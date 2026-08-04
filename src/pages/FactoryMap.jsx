@@ -166,6 +166,9 @@ export default function FactoryMap({ setupMode = false }) {
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
   const [storyLoading, setStoryLoading] = useState(false);
+  const [oeeExplain, setOeeExplain] = useState(null); // { title, rows } — กางวิธีคิด OEE เฉลี่ยถ่วงน้ำหนัก
+  // วันที่ของ modal สรุปเรื่องราว — ตั้งตอนเปิด: คลิกจากผัง (live) = วันงานปัจจุบัน · คลิกจากแถบขวา = วันที่ในกรอบ
+  const [storyDate, setStoryDate] = useState(getWorkDate);
   const [highlight, setHighlight] = useState(null); // line_name ที่คลิกจาก panel (เน้นชั่วคราว)
   const [detailLine, setDetailLine] = useState(null); // ไลน์ที่คลิกเจาะดู popup รายละเอียด
   const [hoverLine, setHoverLine] = useState(null); // ไลน์ที่เม้าส์วาง (การ์ดพรีวิวลอย — เฉพาะ mouse)
@@ -464,7 +467,7 @@ export default function FactoryMap({ setupMode = false }) {
       ]);
       const out = {};
       // oeeWSum/oeeWLoad = ถ่วงน้ำหนักด้วยเวลารับภาระ (กฎ OEE: ห้าม mean-of-percentages) · oeeSum/oeeN = fallback เมื่อไม่มีน้ำหนัก
-      const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 }));
+      const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] }));
       // คนเข้างานของวันนั้น (map พนักงาน→ไลน์ ปัจจุบัน — ยอมรับได้สำหรับทบทวนย้อนหลัง)
       const lineOfId = {}; (plRes.data || []).forEach(l => { lineOfId[l.id] = l.name; });
       const presentSet = new Set((logRes.data || []).filter(l => l.is_present).map(l => l.employee_id));
@@ -511,6 +514,8 @@ export default function FactoryMap({ setupMode = false }) {
             const wLoad = Math.max(0, (s.shift_min || 570) - plannedMin);
             o.oeeWSum += Number(s.oee) * wLoad; o.oeeWLoad += wLoad;
             o.oeeSum += Number(s.oee); o.oeeN++;
+            // เก็บรายกะไว้กางอธิบายวิธีคิดค่าเฉลี่ยถ่วงน้ำหนักบนจอ (ตอบคำถาม "ทำไมบวกหารแล้วไม่ตรง")
+            o.oeeRows.push({ line: s.line_name, shift: s.shift, oee: Number(s.oee), w: wLoad, shiftMin: s.shift_min || 570, planned: Math.round(plannedMin) });
           }
         });
       }
@@ -523,7 +528,6 @@ export default function FactoryMap({ setupMode = false }) {
 
   /* ── สรุปเรื่องราวทั้งวันของไลน์ที่คลิก (modal) — ผลิตรายพาร์ท · Downtime+เหตุผล · ของเสีย · 4M · คน ──
      วันที่ = วันที่ของแผงทบทวน (โหมด review) หรือวันงานปัจจุบัน (โหมดสด) · โหลดเมื่อเปิด modal เท่านั้น */
-  const storyDate = panelMode === 'review' ? reviewDate : getWorkDate();
   useEffect(() => {
     if (!storyLine) { setStory(null); return; }
     let cancelled = false;
@@ -643,9 +647,10 @@ export default function FactoryMap({ setupMode = false }) {
   //   (popup เมตริกผลิตไม่มีความหมายกับโซน facility — ยอด/OEE/คน เป็น "—" หมด · 2026-08-03)
   // ไลน์ผลิต → เปิด "สรุปเรื่องราวทั้งวัน" (ผลิตรายพาร์ท/DT+เหตุผล/ของเสีย/4M) — มีปุ่มไปผังไลน์+พนักงานในนั้น
   //   (เดิมคลิกแล้วเด้งไปผังคนทันที ซึ่งดูปัญหาของวันไม่ได้ · 2026-08-03 คำสั่ง user)
-  const openLine = (name) => {
+  // date = วันที่ที่จะสรุป · ไม่ส่ง = วันงานปัจจุบัน (คลิกจากผัง live) · ส่ง reviewDate = คลิกจากแถบทบทวนขวา
+  const openLine = (name, date) => {
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
-    setHoverLine(null); setStoryLine(name);
+    setHoverLine(null); setStoryDate(date || getWorkDate()); setStoryLine(name);
   };
   // เปิดผังไลน์ + พนักงาน (Dashboard) — จากปุ่มใน modal สรุป
   const openFloorMap = (name) => {
@@ -709,12 +714,13 @@ export default function FactoryMap({ setupMode = false }) {
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
   const reviewOf = (name) => {
-    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0 };
+    const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] };
     familyNames(name).forEach(n => {
       const r = reviewStatus[n]; if (!r) return;
       agg.actual += r.actual || 0; agg.target += r.target || 0;
       agg.oeeWSum += r.oeeWSum || 0; agg.oeeWLoad += r.oeeWLoad || 0; agg.oeeSum += r.oeeSum || 0; agg.oeeN += r.oeeN || 0;
       agg.dtMin += r.dtMin || 0; agg.ng += r.ng || 0; agg.present += r.present || 0; agg.headTotal += r.headTotal || 0;
+      if (r.oeeRows?.length) agg.oeeRows.push(...r.oeeRows);
     });
     agg.oee = agg.oeeWLoad > 0 ? Math.round(agg.oeeWSum / agg.oeeWLoad) : (agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null);
     return agg;
@@ -736,8 +742,8 @@ export default function FactoryMap({ setupMode = false }) {
   }, [reviewStatus, regions, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
   // ยอดรวมทั้งโรงงาน (รวมเฉพาะไลน์บนสุด กันนับซ้ำ) · OEE ถ่วงน้ำหนักเช่นกัน
   const reviewTotals = useMemo(() => {
-    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, oee: null };
-    topNames.forEach(name => { const r = reviewOf(name); t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; t.oeeWSum += r.oeeWSum; t.oeeWLoad += r.oeeWLoad; t.oeeSum += r.oeeSum; t.oeeN += r.oeeN; });
+    const t = { actual: 0, target: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, oee: null, oeeRows: [] };
+    topNames.forEach(name => { const r = reviewOf(name); t.actual += r.actual; t.target += r.target; t.dtMin += r.dtMin; t.ng += r.ng; t.present += r.present; t.headTotal += r.headTotal; t.oeeWSum += r.oeeWSum; t.oeeWLoad += r.oeeWLoad; t.oeeSum += r.oeeSum; t.oeeN += r.oeeN; if (r.oeeRows?.length) t.oeeRows.push(...r.oeeRows); });
     t.oee = t.oeeWLoad > 0 ? Math.round(t.oeeWSum / t.oeeWLoad) : (t.oeeN ? Math.round(t.oeeSum / t.oeeN) : null);
     return t;
   }, [reviewStatus, topNames]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1014,7 +1020,8 @@ export default function FactoryMap({ setupMode = false }) {
                     const t = reviewTotals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
                     const stats = [
                       { label: 'ผลิตได้รวม / เป้า', val: `${fmtNum(t.actual)}/${fmtNum(t.target)}${pct != null ? ` · ${pct}%` : ''}`, color: pctCol(pct) },
-                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee) },
+                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee),
+                        explain: t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
                       { label: 'Downtime รวม', val: `${fmtNum(t.dtMin)} น.`, color: t.dtMin > 0 ? '#f59e0b' : 'var(--text)' },
                       { label: 'ของเสียรวม', val: fmtNum(t.ng), color: t.ng > 0 ? '#ef4444' : 'var(--text)' },
                       { label: 'คนเข้างาน', val: t.headTotal > 0 ? `${t.present}/${t.headTotal}` : '—', color: 'var(--text)' },
@@ -1022,9 +1029,14 @@ export default function FactoryMap({ setupMode = false }) {
                     return (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
                         {stats.map(s => (
-                          <div key={s.label} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px' }}>
-                            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>{s.label}</div>
+                          <div key={s.label} onClick={s.explain ? () => setOeeExplain(s.explain) : undefined}
+                            title={s.explain ? 'ดูวิธีคิดค่าเฉลี่ย' : undefined}
+                            style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', cursor: s.explain ? 'pointer' : 'default' }}>
+                            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 600 }}>
+                              {s.label}{s.explain && <span style={{ color: 'var(--accent)', fontWeight: 800 }}> ⓘ</span>}
+                            </div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: s.color }}>{s.val}</div>
+                            {s.explain && <div style={{ fontSize: 9.5, color: 'var(--muted)' }}>ถ่วงน้ำหนักตามเวลารับภาระ</div>}
                           </div>
                         ))}
                       </div>
@@ -1044,7 +1056,7 @@ export default function FactoryMap({ setupMode = false }) {
                     const pct = r.target > 0 ? Math.round(r.actual / r.target * 100) : null;
                     return (
                       // ไลน์แม่ที่มีลูก → คลิกเปิด breakdown ไลน์ย่อย · ไลน์เดี่ยว → เปิดผังไลน์พร้อมพนักงาน
-                      <div key={name} onClick={() => { if (hasKids) { setReviewDetail(name); } else { if (hasRegion) flashLine(name); openLine(name); } }}
+                      <div key={name} onClick={() => { if (hasKids) { setReviewDetail(name); } else { if (hasRegion) flashLine(name); openLine(name, reviewDate); } }}
                         style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${highlight === name ? pctCol(pct) : 'var(--border2)'}` }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
@@ -1167,6 +1179,84 @@ export default function FactoryMap({ setupMode = false }) {
       })()}
 
       {/* ── drill-down: คลิกไลน์ → รายละเอียดทุก metric + แยกตามไลน์ลูก ── */}
+      {/* ── กางวิธีคิด OEE เฉลี่ย (ถ่วงน้ำหนัก) — ตอบคำถาม "ทำไมบวกกันหารแล้วไม่ตรง" ── */}
+      {oeeExplain && (() => {
+        const rows = [...oeeExplain.rows].sort((a, b) => b.w - a.w);
+        const sumW = rows.reduce((a, r) => a + r.w, 0);
+        const sumWX = rows.reduce((a, r) => a + r.oee * r.w, 0);
+        const weighted = sumW > 0 ? sumWX / sumW : null;
+        const plain = rows.length ? rows.reduce((a, r) => a + r.oee, 0) / rows.length : null;
+        const sh = (v) => v === 'day' ? 'เช้า' : v === 'night' ? 'ดึก' : (v || '—');
+        return (
+          <div onClick={() => setOeeExplain(null)} style={{ position: 'fixed', inset: 0, zIndex: 1260, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 660, maxHeight: '90vh', overflowY: 'auto', padding: '20px 22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>🧮 {oeeExplain.title}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ค่าเฉลี่ยถ่วงน้ำหนัก — ไม่ใช่เอา % มาบวกกันแล้วหาร</div>
+                </div>
+                <button onClick={() => setOeeExplain(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+              </div>
+
+              {/* สูตร */}
+              <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 9, padding: '10px 12px', margin: '12px 0 14px', fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+                <b style={{ color: 'var(--text)' }}>สูตร:</b> OEE เฉลี่ย = Σ(OEE ของกะ × เวลารับภาระ) ÷ Σ(เวลารับภาระ)<br />
+                <b style={{ color: 'var(--text)' }}>เวลารับภาระ</b> = เวลากะ − เวลาหยุดตามแผน (นาที) · กะที่เดินเครื่องนานกว่า ถ่วงน้ำหนักมากกว่า
+              </div>
+
+              {/* ตารางคิดจริง */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 460 }}>
+                  <thead><tr style={{ color: 'var(--muted)', textAlign: 'right', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ textAlign: 'left', padding: '5px 7px' }}>ไลน์ · กะ</th>
+                    <th style={{ padding: '5px 7px' }}>OEE</th>
+                    <th style={{ padding: '5px 7px' }}>เวลารับภาระ</th>
+                    <th style={{ padding: '5px 7px' }}>OEE × เวลา</th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map((r, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border2)', textAlign: 'right', color: 'var(--text)' }}>
+                        <td style={{ textAlign: 'left', padding: '6px 7px' }}>
+                          <b>{r.line}</b> <span style={{ color: 'var(--muted)' }}>· {sh(r.shift)}</span>
+                          {r.planned > 0 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{r.shiftMin} − {r.planned} (หยุดตามแผน)</div>}
+                        </td>
+                        <td style={{ padding: '6px 7px', fontWeight: 700, color: oeeCol(r.oee) }}>{r.oee.toFixed(1)}%</td>
+                        <td style={{ padding: '6px 7px' }}>{fmtNum(r.w)} น.</td>
+                        <td style={{ padding: '6px 7px', color: 'var(--muted)' }}>{fmtNum(r.oee * r.w)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr style={{ textAlign: 'right', borderTop: '2px solid var(--border2)', color: 'var(--text)', fontWeight: 800 }}>
+                    <td style={{ textAlign: 'left', padding: '8px 7px' }}>รวม</td>
+                    <td style={{ padding: '8px 7px' }}>—</td>
+                    <td style={{ padding: '8px 7px' }}>{fmtNum(sumW)} น.</td>
+                    <td style={{ padding: '8px 7px' }}>{fmtNum(sumWX)}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+
+              {/* ผลลัพธ์ + เทียบกับเฉลี่ยธรรมดา */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
+                <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 9, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>✅ ที่ระบบใช้ (ถ่วงน้ำหนัก)</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: oeeCol(weighted) }}>{weighted != null ? `${weighted.toFixed(1)}%` : '—'}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{fmtNum(sumWX)} ÷ {fmtNum(sumW)}</div>
+                </div>
+                <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>❌ ถ้าบวกกันหารเฉยๆ</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--muted)' }}>{plain != null ? `${plain.toFixed(1)}%` : '—'}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>เฉลี่ย {rows.length} กะเท่าๆ กัน</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 12, lineHeight: 1.7 }}>
+                <b style={{ color: 'var(--text2)' }}>ทำไมต่างกัน:</b> กะที่เดินเครื่องนานกว่า (หรือไลน์ที่เปิดหลายกะ) มีผลต่อผลงานรวมมากกว่า
+                ถ้าเฉลี่ยเท่าๆ กัน กะสั้นๆ จะถ่วงเท่ากะเต็มวัน — ตัวเลขจะสวยหรือแย่เกินจริง · กะที่ไม่มีผลผลิต (OEE ว่าง) ไม่ถูกนับ
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── สรุปเรื่องราวทั้งวันของไลน์ (คลิกไลน์บนผัง/แถบขวา) ── */}
       {storyLine && (() => {
         const s = story;
@@ -1181,7 +1271,9 @@ export default function FactoryMap({ setupMode = false }) {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text)' }}>📋 {storyLine}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                    สรุปทั้งวัน · {fmtThaiDate(storyDate)}{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}{s?.sessionCount ? ` · ${s.sessionCount} กะ` : ''}
+                    {storyDate === getWorkDate()
+                      ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>⚡ วันนี้ (สด)</span>
+                      : 'สรุปทั้งวัน'} · {fmtThaiDate(storyDate)}{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}{s?.sessionCount ? ` · ${s.sessionCount} กะ` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
@@ -1363,8 +1455,13 @@ export default function FactoryMap({ setupMode = false }) {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: '10px 12px', margin: '10px 0 14px' }}>
                 <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>รวมทั้งกลุ่ม</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: pctCol(ppct) }}>{parent.target > 0 ? `${fmtNum(parent.actual)}/${fmtNum(parent.target)} · ${ppct}%` : '—'}</div>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <Chip label="OEE" val={parent.oee != null ? `${parent.oee}%` : '—'} color={oeeCol(parent.oee)} />
+                  {parent.oeeRows?.length > 1 && (
+                    <button onClick={() => setOeeExplain({ title: `OEE เฉลี่ย · ${reviewDetail}`, rows: parent.oeeRows })}
+                      title="ทำไมไม่เท่ากับเฉลี่ยเลขธรรมดา?"
+                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 20, fontSize: 10.5, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>ⓘ วิธีคิด</button>
+                  )}
                   <Chip label="DT" val={`${fmtNum(parent.dtMin)}น.`} color={parent.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
                   <Chip label="NG" val={fmtNum(parent.ng)} color={parent.ng > 0 ? '#ef4444' : 'var(--muted)'} />
                   {parent.headTotal > 0 && <Chip label="คน" val={`${parent.present}/${parent.headTotal}`} color="var(--text2)" />}
@@ -1375,7 +1472,7 @@ export default function FactoryMap({ setupMode = false }) {
                 {rows.map(({ name, r, self }) => {
                   const pct = r.target > 0 ? Math.round(r.actual / r.target * 100) : null;
                   return (
-                    <div key={name} onClick={() => { setReviewDetail(null); openLine(name); }}
+                    <div key={name} onClick={() => { setReviewDetail(null); openLine(name, reviewDate); }}
                       style={{ padding: '9px 11px', borderRadius: 9, cursor: 'pointer', background: 'var(--bg3)', border: `1px solid ${self ? 'var(--border)' : 'var(--border2)'}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
                         <div style={{ minWidth: 0, flex: 1, fontSize: 13.5, fontWeight: 700, color: self ? 'var(--accent)' : 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
