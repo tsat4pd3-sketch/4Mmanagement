@@ -63,6 +63,26 @@ export default function OrderTrace() {
   }, [role, lineId, lines, scopeSecs]);
   const inScope = useCallback(ln => !scopeLineNames || scopeLineNames.has((ln || '').toLowerCase()), [scopeLineNames]);
 
+  /* สรุปภาพรวมของ "ใบที่ค้นเจอ" — ให้เห็นข้อมูลก่อนคลิกเลือกใบ
+     หมายเหตุ: เป็นผลรวมของรายการที่แสดง (list sum) ไม่ใช่ยอดผลิตภาพใหญ่ของโรงงาน
+     จึงบวกตรงๆ ต่อใบ (ไม่ใช้ pairAwareTotal ซึ่งใช้กับจอสรุปยอดรวมภาพใหญ่) */
+  const sum = useMemo(() => {
+    const s = { count: results.length, target: 0, produced: 0, ng: 0, openCount: 0, lines: [], mats: [], days: [], capped: results.length >= 300 };
+    const lineSet = new Set(), matSet = new Set(), daySet = new Set();
+    results.forEach(o => {
+      s.target += Number(o.qty_target ?? o.qty) || 0;
+      s.produced += Number(o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : o.qty_actual) || 0;
+      s.ng += (Number(o.qty_ng) || 0) + (Number(o.qty_suspect) || 0);
+      if (o.status === 'open') s.openCount++;
+      const ss = o.production_sessions || {};
+      if (ss.line_name) lineSet.add(ss.line_name);
+      if (o.mat_no) matSet.add(o.mat_no);
+      if (ss.work_date) daySet.add(ss.work_date);
+    });
+    s.lines = [...lineSet].sort(); s.mats = [...matSet].sort(); s.days = [...daySet].sort();
+    return s;
+  }, [results]);
+
   /* ── ค้นหาใบผลิต (สแกน/พิมพ์ prod_no หรือ MAT/ชื่อชิ้นงาน) ── */
   const doSearch = useCallback(async (term) => {
     const q = (term ?? search).trim();
@@ -363,29 +383,89 @@ export default function OrderTrace() {
         {sel && <button onClick={() => { setSel(null); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>}
       </div>
 
-      {/* ── ผลค้นหา ── */}
+      {/* ── ผลค้นหา: สรุปภาพรวมก่อน แล้วตารางเต็มพื้นที่ (เห็นข้อมูลก่อนคลิกเลือกใบ) ── */}
       {!sel && results.length > 0 && (
-        <div style={{ ...card, marginBottom: 16, maxHeight: 420, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left' }}>
-              <th style={{ padding: 6 }}>PROD.NO</th><th>ชิ้นงาน</th><th>ไลน์</th><th>วัน/กะ</th><th style={{ textAlign: 'right' }}>เป้า</th><th style={{ textAlign: 'right' }}>ผลิต</th><th>สถานะ</th>
-            </tr></thead>
-            <tbody>
-              {results.map(o => (
-                <tr key={o.id} onClick={() => setSel(o)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border2)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                  <td style={{ padding: 6, fontWeight: 700 }}>{o.prod_no}</td>
-                  <td>{o.part_name || o.mat_no}</td>
-                  <td>{o.production_sessions?.line_name}</td>
-                  <td>{fmtDate(o.production_sessions?.work_date)} {o.production_sessions?.shift === 'night' ? '🌙' : '☀️'}</td>
-                  <td style={{ textAlign: 'right' }}>{(o.qty_target ?? o.qty)?.toLocaleString()}</td>
-                  <td style={{ textAlign: 'right' }}>{(o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : o.qty_actual)?.toLocaleString() || '—'}</td>
-                  <td><span style={{ color: (STATUS_META[o.status] || {}).color }}>{(STATUS_META[o.status] || {}).label || o.status}</span></td>
-                </tr>
+        <>
+          <div style={{ ...card, marginBottom: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
+              {[
+                { l: 'ใบที่เจอ', v: sum.count.toLocaleString(), s: sum.openCount > 0 ? `กำลังผลิต ${sum.openCount}` : null },
+                { l: 'เป้ารวม', v: sum.target.toLocaleString() },
+                { l: 'ผลิตรวม', v: sum.produced.toLocaleString(), c: '#22c55e', s: sum.target > 0 ? `${Math.round(sum.produced / sum.target * 100)}% ของเป้า` : null },
+                { l: 'NG รวม', v: sum.ng.toLocaleString(), c: sum.ng > 0 ? '#ef4444' : undefined, s: sum.produced + sum.ng > 0 ? `${(sum.ng / (sum.produced + sum.ng) * 100).toFixed(2)}%` : null },
+                { l: 'ไลน์', v: sum.lines.length, s: sum.lines.slice(0, 2).join(', ') + (sum.lines.length > 2 ? ` +${sum.lines.length - 2}` : '') },
+                { l: 'ชิ้นงาน', v: sum.mats.length, s: sum.mats.slice(0, 2).join(', ') + (sum.mats.length > 2 ? ` +${sum.mats.length - 2}` : '') },
+                { l: 'วันที่ผลิต', v: sum.days.length, s: sum.days.length ? `${fmtDate(sum.days[0])} → ${fmtDate(sum.days[sum.days.length - 1])}` : null },
+              ].map(k => (
+                <div key={k.l} style={{ minWidth: 88 }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k.l}</div>
+                  <div style={{ fontSize: 19, fontWeight: 900, color: k.c || 'var(--text)', lineHeight: 1.2 }}>{k.v}</div>
+                  {k.s && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{k.s}</div>}
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+              <div style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)', textAlign: 'right' }}>
+                รวมจาก {sum.count} ใบที่แสดง<br />👆 คลิกแถวเพื่อดูสอบกลับเต็ม
+              </div>
+            </div>
+            {sum.capped && (
+              <div style={{ marginTop: 8, fontSize: 11.5, color: '#f59e0b' }}>
+                ⚠️ แสดง 300 ใบแรกเท่านั้น (มีมากกว่านี้) — แคบช่วงวันหรือระบุ MAT/PROD.NO ให้เจาะจงขึ้นเพื่อดูครบ
+              </div>
+            )}
+          </div>
+
+          <div style={{ ...card, marginBottom: 16, padding: 0, maxHeight: 'calc(100vh - 330px)', minHeight: 260, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1, boxShadow: 'inset 0 -1px 0 var(--border)' }}>
+                <th style={{ padding: '8px 6px' }}>PROD.NO</th><th>MAT / ชิ้นงาน</th><th>ไลน์ / เครื่อง</th><th>วัน / กะ</th><th>เปิด → ปิด</th>
+                <th style={{ textAlign: 'right' }}>เป้า</th><th style={{ textAlign: 'right' }}>ผลิต</th><th style={{ textAlign: 'right' }}>%</th>
+                <th style={{ textAlign: 'right' }}>NG</th><th style={{ textAlign: 'right' }}>OEE กะ</th><th>ผู้เปิด / ปิด</th><th>สถานะ</th>
+              </tr></thead>
+              <tbody>
+                {results.map(o => {
+                  const s = o.production_sessions || {};
+                  const tgt = Number(o.qty_target ?? o.qty) || 0;
+                  const made = Number(o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : o.qty_actual) || 0;
+                  const ng = (Number(o.qty_ng) || 0) + (Number(o.qty_suspect) || 0);
+                  const pct = tgt > 0 ? Math.round(made / tgt * 100) : null;
+                  return (
+                    <tr key={o.id} onClick={() => setSel(o)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border2)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                      <td style={{ padding: '7px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {o.prod_no}
+                        <span style={{ fontSize: 10 }}>
+                          {o.is_backfill && <span title="ยิงย้อนหลัง"> ⏪</span>}
+                          {o.reopen_count > 0 && <span title={`เคยถอยใบ ${o.reopen_count} ครั้ง`}> ↩️</span>}
+                          {o.paired_order_id && <span title="งานคู่ RH/LH"> 🔗</span>}
+                          {o.carry_over_from_session_id && <span title="ยกยอดมาจากกะก่อน"> ⏬</span>}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{o.mat_no || '—'}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{o.part_name || ''}{o.customer ? ` · ${o.customer}` : ''}</div>
+                      </td>
+                      <td>
+                        <div>{s.line_name || '—'}</div>
+                        {o.machine_no && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>⚙️ {o.machine_no}</div>}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}</td>
+                      <td style={{ whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text2)' }}>{fmtTime(o.opened_at)} → {o.confirmed_at ? fmtTime(o.confirmed_at) : '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{tgt.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{made ? made.toLocaleString() : '—'}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: pct == null ? 'var(--muted)' : pct >= 100 ? '#22c55e' : pct >= 80 ? '#f59e0b' : '#ef4444' }}>{pct == null ? '—' : `${pct}%`}</td>
+                      <td style={{ textAlign: 'right', color: ng > 0 ? '#ef4444' : 'var(--muted)', fontWeight: ng > 0 ? 700 : 400 }}>{ng || '—'}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--text2)' }}>{s.oee != null ? `${Number(s.oee).toFixed(1)}%` : '—'}</td>
+                      <td style={{ fontSize: 11, color: 'var(--muted)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {o.opened_by || '—'}{o.confirmed_by ? ` / ${o.confirmed_by}` : ''}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}><span style={{ color: (STATUS_META[o.status] || {}).color }}>{(STATUS_META[o.status] || {}).label || o.status}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       {!sel && !results.length && !searching && (
         <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>สแกนบาร์โค้ด kanban (PROD.NO) หรือพิมพ์เลข MAT/ชื่อชิ้นงาน แล้วกดค้นหา — เว้นว่างเพื่อดูใบทั้งหมดในช่วงวัน</div>
