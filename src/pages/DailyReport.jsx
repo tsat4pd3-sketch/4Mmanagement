@@ -10,13 +10,16 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { parallelUnitsOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT } from '../utils/strictOee';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import ScanModal from '../components/ScanModal';
+import { resolveMachine } from '../utils/qrCode';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -207,6 +210,7 @@ function LiveTab({ role }) {
   const [showDT, setShowDT]   = useState(false);
   const [moDtPick, setMoDtPick] = useState(null); // { d, team } — เลือกทีมช่างก่อนเปิดใบซ่อมจาก downtime
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
+  const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
 
   // Prod Orders
@@ -808,14 +812,8 @@ function LiveTab({ role }) {
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
   // (session.product_id ไม่ได้ถูกตั้งค่าจาก UI เปิดกะ เลยเป็น null เสมอ — ใช้ mat_no ของแต่ละใบงานแทน)
-  const ctForMatNo = (matNo) => {
-    const fromKanban = kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec;
-    if (fromKanban) return fromKanban;
-    // fallback: kanban_standards บางแถวลิงก์ไป product_id ที่ cycle_time_sec ว่าง ทั้งที่มี dr_products อีกแถว
-    // (mat เดียวกัน) ตั้ง CT ไว้ — โดยเฉพาะใบ manual/สินค้าลิงก์ซ้ำ · เดิมได้ CT=0 → P/OEE ทั้งกะเป็น null
-    // ทั้งที่ผลิตจริงและมี CT (เจอ 7 กะย้อนหลัง เช่น LASER E50 manual · แก้ 2026-07-15)
-    return products.find(p => p.mat_no === matNo && p.cycle_time_sec)?.cycle_time_sec || 0;
-  };
+  // CT ต่อ MAT — single source ที่ src/utils/oee.js (ทุกจอต้องใช้ตัวเดียวกัน ไม่งั้น P คนละชุด)
+  const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
 
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
@@ -1548,15 +1546,16 @@ function LiveTab({ role }) {
       if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
     }
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
-    // ไลน์เครื่องขนาน (flow_mode = parallel_machine เช่น LASER-345 เลเซอร์ 3 ตัว): DT ที่ผูกเครื่อง
-    // = เครื่องเดียวหยุด อีก N-1 ตัวยังวิ่ง → หักเวลาไลน์แค่ 1/N ของนาทีที่ลง · DT ไม่ระบุเครื่อง
-    // (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม — เคสจริง 2026-08-04: DT ราย
-    // เครื่อง 3 ตัวถูกบวกรวมแล้วหักจากเวลาไลน์เดียว → %A โดนกดเป็น 0 ทั้งที่ของออก 400 ชิ้น
-    // N = parallel_stations (ตั้งที่ LineSetup) · ไม่ตั้ง = นับเครื่อง active ของไลน์ · lineFlow ยังไม่โหลด = 1 (พฤติกรรมเดิม)
+    // ไลน์เครื่องขนาน (เช่น LASER-345/789 เลเซอร์ 3 ตัว): DT ที่ผูกเครื่อง = เครื่องเดียวหยุด
+    // อีก N-1 ตัวยังวิ่ง → หักเวลาไลน์แค่ 1/N ของนาทีที่ลง · DT ไม่ระบุเครื่อง (ไฟดับ/รอวัตถุดิบ
+    // ทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม — เคสจริง 2026-08-04: DT รายเครื่อง 3 ตัวถูกบวกรวม
+    // แล้วหักจากเวลาไลน์เดียว → %A โดนกดเป็น 0 ทั้งที่ของออก 400 ชิ้น
+    // N มาจาก parallel_stations (ตั้งที่ LineSetup) ซึ่งแยกจาก flow_mode แล้ว (2026-08-05):
+    // ไลน์งานคู่ LH/RH อย่าง LASER-345/789 เป็น one_piece_flow บนบอร์ด (ไม่ dispatch ผูกเครื่อง)
+    // แต่ยังหัก DT 1/3 ได้ · parallel_machine ที่ไม่ตั้ง stations = fallback นับเครื่อง active ของไลน์
     const lf = lineFlow[selSession?.line_name] || {};
-    const parallelN = lf.flow_mode === 'parallel_machine'
-      ? (lf.parallel_stations || new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false).map(m => m.machine_no)).size || 1)
-      : 1;
+    const parallelN = parallelUnitsOf(lf,
+      new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false).map(m => m.machine_no)).size);
     const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
     const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
     const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
@@ -2479,10 +2478,18 @@ function LiveTab({ role }) {
               </div>
 
               {prodOrdersOpen && (<>
-              {/* ไลน์เครื่องขนาน (parallel_machine) — เลือกเครื่องก่อนเปิด Order เพื่อผูกใบกับเครื่อง (แยกเลนบนบอร์ด + OEE รายเครื่อง) */}
+              {/* ไลน์เครื่องขนาน (parallel_machine — dispatch ผูกเครื่อง เช่น SUB APRON) — เลือกเครื่องก่อนเปิด Order
+                  เพื่อผูกใบกับเครื่อง (แยกเลนบนบอร์ด) · ไลน์งานคู่ LH/RH (LASER-345/789) เป็น one_piece_flow ไม่โชว์แผงนี้
+                  รายชื่อเครื่อง = เฉพาะที่ลงทะเบียนใต้ไลน์ที่เปิดกะจริง (เคยดึงทั้ง family → เครื่อง HYDROFORM
+                  30+ ตัวโผล่ปนจนใช้ไม่ได้ · fallback ไป family เฉพาะเมื่อไลน์ไม่มีเครื่องของตัวเอง) */}
               {canScan && lineFlow[selSession?.line_name]?.flow_mode === 'parallel_machine' && (() => {
-                const famNames = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => (n || '').toLowerCase()));
-                const lineMachines = machines.filter(m => famNames.has((m.line_name || '').toLowerCase()));
+                const dedupe = (arr) => { const seen = new Set(); return arr.filter(m => m.machine_no && !seen.has(m.machine_no) && seen.add(m.machine_no)); };
+                const sessLine = (selSession.line_name || '').toLowerCase();
+                let lineMachines = dedupe(machines.filter(m => (m.line_name || '').toLowerCase() === sessLine && m.is_active !== false));
+                if (!lineMachines.length) {
+                  const famNames = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => (n || '').toLowerCase()));
+                  lineMachines = dedupe(machines.filter(m => famNames.has((m.line_name || '').toLowerCase()) && m.is_active !== false));
+                }
                 return (
                   <div style={{ marginBottom: 10, padding: '8px 12px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
@@ -4345,22 +4352,29 @@ function LiveTab({ role }) {
 
                   <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
-                      {(() => {
-                        const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
-                        if (!lineMachines.length) {
-                          return <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />;
-                        }
-                        return (
-                          <select value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} style={inputStyle}>
-                            <option value="">เลือกเครื่องจักร...</option>
-                            {lineMachines.map(m => (
-                              <option key={m.id} value={m.machine_no}>
-                                {m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      })()}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                        {(() => {
+                          const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
+                          if (!lineMachines.length) {
+                            return <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />;
+                          }
+                          return (
+                            <select value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} style={inputStyle}>
+                              <option value="">เลือกเครื่องจักร...</option>
+                              {lineMachines.map(m => (
+                                <option key={m.id} value={m.machine_no}>
+                                  {m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                        </div>
+                        {/* สแกน QR ที่ติดเครื่อง — เครื่องเสียต้องรีบ ไม่ต้องไล่หาในลิสต์ */}
+                        <button type="button" className="tbtn" onClick={() => setDtScanOpen(true)} title="สแกน QR บนเครื่อง"
+                          style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+                      </div>
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
@@ -4397,6 +4411,23 @@ function LiveTab({ role }) {
                     );
                   })()}
                 </div>
+                {dtScanOpen && (
+                  <ScanModal
+                    title="สแกนเครื่องจักร"
+                    hint="ส่องกล้องที่ป้าย QR บนเครื่อง หรือยิงด้วยเครื่องสแกน"
+                    onScan={(parsed) => {
+                      // ค้นทั้งโรงงานก่อน แล้วค่อยเตือนถ้าเครื่องอยู่คนละไลน์กับกะที่เปิดอยู่
+                      const mc = resolveMachine(parsed, machines);
+                      if (!mc) return `ไม่พบเครื่องนี้ในฐานข้อมูล (${parsed.raw})`;
+                      if (mc.line_name && mc.line_name !== selSession.line_name) {
+                        return `เครื่อง ${mc.machine_no} อยู่ไลน์ ${mc.line_name} ไม่ใช่ ${selSession.line_name}`;
+                      }
+                      setDtForm(f => ({ ...f, machine_no: mc.machine_no || f.machine_no }));
+                      toast.success(`เลือกเครื่อง ${mc.machine_no}`);
+                    }}
+                    onClose={() => setDtScanOpen(false)}
+                  />
+                )}
               </div>
             </div>
           );
@@ -4437,16 +4468,12 @@ function HistoryTab({ role }) {
       return sum + Math.max(0, (Math.min(de, endMs) - Math.max(ds, startMs)) / 60000);
     }, 0);
   };
-  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift) => {
-    if (!startMs || !endMs || endMs <= startMs) return 0;
-    return histBreaks.filter(p => p.shift === 'both' || p.shift === shift).reduce((sum, p) => {
-      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-      let ps = new Date(`${workDateStr}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
-      let pe = ps + (p.duration_min || 0) * 60000;
-      if (pe < startMs) { ps += 86400000; pe += 86400000; } // พักกะดึกหลังเที่ยงคืน — เลื่อนไปวันถัดไป
-      return sum + Math.max(0, (Math.min(pe, endMs) - Math.max(ps, startMs)) / 60000);
-    }, 0);
-  };
+  // เวลาพักตามนโยบายในช่วงที่สนใจ — ใช้ util กลาง (src/utils/oee.js) ตัวเดียวกับตอนปิดกะ/OEE Analytics
+  // เดิมสูตรนี้ไม่กรอง process_type (query ก็ไม่ได้ select มา) → นับพักเกินจริงในไลน์ที่มีนโยบายเฉพาะ process
+  // ทำให้ %P รายชิ้น + OEE จริง ในแท็บประวัติ ไม่ตรงกับหน้าอื่น (รวมเป็นตัวเดียว 2026-08-05)
+  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null) =>
+    policyBreakOverlapMin({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType });
+
 
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
@@ -4491,14 +4518,15 @@ function HistoryTab({ role }) {
   }, [filter, role, scopeSecs, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
+  // CT ผ่าน buildCtMap (fallback kanban_standards → dr_products ตัวเดียวกับตอนปิดกะ) —
+  // เดิมดึง kanban อย่างเดียว → MAT ที่ kanban ลิงก์ product ที่ CT ว่าง จะไม่มี %P ให้ดู (แก้ 2026-08-05)
+  // break_policies ต้อง select process_type ด้วย ไม่งั้นกรองนโยบายเฉพาะ process ไม่ได้ (นับพักเกิน)
   useEffect(() => {
-    supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)
-      .then(({ data }) => {
-        const m = {};
-        (data || []).forEach(r => { if (r.dr_products?.cycle_time_sec) m[r.mat_no] = Number(r.dr_products.cycle_time_sec); });
-        setCtByMat(m);
-      });
-    supabaseDR.from('break_policies').select('shift, start_time, duration_min').eq('is_active', true)
+    Promise.all([
+      supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
+    ]).then(([k, p]) => setCtByMat(buildCtMap({ kanbanStds: k.data || [], products: p.data || [] })));
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
       .then(({ data }) => setHistBreaks(data || []));
   }, []);
 
@@ -4617,7 +4645,7 @@ function HistoryTab({ role }) {
                   )}
 
                   {/* OEE จริง — นับ Downtime "ในแผน" เป็นการสูญเสียด้วย (กันการติ๊กในแผนเพื่อดัน OEE)
-                      ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/strictOee.js */}
+                      ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/oee.js */}
                   {s.oee != null && (() => {
                     const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
@@ -6096,7 +6124,7 @@ function ProductSetup({ role }) {
 function DowntimeTypeSetup({ role }) {
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: 0, is_active: true });
+  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: 0, is_active: true, six_big_loss: '', waste_type: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -6109,16 +6137,18 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active }
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true });
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '' }
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
+    // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
+    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null };
     const { error } = editing === 'new'
-      ? await supabaseDR.from('dr_downtime_types').insert(form)
-      : await supabaseDR.from('dr_downtime_types').update(form).eq('id', editing);
+      ? await supabaseDR.from('dr_downtime_types').insert(payload)
+      : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -6212,10 +6242,24 @@ function DowntimeTypeSetup({ role }) {
                   <option value="common">🔗 Common (ทุกกระบวนการ)</option>
                 </select>
               </Field>
-              <Field label="หมวดหมู่">
+              <Field label="หมวดหมู่ (ใช้คิด OEE)">
                 <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
                   <option value="unplanned">⚠ นอกแผน (Unplanned)</option>
                   <option value="planned">📋 ในแผน (Planned)</option>
+                </select>
+              </Field>
+              {/* แกน Lean — แยกจาก category ที่ใช้คิด OEE โดยตั้งใจ (ดู src/utils/oee.js §6)
+                  ตอบคนละคำถาม: "เวลาที่เสียไปเป็นความสูญเปล่าประเภทไหน แก้ด้วยเครื่องมืออะไร" */}
+              <Field label="6 Big Losses (TPM) — สำหรับวิเคราะห์ ไม่กระทบ OEE">
+                <select value={form.six_big_loss} onChange={e => setForm(f => ({ ...f, six_big_loss: e.target.value }))} style={inputStyle}>
+                  <option value="">— ยังไม่จัดหมวด —</option>
+                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {l.label} (กระทบ {l.oee})</option>)}
+                </select>
+              </Field>
+              <Field label="8 Wastes (Lean) — สำหรับวิเคราะห์ ไม่กระทบ OEE">
+                <select value={form.waste_type} onChange={e => setForm(f => ({ ...f, waste_type: e.target.value }))} style={inputStyle}>
+                  <option value="">— ยังไม่จัดหมวด —</option>
+                  {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
                 </select>
               </Field>
               <Field label="สี">

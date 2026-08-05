@@ -67,7 +67,7 @@
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
-| `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift, **line_type** (ประเภทไลน์: stamping/hydroform/laser/welding_assembly/other — source of truth `src/utils/lineTypes.js` · ตั้งค่าที่ LineSetup แผง Standard Manpower · ใช้จัดกลุ่มกำลังผลิต/ผูกที่มา MAT เบอร์ 200 · **คนละตัวกับ `process_type`** ฝั่ง DR (dr_products/machines) ที่ใช้กรอง downtime/defect types · migration `20260722_production_lines_line_type.sql` backfill จากชื่อไลน์ HDF/LASER/ASSY) |
+| `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift (**กำลังคน — อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น ดูกฎด้านล่าง**), **line_type** (ประเภทไลน์: stamping/hydroform/laser/welding_assembly/other — source of truth `src/utils/lineTypes.js` · ตั้งค่าที่ LineSetup แผง "ข้อมูลเฉพาะไลน์นี้" · **คนละตัวกับ `process_type`** ฝั่ง DR (dr_products/machines) ที่ใช้กรอง downtime/defect types · migration `20260722_production_lines_line_type.sql` **apply แล้ว 2026-08-05** — ค้างมา 2 สัปดาห์ ระหว่างนั้นช่องนี้เซฟไม่ติดเงียบๆ + ลาก flow_mode ปิดตามไปด้วย · `20260805_..._fix_laser.sql` แก้ backfill ที่ตีไลน์เลเซอร์ใต้กลุ่ม HYDROFORM เป็น hydroform ผิด — **กฎ: ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · ⚠️ ยังไม่มีหน้าไหนอ่าน line_type เลย เป็น master ที่ตั้งไว้รอใช้) |
 | `oee_targets` | Target **A/P/Q รายกรุ๊ป** (parent line/ไลน์เดี่ยว) — **เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ** · ระดับ section ไม่เก็บใน DB ใช้**ค่าเฉลี่ยของกรุ๊ป**คำนวณสดในหน้า OEE (2026-07-13) | group_name (unique), target_a/p/q (null = ค่ามาตรฐาน 90/90/99 → OEE 80.2) · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้ (แอปคำนวณเอง) · ตั้งจากปุ่ม 🎯 ใน /oee-analytics (สิทธิ์ manage_master_data) · migration `20260713_oee_targets.sql` |
 | `profiles` | User roles + scope | id, email, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], **mtn_teams[]** (ทีมช่างซ่อมที่สังกัด — แยกคิวใบแจ้งซ่อม MO · แยกจาก sections ที่คุม scope ผลิต · ตั้งที่ /add-user เฉพาะ role งานซ่อม · migration `20260722_profiles_mtn_teams.sql` · 2026-07-22), notify_email, signature_url, avatar_url (รูปโปรไฟล์ user — 2026-07-14) |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
@@ -187,6 +187,7 @@
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/process-setup` | ProcessSetup — จุดจัดการ master กระบวนการผลิต (process_types) ทางเข้าเสริมนอกจาก Daily Report ⚙️ · component ร่วม `ProcessTypeSetup.jsx` | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/qr-labels` | QrLabels — 🏷️ พิมพ์ป้าย QR อุปกรณ์ (เครื่องจักร/จิ๊ก) เลือกไลน์+ติ๊กรายการ → พิมพ์สติกเกอร์ A4 (3 ขนาด) · ดู section "QR / บาร์โค้ดอุปกรณ์" | ทุก role (พิมพ์: `qr_labels:print` = admin/mgr/sv/mtn/engineer) |
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
@@ -234,12 +235,43 @@
 > **`handleRenameLine` (LineSetup.jsx) cascade แล้ว (best-effort ต่อ table):** Main = `workstations, line_layouts, wip_buffer_points, machine_points, machine_flow_links, four_m_logs, factory_line_regions, lpa_plans, lpa_audits, lpa_questions, meeting_action_items, station_assignment_logs, pokayoke_devices, wip_replenish_requests, employee_home_positions, qa_parts, qa_characteristics, qa_instruments, qa_ncr` · DR = `machines, production_sessions, dr_products, line_stock_transactions, jigs, pm_daily_line_targets, pm_daily_alerts, mtn_orders, improvements, scrap_reports, facility_supply_links, pm_coordination_plans, kanban_delivery_rounds, kanban_deliveries, rack_requests, kanban_calc_params, transport_nodes` + `pm_plans.usage_source_line` + คอลัมน์ `source_line` (`bom_items, child_lot_requests, packaging_withdrawal_requests`) + **`lpa_questions.hidden_for_lines[]`** (text[] — bump ธรรมดาไม่ได้ ต้องอ่าน-แก้-เขียนรายแถวด้วย `.contains()`) · (ขยายลิสต์ 2026-07-30 จาก single-source audit — เดิมตกหล่น supply route/PM ประสานงาน/poka-yoke/QA/คำขอ logistic · **ขยายอีกรอบ 2026-08-03 จาก QC audit** — เดิมตกหล่น lpa_questions/kanban_calc_params/transport_nodes/station_assignment_logs/pm_daily_alerts) · **เพิ่มตารางใหม่ที่เก็บ `line_name`/`source_line` ต้องมาเติมในลิสต์นี้ด้วย** · `handleDeleteLine` มีช่องโหว่เดียวกัน (ลบไลน์ที่ยังมี session เปิด = orphan) — ยังไม่ปิด, เลี่ยงลบไลน์ที่มีกะเปิดค้าง
 > **กู้ session ที่กำพร้าไปแล้ว (rename ก่อนมี fix):** ใน `/linesetup` เปลี่ยนชื่อไลน์**กลับเป็นชื่อเก่า** (session ชื่อเก่ากลับมาโผล่) แล้ว**เปลี่ยนเป็นชื่อใหม่ที่ต้องการอีกรอบ** — รอบสองจะ cascade `production_sessions` ตามไปด้วย (fix ใหม่) · หรือ UPDATE `production_sessions.line_name` ชื่อเก่า→ใหม่ ตรงใน DR SQL editor
 
+> ### ⚠️ กฎเหล็ก — กำลังคนมาตรฐาน (`std_day_shift`/`std_night_shift`) อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น (2026-08-05)
+> **`production_lines` เก็บ std ได้ทั้งไลน์แม่และไลน์ลูก แต่ไม่เคยมีกฎ inherit** → ข้อมูลจริงมี **3 convention ปนกันในตารางเดียว**: HYDROFORM (แม่ 14/14 · ลูกทั้ง 6 ก็อป 14/14 มาหมด) · LINE APRON ASSY (แม่ 17 · ลูก 6+7+6=19) · GOR/LWR BAR (แม่ตั้ง · ลูก 0/0) — ส่วน**พนักงานจริง (`employees.line_id`) ผูกกับไลน์แม่ 100% ทุกกลุ่ม**
+> **แต่ละหน้าเลยเดากันเอง แล้วตอบ "ไลน์นี้มีคนกี่คน" ไม่ตรงกัน** (Dashboard 28 · OrderTrace 14 · ProductionPlan ทิ้งไลน์แม่ทั้งดุ้น)
+> **กฎที่ใช้ (ยึด pattern เดียวกับ `shift_schedules`: ลูกตามแม่ เว้นแต่ตั้งเอง):**
+> - **ตัวเลขกำลังคนของ "กลุ่ม" อยู่ที่ไลน์แม่** — แม่ตั้งไว้ = นั่นคือยอดกลุ่ม **ห้ามบวกลูกซ้ำ** · แม่ไม่ได้ตั้ง = รวมจากลูก
+> - **คุณสมบัติไลน์** (เช่น "เดินกะดึกได้ไหม") **ตกทอด**จากแม่ลงลูกได้ — คนละเรื่องกับตัวเลขกำลังคน
+>
+> | export | ใช้ตอบ | ใช้ที่ |
+> |---|---|---|
+> | `stdCapacityOf(lines, name, shift)` | การ์ดรายไลน์ + **ผลรวมทั้งลิสต์ (ไม่นับซ้ำ)** — ไลน์ลูกที่แม่ตั้งไว้แล้ว = 0 | Dashboard |
+> | `stdGroupOf(lines, name, shift)` | "กลุ่มนี้ทั้งกลุ่มกี่คน" | OrderTrace |
+> | `stdInheritedOf` / `hasNightShift` | **คุณสมบัติไลน์** (มีกะดึกไหม) — ⚠️ ห้ามใช้รวมยอด จะซ้ำกับแม่ | ProductionPlan |
+>
+> **จุดใหม่ที่แตะกำลังคน ห้ามอ่าน `line.std_day_shift` ตรงๆ ห้ามเขียน heuristic เอง** (Dashboard เคยใช้ "ไลน์ย่อยที่ไม่มีพนักงาน = 0" ซึ่งพังทันทีที่ลูกมีคนสักคน — LASER E50 มี 1 คน → HYDROFORM กลายเป็น 28 แทน 14 · **พนักงานคนเดียวลงผิดไลน์ = ตัวหารทั้งโรงงานเพี้ยน 14**) · ยอดรวมกะเช้าทั้งโรงงานหลังแก้ = **67 คน** (เดิม 81 จากการนับซ้ำ)
+> **`cost_center` / `head_name` ก็ตกทอดจากแม่** (ลูกไม่ได้กรอก = ใช้ของแม่) — ทำแล้วที่ MtnRepair + Report (ใบค่าฝีมือ)
+> **แผง LineSetup แยก 2 กลุ่มแล้ว:** 🏢 ข้อมูลของกลุ่ม (กำลังคน/cost center/หัวหน้า — ตกทอด) vs 🏭 ข้อมูลเฉพาะไลน์นี้ (ประเภทไลน์/โหมดไหลงาน/N เครื่องขนาน — ไม่ตกทอด) พร้อมข้อความบอกว่าค่าที่กรอกจะถูกนับหรือไม่
+> **⚠️ ProductionPlan ห้ามกรองเหลือเฉพาะไลน์ลูก (leaf-only)** — `lineOfMat` map 1 พาร์ท → 1 ไลน์ ตาม `dr_products.line_name` เท่านั้น ไลน์แม่จึงไม่มีทางนับซ้ำกับลูก · เดิมกรอง leaf ทิ้ง → **HYDROFORM ที่มีสินค้าผูกกับตัวแม่ 5 พาร์ท หายจากแผนผลิตทั้งหมด** และ GOR/LWR BAR (ลูก std_night=0) **ไม่เคยถูกเปิดกะดึกในแผนเลย** ทั้งที่ไลน์เดินกะดึกจริง
+
 ### ทีมช่างซ่อม 4 ส่วน — data-driven + ยึด department เป็นหลัก (2026-07-22)
 
 **เลิก hardcode ชื่อทีมในโค้ด** (คำสั่ง user) — ทีมช่าง (MTN/JIG MTN/DIE MTN/PRODUCTION) มาจากตาราง **`mtn_teams`** (DR · migration `20260722_mtn_teams.sql`): `key` (=`checklists.department`: maintenance/jig_maintenance/die_maintenance/production) · `label` · `icon` · `equip_type` (machine/jig/die/null) · `dept_name` (โยง `mtn_orders.mtn_dept`) · `color` · เพิ่ม/แก้ทีมได้จากตารางนี้ไม่ต้องแก้โค้ด
 - โหลดผ่าน **`src/utils/pmTeams.js`** (`loadPmTeams()` cache + `pmTeamsSync()` + `DEFAULT_TEAMS` fallback ถ้า migration ยังไม่ apply) — หน้า **PMSchedule / PMCheckData / MtnMachineLayout / PMSetup** ดึง options+label+สี+icon จากตัวนี้ (เดิมต่างคนต่าง hardcode DEPT_OPTIONS/MTN_DEPTS · MtnMachineLayout เคยตกหล่น PRODUCTION · PMSetup เป็นหน้าสุดท้ายที่ยัง hardcode — แก้แล้ว 2026-07-22)
 - **Daily PM (ฝ่ายผลิต) แยกจาก PM หน่วยงานช่าง:** `/daily-pm` = operator/หัวหน้าไลน์เช็คเครื่อง**ผลิต**รายวัน (department `production` + registry `pm_daily_line_targets`) · ลิสต์ลงทะเบียน Daily PM กรองเฉพาะ**เครื่องผลิต** (ตัด `equipment_type` jig/die + `equipment_category` facility/utility ออก — เดิมโชว์ทุกอย่างปนกัน · DailyPM.jsx `prodOnly`) · PM หน่วยงานช่าง (JIG/DIE/MTN) แยกตามส่วนงานที่หน้า PMSchedule/PMCheck/PMSetup ตามปกติ · **1 เครื่องมีได้ทั้ง checklist ผลิตรายวัน + checklist ช่างรายไตรมาส** (คนละ department คนละ checkpoints — pmChecklists key = equipment_id+module+department)
 - **ยึด `checklists.department` เป็นหลักในการแยกทีม** (คำสั่ง user — 1 เครื่องมี PM หลายทีมได้: ผลิตตรวจรายวัน / MTN เข้า PM รายไตรมาส = คนละ checklist คนละ department) · **PMCheckData เดิมกรองด้วย `equipment_type` (jig/die/machine)** ทำให้ของชิ้นเดียวโผล่คนละแท็บกับ PMSchedule → แก้เป็น union: โผล่ใต้ทีม D ถ้า **มี checklist ของ D อยู่แล้ว** (ตรงกับ PMSchedule) **หรือ** ประเภทอุปกรณ์ = `equip_type` default ของทีม (ให้เริ่ม checklist ใหม่ได้) · `clDeptByJig` (jig_id→Set(department)) ใน PMCheckData
+> #### ⚠️ กฎเหล็ก — checklist เกิดตอน "บันทึก" เท่านั้น ห้ามสร้างตอนเปิดดู (2026-08-05)
+> `checklists` แถวหนึ่ง = **การประกาศว่า "แผนกนี้รับผิดชอบตรวจเครื่องนี้"** — ทั้ง PMSchedule/PMCheckData/DailyPM ตัดสินว่าเครื่องโผล่ในแท็บแผนกไหนจากการมีอยู่ของแถวนี้ (`clDeptByJig`) · **แค่เปิดดูจึงต้องไม่สร้าง**
+> **บั๊กที่เกิดจริง:** `PMSetup` (เปิด modal แก้ไข) + `PMCheckData` (เลือกเครื่อง) เรียก `getOrCreateChecklist` ตอนเปิด → **เปิดดูเครื่อง X ในแท็บ JIG MTN ครั้งเดียว = เกิด checklist เปล่า 0 จุดตรวจของ JIG MTN ทันที แล้วเครื่อง X ค้างอยู่ในแท็บ JIG MTN ตลอดไป** ดูเหมือน "เครื่องอยู่ผิดหมวด/ผิดทีม" · พบเงาแบบนี้ **24 แถว** (jig/die/production ปนกันทั้งที่ไม่มีใครลงจุดตรวจ)
+> **กติกาปัจจุบัน:**
+> - **เปิดดู → `findChecklist()` (อ่านอย่างเดียว)** · **บันทึกจริง → `getOrCreateChecklist()`** — ทั้ง 2 ฟังก์ชันอยู่ `src/lib/pmChecklists.js` · หน้าใหม่ที่แตะ checklist ต้องแยก 2 จังหวะนี้เสมอ
+> - ไม่มี checklist ของแผนกที่เปิดอยู่ = ฟอร์มเปล่าให้เริ่มลงจุดตรวจใหม่ (PMSetup) / ข้อความอธิบาย + ชี้ทางไปตั้งค่า (PMCheckData) — **ไม่ใช่ error**
+> - **unique index `checklists_equipment_module_dept_uidx` (equipment_id, module, department)** บังคับ 1 เครื่อง = 1 checklist ต่อแผนก (กันเงาซ้ำระดับ DB)
+> - migration ล้างเงา + ย้าย daily→production + unique index: `20260805_pm_dept_ownership_cleanup.sql` (DR · apply แล้ว — ล้าง 24 เงา, จุดตรวจครบ 254 ไม่หาย)
+> - **ลงจุดตรวจไว้ผิดแผนกแล้วไม่ต้องพิมพ์ใหม่:** PM Setup → เปิดแก้ไขเครื่อง → แผง **"🗂️ รายการตรวจของเครื่องนี้ (แยกตามแผนก)"** โชว์ทุกแผนกพร้อมจำนวนจุด/จำนวนครั้งที่เคยตรวจ + ปุ่ม **➡️ ย้าย** (เปลี่ยน `department` ของ checklist เดิม — **ประวัติการตรวจ + แผน PM ย้ายตามไปทั้งก้อน** เพราะทุกตารางอ้าง `checklist_id` เดียวกัน) และ **⧉ คัดลอก** (สำเนาเฉพาะนิยามจุดตรวจไปแผนกอื่น ประวัติแยกกัน) · helper `listChecklistsByDept`/`moveChecklistDept`/`copyChecklistToDept`
+> - **ปลายทางมีประวัติการตรวจแล้ว = ย้ายทับไม่ได้** (FK `inspections.checklist_id` เป็น `NO ACTION` — DB กันอยู่แล้ว) ให้ใช้คัดลอกแทน · ปลายทางมีจุดตรวจแต่ยังไม่เคยตรวจ = ถาม confirm ก่อนแทนที่
+> - **เพิ่มรายการตรวจให้ "แผนกใหม่" ของเครื่องที่มีอยู่แล้ว:** PM Setup ลิสต์เฉพาะเครื่องที่มี checklist ของแผนกที่เลือก (แท็บ = ความรับผิดชอบ) → ทำได้ 2 ทาง (ก) แท็บแผนกนั้น → **เพิ่มอุปกรณ์ใหม่ → เลือกจาก Machine Master** เครื่องเดิม — **save จะใช้แถว `jigs` เดิม (lookup ด้วย `machine_id`) ไม่สร้างอุปกรณ์ซ้ำ** (เดิม mint uuid ใหม่เสมอ = 2 แถวต่อเครื่อง · ยังไม่เคยเกิดจริง ตรวจแล้ว 0 เคส) และมีข้อความบอกว่าเครื่องนี้แผนกไหนตรวจอยู่บ้าง (ข) เปิดเครื่องในแท็บแผนกที่มีจุดตรวจอยู่ → **⧉ คัดลอก** ไปแผนกใหม่
+> - **⚠️ รูปจุดตรวจถูกแชร์หลังคัดลอก** (แถวสำเนาอ้าง `image_path` เดิม ไม่ก๊อปไฟล์) → การเก็บกวาดไฟล์ตอน save ของ PMSetup เช็ค `jig_checkpoints` ก่อนลบทุกครั้ง (ไฟล์ที่แผนกอื่นยังอ้างอยู่ = ไม่ลบ)
+
 - **DEPT_LABEL (`src/lib/pmSchedule.js`) เปลี่ยนชื่อแสดงผลให้ตรงฝั่งแจ้งซ่อม** (MTN/JIG MTN/DIE MTN/PRODUCTION แทน "ซ่อมบำรุง/Die Maintenance/ฝ่ายผลิต") · key เดิมคงไว้
 - **MtnRepair dropdown "แจ้งถึงทีมช่าง"/ฟิลเตอร์/master ดึงจาก `pmTeamsSync().dept_name` (data-driven จาก `mtn_teams`) แล้ว (2026-07-24)** — เลิก hardcode `MTN_DEPTS` (เหลือเป็น fallback default ในลายเซ็น component เท่านั้น เท่ากับ `DEFAULT_TEAMS` ให้พฤติกรรมเดิมเมื่อ table ว่าง) · `loadPmTeams()` เรียกตอน mount → `setMtnDepts` แล้วส่งผ่าน `cp` ไปทุก sub-component · เพิ่ม/แก้ทีมที่ตาราง `mtn_teams` dropdown ตามทันที
 - **ยังเหลือ:** MtnRepair ใช้ `mtn_dept` (ชื่อ "JIG MTN") ยังเก็บ value คนละแบบกับ `checklists.department` ("jig_maintenance") — `mtn_teams.dept_name` เป็นตัวโยง 2 ฝั่ง (ถ้าจะรวม value ให้ตรงกันจริงต้อง migrate data ทีหลัง) · UI จัดการทีม (เพิ่ม/แก้ row) = future (ตอนนี้แก้ผ่านตาราง)
@@ -318,6 +350,7 @@
 - AddUser.jsx: ช่อง Section เป็น checkbox เลือกหลายอันได้ทุก role และ**ยังเขียน `section` เดี่ยว (= ตัวแรกที่ติ๊ก) คู่กันเสมอ — ห้ามเลิกเขียน** เพื่อให้ revert โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope · supervisor ยังบังคับติ๊กอย่างน้อย 1 (Edge Function `create-user` ยังไม่รู้จัก sections — AddUser update ตามหลังด้วย id ที่ได้กลับมา)
 - หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (ครบทั้ง 10 แท็บ — รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M + สิทธิ์อนุมัติ SV/Skill Matrix/ค่าฝีมือ/ใบบันทึก/Multi-Skill Form/จองรถ OT — 2026-07-10), ShiftOrganize (ตารางกะ/override/merge event/dropdown ใน modal — 2026-07-10), OEEAnalytics, LineSetup, EventLog, Improvements, Dashboard, MachineDatabase (2026-07-12 — user ยืนยัน: Dashboard/MachineDatabase ก็กรอง ใครไม่มี scope เห็นหมดเหมือนเดิม) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
 - หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้นเห็นข้อมูลข้ามส่วนงานโดยไม่ตั้งใจ
+- **ข้อยกเว้นทางการ — `/factory-map` (ผังรวมโรงงาน) ไม่ scope โดยตั้งใจ ทุก role เห็นทั้งโรงงาน** (คำสั่ง user 2026-08-05 ปิดเคสจาก QC audit) — เป็นผังภาพรวมสำหรับจอ TV/ผู้บริหาร/ประชุม การกรองเหลือเฉพาะไลน์ตัวเองทำให้ "ภาพรวม" หมดความหมาย · **ห้ามเติม scope filter ให้หน้านี้** เว้นแต่ user สั่งเปลี่ยน · หน้าอื่นยังยึดกฎ scope ตามปกติ (รวมหน้าที่ deep-link ออกไปจากผัง เช่น Dashboard/MtnMachineLayout ซึ่ง gate ด้วย RoleRoute/scope ของตัวเองอยู่แล้ว)
 - **⚠️ dropdown ก็ต้อง scope ไม่ใช่แค่ query (audit 2026-07-23):** `<select>` ที่ลิสต์ **ไลน์/ส่วนงาน/พนักงาน** ต้องกรองตาม scope เหมือนกัน (ไม่งั้น supervisor/leader เห็นไลน์ข้ามส่วนงานใน dropdown แม้ข้อมูลกรองแล้ว) · ปิดช่องโหว่ dropdown แล้ว: **DailyReport เปิดกะ** (leaf+optgroup ตาม `openScopeLineNames`), **Checkin** (แถบ section + ไลน์), **MtnRepair** ReportModal (ผ่าน `scopedLineObjs` ใน cp), **PmCoordination** PlanModal, **DailyPM** ทะเบียน (assign/move — เพิ่ม `scopedProdLines`) · ยังเหลือ (primary user = store/logistic ไม่ใช่ผลิต เลยยัง N/A): LineStock/RackCenter line filter — ถ้าให้ leader ใช้ตรงต้องเพิ่ม scope
 - Rollback: `docs/ROLLBACK_MULTI_SECTION_SCOPE.md` — **ห้าม drop คอลัมน์ `sections` ก่อน revert โค้ด** (App.jsx select คอลัมน์นี้ตอน login ถ้า drop ก่อนจะ login ไม่ได้ทั้งระบบ)
 
@@ -458,11 +491,16 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
 - Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
 
-### %A ไลน์เครื่องขนาน (parallel_machine) — DT ผูกเครื่องหักแค่ 1/N (2026-08-04)
+### %A ไลน์เครื่องขนาน — DT ผูกเครื่องหักแค่ 1/N (2026-08-04 · แยก N ออกจาก flow_mode 2026-08-05)
 
 ไลน์ที่มีเครื่องหลักหลายตัววิ่งขนาน (เช่น **LASER-345 = เลเซอร์ 3 ตัว LS-03/04/05**) พนักงานลง DT **แยกรายเครื่อง** ถูกต้องแล้ว — แต่ `computeOEE` เดิมบวกนาทีทุกเครื่องรวมแล้วหักจากเวลาไลน์เดียว → DT 3 เครื่องพร้อมกันถูกหัก 3 เท่า **%A โดนกดเป็น 0 ทั้งที่ของออกปกติ** (เจอจริง 2026-08-03: LASER-345 A=0.00, P=100, Q=97)
-- แก้ที่ `computeOEE` + `dtOverlapMin` (รับ `weightFn`): ไลน์ `flow_mode='parallel_machine'` → DT ที่**ระบุเครื่อง** หักน้ำหนัก **1/N** (N = `parallel_stations` ตั้งที่ LineSetup · ไม่ตั้ง = นับเครื่อง active ของไลน์) · DT **ไม่ระบุเครื่อง** (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม · ไลน์ one_piece_flow ไม่กระทบ (N=1)
-- **migration `20260723_line_flow_mode.sql` เพิ่ง apply บน Main จริง 2026-08-04** (ค้างมาตั้งแต่ 2026-07-23 — ก่อนหน้านี้คอลัมน์ไม่มีจริง โค้ด tolerant เลยเงียบ) · LASER-345 ตั้ง `parallel_machine`/stations=3 แล้วผ่าน SQL · ไลน์ขนานอื่น (SUB APRON ฯลฯ) ตั้งเองที่ LineSetup แผง Standard Manpower
+- แก้ที่ `computeOEE` + `dtOverlapMin` (รับ `weightFn`): DT ที่**ระบุเครื่อง** หักน้ำหนัก **1/N** · DT **ไม่ระบุเครื่อง** (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม · N=1 (ไม่ตั้ง) = พฤติกรรมเดิมเป๊ะ
+- **⚠️ N (จำนวนเครื่องขนาน) แยกจาก `flow_mode` แล้ว (2026-08-05 · helper กลาง `parallelUnitsOf(line, fallbackCount)` ใน `src/utils/lineTypes.js`):** 2 แกนคนละเรื่อง —
+  - **`parallel_stations` (N)** = หัก DT 1/N ใน %A · **ตั้งได้ทุกโหมดไหลงาน** ที่ LineSetup แผง Standard Manpower — เคสหลัก: **ไลน์งานคู่ LH/RH เช่น LASER-345/789** (เลเซอร์ 3 ตัวขึ้น product เดียว 2 พาร์ทซ้าย-ขวา) เป็น `one_piece_flow` บนบอร์ด (เลนคู่มาจาก `pair_mat_no` ไม่ dispatch ผูกเครื่อง) แต่ตั้ง N=3 เพื่อหัก DT 1/3
+  - **`flow_mode='parallel_machine'`** = การจัดเลนคิวบนบอร์ด + แผงเลือกเครื่องตอนเปิด Order (เช่น SUB APRON — เครื่อง stand-alone คนละ product) · ถ้าเป็นโหมดนี้แต่ไม่ตั้ง N → fallback นับเครื่อง active ของไลน์
+  - จุดที่ใช้ 1/N ครบแล้ว: `DailyReport computeOEE` (ค่า stamp) + **OEE สด `Dashboard` (per-session board) + `FactoryMap` (loadStatus)** — ทั้งคู่ผ่าน `parallelUnitsOf` และ query `downtime_logs` ต้อง select `machine_no` · จุดใหม่ที่คำนวณ %A ให้ใช้ helper นี้เท่านั้น
+- **แผงเลือกเครื่องตอนเปิด Order (ไลน์ parallel_machine) ลิสต์เฉพาะเครื่องของไลน์ที่เปิดกะจริง** (เดิมดึงทั้ง family → เครื่อง HYDROFORM 30+ ตัวโผล่ปน · fallback ไป family เฉพาะเมื่อไลน์ไม่มีเครื่องของตัวเอง + dedupe ตาม machine_no · 2026-08-05)
+- **migration `20260723_line_flow_mode.sql` เพิ่ง apply บน Main จริง 2026-08-04** (ค้างมาตั้งแต่ 2026-07-23 — ก่อนหน้านี้คอลัมน์ไม่มีจริง โค้ด tolerant เลยเงียบ) · ไลน์ขนานอื่น (SUB APRON ฯลฯ) ตั้งเองที่ LineSetup แผง Standard Manpower
 - **กะที่ stamp A=0 ผิดไปแล้ว (pending_close):** SV กด ✕ ปฏิเสธ → หัวหน้ากลุ่มขอปิดกะใหม่ = recompute ด้วยสูตรใหม่เอง (ห้าม blanket-recompute กะเก่าตามกฎเดิม)
 
 ### %A ต้องนับ Downtime ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — แก้ 2026-07-24
@@ -499,6 +537,25 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
 - **⚠️ สิทธิ์ `delete_session` seed ให้ `admin` เท่านั้น** (`20260708_phase0_permission_catalog.sql`) — supervisor/หัวหน้าแผนกไม่เห็นปุ่มลบ · ถ้าอยากให้ลบเองได้ admin เปิดที่ `/permissions`
 - **ปิดกะที่ไม่มีผลผลิต (`totalProduced===0 && P==null`) → stamp `oee_a`/`oee_q` = null** (ไม่ใช่ 100/0) ทั้ง handleCloseSession + edit-times recompute · เดิมกะเปล่ามีเวลาเดินกะแต่ไม่มี DT → A=100/Q=100 ค้าง **รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์** (กรองแค่ != null) · OEE รวมไม่เคยกระทบ (oee=null ถูกกันอยู่แล้ว) · สอดคล้อง cleanup `20260715_oee_null_noproduction_cleanup.sql` (กันตั้งแต่ปิดกะ ไม่ต้องมาไล่ลบทีหลัง)
+
+---
+
+## QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user)
+
+หน้างานเลือกอุปกรณ์จาก dropdown ยาวๆ ตอนใส่ถุงมือ/รีบ = ช้าและเลือกผิด → **พิมพ์ป้าย QR ติดอุปกรณ์ แล้วสแกนเลือก**
+
+- **รูปแบบรหัสในป้าย (source of truth `src/utils/qrCode.js`):** `ESM:M:<uuid>` เครื่องจักร (`machines.id`) · `ESM:J:<uuid>` จิ๊ก/แม่พิมพ์ (`jigs.id`) · `ESM:P:<mat_no>` สินค้า/พาร์ท
+  - **⚠️ เครื่อง/จิ๊กเข้ารหัสด้วย uuid ไม่ใช่เลขเครื่อง** — ป้ายอยู่หน้างานเป็นปี ถ้าใช้เลขเครื่องแล้ววันหนึ่งเปลี่ยนเลข ป้ายที่พิมพ์ไปแล้วชี้ผิดทั้งหมด · บนป้าย**พิมพ์เลขเครื่องตัวใหญ่ให้คนอ่าน** อยู่แล้ว (คนอ่านเลข เครื่องอ่าน uuid) · สินค้าใช้ `mat_no` เพราะเป็นภาษากลางที่ทั้งโรงงาน+SAP อ้างถึง
+  - **ตัวอ่านทน 3 กรณีเสมอ:** QR ของระบบ · **เลขเปล่าจากบาร์โค้ด 1D เดิมที่ติดเครื่องอยู่ก่อนแล้ว** (resolve ผ่าน `normCode` ตัดขีด/ช่องว่าง/ตัวพิมพ์) · QR แบบ URL (`?c=ESM:M:…`)
+  - `resolveMachine`/`resolveJig`/`resolveProduct` — **สแกนป้ายเครื่องในหน้างาน PM จะเด้งไปแถวเงา (`jigs.machine_id`) ให้เอง** (เครื่อง 1 ตัวมี 2 แถว: `machines` + jig เงาสำหรับผูก checklist PM)
+- **ตัวสแกน = `src/components/ScanModal.jsx` (component กลาง reuse ทุกหน้า — ห้ามเขียนตัวอ่านใหม่ต่อหน้า):** 📷 กล้อง (Android/Chrome ใช้ `BarcodeDetector` ที่ติดมากับเบราว์เซอร์ ฟรี · เครื่องที่ไม่มี เช่น iPhone fallback `jsqr` **โหลด lazy เฉพาะตอนเปิดกล้อง** bundle หลักไม่บวม) + 🔫 **เครื่องยิงบาร์โค้ด** (ช่องกรอกโฟกัสรออยู่ ยิงแล้วต่อ `\n` = ส่งเอง — pattern เดียวกับ modal สแกนใบผลิตเดิม) + พิมพ์มือได้เสมอ (ป้ายเลอะ/สแกนไม่ติด งานต้องเดินต่อได้)
+  - `onScan(parsed)` **คืน string = ข้อความ error** ให้โชว์ในโมดัล (เช่น "เครื่องนี้อยู่คนละไลน์") · คืน undefined = สำเร็จ ปิดโมดัลให้เอง · กันสแกนซ้ำรัว 1.5 วิ + สั่น (vibrate) บอกผล · ภาพกล้องประมวลผลในเครื่องล้วน ไม่ส่งออก
+- **พิมพ์ป้าย = หน้า `/qr-labels`** เลือก เครื่องจักร/จิ๊ก → กรองไลน์+ค้นหา → ติ๊ก → พิมพ์ A4 (สติกเกอร์ 40×25 / 60×40 / 90×60 mm) · ป้ายมี QR + เลขตัวใหญ่ + ชื่อ + ไลน์ · register `doc_forms` doc_key **`qr_label`** (ยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิม) · scope ไลน์ตาม pattern มาตรฐาน
+- **จุดที่ต่อสแกนแล้ว:** MtnRepair แจ้งซ่อม (**สแกนเครื่อง → เติมไลน์/section/cost center ให้อัตโนมัติ** — ตรงนี้เจ็บสุดเพราะเดิมพิมพ์เลขเครื่องเอง) · DailyReport ฟอร์ม Downtime (เตือนถ้าเครื่องอยู่คนละไลน์กับกะที่เปิด) · **จุดใหม่ให้ใส่ปุ่ม 📷 ข้าง picker เดิม ห้ามรื้อ dropdown ทิ้ง** (สแกนไม่ได้ต้องเลือกมือได้)
+- **ตัวตนต้อง unique — migration `20260803_asset_identity_unique.sql` (DR):** partial unique index `machines(machine_no) where is_active` + `jigs(jig_no) where jig_no ไม่ว่าง` · ตอนใส่ index ข้อมูล active สะอาดอยู่แล้ว (เลขซ้ำ 13 ค่าที่เคยเห็นเป็นแถวปิดใช้งานทั้งหมด) · partial → แถวปิดใช้งาน (ประวัติ) ยังซ้ำได้ + jig ที่ยังไม่กรอกเลขยังบันทึกได้ (ทยอยลงข้อมูล 300-400 ตัวได้)
+- **สถานะข้อมูล (2026-08-03):** เครื่องจักร active 209 ตัว **พร้อมพิมพ์ป้ายแล้ว** · **จิ๊ก/DIE จริงยังไม่ได้ลงข้อมูล** (ตาราง `jigs` 35 แถว = เงาของเครื่อง 29 + facility 5 + จิ๊กจริง 1 · DIE 0) — พิมพ์ป้ายจิ๊กได้เมื่อลงข้อมูลแล้ว ระบบรออยู่
+- **⚠️ ตาราง `jigs` ไม่ใช่ "ตารางจิ๊ก" — เป็นทะเบียน "อุปกรณ์ที่มีแผน PM"** (อะไรก็ได้ที่ต้องตรวจ: เครื่อง/จิ๊ก/แม่พิมพ์/facility) ชื่อตารางหลอกตา · `equipment_type` เป็นตัวบอกว่าจริงๆ คืออะไร
+- **⚠️ 1 อุปกรณ์จริง = 1 ป้ายเท่านั้น — ต้องกรอง "แถวเงา" ออกเสมอ (2026-08-03):** เครื่องจักรที่ถูกวางบนผัง PM จะมีแถวเงาใน `jigs` (`machine_id` ชี้กลับ `machines` · `equipment_type='machine'`) → **ถ้าลิสต์ทั้งตารางมาพิมพ์ป้าย จะได้ QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน** (สแกนแล้วเด้งคนละที่) · `/qr-labels` แท็บจิ๊กกรองด้วย `!machine_id && equipment_type !== 'machine'` แล้วโชว์ข้อความบอกว่าซ่อนไปกี่รายการ · **เครื่องจักรพิมพ์จากแท็บเครื่องจักรทางเดียว** · ข้อมูลจริง 2026-08-03: 35 แถวใน jigs = เงา 33 + จิ๊กจริง 1 (JIG6/A) + ขยะทดสอบ 1
 
 ---
 
@@ -543,6 +600,31 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - เวลาพักนโยบายคิดจาก `break_policies` ผ่าน helper `policyBreakMin(shift, shiftMin, policies)` (ทับซ้อนกับกรอบกะ · กะเช้าเริ่ม 08:00 กะดึก 20:00 · นโยบายที่ผูก process เฉพาะถูกข้าม — ระดับนี้ไม่รู้ process ของกะ)
 - การ์ด "เวลาที่หายไปก่อนถึง OEE" แยกให้เห็น **พักนโยบาย vs หยุดตามแผน** + แถบสัดส่วน 🟩 สร้างของดี / 🟪 เสียตอนเดินเครื่อง / 🟧 พัก+หยุดตามแผน
 - **payoff:** TEEP ต่ำ + OEE สูง = ไม่ต้องซื้อเครื่อง เปิดกะเพิ่มพอ (ใช้คู่ `/production-plan` ตอนของบลงทุน)
+
+### 🧩 Single source of truth ของ OEE — `src/utils/oee.js` (2026-08-05 · คำสั่ง user)
+
+**ทุกสูตรที่เกี่ยวกับ A/P/Q/OEE/OOE/TEEP อยู่ไฟล์เดียว** — เดิมแตกเป็น `liveOee.js`/`strictOee.js`/`oeeAvg.js` + สูตรซ้ำในหน้า แล้ว drift กันจนตัวเลขคนละชุด · **จอไหนจะโชว์ค่าพวกนี้ต้อง import จากที่นี่ ห้ามเขียนสูตรเองในหน้า · ห้ามแตกไฟล์ util OEE เพิ่ม**
+
+| # | export | ใช้ทำอะไร | เคยพังยังไงตอนต่างคนต่างเขียน |
+|---|---|---|---|
+| 1 | `wavg` / `wLoad` / `wRun` / `wProd` | เฉลี่ยข้ามกะแบบถ่วงน้ำหนัก | mean-of-percentages ใน 4 จอ → ไม่ตรง `/oee-analytics` |
+| 2 | `ctForMat` / `buildCtMap` | CT ต่อ MAT (kanban_standards → dr_products) | FactoryMap/OEEAnalytics ดึง dr_products ล้วน · InsightPanel ดึง kanban ล้วน → P คนละชุด · แท็บประวัติ %P ว่างกับ MAT ที่ kanban ไม่มี CT |
+| 3 | `policyBreakOverlapMin` / `policyBreakForShift` | เวลาพักตามนโยบายที่ทับช่วงเวลา (กรอง shift + process) | 3 implementation: แท็บประวัติไม่กรอง process (พักเกิน) · OEEAnalytics ทิ้งนโยบายเฉพาะ process + เวลาเริ่มกะตายตัว 08:00/20:00 (พักขาด) → OEE จริง/OOE ไม่ตรงกัน |
+| 4 | `computeLiveOee` / `LIVE_MIN_ELAPSED` | OEE สดของกะที่ยังไม่ปิด | FactoryMap ไม่ส่ง NG → Q สด = 100% เสมอ |
+| 5 | `strictOee` / `strictGap` / `STRICT_WARN_SHARE_PCT` | "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย | — |
+| 6 | `SIX_BIG_LOSSES` / `EIGHT_WASTES` / `groupLean` / `lossMeta` / `wasteMeta` | วิเคราะห์ Lean (ดูหัวข้อถัดไป) | — |
+
+**query ต้อง select คอลัมน์ให้ครบด้วย** ไม่งั้น util ได้ข้อมูลไม่พอแล้วเงียบ: `break_policies.process_type` · `production_sessions.start_time/shift_min` · `dr_downtime_types(category, six_big_loss, waste_type)` · NG จาก `defect_logs` เสมอ
+
+### 🧩 วิเคราะห์ Lean — 6 Big Losses (TPM) + 8 Wastes (DOWNTIME) (2026-08-05 · คำสั่ง user)
+
+**แยกคนละแกนกับ `category` (ในแผน/นอกแผน) ที่ใช้คิด OEE โดยตั้งใจ** — user ยืนยันว่า**ไม่แก้การจัดประเภทในแผน/นอกแผน** เพราะแต่ละบริษัท/หน่วยงานนิยาม KPI ต่างกัน เป็นสิทธิ์ของเขา · แกน Lean ตอบคนละคำถาม: *"เวลาที่เสียไปเป็นความสูญเปล่าประเภทไหน ต้องแก้ด้วยเครื่องมืออะไร"*
+
+- **เก็บที่ master เดิม ไม่สร้างตารางใหม่:** `dr_downtime_types.six_big_loss / waste_type` + `dr_defect_types.six_big_loss / waste_type` (migration `20260805_lean_loss_classification.sql` · nullable = ยังไม่จัดหมวด **ห้ามเดาแทนผู้ใช้**)
+- **ตั้งค่าเอง** ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime (dropdown 2 ช่องใต้หมวดหมู่ · ป้ายกำกับบอกชัดว่า "ไม่กระทบ OEE") — migration seed ค่าตั้งต้นจากคำในชื่อประเภทให้แล้ว (เหลือ 12/69 ที่ยังไม่จัด เช่น "อื่นๆ" ซึ่งควรให้คนจัดเอง)
+- **6 Big Losses** ผูกกับตัวที่กระทบ: breakdown/setup → A · minor_stop/reduced_speed → P · defect/startup → Q · แต่ละหมวดมี `fix` = แนวทางแก้ตามตำรา (SMED, TPM, poka-yoke ฯลฯ) แสดงบนหน้า
+- **แสดงที่แท็บ 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics`** (แผงบนสุด สลับแกน 6 Losses ↔ 8 Wastes) — **ไม่สร้างหน้าใหม่** · ของเสียถูกแปลงเป็น "นาทีที่เสียไป" ด้วย CT ของกะนั้น เพื่อเทียบหน่วยเดียวกับ downtime · โชว์เวลาที่ "ยังไม่จัดหมวด" เสมอ (ไม่ซ่อน) พร้อมบอกว่าไปจัดที่ไหน
+- helper กลาง `groupLean({ axis, downtimes, defects, ctSecFn, includePlanned })` ใน `src/utils/oee.js` §6 — จุดใหม่ที่อยากวิเคราะห์ Lean ให้ reuse ตัวนี้
 
 ### ⚠️ ผล audit A/P/Q/OEE ทั้งระบบ — จุดที่เคยไม่ตรงกัน (แก้ครบ 2026-08-05)
 
@@ -1165,7 +1247,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 | F UI | `DailyReport` (10 จุด) + PmCoordination/MonthlyReviewExport/TaxonomyManagerModal · `PMSetup` · `StoreMonitor` · `Improvements` · `OEEAnalytics` | ติด `mgrid` ให้ grid ใน modal · ImageAnnotator เพิ่มซูม 100-400% (§5.1) · เลิกเขียน keyframes กระพริบเอง ใช้ `.mo-card-alert` · playhead gantt ใช้ `.now-line` · แกนวันกราฟเทรนด์ต่อเนื่อง (วันไม่ผลิต = ตอว่าง ไม่ข้ามวัน) |
 | G เอกสาร | Checkin/DailyReport + `20260804_doc_forms_attendance_dpr.sql` | ฟอร์ม export 3 ตัวสุดท้ายเข้าทะเบียน `doc_forms` แล้ว (ดูแถว `/doc-forms`) |
 
-- **ค้างรอ user ตัดสินใจ:** `FactoryMap.jsx` ไม่กรอง scope ตาม section/line (ทุก role เห็นทั้งโรงงาน) — ตั้งใจหรือไม่? เป็นผังภาพรวมสำหรับจอ TV/ผู้บริหาร ถ้าตั้งใจให้บันทึกเป็นข้อยกเว้นในหัวข้อ Section Scoping · ถ้าไม่ ต้องเพิ่มตัวกรองแบบหน้าอื่น
+- **ปิดเคสแล้ว:** `FactoryMap.jsx` ไม่กรอง scope — **user ยืนยัน 2026-08-05 ว่าตั้งใจ ให้ทุกคนเห็นทั้งโรงงาน** (บันทึกเป็นข้อยกเว้นทางการในหัวข้อ Section Scoping แล้ว ไม่ต้องแก้โค้ด)
 
 ## Design System
 

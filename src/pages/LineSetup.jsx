@@ -192,16 +192,31 @@ export default function LineSetup({ embedded = false } = {}) {
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
+  /* ── ลำดับชั้นของข้อมูลในแผง Standard Manpower (2026-08-05) ──
+     แผงนี้เคยยัด field 3 ระดับความหมายไว้ในกล่องเดียวโดยไม่บอกว่าอันไหนอยู่ระดับไหน
+     → ข้อมูลจริงเลยมี 3 convention ปนกัน (ก็อปทับ / แม่≠ผลรวมลูก / แม่อย่างเดียว) และแต่ละหน้าเดากันเอง
+     ตอนนี้แยกชัด: "ข้อมูลของกลุ่ม" (กำลังคน/cost center/หัวหน้า — ลูกตกทอดจากแม่ กฎเดียวกับ shift_schedules)
+     กับ "ข้อมูลเฉพาะไลน์นี้" (ประเภทไลน์/โหมดไหลงาน/เครื่องขนาน — เป็นคุณสมบัติเครื่องจริง ไม่ตกทอด) */
+  const selLineObj    = lines.find(l => l.name === selectedLine) || null;
+  const parentLineObj = selLineObj?.parent_line_name ? (lines.find(l => l.name === selLineObj.parent_line_name) || null) : null;
+  const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
+
   const fetchLines = async () => {
-    let { data, error } = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type, flow_mode, parallel_stations').order('name');
+    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name';
+    let { data, error } = await supabase.from('production_lines').select(`${BASE}, line_type, flow_mode, parallel_stations`).order('name');
     if (error) {
-      // คอลัมน์ line_type/flow_mode ยังไม่ถูก apply (migration 20260722/20260723) — fallback query แบบเดิม หน้าใช้งานได้ปกติ
-      hasLineTypeCol.current = false;
-      hasFlowModeCol.current = false;
-      let r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, line_type').order('name');
-      if (r2.error) { r2 = await supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name').order('name'); }
-      else { hasLineTypeCol.current = true; }
-      data = r2.data;
+      // คอลัมน์เสริมยังไม่ apply (migration 20260722 line_type / 20260723 flow_mode)
+      // ⚠️ ต้อง probe ทีละคอลัมน์แยกกัน — เดิม query รวมพังทีเดียวแล้วปิดทั้งคู่
+      //    ทำให้ line_type ที่ไม่มีจริง ลาก flow_mode/parallel_stations (ที่มีอยู่จริง) ปิดตามไปด้วย
+      //    → แผงตั้งเครื่องขนานเซฟไม่ติดทั้งที่ DB พร้อม (บั๊กเงียบ แก้ 2026-08-05)
+      const probe = async (col) => !(await supabase.from('production_lines').select(`id, ${col}`).limit(1)).error;
+      hasLineTypeCol.current = await probe('line_type');
+      hasFlowModeCol.current = await probe('flow_mode, parallel_stations');
+      const cols = [BASE,
+        hasLineTypeCol.current ? 'line_type' : null,
+        hasFlowModeCol.current ? 'flow_mode, parallel_stations' : null,
+      ].filter(Boolean).join(', ');
+      data = (await supabase.from('production_lines').select(cols).order('name')).data;
     }
     // mandatory scope filter — role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor/manager ที่ตั้ง sections)
     // เห็น/แก้ได้เฉพาะไลน์ในส่วนงานตัวเอง — หน้านี้เป็นหน้า edit master data ห้ามเห็นข้ามส่วนงาน
@@ -285,12 +300,16 @@ export default function LineSetup({ embedded = false } = {}) {
         ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
         ...(hasFlowModeCol.current ? {
           flow_mode: flowMode || 'one_piece_flow',
-          parallel_stations: flowMode === 'parallel_machine' && parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
+          // parallel_stations แยกจาก flow_mode (2026-08-05): ไลน์งานคู่ LH/RH เช่น LASER-345/789
+          // เป็น one_piece_flow บนบอร์ด แต่ตั้ง N เครื่องขนานเพื่อหัก DT 1/N ใน OEE ได้
+          parallel_stations: parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
         } : {}),
       })
       .eq('id', lineObj.id);
     if (error) {
       // คอลัมน์ flow_mode ยังไม่ apply — retry โดยตัด field ออก (ไม่ให้ save พังทั้งแผง)
+      // ⚠️ ต้องเตือนให้ชัดว่า "ค่าที่กรอกไม่ถูกบันทึก" ห้ามขึ้น "บันทึกสำเร็จ" เฉยๆ
+      //    (บทเรียนเดียวกับ MachineDatabase หมวด Facility ที่เคยตัด field ทิ้งเงียบแล้วข้อมูลผิดทั้งชุด)
       if (/flow_mode|parallel_stations/.test(error.message || '')) {
         hasFlowModeCol.current = false;
         const { error: e2 } = await supabase.from('production_lines').update({
@@ -298,10 +317,14 @@ export default function LineSetup({ embedded = false } = {}) {
           cost_center: costCenter || null, head_name: signerHead || null,
           ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
         }).eq('id', lineObj.id);
-        if (e2) toast.error('Error: ' + e2.message); else { toast.info('บันทึกแล้ว (โหมดไหลงานยังไม่ apply migration)'); await fetchLines(); }
+        if (e2) toast.error('Error: ' + e2.message);
+        else { toast.error('⚠️ บันทึกแล้วบางส่วน — "รูปแบบการไหลงาน/จำนวนเครื่องขนาน" ยังไม่ถูกบันทึก (DB ยังไม่ apply migration 20260723_line_flow_mode.sql)'); await fetchLines(); }
+      } else if (/line_type/.test(error.message || '')) {
+        hasLineTypeCol.current = false;
+        toast.error('⚠️ "ประเภทไลน์" ยังไม่ถูกบันทึก (DB ยังไม่ apply migration 20260722_production_lines_line_type.sql) — กดบันทึกอีกครั้งเพื่อเก็บค่าที่เหลือ');
       } else toast.error('Error: ' + error.message);
     }
-    else await fetchLines();
+    else { toast.success('บันทึกแล้ว'); await fetchLines(); }
     setMpSaving(false);
   };
 
@@ -1769,7 +1792,23 @@ export default function LineSetup({ embedded = false } = {}) {
           </button>
           {showManpower && (
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+            {/* ══ ข้อมูลของกลุ่ม — ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตกทอดค่าจากไลน์แม่ ══ */}
+            <div style={groupHeadSt}>
+              🏢 ข้อมูลของกลุ่ม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตามไลน์แม่</span>
+            </div>
+            {parentLineObj && (
+              <div style={inheritNoteSt}>
+                ไลน์นี้เป็น <strong style={{ color: 'var(--text)' }}>ไลน์ย่อย</strong> ของ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> —
+                เว้นว่าง/ใส่ 0 = ใช้ค่าของไลน์แม่ · กรอกเมื่อไลน์นี้มีกำลังคน/ผู้รับผิดชอบแยกจริงเท่านั้น
+              </div>
+            )}
+            {!parentLineObj && childLines.length > 0 && (
+              <div style={inheritNoteSt}>
+                ไลน์นี้เป็น <strong style={{ color: 'var(--text)' }}>ไลน์หลักของกลุ่ม</strong> (มีไลน์ย่อย {childLines.length} ไลน์) —
+                ตัวเลขที่กรอกที่นี่คือกำลังคน <strong style={{ color: 'var(--text)' }}>ของทั้งกลุ่ม</strong> ระบบจะไม่บวกไลน์ย่อยซ้ำ
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
               <div style={{ flex: 1 }}>
                 <label style={labelSt}>☀️ กะเช้า (คน)</label>
                 <input type="number" min={0} value={stdDay} disabled={!canEdit}
@@ -1783,12 +1822,41 @@ export default function LineSetup({ embedded = false } = {}) {
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
             </div>
+            {parentLineObj && (
+              <div style={{ ...inheritNoteSt, marginBottom: 12 }}>
+                {(parentLineObj.std_day_shift || 0) > 0 || (parentLineObj.std_night_shift || 0) > 0 ? (
+                  <>
+                    ไลน์แม่ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ตั้งกำลังคน
+                    <strong style={{ color: 'var(--text)' }}> ของทั้งกลุ่ม</strong> ไว้แล้ว
+                    (☀️ {parentLineObj.std_day_shift || 0} · 🌙 {parentLineObj.std_night_shift || 0} คน) —
+                    ระบบใช้ตัวเลขนั้นเป็นยอดกลุ่ม ตัวเลขในช่องนี้จะ<strong style={{ color: 'var(--text)' }}>ไม่ถูกนับซ้ำ</strong>
+                    {((parseInt(stdDay) || 0) > 0 || (parseInt(stdNight) || 0) > 0) &&
+                      ' · ถ้าอยากให้นับแยกรายไลน์จริง ต้องล้างตัวเลขที่ไลน์แม่ให้เป็น 0 แล้วกรอกทุกไลน์ย่อยแทน'}
+                  </>
+                ) : (
+                  <>ไลน์แม่ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ไม่ได้ตั้งกำลังคนไว้ —
+                    ระบบจะ<strong style={{ color: 'var(--text)' }}>รวมกำลังคนจากไลน์ย่อยแต่ละไลน์</strong> ตัวเลขที่กรอกที่นี่จึงถูกนับจริง</>
+                )}
+              </div>
+            )}
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏷️ Cost Center</label>
               <input type="text" value={costCenter} disabled={!canEdit}
                 onChange={e => setCostCenter(e.target.value)}
-                placeholder="เช่น 2140662201"
+                placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'เช่น 2140662201'}
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelSt}>👨‍🔧 หัวหน้างาน (ใช้ในใบค่าฝีมือ)</label>
+              <input type="text" value={signerHead} disabled={!canEdit}
+                onChange={e => setSignerHead(e.target.value)}
+                placeholder={parentLineObj?.head_name ? `ตามไลน์แม่: ${parentLineObj.head_name}` : 'เช่น คุณสุวิทชัย ดีทั่ว'}
+                style={{ marginTop: 4 }} />
+            </div>
+
+            {/* ══ ข้อมูลเฉพาะไลน์นี้ — คุณสมบัติเครื่อง/การไหลงานจริง ไม่ตกทอดถึงไลน์ย่อย ══ */}
+            <div style={{ ...groupHeadSt, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+              🏭 ข้อมูลเฉพาะไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์</span>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏭 ประเภทไลน์</label>
@@ -1808,24 +1876,21 @@ export default function LineSetup({ embedded = false } = {}) {
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
                 {flowMode === 'parallel_machine'
-                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ — บอร์ดจะแตกเป็นเลนขนานตามเครื่อง (เลือกเครื่องตอนเปิด Order)'
-                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์)'}
+                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ (เช่น SUB APRON) — บอร์ดแตกเลนขนานตามเครื่อง + เลือกเครื่องตอนเปิด Order'
+                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์ · งานคู่ LH/RH แยกเลนคู่ให้เองจาก pair_mat_no)'}
               </div>
-              {flowMode === 'parallel_machine' && (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ ...labelSt, fontSize: 11 }}>จำนวนเครื่องขนาน (เว้นว่าง = นับจากทะเบียนเครื่องจักร)</label>
-                  <input type="number" min="1" value={parallelStations} disabled={!canEdit}
-                    onChange={e => setParallelStations(e.target.value)}
-                    placeholder="เช่น 5" style={{ marginTop: 4, width: 120 }} />
+              <div style={{ marginTop: 8 }}>
+                <label style={{ ...labelSt, fontSize: 11 }}>
+                  ⚙️ จำนวนเครื่องหลักวิ่งขนาน (N) — ใช้หัก Downtime ที่ระบุเครื่อง 1/N ในสูตร OEE
+                </label>
+                <input type="number" min="1" value={parallelStations} disabled={!canEdit}
+                  onChange={e => setParallelStations(e.target.value)}
+                  placeholder="เช่น 3" style={{ marginTop: 4, width: 120 }} />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                  ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow
+                  แต่ตั้ง N=3 · เว้นว่าง = ไลน์เดียวหักเต็ม{flowMode === 'parallel_machine' ? ' (เครื่องขนาน: นับจากทะเบียนเครื่องแทน)' : ''}
                 </div>
-              )}
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>
-              <input type="text" value={signerHead} disabled={!canEdit}
-                onChange={e => setSignerHead(e.target.value)}
-                placeholder="เช่น คุณสุวิทชัย ดีทั่ว"
-                style={{ marginTop: 4 }} />
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -1858,6 +1923,19 @@ const labelSt = {
   display: 'block', fontSize: 12, fontWeight: 600,
   color: 'var(--text2)', marginBottom: 0,
   letterSpacing: '0.04em', textTransform: 'uppercase'
+};
+
+/* หัวข้อกลุ่มในแผง Standard Manpower — บอกว่า field ใต้หัวข้อนี้อยู่ระดับ "กลุ่ม" หรือ "ไลน์นี้" */
+const groupHeadSt = {
+  fontSize: 12, fontWeight: 800, color: 'var(--text)',
+  marginBottom: 8, fontFamily: 'var(--font-display)',
+};
+
+/* กล่องอธิบายการตกทอดค่าจากไลน์แม่ (ตัวเล็ก สีจาง ไม่แย่งสายตาจากช่องกรอก) */
+const inheritNoteSt = {
+  fontSize: 11, lineHeight: 1.45, color: 'var(--muted)',
+  background: 'var(--bg2)', border: '1px solid var(--border2)',
+  borderRadius: 6, padding: '6px 8px', marginBottom: 10,
 };
 
 const uploadBtnSt = {
