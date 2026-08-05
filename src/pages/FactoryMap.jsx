@@ -5,6 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { parallelUnitsOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
@@ -246,6 +247,7 @@ export default function FactoryMap({ setupMode = false }) {
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
+  const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
   // ─── Undo/Redo (โหมดตั้งค่า) — snapshot กรอบไลน์ทั้งชุด restore = diff แล้วเขียนย้อนลง DB ───
@@ -286,6 +288,12 @@ export default function FactoryMap({ setupMode = false }) {
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
     setLines(ln || []);
+    // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
+    try {
+      const { data: fl } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
+      flowByLineRef.current = m;
+    } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
     setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
     // โซน MTN/facility (ไม่ผูกไลน์ผลิต) — จาก pm_facility_areas + ชื่อระบบของเครื่อง facility/utility
@@ -309,7 +317,7 @@ export default function FactoryMap({ setupMode = false }) {
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }, breakRes, kstdRes] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
-      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, dr_downtime_types(category)').in('session_id', sessIds),
+      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
       // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
       supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
@@ -332,8 +340,12 @@ export default function FactoryMap({ setupMode = false }) {
     // OEE สด (กะยังเปิด) — util กลาง src/utils/oee.js (ใช้ร่วมกับ /oee-analytics ให้ตัวเลขตรงกัน)
     // ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้เสมอ
     const liveOee = (s, os, dl) => {
-      const r = computeLiveOee({ session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0 });
-      return r ? Math.round(r.oee) : null;
+      // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับ computeOEE ใน DailyReport
+      const r = computeLiveOee({
+        session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
+        parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
+      });
+      return r && r.oee != null ? Math.round(r.oee) : null; // noOutput → oee null (ห้าม round เป็น 0)
     };
 
     const byLine = {};

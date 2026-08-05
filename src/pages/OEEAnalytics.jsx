@@ -14,6 +14,7 @@ import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { parallelUnitsOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
 
@@ -247,6 +248,17 @@ export default function OEEAnalytics() {
   // ══════════════════════════ Shared line/org data ══════════════════════════
   const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}] — ถูก scope แล้ว
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
+  // line_name → { flow_mode, parallel_stations } — หัก DT ที่ระบุเครื่อง 1/N ใน OEE สด (best-effort แยก query
+  // เหมือน FactoryMap — ยังไม่ apply migration 20260723 ก็ไม่พังลิสต์ไลน์หลัก · N=1 พฤติกรรมเดิม)
+  const [flowByLine, setFlowByLine] = useState({});
+  useEffect(() => {
+    supabase.from('production_lines').select('name, flow_mode, parallel_stations')
+      .then(({ data }) => {
+        if (!data) return;
+        const m = {}; data.forEach(l => { m[l.name] = l; });
+        setFlowByLine(m);
+      }, () => {});
+  }, []);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => {
@@ -595,8 +607,13 @@ export default function OEEAnalytics() {
     const dl = tdDowntimes.filter(d => d.session_id === tdLiveSession.id);
     const ng = tdDefects.filter(d => d.session_id === tdLiveSession.id)
       .reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-    return computeLiveOee({ session: tdLiveSession, orders: os, downtimes: dl, ctMap: tdCtMap, ngQty: ng, workDate: tdDate, nowMs: lastUpdate?.getTime?.() || Date.now() });
-  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate]);
+    return computeLiveOee({
+      session: tdLiveSession, orders: os, downtimes: dl, ctMap: tdCtMap, ngQty: ng, workDate: tdDate,
+      nowMs: lastUpdate?.getTime?.() || Date.now(),
+      // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับตอนปิดกะ
+      parallelN: parallelUnitsOf(flowByLine[tdLiveSession.line_name]),
+    });
+  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine]);
   const isLiveCalc = Boolean(tdLiveCalc);
   const tdLiveRow = useMemo(() => tdLiveCalc
     ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }

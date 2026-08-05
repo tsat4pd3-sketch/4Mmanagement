@@ -97,7 +97,10 @@ export function policyBreakForShift({ policies = [], shift, shiftMin, workDate, 
 /* ═══ 4) OEE สด (กะยังไม่ปิด) ═══ */
 export const LIVE_MIN_ELAPSED = 10; // นาทีแรกของกะ ยังประเมินไม่ได้ (ตัวหารเล็กเกินไป)
 
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now() }) {
+// parallelN: จำนวนเครื่องหลักวิ่งขนานของไลน์ (production_lines.parallel_stations ผ่าน parallelUnitsOf ใน lineTypes.js)
+// — DT ที่ระบุเครื่อง (machine_no) หักน้ำหนัก 1/N (เครื่องเดียวหยุด อีก N-1 ยังวิ่ง) · DT ไม่ระบุเครื่อง = หยุดทั้งไลน์ หักเต็ม
+// สูตรเดียวกับ computeOEE ตอนปิดกะใน DailyReport (เคส LASER-345/789 N=3 · 2026-08-05) · ไม่ส่งมา = 1 (พฤติกรรมเดิม)
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1 }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -108,9 +111,10 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   if (!(elapsed >= LIVE_MIN_ELAPSED)) return null;
 
   // Downtime ที่ยังเปิดค้าง (ไม่มีเวลาจบ/นาที) นับถึงตอนนี้
+  const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
   const dtMin = downtimes.reduce((a, d) => {
-    if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0);
-    return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) : 0);
+    if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0) * dtW(d);
+    return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) * dtW(d) : 0);
   }, 0);
   const runMin = Math.max(1, elapsed - dtMin);
 
