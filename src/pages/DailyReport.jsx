@@ -17,6 +17,8 @@ import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import ScanModal from '../components/ScanModal';
+import { resolveMachine } from '../utils/qrCode';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -207,6 +209,7 @@ function LiveTab({ role }) {
   const [showDT, setShowDT]   = useState(false);
   const [moDtPick, setMoDtPick] = useState(null); // { d, team } — เลือกทีมช่างก่อนเปิดใบซ่อมจาก downtime
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
+  const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
 
   // Prod Orders
@@ -4339,22 +4342,29 @@ function LiveTab({ role }) {
 
                   <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
-                      {(() => {
-                        const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
-                        if (!lineMachines.length) {
-                          return <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />;
-                        }
-                        return (
-                          <select value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} style={inputStyle}>
-                            <option value="">เลือกเครื่องจักร...</option>
-                            {lineMachines.map(m => (
-                              <option key={m.id} value={m.machine_no}>
-                                {m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      })()}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                        {(() => {
+                          const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
+                          if (!lineMachines.length) {
+                            return <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />;
+                          }
+                          return (
+                            <select value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} style={inputStyle}>
+                              <option value="">เลือกเครื่องจักร...</option>
+                              {lineMachines.map(m => (
+                                <option key={m.id} value={m.machine_no}>
+                                  {m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                        </div>
+                        {/* สแกน QR ที่ติดเครื่อง — เครื่องเสียต้องรีบ ไม่ต้องไล่หาในลิสต์ */}
+                        <button type="button" className="tbtn" onClick={() => setDtScanOpen(true)} title="สแกน QR บนเครื่อง"
+                          style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+                      </div>
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {(() => {
@@ -4391,6 +4401,23 @@ function LiveTab({ role }) {
                     );
                   })()}
                 </div>
+                {dtScanOpen && (
+                  <ScanModal
+                    title="สแกนเครื่องจักร"
+                    hint="ส่องกล้องที่ป้าย QR บนเครื่อง หรือยิงด้วยเครื่องสแกน"
+                    onScan={(parsed) => {
+                      // ค้นทั้งโรงงานก่อน แล้วค่อยเตือนถ้าเครื่องอยู่คนละไลน์กับกะที่เปิดอยู่
+                      const mc = resolveMachine(parsed, machines);
+                      if (!mc) return `ไม่พบเครื่องนี้ในฐานข้อมูล (${parsed.raw})`;
+                      if (mc.line_name && mc.line_name !== selSession.line_name) {
+                        return `เครื่อง ${mc.machine_no} อยู่ไลน์ ${mc.line_name} ไม่ใช่ ${selSession.line_name}`;
+                      }
+                      setDtForm(f => ({ ...f, machine_no: mc.machine_no || f.machine_no }));
+                      toast.success(`เลือกเครื่อง ${mc.machine_no}`);
+                    }}
+                    onClose={() => setDtScanOpen(false)}
+                  />
+                )}
               </div>
             </div>
           );

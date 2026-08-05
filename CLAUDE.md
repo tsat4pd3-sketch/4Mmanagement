@@ -187,6 +187,7 @@
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/process-setup` | ProcessSetup — จุดจัดการ master กระบวนการผลิต (process_types) ทางเข้าเสริมนอกจาก Daily Report ⚙️ · component ร่วม `ProcessTypeSetup.jsx` | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/qr-labels` | QrLabels — 🏷️ พิมพ์ป้าย QR อุปกรณ์ (เครื่องจักร/จิ๊ก) เลือกไลน์+ติ๊กรายการ → พิมพ์สติกเกอร์ A4 (3 ขนาด) · ดู section "QR / บาร์โค้ดอุปกรณ์" | ทุก role (พิมพ์: `qr_labels:print` = admin/mgr/sv/mtn/engineer) |
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/company-calendar` | CompanyCalendar | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/notification-config` | NotificationConfig | admin เท่านั้น |
@@ -513,6 +514,24 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
 - **⚠️ สิทธิ์ `delete_session` seed ให้ `admin` เท่านั้น** (`20260708_phase0_permission_catalog.sql`) — supervisor/หัวหน้าแผนกไม่เห็นปุ่มลบ · ถ้าอยากให้ลบเองได้ admin เปิดที่ `/permissions`
 - **ปิดกะที่ไม่มีผลผลิต (`totalProduced===0 && P==null`) → stamp `oee_a`/`oee_q` = null** (ไม่ใช่ 100/0) ทั้ง handleCloseSession + edit-times recompute · เดิมกะเปล่ามีเวลาเดินกะแต่ไม่มี DT → A=100/Q=100 ค้าง **รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์** (กรองแค่ != null) · OEE รวมไม่เคยกระทบ (oee=null ถูกกันอยู่แล้ว) · สอดคล้อง cleanup `20260715_oee_null_noproduction_cleanup.sql` (กันตั้งแต่ปิดกะ ไม่ต้องมาไล่ลบทีหลัง)
+
+---
+
+## QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user)
+
+หน้างานเลือกอุปกรณ์จาก dropdown ยาวๆ ตอนใส่ถุงมือ/รีบ = ช้าและเลือกผิด → **พิมพ์ป้าย QR ติดอุปกรณ์ แล้วสแกนเลือก**
+
+- **รูปแบบรหัสในป้าย (source of truth `src/utils/qrCode.js`):** `ESM:M:<uuid>` เครื่องจักร (`machines.id`) · `ESM:J:<uuid>` จิ๊ก/แม่พิมพ์ (`jigs.id`) · `ESM:P:<mat_no>` สินค้า/พาร์ท
+  - **⚠️ เครื่อง/จิ๊กเข้ารหัสด้วย uuid ไม่ใช่เลขเครื่อง** — ป้ายอยู่หน้างานเป็นปี ถ้าใช้เลขเครื่องแล้ววันหนึ่งเปลี่ยนเลข ป้ายที่พิมพ์ไปแล้วชี้ผิดทั้งหมด · บนป้าย**พิมพ์เลขเครื่องตัวใหญ่ให้คนอ่าน** อยู่แล้ว (คนอ่านเลข เครื่องอ่าน uuid) · สินค้าใช้ `mat_no` เพราะเป็นภาษากลางที่ทั้งโรงงาน+SAP อ้างถึง
+  - **ตัวอ่านทน 3 กรณีเสมอ:** QR ของระบบ · **เลขเปล่าจากบาร์โค้ด 1D เดิมที่ติดเครื่องอยู่ก่อนแล้ว** (resolve ผ่าน `normCode` ตัดขีด/ช่องว่าง/ตัวพิมพ์) · QR แบบ URL (`?c=ESM:M:…`)
+  - `resolveMachine`/`resolveJig`/`resolveProduct` — **สแกนป้ายเครื่องในหน้างาน PM จะเด้งไปแถวเงา (`jigs.machine_id`) ให้เอง** (เครื่อง 1 ตัวมี 2 แถว: `machines` + jig เงาสำหรับผูก checklist PM)
+- **ตัวสแกน = `src/components/ScanModal.jsx` (component กลาง reuse ทุกหน้า — ห้ามเขียนตัวอ่านใหม่ต่อหน้า):** 📷 กล้อง (Android/Chrome ใช้ `BarcodeDetector` ที่ติดมากับเบราว์เซอร์ ฟรี · เครื่องที่ไม่มี เช่น iPhone fallback `jsqr` **โหลด lazy เฉพาะตอนเปิดกล้อง** bundle หลักไม่บวม) + 🔫 **เครื่องยิงบาร์โค้ด** (ช่องกรอกโฟกัสรออยู่ ยิงแล้วต่อ `\n` = ส่งเอง — pattern เดียวกับ modal สแกนใบผลิตเดิม) + พิมพ์มือได้เสมอ (ป้ายเลอะ/สแกนไม่ติด งานต้องเดินต่อได้)
+  - `onScan(parsed)` **คืน string = ข้อความ error** ให้โชว์ในโมดัล (เช่น "เครื่องนี้อยู่คนละไลน์") · คืน undefined = สำเร็จ ปิดโมดัลให้เอง · กันสแกนซ้ำรัว 1.5 วิ + สั่น (vibrate) บอกผล · ภาพกล้องประมวลผลในเครื่องล้วน ไม่ส่งออก
+- **พิมพ์ป้าย = หน้า `/qr-labels`** เลือก เครื่องจักร/จิ๊ก → กรองไลน์+ค้นหา → ติ๊ก → พิมพ์ A4 (สติกเกอร์ 40×25 / 60×40 / 90×60 mm) · ป้ายมี QR + เลขตัวใหญ่ + ชื่อ + ไลน์ · register `doc_forms` doc_key **`qr_label`** (ยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิม) · scope ไลน์ตาม pattern มาตรฐาน
+- **จุดที่ต่อสแกนแล้ว:** MtnRepair แจ้งซ่อม (**สแกนเครื่อง → เติมไลน์/section/cost center ให้อัตโนมัติ** — ตรงนี้เจ็บสุดเพราะเดิมพิมพ์เลขเครื่องเอง) · DailyReport ฟอร์ม Downtime (เตือนถ้าเครื่องอยู่คนละไลน์กับกะที่เปิด) · **จุดใหม่ให้ใส่ปุ่ม 📷 ข้าง picker เดิม ห้ามรื้อ dropdown ทิ้ง** (สแกนไม่ได้ต้องเลือกมือได้)
+- **ตัวตนต้อง unique — migration `20260803_asset_identity_unique.sql` (DR):** partial unique index `machines(machine_no) where is_active` + `jigs(jig_no) where jig_no ไม่ว่าง` · ตอนใส่ index ข้อมูล active สะอาดอยู่แล้ว (เลขซ้ำ 13 ค่าที่เคยเห็นเป็นแถวปิดใช้งานทั้งหมด) · partial → แถวปิดใช้งาน (ประวัติ) ยังซ้ำได้ + jig ที่ยังไม่กรอกเลขยังบันทึกได้ (ทยอยลงข้อมูล 300-400 ตัวได้)
+- **สถานะข้อมูล (2026-08-03):** เครื่องจักร active 209 ตัว **พร้อมพิมพ์ป้ายแล้ว** · **จิ๊ก/DIE จริงยังไม่ได้ลงข้อมูล** (ตาราง `jigs` 35 แถว = เงาของเครื่อง 29 + facility 5 + จิ๊กจริง 1 · DIE 0) — พิมพ์ป้ายจิ๊กได้เมื่อลงข้อมูลแล้ว ระบบรออยู่
+- **⚠️ ตาราง `jigs` ไม่ใช่ "ตารางจิ๊ก" — เป็นทะเบียน "อุปกรณ์ที่มีแผน PM"** (อะไรก็ได้ที่ต้องตรวจ: เครื่อง/จิ๊ก/แม่พิมพ์/facility) ชื่อตารางหลอกตา · `equipment_type` เป็นตัวบอกว่าจริงๆ คืออะไร
 
 ---
 

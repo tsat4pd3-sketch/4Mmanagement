@@ -19,6 +19,8 @@ loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sy
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
+import ScanModal from '../components/ScanModal';
+import { resolveMachine } from '../utils/qrCode';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -375,6 +377,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   });
   const [beforeFile, setBeforeFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const lineMachines = useMemo(() => machines.filter(m => !f.line_name || m.line_name === f.line_name), [machines, f.line_name]);
 
@@ -383,6 +386,24 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     let cc = l?.cost_center || '';
     if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
     setF(p => ({ ...p, line_name: name, dept_section: l?.section || p.dept_section, cost_center: cc || p.cost_center }));
+  };
+
+  // สแกนป้าย QR ที่ติดเครื่อง → เติม "ไลน์ + เลขเครื่อง" ให้พร้อมกัน
+  // (ค้นจาก machines ทั้งหมด ไม่ใช่เฉพาะไลน์ที่เลือกไว้ — ป้ายบอกเองว่าเครื่องอยู่ไลน์ไหน)
+  const onScanMachine = (parsed) => {
+    const mc = resolveMachine(parsed, machines);
+    if (!mc) return `ไม่พบเครื่องนี้ในฐานข้อมูล (${parsed.raw}) — ตรวจว่าเครื่องลงทะเบียนแล้วหรือยัง`;
+    const l = lines.find(x => x.name === mc.line_name);
+    let cc = l?.cost_center || '';
+    if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
+    setF(p => ({
+      ...p,
+      machine_no: mc.machine_no || p.machine_no,
+      line_name: mc.line_name || p.line_name,
+      dept_section: l?.section || p.dept_section,
+      cost_center: cc || p.cost_center,
+    }));
+    toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
   const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it) }));
   const onChar = (c) => { const pt = problemTypes.find(x => x.characteristic === c); setF(p => ({ ...p, problem_characteristic: c, problem_detail: pt?.detail || '' })); };
@@ -411,7 +432,14 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
         <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{itemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
-        <Field label="หมายเลขเครื่อง"><input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={inp} placeholder="เลือก/พิมพ์" /><datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist></Field>
+        <Field label="หมายเลขเครื่อง">
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="เลือก/พิมพ์/สแกน" />
+            <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
+              style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+          </div>
+          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist>
+        </Field>
         <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{problemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
         <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
@@ -427,6 +455,14 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : 'บันทึกใบแจ้งซ่อม'}</button>
       </div>
+      {scanOpen && (
+        <ScanModal
+          title="สแกนเครื่องจักร"
+          hint="ส่องกล้องที่ป้าย QR บนเครื่อง หรือยิงด้วยเครื่องสแกน — ระบบจะเติมไลน์ให้เอง"
+          onScan={onScanMachine}
+          onClose={() => setScanOpen(false)}
+        />
+      )}
     </ModalShell>
   );
 }
