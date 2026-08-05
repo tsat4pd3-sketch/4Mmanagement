@@ -4,6 +4,7 @@ import { wavg } from '../utils/oee';
 import { pairAwareTotal } from '../utils/pairTotals';
 import useIsMobile from '../utils/useIsMobile';
 import ThailandZoneMap from '../components/ThailandZoneMap';
+import { LINE_TYPES } from '../utils/lineTypes';
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
    โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายบริษัทในกลุ่มทำได้มั้ย"
@@ -69,7 +70,11 @@ const ORG = {
     {
       key: 'plastech', name: 'Plastech', short: 'Plastech', icon: '🧩',
       desc: 'ชิ้นส่วนพลาสติก — ฉีด / เป่า / พ่นสี',
-      lineAlias: ['INJECTION 1', 'INJECTION 2', 'INJECTION 3', 'BLOW MOLD 1', 'PAINT LINE 1', 'ASSY PLASTIC 1', 'ASSY PLASTIC 2', 'TRIM & WELD'],
+      lineAlias: [
+        { n: 'INJECTION 1', t: 'injection' }, { n: 'INJECTION 2', t: 'injection' }, { n: 'INJECTION 3', t: 'injection' },
+        { n: 'BLOW MOLD 1', t: 'injection' }, { n: 'PAINT LINE 1', t: 'painting' }, { n: 'PAINT LINE 2', t: 'painting' },
+        { n: 'ASSY PLASTIC 1', t: 'assembly' }, { n: 'ASSY PLASTIC 2', t: 'assembly' }, { n: 'TRIM & WELD', t: 'assembly' },
+      ],
       companies: [
         { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'บางพลี · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.61, lon: 100.75, qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
         { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.84, lon: 101.22, qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
@@ -79,7 +84,12 @@ const ORG = {
     {
       key: 'mocy', name: 'Mocy (Motorcycle)', short: 'Mocy', icon: '🏍️',
       desc: 'ชิ้นส่วนรถจักรยานยนต์',
-      lineAlias: ['MC FRAME 1', 'MC FUEL TANK', 'MC MUFFLER 1', 'MC SWING ARM', 'MC HANDLE', 'MC STEP', 'MC COVER ASSY'],
+      lineAlias: [
+        { n: 'MC FRAME 1', t: 'welding_assembly' }, { n: 'MC FUEL TANK', t: 'stamping' },
+        { n: 'MC MUFFLER 1', t: 'welding_assembly' }, { n: 'MC SWING ARM', t: 'welding_assembly' },
+        { n: 'MC HANDLE', t: 'stamping' }, { n: 'MC STEP', t: 'stamping' },
+        { n: 'MC PAINT LINE', t: 'painting' }, { n: 'MC COVER ASSY', t: 'assembly' },
+      ],
       companies: [
         { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'บางนา · กรุงเทพฯ', flag: '🇹🇭', zone: 'bangna', lat: 13.66, lon: 100.63, qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
         { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'ศรีราชา · ชลบุรี', flag: '🇹🇭', zone: 'east', lat: 13.17, lon: 100.99, qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
@@ -99,6 +109,21 @@ const ZONES = [
   { key: 'oversea', name: 'โซนต่างประเทศ', icon: '🌏', color: '#a78bfa', onMap: false, desc: 'เวียดนาม · อินโดนีเซีย' },
 ];
 
+/* ── ประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ) ────────────────────────────────────────────────
+   ฐาน = `production_lines.line_type` ของจริง (master กลาง `src/utils/lineTypes.js`)
+   ⚠️ master ปัจจุบันเป็นของโรงงานโลหะ (stamping/hydroform/laser/เชื่อมประกอบ/อื่นๆ) —
+   กลุ่มพลาสติก/มอเตอร์ไซค์ต้องมี injection/painting/assembly เพิ่ม จึงต่อท้ายไว้ที่นี่และ
+   ทำเครื่องหมาย extra:true (= ยังไม่มีใน master จริง ถ้าทำ multi-company ต้องไปเพิ่มใน LINE_TYPES) */
+const LTYPES = [
+  ...LINE_TYPES.filter(t => t.value !== 'other'),
+  { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
+  { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
+  { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },
+  ...LINE_TYPES.filter(t => t.value === 'other'),
+];
+const ltLabel = (v) => LTYPES.find(t => t.value === v)?.label || '📦 ไม่ระบุประเภท';
+const ltShort = (v) => (ltLabel(v).split(' / ')[0] || '').trim();
+
 const SHIFT_MIN_FALLBACK = 570;
 
 export default function GroupOverview() {
@@ -109,18 +134,30 @@ export default function GroupOverview() {
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState({ axis: 'map', node: null, comp: null });  // axis: map=โซนพื้นที่ · biz=กลุ่มธุรกิจ · node/comp=null คือระดับ TSG
   const [showHow, setShowHow] = useState(false);
+  const [ltFilter, setLtFilter] = useState(null);   // กรองเฉพาะไลน์ประเภทนี้ทั้งกลุ่ม (null = ทุกประเภท)
 
   /* ── โหลดข้อมูลจริงของวันที่เลือก (ถ้าไม่มีกะเลย ถอยหลังหาไม่เกิน 7 วัน เพื่อให้ตัวอย่างมีข้อมูลโชว์เสมอ) ── */
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [plRes, empRes] = await Promise.all([
-        supabase.from('production_lines').select('id, name, parent_line_name'),
+        supabase.from('production_lines').select('id, name, parent_line_name, line_type'),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
       ]);
       const parentOf = {}; (plRes.data || []).forEach(l => { if (l.parent_line_name) parentOf[l.name] = l.parent_line_name; });
       const topOf = (n) => { let cur = n, g = 0; while (parentOf[cur] && g++ < 6) cur = parentOf[cur]; return cur; };
       const lineOfId = {}; (plRes.data || []).forEach(l => { lineOfId[l.id] = l.name; });
+      /* ประเภทไลน์ของ "ไลน์บนสุด" — ตัวเองตั้งไว้ชนะเสมอ · ไม่ได้ตั้งค่อยใช้ประเภทที่ไลน์ลูกส่วนใหญ่เป็น
+         (ตรงตามกฎ "ชื่อ/ค่าของไลน์ตัวเองชนะไลน์แม่" ใน CLAUDE.md) */
+      const selfType = {}; (plRes.data || []).forEach(l => { if (l.line_type) selfType[l.name] = l.line_type; });
+      const childVotes = {};
+      (plRes.data || []).forEach(l => {
+        if (!l.line_type) return;
+        const top = topOf(l.name); if (top === l.name) return;
+        (childVotes[top] ||= {})[l.line_type] = (childVotes[top]?.[l.line_type] || 0) + 1;
+      });
+      const ltypeOfTop = (top) => selfType[top] ||
+        Object.entries(childVotes[top] || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
 
       let d = date, sessions = null;
       for (let i = 0; i < 8; i++) {
@@ -195,6 +232,7 @@ export default function GroupOverview() {
         .filter(o => o.sessions > 0 || o.target > 0)
         .map(o => ({
           line: o.line,
+          ltype: ltypeOfTop(o.line),
           actual: Math.round(o.actual), target: Math.round(o.target),
           dtMin: Math.round(o.dtMin), ng: Math.round(o.ng),
           present: o.present, head: o.head,
@@ -229,7 +267,7 @@ export default function GroupOverview() {
     };
 
     // สร้างบริษัททั้งหมดครั้งเดียว แล้วค่อยจัดกลุ่ม 2 แกน (กลุ่มธุรกิจ / โซนพื้นที่)
-    const allComps = ORG.groups.flatMap(g => {
+    const built = ORG.groups.flatMap(g => {
       const gMeta = { key: g.key, name: g.name, short: g.short, icon: g.icon };
       return g.companies.map(c => {
         let lines;
@@ -238,13 +276,16 @@ export default function GroupOverview() {
         } else {
           const keep = baseLines.filter((l, i) => i < 3 || rnd(`${c.key}|${l.line}|keep`) < c.keep);
           lines = keep.map((l, idx) => {
-            const name = g.lineAlias ? (g.lineAlias[idx % g.lineAlias.length]) : l.line;
+            // กลุ่มที่ไม่ใช่โลหะใช้ชื่อ+ประเภทไลน์ของธุรกิจตัวเอง · กลุ่มโลหะสืบประเภทจากไลน์จริง
+            const al = g.lineAlias ? g.lineAlias[idx % g.lineAlias.length] : null;
+            const name = al ? al.n : l.line;
+            const ltype = al ? al.t : l.ltype;
             const ratio = l.target > 0 ? l.actual / l.target : 0;
             const nRatio = clamp(ratio * jit(`${c.key}|${name}|r|${dk}`, 0.28) + c.oeeD / 260, 0.35, 1.12);
             const target = Math.max(0, Math.round(l.target * c.qtyF * jit(`${c.key}|${name}|t|${dk}`, 0.34)));
             const head = Math.max(0, Math.round(l.head * c.qtyF * jit(`${c.key}|${name}|h`, 0.2)));
             return {
-              line: name,
+              line: name, ltype,
               target,
               actual: Math.round(target * nRatio),
               oee: l.oee == null ? null : +clamp(l.oee + c.oeeD + (rnd(`${c.key}|${name}|o|${dk}`) - 0.5) * 13, 8, 97).toFixed(1),
@@ -256,22 +297,34 @@ export default function GroupOverview() {
             };
           });
         }
-        const worst = [...lines].filter(l => l.target > 0).sort((a, b) => (b.target - b.actual) - (a.target - a.actual))[0] || null;
-        return { ...c, groupMeta: gMeta, lines, worst, ...aggregate(lines) };
+        return { ...c, groupMeta: gMeta, linesAll: lines };
       });
     });
+
+    // นับไลน์ต่อประเภท (จากทั้งหมด ก่อนกรอง) — ใช้เป็นตัวเลขบนชิปฟิลเตอร์
+    const typeCount = {};
+    built.forEach(c => c.linesAll.forEach(l => { const k = l.ltype || 'other'; typeCount[k] = (typeCount[k] || 0) + 1; }));
+
+    // กรองตามประเภทไลน์ → มีผลกับ KPI/การ์ด/แผนที่/ตาราง ทั้งหน้า (ไม่ใช่แค่ซ่อนแถว)
+    const withLines = built.map(c => {
+      const lines = ltFilter ? c.linesAll.filter(l => (l.ltype || 'other') === ltFilter) : c.linesAll;
+      const worst = [...lines].filter(l => l.target > 0).sort((a, b) => (b.target - b.actual) - (a.target - a.actual))[0] || null;
+      return { ...c, lines, worst, ...aggregate(lines) };
+    });
+    const allComps = withLines.filter(c => c.lines.length);
+    const hiddenComps = withLines.length - allComps.length;   // บริษัทที่ไม่มีไลน์ประเภทนี้ (บอกบนจอ ห้ามหายเงียบ)
 
     const packBy = (defs, matchFn) => defs.map(d => {
       const companies = allComps.filter(c => matchFn(c, d));
       const lines = companies.flatMap(c => c.lines);
       return { ...d, companies, lines, ...aggregate(lines) };
     });
-    const groups = packBy(ORG.groups, (c, g) => c.groupMeta.key === g.key);
-    const zones = packBy(ZONES, (c, z) => c.zone === z.key);
+    const groups = packBy(ORG.groups, (c, g) => c.groupMeta.key === g.key).filter(g => g.companies.length);
+    const zones = packBy(ZONES, (c, z) => c.zone === z.key).filter(z => z.companies.length);
 
     const allLines = allComps.flatMap(c => c.lines.map(l => ({ ...l, comp: c })));
-    return { groups, zones, allComps, allLines, ...aggregate(allLines) };
-  }, [baseLines, usedDate, date]);
+    return { groups, zones, allComps, allLines, typeCount, hiddenComps, ...aggregate(allLines) };
+  }, [baseLines, usedDate, date, ltFilter]);
 
   /* ── ขอบเขตที่กำลังดูอยู่ (breadcrumb) — แกน map (โซน) หรือ biz (กลุ่มธุรกิจ) ── */
   const axisNodes = sel.axis === 'map' ? tree.zones : tree.groups;
@@ -387,6 +440,40 @@ export default function GroupOverview() {
         • <b>TSAT4</b> = <b style={{ color: '#22c55e' }}>ข้อมูลจริง</b>จากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> ที่ปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบ seeded ให้ตัวเลขนิ่ง ไม่ดิ้นทุกครั้งที่รีเฟรช)<br />
         • หน้านี้ <b>ไม่เขียนฐานข้อมูล</b> และยังไม่มีตารางบริษัท/โรงงานจริง — ดูสรุป “ถ้าทำจริงต้องทำอะไร” ท้ายหน้า
       </div>
+
+      {/* ── กรองตามประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ: ปั๊ม / เชื่อมประกอบ / ฉีด / พ่นสี ...) ──
+           กรองแล้วมีผลทั้งหน้า: KPI · แผนที่ · การ์ดโซน/กลุ่ม/บริษัท · ตารางไลน์ · ไลน์ที่ต้องดูแลด่วน */}
+      {!loading && !!baseLines.length && (
+        <div style={{ ...card, padding: '10px 13px' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 700 }}>🏭 ประเภทไลน์:</span>
+            {[{ value: null, label: 'ทุกประเภท' }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => {
+              const on = ltFilter === t.value;
+              return (
+                <button key={t.value || 'all'} onClick={() => setLtFilter(t.value)} style={{
+                  fontSize: 12.5, fontWeight: 700, padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
+                  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+                }}>
+                  {t.label}
+                  {t.value && <span style={{ marginLeft: 5, opacity: 0.75 }}>{tree.typeCount[t.value]}</span>}
+                  {t.extra && <span title="ยังไม่มีใน master ประเภทไลน์ปัจจุบัน (ต้องเพิ่มถ้าทำ multi-company จริง)" style={{ marginLeft: 4, opacity: 0.7 }}>*</span>}
+                </button>
+              );
+            })}
+          </div>
+          {ltFilter && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 7 }}>
+              กำลังดูเฉพาะไลน์ <b style={{ color: 'var(--text)' }}>{ltLabel(ltFilter)}</b> — ตัวเลขทุกช่องในหน้านี้นับเฉพาะไลน์ประเภทนี้
+              {tree.hiddenComps > 0 && <> · ซ่อน <b>{tree.hiddenComps}</b> บริษัทที่ไม่มีไลน์ประเภทนี้</>}
+            </div>
+          )}
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+            ประเภทไลน์ของ <b>TSAT4</b> อ่านจากคอลัมน์จริง <code>production_lines.line_type</code> (ตั้งที่ ⚙️ ตั้งค่าผังไลน์) ·
+            <span style={{ opacity: 0.9 }}> * = ประเภทที่ยังไม่มีใน master ปัจจุบัน (โรงงานเราเป็นงานโลหะ) ถ้าทำหลายบริษัทจริงต้องเพิ่มใน <code>src/utils/lineTypes.js</code></span>
+          </div>
+        </div>
+      )}
 
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {!loading && !baseLines.length && (
@@ -637,7 +724,7 @@ export default function GroupOverview() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 640 }}>
                 <thead><tr>
-                  <th style={TH}>ไลน์</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th>
+                  <th style={TH}>ไลน์</th><th style={TH}>ประเภท</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th>
                   <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th>
                   <th style={THR}>NG</th><th style={THR}>คน</th>
                 </tr></thead>
@@ -647,6 +734,7 @@ export default function GroupOverview() {
                     return (
                       <tr key={l.line}>
                         <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
+                        <td style={{ ...TD, fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ltShort(l.ltype)}</td>
                         <td style={TDR}>{fmtNum(l.target)}</td>
                         <td style={TDR}>{fmtNum(l.actual)}</td>
                         <td style={{ ...TDR, color: pctCol(lp), fontWeight: 700 }}>{lp == null ? '—' : lp + '%'}</td>
@@ -679,7 +767,7 @@ export default function GroupOverview() {
               <thead><tr>
                 {!compNode && <th style={TH}>กลุ่มธุรกิจ</th>}
                 {!compNode && <th style={TH}>บริษัท</th>}
-                <th style={TH}>ไลน์</th><th style={THR}>ขาดเป้า</th>
+                <th style={TH}>ไลน์</th><th style={TH}>ประเภท</th><th style={THR}>ขาดเป้า</th>
                 <th style={THR}>ผลิต/เป้า</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th><th style={THR}>NG</th>
               </tr></thead>
               <tbody>
@@ -698,6 +786,7 @@ export default function GroupOverview() {
                         </td>
                       )}
                       <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
+                      <td style={{ ...TD, fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ltShort(l.ltype)}</td>
                       <td style={{ ...TDR, color: '#ef4444', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
                       <td style={{ ...TDR, color: pctCol(lp) }}>{fmtNum(l.actual)}/{fmtNum(l.target)} ({lp}%)</td>
                       <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
@@ -706,7 +795,7 @@ export default function GroupOverview() {
                     </tr>
                   );
                 })}
-                {!hotspots.length && <tr><td style={TD} colSpan={compNode ? 6 : 8}>✅ ทุกไลน์ทำได้ตามเป้า</td></tr>}
+                {!hotspots.length && <tr><td style={TD} colSpan={compNode ? 7 : 9}>✅ ทุกไลน์ทำได้ตามเป้า</td></tr>}
               </tbody>
             </table>
           </div>
