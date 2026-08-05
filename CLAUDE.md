@@ -484,6 +484,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **แผงเลือกเครื่องตอนเปิด Order (ไลน์ parallel_machine) ลิสต์เฉพาะเครื่องของไลน์ที่เปิดกะจริง** (เดิมดึงทั้ง family → เครื่อง HYDROFORM 30+ ตัวโผล่ปน · fallback ไป family เฉพาะเมื่อไลน์ไม่มีเครื่องของตัวเอง + dedupe ตาม machine_no · 2026-08-05)
 - **migration `20260723_line_flow_mode.sql` เพิ่ง apply บน Main จริง 2026-08-04** (ค้างมาตั้งแต่ 2026-07-23 — ก่อนหน้านี้คอลัมน์ไม่มีจริง โค้ด tolerant เลยเงียบ) · ไลน์ขนานอื่น (SUB APRON ฯลฯ) ตั้งเองที่ LineSetup แผง Standard Manpower
 - **กะที่ stamp A=0 ผิดไปแล้ว (pending_close):** SV กด ✕ ปฏิเสธ → หัวหน้ากลุ่มขอปิดกะใหม่ = recompute ด้วยสูตรใหม่เอง (ห้าม blanket-recompute กะเก่าตามกฎเดิม)
+- **✅ backfill กะปิดแล้วของ LASER-345/789 เสร็จ 2026-08-05** (migration `20260805_backfill_oee_a_parallel_one_third.sql` DR — apply แล้ว): replicate สาย A ของ computeOEE เป็น SQL (เงื่อนไขย่อสูตรตรวจกับข้อมูลจริง: DT ทุกแถวระบุเครื่อง+timestamp ครบ · ≤1 order confirmed/กะ · break policies ทั้งหมด common) คำนวณ a_old (weight 1)/a_new (1/3) → อัพเดทเฉพาะกะที่พิสูจน์ได้ว่า stamp ด้วยสูตรเก่า (|a_old−stamp|≤4) · ตรวจหลัง apply: 71/71 กะตรง a_new หมด · ตัวหนักสุด: 789 03/08 กะเช้า 31.69→77.23, 01/08 46.45→85.53, กะ A=0 สี่กะขึ้นเป็น 91-100 · กะที่ปิดหลัง deploy (stamp สูตรใหม่แล้ว) ไม่ถูกแตะ · **ไลน์ทั้งคู่ตั้ง `one_piece_flow` + `parallel_stations=3` แล้ว** (งานคู่ LH/RH — บอร์ดเลนคู่จาก pair_mat_no, ไม่มีแผงเลือกเครื่อง)
 
 ### %A ต้องนับ Downtime ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — แก้ 2026-07-24
 
