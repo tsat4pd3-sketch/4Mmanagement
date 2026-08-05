@@ -35,6 +35,7 @@ export default function QrLabels() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   const [size, setSize] = useState('md');
+  const [shadowCount, setShadowCount] = useState(0);   // เครื่องจักรที่มีแถวเงาในทะเบียน PM (ถูกกรองออกจากแท็บจิ๊ก)
 
   useEffect(() => { loadDocForms(); }, []);
 
@@ -57,7 +58,7 @@ export default function QrLabels() {
   /* ── โหลดอุปกรณ์ ── */
   useEffect(() => {
     let alive = true;
-    setLoading(true); setSel(new Set());
+    setLoading(true); setSel(new Set()); setShadowCount(0);
     const load = async () => {
       if (kind === 'machine') {
         const { data } = await supabaseDR.from('machines')
@@ -68,7 +69,12 @@ export default function QrLabels() {
         const { data } = await supabaseDR.from('jigs')
           .select('id, jig_no, name, part_name, line_name, equipment_type, machine_id')
           .order('line_name').order('jig_no');
-        if (alive) setRows(data || []);
+        // ⚠️ ตาราง jigs ไม่ใช่ "ตารางจิ๊ก" — เป็นทะเบียนอุปกรณ์ที่มีแผน PM
+        // เครื่องจักรที่ถูกวางบนผัง PM จะมี "แถวเงา" อยู่ในนี้ด้วย (machine_id ชี้กลับไป machines)
+        // ต้องกรองเงาออก ไม่งั้นพิมพ์ป้ายซ้ำ = QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน (สแกนแล้วคนละที่)
+        // เครื่องจักรพิมพ์จากแท็บ "เครื่องจักร" ทางเดียวเท่านั้น
+        const realJigs = (data || []).filter(j => !j.machine_id && j.equipment_type !== 'machine');
+        if (alive) { setRows(realJigs); setShadowCount((data || []).length - realJigs.length); }
       }
       if (alive) setLoading(false);
     };
@@ -197,6 +203,17 @@ export default function QrLabels() {
         )}
       </div>
 
+      {kind === 'jig' && shadowCount > 0 && (
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          ℹ️ ซ่อน {shadowCount} รายการที่จริงๆ แล้วเป็น <b>เครื่องจักร</b> (อยู่ในทะเบียน PM ด้วยเพราะมีแผนตรวจ) —
+          พิมพ์ป้ายเครื่องจักรที่แท็บ <b>⚙️ เครื่องจักร</b> ทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน
+        </div>
+      )}
+      {kind === 'jig' && !loading && !visible.length && (
+        <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          ⚠️ ยังไม่มีข้อมูลจิ๊ก/แม่พิมพ์ในระบบ — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+        </div>
+      )}
       {missingNo > 0 && (
         <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
           ⚠️ {missingNo} รายการยังไม่มีเลขกำกับ — พิมพ์ป้ายได้ (QR ใช้รหัสภายใน) แต่คนอ่านป้ายจะไม่เห็นเลข แนะนำใส่เลขให้ครบก่อน
