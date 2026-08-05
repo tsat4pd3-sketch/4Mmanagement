@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
@@ -64,10 +65,23 @@ const S = {
     padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`, background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--muted)',
   }),
-  side: { width: 240, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, alignSelf: 'flex-start', maxHeight: 600, overflowY: 'auto' },
+  side: { width: 272, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, alignSelf: 'flex-start', maxHeight: 600, overflowY: 'auto' },
   rowBtn: (active, child) => ({
     display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', marginLeft: child ? 12 : 0, fontSize: 13,
     border: `1px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--accent-dim)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text2)', fontWeight: active ? 700 : 500,
+  }),
+  // แถวอุปกรณ์ที่ยังไม่วาง — 2 บรรทัด (เลข+ปุ่มวาง / ชื่อ) กันข้อความบี้ตัดบรรทัดในแถบแคบ
+  unplacedRow: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12 },
+  unplacedTop: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
+  unplacedNo: { fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  unplacedSub: { fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
+  // ชิป "วางจุด" ท้ายแถวอุปกรณ์ที่ยังไม่วาง — armed แล้วเปลี่ยนเป็น "คลิกบนผัง"
+  placeChip: (armed) => ({
+    marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+    padding: '2px 7px', borderRadius: 20,
+    border: `1px solid ${armed ? 'var(--accent)' : 'var(--border2)'}`,
+    background: armed ? 'var(--accent-dim)' : 'var(--bg2)',
+    color: armed ? 'var(--accent)' : 'var(--text2)',
   }),
 }
 
@@ -80,7 +94,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
   // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
   const canEdit = can('pm', 'setup', role)
   // เปิดหน้ามาเจอ "ภาพรวมทั้งโรงงาน" ก่อน (ฝัง FactoryMap display ตัวเดียวกับ /factory-map) แล้วค่อยเจาะไลน์
-  const [view, setView] = useState(setupMode ? 'facility' : 'overview') // 'overview' | 'production' | 'facility'
+  // deep-link จากผังรวมโรงงาน: ?view=facility&zone=<ชื่อโซน>&from=factory-map → เปิดแท็บ Facility ที่โซนนั้นเลย
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const deepView = searchParams.get('view')
+  const deepZone = searchParams.get('zone')
+  const cameFrom = searchParams.get('from')
+  const [view, setView] = useState(deepView === 'facility' ? 'facility' : (setupMode ? 'facility' : 'overview')) // 'overview' | 'production' | 'facility'
   const [dept, setDept] = useState('all')
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
@@ -105,6 +125,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [jigInfo, setJigInfo] = useState({})   // jig_id → { name, jig_no, checklists }
   const [armedJig, setArmedJig] = useState(null)
   const [facMachines, setFacMachines] = useState([])   // facility/utility จากฐานเครื่องจักร (ยังไม่มี shadow jig)
+  const [placedAnyZone, setPlacedAnyZone] = useState(() => new Set()) // jig_id ที่ถูกวางไว้แล้ว "ทุกโซน" — ลิสต์ยังไม่วางต้องซ่อนของที่วางโซนอื่นแล้ว
   const [armedMachine, setArmedMachine] = useState(null) // machine ที่กำลังจะวาง (สร้าง shadow jig ตอนวาง)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
@@ -184,6 +205,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const reloadAreas = async () => {
     const { data } = await supabaseDR.from('pm_facility_areas').select('id, name, image_path, sort_order').order('sort_order').order('created_at')
     setAreas(data || [])
+    // deep-link ?zone=<ชื่อโซน> → เลือกโซนนั้นเลย (เทียบชื่อแบบไม่สนตัวพิมพ์/ช่องว่างหัวท้าย)
+    if (data?.length && deepZone) {
+      const key = String(deepZone).trim().toLowerCase()
+      const hit = data.find(a => String(a.name || '').trim().toLowerCase() === key)
+      if (hit) { setAreaId(hit.id); return }
+    }
     if (data?.length && !areaId) setAreaId(data[0].id)
   }
   const loadFacilityArea = async () => {
@@ -192,6 +219,9 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setFacImage(area?.image_path ? publicUrl(area.image_path) : null)
     const { data: pts } = await supabaseDR.from('pm_facility_points').select('id, jig_id, pos_top, pos_left').eq('area_id', areaId)
     setFacPoints(pts || [])
+    // จุดของ "ทุกโซน" — ใช้ซ่อนอุปกรณ์ที่วางโซนอื่นไปแล้วออกจากลิสต์ "ยังไม่วาง" (กันวางซ้ำ/สับสน)
+    const { data: allPts } = await supabaseDR.from('pm_facility_points').select('jig_id')
+    setPlacedAnyZone(new Set((allPts || []).map(p => p.jig_id)))
     // facility/utility equipment + PM status (all zones share the same equipment pool)
     const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
     const pm = await loadPmForJigs((jigs || []).map(j => j.id))
@@ -319,8 +349,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const selLabel = sel ? (view === 'production' ? sel.machine_no : (selInfo?.jig_no || selInfo?.name)) : ''
   const selChecklists = selInfo ? (dept === 'all' ? selInfo.checklists : selInfo.checklists.filter(c => c.dept === dept)) : []
 
-  const placedJigIds = new Set(facPoints.map(p => p.jig_id))
-  const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedJigIds.has(id))
+  // ลิสต์ "ยังไม่วาง" = ไม่ถูกวางในโซนไหนเลย (วางโซนอื่นแล้ว = ซ่อน กันวางซ้ำ · คำสั่ง user 2026-08-03)
+  const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedAnyZone.has(id))
 
   return (
     <div style={S.page}>
@@ -331,6 +361,10 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {/* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */}
+          {cameFrom === 'factory-map' && (
+            <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
+          )}
           {!setupMode && <button onClick={() => { setView('overview'); setSelId(null) }} style={S.viewBtn(view === 'overview')}>🗺️ ภาพรวมทั้งโรงงาน</button>}
           <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
           <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
@@ -375,7 +409,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
             : <MachineFloorMap
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
-                editable={view === 'facility' && canEdit} armed={!!armedJig}
+                editable={view === 'facility' && canEdit} armed={!!armedJig || !!armedMachine}
                 height="clamp(360px, calc(100vh - 260px), 1100px)"
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
@@ -442,18 +476,28 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     </span>
                   </label>
                 )}
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length + facMachines.length})</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length + facMachines.length})</div>
+                {/* บอกวิธีวางให้เห็นชัด — เดิมมีแต่ tooltip คนหาไม่เจอว่าต้องกดยังไง (2026-08-03) */}
+                {canEdit && (unplacedJigs.length + facMachines.length) > 0 && (
+                  <div style={{ fontSize: 11, color: facImage ? 'var(--accent)' : 'var(--accent2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 7, padding: '5px 8px', marginBottom: 7, lineHeight: 1.5 }}>
+                    {facImage
+                      ? <>วิธีวาง: <b>① กดปุ่ม 📍 วาง</b> ที่อุปกรณ์ → <b>② คลิกตำแหน่งบนผัง</b></>
+                      : <>⚠️ ต้อง <b>อัปโหลดรูปผังโซน</b> ก่อน ถึงจะวางอุปกรณ์ได้</>}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {unplacedJigs.map(([id, info]) => {
                     const c = colorFor(info.checklists)
                     return (
                       <div key={id} onClick={() => { if (!canEdit) return; facImage ? (setArmedJig(id), setArmedMachine(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
                         title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : 'อัปโหลดรูปผังก่อน'}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
-                          border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
-                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{info.jig_no || info.name}</span>
-                        {info.jig_no && <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.name}</span>}
+                        style={{ ...S.unplacedRow, border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
+                        <div style={S.unplacedTop}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                          <span style={S.unplacedNo}>{info.jig_no || info.name}</span>
+                          {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                        </div>
+                        {info.jig_no && info.name && <div style={S.unplacedSub}>{info.name}</div>}
                       </div>
                     )
                   })}
@@ -461,12 +505,15 @@ export default function MtnMachineLayout({ setupMode = false }) {
                   {facMachines.map(m => (
                     <div key={`m-${m.id}`} onClick={() => { if (!canEdit) return; facImage ? (setArmedMachine(m.id), setArmedJig(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
                       title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'ดึงจากฐานเครื่องจักร — คลิกแล้ววางบนผัง' : 'อัปโหลดรูปผังก่อน'}
-                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
-                        border: `1px dashed ${armedMachine === m.id ? 'var(--accent)' : 'var(--border2)'}`, background: armedMachine === m.id ? 'var(--accent-dim)' : 'var(--bg2)' }}>
-                      <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
-                      <span style={{ fontWeight: 700, color: 'var(--text)' }}>{m.machine_no}</span>
-                      <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.machine_name || m.line_name || ''}</span>
-                      <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent2)', flexShrink: 0 }}>ฐานเครื่องจักร</span>
+                      style={{ ...S.unplacedRow, border: `1px dashed ${armedMachine === m.id ? 'var(--accent)' : 'var(--border2)'}`, background: armedMachine === m.id ? 'var(--accent-dim)' : 'var(--bg2)' }}>
+                      <div style={S.unplacedTop}>
+                        <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
+                        <span style={S.unplacedNo}>{m.machine_no}</span>
+                        {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                      </div>
+                      <div style={S.unplacedSub}>
+                        {m.machine_name || m.line_name || ''}<span style={{ color: 'var(--accent2)' }}> · ฐานเครื่องจักร</span>
+                      </div>
                     </div>
                   ))}
                   {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · เพิ่ม facility/utility ที่ <b>ฐานข้อมูลเครื่องจักร</b> (เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง</div>}

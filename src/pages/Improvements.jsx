@@ -500,7 +500,7 @@ export default function Improvements() {
           ยังไม่มีโปรเจคปรับปรุง{canManage ? ' — กด "➕ เพิ่มโปรเจคปรับปรุง" เลือกปัญหาจากพาเรโต้ได้เลย' : ''}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
           {visibleItems.map(imp => {
             const st = STATUS_META[imp.status] || STATUS_META.monitoring;
             const r = results[imp.id];
@@ -633,7 +633,9 @@ export default function Improvements() {
                                 {/* แถบ gantt ตามแผน */}
                                 <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
                                   {/* เส้นวันนี้ — playhead ชมพูตาม convention */}
-                                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${pctOf(today)}%`, width: 2, background: '#ec4899', zIndex: 2, boxShadow: '0 0 4px #ec4899' }} />
+                                  {/* เส้นวันนี้ใช้ class กลาง .now-line (index.css) — ได้ [data-perf="lite"] override บนจอ TV
+                                      ห้ามวาด playhead เองด้วย inline boxShadow (UI-CONVENTIONS §6 · QC audit 2026-08-03) */}
+                                  <div className="now-line" style={{ left: `${pctOf(today)}%` }} />
                                   {(m.planned_start || m.planned_end) && (
                                     <div title={`${m.title}\nแผน ${fmtDate(m.planned_start)} – ${fmtDate(m.planned_end)}${m.done_at ? `\nเสร็จจริง ${fmtDate(m.done_at)}` : ''}${m.assignee ? `\nผู้รับผิดชอบ: ${m.assignee}` : ''}`}
                                       style={{ position: 'absolute', top: 2, bottom: 2, left: `${l}%`, width: `${Math.max(rgt - l, 1.5)}%`, borderRadius: 4, background: `${overdue ? '#ef4444' : meta.c}${m.status === 'done' ? 'cc' : '77'}`, border: `1px solid ${overdue ? '#ef4444' : meta.c}` }} />
@@ -704,7 +706,7 @@ export default function Improvements() {
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{modal.id ? '✏️ แก้ไขโปรเจคปรับปรุง' : '➕ เพิ่มโปรเจคปรับปรุง'}</h3>
               <button onClick={() => setModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 16 }}>
               {/* ซ้าย: ข้อมูลโปรเจค */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ชื่อโปรเจค *

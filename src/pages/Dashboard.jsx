@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
-import { isAlarmingDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeAlarm';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -11,6 +11,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { parallelUnitsOf } from '../utils/lineTypes';
+import { stdCapacityOf } from '../utils/stdManpower';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -202,6 +204,7 @@ export default function Dashboard() {
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
+  const linesRef = useRef([]);  // สำเนา lines สำหรับ fetchProdStatus (useCallback deps=[boardDate] — closure state จะ stale)
   const [orgSections, setOrgSections] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -299,7 +302,7 @@ export default function Dashboard() {
       const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessionIds),
+        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)').in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
       let orders = ordRes.data;
@@ -323,8 +326,12 @@ export default function Dashboard() {
       if (!openedAt) return null;
       const shiftMin  = Math.round((closedAt - openedAt) / 60000);
       const dts       = dtBySession[s.id] || [];
-      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+      // ไลน์เครื่องขนาน (เช่น LASER-345/789 N=3): DT ที่ระบุเครื่อง = เครื่องเดียวหยุด หักแค่ 1/N
+      // ของนาทีที่ลง — สูตรเดียวกับ computeOEE ใน DailyReport (N จาก parallel_stations · แยกจาก flow_mode)
+      const parallelN = parallelUnitsOf(linesRef.current.find(l => l.name === s.line_name));
+      const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
+      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
       // Policy breaks overlap
       const wDate = s.work_date;
       const policyBreak = (breakPolicies || [])
@@ -359,7 +366,7 @@ export default function Dashboard() {
           const s0 = new Date(d.started_at).getTime();
           const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
           const ov0 = Math.max(s0, startMs), ov1 = Math.min(e0, endMs);
-          return ov1 > ov0 ? sum + (ov1 - ov0) / 60000 : sum;
+          return ov1 > ov0 ? sum + ((ov1 - ov0) / 60000) * dtW(d) : sum;
         }, 0);
       };
       let totalNetAvailByMat = 0, totalRunMinByMat = 0;
@@ -422,7 +429,10 @@ export default function Dashboard() {
       const activeDT = ['open', 'pending_close'].includes(s.status)
         ? (dtBySession[s.id] || []).filter(isAlarmingDT)
         : [];
-      return { ...s, orders: active, demand, actual, target, oeeData, activeDT, dtLogs: dtBySession[s.id] || [] };
+      const sessDefects = defectBySession[s.id] || [];
+      return { ...s, orders: active, demand, actual, target, oeeData, activeDT,
+        dtLogs: dtBySession[s.id] || [], defectLogs: sessDefects,
+        ngQty: sessDefects.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) };
     });
     setProdStatus(ps);
   }, [boardDate]);
@@ -492,6 +502,7 @@ export default function Dashboard() {
       flowData.forEach(l => { fm[l.name] = l; });
       linesEnriched = linesEnriched.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));
     }
+    linesRef.current = linesEnriched;
     setLines(linesEnriched);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
@@ -672,6 +683,32 @@ export default function Dashboard() {
     () => visibleProdStatus.flatMap(s => (s.activeDT || []).map(d => ({ ...d, line_name: s.line_name, shift: s.shift }))),
     [visibleProdStatus],
   );
+  // หยุดตามแผนที่ยังเปิดค้าง — ไม่ Andon (ไม่ใช่ความเสียหาย) แต่ต้องเห็นในแผง Andon ห้ามหายเงียบ
+  const dtPlannedByLine = useMemo(() => {
+    const m = {};
+    visibleProdStatus.forEach(s => {
+      if (!['open', 'pending_close'].includes(s.status)) return;
+      (s.dtLogs || []).filter(d => isOpenDT(d) && isPlannedDT(d))
+        .forEach(d => (m[s.line_name] ||= []).push({ ...d, line_name: s.line_name }));
+    });
+    return m;
+  }, [visibleProdStatus]);
+  // ── Quality รายไลน์ (ของเสียวันนี้) — ใช้ในแผง Andon คู่กับ downtime (2026-08-04 · คำสั่ง user) ──
+  const qualityByLine = useMemo(() => {
+    const m = {};
+    visibleProdStatus.forEach(s => {
+      if (!s.ngQty) return;
+      const e = m[s.line_name] || (m[s.line_name] = { ng: 0, byType: {} });
+      e.ng += s.ngQty;
+      (s.defectLogs || []).forEach(d => {
+        const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
+        const t = e.byType[k] || (e.byType[k] = { name: k, qty: 0, notes: [] });
+        t.qty += (d.qty_ng || 0) + (d.qty_suspect || 0);
+        if (d.description) t.notes.push(d.description);
+      });
+    });
+    return m;
+  }, [visibleProdStatus]);
   const dtAlarmByMachine = useMemo(() => {
     const m = {};
     dtAlarmList.forEach(d => { if (d.machine_no) (m[d.machine_no] ||= []).push(d); });
@@ -768,17 +805,13 @@ export default function Dashboard() {
   const lineStats = useMemo(() => visibleLines.map(line => {
     const lineLogs    = shiftLogs.filter(l => l.employees?.line_id === line.id);
     const linePresent = lineLogs.filter(l => l.is_present).length;
-    const stdTotal = selectedShift === 'day'  ? (line.std_day_shift   || 0)
-                   : selectedShift === 'night' ? (line.std_night_shift || 0)
-                   : (line.std_day_shift || 0) + (line.std_night_shift || 0);
-    // ไลน์ย่อยส่วนใหญ่ถูกตั้ง std ก็อปมาจากไลน์หลัก แต่พนักงานจริงผูกกับไลน์หลักหมด (ไลน์ย่อย = 0 คน)
-    // → ไลน์ย่อยที่ไม่มีพนักงาน/ไม่มีคนเช็คชื่อของตัวเอง ให้ capacity = 0 กันตัวหารเฟ้อตอนรวมเข้าไลน์หลัก
-    //   (เดิม HYDROFORM = 14 + 14×6 = 98) — ไลน์เดี่ยว/ไลน์หลักไม่กระทบ
-    const isSubline    = !!line.parent_line_name;
-    const hasOwnPeople = (empCounts[line.id]?.all ?? 0) > 0 || lineLogs.length > 0;
-    const lineTotal = (isSubline && !hasOwnPeople)
-      ? 0
-      : (stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length));
+    // กำลังคนมาตรฐาน — ใช้กฎกลาง stdCapacityOf (ไลน์ลูกที่แม่ตั้งตัวเลขไว้แล้ว = 0 ไม่นับซ้ำ)
+    // เดิมเป็น heuristic "ไลน์ย่อยที่ไม่มีพนักงาน = 0" ซึ่งพังทันทีถ้าไลน์ย่อยมีคนสักคน
+    // (LASER E50 มีพนักงาน 1 คน → หลุดกฎ ได้ 14 เต็ม → HYDROFORM = 28 แทน 14)
+    const stdTotal = selectedShift === 'all'
+      ? stdCapacityOf(visibleLines, line.name, 'day') + stdCapacityOf(visibleLines, line.name, 'night')
+      : stdCapacityOf(visibleLines, line.name, selectedShift);
+    const lineTotal = stdTotal > 0 ? stdTotal : (empCounts[line.id]?.[shiftKey] ?? lineLogs.length);
     const lineAlerts = fourMLogs.filter(f => f.line_name === line.name).length;
     const rate = lineTotal > 0 ? Math.round((linePresent / lineTotal) * 100) : 0;
     return { ...line, linePresent, lineTotal, lineAlerts, rate };
@@ -2328,6 +2361,69 @@ export default function Dashboard() {
                 </div>
               )}
 
+              {/* หยุดตามแผน — ไม่ใช่ Andon (นับสต๊อก/ไม่มีแผนผลิต/5ส) แต่ต้องเห็น ห้ามซ่อนหาย */}
+              {(() => {
+                const planned = andonLine.names.flatMap(n => dtPlannedByLine[n] || []);
+                if (!planned.length) return null;
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 7px' }}>
+                      🗓️ หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {planned.map(d => {
+                        const el = dtElapsedMin(d, now.getTime());
+                        return (
+                          <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 9, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>⚙️ {d.machine_no || '—'}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || 'หยุดตามแผน'}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>📍 {d.line_name}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
+                            {el != null && <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏱ {el} นาที</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── คุณภาพ (Quality) — ของเสียของไลน์นี้วันนี้ · คู่กับ downtime (2026-08-04 · คำสั่ง user) ── */}
+              {(() => {
+                const q = andonLine.names.reduce((acc, n) => {
+                  const e = qualityByLine[n]; if (!e) return acc;
+                  acc.ng += e.ng;
+                  Object.values(e.byType).forEach(t => {
+                    const x = acc.byType[t.name] || (acc.byType[t.name] = { name: t.name, qty: 0, notes: [] });
+                    x.qty += t.qty; x.notes.push(...t.notes);
+                  });
+                  return acc;
+                }, { ng: 0, byType: {} });
+                const types = Object.values(q.byType).sort((a, b) => b.qty - a.qty);
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: q.ng > 0 ? '#f59e0b' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                      🚫 คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
+                    </div>
+                    {types.length === 0 ? (
+                      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีของเสียวันนี้ 👍</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {types.map(t => (
+                          <div key={t.name} style={{ padding: '8px 12px', borderRadius: 9, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                              <span style={{ fontSize: 13.5, fontWeight: 800, color: '#fbbf24', minWidth: 0, flex: 1 }}>{t.name}</span>
+                              <span style={{ fontSize: 14, fontWeight: 900, color: '#f59e0b', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} ชิ้น</span>
+                            </div>
+                            {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>💬 {t.notes.join(' · ')}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* 4M Alerts */}
               <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
                 🚨 4M Changes · {fms.length} รายการ
@@ -2429,7 +2525,10 @@ export default function Dashboard() {
                   // (แปลง % เป็น px ตามขนาดจริงของ mapBox ก่อนคำนวณ แล้วแปลงกลับเป็น % ตอน render)
                   const boxW = mapBox.w || 800, boxH = mapBox.h || 450;
                   // ขนาด marker จาก util กลาง (ห้ามตั้งสูตรเองในหน้า — UI-CONVENTIONS §1)
-                  const { MK, SUB } = markerScale(boxW);
+                  // ต้องส่ง machineCount ด้วย (SUB เป็น density-aware) ไม่งั้นวงเครื่องจักรบนผังนี้
+                  // ใหญ่กว่าหน้าอื่น (Management/LineSetup/MachineFloorMap) ที่ส่งครบ — ผิดหลัก WYSIWYG · QC audit 2026-08-03
+                  const mcCount = machinePoints.filter(p => cardLineNames.includes(p.line_name)).length;
+                  const { MK, SUB, subPillFont, subPillMaxW } = markerScale(boxW, { machineCount: mcCount });
                   const MIN_PX_X = MK * 1.2, MIN_PX_Y = MK * 1.6; // ระยะห่างขั้นต่ำรวม nametag+badge
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {
@@ -2574,15 +2673,15 @@ export default function Dashboard() {
                               <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, marginTop: 2 }}>
                               <div style={{
                                 background: 'rgba(0,0,0,0.8)', borderRadius: 4, padding: '1px 6px',
-                                fontSize: Math.max(11, Math.round(MKS * 0.24)), fontWeight: 800, color: '#fff',
-                                whiteSpace: 'nowrap', maxWidth: Math.max(MKS * 1.9, 88), overflow: 'hidden', textOverflow: 'ellipsis',
+                                fontSize: subPillFont, fontWeight: 800, color: '#fff',
+                                whiteSpace: 'nowrap', maxWidth: subPillMaxW, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {p.machine_no}
                               </div>
                               <div style={{
                                 background: 'rgba(239,68,68,0.25)', borderRadius: 3, padding: '0 5px',
                                 fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
-                                whiteSpace: 'nowrap', maxWidth: Math.max(MKS * 2, 88), overflow: 'hidden', textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap', maxWidth: subPillMaxW, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
                               </div>

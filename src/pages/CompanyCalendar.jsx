@@ -183,7 +183,7 @@ export default function CompanyCalendar() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, opacity: loading ? 0.5 : 1 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 14, opacity: loading ? 0.5 : 1 }}>
         {MONTH_NAMES.map((name, m) => {
           const daysInMonth = new Date(year, m + 1, 0).getDate();
           const firstWeekday = new Date(year, m, 1).getDay();

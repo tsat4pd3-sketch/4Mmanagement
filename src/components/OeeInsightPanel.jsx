@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import { wavg, wLoad, buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -20,6 +22,13 @@ const todayWorkDate = () => {
 };
 const DOW_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์'];
 const avg = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
+// เฉลี่ย OEE/A/P ข้ามกะ ต้องถ่วงด้วยเวลารับภาระ (กฎ OEE · util กลาง oeeAvg.js) — เดิม avg() ธรรมดา
+// ทำให้ insight อ้างตัวเลข "เฉลี่ยกะเช้า vs ดึก" ไม่ตรงกับ KPI ในหน้าเดียวกัน (แก้ 2026-08-05)
+const avgW = (ss, pick, plannedOf) => {
+  const rows = ss.map(s => ({ v: pick(s), shift_min: s.shift_min, plannedMin: plannedOf(s.id) }));
+  const r = wavg(rows, x => (x.v == null || isNaN(x.v) ? null : Number(x.v)), wLoad);
+  return r == null ? 0 : r;
+};
 
 const SEV = {
   high: { c: '#ef4444', bg: 'rgba(239,68,68,0.08)', label: 'กระทบหนัก' },
@@ -28,10 +37,14 @@ const SEV = {
 };
 
 export default function OeeInsightPanel({ lines }) {
+  // ตัวเลือกไลน์เรียงตามผัง: ไลน์แม่ก่อน แล้วไลน์ลูกตามใต้แม่ (ไม่ใช่เรียงชื่อรวดเดียวจนลูกหลุดจากแม่)
+  const lineOpts = useMemo(() => toHierarchicalOptions(lines || []), [lines]);
   const [days, setDays] = useState(30);
   const [selLine, setSelLine] = useState('');
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState(null); // null = ยังไม่รัน
+  const [lean, setLean] = useState(null);         // { losses: [...], wastes: [...] } — 6 Big Losses / 8 Wastes
+  const [leanAxis, setLeanAxis] = useState('six_big_loss');
   const [meta, setMeta] = useState(null);
 
   const run = useCallback(async () => {
@@ -51,13 +64,16 @@ export default function OeeInsightPanel({ lines }) {
       const ids = sess.map(s => s.id);
       const sessById = Object.fromEntries(sess.map(s => [s.id, s]));
 
-      const [{ data: dts }, { data: defs }, { data: orders }, { data: kstd }] = await Promise.all([
-        supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category)').in('session_id', ids),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th)').in('session_id', ids),
+      const [{ data: dts }, { data: defs }, { data: orders }, { data: kstd }, { data: prodCt }] = await Promise.all([
+        supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', ids),
+        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th, six_big_loss, waste_type)').in('session_id', ids),
         supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, status').in('session_id', ids).in('status', ['confirmed', 'carry_over', 'imported']),
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
+        supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
       ]);
-      const ctOf = (mat) => Number(kstd?.find(k => k.mat_no === mat)?.dr_products?.cycle_time_sec) || 0;
+      // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (เดิม kanban ล้วน → บาง MAT ได้ CT=0)
+      const ctMapAll = buildCtMap({ kanbanStds: kstd || [], products: prodCt || [] });
+      const ctOf = (mat) => ctMapAll[mat] || 0;
       const prodNameOf = (mat) => kstd?.find(k => k.mat_no === mat)?.dr_products?.name || mat;
 
       // ── ข้อมูลคนขาดจากฝั่ง Main (เช็คชื่อ) — ผูก line ผ่าน employees.line_id ──
@@ -85,6 +101,11 @@ export default function OeeInsightPanel({ lines }) {
       });
       const ctSess = (sid) => { const c = ctBySess[sid]; return c && c.qty > 0 ? c.std / c.qty : 0; };
 
+      // นาที DT "ในแผน" ต่อกะ — ใช้เป็นน้ำหนัก (เวลารับภาระ = shift_min − planned)
+      const plannedMinOf = (sid) => (dts || [])
+        .filter(d => d.session_id === sid && d.dr_downtime_types?.category === 'planned')
+        .reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
+
       const out = [];
 
       /* ═ 1. Loss decomposition — เป้าหายไปไหน ═ */
@@ -100,7 +121,9 @@ export default function OeeInsightPanel({ lines }) {
           shortfall += target - actual;
           const ct = ctSess(s.id);
           if (ct > 0) dtPieces += Math.min(target - actual, (unplMin * 60) / ct);
-          ngPieces += (s.qty_ng || 0) + (s.qty_suspect || 0);
+          // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — CLAUDE.md) ให้ตรงกับ insight ข้อ NG กระจุกประเภท
+          ngPieces += (defs || []).filter(d => d.session_id === s.id)
+            .reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
         }
       });
       if (shortfall > 0) {
@@ -138,15 +161,17 @@ export default function OeeInsightPanel({ lines }) {
       });
 
       /* ═ 3. กะเช้า vs กะดึก ═ */
-      const dayO = sess.filter(s => s.shift === 'day').map(s => Number(s.oee));
-      const nightO = sess.filter(s => s.shift === 'night').map(s => Number(s.oee));
+      const daySess = sess.filter(s => s.shift === 'day');
+      const nightSess = sess.filter(s => s.shift === 'night');
+      const dayO = daySess.map(s => Number(s.oee));
+      const nightO = nightSess.map(s => Number(s.oee));
       if (dayO.length >= 3 && nightO.length >= 3) {
-        const gap = avg(dayO) - avg(nightO);
+        const gap = avgW(daySess, s => s.oee, plannedMinOf) - avgW(nightSess, s => s.oee, plannedMinOf);
         if (Math.abs(gap) >= 5) {
           const worse = gap > 0 ? 'night' : 'day';
           const wSess = sess.filter(s => s.shift === worse);
-          const dA = avg(sess.filter(s => s.shift === 'day').map(s => Number(s.oee_a))) - avg(sess.filter(s => s.shift === 'night').map(s => Number(s.oee_a)));
-          const dP = avg(sess.filter(s => s.shift === 'day').map(s => Number(s.oee_p))) - avg(sess.filter(s => s.shift === 'night').map(s => Number(s.oee_p)));
+          const dA = avgW(daySess, s => s.oee_a, plannedMinOf) - avgW(nightSess, s => s.oee_a, plannedMinOf);
+          const dP = avgW(daySess, s => s.oee_p, plannedMinOf) - avgW(nightSess, s => s.oee_p, plannedMinOf);
           const cause = Math.abs(dA) > Math.abs(dP) ? `Availability ต่างกัน ${Math.abs(dA).toFixed(1)} จุด (Downtime มากกว่า)` : `Performance ต่างกัน ${Math.abs(dP).toFixed(1)} จุด (ความเร็ว/จังหวะงาน)`;
           out.push({
             sev: Math.abs(gap) >= 10 ? 'high' : 'med', icon: worse === 'night' ? '🌙' : '☀️',
@@ -183,15 +208,17 @@ export default function OeeInsightPanel({ lines }) {
       }
 
       /* ═ 5. คนขาด ↔ OEE ═ */
-      const withAbs = sess.filter(s => (absentByDate[s.work_date] || 0) > 0).map(s => Number(s.oee));
-      const noAbs = sess.filter(s => (absentByDate[s.work_date] || 0) === 0).map(s => Number(s.oee));
+      const withAbsS = sess.filter(s => (absentByDate[s.work_date] || 0) > 0);
+      const noAbsS = sess.filter(s => (absentByDate[s.work_date] || 0) === 0);
+      const withAbs = withAbsS.map(s => Number(s.oee));
+      const noAbs = noAbsS.map(s => Number(s.oee));
       if (withAbs.length >= 3 && noAbs.length >= 3) {
-        const gap = avg(noAbs) - avg(withAbs);
+        const gap = avgW(noAbsS, s => s.oee, plannedMinOf) - avgW(withAbsS, s => s.oee, plannedMinOf);
         if (gap >= 5) {
           out.push({
             sev: gap >= 10 ? 'high' : 'med', icon: '👥',
             title: `วันที่มีคนขาด OEE ต่ำกว่าปกติเฉลี่ย ${gap.toFixed(1)} จุด`,
-            detail: `วันมีคนขาด ${withAbs.length} กะ เฉลี่ย OEE ${avg(withAbs).toFixed(1)} vs วันคนครบ ${noAbs.length} กะ เฉลี่ย ${avg(noAbs).toFixed(1)} — กำลังคนคือคอขวด ลองดูแผนคน backup/multi-skill`,
+            detail: `วันมีคนขาด ${withAbs.length} กะ เฉลี่ย OEE ${avgW(withAbsS, s => s.oee, plannedMinOf).toFixed(1)} vs วันคนครบ ${noAbs.length} กะ เฉลี่ย ${avgW(noAbsS, s => s.oee, plannedMinOf).toFixed(1)} — กำลังคนคือคอขวด ลองดูแผนคน backup/multi-skill`,
             impact: gap * 8,
           });
         }
@@ -238,11 +265,19 @@ export default function OeeInsightPanel({ lines }) {
         }
       }
 
+      // ── Lean: 6 Big Losses + 8 Wastes (แกนวิเคราะห์ แยกจาก category ที่ใช้คิด OEE) ──
+      // ของเสียแปลงเป็น "นาทีที่เสียไป" ด้วย CT ของกะนั้น เพื่อเทียบกับ downtime ในหน่วยเดียวกัน
+      const ctSecFn = (sid) => ctSess(sid);
+      setLean({
+        losses: groupLean({ axis: 'six_big_loss', downtimes: dts || [], defects: defs || [], ctSecFn }),
+        wastes: groupLean({ axis: 'waste_type',   downtimes: dts || [], defects: defs || [], ctSecFn }),
+      });
+
       out.sort((a, b) => ({ high: 0, med: 1, info: 2 }[a.sev] - { high: 0, med: 1, info: 2 }[b.sev]) || b.impact - a.impact);
       setInsights(out);
       setMeta({ from, to, nSess: sess.length, dtMin: Math.round(dtMinUnpl) });
     } catch (e) {
-      setInsights([]);
+      setInsights([]); setLean(null);
       setMeta({ error: e.message });
     }
     setLoading(false);
@@ -257,13 +292,71 @@ export default function OeeInsightPanel({ lines }) {
         {/* width กัน index.css select{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
         <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
           <option value="">— ทุกไลน์ที่มองเห็น —</option>
-          {lines.map(l => <option key={l.id} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>)}
+          {/* เรียงตามลำดับชั้นจริง (แม่ → ลูกใต้แม่) ผ่าน util กลาง — เดิม map ตรงๆ ลูกเลยลอยไปคนละที่กับแม่ */}
+          {lineOpts.map(({ line: l, depth }) => (
+            <option key={l.id} value={l.name}>{depth ? `${' '.repeat(depth * 3)}↳ ${l.name}` : l.name}</option>
+          ))}
         </select>
         <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
           {[14, 30, 60, 90].map(d => <option key={d} value={d}>ย้อนหลัง {d} วัน</option>)}
         </select>
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
       </div>
+
+      {/* ── Lean: 6 Big Losses / 8 Wastes — จำแนกจาก master (dr_downtime_types.six_big_loss/waste_type)
+           แยกคนละแกนกับ ในแผน/นอกแผน ที่ใช้คิด OEE โดยตั้งใจ (คำสั่ง user 2026-08-05) ── */}
+      {!loading && lean && (lean.losses.length > 0 || lean.wastes.length > 0) && (() => {
+        const rows = leanAxis === 'six_big_loss' ? lean.losses : lean.wastes;
+        const maxMin = Math.max(1, ...rows.map(r => r.min));
+        const totalMin = rows.reduce((a, r) => a + r.min, 0);
+        const unclassified = rows.find(r => !r.key);
+        return (
+          <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>🧩 วิเคราะห์ความสูญเปล่าแบบ Lean</div>
+              <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                {[['six_big_loss', '6 Big Losses (TPM)'], ['waste_type', '8 Wastes (Lean)']].map(([k, lb]) => (
+                  <button key={k} onClick={() => setLeanAxis(k)}
+                    style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      border: leanAxis === k ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      background: leanAxis === k ? 'var(--accent)' : 'transparent', color: leanAxis === k ? '#fff' : 'var(--text2)' }}>{lb}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+              เวลาสูญเสียรวม {totalMin.toLocaleString()} นาที (นับทั้งในแผน/นอกแผน · ของเสียแปลงเป็นนาทีด้วย CT)
+              {unclassified ? ` · ⚠️ ยังไม่จัดหมวด ${unclassified.min.toLocaleString()} นาที — จัดได้ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime` : ''}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {rows.map((r, i) => {
+                const c = r.meta?.color || 'var(--muted)';
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12.5 }}>
+                      <span style={{ fontWeight: 700, color: r.meta ? 'var(--text)' : 'var(--muted)' }}>
+                        {r.meta ? `${r.meta.icon} ${r.meta.label}` : '❔ ยังไม่จัดหมวด'}
+                      </span>
+                      {r.meta?.oee && <span style={{ fontSize: 10.5, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
+                      <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' }}>
+                        {r.min.toLocaleString()} น. · {r.count} ครั้ง{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
+                        {totalMin > 0 ? <span style={{ color: 'var(--muted)' }}> ({Math.round(r.min / totalMin * 100)}%)</span> : null}
+                      </span>
+                    </div>
+                    <div style={{ height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
+                      <div style={{ width: `${Math.max(1, r.min / maxMin * 100)}%`, height: '100%', background: c }} />
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                      {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.`).join(' · ')}
+                      {r.types.length > 3 ? ` +${r.types.length - 3} ประเภท` : ''}
+                      {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>💡 {r.meta.fix}</div> : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>กำลังวิเคราะห์...</div>

@@ -13,6 +13,7 @@
 */
 import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { wavg, wLoad, wRun, wProd } from '../utils/oee';
 
 /* ── TSG palette (hex ไม่มี # — ตาม pptxgenjs) ── */
 const C = {
@@ -84,7 +85,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       supabaseDR.from('downtime_logs')
         .select('id, session_id, machine_no, description, duration_min, started_at, dr_downtime_types(name, category)')
         .in('session_id', ids),
-      supabaseDR.from('defect_logs').select('session_id, qty_ng').in('session_id', ids),
+      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', ids),
       supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', ids),
     ]);
     downtimes.push(...(dt.data || []));
@@ -111,13 +112,28 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     }
   } catch { /* ตาราง/สิทธิ์ไม่พร้อม — ข้าม */ }
 
+  // NG ต่อกะ (ยึด defect_logs · นับ suspect เป็นของเสียตามกฎ Q) — ใช้ถ่วงน้ำหนัก Q
+  const ngBySession = {};
+  defects.forEach(d => { ngBySession[d.session_id] = (ngBySession[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
+
   /* ── aggregate ต่อกลุ่มไลน์ ── */
+  // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oeeAvg.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
+  // เดิมเป็น mean ธรรมดา → เด็คที่ส่งผู้บริหารไม่ตรงกับ /oee-analytics ของเดือนเดียวกัน (แก้ 2026-08-05)
+  const plannedMinOf = (sid) => downtimes
+    .filter(d => d.session_id === sid && d.dr_downtime_types?.category === 'planned')
+    .reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
   const aggSessions = (ss) => {
-    const mean = (k) => {
-      const vals = ss.map(s => s[k]).filter(v => v != null).map(Number);
-      return vals.length ? r1(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+    const rows = ss.map(s => ({
+      oee: s.oee == null ? null : Number(s.oee), oee_a: s.oee_a == null ? null : Number(s.oee_a),
+      oee_p: s.oee_p == null ? null : Number(s.oee_p), oee_q: s.oee_q == null ? null : Number(s.oee_q),
+      shift_min: s.shift_min, plannedMin: plannedMinOf(s.id),
+      actual_qty: s.actual_qty, qty_ng: ngBySession[s.id] || 0,
+    }));
+    return {
+      oee: wavg(rows, r => r.oee, wLoad), a: wavg(rows, r => r.oee_a, wLoad),
+      p: wavg(rows, r => r.oee_p, wRun), q: wavg(rows, r => r.oee_q, wProd),
+      nSess: ss.length,
     };
-    return { oee: mean('oee'), a: mean('oee_a'), p: mean('oee_p'), q: mean('oee_q'), nSess: ss.length };
   };
   const outputOf = (ss) => {
     const ids = new Set(ss.map(s => s.id));
@@ -143,7 +159,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   };
   const ppmOf = (ss, output) => {
     const ids = new Set(ss.map(s => s.id));
-    const ng = defects.filter(d => ids.has(d.session_id)).reduce((a, d) => a + (Number(d.qty_ng) || 0), 0);
+    const ng = defects.filter(d => ids.has(d.session_id)).reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
     const base = output + ng;
     return base > 0 ? Math.round((ng / base) * 1e6) : 0;
   };

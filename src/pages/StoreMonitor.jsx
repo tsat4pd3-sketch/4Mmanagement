@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -24,12 +27,13 @@ const workDateStr = () => { const d = new Date(); if (d.getHours() < 8) d.setDat
 const hm2m = (s) => { if (!s) return null; const p = String(s).split(':').map(Number); return p[0] * 60 + (p[1] || 0); };
 
 export default function StoreMonitor() {
+  const { role, lineId, sections: scopeSecs } = useContext(UserContext);
+  const [prodLines, setProdLines] = useState([]); // production_lines (id/name/section/parent) — ใช้คิด scope
   const [summary, setSummary] = useState([]);
   const [ks, setKs] = useState({});
   const [rounds, setRounds] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
   const [purchases, setPurchases] = useState([]);
-  const [lineSection, setLineSection] = useState({});
   const [lineFilter, setLineFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');   // all | shortage | over
   const [loading, setLoading] = useState(true);
@@ -43,14 +47,14 @@ export default function StoreMonitor() {
       supabaseDR.from('kanban_delivery_rounds').select('line_name, shift, round_no, cutoff_time, delivery_time, points_count, time_per_point_min, is_active').eq('is_active', true),
       supabaseDR.from('kanban_deliveries').select('line_name, shift, round_no, confirmed_at, received_status').eq('work_date', today),
       supabaseDR.from('purchase_requests').select('mat_no, part_name, dest_line, supplier, status, work_date, created_at').in('status', ['pending', 'ordered']),
-      supabase.from('production_lines').select('name, section'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name'),
     ]);
+    setProdLines(lines || []);
     setSummary(sum || []);
     const km = {}; (std || []).forEach(r => { km[r.mat_no] = r; }); setKs(km);
     setRounds(rnd || []);
     setDeliveries(dlv || []);
     setPurchases(pur || []);
-    const lm = {}; (lines || []).forEach(l => { lm[l.name] = l.section; }); setLineSection(lm);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -116,24 +120,33 @@ export default function StoreMonitor() {
     return out;
   }, [summary, ks, rounds, deliveries, purchases, tick]);
 
-  const lines = useMemo(() => [...new Set(findings.map(f => f.line).filter(Boolean))].sort(), [findings]);
-  const shown = findings
+  // mandatory scope filter — leader = family ไลน์ตัวเอง · role อื่นตาม sections (pattern มาตรฐาน CLAUDE.md)
+  //   null = ไม่จำกัด (admin / role ที่ไม่มี scope) · กรองก่อน filter อิสระเสมอ · ครอบทั้งลิสต์ ตัวนับ และ dropdown
+  const scopeLineNames = useMemo(() => {
+    if (role === 'admin' || !prodLines.length) return null;
+    if (role === 'leader' && lineId) {
+      const self = prodLines.find(l => String(l.id) === String(lineId));
+      return self ? new Set(getLineFamilyNames(prodLines, self.name)) : new Set();
+    }
+    if (scopeSecs?.length) return new Set(prodLines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
+    return null;
+  }, [prodLines, role, lineId, scopeSecs]);
+  const scoped = useMemo(
+    () => (scopeLineNames ? findings.filter(f => !f.line || scopeLineNames.has(f.line)) : findings),
+    [findings, scopeLineNames]);
+
+  const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(), [scoped]);
+  const shown = scoped
     .filter(f => !lineFilter || f.line === lineFilter)
     .filter(f => kindFilter === 'all' || f.kind === kindFilter)
     .sort((a, b) => b.sev - a.sev || (a.val - b.val));
 
-  const nShort = findings.filter(f => f.kind === 'shortage').length;
-  const nOver = findings.filter(f => f.kind === 'over').length;
-  const nLate = findings.filter(f => f.code === 'C').length;
+  const nShort = scoped.filter(f => f.kind === 'shortage').length;
+  const nOver = scoped.filter(f => f.kind === 'over').length;
+  const nLate = scoped.filter(f => f.code === 'C').length;
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <style>{`
-        @keyframes storeAlarm { 50% { opacity: .45 } }
-        .sm-alarm { animation: storeAlarm 1s steps(2,end) infinite; }
-        @media (prefers-reduced-motion: reduce) { .sm-alarm { animation: none } }
-      `}</style>
-
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
           🚨 เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)
@@ -148,7 +161,7 @@ export default function StoreMonitor() {
           { icon: '🟥', label: 'จะขาด (Shortage)', value: nShort, warn: nShort > 0, tone: '#ef4444' },
           { icon: '🟧', label: 'ล้น (Over stock)', value: nOver, warn: nOver > 0, tone: '#f59e0b' },
           { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: '#ef4444' },
-          { icon: '📊', label: 'รายการทั้งหมด', value: findings.length, tone: 'var(--text)' },
+          { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
         ].map(c => (
           <div key={c.label} style={{ flex: '1 1 170px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
@@ -181,13 +194,15 @@ export default function StoreMonitor() {
           ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 11 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 11 }}>
           {shown.map((f, i) => {
             const red = f.kind === 'shortage';
             const tone = red ? '#ef4444' : '#f59e0b';
             const blink = red && f.sev >= 3;   // Andon: แดงกระพริบเฉพาะรุนแรง (ขาดจริง/เลยเวลา) · เหลืองนิ่ง
+            // กระพริบใช้ class กลาง .mo-card-alert (index.css) — มี [data-perf="lite"] override สำหรับจอ TV
+            // ห้ามเขียน keyframes กระพริบเองต่อหน้า (UI-CONVENTIONS §2 · QC audit 2026-08-03)
             return (
-              <div key={i} className={blink ? 'sm-alarm' : undefined} style={{
+              <div key={i} className={blink ? 'mo-card-alert' : undefined} style={{
                 border: `1px solid ${tone}`, borderLeft: `3px solid ${tone}`, borderRadius: 11, padding: 12,
                 background: `color-mix(in srgb, ${tone} 8%, var(--card))`,
               }}>

@@ -21,6 +21,7 @@ const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
+const QrLabels     = lazy(() => import('./pages/QrLabels'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
@@ -126,6 +127,7 @@ const NAV_ITEMS = [
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -1122,6 +1124,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/process-setup" element={
                 <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
               } />
+              <Route path="/qr-labels" element={
+                <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>
+              } />
               <Route path="/machine-database" element={
                 <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
               } />
@@ -1295,7 +1300,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin').eq('id', user.id).single();
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1329,10 +1334,12 @@ export default function App() {
     supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
       .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
       .catch(() => setUserAvatarUrl(null));
-    // is_dept_admin แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260803) ถ้ายังไม่ apply ห้ามทำ login พัง
-    supabase.from('profiles').select('is_dept_admin').eq('id', user.id).maybeSingle()
-      .then(({ data: da }) => { const v = da?.is_dept_admin === true; setUserIsDeptAdmin(v); setDeptAdmin(v); })
-      .catch(() => { setUserIsDeptAdmin(false); setDeptAdmin(false); });
+    // is_dept_admin อยู่ใน select หลักแล้ว (migration 20260803 apply แล้ว — ยืนยันคอลัมน์มีจริงใน prod)
+    // ตั้ง sync ก่อน render แรก — เดิมแยก query async แล้วมี race: หน้า render ก่อน flag มา ปุ่มแก้ไขไม่โผล่
+    {
+      const v = data?.is_dept_admin === true;
+      setUserIsDeptAdmin(v); setDeptAdmin(v);
+    }
     setProfileLoaded(true);
   };
 

@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 
 /*
@@ -47,7 +48,7 @@ export default function OrderTrace() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift').order('name')
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -106,7 +107,8 @@ export default function OrderTrace() {
       const famNames = getLineFamilyNames(lines, sess.line_name);
       const famLower = famNames.map(n => n.toLowerCase());
       const famIds = lines.filter(l => famLower.includes(l.name.toLowerCase())).map(l => l.id);
-      const t = { qtyUpdates: [], defects: [], sessionOrders: [], downtimes: [], mos: [], people: [], stations: {}, fourM: [], childLots: [], rawReqs: [], stockIn: [], stockOut: [], lpa: [], poka: [], dailyPm: null };
+      const t = { qtyUpdates: [], defects: [], sessionOrders: [], downtimes: [], mos: [], people: [], stations: {}, fourM: [], childLots: [], rawReqs: [], stockIn: [], stockOut: [], lpa: [], poka: [], dailyPm: null,
+        reqsByStation: {}, skillsByEmp: {}, homeByEmp: {}, product: null, prevSession: null, machineMos: [], ojtByEmp: {} };
 
       // DR — ของใบ/กะ
       const [qu, df, so, dt] = await Promise.all([
@@ -158,19 +160,43 @@ export default function OrderTrace() {
 
       // Main — คน/4M/การตรวจ ของไลน์+วันนั้น (ทุกก้อน best-effort)
       try {
+        // คน + สกิลปัจจุบัน (⚠️ ไม่มี history — คะแนน ณ วันนี้ ไม่ใช่ ณ วันผลิต) + จุดงาน + เกณฑ์สกิลต่อจุด
         const [emp, ws] = await Promise.all([
-          supabase.from('employees').select('id, name, employee_id_code, team, position').in('line_id', famIds).eq('is_active', true),
-          supabase.from('workstations').select('id, station_name').in('line_id', famIds),
+          supabase.from('employees').select('id, name, employee_id_code, team, position, employee_skills(skill_name, score)').in('line_id', famIds).eq('is_active', true),
+          supabase.from('workstations').select('id, station_name, station_requirements(skill_name, min_score)').in('line_id', famIds),
         ]);
-        t.stations = Object.fromEntries((ws.data || []).map(w => [String(w.id), w.station_name]));
+        const wsAll = ws.data || [];
+        t.stations = Object.fromEntries(wsAll.map(w => [String(w.id), w.station_name]));
+        t.reqsByStation = Object.fromEntries(wsAll.map(w => [String(w.id), w.station_requirements || []]));
+        t.skillsByEmp = Object.fromEntries((emp.data || []).map(e => [e.id, Object.fromEntries((e.employee_skills || []).map(s => [s.skill_name, s.score]))]));
         const empIds = (emp.data || []).map(e => e.id);
         if (empIds.length) {
-          const { data: logs } = await supabase.from('daily_production_logs')
-            .select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift, has_ot, leave_type, remark')
-            .eq('work_date', sess.work_date).in('employee_id', empIds);
+          const [{ data: logs }, hp] = await Promise.all([
+            supabase.from('daily_production_logs')
+              .select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift, has_ot, leave_type, remark')
+              .eq('work_date', sess.work_date).in('employee_id', empIds),
+            supabase.from('employee_home_positions').select('employee_id, station_id').in('employee_id', empIds),
+          ]);
+          t.homeByEmp = Object.fromEntries((hp.data || []).map(h => [h.employee_id, String(h.station_id)]));
           const empBy = Object.fromEntries((emp.data || []).map(e => [e.id, e]));
           t.people = (logs || []).filter(l => !l.shift || l.shift === sess.shift || sess.shift == null)
             .map(l => ({ ...l, emp: empBy[l.employee_id] })).filter(p => p.emp);
+          // จุดงานข้ามไลน์ (assigned ไปจุดนอก family) — โหลดชื่อ+เกณฑ์เพิ่มเฉพาะ id ที่ยังไม่รู้จัก
+          const missing = [...new Set(t.people.map(p => p.assigned_line).filter(id => id && !t.stations[String(id)]))];
+          if (missing.length) {
+            const { data: ws2 } = await supabase.from('workstations').select('id, station_name, line_name, station_requirements(skill_name, min_score)').in('id', missing);
+            (ws2 || []).forEach(w => {
+              t.stations[String(w.id)] = `${w.station_name}${w.line_name ? ` (${w.line_name})` : ''}`;
+              t.reqsByStation[String(w.id)] = w.station_requirements || [];
+            });
+          }
+          // อบรม OJT วันนั้นของคนกลุ่มนี้ (best-effort)
+          try {
+            const { data: oj } = await supabase.from('ojt_training_attendees')
+              .select('employee_id, ojt_trainings!inner(topic, train_date)')
+              .in('employee_id', empIds).eq('ojt_trainings.train_date', sess.work_date);
+            (oj || []).forEach(r => { t.ojtByEmp[r.employee_id] = r.ojt_trainings?.topic || 'OJT'; });
+          } catch { /* ignore */ }
         }
       } catch { /* ignore */ }
       try {
@@ -206,6 +232,34 @@ export default function OrderTrace() {
             .select('jig_id, status, inspected_at').in('jig_id', jigIds)
             .gte('inspected_at', dayStart).lt('inspected_at', dayEnd);
           t.dailyPm = { total: jigIds.length, done: new Set((insp || []).map(i => i.jig_id)).size, fail: (insp || []).filter(i => i.status === 'fail' || i.status === 'ng').length };
+        }
+      } catch { /* ignore */ }
+
+      // CT มาตรฐานของชิ้นงาน (ใช้เทียบความเร็วจริงของใบ)
+      try {
+        const { data: pr } = await supabaseDR.from('dr_products')
+          .select('cycle_time_sec, process_type, pair_mat_no, line_name').eq('mat_no', sel.mat_no).limit(1);
+        t.product = pr?.[0] || null;
+      } catch { /* ignore */ }
+      // กะก่อนหน้าของไลน์ (บริบท: เข้ากะนี้มาด้วยสภาพยังไง)
+      try {
+        const { data: ps } = await supabaseDR.from('production_sessions')
+          .select('id, work_date, shift, status, oee, oee_a, oee_p, oee_q, closed_by_name')
+          .eq('line_name', sess.line_name).lte('work_date', sess.work_date)
+          .order('work_date', { ascending: false }).limit(6);
+        const rank = s => `${s.work_date}~${s.shift === 'night' ? 1 : 0}`;
+        const cur = rank(sess);
+        t.prevSession = (ps || []).filter(s => s.id !== sess.id && rank(s) < cur).sort((a, b) => rank(b).localeCompare(rank(a)))[0] || null;
+      } catch { /* ignore */ }
+      // ประวัติใบซ่อมของเครื่องที่ใบนี้ใช้ — ย้อน 30 วันก่อนเปิดใบ (เครื่องนี้ป่วยเรื้อรังมาก่อนไหม)
+      try {
+        if (sel.machine_no && sel.opened_at) {
+          const d30 = new Date(new Date(sel.opened_at).getTime() - 30 * 86400000).toISOString();
+          const { data: mh } = await supabaseDR.from('mtn_orders')
+            .select('mo_no, status, problem_detail, solution, created_at')
+            .eq('machine_no', sel.machine_no).gte('created_at', d30).lte('created_at', sel.opened_at)
+            .order('created_at', { ascending: false }).limit(5);
+          t.machineMos = mh || [];
         }
       } catch { /* ignore */ }
 
@@ -245,9 +299,45 @@ export default function OrderTrace() {
     return ev.filter(e => e.t).sort((a, b) => new Date(a.t) - new Date(b.t));
   }, [sel, trace]);
 
+  /* ── วิเคราะห์การวิ่งของใบ: เวลาจริง − DT ทับช่วงใบ → วิ/ชิ้นจริง เทียบ CT มาตรฐาน ── */
+  const orderAnalysis = useMemo(() => {
+    if (!sel?.opened_at || !sel?.confirmed_at || !trace) return null;
+    const start = new Date(sel.opened_at).getTime(), end = new Date(sel.confirmed_at).getTime();
+    if (end <= start) return null;
+    const durMin = (end - start) / 60000;
+    let dtUnpl = 0, dtPlan = 0, dtUntimed = 0;
+    trace.downtimes.forEach(d => {
+      const planned = d.dr_downtime_types?.category === 'planned';
+      if (!d.started_at) { if (!planned) dtUntimed += d.duration_min || 0; return; }
+      const a = new Date(d.started_at).getTime();
+      const b = d.ended_at ? new Date(d.ended_at).getTime() : a + (d.duration_min || 0) * 60000;
+      const ov = Math.max(0, Math.min(b, end) - Math.max(a, start)) / 60000;
+      if (planned) dtPlan += ov; else dtUnpl += ov;
+    });
+    const qty = sel.qty_ok ?? sel.qty ?? 0;
+    const netMin = Math.max(0, durMin - dtPlan - dtUnpl);
+    const netSec = qty > 0 && netMin > 0 ? netMin * 60 / qty : null;
+    const stdCt = trace.product?.cycle_time_sec || null;
+    const othersOverlap = trace.sessionOrders.some(o => o.id !== sel.id && o.opened_at
+      && new Date(o.opened_at).getTime() < end && new Date(o.confirmed_at || sel.confirmed_at).getTime() > start);
+    return { durMin, dtUnpl, dtPlan, dtUntimed, qty, netMin, netSec, stdCt,
+      speedPct: stdCt && netSec ? Math.round(stdCt / netSec * 100) : null,
+      ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null, othersOverlap };
+  }, [sel, trace]);
+
   const sess = sel?.production_sessions;
   const stMeta = STATUS_META[sel?.status] || { label: sel?.status, color: 'var(--muted)' };
   const ppeBad = p => !(p.has_helmet && p.has_boots && p.has_gloves);
+  // สูตรเดียวกับ Management/Dashboard computeFit: ทักษะที่ผ่าน min_score / ทั้งหมด ×100
+  const fitOf = (empId, stationId) => {
+    const reqs = trace?.reqsByStation?.[String(stationId)] || [];
+    if (!reqs.length) return null;
+    const sk = trace?.skillsByEmp?.[empId] || {};
+    const passed = reqs.filter(r => (sk[r.skill_name] ?? 0) >= (r.min_score ?? 0)).length;
+    return Math.round(passed / reqs.length * 100);
+  };
+  const fitColor = f => f == null ? 'var(--muted)' : f >= 80 ? '#22c55e' : f >= 60 ? '#f59e0b' : f >= 40 ? '#f97316' : '#ef4444';
+  const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)} ชม. ${Math.round(m % 60)} นาที` : `${Math.round(m)} นาที`;
 
   return (
     <div style={{ maxWidth: 'min(97vw, 1500px)', margin: '0 auto' }}>
@@ -341,22 +431,113 @@ export default function OrderTrace() {
                 </div>
               </CollapseCard>
 
-              {/* ── คนเข้างาน ── */}
-              <CollapseCard id="people" storePrefix="ot" title={`👷 คนเข้างานไลน์ ${sess.line_name} วันนั้น`} count={trace.people.length} defaultOpen={trace.people.length > 0}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {trace.people.map((p, i) => (
-                    <span key={i} style={{ ...chip(p.is_present ? 'var(--bg3)' : 'rgba(239,68,68,0.10)', p.is_present ? 'var(--text2)' : '#ef4444'), fontWeight: 600 }}>
-                      {p.is_present ? '✅' : `🏠${p.leave_type ? ` ${p.leave_type}` : 'ขาด'}`} {p.emp.name}
-                      {p.assigned_line && trace.stations[p.assigned_line] ? ` · ${trace.stations[p.assigned_line]}` : ''}
-                      {p.is_present && ppeBad(p) ? ' · ⚠️PPE' : ''}{p.has_ot ? ' · OT' : ''}
-                    </span>
-                  ))}
-                  {!trace.people.length && <span style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่พบข้อมูลเช็คชื่อของวันนั้น</span>}
-                </div>
+              {/* ── กำลังคน & จุดงาน (data mining) ── */}
+              <CollapseCard id="people" storePrefix="ot" title={`👷 กำลังคน & จุดงาน — ${sess.line_name} วันนั้น`} count={trace.people.length} defaultOpen={trace.people.length > 0}>
+                {(() => {
+                  const present = trace.people.filter(p => p.is_present);
+                  const absent = trace.people.filter(p => !p.is_present);
+                  const enrich = trace.people.map(p => {
+                    const aId = p.assigned_line ? String(p.assigned_line) : null;
+                    const hId = trace.homeByEmp[p.employee_id] || null;
+                    const moved = aId && hId && aId !== hId;
+                    const fit = aId ? fitOf(p.employee_id, aId) : (hId ? fitOf(p.employee_id, hId) : null);
+                    const man4m = trace.fourM.some(f => f.category === 'Man' && (f.description || '').includes(p.emp.name));
+                    return { ...p, aId, hId, moved, fit, man4m };
+                  }).sort((a, b) => (b.is_present - a.is_present) || ((a.fit ?? 101) - (b.fit ?? 101)));
+                  const movedN = enrich.filter(p => p.is_present && p.moved).length;
+                  const lowFitN = enrich.filter(p => p.is_present && p.fit != null && p.fit < 60).length;
+                  const ppeN = present.filter(ppeBad).length;
+                  // กำลังคนมาตรฐานของไลน์ (std = headcount/กะ) — กฎกลาง: แม่ตั้งไว้ = ยอดกลุ่ม · ไม่ตั้ง = รวมลูก
+                  const std = stdGroupOf(lines, sess.line_name, sess.shift === 'night' ? 'night' : 'day');
+                  return (
+                    <>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                        <span style={chip('var(--bg3)', present.length < std ? '#ef4444' : '#22c55e')}>มาทำงาน {present.length}{std ? `/${std} คน (มาตรฐานกะ)` : ' คน'}</span>
+                        {absent.length > 0 && <span style={chip('rgba(239,68,68,0.10)', '#ef4444')}>ขาด/ลา {absent.length}</span>}
+                        {movedN > 0 && <span style={chip('rgba(245,158,11,0.12)', '#f59e0b')}>🔀 ย้ายจุด {movedN}</span>}
+                        {lowFitN > 0 && <span style={chip('rgba(239,68,68,0.12)', '#ef4444')}>⚠️ ทักษะไม่ถึงจุด {lowFitN}</span>}
+                        {ppeN > 0 && <span style={chip('rgba(245,158,11,0.12)', '#f59e0b')}>⚠️ PPE ไม่ครบ {ppeN}</span>}
+                      </div>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                          <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left' }}>
+                            <th style={{ padding: '4px 6px' }}>พนักงาน</th><th>จุดที่เข้าวันนั้น</th><th>จุดประจำ</th><th>Skill fit</th><th>PPE</th><th>หมายเหตุ</th>
+                          </tr></thead>
+                          <tbody>
+                            {enrich.map((p, i) => (
+                              <tr key={i} style={{ borderTop: '1px solid var(--border2)', opacity: p.is_present ? 1 : 0.55 }}>
+                                <td style={{ padding: '5px 6px', whiteSpace: 'nowrap' }}>
+                                  {p.is_present ? '✅' : '🏠'} <b>{p.emp.name}</b>
+                                  <span style={{ color: 'var(--muted)', fontSize: 11 }}> {p.emp.employee_id_code || ''}{p.emp.team ? ` · ทีม ${p.emp.team}` : ''}</span>
+                                </td>
+                                <td style={{ whiteSpace: 'nowrap' }}>
+                                  {p.aId && trace.stations[p.aId] ? <b>{trace.stations[p.aId]}</b> : <span style={{ color: 'var(--muted)' }}>—</span>}
+                                  {p.moved && <span style={{ marginLeft: 6, ...chip('rgba(245,158,11,0.12)', '#f59e0b') }}>🔀 ย้ายจุด</span>}
+                                </td>
+                                <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{p.hId && trace.stations[p.hId] ? trace.stations[p.hId] : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                                <td>{p.fit != null ? <b style={{ color: fitColor(p.fit) }}>{p.fit}%</b> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+                                <td style={{ whiteSpace: 'nowrap' }}>
+                                  {!p.is_present ? '—' : ppeBad(p)
+                                    ? <span style={{ color: '#f59e0b' }}>⚠️ {[!p.has_helmet && 'หมวก', !p.has_boots && 'รองเท้า', !p.has_gloves && 'ถุงมือ'].filter(Boolean).join('/')}</span>
+                                    : <span style={{ color: '#22c55e' }}>ครบ</span>}
+                                </td>
+                                <td style={{ fontSize: 11.5, color: 'var(--text2)' }}>
+                                  {[!p.is_present && (p.leave_type || 'ขาด'), p.has_ot && 'OT', p.man4m && '📋 มี 4M Man', trace.ojtByEmp[p.employee_id] && `🎓 อบรม: ${trace.ojtByEmp[p.employee_id]}`, p.remark].filter(Boolean).join(' · ') || '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {!trace.people.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่พบข้อมูลเช็คชื่อของวันนั้น</div>}
+                      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+                        ⚠️ Skill fit คิดจากคะแนนสกิล "ปัจจุบัน" เทียบเกณฑ์จุดงาน (ระบบไม่เก็บ history คะแนน ณ วันผลิต) · จุดที่เข้า = จากเช็คชื่อ/จัดกำลังคนวันนั้น
+                      </div>
+                    </>
+                  );
+                })()}
               </CollapseCard>
 
+              {/* ── วิเคราะห์การวิ่งของใบ ── */}
+              {orderAnalysis && (
+                <CollapseCard id="analysis" storePrefix="ot" title="⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)" count={null} defaultOpen>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิด→ปิดใบ</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>DT ทับช่วงใบ (นอกแผน/ตามแผน)</span><br />
+                      <b style={{ color: orderAnalysis.dtUnpl > 0 ? '#ef4444' : 'var(--text)' }}>{Math.round(orderAnalysis.dtUnpl)} นาที</b>
+                      <span style={{ color: 'var(--muted)' }}> / {Math.round(orderAnalysis.dtPlan)} นาที</span>
+                      {orderAnalysis.dtUntimed > 0 && <span style={{ color: '#f59e0b', fontSize: 11 }}> (+{Math.round(orderAnalysis.dtUntimed)} นาทีไม่ระบุเวลา)</span>}
+                    </div>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br /><b>{fmtMin(orderAnalysis.netMin)}</b>{orderAnalysis.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.ratePerHr} ชิ้น/ชม.</span> : ''}</div>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นจริง vs CT มาตรฐาน</span><br />
+                      {orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} วิ</b> : '—'}
+                      {orderAnalysis.stdCt ? <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span> : <span style={{ color: 'var(--muted)' }}> / ไม่ตั้ง CT</span>}
+                    </div>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน</span><br />
+                      {orderAnalysis.speedPct != null
+                        ? <b style={{ fontSize: 16, color: orderAnalysis.speedPct >= 95 ? '#22c55e' : orderAnalysis.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.speedPct}%</b>
+                        : <span style={{ color: 'var(--muted)' }}>— (ตั้ง CT ที่ Product Master ก่อน)</span>}
+                    </div>
+                  </div>
+                  {orderAnalysis.othersOverlap && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>⚠️ มีใบอื่นวิ่งทับช่วงเวลาเดียวกันในกะ — อัตรานี้เป็นภาพรวมของไลน์ช่วงนั้น ไม่ใช่ของใบนี้ล้วนๆ</div>}
+                </CollapseCard>
+              )}
+
               {/* ── เครื่องจักร/ใบซ่อม ── */}
-              <CollapseCard id="machine" storePrefix="ot" title="🔧 Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0}>
+              <CollapseCard id="machine" storePrefix="ot" title="🔧 Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
+                {sel.machine_no && (
+                  <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>
+                    ⚙️ ใบนี้ผลิตที่เครื่อง <b>{sel.machine_no}</b>
+                    {trace.machineMos.length
+                      ? <span style={{ color: '#f59e0b' }}> · มีใบซ่อม {trace.machineMos.length} ใบใน 30 วันก่อนเปิดใบ</span>
+                      : <span style={{ color: '#22c55e' }}> · ไม่มีใบซ่อมใน 30 วันก่อนหน้า</span>}
+                    {trace.machineMos.map((m, i) => (
+                      <div key={i} style={{ color: 'var(--text2)', paddingLeft: 14, fontSize: 12 }}>
+                        ↳ {fmtDate((m.created_at || '').slice(0, 10))} MO {m.mo_no || '(รอเลข)'} — {m.problem_detail || ''}{m.solution ? ` · แก้: ${m.solution}` : ` (${m.status})`}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {trace.downtimes.map((d, i) => {
                   const mo = trace.mos.find(m => m.source_downtime_id === d.id);
                   const planned = d.dr_downtime_types?.category === 'planned';
@@ -431,7 +612,15 @@ export default function OrderTrace() {
               </CollapseCard>
 
               {/* ── ใบอื่นในกะ ── */}
-              <CollapseCard id="sessorders" storePrefix="ot" title="📜 ใบอื่นในกะเดียวกัน (บริบทการผลิต)" count={trace.sessionOrders.length - 1} defaultOpen={false}>
+              <CollapseCard id="sessorders" storePrefix="ot" title="🧭 บริบทกะ (กะก่อนหน้า + ใบอื่นในกะ)" count={trace.sessionOrders.length - 1} defaultOpen={false}>
+                {trace.prevSession && (
+                  <div style={{ marginBottom: 8, padding: '7px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>
+                    ⏮ กะก่อนหน้าของไลน์: {fmtDate(trace.prevSession.work_date)} {trace.prevSession.shift === 'night' ? '🌙' : '☀️'}
+                    {trace.prevSession.oee != null
+                      ? <span> · OEE <b style={{ color: trace.prevSession.oee >= 70 ? '#22c55e' : '#f59e0b' }}>{Number(trace.prevSession.oee).toFixed(1)}%</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>(A {trace.prevSession.oee_a ?? '—'} / P {trace.prevSession.oee_p ?? '—'} / Q {trace.prevSession.oee_q ?? '—'})</span></span>
+                      : <span style={{ color: 'var(--muted)' }}> · ยังไม่ stamp OEE</span>}
+                  </div>
+                )}
                 {trace.sessionOrders.filter(o => o.id !== sel.id).map((o, i) => (
                   <div key={i} style={{ fontSize: 12.5, padding: '4px 0', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                     <b style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => { const hit = results.find(r => r.id === o.id); if (hit) setSel(hit); else { setSearch(o.prod_no); doSearch(o.prod_no).then(rows => { const h = rows.find(r => r.id === o.id); if (h) setSel(h); }); } }}>{o.prod_no}</b>

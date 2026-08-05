@@ -496,13 +496,16 @@ function OtMasterDataPanel() {
     load();
   };
 
+  // ปิดใช้งาน master = หายจาก dropdown จองรถ OT → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
   const toggleRouteActive = async (r) => {
+    if (r.is_active && !window.confirm(`ปิดใช้งานสายรถ "${r.name || r.code}" ?\n\nจะไม่ขึ้นให้เลือกตอนจองรถ OT (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('bus_routes').update({ is_active: !r.is_active }).eq('id', r.id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
   };
 
   const toggleTaskActive = async (t) => {
+    if (t.is_active && !window.confirm(`ปิดใช้งานงาน OT "${t.name || t.code}" ?\n\nจะไม่ขึ้นให้เลือกตอนจองรถ OT (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('ot_task_types').update({ is_active: !t.is_active }).eq('id', t.id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
@@ -3747,8 +3750,11 @@ function SkillAllowanceTab() {
   // ดึง Cost Center และหัวหน้างาน จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
     const lineObj = lines.find(l => l.name === line);
-    setCostCenter(lineObj?.cost_center || '');
-    setSignerHead(lineObj?.head_name || '');
+    // ไลน์ย่อยที่ไม่ได้ตั้ง cost center/หัวหน้าเอง → ตกทอดจากไลน์แม่ (pattern เดียวกับ MtnRepair)
+    // เดิมไม่ fallback → HDF1/HDF2 ที่ยังไม่กรอก ทำให้ช่องหัวหน้าในใบค่าฝีมือโล่ง ทั้งที่ไลน์แม่มีชื่ออยู่
+    const parentObj = lineObj?.parent_line_name ? lines.find(l => l.name === lineObj.parent_line_name) : null;
+    setCostCenter(lineObj?.cost_center || parentObj?.cost_center || '');
+    setSignerHead(lineObj?.head_name || parentObj?.head_name || '');
   }, [line, lines]);
 
   // ดึงชื่อผู้อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)

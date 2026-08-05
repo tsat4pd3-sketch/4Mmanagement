@@ -84,7 +84,7 @@ export default function MonthlyReviewExport({ onClose }) {
 
   const lb = { fontSize: 12, color: 'var(--muted)', marginBottom: 4, fontWeight: 700 };
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 560px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 16, fontWeight: 900 }}>📽️ Monthly Performance Review (.pptx)</div>
@@ -107,7 +107,7 @@ export default function MonthlyReviewExport({ onClose }) {
               {!orgSections.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div><div style={lb}>ผู้นำเสนอ</div><input type="text" value={presenter} onChange={e => setPresenter(e.target.value)} style={{ width: '100%' }} /></div>
             <div><div style={lb}>ตำแหน่ง</div><input type="text" value={presPosition} onChange={e => setPresPosition(e.target.value)} style={{ width: '100%' }} /></div>
           </div>

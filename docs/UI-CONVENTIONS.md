@@ -6,6 +6,7 @@
 อัพเดทล่าสุด: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
+อัพเดท 2026-08-04: §5.1 viewer วางจุด default = **พอดีกรอบทั้ง 2 แกน** (เดิมเต็มความกว้าง → รูปแนวนอนสูงล้นจนตารางตกจอ) · §5.1 จอ "ตรวจจริง" ต้อง sync สีหมุดกับผลตรวจ + แตะหมุด↔แถว สองทาง
 
 ---
 
@@ -110,8 +111,18 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
   - `className="mgrid"` — ฟอร์ม grid หลายคอลัมน์ (`1fr 1fr`, `1fr 1fr 1fr` ฯลฯ มักอยู่ใน modal)
     → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ (`!important` ชนะ inline เฉพาะจอแคบ) —
     modal/ฟอร์มใหม่ที่มี grid หลายคอลัมน์**ต้องติด class นี้เสมอ**
+    · ไล่ติดครบแล้ว 2026-08-04 (QC audit): DailyReport 10 จุด (เลือกทีมช่าง/ปิดกะ/เพิ่ม DT/นโยบายพัก/
+    ฟอร์มสินค้า/kanban), PmCoordination, MonthlyReviewExport, TaxonomyManagerModal
   - `className="tbtn"` — ปุ่มไอคอนเล็กในตาราง (✏️ 🗑️ ✕ 💾) → จอทัช (`pointer:coarse`)
-    ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน
+    ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน · **ปุ่มที่มีแต่ไอคอนไม่มีข้อความ ต้องติด class นี้เสมอ**
+- **⚠️ grid `repeat(auto-fill/auto-fit, minmax(Npx, 1fr))` ต้องเขียนเป็น `minmax(min(Npx, 100%), 1fr)` เสมอ (2026-08-04)**
+  — `minmax(Npx, ...)` เป็น **พื้นแข็ง**: container แคบกว่า N (มือถือ 360–390px ลบ padding เหลือ ~324–354px)
+  track จะไม่ยอมหด → **ดันล้นขอบจอ เลื่อนแนวนอนทั้งหน้า/โดน `body{overflow-x:hidden}` ตัดหาย**
+  · ห่อด้วย `min(Npx, 100%)` แล้ว **desktop เหมือนเดิมเป๊ะ** (container กว้าง → `min()` = N)
+  ส่วนมือถือ track หดตาม container ได้ · ไล่แก้ทุกจุดที่ N ≥ 260 แล้ว 30 จุด 15 ไฟล์ (2026-08-04)
+  · ต่างจาก `mgrid` ที่ยุบ 1 คอลัมน์ตายตัวที่ ≤600px — `min()` เป็น fluid ใช้ได้ทุกความกว้าง ใช้คู่กันได้
+  · **grid 2 คอลัมน์ตายตัวที่มีคอลัมน์ px** (เช่น `minmax(240px,300px) 1fr`) ยังต้อง guard ด้วย
+  `isMobile ? '1fr' : ...` หรือ `mgrid` เหมือนเดิม (min() ช่วยไม่ได้ เพราะสองคอลัมน์รวมกันยังเกิน)
 - **ลาก marker/หมุดต้องใช้ pointer events** (`onPointerDown` + window `pointermove/pointerup/pointercancel`
   + `touchAction:'none'` บน element ระหว่างโหมดแก้ไข) — ห้ามใช้ mouse events อย่างเดียว
   ไม่งั้นจอทัชลากไม่ได้ · ต้นแบบ: `MachineFloorMap.jsx` (2026-07-11), JigSpinCheck ใน `PMCheckData.jsx`
@@ -149,6 +160,23 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - **จำกัดจำนวนแถวระดับบนที่แสดงครั้งแรก** + ปุ่ม "▼ แสดงอีก N (ทั้งหมด M)" — ห้ามตัดข้อมูลเงียบๆ และห้ามปล่อย DOM หลายร้อยแถวโดยไม่จำเป็น
 - **ตัวเลือก entity (ลิสต์เลือกสินค้า/พนักงาน/เครื่อง) ที่ยาว:** จัดกลุ่มตามลำดับชั้นที่มีความหมาย (เช่น ตามไลน์) + หัวกลุ่ม sticky + เลื่อนในกรอบ `maxHeight` — ห้ามเป็น chip กองรวม · เลือกแล้ว**พับลิสต์อัตโนมัติ** และต้องมีปุ่มย้อนกลับชัดเจนบนการ์ดที่เลือก ("✕ ปิด — เลือกใหม่") ไม่ใช่แถบตัวหนังสือเล็กๆ
 
+### ⚠️ จัดคอลัมน์ตาราง — ต้องสั่ง `textAlign` ที่ `<th>` เอง (2026-08-03)
+`index.css` มี `th { text-align: left }` เป็น rule ตรง → **ชนะการสืบทอด (`inherit`) จาก `<tr style={{textAlign:'right'}}>` เสมอ** (rule ตรงชนะค่าที่สืบทอดมา ไม่เกี่ยวกับ specificity) · ผลคือ **หัวคอลัมน์ชิดซ้าย แต่ตัวเลขในแถวชิดขวา = เหลื่อมกันทั้งตาราง** (เจอจริงในตารางผลิตรายชิ้นงานของ modal สรุปไลน์)
+- ตารางตัวเลข: ใส่ style ที่ `<th>` ทุกอัน (pattern: const `TH_L`/`TH_R` แล้ว `<th style={TH_R}>`) — **ห้ามหวังพึ่ง textAlign บน `<tr>` อย่างเดียว**
+- คอลัมน์ตัวเลขใส่ **`fontVariantNumeric: 'tabular-nums'`** ที่ `<table>` (เลขกว้างเท่ากัน หลักตรงกัน)
+- การ์ดสรุปที่วางเป็นแถว: บรรทัดคำอธิบายล่างต้อง**จองที่ไว้เสมอ** (`minHeight` + `' '` เมื่อไม่มีค่า) ไม่งั้นการ์ดสูงไม่เท่ากัน
+
+### กราฟพาเรโต ต้องเป็น ABC Analysis + ชื่อบนแกนเฉพาะกลุ่ม A (2026-08-04 — คำสั่ง user)
+พาเรโตที่โชว์ชื่อ**ทุกรายการ**บนแกน = ทุกอย่างดูสำคัญเท่ากัน อ่านไม่ออกว่าต้องแก้อะไรก่อน → ใช้ component กลาง **`src/components/ParetoAbcChart.jsx`** (อย่าวาด BarChart พาเรโตเอง):
+- **จัดกลุ่ม ABC ตาม % สะสม** — A ≤80% (ตัวหลัก) · B 80–95% · C ที่เหลือ (หางยาว) · รายการแรกเป็น A เสมอ (กันเคสรายการเดียวกินเกิน 80%)
+- **สีตามกลุ่ม ไม่ใช่สีรายประเภท** (A แดงเข้ม → C เทาจาง) — สีประเภทไม่มีลำดับความสำคัญในตัว
+- **แกน Y โชว์ชื่อเฉพาะกลุ่ม A** (ตัดที่ 22 ตัวอักษร) · B/C แสดงเป็น `·` — **ชื่อเต็มอยู่ใน tooltip** (พร้อม %, % สะสม, กลุ่ม)
+- **ปุ่ม ⤢ ขยาย** เปิด popup เต็มจอ: กราฟสูงตามจำนวนรายการ (เห็นชื่อครบ) + ตาราง #/รายการ/กลุ่ม/ค่า/%/สะสม%
+- ใต้กราฟมีแถบสัดส่วน A/B/C + ชิป **"เน้นแก้กลุ่ม A →"** ไล่รายการที่ต้องลงมือก่อน
+- **คลิกแท่ง/ชิป A/แถวในตาราง = เจาะลึก (drill-down)** — popup แยกยอดของประเภทนั้นตาม**มิติที่เกี่ยวข้อง** (⚙️ เครื่องจักร · 🏭 ไลน์ · 📦 ชิ้นงาน · 🕐 กะ · 👤 ผู้บันทึก · 📅 วัน) + **รายการดิบพร้อม 💬 หมายเหตุพนักงาน** (เรียงมากสุดก่อน 40 แถวแรก) · แต่ละมิติจัด ABC ซ้ำอีกชั้น
+- **รับ `records` (แถวดิบ flat) ไม่ใช่ยอดที่รวมมาแล้ว** — `[{ cat, value, machine, line, product, shift, man, date, note }]` แล้ว component รวมยอด/จัด ABC/เจาะมิติเอง → **เจาะได้ทุกมิติโดยไม่ต้อง query ใหม่** · หน้าที่ของหน้าเรียกใช้ = map ข้อมูลดิบ (join session → ไลน์/กะ/วัน) แล้วประกาศ `dims`
+- ใช้แล้ว: `/oee-analytics` (Downtime pareto + ของเสียรายประเภท) · export `classifyAbc(items, valueOf)` ไว้ reuse ตอนต้องจัดกลุ่ม ABC ที่อื่น
+
 ### กราฟแท่งรายวัน/ไทม์ซีรีส์ (2026-07-30 — คำสั่ง user)
 - **แกนวันต่อเนื่อง ห้ามข้ามวันที่ไม่มีข้อมูล** — วันว่างแสดงเป็นตอเทาเตี้ย + tooltip "ไม่มีการผลิต" (เห็นช่วงหยุดคาตา ไม่หลอกว่าผลิตติดกัน) · cap จำนวนแท่ง (~400) กันช่วงยาวทำหน้าค้าง
 - **สีตามความหมายมาตรฐาน: เขียว (`var(--accent)`) = ของดี · แดง = NG** ซ้อนบนแท่งเดียวกัน (สเกลจากยอดรวม) + **legend ใต้กราฟเสมอ**
@@ -175,7 +203,13 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - **รูป spin ฝั่ง PM = แนวตั้งเป็นหลัก (ถ่ายจากมือถือ) — container หุ้มรูปพอดี (2026-07-24 — คำสั่ง user):** `JigSpinCheck`/`SpinAnnotator` เดิม `<img width:100% maxHeight:300>` ทำให้รูปแนวตั้งมีแถบเทาข้างเสียพื้นที่ · เปลี่ยนเป็น container `width:fit-content; margin:0 auto` + img `maxWidth:100%; maxHeight: min(<maxH>px, 76vh)` (ไม่ใส่ width:100%) → รูปหุ้มพอดีกึ่งกลาง ไม่มีแถบข้าง + สูงได้เต็มจอมือถือ · `maxH`: JigSpinCheck 2 คอลัมน์ 560 / เดี่ยว 480 · SpinAnnotator 520 · **pin ยังตรงเพราะ useImgBox หัก letterbox** (ตอนนี้ letterbox ≈ 0)
 - 1 part/อุปกรณ์มี**หลายรูป/หลายเฟรมได้** — balloon ต้องผูกกับรูปที่มันอยู่ (`drawing_id`/`image_id`) ลบรูป = ถอดตำแหน่ง balloon แต่**ห้ามลบตัวจุดตรวจ** · ฝั่ง PM รองรับ 360° spin (หลายเฟรม/อุปกรณ์) ผ่าน component กลาง `src/components/SpinAnnotator.jsx` — pin ผูกกับเฟรมที่วาง (`image_id`), ลากรูปหมุนเฟรม, reuse component นี้แทนเขียน annotator ใหม่
 - **หน้าตรวจ PM (`PMCheckData` — JigSpinCheck) 2026-07-10:** รูปหลายมุม (spin) + auto-play ▶/⏸ · **หมุด sync กับ checklist**: สีหมุด = สถานะตรวจจริง (เขียว OK/แดง NG/เหลืองเฝ้าระวัง/ยังไม่ตรวจ=สีหมวด) เปลี่ยนสด, คลิกหมุด↔ไฮไลต์+เลื่อนแถวเช็ค, คลิกแถว→หมุนไปเฟรมของจุดนั้น · **ฟิลเตอร์แผนก = ความรับผิดชอบตามชนิดอุปกรณ์** (ผลิต=ทุกชนิด Autonomous · mtn=machine · jig mtn=jig · die mtn=die) กรองรายการอุปกรณ์ ไม่ใช่แค่เปลี่ยน checklist · **responsive**: จอ ≤860px = master-detail (ลิสต์/ฟอร์มทีละอัน + ปุ่มกลับ) · จอ ≥1180px = 2 คอลัมน์ (รูปซ้าย sticky · เช็คขวา) · desktop กว้างปกติไม่แตะ
-- **Viewer วางจุดต้องซูมได้ (2026-07-15 — user: รูปเล็กจนวางจุดไม่ได้):** รูปในหน้า setup/วางจุด **ห้าม render ที่ขนาดไฟล์ธรรมชาติ** (ไฟล์เล็ก/แนวตั้งจะจิ๋ว) — ค่าเริ่มต้น = **เต็มความกว้างกรอบ** (`width: 100%` ของ viewport) + toolbar ซูม ➖/%/➕ (100–400%, step 50%) + ปุ่ม "↺ พอดีกรอบ" · viewport `maxHeight ~75vh; overflow: auto` เลื่อนดูส่วนอื่นได้ · เปลี่ยนแผ่น → รีเซ็ตซูม · พิกัดคลิก/หมุดยังถูกทุกระดับซูมเพราะคำนวณ % จาก wrapper ที่สเกลไปด้วยกัน (BK ก็สเกลตาม ResizeObserver ปกติ) — ต้นแบบ: `QAInspectionSetup.jsx`
+- **Viewer วางจุดต้องซูมได้ (2026-07-15 — user: รูปเล็กจนวางจุดไม่ได้):** รูปในหน้า setup/วางจุด **ห้าม render ที่ขนาดไฟล์ธรรมชาติ** (ไฟล์เล็ก/แนวตั้งจะจิ๋ว) — ค่าเริ่มต้น = **พอดีกรอบ** + toolbar ซูม ➖/%/➕ (100–400%, step 50%) + ปุ่ม "↺ พอดีกรอบ" · เปลี่ยนแผ่น → รีเซ็ตซูม · พิกัดคลิก/หมุดยังถูกทุกระดับซูมเพราะคำนวณ % จาก wrapper ที่สเกลไปด้วยกัน (BK ก็สเกลตาม ResizeObserver ปกติ) — ต้นแบบ: `QAInspectionSetup.jsx`
+  - **แก้ 2026-08-04 (user: "ใหญ่เกินไป ขนาดเป็นในคอม"): 100% = พอดีกรอบ *ทั้ง 2 แกน* (contain) ไม่ใช่เต็มความกว้าง** — ของเดิม `width:100%` + `maxHeight:75vh` ทำให้รูปแนวนอน (อัตราส่วน ~1.9) สูง ~660px บนพาเนล 1230px **ดันตารางจุดตรวจตกจอ ต้องเลื่อนตลอดแม้บน PC** · สูตร: `fit = min(boxW/naturalW, viewH/naturalH)` แล้ว `imgW = naturalW × fit × zoom` (`viewH ≈ 46% ของความสูงจอ` clamp 260–620px, ฟัง `resize`) — สเกลได้**ทั้งขึ้นและลง** รูปเล็ก/แนวตั้งจึงยังถูกขยายเต็มกรอบตามเจตนาเดิมของกฎ 2026-07-15
+  - **ห้ามใช้ `object-fit` แก้ปัญหานี้** (ข้อ 5 ด้านบน: กล่อง img ต้องเท่ารูปจริง ไม่งั้นพิกัด % ของหมุดเพี้ยน) — ต้องสั่งขนาด img เป็น px แล้วให้ wrapper `width: fit-content; margin: 0 auto` หุ้มพอดี (จัดกลางด้วย `margin:auto` ไม่ใช่ `justify-content:center` — flex ที่ overflow จะกินขอบซ้ายจนเลื่อนกลับไปดูไม่ได้)
+  - **ทำครบทั้ง 2 หน้าวางจุดแล้ว (2026-08-04)**: QA drawing (`QAInspectionSetup` — ต้นแบบ) + PM `ImageAnnotator` (`PMSetup` — เดิม `maxHeight:300` ไม่มีซูมเลย รูปแนวตั้งจากมือถือจิ๋วจนวางจุดไม่ได้) ใช้สูตร `fitScale`/`imgW`/`viewH` ชุดเดียวกัน · **หน้าใหม่ที่มี viewer วางจุด ให้ลอกสูตรนี้ ห้ามกลับไป `width:100%` + `maxHeight` ตายตัว**
+  - ⚠️ ฝั่ง PM หมุดวางบน layer ของ `useImgBox` → `<img>` ต้องส่ง ref ให้ **ทั้ง** `imgRef` ของ useImgBox และ callback ที่อ่าน `naturalWidth` (ref callback เดียวเซ็ตทั้งคู่) ไม่งั้นอย่างใดอย่างหนึ่งเป็น null แล้วหมุดหาย/รูปล้นกรอบ
+  - **วัด `boxW` จาก div นอกที่ไม่ scroll** — ถ้าวัดจากกรอบ scroll เอง พอซูมแล้ว scrollbar โผล่ `clientWidth` จะหด → ขนาดรูปแกว่ง · และรูปที่มาจาก cache บางทีไม่ยิง `onLoad` → ต้องอ่าน `naturalWidth` ผ่าน `ref` callback ด้วย ไม่งั้นตกไป fallback ขนาดไฟล์จริง (ล้นกรอบยิ่งกว่าเดิม)
+- **จอ "ตรวจจริง" ต้อง sync หมุดกับผลตรวจเสมอ (2026-08-04):** หน้าไหนที่เอามาตรฐาน/จุดตรวจมาบันทึกผล (QA `/qa` แท็บใบตรวจ · PM `PMCheckData`) สีหมุด = **สถานะตรวจจริง** (เขียวผ่าน / แดงไม่ผ่าน / เทาข้าม / ยังไม่ตรวจ = สีหมวด-Rank) และ **แตะหมุด ↔ เลื่อนไปแถวรายการนั้น** สองทาง — ห้ามโชว์หมุดสีคงที่แล้วให้ไล่หาเองในตาราง · จอตรวจใช้สูตรรูป "พอดีกรอบ 2 แกน" ตัวเดียวกับจอ setup เพื่อให้เห็นสัดส่วนเดียวกัน
 - เลขจุดตรวจแบบ text เรียงด้วย natural sort (`localeCompare(..., { numeric: true })`) — H2 มาก่อน H10
 - สี: จุด control พิเศษ (Rank M/SC) = แดง/amber, จุดทั่วไป = น้ำเงิน `#4d9fff`, กำลังวางตำแหน่ง = amber
 - ชื่อแผ่น drawing ฝั่ง QA ให้เลือกจาก **view มาตรฐาน** (Front/Back/Top/Bottom View, Side View LH/RH, Isometric, Section, Detail) ผ่าน picker — พิมพ์เองได้เฉพาะกรณีพิเศษ
@@ -202,7 +236,9 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 5. **ระดับ Group/กลุ่ม ในฟอร์มลงทะเบียน/แก้พนักงาน = ดึงจาก `org_nodes` kind='line' (2026-07-22)** ไม่ใช่ `production_lines` ตรงๆ — org group ผูก production_line ผ่าน `ref_line_id` → ตอนเลือกกลุ่มให้ตั้ง `employees.line_id = group.ref_line_id` (production/ผัง/scope ยังทำงาน) · **fallback เป็น `production_lines` (`filterLinesByDept`) เฉพาะเมื่อผังยังไม่มีกลุ่มใต้แผนกนั้น** · ทำแล้ว: Register + operator edit modal
 6. **`employees.section/department/group_name` เป็น free text ไม่ผูก FK** → drift ได้ · **ตัวกรอง (filter bar) ที่ดึง distinct จาก employees ต้องจัดกลุ่ม 2 optgroup: "ในผังองค์กร" (ค่าที่ตรง org_nodes) + "⚠ นอกผัง (ต้องจัดข้อมูล)" (ค่าที่พนักงานกรอกแต่ไม่มีในผัง)** และ**โชว์เฉพาะค่าที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — กันหัวหน้าหาคนไม่เจอ) · ทำแล้ว: operator filter bar (Dept + Group)
 
-ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes)
+7. **dropdown ไลน์ตัวเดียว (ไม่ cascade) ต้องเรียงตามลำดับชั้นผ่าน `toHierarchicalOptions(lines)` (`src/utils/lineHierarchy.js`) — 2026-08-04** คืน `[{line, depth}]` เรียงแม่ → ลูกใต้แม่ แล้ว render ย่อหน้าตาม `depth` (`↳`) · **ห้าม `lines.map()` ตรงๆ แล้วเติม `↳` ให้ลูก** — ลิสต์จะเรียงตามลำดับที่ query มา ลูกลอยไปคนละที่กับแม่ (เจอจริง: แผง 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics` โชว์ `↳ Assy GOR` อยู่**เหนือ** `GOR`, `↳ HDF1/HDF2` เหนือ `HYDROFORM`)
+
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes), `OeeInsightPanel.jsx` (dropdown ไลน์เดี่ยวผ่าน `toHierarchicalOptions`)
 
 ---
 
@@ -304,7 +340,7 @@ pattern ร่วมของทุกบอร์ดที่วางราย
   - **หัว header/toolbar แถวแรก**ที่มีปุ่ม/select ชิดขวา (มักเป็น `justifyContent:space-between`) → **ต้องใส่ `paddingRight: 52`** ไม่งั้นปุ่มขวาสุดมุดใต้ 🔔 (เคยพลาด: DailyReport/OjtTraining/ShiftOrganize — แก้ 2026-07-21)
   - **float ปุ่มควบคุมเฉพาะหน้ามุมขวาบน** ให้เรียง**แนวตั้งใต้ 🔔** (คอลัมน์เดียวกัน `right:14`, เริ่ม `top:54`, ปุ่ม 36×36 เท่ากันหมด) **แล้ว content ของหน้าเว้น `paddingRight:52`** ไม่ให้ลอดใต้คอลัมน์นั้น — ห้ามวางแนวนอนคร่อมหัว header/บอร์ด (เคยพลาด: Management filter cluster `[👤][⚙️][📦][ซ่อนป้าย]` วางแนวนอน fixed คร่อมหัวบอร์ด Heijunka → เปลี่ยนเป็นคอลัมน์แนวตั้งใต้ bell + board เว้น paddingRight, 2026-07-21)
   - **ปุ่ม ☰ เปิดเมนู (มุมซ้ายบน ตอนพับ sidebar) ใช้เครื่องหมายเดียวกับ 🔔**: 36×36 `top:10` radius8 bg3 border2 — ให้ 2 มุมบนสมมาตรกัน
-  - **modal ทุกตัว `zIndex ≥ 2000`** (ต้องเหนือ 🔔 z1200) ไม่งั้น bell วาดทับ modal บังปุ่มปิด (เคยพลาด: PMSchedule DayModal z1000 — แก้ 2026-07-21) · popup เกาะ cell (stock/shipping) ใช้ z1300 + click-catcher z998
+  - **modal ทุกตัว `zIndex ≥ 2000`** (ต้องเหนือ 🔔 z1200) ไม่งั้น bell วาดทับ modal บังปุ่มปิด (เคยพลาด: PMSchedule DayModal z1000 — แก้ 2026-07-21 · **QC audit 2026-08-03 เจออีก 9 จุด แก้แล้ว**: TaxonomyManagerModal z70, MorningMeeting Action z300, Checkin จองรถ/export/z1200, Management แนบ OJT z1000, MonthlyReviewExport z1000, CustomerDemand z1100, TransportMapEditor มาตราส่วน z1200 — **modal ใหม่ต้องเริ่มที่ 2000 เสมอ**) · popup เกาะ cell (stock/shipping) ใช้ z1300 + click-catcher z998
   - **ป้าย sticky ซ้ายของ time board (มือถือ) ต้อง `zIndex:6`** เหนือ playhead (`.now-line` z4 / `.now-chip` z5) ไม่งั้น now-line วาดทับป้ายพาร์ท (เคยพลาด: Dashboard mobile board z3 — แก้ 2026-07-21)
   - ladder รวม: content 1-15 · sticky time-board label 6 · float/bell 500-1300 (🔔=1200) · modal 2000-3200 · popup/siren/tooltip 3000-4000
 - **จุดสถานะเปิด/ปิด — `<ToggleDot on={bool} />` (component กลาง 2026-07-21):** ปุ่ม toggle แบบ on/off (show/hide, กรองเปิด/ปิด, edit-mode) ทุกหน้า **ต้องแปะจุดสถานะมุมล่างขวา** (เขียว=เปิด/แสดง · เทา=ปิด/ซ่อน) ให้ดูออกทันทีที่เดียวทั้งระบบ — `src/components/ToggleDot.jsx` · ปุ่มแม่ต้อง `position:relative` · บนพื้นที่ไม่ใช่ var(--bg) ส่ง prop `ring` = สีพื้น (เช่น rail = `var(--bg2)`) · **ใช้แล้วที่:** Management (filter MAN/MACHINE/WIP + 🏷️), LineSetup (🏷️ ป้าย + 🔗 เชื่อมต่อ), FactoryMap (✏️ แก้ผัง), operator (ดูพนักงานปิดใช้งาน), Report (⚙️ OT master + เอกสาร), Checkin (Preview กะดึก + เฉพาะกะนี้), MorningMeeting (📷 ท่ามือ), LineStock (⏳ รออนุมัติ) · **ปุ่ม toggle on/off ใหม่ให้แปะ ToggleDot เสมอ** — ยกเว้น header collapse ที่มี chevron ▲/▼ อยู่แล้ว (chevron บอกสถานะพอ) และ 1-of-N tab (ไม่ใช่ on/off)

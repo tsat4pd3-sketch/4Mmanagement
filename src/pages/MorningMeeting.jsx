@@ -10,6 +10,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
+import { wavg, wLoad } from '../utils/oee';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -81,6 +82,14 @@ export default function MorningMeeting() {
   const [actModal, setActModal]       = useState(null); // { problem, root_cause, line_name, assignee, due_date, ref_kind, ref_id }
   const [savingAct, setSavingAct]     = useState(false);
   const [sendingTg, setSendingTg]     = useState(false);
+
+  // NG ต่อกะ — ยึด defect_logs (คอลัมน์ session.qty_ng ไม่น่าเชื่อถือ · CLAUDE.md)
+  // ให้ KPI/ชิปรายกะ ตรงกับแผง "Top ของเสีย" ในหน้าเดียวกัน (แก้ 2026-08-05)
+  const ngBySess = useMemo(() => {
+    const m = {};
+    defects.forEach(d => { m[d.session_id] = (m[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
+    return m;
+  }, [defects]);
 
   /* ── ไลน์ใน scope — branch ของ leader มาก่อน section scope เสมอ (กฎ D2) ── */
   const scopedLines = useMemo(() => {
@@ -257,7 +266,15 @@ export default function MorningMeeting() {
       target += sessTarget(s);
     });
     const closed = sessions.filter(s => s.status === 'closed' && s.oee != null);
-    const oeeAvg = closed.length ? Math.round(closed.reduce((a, s) => a + Number(s.oee), 0) / closed.length) : null;
+    // เฉลี่ย OEE หลายกะต้องถ่วงด้วยเวลารับภาระ (util กลาง oeeAvg.js) — mean ธรรมดาทำให้กะสั้นถ่วงเท่ากะเต็ม
+    // และตัวเลขในประชุมเช้า/Telegram/ใบพิมพ์ ไม่ตรงกับ /oee-analytics (แก้ 2026-08-05)
+    const oeeRows = closed.map(s => ({
+      oee: Number(s.oee), shift_min: s.shift_min,
+      plannedMin: downtimes.filter(d => d.session_id === s.id && d.dr_downtime_types?.category === 'planned')
+        .reduce((a, d) => a + (Number(d.duration_min) || 0), 0),
+    }));
+    const oeeAvgRaw = wavg(oeeRows, r => r.oee, wLoad);
+    const oeeAvg = oeeAvgRaw != null ? Math.round(oeeAvgRaw) : null;
     // แยก นอกแผน/ในแผน — ตัวชี้วัดหลักนับเฉพาะ "นอกแผน" (ในแผน เช่น นับสต็อก/ไม่มีแผนผลิต
     // เป็นเรื่องปกติ ไม่ใช่ความเสียหาย ถ้ารวมจะกลบตัวเลขจริงจนดูวิกฤตเกินเหตุ)
     const isPlanned = (d) => d.dr_downtime_types?.category === 'planned';
@@ -274,7 +291,7 @@ export default function MorningMeeting() {
       if (!seenLines.has(s.line_name)) { seenLines.add(s.line_name); dtMachines += mc; }
     });
     const dtPct = dtBaseMin > 0 ? Math.round((dtMin / dtBaseMin) * 1000) / 10 : null;
-    const ng = sessions.reduce((a, s) => a + (s.qty_ng ?? 0), 0);
+    const ng = sessions.reduce((a, s) => a + (ngBySess[s.id] ?? s.qty_ng ?? 0), 0);
     const present = attendance.filter(a => a.is_present).length;
     return {
       actual, target, achieve: pctStr(actual, target), oeeAvg,
@@ -296,7 +313,7 @@ export default function MorningMeeting() {
         // OEE คำนวณตั้งแต่ "ส่งขอปิดกะ" (pending_close) แล้ว — โชว์ได้เลยแต่ติดป้ายว่ายังไม่ผ่านอนุมัติ
         // (เดิมโชว์เฉพาะ closed = official จนค่ารอ SV อนุมัติหายไปทั้งที่มีแล้ว)
         oee: s.oee ?? null, oeePending: s.status !== 'closed', status: s.status,
-        ng: s.qty_ng ?? 0,
+        ng: ngBySess[s.id] ?? s.qty_ng ?? 0,
         // DT บนการ์ด = "นอกแผน" เท่านั้น — ในแผน (นับสต๊อก/ไม่มีแผนผลิต) ไม่ใช่ความเสียหาย
         // ห้ามรวม (เคยรวมแล้วไลน์ไม่มีแผนผลิตโชว์ DT ก้อนใหญ่สีแดง เช่น 569/1620น. ทั้งที่แค่ไม่มีแผน — 2026-07-15)
         dtMin: Math.round(downtimes.filter(d => d.session_id === s.id && d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0)),
@@ -534,7 +551,7 @@ export default function MorningMeeting() {
   const LineCards = () => (
     // min 290px ≈ 5 ใบ/แถวบนจอ desktop — กว้างพอให้ชิปยอด/%/OEE/DT จบบรรทัดเดียวเกือบทุกเคส
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(290px, 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
         <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -1012,7 +1029,7 @@ export default function MorningMeeting() {
 
       {/* ── Modal เพิ่ม Action Item (ฟอร์ม — ห้ามปิดจาก backdrop ตามกติกา §5) ── */}
       {actModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
           <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

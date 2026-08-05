@@ -355,7 +355,8 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
+    // ฟอร์มยาว — ไม่ปิดจาก backdrop (กันเผลอแตะแล้วข้อมูลหายทั้งใบ · UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับปุ่มปิด (§7)
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', borderRadius: 14, border: '1px solid var(--border)', width: 'min(760px, 100%)', padding: 18 }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{plan._new ? '➕ สร้างแผนประสานงาน' : '✏️ แก้ไขแผน'}</div>
 
@@ -374,7 +375,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
         <label style={lbl}>หัวเรื่องงาน *</label>
         <input value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder="เช่น Cleaning Cutting Head" style={inp} />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
           <div>
             <label style={lbl}>เครื่องจักร (พิมพ์/เลือกหมายเลขเครื่อง)</label>
             <input list="pmcoord-mach" value={f.machine_no} onChange={e => onMachineNoInput(e.target.value)}

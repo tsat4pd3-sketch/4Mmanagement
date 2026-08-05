@@ -189,6 +189,13 @@ export default function DailyPM() {
   // ใช้ทั้งเคสยังไม่ระบุไลน์ และเคสเลือกไลน์ผิดแล้วต้องย้าย
   const assignJigLine = async (jig, line_name) => {
     if (!canManage || !line_name || line_name === jig.line_name) return
+    // เขียน master ทันที → ต้องยืนยันก่อน (UI-CONVENTIONS §5.4) · ยกเลิก = ไม่แตะ DB, select กลับค่าเดิมจาก state
+    const movedRegPreview = targets.some(t => t.jig_id === jig.id)
+    const ok = window.confirm(
+      jig.line_name
+        ? `ย้าย "${jig.name}" จากไลน์ ${jig.line_name} → ${line_name} ?${movedRegPreview ? '\n\nรายการลงทะเบียน Daily PM ของอุปกรณ์นี้จะย้ายตามไปด้วย' : ''}`
+        : `กำหนดให้ "${jig.name}" อยู่ไลน์ ${line_name} ?`)
+    if (!ok) { setJigs(prev => [...prev]); return } // re-render → select กลับค่าเดิม
     const { error } = await supabaseDR.from('jigs').update({ line_name }).eq('id', jig.id)
     if (error) return toast.error(error.message)
     // ย้ายรายการลงทะเบียนที่มีอยู่ตามไปด้วย — ไม่งั้นแถวเก่าค้างที่ไลน์เดิม สถานะไลน์เดิมจะเตือนค้างทั้งที่เครื่องย้ายไปแล้ว
@@ -211,6 +218,8 @@ export default function DailyPM() {
     if (isOn) {
       const row = targets.find(t => t.line_name === line_name && t.jig_id === jig.id && !t.shift)
       if (row) {
+        // ติ๊กออก = ลบแถวลงทะเบียน (destructive) → ยืนยันก่อน · ติ๊กเข้าเป็น additive ไม่ต้องถาม (UI-CONVENTIONS §5.4)
+        if (!window.confirm(`เอา "${jig.name}" ออกจากรายการเช็ค Daily PM ของไลน์ ${line_name} ?`)) return
         const { error } = await supabaseDR.from('pm_daily_line_targets').delete().eq('id', row.id)
         if (error) return toast.error(error.message)
         setTargets(prev => prev.filter(t => t.id !== row.id))
@@ -268,7 +277,7 @@ export default function DailyPM() {
               )
             })}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 14 }}>
             {dashboard.map(row => {
               const meta = DAILY_PM_STATUS_META[row.status] ?? DAILY_PM_STATUS_META.none
               // นาฬิกาของ window ตรวจ: pending = เหลืออีกกี่นาที / orange = เกินมาแล้วกี่นาที

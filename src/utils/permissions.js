@@ -23,20 +23,31 @@ export function isDeptAdminActive() { return _deptAdmin; }
 export async function loadPermissions(forceRefresh = false) {
   if (cache && !forceRefresh) return cache;
   if (loadingPromise && !forceRefresh) return loadingPromise;
-  loadingPromise = supabase.from('role_permissions').select('role, permission_key, allowed').then(({ data, error }) => {
-    loadingPromise = null;
-    // ⚠️ ห้ามเขียนทับ cache ด้วยผลลัพธ์ว่างตอน fetch ล้ม (network/RLS สะดุด) —
-    // supabase-js คืน { data:null, error } ไม่ reject · ถ้าเซ็ต Map ว่าง (truthy) ทับ cache
-    // hasPermission จะคืน false ทุก key ค้างถาวรจนกว่าจะ reload → non-admin โดนล็อกเมนู/เด้งออกทุกหน้า
-    // (เคยเป็นบั๊ก: ตอน login เน็ตกระตุก หรือตอน admin แก้สิทธิ์แล้ว broadcast ให้ทุกเครื่อง reload)
-    if (error || !data) return cache || new Map();
-    cache = new Map(data.map(r => [`${r.role}:${r.permission_key}`, r.allowed]));
+  loadingPromise = (async () => {
+    // ⚠️ ต้องดึงแบบแบ่งหน้า (.range) — Supabase ตัดผลลัพธ์ที่ 1000 แถวโดย default
+    // ตารางโต >1000 แถวแล้ว (1,135 แถว ณ 2026-08-03) → แถวที่ seed ทีหลัง (เช่น bucket dept_admin)
+    // หายเงียบจาก cache = สิทธิ์ที่ตั้งใน DB ถูกต้องแต่ปุ่ม/เมนูไม่โผล่ (fail-closed) — บั๊กจริงที่เจอ
+    const PAGE = 1000;
+    const rows = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase.from('role_permissions')
+        .select('role, permission_key, allowed')
+        .range(from, from + PAGE - 1);
+      // ⚠️ ห้ามเขียนทับ cache ด้วยผลลัพธ์ว่าง/บางส่วนตอน fetch ล้ม (network/RLS สะดุด) —
+      // ถ้าหน้าไหนล้ม ให้คืน cache เดิมทั้งก้อน (Map ที่ขาดแถว = non-admin โดนล็อกเมนูค้างถาวร)
+      if (error || !data) return cache || new Map();
+      rows.push(...data);
+      if (data.length < PAGE) break;
+    }
+    if (rows.length === 0) return cache || new Map();
+    cache = new Map(rows.map(r => [`${r.role}:${r.permission_key}`, r.allowed]));
     return cache;
-  }).catch(() => {
-    // เผื่อ promise reject จริง (แทนที่จะคืน {error}) — คืน cache เดิม ไม่ค้าง loadingPromise ที่ reject
-    loadingPromise = null;
-    return cache || new Map();
-  });
+  })().then(m => { loadingPromise = null; return m; })
+    .catch(() => {
+      // เผื่อ promise reject จริง — คืน cache เดิม ไม่ค้าง loadingPromise ที่ reject
+      loadingPromise = null;
+      return cache || new Map();
+    });
   return loadingPromise;
 }
 
@@ -46,8 +57,10 @@ export function hasPermission(permissionKey, role) {
   if (!cache) return false; // ยังไม่โหลด → ปิดกั้นไว้ก่อน (fail closed)
   if (cache.get(`${role}:${permissionKey}`) === true) return true;
   // แอดมินหน่วยงาน — ได้สิทธิ์เพิ่มตาม bucket 'dept_admin' (คุมที่ /permissions)
-  // bucket มีเฉพาะ action (ไม่มี page:*) → ไม่ปลดล็อกหน้าใหม่ scope ยังจำกัดตาม base role
-  if (_deptAdmin && cache.get(`dept_admin:${permissionKey}`) === true) return true;
+  // bucket ให้ได้เฉพาะ "action" เท่านั้น — ห้ามปลดล็อกหน้า (page:*) เด็ดขาด แม้ข้อมูล seed จะหลุดมา
+  // (migration หน้าใหม่ที่ seed ด้วย enum_range จะแจก page:* ให้ทุก role ในอีนัมรวม dept_admin ด้วย
+  //  → บังคับกฎในโค้ดที่นี่ ไม่พึ่งความถูกต้องของ seed อย่างเดียว · QC audit 2026-08-03)
+  if (_deptAdmin && !permissionKey.startsWith('page:') && cache.get(`dept_admin:${permissionKey}`) === true) return true;
   return false;
 }
 

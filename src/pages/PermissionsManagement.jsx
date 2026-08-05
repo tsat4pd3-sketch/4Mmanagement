@@ -109,8 +109,21 @@ export default function PermissionsManagement() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: perms }, { data: cat }] = await Promise.all([
-      supabase.from('role_permissions').select('role, permission_key, allowed'),
+    // ⚠️ role_permissions โต >1000 แถวแล้ว — Supabase ตัดที่ 1000/query ต้องดึงแบบแบ่งหน้า
+    // (เดิมดึงรอบเดียว แถวที่ seed ทีหลัง เช่น bucket dept_admin แสดงเป็น "ไม่ติ๊ก" ทั้งที่ DB เป็น true)
+    const fetchAllPerms = async () => {
+      const PAGE = 1000; const out = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data } = await supabase.from('role_permissions')
+          .select('role, permission_key, allowed').range(from, from + PAGE - 1);
+        if (!data) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return out;
+    };
+    const [perms, { data: cat }] = await Promise.all([
+      fetchAllPerms(),
       supabase.from('permission_catalog').select('resource, action, label, group_name, sort').order('sort'),
     ]);
     setRows(perms || []);
