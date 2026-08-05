@@ -6,6 +6,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
+import { toast } from '../components/Toast';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -30,6 +31,8 @@ const STATUS_META = {
   imported: { label: '⏬ ถูกยกไปกะถัดไป', color: 'var(--muted)' },
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
+// สแกนเปิด/ปิดใบห่างกัน ≤ ค่านี้ = "สแกนเป็นชุด" (พนักงานยิงหลายใบรวดเดียว ไม่ใช่ใบต่อใบ)
+const BATCH_SEC = 180;
 const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: bg, color: fg });
 
 export default function OrderTrace() {
@@ -42,6 +45,7 @@ export default function OrderTrace() {
   const [from, setFrom] = useState(() => addDays(todayStr(), -30));
   const [to, setTo] = useState(todayStr);
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
+  const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)
   const [trace, setTrace] = useState(null);          // bundle ข้อมูลสอบกลับ
@@ -83,26 +87,37 @@ export default function OrderTrace() {
     return s;
   }, [results]);
 
-  /* ── ค้นหาใบผลิต (สแกน/พิมพ์ prod_no หรือ MAT/ชื่อชิ้นงาน) ── */
-  const doSearch = useCallback(async (term) => {
+  /* ── ค้นหาใบผลิต (สแกน/พิมพ์ prod_no หรือ MAT/ชื่อชิ้นงาน) ──
+     สอบกลับ = ทวนสอบย้อนหลัง "ของที่ออกจากไลน์ไปแล้ว" → default ตัดใบที่ยังผลิตอยู่ (status open) ออก
+     (ติ๊ก "รวมใบที่กำลังผลิต" เพื่อดูได้ · สแกน prod_no ตรงเป๊ะแล้วไม่เจอ = fallback หาแบบรวมใบเปิดให้อัตโนมัติ) */
+  const ORDER_COLS = 'id, prod_no, mat_no, part_name, customer, qty, qty_target, qty_actual, qty_ok, qty_ng, qty_suspect, qty_repair, status, opened_by, opened_at, confirmed_by, confirmed_at, is_backfill, machine_no, paired_order_id, carry_over_note, carry_over_from_session_id, reopened_by, reopened_at, reopen_count, session_id, production_sessions!inner(id, line_name, work_date, shift, status, oee, oee_a, oee_p, oee_q, opened_by_name, closed_by_name, closed_at, close_approve_note)';
+  const doSearch = useCallback(async (term, opts = {}) => {
     const q = (term ?? search).trim();
+    const withOpen = opts.includeOpen ?? includeOpen;
     setSearching(true);
-    try {
-      let query = supabaseDR.from('prod_orders')
-        .select('id, prod_no, mat_no, part_name, customer, qty, qty_target, qty_actual, qty_ok, qty_ng, qty_suspect, qty_repair, status, opened_by, opened_at, confirmed_by, confirmed_at, is_backfill, machine_no, paired_order_id, carry_over_note, carry_over_from_session_id, reopened_by, reopened_at, reopen_count, session_id, production_sessions!inner(id, line_name, work_date, shift, status, oee, oee_a, oee_p, oee_q, opened_by_name, closed_by_name, closed_at, close_approve_note)')
+    const run = async (allowOpen) => {
+      let query = supabaseDR.from('prod_orders').select(ORDER_COLS)
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
         .order('opened_at', { ascending: false }).limit(300);
+      if (!allowOpen) query = query.neq('status', 'open');
       if (q) query = query.or(`prod_no.ilike.%${q}%,mat_no.ilike.%${q}%,part_name.ilike.%${q}%`);
       const { data, error } = await query;
       if (error) throw error;
-      const rows = (data || []).filter(o => inScope(o.production_sessions?.line_name));
+      return (data || []).filter(o => inScope(o.production_sessions?.line_name));
+    };
+    try {
+      let rows = await run(withOpen);
+      // สแกนมาแล้วไม่เจอเพราะใบยังผลิตอยู่ → หาให้ใหม่ (ไม่ปล่อยให้สแกนแล้วเงียบ)
+      if (!rows.length && q && !withOpen) {
+        rows = await run(true);
+        if (rows.length) toast.info('ใบนี้ยังผลิตไม่จบ — แสดงให้ (สอบกลับปกติดูเฉพาะใบที่ปิดแล้ว)');
+      }
       setResults(rows);
-      // สแกนแล้วตรงเป๊ะใบเดียว → เปิดเลย
-      if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);
+      if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);   // สแกนตรงเป๊ะใบเดียว → เปิดเลย
       return rows;
     } catch { setResults([]); return []; }
     finally { setSearching(false); }
-  }, [search, from, to, inScope]);
+  }, [search, from, to, inScope, includeOpen]);
 
   // deep-link ?prod= — รอ lines โหลด (scope) ก่อน
   useEffect(() => {
@@ -255,11 +270,14 @@ export default function OrderTrace() {
         }
       } catch { /* ignore */ }
 
-      // CT มาตรฐานของชิ้นงาน (ใช้เทียบความเร็วจริงของใบ)
+      // CT มาตรฐาน — ของชิ้นงานใบนี้ + ทุก MAT ในกะ (กลุ่มใบที่วิ่งพร้อมกันมีหลายชิ้นงานได้
+      // → เทียบความเร็วแบบถ่วงน้ำหนัก Σ(qty×CT) ÷ เวลาเดินจริง ตามสูตร P ของ OEE)
       try {
+        const mats = [...new Set([sel.mat_no, ...(t.sessionOrders || []).map(o => o.mat_no)].filter(Boolean))];
         const { data: pr } = await supabaseDR.from('dr_products')
-          .select('cycle_time_sec, process_type, pair_mat_no, line_name').eq('mat_no', sel.mat_no).limit(1);
-        t.product = pr?.[0] || null;
+          .select('mat_no, cycle_time_sec, process_type, pair_mat_no, line_name').in('mat_no', mats);
+        t.product = (pr || []).find(p => p.mat_no === sel.mat_no) || null;
+        t.ctByMat = Object.fromEntries((pr || []).filter(p => p.cycle_time_sec > 0).map(p => [p.mat_no, Number(p.cycle_time_sec)]));
       } catch { /* ignore */ }
       // กะก่อนหน้าของไลน์ (บริบท: เข้ากะนี้มาด้วยสภาพยังไง)
       try {
@@ -300,7 +318,12 @@ export default function OrderTrace() {
       if (a == null) return false;
       return a <= (oEnd ?? Infinity) && (b ?? a) >= oStart;
     };
-    if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `เปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}` });
+    // ⚠️ เปิด/ปิด = "เวลาสแกน" ไม่ใช่เวลาเริ่ม-จบผลิตจริง (พนักงานสแกนเป็นชุดหลายใบ — ดู orderAnalysis)
+    const batchNote = (ts, key) => {
+      const n = (trace.sessionOrders || []).filter(o => o[key] && Math.abs(new Date(o[key]).getTime() - new Date(ts).getTime()) <= BATCH_SEC * 1000).length;
+      return n > 1 ? ` · 🧾 สแกนพร้อมกัน ${n} ใบ` : '';
+    };
+    if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `สแกนเปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}${batchNote(sel.opened_at, 'opened_at')}` });
     trace.qtyUpdates.forEach(u => { if (!u.is_final) ev.push({ t: u.logged_at, icon: '✍️', text: `อัพเดทยอดสะสม ${u.qty_accum} (+${u.qty_delta}) โดย ${u.logged_by || '—'}` }); });
     trace.defects.filter(d => d.prod_order_id === sel.id).forEach(d => ev.push({ t: d.logged_at, icon: '🚫', warn: true, text: `NG ${d.dr_defect_types?.name_th || ''} ${d.qty_ng || 0} ชิ้น${d.qty_suspect ? ` สงสัย ${d.qty_suspect}` : ''}${d.description ? ` — ${d.description}` : ''} (${d.reported_by_name || '—'})` }));
     trace.downtimes.forEach(d => {
@@ -313,36 +336,99 @@ export default function OrderTrace() {
     });
     trace.fourM.forEach(f => ev.push({ t: f.created_at, icon: '📋', text: `4M ${f.category}${f.change_subtype ? `/${f.change_subtype}` : ''}: ${f.description || ''} (${f.status})` }));
     if (sel.reopened_at) ev.push({ t: sel.reopened_at, icon: '↩️', warn: true, text: `ถอยใบ (ครั้งที่ ${sel.reopen_count || 1}) โดย ${sel.reopened_by || '—'}` });
-    if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `ปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}` });
+    if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `สแกนปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}${batchNote(sel.confirmed_at, 'confirmed_at')}` });
     trace.stockIn.forEach(x => ev.push({ t: x.created_at, icon: '📦', text: `เข้าคลัง ${x.line_name} +${Number(x.qty).toLocaleString()} (${x.created_by})` }));
     trace.stockOut.forEach(x => ev.push({ t: x.created_at, icon: '🚚', dim: true, text: `ตัดส่งลูกค้า −${Number(x.qty).toLocaleString()} · ${x.note || ''} (โดยประมาณ — ตัดจากยอดรวม mat เดียวกัน)` }));
     return ev.filter(e => e.t).sort((a, b) => new Date(a.t) - new Date(b.t));
   }, [sel, trace]);
 
-  /* ── วิเคราะห์การวิ่งของใบ: เวลาจริง − DT ทับช่วงใบ → วิ/ชิ้นจริง เทียบ CT มาตรฐาน ── */
+  /* ── วิเคราะห์การวิ่งของใบ ─────────────────────────────────────────────────
+     ⚠️ ความจริงจากข้อมูล (ตรวจ 2026-08-05): พนักงาน**สแกนเปิด/ปิดใบเป็นชุด** ไม่ใช่ใบต่อใบ
+        เช่น Assy LWR 05/08 เปิด 6 ใบภายใน 10 วินาที (10:43:21→10:43:31) · ปิด 3 ใบภายใน 51 วินาที
+     → "เปิด→ปิด" ของใบเดียว **ไม่ใช่เวลาผลิตจริงของใบนั้น** เอามาหาร qty ใบเดียว = วิ/ชิ้นเพี้ยน
+        (เคสจริง: 153.8 วิ/ชิ้น เทียบ CT 58 วิ = 38% ทั้งที่ไลน์เดินปกติ)
+     → ตรวจเจอชุด/ใบวิ่งทับ = คำนวณ**ระดับกลุ่ม** (Σ qty ของใบที่ทับช่วง ÷ ช่วงเวลารวม) แทนรายใบ
+        และไม่โชว์ตัวเลขรายใบเป็นคำตอบ (หลอก) — รายใบใช้ได้เฉพาะตอนไม่มีใบอื่นทับเลย  */
   const orderAnalysis = useMemo(() => {
     if (!sel?.opened_at || !sel?.confirmed_at || !trace) return null;
     const start = new Date(sel.opened_at).getTime(), end = new Date(sel.confirmed_at).getTime();
     if (end <= start) return null;
-    const durMin = (end - start) / 60000;
-    let dtUnpl = 0, dtPlan = 0, dtUntimed = 0;
-    trace.downtimes.forEach(d => {
-      const planned = d.dr_downtime_types?.category === 'planned';
-      if (!d.started_at) { if (!planned) dtUntimed += d.duration_min || 0; return; }
-      const a = new Date(d.started_at).getTime();
-      const b = d.ended_at ? new Date(d.ended_at).getTime() : a + (d.duration_min || 0) * 60000;
-      const ov = Math.max(0, Math.min(b, end) - Math.max(a, start)) / 60000;
-      if (planned) dtPlan += ov; else dtUnpl += ov;
-    });
-    const qty = sel.qty_ok ?? sel.qty ?? 0;
-    const netMin = Math.max(0, durMin - dtPlan - dtUnpl);
-    const netSec = qty > 0 && netMin > 0 ? netMin * 60 / qty : null;
+
+    // DT ที่ทับช่วงเวลาใดๆ (แยกนอกแผน/ตามแผน · ที่ไม่ระบุเวลาแยกไว้บอกเฉยๆ)
+    const dtIn = (s, e) => {
+      let unpl = 0, plan = 0, untimed = 0;
+      trace.downtimes.forEach(d => {
+        const planned = d.dr_downtime_types?.category === 'planned';
+        if (!d.started_at) { if (!planned) untimed += d.duration_min || 0; return; }
+        const a = new Date(d.started_at).getTime();
+        const b = d.ended_at ? new Date(d.ended_at).getTime() : a + (d.duration_min || 0) * 60000;
+        const ov = Math.max(0, Math.min(b, e) - Math.max(a, s)) / 60000;
+        if (planned) plan += ov; else unpl += ov;
+      });
+      return { unpl, plan, untimed };
+    };
+    const qtyOf = (o) => Number(o.qty_ok ?? o.qty_actual ?? o.qty) || 0;
     const stdCt = trace.product?.cycle_time_sec || null;
-    const othersOverlap = trace.sessionOrders.some(o => o.id !== sel.id && o.opened_at
-      && new Date(o.opened_at).getTime() < end && new Date(o.confirmed_at || sel.confirmed_at).getTime() > start);
-    return { durMin, dtUnpl, dtPlan, dtUntimed, qty, netMin, netSec, stdCt,
+
+    // รายใบ (ตามเวลาสแกน)
+    const durMin = (end - start) / 60000;
+    const dt = dtIn(start, end);
+    const qty = qtyOf(sel);
+    const netMin = Math.max(0, durMin - dt.plan - dt.unpl);
+    const netSec = qty > 0 && netMin > 0 ? netMin * 60 / qty : null;
+
+    // ── ตรวจ "สแกนเป็นชุด" + ใบที่วิ่งทับช่วงเดียวกัน ──
+    const sess = trace.sessionOrders || [];
+    const near = (a, b) => a && b && Math.abs(new Date(a).getTime() - new Date(b).getTime()) <= BATCH_SEC * 1000;
+    const openBatch = sess.filter(o => near(o.opened_at, sel.opened_at));
+    const closeBatch = sess.filter(o => o.confirmed_at && near(o.confirmed_at, sel.confirmed_at));
+    /* กลุ่ม = ใบที่วิ่ง "ต่อเนื่องเชื่อมกัน" (transitive) — ขยายช่วงจนไม่มีใบใหม่เข้ามา
+       ⚠️ ห้ามเอาแค่ใบที่ทับกับใบนี้ตรงๆ: ช่วงเวลาจะถูกดึงกว้างตามใบที่ลากเข้ามา
+          แต่ qty ไม่ได้รวมใบที่ทับกับ "ใบนั้น" อีกที → ตัวหารโตกว่าตัวตั้ง = อัตราต่ำเกินจริง
+          (เทสกับ Assy LWR 05/08: แบบทับตรงๆ ได้ 5 ใบ/ช่วง 09:14→13:38 แต่ช่วงนั้นมีของออกจริงมากกว่านั้น) */
+    const closedOrders = sess.filter(o => o.opened_at && o.confirmed_at
+      && new Date(o.confirmed_at).getTime() > new Date(o.opened_at).getTime());
+    const inGroup = new Map([[sel.id, sel]]);
+    let gStart = start, gEnd = end, grew = true;
+    while (grew) {
+      grew = false;
+      closedOrders.forEach(o => {
+        if (inGroup.has(o.id)) return;
+        const a = new Date(o.opened_at).getTime(), b = new Date(o.confirmed_at).getTime();
+        if (a < gEnd && b > gStart) { inGroup.set(o.id, o); gStart = Math.min(gStart, a); gEnd = Math.max(gEnd, b); grew = true; }
+      });
+    }
+    const groupOrders = [...inGroup.values()];
+    const hasPeers = groupOrders.length > 1;
+    const batchScan = openBatch.length > 1 || closeBatch.length > 1;
+    const groupMode = batchScan || hasPeers;
+
+    // ── ระดับกลุ่ม: ช่วงรวม + ยอดรวมของใบในกลุ่ม (สอดคล้องกัน) ──
+    let group = null;
+    if (groupMode && hasPeers) {
+      const gQty = groupOrders.reduce((s, o) => s + qtyOf(o), 0);
+      const gDt = dtIn(gStart, gEnd);
+      const gNetMin = Math.max(0, (gEnd - gStart) / 60000 - gDt.plan - gDt.unpl);
+      const gSec = gQty > 0 && gNetMin > 0 ? gNetMin * 60 / gQty : null;
+      const sameMat = groupOrders.every(o => (o.mat_no || '') === (sel.mat_no || ''));
+      // เทียบมาตรฐานแบบถ่วงน้ำหนัก (สูตรเดียวกับ P ของ OEE): Σ(qty×CT) ÷ เวลาเดินจริง
+      const ctMap = trace.ctByMat || {};
+      const missCt = groupOrders.filter(o => !ctMap[o.mat_no]);
+      const stdSec = groupOrders.reduce((s, o) => s + qtyOf(o) * (ctMap[o.mat_no] || 0), 0);
+      group = {
+        gStart, gEnd, orders: groupOrders.length, qty: gQty,
+        durMin: (gEnd - gStart) / 60000, netMin: gNetMin, dtUnpl: gDt.unpl, dtPlan: gDt.plan, sec: gSec, sameMat,
+        mats: [...new Set(groupOrders.map(o => o.mat_no).filter(Boolean))],
+        missCtN: missCt.length,
+        ratePerHr: gNetMin > 0 && gQty > 0 ? Math.round(gQty / (gNetMin / 60)) : null,
+        speedPct: (!missCt.length && stdSec > 0 && gNetMin > 0) ? Math.round(stdSec / (gNetMin * 60) * 100) : null,
+      };
+    }
+
+    return { durMin, dtUnpl: dt.unpl, dtPlan: dt.plan, dtUntimed: dt.untimed, qty, netMin, netSec, stdCt,
       speedPct: stdCt && netSec ? Math.round(stdCt / netSec * 100) : null,
-      ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null, othersOverlap };
+      ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null,
+      batchScan, openBatchN: openBatch.length, closeBatchN: closeBatch.length, groupMode, group, othersOverlap: hasPeers };
   }, [sel, trace]);
 
   const sess = sel?.production_sessions;
@@ -380,6 +466,12 @@ export default function OrderTrace() {
           style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
           {searching ? '⏳' : 'ค้นหา'}
         </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
+          title="สอบกลับ = ทวนสอบของที่ออกจากไลน์ไปแล้ว · ใบที่ยังผลิตอยู่จึงไม่แสดงโดยปริยาย">
+          <input type="checkbox" checked={includeOpen} style={{ width: 'auto' }}
+            onChange={e => { const v = e.target.checked; setIncludeOpen(v); doSearch(undefined, { includeOpen: v }); }} />
+          รวมใบที่กำลังผลิต
+        </label>
         {sel && <button onClick={() => { setSel(null); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>}
       </div>
 
@@ -581,8 +673,54 @@ export default function OrderTrace() {
               {/* ── วิเคราะห์การวิ่งของใบ ── */}
               {orderAnalysis && (
                 <CollapseCard id="analysis" storePrefix="ot" title="⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)" count={null} defaultOpen>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิด→ปิดใบ</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
+                  {/* สแกนเป็นชุด → เวลาเปิด-ปิดรายใบไม่ใช่เวลาผลิตจริง ต้องอ่านเป็นระดับกลุ่ม */}
+                  {orderAnalysis.batchScan && (
+                    <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', fontSize: 12, color: '#f59e0b' }}>
+                      ⚠️ <b>ใบนี้ถูกสแกนเป็นชุด</b>
+                      {orderAnalysis.openBatchN > 1 && <> — เปิดพร้อมกัน {orderAnalysis.openBatchN} ใบ</>}
+                      {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดพร้อมกัน {orderAnalysis.closeBatchN} ใบ</>}
+                      {' '}(ภายใน {BATCH_SEC / 60} นาที) → <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
+                    </div>
+                  )}
+
+                  {/* ระดับกลุ่ม = คำตอบหลักเมื่อมีใบวิ่งทับ/สแกนเป็นชุด */}
+                  {orderAnalysis.groupMode && orderAnalysis.group && (
+                    <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--accent)' }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>
+                        📦 ภาพรวมกลุ่มใบที่วิ่งต่อเนื่องช่วงเดียวกัน ({orderAnalysis.group.orders} ใบ
+                        {orderAnalysis.group.mats.length > 1 ? ` · ${orderAnalysis.group.mats.length} ชิ้นงาน` : ''}) — ตัวเลขที่เชื่อถือได้
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ช่วงเวลารวมของกลุ่ม</span><br />
+                          <b>{fmtTime(orderAnalysis.group.gStart)} → {fmtTime(orderAnalysis.group.gEnd)}</b>
+                          <span style={{ color: 'var(--muted)' }}> ({fmtMin(orderAnalysis.group.durMin)})</span>
+                        </div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ผลิตรวมทั้งกลุ่ม</span><br /><b>{orderAnalysis.group.qty.toLocaleString()} ชิ้น</b></div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br />
+                          <b>{fmtMin(orderAnalysis.group.netMin)}</b>{orderAnalysis.group.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.group.ratePerHr} ชิ้น/ชม.</span> : ''}
+                        </div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นเฉลี่ย (กลุ่ม){orderAnalysis.group.sameMat && orderAnalysis.stdCt ? ' vs CT' : ''}</span><br />
+                          {orderAnalysis.group.sec ? <b>{orderAnalysis.group.sec.toFixed(1)} วิ</b> : '—'}
+                          {orderAnalysis.group.sameMat && orderAnalysis.stdCt && <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span>}
+                        </div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน{orderAnalysis.group.mats.length > 1 ? ' (ถ่วงน้ำหนัก)' : ''}</span><br />
+                          {orderAnalysis.group.speedPct != null
+                            ? <b style={{ fontSize: 17, color: orderAnalysis.group.speedPct >= 95 ? '#22c55e' : orderAnalysis.group.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.group.speedPct}%</b>
+                            : <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ({orderAnalysis.group.missCtN} ชิ้นงานในกลุ่มยังไม่ตั้ง CT)</span>}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--muted)' }}>
+                        เทียบมาตรฐาน = Σ(จำนวน × CT ของชิ้นงานนั้น) ÷ เวลาเดินสุทธิ (สูตรเดียวกับ %P ของ OEE) · หัก DT ในช่วง {Math.round(orderAnalysis.group.dtUnpl)} นาทีนอกแผน / {Math.round(orderAnalysis.group.dtPlan)} นาทีตามแผน
+                      </div>
+                    </div>
+                  )}
+
+                  {/* รายใบ — เชื่อถือได้เฉพาะตอนไม่มีใบอื่นทับ/ไม่ได้สแกนเป็นชุด */}
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
+                    {orderAnalysis.groupMode ? '📄 ตัวเลขรายใบ (อ้างอิงเวลาสแกน — ใช้ตัดสินความเร็วไม่ได้)' : '📄 ตัวเลขรายใบ'}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px', fontSize: 13, opacity: orderAnalysis.groupMode ? 0.62 : 1 }}>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิด→ปิดใบ (เวลาสแกน)</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>DT ทับช่วงใบ (นอกแผน/ตามแผน)</span><br />
                       <b style={{ color: orderAnalysis.dtUnpl > 0 ? '#ef4444' : 'var(--text)' }}>{Math.round(orderAnalysis.dtUnpl)} นาที</b>
                       <span style={{ color: 'var(--muted)' }}> / {Math.round(orderAnalysis.dtPlan)} นาที</span>
@@ -590,16 +728,18 @@ export default function OrderTrace() {
                     </div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br /><b>{fmtMin(orderAnalysis.netMin)}</b>{orderAnalysis.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.ratePerHr} ชิ้น/ชม.</span> : ''}</div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นจริง vs CT มาตรฐาน</span><br />
-                      {orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} วิ</b> : '—'}
+                      {orderAnalysis.groupMode ? <span style={{ color: 'var(--muted)' }}>— ใช้ไม่ได้</span> : (orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} วิ</b> : '—')}
                       {orderAnalysis.stdCt ? <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span> : <span style={{ color: 'var(--muted)' }}> / ไม่ตั้ง CT</span>}
                     </div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน</span><br />
-                      {orderAnalysis.speedPct != null
-                        ? <b style={{ fontSize: 16, color: orderAnalysis.speedPct >= 95 ? '#22c55e' : orderAnalysis.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.speedPct}%</b>
-                        : <span style={{ color: 'var(--muted)' }}>— (ตั้ง CT ที่ Product Master ก่อน)</span>}
+                      {orderAnalysis.groupMode
+                        ? <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ดูค่าระดับกลุ่มด้านบน</span>
+                        : orderAnalysis.speedPct != null
+                          ? <b style={{ fontSize: 16, color: orderAnalysis.speedPct >= 95 ? '#22c55e' : orderAnalysis.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.speedPct}%</b>
+                          : <span style={{ color: 'var(--muted)' }}>— (ตั้ง CT ที่ Product Master ก่อน)</span>}
                     </div>
                   </div>
-                  {orderAnalysis.othersOverlap && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>⚠️ มีใบอื่นวิ่งทับช่วงเวลาเดียวกันในกะ — อัตรานี้เป็นภาพรวมของไลน์ช่วงนั้น ไม่ใช่ของใบนี้ล้วนๆ</div>}
+                  {!orderAnalysis.groupMode && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>✅ ไม่มีใบอื่นวิ่งทับช่วงนี้ และไม่ได้สแกนเป็นชุด — ตัวเลขรายใบใช้ได้</div>}
                 </CollapseCard>
               )}
 
