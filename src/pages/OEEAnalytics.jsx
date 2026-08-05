@@ -684,6 +684,9 @@ export default function OEEAnalytics() {
      ══════════════════════════════════════════════════════════════════════ */
   const [sessions,   setSessions]   = useState([]);
   const [downtimes,  setDowntimes]  = useState([]);
+  const [dtIncludePlanned, setDtIncludePlanned] = useState(false); // Pareto DT: default นับเฉพาะนอกแผน
+  const [trOrders, setTrOrders]   = useState([]);   // ใบงานของช่วงที่เลือก (ทำ pair-aware total)
+  const [trPairMat, setTrPairMat] = useState({});
   const [defects,    setDefects]    = useState([]);
   const [dtTypes,    setDtTypes]    = useState([]);
   const [defectTypes,setDefectTypes]= useState([]);
@@ -749,6 +752,29 @@ export default function OEEAnalytics() {
       setDefects(def || []);
       setDtTypes(dtt || []);
       setDefectTypes(deft || []);
+
+      // ใบงาน + pair map ของช่วงที่เลือก — ใช้ทำ "ผลิตรวม" แบบนับงานคู่ RH/LH เป็น 1 คู่ (กฎ pairAwareTotal)
+      // เดิมแท็บนี้บวก actual_qty ตรงๆ (ไม่ pair-aware) ขณะที่แท็บ "ภาพรวมวันนี้" นับคู่แล้ว
+      // → ยอดผลิตของช่วงเดียวกันไม่ตรงกันระหว่าง 2 แท็บในหน้าเดียว (แก้ 2026-08-05)
+      // ⚠️ Supabase คืนสูงสุด 1000 แถว/ครั้ง → ต้องแบ่งหน้า ไม่งั้นช่วงยาวยอดขาดเงียบๆ
+      const ordersAll = [];
+      for (let i = 0; sessionIds.length && i < 40; i++) {
+        const { data: od } = await supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, status, qty, qty_ok, qty_actual')
+          .in('session_id', sessionIds).range(i * 1000, (i + 1) * 1000 - 1);
+        ordersAll.push(...(od || []));
+        if (!od || od.length < 1000) break;
+      }
+      setTrOrders(ordersAll);
+      const trMats = [...new Set(ordersAll.map(o => o.mat_no).filter(Boolean))];
+      if (trMats.length) {
+        const pm = {};
+        for (let i = 0; i < trMats.length; i += 300) {
+          const { data: pr } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', trMats.slice(i, i + 300));
+          (pr || []).forEach(p2 => { if (p2.pair_mat_no) pm[p2.mat_no] = p2.pair_mat_no; });
+        }
+        setTrPairMat(pm);
+      } else setTrPairMat({});
 
       // dropdown ไลน์ของแท็บ trend มาจากชื่อไลน์ใน sessions — ต้องกรองตาม scope ด้วย
       const normLn = (s) => (s || '').trim().toLowerCase();
@@ -818,6 +844,24 @@ export default function OEEAnalytics() {
   }, [rows, period]);
 
   // ── Overall KPIs ───────────────────────────────────────────────
+  // ผลิตรวมของช่วง — นับงานคู่ RH/LH เป็น 1 คู่/stroke (เหมือนแท็บภาพรวมวันนี้ · util pairAwareTotal)
+  // ไม่มีใบงาน (ยังโหลดไม่เสร็จ/ข้อมูลเก่า) → ถอยไปใช้ actual_qty ที่ stamp ไว้
+  const trTotalQty = useMemo(() => {
+    const ids = new Set(rows.map(r => r.id));
+    const os = trOrders.filter(o => ids.has(o.session_id));
+    if (!os.length) return rows.reduce((s2, r) => s2 + (r.totalQty || 0), 0);
+    const perMat = {}; let nullSum = 0;
+    os.forEach(o => {
+      const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
+        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
+      if (!q) return;
+      if (!o.mat_no) { nullSum += q; return; }
+      (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
+    });
+    // ⚠️ pairAwareTotal คืน { target, produced } เท่านั้น — ชื่อฟิลด์อื่นได้ undefined เงียบๆ
+    return pairAwareTotal(Object.values(perMat), m => trPairMat[m] || null).produced + nullSum;
+  }, [rows, trOrders, trPairMat]);
+
   const kpi = useMemo(() => {
     // ถ่วงน้ำหนักตรงจากทุกกะใน scope (ไม่ใช่เฉลี่ยของค่าเฉลี่ยรายวันอีกชั้น — mean-of-means ทำให้
     // วันที่ผลิตน้อยถ่วงเท่าวันที่ผลิตเยอะ) · A/OEE ถ่วงเวลารับภาระ, P ถ่วงเวลาเดินเครื่อง, Q ถ่วงจำนวนผลิต
@@ -848,15 +892,19 @@ export default function OEEAnalytics() {
       netAvailMin: Math.round(sumNetAvail), shiftMinTotal: Math.round(sumShift),
       breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
       teepLines: lineSet.size, teepDays: dayCount,
-      sessions: rows.length, total: rows.reduce((s, r) => s + r.totalQty, 0),
+      sessions: rows.length, total: trTotalQty,
     };
-  }, [rows, breakPols, dateFrom, dateTo]);
+  }, [rows, breakPols, dateFrom, dateTo, trTotalQty]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
   // แถวดิบสำหรับ Pareto + เจาะลึก (ParetoAbcChart รวมยอด/จัด ABC/เจาะมิติเอง)
   //   session → ไลน์/กะ/วัน · downtime_logs → เครื่อง/ชิ้นงาน/ผู้บันทึก/หมายเหตุ
   const sessById = useMemo(() => Object.fromEntries(rows.map(r => [r.id, r])), [rows]);
-  const dtRecords = useMemo(() => downtimes.map(d => {
+  // ⚠️ Pareto Downtime นับเฉพาะ "นอกแผน" (กฎ CLAUDE.md — ในแผน เช่น นับสต๊อก/ไม่มีแผนผลิต ไม่ใช่ loss)
+  // เดิมรวมทั้งสองประเภท → "นับสต๊อก / ไม่มีแผนผลิต" ครองอันดับ 1 ที่ 50% ทั้งที่ไม่ใช่ปัญหาที่ต้องแก้
+  // (บั๊กเดียวกับที่เคยแก้ในแผง Top Downtime 2026-07-15 แต่ Pareto ตกหล่น · user เจอ 2026-08-05)
+  // toggle "รวมหยุดตามแผน" ให้ดูได้เมื่อต้องการ — ไม่ซ่อนข้อมูล แค่ไม่ให้ปนกับ loss จริงโดยปริยาย
+  const dtRecords = useMemo(() => downtimes.filter(d => dtIncludePlanned || d.dr_downtime_types?.category !== 'planned').map(d => {
     const s = sessById[d.session_id] || {};
     return {
       cat: d.dr_downtime_types?.name_th || 'ไม่ระบุ',
@@ -866,7 +914,9 @@ export default function OEEAnalytics() {
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [downtimes, sessById]);
+  }), [downtimes, sessById, dtIncludePlanned]);
+  const dtPlannedMin = useMemo(() => downtimes.filter(d => d.dr_downtime_types?.category === 'planned')
+    .reduce((a, d) => a + (Number(d.duration_min) || 0), 0), [downtimes]);
   const defRecords = useMemo(() => defects.map(d => {
     const s = sessById[d.session_id] || {};
     return {
@@ -1362,8 +1412,17 @@ export default function OEEAnalytics() {
       {/* Downtime Pareto + Defect side-by-side */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
-        <ParetoAbcChart title="Pareto — Downtime รายประเภท (นาที)" records={dtRecords} dims={DT_DIMS} unit="นาที"
-          emptyText="ไม่มีข้อมูล Downtime" sectionStyle={s.section} titleStyle={s.title} />
+        <div>
+          <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
+            records={dtRecords} dims={DT_DIMS} unit="นาที"
+            emptyText={dtIncludePlanned ? 'ไม่มีข้อมูล Downtime' : 'ไม่มี Downtime นอกแผนในช่วงนี้'}
+            sectionStyle={s.section} titleStyle={s.title} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={dtIncludePlanned} onChange={e => setDtIncludePlanned(e.target.checked)} style={{ width: 'auto' }} />
+            รวม "หยุดตามแผน" ด้วย ({Math.round(dtPlannedMin).toLocaleString()} นาที)
+            <span style={{ color: 'var(--muted)' }}>— ปกติไม่นับ เพราะไม่ใช่การสูญเสียที่ต้องแก้</span>
+          </label>
+        </div>
 
         {/* Quality Breakdown — ABC Analysis + เจาะลึก */}
         <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น"
