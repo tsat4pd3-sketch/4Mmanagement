@@ -465,6 +465,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [deptSummary, setDeptSummary] = useState([])
   const [moveBusy, setMoveBusy] = useState(false)
   const [moveTo, setMoveTo] = useState('')
+  const [existingNote, setExistingNote] = useState(null)  // เครื่องที่เลือกเคยขึ้นทะเบียน PM แผนกอื่นแล้ว
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
@@ -562,6 +563,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   const handleMachineSelect = (id) => {
     setMachineId(id)
+    setExistingNote(null)
     if (!id) { setName(''); setLineName(''); setMachineNo(''); return }
     const m = machineOptions.find(x => x.id === id)
     if (!m) return
@@ -570,6 +572,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     setMachineNo(m.machine_no ?? '')
     setEquipCategory('production')
     setEquipType(inferEquipType(m.machine_no))
+    // เครื่องนี้อาจขึ้นทะเบียน PM ไว้แล้วโดยแผนกอื่น — บอกให้รู้ว่าจะ "เพิ่มรายการตรวจของแผนกนี้"
+    // ไม่ใช่สร้างอุปกรณ์ซ้ำ (save จะใช้แถว jigs เดิม)
+    supabaseDR.from('jigs').select('id').eq('module', 'mtn').eq('machine_id', id).maybeSingle()
+      .then(async ({ data: j }) => {
+        if (!j) return
+        const rows = await listChecklistsByDept(j.id, 'mtn').catch(() => [])
+        setExistingNote(rows.filter(r => r.checkpointCount > 0))
+      }, () => {})
   }
 
   const handleModeSwitch = (mode) => {
@@ -643,7 +653,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     // รูปหลายมุมได้ตั้งแต่ 1 รูปขึ้นไป ไม่บังคับจำนวน — 2 รูปขึ้นไปปัดดูรอบเครื่องได้ ยิ่งเยอะยิ่งลื่น
     setSaving(true); setError('')
     try {
-      const jigId = editJig?.id ?? crypto.randomUUID()
+      // ⚠️ เครื่องเดียวกันต้องเป็นแถว jigs แถวเดียว แม้ตรวจหลายแผนก — ถ้าเครื่องจาก Machine Master
+      //    เคยขึ้นทะเบียนไว้แล้ว (แผนกอื่น) ให้ใช้แถวเดิม แล้วเพิ่มแค่ checklist ของแผนกนี้
+      //    (เดิม mint uuid ใหม่เสมอ = อุปกรณ์ซ้ำ 2 แถวต่อเครื่อง)
+      let jigId = editJig?.id ?? null
+      if (!jigId && machineId) {
+        const { data: existJig } = await supabaseDR.from('jigs')
+          .select('id').eq('module', 'mtn').eq('machine_id', machineId).maybeSingle()
+        if (existJig) jigId = existJig.id
+      }
+      if (!jigId) jigId = crypto.randomUUID()
 
       // ── resolve spin frames: upload new files, keep existing paths ──
       const spinMode = layoutType === 'image_pin' && frames.length >= 2
@@ -910,6 +929,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}
+                  {existingNote?.length > 0 && (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border2)', fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)' }}>
+                      ℹ️ เครื่องนี้ขึ้นทะเบียน PM ไว้แล้วโดย{' '}
+                      {existingNote.map(r => `${pmTeamsSync().find(t => t.key === r.department)?.label ?? r.department} (${r.checkpointCount} จุด)`).join(' · ')}
+                      <br />บันทึกครั้งนี้จะ<b style={{ color: 'var(--text2)' }}>เพิ่มรายการตรวจของ {deptLabel}</b> ให้เครื่องเดิม — ไม่สร้างอุปกรณ์ซ้ำ
+                      {' · '}อยากได้จุดตรวจชุดเดิม ให้เปิดแก้ไขเครื่องนี้ในแท็บแผนกนั้นแล้วกด <b style={{ color: 'var(--text2)' }}>⧉ คัดลอก</b>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
