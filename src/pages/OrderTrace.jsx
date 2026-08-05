@@ -155,7 +155,7 @@ export default function OrderTrace() {
       const [qu, df, so, dt] = await Promise.all([
         supabaseDR.from('prod_order_qty_updates').select('qty_accum, qty_delta, is_final, logged_at, logged_by').eq('order_id', sel.id).order('logged_at'),
         supabaseDR.from('defect_logs').select('qty_ng, qty_suspect, qty_repair, description, reported_by_name, logged_at, prod_order_id, dr_defect_types(name_th)').eq('session_id', sess.id).order('logged_at'),
-        supabaseDR.from('prod_orders').select('id, prod_no, mat_no, part_name, status, qty, qty_ok, opened_at, confirmed_at').eq('session_id', sess.id).order('opened_at'),
+        supabaseDR.from('prod_orders').select('id, prod_no, mat_no, part_name, status, qty, qty_target, qty_actual, qty_ok, opened_at, confirmed_at').eq('session_id', sess.id).order('opened_at'),
         supabaseDR.from('downtime_logs').select('id, machine_no, description, duration_min, started_at, ended_at, carry_over, dr_downtime_types(name_th, category)').eq('session_id', sess.id).order('started_at'),
       ]);
       t.qtyUpdates = qu.data || []; t.defects = df.data || []; t.sessionOrders = so.data || []; t.downtimes = dt.data || [];
@@ -324,7 +324,14 @@ export default function OrderTrace() {
     if (!sel || !trace) return empty;
     const sess = trace.sessionOrders || [];
     const ctMap = trace.ctByMat || {};
-    const qtyOf = (o) => Number(o.qty_ok ?? o.qty_actual ?? o.qty) || 0;
+    /* จำนวนที่ใช้ประเมิน "งานชิ้นนี้กินเวลาเท่าไหร่"
+       • ใบปิดแล้ว → ยอดที่ผลิตได้จริง · ใบที่ยังเปิด → เป้าของใบ (ยอดสะสมยังเป็น 0 ใช้ประเมินไม่ได้)
+       ⚠️ ห้ามใช้ `qty_ok ?? qty_actual ?? qty` ตรงๆ — ใบเปิดที่ qty_actual = 0 จะได้ 0
+          ทำให้ "เวลาที่ต้องใช้ผลิต" = 0 แล้วตัดกลุ่มผิด (เจอจริงที่ SUB APRON 05/08) */
+    const qtyOf = (o) => {
+      const v = o.confirmed_at ? (o.qty_ok ?? o.qty_actual ?? o.qty) : (o.qty_target ?? o.qty);
+      return Number(v) || 0;
+    };
 
     // อัตราจริงเฉลี่ยของกะ (fallback เมื่อชิ้นงานยังไม่ตั้ง CT)
     let sessSecPerPc = null;
@@ -335,36 +342,53 @@ export default function OrderTrace() {
       const q = done.reduce((a, o) => a + qtyOf(o), 0);
       if (e > s && q > 0) sessSecPerPc = (e - s) / 1000 / q;
     }
-    // เวลาที่ "ต้องใช้ผลิต" ของใบหนึ่ง (วินาที)
-    const prodSec = (o) => {
+    /* เวลาที่ "ต้องใช้ผลิต" ของใบหนึ่ง (วินาที) — แต่ละ product จำนวนกับ CT ไม่เท่ากัน
+       จึงคิดรายใบเสมอ ห้ามใช้ค่ากลางของไลน์ */
+    const prodInfo = (o) => {
+      if (!o) return null;
+      const q = qtyOf(o);
+      if (q <= 0) return null;                       // ไม่รู้จำนวน = ประเมินเวลาไม่ได้ → ให้ไปใช้ใบข้างเคียงแทน
       const ct = Number(ctMap[o.mat_no]) || 0;
-      if (ct > 0) return qtyOf(o) * ct;
-      if (sessSecPerPc) return qtyOf(o) * sessSecPerPc;
+      if (ct > 0) return { sec: q * ct, from: 'ct' };
+      if (sessSecPerPc) return { sec: q * sessSecPerPc, from: 'session' };
       return null;
     };
-    // จับกลุ่มลูกโซ่ตามเวลาสแกน
+    /* จับกลุ่มลูกโซ่ตามเวลาสแกน
+       ⚠️ ต้องเทียบกับ "ใบที่กำลังผลิตอยู่ในช่วงนั้น" ให้ถูกตัว (คนละใบกันระหว่างขาเปิด/ขาปิด):
+         • ขาเปิด  — ช่องว่างควรยาว = เวลาผลิตของ "ใบก่อนหน้า" (ใบที่ทำอยู่ กว่าจะเสร็จค่อยเปิดใบใหม่)
+         • ขาปิด   — ช่องว่างควรยาว = เวลาผลิตของ "ใบนี้" (ใบที่เพิ่งทำเสร็จ)
+       ถ้าเทียบผิดตัวจะพังเมื่อของคนละขนาด เช่น เปิดใบ 35 ชิ้น (34 นาที) แล้ว 10 นาทีต่อมา
+       เปิดใบ 8 ชิ้น — เทียบกับใบ 8 ชิ้น (4 นาที) จะหลุดว่า "ไม่ใช่ชุด" ทั้งที่ใบแรกยังทำไม่เสร็จ */
     const clusterOf = (key) => {
+      const isOpen = key === 'opened_at';
       const list = sess.filter(o => o[key]).sort((a, b) => new Date(a[key]) - new Date(b[key]));
-      if (!list.length) return { members: [], maxGapSec: null };
+      if (!list.length) return { members: [], maxGapSec: null, needSec: null, needFrom: null };
       const groups = []; let cur = [list[0]];
       for (let i = 1; i < list.length; i++) {
         const gap = (new Date(list[i][key]).getTime() - new Date(list[i - 1][key]).getTime()) / 1000;
-        const need = prodSec(list[i]) ?? prodSec(list[i - 1]);
-        const sameBatch = need != null ? gap < need * BATCH_FRAC : gap <= FALLBACK_BATCH_SEC;
+        const ref = prodInfo(isOpen ? list[i - 1] : list[i]) || prodInfo(isOpen ? list[i] : list[i - 1]);
+        const sameBatch = ref ? gap < ref.sec * BATCH_FRAC : gap <= FALLBACK_BATCH_SEC;
         if (sameBatch) cur.push(list[i]); else { groups.push(cur); cur = [list[i]]; }
       }
       groups.push(cur);
       const mine = groups.find(g => g.some(o => o.id === sel.id)) || [];
-      let maxGapSec = null;
+      // หลักฐานที่โชว์บนจอ: ช่องว่างที่กว้างสุดในชุด + เกณฑ์ที่ใช้กับ "คู่นั้น" (ให้ข้อความไม่ขัดกันเอง)
+      let maxGapSec = null, needSec = null, needFrom = null;
       for (let i = 1; i < mine.length; i++) {
         const g = (new Date(mine[i][key]).getTime() - new Date(mine[i - 1][key]).getTime()) / 1000;
-        maxGapSec = Math.max(maxGapSec ?? 0, g);
+        if (maxGapSec == null || g > maxGapSec) {
+          maxGapSec = g;
+          const ref = prodInfo(isOpen ? mine[i - 1] : mine[i]) || prodInfo(isOpen ? mine[i] : mine[i - 1]);
+          needSec = ref?.sec ?? null; needFrom = ref?.from ?? null;
+        }
       }
-      return { members: mine, maxGapSec };
+      return { members: mine, maxGapSec, needSec, needFrom };
     };
-    const needSec = prodSec(sel);
-    return { open: clusterOf('opened_at'), close: clusterOf('confirmed_at'), needSec,
-      needFrom: (Number(ctMap[sel.mat_no]) || 0) > 0 ? 'ct' : (sessSecPerPc ? 'session' : null) };
+    const open = clusterOf('opened_at'), close = clusterOf('confirmed_at');
+    // หลักฐานหลักที่จะโชว์ = ชุดที่มีใบเยอะกว่า (ขาเปิด/ขาปิด)
+    const evidence = [open, close].filter(c => c.members.length > 1)
+      .sort((a, b) => b.members.length - a.members.length)[0] || null;
+    return { open, close, evidence };
   }, [sel, trace]);
 
   /* ── timeline เหตุการณ์รวม เรียงตามเวลา ── */
@@ -489,8 +513,8 @@ export default function OrderTrace() {
       speedPct: stdCt && netSec ? Math.round(stdCt / netSec * 100) : null,
       ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null,
       batchScan, openBatchN: openBatch.length, closeBatchN: closeBatch.length, groupMode, group, othersOverlap: hasPeers,
-      batchMaxGapSec: Math.max(scanBatch.open.maxGapSec ?? 0, scanBatch.close.maxGapSec ?? 0) || null,
-      batchNeedSec: scanBatch.needSec, batchNeedFrom: scanBatch.needFrom };
+      batchMaxGapSec: scanBatch.evidence?.maxGapSec ?? null,
+      batchNeedSec: scanBatch.evidence?.needSec ?? null, batchNeedFrom: scanBatch.evidence?.needFrom ?? null };
   }, [sel, trace, scanBatch]);
 
   const sess = sel?.production_sessions;
@@ -743,7 +767,7 @@ export default function OrderTrace() {
                       {orderAnalysis.openBatchN > 1 && <> — เปิดรวบ {orderAnalysis.openBatchN} ใบ</>}
                       {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดรวบ {orderAnalysis.closeBatchN} ใบ</>}
                       {orderAnalysis.batchNeedSec > 0 && (
-                        <> — สแกนห่างกันสูงสุด <b>{fmtDur(orderAnalysis.batchMaxGapSec)}</b> แต่ของใบนี้ต้องใช้เวลาผลิต ~<b>{fmtDur(orderAnalysis.batchNeedSec)}</b>
+                        <> — สแกนห่างกันสูงสุด <b>{fmtDur(orderAnalysis.batchMaxGapSec)}</b> แต่ของที่ทำอยู่ช่วงนั้นต้องใช้เวลาผลิต ~<b>{fmtDur(orderAnalysis.batchNeedSec)}</b>
                           {' '}({orderAnalysis.batchNeedFrom === 'ct' ? 'จาก CT มาตรฐาน' : 'จากอัตราจริงของกะ'}) → <b>ผลิตไม่ทันในช่วงนั้น</b></>
                       )}
                       {!orderAnalysis.batchNeedSec && <> (ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง {FALLBACK_BATCH_SEC / 60} นาที)</>}
