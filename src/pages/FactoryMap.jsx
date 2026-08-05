@@ -8,6 +8,7 @@ import { pairAwareTotal } from '../utils/pairTotals';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
+import { computeLiveOee } from '../utils/liveOee';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -321,29 +322,11 @@ export default function FactoryMap({ setupMode = false }) {
     // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
     const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();
 
-    // OEE สด (กะยังเปิด) ≈ A×P×Q จากข้อมูลปัจจุบัน — สูตรย่อของ computeSessionOEE (DailyReport/Dashboard)
-    // A = เวลารันจริง/เวลาที่ผ่านไป · P = เวลามาตรฐานที่ผลิตได้/เวลารัน · Q = ดี/ทั้งหมด · (ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้)
+    // OEE สด (กะยังเปิด) — util กลาง src/utils/liveOee.js (ใช้ร่วมกับ /oee-analytics ให้ตัวเลขตรงกัน)
+    // ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้เสมอ
     const liveOee = (s, os, dl) => {
-      if (!s.start_time) return null;
-      const opened = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
-      let elapsed = (nowMs - opened) / 60000;
-      if (s.shift_min) elapsed = Math.min(elapsed, s.shift_min);
-      if (elapsed < 10) return null; // เพิ่งเปิดกะ ยังประเมินไม่ได้
-      const dtM = dl.reduce((a, d) => {
-        if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0);
-        return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) : 0); // ค้างอยู่ = นับถึงตอนนี้
-      }, 0);
-      const runMin = Math.max(1, elapsed - dtM);
-      let stdMin = 0, produced = 0, ng = 0;
-      os.forEach(o => {
-        const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-        produced += q; stdMin += q * (ctMap[o.mat_no] || 0) / 60; ng += o.qty_ng || 0;
-      });
-      const A = Math.min(1, runMin / elapsed);
-      const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
-      const Q = produced > 0 ? produced / (produced + ng) : 1; // produced = ของดี(สแกน) → ดี/(ดี+เสีย) ไม่หักซ้ำ
-      const oee = Math.round(A * P * Q * 100);
-      return isFinite(oee) ? Math.max(0, Math.min(100, oee)) : null;
+      const r = computeLiveOee({ session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs });
+      return r ? Math.round(r.oee) : null;
     };
 
     const byLine = {};

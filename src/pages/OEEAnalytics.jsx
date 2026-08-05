@@ -14,6 +14,7 @@ import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { computeLiveOee, LIVE_MIN_ELAPSED } from '../utils/liveOee';
 import { lazy, Suspense } from 'react';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
@@ -315,6 +316,7 @@ export default function OEEAnalytics() {
   const [tdDefects,   setTdDefects]   = useState([]);
   const [tdHistory,   setTdHistory]   = useState([]); // last 10 days, closed sessions, lightweight
   const [tdProductsByMat, setTdProductsByMat] = useState({}); // mat_no -> part name
+  const [tdCtMap, setTdCtMap] = useState({});                 // mat_no -> cycle_time_sec (คำนวณ OEE สดของกะที่ยังไม่ปิด)
   const [tdOrdersBySession, setTdOrdersBySession] = useState({}); // session_id -> prod_orders[] (สำหรับนับงานคู่ RH/LH เป็น 1 คู่)
   const [tdPairMat, setTdPairMat] = useState({}); // mat_no -> pair_mat_no
   const [shiftSchedMap, setShiftSchedMap] = useState({}); // line_id -> day_team
@@ -436,11 +438,17 @@ export default function OEEAnalytics() {
       // pair_mat_no ของ mat ที่มีในกะวันนี้ (นับงานคู่ RH/LH เป็น 1 คู่/stroke — ดู pairTotals.js)
       const mats = [...new Set((ord || []).map(o => o.mat_no).filter(Boolean))];
       if (mats.length) {
-        const { data: prod } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats);
-        const pm = {};
-        (prod || []).forEach(p => { if (p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
-        setTdPairMat(pm);
-      } else setTdPairMat({});
+        // + cycle_time_sec/name: ใช้คำนวณ OEE สดของกะที่ยังไม่ปิด (computeLiveOee) และแสดงชื่อพาร์ทในการ์ดกำลังผลิต
+        const { data: prod } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no, cycle_time_sec, name').in('mat_no', mats);
+        const pm = {}, ct = {}, nm = {};
+        (prod || []).forEach(p => {
+          if (p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no;
+          if (p.cycle_time_sec) ct[p.mat_no] = Number(p.cycle_time_sec);
+          if (p.name) nm[p.mat_no] = p.name;
+        });
+        setTdPairMat(pm); setTdCtMap(ct);
+        if (Object.keys(nm).length) setTdProductsByMat(prev => ({ ...prev, ...nm }));
+      } else { setTdPairMat({}); setTdCtMap({}); }
       setLastUpdate(new Date());
 
       // เก็บ mat_no → part name ไว้ map ให้ downtime_logs.mat_no (free text, ไม่ใช่ FK)
@@ -519,10 +527,14 @@ export default function OEEAnalytics() {
         (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0 })).target += v; });
       return pairAwareTotal(Object.values(perMat), m => tdPairMat[m] || null).target + nullSum;
     };
+    // เป้ากะ: ใช้ target_qty ที่ตั้งไว้ → ไม่ได้ตั้ง (ค่า 0 = เกือบทุกกะในระบบจริง) ให้รวมเป้าใบงานแทน
+    // (กฎเดียวกับ MorningMeeting: เป้ากะ = target_qty → รวม qty_target ?? qty ของใบงาน · ห้าม fallback ไป std_day_shift ซึ่งเป็นจำนวน "คน")
+    // เดิม non-pair คืน r.target_qty ตรงๆ → การ์ด "จำนวนชิ้นงานที่ผลิตรวม" ขึ้น "ยังไม่ตั้งเป้ากะ" ทั้งที่ใบงานมีเป้าครบ (2026-08-05)
     const sessTarget = r => {
       const os = (tdOrdersBySession[r.id] || []).filter(o => !['cancelled','imported','carry_over'].includes(o.status));
       if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
-      return r.target_qty || 0;
+      if (r.target_qty) return r.target_qty;
+      return os.reduce((s, o) => s + (o.qty_target ?? o.qty ?? 0), 0);
     };
     const sessActual = r => {
       const os = tdOrdersBySession[r.id] || [];
@@ -584,7 +596,33 @@ export default function OEEAnalytics() {
     return closed[0] || null;
   }, [tdSessionsTeamFiltered]);
 
-  const tdLiveRow = useMemo(() => tdLiveSession ? tdRows.find(r => r.id === tdLiveSession.id) : null, [tdLiveSession, tdRows]);
+  const tdLiveRowStamped = useMemo(() => tdLiveSession ? tdRows.find(r => r.id === tdLiveSession.id) : null, [tdLiveSession, tdRows]);
+  // กะยังไม่ปิด = ยังไม่มีค่า oee_* ที่ stamp → คำนวณสดแบบเดียวกับผังรวมโรงงาน (util กลาง computeLiveOee)
+  // ปิดกะแล้วใช้ค่าที่ stamp เสมอ (ห้ามคำนวณซ้ำด้วย master ปัจจุบัน — ดู CLAUDE.md)
+  const tdLiveCalc = useMemo(() => {
+    if (!tdLiveSession || tdLiveSession.status === 'closed') return null;
+    if (tdLiveRowStamped?.calcOEE != null) return null;
+    const os = tdOrdersBySession[tdLiveSession.id] || [];
+    const dl = tdDowntimes.filter(d => d.session_id === tdLiveSession.id);
+    const ng = tdDefects.filter(d => d.session_id === tdLiveSession.id)
+      .reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+    return computeLiveOee({ session: tdLiveSession, orders: os, downtimes: dl, ctMap: tdCtMap, ngQty: ng, workDate: tdDate, nowMs: lastUpdate?.getTime?.() || Date.now() });
+  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate]);
+  const isLiveCalc = Boolean(tdLiveCalc);
+  const tdLiveRow = useMemo(() => tdLiveCalc
+    ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }
+    : tdLiveRowStamped, [tdLiveCalc, tdLiveRowStamped]);
+  // ชิ้นงานที่กำลังผลิตในกะนั้น (session.product_id มักว่าง เพราะไลน์วิ่งหลายพาร์ทต่อกะ) — ดึงจากใบงานจริง
+  const tdLiveParts = useMemo(() => {
+    if (!tdLiveSession) return [];
+    const os = tdOrdersBySession[tdLiveSession.id] || [];
+    const seen = new Map();
+    os.filter(o => !['cancelled', 'imported'].includes(o.status)).forEach(o => {
+      if (!o.mat_no) return;
+      if (!seen.has(o.mat_no)) seen.set(o.mat_no, tdProductsByMat[o.mat_no] || o.mat_no);
+    });
+    return [...seen.values()];
+  }, [tdLiveSession, tdOrdersBySession, tdProductsByMat]);
   // target ของการ์ด live = เป้ากรุ๊ปของไลน์ที่กำลังผลิตจริง (เจาะจงกว่า filter รวม)
   const liveTarget = useMemo(
     () => tdLiveSession ? targetOf([groupOfLine(tdLiveSession.line_name)]) : null,
@@ -934,7 +972,7 @@ export default function OEEAnalytics() {
 
           {/* 1. OEE Overview */}
           <div style={s.section}>
-            <div style={s.title}>1. OEE OVERVIEW — {tdScopeLabel}</div>
+            <div style={s.title}>OEE OVERVIEW — {tdScopeLabel}</div>
             <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ position: 'relative', width: 168, height: 168, flexShrink: 0 }}>
                 <GaugeRing value={tdKpi.oee} color={oeeColor(tdKpi.oee ?? 0)} />
@@ -992,9 +1030,22 @@ export default function OEEAnalytics() {
             {/* 1.1 Live session */}
             <div style={{ ...s.section, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={s.title}>1.1 OEE รายการล่าสุด (กำลังผลิตงานอยู่)</div>
+                <div>
+                  <div style={s.title}>
+                    {tdLiveSession && tdLiveSession.status !== 'closed' ? 'กะที่กำลังผลิตอยู่ตอนนี้' : 'กะล่าสุดของวันที่เลือก'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                    {tdLiveSession && tdLiveSession.status !== 'closed'
+                      ? (tdLiveCalc?.noOutput ? `เปิดกะแล้ว ${tdLiveCalc.elapsedMin} นาที · ยังไม่ปิดใบงานแรก — ประเมิน P/Q ยังไม่ได้`
+                        : isLiveCalc ? `ค่าสด — คำนวณจากข้อมูล ณ ตอนนี้ (ยังไม่ปิดกะ) · ตัวเลขจริงยืนยันตอนปิดกะ`
+                                    : `รอข้อมูล — กะเพิ่งเปิด ยังคำนวณไม่ได้ (ต้องเดินอย่างน้อย ${LIVE_MIN_ELAPSED} นาที)`)
+                      : 'ค่าที่บันทึกไว้ตอนปิดกะ'}
+                  </div>
+                </div>
                 {tdLiveSession && (() => { const b = STATUS_BADGE[tdLiveSession.status] || STATUS_BADGE.closed; return (
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: b.bg, color: b.color }}>{b.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: b.bg, color: b.color, whiteSpace: 'nowrap' }}>
+                    {b.label}{isLiveCalc ? ' · สด' : ''}
+                  </span>
                 ); })()}
               </div>
               {!tdLiveSession ? (
@@ -1002,10 +1053,15 @@ export default function OEEAnalytics() {
               ) : (
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
                   <div style={{ minWidth: 140 }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>LINE</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{tdLiveSession.line_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>PART</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{tdLiveSession.dr_products?.name || tdLiveSession.dr_products?.mat_no || '—'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไลน์ · กะ</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>
+                      {tdLiveSession.line_name} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>{tdLiveSession.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้นงานที่ผลิต</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
+                      {tdLiveParts.length ? (tdLiveParts.length > 2 ? `${tdLiveParts.slice(0, 2).join(', ')} +${tdLiveParts.length - 2}` : tdLiveParts.join(', '))
+                        : (tdLiveSession.dr_products?.name || tdLiveSession.dr_products?.mat_no || 'ยังไม่เปิดใบงาน')}
+                    </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE</div>
                     <div style={{ fontSize: 28, fontWeight: 900, color: tdLiveRow?.calcOEE != null ? oeeColor(tdLiveRow.calcOEE) : 'var(--muted)' }}>
                       {tdLiveRow?.calcOEE ?? '—'}{tdLiveRow?.calcOEE != null ? '%' : ''}
@@ -1025,7 +1081,7 @@ export default function OEEAnalytics() {
                 target 0 = ไม่มีเป้าให้เทียบ ห้ามโชว์ "0%" (ดูเป็นพลาดเป้าทั้งที่ผลิตได้จริง) — โชว์ "ยังไม่ตั้งเป้า" (2026-07-15) */}
             {(() => { const hasTarget = tdKpi.targetQty > 0; const achievePct = hasTarget ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0; return (
             <div style={{ ...s.section, marginBottom: 0 }}>
-              <div style={s.title}>3. จำนวนชิ้นงานที่ผลิตรวมของวันนี้</div>
+              <div style={s.title}>จำนวนชิ้นงานที่ผลิตรวมของวันนี้</div>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>เป้าหมาย</div>
@@ -1055,7 +1111,7 @@ export default function OEEAnalytics() {
 
           {/* 1.2 Daily OEE chart */}
           <div style={s.section}>
-            <div style={s.title}>1.2 OEE แสดงค่าของแต่ละวัน (10 วันล่าสุด)</div>
+            <div style={s.title}>OEE แต่ละวัน (10 วันล่าสุด)</div>
             <ResponsiveContainer width="100%" height={260}>
               <ComposedChart data={tdHistoryGrouped} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -1076,7 +1132,7 @@ export default function OEEAnalytics() {
 
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
           <div style={s.section}>
-            <div style={s.title}>2. DOWNTIME</div>
+            <div style={s.title}>DOWNTIME (เวลาที่เครื่องหยุด)</div>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '260px 1.5fr 1.2fr', gap: 14, alignItems: 'stretch' }}>
 
               {/* 2.1 Total — โชว์ "นอกแผน" เป็นตัวเลขหลัก (ความเสียหายจริง) · ในแผน (ไม่มีแผนผลิต/นับสต๊อก)
