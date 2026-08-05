@@ -50,6 +50,11 @@ model: inherit
   (CLAUDE.md "Employee Skills & EXP Farming" — เคยเป็นช่อง farm EXP ใน Checkin.jsx)
   · grep: `from\('employee_skills'\)` ใน `src/` แล้วเช็คว่า write อยู่นอก operator.jsx หรือไม่
   · RPC skill ใหม่ต้อง guard role ในตัวฟังก์ชัน + revoke EXECUTE จาก anon/PUBLIC + idempotent
+- **B5** PM checklist ต้องเกิดตอน "บันทึก" เท่านั้น — โค้ดที่เรียก `getOrCreateChecklist(...)`
+  ใน `useEffect` / ตอนเปิด modal / ตอนเลือกอุปกรณ์ = ผิด (สร้าง checklist เปล่าให้แผนกที่แค่เปิดดู
+  แล้วเครื่องค้างในแท็บนั้นถาวร — เคยเกิด 24 แถว) ต้องใช้ `findChecklist(...)` ตอนอ่าน
+  (CLAUDE.md "กฎเหล็ก — checklist เกิดตอนบันทึกเท่านั้น")
+  · grep: `getOrCreateChecklist` ใน `src/` แล้วดูว่าอยู่ใน handler บันทึกจริงหรือ effect ตอนเปิดดู
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
@@ -71,6 +76,8 @@ model: inherit
   (`inSectionScope(...)` / `.in('section', scopeSecs)`) ก่อน apply filter อื่น —
   หน้าที่ทำแล้ว: Management, Checkin, operator, Register, DailyReport, Report —
   **หน้าอื่นที่ query ตาม line/section แต่ไม่มี scope filter = ช่องโหว่ ให้รายงาน**
+  · **ข้อยกเว้นทางการ: `/factory-map` (FactoryMap.jsx) ตั้งใจไม่ scope — ทุก role เห็นทั้งโรงงาน**
+    (user ยืนยัน 2026-08-05 · ผังภาพรวมสำหรับจอ TV/ผู้บริหาร) **ห้ามรายงานเป็นช่องโหว่**
 - **D2** branch ของ `leader` (line_id + team) ต้องมา**ก่อน** branch ของ section scope เสมอ
 - **D3** โค้ดที่อ่าน `profiles.section` เดี่ยวตรงๆ แทนที่จะผ่าน `effectiveSections()` /
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)

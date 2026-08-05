@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
-import { getOrCreateChecklist } from '../lib/pmChecklists'
+import { findChecklist } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
@@ -669,9 +669,14 @@ export default function PMCheckData() {
       if (!fr.length && selectedJig.image_path) fr = [{ id: 'legacy', url: getPublicUrl(selectedJig.image_path) }]
       setFrames(fr)
     })
-    getOrCreateChecklist(selectedJig.id, 'mtn', department, userId).then(async (cl) => {
-      setChecklistId(cl.id)
-      const { data } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+    // ⚠️ อ่านอย่างเดียว — แค่เปิดดูเครื่องต้องไม่สร้าง checklist ของแผนกที่กำลังดูอยู่
+    //    (เดิมใช้ getOrCreateChecklist ตรงนี้ → เกิด checklist เปล่าค้างในแท็บแผนกนั้นตลอดไป)
+    //    ไม่มี checklist = ไม่มีจุดตรวจ → handleSave กันไว้แล้ว (checkpoints.length === 0 = บันทึกไม่ได้)
+    findChecklist(selectedJig.id, 'mtn', department).then(async (cl) => {
+      setChecklistId(cl?.id ?? null)
+      const { data } = cl
+        ? await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+        : { data: [] }
       const cps = data ?? []
       setCheckpoints(cps)
       const init = {}
@@ -896,7 +901,14 @@ export default function PMCheckData() {
                 const formNode = (
                   <>
                   {checkpoints.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 12px', lineHeight: 1.7 }}>
+                      เครื่องนี้ยังไม่มีรายการตรวจของ <b style={{ color: deptColor }}>{(teams.find(t => t.key === department) || {}).label || department}</b>
+                      <br />
+                      <span style={{ fontSize: 12 }}>
+                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — ไปตั้งจุดตรวจของแผนกนี้ที่ PM Setup
+                        <br />ถ้าลงจุดตรวจไว้แล้วแต่ไม่เห็น ให้ดูว่าลงไว้ใต้แผนกอื่นหรือไม่ (ใน PM Setup ย้ายข้ามแผนกได้)
+                      </span>
+                    </div>
                   ) : (
                     <>
                       {(() => {

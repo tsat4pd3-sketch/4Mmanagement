@@ -8,7 +8,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
-import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
+import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
@@ -461,6 +461,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [error, setError] = useState('')
 
   const [lineOptions, setLineOptions] = useState([])
+  // สรุปรายการตรวจของเครื่องนี้แยกตามแผนก (1 เครื่องมีได้หลายแผนก) + เครื่องมือย้าย/คัดลอก
+  const [deptSummary, setDeptSummary] = useState([])
+  const [moveBusy, setMoveBusy] = useState(false)
+  const [moveTo, setMoveTo] = useState('')
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
@@ -472,16 +476,21 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   useEffect(() => {
     if (!editJig || !userId) return
-    getOrCreateChecklist(editJig.id, 'mtn', department, userId).then(async (cl) => {
-      if (!cl) return
-      setFrequency(cl.frequency)
+    // ⚠️ อ่านอย่างเดียว (findChecklist) — ห้ามสร้างตอนเปิดดู ไม่งั้นได้ checklist เปล่าของแผนกที่บังเอิญเปิดดู
+    //    เครื่องนี้อาจยังไม่มี checklist ของแผนกที่เลือก = ฟอร์มเปล่าให้เริ่มลงจุดตรวจใหม่ (สร้างจริงตอน save)
+    ;(async () => {
+      const cl = await findChecklist(editJig.id, 'mtn', department)
+      setFrequency(cl?.frequency ?? 'periodic')
       // load spin frames (jig_images); fall back to jigs.image_path as one frame
+      // — รูปเป็นของ "เครื่อง" ไม่ใช่ของ checklist จึงต้องโหลดเสมอแม้แผนกนี้ยังไม่มี checklist
       const { data: imgs } = await supabaseDR.from('jig_images').select('*').eq('jig_id', editJig.id).order('sort')
       let fr = (imgs ?? []).map(im => ({ _key: im.id, id: im.id, image_path: im.image_path, _preview: getPublicUrl(im.image_path), title: im.title }))
       if (!fr.length && editJig.image_path) fr = [{ _key: 'legacy', image_path: editJig.image_path, _preview: getPublicUrl(editJig.image_path), title: null }]
       setFrames(fr); setFrameIdx(0)
       const frameKeyById = Object.fromEntries(fr.filter(f => f.id).map(f => [f.id, f._key]))
-      const { data: cps } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+      const { data: cps } = cl
+        ? await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+        : { data: [] }
       setCheckpoints((cps ?? []).map(c => ({
         ...c, _key: c.id,
         group_name: c.group_name ?? '', description: c.description ?? '',
@@ -493,14 +502,52 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         ...fr.map(f => f.image_path),
         ...(cps ?? []).map(c => c.image_path),
       ].filter(Boolean))
+      if (!cl) return
       const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
       if (plan) {
         setPlanType(plan.plan_type ?? 'time')
         setUsageThreshold(plan.usage_threshold != null ? String(plan.usage_threshold) : '')
         setUsageLine(plan.usage_source_line ?? '')
       }
-    })
+    })()
+    listChecklistsByDept(editJig.id, 'mtn').then(setDeptSummary).catch(() => setDeptSummary([]))
   }, [editJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reloadDeptSummary = () => {
+    if (editJig) listChecklistsByDept(editJig.id, 'mtn').then(setDeptSummary).catch(() => {})
+  }
+
+  // ย้าย/คัดลอก "รายการตรวจของแผนกที่กำลังเปิดอยู่" ไปแผนกอื่น
+  const handleTransfer = async (mode) => {
+    const cur = deptSummary.find(d => d.department === department)
+    if (!cur) { setError('แผนกนี้ยังไม่มีรายการตรวจให้ย้าย — บันทึกจุดตรวจก่อน'); return }
+    if (!moveTo || moveTo === department) { setError('เลือกแผนกปลายทางก่อน'); return }
+    const toLabel = pmTeamsSync().find(t => t.key === moveTo)?.label ?? moveTo
+    setMoveBusy(true); setError('')
+    try {
+      const run = (replace) => mode === 'move'
+        ? moveChecklistDept(cur.id, moveTo, { replace })
+        : copyChecklistToDept(cur.id, moveTo, userId, { replace })
+      let res = await run(false)
+      if (res.reason === 'target_has_checkpoints') {
+        const ok = window.confirm(`${toLabel} มีรายการตรวจอยู่แล้ว ${res.targetCheckpoints} จุด\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด — ยืนยันหรือไม่?`)
+        if (!ok) { setMoveBusy(false); return }
+        res = await run(true)
+      }
+      if (res.reason === 'empty') { setError('แผนกนี้ยังไม่มีจุดตรวจให้คัดลอก'); setMoveBusy(false); return }
+      toast.success(mode === 'move'
+        ? `ย้ายรายการตรวจไป ${toLabel} แล้ว (ประวัติการตรวจย้ายตามไปด้วย)`
+        : `คัดลอก ${res.count} จุดตรวจไป ${toLabel} แล้ว`)
+      setMoveTo('')
+      reloadDeptSummary()
+      onSaved()   // รีเฟรชลิสต์เครื่องด้านหลัง — ย้ายแล้วเครื่องจะย้ายแท็บ
+      if (mode === 'move') onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setMoveBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!isEdit) setCheckpoints([newCheckpoint()])
@@ -702,7 +749,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           ...checkpoints.map(c => cpImagePaths[c._key] ?? c.image_path).filter(Boolean),
         ])
         const stale = [...initialImagePathsRef.current].filter(p => !finalPaths.has(p) && p.startsWith('jigs/'))
-        if (stale.length) supabaseDR.storage.from('jig-images').remove(stale).catch(() => {})
+        if (stale.length) {
+          // ⚠️ รูปจุดตรวจถูกแชร์ได้ถ้าเคย "คัดลอกรายการตรวจไปแผนกอื่น" (copy อ้าง image_path เดิม)
+          //    → ลบเฉพาะไฟล์ที่ไม่มี checkpoint ของแผนกอื่นอ้างถึงแล้ว
+          supabaseDR.from('jig_checkpoints').select('image_path').in('image_path', stale)
+            .then(({ data }) => {
+              const stillUsed = new Set((data ?? []).map(r => r.image_path))
+              const orphan = stale.filter(p => !stillUsed.has(p))
+              if (orphan.length) supabaseDR.storage.from('jig-images').remove(orphan).catch(() => {})
+            }, () => {})
+        }
         initialImagePathsRef.current = finalPaths
       }
       toast.success('บันทึกสำเร็จ')
@@ -757,6 +813,76 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         </div>
 
         <div style={S.modalBody}>
+          {isEdit && (() => {
+            // 1 เครื่อง = หลายรายการตรวจแยกตามแผนก — ให้เห็นภาพรวมและย้าย/คัดลอกได้โดยไม่ต้องพิมพ์ใหม่
+            const allTeams = pmTeamsSync()
+            const cur = deptSummary.find(d => d.department === department)
+            const others = deptSummary.filter(d => d.department !== department && d.checkpointCount > 0)
+            const chip = (d) => {
+              const t = allTeams.find(x => x.key === d.department)
+              const isCur = d.department === department
+              return (
+                <span key={d.department} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999,
+                  fontSize: 11.5, fontWeight: isCur ? 800 : 600,
+                  background: isCur ? 'var(--accent-dim)' : 'var(--bg3)',
+                  border: `1px solid ${isCur ? (t?.color || deptColor) : 'var(--border2)'}`,
+                  color: isCur ? (t?.color || deptColor) : 'var(--text2)',
+                }}>
+                  {t?.icon ? `${t.icon} ` : ''}{t?.label ?? d.department}
+                  <b style={{ fontWeight: 800 }}>{d.checkpointCount} จุด</b>
+                  {d.inspectionCount > 0 && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· ตรวจแล้ว {d.inspectionCount} ครั้ง</span>}
+                  {isCur && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· กำลังแก้</span>}
+                </span>
+              )
+            }
+            return (
+              <div style={{ padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
+                  🗂️ รายการตรวจของเครื่องนี้ (แยกตามแผนก)
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {deptSummary.length === 0
+                    ? <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการตรวจของแผนกใดเลย — จุดตรวจที่ลงด้านล่างจะเป็นของ <b style={{ color: deptColor }}>{deptLabel}</b></span>
+                    : deptSummary.sort((a, b) => b.checkpointCount - a.checkpointCount).map(chip)}
+                  {deptSummary.length > 0 && !cur && (
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>
+                      · <b style={{ color: deptColor }}>{deptLabel}</b> ยังไม่มี (ลงจุดตรวจด้านล่างแล้วบันทึกเพื่อสร้าง)
+                    </span>
+                  )}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--muted)', margin: '7px 0 0', lineHeight: 1.6 }}>
+                  1 เครื่องมีรายการตรวจได้หลายแผนก (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — เครื่องจะโผล่ในแท็บของแผนกที่มีรายการตรวจ
+                </p>
+
+                {cur && cur.checkpointCount > 0 && (
+                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ลงผิดแผนก? ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
+                    <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
+                      <option value="">— เลือกแผนกปลายทาง —</option>
+                      {allTeams.filter(t => t.key !== department).map(t => (
+                        <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
+                      ))}
+                    </select>
+                    <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
+                      style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
+                      {moveBusy ? '…' : '➡️ ย้าย'}
+                    </button>
+                    <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('copy')}
+                      style={{ ...S.btnSm('#3b9dff'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน">
+                      {moveBusy ? '…' : '⧉ คัดลอก'}
+                    </button>
+                  </div>
+                )}
+                {others.length > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--muted)', margin: '6px 0 0' }}>
+                    💡 จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า)
+                  </p>
+                )}
+              </div>
+            )
+          })()}
+
           {!isEdit && (
             <div>
               <label style={S.label}>ประเภทการเพิ่ม</label>
