@@ -9,6 +9,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee } from '../utils/liveOee';
+import { wavg, wLoad } from '../utils/oeeAvg';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -307,9 +308,12 @@ export default function FactoryMap({ setupMode = false }) {
       .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }, { data: prods }, breakRes] = await Promise.all([
+    const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }, breakRes] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, dr_downtime_types(category)').in('session_id', sessIds),
+      // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
+      // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
+      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type'),
       supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
     ]);
@@ -318,6 +322,7 @@ export default function FactoryMap({ setupMode = false }) {
     const breaks = breakRes?.data || [];
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+    const ngBySess = {}; (defs || []).forEach(d => { ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0); });
     const nowMs = Date.now();
     // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
     const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();
@@ -325,7 +330,7 @@ export default function FactoryMap({ setupMode = false }) {
     // OEE สด (กะยังเปิด) — util กลาง src/utils/liveOee.js (ใช้ร่วมกับ /oee-analytics ให้ตัวเลขตรงกัน)
     // ปิดกะแล้ว = ใช้ค่าที่ stamp ไว้เสมอ
     const liveOee = (s, os, dl) => {
-      const r = computeLiveOee({ session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs });
+      const r = computeLiveOee({ session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0 });
       return r ? Math.round(r.oee) : null;
     };
 
@@ -411,21 +416,28 @@ export default function FactoryMap({ setupMode = false }) {
           : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
+      const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
       const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
       const isLive = s.oee == null && oeeVal != null;
-      const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeSum: 0, oeeN: 0 };
+      const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeRows: [] };
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
         onTimeTarget: acc.onTimeTarget + onTimeTarget,
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + dtMin, dtMinHour: acc.dtMinHour + dtMinHour, dtActive: acc.dtActive || dtActive,
-        ng: acc.ng + (s.qty_ng ?? s.ng_qty ?? 0),
-        oeeSum: acc.oeeSum + (oeeVal != null ? oeeVal : 0), oeeN: acc.oeeN + (oeeVal != null ? 1 : 0),
+        // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — กะเก่า column=0 ทั้งที่มี NG จริง · CLAUDE.md)
+        ng: acc.ng + (ngBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0),
+        // เฉลี่ย OEE ของไลน์ (กะเช้า+ดึก) ต้องถ่วงด้วยเวลารับภาระ ห้าม mean ธรรมดา (util กลาง oeeAvg.js)
+        // เดิม oeeSum/oeeN ทำให้ผังสด กับแผงขวาโหมดทบทวน (ซึ่งถ่วงถูก) โชว์คนละเลขของไลน์เดียวกัน
+        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min, plannedMin: plannedDtMinAll }] : [])],
         oeeLive: acc.oeeLive || isLive,
       };
     });
     const out = {};
-    Object.entries(byLine).forEach(([name, v]) => { out[name] = { ...v, oee: v.oeeN ? Math.round(v.oeeSum / v.oeeN) : null }; });
+    Object.entries(byLine).forEach(([name, v]) => {
+      const avg = wavg(v.oeeRows || [], r => r.oee, wLoad);
+      out[name] = { ...v, oee: avg != null ? Math.round(avg) : null };
+    });
     setLineStatus(out);
   }, []);
   useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
@@ -562,11 +574,13 @@ export default function FactoryMap({ setupMode = false }) {
       });
       if (sessions?.length) {
         const sessIds = sessions.map(s => s.id);
-        const [{ data: orders }, { data: dts }, { data: prods }] = await Promise.all([
+        const [{ data: orders }, { data: dts }, { data: rvDefs }, { data: prods }] = await Promise.all([
           supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
           supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
+          supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
           supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
         ]);
+        const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
         const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
@@ -593,7 +607,7 @@ export default function FactoryMap({ setupMode = false }) {
             if (d.dr_downtime_types?.category === 'planned') plannedMin += mins;
             else o.dtMin += mins;
           });
-          o.ng += s.qty_ng ?? s.ng_qty ?? 0;
+          o.ng += rvNgBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0;   // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ)
           // OEE ถ่วงด้วย "เวลารับภาระ" (shift_min − plannedMin) ตามกฎถ่วงน้ำหนัก OEE
           if (s.oee != null) {
             const wLoad = Math.max(0, (s.shift_min || 570) - plannedMin);
@@ -749,12 +763,12 @@ export default function FactoryMap({ setupMode = false }) {
   const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
   const isFac = (name) => !allProdNames.has(name);
   const stOf = (name) => {
-    const agg = { ...EMPTY_ST, supList: [], oeeSum: 0, oeeN: 0 };
+    const agg = { ...EMPTY_ST, supList: [], oeeRows: [] };
     familyNames(name).forEach(n => {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeSum += p.oeeSum || 0; agg.oeeN += p.oeeN || 0; agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
@@ -766,7 +780,8 @@ export default function FactoryMap({ setupMode = false }) {
       if (fs) { agg.supList = fs.machines; agg.supAtRisk = fs.atRisk; agg.supFeeds = fs.feeds; agg.isFac = true; }
       else agg.isFac = true;
     }
-    agg.oee = agg.oeeN ? Math.round(agg.oeeSum / agg.oeeN) : null;
+    const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
+    agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];

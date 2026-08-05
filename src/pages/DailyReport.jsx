@@ -4899,8 +4899,11 @@ function ExportTab() {
     const totalDT     = (s.downtime_logs || []).reduce((a, d) => a + (d.duration_min || 0), 0);
     const unplanDT    = (s.downtime_logs || []).filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
     const planDT      = totalDT - unplanDT;
-    const ngQty       = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
-    const okQty       = s.qty_ok || Math.max(0, (s.actual_qty || 0) - ngQty);
+    // NG ยึด defect_logs (session.qty_ng เป็น rollup ตัวเดียวกัน — บวกซ้ำ = 2 เท่า · แก้ 2026-08-05)
+    const dfRows      = s.defect_logs || [];
+    const ngQty       = dfRows.length ? dfRows.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) : (s.qty_ng || 0);
+    // ยอดดี = ยอดสแกน ห้ามลบ NG ซ้ำ (กฎ Q 2026-08-02 — การ์ดที่สแกนปิดคือของดีล้วน)
+    const okQty       = s.qty_ok ?? (s.actual_qty || 0);
     return {
       'วันที่': fmtDate(s.work_date),
       'ไลน์': s.line_name,
@@ -4932,7 +4935,8 @@ function ExportTab() {
       const dts = s.downtime_logs || [];
       const unplanDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
       const planDT   = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-      const ngQty    = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
+      const dfR2     = s.defect_logs || [];   // NG ยึด defect_logs — บวก session.qty_ng ซ้ำ = 2 เท่า (แก้ 2026-08-05)
+      const ngQty    = dfR2.length ? dfR2.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) : (s.qty_ng || 0);
       const totalQty = s.actual_qty || 0;
       const ctSec    = s.dr_products?.cycle_time_sec || 0;
 
@@ -5091,8 +5095,10 @@ function ExportTab() {
 
       // ── Info grid (ไลน์ / วันที่ / กะ / สินค้า / เวลา / ผู้เปิด-ปิด) ──
       const shiftLabel = s.shift === 'day' ? 'กะเช้า (Day)' : 'กะดึก (Night)';
-      const ngQty = (s.defect_logs || []).reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
-      const okQty = s.qty_ok || Math.max(0, (s.actual_qty || 0) - ngQty);
+      // NG ยึด defect_logs · ยอดดี = ยอดสแกน ห้ามลบ NG ซ้ำ (กฎ Q · แก้ 2026-08-05)
+      const dfR = s.defect_logs || [];
+      const ngQty = dfR.length ? dfR.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) : (s.qty_ng || 0);
+      const okQty = s.qty_ok ?? (s.actual_qty || 0);
       autoTable(doc, {
         startY: y,
         theme: 'grid',

@@ -544,6 +544,25 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - การ์ด "เวลาที่หายไปก่อนถึง OEE" แยกให้เห็น **พักนโยบาย vs หยุดตามแผน** + แถบสัดส่วน 🟩 สร้างของดี / 🟪 เสียตอนเดินเครื่อง / 🟧 พัก+หยุดตามแผน
 - **payoff:** TEEP ต่ำ + OEE สูง = ไม่ต้องซื้อเครื่อง เปิดกะเพิ่มพอ (ใช้คู่ `/production-plan` ตอนของบลงทุน)
 
+### ⚠️ ผล audit A/P/Q/OEE ทั้งระบบ — จุดที่เคยไม่ตรงกัน (แก้ครบ 2026-08-05)
+
+audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพบ **ตัวเลขคนละชุดระหว่างหน้าจอ 6 เรื่อง** — แก้แล้วทั้งหมด บันทึกไว้กัน regress:
+
+| เรื่อง | อาการเดิม | แก้เป็น |
+|---|---|---|
+| **NG ของ OEE สดบนผังรวม** | `FactoryMap` ไม่ส่ง `ngQty` เข้า `computeLiveOee` → util fallback ไป `prod_orders.qty_ng` ซึ่ง**ไม่เคยถูกเขียนทั้งระบบ** (ยืนยัน 0/6100 แถว) → **Q สด = 100% เสมอ** OEE บนจอ TV สูงกว่าความจริง | โหลด `defect_logs` แล้วส่ง `ngQty` (qty_ng + qty_suspect) เหมือน `/oee-analytics` |
+| **NG นับซ้ำ 2 เท่า** | `Σ defect_logs.qty_ng + session.qty_ng` — แต่คอลัมน์ session **คือ rollup ของ defect_logs** ที่ stamp ตอนปิดกะ → PPM สูงเกินจริง 2 เท่า / FTT ต่ำเกินจริง (QualityControl) · CSV/Excel/PDF ใบรายงานกะ ช่อง NG ผิด 2 เท่า | ยึด `defect_logs` เป็นหลัก (`มีแถว ? ผลรวม : คอลัมน์`) ทุกจุด |
+| **ยอดดีหักซ้ำ** | `okQty = qty_ok \|\| (actual_qty − ngQty)` ใน CSV/PDF — ขัดกฎ Q (ยอดสแกน = ของดีล้วน) แถม ngQty ที่หักคือค่านับซ้ำ | `qty_ok ?? actual_qty` |
+| **เฉลี่ย OEE แบบ mean ธรรมดา** | FactoryMap (ไลน์+ครอบครัว) · MorningMeeting (KPI+Telegram+ใบพิมพ์) · เด็ค Monthly Review ผู้บริหาร · OeeInsightPanel (เทียบกะเช้า/ดึก, วันคนขาด) — ทั้งหมด `sum/n` → ไม่ตรงกับ `/oee-analytics` | ทุกจุด import **`src/utils/oeeAvg.js`** (`wavg`/`wLoad`/`wRun`/`wProd`) — **ห้ามเขียน sum/n เอง** |
+| **ผลิตรวมวันนี้ = 0 ระหว่างกะ** | `/oee-analytics` non-pair คืน `actual_qty` ซึ่งเขียนตอนปิดกะเท่านั้น | ไม่มีค่า → รวมจากใบงานสด (`qty_ok ?? qty` / `qty_actual`) |
+| **NG จากคอลัมน์ session ปนกับ defect_logs ในหน้าเดียว** | MorningMeeting (KPI/ชิปรายกะ) · FactoryMap (สด/ทบทวน) · OeeInsightPanel (loss decomposition) ใช้คอลัมน์ ขณะที่แผง Top-defect ในหน้าเดียวกันใช้ defect_logs | ยึด `defect_logs` (qty_ng + qty_suspect) ทุกจุด |
+
+**กฎที่ตกผลึกจาก audit นี้:**
+- **NG ทุกจุดยึด `defect_logs` (qty_ng + qty_suspect)** — คอลัมน์ `production_sessions.qty_ng` เป็น rollup ใช้เป็น fallback เท่านั้น ห้ามบวกทั้งสอง · `prod_orders.qty_ng` เป็น vestigial ไม่มีใครเขียน ห้ามอ่าน
+- **เฉลี่ย OEE/A/P/Q ข้ามกะ ต้อง `import { wavg, wLoad, wRun, wProd } from '../utils/oeeAvg'`** จุดเดียว
+- **ยอดดี = ยอดสแกน ห้ามลบ NG** (กฎ Q) · ยอดที่ต้องใช้ระหว่างกะให้คำนวณจาก `prod_orders` ไม่ใช่ `actual_qty` (เขียนตอนปิดกะ)
+- ยังเหลือ (🟡 ยอมรับได้ แต่ระวัง): CT มาจากคนละแหล่งระหว่างจอ (kanban_standards vs dr_products) · `policyBreakMin` มี 3 implementation (DailyReport computePolicyBreakMin = ต้นฉบับกรอง process · histBreakOverlapMin ไม่กรอง · OEEAnalytics ทิ้งนโยบายเฉพาะ process + ใช้เวลาเริ่มกะ fix 08:00/20:00) → ค่า OEE จริง/OOE ต่างกันเล็กน้อยระหว่าง Daily Report กับ OEE Analytics
+
 ### ⚠️ กฎเฉลี่ย OEE รวมหลายกะ — ถ่วงน้ำหนักตามตำรา ห้าม mean-of-percentages (2026-08-02)
 
 - **รวม A/P/Q/OEE ของหลายกะ (KPI/เทรนด์ใน `/oee-analytics`) ต้องถ่วงน้ำหนัก ไม่ใช่เฉลี่ยเปอร์เซ็นต์ตรงๆ** — helper `wavg(items, valFn, wFn)` ใน `OEEAnalytics.jsx` (มี fallback เป็นเฉลี่ยธรรมดาเมื่อไม่มีน้ำหนัก + กันหารศูนย์ + คืน null เมื่อไม่มีค่า valid):

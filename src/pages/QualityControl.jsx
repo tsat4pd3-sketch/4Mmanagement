@@ -341,11 +341,14 @@ function QualityDashboard() {
     } else {
       // ── ระดับกะ (เดิม): actual_qty + qty_ng ของ session + defect logs ──
       const shownDefects = lineFilter ? defects.filter(d => shownSessIds.has(d.session_id)) : defects;
+      // NG ยึด defect_logs เป็นหลัก (คอลัมน์ session.qty_ng คือ rollup ของ defect_logs ที่ stamp ตอนปิดกะ
+      // — บวกทั้งสองเข้าด้วยกัน = นับซ้ำ 2 เท่า ทำให้ PPM สูงเกินจริง/FTT ต่ำเกินจริง · แก้ 2026-08-05)
+      // นับ qty_suspect ด้วยให้ตรงกับพาเรโตในหน้าเดียวกัน + กฎ Q ที่ต้นทาง (computeOEE นับ suspect เป็นของเสีย)
       const defBySession = new Map();
-      shownDefects.forEach(d => { defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0)); addType(d); });
+      shownDefects.forEach(d => { defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0)); addType(d); });
       shownSessions.forEach(s => {
         const t = s.actual_qty || 0;
-        const g = (defBySession.get(s.id) || 0) + (s.qty_ng || 0);
+        const g = defBySession.has(s.id) ? defBySession.get(s.id) : (s.qty_ng || 0);
         total += t; ng += g;
         addDate(s.work_date, t, g); addLine(s.line_name || '—', t, g);
       });

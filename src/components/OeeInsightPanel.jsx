@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import { wavg, wLoad } from '../utils/oeeAvg';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -21,6 +22,13 @@ const todayWorkDate = () => {
 };
 const DOW_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์'];
 const avg = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
+// เฉลี่ย OEE/A/P ข้ามกะ ต้องถ่วงด้วยเวลารับภาระ (กฎ OEE · util กลาง oeeAvg.js) — เดิม avg() ธรรมดา
+// ทำให้ insight อ้างตัวเลข "เฉลี่ยกะเช้า vs ดึก" ไม่ตรงกับ KPI ในหน้าเดียวกัน (แก้ 2026-08-05)
+const avgW = (ss, pick, plannedOf) => {
+  const rows = ss.map(s => ({ v: pick(s), shift_min: s.shift_min, plannedMin: plannedOf(s.id) }));
+  const r = wavg(rows, x => (x.v == null || isNaN(x.v) ? null : Number(x.v)), wLoad);
+  return r == null ? 0 : r;
+};
 
 const SEV = {
   high: { c: '#ef4444', bg: 'rgba(239,68,68,0.08)', label: 'กระทบหนัก' },
@@ -88,6 +96,11 @@ export default function OeeInsightPanel({ lines }) {
       });
       const ctSess = (sid) => { const c = ctBySess[sid]; return c && c.qty > 0 ? c.std / c.qty : 0; };
 
+      // นาที DT "ในแผน" ต่อกะ — ใช้เป็นน้ำหนัก (เวลารับภาระ = shift_min − planned)
+      const plannedMinOf = (sid) => (dts || [])
+        .filter(d => d.session_id === sid && d.dr_downtime_types?.category === 'planned')
+        .reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
+
       const out = [];
 
       /* ═ 1. Loss decomposition — เป้าหายไปไหน ═ */
@@ -103,7 +116,9 @@ export default function OeeInsightPanel({ lines }) {
           shortfall += target - actual;
           const ct = ctSess(s.id);
           if (ct > 0) dtPieces += Math.min(target - actual, (unplMin * 60) / ct);
-          ngPieces += (s.qty_ng || 0) + (s.qty_suspect || 0);
+          // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — CLAUDE.md) ให้ตรงกับ insight ข้อ NG กระจุกประเภท
+          ngPieces += (defs || []).filter(d => d.session_id === s.id)
+            .reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
         }
       });
       if (shortfall > 0) {
@@ -141,15 +156,17 @@ export default function OeeInsightPanel({ lines }) {
       });
 
       /* ═ 3. กะเช้า vs กะดึก ═ */
-      const dayO = sess.filter(s => s.shift === 'day').map(s => Number(s.oee));
-      const nightO = sess.filter(s => s.shift === 'night').map(s => Number(s.oee));
+      const daySess = sess.filter(s => s.shift === 'day');
+      const nightSess = sess.filter(s => s.shift === 'night');
+      const dayO = daySess.map(s => Number(s.oee));
+      const nightO = nightSess.map(s => Number(s.oee));
       if (dayO.length >= 3 && nightO.length >= 3) {
-        const gap = avg(dayO) - avg(nightO);
+        const gap = avgW(daySess, s => s.oee, plannedMinOf) - avgW(nightSess, s => s.oee, plannedMinOf);
         if (Math.abs(gap) >= 5) {
           const worse = gap > 0 ? 'night' : 'day';
           const wSess = sess.filter(s => s.shift === worse);
-          const dA = avg(sess.filter(s => s.shift === 'day').map(s => Number(s.oee_a))) - avg(sess.filter(s => s.shift === 'night').map(s => Number(s.oee_a)));
-          const dP = avg(sess.filter(s => s.shift === 'day').map(s => Number(s.oee_p))) - avg(sess.filter(s => s.shift === 'night').map(s => Number(s.oee_p)));
+          const dA = avgW(daySess, s => s.oee_a, plannedMinOf) - avgW(nightSess, s => s.oee_a, plannedMinOf);
+          const dP = avgW(daySess, s => s.oee_p, plannedMinOf) - avgW(nightSess, s => s.oee_p, plannedMinOf);
           const cause = Math.abs(dA) > Math.abs(dP) ? `Availability ต่างกัน ${Math.abs(dA).toFixed(1)} จุด (Downtime มากกว่า)` : `Performance ต่างกัน ${Math.abs(dP).toFixed(1)} จุด (ความเร็ว/จังหวะงาน)`;
           out.push({
             sev: Math.abs(gap) >= 10 ? 'high' : 'med', icon: worse === 'night' ? '🌙' : '☀️',
@@ -186,15 +203,17 @@ export default function OeeInsightPanel({ lines }) {
       }
 
       /* ═ 5. คนขาด ↔ OEE ═ */
-      const withAbs = sess.filter(s => (absentByDate[s.work_date] || 0) > 0).map(s => Number(s.oee));
-      const noAbs = sess.filter(s => (absentByDate[s.work_date] || 0) === 0).map(s => Number(s.oee));
+      const withAbsS = sess.filter(s => (absentByDate[s.work_date] || 0) > 0);
+      const noAbsS = sess.filter(s => (absentByDate[s.work_date] || 0) === 0);
+      const withAbs = withAbsS.map(s => Number(s.oee));
+      const noAbs = noAbsS.map(s => Number(s.oee));
       if (withAbs.length >= 3 && noAbs.length >= 3) {
-        const gap = avg(noAbs) - avg(withAbs);
+        const gap = avgW(noAbsS, s => s.oee, plannedMinOf) - avgW(withAbsS, s => s.oee, plannedMinOf);
         if (gap >= 5) {
           out.push({
             sev: gap >= 10 ? 'high' : 'med', icon: '👥',
             title: `วันที่มีคนขาด OEE ต่ำกว่าปกติเฉลี่ย ${gap.toFixed(1)} จุด`,
-            detail: `วันมีคนขาด ${withAbs.length} กะ เฉลี่ย OEE ${avg(withAbs).toFixed(1)} vs วันคนครบ ${noAbs.length} กะ เฉลี่ย ${avg(noAbs).toFixed(1)} — กำลังคนคือคอขวด ลองดูแผนคน backup/multi-skill`,
+            detail: `วันมีคนขาด ${withAbs.length} กะ เฉลี่ย OEE ${avgW(withAbsS, s => s.oee, plannedMinOf).toFixed(1)} vs วันคนครบ ${noAbs.length} กะ เฉลี่ย ${avgW(noAbsS, s => s.oee, plannedMinOf).toFixed(1)} — กำลังคนคือคอขวด ลองดูแผนคน backup/multi-skill`,
             impact: gap * 8,
           });
         }

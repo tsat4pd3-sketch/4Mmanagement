@@ -16,6 +16,7 @@ import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { computeLiveOee, LIVE_MIN_ELAPSED } from '../utils/liveOee';
 import { strictOee } from '../utils/strictOee';
+import { wavg, wLoad, wRun, wProd } from '../utils/oeeAvg';
 import { lazy, Suspense } from 'react';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
@@ -98,23 +99,6 @@ function policyBreakMin(shift, shiftMin, policies) {
 // (loading × A) · Q ถ่วงด้วย "จำนวนที่ผลิต" (ดี + เสีย) — กะเล็กไม่ถ่วงเท่ากะใหญ่ (เดิมเฉลี่ยธรรมดา
 // mean-of-percentages ทำให้กะผลิต 10 ชิ้นครึ่งชม.มีน้ำหนักเท่ากะทั้งวัน · แก้ 2026-08-02)
 // รับ field ได้ทั้งแบบเต็ม (calcA/plannedMin/totalQty จาก calcOEE) และแบบ history (oee_a/actual_qty/qty_ng)
-const wLoad = it => Math.max(0, (Number(it.shift_min) || 0) - (Number(it.plannedMin) || 0));
-const wRun  = it => wLoad(it) * (((it.calcA != null ? it.calcA : (it.oee_a != null ? +it.oee_a : 100))) / 100);
-const wProd = it => (Number(it.totalQty != null ? it.totalQty : it.actual_qty) || 0) + (Number(it.ngQty != null ? it.ngQty : it.qty_ng) || 0);
-// ถ่วงน้ำหนัก + fallback เป็นเฉลี่ยธรรมดาเมื่อไม่มีน้ำหนัก (กันหารศูนย์ — เช่นกะไม่มี shift_min/ผลผลิต)
-function wavg(items, valFn, wFn) {
-  let sw = 0, swv = 0, n = 0, sum = 0;
-  for (const it of items) {
-    const v = valFn(it);
-    if (v == null) continue;
-    n++; sum += v;
-    const w = wFn(it);
-    if (w > 0) { sw += w; swv += v * w; }
-  }
-  if (!n) return null;
-  return +((sw > 0 ? swv / sw : sum / n)).toFixed(1);
-}
-
 // ── Date helpers ─────────────────────────────────────────────────
 // ⚠️ ห้ามใช้ toISOString() เพื่อคำนวณวันที่ local — จะเพี้ยนข้ามวันเพราะ UTC offset (ดู CLAUDE.md)
 const fmtMonthKey = d => d.slice(0, 7);          // YYYY-MM
@@ -537,10 +521,14 @@ export default function OEEAnalytics() {
       if (r.target_qty) return r.target_qty;
       return os.reduce((s, o) => s + (o.qty_target ?? o.qty ?? 0), 0);
     };
+    // ผลิตจริง: actual_qty เขียนตอน "ปิดกะ" เท่านั้น → กะที่ยังเปิดต้องรวมจากใบงานสด
+    // (เดิม non-pair คืน r.totalQty ตรงๆ → การ์ด "ผลิตรวมวันนี้" เป็น 0 ทั้งที่ผลิตอยู่ · แก้ 2026-08-05
+    //  pattern เดียวกับบั๊ก sessTarget) · pair-aware ทำถูกอยู่แล้วทั้งสองเส้นทาง
+    const ordSum = os => os.reduce((s2, o) => s2 + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
     const sessActual = r => {
       const os = tdOrdersBySession[r.id] || [];
       if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
-      return r.totalQty || 0;
+      return r.totalQty || ordSum(os);
     };
     // OOE/TEEP ของวันนี้ — ฐาน: OOE = เวลากะทั้งหมด · TEEP = ปฏิทิน 24 ชม. ของไลน์ที่เปิดกะวันนี้
     const tdOee = wavg(tdRows, r => r.calcOEE, wLoad);
