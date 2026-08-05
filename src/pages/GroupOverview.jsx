@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal } from '../utils/pairTotals';
 import useIsMobile from '../utils/useIsMobile';
+import ThailandZoneMap from '../components/ThailandZoneMap';
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
    โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายบริษัทในกลุ่มทำได้มั้ย"
@@ -58,11 +59,11 @@ const ORG = {
       key: 'amf', name: 'Automotive Metal Forming', short: 'Metal Forming', icon: '🔩',
       desc: 'ชิ้นส่วนโลหะยานยนต์ — ปั๊มขึ้นรูป / เชื่อมประกอบ',
       companies: [
-        { key: 'tsat1', code: 'TSAT1', name: 'Thai Summit Autoparts 1', region: 'ระยอง', flag: '🇹🇭', qtyF: 1.28, oeeD: 2.5, dtF: 0.85, ngF: 0.8, keep: 0.9 },
-        { key: 'tsat4', code: 'TSAT4', name: 'Thai Summit Autoparts 4 (บริษัทเรา)', region: 'บ้านโพธิ์ · ฉะเชิงเทรา', flag: '🇹🇭', real: true },
-        { key: 'tsla', code: 'TSLA', name: 'Thai Summit Laemchabang', region: 'ชลบุรี', flag: '🇹🇭', qtyF: 0.92, oeeD: -4.5, dtF: 1.3, ngF: 1.4, keep: 0.8 },
-        { key: 'tsesa', code: 'TSESA', name: 'Thai Summit Eastern Seaboard', region: 'ระยอง', flag: '🇹🇭', qtyF: 1.05, oeeD: -1.5, dtF: 1.1, ngF: 1.1, keep: 0.85 },
-        { key: 'tsrf', code: 'TSRF', name: 'Thai Summit Rayong Forming', region: 'ระยอง', flag: '🇹🇭', qtyF: 0.7, oeeD: -8.5, dtF: 1.6, ngF: 1.8, keep: 0.6 },
+        { key: 'tsat1', code: 'TSAT1', name: 'Thai Summit Autoparts 1', region: 'บางปู · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.53, lon: 100.64, qtyF: 1.28, oeeD: 2.5, dtF: 0.85, ngF: 0.8, keep: 0.9 },
+        { key: 'tsat4', code: 'TSAT4', name: 'Thai Summit Autoparts 4 (บริษัทเรา)', region: 'บ้านโพธิ์ · ฉะเชิงเทรา', flag: '🇹🇭', zone: 'bangna', lat: 13.58, lon: 101.08, real: true },
+        { key: 'tsla', code: 'TSLA', name: 'Thai Summit Laemchabang', region: 'แหลมฉบัง · ชลบุรี', flag: '🇹🇭', zone: 'east', lat: 13.08, lon: 100.92, qtyF: 0.92, oeeD: -4.5, dtF: 1.3, ngF: 1.4, keep: 0.8 },
+        { key: 'tsesa', code: 'TSESA', name: 'Thai Summit Eastern Seaboard', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.92, lon: 101.14, qtyF: 1.05, oeeD: -1.5, dtF: 1.1, ngF: 1.1, keep: 0.85 },
+        { key: 'tsrf', code: 'TSRF', name: 'Thai Summit Rayong Forming', region: 'นิคมฯ มาบตาพุด · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.70, lon: 101.32, qtyF: 0.7, oeeD: -8.5, dtF: 1.6, ngF: 1.8, keep: 0.6 },
       ],
     },
     {
@@ -70,9 +71,9 @@ const ORG = {
       desc: 'ชิ้นส่วนพลาสติก — ฉีด / เป่า / พ่นสี',
       lineAlias: ['INJECTION 1', 'INJECTION 2', 'INJECTION 3', 'BLOW MOLD 1', 'PAINT LINE 1', 'ASSY PLASTIC 1', 'ASSY PLASTIC 2', 'TRIM & WELD'],
       companies: [
-        { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'สมุทรปราการ', flag: '🇹🇭', qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
-        { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ระยอง', flag: '🇹🇭', qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
-        { key: 'ptcvn', code: 'TSPT-VN', name: 'Thai Summit Plastech Vietnam', region: 'เวียดนาม', flag: '🇻🇳', qtyF: 0.55, oeeD: -6.5, dtF: 1.4, ngF: 1.6, keep: 0.5 },
+        { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'บางพลี · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.61, lon: 100.75, qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
+        { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.84, lon: 101.22, qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
+        { key: 'ptcvn', code: 'TSPT-VN', name: 'Thai Summit Plastech Vietnam', region: 'Hanoi · เวียดนาม', flag: '🇻🇳', zone: 'oversea', qtyF: 0.55, oeeD: -6.5, dtF: 1.4, ngF: 1.6, keep: 0.5 },
       ],
     },
     {
@@ -80,13 +81,21 @@ const ORG = {
       desc: 'ชิ้นส่วนรถจักรยานยนต์',
       lineAlias: ['MC FRAME 1', 'MC FUEL TANK', 'MC MUFFLER 1', 'MC SWING ARM', 'MC HANDLE', 'MC STEP', 'MC COVER ASSY'],
       companies: [
-        { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'สมุทรปราการ', flag: '🇹🇭', qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
-        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'ปทุมธานี', flag: '🇹🇭', qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
-        { key: 'mocyid', code: 'TSMC-ID', name: 'Thai Summit Mocy Indonesia', region: 'อินโดนีเซีย', flag: '🇮🇩', qtyF: 0.5, oeeD: -9.5, dtF: 1.7, ngF: 1.9, keep: 0.45 },
+        { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'บางนา · กรุงเทพฯ', flag: '🇹🇭', zone: 'bangna', lat: 13.66, lon: 100.63, qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
+        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'บางบ่อ · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.50, lon: 100.90, qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
+        { key: 'mocyid', code: 'TSMC-ID', name: 'Thai Summit Mocy Indonesia', region: 'Karawang · อินโดนีเซีย', flag: '🇮🇩', zone: 'oversea', qtyF: 0.5, oeeD: -9.5, dtF: 1.7, ngF: 1.9, keep: 0.45 },
       ],
     },
   ],
 };
+
+/* ── โซนพื้นที่ (แกนที่ 2 — ตัดขวางกลุ่มธุรกิจ) · onMap=false คือไม่ได้อยู่บนแผนที่ภาคกลาง ──
+   หมุดบนแผนที่ใช้ lat/lon จริงของบริษัท → กรอบโซนคำนวณจากหมุด (ดู ThailandZoneMap) */
+const ZONES = [
+  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: '#38bdf8', onMap: true, desc: 'บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
+  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: '#f59e0b', onMap: true, desc: 'ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
+  { key: 'oversea', name: 'โซนต่างประเทศ', icon: '🌏', color: '#a78bfa', onMap: false, desc: 'เวียดนาม · อินโดนีเซีย' },
+];
 
 const SHIFT_MIN_FALLBACK = 570;
 
@@ -96,7 +105,7 @@ export default function GroupOverview() {
   const [usedDate, setUsedDate] = useState(null);      // วันที่ที่มีข้อมูลจริง (อาจถอยหลังจาก date)
   const [baseLines, setBaseLines] = useState([]);      // aggregate จริงต่อไลน์บนสุด (= ฐานของ TSAT4)
   const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState({ biz: null, comp: null });  // null,null = ระดับ TSG
+  const [sel, setSel] = useState({ axis: 'map', node: null, comp: null });  // axis: map=โซนพื้นที่ · biz=กลุ่มธุรกิจ · node/comp=null คือระดับ TSG
   const [showHow, setShowHow] = useState(false);
 
   /* ── โหลดข้อมูลจริงของวันที่เลือก (ถ้าไม่มีกะเลย ถอยหลังหาไม่เกิน 7 วัน เพื่อให้ตัวอย่างมีข้อมูลโชว์เสมอ) ── */
@@ -217,8 +226,10 @@ export default function GroupOverview() {
       };
     };
 
-    const groups = ORG.groups.map(g => {
-      const companies = g.companies.map(c => {
+    // สร้างบริษัททั้งหมดครั้งเดียว แล้วค่อยจัดกลุ่ม 2 แกน (กลุ่มธุรกิจ / โซนพื้นที่)
+    const allComps = ORG.groups.flatMap(g => {
+      const gMeta = { key: g.key, name: g.name, short: g.short, icon: g.icon };
+      return g.companies.map(c => {
         let lines;
         if (c.real) {
           lines = baseLines.map(l => ({ ...l }));
@@ -244,22 +255,29 @@ export default function GroupOverview() {
           });
         }
         const worst = [...lines].filter(l => l.target > 0).sort((a, b) => (b.target - b.actual) - (a.target - a.actual))[0] || null;
-        return { ...c, group: g, lines, worst, ...aggregate(lines) };
+        return { ...c, groupMeta: gMeta, lines, worst, ...aggregate(lines) };
       });
-      const gLines = companies.flatMap(c => c.lines);
-      return { ...g, companies, lines: gLines, ...aggregate(gLines) };
     });
 
-    const allLines = groups.flatMap(g => g.companies.flatMap(c => c.lines.map(l => ({ ...l, comp: c, group: g }))));
-    return { groups, allLines, ...aggregate(allLines) };
+    const packBy = (defs, matchFn) => defs.map(d => {
+      const companies = allComps.filter(c => matchFn(c, d));
+      const lines = companies.flatMap(c => c.lines);
+      return { ...d, companies, lines, ...aggregate(lines) };
+    });
+    const groups = packBy(ORG.groups, (c, g) => c.groupMeta.key === g.key);
+    const zones = packBy(ZONES, (c, z) => c.zone === z.key);
+
+    const allLines = allComps.flatMap(c => c.lines.map(l => ({ ...l, comp: c })));
+    return { groups, zones, allComps, allLines, ...aggregate(allLines) };
   }, [baseLines, usedDate, date]);
 
-  /* ── ขอบเขตที่กำลังดูอยู่ (breadcrumb) ── */
-  const bizNode = sel.biz ? tree.groups.find(g => g.key === sel.biz) : null;
-  const compNode = bizNode && sel.comp ? bizNode.companies.find(c => c.key === sel.comp) : null;
+  /* ── ขอบเขตที่กำลังดูอยู่ (breadcrumb) — แกน map (โซน) หรือ biz (กลุ่มธุรกิจ) ── */
+  const axisNodes = sel.axis === 'map' ? tree.zones : tree.groups;
+  const bizNode = sel.node ? axisNodes.find(n => n.key === sel.node) : null;
+  const compNode = sel.comp ? tree.allComps.find(c => c.key === sel.comp) : null;
   const scope = compNode || bizNode || tree;
-  const scopeLines = compNode ? compNode.lines.map(l => ({ ...l, comp: compNode, group: bizNode }))
-    : bizNode ? bizNode.companies.flatMap(c => c.lines.map(l => ({ ...l, comp: c, group: bizNode })))
+  const scopeLines = compNode ? compNode.lines.map(l => ({ ...l, comp: compNode }))
+    : bizNode ? bizNode.companies.flatMap(c => c.lines.map(l => ({ ...l, comp: c })))
       : tree.allLines;
   const hotspots = scopeLines.filter(l => l.target > 0 && l.actual < l.target)
     .sort((a, b) => (b.target - b.actual) - (a.target - a.actual)).slice(0, 10);
@@ -285,9 +303,12 @@ export default function GroupOverview() {
               <span style={{ fontSize: 12, color: 'var(--muted)', width: 18 }}>#{i + 1}</span>
               <span>{it.icon || it.flag}</span>
               <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.code || it.name}</span>
-              {it.real
-                ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+              {/* ป้ายจริง/จำลอง ใช้กับ "บริษัท" เท่านั้น — โซน/กลุ่มธุรกิจเป็นก้อนรวม (มีทั้งของจริงและจำลอง) */}
+              {it.companies
+                ? <span style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
+                : it.real
+                  ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
+                  : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
             </button>
             <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
@@ -327,9 +348,9 @@ export default function GroupOverview() {
           </h2>
           {/* breadcrumb: TSG › กลุ่มธุรกิจ › บริษัท */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', marginTop: 3 }}>
-            {crumbBtn(`🏢 ${ORG.code}`, () => setSel({ biz: null, comp: null }), !bizNode)}
+            {crumbBtn(`🏢 ${ORG.code}`, () => setSel(s => ({ axis: s.axis, node: null, comp: null })), !bizNode)}
             {bizNode && <><span style={{ color: 'var(--muted)' }}>›</span>
-              {crumbBtn(`${bizNode.icon} ${bizNode.name}`, () => setSel({ biz: bizNode.key, comp: null }), !compNode)}</>}
+              {crumbBtn(`${bizNode.icon} ${bizNode.name}`, () => setSel(s => ({ ...s, comp: null })), !compNode)}</>}
             {compNode && <><span style={{ color: 'var(--muted)' }}>›</span>
               {crumbBtn(`${compNode.flag} ${compNode.code}`, () => { }, true)}</>}
           </div>
@@ -338,7 +359,17 @@ export default function GroupOverview() {
             {usedDate && usedDate !== date && <span style={{ color: '#f59e0b' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
+          <div style={{ display: 'flex', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
+            {[{ k: 'map', t: '🗺️ ตามพื้นที่' }, { k: 'biz', t: '🗂️ ตามกลุ่มธุรกิจ' }].map(o => (
+              <button key={o.k} onClick={() => setSel({ axis: o.k, node: null, comp: null })} style={{
+                padding: '7px 11px', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer',
+                background: sel.axis === o.k ? 'var(--accent)' : 'var(--bg3)',
+                color: sel.axis === o.k ? '#08120a' : 'var(--text)',
+              }}>{o.t}</button>
+            ))}
+          </div>
           <button className="tbtn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
           <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)}
             style={{ width: 148, padding: '7px 9px', fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, color: 'var(--text)' }} />
@@ -350,7 +381,7 @@ export default function GroupOverview() {
       {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้เข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว) ── */}
       <div style={{ ...card, borderStyle: 'dashed', borderColor: '#f59e0b', background: 'rgba(245,158,11,0.07)', fontSize: 13, lineHeight: 1.7 }}>
         <b style={{ color: '#f59e0b' }}>นี่คือหน้าจอตัวอย่าง (mockup) เพื่อดูว่า “ระบบรองรับหลายบริษัทในกลุ่ม” จะหน้าตาแบบไหน</b><br />
-        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต — <b>กดที่การ์ด/ชื่อเพื่อเจาะลึกลงชั้นถัดไป</b><br />
+        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>โซนพื้นที่</b> ({ZONES.map(z => z.name).join(' / ')}) ได้จากปุ่มมุมขวาบน — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b><br />
         • <b>TSAT4</b> = <b style={{ color: '#22c55e' }}>ข้อมูลจริง</b>จากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> ที่ปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบ seeded ให้ตัวเลขนิ่ง ไม่ดิ้นทุกครั้งที่รีเฟรช)<br />
         • หน้านี้ <b>ไม่เขียนฐานข้อมูล</b> และยังไม่มีตารางบริษัท/โรงงานจริง — ดูสรุป “ถ้าทำจริงต้องทำอะไร” ท้ายหน้า
       </div>
@@ -367,11 +398,11 @@ export default function GroupOverview() {
         {/* ── KPI ของขอบเขตที่กำลังดู ── */}
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(min(190px, 100%), 1fr))' }}>
           <Kpi
-            label={compNode ? '🏭 ไลน์ผลิต' : bizNode ? '🏢 บริษัทในกลุ่มธุรกิจ' : '🗂️ กลุ่มธุรกิจ'}
-            value={compNode ? compNode.lines.length : bizNode ? bizNode.companies.length : ORG.groups.length}
+            label={compNode ? '🏭 ไลน์ผลิต' : bizNode ? '🏢 บริษัทใน' + (sel.axis === 'map' ? 'โซนนี้' : 'กลุ่มธุรกิจ') : (sel.axis === 'map' ? '🗺️ โซนพื้นที่' : '🗂️ กลุ่มธุรกิจ')}
+            value={compNode ? compNode.lines.length : bizNode ? bizNode.companies.length : axisNodes.length}
             sub={compNode ? `บริษัท ${compNode.code}`
               : bizNode ? `${bizNode.lines.length} ไลน์ผลิตรวม`
-                : `${tree.groups.reduce((a, g) => a + g.companies.length, 0)} บริษัท · ${tree.allLines.length} ไลน์`} />
+                : `${tree.allComps.length} บริษัท · ${tree.allLines.length} ไลน์`} />
           <Kpi label="📦 ผลิตรวม" value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
             sub={`เป้า ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
           <Kpi label="⚙️ OEE (ถ่วงน้ำหนัก)" value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
@@ -382,18 +413,58 @@ export default function GroupOverview() {
             sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ของกำลังคน` : '—'} />
         </div>
 
-        {/* ══ ระดับ 1: TSG — การ์ดกลุ่มธุรกิจ ══ */}
+        {/* ══ ระดับ 1: TSG ══ (แกนแผนที่ = โซนพื้นที่ · แกนกลุ่มธุรกิจ = การ์ดกลุ่ม) */}
         {!bizNode && (<>
+          {sel.axis === 'map' && (
+            <div style={card}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>🗺️ แผนที่โรงงานในกลุ่ม — ภาคกลาง &amp; ตะวันออก</div>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {tree.zones.filter(z => z.onMap).reduce((a, z) => a + z.companies.length, 0)} โรงงานบนแผนที่ ·
+                  หมุดสีตามสถานะการผลิตของวันที่เลือก
+                </span>
+              </div>
+              <ThailandZoneMap
+                zones={tree.zones}
+                isMobile={isMobile}
+                height={isMobile ? 420 : 560}
+                onPickZone={(z) => setSel(s => ({ ...s, node: z.key, comp: null }))}
+                onPickCompany={(c) => setSel(s => ({ ...s, node: c.zone, comp: c.key }))}
+              />
+              {/* บริษัทนอกแผนที่ (ต่างประเทศ) — ห้ามหายไปเงียบๆ เพราะวางบนแผนที่ภาคกลางไม่ได้ */}
+              {tree.zones.filter(z => !z.onMap && z.companies.length).map(z => (
+                <div key={z.key} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border2)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: z.color, marginBottom: 6 }}>
+                    {z.icon} {z.name} <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--muted)' }}>(อยู่นอกกรอบแผนที่ — {z.desc})</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {z.companies.map(c => (
+                      <button key={c.key} onClick={() => setSel(s => ({ ...s, node: z.key, comp: c.key }))} style={{
+                        fontSize: 12, fontWeight: 700, padding: '4px 9px', borderRadius: 999, cursor: 'pointer',
+                        background: 'var(--bg3)', border: '1px dashed var(--border2)', color: 'var(--text)',
+                      }}>
+                        {c.flag} {c.code}
+                        <span style={{ color: oeeCol(c.oee), marginLeft: 5 }}>{c.oee == null ? '—' : c.oee}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div style={card}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายกลุ่มธุรกิจ</div>
-            <RankBars items={tree.groups} onPick={(g) => setSel({ biz: g.key, comp: null })} />
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+              📊 เทียบผลการผลิต{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}
+            </div>
+            <RankBars items={axisNodes} onPick={(g) => setSel(s => ({ ...s, node: g.key, comp: null }))} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
-              แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>คลิกชื่อกลุ่มเพื่อดูบริษัทข้างใน</b>
+              แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>คลิกชื่อเพื่อดูบริษัทข้างใน</b>
             </div>
           </div>
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
-            {tree.groups.map(g => {
+            {axisNodes.map(g => {
               const stCol = g.status === 'bad' ? '#ef4444' : g.status === 'ok' ? '#f59e0b' : '#22c55e';
               return (
                 <div key={g.key} className="kpi-lift" style={{
@@ -436,7 +507,7 @@ export default function GroupOverview() {
                     {/* บริษัทในกลุ่ม — ชิปคลิกเข้าบริษัทได้เลย */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
                       {g.companies.map(c => (
-                        <button key={c.key} onClick={() => setSel({ biz: g.key, comp: c.key })} style={{
+                        <button key={c.key} onClick={() => setSel(s => ({ ...s, node: g.key, comp: c.key }))} style={{
                           fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
                           background: c.real ? 'rgba(34,197,94,0.13)' : 'var(--bg3)',
                           border: `1px ${c.real ? 'solid #22c55e' : 'dashed var(--border2)'}`,
@@ -449,7 +520,7 @@ export default function GroupOverview() {
                     </div>
                   </div>
 
-                  <button onClick={() => setSel({ biz: g.key, comp: null })}
+                  <button onClick={() => setSel(s => ({ ...s, node: g.key, comp: null }))}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 10 }}>
                     ▸ ดูบริษัทในกลุ่ม ({g.companies.length})
                   </button>
@@ -463,7 +534,7 @@ export default function GroupOverview() {
         {bizNode && !compNode && (<>
           <div style={card}>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
-            <RankBars items={bizNode.companies} onPick={(c) => setSel({ biz: bizNode.key, comp: c.key })} />
+            <RankBars items={bizNode.companies} onPick={(c) => setSel(s => ({ ...s, node: bizNode.key, comp: c.key }))} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
               เรียงตาม OEE · <b>คลิกชื่อบริษัทเพื่อดูรายไลน์</b>
             </div>
@@ -520,7 +591,7 @@ export default function GroupOverview() {
                     </div>
                   </div>
 
-                  <button onClick={() => setSel({ biz: bizNode.key, comp: c.key })}
+                  <button onClick={() => setSel(s => ({ ...s, node: bizNode.key, comp: c.key }))}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 8 }}>
                     ▸ ดูรายไลน์ ({c.lines.length})
                   </button>
@@ -595,10 +666,10 @@ export default function GroupOverview() {
                   const lp = +(l.actual / l.target * 100).toFixed(1);
                   return (
                     <tr key={`${l.comp?.key}-${l.line}-${i}`}>
-                      {!compNode && <td style={TD}>{l.group?.icon} {l.group?.short}</td>}
+                      {!compNode && <td style={TD}>{l.comp?.groupMeta?.icon} {l.comp?.groupMeta?.short}</td>}
                       {!compNode && (
                         <td style={TD}>
-                          <button onClick={() => setSel({ biz: l.group.key, comp: l.comp.key })} style={{
+                          <button onClick={() => setSel(s => ({ ...s, node: s.axis === 'map' ? l.comp.zone : l.comp.groupMeta.key, comp: l.comp.key }))} style={{
                             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                             color: 'var(--accent)', fontSize: 13, fontWeight: 700,
                           }}>{l.comp?.flag} {l.comp?.code}</button>
