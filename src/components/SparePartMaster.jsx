@@ -17,6 +17,7 @@ import { teamKeyOf } from '../utils/mtnTeams';
 import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
 import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import ImageCropModal from './ImageCropModal';
+import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
 
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
@@ -67,6 +68,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   const [movePart, setMovePart] = useState(null);   // { part, type }
   const [histPart, setHistPart] = useState(null);
   const [showCats, setShowCats] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const canEdit = can('mtn_repair', 'manage_master', role);
   const canMove = can('mtn_repair', 'service', role) || canEdit;
@@ -212,6 +214,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
           <option value="ok">ปกติ</option>
         </select>
         <button onClick={printList} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>🖨️ พิมพ์</button>
+        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>📥 นำเข้า/อัพเดท</button>}
         {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>🏷️ หมวด</button>}
         {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '8px 15px', fontSize: 12.5 }}>➕ เพิ่มอะไหล่</button>}
       </div>
@@ -333,6 +336,8 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         usageRows={editPart === 'new' ? [] : (usage[editPart.id] || [])} count={parts.length}
         onClose={() => setEditPart(null)} onSaved={reloadAll} />}
       {showCats && <CategoryModal cats={cats} onClose={() => setShowCats(false)} onSaved={loadAux} />}
+      {showImport && <ImportModal parts={parts} cats={cats} teams={teams} fullName={fullName}
+        onClose={() => setShowImport(false)} onDone={reloadAll} />}
     </div>
   );
 }
@@ -724,6 +729,215 @@ function HistoryModal({ part, usageRows, onClose }) {
           </table>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}><button onClick={onClose} style={btnGhost}>ปิด</button></div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   นำเข้า/อัพเดทจากไฟล์ Excel/CSV — อัพโหลดไฟล์เดิมซ้ำได้ ระบบอัพเดททับไม่สร้างซ้ำ
+   ══════════════════════════════════════════════════════════════════════════ */
+function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
+  const [keyField, setKeyField] = useState('code');
+  const [withStock, setWithStock] = useState(false);
+  const [parsed, setParsed] = useState(null);      // { rows, unknown, monthCols }
+  const [fileName, setFileName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null);
+
+  const matched = useMemo(
+    () => (parsed ? matchExisting(parsed.rows, parts, keyField) : []),
+    [parsed, parts, keyField]);
+  const stat = useMemo(() => ({
+    create: matched.filter(r => r.action === 'create').length,
+    update: matched.filter(r => r.action === 'update').length,
+    skip: matched.filter(r => r.action === 'skip').length,
+    warn: matched.filter(r => r.action !== 'skip' && r.errors.length).length,
+  }), [matched]);
+
+  const pick = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = '';
+    if (!file) return;
+    setBusy(true); setFileName(file.name);
+    try {
+      const XLSX = await import('xlsx');          // dynamic import — ไม่ให้ bundle หลักบวม
+      const wb = XLSX.read(await file.arrayBuffer(), { cellDates: false });
+      // เลือกชีทแรกที่แปลงแล้วได้แถวข้อมูล (ไฟล์จริงมักมีหลายชีท)
+      let best = null;
+      for (const name of wb.SheetNames) {
+        const matrix = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
+        const p = parseSpareSheet(matrix, { teamKeyOf, categories: cats });
+        if (p.rows.length && (!best || p.rows.length > best.rows.length)) best = p;
+      }
+      if (!best || !best.rows.length) {
+        toast.error('อ่านไฟล์ไม่ได้ — ต้องมีหัวคอลัมน์ "ชื่ออะไหล่" หรือ "รหัส" อย่างน้อย 1 คอลัมน์');
+        setParsed(null);
+      } else setParsed(best);
+    } catch (err) { toast.error('อ่านไฟล์ไม่สำเร็จ: ' + err.message); setParsed(null); }
+    setBusy(false);
+  };
+
+  const template = async () => {
+    const XLSX = await import('xlsx');
+    const ws = XLSX.utils.aoa_to_sheet([
+      TEMPLATE_HEADERS,
+      ['SP-001', 'โซลินอยด์วาล์ว SMC', 'ชิ้น', teams[0]?.dept_name || 'MTN', '', 'VQ1000', 'SMC', cats[0]?.key || '', 'A-01-1', 5, 2, 10, 850, 30, 'RB-104', ''],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'spare parts');
+    XLSX.writeFile(wb, 'spare_part_import_template.xlsx');
+  };
+
+  const apply = async () => {
+    const todo = matched.filter(r => r.action !== 'skip');
+    if (!todo.length) return toast.error('ไม่มีแถวที่นำเข้าได้');
+    setBusy(true);
+    let created = 0, updated = 0, failed = 0, stockDone = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const r = todo[i];
+      setProgress({ i: i + 1, total: todo.length });
+      try {
+        let pid = r.existing?.id;
+        if (r.action === 'update') {
+          // อัพเดทเฉพาะฟิลด์ที่มีค่าในไฟล์ — คอลัมน์ที่ไม่ได้ส่งมา ห้ามล้างของเดิมทิ้ง
+          const patch = {};
+          for (const [k, v] of Object.entries(r.data)) if (v !== null && v !== undefined) patch[k] = v;
+          const { error } = await supabaseDR.from('mtn_spare_parts').update(patch).eq('id', pid);
+          if (error) throw error;
+          updated++;
+        } else {
+          const { data, error } = await supabaseDR.from('mtn_spare_parts')
+            .insert({ ...r.data, stock_qty: 0, sort_order: parts.length + i + 1 }).select('id').single();
+          if (error) throw error;
+          pid = data.id; created++;
+        }
+
+        // ยอดคงเหลือ: ผ่าน RPC เสมอ (กฎเหล็ก) — ของใหม่ = รับเข้า · ของเดิม = ปรับยอด (ตรวจนับ)
+        if (withStock && r.stockQty != null && pid) {
+          const type = r.action === 'create' ? 'in' : 'adjust';
+          if (!(type === 'in' && r.stockQty <= 0)) {
+            const { error: e2 } = await supabaseDR.rpc('mtn_stock_move', {
+              p_part_id: pid, p_type: type, p_qty: r.stockQty,
+              p_note: `นำเข้าจากไฟล์ ${fileName}`, p_by_name: fullName || null, p_ref_order: null,
+            });
+            if (!e2) stockDone++;
+          }
+        }
+
+        // ยอดใช้ย้อนหลังจากคอลัมน์เดือน → source 'manual'
+        const uRows = Object.entries(r.usage).map(([month_key, qty_out]) => ({
+          part_id: pid, month_key, qty_out, qty_in: 0, source: 'manual',
+        }));
+        if (uRows.length && pid)
+          await supabaseDR.from('mtn_spare_usage_monthly').upsert(uRows, { onConflict: 'part_id,month_key,source' });
+      } catch { failed++; }
+    }
+    setBusy(false); setProgress(null);
+    toast.success(`นำเข้าเสร็จ — เพิ่ม ${created} · อัพเดท ${updated}${stockDone ? ` · ตั้งยอด ${stockDone}` : ''}${failed ? ` · ไม่สำเร็จ ${failed}` : ''}`);
+    onDone(); onClose();
+  };
+
+  const badge = (a) => ({
+    create: { t: 'เพิ่มใหม่', c: '#22c55e' }, update: { t: 'อัพเดท', c: '#38bdf8' }, skip: { t: 'ข้าม', c: '#ef4444' },
+  }[a]);
+
+  return (
+    <div onClick={busy ? undefined : onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(820px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>📥 นำเข้า / อัพเดทคลังอะไหล่จากไฟล์</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>
+          รองรับ .xlsx / .csv · หัวคอลัมน์ไทยหรืออังกฤษก็ได้ · <b>อัพโหลดไฟล์เดิมซ้ำได้เรื่อยๆ</b> ระบบจะอัพเดททับตามคีย์ ไม่สร้างรายการซ้ำ
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+          <label style={{ ...btnPri, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.5 : 1 }}>
+            📄 เลือกไฟล์<input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={pick} style={{ display: 'none' }} />
+          </label>
+          <button onClick={template} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</button>
+          {fileName && <span style={{ fontSize: 12, color: 'var(--muted)' }}>📎 {fileName}</span>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12, fontSize: 12.5 }}>
+          <span style={{ fontWeight: 700, color: 'var(--text2)' }}>จับคู่ของเดิมด้วย:</span>
+          {[['code', 'รหัสภายใน'], ['mat_no', 'เลข MAT']].map(([k, t]) => (
+            <label key={k} style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
+              <input type="radio" name="keyf" checked={keyField === k} onChange={() => setKeyField(k)} style={{ width: 'auto' }} />{t}
+            </label>
+          ))}
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', marginLeft: 'auto' }}>
+            <input type="checkbox" checked={withStock} onChange={e => setWithStock(e.target.checked)} style={{ width: 'auto' }} />
+            อัพเดทยอดคงเหลือด้วย <span style={{ color: 'var(--muted)', fontSize: 11 }}>(ลงเป็นรายการรับเข้า/ปรับยอดในประวัติ)</span>
+          </label>
+        </div>
+
+        {parsed && (
+          <>
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 10 }}>
+              {[['เพิ่มใหม่', stat.create, '#22c55e'], ['อัพเดท', stat.update, '#38bdf8'], ['ข้าม', stat.skip, stat.skip ? '#ef4444' : undefined], ['ต้องดู', stat.warn, stat.warn ? '#f59e0b' : undefined]].map(([t, v, c]) => (
+                <div key={t} style={{ background: 'var(--bg3)', border: `1px solid ${c || 'var(--border)'}`, borderRadius: 8, padding: '6px 12px' }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{t}</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: c || 'var(--text)' }}>{v}</div>
+                </div>
+              ))}
+              {!!Object.keys(parsed.monthCols).length && (
+                <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 8, padding: '6px 12px' }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>ยอดใช้ย้อนหลัง</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{Object.keys(parsed.monthCols).join(', ')}</div>
+                </div>
+              )}
+            </div>
+            {!!parsed.unknown.length && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
+                คอลัมน์ที่ระบบไม่รู้จัก (ข้ามไป): {parsed.unknown.slice(0, 10).join(' · ')}{parsed.unknown.length > 10 ? ' …' : ''}
+              </div>
+            )}
+
+            <div className="table-sticky" style={{ maxHeight: 320, border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                <thead><tr>
+                  <th style={th}>แถว</th><th style={th}>สถานะ</th><th style={th}>ชื่ออะไหล่</th>
+                  <th style={th}>รหัส</th><th style={th}>MAT</th><th style={th}>ชั้นวาง</th>
+                  <th style={{ ...th, textAlign: 'right' }}>LT</th><th style={th}>หมายเหตุการนำเข้า</th>
+                </tr></thead>
+                <tbody>
+                  {matched.slice(0, 200).map((r, i) => {
+                    const b = badge(r.action);
+                    return (
+                      <tr key={i} style={{ opacity: r.action === 'skip' ? 0.55 : 1 }}>
+                        <td style={{ ...td, color: 'var(--muted)', fontSize: 11.5 }}>{r.rowNo}</td>
+                        <td style={td}><span style={{ fontSize: 11, fontWeight: 800, color: b.c, border: `1px solid ${b.c}`, borderRadius: 4, padding: '1px 6px', whiteSpace: 'nowrap' }}>{b.t}</span></td>
+                        <td style={{ ...td, fontWeight: 600 }}>{r.data.name || <span style={{ color: '#ef4444' }}>(ไม่มีชื่อ)</span>}</td>
+                        <td style={{ ...td, fontSize: 11.5 }}>{r.data.code || '—'}</td>
+                        <td style={{ ...td, fontSize: 11.5 }}>{r.data.mat_no || '—'}</td>
+                        <td style={{ ...td, fontSize: 11.5, fontWeight: 700 }}>{r.data.shelf || '—'}</td>
+                        <td style={{ ...td, textAlign: 'right', fontSize: 11.5 }}>{r.data.lead_time_days ?? '—'}</td>
+                        <td style={{ ...td, fontSize: 11, color: r.errors.length ? '#f59e0b' : 'var(--muted)' }}>{r.errors.join(' · ')}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {matched.length > 200 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>แสดง 200 แถวแรกจาก {matched.length} — นำเข้าครบทุกแถว</div>}
+          </>
+        )}
+
+        {progress && (
+          <div style={{ marginTop: 12, fontSize: 12.5 }}>
+            กำลังนำเข้า {progress.i}/{progress.total}…
+            <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 4 }}>
+              <div style={{ height: '100%', width: `${(progress.i / progress.total) * 100}%`, background: 'var(--accent)' }} />
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button onClick={onClose} disabled={busy} style={{ ...btnGhost, opacity: busy ? 0.5 : 1 }}>ปิด</button>
+          <button onClick={apply} disabled={busy || !parsed || !(stat.create + stat.update)}
+            style={{ ...btnPri, opacity: (busy || !parsed || !(stat.create + stat.update)) ? 0.5 : 1 }}>
+            {busy ? 'กำลังทำงาน…' : `นำเข้า ${stat.create + stat.update} รายการ`}
+          </button>
+        </div>
       </div>
     </div>
   );

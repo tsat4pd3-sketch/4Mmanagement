@@ -62,8 +62,10 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
   const [draft, setDraft] = useState(null);          // rect ที่กำลังลาก
   const [showGrid, setShowGrid] = useState(false);
   const [showRackForm, setShowRackForm] = useState(null);
+  const [live, setLive] = useState(null);            // ช่องที่กำลังลากย้าย/ปรับขนาด (พรีวิวลื่นๆ ก่อนบันทึก)
   const wrapRef = useRef(null);
   const dragRef = useRef(null);
+  const moveRef = useRef(null);
   const teams = pmTeamsSync();
 
   const rack = racks.find(r => r.id === rackId) || null;
@@ -137,20 +139,59 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
       y: Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100)),
     };
   };
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const onDown = (e) => {
     if (!edit || !rack?.image_url) return;
-    if (e.target.closest('[data-cell]')) return;    // กดบนช่องเดิม = เลือก ไม่ใช่วาดใหม่
+    const cellEl = e.target.closest('[data-cell]');
     const p = pctFromEvent(e);
+    if (cellEl) {
+      // กดบนช่องเดิม = ย้าย (หรือปรับขนาดถ้ากดที่มุมขวาล่าง) — ไม่ใช่วาดช่องใหม่
+      const c = cells.find(x => x.id === cellEl.getAttribute('data-cell'));
+      if (!c) return;
+      moveRef.current = {
+        mode: e.target.closest('[data-handle]') ? 'resize' : 'move',
+        id: c.id, start: p, orig: { x: +c.x, y: +c.y, w: +c.w, h: +c.h }, moved: false,
+      };
+      setSelCell(c);
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      return;
+    }
     dragRef.current = p;
     setDraft({ x: p.x, y: p.y, w: 0, h: 0 });
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const onMove = (e) => {
+    const m = moveRef.current;
+    if (m) {
+      const p = pctFromEvent(e);
+      const dx = p.x - m.start.x, dy = p.y - m.start.y;
+      if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) m.moved = true;
+      const o = m.orig;
+      const next = m.mode === 'move'
+        ? { x: clamp(o.x + dx, 0, 100 - o.w), y: clamp(o.y + dy, 0, 100 - o.h), w: o.w, h: o.h }
+        : { x: o.x, y: o.y, w: clamp(o.w + dx, 1, 100 - o.x), h: clamp(o.h + dy, 1, 100 - o.y) };
+      setLive({ id: m.id, ...next });
+      return;
+    }
     if (!dragRef.current) return;
     const p = pctFromEvent(e), s = dragRef.current;
     setDraft({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w: Math.abs(p.x - s.x), h: Math.abs(p.y - s.y) });
   };
   const onUp = async () => {
+    // จบการย้าย/ปรับขนาด
+    const m = moveRef.current;
+    if (m) {
+      moveRef.current = null;
+      const lv = live;
+      setLive(null);
+      if (m.moved && lv?.id === m.id) {
+        const patch = { x: +lv.x.toFixed(2), y: +lv.y.toFixed(2), w: +lv.w.toFixed(2), h: +lv.h.toFixed(2) };
+        const { error } = await supabaseDR.from('mtn_rack_cells').update(patch).eq('id', m.id);
+        if (error) { toast.error(error.message); loadCells(rackId); }
+        else setCells(cs => cs.map(c => (c.id === m.id ? { ...c, ...patch } : c)));
+      }
+      return;
+    }
     const d = draft; dragRef.current = null; setDraft(null);
     if (!d || d.w < 1.5 || d.h < 1.5) return;        // ลากสั้นเกิน = ถือว่าพลาด ไม่สร้างช่องจิ๋ว
     const code = prompt('รหัสชั้นวางของช่องนี้ (ต้องตรงกับช่อง "ตำแหน่งชั้นวาง" ของอะไหล่)\nเช่น A-01-3');
@@ -230,7 +271,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
 
       {edit && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
-          ✏️ <b>โหมดแก้ผัง</b> — ลากบนรูปเพื่อสร้างช่องใหม่ (ใส่รหัสชั้นวางให้ตรงกับที่กรอกไว้ในอะไหล่) · กดที่ช่องเพื่อเปลี่ยนรหัส/ลบ
+          ✏️ <b>โหมดแก้ผัง</b> — ลากบน<b>พื้นที่ว่าง</b>เพื่อสร้างช่องใหม่ · ลาก<b>ตัวช่อง</b>เพื่อย้าย · ลาก<b>มุมขวาล่าง</b>เพื่อปรับขนาด · กดช่องแล้วเปลี่ยนรหัส/ลบได้ที่แผงขวา
           {rack && <button onClick={() => setShowGrid(true)} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 10 }}>⊞ สร้างตารางอัตโนมัติ</button>}
         </div>
       )}
@@ -263,29 +304,39 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
                 {/* scrim ให้ช่องเด่นขึ้น (เหมือน FactoryMap) */}
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.22)', borderRadius: 6, pointerEvents: 'none' }} />
 
-                {cells.map(c => {
+                {cells.map(c0 => {
+                  const c = (live && live.id === c0.id) ? { ...c0, ...live } : c0;   // พรีวิวระหว่างลาก
                   const ps = partsOf(c.shelf_code);
                   const st = cellStatus(ps);
                   const isHit = hitCodes ? hitCodes.has(norm(c.shelf_code)) : false;
                   const dim = hitCodes && !isHit;
                   const sel = selCell?.id === c.id;
                   return (
-                    <div key={c.id} data-cell="1"
-                      onClick={(e) => { e.stopPropagation(); setSelCell(c); }}
-                      title={`${c.shelf_code} · ${ps.length} รายการ · ${st.label}`}
+                    <div key={c.id} data-cell={c.id}
+                      onClick={(e) => { e.stopPropagation(); setSelCell(c0); }}
+                      title={edit ? `${c.shelf_code} — ลากเพื่อย้าย · ลากมุมขวาล่างเพื่อปรับขนาด` : `${c.shelf_code} · ${ps.length} รายการ · ${st.label}`}
                       style={{
                         position: 'absolute', left: `${c.x}%`, top: `${c.y}%`, width: `${c.w}%`, height: `${c.h}%`,
                         border: `2px solid ${isHit ? '#facc15' : sel ? 'var(--accent)' : st.color}`,
                         background: isHit ? 'rgba(250,204,21,0.4)' : st.bg,
                         opacity: dim ? 0.28 : 1,
                         boxShadow: isHit ? '0 0 0 3px rgba(250,204,21,0.35)' : sel ? '0 0 0 3px rgba(61,214,92,0.3)' : 'none',
-                        borderRadius: 4, cursor: 'pointer', display: 'grid', placeItems: 'center', overflow: 'hidden',
-                        transition: 'opacity .15s',
+                        borderRadius: 4, cursor: edit ? 'move' : 'pointer', display: 'grid', placeItems: 'center', overflow: 'visible',
+                        transition: live?.id === c.id ? 'none' : 'opacity .15s',
                       }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', textAlign: 'center', lineHeight: 1.25, padding: 2 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', textAlign: 'center', lineHeight: 1.25, padding: 2, overflow: 'hidden' }}>
                         {c.label || c.shelf_code}
                         {!!ps.length && <div style={{ fontSize: 10, fontWeight: 700, opacity: 0.95 }}>{ps.length} รายการ</div>}
                       </div>
+                      {/* มือจับปรับขนาด (มุมขวาล่าง) — โผล่เฉพาะโหมดแก้ผัง */}
+                      {edit && (
+                        <div data-handle="1" title="ลากเพื่อปรับขนาด"
+                          style={{
+                            position: 'absolute', right: -5, bottom: -5, width: 12, height: 12,
+                            background: 'var(--accent)', border: '2px solid #fff', borderRadius: 3,
+                            cursor: 'nwse-resize', boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+                          }} />
+                      )}
                     </div>
                   );
                 })}
