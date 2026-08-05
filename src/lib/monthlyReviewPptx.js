@@ -13,7 +13,7 @@
 */
 import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { wavg, wLoad, wRun, wProd } from '../utils/oeeAvg';
+import { wavg, wLoad, wRun, wProd } from '../utils/oee';
 
 /* ── TSG palette (hex ไม่มี # — ตาม pptxgenjs) ── */
 const C = {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
-import { wavg, wLoad } from '../utils/oeeAvg';
+import { wavg, wLoad, buildCtMap } from '../utils/oee';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -62,13 +62,16 @@ export default function OeeInsightPanel({ lines }) {
       const ids = sess.map(s => s.id);
       const sessById = Object.fromEntries(sess.map(s => [s.id, s]));
 
-      const [{ data: dts }, { data: defs }, { data: orders }, { data: kstd }] = await Promise.all([
+      const [{ data: dts }, { data: defs }, { data: orders }, { data: kstd }, { data: prodCt }] = await Promise.all([
         supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category)').in('session_id', ids),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th)').in('session_id', ids),
         supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, status').in('session_id', ids).in('status', ['confirmed', 'carry_over', 'imported']),
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
+        supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
       ]);
-      const ctOf = (mat) => Number(kstd?.find(k => k.mat_no === mat)?.dr_products?.cycle_time_sec) || 0;
+      // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (เดิม kanban ล้วน → บาง MAT ได้ CT=0)
+      const ctMapAll = buildCtMap({ kanbanStds: kstd || [], products: prodCt || [] });
+      const ctOf = (mat) => ctMapAll[mat] || 0;
       const prodNameOf = (mat) => kstd?.find(k => k.mat_no === mat)?.dr_products?.name || mat;
 
       // ── ข้อมูลคนขาดจากฝั่ง Main (เช็คชื่อ) — ผูก line ผ่าน employees.line_id ──

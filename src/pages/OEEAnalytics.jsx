@@ -14,10 +14,8 @@ import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { computeLiveOee, LIVE_MIN_ELAPSED } from '../utils/liveOee';
-import { strictOee } from '../utils/strictOee';
-import { wavg, wLoad, wRun, wProd } from '../utils/oeeAvg';
 import { lazy, Suspense } from 'react';
+import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
@@ -76,23 +74,12 @@ function calcOEE(sessions, downtimes, defects) {
    TEEP = ฐาน "เวลาปฏิทิน 24 ชม./วัน"                          → กำลังผลิตที่มีทั้งหมด ใช้ไปกี่ %
    ค่าจะเรียง TEEP ≤ OOE ≤ OEE เสมอ (ฐานใหญ่ขึ้น เลขเล็กลง)
    คิดจาก OEE ที่ stamp ไว้แล้วคูณสัดส่วนฐาน — ไม่คำนวณ A/P/Q ใหม่ (กันได้ตัวเลขคนละชุดกับ Daily Report) */
-const SHIFT_START_MIN = { day: 8 * 60, night: 20 * 60 };
-// เวลาพักตามนโยบายบริษัทที่ตกอยู่ในกรอบกะนั้น (นาที) — นับเฉพาะช่วงที่ทับกับกะจริง
-function policyBreakMin(shift, shiftMin, policies) {
-  const startMin = SHIFT_START_MIN[shift] ?? SHIFT_START_MIN.day;
-  const endMin = startMin + (Number(shiftMin) || 0);
-  let total = 0;
-  for (const p of policies || []) {
-    if (!(p.shift === 'both' || p.shift === shift)) continue;
-    if (p.process_type && p.process_type !== 'common') continue; // นโยบายเฉพาะ process — ข้าม (ไม่รู้ process ของกะที่นี่)
-    const [h, m] = String(p.start_time || '00:00').split(':').map(Number);
-    let bs = h * 60 + m;
-    if (bs < startMin) bs += 1440;                                // พักหลังเที่ยงคืน (กะดึกข้ามวัน)
-    const ov = Math.min(bs + (Number(p.duration_min) || 0), endMin) - Math.max(bs, startMin);
-    if (ov > 0) total += ov;
-  }
-  return total;
-}
+// เวลาพักตามนโยบาย — ใช้ util กลาง (src/utils/oee.js) จุดเดียวกับ Daily Report
+// เดิมมีสูตรท้องถิ่นที่ทิ้งนโยบายเฉพาะ process + ใช้เวลาเริ่มกะตายตัว 08:00/20:00 → นับพักขาด
+// ทำให้ OEE จริง/OOE ของกะเดียวกันไม่ตรงกับแท็บประวัติใน Daily Report (รวมเป็นตัวเดียว 2026-08-05)
+const policyBreakMin = (row, policies) => policyBreakForShift({
+  policies, shift: row.shift, shiftMin: row.shift_min, workDate: row.work_date, startTime: row.start_time,
+});
 
 // ── ค่าเฉลี่ยถ่วงน้ำหนักตามตำรา OEE ───────────────────────────────
 // A/OEE ถ่วงด้วย "เวลารับภาระ" (loading time = shift − planned DT) · P ถ่วงด้วย "เวลาเดินเครื่อง"
@@ -424,14 +411,18 @@ export default function OEEAnalytics() {
       const mats = [...new Set((ord || []).map(o => o.mat_no).filter(Boolean))];
       if (mats.length) {
         // + cycle_time_sec/name: ใช้คำนวณ OEE สดของกะที่ยังไม่ปิด (computeLiveOee) และแสดงชื่อพาร์ทในการ์ดกำลังผลิต
-        const { data: prod } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no, cycle_time_sec, name').in('mat_no', mats);
-        const pm = {}, ct = {}, nm = {};
+        // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products)
+        const [{ data: prod }, kstd] = await Promise.all([
+          supabaseDR.from('dr_products').select('mat_no, pair_mat_no, cycle_time_sec, name').in('mat_no', mats),
+          supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').in('mat_no', mats).then(r => r, () => ({ data: [] })),
+        ]);
+        const pm = {}, nm = {};
         (prod || []).forEach(p => {
           if (p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no;
-          if (p.cycle_time_sec) ct[p.mat_no] = Number(p.cycle_time_sec);
           if (p.name) nm[p.mat_no] = p.name;
         });
-        setTdPairMat(pm); setTdCtMap(ct);
+        setTdPairMat(pm);
+        setTdCtMap(buildCtMap({ kanbanStds: kstd?.data || [], products: prod || [] }));
         if (Object.keys(nm).length) setTdProductsByMat(prev => ({ ...prev, ...nm }));
       } else { setTdPairMat({}); setTdCtMap({}); }
       setLastUpdate(new Date());
@@ -449,7 +440,7 @@ export default function OEEAnalytics() {
     if (isScoped && !(tdScopeLines || []).length) { setTdHistory([]); return; }
     const startStr = dateStrAdd(tdDate, -9);
     let q = supabaseDR.from('production_sessions')
-      .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift, shift_min, actual_qty, qty_ng')
+      .select('work_date, oee, oee_a, oee_p, oee_q, status, line_name, shift, shift_min, start_time, actual_qty, qty_ng')
       .eq('status', 'closed')
       .gte('work_date', startStr).lte('work_date', tdDate)
       .limit(3000);
@@ -537,7 +528,7 @@ export default function OEEAnalytics() {
     const tdLineSet = new Set();
     tdValid.forEach(r => {
       const sm = Number(r.shift_min) || 0;
-      const brk = policyBreakMin(r.shift, sm, breakPols);
+      const brk = policyBreakMin(r, breakPols);
       const pl = Number(r.plannedMin) || 0;
       tdShift += sm; tdBreak += brk; tdPlanned += pl; tdNet += Math.max(0, sm - brk - pl);
       tdLineSet.add(r.line_name);
@@ -547,7 +538,7 @@ export default function OEEAnalytics() {
     // OEE จริง — นับหยุด "ในแผน" เป็นการสูญเสีย (กันการติ๊กในแผนเพื่อดัน A) · ถ่วงด้วยฐาน (กะ − พัก)
     const strictRows = tdValid.map(r => {
       const st = strictOee({
-        shiftMin: r.shift_min, breakMin: policyBreakMin(r.shift, Number(r.shift_min) || 0, breakPols),
+        shiftMin: r.shift_min, breakMin: policyBreakMin(r, breakPols),
         plannedDtMin: r.plannedMin, a: r.calcA, p: r.calcP, q: r.calcQ,
       });
       return st && st.oee != null ? { oee: st.oee, w: st.baseMin } : null;
@@ -820,7 +811,7 @@ export default function OEEAnalytics() {
     const lineSet = new Set();
     valid.forEach(r => {
       const shiftMin = Number(r.shift_min) || 0;
-      const brk = policyBreakMin(r.shift, shiftMin, breakPols);
+      const brk = policyBreakMin(r, breakPols);
       const plan = Number(r.plannedMin) || 0;
       sumShift += shiftMin; sumBreak += brk; sumPlanned += plan;
       sumNetAvail += Math.max(0, shiftMin - brk - plan);

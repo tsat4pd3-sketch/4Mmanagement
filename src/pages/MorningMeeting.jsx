@@ -10,7 +10,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
-import { wavg, wLoad } from '../utils/oeeAvg';
+import { wavg, wLoad } from '../utils/oee';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷

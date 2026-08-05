@@ -1,0 +1,177 @@
+/*
+  OEE — single source of truth ของการคำนวณทุกตัวชี้วัดที่ใช้ร่วมหลายจอ
+  ═══════════════════════════════════════════════════════════════════
+  รวมไว้ไฟล์เดียวโดยตั้งใจ (เดิมแตกเป็น liveOee/strictOee/oeeAvg แล้วสูตรเริ่ม drift กัน)
+  — จอไหนจะโชว์ A/P/Q/OEE/OOE/TEEP ต้อง import จากที่นี่ ห้ามเขียนสูตรเองในหน้า
+
+  ค่าที่ stamp ตอนปิดกะ (`production_sessions.oee_a/p/q/oee`) คือความจริงสูงสุดของกะที่ปิดแล้ว
+  — ห้ามคำนวณใหม่ด้วย master ปัจจุบัน · ตัวชี้วัดอื่น (OOE/TEEP/strict) คูณ "สัดส่วนฐานเวลา"
+  จากค่าที่ stamp เสมอ เพื่อไม่ให้ได้ตัวเลขคนละชุดกับ Daily Report
+
+  สารบัญ:
+    1) wavg / wLoad / wRun / wProd  — เฉลี่ยข้ามกะแบบถ่วงน้ำหนัก (ห้าม mean-of-percentages)
+    2) ctForMat                     — cycle time ต่อ MAT (kanban_standards → dr_products)
+    3) policyBreakMin               — เวลาพักตามนโยบายที่ทับกับช่วงเวลาที่สนใจ
+    4) computeLiveOee               — OEE สดของกะที่ยังไม่ปิด
+    5) strictOee                    — "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย
+*/
+
+
+/* ═══ 1) เฉลี่ยถ่วงน้ำหนัก ═══ */
+// เฉลี่ยถ่วงน้ำหนัก — ไม่มีน้ำหนัก (ทุกตัว 0) ถอยไปเป็น mean ธรรมดา · ไม่มีค่า valid = null
+export function wavg(items, valFn, wFn) {
+  let ws = 0, vs = 0, plainN = 0, plainSum = 0;
+  for (const it of items) {
+    const v = valFn(it);
+    if (v == null || isNaN(v)) continue;
+    plainN++; plainSum += Number(v);
+    const w = wFn ? Number(wFn(it)) || 0 : 1;
+    if (w > 0) { ws += w; vs += Number(v) * w; }
+  }
+  if (ws > 0) return +(vs / ws).toFixed(1);
+  return plainN ? +(plainSum / plainN).toFixed(1) : null;
+}
+
+// น้ำหนักมาตรฐาน — row ต้องมี shift_min, plannedMin (นาที DT ในแผน), calcA/oee_a, actual_qty/qty_ng
+export const wLoad = it => Math.max(0, (Number(it.shift_min ?? it.shiftMin) || 0) - (Number(it.plannedMin) || 0));
+export const wRun  = it => wLoad(it) * ((it.calcA != null ? it.calcA : (it.oee_a != null ? +it.oee_a : 100)) / 100);
+export const wProd = it => (Number(it.totalQty != null ? it.totalQty : it.actual_qty) || 0) + (Number(it.ngQty != null ? it.ngQty : it.qty_ng) || 0);
+
+/* ═══ 2) Cycle time ต่อ MAT — single source ═══ */
+/*
+  ลำดับ fallback (ต้นฉบับ: ctForMatNo ใน DailyReport):
+    kanban_standards → dr_products (แถวที่มี CT)  — kanban บางแถวลิงก์ product_id ที่ CT ว่าง
+    ทั้งที่มี dr_products อีกแถวของ mat เดียวกันตั้ง CT ไว้ (เคยทำ P/OEE ทั้งกะเป็น null 7 กะ · 2026-07-15)
+  ⚠️ จอที่ดึง CT จาก dr_products อย่างเดียวจะได้ P คนละชุดกับตอนปิดกะ — ให้เรียกตัวนี้เสมอ
+*/
+export function ctForMat(matNo, { kanbanStds = [], products = [] } = {}) {
+  if (!matNo) return 0;
+  const fromKanban = kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec;
+  if (fromKanban) return Number(fromKanban);
+  return Number(products.find(p => p.mat_no === matNo && p.cycle_time_sec)?.cycle_time_sec) || 0;
+}
+
+// สร้าง map mat_no → CT ครั้งเดียว (ใช้กับจอที่ต้องหา CT ซ้ำๆ เช่น computeLiveOee)
+export function buildCtMap({ kanbanStds = [], products = [] } = {}) {
+  const m = {};
+  products.forEach(p => { if (p.cycle_time_sec) m[p.mat_no] = Number(p.cycle_time_sec); });
+  kanbanStds.forEach(k => { const ct = k.dr_products?.cycle_time_sec; if (ct) m[k.mat_no] = Number(ct); });
+  return m;
+}
+
+/* ═══ 3) เวลาพักตามนโยบาย — single source ═══ */
+/*
+  นาทีของ break_policies ที่ทับกับช่วง [startMs, endMs] — ต้นฉบับ: computePolicyBreakMin ใน DailyReport
+  กรอง 2 ชั้นเสมอ: กะ (shift/both) + กระบวนการ (common หรือตรง processType ของกะ)
+  ⚠️ เดิมมี 3 implementation ให้ผลต่างกัน (แท็บประวัติไม่กรอง process = นับพักเกิน ·
+  OEE Analytics ทิ้งนโยบายเฉพาะ process + ใช้เวลาเริ่มกะตายตัว 08:00/20:00 = นับพักขาด)
+  → ทำให้ OEE จริง/OOE ของกะเดียวกันไม่ตรงกันระหว่างหน้าจอ (รวมเป็นตัวนี้ 2026-08-05)
+
+  processType = null → ใช้เฉพาะนโยบาย common (ไม่รู้ process ของกะ — ปลอดภัยกว่าเดานโยบายเฉพาะ)
+*/
+export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
+  if (!startMs || !endMs || endMs <= startMs || !workDate) return 0;
+  return policies.reduce((sum, p) => {
+    if (!(p.shift === 'both' || p.shift === shift)) return sum;
+    const proc = p.process_type;
+    if (proc && proc !== 'common' && proc !== processType) return sum;
+    const [ph, pm] = String(p.start_time || '00:00').split(':').map(Number);
+    let ps = new Date(`${workDate}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
+    let pe = ps + (Number(p.duration_min) || 0) * 60000;
+    if (pe < startMs) { ps += 86400000; pe += 86400000; }  // พักกะดึกหลังเที่ยงคืน
+    return sum + Math.max(0, (Math.min(pe, endMs) - Math.max(ps, startMs)) / 60000);
+  }, 0);
+}
+
+// รูปแบบย่อสำหรับจอที่มีแค่ (กะ, นาทีกะ) — คิดจากเวลาเริ่มกะจริงถ้ามี ไม่งั้น 08:00/20:00
+export const SHIFT_START_MIN = { day: 8 * 60, night: 20 * 60 };
+export function policyBreakForShift({ policies = [], shift, shiftMin, workDate, startTime = null, processType = null }) {
+  if (!shiftMin || !workDate) return 0;
+  const hhmm = startTime ? String(startTime).slice(0, 5)
+    : `${String(Math.floor((SHIFT_START_MIN[shift] ?? SHIFT_START_MIN.day) / 60)).padStart(2, '0')}:00`;
+  const startMs = new Date(`${workDate}T${hhmm}:00`).getTime();
+  return policyBreakOverlapMin({ policies, startMs, endMs: startMs + Number(shiftMin) * 60000, workDate, shift, processType });
+}
+
+
+/* ═══ 4) OEE สด (กะยังไม่ปิด) ═══ */
+export const LIVE_MIN_ELAPSED = 10; // นาทีแรกของกะ ยังประเมินไม่ได้ (ตัวหารเล็กเกินไป)
+
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now() }) {
+  if (!session?.start_time) return null;
+  const wd = workDate || session.work_date;
+  if (!wd) return null;
+
+  const opened = new Date(`${wd}T${session.start_time.slice(0, 5)}:00`).getTime();
+  let elapsed = (nowMs - opened) / 60000;
+  if (session.shift_min) elapsed = Math.min(elapsed, session.shift_min);
+  if (!(elapsed >= LIVE_MIN_ELAPSED)) return null;
+
+  // Downtime ที่ยังเปิดค้าง (ไม่มีเวลาจบ/นาที) นับถึงตอนนี้
+  const dtMin = downtimes.reduce((a, d) => {
+    if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0);
+    return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) : 0);
+  }, 0);
+  const runMin = Math.max(1, elapsed - dtMin);
+
+  let stdMin = 0, produced = 0, ngFromOrders = 0;
+  orders.forEach(o => {
+    const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+    produced += q;
+    stdMin += q * (ctMap[o.mat_no] || 0) / 60;
+    ngFromOrders += o.qty_ng || 0;
+  });
+  const ng = ngQty != null ? ngQty : ngFromOrders;
+
+  const A = Math.min(1, runMin / elapsed);
+  const pct = v => Math.max(0, Math.min(100, Math.round(v * 1000) / 10));
+
+  // ยังไม่ผลิตชิ้นแรก (เพิ่งเปิดกะ/รอของ) → ประเมิน P/Q/OEE ไม่ได้ ต้องคืน null
+  // ห้ามคืน P=0 → OEE 0% (เคยทำการ์ด "กำลังผลิต" ขึ้น 0% แดง ทั้งที่กะเพิ่งเปิด 19 นาที · 2026-08-05)
+  if (produced <= 0) {
+    return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true };
+  }
+
+  const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
+  const Q = produced / (produced + ng);
+  const oee = A * P * Q;
+  if (!isFinite(oee)) return null;
+
+  return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced, ngQty: ng, noOutput: false };
+}
+
+/* ═══ 5) OEE จริง (strict) ═══ */
+// คืน null เมื่อคำนวณไม่ได้ (ไม่มีเวลากะ / ฐาน ≤ 0 / ไม่มีค่า A ที่ stamp)
+export function strictOee({ shiftMin, breakMin = 0, plannedDtMin = 0, a = null, p = null, q = null }) {
+  const shift = Number(shiftMin) || 0;
+  const brk = Math.max(0, Number(breakMin) || 0);
+  const planned = Math.max(0, Number(plannedDtMin) || 0);
+
+  const base = shift - brk;                        // loading time (หักเฉพาะพักตามนโยบาย)
+  if (!(base > 0) || a == null) return null;
+  const loadOfficial = Math.max(0, base - planned); // ฐานของสูตรมาตรฐาน
+  const ratio = loadOfficial / base;                // ≤ 1 เสมอ
+
+  const r1 = v => Math.round(v * 10) / 10;
+  const aStrict = Math.max(0, Math.min(100, Number(a) * ratio));
+  const pv = p == null ? null : Number(p);
+  const qv = q == null ? null : Number(q);
+  const oee = pv == null || qv == null ? null : r1(aStrict * pv * qv / 10000);
+
+  return {
+    a: r1(aStrict),
+    oee,
+    baseMin: Math.round(base),
+    loadMin: Math.round(loadOfficial),
+    plannedDtMin: Math.round(planned),
+    // สัดส่วนเวลาที่ถูก "กันออก" จากฐาน A ของสูตรมาตรฐาน — สูงผิดปกติ = ควรตรวจการจัดประเภท Downtime
+    plannedSharePct: r1((planned / base) * 100),
+  };
+}
+
+// ต่างกันกี่จุดจาก OEE มาตรฐานที่ stamp ไว้ (บวก = OEE มาตรฐานสูงกว่า)
+export const strictGap = (stampedOee, strictOeeVal) =>
+  stampedOee == null || strictOeeVal == null ? null : Math.round((Number(stampedOee) - strictOeeVal) * 10) / 10;
+
+// เกณฑ์เตือน: หยุด "ในแผน" กินฐานเกินเท่าไหร่ถึงควรไปตรวจการจัดประเภท
+export const STRICT_WARN_SHARE_PCT = 5;

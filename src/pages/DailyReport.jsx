@@ -13,10 +13,10 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT } from '../utils/strictOee';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat } from '../utils/oee';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -808,14 +808,8 @@ function LiveTab({ role }) {
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
   // (session.product_id ไม่ได้ถูกตั้งค่าจาก UI เปิดกะ เลยเป็น null เสมอ — ใช้ mat_no ของแต่ละใบงานแทน)
-  const ctForMatNo = (matNo) => {
-    const fromKanban = kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.cycle_time_sec;
-    if (fromKanban) return fromKanban;
-    // fallback: kanban_standards บางแถวลิงก์ไป product_id ที่ cycle_time_sec ว่าง ทั้งที่มี dr_products อีกแถว
-    // (mat เดียวกัน) ตั้ง CT ไว้ — โดยเฉพาะใบ manual/สินค้าลิงก์ซ้ำ · เดิมได้ CT=0 → P/OEE ทั้งกะเป็น null
-    // ทั้งที่ผลิตจริงและมี CT (เจอ 7 กะย้อนหลัง เช่น LASER E50 manual · แก้ 2026-07-15)
-    return products.find(p => p.mat_no === matNo && p.cycle_time_sec)?.cycle_time_sec || 0;
-  };
+  // CT ต่อ MAT — single source ที่ src/utils/oee.js (ทุกจอต้องใช้ตัวเดียวกัน ไม่งั้น P คนละชุด)
+  const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
 
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
@@ -4437,16 +4431,12 @@ function HistoryTab({ role }) {
       return sum + Math.max(0, (Math.min(de, endMs) - Math.max(ds, startMs)) / 60000);
     }, 0);
   };
-  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift) => {
-    if (!startMs || !endMs || endMs <= startMs) return 0;
-    return histBreaks.filter(p => p.shift === 'both' || p.shift === shift).reduce((sum, p) => {
-      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-      let ps = new Date(`${workDateStr}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
-      let pe = ps + (p.duration_min || 0) * 60000;
-      if (pe < startMs) { ps += 86400000; pe += 86400000; } // พักกะดึกหลังเที่ยงคืน — เลื่อนไปวันถัดไป
-      return sum + Math.max(0, (Math.min(pe, endMs) - Math.max(ps, startMs)) / 60000);
-    }, 0);
-  };
+  // เวลาพักตามนโยบายในช่วงที่สนใจ — ใช้ util กลาง (src/utils/oee.js) ตัวเดียวกับตอนปิดกะ/OEE Analytics
+  // เดิมสูตรนี้ไม่กรอง process_type (query ก็ไม่ได้ select มา) → นับพักเกินจริงในไลน์ที่มีนโยบายเฉพาะ process
+  // ทำให้ %P รายชิ้น + OEE จริง ในแท็บประวัติ ไม่ตรงกับหน้าอื่น (รวมเป็นตัวเดียว 2026-08-05)
+  const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null) =>
+    policyBreakOverlapMin({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType });
+
 
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
@@ -4491,14 +4481,15 @@ function HistoryTab({ role }) {
   }, [filter, role, scopeSecs, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
+  // CT ผ่าน buildCtMap (fallback kanban_standards → dr_products ตัวเดียวกับตอนปิดกะ) —
+  // เดิมดึง kanban อย่างเดียว → MAT ที่ kanban ลิงก์ product ที่ CT ว่าง จะไม่มี %P ให้ดู (แก้ 2026-08-05)
+  // break_policies ต้อง select process_type ด้วย ไม่งั้นกรองนโยบายเฉพาะ process ไม่ได้ (นับพักเกิน)
   useEffect(() => {
-    supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)
-      .then(({ data }) => {
-        const m = {};
-        (data || []).forEach(r => { if (r.dr_products?.cycle_time_sec) m[r.mat_no] = Number(r.dr_products.cycle_time_sec); });
-        setCtByMat(m);
-      });
-    supabaseDR.from('break_policies').select('shift, start_time, duration_min').eq('is_active', true)
+    Promise.all([
+      supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
+    ]).then(([k, p]) => setCtByMat(buildCtMap({ kanbanStds: k.data || [], products: p.data || [] })));
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
       .then(({ data }) => setHistBreaks(data || []));
   }, []);
 
@@ -4617,7 +4608,7 @@ function HistoryTab({ role }) {
                   )}
 
                   {/* OEE จริง — นับ Downtime "ในแผน" เป็นการสูญเสียด้วย (กันการติ๊กในแผนเพื่อดัน OEE)
-                      ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/strictOee.js */}
+                      ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/oee.js */}
                   {s.oee != null && (() => {
                     const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
