@@ -4,12 +4,14 @@ import { wavg } from '../utils/oee';
 import { pairAwareTotal } from '../utils/pairTotals';
 import useIsMobile from '../utils/useIsMobile';
 
-/* ══ 🏢 ภาพรวมกลุ่มโรงงาน (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════════
-   โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายโรงพร้อมกันทำได้มั้ย"
-   หน้านี้ = ตัวอย่างหน้าจอเพื่อตอบคำถามนั้น (ยังไม่ใช่ระบบ multi-plant จริง):
-     • โรงงานที่ 1 = ข้อมูลจริงจากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก)
-     • โรงงานที่ 2-5 = ปั้นจากข้อมูลจริงชุดเดียวกันด้วยตัวคูณ + seeded RNG (deterministic — ตัวเลขไม่ดิ้นทุกครั้งที่รีเฟรช)
-   ⚠️ ไม่มีการเขียน DB ใดๆ · ไม่มี schema ของ plant จริง — ข้อมูลจำลองอยู่ในหน่วยความจำหน้านี้เท่านั้น
+/* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
+   โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายบริษัทในกลุ่มทำได้มั้ย"
+   หน้านี้ = ตัวอย่างหน้าจอเพื่อตอบคำถามนั้น (ยังไม่ใช่ระบบ multi-plant จริง)
+
+   โครงองค์กร 3 ชั้น (drill-down):  TSG → กลุ่มธุรกิจ → บริษัท → ไลน์ผลิต
+     • TSAT4 (Automotive Metal Forming) = บริษัทเรา → ใช้ "ข้อมูลจริง" จากฐานข้อมูลปัจจุบัน
+     • บริษัทอื่น = ปั้นจากข้อมูลจริงชุดเดียวกันด้วยตัวคูณ + seeded RNG (deterministic — ตัวเลขไม่ดิ้นทุกครั้งที่รีเฟรช)
+   ⚠️ ไม่เขียน DB ใดๆ · ไม่มี schema ของ plant/company จริง — ข้อมูลจำลองอยู่ในหน่วยความจำหน้านี้เท่านั้น
 
    ไม่ scope ตาม section/line โดยตั้งใจ (เหมือน /factory-map ซึ่งเป็นข้อยกเว้นทางการใน CLAUDE.md):
    เป็นจอภาพรวมผู้บริหาร/ห้องประชุม — สิทธิ์เข้าหน้าคุมที่ role_permissions (seed: admin/manager)
@@ -34,7 +36,7 @@ const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-/* seeded RNG — ตัวเลขจำลองต้องคงที่ต่อ (โรงงาน × ไลน์ × วัน) ไม่งั้นรีเฟรชทีตัวเลขดิ้นที = ดูไม่น่าเชื่อถือ */
+/* seeded RNG — ตัวเลขจำลองต้องคงที่ต่อ (บริษัท × ไลน์ × วัน) ไม่งั้นรีเฟรชทีตัวเลขดิ้นที = ดูไม่น่าเชื่อถือ */
 function hash32(str) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -43,17 +45,48 @@ function hash32(str) {
 const rnd = (str) => (hash32(str) % 100000) / 100000;                 // 0..1
 const jit = (str, spread) => 1 + (rnd(str) - 0.5) * spread;           // 1 ± spread/2
 
-/* ── โรงงานในกลุ่ม (mockup) ───────────────────────────────────────────────────────────
-   real: true = ดึงข้อมูลจริง · ที่เหลือคือ profile การจำลอง
-     qtyF   ตัวคูณปริมาณผลิต (ขนาดโรงงาน)   oeeD  ส่วนต่าง OEE เป็นจุด (+ ดีกว่า / − แย่กว่า)
-     dtF    ตัวคูณ downtime                 ngF   ตัวคูณของเสีย       keep  สัดส่วนไลน์ที่โรงนั้นมี */
-const PLANTS = [
-  { key: 'bp', name: 'บ้านโพธิ์', code: 'PLANT-1', region: 'ฉะเชิงเทรา · ไทย', flag: '🇹🇭', real: true },
-  { key: 'ry', name: 'ระยอง',      code: 'PLANT-2', region: 'ระยอง · ไทย',      flag: '🇹🇭', qtyF: 0.88, oeeD: -6.5, dtF: 1.45, ngF: 1.7, keep: 0.80 },
-  { key: 'sp', name: 'บางปู',      code: 'PLANT-3', region: 'สมุทรปราการ · ไทย', flag: '🇹🇭', qtyF: 1.22, oeeD: 3.5, dtF: 0.72, ngF: 0.65, keep: 0.85 },
-  { key: 'vn', name: 'Hanoi',      code: 'PLANT-4', region: 'เวียดนาม',         flag: '🇻🇳', qtyF: 0.62, oeeD: -2.0, dtF: 1.10, ngF: 1.15, keep: 0.55 },
-  { key: 'id', name: 'Karawang',   code: 'PLANT-5', region: 'อินโดนีเซีย',      flag: '🇮🇩', qtyF: 0.47, oeeD: -11.0, dtF: 1.85, ngF: 2.1, keep: 0.45 },
-];
+/* ── โครงองค์กร TSG (mockup) ────────────────────────────────────────────────────────────
+   ⚙️ แก้รายชื่อกลุ่มธุรกิจ/บริษัทได้ที่ const นี้จุดเดียว — ที่เหลือ (การ์ด/อันดับ/ตาราง) ตามให้เอง
+   real: true = ดึงข้อมูลจริง (มีได้ตัวเดียว = TSAT4) · ที่เหลือคือ profile การจำลอง:
+     qtyF ตัวคูณปริมาณผลิต (ขนาดบริษัท) · oeeD ส่วนต่าง OEE เป็นจุด · dtF ตัวคูณ downtime
+     ngF ตัวคูณของเสีย · keep สัดส่วนไลน์ที่บริษัทนั้นมี
+   ⚠️ ชื่อบริษัทในกลุ่ม Plastech / Mocy เป็นตัวอย่าง (ยังไม่ได้รับรายชื่อจริง) — แก้ได้ที่นี่ */
+const ORG = {
+  code: 'TSG', name: 'Thai Summit Group',
+  groups: [
+    {
+      key: 'amf', name: 'Automotive Metal Forming', short: 'Metal Forming', icon: '🔩',
+      desc: 'ชิ้นส่วนโลหะยานยนต์ — ปั๊มขึ้นรูป / เชื่อมประกอบ',
+      companies: [
+        { key: 'tsat1', code: 'TSAT1', name: 'Thai Summit Autoparts 1', region: 'ระยอง', flag: '🇹🇭', qtyF: 1.28, oeeD: 2.5, dtF: 0.85, ngF: 0.8, keep: 0.9 },
+        { key: 'tsat4', code: 'TSAT4', name: 'Thai Summit Autoparts 4 (บริษัทเรา)', region: 'บ้านโพธิ์ · ฉะเชิงเทรา', flag: '🇹🇭', real: true },
+        { key: 'tsla', code: 'TSLA', name: 'Thai Summit Laemchabang', region: 'ชลบุรี', flag: '🇹🇭', qtyF: 0.92, oeeD: -4.5, dtF: 1.3, ngF: 1.4, keep: 0.8 },
+        { key: 'tsesa', code: 'TSESA', name: 'Thai Summit Eastern Seaboard', region: 'ระยอง', flag: '🇹🇭', qtyF: 1.05, oeeD: -1.5, dtF: 1.1, ngF: 1.1, keep: 0.85 },
+        { key: 'tsrf', code: 'TSRF', name: 'Thai Summit Rayong Forming', region: 'ระยอง', flag: '🇹🇭', qtyF: 0.7, oeeD: -8.5, dtF: 1.6, ngF: 1.8, keep: 0.6 },
+      ],
+    },
+    {
+      key: 'plastech', name: 'Plastech', short: 'Plastech', icon: '🧩',
+      desc: 'ชิ้นส่วนพลาสติก — ฉีด / เป่า / พ่นสี',
+      lineAlias: ['INJECTION 1', 'INJECTION 2', 'INJECTION 3', 'BLOW MOLD 1', 'PAINT LINE 1', 'ASSY PLASTIC 1', 'ASSY PLASTIC 2', 'TRIM & WELD'],
+      companies: [
+        { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'สมุทรปราการ', flag: '🇹🇭', qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
+        { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ระยอง', flag: '🇹🇭', qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
+        { key: 'ptcvn', code: 'TSPT-VN', name: 'Thai Summit Plastech Vietnam', region: 'เวียดนาม', flag: '🇻🇳', qtyF: 0.55, oeeD: -6.5, dtF: 1.4, ngF: 1.6, keep: 0.5 },
+      ],
+    },
+    {
+      key: 'mocy', name: 'Mocy (Motorcycle)', short: 'Mocy', icon: '🏍️',
+      desc: 'ชิ้นส่วนรถจักรยานยนต์',
+      lineAlias: ['MC FRAME 1', 'MC FUEL TANK', 'MC MUFFLER 1', 'MC SWING ARM', 'MC HANDLE', 'MC STEP', 'MC COVER ASSY'],
+      companies: [
+        { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'สมุทรปราการ', flag: '🇹🇭', qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
+        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'ปทุมธานี', flag: '🇹🇭', qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
+        { key: 'mocyid', code: 'TSMC-ID', name: 'Thai Summit Mocy Indonesia', region: 'อินโดนีเซีย', flag: '🇮🇩', qtyF: 0.5, oeeD: -9.5, dtF: 1.7, ngF: 1.9, keep: 0.45 },
+      ],
+    },
+  ],
+};
 
 const SHIFT_MIN_FALLBACK = 570;
 
@@ -61,9 +94,9 @@ export default function GroupOverview() {
   const isMobile = useIsMobile();
   const [date, setDate] = useState(reviewDefaultDate);
   const [usedDate, setUsedDate] = useState(null);      // วันที่ที่มีข้อมูลจริง (อาจถอยหลังจาก date)
-  const [baseLines, setBaseLines] = useState([]);      // aggregate จริงต่อไลน์บนสุด
+  const [baseLines, setBaseLines] = useState([]);      // aggregate จริงต่อไลน์บนสุด (= ฐานของ TSAT4)
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(null);      // plant.key ที่กางดูรายไลน์
+  const [sel, setSel] = useState({ biz: null, comp: null });  // null,null = ระดับ TSG
   const [showHow, setShowHow] = useState(false);
 
   /* ── โหลดข้อมูลจริงของวันที่เลือก (ถ้าไม่มีกะเลย ถอยหลังหาไม่เกิน 7 วัน เพื่อให้ตัวอย่างมีข้อมูลโชว์เสมอ) ── */
@@ -94,7 +127,7 @@ export default function GroupOverview() {
         present: 0, head: 0, sessions: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0,
       }));
 
-      // คนเข้างานของวันนั้น (พนักงานผูกไลน์แม่ 100% ตามกฎกำลังคน — roll up ให้ไลน์บนสุดอยู่ดี)
+      // คนเข้างานของวันนั้น (พนักงานผูกไลน์แม่ตามกฎกำลังคน — roll up ให้ไลน์บนสุดอยู่ดี)
       const { data: logs } = await supabase.from('daily_production_logs')
         .select('employee_id, is_present').eq('work_date', d);
       const presentSet = new Set((logs || []).filter(l => l.is_present).map(l => l.employee_id));
@@ -166,87 +199,142 @@ export default function GroupOverview() {
   }, [date]);
   useEffect(() => { load(); }, [load]);
 
-  /* ── ปั้นข้อมูลรายโรงงานจากฐานจริง ─────────────────────────────────────────────────── */
-  const plants = useMemo(() => {
+  /* ── ปั้นต้นไม้องค์กร: TSG → กลุ่มธุรกิจ → บริษัท → ไลน์ (จากฐานจริงชุดเดียว) ───────── */
+  const tree = useMemo(() => {
     const dk = usedDate || date;
-    return PLANTS.map(p => {
-      let lines;
-      if (p.real) {
-        lines = baseLines.map(l => ({ ...l }));
-      } else {
-        const keep = baseLines.filter((l, i) => i < 3 || rnd(`${p.key}|${l.line}|keep`) < p.keep);
-        lines = keep.map(l => {
-          const ratio = l.target > 0 ? l.actual / l.target : 0;
-          const nRatio = clamp(ratio * jit(`${p.key}|${l.line}|r|${dk}`, 0.28) + p.oeeD / 260, 0.35, 1.12);
-          const target = Math.max(0, Math.round(l.target * p.qtyF * jit(`${p.key}|${l.line}|t|${dk}`, 0.34)));
-          const head = Math.max(0, Math.round(l.head * p.qtyF * jit(`${p.key}|${l.line}|h`, 0.2)));
-          return {
-            line: l.line,
-            target,
-            actual: Math.round(target * nRatio),
-            oee: l.oee == null ? null : +clamp(l.oee + p.oeeD + (rnd(`${p.key}|${l.line}|o|${dk}`) - 0.5) * 13, 8, 97).toFixed(1),
-            dtMin: Math.round(l.dtMin * p.dtF * jit(`${p.key}|${l.line}|d|${dk}`, 0.7)),
-            ng: Math.round(l.ng * p.ngF * jit(`${p.key}|${l.line}|n|${dk}`, 0.8)),
-            head,
-            present: Math.min(head, Math.round(head * clamp(0.94 * jit(`${p.key}|${l.line}|p|${dk}`, 0.12), 0.7, 1))),
-            w: Math.max(1, Math.round(l.w * p.qtyF)),
-          };
-        });
-      }
+
+    const aggregate = (lines) => {
       const sum = (f) => lines.reduce((a, l) => a + (f(l) || 0), 0);
       const target = sum(l => l.target), actual = sum(l => l.actual);
       const oee = wavg(lines, l => l.oee, l => l.w);
       const pct = target > 0 ? +(actual / target * 100).toFixed(1) : null;
-      const status = (pct != null && pct < 80) || (oee != null && oee < 65) ? 'bad'
-        : (pct != null && pct < 95) || (oee != null && oee < 80) ? 'ok' : 'good';
-      // ไลน์ที่ต้องดูแลก่อน = ขาดเป้ามากสุด (ชิ้น)
-      const worst = [...lines].filter(l => l.target > 0).sort((a, b) => (b.target - b.actual) - (a.target - a.actual))[0] || null;
       return {
-        ...p, lines, target, actual, pct, oee, status, worst,
+        target, actual, pct, oee,
         dtMin: sum(l => l.dtMin), ng: sum(l => l.ng),
         present: sum(l => l.present), head: sum(l => l.head),
+        status: (pct != null && pct < 80) || (oee != null && oee < 65) ? 'bad'
+          : (pct != null && pct < 95) || (oee != null && oee < 80) ? 'ok' : 'good',
       };
+    };
+
+    const groups = ORG.groups.map(g => {
+      const companies = g.companies.map(c => {
+        let lines;
+        if (c.real) {
+          lines = baseLines.map(l => ({ ...l }));
+        } else {
+          const keep = baseLines.filter((l, i) => i < 3 || rnd(`${c.key}|${l.line}|keep`) < c.keep);
+          lines = keep.map((l, idx) => {
+            const name = g.lineAlias ? (g.lineAlias[idx % g.lineAlias.length]) : l.line;
+            const ratio = l.target > 0 ? l.actual / l.target : 0;
+            const nRatio = clamp(ratio * jit(`${c.key}|${name}|r|${dk}`, 0.28) + c.oeeD / 260, 0.35, 1.12);
+            const target = Math.max(0, Math.round(l.target * c.qtyF * jit(`${c.key}|${name}|t|${dk}`, 0.34)));
+            const head = Math.max(0, Math.round(l.head * c.qtyF * jit(`${c.key}|${name}|h`, 0.2)));
+            return {
+              line: name,
+              target,
+              actual: Math.round(target * nRatio),
+              oee: l.oee == null ? null : +clamp(l.oee + c.oeeD + (rnd(`${c.key}|${name}|o|${dk}`) - 0.5) * 13, 8, 97).toFixed(1),
+              dtMin: Math.round(l.dtMin * c.dtF * jit(`${c.key}|${name}|d|${dk}`, 0.7)),
+              ng: Math.round(l.ng * c.ngF * jit(`${c.key}|${name}|n|${dk}`, 0.8)),
+              head,
+              present: Math.min(head, Math.round(head * clamp(0.94 * jit(`${c.key}|${name}|p|${dk}`, 0.12), 0.7, 1))),
+              w: Math.max(1, Math.round(l.w * c.qtyF)),
+            };
+          });
+        }
+        const worst = [...lines].filter(l => l.target > 0).sort((a, b) => (b.target - b.actual) - (a.target - a.actual))[0] || null;
+        return { ...c, group: g, lines, worst, ...aggregate(lines) };
+      });
+      const gLines = companies.flatMap(c => c.lines);
+      return { ...g, companies, lines: gLines, ...aggregate(gLines) };
     });
+
+    const allLines = groups.flatMap(g => g.companies.flatMap(c => c.lines.map(l => ({ ...l, comp: c, group: g }))));
+    return { groups, allLines, ...aggregate(allLines) };
   }, [baseLines, usedDate, date]);
 
-  const group = useMemo(() => {
-    const allLines = plants.flatMap(p => p.lines.map(l => ({ ...l, plant: p })));
-    const sum = (f) => plants.reduce((a, p) => a + (f(p) || 0), 0);
-    const target = sum(p => p.target), actual = sum(p => p.actual);
-    return {
-      target, actual,
-      pct: target > 0 ? +(actual / target * 100).toFixed(1) : null,
-      oee: wavg(allLines, l => l.oee, l => l.w),
-      dtMin: sum(p => p.dtMin), ng: sum(p => p.ng),
-      present: sum(p => p.present), head: sum(p => p.head),
-      lineCount: allLines.length,
-      // ไลน์ที่ต้องดูแลด่วนทั้งกลุ่ม — ขาดเป้ามากสุด (ตัดไลน์ที่ไม่มีเป้าออก)
-      hotspots: allLines.filter(l => l.target > 0 && l.actual < l.target)
-        .sort((a, b) => (b.target - b.actual) - (a.target - a.actual)).slice(0, 8),
-    };
-  }, [plants]);
+  /* ── ขอบเขตที่กำลังดูอยู่ (breadcrumb) ── */
+  const bizNode = sel.biz ? tree.groups.find(g => g.key === sel.biz) : null;
+  const compNode = bizNode && sel.comp ? bizNode.companies.find(c => c.key === sel.comp) : null;
+  const scope = compNode || bizNode || tree;
+  const scopeLines = compNode ? compNode.lines.map(l => ({ ...l, comp: compNode, group: bizNode }))
+    : bizNode ? bizNode.companies.flatMap(c => c.lines.map(l => ({ ...l, comp: c, group: bizNode })))
+      : tree.allLines;
+  const hotspots = scopeLines.filter(l => l.target > 0 && l.actual < l.target)
+    .sort((a, b) => (b.target - b.actual) - (a.target - a.actual)).slice(0, 10);
 
-  const maxTarget = Math.max(1, ...plants.map(p => p.target));
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 };
   const TH = { padding: '7px 8px', fontSize: 12, color: 'var(--muted)', fontWeight: 700, textAlign: 'left', whiteSpace: 'nowrap' };
   const THR = { ...TH, textAlign: 'right' };
   const TD = { padding: '7px 8px', fontSize: 13, borderTop: '1px solid var(--border)' };
   const TDR = { ...TD, textAlign: 'right' };
 
+  // แถบเทียบ (ใช้ทั้งระดับกลุ่มธุรกิจและระดับบริษัท)
+  const RankBars = ({ items, onPick }) => {
+    const maxT = Math.max(1, ...items.map(i => i.target));
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {[...items].sort((a, b) => (b.oee ?? -1) - (a.oee ?? -1)).map((it, i) => (
+          <div key={it.key} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '230px 1fr 128px', gap: 10, alignItems: 'center' }}>
+            <button onClick={() => onPick && onPick(it)} disabled={!onPick} style={{
+              display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, minWidth: 0,
+              background: 'none', border: 'none', padding: 0, color: 'var(--text)', textAlign: 'left',
+              cursor: onPick ? 'pointer' : 'default',
+            }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', width: 18 }}>#{i + 1}</span>
+              <span>{it.icon || it.flag}</span>
+              <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.code || it.name}</span>
+              {it.real
+                ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
+                : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+            </button>
+            <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+              <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
+              <div style={{ width: `${clamp(it.actual / maxT * 100, 0, 100)}%`, height: '100%', background: pctCol(it.pct), opacity: 0.85, position: 'relative' }} />
+              <span style={{ position: 'absolute', left: 8, top: 0, lineHeight: '22px', fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
+                {fmtNum(it.actual)} / {fmtNum(it.target)} ชิ้น
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: isMobile ? 'flex-start' : 'flex-end', fontSize: 13 }}>
+              <span style={{ color: pctCol(it.pct), fontWeight: 700 }}>{it.pct == null ? '—' : it.pct + '%'}</span>
+              <span style={{ color: oeeCol(it.oee), fontWeight: 700 }}>OEE {it.oee == null ? '—' : it.oee}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const crumbBtn = (label, onClick, active) => (
+    <button onClick={onClick} disabled={active} style={{
+      background: 'none', border: 'none', padding: '2px 4px', fontSize: 13, fontWeight: active ? 800 : 600,
+      color: active ? 'var(--text)' : 'var(--accent)', cursor: active ? 'default' : 'pointer',
+    }}>{label}</button>
+  );
+
   return (
     <div style={{ maxWidth: 'min(97vw, 2200px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
       {/* ── หัวหน้า + ตัวเลือกวัน (paddingRight กัน 🔔 ทับ) ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', paddingRight: 52 }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            🏢 ภาพรวมกลุ่มโรงงาน
+            🏢 {ORG.code} — ภาพรวมกลุ่มบริษัท
             <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 999, padding: '2px 10px' }}>
               🧪 MOCKUP · ตัวอย่างหน้าจอ
             </span>
           </h2>
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
-            เทียบผลการผลิต {PLANTS.length} โรงงานในกลุ่ม · {fmtThaiDate(usedDate || date)}
+          {/* breadcrumb: TSG › กลุ่มธุรกิจ › บริษัท */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', marginTop: 3 }}>
+            {crumbBtn(`🏢 ${ORG.code}`, () => setSel({ biz: null, comp: null }), !bizNode)}
+            {bizNode && <><span style={{ color: 'var(--muted)' }}>›</span>
+              {crumbBtn(`${bizNode.icon} ${bizNode.name}`, () => setSel({ biz: bizNode.key, comp: null }), !compNode)}</>}
+            {compNode && <><span style={{ color: 'var(--muted)' }}>›</span>
+              {crumbBtn(`${compNode.flag} ${compNode.code}`, () => { }, true)}</>}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
+            {fmtThaiDate(usedDate || date)}
             {usedDate && usedDate !== date && <span style={{ color: '#f59e0b' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
           </div>
         </div>
@@ -259,12 +347,12 @@ export default function GroupOverview() {
         </div>
       </div>
 
-      {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้ผู้บริหารเข้าใจผิดว่ามีโรงงานจริงในระบบแล้ว) ── */}
+      {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้เข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว) ── */}
       <div style={{ ...card, borderStyle: 'dashed', borderColor: '#f59e0b', background: 'rgba(245,158,11,0.07)', fontSize: 13, lineHeight: 1.7 }}>
-        <b style={{ color: '#f59e0b' }}>นี่คือหน้าจอตัวอย่าง (mockup) เพื่อดูว่า “ระบบรองรับหลายโรงงาน” จะหน้าตาแบบไหน</b><br />
-        • <b>{PLANTS[0].code} {PLANTS[0].name}</b> = <b style={{ color: '#22c55e' }}>ข้อมูลจริง</b>จากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก)<br />
-        • โรงงานที่เหลือ = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> ที่ปั้นจากข้อมูลจริงชุดเดียวกัน (ตัวคูณคงที่ต่อโรงงาน + สุ่มแบบ seeded ให้ตัวเลขนิ่ง ไม่ดิ้นทุกครั้งที่รีเฟรช)<br />
-        • หน้านี้ <b>ไม่เขียนฐานข้อมูล</b> และยังไม่มีตาราง/ระบบแยกโรงงานจริง — ดูสรุป “ถ้าทำจริงต้องทำอะไร” ท้ายหน้า
+        <b style={{ color: '#f59e0b' }}>นี่คือหน้าจอตัวอย่าง (mockup) เพื่อดูว่า “ระบบรองรับหลายบริษัทในกลุ่ม” จะหน้าตาแบบไหน</b><br />
+        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต — <b>กดที่การ์ด/ชื่อเพื่อเจาะลึกลงชั้นถัดไป</b><br />
+        • <b>TSAT4</b> = <b style={{ color: '#22c55e' }}>ข้อมูลจริง</b>จากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> ที่ปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบ seeded ให้ตัวเลขนิ่ง ไม่ดิ้นทุกครั้งที่รีเฟรช)<br />
+        • หน้านี้ <b>ไม่เขียนฐานข้อมูล</b> และยังไม่มีตารางบริษัท/โรงงานจริง — ดูสรุป “ถ้าทำจริงต้องทำอะไร” ท้ายหน้า
       </div>
 
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
@@ -276,71 +364,127 @@ export default function GroupOverview() {
 
       {!loading && !!baseLines.length && (<>
 
-        {/* ── KPI รวมทั้งกลุ่ม ── */}
+        {/* ── KPI ของขอบเขตที่กำลังดู ── */}
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(min(190px, 100%), 1fr))' }}>
-          <Kpi label="🏭 โรงงานในกลุ่ม" value={PLANTS.length} sub={`${group.lineCount} ไลน์ผลิตรวม`} />
-          <Kpi label="📦 ผลิตรวมทั้งกลุ่ม" value={fmtNum(group.actual)} color={pctCol(group.pct)}
-            sub={`เป้า ${fmtNum(group.target)} · ${group.pct == null ? '—' : group.pct + '%'}`} />
-          <Kpi label="⚙️ OEE กลุ่ม (ถ่วงน้ำหนัก)" value={group.oee == null ? '—' : group.oee + '%'} color={oeeCol(group.oee)}
+          <Kpi
+            label={compNode ? '🏭 ไลน์ผลิต' : bizNode ? '🏢 บริษัทในกลุ่มธุรกิจ' : '🗂️ กลุ่มธุรกิจ'}
+            value={compNode ? compNode.lines.length : bizNode ? bizNode.companies.length : ORG.groups.length}
+            sub={compNode ? `บริษัท ${compNode.code}`
+              : bizNode ? `${bizNode.lines.length} ไลน์ผลิตรวม`
+                : `${tree.groups.reduce((a, g) => a + g.companies.length, 0)} บริษัท · ${tree.allLines.length} ไลน์`} />
+          <Kpi label="📦 ผลิตรวม" value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
+            sub={`เป้า ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
+          <Kpi label="⚙️ OEE (ถ่วงน้ำหนัก)" value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
             sub="ถ่วงด้วยเวลารับภาระของแต่ละไลน์" />
-          <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(group.dtMin)} sub="นาที (รวมทุกโรง)" color={group.dtMin > 0 ? '#f59e0b' : undefined} />
-          <Kpi label="🚫 ของเสียรวม" value={fmtNum(group.ng)} sub="ชิ้น (NG + สงสัย)" color={group.ng > 0 ? '#ef4444' : undefined} />
-          <Kpi label="👷 คนเข้างาน" value={`${fmtNum(group.present)}/${fmtNum(group.head)}`}
-            sub={group.head ? `${Math.round(group.present / group.head * 100)}% ของกำลังคน` : '—'} />
+          <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(scope.dtMin)} sub="นาที" color={scope.dtMin > 0 ? '#f59e0b' : undefined} />
+          <Kpi label="🚫 ของเสีย" value={fmtNum(scope.ng)} sub="ชิ้น (NG + สงสัย)" color={scope.ng > 0 ? '#ef4444' : undefined} />
+          <Kpi label="👷 คนเข้างาน" value={`${fmtNum(scope.present)}/${fmtNum(scope.head)}`}
+            sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ของกำลังคน` : '—'} />
         </div>
 
-        {/* ── เทียบโรงงาน (แถบเรียงอันดับ) ── */}
-        <div style={card}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายโรงงาน</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[...plants].sort((a, b) => (b.oee ?? -1) - (a.oee ?? -1)).map((p, i) => (
-              <div key={p.key} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '210px 1fr 120px', gap: 10, alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, minWidth: 0 }}>
-                  <span style={{ fontSize: 12, color: 'var(--muted)', width: 18 }}>#{i + 1}</span>
-                  <span>{p.flag}</span>
-                  <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                  {p.real
-                    ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                    : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
-                </div>
-                <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
-                  <div style={{ width: `${clamp(p.target / maxTarget * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
-                  <div style={{ width: `${clamp(p.actual / maxTarget * 100, 0, 100)}%`, height: '100%', background: pctCol(p.pct), opacity: 0.85, position: 'relative' }} />
-                  <span style={{ position: 'absolute', left: 8, top: 0, lineHeight: '22px', fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
-                    {fmtNum(p.actual)} / {fmtNum(p.target)} ชิ้น
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: isMobile ? 'flex-start' : 'flex-end', fontSize: 13 }}>
-                  <span style={{ color: pctCol(p.pct), fontWeight: 700 }}>{p.pct == null ? '—' : p.pct + '%'}</span>
-                  <span style={{ color: oeeCol(p.oee), fontWeight: 700 }}>OEE {p.oee == null ? '—' : p.oee}</span>
-                </div>
-              </div>
-            ))}
+        {/* ══ ระดับ 1: TSG — การ์ดกลุ่มธุรกิจ ══ */}
+        {!bizNode && (<>
+          <div style={card}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายกลุ่มธุรกิจ</div>
+            <RankBars items={tree.groups} onPick={(g) => setSel({ biz: g.key, comp: null })} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
+              แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>คลิกชื่อกลุ่มเพื่อดูบริษัทข้างใน</b>
+            </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
-            แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน (สเกลเทียบโรงงานที่เป้าสูงสุด) · เรียงตาม OEE
-          </div>
-        </div>
 
-        {/* ── การ์ดรายโรงงาน (กดกางดูรายไลน์) ── */}
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))', alignContent: 'start' }}>
-          {plants.map(p => {
-            const stCol = p.status === 'bad' ? '#ef4444' : p.status === 'ok' ? '#f59e0b' : '#22c55e';
-            const open = expanded === p.key;
-            return (
-              <div key={p.key} style={{ display: 'contents' }}>
-                <div className="kpi-lift" style={{
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
+            {tree.groups.map(g => {
+              const stCol = g.status === 'bad' ? '#ef4444' : g.status === 'ok' ? '#f59e0b' : '#22c55e';
+              return (
+                <div key={g.key} className="kpi-lift" style={{
                   ...card, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                  minHeight: 232, borderLeft: `4px solid ${stCol}`,
+                  minHeight: 258, borderLeft: `4px solid ${stCol}`,
                 }}>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                      <span style={{ fontSize: 20 }}>{p.flag}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <span style={{ fontSize: 24 }}>{g.icon}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.code} · {p.region}</div>
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>{g.name}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{g.desc}</div>
                       </div>
-                      {p.real
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', margin: '11px 0 9px' }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE</div>
+                        <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: oeeCol(g.oee), fontVariantNumeric: 'tabular-nums' }}>
+                          {g.oee == null ? '—' : g.oee}<span style={{ fontSize: 15 }}>%</span>
+                        </div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิต / เป้า</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(g.pct), fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtNum(g.actual)} / {fmtNum(g.target)} <span style={{ fontSize: 12 }}>({g.pct == null ? '—' : g.pct + '%'})</span>
+                        </div>
+                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 5 }}>
+                          <div style={{ width: `${clamp(g.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(g.pct) }} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
+                      <Mini label="🔧 DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? '#f59e0b' : undefined} />
+                      <Mini label="🚫 NG" value={fmtNum(g.ng)} color={g.ng > 0 ? '#ef4444' : undefined} />
+                      <Mini label="👷 คน" value={`${fmtNum(g.present)}/${fmtNum(g.head)}`} />
+                    </div>
+
+                    {/* บริษัทในกลุ่ม — ชิปคลิกเข้าบริษัทได้เลย */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                      {g.companies.map(c => (
+                        <button key={c.key} onClick={() => setSel({ biz: g.key, comp: c.key })} style={{
+                          fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
+                          background: c.real ? 'rgba(34,197,94,0.13)' : 'var(--bg3)',
+                          border: `1px ${c.real ? 'solid #22c55e' : 'dashed var(--border2)'}`,
+                          color: 'var(--text)',
+                        }}>
+                          {c.flag} {c.code}
+                          <span style={{ color: oeeCol(c.oee), marginLeft: 5 }}>{c.oee == null ? '—' : c.oee}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button onClick={() => setSel({ biz: g.key, comp: null })}
+                    style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 10 }}>
+                    ▸ ดูบริษัทในกลุ่ม ({g.companies.length})
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>)}
+
+        {/* ══ ระดับ 2: กลุ่มธุรกิจ — การ์ดบริษัท ══ */}
+        {bizNode && !compNode && (<>
+          <div style={card}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
+            <RankBars items={bizNode.companies} onPick={(c) => setSel({ biz: bizNode.key, comp: c.key })} />
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
+              เรียงตาม OEE · <b>คลิกชื่อบริษัทเพื่อดูรายไลน์</b>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))', alignContent: 'start' }}>
+            {bizNode.companies.map(c => {
+              const stCol = c.status === 'bad' ? '#ef4444' : c.status === 'ok' ? '#f59e0b' : '#22c55e';
+              return (
+                <div key={c.key} className="kpi-lift" style={{
+                  ...card, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                  minHeight: 240, borderLeft: `4px solid ${stCol}`,
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 20 }}>{c.flag}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800 }}>{c.code}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name} · {c.region}</div>
+                      </div>
+                      {c.real
                         ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
                         : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
                     </div>
@@ -348,101 +492,119 @@ export default function GroupOverview() {
                     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', margin: '10px 0 8px' }}>
                       <div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>OEE</div>
-                        <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: oeeCol(p.oee), fontVariantNumeric: 'tabular-nums' }}>
-                          {p.oee == null ? '—' : p.oee}<span style={{ fontSize: 15 }}>%</span>
+                        <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, color: oeeCol(c.oee), fontVariantNumeric: 'tabular-nums' }}>
+                          {c.oee == null ? '—' : c.oee}<span style={{ fontSize: 15 }}>%</span>
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิต / เป้า</div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(p.pct), fontVariantNumeric: 'tabular-nums' }}>
-                          {fmtNum(p.actual)} / {fmtNum(p.target)} <span style={{ fontSize: 12 }}>({p.pct == null ? '—' : p.pct + '%'})</span>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(c.pct), fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtNum(c.actual)} / {fmtNum(c.target)} <span style={{ fontSize: 12 }}>({c.pct == null ? '—' : c.pct + '%'})</span>
                         </div>
                         <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 5 }}>
-                          <div style={{ width: `${clamp(p.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(p.pct) }} />
+                          <div style={{ width: `${clamp(c.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(c.pct) }} />
                         </div>
                       </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(p.dtMin)} น.`} color={p.dtMin > 0 ? '#f59e0b' : undefined} />
-                      <Mini label="🚫 NG" value={`${fmtNum(p.ng)}`} color={p.ng > 0 ? '#ef4444' : undefined} />
-                      <Mini label="👷 คน" value={`${fmtNum(p.present)}/${fmtNum(p.head)}`} />
+                      <Mini label="🔧 DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? '#f59e0b' : undefined} />
+                      <Mini label="🚫 NG" value={fmtNum(c.ng)} color={c.ng > 0 ? '#ef4444' : undefined} />
+                      <Mini label="👷 คน" value={`${fmtNum(c.present)}/${fmtNum(c.head)}`} />
                     </div>
 
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 9, minHeight: 34 }}>
-                      {p.worst && p.worst.target > p.worst.actual
-                        ? <>⚠️ ไลน์ที่ตามหลังมากสุด: <b style={{ color: 'var(--text)' }}>{p.worst.line}</b> ขาด {fmtNum(p.worst.target - p.worst.actual)} ชิ้น</>
+                      {c.worst && c.worst.target > c.worst.actual
+                        ? <>⚠️ ไลน์ที่ตามหลังมากสุด: <b style={{ color: 'var(--text)' }}>{c.worst.line}</b> ขาด {fmtNum(c.worst.target - c.worst.actual)} ชิ้น</>
                         : <>✅ ทุกไลน์ทำได้ตามเป้า</>}
                     </div>
                   </div>
 
-                  <button onClick={() => setExpanded(open ? null : p.key)}
+                  <button onClick={() => setSel({ biz: bizNode.key, comp: c.key })}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 8 }}>
-                    {open ? '▲ ปิดรายไลน์' : `▾ ดูรายไลน์ (${p.lines.length})`}
+                    ▸ ดูรายไลน์ ({c.lines.length})
                   </button>
                 </div>
+              );
+            })}
+          </div>
+        </>)}
 
-                {/* แถวขยาย = panel เต็มแถว ตาม convention การ์ด grid (ไม่ปนใน grid การ์ดหลัก) */}
-                {open && (
-                  <div style={{
-                    gridColumn: '1 / -1', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)',
-                    padding: 12, background: 'var(--bg2)',
-                  }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
-                      {p.flag} {p.name} — รายไลน์ ({p.lines.length}) · {fmtThaiDate(usedDate || date)}
-                    </div>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 620 }}>
-                        <thead><tr>
-                          <th style={TH}>ไลน์</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th>
-                          <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th>
-                          <th style={THR}>NG</th><th style={THR}>คน</th>
-                        </tr></thead>
-                        <tbody>
-                          {[...p.lines].sort((a, b) => (a.target - a.actual < b.target - b.actual ? 1 : -1)).map(l => {
-                            const lp = l.target > 0 ? +(l.actual / l.target * 100).toFixed(1) : null;
-                            return (
-                              <tr key={l.line}>
-                                <td style={TD}>{l.line}</td>
-                                <td style={TDR}>{fmtNum(l.target)}</td>
-                                <td style={TDR}>{fmtNum(l.actual)}</td>
-                                <td style={{ ...TDR, color: pctCol(lp), fontWeight: 700 }}>{lp == null ? '—' : lp + '%'}</td>
-                                <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
-                                <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
-                                <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
-                                <td style={TDR}>{fmtNum(l.present)}/{fmtNum(l.head)}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
+        {/* ══ ระดับ 3: บริษัท — ตารางรายไลน์ ══ */}
+        {compNode && (
+          <div style={card}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>
+                🏭 {compNode.flag} {compNode.code} — รายไลน์ ({compNode.lines.length})
               </div>
-            );
-          })}
-        </div>
+              {compNode.real
+                ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 7px' }}>ข้อมูลจริง</span>
+                : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 7px' }}>ตัวเลขจำลอง</span>}
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{compNode.name} · {compNode.region}</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 640 }}>
+                <thead><tr>
+                  <th style={TH}>ไลน์</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th>
+                  <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th>
+                  <th style={THR}>NG</th><th style={THR}>คน</th>
+                </tr></thead>
+                <tbody>
+                  {[...compNode.lines].sort((a, b) => (b.target - b.actual) - (a.target - a.actual)).map(l => {
+                    const lp = l.target > 0 ? +(l.actual / l.target * 100).toFixed(1) : null;
+                    return (
+                      <tr key={l.line}>
+                        <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
+                        <td style={TDR}>{fmtNum(l.target)}</td>
+                        <td style={TDR}>{fmtNum(l.actual)}</td>
+                        <td style={{ ...TDR, color: pctCol(lp), fontWeight: 700 }}>{lp == null ? '—' : lp + '%'}</td>
+                        <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
+                        <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
+                        <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
+                        <td style={TDR}>{fmtNum(l.present)}/{fmtNum(l.head)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {compNode.real && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+                ตัวเลขชุดนี้มาจากฐานข้อมูลจริง — ตรงกับที่เห็นใน <b>/oee-analytics</b> และ <b>/factory-map</b> (ใช้สูตรกลางชุดเดียวกัน)
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* ── ไลน์ที่ต้องดูแลด่วนทั้งกลุ่ม (คุณค่าหลักของจอผู้บริหาร: เห็นข้ามโรงงานในตารางเดียว) ── */}
+        {/* ── ไลน์ที่ต้องดูแลด่วน (ตามขอบเขตที่กำลังดู) ── */}
         <div style={card}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>🚨 ไลน์ที่ต้องดูแลด่วน — ทั้งกลุ่ม</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามโรงงาน)</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+            🚨 ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)</div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 640 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 700 }}>
               <thead><tr>
-                <th style={TH}>โรงงาน</th><th style={TH}>ไลน์</th><th style={THR}>ขาดเป้า</th>
+                {!compNode && <th style={TH}>กลุ่มธุรกิจ</th>}
+                {!compNode && <th style={TH}>บริษัท</th>}
+                <th style={TH}>ไลน์</th><th style={THR}>ขาดเป้า</th>
                 <th style={THR}>ผลิต/เป้า</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th><th style={THR}>NG</th>
               </tr></thead>
               <tbody>
-                {group.hotspots.map((l, i) => {
+                {hotspots.map((l, i) => {
                   const lp = +(l.actual / l.target * 100).toFixed(1);
                   return (
-                    <tr key={`${l.plant.key}-${l.line}-${i}`}>
-                      <td style={TD}>
-                        <span style={{ marginRight: 5 }}>{l.plant.flag}</span>{l.plant.name}
-                        {!l.plant.real && <span style={{ fontSize: 10, color: '#f59e0b', marginLeft: 5 }}>(จำลอง)</span>}
-                      </td>
+                    <tr key={`${l.comp?.key}-${l.line}-${i}`}>
+                      {!compNode && <td style={TD}>{l.group?.icon} {l.group?.short}</td>}
+                      {!compNode && (
+                        <td style={TD}>
+                          <button onClick={() => setSel({ biz: l.group.key, comp: l.comp.key })} style={{
+                            background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                            color: 'var(--accent)', fontSize: 13, fontWeight: 700,
+                          }}>{l.comp?.flag} {l.comp?.code}</button>
+                          {!l.comp?.real && <span style={{ fontSize: 10, color: '#f59e0b', marginLeft: 5 }}>(จำลอง)</span>}
+                        </td>
+                      )}
                       <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
                       <td style={{ ...TDR, color: '#ef4444', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
                       <td style={{ ...TDR, color: pctCol(lp) }}>{fmtNum(l.actual)}/{fmtNum(l.target)} ({lp}%)</td>
@@ -452,7 +614,7 @@ export default function GroupOverview() {
                     </tr>
                   );
                 })}
-                {!group.hotspots.length && <tr><td style={TD} colSpan={7}>✅ ทุกไลน์ทำได้ตามเป้า</td></tr>}
+                {!hotspots.length && <tr><td style={TD} colSpan={compNode ? 6 : 8}>✅ ทุกไลน์ทำได้ตามเป้า</td></tr>}
               </tbody>
             </table>
           </div>
@@ -465,23 +627,24 @@ export default function GroupOverview() {
           background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', padding: 0,
           fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
         }}>
-          <span>{showHow ? '▼' : '▶'}</span> 🛠️ ถ้าจะรองรับหลายโรงงานจริง ต้องทำอะไรบ้าง
+          <span>{showHow ? '▼' : '▶'}</span> 🛠️ ถ้าจะรองรับหลายบริษัทในกลุ่มจริง ต้องทำอะไรบ้าง
           <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>(สรุปเชิงเทคนิค)</span>
         </button>
         {showHow && (
           <div style={{ fontSize: 13, lineHeight: 1.85, marginTop: 10, color: 'var(--text2)' }}>
             <b style={{ color: 'var(--text)' }}>ทำได้ครับ — โครงระบบปัจจุบันรองรับได้โดยไม่ต้องเขียนใหม่</b> เพราะทุกอย่างผูกกับ “ไลน์ / ส่วนงาน” อยู่แล้ว
-            แค่เพิ่มชั้น “โรงงาน (plant)” ทับข้างบน · งานหลักที่ต้องทำ:
+            แค่ต่อ <b>ผังองค์กรที่มีอยู่ (`org_nodes`)</b> ขึ้นไปอีก 2 ชั้น (กลุ่มธุรกิจ → บริษัท) · งานหลักที่ต้องทำ:
             <ol style={{ margin: '8px 0 0', paddingLeft: 22 }}>
-              <li><b>เพิ่มตาราง <code>plants</code> + คอลัมน์ <code>plant_id</code></b> ที่ต้นทางของลำดับชั้น (<code>org_nodes</code>, <code>production_lines</code>, <code>profiles</code>) — ตารางข้อมูลรายวัน (production_sessions / prod_orders / downtime / defect) <b>ไม่ต้องแก้</b> เพราะสืบโรงงานผ่านไลน์ได้</li>
-              <li><b>ขยาย scope ของ user</b> จาก “ส่วนงาน (sections)” เป็น “โรงงาน → ส่วนงาน” — ต่อยอด <code>effectiveSections()</code> เดิม ไม่ต้องรื้อกลไกสิทธิ์</li>
-              <li><b>Master data ที่ต้องแยกต่อโรงงาน:</b> ปฏิทินบริษัท · นโยบายเวลาพัก · เป้า OEE · ทะเบียนเอกสาร (เลขฟอร์มคนละชุด) · ห้อง Telegram แจ้งเตือน</li>
-              <li><b>2 Supabase project ปัจจุบัน (Main + DR) ใช้ต่อได้</b> — แยกด้วย <code>plant_id</code> ในโครงเดิม ไม่ต้องแตก project ต่อโรงงาน (ถ้าโรงงานต่างประเทศต้องเก็บข้อมูลในประเทศตัวเอง ค่อยแยก project แล้วรวมที่ชั้นรายงาน)</li>
-              <li><b>จอนี้ (Group Overview)</b> = ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละโรงเห็นในหน้าตัวเอง</li>
+              <li><b>ขยาย <code>org_nodes.kind</code> ให้มี <code>business_group</code> + <code>company</code></b> (ปัจจุบันมี section / department / line) — โครงต้นไม้ parent_id เดิมรองรับอยู่แล้ว ไม่ต้องสร้างตารางใหม่ · เพิ่ม <code>company_id</code> ที่ <code>production_lines</code> + <code>profiles</code></li>
+              <li><b>ตารางข้อมูลรายวันไม่ต้องแก้</b> (production_sessions / prod_orders / downtime_logs / defect_logs) — สืบบริษัท↔กลุ่มธุรกิจผ่านไลน์ได้ทั้งหมด</li>
+              <li><b>ขยาย scope ของ user</b> จาก “ส่วนงาน (sections)” เป็น “บริษัท → ส่วนงาน” — ต่อยอด <code>effectiveSections()</code> เดิม + เพิ่ม role ระดับกลุ่ม (ผู้บริหาร TSG เห็นทุกบริษัท / ผู้จัดการบริษัทเห็นเฉพาะของตัวเอง)</li>
+              <li><b>Master data ที่ต้องแยกต่อบริษัท:</b> ปฏิทินบริษัท · นโยบายเวลาพัก · เป้า OEE · ทะเบียนเอกสาร (เลขฟอร์มคนละชุด) · ห้อง Telegram แจ้งเตือน · ผังโรงงาน</li>
+              <li><b>2 Supabase project ปัจจุบัน (Main + DR) ใช้ต่อได้</b> — แยกด้วย <code>company_id</code> ในโครงเดิม ไม่ต้องแตก project ต่อบริษัท (ถ้าบริษัทต่างประเทศต้องเก็บข้อมูลในประเทศตัวเอง ค่อยแยก project แล้วรวมที่ชั้นรายงาน)</li>
+              <li><b>จอนี้ (Group Overview)</b> = ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละบริษัทเห็นในหน้าตัวเอง</li>
             </ol>
             <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12.5 }}>
-              <b>ข้อควรระวัง:</b> แต่ละโรงงานต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน)
-              ไม่งั้นตัวเลขเทียบข้ามโรงไม่ได้ — ส่วนนี้เป็นงานวางมาตรฐาน ไม่ใช่งานเขียนโปรแกรม
+              <b>ข้อควรระวัง:</b> แต่ละบริษัทต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน)
+              ไม่งั้นตัวเลขเทียบข้ามบริษัทไม่ได้ — ส่วนนี้เป็นงานวางมาตรฐานกลางของกลุ่ม ไม่ใช่งานเขียนโปรแกรม
             </div>
           </div>
         )}
