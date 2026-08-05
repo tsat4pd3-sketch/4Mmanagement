@@ -82,7 +82,7 @@ const ORG = {
       lineAlias: ['MC FRAME 1', 'MC FUEL TANK', 'MC MUFFLER 1', 'MC SWING ARM', 'MC HANDLE', 'MC STEP', 'MC COVER ASSY'],
       companies: [
         { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'บางนา · กรุงเทพฯ', flag: '🇹🇭', zone: 'bangna', lat: 13.66, lon: 100.63, qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
-        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'บางบ่อ · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.50, lon: 100.90, qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
+        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'ศรีราชา · ชลบุรี', flag: '🇹🇭', zone: 'east', lat: 13.17, lon: 100.99, qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
         { key: 'mocyid', code: 'TSMC-ID', name: 'Thai Summit Mocy Indonesia', region: 'Karawang · อินโดนีเซีย', flag: '🇮🇩', zone: 'oversea', qtyF: 0.5, oeeD: -9.5, dtF: 1.7, ngF: 1.9, keep: 0.45 },
       ],
     },
@@ -90,6 +90,8 @@ const ORG = {
 };
 
 /* ── โซนพื้นที่ (แกนที่ 2 — ตัดขวางกลุ่มธุรกิจ) · onMap=false คือไม่ได้อยู่บนแผนที่ภาคกลาง ──
+   ⚠️ ทั้ง 3 กลุ่มธุรกิจ "คละกัน" ในทุกโซน (ไม่ใช่ 1 โซน = 1 กลุ่มธุรกิจ) — แผนที่จึงต้องบอกได้ว่า
+   หมุดไหนเป็นกลุ่มไหน (ไอคอนในหมุด + ฟิลเตอร์กลุ่ม) และการ์ดโซนต้องโชว์ส่วนผสมของกลุ่มธุรกิจ
    หมุดบนแผนที่ใช้ lat/lon จริงของบริษัท → กรอบโซนคำนวณจากหมุด (ดู ThailandZoneMap) */
 const ZONES = [
   { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: '#38bdf8', onMap: true, desc: 'บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
@@ -426,6 +428,7 @@ export default function GroupOverview() {
               </div>
               <ThailandZoneMap
                 zones={tree.zones}
+                groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: g.short }))}
                 isMobile={isMobile}
                 height={isMobile ? 420 : 560}
                 onPickZone={(z) => setSel(s => ({ ...s, node: z.key, comp: null }))}
@@ -504,8 +507,24 @@ export default function GroupOverview() {
                       <Mini label="👷 คน" value={`${fmtNum(g.present)}/${fmtNum(g.head)}`} />
                     </div>
 
-                    {/* บริษัทในกลุ่ม — ชิปคลิกเข้าบริษัทได้เลย */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                    {/* โซน = มีหลายกลุ่มธุรกิจคละกัน → โชว์ส่วนผสมให้เห็นทันที */}
+                    {sel.axis === 'map' && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 9 }}>
+                        {ORG.groups.map(bg => {
+                          const n = g.companies.filter(c => c.groupMeta.key === bg.key).length;
+                          if (!n) return null;
+                          return (
+                            <span key={bg.key} style={{
+                              fontSize: 11.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                              background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
+                            }}>{bg.icon} {bg.short} · {n}</span>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* บริษัทในกลุ่ม/โซน — ชิปคลิกเข้าบริษัทได้เลย (แกนโซนโชว์ไอคอนกลุ่มธุรกิจนำหน้า) */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                       {g.companies.map(c => (
                         <button key={c.key} onClick={() => setSel(s => ({ ...s, node: g.key, comp: c.key }))} style={{
                           fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
@@ -513,7 +532,7 @@ export default function GroupOverview() {
                           border: `1px ${c.real ? 'solid #22c55e' : 'dashed var(--border2)'}`,
                           color: 'var(--text)',
                         }}>
-                          {c.flag} {c.code}
+                          {sel.axis === 'map' ? c.groupMeta.icon : c.flag} {c.code}
                           <span style={{ color: oeeCol(c.oee), marginLeft: 5 }}>{c.oee == null ? '—' : c.oee}</span>
                         </button>
                       ))}
@@ -553,7 +572,9 @@ export default function GroupOverview() {
                       <span style={{ fontSize: 20 }}>{c.flag}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 16, fontWeight: 800 }}>{c.code}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name} · {c.region}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {sel.axis === 'map' ? `${c.groupMeta.icon} ${c.groupMeta.short} · ` : ''}{c.region}
+                        </div>
                       </div>
                       {c.real
                         ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>

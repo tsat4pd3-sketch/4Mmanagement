@@ -59,8 +59,9 @@ const CITIES = [
 const statusColor = (s) => s === 'bad' ? '#ef4444' : s === 'ok' ? '#f59e0b' : '#22c55e';
 const canHover = () => typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
 
-export default function ThailandZoneMap({ zones, onPickZone, onPickCompany, isMobile, height = 520 }) {
+export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPickCompany, isMobile, height = 520 }) {
   const [hover, setHover] = useState(null);   // company ที่ชี้อยู่ (เมาส์เท่านั้น)
+  const [gFilter, setGFilter] = useState(null); // ไฮไลต์เฉพาะกลุ่มธุรกิจที่เลือก (null = ทุกกลุ่ม)
 
   // กรอบโซน = bounding box ของหมุดในโซน + padding (คำนวณสด — ไม่มีทางที่หมุดจะหลุดกรอบ)
   const zoneBoxes = zones.filter(z => z.onMap && z.companies.length).map(z => {
@@ -71,6 +72,8 @@ export default function ThailandZoneMap({ zones, onPickZone, onPickCompany, isMo
   });
 
   const mapCompanies = zones.filter(z => z.onMap).flatMap(z => z.companies.map(c => ({ ...c, zone: z })));
+  // ส่วนผสมกลุ่มธุรกิจในโซน — ทุกโซนมีหลายกลุ่มคละกัน ต้องอ่านออกจากบนแผนที่เลย
+  const mixOf = (z) => groups.map(g => ({ g, n: z.companies.filter(c => c.groupMeta?.key === g.key).length })).filter(m => m.n > 0);
 
   /* de-overlap ป้ายชื่อหมุด (UI-CONVENTIONS §1.2): โรงงานที่อยู่ใกล้กันจริง (คลัสเตอร์บางนา)
      ป้ายจะทับกันจนอ่านไม่ออก → ไล่ดันป้ายลงทีละแถว แล้วลากเส้นโยงกลับหมุด (ตำแหน่งหมุดไม่ขยับ) */
@@ -90,6 +93,28 @@ export default function ThailandZoneMap({ zones, onPickZone, onPickCompany, isMo
     });
 
   return (
+    <div>
+      {/* ฟิลเตอร์กลุ่มธุรกิจ — กดแล้วเห็นว่ากลุ่มนั้นกระจายอยู่โซนไหนบ้าง (คนละแกนกับโซน) */}
+      {!!groups.length && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไฮไลต์กลุ่มธุรกิจ:</span>
+          {[{ key: null, icon: '🏢', short: 'ทุกกลุ่ม' }, ...groups].map(g => {
+            const on = gFilter === g.key;
+            return (
+              <button key={g.key || 'all'} onClick={() => setGFilter(g.key)} style={{
+                fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+                border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+              }}>
+                {g.icon} {g.short}
+                {g.key && <span style={{ marginLeft: 5, opacity: 0.75 }}>
+                  {zones.filter(z => z.onMap).reduce((a, z) => a + z.companies.filter(c => c.groupMeta?.key === g.key).length, 0)}
+                </span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
     <div style={{ position: 'relative', overflowX: isMobile ? 'auto' : 'visible' }}>
       <div style={{ position: 'relative', minWidth: isMobile ? 720 : undefined }}>
         <svg viewBox={`0 0 1000 ${H}`} style={{ width: '100%', height: 'auto', maxHeight: height, display: 'block', borderRadius: 10 }}>
@@ -127,7 +152,7 @@ export default function ThailandZoneMap({ zones, onPickZone, onPickCompany, isMo
                 fill={z.color} fillOpacity="0.12" stroke={z.color} strokeWidth="2.5" strokeDasharray="12 8" />
               <text x={x + 4} y={y - 10} fill={z.color} fontSize="20" fontWeight="800">{z.icon} {z.name}</text>
               <text x={x + 4 + (z.name.length * 11) + 40} y={y - 10} fill="#9fb0c0" fontSize="14" fontWeight="600">
-                {z.companies.length} บริษัท · OEE {z.oee == null ? '—' : z.oee + '%'}
+                {z.companies.length} บริษัท · OEE {z.oee == null ? '—' : z.oee + '%'} · {mixOf(z).map(m => `${m.g.icon}${m.n}`).join(' ')}
               </text>
             </g>
           ))}
@@ -136,23 +161,31 @@ export default function ThailandZoneMap({ zones, onPickZone, onPickCompany, isMo
           {pinLayout.map(({ c, x, y, r, lx, ly }) => {
             const col = statusColor(c.status);
             const moved = ly > y + r + 8;
+            // จุดที่ไม่เข้าฟิลเตอร์: จาง + ไม่แสดงป้ายชื่อ (UI-CONVENTIONS §1 — ต้องเห็นชัดว่าถูกกรองออก)
+            const dim = gFilter && c.groupMeta?.key !== gFilter;
             return (
-              <g key={c.key} style={{ cursor: 'pointer' }}
+              <g key={c.key} style={{ cursor: 'pointer' }} opacity={dim ? 0.14 : 1}
                 onClick={() => onPickCompany && onPickCompany(c)}
-                onMouseEnter={() => canHover() && setHover(c)}
+                onMouseEnter={() => !dim && canHover() && setHover(c)}
                 onMouseLeave={() => setHover(null)}>
                 {/* เส้นโยงเมื่อป้ายถูกดันลง (ตำแหน่งหมุด = พิกัดจริงเสมอ) */}
-                {moved && <line x1={x} y1={y + r} x2={lx} y2={ly} stroke={col} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.8" />}
+                {moved && !dim && <line x1={x} y1={y + r} x2={lx} y2={ly} stroke={col} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.8" />}
                 {c.real && <circle cx={x} cy={y} r={r + 7} fill="none" stroke="#22c55e" strokeWidth="2" opacity="0.55" />}
                 <circle cx={x} cy={y} r={r} fill={col} stroke="#fff" strokeWidth={c.real ? 3.5 : 2.5} />
-                <text x={x} y={y + 5} textAnchor="middle" fill="#0b0f0b" fontSize="13" fontWeight="800">
-                  {c.real ? '★' : '🏭'}
-                </text>
+                {/* ไอคอน = กลุ่มธุรกิจ (ทุกโซนมีหลายกลุ่มคละกัน ต้องดูออกจากหมุดเลย) */}
+                <text x={x} y={y + 5} textAnchor="middle" fontSize={c.real ? 15 : 12}>{c.groupMeta?.icon || '🏭'}</text>
+                {/* ★ = บริษัทเรา (ข้อมูลจริง) */}
+                {c.real && <>
+                  <circle cx={x + r - 1} cy={y - r + 1} r="8" fill="#22c55e" stroke="#fff" strokeWidth="1.5" />
+                  <text x={x + r - 1} y={y - r + 5} textAnchor="middle" fill="#08120a" fontSize="10" fontWeight="900">★</text>
+                </>}
                 {/* ป้ายชื่อใต้หมุด */}
-                <g transform={`translate(${lx}, ${ly})`}>
-                  <rect x={-39} y={0} width={78} height={21} rx="4" fill="rgba(0,0,0,0.82)" stroke={col} strokeWidth="1" />
-                  <text x="0" y="15" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="700">{c.code}</text>
-                </g>
+                {!dim && (
+                  <g transform={`translate(${lx}, ${ly})`}>
+                    <rect x={-39} y={0} width={78} height={21} rx="4" fill="rgba(0,0,0,0.82)" stroke={col} strokeWidth="1" />
+                    <text x="0" y="15" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="700">{c.code}</text>
+                  </g>
+                )}
               </g>
             );
           })}
@@ -181,14 +214,14 @@ export default function ThailandZoneMap({ zones, onPickZone, onPickCompany, isMo
         )}
       </div>
 
-      {/* legend */}
+      {/* legend — สีหมุด = สถานะ · ไอคอนในหมุด = กลุ่มธุรกิจ (2 มิติในหมุดเดียว) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-        <span><b style={{ color: '#22c55e' }}>●</b> ตามเป้า</span>
-        <span><b style={{ color: '#f59e0b' }}>●</b> เฝ้าระวัง</span>
-        <span><b style={{ color: '#ef4444' }}>●</b> ต้องแก้</span>
+        <span><b>สี:</b> <b style={{ color: '#22c55e' }}>●</b> ตามเป้า <b style={{ color: '#f59e0b' }}>●</b> เฝ้าระวัง <b style={{ color: '#ef4444' }}>●</b> ต้องแก้</span>
+        <span><b>ไอคอน:</b> {groups.map(g => `${g.icon} ${g.short}`).join(' · ')}</span>
         <span>★ = บริษัทเรา (ข้อมูลจริง)</span>
         <span>คลิกหมุด = ดูรายไลน์ · คลิกกรอบโซน = ดูบริษัทในโซน</span>
       </div>
+    </div>
     </div>
   );
 }
