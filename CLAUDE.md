@@ -656,7 +656,14 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 | **ผลิตรวมวันนี้ = 0 ระหว่างกะ** | `/oee-analytics` non-pair คืน `actual_qty` ซึ่งเขียนตอนปิดกะเท่านั้น | ไม่มีค่า → รวมจากใบงานสด (`qty_ok ?? qty` / `qty_actual`) |
 | **NG จากคอลัมน์ session ปนกับ defect_logs ในหน้าเดียว** | MorningMeeting (KPI/ชิปรายกะ) · FactoryMap (สด/ทบทวน) · OeeInsightPanel (loss decomposition) ใช้คอลัมน์ ขณะที่แผง Top-defect ในหน้าเดียวกันใช้ defect_logs | ยึด `defect_logs` (qty_ng + qty_suspect) ทุกจุด |
 
+**audit รอบ 2 — หน้า `/oee-analytics` (2026-08-05 · user เจอเอง):**
+- 🔴 **Pareto Downtime นับ "ในแผน" ด้วย** → "นับสต๊อก/ไม่มีแผนผลิต" ครองอันดับ 1 ที่ 50% ทั้งที่ไม่ใช่ loss (ข้อมูลจริง: DT ในแผนคิดเป็น **73%** ของนาทีทั้งหมด — พาเรโตจึงชี้เป้าผิดหมด) · เป็นบั๊กเดียวกับที่แก้ในแผง Top Downtime ไปแล้ว 2026-07-15 แต่ Pareto ตกหล่น → **default นับเฉพาะนอกแผน + checkbox "รวมหยุดตามแผน" (ปิดไว้)** ไม่ซ่อนข้อมูล แต่ไม่ให้ปนกับ loss จริง
+- 🔴 **`pairAwareTotal(...).actual` = undefined → NaN** — util คืน `{ target, produced }` เท่านั้น · ใช้ชื่อฟิลด์อื่นแล้ว JS ไม่ error แต่ได้ NaN เงียบๆ · **เจอ 2 จุด: เด็ค Monthly Review ผู้บริหาร (ยอด output ทั้งเด็ค) + ผลิตรวมแท็บแนวโน้มที่เพิ่งเขียน** → มีเทสกันไว้แล้ว (`pa.actual === undefined`)
+- 🟡 **ผลิตรวมแท็บแนวโน้มไม่ pair-aware** (บวก actual_qty ตรงๆ) ขณะที่แท็บภาพรวมวันนี้นับคู่แล้ว → 2 แท็บในหน้าเดียวยอดไม่ตรง · แก้: โหลด `prod_orders` ของช่วง (แบ่งหน้าทีละ 1000) + pair map แล้วนับแบบเดียวกัน
+
 **กฎที่ตกผลึกจาก audit นี้:**
+- **Pareto/Top Downtime ทุกจุดนับเฉพาะ `category !== 'planned'`** — จะโชว์ในแผนต้องแยกส่วน/ให้ผู้ใช้เลือกเอง ห้ามปนกันโดยปริยาย
+- **`pairAwareTotal` คืน `{ target, produced }`** — ห้ามอ่านชื่ออื่น (undefined → NaN เงียบ) · ตอนสร้าง perMat ต้องใส่ `mat_no` ด้วย ไม่งั้นจับคู่ไม่ได้
 - **NG ทุกจุดยึด `defect_logs` (qty_ng + qty_suspect)** — คอลัมน์ `production_sessions.qty_ng` เป็น rollup ใช้เป็น fallback เท่านั้น ห้ามบวกทั้งสอง · `prod_orders.qty_ng` เป็น vestigial ไม่มีใครเขียน ห้ามอ่าน
 - **เฉลี่ย OEE/A/P/Q ข้ามกะ ต้อง `import { wavg, wLoad, wRun, wProd } from '../utils/oeeAvg'`** จุดเดียว
 - **ยอดดี = ยอดสแกน ห้ามลบ NG** (กฎ Q) · ยอดที่ต้องใช้ระหว่างกะให้คำนวณจาก `prod_orders` ไม่ใช่ `actual_qty` (เขียนตอนปิดกะ)
