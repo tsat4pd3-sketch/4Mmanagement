@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal } from '../utils/pairTotals';
@@ -119,7 +120,7 @@ const LTYPES = [
   { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
   { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
   { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },
-  ...LINE_TYPES.filter(t => t.value === 'other'),
+  { value: 'other', label: '📦 อื่นๆ / ยังไม่ตั้งประเภท' },
 ];
 const ltLabel = (v) => LTYPES.find(t => t.value === v)?.label || '📦 ไม่ระบุประเภท';
 const ltShort = (v) => (ltLabel(v).split(' / ')[0] || '').trim();
@@ -135,6 +136,8 @@ export default function GroupOverview() {
   const [sel, setSel] = useState({ axis: 'map', node: null, comp: null });  // axis: map=โซนพื้นที่ · biz=กลุ่มธุรกิจ · node/comp=null คือระดับ TSG
   const [showHow, setShowHow] = useState(false);
   const [ltFilter, setLtFilter] = useState(null);   // กรองเฉพาะไลน์ประเภทนี้ทั้งกลุ่ม (null = ทุกประเภท)
+  const [pickComp, setPickComp] = useState(null);   // บริษัทที่กดเลือก → ถามก่อนว่าจะเข้าผังโรงงาน หรือดูภาพรวมในหน้านี้
+  const navigate = useNavigate();
 
   /* ── โหลดข้อมูลจริงของวันที่เลือก (ถ้าไม่มีกะเลย ถอยหลังหาไม่เกิน 7 วัน เพื่อให้ตัวอย่างมีข้อมูลโชว์เสมอ) ── */
   const load = useCallback(async () => {
@@ -519,7 +522,7 @@ export default function GroupOverview() {
                 isMobile={isMobile}
                 height={isMobile ? 420 : 560}
                 onPickZone={(z) => setSel(s => ({ ...s, node: z.key, comp: null }))}
-                onPickCompany={(c) => setSel(s => ({ ...s, node: c.zone, comp: c.key }))}
+                onPickCompany={(c) => setPickComp(c)}
               />
               {/* บริษัทนอกแผนที่ (ต่างประเทศ) — ห้ามหายไปเงียบๆ เพราะวางบนแผนที่ภาคกลางไม่ได้ */}
               {tree.zones.filter(z => !z.onMap && z.companies.length).map(z => (
@@ -613,7 +616,7 @@ export default function GroupOverview() {
                     {/* บริษัทในกลุ่ม/โซน — ชิปคลิกเข้าบริษัทได้เลย (แกนโซนโชว์ไอคอนกลุ่มธุรกิจนำหน้า) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                       {g.companies.map(c => (
-                        <button key={c.key} onClick={() => setSel(s => ({ ...s, node: g.key, comp: c.key }))} style={{
+                        <button key={c.key} onClick={() => setPickComp(c)} style={{
                           fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
                           background: c.real ? 'rgba(34,197,94,0.13)' : 'var(--bg3)',
                           border: `1px ${c.real ? 'solid #22c55e' : 'dashed var(--border2)'}`,
@@ -640,7 +643,7 @@ export default function GroupOverview() {
         {bizNode && !compNode && (<>
           <div style={card}>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
-            <RankBars items={bizNode.companies} onPick={(c) => setSel(s => ({ ...s, node: bizNode.key, comp: c.key }))} />
+            <RankBars items={bizNode.companies} onPick={(c) => setPickComp(c)} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
               เรียงตาม OEE · <b>คลิกชื่อบริษัทเพื่อดูรายไลน์</b>
             </div>
@@ -699,9 +702,9 @@ export default function GroupOverview() {
                     </div>
                   </div>
 
-                  <button onClick={() => setSel(s => ({ ...s, node: bizNode.key, comp: c.key }))}
+                  <button onClick={() => setPickComp(c)}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 8 }}>
-                    ▸ ดูรายไลน์ ({c.lines.length})
+                    ▸ เปิดบริษัทนี้ ({c.lines.length} ไลน์)
                   </button>
                 </div>
               );
@@ -778,7 +781,7 @@ export default function GroupOverview() {
                       {!compNode && <td style={TD}>{l.comp?.groupMeta?.icon} {l.comp?.groupMeta?.short}</td>}
                       {!compNode && (
                         <td style={TD}>
-                          <button onClick={() => setSel(s => ({ ...s, node: s.axis === 'map' ? l.comp.zone : l.comp.groupMeta.key, comp: l.comp.key }))} style={{
+                          <button onClick={() => setPickComp(l.comp)} style={{
                             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                             color: 'var(--accent)', fontSize: 13, fontWeight: 700,
                           }}>{l.comp?.flag} {l.comp?.code}</button>
@@ -801,6 +804,83 @@ export default function GroupOverview() {
           </div>
         </div>
       </>)}
+
+      {/* ── popup เลือกทางเข้าเมื่อกดที่โรงงาน: เข้าผังโรงงาน หรือ ดูภาพรวมในหน้านี้ ──
+           display-only (ไม่มีช่องกรอก) → ปิดด้วยคลิกพื้นหลัง/✕ ได้ตาม §5 · zIndex ≥ 2000 (เหนือ 🔔) */}
+      {pickComp && (
+        <div onClick={() => setPickComp(null)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            ...card, width: 'min(94vw, 520px)', maxHeight: '92vh', overflowY: 'auto', padding: 18,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ fontSize: 26 }}>{pickComp.flag}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 19, fontWeight: 800 }}>{pickComp.code}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+                  {pickComp.groupMeta.icon} {pickComp.groupMeta.short} · {pickComp.region}
+                </div>
+              </div>
+              {pickComp.real
+                ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '2px 7px' }}>ข้อมูลจริง</span>
+                : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '2px 7px' }}>จำลอง</span>}
+              <button className="tbtn" onClick={() => setPickComp(null)} style={{ ...btn, padding: '3px 9px' }}>✕</button>
+            </div>
+
+            {/* สรุปสั้นๆ ให้ตัดสินใจได้ก่อนเลือกทาง */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, margin: '13px 0 15px' }}>
+              <Mini label="OEE" value={pickComp.oee == null ? '—' : pickComp.oee + '%'} color={oeeCol(pickComp.oee)} />
+              <Mini label="ผลิต/เป้า" value={`${pickComp.pct == null ? '—' : pickComp.pct + '%'}`} color={pctCol(pickComp.pct)} />
+              <Mini label="🔧 DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? '#f59e0b' : undefined} />
+              <Mini label="🚫 NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? '#ef4444' : undefined} />
+            </div>
+
+            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>จะดูแบบไหน?</div>
+
+            {/* 1) เข้าผังโรงงานของบริษัทนั้น */}
+            <button
+              disabled={!pickComp.real}
+              onClick={() => { if (pickComp.real) { setPickComp(null); navigate('/factory-map'); } }}
+              style={{
+                width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, marginBottom: 9,
+                background: pickComp.real ? 'var(--bg3)' : 'var(--bg2)',
+                border: `1px solid ${pickComp.real ? 'var(--accent)' : 'var(--border)'}`,
+                color: 'var(--text)', cursor: pickComp.real ? 'pointer' : 'not-allowed', opacity: pickComp.real ? 1 : 0.72,
+              }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>🗺️ เข้าหน้าผังโรงงาน (Floor Plan) ของ {pickComp.code}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                {pickComp.real
+                  ? 'เปิดผังรวมโรงงานจริง — เห็นทุกไลน์บนผัง สีตามสถานะ กดเข้าไลน์ดูรายละเอียดได้'
+                  : <>ยังไม่มีผังของบริษัทจำลอง — <b>ระบบจริง</b>: แต่ละบริษัทมีผังของตัวเอง (ผูก <code>company_id</code> กับผังโรงงาน) กดแล้วเด้งเข้าผังของบริษัทนั้นได้เลย</>}
+              </div>
+            </button>
+
+            {/* 2) ดูภาพรวมในหน้านี้ */}
+            <button onClick={() => {
+              setSel(st => ({ ...st, node: st.axis === 'map' ? pickComp.zone : pickComp.groupMeta.key, comp: pickComp.key }));
+              setPickComp(null);
+            }} style={{
+              width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10,
+              background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)', cursor: 'pointer',
+            }}>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>📊 ดูภาพรวมในหน้านี้ ({pickComp.lines.length} ไลน์)</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                อยู่หน้าเดิม — เห็นตารางรายไลน์ (เป้า/ผลิต/OEE/DT/NG/คน) แล้วกดย้อนกลับขึ้นโซนหรือกลุ่มได้ทันที
+              </div>
+            </button>
+
+            {!pickComp.real && (
+              <button onClick={() => { setPickComp(null); navigate('/factory-map'); }} style={{
+                ...btn, width: '100%', marginTop: 9, fontSize: 12.5, padding: '8px 10px',
+              }}>
+                🔎 ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── ถ้าจะทำจริงต้องทำอะไร (ตอบคำถามผู้บริหารในหน้าเดียวกัน) ── */}
       <div style={card}>
