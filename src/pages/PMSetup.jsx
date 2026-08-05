@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
@@ -7,7 +7,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
-import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind } from '../utils/pmTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
@@ -1109,7 +1109,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 }
 
 // ─── EquipmentCard ────────────────────────────────────────────────────────────
-function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
+function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPending }) {
   const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: '#e05c4a' }
   const color = typeColor[jig.equipment_type] ?? '#527855'
   const catMeta = CATEGORY_TYPE_META[jig.equipment_category] ?? CATEGORY_TYPE_META.production
@@ -1134,6 +1134,12 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
         {jig.jig_no && <p style={S.meta}>No. {jig.jig_no}</p>}
         {jig.line_name && <p style={S.meta}>📍 {jig.line_name}{jig.machine_no ? ` · ${jig.machine_no}` : ''}</p>}
         {jig.machine_id && <p style={{ ...S.meta, color: 'var(--accent)' }}>🔗 เชื่อมกับ Machine Master</p>}
+        {/* ลงจุดตรวจแล้วแต่ยังไม่ลงทะเบียน AM = ยังไม่โผล่ให้พนักงานตรวจ — เตือนตรงนี้ไม่ให้เข้าใจผิดว่าใช้งานได้แล้ว */}
+        {amPending && (
+          <p style={{ ...S.meta, color: '#f59e0b', fontWeight: 700 }}>
+            ⚠ ยังไม่ได้ลงทะเบียน AM · <Link to="/daily-checker?tab=pm" style={{ color: '#f59e0b', textDecoration: 'underline' }}>ลงทะเบียน</Link>
+          </p>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{cpCount}</span> จุดตรวจ
@@ -1160,6 +1166,7 @@ export default function PMSetup() {
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
+  const [amRegistered, setAmRegistered] = useState(null) // Set(jig_id) ที่ลงทะเบียน AM แล้ว (null = ไม่ใช่แท็บ AM)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editJig, setEditJig] = useState(null)
@@ -1196,6 +1203,15 @@ export default function PMSetup() {
         if (c.x_pos != null) pins[eqId] = true
       })
     }
+
+    // แท็บ AM (ฝ่ายผลิต): เครื่องต้อง "ลงทะเบียน AM" (pm_daily_line_targets) ด้วย ถึงจะโผล่ให้ตรวจ
+    // ที่หน้า PM ตรวจสอบ — ลงจุดตรวจอย่างเดียวไม่พอ · ดึงมาเพื่อเตือนบนการ์ด ไม่ให้ 2 หน้าดูขัดกัน
+    let reg = null
+    if (department === 'production') {
+      const { data: tg } = await supabaseDR.from('pm_daily_line_targets').select('jig_id').eq('is_active', true)
+      reg = new Set((tg ?? []).map(t => t.jig_id))
+    }
+    setAmRegistered(reg)
 
     // show only equipment that has a checklist in the selected department
     // (each dept tab = its own responsibility; equipment "belongs" via its checklist)
@@ -1234,6 +1250,10 @@ export default function PMSetup() {
         <div>
           <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
           <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
+          {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
+          <p style={{ ...S.sub, marginTop: 2 }}>
+            <b>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
+          </p>
         </div>
         {canSetup && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1263,6 +1283,7 @@ export default function PMSetup() {
         <div style={S.grid}>
           {jigs.map(jig => (
             <EquipmentCard key={jig.id} jig={jig} canSetup={canSetup} cpCount={cpCounts[jig.id] ?? 0} hasPins={!!pinFlags[jig.id]}
+              amPending={amRegistered ? !amRegistered.has(jig.id) : false}
               onEdit={() => openEdit(jig)} onDelete={() => handleDelete(jig)} />
           ))}
         </div>

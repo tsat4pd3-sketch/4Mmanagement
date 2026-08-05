@@ -4,11 +4,28 @@
 import { supabaseDR } from '../supabaseClient'
 
 export const DEFAULT_TEAMS = [
-  { key: 'maintenance',     label: 'MTN (ซ่อมบำรุง)',      icon: '🔧', equip_type: 'machine', dept_name: 'MTN',        color: '#fb923c', sort_order: 1 },
-  { key: 'jig_maintenance', label: 'JIG MTN',              icon: '🧩', equip_type: 'jig',     dept_name: 'JIG MTN',    color: '#34d399', sort_order: 2 },
-  { key: 'die_maintenance', label: 'DIE MTN',              icon: '🗜️', equip_type: 'die',     dept_name: 'DIE MTN',    color: '#4d9fff', sort_order: 3 },
-  { key: 'production',      label: 'PRODUCTION (ฝ่ายผลิต)', icon: '🏭', equip_type: null,      dept_name: 'PRODUCTION', color: '#3dd65c', sort_order: 4 },
+  { key: 'maintenance',     label: 'MTN (ซ่อมบำรุง)',   icon: '🔧', equip_type: 'machine', dept_name: 'MTN',        color: '#fb923c', sort_order: 1 },
+  { key: 'jig_maintenance', label: 'JIG MTN',           icon: '🧩', equip_type: 'jig',     dept_name: 'JIG MTN',    color: '#34d399', sort_order: 2 },
+  { key: 'die_maintenance', label: 'DIE MTN',           icon: '🗜️', equip_type: 'die',     dept_name: 'DIE MTN',    color: '#4d9fff', sort_order: 3 },
+  { key: 'production',      label: 'AM (ผลิตตรวจเอง)',   icon: '🏭', equip_type: null,      dept_name: 'PRODUCTION', color: '#3dd65c', sort_order: 4 },
 ]
+
+/**
+ * AM vs PM — คนละเรื่องกันตามศัพท์ TPM (คำสั่ง user 2026-08-05)
+ *   production   = AM (Autonomous Maintenance) — พนักงานผลิตดูแล/ตรวจเครื่องเองทุกต้นกะ
+ *   ทีมช่างที่เหลือ = PM (Preventive/Predictive) — ช่างตรวจตามรอบเวลา/ยอดผลิต (อนาคต prescriptive)
+ * key ใน DB ยังเป็น 'production' เหมือนเดิม เปลี่ยนเฉพาะการแสดงผล/คำอธิบาย
+ * — จุดใดที่โชว์ชื่อทีม ให้เรียก teamKind() มาอธิบาย ห้าม hardcode คำว่า "PM ฝ่ายผลิต" อีก
+ */
+export const AM_KIND = {
+  short: 'AM', full: 'Autonomous Maintenance',
+  desc: 'พนักงานผลิตตรวจ/ดูแลเครื่องเองทุกต้นกะ — คนละส่วนกับ PM ของช่าง',
+}
+export const PM_KIND = {
+  short: 'PM', full: 'Preventive / Predictive Maintenance',
+  desc: 'ช่างตรวจตามรอบเวลา / ตามยอดผลิต — คนละส่วนกับ AM ที่ผลิตตรวจเองรายวัน',
+}
+export function teamKind(key) { return key === 'production' ? AM_KIND : PM_KIND }
 
 let _cache = null
 let _inflight = null
