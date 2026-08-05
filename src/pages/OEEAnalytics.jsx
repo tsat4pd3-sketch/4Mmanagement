@@ -934,12 +934,16 @@ export default function OEEAnalytics() {
       note: d.description || '',
     };
   }), [defects, sessById]);
+  // `cluster: true` = จับกลุ่มจากข้อความอิสระ (ทางเดียวที่จะเจาะ "อื่นๆ" ซึ่งบังคับกรอกรายละเอียดอยู่แล้ว)
+  const NOTE_DIM = { key: 'note', label: '💬 หมายเหตุ (จับกลุ่มคำ)', cluster: true };
   const DT_DIMS = [
+    NOTE_DIM,
     { key: 'machine', label: '⚙️ เครื่องจักร' }, { key: 'line', label: '🏭 ไลน์' },
     { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'shift', label: '🕐 กะ' },
     { key: 'man', label: '👤 ผู้บันทึก' }, { key: 'date', label: '📅 วัน' },
   ];
   const DEF_DIMS = [
+    NOTE_DIM,
     { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'line', label: '🏭 ไลน์' },
     { key: 'shift', label: '🕐 กะ' }, { key: 'man', label: '👤 ผู้บันทึก' }, { key: 'date', label: '📅 วัน' },
   ];
