@@ -13,6 +13,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT } from '../utils/strictOee';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
@@ -4614,6 +4615,49 @@ function HistoryTab({ role }) {
                       </div>
                     </div>
                   )}
+
+                  {/* OEE จริง — นับ Downtime "ในแผน" เป็นการสูญเสียด้วย (กันการติ๊กในแผนเพื่อดัน OEE)
+                      ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/strictOee.js */}
+                  {s.oee != null && (() => {
+                    const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
+                    let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
+                    if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
+                    const breakMin = shiftStartMs && shiftEndMs ? histBreakOverlapMin(shiftStartMs, shiftEndMs, s.work_date, s.shift) : 0;
+                    const plannedDtMin = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+                    const st = strictOee({ shiftMin: s.shift_min, breakMin, plannedDtMin, a: s.oee_a, p: s.oee_p, q: s.oee_q });
+                    if (!st || st.oee == null) return null;
+                    const gap = strictGap(s.oee, st.oee);
+                    const warn = st.plannedSharePct >= STRICT_WARN_SHARE_PCT;
+                    const c = st.oee >= 85 ? '#22c55e' : st.oee >= 65 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', borderRadius: 8,
+                        background: warn ? 'rgba(245,158,11,0.08)' : 'var(--bg3)', border: `1px solid ${warn ? 'rgba(245,158,11,0.35)' : 'var(--border)'}` }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง (นับหยุดในแผนเป็นการสูญเสีย)</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                            ฐาน = เวลากะ {s.shift_min} น. − พัก {Math.round(breakMin)} น. = {st.baseMin} น.
+                            {plannedDtMin > 0 ? ` · หยุดในแผน ${Math.round(plannedDtMin)} น. — สูตรมาตรฐานกันออกจากฐาน (เหลือ ${st.loadMin} น.) แต่ตัวนี้นับเป็นสูญเสีย` : ' · ไม่มีหยุดในแผน = เท่ากับ OEE'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 16, marginLeft: 'auto', alignItems: 'center' }}>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>A จริง</div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: st.a >= 85 ? '#22c55e' : st.a >= 65 ? '#f59e0b' : '#ef4444' }}>{st.a.toFixed(1)}%</div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง</div>
+                            <div style={{ fontSize: 22, fontWeight: 900, color: c }}>{st.oee.toFixed(1)}%</div>
+                          </div>
+                        </div>
+                        {gap > 0.05 && (
+                          <div style={{ width: '100%', fontSize: 11, color: warn ? '#f59e0b' : 'var(--muted)' }}>
+                            {warn ? '⚠️ ' : ''}ต่ำกว่า OEE ที่รายงาน {gap.toFixed(1)} จุด — มาจากหยุด "ในแผน" {Math.round(plannedDtMin)} นาที ({st.plannedSharePct.toFixed(1)}% ของฐาน)
+                            {warn ? ' · ตรวจว่าประเภท Downtime เหล่านี้ควรเป็น "ในแผน" จริงหรือไม่' : ''}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Per-MAT.NO breakdown */}
                   {(() => {

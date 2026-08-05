@@ -15,6 +15,7 @@ import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { computeLiveOee, LIVE_MIN_ELAPSED } from '../utils/liveOee';
+import { strictOee } from '../utils/strictOee';
 import { lazy, Suspense } from 'react';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
@@ -555,9 +556,18 @@ export default function OEEAnalytics() {
     });
     const tdCal = tdLineSet.size * 1440;   // วันเดียว = 1,440 นาที/ไลน์
     const tdR1 = v => (v == null ? null : +v.toFixed(1));
+    // OEE จริง — นับหยุด "ในแผน" เป็นการสูญเสีย (กันการติ๊กในแผนเพื่อดัน A) · ถ่วงด้วยฐาน (กะ − พัก)
+    const strictRows = tdValid.map(r => {
+      const st = strictOee({
+        shiftMin: r.shift_min, breakMin: policyBreakMin(r.shift, Number(r.shift_min) || 0, breakPols),
+        plannedDtMin: r.plannedMin, a: r.calcA, p: r.calcP, q: r.calcQ,
+      });
+      return st && st.oee != null ? { oee: st.oee, w: st.baseMin } : null;
+    }).filter(Boolean);
     return {
       oee: tdOee, a: wavg(tdRows, r => r.calcA, wLoad),
       p: wavg(tdRows, r => r.calcP, wRun), q: wavg(tdRows, r => r.calcQ, wProd),
+      strictOee: wavg(strictRows, r => r.oee, r => r.w),
       ooe:  tdOee != null && tdShift > 0 ? tdR1(tdOee * (tdNet / tdShift)) : null,
       teep: tdOee != null && tdCal   > 0 ? tdR1(tdOee * (tdNet / tdCal))   : null,
       netAvailMin: Math.round(tdNet), shiftMinSum: Math.round(tdShift),
@@ -996,6 +1006,16 @@ export default function OEEAnalytics() {
 
             {/* ── OOE / TEEP วันนี้ — ต่างจาก OEE ที่ "ฐานเวลา" (2026-08-04) ── */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+              {/* OEE จริง — นับหยุด "ในแผน" เป็นการสูญเสีย (ปิดช่องโหว่ติ๊กในแผนเพื่อดัน A · 2026-08-05) */}
+              <div style={{ flex: '1 1 150px', minWidth: 140 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง — นับหยุดในแผนด้วย</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.strictOee != null ? oeeColor(tdKpi.strictOee) : 'var(--muted)' }}>{tdKpi.strictOee ?? '—'}{tdKpi.strictOee != null ? '%' : ''}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                  ฐาน = เวลากะ − พัก
+                  {tdKpi.strictOee != null && tdKpi.oee != null && tdKpi.oee - tdKpi.strictOee > 0.05
+                    ? <> · <span style={{ color: '#f59e0b' }}>ต่ำกว่า OEE {(tdKpi.oee - tdKpi.strictOee).toFixed(1)} จุด</span></> : ''}
+                </div>
+              </div>
               <div style={{ flex: '1 1 150px', minWidth: 140 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OOE — ใช้เวลากะคุ้มแค่ไหน</div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.ooe != null ? oeeColor(tdKpi.ooe) : 'var(--muted)' }}>{tdKpi.ooe ?? '—'}{tdKpi.ooe != null ? '%' : ''}</div>
