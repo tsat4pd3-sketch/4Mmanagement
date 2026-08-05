@@ -31,8 +31,14 @@ const STATUS_META = {
   imported: { label: '⏬ ถูกยกไปกะถัดไป', color: 'var(--muted)' },
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
-// สแกนเปิด/ปิดใบห่างกัน ≤ ค่านี้ = "สแกนเป็นชุด" (พนักงานยิงหลายใบรวดเดียว ไม่ใช่ใบต่อใบ)
-const BATCH_SEC = 180;
+/* เกณฑ์ "สแกนรวบ" = ช่องว่างระหว่างสแกน < BATCH_FRAC × เวลาที่ต้องใช้ผลิตของใบนั้น (qty × CT)
+   0.5 = ต้องผลิตเร็วกว่ามาตรฐาน "2 เท่า" ถึงจะทันในช่วงนั้น → เป็นไปไม่ได้ = สแกนรวบแน่นอน
+   (ไม่ใช่เวลาตายตัว — สเกลตามชิ้นงาน/จำนวนของแต่ละใบเอง · ตรวจกับข้อมูลจริง Assy LWR 05/08:
+    ทยอยสแกนทุก 33 นาที (need 34 นาที) = ไม่ใช่ชุด ✓ · สแกน 6 ใบห่างกัน 1-3 วินาที = ชุด ✓
+    ถ้าใช้ 1.0 จะเหมารวมการทยอยสแกนจริงผิด) */
+const BATCH_FRAC = 0.5;
+// ใช้เฉพาะตอนคำนวณเวลาผลิตจริงไม่ได้เลย (ไม่มีทั้ง CT และข้อมูลกะ)
+const FALLBACK_BATCH_SEC = 180;
 const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: bg, color: fg });
 
 export default function OrderTrace() {
@@ -306,6 +312,61 @@ export default function OrderTrace() {
     return () => { alive = false; };
   }, [sel, lines]);
 
+  /* ── ตรวจ "สแกนเป็นชุด" จากข้อมูลจริง ไม่ใช้เวลาตายตัว (2026-08-05 · คำสั่ง user) ────────
+     เกณฑ์เชิงกายภาพ: ใบ 2 ใบที่สแกนห่างกัน **น้อยกว่าเวลาที่ต้องใช้ผลิตของใบนั้น** (qty × CT)
+       = ช่วงนั้นผลิตไม่ทัน → ต้องเป็นการสแกนรวบ ไม่ใช่ทยอยสแกนตามจริง
+     • ต่อกันเป็นลูกโซ่ → เคส "สแกน 3 ใบ → เข้าห้องน้ำ 5 นาที → สแกนต่อ 2 ใบ" ยังเป็นชุดเดียว
+       เพราะ 5 นาที < เวลาผลิตจริงของใบ (35 ชิ้น × 58 วิ ≈ 34 นาที) — เกณฑ์ปรับตามของจริงเอง
+     • ไม่ได้ตั้ง CT → ใช้อัตราจริงเฉลี่ยของกะนั้นแทน (ช่วงเวลา ÷ ยอดรวม)
+     • ไม่มีทั้ง CT และข้อมูลกะ (เช่นใบเดียวโดดๆ) ค่อยถอยไปค่าคงที่ FALLBACK_BATCH_SEC  */
+  const scanBatch = useMemo(() => {
+    const empty = { open: { members: [], maxGapSec: null }, close: { members: [], maxGapSec: null }, needSec: null, needFrom: null };
+    if (!sel || !trace) return empty;
+    const sess = trace.sessionOrders || [];
+    const ctMap = trace.ctByMat || {};
+    const qtyOf = (o) => Number(o.qty_ok ?? o.qty_actual ?? o.qty) || 0;
+
+    // อัตราจริงเฉลี่ยของกะ (fallback เมื่อชิ้นงานยังไม่ตั้ง CT)
+    let sessSecPerPc = null;
+    const done = sess.filter(o => o.opened_at && o.confirmed_at && qtyOf(o) > 0);
+    if (done.length) {
+      const s = Math.min(...done.map(o => new Date(o.opened_at).getTime()));
+      const e = Math.max(...done.map(o => new Date(o.confirmed_at).getTime()));
+      const q = done.reduce((a, o) => a + qtyOf(o), 0);
+      if (e > s && q > 0) sessSecPerPc = (e - s) / 1000 / q;
+    }
+    // เวลาที่ "ต้องใช้ผลิต" ของใบหนึ่ง (วินาที)
+    const prodSec = (o) => {
+      const ct = Number(ctMap[o.mat_no]) || 0;
+      if (ct > 0) return qtyOf(o) * ct;
+      if (sessSecPerPc) return qtyOf(o) * sessSecPerPc;
+      return null;
+    };
+    // จับกลุ่มลูกโซ่ตามเวลาสแกน
+    const clusterOf = (key) => {
+      const list = sess.filter(o => o[key]).sort((a, b) => new Date(a[key]) - new Date(b[key]));
+      if (!list.length) return { members: [], maxGapSec: null };
+      const groups = []; let cur = [list[0]];
+      for (let i = 1; i < list.length; i++) {
+        const gap = (new Date(list[i][key]).getTime() - new Date(list[i - 1][key]).getTime()) / 1000;
+        const need = prodSec(list[i]) ?? prodSec(list[i - 1]);
+        const sameBatch = need != null ? gap < need * BATCH_FRAC : gap <= FALLBACK_BATCH_SEC;
+        if (sameBatch) cur.push(list[i]); else { groups.push(cur); cur = [list[i]]; }
+      }
+      groups.push(cur);
+      const mine = groups.find(g => g.some(o => o.id === sel.id)) || [];
+      let maxGapSec = null;
+      for (let i = 1; i < mine.length; i++) {
+        const g = (new Date(mine[i][key]).getTime() - new Date(mine[i - 1][key]).getTime()) / 1000;
+        maxGapSec = Math.max(maxGapSec ?? 0, g);
+      }
+      return { members: mine, maxGapSec };
+    };
+    const needSec = prodSec(sel);
+    return { open: clusterOf('opened_at'), close: clusterOf('confirmed_at'), needSec,
+      needFrom: (Number(ctMap[sel.mat_no]) || 0) > 0 ? 'ct' : (sessSecPerPc ? 'session' : null) };
+  }, [sel, trace]);
+
   /* ── timeline เหตุการณ์รวม เรียงตามเวลา ── */
   const timeline = useMemo(() => {
     if (!sel || !trace) return [];
@@ -318,12 +379,12 @@ export default function OrderTrace() {
       if (a == null) return false;
       return a <= (oEnd ?? Infinity) && (b ?? a) >= oStart;
     };
-    // ⚠️ เปิด/ปิด = "เวลาสแกน" ไม่ใช่เวลาเริ่ม-จบผลิตจริง (พนักงานสแกนเป็นชุดหลายใบ — ดู orderAnalysis)
-    const batchNote = (ts, key) => {
-      const n = (trace.sessionOrders || []).filter(o => o[key] && Math.abs(new Date(o[key]).getTime() - new Date(ts).getTime()) <= BATCH_SEC * 1000).length;
-      return n > 1 ? ` · 🧾 สแกนพร้อมกัน ${n} ใบ` : '';
+    // ⚠️ เปิด/ปิด = "เวลาสแกน" ไม่ใช่เวลาเริ่ม-จบผลิตจริง (พนักงานสแกนรวบหลายใบ — ดู scanBatch/orderAnalysis)
+    const batchNote = (which) => {
+      const n = scanBatch[which]?.members?.length || 0;
+      return n > 1 ? ` · 🧾 สแกนรวบ ${n} ใบ` : '';
     };
-    if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `สแกนเปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}${batchNote(sel.opened_at, 'opened_at')}` });
+    if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `สแกนเปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}${batchNote('open')}` });
     trace.qtyUpdates.forEach(u => { if (!u.is_final) ev.push({ t: u.logged_at, icon: '✍️', text: `อัพเดทยอดสะสม ${u.qty_accum} (+${u.qty_delta}) โดย ${u.logged_by || '—'}` }); });
     trace.defects.filter(d => d.prod_order_id === sel.id).forEach(d => ev.push({ t: d.logged_at, icon: '🚫', warn: true, text: `NG ${d.dr_defect_types?.name_th || ''} ${d.qty_ng || 0} ชิ้น${d.qty_suspect ? ` สงสัย ${d.qty_suspect}` : ''}${d.description ? ` — ${d.description}` : ''} (${d.reported_by_name || '—'})` }));
     trace.downtimes.forEach(d => {
@@ -336,7 +397,7 @@ export default function OrderTrace() {
     });
     trace.fourM.forEach(f => ev.push({ t: f.created_at, icon: '📋', text: `4M ${f.category}${f.change_subtype ? `/${f.change_subtype}` : ''}: ${f.description || ''} (${f.status})` }));
     if (sel.reopened_at) ev.push({ t: sel.reopened_at, icon: '↩️', warn: true, text: `ถอยใบ (ครั้งที่ ${sel.reopen_count || 1}) โดย ${sel.reopened_by || '—'}` });
-    if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `สแกนปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}${batchNote(sel.confirmed_at, 'confirmed_at')}` });
+    if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `สแกนปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}${batchNote('close')}` });
     trace.stockIn.forEach(x => ev.push({ t: x.created_at, icon: '📦', text: `เข้าคลัง ${x.line_name} +${Number(x.qty).toLocaleString()} (${x.created_by})` }));
     trace.stockOut.forEach(x => ev.push({ t: x.created_at, icon: '🚚', dim: true, text: `ตัดส่งลูกค้า −${Number(x.qty).toLocaleString()} · ${x.note || ''} (โดยประมาณ — ตัดจากยอดรวม mat เดียวกัน)` }));
     return ev.filter(e => e.t).sort((a, b) => new Date(a.t) - new Date(b.t));
@@ -377,11 +438,10 @@ export default function OrderTrace() {
     const netMin = Math.max(0, durMin - dt.plan - dt.unpl);
     const netSec = qty > 0 && netMin > 0 ? netMin * 60 / qty : null;
 
-    // ── ตรวจ "สแกนเป็นชุด" + ใบที่วิ่งทับช่วงเดียวกัน ──
+    // ── สแกนเป็นชุด (จาก scanBatch — เกณฑ์คำนวณจากเวลาผลิตจริง ไม่ใช่เลขตายตัว) + ใบที่วิ่งทับช่วงเดียวกัน ──
     const sess = trace.sessionOrders || [];
-    const near = (a, b) => a && b && Math.abs(new Date(a).getTime() - new Date(b).getTime()) <= BATCH_SEC * 1000;
-    const openBatch = sess.filter(o => near(o.opened_at, sel.opened_at));
-    const closeBatch = sess.filter(o => o.confirmed_at && near(o.confirmed_at, sel.confirmed_at));
+    const openBatch = scanBatch.open.members;
+    const closeBatch = scanBatch.close.members;
     /* กลุ่ม = ใบที่วิ่ง "ต่อเนื่องเชื่อมกัน" (transitive) — ขยายช่วงจนไม่มีใบใหม่เข้ามา
        ⚠️ ห้ามเอาแค่ใบที่ทับกับใบนี้ตรงๆ: ช่วงเวลาจะถูกดึงกว้างตามใบที่ลากเข้ามา
           แต่ qty ไม่ได้รวมใบที่ทับกับ "ใบนั้น" อีกที → ตัวหารโตกว่าตัวตั้ง = อัตราต่ำเกินจริง
@@ -428,8 +488,10 @@ export default function OrderTrace() {
     return { durMin, dtUnpl: dt.unpl, dtPlan: dt.plan, dtUntimed: dt.untimed, qty, netMin, netSec, stdCt,
       speedPct: stdCt && netSec ? Math.round(stdCt / netSec * 100) : null,
       ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null,
-      batchScan, openBatchN: openBatch.length, closeBatchN: closeBatch.length, groupMode, group, othersOverlap: hasPeers };
-  }, [sel, trace]);
+      batchScan, openBatchN: openBatch.length, closeBatchN: closeBatch.length, groupMode, group, othersOverlap: hasPeers,
+      batchMaxGapSec: Math.max(scanBatch.open.maxGapSec ?? 0, scanBatch.close.maxGapSec ?? 0) || null,
+      batchNeedSec: scanBatch.needSec, batchNeedFrom: scanBatch.needFrom };
+  }, [sel, trace, scanBatch]);
 
   const sess = sel?.production_sessions;
   const stMeta = STATUS_META[sel?.status] || { label: sel?.status, color: 'var(--muted)' };
@@ -444,6 +506,7 @@ export default function OrderTrace() {
   };
   const fitColor = f => f == null ? 'var(--muted)' : f >= 80 ? '#22c55e' : f >= 60 ? '#f59e0b' : f >= 40 ? '#f97316' : '#ef4444';
   const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)} ชม. ${Math.round(m % 60)} นาที` : `${Math.round(m)} นาที`;
+  const fmtDur = s => s == null ? '—' : s < 60 ? `${Math.round(s)} วินาที` : fmtMin(s / 60);   // วินาที → อ่านง่าย
 
   return (
     <div style={{ maxWidth: 'min(97vw, 1500px)', margin: '0 auto' }}>
@@ -676,10 +739,15 @@ export default function OrderTrace() {
                   {/* สแกนเป็นชุด → เวลาเปิด-ปิดรายใบไม่ใช่เวลาผลิตจริง ต้องอ่านเป็นระดับกลุ่ม */}
                   {orderAnalysis.batchScan && (
                     <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', fontSize: 12, color: '#f59e0b' }}>
-                      ⚠️ <b>ใบนี้ถูกสแกนเป็นชุด</b>
-                      {orderAnalysis.openBatchN > 1 && <> — เปิดพร้อมกัน {orderAnalysis.openBatchN} ใบ</>}
-                      {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดพร้อมกัน {orderAnalysis.closeBatchN} ใบ</>}
-                      {' '}(ภายใน {BATCH_SEC / 60} นาที) → <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
+                      ⚠️ <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
+                      {orderAnalysis.openBatchN > 1 && <> — เปิดรวบ {orderAnalysis.openBatchN} ใบ</>}
+                      {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดรวบ {orderAnalysis.closeBatchN} ใบ</>}
+                      {orderAnalysis.batchNeedSec > 0 && (
+                        <> — สแกนห่างกันสูงสุด <b>{fmtDur(orderAnalysis.batchMaxGapSec)}</b> แต่ของใบนี้ต้องใช้เวลาผลิต ~<b>{fmtDur(orderAnalysis.batchNeedSec)}</b>
+                          {' '}({orderAnalysis.batchNeedFrom === 'ct' ? 'จาก CT มาตรฐาน' : 'จากอัตราจริงของกะ'}) → <b>ผลิตไม่ทันในช่วงนั้น</b></>
+                      )}
+                      {!orderAnalysis.batchNeedSec && <> (ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง {FALLBACK_BATCH_SEC / 60} นาที)</>}
+                      {' '}→ <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
                     </div>
                   )}
 
