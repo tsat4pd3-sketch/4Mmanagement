@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
    1) ABC: จัดกลุ่มตาม % สะสม (A ≤80% ตัวหลัก · B ≤95% · C หางยาว) — สีตามกลุ่ม ไม่ใช่สีรายประเภท
-   2) แกน Y โชว์ชื่อ **เฉพาะกลุ่ม A** (ที่เหลือดูที่ tooltip/ปุ่มขยาย) — กันภาพรกจนดูสำคัญเท่ากันหมด
+   2) **ความหนาแท่งไม่เท่ากันตามกลุ่ม** — A หนา+ชื่อเต็ม · B บาง+ชื่อย่อ · C บางมาก (ในโหมดย่อ
+      ยุบเป็นแถบเดียว) — ให้สายตาไปที่ A ก่อน · วาดด้วย HTML ไม่ใช่ Recharts เพราะ Recharts
+      บังคับทุกแถวสูงเท่ากัน → ข้อมูลเยอะแล้ว **ชื่อบนแกน Y เขียนทับกัน** (บั๊กที่เจอจริง 2026-08-05)
    3) **คลิกแท่ง = เจาะลึก** แยกตามมิติที่เกี่ยวข้อง (เครื่องจักร/ไลน์/ชิ้นงาน/กะ/คน/วัน) + เห็นรายการดิบ
    รับ `records` (แถวดิบ flat) แล้ว component รวมยอดเอง → เจาะได้ทุกมิติโดยไม่ต้อง query ใหม่ */
 
@@ -88,20 +89,61 @@ export default function ParetoAbcChart({
     );
   };
 
-  const chart = (h, showAllLabels) => (
-    <ResponsiveContainer width="100%" height={h}>
-      <BarChart data={rows} layout="vertical" margin={{ left: 10, right: 34, top: 4, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-        <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-        <YAxis dataKey="name" type="category" width={showAllLabels ? 210 : 140}
-          tick={showAllLabels ? { fontSize: 11, fill: 'var(--text2)' } : yTick} interval={0} />
-        <Tooltip content={tip} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-        <Bar dataKey="value" radius={[0, 4, 4, 0]} cursor={dims.length ? 'pointer' : 'default'}
-          onClick={(d) => dims.length && openDrill(d?.payload?.name ?? d?.name)}>
-          {rows.map((d, i) => <Cell key={i} fill={ABC[d._cls].color} fillOpacity={OPA[d._cls]} />)}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+  // ── แท่ง HTML: ความหนา/ขนาดตัวอักษรต่างกันตามกลุ่ม ABC (Recharts ทำไม่ได้ — ทุก band สูงเท่ากัน) ──
+  const BAR = { A: { h: 20, font: 12, name: true }, B: { h: 11, font: 11, name: true }, C: { h: 6, font: 10.5, name: false } };
+  const maxVal = Math.max(1, ...rows.map(d => d._val));
+
+  const barRow = (d, i, { showName, compact }) => {
+    const m = ABC[d._cls]; const cfg = BAR[d._cls];
+    const nameShown = showName || cfg.name;
+    return (
+      <div key={i} onClick={() => dims.length && openDrill(d.name)}
+        title={`${d.name} · ${fmt(d._val)} ${unit} (${d._pct.toFixed(1)}%) · ${d.count} ครั้ง · สะสม ${d._cum.toFixed(1)}%`}
+        style={{ display: 'grid', gridTemplateColumns: nameShown ? `minmax(0, ${compact ? '38%' : '30%'}) 1fr auto` : '1fr auto',
+          alignItems: 'center', gap: 8, cursor: dims.length ? 'pointer' : 'default',
+          padding: d._cls === 'A' ? '3px 0' : '1.5px 0' }}>
+        {nameShown && (
+          <span style={{ fontSize: cfg.font, fontWeight: d._cls === 'A' ? 700 : 500,
+            color: d._cls === 'A' ? 'var(--text)' : 'var(--text2)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{d.name}</span>
+        )}
+        <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: cfg.h }}>
+          <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, d._val / maxVal * 100)}%`,
+            background: m.color, opacity: OPA[d._cls], borderRadius: 3 }} />
+        </span>
+        <span style={{ fontSize: d._cls === 'A' ? 11.5 : 10.5, fontWeight: d._cls === 'A' ? 800 : 600,
+          color: d._cls === 'A' ? m.color : 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          {fmt(d._val)}{d._cls === 'A' ? ` (${d._pct.toFixed(0)}%)` : ''}
+        </span>
+      </div>
+    );
+  };
+
+  // โหมดย่อ: A+B แสดงเป็นแท่ง · C ยุบเป็นแถบเดียว (ไม่มีชื่อ ไม่กินที่ — กดขยายดูได้)
+  const chartCompact = () => {
+    const cSum = groups.C.reduce((s2, d) => s2 + d._val, 0);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {[...groups.A, ...groups.B].map((d, i) => barRow(d, i, { compact: true }))}
+        {groups.C.length > 0 && (
+          <div onClick={() => setOpen(true)} title={`กลุ่ม C ${groups.C.length} รายการ · ${fmt(cSum)} ${unit} — กดดูรายละเอียด`}
+            style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 38%) 1fr auto', alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>C · {groups.C.length} รายการ (หางยาว)</span>
+            <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: 6 }}>
+              <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, cSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
+            </span>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmt(cSum)}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // โหมดขยาย: ทุกรายการมีชื่อ (C ก็เห็น) ความหนายังต่างกันตามกลุ่ม
+  const chartFull = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {rows.map((d, i) => barRow(d, i, { showName: true }))}
+    </div>
   );
 
   const strip = (
@@ -131,7 +173,7 @@ export default function ParetoAbcChart({
           style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
       </div>
       {strip}
-      {chart(height, false)}
+      {chartCompact()}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--muted)', marginTop: 6 }}>
         {['A', 'B', 'C'].map(k => groups[k].length > 0 && (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -166,7 +208,7 @@ export default function ParetoAbcChart({
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
             </div>
             <div style={{ overflowY: 'auto', padding: '14px 20px 20px' }}>
-              {chart(Math.max(280, rows.length * 26), true)}
+              {chartFull()}
               <div style={{ overflowX: 'auto', marginTop: 14 }}>
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
