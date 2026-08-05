@@ -553,12 +553,18 @@ export default function OEEAnalytics() {
         shiftMin: r.shift_min, breakMin: policyBreakMin(r, breakPols),
         plannedDtMin: r.plannedMin, a: r.calcA, p: r.calcP, q: r.calcQ,
       });
-      return st && st.oee != null ? { oee: st.oee, w: st.baseMin } : null;
+      // gap รายกะ — ต้องเทียบ "กะต่อกะ" แล้วค่อยถ่วงน้ำหนัก ห้ามเอาค่าเฉลี่ยรวม 2 ตัวมาลบกัน
+      // (OEE ถ่วงด้วยเวลารับภาระ · OEE จริง ถ่วงด้วยฐาน กะ−พัก — คนละน้ำหนัก ผลต่างรวมอาจติดลบได้
+      //  ทั้งที่รายกะ strict ≤ OEE เสมอ)
+      return st && st.oee != null
+        ? { oee: st.oee, w: st.baseMin, gap: r.calcOEE != null ? r.calcOEE - st.oee : null }
+        : null;
     }).filter(Boolean);
     return {
       oee: tdOee, a: wavg(tdRows, r => r.calcA, wLoad),
       p: wavg(tdRows, r => r.calcP, wRun), q: wavg(tdRows, r => r.calcQ, wProd),
       strictOee: wavg(strictRows, r => r.oee, r => r.w),
+      strictGapPts: wavg(strictRows.filter(r => r.gap != null), r => r.gap, r => r.w),
       ooe:  tdOee != null && tdShift > 0 ? tdR1(tdOee * (tdNet / tdShift)) : null,
       teep: tdOee != null && tdCal   > 0 ? tdR1(tdOee * (tdNet / tdCal))   : null,
       netAvailMin: Math.round(tdNet), shiftMinSum: Math.round(tdShift),
@@ -1057,9 +1063,9 @@ export default function OEEAnalytics() {
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง — นับหยุดในแผนด้วย</div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.strictOee != null ? oeeColor(tdKpi.strictOee) : 'var(--muted)' }}>{tdKpi.strictOee ?? '—'}{tdKpi.strictOee != null ? '%' : ''}</div>
                 <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-                  ฐาน = เวลากะ − พัก
-                  {tdKpi.strictOee != null && tdKpi.oee != null && tdKpi.oee - tdKpi.strictOee > 0.05
-                    ? <> · <span style={{ color: '#f59e0b' }}>ต่ำกว่า OEE {(tdKpi.oee - tdKpi.strictOee).toFixed(1)} จุด</span></> : ''}
+                  ฐาน = เวลากะ − พัก (นับหยุดในแผนเป็นการสูญเสีย)
+                  {tdKpi.strictGapPts != null && tdKpi.strictGapPts > 0.05
+                    ? <> · <span style={{ color: '#f59e0b' }}>ต่ำกว่า OEE {tdKpi.strictGapPts.toFixed(1)} จุด</span></> : ''}
                 </div>
               </div>
               <div style={{ flex: '1 1 150px', minWidth: 140 }}>
