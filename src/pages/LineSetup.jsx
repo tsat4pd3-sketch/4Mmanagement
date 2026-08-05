@@ -285,7 +285,9 @@ export default function LineSetup({ embedded = false } = {}) {
         ...(hasLineTypeCol.current ? { line_type: lineType || null } : {}),
         ...(hasFlowModeCol.current ? {
           flow_mode: flowMode || 'one_piece_flow',
-          parallel_stations: flowMode === 'parallel_machine' && parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
+          // parallel_stations แยกจาก flow_mode (2026-08-05): ไลน์งานคู่ LH/RH เช่น LASER-345/789
+          // เป็น one_piece_flow บนบอร์ด แต่ตั้ง N เครื่องขนานเพื่อหัก DT 1/N ใน OEE ได้
+          parallel_stations: parseInt(parallelStations) > 0 ? parseInt(parallelStations) : null,
         } : {}),
       })
       .eq('id', lineObj.id);
@@ -1808,17 +1810,21 @@ export default function LineSetup({ embedded = false } = {}) {
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
                 {flowMode === 'parallel_machine'
-                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ — บอร์ดจะแตกเป็นเลนขนานตามเครื่อง (เลือกเครื่องตอนเปิด Order)'
-                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์)'}
+                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ (เช่น SUB APRON) — บอร์ดแตกเลนขนานตามเครื่อง + เลือกเครื่องตอนเปิด Order'
+                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์ · งานคู่ LH/RH แยกเลนคู่ให้เองจาก pair_mat_no)'}
               </div>
-              {flowMode === 'parallel_machine' && (
-                <div style={{ marginTop: 8 }}>
-                  <label style={{ ...labelSt, fontSize: 11 }}>จำนวนเครื่องขนาน (เว้นว่าง = นับจากทะเบียนเครื่องจักร)</label>
-                  <input type="number" min="1" value={parallelStations} disabled={!canEdit}
-                    onChange={e => setParallelStations(e.target.value)}
-                    placeholder="เช่น 5" style={{ marginTop: 4, width: 120 }} />
+              <div style={{ marginTop: 8 }}>
+                <label style={{ ...labelSt, fontSize: 11 }}>
+                  ⚙️ จำนวนเครื่องหลักวิ่งขนาน (N) — ใช้หัก Downtime ที่ระบุเครื่อง 1/N ในสูตร OEE
+                </label>
+                <input type="number" min="1" value={parallelStations} disabled={!canEdit}
+                  onChange={e => setParallelStations(e.target.value)}
+                  placeholder="เช่น 3" style={{ marginTop: 4, width: 120 }} />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                  ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow
+                  แต่ตั้ง N=3 · เว้นว่าง = ไลน์เดียวหักเต็ม{flowMode === 'parallel_machine' ? ' (เครื่องขนาน: นับจากทะเบียนเครื่องแทน)' : ''}
                 </div>
-              )}
+              </div>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ประจำไลน์นี้)</label>

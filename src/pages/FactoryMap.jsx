@@ -5,6 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { parallelUnitsOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
@@ -245,6 +246,7 @@ export default function FactoryMap({ setupMode = false }) {
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
+  const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
   // ─── Undo/Redo (โหมดตั้งค่า) — snapshot กรอบไลน์ทั้งชุด restore = diff แล้วเขียนย้อนลง DB ───
@@ -285,6 +287,12 @@ export default function FactoryMap({ setupMode = false }) {
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
     setLines(ln || []);
+    // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
+    try {
+      const { data: fl } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
+      flowByLineRef.current = m;
+    } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
     setLayoutLines(new Set((lay || []).map(l => l.line_name)));
     setLoading(false);
     // โซน MTN/facility (ไม่ผูกไลน์ผลิต) — จาก pm_facility_areas + ชื่อระบบของเครื่อง facility/utility
@@ -308,7 +316,7 @@ export default function FactoryMap({ setupMode = false }) {
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }, { data: prods }, breakRes] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
-      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, dr_downtime_types(category)').in('session_id', sessIds),
+      supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type'),
       supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
     ]);
@@ -329,9 +337,12 @@ export default function FactoryMap({ setupMode = false }) {
       let elapsed = (nowMs - opened) / 60000;
       if (s.shift_min) elapsed = Math.min(elapsed, s.shift_min);
       if (elapsed < 10) return null; // เพิ่งเปิดกะ ยังประเมินไม่ได้
+      // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับ computeOEE ใน DailyReport
+      const parallelN = parallelUnitsOf(flowByLineRef.current[s.line_name]);
+      const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
       const dtM = dl.reduce((a, d) => {
-        if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0);
-        return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) : 0); // ค้างอยู่ = นับถึงตอนนี้
+        if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0) * dtW(d);
+        return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) * dtW(d) : 0); // ค้างอยู่ = นับถึงตอนนี้
       }, 0);
       const runMin = Math.max(1, elapsed - dtM);
       let stdMin = 0, produced = 0, ng = 0;

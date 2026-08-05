@@ -458,11 +458,16 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - สิ่งที่ย้อนให้: status→open, ล้าง confirmed_by/at + qty_ok, ใบ manual คืน `qty = qty_target` (ยอดสะสม qty_actual คงไว้) + **ถอนแถว stock ที่ trigger `trg_post_confirmed_output` โพสต์อัตโนมัติ** (ลบ `line_stock_transactions` ที่ `ref_order_id`+`created_by='auto'`+`type='issue'` — ตัวกันโพสต์ซ้ำของ trigger เช็คจากแถวนี้ ลบแล้วสแกนปิดใหม่จะโพสต์ให้ใหม่ถูกต้อง)
 - Audit: `prod_orders.reopened_by/reopened_at/reopen_count` (migration `20260715_prod_orders_reopen_log.sql` DR) — การ์ดใบโชว์ชิป "↩️ เคยถอยใบ N ครั้ง · ชื่อ" เสมอ ให้หัวหน้าแผนกตรวจย้อนหลังได้ · update guard `.eq('status','confirmed')` กันถอยซ้ำสองเครื่องพร้อมกัน
 
-### %A ไลน์เครื่องขนาน (parallel_machine) — DT ผูกเครื่องหักแค่ 1/N (2026-08-04)
+### %A ไลน์เครื่องขนาน — DT ผูกเครื่องหักแค่ 1/N (2026-08-04 · แยก N ออกจาก flow_mode 2026-08-05)
 
 ไลน์ที่มีเครื่องหลักหลายตัววิ่งขนาน (เช่น **LASER-345 = เลเซอร์ 3 ตัว LS-03/04/05**) พนักงานลง DT **แยกรายเครื่อง** ถูกต้องแล้ว — แต่ `computeOEE` เดิมบวกนาทีทุกเครื่องรวมแล้วหักจากเวลาไลน์เดียว → DT 3 เครื่องพร้อมกันถูกหัก 3 เท่า **%A โดนกดเป็น 0 ทั้งที่ของออกปกติ** (เจอจริง 2026-08-03: LASER-345 A=0.00, P=100, Q=97)
-- แก้ที่ `computeOEE` + `dtOverlapMin` (รับ `weightFn`): ไลน์ `flow_mode='parallel_machine'` → DT ที่**ระบุเครื่อง** หักน้ำหนัก **1/N** (N = `parallel_stations` ตั้งที่ LineSetup · ไม่ตั้ง = นับเครื่อง active ของไลน์) · DT **ไม่ระบุเครื่อง** (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม · ไลน์ one_piece_flow ไม่กระทบ (N=1)
-- **migration `20260723_line_flow_mode.sql` เพิ่ง apply บน Main จริง 2026-08-04** (ค้างมาตั้งแต่ 2026-07-23 — ก่อนหน้านี้คอลัมน์ไม่มีจริง โค้ด tolerant เลยเงียบ) · LASER-345 ตั้ง `parallel_machine`/stations=3 แล้วผ่าน SQL · ไลน์ขนานอื่น (SUB APRON ฯลฯ) ตั้งเองที่ LineSetup แผง Standard Manpower
+- แก้ที่ `computeOEE` + `dtOverlapMin` (รับ `weightFn`): DT ที่**ระบุเครื่อง** หักน้ำหนัก **1/N** · DT **ไม่ระบุเครื่อง** (ไฟดับ/รอวัตถุดิบทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม · N=1 (ไม่ตั้ง) = พฤติกรรมเดิมเป๊ะ
+- **⚠️ N (จำนวนเครื่องขนาน) แยกจาก `flow_mode` แล้ว (2026-08-05 · helper กลาง `parallelUnitsOf(line, fallbackCount)` ใน `src/utils/lineTypes.js`):** 2 แกนคนละเรื่อง —
+  - **`parallel_stations` (N)** = หัก DT 1/N ใน %A · **ตั้งได้ทุกโหมดไหลงาน** ที่ LineSetup แผง Standard Manpower — เคสหลัก: **ไลน์งานคู่ LH/RH เช่น LASER-345/789** (เลเซอร์ 3 ตัวขึ้น product เดียว 2 พาร์ทซ้าย-ขวา) เป็น `one_piece_flow` บนบอร์ด (เลนคู่มาจาก `pair_mat_no` ไม่ dispatch ผูกเครื่อง) แต่ตั้ง N=3 เพื่อหัก DT 1/3
+  - **`flow_mode='parallel_machine'`** = การจัดเลนคิวบนบอร์ด + แผงเลือกเครื่องตอนเปิด Order (เช่น SUB APRON — เครื่อง stand-alone คนละ product) · ถ้าเป็นโหมดนี้แต่ไม่ตั้ง N → fallback นับเครื่อง active ของไลน์
+  - จุดที่ใช้ 1/N ครบแล้ว: `DailyReport computeOEE` (ค่า stamp) + **OEE สด `Dashboard` (per-session board) + `FactoryMap` (loadStatus)** — ทั้งคู่ผ่าน `parallelUnitsOf` และ query `downtime_logs` ต้อง select `machine_no` · จุดใหม่ที่คำนวณ %A ให้ใช้ helper นี้เท่านั้น
+- **แผงเลือกเครื่องตอนเปิด Order (ไลน์ parallel_machine) ลิสต์เฉพาะเครื่องของไลน์ที่เปิดกะจริง** (เดิมดึงทั้ง family → เครื่อง HYDROFORM 30+ ตัวโผล่ปน · fallback ไป family เฉพาะเมื่อไลน์ไม่มีเครื่องของตัวเอง + dedupe ตาม machine_no · 2026-08-05)
+- **migration `20260723_line_flow_mode.sql` เพิ่ง apply บน Main จริง 2026-08-04** (ค้างมาตั้งแต่ 2026-07-23 — ก่อนหน้านี้คอลัมน์ไม่มีจริง โค้ด tolerant เลยเงียบ) · ไลน์ขนานอื่น (SUB APRON ฯลฯ) ตั้งเองที่ LineSetup แผง Standard Manpower
 - **กะที่ stamp A=0 ผิดไปแล้ว (pending_close):** SV กด ✕ ปฏิเสธ → หัวหน้ากลุ่มขอปิดกะใหม่ = recompute ด้วยสูตรใหม่เอง (ห้าม blanket-recompute กะเก่าตามกฎเดิม)
 
 ### %A ต้องนับ Downtime ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — แก้ 2026-07-24

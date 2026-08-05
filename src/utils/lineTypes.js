@@ -25,3 +25,17 @@ export const FLOW_MODES = [
 export const flowModeOf = (v) => v === 'parallel_machine' ? 'parallel_machine' : 'one_piece_flow';
 export const isParallelLine = (v) => flowModeOf(v) === 'parallel_machine';
 export const flowModeShort = (v) => FLOW_MODES.find(t => t.value === flowModeOf(v))?.short || null;
+
+/* จำนวน "เครื่องหลักวิ่งขนาน" ของไลน์ (N) — ใช้หัก Downtime ที่ผูกเครื่อง 1/N ในสูตร OEE
+   ⚠️ คนละเรื่องกับ flow_mode (การจัดเลนคิวบนบอร์ด/เลือกเครื่องตอนเปิด Order):
+   - ไลน์งานคู่ LH/RH เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้น product เดียว 2 พาร์ทซ้าย-ขวา)
+     = one_piece_flow บนบอร์ด (เลนคู่จาก pair_mat_no) แต่ตั้ง parallel_stations=3 เพื่อหัก DT 1/3
+   - ไลน์เครื่อง stand-alone หลาย product เช่น SUB APRON = parallel_machine (dispatch ผูกเครื่อง)
+     ถ้าไม่ตั้ง stations ให้ fallback นับจากทะเบียนเครื่องของไลน์ (fallbackCount)
+   line = { flow_mode, parallel_stations } · คืนค่า ≥ 1 เสมอ */
+export const parallelUnitsOf = (line, fallbackCount = 0) => {
+  const n = Number(line?.parallel_stations);
+  if (n > 1) return n;
+  if (flowModeOf(line?.flow_mode) === 'parallel_machine') return fallbackCount > 1 ? fallbackCount : 1;
+  return 1;
+};

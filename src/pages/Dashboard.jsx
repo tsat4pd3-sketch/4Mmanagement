@@ -11,6 +11,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
+import { parallelUnitsOf } from '../utils/lineTypes';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -202,6 +203,7 @@ export default function Dashboard() {
   const [logs, setLogs]         = useState([]);
   const [fourMLogs, setFourMLogs] = useState([]);
   const [lines, setLines]       = useState([]);
+  const linesRef = useRef([]);  // สำเนา lines สำหรับ fetchProdStatus (useCallback deps=[boardDate] — closure state จะ stale)
   const [orgSections, setOrgSections] = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -323,8 +325,12 @@ export default function Dashboard() {
       if (!openedAt) return null;
       const shiftMin  = Math.round((closedAt - openedAt) / 60000);
       const dts       = dtBySession[s.id] || [];
-      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+      // ไลน์เครื่องขนาน (เช่น LASER-345/789 N=3): DT ที่ระบุเครื่อง = เครื่องเดียวหยุด หักแค่ 1/N
+      // ของนาทีที่ลง — สูตรเดียวกับ computeOEE ใน DailyReport (N จาก parallel_stations · แยกจาก flow_mode)
+      const parallelN = parallelUnitsOf(linesRef.current.find(l => l.name === s.line_name));
+      const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
+      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
       // Policy breaks overlap
       const wDate = s.work_date;
       const policyBreak = (breakPolicies || [])
@@ -359,7 +365,7 @@ export default function Dashboard() {
           const s0 = new Date(d.started_at).getTime();
           const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
           const ov0 = Math.max(s0, startMs), ov1 = Math.min(e0, endMs);
-          return ov1 > ov0 ? sum + (ov1 - ov0) / 60000 : sum;
+          return ov1 > ov0 ? sum + ((ov1 - ov0) / 60000) * dtW(d) : sum;
         }, 0);
       };
       let totalNetAvailByMat = 0, totalRunMinByMat = 0;
@@ -495,6 +501,7 @@ export default function Dashboard() {
       flowData.forEach(l => { fm[l.name] = l; });
       linesEnriched = linesEnriched.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));
     }
+    linesRef.current = linesEnriched;
     setLines(linesEnriched);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
 
