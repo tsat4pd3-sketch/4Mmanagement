@@ -21,6 +21,8 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
+import SparePartMaster from '../components/SparePartMaster';
+import RackMap from '../components/RackMap';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -309,7 +311,8 @@ export default function MtnRepair() {
         <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
+          {/* คลังอะไหล่ = ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์ */}
+          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ['rack', '🗺️ ผังคลัง'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
             <button key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
           ))}
         </div>
@@ -334,6 +337,8 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
+      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
+      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
@@ -882,18 +887,18 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
         }
-        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว) แล้วอ่านสต็อก "สด"
-        // ณ ตอนตัด (ไม่ใช้ค่า cache ตอนโหลดหน้า ซึ่งอาจเก่า) — ลดโอกาสตัดสต็อกเพี้ยนจาก read-modify-write
-        // NOTE: ยังไม่ atomic เต็มตัวข้ามผู้ใช้พร้อมกัน — วิธีที่ถูกต้องสุดคือ RPC ตัดสต็อกฝั่ง DB (update ... returning)
+        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว)
+        // แล้วตัดผ่าน RPC `mtn_stock_move` — ล็อกแถว + กันติดลบ + ลง ledger ในทรานแซกชันเดียวฝั่ง DB
+        // (เดิม read-modify-write จาก client: 2 เครื่องบันทึกพร้อมกันยอดเพี้ยน + เบิกเกินสต็อกได้)
         const byPart = {};
         usable.filter(p => p.part_id).forEach(p => { byPart[p.part_id] = (byPart[p.part_id] || 0) + Number(p.qty); });
         for (const [pid, totalQty] of Object.entries(byPart)) {
-          const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', pid).maybeSingle();
-          if (!fresh) continue;
-          const nb = Number(fresh.stock_qty || 0) - totalQty;
-          const { error: eSt } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', pid);
-          if (eSt) { toast.error('ตัดสต็อกอะไหล่ไม่สำเร็จ: ' + eSt.message); continue; }
-          await supabaseDR.from('mtn_stock_txns').insert({ part_id: pid, type: 'consume', qty: -totalQty, balance: nb, ref_order_id: o.id, by_name: fullName, note: `เบิกใช้ ${o.mo_no || ''}` });
+          const { error: eSt } = await supabaseDR.rpc('mtn_stock_move', {
+            p_part_id: pid, p_type: 'issue', p_qty: totalQty,
+            p_note: `เบิกใช้ ${o.mo_no || ''}`.trim(), p_by_name: fullName, p_ref_order: o.id,
+          });
+          // สต็อกไม่พอ/อะไหล่ถูกลบ = แจ้งแล้วไปต่อ (บันทึกการซ่อมสำคัญกว่า ห้ามให้ทั้งใบล้มเพราะยอดอะไหล่)
+          if (eSt) toast.error(`ตัดสต็อก "${usable.find(x => x.part_id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
         }
       } else if (step === 4) {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
@@ -1109,44 +1114,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
     </div>
   );
 
-  // ── อะไหล่ + stock control ──
-  const [npart, setNpart] = useState({ code: '', name: '', unit: 'ชิ้น', stock_qty: 0, min_qty: 0 });
-  const stockMove = async (part, type) => {
-    const q = Number(prompt(type === 'in' ? `รับเข้าอะไหล่ "${part.name}" จำนวนเท่าไร?` : `ปรับยอด "${part.name}" (+เพิ่ม / -ลด)`, type === 'in' ? '1' : '0'));
-    if (!Number.isFinite(q) || q === 0) return;
-    // อ่านสต็อกสดก่อนบวก แทนใช้ค่าจาก cache (part.stock_qty อาจเก่า) — ลดโอกาสยอดเพี้ยนจากการปรับพร้อมกัน
-    const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', part.id).maybeSingle();
-    const nb = Number(fresh?.stock_qty ?? part.stock_qty ?? 0) + q;
-    const { error } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', part.id);
-    if (error) return toast.error(error.message);
-    await supabaseDR.from('mtn_stock_txns').insert({ part_id: part.id, type, qty: q, balance: nb, by_name: fullName, note: type === 'in' ? 'รับเข้า' : 'ปรับยอด' });
-    toast.success(`${type === 'in' ? 'รับเข้า' : 'ปรับ'} ${part.name} → คงเหลือ ${nb}`); reload();
-  };
-  const PartList = () => (
-    <div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={npart.code} onChange={e => setNpart(p => ({ ...p, code: e.target.value }))} placeholder="รหัส" style={{ ...inp, width: 110 }} />
-        <input value={npart.name} onChange={e => setNpart(p => ({ ...p, name: e.target.value }))} placeholder="ชื่ออะไหล่" style={{ ...inp, width: 220 }} />
-        <input value={npart.unit} onChange={e => setNpart(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 80 }} />
-        <input type="number" value={npart.stock_qty} onChange={e => setNpart(p => ({ ...p, stock_qty: e.target.value }))} placeholder="สต็อกเริ่ม" style={{ ...inp, width: 90 }} />
-        <input type="number" value={npart.min_qty} onChange={e => setNpart(p => ({ ...p, min_qty: e.target.value }))} placeholder="ขั้นต่ำ" style={{ ...inp, width: 80 }} />
-        <button onClick={() => { if (!npart.name) return; addRow('mtn_spare_parts', { ...npart, stock_qty: Number(npart.stock_qty) || 0, min_qty: Number(npart.min_qty) || 0, sort_order: parts.length + 1 }); setNpart({ code: '', name: '', unit: 'ชิ้น', stock_qty: 0, min_qty: 0 }); }} style={btnPri}>+ เพิ่มอะไหล่</button>
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {parts.map(p => { const low = Number(p.stock_qty) <= Number(p.min_qty || 0); return (
-          <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: `1px solid ${low ? '#ef4444' : 'var(--border)'}`, borderRadius: 8, padding: '8px 10px', flexWrap: 'wrap' }}>
-            <input defaultValue={p.code || ''} onBlur={e => e.target.value !== (p.code || '') && updRow('mtn_spare_parts', p.id, { code: e.target.value })} style={{ ...inp, width: 100 }} placeholder="รหัส" />
-            <input defaultValue={p.name} onBlur={e => e.target.value !== p.name && updRow('mtn_spare_parts', p.id, { name: e.target.value })} style={{ ...inp, width: 220 }} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: low ? '#ef4444' : '#22c55e', minWidth: 90 }}>คงเหลือ {p.stock_qty} {p.unit}</span>
-            <input defaultValue={p.min_qty || 0} onBlur={e => Number(e.target.value) !== Number(p.min_qty || 0) && updRow('mtn_spare_parts', p.id, { min_qty: Number(e.target.value) || 0 })} style={{ ...inp, width: 70 }} title="ขั้นต่ำ" />
-            <button onClick={() => stockMove(p, 'in')} style={{ ...btnGhost, padding: '6px 10px', fontSize: 12, color: '#22c55e' }}>➕ รับเข้า</button>
-            <button onClick={() => stockMove(p, 'adjust')} style={{ ...btnGhost, padding: '6px 10px', fontSize: 12 }}>ปรับ</button>
-            <button onClick={() => delRow('mtn_spare_parts', p.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>); })}
-        {!parts.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีอะไหล่ — เพิ่มด้านบน แล้วเบิกได้ตอนขั้นซ่อม (หักสต็อกอัตโนมัติ)</div>}
-      </div>
-    </div>
-  );
+  // ── อะไหล่: ย้ายไปแท็บ "🔩 คลังอะไหล่" (SparePartMaster) แล้ว — ที่นี่เหลือแค่ทางลัด
+  //    เดิมมีตัวแก้อะไหล่แบบย่อซ้ำอยู่ตรงนี้ (prompt + read-modify-write) — ลบทิ้งกันแก้กัน 2 ที่คนละกติกา
 
   // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
   const [nrate, setNrate] = useState({ name: '', unit: 'บาท/ชม.', price: '', dept: '' });
@@ -1233,11 +1202,10 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
-      {sub === 'parts' && PartList()}
       {sub === 'labor' && LaborList()}
       {sub === 'mo' && MoSeqList()}
       {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}
