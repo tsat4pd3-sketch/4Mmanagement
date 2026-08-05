@@ -544,6 +544,31 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - การ์ด "เวลาที่หายไปก่อนถึง OEE" แยกให้เห็น **พักนโยบาย vs หยุดตามแผน** + แถบสัดส่วน 🟩 สร้างของดี / 🟪 เสียตอนเดินเครื่อง / 🟧 พัก+หยุดตามแผน
 - **payoff:** TEEP ต่ำ + OEE สูง = ไม่ต้องซื้อเครื่อง เปิดกะเพิ่มพอ (ใช้คู่ `/production-plan` ตอนของบลงทุน)
 
+### 🧩 Single source of truth ของ OEE — `src/utils/oee.js` (2026-08-05 · คำสั่ง user)
+
+**ทุกสูตรที่เกี่ยวกับ A/P/Q/OEE/OOE/TEEP อยู่ไฟล์เดียว** — เดิมแตกเป็น `liveOee.js`/`strictOee.js`/`oeeAvg.js` + สูตรซ้ำในหน้า แล้ว drift กันจนตัวเลขคนละชุด · **จอไหนจะโชว์ค่าพวกนี้ต้อง import จากที่นี่ ห้ามเขียนสูตรเองในหน้า · ห้ามแตกไฟล์ util OEE เพิ่ม**
+
+| # | export | ใช้ทำอะไร | เคยพังยังไงตอนต่างคนต่างเขียน |
+|---|---|---|---|
+| 1 | `wavg` / `wLoad` / `wRun` / `wProd` | เฉลี่ยข้ามกะแบบถ่วงน้ำหนัก | mean-of-percentages ใน 4 จอ → ไม่ตรง `/oee-analytics` |
+| 2 | `ctForMat` / `buildCtMap` | CT ต่อ MAT (kanban_standards → dr_products) | FactoryMap/OEEAnalytics ดึง dr_products ล้วน · InsightPanel ดึง kanban ล้วน → P คนละชุด · แท็บประวัติ %P ว่างกับ MAT ที่ kanban ไม่มี CT |
+| 3 | `policyBreakOverlapMin` / `policyBreakForShift` | เวลาพักตามนโยบายที่ทับช่วงเวลา (กรอง shift + process) | 3 implementation: แท็บประวัติไม่กรอง process (พักเกิน) · OEEAnalytics ทิ้งนโยบายเฉพาะ process + เวลาเริ่มกะตายตัว 08:00/20:00 (พักขาด) → OEE จริง/OOE ไม่ตรงกัน |
+| 4 | `computeLiveOee` / `LIVE_MIN_ELAPSED` | OEE สดของกะที่ยังไม่ปิด | FactoryMap ไม่ส่ง NG → Q สด = 100% เสมอ |
+| 5 | `strictOee` / `strictGap` / `STRICT_WARN_SHARE_PCT` | "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย | — |
+| 6 | `SIX_BIG_LOSSES` / `EIGHT_WASTES` / `groupLean` / `lossMeta` / `wasteMeta` | วิเคราะห์ Lean (ดูหัวข้อถัดไป) | — |
+
+**query ต้อง select คอลัมน์ให้ครบด้วย** ไม่งั้น util ได้ข้อมูลไม่พอแล้วเงียบ: `break_policies.process_type` · `production_sessions.start_time/shift_min` · `dr_downtime_types(category, six_big_loss, waste_type)` · NG จาก `defect_logs` เสมอ
+
+### 🧩 วิเคราะห์ Lean — 6 Big Losses (TPM) + 8 Wastes (DOWNTIME) (2026-08-05 · คำสั่ง user)
+
+**แยกคนละแกนกับ `category` (ในแผน/นอกแผน) ที่ใช้คิด OEE โดยตั้งใจ** — user ยืนยันว่า**ไม่แก้การจัดประเภทในแผน/นอกแผน** เพราะแต่ละบริษัท/หน่วยงานนิยาม KPI ต่างกัน เป็นสิทธิ์ของเขา · แกน Lean ตอบคนละคำถาม: *"เวลาที่เสียไปเป็นความสูญเปล่าประเภทไหน ต้องแก้ด้วยเครื่องมืออะไร"*
+
+- **เก็บที่ master เดิม ไม่สร้างตารางใหม่:** `dr_downtime_types.six_big_loss / waste_type` + `dr_defect_types.six_big_loss / waste_type` (migration `20260805_lean_loss_classification.sql` · nullable = ยังไม่จัดหมวด **ห้ามเดาแทนผู้ใช้**)
+- **ตั้งค่าเอง** ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime (dropdown 2 ช่องใต้หมวดหมู่ · ป้ายกำกับบอกชัดว่า "ไม่กระทบ OEE") — migration seed ค่าตั้งต้นจากคำในชื่อประเภทให้แล้ว (เหลือ 12/69 ที่ยังไม่จัด เช่น "อื่นๆ" ซึ่งควรให้คนจัดเอง)
+- **6 Big Losses** ผูกกับตัวที่กระทบ: breakdown/setup → A · minor_stop/reduced_speed → P · defect/startup → Q · แต่ละหมวดมี `fix` = แนวทางแก้ตามตำรา (SMED, TPM, poka-yoke ฯลฯ) แสดงบนหน้า
+- **แสดงที่แท็บ 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics`** (แผงบนสุด สลับแกน 6 Losses ↔ 8 Wastes) — **ไม่สร้างหน้าใหม่** · ของเสียถูกแปลงเป็น "นาทีที่เสียไป" ด้วย CT ของกะนั้น เพื่อเทียบหน่วยเดียวกับ downtime · โชว์เวลาที่ "ยังไม่จัดหมวด" เสมอ (ไม่ซ่อน) พร้อมบอกว่าไปจัดที่ไหน
+- helper กลาง `groupLean({ axis, downtimes, defects, ctSecFn, includePlanned })` ใน `src/utils/oee.js` §6 — จุดใหม่ที่อยากวิเคราะห์ Lean ให้ reuse ตัวนี้
+
 ### ⚠️ ผล audit A/P/Q/OEE ทั้งระบบ — จุดที่เคยไม่ตรงกัน (แก้ครบ 2026-08-05)
 
 audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพบ **ตัวเลขคนละชุดระหว่างหน้าจอ 6 เรื่อง** — แก้แล้วทั้งหมด บันทึกไว้กัน regress:

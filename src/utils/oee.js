@@ -175,3 +175,76 @@ export const strictGap = (stampedOee, strictOeeVal) =>
 
 // เกณฑ์เตือน: หยุด "ในแผน" กินฐานเกินเท่าไหร่ถึงควรไปตรวจการจัดประเภท
 export const STRICT_WARN_SHARE_PCT = 5;
+
+/* ═══ 6) Lean — 6 Big Losses (TPM) + 8 Wastes (DOWNTIME) ═══ */
+/*
+  จำแนกจาก master ที่มีอยู่: `dr_downtime_types.six_big_loss/waste_type` และ `dr_defect_types.*`
+  (migration 20260805_lean_loss_classification.sql · ปรับเองได้จาก Daily Report → ⚙️ ตั้งค่า)
+
+  ⚠️ แยกคนละแกนกับ `category` (ในแผน/นอกแผน) ที่ใช้คิด OEE โดยตั้งใจ —
+  แต่ละบริษัทนิยาม "ในแผน" ต่างกันตาม KPI ที่ตกลงกันไว้ ระบบไม่ตัดสินให้ (คำสั่ง user 2026-08-05)
+  แกน Lean นี้ตอบคนละคำถาม: "เวลาที่เสียไป เป็นความสูญเปล่าประเภทไหน จะแก้ด้วยเครื่องมืออะไร"
+
+  ไม่จำแนก (null) = แสดงเป็น "ยังไม่จัดหมวด" ห้ามเดาแทนผู้ใช้
+*/
+export const SIX_BIG_LOSSES = [
+  { key: 'breakdown',     label: 'เครื่องเสีย (Breakdown)',        oee: 'A', icon: '🔧', color: '#ef4444', fix: 'TPM / PM เชิงป้องกัน · วิเคราะห์ MTBF-MTTR · ใบซ่อม MO ซ้ำซาก' },
+  { key: 'setup',         label: 'ตั้งเครื่อง/เปลี่ยนรุ่น (Setup)', oee: 'A', icon: '🔄', color: '#f59e0b', fix: 'SMED — แยกงาน internal/external · เตรียมแม่พิมพ์ล่วงหน้า' },
+  { key: 'minor_stop',    label: 'หยุดเล็กน้อย/รอ (Minor stop)',   oee: 'P', icon: '⏸️', color: '#eab308', fix: 'ดู pattern การรอ · เติมของตามจังหวะ kanban · poka-yoke จุดติดขัด' },
+  { key: 'reduced_speed', label: 'เดินช้ากว่ามาตรฐาน (Speed)',     oee: 'P', icon: '🐢', color: '#a855f7', fix: 'เทียบ CT จริง vs มาตรฐาน · ตรวจสภาพเครื่อง/ทักษะคน' },
+  { key: 'defect',        label: 'ของเสีย/แก้งาน (Defect)',        oee: 'Q', icon: '🚫', color: '#ec4899', fix: 'QC 7 tools · poka-yoke · คุมพารามิเตอร์กระบวนการ' },
+  { key: 'startup',       label: 'เริ่มเดินเครื่อง (Start-up)',    oee: 'Q', icon: '🌅', color: '#06b6d4', fix: 'มาตรฐานการเริ่มเครื่อง · ลดของเสียช่วง warm-up' },
+];
+export const EIGHT_WASTES = [
+  { key: 'defect',           label: 'ของเสีย (Defects)',              icon: '🚫', color: '#ef4444' },
+  { key: 'overproduction',   label: 'ผลิตเกิน (Overproduction)',      icon: '📦', color: '#f97316' },
+  { key: 'waiting',          label: 'การรอคอย (Waiting)',             icon: '⏳', color: '#eab308' },
+  { key: 'non_utilized',     label: 'ไม่ใช้ศักยภาพคน (Non-utilized)', icon: '🧠', color: '#84cc16' },
+  { key: 'transportation',   label: 'การขนย้าย (Transportation)',     icon: '🚚', color: '#06b6d4' },
+  { key: 'inventory',        label: 'สต๊อกเกินจำเป็น (Inventory)',    icon: '🏭', color: '#3b82f6' },
+  { key: 'motion',           label: 'การเคลื่อนไหว (Motion)',         icon: '🚶', color: '#a855f7' },
+  { key: 'extra_processing', label: 'ทำเกินจำเป็น (Extra-processing)', icon: '🔁', color: '#ec4899' },
+];
+export const lossMeta  = key => SIX_BIG_LOSSES.find(l => l.key === key) || null;
+export const wasteMeta = key => EIGHT_WASTES.find(w => w.key === key) || null;
+
+/*
+  รวมนาที/ชิ้น เข้าถังตามแกนที่เลือก ('six_big_loss' | 'waste_type')
+  downtimes: แถว downtime_logs ที่ embed dr_downtime_types(name_th, category, six_big_loss, waste_type)
+  defects:   แถว defect_logs ที่ embed dr_defect_types(name_th, six_big_loss, waste_type)
+  ctSecFn:   (session_id) => CT วินาที — ใช้แปลงของเสียเป็น "นาทีที่เสียไป" ให้เทียบกับ downtime ได้
+             ไม่ส่งมา = ไม่แปลง (ของเสียจะนับเฉพาะจำนวนชิ้น)
+  คืน [{ key, meta, min, count, qty, types: [{name, min, count, qty}] }] เรียงนาทีมากสุด
+*/
+export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [], ctSecFn = null, includePlanned = true }) {
+  const buckets = {};
+  const put = (key, name, { min = 0, count = 0, qty = 0 }) => {
+    const k = key || '_none';
+    const b = (buckets[k] ||= { key: k, min: 0, count: 0, qty: 0, typeMap: {} });
+    b.min += min; b.count += count; b.qty += qty;
+    const t = (b.typeMap[name] ||= { name, min: 0, count: 0, qty: 0 });
+    t.min += min; t.count += count; t.qty += qty;
+  };
+  downtimes.forEach(d => {
+    const ty = d.dr_downtime_types || {};
+    if (!includePlanned && ty.category === 'planned') return;
+    put(ty[axis], ty.name_th || 'ไม่ระบุประเภท', { min: Number(d.duration_min) || 0, count: 1 });
+  });
+  defects.forEach(d => {
+    const ty = d.dr_defect_types || {};
+    const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+    if (!qty) return;
+    const ct = ctSecFn ? ctSecFn(d.session_id) : 0;
+    put(ty[axis] || 'defect', ty.name_th || 'ของเสีย', { qty, count: 1, min: ct > 0 ? (qty * ct) / 60 : 0 });
+  });
+  return Object.values(buckets)
+    .map(b => ({
+      key: b.key === '_none' ? null : b.key,
+      meta: axis === 'six_big_loss' ? lossMeta(b.key) : wasteMeta(b.key),
+      min: Math.round(b.min), count: b.count, qty: b.qty,
+      types: Object.values(b.typeMap).sort((x, y) => (y.min - x.min) || (y.qty - x.qty))
+        .map(t => ({ ...t, min: Math.round(t.min) })),
+    }))
+    .sort((a, b) => (b.min - a.min) || (b.qty - a.qty));
+}
+

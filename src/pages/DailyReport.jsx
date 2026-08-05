@@ -16,7 +16,7 @@ import { pairAwareTotal } from '../utils/pairTotals';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -6087,7 +6087,7 @@ function ProductSetup({ role }) {
 function DowntimeTypeSetup({ role }) {
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
-  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: 0, is_active: true });
+  const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: 0, is_active: true, six_big_loss: '', waste_type: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -6100,16 +6100,18 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active }
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true });
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '' }
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
+    // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
+    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null };
     const { error } = editing === 'new'
-      ? await supabaseDR.from('dr_downtime_types').insert(form)
-      : await supabaseDR.from('dr_downtime_types').update(form).eq('id', editing);
+      ? await supabaseDR.from('dr_downtime_types').insert(payload)
+      : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -6203,10 +6205,24 @@ function DowntimeTypeSetup({ role }) {
                   <option value="common">🔗 Common (ทุกกระบวนการ)</option>
                 </select>
               </Field>
-              <Field label="หมวดหมู่">
+              <Field label="หมวดหมู่ (ใช้คิด OEE)">
                 <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
                   <option value="unplanned">⚠ นอกแผน (Unplanned)</option>
                   <option value="planned">📋 ในแผน (Planned)</option>
+                </select>
+              </Field>
+              {/* แกน Lean — แยกจาก category ที่ใช้คิด OEE โดยตั้งใจ (ดู src/utils/oee.js §6)
+                  ตอบคนละคำถาม: "เวลาที่เสียไปเป็นความสูญเปล่าประเภทไหน แก้ด้วยเครื่องมืออะไร" */}
+              <Field label="6 Big Losses (TPM) — สำหรับวิเคราะห์ ไม่กระทบ OEE">
+                <select value={form.six_big_loss} onChange={e => setForm(f => ({ ...f, six_big_loss: e.target.value }))} style={inputStyle}>
+                  <option value="">— ยังไม่จัดหมวด —</option>
+                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {l.label} (กระทบ {l.oee})</option>)}
+                </select>
+              </Field>
+              <Field label="8 Wastes (Lean) — สำหรับวิเคราะห์ ไม่กระทบ OEE">
+                <select value={form.waste_type} onChange={e => setForm(f => ({ ...f, waste_type: e.target.value }))} style={inputStyle}>
+                  <option value="">— ยังไม่จัดหมวด —</option>
+                  {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
                 </select>
               </Field>
               <Field label="สี">
