@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 
 /*
@@ -446,11 +447,8 @@ export default function OrderTrace() {
                   const movedN = enrich.filter(p => p.is_present && p.moved).length;
                   const lowFitN = enrich.filter(p => p.is_present && p.fit != null && p.fit < 60).length;
                   const ppeN = present.filter(ppeBad).length;
-                  // กำลังคนมาตรฐานของไลน์ (std = headcount/กะ) — ไลน์แม่ไม่ตั้ง = รวมไลน์ลูก
-                  const stdOf = l => (sess.shift === 'night' ? l?.std_night_shift : l?.std_day_shift) || 0;
-                  const meLine = lines.find(l => l.name.toLowerCase() === sess.line_name.toLowerCase());
-                  let std = stdOf(meLine);
-                  if (!std) std = lines.filter(l => (l.parent_line_name || '').toLowerCase() === sess.line_name.toLowerCase()).reduce((s, l) => s + stdOf(l), 0);
+                  // กำลังคนมาตรฐานของไลน์ (std = headcount/กะ) — กฎกลาง: แม่ตั้งไว้ = ยอดกลุ่ม · ไม่ตั้ง = รวมลูก
+                  const std = stdGroupOf(lines, sess.line_name, sess.shift === 'night' ? 'night' : 'day');
                   return (
                     <>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
