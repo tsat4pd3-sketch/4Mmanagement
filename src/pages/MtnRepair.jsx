@@ -20,6 +20,7 @@ import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import SparePartMaster from '../components/SparePartMaster';
+import RackMap from '../components/RackMap';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -309,7 +310,7 @@ export default function MtnRepair() {
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           {/* คลังอะไหล่ = ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์ */}
-          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
+          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ['rack', '🗺️ ผังคลัง'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
             <button key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
           ))}
         </div>
@@ -335,6 +336,7 @@ export default function MtnRepair() {
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
+      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
