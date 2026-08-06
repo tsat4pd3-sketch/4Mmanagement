@@ -69,6 +69,7 @@ const ORG = {
         { key: 'tsrf', code: 'TSRF', name: 'Thai Summit Rayong Forming', region: 'นิคมฯ มาบตาพุด · ระยอง', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 12.70, lon: 101.32, qtyF: 0.7, oeeD: -8.5, dtF: 1.6, ngF: 1.8, keep: 0.6 },
         { key: 'tsam', code: 'TSAM', name: 'Thai Summit America', region: 'Howell, Michigan · สหรัฐฯ', flag: '🇺🇸', cc: 'US', zone: 'usa', lat: 42.61, lon: -83.93, qtyF: 0.95, oeeD: 4.0, dtF: 0.7, ngF: 0.6, keep: 0.7 },
         { key: 'tscn', code: 'TSCN', name: 'Thai Summit China', region: 'Guangzhou · จีน', flag: '🇨🇳', cc: 'CN', zone: 'china', lat: 23.13, lon: 113.26, qtyF: 1.45, oeeD: 1.0, dtF: 0.95, ngF: 1.0, keep: 0.9 },
+        { key: 'tssa', code: 'TSSA', name: 'Thai Summit South Africa', region: 'Durban · แอฟริกาใต้', flag: '🇿🇦', cc: 'ZA', zone: 'south_africa', lat: -29.86, lon: 31.02, qtyF: 0.62, oeeD: -6.0, dtF: 1.4, ngF: 1.5, keep: 0.6 },
       ],
     },
     {
@@ -83,7 +84,6 @@ const ORG = {
         { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'บางพลี · สมุทรปราการ', flag: '🇹🇭', cc: 'TH', zone: 'bangna', lat: 13.61, lon: 100.75, qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
         { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 12.84, lon: 101.22, qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
         { key: 'ptcvn', code: 'TSPT-VN', name: 'Thai Summit Plastech Vietnam', region: 'Hanoi · เวียดนาม', flag: '🇻🇳', cc: 'VN', zone: 'vietnam', lat: 21.03, lon: 105.85, qtyF: 0.55, oeeD: -6.5, dtF: 1.4, ngF: 1.6, keep: 0.5 },
-        { key: 'ptcbr', code: 'TSPT-BR', name: 'Thai Summit Plastech Brazil', region: 'São Paulo · บราซิล', flag: '🇧🇷', cc: 'BR', zone: 'brazil', lat: -23.55, lon: -46.63, qtyF: 0.5, oeeD: -7.5, dtF: 1.5, ngF: 1.7, keep: 0.5 },
       ],
     },
     {
@@ -113,7 +113,7 @@ const COUNTRY_META = [
   { cc: 'CN', name: 'จีน', flag: '🇨🇳', geoName: 'China' },
   { cc: 'IN', name: 'อินเดีย', flag: '🇮🇳', geoName: 'India' },
   { cc: 'US', name: 'สหรัฐอเมริกา', flag: '🇺🇸', geoName: 'United States of America' },
-  { cc: 'BR', name: 'บราซิล', flag: '🇧🇷', geoName: 'Brazil' },
+  { cc: 'ZA', name: 'แอฟริกาใต้', flag: '🇿🇦', geoName: 'South Africa' },
 ];
 
 /* ── โซนพื้นที่ (แกนที่ 2 — ตัดขวางกลุ่มธุรกิจ) · thaiMap=true = มีแผนที่ละเอียดในไทยให้เจาะดู ──
@@ -128,7 +128,7 @@ const ZONES = [
   { key: 'china', name: 'จีน', icon: '🇨🇳', color: '#fb7185', desc: 'Guangzhou' },
   { key: 'india', name: 'อินเดีย', icon: '🇮🇳', color: '#34d399', desc: 'Chennai' },
   { key: 'usa', name: 'อเมริกาเหนือ', icon: '🇺🇸', color: '#60a5fa', desc: 'Howell, Michigan' },
-  { key: 'brazil', name: 'อเมริกาใต้', icon: '🇧🇷', color: '#fbbf24', desc: 'São Paulo' },
+  { key: 'south_africa', name: 'แอฟริกาใต้', icon: '🇿🇦', color: '#fbbf24', desc: 'Durban' },
 ];
 
 /* ── ประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ) ────────────────────────────────────────────────
@@ -460,7 +460,7 @@ export default function GroupOverview() {
       {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้เข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว) ── */}
       <div style={{ ...card, borderStyle: 'dashed', borderColor: '#f59e0b', background: 'rgba(245,158,11,0.07)', fontSize: 13, lineHeight: 1.7 }}>
         <b style={{ color: '#f59e0b' }}>นี่คือหน้าจอตัวอย่าง (mockup) เพื่อดูว่า “ระบบรองรับหลายบริษัทในกลุ่ม” จะหน้าตาแบบไหน</b><br />
-        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>พื้นที่</b> ({ZONES.length} โซน/ประเทศ — ไทย 2 โซน + ต่างประเทศ 6) ได้จากปุ่มมุมขวาบน — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b><br />
+        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>พื้นที่</b> ({ZONES.length} โซน/ประเทศ — ไทย 2 โซน + ต่างประเทศ 5) ได้จากปุ่มมุมขวาบน — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b><br />
         • <b>TSAT4</b> = <b style={{ color: '#22c55e' }}>ข้อมูลจริง</b>จากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> ที่ปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบ seeded ให้ตัวเลขนิ่ง ไม่ดิ้นทุกครั้งที่รีเฟรช)<br />
         • หน้านี้ <b>ไม่เขียนฐานข้อมูล</b> และยังไม่มีตารางบริษัท/โรงงานจริง — ดูสรุป “ถ้าทำจริงต้องทำอะไร” ท้ายหน้า
       </div>
