@@ -103,8 +103,8 @@ function beDate(iso?: string | null): string {
   return `${+g.day}/${+g.month}/${Number(g.year) + 543}`;
 }
 const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'jig_maintenance'; if (s.includes('DIE')) return 'die_maintenance'; return 'maintenance'; };
-// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team = "JIG MTN") กับ key (checklists.department = "jig_maintenance")
-// mtn_teams เป็น single source ที่โยง 2 ฝั่ง — normalize ทั้งสองด้านเป็น "key" ก่อนจับคู่ routing กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึงห้องทีม
+// ทีมช่างเก็บเป็น key แล้วทั้งระบบ (migration 20260806_unify_team_encoding) — normalize ต่อไปเผื่อ payload/ข้อมูลเก่าที่ยังเป็นชื่อ
+// routing จับคู่ห้องด้วย key เสมอ กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึงห้องทีม
 const TEAM_KEY: Record<string, string> = {
   'mtn': 'maintenance', 'maintenance': 'maintenance',
   'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
         photo = mo.after_img || null; break;
       case 'mtn_returned':
         builtin = [`↩️ <b>ตีกลับใบแจ้งซ่อม (ผิดแผนก)</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
-          `🛑 เหตุผลที่ตีกลับ: <b>${mo.reject_reason || '-'}</b>`, mo.returned_from_dept ? `ตีกลับจากทีม: ${mo.returned_from_dept}` : '',
+          `🛑 เหตุผลที่ตีกลับ: <b>${mo.reject_reason || '-'}</b>`, mo.returned_from_dept ? `ตีกลับจากทีม: ${teamName(mo.returned_from_dept)}` : '',
           ``, `📌 ผู้แจ้ง (${v.reporter_prod || '-'}) โปรดแก้แผนกให้ถูกต้องแล้วส่งใหม่`].filter(Boolean).join('\n'); break;
       default: return json({ error: 'unknown event' }, 400);
     }

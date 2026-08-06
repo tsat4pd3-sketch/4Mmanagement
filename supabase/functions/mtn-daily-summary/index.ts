@@ -68,8 +68,7 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'jig_maintenance'; if (s.includes('DIE')) return 'die_maintenance'; return 'maintenance'; };
-// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team) กับ key (checklists.department)
-// mtn_teams = single source โยง 2 ฝั่ง — normalize เป็น key ก่อนจับคู่ห้องทีม กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึง
+// ทีมช่างเก็บเป็น key แล้วทั้งระบบ (migration 20260806_unify_team_encoding) — normalize ต่อไปเผื่อข้อมูล/คนกรอกที่ยังเป็นชื่อ
 const TEAM_KEY: Record<string, string> = {
   'mtn': 'maintenance', 'maintenance': 'maintenance',
   'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
@@ -78,7 +77,7 @@ const TEAM_KEY: Record<string, string> = {
 };
 const teamKey = (v?: string | null): string => { const s = String(v || '').toLowerCase().trim(); return TEAM_KEY[s] || s; };
 // key → ชื่อที่ใช้แสดง · ดึงจาก mtn_teams ฝั่ง DR (ทีมถูกเปลี่ยนชื่อแล้วสรุปตามทันที) fallback = ค่าเริ่มต้น
-let TEAM_NAME: Record<string, string> = {
+const TEAM_NAME: Record<string, string> = {
   maintenance: 'MTN', jig_maintenance: 'JIG MTN', die_maintenance: 'DIE MTN', production: 'PRODUCTION',
 };
 async function loadTeamNames() {
