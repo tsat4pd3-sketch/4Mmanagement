@@ -15,11 +15,18 @@
 --  3. เท่ากัน → **จุดที่ทำล่าสุดชนะ** แล้วค่อยเรียงชื่อจุด (ให้ผลคงที่ รันซ้ำได้ผลเดิม)
 --  4. เฉพาะจุดงานที่ยังมีอยู่จริง (join workstations) — จุดที่ถูกลบไปแล้วห้ามกลายเป็นตำแหน่งประจำ
 --  5. เฉพาะพนักงานที่ยัง active
---  6. ⚠️ **เติมเฉพาะคนที่ยังไม่มีตำแหน่งประจำ — ไม่ทับของเดิมที่หัวหน้าตั้งเอง**
+--  6. ⚠️ **แตะเฉพาะคนที่ "ยังไม่มีตำแหน่งประจำที่ใช้ได้จริง" — ไม่ทับของเดิมที่หัวหน้าตั้งเอง**
 --     (การตั้งตำแหน่งประจำเป็นการตัดสินใจของคน ระบบเดาทับไม่ได้ · เคสที่ของเดิมไม่ตรงกับประวัติ
 --      ให้ดูจากคำสั่งรายงานท้ายไฟล์แล้วให้หัวหน้าตัดสินเอง)
 --
--- idempotent: รันซ้ำได้ (on conflict do nothing + กรองคนที่มีอยู่แล้วออก)
+-- ⚠️⚠️ กับดักที่ต้องรู้ — **`employee_home_positions.station_id` ไม่มี foreign key** (ตรวจ pg_constraint
+-- 2026-08-06: มีแค่ employee_id_fkey = cascade และ line_id_fkey = no action)
+--   → **ลบจุดงานแล้วแถวตำแหน่งประจำไม่หายตาม แต่ค้างเป็น orphan ชี้ไป station id ที่ไม่มีแล้ว**
+--   → UI เทียบ homePositions[emp] === String(st.id) ไม่เจอจุดไหนเลย = 🏠 ไม่ขึ้น + isHome=false ตลอด
+--   → คนกลุ่มนี้ "มีแถว" แต่ใช้งานไม่ได้ ถ้ากรองด้วย `not exists` เฉยๆ จะข้ามพวกเขาไปทั้งหมด
+--   จึงต้องนับว่า "ตั้งแล้ว" เฉพาะแถวที่ **join กับ workstations ติดจริง** เท่านั้น
+--
+-- idempotent: รันซ้ำได้ (กรองคนที่มีของใช้ได้อยู่แล้วออก · orphan ถูกซ่อมผ่าน on conflict do update)
 -- ย้อนกลับ: แถวที่ backfill รอบนี้ดูได้จาก updated_by is null and updated_at = เวลาที่รัน
 
 with votes as (
@@ -51,10 +58,20 @@ select r.employee_id, r.station_id, r.line_name, r.line_id, now()
   join employees e on e.id = r.employee_id
  where r.rn = 1
    and e.is_active
+   -- "ตั้งแล้ว" = มีแถว **และ** จุดงานนั้นยังมีอยู่จริง · orphan (จุดถูกลบ) นับเป็นยังไม่ตั้ง ต้องซ่อม
    and not exists (
-     select 1 from employee_home_positions h where h.employee_id = r.employee_id
+     select 1
+       from employee_home_positions h
+       join workstations w2 on w2.id = h.station_id
+      where h.employee_id = r.employee_id
    )
-on conflict (employee_id) do nothing;
+-- ถึงตรงนี้ได้เฉพาะ 2 กรณี: (ก) ไม่มีแถวเลย → insert  (ข) แถวเป็น orphan → ซ่อมทับ
+-- ของที่หัวหน้าตั้งไว้และยังใช้ได้ ถูกกรองออกตั้งแต่ where แล้ว ไม่มีทางโดนทับ
+on conflict (employee_id) do update
+   set station_id = excluded.station_id,
+       line_name  = excluded.line_name,
+       line_id    = excluded.line_id,
+       updated_at = excluded.updated_at;
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -90,6 +107,13 @@ on conflict (employee_id) do nothing;
 --   left join workstations cur on cur.id = h.station_id
 --  where h.station_id is distinct from r.station_id
 --  order by r.shifts desc;
+--
+-- (2b) orphan ที่เหลือค้าง — ควรเป็น 0 หลังรัน (ถ้ายังเหลือ = คนนั้นไม่มีประวัติให้เดาเลย)
+--      รันก่อน migration ด้วยเพื่อดูว่าพังไปกี่คน
+--
+-- select count(*) as orphan_home
+--   from employee_home_positions h
+--  where not exists (select 1 from workstations w where w.id = h.station_id);
 --
 -- (3) ยังไม่มีตำแหน่งประจำเลย (ไม่มีประวัติให้เดา — ต้องตั้งมือที่หน้าจัดการไลน์ผลิต)
 --
