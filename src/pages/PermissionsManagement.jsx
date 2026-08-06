@@ -7,6 +7,10 @@ import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
 const ROLES = PERMISSION_COLUMN_ROLES;
+// แท็บ "การเข้าถึงหน้า" โชว์เฉพาะ base role — ตัดคอลัมน์ bucket (แอดมินหน่วยงาน) ออก (2026-08-06)
+//   เพราะ hasPermission() บล็อก `page:*` ของ bucket ไว้ในโค้ด (permissions.js) → ติ๊กตรงนั้นไม่มีผลจริง
+//   เคยโชว์แล้ว user งง: ติ๊กเขียวครบแต่ user ยังเข้าหน้าไม่ได้ (ต้องไปติ๊กที่ role จริง เช่น mtn)
+const PAGE_COLS = ROLES.filter(r => !r.bucket);
 
 // ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
 const PAGE_GROUPS = [
@@ -208,13 +212,14 @@ export default function PermissionsManagement() {
   };
 
   // เรียกเป็นฟังก์ชันธรรมดา (ไม่ใช่ <Component/>) — กัน react ถือเป็น component ใหม่ทุก render แล้ว remount ตาราง
-  const renderPermTable = (groups, firstColLabel) => (
+  // cols = คอลัมน์ที่จะโชว์ (แท็บ "การเข้าถึงหน้า" ตัด bucket ออก — ดู PAGE_COLS)
+  const renderPermTable = (groups, firstColLabel, cols = ROLES) => (
     <div className="table-sticky">
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
             <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{firstColLabel}</th>
-            {ROLES.map(r => (
+            {cols.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
                 <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
@@ -226,14 +231,14 @@ export default function PermissionsManagement() {
           {groups.map(g => (
             <Fragment key={g.group}>
               <tr>
-                <td colSpan={ROLES.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
+                <td colSpan={cols.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
                   <span style={s.groupTitle}>{g.group}</span>
                 </td>
               </tr>
               {g.items.map(p => (
                 <tr key={p.key} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '7px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 380 }}>{p.label}</td>
-                  {ROLES.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
+                  {cols.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
                 </tr>
               ))}
             </Fragment>
@@ -264,7 +269,11 @@ export default function PermissionsManagement() {
         <div style={{ marginTop: 6 }}>
           🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
           <strong> "เป็นแอดมินหน่วยงาน"</strong> ในหน้าจัดการผู้ใช้ · คนนั้นได้ <strong>role เดิม + action ที่ติ๊กในคอลัมน์นี้</strong>
-          เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
+          (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ)
+          <div style={{ marginTop: 4, color: 'var(--accent2)' }}>
+            ⚠️ <strong>แอดมินหน่วยงาน "เปิดหน้า" ให้ไม่ได้</strong> — ให้ได้แค่ปุ่ม/action ในหน้าที่ role เดิมเข้าได้อยู่แล้ว
+            จึงมีคอลัมน์นี้เฉพาะแท็บ "สิทธิ์การทำงาน" · <strong>การเข้าถึงหน้าต้องติ๊กที่ role จริง</strong> (เช่น 🔧 ซ่อมบำรุง) เท่านั้น
+          </div>
         </div>
       </div>
 
@@ -273,7 +282,7 @@ export default function PermissionsManagement() {
         <button style={s.tabBtn(tab === 'actions')} onClick={() => setTab('actions')}>🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)</button>
       </div>
 
-      {tab === 'pages' && renderPermTable(pageGroups, 'หน้า')}
+      {tab === 'pages' && renderPermTable(pageGroups, 'หน้า', PAGE_COLS)}
 
       {tab === 'actions' && (
         <>
