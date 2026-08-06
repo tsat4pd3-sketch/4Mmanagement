@@ -7,7 +7,10 @@ import { filterLinesByDept } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import {
+  inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+} from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 
@@ -303,7 +306,10 @@ export default function Operator() {
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
         department: editingEmp.department,
-        section:    lockedScopeSec || editingEmp.section || null,
+        // เซฟค่าเดียวกับที่ช่อง Section โชว์อยู่เสมอ (WYSIWYG) — "ขึ้นตรงฝ่าย" = null
+        // ครอบข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section ด้วย (section='MTN' → null) ดู sectionScope.js
+        section:    lockedScopeSec || sectionValueForSave(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes)),
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
@@ -1221,25 +1227,38 @@ export default function Operator() {
                   {lockedScopeSec ? (
                     <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
-                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
+                    // แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN/QA) เลือกผ่าน sentinel — ดู sectionScope.js
+                    //   พนักงานเดิมที่ section ว่างแต่แผนกขึ้นตรงฝ่าย ต้องโชว์ sentinel ไม่งั้นช่องแผนกถูกล็อก
+                    <select value={sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes)}
+                      onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
                       <option value="">— เลือก —</option>
                       {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
                         .map(s => <option key={s} value={s}>{s}</option>)}
+                      {!scopeSecs.length && orphanDepts(orgDeptNodes).length > 0 && (
+                        <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                      )}
                     </select>
                   )}
                 </div>
                 <div>
                   <label style={labelSt}>Department / แผนก</label>
                   {(() => {
-                    const empSection = lockedScopeSec || editingEmp.section;
-                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
-                    const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    const empSection = lockedScopeSec
+                      || sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes);
+                    const deptOpts = deptOptionsFor(empSection, orgSectionNodes, orgDeptNodes);
                     return (
-                      <select value={editingEmp.department || ''} disabled={!empSection}
-                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
-                        <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
-                        {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
-                      </select>
+                      <>
+                        <select value={editingEmp.department || ''} disabled={!empSection}
+                          onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
+                          <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                          {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        </select>
+                        {empSection === ORPHAN_SECTION && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                            หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </div>
@@ -1265,9 +1284,9 @@ export default function Operator() {
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                 ) : (() => {
                   // cascade จากผังองค์กร: กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — ตั้ง line_id ผ่าน ref_line_id ให้ production ยังทำงาน
-                  const empSection = lockedScopeSec || editingEmp.section;
-                  const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
-                  const depNode = orgDeptNodes.find(d => (d.code || d.name) === editingEmp.department && (!secNode || d.parent_id === secNode.id));
+                  const empSection = lockedScopeSec
+                    || sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes);
+                  const depNode = deptNodeFor(empSection, editingEmp.department, orgSectionNodes, orgDeptNodes);
                   const orgGroups = depNode ? orgLineNodes.filter(g => g.parent_id === depNode.id) : [];
                   const cur = editingEmp.group_name || '';
                   const curInOrg = orgGroups.some(g => (g.code || g.name) === cur);
@@ -1295,7 +1314,8 @@ export default function Operator() {
                       <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                       {filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                          .filter(l => !editingEmp.section || l.section === editingEmp.section),
+                          // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยให้ filterLinesByDept คัดตามแผนกอย่างเดียว
+                          .filter(l => empSection === ORPHAN_SECTION || !empSection || l.section === empSection),
                         editingEmp.department
                       ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                     </select>
