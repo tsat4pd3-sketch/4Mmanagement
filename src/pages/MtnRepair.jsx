@@ -12,8 +12,8 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection, teamForItem, sameTeam } from '../utils/mtnTeams';
-import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
+import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam } from '../utils/mtnTeams';
+import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
@@ -21,6 +21,8 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
+import SparePartMaster from '../components/SparePartMaster';
+import RackMap from '../components/RackMap';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -198,6 +200,7 @@ export default function MtnRepair() {
   const [laborRates, setLaborRates] = useState([]); // ราคามาตรฐานค่าแรงซ่อม (master)
   const [improvements, setImprovements] = useState([]); // โปรเจคปรับปรุงที่กำลังทำ (cross-ref D)
   const [mtnDepts, setMtnDepts] = useState(() => pmTeamsSync().map(t => t.dept_name)); // ทีมช่าง data-driven (mtn_teams) — ไม่ hardcode
+  const [mtnTeamRows, setMtnTeamRows] = useState(() => pmTeamsSync()); // แถวทีมเต็ม (key/label/icon) — ใช้ตั้ง 'ทีมของ master แต่ละแถว'
   const [supplyByMachineNo, setSupplyByMachineNo] = useState({}); // machine_no → [line_name] (utility/facility จ่ายไลน์ไหน → ผลกระทบเวลาซ่อม/ตัดไฟ)
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -266,7 +269,7 @@ export default function MtnRepair() {
   }, []);
 
   useEffect(() => {
-    loadPmTeams().then(ts => setMtnDepts(ts.map(t => t.dept_name))); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
+    loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.dept_name)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
     const ch = supabaseDR.channel('mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
     return () => { supabaseDR.removeChannel(ch); };
@@ -301,7 +304,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -309,7 +312,8 @@ export default function MtnRepair() {
         <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
+          {/* คลังอะไหล่ = ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์ */}
+          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ['rack', '🗺️ ผังคลัง'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
             <button key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
           ))}
         </div>
@@ -334,6 +338,8 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
+      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
+      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
@@ -405,7 +411,10 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     }));
     toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
-  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it) }));
+  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it, itemTypes) }));
+  // ลิสต์ที่กรองตามทีมที่แจ้งถึงแล้ว (แถวที่ไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
+  const teamItemTypes = useMemo(() => filterByTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
+  const teamProblemTypes = useMemo(() => filterByTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
   const onChar = (c) => { const pt = problemTypes.find(x => x.characteristic === c); setF(p => ({ ...p, problem_characteristic: c, problem_detail: pt?.detail || '' })); };
 
   const save = async () => {
@@ -431,7 +440,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{itemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
+        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
         <Field label="หมายเลขเครื่อง">
           <div style={{ display: 'flex', gap: 6 }}>
             <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="เลือก/พิมพ์/สแกน" />
@@ -440,7 +449,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           </div>
           <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist>
         </Field>
-        <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{problemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
+        <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamProblemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
         <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
@@ -824,6 +833,8 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
 function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
+  // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
+  const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -882,18 +893,18 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
         }
-        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว) แล้วอ่านสต็อก "สด"
-        // ณ ตอนตัด (ไม่ใช้ค่า cache ตอนโหลดหน้า ซึ่งอาจเก่า) — ลดโอกาสตัดสต็อกเพี้ยนจาก read-modify-write
-        // NOTE: ยังไม่ atomic เต็มตัวข้ามผู้ใช้พร้อมกัน — วิธีที่ถูกต้องสุดคือ RPC ตัดสต็อกฝั่ง DB (update ... returning)
+        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว)
+        // แล้วตัดผ่าน RPC `mtn_stock_move` — ล็อกแถว + กันติดลบ + ลง ledger ในทรานแซกชันเดียวฝั่ง DB
+        // (เดิม read-modify-write จาก client: 2 เครื่องบันทึกพร้อมกันยอดเพี้ยน + เบิกเกินสต็อกได้)
         const byPart = {};
         usable.filter(p => p.part_id).forEach(p => { byPart[p.part_id] = (byPart[p.part_id] || 0) + Number(p.qty); });
         for (const [pid, totalQty] of Object.entries(byPart)) {
-          const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', pid).maybeSingle();
-          if (!fresh) continue;
-          const nb = Number(fresh.stock_qty || 0) - totalQty;
-          const { error: eSt } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', pid);
-          if (eSt) { toast.error('ตัดสต็อกอะไหล่ไม่สำเร็จ: ' + eSt.message); continue; }
-          await supabaseDR.from('mtn_stock_txns').insert({ part_id: pid, type: 'consume', qty: -totalQty, balance: nb, ref_order_id: o.id, by_name: fullName, note: `เบิกใช้ ${o.mo_no || ''}` });
+          const { error: eSt } = await supabaseDR.rpc('mtn_stock_move', {
+            p_part_id: pid, p_type: 'issue', p_qty: totalQty,
+            p_note: `เบิกใช้ ${o.mo_no || ''}`.trim(), p_by_name: fullName, p_ref_order: o.id,
+          });
+          // สต็อกไม่พอ/อะไหล่ถูกลบ = แจ้งแล้วไปต่อ (บันทึกการซ่อมสำคัญกว่า ห้ามให้ทั้งใบล้มเพราะยอดอะไหล่)
+          if (eSt) toast.error(`ตัดสต็อก "${usable.find(x => x.part_id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
         }
       } else if (step === 4) {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
@@ -935,7 +946,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
     <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${titles[step]}`} onClose={onClose}>
       <div style={{ display: 'grid', gap: 12 }}>
         {step === 2 && <>
-          <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{repairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
+          <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
             <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${t.dept}` : ''}</option>)}</select></Field>
@@ -1070,7 +1081,7 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
 }
 
 /* ── Master tab (ช่าง / อะไหล่+stock / taxonomy / ชนิดอุปกรณ์) ── */
-function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtnDepts = MTN_DEPTS, fullName, reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -1109,44 +1120,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
     </div>
   );
 
-  // ── อะไหล่ + stock control ──
-  const [npart, setNpart] = useState({ code: '', name: '', unit: 'ชิ้น', stock_qty: 0, min_qty: 0 });
-  const stockMove = async (part, type) => {
-    const q = Number(prompt(type === 'in' ? `รับเข้าอะไหล่ "${part.name}" จำนวนเท่าไร?` : `ปรับยอด "${part.name}" (+เพิ่ม / -ลด)`, type === 'in' ? '1' : '0'));
-    if (!Number.isFinite(q) || q === 0) return;
-    // อ่านสต็อกสดก่อนบวก แทนใช้ค่าจาก cache (part.stock_qty อาจเก่า) — ลดโอกาสยอดเพี้ยนจากการปรับพร้อมกัน
-    const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', part.id).maybeSingle();
-    const nb = Number(fresh?.stock_qty ?? part.stock_qty ?? 0) + q;
-    const { error } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', part.id);
-    if (error) return toast.error(error.message);
-    await supabaseDR.from('mtn_stock_txns').insert({ part_id: part.id, type, qty: q, balance: nb, by_name: fullName, note: type === 'in' ? 'รับเข้า' : 'ปรับยอด' });
-    toast.success(`${type === 'in' ? 'รับเข้า' : 'ปรับ'} ${part.name} → คงเหลือ ${nb}`); reload();
-  };
-  const PartList = () => (
-    <div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={npart.code} onChange={e => setNpart(p => ({ ...p, code: e.target.value }))} placeholder="รหัส" style={{ ...inp, width: 110 }} />
-        <input value={npart.name} onChange={e => setNpart(p => ({ ...p, name: e.target.value }))} placeholder="ชื่ออะไหล่" style={{ ...inp, width: 220 }} />
-        <input value={npart.unit} onChange={e => setNpart(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 80 }} />
-        <input type="number" value={npart.stock_qty} onChange={e => setNpart(p => ({ ...p, stock_qty: e.target.value }))} placeholder="สต็อกเริ่ม" style={{ ...inp, width: 90 }} />
-        <input type="number" value={npart.min_qty} onChange={e => setNpart(p => ({ ...p, min_qty: e.target.value }))} placeholder="ขั้นต่ำ" style={{ ...inp, width: 80 }} />
-        <button onClick={() => { if (!npart.name) return; addRow('mtn_spare_parts', { ...npart, stock_qty: Number(npart.stock_qty) || 0, min_qty: Number(npart.min_qty) || 0, sort_order: parts.length + 1 }); setNpart({ code: '', name: '', unit: 'ชิ้น', stock_qty: 0, min_qty: 0 }); }} style={btnPri}>+ เพิ่มอะไหล่</button>
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {parts.map(p => { const low = Number(p.stock_qty) <= Number(p.min_qty || 0); return (
-          <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: `1px solid ${low ? '#ef4444' : 'var(--border)'}`, borderRadius: 8, padding: '8px 10px', flexWrap: 'wrap' }}>
-            <input defaultValue={p.code || ''} onBlur={e => e.target.value !== (p.code || '') && updRow('mtn_spare_parts', p.id, { code: e.target.value })} style={{ ...inp, width: 100 }} placeholder="รหัส" />
-            <input defaultValue={p.name} onBlur={e => e.target.value !== p.name && updRow('mtn_spare_parts', p.id, { name: e.target.value })} style={{ ...inp, width: 220 }} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: low ? '#ef4444' : '#22c55e', minWidth: 90 }}>คงเหลือ {p.stock_qty} {p.unit}</span>
-            <input defaultValue={p.min_qty || 0} onBlur={e => Number(e.target.value) !== Number(p.min_qty || 0) && updRow('mtn_spare_parts', p.id, { min_qty: Number(e.target.value) || 0 })} style={{ ...inp, width: 70 }} title="ขั้นต่ำ" />
-            <button onClick={() => stockMove(p, 'in')} style={{ ...btnGhost, padding: '6px 10px', fontSize: 12, color: '#22c55e' }}>➕ รับเข้า</button>
-            <button onClick={() => stockMove(p, 'adjust')} style={{ ...btnGhost, padding: '6px 10px', fontSize: 12 }}>ปรับ</button>
-            <button onClick={() => delRow('mtn_spare_parts', p.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>); })}
-        {!parts.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีอะไหล่ — เพิ่มด้านบน แล้วเบิกได้ตอนขั้นซ่อม (หักสต็อกอัตโนมัติ)</div>}
-      </div>
-    </div>
-  );
+  // ── อะไหล่: ย้ายไปแท็บ "🔩 คลังอะไหล่" (SparePartMaster) แล้ว — ที่นี่เหลือแค่ทางลัด
+  //    เดิมมีตัวแก้อะไหล่แบบย่อซ้ำอยู่ตรงนี้ (prompt + read-modify-write) — ลบทิ้งกันแก้กัน 2 ที่คนละกติกา
 
   // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
   const [nrate, setNrate] = useState({ name: '', unit: 'บาท/ชม.', price: '', dept: '' });
@@ -1174,19 +1149,61 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
     </div>
   );
 
-  const SimpleList = ({ table, items, fields, addLabel }) => {
+  /* SimpleList — master list ที่ "แยกมุมมองตามทีมช่างได้"
+     ทีมของแถว: null/ว่าง = 🌐 ใช้ร่วมทุกทีม · ตั้งเป็นทีมใดทีมหนึ่ง = เห็นเฉพาะทีมนั้น
+     ⚠️ ที่แยกคือ "มุมมอง" เท่านั้น — ตัวตนอุปกรณ์ (machine/jig id) เป็นของกลาง ห้ามแตกตามทีม */
+  const SimpleList = ({ table, items, fields, addLabel, teamed = true }) => {
     const [nw, setNw] = useState({});
+    const [nwTeam, setNwTeam] = useState('');
+    const [fTeam, setFTeam] = useState('');
+    const shown = teamed ? filterByTeam(items, fTeam) : items;
+    const teamOpts = mtnTeams.length ? mtnTeams : DEFAULT_TEAMS;
+    const hiddenN = items.length - shown.length;
     return (
       <div>
+        {teamed && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ทีมช่าง:</span>
+            <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={{ ...inp, width: 210 }}>
+              <option value="">ทุกทีม (เห็นทั้งหมด)</option>
+              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+            </select>
+            {!!hiddenN && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ซ่อน {hiddenN} รายการของทีมอื่น</span>}
+            <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>🌐 = ใช้ร่วมทุกทีม</span>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
-          <button onClick={() => { if (!nw[fields[0].k]) return; addRow(table, { ...nw, sort_order: items.length + 1 }); setNw({}); }} style={btnPri}>+ {addLabel}</button>
+          {teamed && (
+            <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: 190 }}>
+              <option value="">🌐 ใช้ร่วมทุกทีม</option>
+              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+            </select>
+          )}
+          <button onClick={() => {
+            if (!nw[fields[0].k]) return;
+            // ทีมของแถวใหม่: ที่เลือกในช่อง หรือ default = ทีมที่กำลังกรองอยู่ (เพิ่มของทีมตัวเองได้เลย)
+            const payload = { ...nw, sort_order: items.length + 1 };
+            if (teamed) payload.team = (nwTeam || fTeam) || null;
+            addRow(table, payload); setNw({}); setNwTeam('');
+          }} style={btnPri}>+ {addLabel}</button>
         </div>
-        <div style={{ display: 'grid', gap: 6 }}>{items.map(it => (
+        <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => (
           <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
             {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
+            {teamed && (
+              <select value={it.team || ''} onChange={e => updRow(table, it.id, { team: e.target.value || null })}
+                title="ทีมที่ใช้รายการนี้" style={{ ...inp, width: 180, flex: '0 0 auto' }}>
+                <option value="">🌐 ใช้ร่วมทุกทีม</option>
+                {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              </select>
+            )}
             <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>))}</div>
+          </div>))}
+          {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>
+            ไม่มีรายการของทีมนี้ — เพิ่มด้านบน (หรือเลือก "ทุกทีม" เพื่อดูของทีมอื่น)
+          </div>}
+        </div>
       </div>
     );
   };
@@ -1233,11 +1250,10 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
-      {sub === 'parts' && PartList()}
       {sub === 'labor' && LaborList()}
       {sub === 'mo' && MoSeqList()}
       {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}

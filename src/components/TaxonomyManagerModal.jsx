@@ -17,11 +17,12 @@ const EMOJI_SUGGESTIONS = ['👁', '👂', '✋', '📏', '📐', '🔧', '🔩'
 // ชนิดอุปกรณ์สำหรับแท็กหมวด (equip_types) — ว่าง = หมวดกลาง โชว์ทุกชนิด
 const EQUIP_TYPE_OPTS = [{ k: 'machine', l: 'Machine' }, { k: 'jig', l: 'JIG' }, { k: 'die', l: 'Die' }, { k: 'facility', l: 'Facility' }]
 
-export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, onClose, onChanged }) {
+export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, teams = null, onClose, onChanged }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // row object or 'new'
-  const blank = { code: '', label: '', color: '#3dd65c', icon: '🔍', sort_order: 0, is_active: true, equip_types: [] }
+  const blank = { code: '', label: '', color: '#3dd65c', icon: '🔍', sort_order: 0, is_active: true, equip_types: [], team: '' }
+  const withTeam = Array.isArray(teams) && teams.length > 0
   const [form, setForm] = useState(blank)
   const [saving, setSaving] = useState(false)
 
@@ -47,6 +48,8 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
       if (extraField === 'color') payload.color = form.color
       if (extraField === 'icon') payload.icon = form.icon
       if (withEquipTypes) payload.equip_types = (form.equip_types?.length ? form.equip_types : null)
+      // ทีมช่างที่ใช้หมวดนี้ — ว่าง = ใช้ร่วมทุกทีม (กฎ 'ของกลาง vs มุมมองทีม' ใน CLAUDE.md)
+      if (withTeam) payload.team = form.team || null
       const { error } = editing === 'new'
         ? await supabaseDR.from(table).insert(payload)
         : await supabaseDR.from(table).update(payload).eq('id', editing)
@@ -96,6 +99,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.label}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.code}</span>
                     {withEquipTypes && <span style={{ fontSize: 10.5, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : 'ทุกชนิด'}</span>}
+                    {withTeam && <span style={{ fontSize: 10.5, color: 'var(--muted)', marginLeft: 6, fontWeight: 700 }}>{r.team ? (teams.find(t => t.key === r.team)?.dept_name || r.team) : '🌐 ทุกทีม'}</span>}
                     {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
                   </div>
                   <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
@@ -131,6 +135,14 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+              {withTeam && (
+                <div><label style={lbl}>ทีมช่างที่ใช้ (ว่าง = ใช้ร่วมทุกทีม)</label>
+                  <select value={form.team || ''} onChange={e => setForm(f => ({ ...f, team: e.target.value }))} style={inp}>
+                    <option value="">🌐 ใช้ร่วมทุกทีม</option>
+                    {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                  </select>
                 </div>
               )}
               {withEquipTypes && (

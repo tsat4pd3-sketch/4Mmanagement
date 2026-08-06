@@ -1,10 +1,14 @@
 import { useState, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { clusterNotes } from '../utils/textCluster';
 
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
    1) ABC: จัดกลุ่มตาม % สะสม (A ≤80% ตัวหลัก · B ≤95% · C หางยาว) — สีตามกลุ่ม ไม่ใช่สีรายประเภท
-   2) แกน Y โชว์ชื่อ **เฉพาะกลุ่ม A** (ที่เหลือดูที่ tooltip/ปุ่มขยาย) — กันภาพรกจนดูสำคัญเท่ากันหมด
+   2) **ความหนาแท่งไม่เท่ากันตามกลุ่ม** — A หนา+ชื่อเต็ม · B บาง+ชื่อย่อ · C บางมาก (ในโหมดย่อ
+      ยุบเป็นแถบเดียว) — ให้สายตาไปที่ A ก่อน · วาดด้วย HTML ไม่ใช่ Recharts เพราะ Recharts
+      บังคับทุกแถวสูงเท่ากัน → ข้อมูลเยอะแล้ว **ชื่อบนแกน Y เขียนทับกัน** (บั๊กที่เจอจริง 2026-08-05)
    3) **คลิกแท่ง = เจาะลึก** แยกตามมิติที่เกี่ยวข้อง (เครื่องจักร/ไลน์/ชิ้นงาน/กะ/คน/วัน) + เห็นรายการดิบ
+   4) **มิติ `cluster:true` = จับกลุ่มจากข้อความอิสระ** (หมายเหตุพนักงาน) ด้วย `utils/textCluster` —
+      แก้เคส "อื่นๆ" ครองอันดับ 1 แต่บอกอะไรไม่ได้ (2026-08-05) · แถวที่ไม่ได้กรอกโน้ตแสดงแยก ไม่กลบ
    รับ `records` (แถวดิบ flat) แล้ว component รวมยอดเอง → เจาะได้ทุกมิติโดยไม่ต้อง query ใหม่ */
 
 const ABC = {
@@ -45,7 +49,8 @@ export default function ParetoAbcChart({
 }) {
   const [open, setOpen] = useState(false);
   const [drill, setDrill] = useState(null);           // ชื่อประเภทที่กำลังเจาะ
-  const [dimKey, setDimKey] = useState(dims[0]?.key || null);
+  // ดีฟอลต์ = มิติปกติตัวแรก (มิติ cluster ถูกเลือกให้อัตโนมัติเฉพาะตอนเจาะ "อื่นๆ")
+  const [dimKey, setDimKey] = useState(dims.find(d => !d.cluster)?.key || dims[0]?.key || null);
 
   const rows = useMemo(() => classifyAbc(groupBy(records, r => r.cat), d => d.value), [records]);
   const total = rows.reduce((s, d) => s + d._val, 0);
@@ -57,10 +62,34 @@ export default function ParetoAbcChart({
 
   // ── ข้อมูลของประเภทที่เจาะ ──
   const drillRecs = useMemo(() => (drill ? records.filter(r => (r.cat || '(ไม่ระบุ)') === drill) : []), [records, drill]);
-  const drillRows = useMemo(() => (dimKey ? classifyAbc(groupBy(drillRecs, r => r[dimKey]), d => d.value) : []), [drillRecs, dimKey]);
-  const drillTotal = drillRows.reduce((s, d) => s + d._val, 0);
+  const drillDim = useMemo(() => dims.find(d => d.key === dimKey) || null, [dims, dimKey]);
+  // มิติแบบ cluster = จับกลุ่มข้อความอิสระ (หมายเหตุ) · มิติปกติ = group ตามค่าในฟิลด์
+  const drillCluster = useMemo(() => (drillDim?.cluster
+    ? clusterNotes(drillRecs, r => r[dimKey], r => r.value) : null), [drillDim, drillRecs, dimKey]);
+  const drillRows = useMemo(() => {
+    if (!dimKey) return [];
+    if (!drillCluster) return classifyAbc(groupBy(drillRecs, r => r[dimKey]), d => d.value);
+    // แถวที่ไม่ได้กรอกหมายเหตุนับรวมในพาเรโตด้วย — ถ้ามันขึ้นกลุ่ม A แปลว่าปัญหาอยู่ที่วินัยการบันทึก
+    const m = drillCluster.missing;
+    const items = m.count > 0
+      ? [...drillCluster.clusters, { name: '(ไม่ได้กรอกหมายเหตุ)', value: m.value, count: m.count, _noNote: true }]
+      : drillCluster.clusters;
+    return classifyAbc(items, d => d.value);
+  }, [drillRecs, dimKey, drillCluster]);
+  const drillTotal = drillRecs.reduce((s, r) => s + (r.value || 0), 0);
 
-  const openDrill = (name) => { setDrill(name); if (!dimKey && dims[0]) setDimKey(dims[0].key); };
+  // ประเภทที่ "ไม่บอกอะไร" (อื่นๆ/ไม่ระบุ) — ถ้าติดกลุ่ม A ต้องชวนให้ไปเจาะ ไม่ปล่อยเป็นอันดับ 1 ลอยๆ
+  const noteDim = dims.find(d => d.cluster) || null;
+  const vagueA = useMemo(() => (noteDim
+    ? groups.A.filter(d => /อื่น|ไม่ระบุ|etc|other/i.test(d.name)) : []), [groups, noteDim]);
+
+  const openDrill = (name, dim) => {
+    setDrill(name);
+    // เปิดจากชิป "อื่นๆ" → เด้งเข้ามิติหมายเหตุให้เลย (คนกดเพราะอยากรู้ว่ามันคืออะไร)
+    const want = dim || (noteDim && /อื่น|ไม่ระบุ|etc|other/i.test(name) ? noteDim.key : null);
+    if (want) setDimKey(want);
+    else if (!dimKey) setDimKey((dims.find(d => !d.cluster) || dims[0])?.key || null);
+  };
 
   const tip = ({ active, payload }) => {
     if (!active || !payload?.length) return null;
@@ -88,20 +117,61 @@ export default function ParetoAbcChart({
     );
   };
 
-  const chart = (h, showAllLabels) => (
-    <ResponsiveContainer width="100%" height={h}>
-      <BarChart data={rows} layout="vertical" margin={{ left: 10, right: 34, top: 4, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
-        <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-        <YAxis dataKey="name" type="category" width={showAllLabels ? 210 : 140}
-          tick={showAllLabels ? { fontSize: 11, fill: 'var(--text2)' } : yTick} interval={0} />
-        <Tooltip content={tip} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-        <Bar dataKey="value" radius={[0, 4, 4, 0]} cursor={dims.length ? 'pointer' : 'default'}
-          onClick={(d) => dims.length && openDrill(d?.payload?.name ?? d?.name)}>
-          {rows.map((d, i) => <Cell key={i} fill={ABC[d._cls].color} fillOpacity={OPA[d._cls]} />)}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+  // ── แท่ง HTML: ความหนา/ขนาดตัวอักษรต่างกันตามกลุ่ม ABC (Recharts ทำไม่ได้ — ทุก band สูงเท่ากัน) ──
+  const BAR = { A: { h: 20, font: 12, name: true }, B: { h: 11, font: 11, name: true }, C: { h: 6, font: 10.5, name: false } };
+  const maxVal = Math.max(1, ...rows.map(d => d._val));
+
+  const barRow = (d, i, { showName, compact }) => {
+    const m = ABC[d._cls]; const cfg = BAR[d._cls];
+    const nameShown = showName || cfg.name;
+    return (
+      <div key={i} onClick={() => dims.length && openDrill(d.name)}
+        title={`${d.name} · ${fmt(d._val)} ${unit} (${d._pct.toFixed(1)}%) · ${d.count} ครั้ง · สะสม ${d._cum.toFixed(1)}%`}
+        style={{ display: 'grid', gridTemplateColumns: nameShown ? `minmax(0, ${compact ? '38%' : '30%'}) 1fr auto` : '1fr auto',
+          alignItems: 'center', gap: 8, cursor: dims.length ? 'pointer' : 'default',
+          padding: d._cls === 'A' ? '3px 0' : '1.5px 0' }}>
+        {nameShown && (
+          <span style={{ fontSize: cfg.font, fontWeight: d._cls === 'A' ? 700 : 500,
+            color: d._cls === 'A' ? 'var(--text)' : 'var(--text2)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{d.name}</span>
+        )}
+        <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: cfg.h }}>
+          <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, d._val / maxVal * 100)}%`,
+            background: m.color, opacity: OPA[d._cls], borderRadius: 3 }} />
+        </span>
+        <span style={{ fontSize: d._cls === 'A' ? 11.5 : 10.5, fontWeight: d._cls === 'A' ? 800 : 600,
+          color: d._cls === 'A' ? m.color : 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          {fmt(d._val)}{d._cls === 'A' ? ` (${d._pct.toFixed(0)}%)` : ''}
+        </span>
+      </div>
+    );
+  };
+
+  // โหมดย่อ: A+B แสดงเป็นแท่ง · C ยุบเป็นแถบเดียว (ไม่มีชื่อ ไม่กินที่ — กดขยายดูได้)
+  const chartCompact = () => {
+    const cSum = groups.C.reduce((s2, d) => s2 + d._val, 0);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {[...groups.A, ...groups.B].map((d, i) => barRow(d, i, { compact: true }))}
+        {groups.C.length > 0 && (
+          <div onClick={() => setOpen(true)} title={`กลุ่ม C ${groups.C.length} รายการ · ${fmt(cSum)} ${unit} — กดดูรายละเอียด`}
+            style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 38%) 1fr auto', alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>C · {groups.C.length} รายการ (หางยาว)</span>
+            <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: 6 }}>
+              <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, cSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
+            </span>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmt(cSum)}</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // โหมดขยาย: ทุกรายการมีชื่อ (C ก็เห็น) ความหนายังต่างกันตามกลุ่ม
+  const chartFull = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {rows.map((d, i) => barRow(d, i, { showName: true }))}
+    </div>
   );
 
   const strip = (
@@ -131,7 +201,17 @@ export default function ParetoAbcChart({
           style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
       </div>
       {strip}
-      {chart(height, false)}
+      {/* "อื่นๆ / ไม่ระบุ" ติดกลุ่ม A = อันดับต้นๆ แต่บอกอะไรไม่ได้ → ชี้ทางไปดูหมายเหตุจริงทันที */}
+      {vagueA.map((d, i) => (
+        <div key={i} onClick={() => openDrill(d.name, noteDim.key)}
+          style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', cursor: 'pointer', marginBottom: 8,
+            background: '#f59e0b14', border: '1px solid #f59e0b55', borderRadius: 8, padding: '6px 10px', fontSize: 11.5, color: 'var(--text2)' }}>
+          <b style={{ color: '#f59e0b' }}>“{d.name}” = {d._pct.toFixed(0)}% แต่ยังไม่บอกสาเหตุ</b>
+          <span>— กดดูหมายเหตุที่พนักงานเขียนจริง แยกเป็นกลุ่มสาเหตุให้แล้ว</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontWeight: 800, whiteSpace: 'nowrap' }}>{noteDim.label} →</span>
+        </div>
+      ))}
+      {chartCompact()}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--muted)', marginTop: 6 }}>
         {['A', 'B', 'C'].map(k => groups[k].length > 0 && (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -166,7 +246,7 @@ export default function ParetoAbcChart({
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
             </div>
             <div style={{ overflowY: 'auto', padding: '14px 20px 20px' }}>
-              {chart(Math.max(280, rows.length * 26), true)}
+              {chartFull()}
               <div style={{ overflowX: 'auto', marginTop: 14 }}>
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
@@ -224,19 +304,43 @@ export default function ParetoAbcChart({
                 ))}
               </div>
 
+              {/* มิติหมายเหตุ: อธิบายว่าจับกลุ่มมายังไง + ชวนยกระดับกลุ่มใหญ่เป็นประเภทจริง */}
+              {drillCluster && (
+                <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 11px', marginBottom: 10, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.65 }}>
+                  จับกลุ่มจาก<b> ข้อความที่พนักงานพิมพ์เอง </b>โดยเทียบความคล้ายของตัวอักษร (พิมพ์ต่างกันเล็กน้อย/มีเว้นวรรค/ใส่เวลา = กลุ่มเดียวกัน)
+                  {drillCluster.missing.count > 0 && (
+                    <> · <span style={{ color: '#f59e0b', fontWeight: 700 }}>ยังไม่กรอกหมายเหตุ {drillCluster.missing.count} ครั้ง ({fmt(drillCluster.missing.value)} {unit})</span></>
+                  )}
+                  {drillRows[0] && !drillRows[0]._noNote && drillRows[0]._pct >= 15 && (
+                    <div style={{ marginTop: 5, color: 'var(--accent)', fontWeight: 700 }}>
+                      💡 “{drillRows[0].name}” กิน {drillRows[0]._pct.toFixed(0)}% ของ “{drill}” — ควรตั้งเป็น<b>ประเภทของตัวเอง</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* สัดส่วนตามมิติที่เลือก — แถบ + ตัวเลข (ABC เหมือนกัน) */}
               {drillRows.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>ไม่มีข้อมูลในมิตินี้</div>
               ) : (
                 <div style={{ display: 'grid', gap: 5 }}>
                   {drillRows.map((d, i) => (
-                    <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px' }}>
+                    <div key={i} style={{ background: 'var(--bg3)', border: `1px solid ${d._noNote ? '#f59e0b55' : 'var(--border2)'}`, borderRadius: 8, padding: '7px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={clsChip(d._cls)}>{d._cls}</span>
-                        <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                        <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 700, color: d._noNote ? '#f59e0b' : 'var(--text)',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: drillCluster ? 'normal' : 'nowrap' }}>
+                          {d._noNote ? '⚠️ ' : ''}{d.name}
+                        </span>
                         <span style={{ fontSize: 12.5, fontWeight: 800, color: ABC[d._cls].color, whiteSpace: 'nowrap' }}>{fmt(d._val)} {unit}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', width: 76, textAlign: 'right' }}>{d._pct.toFixed(1)}% · {d.count} ครั้ง</span>
                       </div>
+                      {/* กลุ่มคำ: บอกว่ารวมข้อความที่เขียนต่างกันกี่แบบ + ตัวอย่าง — โปร่งใสว่าจับกลุ่มอะไรเข้ามา */}
+                      {d.variants > 1 && (
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>
+                          รวม {d.variants} แบบที่เขียนต่างกัน{d.samples?.length ? ` · เช่น "${d.samples.join('" · "')}"` : ''}
+                        </div>
+                      )}
                       <div style={{ height: 5, borderRadius: 3, background: 'var(--bg)', marginTop: 5, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${d._pct}%`, background: ABC[d._cls].color, opacity: OPA[d._cls] }} />
                       </div>
@@ -254,7 +358,7 @@ export default function ParetoAbcChart({
                   <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '6px 9px', fontSize: 11.5 }}>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                       <b style={{ color: ABC.A.color, whiteSpace: 'nowrap' }}>{fmt(r.value)} {unit}</b>
-                      {dims.map(dm => r[dm.key] ? (
+                      {dims.filter(dm => !dm.cluster).map(dm => r[dm.key] ? (
                         <span key={dm.key} style={{ color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                           <span style={{ color: 'var(--muted)' }}>{dm.label}</span> {r[dm.key]}
                         </span>

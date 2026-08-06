@@ -50,9 +50,30 @@ export function teamsForUser(explicitTeams, sections) {
   return [...set]
 }
 
-// ชนิดอุปกรณ์ → ทีม (ใช้เดา default ตอนแจ้งซ่อม) — JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN
-export const teamForItem = (it) => {
+// ── มุมมองต่อทีมของ master list (2026-08-06) ────────────────────────────────
+// หลักการ: ตัวตนอุปกรณ์ (machine id / jig id / ชื่อเครื่อง) = ของกลางชุดเดียวทุกทีมอ้างตรงกัน
+//   แต่ "รายละเอียด" (ลักษณะปัญหา / ชนิดอุปกรณ์ / หมวดอะไหล่ / วิธีตรวจ) เป็นมุมมองเฉพาะทีม
+// กติกา: คอลัมน์ team ของแถว master — **null/ว่าง = ใช้ร่วมทุกทีม (common)**
+//   (pattern เดียวกับ lpa_questions.line_name null = ข้อ common)
+export function inTeamScope(rowTeam, selectedTeam) {
+  if (!selectedTeam) return true                       // ยังไม่เลือกทีม = เห็นทั้งหมด
+  if (rowTeam === null || rowTeam === undefined || String(rowTeam).trim() === '') return true
+  return teamKeyOf(rowTeam) === teamKeyOf(selectedTeam)
+}
+/** กรอง master list ตามทีมที่เลือก (แถว common ติดมาด้วยเสมอ) */
+export const filterByTeam = (rows, selectedTeam, key = 'team') =>
+  (rows || []).filter(r => inTeamScope(r?.[key], selectedTeam))
+
+// ชนิดอุปกรณ์ → ทีม (ใช้เดา default ตอนแจ้งซ่อม)
+//   ลำดับ: (1) ทีมที่ตั้งไว้บนแถว mtn_item_types.team = source of truth
+//          (2) fallback เดาจากชื่อ JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN (ของเดิม ใช้เมื่อยังไม่ตั้งทีม)
+//   itemRows = แถวจาก mtn_item_types (ไม่ส่งมา = ใช้การเดาจากชื่อล้วน — backward-compatible)
+export const teamForItem = (it, itemRows = null) => {
   const s = (it || '').toUpperCase()
+  if (Array.isArray(itemRows)) {
+    const hit = itemRows.find(r => String(r?.name || '').toUpperCase() === s)
+    if (hit?.team) return deptNameOf(hit.team)
+  }
   if (s.includes('JIG')) return 'JIG MTN'
   if (s.includes('DIE')) return 'DIE MTN'
   return 'MTN'

@@ -25,7 +25,7 @@ export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey)
 const DR_AUDIT_TABLES = new Set([
   'dr_products','kanban_standards','checklists','jig_checkpoints','jigs','pm_plans','machines',
   'dr_defect_types','dr_downtime_types','machine_types','process_types','container_types',
-  'mtn_technicians','mtn_spare_parts','mtn_problem_types','mtn_repair_types','mtn_labor_rates','mtn_item_types',
+  'mtn_technicians','mtn_spare_parts','mtn_spare_categories','mtn_problem_types','mtn_repair_types','mtn_labor_rates','mtn_item_types',
   'pm_daily_line_targets','pm_facility_areas','pm_checking_methods','pm_checkpoint_categories',
   'ship_to_plants','shipping_workflow_steps','dt_alert_config','stock_inflow_rules','lot_post_configs',
   'kanban_calc_settings','kanban_targets','product_packaging','scrap_defect_types',

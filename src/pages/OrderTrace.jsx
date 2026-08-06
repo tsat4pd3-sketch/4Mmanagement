@@ -6,6 +6,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
+import { toast } from '../components/Toast';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -30,6 +31,14 @@ const STATUS_META = {
   imported: { label: '⏬ ถูกยกไปกะถัดไป', color: 'var(--muted)' },
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
+/* เกณฑ์ "สแกนรวบ" = ช่องว่างระหว่างสแกน < BATCH_FRAC × เวลาที่ต้องใช้ผลิตของใบนั้น (qty × CT)
+   0.5 = ต้องผลิตเร็วกว่ามาตรฐาน "2 เท่า" ถึงจะทันในช่วงนั้น → เป็นไปไม่ได้ = สแกนรวบแน่นอน
+   (ไม่ใช่เวลาตายตัว — สเกลตามชิ้นงาน/จำนวนของแต่ละใบเอง · ตรวจกับข้อมูลจริง Assy LWR 05/08:
+    ทยอยสแกนทุก 33 นาที (need 34 นาที) = ไม่ใช่ชุด ✓ · สแกน 6 ใบห่างกัน 1-3 วินาที = ชุด ✓
+    ถ้าใช้ 1.0 จะเหมารวมการทยอยสแกนจริงผิด) */
+const BATCH_FRAC = 0.5;
+// ใช้เฉพาะตอนคำนวณเวลาผลิตจริงไม่ได้เลย (ไม่มีทั้ง CT และข้อมูลกะ)
+const FALLBACK_BATCH_SEC = 180;
 const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: bg, color: fg });
 
 export default function OrderTrace() {
@@ -42,6 +51,7 @@ export default function OrderTrace() {
   const [from, setFrom] = useState(() => addDays(todayStr(), -30));
   const [to, setTo] = useState(todayStr);
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
+  const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)
   const [trace, setTrace] = useState(null);          // bundle ข้อมูลสอบกลับ
@@ -63,26 +73,57 @@ export default function OrderTrace() {
   }, [role, lineId, lines, scopeSecs]);
   const inScope = useCallback(ln => !scopeLineNames || scopeLineNames.has((ln || '').toLowerCase()), [scopeLineNames]);
 
-  /* ── ค้นหาใบผลิต (สแกน/พิมพ์ prod_no หรือ MAT/ชื่อชิ้นงาน) ── */
-  const doSearch = useCallback(async (term) => {
+  /* สรุปภาพรวมของ "ใบที่ค้นเจอ" — ให้เห็นข้อมูลก่อนคลิกเลือกใบ
+     หมายเหตุ: เป็นผลรวมของรายการที่แสดง (list sum) ไม่ใช่ยอดผลิตภาพใหญ่ของโรงงาน
+     จึงบวกตรงๆ ต่อใบ (ไม่ใช้ pairAwareTotal ซึ่งใช้กับจอสรุปยอดรวมภาพใหญ่) */
+  const sum = useMemo(() => {
+    const s = { count: results.length, target: 0, produced: 0, ng: 0, openCount: 0, lines: [], mats: [], days: [], capped: results.length >= 300 };
+    const lineSet = new Set(), matSet = new Set(), daySet = new Set();
+    results.forEach(o => {
+      s.target += Number(o.qty_target ?? o.qty) || 0;
+      s.produced += Number(o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : o.qty_actual) || 0;
+      s.ng += (Number(o.qty_ng) || 0) + (Number(o.qty_suspect) || 0);
+      if (o.status === 'open') s.openCount++;
+      const ss = o.production_sessions || {};
+      if (ss.line_name) lineSet.add(ss.line_name);
+      if (o.mat_no) matSet.add(o.mat_no);
+      if (ss.work_date) daySet.add(ss.work_date);
+    });
+    s.lines = [...lineSet].sort(); s.mats = [...matSet].sort(); s.days = [...daySet].sort();
+    return s;
+  }, [results]);
+
+  /* ── ค้นหาใบผลิต (สแกน/พิมพ์ prod_no หรือ MAT/ชื่อชิ้นงาน) ──
+     สอบกลับ = ทวนสอบย้อนหลัง "ของที่ออกจากไลน์ไปแล้ว" → default ตัดใบที่ยังผลิตอยู่ (status open) ออก
+     (ติ๊ก "รวมใบที่กำลังผลิต" เพื่อดูได้ · สแกน prod_no ตรงเป๊ะแล้วไม่เจอ = fallback หาแบบรวมใบเปิดให้อัตโนมัติ) */
+  const ORDER_COLS = 'id, prod_no, mat_no, part_name, customer, qty, qty_target, qty_actual, qty_ok, qty_ng, qty_suspect, qty_repair, status, opened_by, opened_at, confirmed_by, confirmed_at, is_backfill, machine_no, paired_order_id, carry_over_note, carry_over_from_session_id, reopened_by, reopened_at, reopen_count, session_id, production_sessions!inner(id, line_name, work_date, shift, status, oee, oee_a, oee_p, oee_q, opened_by_name, closed_by_name, closed_at, close_approve_note)';
+  const doSearch = useCallback(async (term, opts = {}) => {
     const q = (term ?? search).trim();
+    const withOpen = opts.includeOpen ?? includeOpen;
     setSearching(true);
-    try {
-      let query = supabaseDR.from('prod_orders')
-        .select('id, prod_no, mat_no, part_name, customer, qty, qty_target, qty_actual, qty_ok, qty_ng, qty_suspect, qty_repair, status, opened_by, opened_at, confirmed_by, confirmed_at, is_backfill, machine_no, paired_order_id, carry_over_note, carry_over_from_session_id, reopened_by, reopened_at, reopen_count, session_id, production_sessions!inner(id, line_name, work_date, shift, status, oee, oee_a, oee_p, oee_q, opened_by_name, closed_by_name, closed_at, close_approve_note)')
+    const run = async (allowOpen) => {
+      let query = supabaseDR.from('prod_orders').select(ORDER_COLS)
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
         .order('opened_at', { ascending: false }).limit(300);
+      if (!allowOpen) query = query.neq('status', 'open');
       if (q) query = query.or(`prod_no.ilike.%${q}%,mat_no.ilike.%${q}%,part_name.ilike.%${q}%`);
       const { data, error } = await query;
       if (error) throw error;
-      const rows = (data || []).filter(o => inScope(o.production_sessions?.line_name));
+      return (data || []).filter(o => inScope(o.production_sessions?.line_name));
+    };
+    try {
+      let rows = await run(withOpen);
+      // สแกนมาแล้วไม่เจอเพราะใบยังผลิตอยู่ → หาให้ใหม่ (ไม่ปล่อยให้สแกนแล้วเงียบ)
+      if (!rows.length && q && !withOpen) {
+        rows = await run(true);
+        if (rows.length) toast.info('ใบนี้ยังผลิตไม่จบ — แสดงให้ (สอบกลับปกติดูเฉพาะใบที่ปิดแล้ว)');
+      }
       setResults(rows);
-      // สแกนแล้วตรงเป๊ะใบเดียว → เปิดเลย
-      if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);
+      if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);   // สแกนตรงเป๊ะใบเดียว → เปิดเลย
       return rows;
     } catch { setResults([]); return []; }
     finally { setSearching(false); }
-  }, [search, from, to, inScope]);
+  }, [search, from, to, inScope, includeOpen]);
 
   // deep-link ?prod= — รอ lines โหลด (scope) ก่อน
   useEffect(() => {
@@ -114,7 +155,7 @@ export default function OrderTrace() {
       const [qu, df, so, dt] = await Promise.all([
         supabaseDR.from('prod_order_qty_updates').select('qty_accum, qty_delta, is_final, logged_at, logged_by').eq('order_id', sel.id).order('logged_at'),
         supabaseDR.from('defect_logs').select('qty_ng, qty_suspect, qty_repair, description, reported_by_name, logged_at, prod_order_id, dr_defect_types(name_th)').eq('session_id', sess.id).order('logged_at'),
-        supabaseDR.from('prod_orders').select('id, prod_no, mat_no, part_name, status, qty, qty_ok, opened_at, confirmed_at').eq('session_id', sess.id).order('opened_at'),
+        supabaseDR.from('prod_orders').select('id, prod_no, mat_no, part_name, status, qty, qty_target, qty_actual, qty_ok, opened_at, confirmed_at').eq('session_id', sess.id).order('opened_at'),
         supabaseDR.from('downtime_logs').select('id, machine_no, description, duration_min, started_at, ended_at, carry_over, dr_downtime_types(name_th, category)').eq('session_id', sess.id).order('started_at'),
       ]);
       t.qtyUpdates = qu.data || []; t.defects = df.data || []; t.sessionOrders = so.data || []; t.downtimes = dt.data || [];
@@ -235,11 +276,14 @@ export default function OrderTrace() {
         }
       } catch { /* ignore */ }
 
-      // CT มาตรฐานของชิ้นงาน (ใช้เทียบความเร็วจริงของใบ)
+      // CT มาตรฐาน — ของชิ้นงานใบนี้ + ทุก MAT ในกะ (กลุ่มใบที่วิ่งพร้อมกันมีหลายชิ้นงานได้
+      // → เทียบความเร็วแบบถ่วงน้ำหนัก Σ(qty×CT) ÷ เวลาเดินจริง ตามสูตร P ของ OEE)
       try {
+        const mats = [...new Set([sel.mat_no, ...(t.sessionOrders || []).map(o => o.mat_no)].filter(Boolean))];
         const { data: pr } = await supabaseDR.from('dr_products')
-          .select('cycle_time_sec, process_type, pair_mat_no, line_name').eq('mat_no', sel.mat_no).limit(1);
-        t.product = pr?.[0] || null;
+          .select('mat_no, cycle_time_sec, process_type, pair_mat_no, line_name').in('mat_no', mats);
+        t.product = (pr || []).find(p => p.mat_no === sel.mat_no) || null;
+        t.ctByMat = Object.fromEntries((pr || []).filter(p => p.cycle_time_sec > 0).map(p => [p.mat_no, Number(p.cycle_time_sec)]));
       } catch { /* ignore */ }
       // กะก่อนหน้าของไลน์ (บริบท: เข้ากะนี้มาด้วยสภาพยังไง)
       try {
@@ -268,6 +312,85 @@ export default function OrderTrace() {
     return () => { alive = false; };
   }, [sel, lines]);
 
+  /* ── ตรวจ "สแกนเป็นชุด" จากข้อมูลจริง ไม่ใช้เวลาตายตัว (2026-08-05 · คำสั่ง user) ────────
+     เกณฑ์เชิงกายภาพ: ใบ 2 ใบที่สแกนห่างกัน **น้อยกว่าเวลาที่ต้องใช้ผลิตของใบนั้น** (qty × CT)
+       = ช่วงนั้นผลิตไม่ทัน → ต้องเป็นการสแกนรวบ ไม่ใช่ทยอยสแกนตามจริง
+     • ต่อกันเป็นลูกโซ่ → เคส "สแกน 3 ใบ → เข้าห้องน้ำ 5 นาที → สแกนต่อ 2 ใบ" ยังเป็นชุดเดียว
+       เพราะ 5 นาที < เวลาผลิตจริงของใบ (35 ชิ้น × 58 วิ ≈ 34 นาที) — เกณฑ์ปรับตามของจริงเอง
+     • ไม่ได้ตั้ง CT → ใช้อัตราจริงเฉลี่ยของกะนั้นแทน (ช่วงเวลา ÷ ยอดรวม)
+     • ไม่มีทั้ง CT และข้อมูลกะ (เช่นใบเดียวโดดๆ) ค่อยถอยไปค่าคงที่ FALLBACK_BATCH_SEC  */
+  const scanBatch = useMemo(() => {
+    const empty = { open: { members: [], maxGapSec: null }, close: { members: [], maxGapSec: null }, needSec: null, needFrom: null };
+    if (!sel || !trace) return empty;
+    const sess = trace.sessionOrders || [];
+    const ctMap = trace.ctByMat || {};
+    /* จำนวนที่ใช้ประเมิน "งานชิ้นนี้กินเวลาเท่าไหร่"
+       • ใบปิดแล้ว → ยอดที่ผลิตได้จริง · ใบที่ยังเปิด → เป้าของใบ (ยอดสะสมยังเป็น 0 ใช้ประเมินไม่ได้)
+       ⚠️ ห้ามใช้ `qty_ok ?? qty_actual ?? qty` ตรงๆ — ใบเปิดที่ qty_actual = 0 จะได้ 0
+          ทำให้ "เวลาที่ต้องใช้ผลิต" = 0 แล้วตัดกลุ่มผิด (เจอจริงที่ SUB APRON 05/08) */
+    const qtyOf = (o) => {
+      const v = o.confirmed_at ? (o.qty_ok ?? o.qty_actual ?? o.qty) : (o.qty_target ?? o.qty);
+      return Number(v) || 0;
+    };
+
+    // อัตราจริงเฉลี่ยของกะ (fallback เมื่อชิ้นงานยังไม่ตั้ง CT)
+    let sessSecPerPc = null;
+    const done = sess.filter(o => o.opened_at && o.confirmed_at && qtyOf(o) > 0);
+    if (done.length) {
+      const s = Math.min(...done.map(o => new Date(o.opened_at).getTime()));
+      const e = Math.max(...done.map(o => new Date(o.confirmed_at).getTime()));
+      const q = done.reduce((a, o) => a + qtyOf(o), 0);
+      if (e > s && q > 0) sessSecPerPc = (e - s) / 1000 / q;
+    }
+    /* เวลาที่ "ต้องใช้ผลิต" ของใบหนึ่ง (วินาที) — แต่ละ product จำนวนกับ CT ไม่เท่ากัน
+       จึงคิดรายใบเสมอ ห้ามใช้ค่ากลางของไลน์ */
+    const prodInfo = (o) => {
+      if (!o) return null;
+      const q = qtyOf(o);
+      if (q <= 0) return null;                       // ไม่รู้จำนวน = ประเมินเวลาไม่ได้ → ให้ไปใช้ใบข้างเคียงแทน
+      const ct = Number(ctMap[o.mat_no]) || 0;
+      if (ct > 0) return { sec: q * ct, from: 'ct' };
+      if (sessSecPerPc) return { sec: q * sessSecPerPc, from: 'session' };
+      return null;
+    };
+    /* จับกลุ่มลูกโซ่ตามเวลาสแกน
+       ⚠️ ต้องเทียบกับ "ใบที่กำลังผลิตอยู่ในช่วงนั้น" ให้ถูกตัว (คนละใบกันระหว่างขาเปิด/ขาปิด):
+         • ขาเปิด  — ช่องว่างควรยาว = เวลาผลิตของ "ใบก่อนหน้า" (ใบที่ทำอยู่ กว่าจะเสร็จค่อยเปิดใบใหม่)
+         • ขาปิด   — ช่องว่างควรยาว = เวลาผลิตของ "ใบนี้" (ใบที่เพิ่งทำเสร็จ)
+       ถ้าเทียบผิดตัวจะพังเมื่อของคนละขนาด เช่น เปิดใบ 35 ชิ้น (34 นาที) แล้ว 10 นาทีต่อมา
+       เปิดใบ 8 ชิ้น — เทียบกับใบ 8 ชิ้น (4 นาที) จะหลุดว่า "ไม่ใช่ชุด" ทั้งที่ใบแรกยังทำไม่เสร็จ */
+    const clusterOf = (key) => {
+      const isOpen = key === 'opened_at';
+      const list = sess.filter(o => o[key]).sort((a, b) => new Date(a[key]) - new Date(b[key]));
+      if (!list.length) return { members: [], maxGapSec: null, needSec: null, needFrom: null };
+      const groups = []; let cur = [list[0]];
+      for (let i = 1; i < list.length; i++) {
+        const gap = (new Date(list[i][key]).getTime() - new Date(list[i - 1][key]).getTime()) / 1000;
+        const ref = prodInfo(isOpen ? list[i - 1] : list[i]) || prodInfo(isOpen ? list[i] : list[i - 1]);
+        const sameBatch = ref ? gap < ref.sec * BATCH_FRAC : gap <= FALLBACK_BATCH_SEC;
+        if (sameBatch) cur.push(list[i]); else { groups.push(cur); cur = [list[i]]; }
+      }
+      groups.push(cur);
+      const mine = groups.find(g => g.some(o => o.id === sel.id)) || [];
+      // หลักฐานที่โชว์บนจอ: ช่องว่างที่กว้างสุดในชุด + เกณฑ์ที่ใช้กับ "คู่นั้น" (ให้ข้อความไม่ขัดกันเอง)
+      let maxGapSec = null, needSec = null, needFrom = null;
+      for (let i = 1; i < mine.length; i++) {
+        const g = (new Date(mine[i][key]).getTime() - new Date(mine[i - 1][key]).getTime()) / 1000;
+        if (maxGapSec == null || g > maxGapSec) {
+          maxGapSec = g;
+          const ref = prodInfo(isOpen ? mine[i - 1] : mine[i]) || prodInfo(isOpen ? mine[i] : mine[i - 1]);
+          needSec = ref?.sec ?? null; needFrom = ref?.from ?? null;
+        }
+      }
+      return { members: mine, maxGapSec, needSec, needFrom };
+    };
+    const open = clusterOf('opened_at'), close = clusterOf('confirmed_at');
+    // หลักฐานหลักที่จะโชว์ = ชุดที่มีใบเยอะกว่า (ขาเปิด/ขาปิด)
+    const evidence = [open, close].filter(c => c.members.length > 1)
+      .sort((a, b) => b.members.length - a.members.length)[0] || null;
+    return { open, close, evidence };
+  }, [sel, trace]);
+
   /* ── timeline เหตุการณ์รวม เรียงตามเวลา ── */
   const timeline = useMemo(() => {
     if (!sel || !trace) return [];
@@ -280,7 +403,12 @@ export default function OrderTrace() {
       if (a == null) return false;
       return a <= (oEnd ?? Infinity) && (b ?? a) >= oStart;
     };
-    if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `เปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}` });
+    // ⚠️ เปิด/ปิด = "เวลาสแกน" ไม่ใช่เวลาเริ่ม-จบผลิตจริง (พนักงานสแกนรวบหลายใบ — ดู scanBatch/orderAnalysis)
+    const batchNote = (which) => {
+      const n = scanBatch[which]?.members?.length || 0;
+      return n > 1 ? ` · 🧾 สแกนรวบ ${n} ใบ` : '';
+    };
+    if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `สแกนเปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}${batchNote('open')}` });
     trace.qtyUpdates.forEach(u => { if (!u.is_final) ev.push({ t: u.logged_at, icon: '✍️', text: `อัพเดทยอดสะสม ${u.qty_accum} (+${u.qty_delta}) โดย ${u.logged_by || '—'}` }); });
     trace.defects.filter(d => d.prod_order_id === sel.id).forEach(d => ev.push({ t: d.logged_at, icon: '🚫', warn: true, text: `NG ${d.dr_defect_types?.name_th || ''} ${d.qty_ng || 0} ชิ้น${d.qty_suspect ? ` สงสัย ${d.qty_suspect}` : ''}${d.description ? ` — ${d.description}` : ''} (${d.reported_by_name || '—'})` }));
     trace.downtimes.forEach(d => {
@@ -293,37 +421,101 @@ export default function OrderTrace() {
     });
     trace.fourM.forEach(f => ev.push({ t: f.created_at, icon: '📋', text: `4M ${f.category}${f.change_subtype ? `/${f.change_subtype}` : ''}: ${f.description || ''} (${f.status})` }));
     if (sel.reopened_at) ev.push({ t: sel.reopened_at, icon: '↩️', warn: true, text: `ถอยใบ (ครั้งที่ ${sel.reopen_count || 1}) โดย ${sel.reopened_by || '—'}` });
-    if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `ปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}` });
+    if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `สแกนปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}${batchNote('close')}` });
     trace.stockIn.forEach(x => ev.push({ t: x.created_at, icon: '📦', text: `เข้าคลัง ${x.line_name} +${Number(x.qty).toLocaleString()} (${x.created_by})` }));
     trace.stockOut.forEach(x => ev.push({ t: x.created_at, icon: '🚚', dim: true, text: `ตัดส่งลูกค้า −${Number(x.qty).toLocaleString()} · ${x.note || ''} (โดยประมาณ — ตัดจากยอดรวม mat เดียวกัน)` }));
     return ev.filter(e => e.t).sort((a, b) => new Date(a.t) - new Date(b.t));
   }, [sel, trace]);
 
-  /* ── วิเคราะห์การวิ่งของใบ: เวลาจริง − DT ทับช่วงใบ → วิ/ชิ้นจริง เทียบ CT มาตรฐาน ── */
+  /* ── วิเคราะห์การวิ่งของใบ ─────────────────────────────────────────────────
+     ⚠️ ความจริงจากข้อมูล (ตรวจ 2026-08-05): พนักงาน**สแกนเปิด/ปิดใบเป็นชุด** ไม่ใช่ใบต่อใบ
+        เช่น Assy LWR 05/08 เปิด 6 ใบภายใน 10 วินาที (10:43:21→10:43:31) · ปิด 3 ใบภายใน 51 วินาที
+     → "เปิด→ปิด" ของใบเดียว **ไม่ใช่เวลาผลิตจริงของใบนั้น** เอามาหาร qty ใบเดียว = วิ/ชิ้นเพี้ยน
+        (เคสจริง: 153.8 วิ/ชิ้น เทียบ CT 58 วิ = 38% ทั้งที่ไลน์เดินปกติ)
+     → ตรวจเจอชุด/ใบวิ่งทับ = คำนวณ**ระดับกลุ่ม** (Σ qty ของใบที่ทับช่วง ÷ ช่วงเวลารวม) แทนรายใบ
+        และไม่โชว์ตัวเลขรายใบเป็นคำตอบ (หลอก) — รายใบใช้ได้เฉพาะตอนไม่มีใบอื่นทับเลย  */
   const orderAnalysis = useMemo(() => {
     if (!sel?.opened_at || !sel?.confirmed_at || !trace) return null;
     const start = new Date(sel.opened_at).getTime(), end = new Date(sel.confirmed_at).getTime();
     if (end <= start) return null;
-    const durMin = (end - start) / 60000;
-    let dtUnpl = 0, dtPlan = 0, dtUntimed = 0;
-    trace.downtimes.forEach(d => {
-      const planned = d.dr_downtime_types?.category === 'planned';
-      if (!d.started_at) { if (!planned) dtUntimed += d.duration_min || 0; return; }
-      const a = new Date(d.started_at).getTime();
-      const b = d.ended_at ? new Date(d.ended_at).getTime() : a + (d.duration_min || 0) * 60000;
-      const ov = Math.max(0, Math.min(b, end) - Math.max(a, start)) / 60000;
-      if (planned) dtPlan += ov; else dtUnpl += ov;
-    });
-    const qty = sel.qty_ok ?? sel.qty ?? 0;
-    const netMin = Math.max(0, durMin - dtPlan - dtUnpl);
-    const netSec = qty > 0 && netMin > 0 ? netMin * 60 / qty : null;
+
+    // DT ที่ทับช่วงเวลาใดๆ (แยกนอกแผน/ตามแผน · ที่ไม่ระบุเวลาแยกไว้บอกเฉยๆ)
+    const dtIn = (s, e) => {
+      let unpl = 0, plan = 0, untimed = 0;
+      trace.downtimes.forEach(d => {
+        const planned = d.dr_downtime_types?.category === 'planned';
+        if (!d.started_at) { if (!planned) untimed += d.duration_min || 0; return; }
+        const a = new Date(d.started_at).getTime();
+        const b = d.ended_at ? new Date(d.ended_at).getTime() : a + (d.duration_min || 0) * 60000;
+        const ov = Math.max(0, Math.min(b, e) - Math.max(a, s)) / 60000;
+        if (planned) plan += ov; else unpl += ov;
+      });
+      return { unpl, plan, untimed };
+    };
+    const qtyOf = (o) => Number(o.qty_ok ?? o.qty_actual ?? o.qty) || 0;
     const stdCt = trace.product?.cycle_time_sec || null;
-    const othersOverlap = trace.sessionOrders.some(o => o.id !== sel.id && o.opened_at
-      && new Date(o.opened_at).getTime() < end && new Date(o.confirmed_at || sel.confirmed_at).getTime() > start);
-    return { durMin, dtUnpl, dtPlan, dtUntimed, qty, netMin, netSec, stdCt,
+
+    // รายใบ (ตามเวลาสแกน)
+    const durMin = (end - start) / 60000;
+    const dt = dtIn(start, end);
+    const qty = qtyOf(sel);
+    const netMin = Math.max(0, durMin - dt.plan - dt.unpl);
+    const netSec = qty > 0 && netMin > 0 ? netMin * 60 / qty : null;
+
+    // ── สแกนเป็นชุด (จาก scanBatch — เกณฑ์คำนวณจากเวลาผลิตจริง ไม่ใช่เลขตายตัว) + ใบที่วิ่งทับช่วงเดียวกัน ──
+    const sess = trace.sessionOrders || [];
+    const openBatch = scanBatch.open.members;
+    const closeBatch = scanBatch.close.members;
+    /* กลุ่ม = ใบที่วิ่ง "ต่อเนื่องเชื่อมกัน" (transitive) — ขยายช่วงจนไม่มีใบใหม่เข้ามา
+       ⚠️ ห้ามเอาแค่ใบที่ทับกับใบนี้ตรงๆ: ช่วงเวลาจะถูกดึงกว้างตามใบที่ลากเข้ามา
+          แต่ qty ไม่ได้รวมใบที่ทับกับ "ใบนั้น" อีกที → ตัวหารโตกว่าตัวตั้ง = อัตราต่ำเกินจริง
+          (เทสกับ Assy LWR 05/08: แบบทับตรงๆ ได้ 5 ใบ/ช่วง 09:14→13:38 แต่ช่วงนั้นมีของออกจริงมากกว่านั้น) */
+    const closedOrders = sess.filter(o => o.opened_at && o.confirmed_at
+      && new Date(o.confirmed_at).getTime() > new Date(o.opened_at).getTime());
+    const inGroup = new Map([[sel.id, sel]]);
+    let gStart = start, gEnd = end, grew = true;
+    while (grew) {
+      grew = false;
+      closedOrders.forEach(o => {
+        if (inGroup.has(o.id)) return;
+        const a = new Date(o.opened_at).getTime(), b = new Date(o.confirmed_at).getTime();
+        if (a < gEnd && b > gStart) { inGroup.set(o.id, o); gStart = Math.min(gStart, a); gEnd = Math.max(gEnd, b); grew = true; }
+      });
+    }
+    const groupOrders = [...inGroup.values()];
+    const hasPeers = groupOrders.length > 1;
+    const batchScan = openBatch.length > 1 || closeBatch.length > 1;
+    const groupMode = batchScan || hasPeers;
+
+    // ── ระดับกลุ่ม: ช่วงรวม + ยอดรวมของใบในกลุ่ม (สอดคล้องกัน) ──
+    let group = null;
+    if (groupMode && hasPeers) {
+      const gQty = groupOrders.reduce((s, o) => s + qtyOf(o), 0);
+      const gDt = dtIn(gStart, gEnd);
+      const gNetMin = Math.max(0, (gEnd - gStart) / 60000 - gDt.plan - gDt.unpl);
+      const gSec = gQty > 0 && gNetMin > 0 ? gNetMin * 60 / gQty : null;
+      const sameMat = groupOrders.every(o => (o.mat_no || '') === (sel.mat_no || ''));
+      // เทียบมาตรฐานแบบถ่วงน้ำหนัก (สูตรเดียวกับ P ของ OEE): Σ(qty×CT) ÷ เวลาเดินจริง
+      const ctMap = trace.ctByMat || {};
+      const missCt = groupOrders.filter(o => !ctMap[o.mat_no]);
+      const stdSec = groupOrders.reduce((s, o) => s + qtyOf(o) * (ctMap[o.mat_no] || 0), 0);
+      group = {
+        gStart, gEnd, orders: groupOrders.length, qty: gQty,
+        durMin: (gEnd - gStart) / 60000, netMin: gNetMin, dtUnpl: gDt.unpl, dtPlan: gDt.plan, sec: gSec, sameMat,
+        mats: [...new Set(groupOrders.map(o => o.mat_no).filter(Boolean))],
+        missCtN: missCt.length,
+        ratePerHr: gNetMin > 0 && gQty > 0 ? Math.round(gQty / (gNetMin / 60)) : null,
+        speedPct: (!missCt.length && stdSec > 0 && gNetMin > 0) ? Math.round(stdSec / (gNetMin * 60) * 100) : null,
+      };
+    }
+
+    return { durMin, dtUnpl: dt.unpl, dtPlan: dt.plan, dtUntimed: dt.untimed, qty, netMin, netSec, stdCt,
       speedPct: stdCt && netSec ? Math.round(stdCt / netSec * 100) : null,
-      ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null, othersOverlap };
-  }, [sel, trace]);
+      ratePerHr: netMin > 0 && qty > 0 ? Math.round(qty / (netMin / 60)) : null,
+      batchScan, openBatchN: openBatch.length, closeBatchN: closeBatch.length, groupMode, group, othersOverlap: hasPeers,
+      batchMaxGapSec: scanBatch.evidence?.maxGapSec ?? null,
+      batchNeedSec: scanBatch.evidence?.needSec ?? null, batchNeedFrom: scanBatch.evidence?.needFrom ?? null };
+  }, [sel, trace, scanBatch]);
 
   const sess = sel?.production_sessions;
   const stMeta = STATUS_META[sel?.status] || { label: sel?.status, color: 'var(--muted)' };
@@ -338,6 +530,7 @@ export default function OrderTrace() {
   };
   const fitColor = f => f == null ? 'var(--muted)' : f >= 80 ? '#22c55e' : f >= 60 ? '#f59e0b' : f >= 40 ? '#f97316' : '#ef4444';
   const fmtMin = m => m >= 60 ? `${Math.floor(m / 60)} ชม. ${Math.round(m % 60)} นาที` : `${Math.round(m)} นาที`;
+  const fmtDur = s => s == null ? '—' : s < 60 ? `${Math.round(s)} วินาที` : fmtMin(s / 60);   // วินาที → อ่านง่าย
 
   return (
     <div style={{ maxWidth: 'min(97vw, 1500px)', margin: '0 auto' }}>
@@ -360,32 +553,98 @@ export default function OrderTrace() {
           style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
           {searching ? '⏳' : 'ค้นหา'}
         </button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
+          title="สอบกลับ = ทวนสอบของที่ออกจากไลน์ไปแล้ว · ใบที่ยังผลิตอยู่จึงไม่แสดงโดยปริยาย">
+          <input type="checkbox" checked={includeOpen} style={{ width: 'auto' }}
+            onChange={e => { const v = e.target.checked; setIncludeOpen(v); doSearch(undefined, { includeOpen: v }); }} />
+          รวมใบที่กำลังผลิต
+        </label>
         {sel && <button onClick={() => { setSel(null); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>}
       </div>
 
-      {/* ── ผลค้นหา ── */}
+      {/* ── ผลค้นหา: สรุปภาพรวมก่อน แล้วตารางเต็มพื้นที่ (เห็นข้อมูลก่อนคลิกเลือกใบ) ── */}
       {!sel && results.length > 0 && (
-        <div style={{ ...card, marginBottom: 16, maxHeight: 420, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-            <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left' }}>
-              <th style={{ padding: 6 }}>PROD.NO</th><th>ชิ้นงาน</th><th>ไลน์</th><th>วัน/กะ</th><th style={{ textAlign: 'right' }}>เป้า</th><th style={{ textAlign: 'right' }}>ผลิต</th><th>สถานะ</th>
-            </tr></thead>
-            <tbody>
-              {results.map(o => (
-                <tr key={o.id} onClick={() => setSel(o)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border2)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
-                  <td style={{ padding: 6, fontWeight: 700 }}>{o.prod_no}</td>
-                  <td>{o.part_name || o.mat_no}</td>
-                  <td>{o.production_sessions?.line_name}</td>
-                  <td>{fmtDate(o.production_sessions?.work_date)} {o.production_sessions?.shift === 'night' ? '🌙' : '☀️'}</td>
-                  <td style={{ textAlign: 'right' }}>{(o.qty_target ?? o.qty)?.toLocaleString()}</td>
-                  <td style={{ textAlign: 'right' }}>{(o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : o.qty_actual)?.toLocaleString() || '—'}</td>
-                  <td><span style={{ color: (STATUS_META[o.status] || {}).color }}>{(STATUS_META[o.status] || {}).label || o.status}</span></td>
-                </tr>
+        <>
+          <div style={{ ...card, marginBottom: 10 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
+              {[
+                { l: 'ใบที่เจอ', v: sum.count.toLocaleString(), s: sum.openCount > 0 ? `กำลังผลิต ${sum.openCount}` : null },
+                { l: 'เป้ารวม', v: sum.target.toLocaleString() },
+                { l: 'ผลิตรวม', v: sum.produced.toLocaleString(), c: '#22c55e', s: sum.target > 0 ? `${Math.round(sum.produced / sum.target * 100)}% ของเป้า` : null },
+                { l: 'NG รวม', v: sum.ng.toLocaleString(), c: sum.ng > 0 ? '#ef4444' : undefined, s: sum.produced + sum.ng > 0 ? `${(sum.ng / (sum.produced + sum.ng) * 100).toFixed(2)}%` : null },
+                { l: 'ไลน์', v: sum.lines.length, s: sum.lines.slice(0, 2).join(', ') + (sum.lines.length > 2 ? ` +${sum.lines.length - 2}` : '') },
+                { l: 'ชิ้นงาน', v: sum.mats.length, s: sum.mats.slice(0, 2).join(', ') + (sum.mats.length > 2 ? ` +${sum.mats.length - 2}` : '') },
+                { l: 'วันที่ผลิต', v: sum.days.length, s: sum.days.length ? `${fmtDate(sum.days[0])} → ${fmtDate(sum.days[sum.days.length - 1])}` : null },
+              ].map(k => (
+                <div key={k.l} style={{ minWidth: 88 }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k.l}</div>
+                  <div style={{ fontSize: 19, fontWeight: 900, color: k.c || 'var(--text)', lineHeight: 1.2 }}>{k.v}</div>
+                  {k.s && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{k.s}</div>}
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
+              <div style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)', textAlign: 'right' }}>
+                รวมจาก {sum.count} ใบที่แสดง<br />👆 คลิกแถวเพื่อดูสอบกลับเต็ม
+              </div>
+            </div>
+            {sum.capped && (
+              <div style={{ marginTop: 8, fontSize: 11.5, color: '#f59e0b' }}>
+                ⚠️ แสดง 300 ใบแรกเท่านั้น (มีมากกว่านี้) — แคบช่วงวันหรือระบุ MAT/PROD.NO ให้เจาะจงขึ้นเพื่อดูครบ
+              </div>
+            )}
+          </div>
+
+          <div style={{ ...card, marginBottom: 16, padding: 0, maxHeight: 'calc(100vh - 330px)', minHeight: 260, overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1, boxShadow: 'inset 0 -1px 0 var(--border)' }}>
+                <th style={{ padding: '8px 6px' }}>PROD.NO</th><th>MAT / ชิ้นงาน</th><th>ไลน์ / เครื่อง</th><th>วัน / กะ</th><th>เปิด → ปิด</th>
+                <th style={{ textAlign: 'right' }}>เป้า</th><th style={{ textAlign: 'right' }}>ผลิต</th><th style={{ textAlign: 'right' }}>%</th>
+                <th style={{ textAlign: 'right' }}>NG</th><th style={{ textAlign: 'right' }}>OEE กะ</th><th>ผู้เปิด / ปิด</th><th>สถานะ</th>
+              </tr></thead>
+              <tbody>
+                {results.map(o => {
+                  const s = o.production_sessions || {};
+                  const tgt = Number(o.qty_target ?? o.qty) || 0;
+                  const made = Number(o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : o.qty_actual) || 0;
+                  const ng = (Number(o.qty_ng) || 0) + (Number(o.qty_suspect) || 0);
+                  const pct = tgt > 0 ? Math.round(made / tgt * 100) : null;
+                  return (
+                    <tr key={o.id} onClick={() => setSel(o)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border2)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                      <td style={{ padding: '7px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {o.prod_no}
+                        <span style={{ fontSize: 10 }}>
+                          {o.is_backfill && <span title="ยิงย้อนหลัง"> ⏪</span>}
+                          {o.reopen_count > 0 && <span title={`เคยถอยใบ ${o.reopen_count} ครั้ง`}> ↩️</span>}
+                          {o.paired_order_id && <span title="งานคู่ RH/LH"> 🔗</span>}
+                          {o.carry_over_from_session_id && <span title="ยกยอดมาจากกะก่อน"> ⏬</span>}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{o.mat_no || '—'}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{o.part_name || ''}{o.customer ? ` · ${o.customer}` : ''}</div>
+                      </td>
+                      <td>
+                        <div>{s.line_name || '—'}</div>
+                        {o.machine_no && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>⚙️ {o.machine_no}</div>}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}</td>
+                      <td style={{ whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text2)' }}>{fmtTime(o.opened_at)} → {o.confirmed_at ? fmtTime(o.confirmed_at) : '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{tgt.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{made ? made.toLocaleString() : '—'}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: pct == null ? 'var(--muted)' : pct >= 100 ? '#22c55e' : pct >= 80 ? '#f59e0b' : '#ef4444' }}>{pct == null ? '—' : `${pct}%`}</td>
+                      <td style={{ textAlign: 'right', color: ng > 0 ? '#ef4444' : 'var(--muted)', fontWeight: ng > 0 ? 700 : 400 }}>{ng || '—'}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--text2)' }}>{s.oee != null ? `${Number(s.oee).toFixed(1)}%` : '—'}</td>
+                      <td style={{ fontSize: 11, color: 'var(--muted)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {o.opened_by || '—'}{o.confirmed_by ? ` / ${o.confirmed_by}` : ''}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}><span style={{ color: (STATUS_META[o.status] || {}).color }}>{(STATUS_META[o.status] || {}).label || o.status}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       {!sel && !results.length && !searching && (
         <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>สแกนบาร์โค้ด kanban (PROD.NO) หรือพิมพ์เลข MAT/ชื่อชิ้นงาน แล้วกดค้นหา — เว้นว่างเพื่อดูใบทั้งหมดในช่วงวัน</div>
@@ -501,8 +760,59 @@ export default function OrderTrace() {
               {/* ── วิเคราะห์การวิ่งของใบ ── */}
               {orderAnalysis && (
                 <CollapseCard id="analysis" storePrefix="ot" title="⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)" count={null} defaultOpen>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิด→ปิดใบ</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
+                  {/* สแกนเป็นชุด → เวลาเปิด-ปิดรายใบไม่ใช่เวลาผลิตจริง ต้องอ่านเป็นระดับกลุ่ม */}
+                  {orderAnalysis.batchScan && (
+                    <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', fontSize: 12, color: '#f59e0b' }}>
+                      ⚠️ <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
+                      {orderAnalysis.openBatchN > 1 && <> — เปิดรวบ {orderAnalysis.openBatchN} ใบ</>}
+                      {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดรวบ {orderAnalysis.closeBatchN} ใบ</>}
+                      {orderAnalysis.batchNeedSec > 0 && (
+                        <> — สแกนห่างกันสูงสุด <b>{fmtDur(orderAnalysis.batchMaxGapSec)}</b> แต่ของที่ทำอยู่ช่วงนั้นต้องใช้เวลาผลิต ~<b>{fmtDur(orderAnalysis.batchNeedSec)}</b>
+                          {' '}({orderAnalysis.batchNeedFrom === 'ct' ? 'จาก CT มาตรฐาน' : 'จากอัตราจริงของกะ'}) → <b>ผลิตไม่ทันในช่วงนั้น</b></>
+                      )}
+                      {!orderAnalysis.batchNeedSec && <> (ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง {FALLBACK_BATCH_SEC / 60} นาที)</>}
+                      {' '}→ <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
+                    </div>
+                  )}
+
+                  {/* ระดับกลุ่ม = คำตอบหลักเมื่อมีใบวิ่งทับ/สแกนเป็นชุด */}
+                  {orderAnalysis.groupMode && orderAnalysis.group && (
+                    <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--accent)' }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>
+                        📦 ภาพรวมกลุ่มใบที่วิ่งต่อเนื่องช่วงเดียวกัน ({orderAnalysis.group.orders} ใบ
+                        {orderAnalysis.group.mats.length > 1 ? ` · ${orderAnalysis.group.mats.length} ชิ้นงาน` : ''}) — ตัวเลขที่เชื่อถือได้
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ช่วงเวลารวมของกลุ่ม</span><br />
+                          <b>{fmtTime(orderAnalysis.group.gStart)} → {fmtTime(orderAnalysis.group.gEnd)}</b>
+                          <span style={{ color: 'var(--muted)' }}> ({fmtMin(orderAnalysis.group.durMin)})</span>
+                        </div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ผลิตรวมทั้งกลุ่ม</span><br /><b>{orderAnalysis.group.qty.toLocaleString()} ชิ้น</b></div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br />
+                          <b>{fmtMin(orderAnalysis.group.netMin)}</b>{orderAnalysis.group.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.group.ratePerHr} ชิ้น/ชม.</span> : ''}
+                        </div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นเฉลี่ย (กลุ่ม){orderAnalysis.group.sameMat && orderAnalysis.stdCt ? ' vs CT' : ''}</span><br />
+                          {orderAnalysis.group.sec ? <b>{orderAnalysis.group.sec.toFixed(1)} วิ</b> : '—'}
+                          {orderAnalysis.group.sameMat && orderAnalysis.stdCt && <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span>}
+                        </div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน{orderAnalysis.group.mats.length > 1 ? ' (ถ่วงน้ำหนัก)' : ''}</span><br />
+                          {orderAnalysis.group.speedPct != null
+                            ? <b style={{ fontSize: 17, color: orderAnalysis.group.speedPct >= 95 ? '#22c55e' : orderAnalysis.group.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.group.speedPct}%</b>
+                            : <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ({orderAnalysis.group.missCtN} ชิ้นงานในกลุ่มยังไม่ตั้ง CT)</span>}
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--muted)' }}>
+                        เทียบมาตรฐาน = Σ(จำนวน × CT ของชิ้นงานนั้น) ÷ เวลาเดินสุทธิ (สูตรเดียวกับ %P ของ OEE) · หัก DT ในช่วง {Math.round(orderAnalysis.group.dtUnpl)} นาทีนอกแผน / {Math.round(orderAnalysis.group.dtPlan)} นาทีตามแผน
+                      </div>
+                    </div>
+                  )}
+
+                  {/* รายใบ — เชื่อถือได้เฉพาะตอนไม่มีใบอื่นทับ/ไม่ได้สแกนเป็นชุด */}
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
+                    {orderAnalysis.groupMode ? '📄 ตัวเลขรายใบ (อ้างอิงเวลาสแกน — ใช้ตัดสินความเร็วไม่ได้)' : '📄 ตัวเลขรายใบ'}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px', fontSize: 13, opacity: orderAnalysis.groupMode ? 0.62 : 1 }}>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิด→ปิดใบ (เวลาสแกน)</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>DT ทับช่วงใบ (นอกแผน/ตามแผน)</span><br />
                       <b style={{ color: orderAnalysis.dtUnpl > 0 ? '#ef4444' : 'var(--text)' }}>{Math.round(orderAnalysis.dtUnpl)} นาที</b>
                       <span style={{ color: 'var(--muted)' }}> / {Math.round(orderAnalysis.dtPlan)} นาที</span>
@@ -510,16 +820,18 @@ export default function OrderTrace() {
                     </div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br /><b>{fmtMin(orderAnalysis.netMin)}</b>{orderAnalysis.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.ratePerHr} ชิ้น/ชม.</span> : ''}</div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นจริง vs CT มาตรฐาน</span><br />
-                      {orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} วิ</b> : '—'}
+                      {orderAnalysis.groupMode ? <span style={{ color: 'var(--muted)' }}>— ใช้ไม่ได้</span> : (orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} วิ</b> : '—')}
                       {orderAnalysis.stdCt ? <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span> : <span style={{ color: 'var(--muted)' }}> / ไม่ตั้ง CT</span>}
                     </div>
                     <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน</span><br />
-                      {orderAnalysis.speedPct != null
-                        ? <b style={{ fontSize: 16, color: orderAnalysis.speedPct >= 95 ? '#22c55e' : orderAnalysis.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.speedPct}%</b>
-                        : <span style={{ color: 'var(--muted)' }}>— (ตั้ง CT ที่ Product Master ก่อน)</span>}
+                      {orderAnalysis.groupMode
+                        ? <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ดูค่าระดับกลุ่มด้านบน</span>
+                        : orderAnalysis.speedPct != null
+                          ? <b style={{ fontSize: 16, color: orderAnalysis.speedPct >= 95 ? '#22c55e' : orderAnalysis.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.speedPct}%</b>
+                          : <span style={{ color: 'var(--muted)' }}>— (ตั้ง CT ที่ Product Master ก่อน)</span>}
                     </div>
                   </div>
-                  {orderAnalysis.othersOverlap && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>⚠️ มีใบอื่นวิ่งทับช่วงเวลาเดียวกันในกะ — อัตรานี้เป็นภาพรวมของไลน์ช่วงนั้น ไม่ใช่ของใบนี้ล้วนๆ</div>}
+                  {!orderAnalysis.groupMode && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>✅ ไม่มีใบอื่นวิ่งทับช่วงนี้ และไม่ได้สแกนเป็นชุด — ตัวเลขรายใบใช้ได้</div>}
                 </CollapseCard>
               )}
 
