@@ -261,7 +261,7 @@
 > #### ⚠️ AM (ผลิตตรวจเอง) ≠ PM (ช่าง) — คนละงาน คนละทะเบียน (คำสั่ง user 2026-08-05)
 > ศัพท์ TPM: **`production` = AM (Autonomous Maintenance)** พนักงานผลิตดูแล/ตรวจเครื่องเองทุกต้นกะ · **ทีมช่าง (MTN/JIG MTN/DIE MTN) = PM (Preventive/Predictive · อนาคต prescriptive)** ตรวจตามรอบเวลา/ยอดผลิต · **key ใน DB ยังเป็น `production` เหมือนเดิม เปลี่ยนเฉพาะการแสดงผล**
 > - **ชื่อ/คำอธิบายอยู่ที่ `src/utils/pmTeams.js` จุดเดียว** — `DEFAULT_TEAMS` label `production` = "AM (ผลิตตรวจเอง)" + `teamKind(key)` คืน `{short, full, desc}` (AM_KIND/PM_KIND) · **หน้าใดที่โชว์ชื่อทีมให้เรียก `teamKind()` มาอธิบาย ห้าม hardcode คำว่า "PM ฝ่ายผลิต"** · ใช้แล้วที่ PMSetup + PMCheckData (บรรทัดใต้แท็บ) · DailyPM/DailyChecker ใช้ชื่อ AM อยู่แล้วตั้งแต่ 2026-07-23
-> - `mtn_teams` **ยังไม่ apply จริง** (ตารางไม่มีใน DR — โค้ดวิ่งด้วย `DEFAULT_TEAMS` ตลอด) จึงแก้ label ในไฟล์ seed `20260722_mtn_teams.sql` ให้ตรงกันไว้เลย · ถ้าวันหน้า apply แล้วอยากเปลี่ยนชื่อ ให้แก้ที่ตาราง
+> - `mtn_teams` **apply แล้ว** (ตรวจ 2026-08-06 — เอกสารเดิมเขียนว่ายังไม่ apply ซึ่งไม่จริงแล้ว) → **เปลี่ยนชื่อทีมให้แก้ที่ตาราง `mtn_teams.dept_name`** ไม่ต้องแก้โค้ด · `DEFAULT_TEAMS` เหลือเป็น fallback ตอนโหลดไม่ทัน/ตารางล่ม
 >
 > #### ⚠️ 2 หน้า PM ฝั่งผลิตใช้เกณฑ์คนละอย่าง — เคยดูเหมือนข้อมูลหาย (2026-08-05)
 > | หน้า | ลิสต์อะไร | เกณฑ์ |
@@ -290,7 +290,15 @@
 
 - **DEPT_LABEL (`src/lib/pmSchedule.js`) เปลี่ยนชื่อแสดงผลให้ตรงฝั่งแจ้งซ่อม** (MTN/JIG MTN/DIE MTN/PRODUCTION แทน "ซ่อมบำรุง/Die Maintenance/ฝ่ายผลิต") · key เดิมคงไว้
 - **MtnRepair dropdown "แจ้งถึงทีมช่าง"/ฟิลเตอร์/master ดึงจาก `pmTeamsSync().dept_name` (data-driven จาก `mtn_teams`) แล้ว (2026-07-24)** — เลิก hardcode `MTN_DEPTS` (เหลือเป็น fallback default ในลายเซ็น component เท่านั้น เท่ากับ `DEFAULT_TEAMS` ให้พฤติกรรมเดิมเมื่อ table ว่าง) · `loadPmTeams()` เรียกตอน mount → `setMtnDepts` แล้วส่งผ่าน `cp` ไปทุก sub-component · เพิ่ม/แก้ทีมที่ตาราง `mtn_teams` dropdown ตามทันที
-- **ยังเหลือ:** MtnRepair ใช้ `mtn_dept` (ชื่อ "JIG MTN") ยังเก็บ value คนละแบบกับ `checklists.department` ("jig_maintenance") — `mtn_teams.dept_name` เป็นตัวโยง 2 ฝั่ง (ถ้าจะรวม value ให้ตรงกันจริงต้อง migrate data ทีหลัง) · UI จัดการทีม (เพิ่ม/แก้ row) = future (ตอนนี้แก้ผ่านตาราง)
+> #### ⚠️ กฎเหล็ก — ทีมช่างเก็บเป็น "รหัส" แสดงเป็น "ชื่อ" (unify แล้ว 2026-08-06)
+> เดิมมี **2 encoding ปนกัน**: ฝั่งใบซ่อมเก็บชื่อ (`mtn_orders.mtn_dept = 'JIG MTN'`) ฝั่ง PM เก็บรหัส (`checklists.department = 'jig_maintenance'`) → เทียบ/join ข้ามฝั่งตรงๆ ไม่ได้ ต้องพึ่ง normalize ตลอด
+> **รวมเป็นรหัส (`mtn_teams.key`) หมดแล้วทั้ง 2 project** — migration `20260806_unify_team_encoding_dr.sql` + `_main.sql` (**apply แล้ว**): DR = `mtn_orders.mtn_dept`/`returned_from_dept`, `mtn_technicians.dept`, `mtn_labor_rates.dept`, คอลัมน์ `team` ทุกตัว · Main = `telegram_channels.team`, `profiles.mtn_teams[]`
+> - **เหตุผล:** ชื่อทีมเปลี่ยนได้ (เคยเปลี่ยน PRODUCTION → "AM (ผลิตตรวจเอง)") ถ้าเก็บชื่อ ข้อมูลเก่ากำพร้าทันที — หลักเดียวกับ role / process_type / line_type ทั้งระบบ
+> - **เขียน DB = `teamKeyOf(x)` เสมอ · แสดงผล = `deptNameOf(x)` เสมอ** (`src/utils/mtnTeams.js`) · dropdown ใช้ `teamOptions()` (`value` = key, ข้อความ = ชื่อ) หรือ `<TeamOpts>` ใน MtnRepair — **ห้ามเอาชื่อทีมไปเก็บลง DB อีก**
+> - `teamForItem` / `teamForSection` / `teamsForUser` / `MTN_TEAMS` **คืน key ทั้งหมดแล้ว** (เดิมคืนชื่อ)
+> - helper ยัง normalize ชื่อ→รหัสต่อไป (ข้อมูลที่ export/พิมพ์ไว้ก่อน หรือคนกรอกมือ อาจยังเป็นชื่อ) — **ห้ามถอด `teamKeyOf` ออกเพราะคิดว่า data สะอาดแล้ว**
+> - **⚠️ edge function ยังไม่ deploy (2026-08-06)** — ซอร์สแก้แล้ว (`send-mtn-notification` + `mtn-daily-summary`: normalize ตอนจัดกลุ่ม + `teamName()` ตอนแสดง) แต่ยังไม่ push ขึ้น Supabase · **routing ไม่กระทบ** (ตัวที่ deploy อยู่มี `teamKey()` normalize แล้ว) · ผลที่เห็น: **สรุปงานซ่อมค้าง 09:00 จะโชว์ `jig_maintenance` แทน `JIG MTN`** จนกว่าจะ deploy · ใบแจ้งซ่อมรายใบไม่กระทบ เพราะ client ส่ง**ชื่อทีม**ไปใน payload ให้แล้ว (`notifyMtn` — ถูกต้องทั้ง edge เก่าและใหม่)
+- **ยังเหลือ:** UI จัดการทีม (เพิ่ม/แก้ row ใน `mtn_teams`) = future (ตอนนี้แก้ผ่านตาราง) — แต่ **`mtn_teams` apply จริงแล้ว** (ตรวจ 2026-08-06 · เอกสารเก่าเขียนว่ายังไม่ apply = ไม่จริงแล้ว)
 
 > ### ⚠️ กฎเหล็ก — "ตัวตนอุปกรณ์ = ของกลาง · รายละเอียด = มุมมองของแต่ละทีม" (2026-08-06 · คำสั่ง user)
 > ระบบช่าง **4 ทีมใช้ร่วมกัน** (MTN / JIG MTN / DIE MTN / PRODUCTION) — สิ่งที่ต้อง "ตรงกัน" มีแค่**ตัวตนของอุปกรณ์**
