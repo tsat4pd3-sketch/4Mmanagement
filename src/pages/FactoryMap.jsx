@@ -168,27 +168,37 @@ const estLabelPx = (name, txt, big) => {
 };
 const boxHit = (a, b, pad = 0.35) =>
   a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
-// วางกล่องที่ candidate แรกที่ว่าง (candidate ที่หลุดขอบผัง = ข้าม — ป้ายต้องอยู่ใกล้ไลน์ตัวเอง)
-// ไม่มีที่ว่างเลย → ไล่หาที่ว่างแนวตั้งรอบตำแหน่งแรก ลงก่อนแล้วขึ้น
-// ⚠️ ต้องหยุดเมื่อชนขอบผัง — ยอมให้ป้ายทับกันดีกว่าดันจนป้ายหลุดออกนอกรูป (เจอตอนเทสกับกรอบจริง)
-// คืน null = ไม่มีที่ว่างจริงบนผังนี้ (จอแคบ) → ไม่วาดป้ายนั้น แล้วไปนับบอกบนจอแทน
-const placeBox = (cands, w, h, placed, maxY) => {
-  for (const c of cands) {
-    const b = { x: c.x, y: c.y, w, h };
-    if (b.x < -0.5 || b.x + b.w > 100.5 || b.y < -0.5 || b.y + b.h > maxY + 0.5) continue;
-    if (!placed.some(p => boxHit(b, p))) return b;
-  }
-  const bx = Math.min(Math.max(cands[0].x, 0.3), Math.max(0.3, 100 - w - 0.3));
-  const by = Math.min(Math.max(cands[0].y, 0.3), Math.max(0.3, maxY - h - 0.3));
-  for (const dir of [1, -1]) {
-    for (let i = 1; i <= 12; i++) {
-      const y = by + dir * i * (h + 0.4);
-      if (y < 0.3 || y + h > maxY - 0.3) break;
-      const b = { x: bx, y, w, h };
-      if (!placed.some(p => boxHit(b, p))) return b;
+/* วางกล่องป้าย — กติกาสำคัญที่สุดคือ **ป้ายต้องอยู่ติด/ใกล้กรอบของตัวเอง**
+   ลำดับ: (1) ตำแหน่งที่ติดกรอบ (บน/ล่าง/ซ้าย/ขวา + เลื่อนชิดซ้าย-ขวาตามขอบ)
+          (2) ขยับออกทีละขั้น แต่ **ห้ามเกิน MAX_AWAY** — ที่ขยับออกมาจะถูกลากเส้นโยงกลับกรอบ
+          (3) หาไม่เจอ: จอกว้าง = กลับไปตำแหน่งธรรมชาติ (ยอมทับนิดดีกว่าลอยหนี)
+                       จอแคบ = คืน null ไม่วาด แล้วไปนับบอกบนจอ
+   ⚠️ ห้ามปล่อยให้ขยับได้ไม่จำกัด — เคยดันแนวตั้งได้ถึง 12 แถว ป้ายไปโผล่ห่างกรอบตัวเอง 213px
+      (user ทัก 2026-08-06 "ตำแหน่งมั่ว เด้งไปไกลจากไลน์") · วัดแล้ว MAX_AWAY 9 หน่วยคือจุดคุ้ม:
+      จอ 1800px ทับ 0 · 1250px ทับ 2 · ไกลสุด ~90px (มีเส้นโยงกำกับ) */
+const MAX_AWAY = 9;
+const gapToBox = (b, bb) => {
+  const dx = Math.max(bb.x0 - (b.x + b.w), b.x - bb.x1, 0);
+  const dy = Math.max(bb.y0 - (b.y + b.h), b.y - bb.y1, 0);
+  return Math.hypot(dx, dy);
+};
+const placeBox = (cands, w, h, placed, maxY, bb, allowDrop, isLast) => {
+  const ok = (b) => b.x >= -0.5 && b.x + b.w <= 100.5 && b.y >= -0.5 && b.y + b.h <= maxY + 0.5
+    && !placed.some(p => boxHit(b, p));
+  for (const c of cands) { const b = { x: c.x, y: c.y, w, h }; if (ok(b)) return b; }
+  if (!isLast) return null;                       // ยังย่อข้อความได้อีก → ลองระดับถัดไปก่อน อย่าเพิ่งขยับป้าย
+  for (let i = 1; i <= 6; i++) {
+    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+      const b = { x: cands[0].x + dx * i * w * 0.55, y: cands[0].y + dy * i * (h + 0.4), w, h };
+      if (ok(b) && gapToBox(b, bb) <= MAX_AWAY) return b;
     }
   }
-  return null;
+  if (allowDrop) return null;                     // จอแคบ: ไม่วาด แล้วไปนับบอกบนจอ
+  return {                                        // จอกว้าง: กลับตำแหน่งธรรมชาติ ยอมทับนิดดีกว่าลอยหนีกรอบ
+    x: Math.min(Math.max(cands[0].x, 0.3), Math.max(0.3, 100 - w - 0.3)),
+    y: Math.min(Math.max(cands[0].y, 0.3), Math.max(0.3, maxY - h - 0.3)),
+    w, h,
+  };
 };
 // ผังแคบกว่านี้ = ย่อข้อความบนป้าย (มือถือ/แท็บเล็ตแนวตั้ง) — PC/จอ TV กว้างกว่านี้เสมอ จึงได้ข้อมูลครบ
 const COMPACT_W = 820;
@@ -968,60 +978,77 @@ export default function FactoryMap({ setupMode = false }) {
     const maxY = 100 / aspect;                   // ความสูงผังในหน่วย N
     const g = toN(5);                            // ระยะห่างขั้นต่ำจากขอบกรอบ
     const placed = [];
-    // ไลน์ที่มีปัญหาได้เลือกที่ก่อน — จอแคบมีที่ไม่พอทุกใบ ตัวที่ต้องรีบเห็นต้องรอด
+    // ไลน์ที่มีปัญหาได้เลือกที่ก่อน — ที่ไม่พอทุกใบ ตัวที่ต้องรีบเห็นต้องรอด
     const RANK = { down: 5, bad: 4, waiting: 3, ok: 2, good: 1, idle: 0 };
     const sev = (name) => RANK[regCat(stOf(name))] ?? 0;
+    /* ป้ายที่ขยับออกจากกรอบต้องมีเส้นโยงกลับ ไม่งั้นดูไม่ออกว่าเป็นของไลน์ไหน
+       (พิกัดเส้นเป็นหน่วยผังจริง: x = % ความกว้าง, y = % ความสูง) */
+    const linkOf = (b, bb) => {
+      if (gapToBox(b, bb) < 0.6) return null;
+      const lx = Math.min(Math.max((bb.x0 + bb.x1) / 2, b.x), b.x + b.w);
+      const ly = Math.min(Math.max((bb.y0 + bb.y1) / 2, b.y), b.y + b.h);
+      return { x1: lx, y1: ly * aspect, x2: (bb.x0 + bb.x1) / 2, y2: (bb.y0 + bb.y1) / 2 * aspect };
+    };
+    /* ⭐ กติกาหลัก: "ตำแหน่งสำคัญกว่ารายละเอียด"
+       ป้ายใหญ่กว่ากรอบตัวเองหลายเท่า (กรอบ Laser GOR กว้าง ~54px แต่ป้ายกว้าง ~180px)
+       → จะวางให้ติดกรอบทุกใบโดยไม่ทับกันเป็นไปไม่ได้ถ้ายืนกรานข้อความเต็มทุกใบ
+       ลำดับที่ใช้: ลองข้อความเต็มทุกตำแหน่งที่ติดกรอบก่อน → ไม่ได้ค่อยย่อข้อความ → ชื่ออย่างเดียว
+       → สุดท้ายถึงยอมขยับออก (มีเส้นโยง) — ห้ามสลับลำดับ (เคยให้ตำแหน่งยืดหยุ่นก่อน
+       ผลคือป้ายลอยห่างกรอบตัวเอง 213px user ทัก "ตำแหน่งมั่ว" 2026-08-06)
+       วัดกับกรอบจริง: จอ 1800px ข้อมูลเต็มครบ 27/27 ทับ 0 ไม่มีใบไหนต้องขยับ */
+    const place = (bbPts, big, levels) => {
+      const xs = bbPts.map(p => p[0]), ys = bbPts.map(p => p[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs);
+      const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
+      const cyn = (y0 + y1) / 2, bb = { x0, x1, y0, y1 };
+      for (let lvl = 0; lvl < levels.length; lvl++) {
+        const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big);
+        const w = Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
+        const cands = big
+          ? [ // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
+              { x: bx, y: y1 + g }, { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },
+              { x: bx, y: y0 - h - g }, { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },
+              { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
+              { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
+              { x: x1 + g, y: y0 - h - g }, { x: x0 - w - g, y: y0 - h - g }]
+          : [ // ทุกตัวเลือกติดกรอบของตัวเอง — มี "เลื่อนชิดซ้าย/ขวาตามขอบ" ให้หลบเพื่อนบ้านโดยไม่หนีออกจากกรอบ
+              { x: bx, y: y0 + toN(2) }, { x: x0, y: y0 + toN(2) }, { x: x1 - w, y: y0 + toN(2) },
+              { x: bx, y: y0 - h - g }, { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },
+              { x: bx, y: y1 - h - toN(2) }, { x: x0, y: y1 - h - toN(2) }, { x: x1 - w, y: y1 - h - toN(2) },
+              { x: bx, y: y1 + g }, { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },
+              { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
+              { x: bx, y: y0 + h + g }, { x: bx, y: cyn - h / 2 }];
+        const last = lvl === levels.length - 1;
+        const box = placeBox(cands, w, h, placed, maxY, bb, last && compactLbl, last);
+        if (box) { placed.push(box); return { ...box, lvl, link: linkOf(box, bb) }; }
+      }
+      return null;
+    };
 
-    /* ป้ายกลุ่มวางก่อนป้ายไลน์ (2026-08-06) — ยอดรวมทั้ง family สำคัญกว่ารายไลน์
-       เทสกับกรอบจริง: วางกลุ่มก่อน ผังแคบเสียป้ายน้อยลงชัดเจน (760px ครบ 27/27 · 640px 23 แทน 20)
-       และไม่ทำให้จอใหญ่แย่ลงเลย (1250/1800px ยังครบ ทับ 0) */
+    /* ป้ายกลุ่มวางก่อนป้ายไลน์ — ยอดรวมทั้ง family สำคัญกว่ารายไลน์
+       เทสกับกรอบจริง: วางกลุ่มก่อน ผังแคบเสียป้ายน้อยลงชัดเจน และจอใหญ่ไม่แย่ลงเลย */
     [...autoHulls]
       .sort((a, b) => sev(b.name) - sev(a.name) || polyArea(b.hull) - polyArea(a.hull))
       .forEach(hh => {
-        const kids = (childrenOf[hh.name] || []).length;
-        const { w: wpx, h: hpx } = estLabelPx(`▣ ${hh.name}${compactLbl ? '' : `  ${kids} ไลน์`}`, lblText(stOf(hh.name)), true);
-        const w = Math.min(toN(wpx), 36), h = toN(hpx);
-        const xs = hh.hull.map(p => p[0]), ys = hh.hull.map(p => p[1]);
-        const x0 = Math.min(...xs), x1 = Math.max(...xs);
-        const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
-        const bx = (x0 + x1) / 2 - w / 2, cyn = (y0 + y1) / 2;
-        // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
-        const box = placeBox([
-          { x: bx, y: y1 + g },
-          { x: bx, y: y0 - h - g },
-          { x: x1 + g, y: cyn - h / 2 },
-          { x: x0 - w - g, y: cyn - h / 2 },
-          { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },          // ชิดมุมล่างซ้าย/ขวา
-          { x: bx, y: y1 + g + h + 0.4 },                          // ใต้กรอบ ถัดลงมาอีกแถว
-          { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },  // ชิดมุมบนซ้าย/ขวา
-          { x: bx, y: y0 - 2 * h - g - 0.4 },
-          { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
-        ], w, h, placed, maxY);
-        if (box) { placed.push(box); out.hull[hh.name] = box; }
-        else out.hidden.push(hh.name);
+        const st = stOf(hh.name), kids = (childrenOf[hh.name] || []).length;
+        const full = lblText(st), sh = shortText(st);
+        const levels = [{ name: `▣ ${hh.name}${compactLbl ? '' : `  ${kids} ไลน์`}`, txt: full }];
+        if (sh !== full) levels.push({ name: `▣ ${hh.name}`, txt: sh });
+        if (levels[levels.length - 1].txt !== '') levels.push({ name: `▣ ${hh.name}`, txt: '' });
+        const box = place(hh.hull, true, levels);
+        if (box) out.hull[hh.name] = box; else out.hidden.push(hh.name);
       });
 
     [...regions]
       .sort((a, b) => sev(b.line_name) - sev(a.line_name) || polyArea(b.points) - polyArea(a.points))
       .forEach(r => {
-        const { w: wpx, h: hpx } = estLabelPx(r.line_name, lblText(stOf(r.line_name)), false);
-        const w = Math.min(toN(wpx), 34), h = toN(hpx);
-        const xs = r.points.map(p => p[0]), ys = r.points.map(p => p[1]);
-        const x0 = Math.min(...xs), x1 = Math.max(...xs);
-        const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
-        const bx = (x0 + x1) / 2 - w / 2, cyn = (y0 + y1) / 2;
-        const box = placeBox([
-          { x: bx, y: y0 + toN(2) },            // เดิม: เกาะขอบบนด้านใน (ตำแหน่งที่อยากได้ที่สุด)
-          { x: bx, y: y0 - h - g },             // เหนือกรอบ
-          { x: bx, y: y1 - h - toN(2) },        // เกาะขอบล่างด้านใน
-          { x: bx, y: y1 + g },                 // ใต้กรอบ
-          { x: x1 + g, y: cyn - h / 2 },        // ขวากรอบ
-          { x: x0 - w - g, y: cyn - h / 2 },    // ซ้ายกรอบ
-          { x: bx, y: y0 + h + g },             // ในกรอบ ถัดลงมา 1 แถว
-          { x: bx, y: cyn - h / 2 },            // กลางกรอบ
-        ], w, h, placed, maxY);
-        if (box) { placed.push(box); out.region[r.id] = box; }
-        else out.hidden.push(r.line_name);
+        const st = stOf(r.line_name);
+        const full = lblText(st), sh = shortText(st);
+        const levels = [{ name: r.line_name, txt: full }];
+        if (sh !== full) levels.push({ name: r.line_name, txt: sh });
+        if (levels[levels.length - 1].txt !== '') levels.push({ name: r.line_name, txt: '' });
+        const box = place(r.points, false, levels);
+        if (box) out.region[r.id] = box; else out.hidden.push(r.line_name);
       });
     return out;
     // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
@@ -1230,6 +1257,16 @@ export default function FactoryMap({ setupMode = false }) {
               {drawing && draft.length > 0 && (
                 <polyline points={ptsStr(hoverPt ? [...draft, hoverPt] : draft)} fill={snapFirst ? 'rgba(34,197,94,0.18)' : 'rgba(77,159,255,0.12)'} stroke={snapFirst ? '#22c55e' : '#4d9fff'} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="3 2" />
               )}
+              {/* เส้นโยงป้าย↔กรอบ — เฉพาะป้ายที่ต้องขยับออกจากกรอบเพื่อหลบป้ายอื่น
+                  (ป้ายที่ยังติดกรอบไม่มีเส้น จะได้ไม่รกโดยไม่จำเป็น) */}
+              {!editing && [
+                ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
+                ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
+              ].filter(([l]) => l).map(([l, color, key]) => (
+                <line key={key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                  stroke={color} strokeWidth="1.2" strokeDasharray="3 2" opacity={0.55}
+                  vectorEffect="non-scaling-stroke" pointerEvents="none" />
+              ))}
             </svg>
 
             {drawing && draft.map((pt, i) => (
@@ -1241,8 +1278,10 @@ export default function FactoryMap({ setupMode = false }) {
             {!editing && autoHulls.map(h => {
               const box = labelLayout.hull[h.name];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → นับไปบอกบนจอแทน (ห้ามวาดทับ)
-              const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = lblText(st);
-              const kids = compactLbl ? 0 : (childrenOf[h.name] || []).length;
+              const st = stOf(h.name); const meta = CAT[regCat(st)];
+              // ข้อความตามระดับที่ layout เลือกไว้ (ที่ไม่พอ = ย่อลง แทนที่จะทับ/ลอยหนีกรอบ)
+              const txt = !box || box.lvl === 0 ? lblText(st) : box.lvl === 1 ? shortText(st) : '';
+              const kids = (compactLbl || (box && box.lvl > 0)) ? 0 : (childrenOf[h.name] || []).length;
               const posStyle = box
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
                 : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
@@ -1267,7 +1306,8 @@ export default function FactoryMap({ setupMode = false }) {
               const box = labelLayout.region[r.id];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้
               const [cx, cy] = labelAnchor(r.points);
-              const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = lblText(st);
+              const st = stOf(r.line_name); const meta = CAT[regCat(st)];
+              const txt = !box || box.lvl === 0 ? lblText(st) : box.lvl === 1 ? shortText(st) : '';
               const parent = parentOf[r.line_name];
               const posStyle = box
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
