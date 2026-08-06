@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useMemo, startTransition } from 'react';
+import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -13,6 +13,11 @@ import {
 } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
+import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL } from '../utils/skillLevels';
+
+// การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
+// lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
+const SkillRadarPanel = lazy(() => import('../components/SkillRadarPanel'));
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -33,17 +38,8 @@ function resizeImage(file, maxPx = 1280, quality = 0.85) {
   });
 }
 
-// 5-level standard matching factory requirements
-const SKILL_LEVELS = [
-  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)',  band: 4, desc: 'ผ่านอบรมเฉพาะทาง + สอบ' },
-  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)',   band: 3, desc: 'ทำงานได้ + แก้ไขปัญหา' },
-  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)',  band: 2, desc: 'ทำงานตามมาตรฐานอิสระ' },
-  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  band: 1, desc: 'OJT แล้ว ยังต้องดูแล' },
-  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)',   band: 0, desc: 'ต้องผ่านการ OJT ก่อน' },
-];
-const SKILL_GATES = [25, 50, 75, 100]; // levels requiring approval
-const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
-const getBandCeiling = (score) => score < 25 ? 24 : score < 50 ? 49 : score < 75 ? 74 : 99;
+/* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
+   — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
 
 const EMP_GRADES = {
   gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
@@ -74,6 +70,8 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
+  const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
+  const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
@@ -110,6 +108,13 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
+    supabase.from('skill_sub_items').select('skill_name, seq, label, wi_ref').order('seq')
+      .then(({ data }) => {
+        if (!alive) return;
+        const map = {};
+        (data || []).forEach(r => { (map[r.skill_name] ||= []).push(r); });
+        setSubItemsByskill(map);
+      });
     supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (!alive) return;
@@ -655,6 +660,7 @@ export default function Operator() {
                 : `❌ ปิดใช้งาน (${inactiveEmployees.length})`}
               <ToggleDot on={showInactive} />
             </button>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
           </div>
 
           {/* Scroll hint chip */}
@@ -715,8 +721,14 @@ export default function Operator() {
                 {displayed.map(emp => {
                   const grade = getEmpGrade(emp.employee_id_code);
                   return (
-                  <tr key={emp.id} style={!emp.is_active ? { opacity: 0.5 } : {}}>
-                    <td style={{ position: 'sticky', left: 0, background: !emp.is_active ? 'var(--bg2)' : 'var(--bg2)', zIndex: 1 }}>
+                  // คลิกทั้งแถว = เปิดการ์ดสรุปทักษะ (pattern เดียวกับตาราง Skill Matrix)
+                  // — คอลัมน์จัดการ stopPropagation ไว้ ปุ่ม ✏️/🚫 จึงทำงานเหมือนเดิม
+                  <tr key={emp.id} onClick={() => setRadarEmp(emp)}
+                    title={`ดูสรุปทักษะของ ${emp.name}`}
+                    style={{ cursor: 'pointer', transition: 'background 0.15s', ...(!emp.is_active ? { opacity: 0.5 } : {}) }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                    onMouseLeave={e => e.currentTarget.style.background = ''}>
+                    <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
                         background: !emp.is_active ? 'var(--border2)' : grade.gradient,
@@ -800,7 +812,9 @@ export default function Operator() {
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px' }}>
+                    {/* กันคลิกปุ่มไปเปิดการ์ดสรุปทักษะของแถว (row click ด้านบน) */}
+                    <td onClick={e => e.stopPropagation()} title=""
+                      style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px', cursor: 'default' }}>
                       {emp.is_active ? (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
                           {can('employees', 'edit', role) && (
@@ -853,13 +867,7 @@ export default function Operator() {
       )}
 
       {tab === 1 && (() => {
-        const CAT_META = {
-          hard_skill:      { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
-          machine_skill:   { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
-          product_skill:   { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
-          soft_skill:      { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
-          allowance_skill: { label: 'ใบเซอร์ค่าฝีมือ', color: '#22c55e', icon: '🎫', desc: 'มี/ไม่มี — ใช้ตัดสินสิทธิ์ค่าฝีมือ' },
-        };
+        const CAT_META = SKILL_CAT_META_FULL;   // 4 หมวดทักษะ + ใบเซอร์ค่าฝีมือ (utils/skillLevels.js)
         const grouped = Object.entries(CAT_META).map(([k, m]) => ({
           key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
         })).filter(g => g.skills.length > 0 || true);
@@ -1191,6 +1199,19 @@ export default function Operator() {
         </div>
       )}
 
+      {/* การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (radar + พิมพ์ใบ F-PRS-P1-119) */}
+      {radarEmp && (
+        <Suspense fallback={null}>
+          <SkillRadarPanel
+            emp={radarEmp}
+            skillDefs={skillDefs}
+            subItemsByskill={subItemsByskill}
+            lines={lines}
+            onClose={() => setRadarEmp(null)}
+          />
+        </Suspense>
+      )}
+
       {editingEmp && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(1360px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -1336,15 +1357,9 @@ export default function Operator() {
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
                 <label style={{ ...labelSt, marginBottom: 12, display: 'block' }}>📊 ระดับทักษะ</label>
                 {(() => {
-                  const CAT_META = {
-                    hard_skill:      { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
-                    machine_skill:   { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
-                    product_skill:   { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
-                    soft_skill:      { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
-                    allowance_skill: { label: 'ใบเซอร์ค่าฝีมือ', color: '#22c55e', icon: '🎫' },
-                  };
-                  const grouped = Object.entries(CAT_META).map(([k, m]) => ({
-                    key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+                  // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
+                  const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
+                    key: k, ...m, desc: null, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
                   })).filter(g => g.skills.length > 0);
                   return grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
