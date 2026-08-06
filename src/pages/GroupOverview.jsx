@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal } from '../utils/pairTotals';
 import useIsMobile from '../utils/useIsMobile';
+import WorldFactoryMap from '../components/WorldFactoryMap';
 import ThailandZoneMap from '../components/ThailandZoneMap';
 import { LINE_TYPES } from '../utils/lineTypes';
 
@@ -61,11 +62,13 @@ const ORG = {
       key: 'amf', name: 'Automotive Metal Forming', short: 'Metal Forming', icon: '🔩',
       desc: 'ชิ้นส่วนโลหะยานยนต์ — ปั๊มขึ้นรูป / เชื่อมประกอบ',
       companies: [
-        { key: 'tsat1', code: 'TSAT1', name: 'Thai Summit Autoparts 1', region: 'บางปู · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.53, lon: 100.64, qtyF: 1.28, oeeD: 2.5, dtF: 0.85, ngF: 0.8, keep: 0.9 },
-        { key: 'tsat4', code: 'TSAT4', name: 'Thai Summit Autoparts 4 (บริษัทเรา)', region: 'บ้านโพธิ์ · ฉะเชิงเทรา', flag: '🇹🇭', zone: 'bangna', lat: 13.58, lon: 101.08, real: true },
-        { key: 'tsla', code: 'TSLA', name: 'Thai Summit Laemchabang', region: 'แหลมฉบัง · ชลบุรี', flag: '🇹🇭', zone: 'east', lat: 13.08, lon: 100.92, qtyF: 0.92, oeeD: -4.5, dtF: 1.3, ngF: 1.4, keep: 0.8 },
-        { key: 'tsesa', code: 'TSESA', name: 'Thai Summit Eastern Seaboard', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.92, lon: 101.14, qtyF: 1.05, oeeD: -1.5, dtF: 1.1, ngF: 1.1, keep: 0.85 },
-        { key: 'tsrf', code: 'TSRF', name: 'Thai Summit Rayong Forming', region: 'นิคมฯ มาบตาพุด · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.70, lon: 101.32, qtyF: 0.7, oeeD: -8.5, dtF: 1.6, ngF: 1.8, keep: 0.6 },
+        { key: 'tsat1', code: 'TSAT1', name: 'Thai Summit Autoparts 1', region: 'บางปู · สมุทรปราการ', flag: '🇹🇭', cc: 'TH', zone: 'bangna', lat: 13.53, lon: 100.64, qtyF: 1.28, oeeD: 2.5, dtF: 0.85, ngF: 0.8, keep: 0.9 },
+        { key: 'tsat4', code: 'TSAT4', name: 'Thai Summit Autoparts 4 (บริษัทเรา)', region: 'บ้านโพธิ์ · ฉะเชิงเทรา', flag: '🇹🇭', cc: 'TH', zone: 'bangna', lat: 13.58, lon: 101.08, real: true },
+        { key: 'tsla', code: 'TSLA', name: 'Thai Summit Laemchabang', region: 'แหลมฉบัง · ชลบุรี', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 13.08, lon: 100.92, qtyF: 0.92, oeeD: -4.5, dtF: 1.3, ngF: 1.4, keep: 0.8 },
+        { key: 'tsesa', code: 'TSESA', name: 'Thai Summit Eastern Seaboard', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 12.92, lon: 101.14, qtyF: 1.05, oeeD: -1.5, dtF: 1.1, ngF: 1.1, keep: 0.85 },
+        { key: 'tsrf', code: 'TSRF', name: 'Thai Summit Rayong Forming', region: 'นิคมฯ มาบตาพุด · ระยอง', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 12.70, lon: 101.32, qtyF: 0.7, oeeD: -8.5, dtF: 1.6, ngF: 1.8, keep: 0.6 },
+        { key: 'tsam', code: 'TSAM', name: 'Thai Summit America', region: 'Howell, Michigan · สหรัฐฯ', flag: '🇺🇸', cc: 'US', zone: 'usa', lat: 42.61, lon: -83.93, qtyF: 0.95, oeeD: 4.0, dtF: 0.7, ngF: 0.6, keep: 0.7 },
+        { key: 'tscn', code: 'TSCN', name: 'Thai Summit China', region: 'Guangzhou · จีน', flag: '🇨🇳', cc: 'CN', zone: 'china', lat: 23.13, lon: 113.26, qtyF: 1.45, oeeD: 1.0, dtF: 0.95, ngF: 1.0, keep: 0.9 },
       ],
     },
     {
@@ -77,9 +80,10 @@ const ORG = {
         { n: 'ASSY PLASTIC 1', t: 'assembly' }, { n: 'ASSY PLASTIC 2', t: 'assembly' }, { n: 'TRIM & WELD', t: 'assembly' },
       ],
       companies: [
-        { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'บางพลี · สมุทรปราการ', flag: '🇹🇭', zone: 'bangna', lat: 13.61, lon: 100.75, qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
-        { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', zone: 'east', lat: 12.84, lon: 101.22, qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
-        { key: 'ptcvn', code: 'TSPT-VN', name: 'Thai Summit Plastech Vietnam', region: 'Hanoi · เวียดนาม', flag: '🇻🇳', zone: 'oversea', qtyF: 0.55, oeeD: -6.5, dtF: 1.4, ngF: 1.6, keep: 0.5 },
+        { key: 'ptc1', code: 'TSPT1', name: 'Thai Summit Plastech 1', region: 'บางพลี · สมุทรปราการ', flag: '🇹🇭', cc: 'TH', zone: 'bangna', lat: 13.61, lon: 100.75, qtyF: 1.1, oeeD: 1.5, dtF: 0.9, ngF: 1.2, keep: 0.75 },
+        { key: 'ptc2', code: 'TSPT2', name: 'Thai Summit Plastech 2', region: 'ปลวกแดง · ระยอง', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 12.84, lon: 101.22, qtyF: 0.85, oeeD: -3.5, dtF: 1.25, ngF: 1.5, keep: 0.7 },
+        { key: 'ptcvn', code: 'TSPT-VN', name: 'Thai Summit Plastech Vietnam', region: 'Hanoi · เวียดนาม', flag: '🇻🇳', cc: 'VN', zone: 'vietnam', lat: 21.03, lon: 105.85, qtyF: 0.55, oeeD: -6.5, dtF: 1.4, ngF: 1.6, keep: 0.5 },
+        { key: 'ptcbr', code: 'TSPT-BR', name: 'Thai Summit Plastech Brazil', region: 'São Paulo · บราซิล', flag: '🇧🇷', cc: 'BR', zone: 'brazil', lat: -23.55, lon: -46.63, qtyF: 0.5, oeeD: -7.5, dtF: 1.5, ngF: 1.7, keep: 0.5 },
       ],
     },
     {
@@ -92,22 +96,39 @@ const ORG = {
         { n: 'MC PAINT LINE', t: 'painting' }, { n: 'MC COVER ASSY', t: 'assembly' },
       ],
       companies: [
-        { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'บางนา · กรุงเทพฯ', flag: '🇹🇭', zone: 'bangna', lat: 13.66, lon: 100.63, qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
-        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'ศรีราชา · ชลบุรี', flag: '🇹🇭', zone: 'east', lat: 13.17, lon: 100.99, qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
-        { key: 'mocyid', code: 'TSMC-ID', name: 'Thai Summit Mocy Indonesia', region: 'Karawang · อินโดนีเซีย', flag: '🇮🇩', zone: 'oversea', qtyF: 0.5, oeeD: -9.5, dtF: 1.7, ngF: 1.9, keep: 0.45 },
+        { key: 'mocy1', code: 'TSMC1', name: 'Thai Summit Mocy 1', region: 'บางนา · กรุงเทพฯ', flag: '🇹🇭', cc: 'TH', zone: 'bangna', lat: 13.66, lon: 100.63, qtyF: 0.95, oeeD: 0.5, dtF: 1.0, ngF: 1.0, keep: 0.7 },
+        { key: 'mocy2', code: 'TSMC2', name: 'Thai Summit Mocy 2', region: 'ศรีราชา · ชลบุรี', flag: '🇹🇭', cc: 'TH', zone: 'east', lat: 13.17, lon: 100.99, qtyF: 0.6, oeeD: -5.5, dtF: 1.35, ngF: 1.45, keep: 0.55 },
+        { key: 'mocyid', code: 'TSMC-ID', name: 'Thai Summit Mocy Indonesia', region: 'Karawang · อินโดนีเซีย', flag: '🇮🇩', cc: 'ID', zone: 'indonesia', lat: -6.30, lon: 107.30, qtyF: 0.75, oeeD: -5.0, dtF: 1.4, ngF: 1.5, keep: 0.6 },
+        { key: 'mocyin', code: 'TSMC-IN', name: 'Thai Summit Mocy India', region: 'Chennai · อินเดีย', flag: '🇮🇳', cc: 'IN', zone: 'india', lat: 13.08, lon: 80.27, qtyF: 1.15, oeeD: -3.0, dtF: 1.2, ngF: 1.3, keep: 0.8 },
       ],
     },
   ],
 };
 
-/* ── โซนพื้นที่ (แกนที่ 2 — ตัดขวางกลุ่มธุรกิจ) · onMap=false คือไม่ได้อยู่บนแผนที่ภาคกลาง ──
-   ⚠️ ทั้ง 3 กลุ่มธุรกิจ "คละกัน" ในทุกโซน (ไม่ใช่ 1 โซน = 1 กลุ่มธุรกิจ) — แผนที่จึงต้องบอกได้ว่า
+/* ประเทศที่มีโรงงาน — geoName ต้องตรงกับชื่อใน worldGeo.js (Natural Earth) ไม่งั้นประเทศจะไม่ถูกไฮไลต์ */
+const COUNTRY_META = [
+  { cc: 'TH', name: 'ไทย', flag: '🇹🇭', geoName: 'Thailand' },
+  { cc: 'VN', name: 'เวียดนาม', flag: '🇻🇳', geoName: 'Vietnam' },
+  { cc: 'ID', name: 'อินโดนีเซีย', flag: '🇮🇩', geoName: 'Indonesia' },
+  { cc: 'CN', name: 'จีน', flag: '🇨🇳', geoName: 'China' },
+  { cc: 'IN', name: 'อินเดีย', flag: '🇮🇳', geoName: 'India' },
+  { cc: 'US', name: 'สหรัฐอเมริกา', flag: '🇺🇸', geoName: 'United States of America' },
+  { cc: 'BR', name: 'บราซิล', flag: '🇧🇷', geoName: 'Brazil' },
+];
+
+/* ── โซนพื้นที่ (แกนที่ 2 — ตัดขวางกลุ่มธุรกิจ) · thaiMap=true = มีแผนที่ละเอียดในไทยให้เจาะดู ──
+   ⚠️ ทั้ง 3 กลุ่มธุรกิจ "คละกัน" ในทุกโซน/ทุกประเทศ (ไม่ใช่ 1 โซน = 1 กลุ่มธุรกิจ) — แผนที่จึงต้องบอกได้ว่า
    หมุดไหนเป็นกลุ่มไหน (ไอคอนในหมุด + ฟิลเตอร์กลุ่ม) และการ์ดโซนต้องโชว์ส่วนผสมของกลุ่มธุรกิจ
    หมุดบนแผนที่ใช้ lat/lon จริงของบริษัท → กรอบโซนคำนวณจากหมุด (ดู ThailandZoneMap) */
 const ZONES = [
-  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: '#38bdf8', onMap: true, desc: 'บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
-  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: '#f59e0b', onMap: true, desc: 'ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
-  { key: 'oversea', name: 'โซนต่างประเทศ', icon: '🌏', color: '#a78bfa', onMap: false, desc: 'เวียดนาม · อินโดนีเซีย' },
+  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: '#38bdf8', thaiMap: true, desc: '🇹🇭 บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
+  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: '#f59e0b', thaiMap: true, desc: '🇹🇭 ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
+  { key: 'vietnam', name: 'เวียดนาม', icon: '🇻🇳', color: '#a78bfa', desc: 'Hanoi' },
+  { key: 'indonesia', name: 'อินโดนีเซีย', icon: '🇮🇩', color: '#f472b6', desc: 'Karawang' },
+  { key: 'china', name: 'จีน', icon: '🇨🇳', color: '#fb7185', desc: 'Guangzhou' },
+  { key: 'india', name: 'อินเดีย', icon: '🇮🇳', color: '#34d399', desc: 'Chennai' },
+  { key: 'usa', name: 'อเมริกาเหนือ', icon: '🇺🇸', color: '#60a5fa', desc: 'Howell, Michigan' },
+  { key: 'brazil', name: 'อเมริกาใต้', icon: '🇧🇷', color: '#fbbf24', desc: 'São Paulo' },
 ];
 
 /* ── ประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ) ────────────────────────────────────────────────
@@ -439,7 +460,7 @@ export default function GroupOverview() {
       {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้เข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว) ── */}
       <div style={{ ...card, borderStyle: 'dashed', borderColor: '#f59e0b', background: 'rgba(245,158,11,0.07)', fontSize: 13, lineHeight: 1.7 }}>
         <b style={{ color: '#f59e0b' }}>นี่คือหน้าจอตัวอย่าง (mockup) เพื่อดูว่า “ระบบรองรับหลายบริษัทในกลุ่ม” จะหน้าตาแบบไหน</b><br />
-        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>โซนพื้นที่</b> ({ZONES.map(z => z.name).join(' / ')}) ได้จากปุ่มมุมขวาบน — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b><br />
+        • โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>พื้นที่</b> ({ZONES.length} โซน/ประเทศ — ไทย 2 โซน + ต่างประเทศ 6) ได้จากปุ่มมุมขวาบน — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b><br />
         • <b>TSAT4</b> = <b style={{ color: '#22c55e' }}>ข้อมูลจริง</b>จากฐานข้อมูลปัจจุบัน (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> ที่ปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบ seeded ให้ตัวเลขนิ่ง ไม่ดิ้นทุกครั้งที่รีเฟรช)<br />
         • หน้านี้ <b>ไม่เขียนฐานข้อมูล</b> และยังไม่มีตารางบริษัท/โรงงานจริง — ดูสรุป “ถ้าทำจริงต้องทำอะไร” ท้ายหน้า
       </div>
@@ -510,39 +531,19 @@ export default function GroupOverview() {
           {sel.axis === 'map' && (
             <div style={card}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>🗺️ แผนที่โรงงานในกลุ่ม — ภาคกลาง &amp; ตะวันออก</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>🌏 แผนที่โรงงานทั่วโลก</div>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {tree.zones.filter(z => z.onMap).reduce((a, z) => a + z.companies.length, 0)} โรงงานบนแผนที่ ·
-                  หมุดสีตามสถานะการผลิตของวันที่เลือก
+                  {tree.allComps.length} โรงงาน · {new Set(tree.allComps.map(c => c.cc)).size} ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก
                 </span>
               </div>
-              <ThailandZoneMap
-                zones={tree.zones}
+              <WorldFactoryMap
+                comps={tree.allComps}
+                countries={COUNTRY_META}
                 groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: g.short }))}
                 isMobile={isMobile}
-                height={isMobile ? 420 : 560}
-                onPickZone={(z) => setSel(s => ({ ...s, node: z.key, comp: null }))}
+                height={isMobile ? 420 : 600}
                 onPickCompany={(c) => setPickComp(c)}
               />
-              {/* บริษัทนอกแผนที่ (ต่างประเทศ) — ห้ามหายไปเงียบๆ เพราะวางบนแผนที่ภาคกลางไม่ได้ */}
-              {tree.zones.filter(z => !z.onMap && z.companies.length).map(z => (
-                <div key={z.key} style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border2)' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: z.color, marginBottom: 6 }}>
-                    {z.icon} {z.name} <span style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--muted)' }}>(อยู่นอกกรอบแผนที่ — {z.desc})</span>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {z.companies.map(c => (
-                      <button key={c.key} onClick={() => setSel(s => ({ ...s, node: z.key, comp: c.key }))} style={{
-                        fontSize: 12, fontWeight: 700, padding: '4px 9px', borderRadius: 999, cursor: 'pointer',
-                        background: 'var(--bg3)', border: '1px dashed var(--border2)', color: 'var(--text)',
-                      }}>
-                        {c.flag} {c.code}
-                        <span style={{ color: oeeCol(c.oee), marginLeft: 5 }}>{c.oee == null ? '—' : c.oee}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
             </div>
           )}
 
@@ -641,6 +642,23 @@ export default function GroupOverview() {
 
         {/* ══ ระดับ 2: กลุ่มธุรกิจ — การ์ดบริษัท ══ */}
         {bizNode && !compNode && (<>
+          {/* โซนในไทยมีแผนที่ละเอียด (ชายฝั่ง/ถนน/จังหวัด) — ต่างประเทศดูจากแผนที่โลกระดับบน */}
+          {sel.axis === 'map' && bizNode.thaiMap && (
+            <div style={card}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+                🗺️ {bizNode.icon} {bizNode.name} — แผนที่พื้นที่
+              </div>
+              <ThailandZoneMap
+                zones={[bizNode]}
+                groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: g.short }))}
+                isMobile={isMobile}
+                height={isMobile ? 380 : 470}
+                onPickZone={() => { }}
+                onPickCompany={(c) => setPickComp(c)}
+              />
+            </div>
+          )}
+
           <div style={card}>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
             <RankBars items={bizNode.companies} onPick={(c) => setPickComp(c)} />
