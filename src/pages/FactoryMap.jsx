@@ -176,25 +176,35 @@ const boxHit = (a, b, pad = 0.35) =>
    ⚠️ ห้ามปล่อยให้ขยับได้ไม่จำกัด — เคยดันแนวตั้งได้ถึง 12 แถว ป้ายไปโผล่ห่างกรอบตัวเอง 213px
       (user ทัก 2026-08-06 "ตำแหน่งมั่ว เด้งไปไกลจากไลน์") · วัดแล้ว MAX_AWAY 9 หน่วยคือจุดคุ้ม:
       จอ 1800px ทับ 0 · 1250px ทับ 2 · ไกลสุด ~90px (มีเส้นโยงกำกับ) */
-const MAX_AWAY = 9;
+const MAX_AWAY = 12;
 const gapToBox = (b, bb) => {
   const dx = Math.max(bb.x0 - (b.x + b.w), b.x - bb.x1, 0);
   const dy = Math.max(bb.y0 - (b.y + b.h), b.y - bb.y1, 0);
   return Math.hypot(dx, dy);
 };
-const placeBox = (cands, w, h, placed, maxY, bb, allowDrop, isLast) => {
+/* วางกล่องป้าย · ข้อห้าม 2 อย่าง (คำสั่ง user 2026-08-06 "label ไม่ควรไปทับกรอบพื้นที่ของไลน์อื่น"):
+     (ก) ห้ามทับป้ายใบอื่น   (ข) ห้ามทับ "กรอบพื้นที่ของไลน์อื่น" — ทับกรอบตัวเอง/ในครอบครัวได้
+   ลำดับ: ตำแหน่งที่ติดกรอบตัวเอง → (ถ้าเป็นระดับข้อความสุดท้าย) ค้นหาที่ว่างรอบๆ เรียงจากใกล้ไปไกล
+          จำกัด MAX_AWAY + ลากเส้นโยงกลับกรอบ → จอแคบ: ไม่วาดแล้วนับบอก · จอกว้าง: กลับที่เดิมยอมทับ
+   ⚠️ ห้ามเอา "กรอบไลน์อื่น" ออกจาก obstacles — เคยเช็คแค่ป้ายชนป้าย ผลคือป้าย Assy GOR/GOR
+      ไปนั่งทับกรอบ Laser GOR/LWR BAR (user ทัก) */
+const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, isLast) => {
   const ok = (b) => b.x >= -0.5 && b.x + b.w <= 100.5 && b.y >= -0.5 && b.y + b.h <= maxY + 0.5
-    && !placed.some(p => boxHit(b, p));
+    && !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
   for (const c of cands) { const b = { x: c.x, y: c.y, w, h }; if (ok(b)) return b; }
-  if (!isLast) return null;                       // ยังย่อข้อความได้อีก → ลองระดับถัดไปก่อน อย่าเพิ่งขยับป้าย
-  for (let i = 1; i <= 6; i++) {
-    for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-      const b = { x: cands[0].x + dx * i * w * 0.55, y: cands[0].y + dy * i * (h + 0.4), w, h };
-      if (ok(b) && gapToBox(b, bb) <= MAX_AWAY) return b;
+  if (!isLast) return null;                       // ยังย่อข้อความได้อีก → ลองระดับถัดไปก่อน อย่าเพิ่งย้ายป้าย
+  const step = Math.max(h * 0.8, 1.2);            // ค้นหาที่ว่างรอบกรอบ เรียงจากใกล้สุด
+  const near = [];
+  for (let x = Math.max(0, bb.x0 - MAX_AWAY - w); x <= Math.min(100 - w, bb.x1 + MAX_AWAY); x += step) {
+    for (let y = Math.max(0, bb.y0 - MAX_AWAY - h); y <= Math.min(maxY - h, bb.y1 + MAX_AWAY); y += step) {
+      const b = { x, y, w, h }, d = gapToBox(b, bb);
+      if (d <= MAX_AWAY) near.push({ b, d });
     }
   }
+  near.sort((a, z) => a.d - z.d);
+  for (const { b } of near) if (ok(b)) return b;
   if (allowDrop) return null;                     // จอแคบ: ไม่วาด แล้วไปนับบอกบนจอ
-  return {                                        // จอกว้าง: กลับตำแหน่งธรรมชาติ ยอมทับนิดดีกว่าลอยหนีกรอบ
+  return {                                        // จอกว้าง: กลับตำแหน่งธรรมชาติ ยอมทับดีกว่าไม่มีป้าย
     x: Math.min(Math.max(cands[0].x, 0.3), Math.max(0.3, 100 - w - 0.3)),
     y: Math.min(Math.max(cands[0].y, 0.3), Math.max(0.3, maxY - h - 0.3)),
     w, h,
@@ -996,11 +1006,20 @@ export default function FactoryMap({ setupMode = false }) {
        → สุดท้ายถึงยอมขยับออก (มีเส้นโยง) — ห้ามสลับลำดับ (เคยให้ตำแหน่งยืดหยุ่นก่อน
        ผลคือป้ายลอยห่างกรอบตัวเอง 213px user ทัก "ตำแหน่งมั่ว" 2026-08-06)
        วัดกับกรอบจริง: จอ 1800px ข้อมูลเต็มครบ 27/27 ทับ 0 ไม่มีใบไหนต้องขยับ */
-    const place = (bbPts, big, levels) => {
+    // กรอบพื้นที่ของทุกไลน์ (หน่วย N) — ใช้เป็นสิ่งกีดขวาง ป้ายห้ามไปนั่งทับกรอบไลน์อื่น
+    const regionRect = {};
+    regions.forEach(r => {
+      const xs = r.points.map(p => p[0]), ys = r.points.map(p => p[1]);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys) / aspect;
+      regionRect[r.line_name] = { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) / aspect - y0 };
+    });
+    const place = (bbPts, big, levels, ownNames) => {
       const xs = bbPts.map(p => p[0]), ys = bbPts.map(p => p[1]);
       const x0 = Math.min(...xs), x1 = Math.max(...xs);
       const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
       const cyn = (y0 + y1) / 2, bb = { x0, x1, y0, y1 };
+      // ทับกรอบตัวเอง/ไลน์ในกลุ่มเดียวกันได้ (ป้ายเกาะกรอบตัวเองเป็นเรื่องปกติ) — ที่เหลือห้ามทับ
+      const obstacles = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
       for (let lvl = 0; lvl < levels.length; lvl++) {
         const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big);
         const w = Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
@@ -1019,7 +1038,7 @@ export default function FactoryMap({ setupMode = false }) {
               { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
               { x: bx, y: y0 + h + g }, { x: bx, y: cyn - h / 2 }];
         const last = lvl === levels.length - 1;
-        const box = placeBox(cands, w, h, placed, maxY, bb, last && compactLbl, last);
+        const box = placeBox(cands, w, h, placed, maxY, bb, obstacles, last && compactLbl, last);
         if (box) { placed.push(box); return { ...box, lvl, link: linkOf(box, bb) }; }
       }
       return null;
@@ -1035,7 +1054,8 @@ export default function FactoryMap({ setupMode = false }) {
         const levels = [{ name: `▣ ${hh.name}${compactLbl ? '' : `  ${kids} ไลน์`}`, txt: full }];
         if (sh !== full) levels.push({ name: `▣ ${hh.name}`, txt: sh });
         if (levels[levels.length - 1].txt !== '') levels.push({ name: `▣ ${hh.name}`, txt: '' });
-        const box = place(hh.hull, true, levels);
+        // ป้ายกลุ่มห้ามทับกรอบไลน์ใดๆ เลย (รวมลูกตัวเอง) — เทสแล้วเข้มขนาดนี้ไม่เสียอะไร ยังหาที่ติดกรอบได้ครบ
+        const box = place(hh.hull, true, levels, new Set());
         if (box) out.hull[hh.name] = box; else out.hidden.push(hh.name);
       });
 
@@ -1047,7 +1067,7 @@ export default function FactoryMap({ setupMode = false }) {
         const levels = [{ name: r.line_name, txt: full }];
         if (sh !== full) levels.push({ name: r.line_name, txt: sh });
         if (levels[levels.length - 1].txt !== '') levels.push({ name: r.line_name, txt: '' });
-        const box = place(r.points, false, levels);
+        const box = place(r.points, false, levels, new Set([r.line_name]));
         if (box) out.region[r.id] = box; else out.hidden.push(r.line_name);
       });
     return out;
