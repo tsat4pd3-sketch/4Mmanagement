@@ -138,42 +138,51 @@ const expandHull = (pts, f = 1.045) => {
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
   return pts.map(([x, y]) => [Math.min(100, Math.max(0, round(cx + (x - cx) * f))), Math.min(100, Math.max(0, round(cy + (y - cy) * f)))]);
 };
-// จุดอยู่ใน polygon ไหม (ray casting) — ใช้กันป้ายกลุ่มไปตกในกรอบไลน์/hull ของกลุ่มอื่น
-const pointInPoly = (x, y, poly) => {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
+/* ── จัดวางป้ายไม่ให้ทับกัน (2026-08-06) ─────────────────────────────────────
+   ปัญหาเดิม: ป้ายไลน์ยึด "กึ่งกลางขอบบนของกรอบ" ตายตัว ไม่มีการเลี่ยงกันเลย
+   → ไลน์ที่วางติดกันบนผังจริง (Laser GOR/Assy GOR · Laser LWR/Assy LWR · Line 60/61)
+     ป้ายทับกันจนอ่านไม่ออก (ป้ายกลุ่มเคยมี logic เลี่ยงอยู่ แต่ป้ายไลน์ไม่มี)
+
+   ⚠️ แกน x เป็น % ของ "ความกว้าง" · แกน y เป็น % ของ "ความสูง" — ผังไม่ใช่จัตุรัส
+      ต้องแปลง y เป็นหน่วยเดียวกับ x (หาร aspect) ก่อนคำนวณการทับ ไม่งั้นเพี้ยน
+      หน่วยกลางที่ใช้ในไฟล์นี้เรียก "หน่วย N" = % ของความกว้างผัง
+   ประมาณขนาดกล่องจากความยาวข้อความ (วัดของจริงตอนคำนวณ layout ไม่ได้) แล้ว
+   **กำหนด width ให้ป้ายเท่าที่จองไว้** → พื้นที่ที่จองกับที่วาดจริงตรงกันเสมอ
+   (pattern เดียวกับ de-overlap ป้ายประเทศใน WorldFactoryMap) */
+const estLabelPx = (name, txt, big) => {
+  const nf = big ? 8.6 : 7.8, vf = big ? 7.4 : 7.0;   // px ต่อตัวอักษร (ตัวหนา Sarabun)
+  return {
+    w: Math.max(72, (name || '').length * nf, (txt || '').length * vf) + 22,
+    h: txt ? (big ? 42 : 37) : (big ? 26 : 23),
+  };
 };
-// เลือกตำแหน่งป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — เลี่ยงทับป้ายลูก: ลอง ใต้/เหนือ/ซ้าย/ขวา ของ hull
-// แล้วเลือกจุดที่ไกลป้ายอื่นสุด (bias ใต้กรอบ — ป้ายลูกเกาะขอบบนเสมอ ใต้จึงว่างโดยธรรมชาติ)
-// + โทษหนักถ้าจุดตกในกรอบ/hull ของกลุ่มอื่น (เคสจริง: ป้าย GOR ตกในพื้นที่ LWR BAR)
-const hullLabelPos = (hull, avoid, otherPolys = []) => {
-  const xs = hull.map(p => p[0]), ys = hull.map(p => p[1]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  const cands = [
-    { x: cx, y: maxY, place: 'below', bias: 2, px: cx, py: maxY + 2.5 },
-    { x: cx, y: minY, place: 'above', bias: 0.8, px: cx, py: minY - 2.5 },
-    { x: minX, y: cy, place: 'left', bias: 0, px: minX - 3, py: cy },
-    { x: maxX, y: cy, place: 'right', bias: 0, px: maxX + 3, py: cy },
-  ];
-  let best = cands[0], bestScore = -Infinity;
+const boxHit = (a, b, pad = 0.35) =>
+  a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
+// วางกล่องที่ candidate แรกที่ว่าง (candidate ที่หลุดขอบผัง = ข้าม — ป้ายต้องอยู่ใกล้ไลน์ตัวเอง)
+// ไม่มีที่ว่างเลย → ไล่หาที่ว่างแนวตั้งรอบตำแหน่งแรก ลงก่อนแล้วขึ้น
+// ⚠️ ต้องหยุดเมื่อชนขอบผัง — ยอมให้ป้ายทับกันดีกว่าดันจนป้ายหลุดออกนอกรูป (เจอตอนเทสกับกรอบจริง)
+const placeBox = (cands, w, h, placed, maxY) => {
   for (const c of cands) {
-    const d = avoid.length ? Math.min(...avoid.map(a => Math.hypot(a[0] - c.x, a[1] - c.y))) : 50;
-    const off = (c.y > 97 || c.y < 3 || c.x > 97 || c.x < 3) ? -100 : 0; // ตกขอบผัง = ตัดทิ้ง
-    // ตัวป้ายจริงกินพื้นที่ฝั่ง px/py (เลย anchor ออกไปตามทิศ) — ถ้าไปตกในกรอบของกลุ่มอื่น = โทษหนัก
-    const clash = otherPolys.some(poly => pointInPoly(c.px, c.py, poly)) ? -50 : 0;
-    const score = d + c.bias + off + clash;
-    if (score > bestScore) { bestScore = score; best = c; }
+    const b = { x: c.x, y: c.y, w, h };
+    if (b.x < -0.5 || b.x + b.w > 100.5 || b.y < -0.5 || b.y + b.h > maxY + 0.5) continue;
+    if (!placed.some(p => boxHit(b, p))) return b;
   }
-  return best;
+  const bx = Math.min(Math.max(cands[0].x, 0.3), Math.max(0.3, 100 - w - 0.3));
+  const by = Math.min(Math.max(cands[0].y, 0.3), Math.max(0.3, maxY - h - 0.3));
+  for (const dir of [1, -1]) {
+    for (let i = 1; i <= 12; i++) {
+      const y = by + dir * i * (h + 0.4);
+      if (y < 0.3 || y + h > maxY - 0.3) break;
+      const b = { x: bx, y, w, h };
+      if (!placed.some(p => boxHit(b, p))) return b;
+    }
+  }
+  return { x: bx, y: by, w, h };
 };
-const HULL_LBL_TRANSFORM = {
-  below: 'translate(-50%, 6px)', above: 'translate(-50%, -108%)',
-  left: 'translate(calc(-100% - 6px), -50%)', right: 'translate(6px, -50%)',
+const polyArea = (pts) => {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+  return Math.abs(a) / 2;
 };
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
@@ -243,6 +252,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
   const [newZone, setNewZone] = useState(''); // พิมพ์ชื่อโซน MTN/facility ใหม่ (ไม่มีใน master)
+  const [wrapW, setWrapW] = useState(0);      // ความกว้างผังจริง (px) — แปลงขนาดป้าย px → % ตอนกันป้ายทับกัน
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
@@ -922,23 +932,68 @@ export default function FactoryMap({ setupMode = false }) {
       })
       .filter(h => h.hull.length >= 3);
   }, [regions, topNames, childrenOf]);
-  // ตำแหน่งป้ายกลุ่ม — วางทีละกลุ่ม เลี่ยงป้ายลูกทุกใบ + ป้ายกลุ่มที่วางไปแล้ว
-  const hullLabelPlan = useMemo(() => {
-    const avoid = regions.map(r => labelAnchor(r.points));
-    const out = {};
-    autoHulls.forEach(h => {
-      const kids = new Set(childrenOf[h.name] || []);
-      // กรอบที่ห้ามให้ป้ายไปตก: กรอบไลน์ที่ไม่ใช่ลูกตัวเอง + hull ของกลุ่มอื่น
-      const otherPolys = [
-        ...regions.filter(r => !kids.has(r.line_name)).map(r => r.points),
-        ...autoHulls.filter(o => o.name !== h.name).map(o => o.hull),
-      ];
-      const pos = hullLabelPos(h.hull, avoid, otherPolys);
-      avoid.push([pos.x, pos.y]);
-      out[h.name] = pos;
+  /* ตำแหน่งป้ายทั้งผัง — กันทับกันทั้งป้ายไลน์และป้ายกลุ่ม (2026-08-06)
+     ลำดับ: กรอบใหญ่ได้เลือกที่ก่อน (ป้ายอยู่ตำแหน่งธรรมชาติ) → ตัวเล็กหลบ
+            → ป้ายกลุ่มวางท้ายสุด เลี่ยงป้ายไลน์ที่วางแล้วทุกใบ
+     ยังไม่รู้ขนาดผัง (รูปยังไม่โหลด) = คืน {} → render ถอยไปวางแบบเดิม */
+  const labelLayout = useMemo(() => {
+    const out = { region: {}, hull: {} };
+    if (!wrapW || !aspect) return out;
+    const toN = (px) => (px / wrapW) * 100;      // px → หน่วย N (% ของความกว้าง)
+    const maxY = 100 / aspect;                   // ความสูงผังในหน่วย N
+    const g = toN(5);                            // ระยะห่างขั้นต่ำจากขอบกรอบ
+    const placed = [];
+
+    [...regions]
+      .sort((a, b) => polyArea(b.points) - polyArea(a.points))
+      .forEach(r => {
+        const { w: wpx, h: hpx } = estLabelPx(r.line_name, regText(stOf(r.line_name)), false);
+        const w = Math.min(toN(wpx), 34), h = toN(hpx);
+        const xs = r.points.map(p => p[0]), ys = r.points.map(p => p[1]);
+        const x0 = Math.min(...xs), x1 = Math.max(...xs);
+        const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
+        const bx = (x0 + x1) / 2 - w / 2, cyn = (y0 + y1) / 2;
+        const box = placeBox([
+          { x: bx, y: y0 + toN(2) },            // เดิม: เกาะขอบบนด้านใน (ตำแหน่งที่อยากได้ที่สุด)
+          { x: bx, y: y0 - h - g },             // เหนือกรอบ
+          { x: bx, y: y1 - h - toN(2) },        // เกาะขอบล่างด้านใน
+          { x: bx, y: y1 + g },                 // ใต้กรอบ
+          { x: x1 + g, y: cyn - h / 2 },        // ขวากรอบ
+          { x: x0 - w - g, y: cyn - h / 2 },    // ซ้ายกรอบ
+          { x: bx, y: y0 + h + g },             // ในกรอบ ถัดลงมา 1 แถว
+          { x: bx, y: cyn - h / 2 },            // กลางกรอบ
+        ], w, h, placed, maxY);
+        placed.push(box);
+        out.region[r.id] = box;
+      });
+
+    autoHulls.forEach(hh => {
+      const kids = (childrenOf[hh.name] || []).length;
+      const { w: wpx, h: hpx } = estLabelPx(`▣ ${hh.name}  ${kids} ไลน์`, regText(stOf(hh.name)), true);
+      const w = Math.min(toN(wpx), 36), h = toN(hpx);
+      const xs = hh.hull.map(p => p[0]), ys = hh.hull.map(p => p[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs);
+      const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
+      const bx = (x0 + x1) / 2 - w / 2, cyn = (y0 + y1) / 2;
+      // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
+      // ป้ายกลุ่มวางท้ายสุด (ที่เหลือน้อยแล้ว) จึงให้ตัวเลือกเยอะกว่าป้ายไลน์ รวมมุมกรอบด้วย
+      const box = placeBox([
+        { x: bx, y: y1 + g },
+        { x: bx, y: y0 - h - g },
+        { x: x1 + g, y: cyn - h / 2 },
+        { x: x0 - w - g, y: cyn - h / 2 },
+        { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },          // ชิดมุมล่างซ้าย/ขวา
+        { x: bx, y: y1 + g + h + 0.4 },                          // ใต้กรอบ ถัดลงมาอีกแถว
+        { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },  // ชิดมุมบนซ้าย/ขวา
+        { x: bx, y: y0 - 2 * h - g - 0.4 },
+        { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
+      ], w, h, placed, maxY);
+      placed.push(box);
+      out.hull[hh.name] = box;
     });
     return out;
-  }, [autoHulls, regions, childrenOf]);
+    // stOf/regText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1030,6 +1085,15 @@ export default function FactoryMap({ setupMode = false }) {
   };
 
   const onImgLoad = (e) => setAspect(e.target.naturalWidth / e.target.naturalHeight);
+  // ความกว้างผังจริง — ใช้แปลงขนาดป้าย (px) เป็น % ตอนคำนวณการทับ · ย่อ/ขยายจอแล้วจัดป้ายใหม่เอง
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([en]) => setWrapW(en.contentRect.width));
+    ro.observe(el);
+    setWrapW(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, [imageUrl, loading]);
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
@@ -1049,6 +1113,11 @@ export default function FactoryMap({ setupMode = false }) {
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {!editing && !!autoHulls.length && (
+          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
+          </span>
+        )}
       </div>
 
       {editing && (
@@ -1128,33 +1197,46 @@ export default function FactoryMap({ setupMode = false }) {
               <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff', border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
             ))}
 
-            {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ลอยเหนือเส้นประ บอกยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่) */}
+            {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่)
+                แยกจากป้ายไลน์ให้ชัด (2026-08-06): ▣ + ขอบประหนา + ตัวใหญ่กว่า + ชิปบอกจำนวนไลน์ย่อย */}
             {!editing && autoHulls.map(h => {
-              const pos = hullLabelPlan[h.name] || { x: 50, y: 50, place: 'below' };
+              const box = labelLayout.hull[h.name];
               const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const kids = (childrenOf[h.name] || []).length;
+              const posStyle = box
+                ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
+                : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
               return (
-                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: HULL_LBL_TRANSFORM[pos.place], pointerEvents: 'none', maxWidth: '32%' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.82), rgba(8,10,16,0.66))', border: `1.5px dashed ${meta.color}`, borderRadius: 7, padding: '2px 9px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
-                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
+                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
+                    <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
+                      {kids > 0 && <span style={{ fontSize: '0.72em', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
                     </div>
-                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(11px,1vw,13.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{txt}</div>}
                   </div>
                 </div>
               );
             })}
 
-            {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
+            {/* ป้ายไลน์ = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง
+                ตำแหน่งมาจาก labelLayout (กันทับกัน) — ยังไม่รู้ขนาดผัง = ถอยไปเกาะขอบบนแบบเดิม
+                ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
+                ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
             {regions.map(r => {
-              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const box = labelLayout.region[r.id]; const [cx, cy] = labelAnchor(r.points);
+              const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const parent = parentOf[r.line_name];
+              const posStyle = box
+                ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
+                : { left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', maxWidth: '30%' };
               return (
-                // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
-                // ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) — ปรับเฉพาะ art design:
-                // การ์ดเนียนขึ้น (ขอบสีรอบใบ+เงา) · ชื่อ/ตัวเลขแยกชั้นน้ำหนัก · เลขใช้ tabular-nums เรียงตรง
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
                   <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
-                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{st.isFac && '🔧 '}{r.line_name}
+                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
+                      {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
+                      {st.isFac && '🔧 '}{r.line_name}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
