@@ -137,12 +137,18 @@ const ZONES = [
    กลุ่มพลาสติก/มอเตอร์ไซค์ต้องมี injection/painting/assembly เพิ่ม จึงต่อท้ายไว้ที่นี่และ
    ทำเครื่องหมาย extra:true (= ยังไม่มีใน master จริง ถ้าทำ multi-company ต้องไปเพิ่มใน LINE_TYPES) */
 const LTYPES = [
-  ...LINE_TYPES.filter(t => t.value !== 'other'),
+  { value: 'stamping', label: '🔩 ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
+  ...LINE_TYPES.filter(t => !['stamping', 'hydroform', 'other'].includes(t.value)),
   { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
   { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
   { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },
   { value: 'other', label: '📦 อื่นๆ / ยังไม่ตั้งประเภท' },
 ];
+/* ยุบประเภทไลน์ที่เป็นงานเดียวกันในสายตาผู้บริหาร — ไฮโดรฟอร์มก็คือ metal forming เหมือนปั๊ม
+   ⚠️ ยุบเฉพาะ "การแสดงผลในหน้านี้" เท่านั้น — ค่าใน `production_lines.line_type` ไม่ถูกแก้
+   (ถ้าจะยุบทั้งระบบจริง ต้องแก้ LINE_TYPES ใน src/utils/lineTypes.js + migrate ข้อมูลไลน์ที่เป็น hydroform) */
+const LT_MERGE = { hydroform: 'stamping' };
+const normLt = (v) => (v ? (LT_MERGE[v] || v) : null);
 const ltLabel = (v) => LTYPES.find(t => t.value === v)?.label || '📦 ไม่ระบุประเภท';
 const ltShort = (v) => (ltLabel(v).split(' / ')[0] || '').trim();
 
@@ -256,7 +262,7 @@ export default function GroupOverview() {
         .filter(o => o.sessions > 0 || o.target > 0)
         .map(o => ({
           line: o.line,
-          ltype: ltypeOfTop(o.line),
+          ltype: normLt(ltypeOfTop(o.line)),
           actual: Math.round(o.actual), target: Math.round(o.target),
           dtMin: Math.round(o.dtMin), ng: Math.round(o.ng),
           present: o.present, head: o.head,
@@ -303,7 +309,7 @@ export default function GroupOverview() {
             // กลุ่มที่ไม่ใช่โลหะใช้ชื่อ+ประเภทไลน์ของธุรกิจตัวเอง · กลุ่มโลหะสืบประเภทจากไลน์จริง
             const al = g.lineAlias ? g.lineAlias[idx % g.lineAlias.length] : null;
             const name = al ? al.n : l.line;
-            const ltype = al ? al.t : l.ltype;
+            const ltype = normLt(al ? al.t : l.ltype);
             const ratio = l.target > 0 ? l.actual / l.target : 0;
             const nRatio = clamp(ratio * jit(`${c.key}|${name}|r|${dk}`, 0.28) + c.oeeD / 260, 0.35, 1.12);
             const target = Math.max(0, Math.round(l.target * c.qtyF * jit(`${c.key}|${name}|t|${dk}`, 0.34)));
@@ -494,6 +500,7 @@ export default function GroupOverview() {
           )}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
             ประเภทไลน์ของ <b>TSAT4</b> อ่านจากคอลัมน์จริง <code>production_lines.line_type</code> (ตั้งที่ ⚙️ ตั้งค่าผังไลน์) ·
+            <b> ไฮโดรฟอร์มถูกนับรวมใน "ปั๊มขึ้นรูป / Metal Forming"</b> (งานขึ้นรูปโลหะเหมือนกัน — ยุบเฉพาะการแสดงผลหน้านี้ ค่าในฐานข้อมูลไม่ถูกแก้) ·
             <span style={{ opacity: 0.9 }}> * = ประเภทที่ยังไม่มีใน master ปัจจุบัน (โรงงานเราเป็นงานโลหะ) ถ้าทำหลายบริษัทจริงต้องเพิ่มใน <code>src/utils/lineTypes.js</code></span>
           </div>
         </div>
