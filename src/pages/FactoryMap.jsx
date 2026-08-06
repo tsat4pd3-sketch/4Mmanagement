@@ -58,11 +58,13 @@ const METRICS = {
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
     text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}${s.onTimeTarget >= 1 ? ` · ${Math.round(s.actual / s.onTimeTarget * 100)}%` : ''}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
     cat: s => s.target > 0 ? (s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })()) : (s.hasOpen ? 'waiting' : 'idle'),
+    short: s => s.target > 0 ? (s.onTimeTarget >= 1 ? `${Math.round(s.actual / s.onTimeTarget * 100)}%` : `${s.actual}`) : '',
   },
   oee: {
     label: '⚙️ OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
     text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+    short: s => s.oee != null ? `${Math.round(s.oee)}%` : '',
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -75,12 +77,14 @@ const METRICS = {
     //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
     mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
     mapText: s => s.dtActive ? `🔴 หยุด ${s.dtMinHour} น.` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
+    short: s => s.dtActive ? `🔴 ${s.dtMinHour}น.` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
     label: '🚫 ของเสีย', worstFirst: true, desc: true, facilityNA: true,
     value: s => s.ng,
     text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
     cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
+    short: s => s.ng > 0 ? `NG ${s.ng}` : '',
   },
   people: {
     // 👷 รวม "คน/เข้างาน" + "จุดงานเข้าประจำ" เป็นแท็บเดียว (2026-08-04 คำสั่ง user) —
@@ -100,12 +104,17 @@ const METRICS = {
       const cS = !s.stationTotal ? 'idle' : (() => { const p = s.stationFilled / s.stationTotal * 100; return p >= 90 ? 'good' : p >= 70 ? 'ok' : 'bad'; })();
       return rank[cS] > rank[cM] ? cS : cM;  // เอาด้านที่แย่กว่า
     },
+    short: s => {
+      if (s.headTotal > 0) return `${s.present}/${s.headTotal}${s.ppeBad ? ` ⚠${s.ppeBad}` : ''}`;
+      return s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal}` : '';
+    },
   },
   pm: {
     label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
     value: s => s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null,   // overdue สำคัญกว่า due-soon เสมอ
     text: s => s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
     cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
+    short: s => !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
   },
   supply: {
     // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
@@ -118,6 +127,7 @@ const METRICS = {
       return s.isFac ? `ปกติ${feeds ? ' · จ่าย' + feeds : ''}` : `จ่ายโดย ${supNames(s.supList).join(', ')}`;
     },
     cat: s => !s.supList.length ? 'idle' : s.supAtRisk ? 'down' : 'good',
+    short: s => !s.supList.length ? '' : s.supAtRisk ? '⚠ ซ่อมอยู่' : '',
   },
 };
 
@@ -161,6 +171,7 @@ const boxHit = (a, b, pad = 0.35) =>
 // วางกล่องที่ candidate แรกที่ว่าง (candidate ที่หลุดขอบผัง = ข้าม — ป้ายต้องอยู่ใกล้ไลน์ตัวเอง)
 // ไม่มีที่ว่างเลย → ไล่หาที่ว่างแนวตั้งรอบตำแหน่งแรก ลงก่อนแล้วขึ้น
 // ⚠️ ต้องหยุดเมื่อชนขอบผัง — ยอมให้ป้ายทับกันดีกว่าดันจนป้ายหลุดออกนอกรูป (เจอตอนเทสกับกรอบจริง)
+// คืน null = ไม่มีที่ว่างจริงบนผังนี้ (จอแคบ) → ไม่วาดป้ายนั้น แล้วไปนับบอกบนจอแทน
 const placeBox = (cands, w, h, placed, maxY) => {
   for (const c of cands) {
     const b = { x: c.x, y: c.y, w, h };
@@ -177,8 +188,10 @@ const placeBox = (cands, w, h, placed, maxY) => {
       if (!placed.some(p => boxHit(b, p))) return b;
     }
   }
-  return { x: bx, y: by, w, h };
+  return null;
 };
+// ผังแคบกว่านี้ = ย่อข้อความบนป้าย (มือถือ/แท็บเล็ตแนวตั้ง) — PC/จอ TV กว้างกว่านี้เสมอ จึงได้ข้อมูลครบ
+const COMPACT_W = 820;
 const polyArea = (pts) => {
   let a = 0;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
@@ -820,6 +833,17 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
   const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
+  /* ป้ายบนผังแคบ (มือถือ/จอเล็ก) — ย่อข้อความให้เหลือตัวเลขสำคัญ (คำสั่ง user 2026-08-06:
+     "มือถือลดข้อมูลได้ · PC/จอ display ต้องครบ") · ป้ายกว้างเท่าข้อความยาวสุด
+     ผังแคบจึงจัดยังไงก็ทับ — ย่อข้อความคือทางเดียวที่ไม่ต้องซ่อนไลน์ทิ้ง
+     ⚠️ COMPACT_W ต้องต่ำกว่าความกว้างผังบนโน้ตบุ๊ก/จอ TV เสมอ ไม่งั้นจอใหญ่โดนย่อไปด้วย
+        (จอ 1366 หัก sidebar 252 + แผงขวา 360 ≈ 720 → มือถือ/แท็บเล็ตแนวตั้งเท่านั้นที่เข้าเกณฑ์) */
+  const compactLbl = wrapW > 0 && wrapW < COMPACT_W;
+  const shortText = (st) => {
+    if (st.isFac && M.facilityNA) return facHealth(st) === 'good' ? '' : facHealthText(st);
+    return M.short ? M.short(st) : regText(st);
+  };
+  const lblText = (st) => (compactLbl ? shortText(st) : regText(st));
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
@@ -937,17 +961,50 @@ export default function FactoryMap({ setupMode = false }) {
             → ป้ายกลุ่มวางท้ายสุด เลี่ยงป้ายไลน์ที่วางแล้วทุกใบ
      ยังไม่รู้ขนาดผัง (รูปยังไม่โหลด) = คืน {} → render ถอยไปวางแบบเดิม */
   const labelLayout = useMemo(() => {
-    const out = { region: {}, hull: {} };
-    if (!wrapW || !aspect) return out;
+    const out = { region: {}, hull: {}, ready: false, hidden: [] };
+    if (!wrapW || !aspect) return out;           // รูปยังไม่โหลด → render ถอยไปวางแบบเดิม
+    out.ready = true;
     const toN = (px) => (px / wrapW) * 100;      // px → หน่วย N (% ของความกว้าง)
     const maxY = 100 / aspect;                   // ความสูงผังในหน่วย N
     const g = toN(5);                            // ระยะห่างขั้นต่ำจากขอบกรอบ
     const placed = [];
+    // ไลน์ที่มีปัญหาได้เลือกที่ก่อน — จอแคบมีที่ไม่พอทุกใบ ตัวที่ต้องรีบเห็นต้องรอด
+    const RANK = { down: 5, bad: 4, waiting: 3, ok: 2, good: 1, idle: 0 };
+    const sev = (name) => RANK[regCat(stOf(name))] ?? 0;
+
+    /* ป้ายกลุ่มวางก่อนป้ายไลน์ (2026-08-06) — ยอดรวมทั้ง family สำคัญกว่ารายไลน์
+       เทสกับกรอบจริง: วางกลุ่มก่อน ผังแคบเสียป้ายน้อยลงชัดเจน (760px ครบ 27/27 · 640px 23 แทน 20)
+       และไม่ทำให้จอใหญ่แย่ลงเลย (1250/1800px ยังครบ ทับ 0) */
+    [...autoHulls]
+      .sort((a, b) => sev(b.name) - sev(a.name) || polyArea(b.hull) - polyArea(a.hull))
+      .forEach(hh => {
+        const kids = (childrenOf[hh.name] || []).length;
+        const { w: wpx, h: hpx } = estLabelPx(`▣ ${hh.name}${compactLbl ? '' : `  ${kids} ไลน์`}`, lblText(stOf(hh.name)), true);
+        const w = Math.min(toN(wpx), 36), h = toN(hpx);
+        const xs = hh.hull.map(p => p[0]), ys = hh.hull.map(p => p[1]);
+        const x0 = Math.min(...xs), x1 = Math.max(...xs);
+        const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
+        const bx = (x0 + x1) / 2 - w / 2, cyn = (y0 + y1) / 2;
+        // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
+        const box = placeBox([
+          { x: bx, y: y1 + g },
+          { x: bx, y: y0 - h - g },
+          { x: x1 + g, y: cyn - h / 2 },
+          { x: x0 - w - g, y: cyn - h / 2 },
+          { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },          // ชิดมุมล่างซ้าย/ขวา
+          { x: bx, y: y1 + g + h + 0.4 },                          // ใต้กรอบ ถัดลงมาอีกแถว
+          { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },  // ชิดมุมบนซ้าย/ขวา
+          { x: bx, y: y0 - 2 * h - g - 0.4 },
+          { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
+        ], w, h, placed, maxY);
+        if (box) { placed.push(box); out.hull[hh.name] = box; }
+        else out.hidden.push(hh.name);
+      });
 
     [...regions]
-      .sort((a, b) => polyArea(b.points) - polyArea(a.points))
+      .sort((a, b) => sev(b.line_name) - sev(a.line_name) || polyArea(b.points) - polyArea(a.points))
       .forEach(r => {
-        const { w: wpx, h: hpx } = estLabelPx(r.line_name, regText(stOf(r.line_name)), false);
+        const { w: wpx, h: hpx } = estLabelPx(r.line_name, lblText(stOf(r.line_name)), false);
         const w = Math.min(toN(wpx), 34), h = toN(hpx);
         const xs = r.points.map(p => p[0]), ys = r.points.map(p => p[1]);
         const x0 = Math.min(...xs), x1 = Math.max(...xs);
@@ -963,36 +1020,11 @@ export default function FactoryMap({ setupMode = false }) {
           { x: bx, y: y0 + h + g },             // ในกรอบ ถัดลงมา 1 แถว
           { x: bx, y: cyn - h / 2 },            // กลางกรอบ
         ], w, h, placed, maxY);
-        placed.push(box);
-        out.region[r.id] = box;
+        if (box) { placed.push(box); out.region[r.id] = box; }
+        else out.hidden.push(r.line_name);
       });
-
-    autoHulls.forEach(hh => {
-      const kids = (childrenOf[hh.name] || []).length;
-      const { w: wpx, h: hpx } = estLabelPx(`▣ ${hh.name}  ${kids} ไลน์`, regText(stOf(hh.name)), true);
-      const w = Math.min(toN(wpx), 36), h = toN(hpx);
-      const xs = hh.hull.map(p => p[0]), ys = hh.hull.map(p => p[1]);
-      const x0 = Math.min(...xs), x1 = Math.max(...xs);
-      const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
-      const bx = (x0 + x1) / 2 - w / 2, cyn = (y0 + y1) / 2;
-      // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
-      // ป้ายกลุ่มวางท้ายสุด (ที่เหลือน้อยแล้ว) จึงให้ตัวเลือกเยอะกว่าป้ายไลน์ รวมมุมกรอบด้วย
-      const box = placeBox([
-        { x: bx, y: y1 + g },
-        { x: bx, y: y0 - h - g },
-        { x: x1 + g, y: cyn - h / 2 },
-        { x: x0 - w - g, y: cyn - h / 2 },
-        { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },          // ชิดมุมล่างซ้าย/ขวา
-        { x: bx, y: y1 + g + h + 0.4 },                          // ใต้กรอบ ถัดลงมาอีกแถว
-        { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },  // ชิดมุมบนซ้าย/ขวา
-        { x: bx, y: y0 - 2 * h - g - 0.4 },
-        { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
-      ], w, h, placed, maxY);
-      placed.push(box);
-      out.hull[hh.name] = box;
-    });
     return out;
-    // stOf/regText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
+    // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
   }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
@@ -1113,7 +1145,14 @@ export default function FactoryMap({ setupMode = false }) {
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
-        {!editing && !!autoHulls.length && (
+        {!editing && !!labelLayout.hidden.length && (
+          // จอแคบวางป้ายไม่ครบ — ต้องบอกว่าขาดไปกี่ไลน์ ห้ามให้หายเงียบ
+          <span title={`ไม่มีที่วางป้าย: ${labelLayout.hidden.join(', ')}`}
+            style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, fontWeight: 700, color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap' }}>
+            จอแคบ · ซ่อนป้าย {labelLayout.hidden.length} ไลน์ — แตะกรอบเพื่อดู
+          </span>
+        )}
+        {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
           <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
           </span>
@@ -1201,8 +1240,9 @@ export default function FactoryMap({ setupMode = false }) {
                 แยกจากป้ายไลน์ให้ชัด (2026-08-06): ▣ + ขอบประหนา + ตัวใหญ่กว่า + ชิปบอกจำนวนไลน์ย่อย */}
             {!editing && autoHulls.map(h => {
               const box = labelLayout.hull[h.name];
-              const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
-              const kids = (childrenOf[h.name] || []).length;
+              if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → นับไปบอกบนจอแทน (ห้ามวาดทับ)
+              const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = lblText(st);
+              const kids = compactLbl ? 0 : (childrenOf[h.name] || []).length;
               const posStyle = box
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
                 : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
@@ -1224,8 +1264,10 @@ export default function FactoryMap({ setupMode = false }) {
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
             {regions.map(r => {
-              const box = labelLayout.region[r.id]; const [cx, cy] = labelAnchor(r.points);
-              const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const box = labelLayout.region[r.id];
+              if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้
+              const [cx, cy] = labelAnchor(r.points);
+              const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = lblText(st);
               const parent = parentOf[r.line_name];
               const posStyle = box
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
