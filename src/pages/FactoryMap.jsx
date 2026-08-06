@@ -159,8 +159,10 @@ const expandHull = (pts, f = 1.045) => {
    ประมาณขนาดกล่องจากความยาวข้อความ (วัดของจริงตอนคำนวณ layout ไม่ได้) แล้ว
    **กำหนด width ให้ป้ายเท่าที่จองไว้** → พื้นที่ที่จองกับที่วาดจริงตรงกันเสมอ
    (pattern เดียวกับ de-overlap ป้ายประเทศใน WorldFactoryMap) */
-const estLabelPx = (name, txt, big) => {
+const estLabelPx = (name, txt, big, plain) => {
   const nf = big ? 8.6 : 7.8, vf = big ? 7.4 : 7.0;   // px ต่อตัวอักษร (ตัวหนา Sarabun)
+  // plain = ข้อความล้วนวางในกรอบไลน์ตัวเอง (ไม่มีการ์ด/พื้นหลัง) → เล็กกว่าเยอะ ใส่ข้อมูลได้ครบกว่า
+  if (plain) return { w: Math.max(40, (name || '').length * nf, (txt || '').length * vf) + 6, h: txt ? 30 : 16 };
   return {
     w: Math.max(72, (name || '').length * nf, (txt || '').length * vf) + 22,
     h: txt ? (big ? 42 : 37) : (big ? 26 : 23),
@@ -1020,7 +1022,28 @@ export default function FactoryMap({ setupMode = false }) {
       const cyn = (y0 + y1) / 2, bb = { x0, x1, y0, y1 };
       // ทับกรอบตัวเอง/ไลน์ในกลุ่มเดียวกันได้ (ป้ายเกาะกรอบตัวเองเป็นเรื่องปกติ) — ที่เหลือห้ามทับ
       const obstacles = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
+      const okIn = (b) => !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
       for (let lvl = 0; lvl < levels.length; lvl++) {
+        /* ⭐ ป้ายไลน์: ลอง "ข้อความล้วนในกรอบตัวเอง" ก่อน (คำสั่ง user 2026-08-06)
+           กรอบไลน์มีพื้นสีอ่อนอยู่แล้ว ไม่ต้องมีการ์ด/ขอบซ้อนอีก → ป้ายเล็กลงมาก
+           วัดแล้ว: จอ 1800px มี 17/27 ใบลงในกรอบตัวเองได้ · 1250px ข้อมูลเต็มเพิ่ม 20→21
+           และ "เหลือชื่ออย่างเดียว" ลดจาก 3 เหลือ 1 */
+        if (!big) {
+          const { w: pw, h: ph } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, true);
+          const w2 = Math.min(toN(pw), 34), h2 = toN(ph);
+          const p2 = toN(2), bx2 = (x0 + x1) / 2 - w2 / 2;
+          for (const c of [
+            { x: bx2, y: y0 + p2 }, { x: x0 + p2, y: y0 + p2 }, { x: x1 - w2 - p2, y: y0 + p2 },
+            { x: bx2, y: cyn - h2 / 2 },
+            { x: bx2, y: y1 - h2 - p2 }, { x: x0 + p2, y: y1 - h2 - p2 }, { x: x1 - w2 - p2, y: y1 - h2 - p2 },
+          ]) {
+            const b = { x: c.x, y: c.y, w: w2, h: h2 };
+            // ต้องอยู่ในกรอบตัวเองจริงๆ (ล้นได้เล็กน้อย) ไม่งั้นข้อความลอยบนรูปผังอ่านไม่ออก
+            if (b.x >= x0 - toN(3) && b.x + b.w <= x1 + toN(3) && okIn(b)) {
+              placed.push(b); return { ...b, lvl, plain: true, link: null };
+            }
+          }
+        }
         const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big);
         const w = Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
         const cands = big
@@ -1334,7 +1357,12 @@ export default function FactoryMap({ setupMode = false }) {
                 : { left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', maxWidth: '30%' };
               return (
                 <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
+                  {/* ป้ายที่ลงในกรอบไลน์ตัวเองได้ = ข้อความล้วน ไม่มีการ์ด/ขอบ (กรอบมีพื้นสีอ่อนอยู่แล้ว
+                      ซ้อนการ์ดอีกชั้นทั้งเปลืองที่ทั้งรก) · ป้ายที่ต้องออกไปอยู่นอกกรอบยังใช้การ์ด
+                      ไม่งั้นตัวหนังสือลอยบนรูปถ่ายผังอ่านไม่ออก */}
+                  <div style={box?.plain
+                    ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
+                    : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
