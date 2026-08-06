@@ -1292,11 +1292,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

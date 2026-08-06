@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
@@ -56,13 +56,17 @@ const METRICS = {
     // เป้า 0 = ไม่มี order → ไม่มี pace ให้จัดอันดับ (คืน null → ลงไปท้ายรายการ ไม่ปนกับไลน์ตกจังหวะ)
     value: s => s.target > 0 ? (s.onTimeTarget >= 1 ? Math.round(s.actual / s.onTimeTarget * 100) : 100) : null,
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
-    text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}${s.onTimeTarget >= 1 ? ` · ${Math.round(s.actual / s.onTimeTarget * 100)}%` : ''}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
+    // ป้ายบนผังไม่โชว์ % (2026-08-06 · คำสั่ง user "คนจะงง ชนกับ OEE") — เอาแค่ ได้/ควรได้/เป้า
+    // สีของกรอบยังบอกว่าทันจังหวะไหม (cat) · % เต็มๆ ดูได้ที่ popup รายละเอียด
+    text: s => s.target > 0 ? `${s.actual}/${Math.round(s.onTimeTarget)}/${s.target}` : (s.hasOpen ? '🔵 เปิดกะ · ยังไม่มี order' : '⏸ ยังไม่เปิดกะ'),
     cat: s => s.target > 0 ? (s.onTimeTarget < 1 ? 'ok' : (() => { const p = s.actual / s.onTimeTarget * 100; return p >= 95 ? 'good' : p >= 80 ? 'ok' : 'bad'; })()) : (s.hasOpen ? 'waiting' : 'idle'),
+    short: s => s.target > 0 ? (s.onTimeTarget >= 1 ? `${Math.round(s.actual / s.onTimeTarget * 100)}%` : `${s.actual}`) : '',
   },
   oee: {
     label: '⚙️ OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
     text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+    short: s => s.oee != null ? `${Math.round(s.oee)}%` : '',
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -75,12 +79,14 @@ const METRICS = {
     //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
     mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
     mapText: s => s.dtActive ? `🔴 หยุด ${s.dtMinHour} น.` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
+    short: s => s.dtActive ? `🔴 ${s.dtMinHour}น.` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
     label: '🚫 ของเสีย', worstFirst: true, desc: true, facilityNA: true,
     value: s => s.ng,
     text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
     cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
+    short: s => s.ng > 0 ? `NG ${s.ng}` : '',
   },
   people: {
     // 👷 รวม "คน/เข้างาน" + "จุดงานเข้าประจำ" เป็นแท็บเดียว (2026-08-04 คำสั่ง user) —
@@ -100,12 +106,17 @@ const METRICS = {
       const cS = !s.stationTotal ? 'idle' : (() => { const p = s.stationFilled / s.stationTotal * 100; return p >= 90 ? 'good' : p >= 70 ? 'ok' : 'bad'; })();
       return rank[cS] > rank[cM] ? cS : cM;  // เอาด้านที่แย่กว่า
     },
+    short: s => {
+      if (s.headTotal > 0) return `${s.present}/${s.headTotal}${s.ppeBad ? ` ⚠${s.ppeBad}` : ''}`;
+      return s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal}` : '';
+    },
   },
   pm: {
     label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
     value: s => s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null,   // overdue สำคัญกว่า due-soon เสมอ
     text: s => s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
     cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
+    short: s => !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
   },
   supply: {
     // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
@@ -118,6 +129,7 @@ const METRICS = {
       return s.isFac ? `ปกติ${feeds ? ' · จ่าย' + feeds : ''}` : `จ่ายโดย ${supNames(s.supList).join(', ')}`;
     },
     cat: s => !s.supList.length ? 'idle' : s.supAtRisk ? 'down' : 'good',
+    short: s => !s.supList.length ? '' : s.supAtRisk ? '⚠ ซ่อมอยู่' : '',
   },
 };
 
@@ -138,42 +150,76 @@ const expandHull = (pts, f = 1.045) => {
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
   return pts.map(([x, y]) => [Math.min(100, Math.max(0, round(cx + (x - cx) * f))), Math.min(100, Math.max(0, round(cy + (y - cy) * f)))]);
 };
-// จุดอยู่ใน polygon ไหม (ray casting) — ใช้กันป้ายกลุ่มไปตกในกรอบไลน์/hull ของกลุ่มอื่น
-const pointInPoly = (x, y, poly) => {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
+/* ── จัดวางป้ายไม่ให้ทับกัน (2026-08-06) ─────────────────────────────────────
+   ปัญหาเดิม: ป้ายไลน์ยึด "กึ่งกลางขอบบนของกรอบ" ตายตัว ไม่มีการเลี่ยงกันเลย
+   → ไลน์ที่วางติดกันบนผังจริง (Laser GOR/Assy GOR · Laser LWR/Assy LWR · Line 60/61)
+     ป้ายทับกันจนอ่านไม่ออก (ป้ายกลุ่มเคยมี logic เลี่ยงอยู่ แต่ป้ายไลน์ไม่มี)
+
+   ⚠️ แกน x เป็น % ของ "ความกว้าง" · แกน y เป็น % ของ "ความสูง" — ผังไม่ใช่จัตุรัส
+      ต้องแปลง y เป็นหน่วยเดียวกับ x (หาร aspect) ก่อนคำนวณการทับ ไม่งั้นเพี้ยน
+      หน่วยกลางที่ใช้ในไฟล์นี้เรียก "หน่วย N" = % ของความกว้างผัง
+   ประมาณขนาดกล่องจากความยาวข้อความ (วัดของจริงตอนคำนวณ layout ไม่ได้) แล้ว
+   **กำหนด width ให้ป้ายเท่าที่จองไว้** → พื้นที่ที่จองกับที่วาดจริงตรงกันเสมอ
+   (pattern เดียวกับ de-overlap ป้ายประเทศใน WorldFactoryMap) */
+const estLabelPx = (name, txt, big, plain) => {
+  const nf = big ? 8.6 : 7.8, vf = big ? 7.4 : 7.0;   // px ต่อตัวอักษร (ตัวหนา Sarabun)
+  // plain = ข้อความล้วนวางในกรอบไลน์ตัวเอง (ไม่มีการ์ด/พื้นหลัง) → เล็กกว่าเยอะ ใส่ข้อมูลได้ครบกว่า
+  if (plain) return { w: Math.max(40, (name || '').length * nf, (txt || '').length * vf) + 6, h: txt ? 30 : 16 };
+  return {
+    w: Math.max(72, (name || '').length * nf, (txt || '').length * vf) + 22,
+    h: txt ? (big ? 42 : 37) : (big ? 26 : 23),
+  };
 };
-// เลือกตำแหน่งป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — เลี่ยงทับป้ายลูก: ลอง ใต้/เหนือ/ซ้าย/ขวา ของ hull
-// แล้วเลือกจุดที่ไกลป้ายอื่นสุด (bias ใต้กรอบ — ป้ายลูกเกาะขอบบนเสมอ ใต้จึงว่างโดยธรรมชาติ)
-// + โทษหนักถ้าจุดตกในกรอบ/hull ของกลุ่มอื่น (เคสจริง: ป้าย GOR ตกในพื้นที่ LWR BAR)
-const hullLabelPos = (hull, avoid, otherPolys = []) => {
-  const xs = hull.map(p => p[0]), ys = hull.map(p => p[1]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  const cands = [
-    { x: cx, y: maxY, place: 'below', bias: 2, px: cx, py: maxY + 2.5 },
-    { x: cx, y: minY, place: 'above', bias: 0.8, px: cx, py: minY - 2.5 },
-    { x: minX, y: cy, place: 'left', bias: 0, px: minX - 3, py: cy },
-    { x: maxX, y: cy, place: 'right', bias: 0, px: maxX + 3, py: cy },
-  ];
-  let best = cands[0], bestScore = -Infinity;
-  for (const c of cands) {
-    const d = avoid.length ? Math.min(...avoid.map(a => Math.hypot(a[0] - c.x, a[1] - c.y))) : 50;
-    const off = (c.y > 97 || c.y < 3 || c.x > 97 || c.x < 3) ? -100 : 0; // ตกขอบผัง = ตัดทิ้ง
-    // ตัวป้ายจริงกินพื้นที่ฝั่ง px/py (เลย anchor ออกไปตามทิศ) — ถ้าไปตกในกรอบของกลุ่มอื่น = โทษหนัก
-    const clash = otherPolys.some(poly => pointInPoly(c.px, c.py, poly)) ? -50 : 0;
-    const score = d + c.bias + off + clash;
-    if (score > bestScore) { bestScore = score; best = c; }
-  }
-  return best;
+const boxHit = (a, b, pad = 0.35) =>
+  a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
+/* วางกล่องป้าย — กติกาสำคัญที่สุดคือ **ป้ายต้องอยู่ติด/ใกล้กรอบของตัวเอง**
+   ลำดับ: (1) ตำแหน่งที่ติดกรอบ (บน/ล่าง/ซ้าย/ขวา + เลื่อนชิดซ้าย-ขวาตามขอบ)
+          (2) ขยับออกทีละขั้น แต่ **ห้ามเกิน MAX_AWAY** — ที่ขยับออกมาจะถูกลากเส้นโยงกลับกรอบ
+          (3) หาไม่เจอ: จอกว้าง = กลับไปตำแหน่งธรรมชาติ (ยอมทับนิดดีกว่าลอยหนี)
+                       จอแคบ = คืน null ไม่วาด แล้วไปนับบอกบนจอ
+   ⚠️ ห้ามปล่อยให้ขยับได้ไม่จำกัด — เคยดันแนวตั้งได้ถึง 12 แถว ป้ายไปโผล่ห่างกรอบตัวเอง 213px
+      (user ทัก 2026-08-06 "ตำแหน่งมั่ว เด้งไปไกลจากไลน์") · วัดแล้ว MAX_AWAY 9 หน่วยคือจุดคุ้ม:
+      จอ 1800px ทับ 0 · 1250px ทับ 2 · ไกลสุด ~90px (มีเส้นโยงกำกับ) */
+const MAX_AWAY = 12;
+const gapToBox = (b, bb) => {
+  const dx = Math.max(bb.x0 - (b.x + b.w), b.x - bb.x1, 0);
+  const dy = Math.max(bb.y0 - (b.y + b.h), b.y - bb.y1, 0);
+  return Math.hypot(dx, dy);
 };
-const HULL_LBL_TRANSFORM = {
-  below: 'translate(-50%, 6px)', above: 'translate(-50%, -108%)',
-  left: 'translate(calc(-100% - 6px), -50%)', right: 'translate(6px, -50%)',
+/* วางกล่องป้าย · ข้อห้าม 2 อย่าง (คำสั่ง user 2026-08-06 "label ไม่ควรไปทับกรอบพื้นที่ของไลน์อื่น"):
+     (ก) ห้ามทับป้ายใบอื่น   (ข) ห้ามทับ "กรอบพื้นที่ของไลน์อื่น" — ทับกรอบตัวเอง/ในครอบครัวได้
+   ลำดับ: ตำแหน่งที่ติดกรอบตัวเอง → (ถ้าเป็นระดับข้อความสุดท้าย) ค้นหาที่ว่างรอบๆ เรียงจากใกล้ไปไกล
+          จำกัด MAX_AWAY + ลากเส้นโยงกลับกรอบ → จอแคบ: ไม่วาดแล้วนับบอก · จอกว้าง: กลับที่เดิมยอมทับ
+   ⚠️ ห้ามเอา "กรอบไลน์อื่น" ออกจาก obstacles — เคยเช็คแค่ป้ายชนป้าย ผลคือป้าย Assy GOR/GOR
+      ไปนั่งทับกรอบ Laser GOR/LWR BAR (user ทัก) */
+const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, isLast) => {
+  const ok = (b) => b.x >= -0.5 && b.x + b.w <= 100.5 && b.y >= -0.5 && b.y + b.h <= maxY + 0.5
+    && !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
+  for (const c of cands) { const b = { x: c.x, y: c.y, w, h }; if (ok(b)) return b; }
+  if (!isLast) return null;                       // ยังย่อข้อความได้อีก → ลองระดับถัดไปก่อน อย่าเพิ่งย้ายป้าย
+  const step = Math.max(h * 0.8, 1.2);            // ค้นหาที่ว่างรอบกรอบ เรียงจากใกล้สุด
+  const near = [];
+  for (let x = Math.max(0, bb.x0 - MAX_AWAY - w); x <= Math.min(100 - w, bb.x1 + MAX_AWAY); x += step) {
+    for (let y = Math.max(0, bb.y0 - MAX_AWAY - h); y <= Math.min(maxY - h, bb.y1 + MAX_AWAY); y += step) {
+      const b = { x, y, w, h }, d = gapToBox(b, bb);
+      if (d <= MAX_AWAY) near.push({ b, d });
+    }
+  }
+  near.sort((a, z) => a.d - z.d);
+  for (const { b } of near) if (ok(b)) return b;
+  if (allowDrop) return null;                     // จอแคบ: ไม่วาด แล้วไปนับบอกบนจอ
+  return {                                        // จอกว้าง: กลับตำแหน่งธรรมชาติ ยอมทับดีกว่าไม่มีป้าย
+    x: Math.min(Math.max(cands[0].x, 0.3), Math.max(0.3, 100 - w - 0.3)),
+    y: Math.min(Math.max(cands[0].y, 0.3), Math.max(0.3, maxY - h - 0.3)),
+    w, h,
+  };
+};
+// ผังแคบกว่านี้ = ย่อข้อความบนป้าย (มือถือ/แท็บเล็ตแนวตั้ง) — PC/จอ TV กว้างกว่านี้เสมอ จึงได้ข้อมูลครบ
+const COMPACT_W = 820;
+const polyArea = (pts) => {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
+  return Math.abs(a) / 2;
 };
 const centroid = (pts) => pts.length
   ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
@@ -243,6 +289,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
   const [newZone, setNewZone] = useState(''); // พิมพ์ชื่อโซน MTN/facility ใหม่ (ไม่มีใน master)
+  const [wrapW, setWrapW] = useState(0);      // ความกว้างผังจริง (px) — แปลงขนาดป้าย px → % ตอนกันป้ายทับกัน
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
@@ -424,9 +471,17 @@ export default function FactoryMap({ setupMode = false }) {
         let ctW = 0, ctQ = 0;
         Object.values(perMat).forEach(m => { const ct = ctMap[m.mat_no] || 0; if (ct > 0 && m.target > 0) { ctW += ct * m.target; ctQ += m.target; } });
         const ctAvg = ctQ > 0 ? ctW / ctQ : 0;
-        // มี CT → คิดจากกำลังผลิตจริง · ไม่มี CT (สินค้ายังไม่ตั้ง CT) → ถอยไปสูตรเดิม (สัดส่วนเวลาของกะ)
-        onTimeTarget = ctAvg > 0
-          ? Math.min(target, (availMin * 60) / ctAvg)
+        /* ⚠️ ไลน์ที่เดินหลายเครื่องขนาน กำลังผลิต = N ÷ CT ไม่ใช่ 1 ÷ CT (2026-08-06 · user ให้ตรวจ SUB APRON)
+           เคสจริง SUB APRON: ผลิต 2500 แต่ระบบบอก "ควรได้ 796" → 314% ทั้งที่ของออกปกติ
+           เพราะคิดเหมือนมีเครื่องเดียว (ยอดจริง = 3.14 เท่าของกำลังเครื่องเดียว)
+           **ไลน์ที่เป็น parallel_machine แต่ยังไม่ตั้ง `parallel_stations` = ไม่รู้ N จริง ห้ามเดา**
+           (ทะเบียนเครื่องเอามานับแทนไม่ได้ — SUB APRON ลงไว้ 14 ตัวแต่รวมจิ๊ก/โรบอทด้วย)
+           → ถอยไปสูตรอัตราตามเวลา (เป้า × สัดส่วนเวลาที่ผ่านไป) ซึ่งไม่ต้องรู้ N */
+        const lineCfg = flowByLineRef.current[s.line_name];
+        const parallelN = parallelUnitsOf(lineCfg);
+        const unknownN = flowModeOf(lineCfg?.flow_mode) === 'parallel_machine' && !(Number(lineCfg?.parallel_stations) > 1);
+        onTimeTarget = (ctAvg > 0 && !unknownN)
+          ? Math.min(target, (availMin * 60) / ctAvg * parallelN)
           : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
@@ -810,6 +865,17 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
   const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
+  /* ป้ายบนผังแคบ (มือถือ/จอเล็ก) — ย่อข้อความให้เหลือตัวเลขสำคัญ (คำสั่ง user 2026-08-06:
+     "มือถือลดข้อมูลได้ · PC/จอ display ต้องครบ") · ป้ายกว้างเท่าข้อความยาวสุด
+     ผังแคบจึงจัดยังไงก็ทับ — ย่อข้อความคือทางเดียวที่ไม่ต้องซ่อนไลน์ทิ้ง
+     ⚠️ COMPACT_W ต้องต่ำกว่าความกว้างผังบนโน้ตบุ๊ก/จอ TV เสมอ ไม่งั้นจอใหญ่โดนย่อไปด้วย
+        (จอ 1366 หัก sidebar 252 + แผงขวา 360 ≈ 720 → มือถือ/แท็บเล็ตแนวตั้งเท่านั้นที่เข้าเกณฑ์) */
+  const compactLbl = wrapW > 0 && wrapW < COMPACT_W;
+  const shortText = (st) => {
+    if (st.isFac && M.facilityNA) return facHealth(st) === 'good' ? '' : facHealthText(st);
+    return M.short ? M.short(st) : regText(st);
+  };
+  const lblText = (st) => (compactLbl ? shortText(st) : regText(st));
 
   // side panel: ไลน์ที่มีกะวันนี้ ∪ ไลน์ที่ตีกรอบไว้ — เรียงตาม metric (ปัญหาขึ้นบน)
   const ranked = useMemo(() => {
@@ -922,23 +988,124 @@ export default function FactoryMap({ setupMode = false }) {
       })
       .filter(h => h.hull.length >= 3);
   }, [regions, topNames, childrenOf]);
-  // ตำแหน่งป้ายกลุ่ม — วางทีละกลุ่ม เลี่ยงป้ายลูกทุกใบ + ป้ายกลุ่มที่วางไปแล้ว
-  const hullLabelPlan = useMemo(() => {
-    const avoid = regions.map(r => labelAnchor(r.points));
-    const out = {};
-    autoHulls.forEach(h => {
-      const kids = new Set(childrenOf[h.name] || []);
-      // กรอบที่ห้ามให้ป้ายไปตก: กรอบไลน์ที่ไม่ใช่ลูกตัวเอง + hull ของกลุ่มอื่น
-      const otherPolys = [
-        ...regions.filter(r => !kids.has(r.line_name)).map(r => r.points),
-        ...autoHulls.filter(o => o.name !== h.name).map(o => o.hull),
-      ];
-      const pos = hullLabelPos(h.hull, avoid, otherPolys);
-      avoid.push([pos.x, pos.y]);
-      out[h.name] = pos;
+  /* ตำแหน่งป้ายทั้งผัง — กันทับกันทั้งป้ายไลน์และป้ายกลุ่ม (2026-08-06)
+     ลำดับ: กรอบใหญ่ได้เลือกที่ก่อน (ป้ายอยู่ตำแหน่งธรรมชาติ) → ตัวเล็กหลบ
+            → ป้ายกลุ่มวางท้ายสุด เลี่ยงป้ายไลน์ที่วางแล้วทุกใบ
+     ยังไม่รู้ขนาดผัง (รูปยังไม่โหลด) = คืน {} → render ถอยไปวางแบบเดิม */
+  const labelLayout = useMemo(() => {
+    const out = { region: {}, hull: {}, ready: false, hidden: [] };
+    if (!wrapW || !aspect) return out;           // รูปยังไม่โหลด → render ถอยไปวางแบบเดิม
+    out.ready = true;
+    const toN = (px) => (px / wrapW) * 100;      // px → หน่วย N (% ของความกว้าง)
+    const maxY = 100 / aspect;                   // ความสูงผังในหน่วย N
+    const g = toN(5);                            // ระยะห่างขั้นต่ำจากขอบกรอบ
+    const placed = [];
+    // ไลน์ที่มีปัญหาได้เลือกที่ก่อน — ที่ไม่พอทุกใบ ตัวที่ต้องรีบเห็นต้องรอด
+    const RANK = { down: 5, bad: 4, waiting: 3, ok: 2, good: 1, idle: 0 };
+    const sev = (name) => RANK[regCat(stOf(name))] ?? 0;
+    /* ป้ายที่ขยับออกจากกรอบต้องมีเส้นโยงกลับ ไม่งั้นดูไม่ออกว่าเป็นของไลน์ไหน
+       (พิกัดเส้นเป็นหน่วยผังจริง: x = % ความกว้าง, y = % ความสูง) */
+    const linkOf = (b, bb) => {
+      if (gapToBox(b, bb) < 0.6) return null;
+      const lx = Math.min(Math.max((bb.x0 + bb.x1) / 2, b.x), b.x + b.w);
+      const ly = Math.min(Math.max((bb.y0 + bb.y1) / 2, b.y), b.y + b.h);
+      return { x1: lx, y1: ly * aspect, x2: (bb.x0 + bb.x1) / 2, y2: (bb.y0 + bb.y1) / 2 * aspect };
+    };
+    /* ⭐ กติกาหลัก: "ตำแหน่งสำคัญกว่ารายละเอียด"
+       ป้ายใหญ่กว่ากรอบตัวเองหลายเท่า (กรอบ Laser GOR กว้าง ~54px แต่ป้ายกว้าง ~180px)
+       → จะวางให้ติดกรอบทุกใบโดยไม่ทับกันเป็นไปไม่ได้ถ้ายืนกรานข้อความเต็มทุกใบ
+       ลำดับที่ใช้: ลองข้อความเต็มทุกตำแหน่งที่ติดกรอบก่อน → ไม่ได้ค่อยย่อข้อความ → ชื่ออย่างเดียว
+       → สุดท้ายถึงยอมขยับออก (มีเส้นโยง) — ห้ามสลับลำดับ (เคยให้ตำแหน่งยืดหยุ่นก่อน
+       ผลคือป้ายลอยห่างกรอบตัวเอง 213px user ทัก "ตำแหน่งมั่ว" 2026-08-06)
+       วัดกับกรอบจริง: จอ 1800px ข้อมูลเต็มครบ 27/27 ทับ 0 ไม่มีใบไหนต้องขยับ */
+    // กรอบพื้นที่ของทุกไลน์ (หน่วย N) — ใช้เป็นสิ่งกีดขวาง ป้ายห้ามไปนั่งทับกรอบไลน์อื่น
+    const regionRect = {};
+    regions.forEach(r => {
+      const xs = r.points.map(p => p[0]), ys = r.points.map(p => p[1]);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys) / aspect;
+      regionRect[r.line_name] = { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) / aspect - y0 };
     });
+    const place = (bbPts, big, levels, ownNames) => {
+      const xs = bbPts.map(p => p[0]), ys = bbPts.map(p => p[1]);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs);
+      const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
+      const cyn = (y0 + y1) / 2, bb = { x0, x1, y0, y1 };
+      // ทับกรอบตัวเอง/ไลน์ในกลุ่มเดียวกันได้ (ป้ายเกาะกรอบตัวเองเป็นเรื่องปกติ) — ที่เหลือห้ามทับ
+      const obstacles = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
+      const okIn = (b) => !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
+      for (let lvl = 0; lvl < levels.length; lvl++) {
+        /* ⭐ ป้ายไลน์: ลอง "ข้อความล้วนในกรอบตัวเอง" ก่อน (คำสั่ง user 2026-08-06)
+           กรอบไลน์มีพื้นสีอ่อนอยู่แล้ว ไม่ต้องมีการ์ด/ขอบซ้อนอีก → ป้ายเล็กลงมาก
+           วัดแล้ว: จอ 1800px มี 17/27 ใบลงในกรอบตัวเองได้ · 1250px ข้อมูลเต็มเพิ่ม 20→21
+           และ "เหลือชื่ออย่างเดียว" ลดจาก 3 เหลือ 1 */
+        if (!big) {
+          const { w: pw, h: ph } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, true);
+          const w2 = Math.min(toN(pw), 34), h2 = toN(ph);
+          const p2 = toN(2), bx2 = (x0 + x1) / 2 - w2 / 2;
+          for (const c of [
+            { x: bx2, y: y0 + p2 }, { x: x0 + p2, y: y0 + p2 }, { x: x1 - w2 - p2, y: y0 + p2 },
+            { x: bx2, y: cyn - h2 / 2 },
+            { x: bx2, y: y1 - h2 - p2 }, { x: x0 + p2, y: y1 - h2 - p2 }, { x: x1 - w2 - p2, y: y1 - h2 - p2 },
+          ]) {
+            const b = { x: c.x, y: c.y, w: w2, h: h2 };
+            // ต้องอยู่ในกรอบตัวเองจริงๆ (ล้นได้เล็กน้อย) ไม่งั้นข้อความลอยบนรูปผังอ่านไม่ออก
+            if (b.x >= x0 - toN(3) && b.x + b.w <= x1 + toN(3) && okIn(b)) {
+              placed.push(b); return { ...b, lvl, plain: true, link: null };
+            }
+          }
+        }
+        const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big);
+        const w = Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
+        const cands = big
+          ? [ // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
+              { x: bx, y: y1 + g }, { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },
+              { x: bx, y: y0 - h - g }, { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },
+              { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
+              { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
+              { x: x1 + g, y: y0 - h - g }, { x: x0 - w - g, y: y0 - h - g }]
+          : [ // ทุกตัวเลือกติดกรอบของตัวเอง — มี "เลื่อนชิดซ้าย/ขวาตามขอบ" ให้หลบเพื่อนบ้านโดยไม่หนีออกจากกรอบ
+              { x: bx, y: y0 + toN(2) }, { x: x0, y: y0 + toN(2) }, { x: x1 - w, y: y0 + toN(2) },
+              { x: bx, y: y0 - h - g }, { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },
+              { x: bx, y: y1 - h - toN(2) }, { x: x0, y: y1 - h - toN(2) }, { x: x1 - w, y: y1 - h - toN(2) },
+              { x: bx, y: y1 + g }, { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },
+              { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
+              { x: bx, y: y0 + h + g }, { x: bx, y: cyn - h / 2 }];
+        const last = lvl === levels.length - 1;
+        const box = placeBox(cands, w, h, placed, maxY, bb, obstacles, last && compactLbl, last);
+        if (box) { placed.push(box); return { ...box, lvl, link: linkOf(box, bb) }; }
+      }
+      return null;
+    };
+
+    /* ป้ายกลุ่มวางก่อนป้ายไลน์ — ยอดรวมทั้ง family สำคัญกว่ารายไลน์
+       เทสกับกรอบจริง: วางกลุ่มก่อน ผังแคบเสียป้ายน้อยลงชัดเจน และจอใหญ่ไม่แย่ลงเลย */
+    [...autoHulls]
+      .sort((a, b) => sev(b.name) - sev(a.name) || polyArea(b.hull) - polyArea(a.hull))
+      .forEach(hh => {
+        const st = stOf(hh.name), kids = (childrenOf[hh.name] || []).length;
+        const full = lblText(st), sh = shortText(st);
+        const levels = [{ name: `▣ ${hh.name}${compactLbl ? '' : `  ${kids} ไลน์`}`, txt: full }];
+        if (sh !== full) levels.push({ name: `▣ ${hh.name}`, txt: sh });
+        if (levels[levels.length - 1].txt !== '') levels.push({ name: `▣ ${hh.name}`, txt: '' });
+        // ป้ายกลุ่มห้ามทับกรอบไลน์ใดๆ เลย (รวมลูกตัวเอง) — เทสแล้วเข้มขนาดนี้ไม่เสียอะไร ยังหาที่ติดกรอบได้ครบ
+        const box = place(hh.hull, true, levels, new Set());
+        if (box) out.hull[hh.name] = box; else out.hidden.push(hh.name);
+      });
+
+    [...regions]
+      .sort((a, b) => sev(b.line_name) - sev(a.line_name) || polyArea(b.points) - polyArea(a.points))
+      .forEach(r => {
+        const st = stOf(r.line_name);
+        const full = lblText(st), sh = shortText(st);
+        const levels = [{ name: r.line_name, txt: full }];
+        if (sh !== full) levels.push({ name: r.line_name, txt: sh });
+        if (levels[levels.length - 1].txt !== '') levels.push({ name: r.line_name, txt: '' });
+        const box = place(r.points, false, levels, new Set([r.line_name]));
+        if (box) out.region[r.id] = box; else out.hidden.push(r.line_name);
+      });
     return out;
-  }, [autoHulls, regions, childrenOf]);
+    // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1030,6 +1197,15 @@ export default function FactoryMap({ setupMode = false }) {
   };
 
   const onImgLoad = (e) => setAspect(e.target.naturalWidth / e.target.naturalHeight);
+  // ความกว้างผังจริง — ใช้แปลงขนาดป้าย (px) เป็น % ตอนคำนวณการทับ · ย่อ/ขยายจอแล้วจัดป้ายใหม่เอง
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([en]) => setWrapW(en.contentRect.width));
+    ro.observe(el);
+    setWrapW(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, [imageUrl, loading]);
   const wrapStyle = aspect ? { width: `min(100%, calc((100vh - 210px) * ${aspect}))` } : { width: '100%' };
   const ptsStr = (pts) => pts.map(p => `${p[0]},${p[1]}`).join(' ');
   const flashLine = (name) => { setHighlight(name); setTimeout(() => setHighlight(h => h === name ? null : h), 2000); };
@@ -1049,6 +1225,27 @@ export default function FactoryMap({ setupMode = false }) {
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
+        {!editing && metric === 'productivity' && (
+          <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <b style={{ color: '#22c55e' }}>ทำได้</b> /
+            <b style={{ color: 'var(--text2)' }} title="ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)">ควรได้ตอนนี้</b> /
+            <b style={{ color: 'var(--text2)' }} title="เป้ารวมของใบงานที่เปิดในกะนี้">เป้ากะ</b>
+            <span style={{ opacity: 0.65 }}>· สีกรอบ = ทันจังหวะไหม</span>
+          </span>
+        )}
+        {!editing && !!labelLayout.hidden.length && (
+          // จอแคบวางป้ายไม่ครบ — ต้องบอกว่าขาดไปกี่ไลน์ ห้ามให้หายเงียบ
+          <span title={`ไม่มีที่วางป้าย: ${labelLayout.hidden.join(', ')}`}
+            style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, fontWeight: 700, color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap' }}>
+            จอแคบ · ซ่อนป้าย {labelLayout.hidden.length} ไลน์ — แตะกรอบเพื่อดู
+          </span>
+        )}
+        {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
+          <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
+          </span>
+        )}
       </div>
 
       {editing && (
@@ -1122,39 +1319,73 @@ export default function FactoryMap({ setupMode = false }) {
               {drawing && draft.length > 0 && (
                 <polyline points={ptsStr(hoverPt ? [...draft, hoverPt] : draft)} fill={snapFirst ? 'rgba(34,197,94,0.18)' : 'rgba(77,159,255,0.12)'} stroke={snapFirst ? '#22c55e' : '#4d9fff'} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeDasharray="3 2" />
               )}
+              {/* เส้นโยงป้าย↔กรอบ — เฉพาะป้ายที่ต้องขยับออกจากกรอบเพื่อหลบป้ายอื่น
+                  (ป้ายที่ยังติดกรอบไม่มีเส้น จะได้ไม่รกโดยไม่จำเป็น) */}
+              {!editing && [
+                ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
+                ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
+              ].filter(([l]) => l).map(([l, color, key]) => (
+                <line key={key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                  stroke={color} strokeWidth="1.2" strokeDasharray="3 2" opacity={0.55}
+                  vectorEffect="non-scaling-stroke" pointerEvents="none" />
+              ))}
             </svg>
 
             {drawing && draft.map((pt, i) => (
               <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: i === 0 ? (snapFirst ? 'rgba(34,197,94,0.35)' : 'rgba(77,159,255,0.3)') : '#4d9fff', border: `2px solid ${i === 0 ? '#22c55e' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
             ))}
 
-            {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ลอยเหนือเส้นประ บอกยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่) */}
+            {/* ป้ายกลุ่ม (กรอบแม่อัตโนมัติ) — ยอดรวมทั้ง family (รวมคนที่เช็คชื่อผูกไลน์แม่)
+                แยกจากป้ายไลน์ให้ชัด (2026-08-06): ▣ + ขอบประหนา + ตัวใหญ่กว่า + ชิปบอกจำนวนไลน์ย่อย */}
             {!editing && autoHulls.map(h => {
-              const pos = hullLabelPlan[h.name] || { x: 50, y: 50, place: 'below' };
-              const st = stOf(h.name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const box = labelLayout.hull[h.name];
+              if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → นับไปบอกบนจอแทน (ห้ามวาดทับ)
+              const st = stOf(h.name); const meta = CAT[regCat(st)];
+              // ข้อความตามระดับที่ layout เลือกไว้ (ที่ไม่พอ = ย่อลง แทนที่จะทับ/ลอยหนีกรอบ)
+              const txt = !box || box.lvl === 0 ? lblText(st) : box.lvl === 1 ? shortText(st) : '';
+              const kids = (compactLbl || (box && box.lvl > 0)) ? 0 : (childrenOf[h.name] || []).length;
+              const posStyle = box
+                ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
+                : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
               return (
-                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: HULL_LBL_TRANSFORM[pos.place], pointerEvents: 'none', maxWidth: '32%' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.82), rgba(8,10,16,0.66))', border: `1.5px dashed ${meta.color}`, borderRadius: 7, padding: '2px 9px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
-                    <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
+                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
+                    <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
+                      {kids > 0 && <span style={{ fontSize: '0.72em', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
                     </div>
-                    {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
+                    {txt && <div style={{ fontSize: 'clamp(11px,1vw,13.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{txt}</div>}
                   </div>
                 </div>
               );
             })}
 
-            {/* ป้าย = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง */}
+            {/* ป้ายไลน์ = การ์ดทึบมีขอบสีสถานะ (อ่านออกทุกพื้นหลัง) + จุดแดงถ้า downtime ค้าง
+                ตำแหน่งมาจาก labelLayout (กันทับกัน) — ยังไม่รู้ขนาดผัง = ถอยไปเกาะขอบบนแบบเดิม
+                ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
+                ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
             {regions.map(r => {
-              const [cx, cy] = labelAnchor(r.points); const st = stOf(r.line_name); const meta = CAT[regCat(st)]; const txt = regText(st);
+              const box = labelLayout.region[r.id];
+              if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้
+              const [cx, cy] = labelAnchor(r.points);
+              const st = stOf(r.line_name); const meta = CAT[regCat(st)];
+              const txt = !box || box.lvl === 0 ? lblText(st) : box.lvl === 1 ? shortText(st) : '';
+              const parent = parentOf[r.line_name];
+              const posStyle = box
+                ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
+                : { left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', maxWidth: '30%' };
               return (
-                // เกาะขอบบนของกรอบ (translateY 2px = อยู่ใต้เส้นขอบบนนิดเดียว) ไม่ทับกลางผังไลน์
-                // ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) — ปรับเฉพาะ art design:
-                // การ์ดเนียนขึ้น (ขอบสีรอบใบ+เงา) · ชื่อ/ตัวเลขแยกชั้นน้ำหนัก · เลขใช้ tabular-nums เรียงตรง
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', pointerEvents: 'none', maxWidth: '30%' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
+                <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  {/* ป้ายที่ลงในกรอบไลน์ตัวเองได้ = ข้อความล้วน ไม่มีการ์ด/ขอบ (กรอบมีพื้นสีอ่อนอยู่แล้ว
+                      ซ้อนการ์ดอีกชั้นทั้งเปลืองที่ทั้งรก) · ป้ายที่ต้องออกไปอยู่นอกกรอบยังใช้การ์ด
+                      ไม่งั้นตัวหนังสือลอยบนรูปถ่ายผังอ่านไม่ออก */}
+                  <div style={box?.plain
+                    ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
+                    : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
-                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{st.isFac && '🔧 '}{r.line_name}
+                      {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
+                      {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
+                      {st.isFac && '🔧 '}{r.line_name}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useRef, useMemo, startTransition } from 'react';
+import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -7,9 +7,17 @@ import { filterLinesByDept } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import {
+  inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+} from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
+import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL } from '../utils/skillLevels';
+
+// การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
+// lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
+const SkillRadarPanel = lazy(() => import('../components/SkillRadarPanel'));
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -30,17 +38,8 @@ function resizeImage(file, maxPx = 1280, quality = 0.85) {
   });
 }
 
-// 5-level standard matching factory requirements
-const SKILL_LEVELS = [
-  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)',  band: 4, desc: 'ผ่านอบรมเฉพาะทาง + สอบ' },
-  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)',   band: 3, desc: 'ทำงานได้ + แก้ไขปัญหา' },
-  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)',  band: 2, desc: 'ทำงานตามมาตรฐานอิสระ' },
-  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)',  band: 1, desc: 'OJT แล้ว ยังต้องดูแล' },
-  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)',   band: 0, desc: 'ต้องผ่านการ OJT ก่อน' },
-];
-const SKILL_GATES = [25, 50, 75, 100]; // levels requiring approval
-const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
-const getBandCeiling = (score) => score < 25 ? 24 : score < 50 ? 49 : score < 75 ? 74 : 99;
+/* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
+   — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
 
 const EMP_GRADES = {
   gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
@@ -71,6 +70,8 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
+  const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
+  const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
@@ -107,6 +108,13 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
+    supabase.from('skill_sub_items').select('skill_name, seq, label, wi_ref').order('seq')
+      .then(({ data }) => {
+        if (!alive) return;
+        const map = {};
+        (data || []).forEach(r => { (map[r.skill_name] ||= []).push(r); });
+        setSubItemsByskill(map);
+      });
     supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (!alive) return;
@@ -303,7 +311,10 @@ export default function Operator() {
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
         department: editingEmp.department,
-        section:    lockedScopeSec || editingEmp.section || null,
+        // เซฟค่าเดียวกับที่ช่อง Section โชว์อยู่เสมอ (WYSIWYG) — "ขึ้นตรงฝ่าย" = null
+        // ครอบข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section ด้วย (section='MTN' → null) ดู sectionScope.js
+        section:    lockedScopeSec || sectionValueForSave(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes)),
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
@@ -422,10 +433,10 @@ export default function Operator() {
   const deptOrgList  = useMemo(() => {
     const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
     const empDepts = new Set(empsInSec.map(e => String(e.department || '').trim().toLowerCase()).filter(Boolean));
-    return orgDeptNodes
+    return [...new Set(orgDeptNodes   // dedupe ชื่อ — คนละ section ตั้งชื่อแผนกซ้ำกันได้ (เช่น "ทั่วไป" มีทั้ง PD2/PD4)
       .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)  // orgDeptNodes เรียง sort_order มาแล้ว
       .map(d => d.code || d.name)
-      .filter(name => empDepts.has(String(name).trim().toLowerCase()));  // เฉพาะแผนกที่มีพนักงานจริง
+      .filter(name => empDepts.has(String(name).trim().toLowerCase())))];  // เฉพาะแผนกที่มีพนักงานจริง
   }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
   const deptLegacyList = useMemo(() => {
     const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
@@ -442,18 +453,42 @@ export default function Operator() {
     const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
     return orgDeptNodes.find(d => (d.code || d.name) === filterDept && (!secNode || d.parent_id === secNode.id));
   }, [orgDeptNodes, orgSectionNodes, filterSection, filterDept]);
+  // ⚠️ ต้อง fallback เป็น "ทั้งผัง" เมื่อยังไม่เลือกแผนก (pattern เดียวกับ deptOrgList ที่ fallback เมื่อไม่เลือก section)
+  // เดิม `grpDepNode ? ... : []` = ไม่เลือกแผนก → ลิสต์ในผังว่าง → **กลุ่มทุกตัวตกไปอยู่ "⚠ นอกผัง" ทั้งที่มีในผังจริง**
+  const orgLinesInScope = useMemo(() => {
+    if (grpDepNode) return orgLineNodes.filter(g => g.parent_id === grpDepNode.id);
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    if (secNode) {   // เลือก section แต่ยังไม่เลือกแผนก → กลุ่มของทุกแผนกใน section นั้น
+      const depIds = new Set(orgDeptNodes.filter(d => d.parent_id === secNode.id).map(d => d.id));
+      return orgLineNodes.filter(g => depIds.has(g.parent_id));
+    }
+    return orgLineNodes;   // ยังไม่เลือกอะไรเลย → ทั้งผัง
+  }, [orgLineNodes, orgDeptNodes, orgSectionNodes, grpDepNode, filterSection]);
+  // ⚠️ กลุ่มในผังต้องเทียบทั้ง "ชื่อ" และ "รหัส" — org_nodes kind='line' มี code เป็นเลขไลน์ ('9','12')
+  // ขณะที่ employees.group_name เก็บ "ชื่อ" (เช่น LINE ASSY TSRA) · เทียบด้วย code||name อย่างเดียว
+  // ทำให้พนักงานที่อยู่ไลน์นั้นจริงถูกตีเป็น "นอกผัง" ทั้งกลุ่ม
+  const orgGroupKeys = useMemo(() => {
+    const s = new Set();
+    orgLinesInScope.forEach(g => {
+      [g.name, g.code].filter(Boolean).forEach(v => s.add(String(v).trim().toLowerCase()));
+    });
+    return s;
+  }, [orgLinesInScope]);
   const groupOrgList = useMemo(() => {
-    const empGroups = new Set(empsInDept.map(e => String(e.group_name || '').trim().toLowerCase()).filter(Boolean));
-    return (grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
-      .map(g => g.code || g.name)
-      .filter(name => empGroups.has(String(name).trim().toLowerCase()));
-  }, [orgLineNodes, grpDepNode, empsInDept]);
-  const groupLegacyList = useMemo(() => {
-    const orgAll = new Set((grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
-      .map(g => String(g.code || g.name).trim().toLowerCase()));
-    return [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))]
-      .filter(g => !orgAll.has(String(g).trim().toLowerCase())).sort();
-  }, [orgLineNodes, grpDepNode, empsInDept]);
+    // ค่าใน dropdown = ชื่อกลุ่มที่พนักงานถูกบันทึกไว้จริง (ตัวกรองเทียบกับ group_name ตรงๆ)
+    const byKey = new Map();
+    orgLinesInScope.forEach(g => {
+      [g.name, g.code].filter(Boolean).forEach(v => byKey.set(String(v).trim().toLowerCase(), v));
+    });
+    const seen = new Set();
+    return empsInDept.map(e => e.group_name).filter(Boolean)
+      .filter(gn => orgGroupKeys.has(String(gn).trim().toLowerCase()))
+      .filter(gn => { const k = String(gn).trim().toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  }, [orgLinesInScope, orgGroupKeys, empsInDept]);
+  const groupLegacyList = useMemo(() =>
+    [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))]
+      .filter(g => !orgGroupKeys.has(String(g).trim().toLowerCase())).sort()
+  , [orgGroupKeys, empsInDept]);
   const groupOpts   = useMemo(() => [...groupOrgList, ...groupLegacyList], [groupOrgList, groupLegacyList]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
@@ -649,6 +684,7 @@ export default function Operator() {
                 : `❌ ปิดใช้งาน (${inactiveEmployees.length})`}
               <ToggleDot on={showInactive} />
             </button>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
           </div>
 
           {/* Scroll hint chip */}
@@ -709,8 +745,14 @@ export default function Operator() {
                 {displayed.map(emp => {
                   const grade = getEmpGrade(emp.employee_id_code);
                   return (
-                  <tr key={emp.id} style={!emp.is_active ? { opacity: 0.5 } : {}}>
-                    <td style={{ position: 'sticky', left: 0, background: !emp.is_active ? 'var(--bg2)' : 'var(--bg2)', zIndex: 1 }}>
+                  // คลิกทั้งแถว = เปิดการ์ดสรุปทักษะ (pattern เดียวกับตาราง Skill Matrix)
+                  // — คอลัมน์จัดการ stopPropagation ไว้ ปุ่ม ✏️/🚫 จึงทำงานเหมือนเดิม
+                  <tr key={emp.id} onClick={() => setRadarEmp(emp)}
+                    title={`ดูสรุปทักษะของ ${emp.name}`}
+                    style={{ cursor: 'pointer', transition: 'background 0.15s', ...(!emp.is_active ? { opacity: 0.5 } : {}) }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+                    onMouseLeave={e => e.currentTarget.style.background = ''}>
+                    <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
                         background: !emp.is_active ? 'var(--border2)' : grade.gradient,
@@ -794,7 +836,9 @@ export default function Operator() {
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px' }}>
+                    {/* กันคลิกปุ่มไปเปิดการ์ดสรุปทักษะของแถว (row click ด้านบน) */}
+                    <td onClick={e => e.stopPropagation()} title=""
+                      style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px', cursor: 'default' }}>
                       {emp.is_active ? (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
                           {can('employees', 'edit', role) && (
@@ -847,13 +891,7 @@ export default function Operator() {
       )}
 
       {tab === 1 && (() => {
-        const CAT_META = {
-          hard_skill:      { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
-          machine_skill:   { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
-          product_skill:   { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
-          soft_skill:      { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
-          allowance_skill: { label: 'ใบเซอร์ค่าฝีมือ', color: '#22c55e', icon: '🎫', desc: 'มี/ไม่มี — ใช้ตัดสินสิทธิ์ค่าฝีมือ' },
-        };
+        const CAT_META = SKILL_CAT_META_FULL;   // 4 หมวดทักษะ + ใบเซอร์ค่าฝีมือ (utils/skillLevels.js)
         const grouped = Object.entries(CAT_META).map(([k, m]) => ({
           key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
         })).filter(g => g.skills.length > 0 || true);
@@ -1185,6 +1223,19 @@ export default function Operator() {
         </div>
       )}
 
+      {/* การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (radar + พิมพ์ใบ F-PRS-P1-119) */}
+      {radarEmp && (
+        <Suspense fallback={null}>
+          <SkillRadarPanel
+            emp={radarEmp}
+            skillDefs={skillDefs}
+            subItemsByskill={subItemsByskill}
+            lines={lines}
+            onClose={() => setRadarEmp(null)}
+          />
+        </Suspense>
+      )}
+
       {editingEmp && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(1360px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -1221,25 +1272,38 @@ export default function Operator() {
                   {lockedScopeSec ? (
                     <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
-                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
+                    // แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN/QA) เลือกผ่าน sentinel — ดู sectionScope.js
+                    //   พนักงานเดิมที่ section ว่างแต่แผนกขึ้นตรงฝ่าย ต้องโชว์ sentinel ไม่งั้นช่องแผนกถูกล็อก
+                    <select value={sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes)}
+                      onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
                       <option value="">— เลือก —</option>
                       {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
                         .map(s => <option key={s} value={s}>{s}</option>)}
+                      {!scopeSecs.length && orphanDepts(orgDeptNodes).length > 0 && (
+                        <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                      )}
                     </select>
                   )}
                 </div>
                 <div>
                   <label style={labelSt}>Department / แผนก</label>
                   {(() => {
-                    const empSection = lockedScopeSec || editingEmp.section;
-                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
-                    const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    const empSection = lockedScopeSec
+                      || sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes);
+                    const deptOpts = deptOptionsFor(empSection, orgSectionNodes, orgDeptNodes);
                     return (
-                      <select value={editingEmp.department || ''} disabled={!empSection}
-                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
-                        <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
-                        {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
-                      </select>
+                      <>
+                        <select value={editingEmp.department || ''} disabled={!empSection}
+                          onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
+                          <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                          {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        </select>
+                        {empSection === ORPHAN_SECTION && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                            หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </div>
@@ -1265,22 +1329,26 @@ export default function Operator() {
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                 ) : (() => {
                   // cascade จากผังองค์กร: กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — ตั้ง line_id ผ่าน ref_line_id ให้ production ยังทำงาน
-                  const empSection = lockedScopeSec || editingEmp.section;
-                  const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
-                  const depNode = orgDeptNodes.find(d => (d.code || d.name) === editingEmp.department && (!secNode || d.parent_id === secNode.id));
+                  const empSection = lockedScopeSec
+                    || sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes);
+                  const depNode = deptNodeFor(empSection, editingEmp.department, orgSectionNodes, orgDeptNodes);
                   const orgGroups = depNode ? orgLineNodes.filter(g => g.parent_id === depNode.id) : [];
                   const cur = editingEmp.group_name || '';
-                  const curInOrg = orgGroups.some(g => (g.code || g.name) === cur);
+                  // เก็บ "ชื่อกลุ่ม" ไม่ใช่ code — code ของ kind='line' เป็นเลขไลน์ ('9','12') ซึ่งไม่สื่อความหมาย
+                  // และไม่ตรงกับข้อมูลเดิมเกือบทั้งหมดที่เก็บชื่อไว้ · เทียบค่าปัจจุบันยอมรับทั้งชื่อและ code
+                  const sameGroup = (g, v) => g.name === v || (g.code && g.code === v);
+                  const curInOrg = orgGroups.some(g => sameGroup(g, cur));
                   if (orgGroups.length) {
                     return (
-                      <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                      <select value={curInOrg ? (orgGroups.find(g => sameGroup(g, cur))?.name ?? cur) : cur}
+                        disabled={!editingEmp.department} onChange={e => {
                         const val = e.target.value;
-                        const g = orgGroups.find(x => (x.code || x.name) === val);
+                        const g = orgGroups.find(x => sameGroup(x, val));
                         // เลือกกลุ่มในผัง → line_id จาก ref_line_id · เลือกค่าเดิม (นอกผัง) → คง line_id เดิม
                         setEditingEmp({ ...editingEmp, group_name: val, line_id: g ? (g.ref_line_id || null) : editingEmp.line_id });
                       }}>
                         <option value="">{editingEmp.department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
-                        {orgGroups.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                        {orgGroups.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
                         {cur && !curInOrg && <option value={cur}>{cur} (นอกผัง — ค่าเดิม)</option>}
                       </select>
                     );
@@ -1295,7 +1363,8 @@ export default function Operator() {
                       <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                       {filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                          .filter(l => !editingEmp.section || l.section === editingEmp.section),
+                          // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยให้ filterLinesByDept คัดตามแผนกอย่างเดียว
+                          .filter(l => empSection === ORPHAN_SECTION || !empSection || l.section === empSection),
                         editingEmp.department
                       ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                     </select>
@@ -1316,15 +1385,9 @@ export default function Operator() {
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
                 <label style={{ ...labelSt, marginBottom: 12, display: 'block' }}>📊 ระดับทักษะ</label>
                 {(() => {
-                  const CAT_META = {
-                    hard_skill:      { label: 'Hard Skill',    color: '#ef4444', icon: '🔧' },
-                    machine_skill:   { label: 'Machine Skill', color: '#f97316', icon: '⚙️' },
-                    product_skill:   { label: 'Product Skill', color: '#3b82f6', icon: '📦' },
-                    soft_skill:      { label: 'Soft Skill',    color: '#a855f7', icon: '🧠' },
-                    allowance_skill: { label: 'ใบเซอร์ค่าฝีมือ', color: '#22c55e', icon: '🎫' },
-                  };
-                  const grouped = Object.entries(CAT_META).map(([k, m]) => ({
-                    key: k, ...m, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+                  // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
+                  const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
+                    key: k, ...m, desc: null, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
                   })).filter(g => g.skills.length > 0);
                   return grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>

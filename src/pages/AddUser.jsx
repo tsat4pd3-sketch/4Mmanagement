@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 import { POSITION_OPTIONS } from '../utils/positions';
-import { MTN_TEAMS } from '../utils/mtnTeams';
+import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
 // (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
@@ -633,7 +633,7 @@ export default function AddUser() {
                   <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO)</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
                     {MTN_TEAMS.map(t => {
-                      const checked = form.mtnTeams.includes(t);
+                      const checked = (form.mtnTeams || []).some(x => teamKeyOf(x) === t);
                       return (
                         <label key={t} style={{
                           display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
@@ -643,9 +643,9 @@ export default function AddUser() {
                           color: checked ? 'var(--accent2)' : 'var(--text2)',
                         }}>
                           <input type="checkbox" checked={checked}
-                            onChange={() => setF('mtnTeams', checked ? form.mtnTeams.filter(x => x !== t) : [...form.mtnTeams, t])}
+                            onChange={() => setF('mtnTeams', checked ? form.mtnTeams.filter(x => teamKeyOf(x) !== t) : [...form.mtnTeams, t])}
                             style={{ margin: 0 }} />
-                          {t}
+                          {deptNameOf(t)}
                         </label>
                       );
                     })}
