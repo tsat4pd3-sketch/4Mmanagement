@@ -67,9 +67,8 @@ async function sendTelegram(message: string, chats: string[]) {
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } });
 
-const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
-// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team) กับ key (checklists.department)
-// mtn_teams = single source โยง 2 ฝั่ง — normalize เป็น key ก่อนจับคู่ห้องทีม กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึง
+const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'jig_maintenance'; if (s.includes('DIE')) return 'die_maintenance'; return 'maintenance'; };
+// ทีมช่างเก็บเป็น key แล้วทั้งระบบ (migration 20260806_unify_team_encoding) — normalize ต่อไปเผื่อข้อมูล/คนกรอกที่ยังเป็นชื่อ
 const TEAM_KEY: Record<string, string> = {
   'mtn': 'maintenance', 'maintenance': 'maintenance',
   'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
@@ -77,6 +76,19 @@ const TEAM_KEY: Record<string, string> = {
   'production': 'production',
 };
 const teamKey = (v?: string | null): string => { const s = String(v || '').toLowerCase().trim(); return TEAM_KEY[s] || s; };
+// key → ชื่อที่ใช้แสดง · ดึงจาก mtn_teams ฝั่ง DR (ทีมถูกเปลี่ยนชื่อแล้วสรุปตามทันที) fallback = ค่าเริ่มต้น
+const TEAM_NAME: Record<string, string> = {
+  maintenance: 'MTN', jig_maintenance: 'JIG MTN', die_maintenance: 'DIE MTN', production: 'PRODUCTION',
+};
+async function loadTeamNames() {
+  try {
+    const r = await fetch(`${DR_URL}/rest/v1/mtn_teams?select=key,dept_name`, { headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` } });
+    if (!r.ok) return;
+    const rows = await r.json() as { key: string; dept_name?: string }[];
+    for (const t of rows) if (t?.key && t.dept_name) TEAM_NAME[t.key] = t.dept_name;
+  } catch { /* ใช้ค่า fallback — สรุปรายวันห้ามล้มเพราะชื่อทีม */ }
+}
+const teamName = (v?: string | null): string => TEAM_NAME[teamKey(v)] || String(v || '');
 
 // ใบยังไม่ปิดค้างที่สถานะไหน → รอทำอะไรต่อ (แสดงเป็นกลุ่มในสรุป)
 const WAIT_LABEL: Record<string, string> = {
@@ -127,6 +139,7 @@ Deno.serve(async (req) => {
 
     // ดึงใบที่ยังไม่ปิด/ไม่ถูกปฏิเสธ จาก DR project
     if (!DR_URL || !DR_KEY) return json({ error: 'missing DR env' }, 500);
+    await loadTeamNames();   // ชื่อทีมล่าสุดจาก mtn_teams (best-effort)
     const q = `${DR_URL}/rest/v1/mtn_orders?select=mo_no,status,mtn_dept,item_type,machine_no,line_name,report_at`
       + `&status=not.in.(closed,rejected)&order=report_at.asc`;
     const res = await fetch(q, { headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` } });
@@ -141,7 +154,8 @@ Deno.serve(async (req) => {
     // จัดกลุ่มตามทีม (mtn_dept — ไม่ระบุ = เดาจากชนิดอุปกรณ์)
     const byDept: Record<string, MO[]> = {};
     for (const m of rows) {
-      const dept = (m.mtn_dept && String(m.mtn_dept).trim()) || deptFor(m.item_type || '');
+      // จัดกลุ่มด้วย key เสมอ — ข้อมูลเก่าที่เป็นชื่อจะไม่แตกเป็นคนละกลุ่มกับข้อมูลใหม่
+      const dept = teamKey((m.mtn_dept && String(m.mtn_dept).trim()) || deptFor(m.item_type || ''));
       (byDept[dept] ||= []).push({ ...m, mtn_dept: dept });
     }
     const depts = Object.keys(byDept).sort();
@@ -150,7 +164,7 @@ Deno.serve(async (req) => {
     const header = `🌅 <b>สรุปงานซ่อมค้าง (MO) ประจำวัน</b>\nค้างทั้งหมด <b>${rows.length}</b> ใบ · ${depts.length} ทีม`;
     const overview = [header, '', ...depts.map((d) => {
       const block = buildTeamBlock(byDept[d]);
-      return `━━━ <b>${d}</b> (${byDept[d].length} ใบ) ━━━\n${block}`;
+      return `━━━ <b>${teamName(d)}</b> (${byDept[d].length} ใบ) ━━━\n${block}`;
     })].join('\n');
     await sendTelegram(overview, baseChat);
 
@@ -158,7 +172,7 @@ Deno.serve(async (req) => {
     for (const d of depts) {
       const room = teamChats[teamKey(d)];
       if (!room || !room.length) continue;
-      const msg = `🌅 <b>งานซ่อมค้างของทีม ${d}</b>\nค้าง <b>${byDept[d].length}</b> ใบ\n\n${buildTeamBlock(byDept[d])}`;
+      const msg = `🌅 <b>งานซ่อมค้างของทีม ${teamName(d)}</b>\nค้าง <b>${byDept[d].length}</b> ใบ\n\n${buildTeamBlock(byDept[d])}`;
       await sendTelegram(msg, room);
     }
 

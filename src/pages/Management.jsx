@@ -211,6 +211,20 @@ export default function Management() {
   //   พอ (บอร์ดเตี้ย/ไม่กี่แถว) → โชว์ผัง+บอร์ดพร้อมกันได้ (ไม่มีปุ่มสลับ)
   //   ไม่พอ (แถวเยอะจนดันผังหลุด) → โผล่ปุ่มสลับ ให้ดูทีละมุมเต็มพื้นที่
   const canvasAreaRef = useRef(null);
+  /* ความกว้างจริงของบอร์ด Heijunka (px) — ใช้แปลง "ความกว้างขั้นต่ำของใบงาน" จาก px เป็น %
+     ⚠️ เดิมใส่ minWidth เป็น px ตรงๆ บน style ของใบ → ตัวกันทับ (ที่คลิป widthPct เป็น %) มองไม่เห็น
+        ใบสั้นเลยถูก CSS ดันกว้างกลับจนล้ำใบถัดไป · ข้อมูลจริง Line 60 = 37 ใบ/แถว ใบละ ~9.7 นาที
+        ต่อคิวกันห่าง ~12px แต่ถูกวาด 24px → ทับกันทั้งแถว (ดูกฎใน docs/UI-CONVENTIONS.md §6) */
+  const [boardW, setBoardW] = useState(0);
+  const boardRoRef = useRef(null);
+  const boardRef = useCallback((node) => {          // callback ref — บอร์ดโผล่/หายตามเงื่อนไข ไม่ต้องผูก effect
+    if (boardRoRef.current) { boardRoRef.current.disconnect(); boardRoRef.current = null; }
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([en]) => setBoardW(en.contentRect.width));
+    ro.observe(node); boardRoRef.current = ro;
+    setBoardW(node.getBoundingClientRect().width);
+  }, []);
+
   const [canvasH, setCanvasH] = useState(0);
   useEffect(() => {
     const el = canvasAreaRef.current;
@@ -1294,6 +1308,9 @@ export default function Management() {
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
           const LEFT_W = isMobile ? 120 : 170; // ป้ายพาร์ทใหญ่ (รูป 46px + ชื่อ 2 บรรทัด) — มือถือแคบลง + บอร์ดเลื่อนแนวนอน
+          const tlW = Math.max(0, boardW - LEFT_W);   // ความกว้างแถบเวลาจริง (px) — วัดจากบอร์ด
+          const CARD_MIN_PX = 22;                     // ความกว้างขั้นต่ำของใบงาน (คลิปด้วยช่องว่างถึงใบถัดไปเสมอ)
+          const CARD_TEXT_MIN_PX = 46;                // แคบกว่านี้ = ไม่พิมพ์ตัวหนังสือในใบ
           const nowMs = nowForBoard.current.getTime();
           const wd = lineProdData.workDate;
           const gridStartMs = new Date(`${wd}T08:00:00`).getTime();
@@ -1819,6 +1836,15 @@ export default function Management() {
                           })}
                           {(() => {
                             const positioned = positionedForCards(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
+                            /* กันใบงานทับกัน — ใบต้องไม่ล้ำขอบซ้ายของใบถัดไป (1 ไลน์ผลิตทีละใบ)
+                               ⚠️ ความกว้างขั้นต่ำต้องเป็น % ที่คลิปด้วยช่องว่างถึงใบถัดไป ห้ามใส่ minWidth เป็น px
+                                  (CSS จะดันใบกว้างกลับโดยตัวกันทับมองไม่เห็น — ของจริง 37 ใบ/แถว ใบละ ~9.7 นาที
+                                   ห่างกัน ~12px แต่ถูกวาด 22px = ทับกันทั้งแถว) · ดู docs/UI-CONVENTIONS.md §6 */
+                            const minPct = tlW > 0 ? (CARD_MIN_PX / tlW) * 100 : MIN_W_PCT;
+                            for (let i = 0; i < positioned.length; i++) {
+                              const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
+                              positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
+                            }
                             return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
@@ -1842,7 +1868,7 @@ export default function Management() {
                               <div
                                 title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
                                 style={{
-                                  position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
+                                  position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
                                   borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
                                   boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${sc}44` : 'none',
@@ -1855,6 +1881,9 @@ export default function Management() {
                                     : `${sc}22`,
                                   transition: 'width 0.5s ease, background 0.5s ease',
                                 }} />
+                                {/* ใบแคบเกินกว่าจะพิมพ์ตัวหนังสือครบ = ไม่พิมพ์เลย (เหลือเศษอักษร "MANU…" กองทับกันอ่านไม่รู้เรื่อง)
+                                    สี/แถบ fill ยังบอกสถานะ · ชี้เมาส์เห็นรายละเอียดครบเหมือนเดิม */}
+                                {(tlW <= 0 || widthPct * tlW / 100 >= CARD_TEXT_MIN_PX) && (
                                 <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 2px', overflow: 'hidden' }}>
                                   {/* fill เข้มของใบ manual ทำสีเดิมจม — เกินครึ่งสลับตัวหนังสือเป็นขาว */}
                                   <div style={{ fontSize: 11, fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : sc, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1863,6 +1892,7 @@ export default function Management() {
                                   {/* ใบ manual ที่ยังเปิด: ยอดสะสม/เป้า — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
                                   <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น{isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}</div>
                                 </div>
+                                )}
                               </div>
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                               {tailWidthPct > 0 && (
@@ -1889,7 +1919,7 @@ export default function Management() {
                 );
                 return (
                   <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
-                  <div style={isMobile ? { minWidth: 640 } : undefined}>
+                  <div ref={boardRef} style={isMobile ? { minWidth: 640 } : undefined}>
                   <div>
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>

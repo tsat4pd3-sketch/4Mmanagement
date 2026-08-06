@@ -11,7 +11,7 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { parallelUnitsOf } from '../utils/lineTypes';
-import { MTN_TEAMS, teamForItem } from '../utils/mtnTeams';
+import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -2115,17 +2115,19 @@ function LiveTab({ role }) {
     const payload = {
       status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
       repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      mtn_dept: team || 'MTN', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
+      mtn_dept: teamKeyOf(team) || 'maintenance', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
       report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
     };
     const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
     if (error) { toast.error(error.message); return; }
     fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'mtn_reported', mo: data }),
+      // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
     }).catch(() => {});
     setMoDtPick(null);
-    toast.success(`📝 เปิดใบแจ้งซ่อม MO → แจ้งถึงทีม ${team || 'MTN'} แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”`);
+    toast.success(`📝 เปิดใบแจ้งซ่อม MO → แจ้งถึงทีม ${deptNameOf(team) || 'MTN'} แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”`);
   };
 
   const totalDT      = dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -2877,7 +2879,7 @@ function LiveTab({ role }) {
                     border: `2px solid ${moDtPick.team === t ? '#7c6cf0' : 'var(--border)'}`,
                     background: moDtPick.team === t ? 'rgba(124,108,240,0.14)' : 'var(--card)',
                     color: moDtPick.team === t ? '#7c6cf0' : 'var(--text2)',
-                  }}>{t}</button>
+                  }}>{deptNameOf(t)}</button>
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>

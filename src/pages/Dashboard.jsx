@@ -219,7 +219,21 @@ export default function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams(); // deep-link ?line=NAME (จากผังรวมโรงงาน) → เปิดผังไลน์นั้น
   const navigate = useNavigate();
   const cameFromFactoryMap = useRef(false); // เปิดผังมาจากผังรวมโรงงาน → ปิดแล้วเด้งกลับ /factory-map
-  const [andonLine, setAndonLine] = useState(null); // { title, names } — เปิด Andon panel เจาะรายละเอียด alarm ของไลน์
+  const [andonLine, setAndonLine] = useState(null);
+  /* ความกว้างจริงของบอร์ด Heijunka (px) — ใช้แปลง "ความกว้างขั้นต่ำของใบงาน" จาก px เป็น %
+     ⚠️ เดิมใส่ minWidth เป็น px ตรงๆ บน style ของใบ → ตัวกันทับ (ที่คลิป widthPct เป็น %) มองไม่เห็น
+        ใบสั้นเลยถูก CSS ดันกว้างกลับจนล้ำใบถัดไป · ข้อมูลจริง Line 60 = 37 ใบ/แถว ใบละ ~9.7 นาที
+        ต่อคิวกันห่าง ~12px แต่ถูกวาด 24px → ทับกันทั้งแถว (ดูกฎใน docs/UI-CONVENTIONS.md §6) */
+  const [boardW, setBoardW] = useState(0);
+  const boardRoRef = useRef(null);
+  const boardRef = useCallback((node) => {          // callback ref — บอร์ดโผล่/หายตามเงื่อนไข ไม่ต้องผูก effect
+    if (boardRoRef.current) { boardRoRef.current.disconnect(); boardRoRef.current = null; }
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([en]) => setBoardW(en.contentRect.width));
+    ro.observe(node); boardRoRef.current = ro;
+    setBoardW(node.getBoundingClientRect().width);
+  }, []);
+ // { title, names } — เปิด Andon panel เจาะรายละเอียด alarm ของไลน์
   const mapImgRef = useRef(null);
   const [mapBox, setMapBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -1248,6 +1262,9 @@ export default function Dashboard() {
       {visibleProdStatus.length > 0 && (() => {
         const HOURS   = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
         const LEFT_W  = isMobile ? 120 : 175; // ป้ายพาร์ทใหญ่ (รูป 44px + ชื่อ 2 บรรทัด) — มือถือแคบลง + บอร์ดเลื่อนแนวนอน
+        const tlW = Math.max(0, boardW - LEFT_W);   // ความกว้างแถบเวลาจริง (px) — วัดจากบอร์ด
+        const CARD_MIN_PX = 24;                     // ความกว้างขั้นต่ำของใบงาน (จะถูกคลิปด้วยช่องว่างถึงใบถัดไป)
+        const CARD_TEXT_MIN_PX = 46;                // แคบกว่านี้ = ไม่พิมพ์ตัวหนังสือในใบ (เหลือแค่เศษอักษรอ่านไม่รู้เรื่อง)
         const nowMs   = now.getTime();
 
         const wd = visibleProdStatus[0]?.work_date || boardDate;
@@ -1706,9 +1723,13 @@ export default function Dashboard() {
                                     zIndex: 0, pointerEvents: 'none',
                                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden',
                                   }}>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', writingMode: widthPct < 3 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap', marginBottom: 1 }}>
-                                    🚫{p.name_th || p.name_en}
-                                  </span>
+                                  {/* แคบเกินกว่าจะพิมพ์ชื่อ = ไม่พิมพ์ (เดิมหมุนตั้ง 90° แล้วโดนตัดกลางคำ อ่านไม่ออก
+                                      + ไปทับใบงานที่คร่อมช่วงพัก) — แถบลายเฉียงยังบอกว่าเป็นช่วงพัก ชี้เมาส์เห็นชื่อ */}
+                                  {tlW > 0 && widthPct * tlW / 100 >= 52 && (
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
+                                      🚫{p.name_th || p.name_en}
+                                    </span>
+                                  )}
                                 </div>
                               );
                             });
@@ -1734,15 +1755,15 @@ export default function Dashboard() {
                         })}
                         {(() => {
                           const positioned = positionedForCards(cards).map(item => pctForHalf(item, half)).filter(Boolean);
-                          // MIN_W_PCT บวกความกว้างขั้นต่ำให้การ์ดบาง ๆ มองเห็นได้ แต่ถ้าการ์ดสองใบต่อคิวกันพอดี
-                          // (จบ-เริ่มติดกัน) การบวกความกว้างขั้นต่ำแยกอิสระแต่ละใบจะทำให้ขอบขวาของใบแรกล้ำ
-                          // ขอบซ้ายของใบถัดไป เห็นเป็นแถบซ้อนทับกันทั้งที่ข้อมูลจริงต่อคิวไม่ทับกัน — หรี่ความกว้าง
-                          // ของใบก่อนหน้าลงให้ไม่ล้ำขอบซ้ายของใบถัดไปเสมอ
-                          for (let i = 0; i < positioned.length - 1; i++) {
-                            const maxRight = positioned[i + 1].leftPct;
-                            if (positioned[i].leftPct + positioned[i].widthPct > maxRight) {
-                              positioned[i].widthPct = Math.max(0, maxRight - positioned[i].leftPct);
-                            }
+                          /* กันใบงานทับกัน — ใบต้องไม่ล้ำขอบซ้ายของใบถัดไปเสมอ (1 ไลน์ผลิตทีละใบ)
+                             ⚠️ ความกว้างขั้นต่ำต้องคิดเป็น % ที่ "คลิปด้วยช่องว่างถึงใบถัดไป" เท่านั้น
+                                ห้ามใส่ minWidth เป็น px บน style — CSS จะดันใบกว้างกลับโดยที่ตัวกันทับมองไม่เห็น
+                                (ของจริง Line 60: 37 ใบ/แถว ใบละ ~9.7 นาที ห่างกัน ~12px แต่ถูกวาด 24px
+                                 → ทับกันทั้งแถวแม้บนจอกว้าง 1100px · วัดแล้ว 36 คู่ ลึกสุด 9px) */
+                          const minPct = tlW > 0 ? (CARD_MIN_PX / tlW) * 100 : MIN_W_PCT;
+                          for (let i = 0; i < positioned.length; i++) {
+                            const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
+                            positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                           }
                           return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
                           if (leftPct >= 100) return null;
@@ -1770,7 +1791,7 @@ export default function Dashboard() {
                             <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
-                                left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 24,
+                                left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
                                 background: `${statusColor}28`,
                                 border: `1.5px solid ${statusColor}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
                                 borderRadius: 4, overflow: 'hidden',
@@ -1786,6 +1807,9 @@ export default function Dashboard() {
                                   : `${statusColor}22`,
                                 transition: 'width 0.5s ease, background 0.5s ease',
                               }} />
+                              {/* ใบแคบเกินกว่าจะพิมพ์ตัวหนังสือได้ครบ = ไม่พิมพ์เลย (ellipsis เหลือ "MANU…"/"300…" อ่านไม่รู้เรื่อง
+                                  แถมกองทับกันจนมั่ว) — สี/แถบ fill ยังบอกสถานะ ชี้เมาส์เห็นรายละเอียดครบเหมือนเดิม */}
+                              {(tlW <= 0 || widthPct * tlW / 100 >= CARD_TEXT_MIN_PX) && (
                               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px', overflow: 'hidden' }}>
                                 {/* fill เข้มของใบ manual ทำสีเดิมจม — เกินครึ่งสลับตัวหนังสือเป็นขาว */}
                                 <div style={{ fontSize: 11, fontWeight: 800, color: o.is_manual && !o.isDone && pctBlock >= 45 ? '#fff' : statusColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1797,6 +1821,7 @@ export default function Dashboard() {
                                   {isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}
                                 </div>
                               </div>
+                              )}
                             </div>
                             {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                             {tailWidthPct > 0 && (
@@ -1987,7 +2012,7 @@ export default function Dashboard() {
                         {plannerStrip}
                         {/* มือถือ ≤768px: บอร์ดเลื่อนแนวนอนได้ + ป้ายพาร์ท sticky ซ้าย (desktop เต็มจอเดียวเหมือนเดิม) */}
                         <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
-                        <div style={isMobile ? { minWidth: 640 } : undefined}>
+                        <div ref={boardRef} style={isMobile ? { minWidth: 640 } : undefined}>
                         {/* พาร์ทละ 1 บล็อก — ป้าย/รูปใหญ่อันเดียวครอบ 2 แถบเวลา (☀️ 08–20 บน / 🌙 20–08 ล่าง)
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>

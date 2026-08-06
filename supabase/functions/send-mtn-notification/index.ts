@@ -102,9 +102,9 @@ function beDate(iso?: string | null): string {
   const g: Record<string, string> = {}; for (const x of p) g[x.type] = x.value;
   return `${+g.day}/${+g.month}/${Number(g.year) + 543}`;
 }
-const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
-// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team = "JIG MTN") กับ key (checklists.department = "jig_maintenance")
-// mtn_teams เป็น single source ที่โยง 2 ฝั่ง — normalize ทั้งสองด้านเป็น "key" ก่อนจับคู่ routing กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึงห้องทีม
+const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'jig_maintenance'; if (s.includes('DIE')) return 'die_maintenance'; return 'maintenance'; };
+// ทีมช่างเก็บเป็น key แล้วทั้งระบบ (migration 20260806_unify_team_encoding) — normalize ต่อไปเผื่อ payload/ข้อมูลเก่าที่ยังเป็นชื่อ
+// routing จับคู่ห้องด้วย key เสมอ กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึงห้องทีม
 const TEAM_KEY: Record<string, string> = {
   'mtn': 'maintenance', 'maintenance': 'maintenance',
   'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
@@ -112,6 +112,12 @@ const TEAM_KEY: Record<string, string> = {
   'production': 'production',
 };
 const teamKey = (v?: string | null): string => { const s = String(v || '').toLowerCase().trim(); return TEAM_KEY[s] || s; };
+// key → ชื่อที่ใช้ "แสดง" ในข้อความ (mtn_dept เก็บ key แล้วตั้งแต่ migration 20260806_unify_team_encoding)
+// edge import util ฝั่งเว็บไม่ได้ จึงเก็บ map ไว้เอง — เปลี่ยนชื่อทีมใน mtn_teams ต้องมาแก้ที่นี่ด้วย
+const TEAM_NAME: Record<string, string> = {
+  maintenance: 'MTN', jig_maintenance: 'JIG MTN', die_maintenance: 'DIE MTN', production: 'PRODUCTION',
+};
+const teamName = (v?: string | null): string => TEAM_NAME[teamKey(v)] || String(v || '');
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -140,7 +146,7 @@ Deno.serve(async (req) => {
       if (!chat.length) chat = TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];
     }
     const v = {
-      dept, mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
+      dept: teamName(dept), mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
       machine_no: mo.machine_no || '', problem: mo.problem_characteristic || '-',
       reporter_prod: mo.reporter_prod || mo.reported_by_name || '', reporter_qa: mo.reporter_qa || '',
       want_at: beDate(mo.want_at), repair_type: mo.repair_type || '-', assigned_to: mo.assigned_to || '-',
@@ -153,25 +159,25 @@ Deno.serve(async (req) => {
     let builtin = ''; let photo: string | null = null;
     switch (event) {
       case 'mtn_reported':
-        builtin = [`🛠️ <b>แจ้งซ่อม ${dept}</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`,
+        builtin = [`🛠️ <b>แจ้งซ่อม ${v.dept}</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`,
           `PD ผู้แจ้ง: ${v.reporter_prod}`, `QA ผู้แจ้ง: ${v.reporter_qa}`, v.want_at ? `เป้าหมาย: ${v.want_at}` : '', `สถานะ: รอดำเนินการ`].filter(Boolean).join('\n');
         photo = mo.before_img || null; break;
       case 'mtn_assigned':
-        builtin = [`📋 <b>รับงานซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`, `ปัญหา: ${v.problem}`,
+        builtin = [`📋 <b>รับงานซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`, `ปัญหา: ${v.problem}`,
           `ประเภทงานซ่อม: ${v.repair_type}`, `มอบหมายช่าง: ${v.assigned_to}`].join('\n'); break;
       case 'mtn_repaired':
-        builtin = [`🔧 <b>สรุปผลซ่อม ${dept}</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
+        builtin = [`🔧 <b>สรุปผลซ่อม ${v.dept}</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
           `เลขแจ้งซ่อม: <b>${v.mo_no}</b>`, `ช่างซ่อม: ${v.tech_main}`, `สาเหตุ: ${v.root_cause}`, `วิธีแก้ไข: ${v.solution}`].join('\n');
         photo = mo.after_img || null; break;
       case 'mtn_checked':
-        builtin = [`🔎 <b>ตรวจสอบหลังซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`,
+        builtin = [`🔎 <b>ตรวจสอบหลังซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
           `ผลงานหลังซ่อม: ${v.check_result}`, `เกี่ยวคุณภาพ: ${v.quality_related}`, `ผู้ตรวจ: ${v.checker_name}`].join('\n'); break;
       case 'mtn_qa':
-        builtin = [`🧪 <b>ยืนยันคุณภาพหลังซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`,
+        builtin = [`🧪 <b>ยืนยันคุณภาพหลังซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
           `ผลคุณภาพ: ${v.qa_result}`, `ผู้ตรวจ QA: ${v.qa_checker}`].join('\n');
         photo = mo.qa_img || null; break;
       case 'mtn_handover':
-        builtin = [`🤝 <b>รับมอบหลังซ่อม — ${v.mo_no}</b>`, `${dept} · ${v.line_name} · ${equip}`,
+        builtin = [`🤝 <b>รับมอบหลังซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
           `ติดตามผล: ${v.follow_up}`, `ผู้รับมอบ: ${v.ho_checker}`].join('\n'); break;
       case 'mtn_closed':
         builtin = [`✅ <b>อนุมัติปิดแจ้งซ่อม</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
@@ -179,7 +185,7 @@ Deno.serve(async (req) => {
         photo = mo.after_img || null; break;
       case 'mtn_returned':
         builtin = [`↩️ <b>ตีกลับใบแจ้งซ่อม (ผิดแผนก)</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
-          `🛑 เหตุผลที่ตีกลับ: <b>${mo.reject_reason || '-'}</b>`, mo.returned_from_dept ? `ตีกลับจากทีม: ${mo.returned_from_dept}` : '',
+          `🛑 เหตุผลที่ตีกลับ: <b>${mo.reject_reason || '-'}</b>`, mo.returned_from_dept ? `ตีกลับจากทีม: ${teamName(mo.returned_from_dept)}` : '',
           ``, `📌 ผู้แจ้ง (${v.reporter_prod || '-'}) โปรดแก้แผนกให้ถูกต้องแล้วส่งใหม่`].filter(Boolean).join('\n'); break;
       default: return json({ error: 'unknown event' }, 400);
     }
