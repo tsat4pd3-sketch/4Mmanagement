@@ -24,7 +24,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import useIsMobile from '../utils/useIsMobile';
 import { getLevel, groupSkillsByCategory } from '../utils/skillLevels';
-import { docFormSync } from '../utils/docForms';
+import { docFormSync, loadDocForms } from '../utils/docForms';
 import { buildIndividualSkillHtml } from '../lib/individualSkillPrint';
 import tsLogoUrl from '../assets/TS logo.png';
 
@@ -70,10 +70,16 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
   const handlePrintIndividual = async () => {
     setPrinting(true);
     try {
+      // โหลดทะเบียนเอกสารก่อนเสมอ — docFormSync/fullCode/sig_blocks อ่านจาก cache ระดับ module
+      // component นี้ถูก reuse หลายหน้า (บางหน้าเป็น lazy chunk ที่ไม่ได้เรียก loadDocForms() เอง)
+      // ถ้าไม่โหลดที่นี่ ใบที่พิมพ์จากหน้านั้นจะได้ fallback ในโค้ดเสมอ = เลขฟอร์ม/Rev/ช่องลายเซ็น
+      // ไม่ตรงกับที่ doc_control ตั้งไว้ที่ /doc-forms (โหลดแล้วครั้งเดียว เรียกซ้ำคืน cache ทันที)
+      await loadDocForms();
       // ดึงผู้ประเมิน (หัวหน้าแผนก/leader) + ผู้รับรอง (หัวหน้าส่วน/supervisor หรือ manager) จากไลน์ของพนักงาน
       let assessor = { name: '', pos: 'หัวหน้าแผนก', sig: null };
       let certifier = { name: '', pos: 'หัวหน้าส่วน', sig: null };
       if (emp.line_id) {
+        // หา "คนเซ็น" ตามไลน์ ไม่ใช่การเช็คสิทธิ์ — จึงเทียบ role ตรงๆ ได้ (ไม่ขัดกฎห้าม hardcode role array)
         const { data: sgs } = await supabase.from('profiles')
           .select('role, full_name, position, signature_url')
           .eq('line_id', emp.line_id)
