@@ -50,6 +50,11 @@ model: inherit
   (CLAUDE.md "Employee Skills & EXP Farming" — เคยเป็นช่อง farm EXP ใน Checkin.jsx)
   · grep: `from\('employee_skills'\)` ใน `src/` แล้วเช็คว่า write อยู่นอก operator.jsx หรือไม่
   · RPC skill ใหม่ต้อง guard role ในตัวฟังก์ชัน + revoke EXECUTE จาก anon/PUBLIC + idempotent
+- **B5** PM checklist ต้องเกิดตอน "บันทึก" เท่านั้น — โค้ดที่เรียก `getOrCreateChecklist(...)`
+  ใน `useEffect` / ตอนเปิด modal / ตอนเลือกอุปกรณ์ = ผิด (สร้าง checklist เปล่าให้แผนกที่แค่เปิดดู
+  แล้วเครื่องค้างในแท็บนั้นถาวร — เคยเกิด 24 แถว) ต้องใช้ `findChecklist(...)` ตอนอ่าน
+  (CLAUDE.md "กฎเหล็ก — checklist เกิดตอนบันทึกเท่านั้น")
+  · grep: `getOrCreateChecklist` ใน `src/` แล้วดูว่าอยู่ใน handler บันทึกจริงหรือ effect ตอนเปิดดู
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
@@ -71,6 +76,8 @@ model: inherit
   (`inSectionScope(...)` / `.in('section', scopeSecs)`) ก่อน apply filter อื่น —
   หน้าที่ทำแล้ว: Management, Checkin, operator, Register, DailyReport, Report —
   **หน้าอื่นที่ query ตาม line/section แต่ไม่มี scope filter = ช่องโหว่ ให้รายงาน**
+  · **ข้อยกเว้นทางการ: `/factory-map` (FactoryMap.jsx) ตั้งใจไม่ scope — ทุก role เห็นทั้งโรงงาน**
+    (user ยืนยัน 2026-08-05 · ผังภาพรวมสำหรับจอ TV/ผู้บริหาร) **ห้ามรายงานเป็นช่องโหว่**
 - **D2** branch ของ `leader` (line_id + team) ต้องมา**ก่อน** branch ของ section scope เสมอ
 - **D3** โค้ดที่อ่าน `profiles.section` เดี่ยวตรงๆ แทนที่จะผ่าน `effectiveSections()` /
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)
@@ -94,6 +101,10 @@ model: inherit
 - **F3** ฟอนต์ขั้นต่ำ 11-12px — หา `fontSize` ที่ ≤ 10 (ทั้ง `fontSize: 9`, `fontSize: '10px'`)
 - **F4** modal ฟอร์มกรอกข้อมูลห้ามปิดจาก backdrop click · modal รูปผัง fit จอเดียว
   ห้าม object-fit บน img ที่มี marker ทับ
+- **F4.1** (2026-08-03 · §5.4) หน้า setup/config: การ `.update/.delete/.upsert` **โครงสร้าง/master** ที่ผูกกับ
+  onChange/onClick/toggle/drag โดย**ไม่มี confirm หรือ draft+ปุ่มบันทึก** = ผิด · จับ: `<select>`/checkbox/
+  toggle is_active/ปุ่มลบ ที่เขียน DB ทันที · ยืนยันเฉพาะ ลบ/ปิดใช้งาน/เปลี่ยน FK master/bulk/revoke สิทธิ์
+  (เปิดใช้งาน/additive ไม่ต้อง) · grep: `onChange=.*\.(update|delete|upsert)` ในหน้าหมวดตั้งค่าฯ
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
@@ -132,11 +143,33 @@ model: inherit
   · grep: `backdropFilter` ใน Management/Dashboard/LineSetup/MachineFloorMap แล้วเช็คว่าไม่ได้อยู่บน
   marker/pill (อยู่บน overlay ของ modal ชิ้นเดียวได้) · เช่นเดียวกับ `animation` ที่กระพริบ
   `box-shadow` บน element ที่โผล่ตลอด (จำกัดเฉพาะ Andon แดง)
+- **F14** (2026-07-30) ตาราง/ลิสต์ข้อมูลเยอะ = drill-down hierarchy (UI-CONVENTIONS §"ตาราง/ลิสต์
+  ข้อมูลเยอะ"): ตารางรายการดิบหลักร้อยแถว render แบนทั้งก้อน = ผิด — ต้องมีชั้นสรุป (ระดับที่ user
+  ดูบ่อยสุดอยู่บน เช่น รายวัน) คลิกแตกชั้นถัดไป + แถวสรุปโชว์ aggregate ครบ + จำกัดแถวแรกเห็น
+  พร้อมปุ่ม "แสดงอีก N" (ห้ามตัดเงียบ) — จับ: `.map(` บนข้อมูลจาก query ที่ limit หลักพัน
+  ลง `<tr>` ตรงๆ โดยไม่มี slice/จัดกลุ่ม · ตัวเลือก entity ยาวต้องจัดกลุ่ม+เลื่อนในกรอบ
+  ไม่ใช่ chip กองรวม + เลือกแล้วพับ + มีปุ่มย้อนกลับชัดเจน · section พับได้ (CollapseCard pattern)
+- **F15** (2026-07-30) กราฟแท่งรายวัน (UI-CONVENTIONS §"กราฟแท่งรายวัน"): แกนวันต้องต่อเนื่อง
+  ห้ามข้ามวันไม่มีข้อมูล (วันว่าง = ตอเทา + tooltip) · เขียว=ของดี แดง=NG ซ้อนแท่งเดียวกัน ·
+  ต้องมี legend + caption อธิบายความหมาย · ≤20 แท่งโชว์ตัวเลขบนหัวแท่ง (จอทัชไม่มี hover) —
+  จับ: chart ที่ map เฉพาะวันที่มีข้อมูล (`Object.values(byDate)`) โดยไม่เติมวันว่าง ·
+  กราฟที่ NG อยู่แค่ใน tooltip
+
+- **F16** (2026-08-03) editor ผัง/Floorplan ที่เขียนลง DB ทันทีทุก action (วาด/ลาก/ลบ marker,
+  polygon, node/edge) ต้องมี Undo/Redo ผ่าน hook กลาง `src/utils/useUndoHistory.js`
+  (UI-CONVENTIONS §6.7) — จับ: editor ผังใหม่ที่มี insert/delete จาก pointer event
+  โดยไม่ import useUndoHistory · เขียน undo stack เองเฉพาะหน้า = 🟡 ให้ย้ายมาใช้ hook กลาง ·
+  จุดที่ต้องมี: pushHistory ก่อน mutation แรกของ action, clear เมื่อสลับไลน์/โซน/ผัง
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)
 - **G2** Toast ต้อง import singleton จาก `../components/Toast` — ห้ามทำ toast/alert เอง (`window.alert` ยกเว้น confirm)
+- **G3** เอกสาร export ทุกตัว (พิมพ์/PDF/Excel) ต้องผ่านระบบ Doc Control (CLAUDE.md กฎบังคับหัวไฟล์ + UI-CONVENTIONS §6.6):
+  - ฟังก์ชันพิมพ์/export ต้องอ่านเลขฟอร์ม/Rev/Effective ผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`) — **grep หาเลขฟอร์ม hardcode** (pattern `FM-[A-Z]+-\d`, `F-PRS`, `Rev\.\s*\d`) ในโค้ดพิมพ์ที่ไม่ได้เป็น fallback ของ getDocForm = 🔴
+  - รายงานภายในที่ `window.open`+print โดยไม่มี layout ฟอร์มทางการ ต้องห่อด้วย `withDocFoot(html, doc_key)` — จุดพิมพ์ใหม่ที่ไม่ห่อ = 🟡
+  - โลโก้ต้องผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` — hardcode/วาดโลโก้เอง = 🟡
+  - ห้ามเขียนตาราง `document_controls`/`document_control_revisions` เพิ่ม (เลิกใช้ 2026-07-30 — ยุบเข้า `doc_forms`/`doc_form_revisions`) = 🔴
 
 ## รูปแบบรายงานผล (return เป็นข้อความล้วน)
 

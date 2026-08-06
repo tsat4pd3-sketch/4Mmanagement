@@ -23,6 +23,8 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { nextDocNo } from '../utils/qaDocNo';
+import QaCheckSheet from '../components/QaCheckSheet';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -211,15 +213,8 @@ function Field({ label, children, span }) {
   );
 }
 
-/* running number เช่น NCR-202607-003 — นับจากเลขที่มีอยู่ของเดือนนั้น */
-async function nextDocNo(table, col, prefix) {
-  const ym = getWorkDate().slice(0, 7).replace('-', '');
-  const full = `${prefix}-${ym}-`;
-  const { data } = await supabase.from(table).select(col).like(col, `${full}%`).order(col, { ascending: false }).limit(1);
-  const last = data?.[0]?.[col];
-  const seq = last ? parseInt(last.slice(full.length), 10) + 1 : 1;
-  return `${full}${String(seq).padStart(3, '0')}`;
-}
+/* running number เช่น NCR-202607-003 — ย้ายไป src/utils/qaDocNo.js (2026-08-04)
+   ให้แท็บใบตรวจเรียกใช้ตัวเดียวกันได้โดยไม่เกิด circular import */
 
 /* ════════════════════════════════════════════════════════════════════════
    TAB 1 — Dashboard คุณภาพ (PPM / FTT / Pareto จาก DR project)
@@ -346,20 +341,23 @@ function QualityDashboard() {
     } else {
       // ── ระดับกะ (เดิม): actual_qty + qty_ng ของ session + defect logs ──
       const shownDefects = lineFilter ? defects.filter(d => shownSessIds.has(d.session_id)) : defects;
+      // NG ยึด defect_logs เป็นหลัก (คอลัมน์ session.qty_ng คือ rollup ของ defect_logs ที่ stamp ตอนปิดกะ
+      // — บวกทั้งสองเข้าด้วยกัน = นับซ้ำ 2 เท่า ทำให้ PPM สูงเกินจริง/FTT ต่ำเกินจริง · แก้ 2026-08-05)
+      // นับ qty_suspect ด้วยให้ตรงกับพาเรโตในหน้าเดียวกัน + กฎ Q ที่ต้นทาง (computeOEE นับ suspect เป็นของเสีย)
       const defBySession = new Map();
-      shownDefects.forEach(d => { defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0)); addType(d); });
+      shownDefects.forEach(d => { defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0)); addType(d); });
       shownSessions.forEach(s => {
         const t = s.actual_qty || 0;
-        const g = (defBySession.get(s.id) || 0) + (s.qty_ng || 0);
+        const g = defBySession.has(s.id) ? defBySession.get(s.id) : (s.qty_ng || 0);
         total += t; ng += g;
         addDate(s.work_date, t, g); addLine(s.line_name || '—', t, g);
       });
     }
 
     const ppmTrend = [...byDate.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, v]) => ({ date: fmtD(date), ppm: v.total ? Math.round(v.ng / v.total * 1e6) : null, ng: v.ng }));
+      .map(([date, v]) => ({ date: fmtD(date), ppm: (v.total + v.ng) ? Math.round(v.ng / (v.total + v.ng) * 1e6) : null, ng: v.ng }));
     const lineRows = [...byLine.entries()]
-      .map(([line, v]) => ({ line, ng: v.ng, ppm: v.total ? Math.round(v.ng / v.total * 1e6) : 0 }))
+      .map(([line, v]) => ({ line, ng: v.ng, ppm: (v.total + v.ng) ? Math.round(v.ng / (v.total + v.ng) * 1e6) : 0 }))
       .sort((a, b) => b.ng - a.ng).slice(0, 12);
     let pareto = [...byType.entries()].map(([name, v]) => ({ name, qty: v.qty, color: v.color }))
       .filter(p => p.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10);
@@ -368,8 +366,10 @@ function QualityDashboard() {
     pareto = pareto.map(p => { cum += p.qty; return { ...p, cum: paretoTotal ? +(cum / paretoTotal * 100).toFixed(1) : 0 }; });
     return {
       total, ng,
-      ppm: total ? Math.round(ng / total * 1e6) : null,
-      ftt: total ? +((total - ng) / total * 100).toFixed(2) : null,
+      // total = ยอดสแกน = "ของดี" ล้วน · ผลิตจริงทั้งหมด = total + ng → PPM/FTT ต้องหารด้วยผลิตจริง ไม่ใช่ของดี
+      // (กฎ Q "การ์ดที่สแกน=ของดีล้วน" 2026-08-02 · เดิม ng/total ทำ PPM สูงเกินจริง, (total−ng)/total ทำ FTT ต่ำเกินจริง)
+      ppm: (total + ng) ? Math.round(ng / (total + ng) * 1e6) : null,
+      ftt: (total + ng) ? +(total / (total + ng) * 100).toFixed(2) : null,
       ppmTrend, lineRows, pareto,
     };
   }, [shownSessions, shownSessIds, sessById, orders, defects, lineFilter, productFilter]);
@@ -421,7 +421,7 @@ function QualityDashboard() {
         <KpiCard label="CAPA เกินกำหนด" value={capaOverdue} color={capaOverdue > 0 ? '#ef4444' : '#22c55e'} sub="เลย due date" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: 14 }}>
         <div style={cardSt}>
           <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📈 แนวโน้ม PPM รายวัน</div>
           <ResponsiveContainer width="100%" height={240}>
@@ -648,7 +648,7 @@ function SPCTab({ lines, canRecord, canManage }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(360px, 100%), 1fr))', gap: 14 }}>
             {/* X-bar chart */}
             <div style={cardSt}>
               <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>{sel.subgroup_size === 1 ? '📉 Individuals (I) Chart' : '📉 X̄ Chart'}</div>
@@ -887,7 +887,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
         {canRecord && <button style={btnSt('#ef4444')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>🚨 เปิด NCR ใหม่</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr>
             <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th><th style={thSt}>Part</th>
@@ -915,7 +915,7 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
       </div>
 
       {createModal && (
-        <Modal title="🚨 เปิด NCR ใหม่" onClose={() => setCreateModal(null)}>
+        <Modal title="🚨 เปิด NCR ใหม่" onClose={() => setCreateModal(null)} width={960}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
@@ -1122,7 +1122,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
         })}>🛠 เปิด CAPA ใหม่</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr>
             <th style={thSt}>เลขที่</th><th style={thSt}>หัวข้อ</th><th style={thSt}>NCR อ้างอิง</th>
@@ -1152,7 +1152,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
       </div>
 
       {detail && (
-        <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={700}>
+        <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={1400}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <Field label="หัวข้อ *"><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
             <Field label="ผู้รับผิดชอบ"><input style={inputSt} value={detail.owner_name || ''} onChange={e => setDetail(f => ({ ...f, owner_name: e.target.value }))} disabled={!canRecord} /></Field>
@@ -1160,10 +1160,11 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
           </div>
           {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>อ้างอิง NCR: <b>{detail.ncr_no}</b></div>}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* D1-D8 เรียง 2 คอลัมน์บนจอกว้าง (UI-CONVENTIONS §5 — เดิมคอลัมน์เดียวสูงยืดต้อง scroll) */}
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 10 }}>
             {D_FIELDS.map(([key, label]) => (
               <Field key={key} label={label}>
-                <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={detail[key] || ''}
+                <textarea rows={3} style={{ ...inputSt, resize: 'vertical' }} value={detail[key] || ''}
                   onChange={e => setDetail(f => ({ ...f, [key]: e.target.value }))} disabled={!canRecord || detail.status === 'closed'} />
               </Field>
             ))}
@@ -1280,7 +1281,7 @@ function InstrumentTab({ lines, canManage }) {
         {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
       </div>
 
-      <div style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
+      <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
             <th style={thSt}>รหัส</th><th style={thSt}>ชื่อเครื่องมือ</th><th style={thSt}>ชนิด</th><th style={thSt}>Range / Res.</th>
@@ -1360,6 +1361,9 @@ function InstrumentTab({ lines, canManage }) {
    ════════════════════════════════════════════════════════════════════════ */
 const TABS = [
   { key: 'dashboard',   icon: '📊', label: 'Dashboard คุณภาพ' },
+  // ใบตรวจ = หน้า "ใช้งาน" ของมาตรฐานที่ตั้งไว้ใน /qa-setup (2026-08-04) — วางถัดจาก Dashboard
+  // เพราะเป็นงานประจำวันที่ QC เปิดบ่อยสุด ส่วน SPC/NCR/CAPA เป็นงานตามหลัง
+  { key: 'sheet',       icon: '✅', label: 'ใบตรวจ (Check Sheet)' },
   { key: 'spc',         icon: '📐', label: 'SPC / Cp-Cpk' },
   { key: 'ncr',         icon: '🚨', label: 'NCR ของเสีย' },
   { key: 'capa',        icon: '🛠', label: 'CAPA / 8D' },
@@ -1368,16 +1372,27 @@ const TABS = [
 
 export default function QualityControl() {
   const { can } = usePerms();
+  const { role, lineId, sections } = useContext(UserContext);
   const canRecord = can('qa', 'record');
   const canManage = can('qa', 'manage');
   const [tab, setTab] = useState('dashboard');
-  const [lines, setLines] = useState([]);
+  const [allLines, setAllLines] = useState([]);
   const [capaPrefill, setCapaPrefill] = useState(null); // NCR → เปิด 8D
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLines((data || []).map(l => l.name)));
+    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+      .then(({ data }) => setAllLines(data || []));
   }, []);
+  // ลิสต์ไลน์ที่ส่งให้ทุกแท็บ (SPC/NCR/Instrument) ต้อง scope ด้วย — ไม่งั้น leader/supervisor
+  // เลือกไลน์นอกส่วนงานแล้วสร้าง NCR/characteristic ข้ามส่วนงานได้ (กฎ dropdown-scope · QC audit 2026-08-03)
+  const lines = useMemo(() => {
+    if (role === 'leader' && lineId) {
+      const myLine = allLines.find(l => String(l.id) === String(lineId));
+      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+    }
+    if (sections?.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return allLines.map(l => l.name);
+  }, [allLines, role, lineId, sections]);
 
   const openCapaFromNcr = useCallback((ncr) => {
     setCapaPrefill(ncr);
@@ -1391,7 +1406,7 @@ export default function QualityControl() {
           🔍 Quality Control Center
         </h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949
+          ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949
         </div>
       </div>
 
@@ -1408,6 +1423,7 @@ export default function QualityControl() {
       </div>
 
       {tab === 'dashboard' && <QualityDashboard />}
+      {tab === 'sheet' && <QaCheckSheet canRecord={canRecord} />}
       {tab === 'spc' && <SPCTab lines={lines} canRecord={canRecord} canManage={canManage} />}
       {tab === 'ncr' && <NCRTab lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}

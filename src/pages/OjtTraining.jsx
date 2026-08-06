@@ -6,7 +6,7 @@ import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
-import { getDocForm, fullCode } from '../utils/docForms';
+import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -92,12 +92,16 @@ export default function OjtTraining() {
   const [employees, setEmployees] = useState([]);
   const [lines, setLines] = useState([]);
   const [orgSections, setOrgSections] = useState([]);
+  const [orgSectionNodes, setOrgSectionNodes] = useState([]);
+  const [orgDeptNodes, setOrgDeptNodes] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
   const [empSearch, setEmpSearch] = useState('');
   const [printing, setPrinting] = useState(null);
+  const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry
+  const ojtFormNo = (docReady ? docFormSync('ojt', { form_code: FORM_NO }).form_code : FORM_NO) || FORM_NO;
 
   /* ── scope มาตรฐาน: leader → section ของไลน์ตัวเอง · role อื่นตาม sections ── */
   const leaderLine = useMemo(() => lines.find(l => String(l.id) === String(userLineId)), [lines, userLineId]);
@@ -111,16 +115,18 @@ export default function OjtTraining() {
     const [{ data: tr }, { data: ln }, { data: org }, { data: profs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
-      supabase.from('org_nodes').select('code, name, kind').eq('is_active', true),
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
     ]);
     setLines(ln || []);
     setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name).sort());
+    setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
+    setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
     setTrainings(tr || []);
     setLoading(false);
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
 
   // พนักงานสำหรับ picker — scope: leader = ครอบครัวไลน์ตัวเอง · role อื่นตาม sections
   useEffect(() => {
@@ -453,7 +459,7 @@ table{border-collapse:collapse}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📖 อบรมสอนงาน OJT</h2>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {FORM_NO}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</div>
         </div>
         {canRecord && (
           <button onClick={() => setEditing(emptyDraft())}
@@ -464,7 +470,7 @@ table{border-collapse:collapse}
       </div>
 
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 760 }}>
             <thead>
               <tr>
@@ -530,12 +536,28 @@ table{border-collapse:collapse}
                 <div><div style={lb}>ฝ่าย</div><input type="text" value={editing.dept || ''} onChange={e => setF('dept', e.target.value)} style={{ width: '100%' }} /></div>
                 <div>
                   <div style={lb}>ส่วน</div>
-                  <select value={editing.section || ''} onChange={e => setF('section', e.target.value)} style={{ width: '100%' }}>
+                  <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
                     <option value="">— เลือก —</option>
                     {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <div><div style={lb}>แผนก</div><input type="text" value={editing.department || ''} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }} /></div>
+                <div>
+                  <div style={lb}>แผนก</div>
+                  {(() => {
+                    // cascade: แผนกจากผังองค์กร (org_nodes department) ใต้ส่วนที่เลือก — §5.3
+                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === editing.section);
+                    const depOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    return (
+                      <select value={editing.department || ''} disabled={!editing.section} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }}>
+                        <option value="">{editing.section ? '— เลือก —' : 'เลือกส่วนก่อน'}</option>
+                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        {editing.department && !depOpts.some(d => (d.code || d.name) === editing.department) && (
+                          <option value={editing.department}>{editing.department} (นอกผัง — ค่าเดิม)</option>
+                        )}
+                      </select>
+                    );
+                  })()}
+                </div>
                 <div><div style={lb}>ผู้สอนงาน</div><input type="text" value={editing.trainer_name || ''} onChange={e => setF('trainer_name', e.target.value)} style={{ width: '100%' }} /></div>
               </div>
 

@@ -4,13 +4,13 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
-import { loadDocForms, docFormSync, fullCode } from '../utils/docForms';
+import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
-import { hasPermission, can } from '../utils/permissions';
+import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
@@ -241,7 +241,7 @@ export default function Report({ mode = 'report' }) {
 
 function OtTransportBookingTab({ autoOpenMaster }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const canManageMaster = hasPermission('manage_master_data', role);
+  const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();
@@ -360,7 +360,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'ot_booking')); w.document.close();
   };
 
   return (
@@ -415,7 +415,7 @@ table{border-collapse:collapse;width:100%}
         รายชื่อพนักงานที่จองว่าจะมาทำ OT วันที่ {date} (จากหน้าเช็คชื่อ ทั้งกะเช้า/กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
       </div>
 
-      <div className="card" style={{ overflowX: 'auto' }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -496,13 +496,16 @@ function OtMasterDataPanel() {
     load();
   };
 
+  // ปิดใช้งาน master = หายจาก dropdown จองรถ OT → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
   const toggleRouteActive = async (r) => {
+    if (r.is_active && !window.confirm(`ปิดใช้งานสายรถ "${r.name || r.code}" ?\n\nจะไม่ขึ้นให้เลือกตอนจองรถ OT (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('bus_routes').update({ is_active: !r.is_active }).eq('id', r.id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
   };
 
   const toggleTaskActive = async (t) => {
+    if (t.is_active && !window.confirm(`ปิดใช้งานงาน OT "${t.name || t.code}" ?\n\nจะไม่ขึ้นให้เลือกตอนจองรถ OT (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('ot_task_types').update({ is_active: !t.is_active }).eq('id', t.id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     load();
@@ -701,7 +704,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_daily')); w.document.close();
   };
 
   return (
@@ -751,7 +754,7 @@ table{border-collapse:collapse;width:100%}
         )} />
       </div>
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
             <thead><tr><th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th><th>PPE</th><th>จุดงาน</th></tr></thead>
             <tbody>
@@ -884,7 +887,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_employee')); w.document.close();
   };
 
   return (
@@ -925,7 +928,7 @@ table{border-collapse:collapse;width:100%}
         }} />
       </div>
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 400 }}>
             <thead><tr><th>วันที่</th><th>PPE</th><th>จุดงาน</th></tr></thead>
             <tbody>
@@ -1071,7 +1074,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_station_log')); w.document.close();
   };
 
   return (
@@ -1120,7 +1123,7 @@ table{border-collapse:collapse;width:100%}
       )}
 
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 520 }}>
             <thead>
               <tr>
@@ -1256,7 +1259,7 @@ table{border-collapse:collapse;width:100%}
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
     if (!w) { toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup สำหรับเว็บนี้ก่อนพิมพ์'); return; }
-    w.document.write(html); w.document.close();
+    w.document.write(withDocFoot(html, 'report_period_summary')); w.document.close();
   };
 
   return (
@@ -1295,7 +1298,7 @@ table{border-collapse:collapse;width:100%}
         )} />
       </div>
       {loading ? <Loader /> : (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 420 }}>
             <thead><tr><th>ID</th><th>ชื่อ</th><th>มาทำงาน</th><th>%</th></tr></thead>
             <tbody>
@@ -1557,22 +1560,26 @@ function FourMTab() {
       dayMap[item.id][day][shift].push(l);
     }
 
-    // เอกสารควบคุม (เลขฟอร์ม/revision/effective date/legend/ผู้ออกเอกสาร) — มาจาก document_controls
-    // ถ้ายังไม่มีตาราง/ยังไม่ตั้งค่า ให้ fallback เป็นค่าว่าง ไม่ให้ export ล้ม
-    let docCtrl = null;
-    try {
-      const { data } = await supabase.from('document_controls')
-        .select('doc_no, revision, effective_date, legend, issued:issued_by(full_name, signature_url)')
-        .eq('doc_key', 'changing_point_control').maybeSingle();
-      docCtrl = data;
-    } catch { /* ตาราง document_controls อาจยังไม่ถูกสร้าง */ }
+    // เอกสารควบคุม (เลขฟอร์ม/rev/effective/legend/ผู้ออกเอกสาร) — ทะเบียนกลาง doc_forms (2026-07-30)
+    // ยังไม่ตั้งค่า/ทะเบียนล่ม = fallback ค่าว่าง ไม่ให้ export ล้ม
+    const dfCpc = await getDocForm('changing_point', {});
+    let issuedProfile = null;
+    if (dfCpc.issued_by) {
+      try {
+        const { data } = await supabase.from('profiles').select('full_name, signature_url').eq('id', dfCpc.issued_by).maybeSingle();
+        issuedProfile = data;
+      } catch { /* best-effort */ }
+    }
+    const docCtrl = {
+      doc_no: dfCpc.form_code || null, revision: dfCpc.rev || null,
+      effective_date: dfCpc.effective_date || null, legend: dfCpc.legend || null,
+      issued: issuedProfile,
+    };
     const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
     const logoDataUrl = await getTsLogoDataUrl();
 
     // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
-    const { data: revisionRows } = await supabase.from('document_control_revisions')
-      .select('seq, record_date, rev, issued_date, description, responsible, approved_name')
-      .eq('doc_key', 'changing_point_control').order('seq');
+    const revisionRows = await getDocFormRevisions('changing_point');
 
     const lineSection = lines.find(li => li.name === line)?.section || '';
 
@@ -1999,7 +2006,9 @@ function FourMTab() {
 }
 
 function DocumentControlPanel() {
-  const DOC_KEY = 'changing_point_control';
+  // ทะเบียนกลาง doc_forms/doc_form_revisions (ย้ายจาก document_controls เดิม 2026-07-30) —
+  // แผงนี้เป็น shortcut ของแท็บ 4M · /doc-forms แก้ค่าชุดเดียวกันได้ (data ชี้ที่เดียวกัน)
+  const DOC_KEY = 'changing_point';
   const [docNo, setDocNo] = useState('');
   const [revision, setRevision] = useState('');
   const [effectiveDate, setEffectiveDate] = useState('');
@@ -2014,12 +2023,12 @@ function DocumentControlPanel() {
   const load = async () => {
     setLoading(true);
     const [{ data: doc }, { data: profs }, { data: revs }] = await Promise.all([
-      supabase.from('document_controls').select('doc_no, revision, effective_date, legend, issued_by').eq('doc_key', DOC_KEY).maybeSingle(),
+      supabase.from('doc_forms').select('form_code, rev, effective_date, legend, issued_by').eq('doc_key', DOC_KEY).maybeSingle(),
       supabase.from('profiles').select('id, full_name').order('full_name'),
-      supabase.from('document_control_revisions').select('id, seq, record_date, rev, issued_date, description, responsible, approved_name').eq('doc_key', DOC_KEY).order('seq'),
+      supabase.from('doc_form_revisions').select('id, seq, record_date, rev, issued_date, description, responsible, approved_name').eq('doc_key', DOC_KEY).order('seq'),
     ]);
-    setDocNo(doc?.doc_no || '');
-    setRevision(doc?.revision || '');
+    setDocNo(doc?.form_code || '');
+    setRevision(doc?.rev || '');
     setEffectiveDate(doc?.effective_date || '');
     setLegend(doc?.legend || '');
     setIssuedBy(doc?.issued_by || '');
@@ -2032,13 +2041,14 @@ function DocumentControlPanel() {
 
   const saveDoc = async () => {
     setSaving(true);
-    const { error } = await supabase.from('document_controls').upsert({
+    const { error } = await supabase.from('doc_forms').upsert({
       doc_key: DOC_KEY,
-      doc_no: docNo.trim() || null,
-      revision: revision.trim() || null,
+      form_code: docNo.trim() || null,
+      rev: revision.trim() || null,
       effective_date: effectiveDate || null,
       legend: legend || null,
       issued_by: issuedBy || null,
+      updated_at: new Date().toISOString(),
     }, { onConflict: 'doc_key' });
     setSaving(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
@@ -2048,7 +2058,7 @@ function DocumentControlPanel() {
 
   const addRevision = async () => {
     if (!newRev.rev.trim()) { toast.error('กรุณาระบุ Rev'); return; }
-    const { error } = await supabase.from('document_control_revisions').insert([{
+    const { error } = await supabase.from('doc_form_revisions').insert([{
       doc_key: DOC_KEY, seq: Math.max(0, ...revisions.map(r => r.seq || 0)) + 1, // max+1 กัน seq ซ้ำหลังลบแถวกลาง
       record_date: newRev.record_date || null,
       rev: newRev.rev.trim(),
@@ -2064,7 +2074,7 @@ function DocumentControlPanel() {
 
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    await supabase.from('document_control_revisions').delete().eq('id', r.id);
+    await supabase.from('doc_form_revisions').delete().eq('id', r.id);
     load();
   };
 
@@ -2551,7 +2561,7 @@ ${catHeaderCells}
 <tr style="background:#e5e7eb">${headerCells}</tr>
 </thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
-          const w = window.open('', '_blank'); w.document.write(html); w.document.close();
+          const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'skill_matrix')); w.document.close();
         }} disabled={employees.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: employees.length === 0 ? 0.5 : 1 }}>
           🖨️ PDF
         </button>
@@ -3535,7 +3545,7 @@ function MultiSkillFormTab() {
                 })}
               </div>
             ) : (
-            <div style={{ overflowX: 'auto', position: 'relative' }}>
+            <div className="table-sticky" style={{ overflowX: 'auto', position: 'relative' }}>
             <table style={{ minWidth: 220 + msVisibleDefs.length * 44, borderCollapse: 'collapse', fontSize: 12 }}>
               <thead>
                 <tr>
@@ -3740,8 +3750,11 @@ function SkillAllowanceTab() {
   // ดึง Cost Center และหัวหน้างาน จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
     const lineObj = lines.find(l => l.name === line);
-    setCostCenter(lineObj?.cost_center || '');
-    setSignerHead(lineObj?.head_name || '');
+    // ไลน์ย่อยที่ไม่ได้ตั้ง cost center/หัวหน้าเอง → ตกทอดจากไลน์แม่ (pattern เดียวกับ MtnRepair)
+    // เดิมไม่ fallback → HDF1/HDF2 ที่ยังไม่กรอก ทำให้ช่องหัวหน้าในใบค่าฝีมือโล่ง ทั้งที่ไลน์แม่มีชื่ออยู่
+    const parentObj = lineObj?.parent_line_name ? lines.find(l => l.name === lineObj.parent_line_name) : null;
+    setCostCenter(lineObj?.cost_center || parentObj?.cost_center || '');
+    setSignerHead(lineObj?.head_name || parentObj?.head_name || '');
   }, [line, lines]);
 
   // ดึงชื่อผู้อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
@@ -4023,7 +4036,7 @@ function SkillAllowanceTab() {
 </html>`;
 
     const w = window.open('', '_blank');
-    w.document.write(html);
+    w.document.write(withDocFoot(html, 'skill_pay_summary'));
     w.document.close();
   };
 
@@ -4151,7 +4164,7 @@ function SkillAllowanceTab() {
 
       {/* Preview table */}
       {rows.length > 0 && (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <div>
               <span style={{ fontWeight: 700, fontSize: 15 }}>ใบสรุปค่าฝีมือ</span>
@@ -4606,7 +4619,7 @@ function AttendanceFormTab() {
 </body></html>`;
 
     const w = window.open('', '_blank');
-    w.document.write(html);
+    w.document.write(withDocFoot(html, 'attendance_record'));
     w.document.close();
   };
 
@@ -4723,7 +4736,7 @@ function AttendanceFormTab() {
 
       {/* Preview */}
       {empRows.length > 0 && (
-        <div className="card" style={{ overflowX: 'auto' }}>
+        <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
             <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)' }}>
               ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)

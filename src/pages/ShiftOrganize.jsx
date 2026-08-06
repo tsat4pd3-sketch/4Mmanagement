@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { toast } from '../components/Toast';
 
@@ -26,6 +26,7 @@ function toDateStr(d) {
 export default function ShiftOrganize() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
+  const canDel  = canDelete('shift_schedule', 'edit', role);  // สิทธิ์ลบ/ยุบกะ แยกจากแก้ไข
 
   const [weekRef,   setWeekRef]   = useState(new Date());
   const [lines,     setLines]     = useState([]);
@@ -199,6 +200,7 @@ export default function ShiftOrganize() {
   };
 
   const handleDeleteOverride = async (id) => {
+    if (!confirm('ยืนยันลบรายการเปลี่ยนกะรายบุคคลนี้?')) return;
     await supabase.from('shift_overrides').delete().eq('id', id);
     fetchOverrides();
   };
@@ -314,7 +316,7 @@ export default function ShiftOrganize() {
       </div>
 
       {/* Weekly Shift Table — overflowX: ตารางกว้าง ~610px ให้เลื่อนแนวนอนบนมือถือ (desktop ไม่มี scrollbar เพราะพื้นที่พอ) */}
-      <div className="card" style={{ marginBottom: 8, overflowX: 'auto' }}>
+      <div className="card table-sticky" style={{ marginBottom: 8, overflowX: 'auto' }}>
         <table>
           <thead>
             <tr>
@@ -423,7 +425,7 @@ export default function ShiftOrganize() {
         )}
       </div>
 
-      <div className="card" style={{ overflowX: 'auto' }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: 500 }}>
           <thead>
             <tr>
@@ -460,10 +462,8 @@ export default function ShiftOrganize() {
                 <td style={{ fontSize: 12, color: 'var(--muted)' }}>{o.reason || '—'}</td>
                 {canEdit && (
                   <td style={{ textAlign: 'center' }}>
-                    <button className="tbtn" onClick={() => handleDeleteOverride(o.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>
-                      🗑️
-                    </button>
+                    {canDel && <button className="tbtn" onClick={() => handleDeleteOverride(o.id)}
+                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>🗑️</button>}
                   </td>
                 )}
               </tr>
@@ -486,7 +486,7 @@ export default function ShiftOrganize() {
           </button>
         )}
       </div>
-      <div className="card" style={{ overflowX: 'auto', marginBottom: 8 }}>
+      <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 8 }}>
         <table style={{ minWidth: 560 }}>
           <thead>
             <tr>
@@ -533,10 +533,8 @@ export default function ShiftOrganize() {
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{evt.reason || '—'}</td>
                   {canEdit && (
                     <td style={{ textAlign: 'center' }}>
-                      <button className="tbtn" onClick={() => handleDeleteMergeEvent(evt.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>
-                        🗑️
-                      </button>
+                      {canDel && <button className="tbtn" onClick={() => handleDeleteMergeEvent(evt.id)}
+                        style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>🗑️</button>}
                     </td>
                   )}
                 </tr>

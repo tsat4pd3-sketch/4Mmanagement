@@ -6,6 +6,7 @@ import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
+import { getRoundStatus } from '../utils/deliveryRounds';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -29,6 +30,11 @@ const inputSt = { width:'100%', padding:'8px 10px', borderRadius:8, border:'1px 
 const btn = (bg, color='#fff') => ({ padding:'8px 16px', borderRadius:8, border:'none', cursor:'pointer', fontSize:13, fontWeight:700, background:bg, color, fontFamily:'var(--font-body)' });
 
 const TYPE_LABEL = { issue:'📦 จ่ายเข้าไลน์', consume:'⚙️ ใช้ผลิต (Auto)', return:'↩️ คืน Store', adjust:'🔧 ปรับยอด' };
+
+/* รหัส MAT SAP (ดู CLAUDE.md "รหัส MAT SAP"): ขึ้นต้น 1 = FG งานสำเร็จพร้อมขาย —
+   อยู่ FG WAREHOUSE รอส่งลูกค้า หักออกทางเดียวคือกด "ส่งแล้ว" หน้า Delivery
+   จึงไม่มีเหตุให้ "จ่ายเข้าไลน์" (ปรับยอด/คืนยังทำได้ ผ่านคิวอนุมัติตามปกติ) */
+const isFgMat = (m) => String(m || '').trim().startsWith('1');
 const TYPE_COLOR = { issue:'#22c55e', consume:'#94a3b8', return:'#f59e0b', adjust:'#a855f7' };
 
 /* ประเภท manual movement ที่ต้องผ่านการอนุมัติ (store review) ก่อนมีผลต่อ on-hand
@@ -154,6 +160,10 @@ function StockTab({ role }) {
     const qty = parseFloat(form.qty);
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
     const matUpper = form.mat_no.trim().toUpperCase();
+    if (form.type === 'issue' && isFgMat(matUpper)) {
+      toast.error(`MAT ${matUpper} ขึ้นต้นด้วย 1 = FG งานสำเร็จ — ไม่ต้องจ่ายเข้าไลน์ ระบบหักให้อัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า 🚚 Delivery (แก้ยอดใช้ 🔧 ปรับยอด)`);
+      return;
+    }
     const isAdjustDown = form.type === 'adjust' && form.dir === 'down';
     // กันสร้างของผี: MAT ที่ไม่มีในฐาน (parts master/BOM) ต้องยืนยันก่อน
     if (!knownMats.has(matUpper) && !bomMap[matUpper]) {
@@ -326,7 +336,7 @@ function StockTab({ role }) {
 
       {/* ── Stock view ── */}
       {!showTxn && (
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14, maxHeight:'calc(100vh - 240px)', overflowY:'auto', paddingRight:4 }}>
           {Object.keys(stockByLine).length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
@@ -375,10 +385,17 @@ function StockTab({ role }) {
                               </td>
                               {canIssue && (
                                 <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
-                                  <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineName, mat_no: p.mat_no, part_name: p.part_name || bomMap[p.mat_no] || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
-                                    style={{ ...btn('rgba(34,197,94,0.1)', '#22c55e'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(34,197,94,0.3)' }}>
-                                    + จ่าย
-                                  </button>
+                                  {isFgMat(p.mat_no) ? (
+                                    <span title='FG งานสำเร็จ — หักอัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า Delivery ไม่ต้องจ่ายเข้าไลน์'
+                                      style={{ fontSize:11, fontWeight:700, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                                      🚚 หักผ่าน Delivery
+                                    </span>
+                                  ) : (
+                                    <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineName, mat_no: p.mat_no, part_name: p.part_name || bomMap[p.mat_no] || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
+                                      style={{ ...btn('rgba(34,197,94,0.1)', '#22c55e'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(34,197,94,0.3)' }}>
+                                      + จ่าย
+                                    </button>
+                                  )}
                                 </td>
                               )}
                             </tr>
@@ -410,7 +427,7 @@ function StockTab({ role }) {
               </div>
             )}
           </div>
-          <div style={{ overflowX:'auto' }}>
+          <div className="table-sticky" style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
@@ -451,11 +468,12 @@ function StockTab({ role }) {
       {/* ── Issue / Adjust modal ── */}
       {showForm && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(480px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               {TYPE_LABEL[form.type]}
             </div>
-            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {/* จอกว้างเรียง 2 คอลัมน์ ลด scroll (UI-CONVENTIONS §5) — mgrid ยุบคอลัมน์เดียวบนมือถือ */}
+            <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'start' }}>
               {/* Type selector */}
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ประเภท</label>
@@ -848,7 +866,7 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
       {/* Modal */}
       {showModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(460px,100%)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
             </div>
@@ -1023,18 +1041,10 @@ function DeliveryTimeBoardTab() {
 
   const nowD = new Date(nowMs);
   const nm = frameMin(`${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`);
-  const statusOf = (r) => {
-    const d = dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`];
-    if (d?.received_status === 'full')    return { label: '✔️ รับครบแล้ว', color: '#22c55e', d };
-    if (d?.received_status === 'partial') return { label: '⚠️ รับไม่ครบ',  color: '#f59e0b', d };
-    if (d)                                return { label: '📦 ส่งแล้ว · รอรับ', color: '#0ea5e9', d };
-    const dlv = frameMin((r.delivery_time || '').slice(0, 5));
-    const cut = frameMin((r.cutoff_time || '').slice(0, 5));
-    const fin = dlv == null ? null : dlv + (r.points_count || 1) * (r.time_per_point_min || 10);
-    if (fin != null && nm > fin)                        return { label: '🔴 ค้างส่ง', color: '#ef4444', d: null };
-    if (cut != null && dlv != null && nm >= cut && nm < dlv) return { label: '⏳ กำลังเตรียม', color: '#0ea5e9', d: null };
-    return { label: '⬜ รอ', color: '#94a3b8', d: null };
-  };
+  const wd = workDateNow();
+  // สถานะรอบส่ง — ใช้ util กลาง (deliveryRounds.js) จุดเดียวกับ Kanban Board · frame-aware ไม่เพี้ยนขอบวันงาน
+  const confirmedSet = useMemo(() => new Set(Object.keys(dlvMap)), [dlvMap]);
+  const statusOf = (r) => getRoundStatus(r, confirmedSet, dlvMap, wd, nowMs);
 
   const groups = useMemo(() => {
     const byLine = {};
@@ -1055,7 +1065,7 @@ function DeliveryTimeBoardTab() {
         }),
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rounds, dlvMap, nm]);
+  }, [rounds, dlvMap, nm, nowMs, confirmedSet]);
 
   return (
     <>

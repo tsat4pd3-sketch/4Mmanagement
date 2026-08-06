@@ -351,7 +351,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
 
       {/* Modal คีย์ order ด่วน — ปิดได้จากปุ่มเท่านั้น (มีฟอร์ม ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) */}
       {showAdd && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(94vw, 460px)', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.5)' }}>
             <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>➕ เพิ่ม order ด่วน (คีย์มือ)</span>
@@ -624,7 +624,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
             <button onClick={() => setSortMode('urgent')} style={btn(sortMode === 'urgent')} title="ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน">⚡ ใกล้ดิวก่อน</button>
             <button onClick={() => setSortMode('time')} style={btn(sortMode === 'time')}>🕐 ตามเวลาส่ง</button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 12 }}>
             {cardsSorted.filter(o =>
               cardFilter === 'all' ? true
               : cardFilter === 'shipped' ? o.status === 'shipped'

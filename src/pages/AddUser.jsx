@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
+import { POSITION_OPTIONS } from '../utils/positions';
+import { MTN_TEAMS } from '../utils/mtnTeams';
+
+// ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
+// (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
+// admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
+const MTN_TEAM_ROLES = ['mtn', 'engineer', 'leader', 'supervisor'];
+const isMtnTeamRole = (r) => MTN_TEAM_ROLES.includes(r);
 
 // ชื่อ/สี/คำอธิบายชุดสิทธิ์ อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น — ห้ามพิมพ์รายชื่อโมดูล/หน้า
@@ -9,7 +17,11 @@ import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 const ROLES = ROLE_OPTIONS.map(r => ({ ...r, label: `${r.icon} ${r.label} (${r.en})` }));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], lineId: '', team: '', notifyEmail: '' };
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '' };
+
+// flag "แอดมินหน่วยงาน" โผล่เฉพาะ role หน่วยงานสนับสนุน (indirect) — ไม่ใช่ admin (ได้ทุกอย่างแล้ว)
+// / display (ดูอย่างเดียว) · role ฝ่ายผลิต (supervisor/leader) ก็ให้ตั้งได้ (หัวหน้าส่วน/ไลน์ = แอดมินของหน่วยตัวเอง)
+const DEPT_ADMIN_ELIGIBLE = (r) => r && r !== 'admin' && r !== 'display';
 
 // คำอธิบายกะของแต่ละทีม (ดู CLAUDE.md "Shift Logic") — ทีมอื่นที่ไม่รู้จักแสดงชื่อเฉยๆ
 const TEAM_DESC = {
@@ -19,8 +31,8 @@ const TEAM_DESC = {
 };
 
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
-// เป็น dropdown + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ตำแหน่งใหม่ไม่ต้องแก้โค้ด และเปลี่ยนตัวเลือกได้ตลอด
-const POSITION_SUGGESTIONS = ['ผู้จัดการฝ่าย', 'หัวหน้าแผนก', 'หัวหน้าส่วน', 'หัวหน้าไลน์', 'วิศวกร', 'เจ้าหน้าที่', 'ช่างเทคนิค', 'ธุรการ'];
+// master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ห้าม hardcode ซ้ำ
+const POSITION_SUGGESTIONS = POSITION_OPTIONS;
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -66,8 +78,19 @@ export default function AddUser() {
     const authMap = {};
     (authUsers || []).forEach(u => { authMap[u.id] = u; });
 
+    // mtn_teams best-effort แยก query — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ยังไม่ apply ก็ไม่พังลิสต์หลัก
+    const mtnMap = {};
+    const { data: mtnRows, error: mtnErr } = await supabase.from('profiles').select('id, mtn_teams');
+    if (!mtnErr) (mtnRows || []).forEach(r => { mtnMap[r.id] = Array.isArray(r.mtn_teams) ? r.mtn_teams : []; });
+    // is_dept_admin best-effort แยก query — คอลัมน์เพิ่งเพิ่ม (migration 20260803)
+    const daMap = {};
+    const { data: daRows, error: daErr } = await supabase.from('profiles').select('id, is_dept_admin');
+    if (!daErr) (daRows || []).forEach(r => { daMap[r.id] = r.is_dept_admin === true; });
+
     setUsers((profiles || []).map(p => ({
       ...p,
+      mtn_teams: mtnMap[p.id] || [],
+      is_dept_admin: daMap[p.id] || false,
       email: authMap[p.id]?.email || '—',
       created_at: authMap[p.id]?.created_at || null,
     })));
@@ -75,6 +98,22 @@ export default function AddUser() {
   };
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  // เขียน mtn_teams แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260722 · create-user edge ยังไม่รู้จัก field นี้)
+  //   role ที่ไม่เกี่ยวงานซ่อม → เคลียร์เป็น null · error (ยังไม่ apply migration) = เงียบ ไม่ทำ flow หลักพัง
+  const saveMtnTeams = async (id) => {
+    if (!id) return;
+    const val = isMtnTeamRole(form.role) && form.mtnTeams.length ? form.mtnTeams : null;
+    await supabase.from('profiles').update({ mtn_teams: val }).eq('id', id); // ignore error โดยตั้งใจ
+  };
+
+  // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
+  //   role ที่ไม่เข้าเกณฑ์ (admin/display) → false เสมอ · error (ยังไม่ apply migration) = เงียบ
+  const saveDeptAdmin = async (id) => {
+    if (!id) return;
+    const val = DEPT_ADMIN_ELIGIBLE(form.role) ? !!form.deptAdmin : false;
+    try { await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id); } catch { /* ยังไม่ apply migration */ }
+  };
 
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
   // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
@@ -103,6 +142,8 @@ export default function AddUser() {
       role:        u.role         || 'supervisor',
       position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
+      mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
+      deptAdmin:   u.is_dept_admin === true,
       lineId:      u.line_id      ? String(u.line_id) : '',
       team:        u.team         || '',
       notifyEmail: u.notify_email || '',
@@ -151,6 +192,9 @@ export default function AddUser() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
       // create-user v14 เขียนโปรไฟล์ครบทุก field ในจังหวะเดียวแล้ว (ไม่มีจังหวะสองให้พลาด)
+      // mtn_teams เขียนตามหลัง best-effort (edge ยังไม่รู้จัก field นี้)
+      await saveMtnTeams(data.user?.id);
+      await saveDeptAdmin(data.user?.id);
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
       setShowModal(false);
@@ -231,6 +275,8 @@ export default function AddUser() {
         notify_email: form.notifyEmail || null,
       }).eq('id', editingId);
       if (err) throw err;
+      await saveMtnTeams(editingId); // best-effort แยก กัน edit พังถ้ายังไม่ apply migration
+      await saveDeptAdmin(editingId); // best-effort แยก (migration 20260803)
       setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
       setShowModal(false);
       fetchUsers();
@@ -419,7 +465,7 @@ export default function AddUser() {
         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 8 }}>
           {ROLES.map(r => {
             const sum = accessSummaryForRole(r.value);
             return (
@@ -447,7 +493,7 @@ export default function AddUser() {
               {modalMode === 'create' ? '➕ เพิ่มผู้ใช้ใหม่' : '✏️ แก้ไขข้อมูลผู้ใช้'}
             </h3>
 
-            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 13, alignItems: 'start' }}>
+            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 13, alignItems: 'start' }}>
               {/* โซน 1: ตัวตน (ตำแหน่ง = แสดงผล) แยกชัดจากโซน 2: สิทธิ์ — เคยปนกันจน user งงว่าตำแหน่งคือสิทธิ์ */}
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: 5 }}>
                 👤 ข้อมูลบัญชี & ตัวตน
@@ -580,6 +626,49 @@ export default function AddUser() {
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </div>
               </div>
+
+              {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
+              {isMtnTeamRole(form.role) && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO)</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
+                    {MTN_TEAMS.map(t => {
+                      const checked = form.mtnTeams.includes(t);
+                      return (
+                        <label key={t} style={{
+                          display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                          padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
+                          background: checked ? 'rgba(245,158,11,0.15)' : 'var(--bg2)',
+                          border: `1px solid ${checked ? 'rgba(245,158,11,0.5)' : 'var(--border2)'}`,
+                          color: checked ? 'var(--accent2)' : 'var(--text2)',
+                        }}>
+                          <input type="checkbox" checked={checked}
+                            onChange={() => setF('mtnTeams', checked ? form.mtnTeams.filter(x => x !== t) : [...form.mtnTeams, t])}
+                            style={{ margin: 0 }} />
+                          {t}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                    เลือกทีมที่ user คนนี้สังกัด — หน้าแจ้งซ่อม (MO) จะ<b>โชว์คิวของทีมนี้ก่อน</b> + เดาหน่วยงานปลายทางตอนแจ้ง · ช่างฝ่ายผลิตที่ first-response เลือก <b>PRODUCTION</b> · ไม่ติ๊กเลย = เห็นคิวทุกทีม
+                  </div>
+                </div>
+              )}
+
+              {/* แอดมินหน่วยงาน — ชั้น 2 (แก้/ตั้งค่า/อนุมัติ เฉพาะหน่วยงานตัวเอง) ซ้อนบน role เดิม · โผล่ทุก role ยกเว้น admin/display */}
+              {DEPT_ADMIN_ELIGIBLE(form.role) && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8,
+                    background: form.deptAdmin ? 'rgba(234,179,8,0.12)' : 'var(--bg3)', border: `1px solid ${form.deptAdmin ? 'rgba(234,179,8,0.55)' : 'var(--border2)'}` }}>
+                    <input type="checkbox" checked={!!form.deptAdmin} onChange={e => setF('deptAdmin', e.target.checked)} style={{ margin: 0, width: 'auto' }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: form.deptAdmin ? '#eab308' : 'var(--text)' }}>🛡️ เป็นแอดมินหน่วยงาน</span>
+                  </label>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                    ให้สิทธิ์ <b>แก้ข้อมูล master/ตั้งค่า/อนุมัติ</b> ในหน้าที่ role นี้เข้าถึงได้ — <b>เฉพาะหน่วยงาน/scope ของตัวเอง</b> (ไม่ใช่ admin ระบบ · ไม่ได้จัดการสิทธิ์/ผังองค์กร/เพิ่ม user ทั้งระบบ) · ไม่ติ๊ก = ใช้งานได้อย่างเดียว แก้ไม่ได้ · ปรับ "แอดมินหน่วยงานทำอะไรได้" ที่หน้าจัดการสิทธิ์ คอลัมน์ 🛡️
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label style={labelSt}>Team {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>

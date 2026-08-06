@@ -2,9 +2,14 @@ import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import {
+  inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
+  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor,
+} from '../utils/sectionScope';
+import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
+import { filterLinesByDept } from '../utils/lineHierarchy';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -28,6 +33,7 @@ export default function Register() {
   const [busRouteId,  setBusRouteId]  = useState('');
   const [orgSections, setOrgSections] = useState([]);
   const [orgDepts,    setOrgDepts]    = useState([]);
+  const [orgLines,    setOrgLines]    = useState([]); // org groups (kind='line') + ref_line_id
   const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
@@ -44,11 +50,12 @@ export default function Register() {
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => setBusRoutes(data || []));
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         const nodes = data || [];
         setOrgSections(nodes.filter(n => n.kind === 'section'));
         setOrgDepts(nodes.filter(n => n.kind === 'department'));
+        setOrgLines(nodes.filter(n => n.kind === 'line'));
         const teamCodes = [...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))];
         setTeamOpts(teamCodes);
       });
@@ -62,8 +69,16 @@ export default function Register() {
     ? orgSections.filter(s => inSectionScope(scopeSecs, s.code || s.name))
     : orgSections;
 
-  const selectedSectionNode = orgSections.find(s => (s.code || s.name) === section);
-  const deptOpts = selectedSectionNode ? orgDepts.filter(d => d.parent_id === selectedSectionNode.id) : [];
+  // แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN/QA) เลือกได้ผ่าน sentinel ในช่อง Section — ดู sectionScope.js
+  //   เห็นเฉพาะ user ที่ไม่ถูกจำกัด scope (หัวหน้าราย section ลงทะเบียนคนนอกส่วนงานตัวเองไม่ได้)
+  const orphanDeptOpts = orphanDepts(orgDepts);
+  const showOrphanOpt  = !scopeSecs.length && orphanDeptOpts.length > 0;
+  const isOrphanSec    = section === ORPHAN_SECTION;
+
+  const deptOpts = deptOptionsFor(section, orgSections, orgDepts);
+  // กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — cascade จากผังองค์กร
+  const selectedDeptNode = deptNodeFor(section, department, orgSections, orgDepts);
+  const orgGroupOpts = selectedDeptNode ? orgLines.filter(g => g.parent_id === selectedDeptNode.id) : [];
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -88,7 +103,7 @@ export default function Register() {
         name,
         position:   position  || null,
         department,
-        section:    section   || null,
+        section:    sectionValueForSave(section),  // "ขึ้นตรงฝ่าย" = null (ตรงกับผังจริง)
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
@@ -154,13 +169,10 @@ export default function Register() {
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label style={labelSt}>ตำแหน่งงาน</label>
+              {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) ใช้ร่วมทุกหน้า */}
               <select value={position} onChange={e => setPosition(e.target.value)}>
                 <option value="">— เลือก —</option>
-                <option value="Operator">Operator</option>
-                <option value="Leader">Leader</option>
-                <option value="Technician">Technician</option>
-                <option value="Engineer">Engineer</option>
-                <option value="QC">QC</option>
+                {positionOptionsWith(position).map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
             <div>
@@ -168,9 +180,10 @@ export default function Register() {
               {lockedSection ? (
                 <input type="text" value={lockedSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
               ) : (
-                <select value={section} onChange={e => { setSection(e.target.value); setDepartment(''); }}>
+                <select value={section} onChange={e => { setSection(e.target.value); setDepartment(''); setGroupName(''); setLineId(null); }}>
                   <option value="">— เลือก —</option>
                   {sectionOptsInScope.map(s => <option key={s.id} value={s.code || s.name}>{s.name}</option>)}
+                  {showOrphanOpt && <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>}
                 </select>
               )}
             </div>
@@ -183,6 +196,11 @@ export default function Register() {
                 <option value="">{section ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
                 {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
               </select>
+              {isOrphanSec && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                  หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
+                </div>
+              )}
             </div>
             <div>
               <label style={labelSt}>Team / กะ</label>
@@ -196,23 +214,33 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {(() => {
-              let lineOpts = lockedSection
-                ? lines.filter(l => l.section === lockedSection)
-                : lines;
-              if (department) {
-                const filtered = lineOpts.filter(l =>
-                  l.name === department || l.parent_line_name === department
+              // cascade Section→แผนก→กลุ่ม (UI-CONVENTIONS §5.3): กลุ่มจากผังองค์กร (org_nodes kind='line') ใต้แผนกที่เลือก
+              //   ตั้ง line_id ผ่าน ref_line_id ของกลุ่ม (production ยังทำงาน) · ผังยังไม่มีกลุ่ม → fallback production_lines
+              if (orgGroupOpts.length) {
+                return (
+                  <select value={groupName} disabled={!department} onChange={e => {
+                    const val = e.target.value;
+                    setGroupName(val);
+                    const g = orgGroupOpts.find(x => (x.code || x.name) === val);
+                    setLineId(g?.ref_line_id || null);
+                  }}>
+                    <option value="">{department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                    {orgGroupOpts.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                  </select>
                 );
-                if (filtered.length > 0) lineOpts = filtered;
               }
+              // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยดูทุกไลน์แล้วให้ filterLinesByDept คัดตามแผนก
+              const secFilter = isOrphanSec ? '' : (lockedSection || section);
+              let lineOpts = secFilter ? lines.filter(l => l.section === secFilter) : lines;
+              lineOpts = filterLinesByDept(lineOpts, department);
               return (
-                <select value={groupName} onChange={e => {
+                <select value={groupName} disabled={!department} onChange={e => {
                   const val = e.target.value;
                   setGroupName(val);
                   const line = lines.find(l => l.name === val);
                   setLineId(line?.id || null);
                 }}>
-                  <option value="">— เลือก Line —</option>
+                  <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                   {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                 </select>
               );

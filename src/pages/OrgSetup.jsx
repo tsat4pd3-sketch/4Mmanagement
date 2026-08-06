@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
+import { laborMeta } from '../utils/laborType';
 
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
@@ -16,18 +17,30 @@ export default function OrgSetup() {
   const [formCode, setFormCode] = useState('');
   const [formCostCenter, setFormCostCenter] = useState('');
   const [formRefLineId, setFormRefLineId] = useState('');
+  const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
   const [saving, setSaving] = useState(false);
+  // ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup) — เก็บใน section_signers keyed by production_lines.section
+  const [signersMap, setSignersMap] = useState({});   // sectionKey → {manager_name, ta_name, hrm_name}
+  const [plSecSet, setPlSecSet]     = useState(new Set()); // ค่าจริงของ production_lines.section (ไว้ resolve key ให้ตรงกับใบค่าฝีมือ)
+  const [sgManager, setSgManager]   = useState('');
+  const [sgTA, setSgTA]             = useState('');
+  const [sgHRM, setSgHRM]           = useState('');
+  const [sgSaving, setSgSaving]     = useState(false);
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     setLoading(true);
-    const [{ data: orgData }, { data: lineData }] = await Promise.all([
+    const [{ data: orgData }, { data: lineData }, { data: signerRows }] = await Promise.all([
       supabase.from('org_nodes').select('*').order('sort_order'),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select('id, name, section, cost_center').order('name'),
+      supabase.from('section_signers').select('*'),
     ]);
     setNodes(orgData || []);
     setLines(lineData || []);
+    setPlSecSet(new Set((lineData || []).map(l => l.section).filter(Boolean)));
+    const sm = {}; (signerRows || []).forEach(r => { sm[r.section] = r; });
+    setSignersMap(sm);
     setLoading(false);
   };
 
@@ -39,6 +52,13 @@ export default function OrgSetup() {
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
+  // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
+  const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
+  const lineCostCenter = (node) => {
+    if (node?.kind === 'line' && node.ref_line_id) { const pl = lineById[String(node.ref_line_id)]; if (pl) return pl.cost_center || ''; }
+    return node?.cost_center || '';
+  };
+  const isLinkedLine = (node) => node?.kind === 'line' && !!node?.ref_line_id;
 
   const parentOptionsFor = (kind) => {
     if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
@@ -62,22 +82,53 @@ export default function OrgSetup() {
 
   const currentLines = selDept ? linesOf(selDept) : [];
 
+  // key ของ section_signers = ค่าที่ production_lines.section ใช้ (= ค่าที่ใบค่าฝีมืออ้างถึง)
+  // resolve จาก node.code / node.name โดยเทียบกับค่าจริงใน production_lines กันคีย์ผิดจนข้อมูลกำพร้า
+  const secKeyOf = (node) => {
+    if (!node) return '';
+    if (node.code && plSecSet.has(node.code)) return node.code;
+    if (node.name && plSecSet.has(node.name)) return node.name;
+    return node.code || node.name || '';
+  };
+  // โหลดชื่อผู้เซ็นของ section ที่เลือกเข้าฟอร์ม
+  useEffect(() => {
+    const node = sections.find(s => s.id === selSection);
+    const row = signersMap[secKeyOf(node)] || {};
+    setSgManager(row.manager_name || ''); setSgTA(row.ta_name || ''); setSgHRM(row.hrm_name || '');
+  }, [selSection, signersMap, plSecSet, sections]); // eslint-disable-line
+  const saveSigners = async () => {
+    const node = sections.find(s => s.id === selSection);
+    const key = secKeyOf(node);
+    if (!key) return toast.error('ส่วนงานนี้ยังไม่มี Code/ชื่อ — ตั้งก่อนบันทึกผู้เซ็น');
+    setSgSaving(true);
+    const row = { section: key, manager_name: sgManager || null, ta_name: sgTA || null, hrm_name: sgHRM || null, updated_at: new Date().toISOString() };
+    const { error } = await supabase.from('section_signers').upsert(row, { onConflict: 'section' });
+    if (error) toast.error('Error: ' + error.message);
+    else { setSignersMap(m => ({ ...m, [key]: row })); toast.success('บันทึกผู้เซ็นแล้ว'); }
+    setSgSaving(false);
+  };
+
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
+    setFormLaborType('direct');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
-    setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(node.cost_center || '');
+    setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(lineCostCenter(node));
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
+    setFormLaborType(node.labor_type || 'direct');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
-    if (COST_CENTER_REQUIRED.includes(modal.kind) && !formCostCenter.trim()) {
+    // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
+    const linkedLine = modal.kind === 'line' && !!formRefLineId;
+    const linkedCC = linkedLine ? (lineById[String(formRefLineId)]?.cost_center || '') : '';
+    if (COST_CENTER_REQUIRED.includes(modal.kind) && !linkedLine && !formCostCenter.trim()) {
       return toast.error('กรุณากรอก Cost Center');
     }
-    if (formCostCenter.trim()) {
+    if (!linkedLine && formCostCenter.trim()) {
       const dup = nodes.find(n =>
         n.is_active && n.cost_center && n.cost_center.trim() === formCostCenter.trim() && n.id !== modal.editing?.id
       );
@@ -88,9 +139,12 @@ export default function OrgSetup() {
       kind: modal.kind,
       name: formName.trim(),
       code: formCode.trim() || null,
-      cost_center: formCostCenter.trim() || null,
+      cost_center: linkedLine ? (linkedCC || null) : (formCostCenter.trim() || null),
       parent_id: modal.parentId || null, // department เลือก "ขึ้นตรงฝ่าย" ได้ = parent_id null
       ref_line_id: modal.kind === 'line' && formRefLineId ? Number(formRefLineId) : null,
+      // ประเภทแรงงาน — ตั้งได้ทั้ง section และ department (ช่างส่วนใหญ่อยู่ระดับแผนก)
+      // พนักงาน derive จาก department ก่อน แล้ว section
+      ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -103,6 +157,8 @@ export default function OrgSetup() {
   };
 
   const toggleActive = async (node) => {
+    // ยืนยันเฉพาะตอน "ปิดใช้งาน" (กระทบ dropdown/การอ้างอิงทั้งระบบ) — เปิดกลับไม่ต้องถาม
+    if (node.is_active && !confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
     const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
     if (error) return toast.error(error.message);
     fetchAll();
@@ -151,12 +207,14 @@ export default function OrgSetup() {
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
               <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
+            <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
                   {s.name}
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
                   {s.cost_center && <CostBadge code={s.cost_center} />}
+                  <LaborBadge type={s.labor_type} />
                 </span>
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -167,6 +225,7 @@ export default function OrgSetup() {
                 🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
               </span>
+            </div>
             </div>
           </div>
 
@@ -182,6 +241,7 @@ export default function OrgSetup() {
                   {d.name}
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
+                  <LaborBadge type={d.labor_type} />
                 </span>
                 <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -199,13 +259,40 @@ export default function OrgSetup() {
               <div key={l.id} style={itemStyle(false)}>
                 <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
-                  {l.cost_center && <CostBadge code={l.cost_center} />}
+                  {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
                 </span>
                 <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
           </div>
+
+          {/* ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup — เป็นข้อมูลราย "ส่วนงาน") */}
+          {selSection && selSection !== ORPHAN && (() => {
+            const node = sections.find(s => s.id === selSection);
+            if (!node) return null;
+            const key = secKeyOf(node);
+            return (
+              <div className="card" style={{ flexBasis: '100%', width: '100%', padding: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+                  <strong style={{ fontSize: 13, color: 'var(--text2)' }}>✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ — ส่วน {node.name}{key ? ` (${key})` : ''}</strong>
+                  <button onClick={saveSigners} disabled={sgSaving || !key}
+                    style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
+                    {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                  </button>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                  ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ — ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้ (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
+                </div>
+                {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4 }} /></div>
+                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><input type="text" value={sgTA} onChange={e => setSgTA(e.target.value)} style={{ marginTop: 4 }} /></div>
+                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><input type="text" value={sgHRM} onChange={e => setSgHRM(e.target.value)} style={{ marginTop: 4 }} /></div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -235,10 +322,30 @@ export default function OrgSetup() {
               </div>
               <div>
                 <label style={labelSt}>
-                  Cost Center {COST_CENTER_REQUIRED.includes(modal.kind) ? '(บังคับ)' : '(ไม่บังคับ)'}
+                  Cost Center {modal.kind === 'line' && formRefLineId ? '(จากไลน์ที่ผูก)' : COST_CENTER_REQUIRED.includes(modal.kind) ? '(บังคับ)' : '(ไม่บังคับ)'}
                 </label>
-                <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
+                {modal.kind === 'line' && formRefLineId ? (
+                  <>
+                    <input type="text" value={lineById[String(formRefLineId)]?.cost_center || ''} readOnly disabled
+                      placeholder="— ยังไม่ได้ตั้งที่หน้าจัดการไลน์ —" style={{ opacity: 0.7, cursor: 'not-allowed' }} />
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>🔗 single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
+                  </>
+                ) : (
+                  <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
+                )}
               </div>
+              {['section', 'department'].includes(modal.kind) && (
+                <div>
+                  <label style={labelSt}>ประเภทแรงงาน (Direct/Indirect)</label>
+                  <select value={formLaborType} onChange={e => setFormLaborType(e.target.value)}>
+                    <option value="direct">🔧 Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
+                    <option value="indirect">🗂️ Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    พนักงานใน{modal.kind === 'section' ? 'ส่วน' : 'แผนก'}นี้จะถูกจัดเป็นประเภทนี้อัตโนมัติ{modal.kind === 'section' ? ' (แผนกตั้งทับได้)' : ' (ช่างส่วนใหญ่อยู่ระดับแผนก)'}
+                  </div>
+                </div>
+              )}
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
@@ -278,6 +385,16 @@ function CostBadge({ code }) {
   return (
     <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
+    </span>
+  );
+}
+
+function LaborBadge({ type }) {
+  if (!type) return null;
+  const m = laborMeta(type);
+  return (
+    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600 }}>
+      {m.icon}{m.short}
     </span>
   );
 }

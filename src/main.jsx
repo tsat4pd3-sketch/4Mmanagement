@@ -41,6 +41,15 @@ const checkVersion = async () => {
 checkVersion();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
 
+/* ── PWA Service Worker (เฉพาะ Web Push — ไม่มี fetch handler ไม่ cache อะไร) ──
+   register ตอน production เท่านั้น · ตัว SW (public/sw.js) แตะแค่ push/notificationclick
+   จึงไม่ชน version-guard ข้างบน (ดูคอมเมนต์ใน sw.js) — ห้ามใส่ fetch/caching เข้าไป */
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* ไม่รองรับ — ข้าม */ });
+  });
+}
+
 const isChunkError = (err) =>
   /dynamically imported module|Importing a module script failed|Loading chunk|error loading|Failed to fetch/i
     .test(err?.message || '');

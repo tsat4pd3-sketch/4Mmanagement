@@ -3,10 +3,16 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
+import { filterLinesByDept } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import {
+  inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+} from '../utils/sectionScope';
+import { positionOptionsWith } from '../utils/positions';
+import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
@@ -80,6 +86,7 @@ export default function Operator() {
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
+  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
   const [lines,           setLines]           = useState([]);
   const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
@@ -92,6 +99,7 @@ export default function Operator() {
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
+  const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
   useEffect(() => {
     let alive = true;
@@ -102,7 +110,7 @@ export default function Operator() {
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         if (!alive) return;
         const orgNodes = data || [];
@@ -110,6 +118,7 @@ export default function Operator() {
         setOrgSectionNodes(secNodes);
         setOrgSectionOpts(secNodes.map(n => n.code || n.name));
         setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
+        setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
       });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
@@ -297,7 +306,10 @@ export default function Operator() {
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
         department: editingEmp.department,
-        section:    lockedScopeSec || editingEmp.section || null,
+        // เซฟค่าเดียวกับที่ช่อง Section โชว์อยู่เสมอ (WYSIWYG) — "ขึ้นตรงฝ่าย" = null
+        // ครอบข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section ด้วย (section='MTN' → null) ดู sectionScope.js
+        section:    lockedScopeSec || sectionValueForSave(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes)),
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
@@ -404,12 +416,51 @@ export default function Operator() {
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
   const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
+  // ประเภทแรงงาน direct/indirect derive จาก department ก่อน แล้ว section (ตั้งที่ผังองค์กร) — laborType.js
+  // ช่างส่วนใหญ่อยู่ระดับแผนก → รวมทั้ง section + department nodes ใน map
+  const laborMap = useMemo(() => buildLaborMap([...orgSectionNodes, ...orgDeptNodes]), [orgSectionNodes, orgDeptNodes]);
+  const empLabor = (emp) => laborTypeOf(emp.section, emp.department, laborMap);
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
   const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
-  const deptOpts    = useMemo(() => [...new Set(empsInSec.map(e => e.department).filter(Boolean))].sort(), [empsInSec]);
+  // ตัวกรองแผนก = จัดกลุ่มตามผังองค์กร แต่**โชว์เฉพาะแผนกที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — หัวหน้าหาคนไม่หาย)
+  //   "ในผัง" = แผนกในผังที่มีพนักงาน · "นอกผัง" = แผนกที่พนักงานกรอกไว้แต่ยังไม่มีในผัง (ต้องจัดข้อมูล) · เรียงตาม sort_order ผัง
+  const deptOrgList  = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    const empDepts = new Set(empsInSec.map(e => String(e.department || '').trim().toLowerCase()).filter(Boolean));
+    return orgDeptNodes
+      .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)  // orgDeptNodes เรียง sort_order มาแล้ว
+      .map(d => d.code || d.name)
+      .filter(name => empDepts.has(String(name).trim().toLowerCase()));  // เฉพาะแผนกที่มีพนักงานจริง
+  }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
+  const deptLegacyList = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    const orgAll = new Set(orgDeptNodes
+      .filter(d => filterSection ? (secNode && d.parent_id === secNode.id) : true)
+      .map(d => String(d.code || d.name).trim().toLowerCase()));
+    return [...new Set(empsInSec.map(e => e.department).filter(Boolean))]
+      .filter(d => !orgAll.has(String(d).trim().toLowerCase())).sort();
+  }, [orgDeptNodes, orgSectionNodes, filterSection, empsInSec]);
+  const deptOpts    = useMemo(() => [...deptOrgList, ...deptLegacyList], [deptOrgList, deptLegacyList]);
   const empsInDept  = useMemo(() => empsInSec.filter(e => !filterDept || e.department === filterDept), [empsInSec, filterDept]);
-  const groupOpts   = useMemo(() => [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))].sort(), [empsInDept]);
+  // ตัวกรองกลุ่ม (Group) = cascade จากผังองค์กร (org_nodes kind='line' ใต้แผนกที่เลือก) เหมือน Dept — โชว์เฉพาะกลุ่มที่มีพนักงานจริง
+  const grpDepNode  = useMemo(() => {
+    const secNode = orgSectionNodes.find(s => (s.code || s.name) === filterSection);
+    return orgDeptNodes.find(d => (d.code || d.name) === filterDept && (!secNode || d.parent_id === secNode.id));
+  }, [orgDeptNodes, orgSectionNodes, filterSection, filterDept]);
+  const groupOrgList = useMemo(() => {
+    const empGroups = new Set(empsInDept.map(e => String(e.group_name || '').trim().toLowerCase()).filter(Boolean));
+    return (grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
+      .map(g => g.code || g.name)
+      .filter(name => empGroups.has(String(name).trim().toLowerCase()));
+  }, [orgLineNodes, grpDepNode, empsInDept]);
+  const groupLegacyList = useMemo(() => {
+    const orgAll = new Set((grpDepNode ? orgLineNodes.filter(g => g.parent_id === grpDepNode.id) : [])
+      .map(g => String(g.code || g.name).trim().toLowerCase()));
+    return [...new Set(empsInDept.map(e => e.group_name).filter(Boolean))]
+      .filter(g => !orgAll.has(String(g).trim().toLowerCase())).sort();
+  }, [orgLineNodes, grpDepNode, empsInDept]);
+  const groupOpts   = useMemo(() => [...groupOrgList, ...groupLegacyList], [groupOrgList, groupLegacyList]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
@@ -417,8 +468,9 @@ export default function Operator() {
     .filter(emp => !filterDept    || emp.department === filterDept)
     .filter(emp => !filterGroup   || emp.group_name === filterGroup)
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
-    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade]),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade]);
+    .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
+    .filter(emp => !filterLabor   || empLabor(emp) === filterLabor),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, laborMap]);
 
   // Only show skill columns where at least one displayed employee has score > 0
   // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
@@ -464,7 +516,13 @@ export default function Operator() {
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
-        {(isLeader ? ['👥 พนักงาน'] : ['👥 พนักงาน', '⚙️ กำหนดสกิล', '⬆️ Level Up']).map((t, i) => (
+        {/* แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
+            index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
+        {[
+          [0, '👥 พนักงาน', true],
+          [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
+          [2, '⬆️ Level Up', can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role)],
+        ].filter(([, , show]) => show).map(([i, t]) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
             background: tab === i ? 'var(--accent)' : 'var(--bg3)',
@@ -514,7 +572,26 @@ export default function Operator() {
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
                 style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
                 <option value="">{`— ${f.label} —`}</option>
-                {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                {(f.label === 'Dept' || f.label === 'Group') ? (() => {
+                  const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;
+                  const legacyL = f.label === 'Dept' ? deptLegacyList : groupLegacyList;
+                  return (
+                    <>
+                      {orgL.length > 0 && (
+                        <optgroup label="ในผังองค์กร">
+                          {orgL.map(o => <option key={`o_${o}`} value={o}>{o}</option>)}
+                        </optgroup>
+                      )}
+                      {legacyL.length > 0 && (
+                        <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
+                          {legacyL.map(o => <option key={`l_${o}`} value={o}>{o}</option>)}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })() : (
+                  f.opts.map(o => <option key={o} value={o}>{o}</option>)
+                )}
               </select>
             ))}
 
@@ -540,8 +617,24 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade) && (
-              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); }}
+            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
+            <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
+            {['direct', 'indirect'].map(t => {
+              const m = LABOR_META[t];
+              const active = filterLabor === t;
+              return (
+                <button key={t} onClick={() => setFilterLabor(active ? '' : t)}
+                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: `1px solid ${active ? m.color : 'var(--border2)'}`,
+                    background: active ? `${m.color}22` : 'var(--bg3)',
+                    color: active ? m.color : 'var(--muted)', transition: 'all 0.15s' }}>
+                  {m.icon} {m.short}
+                </button>
+              );
+            })}
+
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -669,7 +762,12 @@ export default function Operator() {
                     <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
                     </td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.section    || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                      {emp.section || '—'}
+                      {emp.section && (() => { const m = laborMeta(empLabor(emp)); return (
+                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 3, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 700 }}>{m.icon}</span>
+                      ); })()}
+                    </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.department || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
@@ -1095,11 +1193,13 @@ export default function Operator() {
 
       {editingEmp && (
         <div className="overlay">
-          <div className="modal" style={{ width: 'min(640px, 94vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div className="modal" style={{ width: 'min(1360px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ marginTop: 0, borderBottom: '1px solid var(--border)', paddingBottom: 12, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               📝 แก้ไขข้อมูลพนักงาน
             </h3>
-            <form onSubmit={handleUpdate} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+            {/* จอ ≥1100px: ซ้าย = ข้อมูลพนักงาน · ขวา = ระดับทักษะ (landscape ตาม UI-CONVENTIONS §5) */}
+            <form onSubmit={handleUpdate} className="modal-2col" style={{ marginTop: 16 }}>
+              <div className="m2c-col">
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={labelSt}>รหัสพนักงาน</label>
@@ -1113,14 +1213,11 @@ export default function Operator() {
                 </div>
                 <div>
                   <label style={labelSt}>ตำแหน่งงาน</label>
+                  {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) · ค่าเก่านอกลิสต์ยังโชว์ได้ */}
                   <select value={editingEmp.position || ''}
                     onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    <option value="Operator">Operator</option>
-                    <option value="Leader">Leader</option>
-                    <option value="Technician">Technician</option>
-                    <option value="Engineer">Engineer</option>
-                    <option value="QC">QC</option>
+                    {positionOptionsWith(editingEmp.position).map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
               </div>
@@ -1130,25 +1227,38 @@ export default function Operator() {
                   {lockedScopeSec ? (
                     <input type="text" value={lockedScopeSec} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                   ) : (
-                    <select value={editingEmp.section || ''} onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '' })}>
+                    // แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN/QA) เลือกผ่าน sentinel — ดู sectionScope.js
+                    //   พนักงานเดิมที่ section ว่างแต่แผนกขึ้นตรงฝ่าย ต้องโชว์ sentinel ไม่งั้นช่องแผนกถูกล็อก
+                    <select value={sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes)}
+                      onChange={e => setEditingEmp({ ...editingEmp, section: e.target.value, department: '', group_name: '', line_id: null })}>
                       <option value="">— เลือก —</option>
                       {(scopeSecs.length ? orgSectionOpts.filter(s => inSectionScope(scopeSecs, s)) : orgSectionOpts)
                         .map(s => <option key={s} value={s}>{s}</option>)}
+                      {!scopeSecs.length && orphanDepts(orgDeptNodes).length > 0 && (
+                        <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                      )}
                     </select>
                   )}
                 </div>
                 <div>
                   <label style={labelSt}>Department / แผนก</label>
                   {(() => {
-                    const empSection = lockedScopeSec || editingEmp.section;
-                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === empSection);
-                    const deptOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    const empSection = lockedScopeSec
+                      || sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes);
+                    const deptOpts = deptOptionsFor(empSection, orgSectionNodes, orgDeptNodes);
                     return (
-                      <select value={editingEmp.department || ''} disabled={!empSection}
-                        onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value })}>
-                        <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
-                        {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
-                      </select>
+                      <>
+                        <select value={editingEmp.department || ''} disabled={!empSection}
+                          onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
+                          <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                          {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        </select>
+                        {empSection === ORPHAN_SECTION && (
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
+                            หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </div>
@@ -1172,20 +1282,45 @@ export default function Operator() {
                 <label style={labelSt}>Group / กลุ่ม (Line)</label>
                 {isLeader ? (
                   <input type="text" value={editingEmp.group_name || myLineName || ''} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
-                ) : (
-                  <select value={editingEmp.group_name || ''} onChange={e => {
-                    const val = e.target.value;
-                    const line = lines.find(l => l.name === val);
-                    setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
-                  }}>
-                    <option value="">— เลือก Line —</option>
-                    {/* cascade ตามลำดับชั้น (2026-07-21): มีแผนก → เฉพาะไลน์ของแผนกนั้น (pattern Register) · มี section → เฉพาะไลน์ section นั้น */}
-                    {(scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
-                      .filter(l => !editingEmp.section || l.section === editingEmp.section)
-                      .filter(l => !editingEmp.department || l.name === editingEmp.department || l.parent_line_name === editingEmp.department)
-                      .map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                  </select>
-                )}
+                ) : (() => {
+                  // cascade จากผังองค์กร: กลุ่ม (org_nodes kind='line') ใต้แผนกที่เลือก — ตั้ง line_id ผ่าน ref_line_id ให้ production ยังทำงาน
+                  const empSection = lockedScopeSec
+                    || sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes);
+                  const depNode = deptNodeFor(empSection, editingEmp.department, orgSectionNodes, orgDeptNodes);
+                  const orgGroups = depNode ? orgLineNodes.filter(g => g.parent_id === depNode.id) : [];
+                  const cur = editingEmp.group_name || '';
+                  const curInOrg = orgGroups.some(g => (g.code || g.name) === cur);
+                  if (orgGroups.length) {
+                    return (
+                      <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                        const val = e.target.value;
+                        const g = orgGroups.find(x => (x.code || x.name) === val);
+                        // เลือกกลุ่มในผัง → line_id จาก ref_line_id · เลือกค่าเดิม (นอกผัง) → คง line_id เดิม
+                        setEditingEmp({ ...editingEmp, group_name: val, line_id: g ? (g.ref_line_id || null) : editingEmp.line_id });
+                      }}>
+                        <option value="">{editingEmp.department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                        {orgGroups.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                        {cur && !curInOrg && <option value={cur}>{cur} (นอกผัง — ค่าเดิม)</option>}
+                      </select>
+                    );
+                  }
+                  // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
+                  return (
+                    <select value={cur} disabled={!editingEmp.department} onChange={e => {
+                      const val = e.target.value;
+                      const line = lines.find(l => l.name === val);
+                      setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                    }}>
+                      <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
+                      {filterLinesByDept(
+                        (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
+                          // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยให้ filterLinesByDept คัดตามแผนกอย่างเดียว
+                          .filter(l => empSection === ORPHAN_SECTION || !empSection || l.section === empSection),
+                        editingEmp.department
+                      ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    </select>
+                  );
+                })()}
               </div>
 
               <div>
@@ -1194,6 +1329,8 @@ export default function Operator() {
                   <option value="">— ไม่ระบุ —</option>
                   {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
                 </select>
+              </div>
+
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
@@ -1285,7 +1422,7 @@ export default function Operator() {
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <div className="m2c-span" style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button type="submit" disabled={isSaving}
                   style={{ flex: 2, padding: 12, background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   {isSaving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูล'}
@@ -1361,8 +1498,8 @@ function SkillSubItemsModal({ skill, onClose }) {
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>📝 หัวข้อการพิจารณา</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>✕</button>

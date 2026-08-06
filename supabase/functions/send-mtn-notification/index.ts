@@ -20,7 +20,7 @@ async function getBotToken(): Promise<string | undefined> {
 
 type Route = { enabled: boolean; chats: string[]; template?: string | null };
 // teamChats = ห้องที่แท็กทีมไว้ (JIG MTN/DIE MTN/MTN/PRODUCTION) → ส่งแจ้งเตือนเข้าห้องของทีมนั้นก่อน
-async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]> }> {
+async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]>; chatTeam: Map<string, string> }> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
       supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
@@ -28,12 +28,13 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
     ]);
     const chatById = new Map<string, string>();
     const teamChats: Record<string, string[]> = {};
+    const chatTeam = new Map<string, string>();   // chat_id → ทีมที่แท็กไว้ (ถ้ามี) — ใช้กันรั่วข้ามทีม
     for (const c of channels ?? []) {
       if (!(c.is_active && c.chat_id)) continue;
       const chat = String(c.chat_id).trim();
       chatById.set(String(c.id), chat);
       const team = (c as { team?: string | null }).team;
-      if (team) (teamChats[String(team).trim()] ||= []).push(chat);
+      if (team) { const t = teamKey(team); (teamChats[t] ||= []).push(chat); chatTeam.set(chat, t); }
     }
     const map: Record<string, Route> = {};
     for (const r of rules ?? []) {
@@ -43,8 +44,8 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
       map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template };
     }
-    return { map, teamChats };
-  } catch { return { map: {}, teamChats: {} }; }
+    return { map, teamChats, chatTeam };
+  } catch { return { map: {}, teamChats: {}, chatTeam: new Map() }; }
 }
 function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
@@ -102,6 +103,15 @@ function beDate(iso?: string | null): string {
   return `${+g.day}/${+g.month}/${Number(g.year) + 543}`;
 }
 const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team = "JIG MTN") กับ key (checklists.department = "jig_maintenance")
+// mtn_teams เป็น single source ที่โยง 2 ฝั่ง — normalize ทั้งสองด้านเป็น "key" ก่อนจับคู่ routing กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึงห้องทีม
+const TEAM_KEY: Record<string, string> = {
+  'mtn': 'maintenance', 'maintenance': 'maintenance',
+  'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
+  'die mtn': 'die_maintenance', 'die_maintenance': 'die_maintenance',
+  'production': 'production',
+};
+const teamKey = (v?: string | null): string => { const s = String(v || '').toLowerCase().trim(); return TEAM_KEY[s] || s; };
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -110,13 +120,25 @@ Deno.serve(async (req) => {
     const { event, mo } = body;
     if (!mo) return json({ error: 'missing mo' }, 400);
     BOT_TOKEN = await getBotToken();
-    const { map: routes, teamChats } = await loadRoutes();
+    const { map: routes, teamChats, chatTeam } = await loadRoutes();
     const baseChat = resolveEvent(routes, event);
     if (baseChat === null) return json({ ok: true, skipped: true }); // event ถูกปิด
 
     const dept = mo.mtn_dept || deptFor(mo.item_type);
-    // แจกให้ถูกทีม: มีห้องของทีมนี้ → ส่งเข้าห้องทีม, ไม่มี → route เดิม (ห้องรวม/fallback)
-    const chat = (teamChats[dept] && teamChats[dept].length) ? teamChats[dept] : baseChat;
+    // ── routing แบบ "แท็กทีม = exclusive" (กันรั่วข้ามทีม) ──
+    //   ห้องแท็กทีม X → รับเฉพาะ MO ของทีม X · ห้อง "ทุกทีม (รวม)" (ไม่แท็ก) → รับทุกทีม
+    //   ห้องทีมอื่นถูกตัดออกเสมอ แม้ถูกติ๊กไว้ใน rule ของ event (เดิมรั่ว: MO ของ MTN เข้าห้อง PRODUCTION)
+    let chat: string[];
+    if (event === 'mtn_returned') {
+      // ตีกลับ → ให้ผู้แจ้ง/ผลิตเห็น: ใช้ห้องตาม rule ตามที่แอดมินตั้ง (ไม่ผูกทีมช่าง)
+      chat = baseChat;
+    } else {
+      const generalRule = (baseChat || []).filter((c) => !chatTeam.get(c));   // ห้อง "รวม" ที่เลือกไว้ใน event
+      const teamRooms = teamChats[teamKey(dept)] || [];                        // ห้องของทีมนี้ (จับคู่แบบไม่สน encoding key/label)
+      chat = [...new Set([...teamRooms, ...generalRule])];
+      // safety: ถ้าไม่เหลือห้องเลย (rule มีแต่ห้องทีมอื่น + ไม่มีห้องทีมนี้) → ห้อง fallback รวม ห้ามเงียบ/ห้ามรั่วทีมอื่น
+      if (!chat.length) chat = TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];
+    }
     const v = {
       dept, mo_no: mo.mo_no || '(ยังไม่ออกเลข)', line_name: mo.line_name || '-', item_type: mo.item_type || '-',
       machine_no: mo.machine_no || '', problem: mo.problem_characteristic || '-',
@@ -155,8 +177,22 @@ Deno.serve(async (req) => {
         builtin = [`✅ <b>อนุมัติปิดแจ้งซ่อม</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
           `เลขแจ้งซ่อม: <b>${v.mo_no}</b>`, `ช่างซ่อม: ${v.tech_main}`, `วิธีแก้ไข: ${v.solution}`, `ผู้อนุมัติ: ${v.approver}`].join('\n');
         photo = mo.after_img || null; break;
+      case 'mtn_returned':
+        builtin = [`↩️ <b>ตีกลับใบแจ้งซ่อม (ผิดแผนก)</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
+          `🛑 เหตุผลที่ตีกลับ: <b>${mo.reject_reason || '-'}</b>`, mo.returned_from_dept ? `ตีกลับจากทีม: ${mo.returned_from_dept}` : '',
+          ``, `📌 ผู้แจ้ง (${v.reporter_prod || '-'}) โปรดแก้แผนกให้ถูกต้องแล้วส่งใหม่`].filter(Boolean).join('\n'); break;
       default: return json({ error: 'unknown event' }, 400);
     }
+    // เด้งบอก "ขั้นต่อไป" ให้ห้องแชททีมรู้ว่าต้องรออะไรต่อ (ตามที่ user ต้องการ)
+    const NEXT: Record<string, string> = {
+      mtn_reported: 'รอช่างรับงาน (ขั้น 2)',
+      mtn_assigned: 'รอดำเนินการซ่อม (ขั้น 3)',
+      mtn_repaired: 'รอตรวจสอบหลังซ่อม (ขั้น 4)',
+      mtn_checked: 'รอยืนยันคุณภาพ / รับมอบ (ขั้น 5-6)',
+      mtn_qa: 'รอรับมอบ (ขั้น 6)',
+      mtn_handover: 'รออนุมัติปิด (ขั้น 7)',
+    };
+    if (NEXT[event]) builtin += `\n⏳ ขั้นต่อไป: ${NEXT[event]}`;
     const message = pick(routes, event, v, builtin);
     const sent = photo
       ? await sendTelegramPhoto(photo, message, chat).catch(() => [])

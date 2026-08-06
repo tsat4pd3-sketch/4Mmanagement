@@ -2,7 +2,7 @@ import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDate } from '../utils/dateFormat';
@@ -62,6 +62,7 @@ const EMPTY_FORM = {
 export default function Improvements() {
   const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canManage = can('improvements', 'manage', role);
+  const canDel    = canDelete('improvements', 'manage', role);  // สิทธิ์ลบโปรเจค แยกจากจัดการ
 
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -499,7 +500,7 @@ export default function Improvements() {
           ยังไม่มีโปรเจคปรับปรุง{canManage ? ' — กด "➕ เพิ่มโปรเจคปรับปรุง" เลือกปัญหาจากพาเรโต้ได้เลย' : ''}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
           {visibleItems.map(imp => {
             const st = STATUS_META[imp.status] || STATUS_META.monitoring;
             const r = results[imp.id];
@@ -632,7 +633,9 @@ export default function Improvements() {
                                 {/* แถบ gantt ตามแผน */}
                                 <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
                                   {/* เส้นวันนี้ — playhead ชมพูตาม convention */}
-                                  <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${pctOf(today)}%`, width: 2, background: '#ec4899', zIndex: 2, boxShadow: '0 0 4px #ec4899' }} />
+                                  {/* เส้นวันนี้ใช้ class กลาง .now-line (index.css) — ได้ [data-perf="lite"] override บนจอ TV
+                                      ห้ามวาด playhead เองด้วย inline boxShadow (UI-CONVENTIONS §6 · QC audit 2026-08-03) */}
+                                  <div className="now-line" style={{ left: `${pctOf(today)}%` }} />
                                   {(m.planned_start || m.planned_end) && (
                                     <div title={`${m.title}\nแผน ${fmtDate(m.planned_start)} – ${fmtDate(m.planned_end)}${m.done_at ? `\nเสร็จจริง ${fmtDate(m.done_at)}` : ''}${m.assignee ? `\nผู้รับผิดชอบ: ${m.assignee}` : ''}`}
                                       style={{ position: 'absolute', top: 2, bottom: 2, left: `${l}%`, width: `${Math.max(rgt - l, 1.5)}%`, borderRadius: 4, background: `${overdue ? '#ef4444' : meta.c}${m.status === 'done' ? 'cc' : '77'}`, border: `1px solid ${overdue ? '#ef4444' : meta.c}` }} />
@@ -687,7 +690,7 @@ export default function Improvements() {
                     <button onClick={() => setStatus(imp, 'monitoring', imp.result_note)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>👁 ติดตามต่อ</button>
                   )}
                   {canManage && <button onClick={() => openEdit(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✏️ แก้ไข</button>}
-                  {canManage && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
+                  {canDel && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
                 </div>
               </div>
             );
@@ -698,12 +701,12 @@ export default function Improvements() {
       {/* ── modal สร้าง/แก้ไข (ฟอร์ม — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) ── */}
       {modal && (
         <div className="overlay">
-          <div className="modal" style={{ width: 'min(880px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div className="modal" style={{ width: 'min(1150px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{modal.id ? '✏️ แก้ไขโปรเจคปรับปรุง' : '➕ เพิ่มโปรเจคปรับปรุง'}</h3>
               <button onClick={() => setModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 16 }}>
               {/* ซ้าย: ข้อมูลโปรเจค */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ชื่อโปรเจค *

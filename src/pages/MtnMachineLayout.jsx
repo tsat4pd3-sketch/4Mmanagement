@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { toast } from '../components/Toast'
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 import MachineFloorMap from '../components/MachineFloorMap'
 import DowntimeSiren from '../components/DowntimeSiren'
 import FactoryMap from './FactoryMap'
@@ -21,8 +24,8 @@ function publicUrl(path) {
   return supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl
 }
 
-const MTN_DEPTS = ['maintenance', 'jig_maintenance', 'die_maintenance']
-const DEPT_ICON = { maintenance: '🔧', jig_maintenance: '🧩', die_maintenance: '🗜️' }
+// ไอคอน fallback ต่อ department (ตัวจริงมาจากตาราง mtn_teams · data-driven)
+const DEPT_ICON = { maintenance: '🔧', jig_maintenance: '🧩', die_maintenance: '🗜️', production: '🏭' }
 const FACILITY_CATS = ['facility', 'utility']
 
 function worstStatus(statuses) {
@@ -62,10 +65,23 @@ const S = {
     padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`, background: active ? 'var(--accent-dim)' : 'var(--bg3)', color: active ? 'var(--accent)' : 'var(--muted)',
   }),
-  side: { width: 240, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, alignSelf: 'flex-start', maxHeight: 600, overflowY: 'auto' },
+  side: { width: 272, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, alignSelf: 'flex-start', maxHeight: 600, overflowY: 'auto' },
   rowBtn: (active, child) => ({
     display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, cursor: 'pointer', marginLeft: child ? 12 : 0, fontSize: 13,
     border: `1px solid ${active ? 'var(--accent)' : 'transparent'}`, background: active ? 'var(--accent-dim)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text2)', fontWeight: active ? 700 : 500,
+  }),
+  // แถวอุปกรณ์ที่ยังไม่วาง — 2 บรรทัด (เลข+ปุ่มวาง / ชื่อ) กันข้อความบี้ตัดบรรทัดในแถบแคบ
+  unplacedRow: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12 },
+  unplacedTop: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
+  unplacedNo: { fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  unplacedSub: { fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
+  // ชิป "วางจุด" ท้ายแถวอุปกรณ์ที่ยังไม่วาง — armed แล้วเปลี่ยนเป็น "คลิกบนผัง"
+  placeChip: (armed) => ({
+    marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+    padding: '2px 7px', borderRadius: 20,
+    border: `1px solid ${armed ? 'var(--accent)' : 'var(--border2)'}`,
+    background: armed ? 'var(--accent-dim)' : 'var(--bg2)',
+    color: armed ? 'var(--accent)' : 'var(--text2)',
   }),
 }
 
@@ -73,11 +89,24 @@ const S = {
 // setupMode=true (/layout-setup แท็บ MTN) = ตั้งค่า facility ได้ (เพิ่มโซน/อัปรูป/วางจุด)
 export default function MtnMachineLayout({ setupMode = false }) {
   const { role } = useContext(UserContext)
-  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) ใช้สิทธิ์เดียวกับ PM Setup — เฉพาะโหมด setup
-  const canEdit = setupMode && can('pm', 'setup', role)
+  // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) = งานของทีม MTN เอง → ใช้สิทธิ์ pm:setup
+  // (mtn/admin/manager/supervisor) ได้ทั้งบน /mtn-layout และ /layout-setup — facility เป็น domain ของช่าง
+  // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
+  const canEdit = can('pm', 'setup', role)
   // เปิดหน้ามาเจอ "ภาพรวมทั้งโรงงาน" ก่อน (ฝัง FactoryMap display ตัวเดียวกับ /factory-map) แล้วค่อยเจาะไลน์
-  const [view, setView] = useState(setupMode ? 'facility' : 'overview') // 'overview' | 'production' | 'facility'
+  // deep-link จากผังรวมโรงงาน: ?view=facility&zone=<ชื่อโซน>&from=factory-map → เปิดแท็บ Facility ที่โซนนั้นเลย
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const deepView = searchParams.get('view')
+  const deepZone = searchParams.get('zone')
+  const cameFrom = searchParams.get('from')
+  const [view, setView] = useState(deepView === 'facility' ? 'facility' : (setupMode ? 'facility' : 'overview')) // 'overview' | 'production' | 'facility'
   const [dept, setDept] = useState('all')
+  const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+  useEffect(() => { loadPmTeams().then(setTeams) }, [])
+  // ป้าย/ไอคอนทีม — data-driven จาก teams ก่อน แล้ว fallback map เดิม
+  const deptIconOf = (k) => teams.find(t => t.key === k)?.icon ?? DEPT_ICON[k] ?? ''
+  const deptLabelOf = (k) => teams.find(t => t.key === k)?.label ?? DEPT_LABEL[k] ?? k
   const [selId, setSelId] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -95,8 +124,37 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [facPoints, setFacPoints] = useState([])
   const [jigInfo, setJigInfo] = useState({})   // jig_id → { name, jig_no, checklists }
   const [armedJig, setArmedJig] = useState(null)
+  const [facMachines, setFacMachines] = useState([])   // facility/utility จากฐานเครื่องจักร (ยังไม่มี shadow jig)
+  const [placedAnyZone, setPlacedAnyZone] = useState(() => new Set()) // jig_id ที่ถูกวางไว้แล้ว "ทุกโซน" — ลิสต์ยังไม่วางต้องซ่อนของที่วางโซนอื่นแล้ว
+  const [armedMachine, setArmedMachine] = useState(null) // machine ที่กำลังจะวาง (สร้าง shadow jig ตอนวาง)
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
+
+  // ─── Undo/Redo — เฉพาะจุดอุปกรณ์บนผังโซนปัจจุบัน (pm_facility_points) ───
+  // เพิ่ม/ลบโซน + อัปโหลดรูป ไม่เข้า history (มีไฟล์ใน storage ย้อนคืนไม่ได้ — ใช้ confirm dialog กันพลาดแทน)
+  const facPointsRef = useRef([])
+  useEffect(() => { facPointsRef.current = facPoints }, [facPoints])
+  const areaIdRef = useRef(null)
+  useEffect(() => { areaIdRef.current = areaId }, [areaId])
+  const pointSnap = () => ({ areaId: areaIdRef.current, points: facPointsRef.current.map(p => ({ ...p })) })
+  const applyPointSnapshot = async (snap) => {
+    if (snap.areaId !== areaIdRef.current) return false   // สลับโซนไปแล้ว (กันลบจุดโซนอื่น — history ถูก clear ตอนสลับอยู่แล้ว)
+    const cur = facPointsRef.current
+    const sM = new Map(snap.points.map(p => [p.id, p])), cM = new Map(cur.map(p => [p.id, p]))
+    const del = cur.filter(p => !sM.has(p.id)).map(p => p.id)
+    const ins = snap.points.filter(p => !cM.has(p.id)).map(p => ({ id: p.id, area_id: snap.areaId, jig_id: p.jig_id, pos_top: p.pos_top, pos_left: p.pos_left }))
+    const upd = snap.points.filter(p => { const c = cM.get(p.id); return c && (c.pos_top !== p.pos_top || c.pos_left !== p.pos_left) })
+    try {
+      if (del.length) { const { error } = await supabaseDR.from('pm_facility_points').delete().in('id', del); if (error) throw error }
+      if (ins.length) { const { error } = await supabaseDR.from('pm_facility_points').insert(ins); if (error) throw error }
+      for (const p of upd) { const { error } = await supabaseDR.from('pm_facility_points').update({ pos_top: p.pos_top, pos_left: p.pos_left }).eq('id', p.id); if (error) throw error }
+    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); return false }
+    facPointsRef.current = snap.points
+    setFacPoints(snap.points)
+    return true
+  }
+  const hist = useUndoHistory({ snapOf: pointSnap, applySnapshot: applyPointSnapshot, enabled: canEdit && view === 'facility' })
+  useEffect(() => { hist.clear() }, [areaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, parent_line_name').order('name').then(({ data }) => {
@@ -147,6 +205,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const reloadAreas = async () => {
     const { data } = await supabaseDR.from('pm_facility_areas').select('id, name, image_path, sort_order').order('sort_order').order('created_at')
     setAreas(data || [])
+    // deep-link ?zone=<ชื่อโซน> → เลือกโซนนั้นเลย (เทียบชื่อแบบไม่สนตัวพิมพ์/ช่องว่างหัวท้าย)
+    if (data?.length && deepZone) {
+      const key = String(deepZone).trim().toLowerCase()
+      const hit = data.find(a => String(a.name || '').trim().toLowerCase() === key)
+      if (hit) { setAreaId(hit.id); return }
+    }
     if (data?.length && !areaId) setAreaId(data[0].id)
   }
   const loadFacilityArea = async () => {
@@ -155,12 +219,21 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setFacImage(area?.image_path ? publicUrl(area.image_path) : null)
     const { data: pts } = await supabaseDR.from('pm_facility_points').select('id, jig_id, pos_top, pos_left').eq('area_id', areaId)
     setFacPoints(pts || [])
+    // จุดของ "ทุกโซน" — ใช้ซ่อนอุปกรณ์ที่วางโซนอื่นไปแล้วออกจากลิสต์ "ยังไม่วาง" (กันวางซ้ำ/สับสน)
+    const { data: allPts } = await supabaseDR.from('pm_facility_points').select('jig_id')
+    setPlacedAnyZone(new Set((allPts || []).map(p => p.jig_id)))
     // facility/utility equipment + PM status (all zones share the same equipment pool)
-    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
+    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
     const pm = await loadPmForJigs((jigs || []).map(j => j.id))
     const info = {}
     ;(jigs || []).forEach(j => { info[j.id] = { name: j.name || '-', jig_no: j.jig_no || '', checklists: pm[j.id] || [] } })
-    setJigInfo(info); setLoading(false)
+    setJigInfo(info)
+    // bridge: facility/utility จากฐานเครื่องจักร (machines) ที่ยังไม่มี shadow jig → ให้ดึงมาวางได้
+    // (คำสั่ง user — ลงทะเบียนที่ฐานเครื่องจักรที่เดียว ไม่ต้องคีย์ซ้ำ PM Setup) · วางแล้วสร้าง jig เงาผูก machine_id
+    const linkedMachineIds = new Set((jigs || []).map(j => j.machine_id).filter(Boolean))
+    const { data: fm } = await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category').eq('is_active', true).in('equipment_category', FACILITY_CATS)
+    setFacMachines((fm || []).filter(m => !linkedMachineIds.has(m.id)))
+    setLoading(false)
   }
 
   const addArea = async () => {
@@ -202,18 +275,34 @@ export default function MtnMachineLayout({ setupMode = false }) {
     } catch (err) { toast.error(err.message) } finally { setBusy(false); if (fileRef.current) fileRef.current.value = '' }
   }
   const placeJig = async (pct) => {
-    if (!armedJig || !areaId || !canEdit) return
-    const { error } = await supabaseDR.from('pm_facility_points').insert({ area_id: areaId, jig_id: armedJig, pos_top: pct.top, pos_left: pct.left })
+    if (!areaId || !canEdit) return
+    let jigId = armedJig
+    // วาง machine จากฐานเครื่องจักร → สร้าง shadow jig (ผูก machine_id) ก่อน แล้วค่อยวาง
+    if (!jigId && armedMachine) {
+      const m = facMachines.find(x => x.id === armedMachine); if (!m) return
+      const { data: jig, error: je } = await supabaseDR.from('jigs').insert({
+        name: m.machine_name || m.machine_no, jig_no: m.machine_no || null,
+        module: 'mtn', equipment_category: m.equipment_category || 'facility',
+        machine_id: m.id, machine_no: m.machine_no || null, line_name: m.line_name || null,
+      }).select('id').single()
+      if (je) return toast.error('สร้างอุปกรณ์ PM ไม่สำเร็จ: ' + je.message)
+      jigId = jig.id
+    }
+    if (!jigId) return
+    hist.pushHistory()
+    const { error } = await supabaseDR.from('pm_facility_points').insert({ area_id: areaId, jig_id: jigId, pos_top: pct.top, pos_left: pct.left })
     if (error) return toast.error(error.message.includes('duplicate') ? 'อุปกรณ์นี้อยู่บนโซนนี้แล้ว' : error.message)
-    setArmedJig(null); loadFacilityArea()
+    setArmedJig(null); setArmedMachine(null); loadFacilityArea()
   }
   const movePoint = async (pointId, pct) => {
     if (!canEdit) return
+    hist.pushHistory()
     setFacPoints(prev => prev.map(p => p.id === pointId ? { ...p, pos_top: pct.top, pos_left: pct.left } : p))
     await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId)
   }
   const removePoint = async (pointId) => {
     if (!canEdit) return
+    hist.pushHistory()
     setFacPoints(prev => prev.filter(p => p.id !== pointId))
     await supabaseDR.from('pm_facility_points').delete().eq('id', pointId)
   }
@@ -260,8 +349,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const selLabel = sel ? (view === 'production' ? sel.machine_no : (selInfo?.jig_no || selInfo?.name)) : ''
   const selChecklists = selInfo ? (dept === 'all' ? selInfo.checklists : selInfo.checklists.filter(c => c.dept === dept)) : []
 
-  const placedJigIds = new Set(facPoints.map(p => p.jig_id))
-  const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedJigIds.has(id))
+  // ลิสต์ "ยังไม่วาง" = ไม่ถูกวางในโซนไหนเลย (วางโซนอื่นแล้ว = ซ่อน กันวางซ้ำ · คำสั่ง user 2026-08-03)
+  const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedAnyZone.has(id))
 
   return (
     <div style={S.page}>
@@ -272,6 +361,10 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {/* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */}
+          {cameFrom === 'factory-map' && (
+            <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
+          )}
           {!setupMode && <button onClick={() => { setView('overview'); setSelId(null) }} style={S.viewBtn(view === 'overview')}>🗺️ ภาพรวมทั้งโรงงาน</button>}
           <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
           <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
@@ -284,7 +377,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
-        {MTN_DEPTS.map(d => <button key={d} onClick={() => setDept(d)} style={S.chip(dept === d, '#4d9fff')}>{DEPT_ICON[d]} {DEPT_LABEL[d]}</button>)}
+        {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
+        {view === 'facility' && canEdit && (
+          <>
+            <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ — จุดบนผังโซนนี้ (Ctrl+Z)">↩️ Undo</button>
+            <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+          </>
+        )}
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(STATUS_META).map(([k, m]) => (
@@ -295,9 +394,9 @@ export default function MtnMachineLayout({ setupMode = false }) {
         </div>
       </div>
 
-      {view === 'facility' && armedJig && (
+      {view === 'facility' && (armedJig || armedMachine) && (
         <div style={{ fontSize: 12, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
-          📍 คลิกบนผังเพื่อวาง <b>{jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name}</b> · <span onClick={() => setArmedJig(null)} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
+          📍 คลิกบนผังเพื่อวาง <b>{armedJig ? (jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name) : (facMachines.find(m => m.id === armedMachine)?.machine_no)}</b>{armedMachine ? ' (ดึงจากฐานเครื่องจักร)' : ''} · <span onClick={() => { setArmedJig(null); setArmedMachine(null) }} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
         </div>
       )}
 
@@ -310,7 +409,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
             : <MachineFloorMap
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
-                editable={view === 'facility' && canEdit} armed={!!armedJig}
+                editable={view === 'facility' && canEdit} armed={!!armedJig || !!armedMachine}
                 height="clamp(360px, calc(100vh - 260px), 1100px)"
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
@@ -321,7 +420,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                 <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
               </div>
               {selChecklists.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของแผนก ${DEPT_LABEL[dept]}` : ''} สำหรับรายการนี้</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของแผนก ${deptLabelOf(dept)}` : ''} สำหรับรายการนี้</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {selChecklists.map((c, i) => {
@@ -331,7 +430,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, borderTop: i ? '1px dashed var(--border)' : 'none', paddingTop: i ? 6 : 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{DEPT_ICON[c.dept]} {DEPT_LABEL[c.dept] ?? c.dept}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{deptIconOf(c.dept)} {deptLabelOf(c.dept)}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
                         <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
                       </div>
@@ -377,22 +476,47 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     </span>
                   </label>
                 )}
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length})</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length + facMachines.length})</div>
+                {/* บอกวิธีวางให้เห็นชัด — เดิมมีแต่ tooltip คนหาไม่เจอว่าต้องกดยังไง (2026-08-03) */}
+                {canEdit && (unplacedJigs.length + facMachines.length) > 0 && (
+                  <div style={{ fontSize: 11, color: facImage ? 'var(--accent)' : 'var(--accent2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 7, padding: '5px 8px', marginBottom: 7, lineHeight: 1.5 }}>
+                    {facImage
+                      ? <>วิธีวาง: <b>① กดปุ่ม 📍 วาง</b> ที่อุปกรณ์ → <b>② คลิกตำแหน่งบนผัง</b></>
+                      : <>⚠️ ต้อง <b>อัปโหลดรูปผังโซน</b> ก่อน ถึงจะวางอุปกรณ์ได้</>}
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {unplacedJigs.map(([id, info]) => {
                     const c = colorFor(info.checklists)
                     return (
-                      <div key={id} onClick={() => { if (!canEdit) return; facImage ? setArmedJig(id) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
+                      <div key={id} onClick={() => { if (!canEdit) return; facImage ? (setArmedJig(id), setArmedMachine(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
                         title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : 'อัปโหลดรูปผังก่อน'}
-                        style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12,
-                          border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
-                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-                        <span style={{ fontWeight: 700, color: 'var(--text)' }}>{info.jig_no || info.name}</span>
-                        {info.jig_no && <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{info.name}</span>}
+                        style={{ ...S.unplacedRow, border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
+                        <div style={S.unplacedTop}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                          <span style={S.unplacedNo}>{info.jig_no || info.name}</span>
+                          {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                        </div>
+                        {info.jig_no && info.name && <div style={S.unplacedSub}>{info.name}</div>}
                       </div>
                     )
                   })}
-                  {!unplacedJigs.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · อุปกรณ์ facility/utility เพิ่มได้ที่หน้า PM Setup</div>}
+                  {/* bridge: facility/utility จากฐานเครื่องจักร — คลิกแล้ววาง = สร้าง shadow jig อัตโนมัติ */}
+                  {facMachines.map(m => (
+                    <div key={`m-${m.id}`} onClick={() => { if (!canEdit) return; facImage ? (setArmedMachine(m.id), setArmedJig(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
+                      title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'ดึงจากฐานเครื่องจักร — คลิกแล้ววางบนผัง' : 'อัปโหลดรูปผังก่อน'}
+                      style={{ ...S.unplacedRow, border: `1px dashed ${armedMachine === m.id ? 'var(--accent)' : 'var(--border2)'}`, background: armedMachine === m.id ? 'var(--accent-dim)' : 'var(--bg2)' }}>
+                      <div style={S.unplacedTop}>
+                        <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
+                        <span style={S.unplacedNo}>{m.machine_no}</span>
+                        {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                      </div>
+                      <div style={S.unplacedSub}>
+                        {m.machine_name || m.line_name || ''}<span style={{ color: 'var(--accent2)' }}> · ฐานเครื่องจักร</span>
+                      </div>
+                    </div>
+                  ))}
+                  {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · เพิ่ม facility/utility ที่ <b>ฐานข้อมูลเครื่องจักร</b> (เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง</div>}
                 </div>
               </>
             )}

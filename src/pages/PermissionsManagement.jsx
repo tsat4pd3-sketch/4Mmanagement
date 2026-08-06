@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { ROLE_OPTIONS } from '../utils/roleMeta';
+import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
-const ROLES = ROLE_OPTIONS;
+// PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
+const ROLES = PERMISSION_COLUMN_ROLES;
 
 // ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
 const PAGE_GROUPS = [
@@ -24,12 +25,14 @@ const PAGE_GROUPS = [
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
-      { key: 'page:/daily-pm',     label: 'Daily PM ฝ่ายผลิต' },
+      { key: 'page:/daily-checker', label: 'Daily Checker (ศูนย์รวมเช็ค — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)' },
+      { key: 'page:/daily-pm',     label: '— แท็บ Autonomous Maintenance (AM) (ใน Daily Checker)' },
+      { key: 'page:/pokayoke',     label: '— แท็บ Poka-Yoke Check (ใน Daily Checker)' },
       { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
       { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
       { key: 'page:/oee-analytics', label: 'OEE' },
       { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
-      { key: 'page:/lpa',          label: 'Layer Process Audit (LPA)' },
+      { key: 'page:/lpa',          label: '— แท็บ Layer Process Audit (ใน Daily Checker)' },
     ],
   },
   {
@@ -41,6 +44,8 @@ const PAGE_GROUPS = [
       { key: 'page:/planner-sales', label: 'Planner & Sales' },
       { key: 'page:/rundown-stock', label: 'Rundown Stock' },
       { key: 'page:/customer-demand', label: 'Delivery' },
+      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal)' },
+      { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
     ],
   },
   {
@@ -52,6 +57,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
+      { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
     ],
   },
   {
@@ -67,6 +73,8 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/report',    label: 'รายงาน' },
       { key: 'page:/event-log', label: 'CQI-15 Event Log' },
+      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
+      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
     ],
   },
   {
@@ -80,6 +88,8 @@ const PAGE_GROUPS = [
       { key: 'page:/products',          label: 'Product Master' },
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
+      { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
+      { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
@@ -99,8 +109,21 @@ export default function PermissionsManagement() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: perms }, { data: cat }] = await Promise.all([
-      supabase.from('role_permissions').select('role, permission_key, allowed'),
+    // ⚠️ role_permissions โต >1000 แถวแล้ว — Supabase ตัดที่ 1000/query ต้องดึงแบบแบ่งหน้า
+    // (เดิมดึงรอบเดียว แถวที่ seed ทีหลัง เช่น bucket dept_admin แสดงเป็น "ไม่ติ๊ก" ทั้งที่ DB เป็น true)
+    const fetchAllPerms = async () => {
+      const PAGE = 1000; const out = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data } = await supabase.from('role_permissions')
+          .select('role, permission_key, allowed').range(from, from + PAGE - 1);
+        if (!data) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+      }
+      return out;
+    };
+    const [perms, { data: cat }] = await Promise.all([
+      fetchAllPerms(),
       supabase.from('permission_catalog').select('resource, action, label, group_name, sort').order('sort'),
     ]);
     setRows(perms || []);
@@ -128,6 +151,9 @@ export default function PermissionsManagement() {
 
   const toggle = async (permissionKey, role, current) => {
     if (role === 'admin') return; // admin เข้าถึงได้เสมอ แก้ไม่ได้
+    // ยืนยันเฉพาะตอน "ปิดสิทธิ์" (current=true→false) — มีผลทุกเครื่องทันที กันแตะ matrix พลาด
+    // (เปิดสิทธิ์ = additive ไม่ต้องถาม ให้แก้ matrix ลื่น)
+    if (current && !confirm(`ปิดสิทธิ์ "${permissionKey}" ของ role "${role}" ?\n\nมีผลทุกเครื่องทันที — ผู้ใช้ role นี้จะเข้า/ทำสิ่งนี้ไม่ได้`)) return;
     const cellId = `${role}:${permissionKey}`;
     setSaving(prev => ({ ...prev, [cellId]: true }));
     const nextVal = !current;
@@ -220,9 +246,8 @@ export default function PermissionsManagement() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>;
 
   const pageGroups   = PAGE_GROUPS.map(g => ({ group: g.group, items: g.pages }));
-  const legacyGroup  = { group: 'Legacy (ระบบเดิม — จะถูกแทนด้วยสิทธิ์รายการย่อยด้านบน)', items: [
-    { key: 'manage_master_data', label: 'แก้ไขข้อมูลตั้งค่า (ตารางกะ, เครื่องจักร, Line Stock, Product Master ฯลฯ — สวิตช์รวมแบบเดิม)' },
-  ] };
+  // legacy `manage_master_data` เกษียณแล้ว (2026-07-22) — แตกเป็นสิทธิ์ย่อย oee:set_target /
+  // ot_master:manage / management:assign_manpower · แถวเก่ายังอยู่ใน role_permissions (ไม่มีโค้ดอ่าน) เผื่อ rollback
 
   return (
     <div style={s.page}>
@@ -236,6 +261,11 @@ export default function PermissionsManagement() {
       <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
         การเปลี่ยนแปลงมีผลกับทุกเครื่องที่เปิดระบบอยู่ทันที (sync อัตโนมัติ)
+        <div style={{ marginTop: 6 }}>
+          🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
+          <strong> "เป็นแอดมินหน่วยงาน"</strong> ในหน้าจัดการผู้ใช้ · คนนั้นได้ <strong>role เดิม + action ที่ติ๊กในคอลัมน์นี้</strong>
+          เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -252,7 +282,7 @@ export default function PermissionsManagement() {
             สิทธิ์รายการย่อยเหล่านี้จะมีผลจริงกับแต่ละหน้า <strong>เมื่อหน้านั้นถูกอัปเดตให้อ่านค่าจากระบบนี้</strong> (กำลังทยอยเปิดใช้ทีละหน้า) —
             ระหว่างนี้หน้าที่ยังไม่อัปเดตจะยึดตามพฤติกรรมเดิม ค่าที่ตั้งไว้ตรงนี้จะถูกใช้ทันทีที่หน้านั้นเปิดใช้ระบบใหม่
           </div>
-          {renderPermTable([...actionGroups, legacyGroup], 'การทำงาน')}
+          {renderPermTable(actionGroups, 'การทำงาน')}
         </>
       )}
     </div>

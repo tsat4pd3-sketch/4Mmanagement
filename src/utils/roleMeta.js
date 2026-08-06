@@ -14,10 +14,16 @@ export const ROLE_META = {
   engineer:         { icon: '⚙️', label: 'งานวิศวกรรม',      en: 'Engineering',      color: '#2dd4bf', desc: 'อัพเดท BOM / EC / New Model (Product Master)' },
   planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#a3e635', desc: 'Store, Kanban, Rack, Rundown + อัพโหลด Forecast' },
   display:          { icon: '📺', label: 'จอแสดงผล',         en: 'View Only',        color: '#94a3b8', desc: 'ดูอย่างเดียว ไม่มี Auto-Logout (จอ TV/บอร์ด)' },
+  // ⚠️ 'dept_admin' ไม่ใช่ base role — เป็น "bucket สิทธิ์" ของ flag แอดมินหน่วยงาน (profiles.is_dept_admin)
+  //   ใช้เป็นคอลัมน์ใน /permissions ตั้งว่าแอดมินหน่วยงานทำ action อะไรได้ · ห้ามเลือกเป็น role ของ user
+  //   (bucket:true → AddUser/ตัวเลือก role กรองออก) · ดู migration 20260803_dept_admin.sql
+  dept_admin:       { icon: '🛡️', label: 'แอดมินหน่วยงาน',   en: 'Dept Admin (flag)', color: '#eab308', desc: 'ชุดสิทธิ์เพิ่มของ flag "เป็นแอดมินหน่วยงาน" — แก้/ตั้งค่า/อนุมัติ เฉพาะหน่วยงานตัวเอง', bucket: true },
 };
 
-// รายการสำหรับ dropdown/radio — label = "ชื่อไทย (อังกฤษ)" ให้ค้นเจอทั้งสองภาษา
-export const ROLE_OPTIONS = Object.entries(ROLE_META).map(([value, m]) => ({ value, ...m }));
+// รายการสำหรับ dropdown/radio เลือก base role ของ user — ตัด bucket (dept_admin) ออก
+export const ROLE_OPTIONS = Object.entries(ROLE_META).filter(([, m]) => !m.bucket).map(([value, m]) => ({ value, ...m }));
+// รวม bucket ด้วย — ใช้เป็นคอลัมน์ในหน้าจัดการสิทธิ์ (/permissions)
+export const PERMISSION_COLUMN_ROLES = Object.entries(ROLE_META).map(([value, m]) => ({ value, ...m }));
 
 // ป้ายสั้นสำหรับชิป/หัวคอลัมน์ เช่น "🏭 สิทธิ์ทั้งฝ่าย" — role แปลกที่ไม่รู้จักคืน key เดิม
 export const roleLabel = (role) => {
