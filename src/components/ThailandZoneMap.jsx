@@ -1,5 +1,6 @@
-/* ══ 🗺️ แผนที่โซนโรงงาน — ภาคกลาง + ตะวันออก (SVG ล้วน ไม่มี dependency/tile ภายนอก) ══════
-   ใช้ในหน้า /group-overview (mockup ภาพรวมกลุ่มบริษัท TSG)
+/* ══ 🗺️ แผนที่โซนในไทย — ภาคกลาง + ตะวันออก (SVG ล้วน ไม่มี dependency/tile ภายนอก) ══════
+   ใช้ในหน้า /group-overview ตอนเจาะเข้า "โซนในไทย" (บางนา / ตะวันออก) — ระดับโลกใช้ WorldFactoryMap
+   ผู้เรียกส่งเฉพาะโซนที่จะวาดมาให้ (component ไม่กรองเอง)
 
    หลักการ:
    • ทุกอย่างวางด้วย "พิกัดจริง (lat/lon)" แล้ว project แบบ equirectangular → viewBox
@@ -64,14 +65,14 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
   const [gFilter, setGFilter] = useState(null); // ไฮไลต์เฉพาะกลุ่มธุรกิจที่เลือก (null = ทุกกลุ่ม)
 
   // กรอบโซน = bounding box ของหมุดในโซน + padding (คำนวณสด — ไม่มีทางที่หมุดจะหลุดกรอบ)
-  const zoneBoxes = zones.filter(z => z.onMap && z.companies.length).map(z => {
+  const zoneBoxes = zones.filter(z => z.companies.length).map(z => {
     const xs = z.companies.map(c => px(c.lon)), ys = z.companies.map(c => py(c.lat));
     const pad = 46;
     const x = Math.min(...xs) - pad, y = Math.min(...ys) - pad;
     return { z, x, y, w: (Math.max(...xs) - Math.min(...xs)) + pad * 2, h: (Math.max(...ys) - Math.min(...ys)) + pad * 2 };
   });
 
-  const mapCompanies = zones.filter(z => z.onMap).flatMap(z => z.companies.map(c => ({ ...c, zone: z })));
+  const mapCompanies = zones.flatMap(z => z.companies.map(c => ({ ...c, zone: z })));
   // ส่วนผสมกลุ่มธุรกิจในโซน — ทุกโซนมีหลายกลุ่มคละกัน ต้องอ่านออกจากบนแผนที่เลย
   const mixOf = (z) => groups.map(g => ({ g, n: z.companies.filter(c => c.groupMeta?.key === g.key).length })).filter(m => m.n > 0);
 
@@ -108,7 +109,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
               }}>
                 {g.icon} {g.short}
                 {g.key && <span style={{ marginLeft: 5, opacity: 0.75 }}>
-                  {zones.filter(z => z.onMap).reduce((a, z) => a + z.companies.filter(c => c.groupMeta?.key === g.key).length, 0)}
+                  {zones.reduce((a, z) => a + z.companies.filter(c => c.groupMeta?.key === g.key).length, 0)}
                 </span>}
               </button>
             );
