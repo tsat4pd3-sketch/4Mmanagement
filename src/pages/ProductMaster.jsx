@@ -83,6 +83,9 @@ function PartsPickModal({ parts, onPick, onClose }) {
           {filtered.map(p => (
             <div key={p.id} onClick={() => onPick(p)}
               style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'center' }}>
+              {p.image_url
+                ? <img src={p.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
+                : <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)', flexShrink: 0 }} />}
               <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#0ea5e9', flexShrink: 0 }}>{p.mat_no}</span>
               <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name}</span>
               {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>📦 {p.qty_per_pkg}/pkg</span>}
@@ -151,7 +154,7 @@ export default function ProductMaster() {
       supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
-      supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
     ]);
     setItems(pr || []);
     setLines(ln || []);
@@ -179,8 +182,9 @@ export default function ProductMaster() {
   const handlePartPick = (p) => {
     const mat = (p.mat_no || '').trim().toUpperCase();
     if (partsPickFor === 'product') {
-      // parts_master เป็นเจ้าของ "ชื่อ" — เลือกแล้วเติมชื่อจากทะเบียนทับเสมอ (กันชื่อ drift)
-      setForm(f => ({ ...f, mat_no: mat, name: p.part_name || f.name }));
+      // parts_master เป็นเจ้าของ "ชื่อ + รูป" — เลือกแล้วเติมชื่อจากทะเบียนทับเสมอ (กันชื่อ drift)
+      // รูปเติมเฉพาะเมื่อฟอร์มยังไม่มี (ไม่ทับรูปที่ผู้ใช้เพิ่งเลือก)
+      setForm(f => ({ ...f, mat_no: mat, name: p.part_name || f.name, image_url: f.image_url || p.image_url || '' }));
       toast.info('เติม MAT + ชื่อจากทะเบียนกลางแล้ว — กรอกรายละเอียดฝั่งผลิต (ไลน์/CT/ลูกค้า) ต่อได้เลย');
     } else if (partsPickFor === 'kanban') {
       setKanbanForm(f => ({
@@ -286,7 +290,9 @@ export default function ProductMaster() {
           const stillUsed = items.some(i => i.id !== editing && i.image_url === oldUrl);
           const oldPath = decodeURIComponent(oldUrl.split('/product-images/')[1] || '');
           if (!stillUsed && oldPath) {
-            supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+            // URL รูปแชร์ข้ามตารางกับทะเบียนกลาง parts_master ได้ (backfill/sync 2026-08-06) — เช็คอีกฝั่งก่อนลบไฟล์เสมอ
+            supabaseDR.from('parts_master').select('id', { count: 'exact', head: true }).eq('image_url', oldUrl)
+              .then(({ count }) => { if (!count) supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {}); });
           }
         }
       }
@@ -302,6 +308,13 @@ export default function ProductMaster() {
       if (imageFile && payload.name) {
         await supabaseDR.from('dr_products').update({ image_url: imageUrl })
           .eq('name', payload.name).neq('id', savedId);  // eq ไม่ใช่ ilike — กันชื่อที่มี % _ ไปแมตช์ผิดตัว
+      }
+      // รูป = ตัวตนพาร์ท (โมเดลทะเบียนกลาง) — เติมเข้า parts_master เมื่อทะเบียนยังไม่มีรูปของ mat นี้ (ไม่ทับของเดิม)
+      if (imageFile && imageUrl && payload.mat_no) {
+        const { data: pmRows } = await supabaseDR.from('parts_master').select('id, image_url').eq('mat_no', payload.mat_no).limit(1);
+        if (pmRows?.[0] && !pmRows[0].image_url) {
+          await supabaseDR.from('parts_master').update({ image_url: imageUrl }).eq('id', pmRows[0].id);
+        }
       }
       toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
       setEditing(null); setEcSource(null);
@@ -1734,8 +1747,16 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         const stillUsed = parts.some(p => p.id !== editPart.id && p.image_url === editPart.image_url);
         const oldPath = decodeURIComponent(editPart.image_url.split('/product-images/')[1] || '');
         if (!stillUsed && oldPath) {
-          supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {});
+          // URL รูปแชร์ข้ามตารางกับ dr_products ได้ (backfill/sync 2026-08-06) — เช็คฝั่ง product ก่อนลบไฟล์เสมอ
+          supabaseDR.from('dr_products').select('id', { count: 'exact', head: true }).eq('image_url', editPart.image_url)
+            .then(({ count }) => { if (!count) supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {}); });
         }
+      }
+      // ทะเบียนกลางเป็นเจ้าของรูป — เติมให้ product ของ mat เดียวกันที่ยังไม่มีรูป (ไม่ทับรูปที่ product ตั้งไว้เอง)
+      if (imageFile && imageUrl && payload.mat_no) {
+        const { data: dps } = await supabaseDR.from('dr_products').select('id, image_url').eq('mat_no', payload.mat_no);
+        const emptyIds = (dps || []).filter(d => !d.image_url).map(d => d.id);
+        if (emptyIds.length) await supabaseDR.from('dr_products').update({ image_url: imageUrl }).in('id', emptyIds);
       }
       toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
       setShowModal(false);
