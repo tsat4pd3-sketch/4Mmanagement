@@ -77,6 +77,15 @@ const TeamOpts = ({ list }) => (list || []).map(k => <option key={k} value={k}>{
 // เดา default หน่วยงานจากชนิดอุปกรณ์ — reuse util กลาง (เลิก duplicate logic)
 const deptForItem = teamForItem;
 
+/* ⚠️ ใบซ่อมเก็บ "ชื่อ" ของ taxonomy ไว้เป็น snapshot (ตาม pattern เดียวกับ lpa_audit_answers.question_text)
+   ข้อดี: ใบเก่ายังอ่านออกเหมือนวันที่แจ้ง · ข้อเสีย: เปลี่ยนชื่อใน master แล้ว KPI/พาเรโต้ (จัดกลุ่มด้วยข้อความ)
+   จะแตกเป็น 2 กลุ่ม → ตอนแก้ชื่อจึงถามก่อนว่าจะให้ใบเก่าตามไปด้วยไหม (ไม่เขียนทับประวัติเงียบๆ) */
+const NAME_CASCADE = {
+  mtn_problem_types: { characteristic: 'problem_characteristic', detail: 'problem_detail' },
+  mtn_item_types:    { name: 'item_type' },
+  mtn_repair_types:  { name: 'repair_type' },
+};
+
 const STATUS_META = {
   pending:   { label: '📣 รอรับงาน',        step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
   assigned:  { label: '🔧 รับงานแล้ว/รอซ่อม', step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
@@ -1094,6 +1103,20 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
   const updRow = async (table, id, payload) => { const { error } = await supabaseDR.from(table).update(payload).eq('id', id); if (error) return toast.error(error.message); reload(); };
+  // เปลี่ยนชื่อใน master → ถามว่าจะให้ใบซ่อมที่บันทึกชื่อเดิมไว้ตามไปด้วยไหม
+  const cascadeRename = async (col, oldV, newV) => {
+    if (!oldV || !newV || oldV === newV) return;
+    const { count } = await supabaseDR.from('mtn_orders').select('id', { count: 'exact', head: true }).eq(col, oldV);
+    if (!count) return;
+    const okGo = confirm(
+      `มีใบแจ้งซ่อม ${count} ใบที่บันทึกค่าเดิมไว้ว่า "${oldV}"\n\n` +
+      `[ตกลง] = แก้ใบเหล่านั้นเป็น "${newV}" ด้วย → KPI/พาเรโต้รวมเป็นกลุ่มเดียว\n` +
+      `[ยกเลิก] = เก็บใบเดิมไว้ตามที่บันทึกวันนั้น → พาเรโต้จะแยกเป็น 2 กลุ่ม`);
+    if (!okGo) return;
+    const { error } = await supabaseDR.from('mtn_orders').update({ [col]: newV }).eq(col, oldV);
+    if (error) toast.error(error.message); else toast.success(`อัปเดตใบซ่อม ${count} ใบตามชื่อใหม่แล้ว`);
+  };
+
   const delRow = async (table, id) => { if (!confirm('ลบรายการนี้?')) return; const { error } = await supabaseDR.from(table).update({ is_active: false }).eq('id', id); if (error) return toast.error(error.message); reload(); };
 
   // ── ช่าง (มี dept) — ช่าง = พนักงานทีมช่าง (จากฐาน employees, แก้ที่หน้าพนักงาน) + ช่างเฉพาะกิจเดิม (mtn_technicians) ──
@@ -1198,7 +1221,13 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
         </div>
         <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => (
           <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
+            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={async e => {
+              const nv = e.target.value, ov = it[fl.k] || '';
+              if (nv === ov) return;
+              await updRow(table, it.id, { [fl.k]: nv });
+              const col = NAME_CASCADE[table]?.[fl.k];   // ชื่อนี้ถูกคัดลอกไปเก็บในใบซ่อมด้วยไหม
+              if (col) await cascadeRename(col, ov, nv);
+            }} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
             {teamed && (
               <select value={it.team || ''} onChange={e => updRow(table, it.id, { team: e.target.value || null })}
                 title="ทีมที่ใช้รายการนี้" style={{ ...inp, width: 180, flex: '0 0 auto' }}>

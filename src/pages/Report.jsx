@@ -5,16 +5,19 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
-import {
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  ResponsiveContainer, Tooltip,
-} from 'recharts';
+// recharts ไม่ต้อง import ที่นี่แล้ว — radar ย้ายไปอยู่ใน SkillRadarPanel (2026-08-06)
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import {
+  SKILL_LEVELS, getLevel, groupSkillsByCategory,
+  MS_LEVELS, scoreToLevel, msStyle, GAUGE_FILL, GAUGE_STROKE, Q_PATHS, skillGaugeSvgStr,
+} from '../utils/skillLevels';
+import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skill ยังวาดหัวโลโก้ตัวเดียวกับใบรายบุคคล
+import SkillRadarPanel from '../components/SkillRadarPanel';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 
@@ -135,26 +138,8 @@ const CAT_META = {
 // แท็บจองรถ: ตัดคำ "พรุ่งนี้" ออก — หน้าเลือกดูวันไหนก็ได้ (default = วันงานวันนี้)
 const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form', '🚐 จองรถ OT'];
 
-const SKILL_LEVELS = [
-  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
-  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)'  },
-  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
-  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)'  },
-];
-const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
-
-const SKILL_CAT_META = {
-  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
-  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
-  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
-  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
-};
-// Group skillDefs by category, preserving sort_order within each group
-const groupSkillsByCategory = (defs) =>
-  Object.entries(SKILL_CAT_META)
-    .map(([k, m]) => ({ key: k, ...m, skills: defs.filter(s => (s.category || 'hard_skill') === k) }))
-    .filter(g => g.skills.length > 0);
+/* สเกลสกิล/หมวด/gauge ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06) — import ด้านบน
+   ห้ามนิยามซ้ำที่นี่อีก (เดิมซ้ำกับ operator.jsx แล้ว desc/หมวดค่าฝีมือ drift กัน) */
 
 loadDocForms(); // ทะเบียนเอกสาร — ฟอร์ม Multi-Skill / ใบประเมินรายบุคคล อ่านผ่าน docFormSync
 const sigLabelsOf = (key, defaults) => docFormSync(key, { sig_blocks: defaults }).sig_blocks || defaults;
@@ -2166,239 +2151,8 @@ function DocumentControlPanel() {
   );
 }
 
-/* ── Radar tooltip ── */
-function RadarTooltipContent({ active, payload }) {
-  if (!active || !payload?.length) return null;
-  const { subject, value } = payload[0].payload;
-  const lv = getLevel(value);
-  return (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', fontSize: 12 }}>
-      <div style={{ fontWeight: 700, color: 'var(--text)' }}>{subject}</div>
-      <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 11, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
-      <div style={{ fontSize: 11, color: lv.color }}>{lv.label}</div>
-    </div>
-  );
-}
-
-/* ── Radar Panel ── */
-function OperatorRadarPanel({ emp, skillDefs, subItemsByskill = {}, lines = [], onClose }) {
-  const vw = useWidth();
-  const skillMap = {};
-  (emp.employee_skills || []).forEach(s => { skillMap[s.skill_name] = s.score; });
-  const [printing, setPrinting] = useState(false);
-
-  const catGroups = groupSkillsByCategory(skillDefs);
-
-  const handlePrintIndividual = async () => {
-    setPrinting(true);
-    try {
-      // ดึงผู้ประเมิน (หัวหน้าแผนก/leader) + ผู้รับรอง (หัวหน้าส่วน/supervisor หรือ manager) จากไลน์ของพนักงาน
-      let assessor = { name: '', pos: 'หัวหน้าแผนก', sig: null };
-      let certifier = { name: '', pos: 'หัวหน้าส่วน', sig: null };
-      if (emp.line_id) {
-        const { data: sgs } = await supabase.from('profiles')
-          .select('role, full_name, position, signature_url')
-          .eq('line_id', emp.line_id)
-          .in('role', ['leader', 'supervisor', 'manager']);
-        const ldr = (sgs || []).find(p => p.role === 'leader');
-        const sv  = (sgs || []).find(p => p.role === 'supervisor');
-        const mgr = (sgs || []).find(p => p.role === 'manager');
-        if (ldr) assessor  = { name: ldr.full_name || '', pos: ldr.position || 'หัวหน้าแผนก', sig: ldr.signature_url || null };
-        const cert = sv || mgr;
-        if (cert) certifier = { name: cert.full_name || '', pos: cert.position || 'หัวหน้าส่วน', sig: cert.signature_url || null };
-      }
-      const dept = emp.department || (lines.find(l => l.id === emp.line_id)?.section) || emp.section || '-';
-      // โลโก้: doc_forms.logo_url ถ้าอัปโหลด · ไม่งั้นไฟล์ทางการ src/assets/TS logo.png → dataURL (pattern เดียวกับ LPA/OJT)
-      const [imgUrl, assessorSig, certifierSig, logoData] = await Promise.all([
-        emp.image_url ? urlToDataUrl(emp.image_url) : Promise.resolve(null),
-        assessor.sig  ? urlToDataUrl(assessor.sig)  : Promise.resolve(null),
-        certifier.sig ? urlToDataUrl(certifier.sig) : Promise.resolve(null),
-        urlToDataUrl(docFormSync('individual_skill', {}).logo_url || tsLogoUrl),
-      ]);
-      const html = buildIndividualSkillHtml({
-        emp, skillDefs, subItemsByskill, dept,
-        assessorName: assessor.name, assessorPos: assessor.pos,
-        certifierName: certifier.name, certifierPos: certifier.pos,
-        imgUrl, assessorSig, certifierSig, logoUrl: logoData,
-      });
-      const w = window.open('', '_blank'); w.document.write(html); w.document.close();
-    } catch (e) {
-      toast.error('พิมพ์ใบประเมินไม่สำเร็จ: ' + (e?.message || e));
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const radarData = skillDefs
-    .map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0, color: s.color || '#4d9fff', fullMark: 100 }))
-    .filter(d => d.value > 0);
-
-  const definedScores = skillDefs.map(s => skillMap[s.name]).filter(s => s !== undefined && s > 0);
-  const avg = definedScores.length ? Math.round(definedScores.reduce((a, b) => a + b, 0) / definedScores.length) : 0;
-  const overall = getLevel(avg);
-
-  /* dynamic gradient based on avg */
-  const glowColor = avg >= 80 ? '#22c55e' : avg >= 60 ? '#84cc16' : avg >= 40 ? '#f59e0b' : '#ef4444';
-
-  // จอ landscape (desktop/tablet) → modal ขยายกว้าง 2 คอลัมน์ (UI-CONVENTIONS §5 — ห้ามแคบสูงแล้ว scroll)
-  const wide = vw >= 1024;
-
-  return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, zIndex: 2100,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        width: wide ? 'min(96vw, 1040px)' : 'min(460px, 94vw)',
-        maxHeight: '92vh',
-        display: 'flex', flexDirection: 'column',
-        background: 'var(--bg2)',
-        border: `1px solid ${glowColor}55`,
-        borderRadius: 20,
-        boxShadow: `0 0 40px ${glowColor}33, 0 20px 60px rgba(0,0,0,0.8)`,
-        overflow: 'hidden',
-        animation: 'smSlideUp 0.28s cubic-bezier(0.16,1,0.3,1)',
-      }}>
-        <style>{`
-          @keyframes smSlideUp {
-            from { opacity:0; transform:translateY(30px) scale(0.96); }
-            to   { opacity:1; transform:translateY(0) scale(1); }
-          }
-        `}</style>
-
-        {/* Header stripe */}
-        <div style={{ height: 4, background: `linear-gradient(90deg, ${glowColor}, transparent)`, flexShrink: 0 }} />
-
-        {/* Profile section (full width) */}
-        <div style={{ padding: '20px 24px 12px', display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
-          <div style={{ position: 'relative', flexShrink: 0 }}>
-            <img
-              src={emp.image_url || ''}
-              alt=""
-              onError={e => { e.target.style.display = 'none'; }}
-              style={{ width: 72, height: 72, borderRadius: 14, objectFit: 'cover', border: `2px solid ${glowColor}88`, display: emp.image_url ? 'block' : 'none' }}
-            />
-            {!emp.image_url && (
-              <div style={{
-                width: 72, height: 72, borderRadius: 14,
-                background: `linear-gradient(135deg, ${glowColor}44, ${glowColor}22)`,
-                border: `2px solid ${glowColor}88`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 26, fontWeight: 800, color: glowColor,
-              }}>
-                {(emp.name || '?')[0]}
-              </div>
-            )}
-            {/* Overall ring */}
-            <div style={{
-              position: 'absolute', bottom: -6, right: -6,
-              background: glowColor, color: '#fff',
-              borderRadius: 8, padding: '1px 6px', fontSize: 11, fontWeight: 800,
-              border: '2px solid var(--bg2)',
-            }}>{avg}</div>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text)', lineHeight: 1.2 }}>{emp.name}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{emp.employee_id_code}</div>
-            <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {emp.group_name && <span style={{ fontSize: 11, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
-              <span style={{ fontSize: 11, background: `${glowColor}22`, color: glowColor, borderRadius: 5, padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
-                {overall.label}
-              </span>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: 4, alignSelf: 'flex-start' }}>✕</button>
-        </div>
-
-        {/* Body — desktop: 2 คอลัมน์ landscape · mobile: คอลัมน์เดียว · scroll เป็น fallback */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'grid', gridTemplateColumns: wide ? '1fr 1fr' : '1fr', columnGap: 8, alignItems: 'start' }}>
-        <div style={{ minWidth: 0 }}>
-        {/* Stat bars row — top 4 non-zero skills */}
-        {radarData.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(radarData.length, 4)}, 1fr)`, gap: 6, padding: '0 24px 12px' }}>
-          {radarData.slice(0, 4).map(d => {
-            const lv = getLevel(d.value);
-            return (
-              <div key={d.subject} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: lv.color, fontFamily: 'var(--font-display)' }}>{d.value}</div>
-                <div style={{ height: 3, background: 'var(--border2)', borderRadius: 2, marginTop: 4 }}>
-                  <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 2, transition: 'width 0.6s ease' }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        )}
-
-        {/* Radar Chart */}
-        <div style={{ padding: '0 12px 16px' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Skill Radar</div>
-          <ResponsiveContainer width="100%" height={240}>
-            <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
-              <PolarGrid stroke="var(--border2)" />
-              <PolarAngleAxis
-                dataKey="subject"
-                tick={{ fill: 'var(--text2)', fontSize: 11, fontFamily: 'var(--font-body)' }}
-              />
-              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-              <Radar
-                dataKey="value"
-                stroke={glowColor}
-                fill={glowColor}
-                fillOpacity={0.25}
-                strokeWidth={2}
-                dot={{ r: 4, fill: glowColor, strokeWidth: 0 }}
-              />
-              <Tooltip content={<RadarTooltipContent />} />
-            </RadarChart>
-          </ResponsiveContainer>
-          <button onClick={handlePrintIndividual} disabled={printing} style={{
-            width: '100%', marginTop: 6, padding: '9px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 700,
-            cursor: printing ? 'default' : 'pointer', background: `${glowColor}18`, color: glowColor,
-            border: `1px solid ${glowColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            opacity: printing ? 0.6 : 1,
-          }}>
-            {printing ? 'กำลังเตรียม...' : '🖨️ พิมพ์ใบประเมินทักษะรายบุคคล (F-PRS-P1-119)'}
-          </button>
-        </div>
-        </div>{/* /left column */}
-
-        {/* All skill bars grouped by category (right column on desktop) */}
-        <div style={{ padding: '0 24px 20px', display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-          {catGroups.map(g => {
-            const gSkills = g.skills.map(s => ({ subject: s.label, value: skillMap[s.name] ?? 0 })).filter(d => d.value > 0);
-            if (gSkills.length === 0) return null;
-            return (
-              <div key={g.key}>
-                <div style={{ marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {g.label}</span>
-                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7, marginLeft: 6 }}>{g.desc}</span>}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  {gSkills.map(d => {
-                    const lv = getLevel(d.value);
-                    return (
-                      <div key={d.subject} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ fontSize: 11, color: 'var(--text2)', width: 90, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
-                        <div style={{ flex: 1, height: 6, background: 'var(--border2)', borderRadius: 3 }}>
-                          <div style={{ height: '100%', width: `${d.value}%`, background: lv.color, borderRadius: 3 }} />
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: lv.color, width: 28, textAlign: 'right' }}>{d.value}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>{/* /right column */}
-        </div>{/* /body */}
-      </div>
-    </div>
-  );
-}
+/* การ์ดสรุปทักษะรายบุคคล (radar + ปุ่มพิมพ์ใบประเมิน) ย้ายไปเป็น component กลาง
+   src/components/SkillRadarPanel.jsx แล้ว (2026-08-06) — /operator ใช้ตัวเดียวกัน */
 
 /* ── Shared Filter Bar for employee tabs ── */
 const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
@@ -2508,7 +2262,7 @@ function SkillMatrixTab() {
   return (
     <div>
       {selectedEmp && (
-        <OperatorRadarPanel
+        <SkillRadarPanel
           emp={selectedEmp}
           skillDefs={skillDefs}
           subItemsByskill={subItemsByskill}
@@ -2748,39 +2502,9 @@ ${catHeaderCells}
    🏅 MultiSkillFormTab — MULTI SKILL OF OPERATORS export
    ══════════════════════════════════════════════════════════════ */
 
-const MS_LEVELS = [
-  { level: 4, pct: '100%',   label: 'สามารถสอนงานผู้อื่นได้',                          color: '#166534', bg: '#bbf7d0', border: '#16a34a' },
-  { level: 3, pct: '75-99%', label: 'สามารถแก้ปัญหาและตัดสินใจในการทำงานได้',          color: '#1e3a5f', bg: '#bfdbfe', border: '#3b82f6' },
-  { level: 2, pct: '50-74%', label: 'ปฏิบัติงานได้โดยไม่ต้องมีผู้แนะนำ',              color: '#713f12', bg: '#fef9c3', border: '#eab308' },
-  { level: 1, pct: '25-49%', label: 'ผ่านการอบรม(OJT)และปฏิบัติงานได้โดยมีผู้แนะนำ', color: '#7c2d12', bg: '#fed7aa', border: '#f97316' },
-  { level: 0, pct: '0-24%',  label: 'อยู่ระหว่างการฝึกอบรม',                           color: '#7f1d1d', bg: '#fecaca', border: '#ef4444' },
-];
-
-function scoreToLevel(score) {
-  if (score === undefined || score === null) return 0;
-  if (score >= 100) return 4;
-  if (score >= 75)  return 3;
-  if (score >= 50)  return 2;
-  if (score >= 25)  return 1;
-  return 0;
-}
-
-const msStyle = (lv) => MS_LEVELS.find(l => l.level === lv) || { bg: '#fff', color: '#999', border: '#ccc' };
-
-/* ── SVG Skill Gauge — circle quartered like factory skill matrix form ── */
-/* Fill order clockwise: bottom-left → bottom-right → top-right → top-left  */
-const GAUGE_FILL = ['none', '#f97316', '#eab308', '#3b82f6', '#22c55e'];
-const GAUGE_STROKE = ['#9ca3af', '#f97316', '#ca8a04', '#2563eb', '#16a34a'];
-
-/* SVG arc paths for each quadrant (cx=17, cy=17, r=15, clockwise fill)
-   L1=bottom-left  L2=+bottom-right  L3=+top-right  L4=+top-left        */
-const Q_PATHS = [
-  'M17,17 L2,17 A15,15 0 0,1 17,32 Z',   // bottom-left
-  'M17,17 L17,32 A15,15 0 0,1 32,17 Z',  // bottom-right
-  'M17,17 L32,17 A15,15 0 0,1 17,2 Z',   // top-right
-  'M17,17 L17,2 A15,15 0 0,1 2,17 Z',    // top-left
-];
-
+/* MS_LEVELS / scoreToLevel / msStyle / gauge (GAUGE_FILL, GAUGE_STROKE, Q_PATHS, skillGaugeSvgStr)
+   ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06) — import ด้านบน
+   เหลือไว้ที่นี่เฉพาะ <SkillGauge> ที่เป็น React component */
 function SkillGauge({ level, size = 34 }) {
   const fill   = GAUGE_FILL[level]   || 'none';
   const stroke = GAUGE_STROKE[level] || '#9ca3af';
@@ -2793,22 +2517,6 @@ function SkillGauge({ level, size = 34 }) {
       <circle cx="17" cy="17" r="15" fill="none" stroke={stroke} strokeWidth="1.5"/>
     </svg>
   );
-}
-
-/* inline SVG string for PDF export */
-function skillGaugeSvgStr(lv) {
-  const fill   = GAUGE_FILL[lv]   || 'none';
-  const stroke = GAUGE_STROKE[lv] || '#9ca3af';
-  const sectors = Q_PATHS.slice(0, lv)
-    .map(d => `<path d="${d}" fill="${fill}" opacity="0.85"/>`)
-    .join('');
-  return `<svg width="26" height="26" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="17" cy="17" r="15" fill="none" stroke="${stroke}" stroke-width="1.5"/>
-    ${sectors}
-    <line x1="17" y1="2" x2="17" y2="32" stroke="${stroke}" stroke-width="1"/>
-    <line x1="2" y1="17" x2="32" y2="17" stroke="${stroke}" stroke-width="1"/>
-    <circle cx="17" cy="17" r="15" fill="none" stroke="${stroke}" stroke-width="1.5"/>
-  </svg>`;
 }
 
 function calcServiceDuration(startDate) {
@@ -2963,279 +2671,8 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 <script>window.onload = () => { window.print(); }</script></body></html>`;
 }
 
-/* ══════════════════════════════════════════════════════════════
-   ใบประเมินทักษะความสามารถของพนักงาน (รายบุคคล) — F-PRS-P1-119-0
-   โหมด Hybrid: หัวข้อการพิจารณา = master (skill_sub_items),
-   ค่าติ๊ก 4 ระดับ derive จากคะแนนสกิลเดิม (0-100)
-   ══════════════════════════════════════════════════════════════ */
-
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-/* เกณฑ์การให้คะแนน 4 ระดับ (หัวคอลัมน์เฉียง + คำอธิบายท้ายฟอร์ม) — ตรงตามฟอร์มกระดาษ */
-const INDIV_CRITERIA = [
-  'ผ่านการฝึกอบรมหน้างานจริง (OJT)',
-  'สามารถอธิบายขั้นตอนการปฏิบัติงานและเข้าปฏิบัติงานได้',
-  'สามารถแก้ไขปัญหาและตัดสินใจหน้างานได้',
-  'สามารถสอนงานคนอื่นได้',
-];
-
-/* กระจายคะแนนสกิล (0-100) → ระดับ 0-4 ต่อหัวข้อย่อย n ข้อ แบบ deterministic
-   ให้ค่าเฉลี่ยของระดับ ≈ score/25 (ทำให้ % กลุ่ม = เฉลี่ยแถว ≈ คะแนนจริง เหมือนฟอร์มกระดาษ) */
-function distributeLevels(score, n) {
-  const s = Math.max(0, Math.min(100, Number(score) || 0));
-  const L = s / 25;                    // 0..4
-  const base = Math.floor(L);
-  const extra = Math.round((L - base) * n);  // จำนวนหัวข้อที่ได้ +1 ระดับ
-  return Array.from({ length: n }, (_, i) => Math.min(4, base + (i < extra ? 1 : 0)));
-}
-
-/* โลโก้ Thai Summit — รับ dataURL ที่ resolve แล้ว (doc_forms.logo_url ถ้าอัปโหลด ไม่งั้น
-   ไฟล์ทางการ src/assets/TS logo.png) · handler แปลงเป็น dataURL ผ่าน urlToDataUrl ก่อนส่งเข้ามา */
-function tsLogoHtml(logoUrl) {
-  const src = logoUrl || '';
-  return `
-  <div style="display:flex;align-items:center;gap:7px">
-    <img src="${src}" alt="Thai Summit" style="height:38px;width:auto;object-fit:contain"/>
-    <div style="line-height:1.2">
-      <div style="font-size:10px;font-weight:800;color:#7a1f1f;letter-spacing:0.02em">THAI SUMMIT</div>
-      <div style="font-size:7px;font-weight:700;color:#333;letter-spacing:0.06em">AUTOMOTIVE CO.,LTD.</div>
-    </div>
-  </div>`;
-}
-
-/* radar SVG (N แกน สเกล 0-100) สำหรับฝังในหน้าพิมพ์ (ไม่มี recharts ในหน้าต่างใหม่) */
-function buildRadarSvg(items, opt = {}) {
-  const size = opt.size || 320;
-  const cx = size / 2, cy = size / 2;
-  const R = size * 0.25;
-  const N = items.length;
-  if (N < 3) return `<svg width="${size}" height="${size}"></svg>`;
-  const ang = i => (-90 + i * 360 / N) * Math.PI / 180;
-  const pt = (i, r) => [cx + r * Math.cos(ang(i)), cy + r * Math.sin(ang(i))];
-  const fmt = ([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`;
-  const clip = s => { const t = String(s || ''); return t.length > 15 ? t.slice(0, 14) + '…' : t; };
-
-  let rings = '';
-  [20, 40, 60, 80, 100].forEach(v => {
-    const rr = R * v / 100;
-    const poly = items.map((_, i) => fmt(pt(i, rr))).join(' ');
-    rings += `<polygon points="${poly}" fill="none" stroke="#d1d5db" stroke-width="0.7"/>`;
-  });
-  rings += `<circle cx="${cx}" cy="${cy}" r="1.5" fill="#9ca3af"/>`;
-
-  let axes = '';
-  items.forEach((it, i) => {
-    const [x, y] = pt(i, R);
-    axes += `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#cbd5e1" stroke-width="0.7"/>`;
-    const [lx, ly] = pt(i, R + 12);
-    const anchor = Math.abs(lx - cx) < 10 ? 'middle' : (lx > cx ? 'start' : 'end');
-    axes += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="7" fill="#374151" text-anchor="${anchor}" dominant-baseline="middle">${esc(clip(it.label))}</text>`;
-  });
-
-  const vpoly = items.map((it, i) => fmt(pt(i, R * Math.max(0, Math.min(100, it.value)) / 100))).join(' ');
-  const dots = items.map((it, i) => {
-    const [x, y] = pt(i, R * Math.max(0, Math.min(100, it.value)) / 100);
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2" fill="#1d4ed8"/>`;
-  }).join('');
-
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-    ${rings}${axes}
-    <polygon points="${vpoly}" fill="#3b82f6" fill-opacity="0.4" stroke="#1d4ed8" stroke-width="1.4"/>
-    ${dots}
-  </svg>`;
-}
-
-/* สร้าง HTML ใบประเมินรายบุคคล
-   emp: { name, employee_id_code, position, department, image_url, employee_skills[] }
-   skillDefs: skill_definitions ทั้งหมด · subItemsByskill: { [skill_name]: [{seq,label,wi_ref}] }
-   signers: { assessor:{name,pos,sig}, certifier:{name,pos,sig} }
-   imgUrl/assesseeSig/assessorSig/certifierSig: dataURL แปลงแล้ว                          */
-function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept, assessorName, assessorPos, certifierName, certifierPos, imgUrl, assessorSig, certifierSig, logoUrl }) {
-  const today = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
-  const skillMap = Object.fromEntries((emp.employee_skills || []).map(s => [s.skill_name, s.score]));
-
-  // สกิลที่จะแสดง = สกิลที่พนักงานมี record (score กำหนดไว้) เรียงตาม sort_order · fallback = ทุกสกิล
-  let skills = skillDefs.filter(s => skillMap[s.name] !== undefined && skillMap[s.name] !== null);
-  if (skills.length === 0) skills = skillDefs.slice();
-
-  // ประมวลผลต่อสกิล — ค่าติ๊กรายแถว derive จากคะแนน (โหมด Hybrid),
-  // แต่ % สรุป/radar ใช้คะแนนจริงเพื่อความเที่ยงตรง (เหมือนฟอร์มกระดาษที่กลุ่ม = เฉลี่ยหัวข้อจริง)
-  const perSkill = skills.map(s => {
-    const items = (subItemsByskill[s.name] && subItemsByskill[s.name].length)
-      ? subItemsByskill[s.name]
-      : [{ seq: 1, label: s.label, wi_ref: null }];
-    const score = Number(skillMap[s.name] ?? 0);
-    const levels = distributeLevels(score, items.length);
-    const groupPct = score;   // คะแนนจริงของสกิล
-    return { skill: s, items, levels, groupPct };
-  });
-
-  const overall = perSkill.length
-    ? Math.round(perSkill.reduce((a, g) => a + g.groupPct, 0) / perSkill.length)
-    : 0;
-
-  // ── ตารางประเมินหลัก ──
-  const critHeaderCells = INDIV_CRITERIA.map(c =>
-    `<th style="border:1px solid #666;background:#f3f4f6;width:26px;padding:0;vertical-align:bottom;height:120px">
-       <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;white-space:nowrap;margin:0 auto;height:118px;overflow:hidden">${esc(c)}</div>
-     </th>`).join('');
-
-  const bodyRows = perSkill.map(g => {
-    const n = g.items.length;
-    return g.items.map((it, ri) => {
-      const lv = g.levels[ri];
-      const rowPct = lv * 25;
-      const tickCells = INDIV_CRITERIA.map((_, ci) =>
-        `<td style="border:1px solid #999;text-align:center;font-size:9px;padding:1px">${ci < lv ? '1' : '0'}</td>`
-      ).join('');
-      const firstCell = ri === 0
-        ? `<td rowspan="${n}" style="border:1px solid #666;padding:2px 4px;font-size:9px;font-weight:700;vertical-align:middle;background:#fafafa">${esc(g.skill.label)}<div style="font-size:7px;color:#777;font-weight:400">(${esc(g.skill.label)})</div></td>`
-        : '';
-      return `<tr>
-        ${firstCell}
-        <td style="border:1px solid #999;text-align:center;font-size:9px;width:24px">${ri + 1}</td>
-        <td style="border:1px solid #999;padding:1px 4px;font-size:9px">${esc(it.label)}${it.wi_ref ? `<span style="color:#999;font-size:7px;margin-left:4px">${esc(it.wi_ref)}</span>` : ''}</td>
-        ${tickCells}
-        <td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;width:38px">${rowPct}%</td>
-        ${ri === 0 ? `<td rowspan="${n}" style="border:1px solid #666"></td>` : ''}
-      </tr>`;
-    }).join('');
-  }).join('');
-
-  // ── สรุปผลการประเมิน (มุมล่างซ้าย) ──
-  const summaryRows = perSkill.map(g => `
-    <tr>
-      <td style="border:1px solid #999;padding:2px 5px;font-size:8.5px">${esc(g.skill.label)}</td>
-      <td style="border:1px solid #999;text-align:center;padding:1px;width:34px">${skillGaugeSvgStr(scoreToLevel(g.groupPct >= 100 ? 100 : g.groupPct))}</td>
-      <td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;width:38px">${g.groupPct}%</td>
-    </tr>`).join('');
-
-  // ── radar ──
-  const radarSvg = buildRadarSvg(perSkill.map(g => ({ label: g.skill.label, value: g.groupPct })), { size: 300 });
-
-  // ── legend 4 ระดับ (มุมล่างขวา) ──
-  const legendPies = [
-    { p: '100%', t: 'สามารถสอนงานผู้อื่นได้', lv: 4 },
-    { p: '75%',  t: 'สามารถแก้ปัญหาและตัดสินใจในการทำงานได้', lv: 3 },
-    { p: '50%',  t: 'ปฏิบัติงานได้โดยไม่ต้องมีผู้แนะนำ', lv: 2 },
-    { p: '25%',  t: 'ผ่านการอบรม(OJT)และปฏิบัติงานได้โดยมีผู้แนะนำ', lv: 1 },
-  ].map(x => `<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">
-      <span style="flex-shrink:0">${skillGaugeSvgStr(x.lv)}</span>
-      <span style="font-size:8px"><b>${x.p}</b> ${esc(x.t)}</span>
-    </div>`).join('');
-
-  const criteriaExplain = INDIV_CRITERIA.map(c =>
-    `<div style="font-size:7.5px;display:flex;justify-content:space-between;gap:8px;margin-bottom:1px">
-       <span>${esc(c)}</span>
-       <span style="white-space:nowrap;color:#444">"ผ่าน"=1 &nbsp; "ไม่ผ่าน"=0</span>
-     </div>`).join('');
-
-  const signBox = (title, name, pos, sig, showPhoto) => `
-    <td style="border:1px solid #666;padding:5px 6px;vertical-align:top;width:${showPhoto ? '34%' : '33%'}">
-      <div style="font-size:9px;font-weight:700;text-align:center;margin-bottom:3px">${esc(title)}</div>
-      ${showPhoto ? `<div style="text-align:center;margin-bottom:3px">${imgUrl ? `<img src="${imgUrl}" style="width:52px;height:64px;object-fit:cover;border:1px solid #ccc"/>` : `<div style="width:52px;height:64px;border:1px solid #ccc;margin:0 auto;display:flex;align-items:center;justify-content:center;font-size:7px;color:#aaa">รูปพนักงาน</div>`}</div>` : ''}
-      <div style="height:26px;text-align:center">${sig ? `<img src="${sig}" style="max-height:26px;max-width:90px;object-fit:contain"/>` : ''}</div>
-      <div style="text-align:center;font-size:8.5px;border-top:1px dotted #999;padding-top:1px">(${esc(name || '.....................')})</div>
-      <div style="text-align:center;font-size:7.5px;color:#555">ตำแหน่ง : ${esc(pos || '-')}</div>
-      <div style="text-align:center;font-size:7.5px;color:#555">วันที่ : ${today}</div>
-    </td>`;
-
-  return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/>
-<title>ใบประเมินทักษะ - ${esc(emp.name || '')}</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700;800&display=swap');
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Sarabun',sans-serif;font-size:9px;color:#000;background:#fff;width:200mm;margin:0 auto}
-  .page{padding:0}table{border-collapse:collapse}
-  #fit{transform-origin:top left}
-  @media print{@page{size:A4 portrait;margin:5mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact;width:auto}}
-</style></head><body><div class="page"><div id="fit">
-  <!-- header -->
-  <table style="width:100%;margin-bottom:4px"><tr>
-    <td style="width:24%;vertical-align:middle">${tsLogoHtml(logoUrl)}</td>
-    <td style="text-align:center;vertical-align:middle">
-      <div style="font-size:13px;font-weight:800">ใบประเมินทักษะความสามารถของพนักงานแผนก ${esc(dept || '-')}</div>
-    </td>
-    <td style="width:16%;text-align:right;vertical-align:middle"><div style="font-size:11px;font-weight:800;color:#1d4ed8">Multi Skill</div></td>
-  </tr></table>
-
-  <!-- assessee / assessor / certifier + radar -->
-  <table style="width:100%;margin-bottom:5px"><tr>
-    <td style="width:62%;vertical-align:top;padding-right:6px">
-      <table style="width:100%"><tr>
-        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[0], emp.name, emp.position, null, true)}
-        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[1], assessorName, assessorPos, assessorSig, false)}
-        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[2], certifierName, certifierPos, certifierSig, false)}
-      </tr></table>
-      <div style="font-size:8px;color:#555;margin-top:3px">เลขที่บัตร : <b>${esc(emp.employee_id_code || '-')}</b> &nbsp;·&nbsp; ตำแหน่ง : <b>${esc(emp.position || '-')}</b></div>
-    </td>
-    <td style="width:38%;vertical-align:top;text-align:center;border:1px solid #ccc;padding:2px">
-      <div style="font-size:8px;font-weight:700;color:#1d4ed8">Multi Skill</div>
-      ${radarSvg}
-    </td>
-  </tr></table>
-
-  <!-- main assessment table -->
-  <table style="width:100%"><thead>
-    <tr style="background:#e5e7eb">
-      <th style="border:1px solid #666;padding:2px;font-size:9px;width:14%">หัวข้อ</th>
-      <th style="border:1px solid #666;padding:2px;font-size:9px;width:22px">ลำดับ</th>
-      <th style="border:1px solid #666;padding:2px;font-size:9px">หัวข้อการพิจารณา</th>
-      ${critHeaderCells}
-      <th style="border:1px solid #666;padding:2px;font-size:8px;width:38px">สรุปผลการประเมิน</th>
-      <th style="border:1px solid #666;padding:2px;font-size:8px;width:18%">ความคิดเห็นเพิ่มเติม</th>
-    </tr>
-  </thead><tbody>${bodyRows}</tbody></table>
-
-  <!-- summary + legend -->
-  <table style="width:100%;margin-top:6px"><tr>
-    <td style="width:38%;vertical-align:top;padding-right:8px">
-      <div style="font-size:9px;font-weight:700;margin-bottom:2px">สรุปผลการประเมิน</div>
-      <table style="width:100%">
-        ${summaryRows}
-        <tr style="background:#dbeafe;font-weight:800">
-          <td style="border:1px solid #666;padding:2px 5px;font-size:8.5px">ทักษะการทำงานโดยรวม</td>
-          <td style="border:1px solid #666;text-align:center;padding:1px">${skillGaugeSvgStr(scoreToLevel(overall >= 100 ? 100 : overall))}</td>
-          <td style="border:1px solid #666;text-align:center;font-size:9px">${overall}%</td>
-        </tr>
-      </table>
-    </td>
-    <td style="vertical-align:top">
-      <div style="font-size:8.5px;font-weight:700;margin-bottom:2px">คำอธิบาย : ระดับทักษะความสามารถการปฏิบัติงานของพนักงาน</div>
-      ${legendPies}
-      <div style="font-size:8px;font-weight:700;margin:4px 0 2px">เกณฑ์การให้คะแนนของผู้ประเมิน</div>
-      ${criteriaExplain}
-      <div style="font-size:7.5px;color:#444;margin-top:4px">
-        <div>หมายเหตุ : 1) พนักงานใหม่ ต้องมีประสบการณ์งานประกอบอย่างน้อย 3 เดือนขึ้นไป ถึงจะขอทดสอบทักษะได้</div>
-        <div style="padding-left:44px">2) พนักงานเก่า ต้องผ่านการฝึกเข้าปฏิบัติงานในหน้างานอย่างน้อย 1 เดือน ถึงจะขอทดสอบปรับระดับทักษะได้</div>
-      </div>
-    </td>
-  </tr></table>
-  <div style="text-align:right;font-size:8px;color:#666;margin-top:3px">${fullCode(docFormSync('individual_skill', { form_code: 'F-PRS-P1-119-0' }))}${docFormSync('individual_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('individual_skill', {}).effective_date : ''}</div>
-</div></div>
-<script>
-  function fitOnePage() {
-    try {
-      // ย่อ #fit ให้พอดี A4 1 หน้า (สูง 297-2*5 = 287mm) เสมอ — พนักงานสกิลเยอะก็ไม่เกินแผ่น
-      // ใช้ zoom (ไม่ใช่ transform) เพราะ zoom ลดกล่อง layout จริง → print นับหน้าถูก (transform เป็นภาพลวงตา ไม่ลดหน้า)
-      var probe = document.createElement('div');
-      probe.style.cssText = 'height:100mm;position:absolute;visibility:hidden;top:0';
-      document.body.appendChild(probe);
-      var pxPerMm = probe.getBoundingClientRect().height / 100;
-      document.body.removeChild(probe);
-      var avail = 287 * pxPerMm;
-      var el = document.getElementById('fit');
-      var h = el.getBoundingClientRect().height;
-      if (h > avail) { el.style.zoom = (avail / h); }
-    } catch (e) {}
-    window.print();
-  }
-  window.onload = function () {
-    if (document.fonts && document.fonts.ready) { document.fonts.ready.then(fitOnePage); }
-    else { fitOnePage(); }
-  };
-</script></body></html>`;
-}
+/* ใบประเมินรายบุคคล F-PRS-P1-119 (esc / tsLogoHtml / buildRadarSvg / buildIndividualSkillHtml)
+   ย้ายไป src/lib/individualSkillPrint.js แล้ว (2026-08-06) — /operator เรียกใบเดียวกัน */
 
 function MultiSkillFormTab() {
   const vw = useWidth();

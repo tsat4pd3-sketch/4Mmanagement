@@ -324,6 +324,15 @@
 >
 > **จุดที่ต้องกรอง (ทำแล้ว):** ⚙️ ข้อมูลหลัก → `SimpleList` มีแถบเลือกทีม + ตั้งทีมรายแถว (นับ "ซ่อน N รายการของทีมอื่น" ไม่ให้หายเงียบ) · **ฟอร์มแจ้งซ่อม** ชนิดอุปกรณ์/ลักษณะปัญหา กรองตามทีมที่แจ้งถึง + **ล้างค่าที่เลือกไว้เมื่อเปลี่ยนทีมแล้วค่าเดิมไม่อยู่ในลิสต์** (กฎ cascade §5.3) · **ขั้นรับงาน** ประเภทงานซ่อมกรองตามทีมของใบ · **คลังอะไหล่** dropdown หมวดกรองตามทีม + ตั้งทีมของหมวดได้ · **PM Setup** จัดการประเภทจุดตรวจ/วิธีตรวจ (`TaxonomyManagerModal` รับ prop `teams` → มี dropdown ทีม + badge บอกว่าแถวไหนของทีมไหน · ว่าง = 🌐 ทุกทีม แบบเดียวกับ `equip_types` ที่มีอยู่เดิม) · **แท็บ 🔧 ประเภทงานซ่อม** ใน ⚙️ ข้อมูลหลัก (เดิมไม่มี UI เลย แก้ได้ทางตารางอย่างเดียว — รหัสย่อของประเภทเป็นส่วนหนึ่งของเลข MO เปลี่ยนแล้วมีผลกับใบที่ออกเลขใหม่เท่านั้น)
 > **⚠️ หมายเลขเครื่องใน dropdown ห้ามกรองตามทีม** — ของกลาง ทุกทีมต้องอ้างเครื่องเดียวกันได้
+> #### ⚠️ ใบซ่อมเก็บ "ชื่อ" ของ taxonomy เป็น snapshot — เปลี่ยนชื่อ master ต้องถามก่อน (2026-08-06)
+> `mtn_orders` เก็บ **ข้อความ** ของ `item_type` / `problem_characteristic` / `problem_detail` / `repair_type` / `assigned_to`
+> (ไม่ใช่ id) — **ตั้งใจ** ตาม pattern snapshot เดียวกับ `lpa_audit_answers.question_text`, `ojt_training_attendees.emp_name`:
+> ใบเก่าต้องอ่านออกเหมือนวันที่แจ้ง แม้ master ถูกแก้/ลบทีหลัง
+> **แต่ KPI พาเรโต้จัดกลุ่มด้วยข้อความ** (`byChar[o.problem_characteristic]`) → เปลี่ยนชื่อใน ⚙️ ข้อมูลหลัก **กราฟแตกเป็น 2 แท่งทันที**
+> → แก้ชื่อในตาราง `NAME_CASCADE` (MtnRepair.jsx) จะ**ถามก่อน**ว่าให้ใบเก่าตามไปด้วยไหม (ตกลง = รวมกลุ่มเดียว · ยกเลิก = คงประวัติเดิม)
+> **ห้ามเขียนทับประวัติเงียบๆ** และ **เพิ่มฟิลด์ taxonomy ใหม่ที่ใบซ่อมเก็บเป็นชื่อ ต้องมาเติมใน `NAME_CASCADE` ด้วย**
+> (ทางเลือกระยะยาวถ้าอยากเลิกพึ่งข้อความ: เพิ่มคอลัมน์ `*_id` คู่กับ snapshot แล้วให้ KPI จัดกลุ่มด้วย id — ยังไม่ทำ)
+>
 > **เพิ่ม master ใหม่ในระบบช่าง ให้ถามก่อนว่า "ของกลางหรือมุมมองทีม"** — ถ้าเป็นมุมมองทีมต้องมีคอลัมน์ `team` + กรองด้วย `filterByTeam` ตั้งแต่แรก
 > **`teamForItem(name, itemRows)` เป็น data-driven แล้ว** — อ่าน `mtn_item_types.team` ก่อน แล้วค่อย fallback เดาจากชื่อ (JIG→JIG MTN ฯลฯ) ที่ hardcode ไว้เดิม
 > **⚠️ backfill เป็น `null` ทั้งหมดโดยตั้งใจ = ทุกทีมยังเห็นทุกแถวเหมือนก่อน apply** — การไล่ติ๊กว่าแถวไหนของทีมไหนเป็นงาน "จัดข้อมูล" ทำผ่าน UI ไม่เดาให้ใน migration
@@ -1156,7 +1165,16 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **โหมด Hybrid (สำคัญ):** ระบบเก็บแค่คะแนนเดียว 0-100 ต่อสกิล — ใบรายบุคคลจึง (ก) เอา**ข้อความหัวข้อย่อย**จาก `skill_sub_items` (ถ้าสกิลไม่มี → fallback 1 แถว = ชื่อสกิล) (ข) **ค่าติ๊ก 4 ระดับรายแถว derive จากคะแนน** (`distributeLevels` กระจายระดับให้เฉลี่ย ≈ score/25 เหมือนฟอร์มกระดาษที่หัวข้อเป็นสเต็ป 25%) (ค) **% สรุปกลุ่ม/radar/โดยรวม ใช้คะแนนจริง** (เที่ยงตรง ไม่ปัดเป็น 25) · ถ้าวันหน้าจะเก็บผลประเมินรายหัวข้อจริง (ไม่ derive) ต้องเพิ่มตารางผลประเมิน + UI กรอก แล้วเปลี่ยนที่มาของค่าติ๊ก
 - **โลโก้ Thai Summit** = ไฟล์ทางการ `src/assets/TS logo.png` (ตัวเดียวกับ App/Login/DailyReport/OJT/LPA/MtnRepair ใช้ — import เป็น `tsLogoUrl`) · **override ได้ด้วยรูปที่อัปโหลดใน `/doc-forms` (`doc_forms.logo_url`)** → เป๊ะ 100% · **pattern มาตรฐานทุกฟอร์มพิมพ์:** handler แปลงเป็น dataURL ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` แล้วส่งเข้า builder (`tsLogoHtml(logoUrl)`) — **ห้าม hardcode/วาดโลโก้เอง** (เคยพลาดวาดกล่อง T/S แยก ไม่ตรงตราจริง)
 - **ใบรายบุคคลบังคับ ≤ 1 หน้า A4 เสมอ (2026-07-21):** พนักงานสกิลเยอะ (เช่น LINE APRON ASSY ~20 สกิล) ตารางยาวเกินหน้า → สคริปต์ `fitOnePage()` วัดความสูงจริงเทียบ 287mm แล้วตั้ง **`el.style.zoom`** ให้พอดี 1 หน้า (ใช้ `zoom` ไม่ใช่ `transform: scale` — transform เป็นภาพลวงตา ไม่ลดกล่อง layout → print ยังนับหลายหน้า · zoom ลด layout จริง Chrome นับหน้าถูก) · เคสสกิลน้อยไม่ย่อ คงขนาดเต็ม · รอ `document.fonts.ready` ก่อนวัด กัน webfont ทำความสูงเพี้ยน — **pattern นี้ reuse ได้กับฟอร์มพิมพ์อื่นที่ต้อง fit 1 หน้าแบบ dynamic**
-- helper ทั้งหมดอยู่ใน `src/pages/Report.jsx` · หัวข้อย่อยจัดการที่ `/operator` ⚙️ ปุ่ม 📝 (`SkillSubItemsModal`)
+- helper: ใบ Multi-Skill (`buildMultiSkillHtml`) ยังอยู่ใน `src/pages/Report.jsx` · **ใบรายบุคคลย้ายไป `src/lib/individualSkillPrint.js`** แล้ว (2026-08-06 — `/operator` เรียกใบเดียวกัน) · หัวข้อย่อยจัดการที่ `/operator` ⚙️ ปุ่ม 📝 (`SkillSubItemsModal`)
+
+> ### ⚠️ การ์ดสรุปทักษะรายบุคคล = component กลาง `src/components/SkillRadarPanel.jsx` (2026-08-06)
+> เดิมการ์ด radar อยู่ใน Report.jsx (ชื่อ `OperatorRadarPanel`) กดดูได้เฉพาะแท็บ 📊 Skill Matrix → หน้า **ฐานข้อมูลพนักงาน (`/operator`) กดดูไม่ได้** ทั้งที่มีคอลัมน์คะแนนสกิลอยู่แล้ว (คำสั่ง user: "หน้าฐานข้อมูล กดดูแบบหน้า skill matrix ไม่ได้หรอ")
+> - **ทางเข้า:** `/skills-report` แท็บ Skill Matrix · `/operator` แท็บฐานข้อมูลพนักงาน — **คลิกทั้งแถว**เหมือนกันทั้งคู่ (คอลัมน์จัดการของ `/operator` ใส่ `stopPropagation` ไว้ ปุ่ม ✏️/🚫 จึงทำงานเหมือนเดิม — **ตารางที่มีปุ่ม action ในแถวแล้วจะเพิ่ม row click ต้องกันแบบนี้เสมอ**)
+> - **props:** `emp` (ต้อง select `employee_skills(skill_name, score)` มาด้วย) · `skillDefs` · `subItemsByskill` (จาก `skill_sub_items` — ใช้ตอนพิมพ์ ไม่ส่ง = 1 แถว/สกิล) · `lines` · `onClose`
+> - **จุดใหม่ที่อยากโชว์สกิลรายคนให้ reuse ตัวนี้ ห้ามก๊อป modal ใหม่** · `/operator` โหลดแบบ `lazy()` (recharts มาเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้า)
+> - **⚠️ กับดัก: component พิมพ์เอกสารที่ถูก reuse ต้องเรียก `await loadDocForms()` เองในฟังก์ชันพิมพ์** — `docFormSync()` อ่าน cache ระดับ module ที่ว่างจนกว่าจะมีใครเรียก `loadDocForms()` · หน้าเดิม (Report.jsx) เรียกไว้ระดับ module แต่หน้าใหม่ที่ reuse เป็น lazy chunk คนละก้อน **ไม่ได้เรียก = ใบพิมพ์ได้ fallback ในโค้ดเสมอ เลขฟอร์ม/Rev/ช่องลายเซ็นไม่ตรงกับที่ตั้งใน `/doc-forms` แบบเงียบๆ** (เจอจาก QC audit 2026-08-06) · **พึ่ง `loadDocForms()` ของหน้าแม่ไม่ได้ — ฟังก์ชันพิมพ์ที่อยู่ใน component ร่วมต้องโหลดเองก่อนอ่านค่า** (เรียกซ้ำคืน cache ทันที ไม่เปลือง)
+> - **สเกลสกิล/หมวด/gauge = `src/utils/skillLevels.js` จุดเดียว** (`SKILL_LEVELS`/`getLevel`/`getBandCeiling`/`SKILL_GATES`/`SKILL_CAT_META`/`groupSkillsByCategory`/`MS_LEVELS`/`scoreToLevel`/`skillGaugeSvgStr`) — เดิมนิยามซ้ำใน Report.jsx กับ operator.jsx แล้ว drift (operator มี `desc`/`band` + หมวด `allowance_skill` ที่ Report ไม่มี) · **ห้ามนิยาม SKILL_LEVELS/หมวดสกิล ซ้ำในหน้าใดๆ อีก**
+> - **`groupSkillsByCategory(defs)` default = 4 หมวดทักษะ ไม่รวม `allowance_skill`** (ใบเซอร์ค่าฝีมือเป็น มี/ไม่มี ไม่ใช่ระดับทักษะ → ไม่เข้า matrix/radar โดยตั้งใจ) · ต้องการรวมให้ส่ง `SKILL_CAT_META_FULL` เป็น arg ที่สอง (หน้าตั้งค่าสกิล/โมดัลแก้ไขพนักงานใน `/operator` ใช้แบบนี้)
 
 ---
 
