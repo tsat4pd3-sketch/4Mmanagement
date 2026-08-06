@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -85,6 +86,7 @@ export default function Operator() {
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
   const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
+  const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [lines,           setLines]           = useState([]);
   const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
@@ -476,10 +478,6 @@ export default function Operator() {
   }, [orgLinesInScope]);
   const groupOrgList = useMemo(() => {
     // ค่าใน dropdown = ชื่อกลุ่มที่พนักงานถูกบันทึกไว้จริง (ตัวกรองเทียบกับ group_name ตรงๆ)
-    const byKey = new Map();
-    orgLinesInScope.forEach(g => {
-      [g.name, g.code].filter(Boolean).forEach(v => byKey.set(String(v).trim().toLowerCase(), v));
-    });
     const seen = new Set();
     return empsInDept.map(e => e.group_name).filter(Boolean)
       .filter(gn => orgGroupKeys.has(String(gn).trim().toLowerCase()))
@@ -492,14 +490,52 @@ export default function Operator() {
   const groupOpts   = useMemo(() => [...groupOrgList, ...groupLegacyList], [groupOrgList, groupLegacyList]);
   const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
 
+  // ── รายชื่อ "ข้อมูลไม่ตรงผังองค์กร" (worklist สำหรับไล่แก้ · 2026-08-06) ──
+  // ฟอร์มเพิ่ม/แก้พนักงานเป็น dropdown จากผังล้วนแล้ว (พิมพ์เองไม่ได้) — ที่ค้างอยู่คือข้อมูลเก่า
+  // ก่อนมี cascade · โชว์ให้เห็นเป็นตัวเลข + กรองดูเฉพาะกลุ่มนี้ได้ จะได้ไล่แก้จนหมดแล้วหายไปเอง
+  // (เจตนา: ไม่ซ่อน "นอกผัง" ทิ้ง — ถ้าซ่อน จะหาคนที่ต้องแก้ไม่เจอ กลายเป็นข้อมูลผิดที่มองไม่เห็น)
+  const orgDeptKeys = useMemo(() => {
+    const s = new Set();
+    orgDeptNodes.forEach(d => [d.name, d.code].filter(Boolean).forEach(v => s.add(String(v).trim().toLowerCase())));
+    return s;
+  }, [orgDeptNodes]);
+  const allOrgLineKeys = useMemo(() => {
+    const s = new Set();
+    orgLineNodes.forEach(g => [g.name, g.code].filter(Boolean).forEach(v => s.add(String(v).trim().toLowerCase())));
+    return s;
+  }, [orgLineNodes]);
+  // คืนเหตุผลที่ไม่ตรงผัง ([] = ตรงผัง) — ยังไม่โหลดผัง (ลิสต์ว่าง) ถือว่าตรงหมด กันเตือนผิดตอนเปิดหน้า
+  const offOrgReasons = useMemo(() => (emp) => {
+    if (!orgDeptNodes.length) return [];
+    const r = [];
+    const dep = String(emp.department || '').trim();
+    if (!dep) r.push('ยังไม่ระบุแผนก');
+    else if (!orgDeptKeys.has(dep.toLowerCase())) r.push(`แผนก "${dep}" ไม่มีในผัง`);
+    const grp = String(emp.group_name || '').trim();
+    if (grp && orgLineNodes.length && !allOrgLineKeys.has(grp.toLowerCase())) r.push(`กลุ่ม "${grp}" ไม่มีในผัง`);
+    return r;
+  }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys]);
+  // section ที่ผังยังไม่มีแผนกใต้มันเลย → พนักงาน section นั้น "แก้ผ่านฟอร์มไม่ได้" (ไม่มีตัวเลือกให้เลือก)
+  // ต้องไปเพิ่มแผนก/กลุ่มที่ผังองค์กร (/org-setup) ก่อน — ต้องแยกให้เห็น ไม่งั้นสั่งให้ไปแก้แล้วแก้ไม่ได้
+  const secWithoutDept = useMemo(() => {
+    const has = new Set(orgDeptNodes.map(d => d.parent_id).filter(Boolean));
+    return new Set(orgSectionNodes.filter(s => !has.has(s.id)).map(s => s.code || s.name));
+  }, [orgDeptNodes, orgSectionNodes]);
+  const offOrgStat = useMemo(() => {
+    const rows = (showInactive ? inactiveEmployees : employees).filter(e => offOrgReasons(e).length);
+    const blocked = rows.filter(e => e.section && secWithoutDept.has(e.section));
+    return { total: rows.length, blocked: blocked.length, blockedSecs: [...new Set(blocked.map(e => e.section))].sort() };
+  }, [employees, inactiveEmployees, showInactive, offOrgReasons, secWithoutDept]);
+
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
     .filter(emp => !filterDept    || emp.department === filterDept)
     .filter(emp => !filterGroup   || emp.group_name === filterGroup)
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
-    .filter(emp => !filterLabor   || empLabor(emp) === filterLabor),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, laborMap]);
+    .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
+    .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, offOrgReasons, laborMap]);
 
   // Only show skill columns where at least one displayed employee has score > 0
   // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
@@ -687,6 +723,35 @@ export default function Operator() {
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
           </div>
 
+          {/* worklist ข้อมูลไม่ตรงผังองค์กร — เตือนแบบนิ่ง (ไม่ใช่ alarm) กดกรองดูเฉพาะคนที่ต้องแก้ได้ */}
+          {offOrgStat.total > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
+              padding: '9px 12px', borderRadius: 8,
+              background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+            }}>
+              <span style={{ fontSize: 12.5, color: '#f59e0b', fontWeight: 700 }}>
+                ⚠️ ข้อมูลไม่ตรงผังองค์กร {offOrgStat.total} คน
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+                แผนก/กลุ่มที่บันทึกไว้ไม่มีในผัง (ข้อมูลเก่าก่อนระบบบังคับเลือกจากผัง) — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
+                {offOrgStat.blocked > 0 && (
+                  <> · <b style={{ color: '#f59e0b' }}>ในนี้ {offOrgStat.blocked} คน ({offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
+                    ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน</>
+                )}
+              </span>
+              <button onClick={() => setFilterOffOrg(v => !v)}
+                style={{
+                  position: 'relative', marginLeft: 'auto',
+                  padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(245,158,11,0.5)', fontSize: 12, cursor: 'pointer',
+                  background: filterOffOrg ? 'rgba(245,158,11,0.28)' : 'transparent', color: '#f59e0b', fontWeight: 700,
+                }}>
+                {filterOffOrg ? '✅ กำลังดูเฉพาะที่ต้องแก้' : '🔎 ดูเฉพาะที่ต้องแก้'}
+                <ToggleDot on={filterOffOrg} ring="var(--bg)" />
+              </button>
+            </div>
+          )}
+
           {/* Scroll hint chip */}
           {!scrollState.hinted && scrollState.right && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
@@ -744,6 +809,7 @@ export default function Operator() {
               <tbody>
                 {displayed.map(emp => {
                   const grade = getEmpGrade(emp.employee_id_code);
+                  const offOrg = offOrgReasons(emp);   // เหตุผลที่ข้อมูลไม่ตรงผัง ([] = ตรงผัง)
                   return (
                   // คลิกทั้งแถว = เปิดการ์ดสรุปทักษะ (pattern เดียวกับตาราง Skill Matrix)
                   // — คอลัมน์จัดการ stopPropagation ไว้ ปุ่ม ✏️/🚫 จึงทำงานเหมือนเดิม
@@ -804,8 +870,15 @@ export default function Operator() {
                         <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 3, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 700 }}>{m.icon}</span>
                       ); })()}
                     </td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.department || '—'}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.group_name || '—'}</td>
+                    {/* ค่าที่ไม่มีในผังองค์กรทำเป็นสีเหลืองนิ่ง + tooltip บอกเหตุผล (ไม่กระพริบ — ไม่ใช่ alarm) */}
+                    <td style={{ fontSize: 12, color: offOrg.some(r => r.includes('แผนก')) ? '#f59e0b' : 'var(--text2)' }}
+                      title={offOrg.find(r => r.includes('แผนก')) || ''}>
+                      {offOrg.some(r => r.includes('แผนก')) && '⚠ '}{emp.department || '—'}
+                    </td>
+                    <td style={{ fontSize: 12, color: offOrg.some(r => r.includes('กลุ่ม')) ? '#f59e0b' : 'var(--text2)' }}
+                      title={offOrg.find(r => r.includes('กลุ่ม')) || ''}>
+                      {offOrg.some(r => r.includes('กลุ่ม')) && '⚠ '}{emp.group_name || '—'}
+                    </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{emp.team       || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.start_date ? emp.start_date : '—'}
