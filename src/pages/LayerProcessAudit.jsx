@@ -697,7 +697,15 @@ table{border-collapse:collapse}
         });
       });
       const stationRow = days.map(d => `<td style="border:1px solid #000;text-align:center;vertical-align:bottom;${hol(d) ? holBg : ''}"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:7px;margin:0 auto;white-space:nowrap;max-height:70px;overflow:hidden">${leaderAud[d]?.station || ''}</div></td>`).join('');
-      const sigCell = (a, extra = '') => `<td style="border:1px solid #000;text-align:center;vertical-align:middle;${extra}">${a ? (sigDataUrls[a.id] ? `<img src="${sigDataUrls[a.id]}" style="max-height:16px;max-width:20px;object-fit:contain"/>` : `<div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:6px;white-space:nowrap;max-height:40px;overflow:hidden;margin:0 auto">${(a.auditor_name || '').slice(0, 12)}</div>`) : ''}</td>`;
+      // ลายเซ็น "ตะแคงแนวดิ่ง" ตามฟอร์มกระดาษเดิมที่เซ็นกันมา (คำสั่งทีมงาน 2026-08-06) —
+      // ช่องวันกว้างแค่ ~20px แต่สูง 56px ถ้าวางลายเซ็นแนวนอนจะถูกย่อจนอ่านไม่ออก
+      // transform ไม่เปลี่ยนกล่อง layout → ต้องวาง img แบบ absolute กลางช่องก่อนแล้วค่อยหมุน
+      // -90° = อ่านจากล่างขึ้นบน ทิศเดียวกับข้อความ vertical-rl ที่ใช้ทั้งใบ (สถานี/หมวด/Monthly)
+      const sigCell = (a, extra = '') => `<td style="border:1px solid #000;text-align:center;vertical-align:middle;${extra}">${a
+        ? (sigDataUrls[a.id]
+          ? `<div style="position:relative;width:18px;height:50px;margin:0 auto"><img src="${sigDataUrls[a.id]}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-90deg);max-height:18px;max-width:50px;object-fit:contain"/></div>`
+          : `<div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:6px;white-space:nowrap;max-height:50px;overflow:hidden;margin:0 auto">${(a.auditor_name || '').slice(0, 14)}</div>`)
+        : ''}</td>`;
       const sigRow = days.map(d => hol(d) ? `<td style="border:1px solid #000;${holBg}"></td>` : sigCell(leaderAud[d])).join('');
       const issues = [];
       monthAudits.forEach(a => (a.lpa_audit_answers || []).forEach(x => { if (['N', 'T'].includes(x.answer)) issues.push({ date: a.audit_date, layer: a.layer, q: x.question_text, ans: x.answer, note: x.note }); }));
@@ -744,7 +752,7 @@ table{border-collapse:collapse;width:100%}
     <td style="border:1px solid #000;text-align:center;vertical-align:bottom;background:#f3e8a0"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:7px;margin:0 auto;white-space:nowrap;max-height:70px;overflow:hidden">${gmAud?.station || ''}</div></td>
   </tr>
   <tr>
-    <td colspan="3" style="border:1px solid #000;text-align:right;padding:1px 6px;font-size:8px;font-weight:bold;height:44px;vertical-align:middle">ลงชื่อ ผู้ตรวจสอบ</td>
+    <td colspan="3" style="border:1px solid #000;text-align:right;padding:1px 6px;font-size:8px;font-weight:bold;height:56px;vertical-align:middle">ลงชื่อ ผู้ตรวจสอบ</td>
     ${sigRow}
     ${svAud.map(a => sigCell(a, 'background:#c9e4c5;')).join('')}
     ${sigCell(mgrAud, 'background:#e0e0e0;')}
