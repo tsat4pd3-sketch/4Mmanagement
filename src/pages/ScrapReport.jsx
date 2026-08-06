@@ -118,15 +118,18 @@ export default function ScrapReport() {
     loadDocForms().then(() => setDocReady(true));
   }, []);
 
-  /* ── SAP / พาร์ทย่อย picker (dr_products main + bom_items sub) ── */
+  /* ── SAP / พาร์ทย่อย picker (dr_products main + bom_items/parts_master sub) ──
+     parts_master เข้ามาด้วย (2026-08-06) — พาร์ทซื้อนอก/วัตถุดิบ (300/500) ที่ยังไม่ถูกผูกใน BOM
+     ของสินค้าใดเลย เดิมไม่ขึ้นให้เลือก ต้องกรอกมือ · dedupe ด้วย mat_no (dr_products > bom_items > parts_master) */
   useEffect(() => {
     if (!sapPicker || sapOptions !== null) return;
     let alive = true;
     (async () => {
-      const [{ data: prods }, { data: boms }, { data: macs }] = await Promise.all([
+      const [{ data: prods }, { data: boms }, { data: macs }, pmRes] = await Promise.all([
         supabaseDR.from('dr_products').select('mat_no, p_no, name, code, line_name').eq('is_active', true).order('name'),
         supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id').eq('is_active', true).order('part_name'),
         supabaseDR.from('machines').select('machine_no'),   // ไว้จับ p_no ที่กรอกเป็นหมายเลขเครื่อง (master ผิด)
+        supabaseDR.from('parts_master').select('mat_no, part_no, part_name').eq('is_active', true).order('part_name').then(r => r, () => ({ data: [] })),
       ]);
       if (!alive) return;
       // ⚠️ dr_products.p_no บางไลน์ถูกกรอกเป็น "หมายเลขเครื่อง" (เจอจริง SUB APRON: SP-72/74/83/88)
@@ -140,7 +143,9 @@ export default function ScrapReport() {
           return { source: 'main', mat_no: p.mat_no || '', part_no: bad ? '' : (p.p_no || p.mat_no || ''), part_name: p.name || '', line_name: p.line_name || '', badMaster: bad ? p.p_no : '' };
         }),
         ...(boms || []).map(b => ({ source: 'sub', mat_no: b.mat_no || '', part_no: b.part_no || b.mat_no || '', part_name: b.part_name || '', line_name: '', badMaster: '' })),
-      ].filter(o => o.mat_no || o.part_no || o.part_name);
+        ...(pmRes?.data || []).map(m => ({ source: 'sub', mat_no: m.mat_no || '', part_no: m.part_no || m.mat_no || '', part_name: m.part_name || '', line_name: '', badMaster: '' })),
+      ].filter(o => o.mat_no || o.part_no || o.part_name)
+        .filter((o, i, arr) => !o.mat_no || arr.findIndex(x => x.mat_no === o.mat_no) === i);
       setSapOptions(opts);
     })();
     return () => { alive = false; };
