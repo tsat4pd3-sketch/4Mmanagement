@@ -8,6 +8,7 @@ import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
+import { loadRetiredEquipIds } from '../lib/pmChecklists'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -39,6 +40,7 @@ export default function DailyPM() {
   const [tab, setTab] = useState('status')
   const [userId, setUserId] = useState(null)
   const [jigs, setJigs] = useState([])
+  const [retiredCount, setRetiredCount] = useState(0)
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
   // scope มาตรฐาน: leader→family · role อื่น→sections · admin/qa→ทั้งหมด (กัน dropdown เห็นไลน์ข้าม scope)
   const scopedProdLines = useMemo(() => {
@@ -72,11 +74,12 @@ export default function DailyPM() {
     const si = getShiftInfo()
     const startISO = si.shiftStart.toISOString()
 
-    const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }] = await Promise.all([
+    const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }, retiredIds] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      loadRetiredEquipIds('mtn').catch(() => new Set()),
     ])
     // Daily PM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → แสดงเฉพาะ "เครื่องผลิต"
     //   ตัด jig/die tooling (งานช่าง JIG/DIE) + facility/utility ออก ไม่ให้ปนในลิสต์ลงทะเบียน (คำสั่ง user 2026-07-22)
@@ -85,7 +88,10 @@ export default function DailyPM() {
       if (j.equipment_type === 'jig' || j.equipment_type === 'die') return false
       return true // machine / ไม่ระบุ (legacy) / production
     })
-    setJigs(prodOnly)
+    // เครื่องที่ถูกปิดใช้งานในฐานเครื่องจักรแล้ว ต้องไม่สั่งให้หน้างานตรวจอีก (แต่ไม่ซ่อนเงียบ — นับไว้บอกบนจอ)
+    const live = prodOnly.filter(j => !retiredIds.has(j.id))
+    setRetiredCount(prodOnly.length - live.length)
+    setJigs(live)
     setTargets(targetRows ?? [])
     setProdLines(lineRows ?? [])
 
@@ -363,6 +369,13 @@ export default function DailyPM() {
             </div>
           </div>
           {!canManage && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>* ดูได้อย่างเดียว — เฉพาะ admin/manager/supervisor แก้ไขได้</div>}
+          {/* ซ่อนเครื่องที่ปลดแล้ว แต่ต้องบอกว่าซ่อนไป — ไม่ให้หายเงียบจนหาไม่เจอ */}
+          {retiredCount > 0 && (
+            <div style={{ marginBottom: 12, padding: '10px 14px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+              ซ่อน <b style={{ color: 'var(--text)' }}>{retiredCount}</b> เครื่องที่ปิดใช้งานแล้วในฐานเครื่องจักร — ไม่ต้องตรวจทุกต้นกะอีก
+              {' '}(เปิดใช้งานกลับได้ที่ <Link to="/machine-database" style={{ color: 'var(--accent)', fontWeight: 700 }}>ฐานข้อมูลเครื่องจักร</Link>)
+            </div>
+          )}
           {Object.keys(jigsByLine).length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
               ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
