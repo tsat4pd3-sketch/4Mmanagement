@@ -100,7 +100,7 @@ const DEPT_CSS = `
      6 การ์ดจัดคอลัมน์ให้สมดุล: แคบ=auto · ≥1200px = 3 คอลัมน์ (2 แถว) · ≥1900px = 6 คอลัมน์แถวเดียว (จอ TV) */
   .hub-grid {
     display: grid; gap: clamp(12px, 1.6vw, 20px);
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
   }
   @media (min-width: 1200px) { .hub-grid { grid-template-columns: repeat(4, 1fr); } }
   @media (min-width: 1900px) { .hub-grid { grid-template-columns: repeat(4, 1fr); } }

@@ -12,13 +12,17 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection, teamForItem, sameTeam } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
+import ScanModal from '../components/ScanModal';
+import { resolveMachine } from '../utils/qrCode';
+import SparePartMaster from '../components/SparePartMaster';
+import RackMap from '../components/RackMap';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -67,7 +71,8 @@ const beEcho = (ymd) => { if (!ymd) return ''; const [y, m, d] = ymd.split('-');
 
 // หน่วยงานซ่อม — fallback เท่านั้น (source of truth = mtn_teams ผ่าน pmTeamsSync().dept_name · ดู CLAUDE.md "ทีมช่างซ่อม 4 ส่วน")
 const MTN_DEPTS = ['JIG MTN', 'DIE MTN', 'MTN', 'PRODUCTION'];
-const deptForItem = (it) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+// เดา default หน่วยงานจากชนิดอุปกรณ์ — reuse util กลาง (เลิก duplicate logic)
+const deptForItem = teamForItem;
 
 const STATUS_META = {
   pending:   { label: '📣 รอรับงาน',        step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
@@ -276,13 +281,16 @@ export default function MtnRepair() {
     else if (fStatus === 'closed') rows = rows.filter(o => o.status === 'closed');
     else if (fStatus !== 'all') rows = rows.filter(o => o.status === fStatus);
     if (fLine) rows = rows.filter(o => o.line_name === fLine);
-    if (fDept) rows = rows.filter(o => (o.mtn_dept || deptForItem(o.item_type)) === fDept);
+    if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
     if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
   }, [orders, scopeLines, fStatus, fLine, fDept, fText]);
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
   const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
+  // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
+  // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
+  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
 
   // เปิดโปรเจคปรับปรุงจากใบ MO (เชื่อม B) — ส่ง prefill ผ่าน sessionStorage แล้วไปหน้า /improvements
   const openImprovementFromMo = (o) => {
@@ -295,8 +303,6 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
-  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
   const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
@@ -305,7 +311,8 @@ export default function MtnRepair() {
         <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
+          {/* คลังอะไหล่ = ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์ */}
+          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ['rack', '🗺️ ผังคลัง'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
             <button key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
           ))}
         </div>
@@ -330,6 +337,8 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
+      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
+      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
@@ -373,6 +382,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   });
   const [beforeFile, setBeforeFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const lineMachines = useMemo(() => machines.filter(m => !f.line_name || m.line_name === f.line_name), [machines, f.line_name]);
 
@@ -381,6 +391,24 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     let cc = l?.cost_center || '';
     if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
     setF(p => ({ ...p, line_name: name, dept_section: l?.section || p.dept_section, cost_center: cc || p.cost_center }));
+  };
+
+  // สแกนป้าย QR ที่ติดเครื่อง → เติม "ไลน์ + เลขเครื่อง" ให้พร้อมกัน
+  // (ค้นจาก machines ทั้งหมด ไม่ใช่เฉพาะไลน์ที่เลือกไว้ — ป้ายบอกเองว่าเครื่องอยู่ไลน์ไหน)
+  const onScanMachine = (parsed) => {
+    const mc = resolveMachine(parsed, machines);
+    if (!mc) return `ไม่พบเครื่องนี้ในฐานข้อมูล (${parsed.raw}) — ตรวจว่าเครื่องลงทะเบียนแล้วหรือยัง`;
+    const l = lines.find(x => x.name === mc.line_name);
+    let cc = l?.cost_center || '';
+    if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
+    setF(p => ({
+      ...p,
+      machine_no: mc.machine_no || p.machine_no,
+      line_name: mc.line_name || p.line_name,
+      dept_section: l?.section || p.dept_section,
+      cost_center: cc || p.cost_center,
+    }));
+    toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
   const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it) }));
   const onChar = (c) => { const pt = problemTypes.find(x => x.characteristic === c); setF(p => ({ ...p, problem_characteristic: c, problem_detail: pt?.detail || '' })); };
@@ -409,7 +437,14 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
         <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{itemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
-        <Field label="หมายเลขเครื่อง"><input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={inp} placeholder="เลือก/พิมพ์" /><datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist></Field>
+        <Field label="หมายเลขเครื่อง">
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="เลือก/พิมพ์/สแกน" />
+            <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
+              style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+          </div>
+          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist>
+        </Field>
         <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{problemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
         <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
@@ -425,6 +460,14 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : 'บันทึกใบแจ้งซ่อม'}</button>
       </div>
+      {scanOpen && (
+        <ScanModal
+          title="สแกนเครื่องจักร"
+          hint="ส่องกล้องที่ป้าย QR บนเครื่อง หรือยิงด้วยเครื่องสแกน — ระบบจะเติมไลน์ให้เอง"
+          onScan={onScanMachine}
+          onClose={() => setScanOpen(false)}
+        />
+      )}
     </ModalShell>
   );
 }
@@ -844,18 +887,18 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
         }
-        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว) แล้วอ่านสต็อก "สด"
-        // ณ ตอนตัด (ไม่ใช้ค่า cache ตอนโหลดหน้า ซึ่งอาจเก่า) — ลดโอกาสตัดสต็อกเพี้ยนจาก read-modify-write
-        // NOTE: ยังไม่ atomic เต็มตัวข้ามผู้ใช้พร้อมกัน — วิธีที่ถูกต้องสุดคือ RPC ตัดสต็อกฝั่ง DB (update ... returning)
+        // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว)
+        // แล้วตัดผ่าน RPC `mtn_stock_move` — ล็อกแถว + กันติดลบ + ลง ledger ในทรานแซกชันเดียวฝั่ง DB
+        // (เดิม read-modify-write จาก client: 2 เครื่องบันทึกพร้อมกันยอดเพี้ยน + เบิกเกินสต็อกได้)
         const byPart = {};
         usable.filter(p => p.part_id).forEach(p => { byPart[p.part_id] = (byPart[p.part_id] || 0) + Number(p.qty); });
         for (const [pid, totalQty] of Object.entries(byPart)) {
-          const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', pid).maybeSingle();
-          if (!fresh) continue;
-          const nb = Number(fresh.stock_qty || 0) - totalQty;
-          const { error: eSt } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', pid);
-          if (eSt) { toast.error('ตัดสต็อกอะไหล่ไม่สำเร็จ: ' + eSt.message); continue; }
-          await supabaseDR.from('mtn_stock_txns').insert({ part_id: pid, type: 'consume', qty: -totalQty, balance: nb, ref_order_id: o.id, by_name: fullName, note: `เบิกใช้ ${o.mo_no || ''}` });
+          const { error: eSt } = await supabaseDR.rpc('mtn_stock_move', {
+            p_part_id: pid, p_type: 'issue', p_qty: totalQty,
+            p_note: `เบิกใช้ ${o.mo_no || ''}`.trim(), p_by_name: fullName, p_ref_order: o.id,
+          });
+          // สต็อกไม่พอ/อะไหล่ถูกลบ = แจ้งแล้วไปต่อ (บันทึกการซ่อมสำคัญกว่า ห้ามให้ทั้งใบล้มเพราะยอดอะไหล่)
+          if (eSt) toast.error(`ตัดสต็อก "${usable.find(x => x.part_id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
         }
       } else if (step === 4) {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
@@ -879,6 +922,13 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
         if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+      }
+      // ลบไฟล์เก่าที่ถูกแทนที่ (รูปก่อน/หลัง/QA + ลายเซ็นต่อขั้น) — ลบหลัง DB update สำเร็จเท่านั้น + best-effort
+      // ไม่งั้นแก้ไขหลังบันทึกทีไร ไฟล์เดิมกำพร้าค้างใน bucket mtn-images ทุกครั้ง (QC audit 2026-08-03)
+      // ข้ามลายเซ็นที่เป็นของโปรไฟล์ (signatures/<uid>/profile...) — ใช้ร่วมทั้งระบบ ห้ามลบ
+      for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'approve_sign']) {
+        const oldUrl = o[fld], newUrl = upd[fld];
+        if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
       }
       if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
@@ -1064,44 +1114,8 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
     </div>
   );
 
-  // ── อะไหล่ + stock control ──
-  const [npart, setNpart] = useState({ code: '', name: '', unit: 'ชิ้น', stock_qty: 0, min_qty: 0 });
-  const stockMove = async (part, type) => {
-    const q = Number(prompt(type === 'in' ? `รับเข้าอะไหล่ "${part.name}" จำนวนเท่าไร?` : `ปรับยอด "${part.name}" (+เพิ่ม / -ลด)`, type === 'in' ? '1' : '0'));
-    if (!Number.isFinite(q) || q === 0) return;
-    // อ่านสต็อกสดก่อนบวก แทนใช้ค่าจาก cache (part.stock_qty อาจเก่า) — ลดโอกาสยอดเพี้ยนจากการปรับพร้อมกัน
-    const { data: fresh } = await supabaseDR.from('mtn_spare_parts').select('stock_qty').eq('id', part.id).maybeSingle();
-    const nb = Number(fresh?.stock_qty ?? part.stock_qty ?? 0) + q;
-    const { error } = await supabaseDR.from('mtn_spare_parts').update({ stock_qty: nb }).eq('id', part.id);
-    if (error) return toast.error(error.message);
-    await supabaseDR.from('mtn_stock_txns').insert({ part_id: part.id, type, qty: q, balance: nb, by_name: fullName, note: type === 'in' ? 'รับเข้า' : 'ปรับยอด' });
-    toast.success(`${type === 'in' ? 'รับเข้า' : 'ปรับ'} ${part.name} → คงเหลือ ${nb}`); reload();
-  };
-  const PartList = () => (
-    <div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <input value={npart.code} onChange={e => setNpart(p => ({ ...p, code: e.target.value }))} placeholder="รหัส" style={{ ...inp, width: 110 }} />
-        <input value={npart.name} onChange={e => setNpart(p => ({ ...p, name: e.target.value }))} placeholder="ชื่ออะไหล่" style={{ ...inp, width: 220 }} />
-        <input value={npart.unit} onChange={e => setNpart(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 80 }} />
-        <input type="number" value={npart.stock_qty} onChange={e => setNpart(p => ({ ...p, stock_qty: e.target.value }))} placeholder="สต็อกเริ่ม" style={{ ...inp, width: 90 }} />
-        <input type="number" value={npart.min_qty} onChange={e => setNpart(p => ({ ...p, min_qty: e.target.value }))} placeholder="ขั้นต่ำ" style={{ ...inp, width: 80 }} />
-        <button onClick={() => { if (!npart.name) return; addRow('mtn_spare_parts', { ...npart, stock_qty: Number(npart.stock_qty) || 0, min_qty: Number(npart.min_qty) || 0, sort_order: parts.length + 1 }); setNpart({ code: '', name: '', unit: 'ชิ้น', stock_qty: 0, min_qty: 0 }); }} style={btnPri}>+ เพิ่มอะไหล่</button>
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        {parts.map(p => { const low = Number(p.stock_qty) <= Number(p.min_qty || 0); return (
-          <div key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--card)', border: `1px solid ${low ? '#ef4444' : 'var(--border)'}`, borderRadius: 8, padding: '8px 10px', flexWrap: 'wrap' }}>
-            <input defaultValue={p.code || ''} onBlur={e => e.target.value !== (p.code || '') && updRow('mtn_spare_parts', p.id, { code: e.target.value })} style={{ ...inp, width: 100 }} placeholder="รหัส" />
-            <input defaultValue={p.name} onBlur={e => e.target.value !== p.name && updRow('mtn_spare_parts', p.id, { name: e.target.value })} style={{ ...inp, width: 220 }} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: low ? '#ef4444' : '#22c55e', minWidth: 90 }}>คงเหลือ {p.stock_qty} {p.unit}</span>
-            <input defaultValue={p.min_qty || 0} onBlur={e => Number(e.target.value) !== Number(p.min_qty || 0) && updRow('mtn_spare_parts', p.id, { min_qty: Number(e.target.value) || 0 })} style={{ ...inp, width: 70 }} title="ขั้นต่ำ" />
-            <button onClick={() => stockMove(p, 'in')} style={{ ...btnGhost, padding: '6px 10px', fontSize: 12, color: '#22c55e' }}>➕ รับเข้า</button>
-            <button onClick={() => stockMove(p, 'adjust')} style={{ ...btnGhost, padding: '6px 10px', fontSize: 12 }}>ปรับ</button>
-            <button onClick={() => delRow('mtn_spare_parts', p.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>); })}
-        {!parts.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีอะไหล่ — เพิ่มด้านบน แล้วเบิกได้ตอนขั้นซ่อม (หักสต็อกอัตโนมัติ)</div>}
-      </div>
-    </div>
-  );
+  // ── อะไหล่: ย้ายไปแท็บ "🔩 คลังอะไหล่" (SparePartMaster) แล้ว — ที่นี่เหลือแค่ทางลัด
+  //    เดิมมีตัวแก้อะไหล่แบบย่อซ้ำอยู่ตรงนี้ (prompt + read-modify-write) — ลบทิ้งกันแก้กัน 2 ที่คนละกติกา
 
   // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
   const [nrate, setNrate] = useState({ name: '', unit: 'บาท/ชม.', price: '', dept: '' });
@@ -1146,15 +1160,54 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
     );
   };
 
+  // ── เลขรัน MO ต่อทีม (ตั้งรหัสทีม + เลขเริ่มต้น เพื่อต่อจากระบบเดิม) ──
+  const [moRows, setMoRows] = useState([]);
+  const [moErr, setMoErr] = useState(false);
+  const ymdToday = (() => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit' }).formatToParts(new Date()); const g = t => p.find(x => x.type === t).value; return `${g('day')}${g('month')}${g('year')}`; })();
+  const loadMoSeq = async () => {
+    try {
+      const [{ data: teams, error: e1 }, { data: seqs }] = await Promise.all([
+        supabaseDR.from('mtn_teams').select('id, dept_name, mo_code, sort_order').eq('is_active', true).order('sort_order'),
+        supabaseDR.from('mtn_mo_seq').select('team_code, last_seq'),
+      ]);
+      if (e1) throw e1;
+      const byCode = {}; (seqs || []).forEach(s => { byCode[s.team_code] = s.last_seq; });
+      setMoRows((teams || []).map(t => ({ ...t, last_seq: byCode[t.mo_code] ?? 0 }))); setMoErr(false);
+    } catch { setMoErr(true); }
+  };
+  useEffect(() => { if (sub === 'mo') loadMoSeq(); }, [sub]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveMoCode = async (t, code) => { const c = (code || '').trim().toUpperCase(); if (!c) return; const { error } = await supabaseDR.from('mtn_teams').update({ mo_code: c }).eq('id', t.id); if (error) return toast.error(error.message); toast.success('บันทึกรหัสทีมแล้ว'); loadMoSeq(); };
+  const saveMoSeq = async (code, val) => { const n = Math.max(0, parseInt(val, 10) || 0); const { error } = await supabaseDR.from('mtn_mo_seq').upsert({ team_code: code, last_seq: n, updated_at: new Date().toISOString() }, { onConflict: 'team_code' }); if (error) return toast.error(error.message); toast.success('บันทึกเลขล่าสุดแล้ว'); loadMoSeq(); };
+  const MoSeqList = () => (
+    <div>
+      <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.7 }}>
+        เลข MO ออกตอน <b>รับงาน (ขั้น 2)</b> รูปแบบ <code>รหัสทีม-ประเภท-วันเดือนปี-เลขรัน</code> เช่น <b style={{ color: 'var(--accent)' }}>MTN-BM-{ymdToday}-0678</b><br />
+        เลขรัน<b>นับต่อเนื่องต่อทีม</b> (ไม่รีเซ็ตรายวัน) · ตั้ง "เลขล่าสุด" เพื่อ<b>ต่อจากระบบเดิม</b> — เช่น MTN เคยออกถึง 677 → ใส่ <b>677</b> ใบถัดไปจะเป็น 0678
+      </div>
+      {moErr ? <div style={{ color: 'var(--muted)', padding: 16, background: 'var(--bg2)', borderRadius: 8 }}>⚠️ ยังไม่ได้ apply migration เลข MO ต่อทีม (<code>20260724_mtn_mo_per_team.sql</code>) — apply ก่อนถึงจะตั้งค่าได้</div> :
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {moRows.map(t => (
+            <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+              <b style={{ flex: '1 1 120px', fontSize: 13 }}>{t.dept_name}</b>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>รหัส <input defaultValue={t.mo_code || ''} onBlur={e => e.target.value.trim().toUpperCase() !== (t.mo_code || '') && saveMoCode(t, e.target.value)} style={{ ...inp, width: 74, marginLeft: 4, textTransform: 'uppercase', fontWeight: 700 }} /></label>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>เลขล่าสุด <input type="number" min="0" defaultValue={t.last_seq} onBlur={e => Number(e.target.value) !== t.last_seq && saveMoSeq(t.mo_code, e.target.value)} style={{ ...inp, width: 96, marginLeft: 4 }} /></label>
+              <span style={{ fontSize: 11.5, color: 'var(--accent)' }}>ถัดไป: {t.mo_code}-BM-{ymdToday}-{String((t.last_seq || 0) + 1).padStart(4, '0')}</span>
+            </div>
+          ))}
+          {!moRows.length && <div style={{ color: 'var(--muted)' }}>ยังไม่มีทีมในตาราง mtn_teams</div>}
+        </div>}
+    </div>
+  );
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['parts', '🔩 อะไหล่ + สต็อก'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
-      {sub === 'parts' && PartList()}
       {sub === 'labor' && LaborList()}
+      {sub === 'mo' && MoSeqList()}
       {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}
       {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
     </div>

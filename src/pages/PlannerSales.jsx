@@ -745,7 +745,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       supabaseDR.from('kanban_calc_params').select('*'),
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no, process_type').eq('is_active', true),
       supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
       supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
@@ -773,26 +773,38 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   useEffect(() => { load(); }, [load]);
 
   // ค่าพารามิเตอร์ที่ใช้จริง = edit ชั่วคราว > param ที่บันทึกไว้ > default จาก master/ค่ากลาง
+  // firstPos: ตัวแรกที่มีค่าจริง (>0) จาก master หลายแหล่ง — ไม่ต้องกรอกเองถ้ามีในฐานข้อมูล
+  const firstPos = (...xs) => { for (const x of xs) { const n = Number(x); if (x != null && x !== '' && n > 0) return x; } return ''; };
   const paramOf = useCallback((mat) => {
-    const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {};
+    const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {}, ks = ksMap[mat] || {};
     const g = (k, dflt) => e[k] ?? p[k] ?? dflt;
     return {
       prep_time_min:  g('prep_time_min', 30),
       fluctuation_pct: g('fluctuation_pct', 7),
-      packaging:      g('packaging', pm.qty_per_pkg ?? ''),
+      // PKG (จำนวน/กล่อง) = คุณสมบัติสินค้า → ดึงจาก master: parts_master.qty_per_pkg → kanban_standards.qty_per_kanban
+      packaging:      g('packaging', firstPos(pm.qty_per_pkg, ks.qty_per_kanban)),
       delivery_cycle: g('delivery_cycle', 1),
       capacity_pc_hr: g('capacity_pc_hr', dr.cycle_time_sec ? Math.round(3600 / dr.cycle_time_sec) : ''),
-      lot_size:       g('lot_size', 1),
+      lot_size:       g('lot_size', firstPos(ks.lot_size, 1) || 1),
       safety_days:    g('safety_days', 1),
       // production (Type B)
       process_count:  g('process_count', 1),
       lot_qty:        g('lot_qty', ''),
       setup_time_sec: g('setup_time_sec', 0),
     };
-  }, [params, edits, pmMap, drMap]);
+  }, [params, edits, pmMap, drMap, ksMap]);
+
+  // แยกพาร์ทตามกระบวนการผลิต (process_type) — PI (สั่งผลิต press) กับ PW (เบิกถอน) ไม่คำนวณพาร์ทร่วมกัน
+  //   Production = metal_forming (ปั๊ม/lot — งานปั๊มขายตรงเป็น FG เบอร์ 1 ก็เข้าที่นี่ ไม่ดูเลข MAT)
+  //   Withdrawal = welding_assembly + พาร์ทที่ยังไม่ตั้ง process (default) · 'common' = ทั้งสองแท็บ
+  const procMatchesTab = useCallback((proc) => {
+    const p = proc || '';
+    if (p === 'common') return true;
+    return calcType === 'production' ? p === 'metal_forming' : p !== 'metal_forming';
+  }, [calcType]);
 
   const rows = useMemo(() => {
-    const mats = Object.keys(forecast).filter(m => forecast[m] > 0);
+    const mats = Object.keys(forecast).filter(m => forecast[m] > 0 && procMatchesTab(drMap[m]?.process_type));
     return mats.map(mat => {
       const pp = paramOf(mat);
       const r = calcType === 'production'
@@ -813,7 +825,11 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed };
     }).filter(row => !lineFilter || row.line === lineFilter)
       .sort((a, b) => a.mat.localeCompare(b.mat));
-  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType]);
+  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType, procMatchesTab]);
+
+  // นับพาร์ทที่ถูกกรองออกเพราะเป็นอีกกระบวนการ (โปร่งใส — ไม่ปล่อยหายเงียบ)
+  const otherProcCount = useMemo(() => Object.keys(forecast)
+    .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
   const changedRows = rows.filter(r => r.changed);
@@ -962,6 +978,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
         await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap);                       // future uploads
+        // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
+        try { await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap); } catch { /* best-effort — บางพาร์ทไม่มีแถว kanban */ }
         await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust); // existing forecast
       }
       toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
@@ -989,6 +1007,15 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <button key={t.id} onClick={() => { setCalcType(t.id); setPreview(null); }}
             style={{ ...btn(calcType === t.id), fontSize: 12.5 }}>{t.label}</button>
         ))}
+      </div>
+
+      {/* แยกพาร์ทตามกระบวนการผลิต — โปร่งใส ไม่ปล่อยพาร์ทหายเงียบ */}
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '6px 10px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
+        🔎 แยกพาร์ทตาม <b style={{ color: 'var(--text2)' }}>กระบวนการผลิต (process_type)</b> — {calcType === 'production'
+          ? <>แท็บนี้แสดงเฉพาะงาน <b style={{ color: 'var(--text2)' }}>ปั๊ม/ผลิตเป็น lot (metal_forming)</b> · งานปั๊มที่ขายตรงเป็น FG ก็อยู่ที่นี่ (ดูกระบวนการ ไม่ดูเลข MAT)</>
+          : <>แท็บนี้แสดงงาน <b style={{ color: 'var(--text2)' }}>เบิกถอน/ประกอบ</b> (ไม่ใช่ปั๊ม)</>}
+        {otherProcCount > 0 && <> · <span style={{ color: '#f59e0b' }}>ซ่อน {otherProcCount} พาร์ทที่เป็นอีกกระบวนการ</span> (อยู่อีกแท็บ)</>}
+        {' '}· ตั้ง process_type ต่อพาร์ทที่ Product Master
       </div>
 
       {/* controls */}
@@ -1125,9 +1152,9 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         </div>
       )}
 
-      {/* (#1) Modal จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน */}
+      {/* (#1) Modal จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน — ฟอร์มกรอกหลายสิบแถว ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) */}
       {mapModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setMapModal(false)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>

@@ -12,7 +12,8 @@ export const FREQ_LABEL = {
 // เพื่อไม่ให้ชื่อทีมปนกันระหว่างหน้า PM กับหน้าแจ้งซ่อม (คำสั่ง user 2026-07-22)
 // key = checklists.department (คงเดิม) · เปลี่ยนเฉพาะข้อความแสดงผล
 export const DEPT_LABEL = {
-  production:      'PRODUCTION (ฝ่ายผลิต)',
+  // ฝ่ายผลิตตรวจเอง = AM (Autonomous Maintenance) — คนละงานกับ PM ของช่าง (ดู src/utils/pmTeams.js teamKind)
+  production:      'AM (ผลิตตรวจเอง)',
   maintenance:     'MTN (ซ่อมบำรุง)',
   jig_maintenance: 'JIG MTN',
   die_maintenance: 'DIE MTN',

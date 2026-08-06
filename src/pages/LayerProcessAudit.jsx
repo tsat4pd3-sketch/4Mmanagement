@@ -7,7 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
-import { getDocForm, fullCode } from '../utils/docForms';
+import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -136,6 +136,7 @@ export default function LayerProcessAudit() {
   const [qEditing, setQEditing] = useState(null);
   const [qScope, setQScope] = useState(''); // หน้า ⚙️ คำถาม: '' = ทุกไลน์ (common) · ชื่อไลน์ = จัดการเฉพาะไลน์นั้น
   const [printing, setPrinting] = useState(false);
+  const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle/ปุ่มดึงเลขฟอร์มจาก registry
 
   /* ── scope มาตรฐาน: leader → family ไลน์ตัวเอง · role อื่นตาม sections ── */
   const visibleLines = useMemo(() => {
@@ -163,6 +164,8 @@ export default function LayerProcessAudit() {
       setMyProfile((profs || []).find(p => p.id === user?.id) || null);
       calMapRef.current = await loadCompanyCalendar();
       setCalReady(true);
+      await loadDocForms();
+      setDocReady(true);
     })();
   }, []);
 
@@ -545,6 +548,8 @@ export default function LayerProcessAudit() {
     setQuestions(qs || []);
   };
   const toggleQuestion = async (q) => {
+    // ปิดใช้งานข้อ = ถอดออกจาก checklist ทุกใบตรวจถัดไป → ยืนยันก่อน (UI-CONVENTIONS §5.4) · เปิดกลับไม่ต้องถาม
+    if (q.is_active && !window.confirm(`ปิดใช้งานข้อ "${q.question}" ?\n\nข้อนี้จะไม่ขึ้นในใบตรวจ LPA ครั้งถัดไป (เปิดกลับได้ภายหลัง)`)) return;
     const { error } = await supabase.from('lpa_questions').update({ is_active: !q.is_active }).eq('id', q.id);
     if (error) { toast.error(error.message); return; }
     setQuestions(prev => prev.map(x => x.id === q.id ? { ...x, is_active: !q.is_active } : x));
@@ -808,12 +813,17 @@ ${issuesHtml}
   const nDays = daysInMonth(selMonth);
   const daysArr = Array.from({ length: nDays }, (_, i) => i + 1);
 
+  // เลขฟอร์มบน subtitle/ปุ่มพิมพ์ ดึงจากทะเบียนเอกสาร (doc_key เดียวกับ print path) — fallback = FORM_NO
+  const lpaDoc = docReady ? docFormSync('lpa_report', { form_code: 'FM-QMR-008', rev: 'Rev.01' }) : { form_code: 'FM-QMR-008', rev: 'Rev.01' };
+  const lpaFormNo = fullCode(lpaDoc) || FORM_NO;
+  const lpaFormCode = lpaDoc.form_code || FORM_NO.split(' ')[0];
+
   return (
     <div className="page-content" style={{ maxWidth: 'min(97vw, 1800px)' }}>
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📋 Layer Process Audit (LPA)</h2>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>แผนตรวจ + บันทึกผล + รายงาน {FORM_NO} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>แผนตรวจ + บันทึกผล + รายงาน {lpaFormNo} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส</div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <TabBtn id="audit" icon="✅" label="บันทึกผลตรวจ" />
@@ -1050,7 +1060,7 @@ ${issuesHtml}
                 (Leader {monthAudits.filter(a => a.layer === 'leader').length} · SV {monthAudits.filter(a => a.layer === 'supervisor').length} · MGR {monthAudits.filter(a => a.layer === 'manager').length} · GM {monthAudits.filter(a => a.layer === 'gm').length})
                 {issues.length > 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}> · พบปัญหา N/T {issues.length} รายการ</span>}
               </div>
-              <button onClick={printReport} disabled={printing} style={btnBlue}>{printing ? '...' : `🖨️ พิมพ์รายงาน ${FORM_NO.split(' ')[0]}`}</button>
+              <button onClick={printReport} disabled={printing} style={btnBlue}>{printing ? '...' : `🖨️ พิมพ์รายงาน ${lpaFormCode}`}</button>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', minWidth: 1100 }}>

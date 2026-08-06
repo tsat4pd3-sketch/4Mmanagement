@@ -116,6 +116,7 @@ export async function exportInspectionExcel({
   approver,
   exporter,
   categories,
+  docForm,
 }) {
   const CATEGORY_META = buildCategoryMeta(categories)
   const wb = new ExcelJS.Workbook()
@@ -405,7 +406,11 @@ export async function exportInspectionExcel({
   setVal(ws, `A${row}`, 'NG = ผิดปกติ     OK = ปกติ', { size: 7 })
 
   merge(ws, `J${row}`, `Q${row}`)
-  setVal(ws, `J${row}`, `FM-JIG-003    Rev.00 Eff.date: ${new Date(inspection.inspected_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}`, { size: 7, center: true })
+  // เลขฟอร์ม/Rev/Effective จาก Document Master กลาง (fallback ค่าเดิม)
+  const _fc = docForm?.form_code || 'FM-JIG-003'
+  const _rev = docForm?.rev || 'Rev.00'
+  const _eff = docForm?.effective_date || new Date(inspection.inspected_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })
+  setVal(ws, `J${row}`, `${_fc}    ${_rev} Eff.date: ${_eff}`, { size: 7, center: true })
 
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], {

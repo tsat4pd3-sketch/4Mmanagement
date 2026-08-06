@@ -84,6 +84,8 @@ export default function CompanyCalendar() {
       if (d.getDay() === wd) dates.push(toDateStr(d.getFullYear(), d.getMonth(), d.getDate()));
       d.setDate(d.getDate() + 1);
     }
+    // เขียนทับทั้งปีทีเดียว — ยืนยันก่อน (ต่างจากคลิกรายวันที่มี draft)
+    if (!confirm(`ตั้งค่า ${dates.length} วัน (ทุกวันในสัปดาห์ที่เลือก ทั้งปี ${year}) เป็น "${bulkType}" ?\n\nเขียนทับค่าเดิมของวันเหล่านี้ทันที`)) return;
     setLoading(true);
     const { error } = await supabase.from('company_calendar').upsert(
       dates.map(dt => ({ work_date: dt, day_type: bulkType, updated_at: new Date().toISOString() })),
@@ -181,7 +183,7 @@ export default function CompanyCalendar() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, opacity: loading ? 0.5 : 1 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 14, opacity: loading ? 0.5 : 1 }}>
         {MONTH_NAMES.map((name, m) => {
           const daysInMonth = new Date(year, m + 1, 0).getDate();
           const firstWeekday = new Date(year, m, 1).getDay();

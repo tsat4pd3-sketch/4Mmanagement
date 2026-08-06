@@ -36,7 +36,8 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
     ? df.sig_blocks : ['พนักงาน QC', 'หัวหน้าแผนก', 'ผู้จัดการ QA/QC', 'ผู้จัดการผลิต', 'ผู้จัดการทั่วไป'];
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ESM Scrap Report';
-  const ws = wb.addWorksheet('FM-PD2-002', {
+  // ชื่อชีท = เลขฟอร์มจาก Document Master กลาง (fallback ค่าเดิม)
+  const ws = wb.addWorksheet(df.form_code || 'FM-PD2-002', {
     pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } },
   });
@@ -104,7 +105,8 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
     box(ws, `H${r}`, it?.bom_ref, { size: 8, align: 'center', border: true });
     box(ws, `I${r}`, it && it.qty ? Number(it.qty) : '', { size: 8, align: 'center', border: true });
     ['J', 'K', 'L', 'M', 'N'].forEach(c => box(ws, `${c}${r}`, '', { size: 8, align: 'center', border: true }));
-    if (it && it.m_cause && M_COL[it.m_cause]) box(ws, `${M_COL[it.m_cause]}${r}`, Number(it.qty) || '', { size: 8, align: 'center', border: true });
+    // ช่อง M1-M5 = เครื่องหมายว่า "เสียเพราะสาเหตุนี้" (ติ๊กช่องเดียว) ไม่ใช่จำนวน — จำนวนอยู่คอลัมน์ Q'TY/ยืนยันแล้ว
+    if (it && it.m_cause && M_COL[it.m_cause]) box(ws, `${M_COL[it.m_cause]}${r}`, '✓', { size: 10, bold: true, align: 'center', border: true });
     box(ws, `O${r}`, it && it.confirm_qty != null ? Number(it.confirm_qty) : '', { size: 8, align: 'center', border: true });
     merge(ws, `P${r}:S${r}`); box(ws, `P${r}`, it?.defect_codes, { size: 8, align: 'center', border: true });
   }
@@ -114,10 +116,10 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
   const sumQty = items.reduce((s, x) => s + (Number(x.qty) || 0), 0);
   const sumConfirm = items.reduce((s, x) => s + (Number(x.confirm_qty) || 0), 0);
   box(ws, `I${totalRow}`, sumQty || '', { bold: true, size: 9, align: 'center', border: true });
+  // แถว TOTAL ของ M1-M5 = จำนวน "รายการ" ที่ติ๊กสาเหตุนั้น (สอดคล้องกับช่องด้านบนที่เป็นเครื่องหมาย ไม่ใช่ยอดชิ้น)
   ['J', 'K', 'L', 'M', 'N'].forEach((c, i) => {
-    const mk = `m${i + 1}`;
-    const s = items.filter(x => x.m_cause === mk).reduce((a, x) => a + (Number(x.qty) || 0), 0);
-    box(ws, `${c}${totalRow}`, s || '', { bold: true, size: 8, align: 'center', border: true });
+    const n = items.filter(x => x.m_cause === `m${i + 1}`).length;
+    box(ws, `${c}${totalRow}`, n || '', { bold: true, size: 8, align: 'center', border: true });
   });
   box(ws, `O${totalRow}`, sumConfirm || '', { bold: true, size: 9, align: 'center', border: true });
   merge(ws, `P${totalRow}:S${totalRow}`); box(ws, `P${totalRow}`, '', { border: true });

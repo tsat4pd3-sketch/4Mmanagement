@@ -200,6 +200,7 @@ export default function ShiftOrganize() {
   };
 
   const handleDeleteOverride = async (id) => {
+    if (!confirm('ยืนยันลบรายการเปลี่ยนกะรายบุคคลนี้?')) return;
     await supabase.from('shift_overrides').delete().eq('id', id);
     fetchOverrides();
   };

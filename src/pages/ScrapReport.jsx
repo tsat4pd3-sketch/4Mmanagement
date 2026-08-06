@@ -18,6 +18,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
+import { printScrapReport } from '../lib/scrapPrint';
+import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -96,6 +98,8 @@ export default function ScrapReport() {
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
   const [sapSearch, setSapSearch] = useState('');
+  const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
+  const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
 
   const loadReports = useCallback(async () => {
     if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
@@ -111,6 +115,7 @@ export default function ScrapReport() {
     // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
     supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setAllLines(data || []));
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
+    loadDocForms().then(() => setDocReady(true));
   }, []);
 
   /* ── SAP / พาร์ทย่อย picker (dr_products main + bom_items sub) ── */
@@ -118,14 +123,23 @@ export default function ScrapReport() {
     if (!sapPicker || sapOptions !== null) return;
     let alive = true;
     (async () => {
-      const [{ data: prods }, { data: boms }] = await Promise.all([
+      const [{ data: prods }, { data: boms }, { data: macs }] = await Promise.all([
         supabaseDR.from('dr_products').select('mat_no, p_no, name, code, line_name').eq('is_active', true).order('name'),
         supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id').eq('is_active', true).order('part_name'),
+        supabaseDR.from('machines').select('machine_no'),   // ไว้จับ p_no ที่กรอกเป็นหมายเลขเครื่อง (master ผิด)
       ]);
       if (!alive) return;
+      // ⚠️ dr_products.p_no บางไลน์ถูกกรอกเป็น "หมายเลขเครื่อง" (เจอจริง SUB APRON: SP-72/74/83/88)
+      //    ซึ่งไม่ใช่เลขพาร์ทลูกค้า → ใบรายงานของเสียพิมพ์ออกมาผิด · ไม่แก้ข้อมูลให้เงียบๆ แต่ทำ 2 อย่าง:
+      //    (1) ไม่เอาค่านั้นมาเป็น part_no (ปล่อยว่างให้กรอกเอง) (2) ติดธง badMaster ให้ UI เตือนไปแก้ที่ Product Master
+      const machineNos = new Set((macs || []).map(m => (m.machine_no || '').trim().toUpperCase()).filter(Boolean));
+      const isMachineNo = v => machineNos.has((v || '').trim().toUpperCase());
       const opts = [
-        ...(prods || []).map(p => ({ source: 'main', mat_no: p.mat_no || '', part_no: p.p_no || p.mat_no || '', part_name: p.name || '', line_name: p.line_name || '' })),
-        ...(boms || []).map(b => ({ source: 'sub', mat_no: b.mat_no || '', part_no: b.part_no || b.mat_no || '', part_name: b.part_name || '', line_name: '' })),
+        ...(prods || []).map(p => {
+          const bad = isMachineNo(p.p_no);
+          return { source: 'main', mat_no: p.mat_no || '', part_no: bad ? '' : (p.p_no || p.mat_no || ''), part_name: p.name || '', line_name: p.line_name || '', badMaster: bad ? p.p_no : '' };
+        }),
+        ...(boms || []).map(b => ({ source: 'sub', mat_no: b.mat_no || '', part_no: b.part_no || b.mat_no || '', part_name: b.part_name || '', line_name: '', badMaster: '' })),
       ].filter(o => o.mat_no || o.part_no || o.part_name);
       setSapOptions(opts);
     })();
@@ -209,6 +223,8 @@ export default function ScrapReport() {
     if (sapPicker.itemKey) setItem(sapPicker.itemKey, { source: o.source, mat_no: o.mat_no, part_no: o.part_no, part_name: o.part_name });
     else setEditor(e => ({ ...e, items: [...e.items, { ...EMPTY_ITEM(), source: o.source, mat_no: o.mat_no, part_no: o.part_no, part_name: o.part_name }] }));
     setSapPicker(null); setSapSearch('');
+    // master ผิด (p_no = หมายเลขเครื่อง) → part no. ว่าง บอกให้รู้ตัว ไม่ปล่อยพิมพ์ใบผิดออกไปเงียบๆ
+    if (o.badMaster) toast.error(`พาร์ทนี้ใน Product Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "${o.badMaster}" — ต้องกรอก PART NO. เอง แล้วไปแก้ที่ /products`);
   };
 
   const totals = useMemo(() => {
@@ -271,7 +287,15 @@ export default function ScrapReport() {
 
   const doExport = async (rep) => {
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
     await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
+  };
+
+  // พิมพ์/บันทึก PDF — layout เดียวกับ Excel · เลขฟอร์ม/Rev/โลโก้ จากทะเบียนเอกสาร (เซฟ PDF จาก dialog พิมพ์)
+  const doPrint = async (rep) => {
+    const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    const ok = await printScrapReport({ report: rep, items: items || [] });
+    if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้แล้วลองใหม่');
   };
 
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
@@ -281,7 +305,7 @@ export default function ScrapReport() {
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          FM-PD2-002 Rev.06 — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
+          {scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
         </div>
       </div>
 
@@ -310,9 +334,10 @@ export default function ScrapReport() {
                 <td style={tdSt}><ScrapSum reportId={rep.id} /></td>
                 <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: STATUS_META[rep.status]?.color, background: `${STATUS_META[rep.status]?.color}1f`, border: `1px solid ${STATUS_META[rep.status]?.color}55` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                  <button style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doExport(rep)}>⬇ Excel</button>
-                  {canRecord && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
-                  {canDel && <button style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
+                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>🖨️ PDF</button>
+                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>⬇ Excel</button>
+                  {canRecord && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
+                  {canDel && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
                 </td>
               </tr>
             ))}
@@ -453,6 +478,7 @@ export default function ScrapReport() {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.mat_no || o.part_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_name}</span></div>
                   {o.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.line_name}</div>}
+                  {o.badMaster && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>⚠ Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "{o.badMaster}" — ต้องกรอก PART NO. เอง</div>}
                 </div>
               </button>
             ))}

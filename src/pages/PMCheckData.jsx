@@ -5,15 +5,16 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
-import { getOrCreateChecklist } from '../lib/pmChecklists'
+import { findChecklist } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
 import { exportInspectionPDF, resolveSignatureDataUrl } from '../lib/pmExportPDF'
+import { getDocForm } from '../utils/docForms'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
-import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind } from '../utils/pmTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -442,8 +443,10 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.email ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
+    // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
+    const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
     await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id)
-    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories }
+    return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
   }
 
   const handleExport = async (kind) => {
@@ -666,9 +669,14 @@ export default function PMCheckData() {
       if (!fr.length && selectedJig.image_path) fr = [{ id: 'legacy', url: getPublicUrl(selectedJig.image_path) }]
       setFrames(fr)
     })
-    getOrCreateChecklist(selectedJig.id, 'mtn', department, userId).then(async (cl) => {
-      setChecklistId(cl.id)
-      const { data } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+    // ⚠️ อ่านอย่างเดียว — แค่เปิดดูเครื่องต้องไม่สร้าง checklist ของแผนกที่กำลังดูอยู่
+    //    (เดิมใช้ getOrCreateChecklist ตรงนี้ → เกิด checklist เปล่าค้างในแท็บแผนกนั้นตลอดไป)
+    //    ไม่มี checklist = ไม่มีจุดตรวจ → handleSave กันไว้แล้ว (checkpoints.length === 0 = บันทึกไม่ได้)
+    findChecklist(selectedJig.id, 'mtn', department).then(async (cl) => {
+      setChecklistId(cl?.id ?? null)
+      const { data } = cl
+        ? await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+        : { data: [] }
       const cps = data ?? []
       setCheckpoints(cps)
       const init = {}
@@ -768,7 +776,7 @@ export default function PMCheckData() {
       : cp.type === 'measure' ? (r.mval !== '' && r.mval != null) : r.attr !== ''
   })
 
-  const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
+  const deptColor = teams.find(t => t.key === department)?.color || DEPT_COLORS[department] || '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
   // กรองอุปกรณ์ตามทีม — ยึด "department (checklist)" เป็นหลัก (คำสั่ง user 2026-07-22):
   //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
@@ -793,6 +801,10 @@ export default function PMCheckData() {
         <div style={S.deptBar}>
           {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
         </div>
+        {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) เป็นคนละงาน — บอกให้ชัดว่าแท็บที่เลือกอยู่คืออะไร */}
+        <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
+          <b style={{ color: deptColor }}>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
+        </div>
         <div style={S.jigList}>
           {department === 'production' ? (() => {
             // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
@@ -808,12 +820,32 @@ export default function PMCheckData() {
               })
             })
             const lineNames = Object.keys(byLine).sort()
-            if (!lineNames.length) return (
-              <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
-                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน Daily PM'}<br />
-                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่หน้า Daily PM →</Link>
-              </p>
+            // ⚠️ ช่องว่างที่เคยทำให้ 2 หน้าไม่ตรงกัน: PM Setup ลิสต์เครื่องที่ "มีรายการตรวจ AM" (มี checklist
+            //    department=production) แต่หน้านี้ลิสต์เฉพาะเครื่องที่ "ลงทะเบียน AM" (pm_daily_line_targets)
+            //    → เครื่องที่ลงจุดตรวจไว้แล้วแต่ยังไม่ลงทะเบียน หายไปเงียบๆ (เจอจริง 21 จาก 27 เครื่อง)
+            //    ไม่เดาลงทะเบียนให้เอง (เป็นการตัดสินใจว่าไลน์ไหนต้องตรวจอะไร) แต่ต้องไม่ซ่อน
+            const pendingReg = jigs.filter(j => clDeptByJig[j.id]?.has('production') && !dailyLineByJig[j.id])
+            const pendingBlock = pendingReg.length > 0 && (
+              <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, border: '1px dashed #f59e0b55', background: 'rgba(245,158,11,0.08)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b' }}>⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน · {pendingReg.length} เครื่อง</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 6px', lineHeight: 1.5 }}>
+                  ลงจุดตรวจไว้ที่ PM Setup แล้ว แต่ยังไม่ถูกติ๊กว่า “ต้องตรวจทุกต้นกะ” จึงยังไม่ขึ้นให้ตรวจที่นี่
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto' }}>
+                  {pendingReg.map(j => <div key={j.id}>· {j.machine_no || j.name}{j.line_name ? ` (${j.line_name})` : ''}</div>)}
+                </div>
+                <Link to="/daily-checker?tab=pm" style={{ display: 'inline-block', marginTop: 6, fontSize: 11.5, color: '#f59e0b', fontWeight: 800 }}>
+                  ไปลงทะเบียนที่แท็บ AM →
+                </Link>
+              </div>
             )
+            if (!lineNames.length) return (<>
+              <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
+                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
+                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่แท็บ AM →</Link>
+              </p>
+              {pendingBlock}
+            </>)
             return (<>
               {lineParam && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
@@ -838,11 +870,16 @@ export default function PMCheckData() {
                           </span>
                         </div>
                         {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
+                        {/* ลงทะเบียนไว้แต่ยังไม่มีจุดตรวจ AM — เปิดเข้าไปจะเจอฟอร์มเปล่า บอกไว้ตั้งแต่ในลิสต์ */}
+                        {!clDeptByJig[jig.id]?.has('production') && (
+                          <p style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 700, margin: '2px 0 0' }}>⚠ ยังไม่มีจุดตรวจ AM</p>
+                        )}
                       </div>
                     )
                   })}
                 </div>
               ))}
+              {pendingBlock}
             </>)
           })() : (<>
             {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>}
@@ -893,7 +930,14 @@ export default function PMCheckData() {
                 const formNode = (
                   <>
                   {checkpoints.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีจุดตรวจสอบ — ไปตั้งค่าที่ PM Setup ก่อน</p>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 12px', lineHeight: 1.7 }}>
+                      เครื่องนี้ยังไม่มีรายการตรวจของ <b style={{ color: deptColor }}>{(teams.find(t => t.key === department) || {}).label || department}</b>
+                      <br />
+                      <span style={{ fontSize: 12 }}>
+                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — ไปตั้งจุดตรวจของแผนกนี้ที่ PM Setup
+                        <br />ถ้าลงจุดตรวจไว้แล้วแต่ไม่เห็น ให้ดูว่าลงไว้ใต้แผนกอื่นหรือไม่ (ใน PM Setup ย้ายข้ามแผนกได้)
+                      </span>
+                    </div>
                   ) : (
                     <>
                       {(() => {
@@ -944,7 +988,7 @@ export default function PMCheckData() {
                 )
 
                 return twoCol ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(360px, 100%), 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
                     <div style={{ position: 'sticky', top: 0 }}>{viewerNode}</div>
                     <div>{formNode}</div>
                   </div>

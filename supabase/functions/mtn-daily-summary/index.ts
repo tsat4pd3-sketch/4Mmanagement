@@ -35,7 +35,7 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
       const chat = String(c.chat_id).trim();
       chatById.set(String(c.id), chat);
       const team = (c as { team?: string | null }).team;
-      if (team) (teamChats[String(team).trim()] ||= []).push(chat);
+      if (team) (teamChats[teamKey(team)] ||= []).push(chat);
     }
     const map: Record<string, Route> = {};
     for (const r of rules ?? []) {
@@ -68,6 +68,15 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team) กับ key (checklists.department)
+// mtn_teams = single source โยง 2 ฝั่ง — normalize เป็น key ก่อนจับคู่ห้องทีม กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึง
+const TEAM_KEY: Record<string, string> = {
+  'mtn': 'maintenance', 'maintenance': 'maintenance',
+  'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
+  'die mtn': 'die_maintenance', 'die_maintenance': 'die_maintenance',
+  'production': 'production',
+};
+const teamKey = (v?: string | null): string => { const s = String(v || '').toLowerCase().trim(); return TEAM_KEY[s] || s; };
 
 // ใบยังไม่ปิดค้างที่สถานะไหน → รอทำอะไรต่อ (แสดงเป็นกลุ่มในสรุป)
 const WAIT_LABEL: Record<string, string> = {
@@ -147,7 +156,7 @@ Deno.serve(async (req) => {
 
     // แยกรายทีม → ห้องของทีม (ถ้ามีห้องแท็กทีมไว้)
     for (const d of depts) {
-      const room = teamChats[d];
+      const room = teamChats[teamKey(d)];
       if (!room || !room.length) continue;
       const msg = `🌅 <b>งานซ่อมค้างของทีม ${d}</b>\nค้าง <b>${byDept[d].length}</b> ใบ\n\n${buildTeamBlock(byDept[d])}`;
       await sendTelegram(msg, room);

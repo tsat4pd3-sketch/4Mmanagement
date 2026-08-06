@@ -3,13 +3,14 @@ import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase, setDrActorName } from './supabaseClient';
-import { ToastContainer } from './components/Toast';
+import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
-import { loadPermissions, canAccessPage } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
+import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -19,17 +20,23 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
+const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
+const QrLabels     = lazy(() => import('./pages/QrLabels'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
 const RundownStock   = lazy(() => import('./pages/RundownStock'));
+const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
+const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
+const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
+const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -76,6 +83,8 @@ const NAV_ITEMS = [
   // · วิเคราะห์ & รายงาน · พนักงาน & ทักษะ (ใหม่ — รวมเรื่องคนที่เคยกระจาย 3 หมวด)
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
+  // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
+  { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -83,6 +92,7 @@ const NAV_ITEMS = [
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/order-trace', icon: '🔎', label: 'สอบกลับ Order (Trace)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
@@ -93,6 +103,8 @@ const NAV_ITEMS = [
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
   { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
   { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
+  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - Store' },
+  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - Store' },
 
   { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -115,8 +127,10 @@ const NAV_ITEMS = [
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/linesetup',  icon: '⚙️',  label: 'ตั้งค่าผังไลน์',   group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -509,10 +523,49 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   );
 }
 
+/* ─── เสียงแจ้งเตือน (Web Audio — ไม่ต้องมีไฟล์เสียง) ───────────
+   เล่นตอนมี notification ใหม่เข้ามาแบบ realtime · เบราว์เซอร์บล็อกเสียงจนกว่าจะมี
+   user gesture → prime AudioContext ตอนแตะจอ/คลิกครั้งแรก · ปิดเสียงได้ (localStorage) */
+let _notifAudioCtx = null;
+function primeNotifAudio() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifAudioCtx) _notifAudioCtx = new AC();
+    if (_notifAudioCtx.state === 'suspended') _notifAudioCtx.resume().catch(() => {});
+  } catch { /* ไม่รองรับ — ข้าม */ }
+}
+function playNotifChime() {
+  if (localStorage.getItem('esm-notif-sound') === 'off') return;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!_notifAudioCtx) _notifAudioCtx = new AC();
+    const ctx = _notifAudioCtx;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    // จังหวะ 2 โน้ต A5 → D6 (ding-dong เบาๆ)
+    [{ f: 880, t: 0 }, { f: 1174.66, t: 0.12 }].forEach(({ f, t }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      const s = now + t;
+      gain.gain.setValueAtTime(0, s);
+      gain.gain.linearRampToValueAtTime(0.18, s + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, s + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(s);
+      osc.stop(s + 0.4);
+    });
+  } catch { /* เสียงถูกบล็อก — เงียบ ไม่ให้พังหน้า */ }
+}
+
 /* ─── Notification Bell ─────────────────────────────────────── */
 function NotificationBell({ userId }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
+  const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
 
   const load = useCallback(async () => {
@@ -526,15 +579,53 @@ function NotificationBell({ userId }) {
     setNotifs(data || []);
   }, [userId]);
 
+  // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
+  useEffect(() => {
+    const prime = () => primeNotifAudio();
+    window.addEventListener('pointerdown', prime, { once: true });
+    window.addEventListener('keydown', prime, { once: true });
+    return () => { window.removeEventListener('pointerdown', prime); window.removeEventListener('keydown', prime); };
+  }, []);
+
   useEffect(() => {
     load();
     if (!userId) return;
     const ch = supabase
       .channel(`notif-${userId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => load())
+      // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [userId, load]);
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    localStorage.setItem('esm-notif-sound', next ? 'off' : 'on');
+    if (!next) { primeNotifAudio(); playNotifChime(); } // เปิดเสียง = เล่นตัวอย่างให้ฟัง
+  };
+
+  // ── Web Push (เด้งเข้ามือถือแม้ปิดแอป) ──
+  const [pushState, setPushState] = useState('default'); // default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  const [pushBusy,  setPushBusy]  = useState(false);
+  const refreshPush = useCallback(() => { getPushState().then(setPushState).catch(() => {}); }, []);
+  useEffect(() => { refreshPush(); }, [refreshPush]);
+
+  const enablePush = async () => {
+    setPushBusy(true);
+    try {
+      const ok = await subscribePush(userId);
+      if (!ok && Notification.permission === 'denied') toast.error('เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์');
+      else if (ok) toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲');
+    } catch (e) { toast.error(e.message || 'เปิดไม่สำเร็จ'); }
+    finally { setPushBusy(false); refreshPush(); }
+  };
+  const disablePush = async () => {
+    setPushBusy(true);
+    await unsubscribePush();
+    setPushBusy(false); refreshPush();
+    toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -606,14 +697,45 @@ function NotificationBell({ userId }) {
           overflow: 'hidden',
           maxHeight: '70vh', display: 'flex', flexDirection: 'column',
         }}>
-          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 700, fontSize: 13 }}>🔔 แจ้งเตือน</span>
-            {unread > 0 && (
-              <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                อ่านทั้งหมด
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button onClick={toggleMute} title={muted ? 'เปิดเสียงแจ้งเตือน' : 'ปิดเสียงแจ้งเตือน'}
+                style={{ fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, opacity: muted ? 0.5 : 1 }}>
+                {muted ? '🔕' : '🔔'}
               </button>
-            )}
+              {unread > 0 && (
+                <button onClick={markAllRead} style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  อ่านทั้งหมด
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* ── Web Push: เปิดแจ้งเตือนเข้ามือถือ (เด้งแม้ปิดแอป) ── */}
+          {pushState !== 'unsupported' && (
+            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', background: 'var(--bg2)' }}>
+              {pushState === 'subscribed' ? (
+                <>
+                  <span style={{ color: 'var(--accent)', fontWeight: 600 }}>📲 เปิดแจ้งเตือนเข้ามือถือแล้ว</span>
+                  <button onClick={disablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                </>
+              ) : pushState === 'denied' ? (
+                <span style={{ color: 'var(--accent2)' }}>🔕 เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ก่อน</span>
+              ) : pushState === 'ios-need-install' ? (
+                <span style={{ color: 'var(--muted)' }}>📲 iPhone: กด “แชร์ → เพิ่มไปยังหน้าจอโฮม” แล้วเปิดจากไอคอนก่อน จึงเปิดแจ้งเตือนได้</span>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--text2)' }}>📲 เด้งแจ้งเตือนเข้ามือถือแม้ปิดแอป</span>
+                  <button onClick={enablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {notifs.length === 0 ? (
@@ -861,7 +983,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -878,14 +1000,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  if (!session) return <Navigate to="/login" replace />;
-
   const handleLogout = async () => {
     // scope 'local' = ออกเฉพาะ browser นี้ (ทุกแท็บของเครื่องนี้ผ่าน localStorage event)
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
     // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
     setDrActorName(null);
+    setDeptAdmin(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -908,6 +1029,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     });
   }, []);
 
+  // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
+  // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
+  if (!session) return <Navigate to="/login" replace />;
+
   // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
   // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
   const marginLeft = (!isMobile && isOpen) ? 'var(--sidebar-w)' : 0;
@@ -916,7 +1041,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
@@ -927,7 +1052,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, sidebarOpen: isOpen }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -975,6 +1100,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
               } />
+              <Route path="/group-overview" element={
+                <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
+              } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
               } />
@@ -999,6 +1127,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/linesetup"  element={
                 <RoleRoute path="/linesetup" userRole={role}><LineSetup /></RoleRoute>
               } />
+              <Route path="/process-setup" element={
+                <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
+              } />
+              <Route path="/qr-labels" element={
+                <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>
+              } />
               <Route path="/machine-database" element={
                 <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
               } />
@@ -1022,6 +1156,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/oee-analytics" element={
                 <RoleRoute path="/oee-analytics" userRole={role}><OEEAnalytics /></RoleRoute>
+              } />
+              <Route path="/order-trace" element={
+                <RoleRoute path="/order-trace" userRole={role}><OrderTrace /></RoleRoute>
               } />
               <Route path="/product-history" element={
                 <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
@@ -1086,6 +1223,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/rundown-stock" element={
                 <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
               } />
+              <Route path="/store-monitor" element={
+                <RoleRoute path="/store-monitor" userRole={role}><StoreMonitor /></RoleRoute>
+              } />
+              <Route path="/transport" element={
+                <RoleRoute path="/transport" userRole={role}><Transport /></RoleRoute>
+              } />
               <Route path="/rack-center" element={
                 <RoleRoute path="/rack-center" userRole={role}><RackCenter /></RoleRoute>
               } />
@@ -1137,6 +1280,7 @@ export default function App() {
   const [userSignatureUrl, setUserSignatureUrl] = useState(null);
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
   const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
+  const [userIsDeptAdmin,  setUserIsDeptAdmin]  = useState(false); // แอดมินหน่วยงาน (profiles.is_dept_admin — 2026-08-03) ซ้อนบน role เดิม
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -1162,7 +1306,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url').eq('id', user.id).single();
+    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin').eq('id', user.id).single();
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1196,6 +1340,12 @@ export default function App() {
     supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
       .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
       .catch(() => setUserAvatarUrl(null));
+    // is_dept_admin อยู่ใน select หลักแล้ว (migration 20260803 apply แล้ว — ยืนยันคอลัมน์มีจริงใน prod)
+    // ตั้ง sync ก่อน render แรก — เดิมแยก query async แล้วมี race: หน้า render ก่อน flag มา ปุ่มแก้ไขไม่โผล่
+    {
+      const v = data?.is_dept_admin === true;
+      setUserIsDeptAdmin(v); setDeptAdmin(v);
+    }
     setProfileLoaded(true);
   };
 
@@ -1271,6 +1421,7 @@ export default function App() {
                 userSection={userSection}
                 userSections={userSections}
                 userMtnTeams={userMtnTeams}
+                userIsDeptAdmin={userIsDeptAdmin}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
+import { addMinutes, timeStrToMs, dayFrameMs, roundDeliveryMin, getRoundStatus } from '../utils/deliveryRounds';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -39,54 +41,9 @@ function matColor(mat_no = '') {
   return m ? m.color : 'var(--muted)';
 }
 
-/* ─── helpers ───────────────────────────────────────────────────────────── */
-function addMinutes(timeStr, mins) {
-  if (!timeStr) return '—';
-  const [h, m] = timeStr.slice(0, 5).split(':').map(Number);
-  const total = h * 60 + m + (mins || 0);
-  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-/* แปลงเวลา "HH:MM" ของ workDate ให้เป็น ms จริง — ห่อข้ามเที่ยงคืนเข้ากรอบ 08:00→08:00 ของวันนั้น */
-function timeStrToMs(workDate, t) {
-  if (!t) return null;
-  const gridStartMs = new Date(`${workDate}T08:00:00`).getTime();
-  const [h, m] = t.slice(0, 5).split(':').map(Number);
-  let ms = gridStartMs + h * 3600000 + m * 60000;
-  if (h < 8) ms += 24 * 3600000;
-  return ms;
-}
-/* กรอบวันงาน 08:00 → 08:00 ของวันถัดไป (ms) */
-function dayFrameMs(workDate) {
-  const startMs = new Date(`${workDate}T08:00:00`).getTime();
-  return { startMs, endMs: startMs + 24 * 3600000 };
-}
-/* ระยะเวลาส่งของรอบ (นาที) = จำนวนจุด × นาที/จุด */
-const roundDeliveryMin = (r) => (r.points_count || 1) * (r.time_per_point_min || 10);
-const ST_WAIT     = { label: '⬜ รอ', color: 'var(--muted)', bg: 'var(--bg2)', border: 'var(--border)', top: 'var(--border2)' };
-const ST_OVERDUE  = { label: '🔴 ค้างส่ง', color: '#ef4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.3)', top: '#ef4444' };
-const ST_PREPARE  = { label: '⏳ กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.08)', border: 'rgba(14,165,233,0.3)', top: '#0ea5e9' };
-/* สถานะรอบจัดส่ง — เทียบเวลาจริงบนกรอบ 08:00→08:00 ของ workDate จึงไม่เพี้ยนตอนรอบข้ามเที่ยงคืน
-   วันย้อนหลัง: รอบที่ยังไม่ยืนยัน = ค้างส่ง · วันล่วงหน้า: ทุกรอบ = รอ */
-function getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs) {
-  const key = `${r.line_name}|${r.shift}|${r.round_no}`;
-  if (confirmedSet.has(key)) {
-    const recv = receivedMap?.[key];
-    if (recv?.received_status === 'full')
-      return { label: '✔️ รับครบแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', top: '#22c55e' };
-    if (recv?.received_status === 'partial')
-      return { label: '⚠️ รับไม่ครบ', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', top: '#f59e0b' };
-    return { label: '📦 ส่งแล้ว · รอรับ', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', top: '#0ea5e9' };
-  }
-  const { startMs, endMs } = dayFrameMs(workDate);
-  if (nowMs < startMs) return ST_WAIT;      // วันงานยังไม่เริ่ม
-  if (nowMs >= endMs)  return ST_OVERDUE;   // วันงานจบไปแล้วแต่ไม่มีการยืนยันส่ง
-  const cutoffMs   = timeStrToMs(workDate, r.cutoff_time);
-  const deliveryMs = timeStrToMs(workDate, r.delivery_time);
-  const finishMs   = deliveryMs == null ? null : deliveryMs + roundDeliveryMin(r) * 60000;
-  if (finishMs != null && nowMs >= finishMs) return ST_OVERDUE;
-  if (cutoffMs != null && deliveryMs != null && nowMs >= cutoffMs && nowMs < deliveryMs) return ST_PREPARE;
-  return ST_WAIT;
-}
+/* ─── helpers ───────────────────────────────────────────────────────────────
+   addMinutes/timeStrToMs/dayFrameMs/roundDeliveryMin/getRoundStatus ย้ายไป
+   src/utils/deliveryRounds.js (single source of truth — เดิมซ้ำกับ LineStock) */
 
 /* ─── Store Board View ───────────────────────────────────────────────────── */
 function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs, canOperate }) {
@@ -493,7 +450,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
 }
 
 /* ─── Delivery Rounds Panel (compact, for cards/table views) ─────────────── */
-function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, roundAlloc, workDate, nowMs, canOperate }) {
+function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onReceive, roundAlloc, workDate, nowMs, canOperate, tripsFor }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const confirmedSet = useMemo(() => {
@@ -526,7 +483,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
         <span style={{ color: 'var(--muted)', fontSize: 14 }}>{collapsed ? '▶' : '▼'}</span>
       </div>
       {!collapsed && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 12 }}>
           {Object.keys(byLine).sort().map(lineName => (
             <div key={lineName} style={{ background: 'var(--bg2)', borderRadius: 8, padding: 12, border: '1px solid var(--border2)' }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
@@ -550,6 +507,16 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         ตัดยอด {r.cutoff_time?.slice(0,5) || '—'} → ส่ง {r.delivery_time?.slice(0,5) || '—'} · 🎴 {alloc.totalKanban} การ์ด
                       </div>
+                      {(() => {
+                        const tp = tripsFor?.(r.id, alloc.totalKanban);
+                        if (!tp) return null;
+                        return (
+                          <div style={{ fontSize: 11, marginTop: 2, color: tp.trips > 1 ? '#f59e0b' : 'var(--muted)', fontWeight: tp.trips > 1 ? 700 : 400 }}
+                            title={tp.assigned ? 'คิดจากรถของคนขับที่มอบหมายรอบนี้ (หน้า มอบหมายขนส่ง)' : 'ยังไม่มอบหมายคนขับ — คิดจากรถที่จุมากสุด'}>
+                            {tp.veh.icon} {alloc.totalKanban} กล่อง ÷ จุ {tp.cap} = <b>{tp.trips} เที่ยว</b>{tp.assigned ? '' : ' (ยังไม่มอบหมายรถ)'}
+                          </div>
+                        );
+                      })()}
                       {confirmedBy && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
                       {canOperate && !isConf && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
@@ -838,7 +805,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
           return (
             <div key={lineName} style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: '#3b82f6', marginBottom: 8 }}>🏭 {lineName} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· คิว {queue.length}</span></div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 12 }}>
                 {lineLots.map(lot => {
                   const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
                   const raws = rawByLot[lot.id] || [];
@@ -975,7 +942,7 @@ const RACK_STATUS = {
   received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
 };
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceRack, onIssuePkg, onAdvanceWip, onAdvancePurchase, fmt, workDate, nowMs, canOperate }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState('');   // '' | '300' | '500'
@@ -1009,7 +976,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'fg' && (
         rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรอบจัดส่ง</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {rounds.map(r => {
             const key = `${r.line_name}|${r.shift}|${r.round_no}`;
             const status = getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs);
@@ -1032,7 +999,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'child' && (
         lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {lotRequests.map(lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
@@ -1057,7 +1024,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             ))}
           </div>
           {filteredPurchases.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรายการจัดซื้อ — เกิดอัตโนมัติเมื่อของซื้อ (300/500) ในสโตร์ไม่พอต่อแผนผลิต</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
               {filteredPurchases.map(pr => {
                 const st = PURCHASE_STATUS[pr.status] || PURCHASE_STATUS.pending;
                 return (
@@ -1075,7 +1042,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'raw' && (
         rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {rawRequests.map(r => {
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
@@ -1093,16 +1060,22 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'rack' && (
         <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>👁️ แสดงคิวภาชนะ/Packaging แบบอ่านอย่างเดียว — เลื่อนสถานะ/จ่ายที่หน้า Rack Center (เจ้าของเดียว กันแข่งกันเขียน)</span>
+            <Link to="/rack-center" style={{ fontSize: 12, fontWeight: 800, color: '#0ea5e9', textDecoration: 'none', padding: '5px 12px', borderRadius: 8, border: '1px solid rgba(14,165,233,0.4)', background: 'rgba(14,165,233,0.08)', whiteSpace: 'nowrap' }}>
+              🗃️ จัดการที่ Rack Center →
+            </Link>
+          </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>🗃️ ภาชนะ (แร็ค/ถาด)</div>
           {rackRequests.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีการเรียกภาชนะ</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
               {rackRequests.map(r => {
                 const st = RACK_STATUS[r.status] || RACK_STATUS.requested;
                 return (
                   <QueueCard key={r.id} code={r.container_name || 'ภาชนะ'} name={null}
                     qty={r.qty} unit="ใบ" destination={r.line_name}
                     statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                    actionLabel={canOperate ? st.next : null} busy={busy === r.id} onAction={() => onAdvanceRack(r)}
+                    actionLabel={null} busy={busy === r.id}
                     meta={r.note || ''} />
                 );
               })}
@@ -1110,7 +1083,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           )}
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>📦 Packaging (จากการผลิต)</div>
           {pkgRequests.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิก packaging</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
               {pkgRequests.map(p => {
                 const issued = p.status === 'issued';
                 return (
@@ -1118,7 +1091,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                     qty={p.qty} unit="" destination={p.source_line || '—'}
                     statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
                     statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
-                    actionLabel={issued || !canOperate ? null : 'จ่าย Packaging'} busy={busy === p.id} onAction={() => onIssuePkg(p)}
+                    actionLabel={null} busy={busy === p.id}
                     meta={[p.product_name, p.source_prod_no ? `FG ${p.source_prod_no}` : ''].filter(Boolean).join(' · ')} />
                 );
               })}
@@ -1129,7 +1102,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'wip' && (
         wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีคำขอเติมจุด WIP — เกิดจากกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {wipRequests.map(w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
@@ -1162,6 +1135,7 @@ export default function HeijunkaKanban() {
   const [lineStock, setLineStock] = useState({});
   const [rounds, setRounds]       = useState([]);
   const [deliveries, setDeliveries] = useState([]);
+  const [transport, setTransport] = useState({ assigns: [], carriers: [], vehicles: [] }); // มอบหมายคนขับ+ความจุรถ (คำนวณเที่ยว)
   const [confirming, setConfirming] = useState(null);
   const [receiveModal, setReceiveModal] = useState(null); // { round, parts, mode }
   const [receiving, setReceiving] = useState(false);
@@ -1314,33 +1288,9 @@ export default function HeijunkaKanban() {
     setPullBusy(null);
   };
 
-  const advanceRack = async (r) => {
-    const next = { requested: 'preparing', preparing: 'delivered', delivered: 'received' }[r.status];
-    if (!next) return;
-    setPullBusy(r.id);
-    try {
-      const payload = { status: next };
-      if (next === 'preparing') { payload.prepared_by = fullName; payload.prepared_at = new Date().toISOString(); }
-      if (next === 'delivered') { payload.delivered_by = fullName; payload.delivered_at = new Date().toISOString(); }
-      if (next === 'received')  { payload.received_by  = fullName; payload.received_at  = new Date().toISOString(); }
-      const { error } = await supabaseDR.from('rack_requests').update(payload).eq('id', r.id);
-      if (error) throw error;
-      toast.success(`อัปเดตภาชนะ → ${next}`);
-      await loadPull();
-    } catch (err) { toast.error(err.message); }
-    setPullBusy(null);
-  };
-
-  const issuePkg = async (p) => {
-    setPullBusy(p.id);
-    try {
-      const { error } = await supabaseDR.from('packaging_withdrawal_requests').update({ status: 'issued' }).eq('id', p.id);
-      if (error) throw error;
-      toast.success(`จ่าย packaging ${p.packaging_code} แล้ว`);
-      await loadPull();
-    } catch (err) { toast.error(err.message); }
-    setPullBusy(null);
-  };
+  // rack_requests + packaging_withdrawal_requests: เลื่อนสถานะ/จ่าย = ทำที่หน้า Rack Center เท่านั้น
+  // (เดิม advanceRack/issuePkg ซ้ำที่นี่ด้วย → แข่งกันเขียน + พฤติกรรมต่าง · ยุบให้ RackCenter เป็นเจ้าของเดียว 2026-07-21)
+  // บอร์ดนี้แสดงคิว rack/packaging แบบอ่านอย่างเดียว + ลิงก์ไป /rack-center
 
   // เติมจุด WIP: pending → preparing → delivered — พอ delivered ค่อยบวก current_qty กลับที่จุดจริง (main supabase)
   const advanceWip = async (w) => {
@@ -1449,13 +1399,33 @@ export default function HeijunkaKanban() {
   useEffect(() => { load(); }, [load]);
 
   const loadDeliveries = useCallback(async () => {
-    const [{ data: rds }, { data: dlvs }] = await Promise.all([
+    const [{ data: rds }, { data: dlvs }, { data: asg }, { data: car }, { data: veh }] = await Promise.all([
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('round_no'),
       supabaseDR.from('kanban_deliveries').select('*').eq('work_date', workDate),
+      // ฝั่ง Transport (มอบหมายคนขับ + ความจุรถ) — ใช้คำนวณ load กี่เที่ยวต่อรอบ (best-effort)
+      supabaseDR.from('transport_round_assignments').select('round_id, carrier_id').eq('work_date', workDate),
+      supabaseDR.from('transport_carriers').select('id, vehicles').eq('is_active', true),
+      supabaseDR.from('transport_vehicles').select('*').eq('is_active', true).order('sort_order'),
     ]);
     setRounds(rds || []);
     setDeliveries(dlvs || []);
+    setTransport({ assigns: asg || [], carriers: car || [], vehicles: veh || [] });
   }, [workDate]);
+
+  // load รอบส่ง: การ์ด kanban N ใบ (1 การ์ด = 1 กล่อง/packaging) ÷ ความจุรถ = กี่เที่ยว
+  // รถที่ใช้คิด: รอบที่มอบหมายคนขับแล้ว (หน้า /transport) = รถของคนขับคนนั้น · ยังไม่มอบหมาย = รถที่จุมากสุดในระบบ
+  // ยังไม่ตั้งความจุรถเลย (migration 20260803 / ช่อง "จุ กล่อง/เที่ยว" ใน /transport) = ไม่แสดง
+  const tripsFor = useCallback((roundId, cards) => {
+    if (!cards || !transport.vehicles.length) return null;
+    const asg = transport.assigns.find(a => a.round_id === roundId);
+    const carrier = asg?.carrier_id ? transport.carriers.find(c => c.id === asg.carrier_id) : null;
+    const codes = carrier?.vehicles?.length ? carrier.vehicles : transport.vehicles.map(v => v.code);
+    const cand = codes.map(c => transport.vehicles.find(v => v.code === c)).filter(v => v && Number(v.capacity_pkg) > 0);
+    if (!cand.length) return null;
+    const veh = cand.reduce((b, v) => (Number(v.capacity_pkg) > Number(b.capacity_pkg) ? v : b), cand[0]);
+    const cap = Number(veh.capacity_pkg);
+    return { trips: Math.ceil(cards / cap), veh, cap, assigned: !!carrier };
+  }, [transport]);
 
   useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
   useEffect(() => { loadPull(); }, [loadPull]);
@@ -1840,7 +1810,7 @@ export default function HeijunkaKanban() {
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests}
-            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceRack={advanceRack} onIssuePkg={issuePkg} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
+            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
           />
         ) : viewMode === 'board' ? (
@@ -1930,7 +1900,7 @@ export default function HeijunkaKanban() {
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
       {viewMode !== 'board' && viewMode !== 'pull' && viewMode !== 'unified' && (
         <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
-          onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} canOperate={canOperate} />
+          onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} canOperate={canOperate} tripsFor={tripsFor} />
       )}
 
       {receiveModal && (

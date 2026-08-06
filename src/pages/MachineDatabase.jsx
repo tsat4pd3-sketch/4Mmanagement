@@ -6,6 +6,7 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
+import EmojiPicker from '../components/EmojiPicker';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -32,11 +33,14 @@ const cancelBtnStyle = {
 
 const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', automation_level: '', operation_mode: '', gang_count: '' };
 // หมวดอุปกรณ์ในฐานเครื่องจักร — Facility/Utility ไม่ผูกไลน์ผลิต (ระบบน้ำ/ลม/High Pressure ฯลฯ)
+// รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
+// ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
 const EQUIP_CATS = [
   { v: 'production', t: '🏭 ไลน์ผลิต' },
-  { v: 'facility',   t: '🔧 Facility' },
-  { v: 'utility',    t: '⚡ Utility' },
+  { v: 'facility',   t: '🔧 Facility / Utility' },
 ];
+// utility เดิม (ก่อน apply migration รวมหมวด) → นับเป็น facility ทุกที่ · ค่าว่าง = production
+const normCat = (c) => (c === 'utility' ? 'facility' : (c || 'production'));
 const emptyType    = { id: null, label: '', color: '#4d9fff', icon: '', sort_order: 0, is_active: true };
 const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#6b7280'];
 
@@ -55,9 +59,19 @@ export default function MachineDatabase() {
   const [loading, setLoading]       = useState(true);
 
   const [search, setSearch]         = useState('');
+  const [filterCat, setFilterCat]   = useState('');   // '' = ทุกหมวด | production | facility | utility
   const [filterLine, setFilterLine] = useState('');
   const [filterType, setFilterType] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  // §139 ย่อ/ขยายกลุ่มไลน์ — จำ override ของ user ใน localStorage (default = กาง)
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('md_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const toggleGroup = (name) => setCollapsedGroups(prev => {
+    const next = new Set(prev); next.has(name) ? next.delete(name) : next.add(name);
+    try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    return next;
+  });
 
   const [editing, setEditing]       = useState(null); // machine form object, or null
   const [saving, setSaving]         = useState(false);
@@ -123,17 +137,27 @@ export default function MachineDatabase() {
     return pcm;
   }, [scopedLines]);
 
+  // ตัวเลือก dropdown "ไลน์/ระบบ" ปรับตามหมวด — production(หรือทุกหมวด) = ไลน์ผลิต · facility = ชื่อระบบ/พื้นที่ (line_name ของเครื่องหมวดนั้น ที่ไม่มีใน production_lines)
+  // normCat: utility เดิม (ก่อน apply migration รวมหมวด) นับเป็น facility เพื่อให้กรองเจอ
+  const catLineNames = useMemo(() => {
+    if (filterCat !== 'facility') return null; // ใช้ dropdown ไลน์ผลิตเดิม
+    const set = new Set();
+    machines.forEach(m => { if (normCat(m.equipment_category) === filterCat && m.line_name) set.add(m.line_name); });
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [machines, filterCat]);
+
   const filtered = useMemo(() => {
     // เลือกไลน์หลัก (parent) = เห็นเครื่องของไลน์ย่อยทั้งกลุ่มด้วย (ไม่งั้นได้ 0 เพราะเครื่องอยู่ที่ไลน์ย่อย)
     const kids = parentChildrenMap[filterLine];
     const inLine = (m) => !filterLine || m.line_name === filterLine || (kids && kids.includes(m.line_name));
     return machines
       .filter(m => !scopeActive || scopedLineNames.has(m.line_name)) // mandatory scope ก่อน filter อิสระเสมอ
+      .filter(m => !filterCat || normCat(m.equipment_category) === filterCat) // หมวดอุปกรณ์ (ผลิต/facility — utility เดิมนับเป็น facility)
       .filter(m => showInactive || m.is_active)
       .filter(inLine)
       .filter(m => !filterType || m.machine_type_id === filterType)
       .filter(m => !search.trim() || [m.machine_no, m.machine_name].some(v => (v || '').toLowerCase().includes(search.trim().toLowerCase())));
-  }, [machines, scopeActive, scopedLineNames, showInactive, filterLine, filterType, search, parentChildrenMap]);
+  }, [machines, scopeActive, scopedLineNames, filterCat, showInactive, filterLine, filterType, search, parentChildrenMap]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -144,7 +168,7 @@ export default function MachineDatabase() {
   /* ── machine CRUD ── */
   const openEdit = (item = null) => {
     setEditing(item
-      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category || 'production', automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '' }
+      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '' }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -172,12 +196,20 @@ export default function MachineDatabase() {
       : supabaseDR.from('machines').insert(p);
     let { error } = await doSave(payload);
     // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
+    let strippedCat = false;
     if (error && /equipment_category|automation_level|operation_mode|gang_count/.test(error.message || '')) {
+      strippedCat = /equipment_category/.test(error.message || '');
       const { equipment_category, automation_level, operation_mode, gang_count, ...rest } = payload;
       void equipment_category; void automation_level; void operation_mode; void gang_count;
       ({ error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
+    // ⚠️ บันทึกหมวด Facility/Utility ไม่ติดเพราะยังไม่ได้ apply migration equipment_category → เตือนแทนที่จะเงียบ
+    if (strippedCat && isFac) {
+      setSaving(false);
+      toast.error('⚠️ ยังไม่ได้ apply migration "machines_equipment_category" — เครื่องถูกบันทึกเป็น "ไลน์ผลิต" ชั่วคราว · apply migration แล้วแก้หมวดเป็น Facility อีกครั้ง');
+      setEditing(null); load(); return;
+    }
     // Supply route: sync ไลน์ที่ facility/utility นี้จ่าย (เฉพาะเครื่องที่มี id แล้ว) — best-effort
     if (editing.id && (editing.equipment_category || 'production') !== 'production') {
       try {
@@ -223,15 +255,27 @@ export default function MachineDatabase() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
         <input placeholder="🔍 ค้นหาหมายเลข/ชื่อเครื่อง" value={search} onChange={e => setSearch(e.target.value)}
           style={{ ...inputStyle, width: 220 }} />
+        {/* หมวดอุปกรณ์ — เปลี่ยนหมวดแล้วล้างไลน์ที่เลือกค้าง (§5.3 cascade) */}
+        <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }} style={{ ...inputStyle, width: 150 }}>
+          <option value="">— ทุกหมวด —</option>
+          {EQUIP_CATS.map(c => <option key={c.v} value={c.v}>{c.t}</option>)}
+        </select>
         <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 180 }}>
-          <option value="">— ทุกไลน์ —</option>
-          {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-          {Object.entries(parentChildrenMap).map(([parent, children]) => (
-            <optgroup key={parent} label={`▸ ${parent}`}>
-              <option value={parent}>{parent} — ทั้งกลุ่ม</option>
-              {children.map(c => <option key={c} value={c}>{c}</option>)}
-            </optgroup>
-          ))}
+          {catLineNames
+            ? <>
+                <option value="">— ทุกระบบ/พื้นที่ —</option>
+                {catLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </>
+            : <>
+                <option value="">— ทุกไลน์ —</option>
+                {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                {Object.entries(parentChildrenMap).map(([parent, children]) => (
+                  <optgroup key={parent} label={`▸ ${parent}`}>
+                    <option value={parent}>{parent} — ทั้งกลุ่ม</option>
+                    {children.map(c => <option key={c} value={c}>{c}</option>)}
+                  </optgroup>
+                ))}
+              </>}
         </select>
         <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...inputStyle, width: 180 }}>
           <option value="">— ทุกประเภท —</option>
@@ -241,6 +285,16 @@ export default function MachineDatabase() {
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           แสดงที่ปิดใช้งาน
         </label>
+        {grouped.length > 1 && (
+          <button type="button" onClick={() => {
+            const allCollapsed = grouped.every(([n]) => collapsedGroups.has(n));
+            const next = allCollapsed ? new Set() : new Set(grouped.map(([n]) => n));
+            setCollapsedGroups(next);
+            try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+          }} style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontSize: 12, padding: '7px 12px' }}>
+            {grouped.every(([n]) => collapsedGroups.has(n)) ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+          </button>
+        )}
         <div style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>{filtered.length} เครื่อง</div>
       </div>
 
@@ -250,12 +304,17 @@ export default function MachineDatabase() {
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 13 }}>ไม่พบเครื่องจักร</div>
       )}
 
-      {grouped.map(([lineName, items]) => (
+      {grouped.map(([lineName, items]) => {
+        const isCollapsed = collapsedGroups.has(lineName);
+        return (
         <div key={lineName} style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button type="button" onClick={() => toggleGroup(lineName)}
+            style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'var(--bg2)', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', color: 'var(--text)' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⚙️ {lineName}</span>
             <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{items.length} เครื่อง</span>
-          </div>
+          </button>
+          {!isCollapsed && (
           <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {items.map(item => (
               <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, opacity: item.is_active ? 1 : 0.5 }}>
@@ -270,8 +329,7 @@ export default function MachineDatabase() {
                     )}
                     {item.automation_level && <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
                     {item.operation_mode && <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
-                    {item.equipment_category === 'facility' && <span style={{ fontSize: 11, color: '#f59a3f' }}>🔧 Facility</span>}
-                    {item.equipment_category === 'utility' && <span style={{ fontSize: 11, color: '#9b8de8' }}>⚡ Utility</span>}
+                    {item.equipment_category && item.equipment_category !== 'production' && <span style={{ fontSize: 11, color: '#f59a3f' }}>🔧 Facility / Utility</span>}
                     {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
                     {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>🔗 จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
                     {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
@@ -286,8 +344,10 @@ export default function MachineDatabase() {
               </div>
             ))}
           </div>
+          )}
         </div>
-      ))}
+        );
+      })}
       </div>
 
       {/* Add/Edit machine modal */}
@@ -380,7 +440,7 @@ export default function MachineDatabase() {
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกเครื่องก่อน แล้วเปิดแก้ไขอีกครั้งเพื่อตั้งไลน์ที่จ่าย</div>
                   ) : (
                     <div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>utility นี้จ่ายให้ไลน์ไหนบ้าง — ถ้าตัดไฟ/มีปัญหาจะรู้ว่ากระทบไลน์ไหน</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์นี้จ่ายให้ไลน์ไหนบ้าง — ถ้าตัดไฟ/มีปัญหาจะรู้ว่ากระทบไลน์ไหน</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 130, overflowY: 'auto', padding: 4, border: '1px solid var(--border)', borderRadius: 8 }}>
                         {scopedLines.filter(l => !parentChildrenMap[l.name]).map(l => {
                           const on = supplyLines.includes(l.name);
@@ -389,7 +449,7 @@ export default function MachineDatabase() {
                               border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{on ? '✓ ' : ''}{l.name}</button>;
                         })}
                       </div>
-                      {supplyLines.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--accent2)', marginTop: 4 }}>กระทบ {supplyLines.length} ไลน์เมื่อ utility นี้หยุด</div>}
+                      {supplyLines.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--accent2)', marginTop: 4 }}>กระทบ {supplyLines.length} ไลน์เมื่ออุปกรณ์นี้หยุด</div>}
                     </div>
                   )}
                 </Field>
@@ -486,8 +546,9 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
               <input autoFocus placeholder="ชื่อประเภท เช่น Robot - Arc Welding" value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={inputStyle} />
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input placeholder="ไอคอน (emoji)" value={form.icon} maxLength={4}
-                  onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} style={{ ...inputStyle, width: 90 }} />
+                <div style={{ width: 150 }}>
+                  <EmojiPicker value={form.icon} onChange={v => setForm(f => ({ ...f, icon: v }))} style={inputStyle} />
+                </div>
                 <div style={{ display: 'flex', gap: 5 }}>
                   {TYPE_COLORS.map(c => (
                     <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}

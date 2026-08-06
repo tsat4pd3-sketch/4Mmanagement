@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes';
+import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ data-driven
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -57,7 +57,10 @@ function RelatedLinks({ matNo, productId }) {
 }
 
 export default function ProductMaster() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, isDeptAdmin } = useContext(UserContext);
+  // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
+  // ถ้าไม่ consume ค่านี้จาก context ปุ่มแก้ไขจะไม่โผล่จนกว่าจะ re-render ด้วยเหตุอื่น (แอดมินหน่วยงานติ๊กแล้วแต่แก้ไม่ได้)
+  void isDeptAdmin;
   const canCreate = can('products', 'create', role);
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
@@ -274,8 +277,11 @@ export default function ProductMaster() {
     if (Number(kanbanForm.qty_per_kanban) < 1) { toast.error('Qty ต้องมากกว่า 0'); return; }
     setKanbanSaving(true);
     const payload = { product_id: kanbanForm.product_id || null, mat_no: kanbanForm.mat_no.trim().toUpperCase(), qty_per_kanban: parseInt(kanbanForm.qty_per_kanban), is_active: kanbanForm.is_active };
+    // upsert on mat_no (unique key) แทน insert ตรงๆ — MAT.NO อาจมีแถวค้างอยู่แล้วจาก
+    // Kanban Auto-Calc (Planner&Sales) ที่ product_id=null (ไม่โชว์ในลิสต์สินค้าเพราะกรอง product_id)
+    // insert เฉยๆ จะชน unique constraint → "duplicate key" ทั้งที่จอโชว์ (0) · upsert = adopt แถวเดิม + ผูก product_id
     const { error } = kanbanEditing === 'new'
-      ? await supabaseDR.from('kanban_standards').insert(payload)
+      ? await supabaseDR.from('kanban_standards').upsert(payload, { onConflict: 'mat_no' })
       : await supabaseDR.from('kanban_standards').update(payload).eq('id', kanbanEditing);
     setKanbanSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -535,8 +541,8 @@ export default function ProductMaster() {
                     {!indented && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: item.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
-                          {item.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${procColor(item.process_type, '#22c55e')}26`, color: procColor(item.process_type, '#22c55e') }}>
+                          {procDisplay(item.process_type)}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: item.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
                           {item.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${item.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
@@ -656,8 +662,8 @@ export default function ProductMaster() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.process_type === 'metal_forming' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.12)', color: repItem.process_type === 'metal_forming' ? '#fbbf24' : '#22c55e' }}>
-                        {repItem.process_type === 'metal_forming' ? '⚙ Metal Forming' : '🔥 Welding/Assy'}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${procColor(repItem.process_type, '#22c55e')}26`, color: procColor(repItem.process_type, '#22c55e') }}>
+                        {procDisplay(repItem.process_type)}
                       </span>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: repItem.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
                         {repItem.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${repItem.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
@@ -1656,6 +1662,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   }
 
   async function toggleActive(p) {
+    // ยืนยันเฉพาะตอน "ปิดใช้งาน" พาร์ท — เปิดกลับไม่ต้องถาม
+    if (p.is_active && !confirm(`ปิดใช้งานพาร์ท "${p.part_no || p.mat_no || ''}" ?\n\nจะหายจากการเลือกใช้ (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
     await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id);
     load();
   }

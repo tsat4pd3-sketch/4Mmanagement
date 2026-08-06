@@ -9,6 +9,7 @@ import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
+import { getDocForm, fullCode } from '../utils/docForms';
 
 const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
@@ -797,12 +798,33 @@ export default function Checkin() {
       registerThaiFont(doc);
       const deptLabel = exportSection || 'ทุกส่วนงาน';
 
+      // เลขฟอร์ม/Rev/ป้ายช่องลายเซ็น/legend อ่านจากทะเบียนเอกสารกลาง (/doc-forms) — fallback = ค่าเดิมในโค้ด
+      // จำนวนช่องลายเซ็นต้องเท่า layout เดิมเสมอ (ทะเบียนเปลี่ยนได้เฉพาะข้อความ) → fitSigs ตัด/เติมให้ครบ
+      const [dfOt, dfAtt] = await Promise.all([
+        getDocForm('ot_compensation_report', {
+          title: 'ใบรายงานการปฏิบัติงานชดเชย / ทำ OT',
+          sig_blocks: ['ผู้บันทึก', 'ผู้ตรวจสอบ', 'ผู้อนุมัติแผนก', 'ผู้อนุมัติฝ่าย HRM'],
+        }),
+        getDocForm('attendance_record', {
+          title: 'บันทึกการมาทำงาน',
+          sig_blocks: ['ผู้บังคับบัญชา / หัวหน้างาน', 'ผู้ตรวจสอบ (HRM)'],
+          legend: 'สัญลักษณ์ :  / = มาทำงาน   ขาด = ขาดงาน   ก = ลากิจ   ป = ลาป่วย   ส = ลาพักร้อน   /OT = ทำ OT ปกติ   /OT+ = ทำ OT ขยาย (23:00 น.)',
+        }),
+      ]);
+      const fitSigs = (df, fb) => fb.map((t, i) => (df.sig_blocks?.[i] ?? t));
+      const stampCode = (df) => {
+        const code = [fullCode(df), df.effective_date ? `Effective: ${df.effective_date}` : ''].filter(Boolean).join(' · ');
+        if (!code) return;                       // ทะเบียนยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิมเป๊ะ
+        doc.setFontSize(7); doc.setFont('Sarabun', 'normal');
+        doc.text(code, 283, 203, { align: 'right' });
+      };
+
       /* ── Form 1: ใบรายงานการปฏิบัติงานชดเชย/ทำ OT (ฟอร์ม 2) ───── */
       let y0 = 10;
       doc.setFontSize(11); doc.setFont('Sarabun', 'bold');
       doc.text('บริษัท ไทยซัมมิทออโตพาร์ท จำกัด', 14, y0);
       doc.setFontSize(13);
-      doc.text('ใบรายงานการปฏิบัติงานชดเชย / ทำ OT', 148, y0, { align: 'center' });
+      doc.text(dfOt.title || 'ใบรายงานการปฏิบัติงานชดเชย / ทำ OT', 148, y0, { align: 'center' });
       y0 += 6;
       doc.setFontSize(9); doc.setFont('Sarabun', 'normal');
       doc.text(`แผนก/ส่วนงาน: ${deptLabel}`, 14, y0);
@@ -844,7 +866,7 @@ export default function Checkin() {
       ].forEach((t, i) => { doc.text(t, 14, yAfter + i * 4); });
 
       const sigY = yAfter + 26;
-      const sigBoxes = ['ผู้บันทึก', 'ผู้ตรวจสอบ', 'ผู้อนุมัติแผนก', 'ผู้อนุมัติฝ่าย HRM'];
+      const sigBoxes = fitSigs(dfOt, ['ผู้บันทึก', 'ผู้ตรวจสอบ', 'ผู้อนุมัติแผนก', 'ผู้อนุมัติฝ่าย HRM']);
       sigBoxes.forEach((label, i) => {
         const x = 14 + i * 68;
         doc.rect(x, sigY, 60, 22);
@@ -853,13 +875,15 @@ export default function Checkin() {
         doc.text('ลงชื่อ ......................................', x + 30, sigY + 8, { align: 'center' });
       });
 
+      stampCode(dfOt);
+
       /* ── Form 2: บันทึกการมาทำงาน (รายเดือน) ───────────────────── */
       doc.addPage();
       let y1 = 10;
       doc.setFontSize(11); doc.setFont('Sarabun', 'bold');
       doc.text('บริษัท ไทยซัมมิทออโตพาร์ท จำกัด', 14, y1);
       doc.setFontSize(13);
-      doc.text('บันทึกการมาทำงาน', 148, y1, { align: 'center' });
+      doc.text(dfAtt.title || 'บันทึกการมาทำงาน', 148, y1, { align: 'center' });
       y1 += 6;
       doc.setFontSize(9); doc.setFont('Sarabun', 'normal');
       doc.text(`แผนก: ${deptLabel}`, 14, y1);
@@ -891,16 +915,18 @@ export default function Checkin() {
 
       const legendY = doc.lastAutoTable.finalY + 6;
       doc.setFontSize(7.5);
-      doc.text('สัญลักษณ์ :  / = มาทำงาน   ขาด = ขาดงาน   ก = ลากิจ   ป = ลาป่วย   ส = ลาพักร้อน   /OT = ทำ OT ปกติ   /OT+ = ทำ OT ขยาย (23:00 น.)', 14, legendY);
+      doc.text(dfAtt.legend, 14, legendY);
 
       const sigY2 = legendY + 16;
-      ['ผู้บังคับบัญชา / หัวหน้างาน', 'ผู้ตรวจสอบ (HRM)'].forEach((label, i) => {
+      fitSigs(dfAtt, ['ผู้บังคับบัญชา / หัวหน้างาน', 'ผู้ตรวจสอบ (HRM)']).forEach((label, i) => {
         const x = 14 + i * 100;
         doc.rect(x, sigY2, 90, 22);
         doc.setFontSize(7.5);
         doc.text(label, x + 45, sigY2 + 18, { align: 'center' });
         doc.text('ลงชื่อ ......................................', x + 45, sigY2 + 8, { align: 'center' });
       });
+
+      stampCode(dfAtt);
 
       doc.save(`attendance_forms_${exportMonth}_${exportHalf}${exportSection ? '_' + exportSection : ''}.pdf`);
       toast.success('สร้างไฟล์ PDF สำเร็จ');
@@ -1573,7 +1599,7 @@ export default function Checkin() {
       {/* ยืนยัน "บันทึกในนามใคร" ก่อนเซฟจริง — จุด checkpoint บังคับให้เห็นชื่อ กันเช็คผิด session
           (ไม่ปิดจากคลิกฉากหลัง ตามกฎ modal ฟอร์ม — ต้องเลือกยืนยัน/สลับผู้ใช้) */}
       {confirmSave && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>👤</div>
             <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>บันทึกเช็คชื่อในนาม</div>
@@ -1601,7 +1627,7 @@ export default function Checkin() {
       )}
 
       {showOtBookModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>🚐 จองรถ OT</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -1710,7 +1736,7 @@ export default function Checkin() {
 
       {/* Export forms modal */}
       {showExport && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>📄 ส่งออกฟอร์มกระดาษ (PDF)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>

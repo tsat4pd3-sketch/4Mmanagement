@@ -34,7 +34,7 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
       const chat = String(c.chat_id).trim();
       chatById.set(String(c.id), chat);
       const team = (c as { team?: string | null }).team;
-      if (team) { const t = String(team).trim(); (teamChats[t] ||= []).push(chat); chatTeam.set(chat, t); }
+      if (team) { const t = teamKey(team); (teamChats[t] ||= []).push(chat); chatTeam.set(chat, t); }
     }
     const map: Record<string, Route> = {};
     for (const r of rules ?? []) {
@@ -103,6 +103,15 @@ function beDate(iso?: string | null): string {
   return `${+g.day}/${+g.month}/${Number(g.year) + 543}`;
 }
 const deptFor = (it: string) => { const s = (it || '').toUpperCase(); if (s.includes('JIG')) return 'JIG MTN'; if (s.includes('DIE')) return 'DIE MTN'; return 'MTN'; };
+// ทีมช่างเก็บได้ 2 encoding: label (mtn_dept / telegram_channels.team = "JIG MTN") กับ key (checklists.department = "jig_maintenance")
+// mtn_teams เป็น single source ที่โยง 2 ฝั่ง — normalize ทั้งสองด้านเป็น "key" ก่อนจับคู่ routing กันเข้ารหัสไม่ตรงแล้วส่งไม่ถึงห้องทีม
+const TEAM_KEY: Record<string, string> = {
+  'mtn': 'maintenance', 'maintenance': 'maintenance',
+  'jig mtn': 'jig_maintenance', 'jig_maintenance': 'jig_maintenance',
+  'die mtn': 'die_maintenance', 'die_maintenance': 'die_maintenance',
+  'production': 'production',
+};
+const teamKey = (v?: string | null): string => { const s = String(v || '').toLowerCase().trim(); return TEAM_KEY[s] || s; };
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -125,7 +134,7 @@ Deno.serve(async (req) => {
       chat = baseChat;
     } else {
       const generalRule = (baseChat || []).filter((c) => !chatTeam.get(c));   // ห้อง "รวม" ที่เลือกไว้ใน event
-      const teamRooms = teamChats[dept] || [];                                 // ห้องของทีมนี้
+      const teamRooms = teamChats[teamKey(dept)] || [];                        // ห้องของทีมนี้ (จับคู่แบบไม่สน encoding key/label)
       chat = [...new Set([...teamRooms, ...generalRule])];
       // safety: ถ้าไม่เหลือห้องเลย (rule มีแต่ห้องทีมอื่น + ไม่มีห้องทีมนี้) → ห้อง fallback รวม ห้ามเงียบ/ห้ามรั่วทีมอื่น
       if (!chat.length) chat = TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];

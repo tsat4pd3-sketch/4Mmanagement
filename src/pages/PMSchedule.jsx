@@ -34,6 +34,8 @@ const DOW_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 function atMidnight(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x }
 function daysBetween(from, to) { return Math.round((atMidnight(to).getTime() - atMidnight(from).getTime()) / 86400000) }
 function dayKey(d) { const x = atMidnight(d); return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}` }
+// 'YYYY-MM-DD' จากเวลา local — ห้ามใช้ toISOString() (คืน UTC → เที่ยงคืนไทยกลายเป็นวันก่อนหน้าเสมอ · ดู CLAUDE.md "Date/Time Utilities")
+function ymd(d) { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
 const fmtDay = (d) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })
 
 const S = {
@@ -163,7 +165,9 @@ export default function PMSchedule() {
     return acc
   }, {})
 
-  const deptColor = DEPT_COLORS[department] ?? '#3dd65c'
+  // สี/ป้ายทีม — data-driven จาก mtn_teams (teams) ก่อน แล้ว fallback map เดิม
+  const teamMeta = teams.find(t => t.key === department)
+  const deptColor = teamMeta?.color ?? DEPT_COLORS[department] ?? '#3dd65c'
   const today = atMidnight(new Date())
   const goCheck = (equipId) => navigate(`/pm-check?dept=${department}&equip=${equipId}`)
 
@@ -171,7 +175,7 @@ export default function PMSchedule() {
     <div style={S.page}>
       <div>
         <h1 style={S.h1}>แผน PM</h1>
-        <p style={S.sub}>ตารางการตรวจสอบ · {DEPT_LABEL[department] ?? department}</p>
+        <p style={S.sub}>ตารางการตรวจสอบ · {teamMeta?.label ?? DEPT_LABEL[department] ?? department}</p>
       </div>
 
       <div style={S.deptBar}>
@@ -324,9 +328,9 @@ export default function PMSchedule() {
 // ── Modal เลื่อนแผน PM (คิวผลิตแน่น/ตัดไฟไม่ได้ ฯลฯ) ──
 function DeferModal({ row, byName, byUid, onClose, onSaved }) {
   const eqName = row.eq?.name ?? '—'
-  const curDue = row.nextDue ? row.nextDue.toISOString().slice(0, 10) : ''
+  const curDue = row.nextDue ? ymd(row.nextDue) : ''
   // ค่าเริ่มต้นวันเลื่อน = ครบกำหนดเดิม + 30 วัน
-  const suggest = (() => { const d = row.nextDue ? new Date(row.nextDue) : new Date(); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10) })()
+  const suggest = (() => { const d = row.nextDue ? new Date(row.nextDue) : new Date(); d.setDate(d.getDate() + 30); return ymd(d) })()
   const [toDue, setToDue] = useState(suggest)
   const [reason, setReason] = useState('')
   const [agreed, setAgreed] = useState('')

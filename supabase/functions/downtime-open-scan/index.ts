@@ -38,7 +38,11 @@ Deno.serve(async () => {
     if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 });
 
     // เฉพาะกะที่ยังเปิดอยู่ (เครื่องยังหยุดจริง — session ปิดแล้วไม่ต้องปลุก)
-    const open = (rows ?? []).filter((r) => ['open', 'pending_close'].includes(r.production_sessions?.status));
+    // และ **ข้ามหยุดตามแผน** (นับสต๊อก/ไม่มีแผนผลิต/5ส) — ไม่ใช่ความเสียหาย ไม่ต้องปลุกใคร
+    // (เคสจริง 2026-08-04: "นับสต๊อก / ไม่มีแผนผลิต" ค้าง 349 นาที ยิงแจ้งเตือน+ไซเรนทั้งวัน)
+    const open = (rows ?? []).filter((r) =>
+      ['open', 'pending_close'].includes(r.production_sessions?.status) &&
+      r.dr_downtime_types?.category !== 'planned');
 
     let sent = 0;
     for (const r of open) {

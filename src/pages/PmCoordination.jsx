@@ -7,6 +7,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
+import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
+loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
    ใบแบบเมล "RE: แผนการ ..." — งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน
@@ -297,12 +299,19 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
   const machOpts = useMemo(() => {
     let arr = machines;
     if (scopeLines) arr = arr.filter(m => !m.line_name || scopeLines.has(m.line_name));
-    return arr;
+    // เรียงตามหมายเลขเครื่อง (คนอ้างอิงด้วยเลขเครื่อง ไม่ใช่ชื่อรุ่น)
+    return [...arr].sort((a, b) => (a.machine_no || '').localeCompare(b.machine_no || '', undefined, { numeric: true }));
   }, [machines, scopeLines]);
 
-  const pickMachine = (id) => {
-    const mc = machines.find(m => m.id === id);
-    setF(v => ({ ...v, machine_id: id, machine_no: mc?.machine_no || '', machine_name: mc?.machine_name || '', line_name: mc?.line_name || v.line_name }));
+  // ผู้ใช้พิมพ์/เลือก "หมายเลขเครื่อง" (MTN/PD/PE อ้างอิงเลขเครื่อง) → resolve เป็นเครื่องในฐานข้อมูล
+  const onMachineNoInput = (val) => {
+    const key = val.trim();
+    const mc = machOpts.find(m => (m.machine_no || '').toLowerCase() === key.toLowerCase());
+    setF(v => ({
+      ...v, machine_no: val, machine_id: mc?.id || '',
+      machine_name: mc ? (mc.machine_name || '') : v.machine_name,
+      line_name: mc?.line_name || v.line_name,
+    }));
   };
   // สร้างจากแผน PM เดิม → เติมเครื่อง/ไลน์/ผูก pm_plan_id + เพิ่มขั้นงานวันครบกำหนดให้อัตโนมัติ
   const fromPmPlan = (planId) => {
@@ -346,7 +355,8 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
+    // ฟอร์มยาว — ไม่ปิดจาก backdrop (กันเผลอแตะแล้วข้อมูลหายทั้งใบ · UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับปุ่มปิด (§7)
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', borderRadius: 14, border: '1px solid var(--border)', width: 'min(760px, 100%)', padding: 18 }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{plan._new ? '➕ สร้างแผนประสานงาน' : '✏️ แก้ไขแผน'}</div>
 
@@ -365,13 +375,15 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
         <label style={lbl}>หัวเรื่องงาน *</label>
         <input value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder="เช่น Cleaning Cutting Head" style={inp} />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
           <div>
-            <label style={lbl}>เครื่องจักร (จากฐานข้อมูล)</label>
-            <select value={f.machine_id} onChange={e => pickMachine(e.target.value)} style={inp}>
-              <option value="">— เลือกเครื่อง —</option>
-              {machOpts.map(m => <option key={m.id} value={m.id}>{[m.machine_name, m.machine_no].filter(Boolean).join(' ')}{m.line_name ? ` (${m.line_name})` : ''}</option>)}
-            </select>
+            <label style={lbl}>เครื่องจักร (พิมพ์/เลือกหมายเลขเครื่อง)</label>
+            <input list="pmcoord-mach" value={f.machine_no} onChange={e => onMachineNoInput(e.target.value)}
+              placeholder="เช่น RB-104, LS-10, CT-02" style={inp} autoComplete="off" />
+            <datalist id="pmcoord-mach">
+              {machOpts.map(m => <option key={m.id} value={m.machine_no}>{[m.machine_name, m.line_name].filter(Boolean).join(' · ')}</option>)}
+            </datalist>
+            {f.machine_id && f.machine_name && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>✓ {f.machine_name}{f.line_name ? ` · ${f.line_name}` : ''}</div>}
           </div>
           <div>
             <label style={lbl}>ไลน์</label>
@@ -397,7 +409,6 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
                 <label style={lblS}>ทีมรับผิดชอบ</label>
                 <select value={t.team || ''} onChange={e => setTask(i, 'team', e.target.value)} style={inp}>
                   <option value="">— ทีม —</option>
-                  <option value="production">PRODUCTION (ฝ่ายผลิต)</option>
                   {teams.map(tm => <option key={tm.key} value={tm.key}>{tm.label}</option>)}
                 </select>
               </div>
@@ -465,10 +476,10 @@ function printPlan(p, tasks) {
   <div class="sec">แผนงาน &amp; รายละเอียด</div>
   <ul>${rows || '<li>—</li>'}</ul>
   ${p.remark ? `<div class="remark">Remark : ${p.remark}</div>` : ''}
-  <div class="sign"><div>ผู้จัดทำ (Maintenance)</div><div>รับทราบ (Production)</div></div>
+  <div class="sign">${(docFormSync('pm_coordination', { sig_blocks: ['ผู้จัดทำ (Maintenance)', 'รับทราบ (Production)'] }).sig_blocks || []).map(s => `<div>${s}</div>`).join('')}</div>
   </body></html>`;
   const w = window.open('', '_blank');
   if (!w) { toast.error('เปิดหน้าต่างพิมพ์ไม่ได้ (popup ถูกบล็อก)'); return; }
-  w.document.write(html); w.document.close();
+  w.document.write(withDocFoot(html, 'pm_coordination')); w.document.close();
   w.onload = () => { w.focus(); w.print(); };
 }
