@@ -58,6 +58,8 @@ export default function LineSetup({ embedded = false } = {}) {
   const [deleteStationModal, setDeleteStationModal] = useState(null); // { station, homes[], moveTo }
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [famStations, setFamStations] = useState([]); // จุดงานทั้งครอบครัวไลน์ — ปลายทางที่ย้ายไปได้
+  // คะแนนสูงสุดที่ "มีอยู่จริง" ต่อสกิล — ใช้เตือนตอนตั้ง min_score ว่าไม่มีใครผ่านได้
+  const [skillMaxScore, setSkillMaxScore] = useState({}); // skill_name -> max score ทั้งโรงงาน
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
@@ -233,6 +235,16 @@ export default function LineSetup({ embedded = false } = {}) {
   useEffect(() => {
     fetchLines();
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
+    // คะแนนสูงสุดที่มีอยู่จริงต่อสกิล — ตั้ง min_score สูงกว่านี้ = ไม่มีใครผ่านได้เลย
+    // (เจอจริง: Control RB/MC ตั้ง 25-50 แต่คะแนนสูงสุดทั้งโรงงานคือ 2 → 8 จุดงานตก 🔴 ถาวร)
+    supabase.from('employee_skills').select('skill_name, score').then(({ data }) => {
+      const m = {};
+      (data || []).forEach(s => {
+        const v = Number(s.score ?? 0);
+        if (m[s.skill_name] == null || v > m[s.skill_name]) m[s.skill_name] = v;
+      });
+      setSkillMaxScore(m);
+    });
     supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('sort_order')
       .then(({ data }) => setSectionOpts((data || []).map(n => n.code || n.name)));
   }, []);
@@ -1453,12 +1465,19 @@ export default function LineSetup({ embedded = false } = {}) {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                             {catSkills.map(skill => {
                               const checked = skill.name in formData.requirements;
+                              // ⚠️ min_score ทำ 2 หน้าที่พร้อมกัน — คนตั้งค่าไม่มีทางรู้ ต้องบอกตรงนี้
+                              //   (1) เกณฑ์ผ่าน  (2) สวิตช์เปิด farm: fn_daily_skill_farm นับเฉพาะจุดที่ min_score >= 70
+                              // ตั้งสูงกว่าคะแนนที่มีจริง = ไม่มีใครผ่าน → skillOk=false ถาวร → วางคนทีไรตก 4M 🔴
+                              const reqScore = checked ? Number(formData.requirements[skill.name] ?? 0) : null;
+                              const maxHave  = skillMaxScore[skill.name];
+                              const nobodyPass = checked && reqScore > 0 && maxHave != null && reqScore > maxHave;
+                              const noFarm     = checked && reqScore > 0 && reqScore < 70;
                               return (
                                 <div key={skill.name} style={{
-                                  display: 'flex', alignItems: 'center', gap: 6,
+                                  display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
                                   padding: '5px 8px', borderRadius: 6,
                                   background: checked ? `${catMeta.color}12` : 'var(--bg3)',
-                                  border: `1px solid ${checked ? catMeta.color + '55' : 'var(--border)'}`,
+                                  border: `1px solid ${nobodyPass ? '#ef4444' : checked ? catMeta.color + '55' : 'var(--border)'}`,
                                 }}>
                                   <input type="checkbox" style={{ width: 'auto', flexShrink: 0 }}
                                     checked={checked} onChange={() => toggleSkillReq(skill.name)} />
@@ -1473,6 +1492,20 @@ export default function LineSetup({ embedded = false } = {}) {
                                         onChange={e => setSkillScore(skill.name, e.target.value)}
                                         style={{ width: 46, fontSize: 11, padding: '2px 4px', textAlign: 'center' }} />
                                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>%</span>
+                                    </div>
+                                  )}
+                                  {(nobodyPass || noFarm) && (
+                                    <div style={{ flexBasis: '100%', fontSize: 10, lineHeight: 1.5, paddingLeft: 22 }}>
+                                      {nobodyPass && (
+                                        <div style={{ color: '#ef4444', fontWeight: 700 }}>
+                                          ⛔ ไม่มีพนักงานคนไหนผ่านเกณฑ์นี้ (คะแนนสูงสุดที่มีจริง = {maxHave}) — วางคนที่จุดนี้จะติด 4M ขออนุมัติทุกครั้ง
+                                        </div>
+                                      )}
+                                      {noFarm && (
+                                        <div style={{ color: '#f59e0b' }}>
+                                          ⚠️ ตั้งต่ำกว่า 70 — ระบบจะ<b>ไม่สะสมคะแนนให้อัตโนมัติ</b>ที่จุดนี้ ต้องประเมินคะแนนเองที่หน้าพนักงาน
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
