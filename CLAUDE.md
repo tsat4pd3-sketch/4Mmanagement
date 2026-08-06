@@ -87,7 +87,23 @@
 | `workstations` | สถานีในแต่ละไลน์ (pos_top, pos_left สำหรับวาง map) |
 | `station_requirements` | ทักษะที่ต้องการต่อสถานี (skill_name, min_score) |
 | `line_layouts` | รูปผังไลน์ (image_url) |
-| `employee_home_positions` | สถานีประจำของพนักงาน |
+| `employee_home_positions` | สถานีประจำของพนักงาน (employee_id **PK** = 1 คน 1 จุด · station_id, line_name, line_id, updated_at, updated_by) |
+
+> ### ⚠️ กฎเหล็ก — ตำแหน่งประจำ (`employee_home_positions`) เป็น "เส้นฐาน 4M" ไม่ใช่แค่ไอคอน 🏠 (2026-08-06)
+> `Management.jsx` ใช้ค่านี้ตัดสินว่าการวางคนครั้งนี้เป็น **4M Man (ย้ายจุด)** หรือไม่:
+> ```js
+> const isHome = homePositions[empId] === String(finalAssign)
+> if (!isHome) → getManCase() → 🟡 แนบรูป OJT + SV  /  🔴 + QA อนุมัติ
+> ```
+> **คนที่ไม่มีตำแหน่งประจำ = ถูกตีว่า "ย้ายจุด" ทุกวัน** → 4M ค้างอนุมัติ + marker กระพริบเหลืองรัวๆ (person-alarm)
+>
+> **⚠️ `station_id` ไม่มี foreign key** (ตรวจ `pg_constraint` แล้ว — มีแค่ `employee_id` cascade + `line_id` no action)
+> → **ลบจุดงานแล้วแถวไม่หายตาม แต่ค้างเป็น orphan ชี้ไป id ที่ไม่มีแล้ว เงียบสนิท** · UI เทียบไม่เจอจุดไหน = 🏠 ไม่ขึ้น + `isHome` false ตลอด
+> **เกิดจริง 21/07/2026** ตอนแตกไลน์ลูก HDF1/HDF2 ออกจาก HYDROFORM แล้วสร้างจุดงานใหม่ → **พัง 105 คน** กว่าจะรู้ตัวก็ 2 สัปดาห์ (หัวหน้าเห็นแค่ "ระบบเอ๋อ")
+> - **ลบจุดงานต้องผ่าน `deleteStation` (LineSetup) เท่านั้น** — เช็คก่อนว่ามีใครใช้เป็นตำแหน่งประจำ แล้วเปิดโมดัลบอกรายชื่อ + ให้**ย้ายไปจุดใหม่ได้ในตัว** (dropdown ปลายทาง = จุดงานทั้งครอบครัวไลน์ ผ่าน `getLineFamilyNames` — เคสหลักคือย้ายจากไลน์แม่ไปไลน์ลูก) · **ห้ามลบ `workstations` ตรงๆ โดยไม่จัดการ home position**
+> - **เช็ค orphan:** `select count(*) from employee_home_positions h where not exists (select 1 from workstations w where w.id = h.station_id)` — ควรเป็น 0 เสมอ
+> - backfill จากประวัติจริง: `20260806_backfill_home_positions_from_history.sql` (1 กะ = 1 เสียง · เท่ากันเอาล่าสุด · **ไม่ทับของที่หัวหน้าตั้งเอง** · orphan นับเป็น "ยังไม่ตั้ง" ต้องซ่อม — apply แล้ว 123 คน)
+> - **ยังไม่ปิด (known gap):** ไม่มี FK `on delete set null` ที่ DB · หน้าจัดการไลน์ผลิตยังไม่มีแถบ "N คนยังไม่มีตำแหน่งประจำ" → orphan จากทางอื่น (SQL ตรง/ย้ายไลน์/import) ยังเงียบอยู่
 
 ### ทักษะ
 | Table | คำอธิบาย |

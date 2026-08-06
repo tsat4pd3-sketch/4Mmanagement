@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -53,6 +54,10 @@ export default function LineSetup({ embedded = false } = {}) {
   const [layoutImage, setLayoutImage] = useState(null);
   const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
   const [stations, setStations] = useState([]);
+  // ลบจุดงานที่มีคนใช้เป็นตำแหน่งประจำ → ถามก่อนว่าจะย้ายไปจุดไหน (ดู deleteStation)
+  const [deleteStationModal, setDeleteStationModal] = useState(null); // { station, homes[], moveTo }
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [famStations, setFamStations] = useState([]); // จุดงานทั้งครอบครัวไลน์ — ปลายทางที่ย้ายไปได้
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
@@ -254,6 +259,13 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
+    // จุดงานทั้งครอบครัวไลน์ (แม่+ลูก) — ใช้เป็นปลายทางตอนย้ายตำแหน่งประจำก่อนลบจุด
+    // เคสหลักคือย้ายจุดจากไลน์แม่ไปไลน์ลูก ปลายทางจึงต้องข้ามไลน์ในครอบครัวได้
+    const famNames = getLineFamilyNames(lines, selectedLine);
+    const { data: famData } = await supabase.from('workstations')
+      .select('id, station_name, line_name, line_id')
+      .in('line_name', famNames.length ? famNames : [selectedLine]);
+    setFamStations(famData || []);
     const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine).order('point_name');
     setWipPoints(wipData || []);
     const { data: mpData } = await supabase.from('machine_points').select('*').eq('line_name', selectedLine);
@@ -737,12 +749,64 @@ export default function LineSetup({ embedded = false } = {}) {
     setFormData({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
   };
 
+  // ── ลบจุดงาน ──────────────────────────────────────────────────────────────
+  // ⚠️ employee_home_positions.station_id **ไม่มี foreign key** (ตรวจ pg_constraint 2026-08-06)
+  //    ลบจุดงานเฉยๆ = ตำแหน่งประจำของคนที่ผูกอยู่ค้างเป็น orphan ชี้ไป id ที่ไม่มีแล้ว **เงียบสนิท**
+  //    → ผังหาจุดไม่เจอ 🏠 ไม่ขึ้น → Management ตีว่า "ย้ายจุด" ทุกครั้งที่จัดคน → เด้ง 4M ขออนุมัติรัวๆ
+  //    (เกิดจริงตอนแตกไลน์ลูก 21/07/2026 — พัง 105 คน กว่าจะรู้ตัวก็ 2 สัปดาห์)
+  //    จึงต้องบอกก่อนว่ากระทบใคร และให้ "ย้ายบ้าน" ไปจุดใหม่ได้ในตัว ไม่ใช่ปล่อยให้ไปตั้งใหม่ทีละคน
   const deleteStation = async (id) => {
-    if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
+    const st = stations.find(s => String(s.id) === String(id));
+    // ใครใช้จุดนี้เป็นตำแหน่งประจำบ้าง
+    const { data: homes } = await supabase
+      .from('employee_home_positions')
+      .select('employee_id, employees(name, employee_id_code)')
+      .eq('station_id', id);
+
+    if (!homes?.length) {
+      if (!window.confirm(`ยืนยันการลบจุดงาน "${st?.station_name ?? ''}" ?`)) return;
+      await doDeleteStation(id);
+      return;
+    }
+    // มีคนผูกอยู่ → เปิดโมดัลให้เลือกย้ายไปจุดอื่น หรือลบทั้งที่รู้ผล
+    setDeleteStationModal({ station: st, homes, moveTo: '' });
+  };
+
+  const doDeleteStation = async (id) => {
     hist.pushHistory();
     await supabase.from('station_requirements').delete().eq('station_id', id);
     const { error } = await supabase.from('workstations').delete().eq('id', id);
-    if (!error) fetchLineData();
+    if (error) { toast.error('ลบจุดงานไม่สำเร็จ: ' + error.message); return; }
+    fetchLineData();
+  };
+
+  // ย้ายตำแหน่งประจำทั้งหมดของจุดที่กำลังจะลบ ไปผูกกับจุดใหม่ แล้วค่อยลบ
+  const confirmDeleteStation = async () => {
+    const m = deleteStationModal;
+    if (!m) return;
+    setDeleteBusy(true);
+    try {
+      if (m.moveTo) {
+        const target = famStations.find(s => String(s.id) === String(m.moveTo));
+        const { error } = await supabase
+          .from('employee_home_positions')
+          .update({
+            station_id: m.moveTo,
+            line_name:  target?.line_name ?? selectedLine,
+            line_id:    target?.line_id ?? null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('station_id', m.station.id);
+        if (error) { toast.error('ย้ายตำแหน่งประจำไม่สำเร็จ: ' + error.message); return; }
+      }
+      await doDeleteStation(m.station.id);
+      toast.success(m.moveTo
+        ? `ลบจุดงานแล้ว · ย้ายตำแหน่งประจำ ${m.homes.length} คนไปจุดใหม่เรียบร้อย`
+        : `ลบจุดงานแล้ว · ${m.homes.length} คนไม่มีตำแหน่งประจำ — ต้องตั้งใหม่ที่หน้าจัดการไลน์ผลิต`);
+      setDeleteStationModal(null);
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const editStation = (st) => {
@@ -1915,6 +1979,67 @@ export default function LineSetup({ embedded = false } = {}) {
         </>}
       </div>
     </div>
+
+    {/* ── ลบจุดงานที่มีคนใช้เป็นตำแหน่งประจำ — บอกว่ากระทบใคร + ให้ย้ายบ้านได้ในตัว ── */}
+    {deleteStationModal && (() => {
+      const m = deleteStationModal;
+      const targets = famStations.filter(s => String(s.id) !== String(m.station?.id));
+      return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} onClick={() => !deleteBusy && setDeleteStationModal(null)} />
+          <div style={{ position: 'relative', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(520px, 96vw)', maxHeight: '86vh', overflowY: 'auto', padding: '18px 20px', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
+              🗑️ ลบจุดงาน "{m.station?.station_name}"
+            </div>
+            <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700, marginBottom: 12 }}>
+              ⚠️ จุดนี้เป็น "ตำแหน่งประจำ" ของพนักงาน {m.homes.length} คน
+            </div>
+
+            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: '8px 12px', marginBottom: 12, maxHeight: 180, overflowY: 'auto' }}>
+              {m.homes.map(h => (
+                <div key={h.employee_id} style={{ fontSize: 12, color: 'var(--text)', padding: '3px 0' }}>
+                  • {h.employees?.name ?? '(ไม่พบชื่อ)'}
+                  <span style={{ color: 'var(--muted)' }}> {h.employees?.employee_id_code ?? ''}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.55, marginBottom: 12 }}>
+              ถ้าลบโดยไม่ย้าย ทุกคนข้างบนจะ<b style={{ color: 'var(--text)' }}>ไม่มีตำแหน่งประจำ</b> — หน้าจัดการไลน์ผลิตจะตีว่า
+              "ย้ายจุด" ทุกครั้งที่จัดคน แล้วเด้ง 4M ขออนุมัติ (แนบรูป OJT + SV/QA) ทุกวันจนกว่าจะตั้งใหม่
+            </div>
+
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+              ย้ายตำแหน่งประจำไปจุดใหม่
+            </label>
+            <select
+              value={m.moveTo}
+              onChange={e => setDeleteStationModal({ ...m, moveTo: e.target.value })}
+              style={{ width: '100%', marginBottom: 14 }}
+            >
+              <option value="">— ไม่ย้าย (ทุกคนจะไม่มีตำแหน่งประจำ) —</option>
+              {targets.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.station_name}{s.line_name !== selectedLine ? ` · ${s.line_name}` : ''}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="tbtn" disabled={deleteBusy} onClick={() => setDeleteStationModal(null)}>ยกเลิก</button>
+              <button
+                className="tbtn"
+                disabled={deleteBusy}
+                onClick={confirmDeleteStation}
+                style={{ background: m.moveTo ? 'var(--accent)' : 'var(--red)', color: '#fff', fontWeight: 700 }}
+              >
+                {deleteBusy ? 'กำลังทำ...' : m.moveTo ? `ย้าย ${m.homes.length} คน แล้วลบจุดนี้` : 'ลบเลย ไม่ย้าย'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     </div>
   );
 }
