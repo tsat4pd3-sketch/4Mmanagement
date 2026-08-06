@@ -94,6 +94,7 @@ const PAGE_GROUPS = [
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
       { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
+      { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
