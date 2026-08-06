@@ -56,6 +56,47 @@ function RelatedLinks({ matNo, productId }) {
   );
 }
 
+/* ── Picker เลือกจากทะเบียนกลาง Parts Master ──
+   โมเดล material master: parts_master = ทะเบียนตัวตนทุก mat (1/2/3/5)
+   มุมมองอื่น (Product = มุมผลิต · Kanban = มุมการดึง) เลือกจากทะเบียนนี้ ไม่พิมพ์เลขใหม่เอง */
+function PartsPickModal({ parts, onPick, onClose }) {
+  const [q, setQ] = useState('');
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    const base = !s ? parts : parts.filter(p =>
+      (p.mat_no || '').toLowerCase().includes(s) ||
+      (p.part_name || '').toLowerCase().includes(s) ||
+      (p.part_no || '').toLowerCase().includes(s) ||
+      (p.supplier || '').toLowerCase().includes(s));
+    return base.slice(0, 120);
+  }, [parts, q]);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,540px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🗂 เลือกจากทะเบียนกลาง Parts Master</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ตัวตนสินค้า (MAT/ชื่อ) มาจากทะเบียนกลางที่เดียว — ไม่มีในลิสต์ = ไปเพิ่มที่ tab 🗂 Parts Master ก่อน</div>
+        <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นหา MAT / ชื่อ / P.NO / supplier..." style={{ ...inputSt, marginBottom: 10 }} />
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 120, border: '1px solid var(--border)', borderRadius: 8 }}>
+          {filtered.length === 0 && (
+            <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ไม่พบพาร์ทที่ตรงเงื่อนไข — เพิ่มได้ที่ tab 🗂 Parts Master</div>
+          )}
+          {filtered.map(p => (
+            <div key={p.id} onClick={() => onPick(p)}
+              style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)', cursor: 'pointer', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#0ea5e9', flexShrink: 0 }}>{p.mat_no}</span>
+              <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name}</span>
+              {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>📦 {p.qty_per_pkg}/pkg</span>}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={onClose} style={btnSecondary}>ปิด</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductMaster() {
   const { role, fullName, isDeptAdmin } = useContext(UserContext);
   // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
@@ -85,6 +126,11 @@ export default function ProductMaster() {
   const [kanbanForm,    setKanbanForm]    = useState({ product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
   const [kanbanSaving,  setKanbanSaving]  = useState(false);
 
+  // ทะเบียนกลาง Parts Master — โมเดล material master: ตัวตนสินค้า (mat_no/ชื่อ/UOM) อยู่ parts_master ที่เดียว
+  // ฟอร์มมุมมองอื่น (Product/Kanban) "เลือก" จากทะเบียน ไม่พิมพ์เลขใหม่เอง
+  const [pmParts, setPmParts] = useState([]);
+  const [partsPickFor, setPartsPickFor] = useState(null); // 'product' | 'kanban' | null
+
   const [search,      setSearch]      = useState('');
   const [lineFilter,  setLineFilter]  = useState('');
   const [showHistory, setShowHistory] = useState(false);
@@ -98,16 +144,19 @@ export default function ProductMaster() {
 
   /* ── load ── */
   const load = useCallback(async () => {
-    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }] = await Promise.all([
+    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       supabase.from('production_lines').select('id, name').order('name'),
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
       supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
+      // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
+      supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier').eq('is_active', true).order('mat_no'),
     ]);
     setItems(pr || []);
     setLines(ln || []);
     setKanbanStds(stds || []);
+    setPmParts(pm || []);
 
     const bc = {};
     (boms || []).forEach(b => { bc[b.product_id] = (bc[b.product_id] || 0) + 1; });
@@ -122,7 +171,26 @@ export default function ProductMaster() {
     setFamilyTotals(totals);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, partsReloadKey]); // เพิ่มพาร์ทใน tab Parts Master แล้ว picker เห็นทันที
+
+  /* ── ทะเบียนกลาง: เช็ค mat อยู่ใน parts_master มั้ย + เลือกจากทะเบียนมาเติมฟอร์ม ── */
+  const pmMatSet = useMemo(() => new Set(pmParts.map(p => (p.mat_no || '').trim().toUpperCase())), [pmParts]);
+  const matInRegistry = (m) => !m || pmMatSet.has(String(m).trim().toUpperCase());
+  const handlePartPick = (p) => {
+    const mat = (p.mat_no || '').trim().toUpperCase();
+    if (partsPickFor === 'product') {
+      // parts_master เป็นเจ้าของ "ชื่อ" — เลือกแล้วเติมชื่อจากทะเบียนทับเสมอ (กันชื่อ drift)
+      setForm(f => ({ ...f, mat_no: mat, name: p.part_name || f.name }));
+      toast.info('เติม MAT + ชื่อจากทะเบียนกลางแล้ว — กรอกรายละเอียดฝั่งผลิต (ไลน์/CT/ลูกค้า) ต่อได้เลย');
+    } else if (partsPickFor === 'kanban') {
+      setKanbanForm(f => ({
+        ...f, mat_no: mat,
+        // ค่าตั้งต้น 1 ใบ Kanban = 1 packaging (qty_per_pkg) — ถ้าผู้ใช้กรอกค่าอื่นไว้แล้วไม่ทับ
+        qty_per_kanban: (!f.qty_per_kanban || Number(f.qty_per_kanban) === 1) && p.qty_per_pkg > 0 ? p.qty_per_pkg : f.qty_per_kanban,
+      }));
+    }
+    setPartsPickFor(null);
+  };
 
   /* ── product CRUD ── */
   const openEdit = (item = null) => {
@@ -780,7 +848,16 @@ export default function ProductMaster() {
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
-                  <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputSt, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                    <button type="button" onClick={() => setPartsPickFor('product')} title="เลือกจากทะเบียนกลาง Parts Master"
+                      style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
+                  </div>
+                  {form.mat_no && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                      ⚠ MAT นี้ยังไม่มีในทะเบียนกลาง Parts Master — แนะนำเพิ่มที่ tab 🗂 ก่อน กันเลขหลุดทะเบียน
+                    </div>
+                  )}
                 </Field>
                 <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
                   <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputSt, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
@@ -876,7 +953,14 @@ export default function ProductMaster() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
-                  <input autoFocus value={kanbanForm.mat_no} onChange={e => setKanbanForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100335" style={{ ...inputSt, fontFamily: 'monospace', fontWeight: 700 }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input autoFocus value={kanbanForm.mat_no} onChange={e => setKanbanForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100335" style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700 }} />
+                    <button type="button" onClick={() => setPartsPickFor('kanban')} title="เลือกจากทะเบียนกลาง Parts Master"
+                      style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
+                  </div>
+                  {kanbanForm.mat_no && pmParts.length > 0 && !matInRegistry(kanbanForm.mat_no) && (
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>⚠ ยังไม่มีในทะเบียนกลาง Parts Master</div>
+                  )}
                 </Field>
                 <Field label="Qty / Kanban Card *">
                   <input type="number" min="1" value={kanbanForm.qty_per_kanban} onChange={e => setKanbanForm(f => ({ ...f, qty_per_kanban: e.target.value }))} style={{ ...inputSt, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
@@ -896,6 +980,9 @@ export default function ProductMaster() {
           </div>
         </div>
       )}
+
+      {/* picker ทะเบียนกลาง — ลอยเหนือ modal สินค้า/kanban (zIndex 2300) */}
+      {partsPickFor && <PartsPickModal parts={pmParts} onPick={handlePartPick} onClose={() => setPartsPickFor(null)} />}
       </>)}
 
       {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
