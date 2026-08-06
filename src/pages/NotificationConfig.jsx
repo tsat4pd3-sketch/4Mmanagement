@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
-import { MTN_TEAMS } from '../utils/mtnTeams'
+import { MTN_TEAMS, deptNameOf } from '../utils/mtnTeams'
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 
 const inputStyle = {
@@ -89,7 +89,7 @@ const SAMPLE = {
   mo_no: 'BM-140726-01', item_type: 'JIG', problem: 'เซนเซอร์ ชำรุด', reporter_prod: 'นายมงคล นาสมบูรณ์',
   reporter_qa: 'นายชะเอ็ม เตียรเขียว', want_at: '07/14/2569 09:59:00', tech_main: 'นายอภิเดช กะจันต๊ะ',
   root_cause: 'อายุการใช้งาน', solution: 'เปลี่ยนสายสัญญาณใหม่ 1 เส้น', approver: 'นายดุลยทรรศน์ ลาภธนสารสมบัติ',
-  dept: 'JIG MTN', repair_type: 'Breakdown Maintenance', assigned_to: 'นายสหพลล์ แสงชา',
+  dept: 'jig_maintenance', repair_type: 'Breakdown Maintenance', assigned_to: 'นายสหพลล์ แสงชา',
   check_result: 'ตรวจสอบผ่าน', quality_related: 'ไม่เกี่ยวกับคุณภาพ', checker_name: 'นายอภิเดช กะจันต๊ะ',
   qa_result: 'ผ่านคุณภาพ', qa_checker: 'นายชะเอ็ม เตียรเขียว', follow_up: 'ไม่เกิดปัญหาซ้ำ', ho_checker: 'นายมงคล นาสมบูรณ์',
   scope_label: 'PD3', total_actual: 2140, total_target: 2400, achieve_pct: 89, oee_avg: 84,
@@ -320,7 +320,7 @@ export default function NotificationConfig() {
             </label>
             <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
               <option value="">🔧 ทุกทีม (รวม)</option>
-              {MTN_TEAMS.map(t => <option key={t} value={t}>ทีม {t}</option>)}
+              {MTN_TEAMS.map(t => <option key={t} value={t}>ทีม {deptNameOf(t)}</option>)}
             </select>
             <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
