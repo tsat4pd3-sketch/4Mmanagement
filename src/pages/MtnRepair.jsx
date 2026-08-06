@@ -12,8 +12,8 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection, teamForItem, sameTeam } from '../utils/mtnTeams';
-import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
+import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam } from '../utils/mtnTeams';
+import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
 import { fmtDateTime } from '../utils/dateFormat';
@@ -200,6 +200,7 @@ export default function MtnRepair() {
   const [laborRates, setLaborRates] = useState([]); // ราคามาตรฐานค่าแรงซ่อม (master)
   const [improvements, setImprovements] = useState([]); // โปรเจคปรับปรุงที่กำลังทำ (cross-ref D)
   const [mtnDepts, setMtnDepts] = useState(() => pmTeamsSync().map(t => t.dept_name)); // ทีมช่าง data-driven (mtn_teams) — ไม่ hardcode
+  const [mtnTeamRows, setMtnTeamRows] = useState(() => pmTeamsSync()); // แถวทีมเต็ม (key/label/icon) — ใช้ตั้ง 'ทีมของ master แต่ละแถว'
   const [supplyByMachineNo, setSupplyByMachineNo] = useState({}); // machine_no → [line_name] (utility/facility จ่ายไลน์ไหน → ผลกระทบเวลาซ่อม/ตัดไฟ)
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -268,7 +269,7 @@ export default function MtnRepair() {
   }, []);
 
   useEffect(() => {
-    loadPmTeams().then(ts => setMtnDepts(ts.map(t => t.dept_name))); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
+    loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.dept_name)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
     const ch = supabaseDR.channel('mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
     return () => { supabaseDR.removeChannel(ch); };
@@ -303,7 +304,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -410,7 +411,10 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     }));
     toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
-  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it) }));
+  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it, itemTypes) }));
+  // ลิสต์ที่กรองตามทีมที่แจ้งถึงแล้ว (แถวที่ไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
+  const teamItemTypes = useMemo(() => filterByTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
+  const teamProblemTypes = useMemo(() => filterByTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
   const onChar = (c) => { const pt = problemTypes.find(x => x.characteristic === c); setF(p => ({ ...p, problem_characteristic: c, problem_detail: pt?.detail || '' })); };
 
   const save = async () => {
@@ -436,7 +440,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{itemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
+        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
         <Field label="หมายเลขเครื่อง">
           <div style={{ display: 'flex', gap: 6 }}>
             <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="เลือก/พิมพ์/สแกน" />
@@ -445,7 +449,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           </div>
           <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist>
         </Field>
-        <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{problemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
+        <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamProblemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
         <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
@@ -829,6 +833,8 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
 function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
+  // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
+  const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -940,7 +946,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
     <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${titles[step]}`} onClose={onClose}>
       <div style={{ display: 'grid', gap: 12 }}>
         {step === 2 && <>
-          <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{repairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
+          <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
             <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${t.dept}` : ''}</option>)}</select></Field>
@@ -1075,7 +1081,7 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
 }
 
 /* ── Master tab (ช่าง / อะไหล่+stock / taxonomy / ชนิดอุปกรณ์) ── */
-function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtnDepts = MTN_DEPTS, fullName, reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -1143,19 +1149,61 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, laborRates = [], mtn
     </div>
   );
 
-  const SimpleList = ({ table, items, fields, addLabel }) => {
+  /* SimpleList — master list ที่ "แยกมุมมองตามทีมช่างได้"
+     ทีมของแถว: null/ว่าง = 🌐 ใช้ร่วมทุกทีม · ตั้งเป็นทีมใดทีมหนึ่ง = เห็นเฉพาะทีมนั้น
+     ⚠️ ที่แยกคือ "มุมมอง" เท่านั้น — ตัวตนอุปกรณ์ (machine/jig id) เป็นของกลาง ห้ามแตกตามทีม */
+  const SimpleList = ({ table, items, fields, addLabel, teamed = true }) => {
     const [nw, setNw] = useState({});
+    const [nwTeam, setNwTeam] = useState('');
+    const [fTeam, setFTeam] = useState('');
+    const shown = teamed ? filterByTeam(items, fTeam) : items;
+    const teamOpts = mtnTeams.length ? mtnTeams : DEFAULT_TEAMS;
+    const hiddenN = items.length - shown.length;
     return (
       <div>
+        {teamed && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ทีมช่าง:</span>
+            <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={{ ...inp, width: 210 }}>
+              <option value="">ทุกทีม (เห็นทั้งหมด)</option>
+              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+            </select>
+            {!!hiddenN && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ซ่อน {hiddenN} รายการของทีมอื่น</span>}
+            <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>🌐 = ใช้ร่วมทุกทีม</span>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
-          <button onClick={() => { if (!nw[fields[0].k]) return; addRow(table, { ...nw, sort_order: items.length + 1 }); setNw({}); }} style={btnPri}>+ {addLabel}</button>
+          {teamed && (
+            <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: 190 }}>
+              <option value="">🌐 ใช้ร่วมทุกทีม</option>
+              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+            </select>
+          )}
+          <button onClick={() => {
+            if (!nw[fields[0].k]) return;
+            // ทีมของแถวใหม่: ที่เลือกในช่อง หรือ default = ทีมที่กำลังกรองอยู่ (เพิ่มของทีมตัวเองได้เลย)
+            const payload = { ...nw, sort_order: items.length + 1 };
+            if (teamed) payload.team = (nwTeam || fTeam) || null;
+            addRow(table, payload); setNw({}); setNwTeam('');
+          }} style={btnPri}>+ {addLabel}</button>
         </div>
-        <div style={{ display: 'grid', gap: 6 }}>{items.map(it => (
+        <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => (
           <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
             {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={e => e.target.value !== (it[fl.k] || '') && updRow(table, it.id, { [fl.k]: e.target.value })} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
+            {teamed && (
+              <select value={it.team || ''} onChange={e => updRow(table, it.id, { team: e.target.value || null })}
+                title="ทีมที่ใช้รายการนี้" style={{ ...inp, width: 180, flex: '0 0 auto' }}>
+                <option value="">🌐 ใช้ร่วมทุกทีม</option>
+                {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              </select>
+            )}
             <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>))}</div>
+          </div>))}
+          {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>
+            ไม่มีรายการของทีมนี้ — เพิ่มด้านบน (หรือเลือก "ทุกทีม" เพื่อดูของทีมอื่น)
+          </div>}
+        </div>
       </div>
     );
   };

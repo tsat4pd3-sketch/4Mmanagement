@@ -292,6 +292,34 @@
 - **MtnRepair dropdown "แจ้งถึงทีมช่าง"/ฟิลเตอร์/master ดึงจาก `pmTeamsSync().dept_name` (data-driven จาก `mtn_teams`) แล้ว (2026-07-24)** — เลิก hardcode `MTN_DEPTS` (เหลือเป็น fallback default ในลายเซ็น component เท่านั้น เท่ากับ `DEFAULT_TEAMS` ให้พฤติกรรมเดิมเมื่อ table ว่าง) · `loadPmTeams()` เรียกตอน mount → `setMtnDepts` แล้วส่งผ่าน `cp` ไปทุก sub-component · เพิ่ม/แก้ทีมที่ตาราง `mtn_teams` dropdown ตามทันที
 - **ยังเหลือ:** MtnRepair ใช้ `mtn_dept` (ชื่อ "JIG MTN") ยังเก็บ value คนละแบบกับ `checklists.department` ("jig_maintenance") — `mtn_teams.dept_name` เป็นตัวโยง 2 ฝั่ง (ถ้าจะรวม value ให้ตรงกันจริงต้อง migrate data ทีหลัง) · UI จัดการทีม (เพิ่ม/แก้ row) = future (ตอนนี้แก้ผ่านตาราง)
 
+> ### ⚠️ กฎเหล็ก — "ตัวตนอุปกรณ์ = ของกลาง · รายละเอียด = มุมมองของแต่ละทีม" (2026-08-06 · คำสั่ง user)
+> ระบบช่าง **4 ทีมใช้ร่วมกัน** (MTN / JIG MTN / DIE MTN / PRODUCTION) — สิ่งที่ต้อง "ตรงกัน" มีแค่**ตัวตนของอุปกรณ์**
+> `machines.id` / `machines.machine_no` / `jigs.id` / ชื่อเครื่อง = **ของกลางชุดเดียว ห้ามแตกตามทีม**
+> (ไม่งั้นเครื่องเดียวกันกลายเป็นคนละตัวในสายตาแต่ละทีม → สืบประวัติข้ามทีมไม่ได้ ซึ่งคือหัวใจของระบบซ่อมบำรุงรวม)
+> **แต่ "รายละเอียด" อื่นเป็นมุมมองเฉพาะทีม ต้องแยก** — JIG มอง Locator/Clamp/Gripper ชำรุด · DIE มองแม่พิมพ์บิ่น/สึก · MTN มองมอเตอร์/อินเวอร์เตอร์
+>
+> **วิธีแยก: คอลัมน์ `team` แบบ nullable — `null`/ว่าง = 🌐 ใช้ร่วมทุกทีม (common)**
+> (pattern เดียวกับ `lpa_questions.line_name` null = ข้อ common) · ค่าใช้ `mtn_teams.key` · กรองผ่าน **`filterByTeam(rows, team)` / `inTeamScope()` ใน `src/utils/mtnTeams.js` จุดเดียว — ห้ามเขียนเงื่อนไขกรองทีมเอง** (normalize ให้แล้ว รับทั้ง key `jig_maintenance` และ label `JIG MTN`)
+>
+> | ระดับ | ตาราง | มิติทีม |
+> |---|---|---|
+> | **ของกลาง (ห้ามแยก)** | `machines`, `jigs`, `mtn_teams`, `pm_facility_areas` | — ไม่มีโดยตั้งใจ |
+> | **มุมมองทีม** | `mtn_problem_types`, `mtn_item_types`, `mtn_repair_types`, `mtn_spare_categories`, `pm_checkpoint_categories`, `pm_checking_methods` | `team` (เพิ่ม 2026-08-06 · migration `20260806_mtn_master_team_scope.sql`) |
+> | | `mtn_technicians`, `mtn_labor_rates` | `dept` (มีอยู่เดิม) |
+> | | `mtn_spare_parts`, `mtn_rack_maps`, `pm_coordination_tasks` | `team` |
+> | | `checklists` | `department` — **1 เครื่องมีได้หลาย checklist คนละทีม** (ดูกฎ checklist ownership) |
+> | | `mtn_orders` | `mtn_dept` (label) |
+> | **derive เอา ไม่ต้องมีคอลัมน์** | `inspections`, `inspection_results`, `jig_checkpoints`, `pm_plans`, `pm_plan_deferrals/reminders` | ← `checklists.department` |
+> | | `mtn_order_parts`, `mtn_stock_txns`, `mtn_spare_usage_monthly` | ← part/order |
+> | | `mtn_rack_cells` | ← `mtn_rack_maps.team` |
+> | | `pm_facility_points` | ← jig |
+>
+> **จุดที่ต้องกรอง (ทำแล้ว):** ⚙️ ข้อมูลหลัก → `SimpleList` มีแถบเลือกทีม + ตั้งทีมรายแถว (นับ "ซ่อน N รายการของทีมอื่น" ไม่ให้หายเงียบ) · **ฟอร์มแจ้งซ่อม** ชนิดอุปกรณ์/ลักษณะปัญหา กรองตามทีมที่แจ้งถึง + **ล้างค่าที่เลือกไว้เมื่อเปลี่ยนทีมแล้วค่าเดิมไม่อยู่ในลิสต์** (กฎ cascade §5.3) · **ขั้นรับงาน** ประเภทงานซ่อมกรองตามทีมของใบ · **คลังอะไหล่** dropdown หมวดกรองตามทีม
+> **⚠️ หมายเลขเครื่องใน dropdown ห้ามกรองตามทีม** — ของกลาง ทุกทีมต้องอ้างเครื่องเดียวกันได้
+> **เพิ่ม master ใหม่ในระบบช่าง ให้ถามก่อนว่า "ของกลางหรือมุมมองทีม"** — ถ้าเป็นมุมมองทีมต้องมีคอลัมน์ `team` + กรองด้วย `filterByTeam` ตั้งแต่แรก
+> **`teamForItem(name, itemRows)` เป็น data-driven แล้ว** — อ่าน `mtn_item_types.team` ก่อน แล้วค่อย fallback เดาจากชื่อ (JIG→JIG MTN ฯลฯ) ที่ hardcode ไว้เดิม
+> **⚠️ backfill เป็น `null` ทั้งหมดโดยตั้งใจ = ทุกทีมยังเห็นทุกแถวเหมือนก่อน apply** — การไล่ติ๊กว่าแถวไหนของทีมไหนเป็นงาน "จัดข้อมูล" ทำผ่าน UI ไม่เดาให้ใน migration
+
 ### Direct / Indirect Labor + รวมช่างเข้าฐานพนักงาน (2026-07-22)
 
 **คนทุกคนอยู่ที่ `employees` ที่เดียว** — operator (ฝ่ายผลิต) และช่างซ่อมบำรุง เป็น employee เหมือนกัน ต่างกันแค่ **ประเภทแรงงาน** และ **section**

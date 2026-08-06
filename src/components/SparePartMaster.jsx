@@ -13,7 +13,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { can, canDelete } from '../utils/permissions';
 import { pmTeamsSync } from '../utils/pmTeams';
-import { teamKeyOf } from '../utils/mtnTeams';
+import { teamKeyOf, filterByTeam } from '../utils/mtnTeams';
 import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
 import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import ImageCropModal from './ImageCropModal';
@@ -100,6 +100,8 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   const reloadAll = useCallback(async () => { await Promise.all([reload?.(), loadAux()]); }, [reload, loadAux]);
 
   const catOf = useCallback((k) => cats.find(c => c.key === k), [cats]);
+  // หมวดอะไหล่เป็นมุมมองของทีม (เช่น LP = Locating Pin เป็นของ JIG) → dropdown กรองตามทีมที่เลือก
+  const teamCats = useMemo(() => filterByTeam(cats, fTeam), [cats, fTeam]);
   // รหัสชั้นวางที่เคยใช้ — datalist กันพิมพ์รหัสใหม่ทุกครั้ง (รหัสต้องนิ่งเพื่อผูกแผนผังคลังในอนาคต)
   const shelfOpts = useMemo(() => [...new Set(parts.map(p => p.shelf).filter(Boolean))].sort(), [parts]);
 
@@ -200,7 +202,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         </select>
         <select value={fCat} onChange={e => setFCat(e.target.value)} style={{ ...inp, width: 170 }}>
           <option value="">ทุกหมวด</option>
-          {cats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.label}</option>)}
+          {teamCats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.label}</option>)}
         </select>
         <select value={fRank} onChange={e => setFRank(e.target.value)} style={{ ...inp, width: 130 }}>
           <option value="">ทุก Rank</option>
@@ -335,7 +337,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       {editPart && <PartEditModal part={editPart === 'new' ? null : editPart} cats={cats} teams={teams} shelfOpts={shelfOpts}
         usageRows={editPart === 'new' ? [] : (usage[editPart.id] || [])} count={parts.length}
         onClose={() => setEditPart(null)} onSaved={reloadAll} />}
-      {showCats && <CategoryModal cats={cats} onClose={() => setShowCats(false)} onSaved={loadAux} />}
+      {showCats && <CategoryModal cats={cats} teams={teams} onClose={() => setShowCats(false)} onSaved={loadAux} />}
       {showImport && <ImportModal parts={parts} cats={cats} teams={teams} fullName={fullName}
         onClose={() => setShowImport(false)} onDone={reloadAll} />}
     </div>
@@ -946,7 +948,7 @@ function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
 /* ══════════════════════════════════════════════════════════════════════════
    จัดการหมวดอะไหล่ (data-driven)
    ══════════════════════════════════════════════════════════════════════════ */
-function CategoryModal({ cats, onClose, onSaved }) {
+function CategoryModal({ cats, teams = [], onClose, onSaved }) {
   const [n, setN] = useState({ key: '', label: '', icon: '', color: '#94a3b8' });
   const add = async () => {
     const key = n.key.trim().toUpperCase();
@@ -965,7 +967,7 @@ function CategoryModal({ cats, onClose, onSaved }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>🏷️ หมวดอะไหล่</div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>รหัสหมวดใช้จัดกลุ่มในคลัง — เพิ่ม/แก้ได้เอง ไม่ต้องแก้โค้ด</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>รหัสหมวดใช้จัดกลุ่มในคลัง — เพิ่ม/แก้ได้เอง ไม่ต้องแก้โค้ด · ตั้งทีมได้ถ้าหมวดนั้นใช้เฉพาะบางทีม (เช่น LP = Locating Pin ของ JIG)</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           <input value={n.key} onChange={e => setN(p => ({ ...p, key: e.target.value }))} placeholder="รหัส (EE)" style={{ ...inp, width: 90 }} />
           <input value={n.icon} onChange={e => setN(p => ({ ...p, icon: e.target.value }))} placeholder="ไอคอน" style={{ ...inp, width: 70 }} />
@@ -980,6 +982,11 @@ function CategoryModal({ cats, onClose, onSaved }) {
               <input defaultValue={c.icon || ''} onBlur={e => e.target.value !== (c.icon || '') && upd(c.key, { icon: e.target.value || null })} style={{ ...inp, width: 60 }} />
               <input defaultValue={c.label} onBlur={e => e.target.value !== c.label && upd(c.key, { label: e.target.value })} style={{ ...inp, flex: 1 }} />
               <input type="color" defaultValue={c.color || '#94a3b8'} onBlur={e => e.target.value !== c.color && upd(c.key, { color: e.target.value })} style={{ ...inp, width: 46, padding: 3 }} />
+              <select value={c.team || ''} onChange={e => upd(c.key, { team: e.target.value || null })}
+                title="ทีมที่ใช้หมวดนี้" style={{ ...inp, width: 165, flex: '0 0 auto' }}>
+                <option value="">🌐 ใช้ร่วมทุกทีม</option>
+                {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              </select>
               <button className="tbtn" onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} style={{ ...btnGhost, padding: '5px 9px', color: '#ef4444' }}>🗑</button>
             </div>
           ))}
