@@ -1335,7 +1335,7 @@ export default function Operator() {
                   <select value={editingEmp.position || ''}
                     onChange={e => setEditingEmp({ ...editingEmp, position: e.target.value })}>
                     <option value="">— เลือก —</option>
-                    {positionOptionsWith(editingEmp.position).map(p => <option key={p} value={p}>{p}</option>)}
+                    {positionOptionsWith(editingEmp.position).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 </div>
               </div>

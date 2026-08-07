@@ -11,6 +11,7 @@ import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permission
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
+import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -399,7 +400,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {[userPosition, userEmail].filter(Boolean).join(' · ')}
+                {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ')}
               </div>
             </div>
             <div style={{
@@ -1329,6 +1330,7 @@ export default function App() {
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
     setUserPosition(data?.position ?? null);
+    loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);

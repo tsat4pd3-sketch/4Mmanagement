@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
-import { POSITION_OPTIONS } from '../utils/positions';
+import { positionOptions, positionLabel, loadPositions, levelOfPosition, maintenanceKindOfPosition, levelMeta } from '../utils/positions';
+import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
@@ -41,7 +42,8 @@ const TEAM_DESC = {
 
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
 // master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ห้าม hardcode ซ้ำ
-const POSITION_SUGGESTIONS = POSITION_OPTIONS;
+// ตัวเลือกตำแหน่ง — อ่านสดจาก cache ของ master (loadPositions() เรียกตอน mount) · [{value:key,label:ไทย,level}]
+const posOpts = () => positionOptions();
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -65,7 +67,11 @@ export default function AddUser() {
   const [resetPw,       setResetPw]       = useState(''); // ช่องตั้งรหัสใหม่ใน modal แก้ไข
   const [resetPwBusy,   setResetPwBusy]   = useState(false);
 
+  const [posVer, setPosVer] = useState(0);   // bump เมื่อ master ตำแหน่งโหลดเสร็จ → dropdown/ป้ายระดับ re-render
+
   useEffect(() => {
+    // master ตำแหน่งงาน (positions) — ต้องโหลดก่อน positionLabel()/levelOfPosition() ถึงได้ค่าจาก DB
+    Promise.all([loadPositions(), loadPermissions()]).then(() => setPosVer(v => v + 1));
     supabase.from('production_lines').select('id, name').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
@@ -157,7 +163,7 @@ export default function AddUser() {
       team:        u.team         || '',
       notifyEmail: u.notify_email || '',
     });
-    setPosCustom(!!u.position && !POSITION_SUGGESTIONS.includes(u.position));
+    setPosCustom(!!u.position && !posOpts().some(p => p.value === u.position));
     setEditingId(u.id);
     setModalMode('edit');
     setMessage(null);
@@ -425,7 +431,7 @@ export default function AddUser() {
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>{u.email}</div>
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: u.position ? 'var(--text)' : 'var(--muted)' }}>
-                    {u.position || '—'}
+                    {u.position ? positionLabel(u.position) : '—'}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
@@ -576,7 +582,7 @@ export default function AddUser() {
                     else { setPosCustom(false); setF('position', e.target.value); }
                   }}>
                   <option value="">— ไม่ระบุ —</option>
-                  {POSITION_SUGGESTIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                  {posOpts().map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   <option value="__custom__">อื่นๆ (พิมพ์เอง)...</option>
                 </select>
                 {posCustom && (
@@ -586,7 +592,36 @@ export default function AddUser() {
                 )}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                   ตำแหน่งจริงในโรงงาน — ใช้แสดงตัวตน/รายงาน/ลายเซ็น <b>ไม่มีผลต่อสิทธิ์</b>
+                  {(() => {
+                    const lv = levelOfPosition(form.position);
+                    return lv ? <> · ระดับงาน: <b style={{ color: 'var(--text2)' }}>{levelMeta(lv)?.label}</b></> : null;
+                  })()}
                 </div>
+                {/* ⚠️ คำเตือน "ระดับงานไม่ตรงกับสิทธิ์ที่ให้" — แนะนำเท่านั้น ไม่บล็อก (หน้างานมีข้อยกเว้นเสมอ)
+                    เคสจริงที่จับได้: ธุรการ (ระดับสนับสนุน) ที่ role ซ่อมบำรุง ได้สิทธิ์อนุมัติ PM เต็ม */}
+                {(() => {
+                  const kind = maintenanceKindOfPosition(form.position);   // 'am' | 'pm' | 'both' | null
+                  if (!form.position || !levelOfPosition(form.position)) return null;
+                  const hasPm = can('pm', 'record', form.role) || can('pm', 'approve', form.role);
+                  const hasAm = can('am', 'record', form.role);
+                  const msgs = [];
+                  if (kind === null && (hasPm || hasAm))
+                    msgs.push(`ตำแหน่งนี้เป็นสายสนับสนุน แต่ชุดสิทธิ์ที่เลือกให้บันทึก/อนุมัติผลตรวจได้ — ตรวจอีกครั้งว่าตั้งใจ`);
+                  if (kind === 'am' && hasPm)
+                    msgs.push(`ตำแหน่งนี้เป็นระดับหน้างาน (AM) แต่ชุดสิทธิ์ให้ทำงาน PM ของช่างได้ด้วย`);
+                  if (kind === 'pm' && !hasPm)
+                    msgs.push(`ตำแหน่งนี้เป็นช่าง (PM) แต่ชุดสิทธิ์ที่เลือกยังบันทึกผลตรวจ PM ไม่ได้`);
+                  if (!msgs.length) return null;
+                  return (
+                    <div style={{ marginTop: 6, padding: '6px 9px', borderRadius: 7, fontSize: 11, lineHeight: 1.5,
+                      background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', color: 'var(--text)' }}>
+                      ⚠️ {msgs.join(' · ')}
+                      <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                        เป็นแค่คำแนะนำ — สิทธิ์จริงคุมที่ 🔐 จัดการสิทธิ์ (ปรับได้ตามหน้างาน)
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>

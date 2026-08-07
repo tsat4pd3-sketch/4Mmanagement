@@ -172,7 +172,7 @@ export default function Register() {
               {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) ใช้ร่วมทุกหน้า */}
               <select value={position} onChange={e => setPosition(e.target.value)}>
                 <option value="">— เลือก —</option>
-                {positionOptionsWith(position).map(p => <option key={p} value={p}>{p}</option>)}
+                {positionOptionsWith(position).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </select>
             </div>
             <div>
