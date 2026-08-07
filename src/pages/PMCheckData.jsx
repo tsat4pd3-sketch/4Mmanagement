@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
@@ -14,7 +14,7 @@ import { getDocForm } from '../utils/docForms'
 import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } from '../lib/pmTaxonomy'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
-import { loadPmTeams, pmTeamsSync, teamKind } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -559,7 +559,9 @@ export default function PMCheckData() {
 
   const [userId, setUserId] = useState(null)
   const [userRole, setUserRole] = useState(null)
-  const canRecord = can('pm', 'record', userRole)
+  // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
+  //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
+  const canRecord = useMemo(() => { const [res, act] = recordPermFor(department); return can(res, act, userRole) }, [department, userRole])
   const [jigs, setJigs] = useState([])
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
@@ -980,7 +982,7 @@ export default function PMCheckData() {
                       })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>
-                        {saving ? 'กำลังบันทึก...' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึกผลตรวจ' : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : cp.type === 'measure' ? (r?.mval === '' || r?.mval == null) : !r?.attr }).length} จุด)`}
+                        {saving ? 'กำลังบันทึก...' : !canRecord ? `🔒 ไม่มีสิทธิ์บันทึกผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : cp.type === 'measure' ? (r?.mval === '' || r?.mval == null) : !r?.attr }).length} จุด)`}
                       </button>
                     </>
                   )}

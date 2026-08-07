@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
-import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
+import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
 import { POSITION_OPTIONS } from '../utils/positions';
 import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 
@@ -15,6 +15,15 @@ const isMtnTeamRole = (r) => MTN_TEAM_ROLES.includes(r);
 // desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น — ห้ามพิมพ์รายชื่อโมดูล/หน้า
 // เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole)
 const ROLES = ROLE_OPTIONS.map(r => ({ ...r, label: `${r.icon} ${r.label} (${r.en})` }));
+// จัดกลุ่ม role ตามแกน (ระดับสิทธิ์ / หน่วยงาน / อุปกรณ์) — ทำให้เห็นชัดว่า role ไม่ใช่ "ตำแหน่งงาน"
+//   เคสจริงที่เคยสับสน: "ส่วนวิศวกรรม" เป็นหน่วยงาน ไม่ใช่ตำแหน่งวิศวกร (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)
+const ROLE_GROUPS = groupRolesByAxis(ROLES);
+// <optgroup> ของ role — ใช้ซ้ำทุก dropdown ที่เลือก role ในหน้านี้
+const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
+  <optgroup key={g.axis} label={g.label}>
+    {g.roles.map(r => <option key={r.value} value={r.value}>{r.label}{withDesc ? ` — ${r.desc}` : ''}</option>)}
+  </optgroup>
+));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '' };
@@ -364,7 +373,7 @@ export default function AddUser() {
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
           style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
           <option value="">ทุกชุดสิทธิ์</option>
-          {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          <RoleOptGroups />
         </select>
         <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
           style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
@@ -462,26 +471,38 @@ export default function AddUser() {
 
       {/* Role reference — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode */}
       <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 8 }}>
-          {ROLES.map(r => {
-            const sum = accessSummaryForRole(r.value);
-            return (
-              <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
-                <div style={{ minWidth: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
-                    {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+          ชุดสิทธิ์ <b>ไม่ใช่ตำแหน่งงาน</b> — ตำแหน่งจริง (วิศวกร / ช่างเทคนิค / หัวหน้าแผนก) กรอกที่ช่อง “ตำแหน่งงาน” แยกต่างหาก<br />
+          เช่น <b>วิศวกรที่สังกัดแผนกซ่อมบำรุง</b> ให้เลือกชุดสิทธิ์ <b>🔧 ซ่อมบำรุง</b> แล้วกรอกตำแหน่งว่า “วิศวกร” — ไม่ใช่เลือก “ส่วนวิศวกรรม”
         </div>
+        {ROLE_GROUPS.map(g => (
+          <div key={g.axis} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
+              {g.label} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— {g.hint}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 8 }}>
+              {g.roles.map(r => {
+                const sum = accessSummaryForRole(r.value);
+                return (
+                  <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
+                      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
+                        {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Create / Edit Modal */}
@@ -575,9 +596,7 @@ export default function AddUser() {
               <div>
                 <label style={labelSt}>ชุดสิทธิ์การใช้งาน (Role)</label>
                 <select value={form.role} onChange={e => setF('role', e.target.value)}>
-                  {ROLES.map(r => (
-                    <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
-                  ))}
+                  <RoleOptGroups withDesc />
                 </select>
                 {/* สรุปหน้าเข้าได้จริงของ role ที่เลือก — อ่านสดจากตารางสิทธิ์ ไม่ hardcode */}
                 {(() => {
