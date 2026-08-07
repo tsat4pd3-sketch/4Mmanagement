@@ -10,6 +10,7 @@
 ## ⚠️ กฎการทำงานทุก session — เช็คกฎก่อน, แก้แล้วอัพเดทกฎ (คำสั่งถาวรจาก user 2026-07-09)
 
 **ก่อนลงมือทำงานใดๆ:**
+0. **อ่าน `docs/ENGINEERING-PRINCIPLES.md`** — หลักการแก้ไข/ต่อยอดอย่างยั่งยืน (คิดเผื่ออนาคต ไม่แก้ฉาบฉวย): single source of truth · data-driven ก่อน hardcode · backward-compatible migration · ห้ามล้มเหลวเงียบ · blast radius + rollback · checklist ก่อน commit/merge — **ใช้กับทุกงานไม่ว่าเล็กหรือใหญ่**
 1. อ่านไฟล์นี้ (CLAUDE.md) ให้จบก่อนเสมอ — โดยเฉพาะกฎเหล็ก supabaseDR, Date/Time utilities, Organizational Hierarchy
 2. ถ้างานแตะ UI → **ต้องอ่าน `docs/UI-CONVENTIONS.md` ก่อน** และทำตามอย่างเคร่งครัด (marker วงกลม+MK+clamp, Andon, ฟอนต์ขั้นต่ำ 11-12px, can() ฯลฯ)
 3. ถ้า convention ขัดกับสิ่งที่กำลังจะทำ → ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยนชัดเจน
@@ -1247,7 +1248,8 @@ supabase/
                        # หน้า Login แยก error "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
                        #   (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
 
-docs/                  # UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
+docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก้แบบยั่งยืน — อ่านก่อนทุกงาน) ·
+                       #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง)
 ```
 
@@ -1316,6 +1318,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 
 ลำดับที่ต้องทำทุกครั้ง ไม่ว่าจะแก้อะไร:
 1. **เช็คกฎก่อนลงมือ** — อ่าน section ที่เกี่ยวข้องใน CLAUDE.md นี้ + เอกสารเฉพาะทาง:
+   - **ทุกงาน → `docs/ENGINEERING-PRINCIPLES.md`** (หลักการแก้แบบยั่งยืน + checklist ก่อน commit/merge)
    - แก้ UI → `docs/UI-CONVENTIONS.md` (บังคับ)
    - แตะสิทธิ์/role → `docs/PERMISSIONS-DESIGN.md`
    - แตะ DB → section "Supabase Projects" (2 projects!) + เขียน migration ลง `supabase/migrations/` เสมอ
