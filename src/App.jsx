@@ -11,6 +11,7 @@ import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permission
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
+import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -21,6 +22,7 @@ const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
+const QrLabels     = lazy(() => import('./pages/QrLabels'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
@@ -35,6 +37,7 @@ const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
+const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -81,6 +84,8 @@ const NAV_ITEMS = [
   // · วิเคราะห์ & รายงาน · พนักงาน & ทักษะ (ใหม่ — รวมเรื่องคนที่เคยกระจาย 3 หมวด)
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
+  // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
+  { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -126,6 +131,7 @@ const NAV_ITEMS = [
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -394,7 +400,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {[userPosition, userEmail].filter(Boolean).join(' · ')}
+                {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ')}
               </div>
             </div>
             <div style={{
@@ -1095,6 +1101,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
               } />
+              <Route path="/group-overview" element={
+                <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
+              } />
               <Route path="/management" element={
                 <RoleRoute path="/management" userRole={role}><Management /></RoleRoute>
               } />
@@ -1121,6 +1130,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/process-setup" element={
                 <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
+              } />
+              <Route path="/qr-labels" element={
+                <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>
               } />
               <Route path="/machine-database" element={
                 <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
@@ -1318,6 +1330,7 @@ export default function App() {
     setUserTeam(data?.team ?? null);
     setUserSection(data?.section ?? null);
     setUserPosition(data?.position ?? null);
+    loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
     setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);

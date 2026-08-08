@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
@@ -7,8 +7,8 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
-import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
-import { getOrCreateChecklist, setChecklistFrequency } from '../lib/pmChecklists'
+import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
+import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
@@ -149,12 +149,39 @@ const S = {
   }),
 }
 
+// ความสูงกรอบดูรูปในหน้าตั้งค่า ≈ 46% ของจอ — เหลือที่ให้ลิสต์จุดตรวจเห็นในจอเดียว (UI-CONVENTIONS §5.1)
+const calcAnnoViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window === 'undefined' ? 900 : window.innerHeight) * 0.46)))
+
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
 function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
   const layerRef = useRef(null)
   // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
   // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
   const { imgRef, imgBox, recalc } = useImgBox([imageUrl])
+  // ซูม: 1 = พอดีกรอบทั้ง 2 แกน (contain) ไม่ใช่ขนาดไฟล์/เต็มความกว้าง — สูตรเดียวกับ QAInspectionSetup
+  // (UI-CONVENTIONS §5.1 · รูป PM ถูกครอปเป็นแนวตั้ง 3:4 ถ้าเต็มความกว้างจะสูงจนเช็คลิสต์ตกจอ)
+  const boxRef = useRef(null)
+  const [boxW, setBoxW] = useState(0)
+  const [natSize, setNatSize] = useState({ w: 0, h: 0 })
+  const [viewH, setViewH] = useState(() => calcAnnoViewH())
+  const [zoom, setZoom] = useState(1)
+  useEffect(() => { setZoom(1); setNatSize({ w: 0, h: 0 }) }, [imageUrl])   // เปลี่ยนรูป → รีเซ็ตซูม/ขนาดไฟล์
+  useEffect(() => {
+    const on = () => setViewH(calcAnnoViewH())
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
+  // วัดความกว้างจาก div นอกที่ไม่ scroll — วัดจากกรอบ scroll เองจะหดตอน scrollbar โผล่ = ขนาดรูปแกว่ง
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) { setBoxW(0); return }
+    const measure = () => setBoxW(el.clientWidth || 0)
+    const ro = new ResizeObserver(measure)
+    ro.observe(el); measure()
+    return () => ro.disconnect()
+  }, [imageUrl])
+  const fitScale = (natSize.w && natSize.h && boxW) ? Math.min(boxW / natSize.w, viewH / natSize.h) : 0
+  const imgW = fitScale ? Math.round(natSize.w * fitScale * zoom) : 0
   const PK = Math.round(Math.max(20, Math.min(36, (imgBox?.rw || 500) * 0.04)))
   const pkFont = Math.max(11, Math.round(PK * 0.45))
   const padX = imgBox ? (PK * 0.7 / imgBox.rw) * 100 : 0
@@ -170,34 +197,74 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
     const y = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
     onImageClick(x, y)
   }
+  const zBtn = {
+    padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)',
+    background: 'var(--bg3)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+  }
   return (
-    <div onClick={handleClick} style={{
-      position: 'relative', userSelect: 'none', borderRadius: 8, overflow: 'hidden',
-      border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`,
-      cursor: activePinKey ? 'crosshair' : 'default',
-    }}>
-      <img ref={imgRef} src={imageUrl} alt="JIG" onLoad={recalc} style={{ width: '100%', maxHeight: 300, objectFit: 'contain', background: 'var(--bg2)', display: 'block' }} />
-      {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
-      {imgBox && (
-        <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
-          {checkpoints.map((cp, i) => {
-            if (cp.x_pos == null || cp.y_pos == null) return null
-            const isActive = activePinKey === cp._key
-            const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
-            return (
-              <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                label={labels?.[i] ?? i + 1} color={col} selected={isActive}
-                title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
-                onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
-            )
-          })}
+    <div>
+      {/* ซูมสำหรับวางจุดแม่นๆ — 100% = พอดีกรอบทั้ง 2 แกน (UI-CONVENTIONS §5.1) */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
+        <span style={{ fontSize: 12, fontWeight: 800, minWidth: 46, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
+        <button type="button" style={zBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
+        {zoom > 1 && <button type="button" style={zBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของรูปได้ในกรอบ' : 'เห็นรูปเต็มพอดีกรอบ — ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
+      </div>
+      {/* div นอก = ตัววัดความกว้างที่ใช้ได้ (ไม่ scroll) · div ใน = กรอบดู สูงไม่เกิน viewH
+          · wrapper รูป width:fit-content + margin auto = จัดกลางโดยไม่โดนตัดขอบซ้ายตอนซูมเกินกรอบ */}
+      <div ref={boxRef}>
+      <div style={{
+        maxHeight: viewH, overflow: 'auto', borderRadius: 8,
+        border: `2px solid ${activePinKey ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg2)',
+      }}>
+        <div onClick={handleClick} style={{
+          position: 'relative', userSelect: 'none', width: 'fit-content', margin: '0 auto',
+          cursor: activePinKey ? 'crosshair' : 'default',
+        }}>
+          <img src={imageUrl} alt="JIG"
+            // รูปจาก cache บางที onLoad ไม่ยิง → ref อ่าน naturalWidth ให้ด้วย (ไม่งั้น render ที่ขนาดไฟล์ = ล้นกรอบ)
+            // ref เดียวกันต้องส่งต่อให้ useImgBox (imgRef) เพื่อวัดกล่องรูปจริงของ layer หมุด
+            ref={el => {
+              imgRef.current = el
+              if (el?.complete && el.naturalWidth && !natSize.w) setNatSize({ w: el.naturalWidth, h: el.naturalHeight })
+            }}
+            onLoad={e => {
+              const el = e.currentTarget
+              setNatSize({ w: el.naturalWidth || 0, h: el.naturalHeight || 0 })
+              recalc()
+            }}
+            style={{
+              display: 'block', height: 'auto',
+              // fallback ระหว่างยังไม่รู้ขนาดไฟล์: contain ในกรอบไว้ก่อน (px ไม่ใช้ % — wrapper เป็น fit-content)
+              width: imgW ? `${imgW}px` : 'auto',
+              maxWidth: imgW ? 'none' : (boxW ? `${boxW}px` : '100%'),
+              maxHeight: imgW ? 'none' : viewH,
+            }} />
+          {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ ไม่ใช่ % ของ container */}
+          {imgBox && (
+            <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
+              {checkpoints.map((cp, i) => {
+                if (cp.x_pos == null || cp.y_pos == null) return null
+                const isActive = activePinKey === cp._key
+                const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
+                return (
+                  <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                    label={labels?.[i] ?? i + 1} color={col} selected={isActive}
+                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
+                    onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
+                )
+              })}
+            </div>
+          )}
+          {activePinKey && (
+            <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
+            </div>
+          )}
         </div>
-      )}
-      {activePinKey && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-          <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
-        </div>
-      )}
+      </div>
+      </div>
     </div>
   )
 }
@@ -394,6 +461,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [error, setError] = useState('')
 
   const [lineOptions, setLineOptions] = useState([])
+  // สรุปรายการตรวจของเครื่องนี้แยกตามแผนก (1 เครื่องมีได้หลายแผนก) + เครื่องมือย้าย/คัดลอก
+  const [deptSummary, setDeptSummary] = useState([])
+  const [moveBusy, setMoveBusy] = useState(false)
+  const [moveTo, setMoveTo] = useState('')
+  const [existingNote, setExistingNote] = useState(null)  // เครื่องที่เลือกเคยขึ้นทะเบียน PM แผนกอื่นแล้ว
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
@@ -405,16 +477,21 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   useEffect(() => {
     if (!editJig || !userId) return
-    getOrCreateChecklist(editJig.id, 'mtn', department, userId).then(async (cl) => {
-      if (!cl) return
-      setFrequency(cl.frequency)
+    // ⚠️ อ่านอย่างเดียว (findChecklist) — ห้ามสร้างตอนเปิดดู ไม่งั้นได้ checklist เปล่าของแผนกที่บังเอิญเปิดดู
+    //    เครื่องนี้อาจยังไม่มี checklist ของแผนกที่เลือก = ฟอร์มเปล่าให้เริ่มลงจุดตรวจใหม่ (สร้างจริงตอน save)
+    ;(async () => {
+      const cl = await findChecklist(editJig.id, 'mtn', department)
+      setFrequency(cl?.frequency ?? 'periodic')
       // load spin frames (jig_images); fall back to jigs.image_path as one frame
+      // — รูปเป็นของ "เครื่อง" ไม่ใช่ของ checklist จึงต้องโหลดเสมอแม้แผนกนี้ยังไม่มี checklist
       const { data: imgs } = await supabaseDR.from('jig_images').select('*').eq('jig_id', editJig.id).order('sort')
       let fr = (imgs ?? []).map(im => ({ _key: im.id, id: im.id, image_path: im.image_path, _preview: getPublicUrl(im.image_path), title: im.title }))
       if (!fr.length && editJig.image_path) fr = [{ _key: 'legacy', image_path: editJig.image_path, _preview: getPublicUrl(editJig.image_path), title: null }]
       setFrames(fr); setFrameIdx(0)
       const frameKeyById = Object.fromEntries(fr.filter(f => f.id).map(f => [f.id, f._key]))
-      const { data: cps } = await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+      const { data: cps } = cl
+        ? await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+        : { data: [] }
       setCheckpoints((cps ?? []).map(c => ({
         ...c, _key: c.id,
         group_name: c.group_name ?? '', description: c.description ?? '',
@@ -426,14 +503,52 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         ...fr.map(f => f.image_path),
         ...(cps ?? []).map(c => c.image_path),
       ].filter(Boolean))
+      if (!cl) return
       const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
       if (plan) {
         setPlanType(plan.plan_type ?? 'time')
         setUsageThreshold(plan.usage_threshold != null ? String(plan.usage_threshold) : '')
         setUsageLine(plan.usage_source_line ?? '')
       }
-    })
+    })()
+    listChecklistsByDept(editJig.id, 'mtn').then(setDeptSummary).catch(() => setDeptSummary([]))
   }, [editJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reloadDeptSummary = () => {
+    if (editJig) listChecklistsByDept(editJig.id, 'mtn').then(setDeptSummary).catch(() => {})
+  }
+
+  // ย้าย/คัดลอก "รายการตรวจของแผนกที่กำลังเปิดอยู่" ไปแผนกอื่น
+  const handleTransfer = async (mode) => {
+    const cur = deptSummary.find(d => d.department === department)
+    if (!cur) { setError('แผนกนี้ยังไม่มีรายการตรวจให้ย้าย — บันทึกจุดตรวจก่อน'); return }
+    if (!moveTo || moveTo === department) { setError('เลือกแผนกปลายทางก่อน'); return }
+    const toLabel = pmTeamsSync().find(t => t.key === moveTo)?.label ?? moveTo
+    setMoveBusy(true); setError('')
+    try {
+      const run = (replace) => mode === 'move'
+        ? moveChecklistDept(cur.id, moveTo, { replace })
+        : copyChecklistToDept(cur.id, moveTo, userId, { replace })
+      let res = await run(false)
+      if (res.reason === 'target_has_checkpoints') {
+        const ok = window.confirm(`${toLabel} มีรายการตรวจอยู่แล้ว ${res.targetCheckpoints} จุด\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด — ยืนยันหรือไม่?`)
+        if (!ok) { setMoveBusy(false); return }
+        res = await run(true)
+      }
+      if (res.reason === 'empty') { setError('แผนกนี้ยังไม่มีจุดตรวจให้คัดลอก'); setMoveBusy(false); return }
+      toast.success(mode === 'move'
+        ? `ย้ายรายการตรวจไป ${toLabel} แล้ว (ประวัติการตรวจย้ายตามไปด้วย)`
+        : `คัดลอก ${res.count} จุดตรวจไป ${toLabel} แล้ว`)
+      setMoveTo('')
+      reloadDeptSummary()
+      onSaved()   // รีเฟรชลิสต์เครื่องด้านหลัง — ย้ายแล้วเครื่องจะย้ายแท็บ
+      if (mode === 'move') onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setMoveBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!isEdit) setCheckpoints([newCheckpoint()])
@@ -448,6 +563,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   const handleMachineSelect = (id) => {
     setMachineId(id)
+    setExistingNote(null)
     if (!id) { setName(''); setLineName(''); setMachineNo(''); return }
     const m = machineOptions.find(x => x.id === id)
     if (!m) return
@@ -456,6 +572,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     setMachineNo(m.machine_no ?? '')
     setEquipCategory('production')
     setEquipType(inferEquipType(m.machine_no))
+    // เครื่องนี้อาจขึ้นทะเบียน PM ไว้แล้วโดยแผนกอื่น — บอกให้รู้ว่าจะ "เพิ่มรายการตรวจของแผนกนี้"
+    // ไม่ใช่สร้างอุปกรณ์ซ้ำ (save จะใช้แถว jigs เดิม)
+    supabaseDR.from('jigs').select('id').eq('module', 'mtn').eq('machine_id', id).maybeSingle()
+      .then(async ({ data: j }) => {
+        if (!j) return
+        const rows = await listChecklistsByDept(j.id, 'mtn').catch(() => [])
+        setExistingNote(rows.filter(r => r.checkpointCount > 0))
+      }, () => {})
   }
 
   const handleModeSwitch = (mode) => {
@@ -529,7 +653,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     // รูปหลายมุมได้ตั้งแต่ 1 รูปขึ้นไป ไม่บังคับจำนวน — 2 รูปขึ้นไปปัดดูรอบเครื่องได้ ยิ่งเยอะยิ่งลื่น
     setSaving(true); setError('')
     try {
-      const jigId = editJig?.id ?? crypto.randomUUID()
+      // ⚠️ เครื่องเดียวกันต้องเป็นแถว jigs แถวเดียว แม้ตรวจหลายแผนก — ถ้าเครื่องจาก Machine Master
+      //    เคยขึ้นทะเบียนไว้แล้ว (แผนกอื่น) ให้ใช้แถวเดิม แล้วเพิ่มแค่ checklist ของแผนกนี้
+      //    (เดิม mint uuid ใหม่เสมอ = อุปกรณ์ซ้ำ 2 แถวต่อเครื่อง)
+      let jigId = editJig?.id ?? null
+      if (!jigId && machineId) {
+        const { data: existJig } = await supabaseDR.from('jigs')
+          .select('id').eq('module', 'mtn').eq('machine_id', machineId).maybeSingle()
+        if (existJig) jigId = existJig.id
+      }
+      if (!jigId) jigId = crypto.randomUUID()
 
       // ── resolve spin frames: upload new files, keep existing paths ──
       const spinMode = layoutType === 'image_pin' && frames.length >= 2
@@ -635,7 +768,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           ...checkpoints.map(c => cpImagePaths[c._key] ?? c.image_path).filter(Boolean),
         ])
         const stale = [...initialImagePathsRef.current].filter(p => !finalPaths.has(p) && p.startsWith('jigs/'))
-        if (stale.length) supabaseDR.storage.from('jig-images').remove(stale).catch(() => {})
+        if (stale.length) {
+          // ⚠️ รูปจุดตรวจถูกแชร์ได้ถ้าเคย "คัดลอกรายการตรวจไปแผนกอื่น" (copy อ้าง image_path เดิม)
+          //    → ลบเฉพาะไฟล์ที่ไม่มี checkpoint ของแผนกอื่นอ้างถึงแล้ว
+          supabaseDR.from('jig_checkpoints').select('image_path').in('image_path', stale)
+            .then(({ data }) => {
+              const stillUsed = new Set((data ?? []).map(r => r.image_path))
+              const orphan = stale.filter(p => !stillUsed.has(p))
+              if (orphan.length) supabaseDR.storage.from('jig-images').remove(orphan).catch(() => {})
+            }, () => {})
+        }
         initialImagePathsRef.current = finalPaths
       }
       toast.success('บันทึกสำเร็จ')
@@ -690,6 +832,76 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         </div>
 
         <div style={S.modalBody}>
+          {isEdit && (() => {
+            // 1 เครื่อง = หลายรายการตรวจแยกตามแผนก — ให้เห็นภาพรวมและย้าย/คัดลอกได้โดยไม่ต้องพิมพ์ใหม่
+            const allTeams = pmTeamsSync()
+            const cur = deptSummary.find(d => d.department === department)
+            const others = deptSummary.filter(d => d.department !== department && d.checkpointCount > 0)
+            const chip = (d) => {
+              const t = allTeams.find(x => x.key === d.department)
+              const isCur = d.department === department
+              return (
+                <span key={d.department} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999,
+                  fontSize: 11.5, fontWeight: isCur ? 800 : 600,
+                  background: isCur ? 'var(--accent-dim)' : 'var(--bg3)',
+                  border: `1px solid ${isCur ? (t?.color || deptColor) : 'var(--border2)'}`,
+                  color: isCur ? (t?.color || deptColor) : 'var(--text2)',
+                }}>
+                  {t?.icon ? `${t.icon} ` : ''}{t?.label ?? d.department}
+                  <b style={{ fontWeight: 800 }}>{d.checkpointCount} จุด</b>
+                  {d.inspectionCount > 0 && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· ตรวจแล้ว {d.inspectionCount} ครั้ง</span>}
+                  {isCur && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· กำลังแก้</span>}
+                </span>
+              )
+            }
+            return (
+              <div style={{ padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
+                  🗂️ รายการตรวจของเครื่องนี้ (แยกตามแผนก)
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {deptSummary.length === 0
+                    ? <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการตรวจของแผนกใดเลย — จุดตรวจที่ลงด้านล่างจะเป็นของ <b style={{ color: deptColor }}>{deptLabel}</b></span>
+                    : deptSummary.sort((a, b) => b.checkpointCount - a.checkpointCount).map(chip)}
+                  {deptSummary.length > 0 && !cur && (
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>
+                      · <b style={{ color: deptColor }}>{deptLabel}</b> ยังไม่มี (ลงจุดตรวจด้านล่างแล้วบันทึกเพื่อสร้าง)
+                    </span>
+                  )}
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--muted)', margin: '7px 0 0', lineHeight: 1.6 }}>
+                  1 เครื่องมีรายการตรวจได้หลายแผนก (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — เครื่องจะโผล่ในแท็บของแผนกที่มีรายการตรวจ
+                </p>
+
+                {cur && cur.checkpointCount > 0 && (
+                  <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ลงผิดแผนก? ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
+                    <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
+                      <option value="">— เลือกแผนกปลายทาง —</option>
+                      {allTeams.filter(t => t.key !== department).map(t => (
+                        <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
+                      ))}
+                    </select>
+                    <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
+                      style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
+                      {moveBusy ? '…' : '➡️ ย้าย'}
+                    </button>
+                    <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('copy')}
+                      style={{ ...S.btnSm('#3b9dff'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน">
+                      {moveBusy ? '…' : '⧉ คัดลอก'}
+                    </button>
+                  </div>
+                )}
+                {others.length > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--muted)', margin: '6px 0 0' }}>
+                    💡 จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า)
+                  </p>
+                )}
+              </div>
+            )
+          })()}
+
           {!isEdit && (
             <div>
               <label style={S.label}>ประเภทการเพิ่ม</label>
@@ -717,6 +929,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}
+                  {existingNote?.length > 0 && (
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border2)', fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)' }}>
+                      ℹ️ เครื่องนี้ขึ้นทะเบียน PM ไว้แล้วโดย{' '}
+                      {existingNote.map(r => `${pmTeamsSync().find(t => t.key === r.department)?.label ?? r.department} (${r.checkpointCount} จุด)`).join(' · ')}
+                      <br />บันทึกครั้งนี้จะ<b style={{ color: 'var(--text2)' }}>เพิ่มรายการตรวจของ {deptLabel}</b> ให้เครื่องเดิม — ไม่สร้างอุปกรณ์ซ้ำ
+                      {' · '}อยากได้จุดตรวจชุดเดิม ให้เปิดแก้ไขเครื่องนี้ในแท็บแผนกนั้นแล้วกด <b style={{ color: 'var(--text2)' }}>⧉ คัดลอก</b>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -889,7 +1109,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 }
 
 // ─── EquipmentCard ────────────────────────────────────────────────────────────
-function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
+function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPending }) {
   const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: '#e05c4a' }
   const color = typeColor[jig.equipment_type] ?? '#527855'
   const catMeta = CATEGORY_TYPE_META[jig.equipment_category] ?? CATEGORY_TYPE_META.production
@@ -914,6 +1134,12 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup }) {
         {jig.jig_no && <p style={S.meta}>No. {jig.jig_no}</p>}
         {jig.line_name && <p style={S.meta}>📍 {jig.line_name}{jig.machine_no ? ` · ${jig.machine_no}` : ''}</p>}
         {jig.machine_id && <p style={{ ...S.meta, color: 'var(--accent)' }}>🔗 เชื่อมกับ Machine Master</p>}
+        {/* ลงจุดตรวจแล้วแต่ยังไม่ลงทะเบียน AM = ยังไม่โผล่ให้พนักงานตรวจ — เตือนตรงนี้ไม่ให้เข้าใจผิดว่าใช้งานได้แล้ว */}
+        {amPending && (
+          <p style={{ ...S.meta, color: '#f59e0b', fontWeight: 700 }}>
+            ⚠ ยังไม่ได้ลงทะเบียน AM · <Link to="/daily-checker?tab=pm" style={{ color: '#f59e0b', textDecoration: 'underline' }}>ลงทะเบียน</Link>
+          </p>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
             <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{cpCount}</span> จุดตรวจ
@@ -940,6 +1166,7 @@ export default function PMSetup() {
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
+  const [amRegistered, setAmRegistered] = useState(null) // Set(jig_id) ที่ลงทะเบียน AM แล้ว (null = ไม่ใช่แท็บ AM)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editJig, setEditJig] = useState(null)
@@ -947,6 +1174,23 @@ export default function PMSetup() {
   const [methods, setMethods] = useState([])
   const [taxModal, setTaxModal] = useState(null) // 'category' | 'method' | null
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+
+  /* สลับชนิดงานของทีม AM ⇄ PM — เก็บเป็น "ข้อมูล" (mtn_teams.kind) ไม่ใช่เงื่อนไขในโค้ด
+     ผลทันที: สิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้สลับระหว่าง am:record / pm:record + คำอธิบายบนหน้าจอ
+     ⚠️ mtn_teams อยู่ DR project → ต้องใช้ supabaseDR (กฎ 2 project ใน CLAUDE.md) */
+  const toggleTeamKind = async () => {
+    const cur = teamKindOf(department)
+    const next = cur === 'am' ? 'pm' : 'am'
+    const name = teams.find(t => t.key === department)?.label ?? department
+    if (!confirm(`เปลี่ยน "${name}" จาก ${cur.toUpperCase()} → ${next.toUpperCase()}?\n\n`
+      + (next === 'am' ? 'AM = พนักงานหน้างานตรวจเองทุกต้นกะ' : 'PM = ช่าง (technician/engineer) ตรวจตามรอบเวลา/ยอดผลิต/เงื่อนไข')
+      + `\nมีผลกับสิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้ (${next}:record)`)) return
+    const { error } = await supabaseDR.from('mtn_teams').update({ kind: next }).eq('key', department)
+    if (error) return toast.error('เปลี่ยนไม่สำเร็จ: ' + error.message)
+    clearPmTeamsCache()
+    setTeams(await loadPmTeams())
+    toast.success(`ตั้งเป็น ${next.toUpperCase()} แล้ว`)
+  }
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
   const loadTaxonomy = () => {
@@ -976,6 +1220,15 @@ export default function PMSetup() {
         if (c.x_pos != null) pins[eqId] = true
       })
     }
+
+    // แท็บ AM (ฝ่ายผลิต): เครื่องต้อง "ลงทะเบียน AM" (pm_daily_line_targets) ด้วย ถึงจะโผล่ให้ตรวจ
+    // ที่หน้า PM ตรวจสอบ — ลงจุดตรวจอย่างเดียวไม่พอ · ดึงมาเพื่อเตือนบนการ์ด ไม่ให้ 2 หน้าดูขัดกัน
+    let reg = null
+    if (department === 'production') {
+      const { data: tg } = await supabaseDR.from('pm_daily_line_targets').select('jig_id').eq('is_active', true)
+      reg = new Set((tg ?? []).map(t => t.jig_id))
+    }
+    setAmRegistered(reg)
 
     // show only equipment that has a checklist in the selected department
     // (each dept tab = its own responsibility; equipment "belongs" via its checklist)
@@ -1014,6 +1267,19 @@ export default function PMSetup() {
         <div>
           <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
           <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
+          {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
+          <p style={{ ...S.sub, marginTop: 2 }}>
+            <b>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
+            {canSetup && (
+              <>
+                {' '}
+                <button onClick={toggleTeamKind} title="สลับว่าทีมนี้เป็นงาน AM หรือ PM (เก็บที่ mtn_teams.kind)"
+                  style={{ ...S.btnSm('var(--muted)'), padding: '1px 8px', fontSize: 11, marginLeft: 4 }}>
+                  เปลี่ยนเป็น {teamKindOf(department) === 'am' ? 'PM' : 'AM'}
+                </button>
+              </>
+            )}
+          </p>
         </div>
         {canSetup && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1043,6 +1309,7 @@ export default function PMSetup() {
         <div style={S.grid}>
           {jigs.map(jig => (
             <EquipmentCard key={jig.id} jig={jig} canSetup={canSetup} cpCount={cpCounts[jig.id] ?? 0} hasPins={!!pinFlags[jig.id]}
+              amPending={amRegistered ? !amRegistered.has(jig.id) : false}
               onEdit={() => openEdit(jig)} onDelete={() => handleDelete(jig)} />
           ))}
         </div>
@@ -1051,11 +1318,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

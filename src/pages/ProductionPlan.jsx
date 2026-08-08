@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import {
@@ -205,7 +206,10 @@ export default function ProductionPlan() {
   const daily = useMemo(() => {
     if (loading) return [];
     const dates = Array.from({ length: DAILY_HORIZON + 1 }, (_, i) => addDays(today, i));
-    return viewLines.filter(l => !viewLines.some(o => o.parent_line_name === l.name)).map(line => {
+    // ⚠️ ห้ามกรองเหลือเฉพาะไลน์ลูก (leaf-only) — `lineOfMat` map 1 พาร์ท → 1 ไลน์ตาม dr_products.line_name
+    // เท่านั้น ไลน์แม่จึงได้ order เฉพาะพาร์ทที่ลงทะเบียนที่ตัวแม่เอง ไม่มีทางนับซ้ำกับไลน์ลูก
+    // เดิมกรอง leaf ทิ้ง → HYDROFORM ที่มีสินค้าผูกกับตัวแม่ 5 พาร์ท หายจากแผนผลิตทั้งหมด (แก้ 2026-08-05)
+    return viewLines.map(line => {
       // ความต้องการของไลน์นี้ต่อวัน (แปลงเป็น shift-load: qty ÷ กำลังต่อกะ)
       const lineOrders = orders.filter(o => lineOfMat(o.mat_no) === line.name);
       const loadByDate = {}, pcsByDate = {}, matSet = new Set();
@@ -218,7 +222,7 @@ export default function ProductionPlan() {
         if (perShift > 0) loadByDate[o.due_date] = (loadByDate[o.due_date] || 0) + qty / perShift;
         else unknownCap += qty;
       });
-      const hasNight = (line.std_night_shift || 0) > 0;
+      const hasNight = hasNightShift(viewLines, line.name);
       // เดินวัน: กะเช้า 1 shift → กะดึก (ถ้ามี) → OT · วันหยุดทำเฉพาะเมื่อ backlog
       let backlog = 0;
       const days = dates.map(date => {
@@ -278,8 +282,10 @@ export default function ProductionPlan() {
     };
     // วันหยุดจ่าย 75% (ม.75) ในเดือน — กำลังสำรองที่เรียกมาได้ด้วยค่าแรงปกติ ก่อนคิด OT วันหยุด
     const sd75DaysOf = (mk) => Object.entries(calMap).filter(([d, t]) => d.startsWith(mk) && t === 'shutdown75').length;
-    return viewLines.filter(l => !viewLines.some(o => o.parent_line_name === l.name)).map(line => {
-      const hasNight = (line.std_night_shift || 0) > 0;
+    return viewLines.map(line => {
+      // กะดึกตกทอดจากไลน์แม่ (GOR/LWR BAR ตั้ง std ไว้ที่แม่ ลูกเป็น 0 → เดิม hasNight=false ทั้งกลุ่ม
+      // แผนเลยไม่เคยเปิดกะดึกให้ 2 กลุ่มนี้ ทั้งที่ไลน์เดินกะดึกจริง)
+      const hasNight = hasNightShift(viewLines, line.name);
       const rows = months.map(mk => {
         const fcs = forecasts.filter(f => monthKey(f.period_month) === mk && lineOfMat(f.mat_no) === line.name);
         let shiftsNeeded = 0, pcs = 0, unknownCap = 0;
@@ -417,7 +423,7 @@ export default function ProductionPlan() {
         monthly.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มี forecast สำหรับไลน์ใน scope</div> :
         monthly.map(({ line, rows }) => (
           <div key={line.id} style={card}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{line.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{line.section}{(line.std_night_shift || 0) > 0 ? ' · มีกะดึก' : ' · กะเช้าอย่างเดียว'}</span></div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{line.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{line.section}{hasNightShift(viewLines, line.name) ? ' · มีกะดึก' : ' · กะเช้าอย่างเดียว'}</span></div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead><tr>
@@ -433,7 +439,7 @@ export default function ProductionPlan() {
                       <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>{r.mk}</td>
                       <td style={td}>{r.fcCount ? Math.round(r.pcs).toLocaleString() : '—'}</td>
                       <td style={td}>{r.fcCount ? r.shiftsNeeded.toFixed(1) : '—'}</td>
-                      <td style={td}>{r.dayShifts}{(line.std_night_shift || 0) > 0 ? ` (+ดึก ${r.dayShifts})` : ''}</td>
+                      <td style={td}>{r.dayShifts}{hasNightShift(viewLines, line.name) ? ` (+ดึก ${r.dayShifts})` : ''}</td>
                       <td style={{ ...td, textAlign: 'left' }}><span style={chip(r.color)}>{r.verdict}</span>{r.unknownCap > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({r.unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง)</span>}</td>
                     </tr>
                   ))}

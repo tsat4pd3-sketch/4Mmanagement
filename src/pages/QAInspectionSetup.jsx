@@ -34,6 +34,8 @@ const ghostBtn = {
   background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)',
 };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 };
+// ความสูงกรอบดู drawing ≈ 46% ของจอ — เหลือที่ให้หัวเรื่อง/แถบแผ่น/ตารางจุดตรวจเห็นในจอเดียว
+const calcViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window === 'undefined' ? 900 : window.innerHeight) * 0.46)));
 const thSt = { padding: '7px 10px', textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border2)' };
 const tdSt = { padding: '7px 10px', fontSize: 12.5, color: 'var(--text)', borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
 
@@ -148,7 +150,10 @@ export default function QAInspectionSetup() {
   const [customTitle, setCustomTitle] = useState('');
   const dwgWrapRef = useRef(null);                      // wrapper รูป drawing — วัดขนาด render จริง
   const [dwgSize, setDwgSize] = useState({ w: 0, h: 0 });
-  const [zoom, setZoom] = useState(1);                  // 1 = เต็มความกว้างกรอบ (ไม่ใช่ขนาดไฟล์) ซูมได้ถึง 4x
+  const dwgBoxRef = useRef(null);                       // กรอบนอก (ไม่ scroll) — วัดความกว้างที่ใช้ได้จริง
+  const [boxW, setBoxW] = useState(0);
+  const [natSize, setNatSize] = useState({ w: 0, h: 0 }); // ขนาดไฟล์จริงของรูป (naturalWidth/Height)
+  const [zoom, setZoom] = useState(1);                  // 1 = พอดีกรอบ (ทั้งกว้างและสูง) ซูมได้ถึง 4x
   const fileRef = useRef(null);                        // input เพิ่ม drawing ใหม่
   const replaceRef = useRef(null);                     // input เปลี่ยนรูปแผ่นที่เปิดอยู่
 
@@ -156,7 +161,16 @@ export default function QAInspectionSetup() {
   const activeDwg = drawings.find(d => d.id === activeDwgId) || null;
   const isPdf = activeDwg?.drawing_url?.toLowerCase().includes('.pdf');
 
-  useEffect(() => { setZoom(1); }, [activeDwgId]);      // เปลี่ยนแผ่น → รีเซ็ตซูม
+  useEffect(() => { setZoom(1); setNatSize({ w: 0, h: 0 }); }, [activeDwgId]); // เปลี่ยนแผ่น → รีเซ็ตซูม/ขนาดไฟล์
+
+  /* ความสูงกรอบดูแบบ — ให้ "แบบ + ตารางจุดตรวจ" อยู่ในจอเดียว (user 2026-08-04: กรอบเดิม 75vh
+     ใหญ่เกินจนตารางตกจอ ต้องเลื่อนตลอด) · สเกลตามความสูงจอจริง ไม่ fix px */
+  const [viewH, setViewH] = useState(() => calcViewH());
+  useEffect(() => {
+    const on = () => setViewH(calcViewH());
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
 
   const loadParts = useCallback(async () => {
     const { data } = await supabase.from('qa_parts').select('*').order('part_no');
@@ -197,6 +211,24 @@ export default function QAInspectionSetup() {
     measure();
     return () => ro.disconnect();
   }, [activeDwgId, isPdf, drawings.length]);
+
+  /* ความกว้างที่ใช้ได้จริงของกรอบ — วัดจาก div นอกที่ไม่ scroll (ถ้าวัดจากตัวกรอบ scroll เอง
+     พอซูมแล้ว scrollbar โผล่ clientWidth จะหด → ขนาดรูปแกว่ง) */
+  useEffect(() => {
+    const el = dwgBoxRef.current;
+    if (!el) { setBoxW(0); return; }
+    const measure = () => setBoxW(el.clientWidth || 0);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [activeDwgId, isPdf, drawings.length]);
+
+  /* zoom 100% = พอดีกรอบทั้ง 2 แกน (contain) — รูปแนวนอนไม่สูงล้นจออีก และรูปเล็ก/แนวตั้ง
+     ยังถูกขยายให้เต็มกรอบเหมือนเดิม (สเกลจากขนาดไฟล์จริง สเกลได้ทั้งขึ้นและลง)
+     ซูม >100% = คูณจากขนาดพอดีกรอบ แล้วเลื่อนดูในกรอบ */
+  const fitScale = (natSize.w && natSize.h && boxW) ? Math.min(boxW / natSize.w, viewH / natSize.h) : 0;
+  const imgW = fitScale ? Math.round(natSize.w * fitScale * zoom) : 0;
 
   const BK = Math.round(Math.max(24, Math.min(44, (dwgSize.w || 600) * 0.04)));
   const bkFont = Math.max(11, Math.round(BK * 0.42));
@@ -656,28 +688,52 @@ export default function QAInspectionSetup() {
                 </div>
               ) : (
                 <>
-                  {/* ซูมสำหรับวางจุดแม่นๆ — 100% = เต็มความกว้างกรอบ (รูปเล็ก/แนวตั้งไม่จิ๋วอีก) */}
+                  {/* ซูมสำหรับวางจุดแม่นๆ — 100% = พอดีกรอบทั้ง 2 แกน (รูปเล็ก/แนวตั้งยังถูกขยายให้เต็มกรอบ) */}
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
                     <button style={ghostBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก">➖</button>
                     <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 52, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
                     <button style={ghostBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
                     {zoom > 1 && <button style={ghostBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
-                    <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของแบบได้ในกรอบ' : 'ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของแบบได้ในกรอบ' : 'เห็นแบบเต็มใบพอดีกรอบ — ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
                   </div>
-                  <div style={{ maxHeight: '75vh', overflow: 'auto', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                    <div
-                      ref={dwgWrapRef}
-                      onClick={onDrawingClick}
-                      style={{ position: 'relative', width: `${zoom * 100}%`, cursor: canManage ? 'crosshair' : 'default' }}>
-                      <img src={activeDwg.drawing_url} alt={activeDwg.title} style={{ display: 'block', width: '100%' }}
-                        onLoad={e => setDwgSize({ w: e.currentTarget.clientWidth, h: e.currentTarget.clientHeight })} />
-                      {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
-                        <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
-                          label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
-                          selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
-                          title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
-                          onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
-                      ))}
+                  {/* div นอก = ตัววัดความกว้างที่ใช้ได้ (ไม่ scroll) · div ใน = กรอบดู สูงไม่เกิน viewH
+                      · wrapper รูป width:fit-content + margin auto = จัดกลางโดยไม่โดนตัดขอบซ้ายตอนซูมเกินกรอบ
+                        (justify-content:center บน flex ที่ overflow จะกินขอบซ้ายหาย) */}
+                  <div ref={dwgBoxRef}>
+                    <div style={{ maxHeight: viewH, overflow: 'auto', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                      <div
+                        ref={dwgWrapRef}
+                        onClick={onDrawingClick}
+                        style={{ position: 'relative', width: 'fit-content', margin: '0 auto', cursor: canManage ? 'crosshair' : 'default' }}>
+                        <img src={activeDwg.drawing_url} alt={activeDwg.title}
+                          // รูปจาก cache บางที onLoad ไม่ยิง → ref อ่าน naturalWidth ให้ด้วย
+                          // (ถ้า natSize = 0 ค้าง รูปจะ render ที่ขนาดไฟล์จริง = ล้นกรอบ)
+                          ref={el => {
+                            if (el?.complete && el.naturalWidth && !natSize.w) {
+                              setNatSize({ w: el.naturalWidth, h: el.naturalHeight });
+                            }
+                          }}
+                          style={{
+                            display: 'block', height: 'auto',
+                            // fallback ระหว่างยังไม่รู้ขนาดไฟล์: contain ในกรอบไว้ก่อน ห้ามปล่อยเต็มขนาดไฟล์
+                            // (ใช้ px ไม่ใช้ % — wrapper เป็น fit-content, % จะอ้างอิงวนกับตัวเอง)
+                            width: imgW ? `${imgW}px` : 'auto',
+                            maxWidth: imgW ? 'none' : (boxW ? `${boxW}px` : '100%'),
+                            maxHeight: imgW ? 'none' : viewH,
+                          }}
+                          onLoad={e => {
+                            const el = e.currentTarget;
+                            setNatSize({ w: el.naturalWidth || 0, h: el.naturalHeight || 0 });
+                            setDwgSize({ w: el.clientWidth, h: el.clientHeight });
+                          }} />
+                        {items.filter(i => i.pos_x != null && i.pos_y != null && (i.drawing_id === activeDwg.id || (!i.drawing_id && drawings[0]?.id === activeDwg.id))).map(i => (
+                          <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
+                            label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
+                            selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
+                            title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
+                            onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </>

@@ -3,11 +3,13 @@
 //   จับคู่จาก profiles.sections (ตามคำสั่ง user) — ผูกกับ section ของคน
 import { pmTeamsSync, DEFAULT_TEAMS } from './pmTeams'
 
-export const MTN_TEAMS = ['JIG MTN', 'DIE MTN', 'MTN', 'PRODUCTION']
+// ⚠️ ค่าที่ "เก็บลง DB" คือ key เสมอ (mtn_teams.key) — ชื่อ (dept_name) ใช้แสดงผลเท่านั้น
+//    เหตุผล: ชื่อทีมเปลี่ยนได้ (เคยเปลี่ยน PRODUCTION → "AM (ผลิตตรวจเอง)") ถ้าเก็บชื่อ ข้อมูลเก่าจะกำพร้าทันที
+//    หลักเดียวกับ role / process_type / line_type ทั้งระบบ
+export const MTN_TEAMS = ['jig_maintenance', 'die_maintenance', 'maintenance', 'production']
 
-// ── Single source: ทีมช่างมี 2 encoding — label (mtn_dept / telegram_channels.team = "JIG MTN")
-//    กับ key (checklists.department = "jig_maintenance") · ตาราง mtn_teams (key ↔ dept_name) เป็นตัวโยง
-//    helper นี้ normalize ค่าใดๆ (label หรือ key) → canonical เพื่อให้เทียบ/กรอง/route ไม่สนว่าเก็บ encoding ไหน
+// ── Single source: ทุกคอลัมน์ทีมเก็บเป็น key แล้ว (migration 20260806_unify_team_encoding)
+//    helper ยัง normalize ชื่อ→key ต่อไป เพราะข้อมูลที่ export/พิมพ์ไว้ก่อนหน้า หรือที่คนกรอกมือ อาจยังเป็นชื่อ
 //    ดึง mapping จาก mtn_teams ที่โหลดไว้ (pmTeamsSync) ก่อน แล้ว fallback DEFAULT_TEAMS (2026-07-30 · F8)
 function teamRows() { const r = pmTeamsSync(); return (r && r.length) ? r : DEFAULT_TEAMS }
 // ค่าใดๆ → mtn_teams.key (canonical) — จับได้ทั้งที่ส่ง key มาตรงๆ หรือส่ง dept_name (label)
@@ -17,7 +19,7 @@ export function teamKeyOf(v) {
   const hit = teamRows().find(t => String(t.key || '').toLowerCase() === low || String(t.dept_name || '').toLowerCase() === low)
   return hit ? hit.key : low
 }
-// ค่าใดๆ → mtn_teams.dept_name (label ที่ใช้ใน mtn_dept / telegram_channels.team) — ไว้เขียน/แสดง
+// ค่าใดๆ → ชื่อทีมที่ใช้ "แสดงผล" (mtn_teams.dept_name) — ห้ามเอาไปเก็บลง DB
 export function deptNameOf(v) {
   const s = String(v || '').trim(); if (!s) return ''
   const low = s.toLowerCase()
@@ -33,9 +35,9 @@ export function sameTeam(a, b) { return teamKeyOf(a) === teamKeyOf(b) }
 export function teamForSection(section) {
   const s = (section || '').toUpperCase().trim()
   if (!s) return null
-  if (s.includes('JIG')) return 'JIG MTN'
-  if (s.includes('DIE')) return 'DIE MTN'
-  if (s === 'MTN' || s.includes('MAINT') || s.includes('ซ่อม')) return 'MTN'
+  if (s.includes('JIG')) return 'jig_maintenance'
+  if (s.includes('DIE')) return 'die_maintenance'
+  if (s === 'MTN' || s.includes('MAINT') || s.includes('ซ่อม')) return 'maintenance'
   return null
 }
 
@@ -43,17 +45,42 @@ export function teamForSection(section) {
 //   1. explicitTeams (profiles.mtn_teams — ตั้งจาก AddUser ตรงๆ 2026-07-22) = source of truth ถ้ามี
 //   2. fallback เดา JIG/DIE/MTN จาก sections (backward-compat กับ user เก่าที่ยังไม่ได้ตั้งทีม)
 export function teamsForUser(explicitTeams, sections) {
-  const valid = (Array.isArray(explicitTeams) ? explicitTeams : []).filter(t => MTN_TEAMS.includes(t))
+  // normalize ก่อนกรอง — ข้อมูลเก่าเก็บเป็นชื่อ ("JIG MTN") ข้อมูลใหม่เก็บ key
+  const valid = (Array.isArray(explicitTeams) ? explicitTeams : []).map(teamKeyOf).filter(t => MTN_TEAMS.includes(t))
   if (valid.length) return [...new Set(valid)]
   const set = new Set()
   for (const sec of sections || []) { const t = teamForSection(sec); if (t) set.add(t) }
   return [...set]
 }
 
-// ชนิดอุปกรณ์ → ทีม (ใช้เดา default ตอนแจ้งซ่อม) — JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN
-export const teamForItem = (it) => {
-  const s = (it || '').toUpperCase()
-  if (s.includes('JIG')) return 'JIG MTN'
-  if (s.includes('DIE')) return 'DIE MTN'
-  return 'MTN'
+// ── มุมมองต่อทีมของ master list (2026-08-06) ────────────────────────────────
+// หลักการ: ตัวตนอุปกรณ์ (machine id / jig id / ชื่อเครื่อง) = ของกลางชุดเดียวทุกทีมอ้างตรงกัน
+//   แต่ "รายละเอียด" (ลักษณะปัญหา / ชนิดอุปกรณ์ / หมวดอะไหล่ / วิธีตรวจ) เป็นมุมมองเฉพาะทีม
+// กติกา: คอลัมน์ team ของแถว master — **null/ว่าง = ใช้ร่วมทุกทีม (common)**
+//   (pattern เดียวกับ lpa_questions.line_name null = ข้อ common)
+export function inTeamScope(rowTeam, selectedTeam) {
+  if (!selectedTeam) return true                       // ยังไม่เลือกทีม = เห็นทั้งหมด
+  if (rowTeam === null || rowTeam === undefined || String(rowTeam).trim() === '') return true
+  return teamKeyOf(rowTeam) === teamKeyOf(selectedTeam)
 }
+/** กรอง master list ตามทีมที่เลือก (แถว common ติดมาด้วยเสมอ) */
+export const filterByTeam = (rows, selectedTeam, key = 'team') =>
+  (rows || []).filter(r => inTeamScope(r?.[key], selectedTeam))
+
+// ชนิดอุปกรณ์ → ทีม (ใช้เดา default ตอนแจ้งซ่อม)
+//   ลำดับ: (1) ทีมที่ตั้งไว้บนแถว mtn_item_types.team = source of truth
+//          (2) fallback เดาจากชื่อ JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN (ของเดิม ใช้เมื่อยังไม่ตั้งทีม)
+//   itemRows = แถวจาก mtn_item_types (ไม่ส่งมา = ใช้การเดาจากชื่อล้วน — backward-compatible)
+export const teamForItem = (it, itemRows = null) => {
+  const s = (it || '').toUpperCase()
+  if (Array.isArray(itemRows)) {
+    const hit = itemRows.find(r => String(r?.name || '').toUpperCase() === s)
+    if (hit?.team) return teamKeyOf(hit.team)
+  }
+  if (s.includes('JIG')) return 'jig_maintenance'
+  if (s.includes('DIE')) return 'die_maintenance'
+  return 'maintenance'
+}
+
+/** ทีมทั้งหมดสำหรับทำ dropdown — [{ key, name }] · value = key (เก็บลง DB) · name = ชื่อที่โชว์ */
+export const teamOptions = () => teamRows().map(t => ({ key: t.key, name: t.dept_name || t.label || t.key }))

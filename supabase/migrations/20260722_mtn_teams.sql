@@ -24,5 +24,7 @@ insert into public.mtn_teams (key, label, icon, equip_type, dept_name, color, so
   ('maintenance',     'MTN (ซ่อมบำรุง)',      '🔧', 'machine', 'MTN',      '#fb923c', 1),
   ('jig_maintenance', 'JIG MTN',              '🧩', 'jig',     'JIG MTN',  '#34d399', 2),
   ('die_maintenance', 'DIE MTN',              '🗜️', 'die',     'DIE MTN',  '#4d9fff', 3),
-  ('production',      'PRODUCTION (ฝ่ายผลิต)', '🏭', null,      'PRODUCTION', '#3dd65c', 4)
+  -- ฝ่ายผลิตตรวจเอง = AM (Autonomous Maintenance) ตามศัพท์ TPM — คนละส่วนกับ PM ของช่าง
+  -- (key ยังเป็น 'production' เท่ากับ checklists.department · แก้เฉพาะชื่อแสดงผล · migration นี้ยังไม่เคย apply)
+  ('production',      'AM (ผลิตตรวจเอง)',      '🏭', null,      'PRODUCTION', '#3dd65c', 4)
 on conflict (key) do nothing;

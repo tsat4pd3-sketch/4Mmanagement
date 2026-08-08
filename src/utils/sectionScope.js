@@ -36,3 +36,60 @@ export function inSectionScope(scopeSections, value) {
   const v = norm(value);
   return scopeSections.some(s => norm(s) === v);
 }
+
+// ─── แผนกที่ขึ้นตรงฝ่าย (ไม่มี Section) ─────────────────────────────────────
+// ผังองค์กรรองรับ `org_nodes.kind='department'` ที่ `parent_id IS NULL` = แผนกขึ้นตรงฝ่าย
+// (MTN / JIG MTN / DIE MTN / QA — หน่วยงานสนับสนุนที่ไม่ได้สังกัดส่วนงานผลิตใด)
+// แต่ dropdown แผนกในฟอร์มพนักงานเป็น cascade `d.parent_id === sectionNode.id` ตรงๆ
+// → แผนกกลุ่มนี้ไม่มีวันโผล่ = ลงทะเบียนช่างไม่ได้เลย (เจอจริง 2026-08-06)
+//
+// แก้ด้วย sentinel ในช่อง Section: เลือก "ขึ้นตรงฝ่าย" → ปลดล็อกช่องแผนกให้เห็นแผนก parent_id = null
+// แล้วบันทึกลง `employees.section` เป็น **null** (ตรงกับผังจริง — ห้ามยัดชื่อแผนกลง section
+// เพื่อให้ cascade ผ่าน จะกลายเป็น section ปลอมที่ไม่มีในผัง)
+//
+// ผลข้างเคียงที่ตั้งใจ: พนักงานกลุ่มนี้ section ว่าง → ไม่เข้า scope ของหัวหน้าที่จำกัดราย section
+// (ถูกต้องแล้ว — ช่างไม่ได้สังกัดส่วนงานผลิต) · การจับทีมช่าง/labor type ยังทำงานปกติเพราะ
+// `teamForSection()` (mtnTeams.js) และ `laborTypeOf()` (laborType.js) เช็ค department ก่อน section
+
+/** ค่า sentinel ในช่อง Section สำหรับ "แผนกขึ้นตรงฝ่าย" — ไม่ใช่ค่าที่เก็บลง DB */
+export const ORPHAN_SECTION = '__org_direct__';
+export const ORPHAN_SECTION_LABEL = '🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)';
+
+/** แปลงค่าจาก dropdown Section → ค่าที่เก็บลง employees.section (sentinel/ว่าง = null) */
+export const sectionValueForSave = (v) => (!v || v === ORPHAN_SECTION ? null : v);
+
+/** แผนกในผังที่ขึ้นตรงฝ่าย (parent_id ว่าง) */
+export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_id);
+
+/**
+ * ตัวเลือกแผนกตามค่าที่เลือกในช่อง Section (cascade — UI-CONVENTIONS §5.3)
+ * sentinel = แผนกขึ้นตรงฝ่าย · ชื่อ section = แผนกใต้ section นั้น · ว่าง = ไม่มีตัวเลือก
+ */
+export function deptOptionsFor(sectionValue, sectionNodes = [], deptNodes = []) {
+  if (sectionValue === ORPHAN_SECTION) return orphanDepts(deptNodes);
+  const node = sectionNodes.find(s => (s.code || s.name) === sectionValue);
+  return node ? deptNodes.filter(d => d.parent_id === node.id) : [];
+}
+
+/** node ของแผนกที่เลือก (ใช้ cascade ต่อไปยัง Group) — จำกัดอยู่ในตัวเลือกที่ถูกต้องเสมอ */
+export function deptNodeFor(sectionValue, department, sectionNodes = [], deptNodes = []) {
+  return deptOptionsFor(sectionValue, sectionNodes, deptNodes)
+    .find(d => (d.code || d.name) === department) || null;
+}
+
+/**
+ * ค่าที่ควรโชว์ในช่อง Section ของพนักงานที่มีอยู่แล้ว
+ *  1. section ตรงกับส่วนงานในผัง → ใช้ค่านั้น
+ *  2. แผนกของพนักงานเป็นแผนกขึ้นตรงฝ่าย → sentinel — ครอบ 2 เคส:
+ *     (ก) section ว่าง (ลงทะเบียนใหม่หลังแก้นี้)  (ข) ข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section
+ *     ด้วย (เช่นช่างที่ย้ายเข้าฐานพนักงาน 2026-07-22 มี section='MTN' ทั้งที่ MTN เป็นแผนก
+ *     ไม่ใช่ส่วนงาน) — ไม่งั้นช่องแผนกถูกล็อกจนแก้อะไรไม่ได้
+ *     ⚠️ ฝั่งเซฟต้องส่งค่าผ่านฟังก์ชันนี้ก่อน `sectionValueForSave` ด้วย เพื่อให้ค่าที่เก็บตรงกับที่
+ *     ช่อง Section โชว์อยู่เสมอ (ไม่งั้นโชว์ "ขึ้นตรงฝ่าย" แต่เซฟ 'MTN' กลับไปเหมือนเดิมเงียบๆ)
+ *  3. ที่เหลือ (section นอกผังทั่วไป) → คืนค่าเดิม ไม่แตะ
+ */
+export function sectionValueForEdit(section, department, deptNodes = [], sectionNodes = []) {
+  if (section && sectionNodes.some(s => (s.code || s.name) === section)) return section;
+  if (department && orphanDepts(deptNodes).some(d => (d.code || d.name) === department)) return ORPHAN_SECTION;
+  return section || '';
+}

@@ -147,12 +147,6 @@ export default function StoreMonitor() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <style>{`
-        @keyframes storeAlarm { 50% { opacity: .45 } }
-        .sm-alarm { animation: storeAlarm 1s steps(2,end) infinite; }
-        @media (prefers-reduced-motion: reduce) { .sm-alarm { animation: none } }
-      `}</style>
-
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
           🚨 เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)
@@ -205,8 +199,10 @@ export default function StoreMonitor() {
             const red = f.kind === 'shortage';
             const tone = red ? '#ef4444' : '#f59e0b';
             const blink = red && f.sev >= 3;   // Andon: แดงกระพริบเฉพาะรุนแรง (ขาดจริง/เลยเวลา) · เหลืองนิ่ง
+            // กระพริบใช้ class กลาง .mo-card-alert (index.css) — มี [data-perf="lite"] override สำหรับจอ TV
+            // ห้ามเขียน keyframes กระพริบเองต่อหน้า (UI-CONVENTIONS §2 · QC audit 2026-08-03)
             return (
-              <div key={i} className={blink ? 'sm-alarm' : undefined} style={{
+              <div key={i} className={blink ? 'mo-card-alert' : undefined} style={{
                 border: `1px solid ${tone}`, borderLeft: `3px solid ${tone}`, borderRadius: 11, padding: 12,
                 background: `color-mix(in srgb, ${tone} 8%, var(--card))`,
               }}>
