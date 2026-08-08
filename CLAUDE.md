@@ -1351,7 +1351,8 @@ supabase/
 docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก้แบบยั่งยืน — อ่านก่อนทุกงาน) ·
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
-                       #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md (ออกแบบเผื่อไว้ ยังไม่ทำ)
+                       #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
+                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน — ออกแบบเผื่อไว้ ยังไม่ทำ)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
