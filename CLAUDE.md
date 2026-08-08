@@ -151,6 +151,7 @@
 | (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ภาพรวม | `/dashboard` | Dashboard (ย้ายกลับหมวด ภาพรวม 2026-07-20 — โซนจอแสดงผล) | ทุก role |
 | ภาพรวม | `/factory-map` | FactoryMap — ผังรวมโรงงาน: วาด polygon ล้อมแต่ละไลน์บนผังใหญ่ผังเดียว ระบายสีตามสถานะการผลิต (ดู section "Factory Master Map") | ทุก role (edit: admin/mgr/sv) |
+| ภาพรวม | `/dept-dashboard` | **DeptDashboard — 📋 Dashboard ส่วนงาน** หน้าเดียวสลับส่วนงานด้วย `?dept=production\|maintenance\|store\|qa` · **เลย์เอาต์ 4 ชั้นเหมือนกันทุกใบ** (🚨 ต้องทำตอนนี้ → 📊 KPI → 📈 ชี้เป้าให้แก้ → 🔗 ทางลัด) · **อ่านอย่างเดียว** ทุก action = ลิงก์ไปหน้าที่ทำงานจริง · เพิ่มส่วนงานใหม่ = เพิ่ม entry ใน `DEPTS` (loader + View) **ห้ามสร้างหน้า dashboard แยกต่อส่วนงาน** · ดู section "Dashboard ส่วนงาน" + `docs/DASHBOARD-DESIGN.md` | ทุก role (ข้อมูลกรองตาม scope) |
 | ภาพรวม | `/group-overview` | **GroupOverview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท)** ตัวอย่างหน้าจอตอบโจทย์ผู้บริหาร "ระบบดูหลายบริษัทในกลุ่มพร้อมกันได้มั้ย" — **แผนที่ภาคกลาง+ตะวันออก (โซนบางนา/โซนตะวันออก)** + drill-down 2 แกน `TSG → โซน\|กลุ่มธุรกิจ → บริษัท → ไลน์` · **TSAT4 = ข้อมูลจริง** ที่เหลือ **จำลอง** จากข้อมูลชุดเดียวกัน (ดู section "Group Overview") | admin/manager (seed) |
 | ฝ่ายผลิต | `/morning-meeting` | MorningMeeting — ประชุมแถวเช้า (ดู section "Morning Meeting") | ทุก role (record: admin/mgr/sv/leader) |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
@@ -925,6 +926,22 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - **🔴 downtime ค้างโชว์เสมอทุก metric:** จุดแดงหน้าชื่อไลน์ (แม้ดู metric อื่น) — alarm ต้องไม่ถูกซ่อน · refresh DR ทุก 30 วิ
 - **สิทธิ์:** เข้าดู = ทุก role (`page:/factory-map`) · อัปโหลด/วาด/ลบ = `can('factory_map','edit')` (admin/manager/supervisor)
 - **รูปเก็บ** bucket `employee-photos` path `factory/` — cleanup-orphan-photos whitelist `factory_map.image_url` + สแกนโฟลเดอร์ factory/ แล้ว (กันลบผิด) · เปลี่ยนรูปลบไฟล์เก่าทิ้ง (best-effort)
+
+---
+
+## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
+
+หน้าเดียวสลับส่วนงานด้วย `?dept=` — **เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA** (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
+
+- **โครง: 1 หน้า + config ต่อส่วนงาน** — `DEPTS = [{ key, icon, label, roles, load, View }]` ใน `src/pages/DeptDashboard.jsx` · **เพิ่มส่วนงานใหม่ = เพิ่ม entry (loader + View) ห้ามสร้างหน้าใหม่** (ไม่งั้นได้ dashboard คนละทรงแล้ว drift) · แท็บ default เลือกตาม role ของผู้ใช้ (mtn→ซ่อมบำรุง · qa→QA · planner_store/sale→สโตร์ · อื่น→ผลิต)
+- **เลย์เอาต์บังคับ 4 ชั้นทุกใบ:** 🚨 ต้องทำตอนนี้ (คิวงานค้าง — ว่างต้องขึ้น "ไม่มีงานค้าง" **ห้ามซ่อนแผง**) → 📊 KPI (มีตัวเทียบเสมอ) → 📈 ชี้เป้าให้แก้ (ตาราง/พาเรโต) → 🔗 ทางลัด
+- **อ่านอย่างเดียว** — ไม่มี insert/update/delete · ทุกแถวใน "ต้องทำตอนนี้" คือลิงก์ไปหน้าที่ทำงานจริง
+- **ห้ามคำนวณ KPI เอง** — OEE เฉลี่ยผ่าน `wavg` (utils/oee) ถ่วงด้วยเวลารับภาระ · ยอดผลิตนับคู่ RH/LH ผ่าน `pairAwareTotal` · NG ยึด `defect_logs` · DT นับเฉพาะนอกแผน · PPM = เสีย ÷ (ดี+เสีย) × 1e6
+- **Scope มาตรฐาน** — leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` (helper `scopeLineNames` ในไฟล์) · สิทธิ์เข้าหน้าเดียว `page:/dept-dashboard` (migration `20260806_dept_dashboard_permission.sql` — seed ทุก role)
+- **ส่วนงานที่ข้อมูลยังน้อย = adoption dashboard ไม่ใช่ analytics** (คำสั่งจากผลสำรวจข้อมูลจริง):
+  - **ซ่อมบำรุง** — แผงเด่นคือ **"⚠️ เครื่องที่หยุดซ้ำ ≥2 ครั้งใน 30 วัน แต่ยังไม่มีใบแจ้งซ่อม"** (downtime 3,567 แถว vs ใบซ่อม 7 ใบ = ช่องว่างจริง) + PM เกินกำหนด/ใกล้ครบ
+  - **QA** — แผงเด่นคือ **"ไลน์ที่เดินกะวันนี้แต่ยังไม่มีบันทึกของเสีย"** (ของดี 100% จริง หรือลืมลง?) + 4M รออนุมัติ QA + LPA ที่ตอบ N/T
+- **ห้ามโชว์เลขที่ดูสมบูรณ์ทั้งที่ยังขาด** — KPI ผลิตมีการ์ด "กะที่ยังไม่ปิด" กำกับว่าตัวเลขยังไม่ครบทั้งวัน
 
 ---
 
