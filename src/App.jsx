@@ -37,6 +37,7 @@ const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
+const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
@@ -83,6 +84,8 @@ const NAV_ITEMS = [
   // จัดหมวดเมนูใหม่ทั้งระบบ 2026-07-20 (คำสั่ง user): ภาพรวม = จอแสดงผล/ผู้บริหาร · ฝ่ายผลิต = งานประจำวัน
   // · วิเคราะห์ & รายงาน · พนักงาน & ทักษะ (ใหม่ — รวมเรื่องคนที่เคยกระจาย 3 หมวด)
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
+  // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
+  { to: '/dept-dashboard', icon: '📋', label: 'Dashboard ส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
@@ -1100,6 +1103,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
+              } />
+              <Route path="/dept-dashboard" element={
+                <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
