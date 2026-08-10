@@ -7,7 +7,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
-import { loadPmTeams, pmTeamsSync, teamKind } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
@@ -1174,6 +1174,23 @@ export default function PMSetup() {
   const [methods, setMethods] = useState([])
   const [taxModal, setTaxModal] = useState(null) // 'category' | 'method' | null
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
+
+  /* สลับชนิดงานของทีม AM ⇄ PM — เก็บเป็น "ข้อมูล" (mtn_teams.kind) ไม่ใช่เงื่อนไขในโค้ด
+     ผลทันที: สิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้สลับระหว่าง am:record / pm:record + คำอธิบายบนหน้าจอ
+     ⚠️ mtn_teams อยู่ DR project → ต้องใช้ supabaseDR (กฎ 2 project ใน CLAUDE.md) */
+  const toggleTeamKind = async () => {
+    const cur = teamKindOf(department)
+    const next = cur === 'am' ? 'pm' : 'am'
+    const name = teams.find(t => t.key === department)?.label ?? department
+    if (!confirm(`เปลี่ยน "${name}" จาก ${cur.toUpperCase()} → ${next.toUpperCase()}?\n\n`
+      + (next === 'am' ? 'AM = พนักงานหน้างานตรวจเองทุกต้นกะ' : 'PM = ช่าง (technician/engineer) ตรวจตามรอบเวลา/ยอดผลิต/เงื่อนไข')
+      + `\nมีผลกับสิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้ (${next}:record)`)) return
+    const { error } = await supabaseDR.from('mtn_teams').update({ kind: next }).eq('key', department)
+    if (error) return toast.error('เปลี่ยนไม่สำเร็จ: ' + error.message)
+    clearPmTeamsCache()
+    setTeams(await loadPmTeams())
+    toast.success(`ตั้งเป็น ${next.toUpperCase()} แล้ว`)
+  }
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
   const loadTaxonomy = () => {
@@ -1253,6 +1270,15 @@ export default function PMSetup() {
           {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
           <p style={{ ...S.sub, marginTop: 2 }}>
             <b>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
+            {canSetup && (
+              <>
+                {' '}
+                <button onClick={toggleTeamKind} title="สลับว่าทีมนี้เป็นงาน AM หรือ PM (เก็บที่ mtn_teams.kind)"
+                  style={{ ...S.btnSm('var(--muted)'), padding: '1px 8px', fontSize: 11, marginLeft: 4 }}>
+                  เปลี่ยนเป็น {teamKindOf(department) === 'am' ? 'PM' : 'AM'}
+                </button>
+              </>
+            )}
           </p>
         </div>
         {canSetup && (

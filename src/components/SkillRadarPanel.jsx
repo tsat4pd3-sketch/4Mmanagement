@@ -25,6 +25,7 @@ import { toast } from './Toast';
 import useIsMobile from '../utils/useIsMobile';
 import { getLevel, groupSkillsByCategory } from '../utils/skillLevels';
 import { docFormSync, loadDocForms } from '../utils/docForms';
+import { loadPositions, positionLabel } from '../utils/positions';
 import { buildIndividualSkillHtml } from '../lib/individualSkillPrint';
 import tsLogoUrl from '../assets/TS logo.png';
 
@@ -74,7 +75,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
       // component นี้ถูก reuse หลายหน้า (บางหน้าเป็น lazy chunk ที่ไม่ได้เรียก loadDocForms() เอง)
       // ถ้าไม่โหลดที่นี่ ใบที่พิมพ์จากหน้านั้นจะได้ fallback ในโค้ดเสมอ = เลขฟอร์ม/Rev/ช่องลายเซ็น
       // ไม่ตรงกับที่ doc_control ตั้งไว้ที่ /doc-forms (โหลดแล้วครั้งเดียว เรียกซ้ำคืน cache ทันที)
-      await loadDocForms();
+      await Promise.all([loadDocForms(), loadPositions()]);   // master ตำแหน่ง — ใบพิมพ์แปลง key เป็นชื่อ
       // ดึงผู้ประเมิน (หัวหน้าแผนก/leader) + ผู้รับรอง (หัวหน้าส่วน/supervisor หรือ manager) จากไลน์ของพนักงาน
       let assessor = { name: '', pos: 'หัวหน้าแผนก', sig: null };
       let certifier = { name: '', pos: 'หัวหน้าส่วน', sig: null };

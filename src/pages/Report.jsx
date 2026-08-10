@@ -20,6 +20,7 @@ import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skil
 import SkillRadarPanel from '../components/SkillRadarPanel';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
+import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -142,6 +143,7 @@ const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log 
    ห้ามนิยามซ้ำที่นี่อีก (เดิมซ้ำกับ operator.jsx แล้ว desc/หมวดค่าฝีมือ drift กัน) */
 
 loadDocForms(); // ทะเบียนเอกสาร — ฟอร์ม Multi-Skill / ใบประเมินรายบุคคล อ่านผ่าน docFormSync
+loadPositions(); // master ตำแหน่งงาน — position เก็บเป็น key ต้องแปลงเป็นชื่อตอนแสดง/พิมพ์
 const sigLabelsOf = (key, defaults) => docFormSync(key, { sig_blocks: defaults }).sig_blocks || defaults;
 const MS_SIG_DEFAULTS = ['จัดทำโดย', 'ตรวจสอบโดย', 'อนุมัติโดย'];
 const IND_SIG_DEFAULTS = ['พนักงานผู้ถูกประเมิน', 'ผู้ประเมิน', 'ผู้รับรอง'];
@@ -2555,7 +2557,7 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
       <td style="text-align:center;border:1px solid #999;white-space:nowrap">${index}</td>
       <td style="border:1px solid #999;padding:0 3px;white-space:nowrap;font-size:9px">${emp.employee_id_code || ''}</td>
       <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.name || ''}</td>
-      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${emp.position || ''}</td>
+      <td style="border:1px solid #999;padding:0 3px;font-size:9px">${positionLabel(emp.position)}</td>
       <td style="border:1px solid #999;padding:0 3px;font-size:9px;white-space:nowrap">${calcServiceDuration(emp.start_date)}</td>
       ${levels.map(levelCell).join('')}${levelCell(overall)}
     </tr>`).join('');
@@ -2856,7 +2858,7 @@ function MultiSkillFormTab() {
               empLevelRows.map(({ emp, levels, overall }) => [
                 emp.employee_id_code || '',
                 emp.name || '',
-                emp.position || '',
+                positionLabel(emp.position),
                 emp.section || '',
                 emp.team || '',
                 calcServiceDuration(emp.start_date),
@@ -2961,7 +2963,7 @@ function MultiSkillFormTab() {
                         <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · {emp.position || ''}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · {positionLabel(emp.position)}</div>
                         </div>
                         <div style={{ marginLeft: 'auto' }}><SkillGauge level={overall} size={32} /></div>
                       </div>
