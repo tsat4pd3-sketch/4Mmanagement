@@ -15,6 +15,7 @@ import {
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL } from '../utils/skillLevels';
+import { pickUnusedColor } from '../utils/colorPick';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -76,6 +77,12 @@ export default function Operator() {
   const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
+  const skillColorTouched = useRef(false); // ผู้ใช้เลือกสีเองแล้ว — อย่าสุ่มทับ
+  // สกิลโหลดเสร็จ → เสนอสีที่ยังไม่ซ้ำเป็นค่าตั้งต้น (เฉพาะตอนผู้ใช้ยังไม่แตะช่องสี)
+  useEffect(() => {
+    if (skillDefs.length && !skillColorTouched.current)
+      setNewSkill(s => ({ ...s, color: pickUnusedColor(skillDefs.map(d => d.color)) }));
+  }, [skillDefs]); // eslint-disable-line react-hooks/exhaustive-deps
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [editingSkill, setEditingSkill] = useState(null); // skill being edited inline
   const [subItemsSkill, setSubItemsSkill] = useState(null); // skill whose หัวข้อการพิจารณา are being managed
@@ -386,7 +393,7 @@ export default function Operator() {
       sort_order: skillDefs.length + 1,
     }]);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else { setNewSkill({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
+    else { skillColorTouched.current = false; setNewSkill({ label: '', color: pickUnusedColor([...skillDefs.map(d => d.color), newSkill.color]), category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
 
@@ -1058,7 +1065,7 @@ export default function Operator() {
                   <label style={labelSt}>สีแสดงผล</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input type="color" value={newSkill.color}
-                      onChange={e => setNewSkill({ ...newSkill, color: e.target.value })}
+                      onChange={e => { skillColorTouched.current = true; setNewSkill({ ...newSkill, color: e.target.value }); }}
                       style={{ width: 44, height: 36, padding: 2, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
                     <span style={{ fontSize: 12, color: newSkill.color, fontWeight: 700 }}>● ตัวอย่าง</span>
                   </div>

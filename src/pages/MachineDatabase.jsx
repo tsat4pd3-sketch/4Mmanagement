@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
+import { pickUnusedColor } from '../utils/colorPick';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -488,7 +489,8 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const startAdd = () => { setForm({ ...emptyType, sort_order: types.length + 1 }); setEditingId('new'); };
+  // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
+  const startAdd = () => { setForm({ ...emptyType, color: pickUnusedColor(types.map(t => t.color)), sort_order: types.length + 1 }); setEditingId('new'); };
   const startEdit = (t) => { setForm({ id: t.id, label: t.label, color: t.color, icon: t.icon || '', sort_order: t.sort_order, is_active: t.is_active }); setEditingId(t.id); };
   const cancelEdit = () => { setEditingId(null); setForm(emptyType); };
 
@@ -550,7 +552,8 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
                   <EmojiPicker value={form.icon} onChange={v => setForm(f => ({ ...f, icon: v }))} style={inputStyle} />
                 </div>
                 <div style={{ display: 'flex', gap: 5 }}>
-                  {TYPE_COLORS.map(c => (
+                  {/* สีที่สุ่มมาอาจอยู่นอก swatch ตายตัว — prepend ให้เห็น/เลือกกลับได้เสมอ */}
+                  {[...new Set([form.color, ...TYPE_COLORS])].map(c => (
                     <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}
                       style={{ width: 20, height: 20, borderRadius: 5, background: c, border: form.color === c ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
                   ))}

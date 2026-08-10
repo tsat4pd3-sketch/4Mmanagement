@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabaseDR } from '../supabaseClient'
 import { toast } from './Toast'
+import { pickUnusedColor } from '../utils/colorPick'
 
 // Generic CRUD modal for a small taxonomy table (code + label + color|icon).
 // Used for pm_checkpoint_categories and pm_checking_methods, but table-agnostic.
@@ -34,7 +35,8 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
   }
   useEffect(() => { fetchRows() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openNew = () => { setForm({ ...blank, sort_order: rows.length + 1 }); setEditing('new') }
+  // สร้างใหม่ default สีที่ยังไม่ซ้ำกับแถวที่มี (ผู้ใช้เปลี่ยนทับได้)
+  const openNew = () => { setForm({ ...blank, sort_order: rows.length + 1, ...(extraField === 'color' ? { color: pickUnusedColor(rows.map(r => r.color)) } : {}) }); setEditing('new') }
   const openEdit = (r) => { setForm({ ...r }); setEditing(r.id) }
 
   const save = async () => {
