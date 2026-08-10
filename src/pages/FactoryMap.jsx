@@ -302,6 +302,10 @@ export default function FactoryMap({ setupMode = false }) {
      (คำสั่ง user 2026-08-06) — ข้อมูลจริง: SUB APRON = manual/standalone 6 เครื่อง ·
      LASER-345/789 = auto/inline · ไม่มีข้อมูล = ไม่ปรับ (ไม่เดาแทนหน้างาน) */
   const manualLineRef = useRef({});
+  /* OEE สดต่อ session ที่ loadStatus คำนวณไว้แล้ว — ให้ modal เรื่องราวรายไลน์ใช้ตัวเดียวกัน
+     ⚠️ เดิม modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น "—"
+        ขณะที่การ์ด hover บนผังเดียวกันโชว์ "OEE 99% (สด)" = จอเดียวกันตอบคนละอย่าง (user ทัก 2026-08-06) */
+  const liveOeeRef = useRef({});
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -420,6 +424,7 @@ export default function FactoryMap({ setupMode = false }) {
     };
 
     const byLine = {};
+    const liveBySess = {};   // session_id → OEE สด (ให้ modal ใช้ค่าเดียวกับผัง)
     sessions.forEach(s => {
       const os = ordBySess[s.id] || [];
       // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
@@ -529,6 +534,7 @@ export default function FactoryMap({ setupMode = false }) {
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
       const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
       const isLive = s.oee == null && oeeVal != null;
+      if (isLive) liveBySess[s.id] = oeeVal;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeRows: [] };
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
@@ -550,6 +556,7 @@ export default function FactoryMap({ setupMode = false }) {
       const avg = wavg(v.oeeRows || [], r => r.oee, wLoad);
       out[name] = { ...v, oee: avg != null ? Math.round(avg) : null };
     });
+    liveOeeRef.current = liveBySess;
     setLineStatus(out);
   }, []);
   useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
@@ -832,7 +839,11 @@ export default function FactoryMap({ setupMode = false }) {
           const p = sOrders.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
           const dt = dtRows.filter(d => d.session_id === s.id && !d.planned).reduce((a, d) => a + d.mins, 0);
           const ng = (defRes.data || []).filter(d => d.session_id === s.id).reduce((a, d) => a + (d.qty_ng || 0), 0);
-          return { id: s.id, line: s.line_name, shift: s.shift, status: s.status, oee: s.oee, a: s.oee_a, p: s.oee_p, q: s.oee_q, target: t, produced: p, dt, ng };
+          // ปิดกะแล้ว = ค่าที่ stamp · ยังเปิด = OEE สดตัวเดียวกับที่ผังใช้ (ห้ามโชว์ "—" ทั้งที่ผังมีเลข)
+          const liveO = liveOeeRef.current[s.id];
+          return { id: s.id, line: s.line_name, shift: s.shift, status: s.status,
+            oee: s.oee != null ? s.oee : (liveO ?? null), oeeLive: s.oee == null && liveO != null,
+            a: s.oee_a, p: s.oee_p, q: s.oee_q, target: t, produced: p, dt, ng };
         }).sort((a, b) => (a.shift === 'day' ? 0 : 1) - (b.shift === 'day' ? 0 : 1));
 
         setStory({
@@ -1817,7 +1828,7 @@ export default function FactoryMap({ setupMode = false }) {
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: pctCol(p) }}>{x.target > 0 ? `${fmtNum(x.produced)}/${fmtNum(x.target)} · ${p}%` : `${fmtNum(x.produced)} ชิ้น`}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%` : '—'} color={oeeCol(x.oee)} />
+                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%${x.oeeLive ? ' (สด)' : ''}` : '—'} color={oeeCol(x.oee)} />
                               {x.a != null && <Chip label="A" val={`${Math.round(x.a)}%`} color="var(--text2)" />}
                               {x.p != null && <Chip label="P" val={`${Math.round(x.p)}%`} color="var(--text2)" />}
                               {x.q != null && <Chip label="Q" val={`${Math.round(x.q)}%`} color="var(--text2)" />}
