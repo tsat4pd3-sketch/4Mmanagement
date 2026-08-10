@@ -11,6 +11,7 @@ import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 import MachineFloorMap from '../components/MachineFloorMap'
 import DowntimeSiren from '../components/DowntimeSiren'
 import FactoryMap from './FactoryMap'
+import { jigEquipTypeOf } from '../utils/equipmentKinds'
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -231,7 +232,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
     // bridge: facility/utility จากฐานเครื่องจักร (machines) ที่ยังไม่มี shadow jig → ให้ดึงมาวางได้
     // (คำสั่ง user — ลงทะเบียนที่ฐานเครื่องจักรที่เดียว ไม่ต้องคีย์ซ้ำ PM Setup) · วางแล้วสร้าง jig เงาผูก machine_id
     const linkedMachineIds = new Set((jigs || []).map(j => j.machine_id).filter(Boolean))
-    const { data: fm } = await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category').eq('is_active', true).in('equipment_category', FACILITY_CATS)
+    const { data: fm } = await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category, equipment_kind').eq('is_active', true).in('equipment_category', FACILITY_CATS)
     setFacMachines((fm || []).filter(m => !linkedMachineIds.has(m.id)))
     setLoading(false)
   }
@@ -283,6 +284,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
       const { data: jig, error: je } = await supabaseDR.from('jigs').insert({
         name: m.machine_name || m.machine_no, jig_no: m.machine_no || null,
         module: 'mtn', equipment_category: m.equipment_category || 'facility',
+        // แถวเงา = สำเนาของเครื่องจริง — ชนิดต้องตามเครื่องเสมอ ห้ามปล่อยให้ default
+        equipment_type: jigEquipTypeOf(m.equipment_kind),
         machine_id: m.id, machine_no: m.machine_no || null, line_name: m.line_name || null,
       }).select('id').single()
       if (je) return toast.error('สร้างอุปกรณ์ PM ไม่สำเร็จ: ' + je.message)

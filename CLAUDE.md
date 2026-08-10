@@ -188,7 +188,8 @@
 | พนักงาน & ทักษะ | `/ojt-training` | OjtTraining — ใบอบรม OJT paperless FM-HRM-004: บันทึก+เซ็นบนจอ+พิมพ์ PDF ตามฟอร์มกระดาษ (สิทธิ์บันทึก `ojt:record` = mgr/sv/leader · ลบ `ojt:delete` = mgr · scope ผู้เข้าอบรมตาม leader family/sections · ย้ายจากหมวดฝ่ายผลิตมาอยู่คู่ฐานข้อมูลพนักงาน/สกิล ตามคำสั่ง user 2026-07-20) | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/products` | ProductMaster | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
-| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase — **default กรอง `equipment_kind='machine'`** (ไม่งั้นแม่พิมพ์ 262 ตัวปนในลิสต์/dropdown/สถิติ) · สลับดูชนิดอื่นได้จากแถบกรอง | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/die-registry` | **DieRegistry — 🔨 ทะเบียนแม่พิมพ์**: มุมมองแม่พิมพ์บนตัวตนเดียวกับเครื่องจักร (ดูกฎเหล็ก "ชนิดอุปกรณ์เป็นแกน ไม่ใช่ตาราง") · จัดกลุ่มเป็น **ชุด (1 พาร์ท = 1 ชุด)** → กางดูสมาชิกราย OP (กระบวนการ/ตัน/shot สะสม/จำนวนครั้งที่เจียร) · แก้ชุดและแม่พิมพ์รายตัวได้ · **แถบ worklist "ข้อมูลที่ยังต้องเก็บให้ครบ" + ปุ่ม 🔎 ดูเฉพาะที่ต้องแก้** (ข้อมูลมาจากการแกะชื่อเครื่องเดิม ช่องที่แกะไม่ออกปล่อยว่าง — **ห้ามซ่อน** pattern เดียวกับแถบ ⚠️ ข้อมูลไม่ตรงผังองค์กรใน `/operator`) · **OP ซ้ำในชุด = สัญญาณว่าเป็นหลายชุดที่ถูกรวมกัน** (เช่นแยกตามวัสดุ RAW/AAW/LAW — เจอจริง 1 ชุด 24 ตัว = 4 วัสดุ × 6 OP) **ระบบชี้ให้เห็น ห้ามแยกให้เองอัตโนมัติ** · **ไม่ให้แก้ `shot_total`** (ตัวนับจากการผลิต ไม่ใช่ค่าที่คนพิมพ์ทับ) · dropdown ไลน์ลิสต์จาก**ไลน์ที่แม่พิมพ์ใช้จริง** ไม่ใช่ `production_lines` อย่างเดียว (ไลน์แม่พิมพ์เป็นชื่อกลุ่มเครื่องปั๊ม เช่น `LINE A ( 800 Ton )` ซึ่งไม่มีในตารางไลน์ผลิต) · **สิทธิ์แก้ = `machines:edit`** (ตัวตนเดียวกัน คนกลุ่มเดียวกันดูแล — เลี่ยงกับดัก seed `enum_range` ของ permission key ใหม่) · scope ตาม pattern มาตรฐาน · migration `20260810_die_registry_permission.sql` | admin/manager/supervisor/mtn |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/process-setup` | ProcessSetup — จุดจัดการ master กระบวนการผลิต (process_types) ทางเข้าเสริมนอกจาก Daily Report ⚙️ · component ร่วม `ProcessTypeSetup.jsx` | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/qr-labels` | QrLabels — 🏷️ พิมพ์ป้าย QR อุปกรณ์ (เครื่องจักร/จิ๊ก) เลือกไลน์+ติ๊กรายการ → พิมพ์สติกเกอร์ A4 (3 ขนาด) · ดู section "QR / บาร์โค้ดอุปกรณ์" | ทุก role (พิมพ์: `qr_labels:print` = admin/mgr/sv/mtn/engineer) |
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
@@ -364,6 +365,21 @@
 > **เพิ่ม master ใหม่ในระบบช่าง ให้ถามก่อนว่า "ของกลางหรือมุมมองทีม"** — ถ้าเป็นมุมมองทีมต้องมีคอลัมน์ `team` + กรองด้วย `filterByTeam` ตั้งแต่แรก
 > **`teamForItem(name, itemRows)` เป็น data-driven แล้ว** — อ่าน `mtn_item_types.team` ก่อน แล้วค่อย fallback เดาจากชื่อ (JIG→JIG MTN ฯลฯ) ที่ hardcode ไว้เดิม
 > **⚠️ backfill เป็น `null` ทั้งหมดโดยตั้งใจ = ทุกทีมยังเห็นทุกแถวเหมือนก่อน apply** — การไล่ติ๊กว่าแถวไหนของทีมไหนเป็นงาน "จัดข้อมูล" ทำผ่าน UI ไม่เดาให้ใน migration
+
+> ### ⚠️ กฎเหล็ก — "ชนิดอุปกรณ์" เป็น **แกน** ไม่ใช่ **ตาราง** · แยกหน้าจอได้ ห้ามแยกฐานข้อมูล (2026-08-10)
+> **ปัญหาที่เจอ:** `machines` มี 505 แถว active แต่ **262 แถวเป็นแม่พิมพ์ ไม่ใช่เครื่องจักร** (คีย์ปนกันมาตั้งแต่ต้นเพราะไม่เคยมีแกน "ชนิด") → ทะเบียนเครื่องจักรอ่านไม่รู้เรื่อง · dropdown เลือกเครื่องมีแม่พิมพ์ปน · สถิติจำนวนเครื่องผิด
+> **คำถามที่ถูกถามและคำตอบ: "แยกเป็น 3 ตาราง machines/jigs/dies ดีไหม" → ไม่**
+> `machines` เป็น **ตารางตัวตนของอุปกรณ์** อยู่แล้ว — `machine_no` unique และ **MO / downtime / prod_orders / QR / ผังเครื่องจักร อ้างเลขนี้รวม 12+ ตาราง** · แยกตาราง = ทุกตารางที่อ้างอุปกรณ์ต้อง polymorphic (`equipment_type + equipment_id`) + QR ต้องมี prefix ต่อชนิด + **ทำลายหัวใจของระบบซ่อมบำรุงรวมคือ "เปิดอุปกรณ์ตัวนี้ เห็นประวัติทั้งหมด"**
+> → ใช้โมเดล **SAP PM / Maximo: 1 ตัวตน + แกนชนิด + ตารางส่วนขยายต่อชนิด**
+> - **`machines.equipment_kind`** (`machine`/`die`/`jig`/`facility` · null = machine) — source of truth `src/utils/equipmentKinds.js`
+> - **⚠️ คนละแกนกับ `equipment_category`** (`production`/`facility` = **ที่ตั้ง/การใช้งาน**) — เครื่องจักรอยู่ facility ได้ · แม่พิมพ์อยู่ production **สองแกนตัดกัน ห้ามยุบรวม**
+> - **ส่วนขยายต่อชนิด:** `equipment_die` (1:1 กับ machines — `machine_id` เป็นทั้ง PK และ FK · OP/ตัน/shot/regrind) · ชนิดอื่นเพิ่มตารางส่วนขยายแบบเดียวกัน **ห้ามยัดคอลัมน์เฉพาะชนิดลง `machines`**
+> - **`die_sets`** = ชุดแม่พิมพ์ (**1 พาร์ท = 1 ชุด**) · `kind` tandem/progressive/transfer/single · `pieces_per_stroke` (งานคู่ LH/RH = 2 — ต่อกับกฎ SCADA "1 stroke ≠ 1 ชิ้น") · `mat_no` โยง Product Master
+> - **`die_op_types`** = master กระบวนการ (13 ค่า data-driven) — เพิ่มกระบวนการใหม่ไม่ต้องแก้โค้ด
+> - **แยก "หน้าจอ" ได้เต็มที่:** `/machine-database` default กรอง `equipment_kind='machine'` · `/die-registry` เป็นมุมมองแม่พิมพ์ — **แยกหน้าจอ ≠ แยกฐานข้อมูล**
+> - **`jigs.equipment_type` ของ "แถวเงา" ต้อง derive จาก `machines.equipment_kind` เสมอ** (`jigEquipTypeOf`) — เดิมตั้งอิสระจากเครื่องจริงจนเพี้ยน (เครื่องอัดลม/คูลลิ่งทาวเวอร์ 9 ตัวกลายเป็น `jig`)
+> - **backfill 2026-08-10:** machine 214 · die 262 · facility 29 · ไม่ระบุ 0 · ชุดแม่พิมพ์ 92 (tandem 52 · progressive 26 · single 14) ผูกแล้ว 259/262 — เลือก **"ติดป้าย" ไม่ใช่ "ย้ายตาราง"** reference ทุกเส้นยังอยู่ครบ rollback ง่าย · **ฟิลด์ที่แกะจากชื่อไม่ออกปล่อยว่าง ห้ามเดา** (ยังไม่ระบุตัน 180 · ไม่ระบุ OP 49 · ไม่ระบุกระบวนการ 90) → เป็น worklist ในหน้า `/die-registry` ไม่ใช่ bug
+> - migration: `20260810_equipment_kind_and_die_master.sql` · `20260810_backfill_dies_from_machines.sql` · `20260810_sync_shadow_jig_equipment_type.sql` (**apply แล้วทั้งหมด 2026-08-10**)
 
 ### Direct / Indirect Labor + รวมช่างเข้าฐานพนักงาน (2026-07-22)
 
