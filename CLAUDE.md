@@ -683,6 +683,16 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **ส่งขอปิดกะใหม่ = เคลียร์ `close_reject_*`** (เดิมเอกสารบอกว่าเคลียร์ แต่โค้ดไม่ได้ทำ → ไอคอน ✕ จะค้างทั้งที่แก้แล้ว) · เคลียร์ใน best-effort update ก้อนเดียวกับ note
 - **⚠️ ไอคอน ✕ ขึ้นได้ต่อเมื่อ apply `20260723_session_close_reject_reason.sql` แล้ว** (เพราะ `close_reject_at` เขียน best-effort) — ถ้าแบนเนอร์แดงในกะยังไม่เคยโชว์ข้อความ แปลว่ายังไม่ apply
 
+> ### ⚠️ กฎเหล็ก — `try { await supabaseDR...update() } catch {}` **ไม่ใช่ best-effort มันคือกลืน error ทิ้ง** (2026-08-10)
+> **supabase-js "คืน" `{ error }` ไม่ได้ throw** → `try/catch` ที่ไม่ destructure `error` จะไม่มีวันจับอะไรได้เลย
+> คอลัมน์ยังไม่มี (42703) = update ล้มเหลว **แต่หน้าจอบอกว่าสำเร็จ** — เจอจริงกับ `close_approve_note`/`close_reject_reason`/`close_request_note` ทั้ง 3 จุด (SV พิมพ์เหตุผลปฏิเสธ → หัวหน้ากลุ่มเห็นแบนเนอร์เปล่า ไม่รู้ว่าต้องแก้อะไร)
+> **pattern ที่ถูกสำหรับคอลัมน์ additive ที่อาจยังไม่ apply:**
+> ```js
+> const { error } = await supabaseDR.from(t).update({...}).eq('id', id)
+> if (error) { console.warn(...); toast.error('งานหลักสำเร็จ แต่ <ฟิลด์> ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration <ชื่อ> (แจ้ง admin)') }
+> ```
+> **flow หลักต้องไม่พัง + ผู้ใช้ต้องรู้ว่าอะไรไม่ถูกบันทึก** — เงียบแปลว่าไม่มีใครไป apply migration สักที
+
 ### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
 
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
