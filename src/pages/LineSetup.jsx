@@ -1786,7 +1786,9 @@ export default function LineSetup({ embedded = false } = {}) {
             }}
           >
             <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-              👥 Standard Manpower
+              {/* ชื่อแผงต้องครอบทุกอย่างที่อยู่ข้างใน — เดิมชื่อ "Standard Manpower" อย่างเดียว
+                  แต่ข้างในมีคุณสมบัติไลน์ (ประเภท/โหมดไหลงาน/เครื่องขนาน) ด้วย user ทักว่าสับสน (2026-08-06) */}
+              ⚙️ ตั้งค่าไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· กำลังคน + คุณสมบัติไลน์</span>
             </h4>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{showManpower ? '▲ ซ่อน' : '▼ แสดง'}</span>
           </button>
@@ -1846,6 +1848,9 @@ export default function LineSetup({ embedded = false } = {}) {
                 placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'เช่น 2140662201'}
                 style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
             </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
+              รวมกำลังคน <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน (เช้า+ดึก)
+            </div>
             <div style={{ marginBottom: 14 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ใช้ในใบค่าฝีมือ)</label>
               <input type="text" value={signerHead} disabled={!canEdit}
@@ -1854,9 +1859,10 @@ export default function LineSetup({ embedded = false } = {}) {
                 style={{ marginTop: 4 }} />
             </div>
 
-            {/* ══ ข้อมูลเฉพาะไลน์นี้ — คุณสมบัติเครื่อง/การไหลงานจริง ไม่ตกทอดถึงไลน์ย่อย ══ */}
-            <div style={{ ...groupHeadSt, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              🏭 ข้อมูลเฉพาะไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์</span>
+            {/* ══ ข้อมูลเฉพาะไลน์นี้ — คุณสมบัติเครื่อง/การไหลงานจริง ไม่ตกทอดถึงไลน์ย่อย ══
+                แยกพื้นหลัง+เส้นคั่นให้เห็นชัดว่า "คนละเรื่องกับกำลังคนข้างบน" (user ทักว่าของปนกันในแผงเดียว) */}
+            <div style={{ ...groupHeadSt, borderTop: '2px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+              🏭 คุณสมบัติของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ใช่เรื่องกำลังคน · ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์</span>
             </div>
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏭 ประเภทไลน์</label>
@@ -1887,15 +1893,20 @@ export default function LineSetup({ embedded = false } = {}) {
                   onChange={e => setParallelStations(e.target.value)}
                   placeholder="เช่น 3" style={{ marginTop: 4, width: 120 }} />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
-                  ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow
-                  แต่ตั้ง N=3 · เว้นว่าง = ไลน์เดียวหักเต็ม{flowMode === 'parallel_machine' ? ' (เครื่องขนาน: นับจากทะเบียนเครื่องแทน)' : ''}
+                  = <strong style={{ color: 'var(--text)' }}>เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง</strong> (ไม่ใช่จำนวนเครื่องทั้งหมดในไลน์ และไม่ใช่จำนวนคน)
+                  · ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow แต่ตั้ง N=3
+                  · <strong style={{ color: 'var(--text)' }}>มีผล 2 ที่: หัก Downtime 1/N ในสูตร OEE และตัวเลข "ควรผลิตได้ตอนนี้" บนผังรวมโรงงาน</strong>
                 </div>
+                {flowMode === 'parallel_machine' && !(parseInt(parallelStations) > 0) && (
+                  // ⚠️ ไลน์เครื่องขนานที่ไม่ตั้ง N = ผังรวมคำนวณกำลังผลิตไม่ได้ ต้องถอยไปสูตรอัตราตามเวลา — ห้ามปล่อยเงียบ
+                  <div style={{ fontSize: 11, lineHeight: 1.45, color: '#f59e0b', background: '#f59e0b14', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 8px', marginTop: 6 }}>
+                    ⚠️ ไลน์นี้ตั้งเป็น "เครื่องขนาน" แต่ยังไม่ได้กรอก N — ระบบไม่รู้ว่าเดินกี่เครื่องพร้อมกัน
+                    จึงคิด "ควรผลิตได้ตอนนี้" จากสัดส่วนเวลาที่ผ่านไปแทน (หยาบกว่า) และหัก Downtime เต็มเหมือนไลน์เครื่องเดียว
+                  </div>
+                )}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                รวม <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน
-              </span>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
               {canEdit && (
               <button onClick={handleSaveStdManpower} disabled={mpSaving}
                 style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
