@@ -258,6 +258,22 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - เพิ่มอุปกรณ์ฝั่ง PM → ดึงจาก machine master (ดู `PMSetup.jsx` addMode workstation)
 - รูปชิ้นงานที่อัพไว้ใน Product Master (`dr_products.image_url`) ให้ดึงมาแสดงซ้ำได้เลย ไม่อัพใหม่
 
+## 5.2.1 ช่องเลือกสีตอน "สร้างใหม่" ต้อง default สีที่ยังไม่ซ้ำ (2026-08-10 — คำสั่ง user)
+
+ฟอร์ม master ที่มีช่องเลือกสี (ประเภทเครื่องจักร/DT/ของเสีย/กระบวนการ/หมวดอะไหล่/สกิล/taxonomy PM ฯลฯ)
+เดิม default สีตายตัว (`#ef4444` ฯลฯ) → คนกดบันทึกโดยไม่เปลี่ยน = สีซ้ำกันเป็นสิบรายการ แยกไม่ออกบนจอ
+
+- **ตอนเปิดฟอร์ม "สร้างใหม่" ให้ตั้ง `color: pickUnusedColor(rows.map(r => r.color))`** จาก util กลาง
+  **`src/utils/colorPick.js`** — สุ่มจาก palette 26 สีเฉพาะสีที่ยังไม่ถูกใช้ · palette หมด = generate สีใหม่
+  จาก hue ที่ห่างจากทุกสีที่ใช้อยู่มากสุด (ไม่มีวันวนกลับมาซ้ำ) · เทียบสีแบบ normalize ตัวพิมพ์
+- **ผู้ใช้เลือกสีเองทับได้เสมอ** — util นี้ตั้งแค่ค่าเริ่มต้น ห้ามสุ่มทับสีที่ผู้ใช้แตะแล้ว
+  (ฟอร์มที่ init ก่อนข้อมูลโหลด เช่น skill ใน `/operator` ใช้ ref `skillColorTouched` กัน effect ทับ)
+- ฟอร์มที่ใช้ swatch ตายตัว (เช่น `TYPE_COLORS` ใน MachineDatabase) ให้ prepend สีที่สุ่มมาเข้า swatch
+  ด้วย `[...new Set([form.color, ...TYPE_COLORS])]` — สีนอกลิสต์ต้องมองเห็น/เลือกกลับได้
+- จุดที่ทำแล้ว (2026-08-10): TaxonomyManagerModal · MachineDatabase (ประเภทเครื่องจักร) ·
+  ProcessTypeSetup · SparePartMaster (หมวดอะไหล่) · DailyReport (ประเภท DT + ของเสีย) · operator (สกิล)
+- **ฟอร์มใหม่ที่มีช่องสี ต้องใช้ `pickUnusedColor` ตั้งแต่แรก ห้าม hardcode สี default ตายตัว**
+
 ## 5.3 Dropdown ลำดับชั้นองค์กร ต้อง cascade เสมอ (2026-07-21 — คำสั่ง user)
 
 ทุกชุด select ที่ไล่ระดับ **Section → แผนก/Dept → Group/Line → Team** (ทั้ง filter bar และฟอร์มใน modal):

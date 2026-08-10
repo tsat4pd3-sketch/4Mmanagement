@@ -20,6 +20,7 @@ import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
+import { pickUnusedColor } from '../utils/colorPick';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -5462,7 +5463,8 @@ function DefectTypeSetup({ role }) {
     setEditing(item?.id || 'new');
     setForm(item
       ? { name_th: item.name_th, color: item.color, process_type: item.process_type || '', sort_order: item.sort_order, is_active: item.is_active }
-      : { ...emptyForm, sort_order: items.length + 1 });
+      // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
+      : { ...emptyForm, color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1 });
   };
 
   const handleSave = async () => {
@@ -6140,7 +6142,8 @@ function DowntimeTypeSetup({ role }) {
     setEditing(item?.id || 'new');
     setForm(item
       ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '' }
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
+      // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
   };
 
   const handleSave = async () => {
