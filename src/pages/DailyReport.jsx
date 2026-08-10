@@ -1353,6 +1353,11 @@ function LiveTab({ role }) {
   const handleManualQtyUpdate = async (o) => {
     const v = parseInt(manualQtyDraft[o.id]);
     if (isNaN(v) || v < 0) { toast.error('กรอกยอดสะสม (ชิ้น) ก่อน'); return; }
+    // ใบสแกนมีจำนวนตายตัวตาม kanban card — ทำเกินใบไม่ได้ (ใบ manual เป็นเป้าที่ตั้งเอง เกินได้)
+    if (!o.is_manual && v > o.qty) {
+      toast.error(`ใบนี้มี ${o.qty} ชิ้น กรอกเกินไม่ได้ — ถ้าทำครบแล้วให้สแกนปิดใบ`);
+      return;
+    }
     const delta = v - (o.qty_actual || 0);
     const { error } = await supabaseDR.from('prod_orders')
       .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id);
@@ -2272,7 +2277,18 @@ function LiveTab({ role }) {
 
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => { setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || ''); setDtCarryDecisions({}); setDtCloseTimes({}); setShowCloseShift(true); }}
+                    <button onClick={() => {
+                      setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
+                      setDtCarryDecisions({}); setDtCloseTimes({});
+                      // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
+                      setCarryQtyActual(m => {
+                        const next = { ...m };
+                        prodOrders.filter(o => o.status === 'open' && (o.qty_actual || 0) > 0)
+                          .forEach(o => { if ((next[o.id] ?? '') === '') next[o.id] = String(o.qty_actual); });
+                        return next;
+                      });
+                      setShowCloseShift(true);
+                    }}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
@@ -2325,8 +2341,11 @@ function LiveTab({ role }) {
                 const orders    = prodOrders.filter(o => o.mat_no === matNo);
                 const orderIds  = new Set(orders.map(o => o.id));
                 const target    = orders.reduce((s, o) => s + o.qty, 0);
+                // ใบที่ยังเปิด (manual + สแกนที่กรอกยอดระหว่างทาง) นับยอดที่ทำไปแล้วด้วย —
+                // ต้องนับให้ตรงกับ FactoryMap/OEE/MorningMeeting ที่ใช้สูตร confirmed ? qty_ok : qty_actual อยู่แล้ว
+                // ใบสแกนที่ยังไม่กรอก qty_actual = null → บวก 0 เหมือนเดิม (พฤติกรรมเดิมไม่เปลี่ยน)
                 const confirmed = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                  + orders.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
+                  + orders.filter(o => o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
                   // ใบที่ยกยอดออกไปกะถัดไป — ผลิตจริงส่วนหนึ่ง (qty_actual) นับเป็นผลิตได้ของกะนี้ (ที่เหลือไปทำต่อกะหน้า)
                   + orders.filter(o => o.status === 'carry_over').reduce((s, o) => s + (o.qty_actual || 0), 0);
                 const openCnt   = orders.filter(o => o.status === 'open').length;
@@ -2352,7 +2371,7 @@ function LiveTab({ role }) {
               const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = pt.produced
                 + nullMat.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                + nullMat.filter(o => o.is_manual && o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
+                + nullMat.filter(o => o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
                 + nullMat.filter(o => o.status === 'carry_over').reduce((s, o) => s + (o.qty_actual || 0), 0);
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
               const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
@@ -2520,6 +2539,36 @@ function LiveTab({ role }) {
                 </div>
               )}
 
+              {/* สรุป "จะส่งต่อกะหน้า" — คู่กับแบนเนอร์ "รับยอดจากกะก่อน" ด้านบน
+                  เดิมมีแต่ตัวเลขรายใบ ต้องไล่บวกเอง/ไปเปิดดูกะถัดไปถึงรู้ว่ากะนี้ส่งต่อเท่าไหร่ */}
+              {(() => {
+                const outOpen  = prodOrders.filter(o => o.status === 'open');
+                const outCarry = prodOrders.filter(o => o.status === 'carry_over');
+                if (!outOpen.length && !outCarry.length) return null;
+                const remainOf   = (o) => Math.max(0, (o.qty_target ?? o.qty) - (o.qty_actual || 0));
+                const settledQty = outCarry.reduce((s, o) => s + remainOf(o), 0);
+                const openQty    = outOpen.reduce((s, o) => s + remainOf(o), 0);
+                const unfilled   = outOpen.filter(o => !(o.qty_actual > 0)).length;
+                const total      = settledQty + openQty;
+                if (!total) return null;
+                return (
+                  <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 9 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>
+                      ⏭ จะส่งต่อกะหน้า {unfilled > 0 ? '~' : ''}{total} ชิ้น
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                      {outCarry.length > 0 && <>ยืนยันยกยอดแล้ว <b style={{ color: 'var(--text2)' }}>{settledQty}</b> ชิ้น ({outCarry.length} ใบ){outOpen.length > 0 ? ' · ' : ''}</>}
+                      {outOpen.length > 0 && <>ใบที่ยังไม่ปิด <b style={{ color: 'var(--text2)' }}>{openQty}</b> ชิ้น ({outOpen.length} ใบ)</>}
+                    </div>
+                    {unfilled > 0 && (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3 }}>
+                        ⚠ {unfilled} ใบยังไม่ได้กรอกยอดที่ทำได้ — ตัวเลขจึงนับเต็มใบไว้ก่อน กรอกในการ์ดเพื่อให้แม่นขึ้น
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {prodOrders.length === 0 && carryOrders.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--muted)', fontSize: 13 }}>
                   ยังไม่มี Prod Order — กด <b>📥 Scan เปิด Order</b> เพื่อเริ่มสแกน Tag Card
@@ -2534,6 +2583,11 @@ function LiveTab({ role }) {
                   const isCarried   = !!o.carry_over_from_session_id;
                   const isManual    = !!o.is_manual;
                   const manualOpen  = isManual && o.status === 'open';
+                  // ใบสแกน (kanban card) ที่ยังไม่ปิด — กรอกยอดสะสมได้เหมือนใบ manual (ไม่บังคับ)
+                  // เพื่อให้เห็นตั้งแต่ระหว่างกะว่า "ถ้าปิดกะตอนนี้จะยกไปกะหน้ากี่ชิ้น"
+                  // ก่อนหน้านี้เห็นแค่เป้า (เช่น 35) จนกว่าจะปิดกะ ต้องไปเปิดดูกะถัดไปถึงรู้
+                  const scanOpen    = !isManual && o.status === 'open';
+                  const scanPartial = scanOpen && (o.qty_actual || 0) > 0;
                   // ใบ manual ที่ไม่ถูกอัพเดทยอดนาน (> 2 ชม.ครึ่ง = เลยรอบเบรคไปแล้ว) เตือนเหลืองนิ่ง
                   const lastUpd     = manualOpen ? new Date(o.qty_updated_at || o.opened_at) : null;
                   const manualStale = manualOpen && (Date.now() - lastUpd.getTime()) > 150 * 60000;
@@ -2609,6 +2663,18 @@ function LiveTab({ role }) {
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
                           </>
+                        ) : scanPartial ? (
+                          // ใบสแกนที่กรอกยอดระหว่างทางแล้ว — โชว์เหมือนฝั่งรับ (ทำได้/เป้า + จะยกไปเท่าไหร่)
+                          // ไม่ต้องรอปิดกะ ไม่ต้องไปเปิดดูกะถัดไป
+                          <>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>
+                              {o.qty_actual}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>
+                              ➡ ปิดกะตอนนี้ ยกไป {Math.max(0, o.qty - o.qty_actual)} ชิ้น
+                            </div>
+                          </>
                         ) : (
                           // confirmed = ผลิตจริง · open ปกติ/carried-in = เป้าที่ต้องทำ (แยก label ให้ไม่กำกวมกับผลิตจริง)
                           <>
@@ -2656,10 +2722,14 @@ function LiveTab({ role }) {
                           ))}
                         </div>
                       )}
-                      {/* แถวอัพเดทยอดสะสมของใบ manual — พนักงานกรอกทุกช่วงเบรคตาม break policy */}
-                      {manualOpen && canScan && (
+                      {/* แถวอัพเดทยอดสะสม — ใบ manual กรอกทุกช่วงเบรคตาม break policy (บังคับ)
+                          ใบสแกน กรอกได้แบบไม่บังคับ เพื่อให้รู้ยอดที่จะส่งต่อกะหน้าก่อนถึงตอนปิดกะ
+                          (ใบสแกนยังปิดด้วยการสแกนเหมือนเดิม — ไม่มีปุ่มปิดด้วยมือ กันเสีย traceability) */}
+                      {(manualOpen || scanOpen) && canScan && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ยอดสะสมตอนนี้:</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
+                            {manualOpen ? 'ยอดสะสมตอนนี้:' : 'ทำได้แล้วกี่ชิ้น:'}
+                          </span>
                           {/* width กัน index.css input{width:100%} ดันปุ่มแตกแถว (กับดัก CSS ใน CLAUDE.md) */}
                           <input type="number" min={0} inputMode="numeric" value={manualQtyDraft[o.id] ?? ''}
                             placeholder={`${o.qty_actual || 0}`}
@@ -2669,10 +2739,17 @@ function LiveTab({ role }) {
                             style={{ background: '#60a5fa', color: '#08131f', border: 'none', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                             💾 อัพเดทยอด
                           </button>
-                          <button onClick={() => handleManualClose(o)}
-                            style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                            ✓ ปิดใบนี้ (ยอดจริง)
-                          </button>
+                          {manualOpen && (
+                            <button onClick={() => handleManualClose(o)}
+                              style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)', borderRadius: 7, padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                              ✓ ปิดใบนี้ (ยอดจริง)
+                            </button>
+                          )}
+                          {scanOpen && (
+                            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                              ไม่บังคับ — กรอกไว้ให้เห็นยอดที่จะส่งต่อกะหน้า · ปิดใบยังใช้สแกนเหมือนเดิม
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -3641,7 +3718,9 @@ function LiveTab({ role }) {
                   const openOrders = prodOrders.filter(o => o.status === 'open');
                   if (!openOrders.length) return null;
                   // ยอดยกต้องมาจากของจริงที่ leader กรอกเองเท่านั้น ห้ามให้ระบบประมาณเวลาที่ "น่าจะ" ผลิตได้มาเติมให้
-                  // (ของเดิมเคยเดาจากเวลาที่เหลือ ทำให้ดูเหมือนผลิตครบทั้งที่ยังไม่ได้ทำ) — เริ่มที่ 0 เสมอ บังคับให้กรอกเอง
+                  // (ของเดิมเคยเดาจากเวลาที่เหลือ ทำให้ดูเหมือนผลิตครบทั้งที่ยังไม่ได้ทำ)
+                  // ข้อยกเว้นเดียว: ยอดที่ "คนกรอกเอง" ไว้ระหว่างกะ (qty_actual) ถูกเติมให้ตอนเปิด modal — แก้ทับได้
+                  // ที่เหลือเริ่มที่ 0 เสมอ บังคับให้กรอกเอง
                   const invalidCarry = openOrders.filter(o => {
                     const dec = carryOverDecisions[o.id];
                     if (dec !== 'carry') return false;
