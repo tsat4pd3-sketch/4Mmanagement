@@ -228,7 +228,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
@@ -294,6 +294,9 @@ export default function FactoryMap({ setupMode = false }) {
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
+  // กำลังคนล่าสุด (ไลน์ → {stationFilled/stationTotal, present/headTotal}) — ใช้ปรับ "จำนวนเครื่องที่เดินได้จริง"
+  // loadStatus เป็น useCallback deps แคบ อ่าน state ตรงๆ จะ stale จึงผ่าน ref เหมือน flowByLineRef
+  const manpowerRef = useRef({});
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -444,7 +447,7 @@ export default function FactoryMap({ setupMode = false }) {
       //   ระบบเป็น pull (ขายเท่าไหร่ ผลิตเท่านั้น) → เป้า = ใบที่เปิดแล้ว · ห้ามคาดหวังเกินที่ลูกค้าดึง
       //   เวลาที่มีให้ผลิต = ตั้งแต่ (เริ่มกะ หรือ เปิดใบแรก แล้วแต่อันหลัง) ถึงตอนนี้ − พักตามแผน − หยุดตามแผน
       //   เดิมใช้ "เป้าเต็ม × สัดส่วนเวลาของกะ" ซึ่งต่ำเกินจริงในระบบ pull (ใบทยอยเปิด เป้าเลยโตทีหลัง)
-      let onTimeTarget = target;
+      let onTimeTarget = target, runN = 0, capN = 0;   // เครื่องที่เดินได้จริง / เต็มกำลัง (ไว้อธิบายบนจอ)
       if (s.status === 'open' && s.start_time) {
         const shiftStart = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
         // เปิดใบแรกช้ากว่าเริ่มกะ = เพิ่งเริ่มผลิตตอนนั้น (ก่อนหน้านั้นยังไม่มีงานให้ทำ)
@@ -478,11 +481,23 @@ export default function FactoryMap({ setupMode = false }) {
            (ทะเบียนเครื่องเอามานับแทนไม่ได้ — SUB APRON ลงไว้ 14 ตัวแต่รวมจิ๊ก/โรบอทด้วย)
            → ถอยไปสูตรอัตราตามเวลา (เป้า × สัดส่วนเวลาที่ผ่านไป) ซึ่งไม่ต้องรู้ N */
         const lineCfg = flowByLineRef.current[s.line_name];
-        const parallelN = parallelUnitsOf(lineCfg);
+        const fullN = parallelUnitsOf(lineCfg);
         const unknownN = flowModeOf(lineCfg?.flow_mode) === 'parallel_machine' && !(Number(lineCfg?.parallel_stations) > 1);
+        /* ⭐ N ที่ตั้งไว้คือ "เต็มกำลัง" — วันไหนคนไม่พอก็เดินน้อยกว่านั้น (คำสั่ง user 2026-08-06:
+           "เดินได้พร้อมกัน 6 เครื่อง แต่บางทีคนไม่พอ ก็จะเดินตามที่มีกำลังคน")
+           → เครื่องที่เดินได้จริง = N × สัดส่วนกำลังคนที่มาจริง (จุดงานที่มีคนเข้าประจำก่อน แล้วค่อยหัวคน)
+           ตรวจกับข้อมูลจริง SUB APRON: N=6 · จุดงานมีคน 3/6 → เดินได้ 3 เครื่อง = 2388 ชิ้น
+           ของออกจริง 2500 (= 3.14 เท่าของเครื่องเดียว) → ตรงกับที่โมเดลทำนาย
+           ⚠️ ไม่มีข้อมูลกำลังคน (ยังไม่เช็คชื่อ/ไลน์ไม่มีจุดงาน) = ไม่ปรับ ใช้ N เต็ม — ห้ามตีเป็น 0 คน */
+        const mp = manpowerRef.current[s.line_name];
+        const manRatio = (mp?.stationTotal > 0 && mp.stationFilled > 0) ? mp.stationFilled / mp.stationTotal
+          : (mp?.headTotal > 0 && mp.present > 0) ? mp.present / mp.headTotal : null;
+        const parallelN = (fullN > 1 && manRatio != null)
+          ? Math.max(1, Math.min(fullN, Math.round(fullN * manRatio))) : fullN;
         onTimeTarget = (ctAvg > 0 && !unknownN)
           ? Math.min(target, (availMin * 60) / ctAvg * parallelN)
           : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
+        runN = parallelN; capN = fullN;
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
@@ -492,6 +507,8 @@ export default function FactoryMap({ setupMode = false }) {
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
         onTimeTarget: acc.onTimeTarget + onTimeTarget,
+        // เดินได้จริงกี่เครื่อง / เต็มกำลังกี่เครื่อง — เอาไปอธิบายบน popup ว่าทำไม "ควรได้" เท่านี้
+        runN: Math.max(acc.runN || 0, runN), capN: Math.max(acc.capN || 0, capN),
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + dtMin, dtMinHour: acc.dtMinHour + dtMinHour, dtActive: acc.dtActive || dtActive,
         // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — กะเก่า column=0 ทั้งที่มี NG จริง · CLAUDE.md)
@@ -553,6 +570,7 @@ export default function FactoryMap({ setupMode = false }) {
       o.stationFilled = filledSet[ln]?.size || 0;
       out[ln] = o;
     });
+    manpowerRef.current = out;
     setManpower(out);
   }, []);
   useEffect(() => { loadManpower(); const t = setInterval(loadManpower, 60000); return () => clearInterval(t); }, [loadManpower]);
@@ -837,7 +855,7 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
@@ -1583,7 +1601,18 @@ export default function FactoryMap({ setupMode = false }) {
                     background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
                     borderRadius: 7, padding: '4px 8px' }}>
                     <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{m.label}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>{t || '—'}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>
+                      {t || '—'}
+                      {/* ไลน์เครื่องขนาน: บอกว่า "ควรได้" คิดจากเครื่องที่เดินได้จริงกี่เครื่อง
+                          ไม่งั้นคนอ่านไม่ออกว่าทำไมตัวเลขเปลี่ยนไปตามวัน (คนมาไม่เท่ากัน) */}
+                      {k === 'productivity' && st.capN > 1 && (
+                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
+                          {st.runN < st.capN
+                            ? `คิดจากเดิน ${st.runN}/${st.capN} เครื่อง (ตามกำลังคนที่มา)`
+                            : `คิดจากเดินเต็มกำลัง ${st.capN} เครื่อง`}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 );
               })}
