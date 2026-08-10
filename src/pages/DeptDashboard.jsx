@@ -590,7 +590,8 @@ function QaView({ d, ctx }) {
 }
 
 /* ═══ config ส่วนงาน — เพิ่มส่วนงานใหม่ = เพิ่ม entry ตรงนี้ (ห้ามสร้างหน้าใหม่) ═══════ */
-const DEPTS = [
+/* export ไว้ให้ทดสอบ/ตรวจสอบได้จากภายนอก (smoke render แต่ละ View) */
+export const DEPTS = [
   { key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', roles: ['leader', 'supervisor', 'manager', 'admin'], load: loadProduction, View: ProductionView },
   { key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', roles: ['mtn', 'engineer'], load: loadMaintenance, View: MaintenanceView },
   { key: 'store', icon: '📦', label: 'สโตร์', roles: ['planner_store', 'sale'], load: loadStore, View: StoreView },
@@ -607,6 +608,10 @@ export default function DeptDashboard() {
   const cfg = DEPTS.find(x => x.key === dept);
 
   const [lines, setLines] = useState([]);
+  /* ⚠️ data ต้องผูกกับส่วนงานที่โหลดมาเสมอ (`{ dept, d }`)
+     ตอนสลับแท็บ React จะ render View ของส่วนงานใหม่ "ก่อน" effect โหลดข้อมูลจะวิ่ง
+     ถ้าเก็บแต่ก้อนข้อมูลเปล่า View ใหม่จะได้ข้อมูลรูปทรงของส่วนงานเก่า → พังทันที
+     (เคสจริง: สลับไปซ่อมบำรุงแล้วเจอ "Cannot read properties of undefined (reading 'forEach')") */
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -627,7 +632,7 @@ export default function DeptDashboard() {
   const load = useCallback(async () => {
     if (!lines.length) return;
     setLoading(true); setErr(null);
-    try { setData(await cfg.load(ctx)); }
+    try { const d = await cfg.load(ctx); setData({ dept: cfg.key, d }); }
     catch (e) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
     finally { setLoading(false); }
   }, [cfg, ctx, lines.length]);
@@ -661,7 +666,10 @@ export default function DeptDashboard() {
 
       {loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
-      {!loading && !err && data && <cfg.View d={data} ctx={ctx} />}
+      {/* render เฉพาะเมื่อข้อมูลที่ถืออยู่เป็นของส่วนงานที่กำลังดู */}
+      {!loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
+      {!loading && !err && data && data.dept !== dept &&
+        <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
     </div>
   );
 }
