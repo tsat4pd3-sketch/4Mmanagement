@@ -18,6 +18,7 @@ import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
 import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import ImageCropModal from './ImageCropModal';
 import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
+import { pickUnusedColor } from '../utils/colorPick';
 
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
@@ -949,14 +950,15 @@ function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
    จัดการหมวดอะไหล่ (data-driven)
    ══════════════════════════════════════════════════════════════════════════ */
 function CategoryModal({ cats, teams = [], onClose, onSaved }) {
-  const [n, setN] = useState({ key: '', label: '', icon: '', color: '#94a3b8' });
+  // ฟอร์มเพิ่มหมวดใหม่ default สีที่ยังไม่ซ้ำกับหมวดที่มี (ผู้ใช้เปลี่ยนทับได้)
+  const [n, setN] = useState(() => ({ key: '', label: '', icon: '', color: pickUnusedColor(cats.map(c => c.color)) }));
   const add = async () => {
     const key = n.key.trim().toUpperCase();
     if (!key || !n.label.trim()) return toast.error('กรอกรหัสหมวดและชื่อ');
     const { error } = await supabaseDR.from('mtn_spare_categories')
       .insert({ key, label: n.label.trim(), icon: n.icon.trim() || null, color: n.color, sort_order: cats.length + 1 });
     if (error) return toast.error(error.message);
-    setN({ key: '', label: '', icon: '', color: '#94a3b8' }); onSaved();
+    setN({ key: '', label: '', icon: '', color: pickUnusedColor([...cats.map(c => c.color), n.color]) }); onSaved();
   };
   const upd = async (key, patch) => {
     const { error } = await supabaseDR.from('mtn_spare_categories').update(patch).eq('key', key);
