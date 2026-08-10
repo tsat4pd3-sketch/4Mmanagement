@@ -652,6 +652,13 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **⚠️ ผลข้างเคียงที่ตั้งใจ — ยอด "ผลิตได้" ระหว่างกะขยับ:** `FactoryMap`/`OEEAnalytics`/`MorningMeeting`/`OrderTrace`/`oee.js computeLiveOee` ใช้สูตร `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` อยู่แล้ว → พอกรอกยอดใบสแกน จอพวกนี้เริ่มนับทันที (เดิมได้ 0) · **จึงแก้ภาพรวมทั้งกะใน DailyReport ให้นับใบ `open` ทุกชนิด** (เดิมนับเฉพาะ `is_manual && open`) ไม่งั้น 2 จอเลขไม่ตรงกัน · ไม่กรอก = `qty_actual` null = บวก 0 = พฤติกรรมเดิม · ค่าที่ stamp ตอนปิดกะไม่กระทบ
 - **จุดใหม่ที่นับ "ผลิตได้" ระหว่างกะ ให้ใช้สูตร `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` เท่านั้น** ห้ามกรอง `is_manual` อีก
 
+### หมายเหตุหัวหน้ากลุ่มตอนขอปิดกะ + ไอคอน "ถูกปฏิเสธ" ในลิสต์กะ (2026-08-10 · คำขอหัวหน้ากลุ่ม)
+
+- **`production_sessions.close_request_note`** (migration `20260810_session_close_request_note.sql` DR · additive) — หมายเหตุที่**ผู้ขอปิดกะ**เขียนเอง (เช่น "ยอดไม่ถึงเพราะรอ material ตั้งแต่ 14:00") · ครบชุด 3 ช่อง: **ขอ** (`close_request_note`) → **อนุมัติ** (`close_approve_note`) / **ปฏิเสธ** (`close_reject_reason`) · แสดงใน modal ตรวจสอบคำขอของ SV (อ่านก่อนตัดสินใจ) + ประวัติกะ · เขียนแบบ **update แยก best-effort** — ยังไม่ apply migration = ปิดกะได้ปกติ **ห้ามยัดลง payload หลัก** (คอลัมน์ไม่มี = ปิดกะพังทั้งระบบ)
+- **ไอคอน ✕ แดง (นิ่ง ไม่กระพริบ) ในลิสต์กะ** เมื่อ `status === 'open' && close_reject_at` — เดิมรู้ว่าถูกตีกลับต่อเมื่อกดเข้าไปในกะ หัวหน้าที่ดูแลหลายไลน์เลยไม่เห็น · คู่กับ ⏳ (pending_close) ที่มีอยู่เดิม · tooltip บอกคนปฏิเสธ + เหตุผล
+- **ส่งขอปิดกะใหม่ = เคลียร์ `close_reject_*`** (เดิมเอกสารบอกว่าเคลียร์ แต่โค้ดไม่ได้ทำ → ไอคอน ✕ จะค้างทั้งที่แก้แล้ว) · เคลียร์ใน best-effort update ก้อนเดียวกับ note
+- **⚠️ ไอคอน ✕ ขึ้นได้ต่อเมื่อ apply `20260723_session_close_reject_reason.sql` แล้ว** (เพราะ `close_reject_at` เขียน best-effort) — ถ้าแบนเนอร์แดงในกะยังไม่เคยโชว์ข้อความ แปลว่ายังไม่ apply
+
 ### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
 
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด

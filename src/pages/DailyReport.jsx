@@ -278,6 +278,8 @@ function LiveTab({ role }) {
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
+  // หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — คู่กับ close_approve_note/close_reject_reason ฝั่ง SV
+  const [closeNote, setCloseNote]           = useState('');
   const [closeEndTime, setCloseEndTime]     = useState(nowTime());
   const [closeStartTime, setCloseStartTime] = useState('');
   const [savingClose, setSavingClose]       = useState(false);
@@ -1912,6 +1914,18 @@ function LiveTab({ role }) {
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
+    // หมายเหตุของผู้ขอปิดกะ + เคลียร์ร่องรอยการถูกปฏิเสธรอบก่อน (ส่งขอใหม่แล้ว = ไม่ค้างสถานะถูกตีกลับ
+    // ไม่งั้นไอคอน ✕ ในลิสต์กะค้างอยู่ทั้งที่แก้แล้ว) — update แยก best-effort เหมือน close_approve_note
+    // ยังไม่ apply migration = ปิดกะได้ปกติ แค่ยังไม่เก็บ/ยังไม่เคลียร์ข้อความ
+    try {
+      await supabaseDR.from('production_sessions').update({
+        close_request_note:   closeNote.trim() || null,
+        close_reject_reason:  null,
+        close_reject_by_name: null,
+        close_reject_at:      null,
+      }).eq('id', selSession.id);
+    } catch { /* additive */ }
+
     // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
 
     const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
@@ -2170,7 +2184,13 @@ function LiveTab({ role }) {
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
-                      {s.status === 'pending_close' && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {/* ถูกปฏิเสธปิดกะ — กะกลับเป็น open แล้ว แต่เดิมเห็นได้ต่อเมื่อเข้าไปในกะ
+                          หัวหน้ากลุ่มที่ดูแลหลายไลน์จึงไม่รู้ว่าไลน์ไหนโดนตีกลับ · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
+                      {s.status === 'open' && s.close_reject_at && (
+                        <span title={`ถูกปฏิเสธปิดกะโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — ${s.close_reject_reason}` : ''} · แก้แล้วส่งขอปิดกะใหม่`}
+                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(239,68,68,0.18)', color: '#ef4444' }}>✕</span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
                   </button>
@@ -2280,7 +2300,7 @@ function LiveTab({ role }) {
                   {selSession.status === 'open' && canRequestClose && (
                     <button onClick={() => {
                       setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
-                      setDtCarryDecisions({}); setDtCloseTimes({});
+                      setDtCarryDecisions({}); setDtCloseTimes({}); setCloseNote('');
                       // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
                       setCarryQtyActual(m => {
                         const next = { ...m };
@@ -3060,6 +3080,12 @@ function LiveTab({ role }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                     เวลาที่ขอ: {selSession.close_requested_at ? fmtDateTime(selSession.close_requested_at) : '—'} · เริ่มกะ {selSession.start_time} · ปิดกะ {selSession.end_time}
                   </div>
+                  {/* หมายเหตุที่หัวหน้ากลุ่มเขียนมา — SV ต้องเห็นก่อนตัดสินใจอนุมัติ/ปฏิเสธ */}
+                  {selSession.close_request_note && (
+                    <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 8, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)', whiteSpace: 'pre-wrap' }}>
+                      📝 หมายเหตุจากหัวหน้ากลุ่ม: <b>{selSession.close_request_note}</b>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 14 }}>
@@ -3846,6 +3872,17 @@ function LiveTab({ role }) {
 
                 </div>{/* /คอลัมน์ขวา (OEE preview) */}
                 </div>{/* /grid 2 คอลัมน์ ชุดล่าง */}
+
+                {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เดิมมีแต่ช่องหมายเหตุฝั่ง SV (อนุมัติ/ปฏิเสธ)
+                    คนขอไม่มีที่อธิบายว่าทำไมยอดไม่ถึง/เกิดอะไรขึ้น · ไม่บังคับ */}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
+                    📝 {role === 'leader' ? 'หมายเหตุถึงผู้อนุมัติ' : 'หมายเหตุปิดกะ'} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ไม่บังคับ)</span>
+                  </div>
+                  <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2}
+                    placeholder="เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง"
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 12.5, borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
@@ -4697,6 +4734,12 @@ function HistoryTab({ role }) {
               </div>
               {expanded === s.id && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เขียนตอนส่งขอปิดกะ */}
+                  {s.close_request_note && (
+                    <div style={{ fontSize: 12, color: '#c4b5fd', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
+                      📝 หมายเหตุหัวหน้ากลุ่ม ({s.close_requested_by_name || '—'}): <b>{s.close_request_note}</b>
+                    </div>
+                  )}
                   {/* หมายเหตุผู้อนุมัติปิดกะ (ถ้ามี — SV กรอกตอนกดอนุมัติ) */}
                   {s.close_approve_note && (
                     <div style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '8px 12px' }}>
