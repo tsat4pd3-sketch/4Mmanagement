@@ -1916,14 +1916,20 @@ function LiveTab({ role }) {
     // หมายเหตุของผู้ขอปิดกะ + เคลียร์ร่องรอยการถูกปฏิเสธรอบก่อน (ส่งขอใหม่แล้ว = ไม่ค้างสถานะถูกตีกลับ
     // ไม่งั้นไอคอน ✕ ในลิสต์กะค้างอยู่ทั้งที่แก้แล้ว) — update แยก best-effort เหมือน close_approve_note
     // ยังไม่ apply migration = ปิดกะได้ปกติ แค่ยังไม่เก็บ/ยังไม่เคลียร์ข้อความ
+    // ⚠️ supabase-js "คืน" { error } ไม่ได้ throw → try/catch เฉยๆ จะกลืน error ทิ้งเงียบ
+    // ต้องเช็ค error เองแล้วบอกผู้ใช้ ไม่งั้นหมายเหตุหายโดยไม่มีใครรู้ (กฎ: ห้ามล้มเหลวเงียบ)
     try {
-      await supabaseDR.from('production_sessions').update({
+      const { error: noteErr } = await supabaseDR.from('production_sessions').update({
         close_request_note:   closeNote.trim() || null,
         close_reject_reason:  null,
         close_reject_by_name: null,
         close_reject_at:      null,
       }).eq('id', selSession.id);
-    } catch { /* additive */ }
+      if (noteErr) {
+        console.warn('[close] เก็บหมายเหตุ/เคลียร์สถานะปฏิเสธไม่สำเร็จ', noteErr);
+        if (closeNote.trim()) toast.error('ปิดกะเรียบร้อย แต่ "หมายเหตุ" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_request_note (แจ้ง admin)');
+      }
+    } catch (e) { console.warn('[close] note update exception', e); }
 
     // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
 
@@ -1985,7 +1991,14 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
     // remark ผู้อนุมัติ (optional) — update แยก best-effort: ยังไม่ apply migration close_approve_note = อนุมัติได้ปกติ
     if (approveNote.trim()) {
-      try { await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id); } catch { /* additive */ }
+      // เช็ค error เอง — supabase-js คืน { error } ไม่ throw (try/catch เฉยๆ กลืนทิ้ง)
+      try {
+        const { error: apErr } = await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id);
+        if (apErr) {
+          console.warn('[approve] เก็บหมายเหตุผู้อนุมัติไม่สำเร็จ', apErr);
+          toast.error('อนุมัติปิดกะแล้ว แต่ "หมายเหตุ" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_approve_note (แจ้ง admin)');
+        }
+      } catch (e) { console.warn('[approve] note update exception', e); }
     }
     setApproveNote('');
 
@@ -2056,13 +2069,19 @@ function LiveTab({ role }) {
     if (error) { setSavingReject(false); toast.error(error.message); return; }
     // เก็บ remark แยกเป็น update best-effort — ถ้ายังไม่ได้ apply migration (คอลัมน์ยังไม่มี) การปฏิเสธยังทำงานปกติ
     // แค่ยังไม่บันทึกข้อความ (ค่อยเก็บได้หลัง migration) — ไม่ให้ feature ใหม่ทำ flow หลักพัง
+    // ⚠️ supabase-js คืน { error } ไม่ throw — ต้องเช็คเอง ไม่งั้นเหตุผลที่ SV พิมพ์หายเงียบ
+    // (หัวหน้ากลุ่มจะเห็นแบนเนอร์เปล่าๆ ไม่รู้ว่าต้องแก้อะไร + ไอคอน ✕ ในลิสต์กะจะไม่ขึ้น)
     try {
-      await supabaseDR.from('production_sessions').update({
+      const { error: rejErr } = await supabaseDR.from('production_sessions').update({
         close_reject_reason:  reason,
         close_reject_by_name: fullName,
         close_reject_at:      new Date().toISOString(),
       }).eq('id', selSession.id);
-    } catch { /* best-effort: คอลัมน์อาจยังไม่มีก่อน migration */ }
+      if (rejErr) {
+        console.warn('[reject] เก็บเหตุผลปฏิเสธไม่สำเร็จ', rejErr);
+        toast.error('ปฏิเสธคำขอแล้ว แต่ "เหตุผล" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_reject_reason (แจ้ง admin) · กรุณาแจ้งหัวหน้ากลุ่มด้วยวิธีอื่น');
+      }
+    } catch (e) { console.warn('[reject] reason update exception', e); }
     setSavingReject(false);
     setShowRejectModal(false);
     setRejectReason('');
