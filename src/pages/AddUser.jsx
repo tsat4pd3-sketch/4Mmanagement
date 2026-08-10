@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
-import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
-import { POSITION_OPTIONS } from '../utils/positions';
+import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
+import { positionOptions, positionLabel, loadPositions, levelOfPosition, maintenanceKindOfPosition, levelMeta } from '../utils/positions';
+import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
@@ -15,6 +16,15 @@ const isMtnTeamRole = (r) => MTN_TEAM_ROLES.includes(r);
 // desc = "ลักษณะ/ขอบเขตอำนาจ" ของ role เท่านั้น — ห้ามพิมพ์รายชื่อโมดูล/หน้า
 // เพราะหน้าเข้าได้จริงเป็น data-driven จาก role_permissions (แสดงอัตโนมัติผ่าน accessSummaryForRole)
 const ROLES = ROLE_OPTIONS.map(r => ({ ...r, label: `${r.icon} ${r.label} (${r.en})` }));
+// จัดกลุ่ม role ตามแกน (ระดับสิทธิ์ / หน่วยงาน / อุปกรณ์) — ทำให้เห็นชัดว่า role ไม่ใช่ "ตำแหน่งงาน"
+//   เคสจริงที่เคยสับสน: "ส่วนวิศวกรรม" เป็นหน่วยงาน ไม่ใช่ตำแหน่งวิศวกร (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)
+const ROLE_GROUPS = groupRolesByAxis(ROLES);
+// <optgroup> ของ role — ใช้ซ้ำทุก dropdown ที่เลือก role ในหน้านี้
+const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
+  <optgroup key={g.axis} label={g.label}>
+    {g.roles.map(r => <option key={r.value} value={r.value}>{r.label}{withDesc ? ` — ${r.desc}` : ''}</option>)}
+  </optgroup>
+));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '' };
@@ -32,7 +42,8 @@ const TEAM_DESC = {
 
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
 // master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ห้าม hardcode ซ้ำ
-const POSITION_SUGGESTIONS = POSITION_OPTIONS;
+// ตัวเลือกตำแหน่ง — อ่านสดจาก cache ของ master (loadPositions() เรียกตอน mount) · [{value:key,label:ไทย,level}]
+const posOpts = () => positionOptions();
 
 export default function AddUser() {
   const [users,         setUsers]         = useState([]);
@@ -56,7 +67,11 @@ export default function AddUser() {
   const [resetPw,       setResetPw]       = useState(''); // ช่องตั้งรหัสใหม่ใน modal แก้ไข
   const [resetPwBusy,   setResetPwBusy]   = useState(false);
 
+  const [posVer, setPosVer] = useState(0);   // bump เมื่อ master ตำแหน่งโหลดเสร็จ → dropdown/ป้ายระดับ re-render
+
   useEffect(() => {
+    // master ตำแหน่งงาน (positions) — ต้องโหลดก่อน positionLabel()/levelOfPosition() ถึงได้ค่าจาก DB
+    Promise.all([loadPositions(), loadPermissions()]).then(() => setPosVer(v => v + 1));
     supabase.from('production_lines').select('id, name').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
@@ -148,7 +163,7 @@ export default function AddUser() {
       team:        u.team         || '',
       notifyEmail: u.notify_email || '',
     });
-    setPosCustom(!!u.position && !POSITION_SUGGESTIONS.includes(u.position));
+    setPosCustom(!!u.position && !posOpts().some(p => p.value === u.position));
     setEditingId(u.id);
     setModalMode('edit');
     setMessage(null);
@@ -364,7 +379,7 @@ export default function AddUser() {
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
           style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
           <option value="">ทุกชุดสิทธิ์</option>
-          {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          <RoleOptGroups />
         </select>
         <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
           style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
@@ -416,7 +431,7 @@ export default function AddUser() {
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>{u.email}</div>
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: u.position ? 'var(--text)' : 'var(--muted)' }}>
-                    {u.position || '—'}
+                    {u.position ? positionLabel(u.position) : '—'}
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
@@ -462,26 +477,38 @@ export default function AddUser() {
 
       {/* Role reference — หมวดที่เข้าได้ดึงจากตารางสิทธิ์จริง (role_permissions) ไม่ hardcode */}
       <div style={{ padding: '12px 16px', background: 'var(--bg3)', borderRadius: 10, border: '1px solid var(--border2)' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
           สิทธิ์การเข้าถึง <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— หมวดที่เข้าได้อ่านจากตารางสิทธิ์ปัจจุบัน ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 8 }}>
-          {ROLES.map(r => {
-            const sum = accessSummaryForRole(r.value);
-            return (
-              <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
-                <div style={{ minWidth: 0 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
-                    {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+          ชุดสิทธิ์ <b>ไม่ใช่ตำแหน่งงาน</b> — ตำแหน่งจริง (วิศวกร / ช่างเทคนิค / หัวหน้าแผนก) กรอกที่ช่อง “ตำแหน่งงาน” แยกต่างหาก<br />
+          เช่น <b>วิศวกรที่สังกัดแผนกซ่อมบำรุง</b> ให้เลือกชุดสิทธิ์ <b>🔧 ซ่อมบำรุง</b> แล้วกรอกตำแหน่งว่า “วิศวกร” — ไม่ใช่เลือก “ส่วนวิศวกรรม”
         </div>
+        {ROLE_GROUPS.map(g => (
+          <div key={g.axis} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
+              {g.label} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— {g.hint}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 8 }}>
+              {g.roles.map(r => {
+                const sum = accessSummaryForRole(r.value);
+                return (
+                  <div key={r.value} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: r.color, flexShrink: 0, marginTop: 5 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: r.color }}>{r.label}</span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.desc}</span>
+                      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
+                        {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Create / Edit Modal */}
@@ -555,7 +582,7 @@ export default function AddUser() {
                     else { setPosCustom(false); setF('position', e.target.value); }
                   }}>
                   <option value="">— ไม่ระบุ —</option>
-                  {POSITION_SUGGESTIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                  {posOpts().map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   <option value="__custom__">อื่นๆ (พิมพ์เอง)...</option>
                 </select>
                 {posCustom && (
@@ -565,7 +592,36 @@ export default function AddUser() {
                 )}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                   ตำแหน่งจริงในโรงงาน — ใช้แสดงตัวตน/รายงาน/ลายเซ็น <b>ไม่มีผลต่อสิทธิ์</b>
+                  {(() => {
+                    const lv = levelOfPosition(form.position);
+                    return lv ? <> · ระดับงาน: <b style={{ color: 'var(--text2)' }}>{levelMeta(lv)?.label}</b></> : null;
+                  })()}
                 </div>
+                {/* ⚠️ คำเตือน "ระดับงานไม่ตรงกับสิทธิ์ที่ให้" — แนะนำเท่านั้น ไม่บล็อก (หน้างานมีข้อยกเว้นเสมอ)
+                    เคสจริงที่จับได้: ธุรการ (ระดับสนับสนุน) ที่ role ซ่อมบำรุง ได้สิทธิ์อนุมัติ PM เต็ม */}
+                {(() => {
+                  const kind = maintenanceKindOfPosition(form.position);   // 'am' | 'pm' | 'both' | null
+                  if (!form.position || !levelOfPosition(form.position)) return null;
+                  const hasPm = can('pm', 'record', form.role) || can('pm', 'approve', form.role);
+                  const hasAm = can('am', 'record', form.role);
+                  const msgs = [];
+                  if (kind === null && (hasPm || hasAm))
+                    msgs.push(`ตำแหน่งนี้เป็นสายสนับสนุน แต่ชุดสิทธิ์ที่เลือกให้บันทึก/อนุมัติผลตรวจได้ — ตรวจอีกครั้งว่าตั้งใจ`);
+                  if (kind === 'am' && hasPm)
+                    msgs.push(`ตำแหน่งนี้เป็นระดับหน้างาน (AM) แต่ชุดสิทธิ์ให้ทำงาน PM ของช่างได้ด้วย`);
+                  if (kind === 'pm' && !hasPm)
+                    msgs.push(`ตำแหน่งนี้เป็นช่าง (PM) แต่ชุดสิทธิ์ที่เลือกยังบันทึกผลตรวจ PM ไม่ได้`);
+                  if (!msgs.length) return null;
+                  return (
+                    <div style={{ marginTop: 6, padding: '6px 9px', borderRadius: 7, fontSize: 11, lineHeight: 1.5,
+                      background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', color: 'var(--text)' }}>
+                      ⚠️ {msgs.join(' · ')}
+                      <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                        เป็นแค่คำแนะนำ — สิทธิ์จริงคุมที่ 🔐 จัดการสิทธิ์ (ปรับได้ตามหน้างาน)
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>
@@ -575,9 +631,7 @@ export default function AddUser() {
               <div>
                 <label style={labelSt}>ชุดสิทธิ์การใช้งาน (Role)</label>
                 <select value={form.role} onChange={e => setF('role', e.target.value)}>
-                  {ROLES.map(r => (
-                    <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
-                  ))}
+                  <RoleOptGroups withDesc />
                 </select>
                 {/* สรุปหน้าเข้าได้จริงของ role ที่เลือก — อ่านสดจากตารางสิทธิ์ ไม่ hardcode */}
                 {(() => {

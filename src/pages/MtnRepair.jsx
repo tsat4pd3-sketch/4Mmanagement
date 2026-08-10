@@ -512,75 +512,91 @@ function printMoReport(o, dparts = [], logo0) {
   if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0);
   const dept = deptNameOf(teamKey);   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
   // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
-  const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
-  const moSig = dfMo.sig_blocks || ['JIG/MTN APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
+  const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
+  const moSig = dfMo.sig_blocks || ['JIG APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}:${g.second}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const L = (k, v) => `<div class="f"><span class="fk">${k}</span> <span class="fv">${esc(v)}</span></div>`;
   const statusTh = (STATUS_META[o.status] || {}).label?.replace(/^[^฀-๿]+/, '').trim() || o.status;
   const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
-  const sign = (title, name, url, dt, dark) => `<td class="sg"><div class="sgh${dark ? ' dk' : ''}">${title}</div><div class="sgimg">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${dt ? beDT(dt) : ''}</div></td>`;
+  // ป้ายหัวช่องเซ็น 4 ช่อง — ไล่เฉดเทาอ่อน→เข้ม ตามฟอร์มกระดาษ (ช่องสุดท้ายพื้นเข้ม ตัวอักษรขาว)
+  const SG_BG = ['#d9d9d9', '#b7b7b7', '#999999', '#666666'];
+  const SG_W = ['26.4%', '23.8%', '25.5%', '24.3%'];   // ความกว้าง 4 ช่องตามฟอร์มจริง (ไม่ใช่ 25% เป๊ะ)
+  const sign = (title, name, url, dt, i) => `<td class="sg" style="width:${SG_W[i]}"><div class="sgh" style="background:${SG_BG[i]}${i === 3 ? ';color:#fff' : ''}">${title}</div><div class="sgimg">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${dt ? beDT(dt) : ''}</div></td>`;
+  // แถวคู่ซ้าย/ขวาในคอลัมน์ (ตารางไร้เส้น) — จุดแบ่งคอลัมน์ย่อย 53% ตามฟอร์มจริง
+  const P = (a, b) => `<table class="in"><tr><td style="width:53%">${a}</td><td>${b}</td></tr></table>`;
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>MO ${esc(o.mo_no || '')}</title><style>
-    *{box-sizing:border-box} body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;padding:8px;font-size:11px}
-    table{border-collapse:collapse;width:100%;table-layout:fixed} td{border:1px solid #000;vertical-align:top;padding:5px 7px}
-    .sech{background:#d4d4d4;text-align:center;font-weight:700;padding:3px;border:1px solid #000}
-    .sech b{font-size:11.5px} .sech .en{font-size:11px}
-    .f{padding:2px 0;font-size:11px;line-height:1.5} .fk{font-weight:700} .fv{}
-    .co{font-size:11px} .ttl{text-align:center;font-size:14px;font-weight:700} .mo{font-size:13px;font-weight:700}
-    .hdr td{padding:4px 7px}
-    .imgcell{height:230px;text-align:center;padding:4px} .imgcell img{max-width:100%;max-height:220px}
-    .signs td{width:25%;height:120px;text-align:center;padding:0}
-    .sgh{background:#d4d4d4;font-weight:700;font-size:11px;padding:3px;border-bottom:1px solid #000} .sgh.dk{background:#8a8a8a;color:#fff}
-    .sgimg{height:56px;display:flex;align-items:center;justify-content:center} .sgimg img{max-height:52px;max-width:90%}
-    .sgn{font-size:11px;border-top:1px solid #999;padding:2px} .sgd{font-size:10px;color:#333}
-    .ft{display:flex;justify-content:space-between;font-size:10px;margin-top:4px}
+    /* ── FM-JIG-008 — พิกัด/สี/ความสูงถอดจากฟอร์มกระดาษต้นฉบับ (หน่วย pt เท่าไฟล์จริง) ── */
+    @page{size:A4;margin:37pt 28pt 0}
+    *{box-sizing:border-box}
+    body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;padding:37pt 28pt 0;font-size:8pt}
+    table{border-collapse:collapse;width:100%;table-layout:fixed}
+    td{border:1px solid #000;vertical-align:top;padding:2pt 3pt}
+    table.in,table.in td{border:none;padding:0}
+    .sech{background:#b7b7b7;text-align:center;font-weight:700;height:24pt;vertical-align:middle;padding:2pt}
+    .sech b{font-size:8.5pt} .sech .en{font-size:8pt;font-weight:700}
+    .f{padding:0 0 9.6pt;font-size:8pt;line-height:1.3} .fk{font-weight:700}
+    .co{font-size:5.5pt;white-space:nowrap} .ttl{text-align:center;font-size:10.5pt;font-weight:700;background:#b7b7b7;vertical-align:middle}
+    .mo{font-size:9.5pt;font-weight:700;vertical-align:middle}
+    .hdr td{height:23pt;vertical-align:middle;padding:1pt 3pt}
+    .imgcell{height:158pt;text-align:center;padding:2pt;vertical-align:middle} .imgcell img{max-width:100%;max-height:154pt}
+    .q td{height:83pt}
+    .signs td{text-align:center;padding:0;vertical-align:top}
+    .sgh{font-weight:700;font-size:8pt;height:24pt;line-height:24pt;border-bottom:1px solid #000}
+    .sgimg{height:64pt;display:flex;align-items:center;justify-content:center} .sgimg img{max-height:60pt;max-width:92%}
+    .sgn{font-size:8pt;height:22pt;line-height:22pt;border-top:1px dotted #000;border-bottom:1px solid #000}
+    .sgd{font-size:8pt;height:23pt;line-height:23pt}
+    .ft{display:flex;justify-content:space-between;font-size:7.5pt;margin-top:9pt}
     @media print{body{padding:0}}
   </style></head><body>
   <table>
     <tr class="hdr">
-      <td style="width:26%"><table style="border:none"><tr><td style="border:none;width:52px;padding:0"><img src="${esc(logo)}" style="width:46px"/></td><td style="border:none;padding:0 6px" class="co">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด สาขา 1</td></tr></table></td>
-      <td class="ttl" style="width:44%">ใบแจ้งซ่อมและปรับปรุง <b>${esc(dept)}</b></td>
-      <td class="mo" style="width:30%">MO NO: ${esc(o.mo_no || '-')}</td>
+      <td rowspan="2" style="width:9.85%;vertical-align:middle;text-align:center"><img src="${esc(logo)}" style="max-width:100%;max-height:40pt"/></td>
+      <td style="width:25.09%" class="co">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด สาขา 1</td>
+      <td class="ttl" colspan="2" style="width:32.53%">ใบแจ้งซ่อมและปรับปรุง ${esc(dept)}</td>
+      <td class="mo" style="width:32.53%">MO NO: ${esc(o.mo_no || '-')}</td>
     </tr>
-    <tr><td style="width:26%"><span class="fk">แจ้งถึงหน่วยงาน:</span> ${esc(dept)}</td>
-        <td colspan="2"><span class="fk">สถานะดำเนินการ:</span> ${esc(statusTh)}</td></tr>
+    <tr class="hdr">
+      <td colspan="2"><span class="fk">แจ้งถึงหน่วยงาน:</span> ${esc(dept)}</td>
+      <td colspan="2"><span class="fk">สถานะดำเนินการ:</span> ${esc(statusTh)}</td>
+    </tr>
   </table>
   <table>
-    <tr><td class="sech" style="width:50%"><b>1 [OPEN MO]</b> <span class="en">ส่วนผู้แจ้ง</span></td>
-        <td class="sech" style="width:50%"><b>2 [ACCEPT/ASSIGN]</b> <span class="en">ส่วนผู้รับงาน</span></td></tr>
+    <tr><td class="sech" style="width:50.2%"><b>1 [OPEN MO]</b> <span class="en">ส่วนผู้แจ้ง</span></td>
+        <td class="sech" style="width:49.8%"><b>2 [ACCEPT/ASSIGN]</b> <span class="en">ส่วนผู้รับงาน</span></td></tr>
     <tr>
       <td rowspan="3">
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('ส่วน:', o.work_area)}</td><td style="border:none;padding:0">${L('แผนก:', o.dept_section)}</td></tr></table>
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('ไลน์การผลิต:', o.line_name)}</td><td style="border:none;padding:0">${L('Cost Ctr:', o.cost_center)}</td></tr></table>
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('PD:', o.reporter_prod)}</td><td style="border:none;padding:0">${L('QA:', o.reporter_qa)}</td></tr></table>
+        ${P(L('ส่วน:', o.work_area), L('แผนก:', o.dept_section))}
+        ${P(L('ไลน์การผลิต:', o.line_name), L('Cost Ctr:', o.cost_center))}
+        ${P(L('PD:', o.reporter_prod), L('QA:', o.reporter_qa))}
         ${L('MC Name:', o.item_type)}${L('Jig No:', o.machine_no)}
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('Customer:', o.customer)}</td><td style="border:none;padding:0">${L('Model:', o.model)}</td></tr></table>
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('วันที่แจ้ง:', beDT(o.report_at))}</td><td style="border:none;padding:0">${L('ต้องการ:', beD(o.want_at))}</td></tr></table>
+        ${P(L('Customer:', o.customer), L('Model:', o.model))}
+        ${P(L('วันที่แจ้ง:', beDT(o.report_at)), L('ต้องการ:', beD(o.want_at)))}
         ${L('ลักษณะปัญหา:', o.problem_characteristic)}${L('รายละเอียด:', o.report_note || o.problem_detail)}
       </td>
-      <td>${L('วันที่รับงาน:', beDT(o.accept_at))}
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('ผู้รับงาน:', o.accepted_by)}</td><td style="border:none;padding:0">${L('ผู้รับผิดชอบ:', o.assigned_to)}</td></tr></table>
+      <td style="height:102pt">${L('วันที่รับงาน:', beDT(o.accept_at))}
+        ${P(L('ผู้รับงาน:', o.accepted_by), L('ผู้รับผิดชอบ:', o.assigned_to))}
         ${L('วันที่คาดการณ์เสร็จ:', beDT(o.target_done_at))}${L('ประเภทงานซ่อม:', o.repair_type)}${L('รายละเอียด:', o.assign_note)}${o.reject_reason ? L('เหตุ Reject:', o.reject_reason) : ''}</td>
     </tr>
-    <tr><td class="sech"><b>3 [REPAIR]</b> <span class="en">ส่วนผู้ซ่อม</span></td></tr>
-    <tr><td>${L('วันที่เสร็จ:', beDT(o.repair_done_at))}
-        <table style="border:none"><tr><td style="border:none;width:50%;padding:0">${L('ผู้ซ่อมหลัก:', o.tech_main)}</td><td style="border:none;padding:0">${L('ผู้ซ่อมรอง:', o.tech_secondary)}</td></tr></table>
+    <tr><td class="sech" style="height:20pt"><b>3 [REPAIR]</b> <span class="en">ส่วนผู้ซ่อม</span></td></tr>
+    <tr><td style="height:99pt">${L('วันที่เสร็จ:', beDT(o.repair_done_at))}
+        ${P(L('ผู้ซ่อมหลัก:', o.tech_main), L('ผู้ซ่อมรอง:', o.tech_secondary))}
         ${L('สาเหตุปัญหา:', o.root_cause)}${L('วิธีการแก้ไข:', o.solution)}${dparts.length ? L('อะไหล่:', dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')) : ''}</td></tr>
   </table>
   <table>
-    <tr><td class="sech" style="width:50%"><b>[BEFORE IMPROVEMENT]</b> <span class="en">ภาพปัญหาก่อนปรับปรุง</span></td>
-        <td class="sech" style="width:50%"><b>[AFTER IMPROVEMENT]</b> <span class="en">ภาพปัญหาหลังปรับปรุง</span></td></tr>
+    <tr><td class="sech" style="width:50.2%;height:21pt"><b>[BEFORE IMPROVEMENT]</b> <span class="en">ภาพปัญหาก่อนปรับปรุง</span></td>
+        <td class="sech" style="width:49.8%;height:21pt"><b>[AFTER IMPROVEMENT]</b> <span class="en">ภาพปัญหาหลังปรับปรุง</span></td></tr>
     <tr><td class="imgcell">${o.before_img ? `<img src="${esc(o.before_img)}"/>` : ''}</td><td class="imgcell">${o.after_img ? `<img src="${esc(o.after_img)}"/>` : ''}</td></tr>
   </table>
   <table>
-    <tr><td class="sech" style="width:50%"><b>4&5 [CONFIRM QUALITY]</b> <span class="en">ยืนยันคุณภาพ</span></td>
-        <td class="sech" style="width:50%"><b>6 [ACCEPT]</b> <span class="en">รับมอบหลังซ่อม</span></td></tr>
-    <tr><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result)}${L('5.รายละเอียด:', o.qa_note)}</td>
+    <tr><td class="sech" style="width:50.2%;height:25pt"><b>4&5 [CONFIRM QUALITY]</b> <span class="en">ยืนยันคุณภาพ</span></td>
+        <td class="sech" style="width:49.8%;height:25pt"><b>6 [ACCEPT]</b> <span class="en">รับมอบหลังซ่อม</span></td></tr>
+    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result)}${L('5.รายละเอียด', o.qa_note)}</td>
         <td>${L('สถานะ:', o.follow_up)}${L('ผู้แจ้ง:', o.ho_reporter || o.reporter_prod)}${L('รายละเอียด:', '')}</td></tr>
   </table>
   <table class="signs">
-    <tr>${sign(moSig[0], o.checker_name, o.checker_sign, o.check_at)}${sign(moSig[1], o.qa_checker, o.qa_sign, o.qa_at)}${sign(moSig[2], o.ho_checker, o.ho_sign, o.ho_at)}${sign(moSig[3], o.approver_name, o.approve_sign, o.approve_at, true)}</tr>
+    <tr>${sign(moSig[0], o.checker_name, o.checker_sign, o.check_at, 0)}${sign(moSig[1], o.qa_checker, o.qa_sign, o.qa_at, 1)}${sign(moSig[2], o.ho_checker, o.ho_sign, o.ho_at, 2)}${sign(moSig[3], o.approver_name, o.approve_sign, o.approve_at, 3)}</tr>
   </table>
   <div class="ft"><span>${[dfMo.form_code, dfMo.rev].filter(Boolean).join('-')}${dfMo.footer_note ? ' · ' + dfMo.footer_note : ''}</span><span>${dfMo.effective_date ? 'Effective : ' + dfMo.effective_date : ''}</span></div>
   <script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>

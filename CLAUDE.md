@@ -151,6 +151,7 @@
 | (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ภาพรวม | `/dashboard` | Dashboard (ย้ายกลับหมวด ภาพรวม 2026-07-20 — โซนจอแสดงผล) | ทุก role |
 | ภาพรวม | `/factory-map` | FactoryMap — ผังรวมโรงงาน: วาด polygon ล้อมแต่ละไลน์บนผังใหญ่ผังเดียว ระบายสีตามสถานะการผลิต (ดู section "Factory Master Map") | ทุก role (edit: admin/mgr/sv) |
+| ภาพรวม | `/dept-dashboard` | **DeptDashboard — 📋 Dashboard ส่วนงาน** หน้าเดียวสลับส่วนงานด้วย `?dept=production\|maintenance\|store\|qa` · **เลย์เอาต์ 4 ชั้นเหมือนกันทุกใบ** (🚨 ต้องทำตอนนี้ → 📊 KPI → 📈 ชี้เป้าให้แก้ → 🔗 ทางลัด) · **อ่านอย่างเดียว** ทุก action = ลิงก์ไปหน้าที่ทำงานจริง · เพิ่มส่วนงานใหม่ = เพิ่ม entry ใน `DEPTS` (loader + View) **ห้ามสร้างหน้า dashboard แยกต่อส่วนงาน** · ดู section "Dashboard ส่วนงาน" + `docs/DASHBOARD-DESIGN.md` | ทุก role (ข้อมูลกรองตาม scope) |
 | ภาพรวม | `/group-overview` | **GroupOverview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท)** ตัวอย่างหน้าจอตอบโจทย์ผู้บริหาร "ระบบดูหลายบริษัทในกลุ่มพร้อมกันได้มั้ย" — **แผนที่ภาคกลาง+ตะวันออก (โซนบางนา/โซนตะวันออก)** + drill-down 2 แกน `TSG → โซน\|กลุ่มธุรกิจ → บริษัท → ไลน์` · **TSAT4 = ข้อมูลจริง** ที่เหลือ **จำลอง** จากข้อมูลชุดเดียวกัน (ดู section "Group Overview") | admin/manager (seed) |
 | ฝ่ายผลิต | `/morning-meeting` | MorningMeeting — ประชุมแถวเช้า (ดู section "Morning Meeting") | ทุก role (record: admin/mgr/sv/leader) |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
@@ -266,8 +267,26 @@
 
 **เลิก hardcode ชื่อทีมในโค้ด** (คำสั่ง user) — ทีมช่าง (MTN/JIG MTN/DIE MTN/PRODUCTION) มาจากตาราง **`mtn_teams`** (DR · migration `20260722_mtn_teams.sql`): `key` (=`checklists.department`: maintenance/jig_maintenance/die_maintenance/production) · `label` · `icon` · `equip_type` (machine/jig/die/null) · `dept_name` (โยง `mtn_orders.mtn_dept`) · `color` · เพิ่ม/แก้ทีมได้จากตารางนี้ไม่ต้องแก้โค้ด
 - โหลดผ่าน **`src/utils/pmTeams.js`** (`loadPmTeams()` cache + `pmTeamsSync()` + `DEFAULT_TEAMS` fallback ถ้า migration ยังไม่ apply) — หน้า **PMSchedule / PMCheckData / MtnMachineLayout / PMSetup** ดึง options+label+สี+icon จากตัวนี้ (เดิมต่างคนต่าง hardcode DEPT_OPTIONS/MTN_DEPTS · MtnMachineLayout เคยตกหล่น PRODUCTION · PMSetup เป็นหน้าสุดท้ายที่ยัง hardcode — แก้แล้ว 2026-07-22)
-> #### ⚠️ AM (ผลิตตรวจเอง) ≠ PM (ช่าง) — คนละงาน คนละทะเบียน (คำสั่ง user 2026-08-05)
+> ### ⚠️ กฎเหล็ก — `user_role` ถือ 3 แกน ห้ามเพิ่ม role เมื่อเจอแกนใหม่ (2026-08-06 · คำสั่ง user)
+> `user_role` คอลัมน์เดียวปนกัน 3 เรื่อง ทำให้เข้าใจผิดซ้ำๆ ว่า role = ตำแหน่งงาน:
+> **`scope`** ระดับสิทธิ์/ขอบเขต (admin·manager·supervisor·leader) · **`unit`** หน่วยงาน (mtn·qa·engineer·sale·planner_store·document_control) · **`device`** อุปกรณ์ (display) · **`tier`** ชั้นเสริม (dept_admin — bucket ของ flag)
+> - **ติดป้ายแกนที่ `ROLE_META[x].axis`** (`src/utils/roleMeta.js`) → `/add-user` จัดกลุ่ม dropdown + แผงอธิบายตามแกนอัตโนมัติ · **เพิ่ม role ใหม่ต้องระบุ `axis` เสมอ** (ไม่ระบุ = ตกกลุ่ม `unit`)
+> - **⚠️ `engineer` = "ส่วนวิศวกรรม" (หน่วยงาน) ไม่ใช่ "ตำแหน่งวิศวกร"** — เคสจริง: **วิศวกรที่ทำ PM สังกัดแผนก MTN ใช้ role `mtn`** (ข้อมูลจริง 2026-08-06: role `engineer` มีบัญชีเดียว `processengineering` · ส่วน role `mtn` 8 คน ในนั้นตำแหน่ง "วิศวกร" 3 คน) · เคยเข้าใจผิดจนเกือบแจกสิทธิ์ PM ให้ผิด role
+> - **ตำแหน่งจริงอยู่ที่ `profiles.position` / `employees.position`** แยกจาก role เด็ดขาด
+> - **เจอแกนใหม่ → เพิ่ม attribute ห้ามเพิ่ม role** (precedent ที่ได้ผลแล้ว 3 ครั้ง: `sections[]` แยก scope · `is_dept_admin` แยก tier · `mtn_teams[]` แยกทีมช่าง) — ไม่งั้นตอน rollout หลายโรงงาน role จะระเบิดเป็นสิบตัว
+> - **✅ แกนที่ 4 "ระดับงาน" ทำแล้ว (2026-08-06 · เฟส 2)** — ตาราง **`positions`** (Main · migration `20260806_positions_master.sql` · apply แล้ว)
+>   - **`employees.position` / `profiles.position` เก็บ "key" แล้ว แสดงผลผ่าน `positionLabel()`** — เดิมเป็น free text ปนไทย-อังกฤษ (`Operator` 195 + `พนักงานฝ่ายผลิต` 6 = อันเดียวกันแต่แยกกันในข้อมูล · `Technician` 17 + `ช่างเทคนิค` 6 · `Engineer` 1 + `วิศวกร` 5) → normalize แล้ว **ทุกแถวจับคู่ level ได้ 100% ไม่มีค่ากำพร้า**
+>   - **แบ่ง 2 ชั้นโดยตั้งใจ:** ตาราง `positions` = **ชื่อตำแหน่ง** (ข้อมูล เปลี่ยนบ่อย ต่างกันได้ทุกโรงงานตอน rollout) · `POSITION_LEVELS` ใน `src/utils/positions.js` = **ระดับงาน** (แนวคิด TPM ที่นิ่ง) — **เพิ่มตำแหน่งใหม่ = เพิ่มแถวชี้ไป level เดิม ไม่ต้องแตะโค้ด**
+>   - `maintenanceKindOfPosition()` → `am` (operator/leader) · `pm` (technician/engineer) · `both` (หัวหน้า/ผจก.) · `null` (ธุรการ/เลขา/เจ้าหน้าที่)
+>   - **payoff:** `/add-user` เตือนเมื่อระดับงานไม่ตรงกับสิทธิ์ที่ให้ — เคสจริงที่จับได้: **ธุรการที่ role `mtn` ได้ `pm:approve` เต็ม** · **เป็นคำแนะนำเท่านั้น ไม่บล็อก** (หน้างานมีข้อยกเว้นเสมอ) สิทธิ์จริงยังคุมที่ `role_permissions`
+>   - **⚠️ จุดที่แสดง/พิมพ์ `position` ต้องผ่าน `positionLabel()` เสมอ** ไม่งั้นใบพิมพ์ขึ้น `operator` — ทำแล้ว: sidebar, `/add-user`, ใบ Multi-Skill + CSV (Report), ใบประเมินรายบุคคล (individualSkillPrint) · **component ร่วมที่พิมพ์เอกสารต้อง `await loadPositions()` เองก่อนอ่าน** (กฎเดียวกับ `loadDocForms()` — SkillRadarPanel ทำแล้ว)
+>
+> #### ⚠️ AM (ผลิตตรวจเอง) ≠ PM (ช่าง) — คนละงาน คนละทะเบียน คนละสิทธิ์ (คำสั่ง user 2026-08-05 · เป็นข้อมูล 2026-08-06)
 > ศัพท์ TPM: **`production` = AM (Autonomous Maintenance)** พนักงานผลิตดูแล/ตรวจเครื่องเองทุกต้นกะ · **ทีมช่าง (MTN/JIG MTN/DIE MTN) = PM (Preventive/Predictive · อนาคต prescriptive)** ตรวจตามรอบเวลา/ยอดผลิต · **key ใน DB ยังเป็น `production` เหมือนเดิม เปลี่ยนเฉพาะการแสดงผล**
+> **นิยาม:** **AM** = พนักงานหน้างานตรวจเองทุกต้นกะ · **PM** = ช่าง (technician/engineer ทุกส่วนงาน) ตรวจ**ตามอีเวนต์** ไม่ใช่ทุกวัน — `pm_plans.plan_type` = `time` (รอบเวลา) / `usage` (ยอดผลิต) / `hybrid` + `condition_rules`
+> - **⚠️ แกน AM/PM เป็น "ข้อมูล" ไม่ใช่เงื่อนไขในโค้ด — `mtn_teams.kind` (`am`/`pm`)** (migration `20260806_am_pm_axis_dr.sql` · apply แล้ว) · อ่านผ่าน **`teamKindOf(key)` / `isAmTeam(key)`** · เดิม hardcode `key === 'production'` ซึ่ง**พังเงียบ**ทันทีที่แยก AM รายส่วนงาน (AM-PD1/PD2) หรือ rollout โรงงานที่เรียกทีมคนละชื่อ — ทีมใหม่จะกลายเป็น PM โดยไม่มีใครรู้ · ทีมที่ไม่รู้จัก → **PM (fail-safe เลือกฝั่งสิทธิ์แคบกว่า)** · **สลับได้ที่ปุ่มใน PM Setup** (หัวข้อ AM/PM ข้างชื่อแผนก)
+> - **⚠️ สิทธิ์บันทึกแยกแกนแล้ว: `am:record` (พนักงานหน้างาน) vs `pm:record` (ช่าง)** — เลือกด้วย **`recordPermFor(dept)`** ห้าม hardcode `can('pm','record')` อีก · migration `20260806_am_pm_permission_axis.sql` **seed `am:record` เท่ากับ `pm:record` เดิมทุกประการ → พฤติกรรมไม่เปลี่ยน ไม่มีใครหลุดสิทธิ์** แล้วค่อยไปรัดเองที่ `/permissions` (เช่น ถอด `pm:record` ออกจาก leader ให้เหลือแต่ AM)
+> - **`display` ถูกถอด `pm:record`/`pm:approve`/`am:record` แล้ว** — จอ TV/บอร์ดหน้าไลน์เป็นอุปกรณ์ ไม่ใช่คน ไม่มีใครรับผิดชอบสิ่งที่บันทึก
 > - **ชื่อ/คำอธิบายอยู่ที่ `src/utils/pmTeams.js` จุดเดียว** — `DEFAULT_TEAMS` label `production` = "AM (ผลิตตรวจเอง)" + `teamKind(key)` คืน `{short, full, desc}` (AM_KIND/PM_KIND) · **หน้าใดที่โชว์ชื่อทีมให้เรียก `teamKind()` มาอธิบาย ห้าม hardcode คำว่า "PM ฝ่ายผลิต"** · ใช้แล้วที่ PMSetup + PMCheckData (บรรทัดใต้แท็บ) · DailyPM/DailyChecker ใช้ชื่อ AM อยู่แล้วตั้งแต่ 2026-07-23
 > - `mtn_teams` **apply แล้ว** (ตรวจ 2026-08-06 — เอกสารเดิมเขียนว่ายังไม่ apply ซึ่งไม่จริงแล้ว) → **เปลี่ยนชื่อทีมให้แก้ที่ตาราง `mtn_teams.dept_name`** ไม่ต้องแก้โค้ด · `DEFAULT_TEAMS` เหลือเป็น fallback ตอนโหลดไม่ทัน/ตารางล่ม
 >
@@ -450,6 +469,15 @@ Reject → status: "rejected" + reject_reason
 ทุก status change → Telegram Group แจ้งเตือนทันที
 ```
 
+> ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
+> **เคสจริง:** พ.ค. 2026 มีตัวสร้าง 4M Man อัตโนมัติ (`[Auto] <ชื่อ> ประจำจุด <จุดงาน> เป็นครั้งแรก` · `created_by = null` · `requires_qa = true`) ยิงจากบั๊กการเทียบเกณฑ์สกิล — ออกมา **392 ใบใน 10 วัน** (18-27 พ.ค.) ทั้งที่ไม่ใช่การเปลี่ยนแปลงกำลังคนจริง · ตัวสร้างถูกแก้ไปแล้ว (มิ.ย. เป็นต้นมา = 0 ใบ) แต่ **323 ใบค้างคิวอนุมัติอยู่ 2 เดือนครึ่ง กลบใบจริง 19 ใบจนหัวหน้ามองไม่เห็นงานที่ต้องทำ** (แผงประชุมเช้า/`/dept-dashboard` โชว์ "รออนุมัติ QA 89")
+> **ล้างแล้ว** — migration `20260810_void_stale_auto_4m_man.sql` (Main · apply แล้ว) ตั้ง 323 ใบเป็น `rejected` **ไม่ลบทิ้ง** (4M เป็นบันทึกคุณภาพ CQI-15/Changing Point — ลบแล้วสืบย้อนไม่ได้) · ฝัง**สถานะเดิม**ไว้ใน `reject_reason` → rollback ได้ตรงใบ (คำสั่งอยู่หัวไฟล์ migration) · ไม่แตะ `[Auto]` ที่ approved ไปแล้ว 69 ใบ และไม่แตะใบที่คนกรอกเองสักใบ
+> **กฎที่ตกผลึก:**
+> - **ตัวสร้าง 4M อัตโนมัติต้องมีเพดาน/ตัวนับ + จุดเฝ้าดู** — ยิงวันละหลายสิบใบต่อเนื่องเป็นสัปดาห์โดยไม่มีใครรู้ = บั๊กที่มองไม่เห็น · ก่อน insert อัตโนมัติ ให้เช็คว่ามีใบซ้ำของ (คน+จุดงาน+ไลน์) อยู่แล้วหรือยัง
+> - **แยกใบที่ระบบสร้างออกจากใบที่คนกรอกให้เห็นในคิว** (คิวปนกันแล้วคนไม่กล้าเคลียร์ทั้งก้อน สุดท้ายค้างทั้งคู่) — ปัจจุบันแยกได้แค่ `created_by is null` + ข้อความ `[Auto]` ยังไม่มีคอลัมน์บอกที่มาจริงจัง
+> - **เคลียร์คิวค้างจากบั๊ก = `rejected` + เหตุผลที่อ่านรู้เรื่อง ห้าม `delete` และห้าม `approved`** (approve = โกหกว่ามีคนพิจารณาแล้ว)
+> - งานที่ค้างเกิน ~30 วันในคิวอนุมัติควรมีสัญญาณเตือน — ตอนนี้ยังไม่มี (ใบเก่าสุดที่เหลือ 81 วัน)
+
 ---
 
 ## Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11)
@@ -466,6 +494,7 @@ Reject → status: "rejected" + reject_reason
 | **2** (เบอร์ 200) | **พาร์ทย่อยผลิตเอง** (Child — in-house) | ชิ้นส่วนผลิตภายในโรงงาน ส่วนใหญ่จากไลน์ปั๊ม/stamping (`process_type = metal_forming`) เพื่อป้อนไลน์ประกอบ | ปิดออเดอร์ผลิต → เข้า `STORE` อัตโนมัติ → Store จ่ายเข้า mini-store ของไลน์ → backflush เมื่อ FG ปิดออเดอร์ |
 | **3** (เบอร์ 300) | **พาร์ทซื้อภายนอก** (Bought-out) | ชิ้นส่วนซื้อจาก supplier (nut/โบลท์/ชิ้นส่วนสำเร็จ) — **ไม่มีออเดอร์ผลิตภายใน** จึงไม่เข้าจาก trigger ปิดออเดอร์ | รับของเข้า `STORE` ด้วยการบันทึกรับ/ปรับยอดที่หน้า Store → จ่ายเข้าไลน์/backflush เหมือนพาร์ทย่อยปกติ (บนบอร์ด Kanban รวมเรียก "Store Child (200/300)") |
 | **5** (เบอร์ 500) | **วัตถุดิบ** (Raw Mat) | วัตถุดิบตั้งต้น | เบิกจาก Store Raw ไปไลน์ผลิต child (ใบเบิกจาก lot request) |
+| **9** (เบอร์ 900 เช่น 90031601/2) | **เลขภายในตั้งเอง** (พาร์ทพิเศษ ยังไม่มี routing) | **ไม่ใช่เลข SAP จริง** — SAP ของโรงงานมีเฉพาะช่วง 100–700 · ทีมงาน**ตั้งใจ**ตั้งเบอร์ 900 ให้พาร์ทที่จะสร้างพิเศษซึ่งยังไม่มีระบบ routing ใน SAP (user ยืนยัน 2026-08-10) — **ห้ามไล่ "แก้" เป็นเลข SAP / ห้ามลบ** จนกว่าพาร์ทนั้นจะเข้าระบบ routing แล้ว user สั่งเปลี่ยนเลขเอง | ไหลตามที่ตั้งค่าใน stock_inflow_rules/การใช้งานจริง (ไม่เข้าเกณฑ์ prefix 1/2/3/5 อัตโนมัติ) |
 | MB3B/RB3B… | เลขพาร์ทลูกค้า (Ford P/N) | ไม่ใช่ MAT SAP | ใช้เป็น key ชั่วคราวเมื่อจับคู่ mat ภายในไม่ได้ (เพิ่ม P/N ใน Product Master แล้วอัพโหลดใหม่เพื่อ map) |
 
 - UI ฝั่ง Store (`LineStock.jsx` helper `isFgMat`): แถว FG ไม่มีปุ่ม "+ จ่าย" (โชว์ "🚚 หักผ่าน Delivery" แทน)
@@ -478,7 +507,7 @@ Reject → status: "rejected" + reject_reason
 > - **"ชื่อสินค้า" parts_master เป็นเจ้าของที่เดียว** — ชื่อฝั่งทะเบียนละเอียดกว่า (มีเลขลูกค้า/ลูกค้ากำกับ) · sync ชื่อ dr_products ให้ตรงแล้ว + ลบ product ทดสอบ 100999/2000999 (migration `20260806_parts_registry_cleanup.sql` DR — apply แล้ว) · จุดใหม่ที่แก้ชื่อสินค้าให้แก้ที่ Parts Master ไม่แก้ที่ dr_products
 > - **"รูปพาร์ท" ก็เป็นตัวตน → เจ้าของคือ parts_master เช่นกัน (2026-08-06):** backfill รูปจาก dr_products เข้าทะเบียน 20 mat แล้ว (migration `20260806_parts_master_image_backfill.sql` DR) · picker 🗂 เลือกจากทะเบียน = prefill รูปให้ฟอร์มสินค้าด้วย (เฉพาะเมื่อฟอร์มยังไม่มีรูป) · อัปรูปฝั่งไหน → เติมให้อีกฝั่งของ mat เดียวกัน**เฉพาะที่ยังว่าง** (fill-if-empty ไม่ทับของเดิม — ทำแล้วทั้ง 2 ทางใน ProductMaster.jsx) · **⚠️ URL รูปแชร์ไฟล์เดียวกันข้ามตาราง dr_products ↔ parts_master ได้ — guard ลบไฟล์เก่าตอนเปลี่ยนรูปต้องเช็คอีกตารางเสมอ** (count query ก่อน remove — ทำแล้วทั้ง 2 ฝั่ง ห้ามถอด ไม่งั้นเปลี่ยนรูปฝั่งหนึ่ง = รูปอีกฝั่งเป็นลิงก์ตาย)
 > - **ลำดับลงข้อมูล: Parts Master ให้ครบก่อน → มุมมองอื่น "เลือก" ไม่ใช่ "พิมพ์ใหม่"**
-> - **เลขชั่วคราวใน dr_products (SUB APRON: M6/M8/127/E024/"300xxx & 300xxx" + 90031601/2 HYDROFORM) ห้ามลบ** — ตรวจ 2026-08-06: ทุกตัวมีใบผลิตจริง (3-48 ใบ) บางตัวมี forecast/สต๊อก · ทางแก้คือ "เปลี่ยนเลข" เป็น SAP จริง (update mat_no + cascade prod_orders/kanban/stock/forecast ที่อ้างเลขเดิม) เมื่อ user หาเลขจริงมาให้ — ยังรออยู่
+> - **เลขชั่วคราวใน dr_products (SUB APRON: M6/M8/127/E024/"300xxx & 300xxx") ห้ามลบ** — ตรวจ 2026-08-06: ทุกตัวมีใบผลิตจริง (3-48 ใบ) บางตัวมี forecast/สต๊อก · ทางแก้คือ "เปลี่ยนเลข" เป็น SAP จริง (update mat_no + cascade prod_orders/kanban/stock/forecast ที่อ้างเลขเดิม) เมื่อ user หาเลขจริงมาให้ — ยังรออยู่ · **ส่วน 90031601/2 (HYDROFORM) ไม่ใช่เลขรอแก้** — เป็นเบอร์ 900 ที่ทีมงานตั้งใจตั้งเอง (ดูตาราง MAT ข้างบน · user ยืนยัน 2026-08-10)
 
 ### กฎธุรกิจที่ห้ามทำพัง
 
@@ -928,6 +957,23 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 ---
 
+## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
+
+หน้าเดียวสลับส่วนงานด้วย `?dept=` — **เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA** (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
+
+- **โครง: 1 หน้า + config ต่อส่วนงาน** — `DEPTS = [{ key, icon, label, roles, load, View }]` ใน `src/pages/DeptDashboard.jsx` · **เพิ่มส่วนงานใหม่ = เพิ่ม entry (loader + View) ห้ามสร้างหน้าใหม่** (ไม่งั้นได้ dashboard คนละทรงแล้ว drift) · แท็บ default เลือกตาม role ของผู้ใช้ (mtn→ซ่อมบำรุง · qa→QA · planner_store/sale→สโตร์ · อื่น→ผลิต)
+- **เลย์เอาต์บังคับ 4 ชั้นทุกใบ:** 🚨 ต้องทำตอนนี้ (คิวงานค้าง — ว่างต้องขึ้น "ไม่มีงานค้าง" **ห้ามซ่อนแผง**) → 📊 KPI (มีตัวเทียบเสมอ) → 📈 ชี้เป้าให้แก้ (ตาราง/พาเรโต) → 🔗 ทางลัด
+- **อ่านอย่างเดียว** — ไม่มี insert/update/delete · ทุกแถวใน "ต้องทำตอนนี้" คือลิงก์ไปหน้าที่ทำงานจริง
+- **ห้ามคำนวณ KPI เอง** — OEE เฉลี่ยผ่าน `wavg` (utils/oee) ถ่วงด้วยเวลารับภาระ · ยอดผลิตนับคู่ RH/LH ผ่าน `pairAwareTotal` · NG ยึด `defect_logs` · DT นับเฉพาะนอกแผน · PPM = เสีย ÷ (ดี+เสีย) × 1e6
+- **Scope มาตรฐาน** — leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` (helper `scopeLineNames` ในไฟล์) · สิทธิ์เข้าหน้าเดียว `page:/dept-dashboard` (migration `20260806_dept_dashboard_permission.sql` — seed ทุก role)
+- **ส่วนงานที่ข้อมูลยังน้อย = adoption dashboard ไม่ใช่ analytics** (คำสั่งจากผลสำรวจข้อมูลจริง):
+  - **ซ่อมบำรุง** — แผงเด่นคือ **"⚠️ เครื่องที่หยุดซ้ำ ≥2 ครั้งใน 30 วัน แต่ยังไม่มีใบแจ้งซ่อม"** (downtime 3,567 แถว vs ใบซ่อม 7 ใบ = ช่องว่างจริง) + PM เกินกำหนด/ใกล้ครบ
+  - **QA** — แผงเด่นคือ **"ไลน์ที่เดินกะวันนี้แต่ยังไม่มีบันทึกของเสีย"** (ของดี 100% จริง หรือลืมลง?) + 4M รออนุมัติ QA + LPA ที่ตอบ N/T
+- **ห้ามโชว์เลขที่ดูสมบูรณ์ทั้งที่ยังขาด** — KPI ผลิตมีการ์ด "กะที่ยังไม่ปิด" กำกับว่าตัวเลขยังไม่ครบทั้งวัน
+- **⚠️ กับดัก: หน้าเดียวหลาย View ต้องผูกข้อมูลกับ "ส่วนงานที่โหลดมา" (`data = { dept, d }`)** — ตอนสลับแท็บ React จะ render View ของส่วนงานใหม่ **ก่อน** effect โหลดข้อมูลจะวิ่ง ถ้าเก็บแต่ก้อนข้อมูลเปล่า View ใหม่จะได้ข้อมูล**รูปทรงของส่วนงานเก่า** → พังทันที (เจอจริง 2026-08-06: `Cannot read properties of undefined (reading 'forEach')` ตอนคลิกแท็บ) · render เฉพาะเมื่อ `data.dept === dept` เท่านั้น · **build/lint จับไม่ได้ (เป็น runtime shape mismatch) — หน้าใหม่ที่สลับ View ด้วย state ต้องใช้ pattern นี้เสมอ**
+
+---
+
 ## Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05)
 
 หน้า `/group-overview` (`GroupOverview.jsx`, กลุ่มภาพรวม) — **เป็นตัวอย่างหน้าจอ (mockup) ไม่ใช่ระบบ multi-company จริง** สร้างตามคำสั่ง user เพื่อตอบผู้บริหารว่า "ระบบนี้ใช้กับหลายบริษัทในกลุ่ม + ดูภาพรวมข้ามบริษัทได้มั้ย"
@@ -986,6 +1032,7 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 หน้า `/mtn-repair` (`MtnRepair.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — **clone ระบบ AppSheet เดิม (Jig MTN) มาอยู่ใน ESM** เพื่อไม่ต้องแยกระบบ + เก็บฐานข้อมูลเดียวกัน · ตารางทั้งหมดอยู่ **DR project** (anon-open ตาม convention)
 
 - **Workflow 7 ขั้น (mirror ของเดิม):** 1 แจ้งซ่อม → 2 รับ/จ่ายงาน (**ออกเลข MO อัตโนมัติ**) → 3 ดำเนินการซ่อม → 4 ตรวจหลังซ่อม → 5 คุณภาพหลังซ่อม (**เฉพาะงานที่ step4 ระบุ "เกี่ยวกับคุณภาพ"** ไม่งั้นข้ามไป step6) → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO) · `status`: pending→assigned→repaired→checked→qa→handover→closed · `rejected` (step2 เลือก "Reject MO") · `current_step` 1..7 ใช้คิด % ความคืบหน้า
+- **↩️ ตีกลับให้ผู้แจ้ง (แจ้งผิดแผนก · 2026-07-22 · migration `20260722_mtn_return_reroute.sql` DR — ⚠️ ค้างไม่ได้ apply มา 2 สัปดาห์ เพิ่ง apply จริง 2026-08-06):** ทีมที่ได้รับใบผิดแผนกกด Reject ที่ step2 → `status='returned'` + `returned_at`/`returned_from_dept` + เหตุผลใน `reject_reason` (reuse ช่องเดิม) → **ใบเด้งกลับหาผู้แจ้ง ไม่ถูกทิ้ง** → ผู้แจ้งเลือกแผนกที่ถูกแล้วส่งใหม่ (`resubmit`) → กลับเป็น `pending` + **รีเซ็ต `report_at`** (นาฬิกา KPI เริ่มนับใหม่ให้แผนกที่ถูก — ไม่โทษทีมที่เพิ่งได้รับใบ) โดยเก็บ `first_report_at` (เวลาเปิดครั้งแรก) + `bounce_count` ไว้อ้างอิง · การ์ดใบโชว์ชิป "↩️ ใบนี้เคยถูกตีกลับ N ครั้ง" เสมอเมื่อ bounce_count > 0 · **ระหว่างที่ migration ยังไม่ apply ฟีเจอร์นี้พังเงียบ** — กด Reject/ส่งใหม่ได้ error 42703 (`update` ไม่ tolerant ตัดคอลัมน์ที่ไม่มี) · `mtn_orders.status` ไม่มี check constraint จึงรับค่า `returned` ได้ทันทีหลังเติมคอลัมน์
 - **ประเมินความพึงพอใจบริการซ่อม (step 6 รับมอบ/ติดตาม — KPI หน่วยงานซ่อม · 2026-07-22):** หน่วยงานผู้แจ้งให้คะแนน **5 ด้าน × 3 ระดับ** (เฉยๆ=1/พอใจ=2/พอใจมาก=3): คุณภาพงานซ่อม · ความเร็วในการตอบสนอง · ความสามารถในการแก้ไขปัญหา · ความสุภาพ/PPE · ความพร้อมในการเข้าแก้ไขปัญหา · เก็บ `mtn_orders.satisfaction` jsonb (ด้านที่ไม่ประเมิน = ไม่มี key · **ไม่บังคับ ข้ามได้**) · const กลาง `SAT_DIMS`/`SAT_LEVELS` ใน MtnRepair · **แท็บ 📊 KPI** เพิ่มการ์ด "ความพึงพอใจเฉลี่ย %" + แถบรายด้าน (avg/3 · เขียว≥2.5/เหลือง≥2/แดง) นับเฉพาะใบที่ประเมิน · migration `20260722_mtn_satisfaction.sql` (DR additive)
 - **⚠️ ฟิลเตอร์สถานะไม่ให้ซ้ำ:** dropdown สถานะ render จาก `STATUS_META` (มี `closed: '✅ ปิด MO'` อยู่แล้ว) + `open`/`all` เท่านั้น — **ห้ามเพิ่ม `<option value="closed">` ซ้ำ** (เคยมี "✅ ปิดแล้ว" ซ้ำกับ "✅ ปิด MO" — ลบแล้ว 2026-07-22)
 - **เลข MO auto — แยกต่อทีม (2026-07-24 · คำสั่ง user):** RPC `mtn_assign_mo_no(order_id, prefix)` (SECURITY DEFINER, idempotent) ออกตอน step2 = **`<รหัสทีม>-<ประเภท>-<DDMMYY>-<เลขรันต่อเนื่องต่อทีม>`** เช่น `MTN-BM-250726-0678` · **รหัสทีม** = `mtn_teams.mo_code` (data-driven — maintenance→MTN/jig→JIG/die→DIE/production→PRD · แก้ได้) · **ประเภท** (prefix) = ประเภทงานซ่อม BM/IM/CM/PM/AM/RE · **DDMMYY** = วันออกเลข (เวลาไทย อ่านได้) · **เลขรัน = ต่อเนื่องต่อทีม ไม่รีเซ็ตรายวัน** (ตาราง `mtn_mo_seq` keyed by team_code) — ต่างจากเดิมที่ `mtn_mo_counter` นับรวมทุกทีมต่อวัน (ปนกัน แยกทีมไม่ได้) · migration `20260724_mtn_mo_per_team.sql` (DR · ต้อง apply หลัง `mtn_teams`) · signature เดิม client ไม่ต้องแก้ (RPC อ่าน `mtn_dept` จากใบเอง) · **ตั้งเลขเริ่มต้นต่อทีม (ต่อจากระบบเดิม) + แก้รหัสทีม ที่ ⚙️ ข้อมูลตั้งต้น → 🔢 เลขรัน MO** (ใส่ "เลขล่าสุด" ของแต่ละทีม เช่น 677 → ใบถัดไป 0678) · `mtn_mo_counter` เดิม vestigial · MO เก่ารูปแบบเดิมยังอยู่เป็นประวัติ
@@ -1351,7 +1398,8 @@ supabase/
 docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก้แบบยั่งยืน — อ่านก่อนทุกงาน) ·
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
-                       #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md (ออกแบบเผื่อไว้ ยังไม่ทำ)
+                       #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
+                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน — ออกแบบเผื่อไว้ ยังไม่ทำ)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
@@ -1462,6 +1510,13 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 | G เอกสาร | Checkin/DailyReport + `20260804_doc_forms_attendance_dpr.sql` | ฟอร์ม export 3 ตัวสุดท้ายเข้าทะเบียน `doc_forms` แล้ว (ดูแถว `/doc-forms`) |
 
 - **ปิดเคสแล้ว:** `FactoryMap.jsx` ไม่กรอง scope — **user ยืนยัน 2026-08-05 ว่าตั้งใจ ให้ทุกคนเห็นทั้งโรงงาน** (บันทึกเป็นข้อยกเว้นทางการในหัวข้อ Section Scoping แล้ว ไม่ต้องแก้โค้ด)
+
+#### ⚠️ audit "migration ในรีโปครบแต่ยังไม่ apply" — วิธีตรวจที่เชื่อถือได้ (2026-08-06)
+
+**`supabase migration list` เทียบชื่อไฟล์ไม่ได้** — เวอร์ชันในตาราง `supabase_migrations.schema_migrations` เป็น timestamp ที่ระบบตั้งตอน apply ผ่าน MCP ไม่ใช่ชื่อไฟล์ในรีโป · **ไฟล์ที่ไม่ได้ apply จึงไม่มีทางรู้จากทะเบียน ต้องพิสูจน์จาก schema จริง**
+**วิธีที่ใช้ (ทำซ้ำได้):** สแกนทุกไฟล์ใน `supabase/migrations/` ดึงเป้าหมายที่สร้าง (`create table` / `add column` / `create function`) → query `information_schema` ของ **ทั้ง 2 project** → ของที่**ไม่มีในทั้งคู่** = migration ที่ยังไม่ apply จริง (ไม่ต้องรู้ว่าไฟล์ไหนของ project ไหน)
+**ผลรอบนี้ (175 ไฟล์ · 215 object):** ค้างจริง **1 ไฟล์** = `20260722_mtn_return_reroute.sql` (apply แล้ว 2026-08-06 · ดูรายละเอียดในหัวข้อ MTN Work-Order) · อีก 6 ตาราง `pm_equipment`/`pm_checklists`/`pm_checkpoints`/`pm_inspections`/`pm_inspection_results`/`pm_schedules` จาก `20260701_add_pm_maintenance_module.sql` **ไม่มีในทั้ง 2 project และไม่ต้อง apply** — ไฟล์นั้น DEPRECATED ตั้งแต่ 2026-07-10 (โมดูล PM จริงย้ายไป `jigs`/`checklists`/`jig_checkpoints`/`inspections`/`inspection_results`/`pm_plans` ฝั่ง DR) เก็บไว้เป็นประวัติเท่านั้น
+**บทเรียน:** migration ที่ค้างจะ**พังเงียบ** (write ตัวที่ไม่ tolerant ได้ error 42703 เฉพาะตอนผู้ใช้กดใช้ฟีเจอร์นั้น) — ค้างมา 2 สัปดาห์กว่าจะรู้ · เขียน migration เสร็จ **ต้อง apply แล้วบันทึกวันที่ apply ใน CLAUDE.md ทันที** (pattern เดียวกับที่ `line_type`/`flow_mode`/`equipment_category` เคยค้างแล้วทำให้ช่องเซฟไม่ติดเงียบๆ)
 
 ## Design System
 

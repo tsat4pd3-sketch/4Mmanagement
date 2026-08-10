@@ -9,6 +9,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 import { docFormSync, fullCode } from '../utils/docForms';
 import { skillGaugeSvgStr, scoreToLevel } from '../utils/skillLevels';
+import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — ใบพิมพ์ต้องแปลงเป็นชื่อ
 
 const IND_SIG_DEFAULTS = ['พนักงานผู้ถูกประเมิน', 'ผู้ประเมิน', 'ผู้รับรอง'];
 const sigLabelsOf = (key, defaults) => docFormSync(key, { sig_blocks: defaults }).sig_blocks || defaults;
@@ -208,11 +209,11 @@ export function buildIndividualSkillHtml({ emp, skillDefs, subItemsByskill, dept
   <table style="width:100%;margin-bottom:5px"><tr>
     <td style="width:62%;vertical-align:top;padding-right:6px">
       <table style="width:100%"><tr>
-        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[0], emp.name, emp.position, null, true)}
+        ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[0], emp.name, positionLabel(emp.position), null, true)}
         ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[1], assessorName, assessorPos, assessorSig, false)}
         ${signBox(sigLabelsOf('individual_skill', IND_SIG_DEFAULTS)[2], certifierName, certifierPos, certifierSig, false)}
       </tr></table>
-      <div style="font-size:8px;color:#555;margin-top:3px">เลขที่บัตร : <b>${esc(emp.employee_id_code || '-')}</b> &nbsp;·&nbsp; ตำแหน่ง : <b>${esc(emp.position || '-')}</b></div>
+      <div style="font-size:8px;color:#555;margin-top:3px">เลขที่บัตร : <b>${esc(emp.employee_id_code || '-')}</b> &nbsp;·&nbsp; ตำแหน่ง : <b>${esc(positionLabel(emp.position) || '-')}</b></div>
     </td>
     <td style="width:38%;vertical-align:top;text-align:center;border:1px solid #ccc;padding:2px">
       <div style="font-size:8px;font-weight:700;color:#1d4ed8">Multi Skill</div>
