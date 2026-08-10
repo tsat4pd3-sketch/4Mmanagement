@@ -297,6 +297,11 @@ export default function FactoryMap({ setupMode = false }) {
   // กำลังคนล่าสุด (ไลน์ → {stationFilled/stationTotal, present/headTotal}) — ใช้ปรับ "จำนวนเครื่องที่เดินได้จริง"
   // loadStatus เป็น useCallback deps แคบ อ่าน state ตรงๆ จะ stale จึงผ่าน ref เหมือน flowByLineRef
   const manpowerRef = useRef({});
+  /* ไลน์ที่ "คนโหลดเข้า-ออกเอง" (machines.automation_level = manual) — เฉพาะไลน์แบบนี้เท่านั้นที่
+     กำลังคนจำกัดจำนวนเครื่องที่เดินได้ · ไลน์ auto/semi-auto เครื่องเดินเองได้ คนแค่ยืนซัพพอร์ท
+     (คำสั่ง user 2026-08-06) — ข้อมูลจริง: SUB APRON = manual/standalone 6 เครื่อง ·
+     LASER-345/789 = auto/inline · ไม่มีข้อมูล = ไม่ปรับ (ไม่เดาแทนหน้างาน) */
+  const manualLineRef = useRef({});
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -355,6 +360,22 @@ export default function FactoryMap({ setupMode = false }) {
       (mc?.data || []).forEach(m => { if (m.equipment_category && m.equipment_category !== 'production' && m.line_name) set.add(m.line_name); });
       setFacilityZones([...set].sort((a, b) => a.localeCompare(b)));
     });
+    // ไลน์ไหน "คนโหลดเข้า-ออกเอง" — นับเครื่องผลิต manual เทียบ auto/semi ต่อไลน์ (query แยก + catch เอง
+    // เพื่อไม่ให้ facilityZones พังถ้าคอลัมน์ automation_level ยังไม่ apply)
+    supabaseDR.from('machines').select('line_name, automation_level, equipment_category').eq('is_active', true)
+      .then(({ data }) => {
+        const cnt = {};
+        (data || []).forEach(m => {
+          if (!m.line_name || (m.equipment_category && m.equipment_category !== 'production')) return;
+          const c = cnt[m.line_name] || (cnt[m.line_name] = { man: 0, autoish: 0 });
+          if (m.automation_level === 'manual') c.man++;
+          else if (m.automation_level === 'auto' || m.automation_level === 'semi_auto') c.autoish++;
+        });
+        const out = {};
+        Object.entries(cnt).forEach(([ln, c]) => { if (c.man || c.autoish) out[ln] = c.man > c.autoish; });
+        manualLineRef.current = out;
+      })
+      .catch(() => { manualLineRef.current = {}; });
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
 
@@ -490,7 +511,12 @@ export default function FactoryMap({ setupMode = false }) {
            ของออกจริง 2500 (= 3.14 เท่าของเครื่องเดียว) → ตรงกับที่โมเดลทำนาย
            ⚠️ ไม่มีข้อมูลกำลังคน (ยังไม่เช็คชื่อ/ไลน์ไม่มีจุดงาน) = ไม่ปรับ ใช้ N เต็ม — ห้ามตีเป็น 0 คน */
         const mp = manpowerRef.current[s.line_name];
-        const manRatio = (mp?.stationTotal > 0 && mp.stationFilled > 0) ? mp.stationFilled / mp.stationTotal
+        // เฉพาะไลน์ที่คนโหลดเข้า-ออกเอง · ไลน์ auto คนแค่ยืนซัพพอร์ท เครื่องเดินเองได้ ไม่ต้องหาร
+        const manRatio = !(manualLineRef.current[s.line_name] === true) ? null
+          // ถ่วงตามเวลาก่อน (รู้ว่าช่วงไหนเดินกี่จุด — รองรับการย้ายคนกลางกะ) แล้วค่อยดูภาพ ณ ตอนนี้
+          : (mp?.stationTotal > 0 && mp.manMin > 0 && mp.winMin > 0)
+            ? Math.min(1, mp.manMin / (mp.stationTotal * mp.winMin))
+          : (mp?.stationTotal > 0 && mp.stationFilled > 0) ? mp.stationFilled / mp.stationTotal
           : (mp?.headTotal > 0 && mp.present > 0) ? mp.present / mp.headTotal : null;
         const parallelN = (fullN > 1 && manRatio != null)
           ? Math.max(1, Math.min(fullN, Math.round(fullN * manRatio))) : fullN;
@@ -534,11 +560,15 @@ export default function FactoryMap({ setupMode = false }) {
     // live = กะปัจจุบันเท่านั้น (คำสั่ง user 2026-08-04) — เดิมนับพนักงานทั้งไลน์ (ทุกทีม 2 กะ)
     // เป็นตัวหาร + present รวม log ทั้งวัน → เลขโป่ง เช่น 15/33 ทั้งที่กะนี้มี 16 คน
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
-    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }] = await Promise.all([
+    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
       supabase.from('production_lines').select('id, name'),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
       supabase.from('workstations').select('id, line_name'),
+      // ประวัติเข้า-ออกจุดงาน (มีเวลาเริ่ม/จบ) — ใช้ถ่วงน้ำหนักตามเวลา ไม่ใช่ดูแค่ ณ ตอนนี้
+      // เคสที่ต้องรองรับ: ต้นกะเดิน 3 เครื่อง ผ่านไป 4 ชม. ย้ายคนมาเดิน 6 เครื่อง
+      supabase.from('station_assignment_logs').select('station_id, line_name, started_at, ended_at')
+        .eq('work_date', workDate).then(r => r).catch(() => ({ data: [] })),
     ]);
     // log ของกะปัจจุบัน (shift null = log เก่าก่อนมีคอลัมน์ — นับรวมแบบ backward-compat)
     const logs = (logsAll || []).filter(l => !l.shift || l.shift === curShift);
@@ -569,6 +599,28 @@ export default function FactoryMap({ setupMode = false }) {
       o.stationTotal = stationTotal[ln];
       o.stationFilled = filledSet[ln]?.size || 0;
       out[ln] = o;
+    });
+    /* ── กำลังคนถ่วงตามเวลา (คนย้ายจุดกลางกะ) ──────────────────────────────
+       เดิมใช้ภาพ ณ ตอนนี้คูณกับเวลาทั้งกะ → ถ้าเช้าเดิน 3 เครื่อง แล้วบ่ายย้ายมาเดิน 6
+       จะคิดเป็น 6 ทั้งกะ (คาดหวังสูงเกิน) · ตอนนี้รวม "นาที-จุดงาน" ที่มีคนอยู่จริง
+       ตั้งแต่ต้นกะถึงตอนนี้ แล้วหารด้วย (จำนวนจุดงาน × นาทีที่ผ่านไป) */
+    const nowT = Date.now();
+    const shiftStartT = (() => {
+      const d = new Date(); d.setHours(curShift === 'day' ? 8 : 20, 0, 0, 0);
+      if (curShift === 'night' && d.getTime() > nowT) d.setDate(d.getDate() - 1);   // ตี 1 = กะดึกที่เริ่มเมื่อวาน
+      return d.getTime();
+    })();
+    const winMin = Math.max(1, (nowT - shiftStartT) / 60000);
+    const manMin = {};
+    (saRes?.data || []).forEach(a => {
+      if (!a.line_name || !a.started_at) return;
+      const st = Math.max(new Date(a.started_at).getTime(), shiftStartT);
+      const en = Math.min(a.ended_at ? new Date(a.ended_at).getTime() : nowT, nowT);
+      if (en > st) manMin[a.line_name] = (manMin[a.line_name] || 0) + (en - st) / 60000;
+    });
+    Object.keys(out).forEach(ln => { out[ln].manMin = manMin[ln] || 0; out[ln].winMin = winMin; });
+    Object.entries(manMin).forEach(([ln, v]) => {
+      if (!out[ln]) out[ln] = { headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, manMin: v, winMin };
     });
     manpowerRef.current = out;
     setManpower(out);
