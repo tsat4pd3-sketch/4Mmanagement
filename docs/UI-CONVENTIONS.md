@@ -273,6 +273,11 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - จุดที่ทำแล้ว (2026-08-10): TaxonomyManagerModal · MachineDatabase (ประเภทเครื่องจักร) ·
   ProcessTypeSetup · SparePartMaster (หมวดอะไหล่) · DailyReport (ประเภท DT + ของเสีย) · operator (สกิล)
 - **ฟอร์มใหม่ที่มีช่องสี ต้องใช้ `pickUnusedColor` ตั้งแต่แรก ห้าม hardcode สี default ตายตัว**
+- **ข้อมูลเก่าที่สีซ้ำอยู่แล้ว ล้างเรียบร้อย (2026-08-10):** migration `20260810_recolor_master_duplicates_dr.sql`
+  (machine_types 27 · dr_downtime_types 40 · dr_defect_types 17 แถว) + `_main.sql` (skill_definitions 21 แถว) —
+  แถวแรกของแต่ละสี (ตาม sort_order) เก็บสีเดิม ตัวซ้ำได้สีใหม่ไม่ชนใครในตาราง · ประเภทชื่อมี "อื่น" ได้โทนเทา
+  (คงความหมาย อื่นๆ=เทา) · ตารางสีเล็กอื่น (mtn_teams/หมวดอะไหล่/process_types/PM taxonomy/machine traits)
+  ตรวจแล้วไม่ซ้ำ ไม่แตะ · ตรวจหลัง apply: ไม่เหลือสีซ้ำใน 4 ตาราง
 
 ## 5.3 Dropdown ลำดับชั้นองค์กร ต้อง cascade เสมอ (2026-07-21 — คำสั่ง user)
 
