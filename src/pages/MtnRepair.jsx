@@ -21,6 +21,7 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
+import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
 
@@ -231,7 +232,8 @@ export default function MtnRepair() {
   const loadMasters = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
-      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
+      // equipment_kind = แกนชนิดอุปกรณ์ (machine/die/jig/facility) — ต้องมี ไม่งั้นแยก "แม่พิมพ์" ออกจาก "เครื่องจักร" ไม่ได้
+      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_problem_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_spare_parts').select('*').eq('is_active', true).order('sort_order'),
@@ -401,7 +403,19 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
-  const lineMachines = useMemo(() => machines.filter(m => !f.line_name || m.line_name === f.line_name), [machines, f.line_name]);
+  // แจ้งซ่อม "แม่พิมพ์" หรือ "เครื่องจักร"? — ตัดสินจากชนิดอุปกรณ์ที่เลือก แล้วค่อยดูทีมที่แจ้งถึง
+  //   ⚠️ แม่พิมพ์ผูก line_name เป็น "ชื่อกลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งไม่มีใน production_lines
+  //      → กรองด้วยไลน์ที่เลือกในฟอร์มจะไม่มีวันเจอแม่พิมพ์เลย (เจอจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01)
+  //      จึงลิสต์แม่พิมพ์ "ทั้งหมด" ไม่กรองไลน์ — แม่พิมพ์ถอดย้ายเครื่องได้อยู่แล้ว
+  const wantDie = useMemo(
+    () => /^DIE\b/i.test(f.item_type || '') || (!f.item_type && teamKeyOf(f.mtn_dept) === 'die_maintenance'),
+    [f.item_type, f.mtn_dept],
+  );
+  const lineMachines = useMemo(() => {
+    if (wantDie) return machines.filter(m => isDie(m.equipment_kind));
+    // ไม่ใช่งานแม่พิมพ์ → ตัดแม่พิมพ์ออกจากลิสต์เครื่องจักร (262 ตัวอยู่ตารางเดียวกัน เคยปนกันมาตลอด)
+    return machines.filter(m => !isDie(m.equipment_kind) && (!f.line_name || m.line_name === f.line_name));
+  }, [machines, f.line_name, wantDie]);
 
   const onLine = (name) => {
     const l = lines.find(x => x.name === name);
@@ -457,13 +471,20 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
         <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
-        <Field label="หมายเลขเครื่อง">
+        <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6 }}>
-            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="เลือก/พิมพ์/สแกน" />
+            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder={wantDie ? 'พิมพ์เพื่อค้นแม่พิมพ์ / สแกน' : 'เลือก/พิมพ์/สแกน'} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
               style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
           </div>
-          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist>
+          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}{m.line_name ? ` · ${m.line_name}` : ''}</option>)}</datalist>
+          {wantDie && (
+            <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
+              {lineMachines.length
+                ? '🔨 ลิสต์แม่พิมพ์ทั้งหมด (ไม่กรองตามไลน์ — แม่พิมพ์ถอดย้ายเครื่องได้) · พิมพ์เลขเพื่อค้น'
+                : '⚠️ ยังไม่มีแม่พิมพ์ในทะเบียน — ลงข้อมูลที่ /die-registry ก่อน (พิมพ์เลขเองได้)'}
+            </div>
+          )}
         </Field>
         <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamProblemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
         <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
