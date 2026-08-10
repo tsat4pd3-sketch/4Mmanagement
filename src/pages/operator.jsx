@@ -88,6 +88,15 @@ export default function Operator() {
   const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [lines,           setLines]           = useState([]);
+  // ── แท็บ "ประเมินทั้งทีม" ────────────────────────────────────────────────
+  // ครึ่งที่หายไปของวงจรสกิล: สร้างสกิลใหม่แล้วไม่มีขั้นตอนให้คะแนนตั้งต้นทั้งทีม
+  // EXP farm เป็นตัว "เติมทีละนิด" (+1/วัน เฉพาะจุดที่ min_score >= 70) ไม่ใช่ตัวประเมินตั้งต้น
+  // ข้อมูลจริง 2026-08-06: สกิลที่สร้าง 16/07 มีคนถือแค่ 5-10 คนจาก 172 · ที่สร้าง 29/05 ยังได้แค่ 44-48
+  // ขณะที่ Safety/QC (seed ตอนตั้งระบบ) = 172 ครบทุกคน → ถ้าไม่มีหน้านี้ สกิลใหม่จะไม่มีวันครอบคลุม
+  const [bulkSkill,  setBulkSkill]  = useState('');
+  const [bulkLineId, setBulkLineId] = useState('');
+  const [bulkScores, setBulkScores] = useState({}); // employee_id -> ค่าที่พิมพ์ (string)
+  const [bulkBusy,   setBulkBusy]   = useState(false);
   const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
   const [luDocFile,       setLuDocFile]       = useState(null);
@@ -256,6 +265,36 @@ export default function Operator() {
   const getEmpSkill = (emp, skillName) => {
     const rec = empSkillMapById[emp.id]?.[skillName];
     return rec !== undefined ? rec.score : undefined;
+  };
+
+  /* ── ประเมินสกิลทั้งทีมรวดเดียว ── */
+  const bulkTargets = useMemo(() => {
+    if (!bulkSkill) return [];
+    return employees.filter(e => !bulkLineId || String(e.line_id) === String(bulkLineId));
+  }, [employees, bulkSkill, bulkLineId]);
+
+  const saveBulkSkills = async () => {
+    const rows = Object.entries(bulkScores)
+      .filter(([, v]) => v !== '' && v != null && !Number.isNaN(Number(v)))
+      .map(([employee_id, v]) => ({
+        employee_id,
+        skill_name: bulkSkill,
+        score: Math.max(0, Math.min(100, Math.round(Number(v)))),
+        updated_at: new Date().toISOString(),
+      }));
+    if (!rows.length) { toast.info('ยังไม่ได้กรอกคะแนนใคร'); return; }
+    setBulkBusy(true);
+    try {
+      // ไม่ส่ง pending_level ไปด้วย — คนที่ค้างรออนุมัติ level up จะได้ไม่ถูกล้างสถานะทิ้ง
+      const { error } = await supabase.from('employee_skills')
+        .upsert(rows, { onConflict: 'employee_id,skill_name' });
+      if (error) { toast.error('บันทึกไม่สำเร็จ: ' + error.message); return; }
+      toast.success(`บันทึกคะแนน ${rows.length} คนเรียบร้อย`);
+      setBulkScores({});
+      fetchEmployees();
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const handleDeactivate = async (id, name) => {
@@ -587,6 +626,7 @@ export default function Operator() {
           [0, '👥 พนักงาน', true],
           [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
           [2, '⬆️ Level Up', can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role)],
+          [3, '📊 ประเมินทั้งทีม', can('skills', 'edit', role)],
         ].filter(([, , show]) => show).map(([i, t]) => (
           <button key={i} onClick={() => setTab(i)} style={{
             padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
@@ -1307,6 +1347,127 @@ export default function Operator() {
             onClose={() => setRadarEmp(null)}
           />
         </Suspense>
+      )}
+
+      {/* ── แท็บ 3: ประเมินสกิลทั้งทีมรวดเดียว ────────────────────────────── */}
+      {tab === 3 && (
+        <div>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>
+              📊 ให้คะแนนสกิลทีละสกิล ทั้งทีมในจอเดียว
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              ระบบสะสมคะแนนให้เองได้ แต่ช้า — <b>+1/วัน</b> เฉพาะจุดที่ตั้งเกณฑ์ตั้งแต่ 70 ขึ้นไป
+              และ <b>+2/สัปดาห์</b> ถ้าอยู่จุดเดิมครบ 3 วันในสัปดาห์นั้น ·
+              สกิลที่เพิ่งสร้างจึงเริ่มจาก 0 คนแล้วคืบทีละนิด (จาก 2 ไป 50 ใช้เวลาหลายเดือน)
+              ระหว่างนั้นพนักงานไม่ผ่านเกณฑ์จุดงาน แล้วการจัดคนจะติด 4M ขออนุมัติทุกครั้ง —
+              <b>ให้คะแนนตั้งต้นที่หน้านี้เพื่อข้ามช่วงนั้นไป</b>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สกิล</label>
+              <select value={bulkSkill} onChange={e => { setBulkSkill(e.target.value); setBulkScores({}); }} style={{ width: 240 }}>
+                <option value="">— เลือกสกิล —</option>
+                {skillDefs.map(sd => (
+                  <option key={sd.name} value={sd.name}>{sd.label || sd.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
+              <select value={bulkLineId} onChange={e => { setBulkLineId(e.target.value); setBulkScores({}); }} style={{ width: 200 }}>
+                <option value="">ทุกไลน์ที่ดูแล</option>
+                {lines
+                  .filter(l => !scopeSecs.length || inSectionScope(scopeSecs, l.section))
+                  .filter(l => !isLeader || !userLineId || String(l.id) === String(userLineId))
+                  .map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+            {bulkSkill && bulkTargets.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>เติมคนที่ยังไม่มีคะแนน:</span>
+                {[25, 50, 70, 75].map(v => (
+                  <button key={v} className="tbtn"
+                    onClick={() => {
+                      const next = { ...bulkScores };
+                      bulkTargets.forEach(emp => {
+                        if (getEmpSkill(emp, bulkSkill) === undefined && (next[emp.id] ?? '') === '') next[emp.id] = String(v);
+                      });
+                      setBulkScores(next);
+                    }}
+                    style={{ fontSize: 11, padding: '4px 10px' }}>{v}</button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!bulkSkill ? (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>
+              เลือกสกิลด้านบนเพื่อเริ่มประเมิน
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+                พนักงาน {bulkTargets.length} คน ·
+                มีคะแนนแล้ว {bulkTargets.filter(e => getEmpSkill(e, bulkSkill) !== undefined).length} ·
+                <b style={{ color: '#f59e0b' }}> ยังไม่มี {bulkTargets.filter(e => getEmpSkill(e, bulkSkill) === undefined).length}</b>
+              </div>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
+                <table className="table-sticky" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg3)' }}>
+                      <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 11, color: 'var(--muted)' }}>พนักงาน</th>
+                      <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: 11, color: 'var(--muted)' }}>ไลน์</th>
+                      <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, color: 'var(--muted)' }}>คะแนนปัจจุบัน</th>
+                      <th style={{ textAlign: 'center', padding: '8px 12px', fontSize: 11, color: 'var(--muted)' }}>คะแนนใหม่</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkTargets.map(emp => {
+                      const cur = getEmpSkill(emp, bulkSkill);
+                      const pending = empSkillMapById[emp.id]?.[bulkSkill]?.pending_level;
+                      const lineName = lines.find(l => String(l.id) === String(emp.line_id))?.name ?? '—';
+                      return (
+                        <tr key={emp.id} style={{ borderTop: '1px solid var(--border)' }}>
+                          <td style={{ padding: '6px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+                            {emp.name}
+                            <span style={{ color: 'var(--muted)', fontSize: 11 }}> {emp.employee_id_code}</span>
+                            {pending != null && (
+                              <span title="ค้างรออนุมัติ Level Up — ระบบหยุดสะสมคะแนนให้จนกว่าจะอนุมัติ"
+                                style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b' }}>⏳ รออนุมัติ {pending}</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '6px 12px', fontSize: 11.5, color: 'var(--muted)' }}>{lineName}</td>
+                          <td style={{ padding: '6px 12px', textAlign: 'center', fontSize: 12.5 }}>
+                            {cur === undefined
+                              ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>ยังไม่มี</span>
+                              : <span style={{ color: 'var(--text)', fontWeight: 700 }}>{cur}</span>}
+                          </td>
+                          <td style={{ padding: '6px 12px', textAlign: 'center' }}>
+                            <input type="number" min={0} max={100}
+                              value={bulkScores[emp.id] ?? ''}
+                              placeholder={cur === undefined ? '—' : String(cur)}
+                              onChange={e => setBulkScores({ ...bulkScores, [emp.id]: e.target.value })}
+                              style={{ width: 64, textAlign: 'center', fontSize: 12 }} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                <button className="tbtn" onClick={() => setBulkScores({})} disabled={bulkBusy}>ล้างที่กรอก</button>
+                <button className="tbtn" onClick={saveBulkSkills} disabled={bulkBusy}
+                  style={{ background: 'var(--accent)', color: '#fff', fontWeight: 700 }}>
+                  {bulkBusy ? 'กำลังบันทึก...' : `บันทึก ${Object.values(bulkScores).filter(v => v !== '').length} คน`}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {editingEmp && (

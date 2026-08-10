@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
-import { findChecklist } from '../lib/pmChecklists'
+import { findChecklist, loadRetiredEquipIds } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
@@ -604,7 +604,11 @@ export default function PMCheckData() {
   }, [])
 
   useEffect(() => {
-    supabaseDR.from('jigs').select('*').eq('module', 'mtn').order('name').then(({ data }) => setJigs(data ?? []))
+    // เครื่องที่ปิดใช้งานในฐานเครื่องจักรแล้ว ต้องไม่โผล่ให้ตรวจอีก (ดู loadRetiredEquipIds)
+    Promise.all([
+      supabaseDR.from('jigs').select('*').eq('module', 'mtn').order('name'),
+      loadRetiredEquipIds('mtn').catch(() => new Set()),
+    ]).then(([{ data }, retired]) => setJigs((data ?? []).filter(j => !retired.has(j.id))))
     fetchCategories() // primes the category color cache used by categoryColor()
     fetchCheckingMethods().then(rows => setMethodIndex(indexByCode(rows)))
   }, [])

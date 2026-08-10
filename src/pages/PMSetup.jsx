@@ -8,7 +8,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
-import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
+import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept, loadRetiredEquipIds } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
@@ -468,7 +468,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [existingNote, setExistingNote] = useState(null)  // เครื่องที่เลือกเคยขึ้นทะเบียน PM แผนกอื่นแล้ว
   useEffect(() => {
     getCurrentUserId().then(setUserId)
-    supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
+    // เครื่องที่ปิดใช้งานแล้ว ห้ามเลือกมาลงจุดตรวจใหม่ (ไม่งั้นได้แผน PM ของเครื่องที่ปลดไปแล้ว)
+    supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('line_name').order('sort_order')
       .then(({ data }) => setMachineOptions(data ?? []))
     // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown
     supabase.from('production_lines').select('name').order('name')
@@ -1109,7 +1110,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 }
 
 // ─── EquipmentCard ────────────────────────────────────────────────────────────
-function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPending }) {
+function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPending, retired }) {
   const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: '#e05c4a' }
   const color = typeColor[jig.equipment_type] ?? '#527855'
   const catMeta = CATEGORY_TYPE_META[jig.equipment_category] ?? CATEGORY_TYPE_META.production
@@ -1134,8 +1135,15 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPe
         {jig.jig_no && <p style={S.meta}>No. {jig.jig_no}</p>}
         {jig.line_name && <p style={S.meta}>📍 {jig.line_name}{jig.machine_no ? ` · ${jig.machine_no}` : ''}</p>}
         {jig.machine_id && <p style={{ ...S.meta, color: 'var(--accent)' }}>🔗 เชื่อมกับ Machine Master</p>}
+        {/* เครื่องถูกปิดใช้งานในฐานเครื่องจักรแล้ว — หน้าตรวจไม่แสดงอีก แต่ตรงนี้ยังโชว์ให้เห็น
+            เพื่อย้าย/ล้างจุดตรวจได้ (setup ต้องเห็นของทั้งหมด ไม่งั้นของหายแล้วตามไม่ได้) */}
+        {retired && (
+          <p style={{ ...S.meta, color: '#ef4444', fontWeight: 700 }}>
+            ⛔ เครื่องปิดใช้งานแล้ว — ไม่แสดงในหน้าตรวจ · <Link to="/machine-database" style={{ color: '#ef4444', textDecoration: 'underline' }}>ฐานข้อมูลเครื่องจักร</Link>
+          </p>
+        )}
         {/* ลงจุดตรวจแล้วแต่ยังไม่ลงทะเบียน AM = ยังไม่โผล่ให้พนักงานตรวจ — เตือนตรงนี้ไม่ให้เข้าใจผิดว่าใช้งานได้แล้ว */}
-        {amPending && (
+        {amPending && !retired && (
           <p style={{ ...S.meta, color: '#f59e0b', fontWeight: 700 }}>
             ⚠ ยังไม่ได้ลงทะเบียน AM · <Link to="/daily-checker?tab=pm" style={{ color: '#f59e0b', textDecoration: 'underline' }}>ลงทะเบียน</Link>
           </p>
@@ -1167,6 +1175,7 @@ export default function PMSetup() {
   const [cpCounts, setCpCounts] = useState({})
   const [pinFlags, setPinFlags] = useState({})
   const [amRegistered, setAmRegistered] = useState(null) // Set(jig_id) ที่ลงทะเบียน AM แล้ว (null = ไม่ใช่แท็บ AM)
+  const [retiredIds, setRetiredIds] = useState(new Set()) // Set(jig_id) ที่เครื่องแม่ปิดใช้งานแล้ว
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editJig, setEditJig] = useState(null)
@@ -1229,6 +1238,7 @@ export default function PMSetup() {
       reg = new Set((tg ?? []).map(t => t.jig_id))
     }
     setAmRegistered(reg)
+    setRetiredIds(await loadRetiredEquipIds('mtn').catch(() => new Set()))
 
     // show only equipment that has a checklist in the selected department
     // (each dept tab = its own responsibility; equipment "belongs" via its checklist)
@@ -1310,6 +1320,7 @@ export default function PMSetup() {
           {jigs.map(jig => (
             <EquipmentCard key={jig.id} jig={jig} canSetup={canSetup} cpCount={cpCounts[jig.id] ?? 0} hasPins={!!pinFlags[jig.id]}
               amPending={amRegistered ? !amRegistered.has(jig.id) : false}
+              retired={retiredIds.has(jig.id)}
               onEdit={() => openEdit(jig)} onDelete={() => handleDelete(jig)} />
           ))}
         </div>

@@ -53,6 +53,21 @@ export async function setChecklistFrequency(checklistId, frequency) {
   if (error) throw error
 }
 
+// ⚠️ เครื่องที่ปิดใช้งานแล้ว (machines.is_active = false) ต้องไม่โผล่ในหน้า PM/AM อีก
+// `jigs` ไม่มีคอลัมน์ is_active — แถวเงาของเครื่อง (machine_id ชี้กลับ machines) จึงยัง "ดูมีชีวิต"
+// ต่อไปแม้เครื่องจริงถูกปิดใช้งาน → หน้างานถูกสั่งให้ตรวจเครื่องที่ปลดไปแล้ว (เจอจริง BD-05 ค้างใน
+// ทะเบียน AM หลังเครื่องถูกปิดใช้งาน) · จุดที่ลิสต์อุปกรณ์ PM ให้กรองด้วย Set นี้เสมอ
+// **ห้ามกรองแบบเงียบ** — ให้บอกจำนวนที่ซ่อนไว้บนจอด้วย (กฎ "ห้ามปล่อยเงียบ")
+// จิ๊ก/แม่พิมพ์จริง (machine_id = null) ไม่เกี่ยว — ไม่มีเครื่องแม่ให้เช็ค คงแสดงตามเดิม
+export async function loadRetiredEquipIds(module = 'mtn') {
+  const [{ data: shadows }, { data: machines }] = await Promise.all([
+    supabaseDR.from('jigs').select('id, machine_id').eq('module', module).not('machine_id', 'is', null),
+    supabaseDR.from('machines').select('id, is_active'),
+  ])
+  const alive = new Set((machines ?? []).filter(m => m.is_active !== false).map(m => m.id))
+  return new Set((shadows ?? []).filter(j => !alive.has(j.machine_id)).map(j => j.id))
+}
+
 // สรุปว่าเครื่องนี้มีรายการตรวจของแผนกไหนบ้าง (กี่จุดตรวจ / เคยตรวจกี่ครั้ง)
 // ใช้โชว์ใน PM Setup ให้เห็นว่า "1 เครื่องมีได้หลายแผนก" และของจริงอยู่แผนกไหน
 export async function listChecklistsByDept(equipmentId, module = 'mtn') {
