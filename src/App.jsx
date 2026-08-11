@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
@@ -55,6 +56,7 @@ const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const DailyChecker = lazy(() => import('./pages/DailyChecker'));
+const CommandPalette = lazy(() => import('./components/CommandPalette'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
@@ -284,6 +286,12 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   };
 
   const visibleItems = NAV_ITEMS.filter(item => canAccessPage(item.to, userRole));
+  // ค้นหาเมนู: พิมพ์แล้วยุบเป็นลิสต์แบน (ข้ามการไล่กางหมวด) — หมวดยังโชว์เป็นคำอธิบายท้ายบรรทัด
+  const [navQ, setNavQ] = useState('');
+  const q = navQ.trim().toLowerCase();
+  const searchHits = q
+    ? visibleItems.filter(i => (i.label + ' ' + i.group + ' ' + i.to).toLowerCase().includes(q))
+    : null;
   const groupedItems = NAV_GROUP_ORDER
     .map(g => ({ group: g, items: visibleItems.filter(i => i.group === g) }))
     .filter(g => g.items.length > 0);
@@ -331,9 +339,48 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           >◀</button>
         </div>
 
+        {/* ค้นหาเมนู — 51 รายการ 8 หมวด ถ้าไม่มีช่องค้นต้องจำว่าอยู่หมวดไหน (NAVIGATION-REVIEW §2.5) */}
+        <div style={{ position: 'relative', marginBottom: 6, flexShrink: 0 }}>
+          <input
+            value={navQ} onChange={e => setNavQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setNavQ(''); }}
+            placeholder="🔎 ค้นหาเมนู…  (Ctrl+K)"
+            style={{
+              width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8,
+              background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
+            }}
+          />
+          {navQ && (
+            <button onClick={() => setNavQ('')} title="ล้างคำค้น" style={{
+              position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+              width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent',
+              color: 'var(--muted)', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+            }}>✕</button>
+          )}
+        </div>
+
         {/* Links */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', minHeight: 0 }}>
-          {groupedItems.map(({ group, items }) => {
+          {searchHits ? (
+            searchHits.length === 0 ? (
+              <div style={{ padding: '18px 10px', color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
+                ไม่พบเมนูที่ตรงกับ “{navQ}”
+                <div style={{ marginTop: 4, fontSize: 11 }}>เมนูที่ไม่มีสิทธิ์เข้าจะไม่แสดง</div>
+              </div>
+            ) : searchHits.map(item => (
+              <Link
+                key={item.to} to={item.to} className="nav-link"
+                style={location.pathname === item.to
+                  ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                  : {}}
+                onClick={() => { setNavQ(''); if (isMobile) onClose(); }}
+              >
+                <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+              </Link>
+            ))
+          ) : groupedItems.map(({ group, items }) => {
             const collapsed = !!collapsedGroups[group];
             const groupHasActive = items.some(i => location.pathname === i.to);
             return (
@@ -1022,6 +1069,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const shiftCapped = ['leader', 'supervisor'].includes(userRole);
   const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
 
+  // 🔎 ค้นหาเมนู (Ctrl/⌘+K) — เมนู 51 รายการ 8 หมวด หาไม่เจอถ้าไม่มีทางลัด (NAVIGATION-REVIEW §2.5)
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPaletteOpen(v => !v); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // จำหน้าที่เข้าบ่อยไว้ในเครื่อง (ยกขึ้นบนสุดใน palette) — จุดเดียวของทั้งแอป
+  useEffect(() => { trackVisit(location.pathname); }, [location.pathname]);
+
   // 📺 โหมดจอตาม (รับรีโมทจากมือถือ) — จำรหัสไว้ข้ามการรีเฟรช เปิด/ปิดจากปุ่มใน sidebar
   const [remoteCode, setRemoteCode] = useState(() => localStorage.getItem('esm-remote-receiver') || null);
   const onToggleRemote = useCallback(() => {
@@ -1063,6 +1122,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
+        </Suspense>
         {/* 📺 จอตาม: รับคำสั่งรีโมท (pointer/คลิก/เลื่อน/เปลี่ยนหน้า) — ทำงานได้ทุกหน้า */}
         {remoteCode && (
           <Suspense fallback={null}>
