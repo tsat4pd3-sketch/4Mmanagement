@@ -140,6 +140,9 @@ const CAT_META = {
 
 // แท็บจองรถ: ตัดคำ "พรุ่งนี้" ออก — หน้าเลือกดูวันไหนก็ได้ (default = วันงานวันนี้)
 const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form', '🚐 จองรถ OT'];
+// ⚠️ ?tab= ของหน้านี้เป็น "เลข index ของ TABS" (สัญญาเดิม — bookmark/ลิงก์ข้างนอกอ้างเลขนี้)
+//    ⇒ **สลับลำดับ TABS = ลิงก์ข้างนอกพาไปผิดแท็บเงียบๆ** · ที่อ้างอยู่ตอนนี้: `?tab=4` (4M Changes)
+//    จาก /dept-dashboard (คิวอนุมัติ 4M) — ย้ายลำดับเมื่อไหร่ต้องตามแก้ที่นั่นด้วย
 
 /* สเกลสกิล/หมวด/gauge ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06) — import ด้านบน
    ห้ามนิยามซ้ำที่นี่อีก (เดิมซ้ำกับ operator.jsx แล้ว desc/หมวดค่าฝีมือ drift กัน) */
@@ -196,6 +199,12 @@ export default function Report({ mode = 'report' }) {
   const [tabStr, setTabStr] = useTabParam(tabIdxs.map(String), String(tabIdxs[0]));
   const activeTab = Number(tabStr);
   const autoOpenMaster = initialParams.get('master') === '1';
+  // deep-link เข้าคิวอนุมัติ 4M ใบใดใบหนึ่ง (มาจาก /dept-dashboard) — ?tab=4&status=&from=&focus=<id>
+  const fourMDeepLink = {
+    focusId: initialParams.get('focus') || '',
+    initStatus: initialParams.get('status') || '',
+    initFrom: initialParams.get('from') || '',
+  };
 
   return (
     <div className="page-content">
@@ -209,7 +218,7 @@ export default function Report({ mode = 'report' }) {
       {activeTab === 1 && <PerEmployeeTab />}
       {activeTab === 2 && <StationLogTab />}
       {activeTab === 3 && <RangeTab />}
-      {activeTab === 4 && <FourMTab />}
+      {activeTab === 4 && <FourMTab {...fourMDeepLink} />}
       {activeTab === 5 && <SkillMatrixTab />}
       {activeTab === 6 && <SkillAllowanceTab />}
       {activeTab === 7 && <AttendanceFormTab />}
@@ -1312,7 +1321,9 @@ const STATUS_META = {
   rejected:    { label: '❌ Rejected',        color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
 };
 
-function FourMTab() {
+/* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =
+   ตั้งตัวกรองตั้งต้นให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง 7 วัน default — ไม่ตั้งจะเปิดมาเจอจอว่าง) */
+function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
@@ -1342,11 +1353,15 @@ function FourMTab() {
   };
 
   const today = getWorkDate();
-  const [from,        setFrom]        = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
+  const [from,        setFrom]        = useState(() => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(initFrom)) return initFrom;   // มาจาก deep-link — ครอบวันของใบที่เลือก
+    const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d);
+  });
   const [to,          setTo]          = useState(today);
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');
-  const [statusFilter,setStatusFilter]= useState('');
+  const [statusFilter,setStatusFilter]= useState(() => STATUS_META[initStatus] ? initStatus : ''); // validate ค่าจาก URL
+  const [focus,       setFocus]       = useState(focusId);  // id ใบที่เน้นอยู่ ('' = ไม่เน้น)
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
@@ -1701,6 +1716,16 @@ function FourMTab() {
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, fourMFilteredLogs.filter(l => l.category === k).length]));
   const actionableCount = fourMFilteredLogs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
 
+  // ── deep-link: เลื่อนไปหาใบที่ถูกเน้น (ครั้งเดียวหลังโหลดเสร็จ) ─────────────────────────
+  const focusRow = focus ? fourMFilteredLogs.find(l => l.id === focus) : null;
+  const focusRowRef = useRef(null);
+  const focusScrolledRef = useRef(false);
+  useEffect(() => {
+    if (!focus || loading || focusScrolledRef.current || !focusRowRef.current) return;
+    focusRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    focusScrolledRef.current = true;
+  }, [focus, loading, focusRow]);
+
   return (
     <div>
       {/* Reject modal */}
@@ -1871,6 +1896,31 @@ function FourMTab() {
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
+      {/* deep-link จากหน้าอื่น (เช่น Dashboard ส่วนงาน) — บอกเสมอว่าเน้นใบไหนอยู่ และถ้าหาไม่เจอห้ามเงียบ */}
+      {focus && !loading && (
+        focusRow ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
+            <span>🔗 เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+              ✕ ล้างการเน้น
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
+            <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
+            <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
+              style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)' }}>
+              🔄 ล้างตัวกรอง
+            </button>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+              ✕ ปิด
+            </button>
+          </div>
+        )
+      )}
+
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 720 }}>
@@ -1891,9 +1941,10 @@ function FourMTab() {
                 const needsQA = l.requires_qa !== false;
                 const userCanAct = canApproveLog(l);
                 const isActionable = ['pending','pending_qa'].includes(l.status);
+                const isFocus = !!focus && l.id === focus;   // แถวที่ถูกเน้น (นิ่ง ไม่กระพริบ — ไม่ใช่ไฟ Andon)
                 return (
-                  <tr key={l.id}>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(l.work_date)}</td>
+                  <tr key={l.id} ref={isFocus ? focusRowRef : null} style={isFocus ? { background: 'rgba(245,158,11,0.13)' } : undefined}>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12, borderLeft: isFocus ? '3px solid #f59e0b' : undefined }}>{fmtDate(l.work_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
