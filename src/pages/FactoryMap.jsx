@@ -1697,7 +1697,7 @@ export default function FactoryMap({ setupMode = false }) {
         const plain = rows.length ? rows.reduce((a, r) => a + r.oee, 0) / rows.length : null;
         const sh = (v) => v === 'day' ? 'เช้า' : v === 'night' ? 'ดึก' : (v || '—');
         return (
-          <div onClick={() => setOeeExplain(null)} style={{ position: 'fixed', inset: 0, zIndex: 1260, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setOeeExplain(null)} style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 660, maxHeight: '90vh', overflowY: 'auto', padding: '20px 22px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
                 <div>
@@ -1773,7 +1773,7 @@ export default function FactoryMap({ setupMode = false }) {
         const kids = childrenOf[storyLine] || [];
         const sh = (v) => v === 'day' ? '☀️ กะเช้า' : v === 'night' ? '🌙 กะดึก' : (v || '—');
         return (
-          <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1210, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               {/* หัว */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
@@ -1953,7 +1953,7 @@ export default function FactoryMap({ setupMode = false }) {
         rows.sort((a, b) => { const ap = a.r.target > 0 ? a.r.actual / a.r.target : 2; const bp = b.r.target > 0 ? b.r.actual / b.r.target : 2; return ap - bp; });
         const ppct = parent.target > 0 ? Math.round(parent.actual / parent.target * 100) : null;
         return (
-          <div onClick={() => setReviewDetail(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setReviewDetail(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 620, maxHeight: '90vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                 <div>
@@ -2010,7 +2010,7 @@ export default function FactoryMap({ setupMode = false }) {
       {detailLine && (() => {
         const st = stOf(detailLine); const kids = childrenOf[detailLine] || [];
         return (
-          <div onClick={() => setDetailLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setDetailLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
@@ -2074,7 +2074,7 @@ export default function FactoryMap({ setupMode = false }) {
       })()}
 
       {assignFor && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
             {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); return <>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>

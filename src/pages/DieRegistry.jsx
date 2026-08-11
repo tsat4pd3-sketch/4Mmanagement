@@ -611,7 +611,7 @@ export default function DieRegistry() {
 function Modal({ title, onClose, children }) {
   return (
     <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000,
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
