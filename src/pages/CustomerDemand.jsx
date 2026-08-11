@@ -224,26 +224,47 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     if (error) { toast.error(error.message); setBusy(null); return; }
     if (!updated || updated.length === 0) { setBusy(null); await load(); return; } // มีคนเลื่อนไปก่อนแล้ว
     // ส่งแล้ว → หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (ไลน์ที่มีของมากสุดก่อน)
+    // ⚠️ ผลลัพธ์ 3 แบบ (เต็ม/ขาด/ไม่ได้หักเลย) ต้องรายงานให้เห็นเสมอ — ห้ามขึ้น "ส่งแล้ว" เขียวล้วน
+    //    ตอนที่ยอดไม่ถูกหักจริง (เคยเงียบมาตลอด: ส่งไป 3,279 ชิ้น หักจริง 508 โดยไม่มีใครรู้)
+    let shipMsg = null;   // ข้อความสรุปผลการหักสต็อก (null = หักครบตามยอดส่ง)
     if (st.next === 'shipped') {
       const entry = fgStock[o.mat_no];
-      if (entry?.total > 0) {
-        let left = Number(o.qty);
-        const txns = [];
-        [...entry.lines].sort((a, b) => b.qty - a.qty).forEach(l => {
-          if (left <= 0) return;
-          const use = Math.min(l.qty, left);
-          left -= use;
-          txns.push({
-            line_name: l.line_name, mat_no: o.mat_no, part_name: o.part_name, qty: use,
-            type: 'consume', work_date: workDateStr(),
-            note: `ส่งลูกค้า ${o.customer || ''} · ${o.due_date} ${o.ship_time || ''}${o.order_no ? ` · PO ${o.order_no}` : ''}`,
-            created_by: fullName || 'Logistic',
-          });
+      const want = Number(o.qty) || 0;
+      let left = want;
+      const txns = [];
+      [...(entry?.lines || [])].sort((a, b) => b.qty - a.qty).forEach(l => {
+        if (left <= 0) return;
+        const use = Math.min(l.qty, left);
+        left -= use;
+        txns.push({
+          line_name: l.line_name, mat_no: o.mat_no, part_name: o.part_name, qty: use,
+          type: 'consume', work_date: workDateStr(),
+          note: `ส่งลูกค้า ${o.customer || ''} · ${o.due_date} ${o.ship_time || ''}${o.order_no ? ` · PO ${o.order_no}` : ''}`,
+          created_by: fullName || 'Logistic',
+          ref_shipment_id: o.id,   // ผูกกลับรอบส่งใบนี้ → /order-trace สอบกลับได้ตรงใบ ไม่ต้องเดาจากเวลา
         });
-        if (txns.length) {
-          const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
-          if (e2) toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message);
+      });
+      let cut = want - left;
+      if (txns.length) {
+        let { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
+        // คอลัมน์ ref_shipment_id ยังไม่ถูก apply (42703) → ตัดสต็อกให้ได้ก่อน (งานหลักต้องไม่พัง)
+        // แต่ต้องบอกให้รู้ว่าการผูกรอบส่งหายไป ไม่ใช่เงียบแล้วปล่อยให้ traceability พังโดยไม่มีใครสังเกต
+        if (e2?.code === '42703') {
+          ({ error: e2 } = await supabaseDR.from('line_stock_transactions')
+            .insert(txns.map(({ ref_shipment_id, ...t }) => t)));   // eslint-disable-line no-unused-vars
+          if (!e2) toast.info('ตัดสต็อกแล้ว แต่ยังผูกกับรอบส่งไม่ได้ — ยังไม่ได้ apply migration 20260811_stock_txn_ref_shipment (แจ้ง admin)');
         }
+        if (e2) { cut = 0; toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message); }
+      }
+      if (cut <= 0) {
+        // ไม่มีสต็อกของ MAT นี้ในระบบเลย → ยอดคลังไม่ขยับ (ยอดคงเหลือจะสูงกว่าความจริงไปเรื่อยๆ)
+        // สาเหตุที่เจอบ่อยสุด: order อ้างเลขพาร์ทลูกค้า (RB3B/MB3B…) ที่ยังจับคู่ MAT SAP ไม่ได้
+        // → FG เข้าคลังด้วยเลข SAP แต่ตัดออกด้วยเลขลูกค้า = คนละกุญแจ ไม่มีวันเจอกัน
+        const looksCustomerPn = !/^\d/.test(String(o.mat_no || '').trim());
+        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก (ไม่มีข้อมูลสต็อกของ MAT นี้)`
+          + (looksCustomerPn ? ' · ดูเหมือนเลขพาร์ทลูกค้า ยังไม่จับคู่ MAT SAP — ตั้ง p_no ที่ Product Master' : '');
+      } else if (cut < want) {
+        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — หักสต็อกได้ ${cut.toLocaleString()}/${want.toLocaleString()} ชิ้น (สต็อกในระบบไม่พอ ขาด ${(want - cut).toLocaleString()})`;
       }
     }
     if (st.next === 'shipped') {
@@ -256,7 +277,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         } },
       }).catch(() => {});
     }
-    toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`);
+    if (shipMsg) toast.error(shipMsg);   // ส่งสำเร็จ แต่สต็อกไม่ตรง — ต้องมีคนไปตามแก้ ห้ามกลบด้วยเขียว
+    else toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`);
     await load();
     setBusy(null);
   };
