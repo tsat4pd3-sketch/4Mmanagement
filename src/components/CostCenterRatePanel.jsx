@@ -30,15 +30,28 @@ export default function CostCenterRatePanel({ nodes, lines }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  /* union cost center: ผัง + ไลน์ + ที่มีใน rate table (รหัสเก่าที่เลิกใช้ยังเห็นประวัติ) */
+  /* union cost center: ผัง + ไลน์ + ที่มีใน rate table (รหัสเก่าที่เลิกใช้ยังเห็นประวัติ)
+     ⚠️ activity rate มีที่ "ระดับกลุ่ม" (21406 — org kind='line' / production_lines) เท่านั้น (คำสั่ง user 2026-08-11)
+     ระดับส่วน (21404) / แผนก (21405) ไม่กรอก rate — ต้นทุน/saving ระดับบน = sum ขึ้นตาม hierarchy จากกลุ่ม */
   const ccList = useMemo(() => {
-    const map = new Map(); // cc -> { org: [], lines: [] }
-    const put = (cc) => { const k = String(cc || '').trim(); if (!k) return null; if (!map.has(k)) map.set(k, { org: [], lines: [] }); return map.get(k); };
-    (nodes || []).filter(n => n.is_active && n.cost_center).forEach(n => { put(n.cost_center)?.org.push(n.name); });
+    const map = new Map(); // cc -> { orgGroup: [], orgOther: [], lines: [] }
+    const put = (cc) => { const k = String(cc || '').trim(); if (!k) return null; if (!map.has(k)) map.set(k, { orgGroup: [], orgOther: [], lines: [] }); return map.get(k); };
+    (nodes || []).filter(n => n.is_active && n.cost_center).forEach(n => {
+      const e = put(n.cost_center); if (!e) return;
+      if (n.kind === 'line') e.orgGroup.push(n.name);
+      else e.orgOther.push(`${n.kind === 'section' ? 'ส่วน' : n.kind === 'department' ? 'แผนก' : n.kind} ${n.name}`);
+    });
     (lines || []).filter(l => l.cost_center).forEach(l => { put(l.cost_center)?.lines.push(l.name); });
     rates.forEach(r => put(r.cost_center));
     return [...map.entries()].map(([cc, u]) => ({ cc, ...u })).sort((a, b) => a.cc.localeCompare(b.cc));
   }, [nodes, lines, rates]);
+
+  const rateCcSet = useMemo(() => new Set(rates.map(r => String(r.cost_center).trim())), [rates]);
+  // ระดับกลุ่ม = ไลน์ผลิตใช้จริง หรือเป็น group node ในผัง (+ รหัสที่มี rate แล้ว — ประวัติต้องไม่หาย)
+  const groupList = useMemo(() => ccList.filter(e => e.lines.length || e.orgGroup.length || rateCcSet.has(e.cc)), [ccList, rateCcSet]);
+  const otherCount = ccList.length - groupList.length;
+  const [showAllLevels, setShowAllLevels] = useState(false);
+  const shownList = showAllLevels ? ccList : groupList;
 
   const handleSave = async () => {
     const cc = form.cost_center.trim();
@@ -71,14 +84,22 @@ export default function CostCenterRatePanel({ nodes, lines }) {
     load();
   };
 
-  const noRateUsed = ccList.filter(c => c.lines.length && !rates.some(r => String(r.cost_center).trim() === c.cc)).length;
+  const noRateUsed = groupList.filter(c => c.lines.length && !rateCcSet.has(c.cc)).length;
 
   return (
-    <CollapseCard id="cc_rates" storePrefix="orgsetup" count={ccList.length}
-      title={<span>💰 Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(DL/OH/DP บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
+    <CollapseCard id="cc_rates" storePrefix="orgsetup" count={groupList.length}
+      title={<span>💰 Activity Rate ต่อ Cost Center — ระดับกลุ่ม (21406) <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(DL/OH/DP บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-        รวมรหัสจากผังองค์กร + ไลน์ผลิต · rate ปรับรายปี = เพิ่มแถวใหม่พร้อมวัน effective (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น)
+        rate ตั้งที่ <b>ระดับกลุ่มไลน์ (รหัส 21406)</b> เท่านั้น — ระดับแผนก/ส่วน ไม่ต้องกรอก (ต้นทุน/saving ระดับบนรวมขึ้นจากกลุ่มตาม hierarchy)
+        · rate ปรับรายปี = เพิ่มแถวใหม่พร้อมวัน effective (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น)
         {noRateUsed > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · ⚠ มี {noRateUsed} รหัสที่ไลน์ใช้อยู่แต่ยังไม่ตั้ง rate</span>}
+        {otherCount > 0 && (
+          <span> · ซ่อนรหัสระดับส่วน/แผนก {otherCount} รหัส{' '}
+            <button onClick={() => setShowAllLevels(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+              {showAllLevels ? 'กลับมาแสดงเฉพาะระดับกลุ่ม' : 'แสดงทั้งหมด'}
+            </button>
+          </span>
+        )}
       </div>
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8, maxHeight: 420 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
@@ -90,10 +111,10 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             </tr>
           </thead>
           <tbody>
-            {ccList.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 14, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ยังไม่มี cost center ในผัง/ไลน์ — กรอกที่ฟอร์ม Section/แผนก/กลุ่ม หรือหน้าจัดการไลน์ก่อน</td></tr>
+            {shownList.length === 0 && (
+              <tr><td colSpan={8} style={{ padding: 14, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ยังไม่มี cost center ระดับกลุ่ม — กรอกที่ฟอร์มกลุ่มในผัง หรือหน้าจัดการไลน์ (ไลน์แม่) ก่อน</td></tr>
             )}
-            {ccList.map(({ cc, org, lines: lns }) => {
+            {shownList.map(({ cc, orgGroup, orgOther, lines: lns }) => {
               const cur = rateFor(rates, cc, todayStr());
               const hist = rates.filter(r => String(r.cost_center).trim() === cc);
               const total = cur ? RATE_COMPONENTS.reduce((a, c) => a + (Number(cur[c.field]) || 0), 0) : null;
@@ -104,12 +125,17 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     <td style={{ padding: '7px 10px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)', whiteSpace: 'nowrap' }}>
                       {cc}
                       {lns.length > 0 && !cur && <span title="ไลน์ใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate — cost saving ของไลน์นี้จะคำนวณไม่ได้" style={{ marginLeft: 6, fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>⚠</span>}
+                      {lns.length > 0 && !cc.startsWith('21406') && (
+                        <span title="ไลน์ใช้รหัสนี้อยู่ แต่ไม่ใช่ชุดระดับกลุ่ม (21406) — เช็คกับบัญชีแล้วแก้ที่หน้าจัดการไลน์/ผังองค์กร"
+                          style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.13)', borderRadius: 5, padding: '1px 5px' }}>ไม่ใช่ 21406?</span>
+                      )}
                     </td>
                     <td style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', maxWidth: 260 }}>
-                      {org.length > 0 && <span>🏛️ {org.join(', ')}</span>}
-                      {org.length > 0 && lns.length > 0 && ' · '}
+                      {orgGroup.length > 0 && <span>▦ {orgGroup.join(', ')}</span>}
+                      {orgGroup.length > 0 && lns.length > 0 && ' · '}
                       {lns.length > 0 && <span>🏭 {lns.join(', ')}</span>}
-                      {!org.length && !lns.length && <span style={{ opacity: 0.6 }}>— ไม่มีในผัง/ไลน์แล้ว (ประวัติ)</span>}
+                      {orgOther.length > 0 && <span style={{ opacity: 0.7 }}>{(orgGroup.length || lns.length) ? ' · ' : ''}🏛️ {orgOther.join(', ')}</span>}
+                      {!orgGroup.length && !lns.length && !orgOther.length && <span style={{ opacity: 0.6 }}>— ไม่มีในผัง/ไลน์แล้ว (ประวัติ)</span>}
                     </td>
                     {RATE_COMPONENTS.map(c => (
                       <td key={c.key} style={{ padding: '7px 10px', fontSize: 12, textAlign: 'right', fontFamily: 'monospace', color: cur ? 'var(--text2)' : 'var(--muted)' }}>
@@ -169,7 +195,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>Cost Center *
                   <input list="cc-rate-codes" value={form.cost_center} disabled={!!form.id}
                     onChange={e => setForm({ ...form, cost_center: e.target.value })} placeholder="เช่น 2140662101" style={{ marginTop: 4, fontFamily: 'monospace' }} />
-                  <datalist id="cc-rate-codes">{ccList.map(c => <option key={c.cc} value={c.cc} />)}</datalist>
+                  <datalist id="cc-rate-codes">{groupList.map(c => <option key={c.cc} value={c.cc} />)}</datalist>
                 </label>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Effective *
                   <input type="date" value={form.effective_from} onChange={e => setForm({ ...form, effective_from: e.target.value })} style={{ marginTop: 4, width: 145, display: 'block' }} />
