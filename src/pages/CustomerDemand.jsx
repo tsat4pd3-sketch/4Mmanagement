@@ -7,7 +7,7 @@ import { can } from '../utils/permissions';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
-import { buildPnIndex, resolveMatNo, matIssueText } from '../utils/matResolve';
+import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../utils/matResolve';
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -151,13 +151,12 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         supabaseDR.from('kanban_standards').select('mat_no, p_no').not('p_no', 'is', null),
       ]);
       const pnIdx = buildPnIndex([...(dp || []), ...(ks || [])]);
-      const mm = {};
-      mats.forEach(x => { mm[x] = resolveMatNo(x, pnIdx); });
-      setMatMap(mm);
-
-      const sapMats = [...new Set(Object.values(mm).map(r => r.mat).filter(Boolean))];
-      const { data: st } = sapMats.length
-        ? await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', sapMats)
+      // ดึงสต็อกของ "ทั้งเลขบน order และปลายทางที่ map ได้" แล้วค่อยเลือกตัวที่มีของจริง
+      // ⚠️ ห้ามดึงเฉพาะเลขที่ resolve ได้ — ของบางส่วนถูกบันทึกด้วยเลขลูกค้าตรงๆ
+      //    (MB3B 8A297 CB คงเหลือ 2,716) บังคับ resolve จะทำให้เลิกหักทั้งที่เดิมหักได้
+      const keys = stockLookupKeys(mats, pnIdx);
+      const { data: st } = keys.length
+        ? await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', keys)
         : { data: [] };
       const m = {};
       (st || []).forEach(r => {
@@ -167,7 +166,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         e.total += q;
         e.lines.push({ line_name: r.line_name, qty: q });
       });
-      setFgStock(m);   // keyed ด้วยเลข SAP — อ่านผ่าน stockOf(o) เสมอ
+      setFgStock(m);
+      const mm = {};
+      mats.forEach(x => { mm[x] = pickStockMat(x, pnIdx, (k) => !!m[k]); });
+      setMatMap(mm);   // เลขบน order → กุญแจที่ใช้ตัดสต็อกจริง (+ สาเหตุถ้าเลือกไม่ได้)
     } else { setFgStock({}); setMatMap({}); }
   }, [day]);
   useEffect(() => { load(); }, [load, refreshKey]);
