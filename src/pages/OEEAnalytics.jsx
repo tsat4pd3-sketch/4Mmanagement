@@ -17,6 +17,8 @@ import { pairAwareTotal } from '../utils/pairTotals';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
@@ -219,7 +221,7 @@ const STATUS_BADGE = {
 export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
-  const [viewTab, setViewTab] = useState('today'); // today | trend | insight
+  const [viewTab, setViewTab] = useTabParam(['today', 'trend', 'insight'], 'today');
   // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
   const [breakPols, setBreakPols] = useState([]);
   useEffect(() => {
@@ -960,16 +962,16 @@ export default function OEEAnalytics() {
 
   return (
     <div style={s.page}>
-      {/* Header */}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>📈 OEE Analytics</div>
-          <div style={{ fontSize: 13, color: 'var(--muted)' }}>วิเคราะห์ประสิทธิภาพการผลิต — Availability · Performance · Quality</div>
-        </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button style={s.tab(viewTab === 'today')}  onClick={() => setViewTab('today')}>⚡ ภาพรวมวันนี้</button>
-          <button style={s.tab(viewTab === 'trend')}  onClick={() => setViewTab('trend')}>📊 แนวโน้ม/ประวัติ</button>
-          <button style={s.tab(viewTab === 'insight')} onClick={() => setViewTab('insight')}>🧠 วิเคราะห์สาเหตุ</button>
+      <PageHeader
+        title="OEE Analytics" icon="📈"
+        sub="วิเคราะห์ประสิทธิภาพการผลิต — Availability · Performance · Quality"
+        tabs={[
+          { key: 'today', label: '⚡ ภาพรวมวันนี้' },
+          { key: 'trend', label: '📊 แนวโน้ม/ประวัติ' },
+          { key: 'insight', label: '🧠 วิเคราะห์สาเหตุ' },
+        ]}
+        tab={viewTab} onTab={setViewTab}
+        actions={<>
           {canSetTarget && (
             <button style={{ ...s.tab(false), color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
               onClick={() => setShowTargetModal(true)} title="ตั้ง Target A/P/Q รายกรุ๊ป (OEE = A×P×Q อัตโนมัติ) — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
@@ -982,8 +984,8 @@ export default function OEEAnalytics() {
               📽️ รายงานเดือน
             </button>
           )}
-        </div>
-      </div>
+        </>}
+      />
 
       {viewTab === 'today' ? (
         <>

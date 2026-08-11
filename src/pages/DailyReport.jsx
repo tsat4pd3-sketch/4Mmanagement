@@ -21,6 +21,8 @@ import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, bui
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -140,38 +142,23 @@ const CAT_META = {
 ═══════════════════════════════════════════════════════════════ */
 export default function DailyReport() {
   const { role } = useContext(UserContext);
-  const [tab, setTab] = useState('live');
-
   const canSetup = can('daily_report', 'setup', role);
+  const [tabRaw, setTab] = useTabParam(['live', 'history', 'export', 'setup'], 'live');
+  const tab = tabRaw === 'setup' && !canSetup ? 'live' : tabRaw;   // ลิงก์เข้าแท็บที่ไม่มีสิทธิ์ = ตกกลับแท็บแรก
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
-      {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับแท็บขวาสุด (⚙️ ตั้งค่า) */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12, paddingRight: 52 }}>
-        <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            📊 Daily Production Report
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 10, padding: 4 }}>
-          {[
-            { key: 'live',    label: '⚡ Live กะนี้' },
-            { key: 'history', label: '📋 ประวัติ' },
-            { key: 'export',  label: '📤 Export' },
-            ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
-          ].map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ padding: '6px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                background: tab === t.key ? 'var(--accent)' : 'transparent',
-                color: tab === t.key ? '#fff' : 'var(--muted)' }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Daily Production Report" icon="📊"
+        sub="บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ"
+        tabs={[
+          { key: 'live', label: '⚡ Live กะนี้' },
+          { key: 'history', label: '📋 ประวัติ' },
+          { key: 'export', label: '📤 Export' },
+          ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'live'    && <LiveTab role={role} />}
       {tab === 'history' && <HistoryTab role={role} />}
