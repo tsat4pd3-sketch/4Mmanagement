@@ -50,14 +50,11 @@ const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
-const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PmForecast  = lazy(() => import('./pages/PmForecast'));
 const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
-const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
 const DailyChecker = lazy(() => import('./pages/DailyChecker'));
-const PokaYokeCheck = lazy(() => import('./pages/PokaYokeCheck'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
@@ -78,7 +75,8 @@ export const UserContext = createContext({ role: 'admin', lineId: null, team: nu
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
 // สิทธิ์เข้าหน้าอ่านจาก role_permissions ผ่าน canAccessPage() เท่านั้น (data-driven)
 // — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
-const NAV_ITEMS = [
+// ⚠️ export — PageHeader ใช้สร้าง breadcrumb (หมวด › ชื่อหน้า) จากลิสต์นี้ ห้ามถอด export
+export const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
   // 🎮 /remote ตั้งใจไม่อยู่ในเมนูหมวด — คู่กับปุ่ม 📺 รับรีโมทจอ ที่โซนล่างของ sidebar (ดู Sidebar)
 
@@ -1178,21 +1176,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/daily-checker" element={
                 <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
               } />
-              <Route path="/pokayoke" element={
-                <RoleRoute path="/pokayoke" userRole={role}><PokaYokeCheck /></RoleRoute>
-              } />
-              <Route path="/daily-pm" element={
-                <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
-              } />
+              {/* ⤵ route เก่าที่ยุบเข้าแท็บ Daily Checker แล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้
+                  และทุกคนเห็นภาพเดียวกัน ไม่ใช่หน้าเดี่ยวที่ไม่มีแท็บพี่น้อง — ดู NAVIGATION-REVIEW §2.4)
+                  สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
+              <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
+              <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
               <Route path="/ojt-training" element={
                 <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
               } />
-              <Route path="/lpa" element={
-                <RoleRoute path="/lpa" userRole={role}><LayerProcessAudit /></RoleRoute>
-              } />
+              <Route path="/lpa" element={<Navigate to="/daily-checker?tab=lpa" replace />} />
               <Route path="/doc-forms" element={
                 <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
               } />

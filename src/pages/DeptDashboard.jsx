@@ -560,7 +560,7 @@ function QaView({ d, ctx }) {
   const actions = [
     ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: '#f59e0b', to: '/report' })),
     ...noLog.map(l => ({ icon: '❔', title: `${l} — ยังไม่มีบันทึกของเสียวันนี้`, detail: 'ของดี 100% จริง หรือยังไม่ได้ลงบันทึก?', tag: 'ตรวจสอบ', tagColor: '#f59e0b', to: '/daily-report' })),
-    ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/lpa' })),
+    ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/daily-checker?tab=lpa' })),
   ];
 
   return (<>
@@ -584,7 +584,7 @@ function QaView({ d, ctx }) {
       sectionStyle={cardSt} emptyText="ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง" />
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'], ['/qa-setup', '📐 มาตรฐานการตรวจ'], ['/lpa', '📋 LPA', lpaIssues.length], ['/scrap-report', '♻️ ใบรายงานของเสีย'], ['/event-log', '⚡ CQI-15']]} />
+      <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'], ['/qa-setup', '📐 มาตรฐานการตรวจ'], ['/daily-checker?tab=lpa', '📋 LPA', lpaIssues.length], ['/scrap-report', '♻️ ใบรายงานของเสีย'], ['/event-log', '⚡ CQI-15']]} />
     </Section>
   </>);
 }
