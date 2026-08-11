@@ -391,6 +391,8 @@
 > - **ที่กันไว้อยู่แล้ว:** ลบ = soft delete (`is_active=false` ใบเก่ายังอ่านออก กู้ได้) · `mtn_item_types`/`mtn_problem_types`/`mtn_spare_categories` อยู่ใน `DR_AUDIT_TABLES` → `audit_log` รู้ว่าใครแก้
 > - **📜 แท็บ "ประวัติการแก้ไข" ใน ⚙️ ข้อมูลตั้งต้น (2026-08-11)** — `MasterAuditLog` อ่าน `audit_log` ฝั่ง DR (300 รายการล่าสุด · กรองตามตาราง) โชว์ **ใคร/เมื่อไหร่/ค่าเก่า → ค่าใหม่** รายฟิลด์ · actor มาจาก `updated_by_name` ที่ wrapper ใน `supabaseClient.js` ฝังให้ (DR เป็น anon ไม่มี `auth.uid()`) · เพิ่มตาราง master ใหม่เข้าแท็บนี้ = เติมใน `AUDIT_TABLES` + ต้องอยู่ใน `DR_AUDIT_TABLES` ด้วย
 >
+> - **ใช้กติกาเดียวกันแล้วที่ `TaxonomyManagerModal`** (ประเภทจุดตรวจ/วิธีตรวจ ใน PM Setup — `pm_checkpoint_categories`/`pm_checking_methods` ก็มีคอลัมน์ `team`) · รับ prop `role` + `myTeams` (จาก `teamsForUser`) · **จุดใหม่ที่ reuse component นี้กับตารางที่มี `team` ต้องส่ง 2 prop นี้ด้วย** ไม่งั้นกลับไปแก้ข้ามทีมได้เหมือนเดิม
+>
 > **เพิ่ม master ใหม่ในระบบช่าง ให้ถามก่อนว่า "ของกลางหรือมุมมองทีม"** — ถ้าเป็นมุมมองทีมต้องมีคอลัมน์ `team` + กรองด้วย `filterByTeam` + **ล็อกตามเจ้าของแบบเดียวกัน** ตั้งแต่แรก
 > **`teamForItem(name, itemRows)` เป็น data-driven แล้ว** — อ่าน `mtn_item_types.team` ก่อน แล้วค่อย fallback เดาจากชื่อ (JIG→JIG MTN ฯลฯ) ที่ hardcode ไว้เดิม
 > **⚠️ backfill เป็น `null` ทั้งหมดโดยตั้งใจ = ทุกทีมยังเห็นทุกแถวเหมือนก่อน apply** — การไล่ติ๊กว่าแถวไหนของทีมไหนเป็นงาน "จัดข้อมูล" ทำผ่าน UI ไม่เดาให้ใน migration
