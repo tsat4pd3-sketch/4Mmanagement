@@ -332,7 +332,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -1140,7 +1140,7 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
 }
 
 /* ── Master tab (ช่าง / อะไหล่+stock / taxonomy / ชนิดอุปกรณ์) ── */
-function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, reloadMasters }) {
+function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, role, userTeams = [], reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -1148,10 +1148,19 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   // เปลี่ยนชื่อใน master → ถามว่าจะให้ใบซ่อมที่บันทึกชื่อเดิมไว้ตามไปด้วยไหม
   const cascadeRename = async (col, oldV, newV) => {
     if (!oldV || !newV || oldV === newV) return;
-    const { count } = await supabaseDR.from('mtn_orders').select('id', { count: 'exact', head: true }).eq(col, oldV);
+    // ดึงทีมของใบที่จะโดนด้วย — เขียนทับประวัติข้ามทีมเป็นความเสี่ยงที่แรงที่สุดของหน้านี้
+    // ต้องบอกให้เห็นว่าไปแตะใบของทีมไหนบ้าง ห้ามถามลอยๆ แค่จำนวนใบ
+    const { data } = await supabaseDR.from('mtn_orders').select('mtn_dept').eq(col, oldV);
+    const rows = data || [];
+    const count = rows.length;
     if (!count) return;
+    const byTeam = {};
+    for (const r of rows) { const k = teamKeyOf(r.mtn_dept) || ''; byTeam[k] = (byTeam[k] || 0) + 1; }
+    const brk = Object.entries(byTeam).sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `   · ${k ? (deptNameOf(k) || k) : 'ไม่ระบุทีม'} ${n} ใบ`).join('\n');
     const okGo = confirm(
-      `มีใบแจ้งซ่อม ${count} ใบที่บันทึกค่าเดิมไว้ว่า "${oldV}"\n\n` +
+      `มีใบแจ้งซ่อม ${count} ใบที่บันทึกค่าเดิมไว้ว่า "${oldV}"\n${brk}\n\n` +
+      (Object.keys(byTeam).length > 1 ? `⚠️ ใบเหล่านี้อยู่หลายทีม — แก้แล้วประวัติของทุกทีมข้างบนเปลี่ยนตาม\n\n` : '') +
       `[ตกลง] = แก้ใบเหล่านั้นเป็น "${newV}" ด้วย → KPI/พาเรโต้รวมเป็นกลุ่มเดียว\n` +
       `[ยกเลิก] = เก็บใบเดิมไว้ตามที่บันทึกวันนั้น → พาเรโต้จะแยกเป็น 2 กลุ่ม`);
     if (!okGo) return;
@@ -1232,6 +1241,42 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     const shown = teamed ? filterByTeam(items, fTeam) : items;
     const teamOpts = mtnTeams.length ? mtnTeams : DEFAULT_TEAMS;
     const hiddenN = items.length - shown.length;
+
+    /* ── ล็อกตามเจ้าของ (คำสั่ง user 2026-08-11) ─────────────────────────
+       เดิมใครมีสิทธิ์ manage_master ก็แก้ของทุกทีมได้ → MTN เข้าไปเปลี่ยนชื่อของ
+       DIE MTN ได้ และแถว 🌐 ของกลางแก้ทีเดียวกระทบทุกทีม (แบบเดียวกับที่เคย
+       "แย่งกันตั้งเลข MAT") · กติกา:
+         · แถวของทีมตัวเอง        → แก้/ลบได้
+         · แถวของทีมอื่น          → อ่านอย่างเดียว
+         · แถว 🌐 ใช้ร่วมทุกทีม   → เฉพาะ admin/manager (แก้ทีเดียวกระทบทุกทีม)
+       ⚠️ fallback สำคัญ: user ที่ยังไม่ได้ตั้ง `profiles.mtn_teams` = ไม่ล็อก
+          ไม่งั้นวันที่ deploy ช่างที่ยังไม่ถูกตั้งทีมจะแก้อะไรไม่ได้ทั้งระบบ */
+    const isBoss = role === 'admin' || role === 'manager';
+    const myKeys = (userTeams || []).map(teamKeyOf).filter(Boolean);
+    const unscoped = myKeys.length === 0;
+    const teamNameOf = (k) => (k ? (teamOpts.find(t => teamKeyOf(t.key) === teamKeyOf(k))?.dept_name || deptNameOf(k) || k) : '🌐 ใช้ร่วมทุกทีม');
+    const canEditRow = (r) => {
+      if (!teamed || isBoss || unscoped) return true;
+      const t = teamKeyOf(r?.team);
+      return t ? myKeys.includes(t) : false;      // ไม่มีทีม = ของกลาง → หัวหน้าเท่านั้น
+    };
+    const lockNote = (r) => {
+      const t = teamKeyOf(r?.team);
+      return t ? `รายการนี้เป็นของทีม ${teamNameOf(t)} — แก้ได้เฉพาะทีมนั้นหรือหัวหน้า`
+        : 'รายการนี้ทุกทีมใช้ร่วมกัน — แก้ได้เฉพาะหัวหน้า (แก้ทีเดียวกระทบทุกทีม)';
+    };
+    // เปลี่ยนทีมของแถว = ของหายจากลิสต์ทีมเดิมทันที → ต้องบอกก่อนเสมอ ห้ามเงียบ
+    const changeTeam = (it, v) => {
+      const from = teamKeyOf(it.team), to = teamKeyOf(v) || null;
+      if (from === to) return;
+      const msg = !from
+        ? `ตอนนี้ "${it[fields[0].k]}" ทุกทีมใช้ร่วมกัน\n\nเปลี่ยนเป็นของทีม "${teamNameOf(to)}" แล้ว\n→ ทีมอื่นจะไม่เห็นรายการนี้ในฟอร์มแจ้งซ่อมอีก`
+        : to
+          ? `ย้าย "${it[fields[0].k]}"\nจากทีม "${teamNameOf(from)}" → "${teamNameOf(to)}"\n\n→ ทีมเดิมจะไม่เห็นรายการนี้อีก`
+          : `เปลี่ยน "${it[fields[0].k]}" เป็นของกลาง (ทุกทีมใช้ร่วมกัน)\n\n→ ทุกทีมจะเห็นรายการนี้ และแก้ได้เฉพาะหัวหน้า`;
+      if (!confirm(msg + '\n\nยืนยัน?')) return;
+      updRow(table, it.id, { team: to });
+    };
     return (
       <div>
         {teamed && (
@@ -1245,40 +1290,61 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>🌐 = ใช้ร่วมทุกทีม</span>
           </div>
         )}
+        {teamed && !isBoss && (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', marginBottom: 10 }}>
+            {unscoped
+              ? '⚠️ บัญชีนี้ยังไม่ได้ตั้ง "ทีมช่างซ่อม" ที่หน้าจัดการผู้ใช้งาน — ตอนนี้จึงยังแก้ได้ทุกรายการ · ตั้งทีมแล้วระบบจะล็อกให้แก้ได้เฉพาะของทีมตัวเอง'
+              : <>🔒 แก้ได้เฉพาะรายการของทีม <b>{myKeys.map(teamNameOf).join(' · ')}</b> — ของทีมอื่นและรายการ 🌐 ใช้ร่วมทุกทีม ดูได้อย่างเดียว (แก้ทีเดียวกระทบทุกทีม ต้องให้หัวหน้าแก้)</>}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
           {teamed && (
+            /* เพิ่มของกลาง (🌐) ได้เฉพาะหัวหน้า — คนทีมเดียวเพิ่มได้แต่ของทีมตัวเอง */
             <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: 190 }}>
-              <option value="">🌐 ใช้ร่วมทุกทีม</option>
-              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              {(isBoss || unscoped) && <option value="">🌐 ใช้ร่วมทุกทีม</option>}
+              {teamOpts.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
+                .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select>
           )}
           <button onClick={() => {
             if (!nw[fields[0].k]) return;
             // ทีมของแถวใหม่: ที่เลือกในช่อง หรือ default = ทีมที่กำลังกรองอยู่ (เพิ่มของทีมตัวเองได้เลย)
             const payload = { ...nw, sort_order: items.length + 1 };
-            if (teamed) payload.team = (nwTeam || fTeam) || null;
+            if (teamed) {
+              let t = (nwTeam || fTeam) || null;
+              // ไม่ใช่หัวหน้า + สังกัดทีมเดียว → บังคับเป็นของทีมตัวเอง (กันเผลอสร้างเป็นของกลาง)
+              if (!isBoss && !unscoped && !myKeys.includes(teamKeyOf(t))) t = myKeys.length === 1 ? myKeys[0] : null;
+              if (!isBoss && !unscoped && !t) return toast.error('เลือกทีมของรายการก่อน — เพิ่มรายการ 🌐 ใช้ร่วมทุกทีม ได้เฉพาะหัวหน้า');
+              payload.team = t;
+            }
             addRow(table, payload); setNw({}); setNwTeam('');
           }} style={btnPri}>+ {addLabel}</button>
         </div>
-        <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => (
-          <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={async e => {
+        <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => {
+          const ok = canEditRow(it);
+          const ro = { background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' };
+          return (
+          <div key={it.id} title={ok ? undefined : lockNote(it)}
+            style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: ok ? 1 : 0.72 }}>
+            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} readOnly={!ok} onBlur={ok ? async e => {
               const nv = e.target.value, ov = it[fl.k] || '';
               if (nv === ov) return;
               await updRow(table, it.id, { [fl.k]: nv });
               const col = NAME_CASCADE[table]?.[fl.k];   // ชื่อนี้ถูกคัดลอกไปเก็บในใบซ่อมด้วยไหม
               if (col) await cascadeRename(col, ov, nv);
-            }} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
+            } : undefined} style={{ ...inp, ...(ok ? null : ro), flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
             {teamed && (
-              <select value={it.team || ''} onChange={e => updRow(table, it.id, { team: e.target.value || null })}
-                title="ทีมที่ใช้รายการนี้" style={{ ...inp, width: 180, flex: '0 0 auto' }}>
+              <select value={it.team || ''} disabled={!ok} onChange={e => changeTeam(it, e.target.value)}
+                title={ok ? 'ทีมที่ใช้รายการนี้' : lockNote(it)} style={{ ...inp, ...(ok ? null : ro), width: 180, flex: '0 0 auto' }}>
                 <option value="">🌐 ใช้ร่วมทุกทีม</option>
                 {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
             )}
-            <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>))}
+            {ok
+              ? <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+              : <span title={lockNote(it)} style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
+          </div>); })}
           {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>
             ไม่มีรายการของทีมนี้ — เพิ่มด้านบน (หรือเลือก "ทุกทีม" เพื่อดูของทีมอื่น)
           </div>}
