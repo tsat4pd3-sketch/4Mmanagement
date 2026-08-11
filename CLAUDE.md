@@ -1467,7 +1467,8 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
                        #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
-                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน — ออกแบบเผื่อไว้ ยังไม่ทำ)
+                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
+                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ + แผนจัดระเบียบ — ยังไม่ได้ทำ)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
