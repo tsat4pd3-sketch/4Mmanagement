@@ -8,6 +8,7 @@
    กุญแจจับคู่ของ = shelf_code ↔ mtn_spare_parts.shelf (ข้อความตรงกัน ไม่ใช้ FK
    เพราะ 1 ช่องมีอะไหล่ได้หลายตัว) → รหัสชั้นวางต้องนิ่ง (ฟอร์มอะไหล่มี datalist ช่วย) */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { pmTeamsSync } from '../utils/pmTeams';
@@ -91,7 +92,56 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
     const { data } = await supabaseDR.from('mtn_rack_cells').select('*').eq('rack_id', rid);
     setCells(data || []);
   }, []);
-  useEffect(() => { loadCells(rackId); setSelCell(null); }, [rackId, loadCells]);
+  // ── Undo/Redo (UI-CONVENTIONS §6.7 — editor ผังทุกตัวเขียน DB ทันที ต้องย้อนได้) ──
+  //    snapshot = ช่องทั้งชุดของผังที่เปิดอยู่ · applySnapshot diff แล้วเขียนย้อนลง DB
+  //    ⚠️ ลำดับ delete → update → insert : ปลดปล่อยรหัสที่ไม่ควรมีก่อน
+  //       ไม่งั้นชน unique (rack_id, shelf_code) ตอนคืนช่องที่เคยถูกลบ
+  //    ⚠️ insert คืนด้วย id เดิม เพื่อให้ undo/redo ซ้อนกันหลายชั้นยังอ้างแถวเดิมได้
+  const cellsRef = useRef([]); useEffect(() => { cellsRef.current = cells; }, [cells]);
+  const rackIdRef = useRef(''); useEffect(() => { rackIdRef.current = rackId; }, [rackId]);
+  const snapOf = useCallback(() => cellsRef.current.map(c => ({ ...c })), []);
+  const applySnapshot = useCallback(async (snap) => {
+    const rid = rackIdRef.current;
+    try {
+      const cur = cellsRef.current;
+      const snapById = new Map(snap.map(c => [c.id, c]));
+      const curById = new Map(cur.map(c => [c.id, c]));
+
+      const toDel = cur.filter(c => !snapById.has(c.id)).map(c => c.id);
+      if (toDel.length) {
+        const { error } = await supabaseDR.from('mtn_rack_cells').delete().in('id', toDel);
+        if (error) throw error;
+      }
+      for (const s of snap) {
+        const c = curById.get(s.id);
+        if (!c) continue;
+        const patch = {};
+        for (const k of ['shelf_code', 'x', 'y', 'w', 'h']) if (String(c[k]) !== String(s[k])) patch[k] = s[k];
+        if (Object.keys(patch).length) {
+          const { error } = await supabaseDR.from('mtn_rack_cells').update(patch).eq('id', s.id);
+          if (error) throw error;
+        }
+      }
+      const toIns = snap.filter(s => !curById.has(s.id)).map(s => ({
+        id: s.id, rack_id: s.rack_id || rid, shelf_code: s.shelf_code, x: s.x, y: s.y, w: s.w, h: s.h,
+      }));
+      if (toIns.length) {
+        const { error } = await supabaseDR.from('mtn_rack_cells').insert(toIns);
+        if (error) throw error;
+      }
+      await loadCells(rid);
+      setSelCell(null);
+      return true;
+    } catch (e) {
+      toast.error('ย้อนกลับไม่สำเร็จ: ' + (e.message || ''));
+      await loadCells(rid);          // ให้จอตรงกับ DB จริงเสมอ แม้ย้อนไม่สำเร็จ
+      return false;
+    }
+  }, [loadCells]);
+  const hist = useUndoHistory({ snapOf, applySnapshot, enabled: canEdit && edit });
+
+  // สลับผังคนละแผ่น = snapshot เก่าใช้ไม่ได้ (คนละ rack_id) ห้ามให้ undo ไปลบของผังอื่น
+  useEffect(() => { loadCells(rackId); setSelCell(null); hist.clear(); }, [rackId, loadCells]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // อะไหล่ต่อรหัสชั้นวาง (เทียบแบบตัดช่องว่าง/ตัวพิมพ์ — รหัสที่คนพิมพ์ไม่เป๊ะเสมอ)
   const norm = (s) => String(s || '').trim().toUpperCase();
@@ -151,6 +201,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
       moveRef.current = {
         mode: e.target.closest('[data-handle]') ? 'resize' : 'move',
         id: c.id, start: p, orig: { x: +c.x, y: +c.y, w: +c.w, h: +c.h }, moved: false,
+        snap: snapOf(),        // ถ่ายก่อนลาก — push จริงตอนปล่อยเมาส์ (แตะแล้วไม่ลาก = ไม่ต้องมีประวัติ)
       };
       setSelCell(c);
       e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -185,6 +236,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
       const lv = live;
       setLive(null);
       if (m.moved && lv?.id === m.id) {
+        hist.pushSnapshot(m.snap);           // ประวัติ = ตำแหน่งก่อนเริ่มลาก
         const patch = { x: +lv.x.toFixed(2), y: +lv.y.toFixed(2), w: +lv.w.toFixed(2), h: +lv.h.toFixed(2) };
         const { error } = await supabaseDR.from('mtn_rack_cells').update(patch).eq('id', m.id);
         if (error) { toast.error(error.message); loadCells(rackId); }
@@ -200,6 +252,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
   };
 
   const addCell = async (shelf_code, rect) => {
+    hist.pushHistory();
     const { error } = await supabaseDR.from('mtn_rack_cells').insert({
       rack_id: rackId, shelf_code,
       x: +rect.x.toFixed(2), y: +rect.y.toFixed(2), w: +rect.w.toFixed(2), h: +rect.h.toFixed(2),
@@ -208,13 +261,15 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
     loadCells(rackId);
   };
   const delCell = async (c) => {
-    if (!confirm(`ลบช่อง "${c.shelf_code}" ออกจากผัง?\n(ตัวอะไหล่ไม่ถูกลบ)`)) return;
+    if (!confirm(`ลบช่อง "${c.shelf_code}" ออกจากผัง?\n(ตัวอะไหล่ไม่ถูกลบ · กด Undo คืนได้)`)) return;
+    hist.pushHistory();
     await supabaseDR.from('mtn_rack_cells').delete().eq('id', c.id);
     setSelCell(null); loadCells(rackId);
   };
   const renameCell = async (c) => {
     const v = prompt('รหัสชั้นวางใหม่', c.shelf_code);
     if (!v?.trim() || v.trim() === c.shelf_code) return;
+    hist.pushHistory();
     const { error } = await supabaseDR.from('mtn_rack_cells').update({ shelf_code: v.trim() }).eq('id', c.id);
     if (error) return toast.error(error.code === '23505' ? 'รหัสนี้มีช่องอยู่แล้ว' : error.message);
     loadCells(rackId);
@@ -272,7 +327,11 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
       {edit && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           ✏️ <b>โหมดแก้ผัง</b> — ลากบน<b>พื้นที่ว่าง</b>เพื่อสร้างช่องใหม่ · ลาก<b>ตัวช่อง</b>เพื่อย้าย · ลาก<b>มุมขวาล่าง</b>เพื่อปรับขนาด · กดช่องแล้วเปลี่ยนรหัส/ลบได้ที่แผงขวา
-          {rack && <button onClick={() => setShowGrid(true)} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12, marginLeft: 10 }}>⊞ สร้างตารางอัตโนมัติ</button>}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+            <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="Ctrl+Z">↩️ Undo</button>
+            <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="Ctrl+Y">↪️ Redo</button>
+            {rack && <button onClick={() => setShowGrid(true)} style={{ ...btnGhost, padding: '6px 11px', fontSize: 12 }}>⊞ สร้างตารางอัตโนมัติ</button>}
+          </div>
         </div>
       )}
 
@@ -428,7 +487,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
         </div>
       )}
 
-      {showGrid && rack && <GridModal rackId={rack.id} existing={cells} onClose={() => setShowGrid(false)} onDone={() => { setShowGrid(false); loadCells(rack.id); }} />}
+      {showGrid && rack && <GridModal rackId={rack.id} existing={cells} onBeforeSave={() => hist.pushHistory()} onClose={() => setShowGrid(false)} onDone={() => { setShowGrid(false); loadCells(rack.id); }} />}
       {showRackForm && <RackFormModal {...showRackForm} teams={teams} myTeams={myTeams} onClose={() => setShowRackForm(null)}
         onSaved={(id) => { setShowRackForm(null); loadRacks().then(() => id && setRackId(id)); }} />}
     </div>
@@ -436,7 +495,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
 }
 
 /* ── สร้างตารางช่องอัตโนมัติ (แถว × คอลัมน์) — ชั้นวางเป็นตาราง ไม่ต้องลากทีละช่อง ── */
-function GridModal({ rackId, existing, onClose, onDone }) {
+function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
   const [rows, setRows] = useState(4);
   const [cols, setCols] = useState(5);
   const [prefix, setPrefix] = useState('A');
@@ -468,6 +527,7 @@ function GridModal({ rackId, existing, onClose, onDone }) {
     const have = new Set(existing.map(c => String(c.shelf_code).trim().toUpperCase()));
     const rowsToAdd = preview.filter(p => !have.has(p.shelf_code.toUpperCase())).map(p => ({ ...p, rack_id: rackId }));
     if (!rowsToAdd.length) { setSaving(false); return toast.error('ทุกรหัสมีช่องอยู่แล้ว'); }
+    onBeforeSave?.();        // สร้างทีเดียวหลายสิบช่อง — ต้องกด Undo ล้างทั้งชุดได้
     const { error } = await supabaseDR.from('mtn_rack_cells').insert(rowsToAdd);
     setSaving(false);
     if (error) return toast.error(error.message);
