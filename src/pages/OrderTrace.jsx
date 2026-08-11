@@ -205,19 +205,35 @@ export default function OrderTrace() {
         }
       } catch { /* ignore */ }
 
-      // stock: ขาเข้าคลัง (hard link ref_order_id) + ขาตัดส่งของ mat เดียวกันหลังปิดใบ (เชิงเวลา)
-      try {
-        const { data: si } = await supabaseDR.from('line_stock_transactions')
+      // stock: ขาเข้าคลัง (hard link ref_order_id) + ขาตัดส่งของ mat เดียวกันหลังปิดใบ
+      // ⚠️ 2 ขาความแน่นอนไม่เท่ากัน — ห้ามแสดงปนกันจนดูเท่ากัน:
+      //   ขาเข้า  = ผูกใบผลิตใบนี้ตรงๆ (ref_order_id) → แน่นอน
+      //   ขาออก  = ยังผูก "ใบผลิต → รอบส่ง" ไม่ได้ (GAP #1 ที่เหลืออยู่) จึงยังเดาจาก mat + ช่วงเวลา
+      //            แต่ตั้งแต่ 2026-08-11 แถวตัดส่งผูก ref_shipment_id แล้ว → บอกได้ว่าเป็น "รอบส่งใบไหน"
+      //            (รู้ปลายทางแน่นอน · ส่วนที่ยังเดาคือของจากใบผลิตนี้ไปออกรอบนั้นจริงไหม)
+      {
+        const { data: si, error: eIn } = await supabaseDR.from('line_stock_transactions')
           .select('line_name, qty, type, note, created_by, created_at').eq('ref_order_id', sel.id).order('created_at');
+        if (eIn) console.warn('[OrderTrace] stockIn:', eIn.message);
         t.stockIn = si || [];
         if (sel.confirmed_at) {
-          const { data: sc } = await supabaseDR.from('line_stock_transactions')
-            .select('line_name, qty, type, note, created_by, created_at')
-            .eq('mat_no', sel.mat_no).eq('type', 'consume')
+          const cols = 'line_name, qty, type, note, created_by, created_at, ref_shipment_id, customer_shipping_orders(order_no, customer, due_date, ship_time, qty, shipped_by)';
+          let { data: sc, error: eOut } = await supabaseDR.from('line_stock_transactions')
+            .select(cols).eq('mat_no', sel.mat_no).eq('type', 'consume')
             .gte('created_at', sel.confirmed_at).order('created_at').limit(12);
-          t.stockOut = (sc || []).filter(x => (x.note || '').includes('ส่งลูกค้า'));
+          if (eOut) {
+            // ยังไม่ apply migration 20260811 → ถอยไปคอลัมน์เดิม (เห็นการตัดส่งเหมือนก่อน แค่ไม่รู้ว่ารอบไหน)
+            ({ data: sc } = await supabaseDR.from('line_stock_transactions')
+              .select('line_name, qty, type, note, created_by, created_at')
+              .eq('mat_no', sel.mat_no).eq('type', 'consume')
+              .gte('created_at', sel.confirmed_at).order('created_at').limit(12));
+            t.stockOutNoLink = true;
+          }
+          // ผูกรอบส่งแล้ว = เอาแน่ · ไม่มี link ค่อยถอยไปดูข้อความ note (แถวเก่าก่อน 2026-08-11)
+          // ห้ามกรองด้วย note อย่างเดียว — แก้ข้อความในโค้ดเมื่อไหร่ แถวใหม่จะหายจากสายสอบกลับเงียบๆ
+          t.stockOut = (sc || []).filter(x => x.ref_shipment_id || (x.note || '').includes('ส่งลูกค้า'));
         }
-      } catch { /* ignore */ }
+      }
 
       // Main — คน/4M/การตรวจ ของไลน์+วันนั้น (ทุกก้อน best-effort)
       try {
@@ -654,7 +670,13 @@ export default function OrderTrace() {
     if (sel.reopened_at) ev.push({ t: sel.reopened_at, icon: '↩️', warn: true, text: `ถอยใบ (ครั้งที่ ${sel.reopen_count || 1}) โดย ${sel.reopened_by || '—'}` });
     if (sel.confirmed_at) ev.push({ t: sel.confirmed_at, icon: '✅', text: `สแกนปิดใบ ผลิตจริง ${sel.qty_ok ?? sel.qty} ชิ้น โดย ${sel.confirmed_by || '—'}${batchNote('close')}` });
     trace.stockIn.forEach(x => ev.push({ t: x.created_at, icon: '📦', text: `เข้าคลัง ${x.line_name} +${Number(x.qty).toLocaleString()} (${x.created_by})` }));
-    trace.stockOut.forEach(x => ev.push({ t: x.created_at, icon: '🚚', dim: true, text: `ตัดส่งลูกค้า −${Number(x.qty).toLocaleString()} · ${x.note || ''} (โดยประมาณ — ตัดจากยอดรวม mat เดียวกัน)` }));
+    trace.stockOut.forEach(x => {
+      const sh = x.customer_shipping_orders;
+      ev.push({ t: x.created_at, icon: '🚚', dim: true,
+        text: `ตัดส่งลูกค้า −${Number(x.qty).toLocaleString()} · ${sh
+          ? `รอบส่ง ${sh.due_date} ${(sh.ship_time || '').slice(0, 5)}${sh.order_no ? ` · PO ${sh.order_no}` : ''} (ผูกรอบส่งแล้ว — แต่ยังบอกไม่ได้ว่าเป็นของจากใบผลิตนี้)`
+          : `${x.note || ''} (โดยประมาณ — ตัดจากยอดรวม mat เดียวกัน)`}` });
+    });
     return ev.filter(e => e.t).sort((a, b) => new Date(a.t) - new Date(b.t));
   }, [sel, trace]);
 
@@ -1277,11 +1299,23 @@ export default function OrderTrace() {
                 {trace.stockIn.map((x, i) => (
                   <div key={`i${i}`} style={{ fontSize: 12.5, padding: '4px 0' }}>📥 {fmtDT(x.created_at)} เข้าคลัง <b>{x.line_name}</b> +{Number(x.qty).toLocaleString()} <span style={{ color: 'var(--muted)' }}>(ผูกใบนี้โดยตรง)</span></div>
                 ))}
-                {trace.stockOut.map((x, i) => (
-                  <div key={`o${i}`} style={{ fontSize: 12.5, padding: '4px 0', opacity: 0.75 }}>🚚 {fmtDT(x.created_at)} ตัดส่ง −{Number(x.qty).toLocaleString()} · {x.note}</div>
-                ))}
+                {trace.stockOut.map((x, i) => {
+                  const sh = x.customer_shipping_orders;
+                  return (
+                    <div key={`o${i}`} style={{ fontSize: 12.5, padding: '4px 0', opacity: 0.75 }}>
+                      🚚 {fmtDT(x.created_at)} ตัดส่ง −{Number(x.qty).toLocaleString()} · {sh
+                        ? <>รอบส่ง <b>{sh.due_date} {(sh.ship_time || '').slice(0, 5)}</b> · {sh.customer || '—'}{sh.order_no ? ` · PO ${sh.order_no}` : ''}{sh.shipped_by ? ` · ${sh.shipped_by}` : ''} <span style={{ color: '#22c55e' }}>(ผูกรอบส่งแล้ว)</span></>
+                        : x.note}
+                    </div>
+                  );
+                })}
                 {!trace.stockIn.length && !trace.stockOut.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีการเคลื่อนไหว stock ที่ผูกใบนี้ (ใบยังไม่ปิด / MAT ไม่เข้าคลังอัตโนมัติ)</div>}
-                {trace.stockOut.length > 0 && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>⚠️ การตัดส่งเป็นยอดรวมของ MAT เดียวกัน (ไม่ผูกรายใบ) — ใช้ช่วงเวลาประกอบการตีความ</div>}
+                {trace.stockOut.length > 0 && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+                    ⚠️ ขาตัดส่งยังจับคู่กับใบผลิตนี้แบบ <b>เชิงเวลา</b> (MAT เดียวกัน + หลังปิดใบ) — บอกได้ว่าของไปออกรอบส่งไหน แต่ยังไม่ยืนยันว่าเป็นชิ้นที่ผลิตจากใบนี้
+                    {trace.stockOutNoLink && <> · <span style={{ color: '#f59e0b' }}>ยังไม่ได้ apply migration 20260811_stock_txn_ref_shipment จึงยังไม่รู้ว่ารอบส่งใบไหน</span></>}
+                  </div>
+                )}
               </CollapseCard>
 
               {/* ── ใบอื่นในกะ ── */}
