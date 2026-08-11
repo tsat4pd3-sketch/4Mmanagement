@@ -6,6 +6,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
 } from '../utils/capacityModel';
@@ -42,7 +44,7 @@ const PLAN_META = {
 export default function ProductionPlan() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile();
-  const [tab, setTab] = useState('daily');       // 'daily' | 'monthly'
+  const [tab, setTab] = useTabParam(['daily', 'monthly'], 'daily');
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
   const [allLines, setAllLines] = useState([]);
@@ -325,22 +327,25 @@ export default function ProductionPlan() {
 
   return (
     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingRight: 52 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(17px, 2.2vw, 22px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>🗓️ วางแผนการผลิต</h1>
-        <button onClick={() => setTab('daily')} style={btnSt(tab === 'daily')}>📅 รายวัน (ออเดอร์)</button>
-        <button onClick={() => setTab('monthly')} style={btnSt(tab === 'monthly')}>📆 รายเดือน (Forecast)</button>
-        {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 'auto', minWidth: 110, padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกส่วนงาน</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+      <PageHeader
+        title="วางแผนการผลิต" icon="🗓️"
+        tabs={[
+          { key: 'daily', label: '📅 รายวัน (ออเดอร์)' },
+          { key: 'monthly', label: '📆 รายเดือน (Forecast)' },
+        ]}
+        tab={tab} onTab={setTab}
+        actions={<>
+          {sectionOpts.length > 1 && (
+            <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 'auto', minWidth: 110, padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+              <option value="">ทุกส่วนงาน</option>
+              {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>วางแผนที่กำลัง:</span>
           <button onClick={() => setCapMode('median')} style={btnSt(capMode === 'median')} title="ใช้ median ของยอดที่เคยทำได้จริง (สมจริง)">ปกติ (median)</button>
           <button onClick={() => setCapMode('safe')} style={btnSt(capMode === 'safe')} title="ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)">ปลอดภัย (P25)</button>
-        </div>
-      </div>
+        </>}
+      />
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
       </div>
