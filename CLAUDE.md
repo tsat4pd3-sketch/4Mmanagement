@@ -212,7 +212,7 @@
   - **⚠️ แท็บที่ต้องมีสิทธิ์ ต้อง guard ค่าจาก URL ด้วย** ซ่อนปุ่มอย่างเดียวไม่พอ (คนแปะลิงก์ให้กันได้) — ทำแล้วที่ daily-report `setup` · lpa `questions` · operator `skills`/`levelup` · mtn-layout `overview` ตอน setupMode
   - **⚠️ `setTab` เปลี่ยน identity ตาม URL** — ถ้าใช้ใน `useCallback`/`useEffect` ต้องใส่ใน deps (ต่างจาก setter ของ `useState` ที่นิ่ง)
   - **⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return** (rules-of-hooks · React #310)
-  - **ไม่ผูก URL กับ state ที่ระบบสั่งสลับเอง** (เช่น PMCheckData บันทึก→ประวัติ ตอนกดบันทึก) ไม่งั้นประวัติ Back งอกทุกครั้ง
+  - **ไม่ผูก URL กับ state ที่ระบบสั่งสลับเอง** (เช่น PMCheckData บันทึก→ประวัติ ตอนกดบันทึก) ไม่งั้นประวัติ Back งอกทุกครั้ง · ถ้าจำเป็นต้องผูกจริงๆ ให้ระบบสลับด้วย **`setTab(k, { replace: true })`** (EventLog บันทึกเสร็จ→รายการ)
 - **route ที่ยุบเป็นแท็บแล้วต้อง `<Navigate to="…?tab=x" replace />`** ห้าม render ซ้ำสองทาง — `/daily-pm` `/pokayoke` `/lpa` → `/daily-checker?tab=` · **ลิงก์ภายในให้ชี้ปลายทางจริง** ไม่เด้งผ่าน redirect · **ยกเว้น `/linesetup`** ที่คงไว้เป็นทาง "ดูอย่างเดียว" ของคนไม่มีสิทธิ์ `line_setup:edit` (redirect แล้ววนกลับมาที่เดิม)
 - **ทางลัดหาเมนู (เมนู 51 รายการ 8 หมวด):** ช่องค้นหาบนหัว sidebar (พิมพ์แล้วยุบเป็นลิสต์แบน) + **`Ctrl/⌘+K` เปิด `CommandPalette`** (ค้นแบบ subsequence · ↑↓ Enter Esc) — **ทั้งคู่ดึงจาก `NAV_ITEMS` + `canAccessPage` เมนูใหม่โผล่เอง ห้ามพิมพ์รายชื่อหน้าซ้ำ**
 - **"ใช้บ่อย"** = `src/utils/navRecent.js` (localStorage ต่อเครื่อง · decay ครึ่งชีวิต 14 วัน ไม่ค้างบนสุดเพราะเคยกดรัวๆ) · `trackVisit` เรียกจากจุดเดียวใน `App.jsx` (ProtectedLayout ตอน pathname เปลี่ยน)

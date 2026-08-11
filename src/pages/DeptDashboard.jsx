@@ -605,6 +605,10 @@ export default function DeptDashboard() {
   const [sp, setSp] = useSearchParams();
   const defDept = DEPTS.find(x => x.roles.includes(role))?.key || 'production';
   const dept = DEPTS.find(x => x.key === sp.get('dept'))?.key || defDept;
+  /* ⚠️ หน้านี้ "ไม่" ใช้ useTabParam เหมือนหน้าอื่นโดยตั้งใจ — ค่า default ของ ?dept= ขึ้นกับ role ของคนดู
+     (ช่างเปิดมาเจอซ่อมบำรุง · QA เจอ QA) ถ้าใช้ hook ตัวนั้น แท็บที่เป็น default จะถูกตัดออกจาก URL
+     → แชร์ลิงก์ให้คนละ role แล้วเห็นคนละส่วนงาน · ที่นี่จึงเขียน ?dept= ลง URL เสมอทุกครั้ง */
+  const setDept = (k) => { const n = new URLSearchParams(sp); n.set('dept', k); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
   const [lines, setLines] = useState([]);
@@ -655,7 +659,7 @@ export default function DeptDashboard() {
       {/* เลือกส่วนงาน */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {DEPTS.map(t => (
-          <button key={t.key} onClick={() => setSp({ dept: t.key }, { replace: true })} style={{
+          <button key={t.key} onClick={() => setDept(t.key)} style={{
             fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
             background: dept === t.key ? 'var(--accent)' : 'var(--bg3)',
             color: dept === t.key ? '#08120a' : 'var(--text)',

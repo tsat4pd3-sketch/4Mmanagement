@@ -256,7 +256,7 @@ export default function EventLog() {
       } catch (_) { /* notification failure is non-critical */ }
 
       toast.success('บันทึก Event สำเร็จ');
-      setTab('list');
+      setTab('list', { replace: true });   // ระบบสั่งเด้งเอง — ไม่ push ไม่งั้นกด Back ย้อนเข้าฟอร์มที่บันทึกไปแล้ว
       setForm({ work_date: today, event_time: new Date().toTimeString().slice(0,5), line_name: '', station_number: '', weld_cell_operator: '', event_no: '', issue_description: '', qty_total: 0, qty_ok: 0, qty_ng: 0, qty_rework: 0, qty_scrap: 0, remark: '' });
       fetchAll();
     } catch (e) {
