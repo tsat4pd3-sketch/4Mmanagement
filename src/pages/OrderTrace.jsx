@@ -8,6 +8,7 @@ import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 import { toast } from '../components/Toast';
 import { deptNameOf } from '../utils/mtnTeams';
+import PageHeader from '../components/PageHeader';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -732,10 +733,10 @@ export default function OrderTrace() {
 
   return (
     <div style={{ maxWidth: 'min(97vw, 1500px)', margin: '0 auto' }}>
-      <div style={{ paddingRight: 52, marginBottom: 14 }}>
-        <div style={{ fontSize: 22, fontWeight: 900 }}>🔎 สอบกลับ Order (Order Traceability)</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>สแกน/ค้นหาใบผลิต → เห็นทุกเหตุการณ์ + สถานการณ์รอบข้าง ณ เวลาผลิตใบนั้น</div>
-      </div>
+      <PageHeader
+        title="สอบกลับ Order (Order Traceability)" icon="🔎"
+        sub="สแกน/ค้นหาใบผลิต → เห็นทุกเหตุการณ์ + สถานการณ์รอบข้าง ณ เวลาผลิตใบนั้น"
+      />
 
       {/* ── ค้นหา ── */}
       <div style={{ ...card, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>

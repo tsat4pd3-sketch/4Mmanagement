@@ -13,6 +13,7 @@
 0. **อ่าน `docs/ENGINEERING-PRINCIPLES.md`** — หลักการแก้ไข/ต่อยอดอย่างยั่งยืน (คิดเผื่ออนาคต ไม่แก้ฉาบฉวย): single source of truth · data-driven ก่อน hardcode · backward-compatible migration · ห้ามล้มเหลวเงียบ · blast radius + rollback · checklist ก่อน commit/merge — **ใช้กับทุกงานไม่ว่าเล็กหรือใหญ่**
 1. อ่านไฟล์นี้ (CLAUDE.md) ให้จบก่อนเสมอ — โดยเฉพาะกฎเหล็ก supabaseDR, Date/Time utilities, Organizational Hierarchy
 2. ถ้างานแตะ UI → **ต้องอ่าน `docs/UI-CONVENTIONS.md` ก่อน** และทำตามอย่างเคร่งครัด (marker วงกลม+MK+clamp, Andon, ฟอนต์ขั้นต่ำ 11-12px, can() ฯลฯ)
+   - **หน้าใหม่/แก้หัวหน้าเพจ → ต้องใช้ `PageHeader` + `useTabParam` ห้ามวาดหัวเรื่อง/แถบแท็บเอง** (UI-CONVENTIONS §6.8)
 3. ถ้า convention ขัดกับสิ่งที่กำลังจะทำ → ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยนชัดเจน
 4. มีหลาย session ทำงานขนานกัน — `git pull origin main` ก่อนเริ่ม และเช็คว่างานที่จะทำ session อื่นทำไปแล้วหรือยัง
 
@@ -201,6 +202,21 @@
 | (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
 
 ---
+
+
+### 🧭 โครงนำทาง — หัวหน้าเพจ / แท็บ / ทางลัด (2026-08-11 · ดู `docs/NAVIGATION-REVIEW.md` §6)
+
+- **ทุกหน้าขึ้นด้วย `<PageHeader>`** (`src/components/PageHeader.jsx`) — breadcrumb `🏠 หน้าหลัก › หมวด › หน้า › แท็บ` **generate เองจาก `NAV_ITEMS`** ตาม pathname ไม่ต้องใส่มือ · เว้น `paddingRight: 52` กัน 🔔 ให้แล้ว · **ห้ามวาดหัวเรื่อง/แถบแท็บเอง** (เดิมแต่ละหน้าวาดเอง เลยได้มุมโค้งแท็บ 7/8/12 ปนกัน)
+- **หน้าที่มีแท็บผูก URL ด้วย `useTabParam`** (`src/utils/useTabParam.js`) — refresh/แชร์ลิงก์/Back อยู่แท็บเดิม · ค่าที่ไม่รู้จัก = ตกกลับแท็บ default (ห้ามจอว่าง) · แท็บ default ไม่ใส่ใน URL · param อื่น (`?line=`) ถูกรักษาไว้
+  - **⚠️ แท็บซ้อนแท็บต้องคนละ param** — หน้าที่ถูกฝังในหน้ารวมใช้ `?sub=` (`/linesetup` ใน `/layout-setup` · `/daily-pm` `/lpa` ใน `/daily-checker`) ไม่งั้นแย่ง `?tab=` กับหน้าแม่
+  - **⚠️ แท็บที่ต้องมีสิทธิ์ ต้อง guard ค่าจาก URL ด้วย** ซ่อนปุ่มอย่างเดียวไม่พอ (คนแปะลิงก์ให้กันได้) — ทำแล้วที่ daily-report `setup` · lpa `questions` · operator `skills`/`levelup` · mtn-layout `overview` ตอน setupMode
+  - **⚠️ `setTab` เปลี่ยน identity ตาม URL** — ถ้าใช้ใน `useCallback`/`useEffect` ต้องใส่ใน deps (ต่างจาก setter ของ `useState` ที่นิ่ง)
+  - **⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return** (rules-of-hooks · React #310)
+  - **ไม่ผูก URL กับ state ที่ระบบสั่งสลับเอง** (เช่น PMCheckData บันทึก→ประวัติ ตอนกดบันทึก) ไม่งั้นประวัติ Back งอกทุกครั้ง
+- **route ที่ยุบเป็นแท็บแล้วต้อง `<Navigate to="…?tab=x" replace />`** ห้าม render ซ้ำสองทาง — `/daily-pm` `/pokayoke` `/lpa` → `/daily-checker?tab=` · **ลิงก์ภายในให้ชี้ปลายทางจริง** ไม่เด้งผ่าน redirect · **ยกเว้น `/linesetup`** ที่คงไว้เป็นทาง "ดูอย่างเดียว" ของคนไม่มีสิทธิ์ `line_setup:edit` (redirect แล้ววนกลับมาที่เดิม)
+- **ทางลัดหาเมนู (เมนู 51 รายการ 8 หมวด):** ช่องค้นหาบนหัว sidebar (พิมพ์แล้วยุบเป็นลิสต์แบน) + **`Ctrl/⌘+K` เปิด `CommandPalette`** (ค้นแบบ subsequence · ↑↓ Enter Esc) — **ทั้งคู่ดึงจาก `NAV_ITEMS` + `canAccessPage` เมนูใหม่โผล่เอง ห้ามพิมพ์รายชื่อหน้าซ้ำ**
+- **"ใช้บ่อย"** = `src/utils/navRecent.js` (localStorage ต่อเครื่อง · decay ครึ่งชีวิต 14 วัน ไม่ค้างบนสุดเพราะเคยกดรัวๆ) · `trackVisit` เรียกจากจุดเดียวใน `App.jsx` (ProtectedLayout ตอน pathname เปลี่ยน)
+- **4 หน้าที่ไม่มีหัวเรื่องโดยตั้งใจ:** `Login` (มีแบรนด์เอง) · `Dashboard`/`Management` (บอร์ดจอ TV หัวเรื่องกินที่แนวตั้ง) · `LineSetup` (ถูกฝังในแท็บหน้าอื่น หัวเรื่องอยู่ที่หน้าแม่)
 
 ## Organizational Hierarchy (Thai Summit Group)
 
@@ -1503,7 +1519,7 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
                        #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
-                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ + แผนจัดระเบียบ — ยังไม่ได้ทำ)
+                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
