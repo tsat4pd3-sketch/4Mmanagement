@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -942,7 +944,7 @@ function ShipToTab({ canEdit, onChanged }) {
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 export default function CustomerDemand() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useState('shipping');
+  const [tab, setTab] = useTabParam(['shipping', 'shipto'], 'shipping');
   const [refreshKey, setRefreshKey] = useState(0);
   // Ship-to config — สิทธิ์จากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canConfig = can('shipping', 'config', role);
@@ -964,21 +966,15 @@ export default function CustomerDemand() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🚚 Delivery — ติดตามการส่งงานลูกค้า
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {[
-          { id: 'shipping', label: '🕐 Shipping Chart' },
-          { id: 'shipto',   label: '⚙️ Ship-to Config' },
-        ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
-      </div>
+      <PageHeader
+        title="Delivery — ติดตามการส่งงานลูกค้า" icon="🚚"
+        sub="Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales"
+        tabs={[
+          { key: 'shipping', label: '🕐 Shipping Chart' },
+          { key: 'shipto', label: '⚙️ Ship-to Config' },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap)} />}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
