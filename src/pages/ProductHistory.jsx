@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
+import PageHeader from '../components/PageHeader';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -186,8 +187,10 @@ export default function ProductHistory() {
 
   return (
     <div style={{ padding: '16px 20px', maxWidth: 1400, margin: '0 auto' }}>
-      <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 4 }}>📜 ประวัติผลิต (by Product)</div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)</div>
+      <PageHeader
+        title="ประวัติผลิต (by Product)" icon="📜"
+        sub="เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)"
+      />
 
       {/* ตัวเลือกสินค้า + ช่วงวันที่ */}
       <div style={{ ...card, marginBottom: 16 }}>
