@@ -7,6 +7,7 @@
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
+อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
 อัพเดท 2026-08-04: §5.1 viewer วางจุด default = **พอดีกรอบทั้ง 2 แกน** (เดิมเต็มความกว้าง → รูปแนวนอนสูงล้นจนตารางตกจอ) · §5.1 จอ "ตรวจจริง" ต้อง sync สีหมุดกับผลตรวจ + แตะหมุด↔แถว สองทาง
 
 ---
@@ -380,6 +381,29 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - ปุ่มใช้ `undoBtnStyle(enabled)` จากไฟล์เดียวกัน: `↩️ Undo` `↪️ Redo` วางในแถบเครื่องมือของโหมดแก้ไข (แสดงเฉพาะตอนมีสิทธิ์แก้)
 - **ใช้แล้วที่:** TransportMapEditor (ถนน/จุดจอด AMR — node+edge), FactoryMap setupMode (polygon กรอบไลน์), MtnMachineLayout facility (จุดอุปกรณ์บนโซน — เพิ่ม/ลบโซน+อัปรูปไม่เข้า history เพราะไฟล์ storage ย้อนไม่ได้ ใช้ confirm แทน), LineSetup (จุดงาน+ทักษะ/WIP/เครื่องจักร/เส้น flow ของไลน์ที่เลือก)
 - editor ผังตัวใหม่ในอนาคต**ต้องใช้ hook นี้ตั้งแต่แรก** — ห้ามเขียน undo เองเฉพาะหน้า
+
+## 6.8 หัวหน้าเพจ + แท็บ — `PageHeader` / `useTabParam` (2026-08-11 · ดู `docs/NAVIGATION-REVIEW.md`)
+
+**ห้ามวาดหัวเรื่อง/แถบแท็บเอง** — เดิมแต่ละหน้าวาดเอง เลยได้มุมโค้งแท็บ 7/8/12/`var(--radius-lg)` ปนกัน และมีหัวเรื่องแค่ 22 จาก 56 หน้า
+
+```jsx
+const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/useTabParam.js
+<PageHeader title="แจ้งซ่อม MTN (MO)" icon="🛠️" sub="ค้างดำเนินการ 3 ใบ"
+  actions={<button…/>} tabs={TABS} tab={tab} onTab={setTab} />     // src/components/PageHeader.jsx
+```
+
+1. **ทุกหน้าขึ้นด้วย `<PageHeader>`** — breadcrumb (`🏠 หน้าหลัก › หมวด › หน้า › แท็บ`) generate เองจาก `NAV_ITEMS` ตาม pathname **ไม่ต้องใส่มือ** · route ที่ไม่อยู่ใน NAV_ITEMS = ไม่มี breadcrumb (ไม่พัง) · `paddingRight: 52` กัน 🔔 ให้แล้ว
+2. **หน้าที่มีแท็บต้องผูก `?tab=`** ผ่าน `useTabParam` — refresh/แชร์ลิงก์/ปุ่ม Back ต้องอยู่แท็บเดิม · **ค่าที่ไม่รู้จักใน URL = ตกกลับแท็บ default ห้ามจอว่าง** · แท็บ default ไม่ใส่ใน URL (ลิงก์สะอาด) · เปลี่ยนแท็บ = push history (Back กลับแท็บก่อนหน้า) · param อื่น (`?line=`) ถูกรักษาไว้
+   - ⚠️ `setTab` จาก `useTabParam` **เปลี่ยน identity ตาม URL** — ถ้าเรียกใน `useCallback`/`useEffect` ต้องใส่ใน deps (เดิม `useState` setter นิ่ง เลยเคยใส่ `[]` ได้)
+   - ⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return (กฎ rules-of-hooks — React #310)
+3. **แท็บ ≤ 7 ตัว** เกินกว่านั้นให้ยุบกลุ่มหรือแยกหน้า
+4. **แท็บ "ตั้งค่า/ข้อมูลหลัก" อยู่ท้ายสุดเสมอ** และ gate ด้วย `can()` (งานประจำวันมาก่อน setup)
+5. **ยุบหน้าเข้าเป็นแท็บเมื่อไหร่ ต้อง `<Navigate to="…?tab=x" replace />` route เดิม** ห้ามปล่อยให้ render ซ้ำสองทาง (bookmark เก่าของคนหนึ่งพาไปหน้าเดี่ยว อีกคนเข้าจากเมนูเห็นหน้ารวม = คุยกันคนละภาพ) · ทำแล้ว: `/daily-pm` `/pokayoke` `/lpa` → `/daily-checker?tab=` · **ลิงก์ภายในให้ชี้ปลายทางจริง** ไม่ต้องเด้งผ่าน redirect
+6. **หน้าที่ถูกเปิดจากหน้าอื่นต้องมีทางกลับ** — breadcrumb ของ PageHeader ทำให้แล้ว (หรือปุ่ม ← ที่ระบุปลายทาง เช่น `?from=factory-map`)
+
+**ข้อยกเว้นที่ตั้งใจ:** `/linesetup` **ไม่ redirect** เข้า `/layout-setup?tab=production` — เพราะแท็บนั้น gate ด้วย `line_setup:edit` และ **ชี้กลับมา `/linesetup` เป็นทาง "ดูอย่างเดียว"** ของคนที่ไม่มีสิทธิ์แก้ · redirect แล้วจะกลายเป็นวงวน
+
+---
 
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
