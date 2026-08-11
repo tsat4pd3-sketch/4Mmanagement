@@ -418,6 +418,7 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
 
 1. **ทุกหน้าขึ้นด้วย `<PageHeader>`** — breadcrumb (`🏠 หน้าหลัก › หมวด › หน้า › แท็บ`) generate เองจาก `NAV_ITEMS` ตาม pathname **ไม่ต้องใส่มือ** · route ที่ไม่อยู่ใน NAV_ITEMS = ไม่มี breadcrumb (ไม่พัง) · `paddingRight: 52` กัน 🔔 ให้แล้ว
 2. **หน้าที่มีแท็บต้องผูก `?tab=`** ผ่าน `useTabParam` — refresh/แชร์ลิงก์/ปุ่ม Back ต้องอยู่แท็บเดิม · **ค่าที่ไม่รู้จักใน URL = ตกกลับแท็บ default ห้ามจอว่าง** · แท็บ default ไม่ใส่ใน URL (ลิงก์สะอาด) · เปลี่ยนแท็บ = push history (Back กลับแท็บก่อนหน้า) · param อื่น (`?line=`) ถูกรักษาไว้
+   - ⚠️ **การสลับแท็บที่ "ระบบสั่งเอง" ต้องใช้ `setTab(k, { replace: true })`** (เช่นบันทึกเสร็จแล้วเด้งกลับหน้ารายการ) — ถ้า push ผู้ใช้กด Back จะย้อนเข้าฟอร์มที่เพิ่งบันทึกไปแล้ว · ผู้ใช้กดแท็บเอง = push (ค่าเริ่มต้น)
    - ⚠️ `setTab` จาก `useTabParam` **เปลี่ยน identity ตาม URL** — ถ้าเรียกใน `useCallback`/`useEffect` ต้องใส่ใน deps (เดิม `useState` setter นิ่ง เลยเคยใส่ `[]` ได้)
    - ⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return (กฎ rules-of-hooks — React #310)
 3. **แท็บ ≤ 7 ตัว** เกินกว่านั้นให้ยุบกลุ่มหรือแยกหน้า
