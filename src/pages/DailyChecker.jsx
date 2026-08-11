@@ -1,7 +1,7 @@
 import { useContext, Suspense, lazy } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { UserContext } from '../App';
 import { canAccessPage } from '../utils/permissions';
+import useTabParam from '../utils/useTabParam';
 
 /* ── Daily Checker — ศูนย์รวมระบบเช็ครายวันของไลน์ผลิต (2026-07-23) ──────────────────
    ขมวด Daily PM + LPA (+ ระบบเช็คอื่นที่จะเพิ่ม) เป็นหน้าเดียว แยกด้วยแท็บ
@@ -24,12 +24,11 @@ const TABS = [
 
 export default function DailyChecker() {
   const { role } = useContext(UserContext);
-  const [sp, setSp] = useSearchParams();
 
+  // แท็บโผล่ตามสิทธิ์ย่อยของแต่ละระบบเช็ค — ลิสต์ที่ส่งให้ useTabParam จึงเป็นเฉพาะที่เข้าได้
+  // (URL ที่ชี้แท็บซึ่งไม่มีสิทธิ์ = ตกกลับแท็บแรกที่เข้าได้ ไม่ใช่จอว่าง)
   const available = TABS.filter(t => canAccessPage(t.page, role));
-  const wanted = sp.get('tab');
-  const active = available.find(t => t.key === wanted)?.key || available[0]?.key;
-  const setActive = (k) => { const n = new URLSearchParams(sp); n.set('tab', k); setSp(n, { replace: true }); };
+  const [active, setActive] = useTabParam(available.map(t => t.key), available[0]?.key);
   const Cur = available.find(t => t.key === active)?.Comp;
 
   return (

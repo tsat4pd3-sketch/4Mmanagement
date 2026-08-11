@@ -14,6 +14,10 @@ import { useSearchParams } from 'react-router-dom';
    • แท็บ default ไม่ใส่ใน URL (ลิงก์สะอาด `/mtn-repair` = แท็บแรก)
    • เปลี่ยนแท็บ = push history (Back กลับแท็บก่อนหน้าได้ตามที่ผู้ใช้คาด)
    • param อื่นใน URL (เช่น ?line=) ถูกรักษาไว้เสมอ
+
+   ⚠️ `setTab(k, { replace: true })` สำหรับการสลับที่ "ระบบสั่งเอง" ไม่ใช่ผู้ใช้กด
+      (เช่น บันทึกเสร็จแล้วเด้งกลับหน้ารายการ) — ถ้า push ผู้ใช้กด Back จะย้อนเข้าฟอร์มเปล่า
+      ที่เพิ่งบันทึกไปแล้ว ซึ่งไม่มีใครคาดหวัง · ผู้ใช้กดแท็บเอง = push เสมอ (ค่าเริ่มต้น)
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 export default function useTabParam(keys, defaultKey, param = 'tab') {
   const [sp, setSp] = useSearchParams();
@@ -23,11 +27,11 @@ export default function useTabParam(keys, defaultKey, param = 'tab') {
   const hit = list.find(k => String(k) === raw);
   const tab = hit !== undefined ? hit : def;
 
-  const setTab = useCallback((k) => {
+  const setTab = useCallback((k, opts) => {
     const next = new URLSearchParams(sp);
     if (String(k) === String(def)) next.delete(param);
     else next.set(param, String(k));
-    setSp(next);            // push (ไม่ใช่ replace) — ให้ Back กลับแท็บก่อนหน้า
+    setSp(next, { replace: !!opts?.replace });
   }, [sp, setSp, def, param]);
 
   return [tab, setTab];
