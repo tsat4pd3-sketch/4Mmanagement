@@ -8,6 +8,7 @@ import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 import { toast } from '../components/Toast';
 import { deptNameOf } from '../utils/mtnTeams';
+import { isParallelLine } from '../utils/lineTypes';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -69,8 +70,14 @@ export default function OrderTrace() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift').order('name')
-      .then(({ data }) => setLines(data || []));
+    // flow_mode ตัดสินว่า "ใบหนึ่งใช้เครื่องกี่ตัว" (ไหลทีละชิ้นผ่านทุกเครื่อง vs เครื่องขนานตัวใครตัวมัน)
+    // — best-effort: ยังไม่ apply migration ก็ถอยไป select เดิม (flowModeOf() default = one_piece_flow)
+    (async () => {
+      const base = 'id, name, section, parent_line_name, std_day_shift, std_night_shift';
+      let r = await supabase.from('production_lines').select(`${base}, flow_mode, parallel_stations`).order('name');
+      if (r.error) r = await supabase.from('production_lines').select(base).order('name');
+      setLines(r.data || []);
+    })();
   }, []);
 
   // scope ไลน์ (pattern มาตรฐาน: leader = family ตัวเอง · role อื่น = ตาม sections)
@@ -340,7 +347,14 @@ export default function OrderTrace() {
         const ago = d => new Date(new Date(prodAt).getTime() - d * 86400000).toISOString();
 
         // เครื่องจักรของครอบครัวไลน์ (เฉพาะเครื่องผลิต — facility/utility ไม่เกี่ยวกับใบนี้)
-        const mcBase = 'id, machine_no, machine_name, line_name, is_active';
+        /* ⚠️ "ใบหนึ่งใช้เครื่องกี่ตัว" ขึ้นกับ flow_mode ของไลน์ — ห้ามเหมาว่าเป็นผู้ต้องสงสัยเสมอ
+           one_piece_flow (ดีฟอลต์ · ไลน์ full automation) = งานไหลผ่าน **ทุกเครื่องตามลำดับ step**
+             → ทุกเครื่อง "ถูกใช้ผลิตใบนี้จริง" ไม่ใช่การเดา
+           parallel_machine = เครื่อง stand-alone ตัวใครตัวมัน → ใบระบุ machine_no = ยืนยันตัวนั้น
+             ไม่ระบุ = ผู้ต้องสงสัย (เฉพาะกรณีนี้เท่านั้นที่ระบบไม่รู้จริง) */
+        const lineRow = lines.find(l => l.name === sess.line_name) || null;
+        const isParallel = isParallelLine(lineRow?.flow_mode);
+        const mcBase = 'id, machine_no, machine_name, line_name, is_active, sort_order';
         let mr = await supabaseDR.from('machines').select(`${mcBase}, equipment_category`).in('line_name', famNames);
         if (mr.error) mr = await supabaseDR.from('machines').select(mcBase).in('line_name', famNames);
         const mcs = (mr.data || []).filter(m => m.is_active !== false && (m.equipment_category ?? 'production') === 'production');
@@ -442,7 +456,7 @@ export default function OrderTrace() {
         t.downtimes.forEach(d => { if (d.machine_no) (dtByMc[d.machine_no] ||= []).push(d); });
 
         const dayDiff = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
-        const build = (kind, id, label, name, machineNo, jig) => {
+        const build = (kind, id, label, name, machineNo, jig, sortOrder = null) => {
           const plans = jig ? (plansByJig[jig.id] || []) : [];
           const insps = jig ? (inspByJig[jig.id] || []) : [];
           /* ⚠️ `pm_plans.next_due_date` เป็น "สถานะปัจจุบัน" ไม่ใช่ประวัติ — ช่างทำ PM หลังวันผลิต
@@ -477,25 +491,43 @@ export default function OrderTrace() {
           const dts = machineNo ? (dtByMc[machineNo] || []) : [];
           const audits = [...(auditByRow[id] || []), ...(jig ? (auditByRow[jig.id] || []) : [])]
             .sort((a, b) => String(b.changed_at).localeCompare(String(a.changed_at)));
+          /* usage: ใบนี้ "ใช้" อุปกรณ์ตัวนี้จริงแค่ไหน
+             confirmed = ใบระบุเครื่องตัวนี้ตรงๆ · flow = ไลน์ไหลทีละชิ้น ผ่านทุกเครื่องแน่นอน
+             suspect   = ไลน์เครื่องขนานแต่ใบไม่ได้ระบุ → ระบบไม่รู้ว่าวิ่งตัวไหน */
           const confirmed = !!(machineNo && sel.machine_no && machineNo === sel.machine_no);
+          const usage = confirmed ? 'confirmed'
+            : (kind === 'machine' && !isParallel) ? 'flow'
+            : (kind === 'machine' && isParallel) ? 'suspect' : 'line';
           // เรียงตาม "ควรสงสัยก่อน": ยืนยันตัวจริง → PM ค้าง → เพิ่งซ่อม ≤7 วัน → มี DT ในกะนี้
           const risk = (confirmed ? 100 : 0) + (overdue > 0 ? 40 : 0)
             + (daysSinceFix != null && daysSinceFix <= 7 ? 30 : 0) + (neverInspected ? 20 : 0) + (dts.length ? 10 : 0)
             + (jig && !plans.length ? 5 : 0);
-          return { kind, id, label, name, machineNo, jigId: jig?.id || null, hasPmPlan: plans.length > 0,
+          return { kind, id, label, name, machineNo, jigId: jig?.id || null, hasPmPlan: plans.length > 0, usage, sortOrder,
             overdue, dueAtProd, neverInspected, usageOnly, nextDue, planDept, lastPlanDone, lastInsp, insps, mos, lastFixed, daysSinceFix, dts, audits, confirmed, risk,
             amTarget: jig ? t.amTargetJigs?.has(jig.id) : false, amDone: jig ? t.amDoneJigs?.has(jig.id) : false,
             inspName: lastInsp ? (profName[lastInsp.inspector_id] || 'ไม่ทราบชื่อ') : null };
         };
 
+        /* ลำดับ step ของไลน์ไหลทีละชิ้น — เรียงตาม sort_order ในทะเบียนเครื่อง
+           ⚠️ ถ้า sort_order เท่ากันหมด (ไม่เคยตั้ง) = ไม่รู้ลำดับจริง → ห้ามเดาเลขขั้นให้ */
+        const ordered = [...mcs].sort((a, b) =>
+          String(a.line_name || '').localeCompare(String(b.line_name || ''))
+          || (a.sort_order ?? 0) - (b.sort_order ?? 0)
+          || String(a.machine_no || '').localeCompare(String(b.machine_no || '')));
+        const hasStepOrder = new Set(mcs.map(m => m.sort_order ?? 0)).size > 1;
+        const stepOf = {}; ordered.forEach((m, i) => { stepOf[m.id] = i + 1; });
+
         const rows = [
-          ...mcs.map(m => build('machine', m.id, m.machine_no || '(ไม่มีเลข)', m.machine_name, m.machine_no, shadowByMc[m.id])),
+          ...mcs.map(m => build('machine', m.id, m.machine_no || '(ไม่มีเลข)', m.machine_name, m.machine_no, shadowByMc[m.id], hasStepOrder ? stepOf[m.id] : null)),
           ...realJigs.map(j => build(j.equipment_type === 'die' ? 'die' : 'jig', j.id, j.jig_no || j.name || '(ไม่มีเลข)', j.name, null, j)),
-        ].sort((a, b) => b.risk - a.risk || String(a.label).localeCompare(String(b.label)));
+        ].sort((a, b) => b.risk - a.risk
+          || (a.sortOrder ?? 999) - (b.sortOrder ?? 999)
+          || String(a.label).localeCompare(String(b.label)));
 
         t.equip = {
           rows,
           confirmedNo: sel.machine_no || null,
+          isParallel, hasStepOrder,
           partial,   // โหลดบางส่วนไม่สำเร็จ/ชนเพดาน → ห้ามให้ "ไม่มีประวัติ" ฟังดูเป็นข้อเท็จจริง
           machineCount: mcs.length,
           dieCount: realJigs.length,
@@ -1045,11 +1077,21 @@ export default function OrderTrace() {
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(34,197,94,.10)', border: '1px solid rgba(34,197,94,.35)' }}>
                       🎯 ใบนี้ระบุเครื่องไว้ชัดเจน: <b>{trace.equip.confirmedNo}</b> — สอบกลับได้ถึงตัวเครื่อง
                     </div>
+                  ) : !trace.equip.isParallel ? (
+                    /* ไลน์ไหลทีละชิ้น = งานผ่านทุกเครื่องตามลำดับ → ทุกตัว "ถูกใช้จริง" ไม่ใช่ผู้ต้องสงสัย */
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(34,197,94,.10)', border: '1px solid rgba(34,197,94,.35)' }}>
+                      ⛓️ ไลน์ <b>{sess.line_name}</b> เป็นแบบ <b>ไหลทีละชิ้น (one-piece flow)</b> — ใบนี้ <b>ผ่านเครื่องทั้ง {trace.equip.machineCount} ตัวตามลำดับ</b> ทุกตัวจึงเกี่ยวข้องกับคุณภาพของงานใบนี้
+                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+                        {trace.equip.hasStepOrder
+                          ? 'เลข "ขั้นที่" มาจากลำดับเครื่องในทะเบียน · เรียงรายการตามตัวที่ควรสงสัยก่อน'
+                          : '⚠️ ทะเบียนเครื่องยังไม่ได้ตั้งลำดับ (sort_order) — จึงยังไม่ระบุว่าเครื่องไหนเป็นขั้นที่เท่าไหร่ ตั้งได้ที่ฐานข้อมูลเครื่องจักร'}
+                      </div>
+                    </div>
                   ) : (
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(245,158,11,.10)', border: '1px solid rgba(245,158,11,.35)' }}>
-                      ⚠️ <b>ใบนี้ไม่ได้บันทึกว่าใช้เครื่องไหน</b> — รายการล่างเป็น <b>ผู้ต้องสงสัย</b> (เครื่องที่ลงทะเบียนในไลน์ {sess.line_name}) ไม่ใช่ข้อสรุปว่าใบนี้ผลิตด้วยตัวใด
+                      ⚠️ ไลน์นี้เป็น <b>เครื่องขนาน</b> (แต่ละใบวิ่งเครื่องเดียว) และ <b>ใบนี้ไม่ได้บันทึกว่าใช้เครื่องไหน</b> — รายการล่างจึงเป็น <b>ผู้ต้องสงสัย</b> ไม่ใช่ข้อสรุป
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>
-                        อยากสอบถึงตัวเครื่อง: ตั้งไลน์เป็น "เครื่องขนาน" ที่ /linesetup แล้วเลือกเครื่องตอนเปิด Order — ใบที่เปิดหลังจากนั้นจะระบุเครื่องให้เอง
+                        อยากสอบถึงตัวเครื่อง: เลือกเครื่องตอนเปิด Order — ใบที่เปิดหลังจากนั้นจะระบุเครื่องให้เอง
                       </div>
                     </div>
                   )}
@@ -1058,10 +1100,19 @@ export default function OrderTrace() {
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, fontSize: 11.5 }}>
                     {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(239,68,68,.15)', color: '#ef4444', fontWeight: 700 }}>🔴 PM เกินกำหนด ณ วันผลิต {trace.equip.overdueCount} รายการ</span>}
                     {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(245,158,11,.15)', color: '#f59e0b', fontWeight: 700 }}>🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต {trace.equip.freshFixCount} รายการ</span>}
-                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>⚙️ เครื่องในไลน์ {trace.equip.machineCount}</span>
+                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>
+                      ⚙️ {trace.equip.isParallel ? 'เครื่องในไลน์' : 'ผ่านเครื่อง'} {trace.equip.machineCount}</span>
                     <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>🧰 จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
                     {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)' }}>ยังไม่มีแผน PM {trace.equip.noPlanCount}</span>}
                   </div>
+
+                  {/* ไม่มีแผน PM สักตัว = ตอบคำถาม "ขาดบำรุงรักษาไหม" ไม่ได้เลย — ต้องบอกตรงๆ ไม่ใช่โชว์ค่าว่าง */}
+                  {trace.equip.rows.length > 0 && trace.equip.noPlanCount === trace.equip.rows.length && (
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.3)' }}>
+                      🔎 <b>ยังตอบไม่ได้ว่าอุปกรณ์ขาดบำรุงรักษาหรือไม่</b> — อุปกรณ์ทั้ง {trace.equip.rows.length} รายการของไลน์นี้ <b>ยังไม่มีแผน PM สักตัว</b> ระบบจึงไม่มีเกณฑ์ให้เทียบ
+                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>ตั้งจุดตรวจ + รอบ PM ที่ PM Setup แล้วใบที่ผลิตหลังจากนั้นจะสอบย้อนได้ว่าตอนผลิตค้าง PM ไหม</div>
+                    </div>
+                  )}
 
                   {trace.equip.partial && (
                     <div style={{ fontSize: 11.5, marginBottom: 8, padding: '5px 9px', borderRadius: 6, background: 'rgba(245,158,11,.10)', border: '1px solid rgba(245,158,11,.3)', color: '#f59e0b' }}>
@@ -1083,9 +1134,11 @@ export default function OrderTrace() {
                           border: `1px solid ${r.confirmed ? 'rgba(34,197,94,.45)' : r.overdue > 0 ? 'rgba(239,68,68,.35)' : 'var(--border)'}`,
                           background: r.confirmed ? 'rgba(34,197,94,.06)' : 'var(--bg3)' }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                            {r.sortOrder != null && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ขั้นที่ {r.sortOrder}</span>}
                             <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {r.label}</b>
                             {r.name && <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{r.name}</span>}
                             {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e' }}>🎯 ใบนี้ระบุ</span>}
+                            {r.usage === 'suspect' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ต้องสงสัย</span>}
                             {r.overdue > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>🔴 PM เกินกำหนด {r.overdue} วัน ณ วันผลิต</span>}
                             {r.daysSinceFix != null && r.daysSinceFix <= 7 && <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>🟠 ซ่อมเสร็จ {r.daysSinceFix} วันก่อนผลิต</span>}
                             {r.dts.length > 0 && <span style={{ fontSize: 11, color: '#f59e0b' }}>⏱ มี Downtime ในกะนี้ {r.dts.length} รายการ</span>}
