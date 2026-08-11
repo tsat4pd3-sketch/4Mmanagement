@@ -118,11 +118,14 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   }, 0);
   const runMin = Math.max(1, elapsed - dtMin);
 
-  let stdMin = 0, produced = 0, ngFromOrders = 0;
+  let stdMin = 0, produced = 0, ngFromOrders = 0, qtyNoCt = 0;
+  const matsNoCt = new Set();
   orders.forEach(o => {
     const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
     produced += q;
-    stdMin += q * (ctMap[o.mat_no] || 0) / 60;
+    const ct = Number(ctMap[o.mat_no]) || 0;
+    if (ct > 0) stdMin += q * ct / 60;
+    else if (q > 0) { qtyNoCt += q; if (o.mat_no) matsNoCt.add(o.mat_no); }
     ngFromOrders += o.qty_ng || 0;
   });
   const ng = ngQty != null ? ngQty : ngFromOrders;
@@ -136,12 +139,24 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true };
   }
 
-  const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
   const Q = produced / (produced + ng);
+
+  /* ผลิตแล้วแต่ "ไม่มีชิ้นงานไหนตั้ง CT ไว้เลย" → stdMin = 0 → P = 0 → OEE = 0%
+     ⚠️ นั่นคือคำกล่าวอ้างเท็จว่า "ไลน์เดินได้แย่มาก" ทั้งที่ความจริงคือ **ไม่รู้มาตรฐาน**
+     (หลักเดียวกับ noOutput ที่ห้ามคืน 0) → P/OEE = null + flag noCt ให้จอบอกว่าต้องไปตั้ง CT
+     A กับ Q ยังตอบได้ (ไม่ต้องใช้ CT) จึงคืนตามปกติ */
+  if (stdMin <= 0) {
+    return { A: pct(A), P: null, Q: pct(Q), oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt] };
+  }
+
+  const P = Math.min(1, stdMin / runMin);
   const oee = A * P * Q;
   if (!isFinite(oee)) return null;
 
-  return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced, ngQty: ng, noOutput: false };
+  // qtyNoCt > 0 = ตั้ง CT ไม่ครบทุกชิ้นงาน → stdMin ขาด → %P ต่ำกว่าจริง (จอควรติดป้ายเตือน)
+  return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+    produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt] };
 }
 
 /* ═══ 5) OEE จริง (strict) ═══ */
