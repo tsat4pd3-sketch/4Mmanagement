@@ -1,7 +1,9 @@
-import { useState, useContext } from 'react'
+import { useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
+import PageHeader from '../components/PageHeader'
+import useTabParam from '../utils/useTabParam'
 import FactoryMap from './FactoryMap'
 import MtnMachineLayout from './MtnMachineLayout'
 import LineSetup from './LineSetup'
@@ -19,25 +21,16 @@ const TABS = [
 
 export default function LayoutSetup() {
   const { role } = useContext(UserContext)
-  const [tab, setTab] = useState('factory')
+  const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'factory')
   const cur = TABS.find(t => t.key === tab)
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 }}>🗺️ ตั้งค่าผัง / Floorplan</h1>
-        <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่</p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-            border: `1.5px solid ${tab === t.key ? 'var(--accent)' : 'var(--border2)'}`,
-            background: tab === t.key ? 'var(--accent-dim)' : 'var(--bg3)', color: tab === t.key ? 'var(--accent)' : 'var(--muted)',
-          }}>{t.label}</button>
-        ))}
-      </div>
+      <PageHeader
+        title="ตั้งค่าผัง / Floorplan" icon="🗺️"
+        sub="รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่"
+        tabs={TABS} tab={tab} onTab={setTab}
+      />
       {cur && <p style={{ fontSize: 12.5, color: 'var(--text2)', margin: 0 }}>{cur.desc}</p>}
 
       {tab === 'factory' && (

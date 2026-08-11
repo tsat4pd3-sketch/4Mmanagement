@@ -16,6 +16,8 @@ import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL } from '../utils/skillLevels';
 import { pickUnusedColor } from '../utils/colorPick';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -55,6 +57,9 @@ const getEmpGrade = (code = '') => {
   return EMP_GRADES.bronze;
 };
 
+// ชื่อแท็บใน URL (?tab=) — index ต้องตรงกับที่เนื้อหาอ้าง tab === n
+const TAB_KEYS = ['employees', 'skills', 'levelup'];
+
 export default function Operator() {
   const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [] } = useContext(UserContext);
   const isLeader = role === 'leader';
@@ -63,7 +68,18 @@ export default function Operator() {
   // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
   const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
 
-  const [tab, setTab] = useState(0);
+  // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
+  // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
+  const [tabKey, setTabKey] = useTabParam(TAB_KEYS, TAB_KEYS[0]);
+  // ⚠️ URL เปิดแท็บที่ไม่มีสิทธิ์ไม่ได้ — ปุ่มซ่อนอย่างเดียวไม่พอ (คนแปะลิงก์ ?tab=skills ให้กันได้)
+  const tabAllowed = [
+    true,
+    can('skills', 'edit', role),
+    can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role),
+  ];
+  const tabIdx = TAB_KEYS.indexOf(tabKey);
+  const tab = tabAllowed[tabIdx] ? tabIdx : 0;
+  const setTab = (i) => setTabKey(TAB_KEYS[i] || TAB_KEYS[0]);
   const [skillDefs, setSkillDefs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const tableWrapRef = useRef(null);
@@ -581,11 +597,7 @@ export default function Operator() {
       {subItemsSkill && (
         <SkillSubItemsModal skill={subItemsSkill} onClose={() => setSubItemsSkill(null)} />
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          👥 ฐานข้อมูลพนักงาน
-        </h2>
-      </div>
+      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥" />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
         {/* แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที

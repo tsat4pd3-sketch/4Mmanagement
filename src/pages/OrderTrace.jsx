@@ -32,6 +32,16 @@ const STATUS_META = {
   imported: { label: '⏬ ถูกยกไปกะถัดไป', color: 'var(--muted)' },
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
+/* ผลตรวจ PM/AM — `inspections.status` มีได้ 4 ค่า: pending | pass | fail | warning
+   ⚠️ ห้ามเทียบด้วย regex /fail|ng/ : "pe**nd**ing" กับ "warni**ng**" ติดทั้งคู่
+      → "ตรวจไม่ครบทุกจุด" (pending = ค่า default ของคอลัมน์ เจอบ่อยมาก) จะขึ้นแดงว่า
+        "พบผิดปกติ" = สร้างหลักฐานเท็จในแผงที่ใช้สอบสวนคุณภาพ ต้องเทียบตรงตัวเท่านั้น */
+const INSP_NG = new Set(['fail', 'warning', 'ng']);   // 'ng' เผื่อข้อมูลเก่าก่อนมี check constraint
+const inspVerdict = raw => {
+  const s = String(raw || '').toLowerCase();
+  if (s === 'pending' || !s) return <span style={{ color: 'var(--muted)' }}>ตรวจไม่ครบทุกจุด</span>;
+  return <span style={{ color: INSP_NG.has(s) ? '#ef4444' : '#22c55e' }}>{INSP_NG.has(s) ? 'พบผิดปกติ' : 'ปกติ'}</span>;
+};
 /* เกณฑ์ "สแกนรวบ" = ช่องว่างระหว่างสแกน < BATCH_FRAC × เวลาที่ต้องใช้ผลิตของใบนั้น (qty × CT)
    0.5 = ต้องผลิตเร็วกว่ามาตรฐาน "2 เท่า" ถึงจะทันในช่วงนั้น → เป็นไปไม่ได้ = สแกนรวบแน่นอน
    (ไม่ใช่เวลาตายตัว — สเกลตามชิ้นงาน/จำนวนของแต่ละใบเอง · ตรวจกับข้อมูลจริง Assy LWR 05/08:
@@ -150,7 +160,8 @@ export default function OrderTrace() {
       const famLower = famNames.map(n => n.toLowerCase());
       const famIds = lines.filter(l => famLower.includes(l.name.toLowerCase())).map(l => l.id);
       const t = { qtyUpdates: [], defects: [], sessionOrders: [], downtimes: [], mos: [], people: [], stations: {}, fourM: [], childLots: [], rawReqs: [], stockIn: [], stockOut: [], lpa: [], poka: [], dailyPm: null,
-        reqsByStation: {}, skillsByEmp: {}, homeByEmp: {}, product: null, prevSession: null, machineMos: [], ojtByEmp: {} };
+        reqsByStation: {}, skillsByEmp: {}, homeByEmp: {}, product: null, prevSession: null, machineMos: [], ojtByEmp: {},
+        equip: null, amTargetJigs: new Set(), amDoneJigs: new Set() };
 
       // DR — ของใบ/กะ
       const [qu, df, so, dt] = await Promise.all([
@@ -270,10 +281,20 @@ export default function OrderTrace() {
         if (jigIds.length) {
           const dayStart = `${sess.work_date}T00:00:00+07:00`;
           const dayEnd = `${addDays(sess.work_date, 1)}T08:00:00+07:00`;
-          const { data: insp } = await supabaseDR.from('inspections')
-            .select('jig_id, status, inspected_at').in('jig_id', jigIds)
+          // ⚠️ "ตรวจ AM แล้ว" = การตรวจของ **ฝ่ายผลิต** เท่านั้น — ถ้าไม่กรอง department
+          //    วันที่ช่าง JIG MTN เข้า PM เครื่องนั้น จะถูกนับว่าผลิตตรวจ AM แล้วทั้งที่ยังไม่ได้ตรวจ
+          //    (หลักเดียวกับ prodIds ใน src/lib/pmDailyAlarm.js)
+          const { data: amCls } = await supabaseDR.from('checklists')
+            .select('id, equipment_id').in('equipment_id', jigIds).eq('module', 'mtn').eq('department', 'production');
+          const amClIds = new Set((amCls || []).map(c => c.id));
+          const { data: inspRaw } = await supabaseDR.from('inspections')
+            .select('jig_id, checklist_id, status, inspected_at').in('jig_id', jigIds)
             .gte('inspected_at', dayStart).lt('inspected_at', dayEnd);
-          t.dailyPm = { total: jigIds.length, done: new Set((insp || []).map(i => i.jig_id)).size, fail: (insp || []).filter(i => i.status === 'fail' || i.status === 'ng').length };
+          const insp = (inspRaw || []).filter(i => !amClIds.size || amClIds.has(i.checklist_id));
+          t.dailyPm = { total: jigIds.length, done: new Set(insp.map(i => i.jig_id)).size, fail: insp.filter(i => i.status === 'fail' || i.status === 'ng').length };
+          // เก็บระดับ jig ไว้ให้แผงอุปกรณ์ชี้ได้ว่า "เครื่องตัวนี้" วันนั้นตรวจ AM แล้วหรือยัง
+          t.amTargetJigs = new Set(jigIds);
+          t.amDoneJigs = new Set(insp.map(i => i.jig_id));
         }
       } catch { /* ignore */ }
 
@@ -307,6 +328,182 @@ export default function OrderTrace() {
           t.machineMos = mh || [];
         }
       } catch { /* ignore */ }
+
+      /* ── 🏭 อุปกรณ์ที่ใช้ผลิต + สภาพบำรุงรักษา "ณ เวลาที่ผลิตใบนี้" (2026-08-11) ──────────
+         โจทย์คุณภาพ: ของใบนี้เสีย → เครื่อง/แม่พิมพ์ตัวไหนผลิต · ตอนนั้นขาด PM ไหม · ใครแตะอะไรไปล่าสุด
+         ⚠️ ความแน่ชัดของ "ใช้เครื่องไหน" มี 2 ระดับ — ห้ามนำเสนอปนกัน:
+            🎯 ยืนยัน = prod_orders.machine_no (ไลน์ flow_mode=parallel_machine ที่เลือกเครื่องตอนเปิดใบ)
+            ⚙️ สงสัย  = เครื่องที่ลงทะเบียนในครอบครัวไลน์ (ระบบไม่รู้ว่าใบนี้วิ่งตัวไหนจริง)
+         ⚠️ ทุกอย่างตัดที่ "เวลาผลิต" ไม่ใช่ "ตอนนี้" — PM ที่เพิ่งทำหลังผลิตไม่ช่วยใบที่เสียไปแล้ว */
+      try {
+        const prodAt = sel.opened_at || `${sess.work_date}T08:00:00+07:00`;
+        const ago = d => new Date(new Date(prodAt).getTime() - d * 86400000).toISOString();
+
+        // เครื่องจักรของครอบครัวไลน์ (เฉพาะเครื่องผลิต — facility/utility ไม่เกี่ยวกับใบนี้)
+        const mcBase = 'id, machine_no, machine_name, line_name, is_active';
+        let mr = await supabaseDR.from('machines').select(`${mcBase}, equipment_category`).in('line_name', famNames);
+        if (mr.error) mr = await supabaseDR.from('machines').select(mcBase).in('line_name', famNames);
+        const mcs = (mr.data || []).filter(m => m.is_active !== false && (m.equipment_category ?? 'production') === 'production');
+        const mcIds = mcs.map(m => m.id);
+        const mcNos = [...new Set(mcs.map(m => m.machine_no).filter(Boolean))];
+
+        // jigs = ทะเบียน "อุปกรณ์ที่มีแผน PM" (ชื่อตารางหลอกตา) → แถวเงาของเครื่อง + จิ๊ก/แม่พิมพ์ตัวจริง
+        const jSel = 'id, jig_no, name, machine_id, equipment_type, line_name';
+        const [shadowR, realR] = await Promise.all([
+          mcIds.length ? supabaseDR.from('jigs').select(jSel).in('machine_id', mcIds) : Promise.resolve({ data: [] }),
+          supabaseDR.from('jigs').select(jSel).in('line_name', famNames).is('machine_id', null),
+        ]);
+        const jigErr = shadowR.error || realR.error;
+        if (jigErr) console.warn('[trace] jigs', jigErr);
+        const shadowByMc = {}; (shadowR.data || []).forEach(j => { if (j.machine_id) shadowByMc[j.machine_id] = j; });
+        const realJigs = (realR.data || []).filter(j => (j.equipment_type || '') !== 'machine');
+        const jigIds = [...(shadowR.data || []).map(j => j.id), ...realJigs.map(j => j.id)];
+
+        // แผน PM ต่ออุปกรณ์: jig → checklists (1 เครื่องมีได้หลายทีม) → pm_plans
+        // ⚠️ query ชุดนี้ "ไม่พบข้อมูล" กับ "โหลดไม่สำเร็จ" ต้องแยกกันให้ออก — supabase-js คืน { error }
+        //    ไม่ throw · ถ้ากลืนทิ้ง แผงจะสรุปว่า "ไม่มีประวัติบำรุงรักษา" ทั้งที่แค่โหลดไม่ติด
+        let partial = !!jigErr || !!mr.error;
+        const plansByJig = {};
+        let clList = [];
+        if (jigIds.length) {
+          const { data: cls, error: clsErr } = await supabaseDR.from('checklists')
+            .select('id, equipment_id, department').in('equipment_id', jigIds).eq('module', 'mtn');
+          if (clsErr) { partial = true; console.warn('[trace] checklists', clsErr); }
+          clList = cls || [];
+          const jigOfCl = Object.fromEntries(clList.map(c => [c.id, c.equipment_id]));
+          const deptOfCl = Object.fromEntries(clList.map(c => [c.id, c.department]));
+          const clIds = clList.map(c => c.id);
+          if (clIds.length) {
+            const { data: pls, error: plsErr } = await supabaseDR.from('pm_plans')
+              .select('checklist_id, plan_type, interval_days, next_due_date, last_done_at, is_active').in('checklist_id', clIds);
+            if (plsErr) { partial = true; console.warn('[trace] pm_plans', plsErr); }
+            (pls || []).filter(p => p.is_active !== false).forEach(p => {
+              const jid = jigOfCl[p.checklist_id]; if (!jid) return;
+              (plansByJig[jid] ||= []).push({ ...p, dept: deptOfCl[p.checklist_id] });
+            });
+          }
+        }
+
+        /* ประวัติ "ตรวจ/PM" ก่อนเวลาผลิต — ดึง **ครั้งล่าสุดต่อ checklist** ทีละใบ
+           ⚠️ ห้ามกวาดรวมทุก jig แล้ว `.limit(N)`: AM ตรวจทุกต้นกะ ย้อน 180 วันทะลุพันแถวง่ายๆ
+              → ประวัติ PM ช่างรายไตรมาส (ตัวที่เราอยากสอบพอดี) ถูกเบียดตกไปก่อน แล้วแผงจะ
+              พูดผิดว่า "ไม่พบประวัติการตรวจ" + กลบ PM ที่ค้างจริงให้กลายเป็น "อยู่ในรอบ"
+              ซึ่งขัดกฎเหล็กข้อ 2 ของแผงนี้เอง · จำนวน checklist อยู่ระดับหลักสิบ ยิงขนานได้ */
+        const inspByJig = {}, inspByCl = {};
+        await Promise.all(clList.map(async c => {
+          const { data, error } = await supabaseDR.from('inspections')
+            .select('jig_id, checklist_id, inspector_id, inspected_at, status, notes')
+            .eq('checklist_id', c.id).lte('inspected_at', prodAt)
+            .order('inspected_at', { ascending: false }).limit(1);
+          if (error) { partial = true; console.warn('[trace] inspections', error); return; }
+          const row = (data || [])[0]; if (!row) return;
+          inspByCl[c.id] = row;
+          (inspByJig[row.jig_id] ||= []).push(row);
+        }));
+        Object.values(inspByJig).forEach(a => a.sort((x, y) => String(y.inspected_at).localeCompare(String(x.inspected_at))));
+
+        // ประวัติ "ใบซ่อม MO" ก่อนเวลาผลิต — เพิ่งซ่อมเสร็จก่อนผลิต = ต้องสงสัยลำดับต้นๆ ของปัญหาคุณภาพ
+        const moByMc = {};
+        const MO_LIMIT = 300;
+        if (mcNos.length) {
+          const { data: mo, error: moErr } = await supabaseDR.from('mtn_orders')
+            .select('mo_no, machine_no, status, mtn_dept, problem_detail, root_cause, solution, assigned_to, reported_by_name, created_at, repair_done_at')
+            .in('machine_no', mcNos).gte('created_at', ago(90)).lte('created_at', prodAt)
+            .order('created_at', { ascending: false }).limit(MO_LIMIT);
+          if (moErr) { partial = true; console.warn('[trace] mtn_orders', moErr); }
+          if ((mo || []).length === MO_LIMIT) partial = true;   // ชนเพดาน = เห็นไม่ครบ ต้องบอก
+          (mo || []).forEach(m => { (moByMc[m.machine_no] ||= []).push(m); });
+        }
+
+        // ใครแก้ "ทะเบียนอุปกรณ์" ก่อนหน้านั้น (audit_log กลาง — best-effort ยังไม่ apply ก็ไม่พัง)
+        const auditByRow = {};
+        try {
+          const AU_LIMIT = 200;
+          const { data: au } = await supabaseDR.from('audit_log')
+            .select('table_name, row_pk, action, actor, changed_fields, changed_at')
+            .in('table_name', ['machines', 'jigs']).in('row_pk', [...mcIds, ...jigIds])
+            .gte('changed_at', ago(90)).lte('changed_at', prodAt)
+            .order('changed_at', { ascending: false }).limit(AU_LIMIT);
+          if ((au || []).length === AU_LIMIT) partial = true;
+          (au || []).forEach(a => { (auditByRow[a.row_pk] ||= []).push(a); });
+        } catch { /* audit ยังไม่พร้อม */ }
+
+        // ชื่อผู้ตรวจอยู่ profiles ฝั่ง Main (คนละ project — join ตรงไม่ได้ ต้องดึงแยก)
+        const inspIds = [...new Set(Object.values(inspByJig).flat().map(i => i.inspector_id).filter(Boolean))];
+        let profName = {};
+        if (inspIds.length) {
+          try {
+            const { data: pf } = await supabase.from('profiles').select('id, full_name, email').in('id', inspIds);
+            profName = Object.fromEntries((pf || []).map(p => [p.id, p.full_name || p.email]));
+          } catch { /* ignore */ }
+        }
+
+        const dtByMc = {};
+        t.downtimes.forEach(d => { if (d.machine_no) (dtByMc[d.machine_no] ||= []).push(d); });
+
+        const dayDiff = (a, b) => Math.floor((new Date(a) - new Date(b)) / 86400000);
+        const build = (kind, id, label, name, machineNo, jig) => {
+          const plans = jig ? (plansByJig[jig.id] || []) : [];
+          const insps = jig ? (inspByJig[jig.id] || []) : [];
+          /* ⚠️ `pm_plans.next_due_date` เป็น "สถานะปัจจุบัน" ไม่ใช่ประวัติ — ช่างทำ PM หลังวันผลิต
+             ค่านี้ก็ขยับไปข้างหน้าแล้ว ใบเก่าจะดูเหมือน PM ปกติทั้งที่ตอนนั้นค้างจริง
+             → "ค้าง ณ วันผลิต" ต้องคำนวณย้อนจากประวัติจริง: ตรวจครั้งล่าสุดก่อนผลิต + interval_days
+             (แผนแบบ usage/hybrid ย้อนไม่ได้ — ไม่เดา ปล่อยเป็นไม่ทราบ แล้วโชว์ค่าปัจจุบันโดยติดป้ายกำกับ) */
+          let overdue = 0, dueAtProd = null, nextDue = null, planDept = null, usageOnly = false;
+          plans.forEach(p => {
+            if (!nextDue || (p.next_due_date && p.next_due_date < nextDue)) { nextDue = p.next_due_date || nextDue; planDept = p.dept || planDept; }
+            if (p.plan_type && p.plan_type !== 'time') { usageOnly = true; return; }
+            if (!p.interval_days) return;
+            const prev = inspByCl[p.checklist_id];   // ครั้งล่าสุดของ "แผนนั้น" โดยตรง
+            if (!prev) return;  // ไม่มีประวัติ = พิสูจน์ไม่ได้ ห้ามนับว่าค้าง
+            const due = new Date(new Date(prev.inspected_at).getTime() + p.interval_days * 86400000);
+            // เทียบระดับ "วัน" ตามเวลาไทย — ใช้ ISO ดิบจะคลาด 1 วันเมื่อครบกำหนดช่วงค่ำ (UTC ข้ามวันก่อน)
+            const dueDay = due.toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
+            const late = dayDiff(`${sess.work_date}T00:00:00+07:00`, `${dueDay}T00:00:00+07:00`);
+            if (late > overdue) { overdue = late; dueAtProd = dueDay; }
+          });
+          // มีแผน PM แต่ไม่พบร่องรอยการตรวจก่อนวันผลิตเลย = สัญญาณที่ต้องเห็น ไม่ใช่ช่องว่าง
+          const neverInspected = plans.length > 0 && insps.length === 0;
+          const lastPlanDone = plans.map(p => p.last_done_at).filter(Boolean).sort().pop() || null;
+          const lastInsp = insps[0] || null;
+          const mos = machineNo ? (moByMc[machineNo] || []) : [];
+          /* ⚠️ ต้องกรอง repair_done_at ด้วย — query กรองแค่ created_at ≤ เวลาผลิต
+             ใบที่ "แจ้งก่อนผลิต แต่ช่างซ่อมเสร็จหลังผลิต" (เคสธรรมดามาก) จะได้ค่าติดลบ
+             แล้วไปโผล่เป็น "🟠 ซ่อมเสร็จ -5 วันก่อนผลิต" + ดัน risk ขึ้นผิดตัว
+             และเรียงด้วย repair_done_at ไม่ใช่ created_at (ใบที่แจ้งทีหลังอาจซ่อมเสร็จก่อน) */
+          const lastFixed = mos.filter(m => m.repair_done_at && m.repair_done_at <= prodAt)
+            .sort((a, b) => String(b.repair_done_at).localeCompare(String(a.repair_done_at)))[0] || null;
+          const daysSinceFix = lastFixed ? dayDiff(prodAt, lastFixed.repair_done_at) : null;
+          const dts = machineNo ? (dtByMc[machineNo] || []) : [];
+          const audits = [...(auditByRow[id] || []), ...(jig ? (auditByRow[jig.id] || []) : [])]
+            .sort((a, b) => String(b.changed_at).localeCompare(String(a.changed_at)));
+          const confirmed = !!(machineNo && sel.machine_no && machineNo === sel.machine_no);
+          // เรียงตาม "ควรสงสัยก่อน": ยืนยันตัวจริง → PM ค้าง → เพิ่งซ่อม ≤7 วัน → มี DT ในกะนี้
+          const risk = (confirmed ? 100 : 0) + (overdue > 0 ? 40 : 0)
+            + (daysSinceFix != null && daysSinceFix <= 7 ? 30 : 0) + (neverInspected ? 20 : 0) + (dts.length ? 10 : 0)
+            + (jig && !plans.length ? 5 : 0);
+          return { kind, id, label, name, machineNo, jigId: jig?.id || null, hasPmPlan: plans.length > 0,
+            overdue, dueAtProd, neverInspected, usageOnly, nextDue, planDept, lastPlanDone, lastInsp, insps, mos, lastFixed, daysSinceFix, dts, audits, confirmed, risk,
+            amTarget: jig ? t.amTargetJigs?.has(jig.id) : false, amDone: jig ? t.amDoneJigs?.has(jig.id) : false,
+            inspName: lastInsp ? (profName[lastInsp.inspector_id] || 'ไม่ทราบชื่อ') : null };
+        };
+
+        const rows = [
+          ...mcs.map(m => build('machine', m.id, m.machine_no || '(ไม่มีเลข)', m.machine_name, m.machine_no, shadowByMc[m.id])),
+          ...realJigs.map(j => build(j.equipment_type === 'die' ? 'die' : 'jig', j.id, j.jig_no || j.name || '(ไม่มีเลข)', j.name, null, j)),
+        ].sort((a, b) => b.risk - a.risk || String(a.label).localeCompare(String(b.label)));
+
+        t.equip = {
+          rows,
+          confirmedNo: sel.machine_no || null,
+          partial,   // โหลดบางส่วนไม่สำเร็จ/ชนเพดาน → ห้ามให้ "ไม่มีประวัติ" ฟังดูเป็นข้อเท็จจริง
+          machineCount: mcs.length,
+          dieCount: realJigs.length,
+          overdueCount: rows.filter(r => r.overdue > 0).length,
+          freshFixCount: rows.filter(r => r.daysSinceFix != null && r.daysSinceFix <= 7).length,
+          noPlanCount: rows.filter(r => !r.hasPmPlan).length,
+        };
+      } catch (e) { console.warn('[trace] โหลดข้อมูลอุปกรณ์ไม่สำเร็จ', e); }
 
       if (alive) { setTrace(t); setLoading(false); }
     })();
@@ -837,6 +1034,115 @@ export default function OrderTrace() {
               )}
 
               {/* ── เครื่องจักร/ใบซ่อม ── */}
+              {/* 🏭 อุปกรณ์ที่ใช้ผลิต — ตอบโจทย์ "ของเสีย → เครื่อง/แม่พิมพ์ตัวไหน · ขาด PM ไหม · ใครแตะล่าสุด" */}
+              {trace.equip && (
+                <CollapseCard id="equip" storePrefix="ot" title="🏭 อุปกรณ์ที่ใช้ผลิต — สภาพบำรุงรักษา ณ เวลาผลิต"
+                  count={trace.equip.rows.length}
+                  defaultOpen={trace.equip.overdueCount > 0 || trace.equip.freshFixCount > 0 || !!trace.equip.confirmedNo}>
+
+                  {/* ระดับความแน่ชัด — ห้ามให้ "ผู้ต้องสงสัย" ดูเหมือนคำตอบ */}
+                  {trace.equip.confirmedNo ? (
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(34,197,94,.10)', border: '1px solid rgba(34,197,94,.35)' }}>
+                      🎯 ใบนี้ระบุเครื่องไว้ชัดเจน: <b>{trace.equip.confirmedNo}</b> — สอบกลับได้ถึงตัวเครื่อง
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(245,158,11,.10)', border: '1px solid rgba(245,158,11,.35)' }}>
+                      ⚠️ <b>ใบนี้ไม่ได้บันทึกว่าใช้เครื่องไหน</b> — รายการล่างเป็น <b>ผู้ต้องสงสัย</b> (เครื่องที่ลงทะเบียนในไลน์ {sess.line_name}) ไม่ใช่ข้อสรุปว่าใบนี้ผลิตด้วยตัวใด
+                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+                        อยากสอบถึงตัวเครื่อง: ตั้งไลน์เป็น "เครื่องขนาน" ที่ /linesetup แล้วเลือกเครื่องตอนเปิด Order — ใบที่เปิดหลังจากนั้นจะระบุเครื่องให้เอง
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ชี้เป้าก่อน ไม่ใช่กองข้อมูลให้อ่านเอง */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, fontSize: 11.5 }}>
+                    {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(239,68,68,.15)', color: '#ef4444', fontWeight: 700 }}>🔴 PM เกินกำหนด ณ วันผลิต {trace.equip.overdueCount} รายการ</span>}
+                    {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'rgba(245,158,11,.15)', color: '#f59e0b', fontWeight: 700 }}>🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต {trace.equip.freshFixCount} รายการ</span>}
+                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>⚙️ เครื่องในไลน์ {trace.equip.machineCount}</span>
+                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>🧰 จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
+                    {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)' }}>ยังไม่มีแผน PM {trace.equip.noPlanCount}</span>}
+                  </div>
+
+                  {trace.equip.partial && (
+                    <div style={{ fontSize: 11.5, marginBottom: 8, padding: '5px 9px', borderRadius: 6, background: 'rgba(245,158,11,.10)', border: '1px solid rgba(245,158,11,.3)', color: '#f59e0b' }}>
+                      ⚠️ โหลดประวัติได้ไม่ครบทุกรายการ — ช่องที่ขึ้นว่า "ไม่มีประวัติ" อาจเป็นเพราะดูไม่ครบ ไม่ใช่ว่าไม่มีจริง (ดู console หากต้องตรวจสอบ)
+                    </div>
+                  )}
+
+                  {trace.equip.dieCount === 0 && (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
+                      💡 ยังไม่มีจิ๊ก/แม่พิมพ์ตัวจริงลงทะเบียนในไลน์นี้ — ลงข้อมูลที่ PM Setup แล้วสอบกลับถึงตัวแม่พิมพ์ได้เหมือนเครื่องจักร
+                    </div>
+                  )}
+
+                  {trace.equip.rows.length === 0
+                    ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบเครื่องจักร/อุปกรณ์ที่ลงทะเบียนกับไลน์นี้</div>
+                    : (() => {
+                      const Row = ({ r }) => (
+                        <div style={{ padding: '8px 10px', borderRadius: 8, marginBottom: 6,
+                          border: `1px solid ${r.confirmed ? 'rgba(34,197,94,.45)' : r.overdue > 0 ? 'rgba(239,68,68,.35)' : 'var(--border)'}`,
+                          background: r.confirmed ? 'rgba(34,197,94,.06)' : 'var(--bg3)' }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                            <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {r.label}</b>
+                            {r.name && <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{r.name}</span>}
+                            {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e' }}>🎯 ใบนี้ระบุ</span>}
+                            {r.overdue > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>🔴 PM เกินกำหนด {r.overdue} วัน ณ วันผลิต</span>}
+                            {r.daysSinceFix != null && r.daysSinceFix <= 7 && <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>🟠 ซ่อมเสร็จ {r.daysSinceFix} วันก่อนผลิต</span>}
+                            {r.dts.length > 0 && <span style={{ fontSize: 11, color: '#f59e0b' }}>⏱ มี Downtime ในกะนี้ {r.dts.length} รายการ</span>}
+                            {r.amTarget && !r.amDone && <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠ วันนั้นยังไม่ได้ตรวจ AM</span>}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 4, display: 'grid', gap: 2 }}>
+                            <div>🛠️ แผน PM: {r.hasPmPlan
+                              ? <>{r.overdue > 0
+                                  ? <b style={{ color: '#ef4444' }}>ณ วันผลิต เลยกำหนดมาแล้ว {r.overdue} วัน (ควรตรวจ {fmtDate(r.dueAtProd)})</b>
+                                  : r.neverInspected ? <b style={{ color: '#f59e0b' }}>มีแผน PM แต่ไม่พบประวัติการตรวจก่อนวันผลิตเลย</b>
+                                  : r.usageOnly ? <span>แผนอิงยอดผลิต — ย้อนสถานะ ณ วันผลิตไม่ได้</span>
+                                  : <span style={{ color: '#22c55e' }}>ณ วันผลิต ยังอยู่ในรอบ</span>}
+                                {r.planDept ? ` · ทีม ${deptNameOf(r.planDept)}` : ''}
+                                {r.nextDue ? <span style={{ color: 'var(--muted)' }}> · รอบถัดไป {fmtDate(r.nextDue)} (ค่าปัจจุบัน)</span> : ''}
+                                {r.lastPlanDone ? <span style={{ color: 'var(--muted)' }}> · ทำล่าสุด {fmtDT(r.lastPlanDone)}</span> : ''}</>
+                              : <span style={{ color: 'var(--muted)' }}>ยังไม่ได้ตั้งแผน PM ให้อุปกรณ์ตัวนี้</span>}</div>
+                            {r.lastInsp && (
+                              <div>🔍 ตรวจล่าสุดก่อนผลิต: {fmtDT(r.lastInsp.inspected_at)} · <b>{r.inspName}</b>
+                                {' · '}{inspVerdict(r.lastInsp.status)}
+                                {r.lastInsp.notes ? ` — ${r.lastInsp.notes}` : ''}</div>
+                            )}
+                            {r.mos.slice(0, 3).map((m, i) => (
+                              <div key={i}>🔧 {m.mo_no || '(รอเลข MO)'} {fmtDT(m.repair_done_at || m.created_at)}
+                                {m.problem_detail ? ` — อาการ: ${m.problem_detail}` : ''}
+                                {m.root_cause ? ` · สาเหตุ: ${m.root_cause}` : ''}
+                                {m.solution ? ` · แก้: ${m.solution}` : ` · สถานะ ${m.status}`}
+                                {m.assigned_to ? ` · ช่าง ${m.assigned_to}` : ''}
+                                {m.reported_by_name ? ` · แจ้งโดย ${m.reported_by_name}` : ''}</div>
+                            ))}
+                            {r.mos.length > 3 && <div style={{ color: 'var(--muted)' }}>· มีใบซ่อมอีก {r.mos.length - 3} ใบใน 90 วันก่อนผลิต</div>}
+                            {r.audits.slice(0, 2).map((a, i) => (
+                              <div key={`a${i}`} style={{ color: 'var(--muted)' }}>✏️ แก้ทะเบียน{Array.isArray(a.changed_fields) && a.changed_fields.length ? ` (${a.changed_fields.join(', ')})` : ''} โดย {a.actor || 'ไม่ทราบ'} · {fmtDT(a.changed_at)}</div>
+                            ))}
+                            {!r.hasPmPlan && !r.lastInsp && !r.mos.length && (
+                              <div style={{ color: 'var(--muted)' }}>
+                                {trace.equip.partial ? 'ยังไม่พบประวัติ (โหลดข้อมูลได้ไม่ครบ — ดูแถบเตือนด้านบน)' : 'ไม่มีประวัติบำรุงรักษาก่อนวันผลิต'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                      const head = trace.equip.rows.slice(0, 8), rest = trace.equip.rows.slice(8);
+                      return (<>
+                        {head.map(r => <Row key={r.id} r={r} />)}
+                        {rest.length > 0 && (
+                          <details>
+                            <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text2)', padding: '4px 0' }}>
+                              แสดงอุปกรณ์ที่เหลืออีก {rest.length} รายการ (ความเสี่ยงต่ำกว่า)
+                            </summary>
+                            <div style={{ marginTop: 6 }}>{rest.map(r => <Row key={r.id} r={r} />)}</div>
+                          </details>
+                        )}
+                      </>);
+                    })()}
+                </CollapseCard>
+              )}
+
               <CollapseCard id="machine" storePrefix="ot" title="🔧 Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
                 {sel.machine_no && (
                   <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>

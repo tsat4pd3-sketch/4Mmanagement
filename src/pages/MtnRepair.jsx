@@ -24,6 +24,8 @@ import { resolveMachine } from '../utils/qrCode';
 import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -205,7 +207,15 @@ const DateField = ({ label, value, onChange, required }) => (
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
   const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
-  const [tab, setTab] = useState('list');
+  // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
+  const TAB_DEFS = [
+    { key: 'list', label: '📋 รายการ MO' },
+    { key: 'kpi', label: '📊 KPI' },
+    { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
+    { key: 'rack', label: '🗺️ ผังคลัง' },
+    ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
+  ];
+  const [tab, setTab] = useTabParam(TAB_DEFS.map(t => t.key), 'list');
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -326,16 +336,11 @@ export default function MtnRepair() {
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {/* คลังอะไหล่ = ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์ */}
-          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ['rack', '🗺️ ผังคลัง'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="แจ้งซ่อม MTN (MO)" icon="🛠️"
+        sub={<>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</>}
+        tabs={TAB_DEFS} tab={tab} onTab={setTab}
+      />
 
       {tab === 'list' && <>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>

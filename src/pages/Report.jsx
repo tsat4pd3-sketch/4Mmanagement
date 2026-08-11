@@ -21,6 +21,8 @@ import SkillRadarPanel from '../components/SkillRadarPanel';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -189,29 +191,20 @@ export default function Report({ mode = 'report' }) {
   const location = useLocation();
   const initialParams = new URLSearchParams(location.search);
   const tabIdxs = mode === 'skills' ? SKILL_TAB_IDXS : TABS.map((_, i) => i).filter(i => !SKILL_TAB_IDXS.includes(i));
-  const initialTab = Number(initialParams.get('tab'));
-  const [activeTab, setActiveTab] = useState(
-    tabIdxs.includes(initialTab) ? initialTab : tabIdxs[0]
-  );
+  // ⚠️ ?tab= เป็น "เลข index" มาแต่เดิม (ลิงก์/bookmark เก่าอ้างเลขนี้) — คงสัญญาเดิมไว้ ไม่เปลี่ยนเป็นชื่อ
+  //    ต่างจากเดิมตรงที่ตอนนี้ "เขียนกลับ" URL ด้วย (กดแท็บ → ลิงก์เปลี่ยน → refresh/Back อยู่แท็บเดิม)
+  const [tabStr, setTabStr] = useTabParam(tabIdxs.map(String), String(tabIdxs[0]));
+  const activeTab = Number(tabStr);
   const autoOpenMaster = initialParams.get('master') === '1';
 
   return (
     <div className="page-content">
-      <div style={{ marginBottom: 18 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          {mode === 'skills' ? '🏅 Skill Matrix & ค่าฝีมือ' : '📋 รายงาน'}
-        </h2>
-      </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', flexShrink: 0 }}>
-        {tabIdxs.map((i) => (
-          <button key={i} onClick={() => setActiveTab(i)} style={{
-            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
-            background: activeTab === i ? 'var(--accent)' : 'var(--bg3)',
-            color: activeTab === i ? '#fff' : 'var(--text2)',
-            fontWeight: activeTab === i ? 700 : 400,
-          }}>{TABS[i]}</button>
-        ))}
-      </div>
+      <PageHeader
+        title={mode === 'skills' ? 'Skill Matrix & ค่าฝีมือ' : 'รายงาน'}
+        icon={mode === 'skills' ? '🏅' : '📋'}
+        tabs={tabIdxs.map(i => ({ key: String(i), label: TABS[i] }))}
+        tab={String(activeTab)} onTab={setTabStr}
+      />
       {activeTab === 0 && <DailyTab />}
       {activeTab === 1 && <PerEmployeeTab />}
       {activeTab === 2 && <StationLogTab />}

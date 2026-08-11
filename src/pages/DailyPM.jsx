@@ -8,6 +8,7 @@ import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
+import useTabParam from '../utils/useTabParam'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -36,7 +37,8 @@ export default function DailyPM() {
   const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
 
-  const [tab, setTab] = useState('status')
+  // ⚠️ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ AM ของ /daily-checker ซึ่งจอง ?tab= ไปแล้ว
+  const [tab, setTab] = useTabParam(['status', 'registry'], 'status', 'sub')
   const [userId, setUserId] = useState(null)
   const [jigs, setJigs] = useState([])
   const [prodLines, setProdLines] = useState([]) // รายชื่อไลน์ผลิต — ใช้กำหนดไลน์ให้อุปกรณ์ที่ยังไม่ระบุ
