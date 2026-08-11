@@ -504,12 +504,21 @@ export default function ProductMaster() {
       }
       toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
     } else {
-      const payload = toImport.map(r => ({
-        mat_no: r.mat_no, part_name: r.part_name,
-        part_no: r.part_no || null, uom: r.uom || 'EA',
-        qty_per_pkg: r.qty_per_pkg ? Number(r.qty_per_pkg) : null,
-        supplier: r.supplier || null, note: r.note || null, is_active: true,
-      }));
+      // ต้นทุน/ชิ้น: ไฟล์ไม่มีคอลัมน์/เซลล์ว่าง = คงค่าเดิม (upsert ทับทั้งแถว — ต้องเติมค่าเดิมกลับเอง)
+      // ⚠️ PostgREST บังคับทุก object ใน bulk upsert มี key ชุดเดียวกัน — ห้าม spread รายแถวตามเซลล์
+      const existingByMat = new Map(dupRows.map(d => [d.row.mat_no, d.existing]));
+      const costVal = (cell, oldVal) => (cell !== undefined && cell !== '' ? (Number(cell) || null) : (oldVal ?? null));
+      const payload = toImport.map(r => {
+        const ex = existingByMat.get(r.mat_no);
+        return {
+          mat_no: r.mat_no, part_name: r.part_name,
+          part_no: r.part_no || null, uom: r.uom || 'EA',
+          qty_per_pkg: r.qty_per_pkg ? Number(r.qty_per_pkg) : null,
+          supplier: r.supplier || null, note: r.note || null, is_active: true,
+          material_cost: costVal(r.material_cost, ex?.material_cost),
+          standard_cost: costVal(r.standard_cost, ex?.standard_cost),
+        };
+      });
       const { error } = await supabaseDR.from('parts_master').upsert(payload, { onConflict: 'mat_no', ignoreDuplicates: false });
       if (error) { toast.error(error.message); return; }
       toast.success(`นำเข้า ${payload.length} รายการสำเร็จ`);
@@ -1551,7 +1560,7 @@ function ExportPanel({ items, kanbanStds, bomCounts }) {
   };
 
   const exportParts = () => {
-    const headers = ['mat_no','part_name','part_no','uom','qty_per_pkg','supplier','note','is_active'];
+    const headers = ['mat_no','part_name','part_no','uom','qty_per_pkg','supplier','note','material_cost','standard_cost','is_active'];
     downloadCsv(`parts_master_${today}.csv`, headers, parts);
   };
 
@@ -1575,7 +1584,7 @@ function ExportPanel({ items, kanbanStds, bomCounts }) {
           <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>🗂 Parts Master</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
             ส่งออก parts_master {partsLoaded ? `${parts.length} รายการ` : '(กำลังโหลด...)'}<br />
-            Columns: mat_no, part_name, part_no, uom, qty_per_pkg, supplier, note, is_active
+            Columns: mat_no, part_name, part_no, uom, qty_per_pkg, supplier, note, material_cost, standard_cost, is_active
           </div>
           <button onClick={exportParts} disabled={!partsLoaded} style={{ ...btnPrimary, width: '100%', textAlign: 'center', opacity: partsLoaded ? 1 : 0.6 }}>
             ⬇️ ดาวน์โหลด Parts.csv
@@ -1597,6 +1606,8 @@ function ExportPanel({ items, kanbanStds, bomCounts }) {
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: 'EA',
   qty_per_pkg: '', supplier: '', note: '', is_active: true, image_url: '',
+  // ต้นทุน/ชิ้น (cost saving ใน /improvements · 2026-08-11): standard_cost (บช. รวม mat+DL+OH+DP) ชนะ material_cost เสมอ
+  material_cost: '', standard_cost: '',
 };
 
 const MAT_PREFIXES = [
@@ -1637,10 +1648,12 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   const [csvImporting, setCsvImporting] = useState(false);
   const csvRef = useRef(null);
 
-  const PARTS_CSV_HEADER = 'mat_no,part_name,part_no,uom,qty_per_pkg,supplier,note';
+  // material_cost/standard_cost (บาท/ชิ้น — cost saving ใน /improvements): ไฟล์เก่าที่ไม่มี 2 คอลัมน์นี้ยังนำเข้าได้
+  // และจะไม่ล้างค่าต้นทุนเดิม (อัพเดทเฉพาะฟิลด์ที่มีค่าในไฟล์)
+  const PARTS_CSV_HEADER = 'mat_no,part_name,part_no,uom,qty_per_pkg,supplier,note,material_cost,standard_cost';
   const PARTS_CSV_EXAMPLE = [
-    'EXAMPLE-300001234,[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] NUT WELD M8,NW-M8-001,EA,500,THAI SUMMIT PARTS,สำหรับ APRON ASSY',
-    'EXAMPLE-500009876,[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] STEEL PLATE 1.0MM,SP-1.0-A,KG,,ABC STEEL,',
+    'EXAMPLE-300001234,[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] NUT WELD M8,NW-M8-001,EA,500,THAI SUMMIT PARTS,สำหรับ APRON ASSY,0.85,1.2',
+    'EXAMPLE-500009876,[ตัวอย่าง-ลบแถวนี้ก่อนนำเข้าจริง] STEEL PLATE 1.0MM,SP-1.0-A,KG,,ABC STEEL,,32.5,',
   ].join('\n');
 
   const downloadPartsTemplate = () => {
@@ -1734,6 +1747,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
         supplier: (form.supplier || '').trim() || null, note: (form.note || '').trim() || null,
         is_active: form.is_active, image_url: imageUrl,
+        material_cost: form.material_cost !== '' && form.material_cost != null ? Number(form.material_cost) : null,
+        standard_cost: form.standard_cost !== '' && form.standard_cost != null ? Number(form.standard_cost) : null,
       };
       let err;
       if (editPart) {
@@ -1820,6 +1835,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Part No.</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>UOM</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Qty/Pkg</th>
+                <th title="Material Cost บาท/ชิ้น (raw mat)" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Mat ฿</th>
+                <th title="Standard Cost บาท/ชิ้น จากบัญชี (รวม mat+DL+OH+DP) — ใช้คิด cost saving" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Std ฿</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Supplier</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center' }}>สถานะ</th>
                 {canEdit && <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}></th>}
@@ -1827,7 +1844,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 9 : 8} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                   {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
                 </td></tr>
               )}
@@ -1849,6 +1866,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.part_no || '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{p.uom}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.qty_per_pkg ?? '-'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.material_cost != null ? Number(p.material_cost).toLocaleString() : '-'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, color: p.standard_cost != null ? 'var(--accent)' : 'var(--text2)', fontWeight: p.standard_cost != null ? 700 : 400, textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.standard_cost != null ? Number(p.standard_cost).toLocaleString() : '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)' }}>{p.supplier || '-'}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
                     <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, fontWeight: 700, background: p.is_active ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', color: p.is_active ? '#22c55e' : '#ef4444' }}>
@@ -1947,6 +1966,21 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <input type="number" min="1" step="any" style={inputSt}
                     value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))}
                     placeholder="จำนวนต่อกล่อง" />
+                </div>
+              </div>
+              {/* ต้นทุน/ชิ้น — ใช้คิด cost saving ของเสียใน /improvements (standard ชนะ material เสมอ) */}
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Material Cost (บาท/ชิ้น)</label>
+                  <input type="number" min="0" step="any" style={inputSt}
+                    value={form.material_cost ?? ''} onChange={e => setForm(f => ({ ...f, material_cost: e.target.value }))}
+                    placeholder="ต้นทุนวัตถุดิบ (raw mat)" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Standard Cost (บาท/ชิ้น)</label>
+                  <input type="number" min="0" step="any" style={inputSt}
+                    value={form.standard_cost ?? ''} onChange={e => setForm(f => ({ ...f, standard_cost: e.target.value }))}
+                    placeholder="จากบัญชี (รวม mat+DL+OH+DP)" />
                 </div>
               </div>
               <div>
