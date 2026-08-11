@@ -403,7 +403,7 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - **ใช้แล้วที่:** TransportMapEditor (ถนน/จุดจอด AMR — node+edge), FactoryMap setupMode (polygon กรอบไลน์), MtnMachineLayout facility (จุดอุปกรณ์บนโซน — เพิ่ม/ลบโซน+อัปรูปไม่เข้า history เพราะไฟล์ storage ย้อนไม่ได้ ใช้ confirm แทน), LineSetup (จุดงาน+ทักษะ/WIP/เครื่องจักร/เส้น flow ของไลน์ที่เลือก), **RackMap (ช่องชั้นวางคลังอะไหล่ — เพิ่ม 2026-08-11)**
 - **ไม่เข้าข่าย:** `SpinAnnotator` (ปักหมุดจุดตรวจ PMSetup) — ไม่เขียน DB เอง ส่งค่ากลับให้หน้าแม่ save รวม
 - editor ผังตัวใหม่ในอนาคต**ต้องใช้ hook นี้ตั้งแต่แรก** — ห้ามเขียน undo เองเฉพาะหน้า
-- **⚠️ ยังค้าง (หนี้ที่รู้ตัว): `QAInspectionSetup`** — วาง/ย้าย balloon (`qa_inspection_items.pos_x/pos_y`) + ลบจุดตรวจ เขียน DB ทันที และ**ลบ drawing เคลียร์ตำแหน่ง balloon ทั้งแผ่นรวดเดียว** = เข้าข่ายเต็มๆ แต่ยังไม่มี undo
+- **`QAInspectionSetup` ทำแล้ว (2026-08-11)** — ครอบ `qa_inspection_items` (วาง/ย้าย balloon · เพิ่ม/แก้/**ลบจุดตรวจซึ่งเป็น hard delete**) · **การลบ "แผ่นแบบ" (drawing) ไม่เข้า history โดยตั้งใจ** เพราะลบไฟล์ storage ไปด้วย ย้อนไม่ได้จริง — ใช้ confirm แทน (หลักเดียวกับ MtnMachineLayout) · context = `part` ที่เลือก เปลี่ยน part แล้ว `clear()`
 - **⚠️ กับดัก: RackMap ถูกสร้าง 2026-08-05 (หลังกฎ 2 วัน) แล้วไม่ได้ใช้ hook — ไม่มีอะไรจับได้เลยจนผู้ใช้ทัก** · กฎนี้ build/lint ตรวจไม่ได้ → **เขียน editor ผังใหม่ให้ไล่เช็ครายการ "ใช้แล้วที่" ข้างบน แล้วเติมชื่อตัวเองในคอมมิทเดียวกัน**
 
 ## 6.8 หัวหน้าเพจ + แท็บ — `PageHeader` / `useTabParam` (2026-08-11 · ดู `docs/NAVIGATION-REVIEW.md`)
