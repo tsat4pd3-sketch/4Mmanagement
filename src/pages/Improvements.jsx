@@ -606,6 +606,49 @@ export default function Improvements() {
         </div>
       </div>
 
+      {/* ── 💰 สรุป cost saving รวมขึ้นตาม hierarchy: กลุ่ม → ส่วน → รวม (2026-08-11 · คำสั่ง user
+             "rate อยู่ระดับกลุ่ม แล้วค่อย sum ขึ้นมาตาม hierarchy") — rate ไม่กรอกซ้ำระดับบน ยอดระดับบน = ผลรวมจากกลุ่ม ── */}
+      {(() => {
+        const active = visibleItems.filter(i => i.status !== 'cancelled');
+        const tree = new Map(); // section -> { total, groups: Map(group -> total) }
+        let grand = 0, computed = 0, pending = 0;
+        active.forEach(imp => {
+          const cs = costSavingOf(imp, results[imp.id]);
+          if (!cs || cs.totalPerMonth == null) { pending += 1; return; }
+          computed += 1; grand += cs.totalPerMonth;
+          const li = lines.find(l => l.name === imp.line_name);
+          const sec = li?.section || '—';
+          const grp = li?.parent_line_name || imp.line_name;
+          const s = tree.get(sec) || { total: 0, groups: new Map() };
+          s.total += cs.totalPerMonth;
+          s.groups.set(grp, (s.groups.get(grp) || 0) + cs.totalPerMonth);
+          tree.set(sec, s);
+        });
+        if (!computed) return null;
+        const col = (v) => (v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : 'var(--muted)');
+        return (
+          <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>💰 Cost Saving รวม (บาท/เดือน)</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                จาก {computed} โปรเจค (ไม่รวมที่ยกเลิก){pending > 0 ? ` · อีก ${pending} โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด` : ''} · รวมขึ้นจากระดับกลุ่มตามผังองค์กร
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
+              {[...tree.entries()].sort((a, b) => b[1].total - a[1].total).map(([sec, s]) => (
+                <div key={sec} style={{ fontSize: 11, color: 'var(--text2)' }}>
+                  <b style={{ color: 'var(--text)' }}>🏛️ {sec}</b> <b style={{ color: col(s.total) }}>{fmtBaht(s.total)}</b>
+                  <span style={{ color: 'var(--muted)' }}>
+                    {' '}( {[...s.groups.entries()].sort((a, b) => b[1] - a[1]).map(([g, v]) => `${g} ${fmtBaht(v)}`).join(' · ')} )
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {visibleItems.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)', fontSize: 13 }}>
           ยังไม่มีโปรเจคปรับปรุง{canManage ? ' — กด "➕ เพิ่มโปรเจคปรับปรุง" เลือกปัญหาจากพาเรโต้ได้เลย' : ''}
