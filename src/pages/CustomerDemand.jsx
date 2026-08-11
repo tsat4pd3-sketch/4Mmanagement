@@ -7,6 +7,7 @@ import { can } from '../utils/permissions';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { buildPnIndex, resolveMatNo, matIssueText } from '../utils/matResolve';
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -47,7 +48,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   const [day, setDay] = useState(workDateStr());
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [fgStock, setFgStock] = useState({});   // mat_no → { total, lines } — stock FG พร้อมส่งใน warehouse
+  const [fgStock, setFgStock] = useState({});   // **เลข SAP** → { total, lines } — stock FG พร้อมส่งใน warehouse
+  // เลขบน order (อาจเป็นเลขลูกค้า) → ผลการจับคู่ MAT SAP · ดู utils/matResolve.js
+  const [matMap, setMatMap] = useState({});
   const [cardFilter, setCardFilter] = useState('todo');   // 'todo' | 'overdue' | 'shipped' | 'all'
   const [sortMode, setSortMode] = useState('urgent');     // 'urgent' = ใกล้ดิว/หลุดเฟสขึ้นก่อน · 'time' = ตามเวลาส่ง
   const [wfSteps, setWfSteps] = useState([]);              // standard workflow (walkback) — deadline ต่อเฟส
@@ -139,7 +142,23 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     setPopup(null);
     const mats = [...new Set(list.map(o => o.mat_no))];
     if (mats.length) {
-      const { data: st } = await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', mats);
+      // ── แปลงเลขลูกค้า → MAT SAP ก่อนไปหาสต็อก ────────────────────────────
+      // order จาก EDI 862 อ้างเลขลูกค้า (RB3B 8C306 BB) แต่ FG เข้าคลังด้วยเลข SAP
+      // (10100379) — เดิมหาด้วยเลขบน order ตรงๆ จึงไม่เจอสต็อกแล้วไม่หักแบบเงียบๆ
+      // ⚠️ resolve เฉพาะที่ชัดตัวเดียว · กำกวม/ปลายทางไม่ใช่เลข SAP = ไม่เดา (ดู matResolve.js)
+      const [{ data: dp }, { data: ks }] = await Promise.all([
+        supabaseDR.from('dr_products').select('mat_no, p_no').not('p_no', 'is', null),
+        supabaseDR.from('kanban_standards').select('mat_no, p_no').not('p_no', 'is', null),
+      ]);
+      const pnIdx = buildPnIndex([...(dp || []), ...(ks || [])]);
+      const mm = {};
+      mats.forEach(x => { mm[x] = resolveMatNo(x, pnIdx); });
+      setMatMap(mm);
+
+      const sapMats = [...new Set(Object.values(mm).map(r => r.mat).filter(Boolean))];
+      const { data: st } = sapMats.length
+        ? await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', sapMats)
+        : { data: [] };
       const m = {};
       (st || []).forEach(r => {
         const q = parseFloat(r.qty_on_hand) || 0;
@@ -148,8 +167,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         e.total += q;
         e.lines.push({ line_name: r.line_name, qty: q });
       });
-      setFgStock(m);
-    } else setFgStock({});
+      setFgStock(m);   // keyed ด้วยเลข SAP — อ่านผ่าน stockOf(o) เสมอ
+    } else { setFgStock({}); setMatMap({}); }
   }, [day]);
   useEffect(() => { load(); }, [load, refreshKey]);
 
@@ -197,19 +216,23 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   }, [orders, custLabel]);
 
   // จัดสรร stock พร้อมส่งให้รอบที่ยังไม่ส่ง เรียงตามเวลา (FIFO) — รอบไหนพร้อมส่ง/ขาดเท่าไหร่
+  // ⚠️ pool แชร์ตามเลข SAP: order คนละเลขลูกค้าที่ชี้ SAP เดียวกันต้องแย่งของก้อนเดียวกัน
   const coverage = useMemo(() => {
     const remain = {};
     Object.entries(fgStock).forEach(([m, v]) => { remain[m] = v.total; });
     const map = {};
     orders.forEach(o => {
       if (o.status === 'shipped') return;
-      const avail = remain[o.mat_no] || 0;
+      const sap = matMap[o.mat_no]?.mat ?? null;
+      const avail = sap ? (remain[sap] || 0) : 0;
       const use = Math.min(avail, Number(o.qty));
-      remain[o.mat_no] = avail - use;
-      map[o.id] = { covered: use, short: Number(o.qty) - use, tracked: !!fgStock[o.mat_no] };
+      if (sap) remain[sap] = avail - use;
+      // ⚠️ unknown = จับคู่เลข SAP ไม่ได้ → "ไม่รู้ว่ามีของไหม" ห้ามแสดงเป็น "ไม่มีของ ต้องผลิต!"
+      //    (ของอาจเต็มคลังอยู่ใต้เลข SAP — เตือนผิดทำให้ผลิตซ้ำโดยไม่จำเป็น)
+      map[o.id] = { covered: use, short: Number(o.qty) - use, tracked: !!(sap && fgStock[sap]), unknown: !sap };
     });
     return map;
-  }, [orders, fgStock]);
+  }, [orders, fgStock, matMap]);
 
   const advance = async (o) => {
     const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
@@ -228,7 +251,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     //    ตอนที่ยอดไม่ถูกหักจริง (เคยเงียบมาตลอด: ส่งไป 3,279 ชิ้น หักจริง 508 โดยไม่มีใครรู้)
     let shipMsg = null;   // ข้อความสรุปผลการหักสต็อก (null = หักครบตามยอดส่ง)
     if (st.next === 'shipped') {
-      const entry = fgStock[o.mat_no];
+      // เลข SAP ที่ของอยู่จริง — order อาจอ้างเลขลูกค้า ต้อง resolve ก่อนเสมอ
+      const res = matMap[o.mat_no] || { mat: null, status: 'none', candidates: [] };
+      const sap = res.mat;
+      const entry = sap ? fgStock[sap] : null;
       const want = Number(o.qty) || 0;
       let left = want;
       const txns = [];
@@ -237,7 +263,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         const use = Math.min(l.qty, left);
         left -= use;
         txns.push({
-          line_name: l.line_name, mat_no: o.mat_no, part_name: o.part_name, qty: use,
+          line_name: l.line_name, mat_no: sap, part_name: o.part_name, qty: use,
           type: 'consume', work_date: workDateStr(),
           note: `ส่งลูกค้า ${o.customer || ''} · ${o.due_date} ${o.ship_time || ''}${o.order_no ? ` · PO ${o.order_no}` : ''}`,
           created_by: fullName || 'Logistic',
@@ -257,12 +283,11 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         if (e2) { cut = 0; toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message); }
       }
       if (cut <= 0) {
-        // ไม่มีสต็อกของ MAT นี้ในระบบเลย → ยอดคลังไม่ขยับ (ยอดคงเหลือจะสูงกว่าความจริงไปเรื่อยๆ)
-        // สาเหตุที่เจอบ่อยสุด: order อ้างเลขพาร์ทลูกค้า (RB3B/MB3B…) ที่ยังจับคู่ MAT SAP ไม่ได้
-        // → FG เข้าคลังด้วยเลข SAP แต่ตัดออกด้วยเลขลูกค้า = คนละกุญแจ ไม่มีวันเจอกัน
-        const looksCustomerPn = !/^\d/.test(String(o.mat_no || '').trim());
-        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก (ไม่มีข้อมูลสต็อกของ MAT นี้)`
-          + (looksCustomerPn ? ' · ดูเหมือนเลขพาร์ทลูกค้า ยังไม่จับคู่ MAT SAP — ตั้ง p_no ที่ Product Master' : '');
+        // ยอดคลังไม่ขยับ → ยอดคงเหลือจะสูงกว่าความจริงไปเรื่อยๆ ต้องบอกให้รู้ว่าติดตรงไหน
+        // แยก 2 สาเหตุที่คนละวิธีแก้: จับคู่เลขไม่ได้ (แก้ master) vs จับคู่ได้แต่ของไม่เคยเข้าคลัง (แก้การปิดออเดอร์ผลิต)
+        const why = matIssueText(o.mat_no, res);
+        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก · `
+          + (why || `ไม่มีข้อมูลสต็อกของ ${sap} ในคลัง (ของยังไม่เคยถูกบันทึกเข้า — เช็คการปิดออเดอร์ผลิต/กฎรับเข้าอัตโนมัติ)`);
       } else if (cut < want) {
         shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — หักสต็อกได้ ${cut.toLocaleString()}/${want.toLocaleString()} ชิ้น (สต็อกในระบบไม่พอ ขาด ${(want - cut).toLocaleString()})`;
       }
@@ -285,7 +310,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
 
   const shippedCount = orders.filter(o => o.status === 'shipped').length;
   const overdueCount = orders.filter(isOverdue).length;
-  const shortCount = orders.filter(o => o.status !== 'shipped' && (coverage[o.id]?.short || 0) > 0).length;
+  // นับ "stock ไม่พอ" เฉพาะรอบที่เช็คสต็อกได้จริง — รอบที่จับคู่เลขไม่ได้แยกไปอีกตัวนับ
+  // (ไม่งั้นตัวเลข "N รอบ stock ไม่พอ" จะโป่งด้วยรอบที่แค่ยังไม่รู้ แล้วสั่งผลิตเกิน)
+  const shortCount = orders.filter(o => o.status !== 'shipped' && !coverage[o.id]?.unknown && (coverage[o.id]?.short || 0) > 0).length;
+  const unknownCount = orders.filter(o => o.status !== 'shipped' && coverage[o.id]?.unknown).length;
 
   // 🎯 ranking ความเร่งด่วน = deadline ของเฟสที่ยังไม่เสร็จ ที่เก่าสุด/ใกล้สุด
   // (ใบที่หลุดเฟสมานานสุดขึ้นแถวบนสุด → ใบที่ deadline ถัดไปใกล้เข้ามา → ใบที่ยังมีเวลา)
@@ -356,6 +384,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
           🚚 {orders.length} รอบส่ง · ✅ {shippedCount} ส่งแล้ว
           {overdueCount > 0 && <span style={{ color: '#ef4444' }}> · 🔴 {overdueCount} เลยเวลา</span>}
           {shortCount > 0 && <span style={{ color: '#f59e0b' }}> · 📦 {shortCount} รอบ stock ไม่พอ</span>}
+          {unknownCount > 0 && <span style={{ color: 'var(--muted)' }} title="เลขพาร์ทลูกค้ายังไม่จับคู่ MAT SAP — เช็คสต็อกและตัดสต็อกอัตโนมัติไม่ได้ ตั้ง p_no ที่ Product Master"> · ❔ {unknownCount} รอบ ยังเช็ค stock ไม่ได้</span>}
         </span>
         {pastDue.length > 0 && (
           <button onClick={() => setDay(pastDue.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDue[0].due_date))}
@@ -591,11 +620,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.order_no ? `PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</span>
                     </div>
                     {o.status !== 'shipped' && cov && (
-                      cov.short <= 0
-                        ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                        : cov.covered > 0
-                          ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
-                          : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(cov.short)} ชิ้น ต้องผลิต!</div>
+                      cov.unknown
+                        ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</div>
+                        : cov.short <= 0
+                          ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
+                          : cov.covered > 0
+                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
+                            : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(cov.short)} ชิ้น ต้องผลิต!</div>
                     )}
                     {o.status !== 'shipped' && phases.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
@@ -693,11 +724,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                       </div>
                     )}
                     {o.status !== 'shipped' && coverage[o.id] && (
-                      coverage[o.id].short <= 0
-                        ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                        : coverage[o.id].covered > 0
-                          ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
-                          : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(coverage[o.id].short)} ชิ้น ต้องผลิต!</div>
+                      coverage[o.id].unknown
+                        ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</div>
+                        : coverage[o.id].short <= 0
+                          ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
+                          : coverage[o.id].covered > 0
+                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
+                            : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(coverage[o.id].short)} ชิ้น ต้องผลิต!</div>
                     )}
                     {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
                     {st.next && (
