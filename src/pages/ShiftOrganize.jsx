@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { toast } from '../components/Toast';
 
 function getWeekDates(refDate) {
@@ -83,8 +84,14 @@ export default function ShiftOrganize() {
 
   const fetchEmployees = async () => {
     let q = supabase.from('employees').select('id, name, employee_id_code, line_id, production_lines(section)').eq('is_active', true);
-    // mandatory scope: leader → ไลน์ตัวเอง (server-side), role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
-    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
+    // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
+    // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
+    if (role === 'leader' && userLineId) {
+      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const fam = getLineFamilyIds(ls || [], Number(userLineId));
+      q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', userLineId);
+    }
     const { data } = await q.order('name');
     let scoped = data || [];
     if (!(role === 'leader' && userLineId) && scopeSecs.length) {
