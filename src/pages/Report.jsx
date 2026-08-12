@@ -789,14 +789,21 @@ function PerEmployeeTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
-    let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true);
-    if (role === 'leader' && userLineId) empQ = empQ.eq('line_id', userLineId);
-    else if (scopeSecs.length)           empQ = empQ.in('section', scopeSecs);
-    empQ.order('name').then(({ data }) => {
+    // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id
+    // ตรงตัว ไม่งั้นคนที่ผูกไลน์ลูกหายจากสายตาหัวหน้าที่ผูกไลน์แม่) · sections → เฉพาะใน scope
+    (async () => {
+      let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true);
+      if (role === 'leader' && userLineId) {
+        const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+        const fam = getLineFamilyIds(ls || [], Number(userLineId));
+        empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
+      } else if (scopeSecs.length) {
+        empQ = empQ.in('section', scopeSecs);
+      }
+      const { data } = await empQ.order('name');
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
-    });
+    })();
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 

@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
-import { filterLinesByDept } from '../utils/lineHierarchy';
+import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -225,9 +225,17 @@ export default function Operator() {
   };
 
   const fetchEmployees = async () => {
+    // scope ของ leader = ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+    // ดึงไลน์เองตรงนี้ ไม่พึ่ง state `lines` เพราะโหลดขนานกัน อาจยังว่างตอน fetch รอบแรก
+    let famIds = null;
+    if (isLeader && userLineId) {
+      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const s = getLineFamilyIds(ls || [], Number(userLineId));
+      famIds = s.size ? [...s] : null;
+    }
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
-      if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
+      if (isLeader && userLineId)       q = famIds ? q.in('line_id', famIds) : q.eq('line_id', userLineId);
       else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
     };
