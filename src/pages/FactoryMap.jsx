@@ -306,6 +306,7 @@ export default function FactoryMap({ setupMode = false }) {
      ⚠️ เดิม modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น "—"
         ขณะที่การ์ด hover บนผังเดียวกันโชว์ "OEE 99% (สด)" = จอเดียวกันตอบคนละอย่าง (user ทัก 2026-08-06) */
   const liveOeeRef = useRef({});
+  const runNRef = useRef({});   // ไลน์ → จำนวนเครื่องที่เดินจริง (ปรับตามกำลังคนแล้ว) — ใช้เป็นตัวหาร P
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -419,6 +420,9 @@ export default function FactoryMap({ setupMode = false }) {
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
         parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
+        // P หารด้วยจำนวนเครื่องเฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (parallel_machine) — ผลิตต่อเนื่อง CT เป็นของทั้งไลน์
+        parallelP: flowModeOf(flowByLineRef.current[s.line_name]?.flow_mode) === 'parallel_machine'
+          ? (runNRef.current[s.line_name] || parallelUnitsOf(flowByLineRef.current[s.line_name])) : 1,
       });
       return r && r.oee != null ? Math.round(r.oee) : null; // noOutput → oee null (ห้าม round เป็น 0)
     };
@@ -529,6 +533,7 @@ export default function FactoryMap({ setupMode = false }) {
           ? Math.min(target, (availMin * 60) / ctAvg * parallelN)
           : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
         runN = parallelN; capN = fullN;
+        runNRef.current[s.line_name] = Math.max(runNRef.current[s.line_name] || 0, parallelN);
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);

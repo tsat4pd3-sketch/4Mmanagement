@@ -100,7 +100,16 @@ export const LIVE_MIN_ELAPSED = 10; // นาทีแรกของกะ ย�
 // parallelN: จำนวนเครื่องหลักวิ่งขนานของไลน์ (production_lines.parallel_stations ผ่าน parallelUnitsOf ใน lineTypes.js)
 // — DT ที่ระบุเครื่อง (machine_no) หักน้ำหนัก 1/N (เครื่องเดียวหยุด อีก N-1 ยังวิ่ง) · DT ไม่ระบุเครื่อง = หยุดทั้งไลน์ หักเต็ม
 // สูตรเดียวกับ computeOEE ตอนปิดกะใน DailyReport (เคส LASER-345/789 N=3 · 2026-08-05) · ไม่ส่งมา = 1 (พฤติกรรมเดิม)
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1 }) {
+/* parallelN = หัก DT รายเครื่อง 1/N (ทุกโหมดไหลงาน)
+   parallelP = ตัวหารของ P — "เวลาเครื่องที่มีให้ใช้ = runMin × parallelP"
+   ⚠️ 2 ตัวนี้ไม่เท่ากันเสมอไป และห้ามเอามารวมกัน (คำสั่ง user 2026-08-11):
+     · ผลิตต่อเนื่อง (one_piece_flow เช่น LASER-345/789 เลเซอร์ 3 ตัวเป็นสายเดียว)
+       → CT ที่กรอกเป็นของ "ทั้งไลน์" อยู่แล้ว → parallelP = 1 ห้ามหาร
+       (เคยคิดจะหาร N=3 ทั้งกระดาน — เช็คแล้ว P จะร่วงจาก 63-98% เหลือ 21-33% = พัง)
+     · เครื่อง stand-alone ต่างคนต่างรัน (parallel_machine เช่น SUB APRON)
+       → CT เป็นของ "ต่อเครื่อง" → parallelP = จำนวนเครื่องที่เดินจริง
+   ไม่ส่ง parallelP = 1 (พฤติกรรมเดิมเป๊ะ) */
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelP = 1 }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -136,7 +145,10 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true };
   }
 
-  const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
+  // ไลน์เครื่องขนาน: เวลาเครื่องที่มีให้ใช้ = runMin × จำนวนเครื่องที่เดิน (ไม่งั้น P ทะลุ 100% แล้วโดน cap
+  // จนอ่านไม่ได้ — เคสจริง SUB APRON: งาน 550 นาที ใน 196 นาที = 2.8 เท่า → cap 100% ทุกครั้ง)
+  const runCap = runMin * Math.max(1, parallelP);
+  const P = Math.min(1, runCap > 0 ? stdMin / runCap : 0);
   const Q = produced / (produced + ng);
   const oee = A * P * Q;
   if (!isFinite(oee)) return null;
