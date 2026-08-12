@@ -7,6 +7,7 @@
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
+อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
 อัพเดท 2026-08-04: §5.1 viewer วางจุด default = **พอดีกรอบทั้ง 2 แกน** (เดิมเต็มความกว้าง → รูปแนวนอนสูงล้นจนตารางตกจอ) · §5.1 จอ "ตรวจจริง" ต้อง sync สีหมุดกับผลตรวจ + แตะหมุด↔แถว สองทาง
 
 ---
@@ -273,6 +274,11 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 - จุดที่ทำแล้ว (2026-08-10): TaxonomyManagerModal · MachineDatabase (ประเภทเครื่องจักร) ·
   ProcessTypeSetup · SparePartMaster (หมวดอะไหล่) · DailyReport (ประเภท DT + ของเสีย) · operator (สกิล)
 - **ฟอร์มใหม่ที่มีช่องสี ต้องใช้ `pickUnusedColor` ตั้งแต่แรก ห้าม hardcode สี default ตายตัว**
+- **ข้อมูลเก่าที่สีซ้ำอยู่แล้ว ล้างเรียบร้อย (2026-08-10):** migration `20260810_recolor_master_duplicates_dr.sql`
+  (machine_types 27 · dr_downtime_types 40 · dr_defect_types 17 แถว) + `_main.sql` (skill_definitions 21 แถว) —
+  แถวแรกของแต่ละสี (ตาม sort_order) เก็บสีเดิม ตัวซ้ำได้สีใหม่ไม่ชนใครในตาราง · ประเภทชื่อมี "อื่น" ได้โทนเทา
+  (คงความหมาย อื่นๆ=เทา) · ตารางสีเล็กอื่น (mtn_teams/หมวดอะไหล่/process_types/PM taxonomy/machine traits)
+  ตรวจแล้วไม่ซ้ำ ไม่แตะ · ตรวจหลัง apply: ไม่เหลือสีซ้ำใน 4 ตาราง
 
 ## 5.3 Dropdown ลำดับชั้นองค์กร ต้อง cascade เสมอ (2026-07-21 — คำสั่ง user)
 
@@ -394,8 +400,35 @@ pattern ร่วมของทุกบอร์ดที่วางราย
 - **จุดที่ต้องเรียก `pushHistory()` = "ก่อน" mutation แรกของทุก action** (วาง/ลบ/บันทึกฟอร์ม/เชื่อมเส้น) · การพิมพ์ต่อเนื่อง (ชื่อจุด) ส่ง tag เดิม → coalesce ใน 1.2 วิ ไม่ push ทุกตัวอักษร · การลากย้าย: ถ่าย snapshot ตอน pointerdown เก็บใน dragRef แล้ว `pushSnapshot(snap)` ตอนปล่อยเมื่อขยับจริง
 - **เปลี่ยน context (สลับไลน์/โซน/ผังคนละแผ่น) → `hist.clear()`** — snapshot ข้ามผังใช้ไม่ได้ ห้ามให้ undo ไปลบของผังอื่น
 - ปุ่มใช้ `undoBtnStyle(enabled)` จากไฟล์เดียวกัน: `↩️ Undo` `↪️ Redo` วางในแถบเครื่องมือของโหมดแก้ไข (แสดงเฉพาะตอนมีสิทธิ์แก้)
-- **ใช้แล้วที่:** TransportMapEditor (ถนน/จุดจอด AMR — node+edge), FactoryMap setupMode (polygon กรอบไลน์), MtnMachineLayout facility (จุดอุปกรณ์บนโซน — เพิ่ม/ลบโซน+อัปรูปไม่เข้า history เพราะไฟล์ storage ย้อนไม่ได้ ใช้ confirm แทน), LineSetup (จุดงาน+ทักษะ/WIP/เครื่องจักร/เส้น flow ของไลน์ที่เลือก)
+- **ใช้แล้วที่:** TransportMapEditor (ถนน/จุดจอด AMR — node+edge), FactoryMap setupMode (polygon กรอบไลน์), MtnMachineLayout facility (จุดอุปกรณ์บนโซน — เพิ่ม/ลบโซน+อัปรูปไม่เข้า history เพราะไฟล์ storage ย้อนไม่ได้ ใช้ confirm แทน), LineSetup (จุดงาน+ทักษะ/WIP/เครื่องจักร/เส้น flow ของไลน์ที่เลือก), **RackMap (ช่องชั้นวางคลังอะไหล่ — เพิ่ม 2026-08-11)**
+- **ไม่เข้าข่าย:** `SpinAnnotator` (ปักหมุดจุดตรวจ PMSetup) — ไม่เขียน DB เอง ส่งค่ากลับให้หน้าแม่ save รวม
 - editor ผังตัวใหม่ในอนาคต**ต้องใช้ hook นี้ตั้งแต่แรก** — ห้ามเขียน undo เองเฉพาะหน้า
+- **`QAInspectionSetup` ทำแล้ว (2026-08-11)** — ครอบ `qa_inspection_items` (วาง/ย้าย balloon · เพิ่ม/แก้/**ลบจุดตรวจซึ่งเป็น hard delete**) · **การลบ "แผ่นแบบ" (drawing) ไม่เข้า history โดยตั้งใจ** เพราะลบไฟล์ storage ไปด้วย ย้อนไม่ได้จริง — ใช้ confirm แทน (หลักเดียวกับ MtnMachineLayout) · context = `part` ที่เลือก เปลี่ยน part แล้ว `clear()`
+- **⚠️ กับดัก: RackMap ถูกสร้าง 2026-08-05 (หลังกฎ 2 วัน) แล้วไม่ได้ใช้ hook — ไม่มีอะไรจับได้เลยจนผู้ใช้ทัก** · กฎนี้ build/lint ตรวจไม่ได้ → **เขียน editor ผังใหม่ให้ไล่เช็ครายการ "ใช้แล้วที่" ข้างบน แล้วเติมชื่อตัวเองในคอมมิทเดียวกัน**
+
+## 6.8 หัวหน้าเพจ + แท็บ — `PageHeader` / `useTabParam` (2026-08-11 · ดู `docs/NAVIGATION-REVIEW.md`)
+
+**ห้ามวาดหัวเรื่อง/แถบแท็บเอง** — เดิมแต่ละหน้าวาดเอง เลยได้มุมโค้งแท็บ 7/8/12/`var(--radius-lg)` ปนกัน และมีหัวเรื่องแค่ 22 จาก 56 หน้า
+
+```jsx
+const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/useTabParam.js
+<PageHeader title="แจ้งซ่อม MTN (MO)" icon="🛠️" sub="ค้างดำเนินการ 3 ใบ"
+  actions={<button…/>} tabs={TABS} tab={tab} onTab={setTab} />     // src/components/PageHeader.jsx
+```
+
+1. **ทุกหน้าขึ้นด้วย `<PageHeader>`** — breadcrumb (`🏠 หน้าหลัก › หมวด › หน้า › แท็บ`) generate เองจาก `NAV_ITEMS` ตาม pathname **ไม่ต้องใส่มือ** · route ที่ไม่อยู่ใน NAV_ITEMS = ไม่มี breadcrumb (ไม่พัง) · `paddingRight: 52` กัน 🔔 ให้แล้ว
+2. **หน้าที่มีแท็บต้องผูก `?tab=`** ผ่าน `useTabParam` — refresh/แชร์ลิงก์/ปุ่ม Back ต้องอยู่แท็บเดิม · **ค่าที่ไม่รู้จักใน URL = ตกกลับแท็บ default ห้ามจอว่าง** · แท็บ default ไม่ใส่ใน URL (ลิงก์สะอาด) · เปลี่ยนแท็บ = push history (Back กลับแท็บก่อนหน้า) · param อื่น (`?line=`) ถูกรักษาไว้
+   - ⚠️ **การสลับแท็บที่ "ระบบสั่งเอง" ต้องใช้ `setTab(k, { replace: true })`** (เช่นบันทึกเสร็จแล้วเด้งกลับหน้ารายการ) — ถ้า push ผู้ใช้กด Back จะย้อนเข้าฟอร์มที่เพิ่งบันทึกไปแล้ว · ผู้ใช้กดแท็บเอง = push (ค่าเริ่มต้น)
+   - ⚠️ `setTab` จาก `useTabParam` **เปลี่ยน identity ตาม URL** — ถ้าเรียกใน `useCallback`/`useEffect` ต้องใส่ใน deps (เดิม `useState` setter นิ่ง เลยเคยใส่ `[]` ได้)
+   - ⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return (กฎ rules-of-hooks — React #310)
+3. **แท็บ ≤ 7 ตัว** เกินกว่านั้นให้ยุบกลุ่มหรือแยกหน้า
+4. **แท็บ "ตั้งค่า/ข้อมูลหลัก" อยู่ท้ายสุดเสมอ** และ gate ด้วย `can()` (งานประจำวันมาก่อน setup)
+5. **ยุบหน้าเข้าเป็นแท็บเมื่อไหร่ ต้อง `<Navigate to="…?tab=x" replace />` route เดิม** ห้ามปล่อยให้ render ซ้ำสองทาง (bookmark เก่าของคนหนึ่งพาไปหน้าเดี่ยว อีกคนเข้าจากเมนูเห็นหน้ารวม = คุยกันคนละภาพ) · ทำแล้ว: `/daily-pm` `/pokayoke` `/lpa` → `/daily-checker?tab=` · **ลิงก์ภายในให้ชี้ปลายทางจริง** ไม่ต้องเด้งผ่าน redirect
+6. **หน้าที่ถูกเปิดจากหน้าอื่นต้องมีทางกลับ** — breadcrumb ของ PageHeader ทำให้แล้ว (หรือปุ่ม ← ที่ระบุปลายทาง เช่น `?from=factory-map`)
+
+**ข้อยกเว้นที่ตั้งใจ:** `/linesetup` **ไม่ redirect** เข้า `/layout-setup?tab=production` — เพราะแท็บนั้น gate ด้วย `line_setup:edit` และ **ชี้กลับมา `/linesetup` เป็นทาง "ดูอย่างเดียว"** ของคนที่ไม่มีสิทธิ์แก้ · redirect แล้วจะกลายเป็นวงวน
+
+---
 
 ## 7. เบ็ดเตล็ดที่เคยกัด
 

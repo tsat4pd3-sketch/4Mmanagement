@@ -10,6 +10,7 @@ import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
+import useTabParam from '../utils/useTabParam';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -61,7 +62,8 @@ export default function LineSetup({ embedded = false } = {}) {
   const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
-  const [activeTab, setActiveTab] = useState('stations'); // 'stations' | 'wip' | 'machines'
+  // ⚠️ ใช้ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ 'ผลิต' ของ /layout-setup ซึ่งจอง ?tab= ไปแล้ว
+  const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stations', 'sub');
   // UX แถบขวา: ค้นหา + พับรายการ (ข้อมูลเยอะ เลื่อนหายาก — 2026-07-24)
   const [lineSearch, setLineSearch] = useState('');
   const [lineListOpen, setLineListOpen] = useState(() => { try { return localStorage.getItem('ls_lineList_open') !== '0'; } catch { return true; } });

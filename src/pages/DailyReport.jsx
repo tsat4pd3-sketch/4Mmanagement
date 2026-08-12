@@ -21,6 +21,8 @@ import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, bui
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -140,38 +142,23 @@ const CAT_META = {
 ═══════════════════════════════════════════════════════════════ */
 export default function DailyReport() {
   const { role } = useContext(UserContext);
-  const [tab, setTab] = useState('live');
-
   const canSetup = can('daily_report', 'setup', role);
+  const [tabRaw, setTab] = useTabParam(['live', 'history', 'export', 'setup'], 'live');
+  const tab = tabRaw === 'setup' && !canSetup ? 'live' : tabRaw;   // ลิงก์เข้าแท็บที่ไม่มีสิทธิ์ = ตกกลับแท็บแรก
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
-      {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับแท็บขวาสุด (⚙️ ตั้งค่า) */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12, paddingRight: 52 }}>
-        <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            📊 Daily Production Report
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 10, padding: 4 }}>
-          {[
-            { key: 'live',    label: '⚡ Live กะนี้' },
-            { key: 'history', label: '📋 ประวัติ' },
-            { key: 'export',  label: '📤 Export' },
-            ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
-          ].map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ padding: '6px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                background: tab === t.key ? 'var(--accent)' : 'transparent',
-                color: tab === t.key ? '#fff' : 'var(--muted)' }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Daily Production Report" icon="📊"
+        sub="บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ"
+        tabs={[
+          { key: 'live', label: '⚡ Live กะนี้' },
+          { key: 'history', label: '📋 ประวัติ' },
+          { key: 'export', label: '📤 Export' },
+          ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'live'    && <LiveTab role={role} />}
       {tab === 'history' && <HistoryTab role={role} />}
@@ -278,6 +265,8 @@ function LiveTab({ role }) {
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
+  // หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — คู่กับ close_approve_note/close_reject_reason ฝั่ง SV
+  const [closeNote, setCloseNote]           = useState('');
   const [closeEndTime, setCloseEndTime]     = useState(nowTime());
   const [closeStartTime, setCloseStartTime] = useState('');
   const [savingClose, setSavingClose]       = useState(false);
@@ -1912,6 +1901,24 @@ function LiveTab({ role }) {
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
+    // หมายเหตุของผู้ขอปิดกะ + เคลียร์ร่องรอยการถูกปฏิเสธรอบก่อน (ส่งขอใหม่แล้ว = ไม่ค้างสถานะถูกตีกลับ
+    // ไม่งั้นไอคอน ✕ ในลิสต์กะค้างอยู่ทั้งที่แก้แล้ว) — update แยก best-effort เหมือน close_approve_note
+    // ยังไม่ apply migration = ปิดกะได้ปกติ แค่ยังไม่เก็บ/ยังไม่เคลียร์ข้อความ
+    // ⚠️ supabase-js "คืน" { error } ไม่ได้ throw → try/catch เฉยๆ จะกลืน error ทิ้งเงียบ
+    // ต้องเช็ค error เองแล้วบอกผู้ใช้ ไม่งั้นหมายเหตุหายโดยไม่มีใครรู้ (กฎ: ห้ามล้มเหลวเงียบ)
+    try {
+      const { error: noteErr } = await supabaseDR.from('production_sessions').update({
+        close_request_note:   closeNote.trim() || null,
+        close_reject_reason:  null,
+        close_reject_by_name: null,
+        close_reject_at:      null,
+      }).eq('id', selSession.id);
+      if (noteErr) {
+        console.warn('[close] เก็บหมายเหตุ/เคลียร์สถานะปฏิเสธไม่สำเร็จ', noteErr);
+        if (closeNote.trim()) toast.error('ปิดกะเรียบร้อย แต่ "หมายเหตุ" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_request_note (แจ้ง admin)');
+      }
+    } catch (e) { console.warn('[close] note update exception', e); }
+
     // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
 
     const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
@@ -1972,7 +1979,14 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
     // remark ผู้อนุมัติ (optional) — update แยก best-effort: ยังไม่ apply migration close_approve_note = อนุมัติได้ปกติ
     if (approveNote.trim()) {
-      try { await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id); } catch { /* additive */ }
+      // เช็ค error เอง — supabase-js คืน { error } ไม่ throw (try/catch เฉยๆ กลืนทิ้ง)
+      try {
+        const { error: apErr } = await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id);
+        if (apErr) {
+          console.warn('[approve] เก็บหมายเหตุผู้อนุมัติไม่สำเร็จ', apErr);
+          toast.error('อนุมัติปิดกะแล้ว แต่ "หมายเหตุ" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_approve_note (แจ้ง admin)');
+        }
+      } catch (e) { console.warn('[approve] note update exception', e); }
     }
     setApproveNote('');
 
@@ -2043,13 +2057,19 @@ function LiveTab({ role }) {
     if (error) { setSavingReject(false); toast.error(error.message); return; }
     // เก็บ remark แยกเป็น update best-effort — ถ้ายังไม่ได้ apply migration (คอลัมน์ยังไม่มี) การปฏิเสธยังทำงานปกติ
     // แค่ยังไม่บันทึกข้อความ (ค่อยเก็บได้หลัง migration) — ไม่ให้ feature ใหม่ทำ flow หลักพัง
+    // ⚠️ supabase-js คืน { error } ไม่ throw — ต้องเช็คเอง ไม่งั้นเหตุผลที่ SV พิมพ์หายเงียบ
+    // (หัวหน้ากลุ่มจะเห็นแบนเนอร์เปล่าๆ ไม่รู้ว่าต้องแก้อะไร + ไอคอน ✕ ในลิสต์กะจะไม่ขึ้น)
     try {
-      await supabaseDR.from('production_sessions').update({
+      const { error: rejErr } = await supabaseDR.from('production_sessions').update({
         close_reject_reason:  reason,
         close_reject_by_name: fullName,
         close_reject_at:      new Date().toISOString(),
       }).eq('id', selSession.id);
-    } catch { /* best-effort: คอลัมน์อาจยังไม่มีก่อน migration */ }
+      if (rejErr) {
+        console.warn('[reject] เก็บเหตุผลปฏิเสธไม่สำเร็จ', rejErr);
+        toast.error('ปฏิเสธคำขอแล้ว แต่ "เหตุผล" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_reject_reason (แจ้ง admin) · กรุณาแจ้งหัวหน้ากลุ่มด้วยวิธีอื่น');
+      }
+    } catch (e) { console.warn('[reject] reason update exception', e); }
     setSavingReject(false);
     setShowRejectModal(false);
     setRejectReason('');
@@ -2170,7 +2190,13 @@ function LiveTab({ role }) {
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
-                      {s.status === 'pending_close' && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {/* ถูกปฏิเสธปิดกะ — กะกลับเป็น open แล้ว แต่เดิมเห็นได้ต่อเมื่อเข้าไปในกะ
+                          หัวหน้ากลุ่มที่ดูแลหลายไลน์จึงไม่รู้ว่าไลน์ไหนโดนตีกลับ · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
+                      {s.status === 'open' && s.close_reject_at && (
+                        <span title={`ถูกปฏิเสธปิดกะโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — ${s.close_reject_reason}` : ''} · แก้แล้วส่งขอปิดกะใหม่`}
+                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(239,68,68,0.18)', color: '#ef4444' }}>✕</span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
                   </button>
@@ -2280,7 +2306,7 @@ function LiveTab({ role }) {
                   {selSession.status === 'open' && canRequestClose && (
                     <button onClick={() => {
                       setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
-                      setDtCarryDecisions({}); setDtCloseTimes({});
+                      setDtCarryDecisions({}); setDtCloseTimes({}); setCloseNote('');
                       // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
                       setCarryQtyActual(m => {
                         const next = { ...m };
@@ -3060,6 +3086,12 @@ function LiveTab({ role }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                     เวลาที่ขอ: {selSession.close_requested_at ? fmtDateTime(selSession.close_requested_at) : '—'} · เริ่มกะ {selSession.start_time} · ปิดกะ {selSession.end_time}
                   </div>
+                  {/* หมายเหตุที่หัวหน้ากลุ่มเขียนมา — SV ต้องเห็นก่อนตัดสินใจอนุมัติ/ปฏิเสธ */}
+                  {selSession.close_request_note && (
+                    <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 8, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)', whiteSpace: 'pre-wrap' }}>
+                      📝 หมายเหตุจากหัวหน้ากลุ่ม: <b>{selSession.close_request_note}</b>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 14 }}>
@@ -3846,6 +3878,17 @@ function LiveTab({ role }) {
 
                 </div>{/* /คอลัมน์ขวา (OEE preview) */}
                 </div>{/* /grid 2 คอลัมน์ ชุดล่าง */}
+
+                {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เดิมมีแต่ช่องหมายเหตุฝั่ง SV (อนุมัติ/ปฏิเสธ)
+                    คนขอไม่มีที่อธิบายว่าทำไมยอดไม่ถึง/เกิดอะไรขึ้น · ไม่บังคับ */}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
+                    📝 {role === 'leader' ? 'หมายเหตุถึงผู้อนุมัติ' : 'หมายเหตุปิดกะ'} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ไม่บังคับ)</span>
+                  </div>
+                  <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2}
+                    placeholder="เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง"
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 12.5, borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
@@ -4697,6 +4740,12 @@ function HistoryTab({ role }) {
               </div>
               {expanded === s.id && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เขียนตอนส่งขอปิดกะ */}
+                  {s.close_request_note && (
+                    <div style={{ fontSize: 12, color: '#c4b5fd', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
+                      📝 หมายเหตุหัวหน้ากลุ่ม ({s.close_requested_by_name || '—'}): <b>{s.close_request_note}</b>
+                    </div>
+                  )}
                   {/* หมายเหตุผู้อนุมัติปิดกะ (ถ้ามี — SV กรอกตอนกดอนุมัติ) */}
                   {s.close_approve_note && (
                     <div style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '8px 12px' }}>

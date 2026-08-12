@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
@@ -32,7 +33,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 
-const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', automation_level: '', operation_mode: '', gang_count: '' };
+const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '' };
 // หมวดอุปกรณ์ในฐานเครื่องจักร — Facility/Utility ไม่ผูกไลน์ผลิต (ระบบน้ำ/ลม/High Pressure ฯลฯ)
 // รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
 // ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
@@ -61,6 +62,10 @@ export default function MachineDatabase() {
 
   const [search, setSearch]         = useState('');
   const [filterCat, setFilterCat]   = useState('');   // '' = ทุกหมวด | production | facility | utility
+  // ⚠️ ชนิดอุปกรณ์ — default 'machine' เพราะหน้านี้คือ "ฐานข้อมูลเครื่องจักร"
+  //    ข้อมูลจริง 2026-08-10: 262/505 แถวเป็น "แม่พิมพ์" ที่ถูกลงผิดที่ (ดู utils/equipmentKinds.js)
+  //    ถ้าไม่กรอง แม่พิมพ์จะปนใน dropdown เลือกเครื่อง + นับเป็นเครื่องจักรในสถิติ
+  const [filterKind, setFilterKind] = useState('machine');
   const [filterLine, setFilterLine] = useState('');
   const [filterType, setFilterType] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -153,6 +158,7 @@ export default function MachineDatabase() {
     const inLine = (m) => !filterLine || m.line_name === filterLine || (kids && kids.includes(m.line_name));
     return machines
       .filter(m => !scopeActive || scopedLineNames.has(m.line_name)) // mandatory scope ก่อน filter อิสระเสมอ
+      .filter(m => !filterKind || kindOf(m.equipment_kind) === filterKind)      // ชนิดอุปกรณ์ (เครื่องจักร/แม่พิมพ์/จิ๊ก/facility)
       .filter(m => !filterCat || normCat(m.equipment_category) === filterCat) // หมวดอุปกรณ์ (ผลิต/facility — utility เดิมนับเป็น facility)
       .filter(m => showInactive || m.is_active)
       .filter(inLine)
@@ -184,6 +190,7 @@ export default function MachineDatabase() {
       machine_name:      editing.machine_name || null,
       machine_type_id:   editing.machine_type_id || null,
       equipment_category: editing.equipment_category || 'production',
+      equipment_kind:    kindOf(editing.equipment_kind),   // ชนิดอุปกรณ์ (เครื่องจักร/แม่พิมพ์/จิ๊ก/facility)
       // ลักษณะเครื่องจักร (data-driven) — เฉพาะเครื่องผลิต
       automation_level:  (editing.equipment_category || 'production') === 'production' ? (editing.automation_level || null) : null,
       operation_mode:    (editing.equipment_category || 'production') === 'production' ? (editing.operation_mode || null) : null,
@@ -198,13 +205,21 @@ export default function MachineDatabase() {
     let { error } = await doSave(payload);
     // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
     let strippedCat = false;
-    if (error && /equipment_category|automation_level|operation_mode|gang_count/.test(error.message || '')) {
+    let strippedKind = false;
+    if (error && /equipment_category|equipment_kind|automation_level|operation_mode|gang_count/.test(error.message || '')) {
       strippedCat = /equipment_category/.test(error.message || '');
-      const { equipment_category, automation_level, operation_mode, gang_count, ...rest } = payload;
-      void equipment_category; void automation_level; void operation_mode; void gang_count;
+      strippedKind = /equipment_kind/.test(error.message || '');
+      const { equipment_category, equipment_kind, automation_level, operation_mode, gang_count, ...rest } = payload;
+      void equipment_category; void equipment_kind; void automation_level; void operation_mode; void gang_count;
       ({ error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
+    // ⚠️ ชนิดอุปกรณ์บันทึกไม่ติด (migration ยังไม่ apply) → เตือน ห้ามเงียบ (บทเรียนจาก equipment_category)
+    if (strippedKind && kindOf(editing.equipment_kind) !== 'machine') {
+      setSaving(false);
+      toast.error('⚠️ ยังไม่ได้ apply migration "equipment_kind" — บันทึกเป็นเครื่องจักรชั่วคราว · apply แล้วมาแก้ชนิดอีกครั้ง');
+      setEditing(null); load(); return;
+    }
     // ⚠️ บันทึกหมวด Facility/Utility ไม่ติดเพราะยังไม่ได้ apply migration equipment_category → เตือนแทนที่จะเงียบ
     if (strippedCat && isFac) {
       setSaving(false);
@@ -256,6 +271,13 @@ export default function MachineDatabase() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
         <input placeholder="🔍 ค้นหาหมายเลข/ชื่อเครื่อง" value={search} onChange={e => setSearch(e.target.value)}
           style={{ ...inputStyle, width: 220 }} />
+        {/* ชนิดอุปกรณ์ — แยกเครื่องจักรออกจากแม่พิมพ์/จิ๊ก (แกนคนละแกนกับ "หมวด" ผลิต/facility) */}
+        <select value={filterKind} onChange={e => { setFilterKind(e.target.value); setFilterLine(''); }}
+          title="ชนิดอุปกรณ์ — แม่พิมพ์กับจิ๊กไม่ใช่เครื่องจักร จึงแยกกันคนละลิสต์"
+          style={{ ...inputStyle, width: 170, borderColor: filterKind === 'machine' ? undefined : 'var(--accent2)' }}>
+          <option value="">— ทุกชนิด —</option>
+          {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+        </select>
         {/* หมวดอุปกรณ์ — เปลี่ยนหมวดแล้วล้างไลน์ที่เลือกค้าง (§5.3 cascade) */}
         <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }} style={{ ...inputStyle, width: 150 }}>
           <option value="">— ทุกหมวด —</option>
@@ -296,7 +318,22 @@ export default function MachineDatabase() {
             {grouped.every(([n]) => collapsedGroups.has(n)) ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
           </button>
         )}
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>{filtered.length} เครื่อง</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto', textAlign: 'right' }}>
+          {filtered.length} รายการ
+          {/* ห้ามซ่อนเงียบ — บอกเสมอว่าชนิดอื่นถูกกรองออกไปกี่ตัว พร้อมทางไปดู */}
+          {(() => {
+            if (!filterKind) return null;
+            const others = machines.filter(m => (showInactive || m.is_active) && kindOf(m.equipment_kind) !== filterKind);
+            if (!others.length) return null;
+            const by = {};
+            others.forEach(m => { const k = kindOf(m.equipment_kind); by[k] = (by[k] || 0) + 1; });
+            return (
+              <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 2 }}>
+                ซ่อนชนิดอื่น {Object.entries(by).map(([k, n]) => `${kindIcon(k)} ${kindLabel(k)} ${n}`).join(' · ')}
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {/* §137: ครอบรายการเครื่อง (จัดกลุ่มตามไลน์) ด้วยความสูงจำกัด + เลื่อนในตัว กันล้นจอเมื่อเครื่องเยอะ */}
@@ -356,9 +393,27 @@ export default function MachineDatabase() {
         <div className="overlay" style={{ zIndex: 2000 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
-              {editing.id ? 'แก้ไขเครื่องจักร' : '+ เพิ่มเครื่องจักร'}
+              {editing.id ? `แก้ไข${kindLabel(editing.equipment_kind)}` : '+ เพิ่มอุปกรณ์'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* ชนิดอุปกรณ์ — แกนคนละแกนกับ "หมวด" (ผลิต/facility) · แม่พิมพ์ไม่ใช่เครื่องจักร */}
+              <Field label="ชนิดอุปกรณ์">
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {EQUIPMENT_KINDS.map(k => {
+                    const on = kindOf(editing.equipment_kind) === k.key;
+                    return <button key={k.key} type="button" title={k.desc}
+                      onClick={() => setEditing(f => ({ ...f, equipment_kind: k.key }))}
+                      style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                        border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>
+                      {k.icon} {k.label}</button>;
+                  })}
+                </div>
+                {kindOf(editing.equipment_kind) === 'die' && (
+                  <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 5, lineHeight: 1.5 }}>
+                    🔨 แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>ทะเบียนแม่พิมพ์</b>
+                  </div>
+                )}
+              </Field>
               <Field label="หมวดอุปกรณ์">
                 <div style={{ display: 'flex', gap: 6 }}>
                   {EQUIP_CATS.map(c => {
