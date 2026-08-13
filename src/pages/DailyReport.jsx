@@ -10,7 +10,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal } from '../utils/pairTotals';
@@ -1682,19 +1682,32 @@ function LiveTab({ role }) {
       })
     );
 
-    let P = null;
+    /* ⚠️ ไลน์เครื่องขนาน (parallel_machine เช่น SUB APRON): CT เป็น "ต่อเครื่อง" งานกระจายอยู่หลายเครื่อง
+       → ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์" · ต้องใช้สาย parallel เสมอ ห้ามพึ่ง heuristic
+       isParallel (ทับกัน >15 นาที + >20%) ซึ่งเป็น all-or-nothing: บางกะเข้าเงื่อนไข บางกะไม่เข้า
+       → P พลิกไปมา 52/76/89/100 แล้ว cap 100 เงียบ (SUB APRON 14 กะ ชนเพดาน 6 กะ · 2026-08-13)
+       ไลน์ผลิตต่อเนื่อง (one_piece_flow เช่น LASER-345/789) CT เป็นของทั้งไลน์อยู่แล้ว → ห้ามแตะ
+       (เช็คแล้ว หารจำนวนเครื่องจะทำ P ร่วงจาก 63-98% เหลือ 21-33%) */
+    const perMachineCt = flowModeOf(lf.flow_mode) === 'parallel_machine';
+    let P = null, pRawRatio = null;   // pRawRatio = ค่าก่อน cap 100% — ใช้เตือนเมื่องาน > เวลาเครื่องที่มี
     if (runSec > 0 && matPData.length > 0) {
       const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
-      if (isParallel) {
+      if (isParallel || perMachineCt) {
         // Parallel (คนละ product วิ่งพร้อมกันคนละสถานี): denominator = Σ run ต่อ product group
         // = ถ่วงน้ำหนัก P ตามเวลารันจริงของแต่ละสถานี — ห้ามใช้ mean เท่าๆ กัน
         // (เคยพัง 2026-07-13: งานแทรก 10 ชิ้น/10 นาที window ทับงานหลัก → mean ลาก P ทั้งกะ
         //  จาก ~93% เหลือ 48% ทั้งที่งานแทรกวิ่งเต็มประสิทธิภาพในช่วงของมันเอง)
-        const denomSec = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
-        P = Math.min(1, totalStdSec / denomSec);
+        // clamp [runSec, N×runSec]: ต่ำกว่าเวลาไลน์ = P เฟ้อ · สูงกว่า N เท่า = อ้างว่ามีเครื่องมากกว่าที่มีจริง
+        const rawDenom = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
+        const denomSec = perMachineCt
+          ? Math.min(Math.max(rawDenom, runSec), runSec * Math.max(1, parallelN))
+          : rawDenom;
+        pRawRatio = totalStdSec / denomSec;
+        P = Math.min(1, pRawRatio);
       } else {
         // Sequential: standard time รวมหารด้วย run_time ทั้งกะ (จับ idle ระหว่าง MAT.NO ด้วย)
-        P = Math.min(1, totalStdSec / runSec);
+        pRawRatio = totalStdSec / runSec;
+        P = Math.min(1, pRawRatio);
       }
     }
     // Q = ของดี / ผลิตจริง(ดี+เสีย) — การ์ดที่สแกนปิด = "ของดีล้วน" (ผลิตครบเป้าของดี · ของเสียผลิตเพิ่มต่างหาก
@@ -1703,7 +1716,12 @@ function LiveTab({ role }) {
     // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
     const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty) : 1;
     const oee = P != null ? A * P * Q : null;
-    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
+    /* pOver = P ทะลุ 100% ก่อนโดน cap → งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
+       แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
+       ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
+       แทนที่จะปล่อยจน OEE ของทั้งไลน์อ่านไม่ได้ 14 กะโดยไม่มีใครรู้ (2026-08-13) */
+    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty,
+      pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10 };
   };
   // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
   // บน prod_orders — backflush ตอน order เปลี่ยนเป็น 'confirmed' (ระเบิด BOM → หัก
@@ -3381,7 +3399,7 @@ function LiveTab({ role }) {
             if (endMs < startMs) endMs += 86400000;
             return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
           });
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
           const twoCol = wide1100;
@@ -3401,6 +3419,16 @@ function LiveTab({ role }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                 </div>
+                {/* %P ตันเพดาน — งานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง แปลว่าข้อมูลมีอะไรผิด
+                    ห้าม cap เงียบแล้วปล่อยผ่าน (เตือนอย่างเดียว ไม่บล็อกการปิดกะ — หน้างานต้องเดินต่อได้) */}
+                {pOver && (
+                  <div style={{ fontSize: 12, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, color: '#f59e0b', fontWeight: 600 }}>
+                    ⚠ %P คำนวณได้ {pRawPct}% (เกิน 100% เลยถูกตัดเหลือ 100%) — งานตามมาตรฐานมากกว่าเวลาเครื่องที่มีในกะนี้
+                    <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 3 }}>
+                      ปิดกะได้ตามปกติ แต่ควรตรวจ: CT ของชิ้นงาน (Product Master) · ยอดที่กรอก · เวลาเปิด-ปิดใบ · จำนวนเครื่องขนานของไลน์ (LineSetup)
+                    </div>
+                  </div>
+                )}
 
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                   <Field label="เวลาเริ่มกะจริง (แก้ได้ถ้าตอนเปิดกะ/auto-เดาเวลาผิด)">
