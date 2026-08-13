@@ -2242,14 +2242,18 @@ function LiveTab({ role }) {
                     style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
                       borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      {/* ชื่อไลน์ยาว (LINE ASSY TSRA) ต้องหดได้ ไม่งั้นดันชิปสถานะตกขอบ sidebar 220px */}
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.line_name}</div>
+                      {/* ⏳ = ส่งไปแล้ว "รอ SV" (ลูกบอลอยู่ฝั่งเขา) — เป็นสถานะที่เจอเยอะสุด จึงเอาแค่ไอคอน */}
                       {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
-                      {/* ถูกปฏิเสธปิดกะ — กะกลับเป็น open แล้ว แต่เดิมเห็นได้ต่อเมื่อเข้าไปในกะ
-                          หัวหน้ากลุ่มที่ดูแลหลายไลน์จึงไม่รู้ว่าไลน์ไหนโดนตีกลับ · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
+                      {/* ถูกตีกลับ = "ลูกบอลอยู่ฝั่งเรา ต้องกลับไปแก้" — ต้องแยกจาก ⏳ ให้ขาด
+                          ⚠️ ห้ามใช้ ✕ (ในหน้าเดียวกัน "✕ ปฏิเสธ" คือปุ่มกด คนจะนึกว่ากดแล้วลบ/ปิด)
+                          ⚠️ ห้ามใช้ ↩️ (หน้านี้ใช้เป็น "ถอยใบ" ของ order ไปแล้ว)
+                          → ใช้ชิปข้อความสั้น อ่านออกทันทีไม่ต้องเดาความหมายไอคอน · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
                       {s.status === 'open' && s.close_reject_at && (
-                        <span title={`ถูกปฏิเสธปิดกะโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — ${s.close_reject_reason}` : ''} · แก้แล้วส่งขอปิดกะใหม่`}
-                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(239,68,68,0.18)', color: '#ef4444' }}>✕</span>
+                        <span title={`ถูกตีกลับโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — "${s.close_reject_reason}"` : ''} · แก้แล้วกดขอปิดกะใหม่`}
+                          style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
