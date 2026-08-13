@@ -18,6 +18,7 @@ import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCa
 import { groupRoutings } from '../utils/routing';
 import { buildVsmModel } from '../lib/vsmModel';
 import { printVsm } from '../lib/vsmPrint';
+import { printVsmA3 } from '../lib/vsmA3Print';
 import VsmCanvas, { VsmLegend, PALETTE_DARK, PALETTE_LIGHT } from '../components/VsmCanvas';
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -57,6 +58,8 @@ export default function VSM() {
   const [busy, setBusy] = useState(false);
   const [rawRef, setRawRef] = useState(null);         // ข้อมูลดิบที่ใช้ generate (คำนวณซ้ำตอนแก้ override)
   const [showLoad, setShowLoad] = useState(false);
+  const [a3, setA3] = useState({});                    // เนื้อหา A3 Report (เก็บใน vsm_maps.data.a3)
+  const [showA3, setShowA3] = useState(false);
 
   const printRef = useRef(null);
   const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
@@ -202,6 +205,26 @@ export default function VSM() {
     });
   }, [rawRef]);
 
+  // override ระดับใบ (ไม่ผูกกับขั้น) — รอบส่ง supplier/ลูกค้า ที่ระบบไม่มีข้อมูล
+  const setTopOv = useCallback((key, value) => {
+    setOverrides(prev => {
+      const next = { ...prev, [key]: value };
+      if (value === '' || value == null) delete next[key];
+      if (rawRef) setModel(buildVsmModel({ ...rawRef, overrides: next }));
+      return next;
+    });
+  }, [rawRef]);
+
+  const setSupPattern = useCallback((matNo, value) => {
+    setOverrides(prev => {
+      const pat = { ...(prev.__supplier_pattern || {}) };
+      if (value) pat[matNo] = value; else delete pat[matNo];
+      const next = { ...prev, __supplier_pattern: pat };
+      if (rawRef) setModel(buildVsmModel({ ...rawRef, overrides: next }));
+      return next;
+    });
+  }, [rawRef]);
+
   /* ── บันทึก / โหลด / พิมพ์ ──────────────────────────────────────────────── */
   const save = useCallback(async () => {
     if (!model || !rawRef) return;
@@ -215,7 +238,7 @@ export default function VSM() {
       approved_by: mapMeta?.approved_by || null,
       checked_by: mapMeta?.checked_by || null,
       issued_by: mapMeta?.issued_by || fullName || null,
-      data: { model, overrides, monthKey },
+      data: { model, overrides, monthKey, a3 },
       generated_at: new Date().toISOString(),
       updated_by_name: fullName || null,
     };
@@ -239,23 +262,31 @@ export default function VSM() {
     setMonthKey(data.data?.monthKey || monthKeyNow());
     setOverrides(data.data?.overrides || {});
     setModel(data.data?.model || null);
+    setA3(data.data?.a3 || {});
     setRawRef(null);                 // snapshot — ต้องกด "สร้างร่างใหม่" ถึงจะดึงข้อมูลสดอีกรอบ
     setShowLoad(false);
     toast.info('เปิดใบที่บันทึกไว้ (ตัวเลขเป็น snapshot ตอนบันทึก)');
   }, []);
 
-  const doPrint = useCallback(async () => {
-    if (!model) return;
+  // ผังที่พิมพ์ = clone SVG ตัวจริงบนจอ (ชุดสีสว่างที่ render ซ่อนไว้) ห้ามวาด layout ใหม่ในตัวพิมพ์
+  const printPayload = useCallback(() => {
     const host = printRef.current;
     const svgEl = host?.querySelector('svg');
     const legendEl = host?.querySelector('[data-legend]');
-    if (!svgEl) { toast.error('ยังไม่มีผังให้พิมพ์'); return; }
-    const ok = await printVsm({
-      map: mapMeta || { state, title: `${model.header.partName} · ${monthKey}`, ...monthBounds(monthKey) },
+    if (!svgEl) return null;
+    return {
+      map: { ...(mapMeta || { state, title: `${model.header.partName} · ${monthKey}`, ...monthBounds(monthKey) }), a3 },
       model, svgHtml: svgEl.outerHTML, legendHtml: legendEl?.innerHTML || '',
-    });
+    };
+  }, [model, mapMeta, state, monthKey, a3]);
+
+  const doPrint = useCallback(async (kind) => {
+    if (!model) return;
+    const payload = printPayload();
+    if (!payload) { toast.error('ยังไม่มีผังให้พิมพ์'); return; }
+    const ok = await (kind === 'a3' ? printVsmA3(payload) : printVsm(payload));
     if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
-  }, [model, mapMeta, state, monthKey]);
+  }, [model, printPayload]);
 
   /* ── UI ─────────────────────────────────────────────────────────────────── */
   const S = { card: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 } };
@@ -311,7 +342,9 @@ export default function VSM() {
             <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ ดึงข้อมูลใหม่</button>
           )}
           {model && canManage && <button onClick={save} disabled={busy} style={btn('#3b82f6', { color: '#fff' })}>💾 บันทึก</button>}
-          {model && <button onClick={doPrint} style={btn('#f59e0b')}>🖨️ พิมพ์ A3 / PDF</button>}
+          {model && <button onClick={() => doPrint('a3')} style={btn('#f59e0b')}>📋 A3 Report (Toyota)</button>}
+          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>🖨️ ใบ VSM</button>}
+          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>✍️ เนื้อหา A3</button>}
           <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>📂 ใบที่บันทึกไว้ ({savedMaps.length})</button>
         </div>
       </div>
@@ -338,6 +371,56 @@ export default function VSM() {
           <div style={{ fontSize: 12, marginTop: 8 }}>
             ลำดับกระบวนการ (ปั๊ม → ประกอบ → …) ตั้งที่ <b>Product Master → 🔀 Routing</b> —
             ยังไม่ได้ตั้ง ระบบจะใช้ไลน์เดียวจาก Product Master ไปก่อนแล้วเตือนไว้
+          </div>
+        </div>
+      )}
+
+      {model && showA3 && (
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>✍️ เนื้อหา A3 Report (Toyota / Denso)</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>
+            ช่อง <b>② สภาพปัจจุบัน</b> ระบบสรุปข้อเท็จจริง + ผัง VSM ให้เอง — ที่เหลือเป็นการวิเคราะห์ของคน ระบบไม่เดาให้
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12, alignContent: 'start' }}>
+            {[
+              ['title', 'หัวเรื่อง A3', 'เช่น ลด Lead time สาย REINF ASY BDY SD RR', 2],
+              ['background', '① ความเป็นมา / เหตุผลที่ต้องทำ', 'ทำไมต้องทำเรื่องนี้ · กระทบใคร · เกี่ยวกับนโยบายอะไร', 4],
+              ['target', '③ เป้าหมาย (วัดได้)', 'เช่น ลด PLT จาก 81 → 60 วัน ภายใน ธ.ค.', 3],
+              ['rootCause', '④ วิเคราะห์สาเหตุราก (5 Why / ก้างปลา)', 'ทำไม → ทำไม → ทำไม …', 4],
+              ['countermeasures', '⑤ มาตรการแก้ไข', 'จะแก้ที่จุดไหน ด้วยวิธีอะไร', 4],
+              ['followup', '⑦ ติดตามผล', 'วัดผลเมื่อไหร่ ด้วยตัวชี้วัดอะไร ใครตรวจ', 3],
+            ].map(([k, label, ph, rows]) => (
+              <div key={k} style={{ gridColumn: k === 'title' ? '1 / -1' : undefined }}>
+                <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{label}</label>
+                <textarea rows={rows} value={a3[k] || ''} onChange={e => setA3(v => ({ ...v, [k]: e.target.value }))}
+                  placeholder={ph}
+                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 6, resize: 'vertical',
+                    border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+              </div>
+            ))}
+          </div>
+
+          {/* ⑥ แผนดำเนินการ */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>⑥ แผนดำเนินการ (ใคร / อะไร / เมื่อไหร่)</label>
+              <button onClick={() => setA3(v => ({ ...v, plan: [...(v.plan || []), { what: '', who: '', when: '', status: '' }] }))}
+                style={{ padding: '4px 12px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>
+                + เพิ่มแถว
+              </button>
+            </div>
+            {(a3.plan || []).map((r, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 110px 32px', gap: 6, marginBottom: 5 }}>
+                {[['what', 'สิ่งที่ต้องทำ'], ['who', 'ผู้รับผิดชอบ'], ['when', 'กำหนดเสร็จ'], ['status', 'สถานะ']].map(([f, ph]) => (
+                  <input key={f} value={r[f] || ''} placeholder={ph}
+                    onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
+                    style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                ))}
+                <button onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+              </div>
+            ))}
+            {!(a3.plan || []).length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีแถว — กด "+ เพิ่มแถว"</div>}
           </div>
         </div>
       )}
@@ -406,6 +489,35 @@ export default function VSM() {
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* ── ข้อมูลที่ระบบไม่มี ต้องกรอกเอง ── */}
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>รอบส่ง (ระบบยังไม่เก็บ — กรอกเอง)</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
+            รูปแบบตามใบเดิมของบริษัท เช่น <b>7:1:1</b> (ผู้ส่งมอบ) · <b>1:4:2</b> (ลูกค้า)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, alignContent: 'start' }}>
+            <div>
+              <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                🚚 ลูกค้า — {model.customer.name || model.header.customer || 'ไม่ระบุ'}
+              </label>
+              <input value={overrides.__customer_pattern || ''} onChange={e => setTopOv('__customer_pattern', e.target.value)}
+                placeholder={model.customer.roundsPerDay ? `ระบบเห็น ${model.customer.roundsPerDay} รอบ/วัน` : 'เช่น 1:4:2'}
+                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+            </div>
+            {model.suppliers.map(sp => (
+              <div key={sp.matNo}>
+                <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                  🏭 {sp.supplier || 'ยังไม่ระบุผู้ส่งมอบ'} · {sp.matNo}
+                </label>
+                <input value={(overrides.__supplier_pattern || {})[sp.matNo] || ''} onChange={e => setSupPattern(sp.matNo, e.target.value)}
+                  placeholder="เช่น 7:1:1"
+                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+              </div>
+            ))}
+            {!model.suppliers.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>BOM ของสินค้านี้ยังไม่มีพาร์ทซื้อนอก</div>}
+          </div>
         </div>
 
         {/* ── สรุป + สัญลักษณ์ ── */}

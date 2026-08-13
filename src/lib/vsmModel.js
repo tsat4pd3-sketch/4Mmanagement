@@ -195,7 +195,8 @@ export function buildVsmModel(input) {
     supplier: c.supplier,
     qty: num(stockByMat[c.matNo]),
     days: demand.perDay && stockByMat[c.matNo] != null ? round(stockByMat[c.matNo] / (demand.perDay * c.qtyPerUnit), 2) : null,
-    deliveryPattern: null,     // ❌ ระบบยังไม่เก็บรอบส่ง supplier (7:1:1) — ดู VSM-DESIGN.md
+    // ❌ ระบบยังไม่เก็บรอบส่ง supplier (7:1:1) — รับจากที่คนกรอกในใบเท่านั้น ห้ามเดา
+    deliveryPattern: (overrides.__supplier_pattern || {})[c.matNo] || null,
   }));
   if (suppliers.length && suppliers.every(s => s.qty == null)) W('warn', 'ยังไม่มียอดคงคลังของพาร์ทซื้อนอกในระบบ — ▲ ฝั่ง supplier จะว่าง');
   if (suppliers.length) W('info', 'รอบส่งของ supplier (เช่น 7:1:1) ระบบยังไม่เก็บ — กรอกเองในใบ');
@@ -212,14 +213,18 @@ export function buildVsmModel(input) {
 
   // ── คงคลังระหว่างทาง ──────────────────────────────────────────────────────
   const invDays = qty => (demand.perDay && qty != null ? round(qty / demand.perDay, 2) : null);
+  // จุดที่มี kanban = จุดดึง (pull) → ผังวาดเป็น supermarket + kanban post แทนสามเหลี่ยมเปล่า
+  const kbOf = mat => (kanbanStds || []).find(k => k.mat_no === mat) || null;
   const rawChild = children.find(c => String(c.matNo).startsWith('5'));
   const inventories = [];
+  const rawPm = rawChild ? partsMaster.find(p => p.mat_no === rawChild.matNo) : null;
   inventories.push({
     pos: 'raw', label: rawChild ? 'Store Raw Material' : 'Store',
     matNo: rawChild?.matNo || null,
     qty: rawChild ? num(stockByMat[rawChild.matNo]) : null,
     days: rawChild ? invDays(num(stockByMat[rawChild.matNo])) : null,
-    manual: false,
+    uom: rawPm?.uom || null,
+    manual: false, kanban: rawChild ? kbOf(rawChild.matNo) : null,
   });
   chain.forEach((b, i) => {
     const isLast = i === chain.length - 1;
@@ -228,10 +233,12 @@ export function buildVsmModel(input) {
       pos: `after:${b.key}`, label: b.wipLabel || 'WIP',
       matNo: b.matNo, qty: b.wipQty, days: invDays(b.wipQty),
       manual: true,                             // ระบบไม่เก็บ WIP กลางทาง → ต้องกรอก
+      kanban: kbOf(b.matNo),
     });
   });
   const fgQty = num(stockByMat[fg.mat_no]);
-  inventories.push({ pos: 'fg', label: 'FG Warehouse', matNo: fg.mat_no, qty: fgQty, days: invDays(fgQty), manual: false });
+  inventories.push({ pos: 'fg', label: 'FG Warehouse', matNo: fg.mat_no, qty: fgQty, days: invDays(fgQty),
+    manual: false, kanban: kbOf(fg.mat_no) });
 
   const missingWip = inventories.filter(v => v.manual && v.qty == null).length;
   if (missingWip) W('warn', `คงคลังระหว่างทาง ${missingWip} จุดยังไม่ได้กรอก — PLT จะต่ำกว่าความจริง (กรอกในตารางด้านล่าง)`);
@@ -260,7 +267,11 @@ export function buildVsmModel(input) {
     chain,
     feeders: feeders.map(c => ({ matNo: c.matNo, name: c.name, boxes: c.steps.map(s => boxOf(s, c.matNo)) })),
     inventories,
-    customer: { name: fg.customer || null, roundsPerDay: custRounds || null },
+    customer: {
+      name: fg.customer || null,
+      roundsPerDay: custRounds || null,
+      pattern: overrides.__customer_pattern || null,
+    },
     totals: { ptSec, pltDays, vaSec, nvaSec, vaPct },
     warnings,
   };

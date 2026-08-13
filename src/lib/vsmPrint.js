@@ -75,7 +75,9 @@ export async function printVsm({ map, model, svgHtml, legendHtml, section = null
   .sig { width:150px; border:1.2px solid #374151; padding:4px 6px; text-align:center; font-size:10px }
   .sig .lbl { color:#4b5563 } .sig .sp { height:38px } .sig .nm { border-top:1px dotted #6b7280; padding-top:2px; font-weight:600 }
   .note { font-size:9.5px; color:#6b7280; margin-top:4px }
+  html, body { margin:0; padding:0 }
 </style></head><body>
+  <div id="sheet">
   <div class="hd">
     <div class="logo">${logo ? `<img src="${logo}" alt="">` : ''}</div>
     <div class="mid">
@@ -115,12 +117,27 @@ export async function printVsm({ map, model, svgHtml, legendHtml, section = null
     &nbsp;(NVA = PLT × A/T)
     ${code ? '' : ' · เอกสารนี้ยังไม่ได้ตั้งเลขฟอร์มในทะเบียน (/doc-forms)'}
   </div>
+  </div>
+<script>
+  // บังคับจบใน 1 หน้า — zoom ลดกล่อง layout จริง (transform: scale ไม่ลด เบราว์เซอร์ยังนับหลายหน้า)
+  (function () {
+    function fit() {
+      var el = document.getElementById('sheet');
+      var maxH = 283 * (96 / 25.4);
+      el.style.zoom = 1;
+      var h = el.scrollHeight;
+      if (h > maxH) el.style.zoom = Math.max(0.45, (maxH / h) * 0.995);
+      window.focus(); window.print();
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ setTimeout(fit, 60); });
+    else window.addEventListener('load', function(){ setTimeout(fit, 160); });
+  })();
+</script>
 </body></html>`;
 
   const w = window.open('', '_blank');
   if (!w) return false;
   w.document.write(withDocFoot(html, 'vsm', section ? { section } : {}));
   w.document.close();
-  w.onload = () => { w.focus(); w.print(); };
   return true;
 }
