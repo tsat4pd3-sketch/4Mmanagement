@@ -65,8 +65,10 @@ const METRICS = {
   oee: {
     label: '⚙️ OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
-    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
-    short: s => s.oee != null ? `${Math.round(s.oee)}%` : '',
+    text: s => s.oee != null
+      ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}${s.oeeCtPartial ? ' ⚠CT ไม่ครบ' : ''}`
+      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+    short: s => s.oee != null ? `${Math.round(s.oee)}%` : (s.oeeNoCt ? '⚠CT' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -228,7 +230,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
@@ -306,6 +308,7 @@ export default function FactoryMap({ setupMode = false }) {
      ⚠️ เดิม modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น "—"
         ขณะที่การ์ด hover บนผังเดียวกันโชว์ "OEE 99% (สด)" = จอเดียวกันตอบคนละอย่าง (user ทัก 2026-08-06) */
   const liveOeeRef = useRef({});
+  const runNRef = useRef({});   // ไลน์ → จำนวนเครื่องที่เดินจริง (ปรับตามกำลังคนแล้ว) — ใช้เป็นตัวหาร P
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -419,8 +422,11 @@ export default function FactoryMap({ setupMode = false }) {
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
         parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
+        // P หารด้วยจำนวนเครื่องเฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (parallel_machine) — ผลิตต่อเนื่อง CT เป็นของทั้งไลน์
+        parallelP: flowModeOf(flowByLineRef.current[s.line_name]?.flow_mode) === 'parallel_machine'
+          ? (runNRef.current[s.line_name] || parallelUnitsOf(flowByLineRef.current[s.line_name])) : 1,
       });
-      return r && r.oee != null ? Math.round(r.oee) : null; // noOutput → oee null (ห้าม round เป็น 0)
+      return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
 
     const byLine = {};
@@ -529,10 +535,12 @@ export default function FactoryMap({ setupMode = false }) {
           ? Math.min(target, (availMin * 60) / ctAvg * parallelN)
           : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
         runN = parallelN; capN = fullN;
+        runNRef.current[s.line_name] = Math.max(runNRef.current[s.line_name] || 0, parallelN);
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
-      const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
+      const lr = s.oee != null ? null : liveOee(s, os, dl);
+      const oeeVal = s.oee != null ? Number(s.oee) : (lr && lr.oee != null ? Math.round(lr.oee) : null);
       const isLive = s.oee == null && oeeVal != null;
       if (isLive) liveBySess[s.id] = oeeVal;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeRows: [] };
@@ -549,6 +557,9 @@ export default function FactoryMap({ setupMode = false }) {
         // เดิม oeeSum/oeeN ทำให้ผังสด กับแผงขวาโหมดทบทวน (ซึ่งถ่วงถูก) โชว์คนละเลขของไลน์เดียวกัน
         oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min, plannedMin: plannedDtMinAll }] : [])],
         oeeLive: acc.oeeLive || isLive,
+        // ประเมิน OEE ไม่ได้เพราะยังไม่ตั้ง CT ของชิ้นงานที่ผลิต — ต้องบอกบนจอ ไม่ใช่เงียบเป็นช่องว่าง
+        oeeNoCt: acc.oeeNoCt || !!(lr && lr.noCt),
+        oeeCtPartial: acc.oeeCtPartial || !!(lr && !lr.noCt && lr.qtyNoCt > 0),
       };
     });
     const out = {};

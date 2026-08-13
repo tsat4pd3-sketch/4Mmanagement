@@ -1115,6 +1115,9 @@ export default function OEEAnalytics() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                     {tdLiveSession && tdLiveSession.status !== 'closed'
                       ? (tdLiveCalc?.noOutput ? `เปิดกะแล้ว ${tdLiveCalc.elapsedMin} นาที · ยังไม่ปิดใบงานแรก — ประเมิน P/Q ยังไม่ได้`
+                        /* ผลิตแล้วแต่ชิ้นงานยังไม่ได้ตั้ง CT → ประเมินความเร็วไม่ได้ ห้ามโชว์ OEE 0% */
+                        : tdLiveCalc?.noCt ? `ผลิตแล้ว ${tdLiveCalc.produced} ชิ้น แต่ชิ้นงานยังไม่ได้ตั้ง Cycle Time — ประเมิน %P/OEE ไม่ได้ (ตั้งที่ Product Master: ${(tdLiveCalc.matsNoCt || []).slice(0, 3).join(', ')})`
+                        : tdLiveCalc?.qtyNoCt > 0 ? `ค่าสด — ⚠ มีชิ้นงานที่ยังไม่ตั้ง CT ${tdLiveCalc.qtyNoCt} ชิ้น (${(tdLiveCalc.matsNoCt || []).slice(0, 3).join(', ')}) → %P ต่ำกว่าจริง`
                         : isLiveCalc ? `ค่าสด — คำนวณจากข้อมูล ณ ตอนนี้ (ยังไม่ปิดกะ) · ตัวเลขจริงยืนยันตอนปิดกะ`
                                     : `รอข้อมูล — กะเพิ่งเปิด ยังคำนวณไม่ได้ (ต้องเดินอย่างน้อย ${LIVE_MIN_ELAPSED} นาที)`)
                       : 'ค่าที่บันทึกไว้ตอนปิดกะ'}
