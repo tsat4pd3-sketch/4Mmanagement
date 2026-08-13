@@ -65,6 +65,7 @@ const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const PEDocs = lazy(() => import('./pages/PEDocs'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -129,6 +130,9 @@ export const NAV_ITEMS = [
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
+  // หมวดวิศวกรรม (Process Engineering) — เพิ่ม 2026-08-13 (คำสั่ง user: โมดูล PFC/PFMEA/Control Plan)
+  { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'วิศวกรรม (PE)' },
+
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -152,7 +156,7 @@ export const NAV_ITEMS = [
   { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'วิศวกรรม (PE)', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -1285,6 +1289,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/qa-setup" element={
                 <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>
+              } />
+              <Route path="/pe-docs" element={
+                <RoleRoute path="/pe-docs" userRole={role}><PEDocs /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
