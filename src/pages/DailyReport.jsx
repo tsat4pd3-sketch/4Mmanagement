@@ -184,6 +184,19 @@ function LiveTab({ role }) {
   const [dtLogs, setDtLogs]         = useState([]);
   const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   const [selSession, setSelSession] = useState(null);
+  // §139 ย่อ/ขยายกลุ่มไลน์ในลิสต์กะ — กะค้างไม่ปิดสะสมทำให้ลิสต์ยาวมาก (เจอจริง 34 กะ) · จำใน localStorage
+  const [sessGroupCollapsed, setSessGroupCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('dr_sess_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const persistSessGroups = (next) => {
+    try { localStorage.setItem('dr_sess_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    setSessGroupCollapsed(next);
+  };
+  const toggleSessGroup = (name) => {
+    const next = new Set(sessGroupCollapsed);
+    next.has(name) ? next.delete(name) : next.add(name);
+    persistSessGroups(next);
+  };
   const [loading, setLoading]       = useState(true);
   // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
   const [ctOverage, setCtOverage]   = useState({});
@@ -2184,24 +2197,47 @@ function LiveTab({ role }) {
       {sessions.length > 1 && (
         // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4, flexShrink: 0 }}>กะที่เปิดอยู่ ({sessions.length})</div>
+          {(() => {
+            const groupNames = [...new Set(sessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
+            const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>กะที่เปิดอยู่ ({sessions.length})</div>
+                {groupNames.length > 1 && (
+                  <button onClick={() => persistSessGroups(allCollapsed ? new Set() : new Set(groupNames))}
+                    title={allCollapsed ? 'กางทุกกลุ่ม' : 'ย่อทุกกลุ่ม'}
+                    style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+                    {allCollapsed ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
           {(() => {
-            // Group sessions by parent line (or self if no parent)
+            // จัดกลุ่มตามไลน์แม่ (ไลน์เดี่ยว = เป็นกลุ่มของตัวเอง)
             const groups = {};
             sessions.forEach(s => {
               const parent = lineMap[s.line_name]?.parent_line_name || s.line_name;
               if (!groups[parent]) groups[parent] = [];
               groups[parent].push(s);
             });
-            return Object.entries(groups).map(([groupName, groupSessions]) => (
+            return Object.entries(groups).map(([groupName, groupSessions]) => {
+              /* ⚠️ หัวกลุ่มต้องขึ้น "ทุกกลุ่ม" — เดิมโชว์เฉพาะกลุ่มที่มีสมาชิกเป็นไลน์ลูก
+                 → ไลน์เดี่ยว (เช่น LINE ASSY TSRA ที่ไม่มีไลน์แม่) ไม่มีหัวข้อของตัวเอง
+                   เลยไหลไปต่อท้ายหัวข้อของกลุ่มก่อนหน้า ดูเหมือนเป็นไลน์ลูกของกลุ่มนั้น (user ทัก) */
+              const hasSel = groupSessions.some(s => s.id === selSession?.id);
+              const collapsed = sessGroupCollapsed.has(groupName) && !hasSel;  // กะที่เลือกอยู่ต้องไม่ถูกซ่อน
+              return (
               <div key={groupName}>
-                {groupSessions.some(s => lineMap[s.line_name]?.parent_line_name) && (
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                    {groupName}
-                  </div>
-                )}
-                {groupSessions.map(s => (
+                <button onClick={() => toggleSessGroup(groupName)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 9 }}>{collapsed ? '▶' : '▼'}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupName}</span>
+                  <span style={{ fontWeight: 600 }}>{groupSessions.length}</span>
+                </button>
+                {!collapsed && groupSessions.map(s => (
                   <button key={s.id} onClick={() => setSelSession(s)}
                     style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
                       borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
@@ -2220,7 +2256,8 @@ function LiveTab({ role }) {
                   </button>
                 ))}
               </div>
-            ));
+              );
+            });
           })()}
           </div>
         </div>
