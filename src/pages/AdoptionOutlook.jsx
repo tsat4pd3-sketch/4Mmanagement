@@ -144,6 +144,204 @@ const DEPTS = [
   },
 ];
 
+/* ── 4 ระดับความสามารถของข้อมูล (analytics maturity) ───────────────────────────────────
+   ระดับสูงขึ้นไม่ได้มาจาก "ซอฟต์แวร์เก่งขึ้น" แต่มาจาก "ข้อมูลครบขึ้นและเชื่อมกัน"
+   — เป็นแกนเดียวที่ใช้ตอบทุกคำถามในแท็บมิติ ห้ามนิยามระดับซ้ำที่อื่น */
+const LEVELS = [
+  { n: 1, icon: '📋', name: 'เห็นย้อนหลัง', en: 'Descriptive', desc: 'ตอบได้ว่า "เกิดอะไรขึ้น" — ต้องมีการบันทึกครบก่อน' },
+  { n: 2, icon: '🔍', name: 'รู้สาเหตุ', en: 'Diagnostic', desc: 'ตอบได้ว่า "ทำไมถึงเกิด" — ต้องเชื่อมข้อมูลข้ามแผนกได้' },
+  { n: 3, icon: '🔮', name: 'รู้ล่วงหน้า', en: 'Predictive', desc: 'เตือนก่อนเกิด — ต้องมีข้อมูลย้อนหลังมากพอจะเห็นแนวโน้ม' },
+  { n: 4, icon: '🎯', name: 'บอกว่าต้องทำอะไร', en: 'Prescriptive', desc: 'เสนอทางแก้ที่ทำได้จริง — ต้องรู้ทั้งปัญหา ทรัพยากร และผลกระทบ' },
+];
+const lv = (n) => LEVELS.find(l => l.n === n);
+
+/* ── มิติที่มองเห็นได้เมื่อข้อมูลเชื่อมกัน ─────────────────────────────────────────────────
+   แต่ละคำถาม = คำถามที่ผู้บริหารถามจริง แล้วบอกว่า "ต้องต่อข้อมูลจากแผนกไหนบ้าง"
+   chain[].have(c) = เช็คจาก count จริง → ชิปเขียว/เทา บอกว่าสายข้อมูลขาดตรงไหน (ไม่ใช่คำโฆษณา)
+   now/full = ระดับที่ตอบได้วันนี้ / เมื่อข้อมูลครบ
+   ⚠️ full ต้องเป็นสิ่งที่ทำได้ด้วยข้อมูลที่ระบบเก็บอยู่แล้วจริงๆ — ห้ามใส่ความสามารถที่ต้องซื้อของใหม่
+      (ยกเว้นระบุชัดว่าต้องมี SCADA/เซ็นเซอร์ — ดู docs/SCADA_REALTIME_DESIGN.md) */
+const DIMENSIONS = [
+  {
+    key: 'quality', icon: '✅', label: 'คุณภาพ',
+    qs: [
+      {
+        q: 'ลูกค้าเคลมของล็อตหนึ่ง — ย้อนกลับได้ถึงไหน?',
+        chain: [
+          { d: 'สโตร์', l: 'รอบส่ง/ลูกค้า', have: c => c.shipped > 0 },
+          { d: 'ผลิต', l: 'ใบผลิต + กะ', have: c => c.ordConfirmed > 0 },
+          { d: 'ผลิต', l: 'เครื่องที่ใช้', have: c => c.dtUnplannedRows > 0 },
+          { d: 'คน', l: 'คนที่ยืนจุดงาน + สกิล', have: c => c.skills > 0 },
+          { d: 'ผลิต', l: '4M ที่เปลี่ยนวันนั้น', have: c => c.fourM > 0 },
+          { d: 'ซ่อมบำรุง', l: 'เครื่องค้าง PM ไหม', have: c => c.inspections > 0 },
+          { d: 'สโตร์', l: 'ล็อตวัตถุดิบ supplier', have: () => false },
+        ],
+        now: 2, full: 2, to: '/order-trace',
+        nowTxt: 'ย้อนได้แล้วถึง ใบผลิต → เครื่อง → คนที่จุดงาน → 4M → สถานะ PM ของวันนั้น',
+        fullTxt: 'ต่อได้ถึงล็อตวัตถุดิบของ supplier และแม่พิมพ์ตัวที่ใช้จริง = ปิดสายครบตั้งแต่เหล็กม้วนถึงมือลูกค้า',
+        need: ['บันทึกเลขล็อต/heat no. ของ supplier ตอนรับวัตถุดิบเข้า', 'ผูกใบผลิตกับแม่พิมพ์ตัวที่ใช้ (สแกน QR ตอนขึ้นงาน)'],
+      },
+      {
+        q: 'จะรู้ตัวก่อนมั้ย ว่าคุณภาพกำลังจะหลุดควบคุม?',
+        chain: [
+          { d: 'QA', l: 'มาตรฐาน/จุดวัด', have: c => c.qaParts > 0 },
+          { d: 'QA', l: 'ใบตรวจตามรอบ', have: c => c.qaSheets > 0 },
+          { d: 'QA', l: 'ค่าที่วัดจริง (SPC)', have: c => c.qaMeas > 0 },
+          { d: 'ผลิต', l: 'ของเสียรายกะ', have: c => c.sessWithNg > 0 },
+        ],
+        now: 1, full: 3, to: '/qa',
+        nowTxt: 'ตอบไม่ได้ — ยังไม่มีค่าวัดเข้า SPC เลย รู้ได้แค่ "เสียไปแล้วกี่ชิ้น" หลังเกิดเหตุ',
+        fullTxt: 'Cp/Cpk รายจุดวัด + เห็นค่าค่อยๆ เลื่อนออกจากกึ่งกลางสเปค → เตือนตั้งแต่ยังไม่มีของเสียสักชิ้น',
+        need: ['ตั้งมาตรฐาน+จุดวัดให้ครบทุกพาร์ท', 'ลงค่าวัดจริงตามรอบ (ไม่ใช่แค่ผ่าน/ไม่ผ่าน)'],
+      },
+      {
+        q: 'ของเสียตัวนี้เกิดจากอะไร — คน เครื่อง วัตถุดิบ หรือวิธีทำ?',
+        chain: [
+          { d: 'ผลิต', l: 'ของเสีย + หมายเหตุ', have: c => c.sessWithNg > 0 },
+          { d: 'ผลิต', l: '4M ที่เปลี่ยน', have: c => c.fourM > 0 },
+          { d: 'คน', l: 'สกิลคนที่ยืนจุดนั้น', have: c => c.skills > 0 },
+          { d: 'ซ่อมบำรุง', l: 'สภาพเครื่อง/PM', have: c => c.inspections > 0 },
+          { d: 'QA', l: 'ใบ NCR / CAPA', have: c => c.qaNcr > 0 },
+        ],
+        now: 2, full: 3, to: '/qa',
+        nowTxt: 'ชี้ได้บางส่วน (4M + คน + เครื่อง) แต่ของเสียถูกบันทึกแค่บางกะ ทำให้ยังหา pattern ไม่ได้',
+        fullTxt: 'จับ pattern ได้ว่า "ของเสียชนิดนี้มักเกิดตอนเปลี่ยนคน/หลังเปลี่ยนแม่พิมพ์/กับเครื่องตัวนี้" → กันไว้ก่อน',
+        need: ['บันทึกของเสียให้ครบทุกกะ', 'เปิด NCR เมื่อเจอของเสียซ้ำ เพื่อปิดลูปหาสาเหตุ'],
+      },
+    ],
+  },
+  {
+    key: 'machine', icon: '⚙️', label: 'เครื่องจักร',
+    qs: [
+      {
+        q: 'เครื่องเริ่มเบี่ยงเบนหรือยัง — ก่อนที่จะพังจริง?',
+        chain: [
+          { d: 'ผลิต', l: 'เครื่องหยุด/หยุดสั้น', have: c => c.dtUnplannedRows > 0 },
+          { d: 'ผลิต', l: '%P ต่อกะ (ความเร็วตก)', have: c => c.sessClosed > 0 },
+          { d: 'ผลิต', l: 'ของเสียของเครื่องนั้น', have: c => c.sessWithNg > 0 },
+          { d: 'ซ่อมบำรุง', l: 'ใบซ่อมที่ผ่านมา', have: c => c.mo > 0 },
+          { d: 'ซ่อมบำรุง', l: 'ประวัติการตรวจ', have: c => c.inspections > 0 },
+        ],
+        now: 1, full: 3, to: '/dept-dashboard?dept=maintenance',
+        nowTxt: 'มีข้อมูลเครื่องหยุดครบแล้ว แต่ยังไม่มีใครเปิดใบซ่อมตาม จึงเห็นแค่ "หยุดไปแล้ว" ไม่รู้ว่ากำลังจะหยุดอีก',
+        fullTxt: 'สัญญาณเตือน 3 ทางพร้อมกัน: หยุดสั้นถี่ขึ้น + ความเร็วค่อยๆ ตก + ของเสียเพิ่ม = เครื่องกำลังเสื่อม ทั้งที่ยังไม่พัง',
+        need: ['เปิดใบซ่อมทุกครั้งที่เครื่องหยุดผิดปกติ', 'บันทึกผลตรวจ PM ตามรอบ'],
+      },
+      {
+        q: 'เครื่องนี้ควรซ่อมเมื่อไหร่ ใช้อะไหล่อะไร ใครทำ กระทบแผนผลิตแค่ไหน?',
+        chain: [
+          { d: 'ซ่อมบำรุง', l: 'แผน PM + รอบ', have: c => c.pmPlans > 0 },
+          { d: 'ผลิต', l: 'ยอดผลิตสะสม (shot)', have: c => c.ordConfirmed > 0 },
+          { d: 'ซ่อมบำรุง', l: 'อะไหล่คงคลัง', have: c => c.spare > 0 },
+          { d: 'ซ่อมบำรุง', l: 'ทีมช่าง/คิวงาน', have: c => c.mo > 0 },
+          { d: 'สโตร์', l: 'ออเดอร์ที่รอไลน์นี้', have: c => c.shipOrders > 0 },
+        ],
+        now: 1, full: 4, to: '/pm-forecast',
+        nowTxt: 'บอกได้แค่ว่า "ครบรอบแล้ว" — ยังไม่รู้ว่าควรทำวันไหนถึงกระทบผลิตน้อยที่สุด และของพร้อมหรือเปล่า',
+        fullTxt: 'นี่คือ Prescriptive Maintenance เต็มรูป: ระบบเสนอ "ทำวันพฤหัส กะดึก · ใช้อะไหล่ 3 ตัวมีของครบ · ทีม MTN ว่าง · กระทบออเดอร์ลูกค้า 0 ใบ เพราะผลิตล่วงหน้าไว้แล้ว"',
+        need: ['ลงข้อมูลอะไหล่คงคลัง', 'เปิดใบซ่อม/บันทึก PM ให้เป็นนิสัย', 'ผูกแผน PM กับยอดผลิตสะสม'],
+      },
+      {
+        q: 'เครื่องไหนควรซ่อมต่อ เครื่องไหนควรเปลี่ยนทิ้ง?',
+        chain: [
+          { d: 'ซ่อมบำรุง', l: 'ใบซ่อม + ค่าแรง/อะไหล่', have: c => c.mo > 0 },
+          { d: 'ผลิต', l: 'เวลาที่เครื่องทำให้เสีย', have: c => c.dtUnplannedRows > 0 },
+          { d: 'บัญชี', l: 'ต้นทุนเวลาเดินไลน์', have: c => (c.linesWithCc || 0) > 0 },
+        ],
+        now: 1, full: 4, to: '/mtn-repair',
+        nowTxt: 'ตัดสินด้วยความรู้สึกและประสบการณ์ช่าง ยังไม่มีตัวเลขรองรับ',
+        fullTxt: 'เทียบ "ค่าซ่อมสะสม + เวลาที่เสียไปคิดเป็นเงิน" กับ "ราคาเครื่องใหม่" ต่อเครื่อง → ของบลงทุนด้วยตัวเลข ไม่ใช่ความรู้สึก',
+        need: ['บันทึกค่าแรง/ค่าอะไหล่ทุกใบซ่อม', 'กรอก Activity Rate ต่อ cost center'],
+      },
+    ],
+  },
+  {
+    key: 'delivery', icon: '🚚', label: 'การจัดส่ง',
+    qs: [
+      {
+        q: 'เครื่องเสียตอนนี้ — จะกระทบรอบส่งไหน ลูกค้ารายไหน?',
+        chain: [
+          { d: 'ผลิต', l: 'เครื่องที่หยุดอยู่', have: c => c.dtUnplannedRows > 0 },
+          { d: 'ผลิต', l: 'ไลน์นั้นผลิตพาร์ทอะไร', have: c => c.prodWithCt > 0 },
+          { d: 'สโตร์', l: 'ออเดอร์ที่รอพาร์ทนั้น', have: c => c.shipOrders > 0 },
+          { d: 'สโตร์', l: 'สต็อกที่มีอยู่จริง', have: c => c.stockConsume > 0 },
+        ],
+        now: 1, full: 3, to: '/customer-demand',
+        nowTxt: 'ข้อมูลทุกชิ้นมีอยู่ในระบบแล้ว แต่ยังไม่มีหน้าไหนต่อสายให้เห็นพร้อมกัน — ต้องเปิด 3 หน้ามาเทียบเอง',
+        fullTxt: 'เครื่องหยุดปุ๊บ ระบบบอกทันที "กระทบออเดอร์ 4 ใบ ลูกค้า Ford รอบบ่ายพรุ่งนี้ · สต็อกพอถึง 14:00" → ตัดสินใจย้ายไลน์/เร่ง OT ได้ทันที',
+        need: ['กดยืนยัน "ส่งแล้ว" ทุกรอบ เพื่อให้สต็อกตรงของจริง'],
+      },
+      {
+        q: 'เดือนหน้าจะส่งลูกค้าทันมั้ย ต้องเปิด OT หรือกะดึกกี่วัน?',
+        chain: [
+          { d: 'ขาย', l: 'Forecast ลูกค้า', have: c => c.forecasts > 0 },
+          { d: 'ผลิต', l: 'กำลังผลิตจริงที่ทำได้', have: c => c.ordConfirmed > 0 },
+          { d: 'ซ่อมบำรุง', l: 'PM ที่จะครบเดือนหน้า', have: c => c.pmPlans > 0 },
+          { d: 'คน', l: 'กำลังคน + วันหยุด', have: c => c.checkinLogs > 0 },
+        ],
+        now: 2, full: 3, to: '/production-plan',
+        nowTxt: 'คำนวณได้แล้วจากกำลังผลิตจริงย้อนหลัง (ไม่ใช่ตัวเลขทฤษฎี) แต่ยังไม่ได้หักวันที่เครื่องต้องหยุดทำ PM',
+        fullTxt: 'รวมทุกข้อจำกัดในภาพเดียว: ออเดอร์ + กำลังคนจริง + วันที่เครื่องต้องหยุด PM + วันหยุดบริษัท → บอกล่วงหน้าเป็นเดือนว่าวันไหนต้องเปิด OT',
+        need: ['ผูกแผน PM เข้ากับแผนผลิต'],
+      },
+      {
+        q: 'สต็อกที่เห็นในระบบ ตรงกับของจริงในคลังมั้ย?',
+        chain: [
+          { d: 'ผลิต', l: 'ปิดออเดอร์ → เข้าคลัง', have: c => c.ordConfirmed > 0 },
+          { d: 'สโตร์', l: 'จ่ายเข้าไลน์', have: c => c.stockAll > 0 },
+          { d: 'สโตร์', l: 'กดส่ง → ตัดสต็อก', have: c => c.shipped > 0 && c.stockConsume > 5 },
+        ],
+        now: 1, full: 2, to: '/line-stock',
+        nowTxt: 'ขาเข้าบันทึกอัตโนมัติแล้ว แต่ขาออกแทบไม่ถูกกด ยอดคงเหลือจึงสูงกว่าของจริงเรื่อยๆ',
+        fullTxt: 'ยอดในระบบ = ของบนชั้นจริง → เลิกนับสต็อกซ้ำเพื่อเช็คว่าระบบถูกไหม และเชื่อยอดไปวางแผนผลิตได้',
+        need: ['กดยืนยันส่งทุกรอบ', 'ตั้งเลขพาร์ทลูกค้า ↔ เลข SAP ให้ครบ'],
+      },
+    ],
+  },
+  {
+    key: 'cost', icon: '💰', label: 'ต้นทุน & คน',
+    qs: [
+      {
+        q: 'เวลาที่เสียไปกับของเสีย คิดเป็นเงินเท่าไหร่?',
+        chain: [
+          { d: 'ผลิต', l: 'เวลาหยุด + ของเสีย', have: c => c.dtUnplannedRows > 0 },
+          { d: 'บัญชี', l: 'Activity Rate (บาท/ชม.)', have: c => c.rateRows > 0 },
+          { d: 'บัญชี', l: 'ต้นทุนต่อชิ้น', have: c => c.partsWithCost > 0 },
+        ],
+        now: 1, full: 2, to: '/org-setup',
+        nowTxt: 'วัดเป็น "นาที" และ "ชิ้น" ได้แม่นแล้ว แต่แปลงเป็นบาทไม่ได้ เพราะยังไม่มีใครกรอกค่าแรง/ต้นทุน',
+        fullTxt: 'ทุกความสูญเสียขึ้นเป็นบาทอัตโนมัติ → คุยกับผู้บริหารและบัญชีด้วยภาษาเดียวกัน',
+        need: ['กรอก Activity Rate ต่อ cost center', 'กรอกต้นทุนต่อชิ้นใน Parts Master'],
+      },
+      {
+        q: 'คนคนนี้ยืนจุดนี้ได้มั้ย — ถ้าวันนี้ขาด ใครแทนได้?',
+        chain: [
+          { d: 'คน', l: 'สกิลรายคน', have: c => c.skills > 0 },
+          { d: 'คน', l: 'ทักษะที่จุดงานต้องการ', have: c => c.empActive > 0 },
+          { d: 'คน', l: 'เช็คชื่อวันนี้', have: c => c.checkinLogs > 0 },
+          { d: 'คน', l: 'ประวัติอบรม OJT', have: c => (c.ojt || 0) > 0 },
+        ],
+        now: 2, full: 3, to: '/operator',
+        nowTxt: 'จับคู่คน ↔ จุดงานด้วยคะแนนทักษะได้แล้ว และเห็นว่าใครขาดวันนี้',
+        fullTxt: 'เตือนล่วงหน้าว่า "จุดงานนี้มีคนทำได้คนเดียวทั้งโรงงาน" → วางแผนอบรมก่อนที่คนคนนั้นจะลาออก/ลาป่วย',
+        need: ['บันทึกการอบรม OJT ทุกครั้งที่สอนงาน'],
+      },
+      {
+        q: 'การปรับปรุงที่ลงแรงไป คุ้มมั้ย?',
+        chain: [
+          { d: 'ผลิต', l: 'โปรเจคปรับปรุง', have: c => c.improvements > 0 },
+          { d: 'ผลิต', l: 'ตัวเลขก่อน-หลัง', have: c => c.dtUnplannedRows > 0 },
+          { d: 'บัญชี', l: 'อัตราค่าใช้จ่าย', have: c => c.rateRows > 0 },
+        ],
+        now: 1, full: 2, to: '/improvements',
+        nowTxt: 'ยังไม่มีโปรเจคในระบบเลย ผลการปรับปรุงจึงยังไม่ถูกวัด',
+        fullTxt: 'ทุกโปรเจคมีตัวเลขก่อน-หลังที่ระบบดึงจากข้อมูลจริงเอง + คิดเป็นบาท/เดือน และระยะคืนทุน — ไม่ต้องกรอกผลเอง',
+        need: ['เปิดโปรเจคปรับปรุงผูกกับปัญหาจริง', 'กรอก Activity Rate'],
+      },
+    ],
+  },
+];
+
 /* ── โหลดข้อมูลทั้งหมด (นับจริงทุกตัว) ────────────────────────────────────────────────── */
 async function loadAll() {
   const today = getWorkDate();
@@ -186,6 +384,12 @@ async function loadAll() {
     cnt(supabase, 'employees', q => q.eq('is_active', true)),
     cnt(supabase, 'daily_production_logs'),
   ]);
+  /* 2 ตัวนี้ใช้เฉพาะแท็บ "มิติที่มองเห็นได้" (สายข้อมูลพยากรณ์/คน) — แยกออกมาให้อ่านง่าย */
+  const [forecasts, skills, ojt] = await Promise.all([
+    cnt(supabaseDR, 'customer_forecasts'),
+    cnt(supabase, 'employee_skills'),
+    cnt(supabase, 'ojt_trainings'),
+  ]);
 
   /* ── loss ที่วัดได้จริงในหน้าต่าง 30 วัน (ใช้คิดเงินในแท็บ ROI) ── */
   const { data: winSess } = await supabaseDR.from('production_sessions')
@@ -214,7 +418,8 @@ async function loadAll() {
       sess, sessClosed, ord, ordConfirmed, mo, pmPlans, inspections, spare, improvements,
       shipOrders, shipped, stockAll, stockConsume, machinesProd, dies, jigsReal, prodAll, prodWithCt,
       partsAll, partsWithCost, fourM, lpaAudits, qaSheets, qaMeas, qaNcr, qaParts,
-      linesAll, linesWithCc, empActive, checkinLogs,
+      linesAll, linesWithCc, empActive, checkinLogs, forecasts, skills, ojt,
+      rateRows: rates?.length || 0,   // มี Activity Rate กี่ cost center — สายข้อมูล "คิดเป็นเงิน" ขาดตรงนี้
       /* ตัวหาร/ตัวตั้งที่ต้องนับจากหน้าต่างเดียวกัน (ไม่ใช่ทั้งฐาน) */
       sessWin: ids.length, sessWithNg, dtUnplannedRows: dts.filter(d => d.dr_downtime_types?.category !== 'planned').length,
     },
@@ -266,7 +471,200 @@ function SignalRow({ s, navigate }) {
   );
 }
 
-/* ── แท็บ 1: ก่อน-หลัง รายแผนก ─────────────────────────────────────────────────────────── */
+/* ป้ายระดับความสามารถ — ใช้ทั้งแท็บมิติและแท็บบันได ห้ามวาดเองซ้ำ */
+function LevelPill({ n, dim }) {
+  const L = lv(n);
+  const col = ['#94a3b8', '#38bdf8', '#a78bfa', '#22c55e'][n - 1] || 'var(--muted)';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700,
+      color: dim ? 'var(--muted)' : col, border: `1px solid ${dim ? 'var(--border2)' : col}`,
+      borderRadius: 999, padding: '2px 9px', whiteSpace: 'nowrap', opacity: dim ? 0.75 : 1,
+    }}>{L.icon} {L.name}</span>
+  );
+}
+
+/* ── แท็บ: มิติที่มองเห็นได้เมื่อข้อมูลเชื่อมกัน ─────────────────────────────────────────── */
+function DimensionTab({ c, navigate, isMobile }) {
+  const [only, setOnly] = useState('all');
+  const dims = only === 'all' ? DIMENSIONS : DIMENSIONS.filter(d => d.key === only);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+        {[{ key: 'all', icon: '🔗', label: 'ทุกมิติ' }, ...DIMENSIONS].map(d => {
+          const on = only === d.key;
+          return (
+            <button key={d.key} onClick={() => setOnly(d.key)} style={{
+              fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
+              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+            }}>{d.icon} {d.label}</button>
+          );
+        })}
+      </div>
+
+      {dims.map(dim => (
+        <div key={dim.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 800, marginTop: 2 }}>{dim.icon} {dim.label}</div>
+          {dim.qs.map((q, qi) => {
+            const missing = q.chain.filter(s => !s.have(c)).length;
+            const gained = q.full > q.now;
+            return (
+              <div key={qi} style={{ ...cardSt, borderLeft: `4px solid ${gained ? 'var(--accent2)' : 'var(--accent)'}` }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.45, marginBottom: 9 }}>“{q.q}”</div>
+
+                {/* สายข้อมูล — หัวใจของหน้านี้: ให้เห็นว่าคำตอบต้องต่อจากหลายแผนก และขาดตรงไหน */}
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
+                  ต้องต่อข้อมูลจาก {q.chain.length} จุด{missing > 0 && <b style={{ color: '#f59e0b' }}> · ยังขาด {missing}</b>}
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginBottom: 11 }}>
+                  {q.chain.map((s, si) => {
+                    const ok = s.have(c);
+                    return (
+                      <span key={si} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {si > 0 && <span style={{ color: 'var(--muted)', fontSize: 12 }}>→</span>}
+                        <span title={`ข้อมูลจาก: ${s.d}`} style={{
+                          fontSize: 11.5, fontWeight: 600, borderRadius: 7, padding: '3px 8px', whiteSpace: 'nowrap',
+                          color: ok ? '#22c55e' : 'var(--muted)',
+                          background: ok ? 'rgba(34,197,94,0.10)' : 'transparent',
+                          border: `1px ${ok ? 'solid' : 'dashed'} ${ok ? 'rgba(34,197,94,0.5)' : 'var(--border2)'}`,
+                        }}>
+                          {ok ? '✓' : '○'} {s.l}
+                          <span style={{ opacity: 0.65, marginLeft: 4 }}>· {s.d}</span>
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignContent: 'start' }}>
+                  <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                    <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>วันนี้</span>
+                      <LevelPill n={q.now} /><Badge tone="real">วัดจริง</Badge>
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text2)' }}>{q.nowTxt}</div>
+                  </div>
+                  <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                    <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>เมื่อข้อมูลเชื่อมครบ</span>
+                      <LevelPill n={q.full} /><Badge tone="guess">คาดการณ์</Badge>
+                    </div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>{q.fullTxt}</div>
+                  </div>
+                </div>
+
+                {q.need?.length > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
+                    <b style={{ color: '#f59e0b' }}>ต้องเติมอะไรถึงจะไปถึง:</b> {q.need.join(' · ')}
+                    <button onClick={() => navigate(q.to)} style={{
+                      marginLeft: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: 'var(--accent)', fontSize: 12, fontWeight: 700, textDecoration: 'underline',
+                    }}>เปิดหน้าที่เกี่ยวข้อง →</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── แท็บ: 4 ระดับความสามารถ ────────────────────────────────────────────────────────────
+   ตอบคำถาม "predictive / prescriptive ต้องมีอะไรก่อน" ด้วยการนับคำถามจริงในแท็บมิติ */
+function LadderTab({ c, navigate, isMobile }) {
+  const all = DIMENSIONS.flatMap(d => d.qs.map(q => ({ ...q, dim: d })));
+  const col = ['#94a3b8', '#38bdf8', '#a78bfa', '#22c55e'];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ ...cardSt, fontSize: 12.5, lineHeight: 1.65 }}>
+        ระดับที่สูงขึ้น <b>ไม่ได้มาจากซอฟต์แวร์เก่งขึ้น</b> แต่มาจาก <b>ข้อมูลครบขึ้นและเชื่อมกัน</b> ·
+        ตัวเลขด้านล่างนับจาก {all.length} คำถามในแท็บ “มิติที่มองเห็นได้”
+      </div>
+
+      {LEVELS.map(L => {
+        const nowAt = all.filter(q => q.now === L.n);
+        const fullAt = all.filter(q => q.full === L.n);
+        const c0 = col[L.n - 1];
+        return (
+          <div key={L.n} style={{ ...cardSt, borderLeft: `4px solid ${c0}` }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 3 }}>
+              <span style={{ fontSize: 22 }}>{L.icon}</span>
+              <span style={{ fontSize: 16, fontWeight: 800 }}>ระดับ {L.n} · {L.name}</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L.en}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>{L.desc}</div>
+
+            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignContent: 'start' }}>
+              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
+                  วันนี้อยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{nowAt.length}</span> คำถาม <Badge tone="real">วัดจริง</Badge>
+                </div>
+                {nowAt.length
+                  ? <ul style={{ margin: 0, paddingLeft: 17, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {nowAt.map((q, i) => <li key={i} style={{ fontSize: 11.5, lineHeight: 1.5 }}>{q.dim.icon} {q.q}</li>)}
+                  </ul>
+                  : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ยังไม่มีคำถามไหนอยู่ระดับนี้</div>}
+              </div>
+              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
+                  จะขึ้นมาอยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{fullAt.length}</span> คำถาม <Badge tone="guess">เมื่อข้อมูลครบ</Badge>
+                </div>
+                {fullAt.length
+                  ? <ul style={{ margin: 0, paddingLeft: 17, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {fullAt.map((q, i) => <li key={i} style={{ fontSize: 11.5, lineHeight: 1.5 }}>{q.dim.icon} {q.q}</li>)}
+                  </ul>
+                  : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>—</div>}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* กุญแจที่ปลดล็อกได้เยอะที่สุด — นับว่าข้อมูลชิ้นไหนถูกใช้ในหลายคำถามที่สุด แล้วยังไม่มี */}
+      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>🔑 ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+          นับจากสายข้อมูลของทุกคำถาม — ชิ้นที่ยังไม่มี และถูกใช้ในหลายคำถามที่สุด ควรทำก่อน
+        </div>
+        {(() => {
+          const tally = {};
+          all.forEach(q => q.chain.forEach(s => {
+            if (s.have(c)) return;
+            const k = `${s.l}|${s.d}`;
+            (tally[k] ||= { l: s.l, d: s.d, n: 0 }).n++;
+          }));
+          const list = Object.values(tally).sort((a, b) => b.n - a.n);
+          if (!list.length) return <div style={{ fontSize: 13, color: '#22c55e' }}>✅ สายข้อมูลครบทุกจุดแล้ว</div>;
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {list.map((x, i) => (
+                <div key={i} style={{
+                  display: 'flex', gap: 9, alignItems: 'center',
+                  background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px',
+                }}>
+                  <span style={{
+                    fontSize: 13, fontWeight: 800, color: x.n >= 3 ? '#ef4444' : x.n === 2 ? '#f59e0b' : 'var(--muted)',
+                    minWidth: 58, whiteSpace: 'nowrap',
+                  }}>{x.n} คำถาม</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
+                    <b>{x.l}</b><span style={{ color: 'var(--muted)' }}> · {x.d}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+    </div>
+  );
+}
+
+/* ── แท็บ: ก่อน-หลัง รายแผนก ───────────────────────────────────────────────────────────── */
 function DeptTab({ c, navigate, isMobile }) {
   const rows = DEPTS.map(d => {
     const sigs = d.signals(c);
@@ -468,7 +866,9 @@ function RoiTab({ c, loss, rates, navigate, isMobile }) {
 export default function AdoptionOutlook() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const [tab, setTab] = useTabParam(['dept', 'roi'], 'dept');
+  /* default = 'dim' — คำถามที่ผู้บริหารถามจริง ควรเป็นสิ่งแรกที่เห็น
+     (ก่อน-หลัง/ROI เป็นรายละเอียดที่ค่อยกดเข้าไปดู) */
+  const [tab, setTab] = useTabParam(['dim', 'ladder', 'dept', 'roi'], 'dim');
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
 
@@ -481,13 +881,13 @@ export default function AdoptionOutlook() {
 
   if (err) return (
     <div style={{ padding: 16 }}>
-      <PageHeader title="ภาพเมื่อทุกแผนกใช้ครบ" icon="🔮" />
+      <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
       <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>
     </div>
   );
   if (!d) return (
     <div style={{ padding: 16 }}>
-      <PageHeader title="ภาพเมื่อทุกแผนกใช้ครบ" icon="🔮" />
+      <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
       <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังนับข้อมูลจากฐานจริง…</div>
     </div>
   );
@@ -495,9 +895,14 @@ export default function AdoptionOutlook() {
   return (
     <div style={{ padding: isMobile ? 12 : 16, maxWidth: 1400, margin: '0 auto' }}>
       <PageHeader
-        title="ภาพเมื่อทุกแผนกใช้ครบ" icon="🔮"
-        sub={`ข้อมูล ณ ${d.loss.to} · ฐานข้อมูลจริงทั้งหมด ไม่มีตัวเลขสมมติในฝั่ง "วันนี้"`}
-        tabs={[{ key: 'dept', label: '🏭 ก่อน-หลัง รายแผนก' }, { key: 'roi', label: '💰 เงินที่ประหยัดได้' }]}
+        title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮"
+        sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
+        tabs={[
+          { key: 'dim', label: '🔍 มิติที่มองเห็นได้' },
+          { key: 'ladder', label: '📈 4 ระดับ (ถึง Prescriptive)' },
+          { key: 'dept', label: '🏭 ก่อน-หลัง รายแผนก' },
+          { key: 'roi', label: '💰 เงินที่ประหยัดได้' },
+        ]}
         tab={tab} onTab={setTab}
       />
 
@@ -505,17 +910,23 @@ export default function AdoptionOutlook() {
       <div style={{
         ...cardSt, borderLeft: '4px solid var(--accent2)', marginBottom: 12, fontSize: 12.5, lineHeight: 1.65,
       }}>
-        <b>อ่านหน้านี้ยังไง:</b> ทุกตัวเลขที่ติดป้าย <Badge tone="real">วัดจริง</Badge> นับสดจากฐานข้อมูลตอนเปิดหน้า ·
-        ส่วนที่ติดป้าย <Badge tone="guess">ภาพคาดการณ์ / สมมติฐาน</Badge> คือสิ่งที่<b>ยังไม่เกิด</b> —
-        เป็นความสามารถที่จะปลดล็อกเมื่อข้อมูลครบ และตัวเลขที่ปรับเองได้ <b>ระบบไม่ได้รับประกัน</b>
+        <b>คำถามของหน้านี้:</b> เมื่อทุกแผนกใช้ระบบจริงและข้อมูลมองเห็นกันหมด —
+        เราจะ<b>ตอบคำถามอะไรได้บ้างที่วันนี้ตอบไม่ได้</b> (สอบกลับ · คุมคุณภาพ · เห็นเครื่องเบี่ยงเบน ·
+        รู้ผลกระทบต่อการจัดส่ง · พยากรณ์ข้ามแผนก · prescriptive maintenance)
+        <div style={{ marginTop: 6 }}>
+          ป้าย <Badge tone="real">วัดจริง</Badge> = นับสดจากฐานข้อมูลตอนเปิดหน้า ·
+          ป้าย <Badge tone="guess">คาดการณ์</Badge> = สิ่งที่<b>ยังไม่เกิด</b> จะเป็นไปได้เมื่อข้อมูลครบ
+        </div>
         <div style={{ marginTop: 6, color: 'var(--muted)' }}>
-          หน้านี้อ่านอย่างเดียว ไม่แก้ไขข้อมูลใดๆ · ทุกปุ่มคือทางลัดไปหน้าที่ทำงานจริง
+          หน้านี้อ่านอย่างเดียว ไม่แก้ไขข้อมูลใดๆ · ทุกปุ่มคือทางลัดไปหน้าที่ทำงานจริง ·
+          <b> ทุกความสามารถในหน้านี้ใช้ข้อมูลที่ระบบเก็บอยู่แล้ว ไม่ต้องซื้อระบบเพิ่ม</b>
         </div>
       </div>
 
-      {tab === 'dept'
-        ? <DeptTab c={d.c} navigate={navigate} isMobile={isMobile} />
-        : <RoiTab c={d.c} loss={d.loss} rates={d.rates} navigate={navigate} isMobile={isMobile} />}
+      {tab === 'dim' && <DimensionTab c={d.c} navigate={navigate} isMobile={isMobile} />}
+      {tab === 'ladder' && <LadderTab c={d.c} navigate={navigate} isMobile={isMobile} />}
+      {tab === 'dept' && <DeptTab c={d.c} navigate={navigate} isMobile={isMobile} />}
+      {tab === 'roi' && <RoiTab c={d.c} loss={d.loss} rates={d.rates} navigate={navigate} isMobile={isMobile} />}
     </div>
   );
 }
