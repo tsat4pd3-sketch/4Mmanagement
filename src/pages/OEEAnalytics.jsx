@@ -14,7 +14,7 @@ import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
@@ -620,6 +620,9 @@ export default function OEEAnalytics() {
       nowMs: lastUpdate?.getTime?.() || Date.now(),
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับตอนปิดกะ
       parallelN: parallelUnitsOf(flowByLine[tdLiveSession.line_name]),
+      // เพดานเครื่องขนานสำหรับตัวหาร P (ต้องส่งเหมือน /factory-map ไม่งั้น 2 จอโชว์คนละเลข)
+      parallelCap: flowModeOf(flowByLine[tdLiveSession.line_name]?.flow_mode) === 'parallel_machine'
+        ? parallelUnitsOf(flowByLine[tdLiveSession.line_name]) : 1,
     });
   }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine]);
   const isLiveCalc = Boolean(tdLiveCalc);
