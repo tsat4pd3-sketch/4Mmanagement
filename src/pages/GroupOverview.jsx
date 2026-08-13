@@ -7,6 +7,7 @@ import useIsMobile from '../utils/useIsMobile';
 import WorldFactoryMap from '../components/WorldFactoryMap';
 import ThailandZoneMap from '../components/ThailandZoneMap';
 import { LINE_TYPES } from '../utils/lineTypes';
+import { rnd, jit } from '../utils/seededRandom';
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
    โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายบริษัทในกลุ่มทำได้มั้ย"
@@ -40,14 +41,8 @@ const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-/* seeded RNG — ตัวเลขจำลองต้องคงที่ต่อ (บริษัท × ไลน์ × วัน) ไม่งั้นรีเฟรชทีตัวเลขดิ้นที = ดูไม่น่าเชื่อถือ */
-function hash32(str) {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-const rnd = (str) => (hash32(str) % 100000) / 100000;                 // 0..1
-const jit = (str, spread) => 1 + (rnd(str) - 0.5) * spread;           // 1 ± spread/2
+/* seeded RNG — ตัวเลขจำลองต้องคงที่ต่อ (บริษัท × ไลน์ × วัน) ไม่งั้นรีเฟรชทีตัวเลขดิ้นที = ดูไม่น่าเชื่อถือ
+   ย้ายไป utils/seededRandom.js แล้ว (2026-08-13) เพราะ /adoption-outlook ใช้ตัวเดียวกัน */
 
 /* ── โครงองค์กร TSG (mockup) ────────────────────────────────────────────────────────────
    ⚙️ แก้รายชื่อกลุ่มธุรกิจ/บริษัทได้ที่ const นี้จุดเดียว — ที่เหลือ (การ์ด/อันดับ/ตาราง) ตามให้เอง
