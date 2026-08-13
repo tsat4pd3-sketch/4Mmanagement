@@ -178,13 +178,18 @@ export default function PEDocs() {
   };
 
   /* ── สรุป FMEA ทั้งชุด (top RPN) ── */
+  // seq ของ item เริ่มนับใหม่ทุก OP → ต้องเรียงด้วย (ลำดับ OP, seq) ฝั่ง client ไม่งั้นหลาย OP สลับแถวปนกัน
+  const bySeqInOp = useCallback((a, b) => {
+    const pa = procById[a.process_id], pb = procById[b.process_id];
+    return (Number(pa?.seq) || 0) - (Number(pb?.seq) || 0) || (a.seq || 0) - (b.seq || 0) || (a.char_no || 0) - (b.char_no || 0);
+  }, [procById]);
   const fmeaView = useMemo(() => {
     let list = fmea.map(it => ({ ...it, rpn: rpnOf(it), rpnNew: rpnNewOf(it) }));
     if (procFilter) list = list.filter(it => it.process_id === procFilter);
     if (rpnOnly) list = list.filter(it => (it.rpn || 0) >= 100);
-    return list;
-  }, [fmea, procFilter, rpnOnly]);
-  const cpView = useMemo(() => (procFilter ? cp.filter(it => it.process_id === procFilter) : cp), [cp, procFilter]);
+    return list.sort(bySeqInOp);
+  }, [fmea, procFilter, rpnOnly, bySeqInOp]);
+  const cpView = useMemo(() => (procFilter ? cp.filter(it => it.process_id === procFilter) : [...cp]).sort(bySeqInOp), [cp, procFilter, bySeqInOp]);
   const highRpn = useMemo(() => fmea.map(it => ({ ...it, rpn: rpnOf(it) })).filter(it => (it.rpn || 0) >= 100).length, [fmea]);
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
@@ -312,6 +317,7 @@ export default function PEDocs() {
                     <div key={it.id} style={{ background: 'var(--card)', border: `1px solid ${(it.rpn || 0) >= 100 ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 10, padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.13)', color: '#4d9fff', borderRadius: 5, padding: '2px 7px' }}>OP {p?.op_no} {p?.name}</span>
+                        {it.item_function && <span style={{ fontSize: 10, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px' }}>{it.item_function}</span>}
                         {classChip(it.classification)}
                         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{it.failure_mode}</span>
                         <span style={{ flex: 1 }} />
@@ -364,7 +370,10 @@ export default function PEDocs() {
                       const p = procById[it.process_id];
                       return (
                         <tr key={it.id}>
-                          <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text)' }}>{p?.op_no}</td>
+                          <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text)' }}>
+                            {p?.op_no}
+                            {it.sub_op && <div style={{ fontFamily: 'inherit', fontSize: 10, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.sub_op}</div>}
+                          </td>
                           <td style={tdSt}>{it.char_no ?? '—'}</td>
                           <td style={tdSt}>
                             {it.product_char && <div style={{ fontWeight: 700, color: 'var(--text)' }}>{it.product_char}</div>}
@@ -585,6 +594,7 @@ export default function PEDocs() {
                 <option value="">—</option><option value="CC">CC</option><option value="SC">SC</option>
               </select>
             </label>
+            <label style={{ ...lbl, gridColumn: '1 / -1' }}>Item / Function (กลุ่มในฟอร์ม เช่น INCOMING INSP. / PROGRESSIVE / REWORK)<input value={fmeaModal.item_function || ''} onChange={e => setFmeaModal({ ...fmeaModal, item_function: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Requirement<textarea rows={2} value={fmeaModal.requirement || ''} onChange={e => setFmeaModal({ ...fmeaModal, requirement: e.target.value })} placeholder="- Nut thread Q'ty 1 Pc." style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Potential Failure Mode *<input value={fmeaModal.failure_mode} onChange={e => setFmeaModal({ ...fmeaModal, failure_mode: e.target.value })} placeholder="- Missing nut" style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Effects (แยกบรรทัด TSAT4 / Assembly plant / End user)<textarea rows={3} value={fmeaModal.effects || ''} onChange={e => setFmeaModal({ ...fmeaModal, effects: e.target.value })} placeholder={'TSAT4: Sorted 100% and rework offline\nAssembly plant: Can\'t assembled\nEnd user: ...'} style={{ marginTop: 4 }} /></label>
@@ -616,6 +626,7 @@ export default function PEDocs() {
               const num = (v) => (v !== '' && v != null ? Number(v) : null);
               const patch = {
                 process_id: fmeaModal.process_id, seq: Number(fmeaModal.seq) || 0,
+                item_function: fmeaModal.item_function?.trim() || null,
                 requirement: fmeaModal.requirement?.trim() || null, failure_mode: fmeaModal.failure_mode.trim(),
                 effects: fmeaModal.effects?.trim() || null, severity: num(fmeaModal.severity),
                 classification: fmeaModal.classification || null, causes: fmeaModal.causes?.trim() || null,
@@ -646,6 +657,7 @@ export default function PEDocs() {
               </select>
             </label>
             <label style={lbl}>Char No.<input type="number" value={cpModal.char_no ?? ''} onChange={e => setCpModal({ ...cpModal, char_no: e.target.value })} style={{ marginTop: 4, width: 110, display: 'block' }} /></label>
+            <label style={{ ...lbl, gridColumn: '1 / -1' }}>Sub-op (กลุ่มในใบ CP เช่น "130.3 · PROGRESSIVE")<input value={cpModal.sub_op || ''} onChange={e => setCpModal({ ...cpModal, sub_op: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Product Characteristic<input value={cpModal.product_char || ''} onChange={e => setCpModal({ ...cpModal, product_char: e.target.value })} placeholder="QUANTITY OF NUT" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Process Characteristic<input value={cpModal.process_char || ''} onChange={e => setCpModal({ ...cpModal, process_char: e.target.value })} placeholder="WELDING PARAMETER" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Special Char.
@@ -668,6 +680,7 @@ export default function PEDocs() {
               if (!cpModal.product_char?.trim() && !cpModal.process_char?.trim()) { toast.error('กรอก characteristic อย่างน้อย 1 ช่อง'); return; }
               const patch = {
                 process_id: cpModal.process_id, char_no: cpModal.char_no !== '' && cpModal.char_no != null ? Number(cpModal.char_no) : null,
+                sub_op: cpModal.sub_op?.trim() || null,
                 seq: Number(cpModal.seq) || 0, product_char: cpModal.product_char?.trim() || null,
                 process_char: cpModal.process_char?.trim() || null, special_class: cpModal.special_class || null,
                 person: cpModal.person?.trim() || null, spec: cpModal.spec?.trim() || null,
