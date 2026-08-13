@@ -41,6 +41,7 @@ const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -90,6 +91,8 @@ export const NAV_ITEMS = [
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
+  // ภาพ "ถ้าทุกแผนกใช้ครบจะได้อะไร" — ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
+  { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อทุกแผนกใช้ครบ', group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -1168,6 +1171,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
+              } />
+              <Route path="/adoption-outlook" element={
+                <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
