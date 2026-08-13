@@ -613,8 +613,10 @@ async function loadAll() {
    กฎที่ยึด:
    • **ไม่ hardcode กะตัวอย่าง** — เลือกกะแย่สุดใน 45 วันล่าสุดสดทุกครั้งที่เปิด
      (hardcode ไว้ = พอข้อมูลเดินหน้า ตัวอย่างจะเน่าและกลายเป็นข้อมูลเท็จ)
-   • **ชั้น 1-2 = ของจริงล้วน** ป้ายเขียว · ชั้น 3 ยังไม่มีข้อมูลในระบบ → บอกตรงๆ ว่าตอบไม่ได้
-     (โหมดสาธิตค่อยเติมตัวอย่างคำตอบ พร้อมป้ายม่วง)
+   • **ชั้น 1-2 = ของจริงล้วน** ป้ายเขียว · ชั้น 3 อ่านจากโมดูล PE Core Tools (`/pe-docs`)
+     **เช็คแบบผูกกับพาร์ท/ไลน์ของกะนั้น ห้ามนับรวมทั้งระบบ** — ทั้งระบบมี FMEA แล้วก็จริง
+     แต่ถ้าเป็นของคนละพาร์ท การขึ้นว่า "มีข้อมูลแล้ว" คือตอบผิดคำถาม
+     (พาร์ทนี้ยังไม่มี → บอกตรงๆ + ชี้ทางไปลง · โหมดสาธิตค่อยเติมตัวอย่างคำตอบ พร้อมป้ายม่วง)
    • **โหลดตอนเปิดแท็บเท่านั้น** (lazy) — ไม่ถ่วงหน้าแรกที่คนส่วนใหญ่เปิดดู
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 const DEEP_DAYS = 45;            // หน้าต่างหากะตัวอย่าง — กว้างพอให้เจอกะที่มีทั้ง DT และของเสีย
@@ -724,18 +726,39 @@ async function loadDeepDive() {
     : { data: [] };
   const pByMat = Object.fromEntries((prods || []).map(p => [p.mat_no, p]));
 
-  /* สถานะเอกสารออกแบบ (ฝั่ง Main) — ชั้น 3 ของเรื่องเล่า
-     ตารางมีครบตามมาตรฐาน AIAG แล้ว แต่ยังไม่มีข้อมูล/หน้าจอ → ต้องรายงานตรงๆ */
-  const [peSets, peProc, peFmea, peCp] = await Promise.all([
-    cnt(supabase, 'pe_doc_sets'), cnt(supabase, 'pe_processes'),
-    cnt(supabase, 'pe_fmea_items'), cnt(supabase, 'pe_cp_items'),
-  ]);
+  /* ── สถานะเอกสารออกแบบของ "พาร์ทที่ผลิตในกะนี้" (โมดูล PE Core Tools · Main) ──
+     ⚠️ ต้องเช็คแบบ **ผูกกับพาร์ท/ไลน์ของกะนี้** ห้ามนับรวมทั้งระบบ —
+     ทั้งระบบมี FMEA อยู่แล้วก็จริง แต่ถ้าเป็นของคนละพาร์ท การขึ้นว่า "มีข้อมูลแล้ว"
+     คือการตอบผิดคำถาม (คำถามคือ "อาการของกะ *นี้* เคยคาดไว้มั้ย")
+     จับคู่ด้วย mat_no ก่อน (ตรงตัวที่สุด) แล้วค่อย fallback ไปชื่อไลน์ — pe_doc_sets.mat_no
+     ยังว่างได้ในข้อมูลจริง จึงพึ่ง mat_no อย่างเดียวไม่ได้ */
+  const { data: allSets } = await supabase.from('pe_doc_sets')
+    .select('id, part_no, mat_no, part_name, line_name, status').limit(500);
+  const norm = (x) => (x || '').trim().toLowerCase();
+  const matSet = new Set(mats.map(norm));
+  const mySet = (allSets || []).find(s => s.mat_no && matSet.has(norm(s.mat_no)))
+    || (allSets || []).find(s => norm(s.line_name) === norm(S.line_name))
+    || null;
+
+  let peScoped = { proc: 0, fmea: 0, cp: 0 };
+  if (mySet) {
+    const { data: procs } = await supabase.from('pe_processes').select('id').eq('set_id', mySet.id);
+    const pids = (procs || []).map(p => p.id);
+    const [f, c] = pids.length
+      ? await Promise.all([
+        cnt(supabase, 'pe_fmea_items', q => q.in('process_id', pids)),
+        cnt(supabase, 'pe_cp_items', q => q.in('process_id', pids)),
+      ])
+      : [0, 0];
+    peScoped = { proc: pids.length, fmea: f, cp: c };
+  }
 
   return {
     empty: false, from, to: today,
     sess: S, dt: best.dt, def: best.df,
     orders: (ords || []).map(o => ({ ...o, prod: pByMat[o.mat_no] || null })),
-    pe: { sets: peSets, proc: peProc, fmea: peFmea, cp: peCp },
+    /* set = ชุดเอกสารของพาร์ทนี้ (null = ยังไม่มี) · totalSets = ทั้งระบบมีกี่พาร์ทแล้ว (ใช้บอกบริบท) */
+    pe: { set: mySet, totalSets: (allSets || []).length, ...peScoped },
   };
 }
 
@@ -1322,8 +1345,10 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
   const shiftTh = S.shift === 'night' ? 'กะดึก' : 'กะเช้า';
   const gcol = (n) => ({ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : `repeat(${n}, 1fr)` });
 
-  /* ── ชั้น 3: เอกสารออกแบบ — real = ยังตอบไม่ได้ · demo = ตัวอย่างคำตอบ ── */
-  const peReady = (dd.pe.fmea || 0) > 0;
+  /* ── ชั้น 3: เอกสารออกแบบของ "พาร์ทนี้" — มีชุดแล้วหรือยัง ── */
+  const peSet = dd.pe.set;
+  const peReady = !!peSet && (dd.pe.fmea || 0) > 0;
+  const peLink = peSet ? `/pe-docs?set=${peSet.id}&tab=fmea` : '/pe-docs';
   const DOCS = [
     {
       icon: '📄', name: 'Process Flow (PFC)', n: dd.pe.proc,
@@ -1521,17 +1546,33 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         <StepHead n="3" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="#a78bfa"
           sub="รู้ว่าเกิดอะไรแล้ว คำถามถัดไปคือ ตอนออกแบบกระบวนการ เราเคยคาดอาการนี้ไว้หรือเปล่า และที่ดักไว้มันพอมั้ย" />
 
-        {!peReady && !demoOn && (
+        {/* สถานะเอกสารของพาร์ทนี้ — แยก "ยังไม่มีของพาร์ทนี้" ออกจาก "ทั้งระบบยังไม่มีอะไรเลย" */}
+        {peSet ? (
+          <div style={{
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #22c55e', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+          }}>
+            <b style={{ color: '#22c55e' }}>พาร์ทนี้มีชุดเอกสารแล้ว</b> — {peSet.part_no}
+            {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
+            <button onClick={() => navigate(peLink)} style={{
+              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              cursor: 'pointer', background: 'var(--accent)', color: '#08120a', border: 'none',
+            }}>เปิดดู →</button>
+          </div>
+        ) : !demoOn && (
           <div style={{
             ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #f59e0b', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
           }}>
-            <b style={{ color: '#f59e0b' }}>วันนี้ตอบไม่ได้เลย</b> — ระบบ<b>มีที่เก็บครบแล้ว</b>ตามมาตรฐาน AIAG
-            (Process Flow / FMEA ที่มี S-O-D และ action / Control Plan ที่มีความถี่และ reaction plan)
-            แต่ <b>ยังไม่มีข้อมูลสักแถว และยังไม่มีหน้าจอให้กรอก</b>
+            <b style={{ color: '#f59e0b' }}>พาร์ทที่ผลิตในกะนี้ยังไม่มีชุดเอกสาร</b> — จึงยังย้อนกลับไปถามไม่ได้ว่า
+            อาการที่เกิดวันนี้ <b>เคยถูกคาดไว้ตอนออกแบบกระบวนการหรือเปล่า</b>
             <div style={{ marginTop: 6, color: 'var(--muted)' }}>
-              แปลว่าตอนนี้เราวัดความสูญเสียได้ละเอียดมาก แต่<b>เทียบกลับไปที่เจตนาการออกแบบไม่ได้</b> —
-              ทุกครั้งที่เครื่องเสียหรือของเสีย เราจึงตอบไม่ได้ว่า “เคยรู้อยู่แล้วแต่ปล่อย” หรือ “ไม่เคยคิดถึงเลย”
+              โมดูล Flow / PFMEA / Control Plan <b>มีหน้าจอให้กรอกแล้ว</b> และตอนนี้ลงไปแล้ว {fmtNum(dd.pe.totalSets)} พาร์ท —
+              ยังไม่ครอบคลุมพาร์ทนี้ · ตราบใดที่ยังไม่ลง เราจะ<b>วัดความสูญเสียได้ละเอียด แต่เทียบกลับไปที่เจตนาการออกแบบไม่ได้</b>
+              คือตอบไม่ได้ว่า “เคยรู้อยู่แล้วแต่ปล่อย” หรือ “ไม่เคยคิดถึงเลย”
             </div>
+            <button onClick={() => navigate('/pe-docs')} style={{
+              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+              cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
+            }}>📐 ไปลงเอกสารพาร์ทนี้</button>
           </div>
         )}
 
@@ -1563,9 +1604,14 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
                     </div>
                   </>
                 ) : has ? (
-                  <div style={{ fontSize: 12, color: 'var(--text2)' }}>มีข้อมูลแล้ว — เจาะรายตัวได้ที่หน้าเอกสารกระบวนการ</div>
+                  <button onClick={() => navigate(peLink)} style={{
+                    fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none',
+                    padding: 0, cursor: 'pointer', textAlign: 'left', fontWeight: 700,
+                  }}>เปิดดูรายตัวของพาร์ทนี้ →</button>
                 ) : (
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีข้อมูล — ตอบคำถามนี้ไม่ได้</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {peSet ? 'ชุดนี้ยังไม่ได้ลงหัวข้อนี้' : 'พาร์ทนี้ยังไม่มีเอกสาร'} — ตอบคำถามนี้ไม่ได้
+                  </div>
                 )}
               </div>
             );
@@ -1596,7 +1642,11 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <b>ที่ยังตอบไม่ได้</b> คือชั้น 3 — ต้องมี 2 อย่าง:
             <div style={{ marginTop: 4, display: 'grid', gap: 3, color: 'var(--text2)' }}>
               <div>① เพิ่ม<b>ช่อง 4M ที่ประเภท Downtime</b> เพื่อเลิกเดาจากข้อความ (แก้ที่ Daily Report → ⚙️ ตั้งค่า)</div>
-              <div>② ลง<b>ข้อมูล PFC / FMEA / Control Plan</b> ของพาร์ทที่ผลิตจริง — ตารางรออยู่แล้ว ยังขาดหน้าจอกรอก</div>
+              <div>
+                ② ลง<b>เอกสาร Flow / PFMEA / Control Plan</b> ให้ครอบคลุมพาร์ทที่ผลิตจริง —
+                หน้าจอมีแล้วที่ <b>/pe-docs</b> ตอนนี้ลงไป {fmtNum(dd.pe.totalSets)} พาร์ท
+                {peSet ? ' (รวมพาร์ทของกะนี้แล้ว)' : ' แต่ยังไม่มีพาร์ทของกะนี้'}
+              </div>
             </div>
           </div>
         </div>
@@ -1605,6 +1655,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             { l: '🔎 เปิดกะนี้ใน Daily Report', to: '/daily-report' },
             { l: '📊 ดู OEE ย้อนหลังไลน์นี้', to: '/oee-analytics' },
             { l: '🧠 วิเคราะห์สาเหตุ (Lean)', to: '/oee-analytics?tab=insight' },
+            { l: '📐 Flow / PFMEA / Control Plan', to: peLink },
             { l: '🔧 ใบแจ้งซ่อม', to: '/mtn-repair' },
           ].map(b => (
             <button key={b.to} onClick={() => navigate(b.to)} style={{
