@@ -37,6 +37,7 @@ const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
+const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
@@ -100,6 +101,7 @@ export const NAV_ITEMS = [
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/vsm',            icon: '🗺️', label: 'VSM สายธารคุณค่า',   group: 'วิเคราะห์ & รายงาน' },
   { to: '/order-trace', icon: '🔎', label: 'สอบกลับ Order (Trace)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
@@ -1240,6 +1242,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/product-history" element={
                 <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
+              } />
+              <Route path="/vsm" element={
+                <RoleRoute path="/vsm" userRole={role}><VSM /></RoleRoute>
               } />
               <Route path="/daily-checker" element={
                 <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>

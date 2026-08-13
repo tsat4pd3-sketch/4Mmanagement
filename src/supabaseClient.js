@@ -31,6 +31,7 @@ const DR_AUDIT_TABLES = new Set([
   'kanban_calc_settings','kanban_targets','product_packaging','scrap_defect_types',
   'machine_automation_levels','machine_operation_modes',
   'die_sets','equipment_die','die_op_types',
+  'part_routings',
 ])
 let drActorName = null
 // เรียกจาก App.jsx เมื่อรู้ตัวตน user (login) — ล้างเป็น null ตอน logout
