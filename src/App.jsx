@@ -37,10 +37,12 @@ const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
+const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -63,6 +65,7 @@ const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const PEDocs = lazy(() => import('./pages/PEDocs'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -90,6 +93,9 @@ export const NAV_ITEMS = [
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
+  // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
+  // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
+  { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -97,6 +103,7 @@ export const NAV_ITEMS = [
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/vsm',            icon: '🗺️', label: 'VSM สายธารคุณค่า',   group: 'วิเคราะห์ & รายงาน' },
   { to: '/order-trace', icon: '🔎', label: 'สอบกลับ Order (Trace)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
@@ -123,6 +130,9 @@ export const NAV_ITEMS = [
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
 
+  // หมวดวิศวกรรม (Process Engineering) — เพิ่ม 2026-08-13 (คำสั่ง user: โมดูล PFC/PFMEA/Control Plan)
+  { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'วิศวกรรม (PE)' },
+
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
@@ -146,7 +156,7 @@ export const NAV_ITEMS = [
   { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'วิศวกรรม (PE)', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -1169,6 +1179,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
               } />
+              <Route path="/adoption-outlook" element={
+                <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
+              } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
               } />
@@ -1235,6 +1248,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/product-history" element={
                 <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
               } />
+              <Route path="/vsm" element={
+                <RoleRoute path="/vsm" userRole={role}><VSM /></RoleRoute>
+              } />
               <Route path="/daily-checker" element={
                 <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
               } />
@@ -1273,6 +1289,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/qa-setup" element={
                 <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>
+              } />
+              <Route path="/pe-docs" element={
+                <RoleRoute path="/pe-docs" userRole={role}><PEDocs /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>

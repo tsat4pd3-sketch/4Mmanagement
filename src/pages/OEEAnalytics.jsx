@@ -14,7 +14,7 @@ import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { pairAwareTotal } from '../utils/pairTotals';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
@@ -620,6 +620,9 @@ export default function OEEAnalytics() {
       nowMs: lastUpdate?.getTime?.() || Date.now(),
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับตอนปิดกะ
       parallelN: parallelUnitsOf(flowByLine[tdLiveSession.line_name]),
+      // เพดานเครื่องขนานสำหรับตัวหาร P (ต้องส่งเหมือน /factory-map ไม่งั้น 2 จอโชว์คนละเลข)
+      parallelCap: flowModeOf(flowByLine[tdLiveSession.line_name]?.flow_mode) === 'parallel_machine'
+        ? parallelUnitsOf(flowByLine[tdLiveSession.line_name]) : 1,
     });
   }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine]);
   const isLiveCalc = Boolean(tdLiveCalc);
@@ -1115,6 +1118,9 @@ export default function OEEAnalytics() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                     {tdLiveSession && tdLiveSession.status !== 'closed'
                       ? (tdLiveCalc?.noOutput ? `เปิดกะแล้ว ${tdLiveCalc.elapsedMin} นาที · ยังไม่ปิดใบงานแรก — ประเมิน P/Q ยังไม่ได้`
+                        /* ผลิตแล้วแต่ชิ้นงานยังไม่ได้ตั้ง CT → ประเมินความเร็วไม่ได้ ห้ามโชว์ OEE 0% */
+                        : tdLiveCalc?.noCt ? `ผลิตแล้ว ${tdLiveCalc.produced} ชิ้น แต่ชิ้นงานยังไม่ได้ตั้ง Cycle Time — ประเมิน %P/OEE ไม่ได้ (ตั้งที่ Product Master: ${(tdLiveCalc.matsNoCt || []).slice(0, 3).join(', ')})`
+                        : tdLiveCalc?.qtyNoCt > 0 ? `ค่าสด — ⚠ มีชิ้นงานที่ยังไม่ตั้ง CT ${tdLiveCalc.qtyNoCt} ชิ้น (${(tdLiveCalc.matsNoCt || []).slice(0, 3).join(', ')}) → %P ต่ำกว่าจริง`
                         : isLiveCalc ? `ค่าสด — คำนวณจากข้อมูล ณ ตอนนี้ (ยังไม่ปิดกะ) · ตัวเลขจริงยืนยันตอนปิดกะ`
                                     : `รอข้อมูล — กะเพิ่งเปิด ยังคำนวณไม่ได้ (ต้องเดินอย่างน้อย ${LIVE_MIN_ELAPSED} นาที)`)
                       : 'ค่าที่บันทึกไว้ตอนปิดกะ'}

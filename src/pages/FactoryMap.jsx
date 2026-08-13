@@ -65,8 +65,10 @@ const METRICS = {
   oee: {
     label: '⚙️ OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
-    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
-    short: s => s.oee != null ? `${Math.round(s.oee)}%` : '',
+    text: s => s.oee != null
+      ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}${s.oeeCtPartial ? ' ⚠CT ไม่ครบ' : ''}${s.oeePOver ? ` ⚠%P ตัน (${Math.round(s.oeePRaw)}%)` : ''}`
+      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+    short: s => s.oee != null ? `${Math.round(s.oee)}%${s.oeePOver ? '⚠' : ''}` : (s.oeeNoCt ? '⚠CT' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -228,7 +230,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
@@ -419,8 +421,15 @@ export default function FactoryMap({ setupMode = false }) {
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
         parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
+        /* เพดานเครื่องขนาน — เฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (parallel_machine)
+           ตัวหารจริงของ P วัดจาก order window ใน util (busyMinutes) ไม่ใช่จำนวนคน
+           ⚠️ เคย ship เป็น "จำนวนเครื่องที่ปรับตามกำลังคน" ซึ่งผิด — 1 คนคุมได้หลายเครื่อง
+           (จำนวนคนยังใช้กับ "ควรผลิตได้ตอนนี้" (runN/capN) ตามเดิม — คนละเรื่องกับตัวหาร P)
+           เคสจริง SUB APRON 05/08: คน 4 แต่ 6 พาร์ทวิ่งพร้อมกัน = 6 เครื่อง (2026-08-13) */
+        parallelCap: flowModeOf(flowByLineRef.current[s.line_name]?.flow_mode) === 'parallel_machine'
+          ? parallelUnitsOf(flowByLineRef.current[s.line_name]) : 1,
       });
-      return r && r.oee != null ? Math.round(r.oee) : null; // noOutput → oee null (ห้าม round เป็น 0)
+      return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
 
     const byLine = {};
@@ -532,7 +541,8 @@ export default function FactoryMap({ setupMode = false }) {
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
-      const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
+      const lr = s.oee != null ? null : liveOee(s, os, dl);
+      const oeeVal = s.oee != null ? Number(s.oee) : (lr && lr.oee != null ? Math.round(lr.oee) : null);
       const isLive = s.oee == null && oeeVal != null;
       if (isLive) liveBySess[s.id] = oeeVal;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeRows: [] };
@@ -549,6 +559,14 @@ export default function FactoryMap({ setupMode = false }) {
         // เดิม oeeSum/oeeN ทำให้ผังสด กับแผงขวาโหมดทบทวน (ซึ่งถ่วงถูก) โชว์คนละเลขของไลน์เดียวกัน
         oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min, plannedMin: plannedDtMinAll }] : [])],
         oeeLive: acc.oeeLive || isLive,
+        // ประเมิน OEE ไม่ได้เพราะยังไม่ตั้ง CT ของชิ้นงานที่ผลิต — ต้องบอกบนจอ ไม่ใช่เงียบเป็นช่องว่าง
+        oeeNoCt: acc.oeeNoCt || !!(lr && lr.noCt),
+        oeeCtPartial: acc.oeeCtPartial || !!(lr && !lr.noCt && lr.qtyNoCt > 0),
+        /* %P ทะลุ 100 ก่อนโดน cap = งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
+           → ข้อมูลมีอะไรผิด (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
+           ต้องเห็นบนจอ ห้าม cap เงียบ — เคสจริง SUB APRON โดน cap มาแล้ว 14 กะโดยไม่มีใครรู้ */
+        oeePOver: acc.oeePOver || !!(lr && lr.pOver),
+        oeePRaw: Math.max(acc.oeePRaw || 0, (lr && lr.pOver && lr.pRawPct) || 0),
       };
     });
     const out = {};
@@ -918,7 +936,7 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; agg.oeeNoCt = agg.oeeNoCt || p.oeeNoCt; agg.oeeCtPartial = agg.oeeCtPartial || p.oeeCtPartial; agg.oeePOver = agg.oeePOver || p.oeePOver; agg.oeePRaw = Math.max(agg.oeePRaw || 0, p.oeePRaw || 0); }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
