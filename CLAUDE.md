@@ -1026,7 +1026,10 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
   (กฎ CLAUDE.md: ห้ามจำลอง layout ใบจริงมาไว้ในตัวพิมพ์) — หน้าจอ render SVG ซ้ำแบบชุดสีสว่างซ่อนไว้สำหรับพิมพ์
   · เลขฟอร์ม/Rev/ช่องเซ็น/โลโก้/แนวกระดาษ อ่านจากทะเบียน doc_key **`vsm`** (`layout_locked=false` เปลี่ยนแนวกระดาษได้จริง)
 - **Scope มาตรฐาน:** leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` — **ตัวเลือกสินค้าก็ scope ด้วย**
-- migration: `20260813_part_routings.sql` + `20260813_vsm_maps.sql` (DR) · `20260813_vsm_permission.sql` (Main)
+- migration: `20260813_part_routings.sql` + `20260813_vsm_maps.sql` (DR) · `20260813_vsm_permission.sql` (Main) — **apply แล้วทั้ง 3 · 2026-08-13**
+- **⚠️ กับดักที่เจอตอน apply (จดไว้กัน session ถัดไปเสียเวลา):** `permission_catalog` ใช้คอลัมน์
+  **`(resource, action, label, group_name, sort)` ไม่ใช่ `permission_key`/`category`** (key ที่โค้ดเช็คคือ `resource:action`
+  ที่ประกอบขึ้นมา) · `doc_forms.sig_blocks` เป็น **jsonb ไม่ใช่ text[]** (ต้อง `'[...]'::jsonb`)
 - **ยังไม่ทำ (เฟส 2-4):** Future state + kaizen burst ผูก `/improvements` · รอบส่ง supplier · เทียบ current vs future อัตโนมัติ
 
 ---

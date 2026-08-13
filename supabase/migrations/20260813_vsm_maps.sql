@@ -1,3 +1,4 @@
+-- ✅ apply แล้ว 2026-08-13 (DR)
 -- Value Stream Map — เอกสาร VSM 1 ใบ (Current / Future / Ideal state)
 -- ★ Apply on DR project (eyhclzkifitbhbljgoav) — additive
 -- ออกแบบ: docs/VSM-DESIGN.md

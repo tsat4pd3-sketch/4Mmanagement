@@ -1,3 +1,4 @@
+-- ✅ apply แล้ว 2026-08-13 (Main)
 -- VSM (Value Stream Mapping) — สิทธิ์ + ทะเบียนเอกสาร · 2026-08-13
 -- ★ Apply on Main project (ewhdfqwfwofivojtsizn) — additive
 --
@@ -11,11 +12,13 @@ from unnest(enum_range(null::user_role)) r
 on conflict (role, permission_key) do nothing;
 
 -- 2) สิทธิ์ระดับ action
-insert into public.permission_catalog (permission_key, label, category)
+-- ⚠️ permission_catalog ใช้คอลัมน์ (resource, action, label, group_name, sort)
+--    ไม่ใช่ permission_key/category — key ที่โค้ดเช็คคือ resource:action ที่ประกอบขึ้นมา
+insert into public.permission_catalog (resource, action, label, group_name, sort)
 values
-  ('vsm:manage',      'VSM — สร้าง/แก้ไข/ลบแผนผังสายธาร',        'วิเคราะห์ & รายงาน'),
-  ('routing:manage',  'ลำดับกระบวนการ (Routing) — เพิ่ม/แก้/ลบ',  'ตั้งค่า,ฐานข้อมูล')
-on conflict (permission_key) do nothing;
+  ('vsm',     'manage', 'VSM: สร้าง/แก้ไข/ลบแผนผังสายธาร',    'วิเคราะห์ & รายงาน', 240),
+  ('routing', 'manage', 'Routing: เพิ่ม/แก้/ลบลำดับกระบวนการ', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 241)
+on conflict do nothing;
 
 -- vsm:manage = admin/manager/supervisor/leader/engineer (คนที่ทำ Lean หน้างาน)
 insert into public.role_permissions (role, permission_key, allowed)
@@ -36,10 +39,10 @@ on conflict (role, permission_key) do nothing;
 insert into public.doc_forms (doc_key, title, form_code, rev, paper, paper_size, orientation, layout_locked, used_route, sig_blocks)
 values ('vsm', 'แผนผังสายธารคุณค่า (Value Stream Map)', null, null,
         'A3 แนวนอน', 'A3', 'landscape', false, '/vsm',
-        array['Approved By', 'Checked By', 'Issued By'])
+        '["Approved By","Checked By","Issued By"]'::jsonb)   -- ⚠️ sig_blocks เป็น jsonb ไม่ใช่ text[]
 on conflict (doc_key) do nothing;
 
 -- Rollback:
 --   delete from public.role_permissions where permission_key in ('page:/vsm','vsm:manage','routing:manage');
---   delete from public.permission_catalog where permission_key in ('vsm:manage','routing:manage');
+--   delete from public.permission_catalog where resource in ('vsm','routing');
 --   delete from public.doc_forms where doc_key = 'vsm';

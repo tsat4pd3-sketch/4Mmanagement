@@ -1,3 +1,4 @@
+-- ✅ apply แล้ว 2026-08-13 (DR)
 -- Routing master — ลำดับกระบวนการของแต่ละพาร์ท (พาร์ท → ขั้น 1,2,3 → เครื่อง/ไลน์)
 -- ★ Apply on DR project (eyhclzkifitbhbljgoav) — additive
 --
