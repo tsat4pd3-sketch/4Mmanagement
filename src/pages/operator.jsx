@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
-import { filterLinesByDept } from '../utils/lineHierarchy';
+import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
@@ -15,6 +15,9 @@ import {
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL } from '../utils/skillLevels';
+import { pickUnusedColor } from '../utils/colorPick';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -54,6 +57,9 @@ const getEmpGrade = (code = '') => {
   return EMP_GRADES.bronze;
 };
 
+// ชื่อแท็บใน URL (?tab=) — index ต้องตรงกับที่เนื้อหาอ้าง tab === n
+const TAB_KEYS = ['employees', 'skills', 'levelup'];
+
 export default function Operator() {
   const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [] } = useContext(UserContext);
   const isLeader = role === 'leader';
@@ -62,7 +68,18 @@ export default function Operator() {
   // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
   const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
 
-  const [tab, setTab] = useState(0);
+  // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
+  // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
+  const [tabKey, setTabKey] = useTabParam(TAB_KEYS, TAB_KEYS[0]);
+  // ⚠️ URL เปิดแท็บที่ไม่มีสิทธิ์ไม่ได้ — ปุ่มซ่อนอย่างเดียวไม่พอ (คนแปะลิงก์ ?tab=skills ให้กันได้)
+  const tabAllowed = [
+    true,
+    can('skills', 'edit', role),
+    can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role),
+  ];
+  const tabIdx = TAB_KEYS.indexOf(tabKey);
+  const tab = tabAllowed[tabIdx] ? tabIdx : 0;
+  const setTab = (i) => setTabKey(TAB_KEYS[i] || TAB_KEYS[0]);
   const [skillDefs, setSkillDefs] = useState([]);
   const [employees, setEmployees] = useState([]);
   const tableWrapRef = useRef(null);
@@ -76,6 +93,12 @@ export default function Operator() {
   const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
+  const skillColorTouched = useRef(false); // ผู้ใช้เลือกสีเองแล้ว — อย่าสุ่มทับ
+  // สกิลโหลดเสร็จ → เสนอสีที่ยังไม่ซ้ำเป็นค่าตั้งต้น (เฉพาะตอนผู้ใช้ยังไม่แตะช่องสี)
+  useEffect(() => {
+    if (skillDefs.length && !skillColorTouched.current)
+      setNewSkill(s => ({ ...s, color: pickUnusedColor(skillDefs.map(d => d.color)) }));
+  }, [skillDefs]); // eslint-disable-line react-hooks/exhaustive-deps
   const [isAddingSkill, setIsAddingSkill] = useState(false);
   const [editingSkill, setEditingSkill] = useState(null); // skill being edited inline
   const [subItemsSkill, setSubItemsSkill] = useState(null); // skill whose หัวข้อการพิจารณา are being managed
@@ -225,9 +248,17 @@ export default function Operator() {
   };
 
   const fetchEmployees = async () => {
+    // scope ของ leader = ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+    // ดึงไลน์เองตรงนี้ ไม่พึ่ง state `lines` เพราะโหลดขนานกัน อาจยังว่างตอน fetch รอบแรก
+    let famIds = null;
+    if (isLeader && userLineId) {
+      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const s = getLineFamilyIds(ls || [], Number(userLineId));
+      famIds = s.size ? [...s] : null;
+    }
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
-      if (isLeader && userLineId)       q = q.eq('line_id', userLineId);
+      if (isLeader && userLineId)       q = famIds ? q.in('line_id', famIds) : q.eq('line_id', userLineId);
       else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
     };
@@ -386,7 +417,7 @@ export default function Operator() {
       sort_order: skillDefs.length + 1,
     }]);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else { setNewSkill({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
+    else { skillColorTouched.current = false; setNewSkill({ label: '', color: pickUnusedColor([...skillDefs.map(d => d.color), newSkill.color]), category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
 
@@ -574,11 +605,7 @@ export default function Operator() {
       {subItemsSkill && (
         <SkillSubItemsModal skill={subItemsSkill} onClose={() => setSubItemsSkill(null)} />
       )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          👥 ฐานข้อมูลพนักงาน
-        </h2>
-      </div>
+      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥" />
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
         {/* แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
@@ -1058,7 +1085,7 @@ export default function Operator() {
                   <label style={labelSt}>สีแสดงผล</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input type="color" value={newSkill.color}
-                      onChange={e => setNewSkill({ ...newSkill, color: e.target.value })}
+                      onChange={e => { skillColorTouched.current = true; setNewSkill({ ...newSkill, color: e.target.value }); }}
                       style={{ width: 44, height: 36, padding: 2, borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
                     <span style={{ fontSize: 12, color: newSkill.color, fontWeight: 700 }}>● ตัวอย่าง</span>
                   </div>

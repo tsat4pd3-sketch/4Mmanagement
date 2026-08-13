@@ -23,6 +23,8 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 import { nextDocNo } from '../utils/qaDocNo';
 import QaCheckSheet from '../components/QaCheckSheet';
 
@@ -1375,7 +1377,7 @@ export default function QualityControl() {
   const { role, lineId, sections } = useContext(UserContext);
   const canRecord = can('qa', 'record');
   const canManage = can('qa', 'manage');
-  const [tab, setTab] = useState('dashboard');
+  const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'dashboard');
   const [allLines, setAllLines] = useState([]);
   const [capaPrefill, setCapaPrefill] = useState(null); // NCR → เปิด 8D
 
@@ -1397,30 +1399,15 @@ export default function QualityControl() {
   const openCapaFromNcr = useCallback((ncr) => {
     setCapaPrefill(ncr);
     setTab('capa');
-  }, []);
+  }, [setTab]);
 
   return (
     <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>
-          🔍 Quality Control Center
-        </h1>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
-        {TABS.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            style={{
-              ...ghostBtn, padding: '8px 16px', fontSize: 13,
-              ...(tab === t.key ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)', fontWeight: 800 } : {}),
-            }}>
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
+      <PageHeader
+        title="Quality Control Center" icon="🔍"
+        sub="ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949"
+        tabs={TABS.map(t => ({ key: t.key, label: `${t.icon} ${t.label}` }))} tab={tab} onTab={setTab}
+      />
 
       {tab === 'dashboard' && <QualityDashboard />}
       {tab === 'sheet' && <QaCheckSheet canRecord={canRecord} />}

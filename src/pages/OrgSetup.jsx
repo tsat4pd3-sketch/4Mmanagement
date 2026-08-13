@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { laborMeta } from '../utils/laborType';
+import CostCenterRatePanel from '../components/CostCenterRatePanel';
 
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
@@ -293,6 +294,11 @@ export default function OrgSetup() {
               </div>
             );
           })()}
+
+          {/* 💰 Activity Rate ต่อ Cost Center (DL/OH/DP บาท/ชม.) — ใช้คิด cost saving ในโปรเจคปรับปรุง (2026-08-11) */}
+          <div style={{ flexBasis: '100%', width: '100%' }}>
+            <CostCenterRatePanel nodes={nodes} lines={lines} />
+          </div>
         </div>
       )}
 

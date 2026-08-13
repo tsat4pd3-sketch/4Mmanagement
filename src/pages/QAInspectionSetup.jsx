@@ -18,6 +18,7 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
 import CalloutPin from '../components/CalloutPin';
+import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -198,7 +199,61 @@ export default function QAInspectionSetup() {
     setActiveDwgId(prev => (data || []).some(d => d.id === prev) ? prev : (data?.[0]?.id ?? null));
   }, []);
 
-  useEffect(() => { loadItems(selId); loadDrawings(selId); setPlacingId(null); }, [selId, loadItems, loadDrawings]);
+  /* ── Undo/Redo (UI-CONVENTIONS §6.7) ────────────────────────────────────
+     หน้านี้เขียน DB ทันทีทุก action (วาง/ย้าย balloon · เพิ่ม/แก้/ลบจุดตรวจ)
+     ไม่มีปุ่ม save รวม → พลาดทีเดียวหายจริง โดยเฉพาะ delItem ที่เป็น hard delete
+     ⚠️ ครอบเฉพาะ `qa_inspection_items` — การลบ "แผ่นแบบ" (drawing) ไม่เข้า history
+        เพราะลบไฟล์ใน storage ไปด้วย ย้อนกลับไม่ได้จริง (precedent เดียวกับ
+        MtnMachineLayout: เพิ่ม/ลบโซน+อัปรูป ใช้ confirm แทน undo) */
+  const itemsRef = useRef([]); useEffect(() => { itemsRef.current = items; }, [items]);
+  const selIdRef = useRef(null); useEffect(() => { selIdRef.current = selId; }, [selId]);
+  const snapOfItems = useCallback(() => itemsRef.current.map(r => ({ ...r })), []);
+  const applyItemsSnapshot = useCallback(async (snap) => {
+    const pid = selIdRef.current;
+    try {
+      const cur = itemsRef.current;
+      const snapById = new Map(snap.map(r => [r.id, r]));
+      const curById = new Map(cur.map(r => [r.id, r]));
+
+      const toDel = cur.filter(r => !snapById.has(r.id)).map(r => r.id);
+      if (toDel.length) {
+        const { error } = await supabase.from('qa_inspection_items').delete().in('id', toDel);
+        if (error) throw error;
+      }
+      for (const s of snap) {
+        const c = curById.get(s.id);
+        if (!c) continue;
+        const patch = {};
+        for (const k of Object.keys(s)) {
+          if (k === 'id' || k === 'created_at') continue;
+          if (String(c[k] ?? '') !== String(s[k] ?? '')) patch[k] = s[k];
+        }
+        if (Object.keys(patch).length) {
+          const { error } = await supabase.from('qa_inspection_items').update(patch).eq('id', s.id);
+          if (error) throw error;
+        }
+      }
+      const toIns = snap.filter(s => !curById.has(s.id)).map(s => {
+        const { created_at, ...rest } = s;      // eslint-disable-line no-unused-vars
+        return { ...rest, part_id: s.part_id || pid };   // คง id เดิม → undo/redo ซ้อนกันได้
+      });
+      if (toIns.length) {
+        const { error } = await supabase.from('qa_inspection_items').insert(toIns);
+        if (error) throw error;
+      }
+      await loadItems(pid);
+      setPlacingId(null);
+      return true;
+    } catch (e) {
+      toast.error('ย้อนกลับไม่สำเร็จ: ' + (e.message || ''));
+      await loadItems(pid);            // ให้จอตรงกับ DB จริงเสมอ
+      return false;
+    }
+  }, [loadItems]);
+  const hist = useUndoHistory({ snapOf: snapOfItems, applySnapshot: applyItemsSnapshot, enabled: canManage });
+
+  // เปลี่ยน part = snapshot เก่าใช้ไม่ได้ (คนละ part_id) ห้ามให้ undo ไปลบจุดตรวจของ part อื่น
+  useEffect(() => { loadItems(selId); loadDrawings(selId); setPlacingId(null); hist.clear(); }, [selId, loadItems, loadDrawings]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ขนาด balloon สเกลตามความกว้างรูปที่ RENDER จริง (สูตรแบบ MK — ดู docs/UI-CONVENTIONS.md 5.1)
      + edge clamp ไม่ให้ balloon ตกขอบรูป */
@@ -489,6 +544,7 @@ export default function QAInspectionSetup() {
       remark: f.remark.trim() || null,
       ...(f.id ? { is_active: f.is_active } : {}),
     };
+    hist.pushHistory();
     const { error } = f.id
       ? await supabase.from('qa_inspection_items').update(payload).eq('id', f.id)
       : await supabase.from('qa_inspection_items').insert(payload);
@@ -499,7 +555,8 @@ export default function QAInspectionSetup() {
   };
 
   const delItem = async (it) => {
-    if (!window.confirm(`ลบจุดตรวจ #${it.balloon_no} ${it.characteristic}?`)) return;
+    if (!window.confirm(`ลบจุดตรวจ #${it.balloon_no} ${it.characteristic}?\n(กด Undo คืนได้)`)) return;
+    hist.pushHistory();
     const { error } = await supabase.from('qa_inspection_items').delete().eq('id', it.id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบแล้ว');
@@ -528,6 +585,7 @@ export default function QAInspectionSetup() {
     const y = +((e.clientY - rect.top) / rect.height * 100).toFixed(2);
     if (placingId) {
       // วาง/ย้าย balloon — เปลี่ยนแผ่นได้ด้วย: เปิดแผ่นที่ต้องการแล้วคลิก
+      hist.pushHistory();
       const { error } = await supabase.from('qa_inspection_items').update({ pos_x: x, pos_y: y, drawing_id: activeDwg.id }).eq('id', placingId);
       if (error) { toast.error(error.message); return; }
       setPlacingId(null);
@@ -747,7 +805,13 @@ export default function QAInspectionSetup() {
                   📋 มาตรฐานการตรวจ ({items.length} จุด
                   {items.some(i => i.rank) ? ` · Rank M ${items.filter(i => i.rank === 'M').length} / SC ${items.filter(i => i.rank === 'SC').length}` : ''})
                 </div>
-                {canManage && <button style={btnSt()} onClick={() => setItemModal({ ...EMPTY_ITEM, balloon_no: nextBalloon })}>+ เพิ่มจุดตรวจ</button>}
+                {canManage && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="Ctrl+Z">↩️ Undo</button>
+                    <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="Ctrl+Y">↪️ Redo</button>
+                    <button style={btnSt()} onClick={() => setItemModal({ ...EMPTY_ITEM, balloon_no: nextBalloon })}>+ เพิ่มจุดตรวจ</button>
+                  </div>
+                )}
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>

@@ -160,9 +160,20 @@ export default function Checkin() {
     const { workDateStr } = shiftInfo;
     const nextDateStr = addDaysToDateStr(workDateStr, 1);
 
+    // ⚠️ ต้องดึงไลน์ก่อนสร้าง query พนักงาน — scope ของ leader = "ทั้งครอบครัวไลน์"
+    // (ตัวเอง + ไลน์แม่ + ไลน์ลูก) ตาม pattern มาตรฐาน ห้ามกรอง line_id ตรงตัว
+    // เคสจริง 2026-08-10: จัดข้อมูล PD4 ย้ายพนักงานจากไลน์แม่ (GOR/LWR BAR) ไปไลน์ลูก
+    // (Assy GOR/Assy LWR) → หัวหน้ากลุ่มที่ผูกกับไลน์แม่เห็น 0 คน = "เช็คชื่อหายหมด"
+    const { data: lineData } = await supabase.from('production_lines')
+      .select('id, name, section, parent_line_name').order('section').order('name');
+    setLines(lineData || []);
+
     let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
     if (role === 'leader') {
-      if (lineId) empQ = empQ.eq('line_id', lineId);
+      if (lineId) {
+        const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
+        empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+      }
       if (team)   empQ = empQ.eq('team', team);
     } else if (scopeSecs.length) {
       // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
@@ -174,7 +185,6 @@ export default function Checkin() {
       { data: logData },
       { data: scheduleData },
       { data: overrideData },
-      { data: lineData },
       { data: orgNodeData },
       { data: mergeData },
       { data: bookingData },
@@ -187,7 +197,6 @@ export default function Checkin() {
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('section').order('name'),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
       shiftInfo.shift === 'night'
@@ -198,7 +207,6 @@ export default function Checkin() {
         ? supabase.from('ot_night_bookings').select('employee_id, work_date, task_type_id, ot_period').in('work_date', extraAdvanceDates).eq('shift', shiftInfo.shift)
         : Promise.resolve({ data: [] }),
     ]);
-    setLines(lineData || []);
     const pcm = {};
     (lineData || []).forEach(l => {
       if (l.parent_line_name) {
@@ -768,7 +776,10 @@ export default function Checkin() {
       let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       if (role === 'leader') {
-        if (lineId) empQ = empQ.eq('line_id', lineId);
+        if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+          const famIdsQ = getLineFamilyIds(lines, Number(lineId));
+          empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+        }
         if (team)   empQ = empQ.eq('team', team);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabaseDR } from '../supabaseClient'
 import { toast } from './Toast'
+import { pickUnusedColor } from '../utils/colorPick'
+import { teamKeyOf } from '../utils/mtnTeams'
 
 // Generic CRUD modal for a small taxonomy table (code + label + color|icon).
 // Used for pm_checkpoint_categories and pm_checking_methods, but table-agnostic.
@@ -17,7 +19,7 @@ const EMOJI_SUGGESTIONS = ['👁', '👂', '✋', '📏', '📐', '🔧', '🔩'
 // ชนิดอุปกรณ์สำหรับแท็กหมวด (equip_types) — ว่าง = หมวดกลาง โชว์ทุกชนิด
 const EQUIP_TYPE_OPTS = [{ k: 'machine', l: 'Machine' }, { k: 'jig', l: 'JIG' }, { k: 'die', l: 'Die' }, { k: 'facility', l: 'Facility' }]
 
-export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, teams = null, onClose, onChanged }) {
+export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, teams = null, role = null, myTeams = [], onClose, onChanged }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // row object or 'new'
@@ -25,6 +27,22 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
   const withTeam = Array.isArray(teams) && teams.length > 0
   const [form, setForm] = useState(blank)
   const [saving, setSaving] = useState(false)
+
+  /* ล็อกตามเจ้าของ — กติกาเดียวกับ SimpleList ใน /mtn-repair (ดู CLAUDE.md
+     "master ของทีมช่าง ใครเป็นเจ้าของ คนนั้นแก้") · แถวของทีมอื่น = ดูอย่างเดียว
+     · แถว 🌐 ของกลาง = admin/manager เท่านั้น (แก้ทีเดียวกระทบทุกทีม)
+     ⚠️ ยังไม่ได้ตั้งทีมให้ user (myTeams ว่าง) = ไม่ล็อก ไม่งั้นช่างทำงานไม่ได้ */
+  const isBoss = role === 'admin' || role === 'manager'
+  const myKeys = (myTeams || []).map(teamKeyOf).filter(Boolean)
+  const unscoped = !withTeam || myKeys.length === 0
+  const canEditRow = (r) => {
+    if (isBoss || unscoped) return true
+    return r?.team ? myKeys.includes(teamKeyOf(r.team)) : false
+  }
+  const teamLabel = (k) => (k ? (teams?.find(t => t.key === k)?.dept_name || k) : '🌐 ใช้ร่วมทุกทีม')
+  const lockNote = (r) => (r?.team
+    ? `รายการนี้เป็นของทีม ${teamLabel(r.team)} — แก้ได้เฉพาะทีมนั้นหรือหัวหน้า`
+    : 'รายการนี้ทุกทีมใช้ร่วมกัน — แก้ได้เฉพาะหัวหน้า (แก้ทีเดียวกระทบทุกทีม)')
 
   const fetchRows = async () => {
     setLoading(true)
@@ -34,7 +52,8 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
   }
   useEffect(() => { fetchRows() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const openNew = () => { setForm({ ...blank, sort_order: rows.length + 1 }); setEditing('new') }
+  // สร้างใหม่ default สีที่ยังไม่ซ้ำกับแถวที่มี (ผู้ใช้เปลี่ยนทับได้)
+  const openNew = () => { setForm({ ...blank, sort_order: rows.length + 1, ...(extraField === 'color' ? { color: pickUnusedColor(rows.map(r => r.color)) } : {}) }); setEditing('new') }
   const openEdit = (r) => { setForm({ ...r }); setEditing(r.id) }
 
   const save = async () => {
@@ -49,7 +68,13 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
       if (extraField === 'icon') payload.icon = form.icon
       if (withEquipTypes) payload.equip_types = (form.equip_types?.length ? form.equip_types : null)
       // ทีมช่างที่ใช้หมวดนี้ — ว่าง = ใช้ร่วมทุกทีม (กฎ 'ของกลาง vs มุมมองทีม' ใน CLAUDE.md)
-      if (withTeam) payload.team = form.team || null
+      if (withTeam) {
+        let t = form.team || null
+        // กันคนทีมเดียวเผลอสร้าง/ย้ายเป็นของกลาง (กระทบทุกทีม)
+        if (!isBoss && !unscoped && !myKeys.includes(teamKeyOf(t))) t = myKeys.length === 1 ? myKeys[0] : null
+        if (!isBoss && !unscoped && !t) { setSaving(false); toast.error('เลือกทีมของรายการก่อน — สร้างรายการ 🌐 ใช้ร่วมทุกทีม ได้เฉพาะหัวหน้า'); return }
+        payload.team = t
+      }
       const { error } = editing === 'new'
         ? await supabaseDR.from(table).insert(payload)
         : await supabaseDR.from(table).update(payload).eq('id', editing)
@@ -102,8 +127,10 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                     {withTeam && <span style={{ fontSize: 10.5, color: 'var(--muted)', marginLeft: 6, fontWeight: 700 }}>{r.team ? (teams.find(t => t.key === r.team)?.dept_name || r.team) : '🌐 ทุกทีม'}</span>}
                     {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
                   </div>
-                  <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
-                  <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>
+                  {canEditRow(r) ? <>
+                    <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
+                    <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>
+                  </> : <span title={lockNote(r)} style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
                 </div>
               ))}
               {rows.length === 0 && <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 20 }}>ยังไม่มีรายการ</p>}
@@ -139,9 +166,11 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
               )}
               {withTeam && (
                 <div><label style={lbl}>ทีมช่างที่ใช้ (ว่าง = ใช้ร่วมทุกทีม)</label>
+                  {/* สร้าง/ย้ายเป็นของกลาง (🌐) ได้เฉพาะหัวหน้า — คนทีมเดียวตั้งได้แต่ของทีมตัวเอง */}
                   <select value={form.team || ''} onChange={e => setForm(f => ({ ...f, team: e.target.value }))} style={inp}>
-                    <option value="">🌐 ใช้ร่วมทุกทีม</option>
-                    {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                    {(isBoss || unscoped) && <option value="">🌐 ใช้ร่วมทุกทีม</option>}
+                    {teams.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
+                      .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
                   </select>
                 </div>
               )}

@@ -30,6 +30,7 @@ const DR_AUDIT_TABLES = new Set([
   'ship_to_plants','shipping_workflow_steps','dt_alert_config','stock_inflow_rules','lot_post_configs',
   'kanban_calc_settings','kanban_targets','product_packaging','scrap_defect_types',
   'machine_automation_levels','machine_operation_modes',
+  'die_sets','equipment_die','die_op_types',
   'part_routings',
 ])
 let drActorName = null

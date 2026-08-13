@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext } from 'react'
+import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
@@ -8,6 +8,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
+import { teamsForUser } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
@@ -1159,8 +1160,10 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPe
 
 // ─── PMSetup (main) ───────────────────────────────────────────────────────────
 export default function PMSetup() {
-  const { role } = useContext(UserContext)
+  const { role, mtnTeams: userMtnTeams, sections: scopeSecs } = useContext(UserContext)
   const canSetup = can('pm', 'setup', role)
+  // ทีมช่างของ user — ใช้ล็อกไม่ให้แก้ master ของทีมอื่น (ดู CLAUDE.md "ใครเป็นเจ้าของ คนนั้นแก้")
+  const pmUserTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
   const [searchParams, setSearchParams] = useSearchParams()
   const department = searchParams.get('dept') || 'maintenance'
   const [jigs, setJigs] = useState([])
@@ -1318,11 +1321,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

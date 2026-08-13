@@ -8,6 +8,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
@@ -21,6 +22,7 @@ const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
+const DieRegistry = lazy(() => import('./pages/DieRegistry'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const QrLabels     = lazy(() => import('./pages/QrLabels'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
@@ -40,6 +42,7 @@ const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -50,14 +53,12 @@ const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
-const DailyPM     = lazy(() => import('./pages/DailyPM'));
 const PmForecast  = lazy(() => import('./pages/PmForecast'));
 const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
-const LayerProcessAudit = lazy(() => import('./pages/LayerProcessAudit'));
 const DailyChecker = lazy(() => import('./pages/DailyChecker'));
-const PokaYokeCheck = lazy(() => import('./pages/PokaYokeCheck'));
+const CommandPalette = lazy(() => import('./components/CommandPalette'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
@@ -78,7 +79,8 @@ export const UserContext = createContext({ role: 'admin', lineId: null, team: nu
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
 // สิทธิ์เข้าหน้าอ่านจาก role_permissions ผ่าน canAccessPage() เท่านั้น (data-driven)
 // — จึงไม่มีฟิลด์ roles ในนี้ (เคยมี แต่เป็น dead field ไม่ถูกอ่าน ลบออก 2026-07-10 กันเข้าใจผิดว่าเป็น source of truth)
-const NAV_ITEMS = [
+// ⚠️ export — PageHeader ใช้สร้าง breadcrumb (หมวด › ชื่อหน้า) จากลิสต์นี้ ห้ามถอด export
+export const NAV_ITEMS = [
   { to: '/',            icon: '🏠', label: 'หน้าหลัก',           group: 'ภาพรวม' },
   // 🎮 /remote ตั้งใจไม่อยู่ในเมนูหมวด — คู่กับปุ่ม 📺 รับรีโมทจอ ที่โซนล่างของ sidebar (ดู Sidebar)
 
@@ -90,6 +92,8 @@ const NAV_ITEMS = [
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
+  // ภาพ "ถ้าทุกแผนกใช้ครบจะได้อะไร" — ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
+  { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อทุกแผนกใช้ครบ', group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -135,6 +139,7 @@ const NAV_ITEMS = [
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/die-registry', icon: '🔨', label: 'ทะเบียนแม่พิมพ์', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
@@ -286,6 +291,12 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   };
 
   const visibleItems = NAV_ITEMS.filter(item => canAccessPage(item.to, userRole));
+  // ค้นหาเมนู: พิมพ์แล้วยุบเป็นลิสต์แบน (ข้ามการไล่กางหมวด) — หมวดยังโชว์เป็นคำอธิบายท้ายบรรทัด
+  const [navQ, setNavQ] = useState('');
+  const q = navQ.trim().toLowerCase();
+  const searchHits = q
+    ? visibleItems.filter(i => (i.label + ' ' + i.group + ' ' + i.to).toLowerCase().includes(q))
+    : null;
   const groupedItems = NAV_GROUP_ORDER
     .map(g => ({ group: g, items: visibleItems.filter(i => i.group === g) }))
     .filter(g => g.items.length > 0);
@@ -333,9 +344,48 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           >◀</button>
         </div>
 
+        {/* ค้นหาเมนู — 51 รายการ 8 หมวด ถ้าไม่มีช่องค้นต้องจำว่าอยู่หมวดไหน (NAVIGATION-REVIEW §2.5) */}
+        <div style={{ position: 'relative', marginBottom: 6, flexShrink: 0 }}>
+          <input
+            value={navQ} onChange={e => setNavQ(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setNavQ(''); }}
+            placeholder="🔎 ค้นหาเมนู…  (Ctrl+K)"
+            style={{
+              width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8,
+              background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
+            }}
+          />
+          {navQ && (
+            <button onClick={() => setNavQ('')} title="ล้างคำค้น" style={{
+              position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+              width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent',
+              color: 'var(--muted)', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+            }}>✕</button>
+          )}
+        </div>
+
         {/* Links */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto', minHeight: 0 }}>
-          {groupedItems.map(({ group, items }) => {
+          {searchHits ? (
+            searchHits.length === 0 ? (
+              <div style={{ padding: '18px 10px', color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
+                ไม่พบเมนูที่ตรงกับ “{navQ}”
+                <div style={{ marginTop: 4, fontSize: 11 }}>เมนูที่ไม่มีสิทธิ์เข้าจะไม่แสดง</div>
+              </div>
+            ) : searchHits.map(item => (
+              <Link
+                key={item.to} to={item.to} className="nav-link"
+                style={location.pathname === item.to
+                  ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                  : {}}
+                onClick={() => { setNavQ(''); if (isMobile) onClose(); }}
+              >
+                <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+              </Link>
+            ))
+          ) : groupedItems.map(({ group, items }) => {
             const collapsed = !!collapsedGroups[group];
             const groupHasActive = items.some(i => location.pathname === i.to);
             return (
@@ -1024,6 +1074,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   const shiftCapped = ['leader', 'supervisor'].includes(userRole);
   const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
 
+  // 🔎 ค้นหาเมนู (Ctrl/⌘+K) — เมนู 51 รายการ 8 หมวด หาไม่เจอถ้าไม่มีทางลัด (NAVIGATION-REVIEW §2.5)
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); setPaletteOpen(v => !v); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // จำหน้าที่เข้าบ่อยไว้ในเครื่อง (ยกขึ้นบนสุดใน palette) — จุดเดียวของทั้งแอป
+  useEffect(() => { trackVisit(location.pathname); }, [location.pathname]);
+
   // 📺 โหมดจอตาม (รับรีโมทจากมือถือ) — จำรหัสไว้ข้ามการรีเฟรช เปิด/ปิดจากปุ่มใน sidebar
   const [remoteCode, setRemoteCode] = useState(() => localStorage.getItem('esm-remote-receiver') || null);
   const onToggleRemote = useCallback(() => {
@@ -1065,6 +1127,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
+        </Suspense>
         {/* 📺 จอตาม: รับคำสั่งรีโมท (pointer/คลิก/เลื่อน/เปลี่ยนหน้า) — ทำงานได้ทุกหน้า */}
         {remoteCode && (
           <Suspense fallback={null}>
@@ -1109,6 +1174,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
               } />
+              <Route path="/adoption-outlook" element={
+                <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
+              } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
               } />
@@ -1145,6 +1213,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/machine-database" element={
                 <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
               } />
+              <Route path="/die-registry" element={
+                <RoleRoute path="/die-registry" userRole={role}><DieRegistry /></RoleRoute>
+              } />
               <Route path="/add-user"   element={
                 <RoleRoute path="/add-user" userRole={role}><AddUser /></RoleRoute>
               } />
@@ -1178,21 +1249,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/daily-checker" element={
                 <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
               } />
-              <Route path="/pokayoke" element={
-                <RoleRoute path="/pokayoke" userRole={role}><PokaYokeCheck /></RoleRoute>
-              } />
-              <Route path="/daily-pm" element={
-                <RoleRoute path="/daily-pm" userRole={role}><DailyPM /></RoleRoute>
-              } />
+              {/* ⤵ route เก่าที่ยุบเข้าแท็บ Daily Checker แล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้
+                  และทุกคนเห็นภาพเดียวกัน ไม่ใช่หน้าเดี่ยวที่ไม่มีแท็บพี่น้อง — ดู NAVIGATION-REVIEW §2.4)
+                  สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
+              <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
+              <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
               <Route path="/ojt-training" element={
                 <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
               } />
-              <Route path="/lpa" element={
-                <RoleRoute path="/lpa" userRole={role}><LayerProcessAudit /></RoleRoute>
-              } />
+              <Route path="/lpa" element={<Navigate to="/daily-checker?tab=lpa" replace />} />
               <Route path="/doc-forms" element={
                 <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
               } />

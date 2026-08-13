@@ -18,6 +18,7 @@ import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
 import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import ImageCropModal from './ImageCropModal';
 import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
+import { pickUnusedColor } from '../utils/colorPick';
 
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
@@ -377,7 +378,7 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(420px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: m.color, marginBottom: 3 }}>{m.title}</div>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>{part.name}</div>
@@ -522,7 +523,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, usageRows, count, onClose
   const g2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16, overflow: 'auto' }}>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16, overflow: 'auto' }}>
         <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(760px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
           <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>{isNew ? '➕ เพิ่มอะไหล่เข้าคลัง' : '✏️ แก้ไขอะไหล่'}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>ตามฟอร์ม FM-JIG-009 Spare part list · Rank จัดอัตโนมัติตาม WI-JIG-010</div>
@@ -685,7 +686,7 @@ function HistoryModal({ part, usageRows, onClose }) {
   const maxOut = Math.max(1, ...months.map(k => byMonth[k]?.out || 0));
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(660px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800 }}>📜 ประวัติ · {part.name}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>คงเหลือปัจจุบัน {fmtNum(part.stock_qty)} {part.unit || ''}</div>
@@ -844,7 +845,7 @@ function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
   }[a]);
 
   return (
-    <div onClick={busy ? undefined : onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16 }}>
+    <div onClick={busy ? undefined : onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(820px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>📥 นำเข้า / อัพเดทคลังอะไหล่จากไฟล์</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>
@@ -949,14 +950,15 @@ function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
    จัดการหมวดอะไหล่ (data-driven)
    ══════════════════════════════════════════════════════════════════════════ */
 function CategoryModal({ cats, teams = [], onClose, onSaved }) {
-  const [n, setN] = useState({ key: '', label: '', icon: '', color: '#94a3b8' });
+  // ฟอร์มเพิ่มหมวดใหม่ default สีที่ยังไม่ซ้ำกับหมวดที่มี (ผู้ใช้เปลี่ยนทับได้)
+  const [n, setN] = useState(() => ({ key: '', label: '', icon: '', color: pickUnusedColor(cats.map(c => c.color)) }));
   const add = async () => {
     const key = n.key.trim().toUpperCase();
     if (!key || !n.label.trim()) return toast.error('กรอกรหัสหมวดและชื่อ');
     const { error } = await supabaseDR.from('mtn_spare_categories')
       .insert({ key, label: n.label.trim(), icon: n.icon.trim() || null, color: n.color, sort_order: cats.length + 1 });
     if (error) return toast.error(error.message);
-    setN({ key: '', label: '', icon: '', color: '#94a3b8' }); onSaved();
+    setN({ key: '', label: '', icon: '', color: pickUnusedColor([...cats.map(c => c.color), n.color]) }); onSaved();
   };
   const upd = async (key, patch) => {
     const { error } = await supabaseDR.from('mtn_spare_categories').update(patch).eq('key', key);
@@ -964,7 +966,7 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
     onSaved();
   };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 200, padding: 16 }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>🏷️ หมวดอะไหล่</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>รหัสหมวดใช้จัดกลุ่มในคลัง — เพิ่ม/แก้ได้เอง ไม่ต้องแก้โค้ด · ตั้งทีมได้ถ้าหมวดนั้นใช้เฉพาะบางทีม (เช่น LP = Locating Pin ของ JIG)</div>
