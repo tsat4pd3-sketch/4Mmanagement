@@ -602,13 +602,174 @@ async function loadAll() {
   };
 }
 
+/* ══ 🔬 เจาะปัญหา 1 กะจริง — OEE → 4M → ย้อนกลับหาเอกสารออกแบบ ═══════════════════════════
+   ทำไมต้องมี: 3 แท็บแรกตอบ "ภาพรวมมองเห็นอะไรได้" แต่ผู้บริหารมักถามต่อว่า
+   "แล้วมันช่วยแก้ของจริงยังไง" → แท็บนี้เดินให้ดูทีละชั้นบน **กะที่แย่ที่สุดที่เกิดขึ้นจริง**
+
+   ชั้น 1 กะนี้เสียหายเท่าไหร่ (A/P/Q)  → ชั้น 2 เสียไปกับ 4M ตัวไหน
+   → ชั้น 3 ย้อนกลับไปถามเอกสารออกแบบ (PFC → FMEA → Control Plan) ว่า "เคยคาดไว้มั้ย"
+   → ชั้น 4 สรุปว่าต้องไปแก้ที่ไหน
+
+   กฎที่ยึด:
+   • **ไม่ hardcode กะตัวอย่าง** — เลือกกะแย่สุดใน 45 วันล่าสุดสดทุกครั้งที่เปิด
+     (hardcode ไว้ = พอข้อมูลเดินหน้า ตัวอย่างจะเน่าและกลายเป็นข้อมูลเท็จ)
+   • **ชั้น 1-2 = ของจริงล้วน** ป้ายเขียว · ชั้น 3 อ่านจากโมดูล PE Core Tools (`/pe-docs`)
+     **เช็คแบบผูกกับพาร์ท/ไลน์ของกะนั้น ห้ามนับรวมทั้งระบบ** — ทั้งระบบมี FMEA แล้วก็จริง
+     แต่ถ้าเป็นของคนละพาร์ท การขึ้นว่า "มีข้อมูลแล้ว" คือตอบผิดคำถาม
+     (พาร์ทนี้ยังไม่มี → บอกตรงๆ + ชี้ทางไปลง · โหมดสาธิตค่อยเติมตัวอย่างคำตอบ พร้อมป้ายม่วง)
+   • **โหลดตอนเปิดแท็บเท่านั้น** (lazy) — ไม่ถ่วงหน้าแรกที่คนส่วนใหญ่เปิดดู
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+const DEEP_DAYS = 45;            // หน้าต่างหากะตัวอย่าง — กว้างพอให้เจอกะที่มีทั้ง DT และของเสีย
+
+const FOUR_M = [
+  { key: 'machine', icon: '⚙️', label: 'Machine', th: 'เครื่องจักร', color: '#ef4444' },
+  { key: 'method', icon: '📋', label: 'Method', th: 'วิธีทำงาน', color: '#f59e0b' },
+  { key: 'material', icon: '🧱', label: 'Material', th: 'วัตถุดิบ', color: '#3b82f6' },
+  { key: 'man', icon: '👷', label: 'Man', th: 'คน', color: '#a78bfa' },
+];
+
+/* ⚠️ ระบบ**ยังไม่มีแกน 4M** ที่ master ของ downtime/defect (มีแต่ six_big_loss / waste_type)
+   → ต้องเดาจากข้อความที่พนักงานพิมพ์ · เรียงจากเจาะจงไปกว้าง ตัวแรกที่ match ชนะ
+   หน้าจอจึงต้อง (ก) ติดป้ายว่าเป็นการจัดกลุ่มจากข้อความ (ข) โชว์ข้อความจริงใต้ทุกกลุ่มให้คนตรวจได้
+   (ค) โชว์รายการที่จัดไม่ได้ ห้ามยัดมั่วเข้ากลุ่มใดกลุ่มหนึ่ง */
+const FOUR_M_WORDS = [
+  { k: 'man', w: ['ขาดคน', 'คนไม่พอ', 'พนักงานลา', 'รอคน', 'อบรม', 'สกิล', 'พนักงาน'] },
+  { k: 'material', w: ['material', 'วัตถุดิบ', 'รอของ', 'ของหมด', 'พาร์ท', 'ชิ้นส่วน', 'เหล็ก', 'คอยล์'] },
+  { k: 'method', w: ['qa', 'ตรวจสอบ', 'เปลี่ยนรุ่น', 'setup', 'เซ็ต', 'ปรับตั้ง', 'ประชุม', '5ส', 'นับสต', 'ไม่มีแผน', 'เอกสาร', 'รออนุมัติ'] },
+  { k: 'machine', w: ['robot', 'โรบอท', 'plc', 'เครื่อง', 'แม่พิมพ์', 'die', 'jig', 'จิ๊ก', 'ไฟฟ้า', 'ลมรั่ว', 'สายลม', 'ไฮดรอ', 'มอเตอร์', 'เซนเซอร์', 'alarm', 'error', 'สายไฟ', 'กิ๊บ', 'ชำรุด', 'หัก', 'รั่ว'] },
+];
+
+/* กลุ่มคำเรียกอุปกรณ์เดียวกันที่คนพิมพ์ต่างกัน (ไทย/อังกฤษ/รหัส) — ใช้จับว่า
+   "ของเสีย" กับ "เครื่องที่เสีย" ในกะเดียวกัน พูดถึงอุปกรณ์ตัวเดียวกันหรือเปล่า
+   ⚠️ เป็นการจับคู่จาก **ข้อความ** ไม่ใช่ความสัมพันธ์ที่ระบบยืนยัน → จอต้องเขียนกำกับเสมอ */
+const EQUIP_SYN = [
+  { name: 'โรบอท', w: ['robot', 'โรบอท', 'หุ่นยนต์', 'rb_', 'rb-'] },
+  { name: 'แม่พิมพ์', w: ['แม่พิมพ์', 'die-', 'die '] },
+  { name: 'จิ๊ก', w: ['jig', 'จิ๊ก'] },
+  { name: 'PLC / ระบบควบคุม', w: ['plc', 'ระบบควบคุม'] },
+  { name: 'เซนเซอร์', w: ['sensor', 'เซนเซอร์'] },
+  { name: 'มอเตอร์', w: ['motor', 'มอเตอร์'] },
+];
+
+/* คืน key ของ 4M · 'quality' = เป็นการสูญเสียฝั่งคุณภาพ (ไปรวมกับของเสีย) · null = จัดไม่ได้ */
+function fourMOf(row) {
+  const sbl = row.six_big_loss || null;
+  if (sbl === 'defect' || sbl === 'startup') return 'quality';
+  const txt = `${row.dt_type || ''} ${row.description || ''}`.toLowerCase();
+  for (const g of FOUR_M_WORDS) if (g.w.some(w => txt.includes(w))) return g.k;
+  /* master ที่หัวหน้าตั้งไว้เอง เชื่อถือได้กว่าการเดาคำ — ใช้เป็นตาข่ายรับท้าย */
+  if (sbl === 'breakdown') return 'machine';
+  if (sbl === 'setup') return 'method';
+  return null;
+}
+
+/* หา "กะที่ควรเอามาเจาะ" = OEE ต่ำสุด แต่ต้องมีเนื้อให้เจาะจริง (มี DT หลายรายการ + มีของเสีย)
+   กะที่ OEE 0 เพราะลง DT ก้อนเดียวทั้งกะ ไม่มีอะไรให้เรียนรู้ → ให้คะแนนต่ำกว่า */
+function pickDeepSession(cands, dtBy, defBy) {
+  return [...cands].map(s => {
+    const dt = dtBy[s.id] || [], df = defBy[s.id] || [];
+    const kinds = new Set(dt.map(d => fourMOf(d)).filter(Boolean)).size;
+    return { s, dt, df, score: (dt.length >= 3 ? 4 : 0) + (df.length > 0 ? 3 : 0) + kinds };
+  }).sort((a, b) => b.score - a.score || (+a.s.oee) - (+b.s.oee))[0];
+}
+
+async function loadDeepDive() {
+  const today = getWorkDate();
+  const from = dayAdd(today, -DEEP_DAYS);
+
+  const { data: cands, error } = await supabaseDR.from('production_sessions')
+    .select('id, line_name, work_date, shift, shift_min, oee, oee_a, oee_p, oee_q, actual_qty, target_qty')
+    .eq('status', 'closed').not('oee', 'is', null)
+    .gte('work_date', from).lte('work_date', today)
+    .order('oee', { ascending: true }).limit(25);
+  if (error) throw new Error(error.message);
+  if (!cands?.length) return { empty: true, from, to: today };
+
+  const ids = cands.map(s => s.id);
+  const [dtRaw, defRaw] = await Promise.all([
+    inChunks(ids, c => supabaseDR.from('downtime_logs')
+      .select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)')
+      .in('session_id', c)),
+    inChunks(ids, c => supabaseDR.from('defect_logs')
+      .select('session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th, six_big_loss)')
+      .in('session_id', c)),
+  ]);
+
+  /* แบนโครงสร้าง nested ให้ fourMOf อ่านง่าย + คิดนาทีด้วยกฎเดียวกับที่อื่น */
+  const dtBy = {}, defBy = {};
+  dtRaw.forEach(d => {
+    const t = d.dr_downtime_types || {};
+    (dtBy[d.session_id] ||= []).push({
+      min: dtMinOf(d), machine_no: d.machine_no, description: d.description,
+      dt_type: t.name_th, category: t.category, six_big_loss: t.six_big_loss, waste_type: t.waste_type,
+    });
+  });
+  defRaw.forEach(f => {
+    const t = f.dr_defect_types || {};
+    (defBy[f.session_id] ||= []).push({
+      qty: (+f.qty_ng || 0) + (+f.qty_suspect || 0), description: f.description,
+      def_type: t.name_th, six_big_loss: t.six_big_loss,
+    });
+  });
+
+  const best = pickDeepSession(cands, dtBy, defBy);
+  const S = best.s;
+
+  /* ใบผลิต + CT ของสินค้าที่วิ่งในกะนั้น (ใช้บอกว่า "ควรได้เท่าไหร่")
+     dr_products ไม่มี FK กับ prod_orders → ต้องดึงแยกแล้ว map ด้วย mat_no เอง */
+  const { data: ords } = await supabaseDR.from('prod_orders')
+    .select('prod_no, mat_no, qty, qty_target, qty_ok, qty_actual, status, machine_no')
+    .eq('session_id', S.id);
+  const mats = [...new Set((ords || []).map(o => o.mat_no).filter(Boolean))];
+  const { data: prods } = mats.length
+    ? await supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, line_name').in('mat_no', mats)
+    : { data: [] };
+  const pByMat = Object.fromEntries((prods || []).map(p => [p.mat_no, p]));
+
+  /* ── สถานะเอกสารออกแบบของ "พาร์ทที่ผลิตในกะนี้" (โมดูล PE Core Tools · Main) ──
+     ⚠️ ต้องเช็คแบบ **ผูกกับพาร์ท/ไลน์ของกะนี้** ห้ามนับรวมทั้งระบบ —
+     ทั้งระบบมี FMEA อยู่แล้วก็จริง แต่ถ้าเป็นของคนละพาร์ท การขึ้นว่า "มีข้อมูลแล้ว"
+     คือการตอบผิดคำถาม (คำถามคือ "อาการของกะ *นี้* เคยคาดไว้มั้ย")
+     จับคู่ด้วย mat_no ก่อน (ตรงตัวที่สุด) แล้วค่อย fallback ไปชื่อไลน์ — pe_doc_sets.mat_no
+     ยังว่างได้ในข้อมูลจริง จึงพึ่ง mat_no อย่างเดียวไม่ได้ */
+  const { data: allSets } = await supabase.from('pe_doc_sets')
+    .select('id, part_no, mat_no, part_name, line_name, status').limit(500);
+  const norm = (x) => (x || '').trim().toLowerCase();
+  const matSet = new Set(mats.map(norm));
+  const mySet = (allSets || []).find(s => s.mat_no && matSet.has(norm(s.mat_no)))
+    || (allSets || []).find(s => norm(s.line_name) === norm(S.line_name))
+    || null;
+
+  let peScoped = { proc: 0, fmea: 0, cp: 0 };
+  if (mySet) {
+    const { data: procs } = await supabase.from('pe_processes').select('id').eq('set_id', mySet.id);
+    const pids = (procs || []).map(p => p.id);
+    const [f, c] = pids.length
+      ? await Promise.all([
+        cnt(supabase, 'pe_fmea_items', q => q.in('process_id', pids)),
+        cnt(supabase, 'pe_cp_items', q => q.in('process_id', pids)),
+      ])
+      : [0, 0];
+    peScoped = { proc: pids.length, fmea: f, cp: c };
+  }
+
+  return {
+    empty: false, from, to: today,
+    sess: S, dt: best.dt, def: best.df,
+    orders: (ords || []).map(o => ({ ...o, prod: pByMat[o.mat_no] || null })),
+    /* set = ชุดเอกสารของพาร์ทนี้ (null = ยังไม่มี) · totalSets = ทั้งระบบมีกี่พาร์ทแล้ว (ใช้บอกบริบท) */
+    pe: { set: mySet, totalSets: (allSets || []).length, ...peScoped },
+  };
+}
+
 /* ── UI atoms ─────────────────────────────────────────────────────────────────────────── */
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 };
 const Badge = ({ tone, children }) => {
-  const c = tone === 'real' ? '#22c55e' : tone === 'guess' ? '#f59e0b' : 'var(--muted)';
+  const c = tone === 'real' ? '#22c55e' : tone === 'guess' ? '#f59e0b' : tone === 'sim' ? '#a78bfa' : 'var(--muted)';
+  const dashed = tone === 'guess' || tone === 'sim';   // ของที่ "ยังไม่จริง" ใช้เส้นประเสมอ
   return <span style={{
     fontSize: 10.5, fontWeight: 700, color: c, whiteSpace: 'nowrap',
-    border: `1px ${tone === 'guess' ? 'dashed' : 'solid'} ${c}`, borderRadius: 4, padding: '1px 6px',
+    border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 4, padding: '1px 6px',
   }}>{children}</span>;
 };
 
@@ -1087,18 +1248,442 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
 }
 
 /* ── หน้าหลัก ─────────────────────────────────────────────────────────────────────────── */
+/* ── 🔬 เจาะปัญหา 1 กะจริง ─────────────────────────────────────────────────────────────── */
+const StepHead = ({ n, icon, title, sub, tone }) => (
+  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
+    <div style={{
+      width: 28, height: 28, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center',
+      background: tone || 'var(--accent)', color: '#08120a', fontWeight: 800, fontSize: 13,
+    }}>{n}</div>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 800 }}>{icon} {title}</div>
+      {sub && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, lineHeight: 1.55 }}>{sub}</div>}
+    </div>
+  </div>
+);
+
+/* แถบ A/P/Q — ตัวที่ต่ำสุดคือตัวฉุด ต้องเห็นทันทีว่าควรไปแก้ฝั่งไหน */
+const ApqBar = ({ label, val, hint, worst }) => {
+  const v = val == null ? null : +val;
+  const col = v == null ? 'var(--muted)' : v >= 85 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
+  return (
+    <div style={{
+      background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px',
+      border: worst ? '1px solid #ef4444' : '1px solid var(--border)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
+        <span style={{ fontSize: 17, fontWeight: 800, color: col }}>{v == null ? '—' : `${v.toFixed(0)}%`}</span>
+      </div>
+      <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
+        <div style={{ width: `${v == null ? 0 : Math.max(0, Math.min(100, v))}%`, height: '100%', background: col }} />
+      </div>
+      <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
+      {worst && <div style={{ fontSize: 10.5, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
+    </div>
+  );
+};
+
+function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
+  if (err) return <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลกะไม่สำเร็จ: {err}</div>;
+  if (!dd) return <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังหากะที่ควรเอามาเจาะ…</div>;
+  if (dd.empty) return (
+    <div style={{ ...cardSt, fontSize: 13, lineHeight: 1.7 }}>
+      ยังไม่มีกะที่ปิดแล้วในช่วง {dd.from} – {dd.to} จึงยังไม่มีอะไรให้เจาะ
+      <div style={{ color: 'var(--muted)', marginTop: 4 }}>แท็บนี้จะมีข้อมูลเองเมื่อมีการปิดกะพร้อมค่า OEE</div>
+    </div>
+  );
+
+  const S = dd.sess;
+  const seed = `${S.id}`;
+  const D = { n: (s, lo, hi) => rint(`${seed}|${s}`, lo, hi), p: (s, arr) => pick(arr, `${seed}|${s}`, arr[0]) };
+
+  /* ── ชั้น 1: กะนี้เสียหายเท่าไหร่ ── */
+  const apq = [
+    { k: 'A', v: S.oee_a, label: 'A · เดินเครื่องได้', hint: 'เวลาที่ตั้งใจเดิน เดินจริงกี่ %' },
+    { k: 'P', v: S.oee_p, label: 'P · ความเร็ว', hint: 'เดินแล้วเร็วตามมาตรฐานมั้ย' },
+    { k: 'Q', v: S.oee_q, label: 'Q · ของดี', hint: 'ที่ผลิตออกมา เป็นของดีกี่ %' },
+  ];
+  const worstK = apq.filter(x => x.v != null).sort((a, b) => +a.v - +b.v)[0]?.k;
+
+  const tgt = dd.orders.reduce((a, o) => a + (+o.qty_target || +o.qty || 0), 0);
+  const act = dd.orders.reduce((a, o) => a + (o.status === 'confirmed' ? (+o.qty_ok || +o.qty || 0) : (+o.qty_actual || 0)), 0);
+  const ct = dd.orders.find(o => o.prod?.cycle_time_sec)?.prod?.cycle_time_sec || null;
+
+  /* ── ชั้น 2: เสียไปกับ 4M ตัวไหน ── */
+  const dtUnplanned = dd.dt.filter(d => d.category !== 'planned');
+  const dtPlanned = dd.dt.filter(d => d.category === 'planned');
+  const dtMinAll = dd.dt.reduce((a, d) => a + d.min, 0);
+  const ngTotal = dd.def.reduce((a, f) => a + f.qty, 0);
+
+  const byM = {}; const unclassified = [];
+  dd.dt.forEach(d => { const k = fourMOf(d); if (!k) unclassified.push(d); else (byM[k] ||= []).push(d); });
+  const groups = FOUR_M.map(m => {
+    const rows = byM[m.key] || [];
+    return { ...m, rows, min: rows.reduce((a, r) => a + r.min, 0) };
+  }).sort((a, b) => b.min - a.min);
+  const qualityDt = byM.quality || [];
+
+  /* เครื่องที่ "เสีย" ซ้ำในกะเดียว = สัญญาณว่าเป็นเรื่องสภาพเครื่อง ไม่ใช่อุบัติเหตุรายครั้ง
+     ⚠️ นับเฉพาะแถวที่เป็น Machine จริงๆ — ถ้านับ unplanned ทั้งหมด "รอ Material" จะถูกเหมาว่าเครื่องเสียด้วย */
+  const machRows = byM.machine || [];
+  const machCount = {};
+  machRows.forEach(d => { if (d.machine_no) machCount[d.machine_no] = (machCount[d.machine_no] || 0) + 1; });
+  const topFails = [...dtUnplanned].sort((a, b) => b.min - a.min).slice(0, 3);
+  const topDef = [...dd.def].sort((a, b) => b.qty - a.qty)[0] || null;
+
+  /* ของเสีย ↔ เครื่องที่เสีย: ข้อความพูดถึงอุปกรณ์ตัวเดียวกันมั้ย
+     (เจอบ่อยว่า A-loss กับ Q-loss มาจากต้นเหตุเดียวกัน แต่ถูกบันทึกแยกคนละที่จนไม่มีใครเห็น) */
+  const machTxt = machRows.map(r => `${r.dt_type || ''} ${r.description || ''}`.toLowerCase()).join(' ');
+  const machEquip = EQUIP_SYN.filter(g => g.w.some(w => machTxt.includes(w)));
+  const linkedDefs = dd.def.map(f => {
+    const t = `${f.def_type || ''} ${f.description || ''}`.toLowerCase();
+    const g = machEquip.find(g => g.w.some(w => t.includes(w)));
+    return g ? { f, equip: g.name } : null;
+  }).filter(Boolean);
+
+  const shiftTh = S.shift === 'night' ? 'กะดึก' : 'กะเช้า';
+  const gcol = (n) => ({ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : `repeat(${n}, 1fr)` });
+
+  /* ── ชั้น 3: เอกสารออกแบบของ "พาร์ทนี้" — มีชุดแล้วหรือยัง ── */
+  const peSet = dd.pe.set;
+  const peReady = !!peSet && (dd.pe.fmea || 0) > 0;
+  const peLink = peSet ? `/pe-docs?set=${peSet.id}&tab=fmea` : '/pe-docs';
+  const DOCS = [
+    {
+      icon: '📄', name: 'Process Flow (PFC)', n: dd.pe.proc,
+      q: 'ขั้นตอนที่เกิดปัญหา อยู่ในผังกระบวนการมั้ย · เครื่องตัวนี้อยู่ OP ไหน',
+      demo: () => ({
+        verdict: 'ok', head: `อยู่ในผัง — OP${D.n('op', 20, 60)} ${D.p('pn', ['ขึ้นรูป Hydroform', 'เชื่อมประกอบ', 'เจาะรู'])}`,
+        lines: [`เครื่องที่ใช้: ${topFails[0]?.machine_no || S.line_name} · special characteristic: ${D.p('sc', ['SC', '—'])}`],
+      }),
+    },
+    {
+      icon: '⚠️', name: 'FMEA', n: dd.pe.fmea,
+      q: 'อาการที่เกิดวันนี้ เคยถูกคาดไว้มั้ย · ถ้าเคย ทำไมยังหลุด',
+      demo: () => ({
+        verdict: 'warn',
+        head: `2 ใน 3 อาการเคยคาดไว้ — แต่ค่า Detection สูง (ตรวจไม่เจอจนกว่าเครื่องจะหยุด)`,
+        lines: [
+          topFails[0] ? `✅ “${topFails[0].dt_type}” มีใน FMEA · S=${D.n('s1', 6, 8)} O=${D.n('o1', 3, 5)} D=${D.n('d1', 7, 9)} → RPN ${D.n('r1', 150, 280)} (เกินเกณฑ์ 100)` : null,
+          topDef ? `✅ “${topDef.def_type}” มีใน FMEA · แต่ action ที่เขียนไว้ยัง “ยังไม่ดำเนินการ”` : null,
+          topFails[2] ? `🆕 “${topFails[2].dt_type}” ${'—'} ไม่มีใน FMEA เลย = ต้อง revise เพิ่ม failure mode ใหม่` : null,
+        ].filter(Boolean),
+      }),
+    },
+    {
+      icon: '🛡️', name: 'Control Plan', n: dd.pe.cp,
+      q: 'มีอะไรดักไว้ · ความถี่พอมั้ย · เกิดแล้วให้ทำอะไร (reaction plan)',
+      demo: () => ({
+        verdict: 'bad',
+        head: `control ที่เขียนไว้ “ตรวจด้วยสายตาทุก ${D.n('f1', 50, 200)} ชิ้น” — ดักอาการนี้ไม่ทัน`,
+        lines: [
+          `หน้างานจริงกะนี้: หยุดรอ QA ${dtPlanned.length} ครั้ง รวม ${fmtNum(dtPlanned.reduce((a, d) => a + d.min, 0))} นาที = ตรวจถี่กว่าที่ CP เขียน`,
+          `reaction plan ปัจจุบัน: “แจ้งหัวหน้า” — ไม่ได้ระบุว่าต้องกันของที่ผลิตไปแล้วกี่ชิ้น`,
+        ],
+      }),
+    },
+  ];
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      {/* ── กะที่ถูกเลือก ── */}
+      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>
+              🔬 {S.line_name} · {S.work_date} · {shiftTh}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+              กะที่ <b>OEE ต่ำสุดและมีเนื้อให้เจาะ</b> ในช่วง {dd.from} – {dd.to} —
+              ระบบเลือกให้เองทุกครั้งที่เปิดหน้า ไม่ได้ล็อกไว้
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <Badge tone="real">วัดจริง</Badge>
+            <div style={{ fontSize: 30, fontWeight: 800, color: '#ef4444', lineHeight: 1 }}>
+              {S.oee == null ? '—' : `${(+S.oee).toFixed(0)}%`}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── ชั้น 1 ── */}
+      <div style={cardSt}>
+        <StepHead n="1" icon="📉" title="กะนี้เสียหายไปเท่าไหร่"
+          sub="OEE ตัวเดียวบอกแค่ว่าแย่ — ต้องแตกเป็น A/P/Q ก่อนถึงจะรู้ว่าไปแก้ฝั่งไหน" />
+        <div style={gcol(3)}>
+          {apq.map(x => <ApqBar key={x.k} label={x.label} val={x.v} hint={x.hint} worst={x.k === worstK} />)}
+        </div>
+        <div style={{ ...gcol(3), marginTop: 10 }}>
+          {[
+            { l: 'เป้าจากใบผลิต', v: tgt ? `${fmtNum(tgt)} ชิ้น` : '—' },
+            { l: 'ทำได้จริง', v: `${fmtNum(act || S.actual_qty)} ชิ้น`, c: tgt && act < tgt ? '#ef4444' : undefined },
+            { l: 'เวลาหยุดรวม', v: `${fmtNum(dtMinAll)} นาที`, s: `นอกแผน ${fmtNum(dtUnplanned.reduce((a, d) => a + d.min, 0))} · ตามแผน ${fmtNum(dtPlanned.reduce((a, d) => a + d.min, 0))}` },
+          ].map((x, i) => (
+            <div key={i} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.l}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: x.c }}>{x.v}</div>
+              {x.s && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
+            </div>
+          ))}
+        </div>
+        {tgt > 0 && act < tgt && (
+          <div style={{ marginTop: 9, fontSize: 12.5, lineHeight: 1.6 }}>
+            👉 ขาดเป้า <b style={{ color: '#ef4444' }}>{fmtNum(tgt - act)} ชิ้น</b>
+            {ct ? <> · ที่ CT {ct} วิ/ชิ้น = เวลาที่หายไปราว <b>{fmtNum((tgt - act) * ct / 60)} นาที</b></> : null}
+          </div>
+        )}
+      </div>
+
+      {/* ── ชั้น 2 ── */}
+      <div style={cardSt}>
+        <StepHead n="2" icon="🧩" title="เวลาที่หายไป ไปอยู่กับ 4M ตัวไหน" tone="#f59e0b"
+          sub="จัดกลุ่มจากข้อความที่พนักงานพิมพ์จริง — ข้อความต้นฉบับแสดงใต้ทุกกลุ่มให้ตรวจสอบได้" />
+
+        <div style={{
+          fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)', background: 'var(--bg3)',
+          borderRadius: 8, padding: '8px 10px', marginBottom: 10,
+        }}>
+          ⚠️ <b>ระบบยังไม่มีแกน 4M ที่ตัว master</b> (มีแต่ 6 Big Losses / 8 Wastes) — การจัดกลุ่มนี้จึง
+          <b> เดาจากข้อความ</b> ไม่ใช่ค่าที่หัวหน้าตั้งไว้ · ถ้าอยากให้แม่น 100% ต้องเพิ่มช่อง 4M
+          ที่ประเภท Downtime แล้วให้คนเลือกเอง
+        </div>
+
+        <div style={gcol(isMobile ? 1 : 2)}>
+          {groups.filter(g => g.rows.length).map(g => (
+            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: `3px solid ${g.color}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.icon} {g.label} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {g.th}</span></span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: g.color }}>{fmtNum(g.min)} นาที</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--muted)', margin: '2px 0 6px' }}>
+                {g.rows.length} รายการ · {dtMinAll ? Math.round(g.min / dtMinAll * 100) : 0}% ของเวลาหยุดทั้งกะ
+              </div>
+              <div style={{ display: 'grid', gap: 3 }}>
+                {g.rows.sort((a, b) => b.min - a.min).map((r, i) => (
+                  <div key={i} style={{ fontSize: 11.5, lineHeight: 1.5, display: 'flex', gap: 6 }}>
+                    <span style={{ color: g.color, fontWeight: 700, minWidth: 46 }}>{fmtNum(r.min)} น.</span>
+                    <span style={{ minWidth: 0 }}>
+                      {r.dt_type}{r.machine_no ? <span style={{ color: 'var(--muted)' }}> · {r.machine_no}</span> : null}
+                      {r.description ? <span style={{ color: 'var(--text2)' }}> — “{r.description.trim()}”</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* ฝั่งคุณภาพ — ของเสีย + DT ที่ master ตั้งว่าเป็น defect */}
+          {(dd.def.length > 0 || qualityDt.length > 0) && (
+            <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: '3px solid #ec4899' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 800 }}>🚫 คุณภาพ <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· ของเสีย</span></span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: '#ec4899' }}>{fmtNum(ngTotal)} ชิ้น</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--muted)', margin: '2px 0 6px' }}>
+                {dd.def.length} ประเภท{qualityDt.length ? ` · + เวลาแก้งาน ${fmtNum(qualityDt.reduce((a, d) => a + d.min, 0))} นาที` : ''}
+              </div>
+              <div style={{ display: 'grid', gap: 3 }}>
+                {dd.def.map((f, i) => (
+                  <div key={i} style={{ fontSize: 11.5, lineHeight: 1.5, display: 'flex', gap: 6 }}>
+                    <span style={{ color: '#ec4899', fontWeight: 700, minWidth: 46 }}>{fmtNum(f.qty)} ชิ้น</span>
+                    <span style={{ minWidth: 0 }}>
+                      {f.def_type}
+                      {f.description ? <span style={{ color: 'var(--text2)' }}> — “{f.description.trim()}”</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* จัดไม่ได้ — ห้ามซ่อน */}
+        {unclassified.length > 0 && (
+          <div style={{ marginTop: 9, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+            ⚪ จัดเข้า 4M ไม่ได้ {unclassified.length} รายการ ({fmtNum(unclassified.reduce((a, d) => a + d.min, 0))} นาที):{' '}
+            {unclassified.map(d => `“${d.dt_type}”`).join(' · ')} — ข้อความกว้างเกินกว่าจะระบุได้
+          </div>
+        )}
+
+        {/* จุดที่ข้อมูลจริงมักผูกกันเอง — เครื่องเดียวเสียซ้ำ */}
+        {Object.entries(machCount).filter(([, n]) => n >= 2).map(([m, n]) => (
+          <div key={m} style={{
+            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(239,68,68,0.08)',
+            border: '1px solid #ef4444', borderRadius: 8, padding: '8px 10px',
+          }}>
+            🔎 <b>{m} เสีย {n} ครั้งในกะเดียว</b> — คนละอาการกัน ({machRows.filter(d => d.machine_no === m).map(d => d.description?.trim() || d.dt_type).join(' / ')})
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              เสียหลายจุดในกะเดียว = มักเป็นเรื่องสภาพเครื่องโดยรวม ไม่ใช่อุบัติเหตุรายครั้ง —
+              นี่คือจุดที่ควรถามต่อว่า “เคยคาดไว้ใน FMEA มั้ย”
+            </div>
+          </div>
+        ))}
+
+        {/* A-loss กับ Q-loss ชี้ไปที่อุปกรณ์ตัวเดียวกัน — ปกติถูกบันทึกคนละที่จนไม่มีใครเห็นพร้อมกัน */}
+        {linkedDefs.map(({ f, equip }, i) => (
+          <div key={i} style={{
+            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(236,72,153,0.08)',
+            border: '1px solid #ec4899', borderRadius: 8, padding: '8px 10px',
+          }}>
+            🔗 <b>เวลาที่หาย กับ ของเสีย ชี้ไปที่ “{equip}” ตัวเดียวกัน</b>
+            <div style={{ marginTop: 3 }}>
+              ฝั่งเครื่องหยุด: “{machRows.map(r => r.description?.trim()).filter(Boolean)[0] || machRows[0]?.dt_type}” ·
+              ฝั่งของเสีย: “{(f.description || f.def_type || '').trim()}” ({fmtNum(f.qty)} ชิ้น)
+            </div>
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              จับคู่จาก<b>ข้อความที่พนักงานพิมพ์</b> ไม่ใช่ความสัมพันธ์ที่ระบบยืนยัน — แต่ถ้าจริง
+              แปลว่า A กับ Q ของกะนี้มี<b>ต้นเหตุเดียวกัน</b> แก้จุดเดียวได้ทั้งสองฝั่ง
+              (ปกติสองเรื่องนี้ถูกบันทึกคนละหน้าจน ไม่มีใครเห็นพร้อมกัน)
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── ชั้น 3 ── */}
+      <div style={cardSt}>
+        <StepHead n="3" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="#a78bfa"
+          sub="รู้ว่าเกิดอะไรแล้ว คำถามถัดไปคือ ตอนออกแบบกระบวนการ เราเคยคาดอาการนี้ไว้หรือเปล่า และที่ดักไว้มันพอมั้ย" />
+
+        {/* สถานะเอกสารของพาร์ทนี้ — แยก "ยังไม่มีของพาร์ทนี้" ออกจาก "ทั้งระบบยังไม่มีอะไรเลย" */}
+        {peSet ? (
+          <div style={{
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #22c55e', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+          }}>
+            <b style={{ color: '#22c55e' }}>พาร์ทนี้มีชุดเอกสารแล้ว</b> — {peSet.part_no}
+            {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
+            <button onClick={() => navigate(peLink)} style={{
+              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              cursor: 'pointer', background: 'var(--accent)', color: '#08120a', border: 'none',
+            }}>เปิดดู →</button>
+          </div>
+        ) : !demoOn && (
+          <div style={{
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #f59e0b', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+          }}>
+            <b style={{ color: '#f59e0b' }}>พาร์ทที่ผลิตในกะนี้ยังไม่มีชุดเอกสาร</b> — จึงยังย้อนกลับไปถามไม่ได้ว่า
+            อาการที่เกิดวันนี้ <b>เคยถูกคาดไว้ตอนออกแบบกระบวนการหรือเปล่า</b>
+            <div style={{ marginTop: 6, color: 'var(--muted)' }}>
+              โมดูล Flow / PFMEA / Control Plan <b>มีหน้าจอให้กรอกแล้ว</b> และตอนนี้ลงไปแล้ว {fmtNum(dd.pe.totalSets)} พาร์ท —
+              ยังไม่ครอบคลุมพาร์ทนี้ · ตราบใดที่ยังไม่ลง เราจะ<b>วัดความสูญเสียได้ละเอียด แต่เทียบกลับไปที่เจตนาการออกแบบไม่ได้</b>
+              คือตอบไม่ได้ว่า “เคยรู้อยู่แล้วแต่ปล่อย” หรือ “ไม่เคยคิดถึงเลย”
+            </div>
+            <button onClick={() => navigate('/pe-docs')} style={{
+              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+              cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
+            }}>📐 ไปลงเอกสารพาร์ทนี้</button>
+          </div>
+        )}
+
+        <div style={gcol(3)}>
+          {DOCS.map(d => {
+            const has = (d.n || 0) > 0;
+            const sim = !has && demoOn ? d.demo() : null;
+            const vc = sim ? (sim.verdict === 'ok' ? '#22c55e' : sim.verdict === 'warn' ? '#f59e0b' : '#ef4444') : null;
+            return (
+              <div key={d.name} style={{
+                background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px',
+                border: sim ? '1px dashed #a78bfa' : '1px solid var(--border)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>{d.icon} {d.name}</span>
+                  {d.n == null ? <Badge>โหลดไม่ได้</Badge>
+                    : has ? <Badge tone="real">{fmtNum(d.n)} แถว</Badge>
+                      : sim ? <Badge tone="sim">🧪 จำลอง</Badge> : <Badge tone="guess">0 แถว</Badge>}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '5px 0 7px', lineHeight: 1.55 }}>{d.q}</div>
+
+                {sim ? (
+                  <>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: vc, lineHeight: 1.55 }}>{sim.head}</div>
+                    <div style={{ display: 'grid', gap: 3, marginTop: 5 }}>
+                      {sim.lines.map((l, i) => (
+                        <div key={i} style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text2)' }}>{l}</div>
+                      ))}
+                    </div>
+                  </>
+                ) : has ? (
+                  <button onClick={() => navigate(peLink)} style={{
+                    fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none',
+                    padding: 0, cursor: 'pointer', textAlign: 'left', fontWeight: 700,
+                  }}>เปิดดูรายตัวของพาร์ทนี้ →</button>
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    {peSet ? 'ชุดนี้ยังไม่ได้ลงหัวข้อนี้' : 'พาร์ทนี้ยังไม่มีเอกสาร'} — ตอบคำถามนี้ไม่ได้
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {demoOn && !peReady && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+            🧪 ทั้ง 3 การ์ดข้างบนเป็น<b>ตัวอย่างคำตอบ</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
+            เป็นของจริงจากกะนี้ แต่ค่า S-O-D · RPN · ความถี่ใน Control Plan เป็น<b>ตัวเลขสมมติ</b>
+          </div>
+        )}
+      </div>
+
+      {/* ── ชั้น 4 ── */}
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--accent)' }}>
+        <StepHead n="4" icon="🎯" title="สรุป — กะนี้บอกอะไร และต้องไปทำอะไรต่อ" />
+        <div style={{ display: 'grid', gap: 7, fontSize: 12.5, lineHeight: 1.65 }}>
+          <div>
+            <b>ตัวฉุดหลัก:</b> {worstK ? `${worstK} (${(+apq.find(a => a.k === worstK).v).toFixed(0)}%)` : '—'}
+            {groups[0]?.rows.length ? <> · เวลาหายไปกับ <b>{groups[0].icon} {groups[0].label}</b> มากที่สุด ({fmtNum(groups[0].min)} นาที)</> : null}
+          </div>
+          {ngTotal > 0 && <div><b>ฝั่งคุณภาพ:</b> ของเสีย {fmtNum(ngTotal)} ชิ้น — {dd.def.map(f => f.def_type).join(' · ')}</div>}
+          <div style={{ color: 'var(--muted)' }}>
+            ทั้งหมดข้างบนนี้ระบบ<b>ตอบได้แล้ววันนี้</b> จากข้อมูลที่หน้างานกรอกเองทุกกะ
+          </div>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 7 }}>
+            <b>ที่ยังตอบไม่ได้</b> คือชั้น 3 — ต้องมี 2 อย่าง:
+            <div style={{ marginTop: 4, display: 'grid', gap: 3, color: 'var(--text2)' }}>
+              <div>① เพิ่ม<b>ช่อง 4M ที่ประเภท Downtime</b> เพื่อเลิกเดาจากข้อความ (แก้ที่ Daily Report → ⚙️ ตั้งค่า)</div>
+              <div>
+                ② ลง<b>เอกสาร Flow / PFMEA / Control Plan</b> ให้ครอบคลุมพาร์ทที่ผลิตจริง —
+                หน้าจอมีแล้วที่ <b>/pe-docs</b> ตอนนี้ลงไป {fmtNum(dd.pe.totalSets)} พาร์ท
+                {peSet ? ' (รวมพาร์ทของกะนี้แล้ว)' : ' แต่ยังไม่มีพาร์ทของกะนี้'}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 11 }}>
+          {[
+            { l: '🔎 เปิดกะนี้ใน Daily Report', to: '/daily-report' },
+            { l: '📊 ดู OEE ย้อนหลังไลน์นี้', to: '/oee-analytics' },
+            { l: '🧠 วิเคราะห์สาเหตุ (Lean)', to: '/oee-analytics?tab=insight' },
+            { l: '📐 Flow / PFMEA / Control Plan', to: peLink },
+            { l: '🔧 ใบแจ้งซ่อม', to: '/mtn-repair' },
+          ].map(b => (
+            <button key={b.to} onClick={() => navigate(b.to)} style={{
+              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+              background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+            }}>{b.l}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdoptionOutlook() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   /* default = 'dim' — คำถามที่ผู้บริหารถามจริง ควรเป็นสิ่งแรกที่เห็น
      (ก่อน-หลัง/ROI เป็นรายละเอียดที่ค่อยกดเข้าไปดู) */
-  const [tab, setTab] = useTabParam(['dim', 'ladder', 'dept', 'roi'], 'dim');
+  const [tab, setTab] = useTabParam(['dim', 'deep', 'ladder', 'dept', 'roi'], 'dim');
   /* โหมดสาธิตอยู่ใน URL (?demo=on) เพื่อให้ refresh กลางที่ประชุมแล้วยังอยู่โหมดเดิม
      + ส่งลิงก์ให้คนอื่นเปิดดูโหมดเดียวกันได้ · ปิดเป็นค่าเริ่มต้นเสมอ (ของจริงต้องมาก่อน) */
   const [demoRaw, setDemoRaw] = useTabParam(['on', 'off'], 'off', 'demo');
   const demoOn = demoRaw === 'on';
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
+  /* แท็บเจาะปัญหาโหลดแยกตอนเปิดแท็บเท่านั้น — ไม่ถ่วงหน้าแรก และโหลดครั้งเดียวต่อการเปิดหน้า */
+  const [dd, setDd] = useState(null);
+  const [ddErr, setDdErr] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -1106,6 +1691,14 @@ export default function AdoptionOutlook() {
       .catch(e => { if (alive) setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); });
     return () => { alive = false; };
   }, []);
+
+  useEffect(() => {
+    if (tab !== 'deep' || dd || ddErr) return;
+    let alive = true;
+    loadDeepDive().then(r => { if (alive) setDd(r); })
+      .catch(e => { if (alive) setDdErr(e?.message || 'โหลดข้อมูลกะไม่สำเร็จ'); });
+    return () => { alive = false; };
+  }, [tab, dd, ddErr]);
 
   if (err) return (
     <div style={{ padding: 16 }}>
@@ -1127,6 +1720,7 @@ export default function AdoptionOutlook() {
         sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
         tabs={[
           { key: 'dim', label: '🔍 มิติที่มองเห็นได้' },
+          { key: 'deep', label: '🔬 เจาะ 1 กะจริง' },
           { key: 'ladder', label: '📈 4 ระดับ (ถึง Prescriptive)' },
           { key: 'dept', label: '🏭 ก่อน-หลัง รายแผนก' },
           { key: 'roi', label: '💰 เงินที่ประหยัดได้' },
@@ -1176,6 +1770,7 @@ export default function AdoptionOutlook() {
       )}
 
       {tab === 'dim' && <DimensionTab c={d.c} ents={d.ents} demoOn={demoOn} day={d.loss.to} navigate={navigate} isMobile={isMobile} />}
+      {tab === 'deep' && <DeepDiveTab dd={dd} err={ddErr} demoOn={demoOn} navigate={navigate} isMobile={isMobile} />}
       {tab === 'ladder' && <LadderTab c={d.c} navigate={navigate} isMobile={isMobile} />}
       {tab === 'dept' && <DeptTab c={d.c} navigate={navigate} isMobile={isMobile} />}
       {tab === 'roi' && <RoiTab c={d.c} loss={d.loss} rates={d.rates} demoOn={demoOn} day={d.loss.to} navigate={navigate} isMobile={isMobile} />}
