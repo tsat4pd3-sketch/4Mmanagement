@@ -1546,6 +1546,7 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
                        #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
+                       #   ENERGY_MONITORING_DESIGN.md (โมดูลพลังงาน — ออกแบบแล้ว ยังไม่เขียนโค้ด) ·
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
                        #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6)
 ```
