@@ -180,6 +180,7 @@
 | ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — 6 แท็บ: Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ") | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
+| วิเคราะห์ & รายงาน | `/vsm` | **VSM — แผนผังสายธารคุณค่า (Value Stream Map)** เลือก FG (เบอร์ 1) + เดือน → generate ผังจากข้อมูลจริง (CT/%OEE/C-O/LOT/คงคลัง/TT/PLT/PT/%VA) → แก้ค่าที่ระบบไม่รู้ → บันทึก (snapshot) → พิมพ์ A3 · ดู section "Value Stream Mapping" | ทุก role (ดู) · `vsm:manage` = admin/mgr/sv/leader/engineer |
 | วิเคราะห์ & รายงาน | `/report` | Report | ทุก role (7 tabs: รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M/ใบบันทึก/จองรถ OT + CSV export) · **Changing Point Control Record ย้ายเข้าทะเบียนกลาง `doc_forms`/`doc_form_revisions` doc_key `changing_point` แล้ว (2026-07-30)** — แผง "⚙️ จัดการเอกสาร" ในแท็บ 4M กับหน้า `/doc-forms` แก้ข้อมูลชุดเดียวกัน · ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้ (คงไว้เป็นประวัติ ห้าม drop จนกว่าจะยืนยันข้อมูลครบ) |
 | พนักงาน & ทักษะ | `/skills-report` | `<Report mode="skills" />` — 3 แท็บสกิลที่แยกจาก /report (Skill Matrix / ค่าฝีมือ / Multi-Skill Form) component อยู่ใน Report.jsx เดิมทั้งหมด (`SKILL_TAB_IDXS`) | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup | admin |
@@ -998,6 +999,38 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 ---
 
+## Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13)
+
+หน้า VSM (`VSM.jsx`, กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้าสำเร็จรูป (mat เบอร์ 1) + เดือน แล้ว
+**ระบบสร้างแผนผังสายธารคุณค่าจากข้อมูลจริง** ตามมาตรฐานสากล (Learning to See) ให้ตรงกับใบกระดาษเดิมของบริษัท
+· ออกแบบเต็ม + ตารางที่มาของทุกช่อง: **`docs/VSM-DESIGN.md`**
+
+- **ช่องเกือบทั้งใบ generate ได้จากข้อมูลที่มีอยู่แล้ว** — CT (`dr_products`) · %OEE (กะที่ปิดแล้ว ผ่าน `wavg` ถ่วงเวลารับภาระ)
+  · **C/O จาก downtime ที่จัดหมวด `six_big_loss='setup'`** (ผลพลอยได้จากงาน Lean 2026-08-05) · LOT (`kanban_standards`)
+  · คน (`stdManpower`) · คงคลัง (view `line_stock_summary`) · Order/วัน (`customer_forecasts` ÷ วันทำงานจากปฏิทินบริษัท)
+  · AT (`shift_min` − พักตามนโยบาย) · TT · PLT/PT/%VA
+- **⚠️ สูตร %VA — ตัวหารคูณ AT ไม่ใช่ 86,400:** `VA = PT` · **`NVA = PLT(วัน) × AT(วินาที/วัน)`** · `%VA = VA÷(VA+NVA)×100`
+  ถอดกลับจากใบจริง 2 ใบแล้วตรงเป๊ะทั้งคู่ (81 × 56,400 + 48,162 = 4,616,562 = ตัวหารที่พิมพ์ในใบ)
+  ถ้าใช้ 86,400 จะได้ %VA ต่ำกว่าใบจริงเกือบเท่าตัว — **สูตรอยู่ `src/lib/vsmModel.js` จุดเดียว**
+- **🔀 Routing master (ตารางใหม่ `part_routings` · DR):** ระบบไม่เคยมีชั้น "ลำดับกระบวนการ" (`bom_items` บอกแค่ FG→ลูก 1 ชั้น)
+  → จัดการที่ **Product Master → แท็บ 🔀 Routing** (พาร์ท → ขั้น 1,2,3 → ไลน์/เครื่อง/จุดพัก) · สิทธิ์ `routing:manage`
+  · **ค่าว่างในแถว routing = "ให้ระบบไปหาจากข้อมูลจริง"** กรอกทับเฉพาะตอนค่าจริงไม่ตรง
+  · **พาร์ทที่ยังไม่ลง routing ไม่ตัน** — ใช้ไลน์เดียวจาก Product Master ไปก่อน (`is_fallback`) **แล้วขึ้นเตือนบนจอเสมอ ห้ามเงียบ**
+- **⚠️ WIP กลางทางระบบไม่ได้เก็บ — ต้องกรอกเอง** (ช่องขอบส้ม + ▲ เส้นประบนผัง + เตือนว่า "PLT จะต่ำกว่าความจริง")
+  · เช่นเดียวกับ **รอบส่ง supplier (7:1:1)** และ **งานจ้างนอก** — ระบบไม่มีข้อมูล **ห้ามเดาเลขให้**
+- **เก็บเป็น snapshot** (`vsm_maps.data` jsonb) ไม่คำนวณสดตอนเปิดดู — VSM คือภาพ ณ ช่วงเวลาหนึ่ง (ใบจริงเขียน *Information on July 25*)
+  ถ้าคำนวณสด ใบที่อนุมัติไปแล้วจะเปลี่ยนตัวเลขเองเงียบๆ · กด **"↻ ดึงข้อมูลใหม่"** เพื่อ regenerate เอง
+- **ผังเป็น auto-layout จากโมเดล ไม่ใช่ลากวางอิสระ** → regenerate แล้วจัดผังใหม่ให้เอง · สัญลักษณ์ทั้งชุดอยู่ `SYMBOLS`
+  ใน `src/components/VsmCanvas.jsx` **จุดเดียว — legend สร้างจาก registry เดียวกัน ห้ามวาดสัญลักษณ์ซ้ำที่อื่น**
+- **ใบพิมพ์ A3 (`vsmPrint.js`) clone `outerHTML` ของ SVG ตัวจริงบนจอไปใช้ ไม่วาด layout ใหม่**
+  (กฎ CLAUDE.md: ห้ามจำลอง layout ใบจริงมาไว้ในตัวพิมพ์) — หน้าจอ render SVG ซ้ำแบบชุดสีสว่างซ่อนไว้สำหรับพิมพ์
+  · เลขฟอร์ม/Rev/ช่องเซ็น/โลโก้/แนวกระดาษ อ่านจากทะเบียน doc_key **`vsm`** (`layout_locked=false` เปลี่ยนแนวกระดาษได้จริง)
+- **Scope มาตรฐาน:** leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` — **ตัวเลือกสินค้าก็ scope ด้วย**
+- migration: `20260813_part_routings.sql` + `20260813_vsm_maps.sql` (DR) · `20260813_vsm_permission.sql` (Main)
+- **ยังไม่ทำ (เฟส 2-4):** Future state + kaizen burst ผูก `/improvements` · รอบส่ง supplier · เทียบ current vs future อัตโนมัติ
+
+---
+
 ## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
 
 หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **"กำลังผลิตที่ทำได้จริง"** → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB**
@@ -1399,7 +1432,7 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
                        #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
-                       #   VSM-DESIGN.md (Value Stream Mapping — ออกแบบแล้ว ยังไม่ทำ) ·
+                       #   VSM-DESIGN.md (Value Stream Mapping — เฟส 1 ทำแล้ว) ·
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน — ออกแบบเผื่อไว้ ยังไม่ทำ)
 ```
 

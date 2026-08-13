@@ -8,6 +8,7 @@ loadProcessTypes(); // master กระบวนการ data-driven
 import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
+import RoutingPanel from '../components/RoutingPanel';
 
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -524,7 +525,7 @@ export default function ProductMaster() {
       {/* ── Main Tab Bar ── */}
       {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'export', label:'📤 Export' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'routing', label:'🔀 Routing' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -1002,6 +1003,7 @@ export default function ProductMaster() {
       {mainTab === 'packaging' && <PackagingPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
       {mainTab === 'parts' && <PartsMasterPanel canCreate={canCreate} canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
+      {mainTab === 'routing' && <RoutingPanel canEdit={can('routing','manage',role) || canEdit} lines={lines} />}
       {mainTab === 'export' && <ExportPanel items={items} kanbanStds={kanbanStds} bomCounts={bomCounts} />}
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
