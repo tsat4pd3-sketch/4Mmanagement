@@ -12,6 +12,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { isFgMat } from '../utils/matPrefix';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
@@ -90,7 +91,7 @@ export default function VSM() {
     const q = search.trim().toLowerCase();
     return products.filter(p => {
       if (p.is_active === false) return false;
-      if (!String(p.mat_no).startsWith('1')) return false;
+      if (!isFgMat(p.mat_no)) return false;
       if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
       if (!q) return true;
       return [p.mat_no, p.name, p.p_no].some(v => String(v || '').toLowerCase().includes(q));
