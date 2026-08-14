@@ -61,12 +61,16 @@ export const baseOf = (s) => (String(s ?? '').trim().match(/^(\d+)/) || [])[1] |
 /** ชื่อชีท '140 (1)' → '140-1' (ให้ชีทหน้าต่อของ OP เดียวกันยุบเข้าด้วยกันได้) */
 export const normSheetKey = (s) => String(s ?? '').trim().replace(/\s*\((\d+)\)$/, '-$1');
 
-/** ชีทช่วงรวม '240-280' (คุมหลาย OP) — '120-2' ไม่ใช่ (ห่างกันน้อยกว่า 20) */
+/**
+ * ชีทช่วงรวม '240-280' (คุมหลาย OP) — '120-2' ไม่ใช่ (นั่นคือ '120 (2)' = หน้าต่อของ OP 120)
+ * ⚠️ แยกด้วย "ตัวหลังมากกว่าตัวหน้า" ไม่ใช่ระยะห่าง — เลขหน้าต่อเป็น 1,2,3 จึงน้อยกว่าเลข OP เสมอ
+ *    (เคยใช้เกณฑ์ห่าง ≥ 20 แล้วพลาดกับไฟล์จริงที่มีชีท '240-250' ซึ่งห่างแค่ 10)
+ */
 export const rangedKey = (key) => {
   const m = String(key ?? '').match(/^(\d+)-(\d+)$/);
   if (!m) return null;
   const a = +m[1], b = +m[2];
-  return b - a >= 20 ? [a, b] : null;
+  return b > a ? [a, b] : null;
 };
 
 /** ชีทที่มีข้อมูล = ขึ้นต้นด้วยเลข OP หรือเป็นชีท REWORK (ที่เหลือ = cover/ฟอร์มเปล่า) */
@@ -304,14 +308,47 @@ export function buildImportPlan({ fmeaSheets = {}, cpSheets = {}, revisions = []
     }
   }
 
-  /* ไม่มี Control Plan → ถอยไปสร้าง OP จากชื่อชีทของ PFMEA (อัพโหลดไฟล์เดียวก็ยังใช้ได้) */
-  if (!ops.size) {
-    for (const key of Object.keys(fmea)) {
-      if (rangedKey(key)) continue;
-      const b = baseOf(key);
-      if (b) touch(b);
+  /* เลข OP ที่เขียนอยู่ในเซลล์ของแต่ละชีท CP (ใช้จับเคสชื่อชีทไม่ตรงกับเลขข้างใน) */
+  const conflicts = [];
+  for (const [key, recs] of Object.entries(cp)) {
+    if (rangedKey(key)) continue;
+    const kb = baseOf(key);
+    if (!kb) continue;
+    const found = [...new Set(recs.map((r) => baseOf(r.sub_op)).filter(Boolean))];
+    if (found.length && !found.includes(kb)) conflicts.push({ sheet: key, op: found.join(','), text: 'เลขในเซลล์ไม่ตรงกับชื่อชีท' });
+  }
+
+  /**
+   * เติม OP จาก "ชื่อชีท" ของทั้ง 2 ไฟล์ + จำชื่อขั้นงานจาก PFMEA ไว้ใช้ตอน Control Plan ไม่มีให้
+   * ⚠️ จำเป็น เพราะไฟล์จริงมีเคสคนกรอกเลข OP ในเซลล์ผิด (ชีทชื่อ 140 แต่ในเซลล์เขียน 130)
+   *    ถ้ายึดเซลล์อย่างเดียว OP นั้นจะไม่เกิด แล้วแถว PFMEA ของมันหล่นทั้งชีท
+   */
+  const sheetOnly = new Set();
+  const fnameOf = new Map();
+  for (const [key, recs] of Object.entries(fmea)) {
+    if (rangedKey(key) || /REWORK/i.test(key)) continue;
+    const b = baseOf(key);
+    if (!b) continue;
+    const cnt = new Map();
+    for (const r of recs) {
+      const f = String(r.item_function || '').trim();
+      if (f && !PART_RE.test(f)) cnt.set(f, (cnt.get(f) || 0) + 1);
     }
-    if (ops.size) warnings.push({ level: 'warn', text: `ไม่มีไฟล์ Control Plan — สร้างรายการ OP จากชื่อชีทของ PFMEA (${ops.size} OP) ชื่อขั้นงาน/เครื่องจักรจะยังว่าง ต้องเติมเองภายหลัง` });
+    const top = [...cnt.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
+    if (top) fnameOf.set(b, top);
+    if (!ops.has(b)) { touch(b); sheetOnly.add(b); }
+  }
+  for (const key of Object.keys(cp)) {
+    if (rangedKey(key)) continue;
+    const b = baseOf(key);
+    if (b && !ops.has(b)) { touch(b); sheetOnly.add(b); }
+  }
+
+  if (!Object.keys(cp).length && ops.size) {
+    warnings.push({ level: 'warn', text: `ไม่มีไฟล์ Control Plan — สร้างรายการ OP จากชื่อชีทของ PFMEA (${ops.size} OP) เครื่องจักร/จุดควบคุมจะยังว่าง ต้องเติมเองภายหลัง` });
+  }
+  if (conflicts.length) {
+    warnings.push({ level: 'warn', text: `มี ${conflicts.length} ชีทใน Control Plan ที่เลข OP ในเซลล์ไม่ตรงกับชื่อชีท — ระบบยึด "เลขในเซลล์" ตามไฟล์ จุดควบคุมจึงไปอยู่ OP นั้น (ตรวจไฟล์ต้นทางว่าพิมพ์ถูกไหม)`, rows: conflicts });
   }
 
   /* child part จาก label ฝั่ง PFMEA (บางตัวมีเฉพาะใน FMEA) */
@@ -327,21 +364,27 @@ export function buildImportPlan({ fmeaSheets = {}, cpSheets = {}, revisions = []
 
   const opRows = [...ops.keys()].sort((a, b) => +a - +b).map((b) => {
     const o = ops.get(b);
-    const names = o.names.filter(Boolean);
+    /* Control Plan ไม่มีชื่อขั้นงาน → ใช้ Item/Function จาก PFMEA (ช่องนั้นคือชื่อขั้นงานตามฟอร์ม AIAG) */
+    const names = o.names.filter(Boolean).length ? o.names.filter(Boolean) : [fnameOf.get(b)].filter(Boolean);
     const child = [...o.childs].sort();
     const machines = [...o.machines].sort();
     const { name, kind } = nameOp(names, child, b);
     const flow = names.length > 1 ? names.join(' → ') : '';
+    const note = sheetOnly.has(b) ? 'ชื่อขั้นงานมาจาก PFMEA (Control Plan ไม่มี OP นี้)' : '';
     return {
       op_no: b, seq: +b, name, kind, machine_no: null,
       child_parts: child.join('\n') || null,
-      remark: [flow, machines.join(' / ')].filter(Boolean).join(' · ') || null,
+      remark: [flow, machines.join(' / '), note].filter(Boolean).join(' · ') || null,
     };
   });
   const opNos = new Set(opRows.map((o) => o.op_no));
 
-  /* 2) จัดแถว PFMEA เข้า OP */
-  const weldInspOp = opRows.find((o) => o.name.includes('WELD INSPECTION'))?.op_no || null;
+  /* 2) จัดแถว PFMEA เข้า OP
+     ชีท REWORK ไม่มีเลข OP ของตัวเอง → เกาะขั้นตรวจ (งานแก้ไขถูกพบตอนตรวจ)
+     ⚠️ ห้ามล็อกชื่อ 'WELD INSPECTION' ตายตัว — ไฟล์จริงบางพาร์ทมีแต่ 'FINAL INSPECTION'
+        แล้วแถว REWORK จะหล่นทั้งชีท (เจอจริงกับ MB3B-8C306-BE 8 แถว) */
+  const weldExact = opRows.find((o) => o.name.includes('WELD INSPECTION'))?.op_no || null;
+  const weldInspOp = weldExact || [...opRows].reverse().find((o) => o.kind === 'inspection')?.op_no || null;
   const fmeaItems = [];
   const unrouted = [];
   const keys = Object.keys(fmea).sort((a, b) => {
@@ -406,6 +449,11 @@ export function buildImportPlan({ fmeaSheets = {}, cpSheets = {}, revisions = []
     revs.push(r);
   }
 
+  const reworkKey = Object.keys(fmea).find((k) => /REWORK/i.test(k));
+  if (reworkKey && !weldExact && weldInspOp) {
+    const t = opRows.find((o) => o.op_no === weldInspOp);
+    warnings.push({ level: 'warn', text: `ชีท "${reworkKey}" ไม่มีเลข OP ของตัวเอง — ระบบผูกไว้กับ OP ${weldInspOp} ${t?.name || ''} (ขั้นตรวจตัวสุดท้าย) · ย้ายได้เองภายหลังถ้าไม่ตรง` });
+  }
   if (unrouted.length) {
     warnings.push({ level: 'error', text: `มี ${unrouted.length} แถวที่จัดเข้า OP ไม่ได้ — จะไม่ถูกนำเข้า`, rows: unrouted.slice(0, 20) });
   }
