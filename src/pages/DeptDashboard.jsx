@@ -36,6 +36,13 @@ const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400
 const dtMinOf = (d) => d.duration_min != null ? (Number(d.duration_min) || 0)
   : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
 const isOpenDT = (d) => !d.ended_at && d.duration_min == null;
+/* ลิงก์เข้า "คิวอนุมัติ 4M" ของใบนั้นโดยตรง (ไม่ใช่หน้ารายงานเปล่าๆ) — Report.jsx อ่าน param ชุดนี้:
+   status/from = ตั้งตัวกรองให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง default 7 วัน)
+   focus = เน้นแถว + เลื่อนไปหา แล้วกดอนุมัติได้เลย
+   ⚠️ ?tab= ของ /report เป็น "เลข index ของ TABS" (สัญญาเดิมของหน้านั้น) — 4 = 🚨 4M Changes
+      สลับลำดับแท็บใน Report.jsx เมื่อไหร่ ต้องมาแก้เลขตรงนี้ด้วย (มีคอมเมนต์เตือนไว้ที่ TABS แล้ว) */
+const FOURM_TAB = '/report?tab=4';
+const fourMLink = (f) => `${FOURM_TAB}&status=${encodeURIComponent(f.status || '')}&from=${f.work_date}&focus=${f.id}`;
 
 /* ขอบเขตไลน์ตามสิทธิ์ (pattern มาตรฐาน): leader = ครอบครัวไลน์ตัวเอง · role อื่น = ตาม sections
    คืน null = ไม่จำกัด */
@@ -219,7 +226,7 @@ function ProductionView({ d, ctx }) {
   const actions = [
     ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: '#f59e0b', to: '/daily-report' })),
     ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: '#ef4444', to: '/daily-report' })),
-    ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: '#f59e0b', to: '/report' })),
+    ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: '#f59e0b', to: fourMLink(f) })),
   ];
 
   const lineRows = Object.values(today.lines).map(l => {
@@ -558,9 +565,9 @@ function QaView({ d, ctx }) {
   })).filter(r => r.value > 0);
 
   const actions = [
-    ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: '#f59e0b', to: '/report' })),
+    ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: '#f59e0b', to: fourMLink(f) })),
     ...noLog.map(l => ({ icon: '❔', title: `${l} — ยังไม่มีบันทึกของเสียวันนี้`, detail: 'ของดี 100% จริง หรือยังไม่ได้ลงบันทึก?', tag: 'ตรวจสอบ', tagColor: '#f59e0b', to: '/daily-report' })),
-    ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/lpa' })),
+    ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/daily-checker?tab=lpa' })),
   ];
 
   return (<>
@@ -584,7 +591,10 @@ function QaView({ d, ctx }) {
       sectionStyle={cardSt} emptyText="ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง" />
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'], ['/qa-setup', '📐 มาตรฐานการตรวจ'], ['/lpa', '📋 LPA', lpaIssues.length], ['/scrap-report', '♻️ ใบรายงานของเสีย'], ['/event-log', '⚡ CQI-15']]} />
+      <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'],
+        // คิวอนุมัติ 4M ทั้งก้อน — from = ใบเก่าสุด (d.fourM เรียงวันจากเก่าไปใหม่) ให้เห็นครบทุกใบที่ค้าง
+        [`${FOURM_TAB}&status=pending_qa${d.fourM.length ? `&from=${d.fourM[0].work_date}` : ''}`, '📝 4M รออนุมัติ', d.fourM.length],
+        ['/qa-setup', '📐 มาตรฐานการตรวจ'], ['/daily-checker?tab=lpa', '📋 LPA', lpaIssues.length], ['/scrap-report', '♻️ ใบรายงานของเสีย'], ['/event-log', '⚡ CQI-15']]} />
     </Section>
   </>);
 }
@@ -605,6 +615,10 @@ export default function DeptDashboard() {
   const [sp, setSp] = useSearchParams();
   const defDept = DEPTS.find(x => x.roles.includes(role))?.key || 'production';
   const dept = DEPTS.find(x => x.key === sp.get('dept'))?.key || defDept;
+  /* ⚠️ หน้านี้ "ไม่" ใช้ useTabParam เหมือนหน้าอื่นโดยตั้งใจ — ค่า default ของ ?dept= ขึ้นกับ role ของคนดู
+     (ช่างเปิดมาเจอซ่อมบำรุง · QA เจอ QA) ถ้าใช้ hook ตัวนั้น แท็บที่เป็น default จะถูกตัดออกจาก URL
+     → แชร์ลิงก์ให้คนละ role แล้วเห็นคนละส่วนงาน · ที่นี่จึงเขียน ?dept= ลง URL เสมอทุกครั้ง */
+  const setDept = (k) => { const n = new URLSearchParams(sp); n.set('dept', k); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
   const [lines, setLines] = useState([]);
@@ -655,7 +669,7 @@ export default function DeptDashboard() {
       {/* เลือกส่วนงาน */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {DEPTS.map(t => (
-          <button key={t.key} onClick={() => setSp({ dept: t.key }, { replace: true })} style={{
+          <button key={t.key} onClick={() => setDept(t.key)} style={{
             fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
             background: dept === t.key ? 'var(--accent)' : 'var(--bg3)',
             color: dept === t.key ? '#08120a' : 'var(--text)',

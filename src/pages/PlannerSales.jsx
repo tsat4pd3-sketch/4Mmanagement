@@ -5,6 +5,8 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -1245,7 +1247,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
 export default function PlannerSales() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useState('planner');
+  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);
   // สิทธิ์อัพโหลดจากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canUpload = can('demand', 'upload', role);
@@ -1267,22 +1269,16 @@ export default function PlannerSales() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📈 Planner & Sales — Forecast จากลูกค้า
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {[
-          { id: 'planner', label: '📈 Forecast Planner' },
-          { id: 'kanban',  label: '🎴 คำนวณ Kanban' },
-          { id: 'upload',  label: '📤 อัพโหลด (Sales)' },
-        ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
-      </div>
+      <PageHeader
+        title="Planner & Sales — Forecast จากลูกค้า" icon="📈"
+        sub="Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery"
+        tabs={[
+          { key: 'planner', label: '📈 Forecast Planner' },
+          { key: 'kanban', label: '🎴 คำนวณ Kanban' },
+          { key: 'upload', label: '📤 อัพโหลด (Sales)' },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
       {tab === 'kanban' && <KanbanCalcTab canApply={canUpload} fullName={fullName} custLabel={custLabel} />}

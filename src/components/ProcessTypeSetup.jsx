@@ -4,6 +4,7 @@ import { can } from '../utils/permissions';
 import { loadProcessTypes } from '../utils/processTypes';
 import { toast } from './Toast';
 import EmojiPicker from './EmojiPicker';
+import { pickUnusedColor } from '../utils/colorPick';
 
 /* ── ProcessTypeSetup — ตัวจัดการ master กระบวนการผลิต (process_types, DR) ─────────────
    component เดียว ใช้ได้หลายจุด (Daily Report ⚙️ + หน้า /process-setup ในหมวดตั้งค่าฯ)
@@ -36,7 +37,8 @@ export default function ProcessTypeSetup({ role }) {
   const slug = (t) => String(t || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   const openEdit = (item) => {
     setEditing(item ? item.key : 'new');
-    setForm(item ? { ...item } : { key: '', label: '', icon: '🏭', color: '#8b5cf6', sort_order: items.length + 1, is_active: true });
+    // สร้างใหม่ default สีที่ยังไม่ซ้ำกับกระบวนการที่มี (ผู้ใช้เปลี่ยนทับได้)
+    setForm(item ? { ...item } : { key: '', label: '', icon: '🏭', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true });
   };
   const handleSave = async () => {
     if (!form.label?.trim()) { toast.error('กรอกชื่อกระบวนการ'); return; }

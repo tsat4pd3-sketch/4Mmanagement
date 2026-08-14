@@ -3,6 +3,8 @@ import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
@@ -101,7 +103,7 @@ const PAGE_GROUPS = [
 ];
 
 export default function PermissionsManagement() {
-  const [tab, setTab] = useState('pages'); // 'pages' | 'actions'
+  const [tab, setTab] = useTabParam(['pages', 'actions'], 'pages');
   const [rows, setRows] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -251,12 +253,15 @@ export default function PermissionsManagement() {
 
   return (
     <div style={s.page}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>🔐 จัดการสิทธิ์</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-          กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)
-        </div>
-      </div>
+      <PageHeader
+        title="จัดการสิทธิ์" icon="🔐"
+        sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
+        tabs={[
+          { key: 'pages', label: '📄 การเข้าถึงหน้า' },
+          { key: 'actions', label: '🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
@@ -266,11 +271,6 @@ export default function PermissionsManagement() {
           <strong> "เป็นแอดมินหน่วยงาน"</strong> ในหน้าจัดการผู้ใช้ · คนนั้นได้ <strong>role เดิม + action ที่ติ๊กในคอลัมน์นี้</strong>
           เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
         </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button style={s.tabBtn(tab === 'pages')} onClick={() => setTab('pages')}>📄 การเข้าถึงหน้า</button>
-        <button style={s.tabBtn(tab === 'actions')} onClick={() => setTab('actions')}>🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)</button>
       </div>
 
       {tab === 'pages' && renderPermTable(pageGroups, 'หน้า')}

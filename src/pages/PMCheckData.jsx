@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
-import { findChecklist } from '../lib/pmChecklists'
+import { findChecklist, listChecklistsByDept } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
@@ -566,6 +566,7 @@ export default function PMCheckData() {
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
   const [checkpoints, setCheckpoints] = useState([])
+  const [otherDepts, setOtherDepts] = useState([])   // แผนกอื่นที่ลงจุดตรวจของเครื่องนี้ไว้ (โชว์เมื่อแผนกปัจจุบันยังไม่มี)
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
@@ -684,6 +685,12 @@ export default function PMCheckData() {
       const init = {}
       cps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init)
+      // ไม่มีจุดตรวจของแผนกนี้ → หาให้เลยว่าแผนกอื่นลงไว้ไหม จะได้ไม่ต้องไล่กดทีละแท็บ
+      if (!cps.length) {
+        listChecklistsByDept(selectedJig.id, 'mtn')
+          .then(rows => setOtherDepts(rows.filter(r => r.department !== department && r.checkpointCount > 0)))
+          .catch(() => setOtherDepts([]))
+      } else setOtherDepts([])
     })
     fetchHistory(selectedJig.id)
   }, [selectedJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -922,7 +929,13 @@ export default function PMCheckData() {
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
               {tab === 'record' && (() => {
-                const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
+                /* ⚠️ ไม่มีจุดตรวจของแผนกนี้ = ห้ามโชว์รูปหมุน (2026-08-11 · user ทัก "ทำไมรูปยังค้างอยู่")
+                   รูปหลายมุมเป็นของ "ตัวเครื่อง" (ของกลางทุกแผนก) แต่ "หมุดจุดตรวจ" ผูกกับ
+                   checklist ของแต่ละแผนก และ**ปักอยู่คนละมุม (frame) กัน** — AM อาจตรวจด้านหน้า
+                   MTN ตรวจในตู้ไฟ → โชว์รูปมุมที่ 1/8 เปล่าๆ ที่ไม่มีหมุดเลย ไม่ได้บอกอะไร
+                   แถมดูเหมือนหน้าพร้อมใช้งาน ทั้งที่ยังไม่มีอะไรให้ตรวจ
+                   (ตัวเครื่องยืนยันได้จาก thumbnail บนหัวเรื่องอยู่แล้ว) */
+                const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list' && checkpoints.length > 0
                 // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
                 const twoCol = isWide && showPhoto
                 const viewerNode = showPhoto
@@ -932,13 +945,34 @@ export default function PMCheckData() {
                 const formNode = (
                   <>
                   {checkpoints.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 12px', lineHeight: 1.7 }}>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
                       เครื่องนี้ยังไม่มีรายการตรวจของ <b style={{ color: deptColor }}>{(teams.find(t => t.key === department) || {}).label || department}</b>
                       <br />
                       <span style={{ fontSize: 12 }}>
-                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — ไปตั้งจุดตรวจของแผนกนี้ที่ PM Setup
-                        <br />ถ้าลงจุดตรวจไว้แล้วแต่ไม่เห็น ให้ดูว่าลงไว้ใต้แผนกอื่นหรือไม่ (ใน PM Setup ย้ายข้ามแผนกได้)
+                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ)
+                        <br />จุดตรวจของแต่ละแผนก<b>ปักอยู่คนละมุมของเครื่องได้</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
                       </span>
+                      {otherDepts.length > 0 && (
+                        <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 7 }}>
+                            🔎 เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {otherDepts.map(d => {
+                              const t = teams.find(x => x.key === d.department)
+                              return (
+                                <button key={d.department} onClick={() => setDept(d.department)}
+                                  style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                    border: `1.5px solid ${t?.color || 'var(--border2)'}`, background: 'var(--card)', color: t?.color || 'var(--text)' }}>
+                                  {t?.icon || ''} {t?.label || d.department} · {d.checkpointCount} จุด
+                                </button>)
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 12, marginTop: 14 }}>
+                        ยังไม่ได้ลงจุดตรวจของแผนกนี้จริง → ตั้งที่ <b>PM Setup</b> (ถ้าลงผิดแผนก ย้ายข้ามแผนกได้ที่นั่น)
+                      </div>
                     </div>
                   ) : (
                     <>

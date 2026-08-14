@@ -8,6 +8,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
+import useTabParam from '../utils/useTabParam';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -104,7 +105,9 @@ export default function LayerProcessAudit() {
   const canManage = can('lpa', 'manage', role);
   const canDelete = can('lpa', 'delete', role);
 
-  const [tab, setTab] = useState('audit');
+  // ⚠️ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ LPA ของ /daily-checker ซึ่งจอง ?tab= ไปแล้ว
+  const [tabRaw, setTab] = useTabParam(['audit', 'plan', 'report', 'questions'], 'audit', 'sub');
+  const tab = tabRaw === 'questions' && !canManage ? 'audit' : tabRaw;   // ลิงก์เข้าแท็บที่ไม่มีสิทธิ์ = ตกกลับแท็บแรก
   const [lines, setLines] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [profiles, setProfiles] = useState([]);

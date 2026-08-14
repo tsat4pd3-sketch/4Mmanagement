@@ -7,6 +7,8 @@ import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -1267,38 +1269,15 @@ const TABS = [
 export default function LineStock() {
   const { role, fullName } = useContext(UserContext);
   const canEdit = can('line_stock', 'manage_rounds', role);
-  const [activeTab, setActiveTab] = useState('stock');
+  const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stock');
 
   return (
     <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
-      {/* Tab bar */}
-      {/* flexWrap: จอแคบแท็บตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม)
-          หมายเหตุ: ห้ามใช้ overflowX:'auto' ที่นี่ — ปุ่มมี marginBottom:-2 ซ้อนเส้นใต้ จะโดน clip */}
-      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0, flexWrap:'wrap' }}>
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            style={{
-              padding:'9px 20px',
-              whiteSpace:'nowrap',
-              fontSize:13,
-              fontWeight:700,
-              fontFamily:'var(--font-body)',
-              border:'none',
-              borderBottom: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom:-2,
-              cursor:'pointer',
-              borderRadius:'8px 8px 0 0',
-              background: activeTab === t.key ? 'var(--bg2)' : 'transparent',
-              color: activeTab === t.key ? 'var(--text)' : 'var(--muted)',
-              transition:'color 0.15s, background 0.15s',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <PageHeader
+        title="Line Stock — สต๊อกหน้าไลน์" icon="📦"
+        sub="ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต"
+        tabs={TABS} tab={activeTab} onTab={setActiveTab}
+      />
 
       {activeTab === 'stock'     && <StockTab role={role} />}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}

@@ -5,6 +5,8 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import { routeThroughStops, nodeKind, bestStopOrder } from '../utils/transportGraph';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -19,7 +21,7 @@ export default function Transport() {
   const { role, fullName } = useContext(UserContext);
   const canManage = can('transport', 'manage', role);
 
-  const [tab, setTab] = useState('assign');
+  const [tab, setTab] = useTabParam(['assign', 'route', 'carriers'], 'assign');
   const [vehicles, setVehicles] = useState([]);
   const [carriers, setCarriers] = useState([]);
   const [rounds, setRounds] = useState([]);
@@ -152,24 +154,16 @@ export default function Transport() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🚚 มอบหมายขนส่ง (Transport)
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['assign', `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})`], ['route', `🗺️ เส้นทางรอบส่ง (${nRoutes})`], ['carriers', `👷 คนขับ/ยานพาหนะ (${carriers.filter(c => c.is_active).length})`]].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
-            padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)',
-            background: tab === k ? 'var(--accent)' : 'var(--bg2)', color: tab === k ? '#08130a' : 'var(--text2)',
-            border: `1px solid ${tab === k ? 'var(--accent)' : 'var(--border)'}`,
-          }}>{l}</button>
-        ))}
-      </div>
+      <PageHeader
+        title="มอบหมายขนส่ง (Transport)" icon="🚚"
+        sub="มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1"
+        tabs={[
+          { key: 'assign', label: `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})` },
+          { key: 'route', label: `🗺️ เส้นทางรอบส่ง (${nRoutes})` },
+          { key: 'carriers', label: `👷 คนขับ/ยานพาหนะ (${carriers.filter(c => c.is_active).length})` },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'assign' && (
         byLine.length === 0 ? (

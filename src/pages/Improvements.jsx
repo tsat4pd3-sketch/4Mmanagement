@@ -6,6 +6,8 @@ import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDate } from '../utils/dateFormat';
+import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht } from '../utils/costSaving';
+import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 
 /* ── helpers ─────────────────────────────────────────────────── */
 
@@ -57,6 +59,7 @@ const EMPTY_FORM = {
   id: null, title: '', line_name: '', machine_no: '', mat_no: '',
   problem_source: 'downtime', problem_type_id: '', problem_label: '',
   description: '', action_taken: '', start_date: todayStr(), baseline_days: 30,
+  invest_cost: '',
 };
 
 export default function Improvements() {
@@ -76,6 +79,22 @@ export default function Improvements() {
   const [results, setResults] = useState({});          // improvement id -> metric result
   const [statusFilter, setStatusFilter] = useState('all');
 
+  // ── cost saving (2026-08-11): activity rate ต่อ cost center + ต้นทุนต่อชิ้นจาก parts_master ──
+  const [ccRates, setCcRates] = useState([]);          // cost_center_rates (Main — ตั้งที่ /org-setup)
+  const [partCostByMat, setPartCostByMat] = useState({}); // mat_no -> {material_cost, standard_cost}
+  const [workDaysMonth, setWorkDaysMonth] = useState(22); // วันทำงาน/เดือน จากปฏิทินบริษัท (แปลง บาท/วัน → บาท/เดือน)
+  // ก้อน rate ที่นับเป็น saving (DL/OH/DP) — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · จำต่อเครื่อง
+  const [costComps, setCostComps] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : ['dl', 'oh', 'dp']; }
+    catch { return ['dl', 'oh', 'dp']; }
+  });
+  const toggleComp = (key) => setCostComps(prev => {
+    const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+    if (!next.length) return prev; // ต้องเหลืออย่างน้อย 1 ก้อน
+    localStorage.setItem('imp_cost_comps', JSON.stringify(next));
+    return next;
+  });
+
   const [modal, setModal] = useState(null);            // form object เมื่อเปิด modal สร้าง/แก้ไข
   const [saving, setSaving] = useState(false);
   const [beforeFile, setBeforeFile] = useState(null);
@@ -90,18 +109,23 @@ export default function Improvements() {
   /* ── load master + improvements ── */
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+    const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
+      // cost_center: คิด cost saving (ไลน์ลูกไม่กรอก = ตกทอดจากไลน์แม่ — lineCostCenter)
+      supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('name'),
+      // cycle_time_sec: conversion cost ของเสีย = rate × CT/3600
+      supabaseDR.from('dr_products').select('id, name, mat_no, line_name, cycle_time_sec').eq('is_active', true).order('name'),
       supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
       supabaseDR.from('mtn_problem_types').select('characteristic').eq('is_active', true).order('sort_order'),
-      // ใบซ่อม MO (ไม่รวมที่ถูก reject) — ใช้วัดผล/พาเรโต้/cross-ref
-      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status').neq('status', 'rejected').limit(4000),
+      // ใบซ่อม MO (ไม่รวมที่ถูก reject) — ใช้วัดผล/พาเรโต้/cross-ref · labor_cost/parts_cost = ค่าซ่อมจริง → cost saving
+      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost').neq('status', 'rejected').limit(4000),
+      // 2 ตัวล่างเป็น best-effort (migration cost saving ยังไม่ apply = แผง 💰 ขึ้น "ยังตั้งต้นทุนไม่ครบ" — หน้าหลักไม่พัง)
+      supabase.from('cost_center_rates').select('*'),
+      supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),
     ]);
     setLines(ln || []);
     setItems(imp || []);
@@ -114,9 +138,17 @@ export default function Improvements() {
     setMsByImp(m);
     setMtnProblemTypes([...new Set((mpt || []).map(x => x.characteristic))]);
     setMtnOrders(mo || []);
+    setCcRates(ccRes?.data || []);
+    const pc = {};
+    (pcRes?.data || []).forEach(p => { if (p.mat_no) pc[p.mat_no] = p; });
+    setPartCostByMat(pc);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+  // วันทำงาน/เดือนจากปฏิทินบริษัท (กฎ CLAUDE.md: ห้ามใช้ค่าคงที่ 22/26 โดยไม่อ้างปฏิทิน — 22 เป็น fallback เมื่อปฏิทินว่าง)
+  useEffect(() => {
+    loadCompanyCalendar().then(() => setWorkDaysMonth(countWorkingDaysInMonth(todayStr().slice(0, 7), 22))).catch(() => {});
+  }, []);
 
   // รับ prefill จากหน้าแจ้งซ่อม MTN (ปุ่ม "เปิดโปรเจคปรับปรุง") — เชื่อม B
   useEffect(() => {
@@ -251,12 +283,15 @@ export default function Improvements() {
       const aMO = inWin.filter(m => { const d = dOf(m); return d >= imp.start_date && d <= to; });
       const mins = (m) => (m.report_at && m.repair_done_at ? Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000) : 0);
       const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + mins(m), 0));
+      // ค่าซ่อมจริงต่อใบ (ช่างกรอกขั้นซ่อม step 3) — ใช้คิด cost saving ตรงๆ ไม่ต้องประมาณ
+      const sumCost = (arr) => arr.reduce((a, m) => a + (Number(m.labor_cost) || 0) + (Number(m.parts_cost) || 0), 0);
       return {
         source: 'mtn', unit: 'ใบ', beforeDays: beforeDays.size, afterDays: afterDays.size,
         beforeTotal: bMO.length, afterTotal: aMO.length, beforeCount: bMO.length, afterCount: aMO.length,
         beforePerDay: beforeDays.size ? bMO.length / beforeDays.size : 0,
         afterPerDay: afterDays.size ? aMO.length / afterDays.size : 0,
         beforeMin: sumMin(bMO), afterMin: sumMin(aMO),
+        beforeCost: sumCost(bMO), afterCost: sumCost(aMO),
       };
     }
 
@@ -292,14 +327,89 @@ export default function Improvements() {
     const sum = (arr) => arr.reduce((a, r) => a + (Number(r.qty_ng) || 0), 0);
     const bRows = rows.filter(r => !idSetAfter.has(r.session_id));
     const aRows = rows.filter(r => idSetAfter.has(r.session_id));
+    // ยอด NG แยกราย mat (สำหรับ cost saving — ต้นทุน/ชิ้นต่างกันต่อพาร์ท) · ไม่รู้ mat = key null
+    const perMat = { before: {}, after: {} };
+    rows.forEach(r => {
+      const side = idSetAfter.has(r.session_id) ? 'after' : 'before';
+      const m = r.prod_orders?.mat_no || null;
+      perMat[side][m] = (perMat[side][m] || 0) + (Number(r.qty_ng) || 0);
+    });
     return {
       unit: 'ชิ้น NG', beforeDays: beforeDays.size, afterDays: afterDays.size,
       beforeTotal: sum(bRows), afterTotal: sum(aRows),
       beforeCount: bRows.length, afterCount: aRows.length,
       beforePerDay: beforeDays.size ? sum(bRows) / beforeDays.size : 0,
       afterPerDay: afterDays.size ? sum(aRows) / afterDays.size : 0,
+      matBefore: perMat.before, matAfter: perMat.after,
     };
   }, [mtnOrders]);
+
+  /* ── 💰 cost saving (2026-08-11): แปลงผลก่อน/หลัง เป็นบาท ──
+     downtime: Δนาที/วัน × rate(DL+OH+DP ก้อนที่เลือก)/60
+     defect:   Δชิ้น/วัน × ต้นทุน/ชิ้นราย mat — standard_cost (บช.) ชนะ · ไม่มีค่อย material_cost + conversion(CT×rate)
+     mtn:      Δค่าซ่อมจริง (labor+parts ต่อใบ) + Δนาที breakdown × rate
+     ข้อมูลไม่ครบ = บอกว่าขาดอะไร ห้ามเดา (missing/defectNoCost) */
+  const ctByMat = useMemo(() => {
+    const m = {};
+    products.forEach(p => { if (p.mat_no && Number(p.cycle_time_sec) > 0) m[p.mat_no] = Number(p.cycle_time_sec); });
+    return m;
+  }, [products]);
+
+  const costSavingOf = useCallback((imp, r) => {
+    if (!r || r.noData) return null;
+    const cc = lineCostCenter(lines, imp.line_name);
+    const rate = cc ? rateFor(ccRates, cc, imp.start_date) : null;
+    const missing = [];
+    if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
+    else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
+
+    const comp = { dl: 0, oh: 0, dp: 0 };  // บาท/วัน แยกก้อน (โชว์ครบ 3 เสมอ — ก้อนที่ไม่เลือกไม่เข้ายอดรวม)
+    let matPerDay = 0;                      // มูลค่าวัสดุ/standard cost (defect — นับเสมอ ไม่ขึ้นกับก้อนที่เลือก)
+    let repairPerDay = 0;                   // mtn: ค่าซ่อมจริงจากใบ MO
+    const defectParts = [], defectNoCost = new Set();
+    let computable = true;
+    const addComp = (hoursPerDay) => { RATE_COMPONENTS.forEach(c => { comp[c.key] += (Number(rate?.[c.field]) || 0) * hoursPerDay; }); };
+
+    if (imp.problem_source === 'downtime') {
+      if (!rate) computable = false;
+      else addComp((r.beforePerDay - r.afterPerDay) / 60);
+    } else if (imp.problem_source === 'mtn') {
+      repairPerDay = (r.beforeDays ? (r.beforeCost || 0) / r.beforeDays : 0) - (r.afterDays ? (r.afterCost || 0) / r.afterDays : 0);
+      const bdHrPerDay = ((r.beforeDays ? r.beforeMin / r.beforeDays : 0) - (r.afterDays ? r.afterMin / r.afterDays : 0)) / 60;
+      if (rate) addComp(bdHrPerDay);
+      // ไม่มี rate: ยังคิดส่วนค่าซ่อมจริงได้ (เงินจริง ไม่ต้องพึ่ง rate) — missing บอกอยู่แล้วว่าส่วนนาที breakdown ขาด
+    } else {
+      const mats = new Set([...Object.keys(r.matBefore || {}), ...Object.keys(r.matAfter || {})]);
+      mats.forEach(matKey => {
+        const mat = matKey === 'null' ? null : matKey;  // key null ถูกแปลงเป็น 'null' ตอนเป็น object key
+        const dQtyPerDay = (r.beforeDays ? (r.matBefore?.[matKey] || 0) / r.beforeDays : 0)
+          - (r.afterDays ? (r.matAfter?.[matKey] || 0) / r.afterDays : 0);
+        const part = mat ? partCostByMat[mat] : null;
+        const std = Number(part?.standard_cost);
+        const matCost = Number(part?.material_cost);
+        if (std > 0) {
+          matPerDay += dQtyPerDay * std;
+          defectParts.push({ mat, dQtyPerDay, unit: std, source: 'standard' });
+        } else if (matCost > 0) {
+          matPerDay += dQtyPerDay * matCost;
+          const ct = ctByMat[mat] || 0;
+          if (ct && rate) addComp(dQtyPerDay * ct / 3600);
+          defectParts.push({ mat, dQtyPerDay, unit: matCost + (ct && rate ? ratePerHour(rate, costComps) * ct / 3600 : 0), source: 'derived', convMissing: !ct || !rate });
+        } else {
+          defectNoCost.add(mat || 'ไม่ระบุ MAT');
+        }
+      });
+      if (!defectParts.length) computable = false;
+      if (defectNoCost.size) missing.push(`พาร์ทยังไม่ตั้งต้นทุน/ชิ้น (${[...defectNoCost].join(', ')}) — กรอก standard/material cost ที่ Product Master → 🗂 Parts Master`);
+    }
+
+    const compSelected = costComps.reduce((a, k) => a + comp[k], 0);
+    const totalPerDay = computable ? compSelected + matPerDay + repairPerDay : null;
+    const totalPerMonth = totalPerDay != null ? totalPerDay * workDaysMonth : null;
+    const invest = Number(imp.invest_cost) || 0;
+    const payback = invest > 0 && totalPerMonth > 0 ? invest / totalPerMonth : null;
+    return { cc, rate, missing, comp, matPerDay, repairPerDay, defectParts, defectNoCost: [...defectNoCost], totalPerDay, totalPerMonth, payback, invest, computable };
+  }, [lines, ccRates, partCostByMat, ctByMat, costComps, workDaysMonth]);
 
   useEffect(() => {
     let cancelled = false;
@@ -404,6 +514,7 @@ export default function Improvements() {
         action_taken: modal.action_taken?.trim() || null,
         start_date: modal.start_date,
         baseline_days: Number(modal.baseline_days) || 30,
+        invest_cost: modal.invest_cost !== '' && modal.invest_cost != null ? Number(modal.invest_cost) : null,
         updated_at: new Date().toISOString(),
       };
       let row;
@@ -495,6 +606,49 @@ export default function Improvements() {
         </div>
       </div>
 
+      {/* ── 💰 สรุป cost saving รวมขึ้นตาม hierarchy: กลุ่ม → ส่วน → รวม (2026-08-11 · คำสั่ง user
+             "rate อยู่ระดับกลุ่ม แล้วค่อย sum ขึ้นมาตาม hierarchy") — rate ไม่กรอกซ้ำระดับบน ยอดระดับบน = ผลรวมจากกลุ่ม ── */}
+      {(() => {
+        const active = visibleItems.filter(i => i.status !== 'cancelled');
+        const tree = new Map(); // section -> { total, groups: Map(group -> total) }
+        let grand = 0, computed = 0, pending = 0;
+        active.forEach(imp => {
+          const cs = costSavingOf(imp, results[imp.id]);
+          if (!cs || cs.totalPerMonth == null) { pending += 1; return; }
+          computed += 1; grand += cs.totalPerMonth;
+          const li = lines.find(l => l.name === imp.line_name);
+          const sec = li?.section || '—';
+          const grp = li?.parent_line_name || imp.line_name;
+          const s = tree.get(sec) || { total: 0, groups: new Map() };
+          s.total += cs.totalPerMonth;
+          s.groups.set(grp, (s.groups.get(grp) || 0) + cs.totalPerMonth);
+          tree.set(sec, s);
+        });
+        if (!computed) return null;
+        const col = (v) => (v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : 'var(--muted)');
+        return (
+          <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>💰 Cost Saving รวม (บาท/เดือน)</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                จาก {computed} โปรเจค (ไม่รวมที่ยกเลิก){pending > 0 ? ` · อีก ${pending} โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด` : ''} · รวมขึ้นจากระดับกลุ่มตามผังองค์กร
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
+              {[...tree.entries()].sort((a, b) => b[1].total - a[1].total).map(([sec, s]) => (
+                <div key={sec} style={{ fontSize: 11, color: 'var(--text2)' }}>
+                  <b style={{ color: 'var(--text)' }}>🏛️ {sec}</b> <b style={{ color: col(s.total) }}>{fmtBaht(s.total)}</b>
+                  <span style={{ color: 'var(--muted)' }}>
+                    {' '}( {[...s.groups.entries()].sort((a, b) => b[1] - a[1]).map(([g, v]) => `${g} ${fmtBaht(v)}`).join(' · ')} )
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {visibleItems.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)', fontSize: 13 }}>
           ยังไม่มีโปรเจคปรับปรุง{canManage ? ' — กด "➕ เพิ่มโปรเจคปรับปรุง" เลือกปัญหาจากพาเรโต้ได้เลย' : ''}
@@ -581,6 +735,77 @@ export default function Improvements() {
                   )}
                   {imp.result_note && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6 }}><b style={{ color: 'var(--muted)' }}>สรุปผล:</b> {imp.result_note}</div>}
                 </div>
+
+                {/* ── 💰 Cost Saving — แปลงผลจริงเป็นบาทด้วย activity rate (DL/OH/DP) + ต้นทุน/ชิ้น (2026-08-11) ── */}
+                {(() => {
+                  const cs = costSavingOf(imp, r);
+                  if (!cs) return null;
+                  const good = cs.totalPerDay != null && cs.totalPerDay > 0;
+                  const bad = cs.totalPerDay != null && cs.totalPerDay < 0;
+                  return (
+                    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: good ? 'rgba(34,197,94,0.07)' : 'var(--bg3)', border: `1px solid ${good ? 'rgba(34,197,94,0.3)' : 'var(--border)'}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>💰 Cost Saving <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(ประมาณการจากผลจริง{cs.cc ? ` · CC ${cs.cc}` : ''})</span></span>
+                        {/* เลือกก้อน rate ที่นับเป็น saving — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · มีผลทุกการ์ด */}
+                        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>นับ:</span>
+                          {RATE_COMPONENTS.map(c => {
+                            const on = costComps.includes(c.key);
+                            return (
+                              <button key={c.key} onClick={() => toggleComp(c.key)} title={`${c.full} — ${on ? 'นับในยอดรวม (กดเพื่อไม่นับ)' : 'ไม่นับในยอดรวม (กดเพื่อนับ)'}`}
+                                style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 10, cursor: 'pointer',
+                                  border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                                  background: on ? 'var(--accent-dim)' : 'transparent',
+                                  color: on ? 'var(--accent)' : 'var(--muted)', textDecoration: on ? 'none' : 'line-through' }}>
+                                {c.label}
+                              </button>
+                            );
+                          })}
+                        </span>
+                      </div>
+                      {cs.missing.map((m, i) => (
+                        <div key={i} style={{ fontSize: 11, color: '#f59e0b', marginTop: 5 }}>⚠ {m}</div>
+                      ))}
+                      {cs.totalPerDay == null ? (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>ยังคำนวณเป็นบาทไม่ได้ — เติมข้อมูลตามรายการด้านบนก่อน</div>
+                      ) : (
+                        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: good ? '#22c55e' : bad ? '#ef4444' : 'var(--muted)' }}>
+                            {good ? 'ประหยัด' : bad ? 'ต้นทุนเพิ่มขึ้น' : '±0'} ~{fmtBaht(Math.abs(cs.totalPerDay))} บาท/วัน
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}> · ~{fmtBaht(Math.abs(cs.totalPerMonth))} บาท/เดือน</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> ({workDaysMonth} วันทำงาน/เดือน)</span>
+                          </div>
+                          {/* breakdown DL/OH/DP โชว์ครบ 3 ก้อนเสมอ (ตกลง user 2026-08-11) — ก้อนที่ไม่เลือกขีดฆ่า ไม่เข้ายอดรวม */}
+                          <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            {RATE_COMPONENTS.map(c => (
+                              <span key={c.key} style={{ textDecoration: costComps.includes(c.key) ? 'none' : 'line-through', opacity: costComps.includes(c.key) ? 1 : 0.5 }}>
+                                {c.label} {fmtBaht(cs.comp[c.key])}
+                              </span>
+                            ))}
+                            {imp.problem_source === 'defect' && <span>วัสดุ/Std {fmtBaht(cs.matPerDay)}</span>}
+                            {imp.problem_source === 'mtn' && <span>ค่าซ่อมจริง {fmtBaht(cs.repairPerDay)}</span>}
+                            <span style={{ color: 'var(--muted)' }}>(บาท/วัน)</span>
+                          </div>
+                          {imp.problem_source === 'defect' && cs.defectParts.length > 0 && (
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              {cs.defectParts.map(p => (
+                                <div key={p.mat || 'x'}>
+                                  📦 {p.mat} · ลด {p.dQtyPerDay.toFixed(1)} ชิ้น/วัน × {fmtBaht(p.unit)} บาท/ชิ้น
+                                  <span style={{ opacity: 0.8 }}> ({p.source === 'standard' ? 'standard cost' : 'วัสดุ+conversion'}{p.convMissing ? ' · ⚠ ไม่มี CT/rate — ยังไม่รวม conversion' : ''})</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {cs.invest > 0 && (
+                            <div style={{ fontSize: 11, fontWeight: 700, color: cs.payback ? 'var(--accent)' : 'var(--muted)' }}>
+                              🏗 ลงทุน {fmtBaht(cs.invest)} บาท{cs.payback ? ` → คืนทุน ~${cs.payback < 10 ? cs.payback.toFixed(1) : Math.round(cs.payback)} เดือน` : ' — ยังไม่มี saving ให้คืนทุน'}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* ── 🗓 แผนงานโปรเจค (milestone + gantt) — ตามงานทีมระหว่างทาง ไม่ใช่บันทึกทีเดียวจบ ── */}
                 {(() => {
@@ -765,6 +990,11 @@ export default function Improvements() {
                     <select value={modal.baseline_days} onChange={e => setModal({ ...modal, baseline_days: e.target.value })} style={{ marginTop: 4, width: 130, display: 'block' }}>
                       {[14, 30, 60, 90].map(d => <option key={d} value={d}>{d} วัน</option>)}
                     </select>
+                  </label>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>เงินลงทุน (บาท)
+                    {/* ใช้คิดระยะคืนทุนเทียบ cost saving/เดือน — ไม่บังคับ */}
+                    <input type="number" min="0" step="any" value={modal.invest_cost ?? ''} onChange={e => setModal({ ...modal, invest_cost: e.target.value })}
+                      placeholder="ค่าอะไหล่/จิ๊ก/ปรับปรุง" style={{ marginTop: 4, width: 150, display: 'block' }} />
                   </label>
                 </div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>สภาพปัญหา/สาเหตุ
