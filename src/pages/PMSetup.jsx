@@ -46,6 +46,9 @@ function newCheckpoint(extra = {}) {
   return {
     _key: crypto.randomUUID(), name: '', type: 'variable',
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
+    // โหมดเกณฑ์ของจุดชนิด "ค่าวัด" — client-only (ขึ้นต้น _ = ไม่ลง DB) เพราะ DB มีแค่ lsl/usl
+    // ⚠️ ต้องเป็น state จริง ห้าม derive จาก lsl/usl (ดู mMode ด้านล่าง — เคยทำแล้วกดปุ่มไม่ติด)
+    _mmode: 'gte',
     x_pos: null, y_pos: null, _frameKey: null,
     group_name: '', description: '', image_path: null, _imgFile: null, _imgPreview: null,
     ...extra,
@@ -337,9 +340,14 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       </div>
 
       {cp.type === 'measure' && (() => {
-        const has = v => v !== '' && v != null
-        const mMode = (has(cp.lsl) && has(cp.usl)) ? 'between' : has(cp.usl) && !has(cp.lsl) ? 'lte' : 'gte'
-        const setMode = m => onChange(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {})
+        /* ⚠️ โหมดต้องอ่านจาก state (_mmode) ห้าม derive จาก lsl/usl (บั๊กเดิม 2026-08-11):
+           ตอนเริ่ม lsl/usl ว่างทั้งคู่ → derive ได้ 'gte' เสมอ → กด "≤ สูงสุด" หรือ "ช่วง min–max"
+           แล้ว mMode ไม่ขยับ (ดูเหมือนปุ่มกดไม่ติด) · ซ้ำร้าย โหมด gte ซ่อนช่อง usl อยู่
+           = ไม่มีทางกรอก usl ได้เลย → ล็อกตายอยู่โหมดเดียวตลอดกาล */
+        const mMode = cp._mmode || ((cp.lsl !== '' && cp.lsl != null && cp.usl !== '' && cp.usl != null) ? 'between'
+          : ((cp.usl !== '' && cp.usl != null) ? 'lte' : 'gte'))
+        // เปลี่ยนโหมด = ล้างเฉพาะช่องที่โหมดใหม่ไม่ใช้ (กันค่าค้างแล้วบันทึกเกณฑ์ที่ไม่ได้ตั้งใจ)
+        const setMode = m => onChange({ _mmode: m, ...(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {}) })
         const modeBtn = (m, t) => (
           <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
             border: `1.5px solid ${mMode === m ? '#22c55e' : 'var(--border)'}`, background: mMode === m ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', color: mMode === m ? '#22c55e' : 'var(--muted)' }}>{t}</button>
@@ -495,6 +503,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         : { data: [] }
       setCheckpoints((cps ?? []).map(c => ({
         ...c, _key: c.id,
+        // DB ไม่มีคอลัมน์โหมด → เดาจากค่าที่บันทึกไว้ตอนโหลด (มี usl อย่างเดียว = ≤ · มีทั้งคู่ = ช่วง)
+        _mmode: (c.lsl != null && c.usl != null) ? 'between' : (c.usl != null ? 'lte' : 'gte'),
         group_name: c.group_name ?? '', description: c.description ?? '',
         _frameKey: (c.image_id && frameKeyById[c.image_id]) || fr[0]?._key || null,
         _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
@@ -651,6 +661,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     if (checkpoints.some(c => !c.name.trim())) { setError('กรุณาใส่ชื่อทุกจุดตรวจสอบ'); return }
+    /* จุดชนิด "ค่าวัด" ต้องมีเกณฑ์ — ไม่มีเกณฑ์ = measureStatus ไม่มีอะไรให้ fail → **ผ่านตลอดกาล**
+       (จุดตรวจที่ตัดสินอะไรไม่ได้เลย แต่หน้าจอขึ้นเขียวว่าตรวจแล้ว = หลอกคนอ่านผลตรวจ) */
+    const num = v => (v !== '' && v != null ? Number(v) : null)
+    for (const c of checkpoints) {
+      if (c.type !== 'measure') continue
+      const lo = num(c.lsl), hi = num(c.usl)
+      if (lo == null && hi == null) { setError(`จุดตรวจ "${c.name.trim()}" เป็นชนิดค่าวัด — ต้องกรอกเกณฑ์อย่างน้อย 1 ช่อง (ไม่งั้นจะขึ้น OK ทุกครั้งที่ตรวจ)`); return }
+      if (lo != null && hi != null && lo >= hi) { setError(`จุดตรวจ "${c.name.trim()}" ค่าต่ำสุด (${lo}) ต้องน้อยกว่าค่าสูงสุด (${hi}) — ไม่งั้นจะขึ้น NG ทุกครั้ง`); return }
+    }
     // รูปหลายมุมได้ตั้งแต่ 1 รูปขึ้นไป ไม่บังคับจำนวน — 2 รูปขึ้นไปปัดดูรอบเครื่องได้ ยิ่งเยอะยิ่งลื่น
     setSaving(true); setError('')
     try {
