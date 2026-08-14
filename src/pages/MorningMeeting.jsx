@@ -542,7 +542,8 @@ export default function MorningMeeting() {
   // หัวคั่นโซน — กันหน้า "ติดกันเป็นพรืด": ชื่อโซน + เส้นแบ่งยาวเต็มแถว (+ตัวเลขสรุปท้ายเส้น)
   const SectionHead = ({ icon, title, extra }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
-      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{icon} {title}</span>
+      {/* minWidth:0 + ellipsis — จอแคบ (320px) ชื่อโซน+ตัวเลขท้ายแถวรวมกันยาวเกินจอ แล้วดันล้น */}
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{icon} {title}</span>
       <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
       {extra && <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{extra}</span>}
     </div>
@@ -991,7 +992,8 @@ export default function MorningMeeting() {
       {tvMode && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
           {/* paddingRight 64 เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน อยู่เหนือ overlay) — ไม่งั้นปุ่ม ✕ โดนทับ */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)' }}>
+          {/* flexWrap — โหมดประชุมบนจอแคบ (มือถือ/แท็บเล็ตแนวตั้ง) แถบหัวยาวเกินจอแล้วดันล้น */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>

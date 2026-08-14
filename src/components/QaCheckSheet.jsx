@@ -481,7 +481,7 @@ export default function QaCheckSheet({ canRecord }) {
       </div>
 
       {items.length > 0 && (
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: (!isMobile && showDrawing && drawings.length) ? 'minmax(320px, 5fr) 7fr' : '1fr', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: (!isMobile && showDrawing && drawings.length) ? 'minmax(320px, 5fr) 7fr' : 'minmax(0, 1fr)', alignItems: 'start' }}>
           {/* แบบ + หมุด sync ผลตรวจ */}
           {drawings.length > 0 && (
             <div style={{ ...cardSt, position: isMobile ? 'static' : 'sticky', top: 10 }}>

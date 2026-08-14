@@ -1058,7 +1058,8 @@ export default function Checkin() {
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* flexWrap — ปุ่ม Preview กะดึก + ปุ่มข้างๆ รวมกันยาวเกินจอ 320px แล้วดันล้น */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {realShiftInfo.shift === 'day' && (
             <button
               onClick={() => setPreviewNight(p => !p)}

@@ -2193,10 +2193,10 @@ function LiveTab({ role }) {
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : '1fr', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : 'minmax(0, 1fr)', gap: 16 }}>
       {sessions.length > 1 && (
         // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', minWidth: 0 }}>
           {(() => {
             const groupNames = [...new Set(sessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
             const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
@@ -3178,7 +3178,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: งานเสีย+Downtime คอลัมน์ซ้าย · สรุปแยกตามชิ้นงาน คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : '1fr', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {defectLogs.length > 0 && (
                   <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -3481,7 +3481,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: Downtime เปิดค้าง (ต้องตัดสินใจ) คอลัมน์ซ้าย · สรุปตัวเลขกะ คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : '1fr', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
@@ -3813,7 +3813,7 @@ function LiveTab({ role }) {
                 })()}
 
                 {/* จอกว้าง: รายการตัดสินใจ Order ที่ยังไม่ปิด คอลัมน์ซ้าย · OEE preview คอลัมน์ขวา (เห็นผลจากการตัดสินใจข้างๆ กันทันที) */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : '1fr', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
@@ -5499,9 +5499,10 @@ function ExportTab() {
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>วันที่สิ้นสุด</div>
             <input type="date" value={filter.date_to} onChange={e => setFilter(f => ({ ...f, date_to: e.target.value }))} style={sel} />
           </div>
-          <div>
+          {/* minWidth:0 บังคับให้ flex item ยอมหด — ไม่งั้นกว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
+          <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, minWidth: 160 }}>
+            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, width: '100%', minWidth: 0 }}>
               <option value="">ทุกไลน์</option>
               {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
