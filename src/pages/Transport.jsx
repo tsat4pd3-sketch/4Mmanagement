@@ -678,7 +678,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
 
   return (
     // ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับ (§7)
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>

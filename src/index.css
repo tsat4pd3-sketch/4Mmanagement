@@ -300,12 +300,29 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 @media (max-width: 768px)  { .page-content { padding: 14px; } }
 
 /* ─── Overlay / Modal ────────────────────────────────────────────────────── */
+/* ⚠️ กฎเหล็ก (2026-08-04) — modal ต้องเลื่อนได้เสมอเมื่อเนื้อหาสูงกว่าจอ
+   บั๊กเดิม: `position:fixed; align-items:center` + ไม่มี overflow → เนื้อหาสูงกว่าจอจะ
+   ล้นทั้งบนและล่างโดย "เลื่อนไม่ได้เลย" → ปุ่มบันทึกอยู่ใต้ขอบจอ กดไม่ได้
+   (เจอจริง: หัวหน้างานบันทึก Downtime ไม่ได้ · จอสูง 844px ปกติ แต่ 480px = คีย์บอร์ดเปิด/จอเตี้ย พัง)
+   วิธีแก้: overflow-y:auto ที่ตัว overlay + margin:auto ที่ลูก
+     - เนื้อหาพอดีจอ → margin auto จัดกึ่งกลางให้ (หน้าตาเหมือนเดิมเป๊ะ)
+     - เนื้อหาสูงกว่าจอ → margin auto กลายเป็น 0 เอง ลูกชิดบน แล้ว overlay เลื่อนได้เต็ม
+   ⚠️ ห้ามใช้ max-height + overflow ที่ตัว modal แทน — จะไปตัด dropdown/popup ที่เป็น absolute ข้างใน
+   หน้าใหม่ที่ทำ modal เอง (inline position:fixed) ต้องติด className="modal-scroll" ด้วยเสมอ */
+.overlay, .modal-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;             /* modal เลื่อนได้แค่ขึ้น-ลง ห้ามเลื่อนซ้ายขวา */
+  overscroll-behavior: contain;   /* เลื่อนจนสุด modal แล้วไม่ลามไปเลื่อนหน้าหลังฉาก */
+  -webkit-overflow-scrolling: touch;
+}
+.overlay > *, .modal-scroll > * { margin: auto; }
 .overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.78);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000;
   backdrop-filter: blur(4px);
+  padding: 12px;
 }
 .modal {
   background: var(--bg3);

@@ -149,6 +149,32 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
     ฟอร์มสินค้า/kanban), PmCoordination, MonthlyReviewExport, TaxonomyManagerModal
   - `className="tbtn"` — ปุ่มไอคอนเล็กในตาราง (✏️ 🗑️ ✕ 💾) → จอทัช (`pointer:coarse`)
     ขยาย hit area ≥40px · เมาส์ไม่เปลี่ยน · **ปุ่มที่มีแต่ไอคอนไม่มีข้อความ ต้องติด class นี้เสมอ**
+  - **`className="modal-scroll"` — overlay ของ modal ที่เขียน `position:fixed` เองแบบ inline
+    (ตัวที่ใช้ `className="overlay"` อยู่แล้วได้ฟรี ไม่ต้องเติม)**
+
+> ### ⚠️ กฎเหล็ก — modal ต้องเลื่อนถึงปุ่มล่างได้เสมอ (2026-08-04 · บั๊กจริงจากหน้างาน)
+> **อาการที่เจอ:** หัวหน้างานบันทึก Downtime ไม่ได้ — "มันล้นและเลื่อนลงไม่ได้" · บางเครื่องเป็น บางเครื่องไม่เป็น
+> **สาเหตุ:** `position:fixed; inset:0; display:flex; align-items:center` + **ไม่มี `overflow`**
+> → เนื้อหาสูงกว่าจอจะล้นทั้งบนและล่าง แล้ว **เลื่อนไม่ได้เลย** (ไม่ใช่แค่เลื่อนยาก — scroll ไม่ทำงาน)
+> ปุ่มบันทึกอยู่ใต้ขอบจอ = กดไม่ได้ · modal Downtime สูง **673px** → จอ ≥700px รอด, ต่ำกว่านั้นพัง
+> ⇒ อธิบาย "บางเครื่องไม่เป็น" ได้ทั้งหมด (จอเตี้ย · แนวนอน · **คีย์บอร์ดเด้งขึ้นมาบีบ viewport**)
+> **วิธีแก้ (อยู่ใน index.css แล้ว — ครอบ `.overlay` + `.modal-scroll`):**
+> `overflow-y:auto` + `overflow-x:hidden` + `overscroll-behavior:contain` ที่ตัว overlay
+> และ **`margin:auto` ที่ลูก** — เนื้อหาพอดีจอ = จัดกึ่งกลางเหมือนเดิมเป๊ะ · เนื้อหาสูงกว่าจอ =
+> auto margin กลายเป็น 0 เอง ลูกชิดบน แล้ว overlay เลื่อนได้เต็ม (ทั้งหัวเรื่องและปุ่มล่างถึงหมด)
+> **⚠️ ห้ามแก้ด้วย `max-height` + `overflow` ที่ตัว modal แทน** — จะไปตัด dropdown/popup ที่เป็น
+> `position:absolute` ข้างใน modal · **ห้ามใช้ `align-items:safe center`** — เบราว์เซอร์เก่าไม่รู้จัก
+> แล้ว declaration ทั้งบรรทัดเป็นโมฆะ → modal ยืดเต็มจอ
+> **เทสแล้ว:** จอ 390×(844/740/640/540/480/420) ทุกความสูง ปุ่มบันทึก+หัวเรื่องถึงหมด · desktop
+> 1440/1920 จุดกึ่งกลางตรงเป๊ะเท่าเดิม · ไล่ติดครบ **48 จุด** (31 ตัวที่ใช้ `.overlay` ได้ฟรีจาก CSS
+> + 17 ไฟล์ที่เขียน inline เอง) — **modal ใหม่ทุกตัวต้องเข้าเงื่อนไขนี้**
+
+> ### ⚠️ กฎเหล็ก — มือถือเลื่อนได้แค่ขึ้น-ลง ห้ามเลื่อนซ้ายขวาทั้งหน้า (2026-08-04 · คำสั่ง user)
+> `<main>` ใน App.jsx ตั้ง **`overflowY:'auto'` + `overflowX:'hidden'`** (เดิม `overflow:'auto'` = เลื่อนข้างได้)
+> ⇒ **ของกว้าง (ตาราง/บอร์ด/กราฟ/ผัง) ต้องมี scroller ของตัวเอง** (`overflowX:'auto'` ที่กล่องมันเอง)
+> ไม่งั้นจะถูกตัดหายเงียบ · ตรวจแล้วทุกจุดที่ตั้ง `minWidth` บนมือถือมี scroller ครบ
+> (CustomerDemand/Dashboard/HeijunkaKanban/Management) · ตาราง `minWidth` ทุกตัวมี wrapper ครบ
+> · คู่กับกฎ `minmax(min(Npx,100%),1fr)` ด้านบน ที่กัน grid ดันล้นตั้งแต่ต้นทาง
 - **⚠️ grid `repeat(auto-fill/auto-fit, minmax(Npx, 1fr))` ต้องเขียนเป็น `minmax(min(Npx, 100%), 1fr)` เสมอ (2026-08-04)**
   — `minmax(Npx, ...)` เป็น **พื้นแข็ง**: container แคบกว่า N (มือถือ 360–390px ลบ padding เหลือ ~324–354px)
   track จะไม่ยอมหด → **ดันล้นขอบจอ เลื่อนแนวนอนทั้งหน้า/โดน `body{overflow-x:hidden}` ตัดหาย**

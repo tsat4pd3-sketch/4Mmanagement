@@ -1982,7 +1982,7 @@ export default function FactoryMap({ setupMode = false }) {
       })()}
 
       {assignFor && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
             {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); return <>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>

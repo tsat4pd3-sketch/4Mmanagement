@@ -71,7 +71,7 @@ function PartsPickModal({ parts, onPick, onClose }) {
     return base.slice(0, 120);
   }, [parts, q]);
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,540px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🗂 เลือกจากทะเบียนกลาง Parts Master</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ตัวตนสินค้า (MAT/ชื่อ) มาจากทะเบียนกลางที่เดียว — ไม่มีในลิสต์ = ไปเพิ่มที่ tab 🗂 Parts Master ก่อน</div>
@@ -844,7 +844,7 @@ export default function ProductMaster() {
 
       {/* ════ Add / Edit / EC modal ════ */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'rgba(168,85,247,0.5)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,560px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               {ecSource ? '🔄 Engineering Change' : editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}
@@ -958,7 +958,7 @@ export default function ProductMaster() {
 
       {/* ════ Kanban Standard modal ════ */}
       {kanbanEditing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid rgba(14,165,233,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               {kanbanEditing === 'new' ? '+ เพิ่ม Kanban Standard' : 'แก้ไข Kanban Standard'}
@@ -1006,7 +1006,7 @@ export default function ProductMaster() {
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
       {csvPreview && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(600px,100%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1378,7 +1378,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ PICKER MODAL — เลือกพาร์ทจาก Parts Master ══ */}
       {showPicker && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(700px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1452,7 +1452,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ EDIT MODAL — แก้ QTY ของ BOM row ══ */}
       {showEdit && editItem && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
             <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', fontWeight: 700, marginBottom: 4 }}>{editItem.mat_no}</div>
@@ -1488,7 +1488,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ COPY BOM MODAL ══ */}
       {showCopyBom && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>📋 คัดลอก BOM จาก Product อื่น</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
@@ -1879,7 +1879,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
       {/* ══ ADD / EDIT MODAL ══ */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(560px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               {editPart ? '✏️ แก้ไขพาร์ท' : '➕ เพิ่มพาร์ทใหม่'}
@@ -2126,7 +2126,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* link modal */}
       {showLink && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>{editLink ? '✏️ แก้ไข' : '➕ ผูก'} Packaging</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2159,7 +2159,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* master manager modal — ภาชนะ (container_types) ฐานเดียวกับ Rack Center */}
       {showMaster && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(760px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🗃 ภาชนะ (Container Types)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
@@ -2345,7 +2345,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
 
       {/* Modal */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
               🎴 แก้ไข Kanban Std — {form.mat_no}

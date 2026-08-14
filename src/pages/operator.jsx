@@ -1091,7 +1091,7 @@ export default function Operator() {
 
             {/* Edit skill modal */}
             {editingSkill && (
-              <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px', width: 'min(480px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
                   <h3 style={{ margin: '0 0 16px', fontFamily: 'var(--font-display)' }}>✏️ แก้ไขสกิล</h3>
                   <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -1271,7 +1271,7 @@ export default function Operator() {
 
           {/* Reject modal */}
           {rejectLuModal && (
-            <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px', width: 'min(400px,94vw)' }}>
                 <h3 style={{ margin: '0 0 4px', color: '#ef4444' }}>❌ ไม่อนุมัติ Level Up</h3>
                 <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
@@ -1614,7 +1614,7 @@ function SkillSubItemsModal({ skill, onClose }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>📝 หัวข้อการพิจารณา</h3>
