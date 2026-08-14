@@ -72,7 +72,7 @@ function PartsPickModal({ parts, onPick, onClose }) {
     return base.slice(0, 120);
   }, [parts, q]);
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,540px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🗂 เลือกจากทะเบียนกลาง Parts Master</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ตัวตนสินค้า (MAT/ชื่อ) มาจากทะเบียนกลางที่เดียว — ไม่มีในลิสต์ = ไปเพิ่มที่ tab 🗂 Parts Master ก่อน</div>
@@ -278,6 +278,37 @@ export default function ProductMaster() {
             superseded_at: form.effective_from || localDateStr(),
             superseded_by: inserted.id,
           }).eq('id', ecSource.id);
+          // EC = พาร์ทเดิม revision ใหม่ → ลงทะเบียน MAT ใหม่เข้าทะเบียนกลาง parts_master ให้อัตโนมัติ
+          // สืบทอดเฉพาะ "คุณสมบัติทางกายภาพ" จากเลขเดิม (uom/จำนวนต่อกล่อง/supplier/รูป) —
+          // ต้นทุน (material/standard) ไม่สืบทอด: rev ใหม่ต้นทุนเปลี่ยนได้ ให้บัญชีเติมเอง ห้ามเดา
+          if (payload.mat_no) {
+            try {
+              const effDate = form.effective_from || localDateStr();
+              const { data: exist } = await supabaseDR.from('parts_master').select('id').eq('mat_no', payload.mat_no).limit(1);
+              if (!exist?.length) {
+                let oldPm = null;
+                if (ecSource.mat_no) {
+                  const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
+                  oldPm = data?.[0] || null;
+                }
+                const { error: pmErr } = await supabaseDR.from('parts_master').insert({
+                  mat_no: payload.mat_no, part_name: payload.name, part_no: payload.p_no,
+                  uom: oldPm?.uom || null, qty_per_pkg: oldPm?.qty_per_pkg ?? null, supplier: oldPm?.supplier || null,
+                  image_url: imageUrl || oldPm?.image_url || null, is_active: true,
+                  note: `EC ต่อจาก ${ecSource.mat_no || ecSource.name} · มีผล ${effDate}` + (oldPm ? ' · สืบทอด uom/จำนวนต่อกล่อง/supplier จากเลขเดิม — ต้นทุนให้บัญชีเติม' : ''),
+                });
+                if (pmErr) toast.error('ลงทะเบียน Parts Master ไม่สำเร็จ: ' + pmErr.message + ' — ไปเพิ่มเองที่ tab 🗂');
+                else if (oldPm) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว (สืบทอดข้อมูลจากเลขเดิม · ต้นทุนให้บัญชีเติม)');
+                else toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
+                // ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม ให้คนเปิดทะเบียนเห็นว่าถูกแทนแล้ว (best-effort · ไม่ปิด is_active —
+                // ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้ในทะเบียนเป็นการตัดสินใจของคน)
+                if (oldPm) {
+                  const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
+                  await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id);
+                }
+              }
+            } catch (e) { console.warn('EC → parts_master:', e); }
+          }
         }
       } else {
         const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
@@ -854,7 +885,7 @@ export default function ProductMaster() {
 
       {/* ════ Add / Edit / EC modal ════ */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'rgba(168,85,247,0.5)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,560px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               {ecSource ? '🔄 Engineering Change' : editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}
@@ -862,7 +893,7 @@ export default function ProductMaster() {
             {ecSource && (
               <div style={{ fontSize: 12, color: '#a855f7', marginBottom: 16, padding: '8px 12px', background: 'rgba(168,85,247,0.08)', borderRadius: 8, border: '1px solid rgba(168,85,247,0.2)' }}>
                 ต่อจาก: <strong>{ecSource.mat_no}</strong> {ecSource.p_no && `/ ${ecSource.p_no}`}<br />
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมจะถูก mark เป็น superseded อัตโนมัติ</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมถูก mark เป็น superseded อัตโนมัติ · MAT ใหม่ถูกลงทะเบียน Parts Master ให้เอง (สืบทอด uom/จำนวนต่อกล่อง/supplier — ต้นทุนให้บัญชีเติม)</span>
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -877,9 +908,15 @@ export default function ProductMaster() {
                       style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
                   </div>
                   {form.mat_no && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
-                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
-                      ⚠ MAT นี้ยังไม่มีในทะเบียนกลาง Parts Master — แนะนำเพิ่มที่ tab 🗂 ก่อน กันเลขหลุดทะเบียน
-                    </div>
+                    ecSource ? (
+                      <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4 }}>
+                        🗂 MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                        ⚠ MAT นี้ยังไม่มีในทะเบียนกลาง Parts Master — แนะนำเพิ่มที่ tab 🗂 ก่อน กันเลขหลุดทะเบียน
+                      </div>
+                    )
                   )}
                 </Field>
                 <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
@@ -968,7 +1005,7 @@ export default function ProductMaster() {
 
       {/* ════ Kanban Standard modal ════ */}
       {kanbanEditing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid rgba(14,165,233,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               {kanbanEditing === 'new' ? '+ เพิ่ม Kanban Standard' : 'แก้ไข Kanban Standard'}
@@ -1017,7 +1054,7 @@ export default function ProductMaster() {
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
       {csvPreview && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(600px,100%)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1301,7 +1338,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   }, [products, search]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -1389,7 +1426,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ PICKER MODAL — เลือกพาร์ทจาก Parts Master ══ */}
       {showPicker && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, width: 'min(700px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1463,7 +1500,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ EDIT MODAL — แก้ QTY ของ BOM row ══ */}
       {showEdit && editItem && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
             <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', fontWeight: 700, marginBottom: 4 }}>{editItem.mat_no}</div>
@@ -1499,7 +1536,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* ══ COPY BOM MODAL ══ */}
       {showCopyBom && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>📋 คัดลอก BOM จาก Product อื่น</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
@@ -1900,7 +1937,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
       {/* ══ ADD / EDIT MODAL ══ */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(560px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
               {editPart ? '✏️ แก้ไขพาร์ท' : '➕ เพิ่มพาร์ทใหม่'}
@@ -2104,7 +2141,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
         {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>🗃 จัดการภาชนะ (Container Types) ({masters.length})</button>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
         {/* product list */}
         <div style={{ ...cardSt, padding: 12 }}>
           <input style={inputSt} placeholder="🔍 ค้นหา product..." value={search} onChange={e => setSearch(e.target.value)} />
@@ -2162,7 +2199,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* link modal */}
       {showLink && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>{editLink ? '✏️ แก้ไข' : '➕ ผูก'} Packaging</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2195,7 +2232,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
 
       {/* master manager modal — ภาชนะ (container_types) ฐานเดียวกับ Rack Center */}
       {showMaster && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(760px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🗃 ภาชนะ (Container Types)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
@@ -2381,7 +2418,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
 
       {/* Modal */}
       {showModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
               🎴 แก้ไข Kanban Std — {form.mat_no}

@@ -184,6 +184,19 @@ function LiveTab({ role }) {
   const [dtLogs, setDtLogs]         = useState([]);
   const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   const [selSession, setSelSession] = useState(null);
+  // §139 ย่อ/ขยายกลุ่มไลน์ในลิสต์กะ — กะค้างไม่ปิดสะสมทำให้ลิสต์ยาวมาก (เจอจริง 34 กะ) · จำใน localStorage
+  const [sessGroupCollapsed, setSessGroupCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('dr_sess_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const persistSessGroups = (next) => {
+    try { localStorage.setItem('dr_sess_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    setSessGroupCollapsed(next);
+  };
+  const toggleSessGroup = (name) => {
+    const next = new Set(sessGroupCollapsed);
+    next.has(name) ? next.delete(name) : next.add(name);
+    persistSessGroups(next);
+  };
   const [loading, setLoading]       = useState(true);
   // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
   const [ctOverage, setCtOverage]   = useState({});
@@ -2180,47 +2193,75 @@ function LiveTab({ role }) {
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : '1fr', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : 'minmax(0, 1fr)', gap: 16 }}>
       {sessions.length > 1 && (
         // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4, flexShrink: 0 }}>กะที่เปิดอยู่ ({sessions.length})</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', minWidth: 0 }}>
+          {(() => {
+            const groupNames = [...new Set(sessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
+            const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>กะที่เปิดอยู่ ({sessions.length})</div>
+                {groupNames.length > 1 && (
+                  <button onClick={() => persistSessGroups(allCollapsed ? new Set() : new Set(groupNames))}
+                    title={allCollapsed ? 'กางทุกกลุ่ม' : 'ย่อทุกกลุ่ม'}
+                    style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+                    {allCollapsed ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
           {(() => {
-            // Group sessions by parent line (or self if no parent)
+            // จัดกลุ่มตามไลน์แม่ (ไลน์เดี่ยว = เป็นกลุ่มของตัวเอง)
             const groups = {};
             sessions.forEach(s => {
               const parent = lineMap[s.line_name]?.parent_line_name || s.line_name;
               if (!groups[parent]) groups[parent] = [];
               groups[parent].push(s);
             });
-            return Object.entries(groups).map(([groupName, groupSessions]) => (
+            return Object.entries(groups).map(([groupName, groupSessions]) => {
+              /* ⚠️ หัวกลุ่มต้องขึ้น "ทุกกลุ่ม" — เดิมโชว์เฉพาะกลุ่มที่มีสมาชิกเป็นไลน์ลูก
+                 → ไลน์เดี่ยว (เช่น LINE ASSY TSRA ที่ไม่มีไลน์แม่) ไม่มีหัวข้อของตัวเอง
+                   เลยไหลไปต่อท้ายหัวข้อของกลุ่มก่อนหน้า ดูเหมือนเป็นไลน์ลูกของกลุ่มนั้น (user ทัก) */
+              const hasSel = groupSessions.some(s => s.id === selSession?.id);
+              const collapsed = sessGroupCollapsed.has(groupName) && !hasSel;  // กะที่เลือกอยู่ต้องไม่ถูกซ่อน
+              return (
               <div key={groupName}>
-                {groupSessions.some(s => lineMap[s.line_name]?.parent_line_name) && (
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                    {groupName}
-                  </div>
-                )}
-                {groupSessions.map(s => (
+                <button onClick={() => toggleSessGroup(groupName)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 9 }}>{collapsed ? '▶' : '▼'}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupName}</span>
+                  <span style={{ fontWeight: 600 }}>{groupSessions.length}</span>
+                </button>
+                {!collapsed && groupSessions.map(s => (
                   <button key={s.id} onClick={() => setSelSession(s)}
                     style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
                       borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      {/* ชื่อไลน์ยาว (LINE ASSY TSRA) ต้องหดได้ ไม่งั้นดันชิปสถานะตกขอบ sidebar 220px */}
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.line_name}</div>
+                      {/* ⏳ = ส่งไปแล้ว "รอ SV" (ลูกบอลอยู่ฝั่งเขา) — เป็นสถานะที่เจอเยอะสุด จึงเอาแค่ไอคอน */}
                       {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
-                      {/* ถูกปฏิเสธปิดกะ — กะกลับเป็น open แล้ว แต่เดิมเห็นได้ต่อเมื่อเข้าไปในกะ
-                          หัวหน้ากลุ่มที่ดูแลหลายไลน์จึงไม่รู้ว่าไลน์ไหนโดนตีกลับ · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
+                      {/* ถูกตีกลับ = "ลูกบอลอยู่ฝั่งเรา ต้องกลับไปแก้" — ต้องแยกจาก ⏳ ให้ขาด
+                          ⚠️ ห้ามใช้ ✕ (ในหน้าเดียวกัน "✕ ปฏิเสธ" คือปุ่มกด คนจะนึกว่ากดแล้วลบ/ปิด)
+                          ⚠️ ห้ามใช้ ↩️ (หน้านี้ใช้เป็น "ถอยใบ" ของ order ไปแล้ว)
+                          → ใช้ชิปข้อความสั้น อ่านออกทันทีไม่ต้องเดาความหมายไอคอน · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
                       {s.status === 'open' && s.close_reject_at && (
-                        <span title={`ถูกปฏิเสธปิดกะโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — ${s.close_reject_reason}` : ''} · แก้แล้วส่งขอปิดกะใหม่`}
-                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(239,68,68,0.18)', color: '#ef4444' }}>✕</span>
+                        <span title={`ถูกตีกลับโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — "${s.close_reject_reason}"` : ''} · แก้แล้วกดขอปิดกะใหม่`}
+                          style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
                   </button>
                 ))}
               </div>
-            ));
+              );
+            });
           })()}
           </div>
         </div>
@@ -3137,7 +3178,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: งานเสีย+Downtime คอลัมน์ซ้าย · สรุปแยกตามชิ้นงาน คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : '1fr', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {defectLogs.length > 0 && (
                   <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -3440,7 +3481,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: Downtime เปิดค้าง (ต้องตัดสินใจ) คอลัมน์ซ้าย · สรุปตัวเลขกะ คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : '1fr', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
@@ -3772,7 +3813,7 @@ function LiveTab({ role }) {
                 })()}
 
                 {/* จอกว้าง: รายการตัดสินใจ Order ที่ยังไม่ปิด คอลัมน์ซ้าย · OEE preview คอลัมน์ขวา (เห็นผลจากการตัดสินใจข้างๆ กันทันที) */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : '1fr', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
@@ -5458,9 +5499,10 @@ function ExportTab() {
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>วันที่สิ้นสุด</div>
             <input type="date" value={filter.date_to} onChange={e => setFilter(f => ({ ...f, date_to: e.target.value }))} style={sel} />
           </div>
-          <div>
+          {/* minWidth:0 บังคับให้ flex item ยอมหด — ไม่งั้นกว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
+          <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, minWidth: 160 }}>
+            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, width: '100%', minWidth: 0 }}>
               <option value="">ทุกไลน์</option>
               {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
             </select>

@@ -374,7 +374,7 @@ export default function GroupOverview() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {[...items].sort((a, b) => (b.oee ?? -1) - (a.oee ?? -1)).map((it, i) => (
-          <div key={it.key} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '230px 1fr 128px', gap: 10, alignItems: 'center' }}>
+          <div key={it.key} style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '230px 1fr 128px', gap: 10, alignItems: 'center' }}>
             <button onClick={() => onPick && onPick(it)} disabled={!onPick} style={{
               display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, minWidth: 0,
               background: 'none', border: 'none', padding: 0, color: 'var(--text)', textAlign: 'left',
@@ -559,7 +559,7 @@ export default function GroupOverview() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
             {axisNodes.map(g => {
               const stCol = g.status === 'bad' ? '#ef4444' : g.status === 'ok' ? '#f59e0b' : '#22c55e';
               return (
@@ -669,7 +669,7 @@ export default function GroupOverview() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))', alignContent: 'start' }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))', alignContent: 'start' }}>
             {bizNode.companies.map(c => {
               const stCol = c.status === 'bad' ? '#ef4444' : c.status === 'ok' ? '#f59e0b' : '#22c55e';
               return (

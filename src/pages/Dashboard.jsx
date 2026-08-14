@@ -2206,7 +2206,7 @@ export default function Dashboard() {
                 <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {floorCards.map(({ layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations }) => {
                   const allStaffed = totalStations > 0 && staffedStations >= totalStations;
                   return (

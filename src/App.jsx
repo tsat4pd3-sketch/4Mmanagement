@@ -11,6 +11,7 @@ import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permission
 import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
+import ScrollHint from './components/ScrollHint';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 
@@ -1132,6 +1133,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
+        <ScrollHint />
         <Suspense fallback={null}>
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
         </Suspense>
@@ -1165,7 +1168,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           paddingTop: 14,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
-          overflow: 'auto',
+          // ⚠️ เลื่อนได้แค่ขึ้น-ลง — ห้ามเลื่อนซ้ายขวาทั้งหน้า (คำสั่ง user 2026-08-04)
+          //   ของกว้าง (ตาราง/บอร์ด/กราฟ) ต้องมี scroller ของตัวเอง (overflowX:'auto' ที่กล่องมันเอง)
+          //   ตาม UI-CONVENTIONS — ห้ามปล่อยให้ล้นออกมาดันทั้งหน้าให้เลื่อนข้าง
+          overflowY: 'auto',
+          overflowX: 'hidden',
           minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>

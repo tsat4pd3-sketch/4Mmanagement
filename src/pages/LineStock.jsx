@@ -612,7 +612,7 @@ function StockTab({ role }) {
 
       {/* ── Reject reason modal ── (ฟอร์มมี input → ไม่ปิดจาก backdrop click ตาม UI-CONVENTIONS §5) */}
       {rejectTx && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+        <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(420px,100%)' }}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>❌ ปฏิเสธคำขอ</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>

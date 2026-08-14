@@ -1107,7 +1107,7 @@ export default function OEEAnalytics() {
           </div>
 
           {/* Row: Live session + Production qty gauge */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.4fr 1fr', gap: 16, marginBottom: 16 }}>
             {/* 1.1 Live session */}
             <div style={{ ...s.section, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1217,7 +1217,7 @@ export default function OEEAnalytics() {
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
           <div style={s.section}>
             <div style={s.title}>DOWNTIME (เวลาที่เครื่องหยุด)</div>
-            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '260px 1.5fr 1.2fr', gap: 14, alignItems: 'stretch' }}>
+            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '260px 1.5fr 1.2fr', gap: 14, alignItems: 'stretch' }}>
 
               {/* 2.1 Total — โชว์ "นอกแผน" เป็นตัวเลขหลัก (ความเสียหายจริง) · ในแผน (ไม่มีแผนผลิต/นับสต๊อก)
                   ไม่ใช่ loss ห้ามเอามาคิด % หลัก/โป่งตัวเลข (เคยโชว์รวม 5,512น. · 38.68% ทั้งที่ 4,684น. คือ
@@ -1428,7 +1428,7 @@ export default function OEEAnalytics() {
       </div>
 
       {/* Downtime Pareto + Defect side-by-side */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
         <div>
           <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
@@ -1619,7 +1619,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
   const inSt = { width: 64, padding: '4px 6px', borderRadius: 6, fontSize: 12, textAlign: 'right', background: 'var(--bg)', border: '1px solid var(--border2)', color: 'var(--text)' };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
       <div style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 760px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
           <div>

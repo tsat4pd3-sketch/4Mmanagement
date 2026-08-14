@@ -542,7 +542,8 @@ export default function MorningMeeting() {
   // หัวคั่นโซน — กันหน้า "ติดกันเป็นพรืด": ชื่อโซน + เส้นแบ่งยาวเต็มแถว (+ตัวเลขสรุปท้ายเส้น)
   const SectionHead = ({ icon, title, extra }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
-      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{icon} {title}</span>
+      {/* minWidth:0 + ellipsis — จอแคบ (320px) ชื่อโซน+ตัวเลขท้ายแถวรวมกันยาวเกินจอ แล้วดันล้น */}
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{icon} {title}</span>
       <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
       {extra && <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{extra}</span>}
     </div>
@@ -551,7 +552,7 @@ export default function MorningMeeting() {
   const LineCards = () => (
     // min 290px ≈ 5 ใบ/แถวบนจอ desktop — กว้างพอให้ชิปยอด/%/OEE/DT จบบรรทัดเดียวเกือบทุกเคส
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
         <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -671,7 +672,7 @@ export default function MorningMeeting() {
   );
 
   const DtDefectPanel = () => (
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
         <h2 style={h2St}>🛠️ Top Downtime นอกแผน <span style={chip(sum.dtMin ? '#ef4444' : '#22c55e')}>{sum.dtMin} นาที</span></h2>
         {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
@@ -979,7 +980,7 @@ export default function MorningMeeting() {
           <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
           <MissedPanel bounded />
           <DtDefectPanel />
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
             <FourMPanel bounded />
             <ReadinessPanel bounded />
           </div>
@@ -991,7 +992,8 @@ export default function MorningMeeting() {
       {tvMode && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
           {/* paddingRight 64 เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน อยู่เหนือ overlay) — ไม่งั้นปุ่ม ✕ โดนทับ */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)' }}>
+          {/* flexWrap — โหมดประชุมบนจอแคบ (มือถือ/แท็บเล็ตแนวตั้ง) แถบหัวยาวเกินจอแล้วดันล้น */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
@@ -1029,7 +1031,7 @@ export default function MorningMeeting() {
 
       {/* ── Modal เพิ่ม Action Item (ฟอร์ม — ห้ามปิดจาก backdrop ตามกติกา §5) ── */}
       {actModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
           <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
