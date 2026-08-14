@@ -1724,7 +1724,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   ENERGY_MONITORING_DESIGN.md (โมดูลพลังงาน — ออกแบบแล้ว ยังไม่เขียนโค้ด) ·
                        #   VSM-DESIGN.md (Value Stream Mapping — เฟส 1 ทำแล้ว) ·
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
-                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6)
+                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
+                       #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
+                       #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
