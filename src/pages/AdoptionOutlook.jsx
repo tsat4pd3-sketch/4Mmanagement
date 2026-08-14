@@ -6,6 +6,7 @@ import useTabParam from '../utils/useTabParam';
 import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
 import { rnd, rint, pick } from '../utils/seededRandom';
+import { groupLean } from '../utils/oee';
 
 /* ══ 🔮 ภาพเมื่อทุกแผนกใช้ครบ (Full-Adoption Outlook) · 2026-08-13 ═══════════════════════
    ทำอะไร: ตอบผู้บริหารว่า "ถ้าทุกแผนกใช้ระบบเต็มรูปแบบ จะได้อะไร" ด้วย 2 มุม
@@ -621,14 +622,14 @@ async function loadAll() {
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 const DEEP_DAYS = 45;            // หน้าต่างหากะตัวอย่าง — กว้างพอให้เจอกะที่มีทั้ง DT และของเสีย
 
-const FOUR_M = [
-  { key: 'machine', icon: '⚙️', label: 'Machine', th: 'เครื่องจักร', color: '#ef4444' },
-  { key: 'method', icon: '📋', label: 'Method', th: 'วิธีทำงาน', color: '#f59e0b' },
-  { key: 'material', icon: '🧱', label: 'Material', th: 'วัตถุดิบ', color: '#3b82f6' },
-  { key: 'man', icon: '👷', label: 'Man', th: 'คน', color: '#a78bfa' },
-];
+/* ⚠️ 2 แกนนี้ทำคนละหน้าที่ ห้ามสลับกันใช้ (คำสั่ง user 2026-08-13):
+     • **6 Big Losses** = จัดประเภท "เวลาที่หายไป" → ผูกกับ A/P/Q ตรงตัว · มาจาก **master ที่หัวหน้าตั้งเอง**
+       (`dr_downtime_types.six_big_loss`) → แม่นกว่า ไม่ต้องเดา · ใช้ `groupLean()` จาก utils/oee.js
+     • **4M** = แกน "หาสาเหตุ" ของปัญหา **คุณภาพ** (คน/เครื่อง/วิธี/วัสดุ) + Changing Point ที่เปลี่ยนวันนั้น
+   เคยเอา 4M มาจัดประเภทเวลาที่หาย แล้วพลาดจริง: "ระบบ PLC มีปัญหา — HDF **รีเซ็ต**ไม่หาย"
+   ถูกจับเป็น Method เพราะคำว่า "เซ็ต" ทั้งที่ master ระบุว่าเป็น breakdown
 
-/* ⚠️ ระบบ**ยังไม่มีแกน 4M** ที่ master ของ downtime/defect (มีแต่ six_big_loss / waste_type)
+   ⚠️ ระบบ**ยังไม่มีแกน 4M** ที่ master ของ downtime/defect (มีแต่ six_big_loss / waste_type)
    → ต้องเดาจากข้อความที่พนักงานพิมพ์ · เรียงจากเจาะจงไปกว้าง ตัวแรกที่ match ชนะ
    หน้าจอจึงต้อง (ก) ติดป้ายว่าเป็นการจัดกลุ่มจากข้อความ (ข) โชว์ข้อความจริงใต้ทุกกลุ่มให้คนตรวจได้
    (ค) โชว์รายการที่จัดไม่ได้ ห้ามยัดมั่วเข้ากลุ่มใดกลุ่มหนึ่ง */
@@ -695,6 +696,12 @@ async function loadDeepDive() {
       .in('session_id', c)),
   ]);
 
+  /* เก็บ "แถวดิบ" ไว้ด้วย — groupLean() ใน utils/oee.js กินโครงสร้าง nested ตรงๆ
+     (ห้ามเขียนตัวจัดกลุ่ม 6 Big Losses เองซ้ำ) */
+  const rawDtBy = {}, rawDefBy = {};
+  dtRaw.forEach(d => (rawDtBy[d.session_id] ||= []).push(d));
+  defRaw.forEach(f => (rawDefBy[f.session_id] ||= []).push(f));
+
   /* แบนโครงสร้าง nested ให้ fourMOf อ่านง่าย + คิดนาทีด้วยกฎเดียวกับที่อื่น */
   const dtBy = {}, defBy = {};
   dtRaw.forEach(d => {
@@ -753,9 +760,17 @@ async function loadDeepDive() {
     peScoped = { proc: pids.length, fmea: f, cp: c };
   }
 
+  /* 4M ที่ "เปลี่ยนวันนั้น" (Changing Point · ฝั่ง Main) — 4M เป็นแกนหาสาเหตุของคุณภาพ
+     ไม่ใช่แกนจัดประเภทเวลาที่หาย (นั่นเป็นงานของ 6 Big Losses) */
+  const { data: fourM } = await supabase.from('four_m_logs')
+    .select('category, description, status, requires_qa, work_date')
+    .eq('work_date', S.work_date).eq('line_name', S.line_name).limit(30);
+
   return {
     empty: false, from, to: today,
     sess: S, dt: best.dt, def: best.df,
+    rawDt: rawDtBy[S.id] || [], rawDef: rawDefBy[S.id] || [],
+    fourM: fourM || [],
     orders: (ords || []).map(o => ({ ...o, prod: pByMat[o.mat_no] || null })),
     /* set = ชุดเอกสารของพาร์ทนี้ (null = ยังไม่มี) · totalSets = ทั้งระบบมีกี่พาร์ทแล้ว (ใช้บอกบริบท) */
     pe: { set: mySet, totalSets: (allSets || []).length, ...peScoped },
@@ -1316,13 +1331,22 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
   const dtMinAll = dd.dt.reduce((a, d) => a + d.min, 0);
   const ngTotal = dd.def.reduce((a, f) => a + f.qty, 0);
 
-  const byM = {}; const unclassified = [];
-  dd.dt.forEach(d => { const k = fourMOf(d); if (!k) unclassified.push(d); else (byM[k] ||= []).push(d); });
-  const groups = FOUR_M.map(m => {
-    const rows = byM[m.key] || [];
-    return { ...m, rows, min: rows.reduce((a, r) => a + r.min, 0) };
-  }).sort((a, b) => b.min - a.min);
-  const qualityDt = byM.quality || [];
+  /* จัดกลุ่มด้วย 6 Big Losses จาก **master ที่หัวหน้าตั้งเอง** (dr_downtime_types.six_big_loss)
+     ไม่ใช่การเดาจากข้อความ → ตรงกว่า และผูกกับ A/P/Q ได้ตรงตัว
+     ใช้ groupLean() จาก utils/oee.js — ห้ามเขียนตัวจัดกลุ่มเอง */
+  const lean = groupLean({
+    axis: 'six_big_loss', downtimes: dd.rawDt, defects: dd.rawDef,
+    ctSecFn: () => ct, includePlanned: true,
+  });
+  const known = lean.filter(g => g.meta);
+  const unknownLoss = lean.find(g => !g.meta) || null;
+  /* เวลาที่อธิบาย A ได้ = breakdown + setup — ใช้เชื่อมกลับชั้น 1 ให้เห็นว่าทำไม A ถึงตก */
+  const minOf = (k) => (lean.find(g => g.key === k)?.min) || 0;
+  const aMin = minOf('breakdown') + minOf('setup');
+
+  /* 4M ยังใช้อยู่ แต่เฉพาะ "หาสาเหตุฝั่งคุณภาพ" (ดูชั้นของเสีย) ไม่ใช่จัดประเภทเวลา */
+  const byM = {};
+  dd.dt.forEach(d => { const k = fourMOf(d); if (k) (byM[k] ||= []).push(d); });
 
   /* เครื่องที่ "เสีย" ซ้ำในกะเดียว = สัญญาณว่าเป็นเรื่องสภาพเครื่อง ไม่ใช่อุบัติเหตุรายครั้ง
      ⚠️ นับเฉพาะแถวที่เป็น Machine จริงๆ — ถ้านับ unplanned ทั้งหมด "รอ Material" จะถูกเหมาว่าเครื่องเสียด้วย */
@@ -1438,72 +1462,72 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้น 2 ── */}
       <div style={cardSt}>
-        <StepHead n="2" icon="🧩" title="เวลาที่หายไป ไปอยู่กับ 4M ตัวไหน" tone="#f59e0b"
-          sub="จัดกลุ่มจากข้อความที่พนักงานพิมพ์จริง — ข้อความต้นฉบับแสดงใต้ทุกกลุ่มให้ตรวจสอบได้" />
+        <StepHead n="2" icon="🧩" title="เวลาที่หายไป เป็นความสูญเสียประเภทไหน" tone="#f59e0b"
+          sub="6 Big Losses (TPM) — แกนที่ออกแบบมาสำหรับ “เวลาที่หายไป” โดยเฉพาะ และผูกกลับไปที่ A/P/Q ได้ตรงตัว" />
 
         <div style={{
-          fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)', background: 'var(--bg3)',
+          fontSize: 11.5, lineHeight: 1.6, color: 'var(--text2)', background: 'var(--bg3)',
           borderRadius: 8, padding: '8px 10px', marginBottom: 10,
         }}>
-          ⚠️ <b>ระบบยังไม่มีแกน 4M ที่ตัว master</b> (มีแต่ 6 Big Losses / 8 Wastes) — การจัดกลุ่มนี้จึง
-          <b> เดาจากข้อความ</b> ไม่ใช่ค่าที่หัวหน้าตั้งไว้ · ถ้าอยากให้แม่น 100% ต้องเพิ่มช่อง 4M
-          ที่ประเภท Downtime แล้วให้คนเลือกเอง
+          ✅ จัดกลุ่มจาก<b>ค่าที่หัวหน้าตั้งไว้เองใน master</b> (ประเภท Downtime → 6 Big Losses)
+          <b> ไม่ใช่การเดาจากข้อความ</b> — แก้การจัดหมวดได้ที่ Daily Report → ⚙️ ตั้งค่า
         </div>
 
         <div style={gcol(isMobile ? 1 : 2)}>
-          {groups.filter(g => g.rows.length).map(g => (
-            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: `3px solid ${g.color}` }}>
+          {known.map(g => (
+            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: `3px solid ${g.meta.color}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.icon} {g.label} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {g.th}</span></span>
-                <span style={{ fontSize: 15, fontWeight: 800, color: g.color }}>{fmtNum(g.min)} นาที</span>
+                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.meta.icon} {g.meta.label}</span>
+                <span style={{ fontSize: 15, fontWeight: 800, color: g.meta.color }}>
+                  {g.min > 0 ? `${fmtNum(g.min)} นาที` : `${fmtNum(g.qty)} ชิ้น`}
+                </span>
               </div>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', margin: '2px 0 6px' }}>
-                {g.rows.length} รายการ · {dtMinAll ? Math.round(g.min / dtMinAll * 100) : 0}% ของเวลาหยุดทั้งกะ
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 6px', flexWrap: 'wrap' }}>
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800, color: '#08120a', background: g.meta.color,
+                  borderRadius: 4, padding: '1px 7px',
+                }}>ทำให้ {g.meta.oee} ตก</span>
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                  {g.count} รายการ{dtMinAll && g.min ? ` · ${Math.round(g.min / dtMinAll * 100)}% ของเวลาหยุด` : ''}
+                </span>
               </div>
               <div style={{ display: 'grid', gap: 3 }}>
-                {g.rows.sort((a, b) => b.min - a.min).map((r, i) => (
+                {g.types.slice(0, 4).map((t, i) => (
                   <div key={i} style={{ fontSize: 11.5, lineHeight: 1.5, display: 'flex', gap: 6 }}>
-                    <span style={{ color: g.color, fontWeight: 700, minWidth: 46 }}>{fmtNum(r.min)} น.</span>
-                    <span style={{ minWidth: 0 }}>
-                      {r.dt_type}{r.machine_no ? <span style={{ color: 'var(--muted)' }}> · {r.machine_no}</span> : null}
-                      {r.description ? <span style={{ color: 'var(--text2)' }}> — “{r.description.trim()}”</span> : null}
+                    <span style={{ color: g.meta.color, fontWeight: 700, minWidth: 50 }}>
+                      {t.min > 0 ? `${fmtNum(t.min)} น.` : `${fmtNum(t.qty)} ชิ้น`}
                     </span>
+                    <span style={{ minWidth: 0 }}>{t.name}</span>
                   </div>
                 ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 7, lineHeight: 1.55, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
+                💡 แนวทางแก้: {g.meta.fix}
               </div>
             </div>
           ))}
-
-          {/* ฝั่งคุณภาพ — ของเสีย + DT ที่ master ตั้งว่าเป็น defect */}
-          {(dd.def.length > 0 || qualityDt.length > 0) && (
-            <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: '3px solid #ec4899' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800 }}>🚫 คุณภาพ <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· ของเสีย</span></span>
-                <span style={{ fontSize: 15, fontWeight: 800, color: '#ec4899' }}>{fmtNum(ngTotal)} ชิ้น</span>
-              </div>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', margin: '2px 0 6px' }}>
-                {dd.def.length} ประเภท{qualityDt.length ? ` · + เวลาแก้งาน ${fmtNum(qualityDt.reduce((a, d) => a + d.min, 0))} นาที` : ''}
-              </div>
-              <div style={{ display: 'grid', gap: 3 }}>
-                {dd.def.map((f, i) => (
-                  <div key={i} style={{ fontSize: 11.5, lineHeight: 1.5, display: 'flex', gap: 6 }}>
-                    <span style={{ color: '#ec4899', fontWeight: 700, minWidth: 46 }}>{fmtNum(f.qty)} ชิ้น</span>
-                    <span style={{ minWidth: 0 }}>
-                      {f.def_type}
-                      {f.description ? <span style={{ color: 'var(--text2)' }}> — “{f.description.trim()}”</span> : null}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* จัดไม่ได้ — ห้ามซ่อน */}
-        {unclassified.length > 0 && (
-          <div style={{ marginTop: 9, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-            ⚪ จัดเข้า 4M ไม่ได้ {unclassified.length} รายการ ({fmtNum(unclassified.reduce((a, d) => a + d.min, 0))} นาที):{' '}
-            {unclassified.map(d => `“${d.dt_type}”`).join(' · ')} — ข้อความกว้างเกินกว่าจะระบุได้
+        {/* ยังไม่จัดหมวด — ห้ามซ่อน ถ้าก้อนนี้ใหญ่ แปลว่าภาพข้างบนยังไม่ครบ */}
+        {unknownLoss && (
+          <div style={{
+            marginTop: 9, fontSize: 11.5, lineHeight: 1.6, background: 'var(--bg3)',
+            border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 10px', color: 'var(--muted)',
+          }}>
+            ⚪ <b style={{ color: 'var(--text2)' }}>ยังไม่จัดหมวด {fmtNum(unknownLoss.min)} นาที</b> ({unknownLoss.count} รายการ:{' '}
+            {unknownLoss.types.map(t => `“${t.name}”`).join(' · ')}) —
+            ไปติ๊ก 6 Big Losses ให้ประเภทนี้ที่ ⚙️ ตั้งค่า แล้วภาพข้างบนจะครบขึ้นเอง
+          </div>
+        )}
+
+        {/* เชื่อมกลับชั้น 1 — นี่คือประโยชน์ที่ 4M ให้ไม่ได้ */}
+        {aMin > 0 && (
+          <div style={{
+            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(245,154,63,.09)',
+            border: '1px solid var(--accent2)', borderRadius: 8, padding: '8px 10px',
+          }}>
+            🔗 <b>ต่อกลับชั้นที่ 1 ได้ทันที</b> — A ที่ตกไป อธิบายได้ด้วยเครื่องเสีย + ตั้งเครื่อง
+            รวม <b>{fmtNum(aMin)} นาที</b> · ส่วน P กับ Q มีก้อนของตัวเองแยกกันชัดเจน
           </div>
         )}
 
@@ -1521,13 +1545,36 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
           </div>
         ))}
 
-        {/* A-loss กับ Q-loss ชี้ไปที่อุปกรณ์ตัวเดียวกัน — ปกติถูกบันทึกคนละที่จนไม่มีใครเห็นพร้อมกัน */}
+      </div>
+
+      {/* ── ชั้นคุณภาพ: 4M เป็นแกน "หาสาเหตุ" ไม่ใช่แกนจัดประเภทเวลา ── */}
+      <div style={cardSt}>
+        <StepHead n="3" icon="🚫" title="ฝั่งคุณภาพ — ของเสียเกิดจากอะไร (4M)" tone="#ec4899"
+          sub="4M คือแกนหาสาเหตุของปัญหาคุณภาพ (คน/เครื่อง/วิธี/วัสดุ) — คนละงานกับ 6 Big Losses ที่ใช้จัดประเภทเวลาที่หาย" />
+
+        {dd.def.length > 0 ? (
+          <div style={{ display: 'grid', gap: 5 }}>
+            {dd.def.map((f, i) => (
+              <div key={i} style={{
+                background: 'var(--bg3)', borderLeft: '3px solid #ec4899', borderRadius: 6,
+                padding: '8px 11px', fontSize: 12.5, lineHeight: 1.55,
+              }}>
+                <b style={{ color: '#ec4899' }}>{fmtNum(f.qty)} ชิ้น</b> · {f.def_type}
+                {f.description ? <span style={{ color: 'var(--text2)' }}> — “{f.description.trim()}”</span> : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>กะนี้ไม่มีการบันทึกของเสีย</div>
+        )}
+
+        {/* A-loss กับ Q-loss ชี้ไปที่อุปกรณ์ตัวเดียวกัน — Machine ใน 4M */}
         {linkedDefs.map(({ f, equip }, i) => (
           <div key={i} style={{
             marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(236,72,153,0.08)',
             border: '1px solid #ec4899', borderRadius: 8, padding: '8px 10px',
           }}>
-            🔗 <b>เวลาที่หาย กับ ของเสีย ชี้ไปที่ “{equip}” ตัวเดียวกัน</b>
+            🔗 <b>4M · Machine — เวลาที่หาย กับ ของเสีย ชี้ไปที่ “{equip}” ตัวเดียวกัน</b>
             <div style={{ marginTop: 3 }}>
               ฝั่งเครื่องหยุด: “{machRows.map(r => r.description?.trim()).filter(Boolean)[0] || machRows[0]?.dt_type}” ·
               ฝั่งของเสีย: “{(f.description || f.def_type || '').trim()}” ({fmtNum(f.qty)} ชิ้น)
@@ -1535,15 +1582,33 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
               จับคู่จาก<b>ข้อความที่พนักงานพิมพ์</b> ไม่ใช่ความสัมพันธ์ที่ระบบยืนยัน — แต่ถ้าจริง
               แปลว่า A กับ Q ของกะนี้มี<b>ต้นเหตุเดียวกัน</b> แก้จุดเดียวได้ทั้งสองฝั่ง
-              (ปกติสองเรื่องนี้ถูกบันทึกคนละหน้าจน ไม่มีใครเห็นพร้อมกัน)
             </div>
           </div>
         ))}
+
+        {/* 4M ที่ "เปลี่ยนวันนั้น" — Changing Point คือ 4M ตัวจริงที่โรงงานใช้ */}
+        <div style={{ marginTop: 11 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>📝 4M ที่เปลี่ยนในวันนั้น (Changing Point)</div>
+          {dd.fourM.length > 0 ? (
+            <div style={{ display: 'grid', gap: 4 }}>
+              {dd.fourM.slice(0, 6).map((m, i) => (
+                <div key={i} style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--text2)' }}>
+                  <b style={{ color: 'var(--text)' }}>{m.category}</b> — {m.description}
+                  <span style={{ color: 'var(--muted)' }}> · {m.status === 'approved' ? 'อนุมัติแล้ว' : m.status}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+              ไม่มีการบันทึก 4M ของไลน์นี้ในวันนั้น — <b>ไม่ได้แปลว่าไม่มีอะไรเปลี่ยน</b> อาจแปลว่ายังไม่ได้ลงบันทึก
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── ชั้น 3 ── */}
+      {/* ── ชั้น 4 ── */}
       <div style={cardSt}>
-        <StepHead n="3" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="#a78bfa"
+        <StepHead n="4" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="#a78bfa"
           sub="รู้ว่าเกิดอะไรแล้ว คำถามถัดไปคือ ตอนออกแบบกระบวนการ เราเคยคาดอาการนี้ไว้หรือเปล่า และที่ดักไว้มันพอมั้ย" />
 
         {/* สถานะเอกสารของพาร์ทนี้ — แยก "ยังไม่มีของพาร์ทนี้" ออกจาก "ทั้งระบบยังไม่มีอะไรเลย" */}
@@ -1628,11 +1693,11 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้น 4 ── */}
       <div style={{ ...cardSt, borderLeft: '4px solid var(--accent)' }}>
-        <StepHead n="4" icon="🎯" title="สรุป — กะนี้บอกอะไร และต้องไปทำอะไรต่อ" />
+        <StepHead n="5" icon="🎯" title="สรุป — กะนี้บอกอะไร และต้องไปทำอะไรต่อ" />
         <div style={{ display: 'grid', gap: 7, fontSize: 12.5, lineHeight: 1.65 }}>
           <div>
             <b>ตัวฉุดหลัก:</b> {worstK ? `${worstK} (${(+apq.find(a => a.k === worstK).v).toFixed(0)}%)` : '—'}
-            {groups[0]?.rows.length ? <> · เวลาหายไปกับ <b>{groups[0].icon} {groups[0].label}</b> มากที่สุด ({fmtNum(groups[0].min)} นาที)</> : null}
+            {known[0] ? <> · ความสูญเสียหลักคือ <b>{known[0].meta.icon} {known[0].meta.label}</b> ({fmtNum(known[0].min)} นาที)</> : null}
           </div>
           {ngTotal > 0 && <div><b>ฝั่งคุณภาพ:</b> ของเสีย {fmtNum(ngTotal)} ชิ้น — {dd.def.map(f => f.def_type).join(' · ')}</div>}
           <div style={{ color: 'var(--muted)' }}>
