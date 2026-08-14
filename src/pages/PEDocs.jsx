@@ -7,6 +7,7 @@ import { can } from '../utils/permissions';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtDate } from '../utils/dateFormat';
+import PeExcelImportModal from '../components/PeExcelImportModal';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -94,6 +95,7 @@ export default function PEDocs() {
   const [revModal, setRevModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [setImgFile, setSetImgFile] = useState(null);    // รูปรออัปโหลดของ modal ชุดเอกสาร
+  const [importOpen, setImportOpen] = useState(false);   // 📥 นำเข้าจากไฟล์ Excel
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
 
@@ -225,6 +227,7 @@ export default function PEDocs() {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {canEdit && <button style={btnSm} onClick={() => setImportOpen(true)} title="อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่">📥 นำเข้า Excel</button>}
         {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>✏️ แก้ข้อมูลชุด</button>}
         {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>➕ ชุดเอกสารใหม่</button>}
       </div>
@@ -506,6 +509,18 @@ export default function PEDocs() {
             }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึก'}</button>
           </div>
         </div></div>
+      )}
+
+      {/* ══ modal: นำเข้าจากไฟล์ Excel (ฟอร์ม TSAT ที่มีอยู่แล้ว) ══ */}
+      {importOpen && (
+        <PeExcelImportModal sets={sets} currentSetId={setId}
+          onClose={() => setImportOpen(false)}
+          onDone={async (sid) => {
+            setImportOpen(false);
+            const { data } = await supabase.from('pe_doc_sets').select('*').order('part_no');
+            setSets(data || []);
+            pickSet(sid);
+          }} />
       )}
 
       {/* ══ modal: process (OP) ══ */}
