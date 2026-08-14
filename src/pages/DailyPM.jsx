@@ -77,12 +77,20 @@ export default function DailyPM() {
     const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
-      supabaseDR.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
+      supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').eq('department', 'production'),
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
     ])
-    // Daily PM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → แสดงเฉพาะ "เครื่องผลิต"
-    //   ตัด jig/die tooling (งานช่าง JIG/DIE) + facility/utility ออก ไม่ให้ปนในลิสต์ลงทะเบียน (คำสั่ง user 2026-07-22)
+    /* AM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → default แสดงเฉพาะ "เครื่องผลิต"
+       ตัด jig/die tooling + facility/utility ออก ไม่ให้ลิสต์ลงทะเบียนรก (คำสั่ง user 2026-07-22)
+
+       ⚠️ แต่ "ชนิดอุปกรณ์ ไม่ได้ล็อกว่าใครเป็นคนตรวจ" (คำสั่ง user 2026-08-11)
+          แม่พิมพ์/จิ๊ก/ปั๊มลม ฝ่ายผลิตตรวจเองในหมวด AM ได้ ถ้าตั้งใจให้ตรวจ
+          → ตัวที่ **มี checklist ของ AM อยู่แล้ว** ต้องโผล่ให้ลงทะเบียนได้เสมอ
+          ไม่งั้นตั้งจุดตรวจ AM ที่ PM Setup ได้ แต่เครื่องไม่มีวันโผล่ให้ operator ตรวจ = ทางตัน
+          (หลักเดียวกับ union ใน PMCheckData: "มี checklist ของแผนกนี้" ชนะการเดาจากชนิดอุปกรณ์) */
+    const amEquipIds = new Set((prodChecklists ?? []).map(c => c.equipment_id).filter(Boolean))
     const prodOnly = (jigRows ?? []).filter(j => {
+      if (amEquipIds.has(j.id)) return true            // ผลิตตั้งใจตรวจเอง → ชนะเงื่อนไขชนิด/หมวดทั้งหมด
       if (j.equipment_category === 'facility' || j.equipment_category === 'utility') return false
       if (j.equipment_type === 'jig' || j.equipment_type === 'die') return false
       return true // machine / ไม่ระบุ (legacy) / production
