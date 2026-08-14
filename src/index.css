@@ -419,7 +419,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
    ให้ติด className="mgrid" → จอ ≤600px ยุบเป็นคอลัมน์เดียวอัตโนมัติ
    (!important ใน media ชนะ inline style เฉพาะจอแคบ — desktop ใช้ grid inline เดิมเป๊ะ) */
 @media (max-width: 600px) {
-  .mgrid { grid-template-columns: 1fr !important; }
+  .mgrid { grid-template-columns: minmax(0, 1fr) !important; }   /* minmax(0,…) = ยอมหด · 1fr เฉยๆ มีพื้น min-content ดันล้นจอ */
 }
 
 /* ─── Touch targets (2026-07-11) ─────────────────────────────────
@@ -428,6 +428,22 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
    desktop เมาส์ไม่เปลี่ยน · หน้าใหม่ที่มีปุ่มไอคอนเล็กให้ติด class นี้เสมอ */
 @media (pointer: coarse) {
   .tbtn { min-width: 40px; min-height: 40px; }
+
+  /* ── ขยาย "พื้นที่กด" ของปุ่มเล็กทุกตัวให้ถึง 40px โดยไม่ขยับ layout (2026-08-04) ──
+     วัดจริงแล้วมีปุ่มเล็กกว่า 32px อยู่ 265 ปุ่ม ใน 30 หน้า — พนักงานใส่ถุงมือกดพลาด
+     ใช้ ::before ที่ absolute ทับกลางปุ่ม → พื้นที่รับสัมผัสโตขึ้น แต่ "หน้าตา/ตำแหน่ง
+     ทุกอย่างเท่าเดิมเป๊ะ" (วัดกล่องทุก element ก่อน-หลังแล้ว ไม่ขยับสักจุด)
+     ไม่ใช้ min-width/min-height เพราะจะดันแถวชิป/ปฏิทิน/บอร์ดที่ตั้งใจให้แน่นๆ พัง
+     ⚠️ `:not(:has(*))` = เฉพาะปุ่มที่ข้างในเป็นข้อความ/ไอคอนล้วน ไม่มี element ลูก — สำคัญมาก
+     เพราะการใส่ position:relative ให้ปุ่มที่มีลูกเป็น position:absolute จะ "ย้ายจุดอ้างอิง"
+     ของลูกนั้น ทำให้ของเลื่อนตำแหน่ง (วัดแล้วพังจริง: Dashboard 286 จุด · OEEAnalytics 28 · DeptHub 7)
+     เบราว์เซอร์เก่าที่ไม่รู้จัก :has() จะทิ้งกฎนี้ทั้งบล็อก = กลับไปพฤติกรรมเดิม ไม่พัง */
+  button:not(:has(*)) { position: relative; }
+  button:not(:has(*))::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%; height: 100%; min-width: 40px; min-height: 40px;
+  }
   /* เซลล์วันในปฏิทินบริษัท (แตะเพื่อวนสถานะ) — สูงพอสำหรับนิ้ว */
   .cal-day { min-height: 34px; display: flex; align-items: center; justify-content: center; }
 }

@@ -878,7 +878,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                   })}
                 </div>
 
-                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignContent: 'start' }}>
+                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
                   <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
                       <span style={{ fontSize: 12.5, fontWeight: 700 }}>วันนี้</span>
@@ -971,7 +971,7 @@ function LadderTab({ c, navigate, isMobile }) {
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>{L.desc}</div>
 
-            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignContent: 'start' }}>
+            <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
               <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
                   วันนี้อยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{nowAt.length}</span> คำถาม <Badge tone="real">วัดจริง</Badge>
@@ -1050,7 +1050,7 @@ function DeptTab({ c, navigate, isMobile }) {
       {/* สรุปความพร้อมรวม — เรียงแผนกที่ห่างเป้าที่สุดขึ้นก่อน (ชี้เป้าให้ลงมือ) */}
       <div style={{ ...cardSt }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>📊 ความครบของข้อมูล — เทียบกันทุกแผนก</div>
-        <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(220px,100%),1fr))', alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(220px,100%),1fr))', alignContent: 'start' }}>
           {[...rows].sort((a, b) => (a.ready ?? 999) - (b.ready ?? 999)).map(r => {
             const col = r.ready == null ? 'var(--muted)' : r.ready >= 80 ? '#22c55e' : r.ready >= 40 ? '#f59e0b' : '#ef4444';
             return (
@@ -1082,7 +1082,7 @@ function DeptTab({ c, navigate, isMobile }) {
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
             }}>เปิด Dashboard →</button>
           </div>
-          <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignContent: 'start' }}>
+          <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
             <div>
               <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 2 }}>
                 <span style={{ fontSize: 13, fontWeight: 700 }}>วันนี้</span><Badge tone="real">วัดจริงจากฐานข้อมูล</Badge>
@@ -1157,7 +1157,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           <span style={{ fontSize: 14.5, fontWeight: 700 }}>② สมมติฐาน — ปรับได้</span>
           {realRate ? <Badge tone="real">rate จากระบบ</Badge> : <Badge tone="guess">ยังไม่มี rate จริงในระบบ</Badge>}
         </div>
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
           <label style={{ fontSize: 12.5 }}>
             ต้นทุนเวลาเดินไลน์ (บาท/ชม.)
             <input type="number" min={0} value={rate} onChange={e => setRate(Math.max(0, +e.target.value || 0))}
@@ -1186,7 +1186,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
       {/* 3) ผลลัพธ์ */}
       <div style={{ ...cardSt, borderLeft: '4px solid var(--accent)' }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 10 }}>③ เป็นเงินเท่าไหร่</div>
-        <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(210px,100%),1fr))', alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(210px,100%),1fr))', alignContent: 'start' }}>
           <Fact label={`มูลค่าเวลาที่หยุดนอกแผน / ${WINDOW_DAYS} วัน`} value={fmtBaht(dtBaht)} unit="บาท" sub={`${fmtNum(dtHours)} ชม. × ${fmtNum(rate)} บาท`} />
           <Fact label={`ถ้าลดได้ ${cut}%`} value={fmtBaht(cutBaht)} unit="บาท/เดือน" sub={`≈ ${fmtBaht(cutBaht * 12)} บาท/ปี`} />
           {/* โหมดสาธิต: สมมติต้นทุน/ชิ้น เพื่อให้เห็นว่าช่องนี้จะตอบอะไรเมื่อกรอกต้นทุนแล้ว */}
@@ -1343,7 +1343,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
   }).filter(Boolean);
 
   const shiftTh = S.shift === 'night' ? 'กะดึก' : 'กะเช้า';
-  const gcol = (n) => ({ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : `repeat(${n}, 1fr)` });
+  const gcol = (n) => ({ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : `repeat(${n}, 1fr)` });
 
   /* ── ชั้น 3: เอกสารออกแบบของ "พาร์ทนี้" — มีชุดแล้วหรือยัง ── */
   const peSet = dd.pe.set;

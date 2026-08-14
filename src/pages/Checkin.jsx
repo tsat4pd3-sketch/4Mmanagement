@@ -1164,8 +1164,9 @@ export default function Checkin() {
           borderRadius: 10, padding: '12px 16px', marginBottom: 14,
           display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
         }}>
-          {/* Section tabs */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {/* Section tabs — ต้อง wrap เสมอ: section เยอะ (14 ส่วน) เรียงแถวเดียวกว้าง ~1180px
+              บนมือถือจะถูก main (overflow-x:hidden) ตัดหายจนกดปุ่มที่เกินขอบไม่ได้ */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Section</span>
             <button
               onClick={() => { setSelSection(''); setSelLine(''); }}

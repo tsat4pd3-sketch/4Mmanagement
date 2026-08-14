@@ -614,7 +614,7 @@ export default function QAInspectionSetup() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
         {/* ── ซ้าย: รายการ part ── */}
         <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>

@@ -562,20 +562,20 @@ function PlannerTab({ refreshKey, custLabel }) {
 
   const chartData = useMemo(() => months.map(m => {
     // period_month อาจเป็นรายเดือน (manual) หรือรายสัปดาห์ (EDI 830) — รวมด้วยเดือนเดียวกัน
-    const fq = forecasts.filter(f => f.period_month.slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
-    const oq = orders.filter(o => o.due_date.slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
+    const fq = forecasts.filter(f => (f.period_month || '').slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
+    const oq = orders.filter(o => (o.due_date || '').slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
     return { month: monthLabel(m), Forecast: fq, Orders: oq };
   }), [months, forecasts, orders]);
 
   // ตารางราย mat_no ของเดือนที่เลือก — forecast vs order จริง + ภาระชั่วโมงผลิต
   const matRows = useMemo(() => {
     const map = {};
-    forecasts.filter(f => f.period_month.slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
+    forecasts.filter(f => (f.period_month || '').slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
       const r = map[f.mat_no] = map[f.mat_no] || { mat_no: f.mat_no, part_name: f.part_name, customer: f.customer, forecast: 0, ordered: 0 };
       r.forecast += Number(f.qty);
       if (!r.part_name) r.part_name = f.part_name;
     });
-    orders.filter(o => o.due_date.slice(0, 7) === focusMonth.slice(0, 7)).forEach(o => {
+    orders.filter(o => (o.due_date || '').slice(0, 7) === focusMonth.slice(0, 7)).forEach(o => {
       const r = map[o.mat_no] = map[o.mat_no] || { mat_no: o.mat_no, part_name: o.part_name, customer: o.customer, forecast: 0, ordered: 0 };
       r.ordered += Number(o.qty);
       if (!r.part_name) r.part_name = o.part_name;

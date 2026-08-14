@@ -551,7 +551,7 @@ export default function MorningMeeting() {
   const LineCards = () => (
     // min 290px ≈ 5 ใบ/แถวบนจอ desktop — กว้างพอให้ชิปยอด/%/OEE/DT จบบรรทัดเดียวเกือบทุกเคส
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
         <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -671,7 +671,7 @@ export default function MorningMeeting() {
   );
 
   const DtDefectPanel = () => (
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
         <h2 style={h2St}>🛠️ Top Downtime นอกแผน <span style={chip(sum.dtMin ? '#ef4444' : '#22c55e')}>{sum.dtMin} นาที</span></h2>
         {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
@@ -979,7 +979,7 @@ export default function MorningMeeting() {
           <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
           <MissedPanel bounded />
           <DtDefectPanel />
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
             <FourMPanel bounded />
             <ReadinessPanel bounded />
           </div>

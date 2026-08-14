@@ -11,6 +11,7 @@ import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permission
 import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
+import ScrollHint from './components/ScrollHint';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 
@@ -1132,6 +1133,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
+        <ScrollHint />
         <Suspense fallback={null}>
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
         </Suspense>
