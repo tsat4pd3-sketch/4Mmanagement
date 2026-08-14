@@ -9,7 +9,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import {
-  sheetToGrid, parseFmeaSheet, parseCpSheet, parseCoverSheet,
+  sheetToGrid, parseFmeaSheet, parseCpSheet, parseCoverSheet, parseFormHeader,
   normSheetKey, isDataSheet, buildImportPlan, planSummary,
 } from '../utils/peExcelImport';
 
@@ -33,10 +33,13 @@ async function readWorkbook(file, kind) {
   const XLSX = await import('xlsx');
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
   const sheets = {}; const revs = []; const unreadable = [];
+  let header = null;
 
   for (const name of wb.SheetNames) {
     const { rows, merges } = sheetToGrid(XLSX, wb.Sheets[name]);
     const key = normSheetKey(name);
+    // หัวเอกสารซ้ำอยู่ทุกชีท — เอาใบแรกที่อ่านได้พอสมควรมาใช้กรอกข้อมูลชุดให้อัตโนมัติ
+    if (!header) { const h = parseFormHeader(rows); if (Object.keys(h.fields).length >= 2) header = h; }
     // ⚠️ ตัดสินจาก "แกะได้กี่แถว" ไม่ใช่ชื่อชีท — ชีท cover ของฟอร์มนี้ชื่อ '060'/'061'
     //    ซึ่งขึ้นต้นด้วยเลขเหมือนชีท OP (เทียบชื่ออย่างเดียวจะเข้าใจผิด)
     const recs = kind === 'pfc' ? [] : (kind === 'cp' ? parseCpSheet(rows, merges) : parseFmeaSheet(rows, merges));
@@ -45,7 +48,7 @@ async function readWorkbook(file, kind) {
     if (cover.length) revs.push(...cover.map((r) => ({ ...r, doc_type: kind })));
     else if (isDataSheet(key)) unreadable.push(name);
   }
-  return { sheets, revs, unreadable };
+  return { sheets, revs, unreadable, header };
 }
 
 export default function PeExcelImportModal({ sets = [], currentSetId = '', onClose, onDone }) {
@@ -77,6 +80,17 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
         revisions: [...(parts.fmea?.revs || []), ...(parts.cp?.revs || []), ...(parts.pfc?.revs || [])],
       });
       if (unread.length) p.warnings.push({ level: 'warn', text: `มี ${unread.length} ชีทที่ดูเหมือนชีท OP แต่แกะไม่ได้ (layout ไม่ตรงฟอร์ม) — ถูกข้าม`, rows: unread.map((t) => ({ sheet: t })) });
+      /* กรอกข้อมูลชุดให้อัตโนมัติจากหัวเอกสาร (FMEA → CP → PFC ตามลำดับความครบ) */
+      const hf = [parts.fmea?.header, parts.cp?.header, parts.pfc?.header].map((h) => h?.fields || {});
+      const pick = (k) => hf.find((h) => h[k])?.[k] || '';
+      const auto = {
+        part_no: pick('part_no'), part_name: pick('part_name'), model: pick('model'), customer: pick('customer'),
+        doc_no_fmea: hf[0].doc_no || '', doc_no_cp: hf[1].doc_no || '', doc_no_pfc: hf[2].doc_no || '',
+      };
+      setMeta((m) => ({ ...m, ...Object.fromEntries(Object.entries(auto).filter(([, v]) => v)) }));
+      /* พาร์ทนี้มีชุดเอกสารอยู่แล้ว → เดาว่าอยากเติมทับ (ยังเปลี่ยนเองได้) */
+      const hit = auto.part_no && sets.find((x) => String(x.part_no).replace(/\s/g, '') === auto.part_no.replace(/\s/g, ''));
+      if (hit) { setMode('fill'); setTargetId(hit.id); } else if (auto.part_no) setMode('new');
       setPlan(p);
       setStep('preview');
     } catch (e) {

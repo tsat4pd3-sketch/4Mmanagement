@@ -137,8 +137,9 @@ export function parseFmeaSheet(rows = [], merges = []) {
 
     const sev = num1to10(row[4]);
     if (sev !== null && g(2)) {
-      if (cur) recs.push(cur);
+      if (cur) { cur._nrows = r - cur._row; recs.push(cur); }
       cur = {
+        _row: r, _nrows: 1,          // ที่อยู่แถวในชีทต้นฉบับ — export เขียนค่ากลับที่เดิม
         item_function: lastFunc, requirement: g(1), failure_mode: g(2), effects: g(3),
         severity: sev, classification: g(5), causes: g(6), prevention: g(7),
         occurrence: num1to10(row[8]), detection_ctrl: g(9), detection: num1to10(row[10]),
@@ -153,7 +154,7 @@ export function parseFmeaSheet(rows = [], merges = []) {
       }
     }
   }
-  if (cur) recs.push(cur);
+  if (cur) { cur._nrows = stop - cur._row; recs.push(cur); }
   return recs;
 }
 
@@ -182,8 +183,9 @@ export function parseCpSheet(rows = [], merges = []) {
 
     const d = g(3);
     if (/^\d+$/.test(d)) {
-      if (cur) recs.push(cur);
+      if (cur) { cur._nrows = r - cur._row; recs.push(cur); }
       cur = {
+        _row: r, _nrows: 1,          // ที่อยู่แถวในชีทต้นฉบับ — export เขียนค่ากลับที่เดิม
         sub_op: lastA, sub_name: lastB, machine: lastC, char_no: parseInt(d, 10),
         product_char: g(4), process_char: g(5), special_class: g(6), person: g(7),
         spec: g(8), method: g(9), sample_size: g(10), frequency: g(11),
@@ -196,8 +198,84 @@ export function parseCpSheet(rows = [], merges = []) {
       }
     }
   }
-  if (cur) recs.push(cur);
+  if (cur) { cur._nrows = stop - cur._row; recs.push(cur); }
   return recs;
+}
+
+/* ── ②.5 หัวเอกสาร (Header block) ───────────────────────────── */
+
+/**
+ * ป้ายกำกับในหัวฟอร์ม → คีย์กลาง (เทียบแบบตัดอักขระที่ไม่ใช่ตัวอักษร/เลข + ตัวพิมพ์)
+ * ครอบทั้ง 3 ฟอร์ม เพราะแต่ละใบเรียกไม่เหมือนกัน (FMEA ใช้ "Item" · CNP ใช้ "Part Name")
+ */
+const HEADER_LABELS = [
+  [/^item$/, 'item'],
+  [/^(fmeanumber|controlplannumber|documentno|docno)$/, 'doc_no'],
+  [/^(partnumber|partno)$/, 'part_no'],
+  [/^partname$/, 'part_name'],
+  [/^(model|modelyearsprograms|modelyearprogram)$/, 'model'],
+  [/^customername$/, 'customer'],
+  [/^suppliername$/, 'supplier'],
+  [/^codesupplier$/, 'supplier_code'],
+  [/^keydate$/, 'key_date'],
+  [/^preparedby$/, 'prepared_by'],
+  [/^coreteam$/, 'core_team'],
+  [/^(fmeadateoriginal|dateoriginal)$/, 'date_original'],
+  [/^(fmeadaterev|daterevised)$/, 'date_revised'],
+  [/^keycontactphone$/, 'key_contact'],
+  [/^ewono$/, 'ewo_no'],
+  [/^peapprove$/, 'pe_approve'],
+  [/^qaapprove$/, 'qa_approve'],
+];
+const normLabel = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/**
+ * แกะหัวเอกสาร (แถวบนก่อนถึงตารางข้อมูล) → ฟิลด์ + ที่อยู่เซลล์
+ * รองรับ 3 แบบที่เจอในไฟล์จริง:
+ *   ก) ป้ายกับค่าอยู่เซลล์เดียวกัน  "Item : REINF ASY RAD SUPT LWR (MB3B-8C306-BE)"
+ *   ข) ป้ายเซลล์หนึ่ง ค่าเซลล์ถัดไป  A5="Part Number :"  C5="MB3B - 8C306 - BE"
+ *   ค) ป้าย / ":" / ค่า อยู่คนละเซลล์ (PFC)  B6="Part Name"  L6=":"  M6="REINF ASY..."
+ * คืน { fields, cells } — `cells` = ที่อยู่ [row, col] ของค่า ใช้ตอน export เขียนกลับ
+ */
+export function parseFormHeader(rows = [], maxRow = 12) {
+  const fields = {}; const cells = {};
+  const last = Math.min(rows.length, maxRow);
+  for (let r = 0; r < last; r++) {
+    const row = rows[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const raw = cv(row[c]);
+      if (!raw) continue;
+      const [head, ...rest] = raw.split(':');
+      // ⚠️ จำกัดความยาวที่ "ชื่อป้าย" เท่านั้น ห้ามจำกัดทั้งเซลล์ — ป้ายที่ค่ายาว
+      //    ("Core Team : Mr.A(PE); Ms.B(PE); …") จะถูกตัดทิ้งทั้งที่เป็นหัวเอกสารจริง
+      if (head.length > 40) continue;
+      const key = HEADER_LABELS.find(([re]) => re.test(normLabel(head)))?.[1];
+      if (!key || fields[key]) continue;
+      let val = rest.join(':').trim();
+      let at = [r, c];
+      if (!val) {                                   // ค่าอยู่เซลล์ถัดไปทางขวา (ข้าม ":" ที่อยู่เซลล์เดี่ยว)
+        for (let k = c + 1; k < Math.min(row.length, c + 40); k++) {
+          const nx = cv(row[k]);
+          if (!nx || nx === ':') continue;
+          // ⚠️ เจอ "ป้ายของช่องถัดไป" = ช่องนี้ว่างจริง ต้องหยุด ห้ามลากค่าของเพื่อนบ้านมาใส่
+          //    (ในไฟล์จริง "EWO No. :" ว่าง แล้วไปคว้า "MODEL: P703,U704" ของช่องข้างๆ)
+          if (HEADER_LABELS.some(([re]) => re.test(normLabel(nx.split(':')[0])))) break;
+          val = nx; at = [r, k]; break;
+        }
+      }
+      if (val) { fields[key] = val; cells[key] = at; }
+    }
+  }
+
+  /* "REINF ASY RAD SUPT LWR (MB3B-8C306-BE)" → แยกชื่อพาร์ท/เลขพาร์ท */
+  if (fields.item && !fields.part_no) {
+    const m = fields.item.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    if (m) { fields.part_name = fields.part_name || m[1].trim(); fields.part_no = m[2].trim(); }
+    else fields.part_name = fields.part_name || fields.item;
+  }
+  /* เลขพาร์ทในฟอร์มเขียนเว้นวรรครอบขีด ("MB3B - 8C306 - BE") → ยุบให้เป็นรูปแบบเดียวกับในระบบ */
+  if (fields.part_no) fields.part_no = fields.part_no.replace(/\s*-\s*/g, '-').trim();
+  return { fields, cells };
 }
 
 /* ── ③ Cover → ประวัติการแก้ไข (Revision History) ──────────── */
