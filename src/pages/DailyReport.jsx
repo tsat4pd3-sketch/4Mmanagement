@@ -316,7 +316,7 @@ function LiveTab({ role }) {
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type)').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'),
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
@@ -4200,12 +4200,32 @@ function LiveTab({ role }) {
                         style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                       >
                         <option value="">— เลือก MAT.NO —</option>
-                        {lineStds.map(s => (
-                          <option key={s.id} value={s.mat_no}>
-                            {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
-                          </option>
-                        ))}
+                        {lineStds.map(s => {
+                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14:
+                             10105769 กับ 10105770 ชื่อเดียวกันทั้งคู่) → ต่อท้ายด้วยเลขพาร์ทลูกค้า
+                             ที่พอแยกออก + ติดธง ⚠ ให้เห็นว่าคู่ไหนกำกวม (แก้จริงต้องไปตั้งชื่อ
+                             ให้ต่างกันที่ Product Master — ระบบไม่เดาชื่อให้) */
+                          const nm = s.dr_products?.name || s.part_name || '';
+                          const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
+                          return (
+                            <option key={s.id} value={s.mat_no}>
+                              {s.mat_no}{nm ? ` · ${nm}` : ''}
+                              {dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}
+                              {dup ? ' ⚠ชื่อซ้ำ' : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
+                            </option>
+                          );
+                        })}
                       </select>
+                      {(() => {
+                        const names = lineStds.map(s => s.dr_products?.name || s.part_name || '').filter(Boolean);
+                        const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
+                        if (!dupN) return null;
+                        return (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                            ⚠ มีชื่อสินค้าซ้ำกัน {dupN} คู่ในไลน์นี้ — เสี่ยงเปิดผิดใบ · แก้ชื่อให้ต่างกัน (เช่นใส่ลูกค้า AAT/FTM) หรือปิดใช้งานตัวเก่าที่ Product Master
+                          </div>
+                        );
+                      })()}
                     </Field>
                   );
                 })()}
@@ -4432,6 +4452,23 @@ function LiveTab({ role }) {
           // เครื่องจักร + ชิ้นงาน เป็น optional ทุกประเภท downtime — หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
           // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ (machine_no/mat_no nullable · OEE แยกด้วย category)
           const dtMachineOptional = true;
+          /* ตัวเลือก "ชิ้นงาน" ของฟอร์ม Downtime — 3 แหล่งรวมกัน (dedupe ด้วย mat_no)
+             ⚠️ เดิมดึงจาก kanban_standards + ชื่อไลน์ "ตรงเป๊ะ" อย่างเดียว → ไลน์ที่สินค้า
+             ไม่ได้อยู่ในระบบคัมบัง หรือสินค้าผูกกับไลน์แม่/ไลน์พี่น้อง จะขึ้น
+             "ไม่มีชิ้นงานในไลน์นี้" ทั้งที่กำลังผลิตอยู่จริง (หน้างานเลเซอร์แจ้งเข้ามา 2026-08-14)
+             → เอา "ใบงานที่เปิดในกะนี้" มาก่อน (ตรงประเด็นสุด — คือของที่วิ่งอยู่จริง)
+               แล้วเสริมด้วยสินค้า/คัมบังของ "ครอบครัวไลน์" (กฎเดียวกับ sessionProcessTypesAll) */
+          const dtMatOptions = (() => {
+            const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
+            const inFam = (ln) => fam.has((ln || '').trim().toLowerCase());
+            const seen = new Map();
+            const add = (mat, name, src) => { if (mat && !seen.has(mat)) seen.set(mat, { mat_no: mat, name: name || '', src }); };
+            prodOrders.filter(o => !['cancelled', 'imported'].includes(o.status))
+              .forEach(o => add(o.mat_no, o.part_name || products.find(p => p.mat_no === o.mat_no)?.name, 'order'));
+            products.filter(p => inFam(p.line_name)).forEach(p => add(p.mat_no, p.name, 'line'));
+            kanbanStds.filter(s => inFam(s.dr_products?.line_name)).forEach(s => add(s.mat_no, s.dr_products?.name || s.part_name, 'kanban'));
+            return [...seen.values()];
+          })();
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
@@ -4571,20 +4608,21 @@ function LiveTab({ role }) {
                       </div>
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
-                      {(() => {
-                        const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
-                        if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
-                        return (
-                          <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
-                            <option value="">เลือกชิ้นงาน...</option>
-                            {lineStds.map(s => (
-                              <option key={s.id} value={s.mat_no}>
-                                {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      })()}
+                      {!dtMatOptions.length ? (
+                        /* ว่างจริง = ยังไม่มีใบงานในกะ และไม่มีสินค้าผูกกับไลน์เลย → บอกทางแก้ ห้ามปล่อยเป็นทางตัน */
+                        <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center', fontSize: 12 }}>
+                          — ยังไม่มีชิ้นงานให้เลือก (เปิดใบงาน หรือผูกสินค้ากับไลน์ที่ Product Master) · ข้ามได้
+                        </div>
+                      ) : (
+                        <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
+                          <option value="">เลือกชิ้นงาน...</option>
+                          {dtMatOptions.map(o => (
+                            <option key={o.mat_no} value={o.mat_no}>
+                              {o.src === 'order' ? '▶ ' : ''}{o.mat_no}{o.name ? ` · ${o.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </Field>
                   </div>
                   <Field label="รายละเอียด">
@@ -4595,8 +4633,7 @@ function LiveTab({ role }) {
                 <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
                   {(() => {
-                    const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
-                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && dtMatOptions.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
