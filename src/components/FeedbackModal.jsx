@@ -88,6 +88,38 @@ export default function FeedbackModal({ onClose }) {
   const shown = onlyOpen ? rows.filter(r => !['done', 'wontfix'].includes(r.status)) : rows;
   const openCount = rows.filter(r => !['done', 'wontfix'].includes(r.status)).length;
 
+  /* 📋 คัดลอกเป็นข้อความให้เอาไปวางให้ Claude อ่าน
+     ⚠️ จำเป็นเพราะ Claude Code (เซสชันบนเว็บ) **อ่านฐานข้อมูลตรงไม่ได้** — Supabase MCP
+     ติด approval ที่กดไม่ได้ในเซสชันแบบนั้น และ network policy บล็อก supabase.co
+     → ถ้าไม่มีปุ่มนี้ ลูป "user แจ้ง → สั่ง Claude ไปเช็ค" จะสะดุดตรงขั้นสุดท้าย
+     (ถ้ารัน Claude Code แบบ interactive แล้วกดอนุมัติ MCP ได้ ก็อ่านตรงได้ ไม่ต้องใช้ปุ่มนี้) */
+  const copyForClaude = async () => {
+    const list = shown;
+    if (!list.length) { toast.info('ไม่มีเรื่องให้คัดลอก'); return; }
+    const byPage = {};
+    list.forEach(r => { const k = r.page_path || '(ไม่ระบุหน้า)'; byPage[k] = (byPage[k] || 0) + 1; });
+    const head = `feedback จากผู้ใช้ ${list.length} เรื่อง (ดึงเมื่อ ${fmt(new Date().toISOString())})\n`
+      + `รวมตามหน้า: ${Object.entries(byPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${p} ×${n}`).join(' · ')}\n`;
+    const body = list.map((r, i) => {
+      const k = KINDS.find(x => x.key === r.kind) || KINDS[0];
+      return `\n${i + 1}. [${k.label} · ${(STATUS[r.status] || STATUS.new).label}] ${fmt(r.created_at)}`
+        + ` · ${r.user_name || '—'}${r.user_role ? ` (${r.user_role})` : ''} · หน้า ${r.page_path || '—'}\n   ${r.message.replace(/\n/g, '\n   ')}`;
+    }).join('\n');
+    const text = head + body;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`คัดลอก ${list.length} เรื่องแล้ว — เอาไปวางในแชท Claude ได้เลย`);
+    } catch {
+      // บาง browser/บริบทบล็อก clipboard API → ถอยไปวิธีเลือกข้อความเอง ห้ามเงียบ
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand?.('copy');
+      document.body.removeChild(ta);
+      ok ? toast.success(`คัดลอก ${list.length} เรื่องแล้ว`) : toast.error('คัดลอกไม่สำเร็จ — เบราว์เซอร์ไม่อนุญาต');
+    }
+  };
+
   const box = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' };
   const tabBtn = (k, label) => (
     <button key={k} onClick={() => setTab(k)} style={{
@@ -152,7 +184,11 @@ export default function FeedbackModal({ onClose }) {
                   <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} style={{ width: 'auto' }} />
                   เฉพาะที่ยังไม่ปิด
                 </label>
-                <button onClick={load} style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
+                <button onClick={copyForClaude} title="คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้"
+                  style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
+                  📋 คัดลอกให้ Claude
+                </button>
+                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
               </div>
 
               {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>
