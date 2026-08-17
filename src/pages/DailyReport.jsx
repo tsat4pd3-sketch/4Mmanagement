@@ -13,7 +13,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
@@ -320,6 +321,7 @@ function LiveTab({ role }) {
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
     ]);
 
     const lm = {};
@@ -2451,8 +2453,9 @@ function LiveTab({ role }) {
               }).sort((a, b) => b.target - a.target);
 
               // สรุปภาพใหญ่: นับงานคู่ RH/LH เป็น 1 คู่/stroke (max ของสองข้าง) ไม่บวกชิ้นซ้ำ · พาร์ทเดี่ยว = บวกปกติ
+              // + collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่นับซ้ำ (แถวรายพาร์ทยังแยกโชว์ครบ)
               const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
-              const pt = pairAwareTotal(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), pairOf);
+              const pt = pairAwareTotal(collapseOps(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), opInfoSync()), pairOf);
               const nullMat = prodOrders.filter(o => !o.mat_no);
               const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = pt.produced
@@ -2484,6 +2487,16 @@ function LiveTab({ role }) {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{r.matNo}</span>
+                                  {(() => { // 🔩 รายการขั้นตอน (OP) — ยอดไม่ถูกนับซ้ำในสรุปรวม (ผูกพาร์ทจริงแล้ว) · ยังไม่ผูก = เตือน
+                                    const op = opInfoSync()[r.matNo];
+                                    if (!op) return null;
+                                    return (
+                                      <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: op.parent ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: op.parent ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
+                                        title={op.parent ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ผูกได้ที่ Product Master'}>
+                                        🔩 OP{op.seq ? ` ${op.seq}` : ''}{op.parent ? ` · ของ ${op.parent}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                                      </span>
+                                    );
+                                  })()}
                                   {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
                                   {r.ct > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
                                   {r.actualStart && (

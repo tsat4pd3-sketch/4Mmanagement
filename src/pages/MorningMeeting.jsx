@@ -8,7 +8,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { orderTotal } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad } from '../utils/oee';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
@@ -147,6 +148,7 @@ export default function MorningMeeting() {
     setLoading(true);
     try {
       const D = meetingDate;
+      await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณยอด (cache · ครั้งแรกครั้งเดียว)
       const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
@@ -240,16 +242,13 @@ export default function MorningMeeting() {
   //   กะที่ "ไม่มีงานคู่" → ใช้ค่าเดิมเป๊ะ (stamped ก่อน) เพื่อ blast radius น้อยสุด · แหล่งจริง = ใบงาน (prod_orders)
   //   detail รายพาร์ท/เจาะราย MAT ยังอ่านจากใบงานตรงๆ ไม่กระทบ
   const hasPairIn = (os) => os.some(o => o.mat_no && pairMat[o.mat_no] && os.some(x => x.mat_no === pairMat[o.mat_no]));
-  const pairSum = (os, pick) => {
-    const perMat = {}; let nullSum = 0;
-    os.forEach(o => { const v = pick(o); if (!o.mat_no) { nullSum += v; return; } const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 }); e.target += v; });
-    return pairAwareTotal(Object.values(perMat), m => pairMat[m] || null).target + nullSum;
-  };
+  // orderTotal = pair-aware + op-aware (รายการขั้นตอน OP งานขับนัทไม่บวกซ้ำ — collapseOps ใน pairTotals)
+  const pairSum = (os, pick) => orderTotal(os, pick, m => pairMat[m] || null, opInfoSync());
   const sessTarget = (s) => {
     const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
     if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
     if (s.target_qty) return s.target_qty;
-    return os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+    return orderTotal(os, o => o.qty_target ?? o.qty ?? 0, () => null, opInfoSync());
   };
   // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
   const sessActual = (s) => {
@@ -257,7 +256,7 @@ export default function MorningMeeting() {
     if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
     if (s.qty_ok != null) return s.qty_ok;
     if (s.actual_qty) return s.actual_qty;
-    return os.reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
+    return orderTotal(os, o => o.qty_ok ?? o.qty_actual ?? 0, () => null, opInfoSync());
   };
   const sum = useMemo(() => {
     let actual = 0, target = 0;

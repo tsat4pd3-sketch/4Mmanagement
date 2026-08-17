@@ -754,6 +754,33 @@ export default function PMCheckData() {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
       }
 
+      // ⭐ แผน PM "วิ่งตามผลตรวจ" (feedback ทีมงาน 2026-08-17): ตรวจครบทุกจุด (pass/fail) = ทำ PM จริงแล้ว
+      //   → stamp pm_plans.last_done_at + เลื่อน next_due_date (แผนตามรอบเวลา) — เดิมมีแค่ปิดแผนประสานงาน
+      //   ที่ stamp ให้ ทำให้ PM Forecast/ผังเครื่องจักร/Dashboard เห็นแผนค้างทั้งที่ตรวจไปแล้ว
+      //   'pending' (ตรวจไม่ครบ) ไม่นับว่าทำ PM จบ — ไม่เลื่อนรอบ · best-effort ห้ามทำ save หลักพัง แต่ห้ามเงียบ
+      if (overall !== 'pending' && checklistId) {
+        try {
+          const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
+            .select('id, plan_type, interval_days, last_done_at').eq('checklist_id', checklistId).eq('is_active', true)
+          if (pErr) throw pErr
+          const now = new Date()
+          const done = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` // local — ห้าม toISOString
+          for (const pl of (plans || [])) {
+            if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue // วันนี้ stamp ไปแล้ว (ตรวจซ้ำ/AM รายกะ) — ไม่เขียนซ้ำ
+            const patch = { last_done_at: done }
+            // ตามรอบเวลา (time/hybrid) → เลื่อน next_due = วันทำ + interval_days · usage → forecast คำนวณเองจาก last_done_at
+            if (pl.plan_type !== 'usage' && Number(pl.interval_days) > 0) {
+              const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pl.interval_days))
+              patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            }
+            const { error: uErr } = await supabaseDR.from('pm_plans').update(patch).eq('id', pl.id)
+            if (uErr) throw uErr
+          }
+        } catch (e) {
+          toast.error('บันทึกผลตรวจสำเร็จ แต่เลื่อนรอบแผน PM ไม่สำเร็จ: ' + (e?.message || e))
+        }
+      }
+
       // Daily PM line alarm (green when the line is complete & all pass, red on NG).
       const ngTopics = checkpoints.filter(cp => {
         const r = results[cp.id]
