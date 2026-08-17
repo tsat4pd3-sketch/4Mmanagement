@@ -4,7 +4,8 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -422,6 +423,7 @@ export default function FactoryMap({ setupMode = false }) {
       supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
       supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true).then(r => r, () => ({ data: [] })),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
     const pairMap = {}, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
@@ -465,7 +467,7 @@ export default function FactoryMap({ setupMode = false }) {
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullOs = os.filter(o => !o.mat_no);
-      const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
       const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
       const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
@@ -786,6 +788,7 @@ export default function FactoryMap({ setupMode = false }) {
         const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+        await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
         sessions.forEach(s => {
           const o = ensure(s.line_name);
           const os = ordBySess[s.id] || [];
@@ -798,7 +801,7 @@ export default function FactoryMap({ setupMode = false }) {
             e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
           });
           const nullOs = os.filter(od => !od.mat_no);
-          const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
           o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
           // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
@@ -846,6 +849,7 @@ export default function FactoryMap({ setupMode = false }) {
           ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
           supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
           supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+          loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ยอดรวมใน modal ยุบขั้นซ้ำเหมือนผัง
         ]);
         if (cancelled) return;
         const prodName = {}, pairMap = {};
@@ -862,7 +866,7 @@ export default function FactoryMap({ setupMode = false }) {
           e.orders++; if (o.is_manual) e.manual++;
         });
         const parts = Object.values(byMat).sort((a, b) => (b.target || 0) - (a.target || 0));
-        const ptot = pairAwareTotal(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), m => pairMap[m] || null);
+        const ptot = pairAwareTotal(collapseOps(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), opInfoSync()), m => pairMap[m] || null);
         const nullPart = byMat['(ไม่ระบุ MAT)'];
         const totTarget = ptot.target + (nullPart?.target || 0);
         const totProduced = ptot.produced + (nullPart?.produced || 0);

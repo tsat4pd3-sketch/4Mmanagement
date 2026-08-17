@@ -10,7 +10,8 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 
@@ -272,6 +273,7 @@ export default function Dashboard() {
         .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no').not('mat_no', 'is', null),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ยอด demand/actual ไม่นับซ้ำ (ตัวที่ 4 ไม่เข้า destructure)
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
@@ -434,7 +436,7 @@ export default function Dashboard() {
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
       });
       const nullD = active.filter(o => !o.mat_no);
-      const ptotD = pairAwareTotal(Object.values(perMatD), m => pairMap[m] || null);
+      const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
       const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
       const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
