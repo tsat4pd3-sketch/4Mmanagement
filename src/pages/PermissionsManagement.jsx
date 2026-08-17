@@ -9,6 +9,10 @@ import useTabParam from '../utils/useTabParam';
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
 const ROLES = PERMISSION_COLUMN_ROLES;
+// แท็บ "การเข้าถึงหน้า" โชว์เฉพาะ base role — ตัดคอลัมน์ bucket (🛡️ แอดมินหน่วยงาน) ออก (2026-08-06)
+//   เพราะ hasPermission() บล็อก key ที่ขึ้นต้น 'page:' ของ bucket ไว้ในโค้ดเสมอ (permissions.js)
+//   → ติ๊กช่องนั้นไม่มีทางมีผล = ช่องตายที่ทำให้คนตั้งค่าเข้าใจผิดว่าเปิดหน้าให้แอดมินหน่วยงานได้
+const PAGE_COLS = ROLES.filter(r => !r.bucket);
 
 // ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
 const PAGE_GROUPS = [
@@ -17,7 +21,10 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/',            label: 'หน้าหลัก' },
       { key: 'page:/dashboard',   label: 'Dashboard' },
+      { key: 'page:/dept-dashboard', label: 'Dashboard ส่วนงาน' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
+      { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
+      { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
       { key: 'page:/remote',      label: 'รีโมทจอ' },
     ],
   },
@@ -60,6 +67,13 @@ const PAGE_GROUPS = [
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
       { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
+      { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
+    ],
+  },
+  {
+    group: 'วิศวกรรม (PE)',
+    pages: [
+      { key: 'page:/pe-docs', label: 'Flow / PFMEA / Control Plan' },
     ],
   },
   {
@@ -77,6 +91,7 @@ const PAGE_GROUPS = [
       { key: 'page:/event-log', label: 'CQI-15 Event Log' },
       { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
       { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
+      { key: 'page:/vsm',       label: 'VSM สายธารคุณค่า' },
     ],
   },
   {
@@ -90,6 +105,8 @@ const PAGE_GROUPS = [
       { key: 'page:/products',          label: 'Product Master' },
       { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
+      { key: 'page:/die-registry',      label: 'ทะเบียนแม่พิมพ์' },
+      { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
       { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
       { key: 'page:/shift-organize',    label: 'ตารางกะ' },
@@ -210,13 +227,13 @@ export default function PermissionsManagement() {
   };
 
   // เรียกเป็นฟังก์ชันธรรมดา (ไม่ใช่ <Component/>) — กัน react ถือเป็น component ใหม่ทุก render แล้ว remount ตาราง
-  const renderPermTable = (groups, firstColLabel) => (
+  const renderPermTable = (groups, firstColLabel, cols = ROLES) => (
     <div className="table-sticky">
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
             <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{firstColLabel}</th>
-            {ROLES.map(r => (
+            {cols.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
                 <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
@@ -228,14 +245,14 @@ export default function PermissionsManagement() {
           {groups.map(g => (
             <Fragment key={g.group}>
               <tr>
-                <td colSpan={ROLES.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
+                <td colSpan={cols.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
                   <span style={s.groupTitle}>{g.group}</span>
                 </td>
               </tr>
               {g.items.map(p => (
                 <tr key={p.key} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '7px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 380 }}>{p.label}</td>
-                  {ROLES.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
+                  {cols.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
                 </tr>
               ))}
             </Fragment>
@@ -273,7 +290,18 @@ export default function PermissionsManagement() {
         </div>
       </div>
 
-      {tab === 'pages' && renderPermTable(pageGroups, 'หน้า')}
+      {tab === 'pages' && (
+        <>
+          <div style={{ ...s.section, fontSize: 12, lineHeight: 1.6, borderColor: 'rgba(234,179,8,0.4)', background: 'rgba(234,179,8,0.06)' }}>
+            🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน "เปิดหน้า" ให้ไม่ได้</strong> — คอลัมน์นั้นจึงไม่มีในแท็บนี้ (ระบบบล็อกไว้ในโค้ด ติ๊กไปก็ไม่มีผล)
+            <div style={{ marginTop: 4 }}>
+              ต้องการให้ใครเข้าหน้าไหนได้ ให้ติ๊กที่ <strong>role เดิมของเขา</strong> ในตารางนี้ ·
+              แล้วค่อยไปเพิ่มอำนาจ แก้/อนุมัติ ให้เขาที่แท็บ <strong>"สิทธิ์การทำงาน"</strong> คอลัมน์แอดมินหน่วยงาน
+            </div>
+          </div>
+          {renderPermTable(pageGroups, 'หน้า', PAGE_COLS)}
+        </>
+      )}
 
       {tab === 'actions' && (
         <>
