@@ -826,6 +826,15 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 > ```
 > **flow หลักต้องไม่พัง + ผู้ใช้ต้องรู้ว่าอะไรไม่ถูกบันทึก** — เงียบแปลว่าไม่มีใครไป apply migration สักที
 
+> ### ⚠️ กฎเหล็ก — `.update()` ที่ถูก **RLS บล็อก ไม่ error** มันคืน "สำเร็จ 0 แถว" (2026-08-17)
+> คนละเคสกับคอลัมน์ไม่มี (42703 ที่ error จริง) — **RLS ไม่ให้แก้ = PostgREST คืน 200 ไม่มี error เลย**
+> โค้ดที่เช็คแค่ `if (error)` จึงขึ้น toast เขียวทั้งที่ไม่มีอะไรถูกเขียน
+> **เคสจริง:** หัวหน้ากลุ่มวาดลายเซ็นในโมดัล "จัดการลายเซ็น" → ขึ้น "บันทึกลายเซ็นเรียบร้อย" → **logout/login แล้วหาย ต้องเซ็นใหม่ทุกครั้ง** (ฝั่งอ่านถูกอยู่แล้ว — `fetchProfile` select `signature_url` เข้า state ตอน login · ที่พังคือฝั่งเขียน) · รูปโปรไฟล์ (`avatar_url`) เป็นบั๊กชนิดเดียวกัน
+> **ต้องนับแถวเสมอ:** `.update({...}).eq('id', id).select('id')` แล้วเช็ค `data.length` — 0 แถว = ล้มเหลว **ห้ามขึ้นว่าสำเร็จ**
+> **การให้ user แก้โปรไฟล์ตัวเอง ห้ามใช้ policy `for update using (id = auth.uid())` แบบตรงๆ** — ทดสอบแล้ว **user แก้ `role` ตัวเองเป็น `admin` ได้จริง** (RLS จำกัดรายคอลัมน์ไม่ได้ · column GRANT ก็ใช้ไม่ได้เพราะ `/add-user` ต้องให้ admin แก้ role/section ของคนอื่นผ่าน client ตรงๆ)
+> **ทางที่ใช้: SECURITY DEFINER แตะเฉพาะคอลัมน์ที่อนุญาตของแถวตัวเอง** — `set_my_signature(text)` / `set_my_avatar(text)` (migration `20260817_profile_self_update_rpc.sql` · Main) เรียกผ่าน **`saveMyProfileMedia(field, url)` ใน `src/utils/profileSelf.js` จุดเดียว** (RPC ก่อน → ยังไม่ apply migration ค่อยถอยไป update ตรงแบบนับแถว)
+> **จุดใหม่ที่ให้ user แก้ข้อมูลโปรไฟล์ตัวเอง ให้เพิ่มคอลัมน์เข้า RPC + helper นี้ ห้าม update ตรง**
+
 ### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
 
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
