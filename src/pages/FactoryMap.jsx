@@ -4,12 +4,14 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, wavg, wLoad, buildCtMap } from '../utils/oee';
+import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -48,7 +50,25 @@ const CAT = {
 };
 
 // นิยาม metric แต่ละตัว — value(ค่าเรียงอันดับ) · text(บนกรอบ) · cat(หมวดสี) · worstFirst(เรียง side panel)
+/** % เปลี่ยนแปลงพลังงานเทียบเดือนก่อน — ต้องมีฐานจริงถึงจะเทียบ (0 = ไม่มีข้อมูล ไม่ใช่ "ไม่เปลี่ยน") */
+const energyDelta = (s) => (s.kwhPrev ? deltaPct(s.kwh, s.kwhPrev) : null)
+
 const METRICS = {
+  /* ⚡ พลังงานไฟฟ้า — ทีมขอ "show ค่า kWh บริเวณ Line บนผัง อยากดูละเอียดค่อยกดเข้าไป"
+     เฟส 1 ตัวเลขมาจากการกรอกมือรายเดือนที่ /energy → ป้ายต้องบอกที่มา ห้ามดูเหมือนค่าที่วัดสด
+     สี = เทียบเดือนก่อน (ลดลง=เขียว) · ไม่มีฐานเทียบ = เทา ไม่ใช่เขียว
+     ⚠️ facilityNA ต้องไม่ตั้ง — โซนคอมเพรสเซอร์/คูลลิ่งคือตัวกินไฟหลัก metric นี้มีความหมายเต็มที่ */
+  energy: {
+    label: '⚡ พลังงาน', worstFirst: true, desc: true,
+    value: s => s.kwh ?? null,
+    text: s => {
+      if (s.kwh == null) return 'ยังไม่กรอก';
+      const d = energyDelta(s);
+      return `${fmtKwh(s.kwh)} kWh${d != null ? ` · ${d > 0 ? '+' : ''}${d}%` : ''}`;
+    },
+    short: s => (s.kwh == null ? '' : `${fmtKwh(s.kwh)}`),
+    cat: s => (s.kwh == null ? 'idle' : energyCat(energyDelta(s))),
+  },
   productivity: {
     // เทียบ "เป้า ณ เวลาปัจจุบัน (on-time)" ไม่ใช่เป้าเต็มกะ — % จึงบอกว่า "ทันจังหวะมั้ย" แบบ real-time
     // ฟอร์แมต: ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ · สี = ทำได้เทียบเป้า ณ เวลานี้
@@ -260,6 +280,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
   const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
+  const [energyStatus, setEnergyStatus] = useState({});  // ⚡ พลังงานรายเดือน: name → { qty, prev, cost, source } (DR · เฟส 1 กรอกมือ)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
@@ -402,6 +423,7 @@ export default function FactoryMap({ setupMode = false }) {
       supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
       supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true).then(r => r, () => ({ data: [] })),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
     const pairMap = {}, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
@@ -445,7 +467,7 @@ export default function FactoryMap({ setupMode = false }) {
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullOs = os.filter(o => !o.mat_no);
-      const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
       const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
       const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
@@ -578,6 +600,24 @@ export default function FactoryMap({ setupMode = false }) {
     setLineStatus(out);
   }, []);
   useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
+
+  /* ── ⚡ พลังงานไฟฟ้ารายเดือน (DR · เฟส 1 กรอกมือที่ /energy) ──────────────────
+     ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน — โหลดเดือนปัจจุบัน + เดือนก่อนไว้เทียบ
+     ไม่ต้อง refresh ถี่ (ข้อมูลรายเดือน) โหลดครั้งเดียวตอนเปิดหน้าพอ */
+  const loadEnergy = useCallback(async () => {
+    const cur = monthKeyOf(), prev = shiftMonth(cur, -1);
+    const { data, error } = await supabaseDR.from('energy_monthly')
+      .select('scope_name, month_key, qty, cost, source').eq('utility', 'electric').in('month_key', [cur, prev]);
+    if (error) return;                       // ยังไม่ apply migration = metric ขึ้น "ยังไม่กรอก" ไม่พัง
+    const out = {};
+    for (const r of data || []) {
+      const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null });
+      if (r.month_key === cur) { o.qty = Number(r.qty) || 0; o.cost = Number(r.cost) || 0; o.source = r.source; }
+      else o.prev = Number(r.qty) || 0;
+    }
+    setEnergyStatus(out);
+  }, []);
+  useEffect(() => { loadEnergy(); }, [loadEnergy]);
 
   /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
   const loadManpower = useCallback(async () => {
@@ -748,6 +788,7 @@ export default function FactoryMap({ setupMode = false }) {
         const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+        await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
         sessions.forEach(s => {
           const o = ensure(s.line_name);
           const os = ordBySess[s.id] || [];
@@ -760,7 +801,7 @@ export default function FactoryMap({ setupMode = false }) {
             e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
           });
           const nullOs = os.filter(od => !od.mat_no);
-          const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
           o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
           // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
@@ -808,6 +849,7 @@ export default function FactoryMap({ setupMode = false }) {
           ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
           supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
           supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+          loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ยอดรวมใน modal ยุบขั้นซ้ำเหมือนผัง
         ]);
         if (cancelled) return;
         const prodName = {}, pairMap = {};
@@ -824,7 +866,7 @@ export default function FactoryMap({ setupMode = false }) {
           e.orders++; if (o.is_manual) e.manual++;
         });
         const parts = Object.values(byMat).sort((a, b) => (b.target || 0) - (a.target || 0));
-        const ptot = pairAwareTotal(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), m => pairMap[m] || null);
+        const ptot = pairAwareTotal(collapseOps(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), opInfoSync()), m => pairMap[m] || null);
         const nullPart = byMat['(ไม่ระบุ MAT)'];
         const totTarget = ptot.target + (nullPart?.target || 0);
         const totProduced = ptot.produced + (nullPart?.produced || 0);
@@ -941,6 +983,10 @@ export default function FactoryMap({ setupMode = false }) {
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
+      // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
+      //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
+      const en = energyStatus[n];
+      if (en) { agg.kwh = (agg.kwh || 0) + (en.qty || 0); agg.kwhPrev = (agg.kwhPrev || 0) + (en.prev || 0); agg.kwhCost = (agg.kwhCost || 0) + (en.cost || 0); agg.kwhSrc = agg.kwhSrc || en.source; }
     });
     // โซน facility เอง: Supply Route = เครื่องในโซนนี้ down (open MO) มั้ย (มุมมองต่างจากไลน์ผลิตที่เป็น "ถูกจ่าย")
     if (isFac(name)) {

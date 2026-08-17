@@ -13,7 +13,8 @@ import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps, orderTotal } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
@@ -429,6 +430,7 @@ export default function OEEAnalytics() {
         const [{ data: prod }, kstd] = await Promise.all([
           supabaseDR.from('dr_products').select('mat_no, pair_mat_no, cycle_time_sec, name').in('mat_no', mats),
           supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').in('mat_no', mats).then(r => r, () => ({ data: [] })),
+          loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณ tdKpi
         ]);
         const pm = {}, nm = {};
         (prod || []).forEach(p => {
@@ -511,12 +513,8 @@ export default function OEEAnalytics() {
   const tdKpi = useMemo(() => {
     // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
     const hasPairIn = os => os.some(o => o.mat_no && tdPairMat[o.mat_no] && os.some(x => x.mat_no === tdPairMat[o.mat_no]));
-    const pairSum = (os, pick) => {
-      const perMat = {}; let nullSum = 0;
-      os.forEach(o => { const v = pick(o); if (!o.mat_no) { nullSum += v; return; }
-        (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0 })).target += v; });
-      return pairAwareTotal(Object.values(perMat), m => tdPairMat[m] || null).target + nullSum;
-    };
+    // orderTotal = pair-aware + op-aware (รายการขั้นตอน OP งานขับนัทไม่บวกซ้ำ — collapseOps ใน pairTotals)
+    const pairSum = (os, pick) => orderTotal(os, pick, m => tdPairMat[m] || null, opInfoSync());
     // เป้ากะ: ใช้ target_qty ที่ตั้งไว้ → ไม่ได้ตั้ง (ค่า 0 = เกือบทุกกะในระบบจริง) ให้รวมเป้าใบงานแทน
     // (กฎเดียวกับ MorningMeeting: เป้ากะ = target_qty → รวม qty_target ?? qty ของใบงาน · ห้าม fallback ไป std_day_shift ซึ่งเป็นจำนวน "คน")
     // เดิม non-pair คืน r.target_qty ตรงๆ → การ์ด "จำนวนชิ้นงานที่ผลิตรวม" ขึ้น "ยังไม่ตั้งเป้ากะ" ทั้งที่ใบงานมีเป้าครบ (2026-08-05)
@@ -524,12 +522,12 @@ export default function OEEAnalytics() {
       const os = (tdOrdersBySession[r.id] || []).filter(o => !['cancelled','imported','carry_over'].includes(o.status));
       if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
       if (r.target_qty) return r.target_qty;
-      return os.reduce((s, o) => s + (o.qty_target ?? o.qty ?? 0), 0);
+      return orderTotal(os, o => o.qty_target ?? o.qty ?? 0, () => null, opInfoSync());
     };
     // ผลิตจริง: actual_qty เขียนตอน "ปิดกะ" เท่านั้น → กะที่ยังเปิดต้องรวมจากใบงานสด
     // (เดิม non-pair คืน r.totalQty ตรงๆ → การ์ด "ผลิตรวมวันนี้" เป็น 0 ทั้งที่ผลิตอยู่ · แก้ 2026-08-05
     //  pattern เดียวกับบั๊ก sessTarget) · pair-aware ทำถูกอยู่แล้วทั้งสองเส้นทาง
-    const ordSum = os => os.reduce((s2, o) => s2 + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
+    const ordSum = os => orderTotal(os, o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), () => null, opInfoSync());
     const sessActual = r => {
       const os = tdOrdersBySession[r.id] || [];
       if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
@@ -778,6 +776,7 @@ export default function OEEAnalytics() {
       }
       setTrOrders(ordersAll);
       const trMats = [...new Set(ordersAll.map(o => o.mat_no).filter(Boolean))];
+      await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ trTotalQty ยุบขั้นซ้ำก่อนรวมยอด
       if (trMats.length) {
         const pm = {};
         for (let i = 0; i < trMats.length; i += 300) {
@@ -870,7 +869,8 @@ export default function OEEAnalytics() {
       (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
     });
     // ⚠️ pairAwareTotal คืน { target, produced } เท่านั้น — ชื่อฟิลด์อื่นได้ undefined เงียบๆ
-    return pairAwareTotal(Object.values(perMat), m => trPairMat[m] || null).produced + nullSum;
+    // collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่บวกซ้ำ
+    return pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => trPairMat[m] || null).produced + nullSum;
   }, [rows, trOrders, trPairMat]);
 
   const kpi = useMemo(() => {

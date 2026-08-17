@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { isFgMat } from '../utils/matPrefix';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
@@ -36,7 +37,7 @@ const TYPE_LABEL = { issue:'📦 จ่ายเข้าไลน์', consume:
 /* รหัส MAT SAP (ดู CLAUDE.md "รหัส MAT SAP"): ขึ้นต้น 1 = FG งานสำเร็จพร้อมขาย —
    อยู่ FG WAREHOUSE รอส่งลูกค้า หักออกทางเดียวคือกด "ส่งแล้ว" หน้า Delivery
    จึงไม่มีเหตุให้ "จ่ายเข้าไลน์" (ปรับยอด/คืนยังทำได้ ผ่านคิวอนุมัติตามปกติ) */
-const isFgMat = (m) => String(m || '').trim().startsWith('1');
+// FG = ขึ้นต้นด้วย 1 — นิยามกลางที่ src/utils/matPrefix.js (ห้ามนิยามซ้ำในหน้า)
 const TYPE_COLOR = { issue:'#22c55e', consume:'#94a3b8', return:'#f59e0b', adjust:'#a855f7' };
 
 /* ประเภท manual movement ที่ต้องผ่านการอนุมัติ (store review) ก่อนมีผลต่อ on-hand

@@ -9,6 +9,8 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
+import { loadOpInfo } from '../utils/opItems';
 
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -45,7 +47,7 @@ const btnSecondary = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
 
-const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '' });
+const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '', is_operation: false, op_parent_mat: '', op_seq: '' });
 
 /* ── Quick-link chips to connected modules ── */
 function RelatedLinks({ matNo, productId }) {
@@ -214,6 +216,7 @@ export default function ProductMaster() {
       posting_mode: item.posting_mode || 'immediate', lot_accumulate_threshold: item.lot_accumulate_threshold || '',
       is_active: item.is_active, effective_from: item.effective_from || '',
       image_url: item.image_url || sharedImage || '', pair_mat_no: item.pair_mat_no || '',
+      is_operation: !!item.is_operation, op_parent_mat: item.op_parent_mat || '', op_seq: item.op_seq ?? '',
     } : BLANK());
   };
 
@@ -230,6 +233,7 @@ export default function ProductMaster() {
       is_active: true,
       effective_from: localDateStr(),
       image_url: item.image_url || '',
+      is_operation: !!item.is_operation, op_parent_mat: item.op_parent_mat || '', op_seq: item.op_seq ?? '',
     });
   };
 
@@ -327,6 +331,18 @@ export default function ProductMaster() {
               .then(({ count }) => { if (!count) supabaseDR.storage.from('product-images').remove([oldPath]).catch(() => {}); });
           }
         }
+      }
+      // 🔩 ฟิลด์ชั้น Operation (รายการขั้นตอน เช่นงานขับนัท) — เขียนแยก best-effort เพราะคอลัมน์มาจาก
+      // migration 20260817_operation_items_dr ที่อาจยังไม่ apply (ห้ามยัดลง payload หลัก = save พังทั้งฟอร์ม)
+      // อัพเดทเฉพาะเมื่อเกี่ยวข้อง (ติ๊กอยู่ / เคยติ๊ก) — ไม่งั้นทุก save จะเด้ง error ตอน migration ยังไม่มา
+      const wasOp = editing !== 'new' && !!items.find(i => i.id === editing)?.is_operation;
+      if (form.is_operation || wasOp) {
+        const { error: opErr } = await supabaseDR.from('dr_products').update({
+          is_operation: !!form.is_operation,
+          op_parent_mat: form.is_operation ? ((form.op_parent_mat || '').trim().toUpperCase() || null) : null,
+          op_seq: form.is_operation && form.op_seq !== '' && form.op_seq != null ? parseInt(form.op_seq) : null,
+        }).eq('id', savedId);
+        if (opErr) toast.error('บันทึกสินค้าสำเร็จ แต่ฟิลด์ "รายการขั้นตอน (OP)" ยังไม่ถูกบันทึก — ยังไม่ได้ apply migration 20260817_operation_items_dr (แจ้ง admin)');
       }
       // ผูกคู่ RH/LH สองทาง — ถ้าเปลี่ยน/ยกเลิกคู่เดิม ให้เลิกผูกฝั่งคู่เดิมด้วย
       const oldPairMatNo = editing !== 'new' ? items.find(i => i.id === editing)?.pair_mat_no : null;
@@ -593,9 +609,9 @@ export default function ProductMaster() {
       <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
           <span style={{ fontWeight: 700, color: '#f59e0b' }}>📦 ชิ้นส่วนที่ซื้อจาก Supplier</span>
-          {' '}(300xxxxx · 500xxxxx) เพิ่มได้ที่ tab{' '}
+          {' '}(ขึ้นต้น <strong>3</strong> · <strong>5</strong>) เพิ่มได้ที่ tab{' '}
           <strong style={{ color: 'var(--text)' }}>🗂 Parts Master</strong>
-          {' '}— หน้านี้รองรับเฉพาะ <strong>100xxxxx</strong> (FG ส่งลูกค้า) และ <strong>200xxxxx</strong> (Child Part ผลิตเอง)
+          {' '}— หน้านี้รองรับเฉพาะเลขขึ้นต้น <strong>1</strong> (FG ส่งลูกค้า) และ <strong>2</strong> (Child Part ผลิตเอง)
         </div>
         <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: '#f59e0b', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
           ไปที่ Parts Master →
@@ -629,6 +645,24 @@ export default function ProductMaster() {
         </>}
         {canCreate && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
       </div>
+
+      {/* 🔩 worklist — รายการขั้นตอน (OP) ที่ยังไม่ผูกพาร์ทจริง = ยอดรวมยังนับซ้ำได้ (ห้ามซ่อน — pattern แถบ ⚠️ ข้อมูลไม่ตรงผัง) */}
+      {(() => {
+        const opNoParent = items.filter(i => i.is_active && i.is_operation && !i.op_parent_mat);
+        if (!opNoParent.length) return null;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
+            <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
+              🔩 รายการขั้นตอน (OP) ที่ยังไม่ผูกพาร์ทจริง {opNoParent.length} รายการ
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+              ยอดผลิตของรายการเหล่านี้ยังถูกนับซ้ำในยอดรวมได้ — กด "แก้ไข" ที่รายการแล้วเลือก "เป็นขั้นของพาร์ทจริง (MAT)"
+              {' '}(พาร์ทจริงยังไม่มีในระบบ = ไปเพิ่มพาร์ท 2xxx ก่อน)
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>({opNoParent.map(i => i.mat_no).join(' · ')})</span>
+          </div>
+        );
+      })()}
 
       {/* ── Name Groups → Family cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -675,6 +709,12 @@ export default function ProductMaster() {
                     )}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
                       {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
+                      {item.is_operation && (
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: item.op_parent_mat ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
+                          title={item.op_parent_mat ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ยอดยังนับซ้ำได้ กดแก้ไขแล้วเลือกพาร์ทจริง'}>
+                          🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                        </span>
+                      )}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
                       {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
                       {item.code && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
@@ -964,6 +1004,33 @@ export default function ProductMaster() {
                   ))}
                 </select>
               </Field>
+              {/* 🔩 ชั้น Operation — รายการที่เป็น "ขั้นตอน" ของพาร์ทจริง (เช่นงานขับนัท SUB APRON 1 รายการ/1 OP)
+                  ใบงานยังเปิด/ปิดรายเครื่องได้ตามเดิม (หัวหน้าไลน์มอนิเตอร์รายขั้น) แต่ยอดรวมภาพใหญ่
+                  จะนับที่พาร์ทจริงตัวเดียว ไม่บวกซ้ำ (collapseOps · migration 20260817_operation_items_dr) */}
+              <div style={{ border: '1px solid rgba(14,165,233,0.35)', borderRadius: 8, padding: '10px 12px', background: 'rgba(14,165,233,0.05)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
+                </label>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                </div>
+                {form.is_operation && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                    <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
+                      <select value={form.op_parent_mat} onChange={e => setForm(f => ({ ...f, op_parent_mat: e.target.value }))} style={inputSt}>
+                        <option value="">— ยังไม่ระบุ (ยอดจะยังนับซ้ำจนกว่าจะผูก) —</option>
+                        {items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)
+                          .sort((a, b) => (a.name === form.name ? -1 : b.name === form.name ? 1 : 0))
+                          .map(i => <option key={i.id} value={i.mat_no}>{i.mat_no} — {i.name}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
+                      <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
+                    </Field>
+                  </div>
+                )}
+              </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputSt} /></Field>
                 <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder="เช่น 500" style={inputSt} /></Field>
@@ -1188,12 +1255,14 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [copying, setCopying]         = useState(false);
 
   const loadAll = useCallback(async () => {
-    const [{ data: prods }, { data: boms }, { data: parts }] = await Promise.all([
+    const [{ data: prods }, { data: boms }, { data: parts }, opMap] = await Promise.all([
       supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
       supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
+      loadOpInfo(),
     ]);
-    setProducts(prods || []);
+    // 🔩 รายการขั้นตอน (OP งานขับนัท) ไม่ใช่พาร์ทจริง — ห้ามมี BOM ของตัวเอง จึงไม่โผล่ในลิสต์นี้
+    setProducts((prods || []).filter(p => !opMap[p.mat_no]));
     setPartsMaster(parts || []);
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
@@ -1636,11 +1705,9 @@ function ExportPanel({ items, kanbanStds, bomCounts }) {
 
 /* ═══════════════════════════════════════════════════════════════
    PARTS MASTER PANEL — ฐานข้อมูลกลางของพาร์ทย่อย
-   mat_no prefix:
-     100xxxxx = FG (ส่งลูกค้า)
-     200xxxxx = child part ผลิตในบริษัท
-     300xxxxx = child part ซื้อนอก
-     500xxxxx = raw material
+   ประเภทพาร์ทแยกด้วย "เลขตัวแรก" ของ MAT SAP — นิยามอยู่ที่ src/utils/matPrefix.js
+   (1=FG · 2=Child ผลิตเอง · 3=Child ซื้อนอก · 5=Raw · 9=เลขภายใน)
+   ⚠️ ห้ามกลับไปเทียบ 3 ตัวแรก — เลข FG รันทะลุ 100xxxxx ไปเป็น 101xxxxx แล้ว
 ═══════════════════════════════════════════════════════════════ */
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: 'EA',
@@ -1649,28 +1716,7 @@ const EMPTY_PART = {
   material_cost: '', standard_cost: '',
 };
 
-const MAT_PREFIXES = [
-  { prefix: '100', label: '100xxxxx — FG (ส่งลูกค้า)', color: '#22c55e' },
-  { prefix: '200', label: '200xxxxx — Child Part (ผลิตเอง)', color: '#3b82f6' },
-  { prefix: '300', label: '300xxxxx — Child Part (ซื้อนอก)', color: '#f59e0b' },
-  { prefix: '500', label: '500xxxxx — Raw Material', color: '#a78bfa' },
-];
-
-function matColor(mat_no = '') {
-  if (mat_no.startsWith('1')) return '#22c55e';
-  if (mat_no.startsWith('2')) return '#3b82f6';
-  if (mat_no.startsWith('3')) return '#f59e0b';
-  if (mat_no.startsWith('5')) return '#a78bfa';
-  return 'var(--muted)';
-}
-
-function matTypeLabel(mat_no = '') {
-  if (mat_no.startsWith('1')) return 'FG';
-  if (mat_no.startsWith('2')) return 'Child (ผลิต)';
-  if (mat_no.startsWith('3')) return 'Child (ซื้อ)';
-  if (mat_no.startsWith('5')) return 'Raw Mat';
-  return '';
-}
+const MAT_PREFIXES = MAT_CLASSES.map(c => ({ prefix: c.digit, label: `${c.digit}xxxxxxx — ${c.label}`, color: c.color }));
 
 function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadKey }) {
   const [parts, setParts]         = useState([]);
@@ -1749,7 +1795,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
   const filtered = useMemo(() => {
     let r = parts;
-    if (prefixFilter) r = r.filter(p => p.mat_no?.startsWith(prefixFilter));
+    if (prefixFilter) r = r.filter(p => matMatches(p.mat_no, prefixFilter));
     if (search.trim()) {
       const q = search.toLowerCase();
       r = r.filter(p =>
@@ -1847,7 +1893,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         <select style={{ ...inputSt, width: 'auto', background: 'var(--bg2)' }}
           value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
           <option value="">ทุกประเภท</option>
-          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.prefix}xxxxx</option>)}
+          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.label}</option>)}
         </select>
         {canCreate && <>
           <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
@@ -1898,7 +1944,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
-                      {matTypeLabel(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matTypeLabel(p.mat_no)}</span>}
+                      {matClassOf(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matLabel(p.mat_no)}</span>}
                     </div>
                   </td>
                   <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text)', fontWeight: 600, borderTop: '1px solid var(--border)' }}>{p.part_name}</td>

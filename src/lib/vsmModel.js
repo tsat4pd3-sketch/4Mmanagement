@@ -15,6 +15,7 @@
  *            P/8 RADIATOR GRL   → 82.65 × 56,400 + 53,100 = 4,714,560 → 1.13% ตรงใบ
  *   (ถ้าใช้ 86,400 จะได้ตัวหาร 7 ล้าน = %VA ต่ำกว่าใบจริงเกือบเท่าตัว)
  */
+import { matDigit } from '../utils/matPrefix';
 import { wavg, wLoad, ctForMat, policyBreakForShift } from '../utils/oee';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { stepsFor } from '../utils/routing';
@@ -215,7 +216,7 @@ export function buildVsmModel(input) {
   const invDays = qty => (demand.perDay && qty != null ? round(qty / demand.perDay, 2) : null);
   // จุดที่มี kanban = จุดดึง (pull) → ผังวาดเป็น supermarket + kanban post แทนสามเหลี่ยมเปล่า
   const kbOf = mat => (kanbanStds || []).find(k => k.mat_no === mat) || null;
-  const rawChild = children.find(c => String(c.matNo).startsWith('5'));
+  const rawChild = children.find(c => matDigit(c.matNo) === '5');
   const inventories = [];
   const rawPm = rawChild ? partsMaster.find(p => p.mat_no === rawChild.matNo) : null;
   inventories.push({

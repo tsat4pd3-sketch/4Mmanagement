@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import useIsMobile from '../utils/useIsMobile';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 
@@ -164,6 +165,7 @@ async function loadProduction(ctx) {
     ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', ids) : { data: [] },
     supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
     ids7.length ? supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', ids7) : { data: [] },
+    loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 6 ไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
   return { sess, sess7: sess7 || [], orders: orders || [], dts: dts || [], defs: defs || [], prods: prods || [], dt7: dt7 || [], fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
@@ -190,7 +192,7 @@ function ProductionView({ d, ctx }) {
         e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
       });
       const nulls = os.filter(od => !od.mat_no);
-      const pt = pairAwareTotal(Object.values(perMat), pairOf);
+      const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
       L.target += pt.target + nulls.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
       L.actual += pt.produced + nulls.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
       let planned = 0;

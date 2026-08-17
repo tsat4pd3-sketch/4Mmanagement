@@ -7,6 +7,7 @@ import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
+const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
 import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -54,6 +55,7 @@ const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
+const Energy = lazy(() => import('./pages/Energy'));
 const PmForecast  = lazy(() => import('./pages/PmForecast'));
 const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
@@ -125,6 +127,7 @@ export const NAV_ITEMS = [
   { to: '/pm-forecast', icon: '🔧', label: 'PM ล่วงหน้า (Planner)',            group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-coordination', icon: '🗓️', label: 'แผนประสานงาน PM (แจ้งผลิต)',   group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
@@ -268,6 +271,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
+  const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
@@ -509,6 +513,17 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
           </button>
 
+          {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
+              admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
+          <button
+            onClick={() => setFbOpen(true)}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+          >
+            <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
+            <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
+          </button>
+
           {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
               🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
           {canAccessPage('/remote', userRole) && (<>
@@ -570,6 +585,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           </>)}
         </div>
       </nav>
+      {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
+
       <SignatureModal
         open={sigModalOpen}
         onClose={() => setSigModalOpen(false)}
@@ -1344,6 +1361,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/pm-forecast" element={
                 <RoleRoute path="/pm-forecast" userRole={role}><PmForecast /></RoleRoute>
+              } />
+              <Route path="/energy" element={
+                <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>

@@ -12,7 +12,8 @@
   Doc control: doc_key 'monthly_review' ใน doc_forms (โลโก้/เลขฟอร์ม override ได้จาก /doc-forms)
 */
 import { supabase, supabaseDR } from '../supabaseClient';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd } from '../utils/oee';
 
 /* ── TSG palette (hex ไม่มี # — ตาม pptxgenjs) ── */
@@ -94,6 +95,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   }
 
   // pair map สำหรับนับ output แบบ 1 คู่/stroke (กฎ pairAwareTotal)
+  await loadOpInfo(); // map รายการขั้นตอน (OP งานขับนัท) — output เด็คไม่นับซ้ำ
   const mats = [...new Set(orders.map(o => o.mat_no).filter(Boolean))];
   const pairMap = {};
   for (const ms of chunk(mats, 200)) {
@@ -147,7 +149,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       if (o.mat_no) perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: (perMat[o.mat_no]?.produced || 0) + qty };
       else nullMat += qty;
     });
-    return pairAwareTotal(Object.values(perMat), mt => pairMap[mt] || null).produced + nullMat;
+    return pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), mt => pairMap[mt] || null).produced + nullMat;
   };
   const dtStats = (ss) => {
     const ids = new Set(ss.map(s => s.id));

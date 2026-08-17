@@ -2,7 +2,7 @@
  * VSM — แผนผังสายธารคุณค่า (Value Stream Mapping) · เฟส 1 = Current state + พิมพ์ A3
  * ออกแบบ: docs/VSM-DESIGN.md
  *
- * flow: เลือก FG (100xxxxx) + เดือน → สร้างร่างจากข้อมูลจริง → แก้ค่าที่ระบบไม่รู้ → บันทึก → พิมพ์
+ * flow: เลือก FG (เลขขึ้นต้น 1) + เดือน → สร้างร่างจากข้อมูลจริง → แก้ค่าที่ระบบไม่รู้ → บันทึก → พิมพ์
  *
  * ⚠️ สูตรทั้งหมดอยู่ `src/lib/vsmModel.js` (ซึ่ง reuse utils/oee, stdManpower, companyCalendar)
  *    หน้านี้ทำหน้าที่ "โหลดข้อมูล + แสดงผล" เท่านั้น ห้ามคำนวณ OEE/CT/AT เองที่นี่
@@ -12,6 +12,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { isFgMat } from '../utils/matPrefix';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
@@ -90,7 +91,7 @@ export default function VSM() {
     const q = search.trim().toLowerCase();
     return products.filter(p => {
       if (p.is_active === false) return false;
-      if (!String(p.mat_no).startsWith('1')) return false;
+      if (!isFgMat(p.mat_no)) return false;
       if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
       if (!q) return true;
       return [p.mat_no, p.name, p.p_no].some(v => String(v || '').toLowerCase().includes(q));
