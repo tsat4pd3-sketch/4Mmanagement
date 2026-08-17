@@ -1105,10 +1105,19 @@ export default function ProductMaster() {
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
+                      {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
+                          เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
                       <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
-                        options={items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)}
+                        options={(() => {
+                          const real = items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation);
+                          const seen = new Set(real.map(i => (i.mat_no || '').trim().toUpperCase()));
+                          const bought = pmParts
+                            .filter(p => p.mat_no && !seen.has((p.mat_no || '').trim().toUpperCase()))
+                            .map(p => ({ mat_no: p.mat_no, name: `${p.part_name || ''} 🗂ทะเบียน/ซื้อนอก` }));
+                          return [...real, ...bought];
+                        })()}
                         placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ยังไม่ผูก ยอดนับซ้ำ)"
-                        hint="ลิสต์เรียงตามเลข · แสดงเฉพาะพาร์ทจริงที่ใช้งานอยู่ (รายการ OP ด้วยกัน + สินค้าที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ)" />
+                        hint="รวมทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอกจากทะเบียน Parts Master (ป้าย 🗂) · รายการ OP ด้วยกัน + ของที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
