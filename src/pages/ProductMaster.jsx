@@ -952,13 +952,25 @@ export default function ProductMaster() {
                 <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputSt} />
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
+                <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : form.is_operation ? 'เลข/ชื่อของขั้น (ตั้งเอง — ไม่ใช่เลข SAP)' : 'MAT.NO (SAP)'}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder={form.is_operation ? 'เช่น 332 ขับนัท M6' : 'เช่น 10100399'} style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
                     <button type="button" onClick={() => setPartsPickFor('product')} title="เลือกจากทะเบียนกลาง Parts Master"
                       style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
                   </div>
-                  {form.mat_no && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
+                  {/* คำใบ้เคส OP (user ขอ 2026-08-17): SAP ไม่มีตัวตนของขั้น — ตั้งชื่อเอง ห้ามใช้เลขพาร์ทจริงซ้ำ */}
+                  {form.is_operation && (
+                    <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 4 }}>
+                      🔩 รายการ OP ไม่ใช้เลข MAT SAP — ตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เลขพาร์ทจริงใส่ช่อง "เป็นขั้นของพาร์ทจริง" ด้านล่างเท่านั้น)
+                    </div>
+                  )}
+                  {/* เตือนเลขซ้ำตั้งแต่ตอนพิมพ์ — ไม่ต้องรอชน unique constraint ตอนกดบันทึก */}
+                  {form.mat_no && items.some(i => i.mat_no === form.mat_no.trim() && i.id !== editing) && (
+                    <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, fontWeight: 700 }}>
+                      ⚠ เลขนี้มีสินค้าอยู่แล้วในระบบ — บันทึกไม่ผ่านแน่นอน{form.is_operation ? ' · รายการ OP ต้องตั้งเลข/ชื่อใหม่ของตัวเอง' : ' · ค้นหาแล้วแก้ไขตัวเดิมแทน'}
+                    </div>
+                  )}
+                  {form.mat_no && !form.is_operation && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
                     ecSource ? (
                       <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4 }}>
                         🗂 MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
@@ -1024,7 +1036,7 @@ export default function ProductMaster() {
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP) · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
                 </div>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
