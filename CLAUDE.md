@@ -498,6 +498,22 @@
 - **legacy `manage_master_data` เกษียณแล้ว (2026-07-22)** — สวิตช์รวมเก่า (แทน `['admin','manager','supervisor'].includes(role)` hardcode ~10 ไฟล์) ถูกแตกเป็นสิทธิ์ย่อยครบแล้ว: `oee:set_target` (ปุ่ม 🎯 ตั้งเป้า OEE) · `ot_master:manage` (Report แผงจองรถ OT — สายรถ/งาน OT) · `management:assign_manpower` (ลากจัดกำลังคนบนผัง) · seed default = admin/mgr/sv เท่าเดิม (พฤติกรรมไม่เปลี่ยน) · migration `20260722_retire_manage_master_data.sql` · แถว `manage_master_data` เดิมใน role_permissions คงไว้แต่ไม่มีโค้ดอ่านแล้ว (เผื่อ rollback) — **ห้ามผูกฟีเจอร์ใหม่กับ manage_master_data อีก**
 - **ต่างจาก scoping ตาม section/line/team** (ด้านล่าง) — permission ตอบว่า "เข้าหน้านี้ได้ไหม/ทำ action นี้ได้ไหม" ส่วน scoping ตอบว่า "เห็นข้อมูลแถวไหนบ้าง" สองเรื่องนี้แยกกันคนละกลไก
 
+> #### ⚠️ กฎเหล็ก — RLS ก็ต้อง data-driven: เช็คสิทธิ์ด้วย `has_perm('<key>')` ห้าม hardcode role array ใน policy (2026-08-17)
+> UI อ่าน `role_permissions` แต่ **RLS บาง policy ยัง hardcode รายชื่อ role ไว้ใน DB** → 2 ฝั่ง drift กันแล้ว**เพี้ยนได้ 2 ทางสวนกัน** และ build/lint จับไม่ได้เลย (เป็น runtime ฝั่ง DB):
+> - **UI ให้ แต่ DB ปฏิเสธ** = ปุ่มโผล่ กดแล้วเด้ง error 42501 (`new row violates row-level security policy`)
+> - **UI ซ่อน แต่ DB อนุญาต** = ช่องโหว่ ยิง API ตรงได้ทั้งที่ `role_permissions` ปิดไว้
+>
+> **เคสจริงที่เจอ (`employee_skills`):** policy เดิมเช็ค `role = any(['admin','manager','supervisor','leader'])` ขณะที่ `role_permissions` บอกว่า `mtn` มี `skills:edit`=true และ `leader`=false → ช่าง MTN **เพิ่มสกิลให้ช่างด้วยกันไม่ได้เลย** (พนักงานสนับสนุน MTN/DIE MTN 18 คน ยังไม่มีสกิลสักแถว) ส่วน leader กลับเขียนได้ผ่านแผงในโมดัลแก้ไขพนักงาน — ขัดกับระบบ farm+ด่านอนุมัติที่ตั้งใจย้ายไปฝั่ง server แล้ว
+>
+> - **ใช้ `public.has_perm(perm_key text)`** (Main · SECURITY DEFINER · mirror ของ `hasPermission()` ใน `permissions.js`: admin bypass → `role_permissions` ของ base role → bucket `dept_admin` ที่**ห้ามปลดล็อก `page:*`**) · migration `20260817_employee_skills_rls_data_driven.sql`
+> - **⚠️ ห้ามเปลี่ยนชื่อพารามิเตอร์ `perm_key`** — มี 21 policy ฝั่ง QA อ้างอยู่ (`qa_parts`/`qa_ncr`/`qa_capa`/`qa_measurements`/`qa_inspection_*`/`qa_characteristics`/`qa_instruments`/`qa_part_drawings`) · เปลี่ยนแล้วได้ error 42P13 ต้อง `drop function` ก่อน ซึ่งจะพา policy ตกไปด้วย → **ใช้ `create or replace` เสมอ**
+> - **policy ที่ต้องการหลาย key ให้ `or` กัน** (`employee_skills` = `skills:edit` ∨ `skills:approve_levelup` ∨ `skills:delete`) แล้วปรับต่อที่ `/permissions` ได้เลยไม่ต้องเขียน migration ใหม่
+> - **⚠️ RLS ปฏิเสธ UPDATE/DELETE = 0 rows ไม่ error** (เงียบ!) มีแต่ INSERT/upsert ที่โยน 42501 → **โค้ดที่เขียนตารางซึ่งคุมด้วย RLS ต้อง gate ด้วย `can()` ฝั่ง UI ให้ตรงกับ policy ด้วย** อย่าหวังพึ่ง error
+> - **ผลของการแก้ (วัดกับผู้ใช้จริง):** ได้สิทธิ์เพิ่ม mtn 8 + planner_store(dept_admin) 1 · **เสียสิทธิ์ leader 17 คน** (ตรงตามที่ `role_permissions` ตั้งไว้) — อยากคืนให้ leader ติ๊ก `leader × skills:edit` ที่ `/permissions` 1 คลิก มีผลทั้ง UI และ RLS ทันทีไม่ต้อง deploy
+> - **policy อื่นที่ยัง hardcode role array อยู่ ให้ทยอยย้ายมาใช้ `has_perm()`** เมื่อไปแตะตารางนั้น
+>
+> **⚠️ แผง "📊 ระดับทักษะ" ในโมดัลแก้ไขพนักงาน (`/operator`) แยกสิทธิ์จาก `employees:edit` แล้ว** — เดิมไม่ถูก gate เลย ใครเปิดโมดัลได้ก็แก้คะแนนได้ · ตอนนี้ read-only เมื่อไม่มี `skills:edit` และ `handleUpdate` **ยิง upsert/delete เฉพาะสกิลที่เปลี่ยนจริง** (เดิมยิงทุกสกิลทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป → คนไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ) · สกิลพลาด = **ไม่ throw รวม** (ข้อมูลพนักงานบันทึกไปแล้ว การ throw ทำให้อ่านเหมือนไม่ได้บันทึกอะไรเลย) แต่ต้องขึ้น toast บอกให้ชัดว่าส่วนไหนสำเร็จ ส่วนไหนไม่ — **ห้ามเงียบ**
+
 ### Section/Line/Team Scoping — รองรับหลาย section ต่อ user แล้ว (2026-07-09)
 
 - ขอบเขตส่วนงานเก็บที่ `profiles.sections text[]` (หลายค่า เช่น `{PD1,PD2,QA}`) โดยยังมี `profiles.section` เดี่ยว (legacy) อยู่คู่กัน — ตีความผ่าน `effectiveSections(role, sections, section)` ใน `src/utils/sectionScope.js` ตามลำดับ:

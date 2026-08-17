@@ -67,6 +67,10 @@ export default function Operator() {
   // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
   // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
   const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
+  // ⚠️ สิทธิ์แก้ "ระดับทักษะ" แยกจาก employees:edit — คนที่แก้ประวัติพนักงานได้ ไม่จำเป็นต้องแก้คะแนนสกิลได้
+  //   (leader มี employees:edit แต่ skills:edit = false โดยตั้งใจ — คะแนนสกิลมาจากการ farm + ด่านอนุมัติ)
+  //   RLS ฝั่ง DB ก็คุมด้วย skills:edit เช่นกัน → ยิงทั้งที่ไม่มีสิทธิ์ = error ทับการบันทึกที่สำเร็จไปแล้ว
+  const canEditSkills = can('skills', 'edit', role);
 
   // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
   // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
@@ -366,31 +370,46 @@ export default function Operator() {
         }
       }
 
-      // Skills marked as enabled → upsert; disabled (N/A) → delete record
-      const enabledSkills = skillDefs.filter(sd => editingEmp.skillEnabled?.[sd.name]);
-      const disabledSkillNames = skillDefs.filter(sd => !editingEmp.skillEnabled?.[sd.name]).map(sd => sd.name);
+      // ── ระดับทักษะ ────────────────────────────────────────────────────────
+      // เทียบกับค่าเดิมแล้วยิงเฉพาะ "ที่เปลี่ยนจริง" — เดิมยิง upsert ทุกสกิลที่ติ๊กไว้ + delete ทุกสกิล
+      // ที่ไม่ติ๊ก (รวมตัวที่ไม่เคยมีแถวอยู่แล้ว) → แตะ employee_skills ทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป
+      // ทำให้คนที่ไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ
+      let skillWarn = '';
+      if (canEditSkills) {
+        const origMap = new Map((editingEmp.employee_skills || []).map(s => [s.skill_name, s]));
+        const upserts = [];
+        const removals = [];
+        skillDefs.forEach(sd => {
+          const on = !!editingEmp.skillEnabled?.[sd.name];
+          const orig = origMap.get(sd.name);
+          if (on) {
+            const score = sd.category === 'allowance_skill' ? 100 : Number(editingEmp.skillScores?.[sd.name] ?? 0);
+            if (!orig || Number(orig.score) !== score) {
+              upserts.push({ employee_id: editingEmp.id, skill_name: sd.name, score, updated_at: new Date().toISOString() });
+            }
+          } else if (orig) {
+            removals.push(sd.name);   // ลบเฉพาะที่เคยมีแถวจริง
+          }
+        });
 
-      if (enabledSkills.length > 0) {
-        const upserts = enabledSkills.map(sd => ({
-          employee_id: editingEmp.id,
-          skill_name: sd.name,
-          score: sd.category === 'allowance_skill' ? 100 : Number(editingEmp.skillScores?.[sd.name] ?? 0),
-          updated_at: new Date().toISOString(),
-        }));
-        const { error: skillErr } = await supabase.from('employee_skills')
-          .upsert(upserts, { onConflict: 'employee_id,skill_name' });
-        if (skillErr) throw skillErr;
+        if (upserts.length > 0) {
+          const { error: skillErr } = await supabase.from('employee_skills')
+            .upsert(upserts, { onConflict: 'employee_id,skill_name' });
+          if (skillErr) skillWarn = skillErr.message;
+        }
+        if (!skillWarn && removals.length > 0) {
+          const { error: delErr } = await supabase.from('employee_skills')
+            .delete()
+            .eq('employee_id', editingEmp.id)
+            .in('skill_name', removals);
+          if (delErr) skillWarn = delErr.message;
+        }
       }
 
-      if (disabledSkillNames.length > 0) {
-        const { error: delErr } = await supabase.from('employee_skills')
-          .delete()
-          .eq('employee_id', editingEmp.id)
-          .in('skill_name', disabledSkillNames);
-        if (delErr) throw delErr;
-      }
-
-      toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
+      // ⚠️ ข้อมูลพนักงานถูกบันทึกไปแล้วข้างบน — ถ้าสกิลพลาดห้าม throw รวม (จะอ่านเหมือนไม่ได้บันทึกอะไรเลย)
+      //    แต่ก็ห้ามเงียบ: บอกให้ชัดว่าส่วนไหนสำเร็จ ส่วนไหนไม่
+      if (skillWarn) toast.error('บันทึกข้อมูลพนักงานแล้ว แต่ระดับทักษะยังบันทึกไม่ได้: ' + skillWarn);
+      else toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
       fetchEmployees();
     } catch (err) {
@@ -1483,7 +1502,12 @@ export default function Operator() {
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
-                <label style={{ ...labelSt, marginBottom: 12, display: 'block' }}>📊 ระดับทักษะ</label>
+                <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>📊 ระดับทักษะ</label>
+                {!canEditSkills && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    🔒 ดูอย่างเดียว — บัญชีนี้ไม่มีสิทธิ์แก้ระดับทักษะ (ข้อมูลอื่นในฟอร์มยังแก้ได้ตามปกติ)
+                  </div>
+                )}
                 {(() => {
                   // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
                   const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
@@ -1504,13 +1528,13 @@ export default function Operator() {
                           return (
                             <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: 'pointer' }}>
-                                <input type="checkbox" checked={enabled}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: canEditSkills ? 'pointer' : 'default' }}>
+                                <input type="checkbox" checked={enabled} disabled={!canEditSkills}
                                   onChange={e => setEditingEmp({
                                     ...editingEmp,
                                     skillEnabled: { ...editingEmp.skillEnabled, [sd.name]: e.target.checked },
                                   })}
-                                  style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                                  style={{ width: 14, height: 14, cursor: canEditSkills ? 'pointer' : 'default' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
                                   {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
@@ -1527,7 +1551,7 @@ export default function Operator() {
                               {enabled && g.key === 'allowance_skill' ? (
                                 <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
                               ) : enabled ? (
-                                <input type="number" value={score}
+                                <input type="number" value={score} disabled={!canEditSkills}
                                   onChange={e => setEditingEmp({
                                     ...editingEmp,
                                     skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
