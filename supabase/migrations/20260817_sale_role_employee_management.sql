@@ -46,9 +46,7 @@
 --   delete from role_permissions where role='sale'::user_role and permission_key in
 --     ('page:/operator','page:/register','employees:register','employees:edit','skills:edit');
 --   delete from role_permissions where permission_key = 'employees:edit_all_sections';
---   update profiles set section = null
---     where id in (select id from auth.users where email in
---       ('warehouse1@tsat4','warehouse2@tsat4','planningstore@tsat4'));
+--   update profiles set section = null where role = 'sale'::user_role;
 -- ============================================================================
 
 -- ── 1. เปิดหน้า/ปุ่มให้ role sale ─────────────────────────────────────────────
@@ -79,8 +77,10 @@ from unnest(array['sale','qa','document_control','engineer','display']) as r
 on conflict (role, permission_key) do update set allowed = excluded.allowed;
 
 -- ── 3. ส่วนงานของบัญชีคลัง/สโตร์ (คอลัมน์เดี่ยว ไม่แตะ sections[]) ────────────
+-- ทุกบัญชี role `sale` อยู่หน่วยงานเดียวกัน (W/H · Store · Delivery · Billing — ยืนยันโดย user)
+-- ไล่ตาม role ไม่ระบุอีเมลรายตัว → บัญชี sale ที่เพิ่มทีหลังก็ได้ค่าเดียวกันเมื่อรัน migration ซ้ำ
+-- (ถ้าวันหน้ามีบัญชี sale ที่อยู่คนละหน่วยงานจริง ให้แก้ทีละคนที่ /add-user แทน)
 update public.profiles p
 set section = 'Planning&Store'
-from auth.users u
-where u.id = p.id
-  and u.email in ('warehouse1@tsat4', 'warehouse2@tsat4', 'planningstore@tsat4');
+where p.role = 'sale'::user_role
+  and p.section is distinct from 'Planning&Store';
