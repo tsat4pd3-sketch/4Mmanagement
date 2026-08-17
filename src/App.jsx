@@ -7,6 +7,7 @@ import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
+const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
 import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -270,6 +271,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
+  const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
@@ -511,6 +513,17 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
           </button>
 
+          {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
+              admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
+          <button
+            onClick={() => setFbOpen(true)}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+          >
+            <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
+            <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
+          </button>
+
           {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
               🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
           {canAccessPage('/remote', userRole) && (<>
@@ -572,6 +585,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           </>)}
         </div>
       </nav>
+      {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
+
       <SignatureModal
         open={sigModalOpen}
         onClose={() => setSigModalOpen(false)}

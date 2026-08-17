@@ -9,6 +9,7 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
 
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -593,9 +594,9 @@ export default function ProductMaster() {
       <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
           <span style={{ fontWeight: 700, color: '#f59e0b' }}>📦 ชิ้นส่วนที่ซื้อจาก Supplier</span>
-          {' '}(300xxxxx · 500xxxxx) เพิ่มได้ที่ tab{' '}
+          {' '}(ขึ้นต้น <strong>3</strong> · <strong>5</strong>) เพิ่มได้ที่ tab{' '}
           <strong style={{ color: 'var(--text)' }}>🗂 Parts Master</strong>
-          {' '}— หน้านี้รองรับเฉพาะ <strong>100xxxxx</strong> (FG ส่งลูกค้า) และ <strong>200xxxxx</strong> (Child Part ผลิตเอง)
+          {' '}— หน้านี้รองรับเฉพาะเลขขึ้นต้น <strong>1</strong> (FG ส่งลูกค้า) และ <strong>2</strong> (Child Part ผลิตเอง)
         </div>
         <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: '#f59e0b', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
           ไปที่ Parts Master →
@@ -1636,11 +1637,9 @@ function ExportPanel({ items, kanbanStds, bomCounts }) {
 
 /* ═══════════════════════════════════════════════════════════════
    PARTS MASTER PANEL — ฐานข้อมูลกลางของพาร์ทย่อย
-   mat_no prefix:
-     100xxxxx = FG (ส่งลูกค้า)
-     200xxxxx = child part ผลิตในบริษัท
-     300xxxxx = child part ซื้อนอก
-     500xxxxx = raw material
+   ประเภทพาร์ทแยกด้วย "เลขตัวแรก" ของ MAT SAP — นิยามอยู่ที่ src/utils/matPrefix.js
+   (1=FG · 2=Child ผลิตเอง · 3=Child ซื้อนอก · 5=Raw · 9=เลขภายใน)
+   ⚠️ ห้ามกลับไปเทียบ 3 ตัวแรก — เลข FG รันทะลุ 100xxxxx ไปเป็น 101xxxxx แล้ว
 ═══════════════════════════════════════════════════════════════ */
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: 'EA',
@@ -1649,28 +1648,7 @@ const EMPTY_PART = {
   material_cost: '', standard_cost: '',
 };
 
-const MAT_PREFIXES = [
-  { prefix: '100', label: '100xxxxx — FG (ส่งลูกค้า)', color: '#22c55e' },
-  { prefix: '200', label: '200xxxxx — Child Part (ผลิตเอง)', color: '#3b82f6' },
-  { prefix: '300', label: '300xxxxx — Child Part (ซื้อนอก)', color: '#f59e0b' },
-  { prefix: '500', label: '500xxxxx — Raw Material', color: '#a78bfa' },
-];
-
-function matColor(mat_no = '') {
-  if (mat_no.startsWith('1')) return '#22c55e';
-  if (mat_no.startsWith('2')) return '#3b82f6';
-  if (mat_no.startsWith('3')) return '#f59e0b';
-  if (mat_no.startsWith('5')) return '#a78bfa';
-  return 'var(--muted)';
-}
-
-function matTypeLabel(mat_no = '') {
-  if (mat_no.startsWith('1')) return 'FG';
-  if (mat_no.startsWith('2')) return 'Child (ผลิต)';
-  if (mat_no.startsWith('3')) return 'Child (ซื้อ)';
-  if (mat_no.startsWith('5')) return 'Raw Mat';
-  return '';
-}
+const MAT_PREFIXES = MAT_CLASSES.map(c => ({ prefix: c.digit, label: `${c.digit}xxxxxxx — ${c.label}`, color: c.color }));
 
 function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadKey }) {
   const [parts, setParts]         = useState([]);
@@ -1749,7 +1727,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
   const filtered = useMemo(() => {
     let r = parts;
-    if (prefixFilter) r = r.filter(p => p.mat_no?.startsWith(prefixFilter));
+    if (prefixFilter) r = r.filter(p => matMatches(p.mat_no, prefixFilter));
     if (search.trim()) {
       const q = search.toLowerCase();
       r = r.filter(p =>
@@ -1847,7 +1825,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         <select style={{ ...inputSt, width: 'auto', background: 'var(--bg2)' }}
           value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
           <option value="">ทุกประเภท</option>
-          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.prefix}xxxxx</option>)}
+          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.label}</option>)}
         </select>
         {canCreate && <>
           <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
@@ -1898,7 +1876,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
-                      {matTypeLabel(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matTypeLabel(p.mat_no)}</span>}
+                      {matClassOf(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matLabel(p.mat_no)}</span>}
                     </div>
                   </td>
                   <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text)', fontWeight: 600, borderTop: '1px solid var(--border)' }}>{p.part_name}</td>
