@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESM — คู่มือการใช้งาน | Thai Summit Group</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+ --gd:#0D3D14; --gm:#14571F; --or:#C0561E; --gold:#EBD9B0;
+ --ink:#16261a; --mut:#5b6b5f; --line:#d8e0d6; --bg:#f4f6f2;
+ --ts-logo:url("data:image/png;base64,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");
+}
+html,body{height:100%}
+body{font-family:Tahoma,"Sarabun","Noto Sans Thai",sans-serif;background:#0a1a0e;color:var(--ink);overflow:hidden}
+#deck{position:relative;width:100vw;height:100vh}
+.sl{position:absolute;inset:0;display:none;flex-direction:column;
+ padding:44px 60px 56px;background:var(--bg);overflow:hidden}
+.sl.on{display:flex}
+.logo{position:absolute;top:26px;right:44px;width:52px;height:44px;opacity:.92;
+ background:var(--ts-logo) center/contain no-repeat}
+.pg{position:absolute;bottom:18px;right:44px;font-size:13px;color:var(--mut);letter-spacing:.5px}
+h1{font-size:78px;color:#fff;letter-spacing:3px;line-height:1}
+h2{font-size:34px;color:var(--gd);border-bottom:4px solid var(--or);
+ padding-bottom:12px;margin-bottom:22px;padding-right:120px;line-height:1.25}
+h2 .ic{margin-right:10px}
+/* จัดเนื้อหาให้อยู่กลางแนวตั้งเมื่อสั้นกว่าจอ — กันหน้าโหวงตอนฉายโปรเจคเตอร์
+   เนื้อหายาวจะดันเต็มแล้วเลื่อนในกล่องเอง */
+.bd{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center}
+h3{font-size:19px;margin-bottom:12px}
+
+/* cover */
+.cover{background:linear-gradient(150deg,var(--gd) 0%,var(--gm) 62%,#0a2b10 100%);
+ align-items:flex-start;justify-content:center;padding-left:76px}
+.cover .logo{opacity:1;width:72px;height:60px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
+.c-sub{font-size:29px;color:var(--gold);margin-top:14px;letter-spacing:1px}
+.c-line{font-size:20px;color:#cfe3d2;margin-top:30px}
+.c-foot{position:absolute;bottom:52px;left:76px;font-size:15px;color:#9dbba4;
+ border-top:2px solid var(--or);padding-top:12px}
+
+/* section divider */
+.sec{background:linear-gradient(140deg,var(--gd),var(--gm));justify-content:center;padding-left:76px}
+.sec-num{font-size:120px;font-weight:bold;color:rgba(235,217,176,.22);line-height:.9}
+.sec h2{font-size:52px;color:#fff;border:0;border-left:7px solid var(--or);
+ padding:4px 0 4px 22px;margin:10px 0 0}
+.sec-sub{font-size:21px;color:var(--gold);margin-top:16px;padding-left:29px}
+.sec .pg{color:#9dbba4}
+
+/* agenda */
+.ag{display:grid;grid-template-columns:1fr 1fr;gap:12px 26px;align-content:start}
+.ag-row{display:flex;gap:14px;align-items:flex-start;background:#fff;
+ border:1px solid var(--line);border-left:5px solid var(--gd);border-radius:7px;padding:12px 15px}
+.ag-n{flex:0 0 30px;height:30px;border-radius:50%;background:var(--or);color:#fff;
+ font-size:15px;font-weight:bold;display:flex;align-items:center;justify-content:center}
+.ag-row > div > b:first-child{display:block;font-size:17px;color:var(--gd);margin-bottom:3px}
+.ag-row > div > span{font-size:13.5px;color:var(--mut);line-height:1.5}
+
+/* table */
+/* กล่องเนื้อหา: ย่อตามเนื้อหา (ตารางสั้นๆ จะได้ไม่ยืดเต็มจอจนดูโหวง)
+   แต่ถ้าเนื้อหายาวเกินจอ ให้เลื่อนในกล่องแทนการล้นออกนอกสไลด์ */
+.scroll{overflow:auto;flex:0 1 auto;min-height:0;border:1px solid var(--line);border-radius:8px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:16px}
+th{background:var(--gd);color:#fff;text-align:left;padding:11px 14px;
+ font-size:15px;position:sticky;top:0;letter-spacing:.3px}
+td{padding:10px 14px;border-top:1px solid var(--line);line-height:1.55;vertical-align:top}
+tbody tr:nth-child(even){background:#f8faf7}
+.note{margin-top:14px;background:#fdf3e8;border-left:5px solid var(--or);
+ padding:12px 16px;border-radius:0 7px 7px 0;font-size:15px;line-height:1.65}
+
+/* bullets */
+.bls{display:flex;flex-direction:column;gap:9px;overflow:auto;flex:0 1 auto;min-height:0;padding-right:6px}
+.bl{background:#fff;border:1px solid var(--line);border-left:5px solid var(--gm);
+ border-radius:7px;padding:11px 16px}
+.bl-t{font-size:17px;font-weight:bold;color:var(--gd);margin-bottom:3px}
+.bl-d{font-size:15px;color:#3d4d41;line-height:1.6}
+
+/* steps */
+.sts{display:flex;flex-direction:column;gap:9px;overflow:auto;flex:0 1 auto;min-height:0}
+.st{display:flex;gap:15px;align-items:flex-start;background:#fff;
+ border:1px solid var(--line);border-radius:7px;padding:11px 16px}
+.st-n{flex:0 0 32px;height:32px;border-radius:50%;background:var(--gd);color:#fff;
+ font-weight:bold;font-size:16px;display:flex;align-items:center;justify-content:center}
+.st > div > b:first-child{display:block;font-size:17px;color:var(--gd);margin-bottom:2px}
+.st > div > span{font-size:15px;color:#3d4d41;line-height:1.55}
+
+/* two col */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:22px;flex:1;min-height:0}
+.col{background:#fff;border:1px solid var(--line);border-radius:9px;padding:20px 22px}
+.col-a{border-top:6px solid #8fa894}
+.col-b{border-top:6px solid var(--or)}
+.col-a h3{color:#5b6b5f}
+.col-b h3{color:var(--or)}
+.col ul{list-style:none}
+.col li{font-size:16.5px;line-height:1.6;padding:9px 0 9px 24px;position:relative;
+ border-bottom:1px dashed var(--line)}
+.col li:last-child{border:0}
+.col li::before{content:"▪";position:absolute;left:4px;color:var(--or);font-size:17px}
+
+/* warn */
+.warnbar{margin-top:14px;background:#fdf3e8;border-left:5px solid var(--or);
+ padding:12px 16px;border-radius:0 7px 7px 0;font-size:15px;line-height:1.65}
+.bigwarn{flex:0 1 auto;display:flex;flex-direction:column;justify-content:center;
+ background:#fff;border:2px solid var(--or);border-radius:11px;padding:34px 40px}
+.bw-t{font-size:32px;font-weight:bold;color:var(--or);margin-bottom:22px;line-height:1.3}
+.bigwarn ul{list-style:none}
+.bigwarn li{font-size:18px;line-height:1.65;padding:10px 0 10px 26px;position:relative}
+.bigwarn li::before{content:"→";position:absolute;left:0;color:var(--gd);font-weight:bold}
+
+/* andon */
+.andon{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;flex:1;min-height:0}
+.an{background:#fff;border:1px solid var(--line);border-radius:10px;padding:22px 16px;
+ text-align:center;display:flex;flex-direction:column;justify-content:center}
+.an-d{font-size:52px;line-height:1}
+.an-n{font-size:22px;font-weight:bold;margin:12px 0 8px}
+.an-m{font-size:14.5px;color:#3d4d41;line-height:1.5;min-height:46px}
+.an-b{font-size:14px;color:var(--mut);margin-top:10px;border-top:1px solid var(--line);padding-top:10px}
+.an-g{border-top:6px solid #22a94a}.an-g .an-n{color:#1a7d38}
+.an-y{border-top:6px solid #e0b020}.an-y .an-n{color:#9a7607}
+.an-r{border-top:6px solid #d33}.an-r .an-n{color:#b32020}
+.an-x{border-top:6px solid #9aa79c}.an-x .an-n{color:var(--mut)}
+
+/* oee */
+.formula{text-align:center;font-size:44px;font-weight:bold;color:var(--gd);
+ margin:6px 0 22px;letter-spacing:2px}
+.fa{color:#1a7d38}.fp{color:var(--or)}.fq{color:#2158a8}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.fcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:20px}
+.fcard p{font-size:15.5px;color:#3d4d41;line-height:1.6}
+.fc-a{border-top:6px solid #1a7d38}.fc-a h3{color:#1a7d38}
+.fc-p{border-top:6px solid var(--or)}.fc-p h3{color:var(--or)}
+.fc-q{border-top:6px solid #2158a8}.fc-q h3{color:#2158a8}
+
+/* closing */
+.cls{display:flex;flex-direction:column;gap:10px;flex:0 1 auto;min-height:0;overflow:auto}
+.cl{display:flex;gap:16px;align-items:center;background:#fff;border:1px solid var(--line);
+ border-left:5px solid var(--or);border-radius:7px;padding:13px 18px}
+.cl-i{font-size:30px;flex:0 0 40px;text-align:center}
+.cl > div > b:first-child{display:block;font-size:18px;color:var(--gd);margin-bottom:2px}
+.cl > div > span{font-size:15px;color:#3d4d41;line-height:1.5}
+
+/* progress + hint */
+#bar{position:fixed;left:0;bottom:0;height:4px;background:var(--or);
+ width:0;transition:width .18s ease;z-index:50}
+#hint{position:fixed;left:22px;bottom:14px;font-size:12px;color:var(--mut);
+ z-index:50;opacity:.85;transition:opacity .4s}
+.sec #hint,.cover #hint{color:#9dbba4}
+@media print{
+ body{overflow:visible;background:#fff}
+ #deck{height:auto}
+ .sl{display:flex!important;position:relative;height:100vh;page-break-after:always}
+ #bar,#hint{display:none}
+}
+</style></head>
+<body><div id="deck">
+<section class="sl cover"><i class="logo"></i>
+<h1>ESM</h1><div class="c-sub">Enterprise Shopfloor Management</div>
+<div class="c-line">คู่มือการใช้งานระบบ · ทุกฟังก์ชัน</div><div class="c-foot">Thai Summit Group · 2026-08-17</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">2/67</div><h2>หัวข้อวันนี้</h2>
+<div class="bd"><div class="ag"><div class="ag-row"><span class="ag-n">1</span><div><b>ระดับผู้ใช้ (role) — ใครเห็นอะไร</b><span>11 role + ขอบเขตข้อมูล + แอดมินหน่วยงาน</span></div></div><div class="ag-row"><span class="ag-n">2</span><div><b>พื้นฐานที่ทุกคนต้องรู้</b><span>เข้าระบบ · หาเมนู · กะ · ไฟ Andon · แจ้งเตือน</span></div></div><div class="ag-row"><span class="ag-n">3</span><div><b>ฝ่ายผลิต — งานประจำวัน</b><span>ประชุมเช้า · เช็คชื่อ · จัดไลน์ · Daily Report</span></div></div><div class="ag-row"><span class="ag-n">4</span><div><b>วิเคราะห์ & รายงาน</b><span>OEE · ประวัติผลิต · VSM · สอบกลับ Order</span></div></div><div class="ag-row"><span class="ag-n">5</span><div><b>พนักงาน & ทักษะ</b><span>ทะเบียน · Skill Matrix · OJT · ตารางกะ</span></div></div><div class="ag-row"><span class="ag-n">6</span><div><b>คลัง & จัดส่ง</b><span>Store · Kanban · Delivery · ขนส่ง</span></div></div><div class="ag-row"><span class="ag-n">7</span><div><b>ซ่อมบำรุง</b><span>แจ้งซ่อม MO · PM · คลังอะไหล่</span></div></div><div class="ag-row"><span class="ag-n">8</span><div><b>คุณภาพ & วิศวกรรม</b><span>ใบตรวจ · NCR · PFMEA · Control Plan</span></div></div><div class="ag-row"><span class="ag-n">9</span><div><b>ตั้งค่าและฐานข้อมูล</b><span>master data · สิทธิ์ · เอกสาร</span></div></div></div></div></section>
+<section class="sl sec"><div class="pg">3/67</div>
+<div class="sec-num">1</div><h2>ระดับผู้ใช้ (role)</h2><div class="sec-sub">ใครเห็นอะไร ทำอะไรได้</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">4/67</div><h2>role ทั้ง 11 แบบ</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>role</th><th>เหมาะกับใคร</th><th>เห็นข้อมูลแค่ไหน</th></tr></thead><tbody><tr><td>🛡️ ผู้ดูแลระบบ</td><td>IT / ผู้ดูแล</td><td><b>ทั้งโรงงาน + ทุกหน้าเสมอ</b></td></tr><tr><td>🏭 สิทธิ์ทั้งฝ่าย</td><td>ผู้จัดการฝ่าย/โรงงาน</td><td>ทั้งโรงงาน</td></tr><tr><td>🏢 สิทธิ์ระดับส่วน</td><td>หัวหน้าส่วน/แผนก</td><td>เฉพาะส่วนงานที่ตั้งไว้ (หลายส่วนได้)</td></tr><tr><td>👥 สิทธิ์ระดับไลน์</td><td>หัวหน้ากลุ่ม/ไลน์</td><td>ไลน์ตัวเอง <b>+ ไลน์ลูกทุกตัว</b></td></tr><tr><td>✅ งานคุณภาพ</td><td>ทีม QA/QC ทุกระดับ</td><td><b>ทั้งโรงงาน</b> (งานคุณภาพข้ามสายผลิต)</td></tr><tr><td>🔧 ซ่อมบำรุง</td><td>ช่าง MTN / JIG / DIE</td><td>ตามส่วนงาน + ทีมช่างที่สังกัด</td></tr><tr><td>⚙️ งานวิศวกรรม</td><td>ส่วนวิศวกรรม (PE)</td><td>ตามส่วนงานที่ตั้ง</td></tr><tr><td>📦 แผนงาน-คลัง</td><td>คลัง / วางแผน</td><td>ตามส่วนงานที่ตั้ง</td></tr><tr><td>🚚 ขาย-จัดส่ง</td><td>ทีมขาย / จัดส่ง</td><td>ตามส่วนงานที่ตั้ง</td></tr><tr><td>🗂️ งานเอกสาร</td><td>ควบคุมเอกสาร</td><td>ตามส่วนงานที่ตั้ง</td></tr><tr><td>📺 จอแสดงผล</td><td>จอ TV / บอร์ดหน้าไลน์</td><td>ดูอย่างเดียว ไม่ใช่คน</td></tr></tbody></table></div><div class="note">role = ชุดสิทธิ์ใช้ระบบ <b>ไม่ใช่ตำแหน่งงาน</b> — ตำแหน่งจริงเก็บแยกในช่อง “ตำแหน่ง” ใช้แสดงตัวตน/พิมพ์เอกสาร ไม่มีผลต่อสิทธิ์</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">5/67</div><h2>⚙️ engineer ≠ “ตำแหน่งวิศวกร”</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">engineer = ส่วนวิศวกรรม (หน่วยงาน)</div><ul><li>วิศวกรที่ทำงาน <b>PM</b> สังกัดแผนก MTN → ใช้ role <b>mtn</b> ไม่ใช่ engineer</li><li>เคยเข้าใจผิดจนเกือบแจกสิทธิ์ PM ให้ผิด role</li><li>ตำแหน่งจริงอยู่ที่ช่อง “ตำแหน่ง” แยกจาก role เด็ดขาด</li></ul></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">6/67</div><h2>🛡️ แอดมินหน่วยงาน — สิทธิ์ชั้นที่ 2</h2>
+<div class="two">
+ <div class="col col-a"><h3>คนใช้งานทั่วไป</h3><ul><li>เข้าหน้าตาม role เดิม</li><li>ดู / ใช้ ตามปกติ</li><li>แก้ master ไม่ได้</li></ul></div>
+ <div class="col col-b"><h3>+ ติ๊ก “เป็นแอดมินหน่วยงาน”</h3><ul><li>เข้าหน้า <b>เท่าเดิม</b> (ไม่เพิ่มหน้าใหม่)</li><li><b>+ แก้ master · ตั้งค่า · อนุมัติ</b></li><li>ขอบเขตข้อมูลเท่าเดิม (ไม่ใช่ admin ระบบ)</li></ul></div>
+</div><div class="warnbar">ตัวอย่าง: planner_store เข้า Product Master ได้อยู่แล้วแต่กดแก้ไม่ได้ → ติ๊กแอดมินหน่วยงาน → ปุ่มแก้โผล่ทันที</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">7/67</div><h2>⚠️ จุดที่คนสับสนมากที่สุด</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">แอดมินหน่วยงาน “เปิดหน้า” ให้ไม่ได้</div><ul><li>อยากให้ช่าง MTN เข้าหน้า X ได้ → ต้องติ๊กให้ <b>role mtn</b> ในแท็บ “การเข้าถึงหน้า” ก่อนเสมอ</li><li>แล้วค่อยเพิ่มอำนาจ แก้/อนุมัติ ที่แท็บ “สิทธิ์การทำงาน” คอลัมน์ 🛡️</li><li>ด้วยเหตุนี้แท็บ “การเข้าถึงหน้า” จึง <b>ไม่มี</b> คอลัมน์แอดมินหน่วยงานให้ติ๊ก</li></ul></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">8/67</div><h2><span class="ic">🔍</span>ขอบเขตข้อมูล (Scope) — ระบบกรองให้เอง</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">หัวหน้ากลุ่ม (leader)</div><div class="bl-d">เห็นไลน์ตัวเอง <b>+ ไลน์ลูกทุกตัว</b> เช่น หัวหน้า GOR เห็น Assy GOR / Laser GOR ด้วย</div></div><div class="bl"><div class="bl-t">role อื่น</div><div class="bl-d">เห็นตาม <b>ส่วนงาน</b> ที่ตั้งไว้ (ตั้งได้หลายส่วน เช่น PD1 + PD2)</div></div><div class="bl"><div class="bl-t">admin / qa</div><div class="bl-d">เห็นทั้งโรงงานเสมอ</div></div><div class="bl"><div class="bl-t">ไม่ได้ตั้งส่วนงาน</div><div class="bl-d">เห็นทั้งโรงงาน</div></div><div class="bl"><div class="bl-t">ข้อยกเว้นตั้งใจ</div><div class="bl-d">หน้า <b>ผังรวมโรงงาน</b> ทุกคนเห็นทั้งโรงงาน — เป็นจอภาพรวมสำหรับ TV/ประชุม</div></div></div></div></section>
+<section class="sl sec"><div class="pg">9/67</div>
+<div class="sec-num">2</div><h2>พื้นฐานที่ทุกคนต้องรู้</h2><div class="sec-sub">ใช้เหมือนกันทุกหน้า</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">10/67</div><h2><span class="ic">🔑</span>เข้าระบบ & ระบบเตะออกเมื่อไหร่</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">เข้าระบบ</div><div class="bl-d">อีเมล + รหัสผ่าน · ระบบแยกข้อความ “ไม่พบบัญชี” กับ “รหัสผิด” ให้ — อ่านให้ดี</div></div><div class="bl"><div class="bl-t">ลืมรหัส</div><div class="bl-d">แจ้ง admin ตั้งใหม่ให้ที่หน้าจัดการผู้ใช้งาน (ปุ่ม 🔑)</div></div><div class="bl"><div class="bl-t">ไม่แตะเครื่อง 30 นาที</div><div class="bl-d">เตือน 5 นาที → ออกอัตโนมัติ (ขยับเมาส์แท็บไหนก็ได้ = ยกเลิก)</div></div><div class="bl"><div class="bl-t">หมดกะ</div><div class="bl-d"><b>หัวหน้ากลุ่ม/หัวหน้าส่วน</b> ถูกเตะเมื่อสิ้นกะ + 1 ชม. — กะเช้า 21:00 · กะดึก 09:00</div></div><div class="bl"><div class="bl-t">ทำไมต้องเตะ</div><div class="bl-d">เครื่องเช็คชื่อใช้ร่วมกัน กันคนกะใหม่มาเช็คด้วย session ของกะก่อน</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">11/67</div><h2><span class="ic">🧭</span>หาเมนูให้เจอเร็ว</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">sidebar ซ้าย</div><div class="bl-d">9 หมวด: ภาพรวม → ฝ่ายผลิต → วิเคราะห์ → พนักงาน → คลัง → ซ่อมบำรุง → QA/QC → PE → ตั้งค่า</div></div><div class="bl"><div class="bl-t">ช่องค้นหาบนหัว sidebar</div><div class="bl-d">พิมพ์ชื่อหน้า แล้วเด้งไปเลย</div></div><div class="bl"><div class="bl-t">Ctrl + K  (Mac: ⌘K)</div><div class="bl-d">เปิดช่องค้นหาแบบเร็ว — ↑↓ เลือก · Enter ไป · Esc ปิด</div></div><div class="bl"><div class="bl-t">“ใช้บ่อย”</div><div class="bl-d">ระบบจำหน้าที่เข้าบ่อยขึ้นบนสุดให้เอง</div></div><div class="bl"><div class="bl-t">เห็นเฉพาะที่มีสิทธิ์</div><div class="bl-d">เมนูที่ไม่มีสิทธิ์จะ<b>ไม่โผล่เลย</b> ไม่ใช่กดแล้วโดนปฏิเสธ</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">12/67</div><h2>กะการทำงาน</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>กะ</th><th>เวลา</th><th>OT ปกติ</th></tr></thead><tbody><tr><td>กะเช้า</td><td>08:00 – 17:30</td><td>17:30 – 20:00</td></tr><tr><td>กะดึก</td><td>20:00 – 07:59</td><td>20:00 – 22:30</td></tr><tr><td>ทีม A / B</td><td>หมุนกะสลับกัน</td><td>ไลน์ลูกตามกะไลน์แม่อัตโนมัติ</td></tr><tr><td>ทีม C</td><td><b>กะเช้าตลอด ไม่หมุน</b></td><td>—</td></tr></tbody></table></div><div class="note">⚠️ <b>“วันงาน” ตัดที่ 08:00 ไม่ใช่เที่ยงคืน</b> — ทำงานตี 2 ของวันที่ 18 ระบบนับเป็น <b>วันงานที่ 17</b> (กะดึกของวันที่ 17) ทุกหน้าใช้กติกาเดียวกัน</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">13/67</div><h2>วันหยุด 4 แบบ (ปฏิทินบริษัท)</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>ชนิด</th><th>ความหมาย</th></tr></thead><tbody><tr><td>วันทำงาน</td><td>ปกติ</td></tr><tr><td>หยุด OT×1.5 / OT×2</td><td>วันหยุดที่มาทำได้ค่า OT — จอง OT ได้ 8 หรือ 10 ชม.</td></tr><tr><td><b>หยุด 75% (ม.75)</b></td><td>หยุดชั่วคราวเพราะลูกค้าลด order · หยุด = ได้ค่าจ้าง 75% · <b>ถูกเรียกมาทำ = ค่าแรงปกติ</b></td></tr></tbody></table></div><div class="note"><b>ม.75 = “กำลังสำรอง”</b> — ระบบวางแผนผลิตจะเรียกใช้วันนี้ <b>ก่อน</b> สั่ง OT วันหยุด เพราะถูกกว่า</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">14/67</div><h2>ไฟ Andon — อ่านสีให้ถูก</h2>
+<div class="andon"><div class="an an-g"><div class="an-d">🟢</div><div class="an-n">เขียว</div><div class="an-m">ปกติ</div><div class="an-b">นิ่ง</div></div><div class="an an-y"><div class="an-d">🟡</div><div class="an-n">เหลือง</div><div class="an-m">ต้องระวัง / รอดำเนินการ</div><div class="an-b"><b>นิ่ง ไม่กระพริบ</b></div></div><div class="an an-r"><div class="an-d">🔴</div><div class="an-n">แดง</div><div class="an-m">หยุด / ผิดปกติ ต้องแก้เดี๋ยวนี้</div><div class="an-b"><b>กระพริบ</b></div></div><div class="an an-x"><div class="an-d">⚪</div><div class="an-n">เทา</div><div class="an-m">ไม่มีข้อมูล / ยังไม่เปิดกะ</div><div class="an-b">นิ่ง</div></div></div>
+<div class="warnbar"><b>แดงกระพริบ = เรื่องด่วนเท่านั้น</b> — ถ้าทุกอย่างกระพริบ คนจะเลิกสนใจ<br>
+<b>หยุดตามแผน</b> (นับสต๊อก · ไม่มีแผนผลิต · 5ส) <b>ไม่ทำให้แดง</b> และไม่ยิงแจ้งเตือน — ไม่ใช่ความเสียหาย</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">15/67</div><h2><span class="ic">🔔</span>แจ้งเตือน 3 ช่องทาง</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">🔔 กระดิ่งในแอป</div><div class="bl-d">4M · ถูก @ ในคอมเมนต์ · เครื่องหยุดด่วน (เรียกช่าง / ค้างเกินเวลา)</div></div><div class="bl"><div class="bl-t">📱 Telegram</div><div class="bl-d">ตามที่ตั้งไว้ต่อเรื่อง — เช็คชื่อ · ปิดกะ · แจ้งซ่อม · จัดส่ง</div></div><div class="bl"><div class="bl-t">📲 Push เข้ามือถือ</div><div class="bl-d">เรื่องเดียวกับกระดิ่ง <b>เด้งแม้ปิดแอป</b> — กดกระดิ่ง → ปุ่ม “📲 เปิด”</div></div><div class="bl"><div class="bl-t">iPhone</div><div class="bl-d">ต้อง <b>เพิ่มลงหน้าจอโฮม</b> ก่อน (Safari เฉยๆ ใช้ไม่ได้) + iOS 16.4 ขึ้นไป</div></div><div class="bl"><div class="bl-t">Android / คอม</div><div class="bl-d">ใช้ได้เลย</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">16/67</div><h2><span class="ic">💬</span>💬 แจ้งปัญหา / ข้อเสนอแนะ</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">อยู่ที่ไหน</div><div class="bl-d">ปุ่ม 💬 <b>ท้าย sidebar</b> — เจอบั๊ก มีไอเดีย หรือสงสัย พิมพ์ส่งได้เลย</div></div><div class="bl"><div class="bl-t">ไม่ต้องอธิบายว่าอยู่หน้าไหน</div><div class="bl-d">ระบบเก็บหน้าที่คุณอยู่ตอนกดแจ้งให้อัตโนมัติ</div></div><div class="bl"><div class="bl-t">เลือกประเภทได้</div><div class="bl-d">🐞 บั๊ก · 💡 ข้อเสนอแนะ · ❓ คำถาม</div></div><div class="bl"><div class="bl-t">ดีกว่าแชทตรงไหน</div><div class="bl-d"><b>ค้นย้อนหลังได้ ไม่ตกหล่น</b> · เห็นสถานะว่าเรื่องไหนแก้แล้ว</div></div><div class="bl"><div class="bl-t">ใครดู</div><div class="bl-d">admin / manager เห็นทั้งหมดในแท็บกล่องขาเข้า และตอบ/ปิดงานได้</div></div></div></div></section>
+<section class="sl sec"><div class="pg">17/67</div>
+<div class="sec-num">3</div><h2>ฝ่ายผลิต</h2><div class="sec-sub">งานประจำวัน — ใช้ทุกกะ</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">18/67</div><h2><span class="ic">🌅</span>🌅 ประชุมแถวเช้า</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ข้อมูลดึงอัตโนมัติทั้งหมด</div><div class="bl-d"><b>ไม่ต้องทำสไลด์</b> — เปิดหน้าแล้วประชุมได้เลย</div></div><div class="bl"><div class="bl-t">วาระ 1–3</div><div class="bl-d">ภาพรวมเมื่อวาน → <b>งานหลุดแผน + สาเหตุอัตโนมัติ</b> → Top Downtime & ของเสีย</div></div><div class="bl"><div class="bl-t">💬 เห็นหมายเหตุพนักงาน</div><div class="bl-d">สำคัญมากกับประเภท “อื่นๆ” ที่ชื่อประเภทบอกอะไรไม่ได้</div></div><div class="bl"><div class="bl-t">วาระ 4–6</div><div class="bl-d">4M ของวัน → ความพร้อมเช้านี้ → <b>Action items</b> (ติดตามข้ามวันจนปิด)</div></div><div class="bl"><div class="bl-t">ปุ่มสำคัญ</div><div class="bl-d">📺 โหมดประชุมเต็มจอ · 🖨️ พิมพ์สรุป · 📤 ส่ง Telegram</div></div><div class="bl"><div class="bl-t">📷 คุมด้วยท่ามือ</div><div class="bl-d">ชี้นิ้วซ้าย/ขวาเปลี่ยนวาระ — กล้องประมวลผลในเครื่อง ไม่ส่งภาพออก · เปิดเองเท่านั้น</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">19/67</div><h2>📝 เช็คชื่อ & PPE — งานแรกของทุกกะ</h2>
+<div class="bd"><div class="sts"><div class="st"><span class="st-n">1</span><div><b>เลือกไลน์</b><span>เห็นเฉพาะไลน์ในขอบเขตตัวเอง</span></div></div><div class="st"><span class="st-n">2</span><div><b>ติ๊ก มา / ลา</b><span>รายคน</span></div></div><div class="st"><span class="st-n">3</span><div><b>ติ๊ก PPE</b><span>หมวก · รองเท้า · ถุงมือ ตามที่ไลน์นั้นกำหนด</span></div></div><div class="st"><span class="st-n">4</span><div><b>ติ๊ก OT ถ้ามี</b><span>วันหยุดเลือกช่วงได้ 4 แบบ (เช้า/ดึก × 8/10 ชม.)</span></div></div><div class="st"><span class="st-n">5</span><div><b>บันทึก</b><span>ระบบดูเองว่าเปลี่ยนอะไร แล้วแจ้งให้ตรง</span></div></div></div><div class="warnbar">⚠️ <b>PPE ไม่ครบ</b> = คนนั้นขึ้นแดงกระพริบบนผังไลน์ และ <b>ไม่ถูกจัดลงจุดงาน</b> ในหน้าจัดการไลน์</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">20/67</div><h2>ปุ่มบันทึกเดียว ทำ 3 งาน</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>คุณทำอะไร</th><th>Telegram แจ้งว่า</th></tr></thead><tbody><tr><td>บันทึกครั้งแรกของวัน</td><td>เช็คชื่อเริ่มงาน</td></tr><tr><td>แก้คนมา/ลา/PPE ทีหลัง</td><td><b>อัปเดตกำลังคน</b> (บอกด้วยว่าใครเปลี่ยน)</td></tr><tr><td>จอง / แก้ OT</td><td><b>จองรถ OT</b> (รายชื่อ + งาน + เวลา)</td></tr><tr><td>กดบันทึกโดยไม่เปลี่ยนอะไร</td><td><b>เงียบ ไม่แจ้ง</b></td></tr></tbody></table></div><div class="note">ระบบเทียบกับตอนเปิดหน้า แล้วเลือกข้อความแจ้งเตือนให้เอง — <b>ไม่มีการแจ้งซ้ำให้หัวหน้าแผนกงง</b></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">21/67</div><h2><span class="ic">🔄</span>🔄 จัดการไลน์ผลิต — ลากคนลงจุดงาน</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ลากวางบนผังจริง</div><div class="bl-d">ลากคนจาก pool ลงจุดงาน</div></div><div class="bl"><div class="bl-t">Skill Fit คิดให้ทันที</div><div class="bl-d">🟢 80%+ · 🟡 60–79% · 🟠 40–59% · 🔴 ต่ำกว่า 40%</div></div><div class="bl"><div class="bl-t">ย้ายคนข้ามจุด/ข้ามไลน์</div><div class="bl-d"><b>ระบบสร้าง 4M (Man) ให้อัตโนมัติ</b> เข้าคิวอนุมัติ</div></div><div class="bl"><div class="bl-t">PPE ไม่ครบ</div><div class="bl-d">ขึ้นแถบเตือนเหนือผัง — ไม่เข้า pool ให้ลาก</div></div><div class="bl"><div class="bl-t">ย้ายแล้ว 4M ยังไม่อนุมัติ</div><div class="bl-d">จุดขึ้นเหลือง (นิ่ง ไม่กระพริบ)</div></div></div></div></section>
+<section class="sl sec"><div class="pg">22/67</div>
+<div class="sec-num">3</div><h2>📊 Daily Report</h2><div class="sec-sub">หัวใจของงานผลิตรายวัน</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">23/67</div><h2>เปิดใบงาน 2 แบบ</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>แบบ</th><th>ใช้เมื่อ</th><th>ปิดยังไง</th></tr></thead><tbody><tr><td><b>สแกน Kanban</b></td><td>มีบาร์โค้ด</td><td><b>ต้องสแกนปิดเท่านั้น</b> — ไม่มีปุ่มปิดมือ (รักษาการสอบกลับ + ยอดเข้าคลัง)</td></tr><tr><td>✍️ <b>เปิดเป้า</b></td><td>ไลน์ที่ไม่มี kanban card</td><td>ปุ่ม ✓ ปิดใบนี้ (ยอดจริง)</td></tr></tbody></table></div><div class="note">⏪ <b>เปิดย้อนหลังได้</b> (บังคับกรอกเวลา · ห้ามกรอกเวลาที่ยังมาไม่ถึง) · <b>งานคู่ RH/LH</b> เปิดใบเดียว ระบบถามแล้วเปิดคู่ให้</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">24/67</div><h2><span class="ic">✍️</span>กรอกยอดระหว่างกะ — แนะนำให้ทำ</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ทำเมื่อไหร่</div><div class="bl-d">ทุกช่วงเบรค กรอก <b>ยอดสะสม</b> ในการ์ดใบงาน — <b>ใบสแกนก็กรอกได้ ไม่บังคับ</b></div></div><div class="bl"><div class="bl-t">ได้อะไร</div><div class="bl-d">การ์ดเปลี่ยนเป็น “ทำได้ / เป้า” + บอก <b>“➡ ปิดกะตอนนี้ ยกไป N ชิ้น”</b></div></div><div class="bl"><div class="bl-t">แก้ปัญหาอะไร</div><div class="bl-d">เห็นยอดที่จะส่งต่อกะหน้า<b>ตั้งแต่ระหว่างกะ</b> ไม่ต้องไปเปิดดูกะถัดไป</div></div><div class="bl"><div class="bl-t">แบนเนอร์รวม</div><div class="bl-d">“⏭ จะส่งต่อกะหน้า ~X ชิ้น” — ใบที่ยังไม่กรอกนับเต็มใบไว้ก่อน + เตือนสีเหลือง</div></div><div class="bl"><div class="bl-t">ตอนปิดกะ</div><div class="bl-d">ยอดที่กรอกไว้ถูกเติมให้ในช่อง “ยอดจริง” อัตโนมัติ (แก้ทับได้)</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">25/67</div><h2><span class="ic">🔧</span>🔧 Downtime — บันทึกเครื่องหยุด</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">กรอกได้ 2 แบบ</div><div class="bl-d">เวลาเริ่ม–จบ <b>หรือ</b> กรอกแค่จำนวนนาที</div></div><div class="bl"><div class="bl-t">เครื่อง/ชิ้นงานไม่บังคับ</div><div class="bl-d">หลายเรื่องหยุดทั้งไลน์ — รอวัตถุดิบ · ไฟดับ · ประชุม · 5ส<br>แต่ถ้าเป็น <b>เครื่องเสีย</b> แล้วไม่เลือกเครื่อง ระบบจะ<b>ถามยืนยันก่อน</b></div></div><div class="bl"><div class="bl-t">ประเภทที่มีคำว่า “อื่น”</div><div class="bl-d"><b>บังคับกรอกรายละเอียด</b> — ไม่งั้นรายงาน/ประชุมเช้าอ่านไม่รู้เรื่อง</div></div><div class="bl"><div class="bl-t">📷 สแกน QR เครื่อง</div><div class="bl-d">เตือนถ้าเครื่องอยู่คนละไลน์กับกะที่เปิด</div></div><div class="bl"><div class="bl-t">📞 เรียกช่าง</div><div class="bl-d">แจ้งช่างทันที + <b>ไซเรนดังหน้า MTN</b></div></div><div class="bl"><div class="bl-t">ไม่ปิดรายการเกิน 15 นาที</div><div class="bl-d">แจ้งเตือนอัตโนมัติ + <b>ไซเรนดังหน้าผลิต</b></div></div><div class="bl"><div class="bl-t">📝 เปิดใบซ่อม</div><div class="bl-d">สร้างใบ MO ต่อได้เลยจากแถวนั้น</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">26/67</div><h2>ปิดกะ — ขั้นตอนและการตรวจ</h2>
+<div class="bd"><div class="sts"><div class="st"><span class="st-n">1</span><div><b>หัวหน้ากลุ่มกด 📋 ขอปิดกะ</b><span>กรอก<b>หมายเหตุของผู้ขอ</b>ได้ เช่น “ยอดไม่ถึงเพราะรอ material ตั้งแต่ 14:00”</span></div></div><div class="st"><span class="st-n">2</span><div><b>เครื่องยังซ่อมไม่เสร็จ?</b><span>เลือก “ยังซ่อมอยู่ — ตัดยอดข้ามกะ” → กะถัดไปสร้างรายการต่อให้เอง</span></div></div><div class="st"><span class="st-n">3</span><div><b>หัวหน้าส่วนตรวจ</b><span>✅ อนุมัติ (ใส่หมายเหตุได้) หรือ ✕ <b>ปฏิเสธ (บังคับบอกเหตุผล)</b></span></div></div><div class="st"><span class="st-n">4</span><div><b>ถูกปฏิเสธ</b><span>กะกลับมาเปิด + <b>แบนเนอร์แดงบอกว่าต้องแก้อะไร</b> + ลิสต์กะขึ้นชิป “✏️ ต้องแก้”</span></div></div></div><div class="warnbar">↩️ <b>ถอยใบที่สแกนปิดไปแล้ว</b>ได้ เฉพาะตอนกะยังเปิด — การ์ดจะโชว์ “เคยถอยใบ N ครั้ง” ตลอดไป ให้ตรวจย้อนหลังได้</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">27/67</div><h2><span class="ic">🗓️</span>🗓️ วางแผนการผลิต</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ตอบอะไร</div><div class="bl-d">จากยอดลูกค้า → <b>ต้องเปิดกี่กะ วันไหนต้อง OT / กะดึก / ทำวันหยุด</b></div></div><div class="bl"><div class="bl-t">กำลังผลิตมาจากไหน</div><div class="bl-d"><b>ค่ากลางจากที่ทำได้จริง 60 วันล่าสุด</b> ไม่ใช่ทฤษฎี — รวม OEE/เบรค/ของเสียในตัวแล้ว</div></div><div class="bl"><div class="bl-t">แท็บรายวัน</div><div class="bl-d">ปฏิทิน 21 วัน ระบายสี ☀ กะเช้า · 🌙 กะดึก · ⏰ OT · ⚡ วัน ม.75 · ⚠ OT วันหยุด</div></div><div class="bl"><div class="bl-t">ลำดับที่ระบบเลือก</div><div class="bl-d">กะเช้า → +กะดึก → +OT → <b>⚡ วัน ม.75 (ถูกกว่า)</b> → ⚠ OT วันหยุด</div></div><div class="bl"><div class="bl-t">แท็บรายเดือน</div><div class="bl-d">6 เดือนข้างหน้า — กะเช้าพอ / ต้อง OT กี่วัน / <b>🚨 เกินกำลัง ต้องเพิ่มไลน์-คน</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">28/67</div><h2>✅ Daily Checker — AM ≠ PM</h2>
+<div class="two">
+ <div class="col col-a"><h3>🔧 AM (ผลิตตรวจเอง)</h3><ul><li><b>พนักงานผลิต</b>ตรวจเครื่องเอง</li><li><b>ทุกต้นกะ</b></li><li>ทะเบียนแยกของตัวเอง</li></ul></div>
+ <div class="col col-b"><h3>🔩 PM (ช่างตรวจ)</h3><ul><li><b>ช่าง</b> MTN / JIG / DIE</li><li><b>ตามรอบเวลา หรือ ยอดผลิต</b></li><li>คนละสิทธิ์ คนละหน้า</li></ul></div>
+</div><div class="warnbar">ลำดับตั้งค่า AM ที่ถูกต้อง: <b>PM Setup ลงจุดตรวจ → Daily Checker ⚙️ ติ๊กลงทะเบียน → เครื่องถึงโผล่ให้ตรวจ</b><br>ลงจุดตรวจแล้วแต่ยังไม่ลงทะเบียน → มีบล็อกส้มบอกให้ไปลงทะเบียน <b>ไม่เงียบ</b></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">29/67</div><h2><span class="ic">📋</span>📋 LPA — Layer Process Audit</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ชั้นผู้ตรวจ 4 ชั้น</div><div class="bl-d">Leader ทุกวัน · Supervisor/Engineer รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส</div></div><div class="bl"><div class="bl-t">บันทึกผล</div><div class="bl-d">ตอบ Y/N/T/NA · <b>N หรือ T บังคับกรอกรายละเอียดปัญหา</b> · ปุ่ม “ยังไม่ตอบ = Y” · เซ็นบนจอ</div></div><div class="bl"><div class="bl-t">แผนตรวจ</div><div class="bl-d">มองทีละไตรมาส · 📍 ดึงจุดงานในไลน์มาเป็นสถานีตรวจ · ⚡ เติมแผนทั้งไตรมาสอัตโนมัติ</div></div><div class="bl"><div class="bl-t">คำถามรายไลน์</div><div class="bl-d">🌐 ข้อกลางใช้ทุกไลน์ / ข้อเฉพาะไลน์ / 🚫 ซ่อนข้อกลางเฉพาะไลน์ที่ไม่ใช้</div></div><div class="bl"><div class="bl-t">🖨️ พิมพ์</div><div class="bl-d">ใบแผน (A4 แนวนอน) · ใบรายงาน FM-QMR-008 (A3 แนวนอน)</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">30/67</div><h2><span class="ic">💡</span>💡 Improvements (Kaizen) — วัดผลให้เอง</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">จุดขาย</div><div class="bl-d"><b>ไม่ต้องกรอกผลเอง</b> — ระบบเทียบก่อน/หลังจากข้อมูลที่เกิดจริง</div></div><div class="bl"><div class="bl-t">เริ่มยังไง</div><div class="bl-d">เลือกไลน์ → ระบบโชว์ <b>พาเรโต Top 10</b> → คลิกปัญหา → ตั้งชื่อ+เป้าให้อัตโนมัติ</div></div><div class="bl"><div class="bl-t">วัดผลได้ 3 ฐาน</div><div class="bl-d">Downtime · ของเสีย · <b>ใบซ่อม MO</b></div></div><div class="bl"><div class="bl-t">🗓 แผนงาน PDCA</div><div class="bl-d">สร้าง 5 ขั้นให้อัตโนมัติ + Gantt ในการ์ด (เลยแผน = แดง)</div></div><div class="bl"><div class="bl-t">💰 Cost Saving</div><div class="bl-d">แปลงผลเป็น <b>บาท/วัน · บาท/เดือน · ระยะคืนทุน</b> แยก DL/OH/DP</div></div><div class="bl"><div class="bl-t">ข้อมูลไม่ครบ</div><div class="bl-d">ขึ้น ⚠ บอกว่า<b>ขาดอะไรและแก้ที่ไหน — ไม่เดาตัวเลข</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">31/67</div><h2><span class="ic">♻️</span>♻️ ใบรายงานของเสีย (FM-PD2-002)</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">⤵ ดึงจาก Daily Report</div><div class="bl-d">รวมของเสียของไลน์+วันนั้นมาเป็นแถวตั้งต้น แล้วแก้เพิ่มได้</div></div><div class="bl"><div class="bl-t">พาร์ทย่อย</div><div class="bl-d">nut/สกรูที่เสียก่อนเข้ากระบวนการหลัก — เพิ่มจากปุ่ม “เพิ่มจาก SAP/BOM”</div></div><div class="bl"><div class="bl-t">⚠️ ช่อง M1–M5</div><div class="bl-d"><b>ติ๊กสาเหตุ ✓ ไม่ใช่จำนวน</b> — จำนวนอยู่ช่อง Q'TY</div></div><div class="bl"><div class="bl-t">Export</div><div class="bl-d">📊 Excel (ตรงฟอร์ม 100%) · 🖨️ PDF · เลขเอกสารรันอัตโนมัติรายเดือน</div></div></div></div></section>
+<section class="sl sec"><div class="pg">32/67</div>
+<div class="sec-num">4</div><h2>วิเคราะห์ & รายงาน</h2><div class="sec-sub">OEE · ประวัติ · VSM · สอบกลับ</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">33/67</div><h2>OEE คืออะไร</h2>
+<div class="formula">OEE &nbsp;=&nbsp; <span class="fa">A</span> &nbsp;×&nbsp; <span class="fp">P</span> &nbsp;×&nbsp; <span class="fq">Q</span></div>
+<div class="three">
+ <div class="fcard fc-a"><h3>A — Availability</h3><p>เครื่องเดินได้กี่ % ของเวลาที่ตั้งใจให้เดิน</p></div>
+ <div class="fcard fc-p"><h3>P — Performance</h3><p>เดินเร็วเท่ามาตรฐานมั้ย</p></div>
+ <div class="fcard fc-q"><h3>Q — Quality</h3><p>ของที่ออกมาดีกี่ %</p></div>
+</div>
+<div class="warnbar"><b>⚠️ ยอดที่สแกนปิดใบ = “ของดี” ล้วน</b> — ของเสียถูกผลิตเพิ่มจนได้ของดีครบแล้ว<br>
+Q = ของดี ÷ (ของดี + ของเสีย) &nbsp;·&nbsp; <b>ห้ามเอาของดีลบของเสีย</b> จะได้ค่าต่ำเกินจริง</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">34/67</div><h2>3 ตัวชี้วัด ต่างกันแค่ “ฐานเวลา”</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th></th><th>ฐานเวลา (ตัวหาร)</th><th>ตอบว่า</th></tr></thead><tbody><tr><td><b>OEE</b></td><td>เวลาที่ตั้งใจเดิน (หักพัก + หยุดตามแผน)</td><td>ตอนตั้งใจเดิน เดินดีแค่ไหน</td></tr><tr><td><b>OOE</b></td><td>เวลากะทั้งหมด</td><td>เวลาที่เปิดโรงงาน ใช้คุ้มแค่ไหน</td></tr><tr><td><b>TEEP</b></td><td>ปฏิทิน 24 ชม.</td><td>กำลังผลิตทั้งหมดที่มี ใช้ไปกี่ %</td></tr><tr><td><b>OEE จริง</b></td><td>เวลากะ − พัก (นับหยุดทุกชนิดเป็นการสูญเสีย)</td><td>ปิดช่องโหว่ติ๊ก Downtime เป็น “ในแผน” แล้ว OEE ไม่ตก</td></tr></tbody></table></div><div class="note"><b>TEEP ต่ำ + OEE สูง = ไม่ต้องซื้อเครื่อง เปิดกะเพิ่มพอ</b> — ใช้ตอนของบลงทุน</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">35/67</div><h2><span class="ic">📈</span>แท็บในหน้า OEE</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ภาพรวมวันนี้</div><div class="bl-d">การ์ดกะที่กำลังผลิต — คำนวณ<b>สด</b> มีป้าย “· สด”</div></div><div class="bl"><div class="bl-t">🧠 วิเคราะห์สาเหตุ</div><div class="bl-d">7 เรื่องอัตโนมัติ: แตกเป้าที่หาย · DT เรื้อรัง · กะเช้า vs ดึก · คนขาด↔OEE · สินค้าวิ่งช้าซ้ำ ฯลฯ<br>+ <b>6 Big Losses / 8 Wastes</b> พร้อมแนวทางแก้ตามตำรา</div></div><div class="bl"><div class="bl-t">🧩 เจาะ “อื่นๆ”</div><div class="bl-d">จับกลุ่มหมายเหตุที่พนักงานพิมพ์เอง แล้วชวนไปตั้งเป็นประเภทของตัวเอง</div></div><div class="bl"><div class="bl-t">📽️ รายงานเดือน</div><div class="bl-d">สร้างเด็ค PowerPoint ตาม template TSG อัตโนมัติ</div></div><div class="bl"><div class="bl-t">🎯 ตั้งเป้า A/P/Q</div><div class="bl-d">รายกลุ่มไลน์ — <b>เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">36/67</div><h2>⚠️ ประเมินไม่ได้ ≠ 0%</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">ยังไม่ผลิต / ยังไม่ตั้ง cycle time → ขึ้น “—”</div><ul><li><b>0% แปลว่า “วัดแล้วได้ศูนย์”</b> ซึ่งคนละเรื่องกับ “ยังวัดไม่ได้”</li><li>ระบบขึ้น “—” พร้อม<b>บอกเหตุผล</b> ว่าต้องไปตั้งอะไร</li><li>ตั้ง CT ไม่ครบทุกชิ้นงาน → %P ต่ำกว่าจริง จะมีป้าย <b>⚠ CT ไม่ครบ</b> เตือน</li></ul></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">37/67</div><h2><span class="ic">🔎</span>🔎 สอบกลับ Order (Trace)</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ใช้ยังไง</div><div class="bl-d">สแกน/ค้นเลขใบผลิต → เห็น<b>ทุกเหตุการณ์ของใบนั้น + สถานการณ์รอบข้างตอนผลิต</b></div></div><div class="bl"><div class="bl-t">Timeline</div><div class="bl-d">เปิดใบ → ยอดสะสม → ของเสีย → Downtime → 4M → ปิดใบ → เข้าคลัง → ตัดส่ง</div></div><div class="bl"><div class="bl-t">👷 คนและจุดงาน</div><div class="bl-d">ใครอยู่จุดไหน · ย้ายจุดมั้ย · Skill fit · PPE · อบรม OJT วันนั้น</div></div><div class="bl"><div class="bl-t">🏭 อุปกรณ์ที่ใช้ผลิต</div><div class="bl-d">เครื่อง/แม่พิมพ์ <b>ขาด PM ตอนนั้นมั้ย · ใครแตะล่าสุด</b><br>คำนวณ<b>ย้อนจากประวัติจริง</b> ไม่ใช่อ่านสถานะปัจจุบัน</div></div><div class="bl"><div class="bl-t">⏱️ ความเร็วจริง</div><div class="bl-d">พนักงานสแกนเป็นชุด → ระบบตรวจเจอแล้วคิด<b>ระดับกลุ่ม</b>แทน (รายใบใช้ตัดสินไม่ได้)</div></div><div class="bl"><div class="bl-t">🔍 ลูกค้าแจ้งอาการ</div><div class="bl-d">เลือกอาการจาก PFMEA → ชี้จุดต้องสงสัยเป็น <b>3 ขาแบบ 8D</b><br>อาการที่ไม่เคยมีใน PFMEA → ขึ้นแถบส้ม “ไม่เคยถูกคาดไว้ตอนออกแบบ”</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">38/67</div><h2><span class="ic">📊</span>🗺️ VSM · 📜 ประวัติผลิต · 📋 รายงาน</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">🗺️ VSM</div><div class="bl-d">เลือกสินค้า + เดือน → <b>ระบบสร้างผังสายธารคุณค่าจากข้อมูลจริง</b> (CT · OEE · C/O · คงคลัง · Takt · %VA)</div></div><div class="bl"><div class="bl-t">ช่องที่ระบบไม่รู้</div><div class="bl-d"><b>ขอบส้ม กรอกเอง</b> (WIP กลางทาง · รอบส่ง supplier) พร้อมเตือนว่า PLT จะต่ำกว่าจริง</div></div><div class="bl"><div class="bl-t">📜 ประวัติผลิต</div><div class="bl-d">เลือกสินค้า → ย้อนหลังว่าผลิตไลน์ไหน กะไหน เท่าไหร่ เสียเท่าไหร่ · แตกดู วัน → ไลน์·กะ → รายใบ</div></div><div class="bl"><div class="bl-t">📋 รายงาน</div><div class="bl-d">7 แท็บ + Export CSV — รวม <b>คิวอนุมัติ 4M</b></div></div><div class="bl"><div class="bl-t">⚠️ แท็บ 4M</div><div class="bl-d">ช่วงวัน default = 7 วันล่าสุด — <b>ใบค้างมักเก่ากว่านั้น ต้องขยายช่วงเอง</b></div></div></div></div></section>
+<section class="sl sec"><div class="pg">39/67</div>
+<div class="sec-num">5</div><h2>พนักงาน & ทักษะ</h2><div class="sec-sub">ทะเบียน · สกิล · OJT · กะ</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">40/67</div><h2><span class="ic">👥</span>➕ เพิ่มพนักงาน / 👥 ฐานข้อมูลพนักงาน</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ลงทะเบียน</div><div class="bl-d">รหัส · ชื่อ · <b>รูปถ่าย</b> · ส่วนงาน → แผนก → ไลน์ → ทีม (A/B/C) · ตำแหน่ง</div></div><div class="bl"><div class="bl-t">ตัวเลือกไล่ลำดับกัน</div><div class="bl-d">เปลี่ยนตัวแม่ ตัวลูกล้างค่าให้เอง</div></div><div class="bl"><div class="bl-t">แผนกขึ้นตรงฝ่าย</div><div class="bl-d">MTN / JIG MTN / DIE MTN → เลือก <b>“🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)”</b></div></div><div class="bl"><div class="bl-t">คลิกทั้งแถว</div><div class="bl-d">เปิด<b>การ์ดสรุปทักษะ</b> (radar + 🖨️ พิมพ์ใบประเมินรายบุคคล)</div></div><div class="bl"><div class="bl-t">⚠️ แถบเหลือง</div><div class="bl-d">“ข้อมูลไม่ตรงผังองค์กร N คน” + ปุ่ม 🔎 ดูเฉพาะที่ต้องแก้<br>บาง section ผังยังไม่มีแผนก → <b>แก้ผ่านฟอร์มไม่ได้ ต้องไปเพิ่มที่ผังองค์กรก่อน</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">41/67</div><h2>ระบบสะสมทักษะ (EXP) ทำงานยังไง</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>เมื่อ</th><th>ได้</th></tr></thead><tbody><tr><td>มาทำงานที่จุดที่ต้องใช้สกิลนั้น</td><td><b>+1 ต่อวัน</b></td></tr><tr><td>ทำงาน ≥3 วันในสัปดาห์</td><td><b>+2</b> (รันทุกเช้าวันจันทร์)</td></tr><tr><td>ไม่ได้ทำงานเลยทั้งสัปดาห์</td><td><b>−2</b> (ต่ำสุด 25)</td></tr><tr><td>ระดับ 100</td><td>ต้องแนบเอกสารอบรม + ผู้จัดการอนุมัติ</td></tr></tbody></table></div><div class="note">⚠️ <b>ชนเพดาน 24 / 49 / 74 / 99 → หยุดสะสม + สร้างคำขออัพระดับ</b> ต้องมีคนอนุมัติถึงข้ามได้<br>ระบบรันอัตโนมัติฝั่งเซิร์ฟเวอร์ · ปุ่ม 🔄 รันเองได้ (รันซ้ำไม่บวกซ้ำ)</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">42/67</div><h2><span class="ic">🏅</span>📖 OJT · 🏅 Skill Matrix · 🗓 ตารางกะ</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">📖 อบรม OJT (FM-HRM-004)</div><div class="bl-d">หัวข้อ · ผู้สอน · ผู้เข้าอบรม · คะแนนก่อน/หลัง (0–4) · <b>เซ็นบนจอ</b> · 🖨️ พิมพ์</div></div><div class="bl"><div class="bl-t">🏅 พิมพ์ 2 ใบ</div><div class="bl-d"><b>สรุปทั้งไลน์</b> (FM-PD1-017) ตารางคน × สกิล เป็นวงกลม 5 ระดับ · A3<br><b>รายบุคคล</b> (F-PRS-P1-119) radar + รูป + 3 ลายเซ็น · A4 <b>บังคับจบใน 1 หน้าเสมอ</b></div></div><div class="bl"><div class="bl-t">🗓 ตารางกะ</div><div class="bl-d">กำหนดกะ A/B รายสัปดาห์ · <b>ตั้งที่ไลน์แม่ → ไลน์ลูกตามให้เอง</b></div></div><div class="bl"><div class="bl-t">Override</div><div class="bl-d">ปรับกะรายบุคคล · ยุบกะทั้งส่วนงาน/ไลน์</div></div></div></div></section>
+<section class="sl sec"><div class="pg">43/67</div>
+<div class="sec-num">6</div><h2>คลัง & จัดส่ง</h2><div class="sec-sub">Store · Kanban · Delivery · ขนส่ง</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">44/67</div><h2>ภาษากลาง — เลข MAT ดู “ตัวแรกตัวเดียว”</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>ตัวแรก</th><th>คือ</th><th>ไหลยังไง</th></tr></thead><tbody><tr><td><b>1</b></td><td>FG งานสำเร็จ</td><td>ปิดใบผลิต → เข้าคลัง FG อัตโนมัติ · <b>หักออกทางเดียวคือกด “ส่งแล้ว”</b></td></tr><tr><td><b>2</b></td><td>พาร์ทย่อยผลิตเอง</td><td>ปิดใบผลิต → เข้า STORE → จ่ายเข้าไลน์</td></tr><tr><td><b>3</b></td><td>พาร์ทซื้อนอก</td><td>บันทึกรับเข้า STORE → จ่ายเข้าไลน์</td></tr><tr><td><b>5</b></td><td>วัตถุดิบ</td><td>เบิกไปไลน์ผลิต</td></tr><tr><td><b>9</b></td><td>เลขภายในที่ตั้งเอง</td><td><b>ไม่ใช่เลข SAP — ตั้งใจตั้งเอง ห้ามไล่แก้/ลบ</b></td></tr></tbody></table></div><div class="note">⚠️ <b>ดูตัวแรกตัวเดียว ห้ามเทียบ 3 ตัว</b> — เลข SAP รันทะลุช่วงเดิมแล้ว (FG มี 101xxxxx)</div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">45/67</div><h2><span class="ic">📦</span>📦 Store · 🎴 Kanban · 🗃️ Rack Center</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">📦 Store management</div><div class="bl-d">ยอดคงเหลือ · รับเข้า · จ่ายเข้าไลน์ · ปรับยอด</div></div><div class="bl"><div class="bl-t">แถว FG ไม่มีปุ่มจ่าย</div><div class="bl-d">โชว์ “🚚 หักผ่าน Delivery” แทน</div></div><div class="bl"><div class="bl-t">ปรับยอดที่กรอกมือ</div><div class="bl-d"><b>เข้าคิว ⏳ รออนุมัติ</b>ก่อนมีผล · การเคลื่อนไหวอัตโนมัติไม่เข้าคิว</div></div><div class="bl"><div class="bl-t">🎴 Kanban Board</div><div class="bl-d">⏰ รอบจัดส่งวันนี้ — “N กล่อง ÷ จุ C = M เที่ยว” (เกิน 1 เที่ยว = ส้ม)</div></div><div class="bl"><div class="bl-t">🗃️ Rack Center</div><div class="bl-d">🏷️ พิมพ์ป้าย QR แปะจุดวาง → <b>สแกนแล้วฟอร์มกรอกครบ เหลือกดยืนยัน</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">46/67</div><h2><span class="ic">📈</span>📈 Planner & Sales — คำนวณ Kanban</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">2 ชนิด</div><div class="bl-d">🔄 <b>Withdrawal</b> (เบิกถอน — ไลน์ประกอบ) · 🏭 <b>Production</b> (สั่งผลิต — ไลน์ปั๊ม)</div></div><div class="bl"><div class="bl-t">แยกด้วยอะไร</div><div class="bl-d"><b>กระบวนการผลิต ไม่ใช่เลข MAT</b> — พาร์ทไม่ขึ้น = ยังไม่ตั้งกระบวนการที่ Product Master</div></div><div class="bl"><div class="bl-t">ไม่ต้องกรอกซ้ำทุกเดือน</div><div class="bl-d">จำนวน/กล่อง · กำลังผลิต/ชม. · LOT <b>ดึงจาก master ให้เอง</b></div></div><div class="bl"><div class="bl-t">📊 สรุปภาระการผลิต</div><div class="bl-d">%load ต่อไลน์ — <85 เขียว · 85–100 เหลือง · <b>>100 แดง เกินกำลัง</b></div></div><div class="bl"><div class="bl-t">🔗 จับคู่เลข SAP</div><div class="bl-d">พาร์ทที่ map ไม่ได้<b>ขึ้นแถบเตือน</b> + ระบบเดาให้เลือก (ไม่ทิ้งเงียบ)</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">47/67</div><h2>🚚 Delivery — สถานะรอบส่ง (ห้ามข้าม)</h2>
+<div class="bd"><div class="sts"><div class="st"><span class="st-n">1</span><div><b>รอยืนยัน</b><span>−240 นาทีก่อนเวลาส่ง</span></div></div><div class="st"><span class="st-n">2</span><div><b>ยืนยันแล้ว</b><span>−120 นาที</span></div></div><div class="st"><span class="st-n">3</span><div><b>เตรียมเสร็จ</b><span>−60 นาที</span></div></div><div class="st"><span class="st-n">4</span><div><b>โหลดขึ้นรถ</b><span>ถึงเวลาส่ง</span></div></div><div class="st"><span class="st-n">5</span><div><b>ส่งแล้ว</b><span><b>หักสต็อกอัตโนมัติ</b></span></div></div></div><div class="warnbar">🟢 stock พอ · 🟡 ขาดบางส่วน · 🔴 <b>ไม่มี stock ต้องผลิต!</b> · <b>❔ เทา = จับคู่เลขไม่ได้ ไม่ใช่ “ไม่มีของ”</b> (อย่าสั่งผลิตซ้ำ)<br>หักสต็อกไม่ได้/ไม่ครบ → <b>toast แดงบอกสาเหตุ ไม่กลบด้วย toast เขียว</b></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">48/67</div><h2><span class="ic">🚚</span>🚨 เฝ้าระวังสต๊อก · 🚚 มอบหมายขนส่ง</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">🚨 จับ 5 เคส</div><div class="bl-d">ต่ำกว่า Min · เกิน Max · รอบส่งเลยเวลายังไม่ยืนยัน · รับไม่ครบ · สั่งซื้อค้างเกินกำหนด</div></div><div class="bl"><div class="bl-t">อ่านอย่างเดียว</div><div class="bl-d">🟥 Shortage / 🟧 Over stock แบบ Andon · refresh ทุก 60 วิ · <b>ไม่แตะข้อมูล</b></div></div><div class="bl"><div class="bl-t">🗓️ มอบหมายวันนี้</div><div class="bl-d">เลือกคนขับต่อรอบส่ง</div></div><div class="bl"><div class="bl-t">🗺️ เส้นทางรอบส่ง</div><div class="bl-d">จัดลำดับจุดจอด → เห็นเส้นทาง + ระยะ + เวลา · <b>✨ เรียงจุดจอดสั้นสุดอัตโนมัติ</b></div></div><div class="bl"><div class="bl-t">▶ จำลองการวิ่ง</div><div class="bl-d">ดูรถวิ่งบนผังพร้อมนาฬิกา · <b>ถนนขาด = ขึ้นเตือน</b></div></div></div></div></section>
+<section class="sl sec"><div class="pg">49/67</div>
+<div class="sec-num">7</div><h2>ซ่อมบำรุง</h2><div class="sec-sub">แจ้งซ่อม MO · PM · คลังอะไหล่</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">50/67</div><h2>🛠️ ใบแจ้งซ่อม MO — 7 ขั้น</h2>
+<div class="bd"><div class="sts"><div class="st"><span class="st-n">1</span><div><b>แจ้งซ่อม</b><span>ทุกคน</span></div></div><div class="st"><span class="st-n">2</span><div><b>รับ/จ่ายงาน</b><span>ช่าง — <b>ออกเลข MO อัตโนมัติ</b> เช่น MTN-BM-250726-0678</span></div></div><div class="st"><span class="st-n">3</span><div><b>ดำเนินการซ่อม</b><span>ช่าง + เบิกอะไหล่ + ค่าแรง/ค่าอะไหล่</span></div></div><div class="st"><span class="st-n">4</span><div><b>ตรวจหลังซ่อม</b><span>ช่าง</span></div></div><div class="st"><span class="st-n">5</span><div><b>คุณภาพหลังซ่อม</b><span>QA — <b>เฉพาะงานที่ขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ</b> ไม่งั้นข้าม</span></div></div><div class="st"><span class="st-n">6</span><div><b>รับมอบ + ประเมินความพึงพอใจ</b><span>ผู้แจ้ง (5 ด้าน)</span></div></div><div class="st"><span class="st-n">7</span><div><b>อนุมัติปิด</b><span>ผู้จัดการ</span></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">51/67</div><h2><span class="ic">🛠️</span>แจ้งซ่อมยังไงให้เร็ว</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">📷 สแกน QR เครื่อง</div><div class="bl-d">ไลน์ / ส่วนงาน / cost center <b>เติมให้อัตโนมัติ</b> (หรือเลือกจาก dropdown)</div></div><div class="bl"><div class="bl-t">เลือกทีมช่าง</div><div class="bl-d">บังคับ — ชนิดอุปกรณ์ + ลักษณะปัญหา<b>กรองตามทีม</b>ให้</div></div><div class="bl"><div class="bl-t">ลักษณะปัญหา 2 ชั้น</div><div class="bl-d">กลุ่มใหญ่ → หัวข้อย่อย · <b>มีช่องค้นหาข้ามชั้น</b> พิมพ์หาได้เลย</div></div><div class="bl"><div class="bl-t">↩️ แจ้งผิดแผนก</div><div class="bl-d">ตีกลับได้ → ใบเด้งกลับหาผู้แจ้ง → เลือกแผนกใหม่ส่งอีกที<br><b>นาฬิกา KPI เริ่มนับใหม่ให้ทีมที่ถูก</b> · การ์ดโชว์ “เคยถูกตีกลับ N ครั้ง”</div></div><div class="bl"><div class="bl-t">⚠️ อุปกรณ์จ่ายหลายไลน์</div><div class="bl-d">แบนเนอร์แดง “หยุดซ่อม/ตัดไฟจะกระทบไลน์: …”</div></div><div class="bl"><div class="bl-t">🖨️ พิมพ์ใบ MO</div><div class="bl-d">ฟอร์มต่างกันตามทีม — MTN → FM-MTN-006 · JIG/DIE/ผลิต → FM-JIG-008</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">52/67</div><h2>⚠️ master ของทีมช่าง — ใครเป็นเจ้าของ คนนั้นแก้</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">แถวของทีมอื่น = อ่านอย่างเดียว 🔒</div><ul><li>แถว <b>🌐 ใช้ร่วมทุกทีม</b> = <b>admin / manager เท่านั้น</b> (แก้ทีเดียวกระทบทุกทีม)</li><li>เปลี่ยนชื่อ master → <b>ระบบถามก่อน</b>ว่าให้ใบเก่าตามไปด้วยมั้ย</li><li>ไม่งั้น<b>กราฟ KPI แตกเป็น 2 แท่ง</b>ทันที (ชื่อเก่า/ชื่อใหม่แยกกลุ่ม)</li><li>ลบ = ซ่อน ไม่ลบจริง — ใบเก่ายังอ่านออก · 📜 มีแท็บประวัติการแก้ไข ว่าใครแก้อะไร</li></ul></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">53/67</div><h2><span class="ic">🔩</span>🔩 คลังอะไหล่ · 🗺️ ผังคลัง</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ตอบอะไร</div><div class="bl-d">ค้นหาอะไหล่ · <b>ดูตำแหน่งชั้นวาง</b> · ยอดคงเหลือตรงกับการเบิกจริงในใบ MO</div></div><div class="bl"><div class="bl-t">Rank A/B/C</div><div class="bl-d"><b>คำนวณให้เอง</b>ตาม WI-JIG-010 (เฉลี่ย/เดือน × leadtime) · แก้ทับได้แต่<b>บังคับระบุเหตุผล</b></div></div><div class="bl"><div class="bl-t">Safety Stock</div><div class="bl-d">Rank A/B ที่ยังไม่ตั้ง → <b>ขึ้นแถบเตือน</b></div></div><div class="bl"><div class="bl-t">📥 นำเข้า Excel</div><div class="bl-d">อัปไฟล์เดิมซ้ำได้ = <b>อัปเดตทับ ไม่สร้างซ้ำ</b> · <b>ดูสรุปก่อนลงมือเสมอ</b></div></div><div class="bl"><div class="bl-t">🗺️ ผังคลัง</div><div class="bl-d">ถ่ายรูปชั้นวางจริง → ตีช่อง → <b>ค้นชื่อของแล้วช่องที่เก็บไฮไลต์</b></div></div><div class="bl"><div class="bl-t">⚠️ ไม่ปล่อยของหาย</div><div class="bl-d">บล็อก “ยังหาบนผังไม่เจอ” — อะไหล่ที่ยังไม่กรอกชั้นวาง/ยังไม่ตีช่อง</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">54/67</div><h2><span class="ic">🔧</span>PM — ตรวจ · แผน · ล่วงหน้า · ประสานงาน</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">✅ ตรวจสอบอุปกรณ์</div><div class="bl-d">รูปมาตรฐานกดดูเต็มจอ · รูปหมุนหลายมุมพร้อมหมุด · ค่าวัด 3 โหมด (≥ / ≤ / ช่วง)</div></div><div class="bl"><div class="bl-t">ตรวจครบทุกจุด</div><div class="bl-d"><b>แผน PM เลื่อนรอบถัดไปให้อัตโนมัติ</b> (ตรวจไม่ครบ = ไม่เลื่อน)</div></div><div class="bl"><div class="bl-t">⚠️ แค่เปิดดูไม่สร้างรายการ</div><div class="bl-d">รายการเกิดตอน<b>บันทึก</b>เท่านั้น</div></div><div class="bl"><div class="bl-t">📅 แผน PM</div><div class="bl-d">เตือนล่วงหน้า <b>30 / 14 / 3 วัน / เกินกำหนด</b></div></div><div class="bl"><div class="bl-t">🔧 PM ล่วงหน้า (Planner)</div><div class="bl-d">ผลิตเห็นวันที่ต้องหยุด <b>1–2 สัปดาห์ล่วงหน้า + ยอดที่ต้องผลิตเผื่อ (buffer)</b></div></div><div class="bl"><div class="bl-t">🗓️ แผนประสานงาน PM</div><div class="bl-d">งานที่กินหลายวัน — 📤 แจ้ง Production + <b>🔔 แผงแดงช่วง Support ที่กำลังจะถึง</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">55/67</div><h2>⚠️ ชนิดอุปกรณ์ไม่ได้ล็อกว่าใครตรวจ</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">แผนกใน checklist เป็นตัวตัดสินเสมอ</div><ul><li>ฝ่ายผลิตตรวจ<b>แม่พิมพ์ / จิ๊ก / ปั๊มลม</b>เองในหมวด AM ได้ ถ้าตั้งใจให้ตรวจ</li><li>ลงจุดตรวจผิดแผนกแล้ว<b>ไม่ต้องพิมพ์ใหม่</b> — PM Setup มีปุ่ม</li><li><b>➡️ ย้าย</b> = ย้ายทั้งก้อน ประวัติการตรวจ + แผน PM ตามไปด้วย</li><li><b>⧉ คัดลอก</b> = สำเนาเฉพาะนิยามจุดตรวจ (ประวัติแยกกัน)</li></ul></div></div></section>
+<section class="sl sec"><div class="pg">56/67</div>
+<div class="sec-num">8</div><h2>คุณภาพ & วิศวกรรม</h2><div class="sec-sub">ใบตรวจ · NCR · PFMEA · Control Plan</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">57/67</div><h2><span class="ic">✅</span>✅ ใบตรวจ (Check Sheet)</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">1 ใบ = ?</div><div class="bl-d">พาร์ท + วันงาน + กะ + รอบที่ (ความถี่ “3 ชิ้น/กะ” = เปิดหลายรอบได้)</div></div><div class="bl"><div class="bl-t">บันทึกทีละแถวทันที</div><div class="bl-d">จอดับ / แบตหมด <b>ไม่หายทั้งใบ</b></div></div><div class="bl"><div class="bl-t">NG</div><div class="bl-d"><b>บังคับกรอกรายละเอียด</b></div></div><div class="bl"><div class="bl-t">⚠️ ค่าหลุดสเปคแล้วกด “ผ่าน”</div><div class="bl-d"><b>ระบบบล็อก</b> พาไปฟอร์ม NG แทน — กันบันทึกของเสียเป็นของดี</div></div><div class="bl"><div class="bl-t">ปิดใบ</div><div class="bl-d"><b>ปิดไม่ได้จนกว่าจะตรวจครบทุกจุด</b> · มีปุ่ม ✓ ผ่านทั้งหมดที่ยังไม่ตรวจ</div></div><div class="bl"><div class="bl-t">NG → NCR</div><div class="bl-d">เปิดได้จากในแถว ข้อมูลเติมให้อัตโนมัติ (<b>เปิดได้แม้ใบปิดแล้ว</b>)</div></div><div class="bl"><div class="bl-t">หมุดบนแบบ</div><div class="bl-d">เปลี่ยนสีตามผล — เขียวผ่าน / แดงไม่ผ่าน / เทาข้าม</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">58/67</div><h2><span class="ic">📐</span>📐 PE Core Tools — Flow / PFMEA / Control Plan</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">แกนร่วม</div><div class="bl-d">ใช้ <b>เลข Process (OP 10..280)</b> เป็นแกนเดียว — เก็บข้อมูลชุดเดียว แสดง 3 มุมมอง</div></div><div class="bl"><div class="bl-t">📥 นำเข้า Excel</div><div class="bl-d">อัปไฟล์ PFMEA / Control Plan / PFC ที่มีอยู่แล้ว <b>ไม่ต้องพิมพ์ใหม่</b></div></div><div class="bl"><div class="bl-t">อ่านหัวเอกสารเอง</div><div class="bl-d">เติม Part No. / Model / ลูกค้า / เลขเอกสาร ให้ · <b>ดูสรุปก่อนเสมอ</b></div></div><div class="bl"><div class="bl-t">เติมทับชุดเดิม</div><div class="bl-d">แทนที่รายการ แต่<b>ไม่ลบ OP เดิม</b> — ค่าที่คนแก้ไว้ไม่หาย</div></div><div class="bl"><div class="bl-t">layout ไม่รู้จัก</div><div class="bl-d">ได้ 0 รายการ + <b>บอกว่าคาด layout แบบไหน</b> (ไม่ยอมนำเข้าข้อมูลมั่ว)</div></div><div class="bl"><div class="bl-t">⬇️ ดาวน์โหลด Excel</div><div class="bl-d">PFMEA / Control Plan สร้างใหม่จากข้อมูลในระบบ (RPN เป็นสูตร)</div></div><div class="bl"><div class="bl-t">🗺️ ผังกระบวนการ</div><div class="bl-d">ระบบวาดให้เอง แก้ OP แล้วเปลี่ยนตามทันที · พิมพ์ A3 <b>บังคับลง 1 หน้า</b></div></div></div></div></section>
+<section class="sl sec"><div class="pg">59/67</div>
+<div class="sec-num">9</div><h2>ตั้งค่าและฐานข้อมูล</h2><div class="sec-sub">master data · สิทธิ์ · เอกสาร</div></section>
+<section class="sl"><i class="logo"></i><div class="pg">60/67</div><h2>🔩 Product Master — ลำดับที่ถูกต้อง</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">ลง Parts Master ให้ครบก่อน</div><ul><li><b>Parts Master = ทะเบียนกลางของทุก MAT</b> — เลข · ชื่อ · หน่วย · จำนวน/กล่อง · supplier · ต้นทุน · รูป</li><li>หน้าอื่น <b>“เลือก” ไม่ใช่ “พิมพ์ใหม่”</b> (ฟอร์มสินค้ามีปุ่ม 🗂 เลือกจาก Parts Master)</li><li>พิมพ์เลขที่ไม่มีในทะเบียน = <b>เตือนสีส้ม (ไม่บล็อก)</b></li></ul></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">61/67</div><h2><span class="ic">🔄</span>🔄 EC (Engineering Change) ทำอะไรให้บ้าง</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ทำให้เอง</div><div class="bl-d">สร้างสินค้าใหม่ + mark ตัวเก่าถูกแทน + <b>ลงทะเบียน MAT ใหม่</b></div></div><div class="bl"><div class="bl-t">สืบทอด</div><div class="bl-d">เฉพาะ<b>คุณสมบัติกายภาพ</b> — หน่วย / จำนวนต่อกล่อง / supplier / รูป</div></div><div class="bl"><div class="bl-t">⚠️ ไม่สืบทอดต้นทุน</div><div class="bl-d">rev ใหม่ต้นทุนเปลี่ยนได้ — <b>ให้บัญชีเติม ระบบไม่เดา</b></div></div><div class="bl"><div class="bl-t">ต้องตามไปตั้งเอง</div><div class="bl-d">BOM · Kanban Std · Packaging · Routing · และควรออก revision ที่ PE Docs</div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">62/67</div><h2><span class="ic">⚙️</span>🗺️ ตั้งค่าผัง · 🏭 เครื่องจักร · 🔨 แม่พิมพ์ · 🏷️ QR</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">🗺️ ตั้งค่าผัง (ที่เดียว)</div><div class="bl-d">🗺️ ภาพรวมโรงงาน · 🏭 ผลิต · 🔧 MTN · 📦 <b>Store/AMR วาดถนน</b></div></div><div class="bl"><div class="bl-t">วาดถนน</div><div class="bl-d">ถนน 2 เส้นตัดกัน = <b>ระบบใส่สี่แยกให้เอง</b> · 📏 ตั้งมาตราส่วนแล้วได้ระยะ/เวลาจริง</div></div><div class="bl"><div class="bl-t">🏭 ฐานข้อมูลเครื่องจักร</div><div class="bl-d"><b>default กรองเฉพาะเครื่องจักร</b> ไม่งั้นแม่พิมพ์ 262 ตัวปนในลิสต์/สถิติ</div></div><div class="bl"><div class="bl-t">🔗 Supply route</div><div class="bl-d">เครื่อง facility จ่ายให้ไลน์ไหน — ใช้เตือนตอนซ่อม/ตัดไฟ</div></div><div class="bl"><div class="bl-t">🔨 ทะเบียนแม่พิมพ์</div><div class="bl-d">จัดกลุ่มเป็นชุด (1 พาร์ท = 1 ชุด) · <b>แก้ shot สะสมไม่ได้</b> (ตัวนับจากการผลิต)</div></div><div class="bl"><div class="bl-t">🏷️ พิมพ์ป้าย QR</div><div class="bl-d">A4 · 3 ขนาด · <b>1 อุปกรณ์ = 1 ป้ายเท่านั้น</b> · สแกนไม่ติดก็<b>พิมพ์มือได้เสมอ</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">63/67</div><h2>🔐 จัดการสิทธิ์ — 2 แท็บ</h2>
+<div class="bd"><div class="scroll"><table><thead><tr><th>แท็บ</th><th>คุมอะไร</th><th>มีคอลัมน์ 🛡️ มั้ย</th></tr></thead><tbody><tr><td>📄 <b>การเข้าถึงหน้า</b></td><td>role ไหนเข้าหน้าไหนได้</td><td><b>ไม่มี</b> (ระบบบล็อก ติ๊กก็ไม่มีผล)</td></tr><tr><td>🛠️ <b>สิทธิ์การทำงาน</b></td><td>สร้าง / แก้ / ลบ / อนุมัติ ในหน้านั้น</td><td><b>มี</b></td></tr></tbody></table></div><div class="note">ติ๊กแล้ว<b>มีผลทันทีทุกเครื่อง</b> · admin เข้าถึงได้ทุกอย่างเสมอ (ล็อกไว้ในโค้ด)<br>⚠️ หน้าใหม่บางหน้าอาจยังไม่มีแถวของบาง role — ระบบปิดไว้ก่อนเพื่อความปลอดภัย <b>ถ้ามีคนบอกว่า “เข้าไม่ได้” ให้มาติ๊กที่นี่</b></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">64/67</div><h2><span class="ic">📄</span>📄 ทะเบียนเอกสาร & ฟอร์ม</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">คุมอะไร</div><div class="bl-d">เลขฟอร์ม · Rev · วันบังคับใช้ · ช่องลายเซ็น · footer · โลโก้ · Legend · ประวัติแก้ไข</div></div><div class="bl"><div class="bl-t">จุดขาย</div><div class="bl-d"><b>แก้ที่นี่ ใบพิมพ์ใช้ทันที ไม่ต้องแก้โปรแกรม</b> (24+ ฟอร์ม)</div></div><div class="bl"><div class="bl-t">🖨️ ทดลองพิมพ์</div><div class="bl-d">ใบตัวอย่างมี<b>ลายน้ำ “ตัวอย่าง” + แถบเตือน</b> กันเอาไปใช้แทนใบจริง</div></div><div class="bl"><div class="bl-t">✍️ ลายเซ็นแยกส่วนงาน</div><div class="bl-d">เลขฟอร์ม/Rev เป็นของบริษัท (ชุดเดียว) แต่<b>ป้ายช่องเซ็น + ชื่อผู้เซ็น แยกตามส่วนงานได้</b></div></div><div class="bl"><div class="bl-t">บางฟอร์มล็อกแนวกระดาษ</div><div class="bl-d">เปลี่ยนแล้วใบพัง — ระบบ<b>อธิบายเหตุผลบนจอ ไม่ปล่อยให้กดแล้วเงียบ</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">65/67</div><h2><span class="ic">🔑</span>🔑 จัดการผู้ใช้งาน</h2>
+<div class="bd"><div class="bls"><div class="bl"><div class="bl-t">ตั้งได้</div><div class="bl-d">อีเมล · ชื่อ · <b>role</b> · ตำแหน่ง · <b>ส่วนงาน (หลายอันได้)</b> · ไลน์/ทีม</div></div><div class="bl"><div class="bl-t">🔧 ทีมช่างซ่อม</div><div class="bl-d">MTN / JIG MTN / DIE MTN / ผลิต — <b>แยกจากส่วนงาน ไม่กระทบ scope ข้อมูลผลิต</b></div></div><div class="bl"><div class="bl-t">🛡️ เป็นแอดมินหน่วยงาน</div><div class="bl-d">ติ๊กที่นี่</div></div><div class="bl"><div class="bl-t">🔑 ตั้งรหัสผ่านใหม่</div><div class="bl-d">ให้คนที่ลืมรหัส (ใช้กับบัญชี admin ไม่ได้)</div></div><div class="bl"><div class="bl-t">ระบบเตือนให้</div><div class="bl-d">เมื่อ<b>ระดับงานไม่ตรงกับสิทธิ์ที่ให้</b> เช่น ธุรการได้สิทธิ์อนุมัติ PM เต็ม — <b>เป็นคำแนะนำ ไม่บล็อก</b></div></div></div></div></section>
+<section class="sl"><i class="logo"></i><div class="pg">66/67</div><h2>สรุป 6 ข้อที่อยากให้จำ</h2>
+<div class="bd"><div class="cls"><div class="cl"><span class="cl-i">🕗</span><div><b>“วันงาน” ตัดที่ 08:00</b><span>ทำงานตี 2 = ยังเป็นวันงานของเมื่อวาน</span></div></div><div class="cl"><span class="cl-i">🔴</span><div><b>แดงกระพริบ = ด่วนเท่านั้น</b><span>เหลือง = ระวัง (นิ่ง) · หยุดตามแผนไม่ทำให้แดง</span></div></div><div class="cl"><span class="cl-i">✍️</span><div><b>กรอกยอดทุกช่วงเบรค</b><span>เห็นยอดส่งต่อกะหน้าทันที · ปิดกะเร็วขึ้น</span></div></div><div class="cl"><span class="cl-i">💬</span><div><b>ประเภท “อื่นๆ” ต้องพิมพ์รายละเอียด</b><span>ไม่งั้นประชุมเช้าอ่านไม่รู้เรื่อง</span></div></div><div class="cl"><span class="cl-i">🛡️</span><div><b>แอดมินหน่วยงานเปิดหน้าให้ไม่ได้</b><span>ต้องติ๊กที่ role เดิมก่อนเสมอ</span></div></div><div class="cl"><span class="cl-i">💬</span><div><b>เจอปัญหา กดปุ่ม 💬 ท้ายเมนู</b><span>ไม่ตกหล่นเหมือนแชท · ตามสถานะได้</span></div></div></div></div></section>
+<section class="sl cover"><i class="logo"></i>
+<h1>ขอบคุณครับ</h1><div class="c-sub">คำถาม / ข้อเสนอแนะ</div>
+<div class="c-line">กดปุ่ม 💬 ท้ายเมนู แจ้งได้ตลอด</div><div class="c-foot">เอกสารฉบับเต็ม: docs/WORK_INSTRUCTION.md</div></section>
+</div>
+<div id="bar"></div>
+<div id="hint">→ / Space ถัดไป &nbsp;·&nbsp; ← ย้อนกลับ &nbsp;·&nbsp; F เต็มจอ &nbsp;·&nbsp; แตะขอบซ้าย/ขวาได้</div>
+<script>
+const S=[...document.querySelectorAll('.sl')];let i=0;
+const bar=document.getElementById('bar'),hint=document.getElementById('hint');
+function go(n){i=Math.max(0,Math.min(S.length-1,n));
+ S.forEach((s,k)=>s.classList.toggle('on',k===i));
+ bar.style.width=((i+1)/S.length*100)+'%';
+ location.hash=i?('#'+(i+1)):'';}
+addEventListener('keydown',e=>{
+ if(['ArrowRight',' ','PageDown','Enter'].includes(e.key)){e.preventDefault();go(i+1)}
+ else if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();go(i-1)}
+ else if(e.key==='Home')go(0);
+ else if(e.key==='End')go(S.length-1);
+ else if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+});
+addEventListener('click',e=>{if(e.target.closest('.scroll,.bls,.sts,.cls'))return;
+ go(e.clientX<innerWidth*0.22?i-1:i+1)});
+let x0=null;
+addEventListener('touchstart',e=>x0=e.changedTouches[0].clientX,{passive:true});
+addEventListener('touchend',e=>{if(x0===null)return;
+ const d=e.changedTouches[0].clientX-x0;if(Math.abs(d)>55)go(i+(d<0?1:-1));x0=null},{passive:true});
+go(parseInt(location.hash.slice(1))-1||0);
+setTimeout(()=>hint.style.opacity=0,5000);
+</script></body></html>

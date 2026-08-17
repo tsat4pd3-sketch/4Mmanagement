@@ -15,6 +15,17 @@ import { loadOpInfo } from '../utils/opItems';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
+// แปล error DB ตอนเซฟสินค้าเป็นภาษาคน — เคสจริง: สร้างรายการ OP แล้วใส่เลขพาร์ทจริงในช่อง MAT.NO
+// (2026-08-17 user เจอ "duplicate key ... dr_products_mat_no_key" แล้วอ่านไม่ออกว่าต้องแก้ยังไง)
+const friendlySaveError = (error, matNo, isOperation) => {
+  if (error?.code === '23505' && String(error.message || '').includes('mat_no')) {
+    return isOperation
+      ? `MAT.NO "${matNo}" มีสินค้าอยู่แล้ว — รายการขั้นตอน (OP) ต้องตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เช่น "332 ขับนัท M6") ส่วนเลขพาร์ทจริงใส่เฉพาะช่อง "เป็นขั้นของพาร์ทจริง (MAT)"`
+      : `MAT.NO "${matNo}" มีสินค้าอยู่แล้วในระบบ — ค้นหาแล้วแก้ไขตัวเดิมแทน (สินค้าที่ปิดใช้งานอยู่ก็นับ)`;
+  }
+  return error?.message || 'เกิดข้อผิดพลาด';
+};
+
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
    - Daily Report  → เลือก product ตอนเปิดกะ
@@ -48,6 +59,75 @@ const btnSecondary = {
 };
 
 const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '', is_operation: false, op_parent_mat: '', op_seq: '' });
+
+/* ── ช่องเลือก MAT แบบพิมพ์ค้นหา (แทน <select> ยาวเป็นร้อยตัวที่ user ทัก "ตาลาย" 2026-08-17) ──
+   พิมพ์เลข/ชื่อบางส่วน → กรองลิสต์ให้ · คลิกเลือก · ล้างช่อง = ไม่เลือก
+   pattern เดียวกับช่องเครื่องจักรใน PmCoordination (input+ลิสต์กรอง) — ไม่ใช้ datalist เพราะ
+   บาง browser ไม่กรองจาก label (ชื่อสินค้า) และบังคับพิมพ์ค่าเป๊ะ */
+function MatSearchField({ value, onChange, options, placeholder, hint }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  // เรียงตาม rank ก่อน (option ไม่มี rank = 0 เท่ากันหมด → ได้พฤติกรรมเรียงเลขเดิม) แล้วค่อยตามเลข
+  const sorted = useMemo(
+    () => [...options].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0)
+      || String(a.mat_no).localeCompare(String(b.mat_no), undefined, { numeric: true })),
+    [options]);
+  // จัดอันดับผลค้น: เลขขึ้นต้นตรง → เลขมีคำนั้น → ชื่อมีคำนั้น (2026-08-17 — user พิมพ์ "30"
+  // แล้วเจอแต่ตัวที่ชื่อมี "306" ขึ้นก่อน ส่วนเบอร์ 30xxxxx จมท้ายลิสต์จนคิดว่า "หาพาร์ทไม่เจอ")
+  const nq = q.trim().toLowerCase();
+  let filtered = sorted;
+  if (nq) {
+    const starts = [], inMat = [], inName = [];
+    for (const o of sorted) {
+      const m = String(o.mat_no).toLowerCase();
+      if (m.startsWith(nq)) starts.push(o);
+      else if (m.includes(nq)) inMat.push(o);
+      else if (String(o.name || '').toLowerCase().includes(nq)) inName.push(o);
+    }
+    filtered = [...starts, ...inMat, ...inName];
+  }
+  const sel = value ? options.find(o => o.mat_no === value) : null;
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {sel ? (
+        <div style={{ ...inputSt, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <b style={{ fontFamily: 'monospace' }}>{sel.mat_no}</b> — {sel.name}
+          </span>
+          <button type="button" onClick={() => { onChange(''); setQ(''); setOpen(true); }}
+            style={{ border: 'none', background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: 0, flexShrink: 0 }}
+            title="ล้าง — เลือกใหม่">✕</button>
+        </div>
+      ) : (
+        <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+          placeholder={placeholder || 'พิมพ์เลข MAT หรือชื่อ เพื่อค้นหา…'} style={inputSt} />
+      )}
+      {open && !sel && (
+        <div style={{ position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 4, maxHeight: 260, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
+          {filtered.length === 0 && <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)' }}>ไม่พบ "{q}" ในลิสต์</div>}
+          {filtered.slice(0, 60).map(o => (
+            <div key={o.mat_no} onClick={() => { onChange(o.mat_no); setOpen(false); setQ(''); }}
+              style={{ padding: '7px 12px', fontSize: 12.5, cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg2)'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <b style={{ fontFamily: 'monospace', flexShrink: 0 }}>{o.mat_no}</b>
+              <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{o.name}</span>
+              {o.tag && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>{o.tag}</span>}
+            </div>
+          ))}
+          {filtered.length > 60 && <div style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>…อีก {filtered.length - 60} รายการ — พิมพ์เพิ่มเพื่อกรอง</div>}
+        </div>
+      )}
+      {hint && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
+}
 
 /* ── Quick-link chips to connected modules ── */
 function RelatedLinks({ matNo, productId }) {
@@ -119,6 +199,7 @@ export default function ProductMaster() {
   const [kanbanStds, setKanbanStds] = useState([]);
   const [familyTotals, setFamilyTotals] = useState({});
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
+  const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
 
   const [editing,  setEditing]  = useState(null);          // id | 'new' | null
   const [ecSource, setEcSource] = useState(null);
@@ -154,7 +235,7 @@ export default function ProductMaster() {
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       supabase.from('production_lines').select('id, name').order('name'),
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
-      supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
+      supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
       supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
@@ -166,6 +247,7 @@ export default function ProductMaster() {
 
     const bc = {};
     (boms || []).forEach(b => { bc[b.product_id] = (bc[b.product_id] || 0) + 1; });
+    setBomRows(boms || []);
     setBomCounts(bc);
 
     const totals = {};
@@ -274,7 +356,7 @@ export default function ProductMaster() {
       if (editing === 'new') {
         if (ecSource) payload.family_id = ecSource.family_id;
         const { data: inserted, error } = await supabaseDR.from('dr_products').insert(payload).select().single();
-        if (error) { toast.error(error.message); return; }
+        if (error) { toast.error(friendlySaveError(error, payload.mat_no, form.is_operation)); return; }
         savedId = inserted.id;
         if (ecSource) {
           await supabaseDR.from('dr_products').update({
@@ -316,7 +398,7 @@ export default function ProductMaster() {
         }
       } else {
         const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
-        if (error) { toast.error(error.message); return; }
+        if (error) { toast.error(friendlySaveError(error, payload.mat_no, form.is_operation)); return; }
       }
       // อัปโหลดรูปใหม่ + DB update สำเร็จแล้ว ค่อยลบไฟล์รูปเดิมทิ้ง กันไฟล์กำพร้าสะสมใน storage (best-effort)
       // ลบเฉพาะเมื่อ URL เดิมชี้ bucket product-images และไม่มีสินค้าอื่นใช้รูปเดียวกันอยู่ (สินค้าชื่อเดียวกันแชร์รูปกัน)
@@ -941,13 +1023,25 @@ export default function ProductMaster() {
                 <input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputSt} />
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
+                <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : form.is_operation ? 'เลข/ชื่อของขั้น (ตั้งเอง — ไม่ใช่เลข SAP)' : 'MAT.NO (SAP)'}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder={form.is_operation ? 'เช่น 332 ขับนัท M6' : 'เช่น 10100399'} style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
                     <button type="button" onClick={() => setPartsPickFor('product')} title="เลือกจากทะเบียนกลาง Parts Master"
                       style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
                   </div>
-                  {form.mat_no && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
+                  {/* คำใบ้เคส OP (user ขอ 2026-08-17): SAP ไม่มีตัวตนของขั้น — ตั้งชื่อเอง ห้ามใช้เลขพาร์ทจริงซ้ำ */}
+                  {form.is_operation && (
+                    <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 4 }}>
+                      🔩 รายการ OP ไม่ใช้เลข MAT SAP — ตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เลขพาร์ทจริงใส่ช่อง "เป็นขั้นของพาร์ทจริง" ด้านล่างเท่านั้น)
+                    </div>
+                  )}
+                  {/* เตือนเลขซ้ำตั้งแต่ตอนพิมพ์ — ไม่ต้องรอชน unique constraint ตอนกดบันทึก */}
+                  {form.mat_no && items.some(i => i.mat_no === form.mat_no.trim() && i.id !== editing) && (
+                    <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, fontWeight: 700 }}>
+                      ⚠ เลขนี้มีสินค้าอยู่แล้วในระบบ — บันทึกไม่ผ่านแน่นอน{form.is_operation ? ' · รายการ OP ต้องตั้งเลข/ชื่อใหม่ของตัวเอง' : ' · ค้นหาแล้วแก้ไขตัวเดิมแทน'}
+                    </div>
+                  )}
+                  {form.mat_no && !form.is_operation && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
                     ecSource ? (
                       <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4 }}>
                         🗂 MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
@@ -997,12 +1091,10 @@ export default function ProductMaster() {
                 </select>
               </Field>
               <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
-                <select value={form.pair_mat_no} onChange={e => setForm(f => ({ ...f, pair_mat_no: e.target.value }))} style={inputSt}>
-                  <option value="">ไม่มีคู่</option>
-                  {items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active).map(i => (
-                    <option key={i.id} value={i.mat_no}>{i.mat_no} — {i.name}</option>
-                  ))}
-                </select>
+                <MatSearchField value={form.pair_mat_no} onChange={v => setForm(f => ({ ...f, pair_mat_no: v }))}
+                  options={items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active)}
+                  placeholder="พิมพ์เลข MAT หรือชื่อ เพื่อค้นหาคู่… (ว่าง = ไม่มีคู่)"
+                  hint="ลิสต์เรียงตามเลข · แสดงเฉพาะสินค้าที่ใช้งานอยู่" />
               </Field>
               {/* 🔩 ชั้น Operation — รายการที่เป็น "ขั้นตอน" ของพาร์ทจริง (เช่นงานขับนัท SUB APRON 1 รายการ/1 OP)
                   ใบงานยังเปิด/ปิดรายเครื่องได้ตามเดิม (หัวหน้าไลน์มอนิเตอร์รายขั้น) แต่ยอดรวมภาพใหญ่
@@ -1013,17 +1105,35 @@ export default function ProductMaster() {
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP) · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
                 </div>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
-                      <select value={form.op_parent_mat} onChange={e => setForm(f => ({ ...f, op_parent_mat: e.target.value }))} style={inputSt}>
-                        <option value="">— ยังไม่ระบุ (ยอดจะยังนับซ้ำจนกว่าจะผูก) —</option>
-                        {items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)
-                          .sort((a, b) => (a.name === form.name ? -1 : b.name === form.name ? 1 : 0))
-                          .map(i => <option key={i.id} value={i.mat_no}>{i.mat_no} — {i.name}</option>)}
-                      </select>
+                      {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
+                          เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
+                      <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
+                        options={(() => {
+                          // จัดอันดับจากข้อมูลที่ระบบรู้ (user ขอ 2026-08-17 "ควรดูจาก BOM"):
+                          // ① พาร์ทจริงในไลน์เดียวกับ OP ตัวนี้ ② พาร์ทใน BOM ของสินค้าไลน์นี้ (ของที่ถูกส่งเข้าไลน์)
+                          // ③ พาร์ทจริงไลน์อื่น ④ ทะเบียน Parts Master (ซื้อนอก) ที่เหลือ
+                          const norm = (m) => (m || '').trim().toUpperCase();
+                          const lineProdIds = new Set(items.filter(i => i.line_name && i.line_name === form.line_name).map(i => i.id));
+                          const bomMats = new Set(bomRows.filter(b => lineProdIds.has(b.product_id)).map(b => norm(b.mat_no)));
+                          const real = items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)
+                            .map(i => ({ mat_no: i.mat_no, name: i.name,
+                              rank: i.line_name === form.line_name ? 0 : bomMats.has(norm(i.mat_no)) ? 1 : 2,
+                              tag: i.line_name === form.line_name ? '🏭ไลน์นี้' : bomMats.has(norm(i.mat_no)) ? '📦BOMไลน์นี้' : null }));
+                          const seen = new Set(real.map(o => norm(o.mat_no)));
+                          const bought = pmParts
+                            .filter(p => p.mat_no && !seen.has(norm(p.mat_no)))
+                            .map(p => ({ mat_no: p.mat_no, name: `${p.part_name || ''} · ทะเบียน/ซื้อนอก`,
+                              rank: bomMats.has(norm(p.mat_no)) ? 1 : 3,
+                              tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
+                          return [...real, ...bought];
+                        })()}
+                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ยังไม่ผูก ยอดนับซ้ำ)"
+                        hint="เรียงตามความเกี่ยวข้อง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ · รายการ OP ด้วยกัน + ของที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />

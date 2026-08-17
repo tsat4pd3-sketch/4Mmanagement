@@ -21,6 +21,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
+import { isTrialDefect, defectQty } from '../utils/oee';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import PageHeader from '../components/PageHeader';
@@ -293,7 +294,7 @@ function QualityDashboard() {
       const ids = (ss || []).map(s => s.id);
       const [{ data: oo }, { data: dd }] = ids.length ? await Promise.all([
         supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', ids),
-        supabaseDR.from('defect_logs').select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, dr_defect_types(name_th, color)').in('session_id', ids),
+        supabaseDR.from('defect_logs').select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', ids),
       ]) : [{ data: [] }, { data: [] }];
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
       let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed');
@@ -347,7 +348,12 @@ function QualityDashboard() {
       // — บวกทั้งสองเข้าด้วยกัน = นับซ้ำ 2 เท่า ทำให้ PPM สูงเกินจริง/FTT ต่ำเกินจริง · แก้ 2026-08-05)
       // นับ qty_suspect ด้วยให้ตรงกับพาเรโตในหน้าเดียวกัน + กฎ Q ที่ต้นทาง (computeOEE นับ suspect เป็นของเสีย)
       const defBySession = new Map();
-      shownDefects.forEach(d => { defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0)); addType(d); });
+      // ⚠️ FTT/PPM = คุณภาพของไลน์ผลิต → ไม่นับ "งานทดลอง" (มาตรฐานเดียวกับ %Q ใน OEE · 2026-08-17)
+      //    แต่พาเรโตประเภทของเสีย (addType) ยังนับครบทุกรายการ — งานทดลองก็เป็นของเสียจริงที่ต้องเห็น
+      shownDefects.forEach(d => {
+        if (!isTrialDefect(d)) defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + defectQty(d));
+        addType(d);
+      });
       shownSessions.forEach(s => {
         const t = s.actual_qty || 0;
         const g = defBySession.has(s.id) ? defBySession.get(s.id) : (s.qty_ng || 0);

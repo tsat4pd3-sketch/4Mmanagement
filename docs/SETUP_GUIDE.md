@@ -141,7 +141,7 @@ npm run build    # ได้ ./dist สำหรับ deploy
 | 5 | **Shift Organize** | กำหนดตารางกะ A/B ของสัปดาห์แรก |
 | 6 | **Daily Report → ตั้งค่า** | สร้างสินค้า/Model (พร้อม cycle time + เป้าต่อกะ), Kanban Standard (MAT.NO), เครื่องจักร, ประเภท Downtime, ประเภทงานเสีย, นโยบายหยุดพัก |
 
-หลังจากนั้นระบบพร้อมใช้งานเต็มรูปแบบ — ดูวิธีใช้แต่ละหน้าใน `docs/USER_MANUAL.md`
+หลังจากนั้นระบบพร้อมใช้งานเต็มรูปแบบ — ดูวิธีใช้แต่ละหน้าใน `docs/WORK_INSTRUCTION.md`
 
 ---
 

@@ -51,3 +51,19 @@ export const fmtBaht = (n) => {
   const abs = Math.abs(n);
   return abs >= 100 ? Math.round(n).toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 1 });
 };
+
+/* ต้นทุนของเสีย/ชิ้น — ใช้ร่วมทั้ง /improvements (saving) และ /oee-analytics (มูลค่าของเสีย)
+   ลำดับตามที่ตกลงกับ user 2026-08-11:
+     standard_cost (บช. คำนวณ รวม mat+conversion แล้ว) ชนะเสมอ
+     → ไม่มีค่อย material_cost + conversion (rate บาท/ชม. × CT วินาที / 3600)
+   ⚠️ ไม่รู้ต้นทุน = คืน null **ห้ามเดาเป็น 0** (0 จะทำให้ยอดรวมดูน้อยกว่าจริงแบบเงียบ) */
+export function defectUnitCost(part, { ratePerHr = 0, ctSec = 0 } = {}) {
+  const std = Number(part?.standard_cost);
+  if (std > 0) return { unit: std, source: 'standard', convMissing: false };
+  const mat = Number(part?.material_cost);
+  if (mat > 0) {
+    const hasConv = ratePerHr > 0 && ctSec > 0;
+    return { unit: mat + (hasConv ? ratePerHr * (ctSec / 3600) : 0), source: 'derived', convMissing: !hasConv };
+  }
+  return { unit: null, source: 'none', convMissing: false };
+}
