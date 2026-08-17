@@ -96,6 +96,8 @@ export default function PEDocs() {
   const [saving, setSaving] = useState(false);
   const [setImgFile, setSetImgFile] = useState(null);    // รูปรออัปโหลดของ modal ชุดเอกสาร
   const [importOpen, setImportOpen] = useState(false);   // 📥 นำเข้าจากไฟล์ Excel
+  const [exporting, setExporting] = useState(false);     // ⬇️ กำลังสร้างไฟล์ Excel
+  const [exportNotes, setExportNotes] = useState(null);  // สิ่งที่ไฟล์ที่ได้ "ไม่เหมือนของเดิม" — ต้องบอก ห้ามเงียบ
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
 
@@ -130,6 +132,25 @@ export default function PEDocs() {
   useEffect(() => { loadDetail(setId); }, [setId, loadDetail]);
 
   const curSet = sets.find(s => s.id === setId) || null;
+
+  /* ⬇️ ดาวน์โหลดเป็น .xlsx ตามฟอร์มเดิม (เฉพาะแท็บ PFMEA / Control Plan — PFC เป็นผังวาด ทำไม่ได้)
+     exceljs + ตัวสร้างไฟล์โหลดแบบ dynamic ตอนกดเท่านั้น ไม่ถ่วงตอนเปิดหน้า */
+  const doExport = async () => {
+    if (!curSet || exporting || (tab !== 'fmea' && tab !== 'cp')) return;
+    setExporting(true); setExportNotes(null);
+    try {
+      const { downloadPeWorkbook } = await import('../lib/peExcelExport');
+      const { filename, notes, sheets } = await downloadPeWorkbook(tab, {
+        set: curSet, processes: procs, items: tab === 'fmea' ? fmea : cp, revisions: revs,
+      });
+      toast.success(`ดาวน์โหลดแล้ว · ${filename} (${sheets} ชีท)`);
+      if (notes?.length) setExportNotes(notes);
+    } catch (e) {
+      toast.error(e?.message || 'สร้างไฟล์ไม่สำเร็จ');
+    } finally {
+      setExporting(false);
+    }
+  };
   const procById = useMemo(() => Object.fromEntries(procs.map(p => [p.id, p])), [procs]);
   const pickSet = (id) => { const next = new URLSearchParams(sp); if (id) next.set('set', id); else next.delete('set'); setSp(next); };
 
@@ -227,10 +248,27 @@ export default function PEDocs() {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {curSet && (tab === 'fmea' || tab === 'cp') && (
+          <button style={btnSm} onClick={doExport} disabled={exporting}
+            title={`สร้างไฟล์ .xlsx ตามฟอร์ม ${tab === 'fmea' ? 'FM-PE1-018 (PFMEA)' : 'FM-PE1-019 (Control Plan)'} — 1 ชีทต่อ OP พร้อมตั้งค่าพิมพ์ A4 แนวนอน`}>
+            {exporting ? '⏳ กำลังสร้างไฟล์...' : `⬇️ ดาวน์โหลด Excel (${tab === 'fmea' ? 'PFMEA' : 'Control Plan'})`}
+          </button>
+        )}
         {canEdit && <button style={btnSm} onClick={() => setImportOpen(true)} title="อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่">📥 นำเข้า Excel</button>}
         {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>✏️ แก้ข้อมูลชุด</button>}
         {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>➕ ชุดเอกสารใหม่</button>}
       </div>
+
+      {exportNotes && (
+        <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 8, border: '1px solid #f59e0b55', background: '#f59e0b14', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 14 }}>ℹ️</span>
+          <div style={{ flex: 1 }}>
+            <b style={{ color: 'var(--text)' }}>ไฟล์ที่ได้ต่างจากต้นฉบับตรงไหนบ้าง</b>
+            {exportNotes.map((n, i) => <div key={i} style={{ marginTop: 3 }}>· {n}</div>)}
+          </div>
+          <button style={{ ...btnSm, padding: '2px 8px' }} onClick={() => setExportNotes(null)}>✕</button>
+        </div>
+      )}
 
       {!curSet ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)', fontSize: 13 }}>
@@ -259,6 +297,12 @@ export default function PEDocs() {
           {/* ══ แท็บ Flow ══ */}
           {tab === 'flow' && (
             <div>
+              {/* ทำไมแท็บนี้ไม่มีปุ่มดาวน์โหลด — ต้องบอกเหตุผล ไม่ใช่ปล่อยให้หาปุ่มไม่เจอ */}
+              <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, border: '1px dashed var(--border2)', fontSize: 12, color: 'var(--muted)' }}>
+                ℹ️ ใบ Process Flow (PFC) ดาวน์โหลดเป็น Excel ฟอร์มเดิมไม่ได้ — ในไฟล์จริงผังไม่ได้อยู่ในตาราง
+                แต่วาดด้วยรูปทรง Excel ~560 ชิ้น + รูป 59 ไฟล์ สร้างขึ้นใหม่จากข้อมูลในระบบไม่ได้
+                · แก้ผังต้องแก้ใน Excel แล้วอัพเข้ามาใหม่ · <b>PFMEA และ Control Plan ดาวน์โหลดได้</b> (ที่แท็บนั้น)
+              </div>
               {canEdit && (
                 <button style={{ ...btnPrim, marginBottom: 10 }} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>➕ เพิ่ม Process (OP)</button>
               )}
