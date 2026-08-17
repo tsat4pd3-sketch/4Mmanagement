@@ -6,7 +6,6 @@
  *   G CODE · H BOM · I Q'TY · J-N สาเหตุ M1-M5 · O ยืนยันจำนวน · P-S รหัสงานเสีย
  * หัว/ท้าย/สายอนุมัติ mirror ฟอร์มกระดาษ
  */
-import ExcelJS from 'exceljs';
 import { getDocForm, fullCode } from '../utils/docForms';
 
 const M_COL = { m1: 'J', m2: 'K', m3: 'L', m4: 'M', m5: 'N' };
@@ -34,6 +33,9 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
   });
   const sig = (Array.isArray(df.sig_blocks) && df.sig_blocks.length >= 5)
     ? df.sig_blocks : ['พนักงาน QC', 'หัวหน้าแผนก', 'ผู้จัดการ QA/QC', 'ผู้จัดการผลิต', 'ผู้จัดการทั่วไป'];
+  /* exceljs โหลดตอนกด export เท่านั้น (lazy chunk ~960KB ใช้ร่วมกับตัว export อื่น)
+     — ห้าม import แบบ static ไม่งั้นก้อนนี้ไปฝังอยู่ในชิ้นของหน้าที่เผลอ import ก่อน */
+  const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'ESM Scrap Report';
   // ชื่อชีท = เลขฟอร์มจาก Document Master กลาง (fallback ค่าเดิม)
