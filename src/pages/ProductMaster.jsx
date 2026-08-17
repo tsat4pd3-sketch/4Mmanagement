@@ -76,10 +76,20 @@ function MatSearchField({ value, onChange, options, placeholder, hint }) {
   const sorted = useMemo(
     () => [...options].sort((a, b) => String(a.mat_no).localeCompare(String(b.mat_no), undefined, { numeric: true })),
     [options]);
+  // จัดอันดับผลค้น: เลขขึ้นต้นตรง → เลขมีคำนั้น → ชื่อมีคำนั้น (2026-08-17 — user พิมพ์ "30"
+  // แล้วเจอแต่ตัวที่ชื่อมี "306" ขึ้นก่อน ส่วนเบอร์ 30xxxxx จมท้ายลิสต์จนคิดว่า "หาพาร์ทไม่เจอ")
   const nq = q.trim().toLowerCase();
-  const filtered = nq
-    ? sorted.filter(o => `${o.mat_no} ${o.name || ''}`.toLowerCase().includes(nq))
-    : sorted;
+  let filtered = sorted;
+  if (nq) {
+    const starts = [], inMat = [], inName = [];
+    for (const o of sorted) {
+      const m = String(o.mat_no).toLowerCase();
+      if (m.startsWith(nq)) starts.push(o);
+      else if (m.includes(nq)) inMat.push(o);
+      else if (String(o.name || '').toLowerCase().includes(nq)) inName.push(o);
+    }
+    filtered = [...starts, ...inMat, ...inName];
+  }
   const sel = value ? options.find(o => o.mat_no === value) : null;
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
