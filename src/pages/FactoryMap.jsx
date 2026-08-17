@@ -10,7 +10,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, buildCtMap } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty } from '../utils/oee';
 import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
@@ -418,7 +418,7 @@ export default function FactoryMap({ setupMode = false }) {
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
       // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
-      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
+      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)').in('session_id', sessIds),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type'),
       supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
@@ -431,7 +431,8 @@ export default function FactoryMap({ setupMode = false }) {
     const breaks = breakRes?.data || [];
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
-    const ngBySess = {}; (defs || []).forEach(d => { ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0); });
+    // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — สูตรเดียวกับตอนปิดกะ
+    const ngBySess = {}; (defs || []).forEach(d => { if (isTrialDefect(d)) return; ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + defectQty(d); });
     const nowMs = Date.now();
     // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
     const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();

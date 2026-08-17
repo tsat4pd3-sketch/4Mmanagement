@@ -17,7 +17,8 @@ import { pairAwareTotal, collapseOps, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
-import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
+import { defectUnitCost, fmtBaht } from '../utils/costSaving';
+import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
@@ -409,7 +410,7 @@ export default function OEEAnalytics() {
           ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
+          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
           ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', sessionIds)
@@ -611,8 +612,8 @@ export default function OEEAnalytics() {
     if (tdLiveRowStamped?.calcOEE != null) return null;
     const os = tdOrdersBySession[tdLiveSession.id] || [];
     const dl = tdDowntimes.filter(d => d.session_id === tdLiveSession.id);
-    const ng = tdDefects.filter(d => d.session_id === tdLiveSession.id)
-      .reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+    // ⚠️ Q ไม่นับงานทดลอง — ยอดเต็มยังใช้ในพาเรโต/มูลค่าของเสียตามปกติ
+    const ng = sumDefectQty(tdDefects.filter(d => d.session_id === tdLiveSession.id), 'line');
     return computeLiveOee({
       session: tdLiveSession, orders: os, downtimes: dl, ctMap: tdCtMap, ngQty: ng, workDate: tdDate,
       nowMs: lastUpdate?.getTime?.() || Date.now(),
@@ -697,6 +698,7 @@ export default function OEEAnalytics() {
   const [trOrders, setTrOrders]   = useState([]);   // ใบงานของช่วงที่เลือก (ทำ pair-aware total)
   const [trPairMat, setTrPairMat] = useState({});
   const [defects,    setDefects]    = useState([]);
+  const [partCost,   setPartCost]   = useState({});   // mat_no -> {material_cost, standard_cost} (แผงมูลค่าของเสีย)
   const [dtTypes,    setDtTypes]    = useState([]);
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
@@ -749,7 +751,7 @@ export default function OEEAnalytics() {
           ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
+          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
           : Promise.resolve({ data: [] }),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
@@ -759,6 +761,10 @@ export default function OEEAnalytics() {
       setSessions(sess || []);
       setDowntimes(dt || []);
       setDefects(def || []);
+      // ต้นทุน/ชิ้น สำหรับแผง "มูลค่าของเสีย" — best-effort (ยังไม่กรอกต้นทุน = แผงบอกว่าขาดอะไร ไม่เดา)
+      supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true)
+        .then(({ data: pm }) => setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r]))))
+        .catch(() => setPartCost({}));
       setDtTypes(dtt || []);
       setDefectTypes(deft || []);
 
@@ -939,6 +945,30 @@ export default function OEEAnalytics() {
       note: d.description || '',
     };
   }), [defects, sessById]);
+  /* 💰 มูลค่าของเสีย — แยก "ทั้งหมด" กับ "เฉพาะไลน์ผลิต (ไม่รวมงานทดลอง)" (2026-08-17 · คำสั่ง user)
+     ตัวหลัง = ก้อนเดียวกับที่ถูกนับใน %Q ของ OEE · ต้นทุน/ชิ้นใช้ util กลาง defectUnitCost
+     ⚠️ พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master → ไม่เดาราคา แต่รายงานจำนวนให้เห็นบนจอ */
+  const defectCost = useMemo(() => {
+    const acc = { all: 0, line: 0, trial: 0, qtyAll: 0, qtyLine: 0, qtyTrial: 0 };
+    const noCost = new Map();   // mat -> จำนวนชิ้นที่ตีมูลค่าไม่ได้
+    defects.forEach(d => {
+      const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+      if (!qty) return;
+      const trial = isTrialDefect(d);
+      acc.qtyAll += qty; if (trial) acc.qtyTrial += qty; else acc.qtyLine += qty;
+      const mat = d.prod_orders?.mat_no || null;
+      const { unit } = defectUnitCost(mat ? partCost[mat] : null);
+      if (unit == null) {
+        const k = mat || 'ไม่ระบุ MAT';
+        noCost.set(k, (noCost.get(k) || 0) + qty);
+        return;
+      }
+      const v = qty * unit;
+      acc.all += v; if (trial) acc.trial += v; else acc.line += v;
+    });
+    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]) };
+  }, [defects, partCost]);
+
   // `cluster: true` = จับกลุ่มจากข้อความอิสระ (ทางเดียวที่จะเจาะ "อื่นๆ" ซึ่งบังคับกรอกรายละเอียดอยู่แล้ว)
   const NOTE_DIM = { key: 'note', label: '💬 หมายเหตุ (จับกลุ่มคำ)', cluster: true };
   const DT_DIMS = [
@@ -1443,6 +1473,37 @@ export default function OEEAnalytics() {
         </div>
 
         {/* Quality Breakdown — ABC Analysis + เจาะลึก */}
+        {/* 💰 มูลค่าของเสีย — แยกงานทดลองออกจากของเสียจากไลน์ผลิต (ตัวที่คิดเข้า %Q) */}
+        {defectCost.qtyAll > 0 && (
+          <div style={s.section}>
+            <div style={s.title}>💰 มูลค่าของเสีย (ช่วงที่เลือก)</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, alignContent: 'start' }}>
+              {[
+                { k: 'all',   label: 'ของเสียทั้งหมด',            sub: 'รวมงานทดลอง',                      color: '#ef4444', qty: defectCost.qtyAll },
+                { k: 'line',  label: 'จากไลน์ผลิต',               sub: 'ไม่รวมงานทดลอง = ตัวที่คิดเข้า %Q', color: '#f59e0b', qty: defectCost.qtyLine },
+                { k: 'trial', label: '🧪 งานทดลอง (Try-out)',     sub: 'ไม่ถูกนับใน %Q',                    color: '#a855f7', qty: defectCost.qtyTrial },
+              ].map(c => (
+                <div key={c.k} style={{ background: 'var(--card)', border: `1px solid ${c.color}44`, borderLeft: `4px solid ${c.color}`, borderRadius: 10, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{c.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: c.color, lineHeight: 1.25 }}>
+                    {fmtBaht(defectCost[c.k])} <span style={{ fontSize: 12, fontWeight: 700 }}>บาท</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.qty.toLocaleString()} ชิ้น · {c.sub}</div>
+                </div>
+              ))}
+            </div>
+            {defectCost.noCost.length > 0 && (
+              <div style={{ marginTop: 10, fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.7 }}>
+                ⚠ ยังตีมูลค่าไม่ได้ {defectCost.noCost.length} พาร์ท ({defectCost.noCost.reduce((a, x) => a + x[1], 0).toLocaleString()} ชิ้น) — ยอดบาทข้างบนจึงต่ำกว่าความจริง
+                <br />กรอกต้นทุน/ชิ้นที่ <b>Product Master → 🗂 Parts Master</b> (standard_cost หรือ material_cost)
+                <div style={{ marginTop: 4, color: 'var(--muted)' }}>
+                  {defectCost.noCost.slice(0, 8).map(([m, q]) => `${m} (${q})`).join(' · ')}{defectCost.noCost.length > 8 ? ' …' : ''}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น"
           emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
       </div>
