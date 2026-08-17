@@ -12,7 +12,7 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
+import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
@@ -401,7 +401,7 @@ function MoCard({ o, onOpen }) {
 function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
-    cost_center: '', model: '', customer: '', code: '', want_at: '', problem_characteristic: '', problem_detail: '',
+    cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
     report_note: '', is_sample: false, reporter_prod: fullName || '', reporter_qa: '',
   });
   const [beforeFile, setBeforeFile] = useState(null);
@@ -448,17 +448,56 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   };
   const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it, itemTypes) }));
   // ลิสต์ที่กรองตามทีมที่แจ้งถึงแล้ว (แถวที่ไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
-  const teamItemTypes = useMemo(() => filterByTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
-  const teamProblemTypes = useMemo(() => filterByTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
-  const onChar = (c) => { const pt = problemTypes.find(x => x.characteristic === c); setF(p => ({ ...p, problem_characteristic: c, problem_detail: pt?.detail || '' })); };
+  /* ลิสต์ที่ "เห็นได้" — ต่างจาก filterByTeam ที่ใช้คุมสิทธิ์แก้
+     AM เห็นทุกแถว (เจอปัญหาก่อนใคร) · JIG↔MTN เห็นข้ามกันได้ผ่าน shared_teams · DIE แยกชัด */
+  const teamItemTypes = useMemo(() => visibleForTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
+  const teamProblemTypes = useMemo(() => visibleForTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
+
+  /* ── ลักษณะปัญหา 2 ชั้น: กลุ่มใหญ่ → หัวข้อย่อย (feedback ทีมงาน 2026-08-11) ──
+     เดิม dropdown เดียว 29 ตัว "พนักงานเลือกค่อนข้างลำบาก"
+     ⚠️ ต้องมีช่องค้นหาข้ามชั้นด้วย — ช่างที่แจ้งทุกวันรู้อยู่แล้วว่าจะเลือกอะไร
+        การบังคับเลือกกลุ่มก่อนคือเพิ่มขั้นตอนให้เขา */
+  const [probQ, setProbQ] = useState('');
+  const NO_GROUP = 'อื่นๆ';
+  const probGroups = useMemo(() => {
+    const m = new Map();
+    for (const p of teamProblemTypes) {
+      const g = (p.group_name || '').trim() || NO_GROUP;
+      if (!m.has(g)) m.set(g, []);
+      m.get(g).push(p);
+    }
+    // กลุ่ม "อื่นๆ" ไปท้ายเสมอ
+    return [...m.entries()].sort((a, b) => (a[0] === NO_GROUP ? 1 : b[0] === NO_GROUP ? -1 : 0));
+  }, [teamProblemTypes]);
+  const probHits = useMemo(() => {
+    const q = probQ.trim().toLowerCase();
+    if (!q) return null;
+    return teamProblemTypes.filter(p =>
+      [p.characteristic, p.detail, p.group_name].some(v => String(v || '').toLowerCase().includes(q)));
+  }, [probQ, teamProblemTypes]);
+  const subOf = useMemo(() => {
+    if (!f.problem_group) return [];
+    return teamProblemTypes.filter(p => ((p.group_name || '').trim() || NO_GROUP) === f.problem_group);
+  }, [f.problem_group, teamProblemTypes]);
+
+  // เลือกหัวข้อย่อย → เก็บทั้งกลุ่มและหัวข้อลงใบ (พาเรโต้จะได้จัดกลุ่มได้ 2 ระดับ)
+  const onChar = (c) => {
+    const pt = teamProblemTypes.find(x => x.characteristic === c);
+    setF(p => ({ ...p, problem_characteristic: c, problem_group: (pt?.group_name || '').trim() || p.problem_group || '' }));
+  };
 
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
-    if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา');
+    if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
     setSaving(true);
     const payload = { ...f, want_at: f.want_at || null, status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: getWorkDate(), reported_by_name: fullName };
-    const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
+    let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
+    // ยังไม่ apply migration problem_group → ตัดคอลัมน์แล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
+    if (error?.code === '42703') {
+      const { problem_group, ...rest } = payload;   // eslint-disable-line no-unused-vars
+      ({ data, error } = await supabaseDR.from('mtn_orders').insert(rest).select().single());
+    }
     if (error) { setSaving(false); return toast.error(error.message); }
     if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.jpg`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
     notifyMtn(data, 'mtn_reported');
@@ -491,8 +530,35 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
             </div>
           )}
         </Field>
-        <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamProblemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
-        <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
+        <Field label="ลักษณะปัญหา — กลุ่ม" required>
+          <select value={f.problem_group} onChange={e => setF(p => ({ ...p, problem_group: e.target.value, problem_characteristic: '' }))} style={inp}>
+            <option value="">— เลือกกลุ่ม —</option>
+            {probGroups.map(([g, list]) => <option key={g} value={g}>{g} ({list.length})</option>)}
+          </select>
+        </Field>
+        <Field label={`หัวข้อย่อย${subOf.length ? ` (${subOf.length})` : ''}`} required>
+          <select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} disabled={!f.problem_group} style={{ ...inp, ...(f.problem_group ? null : { background: 'var(--bg2)' }) }}>
+            <option value="">{f.problem_group ? '— เลือกหัวข้อย่อย —' : 'เลือกกลุ่มก่อน'}</option>
+            {subOf.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}
+          </select>
+        </Field>
+        {/* ค้นหาข้ามชั้น — ช่างที่รู้อยู่แล้วว่าจะเลือกอะไร ไม่ต้องไล่เลือกกลุ่มก่อน */}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Field label="🔍 หาเร็ว (พิมพ์อาการได้เลย ไม่ต้องเลือกกลุ่ม)">
+            <input value={probQ} onChange={e => setProbQ(e.target.value)} placeholder="เช่น ลมรั่ว / พันช์ / เซนเซอร์" style={inp} />
+          </Field>
+          {probHits && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+              {probHits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบ — ลองคำอื่น หรือเลือกจากกลุ่มด้านบน</span>}
+              {probHits.slice(0, 12).map(p => (
+                <button key={p.id} type="button" onClick={() => { onChar(p.characteristic); setProbQ(''); }}
+                  style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)' }}>
+                  {p.characteristic}<span style={{ color: 'var(--muted)', marginLeft: 5, fontWeight: 400 }}>· {(p.group_name || 'อื่นๆ')}</span>
+                </button>))}
+              {probHits.length > 12 && <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>…อีก {probHits.length - 12}</span>}
+            </div>
+          )}
+        </div>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
         <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6 }}><input value={f.model} onChange={e => set('model', e.target.value)} style={inp} placeholder="โมเดล" /><input value={f.customer} onChange={e => set('customer', e.target.value)} style={inp} placeholder="ลูกค้า" /></div></Field>
@@ -1098,16 +1164,29 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
   const rows = useMemo(() => { const since = new Date(); since.setDate(since.getDate() - Number(days)); return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && (!line || o.line_name === line) && new Date(o.report_at) >= since && o.repair_done_at); }, [orders, scopeLines, line, days]);
+  const [openGroup, setOpenGroup] = useState(null);   // กลุ่มที่กางดูหัวข้อย่อยในพาเรโต้
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
     for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
     const byChar = {}; rows.forEach(o => { const k = o.problem_characteristic || 'อื่นๆ'; byChar[k] = (byChar[k] || 0) + 1; });
+    /* พาเรโต้ 2 ระดับ (feedback ทีมงาน 2026-08-11) — กลุ่มใหญ่ก่อน แล้วเจาะเข้าไปดูหัวข้อย่อย
+       ⚠️ ใบเก่าที่แจ้งก่อนมีกลุ่ม จะไม่มี problem_group → ตกกลุ่ม "ไม่ระบุกลุ่ม"
+          ห้ามยัดเข้ากลุ่มใดกลุ่มหนึ่งมั่ว (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
+    const byGroup = {};
+    rows.forEach(o => {
+      const g = (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม';
+      const c = o.problem_characteristic || 'อื่นๆ';
+      const e = (byGroup[g] ||= { n: 0, subs: {} });
+      e.n++; e.subs[c] = (e.subs[c] || 0) + 1;
+    });
+    const paretoGroup = Object.entries(byGroup).sort((a, b) => b[1].n - a[1].n)
+      .map(([g, e]) => ({ group: g, n: e.n, subs: Object.entries(e.subs).sort((a, b) => b[1] - a[1]) }));
     // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
     const rated = rows.filter(o => satAvg(o.satisfaction) != null);
     const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
     const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), satOverall, satByDim, satN: rated.length };
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), paretoGroup, satOverall, satByDim, satN: rated.length };
   }, [rows]);
   const Card = ({ t, v, c }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 160 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div></div>;
   return (
@@ -1131,7 +1210,38 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
         ); })}
       </div>}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา (Top 10)</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา — ตามกลุ่มใหญ่</div>
+        {/* กลุ่มใหญ่ก่อน กดแตกดูหัวข้อย่อย — ดูภาพรวมได้ก่อนจมกับ 29 แท่งเตี้ยๆ */}
+        {stat.paretoGroup.map(g => {
+          const max = stat.paretoGroup[0].n;
+          const open = openGroup === g.group;
+          return (
+            <div key={g.group} style={{ marginBottom: 5 }}>
+              <div onClick={() => setOpenGroup(open ? null : g.group)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <div style={{ width: 190, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {open ? '▾' : '▸'} {g.group}
+                </div>
+                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ width: `${(g.n / max) * 100}%`, height: '100%', background: g.group === 'ไม่ระบุกลุ่ม' ? '#6b7280' : '#f59e0b' }} />
+                </div>
+                <div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{g.n}</div>
+              </div>
+              {open && g.subs.map(([c, n]) => (
+                <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, paddingLeft: 16 }}>
+                  <div style={{ width: 174, fontSize: 11.5, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</div>
+                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${(n / g.n) * 100}%`, height: '100%', background: '#fbbf24' }} />
+                  </div>
+                  <div style={{ width: 34, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)' }}>{n}</div>
+                </div>))}
+            </div>);
+        })}
+        {stat.paretoGroup.some(g => g.group === 'ไม่ระบุกลุ่ม') && (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+            ⚪ "ไม่ระบุกลุ่ม" = ใบที่แจ้งก่อนระบบมีการจัดกลุ่ม (ระบบไม่เดากลุ่มย้อนหลังให้ — ใบเก่าเก็บเป็นข้อความ ไม่รู้กลุ่มจริง)
+          </div>)}
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '14px 0 8px' }}>รายหัวข้อ (Top 10 ทั้งหมด)</div>
         {stat.pareto.map(([k, n]) => { const max = stat.pareto[0][1]; return <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}><div style={{ width: 190, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</div><div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${(n / max) * 100}%`, height: '100%', background: '#f59e0b' }} /></div><div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{n}</div></div>; })}
         {!stat.pareto.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูลในช่วงนี้</div>}
       </div>
@@ -1337,7 +1447,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   /* SimpleList — master list ที่ "แยกมุมมองตามทีมช่างได้"
      ทีมของแถว: null/ว่าง = 🌐 ใช้ร่วมทุกทีม · ตั้งเป็นทีมใดทีมหนึ่ง = เห็นเฉพาะทีมนั้น
      ⚠️ ที่แยกคือ "มุมมอง" เท่านั้น — ตัวตนอุปกรณ์ (machine/jig id) เป็นของกลาง ห้ามแตกตามทีม */
-  const SimpleList = ({ table, items, fields, addLabel, teamed = true }) => {
+  const SimpleList = ({ table, items, fields, addLabel, teamed = true, shared = false }) => {
     const [nw, setNw] = useState({});
     const [nwTeam, setNwTeam] = useState('');
     const [fTeam, setFTeam] = useState('');
@@ -1444,6 +1554,27 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                 {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
             )}
+            {/* 👁 ทีมอื่นที่ "เห็น" รายการนี้ด้วย — คนละเรื่องกับเจ้าของ (ที่แก้ได้)
+                ใช้กับเคสงานทับซ้อน JIG MTN ↔ MTN · AM เห็นทุกแถวอยู่แล้วไม่ต้องติ๊ก */}
+            {shared && teamed && (() => {
+              const cur = Array.isArray(it.shared_teams) ? it.shared_teams.map(teamKeyOf) : [];
+              const pickable = teamOpts.filter(t => !seesEverything(t.key) && teamKeyOf(t.key) !== teamKeyOf(it.team));
+              return (
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }} title="ทีมอื่นที่เห็นรายการนี้ด้วย (เห็นได้ แต่แก้ไม่ได้)">
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>👁</span>
+                  {pickable.map(t => {
+                    const on = cur.includes(teamKeyOf(t.key));
+                    return (
+                      <button key={t.key} type="button" disabled={!ok}
+                        onClick={() => updRow(table, it.id, { shared_teams: on ? cur.filter(x => x !== teamKeyOf(t.key)) : [...cur, teamKeyOf(t.key)] })}
+                        style={{ padding: '3px 7px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
+                          border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
+                          color: on ? 'var(--accent)' : 'var(--muted)', opacity: ok ? 1 : 0.6 }}>
+                        {t.icon || ''}{(t.dept_name || t.label || '').replace(' MTN', '')}
+                      </button>);
+                  })}
+                </div>);
+            })()}
             {ok
               ? <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
               : <span title={lockNote(it)} style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
@@ -1505,8 +1636,9 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
       {sub === 'labor' && LaborList()}
       {sub === 'mo' && MoSeqList()}
       {sub === 'audit' && <MasterAuditLog teams={mtnTeams.length ? mtnTeams : DEFAULT_TEAMS} />}
-      {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}
-      {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
+      {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" shared
+        fields={[{ k: 'group_name', ph: 'กลุ่มใหญ่ (เช่น ระบบลม)', w: 190 }, { k: 'characteristic', ph: 'หัวข้อย่อย', w: 220 }, { k: 'detail', ph: 'คำอธิบาย', w: 260 }]} />}
+      {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" shared fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
       {sub === 'repair' && (<>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
           ⚠️ รหัสย่อถูกใช้เป็นส่วนหนึ่งของเลข MO (เช่น <code>MTN-<b>BM</b>-060826-0001</code>) — เปลี่ยนแล้วมีผลกับใบที่ออกเลขใหม่เท่านั้น ใบเก่าคงเดิม

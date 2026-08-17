@@ -338,3 +338,35 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
     .sort((a, b) => (b.min - a.min) || (b.qty - a.qty));
 }
 
+
+/* ═══ 7) งานทดลอง (Try-out) — แยกออกจาก %Q แต่ยังนับเป็นมูลค่าของเสีย (2026-08-17) ═══
+   ไลน์ไม่ควรถูกลงโทษใน OEE จากงานลองแม่พิมพ์/ลองงานใหม่ แต่ของที่เสียไปมีต้นทุนจริง
+   ต้องเห็นทั้ง 2 มุม: "มูลค่าของเสียทั้งหมด" vs "เฉพาะไลน์ผลิต" (= ตัวเดียวกับที่คิด %Q)
+
+   ทำเครื่องหมายได้ 2 ทาง (migration 20260817_defect_trial_flag):
+     • defect_logs.is_trial              — ติ๊กรายครั้งในฟอร์มบันทึกงานเสีย
+     • dr_defect_types.excl_from_q       — ตั้งที่ประเภท (⚙️ ตั้งค่า) ทั้งประเภทเป็นงานทดลอง
+
+   ⚠️ ต้องอ่าน excl_from_q ผ่าน join → query ที่เอาไปคิด %Q ต้อง select
+      `dr_defect_types(..., excl_from_q)` ด้วย ไม่งั้นจะเห็นแค่ is_trial แล้วตกหล่นเงียบ
+   ⚠️ จุดที่ "แสดงรายการ" ของเสีย ห้ามกรองทิ้ง — งานทดลองเป็นของเสียจริง ต้องเห็นในลิสต์/พาเรโต */
+
+/** รายการนี้เป็นงานทดลองมั้ย (ไม่นับเข้า %Q) */
+export const isTrialDefect = (d) =>
+  d?.is_trial === true || d?.dr_defect_types?.excl_from_q === true;
+
+/** จำนวนของเสียของ 1 แถว — NG + สงสัย (กฎเดิม: ยึด defect_logs ไม่ใช่คอลัมน์ rollup ของ session) */
+export const defectQty = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+
+/** รวมจำนวนของเสีย
+ *  mode 'line' (ดีฟอลต์) = ไม่รวมงานทดลอง → ใช้คิด %Q / OEE
+ *  mode 'all'            = รวมทุกอย่าง     → ใช้คิดมูลค่าของเสียทั้งหมด */
+export const sumDefectQty = (rows, mode = 'line') =>
+  (rows || []).reduce((s, d) => s + ((mode === 'all' || !isTrialDefect(d)) ? defectQty(d) : 0), 0);
+
+/** แยก 2 ยอดในรอบเดียว — คืน { all, line, trial } */
+export function splitDefectQty(rows) {
+  let all = 0, trial = 0;
+  (rows || []).forEach(d => { const q = defectQty(d); all += q; if (isTrialDefect(d)) trial += q; });
+  return { all, line: all - trial, trial };
+}

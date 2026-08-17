@@ -13,11 +13,12 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
@@ -264,7 +265,7 @@ function LiveTab({ role }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
   const [savingDefect, setSavingDefect] = useState(false);
 
   // SV review-before-approve modal for pending_close requests
@@ -316,10 +317,11 @@ function LiveTab({ role }) {
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type)').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'),
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
     ]);
 
     const lm = {};
@@ -490,7 +492,7 @@ function LiveTab({ role }) {
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data } = await supabaseDR.from('defect_logs')
-      .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no, part_name)')
+      .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name)')
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     setDefectLogs(data || []);
@@ -1423,6 +1425,7 @@ function LiveTab({ role }) {
       qty_suspect:      suspect,
       qty_repair:       repair,
       description:      defectForm.description || null,
+      is_trial:         !!defectForm.is_trial,
     };
     const { error } = defectForm.id
       ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
@@ -1437,7 +1440,7 @@ function LiveTab({ role }) {
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
     loadDefectLogs(selSession.id);
   };
 
@@ -1540,8 +1543,9 @@ function LiveTab({ role }) {
     // Also count qty_actual from open orders being carried over
     const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
     const totalProduced  = confirmedQty + carryActualQty;
-    const ngQty = ngQtyOverride !== undefined ? ngQtyOverride
-      : defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+    // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — ของเสียจากการลองแม่พิมพ์/ลองงานใหม่
+    // ไม่ควรลงโทษ OEE ของไลน์ · ยอดเต็มยังอยู่ครบใน defect_logs ให้เอาไปคิดมูลค่าของเสีย
+    const ngQty = ngQtyOverride !== undefined ? ngQtyOverride : sumDefectQty(defectLogs, 'line');
     // ใช้ work_date + start_time (เวลาเริ่มกะที่ตั้งไว้จริง) เป็นจุดเริ่ม — ไม่ใช่ created_at ที่อาจคลาดเคลื่อนจากเวลาที่หัวหน้าเช็คชื่อ/เปิดระบบ
     // start_time แก้ได้ตอนปิดกะ (startTimeOverride) เผื่อตอนเปิดกะ/auto-open เดาเวลาผิด
     const workDate    = selSession?.work_date;
@@ -2193,10 +2197,10 @@ function LiveTab({ role }) {
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : '1fr', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : 'minmax(0, 1fr)', gap: 16 }}>
       {sessions.length > 1 && (
         // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', minWidth: 0 }}>
           {(() => {
             const groupNames = [...new Set(sessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
             const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
@@ -2451,8 +2455,9 @@ function LiveTab({ role }) {
               }).sort((a, b) => b.target - a.target);
 
               // สรุปภาพใหญ่: นับงานคู่ RH/LH เป็น 1 คู่/stroke (max ของสองข้าง) ไม่บวกชิ้นซ้ำ · พาร์ทเดี่ยว = บวกปกติ
+              // + collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่นับซ้ำ (แถวรายพาร์ทยังแยกโชว์ครบ)
               const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
-              const pt = pairAwareTotal(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), pairOf);
+              const pt = pairAwareTotal(collapseOps(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), opInfoSync()), pairOf);
               const nullMat = prodOrders.filter(o => !o.mat_no);
               const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = pt.produced
@@ -2484,6 +2489,16 @@ function LiveTab({ role }) {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{r.matNo}</span>
+                                  {(() => { // 🔩 รายการขั้นตอน (OP) — ยอดไม่ถูกนับซ้ำในสรุปรวม (ผูกพาร์ทจริงแล้ว) · ยังไม่ผูก = เตือน
+                                    const op = opInfoSync()[r.matNo];
+                                    if (!op) return null;
+                                    return (
+                                      <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: op.parent ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: op.parent ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
+                                        title={op.parent ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ผูกได้ที่ Product Master'}>
+                                        🔩 OP{op.seq ? ` ${op.seq}` : ''}{op.parent ? ` · ของ ${op.parent}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                                      </span>
+                                    );
+                                  })()}
                                   {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
                                   {r.ct > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
                                   {r.actualStart && (
@@ -2575,7 +2590,7 @@ function LiveTab({ role }) {
                     <button onClick={() => {
                       const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
                       setShowDefect(true);
-                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
                     }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
@@ -2905,6 +2920,13 @@ function LiveTab({ role }) {
                           {d.qty_ng     > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
                           {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
                           {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                          {/* งานทดลองต้องเห็นในลิสต์เสมอ (เป็นของเสียจริง) แค่ไม่ถูกนับเข้า %Q */}
+                          {isTrialDefect(d) && (
+                            <span title="งานทดลอง — ไม่นับเข้า %Q แต่ยังนับเป็นมูลค่าของเสีย"
+                              style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
+                              🧪 งานทดลอง
+                            </span>
+                          )}
                         </div>
                         {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
@@ -2914,7 +2936,7 @@ function LiveTab({ role }) {
                       </div>
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -3178,7 +3200,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: งานเสีย+Downtime คอลัมน์ซ้าย · สรุปแยกตามชิ้นงาน คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : '1fr', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {defectLogs.length > 0 && (
                   <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -3481,7 +3503,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: Downtime เปิดค้าง (ต้องตัดสินใจ) คอลัมน์ซ้าย · สรุปตัวเลขกะ คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : '1fr', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
@@ -3813,7 +3835,7 @@ function LiveTab({ role }) {
                 })()}
 
                 {/* จอกว้าง: รายการตัดสินใจ Order ที่ยังไม่ปิด คอลัมน์ซ้าย · OEE preview คอลัมน์ขวา (เห็นผลจากการตัดสินใจข้างๆ กันทันที) */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : '1fr', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
@@ -4200,12 +4222,32 @@ function LiveTab({ role }) {
                         style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                       >
                         <option value="">— เลือก MAT.NO —</option>
-                        {lineStds.map(s => (
-                          <option key={s.id} value={s.mat_no}>
-                            {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
-                          </option>
-                        ))}
+                        {lineStds.map(s => {
+                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14:
+                             10105769 กับ 10105770 ชื่อเดียวกันทั้งคู่) → ต่อท้ายด้วยเลขพาร์ทลูกค้า
+                             ที่พอแยกออก + ติดธง ⚠ ให้เห็นว่าคู่ไหนกำกวม (แก้จริงต้องไปตั้งชื่อ
+                             ให้ต่างกันที่ Product Master — ระบบไม่เดาชื่อให้) */
+                          const nm = s.dr_products?.name || s.part_name || '';
+                          const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
+                          return (
+                            <option key={s.id} value={s.mat_no}>
+                              {s.mat_no}{nm ? ` · ${nm}` : ''}
+                              {dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}
+                              {dup ? ' ⚠ชื่อซ้ำ' : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
+                            </option>
+                          );
+                        })}
                       </select>
+                      {(() => {
+                        const names = lineStds.map(s => s.dr_products?.name || s.part_name || '').filter(Boolean);
+                        const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
+                        if (!dupN) return null;
+                        return (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                            ⚠ มีชื่อสินค้าซ้ำกัน {dupN} คู่ในไลน์นี้ — เสี่ยงเปิดผิดใบ · แก้ชื่อให้ต่างกัน (เช่นใส่ลูกค้า AAT/FTM) หรือปิดใช้งานตัวเก่าที่ Product Master
+                          </div>
+                        );
+                      })()}
                     </Field>
                   );
                 })()}
@@ -4412,6 +4454,32 @@ function LiveTab({ role }) {
                 <Field label="รายละเอียด / สาเหตุ">
                   <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
                 </Field>
+
+                {/* 🧪 งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรลงโทษ %Q ของไลน์
+                    แต่ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user) */}
+                {(() => {
+                  const byType = defectTypes.find(t => t.id === defectForm.defect_type_id)?.excl_from_q === true;
+                  const on = byType || defectForm.is_trial;
+                  return (
+                    <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8,
+                      border: `1px solid ${on ? '#a855f7' : 'var(--border)'}`,
+                      background: on ? 'rgba(168,85,247,0.10)' : 'var(--bg2)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: byType ? 'default' : 'pointer' }}>
+                        <input type="checkbox" checked={on} disabled={byType}
+                          onChange={e => setDefectForm(f => ({ ...f, is_trial: e.target.checked }))}
+                          style={{ width: 'auto', margin: 0 }} />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? '#a855f7' : 'var(--text2)' }}>
+                          🧪 งานทดลอง (Try-out) — ไม่นับเข้า %Q
+                        </span>
+                      </label>
+                      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                        {byType
+                          ? 'ประเภทนี้ถูกตั้งเป็นงานทดลองไว้แล้วที่ ⚙️ ตั้งค่า — ติ๊กให้อัตโนมัติ'
+                          : 'เช่น ลองแม่พิมพ์ใหม่ / ลองงานใหม่ — ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย แค่ไม่ฉุด OEE ของไลน์'}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
@@ -4432,6 +4500,23 @@ function LiveTab({ role }) {
           // เครื่องจักร + ชิ้นงาน เป็น optional ทุกประเภท downtime — หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
           // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ (machine_no/mat_no nullable · OEE แยกด้วย category)
           const dtMachineOptional = true;
+          /* ตัวเลือก "ชิ้นงาน" ของฟอร์ม Downtime — 3 แหล่งรวมกัน (dedupe ด้วย mat_no)
+             ⚠️ เดิมดึงจาก kanban_standards + ชื่อไลน์ "ตรงเป๊ะ" อย่างเดียว → ไลน์ที่สินค้า
+             ไม่ได้อยู่ในระบบคัมบัง หรือสินค้าผูกกับไลน์แม่/ไลน์พี่น้อง จะขึ้น
+             "ไม่มีชิ้นงานในไลน์นี้" ทั้งที่กำลังผลิตอยู่จริง (หน้างานเลเซอร์แจ้งเข้ามา 2026-08-14)
+             → เอา "ใบงานที่เปิดในกะนี้" มาก่อน (ตรงประเด็นสุด — คือของที่วิ่งอยู่จริง)
+               แล้วเสริมด้วยสินค้า/คัมบังของ "ครอบครัวไลน์" (กฎเดียวกับ sessionProcessTypesAll) */
+          const dtMatOptions = (() => {
+            const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
+            const inFam = (ln) => fam.has((ln || '').trim().toLowerCase());
+            const seen = new Map();
+            const add = (mat, name, src) => { if (mat && !seen.has(mat)) seen.set(mat, { mat_no: mat, name: name || '', src }); };
+            prodOrders.filter(o => !['cancelled', 'imported'].includes(o.status))
+              .forEach(o => add(o.mat_no, o.part_name || products.find(p => p.mat_no === o.mat_no)?.name, 'order'));
+            products.filter(p => inFam(p.line_name)).forEach(p => add(p.mat_no, p.name, 'line'));
+            kanbanStds.filter(s => inFam(s.dr_products?.line_name)).forEach(s => add(s.mat_no, s.dr_products?.name || s.part_name, 'kanban'));
+            return [...seen.values()];
+          })();
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
@@ -4571,20 +4656,21 @@ function LiveTab({ role }) {
                       </div>
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
-                      {(() => {
-                        const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
-                        if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
-                        return (
-                          <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
-                            <option value="">เลือกชิ้นงาน...</option>
-                            {lineStds.map(s => (
-                              <option key={s.id} value={s.mat_no}>
-                                {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      })()}
+                      {!dtMatOptions.length ? (
+                        /* ว่างจริง = ยังไม่มีใบงานในกะ และไม่มีสินค้าผูกกับไลน์เลย → บอกทางแก้ ห้ามปล่อยเป็นทางตัน */
+                        <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center', fontSize: 12 }}>
+                          — ยังไม่มีชิ้นงานให้เลือก (เปิดใบงาน หรือผูกสินค้ากับไลน์ที่ Product Master) · ข้ามได้
+                        </div>
+                      ) : (
+                        <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
+                          <option value="">เลือกชิ้นงาน...</option>
+                          {dtMatOptions.map(o => (
+                            <option key={o.mat_no} value={o.mat_no}>
+                              {o.src === 'order' ? '▶ ' : ''}{o.mat_no}{o.name ? ` · ${o.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </Field>
                   </div>
                   <Field label="รายละเอียด">
@@ -4595,8 +4681,7 @@ function LiveTab({ role }) {
                 <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
                   {(() => {
-                    const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
-                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && dtMatOptions.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
@@ -5499,9 +5584,10 @@ function ExportTab() {
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>วันที่สิ้นสุด</div>
             <input type="date" value={filter.date_to} onChange={e => setFilter(f => ({ ...f, date_to: e.target.value }))} style={sel} />
           </div>
-          <div>
+          {/* minWidth:0 บังคับให้ flex item ยอมหด — ไม่งั้นกว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
+          <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, minWidth: 160 }}>
+            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, width: '100%', minWidth: 0 }}>
               <option value="">ทุกไลน์</option>
               {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
@@ -5647,7 +5733,7 @@ function DefectTypeSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
-  const emptyForm = { name_th: '', color: '#ef4444', process_type: '', sort_order: 0, is_active: true };
+  const emptyForm = { name_th: '', color: '#ef4444', process_type: '', sort_order: 0, is_active: true, excl_from_q: false };
   const [form, setForm]       = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -5659,7 +5745,7 @@ function DefectTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, color: item.color, process_type: item.process_type || '', sort_order: item.sort_order, is_active: item.is_active }
+      ? { name_th: item.name_th, color: item.color, process_type: item.process_type || '', sort_order: item.sort_order, is_active: item.is_active, excl_from_q: item.excl_from_q === true }
       // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
       : { ...emptyForm, color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1 });
   };
@@ -5719,6 +5805,7 @@ function DefectTypeSetup({ role }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
                     {!item.is_active && <div style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</div>}
+                    {item.excl_from_q && <div style={{ fontSize: 10.5, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
@@ -5765,6 +5852,18 @@ function DefectTypeSetup({ role }) {
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
                 <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
               </label>
+              {/* งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรฉุด OEE ของไลน์ (2026-08-17) */}
+              <div style={{ padding: '9px 11px', borderRadius: 8, border: `1px solid ${form.excl_from_q ? '#a855f7' : 'var(--border)'}`,
+                background: form.excl_from_q ? 'rgba(168,85,247,0.10)' : 'var(--bg2)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.excl_from_q} onChange={e => setForm(f => ({ ...f, excl_from_q: e.target.checked }))} style={{ width: 'auto', margin: 0 }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? '#a855f7' : 'var(--text)' }}>🧪 งานทดลอง — ไม่นับเข้า %Q</span>
+                </label>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                  ติ๊กแล้ว ของเสียประเภทนี้จะไม่ถูกนับใน %Q ของ OEE ทุกจอ แต่ยังนับใน "มูลค่าของเสียทั้งหมด"
+                  <br />ประเภททั่วไปไม่ต้องติ๊ก — พนักงานติ๊ก 🧪 รายครั้งในฟอร์มบันทึกงานเสียได้อยู่แล้ว
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>

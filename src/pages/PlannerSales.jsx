@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
@@ -188,7 +189,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           const k = norm(pno);
           if (!k || !mat) return;
           const cur = matMap[k];
-          if (!cur || (!String(cur.mat_no).startsWith('1') && String(mat).startsWith('1'))) matMap[k] = { mat_no: mat, name };
+          if (!cur || (!isFgMat(cur.mat_no) && isFgMat(mat))) matMap[k] = { mat_no: mat, name };
           // ดัชนี base part (ตัด revision) สำหรับ fallback — เก็บทุกตัวเพื่อเช็คกำกวม
           const b = baseOfPart(pno);
           if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }

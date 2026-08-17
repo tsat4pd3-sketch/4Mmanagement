@@ -5,6 +5,7 @@ import { roleLabel } from '../utils/roleMeta';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
 import { toast } from '../components/Toast';
+import { saveMyProfileMedia } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
@@ -218,8 +219,9 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
       if (upErr) throw upErr;
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      const { error: dbErr } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
-      if (dbErr) throw dbErr;
+      // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error (บั๊กเดียวกับลายเซ็น 2026-08-17)
+      const res = await saveMyProfileMedia('avatar_url', publicUrl);
+      if (!res.ok) throw new Error(res.message);
       // ลบไฟล์เก่า best-effort หลัง DB update สำเร็จเท่านั้น (กฎ Storage E2) — เฉพาะโฟลเดอร์ตัวเอง
       if (userAvatarUrl?.includes('/avatars/')) {
         const old = decodeURIComponent(userAvatarUrl.split('/avatars/')[1] || '').split('?')[0];

@@ -41,7 +41,7 @@
 ```
 docs/
 ├── SETUP_GUIDE.md      คู่มือติดตั้งสำหรับทีม IT
-├── USER_MANUAL.md      คู่มือใช้งานทุกหน้า ทุกฟังก์ชัน
+├── WORK_INSTRUCTION.md คู่มือใช้งาน (ฉบับหลัก) — ทุกหน้า ทุกฟังก์ชัน แบ่งตามหมวด + ระดับผู้ใช้
 └── sql/
     ├── 01_main_schema.sql   Schema โปรเจคหลัก (19 ตาราง)
     ├── 02_dr_schema.sql     Schema Daily Report (10 ตาราง)

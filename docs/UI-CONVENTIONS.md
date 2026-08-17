@@ -178,6 +178,22 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 > - **`isMobile ? '1fr' : …` เขียนเป็น `isMobile ? 'minmax(0, 1fr)' : …`** — ไล่แก้แล้ว 23 จุด 9 ไฟล์
 > - อาการ: การ์ด/แถวกว้างเกินจอ **แล้วโดน `main{overflow-x:hidden}` ตัดหายเงียบ** (ไม่มี scrollbar ให้รู้ตัว)
 
+> ### ⚠️ 4 ต้นเหตุที่ทำให้ล้นจอมือถือ — ไล่แก้ครบทั้งโปรเจคแล้ว (2026-08-04 รอบ 2)
+> วัดจริง 60 หน้า × **3 ความกว้าง (320/360/390)** × **กดทุกแท็บ/เปิด modal** ด้วย `audit/sweep.mjs`
+> (รอบแรกวัดแค่ 390px + หน้าแรก เลยไม่เจอ — user ทักว่ายังล้นอยู่ ถูกต้อง)
+> 1. **`<select>` กว้างตาม option ที่ยาวที่สุด** — ชื่อไลน์จริงยาวๆ ทำให้ select กว้าง 427px บนจอ 390px
+>    แก้ที่ index.css: `input, select, textarea { max-width: 100% }`
+>    · **แต่ max-width:% ใช้ไม่ได้ถ้าพ่อเป็น shrink-to-fit** (เปอร์เซ็นต์เทียบกับความกว้างที่ยังไม่นิ่ง = ถูกมองข้าม)
+>      เคสนั้นต้องใส่ **`minWidth: 0`** ที่ตัวพ่อ (flex/grid item) ด้วย
+> 2. **flex/grid item มี `min-width:auto`** = ไม่ยอมหดต่ำกว่าเนื้อหา → ใส่ `minWidth: 0`
+>    (DailyReport Export/คอลัมน์กะ · Report ใบบันทึก)
+> 3. **`gridTemplateColumns: '1fr'`** คอลัมน์เดียว = พื้นเป็น min-content → `'minmax(0, 1fr)'`
+> 4. **แถบปุ่ม/ฟอร์มที่ไม่มี `flexWrap`** — รวมกันยาวเกินจอ (Checkin Preview กะดึก · Report จาก-ถึง ·
+>    MorningMeeting โหมดประชุม) → ใส่ `flexWrap: 'wrap'`
+> **`minWidth: <px>` ที่ตั้งไว้ใหญ่กว่าจอเล็กสุด (320px) ก็ล้นเหมือนกัน** — Transport ตั้ง `minWidth:320`
+> ทั้งที่พื้นที่จริงเหลือ 283px → เปลี่ยนเป็น `minWidth: 0` + ให้ `flex-basis` คุมขนาดบน desktop แทน
+> **ผลสุดท้าย: ล้นจอ 0 หน้า** (จาก 6 หน้าตอนเริ่มรอบ 2)
+
 > ### 📜 บอก user ว่า "เลื่อนลงได้อีก" — `<ScrollHint/>` (2026-08-04 · คำสั่ง user)
 > มือถือไม่มี scrollbar ให้เห็น → user ไม่รู้ว่าหน้ายังมีเนื้อหาข้างล่าง (ต้นเหตุที่หัวหน้างานหาปุ่มบันทึกไม่เจอ)
 > `src/components/ScrollHint.jsx` **mount ครั้งเดียวใน App.jsx ครอบทุกหน้า ไม่ต้องแก้รายหน้า**

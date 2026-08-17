@@ -9,6 +9,7 @@ import CollapseCard from '../components/CollapseCard';
 import { toast } from '../components/Toast';
 import { deptNameOf } from '../utils/mtnTeams';
 import { isParallelLine } from '../utils/lineTypes';
+import { noteSimilarity, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import PageHeader from '../components/PageHeader';
 
 /*
@@ -54,6 +55,29 @@ const BATCH_FRAC = 0.5;
 const FALLBACK_BATCH_SEC = 180;
 const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: bg, color: fg });
 
+/* ── โฟกัสการสอบสวนตาม "อาการที่ลูกค้าแจ้ง" ────────────────────────────────────────────
+   กลุ่มคำของชิ้นส่วน/อาการ ที่คนเขียนต่างกันได้ (ไทย/อังกฤษ) — จำเป็นเพราะ FMEA เขียน
+   "Missing nut" แต่ลูกค้า/หน้างานเขียน "นัทไม่มี" เทียบตรงๆ ไม่มีวันเจอกัน
+   (หลักเดียวกับ EQUIP_SYN ใน AdoptionOutlook · ตัวจับคู่ n-gram ข้ามภาษาไม่ได้)
+   ⚠️ ใช้แค่ **โฟกัสว่าจุดไหนเกี่ยวข้อง** ไม่ได้ใช้สรุปสาเหตุ — คนยังเป็นคนตัดสิน */
+const PART_WORDS = [
+  { key: 'nut', label: 'นัท', w: ['nut', 'นัท', 'น็อต', 'น๊อต'] },
+  { key: 'bolt', label: 'โบลท์/สลัก', w: ['bolt', 'โบลท์', 'สลัก'] },
+  { key: 'stud', label: 'สตัด', w: ['stud', 'สตัด'] },
+  { key: 'rivet', label: 'ริเวท', w: ['rivet', 'ริเวท', 'ย้ำ'] },
+  { key: 'weld', label: 'รอยเชื่อม', w: ['weld', 'เชื่อม', 'สปอต', 'spot'] },
+  { key: 'hole', label: 'รู/เจาะ', w: ['hole', 'รู', 'เจาะ', 'pierce'] },
+  { key: 'burr', label: 'ครีบ/คม', w: ['burr', 'ครีบ', 'คม'] },
+  { key: 'dim', label: 'ขนาด/รูปทรง', w: ['dimension', 'gap', 'ขนาด', 'เบี้ยว', 'บิด', 'offset'] },
+  { key: 'crack', label: 'แตก/ร้าว', w: ['crack', 'แตก', 'ร้าว'] },
+  { key: 'scratch', label: 'รอยขีดข่วน', w: ['scratch', 'ขีดข่วน', 'รอย'] },
+];
+/* คืนกลุ่มคำที่พบในข้อความ (ใช้ทั้งกับ failure_mode และรายละเอียดที่ผู้ใช้พิมพ์) */
+const wordGroups = (txt) => {
+  const s = (txt || '').toLowerCase();
+  return PART_WORDS.filter(g => g.w.some(w => s.includes(w)));
+};
+
 export default function OrderTrace() {
   const { role, lineId, sections } = useContext(UserContext);
   const scopeSecs = sections || [];
@@ -68,6 +92,8 @@ export default function OrderTrace() {
   const [searching, setSearching] = useState(false);
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)
   const [trace, setTrace] = useState(null);          // bundle ข้อมูลสอบกลับ
+  const [claimFm, setClaimFm] = useState('');        // failure mode ที่เลือกจาก PFMEA ของพาร์ทนี้
+  const [claimNote, setClaimNote] = useState('');    // รายละเอียดที่ลูกค้าแจ้งเพิ่ม
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -160,6 +186,7 @@ export default function OrderTrace() {
   /* ── โหลด bundle สอบกลับของใบที่เลือก ── */
   useEffect(() => {
     if (!sel) { setTrace(null); return; }
+    setClaimFm(''); setClaimNote('');   // เปลี่ยนใบ = ล้างอาการที่กรอกไว้ กันหลักฐานของใบเก่าค้าง
     let alive = true;
     (async () => {
       setLoading(true);
@@ -169,7 +196,7 @@ export default function OrderTrace() {
       const famIds = lines.filter(l => famLower.includes(l.name.toLowerCase())).map(l => l.id);
       const t = { qtyUpdates: [], defects: [], sessionOrders: [], downtimes: [], mos: [], people: [], stations: {}, fourM: [], childLots: [], rawReqs: [], stockIn: [], stockOut: [], lpa: [], poka: [], dailyPm: null,
         reqsByStation: {}, skillsByEmp: {}, homeByEmp: {}, product: null, prevSession: null, machineMos: [], ojtByEmp: {},
-        equip: null, amTargetJigs: new Set(), amDoneJigs: new Set() };
+        equip: null, amTargetJigs: new Set(), amDoneJigs: new Set(), pe: null };
 
       // DR — ของใบ/กะ
       const [qu, df, so, dt] = await Promise.all([
@@ -554,6 +581,35 @@ export default function OrderTrace() {
         };
       } catch (e) { console.warn('[trace] โหลดข้อมูลอุปกรณ์ไม่สำเร็จ', e); }
 
+      /* ── เอกสารออกแบบของพาร์ทนี้ (PE Core Tools · Main) ──────────────────────────
+         ใช้เป็น "รายการอาการที่เคยคาดไว้" ให้ผู้ใช้เลือก แทนการเดาจากข้อความล้วน
+         ⚠️ ต้องผูกกับพาร์ท/ไลน์ของใบนี้ ห้ามดึงรวมทั้งระบบ (จะได้ FMEA ของพาร์ทอื่น)
+         จับคู่ mat_no ก่อน แล้ว fallback ชื่อไลน์ — pe_doc_sets.mat_no ยังว่างได้ในข้อมูลจริง */
+      try {
+        const nz = x => (x || '').trim().toLowerCase();
+        const { data: sets } = await supabase.from('pe_doc_sets')
+          .select('id, part_no, mat_no, part_name, line_name').limit(500);
+        const set = (sets || []).find(s => s.mat_no && nz(s.mat_no) === nz(sel.mat_no))
+          || (sets || []).find(s => nz(s.line_name) === nz(sess.line_name)) || null;
+        if (set) {
+          const { data: procs } = await supabase.from('pe_processes')
+            .select('id, op_no, seq, name, kind, machine_no, child_parts, special_class')
+            .eq('set_id', set.id).order('seq');
+          const pids = (procs || []).map(p => p.id);
+          const [fm, cp] = pids.length ? await Promise.all([
+            supabase.from('pe_fmea_items')
+              .select('id, process_id, seq, failure_mode, effects, severity, occurrence, detection, causes, prevention, detection_ctrl, recommended_action, action_taken')
+              .in('process_id', pids),
+            supabase.from('pe_cp_items')
+              .select('id, process_id, seq, product_char, process_char, special_class, spec, method, sample_size, frequency, control_method, reaction_plan')
+              .in('process_id', pids),
+          ]) : [{ data: [] }, { data: [] }];
+          t.pe = { set, procs: procs || [], fmea: fm?.data || [], cp: cp?.data || [] };
+        } else {
+          t.pe = { set: null, procs: [], fmea: [], cp: [], totalSets: (sets || []).length };
+        }
+      } catch (e) { console.warn('[trace] โหลดเอกสาร PE ไม่สำเร็จ', e); }
+
       if (alive) { setTrace(t); setLoading(false); }
     })();
     return () => { alive = false; };
@@ -637,6 +693,79 @@ export default function OrderTrace() {
       .sort((a, b) => b.members.length - a.members.length)[0] || null;
     return { open, close, evidence };
   }, [sel, trace]);
+
+  /* ══ โฟกัสตามอาการที่ลูกค้าแจ้ง → จัดหลักฐานเป็น 3 ขาแบบ 8D ═══════════════════════
+     ขา 1 Occurrence (D4) · ขา 2 Detection/Escape (D4) · ขา 3 Systemic (D7)
+     ⚠️ ระบบ **เสนอจุดที่ต้องสงสัย** ไม่ได้สรุปสาเหตุ — คนเป็นคนตัดสินเสมอ
+     ⚠️ ไม่เขียน DB ใดๆ (เฟส 1 อ่านอย่างเดียวเหมือนทั้งหน้า) */
+  const claim = useMemo(() => {
+    const pe = trace?.pe;
+    if (!sel || !trace || !pe?.set) return null;
+    const fm = pe.fmea.find(f => f.id === claimFm) || null;
+    if (!fm && !claimNote.trim()) return null;
+
+    const procById = Object.fromEntries(pe.procs.map(p => [p.id, p]));
+    const srcProc = fm ? procById[fm.process_id] : null;
+
+    /* กลุ่มคำจากอาการ (failure mode ที่เลือก + รายละเอียดที่พิมพ์เพิ่ม) */
+    const groups = [...new Set([
+      ...wordGroups(fm?.failure_mode || ''),
+      ...wordGroups(claimNote),
+    ].map(g => g.key))].map(k => PART_WORDS.find(g => g.key === k));
+
+    const hitsGroups = (txt) => {
+      const s = (txt || '').toLowerCase();
+      return groups.length > 0 && groups.some(g => g.w.some(w => s.includes(w)));
+    };
+
+    /* จุดในกระบวนการที่เกี่ยวกับอาการนี้ — ดูจากชิ้นส่วนลูกที่ใส่ + ชื่อขั้นตอน */
+    const related = pe.procs.filter(p =>
+      (srcProc && p.id === srcProc.id)
+      || hitsGroups(`${p.name || ''} ${p.child_parts || ''}`));
+    const relIds = new Set(related.map(p => p.id));
+    const relMachines = [...new Set(related.map(p => p.machine_no).filter(Boolean))];
+    /* ขั้นตอนที่เป็นด่านตรวจ — ต้องเป็นตัวที่ควรจับอาการนี้ได้ */
+    const inspProcs = pe.procs.filter(p => p.kind === 'inspection');
+
+    /* FMEA ตัวอื่นที่เป็น "อาการเดียวกัน" จริงๆ (อาการเดียวเกิดได้หลาย OP)
+       ⚠️ ห้ามใช้แค่ "มีคำว่านัทเหมือนกัน" — เอกสารนี้มี 45 ข้อที่มีคำว่า nut
+       (Nut cold weld / Nut offset / …) ซึ่งเป็นคนละอาการ → ต้องเทียบความคล้ายของข้อความ */
+    const sameMode = fm ? pe.fmea.filter(f =>
+      f.id !== fm.id && noteSimilarity(f.failure_mode, fm.failure_mode) >= CLUSTER_THRESHOLD) : [];
+
+    /* Control Plan ของจุดที่เกี่ยวข้อง + ด่านตรวจที่พูดถึงชิ้นส่วนนี้
+       ⚠️ ไม่เอา CP ของ OP ตรวจทั้งหมด (มี 87 แถว ส่วนใหญ่ไม่เกี่ยวกับอาการนี้) */
+    const cpRows = pe.cp.filter(c => relIds.has(c.process_id)
+      || (inspProcs.some(p => p.id === c.process_id)
+        && hitsGroups(`${c.product_char || ''} ${c.process_char || ''} ${c.spec || ''}`)));
+
+    /* ── ขา 1: Occurrence — downtime ในกะที่ชี้ไปเครื่อง/อาการเดียวกัน ── */
+    const dtHits = (trace.downtimes || []).filter(d =>
+      (d.machine_no && relMachines.includes(d.machine_no))
+      || hitsGroups(`${d.dr_downtime_types?.name_th || ''} ${d.description || ''}`));
+    /* สภาพเครื่องที่เกี่ยวข้อง (ดึงจากแผงอุปกรณ์ที่โหลดไว้แล้ว) */
+    const equipHits = (trace.equip?.rows || []).filter(r =>
+      r.machineNo && relMachines.includes(r.machineNo));
+
+    /* ── ขา 2: Detection — ด่านที่ควรจับได้ มีบันทึกมั้ย ── */
+    const rpn = fm && fm.severity && fm.occurrence && fm.detection
+      ? fm.severity * fm.occurrence * fm.detection : null;
+
+    return {
+      set: pe.set, fm, srcProc, groups, related, relMachines, inspProcs,
+      sameMode, cpRows, dtHits, equipHits, rpn,
+      /* อาการที่พิมพ์มา แต่ไม่มีใน FMEA เลย = ไม่เคยถูกคาดไว้ → ต้อง revise */
+      notInFmea: !fm && claimNote.trim().length > 0
+        && !pe.fmea.some(f => hitsGroups(f.failure_mode)),
+      ngLogged: (trace.defects || []).length,
+      pokaLogged: (trace.poka || []).length,
+      lpaLogged: (trace.lpa || []).length,
+      lpaOnRelStation: (trace.lpa || []).filter(a =>
+        relMachines.some(m => (a.station || '').toUpperCase().includes(m.toUpperCase()))).length,
+      noPmMachines: equipHits.filter(r => !r.hasPmPlan).length,
+      shipTraceable: (trace.stockOut || []).length > 0,
+    };
+  }, [sel, trace, claimFm, claimNote]);
 
   /* ── timeline เหตุการณ์รวม เรียงตามเวลา ── */
   const timeline = useMemo(() => {
@@ -931,6 +1060,168 @@ export default function OrderTrace() {
           {trace && !loading && (
             <>
               {/* ── Timeline ── */}
+              {/* ── 🔍 อาการที่ลูกค้าแจ้ง → โฟกัสหลักฐานเป็น 3 ขาแบบ 8D ── */}
+              <CollapseCard id="claim" storePrefix="ot" title="🔍 ลูกค้าแจ้งอาการอะไร — โฟกัสการสอบสวน (8D)"
+                count={claim ? claim.related.length : null} defaultOpen={!!trace.pe?.set}>
+                {!trace.pe?.set ? (
+                  <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--muted)' }}>
+                    พาร์ทนี้ <b style={{ color: 'var(--text2)' }}>ยังไม่มีเอกสาร PFMEA / Control Plan ในระบบ</b> —
+                    จึงยังโฟกัสตามอาการไม่ได้ (ทั้งระบบลงไปแล้ว {trace.pe?.totalSets ?? 0} พาร์ท)
+                    <div style={{ marginTop: 5 }}>ลงเอกสารได้ที่หน้า <b>วิศวกรรม (PE) → Flow / PFMEA / Control Plan</b></div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
+                      เลือกอาการจาก <b style={{ color: 'var(--text2)' }}>PFMEA ของพาร์ทนี้</b> ({trace.pe.set.part_no}) —
+                      ระบบจะกรองเฉพาะจุด/เครื่อง/ด่านตรวจที่เกี่ยวข้อง แล้วจัดเป็น 3 ขาให้พร้อมลอกใส่ 8D
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                      <select value={claimFm} onChange={e => setClaimFm(e.target.value)}
+                        style={{ flex: '2 1 320px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 6 }}>
+                        <option value="">— เลือกอาการที่ลูกค้าแจ้ง (จาก PFMEA {trace.pe.fmea.length} รายการ) —</option>
+                        {trace.pe.fmea.slice().sort((a, b) =>
+                          ((b.severity || 0) * (b.occurrence || 0) * (b.detection || 0)) - ((a.severity || 0) * (a.occurrence || 0) * (a.detection || 0))
+                        ).map(f => {
+                          const p = trace.pe.procs.find(x => x.id === f.process_id);
+                          const r = (f.severity || 0) * (f.occurrence || 0) * (f.detection || 0);
+                          return <option key={f.id} value={f.id}>
+                            {`OP${p?.op_no || '?'} · ${(f.failure_mode || '').replace(/^[-\s]+/, '').slice(0, 60)}${r ? ` · RPN ${r}` : ''}`}
+                          </option>;
+                        })}
+                      </select>
+                      <input value={claimNote} onChange={e => setClaimNote(e.target.value)}
+                        placeholder="รายละเอียดที่ลูกค้าแจ้ง เช่น ตำแหน่ง M8 ด้านซ้าย"
+                        style={{ flex: '1 1 220px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 6 }} />
+                    </div>
+
+                    {!claim ? (
+                      <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกอาการ หรือพิมพ์รายละเอียด แล้วระบบจะไล่หลักฐานให้</div>
+                    ) : claim.notInFmea ? (
+                      <div style={{ ...card, borderLeft: '4px solid #f59e0b', fontSize: 12.5, lineHeight: 1.7 }}>
+                        <b style={{ color: '#f59e0b' }}>อาการนี้ไม่มีใน PFMEA ของพาร์ทนี้เลย</b> —
+                        แปลว่า<b>ไม่เคยถูกคาดไว้ตอนออกแบบกระบวนการ</b>
+                        <div style={{ color: 'var(--muted)', marginTop: 4 }}>
+                          นี่คือข้อสรุปที่ต้องเขียนใน 8D ขา Systemic (D7) อยู่แล้ว — และต้อง revise PFMEA เพิ่ม failure mode ใหม่
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {/* ── ขา 1 · Occurrence ── */}
+                        <div style={{ ...card, borderLeft: '4px solid #ef4444' }}>
+                          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 6 }}>
+                            🔴 ขา 1 · ทำไมถึงเกิด <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(8D · D4 Root Cause)</span>
+                          </div>
+                          {claim.fm && (
+                            <div style={{ fontSize: 12.5, lineHeight: 1.7, marginBottom: 6 }}>
+                              PFMEA <b>OP{claim.srcProc?.op_no}</b> — “{(claim.fm.failure_mode || '').replace(/^[-\s]+/, '')}”
+                              {claim.rpn && <> · <b style={{ color: claim.rpn >= 100 ? '#ef4444' : 'var(--text)' }}>RPN {claim.rpn}</b>
+                                <span style={{ color: 'var(--muted)' }}> (S{claim.fm.severity} × O{claim.fm.occurrence} × D{claim.fm.detection})</span></>}
+                              {claim.fm.causes && <div style={{ color: 'var(--text2)', marginTop: 3 }}>สาเหตุที่เคยระบุไว้: {claim.fm.causes.replace(/\n/g, ' · ').slice(0, 220)}</div>}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+                            <b>จุดที่ต้องสงสัย {claim.related.length} จุด</b>
+                            {claim.relMachines.length > 0 && <> · เครื่อง: <b>{claim.relMachines.join(' · ')}</b></>}
+                            <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+                              {claim.related.slice(0, 12).map(p => `OP${p.op_no}`).join(' · ')}
+                              {claim.related.length > 12 ? ` … +${claim.related.length - 12}` : ''}
+                            </div>
+                          </div>
+                          {claim.dtHits.length > 0 ? (
+                            <div style={{ marginTop: 7, fontSize: 12.5, lineHeight: 1.65 }}>
+                              <b style={{ color: '#ef4444' }}>⚠ เจอ Downtime ที่เกี่ยวข้องในกะนี้ {claim.dtHits.length} รายการ</b>
+                              {claim.dtHits.slice(0, 5).map((d, i) => (
+                                <div key={i} style={{ color: 'var(--text2)' }}>
+                                  · {d.duration_min ? `${d.duration_min} น.` : '—'} {d.machine_no ? `[${d.machine_no}] ` : ''}
+                                  {d.dr_downtime_types?.name_th}{d.description ? ` — “${d.description.trim()}”` : ''}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: 7, fontSize: 12.5, color: 'var(--muted)' }}>ไม่พบ Downtime ที่เกี่ยวข้องในกะนี้ — ดูกะข้างเคียงเพิ่มที่ Daily Report</div>
+                          )}
+                          {claim.noPmMachines > 0 && (
+                            <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>
+                              🔧 เครื่องที่เกี่ยวข้อง <b>{claim.noPmMachines} ตัวยังไม่มีแผน PM</b> — ไม่มีการบำรุงรักษาเชิงป้องกันรองรับ
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ── ขา 2 · Detection ── */}
+                        <div style={{ ...card, borderLeft: '4px solid #f59e0b' }}>
+                          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 6 }}>
+                            🟠 ขา 2 · ทำไมถึงหลุดรอด <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(8D · D4 Escape Point)</span>
+                          </div>
+                          {claim.fm?.detection_ctrl && (
+                            <div style={{ fontSize: 12.5, lineHeight: 1.7, marginBottom: 5 }}>
+                              ด่านที่ PFMEA อ้างไว้: <b>{claim.fm.detection_ctrl.replace(/\n/g, ' · ').slice(0, 200)}</b>
+                              {claim.fm.detection >= 7 && <span style={{ color: '#ef4444' }}> · D={claim.fm.detection} (ตรวจจับยาก)</span>}
+                            </div>
+                          )}
+                          {claim.cpRows.length > 0 ? (
+                            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                              <b>Control Plan ของจุดเหล่านี้ {claim.cpRows.length} รายการ</b>
+                              {claim.cpRows.slice(0, 6).map((c, i) => {
+                                const p = trace.pe.procs.find(x => x.id === c.process_id);
+                                return (
+                                  <div key={i} style={{ color: 'var(--text2)', marginTop: 2 }}>
+                                    · OP{p?.op_no} {c.product_char || c.process_char || ''} —
+                                    <b> {(c.frequency || 'ไม่ระบุความถี่').replace(/\n/g, ' / ')}</b>
+                                    {c.sample_size ? ` · ตัวอย่าง ${c.sample_size.replace(/\n/g, '/')}` : ''}
+                                    {c.special_class ? <span style={{ color: '#f59e0b' }}> · {c.special_class}</span> : ''}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีจุดควบคุมใน Control Plan สำหรับจุดเหล่านี้</div>}
+                          <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11.5 }}>
+                            <span style={chip(claim.ngLogged ? 'rgba(61,214,92,.15)' : 'rgba(239,68,68,.15)', claim.ngLogged ? 'var(--accent)' : '#ef4444')}>
+                              {claim.ngLogged ? `✅ บันทึกของเสียในกะ ${claim.ngLogged} รายการ` : '🔴 กะนี้ไม่มีบันทึกของเสียเลย'}
+                            </span>
+                            <span style={chip(claim.pokaLogged ? 'rgba(61,214,92,.15)' : 'rgba(239,68,68,.15)', claim.pokaLogged ? 'var(--accent)' : '#ef4444')}>
+                              {claim.pokaLogged ? `✅ Poka-Yoke ${claim.pokaLogged} ครั้ง` : '🔴 ไม่มีบันทึก Poka-Yoke'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* ── ขา 3 · Systemic ── */}
+                        <div style={{ ...card, borderLeft: '4px solid #a78bfa' }}>
+                          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 6 }}>
+                            🟣 ขา 3 · ทำไมระบบคุมไม่ได้ <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(8D · D7 Prevent Recurrence)</span>
+                          </div>
+                          <div style={{ display: 'grid', gap: 4, fontSize: 12.5, lineHeight: 1.65 }}>
+                            {claim.rpn >= 100 && (
+                              <div>⚠ ความเสี่ยงนี้ถูกประเมินไว้สูง (<b>RPN {claim.rpn}</b>) — ตรวจดูว่าความถี่ใน Control Plan แรงพอกับความเสี่ยงมั้ย</div>
+                            )}
+                            {claim.fm && !claim.fm.action_taken && (
+                              <div>⚠ PFMEA ข้อนี้<b>ยังไม่มีการบันทึก action ที่ทำจริง</b>{claim.fm.recommended_action ? ' (มีแต่ข้อเสนอ)' : ''} — ความเสี่ยงถูกยอมรับไว้เฉยๆ</div>
+                            )}
+                            <div>
+                              {claim.lpaOnRelStation > 0
+                                ? <>✅ LPA เคยตรวจสถานีที่เกี่ยวข้อง {claim.lpaOnRelStation} ครั้งในวันนั้น</>
+                                : <>⚠ LPA วันนั้น <b>ไม่เคยสุ่มโดนสถานีที่เกี่ยวข้อง</b>{claim.lpaLogged ? ` (ตรวจ ${claim.lpaLogged} ครั้ง แต่คนละจุด)` : ''} — การสุ่มไม่ได้ผูกกับความเสี่ยง</>}
+                            </div>
+                            <div>
+                              {claim.shipTraceable
+                                ? <>✅ มีข้อมูลรอบส่ง — ย้อนกลับหาลูกค้าได้</>
+                                : <>⚠ <b>ไม่มีข้อมูลการตัดส่ง</b> — ย้อนจากกล่องที่ลูกค้าเคลมกลับมาหากะที่ผลิตไม่ได้ ทำให้ขอบเขตการกันของกว้างเกินจำเป็น</>}
+                            </div>
+                            {claim.sameMode.length > 0 && (
+                              <div>🔁 อาการเดียวกันนี้ถูกระบุไว้ที่ <b>OP อื่นอีก {claim.sameMode.length} จุด</b> — ถ้าแก้จุดเดียวอาจไม่ครอบคลุม</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+                          ⚠️ ระบบ<b>เสนอจุดที่ต้องสงสัย</b>จากการจับคู่ชิ้นส่วน/คำในอาการ —
+                          <b>ไม่ใช่การยืนยันสาเหตุ</b> คนยังต้องเป็นผู้ตัดสิน · หน้านี้ไม่บันทึกอะไรลงฐานข้อมูล
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CollapseCard>
+
               <CollapseCard id="timeline" storePrefix="ot" title="🕐 Timeline เหตุการณ์" count={timeline.length}>
                 <div style={{ display: 'grid', gap: 0 }}>
                   {timeline.map((e, i) => (

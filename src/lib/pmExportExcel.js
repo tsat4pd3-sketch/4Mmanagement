@@ -1,4 +1,3 @@
-import ExcelJS from 'exceljs'
 import { supabaseDR } from '../supabaseClient'
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -119,6 +118,8 @@ export async function exportInspectionExcel({
   docForm,
 }) {
   const CATEGORY_META = buildCategoryMeta(categories)
+  /* exceljs โหลดตอนกด export เท่านั้น (lazy chunk ใช้ร่วมกับตัว export อื่น) */
+  const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   wb.creator = 'PM JIG System'
   const ws = wb.addWorksheet('PM JIG', {

@@ -241,6 +241,11 @@ input[type="checkbox"], input[type="radio"] {
   width: auto;
   padding: 0;
 }
+/* ⚠️ ห้ามให้ช่องกรอก/dropdown กว้างเกินกล่องที่มันอยู่ (2026-08-04)
+   <select> ที่ตั้ง width:auto จะกว้างตาม "option ที่ยาวที่สุด" — ชื่อไลน์จริงยาวๆ
+   ทำให้ select กว้าง 427px บนจอ 390px แล้วดันล้นทั้งแถบกรอง (วัดเจอที่ OEEAnalytics/Report/DailyReport)
+   max-width:100% คุมไว้โดยไม่ไปยุ่งกับ width ที่แต่ละหน้าตั้งเอง */
+input, select, textarea { max-width: 100%; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 select { cursor: pointer; }

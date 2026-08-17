@@ -399,7 +399,9 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
   return (
     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* left: เลือกรอบ + จัดลำดับจุดจอด */}
-      <div style={{ ...card, flex: '0 0 320px', minWidth: 280 }}>
+      {/* '0 1 320px' + minWidth:0 — desktop กว้าง 320 เท่าเดิม แต่จอ 320px ยอมหดแทนที่จะดันล้น
+          (เดิม '0 0 320px' + minWidth:280 = ไม่ยอมหดเลย ล้นออกนอกจอ 37px) */}
+      <div style={{ ...card, flex: '0 1 320px', minWidth: 0, maxWidth: '100%' }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>เลือกรอบส่ง</div>
         <select value={selRound || ''} onChange={e => setSelRound(e.target.value || null)}
           style={{ width: '100%', padding: '7px 9px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', marginBottom: 12 }}>
@@ -565,7 +567,8 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
       </div>
 
       {/* right: แผนที่เส้นทาง */}
-      <div style={{ flex: '1 1 480px', minWidth: 320 }}>
+      {/* minWidth:0 — จอ 320px มีพื้นที่จริง 283px ถ้าคง minWidth:320 จะดันล้นออกนอกจอ */}
+      <div style={{ flex: '1 1 480px', minWidth: 0 }}>
         {imageUrl ? (
           <>
           <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
