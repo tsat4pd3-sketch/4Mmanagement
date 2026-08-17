@@ -15,6 +15,17 @@ import { loadOpInfo } from '../utils/opItems';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
+// แปล error DB ตอนเซฟสินค้าเป็นภาษาคน — เคสจริง: สร้างรายการ OP แล้วใส่เลขพาร์ทจริงในช่อง MAT.NO
+// (2026-08-17 user เจอ "duplicate key ... dr_products_mat_no_key" แล้วอ่านไม่ออกว่าต้องแก้ยังไง)
+const friendlySaveError = (error, matNo, isOperation) => {
+  if (error?.code === '23505' && String(error.message || '').includes('mat_no')) {
+    return isOperation
+      ? `MAT.NO "${matNo}" มีสินค้าอยู่แล้ว — รายการขั้นตอน (OP) ต้องตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เช่น "332 ขับนัท M6") ส่วนเลขพาร์ทจริงใส่เฉพาะช่อง "เป็นขั้นของพาร์ทจริง (MAT)"`
+      : `MAT.NO "${matNo}" มีสินค้าอยู่แล้วในระบบ — ค้นหาแล้วแก้ไขตัวเดิมแทน (สินค้าที่ปิดใช้งานอยู่ก็นับ)`;
+  }
+  return error?.message || 'เกิดข้อผิดพลาด';
+};
+
 /* ─── PRODUCT MASTER ─────────────────────────────────────────────────────────
    ฐานข้อมูลกลางของ Product/Model ที่ใช้ร่วมกันในทุกโมดูล
    - Daily Report  → เลือก product ตอนเปิดกะ
@@ -274,7 +285,7 @@ export default function ProductMaster() {
       if (editing === 'new') {
         if (ecSource) payload.family_id = ecSource.family_id;
         const { data: inserted, error } = await supabaseDR.from('dr_products').insert(payload).select().single();
-        if (error) { toast.error(error.message); return; }
+        if (error) { toast.error(friendlySaveError(error, payload.mat_no, form.is_operation)); return; }
         savedId = inserted.id;
         if (ecSource) {
           await supabaseDR.from('dr_products').update({
@@ -316,7 +327,7 @@ export default function ProductMaster() {
         }
       } else {
         const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);
-        if (error) { toast.error(error.message); return; }
+        if (error) { toast.error(friendlySaveError(error, payload.mat_no, form.is_operation)); return; }
       }
       // อัปโหลดรูปใหม่ + DB update สำเร็จแล้ว ค่อยลบไฟล์รูปเดิมทิ้ง กันไฟล์กำพร้าสะสมใน storage (best-effort)
       // ลบเฉพาะเมื่อ URL เดิมชี้ bucket product-images และไม่มีสินค้าอื่นใช้รูปเดียวกันอยู่ (สินค้าชื่อเดียวกันแชร์รูปกัน)
