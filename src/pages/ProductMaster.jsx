@@ -60,6 +60,62 @@ const btnSecondary = {
 
 const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '', is_operation: false, op_parent_mat: '', op_seq: '' });
 
+/* ── ช่องเลือก MAT แบบพิมพ์ค้นหา (แทน <select> ยาวเป็นร้อยตัวที่ user ทัก "ตาลาย" 2026-08-17) ──
+   พิมพ์เลข/ชื่อบางส่วน → กรองลิสต์ให้ · คลิกเลือก · ล้างช่อง = ไม่เลือก
+   pattern เดียวกับช่องเครื่องจักรใน PmCoordination (input+ลิสต์กรอง) — ไม่ใช้ datalist เพราะ
+   บาง browser ไม่กรองจาก label (ชื่อสินค้า) และบังคับพิมพ์ค่าเป๊ะ */
+function MatSearchField({ value, onChange, options, placeholder, hint }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  const sorted = useMemo(
+    () => [...options].sort((a, b) => String(a.mat_no).localeCompare(String(b.mat_no), undefined, { numeric: true })),
+    [options]);
+  const nq = q.trim().toLowerCase();
+  const filtered = nq
+    ? sorted.filter(o => `${o.mat_no} ${o.name || ''}`.toLowerCase().includes(nq))
+    : sorted;
+  const sel = value ? options.find(o => o.mat_no === value) : null;
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {sel ? (
+        <div style={{ ...inputSt, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <b style={{ fontFamily: 'monospace' }}>{sel.mat_no}</b> — {sel.name}
+          </span>
+          <button type="button" onClick={() => { onChange(''); setQ(''); setOpen(true); }}
+            style={{ border: 'none', background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: 0, flexShrink: 0 }}
+            title="ล้าง — เลือกใหม่">✕</button>
+        </div>
+      ) : (
+        <input value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+          placeholder={placeholder || 'พิมพ์เลข MAT หรือชื่อ เพื่อค้นหา…'} style={inputSt} />
+      )}
+      {open && !sel && (
+        <div style={{ position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 4, maxHeight: 260, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
+          {filtered.length === 0 && <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)' }}>ไม่พบ "{q}" ในลิสต์</div>}
+          {filtered.slice(0, 60).map(o => (
+            <div key={o.mat_no} onClick={() => { onChange(o.mat_no); setOpen(false); setQ(''); }}
+              style={{ padding: '7px 12px', fontSize: 12.5, cursor: 'pointer', borderBottom: '1px solid var(--border)', display: 'flex', gap: 8 }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--bg2)'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <b style={{ fontFamily: 'monospace', flexShrink: 0 }}>{o.mat_no}</b>
+              <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.name}</span>
+            </div>
+          ))}
+          {filtered.length > 60 && <div style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>…อีก {filtered.length - 60} รายการ — พิมพ์เพิ่มเพื่อกรอง</div>}
+        </div>
+      )}
+      {hint && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
+}
+
 /* ── Quick-link chips to connected modules ── */
 function RelatedLinks({ matNo, productId }) {
   return (
@@ -1020,12 +1076,10 @@ export default function ProductMaster() {
                 </select>
               </Field>
               <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
-                <select value={form.pair_mat_no} onChange={e => setForm(f => ({ ...f, pair_mat_no: e.target.value }))} style={inputSt}>
-                  <option value="">ไม่มีคู่</option>
-                  {items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active).map(i => (
-                    <option key={i.id} value={i.mat_no}>{i.mat_no} — {i.name}</option>
-                  ))}
-                </select>
+                <MatSearchField value={form.pair_mat_no} onChange={v => setForm(f => ({ ...f, pair_mat_no: v }))}
+                  options={items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active)}
+                  placeholder="พิมพ์เลข MAT หรือชื่อ เพื่อค้นหาคู่… (ว่าง = ไม่มีคู่)"
+                  hint="ลิสต์เรียงตามเลข · แสดงเฉพาะสินค้าที่ใช้งานอยู่" />
               </Field>
               {/* 🔩 ชั้น Operation — รายการที่เป็น "ขั้นตอน" ของพาร์ทจริง (เช่นงานขับนัท SUB APRON 1 รายการ/1 OP)
                   ใบงานยังเปิด/ปิดรายเครื่องได้ตามเดิม (หัวหน้าไลน์มอนิเตอร์รายขั้น) แต่ยอดรวมภาพใหญ่
@@ -1041,12 +1095,10 @@ export default function ProductMaster() {
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
-                      <select value={form.op_parent_mat} onChange={e => setForm(f => ({ ...f, op_parent_mat: e.target.value }))} style={inputSt}>
-                        <option value="">— ยังไม่ระบุ (ยอดจะยังนับซ้ำจนกว่าจะผูก) —</option>
-                        {items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)
-                          .sort((a, b) => (a.name === form.name ? -1 : b.name === form.name ? 1 : 0))
-                          .map(i => <option key={i.id} value={i.mat_no}>{i.mat_no} — {i.name}</option>)}
-                      </select>
+                      <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
+                        options={items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)}
+                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ยังไม่ผูก ยอดนับซ้ำ)"
+                        hint="ลิสต์เรียงตามเลข · แสดงเฉพาะพาร์ทจริงที่ใช้งานอยู่ (รายการ OP ด้วยกัน + สินค้าที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ)" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
