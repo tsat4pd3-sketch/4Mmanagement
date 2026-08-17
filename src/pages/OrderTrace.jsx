@@ -1062,7 +1062,7 @@ export default function OrderTrace() {
               {/* ── Timeline ── */}
               {/* ── 🔍 อาการที่ลูกค้าแจ้ง → โฟกัสหลักฐานเป็น 3 ขาแบบ 8D ── */}
               <CollapseCard id="claim" storePrefix="ot" title="🔍 ลูกค้าแจ้งอาการอะไร — โฟกัสการสอบสวน (8D)"
-                count={claim ? claim.related.length : null} defaultOpen={!!claim}>
+                count={claim ? claim.related.length : null} defaultOpen={!!trace.pe?.set}>
                 {!trace.pe?.set ? (
                   <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--muted)' }}>
                     พาร์ทนี้ <b style={{ color: 'var(--text2)' }}>ยังไม่มีเอกสาร PFMEA / Control Plan ในระบบ</b> —
