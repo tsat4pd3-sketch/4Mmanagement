@@ -1,35 +1,47 @@
--- ปิดช่องว่างทะเบียนสิทธิ์ `permission_catalog` (2026-08-06 · จาก audit ระบบจัดการสิทธิ์)
+-- ── Main project ──
+-- ปิดช่องโหว่ทะเบียนสิทธิ์การทำงาน (permission_catalog) จาก audit ระบบจัดการสิทธิ์ 2026-08-06
 --
--- ที่มา: หน้า /permissions แท็บ "สิทธิ์การทำงาน" render จาก `permission_catalog`
---   → key ที่โค้ดเช็คจริงแต่ไม่มีในทะเบียน = **มองไม่เห็นบนจอ ปรับไม่ได้** (แก้ได้ทางตารางเท่านั้น)
---   → key ที่อยู่ในทะเบียนแต่ไม่มีโค้ดไหนเช็ค = ติ๊กแล้วไม่เกิดอะไร (หลอกคนตั้งค่า)
+-- ที่มา: เทียบ 3 ทาง (โค้ดที่เรียก can() ↔ ทะเบียน permission_catalog ↔ ข้อมูล role_permissions)
+--   แล้วพบ 2 กลุ่มที่ไม่ตรงกัน:
 --
--- ⚠️ ไม่แตะ `role_permissions` เลย — สิทธิ์ที่แต่ละ role ถืออยู่ "ไม่เปลี่ยนแม้แต่แถวเดียว"
---    migration นี้แค่ทำให้ key ที่ทำงานอยู่แล้วโผล่ให้ตั้งค่าได้
+-- (1) 8 key ที่โค้ดใช้จริง + มีแถวใน role_permissions แล้ว แต่ "ไม่มีในทะเบียน"
+--     → ไม่ขึ้นในตารางแท็บ "สิทธิ์การทำงาน" ของหน้า /permissions
+--     → สิทธิ์ล็อกตายตามที่ migration seed ไว้ admin ปรับเองไม่ได้เลย
 --
--- ROLLBACK:
---   delete from permission_catalog where (resource,action) in (
---     ('lpa','record'),('lpa','manage'),('lpa','delete'),('transport','manage'),
---     ('pm_coord','manage'),('doc_forms','manage'),('ojt','record'),('ojt','delete'));
+-- (2) 3 key ที่อยู่ในทะเบียน แต่ "ไม่มีโค้ดไหนเรียกใช้"
+--     → ติ๊กแล้วไม่มีผลจริง (3 หน้านี้คุมด้วย page permission + admin-only อยู่แล้ว)
+--
+-- ⚠️ migration นี้ไม่เปลี่ยนสิทธิ์ของใครเลย — แตะแค่ "ทะเบียนรายการที่โผล่ให้ตั้งค่า"
+--    ค่าจริงอยู่ใน role_permissions ซึ่งไม่ถูกแตะ (ทั้ง insert และ delete)
+
+-- ── (1) เพิ่ม key ที่ขาด ────────────────────────────────────────────────
+-- group_name/sort ยึด convention เดิม: ต่อท้าย sort สูงสุดของกลุ่มนั้น
+insert into public.permission_catalog (resource, action, label, group_name, sort) values
+  -- LPA (Layer Process Audit) — หน้าอยู่หมวดฝ่ายผลิต
+  ('lpa',        'record',        'LPA: บันทึกผลตรวจ',                'ฝ่ายผลิต',                 220),
+  ('lpa',        'manage',        'LPA: จัดการแผน/คำถาม',             'ฝ่ายผลิต',                 221),
+  ('lpa',        'delete',        'LPA: ลบผลตรวจ/แผน',                'ฝ่ายผลิต',                 222),
+  -- ขนส่ง (Teiki-bin) — หน้าอยู่หมวด Logistic
+  ('transport',  'manage',        'ขนส่ง: มอบหมายคนขับ/ยานพาหนะ',     'Logistic - Store',         67),
+  -- PM ประสานงานข้ามวัน
+  ('pm_coord',   'manage',        'PM ประสานงาน: สร้าง/แก้/แจ้ง Production', 'การตรวจสอบและซ่อมบำรุง', 210),
+  -- เอกสาร & ฟอร์ม + OJT — จัดกลุ่มเดียวกับ employees/skills ที่มีอยู่เดิม
+  ('doc_forms',  'manage',        'ทะเบียนเอกสาร: แก้เลขฟอร์ม/Rev/ลายเซ็น', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 220),
+  ('ojt',        'record',        'OJT: บันทึกใบอบรม',                'ตั้งค่าโปรแกรม,ฐานข้อมูล', 230),
+  ('ojt',        'delete',        'OJT: ลบใบอบรม',                    'ตั้งค่าโปรแกรม,ฐานข้อมูล', 231)
+on conflict (resource, action) do nothing;
+
+-- ── (2) ลบ key ที่ไม่มีโค้ดเรียกใช้ (ติ๊กแล้วไม่มีผล) ──────────────────
+-- org:manage        → /org-setup   คุมด้วย page:/org-setup (admin เท่านั้น)
+-- users:manage      → /add-user    คุมด้วย page:/add-user + Edge Function admin-only
+-- permissions:manage→ /permissions คุมด้วย page:/permissions (admin เท่านั้น)
+-- ลบเฉพาะจากทะเบียน (รายการที่โผล่ให้ติ๊ก) — แถวใน role_permissions คงไว้ เผื่อ rollback
+delete from public.permission_catalog
+ where (resource, action) in (('org','manage'), ('users','manage'), ('permissions','manage'));
+
+-- rollback:
+--   delete from permission_catalog where resource in ('lpa','transport','pm_coord','doc_forms','ojt');
 --   insert into permission_catalog (resource, action, label, group_name, sort) values
 --     ('org','manage','แผนผังองค์กร: จัดการ','ตั้งค่าโปรแกรม,ฐานข้อมูล',88),
 --     ('users','manage','ผู้ใช้งานระบบ: สร้าง/แก้ไข','ตั้งค่าโปรแกรม,ฐานข้อมูล',89),
 --     ('permissions','manage','จัดการสิทธิ์: แก้ไข','ตั้งค่าโปรแกรม,ฐานข้อมูล',90);
-
--- 1) key ที่โค้ดใช้จริงแต่หายจากทะเบียน (8 ตัว)
-insert into permission_catalog (resource, action, label, group_name, sort) values
-  ('lpa',       'record', 'LPA: บันทึกผลตรวจ',              'ฝ่ายผลิต',                  220),
-  ('lpa',       'manage', 'LPA: จัดการแผน/คำถาม',            'ฝ่ายผลิต',                  221),
-  ('lpa',       'delete', 'LPA: ลบผลตรวจ',                   'ฝ่ายผลิต',                  222),
-  ('transport', 'manage', 'ขนส่ง: มอบหมาย/จัดการคนขับ',      'Logistic - Store',          67),
-  ('pm_coord',  'manage', 'แผนประสานงาน PM: จัดการ',         'การตรวจสอบและซ่อมบำรุง',    210),
-  ('doc_forms', 'manage', 'ทะเบียนเอกสาร: แก้ไข',            'ตั้งค่าโปรแกรม,ฐานข้อมูล',  220),
-  ('ojt',       'record', 'OJT: บันทึกใบอบรม',               'ตั้งค่าโปรแกรม,ฐานข้อมูล',  230),
-  ('ojt',       'delete', 'OJT: ลบใบอบรม',                   'ตั้งค่าโปรแกรม,ฐานข้อมูล',  231)
-on conflict (resource, action) do nothing;
-
--- 2) key ที่ไม่มีโค้ดไหนเช็ค — ติ๊กแล้วไม่มีผล (สิทธิ์จริงคุมด้วย role admin ตรงๆ)
---    ⚠️ ตรวจแล้วว่าไม่ใช่ key ที่ถูกเรียกแบบ dynamic (ต่างจาก event_log:approve_* / mtn_repair:approve
---       ที่ประกอบชื่อ key ตอน runtime — พวกนั้นห้ามลบ)
-delete from permission_catalog
-where (resource, action) in (('org','manage'), ('users','manage'), ('permissions','manage'));
