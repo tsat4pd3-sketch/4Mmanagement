@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -8,6 +8,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtDate } from '../utils/dateFormat';
 import PeExcelImportModal from '../components/PeExcelImportModal';
+import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -98,6 +99,8 @@ export default function PEDocs() {
   const [importOpen, setImportOpen] = useState(false);   // 📥 นำเข้าจากไฟล์ Excel
   const [exporting, setExporting] = useState(false);     // ⬇️ กำลังสร้างไฟล์ Excel
   const [exportNotes, setExportNotes] = useState(null);  // สิ่งที่ไฟล์ที่ได้ "ไม่เหมือนของเดิม" — ต้องบอก ห้ามเงียบ
+  const [showChart, setShowChart] = useState(true);      // 🗺️ ผังกระบวนการในแท็บ Flow
+  const printChartRef = useRef(null);                    // ผังชุดสีสว่างซ่อนไว้ ใช้ตอนพิมพ์
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
 
@@ -149,6 +152,26 @@ export default function PEDocs() {
       toast.error(e?.message || 'สร้างไฟล์ไม่สำเร็จ');
     } finally {
       setExporting(false);
+    }
+  };
+
+  /* 🖨️ พิมพ์ผังกระบวนการ — clone SVG ชุดสีสว่างที่ซ่อนไว้ ไม่วาด layout ใหม่ในตัวพิมพ์ */
+  const doPrintFlow = async () => {
+    if (!curSet || !procs.length) return;
+    const box = printChartRef.current;
+    const svg = box?.querySelector('svg');
+    if (!svg) { toast.error('ยังเตรียมผังไม่เสร็จ ลองใหม่อีกครั้ง'); return; }
+    try {
+      const { printPfc } = await import('../lib/pePfcPrint');
+      const r = await printPfc({
+        set: curSet, procs, svgHtml: svg.outerHTML,
+        legendHtml: box.querySelector('[data-legend]')?.innerHTML || '',
+      });
+      if (!r.ok && r.reason === 'popup') { toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้แล้วลองใหม่'); return; }
+      /* ลงหน้าเดียวเสมอ แต่ถ้าต้องย่อจนตัวหนังสือเล็กเกินอ่าน ต้องบอก ห้ามปล่อยให้ไปเจอเองตอนพิมพ์ออกมา */
+      if (r.tooSmall) setExportNotes([`ผังลงได้ 1 หน้าตามที่ตั้งไว้ แต่ต้องย่อจนตัวหนังสือเหลือ ~${r.fontMm.toFixed(1)} มม. (เล็กกว่า 1.6 มม. = อ่านด้วยตาเปล่าลำบาก) — ขั้นงาน ${procs.length} OP เยอะเกินกว่ากระดาษ ${r.paper} ${r.landscape ? 'แนวนอน' : 'แนวตั้ง'} จะรับไหว · เปลี่ยนขนาดกระดาษได้ที่ /doc-forms (doc_key: pe_pfc) หรือพิมพ์จากไฟล์ PFC ต้นฉบับแทน`]);
+    } catch (e) {
+      toast.error(e?.message || 'เปิดหน้าพิมพ์ไม่สำเร็จ');
     }
   };
   const procById = useMemo(() => Object.fromEntries(procs.map(p => [p.id, p])), [procs]);
@@ -297,11 +320,41 @@ export default function PEDocs() {
           {/* ══ แท็บ Flow ══ */}
           {tab === 'flow' && (
             <div>
-              {/* ทำไมแท็บนี้ไม่มีปุ่มดาวน์โหลด — ต้องบอกเหตุผล ไม่ใช่ปล่อยให้หาปุ่มไม่เจอ */}
-              <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, border: '1px dashed var(--border2)', fontSize: 12, color: 'var(--muted)' }}>
-                ℹ️ ใบ Process Flow (PFC) ดาวน์โหลดเป็น Excel ฟอร์มเดิมไม่ได้ — ในไฟล์จริงผังไม่ได้อยู่ในตาราง
-                แต่วาดด้วยรูปทรง Excel ~560 ชิ้น + รูป 59 ไฟล์ สร้างขึ้นใหม่จากข้อมูลในระบบไม่ได้
-                · แก้ผังต้องแก้ใน Excel แล้วอัพเข้ามาใหม่ · <b>PFMEA และ Control Plan ดาวน์โหลดได้</b> (ที่แท็บนั้น)
+              {/* ── 🗺️ ผังกระบวนการที่ระบบวาดจากรายการ OP ── */}
+              {procs.length > 0 && (
+                <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg2)', flexWrap: 'wrap' }}>
+                    <button style={{ ...btnSm, border: 'none', background: 'transparent', padding: 0, fontSize: 13 }} onClick={() => setShowChart(v => !v)}>
+                      {showChart ? '▼' : '▶'} 🗺️ ผังกระบวนการ ({procs.length} ขั้นงาน)
+                    </button>
+                    <span style={{ flex: 1 }} />
+                    {showChart && <button style={btnSm} onClick={doPrintFlow} title="พิมพ์ผัง A3 แนวนอน (หรือบันทึกเป็น PDF จากหน้าต่างพิมพ์)">🖨️ พิมพ์ผัง</button>}
+                  </div>
+                  {showChart && (
+                    <div style={{ padding: 12 }}>
+                      {/* ⚠️ ต้องบอกเสมอว่านี่ไม่ใช่ไฟล์ PFC ตัวจริง — ห้ามถอดข้อความนี้ */}
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
+                        ผังนี้ระบบวาดจาก<b>รายการขั้นงานในตารางด้านล่าง</b> — แก้ OP แล้วผังเปลี่ยนตามทันที ·
+                        <b style={{ color: 'var(--text2)' }}> ไม่ใช่ไฟล์ PFC ต้นฉบับของ PE</b> (ไฟล์นั้นเป็นรูปทรง Excel ~560 ชิ้นวางมือข้าม 5 หน้า
+                        ระบบสร้างให้เหมือนเป๊ะไม่ได้ และดาวน์โหลดเป็น Excel ฟอร์มเดิมไม่ได้ — แก้ผังตัวจริงต้องแก้ใน Excel แล้วอัพเข้ามาใหม่)
+                      </div>
+                      <div style={{ overflowX: 'auto' }}>
+                        <div style={{ minWidth: 720 }}>
+                          <PeFlowChart procs={procs} onPick={canEdit ? (p => { setProcImgFile(null); setProcModal({ ...p }); }) : undefined} />
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                        <FlowLegend procs={procs} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ผังชุดสีสว่างสำหรับพิมพ์ — ซ่อนไว้ ตัวพิมพ์ clone SVG ก้อนนี้ไปใช้ (ไม่วาด layout ซ้ำ) */}
+              <div ref={printChartRef} aria-hidden style={{ position: 'absolute', left: -99999, top: 0, width: 1500, pointerEvents: 'none' }}>
+                <PeFlowChart procs={procs} mode="light" />
+                <div data-legend><FlowLegend procs={procs} mode="light" /></div>
               </div>
               {canEdit && (
                 <button style={{ ...btnPrim, marginBottom: 10 }} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>➕ เพิ่ม Process (OP)</button>

@@ -15,10 +15,17 @@
 -- ⚠️ ไม่ตั้ง sig_blocks — 2 ใบนี้ไม่มีแถบช่องลายเซ็นท้ายฟอร์มแบบใบอื่น
 --    ผู้จัดทำ/ตรวจ/อนุมัติ อยู่ในหัวเอกสาร และมาจาก pe_doc_revisions (ต่อ revision) ไม่ใช่ค่าคงที่ของฟอร์ม
 
-insert into doc_forms (doc_key, form_code, title, rev, effective_date, paper, paper_size, orientation, layout_locked, used_route)
+-- pe_pfc = ใบพิมพ์ "ผังกระบวนการที่ระบบวาดจากรายการ OP" (src/lib/pePfcPrint.js)
+--   เลขฟอร์ม FM-PE1-020 Rev.01 / Effective 17/03/2015 ยกจาก footer ของไฟล์ PFC จริง
+--   ⚠️ ใบนี้ไม่ใช่ไฟล์ PFC ต้นฉบับ (ต้นฉบับเป็นผังวาดมือใน Excel) — บนใบมีข้อความกำกับไว้แล้ว
+--   layout_locked = false : ผังเป็น SVG สเกลตาม viewBox → เปลี่ยน A3↔A4 / แนวกระดาษ แล้วมีผลจริง
+insert into doc_forms (doc_key, form_code, title, rev, effective_date, paper, paper_size, orientation, layout_locked, used_route, sig_blocks)
 values
   ('pe_fmea', 'FM-PE1-018', 'Process FMEA (Potential Failure Mode and Effects Analysis)',
-   'Rev.01', '24/07/2015', 'A4 แนวนอน', 'A4', 'landscape', true, '/pe-docs'),
+   'Rev.01', '24/07/2015', 'A4 แนวนอน', 'A4', 'landscape', true, '/pe-docs', null),
   ('pe_cp', 'FM-PE1-019', 'Control Plan',
-   'Rev.01', '24/07/2015', 'A4 แนวนอน', 'A4', 'landscape', true, '/pe-docs')
+   'Rev.01', '24/07/2015', 'A4 แนวนอน', 'A4', 'landscape', true, '/pe-docs', null),
+  ('pe_pfc', 'FM-PE1-020', 'ผังกระบวนการผลิต (Process Flow Chart)',
+   'Rev.01', '17/03/2015', 'A3 แนวนอน', 'A3', 'landscape', false, '/pe-docs',
+   '["Issued By","Checked By","Approved By"]'::jsonb)
 on conflict (doc_key) do nothing;
