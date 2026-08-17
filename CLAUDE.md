@@ -886,6 +886,23 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **`Q = ของดี / ผลิตจริงทั้งหมด = totalProduced / (totalProduced + ngQty)`** — **ห้าม** `(ดี − NG)/ดี` (หักซ้ำ ทำ %Q ต่ำเกินจริง: ดี100 NG50 ได้ 50% ที่ถูกคือ 66.7%) · **ยอด "ดี" (qty_ok) = ยอดสแกน ไม่ต้องลบ NG**
 - แก้ครบ 5 จุด OEE (2026-08-02): `DailyReport.jsx` computeOEE Q (Q ที่ stamp) + totalQtyOk · `FactoryMap.jsx`/`Dashboard.jsx` liveOee (Q สด) · `OEEAnalytics.jsx` calcOEE fallback okQty — **จุดใหม่ที่คำนวณ Q ให้ใช้สูตรนี้เท่านั้น**
 - **ฝั่ง QA แก้ตามด้วย (2026-08-02):** `QualityControl.jsx` FTT = `total/(total+ng)` (เดิม `(total−ng)/total` ต่ำเกินจริง) + PPM = `ng/(total+ng)×1e6` (เดิม `ng/total` สูงเกินจริง เพราะ `total`=ยอดสแกน=ของดี ต้องหารด้วยผลิตจริง=ดี+เสีย) ครบ 3 จุด ppm + 1 จุด ftt (บรรทัด ~360-372) · ⚠️ PPM เป็นเมตริกที่อาจอ้างอิงกับลูกค้า — ถ้า QMS นิยาม PPM = ng/ยอดสแกน ให้ revert เฉพาะจุดนี้
+> ### ⚠️ กฎเหล็ก — "งานทดลอง (Try-out)" ไม่นับเข้า %Q แต่ต้องเก็บไว้คิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user)
+> ไลน์ไม่ควรถูกลงโทษใน OEE จากของเสียตอน **ลองแม่พิมพ์/ลองงานใหม่** — แต่ของที่เสียไปมีต้นทุนจริง ต้องเห็น 2 มุม:
+> **"มูลค่าของเสียทั้งหมด"** vs **"มูลค่าของเสียจากไลน์ผลิต"** (= ก้อนเดียวกับที่คิดเข้า %Q)
+> **ทำเครื่องหมายได้ 2 ทาง (user เลือกทั้งคู่) — migration `20260817_defect_trial_flag.sql` (DR · additive default false → ก่อนมีใครติ๊ก %Q เดิมเป๊ะ):**
+> | ที่ | คอลัมน์ | ใช้ตอน |
+> |---|---|---|
+> | ประเภทของเสีย (⚙️ ตั้งค่า) | `dr_defect_types.excl_from_q` | ตั้งครั้งเดียว เช่นประเภท "งานทดลอง/Try-out" |
+> | รายการที่บันทึก (ฟอร์มงานเสีย) | `defect_logs.is_trial` | ประเภทไหนก็ติ๊กรายครั้งได้ — ระหว่างลองงาน ของเสียเป็นได้ทุกประเภท ถ้าผูกกับประเภทอย่างเดียวจะเสียข้อมูลว่าเสียเพราะอะไร |
+>
+> **อ่านผ่าน `src/utils/oee.js` §7 เท่านั้น** — `isTrialDefect(d)` (เช็คทั้ง 2 ธง) · `defectQty(d)` · **`sumDefectQty(rows, 'line'\|'all')`** · `splitDefectQty(rows)` — **ห้ามเขียนเงื่อนไขกรองงานทดลองเองในหน้า**
+> - **`'line'` = ไม่รวมงานทดลอง → ใช้กับ %Q/OEE ทุกจอ** · **`'all'` = รวมทุกอย่าง → ใช้คิดมูลค่า**
+> - **⚠️ query ที่เอาไปคิด %Q ต้อง select `dr_defect_types(..., excl_from_q)` ด้วย** ไม่งั้นเห็นแค่ `is_trial` แล้วตกหล่นเงียบ (`is_trial` มากับ `select('*')` อยู่แล้ว แต่ `excl_from_q` ต้องขอผ่าน join)
+> - **⚠️ จุดที่ "แสดงรายการ/พาเรโต/ตัวนับของเสีย" ห้ามกรองทิ้ง** — งานทดลองเป็นของเสียจริง ต้องเห็นในลิสต์ (ติดชิป 🧪) · ที่ตัดออกคือ **%Q เท่านั้น**
+> - จุดที่แก้แล้ว: `DailyReport computeOEE` (ค่าที่ stamp ตอนปิดกะ) · OEE สด `FactoryMap`/`Dashboard`/`OEEAnalytics` · **FTT/PPM ใน `QualityControl`** (ตัวชี้วัดคุณภาพของไลน์ผลิต มาตรฐานเดียวกับ %Q — แต่พาเรโตประเภทยังนับครบ)
+> - **มูลค่าของเสีย** = แผง 💰 ในแท็บแนวโน้มของ `/oee-analytics` (ทั้งหมด / จากไลน์ผลิต / งานทดลอง) · ต้นทุน/ชิ้นผ่าน **`defectUnitCost(part, {ratePerHr, ctSec})` ใน `src/utils/costSaving.js`** (ใช้ร่วมกับ `/improvements` — `standard_cost` ชนะ → ไม่มีค่อย `material_cost` + conversion) · **ไม่รู้ต้นทุน = คืน `null` ห้ามเดาเป็น 0** แล้วขึ้นแถบส้มบอกว่ามีกี่พาร์ท/กี่ชิ้นที่ตีมูลค่าไม่ได้ + ชี้ไปกรอกที่ Parts Master
+> - **กะที่ปิดไปแล้วไม่ถูก recompute ย้อนหลัง** (กฎเดิม: ห้าม blanket-recompute กะเก่าด้วย master ปัจจุบัน)
+
 - **⚠️ กะที่ปิดไปแล้วมี `oee_q` ที่ stamp ด้วยสูตรเก่า (หักซ้ำ) ค้างอยู่** — backfill DR แล้ว 2026-08-02 (migration `20260802_backfill_oee_q_no_double_deduct.sql`): `oee_q = actual_qty/(actual_qty+ng)×100`, `oee = oee_a×oee_p×oee_q/1e4` (เฉพาะ closed + oee_a/p/q not null + actual_qty>0 · idempotent แตะเฉพาะแถวที่ค่าต่าง ≥0.05) · **ng นับจาก `defect_logs` (Σ qty_ng+qty_suspect ต่อ session) ไม่ใช่ session column `qty_ng`/`qty_suspect`** — column ไม่น่าเชื่อถือ (เจอ Line 60 21/07 column=0 แต่ defect_logs มี NG 12 → old_q=100 ผิด, ที่ถูก 97.6) · รันจริง 5 กะเปลี่ยน (swing −2.4..+1.0)
 
 ### OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" อย่างเดียว (`/oee-analytics` · 2026-08-04 · คำสั่ง user)
