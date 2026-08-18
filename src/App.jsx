@@ -191,16 +191,8 @@ export function accessSummaryForRole(role) {
   return { total: pages.length, all: pages.length >= NAV_ITEMS.length - 1, groups };
 }
 
-// เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
-// เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
-// (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)
-export function focusSidebarGroups(groups) {
-  const collapsed = {};
-  NAV_GROUP_ORDER.forEach(g => { if (!groups.includes(g)) collapsed[g] = true; });
-  try { localStorage.setItem('nav_collapsed_groups', JSON.stringify(collapsed)); } catch { /* ignore */ }
-  // Sidebar mount อยู่ตลอด — แจ้งให้ sync state จาก localStorage ใหม่
-  window.dispatchEvent(new Event('nav-groups-changed'));
-}
+// focusSidebarGroups ถูกถอดออกแล้ว (2026-08-18) — desktop เป็น rail (ไฮไลต์หมวดของหน้าปัจจุบันเอง)
+// และ drawer มือถือเป็น accordion ที่เปิดหมวดของหน้าปัจจุบันให้อัตโนมัติ จึงไม่ต้องสั่งโฟกัสจาก hub อีก
 
 /* ─── Role Route Guard ────────────────────────────────────────────────
    สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
@@ -292,9 +284,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
   const [footerOpen, setFooterOpen] = useState(() => { try { return localStorage.getItem('sb_footer_open') === '1'; } catch { return false; } });
   const toggleFooter = () => setFooterOpen(v => { try { localStorage.setItem('sb_footer_open', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
-  const [collapsedGroups, setCollapsedGroups] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}'); } catch { return {}; }
-  });
+  // drawer มือถือ: หมวดเป็น accordion เปิดทีละหมวด — undefined = ตามหมวดของหน้าปัจจุบัน · null = ปิดหมด
+  // (เดิมกางทุกหมวด 55 รายการ = เลื่อน 3 จอ — ปัญหาเดียวกับ desktop ก่อนเปลี่ยนเป็น rail)
+  const [mOpenGroup, setMOpenGroup] = useState(undefined);
 
   // ── แผงหมวดของ rail (desktop · sidebar แบบ D 2026-08-18) ──────────────────────
   // panel = ชื่อหมวด | '__star' (ใช้บ่อย) | '__me' (โปรไฟล์) | null = ปิด
@@ -304,8 +296,10 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
 
   // เปลี่ยนหน้า = ปิดแผงเอง (เว้นปักหมุด) — เลือกเมนูแล้วแผงต้องหลบให้เห็นเนื้อหาทันที
+  // และ accordion มือถือกลับไปตามหมวดของหน้าใหม่ (undefined = follow active)
   useEffect(() => {
     if (!pinnedRef.current) setPanel(null);
+    setMOpenGroup(undefined);
   }, [location.pathname]);
 
   // Esc ปิดแผง (เฉพาะตอนไม่ปักหมุด)
@@ -317,23 +311,6 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   }, [panel, pinned]);
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
-
-  // hub สั่งโฟกัสหมวด (focusSidebarGroups) → โหลดค่าพับ/กางจาก localStorage ใหม่
-  useEffect(() => {
-    const sync = () => {
-      try { setCollapsedGroups(JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}')); } catch { /* ignore */ }
-    };
-    window.addEventListener('nav-groups-changed', sync);
-    return () => window.removeEventListener('nav-groups-changed', sync);
-  }, []);
-
-  const toggleGroup = (g) => {
-    setCollapsedGroups(prev => {
-      const next = { ...prev, [g]: !prev[g] };
-      localStorage.setItem('nav_collapsed_groups', JSON.stringify(next));
-      return next;
-    });
-  };
 
   const visibleItems = NAV_ITEMS.filter(item => canAccessPage(item.to, userRole));
   // ค้นหาเมนู: พิมพ์แล้วยุบเป็นลิสต์แบน (ข้ามการไล่กางหมวด) — หมวดยังโชว์เป็นคำอธิบายท้ายบรรทัด
@@ -350,8 +327,10 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
     : '?';
 
-  // หมวดของหน้าปัจจุบัน — ใช้ไฮไลต์บน rail + เป็นแผง default ตอนปักหมุด
+  // หมวดของหน้าปัจจุบัน — ใช้ไฮไลต์บน rail + เป็นแผง default ตอนปักหมุด + หมวดที่ accordion มือถือเปิดให้เอง
   const activeGroup = groupedItems.find(g => g.items.some(i => i.to === location.pathname))?.group || null;
+  // หน้าที่ใช้บ่อยของเครื่องนี้ (navRecent) — desktop = แผง ⭐ บน rail · มือถือ = บล็อกบนสุดของ drawer
+  const starItems = topPaths(8).map(p => visibleItems.find(i => i.to === p)).filter(Boolean);
 
   // ปักหมุดอยู่แต่ยังไม่มีแผงเปิด (เพิ่งโหลด/เพิ่งกดปัก) → เปิดแผงหมวดของหน้าปัจจุบันให้
   useEffect(() => {
@@ -523,9 +502,6 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
      เลือกเมนูแล้วปิดเอง · 📌 ปักหมุด = ค้างแผงไว้และดันเนื้อหา (opt-in เท่านั้น) */
   if (!isMobile) {
     const panelOpen = !!panel;
-    const starItems = topPaths(8)
-      .map(p => visibleItems.find(i => i.to === p))
-      .filter(Boolean);
     const panelMeta = panel === '__star' ? { icon: '⭐', title: 'ใช้บ่อย' }
       : panel === '__me' ? { icon: '👤', title: 'โปรไฟล์ & อุปกรณ์' }
       : { icon: NAV_GROUP_META[panel]?.icon || '📁', title: panel };
@@ -775,47 +751,70 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
             ))
-          ) : groupedItems.map(({ group, items }) => {
-            const collapsed = !!collapsedGroups[group];
-            const groupHasActive = items.some(i => location.pathname === i.to);
-            return (
-              <div key={group} style={{ marginBottom: 2 }}>
-                {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
-                    · หมวดที่เปิดอยู่ = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน
-                    (เดิมทุกหมวดเป็น text2 เขียวอ่อนเหมือนกันหมด แยก active ไม่ออก) */}
-                <button
-                  onClick={() => toggleGroup(group)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: groupHasActive ? 'var(--accent-dim)' : 'none',
-                    border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
-                    borderRadius: 'var(--radius)', cursor: 'pointer', padding: '9px 10px 9px 9px',
-                    marginTop: 3,
-                    color: groupHasActive ? 'var(--accent)' : 'var(--text)',
-                    fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
-                    fontFamily: 'var(--font-display)',
-                  }}
+          ) : (<>
+            {/* ⭐ ใช้บ่อย — คนหน้างานวนอยู่ 3-5 หน้าเดิมทั้งวัน ยกขึ้นบนสุดไม่ต้องไล่หาในหมวด
+                (แนวคิดเดียวกับปุ่ม ⭐ บน rail ของ desktop · ไม่มีสถิติ = ไม่โชว์บล็อกเปล่า) */}
+            {starItems.length > 0 && (<>
+              <div style={{ padding: '4px 9px 2px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.03em' }}>⭐ ใช้บ่อย</div>
+              {starItems.slice(0, 5).map(item => (
+                <Link
+                  key={`star-${item.to}`} to={item.to} className="nav-link"
+                  style={location.pathname === item.to
+                    ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                    : {}}
+                  onClick={onClose}
                 >
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 12, opacity: 0.6, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
-                </button>
-                {!collapsed && items.map(item => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="nav-link"
-                    style={location.pathname === item.to
-                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                      : {}}
-                    onClick={() => isMobile && onClose()}
+                  <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                </Link>
+              ))}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 2px' }} />
+            </>)}
+
+            {/* หมวด = accordion เปิดทีละหมวด · หมวดของหน้าปัจจุบันเปิดให้เอง (mOpenGroup undefined = follow) */}
+            {groupedItems.map(({ group, items }) => {
+              const open = (mOpenGroup === undefined ? activeGroup : mOpenGroup) === group;
+              const groupHasActive = items.some(i => location.pathname === i.to);
+              return (
+                <div key={group} style={{ marginBottom: 2 }}>
+                  {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
+                      · หมวดที่มีหน้าปัจจุบัน = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน */}
+                  <button
+                    onClick={() => setMOpenGroup(open ? null : group)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                      background: groupHasActive ? 'var(--accent-dim)' : 'none',
+                      border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
+                      borderRadius: 'var(--radius)', cursor: 'pointer', padding: '10px 10px 10px 9px',
+                      marginTop: 3,
+                      color: groupHasActive ? 'var(--accent)' : 'var(--text)',
+                      fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
+                      fontFamily: 'var(--font-display)',
+                    }}
                   >
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-            );
-          })}
+                    <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
+                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
+                    <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  </button>
+                  {open && items.map(item => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="nav-link"
+                      style={location.pathname === item.to
+                        ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                        : {}}
+                      onClick={onClose}
+                    >
+                      <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
+          </>)}
 
         </div>
 
