@@ -29,6 +29,7 @@ import useTabParam from '../utils/useTabParam';
 import { nextDocNo } from '../utils/qaDocNo';
 import QaCheckSheet from '../components/QaCheckSheet';
 import PeChangeRequests from '../components/PeChangeRequests';
+import QaClaims from '../components/QaClaims';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -1074,9 +1075,25 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
   }, [filter]);
   useEffect(() => { load(); }, [load]);
 
-  // เปิดจากปุ่มใน NCR
+  // เปิดจากปุ่มใน NCR / เคลมลูกค้า
   useEffect(() => {
     if (!prefill) return;
+    /* เคลมลูกค้าสร้างใบ 8D ไว้แล้ว ส่งมาแค่ id — ดึงใบจริงมาเปิด (ไม่สร้างใบใหม่ซ้ำ) */
+    if (prefill._openId) {
+      supabase.from('qa_capa').select('*, qa_ncr(ncr_no, source, part_no, line_name)').eq('id', prefill._openId).single()
+        .then(({ data, error }) => {
+          if (error || !data) { toast.error('เปิดใบ 8D ไม่สำเร็จ'); return; }
+          setDetail({
+            ...data, ncr_no: data.qa_ncr?.ncr_no,
+            ncr_source: data.qa_ncr?.source || 'customer',   // มาจากเคลม = หลุดถึงลูกค้าเสมอ
+            part_no: data.part_no || data.qa_ncr?.part_no || '',
+            line_name: data.line_name || data.qa_ncr?.line_name || '',
+          });
+          load();
+        });
+      onPrefillDone();
+      return;
+    }
     setDetail({
       id: null, capa_no: '', ncr_id: prefill.id, ncr_no: prefill.ncr_no,
       /* พาเลขพาร์ท/ไลน์มาด้วย — เป็นกุญแจหาชุดเอกสาร PE ในลูปปิด 8D */
@@ -1443,6 +1460,8 @@ const TABS = [
   { key: 'sheet',       icon: '✅', label: 'ใบตรวจ (Check Sheet)' },
   { key: 'spc',         icon: '📐', label: 'SPC / Cp-Cpk' },
   { key: 'ncr',         icon: '🚨', label: 'NCR ของเสีย' },
+  // เคลมลูกค้า = ของเสียที่หลุดออกไปถึงลูกค้า — วางคู่ NCR เพราะอ่านด้วยกัน (2026-08-17)
+  { key: 'claims',      icon: '📮', label: 'เคลมลูกค้า' },
   { key: 'capa',        icon: '🛠', label: 'CAPA / 8D' },
   { key: 'instruments', icon: '📏', label: 'เครื่องมือวัด' },
 ];
@@ -1489,6 +1508,7 @@ export default function QualityControl() {
       {tab === 'spc' && <SPCTab lines={lines} canRecord={canRecord} canManage={canManage} />}
       {tab === 'ncr' && <NCRTab lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}
+      {tab === 'claims' && <QaClaims lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lines={lines} canManage={canManage} />}
     </div>
   );

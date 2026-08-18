@@ -271,3 +271,41 @@ export const CR_STATUS = {
 };
 
 export const DOC_LABEL = { fmea: 'PFMEA', cp: 'Control Plan', pfc: 'ผังกระบวนการ (PFC)' };
+
+/* ── เคลมซ้ำ (repeat claim) ─────────────────────────────────────────────────
+   พาร์ทเดิม + อาการคล้ายเดิม ภายใน REPEAT_MONTHS = 8D ครั้งก่อน "ไม่ได้ผลจริง"
+   ⚠️ ใช้เกณฑ์ STRONG เท่านั้น — เป็นข้อกล่าวหาที่หนัก เตือนพร่ำเพรื่อแล้วคนจะเลิกสนใจ
+   ⚠️ อยู่ที่นี่ (ไม่ใช่ในหน้า) เพราะเป็น logic บริสุทธิ์ที่ต้องเทสได้ และจะถูกใช้ซ้ำ
+      ตอนทำการวัด effectiveness อัตโนมัติ (เฟส 4) */
+export const REPEAT_MONTHS = 12;
+
+const monthsAgoStr = (n, from = new Date()) => {
+  const d = new Date(from);
+  d.setMonth(d.getMonth() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * หาเคลมเก่าที่ซ้ำกับใบนี้ (ใหม่→เก่า) — แนบ `_score` / `_sure` ไปกับแต่ละใบ
+ *
+ * ⚠️ **เกณฑ์เดียวแยกไม่ได้ — วัดจริงแล้ว** (ข้อความเคลมจริงแบบไทย):
+ *      "นัทไม่มี…" ↔ "นัทหาย 2 ตัว"        = 0.56  ← ซ้ำจริง
+ *      "นัทไม่มี…" ↔ "นัทเชื่อมเยื้องศูนย์"  = 0.56  ← **คนละอาการ**
+ *    คะแนนเท่ากันเพราะทั้งคู่แมตช์แค่ "กลุ่มคำ" (นัท) · ลดเกณฑ์ = เตือนผิด · ขึ้นเกณฑ์ = พลาดของจริง
+ *    → แยกเป็น 2 ระดับตาม `via` แทน:
+ *      `both`  (ข้อความ + กลุ่มคำ ตรงกัน) = **ซ้ำแน่** (แดง)
+ *      `group` (ตรงแค่กลุ่มคำ)            = **อาจซ้ำ ต้องให้คนดู** (เหลือง)
+ *    ห้ามยุบสองระดับนี้เป็นระดับเดียว — เคลมซ้ำเป็นข้อกล่าวหาที่หนัก (แปลว่า 8D ก่อนไม่ได้ผล)
+ */
+export function findRepeats(claim, all = [], months = REPEAT_MONTHS) {
+  if (!claim?.part_no || !claim?.defect_desc) return [];
+  const since = monthsAgoStr(months);
+  return all
+    .filter((c) => c.id !== claim.id && c.part_no === claim.part_no && c.claim_date >= since)
+    .map((c) => { const m = matchScore(claim.defect_desc, c.defect_desc); return { ...c, _score: m.score, _sure: m.via === 'both' && m.score >= STRONG }; })
+    .filter((c) => c._sure || c._score >= WEAK)
+    .sort((a, b) => (b._sure - a._sure) || (a.claim_date < b.claim_date ? 1 : -1));
+}
+
+/** เคลมที่ "ซ้ำแน่" เท่านั้น (ใช้กับตัวนับ/แถบเตือนสีแดง) */
+export const sureRepeats = (list) => list.filter((c) => c._sure);
