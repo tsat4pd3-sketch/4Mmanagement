@@ -103,7 +103,7 @@
 ### กะการทำงาน
 | Table | คำอธิบาย |
 |-------|---------|
-| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ (line_id, work_date, day_team, **`is_manual`**) · **ไลน์ลูก inherit กะจากไลน์แม่อัตโนมัติ** เว้นแต่ `is_manual=true` (ตั้งเอง) — ตั้งกะไลน์แม่แล้ว save จะ cascade ไปไลน์ลูกที่ยังตามแม่ (`effTeam`/`parentIdOf` ใน ShiftOrganize) · migration `20260721_shift_schedule_inherit.sql` |
+| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ · **1 แถว = 1 ขอบเขต: `line_id` (ไลน์ผลิต) หรือ `dept_name` (หน่วยงานสนับสนุน) อย่างใดอย่างหนึ่ง** (check constraint บังคับ) · **ไลน์ลูก inherit กะจากไลน์แม่อัตโนมัติ** เว้นแต่ `is_manual=true` (ตั้งเอง) — ตั้งกะไลน์แม่แล้ว save จะ cascade ไปไลน์ลูกที่ยังตามแม่ (`effTeam`/`parentIdOf` ใน ShiftOrganize) · migration `20260721_shift_schedule_inherit.sql` + `20260811_shift_schedule_department.sql` (ดูกฎเหล็ก "กะของพนักงาน" ด้านล่าง) |
 | `shift_overrides` | Override กะรายบุคคล |
 | `shift_merge_events` | Merge กะทั้ง section/line |
 
@@ -288,6 +288,22 @@
 
 **เลิก hardcode ชื่อทีมในโค้ด** (คำสั่ง user) — ทีมช่าง (MTN/JIG MTN/DIE MTN/PRODUCTION) มาจากตาราง **`mtn_teams`** (DR · migration `20260722_mtn_teams.sql`): `key` (=`checklists.department`: maintenance/jig_maintenance/die_maintenance/production) · `label` · `icon` · `equip_type` (machine/jig/die/null) · `dept_name` (โยง `mtn_orders.mtn_dept`) · `color` · เพิ่ม/แก้ทีมได้จากตารางนี้ไม่ต้องแก้โค้ด
 - โหลดผ่าน **`src/utils/pmTeams.js`** (`loadPmTeams()` cache + `pmTeamsSync()` + `DEFAULT_TEAMS` fallback ถ้า migration ยังไม่ apply) — หน้า **PMSchedule / PMCheckData / MtnMachineLayout / PMSetup** ดึง options+label+สี+icon จากตัวนี้ (เดิมต่างคนต่าง hardcode DEPT_OPTIONS/MTN_DEPTS · MtnMachineLayout เคยตกหล่น PRODUCTION · PMSetup เป็นหน้าสุดท้ายที่ยัง hardcode — แก้แล้ว 2026-07-22)
+> ### ⚠️ กฎเหล็ก — "พนักงานคนนี้เข้ากะไหน" ตอบผ่าน `src/utils/shiftAssign.js` เท่านั้น (2026-08-11)
+> เดิม logic นี้ถูกเขียนซ้ำใน `Checkin.jsx` กับ `Dashboard.jsx` (คอมเมนต์เขียนว่า "same logic as Checkin") แล้ว **drift กันจริง** — Dashboard ตกเงื่อนไข **Team C** → คนทีม C ที่เช็คชื่อแล้ว **หายจากบอร์ดทั้งกะเช้าและกะดึก** (บอร์ดกรองด้วย `assignedShift` ที่เป็น null) · รวมมาที่ util เดียวแล้ว
+> **ลำดับตัดสิน (ห้ามสลับ):** `shift_overrides` รายคน → `shift_merge_events` (ไลน์ชนะ section) → **ตารางกะ: ไลน์ผลิตก่อน → ไม่มีค่อยใช้ของหน่วยงาน**
+> - `buildScheduleMaps(rows)` → `{ byLine, byDept, count }` · `scheduleTeamFor(emp, maps)` · `shiftFromTeam(dayTeam, empTeam)` · `resolveAssignedShift(emp, {overrideShift, mergeShift, maps})`
+> - **`Team C` = กะเช้าตลอด ไม่หมุน A/B** — ห้ามตัดเงื่อนไขนี้ออก คนจะหายจากจอ · ทีมที่ไม่รู้จัก → `null` (ไม่เดา)
+>
+> #### 🏢 กะของ "หน่วยงานสนับสนุน" — `shift_schedules.dept_name` (2026-08-11 · user แจ้ง "set กะให้พนักงานซัพพอร์ทยังทำไม่ได้")
+> ตารางกะเดิมผูก `(work_date, line_id)` เท่านั้น → **พนักงานที่ไม่มี `line_id` (ช่าง MTN/JIG/DIE · QA · คลัง) ไม่มีแถวให้ตั้งกะเลย** `assignedShift` เป็น null ตลอด เหลือทางเดียวคือ `shift_overrides` ทีละคน-ทีละวัน (14 คน × 30 วัน = ใช้จริงไม่ไหว)
+> - **รูปแบบที่ user ยืนยัน: หมุน A/B พร้อมกันทั้งแผนก เหมือนไลน์ผลิต** · คนที่ไม่หมุนกะ = **Team C** (กลไกเดิมรองรับอยู่แล้ว ไม่ต้องเพิ่มอะไร)
+> - แถวหน่วยงาน = `line_id: null` + `dept_name` = ชื่อแผนก (จับคู่ `employees.department` แบบ trim+lowercase) · check constraint บังคับให้แถวหนึ่งมีขอบเขตเดียว
+> - **ตั้งที่ `/shift-organize` ตาราง "🏢 หน่วยงานสนับสนุน"** — ลิสต์เฉพาะแผนกที่มีพนักงานจริง เรียง "คนไม่ผูกไลน์" มากสุดขึ้นบน + แถบบอกจำนวนคนที่ยังไม่มีกะ · แผนกที่พนักงานกรอกไว้แต่ไม่มีในผัง ขึ้นป้าย **⚠ นอกผัง** (ตั้งกะได้ แต่ควรจัดให้ตรงผัง — **ห้ามซ่อน** หลักเดียวกับ optgroup "นอกผัง" ใน `/operator`)
+> - **scope:** leader ไม่เห็นตารางนี้ (ดูแลไลน์ ไม่ใช่หน่วยงาน) · role ที่ถูกจำกัด `sections` เห็นเฉพาะแผนกใต้ส่วนงานตัวเอง · **แผนกขึ้นตรงฝ่าย (ไม่มี section) เห็นเฉพาะ user ที่ไม่ถูกจำกัด** (กฎเดียวกับ `ORPHAN_SECTION`)
+> - **⚠️ unique index ของ `dept_name` ต้องเป็นแบบธรรมดา ห้าม partial** — PostgREST upsert ส่งแค่ `on_conflict=work_date,dept_name` เติม `WHERE` ให้ไม่ได้ → Postgres infer partial index ไม่เจอ แล้วพังทั้งการบันทึก · ไม่ต้องกลัวชนกับแถวไลน์ (dept_name = null ซึ่ง unique index ปล่อยผ่านเสมอ)
+> - **⚠️ `fetchEmployees` ที่กรอง scope ต้อง fallback ไป `employees.section` ด้วย** ไม่ใช่ดูแค่ `production_lines.section` — พนักงานซัพพอร์ทไม่มีไลน์ จึงไม่มี join ให้ดู แล้วหายจากสายตา user ที่ถูกจำกัด scope ทั้งที่อยู่ส่วนงานเดียวกัน
+> - อ่านแบบ tolerant: ยังไม่ apply migration = `dept_name` ไม่มีในผลลัพธ์ → ทำงานแบบเดิมเป๊ะ (ใช้ `select('*')`) · ตอนบันทึกเจอ `42703` ต้อง **ขึ้น toast บอกให้ไป apply migration ห้ามเงียบ**
+
 > ### ⚠️ กฎเหล็ก — `user_role` ถือ 3 แกน ห้ามเพิ่ม role เมื่อเจอแกนใหม่ (2026-08-06 · คำสั่ง user)
 > `user_role` คอลัมน์เดียวปนกัน 3 เรื่อง ทำให้เข้าใจผิดซ้ำๆ ว่า role = ตำแหน่งงาน:
 > **`scope`** ระดับสิทธิ์/ขอบเขต (admin·manager·supervisor·leader) · **`unit`** หน่วยงาน (mtn·qa·engineer·sale·planner_store·document_control) · **`device`** อุปกรณ์ (display) · **`tier`** ชั้นเสริม (dept_admin — bucket ของ flag)
