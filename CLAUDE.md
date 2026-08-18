@@ -150,7 +150,7 @@
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
 | ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
-| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
+| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันใน**แผงโปรไฟล์ 👤** (desktop rail) / เมนูโปรไฟล์ท้าย drawer (มือถือ) เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ภาพรวม | `/dashboard` | Dashboard (ย้ายกลับหมวด ภาพรวม 2026-07-20 — โซนจอแสดงผล) | ทุก role |
 | ภาพรวม | `/factory-map` | FactoryMap — ผังรวมโรงงาน: วาด polygon ล้อมแต่ละไลน์บนผังใหญ่ผังเดียว ระบายสีตามสถานะการผลิต (ดู section "Factory Master Map") | ทุก role (edit: admin/mgr/sv) |
 | ภาพรวม | `/dept-dashboard` | **DeptDashboard — 📋 Dashboard ส่วนงาน** หน้าเดียวสลับส่วนงานด้วย `?dept=production\|maintenance\|store\|qa` · **เลย์เอาต์ 4 ชั้นเหมือนกันทุกใบ** (🚨 ต้องทำตอนนี้ → 📊 KPI → 📈 ชี้เป้าให้แก้ → 🔗 ทางลัด) · **อ่านอย่างเดียว** ทุก action = ลิงก์ไปหน้าที่ทำงานจริง · เพิ่มส่วนงานใหม่ = เพิ่ม entry ใน `DEPTS` (loader + View) **ห้ามสร้างหน้า dashboard แยกต่อส่วนงาน** · ดู section "Dashboard ส่วนงาน" + `docs/DASHBOARD-DESIGN.md` | ทุก role (ข้อมูลกรองตาม scope) |
@@ -218,7 +218,13 @@
   - **⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return** (rules-of-hooks · React #310)
   - **ไม่ผูก URL กับ state ที่ระบบสั่งสลับเอง** (เช่น PMCheckData บันทึก→ประวัติ ตอนกดบันทึก) ไม่งั้นประวัติ Back งอกทุกครั้ง · ถ้าจำเป็นต้องผูกจริงๆ ให้ระบบสลับด้วย **`setTab(k, { replace: true })`** (EventLog บันทึกเสร็จ→รายการ)
 - **route ที่ยุบเป็นแท็บแล้วต้อง `<Navigate to="…?tab=x" replace />`** ห้าม render ซ้ำสองทาง — `/daily-pm` `/pokayoke` `/lpa` → `/daily-checker?tab=` · **ลิงก์ภายในให้ชี้ปลายทางจริง** ไม่เด้งผ่าน redirect · **ยกเว้น `/linesetup`** ที่คงไว้เป็นทาง "ดูอย่างเดียว" ของคนไม่มีสิทธิ์ `line_setup:edit` (redirect แล้ววนกลับมาที่เดิม)
-- **ทางลัดหาเมนู (เมนู 51 รายการ 8 หมวด):** ช่องค้นหาบนหัว sidebar (พิมพ์แล้วยุบเป็นลิสต์แบน) + **`Ctrl/⌘+K` เปิด `CommandPalette`** (ค้นแบบ subsequence · ↑↓ Enter Esc) — **ทั้งคู่ดึงจาก `NAV_ITEMS` + `canAccessPage` เมนูใหม่โผล่เอง ห้ามพิมพ์รายชื่อหน้าซ้ำ**
+- **🚆 Sidebar desktop = "rail + แผงลอย" (แบบ D · 2026-08-18 คำสั่ง user "เอา D เลย" หลัง review ว่าเมนู 55 รายการ 9 หมวด = 3.3 จอ หาไม่เจอ):**
+  - **rail 64px (`--rail-w`) ไอคอนหมวด 9 ปุ่ม** (ไอคอน+ชื่อย่อจาก **`NAV_GROUP_META`** ใน App.jsx — เพิ่มหมวดใหม่ต้องเติม meta ด้วย ไม่งั้นได้ 📁 + ชื่อเต็มตัด ellipsis) · กดไอคอน → **แผงเมนูหมวด (252px) "ลอยทับ" เนื้อหา ไม่ดันเนื้อหา** (คำสั่ง user "ต้องไม่ไปบีบหน้าจอหลัก") — เนื้อหาหลักกว้างขึ้น +188px เทียบ sidebar เดิม
+  - เลือกเมนู/เปลี่ยนหน้า/Esc/คลิกนอกแผง = แผงปิดเอง · **📌 ปักหมุด (opt-in, จำใน `esm_rail_pin`) = แผงค้าง + ดันเนื้อหา** (`calc(--rail-w + --sidebar-w)`) — state อยู่ ProtectedLayout เพราะ marginLeft ของ `<main>` ต้องรู้
+  - rail ล่าง: **⭐ ใช้บ่อย** (topPaths จาก navRecent) · **👤 avatar → แผงโปรไฟล์** (การ์ด user + ลายเซ็น/เปลี่ยนรหัส/รีโมท 🎮📺/Light Mode/ออกจากระบบ — ของเดิมท้าย sidebar ทั้งหมดย้ายมาที่นี่ **ไม่หายไปไหน**) · **◀ ซ่อน rail** (จอ TV เต็มจอ — ☰ เดิมโผล่กลับ)
+  - **มือถือ (<768px) ยังเป็น drawer เต็มแบบเดิม** (ทับเนื้อหาอยู่แล้ว ไม่บีบจอ) · การ์ด user + เมนูโปรไฟล์เป็น JSX ชุดเดียว (`userCard`/`profileActions` ใน Sidebar) ใช้ทั้ง 2 โหมด — **ห้าม copy ซ้ำ**
+  - ทดสอบ layout ได้ที่ audit harness `?p=__sidebar` (mount `Sidebar` ตรงๆ role admin — `Sidebar` ถูก export ไว้เพื่อการนี้)
+- **ทางลัดหาเมนู:** desktop = ปุ่ม 🔎 บน rail + **`Ctrl/⌘+K` เปิด `CommandPalette`** (ค้นแบบ subsequence · ↑↓ Enter Esc) · มือถือ = ช่องค้นหาบนหัว drawer (พิมพ์แล้วยุบเป็นลิสต์แบน) — **ทั้งหมดดึงจาก `NAV_ITEMS` + `canAccessPage` เมนูใหม่โผล่เอง ห้ามพิมพ์รายชื่อหน้าซ้ำ**
 - **"ใช้บ่อย"** = `src/utils/navRecent.js` (localStorage ต่อเครื่อง · decay ครึ่งชีวิต 14 วัน ไม่ค้างบนสุดเพราะเคยกดรัวๆ) · `trackVisit` เรียกจากจุดเดียวใน `App.jsx` (ProtectedLayout ตอน pathname เปลี่ยน)
 - **4 หน้าที่ไม่มีหัวเรื่องโดยตั้งใจ:** `Login` (มีแบรนด์เอง) · `Dashboard`/`Management` (บอร์ดจอ TV หัวเรื่องกินที่แนวตั้ง) · `LineSetup` (ถูกฝังในแท็บหน้าอื่น หัวเรื่องอยู่ที่หน้าแม่)
 
@@ -1426,7 +1432,7 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — **ใช้ได้ทุกหน้า** ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
 
-- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันโซนล่างสุดของ sidebar** (เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
+- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันในเมนูโปรไฟล์** (desktop = แผง 👤 บน rail · มือถือ = ท้าย drawer เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
 - **ฝั่งจอ (Receiver):** ปุ่ม "📺 รับรีโมทจอ (จอตาม)" → สุ่มรหัส 6 หลัก (จำใน localStorage ข้ามรีเฟรช) + ป้ายสถานะมุมล่างซ้ายแสดงรหัส/สถานะเชื่อมต่อเสมอ · `src/components/RemoteReceiver.jsx` ฝังระดับ App (ใน Router) — จอ**ต้อง opt-in เอง** และกด ✕ ปิดได้ตลอด
 - **ฝั่งมือถือ:** หน้า `/remote` (🎮 รีโมทจอ) ใส่รหัสจากจอ → **Touchpad: ลาก 1 นิ้ว = เลื่อน pointer แดงบนจอ · แตะ = คลิก (elementFromPoint + native .click()) · ลาก 2 นิ้ว = scroll** + ปุ่ม ◀ ▶ Esc (ยิง KeyboardEvent — โหมดประชุมแถวเช้าฟัง keydown อยู่แล้ว) + ปุ่มเลื่อนขึ้น/ลง + ชิปสั่งจอกระโดดไปหน้าใดก็ได้ (เมนูจาก `navItemsForGroups` ชุดเดียวกับ sidebar — สิทธิ์เข้าหน้าคุมที่ฝั่งจอผ่าน RoleRoute ตามปกติ)
 - **กลไก pointer:** จอถือตำแหน่งเอง มือถือส่ง delta (throttle ~25Hz) · scroll เดินหา ancestor ที่ overflow แล้ว scrollBy ที่ตัวนั้น (รองรับ inner scroll container) · คลิกหา interactive ใกล้สุดด้วย `.closest('button, a, [role=button], input, ...')`
