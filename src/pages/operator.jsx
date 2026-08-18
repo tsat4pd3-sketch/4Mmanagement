@@ -7,7 +7,7 @@ import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
-import { can } from '../utils/permissions';
+import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
@@ -18,6 +18,7 @@ import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FUL
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import SkillEditHistory from '../components/SkillEditHistory';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -67,6 +68,33 @@ export default function Operator() {
   // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
   // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
   const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
+  // ⚠️ สิทธิ์แก้ "ระดับทักษะ" แยกจาก employees:edit — คนที่แก้ประวัติพนักงานได้ ไม่จำเป็นต้องแก้คะแนนสกิลได้
+  //   ปรับผู้ถือสิทธิ์ที่ /permissions ได้เลย มีผลทั้ง UI และ RLS (policy อ่าน has_perm('skills:edit'))
+  //   leader ได้สิทธิ์นี้แล้ว (user สั่ง 2026-08-17) — คู่กับ audit log ที่บันทึกการแก้ด้วยมือทุกครั้ง
+  //   (trigger trg_audit_employee_skills → ดูได้ที่แผง 🕓 ประวัติการแก้คะแนน ในโมดัลนี้)
+  //   RLS ฝั่ง DB ก็คุมด้วย skills:edit เช่นกัน → ยิงทั้งที่ไม่มีสิทธิ์ = error ทับการบันทึกที่สำเร็จไปแล้ว
+  const canEditSkills = can('skills', 'edit', role);
+
+  // ── สิทธิ์ "แก้ได้เฉพาะคนของหน่วยงานตัวเอง" (2026-08-17) ────────────────────
+  // บางหน่วยงาน (คลัง/สโตร์) ต้องเห็นพนักงานทั้งโรงงานเพื่อทำงาน logistic ได้ตามปกติ
+  // แต่ต้องกัน "แก้/ปิดใช้งานผิดตัว" → คุมที่สิทธิ์เขียน "รายแถว" ไม่ใช่การมองเห็น
+  //
+  // ⚠️ ห้ามเอา profiles.sections (scope ทั้งระบบ) มาทำเรื่องนี้ — section ของหน่วยงาน
+  //    สนับสนุน (เช่น 'Planning&Store') ไม่มีไลน์ผลิตสังกัดอยู่เลย ตั้ง scope เมื่อไหร่
+  //    หน้าที่กรองด้วย section (StoreMonitor / PlannerSales / RundownStock / Dashboard)
+  //    จะเหลือ 0 แถวทันที = พังงานประจำวันของเขาเอง
+  //
+  // data-driven + backward-compatible:
+  //   role ที่มี `employees:edit_all_sections` → แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม)
+  //   ไม่มี → แก้ได้เฉพาะแถวที่ section ตรงกับส่วนงานของตัวเอง
+  //   ยังไม่ seed key นี้ → ทุก role แก้ได้หมดเหมือนเดิม (ดู canDelete() ใน permissions.js)
+  // หมายเหตุ: เป็นการกันพลาดฝั่ง UI — RLS ระดับ DB ยังไม่รู้จัก section ของพนักงาน
+  const editAllSections = !isActionSeeded('employees', 'edit_all_sections')
+    || can('employees', 'edit_all_sections', role);
+  const homeSection = userSection || scopeSecs[0] || null;
+  /** แก้แถวนี้ได้ไหม — ต้องมีสิทธิ์ employees:edit และอยู่ในส่วนงานที่ตัวเองดูแล */
+  const canEditEmp = (emp) => can('employees', 'edit', role)
+    && (editAllSections || (!!homeSection && inSectionScope([homeSection], emp?.section)));
 
   // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
   // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
@@ -290,6 +318,12 @@ export default function Operator() {
   };
 
   const handleDeactivate = async (id, name) => {
+    // กันพลาดอีกชั้น — ปุ่มถูกซ่อนไว้แล้ว แต่กันเคสกดจากแถวที่ไม่ใช่ส่วนงานตัวเอง
+    const target = [...employees, ...inactiveEmployees].find(e => e.id === id);
+    if (target && !canEditEmp(target)) {
+      toast.error(`แก้ไขได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}`);
+      return;
+    }
     if (!window.confirm(`ปิดใช้งานพนักงาน: ${name}?\nพนักงานจะไม่ปรากฏในระบบเช็คชื่อ แต่ข้อมูลยังคงอยู่`)) return;
     const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id);
     if (error) toast.error('ไม่สามารถปิดใช้งานได้: ' + error.message);
@@ -297,6 +331,11 @@ export default function Operator() {
   };
 
   const handleReactivate = async (id) => {
+    const tgt = [...employees, ...inactiveEmployees].find(e => e.id === id);
+    if (tgt && !canEditEmp(tgt)) {
+      toast.error(`แก้ไขได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}`);
+      return;
+    }
     const { error } = await supabase.from('employees').update({ is_active: true }).eq('id', id);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
     else fetchEmployees();
@@ -366,31 +405,46 @@ export default function Operator() {
         }
       }
 
-      // Skills marked as enabled → upsert; disabled (N/A) → delete record
-      const enabledSkills = skillDefs.filter(sd => editingEmp.skillEnabled?.[sd.name]);
-      const disabledSkillNames = skillDefs.filter(sd => !editingEmp.skillEnabled?.[sd.name]).map(sd => sd.name);
+      // ── ระดับทักษะ ────────────────────────────────────────────────────────
+      // เทียบกับค่าเดิมแล้วยิงเฉพาะ "ที่เปลี่ยนจริง" — เดิมยิง upsert ทุกสกิลที่ติ๊กไว้ + delete ทุกสกิล
+      // ที่ไม่ติ๊ก (รวมตัวที่ไม่เคยมีแถวอยู่แล้ว) → แตะ employee_skills ทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป
+      // ทำให้คนที่ไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ
+      let skillWarn = '';
+      if (canEditSkills && canEditEmp(editingEmp)) {
+        const origMap = new Map((editingEmp.employee_skills || []).map(s => [s.skill_name, s]));
+        const upserts = [];
+        const removals = [];
+        skillDefs.forEach(sd => {
+          const on = !!editingEmp.skillEnabled?.[sd.name];
+          const orig = origMap.get(sd.name);
+          if (on) {
+            const score = sd.category === 'allowance_skill' ? 100 : Number(editingEmp.skillScores?.[sd.name] ?? 0);
+            if (!orig || Number(orig.score) !== score) {
+              upserts.push({ employee_id: editingEmp.id, skill_name: sd.name, score, updated_at: new Date().toISOString() });
+            }
+          } else if (orig) {
+            removals.push(sd.name);   // ลบเฉพาะที่เคยมีแถวจริง
+          }
+        });
 
-      if (enabledSkills.length > 0) {
-        const upserts = enabledSkills.map(sd => ({
-          employee_id: editingEmp.id,
-          skill_name: sd.name,
-          score: sd.category === 'allowance_skill' ? 100 : Number(editingEmp.skillScores?.[sd.name] ?? 0),
-          updated_at: new Date().toISOString(),
-        }));
-        const { error: skillErr } = await supabase.from('employee_skills')
-          .upsert(upserts, { onConflict: 'employee_id,skill_name' });
-        if (skillErr) throw skillErr;
+        if (upserts.length > 0) {
+          const { error: skillErr } = await supabase.from('employee_skills')
+            .upsert(upserts, { onConflict: 'employee_id,skill_name' });
+          if (skillErr) skillWarn = skillErr.message;
+        }
+        if (!skillWarn && removals.length > 0) {
+          const { error: delErr } = await supabase.from('employee_skills')
+            .delete()
+            .eq('employee_id', editingEmp.id)
+            .in('skill_name', removals);
+          if (delErr) skillWarn = delErr.message;
+        }
       }
 
-      if (disabledSkillNames.length > 0) {
-        const { error: delErr } = await supabase.from('employee_skills')
-          .delete()
-          .eq('employee_id', editingEmp.id)
-          .in('skill_name', disabledSkillNames);
-        if (delErr) throw delErr;
-      }
-
-      toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
+      // ⚠️ ข้อมูลพนักงานถูกบันทึกไปแล้วข้างบน — ถ้าสกิลพลาดห้าม throw รวม (จะอ่านเหมือนไม่ได้บันทึกอะไรเลย)
+      //    แต่ก็ห้ามเงียบ: บอกให้ชัดว่าส่วนไหนสำเร็จ ส่วนไหนไม่
+      if (skillWarn) toast.error('บันทึกข้อมูลพนักงานแล้ว แต่ระดับทักษะยังบันทึกไม่ได้: ' + skillWarn);
+      else toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
       fetchEmployees();
     } catch (err) {
@@ -941,7 +995,11 @@ export default function Operator() {
                       style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 1, boxShadow: '-2px 0 8px rgba(0,0,0,0.18)', padding: '0 8px', cursor: 'default' }}>
                       {emp.is_active ? (
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
-                          {can('employees', 'edit', role) && (
+                          {can('employees', 'edit', role) && !canEditEmp(emp) && (
+                            <span title={`แก้ไขได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}`}
+                              style={{ fontSize: 13, color: 'var(--muted)', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔒</span>
+                          )}
+                          {canEditEmp(emp) && (
                           <button className="tbtn" title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
@@ -953,7 +1011,7 @@ export default function Operator() {
                             ✏️
                           </button>
                           )}
-                          {can('employees', 'deactivate', role) && (
+                          {can('employees', 'deactivate', role) && canEditEmp(emp) && (
                           <button className="tbtn" title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444',
@@ -966,7 +1024,7 @@ export default function Operator() {
                           </button>
                           )}
                         </div>
-                      ) : can('employees', 'deactivate', role) ? (
+                      ) : (can('employees', 'deactivate', role) && canEditEmp(emp)) ? (
                         <button className="tbtn" title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
@@ -1483,7 +1541,12 @@ export default function Operator() {
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
-                <label style={{ ...labelSt, marginBottom: 12, display: 'block' }}>📊 ระดับทักษะ</label>
+                <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>📊 ระดับทักษะ</label>
+                {!(canEditSkills && canEditEmp(editingEmp)) && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    🔒 ดูอย่างเดียว — {canEditSkills ? `แก้ได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}` : 'บัญชีนี้ไม่มีสิทธิ์แก้ระดับทักษะ'} (ข้อมูลอื่นในฟอร์มยังแก้ได้ตามปกติ)
+                  </div>
+                )}
                 {(() => {
                   // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
                   const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
@@ -1504,13 +1567,13 @@ export default function Operator() {
                           return (
                             <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: 'pointer' }}>
-                                <input type="checkbox" checked={enabled}
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: (canEditSkills && canEditEmp(editingEmp)) ? 'pointer' : 'default' }}>
+                                <input type="checkbox" checked={enabled} disabled={!(canEditSkills && canEditEmp(editingEmp))}
                                   onChange={e => setEditingEmp({
                                     ...editingEmp,
                                     skillEnabled: { ...editingEmp.skillEnabled, [sd.name]: e.target.checked },
                                   })}
-                                  style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                                  style={{ width: 14, height: 14, cursor: (canEditSkills && canEditEmp(editingEmp)) ? 'pointer' : 'default' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
                                   {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
@@ -1527,7 +1590,7 @@ export default function Operator() {
                               {enabled && g.key === 'allowance_skill' ? (
                                 <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
                               ) : enabled ? (
-                                <input type="number" value={score}
+                                <input type="number" value={score} disabled={!(canEditSkills && canEditEmp(editingEmp))}
                                   onChange={e => setEditingEmp({
                                     ...editingEmp,
                                     skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
@@ -1547,6 +1610,8 @@ export default function Operator() {
                     </div>
                   ));
                 })()}
+
+                {editingEmp.id && <SkillEditHistory employeeId={editingEmp.id} />}
               </div>
 
               <div>
