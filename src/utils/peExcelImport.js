@@ -365,6 +365,28 @@ export function buildImportPlan({ fmeaSheets = {}, cpSheets = {}, revisions = []
   const cp = Object.fromEntries(Object.entries(cpSheets).filter(([k]) => isDataSheet(k)));
   const warnings = [];
 
+  /* 0) ชีท CP ที่ "เลข OP ในเซลล์" ไม่ตรงกับ "ชื่อชีท" → ยึดชื่อชีท แก้ให้เลย + เตือน
+     เหตุผลที่ยึดชื่อชีท: ชื่อแท็บคือสิ่งที่คนคลิกเข้าไปเพื่อกรอกเนื้อหาของ OP นั้น ส่วนเลขในเซลล์
+     เป็นของที่ติดมาจากการก๊อปชีท (เจอจริงในไฟล์ MB3B-8C306-BE: ชีท 140 แต่ในเซลล์เขียน 130)
+     ⚠️ แก้ให้เฉพาะเมื่อ "ทั้งชีทชี้ไป OP เดียวที่ผิด" เท่านั้น — ชีทที่มีหลายเลขปนกันถือว่ากำกวม
+        ไม่แตะ แค่เตือน (เดาแล้วย้ายจุดควบคุมผิด OP แย่กว่าปล่อยไว้ให้คนตัดสิน)
+     ⚠️ ต้องทำ "ก่อน" สร้างรายการ OP — ไม่งั้นชื่อขั้นงาน/เครื่องจักรไปลงทะเบียนใต้ OP ที่ผิดแล้ว */
+  const fixedOps = [];
+  const ambiguousOps = [];
+  for (const [key, recs] of Object.entries(cp)) {
+    if (rangedKey(key)) continue;
+    const kb = baseOf(key);
+    if (!kb) continue;
+    const found = [...new Set(recs.map((r) => baseOf(r.sub_op)).filter(Boolean))];
+    if (!found.length || found.includes(kb)) continue;
+    if (found.length === 1) {
+      for (const r of recs) r.sub_op = String(r.sub_op ?? '').replace(/^(\s*)\d+/, `$1${kb}`);
+      fixedOps.push({ sheet: key, op: `${found[0]} → ${kb}`, text: `ย้ายให้แล้ว ${recs.length} จุดควบคุม` });
+    } else {
+      ambiguousOps.push({ sheet: key, op: found.join(','), text: 'มีหลายเลข OP ปนกัน — ไม่แก้ให้ ต้องดูเอง' });
+    }
+  }
+
   /* 1) รายการ OP — สร้างจาก Control Plan ก่อน (ละเอียดสุด: มีขั้นย่อย + เครื่อง) */
   const ops = new Map(); // base → { names[], machines:Set, childs:Set }
   const touch = (b) => {
@@ -384,16 +406,6 @@ export function buildImportPlan({ fmeaSheets = {}, cpSheets = {}, revisions = []
       for (const ln of lines.slice(1)) if (PART_RE.test(ln.trim())) o.childs.add(ln.trim());
       if (String(r.machine || '').trim()) o.machines.add(String(r.machine).trim());
     }
-  }
-
-  /* เลข OP ที่เขียนอยู่ในเซลล์ของแต่ละชีท CP (ใช้จับเคสชื่อชีทไม่ตรงกับเลขข้างใน) */
-  const conflicts = [];
-  for (const [key, recs] of Object.entries(cp)) {
-    if (rangedKey(key)) continue;
-    const kb = baseOf(key);
-    if (!kb) continue;
-    const found = [...new Set(recs.map((r) => baseOf(r.sub_op)).filter(Boolean))];
-    if (found.length && !found.includes(kb)) conflicts.push({ sheet: key, op: found.join(','), text: 'เลขในเซลล์ไม่ตรงกับชื่อชีท' });
   }
 
   /**
@@ -425,8 +437,11 @@ export function buildImportPlan({ fmeaSheets = {}, cpSheets = {}, revisions = []
   if (!Object.keys(cp).length && ops.size) {
     warnings.push({ level: 'warn', text: `ไม่มีไฟล์ Control Plan — สร้างรายการ OP จากชื่อชีทของ PFMEA (${ops.size} OP) เครื่องจักร/จุดควบคุมจะยังว่าง ต้องเติมเองภายหลัง` });
   }
-  if (conflicts.length) {
-    warnings.push({ level: 'warn', text: `มี ${conflicts.length} ชีทใน Control Plan ที่เลข OP ในเซลล์ไม่ตรงกับชื่อชีท — ระบบยึด "เลขในเซลล์" ตามไฟล์ จุดควบคุมจึงไปอยู่ OP นั้น (ตรวจไฟล์ต้นทางว่าพิมพ์ถูกไหม)`, rows: conflicts });
+  if (fixedOps.length) {
+    warnings.push({ level: 'warn', text: `แก้ให้แล้ว — มี ${fixedOps.length} ชีทใน Control Plan ที่เลขในเซลล์ไม่ตรงกับชื่อชีท ระบบยึด "ชื่อชีท" และย้ายจุดควบคุมไป OP ที่ถูก · ข้อมูลที่นำเข้าถูกต้องแล้ว แต่ควรไปแก้เลขในไฟล์ต้นทางด้วย ไม่งั้นรอบหน้าเจอซ้ำ`, rows: fixedOps });
+  }
+  if (ambiguousOps.length) {
+    warnings.push({ level: 'warn', text: `มี ${ambiguousOps.length} ชีทที่เลข OP ในเซลล์ปนกันหลายตัวและไม่ตรงกับชื่อชีท — ระบบ **ไม่แก้ให้** (กำกวมเกินกว่าจะเดา) จุดควบคุมจะไปตามเลขในเซลล์ ตรวจไฟล์ต้นทางเอง`, rows: ambiguousOps });
   }
 
   /* child part จาก label ฝั่ง PFMEA (บางตัวมีเฉพาะใน FMEA) */

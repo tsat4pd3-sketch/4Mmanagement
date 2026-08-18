@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { focusSidebarGroups, navItemsForGroups } from '../App';
+import { navItemsForGroups } from '../App';
 import { roleLabel } from '../utils/roleMeta';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
 import { toast } from '../components/Toast';
+import { saveMyProfileMedia } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
@@ -15,7 +16,7 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
      (นับจากตารางจริง refresh ทุก 60 วิ — เป็นของเสริม ผิดพลาดต้องไม่ทำหน้าพัง)
    - โมดูล = แผงควบคุม: มุม bracket + รหัสโมดูล (PRD·01) + ไฟสถานะนิ่ง (Andon §2: ห้ามกระพริบ)
    - พื้นหลังกริด blueprint จางๆ + นาฬิกา/กะสด · ฟอนต์ตัวเลข/รหัส = monospace
-   การทำงานเดิมคงครบ: ชิปเมนูดึงจาก NAV_ITEMS (ห้ามพิมพ์ list มือ) · focusSidebarGroups ·
+   การทำงานเดิมคงครบ: ชิปเมนูดึงจาก NAV_ITEMS (ห้ามพิมพ์ list มือ) ·
    กรองสิทธิ์ role · theme toggle/logout · .hub-topbar มือถือกลับเข้า flow */
 
 const MONO = "ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
@@ -218,8 +219,9 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
       if (upErr) throw upErr;
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      const { error: dbErr } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user.id);
-      if (dbErr) throw dbErr;
+      // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error (บั๊กเดียวกับลายเซ็น 2026-08-17)
+      const res = await saveMyProfileMedia('avatar_url', publicUrl);
+      if (!res.ok) throw new Error(res.message);
       // ลบไฟล์เก่า best-effort หลัง DB update สำเร็จเท่านั้น (กฎ Storage E2) — เฉพาะโฟลเดอร์ตัวเอง
       if (userAvatarUrl?.includes('/avatars/')) {
         const old = decodeURIComponent(userAvatarUrl.split('/avatars/')[1] || '').split('?')[0];
@@ -280,8 +282,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
   const openMenu = (e, d, to) => {
     e.stopPropagation(); // อย่าให้ card onClick ยิงซ้ำ
-    if (d.navGroups) focusSidebarGroups(d.navGroups);
-    navigate(to);
+    navigate(to);   // rail/accordion ไฮไลต์+เปิดหมวดของหน้าปลายทางเองแล้ว ไม่ต้องสั่งโฟกัสหมวด
   };
 
   return (
@@ -453,7 +454,6 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             style={{ '--mc': d.color, animation: `hub-fade-up 0.55s ease ${0.12 + 0.07 * i}s both` }}
             onClick={() => {
               if (!d.available) return;
-              if (d.navGroups) focusSidebarGroups(d.navGroups); // กาง sidebar เฉพาะหมวดของโมดูลนี้
               navigate(d.route);
             }}
           >

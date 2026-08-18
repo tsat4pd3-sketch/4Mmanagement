@@ -6,7 +6,7 @@ import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { fmtDate } from '../utils/dateFormat';
-import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht } from '../utils/costSaving';
+import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 
 /* ── helpers ─────────────────────────────────────────────────── */
@@ -385,16 +385,16 @@ export default function Improvements() {
         const dQtyPerDay = (r.beforeDays ? (r.matBefore?.[matKey] || 0) / r.beforeDays : 0)
           - (r.afterDays ? (r.matAfter?.[matKey] || 0) / r.afterDays : 0);
         const part = mat ? partCostByMat[mat] : null;
-        const std = Number(part?.standard_cost);
-        const matCost = Number(part?.material_cost);
-        if (std > 0) {
-          matPerDay += dQtyPerDay * std;
-          defectParts.push({ mat, dQtyPerDay, unit: std, source: 'standard' });
-        } else if (matCost > 0) {
-          matPerDay += dQtyPerDay * matCost;
-          const ct = ctByMat[mat] || 0;
+        // สูตรต้นทุน/ชิ้น = util กลาง (ใช้ร่วมกับแผงมูลค่าของเสียใน /oee-analytics)
+        const ct = ctByMat[mat] || 0;
+        const uc = defectUnitCost(part, { ratePerHr: rate ? ratePerHour(rate, costComps) : 0, ctSec: ct });
+        if (uc.source === 'standard') {
+          matPerDay += dQtyPerDay * uc.unit;
+          defectParts.push({ mat, dQtyPerDay, unit: uc.unit, source: 'standard' });
+        } else if (uc.source === 'derived') {
+          matPerDay += dQtyPerDay * (Number(part?.material_cost) || 0);
           if (ct && rate) addComp(dQtyPerDay * ct / 3600);
-          defectParts.push({ mat, dQtyPerDay, unit: matCost + (ct && rate ? ratePerHour(rate, costComps) * ct / 3600 : 0), source: 'derived', convMissing: !ct || !rate });
+          defectParts.push({ mat, dQtyPerDay, unit: uc.unit, source: 'derived', convMissing: uc.convMissing });
         } else {
           defectNoCost.add(mat || 'ไม่ระบุ MAT');
         }

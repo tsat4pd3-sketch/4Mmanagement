@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import useIsMobile from '../utils/useIsMobile';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 
@@ -164,6 +165,7 @@ async function loadProduction(ctx) {
     ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', ids) : { data: [] },
     supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
     ids7.length ? supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', ids7) : { data: [] },
+    loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 6 ไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
   return { sess, sess7: sess7 || [], orders: orders || [], dts: dts || [], defs: defs || [], prods: prods || [], dt7: dt7 || [], fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
@@ -190,7 +192,7 @@ function ProductionView({ d, ctx }) {
         e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
       });
       const nulls = os.filter(od => !od.mat_no);
-      const pt = pairAwareTotal(Object.values(perMat), pairOf);
+      const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
       L.target += pt.target + nulls.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
       L.actual += pt.produced + nulls.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
       let planned = 0;
@@ -534,7 +536,19 @@ async function loadQa(ctx) {
     ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, mat_no, dr_defect_types(name)').in('session_id', ids) : { data: [] },
     ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [] },
   ]);
-  return { sess: scoped, defs: defs || [], orders: orders || [], fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), lpa: (lpa.data || []).filter(a => inScope(a.line_name)) };
+  /* ลูปปิด 8D → PE: CAPA ที่ปิดแล้ว เอกสาร PFMEA/Control Plan ตามแก้หรือยัง (IATF §10.2.3/10.2.4)
+     ⚠️ best-effort — ยังไม่ apply migration 20260817 = คอลัมน์/ตารางไม่มี ต้องไม่ทำทั้งหน้าพัง */
+  let capa = [], crOpen = 0, claims = [];
+  try {
+    const [{ data: cp }, { count: n }, { data: cl }] = await Promise.all([
+      supabase.from('qa_capa').select('id, capa_no, title, status, due_date, pe_review_status, closed_at').order('created_at', { ascending: false }).limit(200),
+      supabase.from('pe_change_requests').select('id', { count: 'exact', head: true }).in('status', ['proposed', 'accepted']),
+      supabase.from('qa_customer_claims').select('id, claim_no, claim_date, customer, part_no, defect_desc, status, due_reply_date, replied_at, capa_id').order('claim_date', { ascending: false }).limit(200),
+    ]);
+    capa = cp || []; crOpen = n || 0; claims = cl || [];
+  } catch { /* ไม่มีตาราง = ถือว่ายังไม่เปิดใช้ ลูปนี้ */ }
+  return { sess: scoped, defs: defs || [], orders: orders || [], capa, crOpen, claims,
+    fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), lpa: (lpa.data || []).filter(a => inScope(a.line_name)) };
 }
 
 function QaView({ d, ctx }) {
@@ -558,6 +572,21 @@ function QaView({ d, ctx }) {
     .map(x => ({ ...x, audit_date: a.audit_date, line_name: a.line_name, layer: a.layer, station: a.station }))
   ).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)), [d.lpa]);
 
+  /* ── ลูปปิด 8D → เอกสาร PE ── */
+  const capa = d.capa || [];
+  const capaClosed = capa.filter(c => c.status === 'closed');
+  const peDone = capaClosed.filter(c => c.pe_review_status === 'done' || c.pe_review_status === 'na').length;
+  const peRate = capaClosed.length ? Math.round(peDone / capaClosed.length * 100) : null;
+  const capaOpen = capa.filter(c => c.status !== 'closed');
+  /* ปิดปัญหาไปแล้วแต่ยังไม่ตอบเรื่องเอกสาร = ช่องว่างที่ auditor ถามแน่ */
+  const capaNoPe = capaClosed.filter(c => (c.pe_review_status || 'pending') === 'pending');
+
+  /* ── เคลมลูกค้า — ของเสียที่หลุดออกไปถึงลูกค้าแล้ว (ระดับความเร่งด่วนสูงสุดของ QA) ── */
+  const claims = d.claims || [];
+  const claimOpen = claims.filter(c => c.status !== 'closed');
+  const claimLate = claimOpen.filter(c => c.due_reply_date && c.due_reply_date < workDate && !c.replied_at);
+  const claimNo8D = claimOpen.filter(c => !c.capa_id);
+
   const defRecords = d.defs.map(x => ({
     cat: x.dr_defect_types?.name || 'ไม่ระบุประเภท', value: (+x.qty_ng || 0) + (+x.qty_suspect || 0),
     line: sMap[x.session_id]?.line_name || '-', product: x.mat_no || '(ไม่ระบุ)',
@@ -567,6 +596,18 @@ function QaView({ d, ctx }) {
   const actions = [
     ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: '#f59e0b', to: fourMLink(f) })),
     ...noLog.map(l => ({ icon: '❔', title: `${l} — ยังไม่มีบันทึกของเสียวันนี้`, detail: 'ของดี 100% จริง หรือยังไม่ได้ลงบันทึก?', tag: 'ตรวจสอบ', tagColor: '#f59e0b', to: '/daily-report' })),
+    /* เคลมลูกค้าขึ้นก่อนเสมอ — ลูกค้ารออยู่ */
+    ...claimLate.slice(0, 5).map(c => ({ icon: '⏰', title: `เลยกำหนดตอบลูกค้า — ${c.claim_no} (${c.customer})`,
+      detail: (c.defect_desc || '').slice(0, 45), age: daysSince(`${c.due_reply_date}T08:00:00`),
+      tag: 'ด่วน', tagColor: '#ef4444', to: '/qa?tab=claims' })),
+    ...claimNo8D.slice(0, 5).map(c => ({ icon: '📮', title: `${c.claim_no} ยังไม่ได้เปิด 8D`,
+      detail: `${c.customer} · ${(c.defect_desc || '').slice(0, 40)}`, age: daysSince(`${c.claim_date}T08:00:00`),
+      tag: 'ต้องมี 8D', tagColor: '#f59e0b', to: '/qa?tab=claims' })),
+    ...capaNoPe.slice(0, 5).map(c => ({ icon: '🔗', title: `${c.capa_no} ปิดแล้ว แต่ยังไม่ทบทวน PFMEA/Control Plan`,
+      detail: (c.title || '').slice(0, 45), age: c.closed_at ? daysSince(c.closed_at) : null,
+      tag: 'IATF 10.2.4', tagColor: '#ef4444', to: '/qa?tab=capa' })),
+    ...(d.crOpen ? [{ icon: '📥', title: `คำขอแก้เอกสาร PE ค้าง ${d.crOpen} รายการ`,
+      detail: 'ทีม PE ยังไม่ได้พิจารณา/ออก revision', tag: 'รอ PE', tagColor: '#f59e0b', to: '/pe-docs' }] : []),
     ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/daily-checker?tab=lpa' })),
   ];
 
@@ -584,6 +625,14 @@ function QaView({ d, ctx }) {
       <Kpi label="📝 4M รออนุมัติ QA" value={d.fourM.length} unit="ใบ" color={d.fourM.length ? '#f59e0b' : '#22c55e'} sub="ค้างที่ QA" />
       <Kpi label="📋 LPA พบปัญหา" value={lpaIssues.length} unit="ข้อ" color={lpaIssues.length ? '#f59e0b' : '#22c55e'} sub="ตอบ N/T ใน 30 วัน" />
       <Kpi label="🧾 การตรวจ LPA" value={d.lpa.length} unit="ครั้ง" sub="30 วันล่าสุด" />
+      <Kpi label="📮 เคลมลูกค้าที่ยังไม่ปิด" value={claimOpen.length} unit="ใบ"
+        color={claimLate.length ? '#ef4444' : claimOpen.length ? '#f59e0b' : '#22c55e'}
+        sub={claimLate.length ? `เลยกำหนดตอบ ${claimLate.length} ใบ` : (claimNo8D.length ? `ยังไม่เปิด 8D ${claimNo8D.length} ใบ` : 'ไม่มีค้าง')} />
+      <Kpi label="🔗 8D ปิดแล้ว เอกสารตามครบ" value={peRate == null ? '—' : `${peRate}%`}
+        color={peRate == null ? undefined : peRate >= 90 ? '#22c55e' : peRate >= 50 ? '#f59e0b' : '#ef4444'}
+        sub={capaClosed.length ? `${peDone}/${capaClosed.length} ใบ · IATF §10.2.4` : 'ยังไม่มี 8D ที่ปิด'} />
+      <Kpi label="🛠 8D ค้างดำเนินการ" value={capaOpen.length} unit="ใบ" color={capaOpen.length ? '#f59e0b' : '#22c55e'}
+        sub={d.crOpen ? `คำขอแก้เอกสารค้าง ${d.crOpen}` : 'ไม่มีคำขอแก้เอกสารค้าง'} />
     </div>
 
     <ParetoAbcChart title="🚫 ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
@@ -594,6 +643,7 @@ function QaView({ d, ctx }) {
       <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'],
         // คิวอนุมัติ 4M ทั้งก้อน — from = ใบเก่าสุด (d.fourM เรียงวันจากเก่าไปใหม่) ให้เห็นครบทุกใบที่ค้าง
         [`${FOURM_TAB}&status=pending_qa${d.fourM.length ? `&from=${d.fourM[0].work_date}` : ''}`, '📝 4M รออนุมัติ', d.fourM.length],
+        ['/qa?tab=claims', '📮 เคลมลูกค้า', claimOpen.length], ['/qa?tab=capa', '🛠 8D / CAPA', capaOpen.length], ['/pe-docs', '📐 PFMEA / Control Plan', d.crOpen],
         ['/qa-setup', '📐 มาตรฐานการตรวจ'], ['/daily-checker?tab=lpa', '📋 LPA', lpaIssues.length], ['/scrap-report', '♻️ ใบรายงานของเสีย'], ['/event-log', '⚡ CQI-15']]} />
     </Section>
   </>);

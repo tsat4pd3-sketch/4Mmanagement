@@ -34,9 +34,10 @@
   --font-body:    'Sarabun', 'Tahoma', sans-serif;
   --font-display: 'Tahoma', 'Sarabun', sans-serif;
 
-  --sidebar-w:        252px;
+  --sidebar-w:        252px;   /* ความกว้าง "แผงเมนู" (drawer มือถือ + แผงหมวดของ rail) */
   --sidebar-w-tablet: 210px;
   --sidebar-w-tv:     280px;
+  --rail-w:           64px;    /* แถบไอคอนหมวด (desktop sidebar แบบ D · 2026-08-18) — เนื้อหาหลักเสียแค่เท่านี้ */
   --radius:    4px;
   --radius-sm: 3px;
   --radius-lg: 8px;

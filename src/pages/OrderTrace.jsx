@@ -10,6 +10,7 @@ import { toast } from '../components/Toast';
 import { deptNameOf } from '../utils/mtnTeams';
 import { isParallelLine } from '../utils/lineTypes';
 import { noteSimilarity, CLUSTER_THRESHOLD } from '../utils/textCluster';
+import { PART_WORDS, wordGroups } from '../utils/peLink';
 import PageHeader from '../components/PageHeader';
 
 /*
@@ -56,27 +57,8 @@ const FALLBACK_BATCH_SEC = 180;
 const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: bg, color: fg });
 
 /* ── โฟกัสการสอบสวนตาม "อาการที่ลูกค้าแจ้ง" ────────────────────────────────────────────
-   กลุ่มคำของชิ้นส่วน/อาการ ที่คนเขียนต่างกันได้ (ไทย/อังกฤษ) — จำเป็นเพราะ FMEA เขียน
-   "Missing nut" แต่ลูกค้า/หน้างานเขียน "นัทไม่มี" เทียบตรงๆ ไม่มีวันเจอกัน
-   (หลักเดียวกับ EQUIP_SYN ใน AdoptionOutlook · ตัวจับคู่ n-gram ข้ามภาษาไม่ได้)
-   ⚠️ ใช้แค่ **โฟกัสว่าจุดไหนเกี่ยวข้อง** ไม่ได้ใช้สรุปสาเหตุ — คนยังเป็นคนตัดสิน */
-const PART_WORDS = [
-  { key: 'nut', label: 'นัท', w: ['nut', 'นัท', 'น็อต', 'น๊อต'] },
-  { key: 'bolt', label: 'โบลท์/สลัก', w: ['bolt', 'โบลท์', 'สลัก'] },
-  { key: 'stud', label: 'สตัด', w: ['stud', 'สตัด'] },
-  { key: 'rivet', label: 'ริเวท', w: ['rivet', 'ริเวท', 'ย้ำ'] },
-  { key: 'weld', label: 'รอยเชื่อม', w: ['weld', 'เชื่อม', 'สปอต', 'spot'] },
-  { key: 'hole', label: 'รู/เจาะ', w: ['hole', 'รู', 'เจาะ', 'pierce'] },
-  { key: 'burr', label: 'ครีบ/คม', w: ['burr', 'ครีบ', 'คม'] },
-  { key: 'dim', label: 'ขนาด/รูปทรง', w: ['dimension', 'gap', 'ขนาด', 'เบี้ยว', 'บิด', 'offset'] },
-  { key: 'crack', label: 'แตก/ร้าว', w: ['crack', 'แตก', 'ร้าว'] },
-  { key: 'scratch', label: 'รอยขีดข่วน', w: ['scratch', 'ขีดข่วน', 'รอย'] },
-];
-/* คืนกลุ่มคำที่พบในข้อความ (ใช้ทั้งกับ failure_mode และรายละเอียดที่ผู้ใช้พิมพ์) */
-const wordGroups = (txt) => {
-  const s = (txt || '').toLowerCase();
-  return PART_WORDS.filter(g => g.w.some(w => s.includes(w)));
-};
+   กลุ่มคำของชิ้นส่วน/อาการ (ไทย/อังกฤษ) ย้ายไปอยู่ `src/utils/peLink.js` แล้ว (2026-08-17)
+   — ตอนนี้มีผู้ใช้ 2 ที่ (หน้านี้ + ลูปปิด 8D→PE) ต้องนิยามที่เดียว เพิ่มคำใหม่แก้ที่ util */
 
 export default function OrderTrace() {
   const { role, lineId, sections } = useContext(UserContext);
