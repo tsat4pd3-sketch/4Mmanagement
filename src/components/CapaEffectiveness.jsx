@@ -10,7 +10,7 @@
      · ปิดใบทั้งที่ตัวเลขไม่ลด = ทำได้ แต่ต้องยืนยัน แล้ว stamp ไว้ให้เห็นตลอดไป
        (บล็อกแข็งเกินไป คนจะเลี่ยงด้วยการไม่เปิด CAPA เลย ซึ่งแย่กว่า) */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { sumDefectQty } from '../utils/oee';
 import {
@@ -58,15 +58,19 @@ function Bars({ m }) {
 /**
  * @param {object}   capa      แถว qa_capa ที่กำลังเปิดอยู่
  * @param {function} onChange  (patch) => void  แก้ค่าใน state ของโมดัลแม่
- * @param {boolean}  canEdit   ตั้งค่าการวัดได้ไหม (qa:record)
- * @param {function} onResult  (judge, measure) => void  ส่งผลกลับให้แม่ใช้ตอนกดปิดใบ
+ * @param {boolean}  canEdit         ตั้งค่าการวัดได้ไหม (qa:record)
+ * @param {boolean}  canWriteResult  เขียนช่อง "ผลตรวจประสิทธิผล" ได้ไหม (qa:manage — ต้องตรงกับ gate ของช่องนั้น)
+ * @param {function} onResult        (judge, measure, loading) => void  ส่งผลกลับให้แม่ใช้ตอนกดปิดใบ
  */
-export default function CapaEffectiveness({ capa, onChange, canEdit, onResult }) {
+export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteResult, onResult }) {
   const [types, setTypes] = useState([]);
   const [data, setData] = useState(null);      // { m, sessions } หรือ null
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [noTrial, setNoTrial] = useState(false);  // ยังไม่มีธงงานทดลองในฐาน = ตัวเลขรวม try-out ปนมา
+  const [typesErr, setTypesErr] = useState(false);
+  const [capped, setCapped] = useState(false);    // หน้าต่างเทียบยังเดินไม่ครบ = ผลระหว่างทาง
+  const seqRef = useRef(0);                       // กันผลลัพธ์เก่ากลับมาทับผลใหม่ (ช่องไลน์/พาร์ทพิมพ์อิสระ)
 
   const pivot = capa.d6_effective_from || '';
   const win = Number(capa.eff_window_days) || DEFAULT_WINDOW;
@@ -82,21 +86,33 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
     [closed, capa.eff_verdict, capa.eff_snapshot],
   );
 
+  /* ⚠️ supabase-js **คืน** { error } ไม่ throw → .catch() เป็นโค้ดตาย
+     โหลดประเภทไม่ได้แล้วเงียบ = dropdown ว่าง → คนวัดแบบ "ทุกประเภททั้งไลน์" โดยไม่รู้ตัว
+     ซึ่งให้ verdict คนละตัวกับที่ตั้งใจ */
   useEffect(() => {
-    supabaseDR.from('dr_defect_types').select('id, name_th, is_active').eq('is_active', true).order('sort_order')
-      .then(({ data: d }) => setTypes(d || [])).catch(() => {});
+    (async () => {
+      const { data: d, error } = await supabaseDR.from('dr_defect_types')
+        .select('id, name_th, is_active').eq('is_active', true).order('sort_order');
+      if (error) { console.warn('[capaEffect] โหลดประเภทของเสียไม่ได้', error); setTypesErr(true); return; }
+      setTypes(d || []); setTypesErr(false);
+    })();
   }, []);
 
   const load = useCallback(async () => {
     if (stamped) return;
+    /* กันผลลัพธ์เก่าทับผลใหม่ — ช่อง "ไลน์ผลิต"/"เลขพาร์ท" เป็น input พิมพ์อิสระ
+       response ของชื่อที่พิมพ์ค้างกลางคันอาจกลับมาช้ากว่าแล้ว setData ทับตัวที่ถูก */
+    const reqId = ++seqRef.current;
+    const fresh = () => reqId === seqRef.current;
     const w = effectWindow(pivot, win);
-    if (!w || !capa.line_name) { setData(null); return; }
+    if (!w || !capa.line_name) { setData(null); setCapped(false); return; }
     setLoading(true); setErr('');
     try {
       const { data: sessions, error: e1 } = await supabaseDR.from('production_sessions')
         .select('id, work_date').eq('line_name', capa.line_name)
         .gte('work_date', w.from).lte('work_date', w.to).limit(2000);
       if (e1) throw e1;
+      if (!fresh()) return;
       if (!sessions?.length) { setData({ m: null, empty: true }); return; }
 
       /* ⚠️ ต้อง select excl_from_q ผ่าน join — ไม่งั้นเห็นแค่ is_trial แล้วงานทดลอง
@@ -121,7 +137,8 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
         if (e2) throw e2;
         rows = rows.concat(d || []);
       }
-      setNoTrial(noTrialFlag);
+      if (!fresh()) return;
+      setNoTrial(noTrialFlag); setCapped(w.capped);
       // จำกัดเฉพาะพาร์ทของใบนี้ ถ้าระบุ (mat_no ของ dr_products ≠ part_no ลูกค้าเสมอไป → เทียบทั้ง 2 ทาง)
       const pn = (capa.part_no || '').trim().toUpperCase().replace(/[\s-]/g, '');
       const filtered = pn
@@ -132,21 +149,29 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
         : rows;
       setData({ m: splitBeforeAfter(sessions, filtered, pivot, (r) => sumDefectQty(r, 'line')), matched: filtered.length, raw: rows.length });
     } catch (e) {
+      if (!fresh()) return;
       setErr(e?.message || String(e));
       setData(null);
-    } finally { setLoading(false); }
+    } finally { if (fresh()) setLoading(false); }
   }, [pivot, win, capa.line_name, capa.part_no, capa.eff_defect_type_id, stamped]);
 
-  useEffect(() => { load(); }, [load]);
+  /* debounce — ไม่งั้นยิง query ทุกตัวอักษรที่พิมพ์ในช่องไลน์/เลขพาร์ท */
+  useEffect(() => { const t = setTimeout(load, 450); return () => clearTimeout(t); }, [load]);
 
+  /* ⚠️ ต้องคืน verdict เสมอ ห้ามคืน null —
+     null ทำให้ตอนกดปิดใบ ไม่เข้าทั้ง 2 สาขา confirm แล้ว **ไม่ stamp eff_verdict**
+     → ใบนั้นหายจาก KPI "8D ที่ของเสียลดจริง" และคิว "ปิดแล้วแต่ไม่ลด" แบบเงียบ
+     (ขัดกฎเฟส 4 ข้อ 5: stamp ผลไว้เสมอ) · `loading` แยกไว้กันปิดตอนตัวเลขยังไม่นิ่ง */
   const judged = useMemo(() => {
     if (stamped) return stamped.j;
-    if (!pivot) return judgeEffect(null);
-    if (!data || !data.m) return data?.empty ? judgeEffect({ beforeDays: 0, afterDays: 0 }) : null;
+    if (!pivot) return judgeEffect(null);                              // no_pivot
+    if (!capa.line_name) return judgeEffect({ beforeDays: 0, afterDays: 0 }); // no_data — ไม่รู้ว่าไลน์ไหน
+    if (data?.empty) return judgeEffect({ beforeDays: 0, afterDays: 0 });
+    if (!data?.m) return judgeEffect({ beforeDays: 0, afterDays: 0 }); // โหลดพัง/ยังไม่เสร็จ = ยังไม่รู้ (ไม่ใช่ "ไม่ได้ผล")
     return judgeEffect(data.m);
-  }, [stamped, pivot, data]);
+  }, [stamped, pivot, capa.line_name, data]);
 
-  useEffect(() => { onResult?.(judged, stamped ? stamped.m : data?.m); }, [judged, data, stamped]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onResult?.(judged, stamped ? stamped.m : data?.m, loading); }, [judged, data, stamped, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const m = stamped ? stamped.m : data?.m;
   const V = judged ? VERDICTS[judged.verdict] : null;
@@ -157,12 +182,12 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
       <div style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12.5, fontWeight: 800 }}>📉 ประสิทธิผลจากข้อมูลจริง</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>ของเสียต่อวันผลิต ก่อน/หลังมาตรการมีผล</span>
-        {V && (
+        {V && !loading && (
           <span style={{ marginLeft: 'auto', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 800, color: V.color, background: `${V.color}22`, border: `1px solid ${V.color}66` }}>
             {V.short}
           </span>
         )}
-        {stamped && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>· ค่าที่บันทึกไว้ตอนปิดใบ</span>}
+        {stamped && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· ค่าที่บันทึกไว้ตอนปิดใบ</span>}
       </div>
 
       <div style={{ padding: 12, display: 'grid', gap: 10 }}>
@@ -212,6 +237,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
         {closed && !capa.eff_verdict && (
           <Note>ℹ️ ใบนี้ปิดไปก่อนที่ระบบจะมีการวัดประสิทธิผล — {pivot ? <>ตัวเลขข้างล่าง<b>คำนวณสด ณ ตอนนี้</b> ไม่ใช่ค่าที่บันทึกไว้ตอนปิดใบ</> : <>และไม่ได้ระบุวันที่มาตรการมีผล จึงย้อนวัดให้ไม่ได้</>}</Note>
         )}
+        {typesErr && <Note tone="warn">⚠️ โหลดรายการ <b>ประเภทของเสีย</b> ไม่สำเร็จ — ตอนนี้วัดแบบ "ทุกประเภท" เลือกเจาะจงประเภทไม่ได้</Note>}
         {noTrial && <Note tone="warn">⚠️ ฐานข้อมูลยังไม่มีธง <b>งานทดลอง (try-out)</b> — ตัวเลขนี้จึงรวมของเสียตอนลองแม่พิมพ์/ลองงานใหม่เข้ามาด้วย (apply migration 20260817_defect_trial_flag แล้วจะแยกให้อัตโนมัติ)</Note>}
         {err && <Note tone="bad">🔴 โหลดข้อมูลไม่สำเร็จ — <b>ตัวเลขที่เห็นอาจไม่ครบ</b><br />{err}</Note>}
         {loading && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>กำลังคำนวณ…</div>}
@@ -236,10 +262,11 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
             )}
           </>
         )}
+        {capped && m && <Note>⏳ หน้าต่างเทียบ {win} วัน<b>ยังเดินไม่ครบ</b> — ผลนี้เป็นค่าระหว่างทาง จะนิ่งขึ้นเมื่อครบหน้าต่าง</Note>}
         {data?.empty && <Note tone="warn">⚠️ ไม่พบกะที่เปิดผลิตของไลน์ <b>{capa.line_name}</b> ในช่วงที่วัด — ตรวจว่าชื่อไลน์ตรงกับที่ใช้ใน Daily Report ไหม</Note>}
 
         {/* ── เติมผลลงช่องประสิทธิผล (คนแก้ต่อได้) ── */}
-        {!closed && m && judged && canEdit && (
+        {!closed && m && judged && canWriteResult && (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button style={btn('#4d9fff', '#fff')} onClick={() => onChange({
               effectiveness: [capa.effectiveness?.trim(), effectSummaryText(m, judged, { pivot, windowDays: win, typeLabel })].filter(Boolean).join('\n\n'),
@@ -247,7 +274,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, onResult })
           </div>
         )}
 
-        <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.6, borderTop: '1px dashed var(--border2)', paddingTop: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, borderTop: '1px dashed var(--border2)', paddingTop: 8 }}>
           หารด้วย <b>จำนวนวันที่ไลน์ผลิตจริง</b> ไม่ใช่วันปฏิทิน (ไลน์หยุด ของเสียเป็น 0 ไม่ได้แปลว่าได้ผล) ·
           {noTrial ? '' : 'ไม่นับ'}<b>งานทดลอง</b>{noTrial ? ' ถูกนับรวมอยู่' : ' (try-out)'} · ตัวเลขนี้เป็น<b>สัญญาณ ไม่ใช่คำตัดสิน</b> — คนเป็นผู้สรุป
         </div>

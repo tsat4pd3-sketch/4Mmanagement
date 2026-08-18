@@ -2279,7 +2279,7 @@ Environment Variables:
 | `supabase/migrations/20260817_pe_change_requests.sql` | ตาราง `pe_change_requests` + คอลัมน์ `qa_capa.part_no/line_name/pe_review_status` + `qa_ncr.pe_set_id` |
 | `src/utils/peLink.js` | **ตัวจับคู่ + ตัวเสนอ (pure ไม่ import supabase โดยตั้งใจ)** · `PART_WORDS`/`wordGroups` (ย้ายมาจาก OrderTrace) · `matchScore`/`rankItems`/`suggestChanges`/`matchDocSet` |
 | `src/components/PeChangeRequests.jsx` | จอเดียวใช้ 2 ฝั่ง — `mode="source"` (โมดัล 8D ใน `/qa`) · `mode="inbox"` (`/pe-docs`) |
-| `supabase/migrations/20260818_capa_effectiveness.sql` | คอลัมน์วัดประสิทธิผลบน `qa_capa` (`d6_effective_from`/`eff_window_days`/`eff_defect_type_id`/`eff_verdict`/`eff_snapshot`) |
+| `supabase/migrations/20260818_capa_effectiveness.sql` **⬜ ยังไม่ apply** | คอลัมน์วัดประสิทธิผลบน `qa_capa` (`d6_effective_from`/`eff_window_days`/`eff_defect_type_id`/`eff_verdict`/`eff_snapshot`) |
 | `src/utils/capaEffect.js` | **สูตรวัดประสิทธิผลทั้งหมด (pure เทสได้)** — `effectWindow`/`splitBeforeAfter`/`judgeEffect`/`effectSummaryText` |
 | `src/components/CapaEffectiveness.jsx` | แผงในโมดัล 8D — ตั้งค่าการวัด + แถบเทียบก่อน/หลัง + ปุ่มเติมผลลงช่องประสิทธิผล |
 
@@ -2302,7 +2302,8 @@ Environment Variables:
 3. **ต้องหารด้วยวันผลิตจริง** — ไลน์หยุด 5 วันแล้วของเสียเป็น 0 **ไม่ได้แปลว่าได้ผล** · `afterDays < 5` = ยังวัดไม่ได้ ห้ามตัดสิน · ก่อนหน้าไม่มีของเสียเลย = `no_baseline` (เกณฑ์ที่ตั้งอาจไม่ตรงอาการ) ไม่ใช่ "ได้ผล"
 4. **ปิดใบแล้ว = อ่าน `eff_snapshot` ที่ stamp ไว้ ห้ามคำนวณใหม่** — ของเสียถูกแก้/เพิ่มทีหลังได้ คำนวณสดจะทำให้ใบที่ปิดแล้วเปลี่ยนคำตอบเองเงียบๆ (หลักเดียวกับ OEE ที่ stamp ตอนปิดกะ)
 5. **เตือนดังตอนปิด แต่ไม่บล็อก + stamp ผลเสมอ** — บล็อกแข็งคนจะเลี่ยงด้วยการไม่ตั้งค่าการวัดเลย · แต่ "ปิดทั้งที่ตัวเลขไม่ลด" ต้องเห็นตลอดไป (ชิปในลิสต์ CAPA + คิวงานบน dashboard) · **ระบบไม่ auto-reopen ใบ**
-6. **กับดักที่เกือบพลาด:** `stamped` ต้อง `useMemo` (ไม่งั้น `load` เปลี่ยน identity → ยิง DB วนไม่จบ ซึ่ง build จับไม่ได้) · `dr_defect_types` คอลัมน์ชื่อ **`name_th` ไม่ใช่ `name`** · ธง `is_trial`/`excl_from_q` ยังไม่ apply = ถอย select ชุดเดิม **แล้วต้องบอกบนจอว่าตัวเลขรวมงานทดลองปนมา**
+6. **`judgeEffect` ต้องคืน verdict เสมอ ห้ามคืน `null`** — `null` ทำให้ตอนปิดใบไม่เข้าสาขา confirm แล้วไม่ stamp `eff_verdict` → ใบหายจาก KPI เงียบๆ (เกิดจริงตอนกรอก pivot แล้วแต่ยังไม่กรอกไลน์)
+7. **กับดักที่เกือบพลาด:** `stamped` ต้อง `useMemo` (ไม่งั้น `load` เปลี่ยน identity → ยิง DB วนไม่จบ ซึ่ง build จับไม่ได้) · `dr_defect_types` คอลัมน์ชื่อ **`name_th` ไม่ใช่ `name`** · ธง `is_trial`/`excl_from_q` ยังไม่ apply = ถอย select ชุดเดิม **แล้วต้องบอกบนจอว่าตัวเลขรวมงานทดลองปนมา** · `.then().catch()` บน supabase-js เป็นโค้ดตาย (คืน `{error}` ไม่ throw) · ช่อง input พิมพ์อิสระที่เป็น deps ของ loader ต้อง debounce + กันผลเก่าทับผลใหม่ · ปุ่มที่เขียนค่าลงช่องหนึ่ง ต้อง gate ด้วยสิทธิ์เดียวกับช่องนั้น
 
 ### ⚠️ ตัวจับคู่: กลุ่มคำ = ตัวกรอง · n-gram = ตัวจัดอันดับ (ห้ามเอามาบวกกันตรงๆ)
 ไทย↔อังกฤษ n-gram แทบเป็น 0 เสมอ ("นัทไม่มี" vs "Missing nut") ต้องให้กลุ่มคำยกพื้นให้ **แต่ยกได้แค่ระดับเบาะแส (< STRONG)** เพราะคำเดียวกันมีได้หลายสิบข้อในเอกสารเดียว

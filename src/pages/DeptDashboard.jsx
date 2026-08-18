@@ -28,17 +28,13 @@ function getWorkDate() {
   if (d.getHours() < 8) d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+/* บวกวันบน 'YYYY-MM-DD' แบบ local — ห้าม toISOString (UTC เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
 const dayAdd = (s, n) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); } catch { return s; } };
 const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
 const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null;
-/* บวกวันบน 'YYYY-MM-DD' แบบ local — ห้าม toISOString (UTC เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
-const addDaysStr = (s, n) => {
-  const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 const dtMinOf = (d) => d.duration_min != null ? (Number(d.duration_min) || 0)
   : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
 const isOpenDT = (d) => !d.ended_at && d.duration_min == null;
@@ -537,10 +533,16 @@ async function loadQa(ctx) {
   ]);
   const scoped = (sess || []).filter(s => inScope(s.line_name));
   const ids = scoped.map(s => s.id);
-  const [{ data: defs }, { data: orders }] = await Promise.all([
-    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, mat_no, dr_defect_types(name)').in('session_id', ids) : { data: [] },
-    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [] },
+  /* ⚠️ defect_logs **ไม่มีคอลัมน์ `mat_no`** (mat มาจาก prod_orders) และ dr_defect_types ใช้ `name_th` ไม่ใช่ `name`
+     เดิม select ผิดทั้ง 2 จุด → 42703 → `defs = []` เงียบๆ → KPI ของเสีย/PPM/พาเรโตของ QA เป็น 0 มาตลอด
+     → เช็ค error ด้วย ไม่งั้นบั๊กชนิดเดียวกันซ่อนตัวได้อีก (supabase-js คืน { error } ไม่ throw) */
+  const [defRes, ordRes] = await Promise.all([
+    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, prod_orders(mat_no), dr_defect_types(name_th)').in('session_id', ids) : { data: [], error: null },
+    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [], error: null },
   ]);
+  if (defRes.error) console.warn('[deptDashboard/qa] โหลดของเสียไม่สำเร็จ', defRes.error);
+  if (ordRes.error) console.warn('[deptDashboard/qa] โหลดใบผลิตไม่สำเร็จ', ordRes.error);
+  const defs = defRes.data, orders = ordRes.data;
   /* ลูปปิด 8D → PE: CAPA ที่ปิดแล้ว เอกสาร PFMEA/Control Plan ตามแก้หรือยัง (IATF §10.2.3/10.2.4)
      ⚠️ best-effort — ยังไม่ apply migration 20260817 = คอลัมน์/ตารางไม่มี ต้องไม่ทำทั้งหน้าพัง */
   let capa = [], crOpen = 0, claims = [];
@@ -562,6 +564,7 @@ async function loadQa(ctx) {
     crOpen = n || 0; claims = cl || [];
   } catch { /* ไม่มีตาราง = ถือว่ายังไม่เปิดใช้ ลูปนี้ */ }
   return { sess: scoped, defs: defs || [], orders: orders || [], capa, crOpen, claims,
+    loadErr: !!(defRes.error || ordRes.error),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), lpa: (lpa.data || []).filter(a => inScope(a.line_name)) };
 }
 
@@ -604,7 +607,7 @@ function QaView({ d, ctx }) {
     ? Math.round(capaMeasured.filter(c => c.eff_verdict === 'effective').length / capaMeasured.length * 100) : null;
   /* ใบที่ส่งตรวจประสิทธิผลแล้ว และหน้าต่างวัดผลครบแล้ว = ถึงเวลาสรุป (ไม่ใช่ปล่อยค้าง) */
   const capaDueVerify = capa.filter(c => c.status === 'verify' && c.d6_effective_from
-    && addDaysStr(c.d6_effective_from, Number(c.eff_window_days) || 30) <= workDate);
+    && dayAdd(c.d6_effective_from, Number(c.eff_window_days) || 30) <= workDate);
 
   /* ── เคลมลูกค้า — ของเสียที่หลุดออกไปถึงลูกค้าแล้ว (ระดับความเร่งด่วนสูงสุดของ QA) ── */
   const claims = d.claims || [];
@@ -613,8 +616,8 @@ function QaView({ d, ctx }) {
   const claimNo8D = claimOpen.filter(c => !c.capa_id);
 
   const defRecords = d.defs.map(x => ({
-    cat: x.dr_defect_types?.name || 'ไม่ระบุประเภท', value: (+x.qty_ng || 0) + (+x.qty_suspect || 0),
-    line: sMap[x.session_id]?.line_name || '-', product: x.mat_no || '(ไม่ระบุ)',
+    cat: x.dr_defect_types?.name_th || 'ไม่ระบุประเภท', value: (+x.qty_ng || 0) + (+x.qty_suspect || 0),
+    line: sMap[x.session_id]?.line_name || '-', product: x.prod_orders?.mat_no || '(ไม่ระบุ)',
     shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
   })).filter(r => r.value > 0);
 
@@ -644,6 +647,12 @@ function QaView({ d, ctx }) {
   ];
 
   return (<>
+    {/* "0 ของเสีย" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — ไม่งั้นจอที่พังอยู่ดูเหมือนจอที่ทุกอย่างปกติ */}
+    {d.loadErr && (
+      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+        🔴 โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ — ตัวเลขของเสีย · PPM · พาเรโต ด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
+      </div>
+    )}
     <Section title="🚨 ต้องทำตอนนี้" sub={`4M รออนุมัติ QA ${d.fourM.length} · ไลน์ที่ยังไม่บันทึกของเสียวันนี้ ${noLog.length} · LPA พบปัญหา 30 วัน ${lpaIssues.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>

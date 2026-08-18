@@ -1250,8 +1250,11 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
             <CapaEffectiveness
               capa={detail}
               canEdit={canRecord && detail.status !== 'closed'}
+              /* ช่อง "ผลตรวจติดตามประสิทธิผล" gate ด้วย canManage → ปุ่มเติมผลต้องตรงกัน
+                 ไม่งั้นคนที่มีแค่ qa:record เขียนทับช่องนั้นได้ผ่านปุ่ม */
+              canWriteResult={canManage && detail.status !== 'closed'}
               onChange={(patch) => setDetail(f => ({ ...f, ...patch }))}
-              onResult={(j, m) => { effRef.current = { j, m }; }}
+              onResult={(j, m, busy) => { effRef.current = { j, m, busy }; }}
             />
           )}
 
@@ -1322,7 +1325,8 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
                   /* ── ด่านประสิทธิผล (IATF §10.2.4) — เตือนดัง แต่ไม่บล็อก ──
                      ตัวเลขบอกว่ายังไม่ลด = ปิดได้ถ้าคนยืนยัน แต่ต้อง stamp ไว้ให้เห็นตลอดไป
                      (บล็อกแข็ง คนจะเลี่ยงด้วยการไม่ตั้งค่าการวัดเลย ซึ่งแย่กว่า) */
-                  const { j, m } = effRef.current || {};
+                  const { j, m, busy } = effRef.current || {};
+                  if (busy && !window.confirm('ตัวเลขประสิทธิผลยังคำนวณไม่เสร็จ — ปิดใบเลยไหม? (ผลที่บันทึกอาจไม่ใช่ค่าล่าสุด)')) return;
                   const n = (v) => (Math.round((v || 0) * 10) / 10).toFixed(1);
                   if (j && (j.verdict === 'not_effective' || j.verdict === 'worse')) {
                     if (!window.confirm(

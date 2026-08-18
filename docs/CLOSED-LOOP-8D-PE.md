@@ -246,7 +246,7 @@ failure_mode ที่เพิ่งเกิด  ──ค้นข้าม p
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `supabase/migrations/20260818_capa_effectiveness.sql` | คอลัมน์ `d6_effective_from` / `eff_window_days` / `eff_defect_type_id`+`_label` / `eff_verdict` / `eff_measured_at` / `eff_snapshot` |
+| `supabase/migrations/20260818_capa_effectiveness.sql` **⬜ ยังไม่ apply** | คอลัมน์ `d6_effective_from` / `eff_window_days` / `eff_defect_type_id`+`_label` / `eff_verdict` / `eff_measured_at` / `eff_snapshot` |
 | `src/utils/capaEffect.js` | **สูตรทั้งหมด (pure เทสได้)** — `effectWindow` · `splitBeforeAfter` · `judgeEffect` · `effectSummaryText` |
 | `src/components/CapaEffectiveness.jsx` | แผงในโมดัล 8D — ตั้งค่าการวัด + แถบเทียบก่อน/หลัง + ปุ่มเติมผลลงช่องประสิทธิผล |
 
@@ -276,8 +276,22 @@ failure_mode ที่เพิ่งเกิด  ──ค้นข้าม p
 | 2 | **`dr_defect_types` คอลัมน์ชื่อ `name_th` ไม่ใช่ `name`** — เขียน `name` ไป dropdown จะว่างเปล่าเงียบๆ |
 | 3 | **ธง `is_trial`/`excl_from_q` อาจยังไม่ apply** → ถอยไป select ชุดเดิม **แล้วต้องบอกบนจอว่าตัวเลขรวมงานทดลองปนมา** ไม่ใช่แค่เงียบ |
 | 4 | **DeptDashboard ต้อง retry select เมื่อเจอ 42703** — คอลัมน์ `eff_*` เดียวที่ขาด ห้ามทำ KPI ลูปปิดหายทั้งแผง |
+| 5 | **`judgeEffect` ต้องคืน verdict เสมอ ห้ามคืน `null`** — `null` ทำให้ตอนกดปิดใบไม่เข้าทั้ง 2 สาขา confirm แล้ว **ไม่ stamp `eff_verdict`** → ใบหายจาก KPI และคิว "ปิดแล้วแต่ไม่ลด" เงียบๆ (เส้นทางที่เกิดจริง: กรอก pivot แล้วแต่ยังไม่กรอกไลน์ผลิต) |
+| 6 | **`.then().catch()` บน supabase-js เป็นโค้ดตาย** — คืน `{ error }` ไม่ throw · โหลดประเภทของเสียพังแล้วเงียบ = dropdown ว่าง → คนวัดแบบ "ทุกประเภททั้งไลน์" โดยไม่รู้ตัว ซึ่งให้ verdict คนละตัว |
+| 7 | **ช่องที่ input พิมพ์อิสระเป็น deps ของ loader ต้อง debounce + กันผลเก่าทับผลใหม่** — ไลน์/เลขพาร์ทพิมพ์ทีละตัวอักษร = ยิง query ทุกคีย์ และ response ที่ช้ากว่าจะ `setData` ทับตัวที่ถูก |
+| 8 | **ปุ่มที่เขียนค่าลงช่องหนึ่ง ต้อง gate ด้วยสิทธิ์เดียวกับช่องนั้น** — ช่อง "ผลตรวจประสิทธิผล" เป็น `qa:manage` แต่ปุ่ม "เติมตัวเลขลงช่อง" เผลอ gate ด้วย `qa:record` = ข้ามสิทธิ์ได้ |
 
 ### สัญญาณบน `/dept-dashboard?dept=qa`
 - KPI **📉 8D ที่ของเสียลดจริง %** — นับเฉพาะใบที่ **วัดได้จริง** (verdict กลุ่ม "ยังไม่รู้" ไม่ถูกนับทั้งฝั่งได้ผลและไม่ได้ผล)
 - คิวงาน **📉 ปิดแล้วแต่ของเสียยังไม่ลด** (แดง — ต้องกลับไปทบทวน D4) และ **⏱️ ครบกำหนดวัดผลแล้ว ยังไม่สรุป**
 - ลิสต์ CAPA ใน `/qa` ติดชิปผลวัดข้างสถานะ — ปิดทั้งที่ไม่ลด ต้องเห็นจากลิสต์ ไม่ใช่ซ่อนอยู่ในใบ
+
+
+### 🐛 บั๊กเก่าที่ QC audit จับได้ระหว่างทำเฟส 4 (แก้แล้ว 2026-08-18)
+`DeptDashboard.jsx` loader ของ QA select `defect_logs` ด้วย **`mat_no`** (คอลัมน์นี้ไม่มีในตาราง — mat มาจาก `prod_orders`)
+และ **`dr_defect_types(name)`** (ชื่อจริงคือ `name_th`) → PostgREST คืน 42703 แต่โค้ด destructure แค่ `{ data }`
+→ **KPI "ของเสีย 7 วัน" = 0 · PPM = "—" · พาเรโตว่าง มาตั้งแต่วันที่สร้างหน้า** โดยไม่มีใครรู้
+(มาจากคอมมิท `be4417c` ตอนสร้าง Dashboard ส่วนงาน ไม่ใช่ของเฟส 4)
+
+**บทเรียน:** ทุก query ที่ป้อน KPI ต้อง `console.warn` เมื่อ error **และหน้าจอต้องแยก "0 จริง" ออกจาก "โหลดไม่ได้"**
+— เพิ่มแถบแดง "โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ" (`d.loadErr`) แล้ว
