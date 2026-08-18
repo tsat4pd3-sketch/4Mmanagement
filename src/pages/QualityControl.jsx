@@ -12,7 +12,7 @@
  * ข้อมูลผลิต/ของเสียรายกะ อยู่ DR project (client `supabaseDR`, อ่านอย่างเดียว)
  * สิทธิ์: qa:record = บันทึกผลวัด/เปิด NCR/CAPA, qa:manage = master + disposition + ปิดรายการ
  */
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import {
   ResponsiveContainer, ComposedChart, LineChart, BarChart, Line, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, ReferenceLine, Cell, LabelList,
@@ -30,6 +30,8 @@ import { nextDocNo } from '../utils/qaDocNo';
 import QaCheckSheet from '../components/QaCheckSheet';
 import PeChangeRequests from '../components/PeChangeRequests';
 import QaClaims from '../components/QaClaims';
+import CapaEffectiveness from '../components/CapaEffectiveness';
+import { VERDICTS as EFF_V } from '../utils/capaEffect';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -1065,6 +1067,10 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active');
   const [detail, setDetail] = useState(null); // { ...capa } (id=null = สร้างใหม่)
+  /* ผลวัดประสิทธิผลล่าสุดจากแผง CapaEffectiveness — เก็บใน ref ไม่ใช่ state
+     (ใช้ตอนกดปิดใบเท่านั้น ถ้าเป็น state จะ re-render โมดัลทุกครั้งที่คำนวณเสร็จ) */
+  const effRef = useRef(null);
+  useEffect(() => { effRef.current = null; }, [detail?.id]);
 
   const load = useCallback(async () => {
     let q = supabase.from('qa_capa').select('*, qa_ncr(ncr_no, source, part_no, line_name)').order('created_at', { ascending: false }).limit(300);
@@ -1122,14 +1128,25 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
       part_no: f.part_no?.trim() || null, line_name: f.line_name?.trim() || null,
       ...(f.pe_review_status ? { pe_review_status: f.pe_review_status } : {}),
       ...(f.pe_review_note !== undefined ? { pe_review_note: f.pe_review_note?.trim() || null } : {}),
+      /* ตัวแปรการวัดประสิทธิผล (เฟส 4) — ส่งเฉพาะที่มีค่า เผื่อยังไม่ apply migration */
+      ...(f.d6_effective_from !== undefined ? { d6_effective_from: f.d6_effective_from || null } : {}),
+      ...(f.eff_window_days ? { eff_window_days: Number(f.eff_window_days) } : {}),
+      ...(f.eff_defect_type_id !== undefined ? { eff_defect_type_id: f.eff_defect_type_id || null, eff_defect_type_label: f.eff_defect_type_label || null } : {}),
+      ...(extra._eff ? extra._eff : {}),
       ...(f.status === 'closed' && !f.closed_at ? { closed_at: new Date().toISOString() } : {}),
     };
-    let error;
-    if (f.id) {
-      ({ error } = await supabase.from('qa_capa').update(payload).eq('id', f.id));
-    } else {
-      const capa_no = await nextDocNo('qa_capa', 'capa_no', 'CAPA');
-      ({ error } = await supabase.from('qa_capa').insert({ ...payload, capa_no, created_by: fullName || null }));
+    /* คอลัมน์ของเฟส 4 อาจยังไม่ apply migration → ลองเต็มก่อน เจอ 42703 ค่อยตัดทิ้งแล้วลองใหม่
+       ⚠️ ต้องบอกผู้ใช้ว่าอะไรไม่ถูกบันทึก ห้ามเงียบ (กฎ best-effort ของโปรเจค) */
+    const EFF_COLS = ['d6_effective_from', 'eff_window_days', 'eff_defect_type_id', 'eff_defect_type_label', 'eff_verdict', 'eff_measured_at', 'eff_snapshot'];
+    const write = async (p) => (f.id
+      ? supabase.from('qa_capa').update(p).eq('id', f.id)
+      : supabase.from('qa_capa').insert({ ...p, capa_no: await nextDocNo('qa_capa', 'capa_no', 'CAPA'), created_by: fullName || null }));
+    let { error } = await write(payload);
+    if (error?.code === '42703' && EFF_COLS.some((c) => c in payload)) {
+      const slim = { ...payload };
+      EFF_COLS.forEach((c) => delete slim[c]);
+      ({ error } = await write(slim));
+      if (!error) toast.error('บันทึกแล้ว แต่ยังเก็บ "ผลวัดประสิทธิผล" ไม่ได้ — ยังไม่ได้ apply migration 20260818_capa_effectiveness (แจ้ง admin)');
     }
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
     toast.success(msg);
@@ -1180,7 +1197,13 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: overdue ? '#ef4444' : undefined, fontWeight: overdue ? 800 : 400 }}>
                     {fmtD(c.due_date)}{overdue ? ' ⚠️' : ''}
                   </td>
-                  <td style={tdSt}><Chip label={CAPA_STATUS[c.status]?.label || c.status} color={CAPA_STATUS[c.status]?.color || '#6b7280'} /></td>
+                  <td style={tdSt}>
+                    <Chip label={CAPA_STATUS[c.status]?.label || c.status} color={CAPA_STATUS[c.status]?.color || '#6b7280'} />
+                    {/* ผลวัดจริงตอนปิด — ปิดทั้งที่ของเสียไม่ลด ต้องเห็นจากลิสต์ ไม่ใช่ซ่อนอยู่ในใบ */}
+                    {c.eff_verdict && EFF_V[c.eff_verdict] && (
+                      <span style={{ marginLeft: 5 }}><Chip label={EFF_V[c.eff_verdict].short} color={EFF_V[c.eff_verdict].color} /></span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
@@ -1220,6 +1243,17 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
                 onChange={e => setDetail(f => ({ ...f, effectiveness: e.target.value }))} disabled={!canManage || detail.status === 'closed'} />
             </Field>
           </div>
+
+          {/* ── เฟส 4: ตัวเลขจริงคู่กับข้อความข้างบน — IATF §10.2.4 ──
+              ข้อความที่คนพิมพ์เองอย่างเดียว ตอบ auditor ไม่ได้ว่า "รู้ได้ยังไงว่าได้ผล" */}
+          {detail.id && (
+            <CapaEffectiveness
+              capa={detail}
+              canEdit={canRecord && detail.status !== 'closed'}
+              onChange={(patch) => setDetail(f => ({ ...f, ...patch }))}
+              onResult={(j, m) => { effRef.current = { j, m }; }}
+            />
+          )}
 
           {/* ── ลูปปิด: D7 บอกให้ "อัปเดต FMEA/Control Plan" อยู่แล้ว แต่ไม่เคยมีที่ให้ทำจริง ──
               แผงนี้คือที่ทำจริง · ระบบเสนอให้ ทีม PE เป็นคนตัดสิน (docs/CLOSED-LOOP-8D-PE.md) */}
@@ -1281,7 +1315,26 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
                   const pe = detail.pe_review_status || 'pending';
                   if (pe === 'pending') { toast.error('ก่อนปิด ต้องสรุปเรื่องเอกสาร PE ก่อน — เลือกว่า "แก้แล้ว" หรือ "ไม่ต้องแก้ (พร้อมเหตุผล)"'); return; }
                   if (pe === 'na' && !detail.pe_review_note?.trim()) { toast.error('เลือก "ไม่ต้องแก้" ต้องระบุเหตุผล — auditor จะถามข้อนี้'); return; }
-                  save({ status: 'closed' }, `ปิด ${detail.capa_no} แล้ว ✓`);
+
+                  /* ── ด่านประสิทธิผล (IATF §10.2.4) — เตือนดัง แต่ไม่บล็อก ──
+                     ตัวเลขบอกว่ายังไม่ลด = ปิดได้ถ้าคนยืนยัน แต่ต้อง stamp ไว้ให้เห็นตลอดไป
+                     (บล็อกแข็ง คนจะเลี่ยงด้วยการไม่ตั้งค่าการวัดเลย ซึ่งแย่กว่า) */
+                  const { j, m } = effRef.current || {};
+                  const n = (v) => (Math.round((v || 0) * 10) / 10).toFixed(1);
+                  if (j && (j.verdict === 'not_effective' || j.verdict === 'worse')) {
+                    if (!window.confirm(
+                      `⚠️ ตัวเลขจริงบอกว่าของเสียยังไม่ลด\n\n`
+                      + `ก่อนแก้ ${n(m?.beforePerDay)} ชิ้น/วัน → หลังแก้ ${n(m?.afterPerDay)} ชิ้น/วัน\n`
+                      + `${j.reason}\n\nปกติควรกลับไปทบทวน D4 (สาเหตุราก) ก่อน\nยืนยันจะปิดใบนี้เลยไหม? (ผลนี้จะถูกบันทึกไว้ในใบ)`
+                    )) return;
+                  } else if (j && (j.verdict === 'too_early' || j.verdict === 'no_pivot' || j.verdict === 'no_data' || j.verdict === 'no_baseline')) {
+                    if (!window.confirm(
+                      `ℹ️ ระบบยังวัดประสิทธิผลจากข้อมูลจริงไม่ได้\n(${j.reason})\n\n`
+                      + `ปิดใบโดยอ้างอิงแค่ข้อความที่กรอกไว้ ใช่ไหม?`
+                    )) return;
+                  }
+                  const stamp = j ? { _eff: { eff_verdict: j.verdict, eff_measured_at: new Date().toISOString(), eff_snapshot: m ? { ...m, reason: j.reason } : null } } : {};
+                  save({ status: 'closed', ...stamp }, `ปิด ${detail.capa_no} แล้ว ✓`);
                 }}>✅ ปิด CAPA</button>
               )}
             </div>
