@@ -20,6 +20,15 @@ export const SKILL_LEVELS = [
 /* ระดับที่ต้องขออนุมัติข้ามขั้น (ดู "Employee Skills & EXP Farming" ใน CLAUDE.md) */
 export const SKILL_GATES = [25, 50, 75, 100];
 
+/* เพดานคะแนนที่ "พิมพ์ใส่เอง" ได้ ถ้าไม่มีสิทธิ์ `skills:edit_high` (2026-08-18 · คำสั่ง user)
+   หัวหน้ากลุ่ม (leader) ตั้งได้ถึงระดับ "มาตรฐาน" (50) เท่านั้น
+   สูงกว่านั้น (75 แก้ปัญหาได้ / 100 ผู้เชี่ยวชาญ) ต้องผ่านคนที่สิทธิ์สูงกว่า
+   ⚠️ บังคับ 2 ชั้น — ค่านี้คุมฝั่ง UI ส่วนฝั่ง DB คุมด้วย RLS ของ employee_skills
+      (WITH CHECK: score <= 50 or has_perm('skills:edit_high'))
+      แก้ค่านี้ต้องแก้ policy ให้ตรงกันด้วย ไม่งั้น UI ปล่อยผ่านแล้วโดน DB ตีกลับเป็น error 42501
+   ⚠️ ไม่กระทบ EXP farm อัตโนมัติ (SECURITY DEFINER bypass RLS) — คะแนนจากการทำงานจริงยังขึ้นเกิน 50 ได้ */
+export const SKILL_EDIT_CAP = 50;
+
 export const getLevel = (score) => SKILL_LEVELS.find(l => score >= l.min) ?? SKILL_LEVELS[4];
 
 /* เพดานของขั้นปัจจุบัน — farm ขึ้นได้ถึงค่านี้ แล้วต้องรออนุมัติ level up */
