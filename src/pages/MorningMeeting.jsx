@@ -8,7 +8,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { orderTotal } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad } from '../utils/oee';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
@@ -147,6 +148,7 @@ export default function MorningMeeting() {
     setLoading(true);
     try {
       const D = meetingDate;
+      await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณยอด (cache · ครั้งแรกครั้งเดียว)
       const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
@@ -240,16 +242,13 @@ export default function MorningMeeting() {
   //   กะที่ "ไม่มีงานคู่" → ใช้ค่าเดิมเป๊ะ (stamped ก่อน) เพื่อ blast radius น้อยสุด · แหล่งจริง = ใบงาน (prod_orders)
   //   detail รายพาร์ท/เจาะราย MAT ยังอ่านจากใบงานตรงๆ ไม่กระทบ
   const hasPairIn = (os) => os.some(o => o.mat_no && pairMat[o.mat_no] && os.some(x => x.mat_no === pairMat[o.mat_no]));
-  const pairSum = (os, pick) => {
-    const perMat = {}; let nullSum = 0;
-    os.forEach(o => { const v = pick(o); if (!o.mat_no) { nullSum += v; return; } const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 }); e.target += v; });
-    return pairAwareTotal(Object.values(perMat), m => pairMat[m] || null).target + nullSum;
-  };
+  // orderTotal = pair-aware + op-aware (รายการขั้นตอน OP งานขับนัทไม่บวกซ้ำ — collapseOps ใน pairTotals)
+  const pairSum = (os, pick) => orderTotal(os, pick, m => pairMat[m] || null, opInfoSync());
   const sessTarget = (s) => {
     const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
     if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
     if (s.target_qty) return s.target_qty;
-    return os.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+    return orderTotal(os, o => o.qty_target ?? o.qty ?? 0, () => null, opInfoSync());
   };
   // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
   const sessActual = (s) => {
@@ -257,7 +256,7 @@ export default function MorningMeeting() {
     if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
     if (s.qty_ok != null) return s.qty_ok;
     if (s.actual_qty) return s.actual_qty;
-    return os.reduce((a, o) => a + (o.qty_ok ?? o.qty_actual ?? 0), 0);
+    return orderTotal(os, o => o.qty_ok ?? o.qty_actual ?? 0, () => null, opInfoSync());
   };
   const sum = useMemo(() => {
     let actual = 0, target = 0;
@@ -542,7 +541,8 @@ export default function MorningMeeting() {
   // หัวคั่นโซน — กันหน้า "ติดกันเป็นพรืด": ชื่อโซน + เส้นแบ่งยาวเต็มแถว (+ตัวเลขสรุปท้ายเส้น)
   const SectionHead = ({ icon, title, extra }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
-      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{icon} {title}</span>
+      {/* minWidth:0 + ellipsis — จอแคบ (320px) ชื่อโซน+ตัวเลขท้ายแถวรวมกันยาวเกินจอ แล้วดันล้น */}
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{icon} {title}</span>
       <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
       {extra && <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{extra}</span>}
     </div>
@@ -551,7 +551,7 @@ export default function MorningMeeting() {
   const LineCards = () => (
     // min 290px ≈ 5 ใบ/แถวบนจอ desktop — กว้างพอให้ชิปยอด/%/OEE/DT จบบรรทัดเดียวเกือบทุกเคส
     // (เดิม 240px ได้ 6 ใบ/แถว การ์ดแคบจนชิปตกบรรทัดบ่อย ดูรก)
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 10 }}>
       {lineResults.map(({ line, shifts }) => (
         <div key={line.id} style={{ ...card, height: '100%', minHeight: 126, display: 'flex', flexDirection: 'column', gap: 8, opacity: shifts.length ? 1 : 0.55 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -671,7 +671,7 @@ export default function MorningMeeting() {
   );
 
   const DtDefectPanel = () => (
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
         <h2 style={h2St}>🛠️ Top Downtime นอกแผน <span style={chip(sum.dtMin ? '#ef4444' : '#22c55e')}>{sum.dtMin} นาที</span></h2>
         {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
@@ -979,7 +979,7 @@ export default function MorningMeeting() {
           <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
           <MissedPanel bounded />
           <DtDefectPanel />
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
             <FourMPanel bounded />
             <ReadinessPanel bounded />
           </div>
@@ -991,7 +991,8 @@ export default function MorningMeeting() {
       {tvMode && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
           {/* paddingRight 64 เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน อยู่เหนือ overlay) — ไม่งั้นปุ่ม ✕ โดนทับ */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)' }}>
+          {/* flexWrap — โหมดประชุมบนจอแคบ (มือถือ/แท็บเล็ตแนวตั้ง) แถบหัวยาวเกินจอแล้วดันล้น */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 64px 14px 22px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
@@ -1029,7 +1030,7 @@ export default function MorningMeeting() {
 
       {/* ── Modal เพิ่ม Action Item (ฟอร์ม — ห้ามปิดจาก backdrop ตามกติกา §5) ── */}
       {actModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
           <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

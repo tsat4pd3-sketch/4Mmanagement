@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
@@ -188,7 +189,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           const k = norm(pno);
           if (!k || !mat) return;
           const cur = matMap[k];
-          if (!cur || (!String(cur.mat_no).startsWith('1') && String(mat).startsWith('1'))) matMap[k] = { mat_no: mat, name };
+          if (!cur || (!isFgMat(cur.mat_no) && isFgMat(mat))) matMap[k] = { mat_no: mat, name };
           // ดัชนี base part (ตัด revision) สำหรับ fallback — เก็บทุกตัวเพื่อเช็คกำกวม
           const b = baseOfPart(pno);
           if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }
@@ -562,20 +563,20 @@ function PlannerTab({ refreshKey, custLabel }) {
 
   const chartData = useMemo(() => months.map(m => {
     // period_month อาจเป็นรายเดือน (manual) หรือรายสัปดาห์ (EDI 830) — รวมด้วยเดือนเดียวกัน
-    const fq = forecasts.filter(f => f.period_month.slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
-    const oq = orders.filter(o => o.due_date.slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
+    const fq = forecasts.filter(f => (f.period_month || '').slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
+    const oq = orders.filter(o => (o.due_date || '').slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
     return { month: monthLabel(m), Forecast: fq, Orders: oq };
   }), [months, forecasts, orders]);
 
   // ตารางราย mat_no ของเดือนที่เลือก — forecast vs order จริง + ภาระชั่วโมงผลิต
   const matRows = useMemo(() => {
     const map = {};
-    forecasts.filter(f => f.period_month.slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
+    forecasts.filter(f => (f.period_month || '').slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
       const r = map[f.mat_no] = map[f.mat_no] || { mat_no: f.mat_no, part_name: f.part_name, customer: f.customer, forecast: 0, ordered: 0 };
       r.forecast += Number(f.qty);
       if (!r.part_name) r.part_name = f.part_name;
     });
-    orders.filter(o => o.due_date.slice(0, 7) === focusMonth.slice(0, 7)).forEach(o => {
+    orders.filter(o => (o.due_date || '').slice(0, 7) === focusMonth.slice(0, 7)).forEach(o => {
       const r = map[o.mat_no] = map[o.mat_no] || { mat_no: o.mat_no, part_name: o.part_name, customer: o.customer, forecast: 0, ordered: 0 };
       r.ordered += Number(o.qty);
       if (!r.part_name) r.part_name = o.part_name;
@@ -1156,7 +1157,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* (#1) Modal จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน — ฟอร์มกรอกหลายสิบแถว ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) */}
       {mapModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
@@ -1215,7 +1216,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* Preview & Apply (แสดงอย่างเดียว ปิดจากปุ่ม/นอกกรอบได้) */}
       {preview && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>เขียนค่า Min/Max/Total ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)</div>

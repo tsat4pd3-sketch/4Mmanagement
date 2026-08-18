@@ -7,10 +7,12 @@ import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
+const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
 import { trackVisit } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
+import ScrollHint from './components/ScrollHint';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 
@@ -37,10 +39,12 @@ const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
 const OEEAnalytics  = lazy(() => import('./pages/OEEAnalytics'));
 const ProductHistory = lazy(() => import('./pages/ProductHistory'));
+const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
+const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -51,6 +55,7 @@ const PMSetup     = lazy(() => import('./pages/PMSetup'));
 const PMCheckData = lazy(() => import('./pages/PMCheckData'));
 const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
+const Energy = lazy(() => import('./pages/Energy'));
 const PmForecast  = lazy(() => import('./pages/PmForecast'));
 const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
@@ -63,6 +68,7 @@ const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
+const PEDocs = lazy(() => import('./pages/PEDocs'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -90,6 +96,9 @@ export const NAV_ITEMS = [
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
+  // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
+  // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
+  { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -97,6 +106,7 @@ export const NAV_ITEMS = [
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
+  { to: '/vsm',            icon: '🗺️', label: 'VSM สายธารคุณค่า',   group: 'วิเคราะห์ & รายงาน' },
   { to: '/order-trace', icon: '🔎', label: 'สอบกลับ Order (Trace)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/daily-checker',  icon: '✅', label: 'Daily Checker',       group: 'ฝ่ายผลิต' },  // ขมวด PM Daily + LPA + ระบบเช็คอื่น (แท็บใน DailyChecker)
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
@@ -117,11 +127,15 @@ export const NAV_ITEMS = [
   { to: '/pm-forecast', icon: '🔧', label: 'PM ล่วงหน้า (Planner)',            group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-coordination', icon: '🗓️', label: 'แผนประสานงาน PM (แจ้งผลิต)',   group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
+
+  // หมวดวิศวกรรม (Process Engineering) — เพิ่ม 2026-08-13 (คำสั่ง user: โมดูล PFC/PFMEA/Control Plan)
+  { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'วิศวกรรม (PE)' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -146,7 +160,7 @@ export const NAV_ITEMS = [
   { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'วิศวกรรม (PE)', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -257,6 +271,7 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
+  const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
@@ -498,6 +513,17 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
             <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
           </button>
 
+          {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
+              admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
+          <button
+            onClick={() => setFbOpen(true)}
+            className="nav-link"
+            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+          >
+            <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
+            <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
+          </button>
+
           {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
               🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
           {canAccessPage('/remote', userRole) && (<>
@@ -559,6 +585,8 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
           </>)}
         </div>
       </nav>
+      {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
+
       <SignatureModal
         open={sigModalOpen}
         onClose={() => setSigModalOpen(false)}
@@ -1122,6 +1150,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
         <NotificationBell userId={userId} />
+        {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
+        <ScrollHint />
         <Suspense fallback={null}>
           <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
         </Suspense>
@@ -1155,7 +1185,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           paddingTop: 14,
           background: 'var(--bg)',
           transition: 'margin-left 0.3s cubic-bezier(0.4,0,0.2,1)',
-          overflow: 'auto',
+          // ⚠️ เลื่อนได้แค่ขึ้น-ลง — ห้ามเลื่อนซ้ายขวาทั้งหน้า (คำสั่ง user 2026-08-04)
+          //   ของกว้าง (ตาราง/บอร์ด/กราฟ) ต้องมี scroller ของตัวเอง (overflowX:'auto' ที่กล่องมันเอง)
+          //   ตาม UI-CONVENTIONS — ห้ามปล่อยให้ล้นออกมาดันทั้งหน้าให้เลื่อนข้าง
+          overflowY: 'auto',
+          overflowX: 'hidden',
           minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
@@ -1168,6 +1202,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
+              } />
+              <Route path="/adoption-outlook" element={
+                <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>
@@ -1235,6 +1272,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/product-history" element={
                 <RoleRoute path="/product-history" userRole={role}><ProductHistory /></RoleRoute>
               } />
+              <Route path="/vsm" element={
+                <RoleRoute path="/vsm" userRole={role}><VSM /></RoleRoute>
+              } />
               <Route path="/daily-checker" element={
                 <RoleRoute path="/daily-checker" userRole={role}><DailyChecker /></RoleRoute>
               } />
@@ -1273,6 +1313,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/qa-setup" element={
                 <RoleRoute path="/qa-setup" userRole={role}><QAInspectionSetup /></RoleRoute>
+              } />
+              <Route path="/pe-docs" element={
+                <RoleRoute path="/pe-docs" userRole={role}><PEDocs /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
@@ -1318,6 +1361,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/pm-forecast" element={
                 <RoleRoute path="/pm-forecast" userRole={role}><PmForecast /></RoleRoute>
+              } />
+              <Route path="/energy" element={
+                <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>

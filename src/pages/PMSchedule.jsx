@@ -368,7 +368,7 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
 
   const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(440px,96vw)' }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏭ เลื่อนแผน PM</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>{eqName}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} · ครบกำหนดเดิม {curDue ? new Date(curDue).toLocaleDateString('th-TH') : '—'}</div>

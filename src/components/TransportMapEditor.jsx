@@ -521,7 +521,7 @@ export default function TransportMapEditor() {
         const m = parseFloat(scaleMeters)
         const ok = m > 0 && unitDist > 1e-6
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 380px)' }}>
               <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>📏 ตั้งมาตราส่วน</h3>
               <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> หน่วยผัง</div>

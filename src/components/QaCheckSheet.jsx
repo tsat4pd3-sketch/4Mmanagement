@@ -408,7 +408,7 @@ export default function QaCheckSheet({ canRecord }) {
       <div style={{ ...cardSt, marginBottom: 12 }}>
         <div className="mgrid" style={{
           display: 'grid', gap: 10,
-          gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 2fr) 150px 130px 110px 1fr',
+          gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(220px, 2fr) 150px 130px 110px 1fr',
           alignItems: 'end',
         }}>
           <div>
@@ -481,7 +481,7 @@ export default function QaCheckSheet({ canRecord }) {
       </div>
 
       {items.length > 0 && (
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: (!isMobile && showDrawing && drawings.length) ? 'minmax(320px, 5fr) 7fr' : '1fr', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: (!isMobile && showDrawing && drawings.length) ? 'minmax(320px, 5fr) 7fr' : 'minmax(0, 1fr)', alignItems: 'start' }}>
           {/* แบบ + หมุด sync ผลตรวจ */}
           {drawings.length > 0 && (
             <div style={{ ...cardSt, position: isMobile ? 'static' : 'sticky', top: 10 }}>
@@ -700,7 +700,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
       {showNg && !readOnly && (
         <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
           onClick={e => e.stopPropagation()}>
-          <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '1fr 120px auto' }}>
+          <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 120px auto' }}>
             <input style={inputSt} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
               value={draft?.note ?? res?.note ?? ''} onChange={e => onDraft({ note: e.target.value, judgement: 'ng' })} />
             <input type="number" min={1} style={inputSt} placeholder="จำนวน NG"

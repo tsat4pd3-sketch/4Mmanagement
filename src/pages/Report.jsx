@@ -1261,7 +1261,7 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--muted)' }}>จาก</span>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
           <span style={{ color: 'var(--muted)' }}>ถึง</span>
@@ -1737,7 +1737,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
     <div>
       {/* Reject modal */}
       {rejectModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 14px', color: '#ef4444', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
@@ -1759,7 +1759,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       {/* QA Approve Modal */}
       {qaApproveModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 4px', color: '#a855f7', fontFamily: 'var(--font-display)' }}>🔍 QA ยืนยันคุณภาพงาน</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
@@ -1811,7 +1811,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       {/* Image viewer modal */}
       {imageViewModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
             <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />
@@ -4148,9 +4148,10 @@ function AttendanceFormTab() {
             <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
           </select>
         </div>
-        <div>
+        {/* minWidth:0 — ไม่งั้น div นี้กว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
+        <div style={{ minWidth: 0, flex: '1 1 150px' }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกไลน์</option>
             {attLinesInScope.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>

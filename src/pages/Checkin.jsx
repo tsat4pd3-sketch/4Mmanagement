@@ -990,7 +990,7 @@ export default function Checkin() {
     <div className="page-content">
       {/* Modal ยืนยันเปิดกะ Daily Report */}
       {openShiftModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '24px 28px', maxWidth: 420, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
             <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', marginBottom: 6 }}>📊 เปิดกะ Daily Report?</div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
@@ -1058,7 +1058,8 @@ export default function Checkin() {
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* flexWrap — ปุ่ม Preview กะดึก + ปุ่มข้างๆ รวมกันยาวเกินจอ 320px แล้วดันล้น */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {realShiftInfo.shift === 'day' && (
             <button
               onClick={() => setPreviewNight(p => !p)}
@@ -1164,8 +1165,9 @@ export default function Checkin() {
           borderRadius: 10, padding: '12px 16px', marginBottom: 14,
           display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
         }}>
-          {/* Section tabs */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {/* Section tabs — ต้อง wrap เสมอ: section เยอะ (14 ส่วน) เรียงแถวเดียวกว้าง ~1180px
+              บนมือถือจะถูก main (overflow-x:hidden) ตัดหายจนกดปุ่มที่เกินขอบไม่ได้ */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Section</span>
             <button
               onClick={() => { setSelSection(''); setSelLine(''); }}
@@ -1610,7 +1612,7 @@ export default function Checkin() {
       {/* ยืนยัน "บันทึกในนามใคร" ก่อนเซฟจริง — จุด checkpoint บังคับให้เห็นชื่อ กันเช็คผิด session
           (ไม่ปิดจากคลิกฉากหลัง ตามกฎ modal ฟอร์ม — ต้องเลือกยืนยัน/สลับผู้ใช้) */}
       {confirmSave && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>👤</div>
             <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>บันทึกเช็คชื่อในนาม</div>
@@ -1638,7 +1640,7 @@ export default function Checkin() {
       )}
 
       {showOtBookModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>🚐 จองรถ OT</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -1747,7 +1749,7 @@ export default function Checkin() {
 
       {/* Export forms modal */}
       {showExport && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>📄 ส่งออกฟอร์มกระดาษ (PDF)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>

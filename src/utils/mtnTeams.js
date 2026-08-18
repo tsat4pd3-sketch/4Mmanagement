@@ -63,9 +63,35 @@ export function inTeamScope(rowTeam, selectedTeam) {
   if (rowTeam === null || rowTeam === undefined || String(rowTeam).trim() === '') return true
   return teamKeyOf(rowTeam) === teamKeyOf(selectedTeam)
 }
-/** กรอง master list ตามทีมที่เลือก (แถว common ติดมาด้วยเสมอ) */
+/** กรอง master list ตามทีมที่เลือก (แถว common ติดมาด้วยเสมอ)
+ *  ⚠️ ใช้กับ "ใครแก้ได้" เท่านั้น — การ **มองเห็น** ในฟอร์มแจ้งซ่อมให้ใช้ `visibleToTeam` */
 export const filterByTeam = (rows, selectedTeam, key = 'team') =>
   (rows || []).filter(r => inTeamScope(r?.[key], selectedTeam))
+
+/* ═══ "ใครเห็น" ≠ "ใครเป็นเจ้าของ" (คำสั่ง user 2026-08-11) ═══════════════════
+   ความจริงหน้างานที่ทำให้ต้องแยก 2 แกนนี้:
+     · **ช่างฝ่ายผลิต (AM) เจอปัญหาก่อนใครเสมอ → ต้องเห็นทุกลักษณะปัญหา**
+       (ถ้าให้ไปติ๊ก shared ทีละแถวจะตกหล่นแน่ จึงเป็นกฎในโค้ด ไม่ใช่ข้อมูล)
+     · **DIE MTN แยกชัดเจน** — งานแม่พิมพ์ไม่เกี่ยวกับช่างส่วนอื่น
+     · **JIG MTN ↔ MTN ทับซ้อนกัน** — มีแค่ JIG Fixture ที่เป็นของ JIG แน่ๆ
+       เรื่องอื่นทับซ้อนในบางเคส → ต้องระบุ "ทีมอื่นที่เห็นด้วย" ได้รายแถว
+   คอลัมน์: `team` = เจ้าของ (แก้ได้) · `shared_teams text[]` = ทีมอื่นที่เห็น (แก้ไม่ได้) */
+
+/** ทีมที่เห็นทุกแถวเสมอ — ผลิตเป็นด่านแรกที่เจอปัญหา */
+export const SEE_ALL_TEAMS = ['production']
+export const seesEverything = (team) => SEE_ALL_TEAMS.includes(teamKeyOf(team))
+
+/** แถวนี้ทีมที่เลือก "เห็น" ไหม (ไม่ได้แปลว่าแก้ได้) */
+export function visibleToTeam(row, selectedTeam) {
+  if (!selectedTeam) return true
+  if (seesEverything(selectedTeam)) return true                 // AM เห็นหมด
+  if (inTeamScope(row?.team, selectedTeam)) return true         // เจ้าของ หรือ common
+  const shared = Array.isArray(row?.shared_teams) ? row.shared_teams : []
+  return shared.map(teamKeyOf).includes(teamKeyOf(selectedTeam))
+}
+/** กรองลิสต์สำหรับ "แสดงให้เลือก" (ฟอร์มแจ้งซ่อม) — ต่างจาก filterByTeam ที่ใช้คุมสิทธิ์แก้ */
+export const visibleForTeam = (rows, selectedTeam) =>
+  (rows || []).filter(r => visibleToTeam(r, selectedTeam))
 
 // ชนิดอุปกรณ์ → ทีม (ใช้เดา default ตอนแจ้งซ่อม)
 //   ลำดับ: (1) ทีมที่ตั้งไว้บนแถว mtn_item_types.team = source of truth

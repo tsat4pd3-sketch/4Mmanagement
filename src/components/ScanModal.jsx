@@ -151,7 +151,7 @@ export default function ScanModal({
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={box}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>📷 {title}</h3>
