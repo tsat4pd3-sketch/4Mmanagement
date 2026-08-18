@@ -18,6 +18,7 @@ import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FUL
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import SkillEditHistory from '../components/SkillEditHistory';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -68,7 +69,9 @@ export default function Operator() {
   // หลาย section → เปิดให้เลือกได้เฉพาะใน scope ตัวเอง
   const lockedScopeSec = scopeSecs.length === 1 ? scopeSecs[0] : null;
   // ⚠️ สิทธิ์แก้ "ระดับทักษะ" แยกจาก employees:edit — คนที่แก้ประวัติพนักงานได้ ไม่จำเป็นต้องแก้คะแนนสกิลได้
-  //   (leader มี employees:edit แต่ skills:edit = false โดยตั้งใจ — คะแนนสกิลมาจากการ farm + ด่านอนุมัติ)
+  //   ปรับผู้ถือสิทธิ์ที่ /permissions ได้เลย มีผลทั้ง UI และ RLS (policy อ่าน has_perm('skills:edit'))
+  //   leader ได้สิทธิ์นี้แล้ว (user สั่ง 2026-08-17) — คู่กับ audit log ที่บันทึกการแก้ด้วยมือทุกครั้ง
+  //   (trigger trg_audit_employee_skills → ดูได้ที่แผง 🕓 ประวัติการแก้คะแนน ในโมดัลนี้)
   //   RLS ฝั่ง DB ก็คุมด้วย skills:edit เช่นกัน → ยิงทั้งที่ไม่มีสิทธิ์ = error ทับการบันทึกที่สำเร็จไปแล้ว
   const canEditSkills = can('skills', 'edit', role);
 
@@ -1607,6 +1610,8 @@ export default function Operator() {
                     </div>
                   ));
                 })()}
+
+                {editingEmp.id && <SkillEditHistory employeeId={editingEmp.id} />}
               </div>
 
               <div>
