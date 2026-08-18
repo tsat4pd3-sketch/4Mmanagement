@@ -8,6 +8,7 @@ import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/compa
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { buildScheduleMaps, resolveAssignedShift } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 
@@ -220,9 +221,9 @@ export default function Checkin() {
 
     if (!empData) return;
 
-    const lineSchedule = {};
-    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
-    setNoSchedule(Object.keys(lineSchedule).length === 0);
+    // ตารางกะ: ไลน์ผลิต (line_id) + หน่วยงานสนับสนุน (dept_name) — ดู utils/shiftAssign.js
+    const schedMaps = buildScheduleMaps(scheduleData);
+    setNoSchedule(schedMaps.count === 0);
 
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
@@ -232,26 +233,17 @@ export default function Checkin() {
     (lineData || []).forEach(l => { lineSection[l.id] = l.section; });
 
     const enriched = empData.map(emp => {
-      let assignedShift = null;
-      if (empOverride[emp.id]) {
-        // 1st priority: individual override
-        assignedShift = empOverride[emp.id];
-      } else {
-        // 2nd priority: merge event (line-level beats section-level)
-        const empSec = lineSection[emp.line_id];
-        const mergeEvent =
-          (mergeData || []).find(e => e.line_id === emp.line_id) ||
-          (mergeData || []).find(e => e.section && e.section === empSec);
-        if (mergeEvent) {
-          assignedShift = mergeEvent.target_shift;
-        } else if (emp.line_id && lineSchedule[emp.line_id]) {
-          // 3rd priority: normal A/B schedule
-          const dayTeam = lineSchedule[emp.line_id];
-          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-          // Team C = fixed day shift (ไม่หมุน A/B)
-          assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
-        }
-      }
+      // merge event (line-level beats section-level) — ใช้ section ของไลน์พนักงาน
+      const empSec = lineSection[emp.line_id];
+      const mergeEvent =
+        (mergeData || []).find(e => e.line_id === emp.line_id) ||
+        (mergeData || []).find(e => e.section && e.section === empSec);
+      // ลำดับ: override รายคน → merge event → ตารางกะ (ไลน์ → หน่วยงาน) · Team C = กะเช้าตลอด
+      const assignedShift = resolveAssignedShift(emp, {
+        overrideShift: empOverride[emp.id],
+        mergeShift: mergeEvent?.target_shift,
+        maps: schedMaps,
+      });
       return { ...emp, assignedShift };
     });
 

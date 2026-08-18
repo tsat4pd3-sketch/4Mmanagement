@@ -9,6 +9,7 @@ import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
@@ -471,7 +472,7 @@ export default function Dashboard() {
       { data: mpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active, employee_skills(skill_name, score))')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, department, is_active, employee_skills(skill_name, score))')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -486,28 +487,23 @@ export default function Dashboard() {
       supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
-    // Build per-line day_team map
-    const lineSchedule = {};
-    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+    // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
+    // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
+    //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
+    const schedMaps = buildScheduleMaps(scheduleData);
 
     // Build per-employee override map
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
 
-    // Enrich logs with assignedShift (same logic as Checkin.jsx)
     const enriched = (logData || []).map(log => {
       const emp = log.employees;
-      let assignedShift = null;
-      if (emp) {
-        if (empOverride[emp.id]) {
-          assignedShift = empOverride[emp.id];
-        } else if (emp.line_id && lineSchedule[emp.line_id]) {
-          const dayTeam = lineSchedule[emp.line_id];
-          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-          assignedShift = emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
-        }
-      }
-      return { ...log, assignedShift };
+      return {
+        ...log,
+        assignedShift: emp
+          ? resolveAssignedShift(emp, { overrideShift: empOverride[emp.id], maps: schedMaps })
+          : null,
+      };
     });
 
     setLogs(enriched);
@@ -530,11 +526,10 @@ export default function Dashboard() {
       if (!emp.line_id) return;
       if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
       counts[emp.line_id].all++;
-      const dayTeam = lineSchedule[emp.line_id];
-      if (!dayTeam) return;
-      const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-      if (emp.team === dayTeam)   counts[emp.line_id].day++;
-      else if (emp.team === nightTeam) counts[emp.line_id].night++;
+      // กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ตรงๆ (ไม่ตกไปกะหน่วยงาน)
+      const sh = shiftFromTeam(schedMaps.byLine[emp.line_id], emp.team);
+      if (sh === 'day')        counts[emp.line_id].day++;
+      else if (sh === 'night') counts[emp.line_id].night++;
     });
     setEmpCounts(counts);
     setLayouts(layoutData || []);
