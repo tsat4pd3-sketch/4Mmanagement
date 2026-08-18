@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { focusSidebarGroups, navItemsForGroups } from '../App';
+import { navItemsForGroups } from '../App';
 import { roleLabel } from '../utils/roleMeta';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
@@ -16,7 +16,7 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
      (นับจากตารางจริง refresh ทุก 60 วิ — เป็นของเสริม ผิดพลาดต้องไม่ทำหน้าพัง)
    - โมดูล = แผงควบคุม: มุม bracket + รหัสโมดูล (PRD·01) + ไฟสถานะนิ่ง (Andon §2: ห้ามกระพริบ)
    - พื้นหลังกริด blueprint จางๆ + นาฬิกา/กะสด · ฟอนต์ตัวเลข/รหัส = monospace
-   การทำงานเดิมคงครบ: ชิปเมนูดึงจาก NAV_ITEMS (ห้ามพิมพ์ list มือ) · focusSidebarGroups ·
+   การทำงานเดิมคงครบ: ชิปเมนูดึงจาก NAV_ITEMS (ห้ามพิมพ์ list มือ) ·
    กรองสิทธิ์ role · theme toggle/logout · .hub-topbar มือถือกลับเข้า flow */
 
 const MONO = "ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
@@ -282,8 +282,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
   const openMenu = (e, d, to) => {
     e.stopPropagation(); // อย่าให้ card onClick ยิงซ้ำ
-    if (d.navGroups) focusSidebarGroups(d.navGroups);
-    navigate(to);
+    navigate(to);   // rail/accordion ไฮไลต์+เปิดหมวดของหน้าปลายทางเองแล้ว ไม่ต้องสั่งโฟกัสหมวด
   };
 
   return (
@@ -455,7 +454,6 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             style={{ '--mc': d.color, animation: `hub-fade-up 0.55s ease ${0.12 + 0.07 * i}s both` }}
             onClick={() => {
               if (!d.available) return;
-              if (d.navGroups) focusSidebarGroups(d.navGroups); // กาง sidebar เฉพาะหมวดของโมดูลนี้
               navigate(d.route);
             }}
           >
