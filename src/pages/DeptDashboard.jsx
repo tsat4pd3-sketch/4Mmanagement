@@ -536,7 +536,18 @@ async function loadQa(ctx) {
     ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, mat_no, dr_defect_types(name)').in('session_id', ids) : { data: [] },
     ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [] },
   ]);
-  return { sess: scoped, defs: defs || [], orders: orders || [], fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), lpa: (lpa.data || []).filter(a => inScope(a.line_name)) };
+  /* ลูปปิด 8D → PE: CAPA ที่ปิดแล้ว เอกสาร PFMEA/Control Plan ตามแก้หรือยัง (IATF §10.2.3/10.2.4)
+     ⚠️ best-effort — ยังไม่ apply migration 20260817 = คอลัมน์/ตารางไม่มี ต้องไม่ทำทั้งหน้าพัง */
+  let capa = [], crOpen = 0;
+  try {
+    const [{ data: cp }, { count: n }] = await Promise.all([
+      supabase.from('qa_capa').select('id, capa_no, title, status, due_date, pe_review_status, closed_at').order('created_at', { ascending: false }).limit(200),
+      supabase.from('pe_change_requests').select('id', { count: 'exact', head: true }).in('status', ['proposed', 'accepted']),
+    ]);
+    capa = cp || []; crOpen = n || 0;
+  } catch { /* ไม่มีตาราง = ถือว่ายังไม่เปิดใช้ ลูปนี้ */ }
+  return { sess: scoped, defs: defs || [], orders: orders || [], capa, crOpen,
+    fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), lpa: (lpa.data || []).filter(a => inScope(a.line_name)) };
 }
 
 function QaView({ d, ctx }) {
@@ -560,6 +571,15 @@ function QaView({ d, ctx }) {
     .map(x => ({ ...x, audit_date: a.audit_date, line_name: a.line_name, layer: a.layer, station: a.station }))
   ).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)), [d.lpa]);
 
+  /* ── ลูปปิด 8D → เอกสาร PE ── */
+  const capa = d.capa || [];
+  const capaClosed = capa.filter(c => c.status === 'closed');
+  const peDone = capaClosed.filter(c => c.pe_review_status === 'done' || c.pe_review_status === 'na').length;
+  const peRate = capaClosed.length ? Math.round(peDone / capaClosed.length * 100) : null;
+  const capaOpen = capa.filter(c => c.status !== 'closed');
+  /* ปิดปัญหาไปแล้วแต่ยังไม่ตอบเรื่องเอกสาร = ช่องว่างที่ auditor ถามแน่ */
+  const capaNoPe = capaClosed.filter(c => (c.pe_review_status || 'pending') === 'pending');
+
   const defRecords = d.defs.map(x => ({
     cat: x.dr_defect_types?.name || 'ไม่ระบุประเภท', value: (+x.qty_ng || 0) + (+x.qty_suspect || 0),
     line: sMap[x.session_id]?.line_name || '-', product: x.mat_no || '(ไม่ระบุ)',
@@ -569,6 +589,11 @@ function QaView({ d, ctx }) {
   const actions = [
     ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: '#f59e0b', to: fourMLink(f) })),
     ...noLog.map(l => ({ icon: '❔', title: `${l} — ยังไม่มีบันทึกของเสียวันนี้`, detail: 'ของดี 100% จริง หรือยังไม่ได้ลงบันทึก?', tag: 'ตรวจสอบ', tagColor: '#f59e0b', to: '/daily-report' })),
+    ...capaNoPe.slice(0, 5).map(c => ({ icon: '🔗', title: `${c.capa_no} ปิดแล้ว แต่ยังไม่ทบทวน PFMEA/Control Plan`,
+      detail: (c.title || '').slice(0, 45), age: c.closed_at ? daysSince(c.closed_at) : null,
+      tag: 'IATF 10.2.4', tagColor: '#ef4444', to: '/qa?tab=capa' })),
+    ...(d.crOpen ? [{ icon: '📥', title: `คำขอแก้เอกสาร PE ค้าง ${d.crOpen} รายการ`,
+      detail: 'ทีม PE ยังไม่ได้พิจารณา/ออก revision', tag: 'รอ PE', tagColor: '#f59e0b', to: '/pe-docs' }] : []),
     ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/daily-checker?tab=lpa' })),
   ];
 
@@ -586,6 +611,11 @@ function QaView({ d, ctx }) {
       <Kpi label="📝 4M รออนุมัติ QA" value={d.fourM.length} unit="ใบ" color={d.fourM.length ? '#f59e0b' : '#22c55e'} sub="ค้างที่ QA" />
       <Kpi label="📋 LPA พบปัญหา" value={lpaIssues.length} unit="ข้อ" color={lpaIssues.length ? '#f59e0b' : '#22c55e'} sub="ตอบ N/T ใน 30 วัน" />
       <Kpi label="🧾 การตรวจ LPA" value={d.lpa.length} unit="ครั้ง" sub="30 วันล่าสุด" />
+      <Kpi label="🔗 8D ปิดแล้ว เอกสารตามครบ" value={peRate == null ? '—' : `${peRate}%`}
+        color={peRate == null ? undefined : peRate >= 90 ? '#22c55e' : peRate >= 50 ? '#f59e0b' : '#ef4444'}
+        sub={capaClosed.length ? `${peDone}/${capaClosed.length} ใบ · IATF §10.2.4` : 'ยังไม่มี 8D ที่ปิด'} />
+      <Kpi label="🛠 8D ค้างดำเนินการ" value={capaOpen.length} unit="ใบ" color={capaOpen.length ? '#f59e0b' : '#22c55e'}
+        sub={d.crOpen ? `คำขอแก้เอกสารค้าง ${d.crOpen}` : 'ไม่มีคำขอแก้เอกสารค้าง'} />
     </div>
 
     <ParetoAbcChart title="🚫 ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
@@ -596,6 +626,7 @@ function QaView({ d, ctx }) {
       <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'],
         // คิวอนุมัติ 4M ทั้งก้อน — from = ใบเก่าสุด (d.fourM เรียงวันจากเก่าไปใหม่) ให้เห็นครบทุกใบที่ค้าง
         [`${FOURM_TAB}&status=pending_qa${d.fourM.length ? `&from=${d.fourM[0].work_date}` : ''}`, '📝 4M รออนุมัติ', d.fourM.length],
+        ['/qa?tab=capa', '🛠 8D / CAPA', capaOpen.length], ['/pe-docs', '📐 PFMEA / Control Plan', d.crOpen],
         ['/qa-setup', '📐 มาตรฐานการตรวจ'], ['/daily-checker?tab=lpa', '📋 LPA', lpaIssues.length], ['/scrap-report', '♻️ ใบรายงานของเสีย'], ['/event-log', '⚡ CQI-15']]} />
     </Section>
   </>);

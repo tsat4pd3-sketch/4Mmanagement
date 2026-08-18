@@ -28,6 +28,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { nextDocNo } from '../utils/qaDocNo';
 import QaCheckSheet from '../components/QaCheckSheet';
+import PeChangeRequests from '../components/PeChangeRequests';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -1065,7 +1066,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
   const [detail, setDetail] = useState(null); // { ...capa } (id=null = สร้างใหม่)
 
   const load = useCallback(async () => {
-    let q = supabase.from('qa_capa').select('*, qa_ncr(ncr_no)').order('created_at', { ascending: false }).limit(300);
+    let q = supabase.from('qa_capa').select('*, qa_ncr(ncr_no, source, part_no, line_name)').order('created_at', { ascending: false }).limit(300);
     if (filter === 'active') q = q.neq('status', 'closed');
     if (filter === 'closed') q = q.eq('status', 'closed');
     const { data } = await q;
@@ -1078,6 +1079,9 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
     if (!prefill) return;
     setDetail({
       id: null, capa_no: '', ncr_id: prefill.id, ncr_no: prefill.ncr_no,
+      /* พาเลขพาร์ท/ไลน์มาด้วย — เป็นกุญแจหาชุดเอกสาร PE ในลูปปิด 8D */
+      part_no: prefill.part_no || '', line_name: prefill.line_name || '',
+      ncr_source: prefill.source || null,
       title: `แก้ไขปัญหา ${prefill.defect_desc?.slice(0, 60) || ''} (${prefill.ncr_no})`,
       owner_name: fullName || '', due_date: '',
       d1_team: '', d2_problem: prefill.defect_desc || '', d3_containment: prefill.containment || '',
@@ -1098,6 +1102,9 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
       d5_corrective: f.d5_corrective?.trim() || null, d6_implement: f.d6_implement?.trim() || null,
       d7_prevent: f.d7_prevent?.trim() || null, d8_closure: f.d8_closure?.trim() || null,
       effectiveness: f.effectiveness?.trim() || null, status: f.status,
+      part_no: f.part_no?.trim() || null, line_name: f.line_name?.trim() || null,
+      ...(f.pe_review_status ? { pe_review_status: f.pe_review_status } : {}),
+      ...(f.pe_review_note !== undefined ? { pe_review_note: f.pe_review_note?.trim() || null } : {}),
       ...(f.status === 'closed' && !f.closed_at ? { closed_at: new Date().toISOString() } : {}),
     };
     let error;
@@ -1125,6 +1132,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
         <div style={{ flex: 1 }} />
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
           id: null, capa_no: '', ncr_id: null, title: '', owner_name: fullName || '', due_date: '',
+          part_no: '', line_name: '',
           d1_team: '', d2_problem: '', d3_containment: '', d4_root_cause: '', d5_corrective: '',
           d6_implement: '', d7_prevent: '', d8_closure: '', effectiveness: '', status: 'open',
         })}>🛠 เปิด CAPA ใหม่</button>}
@@ -1140,7 +1148,12 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
             {list.map(c => {
               const overdue = c.status !== 'closed' && c.due_date && c.due_date < today;
               return (
-                <tr key={c.id} onClick={() => setDetail({ ...c, ncr_no: c.qa_ncr?.ncr_no })} style={{ cursor: 'pointer' }}
+                <tr key={c.id} onClick={() => setDetail({
+                  ...c, ncr_no: c.qa_ncr?.ncr_no, ncr_source: c.qa_ncr?.source,
+                  /* CAPA เก่าที่ยังไม่มีพาร์ท/ไลน์ของตัวเอง — ยืมจาก NCR ต้นเรื่องให้หาเอกสารได้ */
+                  part_no: c.part_no || c.qa_ncr?.part_no || '',
+                  line_name: c.line_name || c.qa_ncr?.line_name || '',
+                })} style={{ cursor: 'pointer' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg3)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ ...tdSt, fontWeight: 700, whiteSpace: 'nowrap' }}>{c.capa_no}</td>
@@ -1166,6 +1179,15 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
             <Field label="ผู้รับผิดชอบ"><input style={inputSt} value={detail.owner_name || ''} onChange={e => setDetail(f => ({ ...f, owner_name: e.target.value }))} disabled={!canRecord} /></Field>
             <Field label="กำหนดปิด (due date)"><input type="date" style={inputSt} value={detail.due_date || ''} onChange={e => setDetail(f => ({ ...f, due_date: e.target.value }))} disabled={!canRecord} /></Field>
           </div>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <Field label="เลขพาร์ท (ใช้หาเอกสาร PFMEA/Control Plan)">
+              <input style={inputSt} value={detail.part_no || ''} placeholder="เช่น MB3B-8C306-BE"
+                onChange={e => setDetail(f => ({ ...f, part_no: e.target.value }))} disabled={!canRecord} />
+            </Field>
+            <Field label="ไลน์ผลิต">
+              <input style={inputSt} value={detail.line_name || ''} onChange={e => setDetail(f => ({ ...f, line_name: e.target.value }))} disabled={!canRecord} />
+            </Field>
+          </div>
           {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>อ้างอิง NCR: <b>{detail.ncr_no}</b></div>}
 
           {/* D1-D8 เรียง 2 คอลัมน์บนจอกว้าง (UI-CONVENTIONS §5 — เดิมคอลัมน์เดียวสูงยืดต้อง scroll) */}
@@ -1182,6 +1204,47 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
             </Field>
           </div>
 
+          {/* ── ลูปปิด: D7 บอกให้ "อัปเดต FMEA/Control Plan" อยู่แล้ว แต่ไม่เคยมีที่ให้ทำจริง ──
+              แผงนี้คือที่ทำจริง · ระบบเสนอให้ ทีม PE เป็นคนตัดสิน (docs/CLOSED-LOOP-8D-PE.md) */}
+          {detail.id && (
+            <div style={{ marginTop: 14 }}>
+              <PeChangeRequests
+                mode="source"
+                canPropose={canRecord && detail.status !== 'closed'}
+                canDecide={false}
+                source={{
+                  kind: 'capa', id: detail.id, label: detail.capa_no,
+                  partNo: detail.part_no, lineName: detail.line_name,
+                  symptom: detail.d2_problem || '', rootCause: detail.d4_root_cause || '',
+                  corrective: detail.d5_corrective || '',
+                  isCustomer: detail.ncr_source === 'customer',
+                }}
+              />
+              {detail.status !== 'closed' && (
+                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginTop: 10 }}>
+                  <Field label="สรุปเรื่องเอกสาร PE (ตอบก่อนปิด)">
+                    <select style={inputSt} value={detail.pe_review_status || 'pending'} disabled={!canRecord}
+                      onChange={e => setDetail(f => ({ ...f, pe_review_status: e.target.value }))}>
+                      <option value="pending">ยังไม่ได้ตรวจสอบ</option>
+                      <option value="done">ทบทวน/แก้เอกสารแล้ว</option>
+                      <option value="na">พิจารณาแล้วว่าไม่ต้องแก้</option>
+                    </select>
+                  </Field>
+                  <Field label="หมายเหตุ (บังคับเมื่อเลือก 'ไม่ต้องแก้')">
+                    <input style={inputSt} value={detail.pe_review_note || ''} disabled={!canRecord}
+                      placeholder="เช่น อาการนี้เป็น special cause ครั้งเดียว ไม่กระทบการควบคุมประจำ"
+                      onChange={e => setDetail(f => ({ ...f, pe_review_note: e.target.value }))} />
+                  </Field>
+                </div>
+              )}
+            </div>
+          )}
+          {!detail.id && (
+            <div style={{ marginTop: 12, padding: '8px 11px', borderRadius: 8, border: '1px dashed var(--border2)', fontSize: 11.5, color: 'var(--muted)' }}>
+              💾 บันทึกก่อน แล้วแผง <b>🔗 เอกสารที่ต้องตามแก้</b> (PFMEA / Control Plan) จะขึ้นให้ใช้งาน
+            </div>
+          )}
+
           {detail.status !== 'closed' && (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
               <button style={ghostBtn} onClick={() => setDetail(null)}>ยกเลิก</button>
@@ -1195,6 +1258,12 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
               {canManage && detail.id && (
                 <button style={btnSt('#22c55e')} onClick={() => {
                   if (!detail.effectiveness?.trim()) { toast.error('กรอกผลตรวจประสิทธิผลก่อนปิด'); return; }
+                  /* ด่านเรื่องเอกสาร PE — IATF §10.2.3/10.2.4 บังคับให้ทบทวน PFMEA/Control Plan
+                     ⚠️ soft gate โดยตั้งใจ: บังคับให้ "ตอบ" ไม่ได้บังคับให้ "แก้เสร็จ"
+                        (แข็งเกินไปคนจะเลี่ยงด้วยการไม่เปิด CAPA เลย ซึ่งแย่กว่า) */
+                  const pe = detail.pe_review_status || 'pending';
+                  if (pe === 'pending') { toast.error('ก่อนปิด ต้องสรุปเรื่องเอกสาร PE ก่อน — เลือกว่า "แก้แล้ว" หรือ "ไม่ต้องแก้ (พร้อมเหตุผล)"'); return; }
+                  if (pe === 'na' && !detail.pe_review_note?.trim()) { toast.error('เลือก "ไม่ต้องแก้" ต้องระบุเหตุผล — auditor จะถามข้อนี้'); return; }
                   save({ status: 'closed' }, `ปิด ${detail.capa_no} แล้ว ✓`);
                 }}>✅ ปิด CAPA</button>
               )}
