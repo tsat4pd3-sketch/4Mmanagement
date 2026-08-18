@@ -91,6 +91,20 @@ export function throughOfMat(byMatLine, byMat, mat) {
  *  baselines: { bufferKey: { qty, ts } } — bufferKey = mat ของขั้น (ยอดนับจริงล่าสุด)
  *  sums / sumsAfter(ts): ผลจาก sumOrders (sumsAfter เรียกซ้ำด้วย afterTs ของ baseline รายแถว)
  *  หมายเหตุ in-flight = ผ่านขั้นนี้แล้วแต่ยังไม่กลายเป็นปลายทาง (สะสมรวมขั้นถัดๆ ไปด้วย — 1:1 ต่อชิ้น FG) */
+/** เฟส 2 — Net requirement: ออเดอร์ FG → ทดลงเป็นชั้น "แต่ละขั้นต้องทำเพิ่มเท่าไหร่"
+ *  demand    = ความต้องการ FG (ชิ้น) · fgOnHand = สต็อก FG คงเหลือ (line_stock_summary)
+ *  rows      = ผลจาก computeChainWip (ต้องมี inFlight ต่อขั้น)
+ *  หลัก: ต้องผลิต FG เพิ่ม = demand − สต็อก FG · ขั้นที่ i ต้องทำเพิ่ม = FGที่ต้องผลิต − ของที่ผ่านขั้นนั้นแล้ว
+ *  (inFlight เป็นยอดสะสม "ผ่านขั้นนี้ ยังไม่เป็น FG" อยู่แล้ว → ลบตรงๆ ได้เลย)
+ *  inFlight ติดลบ (data drift ยังไม่นับจริง) → นับเป็น 0 ห้ามไปเพิ่ม requirement เกินจริง */
+export function netRequirement(demand, fgOnHand, rows) {
+  const d = Math.max(0, Number(demand) || 0)
+  const fgNeed = Math.max(0, d - Math.max(0, Number(fgOnHand) || 0))
+  const perStep = {}
+  rows.forEach(r => { perStep[r.mat] = Math.max(0, fgNeed - Math.max(0, r.inFlight)) })
+  return { demand: d, fgNeed, perStep }
+}
+
 export function computeChainWip(chain, orders, baselines = {}) {
   const { byMat, byMatLine } = sumOrders(orders)
   const parentCum = byMat[chain.parentMat] || 0

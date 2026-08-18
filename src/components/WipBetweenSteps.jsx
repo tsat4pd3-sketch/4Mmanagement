@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { buildWipChains, computeChainWip } from '../utils/wipChain';
+import { buildWipChains, computeChainWip, netRequirement } from '../utils/wipChain';
 
 /* ═══ 📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18) — แท็บใน /line-stock ═══
    ยอดค้างทุก buffer ของสาย OP คำนวณจากใบผลิตที่บันทึกอยู่แล้ว (Σขั้น − Σปลายทาง)
@@ -29,6 +29,10 @@ export default function WipBetweenSteps() {
   const [countQty, setCountQty] = useState('');
   const [countNote, setCountNote] = useState('');
   const [saving, setSaving] = useState(false);
+  // ── เฟส 2: net requirement ──
+  const [fgStock, setFgStock] = useState({});       // parentMat → qty_on_hand รวมทุกคลัง
+  const [pendingOrders, setPendingOrders] = useState({}); // parentMat → Σ order ค้างส่ง (default ของ demand)
+  const [demand, setDemand] = useState({});         // parentMat → ค่าที่ user แก้ (string) · undefined = ใช้ default
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,6 +64,21 @@ export default function WipBetweenSteps() {
         }
       }
       setOrders(all);
+
+      // เฟส 2: สต็อก FG คงเหลือ + ออเดอร์ค้างส่งของพาร์ทปลายทาง (default ของช่องความต้องการ)
+      const parentMats = ch.map(c => c.parentMat);
+      if (parentMats.length) {
+        const [{ data: stk }, { data: ords }] = await Promise.all([
+          supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('mat_no', parentMats),
+          supabaseDR.from('customer_shipping_orders').select('mat_no, qty').in('mat_no', parentMats).neq('status', 'shipped'),
+        ]);
+        const fs = {};
+        (stk || []).forEach(r => { fs[r.mat_no] = (fs[r.mat_no] || 0) + Number(r.qty_on_hand || 0); });
+        setFgStock(fs);
+        const po = {};
+        (ords || []).forEach(o => { po[o.mat_no] = (po[o.mat_no] || 0) + Number(o.qty || 0); });
+        setPendingOrders(po);
+      }
 
       // baseline นับจริงล่าสุดต่อ buffer_key (best-effort — ตารางยังไม่มี = ว่าง + banner)
       const { data: adj, error: aErr } = await supabaseDR.from('wip_adjustments')
@@ -145,16 +164,41 @@ export default function WipBetweenSteps() {
 
       {scopedChains.map(chainView => {
         const { parentCum, rows } = computeChainWip(chainView, orders, baselines);
+        const pm = chainView.parentMat;
+        const demandVal = demand[pm] !== undefined ? demand[pm] : String(pendingOrders[pm] || '');
+        const fgOnHand = fgStock[pm] || 0;
+        const net = chainView.parentIsProduced && Number(demandVal) > 0
+          ? netRequirement(Number(demandVal), fgOnHand, rows) : null;
         return (
-          <div key={chainView.parentMat} style={card}>
+          <div key={pm} style={card}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-              <b style={{ fontSize: 14 }}>🎯 {chainView.parentMat}</b>
+              <b style={{ fontSize: 14 }}>🎯 {pm}</b>
               <span style={{ color: 'var(--text2)', fontSize: 12.5 }}>{chainView.parentName || ''}</span>
               {chainView.parentLine && <span style={chip('rgba(61,214,92,0.1)', 'var(--accent)')}>🏭 {chainView.parentLine}</span>}
               {chainView.parentIsProduced
                 ? <span style={chip('rgba(61,214,92,0.1)', 'var(--accent)')}>ปลายทางผลิตสะสม {parentCum.toLocaleString()}</span>
                 : <span style={chip('rgba(107,114,128,0.1)', 'var(--muted)')} title="parent เป็นพาร์ทซื้อนอก/ยังไม่มีใบผลิต — แสดงเฉพาะยอดสะสมของขั้น">ปลายทางไม่มีใบผลิต</span>}
             </div>
+            {/* เฟส 2 — ความต้องการ → ต้องผลิต FG เพิ่มเท่าไหร่ (ทดสต็อก FG ให้) */}
+            {chainView.parentIsProduced && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', fontSize: 12.5 }}>
+                <label style={{ fontWeight: 700 }}>📥 ความต้องการ (ชิ้น)</label>
+                <input type="number" min="0" value={demandVal}
+                  onChange={e => setDemand(d => ({ ...d, [pm]: e.target.value }))}
+                  placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
+                {pendingOrders[pm] > 0 && demand[pm] === undefined && (
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>← ออเดอร์ค้างส่งของเลขนี้ (แก้ทับได้)</span>
+                )}
+                <span style={{ color: 'var(--muted)' }}>− สต็อก FG {fgOnHand.toLocaleString()}</span>
+                {net ? (
+                  <span style={chip(net.fgNeed > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(61,214,92,0.12)', net.fgNeed > 0 ? '#f59e0b' : 'var(--accent)')}>
+                    {net.fgNeed > 0 ? `→ ต้องผลิต FG อีก ${net.fgNeed.toLocaleString()}` : '→ สต็อก FG พอแล้ว ✓'}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>กรอกความต้องการ → เห็นเลยว่าแต่ละขั้นต้องทำเพิ่มเท่าไหร่</span>
+                )}
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
@@ -162,6 +206,7 @@ export default function WipBetweenSteps() {
                     <th style={{ padding: '4px 8px' }}>ขั้น (OP)</th>
                     <th style={{ padding: '4px 8px' }}>สถานี · สะสม</th>
                     <th style={{ padding: '4px 8px', textAlign: 'right' }}>ผ่านขั้นนี้แล้ว ยังไม่ถึงปลายทาง</th>
+                    {net && <th style={{ padding: '4px 8px', textAlign: 'right' }}>ต้องทำเพิ่ม</th>}
                     <th style={{ padding: '4px 8px' }}></th>
                   </tr>
                 </thead>
@@ -210,6 +255,13 @@ export default function WipBetweenSteps() {
                           </div>
                         )}
                       </td>
+                      {net && (
+                        <td style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {net.perStep[r.mat] > 0
+                            ? <b style={{ fontSize: 15, color: '#f59e0b' }}>{net.perStep[r.mat].toLocaleString()}</b>
+                            : <span style={chip('rgba(61,214,92,0.12)', 'var(--accent)')}>พอแล้ว ✓</span>}
+                        </td>
+                      )}
                       <td style={{ padding: '7px 8px', textAlign: 'right' }}>
                         {canAdjust && (
                           <button onClick={() => { setCounting({ bufferKey: r.mat, label: `${r.mat}` }); setCountQty(''); setCountNote(''); }}
