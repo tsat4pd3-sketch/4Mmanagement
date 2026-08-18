@@ -1303,6 +1303,9 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
               {canRecord && detail.id && detail.status !== 'verify' && (
                 <button style={btnSt('#4d9fff')} onClick={() => {
                   if (!detail.d5_corrective?.trim()) { toast.error('กรอก D5 มาตรการแก้ไขถาวรก่อนส่งตรวจ'); return; }
+                  /* ไม่ตั้งวันที่มาตรการมีผล = ระบบวัดผลไม่ได้ และจะไม่มีวันเตือนว่าถึงเวลาสรุป
+                     → เตือนแบบไม่บล็อก (ยังไม่ apply migration ก็ต้องส่งตรวจได้ตามปกติ) */
+                  if (!detail.d6_effective_from) toast.info('แนะนำ: กรอก "วันที่มาตรการมีผลจริง" ในแผง 📉 ประสิทธิผล ไม่งั้นระบบวัดผลให้ไม่ได้');
                   save({ status: 'verify' }, 'ส่งตรวจประสิทธิผลแล้ว ✓');
                 }}>ส่งตรวจประสิทธิผล</button>
               )}
