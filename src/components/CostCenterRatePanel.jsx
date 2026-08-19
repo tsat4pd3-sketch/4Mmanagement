@@ -14,11 +14,16 @@ const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const EMPTY = { cost_center: '', effective_from: todayStr(), dl_rate: '', oh_rate: '', dp_rate: '', note: '' };
+/* ⚠️ ช่อง rate ทั้งหมด generate จาก RATE_COMPONENTS — เพิ่มก้อนใหม่ที่ costSaving.js ที่เดียว
+   ฟอร์ม/ตาราง/ยอดรวม ตามให้เอง ห้ามพิมพ์ชื่อคอลัมน์ rate ซ้ำในไฟล์นี้ */
+const EMPTY = {
+  cost_center: '', effective_from: todayStr(), note: '',
+  ...Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, ''])),
+};
 
 export default function CostCenterRatePanel({ nodes, lines }) {
   const [rates, setRates] = useState([]);
-  const [form, setForm] = useState(null);      // {id?, cost_center, effective_from, dl_rate, oh_rate, dp_rate, note}
+  const [form, setForm] = useState(null);      // {id?, cost_center, effective_from, <rate fields จาก RATE_COMPONENTS>, note}
   const [histOpen, setHistOpen] = useState({}); // cc -> bool
   const [saving, setSaving] = useState(false);
 
@@ -60,7 +65,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
     setSaving(true);
     const payload = {
       cost_center: cc, effective_from: form.effective_from,
-      dl_rate: Number(form.dl_rate) || 0, oh_rate: Number(form.oh_rate) || 0, dp_rate: Number(form.dp_rate) || 0,
+      ...Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, Number(form[c.field]) || 0])),
       note: form.note?.trim() || null,
     };
     const q = form.id
@@ -153,7 +158,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     </td>
                     <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                       {cur && <button onClick={() => setForm({ ...EMPTY, ...cur, id: cur.id })} title="แก้แถว rate ปัจจุบัน" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
-                      <button onClick={() => setForm({ ...EMPTY, cost_center: cc, ...(cur ? { dl_rate: cur.dl_rate, oh_rate: cur.oh_rate, dp_rate: cur.dp_rate } : {}) })}
+                      <button onClick={() => setForm({ ...EMPTY, cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
                         title="เพิ่ม rate รอบใหม่ (effective ใหม่)" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--accent)', padding: '2px 8px', marginLeft: 4 }}>＋ rate</button>
                     </td>
                   </tr>
