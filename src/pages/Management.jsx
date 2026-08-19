@@ -154,6 +154,7 @@ export default function Management() {
   const [workers,        setWorkers]        = useState([]);
   const [specialTaskOptions, setSpecialTaskOptions] = useState(DEFAULT_SPECIAL_TASKS); // master งานนอกไลน์ (best-effort)
   const [ppeAlerts,      setPpeAlerts]      = useState([]); // เช็คชื่อแล้วแต่ PPE ไม่ครบ (ไม่อยู่ใน workers)
+  const [helperMap,      setHelperMap]      = useState({}); // 🤝 ยืมตัวข้ามไลน์วันนี้ { employee_id: to_line_id } (line_helpers — best-effort)
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
   const [wipPoints,      setWipPoints]      = useState([]);
@@ -484,6 +485,14 @@ export default function Management() {
       .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
       .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
     setPpeAlerts(ppeData || []);
+    // 🤝 ยืมตัวข้ามไลน์กะนี้ (line_helpers) — best-effort: ยังไม่ apply migration = พฤติกรรมเดิม
+    const { data: helperData, error: eHelper } = await supabase.from('line_helpers')
+      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', getCurrentShift());
+    if (!eHelper) {
+      const hm = {};
+      (helperData || []).forEach(h => { hm[h.employee_id] = h.to_line_id; });
+      setHelperMap(hm);
+    }
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
     const { data: stData } = await supabase.from('operator_special_tasks').select('*').eq('work_date', today);
@@ -803,12 +812,19 @@ export default function Management() {
   }, [isLeader, userLineId, allLines]);
 
   const matchesTeam = (w) => {
+    // 🤝 คนที่ถูกยืมตัวมาช่วยไลน์ใน scope เรากะนี้ ให้เข้า pool ได้แม้ line_id เดิมอยู่นอก scope
+    const helperTo = helperMap[w.employee_id];
     if (isLeader) {
-      if (leaderFamilyIds && !leaderFamilyIds.has(w.employees?.line_id)) return false;
+      if (leaderFamilyIds && !leaderFamilyIds.has(w.employees?.line_id)
+          && !(helperTo && leaderFamilyIds.has(helperTo))) return false;
       return true;
     }
     // role ที่ถูกจำกัดขอบเขตส่วนงาน เห็นเฉพาะพนักงานในส่วนงานตัวเอง (เหมือน operator.jsx)
-    if (scopeSecs.length) return inSectionScope(scopeSecs, w.employees?.section);
+    if (scopeSecs.length) {
+      if (inSectionScope(scopeSecs, w.employees?.section)) return true;
+      const toLine = helperTo ? allLines.find(l => l.id === helperTo) : null;
+      return !!toLine && inSectionScope(scopeSecs, toLine.section);
+    }
     return true;
   };
 
@@ -952,6 +968,13 @@ export default function Management() {
         {worker.employees?.team && (
           <div style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
             Team {worker.employees.team}
+          </div>
+        )}
+        {/* 🤝 ยืมตัวมาจากไลน์อื่นกะนี้ (line_helpers) */}
+        {helperMap[worker.employee_id] && (
+          <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
+            style={{ fontSize: 10, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            🤝 ยืมตัว
           </div>
         )}
         {/* assign to special task */}
