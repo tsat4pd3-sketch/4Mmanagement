@@ -100,7 +100,8 @@ async function dr<T>(path: string): Promise<T[]> {
 type Sess = { id: string; work_date: string; line_name: string; shift: string; status: string; closed_at: string | null };
 type Ord  = { id: string; session_id: string; mat_no: string | null; part_name: string | null;
               status: string; opened_at: string | null; confirmed_at: string | null };
-type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null };
+type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null;
+              is_operation: boolean | null; op_parent_mat: string | null };
 
 const STAGE_LABEL: Record<string, string> = { first: 'ชิ้นแรก (First)', middle: 'ระหว่างผลิต (Middle)', end: 'ชิ้นสุดท้าย (End)' };
 const REASON_LABEL: Record<string, string> = {
@@ -151,19 +152,31 @@ Deno.serve(async (req) => {
     const sIds = sessions.map(s => s.id);
     const orders = await dr<Ord>(
       `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at&session_id=in.(${sIds.join(',')})`);
-    const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name');
+    const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,is_operation,op_parent_mat');
 
     /* ── 2) จับคู่ RH/LH เป็น "รุ่นเดียวกัน" — ตัวแทนกลุ่ม = mat ที่เรียงน้อยกว่า ── */
     const pairOf = new Map<string, string>();
     const nameOf = new Map<string, string>();
+    const opParent = new Map<string, string>();   // รายการขั้นตอน (OP) → พาร์ทจริง
+    const opNoParent = new Set<string>();         // OP ที่ยังไม่ผูกพาร์ทจริง (ต้องบอก ห้ามซ่อน)
     for (const p of products) {
       if (!p.mat_no) continue;
       if (p.name) nameOf.set(p.mat_no, p.name);
       if (p.pair_mat_no) pairOf.set(p.mat_no, p.pair_mat_no);
+      if (p.is_operation) {
+        if (p.op_parent_mat) opParent.set(p.mat_no, p.op_parent_mat);
+        else opNoParent.add(p.mat_no);
+      }
     }
+    // ⚠️ ยุบ "รายการขั้นตอน (OP)" เข้าพาร์ทจริงก่อนเสมอ แล้วค่อยจับคู่ RH/LH
+    //    OP (ขับนัท/สปอต เช่น `E025 (M6 ไม่มีเกลียว)`) ไม่ใช่ "รุ่น" ที่ QA ตรวจ — เป็นขั้นตอนย่อย
+    //    ของพาร์ทเดียวกัน · ไม่ยุบ = เรียก QA ซ้ำหลายรอบต่อพาร์ทเดียว (dry-run 2026-08-19 เจอ
+    //    14/30 รายการเป็น OP) · กฎเหล็กชั้น Operation ใน CLAUDE.md
+    //    OP ที่ยังไม่ผูกพาร์ทจริง (op_parent_mat null) = ใช้เลขเดิมไปก่อน + ติดธงบอกให้ไปผูก
     const canon = (mat: string) => {
-      const pair = pairOf.get(mat);
-      return pair && pair < mat ? pair : mat;
+      const base = opParent.get(mat) || mat;
+      const pair = pairOf.get(base);
+      return pair && pair < base ? pair : base;
     };
 
     /* ── 3) แตกเป็น "run" ต่อ (กะ × รุ่น) ── */
@@ -275,6 +288,7 @@ Deno.serve(async (req) => {
             stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
             at: hhmm(r.triggered_at), due: hhmm(r.due_at),
             part_linked: !!r.part_id,   // false = ต้องผูก qa_parts.mat_no ก่อนถึงจะกดเปิดใบจากคิวได้
+            op_unlinked: r.mat_group.filter(m => opNoParent.has(m)),  // OP ที่ยังไม่ผูกพาร์ทจริง
           })),
         note: 'โหมดทดลอง — ยังไม่เขียนอะไรลงฐานข้อมูลและไม่ส่ง Telegram',
       });
