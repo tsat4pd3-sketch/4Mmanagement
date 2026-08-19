@@ -11,6 +11,8 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, wavg, wLoad, buildCtMap } from '../utils/oee';
+import { usePolling } from '../utils/usePolling';
+import { cachedMaster } from '../utils/masterCache';
 import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
@@ -413,22 +415,26 @@ export default function FactoryMap({ setupMode = false }) {
       .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }, breakRes, kstdRes] = await Promise.all([
+    const [{ data: orders }, { data: dts }, { data: defs }, prods, breaks, kstds] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
       // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
       supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type'),
-      supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
+      // ⚡ master 3 ตัวล่างนี้ผ่าน cache (10 นาที) — เดิมดึงทั้งตารางทุก 30 วิ กิน egress ~70% ของรอบ
+      //    โดยไม่ได้ความสดอะไรเพิ่ม (CT/นโยบายพัก เปลี่ยนเดือนละไม่กี่ครั้ง) ดู src/utils/masterCache.js
+      cachedMaster('dr_products:ct', async () =>
+        (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
+      cachedMaster('break_policies:active', async () =>
+        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)).data || []),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
-      supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true).then(r => r, () => ({ data: [] })),
+      cachedMaster('kanban_standards:ct', async () =>
+        (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
     const pairMap = {}, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
-    const ctMap = buildCtMap({ kanbanStds: kstdRes?.data || [], products: prods || [] });
-    const breaks = breakRes?.data || [];
+    const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     const ngBySess = {}; (defs || []).forEach(d => { ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0); });
@@ -599,7 +605,7 @@ export default function FactoryMap({ setupMode = false }) {
     liveOeeRef.current = liveBySess;
     setLineStatus(out);
   }, []);
-  useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
+  usePolling(loadStatus, 30000);
 
   /* ── ⚡ พลังงานไฟฟ้ารายเดือน (DR · เฟส 1 กรอกมือที่ /energy) ──────────────────
      ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน — โหลดเดือนปัจจุบัน + เดือนก่อนไว้เทียบ
@@ -690,11 +696,12 @@ export default function FactoryMap({ setupMode = false }) {
     manpowerRef.current = out;
     setManpower(out);
   }, []);
-  useEffect(() => { loadManpower(); const t = setInterval(loadManpower, 60000); return () => clearInterval(t); }, [loadManpower]);
+  usePolling(loadManpower, 60000);
 
   /* ── PM เครื่องจักรรายไลน์ (DR: machines → checklists → pm_plans) — refresh 5 นาที ── */
   const loadPM = useCallback(async () => {
-    const { data: machines } = await supabaseDR.from('machines').select('id, line_name').eq('is_active', true);
+    const machines = await cachedMaster('machines:idline', async () =>
+      (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []);
     if (!machines?.length) { setPmStatus({}); return; }
     const lineOfMachine = {}; machines.forEach(m => { lineOfMachine[m.id] = m.line_name; });
     const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').in('equipment_id', machines.map(m => m.id));
@@ -714,19 +721,24 @@ export default function FactoryMap({ setupMode = false }) {
     });
     setPmStatus(out);
   }, []);
-  useEffect(() => { loadPM(); const t = setInterval(loadPM, 300000); return () => clearInterval(t); }, [loadPM]);
+  usePolling(loadPM, 300000);
 
   /* ── Supply route (DR: facility_supply_links + machines + open MO) — refresh 30 วิ ──
      utility/facility จ่ายไลน์ไหน · ถ้ามีใบซ่อม (MO) เปิดค้างบนเครื่องนั้น = ไลน์ที่จ่ายกระทบ (แดง) */
   const loadSupply = useCallback(async () => {
-    const [links, mcs, mos] = await Promise.all([
-      supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
-      supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category').then(r => r).catch(() => ({ data: [] })),
-      supabaseDR.from('mtn_orders').select('machine_no, status').then(r => r).catch(() => ({ data: [] })),
+    // ⚡ links/machines เป็น master (เปลี่ยนนานๆ ครั้ง) → cache · เหลือแต่ใบซ่อมที่ต้องสดจริง
+    //    และกรอง "ใบที่ยังไม่ปิด" ฝั่ง server — เดิมดึง mtn_orders ทั้งตารางมากรองในเบราว์เซอร์
+    const [linkRows, machineRows, mos] = await Promise.all([
+      cachedMaster('facility_supply_links', async () =>
+        (await supabaseDR.from('facility_supply_links').select('machine_id, line_name')).data || []),
+      cachedMaster('machines:supply', async () =>
+        (await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category')).data || []),
+      supabaseDR.from('mtn_orders').select('machine_no')
+        .not('status', 'in', '("closed","rejected")').then(r => r, () => ({ data: [] })),
     ]);
-    const linkRows = links?.data || [];
-    const byId = {}; (mcs?.data || []).forEach(m => { byId[m.id] = m; });
-    const openNos = new Set((mos?.data || []).filter(o => !['closed', 'rejected'].includes(o.status)).map(o => o.machine_no));
+    const mcRows = machineRows || [];
+    const byId = {}; mcRows.forEach(m => { byId[m.id] = m; });
+    const openNos = new Set((mos?.data || []).map(o => o.machine_no));
     // (ก) มุมมองไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ (เดิม)
     const out = {};
     linkRows.forEach(l => {
@@ -741,7 +753,7 @@ export default function FactoryMap({ setupMode = false }) {
     // (ข) มุมมองโซน facility เอง: เครื่องในโซนนี้ down (open MO) มั้ย + จ่ายให้ไลน์ไหนบ้าง
     const feedsByMachine = {}; linkRows.forEach(l => { (feedsByMachine[l.machine_id] ||= []).push(l.line_name); });
     const fac = {};
-    (mcs?.data || []).forEach(m => {
+    mcRows.forEach(m => {
       if (!m.equipment_category || m.equipment_category === 'production' || !m.line_name) return;
       const atRisk = openNos.has(m.machine_no);
       const o = fac[m.line_name] || { machines: [], atRisk: false, feeds: new Set() };
@@ -753,7 +765,7 @@ export default function FactoryMap({ setupMode = false }) {
     Object.values(fac).forEach(o => { o.feeds = [...o.feeds]; });
     setFacilitySupply(fac);
   }, []);
-  useEffect(() => { loadSupply(); const t = setInterval(loadSupply, 30000); return () => clearInterval(t); }, [loadSupply]);
+  usePolling(loadSupply, 30000);
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */

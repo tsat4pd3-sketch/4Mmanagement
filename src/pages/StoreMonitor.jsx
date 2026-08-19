@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { visibleInterval } from '../utils/usePolling';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -59,8 +60,8 @@ export default function StoreMonitor() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const t = setInterval(() => { load(); setTick(x => x + 1); }, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(() => { load(); setTick(x => x + 1); }, 60000);
+    return () => stopPoll();
   }, [load]);
 
   const findings = useMemo(() => {

@@ -13,6 +13,7 @@ import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
+import { visibleInterval } from '../utils/usePolling';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -364,8 +365,7 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchLineProd(viewLineNames);
-    const t = setInterval(() => fetchLineProd(viewLineNames), 30000);
-    return () => clearInterval(t);
+    return visibleInterval(() => fetchLineProd(viewLineNames), 30000);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเฉพาะตอน downtime ยังเปิดค้าง (ปิดรายการ = ดับทันที) ──
@@ -378,12 +378,12 @@ export default function Management() {
     const refresh = () => fetchActiveDowntimes(viewLineNames).then(setDtAlarms).catch(() => {});
     const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
     refresh();
-    const t = setInterval(refresh, 60000);
+    const stopPoll = visibleInterval(refresh, 60000);
     const ch = supabaseDR.channel('mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();
-    return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
+    return () => { stopPoll(); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
 

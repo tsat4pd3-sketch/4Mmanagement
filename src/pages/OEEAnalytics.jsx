@@ -20,6 +20,7 @@ import { lazy, Suspense } from 'react';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { visibleInterval } from '../utils/usePolling';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
@@ -495,8 +496,8 @@ export default function OEEAnalytics() {
   // Auto refresh ทุก 60 วิ เฉพาะตอนอยู่ tab วันนี้ + เปิด auto refresh
   useEffect(() => {
     if (viewTab !== 'today' || !autoRefresh) return;
-    const t = setInterval(() => { loadToday(); loadTdHistory(); }, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(() => { loadToday(); loadTdHistory(); }, 60000);
+    return () => stopPoll();
   }, [viewTab, autoRefresh, loadToday, loadTdHistory]);
 
   const tdSessionsTeamFiltered = useMemo(() => {
