@@ -1277,12 +1277,18 @@ const AUDIT_TABLES = {
   mtn_spare_parts:     '🔩 อะไหล่',
   mtn_technicians:     '👷 ช่าง',
   mtn_labor_rates:     '💰 ค่าแรงมาตรฐาน',
+  equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
+  die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
 };
 const AUDIT_FIELD = {
   name: 'ชื่อ', characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', team: 'ทีม', dept: 'ทีม',
   price: 'ราคา', unit: 'หน่วย', is_active: 'สถานะใช้งาน', shelf: 'ตำแหน่งชั้นวาง',
   stock_qty: 'ยอดคงเหลือ', min_qty: 'ขั้นต่ำ', prefix: 'รหัสย่อ', sort_order: 'ลำดับ',
   code: 'รหัส', mat_no: 'เลข MAT', rank_override: 'Rank (ตั้งเอง)', rank_note: 'เหตุผล Rank',
+  die_status: 'สถานะแม่พิมพ์', status_note: 'หมายเหตุสถานะ', area_id: 'ผังจัดเก็บ',
+  pos_x: 'ตำแหน่ง X (%)', pos_y: 'ตำแหน่ง Y (%)', regrind_count: 'เจียรไปแล้ว (ครั้ง)',
+  regrind_limit: 'เจียรได้สูงสุด', tonnage_ton: 'ขนาดตัน', op_seq: 'OP', note: 'หมายเหตุ',
+  image_url: 'รูปผัง',
 };
 const AUDIT_ACT = { INSERT: { t: '➕ เพิ่ม', c: '#22c55e' }, UPDATE: { t: '✏️ แก้ไข', c: '#f59e0b' }, DELETE: { t: '🗑 ลบ', c: '#ef4444' } };
 
