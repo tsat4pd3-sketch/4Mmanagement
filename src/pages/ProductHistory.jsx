@@ -159,9 +159,33 @@ export default function ProductHistory() {
     return products.filter(p => !p.line_name || scopeLineNames.has(p.line_name.trim().toLowerCase()));
   }, [products, scopeLineNames]);
 
-  const lineOpts = useMemo(() =>
-    [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
-  [scopedProducts]);
+  // dropdown ไลน์จัดชั้นตามผัง (กฎ §5.3 — เดิมลิสต์แบนเรียง ก-ฮ แม่ลูกปนกัน user ทัก 2026-08-18):
+  // optgroup = กลุ่มบนสุดตาม parent_line_name · แม่ขึ้นก่อนในกลุ่ม ลูกมี ↳ นำหน้า
+  // ชื่อที่ไม่อยู่ใน production_lines = optgroup "⚠ นอกผัง" ห้ามซ่อน (กฎ worklist — ซ่อนแล้วหาของผิดไม่เจอ)
+  const lineGroups = useMemo(() => {
+    const names = [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))];
+    const byName = {}; lines.forEach(l => { byName[l.name] = l; });
+    const topOf = (n) => {
+      let cur = byName[n]; if (!cur) return null;
+      const seen = new Set();
+      while (cur.parent_line_name && byName[cur.parent_line_name] && !seen.has(cur.name)) { seen.add(cur.name); cur = byName[cur.parent_line_name]; }
+      return cur.name;
+    };
+    const sortTh = (a, b) => a.localeCompare(b, 'th');
+    const groups = {}; const off = [];
+    names.forEach(n => {
+      const t = topOf(n);
+      if (!t) { off.push(n); return; }
+      (groups[t] = groups[t] || []).push(n);
+    });
+    return {
+      groups: Object.keys(groups).sort(sortTh).map(t => ({
+        top: t,
+        names: groups[t].sort((a, b) => (a === t ? -1 : b === t ? 1 : sortTh(a, b))),
+      })),
+      off: off.sort(sortTh),
+    };
+  }, [scopedProducts, lines]);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -204,7 +228,16 @@ export default function ProductHistory() {
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
             <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ marginTop: 4, width: 200 }}>
               <option value="">ทุกไลน์</option>
-              {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+              {lineGroups.groups.map(g => (
+                <optgroup key={g.top} label={g.top}>
+                  {g.names.map(n => <option key={n} value={n}>{n === g.top ? n : `↳ ${n}`}</option>)}
+                </optgroup>
+              ))}
+              {lineGroups.off.length > 0 && (
+                <optgroup label="⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)">
+                  {lineGroups.off.map(n => <option key={n} value={n}>{n}</option>)}
+                </optgroup>
+              )}
             </select>
           </div>
           <div>
