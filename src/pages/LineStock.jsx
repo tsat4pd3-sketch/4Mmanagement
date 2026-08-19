@@ -11,6 +11,7 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import { visibleInterval } from '../utils/usePolling';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -1033,8 +1034,8 @@ function DeliveryTimeBoardTab() {
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(load, 60000);
+    return () => stopPoll();
   }, [load]);
 
   const dlvMap = useMemo(() => {

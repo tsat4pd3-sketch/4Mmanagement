@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { supabaseDR } from '../supabaseClient'
+import { visibleInterval } from '../utils/usePolling'
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -28,11 +29,11 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
 
   useEffect(() => {
     fetchAlerts()
-    const t = setInterval(fetchAlerts, 60000) // กันเหนียวเผื่อ realtime หลุด
+    const stopPoll = visibleInterval(fetchAlerts, 60000) // กันเหนียวเผื่อ realtime หลุด
     const ch = supabaseDR.channel(`dt-siren-${mode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(fetchAlerts, 400))
       .subscribe()
-    return () => { clearInterval(t); supabaseDR.removeChannel(ch) }
+    return () => { stopPoll(); supabaseDR.removeChannel(ch) }
   }, [mode, fetchAlerts])
 
   // ปลดล็อกเสียงตอน user แตะครั้งแรก (นโยบาย autoplay)
