@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { focusSidebarGroups, navItemsForGroups } from '../App';
+import { focusSidebarGroups, navItemsForGroups, UserContext } from '../App';
+import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
@@ -201,6 +202,8 @@ function getWorkDate() {
 export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition,
   userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved }) {
   const navigate = useNavigate();
+  // scope ของผู้ใช้ (DeptHub อยู่ใน UserContext.Provider ของ App แล้ว)
+  const { lineId: userLineId, sections: userSections = [] } = useContext(UserContext);
 
   // ── โปรไฟล์เมนู: เปลี่ยนรูป / ลายเซ็น / เปลี่ยนรหัสผ่าน (2026-07-14) ──
   const [profileOpen, setProfileOpen] = useState(false);
@@ -245,20 +248,46 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   // ── LIVE TELEMETRY — นับจากตารางจริง (head:true count = เบา) refresh ทุก 60 วิ ──
   // เป็นของเสริมของหน้า hub: query พลาด = คงค่าเดิม/แสดง "–" ห้ามทำหน้าพัง
   const [tele, setTele] = useState({ lines: null, present: null, dt: null, fourM: null });
+  const [prodLines, setProdLines] = useState([]);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name, section, parent_line_name')
+      .then(({ data }) => setProdLines(data || []));
+  }, []);
+
+  // ⚠️ ตัวเลขบนหน้าหลักต้อง scope — ไม่งั้นหัวหน้าไลน์เห็นของทั้งโรงงานแล้วสับสน
+  //    ("ไลน์ผมทำไมไม่แจ้งเตือนแบบนี้" = เห็น Andon ของแผนกอื่น · feedback 2026-08-19)
+  //    หน่วยงานช่าง → ทั้งโรงงาน (ดูแลเครื่องทุกไลน์) · ผลิต → เฉพาะส่วนงานตัวเอง
+  const scopeNames = useMemo(
+    () => scopedLineNames({ role: userRole, lineId: userLineId, sections: userSections, lines: prodLines }),
+    [userRole, userLineId, userSections, prodLines],
+  );
+  const scopeLineIds = useMemo(
+    () => (scopeNames ? prodLines.filter(l => scopeNames.includes(l.name)).map(l => l.id) : null),
+    [scopeNames, prodLines],
+  );
+  const wholeFactory = scopeNames == null;
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
       const wd = getWorkDate();
       try {
-        const [s, a, m, dts] = await Promise.all([
-          supabaseDR.from('production_sessions').select('id', { count: 'exact', head: true })
-            .eq('work_date', wd).in('status', ['open', 'pending_close']),
-          supabase.from('daily_production_logs').select('id', { count: 'exact', head: true })
-            .eq('work_date', wd).eq('is_present', true),
-          supabase.from('four_m_logs').select('id', { count: 'exact', head: true })
-            .in('status', ['pending', 'pending_qa']),
-          fetchActiveDowntimes(),
-        ]);
+        let qs = supabaseDR.from('production_sessions').select('id', { count: 'exact', head: true })
+          .eq('work_date', wd).in('status', ['open', 'pending_close']);
+        if (scopeNames) qs = qs.in('line_name', scopeNames);
+
+        // เช็คชื่อ scope ผ่านไลน์ของพนักงาน (daily_production_logs ไม่มี line_name เอง)
+        let qa = supabase.from('daily_production_logs')
+          .select('id, employees!inner(line_id)', { count: 'exact', head: true })
+          .eq('work_date', wd).eq('is_present', true);
+        if (scopeLineIds) qa = qa.in('employees.line_id', scopeLineIds);
+
+        let qm = supabase.from('four_m_logs').select('id', { count: 'exact', head: true })
+          .in('status', ['pending', 'pending_qa']);
+        if (scopeNames) qm = qm.in('line_name', scopeNames);
+
+        const [s, a, m, dts] = await Promise.all([qs, qa, qm, fetchActiveDowntimes(scopeNames)]);
         if (!alive) return;
         setTele({ lines: s.count ?? 0, present: a.count ?? 0, fourM: m.count ?? 0, dt: dts.list.length });
       } catch { /* เงียบ — telemetry เป็นของเสริม */ }
@@ -266,7 +295,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
     load();
     const t = setInterval(load, 60000);
     return () => { alive = false; clearInterval(t); };
-  }, []);
+  }, [scopeNames, scopeLineIds]);
 
   const TELE = [
     { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   color: '#3dd65c', unit: 'ไลน์' },
@@ -435,6 +464,15 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
             ● Live Telemetry
+          </span>
+          {/* ขอบเขตของตัวเลข — ห้ามให้เดาเอง (เคยเข้าใจผิดว่าเห็น Andon ของแผนกอื่นเป็นของตัวเอง) */}
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 99,
+            border: '1px solid var(--border)', color: wholeFactory ? 'var(--muted)' : 'var(--accent)',
+          }} title={wholeFactory
+              ? (MAINTENANCE_ROLES.includes(userRole) ? 'หน่วยงานช่างดูแลเครื่องจักรทุกไลน์ จึงเห็นทั้งโรงงาน' : 'บัญชีนี้ไม่ได้จำกัดส่วนงาน')
+              : `นับเฉพาะไลน์: ${(scopeNames || []).join(', ')}`}>
+            {wholeFactory ? '🏭 ทั้งโรงงาน' : `👥 ส่วนงานของฉัน (${(scopeNames || []).length} ไลน์)`}
           </span>
           <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
           <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>refresh 60s</span>
