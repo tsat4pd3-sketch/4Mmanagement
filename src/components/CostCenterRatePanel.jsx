@@ -93,6 +93,18 @@ export default function CostCenterRatePanel({ nodes, lines }) {
     load();
   };
 
+  /* วัน Effective ตอนแก้แถวเดิม = ล็อกกันแก้พลาด แต่ปลดล็อกได้ (แถว seed เป็น 2000-01-01 ต้องแก้เป็นวันจริงได้)
+     `_unlockDate` เป็นคีย์ client-only ขึ้นต้น `_` — handleSave เลือกฟิลด์เองอยู่แล้ว ไม่มีทางหลุดลง DB */
+  const dateLocked = !!form?.id && !form._unlockDate;
+  const unlockDate = () => {
+    if (!window.confirm(
+      'ปลดล็อกวัน Effective?\n\n'
+      + 'วันนี้บอกว่า rate แถวนี้เริ่มมีผลเมื่อไหร่ — เปลี่ยนแล้ว cost saving ของโปรเจคปรับปรุงที่คิดด้วย rate ช่วงนี้จะขยับตาม\n\n'
+      + 'ถ้าเป็นการ "ปรับ rate รอบใหม่" ให้กดยกเลิก แล้วใช้ปุ่ม ＋ rate ในตารางแทน (rate เดิมเก็บไว้เป็นประวัติ)'
+    )) return;
+    setForm(f => ({ ...f, _unlockDate: true }));
+  };
+
   const noRateUsed = groupList.filter(c => c.lines.length && !rateCcSet.has(c.cc)).length;
 
   return (
@@ -210,24 +222,38 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>Cost Center *
-                  <input list="cc-rate-codes" value={form.cost_center} disabled={!!form.id}
-                    onChange={e => setForm({ ...form, cost_center: e.target.value })} placeholder="เช่น 2140662101" style={{ marginTop: 4, fontFamily: 'monospace' }} />
+                  {/* readOnly ไม่ใช่ disabled — disabled ทำให้กล่องหน้าตาคนละแบบกับโมดัลเพิ่มใหม่ */}
+                  <input list="cc-rate-codes" value={form.cost_center} readOnly={!!form.id}
+                    onChange={e => setForm({ ...form, cost_center: e.target.value })} placeholder="เช่น 2140662101"
+                    title={form.id ? 'ย้าย rate ข้าม cost center ไม่ได้ — ถ้ากรอกรหัสผิด ให้ลบแถวนี้แล้วเพิ่มใหม่' : ''}
+                    style={{ marginTop: 4, fontFamily: 'monospace', opacity: form.id ? 0.75 : 1, cursor: form.id ? 'not-allowed' : 'auto' }} />
                   <datalist id="cc-rate-codes">{groupList.map(c => <option key={c.cc} value={c.cc} />)}</datalist>
                 </label>
-                {/* ⚠️ Effective = "วันที่ rate เริ่มมีผล" (วันของบัญชี) ไม่ใช่ timestamp ตอนแก้ —
-                    เวลาที่แก้ระบบ stamp เองที่ updated_at + audit_log (ใครแก้/เมื่อไหร่) ไม่ต้องกรอก
-                    ล็อกตอนแก้แถวเดิม: ขยับวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน → cost saving ของโปรเจคเก่าเพี้ยนตาม
-                    (กฎเหล็ก: ปรับ rate รอบใหม่ = เพิ่มแถวใหม่ ห้าม update ทับ) */}
+                {/* ⚠️ Effective = "วันที่ rate เริ่มมีผลตามบัญชี" ไม่ใช่ timestamp ตอนแก้
+                    (เวลาแก้ระบบ stamp เองที่ updated_at + audit_log — ไม่ต้องกรอก)
+                    ตอนแก้แถวเดิม "กันพลาด" ไว้ก่อน แต่ต้องปลดล็อกได้ — แถวที่ seed ไว้เป็น 2000-01-01
+                    (วันตั้งต้นให้ครอบโปรเจคที่มีอยู่แล้ว) พอบัญชีบอกวันจริง ต้องแก้ทับได้ ไม่ใช่ลบทิ้งแล้วสร้างใหม่
+                    ⚠️ ห้าม disabled แล้วจบ — input[type=date] ที่ disabled หน้าตาไม่เหมือนตอนเพิ่มใหม่
+                    (ไม่มีไอคอนปฏิทิน) โมดัล 2 ตัวเลยดูคนละแบบ */}
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Effective *
-                  <input type="date" value={form.effective_from} disabled={!!form.id}
+                  <input type="date" value={form.effective_from} readOnly={dateLocked}
                     onChange={e => setForm({ ...form, effective_from: e.target.value })}
-                    title={form.id ? 'ล็อกเมื่อแก้แถวเดิม — ต้องการ rate รอบใหม่ ให้กดปุ่ม ＋ rate ในตาราง' : ''}
-                    style={{ marginTop: 4, width: 145, display: 'block' }} />
+                    onKeyDown={e => { if (dateLocked) e.preventDefault(); }}
+                    onClick={e => { if (dateLocked) { e.preventDefault(); e.currentTarget.blur(); } }}
+                    title={dateLocked ? 'ล็อกกันแก้พลาด — กด 🔓 ถ้าต้องแก้วันจริงๆ' : ''}
+                    style={{ marginTop: 4, width: 145, display: 'block', opacity: dateLocked ? 0.75 : 1, cursor: dateLocked ? 'not-allowed' : 'auto' }} />
                 </label>
               </div>
               {form.id && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px', lineHeight: 1.6 }}>
-                  🔒 วัน Effective ล็อกไว้ — <b>rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
+                  {dateLocked ? (
+                    <>
+                      🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
+                      <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>🔓 แก้วันที่</button>
+                    </>
+                  ) : (
+                    <span style={{ color: '#f59e0b', fontWeight: 700 }}>🔓 ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
+                  )}
                   <div style={{ marginTop: 3, opacity: 0.85 }}>
                     เวลาที่แก้ระบบบันทึกเอง: สร้าง {fmtStamp(form.created_at)} · แก้ล่าสุด {fmtStamp(form.updated_at)} (ใครแก้ดูได้ที่ audit log)
                   </div>
