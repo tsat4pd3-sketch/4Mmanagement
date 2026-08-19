@@ -11,7 +11,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
@@ -350,7 +350,7 @@ export default function MtnRepair() {
             {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
           <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option><TeamOpts list={mtnDepts} /></select>
-          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n} value={n}>{n}</option>)}</select>
+          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(scopedLineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
           <input value={fText} onChange={e => setFText(e.target.value)} placeholder="ค้นหา เลข MO/เครื่อง/ปัญหา" style={{ ...inp, width: 230 }} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
         </div>
@@ -509,7 +509,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
-        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></Field>
+        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{toHierarchicalOptions(lines).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>

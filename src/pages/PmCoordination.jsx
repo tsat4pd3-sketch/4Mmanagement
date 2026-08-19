@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
@@ -389,7 +389,9 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
             <label style={lbl}>ไลน์</label>
             <select value={f.line_name} onChange={e => setF(v => ({ ...v, line_name: e.target.value }))} style={inp}>
               <option value="">— เลือกไลน์ —</option>
-              {lines.filter(l => !scopeLines || scopeLines.has(l.name)).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+              {toHierarchicalOptions(lines.filter(l => !scopeLines || scopeLines.has(l.name))).map(({ line: l, depth }) => (
+                <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+              ))}
             </select>
           </div>
         </div>

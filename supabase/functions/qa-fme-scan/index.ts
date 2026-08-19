@@ -15,6 +15,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
 const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
+// ⚠️ ต้องตั้ง secret DR_URL / DR_ANON_KEY ที่ Supabase project (Edge Functions → Secrets)
+//    ตรวจ 2026-08-19: **ยังไม่ได้ตั้ง** → function จะตอบ error บอกให้ไปตั้งก่อน (ไม่ทำงานเงียบๆ)
 const DR_URL = (Deno.env.get('DR_URL') || '').replace(/\/$/, '');
 const DR_KEY = Deno.env.get('DR_ANON_KEY') || '';
 let BOT_TOKEN: string | undefined = TELEGRAM_BOT_TOKEN;
@@ -106,9 +108,13 @@ const SHEET_STAGE: Record<string, string> = { first: 'setup_first', middle: 'inp
 
 Deno.serve(async (req) => {
   try {
+    // ?dry=1 = โหมดทดลอง — อ่านข้อมูลผลิตจริงแล้วบอกว่า "จะเรียกอะไรบ้าง"
+    // **ไม่เขียน DB · ไม่ส่ง Telegram** · ใช้ดูผลก่อนกดเปิดสวิตช์จริง (ทำงานได้แม้ระบบยังปิดอยู่)
+    const dry = new URL(req.url).searchParams.get('dry') === '1';
+
     const { data: cfg } = await supabase.from('qa_fme_config').select('*').eq('id', 1).maybeSingle();
     if (!cfg) return json({ ok: false, error: 'ยังไม่มี qa_fme_config (apply migration 20260819_qa_fme_call.sql)' });
-    if (!cfg.is_enabled) return json({ ok: true, skipped: 'ปิดอยู่ (qa_fme_config.is_enabled = false)' });
+    if (!cfg.is_enabled && !dry) return json({ ok: true, skipped: 'ปิดอยู่ (qa_fme_config.is_enabled = false)' });
     if (!DR_URL || !DR_KEY) return json({ ok: false, error: 'ยังไม่ได้ตั้ง secret DR_URL / DR_ANON_KEY' });
 
     BOT_TOKEN = await getBotToken();
@@ -232,6 +238,28 @@ Deno.serve(async (req) => {
         seen.add(k); return true;
       })
       .map(w => ({ ...w, part_id: resolvePart(w.mat_group) }));
+
+    // ── โหมดทดลอง: บอกว่า "จะเรียกอะไรบ้าง" แล้วจบ (ไม่เขียน ไม่ส่ง) ──
+    if (dry) {
+      const { data: already } = await supabase.from('qa_fme_obligations')
+        .select('line_name, work_date, shift, mat_no, stage').gte('work_date', yest);
+      const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}`));
+      return json({
+        ok: true, dry: true, enabled: cfg.is_enabled,
+        scanned: { sessions: sessions.length, orders: orders.length, runs: runs.size },
+        would_create: rows
+          .filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`))
+          .map(r => ({
+            line: r.line_name, shift: r.shift, work_date: r.work_date,
+            mat: r.mat_no, mats: r.mat_group, product: r.product_name,
+            stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
+            at: hhmm(r.triggered_at), due: hhmm(r.due_at),
+            part_linked: !!r.part_id,   // false = ต้องผูก qa_parts.mat_no ก่อนถึงจะกดเปิดใบจากคิวได้
+          })),
+        note: 'โหมดทดลอง — ยังไม่เขียนอะไรลงฐานข้อมูลและไม่ส่ง Telegram',
+      });
+    }
+
     if (rows.length) {
       const { data: ins, error } = await supabase.from('qa_fme_obligations')
         .upsert(rows, { onConflict: 'line_name,work_date,shift,mat_no,stage', ignoreDuplicates: true })
