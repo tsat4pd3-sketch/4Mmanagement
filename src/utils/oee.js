@@ -100,7 +100,57 @@ export const LIVE_MIN_ELAPSED = 10; // นาทีแรกของกะ ย�
 // parallelN: จำนวนเครื่องหลักวิ่งขนานของไลน์ (production_lines.parallel_stations ผ่าน parallelUnitsOf ใน lineTypes.js)
 // — DT ที่ระบุเครื่อง (machine_no) หักน้ำหนัก 1/N (เครื่องเดียวหยุด อีก N-1 ยังวิ่ง) · DT ไม่ระบุเครื่อง = หยุดทั้งไลน์ หักเต็ม
 // สูตรเดียวกับ computeOEE ตอนปิดกะใน DailyReport (เคส LASER-345/789 N=3 · 2026-08-05) · ไม่ส่งมา = 1 (พฤติกรรมเดิม)
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1 }) {
+/* parallelN = หัก DT รายเครื่อง 1/N (ทุกโหมดไหลงาน)
+   parallelCap = เพดานเครื่องที่เดินขนานได้ (production_lines.parallel_stations)
+                 ใช้เฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (flow_mode = parallel_machine)
+   ⚠️ 2 ตัวนี้ไม่เท่ากันเสมอไป และห้ามเอามารวมกัน (คำสั่ง user 2026-08-11):
+     · ผลิตต่อเนื่อง (one_piece_flow เช่น LASER-345/789 เลเซอร์ 3 ตัวเป็นสายเดียว)
+       → CT ที่กรอกเป็นของ "ทั้งไลน์" อยู่แล้ว → parallelCap = 1 ห้ามหาร
+       (เคยคิดจะหาร N=3 ทั้งกระดาน — เช็คแล้ว P จะร่วงจาก 63-98% เหลือ 21-33% = พัง)
+     · เครื่อง stand-alone ต่างคนต่างรัน (parallel_machine เช่น SUB APRON)
+       → CT เป็นของ "ต่อเครื่อง" → ตัวหารต้องเป็น "เวลาเครื่องที่ถูกใช้จริง"
+
+   ⚠️⚠️ ตัวหารต้องวัดจาก "ช่วงเวลาที่แต่ละพาร์ทวิ่ง" (busyMinutes) — **ห้ามใช้จำนวนคน**
+   (2026-08-13 · แก้ของที่เคย ship ผิดเอง) เหตุผล: 1 คนคุมได้หลายเครื่อง ไลน์นี้เป็นเครื่อง
+   load/unload เอง — เคสจริง SUB APRON 05/08 กะเช้า: เช็คชื่อ 4 คน แต่ 6 พาร์ทเปิดพร้อมกัน
+   ตั้งแต่ต้นกะ = 6 เครื่องเดินจริง (งาน 4,044 นาที ÷ 6 เครื่อง × 720 นาที = 93.6% สมเหตุผล)
+   ถ้าหารด้วยจำนวนคนจะได้ 4 → P พุ่งเกินจริง · และกะที่ไม่มีใครลงเช็คชื่อจะหารด้วย N เต็ม
+   → P ร่วงทั้งที่แค่ "ไม่รู้" (ขัดกฎ "ประเมินไม่ได้ = null ห้ามแปลงเป็นเลข")
+   วิธีวัดจาก order window ใช้ได้กับทุกกะรวมกะที่ไม่มีข้อมูลเช็คชื่อ และไม่ต้องพึ่ง master ใดๆ */
+// เวลาเครื่องที่ถูกใช้จริง (นาที) = Σ ช่วงเวลาที่แต่ละพาร์ทวิ่ง — ทับกัน = หลายเครื่องเดินพร้อมกัน
+// clamp ในกรอบ [startMs, endMs] เสมอ: ใบที่ปิดด้วยเวลาเลยกรอบกะ (เจอจริง ปิด 08:00 ของวันถัดไป
+// ทั้งที่กะจบ 20:00) จะลากตัวหารให้ยาวเกินจริงจน P ต่ำผิด
+//
+// ⚠️ ต่อพาร์ทต้อง "รวมช่วงที่ทับกัน (union)" ไม่ใช่ min..max และไม่ใช่บวกทุกใบตรงๆ:
+//   · บวกทุกใบตรงๆ → พังกับ "สแกนรวบ" (เปิด 6 ใบใน 10 วินาที = window ซ้อนกันเกือบสนิท)
+//     ตัวหารจะพองเป็นเท่าตัวของจำนวนใบ → P ต่ำผิด
+//   · min..max → นับ "ช่วงที่พาร์ทนั้นไม่ได้วิ่ง" (เช้าล็อตหนึ่ง บ่ายอีกล็อต) เป็นเวลาเครื่องด้วย
+// union ตอบตรงคำถาม "เครื่องตัวนั้นถูกใช้กี่นาที" ทั้งสองเคส
+export function busyMinutes(orders = [], startMs, endMs) {
+  if (!(endMs > startMs)) return 0;
+  const byMat = {};
+  orders.forEach(o => {
+    if (!o.mat_no || !o.opened_at) return;
+    const s = Math.max(new Date(o.opened_at).getTime(), startMs);
+    const e = Math.min(o.confirmed_at ? new Date(o.confirmed_at).getTime() : endMs, endMs);
+    if (!(e > s)) return;
+    (byMat[o.mat_no] ||= []).push([s, e]);
+  });
+  let total = 0;
+  Object.values(byMat).forEach(iv => {
+    iv.sort((a, b) => a[0] - b[0]);
+    let [cs, ce] = iv[0];
+    for (let i = 1; i < iv.length; i++) {
+      const [s, e] = iv[i];
+      if (s <= ce) ce = Math.max(ce, e);           // ทับ/ต่อกัน → ขยายช่วงเดิม
+      else { total += ce - cs; [cs, ce] = [s, e]; } // ขาดตอน → ปิดช่วงเดิม เริ่มช่วงใหม่
+    }
+    total += ce - cs;
+  });
+  return total / 60000;
+}
+
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1 }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -118,11 +168,14 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   }, 0);
   const runMin = Math.max(1, elapsed - dtMin);
 
-  let stdMin = 0, produced = 0, ngFromOrders = 0;
+  let stdMin = 0, produced = 0, ngFromOrders = 0, qtyNoCt = 0;
+  const matsNoCt = new Set();
   orders.forEach(o => {
     const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
     produced += q;
-    stdMin += q * (ctMap[o.mat_no] || 0) / 60;
+    const ct = Number(ctMap[o.mat_no]) || 0;
+    if (ct > 0) stdMin += q * ct / 60;
+    else if (q > 0) { qtyNoCt += q; if (o.mat_no) matsNoCt.add(o.mat_no); }
     ngFromOrders += o.qty_ng || 0;
   });
   const ng = ngQty != null ? ngQty : ngFromOrders;
@@ -136,12 +189,45 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true };
   }
 
-  const P = Math.min(1, runMin > 0 ? stdMin / runMin : 0);
   const Q = produced / (produced + ng);
+
+  /* ผลิตแล้วแต่ "ไม่มีชิ้นงานไหนตั้ง CT ไว้เลย" → stdMin = 0 → P = 0 → OEE = 0%
+     ⚠️ นั่นคือคำกล่าวอ้างเท็จว่า "ไลน์เดินได้แย่มาก" ทั้งที่ความจริงคือ **ไม่รู้มาตรฐาน**
+     (หลักเดียวกับ noOutput ที่ห้ามคืน 0) → P/OEE = null + flag noCt ให้จอบอกว่าต้องไปตั้ง CT
+     A กับ Q ยังตอบได้ (ไม่ต้องใช้ CT) จึงคืนตามปกติ */
+  if (stdMin <= 0) {
+    return { A: pct(A), P: null, Q: pct(Q), oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt] };
+  }
+
+  /* ไลน์เครื่องขนาน: ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์"
+     งานกระจายอยู่บนหลายเครื่อง → เอา runMin (เวลาไลน์) เป็นตัวหารตรงๆ ทำให้ P สูงได้ถึง N เท่า
+     แล้วโดน cap 100% เงียบๆ — ต้นเหตุที่ SUB APRON โชว์ OEE ~99% แทบทุกกะ (2026-08-13)
+     busy = เวลาเครื่องที่ถูกใช้จริงจาก order window · clamp [runMin, N×runMin]:
+       - พาร์ทเดียววิ่ง → busy ≈ runMin → เท่าสูตรเดิมเป๊ะ (ไลน์ปกติไม่กระทบ)
+       - N พาร์ทวิ่งพร้อมกัน → busy ≈ N×runMin → P ถูกต้อง
+     ไลน์ที่ไม่ใช่ parallel_machine ส่ง parallelCap = 1 → ข้ามทั้งบล็อก พฤติกรรมเดิมเป๊ะ */
+  const cap = Math.max(1, Number(parallelCap) || 1);
+  let denomMin = runMin, machineMin = null;
+  if (cap > 1) {
+    // ไม่ตั้ง shift_min = ไม่รู้ว่ากะจบเมื่อไหร่ → ใช้ "ตอนนี้" เป็นขอบ (ตรงกับวิธีคิด elapsed ด้านบน)
+    const shiftEnd = Number(session.shift_min) > 0 ? opened + Number(session.shift_min) * 60000 : nowMs;
+    machineMin = busyMinutes(orders, opened, Math.min(nowMs, shiftEnd));
+    denomMin = Math.min(cap * runMin, Math.max(runMin, machineMin));
+  }
+  const pRaw = denomMin > 0 ? stdMin / denomMin : 0;
+  const P = Math.min(1, pRaw);
   const oee = A * P * Q;
   if (!isFinite(oee)) return null;
 
-  return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced, ngQty: ng, noOutput: false };
+  /* pOver = P ทะลุ 100% ก่อนโดน cap — ห้ามกลืนเงียบ (กฎ "ห้ามล้มเหลวเงียบ")
+     แปลว่างานมาตรฐานที่บันทึก > เวลาเครื่องที่มี = มีอะไรผิดในข้อมูล (CT/ยอด/เวลาเปิด-ปิดใบ/N)
+     ถ้ามี guard นี้ตั้งแต่แรกจะจับได้ตั้งแต่กะแรก แทนที่จะปล่อยจน OEE อ่านไม่ได้ทั้งไลน์ 14 กะ */
+  // qtyNoCt > 0 = ตั้ง CT ไม่ครบทุกชิ้นงาน → stdMin ขาด → %P ต่ำกว่าจริง (จอควรติดป้ายเตือน)
+  return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+    produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt],
+    pOver: pRaw > 1.001, pRawPct: Math.round(pRaw * 1000) / 10,
+    machineMin: machineMin == null ? null : Math.round(machineMin), parallelCap: cap };
 }
 
 /* ═══ 5) OEE จริง (strict) ═══ */
@@ -252,3 +338,35 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
     .sort((a, b) => (b.min - a.min) || (b.qty - a.qty));
 }
 
+
+/* ═══ 7) งานทดลอง (Try-out) — แยกออกจาก %Q แต่ยังนับเป็นมูลค่าของเสีย (2026-08-17) ═══
+   ไลน์ไม่ควรถูกลงโทษใน OEE จากงานลองแม่พิมพ์/ลองงานใหม่ แต่ของที่เสียไปมีต้นทุนจริง
+   ต้องเห็นทั้ง 2 มุม: "มูลค่าของเสียทั้งหมด" vs "เฉพาะไลน์ผลิต" (= ตัวเดียวกับที่คิด %Q)
+
+   ทำเครื่องหมายได้ 2 ทาง (migration 20260817_defect_trial_flag):
+     • defect_logs.is_trial              — ติ๊กรายครั้งในฟอร์มบันทึกงานเสีย
+     • dr_defect_types.excl_from_q       — ตั้งที่ประเภท (⚙️ ตั้งค่า) ทั้งประเภทเป็นงานทดลอง
+
+   ⚠️ ต้องอ่าน excl_from_q ผ่าน join → query ที่เอาไปคิด %Q ต้อง select
+      `dr_defect_types(..., excl_from_q)` ด้วย ไม่งั้นจะเห็นแค่ is_trial แล้วตกหล่นเงียบ
+   ⚠️ จุดที่ "แสดงรายการ" ของเสีย ห้ามกรองทิ้ง — งานทดลองเป็นของเสียจริง ต้องเห็นในลิสต์/พาเรโต */
+
+/** รายการนี้เป็นงานทดลองมั้ย (ไม่นับเข้า %Q) */
+export const isTrialDefect = (d) =>
+  d?.is_trial === true || d?.dr_defect_types?.excl_from_q === true;
+
+/** จำนวนของเสียของ 1 แถว — NG + สงสัย (กฎเดิม: ยึด defect_logs ไม่ใช่คอลัมน์ rollup ของ session) */
+export const defectQty = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+
+/** รวมจำนวนของเสีย
+ *  mode 'line' (ดีฟอลต์) = ไม่รวมงานทดลอง → ใช้คิด %Q / OEE
+ *  mode 'all'            = รวมทุกอย่าง     → ใช้คิดมูลค่าของเสียทั้งหมด */
+export const sumDefectQty = (rows, mode = 'line') =>
+  (rows || []).reduce((s, d) => s + ((mode === 'all' || !isTrialDefect(d)) ? defectQty(d) : 0), 0);
+
+/** แยก 2 ยอดในรอบเดียว — คืน { all, line, trial } */
+export function splitDefectQty(rows) {
+  let all = 0, trial = 0;
+  (rows || []).forEach(d => { const q = defectQty(d); all += q; if (isTrialDefect(d)) trial += q; });
+  return { all, line: all - trial, trial };
+}

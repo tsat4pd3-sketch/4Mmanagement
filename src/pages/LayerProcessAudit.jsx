@@ -4,10 +4,11 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
+import useTabParam from '../utils/useTabParam';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -83,7 +84,7 @@ function SignPadModal({ title, onCancel, onDone }) {
   const clear = () => { const c = cvRef.current, ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); dirty.current = false; };
   const done = () => { if (!dirty.current) { toast.error('ยังไม่ได้เซ็น'); return; } cvRef.current.toBlob(b => b && onDone(b), 'image/png'); };
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
@@ -104,7 +105,9 @@ export default function LayerProcessAudit() {
   const canManage = can('lpa', 'manage', role);
   const canDelete = can('lpa', 'delete', role);
 
-  const [tab, setTab] = useState('audit');
+  // ⚠️ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ LPA ของ /daily-checker ซึ่งจอง ?tab= ไปแล้ว
+  const [tabRaw, setTab] = useTabParam(['audit', 'plan', 'report', 'questions'], 'audit', 'sub');
+  const tab = tabRaw === 'questions' && !canManage ? 'audit' : tabRaw;   // ลิงก์เข้าแท็บที่ไม่มีสิทธิ์ = ตกกลับแท็บแรก
   const [lines, setLines] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -801,7 +804,9 @@ ${issuesHtml}
       <div>
         <div style={lb}>ไลน์ / พื้นที่ตรวจ</div>
         <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ width: 210, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {visibleLines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+          {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+            <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+          ))}
         </select>
       </div>
       <div>
@@ -1129,7 +1134,9 @@ ${issuesHtml}
               <div style={lb}>จัดการคำถามของ</div>
               <select value={qScope} onChange={e => setQScope(e.target.value)} style={{ minWidth: 220 }}>
                 <option value="">🌐 ทุกไลน์ (common — ฐานที่ backfall)</option>
-                {visibleLines.map(l => <option key={l.id} value={l.name}>🏭 {l.name}</option>)}
+                {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : '🏭 '}${l.name}`}</option>
+                ))}
               </select>
             </div>
             <button
@@ -1185,7 +1192,7 @@ ${issuesHtml}
 
       {/* modal แก้คำถาม (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {qEditing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 640px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{qEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}คำถาม</div>
@@ -1206,7 +1213,9 @@ ${issuesHtml}
                 <div style={lb}>ใช้กับไลน์ (เว้นว่าง = ทุกไลน์)</div>
                 <select value={qEditing.line_name || ''} onChange={e => setQEditing(p => ({ ...p, line_name: e.target.value }))} style={{ width: '100%' }}>
                   <option value="">— ทุกไลน์ —</option>
-                  {visibleLines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                  ))}
                 </select>
               </div>
               {qEditing.category === 'special' && (

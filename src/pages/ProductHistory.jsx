@@ -4,6 +4,9 @@ import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
+import PageHeader from '../components/PageHeader';
+import DailyBars from '../components/DailyBars';
+import DemandVsProduction from '../components/DemandVsProduction';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -33,6 +36,11 @@ export default function ProductHistory() {
   const [search, setSearch]     = useState('');
   const [filterLine, setFilterLine] = useState('');
   const [selMat, setSelMat]     = useState(null);   // product object
+  /* โหมดรวมกลุ่ม (2026-08-19 · คำสั่ง user "บางรายการเป็น product เดียวกัน ต่างที่ปลายทางที่ส่งลูกค้า
+     เลยต้องแยก mat sap") — จับกลุ่มด้วย p_no (เลขพาร์ทลูกค้า) เพราะเป็นตัวที่ลูกค้าสั่งจริง
+     ⚠️ ไม่ใช่แค่ความสะดวก: ออเดอร์มักถูกบันทึกใต้ mat ตัวเดียวของกลุ่ม (ข้อมูลจริง RB3B-16E060-BA
+     → ออเดอร์ 7,350 อยู่ใต้ 10100384 ทั้งหมด) ดูราย mat จึงเห็น "ขาด/เกิน" ที่ไม่จริง */
+  const [groupMode, setGroupMode] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(true);  // เลือกสินค้าแล้วพับลิสต์อัตโนมัติ (ข้อมูลเยอะ)
   const [showAllDays, setShowAllDays] = useState(false); // ตารางใบผลิตแสดง 45 วันแรกก่อน
   const [openDays, setOpenDays]     = useState(() => new Set());   // drill: วัน → ไลน์·กะ → ใบ
@@ -63,32 +71,57 @@ export default function ProductHistory() {
     return null; // ไม่จำกัด
   }, [role, lineId, lines, scopeSecs]);
 
-  const loadHistory = useCallback(async (prod) => {
-    if (!prod) return;
+  /* พี่น้องในกลุ่มเดียวกัน = p_no ตรงกัน (normalize ขีด/ช่องว่าง) · ไม่มี p_no = อยู่ตัวเดียว */
+  const normPn = (v) => String(v ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  const groupMats = useMemo(() => {
+    if (!selMat) return [];
+    const k = normPn(selMat.p_no);
+    if (!k) return [selMat];
+    return products.filter(p => normPn(p.p_no) === k);
+  }, [selMat, products]);
+  const canGroup = groupMats.length > 1;
+  /* mat ที่ query จริง — โหมดกลุ่ม = ทุกตัวในกลุ่ม · โหมดเดี่ยว = ตัวที่เลือก */
+  const activeMats = useMemo(
+    () => (groupMode && canGroup ? groupMats : selMat ? [selMat] : []),
+    [groupMode, canGroup, groupMats, selMat],
+  );
+
+  const loadHistory = useCallback(async (mats) => {
+    if (!mats?.length) return;
     setLoading(true);
-    // ใบผลิตของ mat นี้ + join session (line/date/shift/oee)
+    // ใบผลิตของ mat ที่เลือก (เดี่ยวหรือทั้งกลุ่ม) + join session (line/date/shift/oee)
     const { data: ord } = await supabaseDR.from('prod_orders')
       .select('id, prod_no, mat_no, machine_no, qty, qty_target, qty_actual, qty_ok, status, opened_at, confirmed_at, carry_over_note, production_sessions!inner(line_name, work_date, shift, oee, status)')
-      .eq('mat_no', prod.mat_no)
+      .in('mat_no', mats.map(m => m.mat_no))
       .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
       .order('opened_at', { ascending: false }).limit(2000);
-    const { data: def } = await supabaseDR.from('defect_logs')
-      .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
-      .eq('mat_no', prod.mat_no).limit(5000);
+    /* ⚠️ defect_logs **ไม่มีคอลัมน์ mat_no** — ผูกกับสินค้าผ่าน prod_order_id เท่านั้น
+       เดิม .eq('mat_no', …) → 42703 → def = [] เงียบๆ → "NG รวม" ขึ้น 0 เสมอ ทุกสินค้า
+       (เจอจากภาพหน้าจอจริง: 1,000 ใบ แต่ NG รวม = 0) */
+    const oIds = (ord || []).map(o => o.id);
+    let def = [], defErr = null;
+    for (let i = 0; i < oIds.length; i += 120) {          // .in() ยาวเกินไป proxy ตัด
+      const { data: d, error } = await supabaseDR.from('defect_logs')
+        .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
+        .in('prod_order_id', oIds.slice(i, i + 120));
+      if (error) { defErr = error; break; }
+      def = def.concat(d || []);
+    }
+    if (defErr) console.warn('[productHistory] โหลดของเสียไม่สำเร็จ', defErr);
     // audit ของแถว dr_products นี้ (best-effort — ถ้ายังไม่ apply migration audit_log จะว่าง)
     let auditRows = [];
     try {
       const { data: a } = await supabaseDR.from('audit_log')
         .select('action, actor, changed_fields, old_data, new_data, changed_at')
-        .eq('table_name', 'dr_products').eq('row_pk', String(prod.id))
+        .eq('table_name', 'dr_products').in('row_pk', mats.map(m => String(m.id)))
         .order('changed_at', { ascending: false }).limit(200);
       auditRows = a || [];
     } catch { auditRows = []; }
-    setOrders(ord || []); setDefects(def || []); setAudit(auditRows);
+    setOrders(ord || []); setDefects(def); setAudit(auditRows);
     setLoading(false);
   }, [from, to]);
 
-  useEffect(() => { if (selMat) loadHistory(selMat); }, [selMat, loadHistory]);
+  useEffect(() => { if (activeMats.length) loadHistory(activeMats); }, [activeMats, loadHistory]);
 
   // กรอง scope + รวม NG ต่อ order
   const ngByOrder = useMemo(() => {
@@ -107,6 +140,17 @@ export default function ProductHistory() {
     if (scopeLineNames) r = r.filter(x => scopeLineNames.has((x.line || '').toLowerCase()));
     return r;
   }, [orders, ngByOrder, scopeLineNames]);
+
+  /* ผลิตแยกราย MAT — โหมดกลุ่มต้องเห็นว่าเลขไหนผลิตไปเท่าไหร่ (ไลน์เดียวกันแต่คนละปลายทาง) */
+  const byMat = useMemo(() => {
+    const m = {};
+    rows.forEach(r => {
+      const k = r.mat_no || '—';
+      (m[k] = m[k] || { mat: k, produced: 0, ng: 0, orders: 0 });
+      m[k].produced += r.produced || 0; m[k].ng += r.ng || 0; m[k].orders++;
+    });
+    return Object.values(m).sort((a, b) => b.produced - a.produced);
+  }, [rows]);
 
   const summary = useMemo(() => {
     const produced = rows.reduce((s, r) => s + (r.produced || 0), 0);
@@ -150,6 +194,18 @@ export default function ProductHistory() {
     return out;
   }, [rows, to]);
   const dailyMax = Math.max(1, ...daily.map(d => (d.produced || 0) + (d.ng || 0)));
+  /* ผลิตต่อวัน **แยกราย MAT** — ป้อนให้แผงเทียบความต้องการลูกค้า
+     ⚠️ ห้ามยุบรวมข้าม mat: product เดียวกันที่แยกเลข SAP ตามปลายทางลูกค้า แลกของกันไม่ได้จริง
+        (ยอดใน SAP จะเพี้ยน — คำสั่ง user 2026-08-19) การตัดสินพอ/ขาดต้องคิดทีละเลข */
+  const prodByDay = useMemo(() => {
+    const m = {};
+    rows.forEach(r => {
+      if (!r.work_date || !r.mat_no) return;
+      (m[r.mat_no] = m[r.mat_no] || {});
+      m[r.mat_no][r.work_date] = (m[r.mat_no][r.work_date] || 0) + (r.produced || 0);
+    });
+    return m;
+  }, [rows]);
 
   // ตัวเลือกสินค้าต้อง scope ด้วย (กฎ dropdown-scope 2026-07-23) — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก
   // สินค้าที่ยังไม่ระบุไลน์คงโชว์ไว้ (fail-open เฉพาะ null — ไม่ใช่ข้ามส่วนงาน)
@@ -158,9 +214,33 @@ export default function ProductHistory() {
     return products.filter(p => !p.line_name || scopeLineNames.has(p.line_name.trim().toLowerCase()));
   }, [products, scopeLineNames]);
 
-  const lineOpts = useMemo(() =>
-    [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
-  [scopedProducts]);
+  // dropdown ไลน์จัดชั้นตามผัง (กฎ §5.3 — เดิมลิสต์แบนเรียง ก-ฮ แม่ลูกปนกัน user ทัก 2026-08-18):
+  // optgroup = กลุ่มบนสุดตาม parent_line_name · แม่ขึ้นก่อนในกลุ่ม ลูกมี ↳ นำหน้า
+  // ชื่อที่ไม่อยู่ใน production_lines = optgroup "⚠ นอกผัง" ห้ามซ่อน (กฎ worklist — ซ่อนแล้วหาของผิดไม่เจอ)
+  const lineGroups = useMemo(() => {
+    const names = [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))];
+    const byName = {}; lines.forEach(l => { byName[l.name] = l; });
+    const topOf = (n) => {
+      let cur = byName[n]; if (!cur) return null;
+      const seen = new Set();
+      while (cur.parent_line_name && byName[cur.parent_line_name] && !seen.has(cur.name)) { seen.add(cur.name); cur = byName[cur.parent_line_name]; }
+      return cur.name;
+    };
+    const sortTh = (a, b) => a.localeCompare(b, 'th');
+    const groups = {}; const off = [];
+    names.forEach(n => {
+      const t = topOf(n);
+      if (!t) { off.push(n); return; }
+      (groups[t] = groups[t] || []).push(n);
+    });
+    return {
+      groups: Object.keys(groups).sort(sortTh).map(t => ({
+        top: t,
+        names: groups[t].sort((a, b) => (a === t ? -1 : b === t ? 1 : sortTh(a, b))),
+      })),
+      off: off.sort(sortTh),
+    };
+  }, [scopedProducts, lines]);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -186,8 +266,10 @@ export default function ProductHistory() {
 
   return (
     <div style={{ padding: '16px 20px', maxWidth: 1400, margin: '0 auto' }}>
-      <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 4 }}>📜 ประวัติผลิต (by Product)</div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)</div>
+      <PageHeader
+        title="ประวัติผลิต (by Product)" icon="📜"
+        sub="เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)"
+      />
 
       {/* ตัวเลือกสินค้า + ช่วงวันที่ */}
       <div style={{ ...card, marginBottom: 16 }}>
@@ -201,7 +283,16 @@ export default function ProductHistory() {
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
             <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ marginTop: 4, width: 200 }}>
               <option value="">ทุกไลน์</option>
-              {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+              {lineGroups.groups.map(g => (
+                <optgroup key={g.top} label={g.top}>
+                  {g.names.map(n => <option key={n} value={n}>{n === g.top ? n : `↳ ${n}`}</option>)}
+                </optgroup>
+              ))}
+              {lineGroups.off.length > 0 && (
+                <optgroup label="⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)">
+                  {lineGroups.off.map(n => <option key={n} value={n}>{n}</option>)}
+                </optgroup>
+              )}
             </select>
           </div>
           <div>
@@ -259,18 +350,72 @@ export default function ProductHistory() {
           <div style={{ ...card, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 800 }}>{selMat.mat_no} · {selMat.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>
+                  {groupMode && canGroup
+                    ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: '#4d9fff' }}>(รวม {groupMats.length} MAT SAP)</span></>
+                    : <>{selMat.mat_no} · {selMat.name}</>}
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   P/N {selMat.p_no || '—'} · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
                 </div>
               </div>
-              <button onClick={() => { setSelMat(null); setPickerOpen(true); }}
-                style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
-                  background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                ✕ ปิด — เลือกสินค้าอื่น
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {canGroup && (
+                  <button onClick={() => setGroupMode(g => !g)}
+                    title={`สินค้าที่ใช้เลขลูกค้า ${selMat.p_no} เหมือนกัน — ต่างกันที่ปลายทางส่งลูกค้า`}
+                    style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                      background: groupMode ? '#4d9fff' : 'var(--bg2)', color: groupMode ? '#fff' : 'var(--text)',
+                      border: `1px solid ${groupMode ? '#4d9fff' : 'var(--border2)'}` }}>
+                    {groupMode ? `🔗 ดูรวมทั้งกลุ่ม (${groupMats.length}) — กดเพื่อดูเฉพาะตัวนี้` : `🔗 ดูรวมทั้งกลุ่ม (${groupMats.length} MAT SAP)`}
+                  </button>
+                )}
+                <button onClick={() => { setSelMat(null); setPickerOpen(true); setGroupMode(false); }}
+                  style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                    background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                  ✕ ปิด — เลือกสินค้าอื่น
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* โหมดกลุ่ม: เห็นว่าแต่ละเลข SAP ผลิตไปเท่าไหร่ (ไลน์เดียวกัน แต่คนละปลายทางลูกค้า) */}
+          {groupMode && canGroup && byMat.length > 1 && (
+            <CollapseCard id="bymat" title="🔗 ผลิตแยกตาม MAT SAP" count={`${byMat.length} เลข`}>
+              <div style={{ display: 'grid', gap: 7 }}>
+                {byMat.map(r => {
+                  const meta = groupMats.find(g => g.mat_no === r.mat);
+                  return (
+                    <div key={r.mat} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 190, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        title={meta?.name || ''}>{r.mat}
+                        <span style={{ fontWeight: 400, color: 'var(--muted)' }}> · {meta?.name || '—'}</span>
+                      </div>
+                      <div style={{ flex: 1, background: 'var(--bg2)', borderRadius: 6, height: 18, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.round(r.produced / Math.max(1, summary.produced) * 100)}%`, background: 'var(--accent)', height: '100%' }} />
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, width: 150, textAlign: 'right' }}>
+                        {r.produced.toLocaleString()} ชิ้น · {r.orders} ใบ{r.ng > 0 && ` · NG ${r.ng}`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CollapseCard>
+          )}
+
+          {/* ⚠️ มีพี่น้องในกลุ่มแต่ยังดูตัวเดียว = ตัวเลขอาจไม่ใช่ภาพจริง ต้องบอก ห้ามเงียบ
+              (ออเดอร์มักถูกบันทึกใต้ mat ตัวเดียวของกลุ่ม → ดูเดี่ยวเห็น "ขาด/เกิน" ที่ไม่จริง) */}
+          {canGroup && !groupMode && (
+            <div style={{ ...card, marginBottom: 16, borderColor: '#4d9fff66', background: '#4d9fff14', padding: '10px 14px' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff' }}>
+                🔗 สินค้านี้มีอีก {groupMats.length - 1} MAT SAP ที่เป็น product เดียวกัน (P/N {selMat.p_no})
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
+                แยกเลขกันที่ <b>ปลายทางที่ส่งลูกค้า</b> — {groupMats.filter(g => g.mat_no !== selMat.mat_no).map(g => g.mat_no).join(' · ')}
+                <br />ออเดอร์ลูกค้ามักถูกบันทึกใต้เลขเดียวของกลุ่ม → <b>ดูทีละตัวจะเห็นยอด "ขาด/เกิน" ที่ไม่ใช่ภาพจริง</b> กดปุ่ม 🔗 ด้านบนเพื่อดูรวม
+              </div>
+            </div>
+          )}
 
           {/* สรุป */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 16 }}>
@@ -305,33 +450,25 @@ export default function ProductHistory() {
             </CollapseCard>
           )}
 
+          {/* ── ผลิตเทียบกับความต้องการลูกค้า (2026-08-19 · คำสั่ง user) ──
+              ตอบ "ผลิตพอกับที่ลูกค้าสั่งไหม · ต้องเร่งหรือชะลอ" ซึ่งเดิมดูไม่ได้เลย
+              ⚠️ ไม่ผูกกับ daily.length — ไม่มีการผลิตเลย ยิ่งต้องเห็นว่าลูกค้าสั่งอยู่เท่าไหร่ */}
+          <CollapseCard id="demand" title="📦 ผลิตเทียบกับความต้องการลูกค้า" count="ออเดอร์ + forecast">
+            <DemandVsProduction products={activeMats} prodByDay={prodByDay} today={todayStr()} />
+          </CollapseCard>
+
           {/* trend รายวัน */}
           {daily.length > 0 && (
             <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 130, overflowX: 'auto' }}>
-                {daily.map((d, i) => (
-                  <div key={d.d} title={d.empty ? `${d.d} · ไม่มีการผลิต` : `${d.d} · ผลิตดี ${d.produced.toLocaleString()}${d.ng ? ` · NG ${d.ng.toLocaleString()}` : ''}`}
-                    style={{ flex: '1 0 14px', maxWidth: 48, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
-                    {/* วันน้อย = โชว์ตัวเลขบนแท่งเลย ไม่ต้องชี้ */}
-                    {daily.length <= 20 && !d.empty && (
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', textAlign: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
-                        {d.produced.toLocaleString()}
-                      </div>
-                    )}
-                    {/* แท่งซ้อน: NG แดงอยู่บน · ผลิตดีเขียวอยู่ล่าง · วันไม่ผลิต = ตอเทาเตี้ยๆ */}
-                    {d.ng > 0 && <div style={{ background: '#ef4444', height: `${Math.max(2, Math.round(d.ng / dailyMax * 78))}%`, borderRadius: '3px 3px 0 0' }} />}
-                    <div style={{ background: d.empty ? 'var(--border2)' : 'var(--accent)',
-                      height: d.empty ? 3 : `${Math.max(2, Math.round(d.produced / dailyMax * 78))}%`,
-                      borderRadius: d.ng > 0 ? 0 : '3px 3px 0 0' }} />
-                    {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS) */}
-                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', height: 14, overflow: 'visible' }}>
-                      {(daily.length <= 20 || i % 2 === 0) ? fmtDate(d.d) : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* component กลาง — มีแกน Y + เส้น grid + ตัวเลขบนแท่ง (UI-CONVENTIONS §5.2) */}
+              <DailyBars height={150} unit=" ชิ้น"
+                data={daily.map(d => ({
+                  key: d.d, label: fmtDate(d.d), empty: d.empty,
+                  segs: [{ v: d.produced, color: 'var(--accent)', name: 'ผลิตดี' },
+                    { v: d.ng, color: '#ef4444', name: 'NG' }],
+                }))} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: '#ef4444', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ชี้ที่แท่งเพื่อดูตัวเลข
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: '#ef4444', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ตัวเลขบนแท่ง = ผลิตดี+NG รวม
               </div>
             </CollapseCard>
           )}

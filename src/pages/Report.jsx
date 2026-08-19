@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useMemo } from 'react';
+import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -21,6 +21,8 @@ import SkillRadarPanel from '../components/SkillRadarPanel';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -138,6 +140,9 @@ const CAT_META = {
 
 // แท็บจองรถ: ตัดคำ "พรุ่งนี้" ออก — หน้าเลือกดูวันไหนก็ได้ (default = วันงานวันนี้)
 const TABS = ['รายวัน', 'รายพนักงาน', '📍 Log จุดงาน', 'สรุปช่วงเวลา', '🚨 4M Changes', '📊 Skill Matrix', '💰 ค่าฝีมือ', '📋 ใบบันทึก', '🏅 Multi-Skill Form', '🚐 จองรถ OT'];
+// ⚠️ ?tab= ของหน้านี้เป็น "เลข index ของ TABS" (สัญญาเดิม — bookmark/ลิงก์ข้างนอกอ้างเลขนี้)
+//    ⇒ **สลับลำดับ TABS = ลิงก์ข้างนอกพาไปผิดแท็บเงียบๆ** · ที่อ้างอยู่ตอนนี้: `?tab=4` (4M Changes)
+//    จาก /dept-dashboard (คิวอนุมัติ 4M) — ย้ายลำดับเมื่อไหร่ต้องตามแก้ที่นั่นด้วย
 
 /* สเกลสกิล/หมวด/gauge ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06) — import ด้านบน
    ห้ามนิยามซ้ำที่นี่อีก (เดิมซ้ำกับ operator.jsx แล้ว desc/หมวดค่าฝีมือ drift กัน) */
@@ -189,34 +194,31 @@ export default function Report({ mode = 'report' }) {
   const location = useLocation();
   const initialParams = new URLSearchParams(location.search);
   const tabIdxs = mode === 'skills' ? SKILL_TAB_IDXS : TABS.map((_, i) => i).filter(i => !SKILL_TAB_IDXS.includes(i));
-  const initialTab = Number(initialParams.get('tab'));
-  const [activeTab, setActiveTab] = useState(
-    tabIdxs.includes(initialTab) ? initialTab : tabIdxs[0]
-  );
+  // ⚠️ ?tab= เป็น "เลข index" มาแต่เดิม (ลิงก์/bookmark เก่าอ้างเลขนี้) — คงสัญญาเดิมไว้ ไม่เปลี่ยนเป็นชื่อ
+  //    ต่างจากเดิมตรงที่ตอนนี้ "เขียนกลับ" URL ด้วย (กดแท็บ → ลิงก์เปลี่ยน → refresh/Back อยู่แท็บเดิม)
+  const [tabStr, setTabStr] = useTabParam(tabIdxs.map(String), String(tabIdxs[0]));
+  const activeTab = Number(tabStr);
   const autoOpenMaster = initialParams.get('master') === '1';
+  // deep-link เข้าคิวอนุมัติ 4M ใบใดใบหนึ่ง (มาจาก /dept-dashboard) — ?tab=4&status=&from=&focus=<id>
+  const fourMDeepLink = {
+    focusId: initialParams.get('focus') || '',
+    initStatus: initialParams.get('status') || '',
+    initFrom: initialParams.get('from') || '',
+  };
 
   return (
     <div className="page-content">
-      <div style={{ marginBottom: 18 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          {mode === 'skills' ? '🏅 Skill Matrix & ค่าฝีมือ' : '📋 รายงาน'}
-        </h2>
-      </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', flexShrink: 0 }}>
-        {tabIdxs.map((i) => (
-          <button key={i} onClick={() => setActiveTab(i)} style={{
-            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
-            background: activeTab === i ? 'var(--accent)' : 'var(--bg3)',
-            color: activeTab === i ? '#fff' : 'var(--text2)',
-            fontWeight: activeTab === i ? 700 : 400,
-          }}>{TABS[i]}</button>
-        ))}
-      </div>
+      <PageHeader
+        title={mode === 'skills' ? 'Skill Matrix & ค่าฝีมือ' : 'รายงาน'}
+        icon={mode === 'skills' ? '🏅' : '📋'}
+        tabs={tabIdxs.map(i => ({ key: String(i), label: TABS[i] }))}
+        tab={String(activeTab)} onTab={setTabStr}
+      />
       {activeTab === 0 && <DailyTab />}
       {activeTab === 1 && <PerEmployeeTab />}
       {activeTab === 2 && <StationLogTab />}
       {activeTab === 3 && <RangeTab />}
-      {activeTab === 4 && <FourMTab />}
+      {activeTab === 4 && <FourMTab {...fourMDeepLink} />}
       {activeTab === 5 && <SkillMatrixTab />}
       {activeTab === 6 && <SkillAllowanceTab />}
       {activeTab === 7 && <AttendanceFormTab />}
@@ -552,6 +554,70 @@ function OtMasterDataPanel() {
           {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
         </div>
       </div>
+
+      {/* master ของหน้าเช็คชื่อ/จัดกำลังคนอีก 2 ลิสต์ (เลิก hardcode ในโค้ด — QC audit 2026-08-19)
+          สิทธิ์เดียวกับแผงนี้ (ot_master:manage) — กลุ่มเดียวกัน ไม่เพิ่ม permission key ใหม่ */}
+      <SimpleNameMaster table="special_task_types" title="📋 งานนอกไลน์ (หน้า จัดการไลน์ผลิต)"
+        placeholder="เช่น 5ส, คัดงาน" offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
+      <SimpleNameMaster table="leave_types" title="🏖️ ประเภทลา (หน้า เช็คชื่อ)"
+        placeholder="เช่น ลากิจ, ลาป่วย" offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
+    </div>
+  );
+}
+
+/* ลิสต์ master แบบชื่ออย่างเดียว (name/is_active/sort_order) — โครงเดียวกับงาน OT ข้างบน
+   best-effort: ตารางยังไม่ apply migration → บอกบนจอ ไม่พังทั้งแผง */
+function SimpleNameMaster({ table, title, placeholder, offNote }) {
+  const [rows, setRows] = useState([]);
+  const [newName, setNewName] = useState('');
+  const [missing, setMissing] = useState(false);
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from(table).select('id, name, is_active, sort_order').order('sort_order');
+    if (error) { setMissing(true); setRows([]); return; }
+    setMissing(false); setRows(data || []);
+  }, [table]);
+  useEffect(() => { load(); }, [load]);
+  const add = async () => {
+    if (!newName.trim()) return;
+    const { error } = await supabase.from(table).insert([{ name: newName.trim(), sort_order: Math.max(0, ...rows.map(r => r.sort_order || 0)) + 1 }]);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    setNewName(''); load();
+  };
+  const toggle = async (r) => {
+    if (r.is_active && !window.confirm(`ปิดใช้งาน "${r.name}" ?\n\n${offNote} (เปิดกลับได้ภายหลัง)`)) return;
+    const { error } = await supabase.from(table).update({ is_active: !r.is_active }).eq('id', r.id);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
+    load();
+  };
+  const remove = async (r) => {
+    if (!window.confirm(`ลบ "${r.name}"?\n(ข้อมูลเก่าที่บันทึกด้วยชื่อนี้ยังอ่านออก — ถ้าแค่เลิกใช้ แนะนำกด "ปิดใช้" แทน)`)) return;
+    const { error } = await supabase.from(table).delete().eq('id', r.id);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
+    load();
+  };
+  return (
+    <div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{title}</div>
+      {missing ? (
+        <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠ ยังไม่ได้ apply migration 20260819_special_task_leave_masters_main (แจ้ง admin) — ระหว่างนี้หน้าที่ใช้จะใช้ค่ามาตรฐานเดิม</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {rows.map(r => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+                <span style={{ flex: 1 }}>{r.name}</span>
+                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+              </div>
+            ))}
+            {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการ</div>}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -789,14 +855,21 @@ function PerEmployeeTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
-    let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true);
-    if (role === 'leader' && userLineId) empQ = empQ.eq('line_id', userLineId);
-    else if (scopeSecs.length)           empQ = empQ.in('section', scopeSecs);
-    empQ.order('name').then(({ data }) => {
+    // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id
+    // ตรงตัว ไม่งั้นคนที่ผูกไลน์ลูกหายจากสายตาหัวหน้าที่ผูกไลน์แม่) · sections → เฉพาะใน scope
+    (async () => {
+      let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true);
+      if (role === 'leader' && userLineId) {
+        const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+        const fam = getLineFamilyIds(ls || [], Number(userLineId));
+        empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
+      } else if (scopeSecs.length) {
+        empQ = empQ.in('section', scopeSecs);
+      }
+      const { data } = await empQ.order('name');
       setEmployees(data || []);
       if (data?.length) setSelected(data[0].id);
-    });
+    })();
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -1252,7 +1325,7 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--muted)' }}>จาก</span>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
           <span style={{ color: 'var(--muted)' }}>ถึง</span>
@@ -1319,7 +1392,9 @@ const STATUS_META = {
   rejected:    { label: '❌ Rejected',        color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
 };
 
-function FourMTab() {
+/* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =
+   ตั้งตัวกรองตั้งต้นให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง 7 วัน default — ไม่ตั้งจะเปิดมาเจอจอว่าง) */
+function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
@@ -1349,11 +1424,15 @@ function FourMTab() {
   };
 
   const today = getWorkDate();
-  const [from,        setFrom]        = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
+  const [from,        setFrom]        = useState(() => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(initFrom)) return initFrom;   // มาจาก deep-link — ครอบวันของใบที่เลือก
+    const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d);
+  });
   const [to,          setTo]          = useState(today);
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');
-  const [statusFilter,setStatusFilter]= useState('');
+  const [statusFilter,setStatusFilter]= useState(() => STATUS_META[initStatus] ? initStatus : ''); // validate ค่าจาก URL
+  const [focus,       setFocus]       = useState(focusId);  // id ใบที่เน้นอยู่ ('' = ไม่เน้น)
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
   const [loading,     setLoading]     = useState(false);
@@ -1708,11 +1787,21 @@ function FourMTab() {
   const kpi = Object.fromEntries(Object.keys(CAT_META).map(k => [k, fourMFilteredLogs.filter(l => l.category === k).length]));
   const actionableCount = fourMFilteredLogs.filter(l => ['pending','pending_qa'].includes(l.status)).length;
 
+  // ── deep-link: เลื่อนไปหาใบที่ถูกเน้น (ครั้งเดียวหลังโหลดเสร็จ) ─────────────────────────
+  const focusRow = focus ? fourMFilteredLogs.find(l => l.id === focus) : null;
+  const focusRowRef = useRef(null);
+  const focusScrolledRef = useRef(false);
+  useEffect(() => {
+    if (!focus || loading || focusScrolledRef.current || !focusRowRef.current) return;
+    focusRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    focusScrolledRef.current = true;
+  }, [focus, loading, focusRow]);
+
   return (
     <div>
       {/* Reject modal */}
       {rejectModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 14px', color: '#ef4444', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
@@ -1734,7 +1823,7 @@ function FourMTab() {
 
       {/* QA Approve Modal */}
       {qaApproveModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 4px', color: '#a855f7', fontFamily: 'var(--font-display)' }}>🔍 QA ยืนยันคุณภาพงาน</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
@@ -1786,7 +1875,7 @@ function FourMTab() {
 
       {/* Image viewer modal */}
       {imageViewModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
             <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />
@@ -1878,6 +1967,31 @@ function FourMTab() {
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
+      {/* deep-link จากหน้าอื่น (เช่น Dashboard ส่วนงาน) — บอกเสมอว่าเน้นใบไหนอยู่ และถ้าหาไม่เจอห้ามเงียบ */}
+      {focus && !loading && (
+        focusRow ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
+            <span>🔗 เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+              ✕ ล้างการเน้น
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
+            <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
+            <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
+              style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)' }}>
+              🔄 ล้างตัวกรอง
+            </button>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+              ✕ ปิด
+            </button>
+          </div>
+        )
+      )}
+
       {loading ? <Loader /> : (
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 720 }}>
@@ -1898,9 +2012,10 @@ function FourMTab() {
                 const needsQA = l.requires_qa !== false;
                 const userCanAct = canApproveLog(l);
                 const isActionable = ['pending','pending_qa'].includes(l.status);
+                const isFocus = !!focus && l.id === focus;   // แถวที่ถูกเน้น (นิ่ง ไม่กระพริบ — ไม่ใช่ไฟ Andon)
                 return (
-                  <tr key={l.id}>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(l.work_date)}</td>
+                  <tr key={l.id} ref={isFocus ? focusRowRef : null} style={isFocus ? { background: 'rgba(245,158,11,0.13)' } : undefined}>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12, borderLeft: isFocus ? '3px solid #f59e0b' : undefined }}>{fmtDate(l.work_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
                     <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
@@ -4097,9 +4212,10 @@ function AttendanceFormTab() {
             <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
           </select>
         </div>
-        <div>
+        {/* minWidth:0 — ไม่งั้น div นี้กว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
+        <div style={{ minWidth: 0, flex: '1 1 150px' }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุกไลน์</option>
             {attLinesInScope.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
           </select>

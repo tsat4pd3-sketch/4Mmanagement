@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { toast } from '../components/Toast';
 
 function getWeekDates(refDate) {
@@ -31,9 +32,13 @@ export default function ShiftOrganize() {
   const [weekRef,   setWeekRef]   = useState(new Date());
   const [lines,     setLines]     = useState([]);
   const [orgSections, setOrgSections] = useState([]);
+  const [sectionNodes, setSectionNodes] = useState([]); // {id, code, name} — ใช้ map parent ของแผนก
+  const [deptNodes, setDeptNodes] = useState([]);       // {id, code, name, parent_id}
   const [weekTeams, setWeekTeams] = useState({}); // line_id → 'A' | 'B' | null
   const [weekManual, setWeekManual] = useState({}); // line_id → is_manual (ไลน์ลูกตั้งกะเอง ไม่ตามไลน์แม่)
+  const [weekDeptTeams, setWeekDeptTeams] = useState({}); // dept_name → 'A' | 'B'
   const [pending,   setPending]   = useState({}); // line_id → 'A' | 'B'
+  const [pendingDept, setPendingDept] = useState({}); // dept_name → 'A' | 'B'
   const [isSaving,  setIsSaving]  = useState(false);
 
   const [overrides,    setOverrides]    = useState([]);
@@ -75,35 +80,56 @@ export default function ShiftOrganize() {
   const fetchLines = async () => {
     const [{ data: lineData }, { data: orgData }] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('id'),
-      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id')
+        .in('kind', ['section', 'department']).eq('is_active', true).order('name'),
     ]);
     setLines(lineData || []);
-    setOrgSections((orgData || []).map(n => n.code || n.name).sort());
+    const secs = (orgData || []).filter(n => n.kind === 'section');
+    setSectionNodes(secs);
+    setDeptNodes((orgData || []).filter(n => n.kind === 'department'));
+    setOrgSections(secs.map(n => n.code || n.name).sort());
   };
 
   const fetchEmployees = async () => {
-    let q = supabase.from('employees').select('id, name, employee_id_code, line_id, production_lines(section)').eq('is_active', true);
-    // mandatory scope: leader → ไลน์ตัวเอง (server-side), role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
-    if (role === 'leader' && userLineId) q = q.eq('line_id', userLineId);
+    let q = supabase.from('employees')
+      .select('id, name, employee_id_code, line_id, team, section, department, production_lines(section)')
+      .eq('is_active', true);
+    // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
+    // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
+    // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
+    if (role === 'leader' && userLineId) {
+      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const fam = getLineFamilyIds(ls || [], Number(userLineId));
+      q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', userLineId);
+    }
     const { data } = await q.order('name');
     let scoped = data || [];
     if (!(role === 'leader' && userLineId) && scopeSecs.length) {
-      scoped = scoped.filter(e => inSectionScope(scopeSecs, e.production_lines?.section));
+      // ⚠️ fallback ไป employees.section ด้วย — พนักงานซัพพอร์ทไม่มี line_id จึงไม่มี production_lines
+      //    ถ้าดูแค่ section ของไลน์ พวกเขาจะหายจากสายตา user ที่ถูกจำกัด scope ทั้งที่อยู่ส่วนงานเดียวกัน
+      scoped = scoped.filter(e => inSectionScope(scopeSecs, e.production_lines?.section ?? e.section));
     }
     setEmployees(scoped);
   };
 
   const fetchSchedules = async () => {
     // Use Monday's record as the canonical setting for the week
+    // select('*') = tolerant กับ dept_name ที่อาจยังไม่ apply migration (ไม่มีคอลัมน์ก็ไม่ error)
     const { data } = await supabase
       .from('shift_schedules')
-      .select('line_id, day_team, is_manual')
+      .select('*')
       .eq('work_date', weekStart);
-    const map = {}, mmap = {};
-    (data || []).forEach(r => { map[r.line_id] = r.day_team; mmap[r.line_id] = !!r.is_manual; });
+    const map = {}, mmap = {}, dmap = {};
+    (data || []).forEach(r => {
+      if (r.dept_name) { dmap[r.dept_name] = r.day_team; return; }
+      if (r.line_id == null) return;
+      map[r.line_id] = r.day_team; mmap[r.line_id] = !!r.is_manual;
+    });
     setWeekTeams(map);
     setWeekManual(mmap);
+    setWeekDeptTeams(dmap);
     setPending({});
+    setPendingDept({});
   };
 
   const fetchOverrides = async () => {
@@ -150,7 +176,54 @@ export default function ShiftOrganize() {
     setPending(p => ({ ...p, [lineId]: { team: null, manual: false } })); // กลับไปตามไลน์แม่
   };
 
-  const pendingCount = Object.keys(pending).length;
+  const pendingCount = Object.keys(pending).length + Object.keys(pendingDept).length;
+
+  // ── หน่วยงานสนับสนุน (ช่าง MTN/JIG/DIE · QA · คลัง) ────────────────────────
+  // พนักงานกลุ่มนี้ไม่มี line_id → ไม่มีแถวในตารางกะให้ตั้ง (ดู utils/shiftAssign.js)
+  // ตั้งกะทั้งแผนกทีเดียว หมุน A/B เหมือนไลน์ผลิต · คนที่ไม่หมุนกะ = Team C (กลไกเดิมรองรับอยู่แล้ว)
+  const nrm = (s) => (s || '').toString().trim().toLowerCase();
+  const secCodeById = {};
+  sectionNodes.forEach(s => { secCodeById[s.id] = s.code || s.name; });
+
+  // แผนกที่มีพนักงานจริง (ผัง + legacy ที่พนักงานกรอกไว้แต่ไม่มีในผัง) เรียง "คนไม่ผูกไลน์" มากสุดขึ้นบน
+  const deptRows = (() => {
+    if (role === 'leader') return [];               // หัวหน้ากลุ่มดูแลไลน์ ไม่ใช่หน่วยงาน
+    const stat = {};                                 // key(norm) → { name, total, noLine, sec }
+    employees.forEach(e => {
+      const d = (e.department || '').trim();
+      if (!d) return;
+      const k = nrm(d);
+      if (!stat[k]) stat[k] = { name: d, total: 0, noLine: 0, sec: null };
+      stat[k].total++;
+      if (e.line_id == null) stat[k].noLine++;
+      if (!stat[k].sec && e.section) stat[k].sec = e.section;
+    });
+    // ชื่อจากผังชนะชื่อที่พนักงานกรอก (ตัวสะกดอ้างอิงผังองค์กร) + รู้ว่าอยู่ใต้ section ไหน
+    deptNodes.forEach(d => {
+      const k = nrm(d.code || d.name);
+      if (!stat[k]) return;                          // ไม่มีพนักงาน = ไม่ต้องโชว์
+      stat[k].name = d.code || d.name;
+      stat[k].inOrg = true;
+      stat[k].sec = d.parent_id ? (secCodeById[d.parent_id] || null) : null;  // null = ขึ้นตรงฝ่าย
+      stat[k].orphan = !d.parent_id;
+    });
+    return Object.values(stat)
+      .filter(d => {
+        if (!scopeSecs.length) return true;
+        // user ที่ถูกจำกัด scope: เห็นเฉพาะแผนกใต้ส่วนงานของตัวเอง
+        // แผนกขึ้นตรงฝ่าย (ไม่มี section) = ของทั้งโรงงาน เห็นเฉพาะ user ที่ไม่ถูกจำกัด
+        // (กฎเดียวกับ ORPHAN_SECTION ใน sectionScope.js)
+        return d.sec ? inSectionScope(scopeSecs, d.sec) : false;
+      })
+      .sort((a, b) => b.noLine - a.noLine || a.name.localeCompare(b.name, 'th'));
+  })();
+
+  const deptTeamOf = (name) => (pendingDept[name] !== undefined ? pendingDept[name] : (weekDeptTeams[name] ?? null));
+  const toggleDept = (name) => {
+    if (!canEdit) return;
+    setPendingDept(p => ({ ...p, [name]: deptTeamOf(name) === 'A' ? 'B' : 'A' }));
+  };
+  const deptNoLineTotal = deptRows.reduce((s, d) => s + d.noLine, 0);
 
   const handleSave = async () => {
     if (!pendingCount) return;
@@ -174,14 +247,33 @@ export default function ShiftOrganize() {
         rows.push({ work_date: toDateStr(d), line_id: id, day_team: team, is_manual: manual, created_by: userId });
       }
     });
-    if (!rows.length) { setIsSaving(false); return; }
+    // แถวของหน่วยงาน — line_id = null + dept_name = ชื่อแผนก (คนละ unique index กับไลน์)
+    const deptRowsToSave = [];
+    Object.entries(pendingDept).forEach(([name, team]) => {
+      if (!team) return;
+      for (const d of weekDates) {
+        deptRowsToSave.push({ work_date: toDateStr(d), line_id: null, dept_name: name, day_team: team, created_by: userId });
+      }
+    });
 
-    const { error } = await supabase
-      .from('shift_schedules')
-      .upsert(rows, { onConflict: 'work_date,line_id' });
+    if (!rows.length && !deptRowsToSave.length) { setIsSaving(false); return; }
 
-    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else fetchSchedules();
+    let failed = false;
+    if (rows.length) {
+      const { error } = await supabase.from('shift_schedules').upsert(rows, { onConflict: 'work_date,line_id' });
+      if (error) { failed = true; toast.error('บันทึกกะไลน์ผลิตไม่สำเร็จ: ' + error.message); }
+    }
+    if (deptRowsToSave.length) {
+      const { error } = await supabase.from('shift_schedules').upsert(deptRowsToSave, { onConflict: 'work_date,dept_name' });
+      if (error) {
+        failed = true;
+        // 42703 = ยังไม่ได้ apply migration 20260811_shift_schedule_department — ต้องบอกให้ชัด ห้ามเงียบ
+        toast.error(error.code === '42703'
+          ? 'ยังตั้งกะระดับหน่วยงานไม่ได้ — ยังไม่ได้ apply migration 20260811_shift_schedule_department (แจ้ง admin)'
+          : 'บันทึกกะหน่วยงานไม่สำเร็จ: ' + error.message);
+      }
+    }
+    if (!failed) fetchSchedules();
     setIsSaving(false);
   };
 
@@ -297,7 +389,7 @@ export default function ShiftOrganize() {
             disabled={isSaving}
             style={{ padding: '10px 22px', background: isSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}
           >
-            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} ไลน์)`}
+            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} รายการ)`}
           </button>
         )}
       </div>
@@ -408,6 +500,91 @@ export default function ShiftOrganize() {
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 24, padding: '0 4px' }}>
           การตั้งค่าจะมีผลกับทุกวันในสัปดาห์ (จันทร์–อาทิตย์) กด ⇄ สลับ แล้วกด 💾 บันทึก · <b>ตั้งกะที่ไลน์แม่แล้วไลน์ลูกวิ่งตามอัตโนมัติ</b> (↳ ตามไลน์แม่) · สลับกะที่ไลน์ลูกเอง = ✎ แก้เอง (ไม่ตามแม่แล้ว) กด "↳ ตามแม่" เพื่อกลับไปตามไลน์แม่
         </div>
+      )}
+
+      {/* ── หน่วยงานสนับสนุน — พนักงานที่ไม่ได้สังกัดไลน์ผลิต (ช่าง/QA/คลัง) ── */}
+      {deptRows.length > 0 && (
+        <>
+          <h3 style={{ margin: '0 0 4px', fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text2)' }}>
+            🏢 หน่วยงานสนับสนุน (ตั้งกะทั้งแผนก)
+          </h3>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, padding: '0 2px' }}>
+            พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก
+            {deptNoLineTotal > 0 && <> · ตอนนี้มี <b style={{ color: 'var(--amber)' }}>{deptNoLineTotal} คน</b> ที่ยังไม่มีกะเพราะไม่ได้ผูกไลน์</>}
+            {' '}· คนที่ไม่หมุนกะให้ตั้งเป็น <b>Team C</b> (เข้ากะเช้าตลอด)
+          </div>
+          <div className="card table-sticky" style={{ marginBottom: 24, overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ minWidth: 180 }}>หน่วยงาน</th>
+                  <th style={{ minWidth: 120 }}>พนักงาน</th>
+                  <th style={{ textAlign: 'center', minWidth: 130 }}>☀️ กะเช้า</th>
+                  <th style={{ textAlign: 'center', minWidth: 130 }}>🌙 กะดึก</th>
+                  {canEdit && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {deptRows.map(d => {
+                  const team  = deptTeamOf(d.name);
+                  const night = team === 'A' ? 'B' : team === 'B' ? 'A' : null;
+                  const isPending = pendingDept[d.name] !== undefined;
+                  return (
+                    <tr key={d.name}>
+                      <td style={{ fontWeight: 600, fontSize: 14 }}>
+                        {d.name}
+                        {d.inOrg === undefined && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#f59e0b' }}
+                            title="ชื่อแผนกนี้ไม่มีในผังองค์กร — พนักงานกรอกไว้เอง (ตั้งกะได้ปกติ แต่ควรจัดให้ตรงผังที่ /org-setup)">
+                            ⚠ นอกผัง
+                          </span>
+                        )}
+                        {d.orphan && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }} title="แผนกขึ้นตรงฝ่าย ไม่สังกัดส่วนงานผลิต">🏛️ ขึ้นตรงฝ่าย</span>}
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        {d.total} คน
+                        {d.noLine > 0 && <span style={{ color: 'var(--amber)', fontWeight: 600 }}> · ไม่ผูกไลน์ {d.noLine}</span>}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {team ? (
+                          <span style={{
+                            display: 'inline-block', padding: '5px 20px', borderRadius: 7, fontSize: 14, fontWeight: 800,
+                            background: team === 'A' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                            color:      team === 'A' ? '#22c55e'              : '#f59e0b',
+                            border: isPending ? `2px solid ${team === 'A' ? '#22c55e' : '#f59e0b'}` : '1px solid transparent',
+                          }}>Team {team}</span>
+                        ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่กำหนด</span>}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {night ? (
+                          <span style={{
+                            display: 'inline-block', padding: '5px 20px', borderRadius: 7, fontSize: 14, fontWeight: 800,
+                            background: night === 'A' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
+                            color:      night === 'A' ? 'rgba(34,197,94,0.6)'  : 'rgba(245,158,11,0.6)',
+                            border: '1px solid transparent',
+                          }}>Team {night}</span>
+                        ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>}
+                      </td>
+                      {canEdit && (
+                        <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <button onClick={() => toggleDept(d.name)}
+                            style={{
+                              padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                              border: '1px solid var(--border2)',
+                              background: isPending ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
+                              color: isPending ? 'var(--amber)' : 'var(--text2)', cursor: 'pointer',
+                            }}>
+                            {team ? '⇄ สลับ' : '+ กำหนด'}
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* Individual Overrides */}

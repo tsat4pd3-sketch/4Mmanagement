@@ -4,12 +4,18 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, buildCtMap } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty } from '../utils/oee';
+import { usePolling } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
+import { cachedMaster } from '../utils/masterCache';
+import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
+import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -48,7 +54,25 @@ const CAT = {
 };
 
 // นิยาม metric แต่ละตัว — value(ค่าเรียงอันดับ) · text(บนกรอบ) · cat(หมวดสี) · worstFirst(เรียง side panel)
+/** % เปลี่ยนแปลงพลังงานเทียบเดือนก่อน — ต้องมีฐานจริงถึงจะเทียบ (0 = ไม่มีข้อมูล ไม่ใช่ "ไม่เปลี่ยน") */
+const energyDelta = (s) => (s.kwhPrev ? deltaPct(s.kwh, s.kwhPrev) : null)
+
 const METRICS = {
+  /* ⚡ พลังงานไฟฟ้า — ทีมขอ "show ค่า kWh บริเวณ Line บนผัง อยากดูละเอียดค่อยกดเข้าไป"
+     เฟส 1 ตัวเลขมาจากการกรอกมือรายเดือนที่ /energy → ป้ายต้องบอกที่มา ห้ามดูเหมือนค่าที่วัดสด
+     สี = เทียบเดือนก่อน (ลดลง=เขียว) · ไม่มีฐานเทียบ = เทา ไม่ใช่เขียว
+     ⚠️ facilityNA ต้องไม่ตั้ง — โซนคอมเพรสเซอร์/คูลลิ่งคือตัวกินไฟหลัก metric นี้มีความหมายเต็มที่ */
+  energy: {
+    label: '⚡ พลังงาน', worstFirst: true, desc: true,
+    value: s => s.kwh ?? null,
+    text: s => {
+      if (s.kwh == null) return 'ยังไม่กรอก';
+      const d = energyDelta(s);
+      return `${fmtKwh(s.kwh)} kWh${d != null ? ` · ${d > 0 ? '+' : ''}${d}%` : ''}`;
+    },
+    short: s => (s.kwh == null ? '' : `${fmtKwh(s.kwh)}`),
+    cat: s => (s.kwh == null ? 'idle' : energyCat(energyDelta(s))),
+  },
   productivity: {
     // เทียบ "เป้า ณ เวลาปัจจุบัน (on-time)" ไม่ใช่เป้าเต็มกะ — % จึงบอกว่า "ทันจังหวะมั้ย" แบบ real-time
     // ฟอร์แมต: ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ · สี = ทำได้เทียบเป้า ณ เวลานี้
@@ -65,8 +89,10 @@ const METRICS = {
   oee: {
     label: '⚙️ OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
-    text: s => s.oee != null ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}` : (s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
-    short: s => s.oee != null ? `${Math.round(s.oee)}%` : '',
+    text: s => s.oee != null
+      ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}${s.oeeCtPartial ? ' ⚠CT ไม่ครบ' : ''}${s.oeePOver ? ` ⚠%P ตัน (${Math.round(s.oeePRaw)}%)` : ''}`
+      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+    short: s => s.oee != null ? `${Math.round(s.oee)}%${s.oeePOver ? '⚠' : ''}` : (s.oeeNoCt ? '⚠CT' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
   breakdown: {
@@ -228,7 +254,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, hasOpen: false, oee: null, oeeLive: false, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
@@ -258,6 +284,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
   const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
+  const [dieZones, setDieZones] = useState({});        // 🔨 โซนคลังแม่พิมพ์: normName → { id, name, total, mo, moPending } (DR die_storage_areas)
+  const [energyStatus, setEnergyStatus] = useState({});  // ⚡ พลังงานรายเดือน: name → { qty, prev, cost, source } (DR · เฟส 1 กรอกมือ)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
@@ -294,6 +322,18 @@ export default function FactoryMap({ setupMode = false }) {
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
   const regionsRef = useRef([]);
+  // กำลังคนล่าสุด (ไลน์ → {stationFilled/stationTotal, present/headTotal}) — ใช้ปรับ "จำนวนเครื่องที่เดินได้จริง"
+  // loadStatus เป็น useCallback deps แคบ อ่าน state ตรงๆ จะ stale จึงผ่าน ref เหมือน flowByLineRef
+  const manpowerRef = useRef({});
+  /* ไลน์ที่ "คนโหลดเข้า-ออกเอง" (machines.automation_level = manual) — เฉพาะไลน์แบบนี้เท่านั้นที่
+     กำลังคนจำกัดจำนวนเครื่องที่เดินได้ · ไลน์ auto/semi-auto เครื่องเดินเองได้ คนแค่ยืนซัพพอร์ท
+     (คำสั่ง user 2026-08-06) — ข้อมูลจริง: SUB APRON = manual/standalone 6 เครื่อง ·
+     LASER-345/789 = auto/inline · ไม่มีข้อมูล = ไม่ปรับ (ไม่เดาแทนหน้างาน) */
+  const manualLineRef = useRef({});
+  /* OEE สดต่อ session ที่ loadStatus คำนวณไว้แล้ว — ให้ modal เรื่องราวรายไลน์ใช้ตัวเดียวกัน
+     ⚠️ เดิม modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น "—"
+        ขณะที่การ์ด hover บนผังเดียวกันโชว์ "OEE 99% (สด)" = จอเดียวกันตอบคนละอย่าง (user ทัก 2026-08-06) */
+  const liveOeeRef = useRef({});
   const flowByLineRef = useRef({}); // line_name → { flow_mode, parallel_stations } — หัก DT 1/N ใน OEE สด (loadStatus เป็น useCallback deps แคบ ใช้ ref กัน stale)
   useEffect(() => { regionsRef.current = regions; }, [regions]);
 
@@ -352,6 +392,22 @@ export default function FactoryMap({ setupMode = false }) {
       (mc?.data || []).forEach(m => { if (m.equipment_category && m.equipment_category !== 'production' && m.line_name) set.add(m.line_name); });
       setFacilityZones([...set].sort((a, b) => a.localeCompare(b)));
     });
+    // ไลน์ไหน "คนโหลดเข้า-ออกเอง" — นับเครื่องผลิต manual เทียบ auto/semi ต่อไลน์ (query แยก + catch เอง
+    // เพื่อไม่ให้ facilityZones พังถ้าคอลัมน์ automation_level ยังไม่ apply)
+    supabaseDR.from('machines').select('line_name, automation_level, equipment_category').eq('is_active', true)
+      .then(({ data }) => {
+        const cnt = {};
+        (data || []).forEach(m => {
+          if (!m.line_name || (m.equipment_category && m.equipment_category !== 'production')) return;
+          const c = cnt[m.line_name] || (cnt[m.line_name] = { man: 0, autoish: 0 });
+          if (m.automation_level === 'manual') c.man++;
+          else if (m.automation_level === 'auto' || m.automation_level === 'semi_auto') c.autoish++;
+        });
+        const out = {};
+        Object.entries(cnt).forEach(([ln, c]) => { if (c.man || c.autoish) out[ln] = c.man > c.autoish; });
+        manualLineRef.current = out;
+      })
+      .catch(() => { manualLineRef.current = {}; });
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
 
@@ -362,24 +418,30 @@ export default function FactoryMap({ setupMode = false }) {
       .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }, breakRes, kstdRes] = await Promise.all([
+    const [{ data: orders }, { data: dts }, { data: defs }, prods, breaks, kstds] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
       // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
-      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
-      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type'),
-      supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true).then(r => r, () => ({ data: [] })),
+      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)').in('session_id', sessIds),
+      // ⚡ master 3 ตัวล่างนี้ผ่าน cache (10 นาที) — เดิมดึงทั้งตารางทุก 30 วิ กิน egress ~70% ของรอบ
+      //    โดยไม่ได้ความสดอะไรเพิ่ม (CT/นโยบายพัก เปลี่ยนเดือนละไม่กี่ครั้ง) ดู src/utils/masterCache.js
+      cachedMaster('dr_products:ct', async () =>
+        (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
+      cachedMaster('break_policies:active', async () =>
+        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)).data || []),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
-      supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true).then(r => r, () => ({ data: [] })),
+      cachedMaster('kanban_standards:ct', async () =>
+        (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
     const pairMap = {}, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
-    const ctMap = buildCtMap({ kanbanStds: kstdRes?.data || [], products: prods || [] });
-    const breaks = breakRes?.data || [];
+    const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
-    const ngBySess = {}; (defs || []).forEach(d => { ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + (d.qty_ng || 0) + (d.qty_suspect || 0); });
+    // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — สูตรเดียวกับตอนปิดกะ
+    const ngBySess = {}; (defs || []).forEach(d => { if (isTrialDefect(d)) return; ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + defectQty(d); });
     const nowMs = Date.now();
     // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
     const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();
@@ -391,11 +453,19 @@ export default function FactoryMap({ setupMode = false }) {
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
         parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
+        /* เพดานเครื่องขนาน — เฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (parallel_machine)
+           ตัวหารจริงของ P วัดจาก order window ใน util (busyMinutes) ไม่ใช่จำนวนคน
+           ⚠️ เคย ship เป็น "จำนวนเครื่องที่ปรับตามกำลังคน" ซึ่งผิด — 1 คนคุมได้หลายเครื่อง
+           (จำนวนคนยังใช้กับ "ควรผลิตได้ตอนนี้" (runN/capN) ตามเดิม — คนละเรื่องกับตัวหาร P)
+           เคสจริง SUB APRON 05/08: คน 4 แต่ 6 พาร์ทวิ่งพร้อมกัน = 6 เครื่อง (2026-08-13) */
+        parallelCap: flowModeOf(flowByLineRef.current[s.line_name]?.flow_mode) === 'parallel_machine'
+          ? parallelUnitsOf(flowByLineRef.current[s.line_name]) : 1,
       });
-      return r && r.oee != null ? Math.round(r.oee) : null; // noOutput → oee null (ห้าม round เป็น 0)
+      return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
 
     const byLine = {};
+    const liveBySess = {};   // session_id → OEE สด (ให้ modal ใช้ค่าเดียวกับผัง)
     sessions.forEach(s => {
       const os = ordBySess[s.id] || [];
       // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
@@ -407,7 +477,7 @@ export default function FactoryMap({ setupMode = false }) {
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullOs = os.filter(o => !o.mat_no);
-      const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
       const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
       const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
@@ -444,7 +514,7 @@ export default function FactoryMap({ setupMode = false }) {
       //   ระบบเป็น pull (ขายเท่าไหร่ ผลิตเท่านั้น) → เป้า = ใบที่เปิดแล้ว · ห้ามคาดหวังเกินที่ลูกค้าดึง
       //   เวลาที่มีให้ผลิต = ตั้งแต่ (เริ่มกะ หรือ เปิดใบแรก แล้วแต่อันหลัง) ถึงตอนนี้ − พักตามแผน − หยุดตามแผน
       //   เดิมใช้ "เป้าเต็ม × สัดส่วนเวลาของกะ" ซึ่งต่ำเกินจริงในระบบ pull (ใบทยอยเปิด เป้าเลยโตทีหลัง)
-      let onTimeTarget = target;
+      let onTimeTarget = target, runN = 0, capN = 0;   // เครื่องที่เดินได้จริง / เต็มกำลัง (ไว้อธิบายบนจอ)
       if (s.status === 'open' && s.start_time) {
         const shiftStart = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
         // เปิดใบแรกช้ากว่าเริ่มกะ = เพิ่งเริ่มผลิตตอนนั้น (ก่อนหน้านั้นยังไม่มีงานให้ทำ)
@@ -478,20 +548,41 @@ export default function FactoryMap({ setupMode = false }) {
            (ทะเบียนเครื่องเอามานับแทนไม่ได้ — SUB APRON ลงไว้ 14 ตัวแต่รวมจิ๊ก/โรบอทด้วย)
            → ถอยไปสูตรอัตราตามเวลา (เป้า × สัดส่วนเวลาที่ผ่านไป) ซึ่งไม่ต้องรู้ N */
         const lineCfg = flowByLineRef.current[s.line_name];
-        const parallelN = parallelUnitsOf(lineCfg);
+        const fullN = parallelUnitsOf(lineCfg);
         const unknownN = flowModeOf(lineCfg?.flow_mode) === 'parallel_machine' && !(Number(lineCfg?.parallel_stations) > 1);
+        /* ⭐ N ที่ตั้งไว้คือ "เต็มกำลัง" — วันไหนคนไม่พอก็เดินน้อยกว่านั้น (คำสั่ง user 2026-08-06:
+           "เดินได้พร้อมกัน 6 เครื่อง แต่บางทีคนไม่พอ ก็จะเดินตามที่มีกำลังคน")
+           → เครื่องที่เดินได้จริง = N × สัดส่วนกำลังคนที่มาจริง (จุดงานที่มีคนเข้าประจำก่อน แล้วค่อยหัวคน)
+           ตรวจกับข้อมูลจริง SUB APRON: N=6 · จุดงานมีคน 3/6 → เดินได้ 3 เครื่อง = 2388 ชิ้น
+           ของออกจริง 2500 (= 3.14 เท่าของเครื่องเดียว) → ตรงกับที่โมเดลทำนาย
+           ⚠️ ไม่มีข้อมูลกำลังคน (ยังไม่เช็คชื่อ/ไลน์ไม่มีจุดงาน) = ไม่ปรับ ใช้ N เต็ม — ห้ามตีเป็น 0 คน */
+        const mp = manpowerRef.current[s.line_name];
+        // เฉพาะไลน์ที่คนโหลดเข้า-ออกเอง · ไลน์ auto คนแค่ยืนซัพพอร์ท เครื่องเดินเองได้ ไม่ต้องหาร
+        const manRatio = !(manualLineRef.current[s.line_name] === true) ? null
+          // ถ่วงตามเวลาก่อน (รู้ว่าช่วงไหนเดินกี่จุด — รองรับการย้ายคนกลางกะ) แล้วค่อยดูภาพ ณ ตอนนี้
+          : (mp?.stationTotal > 0 && mp.manMin > 0 && mp.winMin > 0)
+            ? Math.min(1, mp.manMin / (mp.stationTotal * mp.winMin))
+          : (mp?.stationTotal > 0 && mp.stationFilled > 0) ? mp.stationFilled / mp.stationTotal
+          : (mp?.headTotal > 0 && mp.present > 0) ? mp.present / mp.headTotal : null;
+        const parallelN = (fullN > 1 && manRatio != null)
+          ? Math.max(1, Math.min(fullN, Math.round(fullN * manRatio))) : fullN;
         onTimeTarget = (ctAvg > 0 && !unknownN)
           ? Math.min(target, (availMin * 60) / ctAvg * parallelN)
           : target * Math.max(0, Math.min(1, ((nowMs - shiftStart) / 60000) / (s.shift_min || 570)));
+        runN = parallelN; capN = fullN;
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
       const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
-      const oeeVal = s.oee != null ? Number(s.oee) : liveOee(s, os, dl);
+      const lr = s.oee != null ? null : liveOee(s, os, dl);
+      const oeeVal = s.oee != null ? Number(s.oee) : (lr && lr.oee != null ? Math.round(lr.oee) : null);
       const isLive = s.oee == null && oeeVal != null;
+      if (isLive) liveBySess[s.id] = oeeVal;
       const acc = byLine[s.line_name] || { ...EMPTY_ST, oeeRows: [] };
       byLine[s.line_name] = {
         actual: acc.actual + actual, target: acc.target + target,
         onTimeTarget: acc.onTimeTarget + onTimeTarget,
+        // เดินได้จริงกี่เครื่อง / เต็มกำลังกี่เครื่อง — เอาไปอธิบายบน popup ว่าทำไม "ควรได้" เท่านี้
+        runN: Math.max(acc.runN || 0, runN), capN: Math.max(acc.capN || 0, capN),
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + dtMin, dtMinHour: acc.dtMinHour + dtMinHour, dtActive: acc.dtActive || dtActive,
         // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — กะเก่า column=0 ทั้งที่มี NG จริง · CLAUDE.md)
@@ -500,6 +591,14 @@ export default function FactoryMap({ setupMode = false }) {
         // เดิม oeeSum/oeeN ทำให้ผังสด กับแผงขวาโหมดทบทวน (ซึ่งถ่วงถูก) โชว์คนละเลขของไลน์เดียวกัน
         oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min, plannedMin: plannedDtMinAll }] : [])],
         oeeLive: acc.oeeLive || isLive,
+        // ประเมิน OEE ไม่ได้เพราะยังไม่ตั้ง CT ของชิ้นงานที่ผลิต — ต้องบอกบนจอ ไม่ใช่เงียบเป็นช่องว่าง
+        oeeNoCt: acc.oeeNoCt || !!(lr && lr.noCt),
+        oeeCtPartial: acc.oeeCtPartial || !!(lr && !lr.noCt && lr.qtyNoCt > 0),
+        /* %P ทะลุ 100 ก่อนโดน cap = งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
+           → ข้อมูลมีอะไรผิด (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
+           ต้องเห็นบนจอ ห้าม cap เงียบ — เคสจริง SUB APRON โดน cap มาแล้ว 14 กะโดยไม่มีใครรู้ */
+        oeePOver: acc.oeePOver || !!(lr && lr.pOver),
+        oeePRaw: Math.max(acc.oeePRaw || 0, (lr && lr.pOver && lr.pRawPct) || 0),
       };
     });
     const out = {};
@@ -507,9 +606,28 @@ export default function FactoryMap({ setupMode = false }) {
       const avg = wavg(v.oeeRows || [], r => r.oee, wLoad);
       out[name] = { ...v, oee: avg != null ? Math.round(avg) : null };
     });
+    liveOeeRef.current = liveBySess;
     setLineStatus(out);
   }, []);
-  useEffect(() => { loadStatus(); const t = setInterval(loadStatus, 30000); return () => clearInterval(t); }, [loadStatus]);
+  usePolling(loadStatus, RATE.ANDON);
+
+  /* ── ⚡ พลังงานไฟฟ้ารายเดือน (DR · เฟส 1 กรอกมือที่ /energy) ──────────────────
+     ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน — โหลดเดือนปัจจุบัน + เดือนก่อนไว้เทียบ
+     ไม่ต้อง refresh ถี่ (ข้อมูลรายเดือน) โหลดครั้งเดียวตอนเปิดหน้าพอ */
+  const loadEnergy = useCallback(async () => {
+    const cur = monthKeyOf(), prev = shiftMonth(cur, -1);
+    const { data, error } = await supabaseDR.from('energy_monthly')
+      .select('scope_name, month_key, qty, cost, source').eq('utility', 'electric').in('month_key', [cur, prev]);
+    if (error) return;                       // ยังไม่ apply migration = metric ขึ้น "ยังไม่กรอก" ไม่พัง
+    const out = {};
+    for (const r of data || []) {
+      const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null });
+      if (r.month_key === cur) { o.qty = Number(r.qty) || 0; o.cost = Number(r.cost) || 0; o.source = r.source; }
+      else o.prev = Number(r.qty) || 0;
+    }
+    setEnergyStatus(out);
+  }, []);
+  useEffect(() => { loadEnergy(); }, [loadEnergy]);
 
   /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
   const loadManpower = useCallback(async () => {
@@ -517,11 +635,15 @@ export default function FactoryMap({ setupMode = false }) {
     // live = กะปัจจุบันเท่านั้น (คำสั่ง user 2026-08-04) — เดิมนับพนักงานทั้งไลน์ (ทุกทีม 2 กะ)
     // เป็นตัวหาร + present รวม log ทั้งวัน → เลขโป่ง เช่น 15/33 ทั้งที่กะนี้มี 16 คน
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
-    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }] = await Promise.all([
+    const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
       supabase.from('production_lines').select('id, name'),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
       supabase.from('workstations').select('id, line_name'),
+      // ประวัติเข้า-ออกจุดงาน (มีเวลาเริ่ม/จบ) — ใช้ถ่วงน้ำหนักตามเวลา ไม่ใช่ดูแค่ ณ ตอนนี้
+      // เคสที่ต้องรองรับ: ต้นกะเดิน 3 เครื่อง ผ่านไป 4 ชม. ย้ายคนมาเดิน 6 เครื่อง
+      supabase.from('station_assignment_logs').select('station_id, line_name, started_at, ended_at')
+        .eq('work_date', workDate).then(r => r).catch(() => ({ data: [] })),
     ]);
     // log ของกะปัจจุบัน (shift null = log เก่าก่อนมีคอลัมน์ — นับรวมแบบ backward-compat)
     const logs = (logsAll || []).filter(l => !l.shift || l.shift === curShift);
@@ -553,13 +675,37 @@ export default function FactoryMap({ setupMode = false }) {
       o.stationFilled = filledSet[ln]?.size || 0;
       out[ln] = o;
     });
+    /* ── กำลังคนถ่วงตามเวลา (คนย้ายจุดกลางกะ) ──────────────────────────────
+       เดิมใช้ภาพ ณ ตอนนี้คูณกับเวลาทั้งกะ → ถ้าเช้าเดิน 3 เครื่อง แล้วบ่ายย้ายมาเดิน 6
+       จะคิดเป็น 6 ทั้งกะ (คาดหวังสูงเกิน) · ตอนนี้รวม "นาที-จุดงาน" ที่มีคนอยู่จริง
+       ตั้งแต่ต้นกะถึงตอนนี้ แล้วหารด้วย (จำนวนจุดงาน × นาทีที่ผ่านไป) */
+    const nowT = Date.now();
+    const shiftStartT = (() => {
+      const d = new Date(); d.setHours(curShift === 'day' ? 8 : 20, 0, 0, 0);
+      if (curShift === 'night' && d.getTime() > nowT) d.setDate(d.getDate() - 1);   // ตี 1 = กะดึกที่เริ่มเมื่อวาน
+      return d.getTime();
+    })();
+    const winMin = Math.max(1, (nowT - shiftStartT) / 60000);
+    const manMin = {};
+    (saRes?.data || []).forEach(a => {
+      if (!a.line_name || !a.started_at) return;
+      const st = Math.max(new Date(a.started_at).getTime(), shiftStartT);
+      const en = Math.min(a.ended_at ? new Date(a.ended_at).getTime() : nowT, nowT);
+      if (en > st) manMin[a.line_name] = (manMin[a.line_name] || 0) + (en - st) / 60000;
+    });
+    Object.keys(out).forEach(ln => { out[ln].manMin = manMin[ln] || 0; out[ln].winMin = winMin; });
+    Object.entries(manMin).forEach(([ln, v]) => {
+      if (!out[ln]) out[ln] = { headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, manMin: v, winMin };
+    });
+    manpowerRef.current = out;
     setManpower(out);
   }, []);
-  useEffect(() => { loadManpower(); const t = setInterval(loadManpower, 60000); return () => clearInterval(t); }, [loadManpower]);
+  usePolling(loadManpower, RATE.BOARD);
 
   /* ── PM เครื่องจักรรายไลน์ (DR: machines → checklists → pm_plans) — refresh 5 นาที ── */
   const loadPM = useCallback(async () => {
-    const { data: machines } = await supabaseDR.from('machines').select('id, line_name').eq('is_active', true);
+    const machines = await cachedMaster('machines:idline', async () =>
+      (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []);
     if (!machines?.length) { setPmStatus({}); return; }
     const lineOfMachine = {}; machines.forEach(m => { lineOfMachine[m.id] = m.line_name; });
     const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').in('equipment_id', machines.map(m => m.id));
@@ -579,19 +725,24 @@ export default function FactoryMap({ setupMode = false }) {
     });
     setPmStatus(out);
   }, []);
-  useEffect(() => { loadPM(); const t = setInterval(loadPM, 300000); return () => clearInterval(t); }, [loadPM]);
+  usePolling(loadPM, RATE.SLOW);
 
   /* ── Supply route (DR: facility_supply_links + machines + open MO) — refresh 30 วิ ──
      utility/facility จ่ายไลน์ไหน · ถ้ามีใบซ่อม (MO) เปิดค้างบนเครื่องนั้น = ไลน์ที่จ่ายกระทบ (แดง) */
   const loadSupply = useCallback(async () => {
-    const [links, mcs, mos] = await Promise.all([
-      supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
-      supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category').then(r => r).catch(() => ({ data: [] })),
-      supabaseDR.from('mtn_orders').select('machine_no, status').then(r => r).catch(() => ({ data: [] })),
+    // ⚡ links/machines เป็น master (เปลี่ยนนานๆ ครั้ง) → cache · เหลือแต่ใบซ่อมที่ต้องสดจริง
+    //    และกรอง "ใบที่ยังไม่ปิด" ฝั่ง server — เดิมดึง mtn_orders ทั้งตารางมากรองในเบราว์เซอร์
+    const [linkRows, machineRows, mos] = await Promise.all([
+      cachedMaster('facility_supply_links', async () =>
+        (await supabaseDR.from('facility_supply_links').select('machine_id, line_name')).data || []),
+      cachedMaster('machines:supply', async () =>
+        (await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category')).data || []),
+      supabaseDR.from('mtn_orders').select('machine_no')
+        .not('status', 'in', '("closed","rejected")').then(r => r, () => ({ data: [] })),
     ]);
-    const linkRows = links?.data || [];
-    const byId = {}; (mcs?.data || []).forEach(m => { byId[m.id] = m; });
-    const openNos = new Set((mos?.data || []).filter(o => !['closed', 'rejected'].includes(o.status)).map(o => o.machine_no));
+    const mcRows = machineRows || [];
+    const byId = {}; mcRows.forEach(m => { byId[m.id] = m; });
+    const openNos = new Set((mos?.data || []).map(o => o.machine_no));
     // (ก) มุมมองไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ (เดิม)
     const out = {};
     linkRows.forEach(l => {
@@ -606,7 +757,7 @@ export default function FactoryMap({ setupMode = false }) {
     // (ข) มุมมองโซน facility เอง: เครื่องในโซนนี้ down (open MO) มั้ย + จ่ายให้ไลน์ไหนบ้าง
     const feedsByMachine = {}; linkRows.forEach(l => { (feedsByMachine[l.machine_id] ||= []).push(l.line_name); });
     const fac = {};
-    (mcs?.data || []).forEach(m => {
+    mcRows.forEach(m => {
       if (!m.equipment_category || m.equipment_category === 'production' || !m.line_name) return;
       const atRisk = openNos.has(m.machine_no);
       const o = fac[m.line_name] || { machines: [], atRisk: false, feeds: new Set() };
@@ -618,7 +769,59 @@ export default function FactoryMap({ setupMode = false }) {
     Object.values(fac).forEach(o => { o.feeds = [...o.feeds]; });
     setFacilitySupply(fac);
   }, []);
-  useEffect(() => { loadSupply(); const t = setInterval(loadSupply, 30000); return () => clearInterval(t); }, [loadSupply]);
+  usePolling(loadSupply, RATE.ANDON);
+
+  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/die-registry?tab=layout · 2026-08-19) ──
+     กรอบบนผังรวมที่ "ชื่อตรงกับชื่อผังจัดเก็บแม่พิมพ์" (die_storage_areas.name · จับคู่ normalize
+     trim+lowercase) = โซนคลังแม่พิมพ์ — pattern เดียวกับโซน facility ↔ pm_facility_areas
+     (ข้าม project Main↔DR ทำ FK ไม่ได้ ชื่อคือกุญแจ — เปลี่ยนชื่อผังใน DieLayout จะ cascade ชื่อกรอบให้)
+     health: แม่พิมพ์ในโซนมีใบซ่อม MO ค้าง → แดง (รอรับงาน = กระพริบ) · ปกติ = เขียว + จำนวนตัว */
+  const loadDieZones = useCallback(async () => {
+    const { data: areas, error } = await supabaseDR.from('die_storage_areas').select('id, name').eq('is_active', true);
+    if (error || !areas?.length) { setDieZones({}); return; }   // ยังไม่ apply migration 20260819 / ยังไม่มีผัง = ไม่มีโซน
+    const [{ data: exts }, { data: dieRows }, { data: mos }] = await Promise.all([
+      supabaseDR.from('equipment_die').select('machine_id, area_id').not('area_id', 'is', null),
+      supabaseDR.from('machines').select('id, machine_no').eq('equipment_kind', 'die'),
+      supabaseDR.from('mtn_orders').select('machine_no, status').in('status', OPEN_MO_STATUSES),
+    ]);
+    const normNo = (s) => String(s || '').trim().toUpperCase();
+    const noById = {}; (dieRows || []).forEach(m => { noById[m.id] = normNo(m.machine_no); });
+    const moByNo = {}; (mos || []).forEach(o => { const k = normNo(o.machine_no); if (k) (moByNo[k] ||= []).push(o); });
+    const byArea = {}; (exts || []).forEach(e => { (byArea[e.area_id] ||= []).push(e.machine_id); });
+    const out = {};
+    areas.forEach(a => {
+      const ids = byArea[a.id] || [];
+      let mo = 0, moPending = 0;
+      ids.forEach(id => {
+        const list = moByNo[noById[id]] || [];
+        if (list.length) { mo++; if (list.some(o => o.status === 'pending')) moPending++; }
+      });
+      out[String(a.name || '').trim().toLowerCase()] = { id: a.id, name: a.name, total: ids.length, mo, moPending };
+    });
+    setDieZones(out);
+  }, []);
+  usePolling(loadDieZones, RATE.ANALYTIC);
+  const dieZoneOf = (name) => dieZones[String(name || '').trim().toLowerCase()] || null;
+
+  /* ── Realtime — ผังเปลี่ยนสี "ทันที" ที่หน้างานบันทึก ไม่ต้องรอรอบ poll (2026-08-19) ────
+     เดิมหน้านี้เป็น polling ล้วน (0 channel) เลยต้องตั้ง 30 วิ เพื่อให้ Andon ทัน = กิน egress หนัก
+     ตอนนี้ push มาก่อน · poll เหลือเป็นแค่ "กันเหนียวเผื่อ realtime หลุด" → ยืดเป็นหลักนาทีได้
+     ⚠️ debounce 1.5 วิ กัน event รัวตอนสแกนปิดใบหลายใบติดกัน (pattern เดียวกับ Dashboard)
+     ⚠️ ผังแดงเร็วกว่าเดิมด้วยซ้ำ — การ "แจ้งเตือน" จริง (Telegram/ไซเรน) เป็นคนละกลไก
+        (edge `downtime-open-scan` pg_cron ทุก 5 นาที ยิงเมื่อค้างเกิน `dt_alert_config.open_alert_min`)  */
+  useEffect(() => {
+    let timer = null;
+    const bump = (fn) => { clearTimeout(timer); timer = setTimeout(fn, 1500); };
+    const ch = supabaseDR.channel('factory-map-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => bump(loadStatus))
+      // mtn_orders กระทบทั้ง supply route และโซนคลังแม่พิมพ์ (MO ค้างของแม่พิมพ์) — refresh คู่กัน
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          () => bump(() => { loadSupply(); loadDieZones(); }))
+      .subscribe();
+    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+  }, [loadStatus, loadSupply, loadDieZones]);
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
@@ -653,6 +856,7 @@ export default function FactoryMap({ setupMode = false }) {
         const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
+        await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
         sessions.forEach(s => {
           const o = ensure(s.line_name);
           const os = ordBySess[s.id] || [];
@@ -665,7 +869,7 @@ export default function FactoryMap({ setupMode = false }) {
             e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
           });
           const nullOs = os.filter(od => !od.mat_no);
-          const ptot = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
           o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
           // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
@@ -713,6 +917,7 @@ export default function FactoryMap({ setupMode = false }) {
           ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
           supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
           supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+          loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ยอดรวมใน modal ยุบขั้นซ้ำเหมือนผัง
         ]);
         if (cancelled) return;
         const prodName = {}, pairMap = {};
@@ -729,7 +934,7 @@ export default function FactoryMap({ setupMode = false }) {
           e.orders++; if (o.is_manual) e.manual++;
         });
         const parts = Object.values(byMat).sort((a, b) => (b.target || 0) - (a.target || 0));
-        const ptot = pairAwareTotal(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), m => pairMap[m] || null);
+        const ptot = pairAwareTotal(collapseOps(Object.values(byMat).filter(p => p.mat !== '(ไม่ระบุ MAT)').map(p => ({ mat_no: p.mat, target: p.target, produced: p.produced })), opInfoSync()), m => pairMap[m] || null);
         const nullPart = byMat['(ไม่ระบุ MAT)'];
         const totTarget = ptot.target + (nullPart?.target || 0);
         const totProduced = ptot.produced + (nullPart?.produced || 0);
@@ -762,10 +967,28 @@ export default function FactoryMap({ setupMode = false }) {
           const p = sOrders.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
           const dt = dtRows.filter(d => d.session_id === s.id && !d.planned).reduce((a, d) => a + d.mins, 0);
           const ng = (defRes.data || []).filter(d => d.session_id === s.id).reduce((a, d) => a + (d.qty_ng || 0), 0);
-          return { id: s.id, line: s.line_name, shift: s.shift, status: s.status, oee: s.oee, a: s.oee_a, p: s.oee_p, q: s.oee_q, target: t, produced: p, dt, ng };
+          // ปิดกะแล้ว = ค่าที่ stamp · ยังเปิด = OEE สดตัวเดียวกับที่ผังใช้ (ห้ามโชว์ "—" ทั้งที่ผังมีเลข)
+          const liveO = liveOeeRef.current[s.id];
+          return { id: s.id, line: s.line_name, shift: s.shift, status: s.status,
+            oee: s.oee != null ? s.oee : (liveO ?? null), oeeLive: s.oee == null && liveO != null,
+            a: s.oee_a, p: s.oee_p, q: s.oee_q, target: t, produced: p, dt, ng };
         }).sort((a, b) => (a.shift === 'day' ? 0 : 1) - (b.shift === 'day' ? 0 : 1));
 
+        /* 🔗 สายการไหลระหว่างไลน์ (2026-08-19) — "หยุดที่นี่ กระทบไลน์ไหน"
+           รวมทั้งครอบครัว แล้วตัดเส้นที่วิ่งอยู่ในครอบครัวเดียวกันทิ้ง (เป็นการไหลภายใน ไม่ใช่ผลกระทบข้ามกลุ่ม)
+           best-effort: ยังไม่ apply migration = ไม่มีบล็อกนี้ ไม่ทำ modal พัง */
+        let flowDown = [], flowUp = [];
+        try {
+          const famSet = new Set(fam);
+          const { data: fl } = await supabaseDR.from('line_flow_links').select('*').eq('is_active', true);
+          for (const l of fl || []) {
+            if (famSet.has(l.from_line) && !famSet.has(l.to_line)) flowDown.push(l);
+            if (famSet.has(l.to_line) && !famSet.has(l.from_line)) flowUp.push(l);
+          }
+        } catch { /* best-effort */ }
+
         setStory({
+          flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
           dtUnplannedMin: dtUnplanned.reduce((a, d) => a + d.mins, 0),
@@ -817,6 +1040,9 @@ export default function FactoryMap({ setupMode = false }) {
   //   (เดิมคลิกแล้วเด้งไปผังคนทันที ซึ่งดูปัญหาของวันไม่ได้ · 2026-08-03 คำสั่ง user)
   // date = วันที่ที่จะสรุป · ไม่ส่ง = วันงานปัจจุบัน (คลิกจากผัง live) · ส่ง reviewDate = คลิกจากแถบทบทวนขวา
   const openLine = (name, date) => {
+    // 🔨 โซนคลังแม่พิมพ์ → เปิดผังจัดเก็บแม่พิมพ์ของโซนนั้นเลย (ต้องเช็คก่อน isFac — ชื่อโซนแม่พิมพ์ก็ไม่ใช่ไลน์ผลิตเหมือนกัน)
+    const dz = dieZoneOf(name);
+    if (dz) { setHoverLine(null); navigate(`/die-registry?tab=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
     setHoverLine(null); setStoryDate(date || getWorkDate()); setStoryLine(name);
   };
@@ -837,17 +1063,23 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; agg.oeeNoCt = agg.oeeNoCt || p.oeeNoCt; agg.oeeCtPartial = agg.oeeCtPartial || p.oeeCtPartial; agg.oeePOver = agg.oeePOver || p.oeePOver; agg.oeePRaw = Math.max(agg.oeePRaw || 0, p.oeePRaw || 0); }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
+      // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
+      //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
+      const en = energyStatus[n];
+      if (en) { agg.kwh = (agg.kwh || 0) + (en.qty || 0); agg.kwhPrev = (agg.kwhPrev || 0) + (en.prev || 0); agg.kwhCost = (agg.kwhCost || 0) + (en.cost || 0); agg.kwhSrc = agg.kwhSrc || en.source; }
     });
     // โซน facility เอง: Supply Route = เครื่องในโซนนี้ down (open MO) มั้ย (มุมมองต่างจากไลน์ผลิตที่เป็น "ถูกจ่าย")
     if (isFac(name)) {
       const fs = facilitySupply[name];
       if (fs) { agg.supList = fs.machines; agg.supAtRisk = fs.atRisk; agg.supFeeds = fs.feeds; agg.isFac = true; }
       else agg.isFac = true;
+      const dz = dieZoneOf(name);
+      if (dz) agg.die = dz;    // 🔨 โซนคลังแม่พิมพ์ — health จากใบซ่อม MO ของแม่พิมพ์ที่วางในโซน
     }
     const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
     agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
@@ -855,8 +1087,12 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
   // โซน MTN/facility (metric ผลิต): default เขียว "ปกติ" ถ้าไม่มีเหตุผิดปกติ — แดง/ส้มเฉพาะเมื่อมีเครื่องซ่อม/PM ค้าง (คำสั่ง user)
-  const facHealth = (st) => (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+  const facHealth = (st) => {
+    if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
+    return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+  };
   const facHealthText = (st) => {
+    if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
     if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
     if (st.dtActive) return '🔴 หยุด';
     if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
@@ -889,7 +1125,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -976,6 +1212,8 @@ export default function FactoryMap({ setupMode = false }) {
     return out;
   };
   const assignableFacility = () => { const f = framedNames(); return facilityZones.filter(n => !f.has(n)); };
+  // 🔨 ผังจัดเก็บแม่พิมพ์ (die_storage_areas) ที่ยังไม่ถูกตีกรอบ — ตีกรอบชื่อเดียวกัน = คลิกแล้วเด้งเข้าผังแม่พิมพ์
+  const assignableDie = () => { const f = framedNames(); return Object.values(dieZones).map(z => z.name).filter(n => !f.has(n)).sort((a, b) => a.localeCompare(b)); };
   // กรอบแม่อัตโนมัติ (2026-08-04): แม่ไม่ได้ตีเอง + ลูกถูกตีแล้ว → เส้นประล้อมกรอบลูกทั้งหมด + ป้ายยอดรวม family
   // แก้ปัญหา "เช็คชื่อกันที่ไลน์แม่" — ข้อมูลที่ผูกชื่อแม่ (คน ฯลฯ) โผล่บนผังโดยไม่ต้องตีกรอบแม่ทับลูก
   const autoHulls = useMemo(() => {
@@ -1105,7 +1343,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
     return out;
     // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1385,7 +1623,7 @@ export default function FactoryMap({ setupMode = false }) {
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
-                      {st.isFac && '🔧 '}{r.line_name}
+                      {st.isFac && (st.die ? '🔨 ' : '🔧 ')}{r.line_name}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
@@ -1577,13 +1815,24 @@ export default function FactoryMap({ setupMode = false }) {
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
               {Object.entries(METRICS).map(([k, m]) => {
-                const skip = st.isFac && m.facilityNA; const c = CAT[skip ? "idle" : m.cat(st)]; const t = skip ? "🔧 Facility" : m.text(st); const isCur = k === metric;
+                const skip = st.isFac && m.facilityNA; const c = CAT[skip ? "idle" : m.cat(st)]; const t = skip ? (st.die ? "🔨 คลังแม่พิมพ์" : "🔧 Facility") : m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
                     borderRadius: 7, padding: '4px 8px' }}>
                     <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{m.label}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>{t || '—'}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>
+                      {t || '—'}
+                      {/* ไลน์เครื่องขนาน: บอกว่า "ควรได้" คิดจากเครื่องที่เดินได้จริงกี่เครื่อง
+                          ไม่งั้นคนอ่านไม่ออกว่าทำไมตัวเลขเปลี่ยนไปตามวัน (คนมาไม่เท่ากัน) */}
+                      {k === 'productivity' && st.capN > 1 && (
+                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
+                          {st.runN < st.capN
+                            ? `คิดจากเดิน ${st.runN}/${st.capN} เครื่อง (ตามกำลังคนที่มา)`
+                            : `คิดจากเดินเต็มกำลัง ${st.capN} เครื่อง`}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 );
               })}
@@ -1605,7 +1854,7 @@ export default function FactoryMap({ setupMode = false }) {
         const plain = rows.length ? rows.reduce((a, r) => a + r.oee, 0) / rows.length : null;
         const sh = (v) => v === 'day' ? 'เช้า' : v === 'night' ? 'ดึก' : (v || '—');
         return (
-          <div onClick={() => setOeeExplain(null)} style={{ position: 'fixed', inset: 0, zIndex: 1260, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setOeeExplain(null)} style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 660, maxHeight: '90vh', overflowY: 'auto', padding: '20px 22px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
                 <div>
@@ -1681,7 +1930,7 @@ export default function FactoryMap({ setupMode = false }) {
         const kids = childrenOf[storyLine] || [];
         const sh = (v) => v === 'day' ? '☀️ กะเช้า' : v === 'night' ? '🌙 กะดึก' : (v || '—');
         return (
-          <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1210, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setStoryLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               {/* หัว */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
@@ -1736,7 +1985,7 @@ export default function FactoryMap({ setupMode = false }) {
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: pctCol(p) }}>{x.target > 0 ? `${fmtNum(x.produced)}/${fmtNum(x.target)} · ${p}%` : `${fmtNum(x.produced)} ชิ้น`}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%` : '—'} color={oeeCol(x.oee)} />
+                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%${x.oeeLive ? ' (สด)' : ''}` : '—'} color={oeeCol(x.oee)} />
                               {x.a != null && <Chip label="A" val={`${Math.round(x.a)}%`} color="var(--text2)" />}
                               {x.p != null && <Chip label="P" val={`${Math.round(x.p)}%`} color="var(--text2)" />}
                               {x.q != null && <Chip label="Q" val={`${Math.round(x.q)}%`} color="var(--text2)" />}
@@ -1777,6 +2026,46 @@ export default function FactoryMap({ setupMode = false }) {
                             })}
                           </tbody>
                         </table>
+                      </div>
+                    </StorySection>
+                  )}
+
+                  {/* 🔗 สายการไหล — "หยุดที่นี่ กระทบใคร / ของมาจากไหน" (2026-08-19)
+                      ⚠️ ยังไม่ผูกกับเวลาหยุดจริง (ต้องรู้ buffer ครบก่อนถึงบอกได้ว่ากระทบเมื่อไหร่)
+                         ตอนนี้บอกแค่ "เชื่อมกับใคร" ซึ่งก็ยังดีกว่าไม่มีอะไรเลย — ห้ามเขียนให้ดูเหมือนคำตอบสำเร็จรูป */}
+                  {(s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
+                    <StorySection title="🔗 สายการไหลระหว่างไลน์">
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        {s.flowDown?.length > 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+                            <b style={{ color: s.dtUnplannedMin > 0 ? '#f59e0b' : 'var(--text)' }}>➡️ ป้อนงานให้:</b>{' '}
+                            {s.flowDown.map((l, i) => (
+                              <span key={l.id}>
+                                {i > 0 && ' · '}
+                                <b style={{ color: 'var(--text)' }}>{l.to_line}</b>
+                                {l.buffer_qty != null
+                                  ? <span style={{ color: 'var(--muted)' }}> (buffer {Number(l.buffer_qty).toLocaleString()} ชิ้น)</span>
+                                  : <span style={{ color: 'var(--muted)' }}> (ยังไม่ระบุ buffer)</span>}
+                              </span>
+                            ))}
+                            {s.dtUnplannedMin > 0 && (
+                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>
+                                ⚠ วันนี้ไลน์นี้หยุดนอกแผน {fmtNum(s.dtUnplannedMin)} นาที — เช็คที่ไลน์ปลายน้ำว่ามี “รอชิ้นงาน” ตามมาไหม
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {s.flowUp?.length > 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+                            <b style={{ color: 'var(--text)' }}>⬅️ รับของจาก:</b>{' '}
+                            {s.flowUp.map((l, i) => (
+                              <span key={l.id}>{i > 0 && ' · '}<b style={{ color: 'var(--text)' }}>{l.from_line}</b></span>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                          ตั้งสายการไหลที่ หน้าจัดการไลน์ → 🔗 สายการไหลระหว่างไลน์
+                        </div>
                       </div>
                     </StorySection>
                   )}
@@ -1861,7 +2150,7 @@ export default function FactoryMap({ setupMode = false }) {
         rows.sort((a, b) => { const ap = a.r.target > 0 ? a.r.actual / a.r.target : 2; const bp = b.r.target > 0 ? b.r.actual / b.r.target : 2; return ap - bp; });
         const ppct = parent.target > 0 ? Math.round(parent.actual / parent.target * 100) : null;
         return (
-          <div onClick={() => setReviewDetail(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setReviewDetail(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 620, maxHeight: '90vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                 <div>
@@ -1918,7 +2207,7 @@ export default function FactoryMap({ setupMode = false }) {
       {detailLine && (() => {
         const st = stOf(detailLine); const kids = childrenOf[detailLine] || [];
         return (
-          <div onClick={() => setDetailLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={() => setDetailLine(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
@@ -1931,7 +2220,7 @@ export default function FactoryMap({ setupMode = false }) {
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
                 {Object.entries(METRICS).map(([k, m]) => {
-                  const skip = st.isFac && m.facilityNA; const cat = skip ? "idle" : m.cat(st); const meta = CAT[cat]; const txt = skip ? "🔧 Facility" : m.text(st);
+                  const skip = st.isFac && m.facilityNA; const cat = skip ? "idle" : m.cat(st); const meta = CAT[cat]; const txt = skip ? (st.die ? "🔨 คลังแม่พิมพ์" : "🔧 Facility") : m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>
                       <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>
@@ -1982,9 +2271,9 @@ export default function FactoryMap({ setupMode = false }) {
       })()}
 
       {assignFor && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
-            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); return <>
+            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); const dieOpts = assignableDie(); return <>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
@@ -1992,6 +2281,7 @@ export default function FactoryMap({ setupMode = false }) {
               {prodOpts.length > 0 && <optgroup label="🏭 ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {dieOpts.length > 0 && <optgroup label="🔨 คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
             {assignLine === '__new__' && (

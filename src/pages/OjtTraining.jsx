@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
@@ -67,7 +67,7 @@ function SignPadModal({ title, onCancel, onDone }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
@@ -119,7 +119,8 @@ export default function OjtTraining() {
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
     ]);
     setLines(ln || []);
-    setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name).sort());
+    // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)
+    setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name));
     setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
     setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
@@ -170,7 +171,9 @@ export default function OjtTraining() {
 
   const openEdit = async (t) => {
     const { data: att } = await supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order');
-    setEditing({ ...t, isNew: false, attendees: att || [] });
+    // ใบเก่าที่ section ว่างแต่มีแผนกขึ้นตรงฝ่าย → โชว์เป็น sentinel ให้แก้ต่อได้ (pattern Register 2026-08-06)
+    setEditing({ ...t, isNew: false, attendees: att || [],
+      section: sectionValueForEdit(t.section, t.department, orgDeptNodes, orgSectionNodes) });
   };
 
   const setF = (k, v) => setEditing(prev => ({ ...prev, [k]: v }));
@@ -226,7 +229,7 @@ export default function OjtTraining() {
         id: editing.id,
         train_date: editing.train_date, time_from: editing.time_from || null, time_to: editing.time_to || null,
         location: editing.location || null, duration_min: editing.duration_min ? Number(editing.duration_min) : null,
-        dept: editing.dept || null, section: editing.section || null, department: editing.department || null,
+        dept: editing.dept || null, section: sectionValueForSave(editing.section), department: editing.department || null,
         for_new: !!editing.for_new, for_review: !!editing.for_review, for_method_change: !!editing.for_method_change,
         topic: editing.topic || null, scope: editing.scope || null, trainer_name: editing.trainer_name || null,
         maker_name: editing.maker_name || null, maker_sig_url: editing.maker_sig_url || null,
@@ -539,14 +542,19 @@ table{border-collapse:collapse}
                   <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
                     <option value="">— เลือก —</option>
                     {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{s}</option>)}
+                    {/* แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN) — เดิม cascade เขียนเองทำให้ออกใบ OJT
+                        ให้ช่างระบุแผนกไม่ได้เลย (QC audit 2026-08-18 · sentinel เห็นเฉพาะ user ไม่จำกัด scope) */}
+                    {!effSections.length && orphanDepts(orgDeptNodes).length > 0 && (
+                      <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                    )}
                   </select>
                 </div>
                 <div>
                   <div style={lb}>แผนก</div>
                   {(() => {
-                    // cascade: แผนกจากผังองค์กร (org_nodes department) ใต้ส่วนที่เลือก — §5.3
-                    const secNode = orgSectionNodes.find(s => (s.code || s.name) === editing.section);
-                    const depOpts = secNode ? orgDeptNodes.filter(d => d.parent_id === secNode.id) : [];
+                    // cascade ผ่าน helper กลาง (§5.3 ข้อ 7 — ห้ามเขียน parent_id cascade เองในหน้า
+                    // เดิมเขียนเอง → แผนกขึ้นตรงฝ่ายไม่มีวันโผล่ · แก้ 2026-08-18)
+                    const depOpts = deptOptionsFor(editing.section, orgSectionNodes, orgDeptNodes);
                     return (
                       <select value={editing.department || ''} disabled={!editing.section} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }}>
                         <option value="">{editing.section ? '— เลือก —' : 'เลือกส่วนก่อน'}</option>

@@ -9,10 +9,11 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
@@ -21,8 +22,11 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
+import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -204,7 +208,15 @@ const DateField = ({ label, value, onChange, required }) => (
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
   const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
-  const [tab, setTab] = useState('list');
+  // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
+  const TAB_DEFS = [
+    { key: 'list', label: '📋 รายการ MO' },
+    { key: 'kpi', label: '📊 KPI' },
+    { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
+    { key: 'rack', label: '🗺️ ผังคลัง' },
+    ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
+  ];
+  const [tab, setTab] = useTabParam(TAB_DEFS.map(t => t.key), 'list');
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -231,7 +243,8 @@ export default function MtnRepair() {
   const loadMasters = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
-      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
+      // equipment_kind = แกนชนิดอุปกรณ์ (machine/die/jig/facility) — ต้องมี ไม่งั้นแยก "แม่พิมพ์" ออกจาก "เครื่องจักร" ไม่ได้
+      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_problem_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_spare_parts').select('*').eq('is_active', true).order('sort_order'),
@@ -304,7 +317,6 @@ export default function MtnRepair() {
   }, [orders, scopeLines, fStatus, fLine, fDept, fText]);
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
-  const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
   // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
   // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
   const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
@@ -320,20 +332,15 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🛠️ แจ้งซ่อม MTN (MO)</h1>
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {/* คลังอะไหล่ = ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์ */}
-          {[['list', '📋 รายการ MO'], ['kpi', '📊 KPI'], ['spare', '🔩 คลังอะไหล่'], ['rack', '🗺️ ผังคลัง'], ...(can('mtn_repair', 'manage_master', role) ? [['master', '⚙️ ข้อมูลหลัก']] : [])].map(([k, t]) => (
-            <button key={k} onClick={() => setTab(k)} style={{ ...(tab === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="แจ้งซ่อม MTN (MO)" icon="🛠️"
+        sub={<>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</>}
+        tabs={TAB_DEFS} tab={tab} onTab={setTab}
+      />
 
       {tab === 'list' && <>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
@@ -343,7 +350,7 @@ export default function MtnRepair() {
             {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
           <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option><TeamOpts list={mtnDepts} /></select>
-          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n} value={n}>{n}</option>)}</select>
+          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(scopedLineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
           <input value={fText} onChange={e => setFText(e.target.value)} placeholder="ค้นหา เลข MO/เครื่อง/ปัญหา" style={{ ...inp, width: 230 }} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
         </div>
@@ -353,7 +360,7 @@ export default function MtnRepair() {
         </div>
       </>}
 
-      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
+      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
@@ -394,14 +401,26 @@ function MoCard({ o, onOpen }) {
 function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
-    cost_center: '', model: '', customer: '', code: '', want_at: '', problem_characteristic: '', problem_detail: '',
+    cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
     report_note: '', is_sample: false, reporter_prod: fullName || '', reporter_qa: '',
   });
   const [beforeFile, setBeforeFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
-  const lineMachines = useMemo(() => machines.filter(m => !f.line_name || m.line_name === f.line_name), [machines, f.line_name]);
+  // แจ้งซ่อม "แม่พิมพ์" หรือ "เครื่องจักร"? — ตัดสินจากชนิดอุปกรณ์ที่เลือก แล้วค่อยดูทีมที่แจ้งถึง
+  //   ⚠️ แม่พิมพ์ผูก line_name เป็น "ชื่อกลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งไม่มีใน production_lines
+  //      → กรองด้วยไลน์ที่เลือกในฟอร์มจะไม่มีวันเจอแม่พิมพ์เลย (เจอจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01)
+  //      จึงลิสต์แม่พิมพ์ "ทั้งหมด" ไม่กรองไลน์ — แม่พิมพ์ถอดย้ายเครื่องได้อยู่แล้ว
+  const wantDie = useMemo(
+    () => /^DIE\b/i.test(f.item_type || '') || (!f.item_type && teamKeyOf(f.mtn_dept) === 'die_maintenance'),
+    [f.item_type, f.mtn_dept],
+  );
+  const lineMachines = useMemo(() => {
+    if (wantDie) return machines.filter(m => isDie(m.equipment_kind));
+    // ไม่ใช่งานแม่พิมพ์ → ตัดแม่พิมพ์ออกจากลิสต์เครื่องจักร (262 ตัวอยู่ตารางเดียวกัน เคยปนกันมาตลอด)
+    return machines.filter(m => !isDie(m.equipment_kind) && (!f.line_name || m.line_name === f.line_name));
+  }, [machines, f.line_name, wantDie]);
 
   const onLine = (name) => {
     const l = lines.find(x => x.name === name);
@@ -427,19 +446,62 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     }));
     toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
-  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it, itemTypes) }));
+  // เลือกชนิดอุปกรณ์ → เดาทีมให้เฉพาะตอนที่ยังไม่ได้เลือกทีม (fill-if-empty)
+  // ⚠️ ห้ามทับทีมที่ user เลือกแล้ว — เคสจริง (feedback 2026-08-19): เลือกทีม JIG แล้วจิ้มชนิดกลาง 🌐
+  //    (CONVEYOR ฯลฯ ที่ fallback เดาเป็น MTN) → ทีมเด้งไป MTN เงียบๆ ลิสต์สลับชุด = "ชนิดอุปกรณ์โชว์มั่ว"
+  //    + ใบไปเข้าคิวทีมผิด
+  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: p.mtn_dept || deptForItem(it, itemTypes) }));
   // ลิสต์ที่กรองตามทีมที่แจ้งถึงแล้ว (แถวที่ไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
-  const teamItemTypes = useMemo(() => filterByTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
-  const teamProblemTypes = useMemo(() => filterByTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
-  const onChar = (c) => { const pt = problemTypes.find(x => x.characteristic === c); setF(p => ({ ...p, problem_characteristic: c, problem_detail: pt?.detail || '' })); };
+  /* ลิสต์ที่ "เห็นได้" — ต่างจาก filterByTeam ที่ใช้คุมสิทธิ์แก้
+     AM เห็นทุกแถว (เจอปัญหาก่อนใคร) · JIG↔MTN เห็นข้ามกันได้ผ่าน shared_teams · DIE แยกชัด */
+  const teamItemTypes = useMemo(() => visibleForTeam(itemTypes, f.mtn_dept), [itemTypes, f.mtn_dept]);
+  const teamProblemTypes = useMemo(() => visibleForTeam(problemTypes, f.mtn_dept), [problemTypes, f.mtn_dept]);
+
+  /* ── ลักษณะปัญหา 2 ชั้น: กลุ่มใหญ่ → หัวข้อย่อย (feedback ทีมงาน 2026-08-11) ──
+     เดิม dropdown เดียว 29 ตัว "พนักงานเลือกค่อนข้างลำบาก"
+     ⚠️ ต้องมีช่องค้นหาข้ามชั้นด้วย — ช่างที่แจ้งทุกวันรู้อยู่แล้วว่าจะเลือกอะไร
+        การบังคับเลือกกลุ่มก่อนคือเพิ่มขั้นตอนให้เขา */
+  const [probQ, setProbQ] = useState('');
+  const NO_GROUP = 'อื่นๆ';
+  const probGroups = useMemo(() => {
+    const m = new Map();
+    for (const p of teamProblemTypes) {
+      const g = (p.group_name || '').trim() || NO_GROUP;
+      if (!m.has(g)) m.set(g, []);
+      m.get(g).push(p);
+    }
+    // กลุ่ม "อื่นๆ" ไปท้ายเสมอ
+    return [...m.entries()].sort((a, b) => (a[0] === NO_GROUP ? 1 : b[0] === NO_GROUP ? -1 : 0));
+  }, [teamProblemTypes]);
+  const probHits = useMemo(() => {
+    const q = probQ.trim().toLowerCase();
+    if (!q) return null;
+    return teamProblemTypes.filter(p =>
+      [p.characteristic, p.detail, p.group_name].some(v => String(v || '').toLowerCase().includes(q)));
+  }, [probQ, teamProblemTypes]);
+  const subOf = useMemo(() => {
+    if (!f.problem_group) return [];
+    return teamProblemTypes.filter(p => ((p.group_name || '').trim() || NO_GROUP) === f.problem_group);
+  }, [f.problem_group, teamProblemTypes]);
+
+  // เลือกหัวข้อย่อย → เก็บทั้งกลุ่มและหัวข้อลงใบ (พาเรโต้จะได้จัดกลุ่มได้ 2 ระดับ)
+  const onChar = (c) => {
+    const pt = teamProblemTypes.find(x => x.characteristic === c);
+    setF(p => ({ ...p, problem_characteristic: c, problem_group: (pt?.group_name || '').trim() || p.problem_group || '' }));
+  };
 
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
-    if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา');
+    if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
     setSaving(true);
     const payload = { ...f, want_at: f.want_at || null, status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: getWorkDate(), reported_by_name: fullName };
-    const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
+    let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
+    // ยังไม่ apply migration problem_group → ตัดคอลัมน์แล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
+    if (error?.code === '42703') {
+      const { problem_group, ...rest } = payload;   // eslint-disable-line no-unused-vars
+      ({ data, error } = await supabaseDR.from('mtn_orders').insert(rest).select().single());
+    }
     if (error) { setSaving(false); return toast.error(error.message); }
     if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.jpg`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
     notifyMtn(data, 'mtn_reported');
@@ -451,22 +513,68 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
-        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></Field>
+        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{toHierarchicalOptions(lines).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
-        <Field label="หมายเลขเครื่อง">
+        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
+          ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
+          : /* ยังไม่เลือกทีม = เห็นทุกทีมได้ แต่ต้องจัดกลุ่มบอกว่าของทีมไหน (เลือกแล้วระบบเติมทีมให้) */
+            (() => {
+              const g = new Map();
+              teamItemTypes.forEach(t => {
+                const k = t.team ? deptNameOf(t.team) : '🌐 ใช้ร่วมทุกทีม';
+                if (!g.has(k)) g.set(k, []);
+                g.get(k).push(t);
+              });
+              return [...g.entries()].sort((a, b) => (a[0].startsWith('🌐') ? 1 : b[0].startsWith('🌐') ? -1 : a[0].localeCompare(b[0], 'th')))
+                .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
+            })()}</select></Field>
+        <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6 }}>
-            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="เลือก/พิมพ์/สแกน" />
+            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder={wantDie ? 'พิมพ์เพื่อค้นแม่พิมพ์ / สแกน' : 'เลือก/พิมพ์/สแกน'} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
               style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
           </div>
-          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}</option>)}</datalist>
+          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}{m.line_name ? ` · ${m.line_name}` : ''}</option>)}</datalist>
+          {wantDie && (
+            <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
+              {lineMachines.length
+                ? '🔨 ลิสต์แม่พิมพ์ทั้งหมด (ไม่กรองตามไลน์ — แม่พิมพ์ถอดย้ายเครื่องได้) · พิมพ์เลขเพื่อค้น'
+                : '⚠️ ยังไม่มีแม่พิมพ์ในทะเบียน — ลงข้อมูลที่ /die-registry ก่อน (พิมพ์เลขเองได้)'}
+            </div>
+          )}
         </Field>
-        <Field label="ลักษณะปัญหา" required><select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamProblemTypes.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}</select></Field>
-        <Field label="รายละเอียดปัญหา (auto)"><input value={f.problem_detail} onChange={e => set('problem_detail', e.target.value)} style={inp} /></Field>
+        <Field label="ลักษณะปัญหา — กลุ่ม" required>
+          <select value={f.problem_group} onChange={e => setF(p => ({ ...p, problem_group: e.target.value, problem_characteristic: '' }))} style={inp}>
+            <option value="">— เลือกกลุ่ม —</option>
+            {probGroups.map(([g, list]) => <option key={g} value={g}>{g} ({list.length})</option>)}
+          </select>
+        </Field>
+        <Field label={`หัวข้อย่อย${subOf.length ? ` (${subOf.length})` : ''}`} required>
+          <select value={f.problem_characteristic} onChange={e => onChar(e.target.value)} disabled={!f.problem_group} style={{ ...inp, ...(f.problem_group ? null : { background: 'var(--bg2)' }) }}>
+            <option value="">{f.problem_group ? '— เลือกหัวข้อย่อย —' : 'เลือกกลุ่มก่อน'}</option>
+            {subOf.map(p => <option key={p.id} value={p.characteristic}>{p.characteristic}</option>)}
+          </select>
+        </Field>
+        {/* ค้นหาข้ามชั้น — ช่างที่รู้อยู่แล้วว่าจะเลือกอะไร ไม่ต้องไล่เลือกกลุ่มก่อน */}
+        <div style={{ gridColumn: '1 / -1' }}>
+          <Field label="🔍 หาเร็ว (พิมพ์อาการได้เลย ไม่ต้องเลือกกลุ่ม)">
+            <input value={probQ} onChange={e => setProbQ(e.target.value)} placeholder="เช่น ลมรั่ว / พันช์ / เซนเซอร์" style={inp} />
+          </Field>
+          {probHits && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+              {probHits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบ — ลองคำอื่น หรือเลือกจากกลุ่มด้านบน</span>}
+              {probHits.slice(0, 12).map(p => (
+                <button key={p.id} type="button" onClick={() => { onChar(p.characteristic); setProbQ(''); }}
+                  style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)' }}>
+                  {p.characteristic}<span style={{ color: 'var(--muted)', marginLeft: 5, fontWeight: 400 }}>· {(p.group_name || 'อื่นๆ')}</span>
+                </button>))}
+              {probHits.length > 12 && <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>…อีก {probHits.length - 12}</span>}
+            </div>
+          )}
+        </div>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
         <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6 }}><input value={f.model} onChange={e => set('model', e.target.value)} style={inp} placeholder="โมเดล" /><input value={f.customer} onChange={e => set('customer', e.target.value)} style={inp} placeholder="ลูกค้า" /></div></Field>
@@ -1068,26 +1176,39 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 }
 
 /* ── KPI tab ─────────────────────────────────────────── */
-function KpiTab({ orders, scopeLines, lineOpts }) {
+function KpiTab({ orders, scopeLines, lineObjs = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
   const rows = useMemo(() => { const since = new Date(); since.setDate(since.getDate() - Number(days)); return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && (!line || o.line_name === line) && new Date(o.report_at) >= since && o.repair_done_at); }, [orders, scopeLines, line, days]);
+  const [openGroup, setOpenGroup] = useState(null);   // กลุ่มที่กางดูหัวข้อย่อยในพาเรโต้
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
     for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
     const byChar = {}; rows.forEach(o => { const k = o.problem_characteristic || 'อื่นๆ'; byChar[k] = (byChar[k] || 0) + 1; });
+    /* พาเรโต้ 2 ระดับ (feedback ทีมงาน 2026-08-11) — กลุ่มใหญ่ก่อน แล้วเจาะเข้าไปดูหัวข้อย่อย
+       ⚠️ ใบเก่าที่แจ้งก่อนมีกลุ่ม จะไม่มี problem_group → ตกกลุ่ม "ไม่ระบุกลุ่ม"
+          ห้ามยัดเข้ากลุ่มใดกลุ่มหนึ่งมั่ว (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
+    const byGroup = {};
+    rows.forEach(o => {
+      const g = (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม';
+      const c = o.problem_characteristic || 'อื่นๆ';
+      const e = (byGroup[g] ||= { n: 0, subs: {} });
+      e.n++; e.subs[c] = (e.subs[c] || 0) + 1;
+    });
+    const paretoGroup = Object.entries(byGroup).sort((a, b) => b[1].n - a[1].n)
+      .map(([g, e]) => ({ group: g, n: e.n, subs: Object.entries(e.subs).sort((a, b) => b[1] - a[1]) }));
     // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
     const rated = rows.filter(o => satAvg(o.satisfaction) != null);
     const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
     const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), satOverall, satByDim, satN: rated.length };
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), paretoGroup, satOverall, satByDim, satN: rated.length };
   }, [rows]);
   const Card = ({ t, v, c }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 160 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div></div>;
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n}>{n}</option>)}</select>
+        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
         <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -1105,7 +1226,38 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
         ); })}
       </div>}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา (Top 10)</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา — ตามกลุ่มใหญ่</div>
+        {/* กลุ่มใหญ่ก่อน กดแตกดูหัวข้อย่อย — ดูภาพรวมได้ก่อนจมกับ 29 แท่งเตี้ยๆ */}
+        {stat.paretoGroup.map(g => {
+          const max = stat.paretoGroup[0].n;
+          const open = openGroup === g.group;
+          return (
+            <div key={g.group} style={{ marginBottom: 5 }}>
+              <div onClick={() => setOpenGroup(open ? null : g.group)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <div style={{ width: 190, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {open ? '▾' : '▸'} {g.group}
+                </div>
+                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}>
+                  <div style={{ width: `${(g.n / max) * 100}%`, height: '100%', background: g.group === 'ไม่ระบุกลุ่ม' ? '#6b7280' : '#f59e0b' }} />
+                </div>
+                <div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{g.n}</div>
+              </div>
+              {open && g.subs.map(([c, n]) => (
+                <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, paddingLeft: 16 }}>
+                  <div style={{ width: 174, fontSize: 11.5, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</div>
+                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${(n / g.n) * 100}%`, height: '100%', background: '#fbbf24' }} />
+                  </div>
+                  <div style={{ width: 34, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)' }}>{n}</div>
+                </div>))}
+            </div>);
+        })}
+        {stat.paretoGroup.some(g => g.group === 'ไม่ระบุกลุ่ม') && (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+            ⚪ "ไม่ระบุกลุ่ม" = ใบที่แจ้งก่อนระบบมีการจัดกลุ่ม (ระบบไม่เดากลุ่มย้อนหลังให้ — ใบเก่าเก็บเป็นข้อความ ไม่รู้กลุ่มจริง)
+          </div>)}
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '14px 0 8px' }}>รายหัวข้อ (Top 10 ทั้งหมด)</div>
         {stat.pareto.map(([k, n]) => { const max = stat.pareto[0][1]; return <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}><div style={{ width: 190, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</div><div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${(n / max) * 100}%`, height: '100%', background: '#f59e0b' }} /></div><div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{n}</div></div>; })}
         {!stat.pareto.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูลในช่วงนี้</div>}
       </div>
@@ -1114,7 +1266,38 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
 }
 
 /* ── Master tab (ช่าง / อะไหล่+stock / taxonomy / ชนิดอุปกรณ์) ── */
-function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, reloadMasters }) {
+/* ── 📜 ประวัติการแก้ไข master ของทีมช่าง (อ่านจาก audit_log ฝั่ง DR) ──────────
+   ตอบคำถาม "ใครไปเปลี่ยนหัวข้อของทีมเรา" — trigger fn_audit เขียนไว้อยู่แล้ว
+   แต่ไม่เคยมีหน้าจอให้ดู · actor ฝั่ง DR มาจาก `updated_by_name` ที่ wrapper
+   ใน supabaseClient.js ฝังให้อัตโนมัติ (DR เป็น anon ไม่มี auth.uid) */
+const AUDIT_TABLES = {
+  mtn_item_types:      '⚙️ ชนิดอุปกรณ์',
+  mtn_problem_types:   '🛑 ลักษณะปัญหา',
+  mtn_repair_types:    '🔧 ประเภทงานซ่อม',
+  mtn_spare_categories:'🏷️ หมวดอะไหล่',
+  mtn_spare_parts:     '🔩 อะไหล่',
+  mtn_technicians:     '👷 ช่าง',
+  mtn_labor_rates:     '💰 ค่าแรงมาตรฐาน',
+  equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
+  die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
+};
+
+function MasterAuditLog({ teams = [] }) {
+  // จอเดียวกับหน้า /audit-log (component กลาง) — ที่นี่จำกัดเฉพาะตารางของทีมช่าง
+  // ดูของทั้งระบบ (สิทธิ์/พนักงาน/สินค้า/เครื่องจักร ฯลฯ) ที่ ตั้งค่าโปรแกรม → 📜 ประวัติการแก้ไขข้อมูล
+  const teamName = (k) => (k ? (teams.find(t => teamKeyOf(t.key) === teamKeyOf(k))?.dept_name || deptNameOf(k) || k) : '🌐 ใช้ร่วมทุกทีม');
+  return (
+    <AuditLogViewer
+      client={supabaseDR}
+      tables={Object.keys(AUDIT_TABLES)}
+      fmtValue={(f, v) => ((f === 'team' || f === 'dept') && v !== undefined ? teamName(v) : undefined)}
+      intro={<>📜 ใครแก้อะไรใน<b>ข้อมูลตั้งต้นของทีมช่าง</b> — เรียงใหม่สุดก่อน · บันทึกอัตโนมัติทุกครั้งที่เพิ่ม/แก้/ลบ
+        <br /><span style={{ opacity: 0.85 }}>อยากดูของทั้งระบบ (สิทธิ์ · พนักงาน · สินค้า · เครื่องจักร …) ไปที่ <b>ตั้งค่าโปรแกรม,ฐานข้อมูล → 📜 ประวัติการแก้ไขข้อมูล</b></span></>}
+    />
+  );
+}
+
+function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], laborRates = [], mtnDepts = MTN_DEPTS, mtnTeams = [], fullName, role, userTeams = [], reloadMasters }) {
   const [sub, setSub] = useState('tech');
   const reload = () => reloadMasters();
   const addRow = async (table, payload) => { const { error } = await supabaseDR.from(table).insert(payload); if (error) return toast.error(error.message); reload(); };
@@ -1122,10 +1305,19 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   // เปลี่ยนชื่อใน master → ถามว่าจะให้ใบซ่อมที่บันทึกชื่อเดิมไว้ตามไปด้วยไหม
   const cascadeRename = async (col, oldV, newV) => {
     if (!oldV || !newV || oldV === newV) return;
-    const { count } = await supabaseDR.from('mtn_orders').select('id', { count: 'exact', head: true }).eq(col, oldV);
+    // ดึงทีมของใบที่จะโดนด้วย — เขียนทับประวัติข้ามทีมเป็นความเสี่ยงที่แรงที่สุดของหน้านี้
+    // ต้องบอกให้เห็นว่าไปแตะใบของทีมไหนบ้าง ห้ามถามลอยๆ แค่จำนวนใบ
+    const { data } = await supabaseDR.from('mtn_orders').select('mtn_dept').eq(col, oldV);
+    const rows = data || [];
+    const count = rows.length;
     if (!count) return;
+    const byTeam = {};
+    for (const r of rows) { const k = teamKeyOf(r.mtn_dept) || ''; byTeam[k] = (byTeam[k] || 0) + 1; }
+    const brk = Object.entries(byTeam).sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `   · ${k ? (deptNameOf(k) || k) : 'ไม่ระบุทีม'} ${n} ใบ`).join('\n');
     const okGo = confirm(
-      `มีใบแจ้งซ่อม ${count} ใบที่บันทึกค่าเดิมไว้ว่า "${oldV}"\n\n` +
+      `มีใบแจ้งซ่อม ${count} ใบที่บันทึกค่าเดิมไว้ว่า "${oldV}"\n${brk}\n\n` +
+      (Object.keys(byTeam).length > 1 ? `⚠️ ใบเหล่านี้อยู่หลายทีม — แก้แล้วประวัติของทุกทีมข้างบนเปลี่ยนตาม\n\n` : '') +
       `[ตกลง] = แก้ใบเหล่านั้นเป็น "${newV}" ด้วย → KPI/พาเรโต้รวมเป็นกลุ่มเดียว\n` +
       `[ยกเลิก] = เก็บใบเดิมไว้ตามที่บันทึกวันนั้น → พาเรโต้จะแยกเป็น 2 กลุ่ม`);
     if (!okGo) return;
@@ -1199,13 +1391,49 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   /* SimpleList — master list ที่ "แยกมุมมองตามทีมช่างได้"
      ทีมของแถว: null/ว่าง = 🌐 ใช้ร่วมทุกทีม · ตั้งเป็นทีมใดทีมหนึ่ง = เห็นเฉพาะทีมนั้น
      ⚠️ ที่แยกคือ "มุมมอง" เท่านั้น — ตัวตนอุปกรณ์ (machine/jig id) เป็นของกลาง ห้ามแตกตามทีม */
-  const SimpleList = ({ table, items, fields, addLabel, teamed = true }) => {
+  const SimpleList = ({ table, items, fields, addLabel, teamed = true, shared = false }) => {
     const [nw, setNw] = useState({});
     const [nwTeam, setNwTeam] = useState('');
     const [fTeam, setFTeam] = useState('');
     const shown = teamed ? filterByTeam(items, fTeam) : items;
     const teamOpts = mtnTeams.length ? mtnTeams : DEFAULT_TEAMS;
     const hiddenN = items.length - shown.length;
+
+    /* ── ล็อกตามเจ้าของ (คำสั่ง user 2026-08-11) ─────────────────────────
+       เดิมใครมีสิทธิ์ manage_master ก็แก้ของทุกทีมได้ → MTN เข้าไปเปลี่ยนชื่อของ
+       DIE MTN ได้ และแถว 🌐 ของกลางแก้ทีเดียวกระทบทุกทีม (แบบเดียวกับที่เคย
+       "แย่งกันตั้งเลข MAT") · กติกา:
+         · แถวของทีมตัวเอง        → แก้/ลบได้
+         · แถวของทีมอื่น          → อ่านอย่างเดียว
+         · แถว 🌐 ใช้ร่วมทุกทีม   → เฉพาะ admin/manager (แก้ทีเดียวกระทบทุกทีม)
+       ⚠️ fallback สำคัญ: user ที่ยังไม่ได้ตั้ง `profiles.mtn_teams` = ไม่ล็อก
+          ไม่งั้นวันที่ deploy ช่างที่ยังไม่ถูกตั้งทีมจะแก้อะไรไม่ได้ทั้งระบบ */
+    const isBoss = role === 'admin' || role === 'manager';
+    const myKeys = (userTeams || []).map(teamKeyOf).filter(Boolean);
+    const unscoped = myKeys.length === 0;
+    const teamNameOf = (k) => (k ? (teamOpts.find(t => teamKeyOf(t.key) === teamKeyOf(k))?.dept_name || deptNameOf(k) || k) : '🌐 ใช้ร่วมทุกทีม');
+    const canEditRow = (r) => {
+      if (!teamed || isBoss || unscoped) return true;
+      const t = teamKeyOf(r?.team);
+      return t ? myKeys.includes(t) : false;      // ไม่มีทีม = ของกลาง → หัวหน้าเท่านั้น
+    };
+    const lockNote = (r) => {
+      const t = teamKeyOf(r?.team);
+      return t ? `รายการนี้เป็นของทีม ${teamNameOf(t)} — แก้ได้เฉพาะทีมนั้นหรือหัวหน้า`
+        : 'รายการนี้ทุกทีมใช้ร่วมกัน — แก้ได้เฉพาะหัวหน้า (แก้ทีเดียวกระทบทุกทีม)';
+    };
+    // เปลี่ยนทีมของแถว = ของหายจากลิสต์ทีมเดิมทันที → ต้องบอกก่อนเสมอ ห้ามเงียบ
+    const changeTeam = (it, v) => {
+      const from = teamKeyOf(it.team), to = teamKeyOf(v) || null;
+      if (from === to) return;
+      const msg = !from
+        ? `ตอนนี้ "${it[fields[0].k]}" ทุกทีมใช้ร่วมกัน\n\nเปลี่ยนเป็นของทีม "${teamNameOf(to)}" แล้ว\n→ ทีมอื่นจะไม่เห็นรายการนี้ในฟอร์มแจ้งซ่อมอีก`
+        : to
+          ? `ย้าย "${it[fields[0].k]}"\nจากทีม "${teamNameOf(from)}" → "${teamNameOf(to)}"\n\n→ ทีมเดิมจะไม่เห็นรายการนี้อีก`
+          : `เปลี่ยน "${it[fields[0].k]}" เป็นของกลาง (ทุกทีมใช้ร่วมกัน)\n\n→ ทุกทีมจะเห็นรายการนี้ และแก้ได้เฉพาะหัวหน้า`;
+      if (!confirm(msg + '\n\nยืนยัน?')) return;
+      updRow(table, it.id, { team: to });
+    };
     return (
       <div>
         {teamed && (
@@ -1219,40 +1447,82 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>🌐 = ใช้ร่วมทุกทีม</span>
           </div>
         )}
+        {teamed && !isBoss && (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', marginBottom: 10 }}>
+            {unscoped
+              ? '⚠️ บัญชีนี้ยังไม่ได้ตั้ง "ทีมช่างซ่อม" ที่หน้าจัดการผู้ใช้งาน — ตอนนี้จึงยังแก้ได้ทุกรายการ · ตั้งทีมแล้วระบบจะล็อกให้แก้ได้เฉพาะของทีมตัวเอง'
+              : <>🔒 แก้ได้เฉพาะรายการของทีม <b>{myKeys.map(teamNameOf).join(' · ')}</b> — ของทีมอื่นและรายการ 🌐 ใช้ร่วมทุกทีม ดูได้อย่างเดียว (แก้ทีเดียวกระทบทุกทีม ต้องให้หัวหน้าแก้)</>}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
           {teamed && (
+            /* เพิ่มของกลาง (🌐) ได้เฉพาะหัวหน้า — คนทีมเดียวเพิ่มได้แต่ของทีมตัวเอง */
             <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: 190 }}>
-              <option value="">🌐 ใช้ร่วมทุกทีม</option>
-              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              {(isBoss || unscoped) && <option value="">🌐 ใช้ร่วมทุกทีม</option>}
+              {teamOpts.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
+                .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select>
           )}
           <button onClick={() => {
             if (!nw[fields[0].k]) return;
             // ทีมของแถวใหม่: ที่เลือกในช่อง หรือ default = ทีมที่กำลังกรองอยู่ (เพิ่มของทีมตัวเองได้เลย)
             const payload = { ...nw, sort_order: items.length + 1 };
-            if (teamed) payload.team = (nwTeam || fTeam) || null;
+            if (teamed) {
+              let t = (nwTeam || fTeam) || null;
+              // ไม่ใช่หัวหน้า + สังกัดทีมเดียว → บังคับเป็นของทีมตัวเอง (กันเผลอสร้างเป็นของกลาง)
+              if (!isBoss && !unscoped && !myKeys.includes(teamKeyOf(t))) t = myKeys.length === 1 ? myKeys[0] : null;
+              if (!isBoss && !unscoped && !t) return toast.error('เลือกทีมของรายการก่อน — เพิ่มรายการ 🌐 ใช้ร่วมทุกทีม ได้เฉพาะหัวหน้า');
+              payload.team = t;
+            }
             addRow(table, payload); setNw({}); setNwTeam('');
           }} style={btnPri}>+ {addLabel}</button>
         </div>
-        <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => (
-          <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} onBlur={async e => {
+        <div style={{ display: 'grid', gap: 6 }}>{shown.map(it => {
+          const ok = canEditRow(it);
+          const ro = { background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' };
+          return (
+          <div key={it.id} title={ok ? undefined : lockNote(it)}
+            style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: ok ? 1 : 0.72 }}>
+            {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} readOnly={!ok} onBlur={ok ? async e => {
               const nv = e.target.value, ov = it[fl.k] || '';
               if (nv === ov) return;
               await updRow(table, it.id, { [fl.k]: nv });
               const col = NAME_CASCADE[table]?.[fl.k];   // ชื่อนี้ถูกคัดลอกไปเก็บในใบซ่อมด้วยไหม
               if (col) await cascadeRename(col, ov, nv);
-            }} style={{ ...inp, flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
+            } : undefined} style={{ ...inp, ...(ok ? null : ro), flex: `1 1 ${fl.w || 200}px`, width: 'auto', minWidth: 120 }} />)}
             {teamed && (
-              <select value={it.team || ''} onChange={e => updRow(table, it.id, { team: e.target.value || null })}
-                title="ทีมที่ใช้รายการนี้" style={{ ...inp, width: 180, flex: '0 0 auto' }}>
+              <select value={it.team || ''} disabled={!ok} onChange={e => changeTeam(it, e.target.value)}
+                title={ok ? 'ทีมที่ใช้รายการนี้' : lockNote(it)} style={{ ...inp, ...(ok ? null : ro), width: 180, flex: '0 0 auto' }}>
                 <option value="">🌐 ใช้ร่วมทุกทีม</option>
                 {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
             )}
-            <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
-          </div>))}
+            {/* 👁 ทีมอื่นที่ "เห็น" รายการนี้ด้วย — คนละเรื่องกับเจ้าของ (ที่แก้ได้)
+                ใช้กับเคสงานทับซ้อน JIG MTN ↔ MTN · AM เห็นทุกแถวอยู่แล้วไม่ต้องติ๊ก */}
+            {shared && teamed && (() => {
+              const cur = Array.isArray(it.shared_teams) ? it.shared_teams.map(teamKeyOf) : [];
+              const pickable = teamOpts.filter(t => !seesEverything(t.key) && teamKeyOf(t.key) !== teamKeyOf(it.team));
+              return (
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }} title="ทีมอื่นที่เห็นรายการนี้ด้วย (เห็นได้ แต่แก้ไม่ได้)">
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>👁</span>
+                  {pickable.map(t => {
+                    const on = cur.includes(teamKeyOf(t.key));
+                    return (
+                      <button key={t.key} type="button" disabled={!ok}
+                        onClick={() => updRow(table, it.id, { shared_teams: on ? cur.filter(x => x !== teamKeyOf(t.key)) : [...cur, teamKeyOf(t.key)] })}
+                        style={{ padding: '3px 7px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
+                          border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
+                          color: on ? 'var(--accent)' : 'var(--muted)', opacity: ok ? 1 : 0.6 }}>
+                        {t.icon || ''}{(t.dept_name || t.label || '').replace(' MTN', '')}
+                      </button>);
+                  })}
+                </div>);
+            })()}
+            {ok
+              ? <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+              : <span title={lockNote(it)} style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
+          </div>); })}
           {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>
             ไม่มีรายการของทีมนี้ — เพิ่มด้านบน (หรือเลือก "ทุกทีม" เพื่อดูของทีมอื่น)
           </div>}
@@ -1303,14 +1573,16 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์'], ['repair', '🔧 ประเภทงานซ่อม']].map(([k, t]) =>
+        {[['tech', '👷 ช่าง (ทุกทีม)'], ['labor', '💰 ค่าแรงมาตรฐาน'], ['mo', '🔢 เลขรัน MO'], ['prob', '🛑 ลักษณะปัญหา'], ['item', '⚙️ ชนิดอุปกรณ์'], ['repair', '🔧 ประเภทงานซ่อม'], ['audit', '📜 ประวัติการแก้ไข']].map(([k, t]) =>
           <button key={k} onClick={() => setSub(k)} style={{ ...(sub === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>)}
       </div>
       {sub === 'tech' && TechList()}
       {sub === 'labor' && LaborList()}
       {sub === 'mo' && MoSeqList()}
-      {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" fields={[{ k: 'characteristic', ph: 'ลักษณะปัญหา', w: 240 }, { k: 'detail', ph: 'รายละเอียด', w: 320 }]} />}
-      {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
+      {sub === 'audit' && <MasterAuditLog teams={mtnTeams.length ? mtnTeams : DEFAULT_TEAMS} />}
+      {sub === 'prob' && <SimpleList table="mtn_problem_types" items={problemTypes} addLabel="เพิ่มปัญหา" shared
+        fields={[{ k: 'group_name', ph: 'กลุ่มใหญ่ (เช่น ระบบลม)', w: 190 }, { k: 'characteristic', ph: 'หัวข้อย่อย', w: 220 }, { k: 'detail', ph: 'คำอธิบาย', w: 260 }]} />}
+      {sub === 'item' && <SimpleList table="mtn_item_types" items={itemTypes} addLabel="เพิ่มชนิด" shared fields={[{ k: 'name', ph: 'ชนิดอุปกรณ์', w: 240 }]} />}
       {sub === 'repair' && (<>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
           ⚠️ รหัสย่อถูกใช้เป็นส่วนหนึ่งของเลข MO (เช่น <code>MTN-<b>BM</b>-060826-0001</code>) — เปลี่ยนแล้วมีผลกับใบที่ออกเลขใหม่เท่านั้น ใบเก่าคงเดิม

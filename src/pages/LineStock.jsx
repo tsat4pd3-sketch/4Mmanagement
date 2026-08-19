@@ -2,11 +2,17 @@ import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { isFgMat } from '../utils/matPrefix';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import WipBetweenSteps from '../components/WipBetweenSteps';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -34,7 +40,7 @@ const TYPE_LABEL = { issue:'📦 จ่ายเข้าไลน์', consume:
 /* รหัส MAT SAP (ดู CLAUDE.md "รหัส MAT SAP"): ขึ้นต้น 1 = FG งานสำเร็จพร้อมขาย —
    อยู่ FG WAREHOUSE รอส่งลูกค้า หักออกทางเดียวคือกด "ส่งแล้ว" หน้า Delivery
    จึงไม่มีเหตุให้ "จ่ายเข้าไลน์" (ปรับยอด/คืนยังทำได้ ผ่านคิวอนุมัติตามปกติ) */
-const isFgMat = (m) => String(m || '').trim().startsWith('1');
+// FG = ขึ้นต้นด้วย 1 — นิยามกลางที่ src/utils/matPrefix.js (ห้ามนิยามซ้ำในหน้า)
 const TYPE_COLOR = { issue:'#22c55e', consume:'#94a3b8', return:'#f59e0b', adjust:'#a855f7' };
 
 /* ประเภท manual movement ที่ต้องผ่านการอนุมัติ (store review) ก่อนมีผลต่อ on-hand
@@ -646,7 +652,7 @@ function StockTab({ role }) {
 
       {/* ── Reject reason modal ── (ฟอร์มมี input → ไม่ปิดจาก backdrop click ตาม UI-CONVENTIONS §5) */}
       {rejectTx && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+        <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(420px,100%)' }}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>❌ ปฏิเสธคำขอ</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
@@ -1065,8 +1071,8 @@ function DeliveryTimeBoardTab() {
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
+    return () => stopPoll();
   }, [load]);
 
   const dlvMap = useMemo(() => {
@@ -1295,6 +1301,7 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
+  { key:'wip',       label:'🔩 WIP ระหว่างขั้น' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
   { key:'timeboard', label:'🕐 บอร์ดเวลา' },
   { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
@@ -1303,40 +1310,18 @@ const TABS = [
 export default function LineStock() {
   const { role, fullName } = useContext(UserContext);
   const canEdit = can('line_stock', 'manage_rounds', role);
-  const [activeTab, setActiveTab] = useState('stock');
+  const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stock');
 
   return (
     <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
-      {/* Tab bar */}
-      {/* flexWrap: จอแคบแท็บตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม)
-          หมายเหตุ: ห้ามใช้ overflowX:'auto' ที่นี่ — ปุ่มมี marginBottom:-2 ซ้อนเส้นใต้ จะโดน clip */}
-      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid var(--border)', paddingBottom:0, flexWrap:'wrap' }}>
-        {TABS.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            style={{
-              padding:'9px 20px',
-              whiteSpace:'nowrap',
-              fontSize:13,
-              fontWeight:700,
-              fontFamily:'var(--font-body)',
-              border:'none',
-              borderBottom: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom:-2,
-              cursor:'pointer',
-              borderRadius:'8px 8px 0 0',
-              background: activeTab === t.key ? 'var(--bg2)' : 'transparent',
-              color: activeTab === t.key ? 'var(--text)' : 'var(--muted)',
-              transition:'color 0.15s, background 0.15s',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <PageHeader
+        title="Line Stock — สต๊อกหน้าไลน์" icon="📦"
+        sub="ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต"
+        tabs={TABS} tab={activeTab} onTab={setActiveTab}
+      />
 
       {activeTab === 'stock'     && <StockTab role={role} />}
+      {activeTab === 'wip'       && <WipBetweenSteps />}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}

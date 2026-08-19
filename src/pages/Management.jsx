@@ -13,6 +13,8 @@ import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 function resizeImage(file, maxPx = 1280, quality = 0.85) {
   return new Promise((resolve) => {
@@ -110,7 +112,9 @@ function useWidth() {
   return w;
 }
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
-const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
+// fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง special_task_types
+// (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
+const DEFAULT_SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
 // Aligned with SKILL_LEVELS scale used across Dashboard / Operator / Report
 const fitColor = (score) => {
@@ -149,7 +153,9 @@ export default function Management() {
   const isSupervisor = role === 'supervisor';
 
   const [workers,        setWorkers]        = useState([]);
+  const [specialTaskOptions, setSpecialTaskOptions] = useState(DEFAULT_SPECIAL_TASKS); // master งานนอกไลน์ (best-effort)
   const [ppeAlerts,      setPpeAlerts]      = useState([]); // เช็คชื่อแล้วแต่ PPE ไม่ครบ (ไม่อยู่ใน workers)
+  const [helperMap,      setHelperMap]      = useState({}); // 🤝 ยืมตัวข้ามไลน์วันนี้ { employee_id: to_line_id } (line_helpers — best-effort)
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
   const [wipPoints,      setWipPoints]      = useState([]);
@@ -224,8 +230,28 @@ export default function Management() {
     ro.observe(node); boardRoRef.current = ro;
     setBoardW(node.getBoundingClientRect().width);
   }, []);
+  /* ความสูงจริงทั้ง section บอร์ด (chips + legend + PLANNER + timeline) — ตัวตัดสิน boardWouldSquish
+     วัดด้วย scrollHeight ของ wrapper: ได้ความสูง "เนื้อหาธรรมชาติ" เสมอ แม้ตอน wrapper เป็น flex:1 +
+     overflow auto (โหมด squish) เนื้อหาถูก clip แต่ scrollHeight ไม่ถูก clip → ไม่เกิดเด้งกลับไปมา
+     · วัดใน effect หลัง render (ไม่ใช่ RO) เพราะเนื้อหาโตโดย wrapper ไม่ resize ได้ (ทั้งคู่โดน clip)
+     · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish หลุดกลับ false */
+  const [boardSectionH, setBoardSectionH] = useState(0);
+  const boardSectionRef = useRef(null);
+  useEffect(() => {
+    const el = boardSectionRef.current;
+    if (el) setBoardSectionH(el.scrollHeight);
+  }, [lineProdData, boardW, isMobile]);
 
   const [canvasH, setCanvasH] = useState(0);
+  // โหลด master งานนอกไลน์ (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม — ห้ามลิสต์ว่าง)
+  useEffect(() => {
+    supabase.from('special_task_types').select('name, is_active').order('sort_order').then(({ data, error }) => {
+      if (error) return; // ยังไม่ apply migration → fallback
+      const names = (data || []).filter(r => r.is_active).map(r => r.name);
+      if (names.length) setSpecialTaskOptions(names);
+    });
+  }, []);
+
   useEffect(() => {
     const el = canvasAreaRef.current;
     if (!el) return;
@@ -248,9 +274,16 @@ export default function Management() {
     }));
     return keys.size;
   }, [lineProdData]);
-  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดโดยประมาณ (chrome หัวบอร์ด ~210 + 64px/แถว) + ผังขั้นต่ำ ~220
-  // เกินพื้นที่ canvas → โผล่ปุ่มสลับ · ไม่เกิน → โชว์คู่กัน (เอนเอียงไปทางโชว์คู่จนกว่าจะล้นจริง ตามคำสั่ง user)
-  const boardWouldSquish = !!lineProdData && canvasH > 0 && (210 + boardRowCount * 64 + 220) > canvasH;
+  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดจริงที่วัดได้ (boardSectionH) + ผังขั้นต่ำ ~260 เกินพื้นที่ canvas
+  // → โผล่ปุ่มสลับ ดูทีละมุม · ไม่เกิน → โชว์คู่กัน
+  // ⚠️ ห้ามกลับไปใช้สูตรเดา (64px/แถว) เป็นตัวตัดสินหลัก — แถวจริงสูง ~88px (รูป 46 + 2 เลนกะเช้า/ดึก)
+  //    เดาต่ำกว่าจริงแล้วระบบคิดว่า "พอโชว์คู่" ทั้งที่ไม่พอ → ผังเหลือที่ ~100px → marker คน/เครื่อง/จุดงาน
+  //    ถูก clamp กองทับกันเป็นก้อนล่างจอ (เจอจริง 2026-08-19 LINE APRON ASSY 8 แถว) · สูตรเดาเหลือไว้
+  //    เฉพาะ fallback เฟรมแรกก่อน effect วัดจะทัน
+  const MIN_MAP_H = 260;
+  const boardWouldSquish = !!lineProdData && canvasH > 0 && (
+    boardSectionH > 0 ? (boardSectionH + MIN_MAP_H) > canvasH
+                      : (210 + boardRowCount * 88 + MIN_MAP_H) > canvasH);
   const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
@@ -364,8 +397,7 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchLineProd(viewLineNames);
-    const t = setInterval(() => fetchLineProd(viewLineNames), 30000);
-    return () => clearInterval(t);
+    return visibleInterval(() => fetchLineProd(viewLineNames), RATE.BOARD);
   }, [selectedLine, viewKey, fetchLineProd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Downtime alarm — จุดเครื่องจักรบนผังกระพริบแดงเฉพาะตอน downtime ยังเปิดค้าง (ปิดรายการ = ดับทันที) ──
@@ -378,12 +410,12 @@ export default function Management() {
     const refresh = () => fetchActiveDowntimes(viewLineNames).then(setDtAlarms).catch(() => {});
     const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
     refresh();
-    const t = setInterval(refresh, 60000);
+    const stopPoll = visibleInterval(refresh, RATE.BACKUP);
     const ch = supabaseDR.channel('mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();
-    return () => { clearInterval(t); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
+    return () => { stopPoll(); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -472,6 +504,14 @@ export default function Management() {
       .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
       .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
     setPpeAlerts(ppeData || []);
+    // 🤝 ยืมตัวข้ามไลน์กะนี้ (line_helpers) — best-effort: ยังไม่ apply migration = พฤติกรรมเดิม
+    const { data: helperData, error: eHelper } = await supabase.from('line_helpers')
+      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', getCurrentShift());
+    if (!eHelper) {
+      const hm = {};
+      (helperData || []).forEach(h => { hm[h.employee_id] = h.to_line_id; });
+      setHelperMap(hm);
+    }
     const { data: mData } = await supabase.from('four_m_logs').select('*').eq('work_date', today);
     const { data: homeData } = await supabase.from('employee_home_positions').select('employee_id, station_id');
     const { data: stData } = await supabase.from('operator_special_tasks').select('*').eq('work_date', today);
@@ -791,12 +831,19 @@ export default function Management() {
   }, [isLeader, userLineId, allLines]);
 
   const matchesTeam = (w) => {
+    // 🤝 คนที่ถูกยืมตัวมาช่วยไลน์ใน scope เรากะนี้ ให้เข้า pool ได้แม้ line_id เดิมอยู่นอก scope
+    const helperTo = helperMap[w.employee_id];
     if (isLeader) {
-      if (leaderFamilyIds && !leaderFamilyIds.has(w.employees?.line_id)) return false;
+      if (leaderFamilyIds && !leaderFamilyIds.has(w.employees?.line_id)
+          && !(helperTo && leaderFamilyIds.has(helperTo))) return false;
       return true;
     }
     // role ที่ถูกจำกัดขอบเขตส่วนงาน เห็นเฉพาะพนักงานในส่วนงานตัวเอง (เหมือน operator.jsx)
-    if (scopeSecs.length) return inSectionScope(scopeSecs, w.employees?.section);
+    if (scopeSecs.length) {
+      if (inSectionScope(scopeSecs, w.employees?.section)) return true;
+      const toLine = helperTo ? allLines.find(l => l.id === helperTo) : null;
+      return !!toLine && inSectionScope(scopeSecs, toLine.section);
+    }
     return true;
   };
 
@@ -940,6 +987,13 @@ export default function Management() {
         {worker.employees?.team && (
           <div style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
             Team {worker.employees.team}
+          </div>
+        )}
+        {/* 🤝 ยืมตัวมาจากไลน์อื่นกะนี้ (line_helpers) */}
+        {helperMap[worker.employee_id] && (
+          <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
+            style={{ fontSize: 10, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            🤝 ยืมตัว
           </div>
         )}
         {/* assign to special task */}
@@ -1302,7 +1356,7 @@ export default function Management() {
         {/* Heijunka: โชว์เมื่อ (แสดงคู่กัน = ไม่ squish) หรือ (โหมดสลับ + เลือก heijunka)
             · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
         {(!boardWouldSquish || mainView === 'heijunka') && (
-        <div style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
+        <div ref={boardSectionRef} style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
         {boardWouldSquish && !lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
@@ -2461,7 +2515,7 @@ export default function Management() {
 
       {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
       {radarWorker && createPortal(
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
@@ -2731,7 +2785,7 @@ export default function Management() {
             <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🏷 กำหนดงานนอกไลน์</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {SPECIAL_TASKS.map(t => (
+              {specialTaskOptions.map(t => (
                 <button key={t} onClick={() => setSpecialTaskType(t)}
                   style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
                     background: specialTaskType === t ? 'rgba(245,158,11,0.2)' : 'var(--bg3)',
@@ -2757,7 +2811,7 @@ export default function Management() {
 
       {/* ── Attach-doc modal ── */}
       {pendingDocModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 16 }}>📎 แนบเอกสาร OJT</div>
             <div style={{ fontSize: 13, color: 'var(--text2)' }}>

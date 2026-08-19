@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext } from 'react'
+import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import imageCompression from 'browser-image-compression'
@@ -8,6 +8,8 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
+import { toHierarchicalOptions } from '../utils/lineHierarchy'
+import { teamsForUser } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
@@ -45,6 +47,9 @@ function newCheckpoint(extra = {}) {
   return {
     _key: crypto.randomUUID(), name: '', type: 'variable',
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
+    // โหมดเกณฑ์ของจุดชนิด "ค่าวัด" — client-only (ขึ้นต้น _ = ไม่ลง DB) เพราะ DB มีแค่ lsl/usl
+    // ⚠️ ต้องเป็น state จริง ห้าม derive จาก lsl/usl (ดู mMode ด้านล่าง — เคยทำแล้วกดปุ่มไม่ติด)
+    _mmode: 'gte',
     x_pos: null, y_pos: null, _frameKey: null,
     group_name: '', description: '', image_path: null, _imgFile: null, _imgPreview: null,
     ...extra,
@@ -336,9 +341,14 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       </div>
 
       {cp.type === 'measure' && (() => {
-        const has = v => v !== '' && v != null
-        const mMode = (has(cp.lsl) && has(cp.usl)) ? 'between' : has(cp.usl) && !has(cp.lsl) ? 'lte' : 'gte'
-        const setMode = m => onChange(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {})
+        /* ⚠️ โหมดต้องอ่านจาก state (_mmode) ห้าม derive จาก lsl/usl (บั๊กเดิม 2026-08-11):
+           ตอนเริ่ม lsl/usl ว่างทั้งคู่ → derive ได้ 'gte' เสมอ → กด "≤ สูงสุด" หรือ "ช่วง min–max"
+           แล้ว mMode ไม่ขยับ (ดูเหมือนปุ่มกดไม่ติด) · ซ้ำร้าย โหมด gte ซ่อนช่อง usl อยู่
+           = ไม่มีทางกรอก usl ได้เลย → ล็อกตายอยู่โหมดเดียวตลอดกาล */
+        const mMode = cp._mmode || ((cp.lsl !== '' && cp.lsl != null && cp.usl !== '' && cp.usl != null) ? 'between'
+          : ((cp.usl !== '' && cp.usl != null) ? 'lte' : 'gte'))
+        // เปลี่ยนโหมด = ล้างเฉพาะช่องที่โหมดใหม่ไม่ใช้ (กันค่าค้างแล้วบันทึกเกณฑ์ที่ไม่ได้ตั้งใจ)
+        const setMode = m => onChange({ _mmode: m, ...(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {}) })
         const modeBtn = (m, t) => (
           <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
             border: `1.5px solid ${mMode === m ? '#22c55e' : 'var(--border)'}`, background: mMode === m ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', color: mMode === m ? '#22c55e' : 'var(--muted)' }}>{t}</button>
@@ -471,8 +481,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
       .then(({ data }) => setMachineOptions(data ?? []))
     // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLineOptions((data ?? []).map(l => l.name).filter(Boolean)))
+    // เก็บเป็น object (id/name/parent_line_name) เพื่อ render จัดชั้นตามผัง (§5.3 ข้อ 8)
+    // ตั้งใจไม่ scope ตาม section — config นับ shot อ้างไลน์ข้ามส่วนงานได้ (เช่นแม่พิมพ์ย้ายเครื่อง)
+    supabase.from('production_lines').select('id, name, parent_line_name').order('name')
+      .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
   }, [])
 
   useEffect(() => {
@@ -494,6 +506,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         : { data: [] }
       setCheckpoints((cps ?? []).map(c => ({
         ...c, _key: c.id,
+        // DB ไม่มีคอลัมน์โหมด → เดาจากค่าที่บันทึกไว้ตอนโหลด (มี usl อย่างเดียว = ≤ · มีทั้งคู่ = ช่วง)
+        _mmode: (c.lsl != null && c.usl != null) ? 'between' : (c.usl != null ? 'lte' : 'gte'),
         group_name: c.group_name ?? '', description: c.description ?? '',
         _frameKey: (c.image_id && frameKeyById[c.image_id]) || fr[0]?._key || null,
         _imgFile: null, _imgPreview: c.image_path ? getPublicUrl(c.image_path) : null,
@@ -650,6 +664,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     if (!name.trim()) { setError('กรุณาใส่ชื่ออุปกรณ์'); return }
     if (addMode === 'workstation' && !isEdit && !machineId) { setError('กรุณาเลือกเครื่องจักรจาก Floor Map'); return }
     if (checkpoints.some(c => !c.name.trim())) { setError('กรุณาใส่ชื่อทุกจุดตรวจสอบ'); return }
+    /* จุดชนิด "ค่าวัด" ต้องมีเกณฑ์ — ไม่มีเกณฑ์ = measureStatus ไม่มีอะไรให้ fail → **ผ่านตลอดกาล**
+       (จุดตรวจที่ตัดสินอะไรไม่ได้เลย แต่หน้าจอขึ้นเขียวว่าตรวจแล้ว = หลอกคนอ่านผลตรวจ) */
+    const num = v => (v !== '' && v != null ? Number(v) : null)
+    for (const c of checkpoints) {
+      if (c.type !== 'measure') continue
+      const lo = num(c.lsl), hi = num(c.usl)
+      if (lo == null && hi == null) { setError(`จุดตรวจ "${c.name.trim()}" เป็นชนิดค่าวัด — ต้องกรอกเกณฑ์อย่างน้อย 1 ช่อง (ไม่งั้นจะขึ้น OK ทุกครั้งที่ตรวจ)`); return }
+      if (lo != null && hi != null && lo >= hi) { setError(`จุดตรวจ "${c.name.trim()}" ค่าต่ำสุด (${lo}) ต้องน้อยกว่าค่าสูงสุด (${hi}) — ไม่งั้นจะขึ้น NG ทุกครั้ง`); return }
+    }
     // รูปหลายมุมได้ตั้งแต่ 1 รูปขึ้นไป ไม่บังคับจำนวน — 2 รูปขึ้นไปปัดดูรอบเครื่องได้ ยิ่งเยอะยิ่งลื่น
     setSaving(true); setError('')
     try {
@@ -1035,7 +1058,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                   <label style={S.label}>นับยอดจากไลน์</label>
                   <select value={usageLine} onChange={e => setUsageLine(e.target.value)}>
                     <option value="">— ใช้ไลน์ของอุปกรณ์{lineName ? ` (${lineName})` : ''} —</option>
-                    {(usageLine && !lineOptions.includes(usageLine) ? [usageLine, ...lineOptions] : lineOptions).map(l => <option key={l} value={l}>{l}</option>)}
+                    {/* ค่าที่ตั้งไว้เดิมแต่ไม่อยู่ในลิสต์ (ไลน์ถูกลบ/เปลี่ยนชื่อ) ยังต้องเลือกค้างไว้ได้ — ห้ามหายเงียบ */}
+                    {usageLine && !lineOptions.some(l => l.name === usageLine) && <option value={usageLine}>{usageLine}</option>}
+                    {toHierarchicalOptions(lineOptions).map(({ line: l, depth }) => (
+                      <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                    ))}
                   </select>
                 </div>
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
@@ -1159,8 +1186,10 @@ function EquipmentCard({ jig, cpCount, hasPins, onEdit, onDelete, canSetup, amPe
 
 // ─── PMSetup (main) ───────────────────────────────────────────────────────────
 export default function PMSetup() {
-  const { role } = useContext(UserContext)
+  const { role, mtnTeams: userMtnTeams, sections: scopeSecs } = useContext(UserContext)
   const canSetup = can('pm', 'setup', role)
+  // ทีมช่างของ user — ใช้ล็อกไม่ให้แก้ master ของทีมอื่น (ดู CLAUDE.md "ใครเป็นเจ้าของ คนนั้นแก้")
+  const pmUserTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
   const [searchParams, setSearchParams] = useSearchParams()
   const department = searchParams.get('dept') || 'maintenance'
   const [jigs, setJigs] = useState([])
@@ -1318,11 +1347,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

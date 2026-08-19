@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
+import { saveMyProfileMedia } from '../utils/profileSelf';
 
 export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved }) {
   const [tab, setTab] = useState('draw'); // 'draw' | 'upload'
@@ -142,11 +143,10 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
 
       const { data: { publicUrl } } = supabase.storage.from('signatures').getPublicUrl(filePath);
 
-      const { error: dbErr } = await supabase
-        .from('profiles')
-        .update({ signature_url: publicUrl })
-        .eq('id', user.id);
-      if (dbErr) { toast.error('บันทึกไม่สำเร็จ: ' + dbErr.message); setSaving(false); return; }
+      // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error แล้วลายเซ็นหายหลัง logout
+      // (เคสจริงที่หัวหน้าแผนกแจ้ง 2026-08-17) → เขียนผ่าน helper ที่ตรวจว่าเขียนติดจริง
+      const res = await saveMyProfileMedia('signature_url', publicUrl);
+      if (!res.ok) { toast.error('บันทึกไม่สำเร็จ: ' + res.message); setSaving(false); return; }
 
       // อัปเดต signature_url สำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเดิมทิ้ง กันไฟล์กำพร้าใน storage
       // ลบเฉพาะไฟล์ใน bucket signatures ที่อยู่ในโฟลเดอร์ของ user เอง (best-effort)

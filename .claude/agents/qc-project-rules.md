@@ -70,6 +70,15 @@ model: inherit
   label/สี/desc ของ role ซ้ำในหน้า และข้อความ UI ห้ามเรียก role ด้วยคำตำแหน่งบริษัท (Manager/Supervisor/Leader)
   · grep: `ROLE_LABELS\s*=|label: 'Manager'|'Supervisor'|'Leader'` ใน `src/` (ยกเว้น roleMeta.js
   และคำที่หมายถึง "ตำแหน่งงานจริง" เช่น ป้ายลายเซ็นบนแบบฟอร์มพิมพ์ / employees level)
+- **C6** หน้า /permissions ต้อง mirror sidebar (2026-08-19) —
+  (ก) `PAGE_GROUPS` ใน PermissionsManagement.jsx ต้องมีหมวด/ลำดับหมวด/ลำดับหน้า/ชื่อหน้า
+  ตรงกับ `NAV_ITEMS` + `NAV_GROUP_ORDER` ใน App.jsx (เพิ่มหน้าใหม่ต้องเพิ่ม 2 ที่ให้ตรงกัน) ·
+  (ข) migration ที่ seed `permission_catalog` ต้องใช้ `group_name` เป็นชื่อหมวดใน
+  `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด (ภาพรวม 1xx · ฝ่ายผลิต 2xx ·
+  วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic - Store 5xx · การตรวจสอบและซ่อมบำรุง 6xx ·
+  ควบคุมคุณภาพ QA/QC 7xx · วิศวกรรม (PE) 8xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 9xx — ห้ามซ้ำเลขเดิม)
+  พิมพ์ชื่อหมวดเองเมื่อไหร่ = หมวดกำพร้าโผล่กลางตาราง (เคยเกิด: 'ซ่อมบำรุง'/'ประชุมแถวเช้า')
+  · grep: `group_name` ใน supabase/migrations/ เทียบกับ NAV_GROUP_ORDER
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext
@@ -113,6 +122,14 @@ model: inherit
   ตัวแม่ที่เลือก + เปลี่ยนตัวแม่ต้องล้างค่าตัวลูก (ดู UI-CONVENTIONS §5.3) — จับ: select แผนกที่
   options มาจาก org_nodes ทั้งหมดโดยไม่กรอง parent_id/section · query org_nodes department ที่ไม่ select
   parent_id · ข้อยกเว้น: AddUser (กำหนด scope), ShiftOrganize merge (section/line ทางเลือก)
+- **F10b** dropdown ไลน์ต้องจัดชั้นแม่→ลูกผ่าน `toHierarchicalOptions` (utils/lineHierarchy — §5.3 ข้อ 8
+  · กวาดทั้งระบบแล้ว 2026-08-18) — จับ: `<option` ที่ map จากลิสต์ไลน์แบนเรียง ก-ฮ (`.sort()`/
+  `localeCompare`/`.order('name')` แล้ว map ตรง) · pattern ห้ามตรงตัว: เติม `'↳ '` เองจาก
+  `parent_line_name` โดยไม่จัดลำดับ · query production_lines ที่ select แค่ `name` (ไม่มี
+  parent_line_name = จัดชั้นไม่ได้) · cascade แผนกต้องใช้ helper `deptOptionsFor`/`ORPHAN_SECTION`
+  (sectionScope) ห้ามเขียน `parent_id === secNode.id` เอง — เขียนเองแล้วแผนกขึ้นตรงฝ่ายหาย
+  (เคยพัง OjtTraining: ออกใบให้ช่าง MTN ไม่ได้) · ข้อยกเว้น: ลิสต์ derive จากข้อมูลจริงที่เป็น
+  string ล้วน (เช่น line filter จาก sessions) = ยอมรับได้ · datalist พิมพ์อิสระ = ไม่บังคับ
   (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์
   ห้ามมีโหมด auto ซ่อนตามความแน่น) คุมทุกชนิดจุด · label บนปุ่มบอก action ที่จะเกิดเมื่อกด
   (Management + LineSetup + MachineFloorMap ต้อง behavior ตรงกัน — WYSIWYG)

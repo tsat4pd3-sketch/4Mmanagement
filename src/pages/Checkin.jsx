@@ -8,10 +8,13 @@ import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/compa
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import { buildScheduleMaps, resolveAssignedShift } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 
-const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
+// fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
+// (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
+const DEFAULT_LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
   { value: 'full',  label: 'เต็มวัน' },
   { value: 'half',  label: 'ครึ่งวัน' },
@@ -79,6 +82,7 @@ export default function Checkin() {
   const canRecord = can('checkin', 'record', role);
 
   const [employees,      setEmployees]      = useState([]);
+  const [leaveTypes,     setLeaveTypes]     = useState(DEFAULT_LEAVE_TYPES); // master ประเภทลา (best-effort)
   const [lines,          setLines]          = useState([]);
   const [attendance,     setAttendance]     = useState({});
   const [otBookings,     setOtBookings]     = useState({});
@@ -103,6 +107,16 @@ export default function Checkin() {
   const [previewNight,   setPreviewNight]   = useState(false);
   const [calLoaded,      setCalLoaded]      = useState(false);
   const [openShiftModal, setOpenShiftModal] = useState(null); // { lines, workDateStr, shift, shiftLabel }
+
+  /* ── 🤝 ยืมพนักงานข้ามไลน์รายกะ (line_helpers — migration 20260819_line_helpers_main) ──
+     หัวหน้าดึงคนไลน์อื่นมาช่วยกะนี้ → โผล่ในรายชื่อเช็คชื่อของไลน์ปลายทาง + ผังจัดกำลังคน
+     (ไม่แตะ employees.line_id — ตัวตนถาวรอยู่ไลน์เดิม การยืมเป็นเรื่องรายวัน+รายกะ) */
+  const [helpersReady,    setHelpersReady]    = useState(true);  // false = ตารางยังไม่ apply migration
+  const [showBorrowModal, setShowBorrowModal] = useState(false);
+  const [borrowSearch,    setBorrowSearch]    = useState('');
+  const [borrowResults,   setBorrowResults]   = useState([]);
+  const [borrowLoading,   setBorrowLoading]   = useState(false);
+  const [borrowLineId,    setBorrowLineId]    = useState('');
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
   const [subLineSelections, setSubLineSelections] = useState({}); // { lineName: bool } — modal checkboxes
 
@@ -129,8 +143,35 @@ export default function Checkin() {
     ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
     : realShiftInfo;
 
+  // โหลด master ประเภทลา (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม)
+  useEffect(() => {
+    supabase.from('leave_types').select('name, is_active').order('sort_order').then(({ data, error }) => {
+      if (error) return;
+      const names = (data || []).filter(r => r.is_active).map(r => r.name);
+      if (names.length) setLeaveTypes(names);
+    });
+  }, []);
+
   useEffect(() => { loadCompanyCalendar().then(() => setCalLoaded(true)); }, []);
   useEffect(() => { fetchData(); }, [previewNight, calLoaded]);
+
+  // 🤝 ค้นหาพนักงานทั้งโรงงานสำหรับยืมตัว (debounce 350ms — ค้นด้วยชื่อ/รหัสอย่างน้อย 2 ตัวอักษร)
+  useEffect(() => {
+    if (!showBorrowModal) return;
+    const q = borrowSearch.trim().replace(/[,()%]/g, ''); // กันอักขระที่พัง syntax ของ PostgREST .or()
+    if (q.length < 2) { setBorrowResults([]); return; }
+    const t = setTimeout(async () => {
+      setBorrowLoading(true);
+      const { data } = await supabase.from('employees')
+        .select('id, employee_id_code, name, image_url, line_id, section, team')
+        .eq('is_active', true)
+        .or(`name.ilike.%${q}%,employee_id_code.ilike.%${q}%`)
+        .order('employee_id_code').limit(30);
+      setBorrowResults(data || []);
+      setBorrowLoading(false);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [borrowSearch, showBorrowModal]);
 
   // "วันหยุดแบบ OT" (ot15/ot2) เท่านั้น — shutdown75 (ม.75) มาทำงาน = ค่าแรงปกติ ไม่เข้า flow จอง OT วันหยุด
   const isHolidayDate = (dateStr) => calLoaded && isOtHolidayType(getDayType(dateStr));
@@ -160,9 +201,20 @@ export default function Checkin() {
     const { workDateStr } = shiftInfo;
     const nextDateStr = addDaysToDateStr(workDateStr, 1);
 
+    // ⚠️ ต้องดึงไลน์ก่อนสร้าง query พนักงาน — scope ของ leader = "ทั้งครอบครัวไลน์"
+    // (ตัวเอง + ไลน์แม่ + ไลน์ลูก) ตาม pattern มาตรฐาน ห้ามกรอง line_id ตรงตัว
+    // เคสจริง 2026-08-10: จัดข้อมูล PD4 ย้ายพนักงานจากไลน์แม่ (GOR/LWR BAR) ไปไลน์ลูก
+    // (Assy GOR/Assy LWR) → หัวหน้ากลุ่มที่ผูกกับไลน์แม่เห็น 0 คน = "เช็คชื่อหายหมด"
+    const { data: lineData } = await supabase.from('production_lines')
+      .select('id, name, section, parent_line_name').order('section').order('name');
+    setLines(lineData || []);
+
     let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
     if (role === 'leader') {
-      if (lineId) empQ = empQ.eq('line_id', lineId);
+      if (lineId) {
+        const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
+        empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+      }
       if (team)   empQ = empQ.eq('team', team);
     } else if (scopeSecs.length) {
       // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
@@ -174,7 +226,6 @@ export default function Checkin() {
       { data: logData },
       { data: scheduleData },
       { data: overrideData },
-      { data: lineData },
       { data: orgNodeData },
       { data: mergeData },
       { data: bookingData },
@@ -187,7 +238,6 @@ export default function Checkin() {
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('section').order('name'),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
       shiftInfo.shift === 'night'
@@ -198,7 +248,6 @@ export default function Checkin() {
         ? supabase.from('ot_night_bookings').select('employee_id, work_date, task_type_id, ot_period').in('work_date', extraAdvanceDates).eq('shift', shiftInfo.shift)
         : Promise.resolve({ data: [] }),
     ]);
-    setLines(lineData || []);
     const pcm = {};
     (lineData || []).forEach(l => {
       if (l.parent_line_name) {
@@ -212,9 +261,51 @@ export default function Checkin() {
 
     if (!empData) return;
 
-    const lineSchedule = {};
-    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
-    setNoSchedule(Object.keys(lineSchedule).length === 0);
+    /* ── 🤝 ยืมตัวข้ามไลน์ (line_helpers) — best-effort: ยังไม่ apply migration = ทำงานแบบเดิมเป๊ะ ──
+       แถวของวัน+กะนี้ทั้งโรงงาน แล้วแยก 2 ขา:
+       - ยืมเข้า (to_line อยู่ใน scope เรา) → ดึง employees ตัวจริงมารวมในรายชื่อ + ป้าย 🤝
+       - ยืมออก (คนใน roster เราถูกยืมไปไลน์นอก scope) → ป้าย "→ ไปช่วยไลน์ X" (ไม่ตัดออกจากลิสต์) */
+    let helperData = [];
+    let helpersOk = true;
+    {
+      const { data: hd, error: he } = await supabase.from('line_helpers')
+        .select('id, employee_id, to_line_id, created_by_name')
+        .eq('work_date', workDateStr).eq('shift', shiftInfo.shift);
+      if (he) helpersOk = false; else helperData = hd || [];
+    }
+    setHelpersReady(helpersOk);
+
+    const lineById = Object.fromEntries((lineData || []).map(l => [l.id, l]));
+    const inMyScope = (toLineId) => {
+      if (role === 'leader') {
+        if (!lineId) return false;
+        const fam = getLineFamilyIds(lineData || [], Number(lineId));
+        return fam.size ? fam.has(toLineId) : toLineId === Number(lineId);
+      }
+      if (scopeSecs.length) return inSectionScope(scopeSecs, lineById[toLineId]?.section);
+      return true;
+    };
+    const helperIn = helperData.filter(h => inMyScope(h.to_line_id));
+    const helperByEmp = Object.fromEntries(helperIn.map(h => [h.employee_id, h]));
+    const helperOutByEmp = {};
+    helperData.forEach(h => {
+      if (!inMyScope(h.to_line_id)) helperOutByEmp[h.employee_id] = lineById[h.to_line_id]?.name || 'ไลน์อื่น';
+    });
+
+    // พนักงานที่ถูกยืมเข้ามาแต่อยู่นอก scope query หลัก → ดึงเพิ่มรายตัว
+    const haveIds = new Set(empData.map(e => e.id));
+    const missingHelperIds = helperIn.filter(h => !haveIds.has(h.employee_id)).map(h => h.employee_id);
+    let helperEmps = [];
+    if (missingHelperIds.length) {
+      const { data: hemp } = await supabase.from('employees').select('*')
+        .in('id', missingHelperIds).eq('is_active', true);
+      helperEmps = hemp || [];
+    }
+    const empAll = [...empData, ...helperEmps];
+
+    // ตารางกะ: ไลน์ผลิต (line_id) + หน่วยงานสนับสนุน (dept_name) — ดู utils/shiftAssign.js
+    const schedMaps = buildScheduleMaps(scheduleData);
+    setNoSchedule(schedMaps.count === 0);
 
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
@@ -223,27 +314,29 @@ export default function Checkin() {
     const lineSection = {};
     (lineData || []).forEach(l => { lineSection[l.id] = l.section; });
 
-    const enriched = empData.map(emp => {
-      let assignedShift = null;
-      if (empOverride[emp.id]) {
-        // 1st priority: individual override
-        assignedShift = empOverride[emp.id];
-      } else {
-        // 2nd priority: merge event (line-level beats section-level)
-        const empSec = lineSection[emp.line_id];
-        const mergeEvent =
-          (mergeData || []).find(e => e.line_id === emp.line_id) ||
-          (mergeData || []).find(e => e.section && e.section === empSec);
-        if (mergeEvent) {
-          assignedShift = mergeEvent.target_shift;
-        } else if (emp.line_id && lineSchedule[emp.line_id]) {
-          // 3rd priority: normal A/B schedule
-          const dayTeam = lineSchedule[emp.line_id];
-          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-          // Team C = fixed day shift (ไม่หมุน A/B)
-          assignedShift = emp.team === 'C' ? 'day' : emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
-        }
+    const enriched = empAll.map(emp => {
+      // merge event (line-level beats section-level) — ใช้ section ของไลน์พนักงาน
+      const empSec = lineSection[emp.line_id];
+      const mergeEvent =
+        (mergeData || []).find(e => e.line_id === emp.line_id) ||
+        (mergeData || []).find(e => e.section && e.section === empSec);
+      // ลำดับ: override รายคน → merge event → ตารางกะ (ไลน์ → หน่วยงาน) · Team C = กะเช้าตลอด
+      const assignedShift = resolveAssignedShift(emp, {
+        overrideShift: empOverride[emp.id],
+        mergeShift: mergeEvent?.target_shift,
+        maps: schedMaps,
+      });
+      const helper = helperByEmp[emp.id];
+      if (helper) {
+        // คนที่ถูกยืมเข้ามา = อยู่กะนี้แน่นอน (การยืมผูกกับกะ) — ห้ามให้ตารางกะไลน์เดิมกรองทิ้ง
+        return {
+          ...emp, assignedShift: shiftInfo.shift,
+          _helperRowId:   helper.id,
+          _helperToLineId: helper.to_line_id,
+          _helperFrom:    lineById[emp.line_id]?.name || emp.section || 'ไม่ระบุไลน์',
+        };
       }
+      if (helperOutByEmp[emp.id]) return { ...emp, assignedShift, _helperOutTo: helperOutByEmp[emp.id] };
       return { ...emp, assignedShift };
     });
 
@@ -392,6 +485,43 @@ export default function Checkin() {
     try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ปล่อยให้ App จัดการต่อ */ }
   };
 
+  /* ── 🤝 ยืม/คืนพนักงานข้ามไลน์ ── */
+  const openBorrowModal = () => {
+    setBorrowLineId(role === 'leader' ? String(lineId || '') : (selLine || ''));
+    setBorrowSearch('');
+    setBorrowResults([]);
+    setShowBorrowModal(true);
+  };
+
+  const borrowEmployee = async (emp) => {
+    if (!borrowLineId) { toast.error('เลือกไลน์ปลายทางที่จะให้มาช่วยก่อน'); return; }
+    const { error } = await supabase.from('line_helpers').insert({
+      work_date:       shiftInfo.workDateStr,
+      shift:           shiftInfo.shift,
+      employee_id:     emp.id,
+      to_line_id:      Number(borrowLineId),
+      created_by_name: fullName || null,
+    });
+    if (error) {
+      if (error.code === '42P01') toast.error('ยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration 20260819_line_helpers_main (แจ้ง admin)');
+      else if (error.code === '23505') toast.error(`${emp.name} ถูกยืมตัวไปไลน์อื่นแล้วในกะนี้ — ต้องให้ไลน์นั้นกดคืนก่อน`);
+      else toast.error('ยืมตัวไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    toast.success(`🤝 ยืม ${emp.name} มาช่วยกะนี้แล้ว`);
+    setShowBorrowModal(false);
+    fetchData();
+  };
+
+  const unborrowEmployee = async (emp) => {
+    if (!emp._helperRowId) return;
+    if (!window.confirm(`คืน ${emp.name} กลับไลน์เดิม (${emp._helperFrom})?`)) return;
+    const { error } = await supabase.from('line_helpers').delete().eq('id', emp._helperRowId);
+    if (error) { toast.error('ยกเลิกยืมตัวไม่สำเร็จ: ' + error.message); return; }
+    toast.success(`คืน ${emp.name} กลับไลน์เดิมแล้ว`);
+    fetchData();
+  };
+
   const handleSave = async () => {
     setConfirmSave(false);
     setIsSaving(true);
@@ -510,7 +640,8 @@ export default function Checkin() {
       const isNight = shiftInfo.shift === 'night';
 
       // ไลน์ที่ถูกเช็คจริง (อาจมีหลายไลน์ถ้าเลือกทั้ง section)
-      const checkedLineIds = [...new Set(displayed.map(emp => emp.line_id).filter(Boolean))];
+      // 🤝 คนยืมตัวนับเป็นไลน์ปลายทาง — ไลน์เดิมของเขาไม่เกี่ยวกับการเปิดกะของเรา
+      const checkedLineIds = [...new Set(displayed.map(emp => emp._helperToLineId || emp.line_id).filter(Boolean))];
       const checkedLines = lines.filter(l => checkedLineIds.includes(l.id));
       const lineNamesText = checkedLines.map(l => l.name).join(', ') || (selSection ? `Section: ${selSection}` : 'ทุกไลน์');
 
@@ -768,7 +899,10 @@ export default function Checkin() {
       let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       if (role === 'leader') {
-        if (lineId) empQ = empQ.eq('line_id', lineId);
+        if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+          const famIdsQ = getLineFamilyIds(lines, Number(lineId));
+          empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+        }
         if (team)   empQ = empQ.eq('team', team);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);
@@ -961,10 +1095,14 @@ export default function Checkin() {
     return s;
   })() : null;
 
+  // 🤝 คนที่ถูกยืมตัวมา ให้ตัวกรองไลน์/section มองเป็น "ไลน์ปลายทาง" ไม่ใช่ไลน์เดิม
+  const effLineIdOf = (emp) => emp._helperToLineId || emp.line_id;
+
   const displayed = employees.filter(emp => {
     if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
-    if (selLine)    return selLineFamilyIds?.size ? selLineFamilyIds.has(emp.line_id) : emp.line_id === Number(selLine);
-    if (selSection) return sectionFamilyIds.has(emp.line_id);
+    const el = effLineIdOf(emp);
+    if (selLine)    return selLineFamilyIds?.size ? selLineFamilyIds.has(el) : el === Number(selLine);
+    if (selSection) return sectionFamilyIds.has(el);
     return true;
   });
 
@@ -979,7 +1117,7 @@ export default function Checkin() {
     <div className="page-content">
       {/* Modal ยืนยันเปิดกะ Daily Report */}
       {openShiftModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '24px 28px', maxWidth: 420, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
             <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', marginBottom: 6 }}>📊 เปิดกะ Daily Report?</div>
             <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
@@ -1031,6 +1169,78 @@ export default function Checkin() {
         </div>
       )}
 
+      {/* 🤝 Modal ยืมพนักงานข้ามไลน์ */}
+      {showBorrowModal && (
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 24px', maxWidth: 520, width: '100%', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>🤝 ยืมพนักงานมาช่วยกะนี้</div>
+              <button onClick={() => setShowBorrowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+              {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร)
+            </div>
+            {!helpersReady && (
+              <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+                ⚠️ ระบบยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260819_line_helpers_main.sql</code> (แจ้ง admin)
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>มาช่วยไลน์</span>
+              <select value={borrowLineId} onChange={e => setBorrowLineId(e.target.value)} style={{ padding: '7px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 200, flex: 1 }}>
+                <option value="">— เลือกไลน์ปลายทาง —</option>
+                {toHierarchicalOptions(scopedLines).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.id}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
+              </select>
+            </div>
+            <input
+              type="text" value={borrowSearch} onChange={e => setBorrowSearch(e.target.value)}
+              placeholder="🔎 ค้นหาพนักงานทั้งโรงงาน — ชื่อ หรือ รหัสพนักงาน (อย่างน้อย 2 ตัวอักษร)"
+              autoFocus
+              style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, marginBottom: 10 }}
+            />
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg2)', minHeight: 120 }}>
+              {borrowLoading && <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>⏳ กำลังค้นหา...</div>}
+              {!borrowLoading && borrowSearch.trim().length >= 2 && borrowResults.length === 0 && (
+                <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>ไม่พบพนักงานที่ตรงกับ "{borrowSearch.trim()}"</div>
+              )}
+              {!borrowLoading && borrowSearch.trim().length < 2 && (
+                <div style={{ padding: 14, fontSize: 12, color: 'var(--muted)' }}>พิมพ์ชื่อหรือรหัสพนักงานเพื่อค้นหา — ค้นได้ทั้งโรงงาน ไม่จำกัดไลน์/ส่วนงาน</div>
+              )}
+              {!borrowLoading && borrowResults.map(r => {
+                const homeLine = lines.find(l => l.id === r.line_id)?.name || r.section || '—';
+                const already = employees.find(e => e.id === r.id);
+                const borrowedHere = !!already?._helperRowId;
+                const inRoster = !!already && !borrowedHere;
+                return (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid var(--border)' }}>
+                    {r.image_url
+                      ? <img src={r.image_url} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                      : <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.employee_id_code} · {homeLine}{r.team ? ` · ทีม ${r.team}` : ''}</div>
+                    </div>
+                    {borrowedHere
+                      ? <span style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, whiteSpace: 'nowrap' }}>🤝 ยืมแล้ว</span>
+                      : inRoster
+                        ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>อยู่ในรายชื่อแล้ว</span>
+                        : (
+                          <button
+                            onClick={() => borrowEmployee(r)}
+                            disabled={!helpersReady}
+                            style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: helpersReady ? 'pointer' : 'not-allowed', background: helpersReady ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
+                          >🤝 ยืมตัว</button>
+                        )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -1047,7 +1257,8 @@ export default function Checkin() {
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* flexWrap — ปุ่ม Preview กะดึก + ปุ่มข้างๆ รวมกันยาวเกินจอ 320px แล้วดันล้น */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {realShiftInfo.shift === 'day' && (
             <button
               onClick={() => setPreviewNight(p => !p)}
@@ -1100,6 +1311,19 @@ export default function Checkin() {
           >
             🚐 จองรถ OT
           </button>
+          {canRecord && (
+            <button
+              onClick={openBorrowModal}
+              title="ดึงพนักงานจากไลน์/ส่วนงานอื่นมาช่วยกะนี้ — จะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง"
+              style={{
+                padding: '8px 14px', borderRadius: 8,
+                border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
+                background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 600,
+              }}
+            >
+              🤝 ยืมพนักงาน
+            </button>
+          )}
           <button
             onClick={() => setConfirmSave(true)}
             disabled={isSaving || previewNight || !canRecord}
@@ -1153,8 +1377,9 @@ export default function Checkin() {
           borderRadius: 10, padding: '12px 16px', marginBottom: 14,
           display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
         }}>
-          {/* Section tabs */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {/* Section tabs — ต้อง wrap เสมอ: section เยอะ (14 ส่วน) เรียงแถวเดียวกว้าง ~1180px
+              บนมือถือจะถูก main (overflow-x:hidden) ตัดหายจนกดปุ่มที่เกินขอบไม่ได้ */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Section</span>
             <button
               onClick={() => { setSelSection(''); setSelLine(''); }}
@@ -1291,6 +1516,23 @@ export default function Checkin() {
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{emp.name}</div>
                         <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        {emp._helperRowId && (
+                          <div style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <span>🤝 ยืมตัวจาก {emp._helperFrom}</span>
+                            {canRecord && (
+                              <button
+                                onClick={() => unborrowEmployee(emp)}
+                                title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
+                                style={{ padding: '1px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, cursor: 'pointer', background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.4)' }}
+                              >✕ คืน</button>
+                            )}
+                          </div>
+                        )}
+                        {emp._helperOutTo && (
+                          <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}>
+                            → ไปช่วยไลน์ {emp._helperOutTo} (กะนี้)
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -1373,7 +1615,7 @@ export default function Checkin() {
                         }}
                       >
                         <option value="">— ไม่ลา —</option>
-                        {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
 
                       {/* หมายเหตุ (แสดงเมื่อเลือก อื่นๆ) */}
@@ -1599,7 +1841,7 @@ export default function Checkin() {
       {/* ยืนยัน "บันทึกในนามใคร" ก่อนเซฟจริง — จุด checkpoint บังคับให้เห็นชื่อ กันเช็คผิด session
           (ไม่ปิดจากคลิกฉากหลัง ตามกฎ modal ฟอร์ม — ต้องเลือกยืนยัน/สลับผู้ใช้) */}
       {confirmSave && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>👤</div>
             <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>บันทึกเช็คชื่อในนาม</div>
@@ -1627,7 +1869,7 @@ export default function Checkin() {
       )}
 
       {showOtBookModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>🚐 จองรถ OT</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
@@ -1736,7 +1978,7 @@ export default function Checkin() {
 
       {/* Export forms modal */}
       {showExport && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>📄 ส่งออกฟอร์มกระดาษ (PDF)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>

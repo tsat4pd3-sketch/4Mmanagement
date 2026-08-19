@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
-import { findChecklist } from '../lib/pmChecklists'
+import { findChecklist, listChecklistsByDept } from '../lib/pmChecklists'
 import { notifyDepartment, createNotification } from '../lib/pmNotify'
 import { handleDailyPmSave } from '../lib/pmDailyAlarm'
 import { exportInspectionExcel } from '../lib/pmExportExcel'
@@ -461,7 +461,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       {/* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — ข้างในมีฟอร์ม NG action/re-check กันเผลอกดแล้วหาย */}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
@@ -566,6 +566,7 @@ export default function PMCheckData() {
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
   const [checkpoints, setCheckpoints] = useState([])
+  const [otherDepts, setOtherDepts] = useState([])   // แผนกอื่นที่ลงจุดตรวจของเครื่องนี้ไว้ (โชว์เมื่อแผนกปัจจุบันยังไม่มี)
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
@@ -684,6 +685,12 @@ export default function PMCheckData() {
       const init = {}
       cps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
       setResults(init)
+      // ไม่มีจุดตรวจของแผนกนี้ → หาให้เลยว่าแผนกอื่นลงไว้ไหม จะได้ไม่ต้องไล่กดทีละแท็บ
+      if (!cps.length) {
+        listChecklistsByDept(selectedJig.id, 'mtn')
+          .then(rows => setOtherDepts(rows.filter(r => r.department !== department && r.checkpointCount > 0)))
+          .catch(() => setOtherDepts([]))
+      } else setOtherDepts([])
     })
     fetchHistory(selectedJig.id)
   }, [selectedJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -745,6 +752,33 @@ export default function PMCheckData() {
 
       if (overall === 'fail') {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
+      }
+
+      // ⭐ แผน PM "วิ่งตามผลตรวจ" (feedback ทีมงาน 2026-08-17): ตรวจครบทุกจุด (pass/fail) = ทำ PM จริงแล้ว
+      //   → stamp pm_plans.last_done_at + เลื่อน next_due_date (แผนตามรอบเวลา) — เดิมมีแค่ปิดแผนประสานงาน
+      //   ที่ stamp ให้ ทำให้ PM Forecast/ผังเครื่องจักร/Dashboard เห็นแผนค้างทั้งที่ตรวจไปแล้ว
+      //   'pending' (ตรวจไม่ครบ) ไม่นับว่าทำ PM จบ — ไม่เลื่อนรอบ · best-effort ห้ามทำ save หลักพัง แต่ห้ามเงียบ
+      if (overall !== 'pending' && checklistId) {
+        try {
+          const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
+            .select('id, plan_type, interval_days, last_done_at').eq('checklist_id', checklistId).eq('is_active', true)
+          if (pErr) throw pErr
+          const now = new Date()
+          const done = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` // local — ห้าม toISOString
+          for (const pl of (plans || [])) {
+            if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue // วันนี้ stamp ไปแล้ว (ตรวจซ้ำ/AM รายกะ) — ไม่เขียนซ้ำ
+            const patch = { last_done_at: done }
+            // ตามรอบเวลา (time/hybrid) → เลื่อน next_due = วันทำ + interval_days · usage → forecast คำนวณเองจาก last_done_at
+            if (pl.plan_type !== 'usage' && Number(pl.interval_days) > 0) {
+              const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pl.interval_days))
+              patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            }
+            const { error: uErr } = await supabaseDR.from('pm_plans').update(patch).eq('id', pl.id)
+            if (uErr) throw uErr
+          }
+        } catch (e) {
+          toast.error('บันทึกผลตรวจสำเร็จ แต่เลื่อนรอบแผน PM ไม่สำเร็จ: ' + (e?.message || e))
+        }
       }
 
       // Daily PM line alarm (green when the line is complete & all pass, red on NG).
@@ -922,7 +956,13 @@ export default function PMCheckData() {
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
               {tab === 'record' && (() => {
-                const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list'
+                /* ⚠️ ไม่มีจุดตรวจของแผนกนี้ = ห้ามโชว์รูปหมุน (2026-08-11 · user ทัก "ทำไมรูปยังค้างอยู่")
+                   รูปหลายมุมเป็นของ "ตัวเครื่อง" (ของกลางทุกแผนก) แต่ "หมุดจุดตรวจ" ผูกกับ
+                   checklist ของแต่ละแผนก และ**ปักอยู่คนละมุม (frame) กัน** — AM อาจตรวจด้านหน้า
+                   MTN ตรวจในตู้ไฟ → โชว์รูปมุมที่ 1/8 เปล่าๆ ที่ไม่มีหมุดเลย ไม่ได้บอกอะไร
+                   แถมดูเหมือนหน้าพร้อมใช้งาน ทั้งที่ยังไม่มีอะไรให้ตรวจ
+                   (ตัวเครื่องยืนยันได้จาก thumbnail บนหัวเรื่องอยู่แล้ว) */
+                const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list' && checkpoints.length > 0
                 // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
                 const twoCol = isWide && showPhoto
                 const viewerNode = showPhoto
@@ -932,13 +972,34 @@ export default function PMCheckData() {
                 const formNode = (
                   <>
                   {checkpoints.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 12px', lineHeight: 1.7 }}>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
                       เครื่องนี้ยังไม่มีรายการตรวจของ <b style={{ color: deptColor }}>{(teams.find(t => t.key === department) || {}).label || department}</b>
                       <br />
                       <span style={{ fontSize: 12 }}>
-                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — ไปตั้งจุดตรวจของแผนกนี้ที่ PM Setup
-                        <br />ถ้าลงจุดตรวจไว้แล้วแต่ไม่เห็น ให้ดูว่าลงไว้ใต้แผนกอื่นหรือไม่ (ใน PM Setup ย้ายข้ามแผนกได้)
+                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ)
+                        <br />จุดตรวจของแต่ละแผนก<b>ปักอยู่คนละมุมของเครื่องได้</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
                       </span>
+                      {otherDepts.length > 0 && (
+                        <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 7 }}>
+                            🔎 เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {otherDepts.map(d => {
+                              const t = teams.find(x => x.key === d.department)
+                              return (
+                                <button key={d.department} onClick={() => setDept(d.department)}
+                                  style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                    border: `1.5px solid ${t?.color || 'var(--border2)'}`, background: 'var(--card)', color: t?.color || 'var(--text)' }}>
+                                  {t?.icon || ''} {t?.label || d.department} · {d.checkpointCount} จุด
+                                </button>)
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 12, marginTop: 14 }}>
+                        ยังไม่ได้ลงจุดตรวจของแผนกนี้จริง → ตั้งที่ <b>PM Setup</b> (ถ้าลงผิดแผนก ย้ายข้ามแผนกได้ที่นั่น)
+                      </div>
                     </div>
                   ) : (
                     <>

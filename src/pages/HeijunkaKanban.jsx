@@ -6,6 +6,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import { addMinutes, timeStrToMs, dayFrameMs, roundDeliveryMin, getRoundStatus } from '../utils/deliveryRounds';
+import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -30,16 +31,10 @@ const chip = (bg, color) => ({
 
 const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก' };
 
-/* mat_no prefix → ประเภทพาร์ท (ใช้กรอง view เดียวกันได้ทั้งฝั่งผลิตและฝั่ง store) */
-const MAT_PREFIXES = [
-  { prefix: '200', label: 'Child (ผลิต)', color: '#3b82f6' },
-  { prefix: '300', label: 'Child (ซื้อ)',  color: '#f59e0b' },
-  { prefix: '500', label: 'Raw Mat',       color: '#a78bfa' },
-];
-function matColor(mat_no = '') {
-  const m = MAT_PREFIXES.find(p => mat_no.startsWith(p.prefix));
-  return m ? m.color : 'var(--muted)';
-}
+/* ประเภทพาร์ทจากเลขตัวแรกของ MAT — นิยามกลางที่ src/utils/matPrefix.js
+   ⚠️ เดิมเทียบ 3 ตัวแรก ('200'/'300'/'500') ซึ่งพังเมื่อเลขรันทะลุช่วง
+      (FG เจอจริงแล้ว: 100xxxxx → 101xxxxx) — ห้ามกลับไปเทียบหลายหลักอีก */
+const MAT_PREFIXES = MAT_CLASSES.filter(c => c.digit !== '1').map(c => ({ prefix: c.digit, label: c.short, color: c.color }));
 
 /* ─── helpers ───────────────────────────────────────────────────────────────
    addMinutes/timeStrToMs/dayFrameMs/roundDeliveryMin/getRoundStatus ย้ายไป
@@ -901,9 +896,9 @@ const PURCHASE_STATUS = {
   received: { label: '✅ รับเข้าแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)',  next: null,       nextLabel: null },
 };
 const PURCHASE_FILTERS = [
-  { key: '',    label: 'ทั้งหมด' },
-  { key: '300', label: '🟠 Child ซื้อ (300)' },
-  { key: '500', label: '🟣 Raw Mat (500)' },
+  { key: '',  label: 'ทั้งหมด' },
+  { key: '3', label: '🟠 Child ซื้อ (3xxxxxxx)' },
+  { key: '5', label: '🟣 Raw Mat (5xxxxxxx)' },
 ];
 const WIP_STATUS = {
   pending:   { label: '🔔 เรียกแล้ว',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: '🔧 เริ่มเตรียม' },
@@ -958,7 +953,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
     wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
-  const filteredPurchases = buyFilter ? purchaseRequests.filter(p => (p.mat_no || '').startsWith(buyFilter[0])) : purchaseRequests;
+  const filteredPurchases = buyFilter ? purchaseRequests.filter(p => matMatches(p.mat_no, buyFilter)) : purchaseRequests;
 
   return (
     <div style={{ padding: 16 }}>
@@ -1614,7 +1609,7 @@ export default function HeijunkaKanban() {
 
     // กรองตามประเภทพาร์ท (mat_no prefix) — ใช้กับมุมมองวิเคราะห์ (การ์ด/ตาราง/CSV)
     // ส่วน roundAlloc/groupDemand ไม่กรอง เพราะเป็นยอดปฏิบัติงานจริงของสโตร์ (การยืนยันส่งต้องครบทุกพาร์ท)
-    if (matFilter) rowList = rowList.filter(r => r.mat_no.startsWith(matFilter));
+    if (matFilter) rowList = rowList.filter(r => matMatches(r.mat_no, matFilter));
 
     const totalKanban = rowList.reduce((s, r) => {
       const per = kanbanStd[r.mat_no];
@@ -1921,7 +1916,7 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
   const [actual, setActual] = useState(() => Object.fromEntries(netParts.map(p => [p.mat_no, p.netTotal])));
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(440px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>
           {mode === 'full' ? '✔️ ยืนยันรับของครบ' : '⚠️ บันทึกรับของไม่ครบ'}

@@ -4,6 +4,7 @@ import { can } from '../utils/permissions';
 import { loadProcessTypes } from '../utils/processTypes';
 import { toast } from './Toast';
 import EmojiPicker from './EmojiPicker';
+import { pickUnusedColor } from '../utils/colorPick';
 
 /* ── ProcessTypeSetup — ตัวจัดการ master กระบวนการผลิต (process_types, DR) ─────────────
    component เดียว ใช้ได้หลายจุด (Daily Report ⚙️ + หน้า /process-setup ในหมวดตั้งค่าฯ)
@@ -36,7 +37,8 @@ export default function ProcessTypeSetup({ role }) {
   const slug = (t) => String(t || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   const openEdit = (item) => {
     setEditing(item ? item.key : 'new');
-    setForm(item ? { ...item } : { key: '', label: '', icon: '🏭', color: '#8b5cf6', sort_order: items.length + 1, is_active: true });
+    // สร้างใหม่ default สีที่ยังไม่ซ้ำกับกระบวนการที่มี (ผู้ใช้เปลี่ยนทับได้)
+    setForm(item ? { ...item } : { key: '', label: '', icon: '🏭', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true });
   };
   const handleSave = async () => {
     if (!form.label?.trim()) { toast.error('กรอกชื่อกระบวนการ'); return; }
@@ -88,7 +90,7 @@ export default function ProcessTypeSetup({ role }) {
       </div>
 
       {editing && form && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 560px)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{editing === 'new' ? '➕ เพิ่มกระบวนการ' : `✏️ แก้ไข ${form.label}`}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

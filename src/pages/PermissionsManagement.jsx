@@ -3,36 +3,69 @@ import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
 const ROLES = PERMISSION_COLUMN_ROLES;
+// แท็บ "การเข้าถึงหน้า" โชว์เฉพาะ base role — ตัดคอลัมน์ bucket (🛡️ แอดมินหน่วยงาน) ออก (2026-08-06)
+//   เพราะ hasPermission() บล็อก key ที่ขึ้นต้น 'page:' ของ bucket ไว้ในโค้ดเสมอ (permissions.js)
+//   → ติ๊กช่องนั้นไม่มีทางมีผล = ช่องตายที่ทำให้คนตั้งค่าเข้าใจผิดว่าเปิดหน้าให้แอดมินหน่วยงานได้
+const PAGE_COLS = ROLES.filter(r => !r.bucket);
 
-// ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
+// ⚠️ ต้อง mirror NAV_ITEMS + NAV_GROUP_ORDER ใน App.jsx เสมอ — หมวด/ลำดับหมวด/ลำดับหน้า/ชื่อหน้า
+//   ให้ตรงกับ sidebar ทั้งหมด (audit 2026-08-19: เดิมหมวด "พนักงาน & ทักษะ" หายทั้งหมวด ·
+//   oee-analytics/scrap-report/event-log อยู่ผิดหมวด · ลำดับสลับ — คนตั้งสิทธิ์หาหน้าไม่เจอ)
+//   เพิ่มหน้าใหม่ = เพิ่มที่นี่ให้ตรงตำแหน่งเดียวกับที่เพิ่มใน NAV_ITEMS
+//   หน้าที่ไม่อยู่ในเมนู (/remote, /linesetup, แท็บใน Daily Checker) คงไว้พร้อมหมายเหตุ — สิทธิ์ยังต้องตั้งได้
 const PAGE_GROUPS = [
   {
     group: 'ภาพรวม',
     pages: [
       { key: 'page:/',            label: 'หน้าหลัก' },
       { key: 'page:/dashboard',   label: 'Dashboard' },
+      { key: 'page:/dept-dashboard', label: 'Dashboard ส่วนงาน' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
-      { key: 'page:/remote',      label: 'รีโมทจอ' },
+      { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
+      { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
+      { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
     ],
   },
   {
     group: 'ฝ่ายผลิต',
     pages: [
+      { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
+      { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
       { key: 'page:/daily-checker', label: 'Daily Checker (ศูนย์รวมเช็ค — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)' },
       { key: 'page:/daily-pm',     label: '— แท็บ Autonomous Maintenance (AM) (ใน Daily Checker)' },
       { key: 'page:/pokayoke',     label: '— แท็บ Poka-Yoke Check (ใน Daily Checker)' },
-      { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
-      { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
-      { key: 'page:/oee-analytics', label: 'OEE' },
-      { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
       { key: 'page:/lpa',          label: '— แท็บ Layer Process Audit (ใน Daily Checker)' },
+      { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
+      { key: 'page:/scrap-report', label: 'ใบรายงานของเสีย (Scrap)' },
+    ],
+  },
+  {
+    group: 'วิเคราะห์ & รายงาน',
+    pages: [
+      { key: 'page:/oee-analytics', label: 'OEE' },
+      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
+      { key: 'page:/vsm',       label: 'VSM สายธารคุณค่า' },
+      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
+      { key: 'page:/report',    label: 'รายงาน' },
+    ],
+  },
+  {
+    group: 'พนักงาน & ทักษะ',
+    pages: [
+      { key: 'page:/register',      label: 'เพิ่มพนักงาน' },
+      { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
+      { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
+      { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },
+      { key: 'page:/shift-organize', label: 'ตารางกะ' },
     ],
   },
   {
@@ -54,10 +87,11 @@ const PAGE_GROUPS = [
       { key: 'page:/mtn-repair',  label: 'แจ้งซ่อม MTN (MO)' },
       { key: 'page:/pm-check',    label: 'ตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
-      { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
-      { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
       { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
+      { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
+      { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
+      { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
     ],
   },
   {
@@ -65,43 +99,38 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'page:/qa',       label: 'Quality Control Center' },
       { key: 'page:/qa-setup', label: 'มาตรฐานการตรวจ & Drawing' },
-      { key: 'page:/scrap-report', label: 'ใบรายงานของเสีย' },
+      { key: 'page:/event-log', label: 'CQI-15 Event Log' },
     ],
   },
   {
-    group: 'รายงาน',
+    group: 'วิศวกรรม (PE)',
     pages: [
-      { key: 'page:/report',    label: 'รายงาน' },
-      { key: 'page:/event-log', label: 'CQI-15 Event Log' },
-      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
-      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
+      { key: 'page:/pe-docs', label: 'Flow / PFMEA / Control Plan' },
     ],
   },
   {
     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล',
     pages: [
       { key: 'page:/org-setup',         label: 'แผนผังองค์กร' },
-      { key: 'page:/register',          label: 'เพิ่มพนักงาน' },
-      { key: 'page:/operator',          label: 'ฐานข้อมูลพนักงาน' },
-      { key: 'page:/skills-report',     label: 'รายงานทักษะพนักงาน' },
-      { key: 'page:/ojt-training',      label: 'ใบอบรม OJT' },
       { key: 'page:/products',          label: 'Product Master' },
-      { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
-      { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
-      { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
       { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
-      { key: 'page:/shift-organize',    label: 'ตารางกะ' },
+      { key: 'page:/linesetup',         label: '— ตั้งค่าผังไลน์ (ไม่อยู่ในเมนู — ฝังเป็นแท็บใน ตั้งค่าผัง/Floorplan)' },
+      { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
+      { key: 'page:/die-registry',      label: 'ทะเบียนแม่พิมพ์' },
+      { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
+      { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
+      { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
+      { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
       { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
-      { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
     ],
   },
 ];
 
 export default function PermissionsManagement() {
-  const [tab, setTab] = useState('pages'); // 'pages' | 'actions'
+  const [tab, setTab] = useTabParam(['pages', 'actions'], 'pages');
   const [rows, setRows] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -208,13 +237,13 @@ export default function PermissionsManagement() {
   };
 
   // เรียกเป็นฟังก์ชันธรรมดา (ไม่ใช่ <Component/>) — กัน react ถือเป็น component ใหม่ทุก render แล้ว remount ตาราง
-  const renderPermTable = (groups, firstColLabel) => (
+  const renderPermTable = (groups, firstColLabel, cols = ROLES) => (
     <div className="table-sticky">
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
             <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{firstColLabel}</th>
-            {ROLES.map(r => (
+            {cols.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
                 <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
@@ -226,14 +255,14 @@ export default function PermissionsManagement() {
           {groups.map(g => (
             <Fragment key={g.group}>
               <tr>
-                <td colSpan={ROLES.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
+                <td colSpan={cols.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
                   <span style={s.groupTitle}>{g.group}</span>
                 </td>
               </tr>
               {g.items.map(p => (
                 <tr key={p.key} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '7px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 380 }}>{p.label}</td>
-                  {ROLES.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
+                  {cols.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
                 </tr>
               ))}
             </Fragment>
@@ -251,12 +280,15 @@ export default function PermissionsManagement() {
 
   return (
     <div style={s.page}>
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)' }}>🔐 จัดการสิทธิ์</div>
-        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-          กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)
-        </div>
-      </div>
+      <PageHeader
+        title="จัดการสิทธิ์" icon="🔐"
+        sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
+        tabs={[
+          { key: 'pages', label: '📄 การเข้าถึงหน้า' },
+          { key: 'actions', label: '🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
@@ -268,12 +300,18 @@ export default function PermissionsManagement() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button style={s.tabBtn(tab === 'pages')} onClick={() => setTab('pages')}>📄 การเข้าถึงหน้า</button>
-        <button style={s.tabBtn(tab === 'actions')} onClick={() => setTab('actions')}>🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)</button>
-      </div>
-
-      {tab === 'pages' && renderPermTable(pageGroups, 'หน้า')}
+      {tab === 'pages' && (
+        <>
+          <div style={{ ...s.section, fontSize: 12, lineHeight: 1.6, borderColor: 'rgba(234,179,8,0.4)', background: 'rgba(234,179,8,0.06)' }}>
+            🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน "เปิดหน้า" ให้ไม่ได้</strong> — คอลัมน์นั้นจึงไม่มีในแท็บนี้ (ระบบบล็อกไว้ในโค้ด ติ๊กไปก็ไม่มีผล)
+            <div style={{ marginTop: 4 }}>
+              ต้องการให้ใครเข้าหน้าไหนได้ ให้ติ๊กที่ <strong>role เดิมของเขา</strong> ในตารางนี้ ·
+              แล้วค่อยไปเพิ่มอำนาจ แก้/อนุมัติ ให้เขาที่แท็บ <strong>"สิทธิ์การทำงาน"</strong> คอลัมน์แอดมินหน่วยงาน
+            </div>
+          </div>
+          {renderPermTable(pageGroups, 'หน้า', PAGE_COLS)}
+        </>
+      )}
 
       {tab === 'actions' && (
         <>

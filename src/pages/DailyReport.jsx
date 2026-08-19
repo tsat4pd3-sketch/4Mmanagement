@@ -4,22 +4,27 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
+import { printProdProblemReport } from '../lib/prodProblemReport';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
+import { pickUnusedColor } from '../utils/colorPick';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -139,38 +144,23 @@ const CAT_META = {
 ═══════════════════════════════════════════════════════════════ */
 export default function DailyReport() {
   const { role } = useContext(UserContext);
-  const [tab, setTab] = useState('live');
-
   const canSetup = can('daily_report', 'setup', role);
+  const [tabRaw, setTab] = useTabParam(['live', 'history', 'export', 'setup'], 'live');
+  const tab = tabRaw === 'setup' && !canSetup ? 'live' : tabRaw;   // ลิงก์เข้าแท็บที่ไม่มีสิทธิ์ = ตกกลับแท็บแรก
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
-      {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับแท็บขวาสุด (⚙️ ตั้งค่า) */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12, paddingRight: 52 }}>
-        <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            📊 Daily Production Report
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 10, padding: 4 }}>
-          {[
-            { key: 'live',    label: '⚡ Live กะนี้' },
-            { key: 'history', label: '📋 ประวัติ' },
-            { key: 'export',  label: '📤 Export' },
-            ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
-          ].map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              style={{ padding: '6px 14px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                background: tab === t.key ? 'var(--accent)' : 'transparent',
-                color: tab === t.key ? '#fff' : 'var(--muted)' }}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader
+        title="Daily Production Report" icon="📊"
+        sub="บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ"
+        tabs={[
+          { key: 'live', label: '⚡ Live กะนี้' },
+          { key: 'history', label: '📋 ประวัติ' },
+          { key: 'export', label: '📤 Export' },
+          ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'live'    && <LiveTab role={role} />}
       {tab === 'history' && <HistoryTab role={role} />}
@@ -196,6 +186,19 @@ function LiveTab({ role }) {
   const [dtLogs, setDtLogs]         = useState([]);
   const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   const [selSession, setSelSession] = useState(null);
+  // §139 ย่อ/ขยายกลุ่มไลน์ในลิสต์กะ — กะค้างไม่ปิดสะสมทำให้ลิสต์ยาวมาก (เจอจริง 34 กะ) · จำใน localStorage
+  const [sessGroupCollapsed, setSessGroupCollapsed] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('dr_sess_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const persistSessGroups = (next) => {
+    try { localStorage.setItem('dr_sess_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    setSessGroupCollapsed(next);
+  };
+  const toggleSessGroup = (name) => {
+    const next = new Set(sessGroupCollapsed);
+    next.has(name) ? next.delete(name) : next.add(name);
+    persistSessGroups(next);
+  };
   const [loading, setLoading]       = useState(true);
   // CT overage history — keyed by mat_no: { checked, overCount, ctSec, avgObservedCt } จากกะปิดล่าสุดของไลน์เดียวกัน
   const [ctOverage, setCtOverage]   = useState({});
@@ -263,7 +266,7 @@ function LiveTab({ role }) {
   const [defectTypes, setDefectTypes]   = useState([]);
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
-  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+  const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
   const [savingDefect, setSavingDefect] = useState(false);
 
   // SV review-before-approve modal for pending_close requests
@@ -277,6 +280,8 @@ function LiveTab({ role }) {
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
   const [closeNg, setCloseNg]               = useState('0');
+  // หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — คู่กับ close_approve_note/close_reject_reason ฝั่ง SV
+  const [closeNote, setCloseNote]           = useState('');
   const [closeEndTime, setCloseEndTime]     = useState(nowTime());
   const [closeStartTime, setCloseStartTime] = useState('');
   const [savingClose, setSavingClose]       = useState(false);
@@ -313,10 +318,11 @@ function LiveTab({ role }) {
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type)').eq('is_active', true).order('mat_no'),
+      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'),
       supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
     ]);
 
     const lm = {};
@@ -487,7 +493,7 @@ function LiveTab({ role }) {
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data } = await supabaseDR.from('defect_logs')
-      .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no, part_name)')
+      .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name)')
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     setDefectLogs(data || []);
@@ -1420,6 +1426,7 @@ function LiveTab({ role }) {
       qty_suspect:      suspect,
       qty_repair:       repair,
       description:      defectForm.description || null,
+      is_trial:         !!defectForm.is_trial,
     };
     const { error } = defectForm.id
       ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
@@ -1434,7 +1441,7 @@ function LiveTab({ role }) {
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
-    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+    setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
     loadDefectLogs(selSession.id);
   };
 
@@ -1537,8 +1544,9 @@ function LiveTab({ role }) {
     // Also count qty_actual from open orders being carried over
     const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
     const totalProduced  = confirmedQty + carryActualQty;
-    const ngQty = ngQtyOverride !== undefined ? ngQtyOverride
-      : defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+    // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — ของเสียจากการลองแม่พิมพ์/ลองงานใหม่
+    // ไม่ควรลงโทษ OEE ของไลน์ · ยอดเต็มยังอยู่ครบใน defect_logs ให้เอาไปคิดมูลค่าของเสีย
+    const ngQty = ngQtyOverride !== undefined ? ngQtyOverride : sumDefectQty(defectLogs, 'line');
     // ใช้ work_date + start_time (เวลาเริ่มกะที่ตั้งไว้จริง) เป็นจุดเริ่ม — ไม่ใช่ created_at ที่อาจคลาดเคลื่อนจากเวลาที่หัวหน้าเช็คชื่อ/เปิดระบบ
     // start_time แก้ได้ตอนปิดกะ (startTimeOverride) เผื่อตอนเปิดกะ/auto-open เดาเวลาผิด
     const workDate    = selSession?.work_date;
@@ -1692,19 +1700,32 @@ function LiveTab({ role }) {
       })
     );
 
-    let P = null;
+    /* ⚠️ ไลน์เครื่องขนาน (parallel_machine เช่น SUB APRON): CT เป็น "ต่อเครื่อง" งานกระจายอยู่หลายเครื่อง
+       → ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์" · ต้องใช้สาย parallel เสมอ ห้ามพึ่ง heuristic
+       isParallel (ทับกัน >15 นาที + >20%) ซึ่งเป็น all-or-nothing: บางกะเข้าเงื่อนไข บางกะไม่เข้า
+       → P พลิกไปมา 52/76/89/100 แล้ว cap 100 เงียบ (SUB APRON 14 กะ ชนเพดาน 6 กะ · 2026-08-13)
+       ไลน์ผลิตต่อเนื่อง (one_piece_flow เช่น LASER-345/789) CT เป็นของทั้งไลน์อยู่แล้ว → ห้ามแตะ
+       (เช็คแล้ว หารจำนวนเครื่องจะทำ P ร่วงจาก 63-98% เหลือ 21-33%) */
+    const perMachineCt = flowModeOf(lf.flow_mode) === 'parallel_machine';
+    let P = null, pRawRatio = null;   // pRawRatio = ค่าก่อน cap 100% — ใช้เตือนเมื่องาน > เวลาเครื่องที่มี
     if (runSec > 0 && matPData.length > 0) {
       const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
-      if (isParallel) {
+      if (isParallel || perMachineCt) {
         // Parallel (คนละ product วิ่งพร้อมกันคนละสถานี): denominator = Σ run ต่อ product group
         // = ถ่วงน้ำหนัก P ตามเวลารันจริงของแต่ละสถานี — ห้ามใช้ mean เท่าๆ กัน
         // (เคยพัง 2026-07-13: งานแทรก 10 ชิ้น/10 นาที window ทับงานหลัก → mean ลาก P ทั้งกะ
         //  จาก ~93% เหลือ 48% ทั้งที่งานแทรกวิ่งเต็มประสิทธิภาพในช่วงของมันเอง)
-        const denomSec = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
-        P = Math.min(1, totalStdSec / denomSec);
+        // clamp [runSec, N×runSec]: ต่ำกว่าเวลาไลน์ = P เฟ้อ · สูงกว่า N เท่า = อ้างว่ามีเครื่องมากกว่าที่มีจริง
+        const rawDenom = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
+        const denomSec = perMachineCt
+          ? Math.min(Math.max(rawDenom, runSec), runSec * Math.max(1, parallelN))
+          : rawDenom;
+        pRawRatio = totalStdSec / denomSec;
+        P = Math.min(1, pRawRatio);
       } else {
         // Sequential: standard time รวมหารด้วย run_time ทั้งกะ (จับ idle ระหว่าง MAT.NO ด้วย)
-        P = Math.min(1, totalStdSec / runSec);
+        pRawRatio = totalStdSec / runSec;
+        P = Math.min(1, pRawRatio);
       }
     }
     // Q = ของดี / ผลิตจริง(ดี+เสีย) — การ์ดที่สแกนปิด = "ของดีล้วน" (ผลิตครบเป้าของดี · ของเสียผลิตเพิ่มต่างหาก
@@ -1713,7 +1734,12 @@ function LiveTab({ role }) {
     // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
     const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty) : 1;
     const oee = P != null ? A * P * Q : null;
-    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty };
+    /* pOver = P ทะลุ 100% ก่อนโดน cap → งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
+       แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
+       ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
+       แทนที่จะปล่อยจน OEE ของทั้งไลน์อ่านไม่ได้ 14 กะโดยไม่มีใครรู้ (2026-08-13) */
+    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty,
+      pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10 };
   };
   // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
   // บน prod_orders — backflush ตอน order เปลี่ยนเป็น 'confirmed' (ระเบิด BOM → หัก
@@ -1911,6 +1937,24 @@ function LiveTab({ role }) {
     setSavingClose(false);
     if (error) { toast.error(error.message); return; }
 
+    // หมายเหตุของผู้ขอปิดกะ + เคลียร์ร่องรอยการถูกปฏิเสธรอบก่อน (ส่งขอใหม่แล้ว = ไม่ค้างสถานะถูกตีกลับ
+    // ไม่งั้นไอคอน ✕ ในลิสต์กะค้างอยู่ทั้งที่แก้แล้ว) — update แยก best-effort เหมือน close_approve_note
+    // ยังไม่ apply migration = ปิดกะได้ปกติ แค่ยังไม่เก็บ/ยังไม่เคลียร์ข้อความ
+    // ⚠️ supabase-js "คืน" { error } ไม่ได้ throw → try/catch เฉยๆ จะกลืน error ทิ้งเงียบ
+    // ต้องเช็ค error เองแล้วบอกผู้ใช้ ไม่งั้นหมายเหตุหายโดยไม่มีใครรู้ (กฎ: ห้ามล้มเหลวเงียบ)
+    try {
+      const { error: noteErr } = await supabaseDR.from('production_sessions').update({
+        close_request_note:   closeNote.trim() || null,
+        close_reject_reason:  null,
+        close_reject_by_name: null,
+        close_reject_at:      null,
+      }).eq('id', selSession.id);
+      if (noteErr) {
+        console.warn('[close] เก็บหมายเหตุ/เคลียร์สถานะปฏิเสธไม่สำเร็จ', noteErr);
+        if (closeNote.trim()) toast.error('ปิดกะเรียบร้อย แต่ "หมายเหตุ" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_request_note (แจ้ง admin)');
+      }
+    } catch (e) { console.warn('[close] note update exception', e); }
+
     // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
 
     const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
@@ -1971,7 +2015,14 @@ function LiveTab({ role }) {
     if (error) { toast.error(error.message); return; }
     // remark ผู้อนุมัติ (optional) — update แยก best-effort: ยังไม่ apply migration close_approve_note = อนุมัติได้ปกติ
     if (approveNote.trim()) {
-      try { await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id); } catch { /* additive */ }
+      // เช็ค error เอง — supabase-js คืน { error } ไม่ throw (try/catch เฉยๆ กลืนทิ้ง)
+      try {
+        const { error: apErr } = await supabaseDR.from('production_sessions').update({ close_approve_note: approveNote.trim() }).eq('id', selSession.id);
+        if (apErr) {
+          console.warn('[approve] เก็บหมายเหตุผู้อนุมัติไม่สำเร็จ', apErr);
+          toast.error('อนุมัติปิดกะแล้ว แต่ "หมายเหตุ" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_approve_note (แจ้ง admin)');
+        }
+      } catch (e) { console.warn('[approve] note update exception', e); }
     }
     setApproveNote('');
 
@@ -2042,13 +2093,19 @@ function LiveTab({ role }) {
     if (error) { setSavingReject(false); toast.error(error.message); return; }
     // เก็บ remark แยกเป็น update best-effort — ถ้ายังไม่ได้ apply migration (คอลัมน์ยังไม่มี) การปฏิเสธยังทำงานปกติ
     // แค่ยังไม่บันทึกข้อความ (ค่อยเก็บได้หลัง migration) — ไม่ให้ feature ใหม่ทำ flow หลักพัง
+    // ⚠️ supabase-js คืน { error } ไม่ throw — ต้องเช็คเอง ไม่งั้นเหตุผลที่ SV พิมพ์หายเงียบ
+    // (หัวหน้ากลุ่มจะเห็นแบนเนอร์เปล่าๆ ไม่รู้ว่าต้องแก้อะไร + ไอคอน ✕ ในลิสต์กะจะไม่ขึ้น)
     try {
-      await supabaseDR.from('production_sessions').update({
+      const { error: rejErr } = await supabaseDR.from('production_sessions').update({
         close_reject_reason:  reason,
         close_reject_by_name: fullName,
         close_reject_at:      new Date().toISOString(),
       }).eq('id', selSession.id);
-    } catch { /* best-effort: คอลัมน์อาจยังไม่มีก่อน migration */ }
+      if (rejErr) {
+        console.warn('[reject] เก็บเหตุผลปฏิเสธไม่สำเร็จ', rejErr);
+        toast.error('ปฏิเสธคำขอแล้ว แต่ "เหตุผล" ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration close_reject_reason (แจ้ง admin) · กรุณาแจ้งหัวหน้ากลุ่มด้วยวิธีอื่น');
+      }
+    } catch (e) { console.warn('[reject] reason update exception', e); }
     setSavingReject(false);
     setShowRejectModal(false);
     setRejectReason('');
@@ -2141,41 +2198,75 @@ function LiveTab({ role }) {
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : '1fr', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : 'minmax(0, 1fr)', gap: 16 }}>
       {sessions.length > 1 && (
         // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4, flexShrink: 0 }}>กะที่เปิดอยู่ ({sessions.length})</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', minWidth: 0 }}>
+          {(() => {
+            const groupNames = [...new Set(sessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
+            const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexShrink: 0 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>กะที่เปิดอยู่ ({sessions.length})</div>
+                {groupNames.length > 1 && (
+                  <button onClick={() => persistSessGroups(allCollapsed ? new Set() : new Set(groupNames))}
+                    title={allCollapsed ? 'กางทุกกลุ่ม' : 'ย่อทุกกลุ่ม'}
+                    style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+                    {allCollapsed ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
           {(() => {
-            // Group sessions by parent line (or self if no parent)
+            // จัดกลุ่มตามไลน์แม่ (ไลน์เดี่ยว = เป็นกลุ่มของตัวเอง)
             const groups = {};
             sessions.forEach(s => {
               const parent = lineMap[s.line_name]?.parent_line_name || s.line_name;
               if (!groups[parent]) groups[parent] = [];
               groups[parent].push(s);
             });
-            return Object.entries(groups).map(([groupName, groupSessions]) => (
+            return Object.entries(groups).map(([groupName, groupSessions]) => {
+              /* ⚠️ หัวกลุ่มต้องขึ้น "ทุกกลุ่ม" — เดิมโชว์เฉพาะกลุ่มที่มีสมาชิกเป็นไลน์ลูก
+                 → ไลน์เดี่ยว (เช่น LINE ASSY TSRA ที่ไม่มีไลน์แม่) ไม่มีหัวข้อของตัวเอง
+                   เลยไหลไปต่อท้ายหัวข้อของกลุ่มก่อนหน้า ดูเหมือนเป็นไลน์ลูกของกลุ่มนั้น (user ทัก) */
+              const hasSel = groupSessions.some(s => s.id === selSession?.id);
+              const collapsed = sessGroupCollapsed.has(groupName) && !hasSel;  // กะที่เลือกอยู่ต้องไม่ถูกซ่อน
+              return (
               <div key={groupName}>
-                {groupSessions.some(s => lineMap[s.line_name]?.parent_line_name) && (
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                    {groupName}
-                  </div>
-                )}
-                {groupSessions.map(s => (
+                <button onClick={() => toggleSessGroup(groupName)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                  <span style={{ fontSize: 9 }}>{collapsed ? '▶' : '▼'}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupName}</span>
+                  <span style={{ fontWeight: 600 }}>{groupSessions.length}</span>
+                </button>
+                {!collapsed && groupSessions.map(s => (
                   <button key={s.id} onClick={() => setSelSession(s)}
                     style={{ display: 'block', width: '100%', marginBottom: 4, padding: lineMap[s.line_name]?.parent_line_name ? '8px 10px 8px 16px' : '10px 12px',
                       borderRadius: 8, border: `2px solid ${selSession?.id === s.id ? 'var(--accent)' : 'var(--border)'}`,
                       background: selSession?.id === s.id ? 'var(--accent-dim)' : 'var(--card)', cursor: 'pointer', textAlign: 'left' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{s.line_name}</div>
-                      {s.status === 'pending_close' && <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      {/* ชื่อไลน์ยาว (LINE ASSY TSRA) ต้องหดได้ ไม่งั้นดันชิปสถานะตกขอบ sidebar 220px */}
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.line_name}</div>
+                      {/* ⏳ = ส่งไปแล้ว "รอ SV" (ลูกบอลอยู่ฝั่งเขา) — เป็นสถานะที่เจอเยอะสุด จึงเอาแค่ไอคอน */}
+                      {s.status === 'pending_close' && <span title="ส่งขอปิดกะแล้ว — รอ SV อนุมัติ" style={{ fontSize: 11, fontWeight: 800, padding: '2px 5px', borderRadius: 10, background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>⏳</span>}
+                      {/* ถูกตีกลับ = "ลูกบอลอยู่ฝั่งเรา ต้องกลับไปแก้" — ต้องแยกจาก ⏳ ให้ขาด
+                          ⚠️ ห้ามใช้ ✕ (ในหน้าเดียวกัน "✕ ปฏิเสธ" คือปุ่มกด คนจะนึกว่ากดแล้วลบ/ปิด)
+                          ⚠️ ห้ามใช้ ↩️ (หน้านี้ใช้เป็น "ถอยใบ" ของ order ไปแล้ว)
+                          → ใช้ชิปข้อความสั้น อ่านออกทันทีไม่ต้องเดาความหมายไอคอน · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
+                      {s.status === 'open' && s.close_reject_at && (
+                        <span title={`ถูกตีกลับโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — "${s.close_reject_reason}"` : ''} · แก้แล้วกดขอปิดกะใหม่`}
+                          style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
                   </button>
                 ))}
               </div>
-            ));
+              );
+            });
           })()}
           </div>
         </div>
@@ -2279,7 +2370,7 @@ function LiveTab({ role }) {
                   {selSession.status === 'open' && canRequestClose && (
                     <button onClick={() => {
                       setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
-                      setDtCarryDecisions({}); setDtCloseTimes({});
+                      setDtCarryDecisions({}); setDtCloseTimes({}); setCloseNote('');
                       // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
                       setCarryQtyActual(m => {
                         const next = { ...m };
@@ -2299,6 +2390,22 @@ function LiveTab({ role }) {
                     <button onClick={openEditTimes}
                       style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
                       ✏️ แก้เวลากะ
+                    </button>
+                  )}
+
+                  {/* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (ไม่ต้องเขียนมือ)
+                      หน้างานออกใบนี้ทุกครั้งที่หยุด/คุณภาพ/รอ เกิน 30 นาที (feedback 2026-08-19) */}
+                  {(dtLogs.length > 0 || defectLogs.length > 0) && (
+                    <button onClick={async () => {
+                      const ok = await printProdProblemReport({
+                        session: selSession, downtimes: dtLogs, defects: defectLogs,
+                        section: lineMap?.[selSession.line_name]?.section || null,
+                      });
+                      if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+                    }}
+                      style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
+                      title="พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ">
+                      📝 ใบรายงานปัญหา
                     </button>
                   )}
 
@@ -2365,8 +2472,9 @@ function LiveTab({ role }) {
               }).sort((a, b) => b.target - a.target);
 
               // สรุปภาพใหญ่: นับงานคู่ RH/LH เป็น 1 คู่/stroke (max ของสองข้าง) ไม่บวกชิ้นซ้ำ · พาร์ทเดี่ยว = บวกปกติ
+              // + collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่นับซ้ำ (แถวรายพาร์ทยังแยกโชว์ครบ)
               const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
-              const pt = pairAwareTotal(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), pairOf);
+              const pt = pairAwareTotal(collapseOps(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), opInfoSync()), pairOf);
               const nullMat = prodOrders.filter(o => !o.mat_no);
               const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = pt.produced
@@ -2398,6 +2506,16 @@ function LiveTab({ role }) {
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{r.matNo}</span>
+                                  {(() => { // 🔩 รายการขั้นตอน (OP) — ยอดไม่ถูกนับซ้ำในสรุปรวม (ผูกพาร์ทจริงแล้ว) · ยังไม่ผูก = เตือน
+                                    const op = opInfoSync()[r.matNo];
+                                    if (!op) return null;
+                                    return (
+                                      <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: op.parent ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: op.parent ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
+                                        title={op.parent ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ผูกได้ที่ Product Master'}>
+                                        🔩 OP{op.seq ? ` ${op.seq}` : ''}{op.parent ? ` · ของ ${op.parent}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                                      </span>
+                                    );
+                                  })()}
                                   {r.name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.name}</span>}
                                   {r.ct > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· CT {r.ct}s</span>}
                                   {r.actualStart && (
@@ -2489,7 +2607,7 @@ function LiveTab({ role }) {
                     <button onClick={() => {
                       const activeMatNos = Array.from(new Set(prodOrders.filter(o => o.status === 'open').map(o => o.mat_no))).filter(Boolean);
                       setShowDefect(true);
-                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '' });
+                      setDefectForm({ id: null, mat_no: activeMatNos.length === 1 ? activeMatNos[0] : '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
                     }}
                       style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                       🔴 บันทึกงานเสีย
@@ -2819,6 +2937,13 @@ function LiveTab({ role }) {
                           {d.qty_ng     > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
                           {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
                           {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                          {/* งานทดลองต้องเห็นในลิสต์เสมอ (เป็นของเสียจริง) แค่ไม่ถูกนับเข้า %Q */}
+                          {isTrialDefect(d) && (
+                            <span title="งานทดลอง — ไม่นับเข้า %Q แต่ยังนับเป็นมูลค่าของเสีย"
+                              style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
+                              🧪 งานทดลอง
+                            </span>
+                          )}
                         </div>
                         {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
@@ -2828,7 +2953,7 @@ function LiveTab({ role }) {
                       </div>
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '' }); setShowDefect(true); }}
+                          <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true }); setShowDefect(true); }}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 4px' }}>✎</button>
                           <button className="tbtn" onClick={() => handleDeleteDefectLog(d.id)}
                             style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>✕</button>
@@ -3059,6 +3184,12 @@ function LiveTab({ role }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                     เวลาที่ขอ: {selSession.close_requested_at ? fmtDateTime(selSession.close_requested_at) : '—'} · เริ่มกะ {selSession.start_time} · ปิดกะ {selSession.end_time}
                   </div>
+                  {/* หมายเหตุที่หัวหน้ากลุ่มเขียนมา — SV ต้องเห็นก่อนตัดสินใจอนุมัติ/ปฏิเสธ */}
+                  {selSession.close_request_note && (
+                    <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 8, padding: '8px 10px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)', whiteSpace: 'pre-wrap' }}>
+                      📝 หมายเหตุจากหัวหน้ากลุ่ม: <b>{selSession.close_request_note}</b>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 14 }}>
@@ -3086,7 +3217,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: งานเสีย+Downtime คอลัมน์ซ้าย · สรุปแยกตามชิ้นงาน คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : '1fr', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: twoCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: twoCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {defectLogs.length > 0 && (
                   <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
@@ -3348,7 +3479,7 @@ function LiveTab({ role }) {
             if (endMs < startMs) endMs += 86400000;
             return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
           });
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
           const twoCol = wide1100;
@@ -3368,6 +3499,16 @@ function LiveTab({ role }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                 </div>
+                {/* %P ตันเพดาน — งานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง แปลว่าข้อมูลมีอะไรผิด
+                    ห้าม cap เงียบแล้วปล่อยผ่าน (เตือนอย่างเดียว ไม่บล็อกการปิดกะ — หน้างานต้องเดินต่อได้) */}
+                {pOver && (
+                  <div style={{ fontSize: 12, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, color: '#f59e0b', fontWeight: 600 }}>
+                    ⚠ %P คำนวณได้ {pRawPct}% (เกิน 100% เลยถูกตัดเหลือ 100%) — งานตามมาตรฐานมากกว่าเวลาเครื่องที่มีในกะนี้
+                    <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 3 }}>
+                      ปิดกะได้ตามปกติ แต่ควรตรวจ: CT ของชิ้นงาน (Product Master) · ยอดที่กรอก · เวลาเปิด-ปิดใบ · จำนวนเครื่องขนานของไลน์ (LineSetup)
+                    </div>
+                  </div>
+                )}
 
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                   <Field label="เวลาเริ่มกะจริง (แก้ได้ถ้าตอนเปิดกะ/auto-เดาเวลาผิด)">
@@ -3379,7 +3520,7 @@ function LiveTab({ role }) {
                 </div>
 
                 {/* จอกว้าง: Downtime เปิดค้าง (ต้องตัดสินใจ) คอลัมน์ซ้าย · สรุปตัวเลขกะ คอลัมน์ขวา — จอแคบเรียงลงเหมือนเดิม */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : '1fr', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenDTCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenDTCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Downtime เปิดค้าง — ต้องตัดสินใจต่อรายการก่อนปิดกะ (เครื่องกลับมาแล้ว / ยังซ่อมอยู่ ตัดยอดข้ามกะ) */}
                 {modalOpenDT.length > 0 && (
@@ -3711,7 +3852,7 @@ function LiveTab({ role }) {
                 })()}
 
                 {/* จอกว้าง: รายการตัดสินใจ Order ที่ยังไม่ปิด คอลัมน์ซ้าย · OEE preview คอลัมน์ขวา (เห็นผลจากการตัดสินใจข้างๆ กันทันที) */}
-                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : '1fr', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: hasOpenOrdersCol ? '1fr 1fr' : 'minmax(0, 1fr)', gap: hasOpenOrdersCol ? 14 : 0, alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                 {/* Carry-over: handle open orders */}
                 {(() => {
@@ -3845,6 +3986,17 @@ function LiveTab({ role }) {
 
                 </div>{/* /คอลัมน์ขวา (OEE preview) */}
                 </div>{/* /grid 2 คอลัมน์ ชุดล่าง */}
+
+                {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เดิมมีแต่ช่องหมายเหตุฝั่ง SV (อนุมัติ/ปฏิเสธ)
+                    คนขอไม่มีที่อธิบายว่าทำไมยอดไม่ถึง/เกิดอะไรขึ้น · ไม่บังคับ */}
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
+                    📝 {role === 'leader' ? 'หมายเหตุถึงผู้อนุมัติ' : 'หมายเหตุปิดกะ'} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ไม่บังคับ)</span>
+                  </div>
+                  <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2}
+                    placeholder="เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง"
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 12.5, borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit' }} />
+                </div>
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                   <button onClick={() => { setShowCloseShift(false); setCarryOverDecisions({}); }} style={cancelBtnStyle}>ยกเลิก</button>
@@ -4087,12 +4239,32 @@ function LiveTab({ role }) {
                         style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                       >
                         <option value="">— เลือก MAT.NO —</option>
-                        {lineStds.map(s => (
-                          <option key={s.id} value={s.mat_no}>
-                            {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
-                          </option>
-                        ))}
+                        {lineStds.map(s => {
+                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14:
+                             10105769 กับ 10105770 ชื่อเดียวกันทั้งคู่) → ต่อท้ายด้วยเลขพาร์ทลูกค้า
+                             ที่พอแยกออก + ติดธง ⚠ ให้เห็นว่าคู่ไหนกำกวม (แก้จริงต้องไปตั้งชื่อ
+                             ให้ต่างกันที่ Product Master — ระบบไม่เดาชื่อให้) */
+                          const nm = s.dr_products?.name || s.part_name || '';
+                          const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
+                          return (
+                            <option key={s.id} value={s.mat_no}>
+                              {s.mat_no}{nm ? ` · ${nm}` : ''}
+                              {dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}
+                              {dup ? ' ⚠ชื่อซ้ำ' : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
+                            </option>
+                          );
+                        })}
                       </select>
+                      {(() => {
+                        const names = lineStds.map(s => s.dr_products?.name || s.part_name || '').filter(Boolean);
+                        const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
+                        if (!dupN) return null;
+                        return (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                            ⚠ มีชื่อสินค้าซ้ำกัน {dupN} คู่ในไลน์นี้ — เสี่ยงเปิดผิดใบ · แก้ชื่อให้ต่างกัน (เช่นใส่ลูกค้า AAT/FTM) หรือปิดใช้งานตัวเก่าที่ Product Master
+                          </div>
+                        );
+                      })()}
                     </Field>
                   );
                 })()}
@@ -4299,6 +4471,32 @@ function LiveTab({ role }) {
                 <Field label="รายละเอียด / สาเหตุ">
                   <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
                 </Field>
+
+                {/* 🧪 งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรลงโทษ %Q ของไลน์
+                    แต่ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user) */}
+                {(() => {
+                  const byType = defectTypes.find(t => t.id === defectForm.defect_type_id)?.excl_from_q === true;
+                  const on = byType || defectForm.is_trial;
+                  return (
+                    <div style={{ marginTop: 10, padding: '9px 12px', borderRadius: 8,
+                      border: `1px solid ${on ? '#a855f7' : 'var(--border)'}`,
+                      background: on ? 'rgba(168,85,247,0.10)' : 'var(--bg2)' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: byType ? 'default' : 'pointer' }}>
+                        <input type="checkbox" checked={on} disabled={byType}
+                          onChange={e => setDefectForm(f => ({ ...f, is_trial: e.target.checked }))}
+                          style={{ width: 'auto', margin: 0 }} />
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? '#a855f7' : 'var(--text2)' }}>
+                          🧪 งานทดลอง (Try-out) — ไม่นับเข้า %Q
+                        </span>
+                      </label>
+                      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                        {byType
+                          ? 'ประเภทนี้ถูกตั้งเป็นงานทดลองไว้แล้วที่ ⚙️ ตั้งค่า — ติ๊กให้อัตโนมัติ'
+                          : 'เช่น ลองแม่พิมพ์ใหม่ / ลองงานใหม่ — ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย แค่ไม่ฉุด OEE ของไลน์'}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
@@ -4319,6 +4517,23 @@ function LiveTab({ role }) {
           // เครื่องจักร + ชิ้นงาน เป็น optional ทุกประเภท downtime — หลายอย่าง (5ส/ประชุม/รอวัตถุดิบ/QA recheck)
           // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ (machine_no/mat_no nullable · OEE แยกด้วย category)
           const dtMachineOptional = true;
+          /* ตัวเลือก "ชิ้นงาน" ของฟอร์ม Downtime — 3 แหล่งรวมกัน (dedupe ด้วย mat_no)
+             ⚠️ เดิมดึงจาก kanban_standards + ชื่อไลน์ "ตรงเป๊ะ" อย่างเดียว → ไลน์ที่สินค้า
+             ไม่ได้อยู่ในระบบคัมบัง หรือสินค้าผูกกับไลน์แม่/ไลน์พี่น้อง จะขึ้น
+             "ไม่มีชิ้นงานในไลน์นี้" ทั้งที่กำลังผลิตอยู่จริง (หน้างานเลเซอร์แจ้งเข้ามา 2026-08-14)
+             → เอา "ใบงานที่เปิดในกะนี้" มาก่อน (ตรงประเด็นสุด — คือของที่วิ่งอยู่จริง)
+               แล้วเสริมด้วยสินค้า/คัมบังของ "ครอบครัวไลน์" (กฎเดียวกับ sessionProcessTypesAll) */
+          const dtMatOptions = (() => {
+            const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
+            const inFam = (ln) => fam.has((ln || '').trim().toLowerCase());
+            const seen = new Map();
+            const add = (mat, name, src) => { if (mat && !seen.has(mat)) seen.set(mat, { mat_no: mat, name: name || '', src }); };
+            prodOrders.filter(o => !['cancelled', 'imported'].includes(o.status))
+              .forEach(o => add(o.mat_no, o.part_name || products.find(p => p.mat_no === o.mat_no)?.name, 'order'));
+            products.filter(p => inFam(p.line_name)).forEach(p => add(p.mat_no, p.name, 'line'));
+            kanbanStds.filter(s => inFam(s.dr_products?.line_name)).forEach(s => add(s.mat_no, s.dr_products?.name || s.part_name, 'kanban'));
+            return [...seen.values()];
+          })();
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
@@ -4458,20 +4673,21 @@ function LiveTab({ role }) {
                       </div>
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
-                      {(() => {
-                        const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === selSession.line_name);
-                        if (!lineStds.length) return <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>— ไม่มีชิ้นงานในไลน์นี้ —</div>;
-                        return (
-                          <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
-                            <option value="">เลือกชิ้นงาน...</option>
-                            {lineStds.map(s => (
-                              <option key={s.id} value={s.mat_no}>
-                                {s.mat_no}{s.dr_products?.name ? ` · ${s.dr_products.name}` : s.part_name ? ` · ${s.part_name}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      })()}
+                      {!dtMatOptions.length ? (
+                        /* ว่างจริง = ยังไม่มีใบงานในกะ และไม่มีสินค้าผูกกับไลน์เลย → บอกทางแก้ ห้ามปล่อยเป็นทางตัน */
+                        <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center', fontSize: 12 }}>
+                          — ยังไม่มีชิ้นงานให้เลือก (เปิดใบงาน หรือผูกสินค้ากับไลน์ที่ Product Master) · ข้ามได้
+                        </div>
+                      ) : (
+                        <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
+                          <option value="">เลือกชิ้นงาน...</option>
+                          {dtMatOptions.map(o => (
+                            <option key={o.mat_no} value={o.mat_no}>
+                              {o.src === 'order' ? '▶ ' : ''}{o.mat_no}{o.name ? ` · ${o.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </Field>
                   </div>
                   <Field label="รายละเอียด">
@@ -4482,8 +4698,7 @@ function LiveTab({ role }) {
                 <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                   <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
                   {(() => {
-                    const lineStdsForBtn = kanbanStds.filter(s => s.dr_products?.line_name === selSession?.line_name);
-                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && lineStdsForBtn.length > 0 && !dtForm.mat_no);
+                    const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && dtMatOptions.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: '#ef4444', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
@@ -4696,6 +4911,12 @@ function HistoryTab({ role }) {
               </div>
               {expanded === s.id && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เขียนตอนส่งขอปิดกะ */}
+                  {s.close_request_note && (
+                    <div style={{ fontSize: 12, color: '#c4b5fd', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
+                      📝 หมายเหตุหัวหน้ากลุ่ม ({s.close_requested_by_name || '—'}): <b>{s.close_request_note}</b>
+                    </div>
+                  )}
                   {/* หมายเหตุผู้อนุมัติปิดกะ (ถ้ามี — SV กรอกตอนกดอนุมัติ) */}
                   {s.close_approve_note && (
                     <div style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '8px 12px' }}>
@@ -5380,9 +5601,10 @@ function ExportTab() {
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>วันที่สิ้นสุด</div>
             <input type="date" value={filter.date_to} onChange={e => setFilter(f => ({ ...f, date_to: e.target.value }))} style={sel} />
           </div>
-          <div>
+          {/* minWidth:0 บังคับให้ flex item ยอมหด — ไม่งั้นกว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
+          <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, minWidth: 160 }}>
+            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, width: '100%', minWidth: 0 }}>
               <option value="">ทุกไลน์</option>
               {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
@@ -5528,7 +5750,7 @@ function DefectTypeSetup({ role }) {
   const [items, setItems]     = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving]   = useState(false);
-  const emptyForm = { name_th: '', color: '#ef4444', process_type: '', sort_order: 0, is_active: true };
+  const emptyForm = { name_th: '', color: '#ef4444', process_type: '', sort_order: 0, is_active: true, excl_from_q: false };
   const [form, setForm]       = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -5540,8 +5762,9 @@ function DefectTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, color: item.color, process_type: item.process_type || '', sort_order: item.sort_order, is_active: item.is_active }
-      : { ...emptyForm, sort_order: items.length + 1 });
+      ? { name_th: item.name_th, color: item.color, process_type: item.process_type || '', sort_order: item.sort_order, is_active: item.is_active, excl_from_q: item.excl_from_q === true }
+      // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
+      : { ...emptyForm, color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1 });
   };
 
   const handleSave = async () => {
@@ -5599,6 +5822,7 @@ function DefectTypeSetup({ role }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
                     {!item.is_active && <div style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</div>}
+                    {item.excl_from_q && <div style={{ fontSize: 10.5, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
@@ -5645,6 +5869,18 @@ function DefectTypeSetup({ role }) {
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
                 <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
               </label>
+              {/* งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรฉุด OEE ของไลน์ (2026-08-17) */}
+              <div style={{ padding: '9px 11px', borderRadius: 8, border: `1px solid ${form.excl_from_q ? '#a855f7' : 'var(--border)'}`,
+                background: form.excl_from_q ? 'rgba(168,85,247,0.10)' : 'var(--bg2)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.excl_from_q} onChange={e => setForm(f => ({ ...f, excl_from_q: e.target.checked }))} style={{ width: 'auto', margin: 0 }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? '#a855f7' : 'var(--text)' }}>🧪 งานทดลอง — ไม่นับเข้า %Q</span>
+                </label>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                  ติ๊กแล้ว ของเสียประเภทนี้จะไม่ถูกนับใน %Q ของ OEE ทุกจอ แต่ยังนับใน "มูลค่าของเสียทั้งหมด"
+                  <br />ประเภททั่วไปไม่ต้องติ๊ก — พนักงานติ๊ก 🧪 รายครั้งในฟอร์มบันทึกงานเสียได้อยู่แล้ว
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
@@ -6219,7 +6455,8 @@ function DowntimeTypeSetup({ role }) {
     setEditing(item?.id || 'new');
     setForm(item
       ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '' }
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: '#ef4444', sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
+      // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
   };
 
   const handleSave = async () => {

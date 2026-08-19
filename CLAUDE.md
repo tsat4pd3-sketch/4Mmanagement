@@ -13,8 +13,10 @@
 0. **อ่าน `docs/ENGINEERING-PRINCIPLES.md`** — หลักการแก้ไข/ต่อยอดอย่างยั่งยืน (คิดเผื่ออนาคต ไม่แก้ฉาบฉวย): single source of truth · data-driven ก่อน hardcode · backward-compatible migration · ห้ามล้มเหลวเงียบ · blast radius + rollback · checklist ก่อน commit/merge — **ใช้กับทุกงานไม่ว่าเล็กหรือใหญ่**
 1. อ่านไฟล์นี้ (CLAUDE.md) ให้จบก่อนเสมอ — โดยเฉพาะกฎเหล็ก supabaseDR, Date/Time utilities, Organizational Hierarchy
 2. ถ้างานแตะ UI → **ต้องอ่าน `docs/UI-CONVENTIONS.md` ก่อน** และทำตามอย่างเคร่งครัด (marker วงกลม+MK+clamp, Andon, ฟอนต์ขั้นต่ำ 11-12px, can() ฯลฯ)
+   - **หน้าใหม่/แก้หัวหน้าเพจ → ต้องใช้ `PageHeader` + `useTabParam` ห้ามวาดหัวเรื่อง/แถบแท็บเอง** (UI-CONVENTIONS §6.8)
 3. ถ้า convention ขัดกับสิ่งที่กำลังจะทำ → ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยนชัดเจน
 4. มีหลาย session ทำงานขนานกัน — `git pull origin main` ก่อนเริ่ม และเช็คว่างานที่จะทำ session อื่นทำไปแล้วหรือยัง
+5. **⭐ เป้าโปรเจค = prototype Smart Factory ที่ข้อมูลทุกอย่าง linkage กันสมบูรณ์ (คำสั่งถาวรจาก user 2026-08-17):** ระบบนี้จะถูกขยายผลทุกส่วนงาน/ทุกโรงงานในกลุ่ม — **ห้ามปัดฟีเจอร์เชื่อมโยงข้ามโมดูลด้วยเหตุผล "ข้อมูลยังมีน้อย/ไม่คุ้ม"** · ให้ทำบน**พาร์ทต้นแบบ 1-2 ตัวให้เห็นภาพเต็ม** (golden thread ปัจจุบัน: สาย 060/061 — PFC/FMEA/CP ครบ + ชั้น OP + BOM + orders ทุกสถานี) แล้ว scale ตามข้อมูลที่ทยอยเข้า — ความลึกของ linkage บนตัวอย่าง สำคัญกว่ารอ coverage ครบ
 
 **หลังแก้/เพิ่มอะไรก็ตาม — อัพเดทกฎในคอมมิทเดียวกัน:**
 - สร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า → อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่)
@@ -70,7 +72,7 @@
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
 | `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift (**กำลังคน — อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น ดูกฎด้านล่าง**), **line_type** (ประเภทไลน์: stamping/hydroform/laser/welding_assembly/other — source of truth `src/utils/lineTypes.js` · ตั้งค่าที่ LineSetup แผง "ข้อมูลเฉพาะไลน์นี้" · **คนละตัวกับ `process_type`** ฝั่ง DR (dr_products/machines) ที่ใช้กรอง downtime/defect types · migration `20260722_production_lines_line_type.sql` **apply แล้ว 2026-08-05** — ค้างมา 2 สัปดาห์ ระหว่างนั้นช่องนี้เซฟไม่ติดเงียบๆ + ลาก flow_mode ปิดตามไปด้วย · `20260805_..._fix_laser.sql` แก้ backfill ที่ตีไลน์เลเซอร์ใต้กลุ่ม HYDROFORM เป็น hydroform ผิด — **กฎ: ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · ⚠️ ยังไม่มีหน้าไหนอ่าน line_type เลย เป็น master ที่ตั้งไว้รอใช้) |
 | `oee_targets` | Target **A/P/Q รายกรุ๊ป** (parent line/ไลน์เดี่ยว) — **เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ** · ระดับ section ไม่เก็บใน DB ใช้**ค่าเฉลี่ยของกรุ๊ป**คำนวณสดในหน้า OEE (2026-07-13) | group_name (unique), target_a/p/q (null = ค่ามาตรฐาน 90/90/99 → OEE 80.2) · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้ (แอปคำนวณเอง) · ตั้งจากปุ่ม 🎯 ใน /oee-analytics (สิทธิ์ manage_master_data) · migration `20260713_oee_targets.sql` |
-| `profiles` | User roles + scope | id, email, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], **mtn_teams[]** (ทีมช่างซ่อมที่สังกัด — แยกคิวใบแจ้งซ่อม MO · แยกจาก sections ที่คุม scope ผลิต · ตั้งที่ /add-user เฉพาะ role งานซ่อม · migration `20260722_profiles_mtn_teams.sql` · 2026-07-22), notify_email, signature_url, avatar_url (รูปโปรไฟล์ user — 2026-07-14) |
+| `profiles` | User roles + scope · **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดว่ามี จนเป็นต้นเหตุให้ `fn_audit` อ่าน `coalesce(full_name, email)` แล้วพังเงียบ ไม่บันทึกผู้แก้เลยทั้งระบบ ดูหัวข้อ Traceability) · **ระบบไม่มีการส่งอีเมล** — `notify_email` เป็นคอลัมน์ที่ไม่เคยถูกใช้ส่งอะไร (ช่องกรอกใน `/add-user` ถอดออกแล้ว 2026-08-17) | id, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], **mtn_teams[]** (ทีมช่างซ่อมที่สังกัด — แยกคิวใบแจ้งซ่อม MO · แยกจาก sections ที่คุม scope ผลิต · ตั้งที่ /add-user เฉพาะ role งานซ่อม · migration `20260722_profiles_mtn_teams.sql` · 2026-07-22), notify_email, signature_url, avatar_url (รูปโปรไฟล์ user — 2026-07-14) |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
 
 ### การผลิตรายวัน
@@ -79,6 +81,7 @@
 | `daily_production_logs` | เช็คชื่อ + PPE | work_date, employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift, has_ot, has_extended_ot |
 | `ot_night_bookings` | จองรถ OT ล่วงหน้า (ธุรการจองรถรับส่ง) | work_date, shift (day/night), employee_id, task_type_id, ot_period (วันหยุด 8/10 ชม. — null = OT ปกติ), booked_by · unique(employee_id, work_date, shift) |
 | `bus_routes` / `ot_task_types` | master สายรถ / งาน OT (จัดการจากแท็บจองรถใน Report) | code, name, is_active, sort_order |
+| `special_task_types` / `leave_types` | master งานนอกไลน์ (Management) / ประเภทลา (Checkin) — เลิก hardcode 2026-08-19 (migration `20260819_special_task_leave_masters_main.sql` **apply แล้ว 2026-08-19** — user รันผ่าน SQL Editor) · จัดการที่แผงจองรถ OT ใน Report (`SimpleNameMaster` · สิทธิ์ `ot_master:manage` เดิม) · โค้ด fallback ค่า default เดิมเมื่อตารางว่าง/ยังไม่ apply | name, is_active, sort_order |
 | `attendances` | บันทึกเข้างาน | - |
 | `operator_special_tasks` | งานนอกไลน์ | employee_id, work_date, task_type |
 
@@ -102,7 +105,7 @@
 ### กะการทำงาน
 | Table | คำอธิบาย |
 |-------|---------|
-| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ (line_id, work_date, day_team, **`is_manual`**) · **ไลน์ลูก inherit กะจากไลน์แม่อัตโนมัติ** เว้นแต่ `is_manual=true` (ตั้งเอง) — ตั้งกะไลน์แม่แล้ว save จะ cascade ไปไลน์ลูกที่ยังตามแม่ (`effTeam`/`parentIdOf` ใน ShiftOrganize) · migration `20260721_shift_schedule_inherit.sql` |
+| `shift_schedules` | ตารางกะ A/B รายสัปดาห์ · **1 แถว = 1 ขอบเขต: `line_id` (ไลน์ผลิต) หรือ `dept_name` (หน่วยงานสนับสนุน) อย่างใดอย่างหนึ่ง** (check constraint บังคับ) · **ไลน์ลูก inherit กะจากไลน์แม่อัตโนมัติ** เว้นแต่ `is_manual=true` (ตั้งเอง) — ตั้งกะไลน์แม่แล้ว save จะ cascade ไปไลน์ลูกที่ยังตามแม่ (`effTeam`/`parentIdOf` ใน ShiftOrganize) · migration `20260721_shift_schedule_inherit.sql` + `20260811_shift_schedule_department.sql` (ดูกฎเหล็ก "กะของพนักงาน" ด้านล่าง) |
 | `shift_overrides` | Override กะรายบุคคล |
 | `shift_merge_events` | Merge กะทั้ง section/line |
 
@@ -148,11 +151,12 @@
 | Group (sidebar) | Route | Component | Role (seed default) |
 |---|---|---|---|
 | ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
-| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันโซนล่าง sidebar เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
+| (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันใน**แผงโปรไฟล์ 👤** (desktop rail) / เมนูโปรไฟล์ท้าย drawer (มือถือ) เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ภาพรวม | `/dashboard` | Dashboard (ย้ายกลับหมวด ภาพรวม 2026-07-20 — โซนจอแสดงผล) | ทุก role |
 | ภาพรวม | `/factory-map` | FactoryMap — ผังรวมโรงงาน: วาด polygon ล้อมแต่ละไลน์บนผังใหญ่ผังเดียว ระบายสีตามสถานะการผลิต (ดู section "Factory Master Map") | ทุก role (edit: admin/mgr/sv) |
 | ภาพรวม | `/dept-dashboard` | **DeptDashboard — 📋 Dashboard ส่วนงาน** หน้าเดียวสลับส่วนงานด้วย `?dept=production\|maintenance\|store\|qa` · **เลย์เอาต์ 4 ชั้นเหมือนกันทุกใบ** (🚨 ต้องทำตอนนี้ → 📊 KPI → 📈 ชี้เป้าให้แก้ → 🔗 ทางลัด) · **อ่านอย่างเดียว** ทุก action = ลิงก์ไปหน้าที่ทำงานจริง · เพิ่มส่วนงานใหม่ = เพิ่ม entry ใน `DEPTS` (loader + View) **ห้ามสร้างหน้า dashboard แยกต่อส่วนงาน** · ดู section "Dashboard ส่วนงาน" + `docs/DASHBOARD-DESIGN.md` | ทุก role (ข้อมูลกรองตาม scope) |
 | ภาพรวม | `/group-overview` | **GroupOverview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท)** ตัวอย่างหน้าจอตอบโจทย์ผู้บริหาร "ระบบดูหลายบริษัทในกลุ่มพร้อมกันได้มั้ย" — **แผนที่ภาคกลาง+ตะวันออก (โซนบางนา/โซนตะวันออก)** + drill-down 2 แกน `TSG → โซน\|กลุ่มธุรกิจ → บริษัท → ไลน์` · **TSAT4 = ข้อมูลจริง** ที่เหลือ **จำลอง** จากข้อมูลชุดเดียวกัน (ดู section "Group Overview") | admin/manager (seed) |
+| ภาพรวม | `/adoption-outlook` | **AdoptionOutlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร** ตอบผู้บริหาร "ทุกแผนกใช้จริงแล้วมองเห็นมิติไหนได้บ้าง" · 4 แท็บ: **มิติที่มองเห็นได้** (คำถามจริง 12 ข้อ + สายข้อมูลข้ามแผนก) · **4 ระดับ** (Descriptive→Prescriptive) · **ก่อน-หลัง รายแผนก** · **เงินที่ประหยัดได้** · **อ่านอย่างเดียว** ทุกปุ่ม = ทางลัดไปหน้าที่ทำงานจริง (ดู section "Adoption Outlook") | admin/manager (seed) |
 | ฝ่ายผลิต | `/morning-meeting` | MorningMeeting — ประชุมแถวเช้า (ดู section "Morning Meeting") | ทุก role (record: admin/mgr/sv/leader) |
 | ฝ่ายผลิต | `/checkin` | Checkin | ทุก role |
 | ฝ่ายผลิต | `/management` | Management | ทุก role |
@@ -177,10 +181,12 @@
 | การตรวจสอบและซ่อมบำรุง | `/pm-coordination` | PmCoordination — 🗓️ แผนประสานงาน PM ข้ามวัน (แบบเมล MTN แจ้ง Production): งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน + ช่วง Production Support → แจ้ง Telegram + พิมพ์ใบ (ดู section "PM Coordination") | ทุก role (ดู) · `pm_coord:manage` = admin/mgr/sv/mtn/engineer/leader |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
-| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — 6 แท็บ: Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ") | admin/manager/supervisor/leader/qa/doc_control |
+| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
-| วิเคราะห์ & รายงาน | `/report` | Report | ทุก role (7 tabs: รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M/ใบบันทึก/จองรถ OT + CSV export) · **Changing Point Control Record ย้ายเข้าทะเบียนกลาง `doc_forms`/`doc_form_revisions` doc_key `changing_point` แล้ว (2026-07-30)** — แผง "⚙️ จัดการเอกสาร" ในแท็บ 4M กับหน้า `/doc-forms` แก้ข้อมูลชุดเดียวกัน · ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้ (คงไว้เป็นประวัติ ห้าม drop จนกว่าจะยืนยันข้อมูลครบ) |
+| วิเคราะห์ & รายงาน | `/vsm` | **VSM — แผนผังสายธารคุณค่า (Value Stream Map)** เลือก FG (เบอร์ 1) + เดือน → generate ผังจากข้อมูลจริง (CT/%OEE/C-O/LOT/คงคลัง/TT/PLT/PT/%VA) → แก้ค่าที่ระบบไม่รู้ → บันทึก (snapshot) → พิมพ์ A3 · ดู section "Value Stream Mapping" | ทุก role (ดู) · `vsm:manage` = admin/mgr/sv/leader/engineer |
+| วิศวกรรม (PE) | `/pe-docs` | **PEDocs — 📐 PE Core Tools: Process Flow / PFMEA / Control Plan** (ดู section "PE Core Tools") | ทุก role (ดู) · แก้ = `pe:edit` (admin/mgr/engineer) · revision = `pe:approve` |
+| วิเคราะห์ & รายงาน | `/report` | Report | ทุก role (7 tabs: รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M/ใบบันทึก/จองรถ OT + CSV export) · **Changing Point Control Record ย้ายเข้าทะเบียนกลาง `doc_forms`/`doc_form_revisions` doc_key `changing_point` แล้ว (2026-07-30)** — แผง "⚙️ จัดการเอกสาร" ในแท็บ 4M กับหน้า `/doc-forms` แก้ข้อมูลชุดเดียวกัน · ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้ (คงไว้เป็นประวัติ ห้าม drop จนกว่าจะยืนยันข้อมูลครบ) · **deep-link (2026-08-11): `?tab=` ของหน้านี้เป็น "เลข index ของ `TABS`"** (สัญญาเดิม ต่างจากหน้าอื่นที่ใช้ key ข้อความ — ดู UI-CONVENTIONS §6.8) → **สลับลำดับ TABS = ลิงก์ข้างนอกพาไปผิดแท็บเงียบๆ** · ที่อ้างอยู่ตอนนี้: `?tab=4` (4M Changes) จาก `/dept-dashboard` · **แท็บ 4M รับต่ออีก 3 param: `status` (ตัวกรองสถานะ · validate กับ `STATUS_META`) · `from=YYYY-MM-DD` (วันเริ่มช่วง) · `focus=<log id>` (เน้นแถว + เลื่อนไปหา)** → กระโดดเข้าคิวอนุมัติใบนั้นแล้วกด Approve ได้เลย · **ต้องส่ง `from` มาด้วยเสมอ** — ช่วง default คือ 7 วันล่าสุด ใบค้างมักเก่ากว่านั้น (ค้างจริง 60-80 วัน) ไม่ส่งจะเปิดมาเจอจอว่าง · หา `focus` ไม่เจอ = ขึ้นแถบแดงอธิบาย + ปุ่มล้างตัวกรอง (**ห้ามเงียบ**) |
 | พนักงาน & ทักษะ | `/skills-report` | `<Report mode="skills" />` — 3 แท็บสกิลที่แยกจาก /report (Skill Matrix / ค่าฝีมือ / Multi-Skill Form) component อยู่ใน Report.jsx เดิมทั้งหมด (`SKILL_TAB_IDXS`) | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup | admin |
 | พนักงาน & ทักษะ | `/register` | Register | admin/manager/supervisor |
@@ -188,7 +194,8 @@
 | พนักงาน & ทักษะ | `/ojt-training` | OjtTraining — ใบอบรม OJT paperless FM-HRM-004: บันทึก+เซ็นบนจอ+พิมพ์ PDF ตามฟอร์มกระดาษ (สิทธิ์บันทึก `ojt:record` = mgr/sv/leader · ลบ `ojt:delete` = mgr · scope ผู้เข้าอบรมตาม leader family/sections · ย้ายจากหมวดฝ่ายผลิตมาอยู่คู่ฐานข้อมูลพนักงาน/สกิล ตามคำสั่ง user 2026-07-20) | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/products` | ProductMaster | ทุก role |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/linesetup` | LineSetup | admin/manager/supervisor |
-| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/machine-database` | MachineDatabase — **default กรอง `equipment_kind='machine'`** (ไม่งั้นแม่พิมพ์ 262 ตัวปนในลิสต์/dropdown/สถิติ) · สลับดูชนิดอื่นได้จากแถบกรอง | admin/manager/supervisor |
+| ตั้งค่าโปรแกรม,ฐานข้อมูล | `/die-registry` | **DieRegistry — 🔨 ทะเบียนแม่พิมพ์**: มุมมองแม่พิมพ์บนตัวตนเดียวกับเครื่องจักร (ดูกฎเหล็ก "ชนิดอุปกรณ์เป็นแกน ไม่ใช่ตาราง") · จัดกลุ่มเป็น **ชุด (1 พาร์ท = 1 ชุด)** → กางดูสมาชิกราย OP (กระบวนการ/ตัน/shot สะสม/จำนวนครั้งที่เจียร) · แก้ชุดและแม่พิมพ์รายตัวได้ · **แถบ worklist "ข้อมูลที่ยังต้องเก็บให้ครบ" + ปุ่ม 🔎 ดูเฉพาะที่ต้องแก้** (ข้อมูลมาจากการแกะชื่อเครื่องเดิม ช่องที่แกะไม่ออกปล่อยว่าง — **ห้ามซ่อน** pattern เดียวกับแถบ ⚠️ ข้อมูลไม่ตรงผังองค์กรใน `/operator`) · **OP ซ้ำในชุด = สัญญาณว่าเป็นหลายชุดที่ถูกรวมกัน** (เช่นแยกตามวัสดุ RAW/AAW/LAW — เจอจริง 1 ชุด 24 ตัว = 4 วัสดุ × 6 OP) **ระบบชี้ให้เห็น ห้ามแยกให้เองอัตโนมัติ** · **ไม่ให้แก้ `shot_total`** (ตัวนับจากการผลิต ไม่ใช่ค่าที่คนพิมพ์ทับ) · dropdown ไลน์ลิสต์จาก**ไลน์ที่แม่พิมพ์ใช้จริง** ไม่ใช่ `production_lines` อย่างเดียว (ไลน์แม่พิมพ์เป็นชื่อกลุ่มเครื่องปั๊ม เช่น `LINE A ( 800 Ton )` ซึ่งไม่มีในตารางไลน์ผลิต) · **สิทธิ์แก้ = `machines:edit`** (ตัวตนเดียวกัน คนกลุ่มเดียวกันดูแล — เลี่ยงกับดัก seed `enum_range` ของ permission key ใหม่) · scope ตาม pattern มาตรฐาน · migration `20260810_die_registry_permission.sql` · **3 แท็บแล้ว (2026-08-19): 📋 ทะเบียน / 🗺️ ผังจัดเก็บ / 📊 สถานะ** (PageHeader + useTabParam — ดู section "DIE MAINTENANCE — Layout & สถานะแม่พิมพ์") | admin/manager/supervisor/mtn |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/process-setup` | ProcessSetup — จุดจัดการ master กระบวนการผลิต (process_types) ทางเข้าเสริมนอกจาก Daily Report ⚙️ · component ร่วม `ProcessTypeSetup.jsx` | admin/manager/supervisor |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/qr-labels` | QrLabels — 🏷️ พิมพ์ป้าย QR อุปกรณ์ (เครื่องจักร/จิ๊ก) เลือกไลน์+ติ๊กรายการ → พิมพ์สติกเกอร์ A4 (3 ขนาด) · ดู section "QR / บาร์โค้ดอุปกรณ์" | ทุก role (พิมพ์: `qr_labels:print` = admin/mgr/sv/mtn/engineer) |
 | พนักงาน & ทักษะ | `/shift-organize` | ShiftOrganize | admin/manager/supervisor |
@@ -200,6 +207,27 @@
 | (ไม่อยู่ใน sidebar) | `/login` | Login | ไม่ต้อง auth |
 
 ---
+
+
+### 🧭 โครงนำทาง — หัวหน้าเพจ / แท็บ / ทางลัด (2026-08-11 · ดู `docs/NAVIGATION-REVIEW.md` §6)
+
+- **ทุกหน้าขึ้นด้วย `<PageHeader>`** (`src/components/PageHeader.jsx`) — breadcrumb `🏠 หน้าหลัก › หมวด › หน้า › แท็บ` **generate เองจาก `NAV_ITEMS`** ตาม pathname ไม่ต้องใส่มือ · เว้น `paddingRight: 52` กัน 🔔 ให้แล้ว · **ห้ามวาดหัวเรื่อง/แถบแท็บเอง** (เดิมแต่ละหน้าวาดเอง เลยได้มุมโค้งแท็บ 7/8/12 ปนกัน)
+- **หน้าที่มีแท็บผูก URL ด้วย `useTabParam`** (`src/utils/useTabParam.js`) — refresh/แชร์ลิงก์/Back อยู่แท็บเดิม · ค่าที่ไม่รู้จัก = ตกกลับแท็บ default (ห้ามจอว่าง) · แท็บ default ไม่ใส่ใน URL · param อื่น (`?line=`) ถูกรักษาไว้
+  - **⚠️ แท็บซ้อนแท็บต้องคนละ param** — หน้าที่ถูกฝังในหน้ารวมใช้ `?sub=` (`/linesetup` ใน `/layout-setup` · `/daily-pm` `/lpa` ใน `/daily-checker`) ไม่งั้นแย่ง `?tab=` กับหน้าแม่
+  - **⚠️ แท็บที่ต้องมีสิทธิ์ ต้อง guard ค่าจาก URL ด้วย** ซ่อนปุ่มอย่างเดียวไม่พอ (คนแปะลิงก์ให้กันได้) — ทำแล้วที่ daily-report `setup` · lpa `questions` · operator `skills`/`levelup` · mtn-layout `overview` ตอน setupMode
+  - **⚠️ `setTab` เปลี่ยน identity ตาม URL** — ถ้าใช้ใน `useCallback`/`useEffect` ต้องใส่ใน deps (ต่างจาก setter ของ `useState` ที่นิ่ง)
+  - **⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return** (rules-of-hooks · React #310)
+  - **ไม่ผูก URL กับ state ที่ระบบสั่งสลับเอง** (เช่น PMCheckData บันทึก→ประวัติ ตอนกดบันทึก) ไม่งั้นประวัติ Back งอกทุกครั้ง · ถ้าจำเป็นต้องผูกจริงๆ ให้ระบบสลับด้วย **`setTab(k, { replace: true })`** (EventLog บันทึกเสร็จ→รายการ)
+- **route ที่ยุบเป็นแท็บแล้วต้อง `<Navigate to="…?tab=x" replace />`** ห้าม render ซ้ำสองทาง — `/daily-pm` `/pokayoke` `/lpa` → `/daily-checker?tab=` · **ลิงก์ภายในให้ชี้ปลายทางจริง** ไม่เด้งผ่าน redirect · **ยกเว้น `/linesetup`** ที่คงไว้เป็นทาง "ดูอย่างเดียว" ของคนไม่มีสิทธิ์ `line_setup:edit` (redirect แล้ววนกลับมาที่เดิม)
+- **🚆 Sidebar desktop = "rail + แผงลอย" (แบบ D · 2026-08-18 คำสั่ง user "เอา D เลย" หลัง review ว่าเมนู 55 รายการ 9 หมวด = 3.3 จอ หาไม่เจอ):**
+  - **rail 64px (`--rail-w`) ไอคอนหมวด 9 ปุ่ม** (ไอคอน+ชื่อย่อจาก **`NAV_GROUP_META`** ใน App.jsx — เพิ่มหมวดใหม่ต้องเติม meta ด้วย ไม่งั้นได้ 📁 + ชื่อเต็มตัด ellipsis) · กดไอคอน → **แผงเมนูหมวด (252px) "ลอยทับ" เนื้อหา ไม่ดันเนื้อหา** (คำสั่ง user "ต้องไม่ไปบีบหน้าจอหลัก") — เนื้อหาหลักกว้างขึ้น +188px เทียบ sidebar เดิม
+  - เลือกเมนู/เปลี่ยนหน้า/Esc/คลิกนอกแผง = แผงปิดเอง · **📌 ปักหมุด (opt-in, จำใน `esm_rail_pin`) = แผงค้าง + ดันเนื้อหา** (`calc(--rail-w + --sidebar-w)`) — state อยู่ ProtectedLayout เพราะ marginLeft ของ `<main>` ต้องรู้
+  - rail ล่าง: **⭐ ใช้บ่อย** (topPaths จาก navRecent) · **👤 avatar → แผงโปรไฟล์** (การ์ด user + ลายเซ็น/เปลี่ยนรหัส/รีโมท 🎮📺/Light Mode/ออกจากระบบ — ของเดิมท้าย sidebar ทั้งหมดย้ายมาที่นี่ **ไม่หายไปไหน**) · **◀ ซ่อน rail** (จอ TV เต็มจอ — ☰ เดิมโผล่กลับ)
+  - **มือถือ (<768px) = drawer เดิมแต่จัดโครงใหม่ (2026-08-18):** บนสุด **⭐ ใช้บ่อย 5 รายการ** (topPaths — ไม่มีสถิติ = ไม่โชว์บล็อกเปล่า) · หมวดเป็น **accordion เปิดทีละหมวด** (แถว = ไอคอน+ชื่อ+จำนวน+▾ · **หมวดของหน้าปัจจุบันเปิดให้เอง** — `mOpenGroup` undefined = follow active) → ลิสต์จาก ~2,500px เหลือ ~1 จอ · การ์ด user + เมนูโปรไฟล์เป็น JSX ชุดเดียว (`userCard`/`profileActions` ใน Sidebar) ใช้ทั้ง 2 โหมด — **ห้าม copy ซ้ำ** · `focusSidebarGroups`/`nav_collapsed_groups` ถูกถอดแล้ว (rail/accordion เปิดหมวดตามหน้าปัจจุบันเอง ไม่ต้องสั่งจาก hub)
+  - ทดสอบ layout ได้ที่ audit harness `?p=__sidebar` (mount `Sidebar` ตรงๆ role admin — `Sidebar` ถูก export ไว้เพื่อการนี้)
+- **ทางลัดหาเมนู:** desktop = ปุ่ม 🔎 บน rail + **`Ctrl/⌘+K` เปิด `CommandPalette`** (ค้นแบบ subsequence · ↑↓ Enter Esc) · มือถือ = ช่องค้นหาบนหัว drawer (พิมพ์แล้วยุบเป็นลิสต์แบน) — **ทั้งหมดดึงจาก `NAV_ITEMS` + `canAccessPage` เมนูใหม่โผล่เอง ห้ามพิมพ์รายชื่อหน้าซ้ำ**
+- **"ใช้บ่อย"** = `src/utils/navRecent.js` (localStorage ต่อเครื่อง · decay ครึ่งชีวิต 14 วัน ไม่ค้างบนสุดเพราะเคยกดรัวๆ) · `trackVisit` เรียกจากจุดเดียวใน `App.jsx` (ProtectedLayout ตอน pathname เปลี่ยน)
+- **4 หน้าที่ไม่มีหัวเรื่องโดยตั้งใจ:** `Login` (มีแบรนด์เอง) · `Dashboard`/`Management` (บอร์ดจอ TV หัวเรื่องกินที่แนวตั้ง) · `LineSetup` (ถูกฝังในแท็บหน้าอื่น หัวเรื่องอยู่ที่หน้าแม่)
 
 ## Organizational Hierarchy (Thai Summit Group)
 
@@ -242,11 +270,25 @@
 > ### ⚠️ กฎเหล็ก — เปลี่ยนชื่อไลน์ (rename) ต้อง cascade `line_name` ทุกตาราง **2 project** (2026-07-22)
 > **ชื่อไลน์ถูกเก็บเป็น text snapshot (ไม่ใช่ FK) ในหลายสิบตารางทั้ง Main + DR** — `production_lines.name` เป็นแค่ที่เดียว ที่เหลืออ้างด้วยชื่อ · เปลี่ยนชื่อแล้ว**ไม่ตามไปแก้ทุกที่ = ข้อมูลชื่อเก่ากำพร้าเงียบๆ ทันที**
 > **เคสจริงที่เจอ:** เปลี่ยนชื่อไลน์ Laser ใน `/linesetup` → "กะที่เปิดค้าง" หายจากรายการ "กะที่เปิดอยู่" ใน Daily Report (เพราะ `production_sessions.line_name` = ชื่อเก่า แต่หน้ากรองด้วยชื่อไลน์ปัจจุบัน — leader `.in('line_name',[children])`, scoped role `lineMap[s.line_name].section` — session ยังเปิดอยู่ใน DB **แค่ถูกกรองพ้นสายตา** ไม่ได้หาย) · `dr_products.line_name` เก่ายังทำให้เปิด order/สแกนของไลน์ที่เปลี่ยนชื่อไม่ได้ด้วย
-> **`handleRenameLine` (LineSetup.jsx) cascade แล้ว (best-effort ต่อ table):** Main = `workstations, line_layouts, wip_buffer_points, machine_points, machine_flow_links, four_m_logs, factory_line_regions, lpa_plans, lpa_audits, lpa_questions, meeting_action_items, station_assignment_logs, pokayoke_devices, wip_replenish_requests, employee_home_positions, qa_parts, qa_characteristics, qa_instruments, qa_ncr` · DR = `machines, production_sessions, dr_products, line_stock_transactions, jigs, pm_daily_line_targets, pm_daily_alerts, mtn_orders, improvements, scrap_reports, facility_supply_links, pm_coordination_plans, kanban_delivery_rounds, kanban_deliveries, rack_requests, kanban_calc_params, transport_nodes` + `pm_plans.usage_source_line` + คอลัมน์ `source_line` (`bom_items, child_lot_requests, packaging_withdrawal_requests`) + **`lpa_questions.hidden_for_lines[]`** (text[] — bump ธรรมดาไม่ได้ ต้องอ่าน-แก้-เขียนรายแถวด้วย `.contains()`) · (ขยายลิสต์ 2026-07-30 จาก single-source audit — เดิมตกหล่น supply route/PM ประสานงาน/poka-yoke/QA/คำขอ logistic · **ขยายอีกรอบ 2026-08-03 จาก QC audit** — เดิมตกหล่น lpa_questions/kanban_calc_params/transport_nodes/station_assignment_logs/pm_daily_alerts) · **เพิ่มตารางใหม่ที่เก็บ `line_name`/`source_line` ต้องมาเติมในลิสต์นี้ด้วย** · `handleDeleteLine` มีช่องโหว่เดียวกัน (ลบไลน์ที่ยังมี session เปิด = orphan) — ยังไม่ปิด, เลี่ยงลบไลน์ที่มีกะเปิดค้าง
+> **`handleRenameLine` (LineSetup.jsx) cascade แล้ว (best-effort ต่อ table):** Main = `workstations, line_layouts, wip_buffer_points, machine_points, machine_flow_links, four_m_logs, factory_line_regions, lpa_plans, lpa_audits, lpa_questions, meeting_action_items, station_assignment_logs, pokayoke_devices, wip_replenish_requests, employee_home_positions, qa_parts, qa_characteristics, qa_instruments, qa_ncr` · DR = `machines, production_sessions, dr_products, line_stock_transactions, jigs, pm_daily_line_targets, pm_daily_alerts, mtn_orders, improvements, scrap_reports, facility_supply_links, pm_coordination_plans, kanban_delivery_rounds, kanban_deliveries, rack_requests, kanban_calc_params, transport_nodes` + **`line_flow_links` (2 คอลัมน์ `from_line`+`to_line`)** + `pm_plans.usage_source_line` + คอลัมน์ `source_line` (`bom_items, child_lot_requests, packaging_withdrawal_requests`) + **`lpa_questions.hidden_for_lines[]`** (text[] — bump ธรรมดาไม่ได้ ต้องอ่าน-แก้-เขียนรายแถวด้วย `.contains()`) · (ขยายลิสต์ 2026-07-30 จาก single-source audit — เดิมตกหล่น supply route/PM ประสานงาน/poka-yoke/QA/คำขอ logistic · **ขยายอีกรอบ 2026-08-03 จาก QC audit** — เดิมตกหล่น lpa_questions/kanban_calc_params/transport_nodes/station_assignment_logs/pm_daily_alerts) · **เพิ่มตารางใหม่ที่เก็บ `line_name`/`source_line` ต้องมาเติมในลิสต์นี้ด้วย** · `handleDeleteLine` มีช่องโหว่เดียวกัน (ลบไลน์ที่ยังมี session เปิด = orphan) — ยังไม่ปิด, เลี่ยงลบไลน์ที่มีกะเปิดค้าง
 > **กู้ session ที่กำพร้าไปแล้ว (rename ก่อนมี fix):** ใน `/linesetup` เปลี่ยนชื่อไลน์**กลับเป็นชื่อเก่า** (session ชื่อเก่ากลับมาโผล่) แล้ว**เปลี่ยนเป็นชื่อใหม่ที่ต้องการอีกรอบ** — รอบสองจะ cascade `production_sessions` ตามไปด้วย (fix ใหม่) · หรือ UPDATE `production_sessions.line_name` ชื่อเก่า→ใหม่ ตรงใน DR SQL editor
 
+> ### 🔗 สายการไหลระหว่างไลน์ — `line_flow_links` (2026-08-19 · คำขอ user)
+> *"hdf1 ป้อนงานเข้า laser345 และส่งต่อเข้าไลน์ apron assy 60 61 มันเกือบจะเป็น one piece flow แต่มีระบบ buffer มา mix เพื่อไม่ให้ไลน์เบรคดาวน์มากเกินไป"*
+> **ระบบเดิมไม่มีที่ไหนเก็บ "ไลน์ต่อไลน์" เลย** (ตรวจแล้ว): `machine_flow_links` = ทางเดินงาน**ในไลน์เดียวกัน** · `part_routings` = routing **รายพาร์ท** (ถูกต้องกว่าแต่มีข้อมูล 1 แถว) · `facility_supply_links` = utility→ไลน์ (ลม/ไฟ/น้ำ คนละเรื่อง)
+> - ตาราง **`line_flow_links`** (DR · `from_line`/`to_line`/`buffer_label`/`buffer_qty`/`is_active` · unique คู่ไลน์ · migration `20260819_line_flow_links.sql` **apply แล้ว**) — **ไม่ seed เส้นทางให้เอง** ("ไลน์ไหนป้อนไลน์ไหน" เป็นความรู้หน้างาน เดาแล้วผิดเสียหายกว่า)
+> - ตั้งที่ **`/linesetup` → แผง 🔗 สายการไหลระหว่างไลน์** (`src/components/LineFlowPanel.jsx`) · สูตรอยู่ **`src/utils/lineFlow.js` (pure · เทส 12 เคส)** — `buildFlowGraph`/`downstreamOf`/`upstreamOf`/`traceChain`/`bufferCoverMin`/`lineAvgCtSec`/`downstreamRisk`/`missingLinksFromRouting`
+> - **⚠️ กฎเหล็กของโมเดลนี้: "ต้นน้ำหยุด ≠ ปลายน้ำหยุดทันที"** — buffer ระหว่างกลางคือตัวกันสะเทือนที่หน้างาน**ตั้งใจ**ใส่ไว้ (ยิ่งเครื่องเยอะ โอกาสเบรคดาวน์ยิ่งสูง จึงต้องมี buffer) · ปลายน้ำหยุดก็ต่อเมื่อ buffer หมด → `bufferCoverMin(qty, ctปลายน้ำ)` = "หยุดได้กี่นาทีก่อนปลายน้ำเริ่มรอ" · **ห้ามแสดงว่าต้นน้ำหยุด = ปลายน้ำกระทบแบบเหมารวม** คนจะเลิกเชื่อสัญญาณ
+> - **⚠️ ไม่กรอก buffer = `null` = "ไม่รู้" ห้ามเดาเป็น 0** (0 แปลว่า "ไม่มี buffer เลย กระทบทันที" คนละความหมาย) · `downstreamRisk` คืน 3 สถานะ `safe`/`at_risk`/**`unknown`** **ห้ามยุบเหลือ 2**
+> - **⚠️ `Number(null)` = 0 ไม่ใช่ NaN** — เช็ค "มีค่าไหม" ด้วย `Number()` เฉยๆ ไม่ได้ (helper `num()` ในไฟล์) · เทสจับได้จริงตอนเขียน: ไลน์ที่ยังไม่กรอก buffer ถูกตีเป็น "0 ชิ้น = กระทบทันที" (กับดักเดียวกับที่เคยทำ Rank อะไหล่เพี้ยน)
+> - **cover time คิดจาก CT ของไลน์ *ปลายน้ำ* เสมอ** (ปลายน้ำเป็นคนกินของออกจาก buffer) · `lineAvgCtSec` **ข้ามรายการที่ `is_operation`** (ไม่ใช่ของที่ปลายน้ำกินเป็นชิ้น)
+> - แสดงที่ **modal เรื่องราวรายไลน์ใน `/factory-map`** (บล็อก 🔗 เหนือ Downtime) — บอกว่าเชื่อมกับใคร + เตือนให้ไปเช็ค "รอชิ้นงาน" ที่ปลายน้ำเมื่อไลน์นี้หยุด · **ยังไม่ผูกกับเวลาหยุดจริงอัตโนมัติ** (ต้องมี buffer ครบก่อน) — จอต้องไม่เขียนให้ดูเหมือนคำตอบสำเร็จรูป
+> - **`missingLinksFromRouting`** = เมื่อ `part_routings` ลงครบ ให้ใช้ตรวจทานว่าเส้นไหนยังไม่ได้ตั้ง — **เสนอให้คนยืนยัน ห้าม insert เอง** (หลักเดียวกับ AI intake / PE change request)
+> - **⚠️ เก็บชื่อไลน์เป็น text snapshot 2 คอลัมน์** → `handleRenameLine` bump ทั้ง `from_line` และ `to_line` แล้ว
+> - **หลักการคิดเงินที่ยืนยันกับ user แล้ว: ความเสียหายคิดที่ไลน์ที่ *เกิดเหตุ* ด้วย rate ของไลน์นั้น ไม่ปันส่วนข้ามไลน์** — ผลกระทบปลายน้ำถูกบันทึกเองอยู่แล้วผ่าน downtime type "รอชิ้นงาน Sub Part"/"รอชิ้นงาน (HDF, Laser)" ที่ไลน์ปลายน้ำ (ข้อมูลจริง 60 วัน: Line 61 = 348 นาที) · cost center แยกตาม SAP = ถูกแล้ว **ห้ามรวม**
+
 > ### ⚠️ กฎเหล็ก — กำลังคนมาตรฐาน (`std_day_shift`/`std_night_shift`) อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น (2026-08-05)
-> **`production_lines` เก็บ std ได้ทั้งไลน์แม่และไลน์ลูก แต่ไม่เคยมีกฎ inherit** → ข้อมูลจริงมี **3 convention ปนกันในตารางเดียว**: HYDROFORM (แม่ 14/14 · ลูกทั้ง 6 ก็อป 14/14 มาหมด) · LINE APRON ASSY (แม่ 17 · ลูก 6+7+6=19) · GOR/LWR BAR (แม่ตั้ง · ลูก 0/0) — ส่วน**พนักงานจริง (`employees.line_id`) ผูกกับไลน์แม่ 100% ทุกกลุ่ม**
+> **`production_lines` เก็บ std ได้ทั้งไลน์แม่และไลน์ลูก แต่ไม่เคยมีกฎ inherit** → ข้อมูลจริงมี **3 convention ปนกันในตารางเดียว**: HYDROFORM (แม่ 14/14 · ลูกทั้ง 6 ก็อป 14/14 มาหมด) · LINE APRON ASSY (แม่ 17 · ลูก 6+7+6=19) · GOR/LWR BAR (แม่ตั้ง · ลูก 0/0) — ส่วน**พนักงานจริง (`employees.line_id`)** เดิมผูกไลน์แม่แทบทั้งหมด **แต่ที่ถูกคือไลน์ลูก (ระดับกลุ่ม)** กำลังทยอยจัด — ดูกฎ "พนักงานอยู่ที่ไลน์ลูก" ในหัวข้อ scope ของ leader
 > **แต่ละหน้าเลยเดากันเอง แล้วตอบ "ไลน์นี้มีคนกี่คน" ไม่ตรงกัน** (Dashboard 28 · OrderTrace 14 · ProductionPlan ทิ้งไลน์แม่ทั้งดุ้น)
 > **กฎที่ใช้ (ยึด pattern เดียวกับ `shift_schedules`: ลูกตามแม่ เว้นแต่ตั้งเอง):**
 > - **ตัวเลขกำลังคนของ "กลุ่ม" อยู่ที่ไลน์แม่** — แม่ตั้งไว้ = นั่นคือยอดกลุ่ม **ห้ามบวกลูกซ้ำ** · แม่ไม่ได้ตั้ง = รวมจากลูก
@@ -259,7 +301,7 @@
 > | `stdInheritedOf` / `hasNightShift` | **คุณสมบัติไลน์** (มีกะดึกไหม) — ⚠️ ห้ามใช้รวมยอด จะซ้ำกับแม่ | ProductionPlan |
 >
 > **จุดใหม่ที่แตะกำลังคน ห้ามอ่าน `line.std_day_shift` ตรงๆ ห้ามเขียน heuristic เอง** (Dashboard เคยใช้ "ไลน์ย่อยที่ไม่มีพนักงาน = 0" ซึ่งพังทันทีที่ลูกมีคนสักคน — LASER E50 มี 1 คน → HYDROFORM กลายเป็น 28 แทน 14 · **พนักงานคนเดียวลงผิดไลน์ = ตัวหารทั้งโรงงานเพี้ยน 14**) · ยอดรวมกะเช้าทั้งโรงงานหลังแก้ = **67 คน** (เดิม 81 จากการนับซ้ำ)
-> **⚠️ `parallel_stations` (N) = "เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง"** — **ไม่ใช่จำนวนเครื่องทั้งหมดในทะเบียน และไม่ใช่จำนวนคน** · ตั้งสูงเกินจริงจะเพี้ยน 2 ทางพร้อมกัน: "ควรผลิตได้ตอนนี้" สูงเกิน (ไลน์ดูตามหลังตลอด) + หัก DT 1/N มากเกิน (%A สูงเกินจริง) · ไลน์ที่เป็น `parallel_machine` แต่ไม่ตั้ง N = ผังรวมถอยไปสูตรอัตราตามเวลา และแผง LineSetup ขึ้นแถบเตือนสีส้มให้ไปตั้ง
+> **⚠️ `parallel_stations` (N) = "เครื่องหลักที่เดินพร้อมกันจริงตอน**เต็มกำลัง**"** — **ไม่ใช่จำนวนเครื่องทั้งหมดในทะเบียน และไม่ใช่จำนวนคนที่มาวันนี้** (ผังรวมปรับตามกำลังคนที่มาจริงให้เองแล้ว ดูหัวข้อ Factory Master Map) · ตั้งสูงเกินจริงจะเพี้ยน 2 ทางพร้อมกัน: "ควรผลิตได้ตอนนี้" สูงเกิน (ไลน์ดูตามหลังตลอด) + หัก DT 1/N มากเกิน (%A สูงเกินจริง) · ไลน์ที่เป็น `parallel_machine` แต่ไม่ตั้ง N = ผังรวมถอยไปสูตรอัตราตามเวลา และแผง LineSetup ขึ้นแถบเตือนสีส้มให้ไปตั้ง
 > **`cost_center` / `head_name` ก็ตกทอดจากแม่** (ลูกไม่ได้กรอก = ใช้ของแม่) — ทำแล้วที่ MtnRepair + Report (ใบค่าฝีมือ)
 > **แผง LineSetup แยก 2 กลุ่มแล้ว:** 🏢 ข้อมูลของกลุ่ม (กำลังคน/cost center/หัวหน้า — ตกทอด) vs 🏭 คุณสมบัติของไลน์นี้ (ประเภทไลน์/โหมดไหลงาน/N เครื่องขนาน — ไม่ตกทอด) พร้อมข้อความบอกว่าค่าที่กรอกจะถูกนับหรือไม่ · **ชื่อแผง = "⚙️ ตั้งค่าไลน์ (กำลังคน + คุณสมบัติไลน์)"** — เดิมชื่อ "Standard Manpower" อย่างเดียวทั้งที่ข้างในมีคุณสมบัติไลน์ด้วย user ทักว่าสับสน (2026-08-06) · **เพิ่ม field ใหม่ในแผงนี้ต้องวางให้ตรงกลุ่ม** และถ้าไม่ใช่เรื่องคน ห้ามไปกองรวมกับกำลังคน
 > **⚠️ ProductionPlan ห้ามกรองเหลือเฉพาะไลน์ลูก (leaf-only)** — `lineOfMat` map 1 พาร์ท → 1 ไลน์ ตาม `dr_products.line_name` เท่านั้น ไลน์แม่จึงไม่มีทางนับซ้ำกับลูก · เดิมกรอง leaf ทิ้ง → **HYDROFORM ที่มีสินค้าผูกกับตัวแม่ 5 พาร์ท หายจากแผนผลิตทั้งหมด** และ GOR/LWR BAR (ลูก std_night=0) **ไม่เคยถูกเปิดกะดึกในแผนเลย** ทั้งที่ไลน์เดินกะดึกจริง
@@ -268,6 +310,23 @@
 
 **เลิก hardcode ชื่อทีมในโค้ด** (คำสั่ง user) — ทีมช่าง (MTN/JIG MTN/DIE MTN/PRODUCTION) มาจากตาราง **`mtn_teams`** (DR · migration `20260722_mtn_teams.sql`): `key` (=`checklists.department`: maintenance/jig_maintenance/die_maintenance/production) · `label` · `icon` · `equip_type` (machine/jig/die/null) · `dept_name` (โยง `mtn_orders.mtn_dept`) · `color` · เพิ่ม/แก้ทีมได้จากตารางนี้ไม่ต้องแก้โค้ด
 - โหลดผ่าน **`src/utils/pmTeams.js`** (`loadPmTeams()` cache + `pmTeamsSync()` + `DEFAULT_TEAMS` fallback ถ้า migration ยังไม่ apply) — หน้า **PMSchedule / PMCheckData / MtnMachineLayout / PMSetup** ดึง options+label+สี+icon จากตัวนี้ (เดิมต่างคนต่าง hardcode DEPT_OPTIONS/MTN_DEPTS · MtnMachineLayout เคยตกหล่น PRODUCTION · PMSetup เป็นหน้าสุดท้ายที่ยัง hardcode — แก้แล้ว 2026-07-22)
+> ### ⚠️ กฎเหล็ก — "พนักงานคนนี้เข้ากะไหน" ตอบผ่าน `src/utils/shiftAssign.js` เท่านั้น (2026-08-11)
+> เดิม logic นี้ถูกเขียนซ้ำใน `Checkin.jsx` กับ `Dashboard.jsx` (คอมเมนต์เขียนว่า "same logic as Checkin") แล้ว **drift กันจริง** — Dashboard ตกเงื่อนไข **Team C** → คนทีม C ที่เช็คชื่อแล้ว **หายจากบอร์ดทั้งกะเช้าและกะดึก** (บอร์ดกรองด้วย `assignedShift` ที่เป็น null) · รวมมาที่ util เดียวแล้ว
+> **ลำดับตัดสิน (ห้ามสลับ):** `shift_overrides` รายคน → `shift_merge_events` (ไลน์ชนะ section) → **ตารางกะ: ไลน์ผลิตก่อน → ไม่มีค่อยใช้ของหน่วยงาน**
+> - `buildScheduleMaps(rows)` → `{ byLine, byDept, count }` · `scheduleTeamFor(emp, maps)` · `shiftFromTeam(dayTeam, empTeam)` · `resolveAssignedShift(emp, {overrideShift, mergeShift, maps})`
+> - **`Team C` = กะเช้าตลอด ไม่หมุน A/B** — ห้ามตัดเงื่อนไขนี้ออก คนจะหายจากจอ · ทีมที่ไม่รู้จัก → `null` (ไม่เดา)
+>
+> #### 🏢 กะของ "หน่วยงานสนับสนุน" — `shift_schedules.dept_name` (2026-08-11 · user แจ้ง "set กะให้พนักงานซัพพอร์ทยังทำไม่ได้")
+> ตารางกะเดิมผูก `(work_date, line_id)` เท่านั้น → **พนักงานที่ไม่มี `line_id` (ช่าง MTN/JIG/DIE · QA · คลัง) ไม่มีแถวให้ตั้งกะเลย** `assignedShift` เป็น null ตลอด เหลือทางเดียวคือ `shift_overrides` ทีละคน-ทีละวัน (14 คน × 30 วัน = ใช้จริงไม่ไหว)
+> - **รูปแบบที่ user ยืนยัน: หมุน A/B พร้อมกันทั้งแผนก เหมือนไลน์ผลิต** · คนที่ไม่หมุนกะ = **Team C** (กลไกเดิมรองรับอยู่แล้ว ไม่ต้องเพิ่มอะไร)
+> - แถวหน่วยงาน = `line_id: null` + `dept_name` = ชื่อแผนก (จับคู่ `employees.department` แบบ trim+lowercase) · check constraint บังคับให้แถวหนึ่งมีขอบเขตเดียว
+> - **ตั้งที่ `/shift-organize` ตาราง "🏢 หน่วยงานสนับสนุน"** — ลิสต์เฉพาะแผนกที่มีพนักงานจริง เรียง "คนไม่ผูกไลน์" มากสุดขึ้นบน + แถบบอกจำนวนคนที่ยังไม่มีกะ · แผนกที่พนักงานกรอกไว้แต่ไม่มีในผัง ขึ้นป้าย **⚠ นอกผัง** (ตั้งกะได้ แต่ควรจัดให้ตรงผัง — **ห้ามซ่อน** หลักเดียวกับ optgroup "นอกผัง" ใน `/operator`)
+> - **scope:** leader ไม่เห็นตารางนี้ (ดูแลไลน์ ไม่ใช่หน่วยงาน) · role ที่ถูกจำกัด `sections` เห็นเฉพาะแผนกใต้ส่วนงานตัวเอง · **แผนกขึ้นตรงฝ่าย (ไม่มี section) เห็นเฉพาะ user ที่ไม่ถูกจำกัด** (กฎเดียวกับ `ORPHAN_SECTION`)
+> - **⚠️ unique index ของ `dept_name` ต้องเป็นแบบธรรมดา ห้าม partial** — PostgREST upsert ส่งแค่ `on_conflict=work_date,dept_name` เติม `WHERE` ให้ไม่ได้ → Postgres infer partial index ไม่เจอ แล้วพังทั้งการบันทึก · ไม่ต้องกลัวชนกับแถวไลน์ (dept_name = null ซึ่ง unique index ปล่อยผ่านเสมอ)
+> - **⚠️ `fetchEmployees` ที่กรอง scope ต้อง fallback ไป `employees.section` ด้วย** ไม่ใช่ดูแค่ `production_lines.section` — พนักงานซัพพอร์ทไม่มีไลน์ จึงไม่มี join ให้ดู แล้วหายจากสายตา user ที่ถูกจำกัด scope ทั้งที่อยู่ส่วนงานเดียวกัน
+> - อ่านแบบ tolerant: ยังไม่ apply migration = `dept_name` ไม่มีในผลลัพธ์ → ทำงานแบบเดิมเป๊ะ (ใช้ `select('*')`) · ตอนบันทึกเจอ `42703` ต้อง **ขึ้น toast บอกให้ไป apply migration ห้ามเงียบ**
+> - **migration apply แล้ว 2026-08-18** (user รันเองผ่าน SQL Editor — เซสชันเว็บเข้า DB ไม่ได้)
+
 > ### ⚠️ กฎเหล็ก — `user_role` ถือ 3 แกน ห้ามเพิ่ม role เมื่อเจอแกนใหม่ (2026-08-06 · คำสั่ง user)
 > `user_role` คอลัมน์เดียวปนกัน 3 เรื่อง ทำให้เข้าใจผิดซ้ำๆ ว่า role = ตำแหน่งงาน:
 > **`scope`** ระดับสิทธิ์/ขอบเขต (admin·manager·supervisor·leader) · **`unit`** หน่วยงาน (mtn·qa·engineer·sale·planner_store·document_control) · **`device`** อุปกรณ์ (display) · **`tier`** ชั้นเสริม (dept_admin — bucket ของ flag)
@@ -300,6 +359,26 @@
 > **2 เกณฑ์นี้ไม่เท่ากันโดยธรรมชาติ** (ข้อมูลจริง 2026-08-05: มี checklist 27 · ลงทะเบียน 7 · **ลงจุดตรวจแล้วแต่ไม่ได้ลงทะเบียน 21** · ลงทะเบียนแต่ยังไม่มีจุดตรวจ 1) — **เป็นเรื่อง data ไม่ใช่ bug ของ logic** (จะให้ไลน์ไหนตรวจเครื่องอะไรทุกกะ เป็นการตัดสินใจของคน **ห้ามให้ระบบลงทะเบียนให้เองอัตโนมัติ**)
 > **แต่ห้ามเงียบ** — ทำให้เห็นทั้ง 2 ทางแล้ว: PM ตรวจสอบ มีบล็อกส้มท้ายลิสต์ "⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน · N เครื่อง" (+รายชื่อ+ลิงก์ไปลงทะเบียน) และรายการที่ลงทะเบียนแต่ยังไม่มีจุดตรวจขึ้น "⚠ ยังไม่มีจุดตรวจ AM" · PM Setup การ์ดเครื่องที่ยังไม่ลงทะเบียนขึ้นชิป "⚠ ยังไม่ได้ลงทะเบียน AM" พร้อมลิงก์
 > **ลำดับที่ถูกต้อง: PM Setup ลงจุดตรวจ → `/daily-checker?tab=pm` ⚙️ ติ๊กลงทะเบียน → เครื่องถึงโผล่ให้ตรวจ**
+>
+> #### ⚠️ กฎเหล็ก — "ชนิดอุปกรณ์" ไม่ได้ล็อกว่า "ใครเป็นคนตรวจ" (2026-08-11 · คำสั่ง user)
+> เลือกชนิดเป็น `Die` **ไม่ได้แปลว่าต้องเป็นทีมแม่พิมพ์ตรวจ** — ฝ่ายผลิตตรวจแม่พิมพ์/จิ๊ก/ปั๊มลมเองในหมวด **AM** ได้ ถ้าตั้งใจให้ตรวจ
+> **`checklists.department` เป็นตัวตัดสินว่าใครตรวจเสมอ · `jigs.equipment_type` เป็นแค่ "ของชิ้นนี้คืออะไร"** (สองแกนตัดกัน ห้ามยุบรวม — หลักเดียวกับ `equipment_kind` vs `equipment_category`)
+> **ตรวจแล้ว 2026-08-11 · 3 หน้าทำถูกอยู่แล้ว:** `PMSetup` (equipment_type เป็น property ของอุปกรณ์ ไม่ผูก department · ลิสต์เพิ่มอุปกรณ์เห็นทั้ง 565 ตัวรวมแม่พิมพ์) · `PMCheckData` (union — "มี checklist ของแผนกนี้" **หรือ** ชนิดตรงกับ `equip_type` default ของทีม) · `PMSchedule` (ยึด checklist ของ department ล้วน)
+> **🔴 `DailyPM` (ทะเบียน AM) ผิด — แก้แล้ว:** `prodOnly` ตัด `equipment_type` jig/die + `equipment_category` facility ออก **แบบตายตัว** → ตั้งจุดตรวจ AM ให้แม่พิมพ์ที่ PM Setup ได้ แต่ **เครื่องไม่มีวันโผล่ในลิสต์ลงทะเบียน = ไม่มีทางให้ operator ตรวจ** · แย่กว่านั้นคือ PMCheckData มีบล็อกส้ม "มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน" **ชี้ทางไปลงทะเบียนที่ลงไม่ได้จริง** = ทางตันที่มองไม่เห็น
+> **กติกา: `amEquipIds` (เครื่องที่มี checklist ของ AM แล้ว) ชนะเงื่อนไขชนิด/หมวดทั้งหมด** — default ยังกรองให้ลิสต์สะอาด แต่สิ่งที่คนตั้งใจตั้งไว้ต้องไม่ถูกกรองทิ้ง · **จุดใหม่ที่กรองอุปกรณ์ด้วย `equipment_type`/`equipment_category` ต้องมีข้อยกเว้นแบบนี้เสมอ**
+>
+> #### ⚠️ จุดตรวจชนิด "ค่าวัด" — โหมดเกณฑ์ต้องเป็น state ห้าม derive จากค่าที่กรอก (2026-08-11 · user ทัก "เลือก max-min กับน้อยกว่าไม่ได้")
+> PM Setup มี 3 โหมดเกณฑ์: `≥ ต่ำสุด` (lsl) · `≤ สูงสุด` (usl) · `ช่วง min–max` (ทั้งคู่) — **DB มีแค่ `jig_checkpoints.lsl`/`usl` ไม่มีคอลัมน์โหมด**
+> เดิม derive โหมดจากค่าที่กรอก → **ล็อกตายอยู่โหมดเดียว**: ตอนเริ่ม lsl/usl ว่างทั้งคู่ = ได้ `gte` เสมอ · กด "≤ สูงสุด"/"ช่วง" แล้วไม่มีอะไรเปลี่ยน (ปุ่มเหมือนกดไม่ติด) · ซ้ำร้าย **โหมด `gte` ซ่อนช่อง usl อยู่ = ไม่มีทางกรอก usl ได้เลย** จึงเข้าโหมดอื่นไม่ได้ตลอดกาล
+> **กติกา: เก็บ `_mmode` เป็น state (client-only ขึ้นต้น `_` ไม่ลง DB — pattern เดียวกับ `_key`/`_frameKey`)** · โหลดจาก DB ค่อย derive ครั้งเดียวตอน map · เปลี่ยนโหมดล้างเฉพาะช่องที่โหมดใหม่ไม่ใช้
+> **ฝั่งหน้าตรวจ (`measureStatus` ใน PMCheckData) รองรับครบ 3 โหมดอยู่แล้ว** (`lsl != null && v < lsl` / `usl != null && v > usl`) — ปัญหาอยู่ที่ฝั่ง setup อย่างเดียว
+> **⚠️ validate ตอนบันทึก (เพิ่ม 2026-08-11):** ชนิดค่าวัด **ต้องมีเกณฑ์อย่างน้อย 1 ช่อง** — ไม่มีเกณฑ์ = `measureStatus` ไม่มีอะไรให้ fail → **จุดตรวจผ่านตลอดกาล แต่จอขึ้นเขียวว่าตรวจแล้ว** (หลอกคนอ่านผล) · และ `min >= max` = NG ตลอด ก็บล็อกเช่นกัน
+>
+> #### ⚠️ รูปหลายมุมของเครื่อง = ของกลาง · หมุดจุดตรวจ = ของแต่ละแผนก (2026-08-11 · user ทัก "ทำไมรูปยังค้างอยู่")
+> `jig_images` (spin 8 มุม) ผูกกับ **ตัวเครื่อง** ทุกแผนกเห็นชุดเดียวกัน — แต่ **`jig_checkpoints.image_id` (หมุดปักอยู่เฟรมไหน) ผูกกับ `checklist` ของแผนก** → **จุดตรวจของแต่ละแผนกอยู่คนละมุมของเครื่องได้** (AM ตรวจด้านหน้า · MTN เปิดตู้ไฟด้านหลัง)
+> **บั๊กที่เจอ:** `showPhoto` เช็คแค่ `frames.length > 0` ไม่ได้เช็คว่ามีจุดตรวจของแผนกที่เปิดอยู่ไหม → เปิดแท็บที่ยังไม่มี checklist **ยังโชว์รูปหมุนมุมที่ 1/8 เปล่าๆ ไม่มีหมุดสักจุด** ดูเหมือนหน้าพร้อมใช้งานทั้งที่ไม่มีอะไรให้ตรวจ (จอกว้างยิ่งหนัก เพราะ 2 คอลัมน์ทำให้รูปกินซ้ายเต็ม)
+> **กติกา: `showPhoto` ต้องมี `checkpoints.length > 0` เสมอ** — ตัวเครื่องยืนยันได้จาก thumbnail บนหัวเรื่องอยู่แล้ว
+> **ห้ามปล่อยให้ทางตัน** — จอว่างต้องบอกด้วยว่า **แผนกไหนมีจุดตรวจของเครื่องนี้อยู่** (`listChecklistsByDept`) เป็นชิปกดสลับแท็บไปดูได้เลย ไม่ใช่ให้ไปไล่กดทีละแท็บเอง
 
 - **AM ฝ่ายผลิต แยกจาก PM หน่วยงานช่าง:** `/daily-pm` = operator/หัวหน้าไลน์เช็คเครื่อง**ผลิต**รายวัน (department `production` + registry `pm_daily_line_targets`) · ลิสต์ลงทะเบียน AM กรองเฉพาะ**เครื่องผลิต** (ตัด `equipment_type` jig/die + `equipment_category` facility/utility ออก — เดิมโชว์ทุกอย่างปนกัน · DailyPM.jsx `prodOnly`) · PM หน่วยงานช่าง (JIG/DIE/MTN) แยกตามส่วนงานที่หน้า PMSchedule/PMCheck/PMSetup ตามปกติ · **1 เครื่องมีได้ทั้ง checklist ผลิตรายวัน + checklist ช่างรายไตรมาส** (คนละ department คนละ checkpoints — pmChecklists key = equipment_id+module+department)
 - **ยึด `checklists.department` เป็นหลักในการแยกทีม** (คำสั่ง user — 1 เครื่องมี PM หลายทีมได้: ผลิตตรวจรายวัน / MTN เข้า PM รายไตรมาส = คนละ checklist คนละ department) · **PMCheckData เดิมกรองด้วย `equipment_type` (jig/die/machine)** ทำให้ของชิ้นเดียวโผล่คนละแท็บกับ PMSchedule → แก้เป็น union: โผล่ใต้ทีม D ถ้า **มี checklist ของ D อยู่แล้ว** (ตรงกับ PMSchedule) **หรือ** ประเภทอุปกรณ์ = `equip_type` default ของทีม (ให้เริ่ม checklist ใหม่ได้) · `clDeptByJig` (jig_id→Set(department)) ใน PMCheckData
@@ -361,9 +440,85 @@
 > **ห้ามเขียนทับประวัติเงียบๆ** และ **เพิ่มฟิลด์ taxonomy ใหม่ที่ใบซ่อมเก็บเป็นชื่อ ต้องมาเติมใน `NAME_CASCADE` ด้วย**
 > (ทางเลือกระยะยาวถ้าอยากเลิกพึ่งข้อความ: เพิ่มคอลัมน์ `*_id` คู่กับ snapshot แล้วให้ KPI จัดกลุ่มด้วย id — ยังไม่ทำ)
 >
-> **เพิ่ม master ใหม่ในระบบช่าง ให้ถามก่อนว่า "ของกลางหรือมุมมองทีม"** — ถ้าเป็นมุมมองทีมต้องมีคอลัมน์ `team` + กรองด้วย `filterByTeam` ตั้งแต่แรก
+> #### ⚠️ กฎเหล็ก — "ใครเห็น" ≠ "ใครเป็นเจ้าของ" ในลิสต์แจ้งซ่อม (2026-08-11 · คำสั่ง user)
+> ความจริงหน้างานที่ทำให้ต้องแยก 2 แกน (เดิมใช้ `team` ตัวเดียวทำทั้ง 2 หน้าที่ = ล็อกแน่นเกินจริง):
+> - **ช่างฝ่ายผลิต (AM) เจอปัญหาก่อนใครเสมอ → ต้องเห็นทุกลักษณะปัญหา/ทุกชนิดอุปกรณ์** — เป็น **กฎในโค้ด** (`SEE_ALL_TEAMS` ใน `mtnTeams.js`) ไม่ใช่ข้อมูล เพราะถ้าให้ไปติ๊กทีละแถวจะตกหล่นแน่
+> - **DIE MTN แยกชัดเจน** — งานแม่พิมพ์ไม่เกี่ยวกับช่างส่วนอื่น
+> - **JIG MTN ↔ MTN ทับซ้อนกัน** — มีแค่ JIG Fixture ที่เป็นของ JIG แน่ๆ เรื่องอื่นทับซ้อนในบางเคส → ต้องระบุ "ทีมอื่นที่เห็นด้วย" ได้รายแถว
+>
+> | คอลัมน์ | ความหมาย | ใช้ที่ |
+> |---|---|---|
+> | `team` | **เจ้าของ — ใครแก้แถวนี้ได้** | `filterByTeam` / `canEditRow` (⚙️ ข้อมูลตั้งต้น) |
+> | `shared_teams text[]` | **ทีมอื่นที่เห็นด้วย (เห็นได้ แก้ไม่ได้)** | `visibleToTeam` / `visibleForTeam` (ฟอร์มแจ้งซ่อม) |
+>
+> **ห้ามยุบ 2 คอลัมน์นี้เป็นตัวเดียว** — ยุบแล้วได้อย่างใดอย่างหนึ่ง: ล็อกแน่นจนผลิตไม่เห็น หรือหลวมจนใครก็แก้ของทีมอื่น
+> **ฟอร์มแจ้งซ่อมต้องใช้ `visibleForTeam` · หน้าจัดการ master ใช้ `filterByTeam`** — สลับกันเมื่อไหร่พังทันที
+> ติ๊กทีมที่เห็นร่วมได้ที่ ⚙️ ข้อมูลตั้งต้น (ปุ่ม 👁 รายแถว) · migration `20260811_mtn_problem_group_and_sharing.sql`
+>
+> **⚠️ ฟอร์มแจ้งซ่อม: เลือกชนิดอุปกรณ์แล้ว "ห้ามเขียนทับทีมที่ user เลือกไว้" (2026-08-19 · feedback "ชนิดอุปกรณ์โชว์มั่ว")** — เดิม `onItem` ตั้ง `mtn_dept = deptForItem(it)` ทุกครั้ง → เลือกทีม JIG แล้วจิ้มชนิด 🌐 ของกลาง ทีมเด้งไป MTN เงียบๆ (ลิสต์ลักษณะปัญหาสลับชุด + ใบเข้าคิวผิดทีม) · กติกา: **เติมทีมให้เฉพาะตอนยังไม่เลือก (fill-if-empty)** · ยังไม่เลือกทีม = dropdown ชนิดจัด **optgroup ตามทีม** (`deptNameOf` + 🌐 ท้ายสุด) ไม่กองรวมปนกัน
+>
+> #### ⚠️ ลักษณะปัญหาเป็น 2 ชั้น: กลุ่มใหญ่ → หัวข้อย่อย (2026-08-11 · feedback ทีมงานหลังลองใช้จริง)
+> *"ลักษณะปัญหาถ้าใส่ทั้งหมดมันเยอะ พนักงานเลือกลำบาก · ช่องรายละเอียดที่กรอก Auto ข้อมูลซ้ำกับช่องเดิม"*
+> — นับจริง: **DIE MTN เห็น 29 ตัวใน dropdown เดียว** (ผลข้างเคียงจากการ seed ลิสต์ให้ครบเมื่อ 2026-08-10)
+> - **`mtn_problem_types.group_name`** = กลุ่มใหญ่ · null = ตกกลุ่ม "อื่นๆ" (ทำงานได้ปกติ ทยอยจัดได้)
+> - **`mtn_orders.problem_group`** ต้องเก็บลงใบด้วย ไม่งั้นพาเรโต้ระดับกลุ่มทำไม่ได้ (KPI จัดกลุ่มด้วยข้อความ snapshot)
+> - **ต้องมีช่องค้นหาข้ามชั้นเสมอ** — ช่างที่แจ้งทุกวันรู้อยู่แล้วว่าจะเลือกอะไร บังคับเลือกกลุ่มก่อน = เพิ่มขั้นตอนให้เขา
+> - **ช่อง "รายละเอียดปัญหา (auto)" ถูกตัดออก** — เดิมเติมค่าจาก `detail` ของ master ซึ่งซ้ำกับช่อง "ระบุรายละเอียด (พิมพ์เอง)" ที่มีอยู่แล้ว
+> - **พาเรโต้ KPI เป็น 2 ระดับ** (กลุ่ม → กดแตกดูหัวข้อย่อย) · ใบเก่าก่อนมีกลุ่ม = "ไม่ระบุกลุ่ม" สีเทา **ห้ามเดากลุ่มย้อนหลังให้**
+> - **insert ใบซ่อม tolerant กับ `problem_group`** (42703 → ตัดคอลัมน์แล้วลองใหม่) — ยังไม่ apply migration ต้องแจ้งซ่อมได้ปกติ
+>
+> #### ⚠️ กฎเหล็ก — master ของทีมช่าง "ใครเป็นเจ้าของ คนนั้นแก้" (2026-08-11 · คำสั่ง user)
+> เดิมใครมีสิทธิ์ `mtn_repair:manage_master` (admin/manager/**ทุกคน role `mtn`**) **แก้ได้ทุกแถวของทุกทีม** — MTN เข้าไปเปลี่ยนชื่อของ DIE MTN ได้ · ลบของ JIG ได้ · แถว 🌐 ของกลางแก้ทีเดียวกระทบทุกทีม (user เทียบกับเคส "แย่งกันตั้งเลข MAT")
+> **กติกาใน `SimpleList` (⚙️ ข้อมูลตั้งต้น):**
+> - แถว **ของทีมตัวเอง** (`profiles.mtn_teams`) → แก้/ลบ/ย้ายทีมได้
+> - แถว **ของทีมอื่น** → อ่านอย่างเดียว (input readOnly + 🔒 ดูอย่างเดียว + tooltip บอกว่าเป็นของทีมไหน)
+> - แถว **🌐 ใช้ร่วมทุกทีม (`team` null)** → **admin/manager เท่านั้น** — แก้ทีเดียวกระทบทุกทีม
+> - **เพิ่มรายการใหม่**: คนทีมเดียวเพิ่มได้แต่ของทีมตัวเอง (dropdown ตัด 🌐 ออก) · สร้างของกลางได้เฉพาะหัวหน้า
+> - **⚠️ fallback บังคับ: user ที่ยังไม่ได้ตั้ง `mtn_teams` = ไม่ล็อก** (แสดงแถบเตือนแทน) — ไม่งั้นวันที่ deploy ช่างที่ยังไม่ถูกตั้งทีมจะแก้อะไรไม่ได้ทั้งระบบ · ตั้งทีมที่ `/add-user`
+> - **เปลี่ยนทีมของแถว = confirm เสมอ ห้ามเงียบ** — ของหายจากลิสต์ทีมเดิมทันที (เคสจริง: ติ๊กของเดิมเป็น JIG แล้วทีม MTN เหลือชนิดอุปกรณ์ตัวเดียว)
+> - **`cascadeRename` บอก breakdown รายทีม** (ใบไหนของทีมไหน) + เตือนพิเศษเมื่อกระทบหลายทีม — เขียนทับประวัติข้ามทีมคือความเสี่ยงที่แรงที่สุดของหน้านี้
+> - **ที่กันไว้อยู่แล้ว:** ลบ = soft delete (`is_active=false` ใบเก่ายังอ่านออก กู้ได้) · `mtn_item_types`/`mtn_problem_types`/`mtn_spare_categories` อยู่ใน `DR_AUDIT_TABLES` → `audit_log` รู้ว่าใครแก้
+> - **📜 แท็บ "ประวัติการแก้ไข" ใน ⚙️ ข้อมูลตั้งต้น (2026-08-11)** — `MasterAuditLog` อ่าน `audit_log` ฝั่ง DR (300 รายการล่าสุด · กรองตามตาราง) โชว์ **ใคร/เมื่อไหร่/ค่าเก่า → ค่าใหม่** รายฟิลด์ · actor มาจาก `updated_by_name` ที่ wrapper ใน `supabaseClient.js` ฝังให้ (DR เป็น anon ไม่มี `auth.uid()`) · เพิ่มตาราง master ใหม่เข้าแท็บนี้ = เติมใน `AUDIT_TABLES` + ต้องอยู่ใน `DR_AUDIT_TABLES` ด้วย
+>
+> - **ใช้กติกาเดียวกันแล้วที่ `TaxonomyManagerModal`** (ประเภทจุดตรวจ/วิธีตรวจ ใน PM Setup — `pm_checkpoint_categories`/`pm_checking_methods` ก็มีคอลัมน์ `team`) · รับ prop `role` + `myTeams` (จาก `teamsForUser`) · **จุดใหม่ที่ reuse component นี้กับตารางที่มี `team` ต้องส่ง 2 prop นี้ด้วย** ไม่งั้นกลับไปแก้ข้ามทีมได้เหมือนเดิม
+>
+> **เพิ่ม master ใหม่ในระบบช่าง ให้ถามก่อนว่า "ของกลางหรือมุมมองทีม"** — ถ้าเป็นมุมมองทีมต้องมีคอลัมน์ `team` + กรองด้วย `filterByTeam` + **ล็อกตามเจ้าของแบบเดียวกัน** ตั้งแต่แรก
 > **`teamForItem(name, itemRows)` เป็น data-driven แล้ว** — อ่าน `mtn_item_types.team` ก่อน แล้วค่อย fallback เดาจากชื่อ (JIG→JIG MTN ฯลฯ) ที่ hardcode ไว้เดิม
 > **⚠️ backfill เป็น `null` ทั้งหมดโดยตั้งใจ = ทุกทีมยังเห็นทุกแถวเหมือนก่อน apply** — การไล่ติ๊กว่าแถวไหนของทีมไหนเป็นงาน "จัดข้อมูล" ทำผ่าน UI ไม่เดาให้ใน migration
+>
+> #### ⚠️ ลิสต์ตั้งต้นของระบบแจ้งซ่อมเป็นของ JIG MTN ล้วน — ทีมใหม่ต้อง seed ลิสต์ของตัวเอง (2026-08-10)
+> `mtn_item_types` / `mtn_problem_types` ที่ seed ไว้ตอนแรก (`20260714_mtn_work_order.sql`) **ยกมาจากระบบ AppSheet ของ JIG MTN ทั้งดุ้น** — ชนิดอุปกรณ์ 7 ตัวเป็น JIG/ROBOT/CONVEYOR/NUT FEEDER · ลักษณะปัญหา 21 ตัวเป็นเรื่อง jig fixture/โรบอท/เซนเซอร์
+> → **ทีม DIE MTN เปิดฟอร์มแจ้งซ่อมแล้วไม่มีอะไรตรงกับงานตัวเองเลย** (ทีมงานแจ้งเข้ามาเอง 2026-08-10) · ทีม MTN (เครื่องจักร) ก็มีอาการเดียวกัน — ยังไม่มีลิสต์มอเตอร์/อินเวอร์เตอร์/ระบบไฮดรอลิก
+> - **แม่พิมพ์ seed แล้ว** — `20260810_mtn_die_master_lists.sql` (DR): ชนิดอุปกรณ์ 5 (DIE TANDEM/PROGRESSIVE/TRANSFER/SINGLE/SET — **ขึ้นต้น "DIE" ทุกตัว** เพื่อให้ `teamForItem` fallback เดาทีมถูกแม้คอลัมน์ team ยังไม่ apply · ชนิดอิง `die_sets.kind` ที่มีจริง) + ลักษณะปัญหา 22 (คมตัด → อาการที่ชิ้นงาน → การไหลของเศษ → ชิ้นส่วนกลไก → ระบบประกอบ) ทั้งหมด `team='die_maintenance'`
+> - **ไม่ seed "อื่นๆ" ซ้ำ** — ใช้แถว `อื่นๆ` เดิมที่เป็น common ร่วมกัน ไม่งั้นทีมเดียวเห็น "อื่นๆ" สองตัว
+> - **⚠️ seed อย่างเดียวยังไม่พอที่จะให้ลิสต์สั้นลง** — แถวเดิม 28 ตัวยัง `team=null` (common) จึงติดมาในลิสต์ทุกทีมเสมอ (user เปิดฟอร์มจริงแล้วเจอ: เลือก DIE MTN ยังขึ้น JIG/ROBOT/STATIONARY ครบ) → **`20260810_mtn_split_lists_by_team.sql` (apply แล้ว 2026-08-10)** ติ๊กของเดิมเป็น `jig_maintenance` + seed ลิสต์ทีม MTN (เครื่องจักร 9 ชนิด · ปัญหา 13)
+>   - **⚠️ 2 ก้อนนี้ต้องรันคู่กันเสมอ ห้ามรันก้อนติ๊กอย่างเดียว** — โยน JIG/ROBOT/STATIONARY/NUT FEEDER ไปเป็นของ JIG แล้ว **ทีม MTN เหลือชนิดอุปกรณ์แค่ `CONVEYOR` ตัวเดียว** ซึ่งเป็น required field = แจ้งซ่อมเครื่องจักรไม่ได้เลย · **ติ๊กของทีมหนึ่ง = ต้องเช็คเสมอว่าทีมที่เหลือยังมีของพอใช้ไหม**
+>   - คงเป็น 🌐 ของกลางโดยตั้งใจ: `CONVEYOR` · เซนเซอร์ชำรุด · กระบอกลม · ลมรั่ว · ระบบไฟฟ้า · เครื่องมาร์ค · Poka-yoke · อื่นๆ (เจอได้ทุกทีม — ผูกทีมใดทีมหนึ่งไม่ได้)
+>   - ผลหลัง apply: DIE MTN เห็น 6 ชนิด · JIG MTN 7 (เท่าเดิม ไม่มีอะไรหาย) · MTN 10
+>
+> #### ⚠️ ช่อง "หมายเลขเครื่อง" ในฟอร์มแจ้งซ่อม ต้องแยกตามชนิดอุปกรณ์ (2026-08-10)
+> **บั๊กที่เจอจริง:** เลือกทีม DIE MTN + ชนิดอุปกรณ์ `DIE SINGLE` แล้วช่องหมายเลขเครื่อง**ขึ้นแต่เครื่องจักร** (`HDF-01`) ไม่มีแม่พิมพ์ให้เลือกเลย — ต้นเหตุ 2 ชั้น:
+> 1. `loadMasters` **ไม่ได้ select `equipment_kind`** → แยกแม่พิมพ์ (262) ออกจากเครื่องจักร (214) ไม่ได้ ทั้งที่อยู่ตาราง `machines` เดียวกัน
+> 2. `lineMachines` กรอง `m.line_name === f.line_name` เสมอ แต่ **แม่พิมพ์ผูก `line_name` เป็นชื่อกลุ่มเครื่องปั๊ม** (`LINE A ( 800 Ton )`) ซึ่ง**ไม่มีใน `production_lines`** → กรองด้วยไลน์ที่เลือกในฟอร์มไม่มีวันเจอแม่พิมพ์
+>
+> **กติกา:** `wantDie` (ชนิดอุปกรณ์ขึ้นต้น `DIE` · หรือทีม `die_maintenance` ตอนยังไม่เลือกชนิด) → ลิสต์ **แม่พิมพ์ทั้งหมด ไม่กรองไลน์** (แม่พิมพ์ถอดย้ายเครื่องได้ ไลน์ไม่ใช่ตัวจำกัด) + label เปลี่ยนเป็น "หมายเลขแม่พิมพ์ (N ตัว · ทุกไลน์)" · ไม่ใช่งานแม่พิมพ์ → **ตัด `die` ออกจากลิสต์เครื่องจักร** (เดิมปนกันมาตลอด) · ทะเบียนว่าง = เตือนสีส้มชี้ไป `/die-registry` ไม่ปล่อยเงียบ
+> **จุดใหม่ที่มี picker เลือกอุปกรณ์ ต้องถามก่อนว่า "ชนิดไหน" แล้วกรองด้วย `equipment_kind` — ห้ามกรองด้วย `line_name` อย่างเดียว** (สมมติฐาน "อุปกรณ์ผูกกับไลน์" ใช้ไม่ได้กับแม่พิมพ์)
+> - **เพิ่มลิสต์ให้ทีมใหม่ ทำที่ `/mtn-repair` → ⚙️ ข้อมูลตั้งต้น ได้เลยไม่ต้องแก้โค้ด** (SimpleList มีตัวกรองทีม + ติ๊กทีมรายแถว) — migration ใช้เมื่อ seed ก้อนใหญ่ทีเดียว
+
+> ### ⚠️ กฎเหล็ก — "ชนิดอุปกรณ์" เป็น **แกน** ไม่ใช่ **ตาราง** · แยกหน้าจอได้ ห้ามแยกฐานข้อมูล (2026-08-10)
+> **ปัญหาที่เจอ:** `machines` มี 505 แถว active แต่ **262 แถวเป็นแม่พิมพ์ ไม่ใช่เครื่องจักร** (คีย์ปนกันมาตั้งแต่ต้นเพราะไม่เคยมีแกน "ชนิด") → ทะเบียนเครื่องจักรอ่านไม่รู้เรื่อง · dropdown เลือกเครื่องมีแม่พิมพ์ปน · สถิติจำนวนเครื่องผิด
+> **คำถามที่ถูกถามและคำตอบ: "แยกเป็น 3 ตาราง machines/jigs/dies ดีไหม" → ไม่**
+> `machines` เป็น **ตารางตัวตนของอุปกรณ์** อยู่แล้ว — `machine_no` unique และ **MO / downtime / prod_orders / QR / ผังเครื่องจักร อ้างเลขนี้รวม 12+ ตาราง** · แยกตาราง = ทุกตารางที่อ้างอุปกรณ์ต้อง polymorphic (`equipment_type + equipment_id`) + QR ต้องมี prefix ต่อชนิด + **ทำลายหัวใจของระบบซ่อมบำรุงรวมคือ "เปิดอุปกรณ์ตัวนี้ เห็นประวัติทั้งหมด"**
+> → ใช้โมเดล **SAP PM / Maximo: 1 ตัวตน + แกนชนิด + ตารางส่วนขยายต่อชนิด**
+> - **`machines.equipment_kind`** (`machine`/`die`/`jig`/`facility` · null = machine) — source of truth `src/utils/equipmentKinds.js`
+> - **⚠️ คนละแกนกับ `equipment_category`** (`production`/`facility` = **ที่ตั้ง/การใช้งาน**) — เครื่องจักรอยู่ facility ได้ · แม่พิมพ์อยู่ production **สองแกนตัดกัน ห้ามยุบรวม**
+> - **ส่วนขยายต่อชนิด:** `equipment_die` (1:1 กับ machines — `machine_id` เป็นทั้ง PK และ FK · OP/ตัน/shot/regrind) · ชนิดอื่นเพิ่มตารางส่วนขยายแบบเดียวกัน **ห้ามยัดคอลัมน์เฉพาะชนิดลง `machines`**
+> - **`die_sets`** = ชุดแม่พิมพ์ (**1 พาร์ท = 1 ชุด**) · `kind` tandem/progressive/transfer/single · `pieces_per_stroke` (งานคู่ LH/RH = 2 — ต่อกับกฎ SCADA "1 stroke ≠ 1 ชิ้น") · `mat_no` โยง Product Master
+> - **`die_op_types`** = master กระบวนการ (13 ค่า data-driven) — เพิ่มกระบวนการใหม่ไม่ต้องแก้โค้ด
+> - **แยก "หน้าจอ" ได้เต็มที่:** `/machine-database` default กรอง `equipment_kind='machine'` · `/die-registry` เป็นมุมมองแม่พิมพ์ — **แยกหน้าจอ ≠ แยกฐานข้อมูล**
+> - **`jigs.equipment_type` ของ "แถวเงา" ต้อง derive จาก `machines.equipment_kind` เสมอ** (`jigEquipTypeOf`) — เดิมตั้งอิสระจากเครื่องจริงจนเพี้ยน (เครื่องอัดลม/คูลลิ่งทาวเวอร์ 9 ตัวกลายเป็น `jig`)
+> - **backfill 2026-08-10:** machine 214 · die 262 · facility 29 · ไม่ระบุ 0 · ชุดแม่พิมพ์ 92 (tandem 52 · progressive 26 · single 14) ผูกแล้ว 259/262 — เลือก **"ติดป้าย" ไม่ใช่ "ย้ายตาราง"** reference ทุกเส้นยังอยู่ครบ rollback ง่าย · **ฟิลด์ที่แกะจากชื่อไม่ออกปล่อยว่าง ห้ามเดา** (ยังไม่ระบุตัน 180 · ไม่ระบุ OP 49 · ไม่ระบุกระบวนการ 90) → เป็น worklist ในหน้า `/die-registry` ไม่ใช่ bug
+> - migration: `20260810_equipment_kind_and_die_master.sql` · `20260810_backfill_dies_from_machines.sql` · `20260810_sync_shadow_jig_equipment_type.sql` (**apply แล้วทั้งหมด 2026-08-10**)
 
 ### Direct / Indirect Labor + รวมช่างเข้าฐานพนักงาน (2026-07-22)
 
@@ -417,14 +572,73 @@
 - `admin` bypass เสมอ (return true ทันทีไม่ query cache) กันกรณี config ผิดจนตัวเองเข้าไม่ได้
 - แก้ได้จากหน้า `/permissions` (`src/pages/PermissionsManagement.jsx`) — ตาราง matrix role × permission key, toggle แล้ว upsert ทันที
 - permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `resource:action` สำหรับสิทธิ์ทำงานในหน้า (เช่น `products:create`, `oee:set_target`) — โหลดจาก `permission_catalog` แสดงในแท็บ "สิทธิ์การทำงาน"
+- **⚠️ กฎเหล็ก — เพิ่มหน้า/สิทธิ์ใหม่ ต้องลง "ทะเบียน" ด้วย ไม่งั้น admin ปรับจาก UI ไม่ได้เลย (audit 2026-08-06):** `role_permissions` เก็บ**ค่า** แต่ตัวที่ทำให้ "โผล่ให้ติ๊ก" ในหน้า `/permissions` เป็นคนละที่ — seed แถวอย่างเดียวไม่พอ:
+  - **หน้าใหม่** → เพิ่ม `{ key: 'page:/xxx', label: '...' }` ใน **`PAGE_GROUPS`** (`src/pages/PermissionsManagement.jsx`) **ในคอมมิทเดียวกับที่เพิ่ม route** · ไม่เพิ่ม = สิทธิ์ล็อกตามที่ seed ไว้ ปรับไม่ได้ (audit 2026-08-06 เจอค้าง 8 หน้า: `/qr-labels` `/dept-dashboard` `/group-overview` `/adoption-outlook` `/energy` `/pe-docs` `/vsm` `/die-registry` — เปิดให้ทุก role แต่ปิดไม่ได้)
+  - **action ใหม่** → insert แถวใน **`permission_catalog`** ด้วย · ไม่ insert = ไม่ขึ้นในตาราง (เคยตกหล่น 8 key: `lpa:*` 3 · `ojt:*` 2 · `doc_forms:manage` · `pm_coord:manage` · `transport:manage` — แก้แล้ว migration `20260806_permission_catalog_gaps.sql`)
+    - ⚠️ **คอลัมน์คือ `resource` + `action` แยกกัน ไม่ใช่ `permission_key`** (key ที่โค้ดเช็คคือ `resource:action` ที่ประกอบขึ้นตอน runtime) · เขียน insert ผิดคอลัมน์ = error 42703
+    - ⚠️ **`group_name` ต้องเป็นชื่อหมวดตาม `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด** (ภาพรวม 1xx · ฝ่ายผลิต 2xx · วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic 5xx · ซ่อมบำรุง 6xx · QA/QC 7xx · PE 8xx · ตั้งค่า 9xx — เลือกเลขที่ยังว่าง ห้ามซ้ำ) — พิมพ์ชื่อหมวดเอง = หมวดกำพร้าโผล่กลางตาราง (audit 2026-08-19 เจอ 'ซ่อมบำรุง'/'ประชุมแถวเช้า' เป็นหมวดเดี่ยว + sort ชนกัน 8 คู่ → จัดใหม่ทั้งตารางด้วย migration `20260819_permission_catalog_regroup.sql` **apply แล้ว 2026-08-19** — cosmetic ล้วน ไม่แตะ role_permissions · ผลตรวจ: 9 หมวด 89 แถว ตรงเป๊ะ) · **`PAGE_GROUPS` ใน PermissionsManagement.jsx ต้อง mirror `NAV_ITEMS` เสมอ** (หมวด/ลำดับ/ชื่อ — เพิ่มหน้าใหม่แก้ 2 ที่ให้ตรงกัน) · QC checklist ข้อ C6
+  - **ลงทะเบียนแล้วยังไม่จบ** — กับดัก `enum_range` (ดูย่อหน้าถัดไป) ทำให้ role ที่เพิ่มทีหลังไม่มีแถว ต้องไปติ๊กที่ `/permissions` เองอยู่ดี
+  - **ห้ามใส่ key ลงทะเบียนโดยที่โค้ดไม่เรียกใช้** — ติ๊กแล้วไม่มีผล คนตั้งค่างง (ลบ `org:manage`/`users:manage`/`permissions:manage` ออกแล้ว — 3 หน้านั้นคุมด้วย `page:*` + admin-only พอ)
+  - **คอลัมน์ 🛡️ แอดมินหน่วยงาน โผล่เฉพาะแท็บ "สิทธิ์การทำงาน"** (`PAGE_COLS` กรอง `bucket` ออกจากแท็บหน้า) เพราะ `hasPermission()` บล็อก `page:*` ของ bucket ไว้ — ติ๊กในแท็บหน้าไม่มีผลจริง **ห้ามเอาคอลัมน์นี้กลับเข้าแท็บการเข้าถึงหน้า**
+  - **ตรวจว่าครบไหม:** เทียบ key ที่โค้ดเรียก (`can('x','y')` / `canDelete` / `hasPermission` — ระวัง call แบบ dynamic เช่น `approve_${role}` ใน EventLog และ `STEP_PERM[step]` ใน MtnRepair) กับ `permission_catalog` และเทียบ `NAV_ITEMS` กับ `PAGE_GROUPS`
 - **🛡️ แอดมินหน่วยงาน (Department Admin) — 2 ชั้นต่อหน่วยงานสนับสนุน (2026-08-03 · คำสั่ง user):** แยก "คนใช้งาน" (ดู/ใช้ แต่แก้ไม่ได้) ออกจาก "แอดมินหน่วยงาน" (แก้ master/ตั้งค่า/อนุมัติ — เฉพาะ scope หน่วยงานตัวเอง ไม่ใช่ admin ระบบ) โดย**ไม่เพิ่ม role รายหน่วยงานเป็นสิบตัว**
   - **โมเดล = flag ต่อ user** `profiles.is_dept_admin` (migration `20260803_dept_admin.sql`) ซ้อนบน role เดิม · role เดิม (mtn/qa/sale/planner_store/supervisor/leader...) = **ชั้น user** · ติ๊ก flag = **ชั้นแอดมินหน่วยงาน**
   - **กลไก:** `dept_admin` เป็น **"bucket สิทธิ์" ใน `role_permissions`** (เพิ่มใน enum `user_role` แต่**ไม่ assign เป็น base role ให้ใคร**) · `permissions.js` module-level `_deptAdmin` (ตั้งจาก `App.jsx fetchProfile` ผ่าน `setDeptAdmin` เหมือน `setDrActorName`) → `hasPermission(key, role)` เช็ค base role ก่อน **แล้ว fallback bucket `dept_admin:${key}`** ถ้า flag เปิด — **ไม่ต้อง thread flag ผ่าน `can()` หลายร้อยจุด** · bucket มีเฉพาะ **action (ไม่มี `page:*`)** → ไม่ปลดล็อกหน้าใหม่ (แอดมินหน่วยงานเห็นหน้าตาม base role เท่านั้น) — **บังคับในโค้ดแล้ว** (`hasPermission` ข้าม bucket เมื่อ key ขึ้นต้น `page:` · QC audit 2026-08-03 — เดิมพึ่งความถูกต้องของ seed อย่างเดียว ซึ่งเสี่ยงเพราะ migration หน้าใหม่ที่ seed ด้วย `enum_range` จะแจก `page:*` ให้ทุก role ในอีนัมรวม `dept_admin`) · scope ยังจำกัดตาม section/ทีมของ base role
   - **ตั้งค่า "แอดมินหน่วยงานทำอะไรได้" ที่ `/permissions` คอลัมน์ 🛡️ แอดมินหน่วยงาน** (data-driven · seed default = action ทั้งหมดที่ manager ทำได้) · **ติ๊ก flag ที่ `/add-user`** (checkbox "เป็นแอดมินหน่วยงาน" โผล่ทุก role ยกเว้น admin/display · เขียน best-effort เหมือน mtn_teams) · `roleMeta.js`: `dept_admin` มี `bucket:true` → `ROLE_OPTIONS` (ตัวเลือก base role) ตัดออก, `PERMISSION_COLUMN_ROLES` รวมไว้เป็นคอลัมน์
   - **ผล:** เช่น planner_store (base role ไม่มี `products:edit`) เข้า Product Master/Kanban Std ได้แต่เดิม**แก้ไม่ได้** (ปุ่ม ✏️ แก้ไข gate ด้วย `can('products','edit')`) → ติ๊กแอดมินหน่วยงาน = ปุ่มแก้โผล่ · **จุดใหม่ที่อยากให้แยก user/แอดมิน ให้ gate ด้วย `can(resource,action)` ตามปกติ** — flag จัดการ tier ให้เอง
   - **ยังไม่ทำ (phase 2):** "จัดการ user ในหน่วยงานตัวเอง" (เพิ่ม/แก้ user รายหน่วยงาน) — ต้องแก้ Edge Function `create-user`/`delete-user` (ตอนนี้ admin-only) · ตอนนี้แอดมินหน่วยงานได้ครบ **แก้ master/config + อนุมัติ workflow** แล้ว
+  - **⚠️ แท็บ "การเข้าถึงหน้า" ห้ามมีคอลัมน์ `dept_admin` (2026-08-06 · user รายงานว่างง):** `hasPermission` บล็อก `page:*` ของ bucket ไว้ในโค้ดอยู่แล้ว → ช่องติ๊กในแท็บนั้นเป็น**ช่องตาย ติ๊กแล้วไม่มีผล** แต่หน้าจอไม่บอก คนตั้งค่าเลยเข้าใจว่า "ตั้งแอดมินหน่วยงานแล้วน่าจะเข้าหน้าได้" · `PermissionsManagement.jsx` แยก `PAGE_COLS = ROLES.filter(r => !r.bucket)` ให้แท็บหน้าใช้ (`renderPermTable(groups, label, cols)`) + แถบอธิบายว่าต้องติ๊กที่ **base role** ก่อนเสมอ แล้วค่อยเพิ่มอำนาจที่แท็บ action · **เพิ่ม bucket ใหม่ในอนาคตต้องคง filter นี้ไว้**
+
 - **legacy `manage_master_data` เกษียณแล้ว (2026-07-22)** — สวิตช์รวมเก่า (แทน `['admin','manager','supervisor'].includes(role)` hardcode ~10 ไฟล์) ถูกแตกเป็นสิทธิ์ย่อยครบแล้ว: `oee:set_target` (ปุ่ม 🎯 ตั้งเป้า OEE) · `ot_master:manage` (Report แผงจองรถ OT — สายรถ/งาน OT) · `management:assign_manpower` (ลากจัดกำลังคนบนผัง) · seed default = admin/mgr/sv เท่าเดิม (พฤติกรรมไม่เปลี่ยน) · migration `20260722_retire_manage_master_data.sql` · แถว `manage_master_data` เดิมใน role_permissions คงไว้แต่ไม่มีโค้ดอ่านแล้ว (เผื่อ rollback) — **ห้ามผูกฟีเจอร์ใหม่กับ manage_master_data อีก**
 - **ต่างจาก scoping ตาม section/line/team** (ด้านล่าง) — permission ตอบว่า "เข้าหน้านี้ได้ไหม/ทำ action นี้ได้ไหม" ส่วน scoping ตอบว่า "เห็นข้อมูลแถวไหนบ้าง" สองเรื่องนี้แยกกันคนละกลไก
+
+> #### ⚠️ กฎเหล็ก — RLS ก็ต้อง data-driven: เช็คสิทธิ์ด้วย `has_perm('<key>')` ห้าม hardcode role array ใน policy (2026-08-17)
+> UI อ่าน `role_permissions` แต่ **RLS บาง policy ยัง hardcode รายชื่อ role ไว้ใน DB** → 2 ฝั่ง drift กันแล้ว**เพี้ยนได้ 2 ทางสวนกัน** และ build/lint จับไม่ได้เลย (เป็น runtime ฝั่ง DB):
+> - **UI ให้ แต่ DB ปฏิเสธ** = ปุ่มโผล่ กดแล้วเด้ง error 42501 (`new row violates row-level security policy`)
+> - **UI ซ่อน แต่ DB อนุญาต** = ช่องโหว่ ยิง API ตรงได้ทั้งที่ `role_permissions` ปิดไว้
+>
+> **เคสจริงที่เจอ (`employee_skills`):** policy เดิมเช็ค `role = any(['admin','manager','supervisor','leader'])` ขณะที่ `role_permissions` บอกว่า `mtn` มี `skills:edit`=true และ `leader`=false → ช่าง MTN **เพิ่มสกิลให้ช่างด้วยกันไม่ได้เลย** (พนักงานสนับสนุน MTN/DIE MTN 18 คน ยังไม่มีสกิลสักแถว) ส่วน leader กลับเขียนได้ผ่านแผงในโมดัลแก้ไขพนักงาน — ขัดกับระบบ farm+ด่านอนุมัติที่ตั้งใจย้ายไปฝั่ง server แล้ว
+>
+> - **ใช้ `public.has_perm(perm_key text)`** (Main · SECURITY DEFINER · mirror ของ `hasPermission()` ใน `permissions.js`: admin bypass → `role_permissions` ของ base role → bucket `dept_admin` ที่**ห้ามปลดล็อก `page:*`**) · migration `20260817_employee_skills_rls_data_driven.sql`
+> - **⚠️ ห้ามเปลี่ยนชื่อพารามิเตอร์ `perm_key`** — มี 21 policy ฝั่ง QA อ้างอยู่ (`qa_parts`/`qa_ncr`/`qa_capa`/`qa_measurements`/`qa_inspection_*`/`qa_characteristics`/`qa_instruments`/`qa_part_drawings`) · เปลี่ยนแล้วได้ error 42P13 ต้อง `drop function` ก่อน ซึ่งจะพา policy ตกไปด้วย → **ใช้ `create or replace` เสมอ**
+> - **policy ที่ต้องการหลาย key ให้ `or` กัน** (`employee_skills` = `skills:edit` ∨ `skills:approve_levelup` ∨ `skills:delete`) แล้วปรับต่อที่ `/permissions` ได้เลยไม่ต้องเขียน migration ใหม่
+> - **⚠️ RLS ปฏิเสธ UPDATE/DELETE = 0 rows ไม่ error** (เงียบ!) มีแต่ INSERT/upsert ที่โยน 42501 → **โค้ดที่เขียนตารางซึ่งคุมด้วย RLS ต้อง gate ด้วย `can()` ฝั่ง UI ให้ตรงกับ policy ด้วย** อย่าหวังพึ่ง error
+> - **ผลของการแก้ (วัดกับผู้ใช้จริง):** ได้สิทธิ์เพิ่ม mtn 8 + planner_store(dept_admin) 1 · **เสียสิทธิ์ leader 17 คน** (ตรงตามที่ `role_permissions` ตั้งไว้)
+> #### ⚠️ สิทธิ์แก้คะแนนทักษะแบ่ง 3 ชั้น ห้ามยุบเป็นสวิตช์เดียว (2026-08-18 · คำสั่ง user)
+> | key | ครอบอะไร | ผู้ถือ (seed) |
+> |---|---|---|
+> | `skills:edit` | แก้คะแนนสกิลทั่วไป | admin · dept_admin · **leader** · manager · mtn · sale · supervisor |
+> | **`skills:edit_high`** | ตั้งคะแนน **เกิน 50** (ระดับแก้ปัญหาได้/ผู้เชี่ยวชาญ) | ผู้ถือ `skills:edit` ทุก role **ยกเว้น leader** |
+> | **`skills:edit_allowance`** | ติ๊ก **ใบเซอร์ค่าฝีมือ** (`category='allowance_skill'` → score 100) | admin · manager · supervisor · dept_admin (**ระดับหัวหน้าแผนกขึ้นไป**) |
+>
+> - **เหตุผลที่แยก:** หัวหน้ากลุ่มควรตั้งคะแนนลูกทีมได้ถึงระดับ "มาตรฐาน" (50) แต่ระดับสูงกว่านั้นควรผ่านคนที่สิทธิ์สูงกว่า · ส่วนใบเซอร์ค่าฝีมือ **กระทบเงิน** จึงแคบสุด (user สั่ง "ค่าฝีมือ ต้องหัวหน้าแผนก" · ยืนยันให้คุมด้วย **role** ไม่ใช่ `profiles.position`)
+> - **บังคับ 2 ชั้นเสมอ — UI + RLS** (`employee_skills_write` WITH CHECK): `score <= 50 or has_perm('skills:edit_high')` และแถวหมวดค่าฝีมือต้องมี `skills:edit_allowance` · **UI อย่างเดียวไม่พอ ยิง API ตรงข้ามได้**
+> - **เพดานอยู่ที่ `SKILL_EDIT_CAP` (`src/utils/skillLevels.js`) จุดเดียว** — แก้ค่านี้ต้องแก้ policy ให้ตรงกันด้วย ไม่งั้น UI ปล่อยผ่านแล้วโดน DB ตีกลับ
+> - **⚠️ WITH CHECK ที่ไม่ผ่าน = error 42501 ดังๆ** (ต่างจาก USING ที่เงียบเป็น 0 แถว) → UI ต้อง gate ให้ตรง + แปลง error เป็นภาษาคน **ห้ามโยน error ดิบใส่หน้างาน**
+> - **สกิลที่คะแนนเดิมเกินเพดานของผู้ใช้ = ล็อกช่อง ไม่ให้แตะเลย** (กันเผลอกดคะแนนคนลง และถึงแก้ก็โดนตีกลับ) · ตอนบันทึกก็ข้ามแถวพวกนี้ ไม่ส่งให้ DB ปฏิเสธ
+> - **⚠️ ไม่กระทบ EXP farm อัตโนมัติ** — `fn_daily_skill_farm`/`fn_weekly_skill_update` เป็น SECURITY DEFINER (bypass RLS) → คะแนนจากการทำงานจริงยังขึ้นเกิน 50 ได้ตามด่านอนุมัติเดิม · **เพดานนี้คุมเฉพาะ "การพิมพ์คะแนนใส่เอง"** ซึ่งเป็นจุดที่ข้ามด่านอนุมัติได้
+> - **⚠️ ผู้อนุมัติ level-up (admin/manager/supervisor) ได้ `edit_high` ครบ** → กด approve ขึ้น 75/100 ได้เหมือนเดิม (flow นั้นเขียน `employee_skills` จาก client จริง ถ้าลืมจะพังเงียบ)
+> - **role ที่เพิ่มทีหลังไม่มีแถว = ถูกจำกัด (fail-safe ฝั่งแคบกว่า)** · migration `20260818_skills_edit_cap.sql` + `20260818_skills_allowance_permission.sql` (**apply แล้ว**)
+> - **เทสแล้วกับ RLS จริง** (สวมบท `authenticated` — รันเป็น service role จะ bypass RLS แล้วหลอกว่าผ่าน): leader→50 ผ่าน · leader→75 บล็อก 42501 · supervisor→75 ผ่าน · ค่าฝีมือ: leader/mtn บล็อก · supervisor ผ่าน
+>
+> - **✅ คืนสิทธิ์ leader แล้ว 2026-08-17 (คำสั่ง user "ให้หัวหน้ากลุ่มทำได้แหละ")** — `leader × skills:edit = true` (migration `20260817_employee_skills_audit.sql`) มีผลทั้ง UI และ RLS ทันทีไม่ต้อง deploy · **เปิดสิทธิ์คู่กับการทำ audit log ให้มีจริงก่อน** (user เข้าใจว่ามี log อยู่แล้ว ซึ่งตอนนั้น**ยังไม่มี**) — ดูหัวข้อ Traceability
+> - **policy อื่นที่ยัง hardcode role array อยู่ ให้ทยอยย้ายมาใช้ `has_perm()`** เมื่อไปแตะตารางนั้น
+>
+> #### ⚠️ กฎเหล็ก — "เห็นได้ทั้งโรงงาน แต่แก้ได้เฉพาะส่วนงานตัวเอง" ห้ามใช้ `profiles.sections` ทำ (2026-08-17)
+> **`sections` เป็น scope ระดับทั้งระบบ ไม่ใช่ตัวกรองเฉพาะหน้าพนักงาน** — หน่วยงานสนับสนุน (คลัง/สโตร์ = section `Planning&Store`) **ไม่มีไลน์ผลิตสังกัดอยู่เลย** → ตั้ง `sections=['Planning&Store']` เมื่อไหร่ หน้าที่กรองด้วย section (**StoreMonitor · PlannerSales · RundownStock · Dashboard · Report**) เหลือ **0 แถวทันที** = พังงานประจำวันของเขาเอง แลกกับการซ่อนรายชื่อพนักงานฝ่ายผลิต
+> - **กลไกที่ถูก: คีย์ `employees:edit_all_sections`** (migration `20260817_sale_role_employee_management.sql`) — role ที่ **มี** = แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม) · **ไม่มี** = ปุ่ม ✏️/🚫 + แผงระดับทักษะ เปิดเฉพาะแถวที่ `employees.section` ตรงกับ **`profiles.section` (คอลัมน์เดี่ยว)** ของผู้ใช้ แถวอื่นขึ้น 🔒
+> - **ใช้ `profiles.section` เดี่ยว ไม่ใช่ `sections[]` โดยตั้งใจ** — `effectiveSections()` ข้อ 5 บอกว่า "role อื่นที่มีแค่ section เดี่ยว → ไม่จำกัด" → **scope ทั้งระบบคงเดิมเป๊ะ** ได้ค่า "ส่วนงานของฉัน" มาใช้ฟรีๆ · **ห้ามเผลอย้ายค่านี้ไปใส่ `sections[]`**
+> - seed = ทุก role ที่เคยแก้ได้ `true` → **พฤติกรรมเดิมไม่เปลี่ยนสำหรับใครเลย** · UI เช็คผ่าน `isActionSeeded()` → ก่อน apply migration ทุก role แก้ได้หมดเหมือนเดิม (pattern เดียวกับ `canDelete()`)
+> - **role ใหม่ที่ยังไม่มีแถว = ถูกจำกัดตามส่วนงาน (fail-safe ฝั่งแคบกว่า)** — ถ้า role ใหม่ต้องแก้ข้ามส่วนงาน ต้องติ๊กที่ `/permissions`
+> - **⚠️ เป็นการกันพลาดฝั่ง UI เท่านั้น** — RLS ของ `employees` เป็น `true` สำหรับ authenticated มาแต่เดิม DB ยังไม่รู้จัก section ของพนักงาน · เหมาะกับโจทย์ "กันแก้/ลบผิดตัว" ไม่ใช่กันคนที่ตั้งใจยิง API ตรง · ถ้าต้องการระดับ DB ต้องเขียน policy ที่ join section ของแถวกับ profiles ของผู้เรียก
+> - **สถานะปัจจุบัน:** role `sale` ได้ `page:/operator` `page:/register` `employees:register` `employees:edit` `skills:edit` (เดิม**ไม่มีแถวเลย** = เข้าไม่ได้) · บัญชี `sale` **ทั้ง 7 ตัว** (W/H · Store · Delivery · Billing — user ยืนยันว่าอยู่หน่วยงานเดียวกัน) ตั้ง `section='Planning&Store'` → เห็นพนักงานทั้งโรงงาน แต่ **แก้ได้เฉพาะคนในหน่วยงานตัวเอง** · `sections[]` ยังว่าง = scope ทั้งระบบไม่กระทบ · บัญชี `sale` ที่เพิ่มทีหลังจะได้ค่าเดียวกันเมื่อรัน migration ซ้ำ — ถ้ามีคนอยู่คนละหน่วยงานจริงให้แก้รายคนที่ `/add-user`
+>
+> #### ⚠️ สิทธิ์แผงสกิลใน `/operator` แยกจาก `employees:edit` แล้ว — `canEditSkillsFor` (2026-08-19 · feedback "สกิลฝ่ายซัพพอร์ท/ช่าง/คนขับรถ เพิ่มไม่ได้")
+> เดิมแผง 📊 ระดับทักษะเปิดเมื่อ **แก้ประวัติพนักงานได้** (`employees:edit` + section ตรง) — พนักงานสนับสนุน (ช่าง MTN/JIG/DIE · คนขับรถ) `section = null` โดยตั้งใจ (กฎ ORPHAN_SECTION) → **ไม่ตรงกับ section ของใครเลย = สกิลล็อกหมดทั้งที่ RLS ฝั่ง DB (has_perm `skills:edit`) เปิดให้ mtn อยู่แล้ว**
+> - **`canEditSkillsFor(emp)`** = `skills:edit` **และ** (`employees:edit_all_sections` ‖ section ตรงกับ `profiles.section` ‖ **พนักงาน section=null → เปิดให้ `MAINTENANCE_ROLES` (mtn/engineer)**) — สิทธิ์สกิลไม่พ่วงสิทธิ์แก้ประวัติอีก · RLS `employee_skills_write` ยังเป็นด่านสุดท้ายเสมอ
+> - migration `20260819_mtn_operator_page_main.sql` (**apply แล้ว 2026-08-19**) เปิด `page:/operator` ให้ role `mtn` (กับดัก enum_range — หน้า seed ก่อน role เกิด) — **ให้เฉพาะ page ไม่แจก `employees:edit`** (ช่างได้แผงสกิลตาม skills:edit เท่านั้น ประวัติพนักงานยังเป็นของฝ่ายบุคคล/หัวหน้าผลิต)
+>
+> **⚠️ แผง "📊 ระดับทักษะ" ในโมดัลแก้ไขพนักงาน (`/operator`) แยกสิทธิ์จาก `employees:edit` แล้ว** — เดิมไม่ถูก gate เลย ใครเปิดโมดัลได้ก็แก้คะแนนได้ · ตอนนี้ read-only เมื่อไม่มี `skills:edit` และ `handleUpdate` **ยิง upsert/delete เฉพาะสกิลที่เปลี่ยนจริง** (เดิมยิงทุกสกิลทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป → คนไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ) · สกิลพลาด = **ไม่ throw รวม** (ข้อมูลพนักงานบันทึกไปแล้ว การ throw ทำให้อ่านเหมือนไม่ได้บันทึกอะไรเลย) แต่ต้องขึ้น toast บอกให้ชัดว่าส่วนไหนสำเร็จ ส่วนไหนไม่ — **ห้ามเงียบ**
 
 ### Section/Line/Team Scoping — รองรับหลาย section ต่อ user แล้ว (2026-07-09)
 
@@ -436,10 +650,36 @@
   5. role อื่นที่มีแค่ `section` เดี่ยวค้างอยู่ → **ไม่จำกัด** (ตั้งใจ — กัน manager เก่าที่เคยกรอก section ไว้เฉยๆ โดนจำกัดกะทันหันหลัง deploy)
 - UserContext ส่ง `sections` = array ผลลัพธ์สุดท้าย (`[]` = ไม่จำกัด) — ในหน้าเช็คด้วย `scopeSecs.length` แล้วกรองด้วย `inSectionScope(scopeSecs, value)` (เทียบ trim+lowercase) หรือ `.in('section', scopeSecs)` ใน query
 - `leader` ยังผูก `profiles.line_id` + `team` เหมือนเดิม ไม่เกี่ยวกับ sections — เช็ค branch ของ leader **ก่อน** branch ของ scope เสมอ
+- > ### ⚠️ กฎเหล็ก — scope ของ leader = **ทั้งครอบครัวไลน์** ห้าม `.eq('line_id', lineId)` ตรงตัว (2026-08-10)
+  > **เคสจริงที่ทำให้เจอ:** จัดข้อมูลพนักงาน PD4 ให้ตรงผังองค์กร → เลือกกลุ่ม "GOR ASSY"/"LWRBAR ASSY" ในฟอร์ม ซึ่ง `org_nodes.ref_line_id` ชี้ไป**ไลน์ลูก** (Assy GOR/Assy LWR) → `employees.line_id` ย้ายจากไลน์แม่ไปไลน์ลูก → **หัวหน้ากลุ่มที่ผูกกับไลน์แม่ (GOR/LWR BAR) เปิดหน้าเช็คชื่อแล้วเห็น 0 คน** ("แก้ฐานข้อมูลใหม่ เช็คชื่อหายหมดเลย" — 4 หัวหน้า, 41 คนหาย)
+  > **ต้นเหตุคือโค้ด ไม่ใช่ข้อมูล** — การย้ายคนไปไลน์ลูกถูกต้องและละเอียดกว่าเดิม แต่ query ของ leader กรอง `line_id` ตรงตัว ขัดกับ pattern ที่เอกสารระบุไว้เอง (`leader = family ไลน์ตัวเอง`) และขัดกับตัวกรองแสดงผลในหน้าเดียวกันที่ใช้ `getLineFamilyIds` อยู่แล้ว
+  > **แก้ครบ 5 จุดแล้ว:** `Checkin` (ลิสต์เช็คชื่อ + export), `operator` (ฐานข้อมูลพนักงาน), `ShiftOrganize`, `Report` (แท็บรายพนักงาน) — ใช้ `getLineFamilyIds(lines, lineId)` แล้ว `.in('line_id', [...fam])` · **fallback เป็น `.eq` เดิมเมื่อ family ว่าง** (ไลน์ยังโหลดไม่เสร็จ/ไม่เจอไลน์) ห้ามปล่อยให้ `.in('line_id', [])` = ไม่เห็นใครเลย
+  > **⚠️ ต้องดึง `production_lines` ให้เสร็จก่อนสร้าง query พนักงาน** — หลายหน้าโหลด lines ขนานกับ employees (Checkin เคย `setLines` อยู่ใน `Promise.all` ก้อนเดียวกัน) ถ้าอ่าน state `lines` ตอนนั้นจะได้ array ว่าง → family ว่าง → ตกไป fallback แล้วบั๊กกลับมาเงียบๆ
+  > **ผลพลอยได้:** หัวหน้า HYDROFORM เห็นเพิ่มจาก 32 → 34 คน (2 คนที่ผูกไลน์ลูก LASER E50 เดิมมองไม่เห็นมาตลอด)
+  >
+  > #### ⚠️ พนักงานอยู่ที่ **ไลน์ลูก (ระดับกลุ่ม)** — ไลน์แม่คือระดับแผนก (2026-08-12 · คำสั่ง user)
+  > **`employees.line_id` ต้องชี้ไลน์ที่มี `parent_line_name` (ไลน์ลูก = ระดับกลุ่ม)** · ไลน์แม่ (`parent_line_name is null`) ส่วนใหญ่เป็น**ระดับแผนก** ไม่ใช่ที่อยู่ของคน — ตรงกับ `org_nodes` kind='line' (กลุ่ม) ที่ `ref_line_id` ชี้ไลน์ลูกอยู่แล้ว และตรงกับที่หัวหน้าตั้งตารางกะไว้
+  > **เอกสารเดิมเขียนว่า "ผูกกับไลน์แม่ 100%" — นั่นคือ*สภาพที่เป็นอยู่* ไม่ใช่*สิ่งที่ควรเป็น*** (ข้อมูลเก่ายังค้างที่ไลน์แม่อยู่หลายกลุ่ม ทยอยจัดให้ตรงได้)
+  >
+  > #### ⚠️ ย้าย `line_id` = ย้ายทุกอย่างที่ผูก `line_id` ไปด้วย — ต้องไล่เช็คก่อนย้าย
+  > **`shift_schedules.line_id` ก็ผูกไลน์เหมือนกัน** → ย้ายคนข้ามชั้นไลน์แล้ว **"ไม่มีตารางกะ" ทันที** ถ้ากะสัปดาห์นั้นถูกตั้งไว้ที่ไลน์อีกชั้นหนึ่ง (เจอจริง 2026-08-12: ย้ายคนกลับไลน์แม่เพื่อกู้เช็คชื่อ → กะ 10-16 ส.ค. ที่ตั้งไว้ที่ไลน์ลูกหายทันที หน้าจัดกะขึ้น "ไม่มีกะ")
+  > **ก่อนย้าย `line_id` ให้ตรวจอย่างน้อย:** `shift_schedules` · `employee_home_positions` · `workstations` ของไลน์ปลายทาง · `shift_overrides` — **และ snapshot ค่าเดิมไว้เสมอ** (ย้อนด้วย `group_name` ไม่ได้ถ้าบางคน `group_name` ว่าง)
+  >
+  > #### 🤝 ยืมพนักงานข้ามไลน์รายกะ — ตาราง `line_helpers` (2026-08-19 · feedback "หัวหน้าดึงพนักงานไลน์อื่นมาช่วยไม่ได้")
+  > scope ของ leader ทำให้คนไลน์อื่น "มองไม่เห็น" โดยดีไซน์ — ทางออกไม่ใช่แก้ scope แต่เป็น**การยืมตัวชั่วคราวเป็นข้อมูล**: `line_helpers` (Main · migration `20260819_line_helpers_main.sql`) 1 แถว = ยืม 1 คน มาช่วยไลน์ปลายทาง 1 กะ (`unique(work_date, shift, employee_id)` — คนหนึ่งถูกยืมได้ทีละไลน์ ไลน์ที่สองต้องให้ไลน์แรกกดคืนก่อน · error 23505 = ข้อความบอกตรงๆ)
+  > - **ห้ามแก้ `employees.line_id` เพื่อยืมตัว** (บทเรียน 2026-08-12 ข้างบน — ย้าย line_id ลากตารางกะ/จุดประจำพังตาม) — การยืมเป็นเรื่องรายวัน+รายกะ ตัวตนถาวรอยู่ไลน์เดิม
+  > - **Checkin:** ปุ่ม 🤝 ยืมพนักงาน (สิทธิ์ `checkin:record`) → ค้นทั้งโรงงานด้วยชื่อ/รหัส → เลือกไลน์ปลายทาง (จาก `scopedLines`) · คนที่ยืมโผล่ในรายชื่อพร้อมป้าย "🤝 ยืมตัวจาก <ไลน์เดิม>" + ปุ่ม ✕ คืน · ฝั่งไลน์เดิมเห็นป้าย "→ ไปช่วยไลน์ X (กะนี้)" (**ไม่ตัดออกจากลิสต์** — ไลน์เดิมยังเช็คชื่อ/ดูสถานะได้)
+  > - **ตัวกรองไลน์/section + เปิดกะ Daily Report ต้องมองคนยืมเป็น "ไลน์ปลายทาง"** (`effLineIdOf(emp)` = `_helperToLineId || line_id`) · `assignedShift` ของคนยืม = กะปัจจุบันเสมอ (การยืมผูกกับกะ — ห้ามให้ตารางกะไลน์เดิมกรองทิ้ง)
+  > - **Management (ผังจัดกำลังคน):** `matchesTeam` ยอมรับคนที่ `helperMap[employee_id]` ชี้ไลน์ใน scope → เข้า pool ลากลงสถานีได้ พร้อมป้าย 🤝 ยืมตัว · **ลากลงสถานี = เข้าเกณฑ์ 4M Man ย้ายข้ามไลน์ตามปกติ** (`sameLine` เทียบจาก `employees.line_id` เดิม — ถูกต้องแล้ว ห้ามไปหลอกให้เป็นไลน์เดียวกัน)
+  > - โค้ดอ่าน/เขียน best-effort ทั้งหมดเผื่อ rollback · migration **apply แล้ว 2026-08-19** (user รันผ่าน SQL Editor)
+  >
+  > #### ⚠️ บทเรียน: อาการที่เกิดจาก**โค้ด** ห้ามแก้ด้วยการ**ย้อนข้อมูล** (2026-08-12)
+  > ตอนเช็คชื่อหาย เคยย้อน `line_id` กลับไลน์แม่เพื่อให้ใช้งานได้ทันทีระหว่างรอ deploy — **ผลคือทำตารางกะพังแทน** (ย้ายปัญหา ไม่ได้แก้) · ข้อมูลที่ถูกจัดให้ตรงผังแล้วคือของถูก **โค้ดต่างหากที่ต้องตามให้ทัน** · ถ้าจำเป็นต้องกู้ชั่วคราวจริงๆ ให้ประเมิน blast radius ของการย้อนข้อมูลก่อน แล้วบอก user ว่าจะแตะอะไรบ้าง
 - AddUser.jsx: ช่อง Section เป็น checkbox เลือกหลายอันได้ทุก role และ**ยังเขียน `section` เดี่ยว (= ตัวแรกที่ติ๊ก) คู่กันเสมอ — ห้ามเลิกเขียน** เพื่อให้ revert โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope · supervisor ยังบังคับติ๊กอย่างน้อย 1 (Edge Function `create-user` ยังไม่รู้จัก sections — AddUser update ตามหลังด้วย id ที่ได้กลับมา)
 - หน้าที่ปิดช่องโหว่แล้ว: Management, Checkin, operator, Register, DailyReport (Live/History/Export), Report (ครบทั้ง 10 แท็บ — รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M + สิทธิ์อนุมัติ SV/Skill Matrix/ค่าฝีมือ/ใบบันทึก/Multi-Skill Form/จองรถ OT — 2026-07-10), ShiftOrganize (ตารางกะ/override/merge event/dropdown ใน modal — 2026-07-10), OEEAnalytics, LineSetup, EventLog, Improvements, Dashboard, MachineDatabase (2026-07-12 — user ยืนยัน: Dashboard/MachineDatabase ก็กรอง ใครไม่มี scope เห็นหมดเหมือนเดิม) — pattern: mandatory scope filter ก่อน แล้วค่อย apply free-text filter ทับ
 - หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้นเห็นข้อมูลข้ามส่วนงานโดยไม่ตั้งใจ
 - **ข้อยกเว้นทางการ — `/factory-map` (ผังรวมโรงงาน) ไม่ scope โดยตั้งใจ ทุก role เห็นทั้งโรงงาน** (คำสั่ง user 2026-08-05 ปิดเคสจาก QC audit) — เป็นผังภาพรวมสำหรับจอ TV/ผู้บริหาร/ประชุม การกรองเหลือเฉพาะไลน์ตัวเองทำให้ "ภาพรวม" หมดความหมาย · **ห้ามเติม scope filter ให้หน้านี้** เว้นแต่ user สั่งเปลี่ยน · หน้าอื่นยังยึดกฎ scope ตามปกติ (รวมหน้าที่ deep-link ออกไปจากผัง เช่น Dashboard/MtnMachineLayout ซึ่ง gate ด้วย RoleRoute/scope ของตัวเองอยู่แล้ว)
+- **⚠️ หน้าหลัก (DeptHub) เคยไม่ scope เลยสักตัว — แก้แล้ว 2026-08-19 (feedback หน้างาน):** telemetry ทั้ง 4 (ไลน์กำลังผลิต/เช็คชื่อ/Downtime ค้าง/4M รออนุมัติ) นับทั้งโรงงานให้ทุก role → หัวหน้าไลน์เห็น Andon ของแผนกอื่นแล้วถามว่า "ไลน์ผมทำไมไม่แจ้งเตือนแบบนี้" · **กติกาที่ user สั่ง: หน่วยงานช่างเห็นทั้งโรงงาน (ดูแลเครื่องทุกไลน์) · หน่วยงานผลิตเห็นเฉพาะส่วนงานตัวเอง** · **helper กลาง `scopedLineNames({role, lineId, sections, lines})` ใน `src/utils/sectionScope.js`** — คืน `null` = ไม่จำกัด · `MAINTENANCE_ROLES` = `['mtn','engineer']` · **หน้าใหม่ที่นับตัวเลขรวมให้ใช้ helper นี้ ห้ามเขียน pattern scope ซ้ำเอง** (เดิมกระจาย ~6 หน้า) · **⚠️ ต้องรอ `production_lines` โหลดเสร็จก่อนเรียก** — lines ว่างคืน `null` (ไม่จำกัด) **ห้ามคืน `[]`** เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย · จอที่โชว์ตัวเลขรวมต้อง**ติดป้ายบอกขอบเขต** (🏭 ทั้งโรงงาน / 👥 ส่วนงานของฉัน) ห้ามให้คนอ่านเดาเอง
 - **⚠️ dropdown ก็ต้อง scope ไม่ใช่แค่ query (audit 2026-07-23):** `<select>` ที่ลิสต์ **ไลน์/ส่วนงาน/พนักงาน** ต้องกรองตาม scope เหมือนกัน (ไม่งั้น supervisor/leader เห็นไลน์ข้ามส่วนงานใน dropdown แม้ข้อมูลกรองแล้ว) · ปิดช่องโหว่ dropdown แล้ว: **DailyReport เปิดกะ** (leaf+optgroup ตาม `openScopeLineNames`), **Checkin** (แถบ section + ไลน์), **MtnRepair** ReportModal (ผ่าน `scopedLineObjs` ใน cp), **PmCoordination** PlanModal, **DailyPM** ทะเบียน (assign/move — เพิ่ม `scopedProdLines`) · ยังเหลือ (primary user = store/logistic ไม่ใช่ผลิต เลยยัง N/A): LineStock/RackCenter line filter — ถ้าให้ leader ใช้ตรงต้องเพิ่ม scope
 - Rollback: `docs/ROLLBACK_MULTI_SECTION_SCOPE.md` — **ห้าม drop คอลัมน์ `sections` ก่อน revert โค้ด** (App.jsx select คอลัมน์นี้ตอน login ถ้า drop ก่อนจะ login ไม่ได้ทั้งระบบ)
 
@@ -498,17 +738,25 @@ Reject → status: "rejected" + reject_reason
 | **9** (เบอร์ 900 เช่น 90031601/2) | **เลขภายในตั้งเอง** (พาร์ทพิเศษ ยังไม่มี routing) | **ไม่ใช่เลข SAP จริง** — SAP ของโรงงานมีเฉพาะช่วง 100–700 · ทีมงาน**ตั้งใจ**ตั้งเบอร์ 900 ให้พาร์ทที่จะสร้างพิเศษซึ่งยังไม่มีระบบ routing ใน SAP (user ยืนยัน 2026-08-10) — **ห้ามไล่ "แก้" เป็นเลข SAP / ห้ามลบ** จนกว่าพาร์ทนั้นจะเข้าระบบ routing แล้ว user สั่งเปลี่ยนเลขเอง | ไหลตามที่ตั้งค่าใน stock_inflow_rules/การใช้งานจริง (ไม่เข้าเกณฑ์ prefix 1/2/3/5 อัตโนมัติ) |
 | MB3B/RB3B… | เลขพาร์ทลูกค้า (Ford P/N) | ไม่ใช่ MAT SAP | ใช้เป็น key ชั่วคราวเมื่อจับคู่ mat ภายในไม่ได้ (เพิ่ม P/N ใน Product Master แล้วอัพโหลดใหม่เพื่อ map) |
 
-- UI ฝั่ง Store (`LineStock.jsx` helper `isFgMat`): แถว FG ไม่มีปุ่ม "+ จ่าย" (โชว์ "🚚 หักผ่าน Delivery" แทน)
-  และฟอร์มบล็อก type `issue` สำหรับ MAT ขึ้นต้น 1
+- UI ฝั่ง Store: แถว FG ไม่มีปุ่ม "+ จ่าย" (โชว์ "🚚 หักผ่าน Delivery" แทน) และฟอร์มบล็อก type `issue` สำหรับ MAT ขึ้นต้น 1
+
+> ### ⚠️ กฎเหล็ก — แยกประเภทพาร์ทด้วย **เลขตัวแรกตัวเดียว** ห้ามเทียบ 3 ตัวแรก (2026-08-13 · user แจ้ง)
+> **เลข SAP รันต่อเนื่องจนทะลุช่วงเดิมไปแล้ว** — FG วิ่งจาก `100xxxxx` ไปเป็น **`101xxxxx`** (ข้อมูลจริง: `10100286` / `10100333` / `10100379`) → โค้ดที่เทียบ `startsWith('100')` **กรอง FG พวกนี้ตกหมด ผู้ใช้ค้นไม่เจอ**
+> ช่วงเลขจะขยับได้อีกเรื่อยๆ แต่ **"เลขตัวแรก" คือแกนที่ SAP การันตี** — `1`=FG · `2`=Child ผลิตเอง · `3`=Child ซื้อนอก · `5`=Raw · `9`=เลขภายใน
+> - **นิยามกลางที่ `src/utils/matPrefix.js` จุดเดียว** (`MAT_CLASSES`/`matDigit`/`matClassOf`/`matColor`/`matLabel`/`isFgMat`/**`matMatches`**) — **ห้ามนิยามการแยกประเภทซ้ำในหน้าใดๆ อีก** (เดิมกระจาย 3 ไฟล์: ProductMaster/HeijunkaKanban/LineStock แล้ว drift กันจนคนละมาตรฐาน — ProductMaster ใช้ 1 หลักกับสี แต่ใช้ 3 หลักกับตัวกรอง ในไฟล์เดียวกัน)
+> - **ตัวกรองใช้ `matMatches(mat, sel)` เสมอ** — เทียบเฉพาะตัวแรก และ**รับค่าเก่าแบบ `'100'` ที่อาจค้างใน state/localStorage ได้ด้วย** (ไม่พังตอน deploy)
+> - **ฝั่ง DB ถูกอยู่แล้ว ห้ามไปแก้ตาม UI**: `stock_inflow_rules` seed `('prefix','1',…)`/`('prefix','2',…)` · `route_buy_parts` ใช้ `like '3%'`/`like '5%'` — ทั้งคู่เป็นเลขตัวเดียว
+> - จุดที่แก้แล้ว: ตัวกรองประเภทใน **Parts Master** · **Heijunka** (ทั้งชิปกรอง view และแท็บใบสั่งซื้อ) · สี/ป้ายประเภททุกหน้า
 
 > ### ⚠️ กฎเหล็ก — `parts_master` = ทะเบียนกลางของทุก mat (material master · 2026-08-06 คำสั่ง user)
 > โมเดลเดียวกับ SAP Material Master + Views: **ตัวตนสินค้า (mat_no / ชื่อ / UOM / qty_per_pkg / supplier) อยู่ `parts_master` ที่เดียว ครอบทุกเบอร์ 1/2/3/5** (ข้อมูลจริง 287 รายการ ครบทุกเบอร์แล้ว) — ตารางอื่นเป็น "มุมมอง" ที่**เลือกจากทะเบียน** ไม่พิมพ์เลขใหม่เอง:
 > - `dr_products` = **มุมการผลิต** (เฉพาะของที่ผลิตในไลน์: ไลน์/CT/p_no/pair_mat_no/process_type) — ฟอร์มเพิ่มสินค้าใน `/products` มีปุ่ม 🗂 เลือกจาก Parts Master (prefill mat+ชื่อ) + เตือนส้มเมื่อพิมพ์ mat ที่ไม่มีในทะเบียน (ไม่บล็อก)
+> - **🔄 EC (Engineering Change) ลงทะเบียน MAT ใหม่เข้า parts_master ให้อัตโนมัติ (2026-08-14 · คำขอ user):** บันทึก EC = สร้าง dr_products ใหม่ + mark ตัวเก่า superseded + **insert parts_master ของ MAT ใหม่** (ถ้ายังไม่มี) — **สืบทอดเฉพาะคุณสมบัติกายภาพ** (uom/qty_per_pkg/supplier/รูป) จากทะเบียนเลขเดิม · **ต้นทุน material/standard ไม่สืบทอดโดยตั้งใจ** (rev ใหม่ต้นทุนเปลี่ยนได้ ให้บัญชีเติม — กฎห้ามเดา) · ฝาก note ไว้ทั้ง 2 ฝั่ง (ใหม่: "EC ต่อจาก X" · เก่า: "ถูกแทนโดย EC → Y") · **ไม่ปิด is_active ของเลขเดิมในทะเบียน** (ของ rev เก่ายังไหลในคลัง/รอบส่งช่วงเปลี่ยนผ่าน — เลิกใช้เป็นการตัดสินใจของคน) · สิ่งที่ EC **ไม่ทำให้** (ต้องตามไปตั้งเองกับ MAT ใหม่): BOM (`bom_items`) · `kanban_standards` (min/max/qty_per_kanban) · Packaging · แผน routing/VSM · และควรออก revision ใน `/pe-docs` ด้วยถ้ามีชุด PFC/FMEA/CP ของพาร์ทนั้น · **⚠️ EC ก็ไม่ปิด kanban_standards ของเลขเดิมด้วย** — แถวคัมบังเลขเก่าค้าง active ให้ลิสต์รก (feedback "hide mat เก่า" 2026-08-17) → เมื่อตัดสินใจเลิกใช้เลขเก่าจริง ปิด `kanban_standards.is_active` ของเลขนั้น (ทำแล้วรอบแรกกับ 10100333/10100379 — migration `20260817_hide_superseded_kanban_dr.sql` **apply แล้ว 2026-08-17** · สต็อกคงเหลือ/การตัดส่งไม่กระทบ เพราะอ่านจาก ledger)
 > - `kanban_standards` = **มุมการดึง** (qty_per_kanban default = qty_per_pkg · แท็บ 🎴 ลิสต์จาก parts_master อยู่แล้ว) · `bom_items` = โครงสร้าง (picker จาก parts_master อยู่แล้ว) · Packaging เลือกจาก product (มุมส่งลูกค้า — ถูกแล้ว เพราะ pack คือเรื่องของ FG)
 > - **"ชื่อสินค้า" parts_master เป็นเจ้าของที่เดียว** — ชื่อฝั่งทะเบียนละเอียดกว่า (มีเลขลูกค้า/ลูกค้ากำกับ) · sync ชื่อ dr_products ให้ตรงแล้ว + ลบ product ทดสอบ 100999/2000999 (migration `20260806_parts_registry_cleanup.sql` DR — apply แล้ว) · จุดใหม่ที่แก้ชื่อสินค้าให้แก้ที่ Parts Master ไม่แก้ที่ dr_products
 > - **"รูปพาร์ท" ก็เป็นตัวตน → เจ้าของคือ parts_master เช่นกัน (2026-08-06):** backfill รูปจาก dr_products เข้าทะเบียน 20 mat แล้ว (migration `20260806_parts_master_image_backfill.sql` DR) · picker 🗂 เลือกจากทะเบียน = prefill รูปให้ฟอร์มสินค้าด้วย (เฉพาะเมื่อฟอร์มยังไม่มีรูป) · อัปรูปฝั่งไหน → เติมให้อีกฝั่งของ mat เดียวกัน**เฉพาะที่ยังว่าง** (fill-if-empty ไม่ทับของเดิม — ทำแล้วทั้ง 2 ทางใน ProductMaster.jsx) · **⚠️ URL รูปแชร์ไฟล์เดียวกันข้ามตาราง dr_products ↔ parts_master ได้ — guard ลบไฟล์เก่าตอนเปลี่ยนรูปต้องเช็คอีกตารางเสมอ** (count query ก่อน remove — ทำแล้วทั้ง 2 ฝั่ง ห้ามถอด ไม่งั้นเปลี่ยนรูปฝั่งหนึ่ง = รูปอีกฝั่งเป็นลิงก์ตาย)
 > - **ลำดับลงข้อมูล: Parts Master ให้ครบก่อน → มุมมองอื่น "เลือก" ไม่ใช่ "พิมพ์ใหม่"**
-> - **เลขชั่วคราวใน dr_products (SUB APRON: M6/M8/127/E024/"300xxx & 300xxx") ห้ามลบ** — ตรวจ 2026-08-06: ทุกตัวมีใบผลิตจริง (3-48 ใบ) บางตัวมี forecast/สต๊อก · ทางแก้คือ "เปลี่ยนเลข" เป็น SAP จริง (update mat_no + cascade prod_orders/kanban/stock/forecast ที่อ้างเลขเดิม) เมื่อ user หาเลขจริงมาให้ — ยังรออยู่ · **ส่วน 90031601/2 (HYDROFORM) ไม่ใช่เลขรอแก้** — เป็นเบอร์ 900 ที่ทีมงานตั้งใจตั้งเอง (ดูตาราง MAT ข้างบน · user ยืนยัน 2026-08-10)
+> - **เลขชั่วคราวใน dr_products (SUB APRON: M6/M8/127/E024/"300xxx & 300xxx") ห้ามลบ** — ตรวจ 2026-08-06: ทุกตัวมีใบผลิตจริง (3-48 ใบ) บางตัวมี forecast/สต๊อก · **2026-08-17 ไขปริศนาแล้ว: พวกนี้คือ "รายการขั้นตอน (OP) ขับนัท" ไม่ใช่พาร์ทรอเปลี่ยนเลข** — ติดธง `is_operation` แล้ว (ดูกฎเหล็กชั้น Operation ในหมวด OEE/งานคู่) **ห้ามเปลี่ยนเลขเป็น SAP จริง** (จะกลายเป็น mat เดียวหลายใบซ้อน ยิ่งนับซ้ำ) · **ส่วน 90031601/2 (HYDROFORM) ไม่ใช่เลขรอแก้** — เป็นเบอร์ 900 ที่ทีมงานตั้งใจตั้งเอง (ดูตาราง MAT ข้างบน · user ยืนยัน 2026-08-10)
 
 ### กฎธุรกิจที่ห้ามทำพัง
 
@@ -534,7 +782,7 @@ Reject → status: "rejected" + reject_reason
      ปรับได้ที่ Store management → ⚙️ รับเข้าอัตโนมัติ · กันซ้ำด้วย ref_order_id)
   → Shipping Chart เห็น stock พร้อมส่งต่อรอบ (FIFO ตามเวลาส่ง): เขียวครบ / เหลืองขาดบางส่วน /
     🚨 แดง "ไม่มี stock ต้องผลิต!" (ห้ามปล่อยใบไม่มี stock เงียบ) + ตัวนับ "N รอบ stock ไม่พอ"
-  → กด "ส่งแล้ว" หัก stock อัตโนมัติ (line_stock_transactions type consume)
+  → กด "ส่งแล้ว" หัก stock อัตโนมัติ (line_stock_transactions type consume + ref_shipment_id ผูกรอบส่ง)
   → Rundown Stock: Balance วัน D = stock ตอนนี้ − order ค้างส่งสะสม (ค้างเก่ารวมเข้าวันนี้
     เรียงพาร์ทที่จะขาดเร็วสุดขึ้นบน) — realtime ไม่ต้องรอปิดกะ
 ```
@@ -547,6 +795,33 @@ Reject → status: "rejected" + reject_reason
   ลูกค้าสั่งนอกไฟล์ EDI/โทรสั่ง) — ใบ source อื่นที่ไม่ใช่ `edi_862` **ไม่ถูกแทนที่**ตอนอัพโหลด 862 ซ้ำ ·
   ใบคีย์มือที่ยัง pending ลบได้จาก popup บนชาร์ต
 - การปรับ stock ที่กรอกมือ (type adjust) เข้าคิว ⏳ รออนุมัติก่อนมีผลต่อยอด — auto movement ไม่เข้าคิว
+
+> #### ⚠️ กด "ส่งแล้ว" แล้วหักสต็อกไม่ได้ ต้องรายงานเสมอ ห้ามขึ้นเขียวล้วน (2026-08-11)
+> การหักสต็อกตอนกดส่ง วิ่งบน `fgStock[mat_no]` ที่มีอยู่ในระบบ — **ไม่มีข้อมูลสต็อกของ MAT นั้น = ไม่หักอะไรเลย แล้วเงียบ** (โค้ดเดิมห่อทั้งก้อนด้วย `if (entry?.total > 0)` ไม่มี else) → หน้าจอขึ้น "🚚 ส่งแล้ว" เขียวปกติ ทั้งที่ยอดคงเหลือไม่ขยับ · **ผลสะสมที่วัดได้จริง 2026-08-11: ส่งไป 3,279 ชิ้น (43 รอบ) หักจริงแค่ 508 ชิ้น (7 แถว)** — ยอดคงเหลือในระบบสูงกว่าของจริงเรื่อยๆ โดยไม่มีใครรู้
+> **2 สาเหตุที่เจอจริง (คนละเรื่องกัน อย่าเหมารวม):**
+> 1. **เลขพาร์ทลูกค้าที่ยังไม่จับคู่ MAT SAP** (`RB3B 8C306 BB` ส่ง 525 · `MB3B 8A297 CB` ส่ง 784) — FG เข้าคลังด้วย**เลข SAP** แต่ order ตัดออกด้วย**เลขลูกค้า** = คนละกุญแจ ไม่มีวันเจอกัน → แก้ที่ต้นทาง: ตั้ง `p_no` ที่ Product Master / ปุ่ม 🔗 จับคู่เลข SAP ใน Planner&Sales
+> 2. **เลข SAP ปกติที่ไม่มีแถวสต็อกเลย** (`10100821` ส่ง 560 · stock rows = 0) — ของไม่เคยถูกบันทึกเข้าคลัง (ไม่ได้ปิดออเดอร์ผลิต/ไม่เข้าเกณฑ์ `stock_inflow_rules`)
+>
+> **กติกา:** `handleAdvance` คิด `cut = want − left` แล้วเทียบ 3 ทาง — หักครบ = เขียวปกติ · **หักได้บางส่วน = 🔴 toast บอกว่าได้เท่าไหร่/ขาดเท่าไหร่** · **หักไม่ได้เลย = 🔴 toast + บอกสาเหตุที่แยกแล้ว** (จับคู่เลขไม่ได้ = แก้ master · จับคู่ได้แต่ไม่มีของในคลัง = เช็คการปิดออเดอร์ผลิต) · **ห้ามกลบด้วย toast เขียว** (สถานะรอบส่งเดินหน้าสำเร็จจริง แต่สต็อกไม่ตรง = มีคนต้องไปตามแก้) · หลักเดียวกับ "🚨 แดง ไม่มี stock ต้องผลิต!" บน Shipping Chart ที่ห้ามปล่อยเงียบ
+
+> #### ⚠️ กฎเหล็ก — order อ้าง "เลขลูกค้า" · คลังเก็บ "เลข SAP" → ต้อง resolve ผ่าน `src/utils/matResolve.js` เสมอ (2026-08-11)
+> FG เข้าคลังด้วย **เลข SAP** (`dr_products.mat_no` ผ่าน trigger ปิดออเดอร์ผลิต) แต่ order จาก EDI 862 อ้าง **เลขลูกค้า** (`RB3B 8C306 BB`) — **คนละกุญแจ เทียบตรงๆ ไม่มีวันเจอกัน**
+> เดิม `CustomerDemand` หาสต็อกด้วย `fgStock[o.mat_no]` ตรงๆ ทั้งที่ `p_no` ตั้งไว้ครบแล้วทั้ง `dr_products` + `kanban_standards` → **ไม่หักอะไรเลยแบบเงียบ** (กระทบ 161 รอบ / 17,678 ชิ้น ที่จับคู่ได้ชัดเจนอยู่แล้ว)
+> - **helper กลาง `src/utils/matResolve.js`** — `normMat` (ตัดขีด/ช่องว่าง + uppercase) · `buildPnIndex(rows)` · `resolveMatNo` · **`pickStockMat`** · `stockLookupKeys` · `matIssueText()` · **ห้ามเขียน logic เทียบ p_no ใหม่ในหน้าอื่น**
+> - **⚠️ ต้องเรียก `pickStockMat` ไม่ใช่ `resolveMatNo` ตรงๆ — ห้ามบังคับ resolve ทับของที่หาเจออยู่แล้ว** · ledger มีของบางส่วนบันทึกด้วย**เลขลูกค้าตรงๆ** (ตรวจ 2026-08-11: `MB3B 8A297 CB` คงเหลือ 2,716 · `MB3B 16C275 CD` 1,100 · `MB3B 16C274 CE` 1,100) เพราะ `dr_products.mat_no` ของพาร์ทกลุ่มนั้นเป็นเลขลูกค้าเอง → resolve อย่างเดียวจะ**เลิกหักทั้งที่เดิมหักได้** (เกือบพลาด: 129 รอบ / 32,295 ชิ้น) · ลำดับ: มีของใต้เลขบน order → map ได้ชัดและมีของ → map ได้แต่ยังไม่มีของ → เป็นเลข SAP แต่ยังไม่มีของ → ยอมแพ้
+> - **ดึงสต็อกด้วย `stockLookupKeys` (เลขบน order + ปลายทางที่ map ได้) แล้วค่อยเลือก** — ดึงเฉพาะเลขที่ resolve ได้จะพลาดของที่อยู่ใต้เลขลูกค้า
+> - **resolve เฉพาะที่ "ชัดเจนตัวเดียวและปลายทางเป็นเลขล้วน"** — สถานะ: `direct` (ของอยู่ใต้เลขบน order) · `sap` · `mapped` / `mapped_nostock` · **`ambiguous`** · **`placeholder`** · **`none`** → 3 ตัวหลัง **ไม่หักสต็อก** และบอกวิธีแก้บนจอ
+> - **วัดผลจริงหลังแก้ (order ที่ยังไม่ส่ง 923 รอบ):** ตัดสต็อกได้ 656 → **808 รอบ** (75,591 → **92,744 ชิ้น**) · **หลุดจากเดิม 0 รอบ** — เกณฑ์รับของงานนี้คือ "ต้องไม่มีทางแย่กว่าเดิม" ไม่ใช่แค่ "ดีขึ้น"
+> - **⚠️ ทำไมถึงห้ามเดา — master `p_no` ยังไม่ unique จริง** (ตรวจ 2026-08-11): `RB3B 16E060 BA` → `10100384 | 10100385 | 10106790` (**FG สะอาดทั้ง 3 เลือกไม่ได้**) · `RB3B 16E024 AA` → `E024 (M6 ไม่มีเกลียว)` (เลขชั่วคราว) · `MB3B 8B222 BE` → `50029377` (**เบอร์ 5 = วัตถุดิบ**) · `SP72/74/83/88` (หมายเลข**เครื่อง**ที่ถูกกรอกลงช่อง p_no — ดูกับดัก Scrap Report 2026-08-05) · เดาแล้วหักผิดตัว = สร้างข้อมูลเท็จเงียบๆ **แย่กว่าไม่หัก**
+> - **⚠️ "ไม่รู้" ≠ "ไม่มีของ"** — order ที่ resolve ไม่ได้ **ห้ามแสดง "🚨 ไม่มี stock ต้องผลิต!"** (ของอาจเต็มคลังอยู่ใต้เลข SAP → สั่งผลิตซ้ำโดยไม่จำเป็น) · ใช้สถานะแยก `coverage[].unknown` → "❔ ยังเช็ค stock ไม่ได้" สีเทา และ**ตัวนับ "N รอบ stock ไม่พอ" ต้องไม่รวม unknown**
+> - แถวตัดสต็อกเขียนด้วย **เลข SAP** (ไม่ใช่เลขบน order) เพื่อให้ netting กับขาเข้าอยู่ก้อนเดียวกัน · order คนละเลขลูกค้าที่ชี้ SAP เดียวกันแย่ง pool เดียวกันถูกต้อง
+> - **ยังไม่ทำ:** `PlannerSales` (ตอน import 862) มี logic map ของตัวเองอยู่ — ยังไม่ย้ายมาใช้ util นี้ (คนละ flow ความเสี่ยงต่างกัน) ถ้าแตะจุดนั้นเมื่อไหร่ให้ย้ายมารวม
+
+> #### 📊 สถานะข้อมูลจริง — ทำไมยัง sim ขาออกจาก order แทนการกดปุ่มไม่ได้ (2026-08-11)
+> **ขาออกแทบไม่ถูกใช้:** ส.ค. `shipped = 0 รอบ` (pending 238) · ก.ค. shipped 43 จาก 728 รอบ → ยอดคงเหลือในระบบเป็นภาพลวงเกือบทั้งหมด (FG เข้า 48,837 ออก 340)
+> **แยกกอง order ทั้งหมด 353,297 ชิ้น (ทุกใบมาจาก `edi_862` จริง):** A. เป็นเลข SAP อยู่แล้ว 570 รอบ/52,978 · **B1. จับคู่ชัดตัวเดียว 161 รอบ/17,678** (← ตัวที่ปลดล็อกด้วย `matResolve`) · B2. กำกวม 2 รอบ/5,280 · B3. ไปเลขปลอม 7 รอบ/20,480 · **C. ไม่มี map เลย 226 รอบ/251,601 (71%)**
+> **ลอง sim FIFO จาก order แล้ว → 10 จาก 12 mat ติดลบ** (เช่น `10100379` order 15,740 vs ผลิต 6,782 = −8,958 · `10100821` order 8,272 vs ผลิต **0**) — order มากกว่าที่ผลิตบันทึกไว้ ซึ่งเป็นไปไม่ได้ถ้าของส่งจริง แปลว่า **ขาเข้าก็บันทึกไม่ครบ + ไม่มียอดยกมา (opening balance)** ledger เริ่ม 2026-07-09 พอดี
+> **ลำดับที่ต้องทำก่อนพูดเรื่อง FIFO attribution:** (1) ✅ ขาออกไม่เงียบ + resolve p_no (2) เคลียร์ B2/B3 ที่ map ผิดตัว (คนตัดสิน) (3) ลงข้อมูล p_no กอง C (4) `10100821` ของไม่เคยเข้าคลัง — เช็คการปิดออเดอร์ผลิต/`stock_inflow_rules` (5) ตั้ง opening stock (6) **ค่อยเปิด FIFO** — inflow ทุกแถวมี `ref_order_id` 100% (3,090 แถว) โครงสร้างพร้อมแล้ว รอแค่ข้อมูลสะอาด · **ห้ามข้ามไปข้อ 6** จะได้ผลลัพธ์แม่นแบบผิด
 - แจ้งเตือน Telegram ผ่าน framework `notification_rules` category `logistic`:
   `edi_import`, `shipping_shipped`, `shipping_overdue`, `shipping_phase_alert`
 
@@ -583,6 +858,15 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **ยอดสะสมของใบ manual ที่ยังเปิด ถูกนับเข้า "ผลิตได้"/ความคืบหน้า/แยกตามชิ้นงาน ทันที** (ไม่ต้องรอปิดใบ — ไม่งั้นเห็น 0 ทั้งกะ) และ**ทุกครั้งที่กรอกถูก log ลง `prod_order_qty_updates`** (qty_accum, qty_delta, is_final, logged_at/by) → การ์ดใบโชว์ชิปประวัติต่อช่วง เช่น "10:00 · สะสม 200 (+200)" "12:00 · สะสม 480 (+280)" (migration `20260713_prod_order_qty_update_log.sql`)
 - **บนบอร์ด Heijunka (Dashboard/Management):** การ์ด manual ใช้ไอคอน ✍️ + ยอด `ทำได้/เป้า` และแถบ fill ในการ์ดวิ่งตาม qty_actual (ใบสแกนปกติแสดงเหมือนเดิม)
 - migration: `20260712_prod_orders_manual_mode.sql` (DR, additive — ใบสแกนปกติไม่กระทบ)
+
+### บอร์ด Heijunka — ตู้รวม + ตัวกรอง (Dashboard) · กันผังถูกบีบ (Management) (2026-08-19)
+
+- **ตู้ Heijunka รวมทุกไลน์ = section บอร์ดใน `/dashboard` อยู่แล้ว** (การ์ดบอร์ดต่อกลุ่มไลน์ เรียงลงมาทั้งหน้า + เลือกวันย้อนหลัง) — **ห้ามสร้างหน้าตู้รวมใหม่** ต่อยอดที่นี่ · เพิ่ม filter bar แล้ว: ชิปกลุ่มไลน์ + ช่องค้นพาร์ท/MAT/เลขใบ (`boardLineSel`/`boardQuery`)
+  - **⚠️ กรองที่ "ชั้นแสดงผลแถว" (`visRows`) เท่านั้น — ห้ามกรอง cards ก่อนคำนวณคิว** ตำแหน่งใบ/เวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อนคำนวณ = เวลาเพี้ยนทั้งแถว · สรุปหัวการ์ด (ผลิต/เป้า/ล่าช้า) ยังนับทุกแถวตามจริงโดยตั้งใจ
+  - แถวที่ถูกกรองซ่อน = แถบนับ "ซ่อน N พาร์ท" เสมอ (ห้ามหายเงียบ) · ชิปไลน์ที่เลือกไว้แต่ไม่มีในวันนั้น = ตกกลับ "ทุกไลน์" (§5.3)
+- **Management `boardWouldSquish` ตัดสินจาก "ความสูงจริงที่วัดได้" ห้ามกลับไปใช้สูตรเดา** — เดิมเดา 64px/แถว (แถวจริง ~88px: รูป 46 + 2 เลน + chips/PLANNER เหนือบอร์ด) → ระบบคิดว่า "โชว์ผัง+บอร์ดคู่กันพอ" ทั้งที่ไม่พอ → **ผังไลน์เหลือที่ ~100px marker คน/เครื่อง/จุดงานถูก clamp กองทับกันเป็นก้อนล่างจอ** (เจอจริง 2026-08-19 LINE APRON ASSY 8 แถว)
+  - วัดด้วย **`scrollHeight` ของ section wrapper** (`boardSectionRef` — ได้ความสูงเนื้อหาธรรมชาติแม้ตอนถูก clip ในโหมด scroll จึงไม่ oscillate) ใน effect หลัง render ไม่ใช่ ResizeObserver (เนื้อหาโตโดย wrapper ไม่ resize ได้เมื่อทั้งคู่โดน clip) · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish เด้งกลับ · สูตรเดา (88px/แถว) เหลือเป็น fallback เฟรมแรกเท่านั้น
+  - **บทเรียน: เงื่อนไข layout ที่ตัดสินจาก "ค่าประมาณ" จะ drift เมื่อ UI จริงเปลี่ยน** (เพิ่มแถบ PLANNER/chips แล้วไม่มีใครไปแก้สูตร) — ตัดสินจากการวัดจริงเสมอเมื่อวัดได้
 
 ### ใบผลิต "ปิดก่อนเปิด" (confirmed_at < opened_at) — กัน 3 ชั้นแล้ว (2026-07-30)
 
@@ -652,6 +936,34 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **⚠️ ผลข้างเคียงที่ตั้งใจ — ยอด "ผลิตได้" ระหว่างกะขยับ:** `FactoryMap`/`OEEAnalytics`/`MorningMeeting`/`OrderTrace`/`oee.js computeLiveOee` ใช้สูตร `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` อยู่แล้ว → พอกรอกยอดใบสแกน จอพวกนี้เริ่มนับทันที (เดิมได้ 0) · **จึงแก้ภาพรวมทั้งกะใน DailyReport ให้นับใบ `open` ทุกชนิด** (เดิมนับเฉพาะ `is_manual && open`) ไม่งั้น 2 จอเลขไม่ตรงกัน · ไม่กรอก = `qty_actual` null = บวก 0 = พฤติกรรมเดิม · ค่าที่ stamp ตอนปิดกะไม่กระทบ
 - **จุดใหม่ที่นับ "ผลิตได้" ระหว่างกะ ให้ใช้สูตร `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` เท่านั้น** ห้ามกรอง `is_manual` อีก
 
+### หมายเหตุหัวหน้ากลุ่มตอนขอปิดกะ + ไอคอน "ถูกปฏิเสธ" ในลิสต์กะ (2026-08-10 · คำขอหัวหน้ากลุ่ม)
+
+- **`production_sessions.close_request_note`** (migration `20260810_session_close_request_note.sql` DR · additive) — หมายเหตุที่**ผู้ขอปิดกะ**เขียนเอง (เช่น "ยอดไม่ถึงเพราะรอ material ตั้งแต่ 14:00") · ครบชุด 3 ช่อง: **ขอ** (`close_request_note`) → **อนุมัติ** (`close_approve_note`) / **ปฏิเสธ** (`close_reject_reason`) · แสดงใน modal ตรวจสอบคำขอของ SV (อ่านก่อนตัดสินใจ) + ประวัติกะ · เขียนแบบ **update แยก best-effort** — ยังไม่ apply migration = ปิดกะได้ปกติ **ห้ามยัดลง payload หลัก** (คอลัมน์ไม่มี = ปิดกะพังทั้งระบบ)
+- **ชิป "✏️ ต้องแก้" แดง (นิ่ง ไม่กระพริบ) ในลิสต์กะ** เมื่อ `status === 'open' && close_reject_at`
+  - **⚠️ ห้ามใช้ `✕`** — ในหน้าเดียวกัน `✕ ปฏิเสธ` คือ**ปุ่มกด** เห็นในลิสต์แล้วนึกว่ากดเพื่อลบ/ปิด (เคยใช้แล้ว user ทัก 2026-08-13) · **ห้ามใช้ `↩️`** — หน้านี้ใช้เป็น "ถอยใบ" ของ order ไปแล้ว
+  - **หลักที่ใช้แยก 2 สถานะ: ⏳ = ลูกบอลอยู่ฝั่ง SV (รออนุมัติ · เจอเยอะสุด เอาแค่ไอคอน) vs ✏️ ต้องแก้ = ลูกบอลอยู่ฝั่งเรา (ใช้ชิปข้อความ อ่านออกทันทีไม่ต้องเดาไอคอน)** — เดิมรู้ว่าถูกตีกลับต่อเมื่อกดเข้าไปในกะ หัวหน้าที่ดูแลหลายไลน์เลยไม่เห็น · คู่กับ ⏳ (pending_close) ที่มีอยู่เดิม · tooltip บอกคนปฏิเสธ + เหตุผล
+- **ส่งขอปิดกะใหม่ = เคลียร์ `close_reject_*`** (เดิมเอกสารบอกว่าเคลียร์ แต่โค้ดไม่ได้ทำ → ไอคอน ✕ จะค้างทั้งที่แก้แล้ว) · เคลียร์ใน best-effort update ก้อนเดียวกับ note
+- **⚠️ ไอคอน ✕ ขึ้นได้ต่อเมื่อ apply `20260723_session_close_reject_reason.sql` แล้ว** (เพราะ `close_reject_at` เขียน best-effort) — ถ้าแบนเนอร์แดงในกะยังไม่เคยโชว์ข้อความ แปลว่ายังไม่ apply
+
+> ### ⚠️ กฎเหล็ก — `try { await supabaseDR...update() } catch {}` **ไม่ใช่ best-effort มันคือกลืน error ทิ้ง** (2026-08-10)
+> **supabase-js "คืน" `{ error }` ไม่ได้ throw** → `try/catch` ที่ไม่ destructure `error` จะไม่มีวันจับอะไรได้เลย
+> คอลัมน์ยังไม่มี (42703) = update ล้มเหลว **แต่หน้าจอบอกว่าสำเร็จ** — เจอจริงกับ `close_approve_note`/`close_reject_reason`/`close_request_note` ทั้ง 3 จุด (SV พิมพ์เหตุผลปฏิเสธ → หัวหน้ากลุ่มเห็นแบนเนอร์เปล่า ไม่รู้ว่าต้องแก้อะไร)
+> **pattern ที่ถูกสำหรับคอลัมน์ additive ที่อาจยังไม่ apply:**
+> ```js
+> const { error } = await supabaseDR.from(t).update({...}).eq('id', id)
+> if (error) { console.warn(...); toast.error('งานหลักสำเร็จ แต่ <ฟิลด์> ยังบันทึกไม่ได้ — ยังไม่ได้ apply migration <ชื่อ> (แจ้ง admin)') }
+> ```
+> **flow หลักต้องไม่พัง + ผู้ใช้ต้องรู้ว่าอะไรไม่ถูกบันทึก** — เงียบแปลว่าไม่มีใครไป apply migration สักที
+
+> ### ⚠️ กฎเหล็ก — `.update()` ที่ถูก **RLS บล็อก ไม่ error** มันคืน "สำเร็จ 0 แถว" (2026-08-17)
+> คนละเคสกับคอลัมน์ไม่มี (42703 ที่ error จริง) — **RLS ไม่ให้แก้ = PostgREST คืน 200 ไม่มี error เลย**
+> โค้ดที่เช็คแค่ `if (error)` จึงขึ้น toast เขียวทั้งที่ไม่มีอะไรถูกเขียน
+> **เคสจริง:** หัวหน้ากลุ่มวาดลายเซ็นในโมดัล "จัดการลายเซ็น" → ขึ้น "บันทึกลายเซ็นเรียบร้อย" → **logout/login แล้วหาย ต้องเซ็นใหม่ทุกครั้ง** (ฝั่งอ่านถูกอยู่แล้ว — `fetchProfile` select `signature_url` เข้า state ตอน login · ที่พังคือฝั่งเขียน) · รูปโปรไฟล์ (`avatar_url`) เป็นบั๊กชนิดเดียวกัน
+> **ต้องนับแถวเสมอ:** `.update({...}).eq('id', id).select('id')` แล้วเช็ค `data.length` — 0 แถว = ล้มเหลว **ห้ามขึ้นว่าสำเร็จ**
+> **การให้ user แก้โปรไฟล์ตัวเอง ห้ามใช้ policy `for update using (id = auth.uid())` แบบตรงๆ** — ทดสอบแล้ว **user แก้ `role` ตัวเองเป็น `admin` ได้จริง** (RLS จำกัดรายคอลัมน์ไม่ได้ · column GRANT ก็ใช้ไม่ได้เพราะ `/add-user` ต้องให้ admin แก้ role/section ของคนอื่นผ่าน client ตรงๆ)
+> **ทางที่ใช้: SECURITY DEFINER แตะเฉพาะคอลัมน์ที่อนุญาตของแถวตัวเอง** — `set_my_signature(text)` / `set_my_avatar(text)` (migration `20260817_profile_self_update_rpc.sql` · Main) เรียกผ่าน **`saveMyProfileMedia(field, url)` ใน `src/utils/profileSelf.js` จุดเดียว** (RPC ก่อน → ยังไม่ apply migration ค่อยถอยไป update ตรงแบบนับแถว)
+> **จุดใหม่ที่ให้ user แก้ข้อมูลโปรไฟล์ตัวเอง ให้เพิ่มคอลัมน์เข้า RPC + helper นี้ ห้าม update ตรง**
+
 ### เปิดกะผิด (กะเปล่า) — ลบ + ไม่ทิ้ง phantom OEE (2026-07-23)
 
 - **ลบกะเปล่าจากจอ Live ได้เลย** (ปุ่ม 🗑 ลบกะเปล่า ในหัว session) — เห็นเมื่อ `can('daily_report','delete_session')` **และ**กะ `open`/`pending_close` **และไม่มี Order/Downtime/Defect เลย** (guard ซ้ำใน `handleDeleteEmptySession`) · เดิมลบได้เฉพาะกะ **closed** ในแท็บประวัติ (`HistoryTab`) → หัวหน้าหาไม่เจอตอนกะยังเปิด
@@ -703,6 +1015,23 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 - **`Q = ของดี / ผลิตจริงทั้งหมด = totalProduced / (totalProduced + ngQty)`** — **ห้าม** `(ดี − NG)/ดี` (หักซ้ำ ทำ %Q ต่ำเกินจริง: ดี100 NG50 ได้ 50% ที่ถูกคือ 66.7%) · **ยอด "ดี" (qty_ok) = ยอดสแกน ไม่ต้องลบ NG**
 - แก้ครบ 5 จุด OEE (2026-08-02): `DailyReport.jsx` computeOEE Q (Q ที่ stamp) + totalQtyOk · `FactoryMap.jsx`/`Dashboard.jsx` liveOee (Q สด) · `OEEAnalytics.jsx` calcOEE fallback okQty — **จุดใหม่ที่คำนวณ Q ให้ใช้สูตรนี้เท่านั้น**
 - **ฝั่ง QA แก้ตามด้วย (2026-08-02):** `QualityControl.jsx` FTT = `total/(total+ng)` (เดิม `(total−ng)/total` ต่ำเกินจริง) + PPM = `ng/(total+ng)×1e6` (เดิม `ng/total` สูงเกินจริง เพราะ `total`=ยอดสแกน=ของดี ต้องหารด้วยผลิตจริง=ดี+เสีย) ครบ 3 จุด ppm + 1 จุด ftt (บรรทัด ~360-372) · ⚠️ PPM เป็นเมตริกที่อาจอ้างอิงกับลูกค้า — ถ้า QMS นิยาม PPM = ng/ยอดสแกน ให้ revert เฉพาะจุดนี้
+> ### ⚠️ กฎเหล็ก — "งานทดลอง (Try-out)" ไม่นับเข้า %Q แต่ต้องเก็บไว้คิดมูลค่าของเสีย (2026-08-17 · คำสั่ง user)
+> ไลน์ไม่ควรถูกลงโทษใน OEE จากของเสียตอน **ลองแม่พิมพ์/ลองงานใหม่** — แต่ของที่เสียไปมีต้นทุนจริง ต้องเห็น 2 มุม:
+> **"มูลค่าของเสียทั้งหมด"** vs **"มูลค่าของเสียจากไลน์ผลิต"** (= ก้อนเดียวกับที่คิดเข้า %Q)
+> **ทำเครื่องหมายได้ 2 ทาง (user เลือกทั้งคู่) — migration `20260817_defect_trial_flag.sql` (DR · additive default false → ก่อนมีใครติ๊ก %Q เดิมเป๊ะ):**
+> | ที่ | คอลัมน์ | ใช้ตอน |
+> |---|---|---|
+> | ประเภทของเสีย (⚙️ ตั้งค่า) | `dr_defect_types.excl_from_q` | ตั้งครั้งเดียว เช่นประเภท "งานทดลอง/Try-out" |
+> | รายการที่บันทึก (ฟอร์มงานเสีย) | `defect_logs.is_trial` | ประเภทไหนก็ติ๊กรายครั้งได้ — ระหว่างลองงาน ของเสียเป็นได้ทุกประเภท ถ้าผูกกับประเภทอย่างเดียวจะเสียข้อมูลว่าเสียเพราะอะไร |
+>
+> **อ่านผ่าน `src/utils/oee.js` §7 เท่านั้น** — `isTrialDefect(d)` (เช็คทั้ง 2 ธง) · `defectQty(d)` · **`sumDefectQty(rows, 'line'\|'all')`** · `splitDefectQty(rows)` — **ห้ามเขียนเงื่อนไขกรองงานทดลองเองในหน้า**
+> - **`'line'` = ไม่รวมงานทดลอง → ใช้กับ %Q/OEE ทุกจอ** · **`'all'` = รวมทุกอย่าง → ใช้คิดมูลค่า**
+> - **⚠️ query ที่เอาไปคิด %Q ต้อง select `dr_defect_types(..., excl_from_q)` ด้วย** ไม่งั้นเห็นแค่ `is_trial` แล้วตกหล่นเงียบ (`is_trial` มากับ `select('*')` อยู่แล้ว แต่ `excl_from_q` ต้องขอผ่าน join)
+> - **⚠️ จุดที่ "แสดงรายการ/พาเรโต/ตัวนับของเสีย" ห้ามกรองทิ้ง** — งานทดลองเป็นของเสียจริง ต้องเห็นในลิสต์ (ติดชิป 🧪) · ที่ตัดออกคือ **%Q เท่านั้น**
+> - จุดที่แก้แล้ว: `DailyReport computeOEE` (ค่าที่ stamp ตอนปิดกะ) · OEE สด `FactoryMap`/`Dashboard`/`OEEAnalytics` · **FTT/PPM ใน `QualityControl`** (ตัวชี้วัดคุณภาพของไลน์ผลิต มาตรฐานเดียวกับ %Q — แต่พาเรโตประเภทยังนับครบ)
+> - **มูลค่าของเสีย** = แผง 💰 ในแท็บแนวโน้มของ `/oee-analytics` (ทั้งหมด / จากไลน์ผลิต / งานทดลอง) · ต้นทุน/ชิ้นผ่าน **`defectUnitCost(part, {ratePerHr, ctSec})` ใน `src/utils/costSaving.js`** (ใช้ร่วมกับ `/improvements` — `standard_cost` ชนะ → ไม่มีค่อย `material_cost` + conversion) · **ไม่รู้ต้นทุน = คืน `null` ห้ามเดาเป็น 0** แล้วขึ้นแถบส้มบอกว่ามีกี่พาร์ท/กี่ชิ้นที่ตีมูลค่าไม่ได้ + ชี้ไปกรอกที่ Parts Master
+> - **กะที่ปิดไปแล้วไม่ถูก recompute ย้อนหลัง** (กฎเดิม: ห้าม blanket-recompute กะเก่าด้วย master ปัจจุบัน)
+
 - **⚠️ กะที่ปิดไปแล้วมี `oee_q` ที่ stamp ด้วยสูตรเก่า (หักซ้ำ) ค้างอยู่** — backfill DR แล้ว 2026-08-02 (migration `20260802_backfill_oee_q_no_double_deduct.sql`): `oee_q = actual_qty/(actual_qty+ng)×100`, `oee = oee_a×oee_p×oee_q/1e4` (เฉพาะ closed + oee_a/p/q not null + actual_qty>0 · idempotent แตะเฉพาะแถวที่ค่าต่าง ≥0.05) · **ng นับจาก `defect_logs` (Σ qty_ng+qty_suspect ต่อ session) ไม่ใช่ session column `qty_ng`/`qty_suspect`** — column ไม่น่าเชื่อถือ (เจอ Line 60 21/07 column=0 แต่ defect_logs มี NG 12 → old_q=100 ผิด, ที่ถูก 97.6) · รันจริง 5 กะเปลี่ยน (swing −2.4..+1.0)
 
 ### OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" อย่างเดียว (`/oee-analytics` · 2026-08-04 · คำสั่ง user)
@@ -730,7 +1059,7 @@ leader กด "📋 ขอปิดกะ" → `pending_close` → SV ตรว�
 | 1 | `wavg` / `wLoad` / `wRun` / `wProd` | เฉลี่ยข้ามกะแบบถ่วงน้ำหนัก | mean-of-percentages ใน 4 จอ → ไม่ตรง `/oee-analytics` |
 | 2 | `ctForMat` / `buildCtMap` | CT ต่อ MAT (kanban_standards → dr_products) | FactoryMap/OEEAnalytics ดึง dr_products ล้วน · InsightPanel ดึง kanban ล้วน → P คนละชุด · แท็บประวัติ %P ว่างกับ MAT ที่ kanban ไม่มี CT |
 | 3 | `policyBreakOverlapMin` / `policyBreakForShift` | เวลาพักตามนโยบายที่ทับช่วงเวลา (กรอง shift + process) | 3 implementation: แท็บประวัติไม่กรอง process (พักเกิน) · OEEAnalytics ทิ้งนโยบายเฉพาะ process + เวลาเริ่มกะตายตัว 08:00/20:00 (พักขาด) → OEE จริง/OOE ไม่ตรงกัน |
-| 4 | `computeLiveOee` / `LIVE_MIN_ELAPSED` | OEE สดของกะที่ยังไม่ปิด | FactoryMap ไม่ส่ง NG → Q สด = 100% เสมอ |
+| 4 | `computeLiveOee` / `LIVE_MIN_ELAPSED` / `busyMinutes` | OEE สดของกะที่ยังไม่ปิด · `busyMinutes` = เวลาเครื่องที่ถูกใช้จริง (ตัวหาร P ของไลน์เครื่องขนาน) | FactoryMap ไม่ส่ง NG → Q สด = 100% เสมอ |
 | 5 | `strictOee` / `strictGap` / `STRICT_WARN_SHARE_PCT` | "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย | — |
 | 6 | `SIX_BIG_LOSSES` / `EIGHT_WASTES` / `groupLean` / `lossMeta` / `wasteMeta` | วิเคราะห์ Lean (ดูหัวข้อถัดไป) | — |
 
@@ -806,6 +1135,19 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 >
 > **ถ้าไม่ตั้ง `pair_mat_no` หรือ ตั้งข้างเดียว** → อาการ: แถบ LH/RH บนบอร์ดไม่ตรงกัน (LH ต้นกะ RH ท้ายกะ) · OEE นับเวลา run ซ้ำ 2 เท่า · เปิดเป้าคู่ไม่ทำงาน — **เจ ออาการพวกนี้ให้เช็ค `pair_mat_no` ก่อนแก้โค้ด** · เพิ่มฟีเจอร์ที่แตะคู่ RH/LH ให้ยึด `pair_mat_no` เป็นตัวจับคู่เสมอ ห้ามเดาจากชื่อ LH/RH
 
+> ### ⚠️ กฎเหล็ก — ชั้น "Operation (รายการขั้นตอน)" ใต้พาร์ทจริง (2026-08-17 · แบบ C เฟส 1 — คำสั่ง user)
+> **ที่มา (เคสงาน Semi ขับนัท SUB APRON):** SAP ไม่มีตัวตนหลังขับนัท (nut weld = OP 160-210 ใน routing ของ FG ไม่ใช่ MAT ใหม่) หน้างานเลยสร้าง "product ปลอม" 1 ตัวต่อ 1 OP (`M6/M8/M10 ไม่มีเกลียว`, `E024 (M6...)`, `173 (M8...)` ฯลฯ) เพื่อให้เครื่องขับนัทแต่ละตัวมีใบงาน/เป้าบนบอร์ด → ชิ้นเดียวกันถูกนับยอด "ผลิตได้" ซ้ำ 2-3 รอบ (ขาต้นนับรายขั้น + ขาดาวนับเลขจริง 2xxx เช่น 20058626)
+> **โมเดล:** `dr_products.is_operation` (boolean) + `op_parent_mat` (MAT พาร์ทจริง) + `op_seq` (เลข OP ตาม PFC) — migration `20260817_operation_items_dr.sql` (DR · **apply แล้ว 2026-08-17** — user รันเองผ่าน SQL Editor เพราะเซสชันเว็บเข้า DB ไม่ได้ · ติดธงครบ **10 ตัว = ชุดเต็มจริง** — `173 (M6 มีเกลียว)` ในลิสต์ migration **ไม่มีอยู่ในฐาน** (ตรวจทั้งไลน์ SUB APRON แล้ว เหลือแต่พาร์ทจริง 20066332/30051864) match 0 แถว = no-op ไม่ต้องตามเก็บ) · backfill เฉพาะที่ยืนยันจาก PFC/ชื่อตรงกัน (M6/M8/M10→20058626 · E024→20066660) ที่เหลือติดธง OP แต่ `op_parent_mat=null` (**ห้ามเดา parent**)
+> - **ชั้น OP เป็น opt-in ล้วน (user ยืนยัน 2026-08-17)** — สร้างเฉพาะขั้นที่**อยากมอนิเตอร์แยก**เท่านั้น (เครื่อง stand-alone/งาน semi) · งานไหล continuous ที่จบในใบพาร์ทจริง = **ไม่ต้องสร้าง OP เลย ห้ามไล่สร้างให้ครบทุกขั้นตาม routing** · กติกาเดียวที่ห้ามพลาด: สร้าง product ให้ sub process เมื่อไหร่ ต้องติ๊ก 🔩 เสมอ (product ปลอมไม่ติดธง = ต้นเหตุบั๊กนับซ้ำ) · เลิกใช้ = ปิด `is_active` ไม่ลบ
+> - **⭐ เกณฑ์ตัดสิน "OP หรือพาร์ทจริง" = "ต้องการให้ระบบตอบได้ไหมว่าของตัวนี้ค้างอยู่กี่ชิ้น" (ตกผลึกกับ user 2026-08-17 · เคส "291+088" SUB APRON)** — ไม่ใช่ "ของแวะพักไหม" (ทุกอย่างแวะพักหมด) · อยากได้บัญชียอดคงเหลือ/min-max/หักลบ demand = พาร์ทจริง (SAP ไม่มีเลขให้ → ใช้เลข 900) · แค่มอนิเตอร์ยอดผลิตรายกะ/รายเครื่อง แล้วดู store ด้วยตา/บัตรจริง = OP พอ · **บัตรคัมบังที่ใช้สแกนเปิดใบของ OP ใช้ต่อได้** (เป็นกลไกดึงงานหน้างาน ไม่ใช่บัญชีสต็อก) แต่ห้ามตั้ง min/max ฝั่ง Store ให้ OP · ขั้นที่คุมทั้งคู่ซ้าย-ขวา/หลายขั้นในสายเดียวกัน ผูก parent ตัวเดียวคงที่ (ธรรมเนียม = ฝั่งขวา / ตัวที่ใบเปิดเยอะสุด) — เคสจริง: `90031601` (HDF1+LS345) → `10100385` · `90031602` (HDF2) → `20065715` (274 RH ก่อนแพ็ค) · LS789 เปลี่ยนไปสแกน tag SAP `20065715`/`20065635` ตรง (ใบจริง ของเข้าคลังถูกเลข) · **FG อิสระที่ผลิตแยกกันได้ (Line 60/61) ห้ามผูก pair_mat_no** — pair มีไว้สำหรับงานที่ผลิตแยกกันไม่ได้จริงๆ (แม่พิมพ์คู่) เท่านั้น (user ทักตอนเกือบผูกผิด)
+> - **ใบงาน OP ยังเปิด/ปิดรายเครื่องเหมือนเดิม** — หัวหน้าไลน์มอนิเตอร์ยอดรายขั้น/รายเครื่องได้เต็ม (เหตุผลที่ user เลือกแบบ C) · แถวรายพาร์ทใน Daily Report ติดชิป 🔩 OP
+> - **ยอดรวม "ภาพใหญ่" ยุบขั้นเข้าพาร์ทจริงผ่าน `collapseOps(perMat, opMap)` / `orderTotal(orders, pick, pairOf, opMap)` ใน `src/utils/pairTotals.js`** — กติกา: พาร์ทจริงอยู่ในชุดข้อมูล = ตัวจริงถือยอด ขั้นถูกตัดทิ้ง · พาร์ทจริงไม่อยู่ = ใช้ max ของขั้นพี่น้อง · **OP ที่ parent=null = นับแบบเดิม + ขึ้น worklist เหลืองใน `/products`** (ห้ามซ่อน — ให้คนไปผูก)
+> - **opMap โหลดผ่าน `loadOpInfo()` / อ่านด้วย `opInfoSync()` (`src/utils/opItems.js`)** — best-effort: migration ยังไม่ apply = `{}` = พฤติกรรมเดิมเป๊ะ · จุดที่ collapse แล้ว: DailyReport (สรุปทั้งกะ) · FactoryMap (live+review+story modal) · Dashboard · DeptDashboard · MorningMeeting · OEEAnalytics (tdKpi+trend) · GroupOverview · monthlyReviewPptx — **จอสรุปใหม่ที่รวมยอดข้ามพาร์ท ต้องส่ง opMap เข้า collapseOps/orderTotal เสมอ**
+> - **📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18)** — แท็บ 🔩 ใน `/line-stock` (`src/components/WipBetweenSteps.jsx` + สูตร pure ที่ `src/utils/wipChain.js`): ยอดค้างทุก buffer ของสาย OP **คำนวณจากใบผลิต ไม่ต้องคีย์รับ-จ่าย** — `in-flight = Σสะสมผ่านขั้น − Σสะสมปลายทาง` (ทุกชิ้น 1:1 กับ FG) · **mat เดียวหลายสถานี** (90031601 = HDF1+LS345) แยกยอดต่อ (mat,line) จาก session แล้ว**เรียงยอดสะสมมาก→น้อย = ลำดับการไหล** (ต้นทางย่อมสะสม ≥ ปลายน้ำ) → ได้ "ค้างระหว่างสถานี" + ยอดผ่านขั้น = สถานีปลายน้ำสุด · **ติดลบ = โชว์ ⚠ ห้ามซ่อนเป็น 0** (สัญญาณว่า baseline/ของเสียยังไม่ปรับ) · baseline "📋 นับจริง" เก็บประวัติที่ `wip_adjustments` (DR · migration `20260818_wip_adjustments_dr.sql` **apply แล้ว 2026-08-18** — user รันผ่าน SQL Editor) ระบบนับต่อจากเวลานับ (`counted_qty + Σหลังเวลานับ`) · สิทธิ์กดนับจริง = `wip:adjust` (migration `20260818_wip_adjust_permission_main.sql` **apply แล้ว 2026-08-18** — catalog + seed admin/mgr/sv/leader) · โค้ด best-effort อยู่แล้วเผื่อ rollback · **เป็นบัญชีภายในแผนกไว้ดูจังหวะงาน ไม่เกี่ยว line_stock_transactions/SAP** · **เฟส 2 (ทำแล้ว 2026-08-18): net requirement** — ช่อง 📥 ความต้องการต่อสาย (default = Σ order ค้างส่งของเลขนั้นจาก `customer_shipping_orders` ≠ shipped · แก้ทับได้) − สต็อก FG (`line_stock_summary`) = ต้องผลิต FG เพิ่ม → คอลัมน์ "ต้องทำเพิ่ม" ต่อขั้น = `max(0, FGที่ต้องผลิต − inFlight)` (`netRequirement` ใน wipChain.js — inFlight ติดลบนับเป็น 0 ไม่เพิ่ม requirement เกินจริง) · demand เลขลูกค้าที่ยังไม่ resolve เป็น SAP จะไม่ถูกรวมใน default (กรอกมือได้)
+> - **ห้ามเอารายการ OP เข้า BOM / kanban / ทะเบียน parts_master** (BOM picker กรองออกแล้ว) · OP ไม่เข้าคลัง (mat text ไม่ตรง prefix rules ของ stock_inflow อยู่แล้ว) · ตั้งค่า OP ที่ฟอร์มสินค้าใน `/products` (กล่อง 🔩 รายการขั้นตอน)
+> - **ห้ามแก้ปัญหาด้วยการเปลี่ยนเลข OP เป็นเลขจริง** (เช่น M6→20058626) — จะกลายเป็น mat เดียวหลายใบซ้อน ยิ่งนับซ้ำหนักกว่าเดิม
+> - **เฟสถัดไป (ยังไม่ทำ):** ผูก OP กับ `part_routings` (routing master จาก VSM) + ใบผลิตหลายขั้นจริง (1 ใบไหลผ่านหลายเครื่อง) · ตอนปิดกะ ค่า stamp (`actual_qty`) ของกะเก่ายังเป็นค่ารวมแบบเดิม — ไม่ backfill (กฎห้าม recompute ย้อนหลัง)
+
 ### ⚠️ "OEE จริง" — ปิดช่องโหว่ติ๊ก Downtime เป็น "ในแผน" เพื่อดัน OEE (2026-08-05 · คำสั่ง user)
 
 **ปัญหา:** สูตร OEE มาตรฐานกัน "หยุดตามแผน" ออกจากฐาน A (`A = run ÷ (กะ − พัก − หยุดในแผน)`) → ติ๊กประเภท DT เป็น "ในแผน" แล้ว A ไม่ตกเลย · หน้างานจึงติ๊กในแผนกับเหตุการณ์ที่จริงๆ เป็นการสูญเสีย (รอ QA ตรวจงาน, เปลี่ยนตะกร้าใส่งาน) ทำให้ OEE สวยเกินจริง — เคสจริง LASER EXPORT กะดึก 04/08: DT 40 น. เป็น "ในแผน" ทั้งหมด → A = 100%, OEE 90.3%
@@ -823,6 +1165,9 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - **การ์ดแรกคือ "กะที่กำลังผลิตอยู่ตอนนี้"** (ไม่มีกะเปิด = "กะล่าสุดของวันที่เลือก") — เดิมค่า A/P/Q/OEE เป็น `—` ตลอดเพราะอ่านจาก `oee_a/p/q` ที่ **stamp ตอนปิดกะเท่านั้น** · แก้แล้ว: กะที่ยังไม่ปิดคำนวณ**สด**ผ่าน util กลาง **`src/utils/liveOee.js` (`computeLiveOee`)** ซึ่ง `FactoryMap` ใช้ร่วม (ตัวเลขตรงกันทุกจอ) · ปิดกะแล้วยังใช้ค่า stamp เสมอ — **ห้ามคำนวณซ้ำด้วย master ปัจจุบัน**
   - สูตรสด (ประมาณระหว่างกะ): A = run ÷ elapsed · P = Σ(qty×CT) ÷ run · Q = ดี ÷ (ดี+เสีย) · DT ที่เปิดค้างนับถึงตอนนี้ · **ไม่หัก break policy** (ต่างจากสูตรตอนปิดกะโดยตั้งใจ)
   - **ยังไม่ผลิตชิ้นแรก (`produced = 0`) → คืน P/Q/OEE = null (`noOutput: true`) ห้ามคืน 0** — เคยทำการ์ดขึ้น "OEE 0%" แดงทั้งที่กะเพิ่งเปิด 19 นาที · A ยังคำนวณได้ปกติ
+  - **⚠️ ผลิตแล้วแต่ชิ้นงาน "ไม่ได้ตั้ง CT" สักตัว → `stdMin = 0` → P = 0 → OEE = 0% (บั๊กเดียวกันคนละหน้า · แก้ 2026-08-11 · user ทัก "OEE 0% บั๊กรึเปล่า")** — นั่นคือ**คำกล่าวอ้างเท็จว่าไลน์เดินได้แย่มาก** ทั้งที่ความจริงคือ **ไม่รู้มาตรฐาน** → คืน `P/OEE = null` + flag **`noCt: true`** พร้อม `matsNoCt[]` ให้จอบอกว่าต้องไปตั้ง CT ที่ Product Master · **A กับ Q ยังตอบได้** (ไม่ต้องใช้ CT) จึงคืนตามปกติ
+  - **ตั้ง CT ไม่ครบทุกชิ้นงาน (`qtyNoCt > 0`) = %P ต่ำกว่าจริง** (stdMin ขาดแต่ runMin นับเต็ม) → คำนวณต่อได้ แต่ **จอต้องติดป้ายเตือน** (`⚠CT ไม่ครบ` บนผัง · ข้อความในการ์ด OEE Analytics) ห้ามปล่อยให้ดูเหมือนค่าปกติ
+  - **กฎรวม: "ประเมินไม่ได้" ต้องเป็น `null` + บอกเหตุผล ห้ามแปลงเป็น 0** — 0% แปลว่า "วัดแล้วได้ศูนย์" ซึ่งคนละเรื่องกับ "ยังวัดไม่ได้" · จุดใหม่ที่คำนวณ OEE/A/P/Q ให้ยึดหลักนี้เสมอ
   - < 10 นาทีแรกของกะ (`LIVE_MIN_ELAPSED`) = null (ตัวหารเล็กเกินไป) · การ์ดอธิบายสถานะเป็นข้อความไทยใต้หัวข้อ + ป้าย "· สด"
   - ชิ้นงานในการ์ดดึงจาก **ใบงานจริง** (`prod_orders`) ไม่ใช่ `session.product_id` (ซึ่งมักว่างเพราะไลน์วิ่งหลายพาร์ทต่อกะ)
 - **เป้ากะในการ์ด "จำนวนชิ้นงานที่ผลิตรวมของวันนี้"**: `target_qty` → **ไม่ได้ตั้ง (0 = เกือบทุกกะ) ให้รวมเป้าใบงาน (`qty_target ?? qty`)** — กฎเดียวกับ MorningMeeting · เดิม fallback มีเฉพาะกะที่มีงานคู่ RH/LH ทำให้ขึ้น "ยังไม่ตั้งเป้ากะ" ทั้งที่ใบงานมีเป้าครบ (เทียบข้อมูลจริง: 66/66 กะกลับมามีเป้า) · **ห้าม fallback ไป `std_day_shift`** (นั่นคือจำนวน "คน")
@@ -849,11 +1194,29 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - ตาราง `improvements` อยู่ **DR project** (anon-open ตาม convention) + bucket `improvement-images` (cap 5MB, รูปบีบ 1280px q0.85 ก่อนอัปโหลด, เปลี่ยน/ลบแล้วลบไฟล์เก่าเสมอ) — migration: `20260712_improvements_module.sql` (DR) + `20260712_improvements_page_permissions.sql` (Main)
 - จุดยึดโปรเจค: `line_name` + `problem_source` (downtime/defect) + `problem_type_id` (→ `dr_downtime_types`/`dr_defect_types`) + optional `machine_no`/`mat_no` + `start_date` (วันเริ่มแก้) + `baseline_days` (หน้าต่างเทียบ 14/30/60/90 วัน)
 - **สูตรเทียบผล:** ก่อน = [start−baseline, start) · หลัง = [start, min(วันนี้, start+baseline)] — ดึง `downtime_logs.duration_min` หรือ `defect_logs.qty_ng` ผ่าน session ของไลน์ แล้วหารด้วย**จำนวนวันที่มีการผลิตจริง** (นับจาก `production_sessions`) ไม่ใช่วันปฏิทิน — แสดง % ลด/เพิ่ม + แถบเทียบ ก่อน(แดง)/หลัง(เขียว)
-- ตอนสร้างมี**พาเรโต้ Top 10** ของไลน์ (ตามหน้าต่างเดียวกัน) คลิกเลือกปัญหา → prefill เป้าโปรเจค + ตั้งชื่อให้อัตโนมัติ
+- ตอนสร้างมี**พาเรโต้ Top 10** ของไลน์ (ตามหน้าต่างเดียวกัน) คลิกเลือกปัญหา → prefill เป้าโปรเจค (รวมเครื่องจักร) + ตั้งชื่อให้อัตโนมัติ
+- **⚠️ หมายเลขเครื่องในหน้านี้เทียบผ่าน `normCode` เสมอ (`sameMc` · 2026-08-19 · user ทัก "คลิกพาเรโต้แล้วเครื่องไม่ auto มาให้"):** `downtime_logs.machine_no` เป็นข้อความที่คนพิมพ์ — มี `"RB- 107"` (เว้นวรรค) ปนกับทะเบียน `"RB-107"` → prefill ถูกตั้งจริงแต่ **select แสดงเป็น "— ทั้งไลน์ —" เงียบๆ** (React select ที่ value ไม่ตรง option ไหนเลย) และผลก่อน/หลังที่ `.eq('machine_no')` ตรงๆ นับตกหล่น · แก้ครบชุด: จัดกลุ่มพาเรโต้/เทียบ selected/กรองผลวัด ใช้ normCode · คลิกพาเรโต้แปลงเป็นชื่อตามทะเบียน (`canonMc`) · `machineOpts` ลิสต์จาก**ครอบครัวไลน์**ไม่ใช่ชื่อตรงเป๊ะ (เครื่องมักลงทะเบียนใต้ไลน์แม่/พี่น้อง) · ค่าที่ไม่มีในทะเบียนยังต้องโชว์ใน select เป็น option ⚠ **ห้ามปล่อยให้แสดง "ทั้งไลน์" ทั้งที่ state กรองรายเครื่อง**
 - สถานะ: `monitoring` (เหลือง นิ่ง) → `done` (เขียว พร้อม result_note) / `cancelled` — snapshot ชื่อปัญหาไว้ใน `problem_label` กัน master ถูกลบ
 - **Milestone/Gantt ต่อโปรเจค (2026-07-14 — คำสั่ง user: ไม่ใช่ฟอร์มทีเดียวจบ ต้องตามงานทีมแบบ gantt):** ตาราง `improvement_milestones` (DR, migration `20260714_improvement_milestones.sql`) — โปรเจคใหม่ seed ขั้นงานมาตรฐาน **PDCA 5 ขั้น** กระจายวันตาม baseline อัตโนมัติ (แก้/เพิ่ม/ลบอิสระ) · การ์ดมีแผง "🗓 แผนงาน x/y ขั้น" + progress + gantt ในตัว: แถบตามแผนสีตามสถานะ (กดป้ายวน todo→doing→done, stamp `done_at`), เลยแผน = แดง "⚠ เลยแผน", เส้นวันนี้สีชมพู (playhead convention) · พาเรโต้: งานในแผน priority รอง (จาง+ป้าย 📅 ในแผน) และแต่ละแถวโชว์ note พนักงาน 💬 (สำคัญกับ "อื่นๆ")
 - สิทธิ์: ทุก role เข้าดูได้ · สร้าง/แก้/ลบ/เปลี่ยนสถานะ + จัดการ milestone = `can('improvements','manage')` (seed: admin/manager/supervisor/leader)
 - Scope: leader เห็นเฉพาะ family ไลน์ตัวเอง · role อื่นกรองตาม `sections` (pattern มาตรฐาน)
+- **⭐ แผนงานอิง PDCA เป็น "ข้อมูล" ต่อขั้น (2026-08-19 · คำสั่ง user "ต้องอิงหลัก PDCA ให้เห็นชัด"):** `improvement_milestones.phase` ('plan'|'do'|'check'|'act' · null = ยังไม่ระบุ โชว์ "–" **ห้ามเดาจากชื่อขั้น** — ขั้นแก้ชื่อ/เพิ่มเองได้) · migration `20260819_improvement_milestone_phase_dr.sql` (**apply แล้ว** ผ่าน MCP — เซสชันนี้เข้า DB ได้) · meta อยู่ `PHASES` ใน Improvements.jsx จุดเดียว (ป้าย P/D/C/A + legend หัวแผน) · **ขั้น check ติด 🤖 = แผงเทียบผลก่อน/หลังจากข้อมูลจริงคือขั้น Check อัตโนมัติของโปรเจค**
+- **⭐ แยก 2 จังหวะ Plan/Do (2026-08-19 · user ทัก "กรอกการแก้ไขก่อน แต่แผนขั้นแรกคือวิเคราะห์สาเหตุ — ย้อนแย้ง"):** เปิดโปรเจค = ปัญหา+เป้า (ช่อง "การแก้ไข" เว้นได้) · **เริ่มลงมือจริง = ติ๊กเริ่มขั้น `phase='do'` ในแผน หรือกดแถบ 🚀 บนการ์ด** → modal กรอกการแก้ไข + **เลื่อน `start_date` = วันเริ่ม Do จริง** (start_date คือจุดตัดเทียบก่อน/หลัง — ปล่อยเป็นวันเปิดโปรเจคทั้งที่ยังวิเคราะห์อยู่ = ช่วง "หลังแก้" ปนวันที่ยังไม่ได้แก้ → % ลด/saving ต่ำกว่าจริง บทเรียนเดียวกับ pivot ของ CAPA) · เลื่อน start_date แล้ว**ต้องล้าง `results[imp.id]`** ให้คำนวณใหม่ (effect ข้ามตัวที่มีผลแล้ว)
+- **⭐ กฎซื่อตรงของตัวเลขเงิน — `MIN_AFTER_DAYS = 5` (2026-08-19 · user ทัก "ประมาณการเอามาจากไหน ในเมื่อยังไม่มีข้อมูลว่าจะลดได้เท่าไหร่"):** หลังแก้ < 5 วันผลิตจริง (เกณฑ์เดียวกับ capaEffect) = **ห้ามโชว์ "ประหยัด X บาท" / ▼%** (หลังแก้ 1 วัน 0 นาที = ▼100% เต็ม ๆ ที่ยังพิสูจน์ไม่ได้) → การ์ดสลับเป็นโหมด **"มูลค่าปัญหานี้ (ก่อนแก้) = เพดานประหยัดถ้าแก้หายหมด"** (`costSavingOf(imp, r, potential=true)` — after = 0 ล้วน คือข้อเท็จจริงจาก baseline) + ป้าย "⏳ รอผล N/5 วัน" · แถบ Cost Saving รวมหัวหน้าเพจนับเฉพาะโปรเจคที่ผลยืนยันแล้ว — ตัวรอผลแยกเป็น "เพดานรวม ~X (ยังไม่นับรวม)"
+- **⭐ ลูปปิด Improvement → PE (2026-08-19):** ปิดจ๊อบมี **soft gate** บังคับตอบ "กระทบ PFMEA/Control Plan ไหม" (ตอบก่อนถึงกดปิดได้ · ไม่บังคับแก้เสร็จ — หลักเดียวกับด่าน D8) · กระทบ = เปิด modal `PeChangeRequests mode="source"` (`ref_kind='improvement'` — ขยาย vocabulary ทั้ง `pe_change_requests`+`pe_doc_revisions` แล้ว migration `20260819_pe_ref_kind_improvement_main.sql` **apply แล้ว**) · ปุ่ม 📐 PE บนการ์ดเข้าดู/เสนอได้ทุกเมื่อ ไม่ใช่ one-shot ตอนปิด
+- **💰 มูลค่าดาวไทม์ในหน้ารายงาน (2026-08-19 · คำสั่ง user "รายละเอียดดาวไทม์ควร link เรื่องเงินออกมาให้เห็น"):** `/oee-analytics` แท็บแนวโน้ม แผง "💰 มูลค่าดาวไทม์นอกแผน" (`dtCost` memo) — บาท = นาที/60 × activity rate เต็ม (DL+DP+IDP+OH) ของ cost center ไลน์ ณ วันเกิดเหตุ · **นับเฉพาะนอกแผน** (กฎ Pareto) · ไลน์ไม่มี rate = กอง "ตีมูลค่าไม่ได้ N นาที" แถบส้มชี้ไป /org-setup **ห้ามเดา** (convention เดียวกับพาร์ทไม่มีต้นทุนในแผงมูลค่าของเสีย) · `linesFull` ต้อง select `cost_center` ด้วย
+- **💰 Cost Saving (2026-08-11 · คำสั่ง user):** การ์ดโปรเจคแปลงผลก่อน/หลังเป็น **บาท/วัน + บาท/เดือน + ระยะคืนทุน** — โมเดล standard costing ของบัญชี:
+  - **Activity rate ต่อ cost center** (**DL/DP/IDP/OH** บาท/ชม. — ตรงกับ activity type ใน SAP · user ยืนยัน 2026-08-19: `ACT_DLAB` ค่าแรง · `ACT_DP_MAC_*` ค่าเสื่อมทางตรง · **`ACT_IDP_MAC` ค่าเสื่อมทางอ้อม รวมค่าซ่อม** ← งานลด breakdown เข้าก้อนนี้ · `ACT_OH_OTH` ค่าโสหุ้ย · **ไม่เก็บ `ACT_DP_DIE_*`/`Dep.Die&Mo`** ตามที่ user สั่ง — ในข้อมูลจริงเป็น 0.01 แทบทั้งหมด รวมทั้งโรงงาน 72 บาท/ชม.) = ตาราง **`cost_center_rates`** (Main · migration `20260811_cost_center_rates_main.sql` · audit+updated_at ผูกแล้ว) — จัดการที่ **`/org-setup` แผง "💰 Activity Rate"** (`src/components/CostCenterRatePanel.jsx`) · เก็บแบบ **`effective_from`** (บช. ปรับรายปี — เพิ่มแถวใหม่ ไม่ทับประวัติ โปรเจคเก่าคำนวณด้วย rate ณ start_date)
+  - **✅ seed ข้อมูลจริงจาก SAP แล้ว 52 cost center (2026-08-19 · migration `20260819_cost_center_rates_seed.sql` · apply แล้ว)** — จับคู่กับไลน์/ผังในระบบได้ **14 cost center** ที่เหลือเป็นไลน์โรงอื่นที่ยังไม่ลงทะเบียน (seed ไว้รอ) · **แก้ `cost_center` ของ LINE A ที่พิมพ์เกินหลักด้วย** (`21040661101` → `2140661101`) ไม่งั้นไลน์ A หา rate ไม่เจอตลอดไป
+  - **⚠️ หัวตาราง/colSpan/ฟอร์ม ต้อง generate จาก `RATE_COMPONENTS` ทั้งหมด** — เคยพลาด: หัวตาราง hardcode 3 ก้อน (DL/OH/DP) แต่ body วน 4 ก้อน → **คอลัมน์เลื่อนกันทั้งตาราง** (IDP ไปโผล่ใต้หัว OH · ยอดรวมจริงไปอยู่ใต้ Effective) ตัวเลขในฐานถูกแต่คนอ่านผิดหมด
+- **⚠️ เพิ่มก้อน rate ใหม่ = เพิ่ม entry ใน `RATE_COMPONENTS` (`src/utils/costSaving.js`) + คอลัมน์ใน `cost_center_rates` เท่านั้น** — ฟอร์ม/ตาราง/ยอดรวม/ตัวเลือกก้อนใน `/improvements` วนจาก array นี้ทั้งหมด **ห้ามพิมพ์ชื่อคอลัมน์ rate ซ้ำในหน้าใดๆ**
+  - **⚠️ บัญชีปรับ rate รอบใหม่ = กดปุ่ม “＋ rate ใหม่” (เพิ่มแถวใหม่ที่ `effective_from`) ห้าม update ทับ** (โปรเจคเก่าต้องคำนวณด้วย rate ณ ช่วงเวลานั้น) · ปุ่ม ✏️ ในตารางไว้แก้เฉพาะตอน**กรอกตัวเลขผิด** จึงทำให้จืดกว่าโดยตั้งใจ · หน้า `/org-setup` เป็น **admin-only** อยู่แล้ว (`page:/org-setup` seed แค่ admin · `dept_admin` เป็น bucket ที่โค้ดบล็อก `page:*` ไว้) ไม่ต้องเพิ่ม gate ซ้ำ
+  - **⚠️ วัน Effective ตอนแก้แถวเดิม = ล็อกกันพลาด แต่ปลดได้ด้วยปุ่ม 🔓 (confirm ก่อน)** — ล็อกตายไม่ได้ เพราะแถวที่ seed มาต้องแก้วันจริงทีหลัง (ทางตัน: ไม่งั้นต้องลบทิ้งสร้างใหม่ = audit ขาด) · **ห้ามใช้ `disabled` กับ input ที่ต้องดูเหมือนช่องปกติ** — `input[type=date]` ที่ disabled ไม่มีไอคอนปฏิทิน ทำให้โมดัลแก้กับเพิ่มใหม่หน้าตาคนละแบบ (ใช้ `readOnly` + หรี่ opacity แทน)
+  - **ชุดแรก = rate ปี 2026** (user ยืนยัน 2026-08-19) — seed ตอนแรกใส่ `2000-01-01` ไว้ก่อนให้ครอบทุกโปรเจค แล้วเปลี่ยนเป็น **`2026-01-01`** ตอนรู้ปีจริง (migration `20260819_cost_center_rates_effective_2026.sql` · **apply แล้ว 2026-08-19** · ปลอดภัยเพราะ `improvements` = 0 แถว) · ผลที่ตั้งใจ: โปรเจคที่เริ่มก่อน 2026 = "ไม่รู้ rate" (null) แทนการเอา rate ปี 2026 ไปคิดย้อนหลัง
+  - **⚠️ rate มีที่ "ระดับกลุ่ม" (cost center ชุด 21406 — org kind='line'/production_lines) เท่านั้น (คำสั่ง user 2026-08-11)** — ระดับส่วน (21404)/แผนก (21405) **ไม่กรอก rate** · ยอดระดับบน = **sum ขึ้นตาม hierarchy จากกลุ่ม** (แถบสรุปใน /improvements: กลุ่ม → ส่วน → รวม) · แผง rate จึงลิสต์เฉพาะรหัสระดับกลุ่ม (+ ปุ่มแสดงทั้งหมด · รหัสที่ไลน์ใช้แต่ไม่ขึ้นต้น 21406 = badge เตือน data drift — เจอจริง: GOR/LWR BAR ใช้ 21405xxxx, LINE A พิมพ์ 21040661101 เกินหลัก)
+  - **ต้นทุน/ชิ้น** = `parts_master.material_cost` (raw mat) + **`standard_cost`** (บช. คำนวณ รวม mat+DL+OH+DP — **มีค่าแล้วชนะ material_cost เสมอ**) — กรอก/นำเข้า CSV ที่ Product Master → 🗂 Parts Master (คอลัมน์ CSV ใหม่ optional — ไฟล์เก่า/เซลล์ว่างไม่ล้างค่าเดิม · ⚠ PostgREST bulk upsert บังคับทุก object คีย์ชุดเดียวกัน ห้าม spread รายแถว — เติมค่าเดิมกลับแทน) · migration `20260811_improvement_cost_saving_dr.sql` (DR — + `improvements.invest_cost` เงินลงทุน→payback)
+  - **สูตร (helper `src/utils/costSaving.js` + `costSavingOf` ใน Improvements.jsx):** downtime = Δนาที/วัน × rate/60 · defect = Δชิ้น/วัน ราย mat × ต้นทุน/ชิ้น (standard_cost ‖ material_cost + conversion CT×rate/3600) · mtn = **Δค่าซ่อมจริง** (`mtn_orders.labor_cost+parts_cost` ต่อใบ) + Δนาที breakdown × rate · cost center ของไลน์ = `lineCostCenter` (ลูกไม่กรอก = ตกทอดไลน์แม่ pattern เดิม) · บาท/เดือน = × `countWorkingDaysInMonth` (ปฏิทินบริษัท)
+  - **แสดง DL/OH/DP แยก 3 ก้อนเสมอ + เลือกได้ว่ายอดรวมนับก้อนไหน** (default ทั้งหมด — บางนโยบายบัญชีไม่นับ DP เป็น sunk cost · จำใน `localStorage['imp_cost_comps']`) · **ข้อมูลไม่ครบ = ขึ้น ⚠ บอกว่าขาดอะไร+แก้ที่ไหน ห้ามเดาตัวเลข** (ไม่มี cost center / ไม่มี rate / พาร์ทไม่มีต้นทุน)
 - **เชื่อมกับ MTN Work-Order (2026-07-14):** `problem_source = 'mtn'` (migration `20260714_improvements_mtn_source.sql` ขยาย check constraint) → วัดผลก่อน/หลังจาก**ใบซ่อม MO** (จำนวนใบ + นาที breakdown จาก `mtn_orders`) แทน downtime/defect · พาเรโต้ตอนสร้างมีโหมด "ใบซ่อม MTN" (เครื่อง+อาการที่มีใบเยอะสุด) · การ์ดโชว์ชิป "🔧 ใบ MO N ใบ" (นับตั้งแต่ start_date) · ฝั่ง MtnRepair: ปุ่ม "💡 เปิดโปรเจคปรับปรุง" ใน DetailDrawer ส่ง prefill ผ่าน `sessionStorage['imp_prefill']` แล้ว navigate มา /improvements (เด่นเมื่อ step6 ติดตามได้ "เกิดปัญหาซ้ำ/แก้ไขไม่ได้") + ชิป "มีโปรเจคปรับปรุงกำลังทำ" บนใบของเครื่องที่มี improvement status=monitoring
 
 ---
@@ -907,6 +1270,33 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 ---
 
+## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน)
+
+หัวหน้ากลุ่ม Assy2 แจ้งว่ายัง**เขียนมือทุกครั้ง** 3 ใบ (ปัญหาการผลิต · ถังเหลือง · ถังแดง) ทั้งที่ข้อมูลอยู่ในระบบแล้ว → ทำเป็น export/paperless
+
+### 📝 ใบรายงานปัญหาการผลิต — `src/lib/prodProblemReport.js`
+
+ปุ่ม **📝 ใบรายงานปัญหา** ในหัว session ของ `/daily-report` (โผล่เมื่อกะนั้นมี downtime หรือของเสียอย่างน้อย 1 รายการ)
+- **generate จากข้อมูลกะนั้นล้วน ไม่ต้องคีย์ซ้ำ:** `defect_logs` → คอลัมน์คุณภาพ · downtime **นอกแผน ≥ 30 นาที** → คอลัมน์เครื่องจักร หรือ การรอ (แยกด้วย `WAIT_WORDS`)
+- **⚠️ เกณฑ์ 30 นาที + ตัด planned ออก มาจากคำพูดหัวหน้าเอง** ("หยุด/รอ เกิน 30 นาที ต้องเขียนใบ") — หยุดตามแผนไม่ใช่ปัญหาที่ต้องรายงาน (หลักเดียวกับ Pareto/Andon ที่กัน planned ออกทุกจุด)
+- **ติ๊ก checkbox เป็น best-effort จากคำในข้อความ แต่ข้อความจริงถูกพิมพ์ลง "รายละเอียดของปัญหา" เสมอ** → ติ๊กไม่ตรงก็ไม่มีข้อมูลหาย · ตัวนับ "ตัดรายการสั้นกว่าเกณฑ์: N รายการ" พิมพ์ท้ายใบ **ห้ามตัดเงียบ**
+- **⚠️ กับดักที่เจอจริงตอนเทส: คำสั้นเกินไปจับผิดตัว** — keyword `'รู'` (จาก `ขอบงาน-รูรั่ง`) ไป match "เสีย**รู**ป" ทำให้ติ๊กผิดช่อง · **keyword ต้องยาวพอที่จะไม่เป็นสับสตริงของคำอื่น** — เพิ่มคำใหม่ต้องเทสกับข้อความจริงก่อนเสมอ
+- doc_key **`prod_problem_report`** (A4 แนวตั้ง · `layout_locked=true` — 3 คอลัมน์ตายตัว) · ยังไม่มีเลขฟอร์มทางการ seed `form_code=null` (หน้าตาเดิมเป๊ะ) doc_control ตั้งเองที่ `/doc-forms`
+- **⚠️ ข้อความ checkbox (`QUALITY_BOXES`/`MACHINE_BOXES`/`WAIT_BOXES`) ถอดจากฟอร์มกระดาษที่สแกนมา — ยังไม่ได้ตรวจกับใบจริง** ถ้าหัวหน้าทักว่าคำไม่ตรง แก้ที่ 3 const นี้จุดเดียว
+
+### 🗑️ ถังเหลือง / ถังแดง — แท็บใน `/qa` (`src/components/QualityBins.jsx`)
+
+- **ตารางเดียว `quality_bin_records` (DR) แยกด้วยคอลัมน์ `bin` ('yellow'|'red') — ห้ามแตก 2 ตาราง** เพราะหมายเหตุท้ายฟอร์มกระดาษเขียนสายงานไว้เอง: *ถังเหลือง → ซ่อม → NG → ติดแท็กแดง → ลงบันทึกชิ้นงานเสีย → วางตะกร้าแดง* · แตกตารางแล้ว**สืบไม่ได้ว่าชิ้นในถังแดงมาจากใบเหลืองใบไหน** → ปุ่ม **➡️ ย้ายเข้าถังแดง** สร้างแถวแดงพร้อม `from_yellow_id` ชี้กลับ
+- ถังเหลือง = ชิ้นงานต้องสงสัย (มีช่องซ่อม → ผลซ่อม OK/NG → วันนำกลับเข้ากระบวนการ) · ถังแดง = ของเสียยืนยันแล้ว (ผู้กำจัดทำลาย + ตำแหน่ง ระดับหัวหน้ากลุ่ม/วิศวกรขึ้นไปตาม DOA)
+- **ชื่อคนเก็บเป็นข้อความไม่ใช่ FK โดยตั้งใจ** (snapshot pattern เดียวกับ `ojt_training_attendees.emp_name`) — ใบเก่าต้องอ่านออกแม้คนลาออก
+- ลบ = **soft delete (`is_active=false`)** ไม่ลบจริง (บันทึกคุณภาพ)
+- **พิมพ์ = `src/lib/qualityBinPrint.js`** (A4 แนวนอน · 15 แถว/หน้า ตามฟอร์มกระดาษ · หัวตาราง 2 ชั้นสำหรับ "ผลการซ่อมชิ้นงาน OK|NG") · doc_key **`qbin_yellow`** / **`qbin_red`**
+- **ไม่เพิ่ม permission key ใหม่ — reuse `scrap:record` / `scrap:manage`** (งานของเสียกลุ่มเดียวกัน คนกลุ่มเดียวกันดูแล) เลี่ยงกับดัก seed `enum_range` ที่ทำให้ role ใหม่ fail-closed
+- **`scrap_report_id`** เตรียมไว้ผูกใบขออนุมัติทำลายกับ `scrap_reports` — **ยังไม่มี UI เชื่อม** (เฟสถัดไป)
+- migration: `20260819_quality_bin_records.sql` (DR) + `20260819_doc_forms_prod_problem_qbin.sql` (Main) — **apply แล้วทั้งคู่ 2026-08-19**
+
+---
+
 ## QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04)
 
 **สายงานคุณภาพแบ่งชัด 2 หน้า — อย่าเอาไปปนกัน:**
@@ -927,6 +1317,24 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - `nextDocNo` ย้ายจาก QualityControl.jsx → **`src/utils/qaDocNo.js`** (ใบตรวจเรียกใช้ตัวเดียวกันโดยไม่เกิด circular import)
 - **ยังไม่ทำ:** ผลตรวจยังไม่ไหลเข้า SPC อัตโนมัติ (จุด variable ที่กรอกค่าในใบตรวจ ยังไม่สร้าง `qa_measurements` ให้เอง — ต้องกด "ส่งเข้า SPC" ที่ setup แล้วกรอกที่แท็บ SPC เหมือนเดิม) · ยังไม่มีฟอร์มพิมพ์ใบตรวจ (ถ้าจะทำ ต้อง register ใน `/doc-forms` ตามกฎเอกสาร)
 
+### 🔔 ผลิตเรียก QA มาตรวจ — FME (First–Middle–End) · โค้ดครบ **ยังไม่ apply/deploy** (2026-08-19)
+
+"ระบบ 2" ตาม `docs/INSPECTION_ALARM_SYSTEMS.md` (ระบบ 1 = `pm-daily-scan` · ระบบ 3 = `pm-plan-reminder` ใช้งานอยู่แล้ว) — เดิมไม่มีช่องทางให้ผลิตเรียก QA เลย ใบตรวจเป็น **pull** (QA เดินไปตรวจเอง) ระบบจึงไม่มีทางรู้ว่า "ตรวจตก" ไปกี่รุ่น
+
+> #### ⚠️ กฎเหล็ก — หน่วยงานตรวจ = **ไลน์ × วันงาน × กะ × รุ่น** ห้ามผูกกับออเดอร์ (คำสั่ง user)
+> *"เฉพาะเปลี่ยนรุ่น หรือ เปลี่ยนกะ ไม่มองเป็นออเดอร์ เพราะบางงาน ลอทนึงมี 50 เลขออเดอร์"*
+> → ผูกกับออเดอร์ = เรียก QA 50 ครั้งต่อลอต · unique key ของ `qa_fme_obligations` คือ
+> `(line_name, work_date, shift, mat_no, stage)` — **นี่คือหัวใจ อย่าเผลอเติม order id เข้าไปในคีย์**
+> **งานคู่ RH/LH = รุ่นเดียวกัน** จับกลุ่มด้วย `dr_products.pair_mat_no` (ตัวแทน = mat ที่เรียงน้อยกว่า) ไม่งั้นสลับ LH/RH ถูกอ่านเป็นเปลี่ยนรุ่นทุกครั้ง แล้วเรียกรัวๆ
+
+- **trigger (derive จากข้อมูลผลิตล้วน ไม่ต้องให้ใครกดแจ้ง):** `first` = รุ่นโผล่ในกะครั้งแรก (ครอบทั้ง **เปลี่ยนกะ** และ **เปลี่ยนรุ่น**) · `end` = รุ่นปิดใบครบแล้วมีรุ่นอื่นเริ่มต่อ หรือปิดกะ · `middle` = รุ่นวิ่งเกิน `mid_after_min` (**default 0 = ปิด** เพราะ user ระบุ "เฉพาะ" 2 เหตุแรก)
+- **completion 2 ระดับ: เปิดใบตรวจ = รับงาน (หยุดเตือนทันที) · ปิดใบ = จบงาน** — ห้ามเตือนซ้ำหลังคนรับงานแล้ว · ผูกแม่นยำผ่าน `sheet_id` เมื่อกดจากคิว · QA เปิดใบเองก็จับคู่ได้ด้วย (พาร์ท+วัน+กะ+`stage`) → **`qa_inspection_sheets.stage` ถูกเขียนจริงแล้ว** (เดิมมีคอลัมน์แต่ไม่มีใครเขียน)
+- **จับคู่พาร์ท QA ↔ เลข SAP:** `qa_parts.mat_no` (คอลัมน์ใหม่ ผูกตรง) → ถอยไปเทียบ `part_no` แบบ normalize · **จับคู่ไม่ได้ = ยังสร้างงานตรวจอยู่ดี** (part_id null + ขึ้นเตือนในคิว + ปุ่มเปิดใบถูกปิด) — **ห้ามข้ามการเรียกเพราะ map ไม่เจอ** จะกลายเป็นตรวจตกแบบไม่มีใครรู้
+- **Telegram:** `qa_fme_call` / `qa_fme_overdue` (หมวด quality) ตั้งห้อง/ปิด/แก้ข้อความที่ `/notification-config` ตาม pattern เดิม
+- **ไม่เพิ่ม permission key ใหม่** — ใช้ `qa:record` (รับงาน/ยกเลิก) + `qa:manage` (ตั้งค่า) เลี่ยงกับดัก seed `enum_range`
+- **ไม่สร้าง `qa_piece_inspections` แยกตามที่เอกสารเดิมเสนอ** — `qa_inspection_sheets` (สร้างทีหลังเอกสาร) ทำหน้าที่นั้นครบแล้ว สร้างตารางที่ 2 = ผลตรวจแตก 2 ที่
+- **⚠️ ยังไม่ apply/deploy — ต้องทำ 3 ขั้นตามลำดับ:** (1) migration `20260819_qa_fme_call.sql` (Main) (2) deploy edge `qa-fme-scan` **`verify_jwt=false`** + `20260819_qa_fme_scan_cron.sql` (3) เปิดสวิตช์ที่ `/qa` ⚙️ · **`is_enabled` default = false โดยตั้งใจ** (ยิงเข้าห้อง Telegram จริง ต้องให้เจ้าของระบบกดเปิดเอง) · `skip_older_min` (120) กันเรียกย้อนหลังท่วมห้องแชทตอนเพิ่งเปิด
+
 ---
 
 ## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
@@ -940,6 +1348,18 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - **แสดงผล:** SVG `<polygon>` viewBox 0 0 100 100 `preserveAspectRatio="none"` + `vector-effect: non-scaling-stroke` (เส้นไม่ยืด) · รูปแสดง `width:100% height:auto` → % ตรงกับรูปเป๊ะไม่ต้องหัก letterbox · ป้ายชื่อ+ยอดวางที่ centroid เป็น **HTML** (ไม่โดน SVG ยืด)
 - **⚠️ "ควรผลิตได้ ณ ตอนนี้" (เลขกลางของ metric ยอดผลิต) คิดจาก CT ไม่ใช่สัดส่วนเวลาของกะ (2026-08-03 · คำสั่ง user):** ระบบเป็น **pull — ขายเท่าไหร่ ผลิตเท่านั้น** → **เป้า (เลขขวา) = ผลรวมใบที่เปิดแล้ว ถูกต้องแล้ว ห้ามเปลี่ยน** · แต่เลขกลางเดิม = `เป้า × (เวลาที่ผ่านไป ÷ เวลากะ)` **ต่ำเกินจริง** เพราะใบทยอยเปิดระหว่างกะ (เป้าโตทีหลัง) — เคสจริง Line 60: ทำได้ 110 แต่ระบบบอกควรได้ 53 → โชว์ 209% ทั้งที่จริงยังตามหลัง · **สูตรใหม่: `ควรผลิตได้ = min(เป้าจากใบที่เปิด, เวลาที่มีให้ผลิต ÷ CT)`** โดย **เวลาที่มีให้ผลิต** = ตั้งแต่ **max(เริ่มกะ, เปิดใบแรก)** ถึงตอนนี้ (ไม่เกินเวลาเลิกกะ) **− เวลาพักตามแผน (`break_policies` ที่ผ่านไปแล้ว) − หยุดตามแผน (planned downtime)** · **ไม่หัก unplanned downtime** (ต้องเห็นว่าตามหลังเพราะเครื่องเสีย) · CT = ถ่วงน้ำหนักตามสัดส่วนเป้าของแต่ละ mat ในกะ · **สินค้าไม่ได้ตั้ง CT → ถอยไปสูตรเดิม** (สัดส่วนเวลาของกะ) · เพดาน `min(เป้า, …)` = หลัก pull ห้ามคาดหวังเกินที่ลูกค้าดึง
   - **⚠️ ไลน์เครื่องขนาน: กำลังผลิต = N ÷ CT ไม่ใช่ 1 ÷ CT (2026-08-06 · user ให้ตรวจ SUB APRON)** — เคสจริง SUB APRON ผลิต 2500 แต่ระบบบอก "ควรได้ 796" = **314%** ทั้งที่ของออกปกติ (ยอดจริง = 3.14 เท่าของกำลังเครื่องเดียว) · แก้: คูณ `parallelUnitsOf(line)` เข้ากับกำลังผลิต · **ไลน์ที่ `flow_mode='parallel_machine'` แต่ยังไม่ตั้ง `parallel_stations` = ไม่รู้ N จริง ห้ามเดา** → ถอยไปสูตรอัตราตามเวลา (เป้า × สัดส่วนเวลาที่ผ่านไป) ซึ่งไม่ต้องรู้ N · **ห้ามนับจากทะเบียนเครื่อง** (SUB APRON ลงไว้ 14 ตัวแต่รวมจิ๊ก/โรบอท — เอามาหารจะเพี้ยนหนักกว่าเดิม) · **ตั้ง `parallel_stations` ที่ `/linesetup` แผง ⚙️ ตั้งค่าไลน์ → 🏭 คุณสมบัติของไลน์นี้** แล้วตัวเลขจะกลับมาคิดจากกำลังผลิตจริง
+  - **⭐ N ที่ตั้งไว้ = "เต็มกำลัง" · วันไหนคนไม่พอต้องคิดตามที่เดินจริง (2026-08-06 · คำสั่ง user "เดินได้พร้อมกัน 6 เครื่อง แต่บางทีคนไม่พอ ก็จะเดินตามที่มีกำลังคน"):** เครื่องที่เดินได้จริง = `N × สัดส่วนกำลังคน` · clamp `[1, N]` · **ไม่มีข้อมูลกำลังคน = ไม่ปรับ ใช้ N เต็ม ห้ามตีเป็น 0 คน** · ตรวจกับข้อมูลจริง SUB APRON: N=6 · จุดงาน 6 มีคน 3 → คิด 3 เครื่อง = 2388 ชิ้น · ของออกจริง 2500 (3.14 เท่าของเครื่องเดียว) = **ตรงกับที่โมเดลทำนาย** · popup บอกกำกับเสมอว่า "คิดจากเดิน 3/6 เครื่อง (ตามกำลังคนที่มา)" ห้ามเปลี่ยนตัวหารเงียบๆ · ⚠️ `loadStatus` เป็น useCallback deps แคบ ต้องอ่านผ่าน `manpowerRef`/`manualLineRef` (อ่าน state ตรงๆ จะ stale)
+    - **⚠️ ปรับเฉพาะ "ไลน์ที่คนโหลดเข้า-ออกเอง" (คำสั่ง user 2026-08-06: "เฉพาะไลน์ manual ที่ใช้คน load in-out ถึงคิด · บางไลน์ออโต้เป็นแค่พนักงานยืนซัพพอร์ท")** — ตัดสินจาก `machines.automation_level` ของเครื่องผลิตในไลน์: `manual` มากกว่า `auto`+`semi_auto` = ไลน์ manual · ไลน์ auto/semi เครื่องเดินเองได้ **ห้ามหารด้วยกำลังคน** · ไม่มีข้อมูล automation_level = ไม่ปรับ (ไม่เดาแทนหน้างาน) · ข้อมูลจริง: SUB APRON = manual/standalone 6 เครื่อง (ปรับ) · LASER-345/789 = auto/inline (ไม่ปรับ)
+    - **⚠️ ถ่วงตามเวลา ไม่ใช่ดูแค่ ณ ตอนนี้ (user ถาม "ถ้าผ่านไป 4 ชั่วโมง มีการย้ายคนไปอีกเครื่อง ระบบจะรู้มั้ย")** — ใช้ `station_assignment_logs` (มี `started_at`/`ended_at` ต่อคน-จุดงาน เขียนจริงอยู่แล้ว) รวม "นาที-จุดงานที่มีคนอยู่" ตั้งแต่ต้นกะถึงตอนนี้ ÷ (จำนวนจุดงาน × นาทีที่ผ่านไป) · เดิมใช้ภาพ ณ ตอนนี้คูณเวลาทั้งกะ → ต้นกะเดิน 3 เครื่อง บ่ายย้ายมา 6 จะคิดเป็น 6 ทั้งกะ (คาดหวังสูงเกิน) · ไม่มี log ค่อยถอยไปภาพ ณ ตอนนี้ (`stationFilled/stationTotal`) แล้วค่อย `present/headTotal` · ตรวจข้อมูลจริง SUB APRON วันนี้: 3 คน × 196 นาที ÷ (6 จุด × 196 นาที) = 0.50 → เดิน 3 เครื่อง ✓
+  - **⭐ P ของไลน์เครื่องขนาน: ตัวหารคือ "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์" — เฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (2026-08-11 · แก้วิธีวัดตัวหาร 2026-08-13)** — เกณฑ์ = `flow_mode` ที่มีอยู่แล้ว **ไม่ต้องเพิ่ม master ใหม่**: `parallel_machine` (เครื่อง stand-alone ต่างคนต่างรันคนละใบ เช่น SUB APRON) = CT ต่อเครื่อง งานกระจายอยู่หลายเครื่อง → เอา `runMin` (เวลาไลน์) เป็นตัวหารตรงๆ ทำให้ P สูงได้ถึง N เท่าแล้ว**โดน cap 100% เงียบ** · `one_piece_flow` (ผลิตต่อเนื่อง เช่น LASER-345/789 เลเซอร์ 3 ตัวเป็นสายเดียว) = CT ของทั้งไลน์อยู่แล้ว → **ห้ามหาร** (ตรวจแล้ว หารจะทำ P ร่วงจาก 63-98% เหลือ 21-33%) · ก่อนแก้ SUB APRON โชว์ OEE ~99% แทบทุกกะเพราะ P ตันเพดานตลอด (raw สูงถึง **842%**)
+    - **⚠️⚠️ ตัวหารวัดจาก "ช่วงเวลาที่แต่ละพาร์ทวิ่ง" (`busyMinutes` ใน `src/utils/oee.js`) — ห้ามใช้จำนวนคน** (2026-08-13 · แก้ของที่เคย ship ผิดเอง) · **1 คนคุมได้หลายเครื่อง** ไลน์นี้เครื่อง load/unload เอง — เคสจริง SUB APRON 05/08 กะเช้า: เช็คชื่อ 4 คน แต่ 6 พาร์ทเปิดพร้อมกัน = 6 เครื่องเดินจริง · หารด้วยจำนวนคน → P เฟ้อ · และกะที่ไม่มีใครลงเช็คชื่อจะหารด้วย N เต็ม → P ร่วงทั้งที่แค่ "ไม่รู้" (ขัดกฎ "ประเมินไม่ได้ = null ห้ามแปลงเป็นเลข") · วิธีวัดจาก order window ใช้ได้ทุกกะ ไม่ต้องพึ่ง master ใดๆ
+    - **`busyMinutes` = Σ ต่อพาร์ทของ "ช่วงที่รวมกันแล้ว (union)"** — ทับกัน = หลายเครื่องเดินพร้อมกัน · **ห้ามบวกทุกใบตรงๆ** (พังกับ "สแกนรวบ" ที่เปิด 6 ใบใน 10 วินาที = window ซ้อนกัน ตัวหารพองเป็นเท่าจำนวนใบ) · **ห้ามใช้ min..max ต่อพาร์ท** (นับช่วงที่พาร์ทนั้นไม่ได้วิ่งเป็นเวลาเครื่องด้วย) · clamp ในกรอบกะเสมอ (ใบที่ปิดเลยกรอบกะจะลากตัวหารยาวเกินจริง)
+    - **clamp ตัวหาร `[runMin, N×runMin]`** — ต่ำกว่าเวลาไลน์ = P เฟ้อ · สูงกว่า N เท่า = อ้างว่ามีเครื่องมากกว่าที่มีจริง · **พาร์ทเดียววิ่ง → busy ≈ runMin → เท่าสูตรเดิมเป๊ะ** (ไลน์ปกติจึงไม่มีทางกระทบ)
+    - **ทำแล้วทั้ง 2 สาย:** OEE สด (`computeLiveOee` param **`parallelCap`** — แยกจาก `parallelN` ที่ใช้หัก DT 1/N **ห้ามเอามารวมกัน**) และ **ปิดกะ (`computeOEE` ใน DailyReport)** ที่ตอนนี้เข้าสาย parallel **เสมอ**เมื่อไลน์เป็น `parallel_machine` ไม่พึ่ง heuristic `isParallel` (ทับกัน >15 นาที + >20%) ซึ่งเป็น all-or-nothing → เดิม P พลิกไปมา 52/76/89/100 ตามว่า window บังเอิญทับกันไหม
+    - **⚠️ `pOver` — %P ทะลุ 100 ก่อนโดน cap ต้องเตือน ห้ามกลืนเงียบ** (กฎ "ห้ามล้มเหลวเงียบ") แปลว่างานมาตรฐานที่บันทึก > เวลาเครื่องที่มีจริง = ข้อมูลผิด (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / N) · โชว์ที่ modal ปิดกะ (แถบส้ม **เตือนอย่างเดียว ไม่บล็อกการปิดกะ**) + ป้าย "⚠%P ตัน" บนผังรวม · **ไม่ใช่เรื่องของไลน์ขนานอย่างเดียว** — วัดจริงแล้ว HDF2 (one_piece_flow) ก็ตัน 4 กะ raw 161-339% = มีข้อมูลผิดรออยู่
+    - **ไม่ backfill ประวัติ** — ค่าจะขยับ 10-90 จุด (วัดแล้ว) · กะที่ปิดก่อนวันแก้คิดคนละสูตร (กฎเดิม: ห้าม blanket-recompute กะเก่าด้วย master ปัจจุบัน)
+    - **วัดผลจริงก่อน merge** (harness เรียก `computeLiveOee` ตัวจริง · 60 กะ 4 ไลน์ · 03-13/08): **ไลน์ cap=1 เปลี่ยน 0 กะ** (HDF2 19 · LASER-345 13 · Line 60 13 — พิสูจน์ว่า blast radius = SUB APRON ไลน์เดียว) · SUB APRON เปลี่ยน 12/15 กะ P จากตัน 100% เหลือ 42-100% อ่านได้จริง · %P ตันเพดานทั้งชุดลดจาก 17 → 6 กะ (ที่เหลือคือข้อมูลผิดจริงที่ต้องไปตาม)
+  - **⚠️ OEE บน modal เรื่องราวรายไลน์ ต้องใช้ค่าเดียวกับผัง (2026-08-06 · user ทัก "แปลกๆ มั้ย"):** modal อ่าน `production_sessions.oee` (stamp ตอนปิดกะ) ตรงๆ → กะที่ยังเปิดขึ้น **"—"** ขณะที่การ์ด hover บนผังเดียวกันโชว์ **"OEE 99% (สด)"** = จอเดียวกันตอบคนละอย่าง · แก้: `loadStatus` เก็บ OEE สดต่อ session ไว้ที่ `liveOeeRef` แล้ว modal อ่านตัวเดียวกัน (ปิดกะแล้ว = ค่า stamp · ยังเปิด = สด + ป้าย "(สด)") — **จุดใหม่ที่โชว์ OEE ของกะที่ยังเปิด ห้ามอ่าน `s.oee` ตรงๆ**
   - **ป้ายบนผังไม่โชว์ % (2026-08-06 · คำสั่ง user "คนจะงง ชนกับ OEE")** — เอาแค่ `ทำได้/ควรได้ตอนนี้/เป้ากะ` · สีกรอบยังบอกว่าทันจังหวะไหม · % เต็มๆ ดูที่ popup (ไม่แตะ) · **เลข 3 ตัวติดกันต้องมี legend อธิบายเหนือผังเสมอ** ไม่งั้นคนอ่านไม่ออก · ผลข้างเคียงที่ดี: ป้ายสั้นลง จอ 1250px ข้อมูลเต็มเพิ่มจาก 21 เป็น 24/27
   - **ยังไม่ทำ (เฟสถัดไป):** ไลน์ที่**ยังไม่เปิดใบเลย** เป้า = 0 → ควร fallback ไป `dr_products.target_per_shift` (มีข้อมูลจริง เช่น 550) หรือ **forecast ลูกค้า** (`customer_forecasts` — ต้องแตกรายเดือน ÷ วันทำงาน) ตามหลัก pull · ⚠️ `production_sessions.target_qty` ปัจจุบัน = 0 ทุกกะ (ไม่มีใครตั้ง) และ `prod_orders.qty_target` = NULL ทุกใบสำหรับใบสแกน — อย่าพึ่ง 2 ค่านี้โดยไม่เช็ค
 - **เลือก metric ได้ 7 แบบ (2026-07-16 · +Supply Route 2026-07-22 · รวมคน+จุดงาน 2026-08-04):** แท็บบนหน้า — 📦 ยอดผลิต (ยอด/เป้า %) · ⚙️ OEE (ปิดกะ=ค่าที่ stamp · **เปิดกะ=คำนวณสด A×P×Q จากข้อมูลปัจจุบัน** ป้าย "(สด)" — สูตรย่อของ computeSessionOEE) · 🔧 Downtime (Σ `duration_min` + active) · 🚫 ของเสีย (`qty_ng`) · **👷 คน & จุดงาน (metric key `people` — รวม "คน/เข้างาน"+"จุดงานเข้าประจำ" เป็นแท็บเดียว 2026-08-04 คำสั่ง user: ป้าย `มา/ทั้งหมด คน · เข้าจุด/จุดทั้งหมด · ⚠PPE` สี=ด้านที่แย่กว่า · คน = Main `daily_production_logs` ผูก `employees.line_id` refresh 60 วิ · จุด = workstations)** · 🛠️ PM เครื่องจักร (DR `machines`→`checklists`→`pm_plans.next_due_date` นับเกินกำหนด/ใกล้ครบ ต่อไลน์ — refresh 5 นาที) · **🔗 Supply Route** (DR `facility_supply_links`+`machines`+`mtn_orders` — utility/facility จ่ายไลน์นี้ **กำลังมี MO เปิดค้าง = ไลน์กระพริบแดง "⚠ ชื่อเครื่อง ซ่อมอยู่"** · ไม่มี MO = เขียว "จ่ายโดย …" · map machine_no→open MO · refresh 30 วิ) · แต่ละ metric กำหนดสี region + ตัวเลขบนกรอบเอง (config `METRICS` ในไฟล์จุดเดียว — เพิ่ม metric ใหม่ที่นี่) · หมวดสี: good เขียว / ok เหลือง / bad แดง / down แดงกระพริบ (`region-alarm`) / idle เทา
@@ -976,6 +1396,7 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - **โครง: 1 หน้า + config ต่อส่วนงาน** — `DEPTS = [{ key, icon, label, roles, load, View }]` ใน `src/pages/DeptDashboard.jsx` · **เพิ่มส่วนงานใหม่ = เพิ่ม entry (loader + View) ห้ามสร้างหน้าใหม่** (ไม่งั้นได้ dashboard คนละทรงแล้ว drift) · แท็บ default เลือกตาม role ของผู้ใช้ (mtn→ซ่อมบำรุง · qa→QA · planner_store/sale→สโตร์ · อื่น→ผลิต)
 - **เลย์เอาต์บังคับ 4 ชั้นทุกใบ:** 🚨 ต้องทำตอนนี้ (คิวงานค้าง — ว่างต้องขึ้น "ไม่มีงานค้าง" **ห้ามซ่อนแผง**) → 📊 KPI (มีตัวเทียบเสมอ) → 📈 ชี้เป้าให้แก้ (ตาราง/พาเรโต) → 🔗 ทางลัด
 - **อ่านอย่างเดียว** — ไม่มี insert/update/delete · ทุกแถวใน "ต้องทำตอนนี้" คือลิงก์ไปหน้าที่ทำงานจริง
+- **⚠️ ลิงก์ต้องพาไปถึง "ตัวงานนั้น" ไม่ใช่หน้ารวมเปล่าๆ (2026-08-11 · user ทัก "กดแล้วไปหน้ารายงาน")** — คลิกแถวแล้วต้องเห็นรายการนั้นพร้อมกดอนุมัติ/แก้ได้ทันที ไม่ใช่ให้ไปไล่หาตัวกรองเอง · ทำแล้ว: 4M → `fourMLink(f)` = `/report?tab=4&status=&from=&focus=<id>` (helper กลางในไฟล์ ใช้ทั้ง ProductionView + QaView) · **แถวใหม่ที่เพิ่มต้องทำแบบเดียวกัน** — ถ้าหน้าปลายทางยังไม่รับ deep-link ให้ไปเพิ่ม param ที่หน้านั้นก่อน · **อย่าลืมส่งวันที่/ตัวกรองไปด้วย** ถ้าหน้าปลายทาง default เป็นช่วงวันแคบ (งานค้างมักเก่ากว่า default เสมอ — นี่คือสาเหตุที่ลิงก์เปล่าไร้ประโยชน์) · ชิปทางลัดของ QA มี "📝 4M รออนุมัติ" เปิดคิวทั้งก้อน (from = ใบเก่าสุด)
 - **ห้ามคำนวณ KPI เอง** — OEE เฉลี่ยผ่าน `wavg` (utils/oee) ถ่วงด้วยเวลารับภาระ · ยอดผลิตนับคู่ RH/LH ผ่าน `pairAwareTotal` · NG ยึด `defect_logs` · DT นับเฉพาะนอกแผน · PPM = เสีย ÷ (ดี+เสีย) × 1e6
 - **Scope มาตรฐาน** — leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` (helper `scopeLineNames` ในไฟล์) · สิทธิ์เข้าหน้าเดียว `page:/dept-dashboard` (migration `20260806_dept_dashboard_permission.sql` — seed ทุก role)
 - **ส่วนงานที่ข้อมูลยังน้อย = adoption dashboard ไม่ใช่ analytics** (คำสั่งจากผลสำรวจข้อมูลจริง):
@@ -983,6 +1404,65 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
   - **QA** — แผงเด่นคือ **"ไลน์ที่เดินกะวันนี้แต่ยังไม่มีบันทึกของเสีย"** (ของดี 100% จริง หรือลืมลง?) + 4M รออนุมัติ QA + LPA ที่ตอบ N/T
 - **ห้ามโชว์เลขที่ดูสมบูรณ์ทั้งที่ยังขาด** — KPI ผลิตมีการ์ด "กะที่ยังไม่ปิด" กำกับว่าตัวเลขยังไม่ครบทั้งวัน
 - **⚠️ กับดัก: หน้าเดียวหลาย View ต้องผูกข้อมูลกับ "ส่วนงานที่โหลดมา" (`data = { dept, d }`)** — ตอนสลับแท็บ React จะ render View ของส่วนงานใหม่ **ก่อน** effect โหลดข้อมูลจะวิ่ง ถ้าเก็บแต่ก้อนข้อมูลเปล่า View ใหม่จะได้ข้อมูล**รูปทรงของส่วนงานเก่า** → พังทันที (เจอจริง 2026-08-06: `Cannot read properties of undefined (reading 'forEach')` ตอนคลิกแท็บ) · render เฉพาะเมื่อ `data.dept === dept` เท่านั้น · **build/lint จับไม่ได้ (เป็น runtime shape mismatch) — หน้าใหม่ที่สลับ View ด้วย state ต้องใช้ pattern นี้เสมอ**
+
+---
+
+## Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13)
+
+หน้า `AdoptionOutlook.jsx` (กลุ่มภาพรวม) — ตอบผู้บริหารว่า **"เมื่อทุกแผนกใช้จริงและข้อมูลมองเห็นกันหมด เราจะมองเห็นมิติไหนได้บ้าง"** (สอบกลับย้อนหลังถึงไหน · รู้ตัวก่อนคุณภาพหลุดไหม · เครื่องเบี่ยงเบนหรือยัง · กระทบการจัดส่งไหม · predictive ข้ามแผนก · prescriptive maintenance) เปิดในห้องประชุมแทนสไลด์ · **อ่านอย่างเดียว ไม่เขียน DB · ไม่มีตาราง/คอลัมน์ใหม่** (migration `20260813_adoption_outlook_permission.sql` seed สิทธิ์อย่างเดียว · apply แล้ว)
+
+> **⚠️ บทเรียนตอนทำ (2026-08-13):** รอบแรกทำเป็น **"รายงานช่องว่างวันนี้"** (ขาดอะไรบ้าง) → user ตีกลับว่า **"ไม่ตรงโจทย์"** เพราะเปิดให้ผู้บริหารดูแล้วเห็นแต่เลข 0 กับสีแดง — ตรงข้ามกับ "ภาพอนาคต" ที่ขอ
+> **โจทย์จริงคือ "ข้อมูลเชื่อมกันแล้วตอบคำถามอะไรได้เพิ่ม" ไม่ใช่ "ตอนนี้ขาดอะไร"** · ตัววัดความครบยังอยู่ (แท็บ 3) แต่ถูกลดบทบาทเป็น**ตัวบอกว่าสายข้อมูลไหนต่อติดแล้ว** ไม่ใช่พระเอกของหน้า
+> **จุดใหม่ที่ทำหน้าให้ผู้บริหารดู ให้เริ่มจาก "คำถามที่เขาถาม" ไม่ใช่ "ตารางที่เรามี"**
+
+- **5 แท็บ (`useTabParam`):** 🔍 **มิติที่มองเห็นได้** (default) · 🔬 **เจาะ 1 กะจริง** · 📈 **4 ระดับ** · 🏭 **ก่อน-หลัง รายแผนก** · 💰 **เงินที่ประหยัดได้**
+- **🔬 แท็บ "เจาะ 1 กะจริง" (2026-08-13) — เดินให้ดูทีละชั้นบนกะที่แย่ที่สุดที่เกิดขึ้นจริง** (3 แท็บแรกตอบ "มองเห็นอะไรได้" แต่ผู้บริหารถามต่อว่า "แล้วช่วยแก้ของจริงยังไง"): ชั้น 1 กะนี้เสียหายเท่าไหร่ (แตก A/P/Q + ชี้ตัวฉุด) → ชั้น 2 เวลาหายไปกับ 4M ตัวไหน → ชั้น 3 ย้อนกลับถามเอกสารออกแบบ (PFC → FMEA → Control Plan) ว่า "เคยคาดไว้มั้ย" → ชั้น 4 สรุป + ทางลัด
+  - **⚠️ ห้าม hardcode กะตัวอย่าง** — `loadDeepDive()` เลือกสดทุกครั้งจากกะปิดแล้วใน 45 วันล่าสุด: OEE ต่ำสุด **ที่มีเนื้อให้เจาะจริง** (`pickDeepSession` ให้คะแนน DT ≥3 รายการ + มีของเสีย + จำนวนกลุ่ม 4M ที่ต่างกัน) · กะที่ OEE 0 เพราะลง DT ก้อนเดียวทั้งกะไม่มีอะไรให้เรียนรู้ → คะแนนต่ำกว่า · **hardcode ไว้ = พอข้อมูลเดินหน้า ตัวอย่างจะเน่าและกลายเป็นข้อมูลเท็จ**
+  - **⚠️ กฎเหล็ก — 6 Big Losses กับ 4M ทำคนละหน้าที่ ห้ามสลับกันใช้ (คำสั่ง user 2026-08-13):**
+    | แกน | ใช้ตอบ | ที่มาข้อมูล |
+    |---|---|---|
+    | **6 Big Losses** (TPM) | จัดประเภท **"เวลาที่หายไป"** → ผูกกับ A/P/Q ตรงตัว (breakdown·setup→A · minor_stop·reduced_speed→P · defect·startup→Q) | **master ที่หัวหน้าตั้งเอง** `dr_downtime_types.six_big_loss` — ไม่ต้องเดา |
+    | **4M** | หา **"สาเหตุ"** ของปัญหา **คุณภาพ** + Changing Point ที่เปลี่ยนวันนั้น | `four_m_logs` (ของจริง) + เดาจากข้อความเฉพาะตอนโยง Machine |
+    - **ชั้น 2 ใช้ `groupLean({axis:'six_big_loss'})` จาก `utils/oee.js` ห้ามเขียนตัวจัดกลุ่มเอง** · `SIX_BIG_LOSSES` มี `oee:'A'|'P'|'Q'` + `fix` (แนวทางแก้ตามตำรา) พร้อมใช้แล้ว
+    - **เคสจริงที่พิสูจน์ว่าทำไมต้องใช้ master ไม่ใช่เดาคำ:** เดิมเอา 4M มาจัดเวลาที่หาย → *"ระบบ PLC มีปัญหา — HDF **รีเซ็ต**ไม่หาย"* ถูกจับเป็น **Method** เพราะคำว่า `เซ็ต` (setup) ทั้งที่ master ระบุ `breakdown` · ตัวเลขที่ถูกคือ breakdown 200 นาที (โรบอท 3 + PLC 1) ไม่ใช่ Machine 180 / Method 60
+    - **coverage จริง 2026-08-13:** downtime types จัดหมวดแล้ว 57/69 (breakdown 30 · minor_stop 16 · setup 5 · defect 5 · startup 1 · **ยังไม่จัด 12**) · defect types 23/23 → **ก้อน "ยังไม่จัดหมวด" ต้องโชว์เสมอ ห้ามซ่อน** พร้อมชี้ทางไปติ๊กที่ ⚙️ ตั้งค่า
+    - 4M ที่ยังเดาจากข้อความ (`FOUR_M_WORDS`) เหลือใช้แค่โยง Machine ↔ ของเสีย — **จอต้องเขียนกำกับว่าจับคู่จากข้อความ**
+  - **⚠️ "เครื่องเสียซ้ำในกะเดียว" ต้องนับเฉพาะแถวที่เป็น Machine จริงๆ** — เดิมนับ unplanned ทั้งหมดแล้ว "รอ Material"/"แก้ไขคุณภาพ" ถูกเหมาว่าเครื่องเสียด้วย (ข้อมูลจริง HDF1 07/08: `machine_no` = HDF-01 **ทั้ง 9 แถว** รวมแถวที่ไม่ใช่เครื่องเสีย → นับ unplanned ได้ 6 ทั้งที่เครื่องเสียจริง 4)
+  - **🔗 จับ "A-loss กับ Q-loss ชี้ไปที่อุปกรณ์ตัวเดียวกัน"** ผ่าน `EQUIP_SYN` (กลุ่มคำเรียกอุปกรณ์เดียวกันที่คนพิมพ์ต่างกัน ไทย/อังกฤษ/รหัส — จำเป็นเพราะ **ฝั่ง DT พิมพ์ `Robot`/`RB_128` แต่ฝั่งของเสียพิมพ์ `โรบอท` เทียบตรงๆ ไม่มีวันเจอกัน**) · เคสจริงที่เจอ: DT "กิ๊บเปอร์หัก" (50 นาที) ↔ ของเสีย "งานเป็นครีบ **โรบอทจับงานร่วง**" = ต้นเหตุเดียวกัน แต่ถูกบันทึกคนละหน้าจนไม่มีใครเห็นพร้อมกัน · **ต้องเขียนกำกับว่าจับคู่จากข้อความ ไม่ใช่ความสัมพันธ์ที่ระบบยืนยัน**
+  - **ชั้น 3 อ่านจากโมดูล PE Core Tools (`/pe-docs` · `PEDocs.jsx`)** — deep-link `?set=<id>&tab=fmea`
+    - **⚠️ ต้องเช็คแบบผูกกับ "พาร์ท/ไลน์ของกะนั้น" ห้ามนับรวมทั้งระบบ** — คำถามคือ "อาการของกะ *นี้* เคยคาดไว้มั้ย" · ถ้านับ `count(pe_fmea_items)` ทั้งตารางแล้วขึ้นว่า "มีข้อมูลแล้ว" ทั้งที่แถวพวกนั้นเป็นของคนละพาร์ทคนละไลน์ = **ตอบผิดคำถาม** (ข้อมูลจริง 2026-08-13: มีชุดเดียว `MB3B-16E060-CH` ของ Line 60 แต่กะที่ระบบเลือกมาเจาะคือ HDF1)
+    - **จับคู่ด้วย `mat_no` ก่อน แล้ว fallback ชื่อไลน์** — `pe_doc_sets.mat_no` ยังว่างได้ในข้อมูลจริง (แถวที่ seed ไว้ mat_no = null) พึ่ง mat_no อย่างเดียวไม่ได้
+    - แยก 2 สถานะให้ขาด: **"พาร์ทนี้ยังไม่มีเอกสาร"** (ชี้ทางไป `/pe-docs`) vs **"ทั้งระบบยังไม่มีอะไรเลย"** · demo mode เติมตัวอย่างคำตอบเฉพาะตอนพาร์ทนี้ยังไม่มี โดยใช้**ชื่อเครื่อง/อาการ/ประเภทของเสียจริงจากกะนั้น** + ค่า S-O-D/RPN/ความถี่เป็นตัวเลขสมมติ
+  - **โหลด lazy ตอนเปิดแท็บเท่านั้น** (ไม่ถ่วงหน้าแรก) · ไม่เขียน DB · `Badge` เพิ่ม tone `sim` (ม่วง เส้นประ)
+- **แท็บ "มิติที่มองเห็นได้" = หัวใจของหน้า** — `DIMENSIONS` 4 มิติ (คุณภาพ/เครื่องจักร/การจัดส่ง/ต้นทุน&คน) รวม **12 คำถามที่ผู้บริหารถามจริง** · แต่ละคำถามแสดง **สายข้อมูลข้ามแผนก** เป็นชิปต่อกัน (`chain[].have(c)` เช็คจาก count จริง → ✓ เขียว = ต่อติดแล้ว · ○ เทาประ = ยังขาด) แล้วเทียบ **วันนี้ตอบได้ระดับไหน vs เมื่อข้อมูลครบ**
+- **`LEVELS` = แกนเดียวของ "ระดับความสามารถ"** — 1 📋 เห็นย้อนหลัง (Descriptive) · 2 🔍 รู้สาเหตุ (Diagnostic) · 3 🔮 รู้ล่วงหน้า (Predictive) · 4 🎯 บอกว่าต้องทำอะไร (Prescriptive) · **ห้ามนิยามระดับซ้ำที่อื่น**
+- **⚠️ `full` (ระดับเมื่อข้อมูลครบ) ต้องเป็นสิ่งที่ทำได้ด้วยข้อมูลที่ระบบเก็บอยู่แล้วจริงๆ ห้ามใส่ความสามารถที่ต้องซื้อของใหม่** (ยกเว้นระบุชัดว่าต้องมี SCADA/เซ็นเซอร์ — ดู `docs/SCADA_REALTIME_DESIGN.md`) · หน้าเขียนกำกับว่า "ไม่ต้องซื้อระบบเพิ่ม" ถ้าใส่ของที่ทำไม่ได้ = โกหกผู้บริหาร
+- **แท็บ 4 ระดับ มีแผง 🔑 "ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด"** — นับว่าชิ้นข้อมูลที่ยังไม่มี ถูกใช้ในกี่คำถาม → เรียงว่าควรทำอะไรก่อน (คำนวณสดจาก `chain` ไม่ต้องมาจัดลำดับเอง)
+- **quick win ที่ค้นพบตอนทำ:** คำถาม *"เครื่องเสียตอนนี้กระทบรอบส่งไหน"* — **ข้อมูลทุกชิ้นมีครบในระบบแล้ว** (downtime → ไลน์ → `dr_products.line_name` → `customer_shipping_orders`) แค่ยังไม่มีหน้าไหนต่อสายให้เห็นพร้อมกัน = ทำได้เลยโดยไม่ต้องลงข้อมูลเพิ่ม
+- **เพิ่มคำถาม/มิติใหม่ = เพิ่ม entry ใน `DIMENSIONS`** แท็บบันได/แผงกุญแจนับตามให้เอง ห้ามไปแก้ที่อื่น
+- **🧪 โหมดสาธิต (`?demo=on` · 2026-08-13 · คำสั่ง user "ขอ simulation ไว้สาธิตให้หัวหน้าดู"):** ปุ่มบนหัวเพจ — เติมส่วนที่ข้อมูลจริงยังไม่มีด้วย **ตัวอย่างคำตอบจำลอง** ให้เห็นว่า "หน้าตาคำตอบ" เป็นยังไงเมื่อทุกแผนกใช้ครบ (ทุกคำถามมี `demo(D)` ของตัวเอง)
+  - **ชื่อเป็นของจริง ตัวเลขเป็นของสมมติ** — ดึงชื่อไลน์/เครื่อง/สินค้า/ลูกค้า/ประเภทของเสียจาก DB จริง (`ents`) เพื่อให้ตัวอย่างเป็นโรงงานเรา ไม่ใช่ demo ลอยๆ ของ vendor
+  - **ป้ายกำกับ 3 ชั้น ห้ามถอด:** แถบม่วงบนสุด + ป้าย "🧪 ตัวอย่างคำตอบเมื่อข้อมูลครบ · ตัวเลขจำลอง" ทุกการ์ด + ชิปสายข้อมูลที่ยังไม่มีเปลี่ยนเป็น **ม่วง 🧪 (ไม่ใช่เขียว)** — คนดูต้องแยกออกตลอดเวลาว่าอันไหนของจริง
+  - **ปิดเป็นค่าเริ่มต้นเสมอ** · อยู่ใน URL เพื่อ refresh กลางที่ประชุมแล้วไม่หลุดโหมด (ใช้ `useTabParam(['on','off'],'off','demo')` — hook เดิม ไม่เขียนตัวใหม่)
+  - **แท็บ "ก่อน-หลัง รายแผนก" ไม่ถูกจำลองโดยตั้งใจ** — เป็นตัววัดว่าต้องไปลงข้อมูลตรงไหน ถ้าจำลองด้วยจะไม่เหลือจอที่บอกความจริง
+  - **ตัวเลขต้อง seeded (นิ่ง)** ผ่าน `src/utils/seededRandom.js` — `Math.random()` จะทำให้เลขดิ้นทุกครั้งที่รีเฟรช สาธิตซ้ำแล้วเลขไม่เหมือนเดิม = ความน่าเชื่อถือหาย
+- **🎲 `src/utils/seededRandom.js`** (`hash32`/`rnd`/`jit`/`rint`/`pick`) — ย้ายออกมาจาก GroupOverview ตอนหน้านี้กลายเป็นผู้ใช้รายที่ 2 (กฎ single source of truth) · **หน้า mockup/สาธิตใหม่ให้ import ตัวนี้ ห้ามเขียน RNG เอง** และทุกจอที่ใช้ต้องติดป้ายบอกว่าเป็นตัวเลขจำลอง
+- **⚠️ กฎเหล็กของหน้านี้ — แยก "ข้อเท็จจริง" ออกจาก "สมมติฐาน" ให้ขาด:** ทุกตัวเลขฝั่ง "วันนี้" ติดป้าย <b>วัดจริง</b> (เขียว) นับสดจากฐานตอนเปิดหน้า **ห้าม hardcode ตัวเลขใดๆ** · ฝั่งอนาคตติดป้าย <b>ภาพคาดการณ์/สมมติฐาน</b> (ส้ม ขอบประ) · **ห้ามถอดป้ายพวกนี้ออก** (precedent เดียวกับ `/group-overview`)
+- **ฝั่ง "เมื่อใช้ครบ" จงใจเป็น *ความสามารถที่ปลดล็อก* ไม่ใช่ตัวเลขปั้น** — ห้ามใส่ "OEE จะขึ้นเป็น X%" เพราะระบบพิสูจน์ไม่ได้
+- **วัดความครบของข้อมูล ไม่ได้วัดคุณภาพของข้อมูล** (ลงครบแต่ลงมั่วก็ขึ้นเขียว) — เขียนกำกับบนจอแล้ว
+- **เพิ่มแผนกใหม่ = เพิ่ม entry ใน `DEPTS`** (`signals(c)` + `unlocks`) การ์ด/แถบสรุป/อันดับตามให้เอง — **ห้ามสร้างหน้าใหม่ต่อแผนก** (หลักเดียวกับ `DEPTS` ใน DeptDashboard)
+- **นับด้วย `count: 'exact', head: true`** ผ่าน helper `cnt()` — ไม่ติดเพดาน 1000 แถว + ไม่ดึงข้อมูลจริง · **error คืน `null` แล้วจอขึ้น "โหลดไม่ได้"** ห้ามแปลงเป็น 0 (0 = "มี 0 รายการ" คนละความหมายกับ "โหลดไม่สำเร็จ")
+- **`.in()` แบ่งก้อนละ 120 id (`inChunks`)** — session 30 วันมีหลายร้อยตัว ใส่ทีเดียว URL ยาวเกินจน proxy ตัด
+- **ROI ไม่เดาแทนผู้ใช้:** rate บาท/ชม. อ่านจาก `cost_center_rates` ถ้ามี (ป้ายเขียว) · **ยังไม่มีใครกรอกเลย (0 แถว)** → ให้กรอกสมมติฐานเอง + ชี้ไป `/org-setup` (ป้ายส้ม) · %ที่ลดได้เป็น slider ที่ผู้ใช้ปรับ **ระบบไม่รับประกัน** · ของเสียแปลงเป็นบาทไม่ได้เพราะ `parts_master` ยังไม่มีต้นทุน/ชิ้น → **บอกบนจอว่าขาดอะไร ไม่เดาราคา**
+- **ไม่ scope ตาม section/line โดยตั้งใจ** — จอภาพรวมผู้บริหาร (precedent `/factory-map`, `/group-overview`) คุมด้วยสิทธิ์เข้าหน้าแทน
+- **📊 ภาพข้อมูลจริง ณ 2026-08-13 (เหตุผลที่หน้านี้ควรมี):** ฝ่ายผลิตใช้เต็มแล้ว — 703 กะ · ใบผลิต 7,210 · downtime 3,906 แถว · เช็คชื่อ 8,385 · 4M 1,057 · LPA 105 ครั้ง · แต่**แผนกที่ต้องเอาข้อมูลไปแก้ยังแทบไม่เริ่ม**: ใบซ่อม MO **7 ใบ** · อะไหล่ในคลัง **0** · ประวัติตรวจ PM **9** · โปรเจคปรับปรุง **0** · ใบตรวจ QA/SPC/NCR **0** · รอบส่งที่กดยืนยัน **43/966** · ตัดสต็อกขาออก **7 แถว** · ต้นทุนพาร์ท **0/297** · Activity rate **0 cost center** · กะที่บันทึกของเสียแค่ ~10-15%
+  → สรุปเป็นประโยคเดียว: **"ระบบวัดความสูญเสียได้แล้ว แต่ยังไม่มีใครตามแก้"** (30 วันล่าสุด: หยุดนอกแผน ~200-300 ชม.) — แท็บ ROI ชั้น ④ ผูกตัวเลขพวกนี้กลับไปที่หน้าที่ต้องไปลงมือ
+- **ยังไม่ทำ (เฟสถัดไป):** เทรนด์ adoption รายเดือน (ตอนนี้เป็นภาพ ณ ปัจจุบัน) · ผูก saving จริงจาก `improvements` เมื่อมีโปรเจคแล้ว (สูตรมีอยู่แล้วที่ `src/utils/costSaving.js`) · export เป็น .pptx ตาม template TSG · **สร้างหน้า "เครื่องเสีย → กระทบรอบส่งไหน" จริง** (quick win ข้างบน — ข้อมูลพร้อมแล้ว)
+- **⭐ ช่องว่างที่เหลืออยู่หลังมีโมดูล PE แล้ว (2026-08-13): ยังไม่มีเส้นเชื่อม "อาการที่เกิดจริง ↔ failure mode ที่เคยคาดไว้"** — `/pe-docs` เก็บ PFC/PFMEA/CP ได้แล้ว และ `/adoption-outlook?tab=deep` เจาะ OEE→4M ได้แล้ว แต่**สองฝั่งยังไม่คุยกัน**: เปิดใบซ่อม/ลงของเสีย แล้วระบบยังตอบไม่ได้ว่าอาการนั้นตรงกับ `pe_fmea_items.failure_mode` ตัวไหน ทำให้ยัง**วัดความสูญเสียได้ละเอียด แต่เทียบกลับไปที่เจตนาการออกแบบไม่ได้** ("เคยรู้อยู่แล้วแต่ปล่อย" หรือ "ไม่เคยคิดถึงเลย")
+  - **เงื่อนไขบังคับของ Prescriptive (ระดับ 4)** — จะบอกว่า "ต้องทำอะไร" ได้ ต้องรู้ก่อนว่าตอนออกแบบตั้งใจคุมอะไรไว้
+  - **ข้อจำกัดวันนี้คือ coverage ไม่ใช่เครื่องมือ** — ลงไปแล้ว 1 พาร์ท (`MB3B-16E060-CH` · Line 60) จากสินค้าทั้งหมด → พาร์ทส่วนใหญ่ยังย้อนกลับไม่ได้
+  - ทำเมื่อไหร่ให้ผูก `pe_fmea_items` ↔ `downtime_logs`/`defect_logs` (+ `mtn_orders`) เพื่อปิดลูป "อาการที่เกิดจริง → failure mode ที่เคยคาดไว้ → ทบทวน S-O-D" · **ห้ามจับคู่อัตโนมัติแบบเดาข้อความแล้วบันทึกลง DB** — ให้ระบบ *เสนอ* แล้วคนยืนยัน (หลักเดียวกับ AI intake ที่คนต้องกดยืนยันก่อน insert)
+  - **✅ ทำแล้ว 2026-08-17/18 (เฟส 1-4 ครบ) — ลูปปิด 8D → PFMEA/PFC/CP · แบบเต็ม `docs/CLOSED-LOOP-8D-PE.md`**
 
 ---
 
@@ -1010,6 +1490,59 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 ---
 
+## Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13)
+
+หน้า VSM (`VSM.jsx`, กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้าสำเร็จรูป (mat เบอร์ 1) + เดือน แล้ว
+**ระบบสร้างแผนผังสายธารคุณค่าจากข้อมูลจริง** ตามมาตรฐานสากล (Learning to See) ให้ตรงกับใบกระดาษเดิมของบริษัท
+· ออกแบบเต็ม + ตารางที่มาของทุกช่อง: **`docs/VSM-DESIGN.md`**
+
+- **ช่องเกือบทั้งใบ generate ได้จากข้อมูลที่มีอยู่แล้ว** — CT (`dr_products`) · %OEE (กะที่ปิดแล้ว ผ่าน `wavg` ถ่วงเวลารับภาระ)
+  · **C/O จาก downtime ที่จัดหมวด `six_big_loss='setup'`** (ผลพลอยได้จากงาน Lean 2026-08-05) · LOT (`kanban_standards`)
+  · คน (`stdManpower`) · คงคลัง (view `line_stock_summary`) · Order/วัน (`customer_forecasts` ÷ วันทำงานจากปฏิทินบริษัท)
+  · AT (`shift_min` − พักตามนโยบาย) · TT · PLT/PT/%VA
+- **⚠️ สูตร %VA — ตัวหารคูณ AT ไม่ใช่ 86,400:** `VA = PT` · **`NVA = PLT(วัน) × AT(วินาที/วัน)`** · `%VA = VA÷(VA+NVA)×100`
+  ถอดกลับจากใบจริง 2 ใบแล้วตรงเป๊ะทั้งคู่ (81 × 56,400 + 48,162 = 4,616,562 = ตัวหารที่พิมพ์ในใบ)
+  ถ้าใช้ 86,400 จะได้ %VA ต่ำกว่าใบจริงเกือบเท่าตัว — **สูตรอยู่ `src/lib/vsmModel.js` จุดเดียว**
+- **🔀 Routing master (ตารางใหม่ `part_routings` · DR):** ระบบไม่เคยมีชั้น "ลำดับกระบวนการ" (`bom_items` บอกแค่ FG→ลูก 1 ชั้น)
+  → จัดการที่ **Product Master → แท็บ 🔀 Routing** (พาร์ท → ขั้น 1,2,3 → ไลน์/เครื่อง/จุดพัก) · สิทธิ์ `routing:manage`
+  · **ค่าว่างในแถว routing = "ให้ระบบไปหาจากข้อมูลจริง"** กรอกทับเฉพาะตอนค่าจริงไม่ตรง
+  · **พาร์ทที่ยังไม่ลง routing ไม่ตัน** — ใช้ไลน์เดียวจาก Product Master ไปก่อน (`is_fallback`) **แล้วขึ้นเตือนบนจอเสมอ ห้ามเงียบ**
+- **⚠️ WIP กลางทางระบบไม่ได้เก็บ — ต้องกรอกเอง** (ช่องขอบส้ม + ▲ เส้นประบนผัง + เตือนว่า "PLT จะต่ำกว่าความจริง")
+  · เช่นเดียวกับ **รอบส่ง supplier (7:1:1)** และ **งานจ้างนอก** — ระบบไม่มีข้อมูล **ห้ามเดาเลขให้**
+- **เก็บเป็น snapshot** (`vsm_maps.data` jsonb) ไม่คำนวณสดตอนเปิดดู — VSM คือภาพ ณ ช่วงเวลาหนึ่ง (ใบจริงเขียน *Information on July 25*)
+  ถ้าคำนวณสด ใบที่อนุมัติไปแล้วจะเปลี่ยนตัวเลขเองเงียบๆ · กด **"↻ ดึงข้อมูลใหม่"** เพื่อ regenerate เอง
+- **ผังเป็น auto-layout จากโมเดล ไม่ใช่ลากวางอิสระ** → regenerate แล้วจัดผังใหม่ให้เอง · สัญลักษณ์ทั้งชุดอยู่ `SYMBOLS`
+  ใน `src/components/VsmCanvas.jsx` **จุดเดียว — legend สร้างจาก registry เดียวกัน ห้ามวาดสัญลักษณ์ซ้ำที่อื่น**
+- **⚠️ สัญลักษณ์ที่อยู่ใน legend ต้องถูกวาดจริงบนผังด้วย** — เคยพลาด: legend โฆษณา 15 ตัว แต่ผังวาดจริง 3 ตัว
+  (feeder/supermarket/kanban/pull/info-flow ไม่เคยถูกวาด · `model.feeders` คำนวณไว้แล้วแต่ canvas ไม่เรียก
+  · supplier โชว์แค่รายแรก) = legend โกหกคนอ่าน · ตอนนี้วาดครบ: สายป้อน (พาร์ทลูกที่ไม่ใช่สายหลัก วาดเหนือสายหลัก
+  แล้วชี้ลงกล่องแรก) · ผู้ส่งมอบทุกราย (เกิน 3 ขึ้น "+ อีก N ราย") · **จุดคงคลังที่มี kanban วาดเป็น supermarket +
+  ลูกศรดึง + การ์ดคัมบัง** (ไม่มี kanban = สามเหลี่ยม I + ลูกศรผลัก) · เส้นข้อมูล electronic (หยัก) vs manual (ตรง)
+  · กล่องจ้างนอกสีม่วง + ชื่อผู้รับจ้าง
+- **รอบส่ง supplier/ลูกค้า (7:1:1 · 1:4:2) ระบบไม่มีข้อมูล** → กรอกในหน้า เก็บที่ `overrides.__supplier_pattern` /
+  `__customer_pattern` — **ห้ามเดาให้**
+- **พิมพ์ได้ 2 ใบ — ทั้งคู่ A3 แนวนอน บังคับจบใน 1 หน้า:**
+  1. **📋 A3 Report (Toyota/Denso)** `src/lib/vsmA3Print.js` — เอกสารเล่าเรื่องหน้าเดียวตาม PDCA:
+     ซ้าย ① ความเป็นมา → ② สภาพปัจจุบัน (**ผัง VSM + ข้อเท็จจริงที่ระบบสรุปให้เอง**) ·
+     ขวา ③ เป้าหมาย → ④ สาเหตุราก → ⑤ มาตรการ → ⑥ แผนดำเนินการ (ใคร/อะไร/เมื่อไหร่) → ⑦ ติดตามผล
+     · เนื้อหาเก็บใน `vsm_maps.data.a3` (ไม่ต้อง migration) กรอกที่ปุ่ม ✍️ เนื้อหา A3
+     · **`currentConditionFacts(model)` สรุปเฉพาะ "ข้อเท็จจริง" จากข้อมูล** (PLT/%VA/Takt · ขั้นที่ C/T เกิน Takt ·
+       คงคลังกินเวลามากสุด · OEE ต่ำสุด · C/O สูงสุด) — **ส่วนที่เป็นการวิเคราะห์/สาเหตุ ระบบไม่เดาให้**
+  2. **🖨️ ใบ VSM** `src/lib/vsmPrint.js` — ใบผังอย่างเดียวตามฟอร์มเดิมของบริษัท
+- **⚠️ "จบใน 1 หน้า" ต้องใช้ `el.style.zoom` ห้ามใช้ `transform: scale`** — transform เป็นภาพลวงตา ไม่ลดกล่อง
+  layout เบราว์เซอร์ยังนับหลายหน้า (บทเรียนเดียวกับใบประเมินรายบุคคล F-PRS-P1-119) · วัดหลัง `document.fonts.ready`
+- **ใบพิมพ์ clone `outerHTML` ของ SVG ตัวจริงบนจอไปใช้ ไม่วาด layout ใหม่**
+  (กฎ CLAUDE.md: ห้ามจำลอง layout ใบจริงมาไว้ในตัวพิมพ์) — หน้าจอ render SVG ซ้ำแบบชุดสีสว่างซ่อนไว้สำหรับพิมพ์
+  · เลขฟอร์ม/Rev/ช่องเซ็น/โลโก้/แนวกระดาษ อ่านจากทะเบียน doc_key **`vsm`** (`layout_locked=false` เปลี่ยนแนวกระดาษได้จริง)
+- **Scope มาตรฐาน:** leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` — **ตัวเลือกสินค้าก็ scope ด้วย**
+- migration: `20260813_part_routings.sql` + `20260813_vsm_maps.sql` (DR) · `20260813_vsm_permission.sql` (Main) — **apply แล้วทั้ง 3 · 2026-08-13**
+- **⚠️ กับดักที่เจอตอน apply (จดไว้กัน session ถัดไปเสียเวลา):** `permission_catalog` ใช้คอลัมน์
+  **`(resource, action, label, group_name, sort)` ไม่ใช่ `permission_key`/`category`** (key ที่โค้ดเช็คคือ `resource:action`
+  ที่ประกอบขึ้นมา) · `doc_forms.sig_blocks` เป็น **jsonb ไม่ใช่ text[]** (ต้อง `'[...]'::jsonb`)
+- **ยังไม่ทำ (เฟส 2-4):** Future state + kaizen burst ผูก `/improvements` · รอบส่ง supplier · เทียบ current vs future อัตโนมัติ
+
+---
+
 ## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
 
 หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **"กำลังผลิตที่ทำได้จริง"** → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB**
@@ -1031,7 +1564,7 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 แก้โจทย์จอที่ไม่มีเมาส์/คีย์บอร์ด/กล้อง (Smart TV, โปรเจคเตอร์, จอบอร์ดหน้าไลน์) — **ใช้ได้ทุกหน้า** ผ่าน Supabase Realtime broadcast (channel `esm-remote-<รหัส 6 หลัก>`) ไม่มีตาราง/เซิร์ฟเวอร์ใหม่:
 
-- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันโซนล่างสุดของ sidebar** (เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
+- **ที่อยู่เมนู:** ลิงก์ 🎮 รีโมทจอ (ไปหน้า `/remote`) + ปุ่ม 📺 รับรีโมทจอ (จอตาม) **อยู่คู่กันในเมนูโปรไฟล์** (desktop = แผง 👤 บน rail · มือถือ = ท้าย drawer เหนือ Light Mode) — ทั้งคู่เห็นเฉพาะ role ที่มีสิทธิ์ `page:/remote` (default ทุก role, ปรับที่ `/permissions`) · `/remote` **ไม่อยู่ในเมนูหมวด/DeptHub** โดยตั้งใจ (เข้าจากลิงก์นี้เท่านั้น)
 - **ฝั่งจอ (Receiver):** ปุ่ม "📺 รับรีโมทจอ (จอตาม)" → สุ่มรหัส 6 หลัก (จำใน localStorage ข้ามรีเฟรช) + ป้ายสถานะมุมล่างซ้ายแสดงรหัส/สถานะเชื่อมต่อเสมอ · `src/components/RemoteReceiver.jsx` ฝังระดับ App (ใน Router) — จอ**ต้อง opt-in เอง** และกด ✕ ปิดได้ตลอด
 - **ฝั่งมือถือ:** หน้า `/remote` (🎮 รีโมทจอ) ใส่รหัสจากจอ → **Touchpad: ลาก 1 นิ้ว = เลื่อน pointer แดงบนจอ · แตะ = คลิก (elementFromPoint + native .click()) · ลาก 2 นิ้ว = scroll** + ปุ่ม ◀ ▶ Esc (ยิง KeyboardEvent — โหมดประชุมแถวเช้าฟัง keydown อยู่แล้ว) + ปุ่มเลื่อนขึ้น/ลง + ชิปสั่งจอกระโดดไปหน้าใดก็ได้ (เมนูจาก `navItemsForGroups` ชุดเดียวกับ sidebar — สิทธิ์เข้าหน้าคุมที่ฝั่งจอผ่าน RoleRoute ตามปกติ)
 - **กลไก pointer:** จอถือตำแหน่งเอง มือถือส่ง delta (throttle ~25Hz) · scroll เดินหา ancestor ที่ overflow แล้ว scrollBy ที่ตัวนั้น (รองรับ inner scroll container) · คลิกหา interactive ใกล้สุดด้วย `.closest('button, a, [role=button], input, ...')`
@@ -1124,6 +1657,24 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 ---
 
+## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
+
+`/die-registry` เป็น 3 แท็บ: **📋 ทะเบียน** (ของเดิม) · **🗺️ ผังจัดเก็บ** (`src/components/DieLayout.jsx`) · **📊 สถานะ** (`src/components/DieStatusBoard.jsx`) — ตอบ "แม่พิมพ์ตัวนี้อยู่ตรงไหน · สถานะอะไร" · migration **`20260819_die_layout_status.sql` (DR — apply แล้ว 2026-08-19 · user รันเองผ่าน SQL Editor)** — โค้ดยัง tolerant ไว้เผื่อ rollback (42P01/42703 → banner ไม่พังเงียบ)
+
+- **ผังจัดเก็บ = pattern เดียวกับ RackMap:** ตาราง `die_storage_areas` (DR · รูปจริง 1 รูป/ผัง · หลายผังได้) + หมุดรายตัวเก็บที่ **`equipment_die.area_id/pos_x/pos_y`** (% ของรูป 0-100) — ตัวตนแม่พิมพ์ยังอยู่ `machines` ตามกฎ "ชนิดอุปกรณ์เป็นแกน ไม่ใช่ตาราง" · หมุด = **วงกลม+ป้ายใต้** ขนาดผ่าน `markerScale` (UI §1) · editor มี Undo/Redo (`useUndoHistory` — §6.7) · รูปผังบีบสเปคผัง 2560px/q0.9 bucket `mtn-images` path `die-area/` · แม่พิมพ์ที่ยังไม่วาง = worklist **ห้ามซ่อน**
+- **⚠️ กฎเหล็ก — สถานะแม่พิมพ์มี 2 แกน ห้ามยุบรวม** (source of truth `src/utils/dieStatus.js`):
+  1. **แกน manual `equipment_die.die_status`** (ready/in_use/maintenance/external/trial/retired — เพิ่มสถานะใหม่แก้ที่ util นี้ที่เดียว · DB ไม่มี check constraint โดยตั้งใจ · key ที่โค้ดไม่รู้จัก = โชว์ key ดิบสีเทา ไม่หายเงียบ) · **null = "ยังไม่ระบุ" ห้าม default เป็น ready** (ห้ามเดาแทนหน้างาน — หลักเดียวกับ backfill ทะเบียน) → เป็น worklist ตัวนับส้ม
+  2. **แกน derive จากใบซ่อม MO** (`mtn_orders` สถานะใน `OPEN_MO_STATUSES`) — **คำนวณสดเสมอ ไม่เก็บซ้ำใน DB** (เก็บซ้ำ = 2 แหล่ง drift · หลักเดียวกับ "ห้ามให้ระบบภายนอกคำนวณ OEE เอง") · จับคู่ด้วย `machine_no` (normalize trim+uppercase) · **MO ค้างชนะสีสถานะ manual เสมอ**: หมุด/แถวแดง · **pending (ยังไม่มีคนรับงาน) = กระพริบ (`dt-alarm-blink`) · MO ที่รับแล้ว = แดงนิ่ง** ตาม Andon
+- ป้ายสถานะ MO ใช้ `MO_STATUS_LABEL` ใน dieStatus.js (mirror `STATUS_META` ของ MtnRepair — import ข้ามจากหน้า lazy chunk ไม่ได้ · **เพิ่มสถานะ MO ใหม่ต้องอัพเดท 2 ที่**)
+- เปลี่ยนสถานะ = `saveDieStatus()` (upsert equipment_die + stamp `status_updated_at/by_name`) ผ่าน `DieStatusEditor` (component ร่วม 2 แท็บ) · สิทธิ์ = **`machines:edit` เดิม** (ไม่ seed key ใหม่ — เลี่ยงกับดัก enum_range) · ใครแก้อะไรดูได้ที่ audit_log (`die_storage_areas` เข้า `DR_AUDIT_TABLES` แล้ว + ทั้งคู่เพิ่มใน `AUDIT_TABLES` ของ MasterAuditLog ใน /mtn-repair)
+- 📊 สถานะ กดปุ่ม 🗺️ ที่แถว = กระโดดไปแท็บผังพร้อม focus หมุดตัวนั้น (`focusDieId` ใน DieRegistry)
+- **🔗 link กับผังรวมโรงงาน + ไลน์ผลิต (2026-08-19 · คำสั่ง user "layout แม่พิมพ์ต้อง link กับไลน์ผลิต/ผังโรงงาน"):**
+  - **ผังรวม ↔ ผังจัดเก็บ:** กรอบบน `/factory-map` ที่**ชื่อตรงกับชื่อผังจัดเก็บ** (`die_storage_areas.name` เทียบ trim+lowercase — ข้าม project Main↔DR ทำ FK ไม่ได้ "ชื่อคือกุญแจ" pattern เดียวกับโซน facility ↔ `pm_facility_areas`) = **โซนคลังแม่พิมพ์ 🔨** · dropdown ตีกรอบมี optgroup "🔨 คลังแม่พิมพ์" · โซนโชว์ health จากใบซ่อม MO ของแม่พิมพ์ที่วางในโซน (`dieZones` ใน FactoryMap · poll `RATE.ANALYTIC` · MO pending = กระพริบตาม Andon) · **คลิกโซน → `/die-registry?tab=layout&area=<id>&from=factory-map`** (มีปุ่ม ← กลับผังรวม — precedent เดียวกับโซน facility → `/mtn-layout`) · ฝั่ง DieLayout: ผังที่ตีกรอบแล้วมีปุ่ม "🏭 ดูบนผังรวมโรงงาน" · ยังไม่ตีกรอบ = ขึ้นคำแนะนำ (ห้ามเงียบ) · **เปลี่ยนชื่อผังจัดเก็บ = cascade ชื่อกรอบบนผังรวมให้อัตโนมัติ** (AreaFormModal — พลาดต้อง toast บอก ห้ามเงียบ · กฎ rename cascade)
+  - **แม่พิมพ์ ↔ ไลน์ผลิต:** ชุดแม่พิมพ์ → `die_sets.mat_no` → `dr_products.line_name` = "🏭 ป้อนไลน์ผลิต" แสดงใน panel ผังจัดเก็บ + แถวบอร์ดสถานะ (info เท่านั้น — ชุดที่ยังไม่ผูก MAT ไม่แสดง = ไปผูกที่แท็บทะเบียน) · ส่วน `machines.line_name` ของแม่พิมพ์ = ชื่อ**กลุ่มเครื่องปั๊ม** (LINE A ( 800 Ton )) แสดงเป็น "เครื่องปั๊ม" ห้ามสับสนกับไลน์ผลิต
+- **เฟสถัดไป (ยังไม่ทำ):** สแกน QR แม่พิมพ์ (`ESM:M:<uuid>` มีอยู่แล้ว) แล้วเด้งเข้าหมุด/เปลี่ยนสถานะ · ผูกสถานะ in_use กับการเปิดใบผลิต (ตอนนี้ยังไม่มีข้อมูล "ใบผลิตใช้แม่พิมพ์ตัวไหน" — ดู gap ใน /order-trace) · auto เปลี่ยนสถานะเป็น maintenance ตอนเปิด MO (ตอนนี้ให้ derive แสดงทับแทน ไม่เขียนทับ manual)
+
+---
+
 ## PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
 
 หน้า `/pm-forecast` (🔧 PM ล่วงหน้า (Planner), กลุ่มการตรวจสอบและซ่อมบำรุง) — ให้ **วางแผน/ผลิตเห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์** + **buffer ที่ต้องผลิตเผื่อ** ก่อนเครื่องหยุดทำ PM
@@ -1140,6 +1691,10 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - สิทธิ์เข้าหน้า: ทุก role (`page:/pm-forecast`, migration `20260716_pm_forecast_permission.sql` Main)
 - อัตรา/วัน อ่านวันทำงานจริงจากปฏิทินบริษัท (`countWorkingDaysInMonth` — fallback 22 เมื่อปฏิทินว่าง · 2026-07-21)
 - **เฟสถัดไป (ยังไม่ทำ):** cron/edge แจ้ง Telegram ผลิต+planner ตอนเข้า window อัตโนมัติ (ตอนนี้เห็นผ่านหน้า + andon เหลืองบน org map)
+
+> ### ⭐ แผน PM "วิ่งตามผลตรวจ" แล้ว (2026-08-17 · feedback ทีมงาน "PM แผนยังไม่วิ่งหากัน")
+> เดิมบันทึกผลตรวจใน **PMCheckData ไม่เคย stamp `pm_plans`** (มีแค่ปิดแผนประสานงาน PmCoordination ที่ stamp) → ตรวจแล้วแผนไม่เลื่อน: PMSchedule มี fallback อ่าน inspections แต่ **PmForecast / MtnMachineLayout / DeptDashboard อ่าน `pm_plans` ตรง** เลยเห็นแผนค้างทั้งที่ตรวจไปแล้ว
+> **กติกาปัจจุบัน (`handleSave` ใน PMCheckData):** ตรวจ**ครบทุกจุด** (overall = pass/**fail ก็นับ** — PM ทำจริงแล้วแค่เจอของเสีย) → stamp `last_done_at` = วันนี้ (local date ห้าม toISOString) + แผน `plan_type !== 'usage'` ที่มี `interval_days` เลื่อน `next_due_date = วันทำ + interval` (สูตรเดียวกับ PmCoordination) · **`pending` (ตรวจไม่ครบ) ไม่นับว่าทำ PM จบ — ไม่เลื่อนรอบ** · วันเดียวกัน stamp ครั้งเดียว (AM ตรวจทุกกะไม่เขียนซ้ำ) · best-effort: พลาด = toast บอก ไม่ทำ save หลักพัง **ห้ามเงียบ**
 
 ## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
 
@@ -1257,6 +1812,59 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 
 ---
 
+## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
+
+หน้า `/pe-docs` (`PEDocs.jsx`, หมวดใหม่ **วิศวกรรม (PE)** ใน NAV_GROUP_ORDER) — โมดูลทีม Process Engineering ถอดโครงจากเอกสารจริง TSAT (PFC-P703-01 Rev.12 / FMEA-P703-01 Rev.33 (AIAG 4th ed) / CNP-P703-01 Rev.22 ที่ user อัปโหลดให้ศึกษา)
+
+- **หลักออกแบบ: กระดูกสันหลัง = "เลข Process (OP 10..280)" ใช้ร่วมทั้ง 3 เอกสาร** → เก็บข้อมูลชุดเดียว แสดง 3 มุมมอง (แท็บ Flow / PFMEA / Control Plan / Revisions ผ่าน `useTabParam` + `?set=` เลือกชุดเอกสาร) — **ห้ามแตกเป็น 3 โมดูลแยกที่ถือ process list ของตัวเอง** (จะ drift ทันที)
+- **ตาราง (Main project — เหตุผล: เอกสารควบคุมมี workflow อนุมัติควรอยู่ฝั่ง authenticated (DR = anon-open) + Main DB ใช้ 30MB < DR 46MB + เก็บที่ DR ไว้ให้ข้อมูลผลิต/SCADA):** `pe_doc_sets` (1 พาร์ท = 1 ชุด PFC+FMEA+CP · part_no/mat_no/line_name = จุดโยงข้อมูลผลิต) · `pe_processes` (unique (set_id, op_no) · `machine_no` โยง machines ฝั่ง DR เป็น text · kind: process/incoming_insp/storage/transport/inspection/rework/warehouse/delivery) · `pe_fmea_items` (คอลัมน์ AIAG ครบ + action + S/O/D ใหม่ · **RPN ไม่เก็บใน DB คำนวณ S×O×D ในแอปเสมอ** ≥100 แดง ≥70 เหลือง) · `pe_cp_items` (จุดควบคุมราย Char No.) · `pe_doc_revisions` (**`ref_kind`/`ref_id` ผูกต้นเหตุ claim/ncr/defect/downtime/mtn** — ถอดจากพฤติกรรมจริงใน cover: เกือบทุก revision เกิดจากเคลมลูกค้า) · ทุกตารางมี audit+updated_at trigger · RLS authenticated (สิทธิ์คุมที่ UI ผ่าน `can()`) · migrations `20260813_pe_core_documents_main.sql` + `20260813_pe_images_main.sql` (**apply แล้ว 2026-08-13**)
+- **รูป:** bucket **`pe-images`** (Main · 5MB cap) — `pe_doc_sets.image_url` (รูป product/drawing) + `pe_processes.image_url` (รูปประกอบ OP) · บีบ 2560px/q0.9 (tier drawing — ต้องซูมอ่านได้) · GIF ดิบ ≤2MB · เปลี่ยน/ลบ = ลบไฟล์เก่าหลัง DB สำเร็จ (best-effort) · lightbox คลิกดูเต็มจอ
+- **สิทธิ์:** ดู = ทุก role (`page:/pe-docs`) — ฝ่ายผลิต/QA ต้องเช็คย้อนได้ · แก้ = `pe:edit` · ออก revision = `pe:approve` (seed: admin/manager/engineer + dept_admin bucket) — engineer = เจ้าของโมดูล (ตาม convention engineer = process engineering)
+- **Seed พาร์ทแรก P703 (MB3B-16E060-CH = งาน Line 60):** migration `20260813_pe_seed_p703_main.sql` (idempotent) — 28 OP ครบตาม PFC (เครื่อง SP-74/78/80/81/82/85/10 + RB-122/126/127 ตรวจจาก CNP รายชีทแล้ว) + ประวัติ revision จาก cover จริง (rev_no = null — cover ไม่ระบุเลขรายแถว จึงเรียงด้วย rev_date)
+- **✅ Seed เต็มใบทั้ง 2 พาร์ท RH+LH แล้ว (2026-08-13 · user อัปโหลดไฟล์ครบ 6 ไฟล์):** RH `MB3B-16E060-CH` (Line 60 · fmea 272 / cp 217 / revs 70) + **LH `MB3B-16E061-CH` (Line 61 · set id `be093964-…` · 37 OP ถึง 370 / fmea 371 / cp 285 / revs 61 · doc *-P703-02)** — แกะทุกชีททุก OP ด้วย `docs/sql/pe_import/` (extract_xlsx.py + build_seed_json.py — **ใช้ซ้ำเมื่อ import พาร์ทถัดไป**) → `docs/sql/pe_seed_p703_full.json` (450KB)
+  - **⚠️ วิธีนำเข้า data ก้อนใหญ่ (บทเรียน):** JSON 450KB ใหญ่เกิน inline SQL → commit เข้า repo (public) แล้วให้ Postgres ดึงเองผ่าน **pg_net** · **ต้องแยก 2 transaction เสมอ**: จังหวะ 1 enqueue `net.http_get` + เก็บ request id ลงตารางชั่วคราว (`pe_seed_p703_fetch`) — **pg_net worker ไม่เห็นคิวจนกว่าจะ commit** (ยิงแล้วรอใน tx เดียวกัน = timeout เสมอ) · จังหวะ 2 poll `net._http_response` แล้ว import (`20260813_pe_seed_p703_full_import_main.sql` — replace items/revisions ของชุดจากไฟล์ทั้งก้อน = idempotent · pe_processes upsert do-nothing คงแถว curated เดิม)
+  - **คอลัมน์จัดกลุ่มตามโครงฟอร์มจริง** (migration `20260813_pe_item_grouping_columns_main.sql`): `pe_fmea_items.item_function` (Item/Function: INCOMING INSP./PROGRESSIVE/REWORK…) + `pe_cp_items.sub_op` ("130.3 · PROGRESSIVE" — 1 OP มีหลาย sub-op ในใบ CP) · **⚠️ seq ของ item เริ่มนับใหม่ทุก OP → จอเรียงด้วย (seq ของ OP, seq item) ฝั่ง client เสมอ** (`bySeqInOp` ใน PEDocs) ไม่งั้นหลาย OP สลับแถวปนกัน
+  - **โครงชีทในไฟล์ TSAT ที่ตัวแกะรองรับ:** ชีท `NN.1,NN.2` = incoming+storage ของ child · ชีท `NN-k`/`NN (2)` = หน้าต่อของ OP เดียวกัน → ยุบเข้า base OP · ชีทช่วงรวม (`240-280`/`340-370`) = route รายแถว (CP ตามเลข sub-op · FMEA ตาม keyword ของ Item/Function) · ชีท `REWORK Assy` → แนบเข้า OP WELD INSPECTION · record ใหม่ = แถวที่มี Severity (FMEA) / Char No. (CP) แถวอื่นเป็นบรรทัดต่อ · label คอลัมน์ A อยู่ใน merged cell ต้อง resolve ผ่าน `merged_cells.ranges`
+- **📥 นำเข้าจากไฟล์ Excel — อัพเองได้ในแอปแล้ว (2026-08-14 · คำสั่ง user "มีเป็น excel อยู่แล้ว ไม่อยากไล่พิมพ์ใหม่"):** ปุ่ม **📥 นำเข้า Excel** ใน `/pe-docs` (สิทธิ์ `pe:edit`) → เลือกไฟล์ PFMEA / Control Plan / PFC (อัพพร้อมกันหรือทีละไฟล์) → **ดูสรุปก่อนเสมอ** → ยืนยันถึงเขียนฐาน · ไม่มีตาราง/คอลัมน์ใหม่ ไม่มี migration
+  - **ตัวแกะ `src/utils/peExcelImport.js`** — pure ทั้งไฟล์ (ไม่ import xlsx/react/supabase → เทสได้ตรงๆ) · port จากสคริปต์ python `docs/sql/pe_import/` ที่ใช้ seed P703 · UI = `src/components/PeExcelImportModal.jsx` · **`xlsx` โหลดแบบ dynamic import เป็น lazy chunk (425KB) ห้าม import แบบ static** (กฎเดียวกับ pptxgenjs)
+  - **⚠️ ต้องอ่านชีทผ่าน `sheetToGrid(XLSX, ws)` เท่านั้น ห้ามเรียก `sheet_to_json` ตรงๆ** — มันคืนแถวเทียบกับ**ขอบเขตข้อมูล (`!ref`)** ไม่ใช่ A1 แต่ `!merges` เป็นพิกัด**สัมบูรณ์**เสมอ → ชีทที่ข้อมูลไม่เริ่มที่ A1 จะเหลื่อมกัน **ป้ายกำกับคอลัมน์ A/B/C ไปโผล่ผิดแถวแบบเงียบๆ** (เจอจริงตอนเทส: อ่านได้แค่ 3 จาก 7 record)
+  - **⚠️ แยกชีทข้อมูลกับชีท cover ด้วย "แกะได้กี่แถว" ห้ามดูจากชื่อชีท** — ชีท cover ของฟอร์มนี้ชื่อ `060`/`061` ซึ่งขึ้นต้นด้วยเลขเหมือนชีท OP · กติกา: `isDataSheet(key) && records.length > 0` = ชีทข้อมูล · แกะได้ 0 แถว → ลองอ่านเป็น cover (ประวัติแก้ไข) · เป็นทั้งคู่ไม่ได้ = รายงานว่า "แกะไม่ได้" **ห้ามข้ามเงียบ**
+  - **⚠️ คอลัมน์วันที่ในชีท cover ไม่คงที่ (เจอทั้ง B และ C)** → `parseCoverSheet` หาเองจากคอลัมน์ที่มีวันที่จริงมากสุด แล้วอ่านที่เหลือแบบ offset (+1 suffix · +2 ECN · +3 เนื้อหา · +6..+8 ผู้จัดทำ/ตรวจ/อนุมัติ — ตรงกันทั้ง 2 layout ที่เจอ)
+  - **โหมดนำเข้า:** *สร้างชุดใหม่* (กรอก Part No./Model/ลูกค้า/เลขเอกสาร) หรือ *เติมทับชุดเดิม* — เติมทับจะ**แทนที่ PFMEA/CP/ประวัติทั้งหมดของชุดนั้น แต่ไม่ลบ OP เดิม** (เพิ่มเฉพาะ OP ใหม่ เพื่อไม่ทับค่าที่คนแก้ไว้ เช่น `machine_no`/`line_name`) · confirm ก่อนเสมอ
+  - **ไฟล์เดียวก็นำเข้าได้** — ไม่มี Control Plan จะสร้างรายการ OP จากชื่อชีทของ PFMEA แทน (ชื่อขั้นงาน/เครื่องจักรว่าง) แล้วขึ้นเตือนให้ไปเติมเอง
+  - **ผลทดสอบ (round-trip กับข้อมูลจริง 656 รายการของ P703 RH+LH):** ตัวแกะชีท **5342/5353 ค่าตรงเป๊ะ** (11 ที่ต่างคือ trailing space จากการที่ชุดทดสอบแตกเซลล์หลายบรรทัดเป็นหลายแถว — พิสูจน์แล้วว่าเซลล์จริงที่มี newline ในตัวอ่านตรงเป๊ะ) · ตัวประกอบ OP **28/28 และ 37/37 · ชื่อ+ชนิดตรง 100% · จำนวนแถวต่อ OP ตรง 100% · ตกหล่น 0 แถว** · `child_parts` ยืนยันไม่ได้จากชุดทดสอบ (JSON ที่ seed ไว้ไม่ได้เก็บบรรทัดที่ 2 ของชื่อขั้นงานซึ่งเป็นที่มาของเลขพาร์ท) — เทสแยกกับ input จำลองแล้วทำงานถูก
+  - **✅ ทดสอบกับไฟล์จริงพาร์ทที่ 3 แล้ว — `MB3B-8C306-BE` (FMEA Rev.16 / CNP Rev.9 / PFC Rev.05 · 2026-08-14):** ได้ **OP 29 · PFMEA 255 · Control Plan 178 · revision 34 · ตกหล่น 0 แถว** · เจอ 3 เคสที่ไฟล์ P703 ไม่มี แก้แล้วทั้งหมด:
+    1. **`rangedKey` ต้องใช้ "ตัวหลัง > ตัวหน้า" ไม่ใช่ระยะห่าง ≥ 20** — ไฟล์นี้มีชีท `240-250` (ห่างแค่ 10) ซึ่งเป็นช่วงรวมจริง · เกณฑ์เดิมตีเป็นชีทเดี่ยว แถวของ OP 250 เลยไปกอง OP 240 · เลขหน้าต่อ (`140 (2)` → `140-2`) เป็น 1,2,3 จึงน้อยกว่าเลข OP เสมอ แยกได้ด้วยทิศทางแทนระยะห่าง
+    2. **⚠️ เลข OP ในเซลล์ไม่ตรงกับชื่อชีท → ยึด "ชื่อชีท" แล้วแก้ให้เลย + เตือน (2026-08-17 · คำสั่ง user)** — ชื่อแท็บคือสิ่งที่คนคลิกเข้าไปกรอกเนื้อหาของ OP นั้น ส่วนเลขในเซลล์คือของที่ติดมาจากการก๊อปชีท (ไฟล์จริง 306: ชีท `140` ในเซลล์เขียน `130`) · เดิมยึดเลขในเซลล์แล้ว**แค่เตือน** → OP 130 ได้จุดควบคุม 10 จุด (ของตัวเอง 5 + ของ 140 อีก 5) ส่วน **OP 140 ได้ 0** ทั้งที่ OP 130–170 มีไลน์ละ 5 จุดเท่ากันหมด · แถม PFMEA เคยหล่นทั้งชีท 18 แถวเพราะ OP 140 ไม่เกิด
+       - **แก้ให้เฉพาะเมื่อ "ทั้งชีทชี้ไป OP เดียวที่ผิด"** — ชีทที่มีหลายเลขปนกัน = กำกวม **ไม่แตะ** แค่เตือน (เดาแล้วย้ายผิด OP แย่กว่าปล่อยให้คนตัดสิน) · ชีทช่วงรวม (`240-250`) ข้ามอยู่แล้ว
+       - **ต้องทำก่อนสร้างรายการ OP** ไม่งั้นชื่อขั้นงาน/เครื่องจักร/child part ลงทะเบียนใต้ OP ผิดไปแล้ว
+       - **แก้ให้ ≠ ปิดปาก** — ยังขึ้นเตือนทุกครั้ง (ชีทไหน · จาก→เป็น · กี่แถว) เพื่อให้ไปแก้ไฟล์ต้นทาง ไม่งั้นอัพรอบหน้าเจอซ้ำ
+    3. **ชีท REWORK ห้ามล็อกชื่อ `WELD INSPECTION` ตายตัว** — พาร์ทนี้มีแต่ `FINAL INSPECTION` แถว REWORK เลยหล่น 8 แถว · เปลี่ยนเป็นเกาะ **ขั้นตรวจตัวสุดท้าย** (`kind='inspection'`) แล้วขึ้นเตือนบอกว่าผูกไว้กับ OP ไหน ย้ายเองได้
+    - **OP ที่ Control Plan ไม่มี → ตั้งชื่อจากช่อง Item/Function ของ PFMEA** (ช่องนั้นคือชื่อขั้นงานตามฟอร์ม AIAG ไม่ใช่การเดา) + remark กำกับที่มา
+  - **📐 สเปกฟอร์มละเอียด + แนวทาง export → `docs/PE-FORM-SPEC.md`** (2026-08-14 · คำสั่ง user "ต้องมี feature export ออกมาให้ได้แบบเอกสารเดิม 100%") — หัวเอกสารรายเซลล์ · คอลัมน์ครบทั้ง 3 ฟอร์ม · ตั้งค่าพิมพ์ · กับดัก 7 ข้อจากไฟล์จริง · **เอกสารนี้เป็นสัญญาระหว่างตัวนำเข้ากับตัวส่งออก แก้ตัวใดตัวหนึ่งต้องมาอัพเดท**
+    - **⚠️ กฎเหล็ก — "ตาราง" กับ "ผัง" ต้องแยกวิธี export ห้ามเหมารวม (แก้ข้อสรุปเดิม 2026-08-17):** เอกสารรอบแรกสรุปว่า export ต้องใช้ไฟล์ต้นฉบับเป็นแม่แบบเท่านั้น — **ถูกสำหรับ PFC แต่กว้างเกินไปสำหรับ PFMEA/CP**
+      - **PFC = ผังที่วาดด้วยรูปทรง Excel ~560 ชิ้น + รูป 59 ไฟล์ ไม่ใช่ตาราง** · อ่าน-เขียนกลับด้วย **ExcelJS เหลือวัตถุ 45/700 (6%)** · **SheetJS เหลือ 0** · ExcelJS สร้าง shape ไม่ได้เลย → **export ไม่ได้ ห้ามวาดผังขึ้นใหม่** (ผังคือเนื้อหา วาดใหม่ = คนละใบ) · อยากได้ 100% ต้องแก้ค่าเซลล์ใน zip ของไฟล์ต้นฉบับ (ไม่แตะ `xl/drawings` `xl/media` `xl/styles.xml` `xl/printerSettings`) — ยังไม่ทำ
+      - **PFMEA / Control Plan = ตารางจริงในเซลล์ → สร้างใหม่จากข้อมูลในระบบได้ ~95%** ทำแล้วที่ `src/lib/peExcelExport.js` (ปุ่ม **⬇️ ดาวน์โหลด Excel** ในแท็บ FMEA/CP · 1 ชีทต่อ OP + ชีท COVER ประวัติแก้ไข · ตั้งค่าพิมพ์ A4 แนวนอน fitToWidth ตามฟอร์มจริง · RPN เป็น**สูตร** `E*I*K` ไม่ใช่ค่าคงที่)
+      - **ทำไมไม่ใช้แม่แบบกับ 2 ใบนี้ทั้งที่ได้ 100%:** ฟอร์มต้นฉบับมีจำนวนแถวตายตัว แต่**ข้อมูลในระบบโตได้** (เจอเคลม → เพิ่ม failure mode คือเหตุผลที่โมดูลนี้มีอยู่) · แทรกแถวในแม่แบบลาก merge/anchor ของ drawing/print area พังตามทั้งชุด + ต้องเก็บไฟล์ต้นฉบับใน Storage + ใช้กับพาร์ทที่พิมพ์เข้าระบบเองไม่ได้เลย
+      - **กฎ "ห้ามจำลอง layout ใบจริงมาไว้อีกที่" ไม่ขัดกัน** — กฎนั้นกันการมี layout **2 ชุดในโค้ด** แล้ว drift (docFormPreview/VSM) · PFMEA/CP ไม่มีตัวที่ 2 เพราะต้นทางเป็นไฟล์ Excel นอกโค้ด
+      - **⚠️ 5% ที่ต่างต้องบอกผู้ใช้บนจอทุกครั้ง ห้ามเงียบ** (`notes` → แถบ ℹ️ ในหน้า): กล่องข้อความ/โลโก้ที่วาดทับหัวฟอร์ม · เส้นขอบที่ไฟล์จริงแก้มือจนไม่สม่ำเสมอ (ตัวสร้างทำให้สม่ำเสมอ) · **ช่องที่ระบบยังไม่มีคอลัมน์เก็บ (Key Date/Core Team/Key Contact) ปล่อยว่าง ห้ามเดา**
+      - **ตรวจแล้วไม่มีข้อมูลตกหล่น** (round-trip ไฟล์จริง 306): PFMEA 255 record × 9 ช่อง = **2,295 ช่องตรง 100%** · CP 178 × 7 = **1,246 ช่องตรง 100%** — เทียบโดยประกอบข้อความหลายบรรทัดกลับจากหลายแถว · **แก้ตัวสร้าง/ตัวแกะเมื่อไหร่ให้รันเทียบแบบนี้ซ้ำ**
+      - เลขฟอร์ม/Rev/Effective อ่านจากทะเบียน `doc_forms` doc_key **`pe_fmea`** (FM-PE1-018) / **`pe_cp`** (FM-PE1-019) — migration `20260817_doc_forms_pe_core.sql` (**apply แล้ว 2026-08-19**) · `layout_locked=true` (ความกว้างคอลัมน์ผูกกับแนวกระดาษ เปลี่ยนแล้วตารางล้นหน้า)
+      - **🗺️ ผังกระบวนการที่ระบบวาดเอง (2026-08-17 · คำขอ user "รวมเป็น flow สวยๆ เห็นได้ในหน้าเดียว")** — `src/components/PeFlowChart.jsx` (SVG + `layoutFlow` pure) + `src/lib/pePfcPrint.js` (พิมพ์ A3 แนวนอน · doc_key `pe_pfc` = FM-PE1-020) · อยู่ในแท็บ Flow ของ `/pe-docs` เหนือตาราง OP
+        - **⚠️ คนละสิ่งกับไฟล์ PFC ต้นฉบับ ห้ามสับสน** — ต้นฉบับคือเอกสารควบคุมที่ PE วางรูปทรงเองใน Excel · ผังนี้ generate จาก `pe_processes` แก้ OP แล้วเปลี่ยนตามทันที · **ข้อความกำกับต้องอยู่ทั้งบนจอและบนใบพิมพ์ ห้ามถอด** (กันเอาไปใช้แทนตัวจริง)
+        - โครงถอดจากไฟล์จริง: แถวบน = ช่องทางเข้า child part (`kind='incoming_insp'`) → **บัสเส้นเดียว** → สายหลักไหลลงเป็นคอลัมน์ วกด้วยตัวเชื่อม A-D เหมือนฟอร์มจริง · สัญลักษณ์ ASME นิยามที่ `SYMBOLS` จุดเดียว **legend สร้างจากตัวเดียวกัน** (เพิ่ม `kind` ใหม่ต้องมาเติม ไม่งั้นตกเป็นสี่เหลี่ยมเงียบๆ)
+        - **`pickShape` เลือกทรงผังด้วย maximize `min(กว้างกระดาษ/กว้างผัง, สูงกระดาษ/สูงผัง)`** — ตรงกับสิ่งที่ต้องการจริง (ตัวหนังสือใหญ่สุดบนกระดาษ) ไม่ต้องเดาสัดส่วนเป้า · วัดจริง A3: 29 OP → ตัวอักษร 2.5 มม. (~7pt) · 60 OP → 2.0 มม.
+        - **บังคับลง 1 หน้าเสมอ** ด้วย `max-height` ของ SVG ในใบพิมพ์ (viewBox ย่อพอดีกรอบ ไม่ยืดผิดสัดส่วน) · **แต่ "ลงได้ ≠ อ่านออก" → เตือนเมื่อตัวอักษรเล็กกว่า 1.6 มม.** ห้ามให้ไปเจอเองตอนพิมพ์ออกมา
+        - **⚠️ กับดักที่เจอตอนเรนเดอร์ดูจริง (อย่าแก้ย้อน):** ลากเส้นจากช่องทางเข้าทุกช่องมาบรรจบจุดเดียว = พงรก + พาดทับวงกลมตัวเชื่อม → ใช้บัส · ช่องทางเข้าแถวที่ไม่ใช่แถวล่างสุด **ต้องเดินสายอ้อมข้าง** (ลากตรงลงมาทะลุกล่องแถวถัดไป — เคยพลาดจนแถวบนไม่มีเส้นต่อลงบัสเลย)
+        - **ยังไม่ทำ:** ไม่ลากเส้นว่า child part ตัวไหนเข้า OP ไหน (เป็น 1-ต่อ-หลาย เช่น W520781-S เข้า 4 OP ลากจริงเป็นเส้นพันกัน) · ยังไม่แสดงขั้นย่อย 10.1→10.2 ที่มีใน `pe_cp_items.sub_op`
+      - **⚠️ `exceljs` ต้อง dynamic import เสมอ (~930KB)** — เดิม `scrapExportExcel.js`/`pmExportExcel.js` import แบบ static ทำให้ก้อนนี้ไปฝังในชิ้นของ `ScrapReport` (978KB) แล้วหน้าอื่นที่ export ต้องดึงชิ้นนั้นมาทั้งดุ้น · แก้เป็น dynamic ทั้ง 3 ไฟล์แล้ว → exceljs เป็นชิ้นร่วมโหลดตอนกด export เท่านั้น (ScrapReport เหลือ **49KB**) · กฎเดียวกับ pptxgenjs/xlsx
+    - **ตัวแกะเก็บ "ที่อยู่" ของทุก record ไว้ด้วย:** `_row`/`_nrows` + `parseFormHeader().cells` — ยังไม่เก็บลง DB (จะได้ใช้ตอนทำ surgical edit ของ PFC ในอนาคต)
+    - **หัวเอกสารแกะได้แล้วทั้ง 3 ฟอร์ม → กรอกข้อมูลชุด (Part No./ชื่อ/Model/ลูกค้า/เลขเอกสาร) ให้อัตโนมัติ** + ถ้าพาร์ทนั้นมีชุดอยู่แล้วจะเดาเป็นโหมด "เติมทับ" ให้เอง · รองรับ 3 แบบที่เจอจริง: ค่าอยู่เซลล์เดียวกับป้าย / เซลล์ถัดไป / **ป้าย·`:`·ค่า อยู่คนละเซลล์ห่างกัน 150 คอลัมน์ (PFC)**
+  - **ฟอร์มอื่นที่ layout ต่างจะได้ 0 OP** แล้วขึ้นข้อความบอกว่าระบบคาด layout แบบไหน (PFMEA เริ่มแถว 10 คอลัมน์ B–S · CP เริ่มแถว 12 มี Char No. ที่คอลัมน์ D) พร้อมบอกให้ส่งไฟล์ให้ผู้ดูแลเพิ่มรูปแบบใหม่ — **ห้ามให้ import ผ่านแบบได้ข้อมูลมั่ว**
+- **เฟสถัดไป (ยังไม่ทำ):** (1) ปุ่ม "🔍 ชน FMEA" จากแถวของเสีย/Downtime/NCR/ใบ MO — จับคู่ เครื่อง+ไลน์+ประเภทปัญหา → โชว์ failure mode + controls ที่เกี่ยว + เช็คว่า control ถูกทำจริงไหม (poka-yoke check/PM/ใบตรวจ) → ไม่เจอคู่ = เพิ่มเข้า FMEA + ออก rev (2) ~~UI import Excel~~ **ทำแล้ว 2026-08-14** (ดูหัวข้อ 📥 นำเข้าจากไฟล์ Excel) (3) เทียบ RPN ที่ประเมิน vs ความถี่เกิดจริงจาก defect_logs (4) พิมพ์ฟอร์ม FM-PE1-018/019 ผ่านทะเบียน doc_forms
+
+---
+
 ## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
 
 > ### ⚠️ กฎเหล็ก — ตาราง master/config ที่ "แก้ไขได้" ต้องมี audit
@@ -1264,11 +1872,37 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 
 - **ตาราง `audit_log` กลาง (ต่อ project)** — เก็บ `table_name, row_pk, action (INSERT/UPDATE/DELETE), actor, changed_fields[], old_data jsonb, new_data jsonb, changed_at` · เขียนโดย generic trigger `fn_audit()` (SECURITY DEFINER) ที่ผูกกับตาราง master · migration `20260724_audit_log_main.sql` + `20260724_audit_log_dr.sql`
 - **`fn_audit()` best-effort เสมอ** — ห่อ insert ด้วย `exception when others then null` → **audit ล้มเหลวห้ามทำ write หลักพัง** (สำคัญมากกับระบบ production) · UPDATE ที่ไม่มีอะไรเปลี่ยนจริง (นอกจาก updated_at) ไม่ log
-- **actor (ใครแก้):** Main (authenticated) = `auth.uid()` → ชื่อจาก `profiles` · **DR เป็น anon เสมอ → `auth.uid()` = null** → actor มาจากคอลัมน์ `updated_by_name` บนแถว
+> ### 🔴 กฎเหล็ก — เทส audit ต้องเทสด้วย `auth.uid()` ที่ไม่ null เสมอ (2026-08-17 · เจอบั๊กที่เงียบมา 3 สัปดาห์)
+> **อาการ:** `audit_log` ฝั่ง Main มี **2,234 แถว จาก 15 ตาราง แต่ `actor` = null ทั้งหมด · `actor_uid` = null ทั้งหมด** → ระบบ traceability ตอบได้แค่ "อะไรเปลี่ยน" **ตอบ "ใครเปลี่ยน" ไม่ได้เลย** ซึ่งเป็นคำถามหลักที่มันถูกสร้างมาเพื่อตอบ
+> **เหตุ:** `fn_audit` เขียน `select coalesce(full_name, email) from public.profiles` แต่ **`profiles` ไม่มีคอลัมน์ `email`** (มี `notify_email`) → error 42703 · บรรทัดนั้นถูกเรียก**เฉพาะเมื่อ `auth.uid()` ไม่ null = คนล็อกอินเป็นคนแก้** → error โดน `exception when others then null` กลืน = **ไม่ log ทั้งแถว** · แถวที่ log สำเร็จทั้งหมดคือการเขียนที่ `auth.uid()` เป็น null (migration/service role) ซึ่งข้ามบรรทัดนั้นไป จึงได้ actor ว่าง
+> **⇒ การแก้โดยคนจริงไม่เคยถูกบันทึกสักครั้ง** · แก้แล้ว migration `20260817_fix_audit_actor_no_email.sql` (actor = `full_name` → ไม่มีก็ใช้ uid) · **แถวเก่า 2,234 แถวกู้ไม่ได้** (ไม่มีข้อมูลต้นทาง) ของใหม่มีชื่อครบ
+> **บทเรียน:** `exception when others then null` จำเป็นจริง (audit ห้ามทำ write หลักพัง) แต่ทำให้บั๊กแบบนี้**เงียบสนิทไม่มีสัญญาณใดๆ** → รัน SQL ด้วย service role แล้วผ่าน **ไม่ได้แปลว่าใช้ได้** เพราะ `auth.uid()` เป็น null = เดินคนละ path กับผู้ใช้จริง
+> **วิธีเทสที่ถูก:** `set_config('request.jwt.claims', json_build_object('sub', <uid>)::text, false)` → `update` จริง 1 แถว → เช็คว่าได้แถวที่ `actor` ไม่ null (ทำในทรานแซกชันที่คืนค่าเดิม + ลบแถวเทสทิ้ง)
+> **⚠️ ห้ามใช้ email เป็นตัวระบุตัวคนที่ไหนอีก — ระบบนี้ไม่มีอีเมล** (user ยืนยัน 2026-08-17 · ตรวจแล้วไม่มี provider ส่งเมลในโปรเจคเลย แจ้งเตือนไป Telegram + in-app + Web Push ล้วน · `profiles.notify_email` เก็บค่าไว้เฉยๆ ไม่เคยถูกใช้ส่งอะไร)
+
+- **actor (ใครแก้):** Main (authenticated) = `auth.uid()` → **`profiles.full_name`** (ไม่มีชื่อ → uid) · **DR เป็น anon เสมอ → `auth.uid()` = null** → actor มาจากคอลัมน์ `updated_by_name` บนแถว
   - **✅ DR actor ทำแล้ว (centralized) — 2026-07-24:** `supabaseClient.js` **wrap `supabaseDR.from`** ให้ฝัง `updated_by_name = ชื่อ user ปัจจุบัน` อัตโนมัติทุก `update/upsert/insert` ของตาราง master ใน `DR_AUDIT_TABLES` (ครอบทุกหน้าในทีเดียว ไม่ต้องไล่แก้ handler รายจุด) · `setDrActorName(fullName)` เรียกจาก `App.jsx fetchProfile` (ล้างตอน signout) · fn_audit อ่าน `updated_by_name` → actor · **⚠️ ตารางใน `DR_AUDIT_TABLES` ต้องมีคอลัมน์ `updated_by_name` (migration `20260724_dr_updated_by_name.sql`) ไม่งั้น write พัง** — เพิ่มตาราง DR ใหม่เข้า audit ต้องเพิ่มทั้งในลิสต์ migration + `DR_AUDIT_TABLES` ให้ตรงกัน
   - **DELETE ฝั่ง DR** actor = `updated_by_name` ของแถวเดิม (คนแก้ล่าสุด ไม่ใช่คนลบ) — gap เล็กๆ ยอมรับได้ (จะได้คนลบจริงต้องผ่าน `current_setting('app.actor')` ซึ่ง REST ตั้งไม่ได้ง่าย)
 - **`updated_at` + trigger `fn_set_updated_at()`** เพิ่มให้ตาราง master ที่ผูก audit (BEFORE UPDATE set now())
 - **ดูประวัติ:** หน้า `/product-history` (ProductHistory) โชว์ audit ของ `dr_products` แถวนั้น (line_name/CT/PN เปลี่ยนโดยใคร) · จุดอื่นที่อยากโชว์ audit ให้ query `audit_log` ด้วย `table_name`+`row_pk`
+- **`employee_skills` (คะแนนทักษะรายคน) ผูก audit แล้ว 2026-08-17** — แต่ใช้ **`fn_audit_manual_only()` ไม่ใช่ `fn_audit()`**: log เฉพาะตอนมี `auth.uid()` (คนกดในแอป) · **cron ไม่ log โดยตั้งใจ** เพราะ daily skill farm เขียนตารางนี้หลายร้อยแถว/วัน → ผูก generic audit จะบวม ~100MB/ปี บน free tier 500MB และ log ว่า "cron +1 EXP" ก็ไม่ตอบคำถามที่คนถามจริง ("ใครไปแก้คะแนน") · **ตารางอื่นที่ job อัตโนมัติเขียนถี่ ให้ใช้ `fn_audit_manual_only` แบบเดียวกัน**
+  - **📜 จอกลางดูประวัติทั้งระบบ = หน้า `/audit-log`** (หมวดตั้งค่าโปรแกรม,ฐานข้อมูล · 2026-08-19 · user ทักว่าเดิมอยู่ผิดที่)
+  - เดิมจอดู audit ตัวเดียวถูกฝังใน `/mtn-repair` → ⚙️ ข้อมูลตั้งต้น ซึ่งกรองไว้แค่ **9 ตารางของทีมช่าง** ทั้งที่ระบบมี audit trigger **~74 ตาราง 2 project** → ของสำคัญไม่มีหน้าไหนดูได้เลย (`role_permissions` 309 แถว = ใครแก้สิทธิ์ · `profiles` · `employees` 308 · `machines` 1,494 · `dr_products` 287)
+  - **component กลาง `src/components/AuditLogViewer.jsx`** — ใช้ร่วมทั้งหน้า `/audit-log` และแท็บใน `/mtn-repair` (ส่ง prop `tables` จำกัดขอบเขต) · **ห้ามเขียนจอดู audit ใหม่ที่อื่น**
+  - **ป้ายไทยของตาราง/ฟิลด์อยู่ที่ `src/utils/auditLabels.js` จุดเดียว** — ไม่รู้จัก = แสดงชื่อดิบ (ไม่พัง) · เพิ่ม audit ให้ตารางใหม่แล้วอยากได้ชื่อไทย มาเติมที่นี่
+  - **แยกฝั่งด้วยแท็บ ไม่ query รวม** — `audit_log` มีคนละชุดต่อ project (คนละ database join กันไม่ได้)
+  - ตัวเลือกตาราง/คนแก้ในตัวกรอง **สร้างจากข้อมูลจริงที่โหลดมา** ไม่ hardcode → ตารางใหม่โผล่เอง
+  - สิทธิ์ `page:/audit-log` seed **admin/manager เท่านั้น** (เห็นการเปลี่ยนสิทธิ์ + ข้อมูลพนักงาน = อ่อนไหว) · role อื่นเปิดเองที่ `/permissions` · migration `20260819_audit_log_page.sql` (**apply แล้ว**)
+- **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
+  - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
+  - **⭐ retention ทำให้ audit_log "หยุดโต" ไม่ใช่แค่ "โตช้าลง"** (ตกผลึกกับ user 2026-08-19) — มันเข้าสมดุลที่ `อัตรา/วัน × 180 วัน` แล้วนิ่ง (ลบเท่าที่เพิ่ม): 20/วัน = ~5 MB · 50/วัน = ~13 MB · 141/วัน = ~35 MB → **เลิกเป็นปัญหาถาวรไม่ว่าใช้หนักแค่ไหน**
+  - **⚠️ อัตรา 141 แถว/วัน ที่ใช้ประเมินตอนแรก คือช่วง "initial implementation" ไม่ใช่ steady state** — ดู audit_log รายวันจริง: spike ทุกครั้งตรงกับวันที่มี migration/backfill (31 ก.ค.–2 ส.ค. ตั้งจุดตรวจ PM 261/685/258 · 5 ส.ค. จัด PM dept ownership 520 · **10 ส.ค. backfill `equipment_kind` 262 แม่พิมพ์ = 1,117 แถว** · 17 ส.ค. จัด dr_products 239) แต่ **18-19 ส.ค. เหลือ 14 และ 24 แถว/วัน** = ต่างกัน 6-10 เท่า
+  - **บทเรียน: อย่าประเมินอัตราโตด้วยค่าเฉลี่ยที่คร่อมช่วง setup** — ดู trend รายวันเสมอ แล้วดูว่า spike ตรงกับ migration/backfill ไหม
+  - ผลต่ออายุ free tier: DR เต็มใน **~4.5 ปี** (ประเมินเดิม 2.6 ปีมองร้ายเกินจริงเพราะใช้อัตราช่วง setup) · **ตัวที่โตต่อเนื่องจริงคือข้อมูลการผลิต** (`prod_orders`/`downtime_logs`/`line_stock_transactions`) ซึ่ง **ไม่ควรมี retention** เพราะเป็นข้อมูลธุรกิจ · ถ้า adoption โต 3 เท่าตามเป้าโปรเจค → ~1.5 ปี
+  - **⚠️ สืบย้อนได้แค่ 6 เดือนล่าสุด** — ต้องเก็บยาวกว่านี้เพื่อ audit ภายนอก (IATF ฯลฯ) ให้ export ออกก่อน หรือยืด interval ใน cron
+  - **ไม่กระทบบันทึกคุณภาพ** — `lpa_audit_answers` / `ojt_*` / `four_m_logs` / `pe_doc_revisions` เก็บในตารางของตัวเอง ไม่ใช่ `audit_log`
+- **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
+  - **บนจอต้องเขียนกำกับว่า log เฉพาะการแก้ด้วยมือ** ไม่งั้นคนอ่านจะเข้าใจว่าคะแนนที่ขยับเองคือไม่มีใครแตะ · **โหลดไม่สำเร็จต้องขึ้น "โหลดไม่ได้" ห้ามแสดงเป็น "ไม่มีประวัติ"** (ว่างเปล่ากับอ่านไม่ได้ คนละเรื่อง)
 - **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
 
 ## ประวัติผลิต by Product — `/product-history` (2026-07-24)
@@ -1277,10 +1911,61 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **แหล่งข้อมูล (DR):** `prod_orders` embed `production_sessions!inner(line_name, work_date, shift, oee, status)` กรองช่วงวัน · `defect_logs` (NG ต่อใบ) · `audit_log` (การแก้ dr_products)
 - **แสดง:** สรุป (ผลิต/เป้า/NG/กี่ไลน์) · แยกตามไลน์ · trend รายวัน · ตารางใบผลิต (วัน/ไลน์/กะ/เครื่อง/เป้า/ผลิต/NG/สถานะ) · ประวัติแก้ไข (ใครเปลี่ยน line_name/CT เมื่อไหร่)
 - **Scope:** leader = family ไลน์ตัวเอง · role อื่น = ตาม sections (กรอง `production_sessions.line_name`) · **ตัวเลือกสินค้าก็ scope ด้วย** (กฎ dropdown-scope — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก · สินค้า line_name ว่างยังโชว์) · สิทธิ์เข้าหน้า `page:/product-history` (ทุก role · migration `20260724_product_history_permission.sql`)
+
+### 📦 ผลิตเทียบกับความต้องการลูกค้า (2026-08-19 · คำสั่ง user)
+*"ดูยอดผลิตรายวันเทียบกับออเดอร์ลูกค้าไม่ได้เลย อยากเห็นว่าที่ผ่านมาผลิตตรงตามความต้องการมั้ย เพียงพอรึป่าว และต้องชะลอหรือเร่ง"*
+
+แผง `📦 ผลิตเทียบกับความต้องการลูกค้า` ในหน้านี้ — สูตรอยู่ **`src/utils/demandSupply.js` (pure · เทส 18 เคส)** · UI `src/components/DemandVsProduction.jsx`
+- **ตัวชี้ขาดคือ "สต็อกจำลองติดลบวันไหน" ไม่ใช่ผลรวมผลิต vs สั่ง** — ผลิตน้อยกว่าที่ลูกค้าสั่งไม่ได้แปลว่าขาด ถ้าสต็อกยกมาพอ
+- **`order` ชนะ `forecast` ในวันที่มีทั้งคู่ ห้ามบวกทับ** (นับซ้ำ — หลักเดียวกับ "รวม forecast source เดียว" ใน kanban calc) · forecast EDI 830 เป็นราย 7 วัน → เกลี่ยเป็นรายวันเท่าๆ กัน **ไม่เดาว่าวันไหนหนักกว่า**
+- **ช่วงข้างหน้าคิดจาก "ยังไม่ผลิตเพิ่มเลย"** = เส้นแย่สุด ไว้ดูว่าเหลือเวลาอีกกี่วันก่อนต้องเร่ง — **ระบบไม่เดาว่าจะผลิตได้เท่าไหร่**
+- **`prodRate` หารด้วยวันที่ผลิตจริง ไม่ใช่วันปฏิทิน** (ไลน์หยุดเสาร์-อาทิตย์ = อัตราต่ำเกินจริง → บอกว่าต้องใช้วันมากเกินความจริง)
+- **จับคู่ออเดอร์กับสินค้าต้อง normalize ทั้ง `mat_no` และ `customer_part_no`** — ออเดอร์อ้าง `RB3B 16E060 BA` แต่ master เป็น `RB3B-16E060-BA` (เทียบใน SQL ตรงๆ ไม่เจอ → ดึงทั้งช่วงแล้วกรองฝั่ง client)
+- **🔗 ดูรวมหลาย MAT SAP เป็น product เดียว (2026-08-19 · คำสั่ง user "บางรายการเป็น product เดียวกัน ต่างที่ปลายทางที่ส่งลูกค้า เลยต้องแยก mat sap"):** จับกลุ่มด้วย **`p_no`** (เลขพาร์ทลูกค้า — ตัวที่ลูกค้าสั่งจริง) ไม่ต้องตั้งค่าอะไรเพิ่ม · ปุ่ม 🔗 ในหัวสินค้า + แถบชวนเมื่อมีพี่น้องแต่ยังดูตัวเดียว
+  - **ไม่ใช่แค่ความสะดวก — ดูทีละเลขให้คำตอบผิดจริง:** ออเดอร์มักถูกบันทึกใต้ **เลขเดียว**ของกลุ่ม (ข้อมูลจริง `RB3B-16E060-BA`: ออเดอร์ 7,350 อยู่ใต้ `10100384` ทั้งหมด ส่วน `10100385`/`10106790` ไม่มีเลย) → เปิดดู `10100385` เห็น "🔴 ขาด 9,526" ทั้งที่ไม่มีใครสั่งเลขนั้น
+  - ข้อมูลจริง: มี **13 กลุ่ม** ที่ `p_no` เดียวมีหลาย mat (สูงสุด 3 ตัว/กลุ่ม)
+
+> #### ⚠️⚠️ กฎเหล็ก — ห้าม net สต็อก/ออเดอร์ข้ามเลข MAT SAP (2026-08-19 · คำสั่ง user)
+> *"เวลาจะเอาไปขายจริง เราจะไม่สลับไปขาย ถ้าไม่ฉุกเฉินจริงๆ เพราะมีการทำลงระบบ SAP ไว้ เดี๋ยวยอดจะเพี้ยน"*
+> product เดียวกันที่แยกเลขตามปลายทางลูกค้า **แลกของกันไม่ได้ในทางปฏิบัติ**
+> - **โหมดกลุ่มมีไว้ "ดูภาพรวม/ภาระไลน์" เท่านั้น · การตัดสิน "พอ/ขาด" ต้องคิดราย MAT เสมอ**
+> - เคสจริงที่พิสูจน์: รวมกลุ่ม = สต็อก 16,218 vs ออเดอร์ 7,350 → **"เหลือเฟือ" ซึ่งผิด** · ราย MAT = `10100384` ต้องส่ง 7,350 มีสต็อก 6,119 → **ขาด 391 จริง** (ของอีก 2 เลขเอามาใช้แทนไม่ได้)
+> - มีทั้งขาดและเกินในกลุ่ม → เสนอว่า **"โอนได้เฉพาะกรณีฉุกเฉิน และต้องปรับยอดใน SAP ด้วย"** ห้ามนับรวมให้อัตโนมัติ
+> - **เลขที่ไม่มีออเดอร์ผูก = "❔ ไม่ตัดสิน" ไม่ใช่ "พอ"** (ออเดอร์ถูกบันทึกใต้เลขอื่นของกลุ่ม ไม่ใช่ลูกค้าไม่สั่ง)
+> - ออเดอร์ที่อ้างเลขลูกค้าล้วนและยังไม่ผูกเลข SAP ตัวไหน → **รายงานแยก ห้ามเดาว่าเป็นของเลขไหน**
+> - ฝั่งโค้ด: `prodByDay` ที่ส่งเข้า `DemandVsProduction` เป็น **`{ mat_no: { วัน: จำนวน } }` แยกราย mat** ห้ามยุบรวม
+
+- ⚠️ **"ยังเทียบไม่ได้" ต้องเป็นคำตอบของตัวเอง** — พาร์ทที่ยังไม่ได้ตั้ง `p_no` ขึ้นแถบส้มบอกว่าต้องไปตั้งที่ไหน **ห้ามแสดง demand = 0** (จะอ่านเป็น "ลูกค้าไม่สั่ง" แล้วสั่งชะลอผลิตผิด)
+
+**📊 สภาพข้อมูล ณ 2026-08-19 (ตรวจจริง):** order 472 รอบ · 118,315 ชิ้น · 37 พาร์ท · **มีแค่ 17/8–1/9** (เริ่มอัพครั้งแรก 17/8) · forecast EDI 830 1,463 แถว ถึง ส.ค. 2027
+จับคู่เลขได้ **428/472 รอบ (90.7%)** = เป็นเลข SAP อยู่แล้ว 13 พาร์ท + จับคู่ชัด 2 พาร์ท · **ไม่มีเคสกำกวมเลย**
+**ยังไม่ได้ตั้ง `p_no` 22 พาร์ท** (44 รอบ · 56,540 ชิ้น = 48% ของจำนวนชิ้น — ส่วนใหญ่เป็นพาร์ทลูก `MB3B E108A26 AA` / `127 (M6 มีเกลียว)` / `5049 (SPOT)`) → ตั้งที่ Product Master แล้วเทียบได้ทันที
+
+> #### ⚠️ กฎเหล็ก — ห้ามลบออเดอร์ที่วันส่งผ่านไปแล้ว (2026-08-19 · คำสั่ง user "ของเดิมไม่หายทำได้มั้ย")
+> `PlannerSales` ตอนนำเข้า EDI 862 เดิมลบ `pending` ตั้งแต่ **`edi.dateFrom` = วันแรกที่มีในไฟล์**
+> → ไฟล์ที่พ่วงรายการวันเก่ามาด้วย (**EDI ทำประจำ**) จะลบประวัติออเดอร์ทับ **แบบเงียบๆ**
+> **EDI 862 คือการแก้ไขคำสั่งซื้อในอนาคต — รายการของวันที่ผ่านไปแล้วเป็นข้อเท็จจริงย้อนหลัง** (ลูกค้าเคยสั่งเท่านี้จริง)
+> ลบทิ้งแล้วตอบไม่ได้ตลอดกาลว่า "ที่ผ่านมาผลิตพอกับที่ลูกค้าสั่งไหม"
+> - ตัดที่ **`max(dateFrom, วันงานปัจจุบัน)`** แทน · รายการวันเก่าที่อยู่ในไฟล์ = **ไม่ insert ซ้ำ** (กันยอดทบซ้อน)
+> - **ผลข้างเคียงที่ตั้งใจ:** ใบค้างส่งของวันเก่าไม่ถูกล้างด้วยการอัพไฟล์อีก — ต้องเคลียร์ที่หน้า Delivery
+>   (ถูกแล้ว: ของที่ยังไม่ส่งและลูกค้าไม่ได้ยกเลิก คือคำถามที่ยังค้างอยู่จริง)
+> - **ประวัติจะสะสมเองตั้งแต่ 2026-08-19 เป็นต้นไป** ไม่ต้องทำอะไรเพิ่ม
 - **ตัวเลือกสินค้า = ลิสต์จัดกลุ่มตามไลน์** (ฟิลเตอร์ไลน์ + ค้นหา + กลุ่ม sticky header เลื่อนในกรอบ · จำกัดแสดง 300 · เลือกสินค้าแล้วพับลิสต์อัตโนมัติ) — เปลี่ยนจาก chip กองรวมที่อ่านยาก (2026-07-30)
 - **ทุก section ย่อ/ขยายได้ตาม convention** (`CollapseCard` — จำสถานะ `ph_collapse_*` ใน localStorage · audit ว่าง default พับ) (2026-07-30)
 - **ตารางใบผลิต = drill-down 3 ชั้น: วัน → ไลน์·กะ → รายใบ** (`dayGroups` — รายวันคือระดับหลัก คลิกแตกชั้นถัดไป · แสดง 45 วันแรก + ปุ่มแสดงอีก) · การ์ดสินค้าที่เลือกมีปุ่ม "✕ ปิด — เลือกสินค้าอื่น" กลับไปลิสต์ · กราฟรายวัน: แกนวัน**ต่อเนื่องไม่ข้ามวัน** (วันไม่ผลิต = ตอเทา) · แท่งซ้อนเขียว=ผลิตดี/แดง=NG · ตัวเลขบนแท่งเมื่อ ≤20 วัน + legend (2026-07-30)
 - **ผลิตได้** = confirmed→`qty_ok??qty` · เปิด→`qty_actual` (สอดคล้องกับการนับใน DailyReport)
+
+### 🔍 แผง "ลูกค้าแจ้งอาการอะไร" — โฟกัสการสอบสวนเป็น 3 ขาแบบ 8D (2026-08-14 · คำสั่ง user)
+
+เดิมหน้านี้ตอบ *"ใบนี้มีอะไรบ้าง"* (กอง 10 แผงให้ไปไล่อ่านเอง) แต่ตอบไม่ได้ว่า *"อะไรเกี่ยวกับอาการที่ลูกค้าเคลม"* — เคสจริงต้องเปิด 6-7 หน้า (Daily Report → OEE → PE Docs → Daily Checker → PM → Delivery)
+- **เลือกอาการจาก `pe_fmea_items` ของพาร์ทนั้น (dropdown เรียงตาม RPN) + ช่องพิมพ์รายละเอียด** — **ห้ามทำเป็นช่องพิมพ์เปล่าอย่างเดียว** เพราะลูกค้าเขียน "นัทไม่มี" แต่ FMEA เขียน "Missing nut" ตัวจับคู่ n-gram ข้ามภาษาไม่ได้ (ปัญหาเดียวกับ `EQUIP_SYN`) · เลือกจากรายการ = จับคู่ด้วย id ไม่ต้องเดา + คนกรอกได้เห็นว่า FMEA เคยคาดอะไรไว้
+- **อาการที่พิมพ์มาแล้วไม่มีใน PFMEA เลย → `notInFmea` ขึ้นแถบส้มว่า "ไม่เคยถูกคาดไว้ตอนออกแบบ"** — เป็นข้อสรุปที่ต้องเขียนใน 8D ขา Systemic อยู่แล้ว + ต้อง revise PFMEA
+- **จัดผลเป็น 3 ขาตรงกับ 8D:** ขา 1 Occurrence (D4) · ขา 2 Detection/Escape (D4) · ขา 3 Systemic (D7) — **Ford/GM บังคับ 3-legged root cause** แต่ละขาต้องมี 5-Why + action + หลักฐานยืนยันของตัวเอง
+- **กลุ่มคำ `PART_WORDS` (nut/bolt/rivet/weld/hole/burr/…) ใช้แค่ "โฟกัสว่าจุดไหนเกี่ยวข้อง" ไม่ใช้สรุปสาเหตุ** — กรอง `pe_processes` ด้วย `name + child_parts` (ข้อมูลจริง: 28 OP → **14 จุดนัท · 7 เครื่อง**)
+- **⚠️ "อาการเดียวกันที่ OP อื่น" ต้องเทียบด้วย `noteSimilarity()` ห้ามใช้แค่ "มีคำว่านัทเหมือนกัน"** — เอกสารนี้มี **45 ข้อที่มีคำว่า nut** (Nut cold weld / Nut offset / torque test) ซึ่งเป็นคนละอาการ · วัดจริง: `Missing nut` ↔ `- Missing nut` = **1.00** ✅ · ↔ `Nut cold weld` = **0.06** ❌ → เหลือ 1 จุดที่ถูกต้อง ไม่ใช่ 44
+- **⚠️ CP ของ OP ตรวจ (OP250/260) ห้ามดึงมาทั้งหมด** — มี 87 แถว ส่วนใหญ่ไม่เกี่ยวกับอาการนี้ → เอาเฉพาะแถวที่ข้อความแตะชิ้นส่วนกลุ่มเดียวกัน
+- **เฟส 1 อ่านอย่างเดียว ไม่เขียน DB ไม่มี migration** · state ถูกล้างเมื่อเปลี่ยนใบ (กันหลักฐานใบเก่าค้าง) · **จอต้องเขียนกำกับว่า "เสนอจุดที่ต้องสงสัย ไม่ใช่ยืนยันสาเหตุ"**
+- ได้ผลเต็มเฉพาะพาร์ทที่มี PFMEA/CP ในระบบ (ตอนนี้ 1 พาร์ท) — พาร์ทที่ไม่มี ขึ้นข้อความชี้ทางไป `/pe-docs` ไม่ปล่อยจอว่าง
 
 ## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
 
@@ -1301,10 +1986,67 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **สอบกลับ = ทวนสอบย้อนหลัง "ของที่ออกจากไลน์ไปแล้ว" → default ตัดใบที่ยังผลิตอยู่ (`status='open'`) ออกจากผลค้นหา (2026-08-05 · คำสั่ง user)** · ติ๊ก "รวมใบที่กำลังผลิต" เพื่อดูได้ · **สแกน prod_no ของใบที่ยังไม่ปิดแล้วไม่เจอ = fallback ค้นแบบรวมใบเปิดให้อัตโนมัติ + toast บอก** (สแกนแล้วต้องไม่เงียบ)
 - **ผลค้นหา = แผงสรุป + ตารางข้อมูลแน่น (2026-08-05 · คำสั่ง user "พอ search ควรโชว์ข้อมูลเยอะๆ ก่อนกดเลือก · พื้นที่ล่างอย่าทิ้งว่าง"):** เหนือตารางมี **แถบสรุปของผลค้นหา** (จำนวนใบ/กำลังผลิต · เป้ารวม · ผลิตรวม+% · NG รวม+% · ไลน์ · ชิ้นงาน · ช่วงวัน) · ตารางเพิ่มเป็น 12 คอลัมน์ (MAT+ชื่อ+ลูกค้า · ไลน์+เครื่อง · เวลาเปิด→ปิด · เป้า/ผลิต/% · NG · OEE กะ · ผู้เปิด-ปิด · ชิป ⏪ย้อนหลัง ↩️ถอยใบ 🔗คู่ ⏬ยกยอด) · **ตารางสูงเต็มพื้นที่จอ** (`calc(100vh - 330px)` แทน `maxHeight:420` ที่ทิ้งพื้นที่ล่างว่าง) + sticky header · **แจ้งเตือนเมื่อชนเพดาน 300 ใบ** (ไม่ตัดเงียบ) · ⚠️ ยอดรวมในแถบสรุป = **ผลรวมของใบที่แสดง (list sum) บวกตรงๆ ต่อใบ** ไม่ใช่ยอดผลิตภาพใหญ่ → **ไม่ใช้ `pairAwareTotal`** (helper นั้นสำหรับจอสรุปยอดรวมภาพใหญ่)
 - **แสดง:** การ์ดใบ (เป้า/จริง/OK/NG/สงสัย/ซ่อม, ใครเปิด-ปิด, backfill/ถอยใบ/ใบคู่, OEE กะ) · **Timeline เหตุการณ์เรียงเวลา** (เปิดใบ→ยอดสะสมรายช่วง→NG→Downtime (ไฮไลต์ช่วงทับใบ)→4M→ปิดใบ→เข้าคลัง→ตัดส่ง) · **👷 กำลังคน & จุดงาน mining (2026-08-03):** ตารางรายคน จุดที่เข้าวันนั้น (`assigned_line`→workstations รวมจุดข้ามไลน์) + จุดประจำ (`employee_home_positions`) + badge 🔀 ย้ายจุด + **skill fit ต่อจุด** (สูตรเดียว computeFit — คะแนน "ปัจจุบัน" ระบบไม่เก็บ history) + PPE รายชิ้น + 4M Man ที่พาดพิงชื่อ + 🎓 อบรม OJT วันนั้น + สรุปเทียบ std headcount กะ · **⏱️ วิเคราะห์การวิ่งของใบ:** เปิด→ปิด − DT ทับช่วงใบ (แยกนอกแผน/ตามแผน/ไม่ระบุเวลา) = เวลาสุทธิ → วิ/ชิ้นจริง vs `dr_products.cycle_time_sec` = %ความเร็ว (caveat ใบอื่นวิ่งทับ = ภาพรวมไลน์) · Downtime+ใบซ่อม MO (`source_downtime_id`→root_cause/solution) + **ประวัติซ่อมเครื่องที่ใบใช้ย้อน 30 วันก่อนเปิดใบ** (`mtn_orders.machine_no`) · 4M วันนั้น · การตรวจประจำวัน (Daily PM count / Poka-Yoke / LPA) · วัสดุ (child_lot_requests `source_prod_no` → raw_withdrawal_requests) · เส้นทาง stock (เข้าคลัง = hard link `ref_order_id` · ตัดส่ง = ยอดรวมเชิงเวลา) · 🧭 บริบทกะ: **กะก่อนหน้าของไลน์ (OEE A/P/Q)** + ใบอื่นในกะ (คลิกกระโดดได้)
-- **ขอบเขต/GAP ของ traceability ทั้งระบบ (audit 2026-07-30):** (1) **ขาแรกจากลูกค้า→order**: ตอนกด "ส่งแล้ว" consume เป็นยอดรวม ไม่บันทึก ref_order_id → ผูก shipment↔ใบผลิตไม่ได้ ต้องใช้ tag บนกล่อง/ช่วงเวลา (2) **วัสดุสุดทางที่เลข MAT**: การรับวัตถุดิบเข้า Store ไม่มีช่อง lot no./heat no. ของ supplier (3) **backflush เชิงปริมาณ**: `source_prod_no` ใน child_lot_requests = ใบที่ trigger สะสมครบล็อต ไม่ใช่ identity รายชิ้น · ตาราง `kanban_scans` เป็น vestigial (ไม่มีโค้ดเขียนแล้ว) — ถ้าจะปิด gap เรียงความคุ้ม: บันทึก ref_order_id ตอน consume ส่งลูกค้า → เพิ่ม lot no. supplier ตอนรับเข้า → lot genealogy รายกล่อง
+### 🏭 สอบกลับถึง "อุปกรณ์ที่ใช้ผลิต" — เครื่อง/แม่พิมพ์ขาด PM ไหม ใครแตะล่าสุด (2026-08-11 · คำขอ user)
+
+โจทย์: **ของใบนี้มีปัญหาคุณภาพ → ย้อนไปหาเครื่อง/แม่พิมพ์ที่ผลิต → ตอนนั้นขาดบำรุงรักษาไหม ครั้งล่าสุดใครทำอะไรไป**
+แผง `🏭 อุปกรณ์ที่ใช้ผลิต` ใน `/order-trace` (loader + `CollapseCard id="equip"`)
+
+> #### ⚠️ กฎเหล็ก 1 — "ใบนี้ใช้เครื่องไหน" ตัดสินด้วย **`flow_mode` ของไลน์** ห้ามเหมาว่าเป็นผู้ต้องสงสัยเสมอ (แก้ 2026-08-11 · user ทัก)
+> | flow_mode | ใบหนึ่งใช้เครื่องกี่ตัว | แผงต้องพูดว่า |
+> |---|---|---|
+> | **`one_piece_flow`** (ดีฟอลต์ · ไลน์ full automation) | **ทุกเครื่องในไลน์ ไล่เป็น step by step** | ⛓️ "ใบนี้ผ่านเครื่องทั้ง N ตัวตามลำดับ ทุกตัวเกี่ยวข้องกับคุณภาพ" = **ยืนยัน ไม่ใช่การเดา** |
+> | **`parallel_machine`** + ใบมี `machine_no` | เครื่องเดียวที่ระบุ | 🎯 "ใบนี้ระบุเครื่อง X" |
+> | **`parallel_machine`** + ใบไม่มี `machine_no` | ไม่รู้ | ⚠️ "ผู้ต้องสงสัย ไม่ใช่ข้อสรุป" + ชี้ทางให้เลือกเครื่องตอนเปิด Order |
+>
+> **เดิมเขียนผิด** — เหมาว่าใบที่ไม่มี `machine_no` = ผู้ต้องสงสัยทุกกรณี ทั้งที่ไลน์ไหลทีละชิ้น**ใช้ทุกเครื่องจริง** (user ทัก) · อ่านโหมดผ่าน `isParallelLine(line.flow_mode)` จาก `src/utils/lineTypes.js` — **หน้าที่แตะ "ใบนี้ใช้อุปกรณ์อะไร" ต้องเช็ค flow_mode ก่อนเสมอ**
+> **ห้ามทำให้ผู้ต้องสงสัยดูเหมือนคำตอบ · และห้ามลดของที่ใช้จริงให้กลายเป็นแค่ผู้ต้องสงสัย** — ผิดทั้งสองทางทำให้สอบกลับชี้ผิดเป้า
+> - **ลำดับ step มาจาก `machines.sort_order`** — ถ้าตั้งเท่ากันหมด (ไม่เคยตั้ง) = ไม่รู้ลำดับจริง **ห้ามเดาเลขขั้นให้** แผงจะไม่โชว์ "ขั้นที่" แล้วบอกว่าให้ไปตั้งลำดับที่ฐานข้อมูลเครื่องจักร
+> - **ทั้งไลน์ไม่มีแผน PM สักตัว = ตอบคำถามไม่ได้** ต้องขึ้นแถบบอกตรงๆ ("ยังไม่มีเกณฑ์ให้เทียบ") ไม่ใช่โชว์ค่าว่างให้ตีความเอง
+
+> #### ⚠️ กฎเหล็ก 2 — "PM ค้าง ณ วันผลิต" ต้องคำนวณย้อนจากประวัติ **ห้ามอ่าน `pm_plans.next_due_date` ตรงๆ**
+> `next_due_date` / `last_done_at` เป็น **สถานะปัจจุบัน (mutable) ไม่ใช่ประวัติ** — ช่างทำ PM หลังวันผลิต ค่าก็ขยับไปข้างหน้าแล้ว → **ใบเก่าจะดูเหมือน "PM ปกติ" ทั้งที่ตอนผลิตค้างจริง** (เทสแล้ว: วิธีเดิมตอบ "อยู่ในรอบ" ในเคสที่สำคัญที่สุด)
+> **สูตรที่ใช้:** `ครบกำหนด ณ ตอนนั้น = inspections ครั้งล่าสุดก่อนเวลาผลิต (match ด้วย checklist_id) + interval_days` แล้วเทียบกับ `work_date`
+> - **แผน `usage`/`hybrid` ย้อนไม่ได้ → ไม่เดา** แสดงว่า "ย้อนสถานะไม่ได้" แล้วโชว์ค่าปัจจุบัน**พร้อมป้าย "(ค่าปัจจุบัน)"** กำกับเสมอ
+> - **ไม่มีประวัติตรวจก่อนวันผลิตเลย ≠ ค้าง** → ขึ้นเป็นสัญญาณของตัวเอง "มีแผน PM แต่ไม่พบประวัติการตรวจ"
+> - หลักเดียวกับกฎ "ห้าม blanket-recompute OEE กะเก่าด้วย master ปัจจุบัน" — **ค่าที่เปลี่ยนได้ ห้ามเอาไปตอบคำถามย้อนหลัง**
+
+- **ทุก query ตัดที่ "เวลาผลิต" (`opened_at`) ไม่ใช่ `now()`** — PM/ซ่อมที่เกิดหลังผลิตไม่ช่วยใบที่เสียไปแล้ว
+- **ชี้เป้าก่อนกองข้อมูล** — เรียงตามความควรสงสัย: ยืนยันตัวจริง(100) → PM ค้าง(40) → เพิ่งซ่อมเสร็จ ≤7 วัน(30) → ไม่เคยตรวจ(20) → มี DT ในกะ(10) · แสดง 8 ตัวแรก ที่เหลือพับใน `<details>`
+  - **"เพิ่งซ่อมเสร็จก่อนผลิต" เป็นสัญญาณคุณภาพชั้นดี** (ตั้งค่าใหม่ยังไม่นิ่ง) — อย่าตัดทิ้งเพราะดูเหมือนข่าวดี
+- **แหล่งข้อมูลต่อเครื่อง:** `machines` (กรอง `is_active` + `equipment_category='production'`) → แถวเงา `jigs.machine_id` → `checklists` (module `mtn`) → `pm_plans` · ประวัติตรวจ `inspections` (180 วัน) · ใบซ่อม `mtn_orders` by `machine_no` (90 วัน) · **ใครแก้ทะเบียน `audit_log`** (table `machines`/`jigs`) · ตรวจ AM วันนั้นจาก `pm_daily_line_targets`+`inspections`
+- **⚠️ ชื่อผู้ตรวจอยู่คนละ project** — `inspections.inspector_id` → `profiles` ฝั่ง **Main** (join ตรงไม่ได้ ต้องดึงแยกด้วย client `supabase`)
+- **จิ๊ก/แม่พิมพ์ตัวจริง = `jigs` ที่ `machine_id IS NULL`** (ตัดแถวเงาของเครื่องออก ไม่งั้นเครื่องตัวเดียวโผล่ 2 แถว — กฎเดียวกับ `/qr-labels`) · ข้อมูลจริงยังมีจิ๊ก 1 ตัว DIE 0 → แผงบอกให้ไปลงทะเบียนที่ PM Setup แทนที่จะเงียบ
+> #### ⚠️ กฎเหล็ก 3 — `inspections.status` เทียบ **ตรงตัว** ห้ามใช้ regex (2026-08-11 · QC จับได้)
+> ค่าที่เป็นไปได้มีแค่ 4 (check constraint `pm_inspections_status_check`): `pending | pass | fail | warning`
+> **`/fail|ng/i` จับ "pe·nd·ing" และ "warni·ng" ติดทั้งคู่** → `pending` (= **ค่า default ของคอลัมน์** และเป็นค่าที่ `computeOverall()` คืนทุกครั้งที่ผู้ตรวจเว้นจุดตรวจไม่ครบ) ขึ้นแดงว่า **"พบผิดปกติ"** = สร้างหลักฐานเท็จในแผงที่ใช้สอบสวนคุณภาพ
+> ใช้ helper `inspVerdict(status)` (OrderTrace.jsx) — `pending`/ว่าง = เทา "ตรวจไม่ครบทุกจุด" (เป็นสัญญาณของตัวเอง คนละเรื่องกับพบของเสีย) · `INSP_NG = {fail, warning, ng}` = แดง
+
+- **⚠️ ประวัติการตรวจต้องดึง "ครั้งล่าสุดต่อ checklist" ทีละใบ ห้ามกวาดรวมแล้ว `.limit(N)`** — AM ตรวจทุกต้นกะ ย้อน 180 วันทะลุพันแถวง่ายๆ → ประวัติ **PM ช่างรายไตรมาส (ตัวที่อยากสอบพอดี) ถูกเบียดตกไปก่อน** แล้วแผงพูดผิดว่า "ไม่พบประวัติการตรวจ" **+ กลบ PM ที่ค้างจริงให้กลายเป็น "อยู่ในรอบ"** (ขัดกฎเหล็กข้อ 2 ของตัวเอง) · จำนวน checklist อยู่ระดับหลักสิบ ยิงขนานด้วย `Promise.all` ได้
+- **⚠️ "เพิ่งซ่อมเสร็จก่อนผลิต" ต้องกรอง `repair_done_at <= เวลาผลิต` ด้วย** — query กรองแค่ `created_at` → ใบที่ **แจ้งก่อนผลิตแต่ช่างซ่อมเสร็จหลังผลิต** (เคสธรรมดามาก) ได้ค่าติดลบ → ขึ้นชิป "🟠 ซ่อมเสร็จ **-5 วัน**ก่อนผลิต" + ดัน risk score จัดเครื่องผิดตัวขึ้นบนสุด · และเรียงด้วย `repair_done_at` ไม่ใช่ `created_at`
+- **⚠️ "ตรวจ AM แล้ว" ต้องกรอง `checklists.department='production'`** — ไม่งั้นวันที่ช่าง JIG MTN เข้า PM เครื่องนั้น จะถูกนับว่าผลิตตรวจ AM แล้ว (หลักเดียวกับ `prodIds` ใน `src/lib/pmDailyAlarm.js`)
+- **ทุก query เช็ค `error` + ชนเพดาน `.limit()` → ตั้ง flag `equip.partial`** ขึ้นแถบส้มบอกว่า "โหลดได้ไม่ครบ" — ห้ามให้ข้อความ "ไม่มีประวัติบำรุงรักษา" ฟังดูเป็นข้อเท็จจริงทั้งที่แค่โหลดไม่ติด (กฎ supabase-js คืน `{ error }` ไม่ throw)
+- **ยังไม่ทำ:** ไม่มีการผูก "ใบผลิต ↔ แม่พิมพ์ที่ใช้" (ต้องมี field เลือกแม่พิมพ์ตอนเปิดใบ หรือสแกน QR จิ๊กเข้างาน) → แม่พิมพ์จึงยังเป็นระดับไลน์เสมอแม้ใบจะระบุเครื่องแล้ว
+
+- **ขอบเขต/GAP ของ traceability ทั้งระบบ (audit 2026-07-30 · อัพเดท 2026-08-11):** (1) **ขาสุดท้าย order→ลูกค้า — ปิดครึ่งทางแล้ว 2026-08-11:** แถวตัดสต็อกตอนกด "ส่งแล้ว" ผูก **`line_stock_transactions.ref_shipment_id`** → `customer_shipping_orders.id` แล้ว (migration `20260811_stock_txn_ref_shipment.sql` DR · **apply แล้ว** · FK `on delete set null` · partial index) → `/order-trace` บอกได้ว่า **ของไปออกรอบส่งใบไหน** (วัน/เวลา/ลูกค้า/PO/คนกดส่ง) แทนการเดาจากข้อความ note · **ส่วนที่ยังเหลือ: ยังบอกไม่ได้ว่า "ชิ้นที่ออกรอบนั้นมาจากใบผลิตใบนี้จริงไหม"** — การตัดสต็อกยังหักจากยอดรวมของ MAT ไม่ใช่รายใบ (ต้องมี lot/กล่องถึงจะปิดสนิท) จอจึงต้องเขียนกำกับว่าขาออกเป็น **เชิงเวลา** ห้ามแสดงให้ดูแน่นอนเท่าขาเข้า (`ref_order_id` ที่ผูกใบตรงๆ) · **ห้ามยัด id ของรอบส่งลง `ref_order_id`** — คอลัมน์นั้นเป็นของ `prod_orders` และถูกใช้เป็นตัวกันโพสต์ซ้ำของ trigger `trg_post_confirmed_output` + ตัวถอนแถวตอน "↩️ ถอยใบ" · **แถวเก่า 7 แถว (ก.ค. หักถูกแล้วแต่เกิดก่อนมีคอลัมน์): backfill ได้เฉพาะที่ deterministic เท่านั้น** — migration `20260811_backfill_shipped_stock_consume.sql` (DR · **เขียนแล้ว ยังไม่ apply**) parse `note` ที่โค้ดเขียนในรูปแบบคงที่ (`ส่งลูกค้า … · date time · PO no`) แล้วจับคู่ด้วย PO+วัน+เวลา+mat+qty · **จับคู่ได้ใบเดียวเท่านั้นถึงเขียน (`n = 1`) กำกวม = ปล่อย null ห้ามเดา** (เอาของเดาไปใส่ช่องที่คนอ่านจะเชื่อว่าแน่นอน แย่กว่า null ที่อ่านออกว่า "ไม่รู้") · ไฟล์เดียวกันมีส่วนที่ 2-3 = เก็บตกรอบที่กด "ส่งแล้ว" แต่ไม่เคยหักสต็อกจากบั๊กเงียบ (จัดสรรตามลำดับวันส่ง ห้ามทำให้ยอดติดลบ · หยุดทันทีถ้าเจอ MAT ที่มีสต็อกหลายคลัง) · **จุดที่กรองแถวตัดส่งต้องเช็ค `ref_shipment_id` ก่อน แล้วค่อย fallback ไปข้อความ note** — กรองด้วย note อย่างเดียวคือผูกกับข้อความในโค้ด แก้เมื่อไหร่แถวใหม่หายจากสายสอบกลับเงียบๆ (2) **วัสดุสุดทางที่เลข MAT**: การรับวัตถุดิบเข้า Store ไม่มีช่อง lot no./heat no. ของ supplier (3) **backflush เชิงปริมาณ**: `source_prod_no` ใน child_lot_requests = ใบที่ trigger สะสมครบล็อต ไม่ใช่ identity รายชิ้น · ตาราง `kanban_scans` เป็น vestigial (ไม่มีโค้ดเขียนแล้ว) — ถ้าจะปิด gap เรียงความคุ้ม: บันทึก ref_order_id ตอน consume ส่งลูกค้า → เพิ่ม lot no. supplier ตอนรับเข้า → lot genealogy รายกล่อง
 - component ร่วม: `src/components/CollapseCard.jsx` (แยกจาก ProductHistory — section ย่อ/ขยาย จำสถานะ localStorage ผ่าน `storePrefix`)
 
 ---
+
+## 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user)
+
+ปุ่ม **"💬 แจ้งปัญหา / ข้อเสนอแนะ"** ท้าย sidebar (ใต้เปลี่ยนรหัสผ่าน) → `src/components/FeedbackModal.jsx` (lazy chunk)
+เดิม feedback วิ่งผ่าน LINE → **ตกหล่น · ค้นย้อนไม่ได้ · ไม่รู้ว่าเรื่องไหนแก้แล้ว**
+
+- **ตาราง `user_feedback` (Main)** — migration `20260814_user_feedback.sql` · kind (bug/idea/question) · status (new/seen/doing/done/wontfix) · เก็บ **snapshot ชื่อ+role** ณ วันที่แจ้ง (โปรไฟล์เปลี่ยนทีหลังได้ — pattern เดียวกับ `lpa_audit_answers.question_text`)
+- **RLS:** ทุกคนที่ login ส่งได้ (ผูก `auth.uid()`) · เห็นของตัวเองเสมอ · **admin/manager เห็น+จัดการทั้งหมด**
+- **ไม่ทำเป็นหน้าแยก และไม่เพิ่ม permission key ใหม่โดยตั้งใจ** — เลี่ยงกับดัก seed `enum_range` ที่ทำให้ role ใหม่เข้าไม่ได้แบบ fail-closed · กล่องขาเข้าเป็น**แท็บในโมดัลเดียวกัน** เห็นเฉพาะ admin/manager ซึ่งตรงกับ RLS อยู่แล้ว
+- **ออกแบบให้ "ส่งง่ายที่สุด"** (คนหน้างานใส่ถุงมือ/รีบ): พิมพ์ข้อความอย่างเดียวก็ส่งได้ · **`page_path` เก็บให้อัตโนมัติ** ไม่ต้องอธิบายว่าอยู่หน้าไหน
+- **⚠️ ส่งไม่เข้าต้องบอกให้ชัด ห้ามขึ้น toast เขียว** — ยังไม่ apply migration (42P01) จะขึ้นข้อความบอกตรงๆ ว่าต้องแจ้ง admin (คนหน้างานจะได้ไม่นั่งรอคำตอบที่ไม่มีวันมา)
+- **📋 ปุ่ม "คัดลอกให้ Claude"** ในกล่องขาเข้า — คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ (สรุปรวมตามหน้า + รายเรื่อง: ประเภท/สถานะ/วันที่/ผู้แจ้ง/หน้า/ข้อความ) เอาไปวางในแชทได้เลย
+  - **⚠️ จำเป็นเพราะ Claude Code เซสชันบนเว็บ "อ่านฐานข้อมูลตรงไม่ได้"** — Supabase MCP ติด approval ที่กดไม่ได้ในเซสชันแบบนั้น + network policy บล็อก `supabase.co` (ตรวจแล้ว 2026-08-14: `execute_sql` คืน `requires approval` · curl ได้ 403 ที่ proxy) → ถ้าไม่มีปุ่มนี้ ลูป "user แจ้ง → สั่ง Claude ไปเช็ค" จะสะดุดตรงขั้นสุดท้าย
+  - รัน Claude Code แบบ interactive แล้วกดอนุมัติ MCP ได้ = อ่านตรงจากตารางได้เลย ไม่ต้องใช้ปุ่มนี้
+  - clipboard API ถูกบล็อกในบางบริบท → มี fallback `execCommand('copy')` และถ้ายังไม่ได้ก็ **ขึ้น error ห้ามเงียบ**
+- **ยังไม่ทำ:** แนบรูปหน้าจอ (โมดัลบอกให้ส่งใน LINE ตามหลังไปก่อน) · แจ้งเตือน admin ตอนมีเรื่องใหม่ (ยังต้องเปิดกล่องดูเอง)
 
 ## Edge Functions
 
@@ -1347,6 +2089,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
+| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
 | `downtime-open-scan` | DR (pg_cron ทุก 5 นาที) | สแกน Downtime ที่เปิดค้างเกิน `dt_alert_config.open_alert_min` นาที → POST `downtime_open_15min` ไป send-notification ฝั่ง Main + stamp `open_alerted_at` กันซ้ำ (2026-07-14) |
 | `send-mtn-notification` | Main | แจ้งเตือนใบแจ้งซ่อม MO — **แจ้งครบทุกสเตป 1-7** (`mtn_reported`/`assigned`/`repaired`/`checked`/`qa`/`handover`/`closed`) · **แยกไฟล์จาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules/telegram_channels เดียวกัน** → ตั้งค่า/ปิด/เลือกห้อง/แก้ข้อความได้จาก `/notification-config` (category maintenance) · **route ตามทีม:** มีห้องแท็ก `telegram_channels.team` = `mtn_dept` → เข้าห้องทีม, ไม่มี → ห้องรวม (smart maintenance/fallback) · **v5 (2026-07-22): แต่ละสเตปต่อท้าย "⏳ ขั้นต่อไป: รอ…"** ให้ห้องแชทรู้ว่ารออะไรต่อ (map `NEXT` ในไฟล์) · payload `{ event, mo: {...} }` |
 | `mtn-daily-summary` | Main (pg_cron 02:00 UTC = **09:00 ไทย**) | **สรุปงานซ่อม (MO) ค้างประจำวัน** (2026-07-22) — อ่าน `mtn_orders` ฝั่ง DR (`DR_URL`/`DR_ANON_KEY`, status ไม่ใช่ closed/rejected) นับตามทีม (`mtn_dept`) + ขั้นที่ค้าง (pending→รอรับงาน … handover→รออนุมัติปิด) → ส่งภาพรวมเข้าห้องรวม (event `mtn_daily_summary`) + แยกรายทีมเข้าห้องที่แท็ก team ไว้ · verify_jwt=false (cron เรียกได้ไม่ต้อง JWT) · ปิด/แก้ห้องได้ที่ `/notification-config` · migration `20260722_mtn_daily_summary_rule.sql` (rule) + `20260722_mtn_daily_summary_cron.sql` (cron Main) |
@@ -1368,7 +2111,84 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
 - **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผัง/ตอนลบไลน์/**ปุ่ม 🗑 ลบรูปผัง** (2026-08-04 — เคสเผลออัพรูปทับ ลบแล้วไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ · เช็ค sharers ก่อนลบไฟล์) — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
 - **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist · **รูป spin บังคับ crop แนวตั้ง 3:4 + ลดขนาด ตอนอัปโหลด (2026-07-24 — คำสั่ง user):** `PMSetup addFrames` → `imageCompression` (normalize EXIF) → `src/utils/cropPortrait.js` (center-crop 3:4, ด้านยาว ≤1200px, q0.82) · รูปถ่ายมือถือ = แนวตั้งอยู่แล้ว, รูปแนวนอนถูก center-crop ให้เป็นแนวตั้งเท่ากันทุกเฟรม (จอตรวจ JigSpinCheck/SpinAnnotator เป็น container แนวตั้ง fit-content — ดู UI-CONVENTIONS §5.1) · คอลัมน์ vestigial `jigs.model_path`/`model_format` และ bucket `jig-images` (cap 40MB + mime GLB) ยังคงอยู่จาก migration เดิม (additive ไม่กระทบ) แต่**ไม่มีโค้ดใช้แล้ว** — ถ้าจะรื้อ 3D กลับมาให้ดู git history (`src/lib/model3d.js`, `src/components/Model3DViewer.jsx`)
-- **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — ตรวจล่าสุด 2026-07-10: Main DB 22MB (~4%), DR DB 18MB (~4%), Storage หลัก ~156MB (~15%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
+> ### ⚠️ กฎเหล็ก — จอที่ refresh เอง ต้อง `usePolling` และ master ต้อง `cachedMaster` (2026-08-19)
+> **Supabase เตือนโควต้าหมด grace period (18 ส.ค. 2026) — ตัวที่ทะลุคือ Egress ไม่ใช่ DB/Storage**
+> (วัดจริง: DB Main 35MB / DR 53MB จาก 500MB · Storage 233MB จาก 1GB — ทั้งคู่ไม่ถึง 25%)
+> **ต้นเหตุ: จอสด poll ทุก 30 วิ ตลอด 24 ชม. แล้วดึง "ตาราง master ทั้งตาราง" มาใหม่ทุกรอบ**
+> วัด payload จริง (JSON ดิบ ก่อน gzip) ที่ FactoryMap ดึงซ้ำทุก 30 วิ:
+> `machines` **107 KB (565 แถว)** · `dr_products` 10 KB · `facility_supply_links` 8.6 KB · `kanban_standards` 6.4 KB
+> = **133 KB ทุก 30 วิ → 16 MB/ชม. → ~11.8 GB/เดือน ต่อจอเดียว** ทั้งที่โควต้าทั้งเดือนมี **5 GB**
+> (ข้อมูลพวกนี้เปลี่ยนเดือนละไม่กี่ครั้ง — จ่าย egress ไปโดยไม่ได้ความสดอะไรเลย)
+>
+> **2 กติกาบังคับสำหรับหน้าที่ refresh เอง:**
+> 1. **`usePolling(fn, ms)` / `visibleInterval(fn, ms)` (`src/utils/usePolling.js`) แทน `setInterval` เสมอ**
+>    — แท็บถูกซ่อน (สลับแอป/ล็อกจอ/ย่อหน้าต่าง) = **หยุดยิง DB** · กลับมาเห็นจอแล้วข้อมูลเก่าเกินรอบ = รีเฟรชทันที
+>    · จอ TV ที่เปิดค้าง = visible ตลอด → **ความสดเท่าเดิมเป๊ะ** · ใช้ `visibleInterval` เมื่อ effect นั้นมี realtime channel/timer อื่นปนอยู่
+> 2. **ตาราง master ต้องผ่าน `cachedMaster(key, loader, ttl)` (`src/utils/masterCache.js`, TTL 10 นาที)**
+>    — `dr_products` `kanban_standards` `machines` `break_policies` `facility_supply_links` ฯลฯ
+>    · **ห้ามเอามา cache ข้อมูลการผลิตสด** (session/order/downtime/defect/mtn_orders) จอจะโกหก
+>    · แก้ master แล้วจอสดเห็นช้าได้ถึง 10 นาที (refresh หน้าเว็บล้าง cache ทันที) — หน้าที่แก้ master เองเรียก `invalidateMaster(key)` ได้
+> 3. **กรองฝั่ง server ห้ามดึงมากรองในเบราว์เซอร์** — เดิม `loadSupply` ดึง `mtn_orders` ทั้งตารางมากรอง `status` เอง
+>    (`status` เป็น NOT NULL default `'pending'` → `.not('status','in','("closed","rejected")')` ให้ผลเท่าเดิมเป๊ะ ตรวจแล้ว)
+>
+> 4. **⚠️ ห้ามใส่ตัวเลข ms ดิบในหน้าใดๆ — ความถี่ทุกจอรวมศูนย์ที่ `src/utils/refreshRates.js`**
+>    (เดิมกระจาย 13 จุด ตั้งกันเอง 30/60 วิ ปนกัน ไม่มีใครรู้ว่ารวมแล้วกินเท่าไหร่)
+>
+> | ระดับ | ค่า | ใช้กับ | เหตุผล |
+> |---|---|---|---|
+> | `RATE.ANDON` | 5 นาที | FactoryMap loadStatus/loadSupply | **realtime เป็นช่องทางหลัก** อันนี้กันเหนียว — ยังเร็วกว่าเกณฑ์แจ้งเตือน (15 นาที) 3 เท่า |
+> | `RATE.BOARD` | 5 นาที | Management บอร์ดยอดผลิต · FactoryMap กำลังคน | ตามงานได้ ช้าไม่กี่นาทีไม่ทำให้ตัดสินใจผิด |
+> | `RATE.ANALYTIC` | 10 นาที | Dashboard · DeptHub · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics | ดูเพื่อวางแผน ไม่ใช่วิ่งไปแก้เดี๋ยวนี้ |
+> | `RATE.BACKUP` | 15 นาที | DowntimeSiren · Management dt alarm · DailyPM | มี realtime push อยู่แล้ว interval เป็นแค่กันเหนียว |
+> | `RATE.SLOW` | 30 นาที | FactoryMap loadPM | แผน PM ไม่เปลี่ยนระหว่างวัน |
+> | `MASTER_TTL` | **4 ชม.** | `cachedMaster` ทุกตัว | master เปลี่ยนเดือนละไม่กี่ครั้ง · refresh หน้าเว็บล้าง cache ทันที |
+>
+> #### ⚠️ 2 หลักที่ต้องเข้าใจก่อนไปแตะตัวเลขพวกนี้
+> **(ก) การแจ้งเตือนจริง ไม่ได้พึ่ง polling ของจอเลย — อย่าเอา polling ไปทำหน้าที่แจ้งเตือน**
+> Telegram + ไซเรน + Web Push มาจาก edge **`downtime-open-scan` (pg_cron ฝั่ง server ทุก 5 นาที)** ยิงเมื่อ downtime ค้างเกิน **`dt_alert_config.open_alert_min` = 15 นาที** · ไซเรนบนจอมาจาก realtime · ปุ่ม "เรียกช่าง" ยิงทันที
+> → **polling ของจอทำแค่ "เปลี่ยนสีบนผัง"** · ในเมื่อเกณฑ์เตือนคือ 15 นาที การ poll ทุก 30-60 วิ **ไม่ได้ทำให้ใครรู้เร็วขึ้นเลย แค่เปลืองโควต้า** (เหตุผลที่ ANDON ยืดจาก 30 วิ → 5 นาทีได้โดยไม่เสียอะไร)
+> **(ข) realtime มาก่อน · poll เป็นตัวกันเหนียว** — push ส่งเฉพาะแถวที่เปลี่ยน (~200 bytes) ถูกกว่า poll ทั้งชุด (22 KB) เป็นร้อยเท่า **และเร็วกว่าด้วย**
+> จอที่มี realtime: Dashboard · Management · DailyPM · DowntimeSiren · **FactoryMap (เพิ่ม 2026-08-19 — เดิม polling ล้วน 0 channel จึงต้องตั้ง 30 วิ)**
+> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ** — `mtn_orders` เคยตกหล่น (migration `20260819_realtime_mtn_orders.sql` · **apply แล้ว**) · ตอนนี้ครบ 5: `downtime_logs` `prod_orders` `defect_logs` `production_sessions` `mtn_orders`
+>
+> **งบ (แผน ~15 จอ): จอที่เปิดหน้าหนักสุด ≈ 0.24 GB/เดือน/จอ → 15 จอ ≈ 3.6 GB** เหลือให้มือถือ/PC ~1.4 GB
+> เกินงบให้ยืด `ANDON`/`ANALYTIC` ก่อน — **อย่าลด realtime** (ถูกและเร็วกว่า ตัดออกต้องกลับไป poll ถี่ซึ่งแพงกว่ามาก) · **ยืดเกิน 10 นาทีไม่คุ้ม**
+> **ผลรวม: FactoryMap จาก ~18.4 MB/ชม. เหลือ ~0.33 MB/ชม. = ลด 98%**
+>
+> **ทำแล้ว:** FactoryMap (4 loop) · Management (2) · Dashboard · DailyPM · DeptHub · DowntimeSiren · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics
+> **ตัวจับเวลาที่เป็นแค่นาฬิกา (`setNow`/`setNowMs`/`setNowForBoard`/`setFrameIdx`) ไม่ต้องแตะ** — ไม่ยิง DB ไม่กิน egress
+> **แนวทางที่ถูกที่สุดคือ realtime + poll ห่างๆ เป็นตัวสำรอง** (Dashboard/DailyPM ทำแบบนี้อยู่แล้ว — push เฉพาะแถวที่เปลี่ยน กิน egress น้อยกว่า poll มาก) · จอใหม่ให้ทำตาม pattern นี้
+>
+> #### 📊 งบ Free tier ครบทุกลิมิต (ตรวจ 2026-08-19 · แผน 15 จอ) — เช็คตัวนี้ก่อนเพิ่มของหนักๆ
+> **⚠️ Egress ของ Supabase เป็น "unified" — รวม DB + Storage + Realtime + Edge Function ในถังเดียว 5 GB**
+> (เคยเข้าใจผิดว่า realtime อยู่นอกถัง — ไม่ใช่ · แต่ push ยังถูกกว่า poll เป็นร้อยเท่าอยู่ดี)
+>
+> | ลิมิต Free | เพดาน | คาดใช้ที่ 15 จอ | เหลือ |
+> |---|---|---|---|
+> | **Egress (รวมทุกอย่าง)** | 5 GB/เดือน | **~3.8 GB** (poll 3.6 + realtime 0.16) | 🟡 24% |
+> | Realtime messages | 2,000,000/เดือน | ~315,000 | ✅ 84% |
+> | Realtime concurrent | 200 | ~25 (15 จอ + มือถือ/PC) | ✅ 88% |
+> | Edge Function calls | 500,000/เดือน | ~19,500 (cron 3 ตัว + แจ้งเตือน) | ✅ 96% |
+> | DB ต่อ project | 500 MB | Main 35 · DR 53 | ✅ 90%+ |
+> | Storage | 1 GB | 233 MB | ✅ 77% |
+> | MAU | 50,000 | <300 | ✅ 99% |
+> | Active projects | 2 | 2 (Main + DR) | ⚠️ **เต็ม — สร้าง project ที่ 3 ไม่ได้** |
+>
+> **ที่มาของ realtime estimate:** write บนตารางที่ subscribe ≈ 700 events/วัน
+> (prod_orders เปิดใบ 154 + แก้ยอด 82 · downtime 118 · sessions 18 · defect 2 · mtn 0 — เฉลี่ย 7 วัน)
+> × 15 จอ = ~10,500 msg/วัน · **โตตามจำนวนจอแบบเชิงเส้น** เพิ่มจอเยอะๆ ให้คำนวณใหม่
+>
+> **⚠️ ตัวที่ตึงที่สุดคือ Egress (24% ของงบ) — ก่อนเพิ่มจอ/หน้า/realtime channel ให้ประเมินตรงนี้ก่อนเสมอ**
+> **`/version.json` ไม่นับ** — 25 bytes เสิร์ฟจาก **Render static site** คนละถังกับ Supabase (Render free 100 GB)
+
+- **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — **ตรวจล่าสุด 2026-08-17: Main DB 34MB (~7%) · DR DB 51MB (~10%)** (2026-08-05: Main 27MB · DR 33MB · Storage Main ~165MB 17% · DR ~63MB 6%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
+  - **ตรวจขนาดเป็นระยะ:** `select pg_size_pretty(pg_database_size(current_database()))` และหาตัวหนักด้วย `pg_stat_user_tables` (⚠️ อย่า join กับ `pg_tables` — คอลัมน์ `schemaname` ชนกัน ใช้ตัวเดียวพอ)
+- **⚠️ ตัวกิน DB ที่ไม่ใช่ข้อมูลงาน — เช็คก่อนตกใจว่า DB โต (2026-08-05):** DR เคยพุ่งไป 72MB โดย **43MB เป็น log ขยะล้วน** ไม่ใช่ข้อมูลธุรกิจ:
+  - `cron.job_run_details` (log ผลรัน pg_cron) — DR รัน cron ถี่มาก (downtime-open-scan ทุก 5 นาที · pm-daily-scan + shipping-phase-scan ทุก 10 นาที) = **~500 แถว/วัน ≈ 1 MB/วัน → ปีละ ~350MB** ถ้าไม่ล้าง · **แก้แล้ว: มี cron `purge-cron-logs` ลบเก่ากว่า 7 วันทุกวัน 18:00 UTC (01:00 ไทย)** — migration `20260805_purge_cron_logs.sql`
+  - `net._http_response` (buffer ผลตอบกลับ pg_net) — pg_net ลบแถวเองแต่**ไม่คืนพื้นที่** เกิด bloat (เคย 16MB จากแถวจริงแค่ 145) · ถ้าโตอีกให้ `vacuum full net._http_response`
+  - **2 ตารางนี้ไม่มีโค้ดไหนอ่านเลย** ลบ/vacuum ได้ปลอดภัย — `cron.job_run_details` เป็นแค่ log ผลการรัน (ตารางตั้งเวลาคือ `cron.job` คนละตัว ไม่กระทบ) · cron ทุกตัวยิง http แบบ fire-and-forget ไม่มีใคร collect ผล
+  - **VACUUM FULL รันใน migration/transaction ไม่ได้** ต้องรันเป็นคำสั่งเดี่ยว (DELETE เฉยๆ Postgres ไม่คืนพื้นที่)
+- **ตัวกิน Storage:** `employee-photos` (Main) 151MB จาก 206 ไฟล์ — แต่ **37 ไฟล์กิน 131MB (87%)** คือ GIF/PNG ยักษ์ 4.7-5.3MB ที่อัปก่อนมี cap 2MB + โฟลเดอร์ `layouts/` (ผัง 16 ไฟล์ 23MB — **ตั้งใจ ห้ามบีบเพิ่ม** ต้องซูมอ่านผังได้) · รูปพนักงานปกติ 144 ไฟล์ ≤200KB (บีบทำงานถูกต้อง)
 
 ---
 
@@ -1411,7 +2231,15 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
                        #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
-                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน — ออกแบบเผื่อไว้ ยังไม่ทำ)
+                       #   ENERGY_MONITORING_DESIGN.md (โมดูลพลังงาน — ออกแบบแล้ว ยังไม่เขียนโค้ด) ·
+                       #   VSM-DESIGN.md (Value Stream Mapping — เฟส 1 ทำแล้ว) ·
+                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
+                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
+                       #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
+                       #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
+                       #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง) ·
+                       #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
+                       #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
@@ -1679,3 +2507,62 @@ Environment Variables:
 | CSV export | ✅ Report ประวัติ PM |
 | Dark/Light theme | ✅ Copy index.css variables |
 | Recharts | ✅ แสดงสถิติ PM |
+
+---
+
+## 🔗 ลูปปิด 8D → PFMEA / PFC / Control Plan (2026-08-17 · คำสั่ง user)
+
+ปิด 8D แล้ว **ระบบย้อนกลับไปชี้เองว่าต้องแก้เอกสาร PE ตัวไหน บรรทัดไหน** + ขยายผลข้ามพาร์ท (yokoten)
+ตอบข้อบังคับ IATF 16949 §10.2.3/10.2.4 · แบบเต็ม + บทเรียนตอนทำ: **`docs/CLOSED-LOOP-8D-PE.md`**
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `supabase/migrations/20260817_pe_change_requests.sql` (**apply แล้ว 2026-08-19**) | ตาราง `pe_change_requests` + คอลัมน์ `qa_capa.part_no/line_name/pe_review_status` + `qa_ncr.pe_set_id` |
+| `src/utils/peLink.js` | **ตัวจับคู่ + ตัวเสนอ (pure ไม่ import supabase โดยตั้งใจ)** · `PART_WORDS`/`wordGroups` (ย้ายมาจาก OrderTrace) · `matchScore`/`rankItems`/`suggestChanges`/`matchDocSet` |
+| `src/components/PeChangeRequests.jsx` | จอเดียวใช้ 2 ฝั่ง — `mode="source"` (โมดัล 8D ใน `/qa`) · `mode="inbox"` (`/pe-docs`) |
+| `supabase/migrations/20260818_capa_effectiveness.sql` (**apply แล้ว 2026-08-19**) | คอลัมน์วัดประสิทธิผลบน `qa_capa` (`d6_effective_from`/`eff_window_days`/`eff_defect_type_id`/`eff_verdict`/`eff_snapshot`) |
+| `src/utils/capaEffect.js` | **สูตรวัดประสิทธิผลทั้งหมด (pure เทสได้)** — `effectWindow`/`splitBeforeAfter`/`judgeEffect`/`effectSummaryText` |
+| `src/components/CapaEffectiveness.jsx` | แผงในโมดัล 8D — ตั้งค่าการวัด + แถบเทียบก่อน/หลัง + ปุ่มเติมผลลงช่องประสิทธิผล |
+
+**จุดใช้งาน:** `/qa` แท็บ 📮 เคลมลูกค้า (ต้นทาง) · แท็บ CAPA/8D (เสนอ + วัดผล + ด่านตอนปิด) · `/pe-docs` (กล่องขาเข้า · รับเรื่อง/ออก revision/ปฏิเสธ) · `/dept-dashboard?dept=qa` (KPI "8D ปิดแล้ว เอกสารตามครบ %" + "8D ที่ของเสียลดจริง %")
+
+### ⚠️ กฎเหล็ก
+1. **ระบบ "เสนอ" เท่านั้น ห้ามเขียน `pe_fmea_items`/`pe_cp_items`/`pe_processes` เองอัตโนมัติ** — เอกสารควบคุม แก้เองได้ = ประเด็น audit ทันที (หลักเดียวกับ AI intake ที่คนต้องกดยืนยันก่อน insert)
+2. **`applied` ต้องผูก `pe_doc_revisions` จริง** — บังคับด้วย DB check constraint `pe_cr_applied_needs_rev` ไม่ใช่แค่ตรวจใน UI · revision ที่ออกจากลูปนี้เขียน `ref_kind`/`ref_id` เสมอ → ประวัติ rev เล่าเองว่าเกิดจากใบไหน
+3. **ปฏิเสธต้องมีเหตุผล** (check constraint `pe_cr_reject_needs_reason`) — auditor ถามว่า "ทำไมเคสนี้ไม่แก้เอกสาร"
+4. **ด่านตอนปิด D8 เป็น soft gate โดยตั้งใจ** — บังคับให้ "ตอบ" (แก้แล้ว / ไม่ต้องแก้+เหตุผล) **ไม่ได้บังคับให้แก้เสร็จ** · แข็งเกินไปคนจะเลี่ยงด้วยการไม่เปิด CAPA เลย ซึ่งแย่กว่า
+5. **"จับคู่ไม่ได้" ต้องขึ้นสีแดงเป็นสัญญาณของตัวเอง ห้ามเงียบ** — *"อาการนี้ไม่เคยอยู่ใน PFMEA"* คือคำตอบที่มีค่าที่สุดในลูป (ตอนออกแบบมองไม่เห็น = ต้องทบทวนวิธีทำ FMEA ไม่ใช่แค่เติมแถว)
+6. **ไม่เพิ่ม permission key ใหม่** — ใช้ `qa:record`/`qa:manage` (ฝั่งเสนอ) + `pe:edit`/`pe:approve` (ฝั่งรับ) เลี่ยงกับดัก seed `enum_range`
+7. **`ref_kind` ใช้ vocabulary ชุดเดียวกับ `pe_doc_revisions` ห้ามตั้งชุดใหม่** — สองชุดเมื่อไหร่ join ข้ามฝั่งไม่ได้
+
+### ⚠️ เฟส 4 — วัดประสิทธิผลจาก `defect_logs` จริง (2026-08-18 · IATF §10.2.4)
+เดิมมีแค่ช่องข้อความ `qa_capa.effectiveness` ที่คนพิมพ์เอง — auditor ถาม *"รู้ได้ยังไงว่าได้ผล"* แล้วตอบไม่ได้
+สูตร: `ก่อน = [pivot − window, pivot)` · `หลัง = [pivot, min(วันนี้, pivot + window))` **หารด้วยจำนวนวันที่ไลน์ผลิตจริง** (จาก `production_sessions`) · เกณฑ์ ลด ≥50% = ได้ผล · 20-50% = ดีขึ้นบางส่วน · <20% = ยังไม่ได้ผล · เพิ่มขึ้น = แย่ลง
+1. **pivot = `d6_effective_from` (วันที่มาตรการมีผลจริง) ห้ามใช้ `closed_at`** — ใบมักถูกปิดหลังมาตรการมีผลไปแล้วหลายสัปดาห์ ใช้วันปิดจะวัดคร่อมช่วงผิด
+2. **"วัดไม่ได้" เป็นคำตอบของตัวเอง ห้ามกลายเป็น "ไม่ได้ผล"** — `too_early`/`no_baseline`/`no_data`/`no_pivot` แยกจาก `not_effective` เด็ดขาด (หลักเดียวกับ OEE: ประเมินไม่ได้ = null ห้ามคืน 0) · KPI นับเฉพาะใบที่วัดได้จริง
+3. **ต้องหารด้วยวันผลิตจริง** — ไลน์หยุด 5 วันแล้วของเสียเป็น 0 **ไม่ได้แปลว่าได้ผล** · `afterDays < 5` = ยังวัดไม่ได้ ห้ามตัดสิน · ก่อนหน้าไม่มีของเสียเลย = `no_baseline` (เกณฑ์ที่ตั้งอาจไม่ตรงอาการ) ไม่ใช่ "ได้ผล"
+4. **ปิดใบแล้ว = อ่าน `eff_snapshot` ที่ stamp ไว้ ห้ามคำนวณใหม่** — ของเสียถูกแก้/เพิ่มทีหลังได้ คำนวณสดจะทำให้ใบที่ปิดแล้วเปลี่ยนคำตอบเองเงียบๆ (หลักเดียวกับ OEE ที่ stamp ตอนปิดกะ)
+5. **เตือนดังตอนปิด แต่ไม่บล็อก + stamp ผลเสมอ** — บล็อกแข็งคนจะเลี่ยงด้วยการไม่ตั้งค่าการวัดเลย · แต่ "ปิดทั้งที่ตัวเลขไม่ลด" ต้องเห็นตลอดไป (ชิปในลิสต์ CAPA + คิวงานบน dashboard) · **ระบบไม่ auto-reopen ใบ**
+6. **`judgeEffect` ต้องคืน verdict เสมอ ห้ามคืน `null`** — `null` ทำให้ตอนปิดใบไม่เข้าสาขา confirm แล้วไม่ stamp `eff_verdict` → ใบหายจาก KPI เงียบๆ (เกิดจริงตอนกรอก pivot แล้วแต่ยังไม่กรอกไลน์)
+7. **กับดักที่เกือบพลาด:** `stamped` ต้อง `useMemo` (ไม่งั้น `load` เปลี่ยน identity → ยิง DB วนไม่จบ ซึ่ง build จับไม่ได้) · `dr_defect_types` คอลัมน์ชื่อ **`name_th` ไม่ใช่ `name`** · ธง `is_trial`/`excl_from_q` ยังไม่ apply = ถอย select ชุดเดิม **แล้วต้องบอกบนจอว่าตัวเลขรวมงานทดลองปนมา** · `.then().catch()` บน supabase-js เป็นโค้ดตาย (คืน `{error}` ไม่ throw) · ช่อง input พิมพ์อิสระที่เป็น deps ของ loader ต้อง debounce + กันผลเก่าทับผลใหม่ · ปุ่มที่เขียนค่าลงช่องหนึ่ง ต้อง gate ด้วยสิทธิ์เดียวกับช่องนั้น
+
+### ⚠️ ตัวจับคู่: กลุ่มคำ = ตัวกรอง · n-gram = ตัวจัดอันดับ (ห้ามเอามาบวกกันตรงๆ)
+ไทย↔อังกฤษ n-gram แทบเป็น 0 เสมอ ("นัทไม่มี" vs "Missing nut") ต้องให้กลุ่มคำยกพื้นให้ **แต่ยกได้แค่ระดับเบาะแส (< STRONG)** เพราะคำเดียวกันมีได้หลายสิบข้อในเอกสารเดียว
+- เขียนครั้งแรกเป็น `max(s, 0.405 + 0.1s)` → คะแนนไม่มีทางถึงเกณฑ์ 0.45 = **ไม่แมตช์อะไรเลยสักเคส** ทั้งที่โค้ดดูถูก
+- `cover` หารด้วย**ฝั่งที่กลุ่มคำน้อยกว่า** — คนกรอกพูดทั้งตัวการและอาการ ("แม่พิมพ์สึก → เป็นครีบ") แต่เอกสารเขียนอย่างเดียว
+- ขา occurrence ค้นด้วย **"D4 + อาการ" คู่กัน** (แถว FMEA จับคู่ failure_mode กับ causes อยู่แล้ว)
+- **ยุบข้อความซ้ำข้าม OP** (ฟอร์มจริงมี "Burr over 0.3 mm." ที่ OP 40/50/60/70) + **บอก `total` ไม่ใช่แค่ top 3** (คำว่า "นัท" มี 35 ข้อในเอกสารเดียว — แสดง 3 โดยไม่บอกว่ามีเท่าไหร่ = ดูแม่นเกินจริง)
+- **จุดควบคุมที่ไม่เกี่ยวกับอาการ ห้ามลากมาเสนอ** — ไม่มีที่ตรง = บอกว่า "มี N จุดแต่ไม่มีจุดไหนแตะอาการนี้" (เดิม fallback เป็นเอาทั้งหมด แล้วเสนอ DIMENSION/APPEARANCE ที่ไม่เกี่ยว คนจะเลิกเชื่อระบบ)
+
+**ผลทดสอบกับเอกสารจริง 306:** เคลม "นัทไม่มี" → เจอ **"QUANTITY OF NUT" ที่ OP 130 PROJECTION WELD NUT (70%)** · "คมตัดแม่พิมพ์สึก/เป็นครีบ" → **"- End cut burr" ที่ OP 100 BENDING** · "สีลอกหลังอบ" → 🔴 ไม่เคยอยู่ใน PFMEA (ถูกต้อง)
+
+### 📮 ทะเบียนเคลมลูกค้า (เฟส 3 · 2026-08-17)
+`qa_customer_claims` (Main · migration `20260817_qa_customer_claims.sql` · **apply แล้ว 2026-08-19**) · UI `src/components/QaClaims.jsx` (แท็บ 📮 ใน `/qa`)
+**โซ่ครบ: เคลม → 8D (สร้าง+ผูกในคลิกเดียว) → คำขอแก้เอกสาร → revision → PFMEA/CP ใหม่**
+- **ปิดเคลมไม่ได้ถ้าไม่มี 8D** — hard gate (ต่างจากด่านปิด D8 ที่เป็น soft) · เคลมมีจำนวนน้อย บังคับได้ไม่เป็นภาระ และปิดโดยไม่มีหลักฐานว่าแก้อะไร = auditor จับแน่
+- **กด "เปิด 8D" = สร้างใบ + ผูก `capa_id` ทันที** ห้ามให้ไปผูกทีหลัง (ลืมแล้วโซ่ขาด ทั้งลูปใช้ไม่ได้)
+- `pe_doc_revisions.ref_kind` เพิ่มค่า `'capa'` (เดิมต้องบิดเป็น `'ncr'`)
+- **⚠️ ตรวจจับเคลมซ้ำต้องมี 2 ระดับ — เกณฑ์เดียวแยกไม่ได้** (วัดกับข้อความไทยจริง): `"นัทไม่มี" ↔ "นัทหาย"` = **0.56 (ซ้ำจริง)** แต่ `"นัทไม่มี" ↔ "นัทเชื่อมเยื้องศูนย์"` = **0.56 เท่ากัน (คนละอาการ)** → แยกตาม `via`: `both` = 🔁 ซ้ำแน่ (แดง) · `group` = ❓ อาจซ้ำ ต้องเปิดดูเอง (เหลือง) · **ห้ามยุบเป็นระดับเดียว** เตือนพร่ำเพรื่อแล้วคนเลิกสนใจทั้งระบบ
+- `findRepeats`/`sureRepeats` อยู่ใน `src/utils/peLink.js` (pure เทสได้ · จะใช้ซ้ำตอนทำ effectiveness เฟส 4)
+
+**⚠️ ก่อนคาดหวังผล (migration ครบทั้ง 4 ตัวแล้ว 2026-08-19 — user รันเองผ่าน SQL Editor):** `qa_ncr`/`qa_capa`/`qa_customer_claims` = **0 แถว** และเอกสาร PE ครอบ 2-3 พาร์ท → ลูปนี้ยังไม่มีอะไรวิ่งจนกว่าจะมีคนเปิดเคลม/NCR/8D จริง + นำเข้าเอกสาร PE ให้ครบ (ดูลำดับใน CLOSED-LOOP-8D-PE.md §8)

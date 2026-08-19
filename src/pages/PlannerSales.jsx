@@ -3,8 +3,11 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
+import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -27,6 +30,8 @@ const inputSt = {
 };
 
 const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/* วันงานปัจจุบัน (ตัด 08:00 ตามกฎโปรเจค — ห้ามใช้ toISOString) */
+const workDateStr = () => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); return dateStr(d); };
 const monthFirst = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 const monthLabel = (iso) => {
   const [y, m] = iso.split('-').map(Number);
@@ -186,7 +191,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           const k = norm(pno);
           if (!k || !mat) return;
           const cur = matMap[k];
-          if (!cur || (!String(cur.mat_no).startsWith('1') && String(mat).startsWith('1'))) matMap[k] = { mat_no: mat, name };
+          if (!cur || (!isFgMat(cur.mat_no) && isFgMat(mat))) matMap[k] = { mat_no: mat, name };
           // ดัชนี base part (ตัด revision) สำหรับ fallback — เก็บทุกตัวเพื่อเช็คกำกวม
           const b = baseOfPart(pno);
           if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }
@@ -353,16 +358,36 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           if (error) throw error;
         }
       } else {
-        // เก็บใบที่เตรียม/ส่งไปแล้ว — ลบเฉพาะ pending จาก EDI ในช่วง horizon แล้วลงฉบับใหม่ (ไม่ insert ซ้ำ slot ที่ทำไปแล้ว)
+        /* เก็บใบที่เตรียม/ส่งไปแล้ว — ลบเฉพาะ pending จาก EDI ในช่วง horizon แล้วลงฉบับใหม่
+           (ไม่ insert ซ้ำ slot ที่ทำไปแล้ว)
+
+           ⚠️ กฎเหล็ก — **ห้ามลบออเดอร์ที่วันส่งผ่านไปแล้ว** (2026-08-19 · คำสั่ง user "ของเดิมไม่หายทำได้มั้ย")
+           EDI 862 คือการ *แก้ไขคำสั่งซื้อในอนาคต* — รายการของวันที่ผ่านไปแล้วเป็น **ข้อเท็จจริงย้อนหลัง**
+           (ลูกค้าเคยสั่งเท่านี้จริง) ลบทิ้งแล้วจะตอบไม่ได้ตลอดกาลว่า "ที่ผ่านมาผลิตพอกับที่ลูกค้าสั่งไหม"
+           เดิมตัดที่ `edi.dateFrom` = วันแรกที่มีในไฟล์ → ไฟล์ที่พ่วงรายการวันเก่ามาด้วย (EDI ทำประจำ)
+           จะลบประวัติทับแบบเงียบๆ · ตัดที่ max(dateFrom, วันงานปัจจุบัน) แทน
+           ผลข้างเคียงที่ตั้งใจ: ใบค้างส่งของวันเก่าไม่ถูกล้างโดยการอัพไฟล์ — ต้องเคลียร์ที่หน้า Delivery
+           (ซึ่งถูกแล้ว: ของที่ยังไม่ส่งและลูกค้าไม่ได้ยกเลิก คือคำถามที่ยังค้างอยู่จริง) */
+        const wd = workDateStr();
+        const delFrom = edi.dateFrom > wd ? edi.dateFrom : wd;
         const { data: keepRows } = await supabaseDR.from('customer_shipping_orders')
           .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
-          .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).neq('status', 'pending');
+          .in('customer', edi.shipTos).gte('due_date', delFrom).neq('status', 'pending');
         const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
         const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
-          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', edi.dateFrom);
+          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', delFrom);
         if (eDel) throw eDel;
+        /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
+        const pastKeys = new Set();
+        if (edi.dateFrom < delFrom) {
+          const { data: pastRows } = await supabaseDR.from('customer_shipping_orders')
+            .select('customer, customer_part_no, mat_no, due_date, ship_time')
+            .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom);
+          (pastRows || []).forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        }
         const recs = edi.records
-          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
+          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)
+            && !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
           .map(r => ({
             batch_id: batch.id, order_no: r.po || null, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
             customer_part_no: r.part, qty: r.qty, due_date: r.date, ship_time: r.time, dock_code: r.dock || null, source: 'edi_862',
@@ -560,20 +585,20 @@ function PlannerTab({ refreshKey, custLabel }) {
 
   const chartData = useMemo(() => months.map(m => {
     // period_month อาจเป็นรายเดือน (manual) หรือรายสัปดาห์ (EDI 830) — รวมด้วยเดือนเดียวกัน
-    const fq = forecasts.filter(f => f.period_month.slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
-    const oq = orders.filter(o => o.due_date.slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
+    const fq = forecasts.filter(f => (f.period_month || '').slice(0, 7) === m.slice(0, 7)).reduce((s, f) => s + Number(f.qty), 0);
+    const oq = orders.filter(o => (o.due_date || '').slice(0, 7) === m.slice(0, 7)).reduce((s, o) => s + Number(o.qty), 0);
     return { month: monthLabel(m), Forecast: fq, Orders: oq };
   }), [months, forecasts, orders]);
 
   // ตารางราย mat_no ของเดือนที่เลือก — forecast vs order จริง + ภาระชั่วโมงผลิต
   const matRows = useMemo(() => {
     const map = {};
-    forecasts.filter(f => f.period_month.slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
+    forecasts.filter(f => (f.period_month || '').slice(0, 7) === focusMonth.slice(0, 7)).forEach(f => {
       const r = map[f.mat_no] = map[f.mat_no] || { mat_no: f.mat_no, part_name: f.part_name, customer: f.customer, forecast: 0, ordered: 0 };
       r.forecast += Number(f.qty);
       if (!r.part_name) r.part_name = f.part_name;
     });
-    orders.filter(o => o.due_date.slice(0, 7) === focusMonth.slice(0, 7)).forEach(o => {
+    orders.filter(o => (o.due_date || '').slice(0, 7) === focusMonth.slice(0, 7)).forEach(o => {
       const r = map[o.mat_no] = map[o.mat_no] || { mat_no: o.mat_no, part_name: o.part_name, customer: o.customer, forecast: 0, ordered: 0 };
       r.ordered += Number(o.qty);
       if (!r.part_name) r.part_name = o.part_name;
@@ -1154,7 +1179,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* (#1) Modal จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน — ฟอร์มกรอกหลายสิบแถว ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) */}
       {mapModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
@@ -1213,7 +1238,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* Preview & Apply (แสดงอย่างเดียว ปิดจากปุ่ม/นอกกรอบได้) */}
       {preview && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>เขียนค่า Min/Max/Total ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)</div>
@@ -1245,7 +1270,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
 export default function PlannerSales() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useState('planner');
+  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);
   // สิทธิ์อัพโหลดจากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canUpload = can('demand', 'upload', role);
@@ -1267,22 +1292,16 @@ export default function PlannerSales() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📈 Planner & Sales — Forecast จากลูกค้า
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {[
-          { id: 'planner', label: '📈 Forecast Planner' },
-          { id: 'kanban',  label: '🎴 คำนวณ Kanban' },
-          { id: 'upload',  label: '📤 อัพโหลด (Sales)' },
-        ].map(t => <button key={t.id} onClick={() => setTab(t.id)} style={btn(tab === t.id)}>{t.label}</button>)}
-      </div>
+      <PageHeader
+        title="Planner & Sales — Forecast จากลูกค้า" icon="📈"
+        sub="Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery"
+        tabs={[
+          { key: 'planner', label: '📈 Forecast Planner' },
+          { key: 'kanban', label: '🎴 คำนวณ Kanban' },
+          { key: 'upload', label: '📤 อัพโหลด (Sales)' },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
       {tab === 'kanban' && <KanbanCalcTab canApply={canUpload} fullName={fullName} custLabel={custLabel} />}

@@ -24,6 +24,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { nextDocNo } from '../utils/qaDocNo';
 import CalloutPin from './CalloutPin';
+import QaFmeQueue from './QaFmeQueue';
+import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -36,13 +38,7 @@ const getCurrentShift = () => {
   return (h >= 8 && h < 20) ? 'day' : 'night';
 };
 
-const STAGE = {
-  incoming:    { label: 'รับเข้า', color: '#a78bfa' },
-  setup_first: { label: 'ชิ้นแรกหลังตั้งเครื่อง', color: '#f59e0b' },
-  inprocess:   { label: 'ในกระบวนการ', color: '#4d9fff' },
-  final:       { label: 'ตรวจสุดท้าย', color: '#22c55e' },
-  patrol:      { label: 'Patrol / รายกะ', color: '#fb923c' },
-};
+const STAGE = QA_STAGES;
 const RANK = { M: { label: 'M', color: '#f59e0b' }, SC: { label: 'SC', color: '#ef4444' } };
 const JUDGE = {
   ok: { label: 'ผ่าน', color: '#22c55e' },
@@ -88,6 +84,11 @@ export default function QaCheckSheet({ canRecord }) {
   const [workDate, setWorkDate] = useState(() => getWorkDate());
   const [shift, setShift] = useState(() => getCurrentShift());
   const [roundNo, setRoundNo] = useState(1);
+  // ช่วงการตรวจของใบที่กำลังจะเปิด (setup_first/inprocess/final) — ตั้งจากคิวเรียกตรวจ FME
+  // เดิมคอลัมน์ stage มีอยู่แต่ไม่เคยถูกเขียน · null = เหมือนเดิมทุกประการ
+  const [sheetStage, setSheetStage] = useState(null);
+  const [fmeObId, setFmeObId] = useState(null);   // งานตรวจในคิวที่ใบนี้กำลังตอบอยู่
+  const fmeKeyRef = useRef(null);                 // คีย์ (พาร์ท|วัน|กะ) ที่คิวตั้งไว้
 
   const [sheet, setSheet] = useState(null);          // แถว qa_inspection_sheets ของคีย์ปัจจุบัน
   const [results, setResults] = useState([]);        // ผลของใบนั้น
@@ -212,6 +213,29 @@ export default function QaCheckSheet({ canRecord }) {
     return { total, ok, ng, na, done: ok + ng + na, left: total - (ok + ng + na) };
   }, [items, resById]);
 
+  /* เปลี่ยนพาร์ท/วัน/กะ เองหลังกดมาจากคิว = ไม่ใช่ใบที่คิวเรียกอีกต่อไป → ตัดการผูกทิ้ง
+     (ไม่งั้นใบของรุ่นอื่นจะไปปิดคิวของรุ่นที่ถูกเรียก = ตรวจตกโดยระบบบอกว่าตรวจแล้ว) */
+  useEffect(() => {
+    if (!fmeObId) return;
+    const key = `${partId}|${workDate}|${shift}`;
+    if (fmeKeyRef.current && fmeKeyRef.current !== key) { setFmeObId(null); setSheetStage(null); }
+  }, [partId, workDate, shift, fmeObId]);
+
+  /* ── ผูกใบตรวจกลับไปที่คิวเรียกตรวจ (FME) ──────────────────────────────────
+     acked = QA รับงานแล้ว (หยุดเตือนซ้ำ) · done_ok/done_ng = ปิดใบแล้ว
+     ⚠️ best-effort แต่ **ห้ามเงียบ** — ถ้าเขียนไม่ได้ ห้องแชทจะโดนเตือนซ้ำทั้งที่ตรวจไปแล้ว */
+  const linkFme = useCallback(async (sheetId, status) => {
+    if (!fmeObId) return;
+    const patch = { sheet_id: sheetId, status };
+    if (status === 'acked') patch.acked_at = new Date().toISOString();
+    else patch.done_at = new Date().toISOString();
+    const { error } = await supabase.from('qa_fme_obligations').update(patch).eq('id', fmeObId);
+    if (error) {
+      console.warn('linkFme', error);
+      toast.error('บันทึกผลตรวจสำเร็จ แต่ปิดคิวเรียกตรวจไม่ได้ — ระบบอาจเตือนซ้ำ (แจ้ง admin)');
+    }
+  }, [fmeObId]);
+
   /* ── สร้างใบเมื่อเริ่มบันทึกจริง (ไม่สร้างใบเปล่าทิ้งไว้) ── */
   const ensureSheet = useCallback(async () => {
     if (sheet?.id) return sheet;
@@ -219,7 +243,7 @@ export default function QaCheckSheet({ canRecord }) {
     const { data, error } = await supabase.from('qa_inspection_sheets').insert({
       part_id: part.id, part_no: part.part_no, part_name: part.part_name || null,
       line_name: part.line_name || null,
-      work_date: workDate, shift, round_no: roundNo,
+      work_date: workDate, shift, round_no: roundNo, stage: sheetStage,
       inspector_name: fullName || null, created_by: fullName || null,
     }).select().single();
     if (error) {
@@ -231,9 +255,11 @@ export default function QaCheckSheet({ canRecord }) {
       return null;
     }
     setSheet(data);
+    // มาจากคิวเรียกตรวจ → ผูกใบกับงานตรวจ + นับว่า "รับงานแล้ว" (หยุดเตือนซ้ำทันที ไม่ต้องรอ cron)
+    if (fmeObId) linkFme(data.id, 'acked');
     loadRecent();
     return data;
-  }, [sheet, part, workDate, shift, roundNo, fullName, loadRecent]);
+  }, [sheet, part, workDate, shift, roundNo, sheetStage, fullName, loadRecent, fmeObId, linkFme]);
 
   /* ── บันทึกผล 1 จุด (upsert ทันที) ── */
   const saveResult = useCallback(async (item, judgement, extra = {}) => {
@@ -303,6 +329,7 @@ export default function QaCheckSheet({ canRecord }) {
       .update({ status: 'done', result, closed_by: fullName || null, closed_at: new Date().toISOString() })
       .eq('id', sheet.id);
     if (error) { toast.error(error.message); return; }
+    await linkFme(sheet.id, result === 'fail' ? 'done_ng' : 'done_ok');
     toast.success('ปิดใบตรวจแล้ว ✓');
     loadSheet(); loadRecent();
   };
@@ -404,11 +431,23 @@ export default function QaCheckSheet({ canRecord }) {
         </div>
       )}
 
+      {/* คิว "ฝ่ายผลิตเรียกตรวจ" — กดแล้วตั้งพาร์ท/วัน/กะ/ช่วงตรวจให้ตรงกับรุ่นที่ถูกเรียก */}
+      <QaFmeQueue scopedLineNames={scopedLineNames} onOpen={(ob) => {
+        setPartId(ob.part_id);
+        setWorkDate(ob.work_date);
+        setShift(ob.shift);
+        setRoundNo(1);
+        setSheetStage(FME_SHEET_STAGE[ob.stage] || null);
+        setFmeObId(ob.id);
+        fmeKeyRef.current = `${ob.part_id}|${ob.work_date}|${ob.shift}`;
+        toast.info(`เปิดใบตรวจ: ${ob.line_name} · ${ob.mat_no} · ${ob.stage === 'end' ? 'ชิ้นสุดท้าย' : ob.stage === 'middle' ? 'ระหว่างผลิต' : 'ชิ้นแรก'}`);
+      }} />
+
       {/* แถบเลือกใบ */}
       <div style={{ ...cardSt, marginBottom: 12 }}>
         <div className="mgrid" style={{
           display: 'grid', gap: 10,
-          gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 2fr) 150px 130px 110px 1fr',
+          gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(220px, 2fr) 150px 130px 110px 1fr',
           alignItems: 'end',
         }}>
           <div>
@@ -481,7 +520,7 @@ export default function QaCheckSheet({ canRecord }) {
       </div>
 
       {items.length > 0 && (
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: (!isMobile && showDrawing && drawings.length) ? 'minmax(320px, 5fr) 7fr' : '1fr', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: (!isMobile && showDrawing && drawings.length) ? 'minmax(320px, 5fr) 7fr' : 'minmax(0, 1fr)', alignItems: 'start' }}>
           {/* แบบ + หมุด sync ผลตรวจ */}
           {drawings.length > 0 && (
             <div style={{ ...cardSt, position: isMobile ? 'static' : 'sticky', top: 10 }}>
@@ -700,7 +739,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
       {showNg && !readOnly && (
         <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
           onClick={e => e.stopPropagation()}>
-          <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '1fr 120px auto' }}>
+          <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 120px auto' }}>
             <input style={inputSt} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
               value={draft?.note ?? res?.note ?? ''} onChange={e => onDraft({ note: e.target.value, judgement: 'ng' })} />
             <input type="number" min={1} style={inputSt} placeholder="จำนวน NG"

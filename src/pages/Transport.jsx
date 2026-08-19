@@ -5,6 +5,10 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import { routeThroughStops, nodeKind, bestStopOrder } from '../utils/transportGraph';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -19,7 +23,7 @@ export default function Transport() {
   const { role, fullName } = useContext(UserContext);
   const canManage = can('transport', 'manage', role);
 
-  const [tab, setTab] = useState('assign');
+  const [tab, setTab] = useTabParam(['assign', 'route', 'carriers'], 'assign');
   const [vehicles, setVehicles] = useState([]);
   const [carriers, setCarriers] = useState([]);
   const [rounds, setRounds] = useState([]);
@@ -75,7 +79,7 @@ export default function Transport() {
     setImageUrl(fm?.image_url || null);
   }, [workDate]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { const t = setInterval(() => { load(); setNowMs(Date.now()); }, 60000); return () => clearInterval(t); }, [load]);
+  useEffect(() => visibleInterval(() => { load(); setNowMs(Date.now()); }, RATE.ANALYTIC), [load]);
   // ฐานพนักงาน (Main) โหลดครั้งเดียว — ใช้เลือกคนขับจาก employees แทนพิมพ์เอง
   useEffect(() => {
     supabase.from('employees').select('id, name, employee_id_code, section').eq('is_active', true).order('name')
@@ -152,24 +156,16 @@ export default function Transport() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🚚 มอบหมายขนส่ง (Transport)
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        {[['assign', `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})`], ['route', `🗺️ เส้นทางรอบส่ง (${nRoutes})`], ['carriers', `👷 คนขับ/ยานพาหนะ (${carriers.filter(c => c.is_active).length})`]].map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
-            padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)',
-            background: tab === k ? 'var(--accent)' : 'var(--bg2)', color: tab === k ? '#08130a' : 'var(--text2)',
-            border: `1px solid ${tab === k ? 'var(--accent)' : 'var(--border)'}`,
-          }}>{l}</button>
-        ))}
-      </div>
+      <PageHeader
+        title="มอบหมายขนส่ง (Transport)" icon="🚚"
+        sub="มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1"
+        tabs={[
+          { key: 'assign', label: `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})` },
+          { key: 'route', label: `🗺️ เส้นทางรอบส่ง (${nRoutes})` },
+          { key: 'carriers', label: `👷 คนขับ/ยานพาหนะ (${carriers.filter(c => c.is_active).length})` },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
       {tab === 'assign' && (
         byLine.length === 0 ? (
@@ -405,7 +401,9 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
   return (
     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* left: เลือกรอบ + จัดลำดับจุดจอด */}
-      <div style={{ ...card, flex: '0 0 320px', minWidth: 280 }}>
+      {/* '0 1 320px' + minWidth:0 — desktop กว้าง 320 เท่าเดิม แต่จอ 320px ยอมหดแทนที่จะดันล้น
+          (เดิม '0 0 320px' + minWidth:280 = ไม่ยอมหดเลย ล้นออกนอกจอ 37px) */}
+      <div style={{ ...card, flex: '0 1 320px', minWidth: 0, maxWidth: '100%' }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>เลือกรอบส่ง</div>
         <select value={selRound || ''} onChange={e => setSelRound(e.target.value || null)}
           style={{ width: '100%', padding: '7px 9px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', marginBottom: 12 }}>
@@ -571,7 +569,8 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
       </div>
 
       {/* right: แผนที่เส้นทาง */}
-      <div style={{ flex: '1 1 480px', minWidth: 320 }}>
+      {/* minWidth:0 — จอ 320px มีพื้นที่จริง 283px ถ้าคง minWidth:320 จะดันล้นออกนอกจอ */}
+      <div style={{ flex: '1 1 480px', minWidth: 0 }}>
         {imageUrl ? (
           <>
           <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
@@ -678,7 +677,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
 
   return (
     // ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับ (§7)
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>

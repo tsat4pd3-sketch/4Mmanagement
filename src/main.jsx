@@ -40,6 +40,21 @@ const checkVersion = async () => {
 };
 checkVersion();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+/* ⚠️ จอ TV ที่เปิดค้าง 24/7 = visible ตลอด → **ไม่มี visibilitychange เลย** → ไม่มีวันรู้ว่ามีเวอร์ชันใหม่
+   (พบ 2026-08-19: แก้ egress แล้ว deploy ไป แต่จอ TV ยังรันโค้ดเก่าจนกว่าจะมีคนไปกด F5
+    — bug fix ทุกตัวที่ผ่านมาก็ไปไม่ถึงจอ TV ด้วยเหตุผลเดียวกัน)
+
+   ── ทำไม 2 ชม. ─────────────────────────────────────────────────────────────
+   ต้นทุน ≈ 0 และ **ไม่เกี่ยวกับโควต้า Supabase เลย** — `/version.json` (25 bytes) เสิร์ฟจาก
+   Render static site คนละที่กับ DB · 15 จอ ทุก 2 ชม. ≈ 4 MB/เดือน จาก Render free 100 GB
+
+   **การ "เช็ค" ไม่ได้แปลว่า "reload"** — reload เกิดต่อเมื่อ build ไม่ตรงเท่านั้น
+   วันที่ไม่ได้ deploy จอไม่ขยับเลย ฉะนั้นถี่แค่ไหนก็ไม่รบกวนคนหน้างาน
+
+   ตัวแปรจริงคือ "deploy fix แล้วจอรับช้าแค่ไหน" — 24 ชม. = จอแสดงของเสียต่ออีกเต็มกะ
+   จึงเลือก 2 ชม. เป็นจุดกลาง · จะยืด/หดแก้ที่ค่าเดียวข้างล่างนี้                              */
+const VERSION_CHECK_MS = 2 * 60 * 60 * 1000;
+setInterval(checkVersion, VERSION_CHECK_MS);
 
 /* ── PWA Service Worker (เฉพาะ Web Push — ไม่มี fetch handler ไม่ cache อะไร) ──
    register ตอน production เท่านั้น · ตัว SW (public/sw.js) แตะแค่ push/notificationclick
