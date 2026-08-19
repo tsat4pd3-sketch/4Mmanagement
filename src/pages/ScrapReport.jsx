@@ -13,7 +13,7 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
@@ -84,11 +84,11 @@ export default function ScrapReport() {
     if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
     return null;
   }, [role, lineId, sections, allLines]);
+  // object array (id/name/parent_line_name) — render dropdown จัดชั้นตามผัง (§5.3 ข้อ 8) · ค่า value ยังเป็น name เหมือนเดิม
   const lines = useMemo(() => {
-    const names = allLines.map(l => l.name);
-    if (!scopedLineNames) return names;
+    if (!scopedLineNames) return allLines;
     const ok = new Set(scopedLineNames);
-    return names.filter(n => ok.has(n));
+    return allLines.filter(l => ok.has(l.name));
   }, [allLines, scopedLineNames]);
   const [defectTypes, setDefectTypes] = useState([]);
   const [listFrom, setListFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return localDateStr(d); });
@@ -359,7 +359,9 @@ export default function ScrapReport() {
             <Field label="ไลน์ *">
               <select style={inputSt} value={editor.report.line_name} onChange={e => setRep({ line_name: e.target.value })}>
                 <option value="">— เลือกไลน์ —</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </Field>
             <Field label="แผนก"><input style={inputSt} value={editor.report.dept} onChange={e => setRep({ dept: e.target.value })} /></Field>

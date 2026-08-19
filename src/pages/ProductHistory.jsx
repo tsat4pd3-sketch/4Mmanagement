@@ -5,6 +5,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
 import PageHeader from '../components/PageHeader';
+import DailyBars from '../components/DailyBars';
+import DemandVsProduction from '../components/DemandVsProduction';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -73,9 +75,19 @@ export default function ProductHistory() {
       .eq('mat_no', prod.mat_no)
       .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
       .order('opened_at', { ascending: false }).limit(2000);
-    const { data: def } = await supabaseDR.from('defect_logs')
-      .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
-      .eq('mat_no', prod.mat_no).limit(5000);
+    /* ⚠️ defect_logs **ไม่มีคอลัมน์ mat_no** — ผูกกับสินค้าผ่าน prod_order_id เท่านั้น
+       เดิม .eq('mat_no', …) → 42703 → def = [] เงียบๆ → "NG รวม" ขึ้น 0 เสมอ ทุกสินค้า
+       (เจอจากภาพหน้าจอจริง: 1,000 ใบ แต่ NG รวม = 0) */
+    const oIds = (ord || []).map(o => o.id);
+    let def = [], defErr = null;
+    for (let i = 0; i < oIds.length; i += 120) {          // .in() ยาวเกินไป proxy ตัด
+      const { data: d, error } = await supabaseDR.from('defect_logs')
+        .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
+        .in('prod_order_id', oIds.slice(i, i + 120));
+      if (error) { defErr = error; break; }
+      def = def.concat(d || []);
+    }
+    if (defErr) console.warn('[productHistory] โหลดของเสียไม่สำเร็จ', defErr);
     // audit ของแถว dr_products นี้ (best-effort — ถ้ายังไม่ apply migration audit_log จะว่าง)
     let auditRows = [];
     try {
@@ -85,7 +97,7 @@ export default function ProductHistory() {
         .order('changed_at', { ascending: false }).limit(200);
       auditRows = a || [];
     } catch { auditRows = []; }
-    setOrders(ord || []); setDefects(def || []); setAudit(auditRows);
+    setOrders(ord || []); setDefects(def); setAudit(auditRows);
     setLoading(false);
   }, [from, to]);
 
@@ -151,6 +163,12 @@ export default function ProductHistory() {
     return out;
   }, [rows, to]);
   const dailyMax = Math.max(1, ...daily.map(d => (d.produced || 0) + (d.ng || 0)));
+  // ผลิตต่อวัน (เฉพาะยอดดี) — ป้อนให้แผงเทียบความต้องการลูกค้า
+  const prodByDay = useMemo(() => {
+    const m = {};
+    rows.forEach(r => { if (r.work_date) m[r.work_date] = (m[r.work_date] || 0) + (r.produced || 0); });
+    return m;
+  }, [rows]);
 
   // ตัวเลือกสินค้าต้อง scope ด้วย (กฎ dropdown-scope 2026-07-23) — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก
   // สินค้าที่ยังไม่ระบุไลน์คงโชว์ไว้ (fail-open เฉพาะ null — ไม่ใช่ข้ามส่วนงาน)
@@ -159,9 +177,33 @@ export default function ProductHistory() {
     return products.filter(p => !p.line_name || scopeLineNames.has(p.line_name.trim().toLowerCase()));
   }, [products, scopeLineNames]);
 
-  const lineOpts = useMemo(() =>
-    [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th')),
-  [scopedProducts]);
+  // dropdown ไลน์จัดชั้นตามผัง (กฎ §5.3 — เดิมลิสต์แบนเรียง ก-ฮ แม่ลูกปนกัน user ทัก 2026-08-18):
+  // optgroup = กลุ่มบนสุดตาม parent_line_name · แม่ขึ้นก่อนในกลุ่ม ลูกมี ↳ นำหน้า
+  // ชื่อที่ไม่อยู่ใน production_lines = optgroup "⚠ นอกผัง" ห้ามซ่อน (กฎ worklist — ซ่อนแล้วหาของผิดไม่เจอ)
+  const lineGroups = useMemo(() => {
+    const names = [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))];
+    const byName = {}; lines.forEach(l => { byName[l.name] = l; });
+    const topOf = (n) => {
+      let cur = byName[n]; if (!cur) return null;
+      const seen = new Set();
+      while (cur.parent_line_name && byName[cur.parent_line_name] && !seen.has(cur.name)) { seen.add(cur.name); cur = byName[cur.parent_line_name]; }
+      return cur.name;
+    };
+    const sortTh = (a, b) => a.localeCompare(b, 'th');
+    const groups = {}; const off = [];
+    names.forEach(n => {
+      const t = topOf(n);
+      if (!t) { off.push(n); return; }
+      (groups[t] = groups[t] || []).push(n);
+    });
+    return {
+      groups: Object.keys(groups).sort(sortTh).map(t => ({
+        top: t,
+        names: groups[t].sort((a, b) => (a === t ? -1 : b === t ? 1 : sortTh(a, b))),
+      })),
+      off: off.sort(sortTh),
+    };
+  }, [scopedProducts, lines]);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -204,7 +246,16 @@ export default function ProductHistory() {
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
             <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ marginTop: 4, width: 200 }}>
               <option value="">ทุกไลน์</option>
-              {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
+              {lineGroups.groups.map(g => (
+                <optgroup key={g.top} label={g.top}>
+                  {g.names.map(n => <option key={n} value={n}>{n === g.top ? n : `↳ ${n}`}</option>)}
+                </optgroup>
+              ))}
+              {lineGroups.off.length > 0 && (
+                <optgroup label="⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)">
+                  {lineGroups.off.map(n => <option key={n} value={n}>{n}</option>)}
+                </optgroup>
+              )}
             </select>
           </div>
           <div>
@@ -308,33 +359,25 @@ export default function ProductHistory() {
             </CollapseCard>
           )}
 
+          {/* ── ผลิตเทียบกับความต้องการลูกค้า (2026-08-19 · คำสั่ง user) ──
+              ตอบ "ผลิตพอกับที่ลูกค้าสั่งไหม · ต้องเร่งหรือชะลอ" ซึ่งเดิมดูไม่ได้เลย
+              ⚠️ ไม่ผูกกับ daily.length — ไม่มีการผลิตเลย ยิ่งต้องเห็นว่าลูกค้าสั่งอยู่เท่าไหร่ */}
+          <CollapseCard id="demand" title="📦 ผลิตเทียบกับความต้องการลูกค้า" count="ออเดอร์ + forecast">
+            <DemandVsProduction product={selMat} prodByDay={prodByDay} today={todayStr()} />
+          </CollapseCard>
+
           {/* trend รายวัน */}
           {daily.length > 0 && (
             <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 130, overflowX: 'auto' }}>
-                {daily.map((d, i) => (
-                  <div key={d.d} title={d.empty ? `${d.d} · ไม่มีการผลิต` : `${d.d} · ผลิตดี ${d.produced.toLocaleString()}${d.ng ? ` · NG ${d.ng.toLocaleString()}` : ''}`}
-                    style={{ flex: '1 0 14px', maxWidth: 48, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
-                    {/* วันน้อย = โชว์ตัวเลขบนแท่งเลย ไม่ต้องชี้ */}
-                    {daily.length <= 20 && !d.empty && (
-                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', textAlign: 'center', marginBottom: 2, whiteSpace: 'nowrap' }}>
-                        {d.produced.toLocaleString()}
-                      </div>
-                    )}
-                    {/* แท่งซ้อน: NG แดงอยู่บน · ผลิตดีเขียวอยู่ล่าง · วันไม่ผลิต = ตอเทาเตี้ยๆ */}
-                    {d.ng > 0 && <div style={{ background: '#ef4444', height: `${Math.max(2, Math.round(d.ng / dailyMax * 78))}%`, borderRadius: '3px 3px 0 0' }} />}
-                    <div style={{ background: d.empty ? 'var(--border2)' : 'var(--accent)',
-                      height: d.empty ? 3 : `${Math.max(2, Math.round(d.produced / dailyMax * 78))}%`,
-                      borderRadius: d.ng > 0 ? 0 : '3px 3px 0 0' }} />
-                    {/* ป้ายวันเว้นแท่ง (ฟอนต์ขั้นต่ำ 11px ตาม UI-CONVENTIONS) */}
-                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 2, whiteSpace: 'nowrap', height: 14, overflow: 'visible' }}>
-                      {(daily.length <= 20 || i % 2 === 0) ? fmtDate(d.d) : ''}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {/* component กลาง — มีแกน Y + เส้น grid + ตัวเลขบนแท่ง (UI-CONVENTIONS §5.2) */}
+              <DailyBars height={150} unit=" ชิ้น"
+                data={daily.map(d => ({
+                  key: d.d, label: fmtDate(d.d), empty: d.empty,
+                  segs: [{ v: d.produced, color: 'var(--accent)', name: 'ผลิตดี' },
+                    { v: d.ng, color: '#ef4444', name: 'NG' }],
+                }))} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: '#ef4444', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ชี้ที่แท่งเพื่อดูตัวเลข
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: '#ef4444', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ตัวเลขบนแท่ง = ผลิตดี+NG รวม
               </div>
             </CollapseCard>
           )}

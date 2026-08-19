@@ -26,10 +26,13 @@ async function urlToDataUrl(url) {
 }
 
 const M_KEYS = ['m1', 'm2', 'm3', 'm4', 'm5'];
-const CODES = [
+// CODE legend A-E ของฟอร์ม FM-PD2-002 — จุดเดียว ใช้ร่วมทั้งใบ PDF และ Excel
+// (เดิมนิยามซ้ำใน scrapExportExcel.js — แก้ Rev ฟอร์มแล้วต้องตามแก้ 2 ที่ · QC audit 2026-08-19)
+export const SCRAP_CODE_LEGEND = [
   'A = สินค้าสำเร็จรูป (FINISHED GOODS)', 'B = กึ่งสำเร็จรูป (SEMI PRODUCT)',
   'C = วัตถุดิบ/ชิ้นงาน (RAW MATERIAL & PART)', 'D = ชิ้นงานทดลอง/แม่พิมพ์ (TRY-OUT)', 'E = อื่น ๆ',
 ];
+const CODES = SCRAP_CODE_LEGEND;
 
 export async function printScrapReport({ report, items }) {
   const df = await getDocForm('scrap_report', {

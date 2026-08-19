@@ -11,6 +11,7 @@ import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -233,7 +234,7 @@ export default function ProductMaster() {
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
       supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
@@ -1087,7 +1088,10 @@ export default function ProductMaster() {
               <Field label="ไลน์ผลิตหลัก">
                 <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
                   <option value="">ไม่ระบุ</option>
-                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {/* จัดชั้นตามผัง (§5.3 ข้อ 8) — ไลน์แม่ยังเลือกได้ (HYDROFORM มีสินค้าผูกตัวแม่) */}
+                  {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
+                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
@@ -2397,9 +2401,12 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
-                  <select style={inputSt} value={masterForm.category} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
-                    {PKG_CATEGORIES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select></div>
+                  {/* datalist = ค่ามาตรฐาน + หมวดที่มีใช้จริง — พิมพ์หมวดใหม่ได้เลยไม่ต้องแก้โค้ด (QC audit 2026-08-19) */}
+                  <input style={inputSt} list="pkg-category-opts" value={masterForm.category}
+                    onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))} placeholder="เช่น BOX, RACK" />
+                  <datalist id="pkg-category-opts">
+                    {[...new Set([...PKG_CATEGORIES, ...masters.map(m => m.category).filter(Boolean)])].map(t => <option key={t} value={t} />)}
+                  </datalist></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
                 <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
               </div>

@@ -16,6 +16,9 @@ import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
+import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
+import { RATE } from '../utils/refreshRates';
+import { visibleInterval } from '../utils/usePolling';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -142,14 +145,8 @@ function MiniBar({ value, max, color }) {
   );
 }
 
-const SKILL_LEVELS = [
-  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
-  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)'  },
-  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
-  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)'  },
-];
-const getFitLevel = (fit) => fit === null ? null : SKILL_LEVELS.find(l => fit >= l.min) ?? SKILL_LEVELS[4];
+// สเกลระดับสกิล = master กลาง utils/skillLevels.js (ห้ามนิยามซ้ำในหน้า — เคยซ้ำแล้วเสี่ยง drift · แก้ 2026-08-18)
+const getFitLevel = (fit) => fit === null ? null : getLevel(fit);
 
 const CAT_META = {
   Man:      { color: '#4d9fff', icon: '👤', bg: 'rgba(77,159,255,0.12)' },
@@ -621,10 +618,10 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
-  // Auto-refresh ข้อมูลหลักทุก 5 นาที (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย)
+  // Auto-refresh ข้อมูลหลัก (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย) — ข้อมูลผลิตมาทาง realtime ด้านล่าง
+  // หยุดยิงเมื่อแท็บถูกซ่อน (ประหยัด egress — ดู src/utils/usePolling.js)
   useEffect(() => {
-    const t = setInterval(() => fetchAll(selectedDate), 5 * 60 * 1000);
-    return () => clearInterval(t);
+    return visibleInterval(() => fetchAll(selectedDate), RATE.ANALYTIC);
   }, [selectedDate, fetchAll]);
 
   // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน

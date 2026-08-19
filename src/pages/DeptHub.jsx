@@ -10,6 +10,8 @@ import { saveMyProfileMedia } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
    คอนเซปต์: Mission Control ของโรงงาน — ไม่ใช่แค่เมนู แต่เป็นแผงควบคุมที่มีชีวิต
@@ -295,8 +297,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       } catch { /* เงียบ — telemetry เป็นของเสริม */ }
     };
     load();
-    const t = setInterval(load, 60000);
-    return () => { alive = false; clearInterval(t); };
+    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
+    return () => { alive = false; stopPoll(); };
   }, [scopeNames, scopeLineIds]);
 
   const TELE = [

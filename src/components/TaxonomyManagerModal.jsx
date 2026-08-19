@@ -4,6 +4,7 @@ import { supabaseDR } from '../supabaseClient'
 import { toast } from './Toast'
 import { pickUnusedColor } from '../utils/colorPick'
 import { teamKeyOf } from '../utils/mtnTeams'
+import { EQUIPMENT_KINDS } from '../utils/equipmentKinds'
 
 // Generic CRUD modal for a small taxonomy table (code + label + color|icon).
 // Used for pm_checkpoint_categories and pm_checking_methods, but table-agnostic.
@@ -17,7 +18,9 @@ import { teamKeyOf } from '../utils/mtnTeams'
 
 const EMOJI_SUGGESTIONS = ['👁', '👂', '✋', '📏', '📐', '🔧', '🔩', '⚙️', '🔍', '🧪', '🌡️', '⚡']
 // ชนิดอุปกรณ์สำหรับแท็กหมวด (equip_types) — ว่าง = หมวดกลาง โชว์ทุกชนิด
-const EQUIP_TYPE_OPTS = [{ k: 'machine', l: 'Machine' }, { k: 'jig', l: 'JIG' }, { k: 'die', l: 'Die' }, { k: 'facility', l: 'Facility' }]
+// derive จาก registry กลาง utils/equipmentKinds (QC audit 2026-08-19 — เดิมนิยามซ้ำเป็นชุดที่ 3
+// เพิ่มชนิดใหม่ที่ master แล้ว modal นี้ตกหล่น) · l ใช้ label ไทยตาม master
+const EQUIP_TYPE_OPTS = EQUIPMENT_KINDS.map(k => ({ k: k.key, l: `${k.icon} ${k.label}` }))
 
 export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, teams = null, role = null, myTeams = [], onClose, onChanged }) {
   const [rows, setRows] = useState([])
