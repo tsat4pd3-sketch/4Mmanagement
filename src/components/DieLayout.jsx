@@ -340,18 +340,18 @@ export default function DieLayout({
                   const sel = selId === d.id;
                   const meta = dieStatusMeta(d.ext?.die_status);
                   return (
+                    /* วงกลม + ป้ายใต้ ตาม UI-CONVENTIONS §1 — anchor ต้องเป๊ะ (กติกา 1):
+                       ตัว wrapper ที่ translate(-50%,-50%) คือ "วงกลมเอง" สูงเท่าวงกลมเท่านั้น
+                       ป้ายห้อยใต้ด้วย position:absolute top:100% (ห้าม flex column — จุดกึ่งกลางจะเลื่อนขึ้นครึ่งป้าย) */
                     <div key={d.id} data-die={d.id}
                       onClick={(e) => { e.stopPropagation(); setSelId(d.id); }}
                       title={`${d.machine_no}\n${st.label}${st.mos.length ? `\n${st.mos.map(o => o.mo_no || '(ยังไม่ออกเลข MO)').join(', ')}` : ''}`}
+                      className={st.blink ? 'dt-alarm-blink' : ''}
                       style={{
                         position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`,
                         transform: 'translate(-50%,-50%)', cursor: edit ? 'move' : 'pointer',
                         opacity: dim ? 0.3 : 1, zIndex: sel ? 5 : 2,
                         transition: live?.id === d.id ? 'none' : 'opacity .15s',
-                        display: 'flex', flexDirection: 'column', alignItems: 'center',
-                      }}>
-                      {/* วงกลม + ป้ายใต้ ตาม UI-CONVENTIONS §1 (ห้ามเหลี่ยม) */}
-                      <div className={st.blink ? 'dt-alarm-blink' : ''} style={{
                         width: mk.SUB, height: mk.SUB, borderRadius: '50%',
                         border: `${mk.subRing}px solid ${isHit ? '#facc15' : sel ? 'var(--accent)' : st.color}`,
                         background: st.mos.length ? '#7f1d1d' : meta.color,
@@ -359,10 +359,10 @@ export default function DieLayout({
                         fontSize: Math.max(11, Math.round(mk.SUB * 0.42)),
                         boxShadow: isHit ? '0 0 0 4px rgba(250,204,21,0.4)' : sel ? '0 0 0 4px rgba(61,214,92,0.35)' : '0 1px 4px rgba(0,0,0,0.5)',
                       }}>
-                        {st.mos.length ? '🔧' : meta.icon}
-                      </div>
+                      {st.mos.length ? '🔧' : meta.icon}
                       {showLabels && (
                         <div style={{
+                          position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
                           marginTop: 2, fontSize: mk.subPillFont, fontWeight: 700, color: '#fff',
                           background: 'rgba(9,11,18,0.82)', border: `1px solid ${isHit ? '#facc15' : st.color}`,
                           borderRadius: 6, padding: '1px 6px', maxWidth: mk.subPillMaxW,
