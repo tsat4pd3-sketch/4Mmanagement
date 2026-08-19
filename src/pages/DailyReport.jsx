@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
+import { printProdProblemReport } from '../lib/prodProblemReport';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
@@ -2389,6 +2390,22 @@ function LiveTab({ role }) {
                     <button onClick={openEditTimes}
                       style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
                       ✏️ แก้เวลากะ
+                    </button>
+                  )}
+
+                  {/* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (ไม่ต้องเขียนมือ)
+                      หน้างานออกใบนี้ทุกครั้งที่หยุด/คุณภาพ/รอ เกิน 30 นาที (feedback 2026-08-19) */}
+                  {(dtLogs.length > 0 || defectLogs.length > 0) && (
+                    <button onClick={async () => {
+                      const ok = await printProdProblemReport({
+                        session: selSession, downtimes: dtLogs, defects: defectLogs,
+                        section: lineMap?.[selSession.line_name]?.section || null,
+                      });
+                      if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+                    }}
+                      style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
+                      title="พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ">
+                      📝 ใบรายงานปัญหา
                     </button>
                   )}
 

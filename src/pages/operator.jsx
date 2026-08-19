@@ -906,7 +906,7 @@ export default function Operator() {
                   <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
-                      <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
+                      <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {sd.label}</div>
                       {sd.scope_section && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
@@ -1215,11 +1215,9 @@ export default function Operator() {
                       <label style={labelSt}>ประเภทสกิล</label>
                       <select value={editingSkill.category || 'hard_skill'}
                         onChange={e => setEditingSkill({ ...editingSkill, category: e.target.value })}>
-                        <option value="hard_skill">🔧 Hard Skill</option>
-                        <option value="machine_skill">⚙️ Machine Skill</option>
-                        <option value="product_skill">📦 Product Skill</option>
-                        <option value="soft_skill">🧠 Soft Skill</option>
-                        <option value="allowance_skill">🎫 ใบเซอร์ค่าฝีมือ</option>
+                        {Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => (
+                          <option key={k} value={k}>{m.icon} {m.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
