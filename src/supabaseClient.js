@@ -33,6 +33,7 @@ const DR_AUDIT_TABLES = new Set([
   'machine_automation_levels','machine_operation_modes',
   'die_sets','equipment_die','die_op_types',
   'part_routings',
+  'quality_bin_records',
 ])
 let drActorName = null
 // เรียกจาก App.jsx เมื่อรู้ตัวตน user (login) — ล้างเป็น null ตอน logout
