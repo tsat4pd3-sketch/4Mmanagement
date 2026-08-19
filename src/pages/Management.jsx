@@ -110,7 +110,9 @@ function useWidth() {
   return w;
 }
 const LINE_4M_CATEGORIES = ['Machine', 'Material', 'Method'];
-const SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
+// fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง special_task_types
+// (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
+const DEFAULT_SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขปัญหาคุณภาพ', 'งานปรับปรุงไลน์', 'อื่นๆ'];
 
 // Aligned with SKILL_LEVELS scale used across Dashboard / Operator / Report
 const fitColor = (score) => {
@@ -149,6 +151,7 @@ export default function Management() {
   const isSupervisor = role === 'supervisor';
 
   const [workers,        setWorkers]        = useState([]);
+  const [specialTaskOptions, setSpecialTaskOptions] = useState(DEFAULT_SPECIAL_TASKS); // master งานนอกไลน์ (best-effort)
   const [ppeAlerts,      setPpeAlerts]      = useState([]); // เช็คชื่อแล้วแต่ PPE ไม่ครบ (ไม่อยู่ใน workers)
   const [fourMLogs,      setFourMLogs]      = useState([]);
   const [dynamicStations,setDynamicStations]= useState([]);
@@ -226,6 +229,15 @@ export default function Management() {
   }, []);
 
   const [canvasH, setCanvasH] = useState(0);
+  // โหลด master งานนอกไลน์ (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม — ห้ามลิสต์ว่าง)
+  useEffect(() => {
+    supabase.from('special_task_types').select('name, is_active').order('sort_order').then(({ data, error }) => {
+      if (error) return; // ยังไม่ apply migration → fallback
+      const names = (data || []).filter(r => r.is_active).map(r => r.name);
+      if (names.length) setSpecialTaskOptions(names);
+    });
+  }, []);
+
   useEffect(() => {
     const el = canvasAreaRef.current;
     if (!el) return;
@@ -2731,7 +2743,7 @@ export default function Management() {
             <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🏷 กำหนดงานนอกไลน์</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {SPECIAL_TASKS.map(t => (
+              {specialTaskOptions.map(t => (
                 <button key={t} onClick={() => setSpecialTaskType(t)}
                   style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
                     background: specialTaskType === t ? 'rgba(245,158,11,0.2)' : 'var(--bg3)',

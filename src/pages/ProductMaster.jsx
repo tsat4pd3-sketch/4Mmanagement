@@ -2401,9 +2401,12 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
-                  <select style={inputSt} value={masterForm.category} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
-                    {PKG_CATEGORIES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select></div>
+                  {/* datalist = ค่ามาตรฐาน + หมวดที่มีใช้จริง — พิมพ์หมวดใหม่ได้เลยไม่ต้องแก้โค้ด (QC audit 2026-08-19) */}
+                  <input style={inputSt} list="pkg-category-opts" value={masterForm.category}
+                    onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))} placeholder="เช่น BOX, RACK" />
+                  <datalist id="pkg-category-opts">
+                    {[...new Set([...PKG_CATEGORIES, ...masters.map(m => m.category).filter(Boolean)])].map(t => <option key={t} value={t} />)}
+                  </datalist></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
                 <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
               </div>

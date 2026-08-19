@@ -12,7 +12,9 @@ import { buildScheduleMaps, resolveAssignedShift } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 
-const LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
+// fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
+// (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
+const DEFAULT_LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
 const LEAVE_DURATION_OPTS = [
   { value: 'full',  label: 'เต็มวัน' },
   { value: 'half',  label: 'ครึ่งวัน' },
@@ -80,6 +82,7 @@ export default function Checkin() {
   const canRecord = can('checkin', 'record', role);
 
   const [employees,      setEmployees]      = useState([]);
+  const [leaveTypes,     setLeaveTypes]     = useState(DEFAULT_LEAVE_TYPES); // master ประเภทลา (best-effort)
   const [lines,          setLines]          = useState([]);
   const [attendance,     setAttendance]     = useState({});
   const [otBookings,     setOtBookings]     = useState({});
@@ -129,6 +132,15 @@ export default function Checkin() {
   const shiftInfo = previewNight
     ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
     : realShiftInfo;
+
+  // โหลด master ประเภทลา (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม)
+  useEffect(() => {
+    supabase.from('leave_types').select('name, is_active').order('sort_order').then(({ data, error }) => {
+      if (error) return;
+      const names = (data || []).filter(r => r.is_active).map(r => r.name);
+      if (names.length) setLeaveTypes(names);
+    });
+  }, []);
 
   useEffect(() => { loadCompanyCalendar().then(() => setCalLoaded(true)); }, []);
   useEffect(() => { fetchData(); }, [previewNight, calLoaded]);
@@ -1378,7 +1390,7 @@ export default function Checkin() {
                         }}
                       >
                         <option value="">— ไม่ลา —</option>
-                        {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
 
                       {/* หมายเหตุ (แสดงเมื่อเลือก อื่นๆ) */}
