@@ -9,10 +9,13 @@
    ⚠️ อย่าเอามาใช้กับ "ข้อมูลการผลิตสด" (session/order/downtime/defect/mtn_orders)
       พวกนั้นต้องสดจริง — cache แล้วจอจะโกหก
 
-   ⚠️ แก้ master แล้วจอสดจะเห็นช้าได้ถึง TTL (ดีฟอลต์ 10 นาที)
-      หน้าที่แก้ master เองให้เรียก `invalidateMaster(key)` หลังบันทึกสำเร็จ เพื่อให้เห็นทันที   */
+   ⚠️ แก้ master แล้วจอสดจะเห็นช้าได้ถึง TTL (ดีฟอลต์ = `MASTER_TTL` ใน refreshRates.js = 1 ชม.)
+      · refresh หน้าเว็บล้าง cache ทันที (cache อยู่ใน memory ของแท็บนั้น)
+      · หน้าที่แก้ master เองให้เรียก `invalidateMaster(key)` หลังบันทึกสำเร็จ เพื่อให้เห็นทันที   */
 
-const DEFAULT_TTL = 10 * 60 * 1000;
+import { MASTER_TTL } from './refreshRates';
+
+const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
 
 /**

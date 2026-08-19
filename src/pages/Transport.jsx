@@ -8,6 +8,7 @@ import { routeThroughStops, nodeKind, bestStopOrder } from '../utils/transportGr
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -78,7 +79,7 @@ export default function Transport() {
     setImageUrl(fm?.image_url || null);
   }, [workDate]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => visibleInterval(() => { load(); setNowMs(Date.now()); }, 60000), [load]);
+  useEffect(() => visibleInterval(() => { load(); setNowMs(Date.now()); }, RATE.ANALYTIC), [load]);
   // ฐานพนักงาน (Main) โหลดครั้งเดียว — ใช้เลือกคนขับจาก employees แทนพิมพ์เอง
   useEffect(() => {
     supabase.from('employees').select('id, name, employee_id_code, section').eq('is_active', true).order('name')

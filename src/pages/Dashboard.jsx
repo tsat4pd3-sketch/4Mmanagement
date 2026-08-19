@@ -17,6 +17,8 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
+import { RATE } from '../utils/refreshRates';
+import { visibleInterval } from '../utils/usePolling';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -616,10 +618,10 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
-  // Auto-refresh ข้อมูลหลักทุก 5 นาที (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย)
+  // Auto-refresh ข้อมูลหลัก (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย) — ข้อมูลผลิตมาทาง realtime ด้านล่าง
+  // หยุดยิงเมื่อแท็บถูกซ่อน (ประหยัด egress — ดู src/utils/usePolling.js)
   useEffect(() => {
-    const t = setInterval(() => fetchAll(selectedDate), 5 * 60 * 1000);
-    return () => clearInterval(t);
+    return visibleInterval(() => fetchAll(selectedDate), RATE.ANALYTIC);
   }, [selectedDate, fetchAll]);
 
   // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน

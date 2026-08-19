@@ -9,6 +9,8 @@ import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy'
 import useTabParam from '../utils/useTabParam'
+import { visibleInterval } from '../utils/usePolling'
+import { RATE } from '../utils/refreshRates'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -153,8 +155,8 @@ export default function DailyPM() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)
       .subscribe()
-    const t = setInterval(() => load(), 5 * 60_000)
-    return () => { clearTimeout(timer); clearInterval(t); supabaseDR.removeChannel(ch) }
+    const stopPoll = visibleInterval(() => load(), RATE.BACKUP)   // realtime ด้านบนคือช่องทางหลัก อันนี้กันเหนียว
+    return () => { clearTimeout(timer); stopPoll(); supabaseDR.removeChannel(ch) }
   }, [load])
 
   const jigsByLine = useMemo(() => {

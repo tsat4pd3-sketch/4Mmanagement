@@ -12,6 +12,7 @@ import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
 
@@ -606,7 +607,7 @@ export default function FactoryMap({ setupMode = false }) {
     liveOeeRef.current = liveBySess;
     setLineStatus(out);
   }, []);
-  usePolling(loadStatus, 30000);
+  usePolling(loadStatus, RATE.ANDON);
 
   /* ── ⚡ พลังงานไฟฟ้ารายเดือน (DR · เฟส 1 กรอกมือที่ /energy) ──────────────────
      ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน — โหลดเดือนปัจจุบัน + เดือนก่อนไว้เทียบ
@@ -697,7 +698,7 @@ export default function FactoryMap({ setupMode = false }) {
     manpowerRef.current = out;
     setManpower(out);
   }, []);
-  usePolling(loadManpower, 60000);
+  usePolling(loadManpower, RATE.BOARD);
 
   /* ── PM เครื่องจักรรายไลน์ (DR: machines → checklists → pm_plans) — refresh 5 นาที ── */
   const loadPM = useCallback(async () => {
@@ -722,7 +723,7 @@ export default function FactoryMap({ setupMode = false }) {
     });
     setPmStatus(out);
   }, []);
-  usePolling(loadPM, 300000);
+  usePolling(loadPM, RATE.SLOW);
 
   /* ── Supply route (DR: facility_supply_links + machines + open MO) — refresh 30 วิ ──
      utility/facility จ่ายไลน์ไหน · ถ้ามีใบซ่อม (MO) เปิดค้างบนเครื่องนั้น = ไลน์ที่จ่ายกระทบ (แดง) */
@@ -766,7 +767,7 @@ export default function FactoryMap({ setupMode = false }) {
     Object.values(fac).forEach(o => { o.feeds = [...o.feeds]; });
     setFacilitySupply(fac);
   }, []);
-  usePolling(loadSupply, 30000);
+  usePolling(loadSupply, RATE.ANDON);
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */

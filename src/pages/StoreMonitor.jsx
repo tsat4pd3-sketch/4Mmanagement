@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -60,7 +61,7 @@ export default function StoreMonitor() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const stopPoll = visibleInterval(() => { load(); setTick(x => x + 1); }, 60000);
+    const stopPoll = visibleInterval(() => { load(); setTick(x => x + 1); }, RATE.ANALYTIC);
     return () => stopPoll();
   }, [load]);
 

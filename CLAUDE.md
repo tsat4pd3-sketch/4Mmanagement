@@ -2048,8 +2048,26 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 > 3. **กรองฝั่ง server ห้ามดึงมากรองในเบราว์เซอร์** — เดิม `loadSupply` ดึง `mtn_orders` ทั้งตารางมากรอง `status` เอง
 >    (`status` เป็น NOT NULL default `'pending'` → `.not('status','in','("closed","rejected")')` ให้ผลเท่าเดิมเป๊ะ ตรวจแล้ว)
 >
-> **ทำแล้ว:** FactoryMap (4 loop) · Management (บอร์ด TV 2 loop) · DeptHub · DowntimeSiren · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics
-> **ตัวจับเวลาที่เป็นแค่นาฬิกา (`setNow`/`setNowMs`/`setNowForBoard`) ไม่ต้องแตะ** — ไม่ยิง DB ไม่กิน egress
+> 4. **⚠️ ห้ามใส่ตัวเลข ms ดิบในหน้าใดๆ — ความถี่ทุกจอรวมศูนย์ที่ `src/utils/refreshRates.js`**
+>    (เดิมกระจาย 13 จุด ตั้งกันเอง 30/60 วิ ปนกัน ไม่มีใครรู้ว่ารวมแล้วกินเท่าไหร่)
+>
+> | ระดับ | ค่า | ใช้กับ | เหตุผล |
+> |---|---|---|---|
+> | `RATE.ANDON` | 60 วิ | FactoryMap loadStatus/loadSupply | ต้องรู้ว่า "เครื่องหยุดตอนนี้" — **ยืดเป็นหลักสิบนาทีไม่ได้ Andon จะตาย** |
+> | `RATE.BOARD` | 2 นาที | Management บอร์ดยอดผลิต · FactoryMap กำลังคน | ตามงานได้ ช้า 2 นาทีไม่ทำให้ตัดสินใจผิด |
+> | `RATE.ANALYTIC` | 5 นาที | Dashboard · DeptHub · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics | ดูเพื่อวางแผน ไม่ใช่วิ่งไปแก้เดี๋ยวนี้ |
+> | `RATE.BACKUP` | 10 นาที | DowntimeSiren · Management dt alarm · DailyPM | **มี realtime push อยู่แล้ว** interval เป็นแค่กันเหนียวเผื่อ realtime หลุด |
+> | `RATE.SLOW` | 15 นาที | FactoryMap loadPM | แผน PM ไม่เปลี่ยนระหว่างวัน |
+> | `MASTER_TTL` | 60 นาที | `cachedMaster` ทุกตัว | master เปลี่ยนเดือนละไม่กี่ครั้ง |
+>
+> **หลักเลือกตัวเลข: "จอนี้ช้าได้แค่ไหนก่อนคนตัดสินใจผิด" ไม่ใช่ "ข้อมูลเปลี่ยนบ่อยแค่ไหน"**
+> **งบที่คำนวณไว้: จอ TV ≈ 1.1-1.3 GB/เดือน/จอ → รับได้ ~4 จอ ในโควต้า 5 GB**
+> เกิน 4 จอให้ยืด `ANDON` เป็น 90-120 วิ ก่อน · **ยืดเกิน 5 นาทีไม่คุ้ม** (ประหยัดเพิ่มแทบไม่ขยับ แต่จอช้าจนคนเลิกเชื่อ)
+> **ผลรวม: FactoryMap จาก ~18.4 MB/ชม. เหลือ ~1.8 MB/ชม. = ลด 90%**
+>
+> **ทำแล้ว:** FactoryMap (4 loop) · Management (2) · Dashboard · DailyPM · DeptHub · DowntimeSiren · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics
+> **ตัวจับเวลาที่เป็นแค่นาฬิกา (`setNow`/`setNowMs`/`setNowForBoard`/`setFrameIdx`) ไม่ต้องแตะ** — ไม่ยิง DB ไม่กิน egress
+> **แนวทางที่ถูกที่สุดคือ realtime + poll ห่างๆ เป็นตัวสำรอง** (Dashboard/DailyPM ทำแบบนี้อยู่แล้ว — push เฉพาะแถวที่เปลี่ยน กิน egress น้อยกว่า poll มาก) · จอใหม่ให้ทำตาม pattern นี้
 
 - **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — **ตรวจล่าสุด 2026-08-17: Main DB 34MB (~7%) · DR DB 51MB (~10%)** (2026-08-05: Main 27MB · DR 33MB · Storage Main ~165MB 17% · DR ~63MB 6%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
   - **ตรวจขนาดเป็นระยะ:** `select pg_size_pretty(pg_database_size(current_database()))` และหาตัวหนักด้วย `pg_stat_user_tables` (⚠️ อย่า join กับ `pg_tables` — คอลัมน์ `schemaname` ชนกัน ใช้ตัวเดียวพอ)

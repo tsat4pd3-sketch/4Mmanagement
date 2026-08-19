@@ -12,6 +12,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
 import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -1034,7 +1035,7 @@ function DeliveryTimeBoardTab() {
   }, []);
   useEffect(() => {
     load();
-    const stopPoll = visibleInterval(load, 60000);
+    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
     return () => stopPoll();
   }, [load]);
 
