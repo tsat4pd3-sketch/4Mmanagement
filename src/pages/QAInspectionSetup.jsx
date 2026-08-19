@@ -17,8 +17,10 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
+import { QA_STAGES } from '../utils/qaStages';
 import CalloutPin from '../components/CalloutPin';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -40,13 +42,6 @@ const calcViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window ==
 const thSt = { padding: '7px 10px', textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border2)' };
 const tdSt = { padding: '7px 10px', fontSize: 12.5, color: 'var(--text)', borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
 
-const STAGE = {
-  incoming:    { label: 'รับเข้า (Incoming)',        color: '#a78bfa' },
-  setup_first: { label: 'ชิ้นแรกหลังตั้งเครื่อง',     color: '#f59e0b' },
-  inprocess:   { label: 'ในกระบวนการ',               color: '#4d9fff' },
-  final:       { label: 'ตรวจสุดท้าย (Final)',        color: '#22c55e' },
-  patrol:      { label: 'Patrol / รายกะ',            color: '#fb923c' },
-};
 
 /* ตามฟอร์ม FM-QA-112: Part Classification + Rank ของจุดตรวจ */
 const PART_RANK = {
@@ -59,6 +54,7 @@ const PART_KIND = {
   component:    'Component, Child part',
   raw_material: 'Raw material',
 };
+const STAGE = QA_STAGES;
 const RANK = {
   M:  { label: 'M',  color: '#f59e0b' },
   SC: { label: 'SC', color: '#ef4444' },
@@ -181,8 +177,9 @@ export default function QAInspectionSetup() {
   useEffect(() => { loadParts(); }, [loadParts]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLines((data || []).map(l => l.name)));
+    // เก็บเป็น object (id/name/parent_line_name) — dropdown จัดชั้นตามผัง (§5.3 ข้อ 8)
+    supabase.from('production_lines').select('id, name, parent_line_name').order('name')
+      .then(({ data }) => setLines(data || []));
   }, []);
 
   const loadItems = useCallback(async (partId) => {
@@ -359,7 +356,7 @@ export default function QAInspectionSetup() {
       part_no: o.part_no || f.part_no,
       part_name: o.part_name || f.part_name,
       customer: o.customer || f.customer,
-      line_name: lines.includes(o.line_name) ? o.line_name : f.line_name,
+      line_name: lines.some(l => l.name === o.line_name) ? o.line_name : f.line_name,
     }));
     setBomSearch('');
   };
@@ -946,7 +943,9 @@ export default function QAInspectionSetup() {
             <Field label="ไลน์ผลิต">
               <select style={inputSt} value={partModal.line_name} onChange={e => setPartModal(f => ({ ...f, line_name: e.target.value }))}>
                 <option value="">— ไม่ระบุ —</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </Field>
             <Field label="Dwg. No."><input style={inputSt} placeholder="เช่น 97/3" value={partModal.dwg_no} onChange={e => setPartModal(f => ({ ...f, dwg_no: e.target.value }))} /></Field>

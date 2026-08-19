@@ -4,7 +4,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyIds } from '../utils/lineHierarchy';
+import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
+import { normCode } from '../utils/qrCode';
 import { fmtDate } from '../utils/dateFormat';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
@@ -49,6 +50,11 @@ const removeImpImage = (url) => {
   if (p) supabaseDR.storage.from('improvement-images').remove([p]).catch(() => {});
 };
 
+/* หมายเลขเครื่องใน downtime_logs/mtn_orders เป็นข้อความที่คนพิมพ์ — มี "RB- 107" ปนกับ "RB-107"
+   ทุกจุดที่เทียบเครื่องในหน้านี้ต้องเทียบผ่าน normCode (ตัดช่องว่าง/ขีด + uppercase)
+   ไม่งั้น dropdown แสดงค่าไม่ได้ + ผลก่อน/หลังนับตกหล่นเงียบๆ (feedback 2026-08-19) */
+const sameMc = (a, b) => normCode(a) === normCode(b);
+
 const STATUS_META = {
   monitoring: { label: '👁 กำลังติดตามผล', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
   done:       { label: '✅ สำเร็จ',          color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
@@ -85,8 +91,8 @@ export default function Improvements() {
   const [workDaysMonth, setWorkDaysMonth] = useState(22); // วันทำงาน/เดือน จากปฏิทินบริษัท (แปลง บาท/วัน → บาท/เดือน)
   // ก้อน rate ที่นับเป็น saving (DL/OH/DP) — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · จำต่อเครื่อง
   const [costComps, setCostComps] = useState(() => {
-    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : ['dl', 'oh', 'dp']; }
-    catch { return ['dl', 'oh', 'dp']; }
+    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : RATE_COMPONENTS.map(c => c.key); }
+    catch { return RATE_COMPONENTS.map(c => c.key); }
   });
   const toggleComp = (key) => setCostComps(prev => {
     const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
@@ -248,7 +254,7 @@ export default function Improvements() {
   // จำนวนใบ MO ตั้งแต่วันเริ่มแก้ (cross-ref บนการ์ด — D)
   const moCountSince = useCallback((imp) => {
     return mtnOrders.filter(m => m.line_name === imp.line_name
-      && (!imp.machine_no || m.machine_no === imp.machine_no)
+      && (!imp.machine_no || sameMc(m.machine_no, imp.machine_no))
       && (imp.problem_source !== 'mtn' || !imp.problem_label || m.problem_characteristic === imp.problem_label)
       && (m.work_date || String(m.report_at).slice(0, 10)) >= imp.start_date).length;
   }, [mtnOrders]);
@@ -276,7 +282,7 @@ export default function Improvements() {
     // ── source = 'mtn' : วัดจากใบซ่อม MO (จำนวนใบ + นาที breakdown) ──
     if (imp.problem_source === 'mtn') {
       const inWin = mtnOrders.filter(m => m.line_name === imp.line_name
-        && (!imp.machine_no || m.machine_no === imp.machine_no)
+        && (!imp.machine_no || sameMc(m.machine_no, imp.machine_no))
         && (!imp.problem_label || m.problem_characteristic === imp.problem_label));
       const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
       const bMO = inWin.filter(m => { const d = dOf(m); return d >= from && d < imp.start_date; });
@@ -301,9 +307,10 @@ export default function Improvements() {
         .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
         .in('session_id', allIds);
       if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
-      if (imp.machine_no) q = q.eq('machine_no', imp.machine_no);
       if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
       rows = (await q).data || [];
+      // กรองเครื่องฝั่ง client ด้วย normCode — .eq ตรงๆ จะพลาด log ที่พิมพ์เว้นวรรค ("RB- 107")
+      if (imp.machine_no) rows = rows.filter(r => sameMc(r.machine_no, imp.machine_no));
       // นับเฉพาะ downtime "นอกแผน" เหมือน KPI หลัก (planned = นับสต็อก/ไม่มีแผนผลิต ไม่ใช่ loss)
       // — ถ้าผู้ใช้ไม่ได้เจาะจงชนิด (ทุกประเภท) ต้องตัด planned ออก ไม่งั้นผลก่อน/หลังเพี้ยน
       if (!imp.problem_type_id) rows = rows.filter(r => r.dr_downtime_types?.category !== 'planned');
@@ -363,7 +370,8 @@ export default function Improvements() {
     if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
     else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
 
-    const comp = { dl: 0, oh: 0, dp: 0 };  // บาท/วัน แยกก้อน (โชว์ครบ 3 เสมอ — ก้อนที่ไม่เลือกไม่เข้ายอดรวม)
+    // บาท/วัน แยกก้อน — โชว์ครบทุกก้อนเสมอ (ก้อนที่ไม่เลือกไม่เข้ายอดรวม) · วนจาก RATE_COMPONENTS ห้าม hardcode
+    const comp = Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0]));
     let matPerDay = 0;                      // มูลค่าวัสดุ/standard cost (defect — นับเสมอ ไม่ขึ้นกับก้อนที่เลือก)
     let repairPerDay = 0;                   // mtn: ค่าซ่อมจริงจากใบ MO
     const defectParts = [], defectNoCost = new Set();
@@ -434,7 +442,7 @@ export default function Improvements() {
       const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
       const agg = new Map();
       mtnOrders.filter(m => m.line_name === line_name && dOf(m) >= from).forEach(m => {
-        const key = `${m.problem_characteristic || ''}::${m.machine_no || ''}`;
+        const key = `${m.problem_characteristic || ''}::${normCode(m.machine_no)}`; // เครื่องเดียวกันที่พิมพ์ไม่เป๊ะ = แถวเดียวกัน
         const cur = agg.get(key) || { label: m.problem_characteristic || 'ทุกอาการ', machine_no: m.machine_no || '', value: 0, count: 0, planned: false, mins: 0, descCount: new Map() };
         cur.value += 1; cur.count += 1;
         if (m.report_at && m.repair_done_at) cur.mins += Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000);
@@ -460,7 +468,7 @@ export default function Improvements() {
         .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
         .in('session_id', ids);
       (data || []).forEach(r => {
-        const key = `${r.downtime_type_id || ''}::${r.machine_no || ''}`;
+        const key = `${r.downtime_type_id || ''}::${normCode(r.machine_no)}`; // เครื่องเดียวกันที่พิมพ์ไม่เป๊ะ = แถวเดียวกัน
         const cur = agg.get(key) || { type_id: r.downtime_type_id, machine_no: r.machine_no || '', value: 0, count: 0, planned: r.dr_downtime_types?.category === 'planned', descCount: new Map() };
         cur.value += Number(r.duration_min) || 0; cur.count += 1;
         pushDesc(cur, r.description);
@@ -577,7 +585,13 @@ export default function Improvements() {
   /* ── render ── */
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
-  const machineOpts = machines.filter(m => m.line_name === modal?.line_name);
+  // เครื่องของ "ครอบครัวไลน์" ไม่ใช่ชื่อไลน์ตรงเป๊ะ — กะมักเปิดบนไลน์ลูกแต่เครื่องลงทะเบียน
+  // ใต้ไลน์แม่/พี่น้อง (pattern เดียวกับ sessionProcessTypesAll ใน DailyReport) · family ว่าง = fallback ตรงเป๊ะ
+  const modalFamNames = modal?.line_name ? getLineFamilyNames(lines, modal.line_name) : [];
+  const machineOpts = machines.filter(m => modalFamNames.length
+    ? modalFamNames.includes(m.line_name) : m.line_name === modal?.line_name);
+  // แปลงหมายเลขเครื่องจาก log (คนพิมพ์ ไม่เป๊ะ) → หมายเลขตามทะเบียนเครื่อง ถ้าจับคู่ได้
+  const canonMc = (raw) => (raw ? (machines.find(m => sameMc(m.machine_no, raw))?.machine_no || raw) : '');
   const productOpts = products.filter(p => p.line_name === modal?.line_name && p.mat_no);
   const typeOpts = modal?.problem_source === 'defect' ? defectTypes : dtTypes;
 
@@ -971,6 +985,11 @@ export default function Improvements() {
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
                     <select value={modal.machine_no || ''} onChange={e => setModal({ ...modal, machine_no: e.target.value })} style={{ marginTop: 4 }}>
                       <option value="">— ทั้งไลน์ —</option>
+                      {/* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน (เช่นชื่อที่พิมพ์ในบันทึก downtime) ต้องยังแสดงได้ —
+                          ไม่งั้น select โชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ = โกหกคนอ่าน */}
+                      {modal.machine_no && !machineOpts.some(m => m.machine_no === modal.machine_no) && (
+                        <option value={modal.machine_no}>⚠ {modal.machine_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)</option>
+                      )}
                       {machineOpts.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
                     </select>
                   </label>
@@ -1033,18 +1052,22 @@ export default function Improvements() {
                       const isMtn = modal.problem_source === 'mtn';
                       const tn = isMtn ? row.label : (typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท');
                       const selected = isMtn
-                        ? (modal.problem_label || '') === (row.label === 'ทุกอาการ' ? '' : row.label) && (modal.machine_no || '') === row.machine_no
-                        : modal.problem_type_id === (row.type_id || '') && (modal.problem_source === 'downtime' ? (modal.machine_no || '') === row.machine_no : (modal.mat_no || '') === row.mat_no);
+                        ? (modal.problem_label || '') === (row.label === 'ทุกอาการ' ? '' : row.label) && sameMc(modal.machine_no, row.machine_no)
+                        : modal.problem_type_id === (row.type_id || '') && (modal.problem_source === 'downtime' ? sameMc(modal.machine_no, row.machine_no) : (modal.mat_no || '') === row.mat_no);
                       // งานในแผน (5ส./นับสต็อก ฯลฯ) = priority รอง: จางลง แถบเทา + ป้ายกำกับ — ไม่ใช่เป้าหลักของ Kaizen
                       const barColor = row.planned ? '#94a3b8' : isMtn ? '#f59e0b' : '#ef4444';
                       return (
-                        <button key={i} onClick={() => setModal({
-                          ...modal,
-                          ...(isMtn
-                            ? { problem_label: row.label === 'ทุกอาการ' ? '' : row.label, problem_type_id: '', machine_no: row.machine_no || '' }
-                            : { problem_type_id: row.type_id || '', problem_label: tn, ...(modal.problem_source === 'downtime' ? { machine_no: row.machine_no || '' } : { mat_no: row.mat_no || '' }) }),
-                          title: modal.title || (isMtn ? `ลดใบซ่อม ${tn} ${row.machine_no || ''}`.trim() : `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${row.machine_no || row.mat_no || ''}`.trim()),
-                        })} style={{
+                        <button key={i} onClick={() => {
+                          // เติมหมายเลขเครื่องเป็นชื่อตามทะเบียน (จับคู่แบบ normCode) — ให้ dropdown แสดงได้
+                          const mc = canonMc(row.machine_no);
+                          setModal({
+                            ...modal,
+                            ...(isMtn
+                              ? { problem_label: row.label === 'ทุกอาการ' ? '' : row.label, problem_type_id: '', machine_no: mc }
+                              : { problem_type_id: row.type_id || '', problem_label: tn, ...(modal.problem_source === 'downtime' ? { machine_no: mc } : { mat_no: row.mat_no || '' }) }),
+                            title: modal.title || (isMtn ? `ลดใบซ่อม ${tn} ${mc}`.trim() : `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${(modal.problem_source === 'downtime' ? mc : row.mat_no) || ''}`.trim()),
+                          });
+                        }} style={{
                           textAlign: 'left', padding: '6px 8px', borderRadius: 7, cursor: 'pointer',
                           border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
                           background: selected ? 'var(--accent-dim)' : 'var(--bg)',

@@ -9,9 +9,10 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
@@ -316,7 +317,6 @@ export default function MtnRepair() {
   }, [orders, scopeLines, fStatus, fLine, fDept, fText]);
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
-  const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
   // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
   // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
   const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
@@ -350,7 +350,7 @@ export default function MtnRepair() {
             {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
           <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option><TeamOpts list={mtnDepts} /></select>
-          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n} value={n}>{n}</option>)}</select>
+          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(scopedLineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
           <input value={fText} onChange={e => setFText(e.target.value)} placeholder="ค้นหา เลข MO/เครื่อง/ปัญหา" style={{ ...inp, width: 230 }} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
         </div>
@@ -360,7 +360,7 @@ export default function MtnRepair() {
         </div>
       </>}
 
-      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
+      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
@@ -446,7 +446,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     }));
     toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
-  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it, itemTypes) }));
+  // เลือกชนิดอุปกรณ์ → เดาทีมให้เฉพาะตอนที่ยังไม่ได้เลือกทีม (fill-if-empty)
+  // ⚠️ ห้ามทับทีมที่ user เลือกแล้ว — เคสจริง (feedback 2026-08-19): เลือกทีม JIG แล้วจิ้มชนิดกลาง 🌐
+  //    (CONVEYOR ฯลฯ ที่ fallback เดาเป็น MTN) → ทีมเด้งไป MTN เงียบๆ ลิสต์สลับชุด = "ชนิดอุปกรณ์โชว์มั่ว"
+  //    + ใบไปเข้าคิวทีมผิด
+  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: p.mtn_dept || deptForItem(it, itemTypes) }));
   // ลิสต์ที่กรองตามทีมที่แจ้งถึงแล้ว (แถวที่ไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   /* ลิสต์ที่ "เห็นได้" — ต่างจาก filterByTeam ที่ใช้คุมสิทธิ์แก้
      AM เห็นทุกแถว (เจอปัญหาก่อนใคร) · JIG↔MTN เห็นข้ามกันได้ผ่าน shared_teams · DIE แยกชัด */
@@ -509,12 +513,24 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
-        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}</select></Field>
+        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{toHierarchicalOptions(lines).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
+        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
+          ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
+          : /* ยังไม่เลือกทีม = เห็นทุกทีมได้ แต่ต้องจัดกลุ่มบอกว่าของทีมไหน (เลือกแล้วระบบเติมทีมให้) */
+            (() => {
+              const g = new Map();
+              teamItemTypes.forEach(t => {
+                const k = t.team ? deptNameOf(t.team) : '🌐 ใช้ร่วมทุกทีม';
+                if (!g.has(k)) g.set(k, []);
+                g.get(k).push(t);
+              });
+              return [...g.entries()].sort((a, b) => (a[0].startsWith('🌐') ? 1 : b[0].startsWith('🌐') ? -1 : a[0].localeCompare(b[0], 'th')))
+                .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
+            })()}</select></Field>
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6 }}>
             <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder={wantDie ? 'พิมพ์เพื่อค้นแม่พิมพ์ / สแกน' : 'เลือก/พิมพ์/สแกน'} />
@@ -1160,7 +1176,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 }
 
 /* ── KPI tab ─────────────────────────────────────────── */
-function KpiTab({ orders, scopeLines, lineOpts }) {
+function KpiTab({ orders, scopeLines, lineObjs = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
   const rows = useMemo(() => { const since = new Date(); since.setDate(since.getDate() - Number(days)); return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && (!line || o.line_name === line) && new Date(o.report_at) >= since && o.repair_done_at); }, [orders, scopeLines, line, days]);
@@ -1192,7 +1208,7 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n}>{n}</option>)}</select>
+        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
         <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -1262,94 +1278,22 @@ const AUDIT_TABLES = {
   mtn_spare_parts:     '🔩 อะไหล่',
   mtn_technicians:     '👷 ช่าง',
   mtn_labor_rates:     '💰 ค่าแรงมาตรฐาน',
+  equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
+  die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
 };
-const AUDIT_FIELD = {
-  name: 'ชื่อ', characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', team: 'ทีม', dept: 'ทีม',
-  price: 'ราคา', unit: 'หน่วย', is_active: 'สถานะใช้งาน', shelf: 'ตำแหน่งชั้นวาง',
-  stock_qty: 'ยอดคงเหลือ', min_qty: 'ขั้นต่ำ', prefix: 'รหัสย่อ', sort_order: 'ลำดับ',
-  code: 'รหัส', mat_no: 'เลข MAT', rank_override: 'Rank (ตั้งเอง)', rank_note: 'เหตุผล Rank',
-};
-const AUDIT_ACT = { INSERT: { t: '➕ เพิ่ม', c: '#22c55e' }, UPDATE: { t: '✏️ แก้ไข', c: '#f59e0b' }, DELETE: { t: '🗑 ลบ', c: '#ef4444' } };
 
 function MasterAuditLog({ teams = [] }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [fTable, setFTable] = useState('');
-  const keys = Object.keys(AUDIT_TABLES);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true); setErr('');
-      const { data, error } = await supabaseDR.from('audit_log')
-        .select('*').in('table_name', keys).order('changed_at', { ascending: false }).limit(300);
-      if (!alive) return;
-      if (error) setErr(error.message); else setRows(data || []);
-      setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-
+  // จอเดียวกับหน้า /audit-log (component กลาง) — ที่นี่จำกัดเฉพาะตารางของทีมช่าง
+  // ดูของทั้งระบบ (สิทธิ์/พนักงาน/สินค้า/เครื่องจักร ฯลฯ) ที่ ตั้งค่าโปรแกรม → 📜 ประวัติการแก้ไขข้อมูล
   const teamName = (k) => (k ? (teams.find(t => teamKeyOf(t.key) === teamKeyOf(k))?.dept_name || deptNameOf(k) || k) : '🌐 ใช้ร่วมทุกทีม');
-  const fmtVal = (f, v) => {
-    if (v === null || v === undefined || v === '') return '(ว่าง)';
-    if (f === 'team' || f === 'dept') return teamName(v);
-    if (f === 'is_active') return v === true || v === 'true' ? 'ใช้งาน' : 'ปิดใช้งาน';
-    return String(v);
-  };
-  const labelOf = (r) => {
-    const d = r.new_data || r.old_data || {};
-    return d.name || d.characteristic || d.code || '(ไม่ทราบชื่อ)';
-  };
-  const shown = fTable ? rows.filter(r => r.table_name === fTable) : rows;
-
   return (
-    <div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 11px' }}>
-        📜 ใครแก้อะไรในข้อมูลตั้งต้นของทีมช่าง — เรียงใหม่สุดก่อน (300 รายการล่าสุด) · ระบบบันทึกอัตโนมัติทุกครั้งที่มีการเพิ่ม/แก้/ลบ
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ดูเฉพาะ:</span>
-        <select value={fTable} onChange={e => setFTable(e.target.value)} style={{ ...inp, width: 220 }}>
-          <option value="">ทุกรายการ</option>
-          {keys.map(k => <option key={k} value={k}>{AUDIT_TABLES[k]}</option>)}
-        </select>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{shown.length} รายการ</span>
-      </div>
-
-      {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}
-      {!!err && <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8 }}>
-        ยังดูประวัติไม่ได้: {err}<br />(ถ้าเป็นตาราง audit_log ไม่มี — ต้อง apply migration 20260724_audit_log_dr.sql ก่อน)
-      </div>}
-      {!loading && !err && !shown.length && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>ยังไม่มีประวัติการแก้ไข</div>}
-
-      <div style={{ display: 'grid', gap: 6 }}>{shown.map(r => {
-        const act = AUDIT_ACT[r.action] || { t: r.action, c: 'var(--text2)' };
-        const fields = (r.changed_fields || []).filter(f => f !== 'updated_at' && f !== 'updated_by_name');
-        return (
-          <div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 8, padding: '9px 11px' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5 }}>
-              <b style={{ color: act.c }}>{act.t}</b>
-              <span style={{ color: 'var(--muted)' }}>{AUDIT_TABLES[r.table_name] || r.table_name}</span>
-              <b style={{ color: 'var(--text)' }}>{labelOf(r)}</b>
-              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 11.5 }}>
-                👤 {r.actor || '—'} · {fmtDateTime(r.changed_at)}
-              </span>
-            </div>
-            {r.action === 'UPDATE' && !!fields.length && (
-              <div style={{ marginTop: 5, display: 'grid', gap: 2 }}>
-                {fields.map(f => (
-                  <div key={f} style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                    <span style={{ color: 'var(--muted)' }}>{AUDIT_FIELD[f] || f}:</span>{' '}
-                    <span style={{ textDecoration: 'line-through', opacity: 0.65 }}>{fmtVal(f, r.old_data?.[f])}</span>
-                    {' → '}<b>{fmtVal(f, r.new_data?.[f])}</b>
-                  </div>))}
-              </div>
-            )}
-          </div>);
-      })}</div>
-    </div>
+    <AuditLogViewer
+      client={supabaseDR}
+      tables={Object.keys(AUDIT_TABLES)}
+      fmtValue={(f, v) => ((f === 'team' || f === 'dept') && v !== undefined ? teamName(v) : undefined)}
+      intro={<>📜 ใครแก้อะไรใน<b>ข้อมูลตั้งต้นของทีมช่าง</b> — เรียงใหม่สุดก่อน · บันทึกอัตโนมัติทุกครั้งที่เพิ่ม/แก้/ลบ
+        <br /><span style={{ opacity: 0.85 }}>อยากดูของทั้งระบบ (สิทธิ์ · พนักงาน · สินค้า · เครื่องจักร …) ไปที่ <b>ตั้งค่าโปรแกรม,ฐานข้อมูล → 📜 ประวัติการแก้ไขข้อมูล</b></span></>}
+    />
   );
 }
 

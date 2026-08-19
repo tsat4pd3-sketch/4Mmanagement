@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -37,8 +39,8 @@ export default function RundownStock() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
+    return () => stopPoll();
   }, [load]);
 
   const custLabel = useCallback((code) => {

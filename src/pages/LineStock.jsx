@@ -10,6 +10,9 @@ import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import WipBetweenSteps from '../components/WipBetweenSteps';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -1032,8 +1035,8 @@ function DeliveryTimeBoardTab() {
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
+    return () => stopPoll();
   }, [load]);
 
   const dlvMap = useMemo(() => {
@@ -1262,6 +1265,7 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
+  { key:'wip',       label:'🔩 WIP ระหว่างขั้น' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
   { key:'timeboard', label:'🕐 บอร์ดเวลา' },
   { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
@@ -1281,6 +1285,7 @@ export default function LineStock() {
       />
 
       {activeTab === 'stock'     && <StockTab role={role} />}
+      {activeTab === 'wip'       && <WipBetweenSteps />}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}

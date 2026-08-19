@@ -1,3 +1,4 @@
+import { getLineFamilyNames } from './lineHierarchy';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
 // (เช่น manager แผนกหนึ่งเห็นเฉพาะ PD1+PD2+QA) — ว่าง/NULL = ไม่จำกัด
@@ -31,6 +32,40 @@ export function effectiveSections(role, sections, section) {
 }
 
 /** เช็คว่าค่า section หนึ่งอยู่ในขอบเขตไหม — scope ว่าง = ผ่านเสมอ */
+/**
+ * หน่วยงานช่าง — ดูแลเครื่องจักรทั้งโรงงาน จึงต้องเห็นสัญญาณ Andon/Downtime ทุกไลน์
+ * (คำสั่ง user 2026-08-19: "หน่วยงานช่างทั้งหมดต้องเห็นของทั้งโรงงาน
+ *  แต่หน่วยงานผลิต ควรเห็นแค่ของส่วนงานตัวเอง")
+ */
+export const MAINTENANCE_ROLES = ['mtn', 'engineer'];
+
+/**
+ * ไลน์ที่ผู้ใช้คนนี้ควรเห็น — pattern มาตรฐานที่กระจายอยู่ ~6 หน้า รวมไว้ที่เดียว
+ * คืน `null` = ไม่จำกัด (เห็นทั้งโรงงาน) · คืน array = เห็นเฉพาะไลน์ในลิสต์
+ *
+ * ลำดับ: admin/หน่วยงานช่าง → ทั้งโรงงาน · leader → ครอบครัวไลน์ตัวเอง
+ *        · มี sections → ไลน์ในส่วนงานนั้น · ไม่มีอะไรเลย → ทั้งโรงงาน
+ *
+ * ⚠️ leader ต้องเป็น "ทั้งครอบครัวไลน์" ห้ามเทียบ line_id ตรงตัว (กฎเหล็ก CLAUDE.md)
+ * ⚠️ ต้องเรียกหลัง production_lines โหลดเสร็จ — lines ว่าง = คืน null (ไม่จำกัด)
+ *    ห้ามคืน [] เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย
+ */
+export function scopedLineNames({ role, lineId, sections = [], lines = [] }) {
+  if (role === 'admin' || MAINTENANCE_ROLES.includes(role)) return null;
+  if (!lines.length) return null;
+  if (role === 'leader' && lineId) {
+    const me = lines.find(l => String(l.id) === String(lineId));
+    if (!me) return null;
+    const fam = getLineFamilyNames(lines, me.name);
+    return fam.length ? fam : null;
+  }
+  if (sections.length) {
+    const names = lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
+    return names.length ? names : null;
+  }
+  return null;
+}
+
 export function inSectionScope(scopeSections, value) {
   if (!scopeSections || !scopeSections.length) return true;
   const v = norm(value);

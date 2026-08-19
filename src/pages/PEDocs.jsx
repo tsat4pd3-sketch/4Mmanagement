@@ -9,6 +9,7 @@ import useTabParam from '../utils/useTabParam';
 import { fmtDate } from '../utils/dateFormat';
 import PeExcelImportModal from '../components/PeExcelImportModal';
 import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
+import PeChangeRequests from '../components/PeChangeRequests';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -100,6 +101,8 @@ export default function PEDocs() {
   const [exporting, setExporting] = useState(false);     // ⬇️ กำลังสร้างไฟล์ Excel
   const [exportNotes, setExportNotes] = useState(null);  // สิ่งที่ไฟล์ที่ได้ "ไม่เหมือนของเดิม" — ต้องบอก ห้ามเงียบ
   const [showChart, setShowChart] = useState(true);      // 🗺️ ผังกระบวนการในแท็บ Flow
+  const [crCount, setCrCount] = useState(0);             // คำขอแก้เอกสารจากหน้างาน (ลูปปิด 8D)
+  const [showCr, setShowCr] = useState(false);
   const printChartRef = useRef(null);                    // ผังชุดสีสว่างซ่อนไว้ ใช้ตอนพิมพ์
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
@@ -301,6 +304,28 @@ export default function PEDocs() {
         <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 30 }}>กำลังโหลด...</div>
       ) : (
         <>
+          {/* ── 📥 คำขอแก้เอกสารจากหน้างาน (ลูปปิด 8D → PE · docs/CLOSED-LOOP-8D-PE.md) ──
+              เห็นทุกแท็บเมื่อเลือกชุดแล้ว — งานที่ค้างต้องไม่ต้องไปหาเอง */}
+          <div style={{ marginBottom: 12 }}>
+            <button
+              onClick={() => setShowCr(v => !v)}
+              style={{
+                width: '100%', textAlign: 'left', cursor: 'pointer', padding: '9px 12px', borderRadius: 10,
+                border: `1px solid ${crCount ? '#f59e0b66' : 'var(--border)'}`,
+                background: crCount ? 'rgba(245,158,11,0.10)' : 'var(--bg2)',
+                color: 'var(--text)', fontSize: 12.5, fontWeight: 700,
+              }}>
+              {showCr ? '▼' : '▶'} 📥 คำขอแก้เอกสารจากหน้างาน
+              {crCount > 0
+                ? <span style={{ color: '#f59e0b' }}> · ค้าง {crCount} รายการ</span>
+                : <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · ไม่มีค้าง</span>}
+              <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: 11.5 }}> — จาก 8D/CAPA ที่ปิดปัญหาแล้วและต้องทบทวน PFMEA/Control Plan</span>
+            </button>
+            <div style={{ display: showCr ? 'block' : 'none', marginTop: 8 }}>
+              <PeChangeRequests mode="inbox" setId={setId} canDecide={canApprove} onCountChange={setCrCount} />
+            </div>
+          </div>
+
           {/* ── ตัวกรอง OP (ใช้ร่วมแท็บ FMEA/CP) ── */}
           {(tab === 'fmea' || tab === 'cp') && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>

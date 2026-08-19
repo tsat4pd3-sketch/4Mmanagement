@@ -9,12 +9,16 @@ import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
+import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
+import { RATE } from '../utils/refreshRates';
+import { visibleInterval } from '../utils/usePolling';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -141,14 +145,8 @@ function MiniBar({ value, max, color }) {
   );
 }
 
-const SKILL_LEVELS = [
-  { min: 100, label: 'ผู้เชี่ยวชาญ',   color: '#a855f7', bg: 'rgba(168,85,247,0.15)' },
-  { min: 75,  label: 'แก้ปัญหาได้',    color: '#22c55e', bg: 'rgba(34,197,94,0.15)'  },
-  { min: 50,  label: 'มาตรฐาน',        color: '#84cc16', bg: 'rgba(132,204,18,0.15)' },
-  { min: 25,  label: 'ต้องดูแล',       color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  { min: 0,   label: 'ยังไม่ผ่าน OJT', color: '#ef4444', bg: 'rgba(239,68,68,0.15)'  },
-];
-const getFitLevel = (fit) => fit === null ? null : SKILL_LEVELS.find(l => fit >= l.min) ?? SKILL_LEVELS[4];
+// สเกลระดับสกิล = master กลาง utils/skillLevels.js (ห้ามนิยามซ้ำในหน้า — เคยซ้ำแล้วเสี่ยง drift · แก้ 2026-08-18)
+const getFitLevel = (fit) => fit === null ? null : getLevel(fit);
 
 const CAT_META = {
   Man:      { color: '#4d9fff', icon: '👤', bg: 'rgba(77,159,255,0.12)' },
@@ -260,6 +258,11 @@ export default function Dashboard() {
   const [breakPolicies, setBreakPolicies] = useState([]);
   // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
+  // ตัวกรองตู้ Heijunka รวม (2026-08-19 · คำขอ user): ดูทุกไลน์-ทุกพาร์ทในจอเดียวแล้วกรองได้
+  // boardLineSel = กลุ่มไลน์ ('' = ทุกไลน์) · boardQuery = ค้นชื่อพาร์ท/MAT/เลขใบ
+  // ⚠️ กรองเฉพาะ "ชั้นแสดงผล" — ห้ามกรอง cards ก่อนคำนวณคิว (ตำแหน่ง/เวลาคาดเสร็จผูกกับคิวทั้งไลน์)
+  const [boardLineSel,  setBoardLineSel]  = useState('');
+  const [boardQuery,    setBoardQuery]    = useState('');
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
@@ -471,7 +474,7 @@ export default function Dashboard() {
       { data: mpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active, employee_skills(skill_name, score))')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, department, is_active, employee_skills(skill_name, score))')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -486,28 +489,23 @@ export default function Dashboard() {
       supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
-    // Build per-line day_team map
-    const lineSchedule = {};
-    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+    // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
+    // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
+    //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
+    const schedMaps = buildScheduleMaps(scheduleData);
 
     // Build per-employee override map
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
 
-    // Enrich logs with assignedShift (same logic as Checkin.jsx)
     const enriched = (logData || []).map(log => {
       const emp = log.employees;
-      let assignedShift = null;
-      if (emp) {
-        if (empOverride[emp.id]) {
-          assignedShift = empOverride[emp.id];
-        } else if (emp.line_id && lineSchedule[emp.line_id]) {
-          const dayTeam = lineSchedule[emp.line_id];
-          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-          assignedShift = emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
-        }
-      }
-      return { ...log, assignedShift };
+      return {
+        ...log,
+        assignedShift: emp
+          ? resolveAssignedShift(emp, { overrideShift: empOverride[emp.id], maps: schedMaps })
+          : null,
+      };
     });
 
     setLogs(enriched);
@@ -530,11 +528,10 @@ export default function Dashboard() {
       if (!emp.line_id) return;
       if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
       counts[emp.line_id].all++;
-      const dayTeam = lineSchedule[emp.line_id];
-      if (!dayTeam) return;
-      const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-      if (emp.team === dayTeam)   counts[emp.line_id].day++;
-      else if (emp.team === nightTeam) counts[emp.line_id].night++;
+      // กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ตรงๆ (ไม่ตกไปกะหน่วยงาน)
+      const sh = shiftFromTeam(schedMaps.byLine[emp.line_id], emp.team);
+      if (sh === 'day')        counts[emp.line_id].day++;
+      else if (sh === 'night') counts[emp.line_id].night++;
     });
     setEmpCounts(counts);
     setLayouts(layoutData || []);
@@ -626,10 +623,10 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
-  // Auto-refresh ข้อมูลหลักทุก 5 นาที (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย)
+  // Auto-refresh ข้อมูลหลัก (พนักงาน/กะ/ทักษะเปลี่ยนไม่บ่อย) — ข้อมูลผลิตมาทาง realtime ด้านล่าง
+  // หยุดยิงเมื่อแท็บถูกซ่อน (ประหยัด egress — ดู src/utils/usePolling.js)
   useEffect(() => {
-    const t = setInterval(() => fetchAll(selectedDate), 5 * 60 * 1000);
-    return () => clearInterval(t);
+    return visibleInterval(() => fetchAll(selectedDate), RATE.ANALYTIC);
   }, [selectedDate, fetchAll]);
 
   // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน
@@ -1338,7 +1335,39 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {Object.entries(byLine).map(([lineName, sessions]) => {
+            {/* ── ตัวกรองตู้รวม: ชิปกลุ่มไลน์ + ช่องค้นพาร์ท/MAT/เลขใบ ──
+                ชิป = state ที่มองเห็น (ไลน์อื่นถูกซ่อนโดยผู้ใช้เลือกเอง ไม่ใช่หายเงียบ)
+                boardLineSel ที่ไม่มีในวันนั้น → ตกกลับ "ทุกไลน์" (กฎ cascade §5.3 ห้ามจอว่างเงียบ) */}
+            {(() => {
+              const lineNames = Object.keys(byLine).sort();
+              const effSel = lineNames.includes(boardLineSel) ? boardLineSel : '';
+              if (lineNames.length <= 1 && !boardQuery) return null;
+              const chip = (active) => ({
+                padding: '3px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                background: active ? 'var(--accent)' : 'var(--bg2)',
+                color: active ? '#08130a' : 'var(--text2)', fontFamily: 'var(--font-body)',
+              });
+              return (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                  {lineNames.length > 1 && [{ k: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ k: n, label: n }))].map(c => (
+                    <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
+                  ))}
+                  {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
+                  <input value={boardQuery} onChange={e => setBoardQuery(e.target.value)} placeholder="🔎 ค้นพาร์ท / MAT / เลขใบ"
+                    style={{ width: 210, marginLeft: 'auto', padding: '4px 10px', borderRadius: 7, fontSize: 12.5,
+                      background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  {(effSel || boardQuery) && (
+                    <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
+                      style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {Object.entries(byLine)
+              .filter(([n]) => !boardLineSel || !Object.keys(byLine).includes(boardLineSel) || n === boardLineSel)
+              .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
               const totalDelayed = sessions.reduce((acc, s) => {
                 const ctSec = s.dr_products?.cycle_time_sec || 0;
@@ -1481,6 +1510,12 @@ export default function Dashboard() {
                       (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
                     const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    // ตัวกรองพาร์ท (boardQuery) — กรองเฉพาะแถวที่จะวาด · สรุปหัวการ์ด/pace ยังนับทุกแถวตามจริง
+                    const bq = boardQuery.trim().toUpperCase();
+                    const visRows = !bq ? productRows : productRows.filter(row =>
+                      (row.label || '').toUpperCase().includes(bq) ||
+                      row.cards.some(c => String(c.mat_no || '').toUpperCase().includes(bq) || String(c.prod_no || '').toUpperCase().includes(bq)));
+                    const hiddenRowCount = productRows.length - visRows.length;
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -2053,7 +2088,13 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
-                        {productRows.map((row, ri) => {
+                        {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
+                        {hiddenRowCount > 0 && (
+                          <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{visRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                          </div>
+                        )}
+                        {visRows.map((row, ri) => {
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;

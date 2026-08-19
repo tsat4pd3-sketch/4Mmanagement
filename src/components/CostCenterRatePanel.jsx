@@ -5,7 +5,7 @@ import CollapseCard from './CollapseCard';
 import { RATE_COMPONENTS, rateFor, fmtBaht } from '../utils/costSaving';
 
 /* ═══ 💰 Activity Rate ต่อ Cost Center — แผงใน /org-setup (2026-08-11) ═══
-   rate DL/OH/DP (บาท/ชม.) ที่บัญชีคำนวณ ต่อ cost center — ใช้แปลงผล Improvement เป็น cost saving
+   rate ที่บัญชีคำนวณ ต่อ cost center (ก้อนตาม RATE_COMPONENTS) — ใช้แปลงผล Improvement เป็น cost saving
    ลิสต์ cost center = union จากผังองค์กร (org_nodes.cost_center) + ไลน์ผลิต (production_lines.cost_center)
    → เห็นทันทีว่ารหัสไหนไลน์ใช้อยู่แต่ยังไม่มี rate (⚠) และรหัสฝั่งผัง/ฝั่งไลน์ไม่ตรงกัน (data drift)
    เก็บแบบ effective_from (บช. ปรับรายปี) — เพิ่ม rate ปีใหม่เป็นแถวใหม่ ไม่ทับประวัติ */
@@ -14,11 +14,20 @@ const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const EMPTY = { cost_center: '', effective_from: todayStr(), dl_rate: '', oh_rate: '', dp_rate: '', note: '' };
+/* timestamp ที่ระบบ stamp เอง (created_at/updated_at) — แสดงผลอย่างเดียว ห้ามให้กรอก */
+const fmtStamp = (v) => (v ? new Date(v).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }) : '—');
+
+/* ⚠️ ช่อง rate ทั้งหมด generate จาก RATE_COMPONENTS — เพิ่มก้อนใหม่ที่ costSaving.js ที่เดียว
+   ฟอร์ม/ตาราง/ยอดรวม ตามให้เอง ห้ามพิมพ์ชื่อคอลัมน์ rate ซ้ำในไฟล์นี้ */
+/* เป็นฟังก์ชัน ไม่ใช่ const — todayStr() ที่ประเมินตอน import จะค้างวันเดิมบนจอที่เปิดข้ามคืน */
+const emptyForm = () => ({
+  cost_center: '', effective_from: todayStr(), note: '',
+  ...Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, ''])),
+});
 
 export default function CostCenterRatePanel({ nodes, lines }) {
   const [rates, setRates] = useState([]);
-  const [form, setForm] = useState(null);      // {id?, cost_center, effective_from, dl_rate, oh_rate, dp_rate, note}
+  const [form, setForm] = useState(null);      // {id?, cost_center, effective_from, <rate fields จาก RATE_COMPONENTS>, note}
   const [histOpen, setHistOpen] = useState({}); // cc -> bool
   const [saving, setSaving] = useState(false);
 
@@ -60,7 +69,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
     setSaving(true);
     const payload = {
       cost_center: cc, effective_from: form.effective_from,
-      dl_rate: Number(form.dl_rate) || 0, oh_rate: Number(form.oh_rate) || 0, dp_rate: Number(form.dp_rate) || 0,
+      ...Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, Number(form[c.field]) || 0])),
       note: form.note?.trim() || null,
     };
     const q = form.id
@@ -84,14 +93,26 @@ export default function CostCenterRatePanel({ nodes, lines }) {
     load();
   };
 
+  /* วัน Effective ตอนแก้แถวเดิม = ล็อกกันแก้พลาด แต่ปลดล็อกได้ (แถว seed เป็น 2000-01-01 ต้องแก้เป็นวันจริงได้)
+     `_unlockDate` เป็นคีย์ client-only ขึ้นต้น `_` — handleSave เลือกฟิลด์เองอยู่แล้ว ไม่มีทางหลุดลง DB */
+  const dateLocked = !!form?.id && !form._unlockDate;
+  const unlockDate = () => {
+    if (!window.confirm(
+      'ปลดล็อกวัน Effective?\n\n'
+      + 'วันนี้บอกว่า rate แถวนี้เริ่มมีผลเมื่อไหร่ — เปลี่ยนแล้ว cost saving ของโปรเจคปรับปรุงที่คิดด้วย rate ช่วงนี้จะขยับตาม\n\n'
+      + 'ถ้าเป็นการ "ปรับ rate รอบใหม่" ให้กดยกเลิก แล้วใช้ปุ่ม ＋ rate ในตารางแทน (rate เดิมเก็บไว้เป็นประวัติ)'
+    )) return;
+    setForm(f => ({ ...f, _unlockDate: true }));
+  };
+
   const noRateUsed = groupList.filter(c => c.lines.length && !rateCcSet.has(c.cc)).length;
 
   return (
     <CollapseCard id="cc_rates" storePrefix="orgsetup" count={groupList.length}
-      title={<span>💰 Activity Rate ต่อ Cost Center — ระดับกลุ่ม (21406) <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(DL/OH/DP บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
+      title={<span>💰 Activity Rate ต่อ Cost Center — ระดับกลุ่ม (21406) <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
         rate ตั้งที่ <b>ระดับกลุ่มไลน์ (รหัส 21406)</b> เท่านั้น — ระดับแผนก/ส่วน ไม่ต้องกรอก (ต้นทุน/saving ระดับบนรวมขึ้นจากกลุ่มตาม hierarchy)
-        · rate ปรับรายปี = เพิ่มแถวใหม่พร้อมวัน effective (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น)
+        · <b>บัญชีส่ง rate รอบใหม่ = กด “＋ rate ใหม่”</b> (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น) — ปุ่ม ✏️ ไว้แก้เฉพาะตอนกรอกตัวเลขผิด
         {noRateUsed > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · ⚠ มี {noRateUsed} รหัสที่ไลน์ใช้อยู่แต่ยังไม่ตั้ง rate</span>}
         {otherCount > 0 && (
           <span> · ซ่อนรหัสระดับส่วน/แผนก {otherCount} รหัส{' '}
@@ -105,14 +126,22 @@ export default function CostCenterRatePanel({ nodes, lines }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead style={{ background: 'var(--bg2)' }}>
             <tr>
-              {['Cost Center', 'ใช้โดย', 'DL', 'OH', 'DP', 'รวม/ชม.', 'Effective', ''].map((h, i) => (
-                <th key={i} style={{ padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: i >= 2 && i <= 5 ? 'right' : 'left', whiteSpace: 'nowrap' }}>{h}</th>
+              {/* ⚠️ หัวตารางต้อง generate จาก RATE_COMPONENTS เหมือน body —
+                  เดิม hardcode 3 ก้อน (DL/OH/DP) แต่ body วน 4 ก้อน → คอลัมน์เลื่อนกันทั้งตาราง
+                  (ตัวเลข IDP ไปโผล่ใต้หัว OH · ตัวเลข OH ไปอยู่ใต้ "รวม") */}
+              {[
+                { h: 'Cost Center', right: false }, { h: 'ใช้โดย', right: false },
+                ...RATE_COMPONENTS.map(c => ({ h: c.label, right: true, title: c.full })),
+                { h: 'รวม/ชม.', right: true }, { h: 'Effective', right: true }, { h: '', right: false },
+              ].map((c, i) => (
+                <th key={i} title={c.title} style={{ padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: c.right ? 'right' : 'left', whiteSpace: 'nowrap' }}>{c.h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
+            {/* colSpan ต้องคิดจาก RATE_COMPONENTS ด้วย (2 คอลัมน์หน้า + ก้อน rate + รวม/effective/ปุ่ม) */}
             {shownList.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 14, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ยังไม่มี cost center ระดับกลุ่ม — กรอกที่ฟอร์มกลุ่มในผัง หรือหน้าจัดการไลน์ (ไลน์แม่) ก่อน</td></tr>
+              <tr><td colSpan={2 + RATE_COMPONENTS.length + 3} style={{ padding: 14, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ยังไม่มี cost center ระดับกลุ่ม — กรอกที่ฟอร์มกลุ่มในผัง หรือหน้าจัดการไลน์ (ไลน์แม่) ก่อน</td></tr>
             )}
             {shownList.map(({ cc, orgGroup, orgOther, lines: lns }) => {
               const cur = rateFor(rates, cc, todayStr());
@@ -151,10 +180,15 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         </button>
                       )}
                     </td>
+                    {/* ⚠️ ＋ rate = ทางหลัก (บัญชีส่ง rate รอบใหม่ = แถวใหม่ ประวัติเดิมคงไว้)
+                        ✏️ = ทางรอง ใช้เฉพาะกรอกผิด — จงใจให้จืดกว่า ไม่ให้เผลอกดแก้ทับ rate ปีเก่า */}
                     <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      {cur && <button onClick={() => setForm({ ...EMPTY, ...cur, id: cur.id })} title="แก้แถว rate ปัจจุบัน" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
-                      <button onClick={() => setForm({ ...EMPTY, cost_center: cc, ...(cur ? { dl_rate: cur.dl_rate, oh_rate: cur.oh_rate, dp_rate: cur.dp_rate } : {}) })}
-                        title="เพิ่ม rate รอบใหม่ (effective ใหม่)" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--accent)', padding: '2px 8px', marginLeft: 4 }}>＋ rate</button>
+                      <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
+                        title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
+                        style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
+                      {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
+                        title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
                     </td>
                   </tr>
                   {open && hist.map(r => (
@@ -167,7 +201,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       <td style={{ padding: '4px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'monospace', color: 'var(--muted)' }}>{fmtBaht(RATE_COMPONENTS.reduce((a, c) => a + (Number(r[c.field]) || 0), 0))}</td>
                       <td style={{ padding: '4px 10px' }} />
                       <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        <button onClick={() => setForm({ ...EMPTY, ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                        <button onClick={() => setForm({ ...emptyForm(), ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
                         <button onClick={() => handleDelete(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>🗑</button>
                       </td>
                     </tr>
@@ -178,14 +212,14 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           </tbody>
         </table>
       </div>
-      <button onClick={() => setForm({ ...EMPTY })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+      <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
         ➕ เพิ่ม rate (พิมพ์รหัสเอง)
       </button>
 
       {/* modal ฟอร์ม rate — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5 */}
       {form && (
         <div className="overlay">
-          <div className="modal" style={{ width: 'min(460px, 94vw)' }}>
+          <div className="modal" style={{ width: 'min(560px, 94vw)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{form.id ? '✏️ แก้ Activity Rate' : '➕ เพิ่ม Activity Rate'}</h3>
               <button onClick={() => setForm(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
@@ -193,20 +227,52 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>Cost Center *
-                  <input list="cc-rate-codes" value={form.cost_center} disabled={!!form.id}
-                    onChange={e => setForm({ ...form, cost_center: e.target.value })} placeholder="เช่น 2140662101" style={{ marginTop: 4, fontFamily: 'monospace' }} />
+                  {/* readOnly ไม่ใช่ disabled — disabled ทำให้กล่องหน้าตาคนละแบบกับโมดัลเพิ่มใหม่ */}
+                  <input list="cc-rate-codes" value={form.cost_center} readOnly={!!form.id}
+                    onChange={e => setForm({ ...form, cost_center: e.target.value })} placeholder="เช่น 2140662101"
+                    title={form.id ? 'ย้าย rate ข้าม cost center ไม่ได้ — ถ้ากรอกรหัสผิด ให้ลบแถวนี้แล้วเพิ่มใหม่' : ''}
+                    style={{ marginTop: 4, fontFamily: 'monospace', opacity: form.id ? 0.75 : 1, cursor: form.id ? 'not-allowed' : 'auto' }} />
                   <datalist id="cc-rate-codes">{groupList.map(c => <option key={c.cc} value={c.cc} />)}</datalist>
                 </label>
+                {/* ⚠️ Effective = "วันที่ rate เริ่มมีผลตามบัญชี" ไม่ใช่ timestamp ตอนแก้
+                    (เวลาแก้ระบบ stamp เองที่ updated_at + audit_log — ไม่ต้องกรอก)
+                    ตอนแก้แถวเดิม "กันพลาด" ไว้ก่อน แต่ต้องปลดล็อกได้ — แถวที่ seed ไว้เป็น 2000-01-01
+                    (วันตั้งต้นให้ครอบโปรเจคที่มีอยู่แล้ว) พอบัญชีบอกวันจริง ต้องแก้ทับได้ ไม่ใช่ลบทิ้งแล้วสร้างใหม่
+                    ⚠️ ห้าม disabled แล้วจบ — input[type=date] ที่ disabled หน้าตาไม่เหมือนตอนเพิ่มใหม่
+                    (ไม่มีไอคอนปฏิทิน) โมดัล 2 ตัวเลยดูคนละแบบ */}
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Effective *
-                  <input type="date" value={form.effective_from} onChange={e => setForm({ ...form, effective_from: e.target.value })} style={{ marginTop: 4, width: 145, display: 'block' }} />
+                  <input type="date" value={form.effective_from} readOnly={dateLocked}
+                    onChange={e => setForm({ ...form, effective_from: e.target.value })}
+                    onKeyDown={e => { if (dateLocked) e.preventDefault(); }}
+                    onClick={e => { if (dateLocked) { e.preventDefault(); e.currentTarget.blur(); } }}
+                    title={dateLocked ? 'ล็อกกันแก้พลาด — กด 🔓 ถ้าต้องแก้วันจริงๆ' : ''}
+                    style={{ marginTop: 4, width: 145, display: 'block', opacity: dateLocked ? 0.75 : 1, cursor: dateLocked ? 'not-allowed' : 'auto' }} />
                 </label>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              {form.id && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px', lineHeight: 1.6 }}>
+                  {dateLocked ? (
+                    <>
+                      🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
+                      <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>🔓 แก้วันที่</button>
+                    </>
+                  ) : (
+                    <span style={{ color: '#f59e0b', fontWeight: 700 }}>🔓 ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
+                  )}
+                  <div style={{ marginTop: 3, opacity: 0.85 }}>
+                    เวลาที่แก้ระบบบันทึกเอง: สร้าง {fmtStamp(form.created_at)} · แก้ล่าสุด {fmtStamp(form.updated_at)} (ใครแก้ดูได้ที่ audit log)
+                  </div>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
                 {RATE_COMPONENTS.map(c => (
-                  <label key={c.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{c.label} <span style={{ fontWeight: 600 }}>({c.full})</span>
+                  <label key={c.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{c.label} <span style={{ fontWeight: 600 }}>({c.full})</span>
                     <input type="number" min="0" step="any" value={form[c.field]} onChange={e => setForm({ ...form, [c.field]: e.target.value })} placeholder="บาท/ชม." style={{ marginTop: 4 }} />
                   </label>
                 ))}
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>
+                รวม {fmtBaht(RATE_COMPONENTS.reduce((a, c) => a + (Number(form[c.field]) || 0), 0))} บาท/ชม.
               </div>
               <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>หมายเหตุ
                 <input value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="เช่น rate ปี 2026 จากบัญชี" style={{ marginTop: 4 }} />

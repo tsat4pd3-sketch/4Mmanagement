@@ -9,7 +9,7 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
-import { trackVisit } from './utils/navRecent';
+import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
@@ -66,6 +66,7 @@ const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
@@ -154,6 +155,7 @@ export const NAV_ITEMS = [
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
@@ -161,6 +163,20 @@ export const NAV_ITEMS = [
 ];
 
 export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'วิศวกรรม (PE)', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+
+// ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
+// ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
+export const NAV_GROUP_META = {
+  'ภาพรวม':                    { icon: '📊', short: 'ภาพรวม' },
+  'ฝ่ายผลิต':                  { icon: '🏭', short: 'ผลิต' },
+  'วิเคราะห์ & รายงาน':        { icon: '📈', short: 'รายงาน' },
+  'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
+  'Logistic - Store':          { icon: '📦', short: 'สโตร์' },
+  'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
+  'ควบคุมคุณภาพ QA/QC':        { icon: '✅', short: 'QA/QC' },
+  'วิศวกรรม (PE)':             { icon: '📐', short: 'PE' },
+  'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
+};
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -177,16 +193,8 @@ export function accessSummaryForRole(role) {
   return { total: pages.length, all: pages.length >= NAV_ITEMS.length - 1, groups };
 }
 
-// เข้าโมดูลจากหน้าหลัก (DeptHub) → กาง sidebar เฉพาะหมวดของโมดูลนั้น หมวดอื่นพับ
-// เพื่อให้เห็นเมนูของโมดูลที่เลือกทันที ไม่ต้องไล่หาในเมนูที่กางหมดทุกหมวด
-// (user ยังพับ/กางเองต่อได้ตามปกติ ค่าที่ตั้งจาก hub จะถูกจำต่อใน localStorage เดียวกัน)
-export function focusSidebarGroups(groups) {
-  const collapsed = {};
-  NAV_GROUP_ORDER.forEach(g => { if (!groups.includes(g)) collapsed[g] = true; });
-  try { localStorage.setItem('nav_collapsed_groups', JSON.stringify(collapsed)); } catch { /* ignore */ }
-  // Sidebar mount อยู่ตลอด — แจ้งให้ sync state จาก localStorage ใหม่
-  window.dispatchEvent(new Event('nav-groups-changed'));
-}
+// focusSidebarGroups ถูกถอดออกแล้ว (2026-08-18) — desktop เป็น rail (ไฮไลต์หมวดของหน้าปัจจุบันเอง)
+// และ drawer มือถือเป็น accordion ที่เปิดหมวดของหน้าปัจจุบันให้อัตโนมัติ จึงไม่ต้องสั่งโฟกัสจาก hub อีก
 
 /* ─── Role Route Guard ────────────────────────────────────────────────
    สิทธิ์เข้าถึงแต่ละหน้าเก็บอยู่ใน role_permissions (ตาราง) ไม่ใช่ array ในโค้ดอีกต่อไป
@@ -267,7 +275,8 @@ function SplashScreen({ onDone }) {
 }
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
-function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote }) {
+// export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
+export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin }) {
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -277,28 +286,33 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
   const [footerOpen, setFooterOpen] = useState(() => { try { return localStorage.getItem('sb_footer_open') === '1'; } catch { return false; } });
   const toggleFooter = () => setFooterOpen(v => { try { localStorage.setItem('sb_footer_open', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
-  const [collapsedGroups, setCollapsedGroups] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}'); } catch { return {}; }
-  });
+  // drawer มือถือ: หมวดเป็น accordion เปิดทีละหมวด — undefined = ตามหมวดของหน้าปัจจุบัน · null = ปิดหมด
+  // (เดิมกางทุกหมวด 55 รายการ = เลื่อน 3 จอ — ปัญหาเดียวกับ desktop ก่อนเปลี่ยนเป็น rail)
+  const [mOpenGroup, setMOpenGroup] = useState(undefined);
+
+  // ── แผงหมวดของ rail (desktop · sidebar แบบ D 2026-08-18) ──────────────────────
+  // panel = ชื่อหมวด | '__star' (ใช้บ่อย) | '__me' (โปรไฟล์) | null = ปิด
+  // ปกติแผง "ลอยทับ" เนื้อหา (เนื้อหาไม่ถูกบีบ — คำสั่ง user) · ปักหมุด 📌 = ค้างไว้และดันเนื้อหา
+  const [panel, setPanel] = useState(null);
+  const pinnedRef = useRef(pinned);
+  useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
+
+  // เปลี่ยนหน้า = ปิดแผงเอง (เว้นปักหมุด) — เลือกเมนูแล้วแผงต้องหลบให้เห็นเนื้อหาทันที
+  // และ accordion มือถือกลับไปตามหมวดของหน้าใหม่ (undefined = follow active)
+  useEffect(() => {
+    if (!pinnedRef.current) setPanel(null);
+    setMOpenGroup(undefined);
+  }, [location.pathname]);
+
+  // Esc ปิดแผง (เฉพาะตอนไม่ปักหมุด)
+  useEffect(() => {
+    if (!panel || pinned) return;
+    const onKey = (e) => { if (e.key === 'Escape') setPanel(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panel, pinned]);
 
   useEffect(() => { setSigUrl(userSignatureUrl); }, [userSignatureUrl]);
-
-  // hub สั่งโฟกัสหมวด (focusSidebarGroups) → โหลดค่าพับ/กางจาก localStorage ใหม่
-  useEffect(() => {
-    const sync = () => {
-      try { setCollapsedGroups(JSON.parse(localStorage.getItem('nav_collapsed_groups') || '{}')); } catch { /* ignore */ }
-    };
-    window.addEventListener('nav-groups-changed', sync);
-    return () => window.removeEventListener('nav-groups-changed', sync);
-  }, []);
-
-  const toggleGroup = (g) => {
-    setCollapsedGroups(prev => {
-      const next = { ...prev, [g]: !prev[g] };
-      localStorage.setItem('nav_collapsed_groups', JSON.stringify(next));
-      return next;
-    });
-  };
 
   const visibleItems = NAV_ITEMS.filter(item => canAccessPage(item.to, userRole));
   // ค้นหาเมนู: พิมพ์แล้วยุบเป็นลิสต์แบน (ข้ามการไล่กางหมวด) — หมวดยังโชว์เป็นคำอธิบายท้ายบรรทัด
@@ -315,6 +329,350 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
     : '?';
 
+  // หมวดของหน้าปัจจุบัน — ใช้ไฮไลต์บน rail + เป็นแผง default ตอนปักหมุด + หมวดที่ accordion มือถือเปิดให้เอง
+  const activeGroup = groupedItems.find(g => g.items.some(i => i.to === location.pathname))?.group || null;
+  // หน้าที่ใช้บ่อยของเครื่องนี้ (navRecent) — desktop = แผง ⭐ บน rail · มือถือ = บล็อกบนสุดของ drawer
+  const starItems = topPaths(8).map(p => visibleItems.find(i => i.to === p)).filter(Boolean);
+
+  // ปักหมุดอยู่แต่ยังไม่มีแผงเปิด (เพิ่งโหลด/เพิ่งกดปัก) → เปิดแผงหมวดของหน้าปัจจุบันให้
+  useEffect(() => {
+    if (pinned) setPanel(p => p || activeGroup || groupedItems[0]?.group || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinned]);
+
+  // การ์ดข้อมูล user (ใช้ทั้ง drawer มือถือ + แผงโปรไฟล์บน desktop)
+  const userCard = (clickable) => (
+    <div onClick={clickable ? toggleFooter : undefined}
+      title={clickable ? (footerOpen ? 'พับเมนูโปรไฟล์' : 'กางเมนูโปรไฟล์ (ลายเซ็น/รหัสผ่าน/ธีม/ออกจากระบบ)') : undefined}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 10px', borderRadius: 8,
+        background: 'var(--bg3)', border: '1px solid var(--border2)',
+        marginBottom: 2, cursor: clickable ? 'pointer' : 'default', userSelect: 'none',
+      }}>
+      {userAvatarUrl ? (
+        <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
+      ) : (
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+          background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 12, fontWeight: 800, color: '#fff',
+        }}>{initials}</div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ')}
+        </div>
+      </div>
+      <div style={{
+        fontSize: 11, fontWeight: 700, padding: '2px 6px',
+        borderRadius: 4, flexShrink: 0,
+        background: userRole === 'admin' ? 'var(--accent-dim)' :
+                    userRole === 'manager' ? 'var(--accent2-dim)' :
+                    userRole === 'supervisor' ? 'rgba(77,159,255,0.12)' :
+                    'var(--accent-dim)',
+        color: userRole === 'admin' ? 'var(--accent)' :
+               userRole === 'manager' ? 'var(--accent2)' :
+               userRole === 'supervisor' ? '#4d9fff' :
+               'var(--green)',
+        border: `1px solid ${
+          userRole === 'admin' ? 'rgba(61,214,92,0.3)' :
+          userRole === 'manager' ? 'rgba(245,154,63,0.3)' :
+          userRole === 'supervisor' ? 'rgba(77,159,255,0.3)' :
+          'rgba(61,214,92,0.3)'
+        }`,
+      }}>
+        {userRole?.toUpperCase() ?? 'ADMIN'}
+      </div>
+      {clickable && !footerOpen && remoteCode && <span style={{ fontSize: 12, flexShrink: 0 }} title={`รับรีโมทอยู่ · ${remoteCode}`}>📺</span>}
+      {clickable && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{footerOpen ? '▾' : '▸'}</span>}
+    </div>
+  );
+
+  // เมนูโปรไฟล์ชุดเดียว ใช้ทั้ง drawer มือถือ + แผง '__me' บน desktop — ห้าม copy JSX ซ้ำ
+  const profileActions = (closeNav) => (<>
+    <button
+      onClick={() => setSigModalOpen(true)}
+      className="nav-link"
+      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+    >
+      <span style={{ fontSize: 15, flexShrink: 0 }}>✍️</span>
+      <span style={{ whiteSpace: 'nowrap' }}>ลายเซ็น</span>
+    </button>
+
+    <button
+      onClick={() => setPwdModalOpen(true)}
+      className="nav-link"
+      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+    >
+      <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
+      <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
+    </button>
+
+    {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
+        admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
+    <button
+      onClick={() => setFbOpen(true)}
+      className="nav-link"
+      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
+    >
+      <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
+      <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
+    </button>
+
+    {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
+        🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
+    {canAccessPage('/remote', userRole) && (<>
+      <Link
+        to="/remote"
+        onClick={closeNav}
+        className="nav-link"
+        style={{ color: location.pathname === '/remote' ? 'var(--accent)' : 'var(--text2)' }}
+      >
+        <span style={{ fontSize: 15, flexShrink: 0 }}>🎮</span>
+        <span style={{ whiteSpace: 'nowrap' }}>รีโมทจอ (คุมจากมือถือ)</span>
+      </Link>
+      <button
+        onClick={onToggleRemote}
+        className="nav-link"
+        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
+      >
+        <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
+        <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
+      </button>
+    </>)}
+
+    <button
+      onClick={onToggleTheme}
+      className="nav-link"
+      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 15, flexShrink: 0 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
+        <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>
+          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+        </span>
+      </div>
+      <div style={{
+        width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+        background: theme === 'dark' ? 'var(--accent)' : 'var(--border2)',
+        position: 'relative',
+        transition: 'background 0.25s',
+      }}>
+        <div style={{
+          position: 'absolute', top: 2,
+          left: theme === 'dark' ? 18 : 2,
+          width: 16, height: 16, borderRadius: '50%',
+          background: '#fff',
+          transition: 'left 0.25s',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+        }} />
+      </div>
+    </button>
+
+    <button
+      onClick={onLogout}
+      className="nav-link"
+      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#ff6b6b' }}
+    >
+      <span style={{ fontSize: 15 }}>🚪</span>
+      <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
+    </button>
+  </>);
+
+  const modals = (<>
+    {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
+    <SignatureModal
+      open={sigModalOpen}
+      onClose={() => setSigModalOpen(false)}
+      currentSignatureUrl={sigUrl}
+      onSaved={(url) => setSigUrl(url)}
+    />
+    <ChangePasswordModal
+      open={pwdModalOpen}
+      onClose={() => setPwdModalOpen(false)}
+      userEmail={userEmail}
+    />
+  </>);
+
+  /* ── Desktop: rail 64px + แผงหมวดลอยทับ (sidebar แบบ D · 2026-08-18) ─────────────
+     หลัก: เนื้อหาหลักเสีย 64px เท่านั้น (เดิม 252px) — แผงเมนูลอยทับตอนกดไอคอนหมวด
+     เลือกเมนูแล้วปิดเอง · 📌 ปักหมุด = ค้างแผงไว้และดันเนื้อหา (opt-in เท่านั้น) */
+  if (!isMobile) {
+    const panelOpen = !!panel;
+    const panelMeta = panel === '__star' ? { icon: '⭐', title: 'ใช้บ่อย' }
+      : panel === '__me' ? { icon: '👤', title: 'โปรไฟล์ & อุปกรณ์' }
+      : { icon: NAV_GROUP_META[panel]?.icon || '📁', title: panel };
+    const panelItems = panel && panel !== '__star' && panel !== '__me'
+      ? (groupedItems.find(g => g.group === panel)?.items || [])
+      : null;
+
+    const railBtn = ({ key, icon, label, title, onClick, isOpenPanel, isCurrent }) => (
+      <button key={key} onClick={onClick} title={title}
+        style={{
+          width: 56, flexShrink: 0, borderRadius: 10, cursor: 'pointer', outline: 'none',
+          border: `1px solid ${isOpenPanel ? 'var(--accent)' : 'transparent'}`,
+          background: isOpenPanel ? 'var(--accent-dim)' : 'transparent',
+          color: (isOpenPanel || isCurrent) ? 'var(--accent)' : 'var(--text2)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+          padding: '6px 2px 4px',
+        }}>
+        <span style={{ fontSize: 18, lineHeight: 1.15 }}>{icon}</span>
+        {/* 11px = ฟอนต์ขั้นต่ำตาม UI-CONVENTIONS — ชื่อย่อจาก NAV_GROUP_META ถูกเลือกให้พอดี 56px */}
+        <span style={{ fontSize: 11, lineHeight: 1.2, maxWidth: 56, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+      </button>
+    );
+
+    return (
+      <>
+        <nav style={{
+          position: 'fixed', top: 0, left: 0, height: '100vh',
+          width: isOpen ? 'var(--rail-w)' : '0px',
+          background: 'var(--bg2)', borderRight: isOpen ? '1px solid var(--border)' : 'none',
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          padding: isOpen ? '10px 0 8px' : '10px 0',
+          gap: 4, zIndex: 1000, overflow: 'hidden',
+          transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
+        }}>
+            <Link to="/" title="หน้าหลัก (เลือกโมดูล)" style={{ flexShrink: 0, lineHeight: 0, marginBottom: 2 }}>
+              <img src={tsLogo} alt="Thai Summit Group" width={30} height={30} style={{ borderRadius: 4 }} />
+            </Link>
+            {railBtn({
+              key: '__search', icon: '🔎', label: 'ค้นหา', title: 'ค้นหาเมนู (Ctrl+K)',
+              onClick: onOpenPalette, isOpenPanel: false, isCurrent: false,
+            })}
+            <div style={{ width: 40, borderTop: '1px solid var(--border)', margin: '2px 0', flexShrink: 0 }} />
+
+            {/* หมวดเมนู — ส่วนกลางเลื่อนได้ กันจอเตี้ยตกขอบ */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: '100%' }}>
+              {groupedItems.map(({ group }) => railBtn({
+                key: group,
+                icon: NAV_GROUP_META[group]?.icon || '📁',
+                label: NAV_GROUP_META[group]?.short || group,
+                title: group,
+                onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
+                isOpenPanel: panel === group,
+                isCurrent: activeGroup === group,
+              }))}
+            </div>
+
+            <div style={{ width: 40, borderTop: '1px solid var(--border)', margin: '2px 0', flexShrink: 0 }} />
+            {railBtn({
+              key: '__star', icon: '⭐', label: 'ใช้บ่อย', title: 'หน้าที่ใช้บ่อย (เครื่องนี้)',
+              onClick: () => setPanel(p => (p === '__star' && !pinned) ? null : '__star'),
+              isOpenPanel: panel === '__star', isCurrent: false,
+            })}
+            {/* โปรไฟล์ user — รายละเอียด/ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ อยู่ในแผงนี้ (ไม่หายไปไหน) */}
+            <button
+              onClick={() => setPanel(p => (p === '__me' && !pinned) ? null : '__me')}
+              title={`${displayName} · โปรไฟล์/ลายเซ็น/ธีม/ออกจากระบบ`}
+              style={{
+                width: 44, height: 44, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', outline: 'none',
+                border: `2px solid ${panel === '__me' ? 'var(--accent)' : 'var(--border2)'}`,
+                background: 'var(--bg3)', padding: 0, position: 'relative',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2,
+              }}>
+              {userAvatarUrl ? (
+                <img src={userAvatarUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+              ) : (
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{initials}</span>
+              )}
+              {remoteCode && (
+                <span title={`รับรีโมทอยู่ · ${remoteCode}`} style={{ position: 'absolute', right: -3, top: -3, fontSize: 12 }}>📺</span>
+              )}
+            </button>
+            <button onClick={onClose} title="ซ่อนเมนู (เต็มจอ — เหมาะจอ TV)" style={{
+              width: 32, height: 26, borderRadius: 8, flexShrink: 0, marginTop: 4,
+              background: 'var(--bg3)', border: '1px solid var(--border2)',
+              color: 'var(--text2)', fontSize: 12, cursor: 'pointer', outline: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>◀</button>
+        </nav>
+
+        {isOpen && panelOpen && (<>
+          {/* backdrop โปร่งใส — คลิกนอกแผง = ปิด (เฉพาะตอนไม่ปักหมุด) */}
+          {!pinned && (
+            <div onClick={() => setPanel(null)} style={{ position: 'fixed', top: 0, bottom: 0, right: 0, left: 'var(--rail-w)', zIndex: 997, background: 'transparent' }} />
+          )}
+          <div style={{
+            position: 'fixed', top: 0, bottom: 0, left: 'var(--rail-w)', width: 'var(--sidebar-w)',
+            background: 'var(--bg2)', borderRight: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column', padding: '0 10px 14px',
+            zIndex: 998,
+            boxShadow: pinned ? 'none' : '18px 0 40px rgba(0,0,0,0.45)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
+              <span style={{ fontSize: 17, flexShrink: 0 }}>{panelMeta.icon}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
+              <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
+                width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
+                border: `1px solid ${pinned ? 'var(--accent)' : 'var(--border2)'}`,
+                background: pinned ? 'var(--accent-dim)' : 'transparent',
+                color: pinned ? 'var(--accent)' : 'var(--muted)', fontSize: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>📌</button>
+              {!pinned && (
+                <button onClick={() => setPanel(null)} title="ปิดแผง (Esc)" style={{
+                  width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
+                  border: '1px solid var(--border2)', background: 'transparent',
+                  color: 'var(--muted)', fontSize: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>✕</button>
+              )}
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {panelItems && panelItems.map(item => (
+                <Link
+                  key={item.to} to={item.to} className="nav-link"
+                  style={location.pathname === item.to
+                    ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                    : {}}
+                  onClick={() => { if (!pinned) setPanel(null); }}
+                >
+                  <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                </Link>
+              ))}
+
+              {panel === '__star' && (
+                starItems.length === 0 ? (
+                  <div style={{ padding: '18px 10px', color: 'var(--muted)', fontSize: 12, textAlign: 'center' }}>
+                    ยังไม่มีสถิติการใช้งานบนเครื่องนี้
+                    <div style={{ marginTop: 4, fontSize: 11 }}>เข้าหน้าต่างๆ แล้วหน้าที่ใช้บ่อยจะมาอยู่ที่นี่เอง</div>
+                  </div>
+                ) : starItems.map(item => (
+                  <Link
+                    key={item.to} to={item.to} className="nav-link"
+                    style={location.pathname === item.to
+                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                      : {}}
+                    onClick={() => { if (!pinned) setPanel(null); }}
+                  >
+                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+                  </Link>
+                ))
+              )}
+
+              {panel === '__me' && (<>
+                {userCard(false)}
+                {profileActions(() => { if (!pinned) setPanel(null); })}
+              </>)}
+            </div>
+          </div>
+        </>)}
+        {modals}
+      </>
+    );
+  }
+
+  /* ── Mobile: drawer เต็มแบบเดิม (เปิดจาก ☰ ทับเนื้อหาอยู่แล้ว ไม่บีบจอ) ── */
   return (
     <>
       {isMobile && isOpen && (
@@ -395,209 +753,82 @@ function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, us
                 <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
             ))
-          ) : groupedItems.map(({ group, items }) => {
-            const collapsed = !!collapsedGroups[group];
-            const groupHasActive = items.some(i => location.pathname === i.to);
-            return (
-              <div key={group} style={{ marginBottom: 2 }}>
-                {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
-                    · หมวดที่เปิดอยู่ = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน
-                    (เดิมทุกหมวดเป็น text2 เขียวอ่อนเหมือนกันหมด แยก active ไม่ออก) */}
-                <button
-                  onClick={() => toggleGroup(group)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: groupHasActive ? 'var(--accent-dim)' : 'none',
-                    border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
-                    borderRadius: 'var(--radius)', cursor: 'pointer', padding: '9px 10px 9px 9px',
-                    marginTop: 3,
-                    color: groupHasActive ? 'var(--accent)' : 'var(--text)',
-                    fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
-                    fontFamily: 'var(--font-display)',
-                  }}
+          ) : (<>
+            {/* ⭐ ใช้บ่อย — คนหน้างานวนอยู่ 3-5 หน้าเดิมทั้งวัน ยกขึ้นบนสุดไม่ต้องไล่หาในหมวด
+                (แนวคิดเดียวกับปุ่ม ⭐ บน rail ของ desktop · ไม่มีสถิติ = ไม่โชว์บล็อกเปล่า) */}
+            {starItems.length > 0 && (<>
+              <div style={{ padding: '4px 9px 2px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.03em' }}>⭐ ใช้บ่อย</div>
+              {starItems.slice(0, 5).map(item => (
+                <Link
+                  key={`star-${item.to}`} to={item.to} className="nav-link"
+                  style={location.pathname === item.to
+                    ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                    : {}}
+                  onClick={onClose}
                 >
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                  <span style={{ fontSize: 12, opacity: 0.6, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
-                </button>
-                {!collapsed && items.map(item => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="nav-link"
-                    style={location.pathname === item.to
-                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                      : {}}
-                    onClick={() => isMobile && onClose()}
+                  <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                </Link>
+              ))}
+              <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 2px' }} />
+            </>)}
+
+            {/* หมวด = accordion เปิดทีละหมวด · หมวดของหน้าปัจจุบันเปิดให้เอง (mOpenGroup undefined = follow) */}
+            {groupedItems.map(({ group, items }) => {
+              const open = (mOpenGroup === undefined ? activeGroup : mOpenGroup) === group;
+              const groupHasActive = items.some(i => location.pathname === i.to);
+              return (
+                <div key={group} style={{ marginBottom: 2 }}>
+                  {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
+                      · หมวดที่มีหน้าปัจจุบัน = accent + พื้นจาง + ขีดซ้าย ให้รู้ทันทีว่าอยู่หมวดไหน */}
+                  <button
+                    onClick={() => setMOpenGroup(open ? null : group)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                      background: groupHasActive ? 'var(--accent-dim)' : 'none',
+                      border: 'none', borderLeft: `2px solid ${groupHasActive ? 'var(--accent)' : 'transparent'}`,
+                      borderRadius: 'var(--radius)', cursor: 'pointer', padding: '10px 10px 10px 9px',
+                      marginTop: 3,
+                      color: groupHasActive ? 'var(--accent)' : 'var(--text)',
+                      fontSize: 13, fontWeight: 800, letterSpacing: '0.01em',
+                      fontFamily: 'var(--font-display)',
+                    }}
                   >
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-            );
-          })}
+                    <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
+                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
+                    <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
+                  </button>
+                  {open && items.map(item => (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className="nav-link"
+                      style={location.pathname === item.to
+                        ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                        : {}}
+                      onClick={onClose}
+                    >
+                      <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                    </Link>
+                  ))}
+                </div>
+              );
+            })}
+          </>)}
 
         </div>
 
         {/* Footer: User info + Theme toggle + Logout */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {/* User info card — คลิกเพื่อกาง/พับเมนูโปรไฟล์ด้านล่าง */}
-          <div onClick={toggleFooter} title={footerOpen ? 'พับเมนูโปรไฟล์' : 'กางเมนูโปรไฟล์ (ลายเซ็น/รหัสผ่าน/ธีม/ออกจากระบบ)'} style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 10px', borderRadius: 8,
-            background: 'var(--bg3)', border: '1px solid var(--border2)',
-            marginBottom: 2, cursor: 'pointer', userSelect: 'none',
-          }}>
-            {userAvatarUrl ? (
-              <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
-            ) : (
-              <div style={{
-                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 12, fontWeight: 800, color: '#fff',
-              }}>
-                {initials}
-              </div>
-            )}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {userFullName || (userEmail?.split('@')[0]) || 'Unknown'}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-            <div style={{
-              fontSize: 11, fontWeight: 700, padding: '2px 6px',
-              borderRadius: 4, flexShrink: 0,
-              background: userRole === 'admin' ? 'var(--accent-dim)' :
-                          userRole === 'manager' ? 'var(--accent2-dim)' :
-                          userRole === 'supervisor' ? 'rgba(77,159,255,0.12)' :
-                          'var(--accent-dim)',
-              color: userRole === 'admin' ? 'var(--accent)' :
-                     userRole === 'manager' ? 'var(--accent2)' :
-                     userRole === 'supervisor' ? '#4d9fff' :
-                     'var(--green)',
-              border: `1px solid ${
-                userRole === 'admin' ? 'rgba(61,214,92,0.3)' :
-                userRole === 'manager' ? 'rgba(245,154,63,0.3)' :
-                userRole === 'supervisor' ? 'rgba(77,159,255,0.3)' :
-                'rgba(61,214,92,0.3)'
-              }`,
-            }}>
-              {userRole?.toUpperCase() ?? 'ADMIN'}
-            </div>
-            {/* กำลังรับรีโมทอยู่แต่เมนูพับ — โชว์ 📺 บอกสถานะไว้บนการ์ด */}
-            {!footerOpen && remoteCode && <span style={{ fontSize: 12, flexShrink: 0 }} title={`รับรีโมทอยู่ · ${remoteCode}`}>📺</span>}
-            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{footerOpen ? '▾' : '▸'}</span>
-          </div>
+          {userCard(true)}
 
-          {footerOpen && (<>
-
-          <button
-            onClick={() => setSigModalOpen(true)}
-            className="nav-link"
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-          >
-            <span style={{ fontSize: 15, flexShrink: 0 }}>✍️</span>
-            <span style={{ whiteSpace: 'nowrap' }}>ลายเซ็น</span>
-          </button>
-
-          <button
-            onClick={() => setPwdModalOpen(true)}
-            className="nav-link"
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-          >
-            <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
-            <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
-          </button>
-
-          {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
-              admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
-          <button
-            onClick={() => setFbOpen(true)}
-            className="nav-link"
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-          >
-            <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
-            <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
-          </button>
-
-          {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
-              🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
-          {canAccessPage('/remote', userRole) && (<>
-            <Link
-              to="/remote"
-              onClick={onClose}
-              className="nav-link"
-              style={{ color: location.pathname === '/remote' ? 'var(--accent)' : 'var(--text2)' }}
-            >
-              <span style={{ fontSize: 15, flexShrink: 0 }}>🎮</span>
-              <span style={{ whiteSpace: 'nowrap' }}>รีโมทจอ (คุมจากมือถือ)</span>
-            </Link>
-            <button
-              onClick={onToggleRemote}
-              className="nav-link"
-              style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
-            >
-              <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
-              <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
-            </button>
-          </>)}
-
-          <button
-            onClick={onToggleTheme}
-            className="nav-link"
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 15, flexShrink: 0 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
-              <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>
-                {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-              </span>
-            </div>
-            <div style={{
-              width: 36, height: 20, borderRadius: 10, flexShrink: 0,
-              background: theme === 'dark' ? 'var(--accent)' : 'var(--border2)',
-              position: 'relative',
-              transition: 'background 0.25s',
-            }}>
-              <div style={{
-                position: 'absolute', top: 2,
-                left: theme === 'dark' ? 18 : 2,
-                width: 16, height: 16, borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.25s',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-              }} />
-            </div>
-          </button>
-
-          <button
-            onClick={onLogout}
-            className="nav-link"
-            style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#ff6b6b' }}
-          >
-            <span style={{ fontSize: 15 }}>🚪</span>
-            <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
-          </button>
-          </>)}
+          {footerOpen && profileActions(onClose)}
         </div>
       </nav>
-      {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
-
-      <SignatureModal
-        open={sigModalOpen}
-        onClose={() => setSigModalOpen(false)}
-        currentSignatureUrl={sigUrl}
-        onSaved={(url) => setSigUrl(url)}
-      />
-      <ChangePasswordModal
-        open={pwdModalOpen}
-        onClose={() => setPwdModalOpen(false)}
-        userEmail={userEmail}
-      />
+      {modals}
     </>
   );
 }
@@ -1109,6 +1340,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // จำหน้าที่เข้าบ่อยไว้ในเครื่อง (ยกขึ้นบนสุดใน palette) — จุดเดียวของทั้งแอป
   useEffect(() => { trackVisit(location.pathname); }, [location.pathname]);
 
+  // 📌 ปักหมุดแผงหมวดของ rail (desktop) — pinned = แผงค้าง + เนื้อหาแคบลง (opt-in เท่านั้น)
+  // state อยู่ที่ layout เพราะ marginLeft ของ <main> ต้องรู้ด้วย
+  const [railPinned, setRailPinned] = useState(() => { try { return localStorage.getItem('esm_rail_pin') === '1'; } catch { return false; } });
+  const toggleRailPin = useCallback(() => {
+    setRailPinned(v => { try { localStorage.setItem('esm_rail_pin', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
+  }, []);
+
   // 📺 โหมดจอตาม (รับรีโมทจากมือถือ) — จำรหัสไว้ข้ามการรีเฟรช เปิด/ปิดจากปุ่มใน sidebar
   const [remoteCode, setRemoteCode] = useState(() => localStorage.getItem('esm-remote-receiver') || null);
   const onToggleRemote = useCallback(() => {
@@ -1124,9 +1362,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
   if (!session) return <Navigate to="/login" replace />;
 
-  // marginLeft ต้องเท่าความกว้าง nav จริง (var(--sidebar-w)) เป๊ะ — เดิม hardcode 240/280 ไม่ตรง
-  // (nav=252 desktop / 210 tablet / 280 TV) → เนื้อหาโดน sidebar ทับ 12px หรือเหลือช่องว่าง
-  const marginLeft = (!isMobile && isOpen) ? 'var(--sidebar-w)' : 0;
+  // sidebar แบบ D (2026-08-18): desktop เนื้อหาเสียแค่ rail 64px — แผงหมวดลอยทับ ไม่ดันเนื้อหา
+  // ยกเว้นปักหมุด 📌 (opt-in) = rail + แผง (var(--rail-w) + var(--sidebar-w))
+  const marginLeft = (!isMobile && isOpen)
+    ? (railPinned ? 'calc(var(--rail-w) + var(--sidebar-w))' : 'var(--rail-w)')
+    : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
@@ -1176,6 +1416,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           userAvatarUrl={userAvatarUrl}
           remoteCode={remoteCode}
           onToggleRemote={onToggleRemote}
+          onOpenPalette={() => setPaletteOpen(true)}
+          pinned={railPinned}
+          onTogglePin={toggleRailPin}
         />
 
         <main style={{
@@ -1256,6 +1499,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
+              } />
+              <Route path="/audit-log" element={
+                <RoleRoute path="/audit-log" userRole={role}><AuditLog /></RoleRoute>
               } />
               <Route path="/notification-config" element={
                 <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>

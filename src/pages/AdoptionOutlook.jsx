@@ -576,7 +576,7 @@ async function loadAll() {
       .select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', c)) : [],
     ids.length ? inChunks(ids, c => supabaseDR.from('defect_logs')
       .select('session_id, qty_ng, qty_suspect').in('session_id', c)) : [],
-    supabase.from('cost_center_rates').select('cost_center, dl_rate, oh_rate, dp_rate, effective_from')
+    supabase.from('cost_center_rates').select('*')   // ก้อน rate มาจาก RATE_COMPONENTS — เพิ่มก้อนใหม่แล้วไม่ต้องมาแก้ select
       .then(r => r.data || []).catch(() => []),
   ]);
 
