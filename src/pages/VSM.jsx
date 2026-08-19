@@ -17,12 +17,24 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
+import { buildCtMap } from '../utils/oee';
 import { buildVsmModel } from '../lib/vsmModel';
+import { buildVsmLive, LIVE_STATUS } from '../lib/vsmLive';
 import { printVsm } from '../lib/vsmPrint';
 import { printVsmA3 } from '../lib/vsmA3Print';
 import VsmCanvas, { VsmLegend, PALETTE_DARK, PALETTE_LIGHT } from '../components/VsmCanvas';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import { usePolling } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+// วันงานตามกฎระบบ: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน)
+const getWorkDate = () => {
+  const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
 const monthBounds = mk => {
   const [y, m] = mk.split('-').map(Number);
   const last = new Date(y, m, 0).getDate();
@@ -32,6 +44,10 @@ const STATES = [
   { key: 'current', label: '📍 Current state' },
   { key: 'future', label: '🎯 Future state' },
   { key: 'ideal', label: '✨ Ideal state' },
+];
+const TABS = [
+  { key: 'doc', label: '📋 เอกสาร VSM (snapshot)' },
+  { key: 'live', label: '⚡ สายธารสด (Realtime)' },
 ];
 const WARN_STYLE = {
   error: { bg: 'rgba(239,68,68,0.12)', bd: '#ef4444', icon: '⛔' },
@@ -43,6 +59,7 @@ export default function VSM() {
   const { role, lineId, sections, fullName } = useContext(UserContext);
   const scopeSecs = sections || [];
   const canManage = can('vsm', 'manage', role);
+  const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'doc');
 
   const [lines, setLines] = useState([]);
   const [products, setProducts] = useState([]);
@@ -62,13 +79,22 @@ export default function VSM() {
   const [a3, setA3] = useState({});                    // เนื้อหา A3 Report (เก็บใน vsm_maps.data.a3)
   const [showA3, setShowA3] = useState(false);
 
+  /* ── ⚡ สายธารสด (Realtime) — คนละก้อนกับเอกสาร snapshot ห้ามปนกัน ──
+     liveRaw = โครงสร้าง "เดือนปัจจุบัน" (CT/C-O/AT/%OEE เฉลี่ย + BOM/routing) โหลดครั้งเดียวต่อ FG
+     liveData = สถานะสดจาก buildVsmLive (refresh ผ่าน realtime + usePolling) — ไม่มีการบันทึกลง DB */
+  const [liveRaw, setLiveRaw] = useState(null);
+  const [liveModel, setLiveModel] = useState(null);
+  const [liveData, setLiveData] = useState(null);
+  const [liveBusy, setLiveBusy] = useState(false);
+
   const printRef = useRef(null);
   const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
   const palette = isLight ? PALETTE_LIGHT : PALETTE_DARK;
 
   /* ── master ─────────────────────────────────────────────────────────────── */
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift')
+    // flow_mode/parallel_stations ใช้ในแท็บสด (computeLiveOee หัก DT 1/N + parallelCap)
+    supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift, flow_mode, parallel_stations')
       .order('name').then(({ data }) => setLines(data || []));
     supabaseDR.from('dr_products')
       .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active')
@@ -112,13 +138,11 @@ export default function VSM() {
   }, []);
   useEffect(() => { loadSaved(); }, [loadSaved]);
 
-  /* ── สร้างร่างจากข้อมูลจริง ─────────────────────────────────────────────── */
-  const generate = useCallback(async (keepOverrides = false) => {
-    const fg = products.find(p => p.mat_no === matNo);
-    if (!fg) { toast.error('เลือกสินค้า (FG) ก่อน'); return; }
-    setBusy(true);
-    try {
-      const { from, to } = monthBounds(monthKey);
+  /* ── โหลดข้อมูลดิบทั้งชุดของ (FG, เดือน) — ใช้ร่วมทั้งแท็บเอกสาร (generate)
+        และแท็บสด (โครงสร้างค่ามาตรฐานเดือนปัจจุบัน) ห้าม duplicate query ── */
+  const fetchRaw = useCallback(async (fg, mk) => {
+    {
+      const { from, to } = monthBounds(mk);
       const famNames = fg.line_name ? getLineFamilyNames(lines, fg.line_name) : [];
 
       // BOM ของ FG → รู้ว่าต้องดึง routing/สต๊อกของพาร์ทลูกตัวไหนบ้าง
@@ -177,14 +201,24 @@ export default function VSM() {
       const stockByMat = {};
       (stock.data || []).forEach(r => { stockByMat[r.mat_no] = (stockByMat[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
 
-      const raw = {
+      return {
         fg, bomItems, products, partsMaster: pm.data || [], routings: groupRoutings(rt.data || []),
         kanbanStds: ks.data || [], lines, sessions, downtimes,
         breakPolicies: bp.data || [], stockByMat,
         forecasts: fc.data || [], shippingOrders: so.data || [],
-        monthKey, workingDays: countWorkingDaysInMonth(monthKey, 0),
+        monthKey: mk, workingDays: countWorkingDaysInMonth(mk, 0),
         deliveryRounds: (dr.data || []).filter(r => famNames.includes(r.line_name)),
       };
+    }
+  }, [products, lines]);
+
+  /* ── สร้างร่างจากข้อมูลจริง (แท็บเอกสาร) ────────────────────────────────── */
+  const generate = useCallback(async (keepOverrides = false) => {
+    const fg = products.find(p => p.mat_no === matNo);
+    if (!fg) { toast.error('เลือกสินค้า (FG) ก่อน'); return; }
+    setBusy(true);
+    try {
+      const raw = await fetchRaw(fg, monthKey);
       const ov = keepOverrides ? overrides : {};
       setRawRef(raw);
       setOverrides(ov);
@@ -194,7 +228,7 @@ export default function VSM() {
     } catch (e) {
       toast.error(e.message || 'สร้างร่างไม่สำเร็จ');
     } finally { setBusy(false); }
-  }, [matNo, monthKey, products, lines, overrides]);
+  }, [matNo, monthKey, products, fetchRaw, overrides]);
 
   // แก้ override → คำนวณใหม่ทันทีจากข้อมูลดิบชุดเดิม (ไม่ยิง DB ซ้ำ)
   const setOv = useCallback((key, field, value) => {
@@ -225,6 +259,101 @@ export default function VSM() {
       return next;
     });
   }, [rawRef]);
+
+  /* ── ⚡ สายธารสด — โหลดโครงสร้าง (ครั้งเดียวต่อ FG) แล้ว refresh เฉพาะข้อมูลสด ──
+     กติกา egress (CLAUDE.md): realtime เป็นช่องทางหลัก · usePolling เป็นตัวกันเหนียว
+     · master/โครงเดือนนี้ไม่โหลดซ้ำทุกรอบ · แท็บถูกซ่อน = หยุดยิง DB (usePolling จัดการ) */
+  useEffect(() => {
+    if (tab !== 'live' || !matNo) return;
+    if (liveRaw?.fgMat === matNo) return;                    // โครงของ FG นี้มีแล้ว
+    const fg = products.find(p => p.mat_no === matNo);
+    if (!fg) return;                                         // master ยังไม่มา — effect วิ่งซ้ำเอง
+    let dead = false;
+    (async () => {
+      setLiveBusy(true);
+      setLiveModel(null);                                    // กันผังของ FG เก่าค้างระหว่างโหลดตัวใหม่
+      setLiveData(null);
+      try {
+        const raw = await fetchRaw(fg, monthKeyNow());       // แท็บสดยึด "เดือนปัจจุบัน" เสมอ
+        if (dead) return;
+        const model = buildVsmModel({ ...raw, overrides: {} });
+        const boxes = [...model.chain, ...model.feeders.flatMap(f => f.boxes)];
+        setLiveModel(model);
+        setLiveData(null);
+        setLiveRaw({
+          fgMat: matNo, raw,
+          ctMap: buildCtMap({ kanbanStds: raw.kanbanStds, products }),
+          chainLines: [...new Set(boxes.map(b => b.line).filter(Boolean))],
+          allMats: [fg.mat_no, ...raw.bomItems.map(b => b.mat_no)].filter(Boolean),
+        });
+      } catch (e) {
+        if (!dead) toast.error(e.message || 'โหลดโครงสายธารไม่สำเร็จ');
+      } finally { if (!dead) setLiveBusy(false); }
+    })();
+    return () => { dead = true; };
+  }, [tab, matNo, liveRaw, products, fetchRaw]);
+
+  // รอบ refresh สด: กะวันนี้ของไลน์ในสาย + ใบงาน/DT/ของเสีย + คงคลังปัจจุบัน (payload เล็ก)
+  const loadLive = useCallback(async () => {
+    if (!liveRaw) return;
+    const wd = getWorkDate();
+    let partial = false;                                     // query ไหนพลาด = บอกบนจอ ห้ามเงียบ
+    const { data: sess, error: se } = await supabaseDR.from('production_sessions')
+      .select('id, line_name, work_date, shift, shift_min, start_time, status, oee')
+      .eq('work_date', wd).in('line_name', liveRaw.chainLines);
+    if (se) { setLiveData(d => ({ ...(d || { byKey: {}, summary: null }), at: Date.now(), workDate: wd, partial: true })); return; }
+    const ids = (sess || []).map(s => s.id);
+    let orders = [], dts = [], dfs = [];
+    if (ids.length) {
+      const [o, d, f] = await Promise.all([
+        // opened_at/confirmed_at ให้ busyMinutes (P ไลน์เครื่องขนาน) — กฎ computeLiveOee
+        supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, status, qty, qty_ok, qty_actual, qty_target, machine_no, opened_at, confirmed_at')
+          .in('session_id', ids),
+        supabaseDR.from('downtime_logs')
+          .select('session_id, machine_no, description, started_at, ended_at, duration_min, created_at, dr_downtime_types(name_th, category)')
+          .in('session_id', ids),
+        // excl_from_q ต้อง join มาด้วย ไม่งั้นงานทดลองตกหล่นเงียบ (กฎ %Q)
+        supabaseDR.from('defect_logs')
+          .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)')
+          .in('session_id', ids),
+      ]);
+      if (o.error || d.error || f.error) partial = true;
+      orders = o.data || []; dts = d.data || []; dfs = f.data || [];
+    }
+    const { data: stock, error: ste } = await supabaseDR.from('line_stock_summary')
+      .select('mat_no, qty_on_hand').in('mat_no', liveRaw.allMats);
+    if (ste) partial = true;
+    const stockByMat = {};
+    (stock || []).forEach(r => { stockByMat[r.mat_no] = (stockByMat[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
+
+    // คงคลังสด → PLT/%VA ขยับตามจริง (โหลดสต๊อกพลาด = ใช้ค่าตอนโหลดโครง ไม่ใช่ 0)
+    const model = buildVsmModel({ ...liveRaw.raw, stockByMat: ste ? liveRaw.raw.stockByMat : stockByMat, overrides: {} });
+    const boxes = [...model.chain, ...model.feeders.flatMap(fd => fd.boxes)];
+    const lv = buildVsmLive({
+      boxes, sessions: sess || [], orders, downtimes: dts, defects: dfs,
+      ctMap: liveRaw.ctMap, lines, nowMs: Date.now(),
+    });
+    setLiveModel(model);
+    setLiveData({ ...lv, at: Date.now(), workDate: wd, partial });
+  }, [liveRaw, lines]);
+
+  usePolling(loadLive, RATE.BOARD, { enabled: tab === 'live' && !!liveRaw });
+
+  // realtime = ช่องทางหลัก (pattern เดียวกับ FactoryMap) · debounce 1.5 วิ กัน event รัวตอนสแกนรวบ
+  // loadLive อยู่ใน deps ตรงๆ (identity เปลี่ยนเมื่อ liveRaw/lines เปลี่ยน = resubscribe นานๆ ครั้ง)
+  useEffect(() => {
+    if (tab !== 'live' || !liveRaw) return;
+    let timer = null;
+    const bump = () => { clearTimeout(timer); timer = setTimeout(() => loadLive(), 1500); };
+    const ch = supabaseDR.channel('vsm-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bump)
+      .subscribe();
+    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+  }, [tab, liveRaw, loadLive]);
 
   /* ── บันทึก / โหลด / พิมพ์ ──────────────────────────────────────────────── */
   const save = useCallback(async () => {
@@ -296,33 +425,36 @@ export default function VSM() {
     fontSize: 13, fontWeight: 700, background: bg, color: '#08130a', fontFamily: 'var(--font-body)', ...extra,
   });
 
+  // FG picker ใช้ร่วม 2 แท็บ (state `matNo` ตัวเดียวกัน — สลับแท็บแล้วยังโฟกัสสินค้าเดิม)
+  const fgPicker = (
+    <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+      <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สินค้าสำเร็จรูป (FG · เบอร์ 1)</label>
+      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา MAT / ชื่อ / P/N…"
+        style={{ marginBottom: 6, fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+      <select value={matNo} onChange={e => setMatNo(e.target.value)}
+        style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
+        <option value="">— เลือกสินค้า —</option>
+        {fgByLine.map(([ln, ps]) => (
+          <optgroup key={ln} label={ln}>
+            {ps.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
+          </optgroup>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(98vw, 2200px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🗺️ แผนผังสายธารคุณค่า (Value Stream Map)
-        </h1>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-          เลือกสินค้าสำเร็จรูป → ระบบดึง CT · %OEE · C/O · LOT · คงคลัง · TT จากข้อมูลจริงมาสร้างผังให้
-        </div>
-      </div>
+      <PageHeader title="แผนผังสายธารคุณค่า (Value Stream Map)" icon="🗺️"
+        sub={tab === 'live'
+          ? 'มุมมองสด: สถานะไลน์ · OEE กะปัจจุบัน · คงคลัง ▲ ปัจจุบัน — ไม่ใช่เอกสารทางการ'
+          : 'เลือกสินค้าสำเร็จรูป → ระบบดึง CT · %OEE · C/O · LOT · คงคลัง · TT จากข้อมูลจริงมาสร้างผังให้'}
+        tabs={TABS} tab={tab} onTab={setTab} />
 
+      {tab === 'doc' && <>
       {/* ── แถบควบคุม ── */}
       <div style={{ ...S.card, marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div style={{ flex: '1 1 320px', minWidth: 260 }}>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สินค้าสำเร็จรูป (FG · เบอร์ 1)</label>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา MAT / ชื่อ / P/N…"
-            style={{ marginBottom: 6, fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
-          <select value={matNo} onChange={e => setMatNo(e.target.value)}
-            style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-            <option value="">— เลือกสินค้า —</option>
-            {fgByLine.map(([ln, ps]) => (
-              <optgroup key={ln} label={ln}>
-                {ps.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </div>
+        {fgPicker}
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เดือนข้อมูล</label>
           <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
@@ -545,6 +677,181 @@ export default function VSM() {
           <div data-legend><VsmLegend palette={palette} /></div>
         </div>
       </>}
+      </>}
+
+      {tab === 'live' && (() => {
+        const chips = [
+          ['down', liveData?.summary?.down || 0],
+          ['run', liveData?.summary?.run || 0],
+          ['closed', liveData?.summary?.closed || 0],
+          ['idle', liveData?.summary?.idle || 0],
+        ];
+        // แปลผล OEE สดต่อกล่อง — "ประเมินไม่ได้" ต้องบอกเหตุผล ห้ามโชว์ 0 (กฎ null + เหตุผล)
+        const liveOeeOf = lv => {
+          if (!lv || lv.status === 'unknown') return { v: null, note: lv?.reason || '—' };
+          if (lv.status === 'idle') return { v: null, note: 'ยังไม่เปิดกะวันนี้' };
+          if (lv.status === 'closed') return { v: lv.closedOee, note: 'กะปิดแล้ว · ค่าที่ stamp' };
+          if (!lv.live) return { v: null, note: 'กะเพิ่งเปิด — ประเมินได้เมื่อเกิน 10 นาที' };
+          if (lv.live.noOutput) return { v: null, note: `ยังไม่ผลิตชิ้นแรก · A ${lv.live.A}%` };
+          if (lv.live.noCt) return { v: null, note: `ชิ้นงานยังไม่ตั้ง CT — ประเมิน P ไม่ได้ · A ${lv.live.A}%` };
+          return {
+            v: lv.live.oee,
+            note: `A ${lv.live.A} · P ${lv.live.P} · Q ${lv.live.Q}`
+              + (lv.live.qtyNoCt ? ' · ⚠CT ไม่ครบ' : '') + (lv.live.pOver ? ' · ⚠%P ตัน' : ''),
+          };
+        };
+        return <>
+          <div style={{ ...S.card, marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            {fgPicker}
+            <div style={{ flex: '2 1 280px', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+              ค่ามาตรฐานในกล่อง (C/T · C/O · %OEE · A/T) = ค่าเฉลี่ย<b style={{ color: 'var(--text)' }}>เดือนนี้</b> ·
+              สถานะไลน์ / ยอดวันนี้ / คงคลัง ▲ = <b style={{ color: 'var(--accent)' }}>สด</b><br />
+              มุมมองนี้<b>ไม่บันทึก/ไม่พิมพ์</b> — เอกสาร VSM ทางการ (snapshot) อยู่แท็บ 📋
+            </div>
+            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ รีเฟรชตอนนี้</button>}
+          </div>
+
+          {!matNo && (
+            <div style={{ ...S.card, textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 14 }}>
+              เลือกสินค้าสำเร็จรูปก่อน — ระบบจะกางสายธารแล้วตามสถานะสดให้เอง
+            </div>
+          )}
+          {matNo && liveBusy && !liveModel && (
+            <div style={{ ...S.card, textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดโครงสายธาร…</div>
+          )}
+
+          {matNo && liveModel && <>
+            {/* ── แถบสถานะรวม ── */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700,
+                padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text)',
+              }}>
+                {/* จุดสถานะ live = นิ่ง+เรืองแสง ห้ามกระพริบ (Andon สงวนกระพริบให้แดง) */}
+                <span style={{ width: 8, height: 8, borderRadius: 99, background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+                REALTIME · อัปเดต {liveData?.at ? new Date(liveData.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· วันงาน {liveData?.workDate || getWorkDate()}</span>
+              </span>
+              {liveData?.partial && (
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid #f59e0b' }}>
+                  ⚠ โหลดข้อมูลสดไม่ครบ — ตัวเลขบางส่วนอาจขาด (จะลองใหม่รอบถัดไป)
+                </span>
+              )}
+              {chips.map(([k, nn]) => (
+                <span key={k} className={k === 'down' && nn > 0 ? 'dt-alarm-blink' : undefined}
+                  style={{
+                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+                    background: 'var(--bg3)', border: '1px solid var(--border)',
+                    // dt-alarm-blink ทาพื้นแดง — ตัวอักษรต้องขาว ไม่งั้นแดงบนแดงอ่านไม่ออก
+                    color: k === 'down' && nn > 0 ? '#fff' : nn > 0 ? LIVE_STATUS[k].color : 'var(--muted)',
+                  }}>
+                  {LIVE_STATUS[k].label} · {nn} ไลน์
+                </span>
+              ))}
+              {(liveData?.summary?.plannedOpen || 0) > 0 && (
+                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                  🗓️ หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
+                </span>
+              )}
+            </div>
+
+            {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
+            {(liveData?.summary?.alarms || []).length > 0 && (
+              <div style={{ background: 'rgba(239,68,68,0.10)', borderLeft: '3px solid #ef4444', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>🚨 Downtime ค้างในสายธารนี้</div>
+                {liveData.summary.alarms.map((a, i) => (
+                  <div key={i} style={{ fontSize: 12.5, color: 'var(--text)', padding: '2px 0' }}>
+                    <b>{a.line}</b>{a.machineNo ? ` · ${a.machineNo}` : ''} — {a.typeName || 'ไม่ระบุประเภท'}
+                    {a.description ? ` · 💬 ${a.description}` : ''}
+                    {a.openMin != null && <span style={{ color: '#ef4444', fontWeight: 700 }}> · ค้าง {a.openMin} นาที</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── ช่องที่ระบบไม่มีข้อมูล (จากโมเดล — กฎห้ามเงียบ) ── */}
+            {!!liveModel.warnings.length && (
+              <div style={{ marginBottom: 12, display: 'grid', gap: 6 }}>
+                {liveModel.warnings.map((w, i) => {
+                  const st = WARN_STYLE[w.level] || WARN_STYLE.info;
+                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+                    {st.icon} {w.text}
+                  </div>;
+                })}
+              </div>
+            )}
+
+            {/* ── ผังสด ── */}
+            <div style={{ ...S.card, padding: 8, marginBottom: 6, overflowX: 'auto' }}>
+              <VsmCanvas model={liveModel} palette={palette} live={liveData} />
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>
+              ขอบกล่องกระบวนการ: <b style={{ color: '#ef4444' }}>แดงกระพริบ = Downtime ค้าง</b> ·
+              <b style={{ color: '#22c55e' }}> เขียว = กำลังผลิต</b> · เส้นประจาง = ยังไม่เปิดกะวันนี้ —
+              วางเมาส์บนกล่องเพื่อดูสถานะ · ▲ คงคลัง/PLT/%VA คำนวณจากยอดคงเหลือปัจจุบัน
+            </div>
+
+            {/* ── การ์ดสถานะรายขั้น (ค่าสดเต็มรูป) ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10, alignContent: 'start', marginBottom: 14 }}>
+              {liveModel.chain.map((b, i) => {
+                const lv = liveData?.byKey?.[b.key];
+                const meta = LIVE_STATUS[lv?.status || 'unknown'];
+                const oee = liveOeeOf(lv);
+                return (
+                  <div key={b.key} style={{ ...S.card, padding: 12, borderLeft: `3px solid ${meta.color}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>
+                        {i + 1}. {b.name}
+                        <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {b.line || '—'}</span>
+                      </div>
+                      <span className={lv?.status === 'down' ? 'dt-alarm-blink' : undefined}
+                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 999, background: 'var(--bg2)' }}>
+                        {meta.label}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--text)' }}>
+                      <span>OEE {lv?.status === 'closed' ? 'วันนี้' : 'กะนี้ (สด)'}:{' '}
+                        <b>{oee.v == null ? '—' : `${oee.v}%`}</b></span>
+                      <span>วันนี้: <b>{lv?.produced ?? '—'}</b>{lv?.target ? ` / ${lv.target}` : ''} ชิ้น</span>
+                      <span style={{ color: 'var(--muted)' }}>OEE เฉลี่ยเดือนนี้: {b.oeePct == null ? '—' : `${b.oeePct}%`}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{oee.note}</div>
+                    {(lv?.alarms || []).map((a, j) => (
+                      <div key={j} style={{ fontSize: 11.5, color: '#ef4444' }}>
+                        🚨 {a.machineNo || 'ไม่ระบุเครื่อง'} · {a.typeName || '—'}{a.openMin != null ? ` · ค้าง ${a.openMin} นาที` : ''}
+                      </div>
+                    ))}
+                    {(lv?.plannedOpen || []).length > 0 && (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                        🗓️ หยุดตามแผนค้าง {lv.plannedOpen.length} รายการ
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* ── สรุปสายธารสด ── */}
+            <div style={{ ...S.card, maxWidth: 460, marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>สรุปสายธาร (จากคงคลังปัจจุบัน)</div>
+              {[
+                ['PLT (Production Lead Time)', liveModel.totals.pltDays == null ? '—' : `${liveModel.totals.pltDays} วัน`],
+                ['PT (Processing Time)', `${(liveModel.totals.ptSec || 0).toLocaleString('th-TH')} sec`],
+                ['%VA (Value Added)', liveModel.totals.vaPct == null ? '—' : `${liveModel.totals.vaPct}%`],
+                ['Takt Time', liveModel.info.ttSec == null ? '—' : `${liveModel.info.ttSec} sec`],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border)', fontSize: 12.5 }}>
+                  <span style={{ color: 'var(--muted)' }}>{k}</span>
+                  <span style={{ color: 'var(--text)', fontWeight: 700 }}>{v}</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.5 }}>
+                คงคลัง WIP กลางทางระบบยังไม่เก็บ (กรอกได้ในแท็บ 📋) — PLT สดจึงอาจต่ำกว่าความจริง
+              </div>
+            </div>
+          </>}
+        </>;
+      })()}
 
       {/* ── ตัวพิมพ์: render ซ้ำด้วยชุดสีสว่าง แล้วให้ vsmPrint clone outerHTML ไปใช้ ── */}
       <div ref={printRef} style={{ position: 'absolute', left: -99999, top: 0, width: 1600, pointerEvents: 'none' }} aria-hidden>
