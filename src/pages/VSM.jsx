@@ -146,9 +146,12 @@ export default function VSM() {
       const famNames = fg.line_name ? getLineFamilyNames(lines, fg.line_name) : [];
 
       // BOM ของ FG → รู้ว่าต้องดึง routing/สต๊อกของพาร์ทลูกตัวไหนบ้าง
-      const { data: bomItems = [] } = await supabaseDR.from('bom_items')
+      // ⚠ error ของ supabase คืน data:null (ไม่ใช่ undefined) — default `= []` ไม่ทำงาน ต้อง throw ให้ toast บอกจริง
+      const { data: bomRaw, error: bomErr } = await supabaseDR.from('bom_items')
         .select('mat_no, part_no, part_name, qty_per_unit, supplier, source_line')
         .eq('product_id', fg.id).eq('is_active', true);
+      if (bomErr) throw new Error(`โหลด BOM ไม่สำเร็จ: ${bomErr.message}`);
+      const bomItems = bomRaw || [];
 
       const allMats = [fg.mat_no, ...bomItems.map(b => b.mat_no)].filter(Boolean);
       const childLines = bomItems
@@ -296,6 +299,8 @@ export default function VSM() {
   // รอบ refresh สด: กะวันนี้ของไลน์ในสาย + ใบงาน/DT/ของเสีย + คงคลังปัจจุบัน (payload เล็ก)
   const loadLive = useCallback(async () => {
     if (!liveRaw) return;
+    // จอที่เปิดค้างข้ามเดือน: โครงค่ามาตรฐาน "เดือนนี้" ต้องไม่ค้างเป็นเดือนเก่า → ล้างให้ init ใหม่
+    if (liveRaw.raw.monthKey !== monthKeyNow()) { setLiveRaw(null); return; }
     const wd = getWorkDate();
     let partial = false;                                     // query ไหนพลาด = บอกบนจอ ห้ามเงียบ
     const { data: sess, error: se } = await supabaseDR.from('production_sessions')
@@ -691,7 +696,7 @@ export default function VSM() {
           if (!lv || lv.status === 'unknown') return { v: null, note: lv?.reason || '—' };
           if (lv.status === 'idle') return { v: null, note: 'ยังไม่เปิดกะวันนี้' };
           if (lv.status === 'closed') return { v: lv.closedOee, note: 'กะปิดแล้ว · ค่าที่ stamp' };
-          if (!lv.live) return { v: null, note: 'กะเพิ่งเปิด — ประเมินได้เมื่อเกิน 10 นาที' };
+          if (!lv.live) return { v: null, note: 'ยังประเมินไม่ได้ — กะต้องเปิดเกิน 10 นาที (และกะต้องมีเวลาเริ่ม)' };
           if (lv.live.noOutput) return { v: null, note: `ยังไม่ผลิตชิ้นแรก · A ${lv.live.A}%` };
           if (lv.live.noCt) return { v: null, note: `ชิ้นงานยังไม่ตั้ง CT — ประเมิน P ไม่ได้ · A ${lv.live.A}%` };
           return {

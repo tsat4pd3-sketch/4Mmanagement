@@ -57,7 +57,7 @@ test('planned เปิดค้าง = แสดงแยกแบบสงบ
   assert.equal(lv.byKey['F1#1'].plannedOpen.length, 1);
   assert.equal(lv.summary.plannedOpen, 1);
   assert.equal(lv.summary.down, 1);
-  assert.equal(lv.summary.alarms[0].line, 'hdf1');
+  assert.equal(lv.summary.alarms[0].line, 'HDF1');   // ชื่อจริง ไม่ใช่ key lowercase (Andon อ่านโดยคน)
   assert.ok(lv.summary.alarms[0].openMin >= 29 && lv.summary.alarms[0].openMin <= 31);
 });
 

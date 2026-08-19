@@ -12,6 +12,7 @@
  * layout เป็น auto-layout จากโมเดล (ไม่ใช่ลากวางอิสระ) → regenerate แล้วผังจัดใหม่ให้เอง
  * โครง: supplier (ซ้าย) → สายป้อน (บน) + สายหลัก (กลาง) → ลูกค้า (ขวา) · บันไดเวลา (ล่าง)
  */
+import { LIVE_STATUS } from '../lib/vsmLive';
 
 export const PALETTE_LIGHT = {
   bg: '#ffffff', ink: '#111827', sub: '#4b5563', line: '#374151', faint: '#9ca3af',
@@ -209,14 +210,15 @@ function ProcBox({ b, x, yProc, P, small = false, lv = null }) {
   // ขอบตามสถานะสด: down แดง(กระพริบ — Andon แดงเท่านั้นที่กระพริบ) · run เขียว · idle เส้นประจาง
   const lvStroke = lv ? ({ down: P.nva, run: P.va }[lv.status] || null) : null;
   const lvDash = lv?.status === 'idle' ? '5 3' : undefined;
+  // ข้อความสถานะอ่านจาก LIVE_STATUS (vsmLive.js) — ห้ามพิมพ์ป้ายสถานะซ้ำที่นี่ เดี๋ยว drift
   const lvTitle = lv ? [
-    lv.status === 'down' ? `🔴 Downtime ค้าง ${lv.alarms?.length || 0} รายการ` :
-    lv.status === 'run' ? '🟢 กำลังผลิต' :
-    lv.status === 'closed' ? '✅ ปิดกะแล้ววันนี้' :
-    lv.status === 'idle' ? '⚪ ยังไม่เปิดกะวันนี้' : '❔ ไม่ทราบสถานะ',
+    (LIVE_STATUS[lv.status] || LIVE_STATUS.unknown).label
+      + (lv.status === 'down' ? ` ${lv.alarms?.length || 0} รายการ` : ''),
     lv.live?.oee != null ? `OEE สด ${lv.live.oee}%` : null,
     lv.produced != null ? `วันนี้ ${lv.produced}/${lv.target || '—'} ชิ้น` : null,
   ].filter(Boolean).join(' · ') : null;
+  // จอ TV โหมดเบา (data-perf="lite") งดกระพริบตาม UI §1.7 — ขอบแดงนิ่งยังบอกสถานะครบ
+  const perfLite = typeof document !== 'undefined' && document.documentElement.dataset.perf === 'lite';
   const rows = [
     ['C/T', b.ct == null ? '—' : `${fmt(b.ct, 1)} sec`],
     ['T/T', b.ttSec == null ? '—' : `${fmt(b.ttSec, 1)} sec`],
@@ -233,7 +235,7 @@ function ProcBox({ b, x, yProc, P, small = false, lv = null }) {
         fill={b.isOutsourced ? P.outsource : P.box}
         stroke={lvStroke || (lv?.status === 'idle' ? P.faint : P.line)}
         strokeWidth={lvStroke ? 2.2 : 1.4} strokeDasharray={lvDash}>
-        {lv?.status === 'down' && (
+        {lv?.status === 'down' && !perfLite && (
           <animate attributeName="stroke-opacity" values="1;0.25;1" dur="1.1s" repeatCount="indefinite" />
         )}
       </rect>

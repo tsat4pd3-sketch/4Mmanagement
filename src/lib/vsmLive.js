@@ -115,6 +115,7 @@ export function buildVsmLive({
 
     lineCache[key] = {
       status, sessionIds,
+      name: lineName,            // ชื่อจริง (ไม่ใช่ key lowercase) — แถบ Andon/summary ต้องใช้ตัวนี้
       shift: openSess?.shift || null,
       live,                      // ผลจาก computeLiveOee (null = ยังประเมินไม่ได้/ไม่มีกะเปิด)
       closedOee,                 // OEE กะที่ปิดแล้ววันนี้ (stamp · ถ่วงน้ำหนัก)
@@ -152,7 +153,7 @@ export function buildVsmLive({
     closed: perLine.filter(([, v]) => v.status === 'closed').length,
     idle: perLine.filter(([, v]) => v.status === 'idle').length,
     plannedOpen: perLine.reduce((a, [, v]) => a + v.plannedOpen.length, 0),
-    alarms: perLine.flatMap(([name, v]) => v.alarms.map(a => ({ line: name, ...a })))
+    alarms: perLine.flatMap(([, v]) => v.alarms.map(a => ({ line: v.name, ...a })))
       .sort((a, b) => (b.openMin || 0) - (a.openMin || 0)),
   };
 
