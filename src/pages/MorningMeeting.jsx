@@ -107,7 +107,8 @@ export default function MorningMeeting() {
     const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
     const base = orgSections.length ? orgSections : fromLines;
     const scoped = scopeSecs.length ? base.filter(s => inSectionScope(scopeSecs, s)) : base;
-    return [...new Set(scoped)].sort();
+    // คงลำดับตามผัง (org_nodes เรียง sort_order มาแล้ว) — .sort() ตัวอักษรเฉพาะ fallback ที่เดาจากไลน์
+    return orgSections.length ? [...new Set(scoped)] : [...new Set(scoped)].sort();
   }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(
     () => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines),
