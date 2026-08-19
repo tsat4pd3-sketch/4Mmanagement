@@ -1562,7 +1562,7 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 ## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
 
-`/die-registry` เป็น 3 แท็บ: **📋 ทะเบียน** (ของเดิม) · **🗺️ ผังจัดเก็บ** (`src/components/DieLayout.jsx`) · **📊 สถานะ** (`src/components/DieStatusBoard.jsx`) — ตอบ "แม่พิมพ์ตัวนี้อยู่ตรงไหน · สถานะอะไร" · migration **`20260819_die_layout_status.sql` (DR — ⚠️ ยังไม่ apply ณ วันเขียน · โค้ด tolerant: ยังไม่ apply = แท็บขึ้น banner บอกให้ apply · ทะเบียน + คอลัมน์ "ใบซ่อม MO ค้าง" ยังทำงานปกติ)**
+`/die-registry` เป็น 3 แท็บ: **📋 ทะเบียน** (ของเดิม) · **🗺️ ผังจัดเก็บ** (`src/components/DieLayout.jsx`) · **📊 สถานะ** (`src/components/DieStatusBoard.jsx`) — ตอบ "แม่พิมพ์ตัวนี้อยู่ตรงไหน · สถานะอะไร" · migration **`20260819_die_layout_status.sql` (DR — apply แล้ว 2026-08-19 · user รันเองผ่าน SQL Editor)** — โค้ดยัง tolerant ไว้เผื่อ rollback (42P01/42703 → banner ไม่พังเงียบ)
 
 - **ผังจัดเก็บ = pattern เดียวกับ RackMap:** ตาราง `die_storage_areas` (DR · รูปจริง 1 รูป/ผัง · หลายผังได้) + หมุดรายตัวเก็บที่ **`equipment_die.area_id/pos_x/pos_y`** (% ของรูป 0-100) — ตัวตนแม่พิมพ์ยังอยู่ `machines` ตามกฎ "ชนิดอุปกรณ์เป็นแกน ไม่ใช่ตาราง" · หมุด = **วงกลม+ป้ายใต้** ขนาดผ่าน `markerScale` (UI §1) · editor มี Undo/Redo (`useUndoHistory` — §6.7) · รูปผังบีบสเปคผัง 2560px/q0.9 bucket `mtn-images` path `die-area/` · แม่พิมพ์ที่ยังไม่วาง = worklist **ห้ามซ่อน**
 - **⚠️ กฎเหล็ก — สถานะแม่พิมพ์มี 2 แกน ห้ามยุบรวม** (source of truth `src/utils/dieStatus.js`):
