@@ -330,7 +330,7 @@ export default function DieRegistry() {
 
       {tab === 'layout' && (
         <DieLayout
-          dies={scopedDies} setsById={setsById} areas={areas} openMos={openMos}
+          dies={scopedDies} setsById={setsById} areas={areas} openMos={openMos} products={products}
           canEdit={canEdit} fullName={fullName} ready={layoutReady}
           reload={load} reloadAreas={reloadAreas} patchDieExt={patchDieExt}
           focusDieId={focusDieId} onFocusConsumed={() => setFocusDieId(null)}
@@ -339,7 +339,7 @@ export default function DieRegistry() {
 
       {tab === 'status' && (
         <DieStatusBoard
-          dies={scopedDies} setsById={setsById} areas={areas} openMos={openMos}
+          dies={scopedDies} setsById={setsById} areas={areas} openMos={openMos} products={products}
           canEdit={canEdit} fullName={fullName} ready={layoutReady} patchDieExt={patchDieExt}
           onShowOnMap={(d) => { setFocusDieId(d.id); setTab('layout'); }}
         />

@@ -7,7 +7,8 @@
    · ค้นหาแล้วหมุดที่ตรงไฮไลต์เหลือง · แม่พิมพ์ที่ยังไม่วาง = worklist ห้ามซ่อน
    · editor เขียน DB ทันที → มี Undo/Redo (UI-CONVENTIONS §6.7)                          */
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { supabaseDR } from '../supabaseClient';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
@@ -46,9 +47,11 @@ const clampPct = (v) => Math.max(1.5, Math.min(98.5, v));
 const missErr = (e) => e && (e.code === '42703' || e.code === '42P01');
 
 export default function DieLayout({
-  dies, setsById, areas, openMos, canEdit, fullName, ready, reload, patchDieExt, reloadAreas,
+  dies, setsById, areas, openMos, products = [], canEdit, fullName, ready, reload, patchDieExt, reloadAreas,
   focusDieId, onFocusConsumed,
 }) {
+  const navigate = useNavigate();
+  const [sp, setSp] = useSearchParams();
   const [areaId, setAreaId] = useState('');
   const [edit, setEdit] = useState(false);
   const [q, setQ] = useState('');
@@ -66,6 +69,28 @@ export default function DieLayout({
     setAreaId(prev => (prev && areas.some(a => a.id === prev)) ? prev : (areas[0]?.id || ''));
   }, [areas]);
 
+  /* ── 🔗 link กับผังรวมโรงงาน (/factory-map) — 2026-08-19 ──
+     กรอบบนผังรวมที่ชื่อตรงกับชื่อผังนี้ (factory_line_regions.line_name · Main) = โซนคลังแม่พิมพ์
+     คลิกโซนบนผังรวม → เด้งมาที่นี่พร้อม ?area=<id>&from=factory-map (pattern เดียวกับโซน facility → /mtn-layout) */
+  const fromFactoryMap = sp.get('from') === 'factory-map';
+  useEffect(() => {
+    const want = sp.get('area');
+    if (!want || !areas.length) return;
+    const hit = areas.find(a => a.id === want)
+      || areas.find(a => String(a.name || '').trim().toLowerCase() === want.trim().toLowerCase());
+    if (hit) setAreaId(hit.id);
+    const next = new URLSearchParams(sp); next.delete('area'); setSp(next, { replace: true });  // คง from= ไว้ให้ปุ่มกลับ
+  }, [areas, sp]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ชื่อกรอบทั้งหมดบนผังรวม (Main) — ไว้บอกว่าผังนี้ถูกตีกรอบบนผังรวมแล้วหรือยัง (โหลดครั้งเดียว)
+  const [mapZoneNames, setMapZoneNames] = useState(null);   // null = ยังไม่รู้ (โหลดไม่เสร็จ/พลาด) ≠ Set ว่าง
+  useEffect(() => {
+    supabase.from('factory_line_regions').select('line_name').then(({ data, error }) => {
+      if (!error) setMapZoneNames(new Set((data || []).map(r => String(r.line_name || '').trim().toLowerCase())));
+    });
+  }, []);
+  const onFactoryMap = !!(area && mapZoneNames?.has(String(area.name || '').trim().toLowerCase()));
+
   // วัดความกว้างผังจริง — markerScale ต้องรู้ (WYSIWYG ทุกหน้า)
   useEffect(() => {
     const el = wrapRef.current;
@@ -77,6 +102,12 @@ export default function DieLayout({
 
   const moMap = useMemo(() => buildOpenMoMap(openMos), [openMos]);
   const activeDies = useMemo(() => dies.filter(d => d.is_active), [dies]);
+  // 🏭 link แม่พิมพ์ ↔ ไลน์ผลิต: ชุดแม่พิมพ์ผูก MAT (die_sets.mat_no) → dr_products.line_name = ไลน์ที่ใช้พาร์ทนี้
+  const matLine = useMemo(() => {
+    const m = {};
+    products.forEach(p => { if (p.mat_no && p.line_name) m[p.mat_no] = p.line_name; });
+    return m;
+  }, [products]);
 
   const placedHere = useMemo(
     () => activeDies.filter(d => d.ext?.area_id === areaId && d.ext?.pos_x != null && d.ext?.pos_y != null),
@@ -249,6 +280,9 @@ export default function DieLayout({
     <div>
       {/* ── แถบเครื่องมือ ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        {fromFactoryMap && (
+          <button onClick={() => navigate('/factory-map')} style={btnGhost}>← กลับผังรวมโรงงาน</button>
+        )}
         <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }} style={{ ...inp, width: 240 }}>
           {!areas.length && <option value="">— ยังไม่มีผังจัดเก็บ —</option>}
           {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -266,7 +300,19 @@ export default function DieLayout({
           <button onClick={() => setAreaForm({ mode: 'new' })} style={btnGhost}>➕ ผังใหม่</button>
           {area && <button onClick={() => setAreaForm({ mode: 'edit', area })} style={btnGhost}>⚙️</button>}
         </>}
+        {onFactoryMap && (
+          <button onClick={() => navigate('/factory-map')} style={btnGhost} title="โซนนี้ถูกตีกรอบบนผังรวมโรงงานแล้ว — คลิกกรอบบนผังรวมเด้งกลับมาที่นี่ได้">
+            🏭 ดูบนผังรวมโรงงาน
+          </button>
+        )}
       </div>
+      {/* บอกสถานะ link กับผังรวม — ห้ามเงียบ: ตีกรอบแล้วโซนบนผังรวมจะโชว์สถานะแม่พิมพ์ + คลิกเด้งมาหน้านี้ */}
+      {area && mapZoneNames && !onFactoryMap && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
+          🔗 ผังนี้ยังไม่ถูกตีกรอบบนผังรวมโรงงาน — ไปที่ <b>ผังรวมโรงงาน → โหมดแก้ผัง</b> แล้วตีกรอบเลือกโซน
+          "🔨 <b>{area.name}</b>" (โซนบนผังรวมจะโชว์จำนวน/ใบซ่อมค้างของแม่พิมพ์ และคลิกเด้งเข้าผังนี้)
+        </div>
+      )}
 
       {/* ผลค้นหา */}
       {!!hits && (
@@ -404,11 +450,14 @@ export default function DieLayout({
                   const setName = setNameOf(selDie);
                   const placed = e.area_id && e.pos_x != null;
                   const mos = openMosOf(selDie, moMap);
+                  const dieSet = setsById[e.die_set_id];
+                  const feedLine = dieSet?.mat_no ? matLine[dieSet.mat_no] : null;   // ไลน์ผลิตที่ใช้พาร์ทของชุดนี้
                   return (
                     <div style={{ display: 'grid', gap: 8, fontSize: 12 }}>
                       <div style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
                         {setName && <>ชุด <b style={{ color: 'var(--text)' }}>{setName}</b>{e.op_seq != null && <> · OP{e.op_seq}</>}<br /></>}
-                        {selDie.line_name && <>ไลน์ {selDie.line_name} · </>}
+                        {feedLine && <>🏭 ป้อนไลน์ผลิต <b style={{ color: 'var(--text)' }}>{feedLine}</b>{dieSet?.mat_no ? ` (MAT ${dieSet.mat_no})` : ''}<br /></>}
+                        {selDie.line_name && <>เครื่องปั๊ม {selDie.line_name} · </>}
                         ตัน {e.tonnage_ton ?? '—'} · shot {Number(e.shot_total || 0).toLocaleString()} ·
                         เจียร {e.regrind_count || 0}{e.regrind_limit ? `/${e.regrind_limit}` : ''}
                         {regrindOver(e) && <b style={{ color: '#ef4444' }}> ⚠️ เจียรครบเกณฑ์แล้ว</b>}
@@ -525,6 +574,21 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
         .update({ name: name.trim(), note: note.trim() || null }).eq('id', area.id);
       setSaving(false);
       if (error) return toast.error(error.message);
+      // ⚠️ cascade ชื่อไปกรอบบนผังรวมโรงงาน (Main factory_line_regions) — link จับคู่ด้วย "ชื่อ"
+      //    (ข้าม project FK ไม่ได้) เปลี่ยนชื่อแล้วไม่ตามไปแก้ = กรอบบนผังรวมกำพร้าเงียบๆ (กฎ rename cascade)
+      if (name.trim() !== (area.name || '').trim()) {
+        const norm = (s) => String(s || '').trim().toLowerCase();
+        const { data: regs, error: rerr } = await supabase.from('factory_line_regions').select('id, line_name');
+        const hit = rerr ? null : (regs || []).find(r => norm(r.line_name) === norm(area.name));
+        if (hit) {
+          const { error: uerr } = await supabase.from('factory_line_regions')
+            .update({ line_name: name.trim() }).eq('id', hit.id);
+          if (uerr) toast.error('เปลี่ยนชื่อผังแล้ว แต่กรอบบนผังรวมโรงงานยังเป็นชื่อเดิม — ไปแก้ที่ผังรวมเอง (' + uerr.message + ')');
+          else toast.info('เปลี่ยนชื่อกรอบบนผังรวมโรงงานตามให้แล้ว');
+        } else if (rerr) {
+          toast.error('เปลี่ยนชื่อผังแล้ว แต่เช็คกรอบบนผังรวมโรงงานไม่สำเร็จ — ถ้าเคยตีกรอบไว้ให้ไปแก้ชื่อที่ผังรวมด้วย');
+        }
+      }
       toast.success('บันทึกแล้ว');
       onSaved(area.id);
     }
