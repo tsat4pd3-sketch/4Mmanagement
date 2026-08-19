@@ -2107,6 +2107,28 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 > **ทำแล้ว:** FactoryMap (4 loop) · Management (2) · Dashboard · DailyPM · DeptHub · DowntimeSiren · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics
 > **ตัวจับเวลาที่เป็นแค่นาฬิกา (`setNow`/`setNowMs`/`setNowForBoard`/`setFrameIdx`) ไม่ต้องแตะ** — ไม่ยิง DB ไม่กิน egress
 > **แนวทางที่ถูกที่สุดคือ realtime + poll ห่างๆ เป็นตัวสำรอง** (Dashboard/DailyPM ทำแบบนี้อยู่แล้ว — push เฉพาะแถวที่เปลี่ยน กิน egress น้อยกว่า poll มาก) · จอใหม่ให้ทำตาม pattern นี้
+>
+> #### 📊 งบ Free tier ครบทุกลิมิต (ตรวจ 2026-08-19 · แผน 15 จอ) — เช็คตัวนี้ก่อนเพิ่มของหนักๆ
+> **⚠️ Egress ของ Supabase เป็น "unified" — รวม DB + Storage + Realtime + Edge Function ในถังเดียว 5 GB**
+> (เคยเข้าใจผิดว่า realtime อยู่นอกถัง — ไม่ใช่ · แต่ push ยังถูกกว่า poll เป็นร้อยเท่าอยู่ดี)
+>
+> | ลิมิต Free | เพดาน | คาดใช้ที่ 15 จอ | เหลือ |
+> |---|---|---|---|
+> | **Egress (รวมทุกอย่าง)** | 5 GB/เดือน | **~3.8 GB** (poll 3.6 + realtime 0.16) | 🟡 24% |
+> | Realtime messages | 2,000,000/เดือน | ~315,000 | ✅ 84% |
+> | Realtime concurrent | 200 | ~25 (15 จอ + มือถือ/PC) | ✅ 88% |
+> | Edge Function calls | 500,000/เดือน | ~19,500 (cron 3 ตัว + แจ้งเตือน) | ✅ 96% |
+> | DB ต่อ project | 500 MB | Main 35 · DR 53 | ✅ 90%+ |
+> | Storage | 1 GB | 233 MB | ✅ 77% |
+> | MAU | 50,000 | <300 | ✅ 99% |
+> | Active projects | 2 | 2 (Main + DR) | ⚠️ **เต็ม — สร้าง project ที่ 3 ไม่ได้** |
+>
+> **ที่มาของ realtime estimate:** write บนตารางที่ subscribe ≈ 700 events/วัน
+> (prod_orders เปิดใบ 154 + แก้ยอด 82 · downtime 118 · sessions 18 · defect 2 · mtn 0 — เฉลี่ย 7 วัน)
+> × 15 จอ = ~10,500 msg/วัน · **โตตามจำนวนจอแบบเชิงเส้น** เพิ่มจอเยอะๆ ให้คำนวณใหม่
+>
+> **⚠️ ตัวที่ตึงที่สุดคือ Egress (24% ของงบ) — ก่อนเพิ่มจอ/หน้า/realtime channel ให้ประเมินตรงนี้ก่อนเสมอ**
+> **`/version.json` ไม่นับ** — 25 bytes เสิร์ฟจาก **Render static site** คนละถังกับ Supabase (Render free 100 GB)
 
 - **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — **ตรวจล่าสุด 2026-08-17: Main DB 34MB (~7%) · DR DB 51MB (~10%)** (2026-08-05: Main 27MB · DR 33MB · Storage Main ~165MB 17% · DR ~63MB 6%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
   - **ตรวจขนาดเป็นระยะ:** `select pg_size_pretty(pg_database_size(current_database()))` และหาตัวหนักด้วย `pg_stat_user_tables` (⚠️ อย่า join กับ `pg_tables` — คอลัมน์ `schemaname` ชนกัน ใช้ตัวเดียวพอ)
