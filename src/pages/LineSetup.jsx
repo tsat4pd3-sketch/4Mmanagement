@@ -11,6 +11,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
+import LineFlowPanel from '../components/LineFlowPanel';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -454,6 +455,9 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
     await bump(supabaseDR, 'pm_plans', 'usage_source_line');
+    // 🔗 สายการไหลระหว่างไลน์ — มี line_name 2 คอลัมน์ ต้อง bump ทั้งขาต้นน้ำและปลายน้ำ
+    await bump(supabaseDR, 'line_flow_links', 'from_line');
+    await bump(supabaseDR, 'line_flow_links', 'to_line');
     for (const t of ['bom_items', 'child_lot_requests', 'packaging_withdrawal_requests']) {
       await bump(supabaseDR, t, 'source_line');
     }
@@ -1918,6 +1922,9 @@ export default function LineSetup({ embedded = false } = {}) {
             </div>
           </div>
           )}
+
+          {/* 🔗 สายการไหลระหว่างไลน์ — ไลน์นี้ป้อนงานให้ใคร / รับของจากใคร (2026-08-19) */}
+          <LineFlowPanel lineName={selectedLine} lines={lines} canEdit={canEdit} />
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
