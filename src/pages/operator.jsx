@@ -137,6 +137,8 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
+  // กางสกิลนอกส่วนงานในโมดัลแก้ไขพนักงาน (default ปิด — ดูหัวข้อ visibleSkillDefs)
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
   const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
@@ -1589,11 +1591,54 @@ export default function Operator() {
                   </div>
                 )}
                 {(() => {
+                  // ── กรองสกิลที่ไม่เกี่ยวกับส่วนงานของพนักงานคนนี้ (2026-08-18 · คำสั่ง user) ──
+                  //   `skill_definitions.scope_section` ว่าง = สกิลกลาง ใช้ได้ทุกส่วน
+                  //   มีค่า (PD3/PD4/…) = ของส่วนงานนั้นโดยเฉพาะ
+                  //   เคสจริงที่ทำให้ต้องกรอง: ช่างแผนก MTN เปิดมาเจอสกิลฝ่ายผลิต 29 ตัว
+                  //   ขึ้น "ไม่เกี่ยวข้อง" เรียงยาวจนหาของตัวเองไม่เจอ (44 → เหลือ 15)
+                  // ⚠️ ห้ามซ่อนเงียบ — สกิลที่พนักงาน "มีอยู่แล้ว" ต้องโชว์เสมอแม้นอกส่วนงาน
+                  //   (ไม่งั้นข้อมูลที่มีอยู่จะมองไม่เห็น/แก้ไม่ได้) + มีปุ่มกางดูของที่ซ่อน พร้อมบอกจำนวน
+                  const empSec = editingEmp.section || null;
+                  const isOwned = (sd) => !!editingEmp.skillEnabled?.[sd.name]
+                    || (editingEmp.employee_skills || []).some(s => s.skill_name === sd.name);
+                  const inScope = (sd) => {
+                    const sc = (sd.scope_section || '').trim();
+                    if (!sc) return true;                       // สกิลกลาง
+                    return !!empSec && inSectionScope([empSec], sc);
+                  };
+                  const visibleSkillDefs = showAllSkills
+                    ? skillDefs
+                    : skillDefs.filter(sd => inScope(sd) || isOwned(sd));
+                  const hiddenCount = skillDefs.length - visibleSkillDefs.length;
+
                   // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
                   const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
-                    key: k, ...m, desc: null, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+                    key: k, ...m, desc: null, skills: visibleSkillDefs.filter(sd => (sd.category || 'hard_skill') === k),
                   })).filter(g => g.skills.length > 0);
-                  return grouped.map(g => (
+                  const scopeBar = (hiddenCount > 0 || showAllSkills) ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      <span>
+                        {showAllSkills
+                          ? `แสดงทุกสกิล (${skillDefs.length})`
+                          : `แสดงสกิลของ ${empSec || 'ส่วนกลาง'} + สกิลกลาง (${visibleSkillDefs.length}/${skillDefs.length})`}
+                      </span>
+                      {hiddenCount > 0 && !showAllSkills && (
+                        <button type="button" onClick={() => setShowAllSkills(true)}
+                          style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
+                          + แสดงสกิลนอกส่วนงาน ({hiddenCount})
+                        </button>
+                      )}
+                      {showAllSkills && (
+                        <button type="button" onClick={() => setShowAllSkills(false)}
+                          style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
+                          ซ่อนสกิลนอกส่วนงาน
+                        </button>
+                      )}
+                    </div>
+                  ) : null;
+                  return (<>
+                  {scopeBar}
+                  {grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
                       <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
@@ -1675,7 +1720,8 @@ export default function Operator() {
                         })}
                       </div>
                     </div>
-                  ));
+                  ))}
+                  </>);
                 })()}
 
                 {editingEmp.id && <SkillEditHistory employeeId={editingEmp.id} />}
