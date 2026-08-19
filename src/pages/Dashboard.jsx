@@ -258,6 +258,11 @@ export default function Dashboard() {
   const [breakPolicies, setBreakPolicies] = useState([]);
   // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
+  // ตัวกรองตู้ Heijunka รวม (2026-08-19 · คำขอ user): ดูทุกไลน์-ทุกพาร์ทในจอเดียวแล้วกรองได้
+  // boardLineSel = กลุ่มไลน์ ('' = ทุกไลน์) · boardQuery = ค้นชื่อพาร์ท/MAT/เลขใบ
+  // ⚠️ กรองเฉพาะ "ชั้นแสดงผล" — ห้ามกรอง cards ก่อนคำนวณคิว (ตำแหน่ง/เวลาคาดเสร็จผูกกับคิวทั้งไลน์)
+  const [boardLineSel,  setBoardLineSel]  = useState('');
+  const [boardQuery,    setBoardQuery]    = useState('');
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
@@ -1330,7 +1335,39 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {Object.entries(byLine).map(([lineName, sessions]) => {
+            {/* ── ตัวกรองตู้รวม: ชิปกลุ่มไลน์ + ช่องค้นพาร์ท/MAT/เลขใบ ──
+                ชิป = state ที่มองเห็น (ไลน์อื่นถูกซ่อนโดยผู้ใช้เลือกเอง ไม่ใช่หายเงียบ)
+                boardLineSel ที่ไม่มีในวันนั้น → ตกกลับ "ทุกไลน์" (กฎ cascade §5.3 ห้ามจอว่างเงียบ) */}
+            {(() => {
+              const lineNames = Object.keys(byLine).sort();
+              const effSel = lineNames.includes(boardLineSel) ? boardLineSel : '';
+              if (lineNames.length <= 1 && !boardQuery) return null;
+              const chip = (active) => ({
+                padding: '3px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                background: active ? 'var(--accent)' : 'var(--bg2)',
+                color: active ? '#08130a' : 'var(--text2)', fontFamily: 'var(--font-body)',
+              });
+              return (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                  {lineNames.length > 1 && [{ k: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ k: n, label: n }))].map(c => (
+                    <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
+                  ))}
+                  {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
+                  <input value={boardQuery} onChange={e => setBoardQuery(e.target.value)} placeholder="🔎 ค้นพาร์ท / MAT / เลขใบ"
+                    style={{ width: 210, marginLeft: 'auto', padding: '4px 10px', borderRadius: 7, fontSize: 12.5,
+                      background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  {(effSel || boardQuery) && (
+                    <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
+                      style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {Object.entries(byLine)
+              .filter(([n]) => !boardLineSel || !Object.keys(byLine).includes(boardLineSel) || n === boardLineSel)
+              .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
               const totalDelayed = sessions.reduce((acc, s) => {
                 const ctSec = s.dr_products?.cycle_time_sec || 0;
@@ -1473,6 +1510,12 @@ export default function Dashboard() {
                       (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
                     const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    // ตัวกรองพาร์ท (boardQuery) — กรองเฉพาะแถวที่จะวาด · สรุปหัวการ์ด/pace ยังนับทุกแถวตามจริง
+                    const bq = boardQuery.trim().toUpperCase();
+                    const visRows = !bq ? productRows : productRows.filter(row =>
+                      (row.label || '').toUpperCase().includes(bq) ||
+                      row.cards.some(c => String(c.mat_no || '').toUpperCase().includes(bq) || String(c.prod_no || '').toUpperCase().includes(bq)));
+                    const hiddenRowCount = productRows.length - visRows.length;
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -2045,7 +2088,13 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
-                        {productRows.map((row, ri) => {
+                        {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
+                        {hiddenRowCount > 0 && (
+                          <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{visRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                          </div>
+                        )}
+                        {visRows.map((row, ri) => {
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;
