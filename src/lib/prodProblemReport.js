@@ -64,6 +64,39 @@ export const WAIT_BOXES = [
 /** คำที่บอกว่า downtime รายการนี้เป็น "การรอ" ไม่ใช่ "เครื่องจักรเสีย" */
 const WAIT_WORDS = ['รอ', 'ขาด', 'คัดแยก', 'ขัดสนิม', 'material', 'wait'];
 
+/* ── เกณฑ์ "ต้องออกใบ / ต้องลงวิธีแก้ไข" ───────────────────────────────────
+ * หน้างานใช้ 30 นาที (คำพูดหัวหน้ากลุ่ม 2026-08-19) — ค่าเดียวใช้ทั้งใบพิมพ์และไอคอนในจอ
+ * ⚠️ ห้าม hardcode เลข 30 ซ้ำที่อื่น import จากที่นี่เท่านั้น
+ */
+export const PROBLEM_MIN_MINUTES = 30;
+
+/** นาทีของ downtime — รายการที่ยังเปิดค้างนับจากเวลาเริ่มถึงตอนนี้ (ยังไม่มี duration_min) */
+export function dtMinutes(d, now = Date.now()) {
+  if (d?.duration_min != null) return Number(d.duration_min) || 0;
+  if (d?.started_at && !d?.ended_at) return Math.max(0, (now - new Date(d.started_at).getTime()) / 60000);
+  return 0;
+}
+
+/**
+ * downtime รายการนี้ต้องลง "วิธีแก้ไข + ผลตรวจติดตาม" ไหม
+ * = นอกแผน และยาวถึงเกณฑ์ (นับรายการที่ยังหยุดอยู่ด้วย — ตอนนั้นแหละที่หัวหน้ากำลังแก้)
+ */
+export const dtNeedsFix = (d, minMinutes = PROBLEM_MIN_MINUTES, now = Date.now()) =>
+  d?.dr_downtime_types?.category !== 'planned' && dtMinutes(d, now) >= minMinutes;
+
+/** ของเสียทุกรายการเข้าใบเสมอ (ไม่มีเกณฑ์เวลา) → ต้องลงวิธีแก้ไขทุกแถว */
+export const defectNeedsFix = () => true;
+
+const hasText = v => !!String(v || '').trim();
+
+/** นับรายการที่ถึงเกณฑ์แต่ยังไม่ได้ลงวิธีแก้ไข — ใช้ทำป้ายเตือนในจอ */
+export function countPendingFix({ downtimes = [], defects = [], minMinutes = PROBLEM_MIN_MINUTES } = {}) {
+  const now = Date.now();
+  const dt = downtimes.filter(d => dtNeedsFix(d, minMinutes, now) && !hasText(d.fix_action)).length;
+  const df = defects.filter(d => !hasText(d.fix_action)).length;
+  return { dt, defect: df, total: dt + df };
+}
+
 const norm = s => String(s || '').toLowerCase();
 const hit = (text, boxes) => {
   const t = norm(text);
@@ -97,12 +130,19 @@ export function buildProblemReport({ downtimes = [], defects = [], minMinutes = 
   const col = (rows, boxes, textOf) => {
     const checked = new Set();
     const details = [];
+    const fixes = [];
     rows.forEach(r => {
       const txt = textOf(r);
       hit(txt, boxes).forEach(x => checked.add(x));
       details.push(txt);
+      // วิธีแก้ไขที่หัวหน้ากลุ่มลงไว้ในระบบ (ไม่ได้ลง = ปล่อยว่างให้เขียนมือเหมือนเดิม)
+      if (hasText(r.fix_action)) fixes.push(String(r.fix_action).trim());
     });
-    return { checked, details };
+    return {
+      checked, details, fixes,
+      fixBy: [...new Set(rows.map(r => r.fix_by).filter(Boolean))].join(', '),
+      pendingFix: rows.filter(r => !hasText(r.fix_action)).length,
+    };
   };
 
   const q = col(defects, QUALITY_BOXES, d => {
@@ -126,13 +166,26 @@ export function buildProblemReport({ downtimes = [], defects = [], minMinutes = 
 
   const qtyNg = defects.reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
 
+  // ผลการตรวจติดตาม = ช่องสรุปท้ายใบ (ใบกระดาษมีช่องเดียวรวมทุกคอลัมน์)
+  const inReport = [...defects, ...machineDt, ...waitDt];
+  const followup = {
+    lines: inReport.filter(r => hasText(r.followup_result)).map(r => String(r.followup_result).trim()),
+    by: [...new Set(inReport.map(r => r.followup_by).filter(Boolean))].join(', '),
+    pending: inReport.filter(r => !hasText(r.followup_result)).length,
+  };
+
   return {
     quality: { ...q, qty: qtyNg, time: span(defects), by: who(defects), count: defects.length },
     machine: { ...m, time: span(machineDt), by: who(machineDt), count: machineDt.length,
                minutes: machineDt.reduce((a, d) => a + (Number(d.duration_min) || 0), 0) },
     wait:    { ...w, time: span(waitDt), by: who(waitDt), count: waitDt.length,
                minutes: waitDt.reduce((a, d) => a + (Number(d.duration_min) || 0), 0) },
-    meta: { minMinutes, skippedShort: short, hasAny: defects.length + long.length > 0 },
+    followup,
+    meta: {
+      minMinutes, skippedShort: short, hasAny: defects.length + long.length > 0,
+      // นับรายการที่เข้าใบแต่ยังไม่ได้ลงวิธีแก้ไข — พิมพ์กำกับท้ายใบ ห้ามเงียบ
+      pendingFix: inReport.filter(r => !hasText(r.fix_action)).length,
+    },
   };
 }
 
@@ -243,12 +296,12 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
     </tr>
     <tr>
       <td class="rowlab">แก้ไขอย่างไร</td>
-      ${[R.quality, R.machine, R.wait].map(() => `
+      ${[R.quality, R.machine, R.wait].map(d => `
         <td>
           <div class="lbl">วิธีการแก้ไข :</div>
-          <div class="val sec-fix"></div>
-          <div class="lbl">ผู้แก้ไข : <span class="fill"></span></div>
-          <div class="lbl">หน่วยงาน : <span class="fill"></span></div>
+          <div class="val sec-fix">${detail(d.fixes)}</div>
+          <div class="lbl">ผู้แก้ไข : <span class="fill">${esc(d.fixBy || '')}</span></div>
+          <div class="lbl">หน่วยงาน : <span class="fill">${esc(extra.dept || section || '')}</span></div>
         </td>`).join('')}
     </tr>
     <tr>
@@ -257,10 +310,10 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
         <div style="display:flex; gap:10px">
           <div style="flex:1">
             <div class="lbl">สรุปผลการดำเนินการ :</div>
-            <div style="min-height:52px"></div>
+            <div style="min-height:52px" class="val">${detail(R.followup.lines)}</div>
           </div>
           <div style="width:150px; font-size:9.5px; text-align:center">
-            ผู้รายงาน<div style="height:22px"></div>
+            ผู้รายงาน<div style="height:22px; font-size:10px; padding-top:4px">${esc(R.followup.by || '')}</div>
             <div style="border-top:1px dotted #000">วันที่</div>
             ผู้อนุมัติ<div style="height:22px"></div>
             <div style="border-top:1px dotted #000">วันที่</div>
@@ -279,7 +332,8 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
 
   <div class="note">
     <span>ดึงจากระบบ ESM · กะ${session.shift === 'night' ? 'ดึก' : 'เช้า'} ${esc(thDate(session.work_date))} ·
-      เกณฑ์ downtime ≥ ${R.meta.minMinutes} นาที${R.meta.skippedShort ? ` (ไม่รวมรายการสั้นกว่านั้น ${R.meta.skippedShort} รายการ)` : ''}</span>
+      เกณฑ์ downtime ≥ ${R.meta.minMinutes} นาที${R.meta.skippedShort ? ` (ไม่รวมรายการสั้นกว่านั้น ${R.meta.skippedShort} รายการ)` : ''}
+      ${R.meta.pendingFix ? ` · ⚠ ยังไม่ได้ลงวิธีแก้ไขในระบบ ${R.meta.pendingFix} รายการ` : ''}</span>
     <span>${esc(code)}</span>
   </div>
 </div>
