@@ -4,7 +4,7 @@
 > + **ทะเบียนเคลมลูกค้า + ตรวจจับเคลมซ้ำ** + **วัดประสิทธิผลจาก `defect_logs` จริง** + KPI
 > โซ่ครบวง: **เคลม → 8D → คำขอแก้เอกสาร → revision → PFMEA/CP ใหม่ → วัดว่าของเสียลดจริงไหม**
 >
-> ไฟล์: `supabase/migrations/20260817_pe_change_requests.sql` · `src/utils/peLink.js` (ตัวเสนอ pure)
+> ไฟล์: `supabase/migrations/20260817_pe_change_requests.sql` (apply แล้ว 2026-08-19) · `src/utils/peLink.js` (ตัวเสนอ pure)
 > · `src/components/PeChangeRequests.jsx` (จอร่วม 2 ฝั่ง) · จุดใช้งาน: `/qa` แท็บ CAPA · `/pe-docs` · `/dept-dashboard?dept=qa`
 >
 > ตอบช่องว่างที่ทั้ง `CLAUDE.md` และ `IATF16949-GAP-REVIEW.md` §10.2 ระบุไว้ตรงกัน:
@@ -208,7 +208,7 @@ failure_mode ที่เพิ่งเกิด  ──ค้นข้าม p
 ## 9. เฟส 3 — ทะเบียนเคลมลูกค้า (2026-08-17)
 
 `qa_customer_claims` (Main) · UI = `src/components/QaClaims.jsx` (แท็บ 📮 ใน `/qa`)
-· migration `20260817_qa_customer_claims.sql`
+· migration `20260817_qa_customer_claims.sql` (apply แล้ว 2026-08-19)
 
 **โซ่ที่ต่อครบแล้ว:** เคลม → 8D (สร้าง+ผูกให้ในคลิกเดียว) → คำขอแก้เอกสาร → revision → PFMEA/CP ใหม่
 
@@ -246,7 +246,7 @@ failure_mode ที่เพิ่งเกิด  ──ค้นข้าม p
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `supabase/migrations/20260818_capa_effectiveness.sql` **⬜ ยังไม่ apply** | คอลัมน์ `d6_effective_from` / `eff_window_days` / `eff_defect_type_id`+`_label` / `eff_verdict` / `eff_measured_at` / `eff_snapshot` |
+| `supabase/migrations/20260818_capa_effectiveness.sql` (**apply แล้ว 2026-08-19**) | คอลัมน์ `d6_effective_from` / `eff_window_days` / `eff_defect_type_id`+`_label` / `eff_verdict` / `eff_measured_at` / `eff_snapshot` |
 | `src/utils/capaEffect.js` | **สูตรทั้งหมด (pure เทสได้)** — `effectWindow` · `splitBeforeAfter` · `judgeEffect` · `effectSummaryText` |
 | `src/components/CapaEffectiveness.jsx` | แผงในโมดัล 8D — ตั้งค่าการวัด + แถบเทียบก่อน/หลัง + ปุ่มเติมผลลงช่องประสิทธิผล |
 
@@ -295,3 +295,25 @@ failure_mode ที่เพิ่งเกิด  ──ค้นข้าม p
 
 **บทเรียน:** ทุก query ที่ป้อน KPI ต้อง `console.warn` เมื่อ error **และหน้าจอต้องแยก "0 จริง" ออกจาก "โหลดไม่ได้"**
 — เพิ่มแถบแดง "โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ" (`d.loadErr`) แล้ว
+
+
+---
+
+## 11. สถานะ ณ 2026-08-19 — พร้อมใช้งานจริงแล้ว
+
+migration ทั้ง 4 ตัว **apply ครบแล้ว** (user รันเองผ่าน SQL Editor ฝั่ง Main · ตรวจผ่าน 7/7 ✅):
+`20260817_doc_forms_pe_core` · `20260817_pe_change_requests` · `20260817_qa_customer_claims` · `20260818_capa_effectiveness`
+
+**ลูปเดินได้ครบวงแล้ว** — เหลือแค่รอข้อมูลจริงไหลเข้า:
+
+```
+เคลมลูกค้า (/qa 📮) → เปิด 8D → ระบบชี้บรรทัดใน PFMEA/CP ที่ต้องแก้
+   → PE รับเรื่อง/ออก revision (/pe-docs) → ปิด 8D → วัดว่าของเสียลดจริงไหม
+```
+
+**สิ่งที่ยังต้องทำเพื่อให้ลูปมีของวิ่ง (เป็นงาน "ลงข้อมูล" ไม่ใช่งานโค้ด):**
+1. **นำเข้าเอกสาร PE ให้ครบพาร์ท** — ปุ่ม 📥 นำเข้า Excel ใน `/pe-docs`
+   (ตอนนี้ครอบ 2-3 พาร์ท · พาร์ทที่ไม่มีเอกสาร ลูปจะชี้ให้ไม่ได้)
+2. **QA เริ่มบันทึกเคลม/NCR/8D ในระบบ** — ทั้ง 3 ตารางยังเป็น 0 แถว
+3. **กรอก "วันที่มาตรการมีผลจริง" (D6) ทุกใบ** — ไม่กรอก = ระบบวัดประสิทธิผลให้ไม่ได้
+   และจะไม่มีวันเตือนว่าถึงเวลาสรุปผล (มี toast เตือนตอนกดส่งตรวจแล้ว แต่ไม่บล็อก)
