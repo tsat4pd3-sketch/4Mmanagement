@@ -16,9 +16,13 @@ const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPAB
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
 const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
 // ⚠️ ต้องตั้ง secret DR_URL / DR_ANON_KEY ที่ Supabase project (Edge Functions → Secrets)
-//    ตรวจ 2026-08-19: **ยังไม่ได้ตั้ง** → function จะตอบ error บอกให้ไปตั้งก่อน (ไม่ทำงานเงียบๆ)
-const DR_URL = (Deno.env.get('DR_URL') || '').replace(/\/$/, '');
-const DR_KEY = Deno.env.get('DR_ANON_KEY') || '';
+// ⚠️ `clean()` ตัดอักขระที่ใส่ใน HTTP header ไม่ได้ทิ้ง (นอกช่วง ASCII printable) — เจอจริง 2026-08-19:
+//    คนวาง secret โดยก๊อป "ค่าที่ถูกปิดบัง" จากหน้าเว็บมา ได้ตัว • (U+2022) มาทั้งพวง แล้ว fetch โยน
+//    "not a valid ByteString" ซึ่งอ่านไม่ออกว่าต้นเหตุคืออะไร · ตัดทิ้งแล้วจะได้ 401 จาก DR แทน
+//    = error ที่ชี้ทางถูก ("key ผิด") · ดูค่าที่ตั้งไว้จริงได้ที่ `?diag=1`
+const clean = (s: string) => s.replace(/[^\x20-\x7E]/g, '').trim();
+const DR_URL = clean(Deno.env.get('DR_URL') || '').replace(/\/$/, '');
+const DR_KEY = clean(Deno.env.get('DR_ANON_KEY') || '');
 let BOT_TOKEN: string | undefined = TELEGRAM_BOT_TOKEN;
 
 /* ── วันงานไทย (ตัด 08:00) — กฎเดียวกับ getWorkDate ทั้งระบบ ห้ามใช้ toISOString ตรงๆ ── */
@@ -96,7 +100,8 @@ async function dr<T>(path: string): Promise<T[]> {
 type Sess = { id: string; work_date: string; line_name: string; shift: string; status: string; closed_at: string | null };
 type Ord  = { id: string; session_id: string; mat_no: string | null; part_name: string | null;
               status: string; opened_at: string | null; confirmed_at: string | null };
-type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null };
+type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null;
+              is_operation: boolean | null; op_parent_mat: string | null };
 
 const STAGE_LABEL: Record<string, string> = { first: 'ชิ้นแรก (First)', middle: 'ระหว่างผลิต (Middle)', end: 'ชิ้นสุดท้าย (End)' };
 const REASON_LABEL: Record<string, string> = {
@@ -108,6 +113,22 @@ const SHEET_STAGE: Record<string, string> = { first: 'setup_first', middle: 'inp
 
 Deno.serve(async (req) => {
   try {
+    // ?diag=1 = ตรวจว่า secret ที่ตั้งไว้ใช้ได้จริงไหม (ยาวเท่าไหร่ · เป็น ASCII ล้วนไหม · หัว/ท้าย)
+    // ไม่โชว์ค่าเต็ม · มีไว้เพราะ "วาง secret ผิด" วินิจฉัยจาก error ปลายทางไม่ออก (เคยเจอวางตัว • มา)
+    if (new URL(req.url).searchParams.get('diag') === '1') {
+      const raw = { url: Deno.env.get('DR_URL') || '', key: Deno.env.get('DR_ANON_KEY') || '' };
+      const info = (s: string) => ({
+        len: s.length,
+        ascii_only: /^[\x20-\x7E]*$/.test(s),
+        head: s.slice(0, 8),
+        tail: s.slice(-8),
+        bad_chars: [...new Set([...s].filter(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126))]
+          .map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`),
+      });
+      return json({ ok: true, raw: { DR_URL: info(raw.url), DR_ANON_KEY: info(raw.key) },
+                    used: { DR_URL: info(DR_URL), DR_ANON_KEY: info(DR_KEY) } });
+    }
+
     // ?dry=1 = โหมดทดลอง — อ่านข้อมูลผลิตจริงแล้วบอกว่า "จะเรียกอะไรบ้าง"
     // **ไม่เขียน DB · ไม่ส่ง Telegram** · ใช้ดูผลก่อนกดเปิดสวิตช์จริง (ทำงานได้แม้ระบบยังปิดอยู่)
     const dry = new URL(req.url).searchParams.get('dry') === '1';
@@ -131,19 +152,31 @@ Deno.serve(async (req) => {
     const sIds = sessions.map(s => s.id);
     const orders = await dr<Ord>(
       `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at&session_id=in.(${sIds.join(',')})`);
-    const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name');
+    const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,is_operation,op_parent_mat');
 
     /* ── 2) จับคู่ RH/LH เป็น "รุ่นเดียวกัน" — ตัวแทนกลุ่ม = mat ที่เรียงน้อยกว่า ── */
     const pairOf = new Map<string, string>();
     const nameOf = new Map<string, string>();
+    const opParent = new Map<string, string>();   // รายการขั้นตอน (OP) → พาร์ทจริง
+    const opNoParent = new Set<string>();         // OP ที่ยังไม่ผูกพาร์ทจริง (ต้องบอก ห้ามซ่อน)
     for (const p of products) {
       if (!p.mat_no) continue;
       if (p.name) nameOf.set(p.mat_no, p.name);
       if (p.pair_mat_no) pairOf.set(p.mat_no, p.pair_mat_no);
+      if (p.is_operation) {
+        if (p.op_parent_mat) opParent.set(p.mat_no, p.op_parent_mat);
+        else opNoParent.add(p.mat_no);
+      }
     }
+    // ⚠️ ยุบ "รายการขั้นตอน (OP)" เข้าพาร์ทจริงก่อนเสมอ แล้วค่อยจับคู่ RH/LH
+    //    OP (ขับนัท/สปอต เช่น `E025 (M6 ไม่มีเกลียว)`) ไม่ใช่ "รุ่น" ที่ QA ตรวจ — เป็นขั้นตอนย่อย
+    //    ของพาร์ทเดียวกัน · ไม่ยุบ = เรียก QA ซ้ำหลายรอบต่อพาร์ทเดียว (dry-run 2026-08-19 เจอ
+    //    14/30 รายการเป็น OP) · กฎเหล็กชั้น Operation ใน CLAUDE.md
+    //    OP ที่ยังไม่ผูกพาร์ทจริง (op_parent_mat null) = ใช้เลขเดิมไปก่อน + ติดธงบอกให้ไปผูก
     const canon = (mat: string) => {
-      const pair = pairOf.get(mat);
-      return pair && pair < mat ? pair : mat;
+      const base = opParent.get(mat) || mat;
+      const pair = pairOf.get(base);
+      return pair && pair < base ? pair : base;
     };
 
     /* ── 3) แตกเป็น "run" ต่อ (กะ × รุ่น) ── */
@@ -221,9 +254,11 @@ Deno.serve(async (req) => {
       if (p.mat_no) byMat.set(norm(p.mat_no), p.id);       // คอลัมน์ผูกตรง (แม่นสุด)
       if (p.part_no) byNo.set(norm(p.part_no), p.id);      // ถอยไปเทียบ part_no แบบ normalize
     }
-    const resolvePart = (mats: string[]) => {
-      for (const m of mats) { const hit = byMat.get(norm(m)); if (hit) return hit; }
-      for (const m of mats) { const hit = byNo.get(norm(m)); if (hit) return hit; }
+    // ลองทั้งเลขพาร์ทจริงหลังยุบ OP (canonMat) และเลขที่ปรากฏบนใบงานจริง
+    const resolvePart = (mats: string[], canonMat: string) => {
+      const all = [canonMat, ...mats];
+      for (const m of all) { const hit = byMat.get(norm(m)); if (hit) return hit; }
+      for (const m of all) { const hit = byNo.get(norm(m)); if (hit) return hit; }
       return null;
     };
 
@@ -237,25 +272,30 @@ Deno.serve(async (req) => {
         if (seen.has(k)) return false;
         seen.add(k); return true;
       })
-      .map(w => ({ ...w, part_id: resolvePart(w.mat_group) }));
+      .map(w => ({ ...w, part_id: resolvePart(w.mat_group, w.mat_no) }));
 
     // ── โหมดทดลอง: บอกว่า "จะเรียกอะไรบ้าง" แล้วจบ (ไม่เขียน ไม่ส่ง) ──
     if (dry) {
       const { data: already } = await supabase.from('qa_fme_obligations')
         .select('line_name, work_date, shift, mat_no, stage').gte('work_date', yest);
       const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}`));
+      const list = rows.filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`));
       return json({
         ok: true, dry: true, enabled: cfg.is_enabled,
         scanned: { sessions: sessions.length, orders: orders.length, runs: runs.size },
-        would_create: rows
-          .filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`))
-          .map(r => ({
-            line: r.line_name, shift: r.shift, work_date: r.work_date,
-            mat: r.mat_no, mats: r.mat_group, product: r.product_name,
-            stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
-            at: hhmm(r.triggered_at), due: hhmm(r.due_at),
-            part_linked: !!r.part_id,   // false = ต้องผูก qa_parts.mat_no ก่อนถึงจะกดเปิดใบจากคิวได้
-          })),
+        summary: {
+          would_create: list.length,
+          // part_linked = กดปุ่ม "เปิดใบตรวจ" จากคิวได้จริงกี่รายการ (ต้องผูก qa_parts.mat_no ก่อน)
+          part_linked: list.filter(r => r.part_id).length,
+          op_unlinked: [...new Set(list.flatMap(r => r.mat_group.filter(m => opNoParent.has(m))))],
+        },
+        would_create: list.map(r => ({
+          line: r.line_name, shift: r.shift, work_date: r.work_date,
+          mat: r.mat_no, mats: r.mat_group, product: r.product_name,
+          stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
+          at: hhmm(r.triggered_at), due: hhmm(r.due_at),
+          part_linked: !!r.part_id,
+        })),
         note: 'โหมดทดลอง — ยังไม่เขียนอะไรลงฐานข้อมูลและไม่ส่ง Telegram',
       });
     }

@@ -6,20 +6,32 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { DIE_SET_KINDS, dieSetKindLabel } from '../utils/equipmentKinds';
+import { OPEN_MO_STATUSES, buildOpenMoMap, openMosOf } from '../utils/dieStatus';
+import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import DieLayout from '../components/DieLayout';
+import DieStatusBoard from '../components/DieStatusBoard';
 
 /* ═══════════════════════════════════════════════════════════════
-   ทะเบียนแม่พิมพ์ (Die Registry) — /die-registry
+   ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
+
+   3 แท็บ (useTabParam):
+     📋 ทะเบียน   — ชุดแม่พิมพ์ + สมาชิกราย OP (ของเดิม)
+     🗺️ ผังจัดเก็บ — layout แม่พิมพ์: รูปจริง + หมุดตำแหน่งรายตัว (DieLayout)
+     📊 สถานะ     — บอร์ดติดตามสถานะ + ใบซ่อม MO ค้าง (DieStatusBoard)
 
    ⚠️ หน้านี้ "แยกจอ" จากฐานข้อมูลเครื่องจักร แต่ **ไม่ได้แยกฐานข้อมูล**
       ตัวตนของแม่พิมพ์ยังอยู่ `machines` (machine_no unique · MO/downtime/QR อ้างเลขนี้)
       หน้านี้อ่าน machines ที่ equipment_kind='die' แล้วต่อ:
-        die_sets      = ชุดแม่พิมพ์ (1 พาร์ท = 1 ชุด)
-        equipment_die = ส่วนขยาย 1:1 ของแม่พิมพ์แต่ละตัว (OP/ตัน/shot/regrind)
+        die_sets          = ชุดแม่พิมพ์ (1 พาร์ท = 1 ชุด)
+        equipment_die     = ส่วนขยาย 1:1 (OP/ตัน/shot/regrind + สถานะ/ตำแหน่งจัดเก็บ)
+        die_storage_areas = ผังจัดเก็บ (migration 20260819_die_layout_status.sql)
       เหตุผลเต็มอยู่ใน src/utils/equipmentKinds.js — อ่านก่อนคิดจะแยกตาราง
 
    ⚠️ ข้อมูลมาจาก backfill ที่แกะจาก "ชื่อเครื่อง" → ไม่ครบทุกช่องโดยธรรมชาติ
       (ฟิลด์ที่แกะไม่ออก = ปล่อยว่าง ห้ามเดา) → หน้านี้ต้องทำให้ "ช่องที่ยังว่าง" เห็นชัด
       เป็น worklist ให้ไล่เก็บ **ห้ามซ่อน** (หลักเดียวกับแถบ ⚠️ ข้อมูลไม่ตรงผังองค์กร ใน /operator)
+      สถานะแม่พิมพ์ก็หลักเดียวกัน: null = "ยังไม่ระบุ" ห้าม default เป็นพร้อมใช้
 ═══════════════════════════════════════════════════════════════ */
 
 const inputStyle = {
@@ -66,17 +78,22 @@ const emptySet = {
 };
 
 export default function DieRegistry() {
-  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
   // ใช้สิทธิ์ชุดเดียวกับฐานข้อมูลเครื่องจักร — แม่พิมพ์อยู่ตาราง machines เดียวกัน คนดูแลกลุ่มเดียวกัน
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
+  const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry');
 
   const [lines, setLines]   = useState([]);
   const [dies, setDies]     = useState([]);   // machines (equipment_kind='die') + equipment_die
   const [sets, setSets]     = useState([]);
   const [opTypes, setOpTypes] = useState([]);
   const [products, setProducts] = useState([]); // dr_products — ผูก mat_no ของชุด
+  const [areas, setAreas]     = useState([]);   // die_storage_areas — ผังจัดเก็บ
+  const [openMos, setOpenMos] = useState([]);   // ใบซ่อม MO ที่ยังไม่ปิด (derive สถานะซ่อม)
+  const [layoutReady, setLayoutReady] = useState(false); // migration 20260819 apply แล้วหรือยัง
   const [loading, setLoading] = useState(true);
+  const [focusDieId, setFocusDieId] = useState(null);    // 📊 สถานะ กด 🗺️ → กระโดดมาแท็บผัง
 
   const [search, setSearch]       = useState('');
   const [filterLine, setFilterLine] = useState('');
@@ -90,7 +107,7 @@ export default function DieRegistry() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: mc }, { data: st }, { data: ot }, { data: pd }] = await Promise.all([
+    const [{ data: ln }, { data: mc }, { data: st }, { data: ot }, { data: pd }, areaRes, moRes] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       // ตัวตนของแม่พิมพ์ยังอยู่ machines — embed ส่วนขยายมาด้วยในนัดเดียว
       supabaseDR.from('machines')
@@ -99,6 +116,12 @@ export default function DieRegistry() {
       supabaseDR.from('die_sets').select('*').order('line_name').order('part_name'),
       supabaseDR.from('die_op_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).order('mat_no'),
+      // ยังไม่ apply migration 20260819 → 42P01 — จับเป็น flag ไปบอกบนจอ ห้ามพังทั้งหน้า
+      supabaseDR.from('die_storage_areas').select('*').eq('is_active', true).order('sort_order').order('name'),
+      // สถานะ "ซ่อมอยู่" derive จากใบ MO จริง — ห้ามให้คนตั้งซ้ำ (2 แหล่งจะ drift กัน)
+      supabaseDR.from('mtn_orders')
+        .select('id, mo_no, status, machine_no, mtn_dept, current_step, report_at')
+        .in('status', OPEN_MO_STATUSES),
     ]);
     setLines(ln || []);
     // equipment_die เป็น 1:1 (machine_id เป็นทั้ง PK และ FK) → PostgREST คืนเป็น "object"
@@ -108,9 +131,26 @@ export default function DieRegistry() {
     setSets(st || []);
     setOpTypes(ot || []);
     setProducts(pd || []);
+    setAreas(areaRes.error ? [] : (areaRes.data || []));
+    setLayoutReady(!areaRes.error);
+    if (moRes.error) toast.error('โหลดใบซ่อม MO ไม่สำเร็จ: ' + moRes.error.message);   // ห้ามเงียบ — สถานะซ่อมจะหายทั้งบอร์ด
+    setOpenMos(moRes.data || []);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const reloadAreas = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('die_storage_areas')
+      .select('*').eq('is_active', true).order('sort_order').order('name');
+    if (!error) { setAreas(data || []); setLayoutReady(true); }
+  }, []);
+
+  /** update ส่วนขยายของแม่พิมพ์ใน state โดยไม่ refetch ทั้งหน้า (ใช้หลังเขียน DB สำเร็จเท่านั้น) */
+  const patchDieExt = useCallback((machineId, patch) => {
+    setDies(list => list.map(d => d.id === machineId
+      ? { ...d, ext: { ...(d.ext || { machine_id: machineId }), ...patch } }
+      : d));
+  }, []);
 
   /* ── mandatory scope (pattern มาตรฐาน: leader = family ไลน์ตัวเอง · อื่น = ตาม sections) ── */
   const scopedLines = useMemo(() => {
@@ -200,6 +240,14 @@ export default function DieRegistry() {
     return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0]));
   }, [rows]);
 
+  /* ── ข้อมูลใช้ร่วมแท็บ 🗺️ ผังจัดเก็บ / 📊 สถานะ ── */
+  const scopedDies = useMemo(() => dies.filter(d => inScope(d.line_name)), [dies, inScope]);
+  const setsById = useMemo(() => Object.fromEntries(sets.map(s => [s.id, s])), [sets]);
+  const moDieCount = useMemo(() => {
+    const m = buildOpenMoMap(openMos);
+    return scopedDies.filter(d => d.is_active && openMosOf(d, m).length > 0).length;
+  }, [openMos, scopedDies]);
+
   /* ── บันทึกชุด ─────────────────────────────────────────────── */
   const saveSet = async () => {
     const f = editSet;
@@ -269,18 +317,35 @@ export default function DieRegistry() {
 
   return (
     <div style={{ padding: '16px 18px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>🔨 ทะเบียนแม่พิมพ์</h2>
-        {scopeActive && (
-          <span style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', padding: '3px 9px', borderRadius: 999 }}>
-            เห็นเฉพาะส่วนงานของคุณ
-          </span>
-        )}
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-        1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน) หน้านี้แยกเฉพาะ “มุมมอง”
-      </div>
+      <PageHeader
+        title="ทะเบียนแม่พิมพ์" icon="🔨"
+        sub={`1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
+        tabs={[
+          { key: 'registry', label: '📋 ทะเบียน' },
+          { key: 'layout', label: '🗺️ ผังจัดเก็บ' },
+          { key: 'status', label: '📊 สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
+        ]}
+        tab={tab} onTab={setTab}
+      />
 
+      {tab === 'layout' && (
+        <DieLayout
+          dies={scopedDies} setsById={setsById} areas={areas} openMos={openMos}
+          canEdit={canEdit} fullName={fullName} ready={layoutReady}
+          reload={load} reloadAreas={reloadAreas} patchDieExt={patchDieExt}
+          focusDieId={focusDieId} onFocusConsumed={() => setFocusDieId(null)}
+        />
+      )}
+
+      {tab === 'status' && (
+        <DieStatusBoard
+          dies={scopedDies} setsById={setsById} areas={areas} openMos={openMos}
+          canEdit={canEdit} fullName={fullName} ready={layoutReady} patchDieExt={patchDieExt}
+          onShowOnMap={(d) => { setFocusDieId(d.id); setTab('layout'); }}
+        />
+      )}
+
+      {tab === 'registry' && <>
       {/* สรุป */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {[
@@ -479,6 +544,7 @@ export default function DieRegistry() {
           </div>
         </div>
       ))}
+      </>}
 
       {/* ── modal: ชุดแม่พิมพ์ ── */}
       {editSet && (

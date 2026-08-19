@@ -316,7 +316,6 @@ export default function MtnRepair() {
   }, [orders, scopeLines, fStatus, fLine, fDept, fText]);
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
-  const lineOpts = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines).map(l => l.name), [lines, scopeLines]);
   // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
   // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
   const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
@@ -360,7 +359,7 @@ export default function MtnRepair() {
         </div>
       </>}
 
-      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineOpts={lineOpts} />}
+      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
@@ -446,7 +445,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     }));
     toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
   };
-  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: deptForItem(it, itemTypes) }));
+  // เลือกชนิดอุปกรณ์ → เดาทีมให้เฉพาะตอนที่ยังไม่ได้เลือกทีม (fill-if-empty)
+  // ⚠️ ห้ามทับทีมที่ user เลือกแล้ว — เคสจริง (feedback 2026-08-19): เลือกทีม JIG แล้วจิ้มชนิดกลาง 🌐
+  //    (CONVEYOR ฯลฯ ที่ fallback เดาเป็น MTN) → ทีมเด้งไป MTN เงียบๆ ลิสต์สลับชุด = "ชนิดอุปกรณ์โชว์มั่ว"
+  //    + ใบไปเข้าคิวทีมผิด
+  const onItem = (it) => setF(p => ({ ...p, item_type: it, mtn_dept: p.mtn_dept || deptForItem(it, itemTypes) }));
   // ลิสต์ที่กรองตามทีมที่แจ้งถึงแล้ว (แถวที่ไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   /* ลิสต์ที่ "เห็นได้" — ต่างจาก filterByTeam ที่ใช้คุมสิทธิ์แก้
      AM เห็นทุกแถว (เจอปัญหาก่อนใคร) · JIG↔MTN เห็นข้ามกันได้ผ่าน shared_teams · DIE แยกชัด */
@@ -514,7 +517,19 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
           <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
         </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</select></Field>
+        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
+          ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
+          : /* ยังไม่เลือกทีม = เห็นทุกทีมได้ แต่ต้องจัดกลุ่มบอกว่าของทีมไหน (เลือกแล้วระบบเติมทีมให้) */
+            (() => {
+              const g = new Map();
+              teamItemTypes.forEach(t => {
+                const k = t.team ? deptNameOf(t.team) : '🌐 ใช้ร่วมทุกทีม';
+                if (!g.has(k)) g.set(k, []);
+                g.get(k).push(t);
+              });
+              return [...g.entries()].sort((a, b) => (a[0].startsWith('🌐') ? 1 : b[0].startsWith('🌐') ? -1 : a[0].localeCompare(b[0], 'th')))
+                .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
+            })()}</select></Field>
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6 }}>
             <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder={wantDie ? 'พิมพ์เพื่อค้นแม่พิมพ์ / สแกน' : 'เลือก/พิมพ์/สแกน'} />
@@ -1160,7 +1175,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 }
 
 /* ── KPI tab ─────────────────────────────────────────── */
-function KpiTab({ orders, scopeLines, lineOpts }) {
+function KpiTab({ orders, scopeLines, lineObjs = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
   const rows = useMemo(() => { const since = new Date(); since.setDate(since.getDate() - Number(days)); return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && (!line || o.line_name === line) && new Date(o.report_at) >= since && o.repair_done_at); }, [orders, scopeLines, line, days]);
@@ -1192,7 +1207,7 @@ function KpiTab({ orders, scopeLines, lineOpts }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{lineOpts.map(n => <option key={n}>{n}</option>)}</select>
+        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
         <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -1262,12 +1277,18 @@ const AUDIT_TABLES = {
   mtn_spare_parts:     '🔩 อะไหล่',
   mtn_technicians:     '👷 ช่าง',
   mtn_labor_rates:     '💰 ค่าแรงมาตรฐาน',
+  equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
+  die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
 };
 const AUDIT_FIELD = {
   name: 'ชื่อ', characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', team: 'ทีม', dept: 'ทีม',
   price: 'ราคา', unit: 'หน่วย', is_active: 'สถานะใช้งาน', shelf: 'ตำแหน่งชั้นวาง',
   stock_qty: 'ยอดคงเหลือ', min_qty: 'ขั้นต่ำ', prefix: 'รหัสย่อ', sort_order: 'ลำดับ',
   code: 'รหัส', mat_no: 'เลข MAT', rank_override: 'Rank (ตั้งเอง)', rank_note: 'เหตุผล Rank',
+  die_status: 'สถานะแม่พิมพ์', status_note: 'หมายเหตุสถานะ', area_id: 'ผังจัดเก็บ',
+  pos_x: 'ตำแหน่ง X (%)', pos_y: 'ตำแหน่ง Y (%)', regrind_count: 'เจียรไปแล้ว (ครั้ง)',
+  regrind_limit: 'เจียรได้สูงสุด', tonnage_ton: 'ขนาดตัน', op_seq: 'OP', note: 'หมายเหตุ',
+  image_url: 'รูปผัง',
 };
 const AUDIT_ACT = { INSERT: { t: '➕ เพิ่ม', c: '#22c55e' }, UPDATE: { t: '✏️ แก้ไข', c: '#f59e0b' }, DELETE: { t: '🗑 ลบ', c: '#ef4444' } };
 
