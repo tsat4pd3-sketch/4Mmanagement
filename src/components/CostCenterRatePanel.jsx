@@ -112,7 +112,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
       title={<span>💰 Activity Rate ต่อ Cost Center — ระดับกลุ่ม (21406) <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
         rate ตั้งที่ <b>ระดับกลุ่มไลน์ (รหัส 21406)</b> เท่านั้น — ระดับแผนก/ส่วน ไม่ต้องกรอก (ต้นทุน/saving ระดับบนรวมขึ้นจากกลุ่มตาม hierarchy)
-        · rate ปรับรายปี = เพิ่มแถวใหม่พร้อมวัน effective (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น)
+        · <b>บัญชีส่ง rate รอบใหม่ = กด “＋ rate ใหม่”</b> (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น) — ปุ่ม ✏️ ไว้แก้เฉพาะตอนกรอกตัวเลขผิด
         {noRateUsed > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · ⚠ มี {noRateUsed} รหัสที่ไลน์ใช้อยู่แต่ยังไม่ตั้ง rate</span>}
         {otherCount > 0 && (
           <span> · ซ่อนรหัสระดับส่วน/แผนก {otherCount} รหัส{' '}
@@ -180,10 +180,15 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         </button>
                       )}
                     </td>
+                    {/* ⚠️ ＋ rate = ทางหลัก (บัญชีส่ง rate รอบใหม่ = แถวใหม่ ประวัติเดิมคงไว้)
+                        ✏️ = ทางรอง ใช้เฉพาะกรอกผิด — จงใจให้จืดกว่า ไม่ให้เผลอกดแก้ทับ rate ปีเก่า */}
                     <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })} title="แก้แถว rate ปัจจุบัน" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                       <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
-                        title="เพิ่ม rate รอบใหม่ (effective ใหม่)" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--accent)', padding: '2px 8px', marginLeft: 4 }}>＋ rate</button>
+                        title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
+                        style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
+                      {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
+                        title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
                     </td>
                   </tr>
                   {open && hist.map(r => (
