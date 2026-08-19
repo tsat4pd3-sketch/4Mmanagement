@@ -16,9 +16,13 @@ const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPAB
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN');
 const TELEGRAM_CHAT_ID   = Deno.env.get('TELEGRAM_CHAT_ID');
 // ⚠️ ต้องตั้ง secret DR_URL / DR_ANON_KEY ที่ Supabase project (Edge Functions → Secrets)
-//    ตรวจ 2026-08-19: **ยังไม่ได้ตั้ง** → function จะตอบ error บอกให้ไปตั้งก่อน (ไม่ทำงานเงียบๆ)
-const DR_URL = (Deno.env.get('DR_URL') || '').replace(/\/$/, '');
-const DR_KEY = Deno.env.get('DR_ANON_KEY') || '';
+// ⚠️ `clean()` ตัดอักขระที่ใส่ใน HTTP header ไม่ได้ทิ้ง (นอกช่วง ASCII printable) — เจอจริง 2026-08-19:
+//    คนวาง secret โดยก๊อป "ค่าที่ถูกปิดบัง" จากหน้าเว็บมา ได้ตัว • (U+2022) มาทั้งพวง แล้ว fetch โยน
+//    "not a valid ByteString" ซึ่งอ่านไม่ออกว่าต้นเหตุคืออะไร · ตัดทิ้งแล้วจะได้ 401 จาก DR แทน
+//    = error ที่ชี้ทางถูก ("key ผิด") · ดูค่าที่ตั้งไว้จริงได้ที่ `?diag=1`
+const clean = (s: string) => s.replace(/[^\x20-\x7E]/g, '').trim();
+const DR_URL = clean(Deno.env.get('DR_URL') || '').replace(/\/$/, '');
+const DR_KEY = clean(Deno.env.get('DR_ANON_KEY') || '');
 let BOT_TOKEN: string | undefined = TELEGRAM_BOT_TOKEN;
 
 /* ── วันงานไทย (ตัด 08:00) — กฎเดียวกับ getWorkDate ทั้งระบบ ห้ามใช้ toISOString ตรงๆ ── */
@@ -108,6 +112,22 @@ const SHEET_STAGE: Record<string, string> = { first: 'setup_first', middle: 'inp
 
 Deno.serve(async (req) => {
   try {
+    // ?diag=1 = ตรวจว่า secret ที่ตั้งไว้ใช้ได้จริงไหม (ยาวเท่าไหร่ · เป็น ASCII ล้วนไหม · หัว/ท้าย)
+    // ไม่โชว์ค่าเต็ม · มีไว้เพราะ "วาง secret ผิด" วินิจฉัยจาก error ปลายทางไม่ออก (เคยเจอวางตัว • มา)
+    if (new URL(req.url).searchParams.get('diag') === '1') {
+      const raw = { url: Deno.env.get('DR_URL') || '', key: Deno.env.get('DR_ANON_KEY') || '' };
+      const info = (s: string) => ({
+        len: s.length,
+        ascii_only: /^[\x20-\x7E]*$/.test(s),
+        head: s.slice(0, 8),
+        tail: s.slice(-8),
+        bad_chars: [...new Set([...s].filter(c => c.charCodeAt(0) < 32 || c.charCodeAt(0) > 126))]
+          .map(c => `U+${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`),
+      });
+      return json({ ok: true, raw: { DR_URL: info(raw.url), DR_ANON_KEY: info(raw.key) },
+                    used: { DR_URL: info(DR_URL), DR_ANON_KEY: info(DR_KEY) } });
+    }
+
     // ?dry=1 = โหมดทดลอง — อ่านข้อมูลผลิตจริงแล้วบอกว่า "จะเรียกอะไรบ้าง"
     // **ไม่เขียน DB · ไม่ส่ง Telegram** · ใช้ดูผลก่อนกดเปิดสวิตช์จริง (ทำงานได้แม้ระบบยังปิดอยู่)
     const dry = new URL(req.url).searchParams.get('dry') === '1';
