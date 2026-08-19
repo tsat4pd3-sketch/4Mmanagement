@@ -166,6 +166,42 @@ export function changeContribution(items) {
  * @returns {{ metered, bill, unmetered, coverPct, over }}
  *   over = true → ผลรวมมากกว่าบิล = **ผิดจริง** (นับซ้ำ/กรอกผิดหลัก) อันนี้ค่อยเตือน
  */
+/* ── SEC / carbon intensity — ผูกพลังงานกับยอดผลิต ─────────────────────────
+   ⚠️ **ไม่ใช่เรื่องของ scope** — ไฟที่ซื้อทั้งก้อนเป็น Scope 2 เสมอ ไม่ว่าจะเอาไปใช้ทำอะไร
+      การหารด้วยจำนวนชิ้นคือการ "เปลี่ยนหน่วยที่ใช้รายงาน" (CFO → CFP) ไม่ได้เปลี่ยน scope
+      รายละเอียด: docs/ENERGY_MONITORING_DESIGN.md §12.3.1
+   ⭐ ประโยชน์: ยอด kWh ขึ้น ≠ แย่ลง (อาจแค่ผลิตเยอะขึ้น)
+      SEC เป็นตัวเดียวที่แยก "ผลิตเยอะขึ้น" ออกจาก "ใช้ไฟเปลืองขึ้น" */
+
+/** kWh ต่อ 1 ชิ้น (Specific Energy Consumption) — ทศนิยม 3 ตำแหน่ง (ค่ามักน้อยกว่า 1) */
+export function secOf(kwh, pieces) {
+  if (kwh == null || pieces == null) return null
+  const k = Number(kwh), p = Number(pieces)
+  if (!Number.isFinite(k) || !Number.isFinite(p) || p <= 0) return null
+  return Math.round((k / p) * 1000) / 1000
+}
+
+/** kgCO2e ต่อ 1 ชิ้น — carbon intensity (รายงานให้ลูกค้า = CFP ช่วง gate-to-gate) */
+export function co2ePerPiece(kgCo2e, pieces) {
+  if (kgCo2e == null || pieces == null) return null
+  const c = Number(kgCo2e), p = Number(pieces)
+  if (!Number.isFinite(c) || !Number.isFinite(p) || p <= 0) return null
+  return Math.round((c / p) * 10000) / 10000
+}
+
+/**
+ * วิธีนับ "ชิ้น" สำหรับ SEC/CFP — **ชิ้นจริง ไม่ใช่ stroke**
+ * เหตุผล (ยืนยันกับ user 2026-08-19):
+ *   · ลูกค้าซื้อของเป็นชิ้น และถามว่า "พาร์ทนี้ปล่อยกี่ kgCO2e ต่อชิ้น"
+ *   · แม่พิมพ์คู่ RH/LH ปั๊มครั้งเดียวได้ 2 ชิ้น → พลังงานต่อชิ้นถูกลงจริงครึ่งหนึ่ง
+ *     **นั่นคือประสิทธิภาพที่ควรถูกนับ ไม่ใช่ถูกกลบ**
+ * ⚠️ ต่างจากจอสรุปผลิตทุกจอที่นับเป็น stroke (`pairAwareTotal`) → **ทุกจอที่โชว์ SEC ต้องติดป้ายว่านับแบบไหน**
+ * ⚠️ แต่ `collapseOps` **ต้องใช้เสมอ** — รายการขั้นตอน (OP) คือชิ้นเดิมที่เดินผ่านสถานี ไม่ใช่ชิ้นใหม่
+ *    ไม่ยุบ = ชิ้นเดียวถูกนับ 2-3 รอบ แล้ว SEC ต่ำกว่าความจริงเป็นเท่าตัว
+ */
+export const PIECE_BASIS = 'physical'
+export const PIECE_BASIS_LABEL = 'นับชิ้นจริง (งานคู่ LH/RH = 2 ชิ้น)'
+
 export function meteredCoverage(meteredQty, billQty) {
   const m = meteredQty == null ? null : Number(meteredQty)
   const b = billQty == null ? null : Number(billQty)

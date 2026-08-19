@@ -30,7 +30,10 @@ import {
   monthKeyOf, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct,
   bahtPerUnit, RATE_SANE_MIN, RATE_SANE_MAX, sumRows,
   efFor, co2eKg, fmtTco2e, monthRange, changeContribution, meteredCoverage,
+  secOf, co2ePerPiece, PIECE_BASIS_LABEL,
 } from '../utils/energy';
+import { collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
@@ -55,6 +58,8 @@ export default function Energy() {
   const [loading, setLoading] = useState(true);
   const [cfgMissing, setCfgMissing] = useState(false);  // ยังไม่ apply migration C1
   const [showUnmetered, setShowUnmetered] = useState(false);
+  const [prod, setProd] = useState(null);   // month → ชิ้นที่ผลิตได้ทั้งโรงงาน (null = ยังไม่โหลด)
+  const [prodErr, setProdErr] = useState('');
 
   /* ── scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่น = ตาม sections ── */
   const scopedLines = useMemo(() => {
@@ -111,6 +116,57 @@ export default function Energy() {
   }, [month]);
   useEffect(() => { load(); }, [load]);
 
+  /* ── ยอดผลิตทั้งโรงงาน รายเดือน (สำหรับ SEC / kgCO2e ต่อชิ้น) ──────────────
+     ⚠️ โหลดเฉพาะตอนเปิดแท็บสรุป — ใบงาน 12 เดือนเป็นหลักพันแถว ไม่ควรดึงตอนคนแค่มากรอกหน่วยไฟ
+        (กฎ egress: จอที่ไม่ได้ใช้ข้อมูลนี้ ห้ามจ่ายค่าดึง)
+     ⚠️ `prod_orders` **ไม่มีคอลัมน์ work_date/line_name** — ต้อง embed production_sessions!inner
+        และเช็ค error เสมอ (select ตรงจะได้ 42703 แล้วเงียบถ้าดึงแค่ data)
+     ⚠️ ต้อง paginate — Supabase ตัดที่ 1000 แถว ไม่ตัดแบบมี error (หายเงียบ = SEC สูงเกินจริง)
+     ⚠️ **ไม่ scope ตามไลน์โดยตั้งใจ** — ตัวหารต้องครอบเท่ากับตัวตั้ง (บิลทั้งโรงงาน)
+        เอาไฟทั้งโรงงานหารด้วยชิ้นของบางไลน์ = ตัวเลขขยะ · จอติดป้าย "ทั้งโรงงาน" กำกับไว้ */
+  const loadProduction = useCallback(async () => {
+    setProdErr('');
+    const ms = monthRange(month, TREND_MONTHS);
+    const from = `${ms[0]}-01`;
+    const [ey, em] = ms[ms.length - 1].split('-').map(Number);
+    const to = `${ms[ms.length - 1]}-${String(new Date(ey, em, 0).getDate()).padStart(2, '0')}`;
+    await loadOpInfo();
+    const PAGE = 1000;
+    const all = [];
+    for (let page = 0; page < 20; page++) {
+      const { data, error } = await supabaseDR.from('prod_orders')
+        .select('mat_no, qty, qty_ok, qty_actual, status, production_sessions!inner(work_date)')
+        .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error) { setProdErr(error.message); setProd({}); return }
+      all.push(...(data || []));
+      if ((data || []).length < PAGE) break;
+      if (page === 19) setProdErr('ใบงานเกิน 20,000 แถว — ตัวเลขอาจไม่ครบ');  // ห้ามตัดเงียบ
+    }
+    // ต่อเดือน: รวมยอดต่อ MAT → collapseOps (ยุบขั้นตอน) → บวกดิบ = **ชิ้นจริง** (ไม่ผ่าน pairAware)
+    const opMap = opInfoSync();
+    const perMonth = {};
+    for (const o of all) {
+      const wd = o.production_sessions?.work_date;
+      if (!wd) continue;
+      const mk = String(wd).slice(0, 7);
+      // "ผลิตได้" สูตรมาตรฐานของระบบ: ปิดใบแล้ว = qty_ok ?? qty · ยังเปิด = qty_actual ?? 0
+      const v = o.status === 'confirmed' ? Number(o.qty_ok ?? o.qty ?? 0) : Number(o.qty_actual ?? 0);
+      if (!v) continue;
+      const bucket = (perMonth[mk] ||= {});
+      const k = o.mat_no ?? '__null__';
+      (bucket[k] ||= { mat_no: o.mat_no ?? null, target: 0, produced: 0 }).produced += v;
+    }
+    const out = {};
+    for (const [mk, bucket] of Object.entries(perMonth)) {
+      out[mk] = collapseOps(Object.values(bucket), opMap)
+        .reduce((s, r) => s + (Number(r.produced) || 0), 0);
+    }
+    setProd(out);
+  }, [month]);
+  useEffect(() => { if (tab === 'summary' && prod == null) loadProduction(); }, [tab, prod, loadProduction]);
+  useEffect(() => { setProd(null); }, [month]);   // เปลี่ยนเดือน = ช่วงเปลี่ยน ต้องโหลดใหม่
+
   /* ── index ข้อมูลย้อนหลัง: month → key → row ── */
   const keyOf = (p) => `${p.kind}::${p.name}`;
   const byMonth = useMemo(() => {
@@ -148,6 +204,15 @@ export default function Energy() {
   const co2 = co2eKg(co2Base, ef);
   const co2Prev = co2eKg(co2BasePrev, efPrev);
   const usingBill = bill?.qty != null;
+
+  /* ── SEC (kWh/ชิ้น) + carbon intensity — ผูกพลังงานกับยอดผลิต
+     ⚠️ ตัวหารเป็น "ชิ้นจริง" (งานคู่ LH/RH = 2) ต่างจากจอผลิตที่นับ stroke → ต้องติดป้ายกำกับเสมอ */
+  const pieces = prod?.[month] ?? null;
+  const piecesPrev = prod?.[prevMonth] ?? null;
+  const sec = secOf(co2Base, pieces);
+  const secPrev = secOf(co2BasePrev, piecesPrev);
+  const secDelta = deltaPct(sec, secPrev);
+  const kgPerPiece = co2ePerPiece(co2, pieces);
 
   /* บันทึกทีละช่อง (upsert) — กรอกแล้วเซฟเลย เหมือนหน้ากรอกอื่นในระบบ */
   const saveCell = async (p, patch) => {
@@ -197,8 +262,10 @@ export default function Energy() {
       bill: b, metered: met,
       tco2e: co2eKg(base, e) == null ? null : Math.round(co2eKg(base, e) / 100) / 10,
       lastYear: ly,
+      pieces: prod?.[mk] ?? null,
+      sec: secOf(base, prod?.[mk]),
     };
-  }), [months, byMonth, meteredPts, factors]);
+  }), [months, byMonth, meteredPts, factors, prod]);
   const hasTrend = trend.some(t => t.bill != null || t.metered != null);
   const hasYoy = trend.some(t => t.lastYear != null);
 
@@ -355,6 +422,14 @@ export default function Energy() {
             : <span style={{ color: '#f59e0b' }}>ยังไม่ได้ตั้งค่าการปล่อย → แท็บ ⚙️</span>} />
         <Kpi label="ค่าไฟรวม (บาท)" value={fmtBaht(bill?.cost ?? metered.cost)}
           sub={`บาท/หน่วย ${bahtPerUnit(bill?.cost ?? metered.cost, bill?.qty ?? metered.qty) ?? '—'} (ปกติ 3.5–5)`} />
+        {/* ⭐ SEC — ตัวเดียวที่แยก "ผลิตเยอะขึ้น" ออกจาก "ใช้ไฟเปลืองขึ้น" (ยอด kWh ขึ้น ≠ แย่ลง) */}
+        <Kpi label="⚙️ kWh ต่อชิ้น (SEC)"
+          value={sec == null ? '—' : sec}
+          tone={secDelta == null ? undefined : secDelta <= -3 ? GOOD : secDelta > 3 ? BAD : undefined}
+          sub={sec == null
+            ? (tab === 'summary' ? <span style={{ color: 'var(--muted)' }}>ต้องมียอดผลิต + หน่วยไฟของเดือนนั้น</span>
+                                 : <span style={{ color: 'var(--muted)' }}>เปิดแท็บ 📊 เพื่อคำนวณ</span>)
+            : <>ผลิต {Math.round(pieces).toLocaleString()} ชิ้น · เทียบเดือนก่อน {deltaChip(secDelta)}</>} />
       </div>
 
       {/* ⚠️ เตือนเฉพาะ "ผิดจริง" — ผลรวมมากกว่าบิลเป็นไปไม่ได้ · น้อยกว่าบิลคือเรื่องปกติที่ยังไม่ได้ติดมิเตอร์ */}
@@ -448,7 +523,47 @@ export default function Energy() {
               )}
             </div>
 
-            {/* ② อะไรทำให้เดือนนี้เปลี่ยน — คำถามที่กราฟเรียงยอดตอบไม่ได้ */}
+            {/* ② พลังงานเทียบยอดผลิต (SEC) — "ยอดไฟขึ้น" ต่างจาก "ใช้ไฟเปลืองขึ้น" */}
+            <div style={{ ...card, marginBottom: 14 }}>
+              <div style={secTitle}>⚙️ พลังงานเทียบยอดผลิต · kWh ต่อชิ้น (SEC)</div>
+              {prod == null ? <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังรวมยอดผลิต…</div>
+                : !trend.some(t => t.sec != null) ? (
+                  <div style={{ color: 'var(--muted)', fontSize: 13 }}>
+                    ยังคำนวณไม่ได้ — ต้องมีทั้ง <b>หน่วยไฟ</b> และ <b>ยอดผลิต</b> ของเดือนเดียวกัน
+                    {prodErr && <div style={{ color: '#f59e0b', marginTop: 4 }}>⚠ ดึงยอดผลิตมีปัญหา: {prodErr}</div>}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 8 }}>
+                      <b>ยอดไฟขึ้น ≠ แย่ลง</b> — อาจแค่ผลิตเยอะขึ้น · SEC เป็นตัวเดียวที่แยก 2 เรื่องนี้ออกจากกัน:
+                      <span style={{ color: GOOD }}> ยอดขึ้น + SEC ลง = ดี</span> ·
+                      <span style={{ color: BAD }}> ยอดเท่าเดิม + SEC ขึ้น = มีของรั่ว/เครื่องเสื่อม</span>
+                    </div>
+                    <ResponsiveContainer width="100%" height={240}>
+                      <ComposedChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                        <YAxis yAxisId="l" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Math.round(v / 1000) + 'k'} />
+                        <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11, fill: '#f59e0b' }} />
+                        <Tooltip contentStyle={tipStyle}
+                          formatter={(v, n) => [v == null ? '—' : (n === 'kWh ต่อชิ้น (SEC)' ? v : Math.round(v).toLocaleString()), n]} />
+                        <Legend wrapperStyle={{ fontSize: 11.5 }} />
+                        <Bar yAxisId="l" dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
+                        <Line yAxisId="r" type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                      <span>📏 <b>{PIECE_BASIS_LABEL}</b> — ต่างจากจอผลิตที่นับเป็น stroke (1 ปั๊ม = 1)</span>
+                      {kgPerPiece != null && <span>🌱 คาร์บอนต่อชิ้น <b>{kgPerPiece}</b> kgCO2e (ช่วง gate-to-gate เท่านั้น ยังไม่รวมวัสดุที่ซื้อเข้ามา)</span>}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
+                      ⚠️ ระดับ<b>ทั้งโรงงาน</b>เท่านั้น (ไฟทั้งโรงงาน ÷ ชิ้นทั้งโรงงาน) — แยกรายไลน์/รายพาร์ทต้องรอมิเตอร์รายไลน์
+                    </div>
+                  </>
+                )}
+            </div>
+
+            {/* ③ อะไรทำให้เดือนนี้เปลี่ยน — คำถามที่กราฟเรียงยอดตอบไม่ได้ */}
             <div style={{ ...card, marginBottom: 14 }}>
               <div style={secTitle}>
                 🔍 อะไรทำให้เดือนนี้เปลี่ยน · {monthLabel(month)} เทียบ {monthLabel(prevMonth)}
@@ -491,7 +606,7 @@ export default function Energy() {
               )}
             </div>
 
-            {/* ③ สัดส่วนการใช้ — โครงสร้างเปลี่ยนหรือแค่ยอดรวมเปลี่ยน */}
+            {/* ④ สัดส่วนการใช้ — โครงสร้างเปลี่ยนหรือแค่ยอดรวมเปลี่ยน */}
             {compPts.length > 0 && (
               <div style={{ ...card, marginBottom: 14 }}>
                 <div style={secTitle}>🧩 สัดส่วนการใช้รายจุด · 6 เดือนล่าสุด</div>
@@ -511,7 +626,7 @@ export default function Energy() {
               </div>
             )}
 
-            {/* ④ ตารางรายจุด 6 เดือน — จับจุดที่ค่อยๆ ไต่ขึ้นทีละนิด */}
+            {/* ⑤ ตารางรายจุด 6 เดือน — จับจุดที่ค่อยๆ ไต่ขึ้นทีละนิด */}
             <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
               <div style={{ ...secTitle, padding: '12px 14px 0' }}>📋 รายจุด · 6 เดือนล่าสุด (kWh)</div>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
