@@ -157,7 +157,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
   const lineNames = useMemo(() => [...new Set(lines.map(l => l.name).filter(Boolean))].sort(), [lines]);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(260px, 340px) 1fr', gap: 16, alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(260px, 340px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* ── ซ้าย: เลือกพาร์ท ── */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา MAT / ชื่อ / P/N…" style={{ ...inp, marginBottom: 10 }} />

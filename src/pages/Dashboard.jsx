@@ -4,13 +4,16 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { sumDefectQty } from '../utils/oee';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 
@@ -272,6 +275,7 @@ export default function Dashboard() {
         .eq('work_date', boardDate),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no').not('mat_no', 'is', null),
+      loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ยอด demand/actual ไม่นับซ้ำ (ตัวที่ 4 ไม่เข้า destructure)
     ]);
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
@@ -316,7 +320,7 @@ export default function Dashboard() {
       const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)').in('session_id', sessionIds),
+        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, is_trial, description, dr_defect_types(name_th, excl_from_q)').in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
       let orders = ordRes.data;
@@ -370,7 +374,8 @@ export default function Dashboard() {
         const ct = ctMap[o.mat_no] || s.dr_products?.cycle_time_sec || 0;
         if (ct > 0) { producedMin += o.qty * ct / 60; knownQty += o.qty; }
       });
-      const ngQty    = (defectBySession[s.id] || []).reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
+      // ⚠️ Q ไม่นับงานทดลอง (มาตรฐานเดียวกับ computeOEE ตอนปิดกะ)
+      const ngQty    = sumDefectQty(defectBySession[s.id] || [], 'line');
       // Availability: ถ้ากะนี้มีหลาย MAT.NO วิ่งคนละช่วงเวลากัน ให้แยกคำนวณ netAvail/runMin ตามช่วงเปิด-ปิดของแต่ละ
       // MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์เดียว — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
       const dtOverlapMinLive = (startMs, endMs, pred = () => true) => {
@@ -434,7 +439,7 @@ export default function Dashboard() {
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
       });
       const nullD = active.filter(o => !o.mat_no);
-      const ptotD = pairAwareTotal(Object.values(perMatD), m => pairMap[m] || null);
+      const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
       const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
       const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
@@ -467,7 +472,7 @@ export default function Dashboard() {
       { data: mpData },
     ] = await Promise.all([
       supabase.from('daily_production_logs')
-        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, is_active, employee_skills(skill_name, score))')
+        .select('id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, shift, assigned_line, employees!inner(id, name, image_url, employee_id_code, line_id, team, department, is_active, employee_skills(skill_name, score))')
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
@@ -482,28 +487,23 @@ export default function Dashboard() {
       supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
-    // Build per-line day_team map
-    const lineSchedule = {};
-    (scheduleData || []).forEach(s => { lineSchedule[s.line_id] = s.day_team; });
+    // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
+    // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
+    //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
+    const schedMaps = buildScheduleMaps(scheduleData);
 
     // Build per-employee override map
     const empOverride = {};
     (overrideData || []).forEach(o => { empOverride[o.employee_id] = o.shift; });
 
-    // Enrich logs with assignedShift (same logic as Checkin.jsx)
     const enriched = (logData || []).map(log => {
       const emp = log.employees;
-      let assignedShift = null;
-      if (emp) {
-        if (empOverride[emp.id]) {
-          assignedShift = empOverride[emp.id];
-        } else if (emp.line_id && lineSchedule[emp.line_id]) {
-          const dayTeam = lineSchedule[emp.line_id];
-          const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-          assignedShift = emp.team === dayTeam ? 'day' : emp.team === nightTeam ? 'night' : null;
-        }
-      }
-      return { ...log, assignedShift };
+      return {
+        ...log,
+        assignedShift: emp
+          ? resolveAssignedShift(emp, { overrideShift: empOverride[emp.id], maps: schedMaps })
+          : null,
+      };
     });
 
     setLogs(enriched);
@@ -526,11 +526,10 @@ export default function Dashboard() {
       if (!emp.line_id) return;
       if (!counts[emp.line_id]) counts[emp.line_id] = { day: 0, night: 0, all: 0 };
       counts[emp.line_id].all++;
-      const dayTeam = lineSchedule[emp.line_id];
-      if (!dayTeam) return;
-      const nightTeam = dayTeam === 'A' ? 'B' : 'A';
-      if (emp.team === dayTeam)   counts[emp.line_id].day++;
-      else if (emp.team === nightTeam) counts[emp.line_id].night++;
+      // กำลังคนเป็นเรื่องของ "ไลน์" → ใช้ตารางกะของไลน์ตรงๆ (ไม่ตกไปกะหน่วยงาน)
+      const sh = shiftFromTeam(schedMaps.byLine[emp.line_id], emp.team);
+      if (sh === 'day')        counts[emp.line_id].day++;
+      else if (sh === 'night') counts[emp.line_id].night++;
     });
     setEmpCounts(counts);
     setLayouts(layoutData || []);
@@ -2206,7 +2205,7 @@ export default function Dashboard() {
                 <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
                 {floorCards.map(({ layout, cardLineNames, lineWs, presentPeople, staffedStations, totalStations }) => {
                   const allStaffed = totalStations > 0 && staffedStations >= totalStations;
                   return (

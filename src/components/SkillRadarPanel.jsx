@@ -200,7 +200,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
         </div>
 
         {/* Body — desktop: 2 คอลัมน์ landscape · mobile: คอลัมน์เดียว · scroll เป็น fallback */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'grid', gridTemplateColumns: wide ? '1fr 1fr' : '1fr', columnGap: 8, alignItems: 'start' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'grid', gridTemplateColumns: wide ? '1fr 1fr' : 'minmax(0, 1fr)', columnGap: 8, alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
         {/* Stat bars row — top 4 non-zero skills */}
         {radarData.length > 0 && (

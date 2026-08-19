@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { wavg } from '../utils/oee';
-import { pairAwareTotal } from '../utils/pairTotals';
+import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import useIsMobile from '../utils/useIsMobile';
 import WorldFactoryMap from '../components/WorldFactoryMap';
 import ThailandZoneMap from '../components/ThailandZoneMap';
@@ -215,6 +216,7 @@ export default function GroupOverview() {
         supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
         supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+        loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 5 ไม่เข้า destructure แค่ให้ cache พร้อม
       ]);
       const ngBySess = {}; (defs || []).forEach(x => { ngBySess[x.session_id] = (ngBySess[x.session_id] || 0) + (Number(x.qty_ng) || 0) + (Number(x.qty_suspect) || 0); });
       const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
@@ -234,7 +236,7 @@ export default function GroupOverview() {
           e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
         });
         const nullOs = os.filter(od => !od.mat_no);
-        const pt = pairAwareTotal(Object.values(perMat), m => pairMap[m] || null);
+        const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
         o.target += pt.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
         o.actual += pt.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
 
@@ -374,7 +376,7 @@ export default function GroupOverview() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {[...items].sort((a, b) => (b.oee ?? -1) - (a.oee ?? -1)).map((it, i) => (
-          <div key={it.key} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '230px 1fr 128px', gap: 10, alignItems: 'center' }}>
+          <div key={it.key} style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '230px 1fr 128px', gap: 10, alignItems: 'center' }}>
             <button onClick={() => onPick && onPick(it)} disabled={!onPick} style={{
               display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, minWidth: 0,
               background: 'none', border: 'none', padding: 0, color: 'var(--text)', textAlign: 'left',
@@ -559,7 +561,7 @@ export default function GroupOverview() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
             {axisNodes.map(g => {
               const stCol = g.status === 'bad' ? '#ef4444' : g.status === 'ok' ? '#f59e0b' : '#22c55e';
               return (
@@ -669,7 +671,7 @@ export default function GroupOverview() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))', alignContent: 'start' }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(330px, 100%), 1fr))', alignContent: 'start' }}>
             {bizNode.companies.map(c => {
               const stCol = c.status === 'bad' ? '#ef4444' : c.status === 'ok' ? '#f59e0b' : '#22c55e';
               return (
