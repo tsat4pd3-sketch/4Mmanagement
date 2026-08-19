@@ -254,9 +254,11 @@ Deno.serve(async (req) => {
       if (p.mat_no) byMat.set(norm(p.mat_no), p.id);       // คอลัมน์ผูกตรง (แม่นสุด)
       if (p.part_no) byNo.set(norm(p.part_no), p.id);      // ถอยไปเทียบ part_no แบบ normalize
     }
-    const resolvePart = (mats: string[]) => {
-      for (const m of mats) { const hit = byMat.get(norm(m)); if (hit) return hit; }
-      for (const m of mats) { const hit = byNo.get(norm(m)); if (hit) return hit; }
+    // ลองทั้งเลขพาร์ทจริงหลังยุบ OP (canonMat) และเลขที่ปรากฏบนใบงานจริง
+    const resolvePart = (mats: string[], canonMat: string) => {
+      const all = [canonMat, ...mats];
+      for (const m of all) { const hit = byMat.get(norm(m)); if (hit) return hit; }
+      for (const m of all) { const hit = byNo.get(norm(m)); if (hit) return hit; }
       return null;
     };
 
@@ -270,26 +272,30 @@ Deno.serve(async (req) => {
         if (seen.has(k)) return false;
         seen.add(k); return true;
       })
-      .map(w => ({ ...w, part_id: resolvePart(w.mat_group) }));
+      .map(w => ({ ...w, part_id: resolvePart(w.mat_group, w.mat_no) }));
 
     // ── โหมดทดลอง: บอกว่า "จะเรียกอะไรบ้าง" แล้วจบ (ไม่เขียน ไม่ส่ง) ──
     if (dry) {
       const { data: already } = await supabase.from('qa_fme_obligations')
         .select('line_name, work_date, shift, mat_no, stage').gte('work_date', yest);
       const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}`));
+      const list = rows.filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`));
       return json({
         ok: true, dry: true, enabled: cfg.is_enabled,
         scanned: { sessions: sessions.length, orders: orders.length, runs: runs.size },
-        would_create: rows
-          .filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`))
-          .map(r => ({
-            line: r.line_name, shift: r.shift, work_date: r.work_date,
-            mat: r.mat_no, mats: r.mat_group, product: r.product_name,
-            stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
-            at: hhmm(r.triggered_at), due: hhmm(r.due_at),
-            part_linked: !!r.part_id,   // false = ต้องผูก qa_parts.mat_no ก่อนถึงจะกดเปิดใบจากคิวได้
-            op_unlinked: r.mat_group.filter(m => opNoParent.has(m)),  // OP ที่ยังไม่ผูกพาร์ทจริง
-          })),
+        summary: {
+          would_create: list.length,
+          // part_linked = กดปุ่ม "เปิดใบตรวจ" จากคิวได้จริงกี่รายการ (ต้องผูก qa_parts.mat_no ก่อน)
+          part_linked: list.filter(r => r.part_id).length,
+          op_unlinked: [...new Set(list.flatMap(r => r.mat_group.filter(m => opNoParent.has(m))))],
+        },
+        would_create: list.map(r => ({
+          line: r.line_name, shift: r.shift, work_date: r.work_date,
+          mat: r.mat_no, mats: r.mat_group, product: r.product_name,
+          stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
+          at: hhmm(r.triggered_at), due: hhmm(r.due_at),
+          part_linked: !!r.part_id,
+        })),
         note: 'โหมดทดลอง — ยังไม่เขียนอะไรลงฐานข้อมูลและไม่ส่ง Telegram',
       });
     }
