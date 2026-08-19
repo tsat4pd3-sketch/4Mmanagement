@@ -803,6 +803,26 @@ export default function FactoryMap({ setupMode = false }) {
   usePolling(loadDieZones, RATE.ANALYTIC);
   const dieZoneOf = (name) => dieZones[String(name || '').trim().toLowerCase()] || null;
 
+  /* ── Realtime — ผังเปลี่ยนสี "ทันที" ที่หน้างานบันทึก ไม่ต้องรอรอบ poll (2026-08-19) ────
+     เดิมหน้านี้เป็น polling ล้วน (0 channel) เลยต้องตั้ง 30 วิ เพื่อให้ Andon ทัน = กิน egress หนัก
+     ตอนนี้ push มาก่อน · poll เหลือเป็นแค่ "กันเหนียวเผื่อ realtime หลุด" → ยืดเป็นหลักนาทีได้
+     ⚠️ debounce 1.5 วิ กัน event รัวตอนสแกนปิดใบหลายใบติดกัน (pattern เดียวกับ Dashboard)
+     ⚠️ ผังแดงเร็วกว่าเดิมด้วยซ้ำ — การ "แจ้งเตือน" จริง (Telegram/ไซเรน) เป็นคนละกลไก
+        (edge `downtime-open-scan` pg_cron ทุก 5 นาที ยิงเมื่อค้างเกิน `dt_alert_config.open_alert_min`)  */
+  useEffect(() => {
+    let timer = null;
+    const bump = (fn) => { clearTimeout(timer); timer = setTimeout(fn, 1500); };
+    const ch = supabaseDR.channel('factory-map-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => bump(loadStatus))
+      // mtn_orders กระทบทั้ง supply route และโซนคลังแม่พิมพ์ (MO ค้างของแม่พิมพ์) — refresh คู่กัน
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          () => bump(() => { loadSupply(); loadDieZones(); }))
+      .subscribe();
+    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+  }, [loadStatus, loadSupply, loadDieZones]);
+
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
   const loadReview = useCallback(async () => {

@@ -40,6 +40,10 @@ const checkVersion = async () => {
 };
 checkVersion();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+/* ⚠️ จอ TV ที่เปิดค้าง 24/7 = visible ตลอด → **ไม่มี visibilitychange เลย** → ไม่มีวันรู้ว่ามีเวอร์ชันใหม่
+   (พบ 2026-08-19: แก้ egress แล้ว deploy ไป แต่จอ TV ยังรันโค้ดเก่าจนกว่าจะมีคนไปกด F5)
+   เช็คเป็นรอบทุก 30 นาทีด้วย — `/version.json` ~50 bytes จิ๊บจ๊อย แลกกับ bug fix ที่ไปไม่ถึงจอ */
+setInterval(checkVersion, 30 * 60 * 1000);
 
 /* ── PWA Service Worker (เฉพาะ Web Push — ไม่มี fetch handler ไม่ cache อะไร) ──
    register ตอน production เท่านั้น · ตัว SW (public/sw.js) แตะแค่ push/notificationclick
