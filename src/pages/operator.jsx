@@ -10,8 +10,7 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
-} from '../utils/sectionScope';
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
@@ -107,6 +106,16 @@ export default function Operator() {
   /** แก้แถวนี้ได้ไหม — ต้องมีสิทธิ์ employees:edit และอยู่ในส่วนงานที่ตัวเองดูแล */
   const canEditEmp = (emp) => can('employees', 'edit', role)
     && (editAllSections || (!!homeSection && inSectionScope([homeSection], emp?.section)));
+  /** สิทธิ์แก้ "สกิล" ของแถวนี้ — แยกจากสิทธิ์แก้ประวัติพนักงาน (feedback หน้างาน 2026-08-19:
+   *  ช่างเพิ่มสกิลให้ทีมตัวเองไม่ได้ ทั้งที่ RLS employee_skills เปิด skills:edit ให้แล้ว —
+   *  เดิมแผงสกิลไปมัดกับ employees:edit + เทียบ section ซึ่งพนักงานสนับสนุนเป็น null ไม่ตรงกับใครเลย)
+   *  กติกา: มี skills:edit + (แก้ได้ทุกส่วน ‖ section ตรงส่วนงานตัวเอง ‖
+   *  พนักงานสนับสนุนขึ้นตรงฝ่าย (section null) ให้ role หน่วยงานช่างแก้ได้ — MAINTENANCE_ROLES
+   *  เห็นทั้งโรงงานตามกฎ scopedLineNames อยู่แล้ว) · RLS ฝั่ง DB ยังคุมชั้นสุดท้ายเสมอ */
+  const canEditSkillsFor = (emp) => canEditSkills
+    && (editAllSections
+        || (!!homeSection && inSectionScope([homeSection], emp?.section))
+        || (!emp?.section && MAINTENANCE_ROLES.includes(role)));
 
   // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
   // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
@@ -128,6 +137,8 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
+  // กางสกิลนอกส่วนงานในโมดัลแก้ไขพนักงาน (default ปิด — ดูหัวข้อ visibleSkillDefs)
+  const [showAllSkills, setShowAllSkills] = useState(false);
   const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
   const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
@@ -422,7 +433,7 @@ export default function Operator() {
       // ที่ไม่ติ๊ก (รวมตัวที่ไม่เคยมีแถวอยู่แล้ว) → แตะ employee_skills ทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป
       // ทำให้คนที่ไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ
       let skillWarn = '';
-      if (canEditSkills && canEditEmp(editingEmp)) {
+      if (canEditSkillsFor(editingEmp)) {
         const origMap = new Map((editingEmp.employee_skills || []).map(s => [s.skill_name, s]));
         const upserts = [];
         const removals = [];
@@ -906,7 +917,7 @@ export default function Operator() {
                   <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
-                      <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
+                      <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {sd.label}</div>
                       {sd.scope_section && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
@@ -1215,11 +1226,9 @@ export default function Operator() {
                       <label style={labelSt}>ประเภทสกิล</label>
                       <select value={editingSkill.category || 'hard_skill'}
                         onChange={e => setEditingSkill({ ...editingSkill, category: e.target.value })}>
-                        <option value="hard_skill">🔧 Hard Skill</option>
-                        <option value="machine_skill">⚙️ Machine Skill</option>
-                        <option value="product_skill">📦 Product Skill</option>
-                        <option value="soft_skill">🧠 Soft Skill</option>
-                        <option value="allowance_skill">🎫 ใบเซอร์ค่าฝีมือ</option>
+                        {Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => (
+                          <option key={k} value={k}>{m.icon} {m.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -1568,12 +1577,12 @@ export default function Operator() {
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
                 <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>📊 ระดับทักษะ</label>
-                {!(canEditSkills && canEditEmp(editingEmp)) && (
+                {!canEditSkillsFor(editingEmp) && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
                     🔒 ดูอย่างเดียว — {canEditSkills ? `แก้ได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}` : 'บัญชีนี้ไม่มีสิทธิ์แก้ระดับทักษะ'} (ข้อมูลอื่นในฟอร์มยังแก้ได้ตามปกติ)
                   </div>
                 )}
-                {canEditSkills && canEditEmp(editingEmp) && !canEditHighSkill && (
+                {canEditSkillsFor(editingEmp) && !canEditHighSkill && (
                   <div style={{ fontSize: 11, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b40', borderRadius: 6, padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
                     ⚖️ ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> (ระดับ “{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
                     <div style={{ color: 'var(--muted)', marginTop: 2 }}>
@@ -1582,11 +1591,54 @@ export default function Operator() {
                   </div>
                 )}
                 {(() => {
+                  // ── กรองสกิลที่ไม่เกี่ยวกับส่วนงานของพนักงานคนนี้ (2026-08-18 · คำสั่ง user) ──
+                  //   `skill_definitions.scope_section` ว่าง = สกิลกลาง ใช้ได้ทุกส่วน
+                  //   มีค่า (PD3/PD4/…) = ของส่วนงานนั้นโดยเฉพาะ
+                  //   เคสจริงที่ทำให้ต้องกรอง: ช่างแผนก MTN เปิดมาเจอสกิลฝ่ายผลิต 29 ตัว
+                  //   ขึ้น "ไม่เกี่ยวข้อง" เรียงยาวจนหาของตัวเองไม่เจอ (44 → เหลือ 15)
+                  // ⚠️ ห้ามซ่อนเงียบ — สกิลที่พนักงาน "มีอยู่แล้ว" ต้องโชว์เสมอแม้นอกส่วนงาน
+                  //   (ไม่งั้นข้อมูลที่มีอยู่จะมองไม่เห็น/แก้ไม่ได้) + มีปุ่มกางดูของที่ซ่อน พร้อมบอกจำนวน
+                  const empSec = editingEmp.section || null;
+                  const isOwned = (sd) => !!editingEmp.skillEnabled?.[sd.name]
+                    || (editingEmp.employee_skills || []).some(s => s.skill_name === sd.name);
+                  const inScope = (sd) => {
+                    const sc = (sd.scope_section || '').trim();
+                    if (!sc) return true;                       // สกิลกลาง
+                    return !!empSec && inSectionScope([empSec], sc);
+                  };
+                  const visibleSkillDefs = showAllSkills
+                    ? skillDefs
+                    : skillDefs.filter(sd => inScope(sd) || isOwned(sd));
+                  const hiddenCount = skillDefs.length - visibleSkillDefs.length;
+
                   // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
                   const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
-                    key: k, ...m, desc: null, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+                    key: k, ...m, desc: null, skills: visibleSkillDefs.filter(sd => (sd.category || 'hard_skill') === k),
                   })).filter(g => g.skills.length > 0);
-                  return grouped.map(g => (
+                  const scopeBar = (hiddenCount > 0 || showAllSkills) ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      <span>
+                        {showAllSkills
+                          ? `แสดงทุกสกิล (${skillDefs.length})`
+                          : `แสดงสกิลของ ${empSec || 'ส่วนกลาง'} + สกิลกลาง (${visibleSkillDefs.length}/${skillDefs.length})`}
+                      </span>
+                      {hiddenCount > 0 && !showAllSkills && (
+                        <button type="button" onClick={() => setShowAllSkills(true)}
+                          style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
+                          + แสดงสกิลนอกส่วนงาน ({hiddenCount})
+                        </button>
+                      )}
+                      {showAllSkills && (
+                        <button type="button" onClick={() => setShowAllSkills(false)}
+                          style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
+                          ซ่อนสกิลนอกส่วนงาน
+                        </button>
+                      )}
+                    </div>
+                  ) : null;
+                  return (<>
+                  {scopeBar}
+                  {grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
                       <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
@@ -1606,7 +1658,7 @@ export default function Operator() {
                           // ใบเซอร์ค่าฝีมือ = คนละสิทธิ์กับสกิลทั่วไป (หัวหน้าแผนกขึ้นไป)
                           const isAllowance = sd.category === 'allowance_skill';
                           const lockedAllowance = isAllowance && !canEditAllowance;
-                          const rowEditable = canEditSkills && canEditEmp(editingEmp) && !lockedAllowance;
+                          const rowEditable = canEditSkillsFor(editingEmp) && !lockedAllowance;
                           return (
                             <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
@@ -1668,7 +1720,8 @@ export default function Operator() {
                         })}
                       </div>
                     </div>
-                  ));
+                  ))}
+                  </>);
                 })()}
 
                 {editingEmp.id && <SkillEditHistory employeeId={editingEmp.id} />}

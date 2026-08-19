@@ -22,7 +22,7 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { isTrialDefect, defectQty } from '../utils/oee';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -499,7 +499,7 @@ function QualityDashboard() {
    ════════════════════════════════════════════════════════════════════════ */
 const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: '', unit: 'mm', nominal: '', usl: '', lsl: '', subgroup_size: 5, gauge: '', control_method: '' };
 
-function SPCTab({ lines, canRecord, canManage }) {
+function SPCTab({ lineObjs, canRecord, canManage }) {
   const { fullName } = useContext(UserContext);
   const [chars, setChars] = useState([]);
   const [selId, setSelId] = useState(null);
@@ -780,7 +780,9 @@ function SPCTab({ lines, canRecord, canManage }) {
             <Field label="ไลน์ผลิต">
               <select style={inputSt} value={charModal.line_name} onChange={e => setCharModal(f => ({ ...f, line_name: e.target.value }))}>
                 <option value="">— ไม่ระบุ —</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                {toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </Field>
             <Field label="หน่วย"><input style={inputSt} value={charModal.unit} onChange={e => setCharModal(f => ({ ...f, unit: e.target.value }))} /></Field>
@@ -826,7 +828,7 @@ const NCR_SEV = { minor: { label: 'Minor', color: '#4d9fff' }, major: { label: '
 const DISPO = { use_as_is: 'ใช้ตามสภาพ (Use as-is)', rework: 'ซ่อมแก้ (Rework)', sort: 'คัดแยก (Sort)', scrap: 'ทำลาย (Scrap)', return_supplier: 'คืน Supplier' };
 const EMPTY_NCR = { report_date: '', line_name: '', part_no: '', part_name: '', source: 'inprocess', severity: 'minor', defect_desc: '', qty_found: '', qty_ng: '' };
 
-function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
+function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa }) {
   const { fullName, role, lineId, sections } = useContext(UserContext);
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active'); // active | all | closed
@@ -934,7 +936,9 @@ function NCRTab({ lines, canRecord, canManage, onOpenCapa }) {
             <Field label="ไลน์ผลิต">
               <select style={inputSt} value={createModal.line_name} onChange={e => setCreateModal(f => ({ ...f, line_name: e.target.value }))}>
                 <option value="">— ไม่ระบุ —</option>
-                {(scopedLineNames ? lines.filter(l => scopedLineNames.includes(l)) : lines).map(l => <option key={l} value={l}>{l}</option>)}
+                {toHierarchicalOptions(scopedLineNames ? lineObjs.filter(l => scopedLineNames.includes(l.name)) : lineObjs).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </Field>
             <Field label="Part No."><input style={inputSt} value={createModal.part_no} onChange={e => setCreateModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
@@ -1375,7 +1379,7 @@ function calState(inst) {
   return { label: 'ปกติ', color: '#22c55e' };
 }
 
-function InstrumentTab({ lines, canManage }) {
+function InstrumentTab({ lineObjs, canManage }) {
   const [list, setList] = useState([]);
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState('');
@@ -1487,7 +1491,9 @@ function InstrumentTab({ lines, canManage }) {
             <Field label="ไลน์">
               <select style={inputSt} value={modal.line_name} onChange={e => setModal(f => ({ ...f, line_name: e.target.value }))}>
                 <option value="">— ไม่ระบุ —</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                {toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </Field>
             <Field label="รอบสอบเทียบ (เดือน)"><input type="number" min="1" style={inputSt} value={modal.cal_freq_months} onChange={e => setModal(f => ({ ...f, cal_freq_months: e.target.value }))} /></Field>
@@ -1544,14 +1550,18 @@ export default function QualityControl() {
   }, []);
   // ลิสต์ไลน์ที่ส่งให้ทุกแท็บ (SPC/NCR/Instrument) ต้อง scope ด้วย — ไม่งั้น leader/supervisor
   // เลือกไลน์นอกส่วนงานแล้วสร้าง NCR/characteristic ข้ามส่วนงานได้ (กฎ dropdown-scope · QC audit 2026-08-03)
-  const lines = useMemo(() => {
+  // lineObjs = object array (id/name/parent_line_name) สำหรับ render dropdown แบบจัดชั้น (§5.3 ข้อ 8)
+  // ส่วน `lines` (ชื่อ string) คงไว้ให้ QaClaims + logic กรองเดิม — ค่า save/filter ไม่เปลี่ยน
+  const lineObjs = useMemo(() => {
     if (role === 'leader' && lineId) {
       const myLine = allLines.find(l => String(l.id) === String(lineId));
-      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+      const fam = myLine ? getLineFamilyNames(allLines, myLine.name) : [];
+      return allLines.filter(l => fam.includes(l.name));
     }
-    if (sections?.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return allLines.map(l => l.name);
+    if (sections?.length) return allLines.filter(l => inSectionScope(sections, l.section));
+    return allLines;
   }, [allLines, role, lineId, sections]);
+  const lines = useMemo(() => lineObjs.map(l => l.name), [lineObjs]);
 
   const openCapaFromNcr = useCallback((ncr) => {
     setCapaPrefill(ncr);
@@ -1568,12 +1578,12 @@ export default function QualityControl() {
 
       {tab === 'dashboard' && <QualityDashboard />}
       {tab === 'sheet' && <QaCheckSheet canRecord={canRecord} />}
-      {tab === 'spc' && <SPCTab lines={lines} canRecord={canRecord} canManage={canManage} />}
-      {tab === 'ncr' && <NCRTab lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
+      {tab === 'spc' && <SPCTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} />}
+      {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}
       {tab === 'bins' && <QualityBins />}
       {tab === 'claims' && <QaClaims lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
-      {tab === 'instruments' && <InstrumentTab lines={lines} canManage={canManage} />}
+      {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
     </div>
   );
 }

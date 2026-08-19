@@ -11,6 +11,8 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -70,6 +72,19 @@ function StockTab({ role }) {
 
   const [lineFilter, setLineFilter] = useState('');
   const [showTxn,    setShowTxn]    = useState(false);
+  // ย่อ/ขยายกลุ่มไลน์-คลัง — จำ override ของ user (default = กาง) · ดู docs/UI-CONVENTIONS.md §6.8
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('ls_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const persistCollapsed = (next) => {
+    try { localStorage.setItem('ls_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    setCollapsedGroups(next);
+  };
+  const toggleGroup = (name) => {
+    const next = new Set(collapsedGroups);
+    next.has(name) ? next.delete(name) : next.add(name);
+    persistCollapsed(next);
+  };
   const [showForm,   setShowForm]   = useState(false);
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
@@ -338,9 +353,29 @@ function StockTab({ role }) {
         </div>
       </div>
 
-      {/* ── Stock view ── */}
+      {/* แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้ ไม่งั้นต้องเลื่อนยาวมากกว่าจะเจอไลน์ที่ต้องการ */}
+      {!showTxn && Object.keys(stockByLine).length > 1 && (() => {
+        const names = Object.keys(stockByLine);
+        const allFolded = names.every(n => collapsedGroups.has(n));
+        return (
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+            <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(names))}
+              style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
+              {allFolded ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+            </button>
+            <span style={{ fontSize:11, color:'var(--muted)' }}>{names.length} ไลน์/คลัง · แตะหัวกลุ่มเพื่อย่อ-กาง</span>
+          </div>
+        );
+      })()}
+
+      {/* ── Stock view ──
+          ⚠️ ห้ามครอบลิสต์นี้ด้วยกล่อง scroll ซ้อน (`maxHeight: calc(100vh - Npx)` + overflowY)
+          เคยทำแล้วพัง: หัวหน้าเพจจริง (แท็บ + ชื่อ + การ์ด KPI 4 ใบ + ตัวกรอง) สูงเกินค่า N ที่เดาไว้มาก
+          → กล่องยื่นพ้นขอบจอ สกรอลบาร์ของตัวเองอยู่นอกจอ เลื่อนหน้าเพจก็ไม่ช่วย
+          → การ์ดกลุ่มท้ายๆ ถูกตัดครึ่งจนเข้าไม่ถึง (สโตร์/แพลนนิ่งแจ้งว่าใช้งานไม่ได้ 2026-08-19)
+          ให้ทั้งหน้า scroll ตามปกติ + ย่อ/กางกลุ่มแทน — ดู docs/UI-CONVENTIONS.md §6.8 */}
       {!showTxn && (
-        <div style={{ display:'flex', flexDirection:'column', gap:14, maxHeight:'calc(100vh - 240px)', overflowY:'auto', paddingRight:4 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {Object.keys(stockByLine).length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
@@ -348,10 +383,13 @@ function StockTab({ role }) {
           ) : (
             Object.entries(stockByLine).map(([lineName, parts]) => {
               const lowParts = parts.filter(p => (p.qty_on_hand || 0) <= 0);
+              const folded  = collapsedGroups.has(lineName);
               return (
                 <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
-                  <div style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg2)', borderBottom:'1px solid var(--border)' }}>
-                    <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>
+                  <div onClick={() => toggleGroup(lineName)}
+                       style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg2)', borderBottom: folded ? 'none' : '1px solid var(--border)', cursor:'pointer', userSelect:'none' }}>
+                    <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)', display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:11, color:'var(--muted)', width:10 }}>{folded ? '▶' : '▼'}</span>
                       {lines.some(l => l.name === lineName) ? '📍' : '🏬'} {lineName}
                     </div>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -359,7 +397,7 @@ function StockTab({ role }) {
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{parts.length} พาร์ท</span>
                     </div>
                   </div>
-                  <div style={{ overflowX:'auto' }}>
+                  <div style={{ overflowX:'auto', display: folded ? 'none' : undefined }}>
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
@@ -1033,8 +1071,8 @@ function DeliveryTimeBoardTab() {
   }, []);
   useEffect(() => {
     load();
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
+    return () => stopPoll();
   }, [load]);
 
   const dlvMap = useMemo(() => {

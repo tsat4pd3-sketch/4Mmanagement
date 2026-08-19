@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useMemo } from 'react';
+import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -554,6 +554,70 @@ function OtMasterDataPanel() {
           {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
         </div>
       </div>
+
+      {/* master ของหน้าเช็คชื่อ/จัดกำลังคนอีก 2 ลิสต์ (เลิก hardcode ในโค้ด — QC audit 2026-08-19)
+          สิทธิ์เดียวกับแผงนี้ (ot_master:manage) — กลุ่มเดียวกัน ไม่เพิ่ม permission key ใหม่ */}
+      <SimpleNameMaster table="special_task_types" title="📋 งานนอกไลน์ (หน้า จัดการไลน์ผลิต)"
+        placeholder="เช่น 5ส, คัดงาน" offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
+      <SimpleNameMaster table="leave_types" title="🏖️ ประเภทลา (หน้า เช็คชื่อ)"
+        placeholder="เช่น ลากิจ, ลาป่วย" offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
+    </div>
+  );
+}
+
+/* ลิสต์ master แบบชื่ออย่างเดียว (name/is_active/sort_order) — โครงเดียวกับงาน OT ข้างบน
+   best-effort: ตารางยังไม่ apply migration → บอกบนจอ ไม่พังทั้งแผง */
+function SimpleNameMaster({ table, title, placeholder, offNote }) {
+  const [rows, setRows] = useState([]);
+  const [newName, setNewName] = useState('');
+  const [missing, setMissing] = useState(false);
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from(table).select('id, name, is_active, sort_order').order('sort_order');
+    if (error) { setMissing(true); setRows([]); return; }
+    setMissing(false); setRows(data || []);
+  }, [table]);
+  useEffect(() => { load(); }, [load]);
+  const add = async () => {
+    if (!newName.trim()) return;
+    const { error } = await supabase.from(table).insert([{ name: newName.trim(), sort_order: Math.max(0, ...rows.map(r => r.sort_order || 0)) + 1 }]);
+    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    setNewName(''); load();
+  };
+  const toggle = async (r) => {
+    if (r.is_active && !window.confirm(`ปิดใช้งาน "${r.name}" ?\n\n${offNote} (เปิดกลับได้ภายหลัง)`)) return;
+    const { error } = await supabase.from(table).update({ is_active: !r.is_active }).eq('id', r.id);
+    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
+    load();
+  };
+  const remove = async (r) => {
+    if (!window.confirm(`ลบ "${r.name}"?\n(ข้อมูลเก่าที่บันทึกด้วยชื่อนี้ยังอ่านออก — ถ้าแค่เลิกใช้ แนะนำกด "ปิดใช้" แทน)`)) return;
+    const { error } = await supabase.from(table).delete().eq('id', r.id);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
+    load();
+  };
+  return (
+    <div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{title}</div>
+      {missing ? (
+        <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠ ยังไม่ได้ apply migration 20260819_special_task_leave_masters_main (แจ้ง admin) — ระหว่างนี้หน้าที่ใช้จะใช้ค่ามาตรฐานเดิม</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
+          </div>
+          <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {rows.map(r => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+                <span style={{ flex: 1 }}>{r.name}</span>
+                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+              </div>
+            ))}
+            {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการ</div>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,9 +1,17 @@
 /* ═══ Cost Saving — สูตรกลางแปลงผล Improvement เป็นบาท (2026-08-11 · คำสั่ง user) ═══
-   โมเดล: activity rate ต่อ cost center (DL/OH/DP บาท/ชม. — ตาราง cost_center_rates ฝั่ง Main
+   โมเดล: activity rate ต่อ cost center (DL/DP/IDP/OH บาท/ชม. — ตาราง cost_center_rates ฝั่ง Main
    ผูกกับผังองค์กร ตั้งที่ /org-setup) + ต้นทุนต่อชิ้นจาก parts_master (material_cost / standard_cost)
 
+   ⚠️ 4 ก้อนตรงกับ activity type ใน SAP (user ยืนยัน 2026-08-19):
+     DL  ACT_DLAB           ค่าแรง (Direct Labour)
+     DP  ACT_DP_MAC_*       ค่าเสื่อมทางตรง (เครื่องจักร — แยกตามขนาดปั๊ม/Progressive/Other)
+     IDP ACT_IDP_MAC        **ค่าเสื่อมทางอ้อม รวมค่าซ่อม** ← งานลด breakdown/ซ่อมบำรุงเข้าก้อนนี้
+     OH  ACT_OH_OTH         ค่าโสหุ้ย
+   ❌ ไม่เก็บ ACT_DP_DIE_* / Dep.Die&Mo (ค่าเสื่อมแม่พิมพ์) — user สั่งตัด และในข้อมูลจริงเป็น 0.01
+      แทบทั้งหมด (รวมทั้งโรงงาน 72 บาท/ชม.) · ลงต้นทุนจริงเมื่อไหร่ค่อยเพิ่มคอลัมน์ die_rate
+
    กติกา (ตกลงกับ user 2026-08-11):
-   - แสดง DL/OH/DP แยก 3 ก้อนเสมอ · ยอดรวมเลือกได้ว่านับก้อนไหน (default ทั้งหมด) —
+   - แสดงแยกทุกก้อนเสมอ · ยอดรวมเลือกได้ว่านับก้อนไหน (default ทั้งหมด) —
      บางบริษัทไม่นับ DP เป็น saving (ค่าเสื่อมเป็น sunk cost)
    - ต้นทุนของเสีย/ชิ้น: standard_cost (บช. คำนวณ รวม mat+conversion แล้ว) ชนะเสมอ →
      ไม่มีค่อย derive = material_cost + conversion (rate ตามก้อนที่เลือก × CT/3600)
@@ -11,10 +19,13 @@
    - ข้อมูลไม่ครบ (ไม่มี cost center / ไม่มี rate / พาร์ทไม่มีต้นทุน) = คืน null/ติดธง
      ให้จอบอกว่าขาดอะไร ห้ามเดาตัวเลขแทนผู้ใช้ */
 
+/* ⚠️ เพิ่มก้อนใหม่ = เพิ่ม entry ที่นี่ + คอลัมน์ใน cost_center_rates เท่านั้น
+   จอ/สูตรทุกที่วนจาก array นี้ ห้าม hardcode ชื่อก้อนซ้ำที่อื่น */
 export const RATE_COMPONENTS = [
-  { key: 'dl', field: 'dl_rate', label: 'DL', full: 'Direct Labor' },
-  { key: 'oh', field: 'oh_rate', label: 'OH', full: 'Overhead' },
-  { key: 'dp', field: 'dp_rate', label: 'DP', full: 'Depreciation' },
+  { key: 'dl',  field: 'dl_rate',  label: 'DL',  full: 'ค่าแรง (Direct Labour)',              act: 'ACT_DLAB' },
+  { key: 'dp',  field: 'dp_rate',  label: 'DP',  full: 'ค่าเสื่อมทางตรง (เครื่องจักร)',        act: 'ACT_DP_MAC_*' },
+  { key: 'idp', field: 'idp_rate', label: 'IDP', full: 'ค่าเสื่อมทางอ้อม (รวมค่าซ่อม)',        act: 'ACT_IDP_MAC' },
+  { key: 'oh',  field: 'oh_rate',  label: 'OH',  full: 'ค่าโสหุ้ย (Overhead)',                 act: 'ACT_OH_OTH' },
 ];
 
 const normCC = (c) => String(c || '').trim();
@@ -40,7 +51,7 @@ export function rateFor(rates, costCenter, refDate) {
   return usable.length ? usable[usable.length - 1] : rows[0];
 }
 
-/* บาท/ชม. ของ rate ตามก้อนที่เลือก (comps = ['dl','oh','dp']) */
+/* บาท/ชม. ของ rate ตามก้อนที่เลือก (comps = ['dl','dp','idp','oh']) */
 export function ratePerHour(rateRow, comps) {
   if (!rateRow) return 0;
   return RATE_COMPONENTS.filter(c => comps.includes(c.key))

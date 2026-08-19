@@ -7,6 +7,7 @@
  * หัว/ท้าย/สายอนุมัติ mirror ฟอร์มกระดาษ
  */
 import { getDocForm, fullCode } from '../utils/docForms';
+import { SCRAP_CODE_LEGEND } from './scrapPrint';
 
 const M_COL = { m1: 'J', m2: 'K', m3: 'L', m4: 'M', m5: 'N' };
 const thin = { style: 'thin' };
@@ -138,10 +139,7 @@ export async function exportScrapReportExcel({ report, items, defectTypes }) {
   merge(ws, `H${f}:M${f}`); box(ws, `H${f}`, `ผู้อนุมัติ  ${report.approver_qa_name || '.......................................'} (${sig[2]})`, { size: 8 });
   merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้อนุมัติ  ${report.approver_pd_name || '.......................................'} (${sig[3]})`, { size: 8 });
   f++;
-  const CODES = [
-    'A = สินค้าสำเร็จรูป (FINISHED GOODS)', 'B = กึ่งสำเร็จรูป (SEMI PRODUCT)',
-    'C = วัตถุดิบ/ชิ้นงาน (RAW MATERIAL & PART)', 'D = ชิ้นงานทดลอง/แม่พิมพ์ (TRY-OUT)', 'E = อื่น ๆ',
-  ];
+  const CODES = SCRAP_CODE_LEGEND; // จุดเดียวกับใบ PDF (scrapPrint.js)
   box(ws, `A${f}`, 'รหัสประเภทชิ้นงาน (CODE)', { bold: true, size: 8 });
   merge(ws, `N${f}:S${f}`); box(ws, `N${f}`, `ผู้อนุมัติ  ${report.approver_gm_name || '.......................................'} (${sig[4]})`, { size: 8 });
   f++;

@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
@@ -804,7 +804,9 @@ ${issuesHtml}
       <div>
         <div style={lb}>ไลน์ / พื้นที่ตรวจ</div>
         <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ width: 210, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {visibleLines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+          {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+            <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+          ))}
         </select>
       </div>
       <div>
@@ -1132,7 +1134,9 @@ ${issuesHtml}
               <div style={lb}>จัดการคำถามของ</div>
               <select value={qScope} onChange={e => setQScope(e.target.value)} style={{ minWidth: 220 }}>
                 <option value="">🌐 ทุกไลน์ (common — ฐานที่ backfall)</option>
-                {visibleLines.map(l => <option key={l.id} value={l.name}>🏭 {l.name}</option>)}
+                {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : '🏭 '}${l.name}`}</option>
+                ))}
               </select>
             </div>
             <button
@@ -1209,7 +1213,9 @@ ${issuesHtml}
                 <div style={lb}>ใช้กับไลน์ (เว้นว่าง = ทุกไลน์)</div>
                 <select value={qEditing.line_name || ''} onChange={e => setQEditing(p => ({ ...p, line_name: e.target.value }))} style={{ width: '100%' }}>
                   <option value="">— ทุกไลน์ —</option>
-                  {visibleLines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                  ))}
                 </select>
               </div>
               {qEditing.category === 'special' && (

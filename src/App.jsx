@@ -66,6 +66,7 @@ const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
@@ -154,6 +155,7 @@ export const NAV_ITEMS = [
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
@@ -1497,6 +1499,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
+              } />
+              <Route path="/audit-log" element={
+                <RoleRoute path="/audit-log" userRole={role}><AuditLog /></RoleRoute>
               } />
               <Route path="/notification-config" element={
                 <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>
