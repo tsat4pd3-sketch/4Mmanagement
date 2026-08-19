@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -1280,97 +1281,19 @@ const AUDIT_TABLES = {
   equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
   die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
 };
-const AUDIT_FIELD = {
-  name: 'ชื่อ', characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', team: 'ทีม', dept: 'ทีม',
-  price: 'ราคา', unit: 'หน่วย', is_active: 'สถานะใช้งาน', shelf: 'ตำแหน่งชั้นวาง',
-  stock_qty: 'ยอดคงเหลือ', min_qty: 'ขั้นต่ำ', prefix: 'รหัสย่อ', sort_order: 'ลำดับ',
-  code: 'รหัส', mat_no: 'เลข MAT', rank_override: 'Rank (ตั้งเอง)', rank_note: 'เหตุผล Rank',
-  die_status: 'สถานะแม่พิมพ์', status_note: 'หมายเหตุสถานะ', area_id: 'ผังจัดเก็บ',
-  pos_x: 'ตำแหน่ง X (%)', pos_y: 'ตำแหน่ง Y (%)', regrind_count: 'เจียรไปแล้ว (ครั้ง)',
-  regrind_limit: 'เจียรได้สูงสุด', tonnage_ton: 'ขนาดตัน', op_seq: 'OP', note: 'หมายเหตุ',
-  image_url: 'รูปผัง',
-};
-const AUDIT_ACT = { INSERT: { t: '➕ เพิ่ม', c: '#22c55e' }, UPDATE: { t: '✏️ แก้ไข', c: '#f59e0b' }, DELETE: { t: '🗑 ลบ', c: '#ef4444' } };
 
 function MasterAuditLog({ teams = [] }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [fTable, setFTable] = useState('');
-  const keys = Object.keys(AUDIT_TABLES);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true); setErr('');
-      const { data, error } = await supabaseDR.from('audit_log')
-        .select('*').in('table_name', keys).order('changed_at', { ascending: false }).limit(300);
-      if (!alive) return;
-      if (error) setErr(error.message); else setRows(data || []);
-      setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-
+  // จอเดียวกับหน้า /audit-log (component กลาง) — ที่นี่จำกัดเฉพาะตารางของทีมช่าง
+  // ดูของทั้งระบบ (สิทธิ์/พนักงาน/สินค้า/เครื่องจักร ฯลฯ) ที่ ตั้งค่าโปรแกรม → 📜 ประวัติการแก้ไขข้อมูล
   const teamName = (k) => (k ? (teams.find(t => teamKeyOf(t.key) === teamKeyOf(k))?.dept_name || deptNameOf(k) || k) : '🌐 ใช้ร่วมทุกทีม');
-  const fmtVal = (f, v) => {
-    if (v === null || v === undefined || v === '') return '(ว่าง)';
-    if (f === 'team' || f === 'dept') return teamName(v);
-    if (f === 'is_active') return v === true || v === 'true' ? 'ใช้งาน' : 'ปิดใช้งาน';
-    return String(v);
-  };
-  const labelOf = (r) => {
-    const d = r.new_data || r.old_data || {};
-    return d.name || d.characteristic || d.code || '(ไม่ทราบชื่อ)';
-  };
-  const shown = fTable ? rows.filter(r => r.table_name === fTable) : rows;
-
   return (
-    <div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 11px' }}>
-        📜 ใครแก้อะไรในข้อมูลตั้งต้นของทีมช่าง — เรียงใหม่สุดก่อน (300 รายการล่าสุด) · ระบบบันทึกอัตโนมัติทุกครั้งที่มีการเพิ่ม/แก้/ลบ
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ดูเฉพาะ:</span>
-        <select value={fTable} onChange={e => setFTable(e.target.value)} style={{ ...inp, width: 220 }}>
-          <option value="">ทุกรายการ</option>
-          {keys.map(k => <option key={k} value={k}>{AUDIT_TABLES[k]}</option>)}
-        </select>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{shown.length} รายการ</span>
-      </div>
-
-      {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}
-      {!!err && <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8 }}>
-        ยังดูประวัติไม่ได้: {err}<br />(ถ้าเป็นตาราง audit_log ไม่มี — ต้อง apply migration 20260724_audit_log_dr.sql ก่อน)
-      </div>}
-      {!loading && !err && !shown.length && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>ยังไม่มีประวัติการแก้ไข</div>}
-
-      <div style={{ display: 'grid', gap: 6 }}>{shown.map(r => {
-        const act = AUDIT_ACT[r.action] || { t: r.action, c: 'var(--text2)' };
-        const fields = (r.changed_fields || []).filter(f => f !== 'updated_at' && f !== 'updated_by_name');
-        return (
-          <div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 8, padding: '9px 11px' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5 }}>
-              <b style={{ color: act.c }}>{act.t}</b>
-              <span style={{ color: 'var(--muted)' }}>{AUDIT_TABLES[r.table_name] || r.table_name}</span>
-              <b style={{ color: 'var(--text)' }}>{labelOf(r)}</b>
-              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 11.5 }}>
-                👤 {r.actor || '—'} · {fmtDateTime(r.changed_at)}
-              </span>
-            </div>
-            {r.action === 'UPDATE' && !!fields.length && (
-              <div style={{ marginTop: 5, display: 'grid', gap: 2 }}>
-                {fields.map(f => (
-                  <div key={f} style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                    <span style={{ color: 'var(--muted)' }}>{AUDIT_FIELD[f] || f}:</span>{' '}
-                    <span style={{ textDecoration: 'line-through', opacity: 0.65 }}>{fmtVal(f, r.old_data?.[f])}</span>
-                    {' → '}<b>{fmtVal(f, r.new_data?.[f])}</b>
-                  </div>))}
-              </div>
-            )}
-          </div>);
-      })}</div>
-    </div>
+    <AuditLogViewer
+      client={supabaseDR}
+      tables={Object.keys(AUDIT_TABLES)}
+      fmtValue={(f, v) => ((f === 'team' || f === 'dept') && v !== undefined ? teamName(v) : undefined)}
+      intro={<>📜 ใครแก้อะไรใน<b>ข้อมูลตั้งต้นของทีมช่าง</b> — เรียงใหม่สุดก่อน · บันทึกอัตโนมัติทุกครั้งที่เพิ่ม/แก้/ลบ
+        <br /><span style={{ opacity: 0.85 }}>อยากดูของทั้งระบบ (สิทธิ์ · พนักงาน · สินค้า · เครื่องจักร …) ไปที่ <b>ตั้งค่าโปรแกรม,ฐานข้อมูล → 📜 ประวัติการแก้ไขข้อมูล</b></span></>}
+    />
   );
 }
 

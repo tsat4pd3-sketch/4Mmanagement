@@ -1865,7 +1865,19 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **`updated_at` + trigger `fn_set_updated_at()`** เพิ่มให้ตาราง master ที่ผูก audit (BEFORE UPDATE set now())
 - **ดูประวัติ:** หน้า `/product-history` (ProductHistory) โชว์ audit ของ `dr_products` แถวนั้น (line_name/CT/PN เปลี่ยนโดยใคร) · จุดอื่นที่อยากโชว์ audit ให้ query `audit_log` ด้วย `table_name`+`row_pk`
 - **`employee_skills` (คะแนนทักษะรายคน) ผูก audit แล้ว 2026-08-17** — แต่ใช้ **`fn_audit_manual_only()` ไม่ใช่ `fn_audit()`**: log เฉพาะตอนมี `auth.uid()` (คนกดในแอป) · **cron ไม่ log โดยตั้งใจ** เพราะ daily skill farm เขียนตารางนี้หลายร้อยแถว/วัน → ผูก generic audit จะบวม ~100MB/ปี บน free tier 500MB และ log ว่า "cron +1 EXP" ก็ไม่ตอบคำถามที่คนถามจริง ("ใครไปแก้คะแนน") · **ตารางอื่นที่ job อัตโนมัติเขียนถี่ ให้ใช้ `fn_audit_manual_only` แบบเดียวกัน**
-  - **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
+  - **📜 จอกลางดูประวัติทั้งระบบ = หน้า `/audit-log`** (หมวดตั้งค่าโปรแกรม,ฐานข้อมูล · 2026-08-19 · user ทักว่าเดิมอยู่ผิดที่)
+  - เดิมจอดู audit ตัวเดียวถูกฝังใน `/mtn-repair` → ⚙️ ข้อมูลตั้งต้น ซึ่งกรองไว้แค่ **9 ตารางของทีมช่าง** ทั้งที่ระบบมี audit trigger **~74 ตาราง 2 project** → ของสำคัญไม่มีหน้าไหนดูได้เลย (`role_permissions` 309 แถว = ใครแก้สิทธิ์ · `profiles` · `employees` 308 · `machines` 1,494 · `dr_products` 287)
+  - **component กลาง `src/components/AuditLogViewer.jsx`** — ใช้ร่วมทั้งหน้า `/audit-log` และแท็บใน `/mtn-repair` (ส่ง prop `tables` จำกัดขอบเขต) · **ห้ามเขียนจอดู audit ใหม่ที่อื่น**
+  - **ป้ายไทยของตาราง/ฟิลด์อยู่ที่ `src/utils/auditLabels.js` จุดเดียว** — ไม่รู้จัก = แสดงชื่อดิบ (ไม่พัง) · เพิ่ม audit ให้ตารางใหม่แล้วอยากได้ชื่อไทย มาเติมที่นี่
+  - **แยกฝั่งด้วยแท็บ ไม่ query รวม** — `audit_log` มีคนละชุดต่อ project (คนละ database join กันไม่ได้)
+  - ตัวเลือกตาราง/คนแก้ในตัวกรอง **สร้างจากข้อมูลจริงที่โหลดมา** ไม่ hardcode → ตารางใหม่โผล่เอง
+  - สิทธิ์ `page:/audit-log` seed **admin/manager เท่านั้น** (เห็นการเปลี่ยนสิทธิ์ + ข้อมูลพนักงาน = อ่อนไหว) · role อื่นเปิดเองที่ `/permissions` · migration `20260819_audit_log_page.sql` (**apply แล้ว**)
+- **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
+  - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
+  - ผลต่ออายุ free tier: DR เต็มใน **~2.6 ปี → ~4.5 ปี** · (3 เดือนได้ 4.7 ปี ต่างแค่ 0.2 ปีแต่เสียประวัติครึ่งหนึ่ง = ไม่คุ้ม)
+  - **⚠️ สืบย้อนได้แค่ 6 เดือนล่าสุด** — ต้องเก็บยาวกว่านี้เพื่อ audit ภายนอก (IATF ฯลฯ) ให้ export ออกก่อน หรือยืด interval ใน cron
+  - **ไม่กระทบบันทึกคุณภาพ** — `lpa_audit_answers` / `ojt_*` / `four_m_logs` / `pe_doc_revisions` เก็บในตารางของตัวเอง ไม่ใช่ `audit_log`
+- **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
   - **บนจอต้องเขียนกำกับว่า log เฉพาะการแก้ด้วยมือ** ไม่งั้นคนอ่านจะเข้าใจว่าคะแนนที่ขยับเองคือไม่มีใครแตะ · **โหลดไม่สำเร็จต้องขึ้น "โหลดไม่ได้" ห้ามแสดงเป็น "ไม่มีประวัติ"** (ว่างเปล่ากับอ่านไม่ได้ คนละเรื่อง)
 - **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
 
