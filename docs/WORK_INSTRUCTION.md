@@ -986,6 +986,32 @@ comm -13 /tmp/wi.txt /tmp/nav.txt      # ว่าง = ครบ
 **แก้เนื้อหาสไลด์:** แก้ `docs/build_presentation.py` แล้วรัน `python3 docs/build_presentation.py`
 — **ห้ามแก้ไฟล์ .html โดยตรง** (รันสคริปต์ครั้งถัดไปจะทับหาย)
 
+### 📄 Infographic 1 หน้า (สำหรับลูกค้า / ผู้บริหาร)
+
+`docs/ESM_Overview_Infographic_A4.pdf` — **A4 แนวนอน 1 หน้า** ธีม TSG · ภาษาอังกฤษ
+(ทำตามคำขอลูกค้า Ford หลังนำเสนอ 18 ส.ค. 2026)
+
+| ไฟล์ | ใช้ตอน |
+|---|---|
+| `..._A4.pdf` | ส่งลูกค้า / พิมพ์ (A4 แนวนอน เต็มหน้า) |
+| `..._A4.png` | 300 dpi — แปะสไลด์ · ส่งไลน์ · ใส่อีเมล |
+| `..._A4.html` | ต้นฉบับ เปิดดูในเบราว์เซอร์ |
+
+เนื้อหา: What it is · ตัวเลขที่ใช้งานจริง · **วงจรการทำงาน 8 ขั้นต่อกะ** ·
+**สายสอบกลับ 1 ออเดอร์** · Module map 9 หมวด · มาตรฐานที่สอดคล้อง (IATF 16949 · CQI-15 · APQP/PPAP · 8D · TPM · Lean)
+
+> ⚠️ **ตัวเลขบนหน้านี้วัดจากฐานข้อมูลจริง** (ดู `STATS` ใน `docs/build_infographic.py`)
+> อัปเดตเลขแล้ว **รัน `python3 docs/build_infographic.py`** แล้วสร้าง PDF/PNG ใหม่
+> **ห้ามแก้ .html/.pdf/.png ตรงๆ** (รันสคริปต์ครั้งถัดไปทับหาย)
+>
+> สร้าง PDF + PNG ใหม่:
+> ```bash
+> python3 docs/build_infographic.py
+> chromium --headless --no-pdf-header-footer \
+>   --print-to-pdf=docs/ESM_Overview_Infographic_A4.pdf \
+>   file://$PWD/docs/ESM_Overview_Infographic_A4.html
+> ```
+
 ### กติกาการเขียน
 - **เขียนให้คนหน้างานอ่านรู้เรื่อง** — ไม่ใช่เอกสารเทคนิค ไม่ต้องมีชื่อตาราง/ชื่อไฟล์
 - **บอกด้วยว่า "ทำไม"** ตรงจุดที่คนพลาดบ่อย (เช่น ทำไม PPE ไม่ครบแล้วลากคนลงจุดไม่ได้)
