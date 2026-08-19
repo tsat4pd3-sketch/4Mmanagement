@@ -11,6 +11,7 @@ import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
@@ -73,8 +74,10 @@ function MatSearchField({ value, onChange, options, placeholder, hint }) {
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
+  // เรียงตาม rank ก่อน (option ไม่มี rank = 0 เท่ากันหมด → ได้พฤติกรรมเรียงเลขเดิม) แล้วค่อยตามเลข
   const sorted = useMemo(
-    () => [...options].sort((a, b) => String(a.mat_no).localeCompare(String(b.mat_no), undefined, { numeric: true })),
+    () => [...options].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0)
+      || String(a.mat_no).localeCompare(String(b.mat_no), undefined, { numeric: true })),
     [options]);
   // จัดอันดับผลค้น: เลขขึ้นต้นตรง → เลขมีคำนั้น → ชื่อมีคำนั้น (2026-08-17 — user พิมพ์ "30"
   // แล้วเจอแต่ตัวที่ชื่อมี "306" ขึ้นก่อน ส่วนเบอร์ 30xxxxx จมท้ายลิสต์จนคิดว่า "หาพาร์ทไม่เจอ")
@@ -115,7 +118,8 @@ function MatSearchField({ value, onChange, options, placeholder, hint }) {
               onMouseEnter={e => e.currentTarget.style.background = 'var(--bg2)'}
               onMouseLeave={e => e.currentTarget.style.background = ''}>
               <b style={{ fontFamily: 'monospace', flexShrink: 0 }}>{o.mat_no}</b>
-              <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.name}</span>
+              <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{o.name}</span>
+              {o.tag && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>{o.tag}</span>}
             </div>
           ))}
           {filtered.length > 60 && <div style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>…อีก {filtered.length - 60} รายการ — พิมพ์เพิ่มเพื่อกรอง</div>}
@@ -196,6 +200,7 @@ export default function ProductMaster() {
   const [kanbanStds, setKanbanStds] = useState([]);
   const [familyTotals, setFamilyTotals] = useState({});
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
+  const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
 
   const [editing,  setEditing]  = useState(null);          // id | 'new' | null
   const [ecSource, setEcSource] = useState(null);
@@ -229,9 +234,9 @@ export default function ProductMaster() {
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
-      supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
+      supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
       supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
@@ -243,6 +248,7 @@ export default function ProductMaster() {
 
     const bc = {};
     (boms || []).forEach(b => { bc[b.product_id] = (bc[b.product_id] || 0) + 1; });
+    setBomRows(boms || []);
     setBomCounts(bc);
 
     const totals = {};
@@ -1082,7 +1088,10 @@ export default function ProductMaster() {
               <Field label="ไลน์ผลิตหลัก">
                 <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
                   <option value="">ไม่ระบุ</option>
-                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {/* จัดชั้นตามผัง (§5.3 ข้อ 8) — ไลน์แม่ยังเลือกได้ (HYDROFORM มีสินค้าผูกตัวแม่) */}
+                  {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
+                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
@@ -1105,10 +1114,30 @@ export default function ProductMaster() {
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
+                      {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
+                          เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
                       <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
-                        options={items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)}
+                        options={(() => {
+                          // จัดอันดับจากข้อมูลที่ระบบรู้ (user ขอ 2026-08-17 "ควรดูจาก BOM"):
+                          // ① พาร์ทจริงในไลน์เดียวกับ OP ตัวนี้ ② พาร์ทใน BOM ของสินค้าไลน์นี้ (ของที่ถูกส่งเข้าไลน์)
+                          // ③ พาร์ทจริงไลน์อื่น ④ ทะเบียน Parts Master (ซื้อนอก) ที่เหลือ
+                          const norm = (m) => (m || '').trim().toUpperCase();
+                          const lineProdIds = new Set(items.filter(i => i.line_name && i.line_name === form.line_name).map(i => i.id));
+                          const bomMats = new Set(bomRows.filter(b => lineProdIds.has(b.product_id)).map(b => norm(b.mat_no)));
+                          const real = items.filter(i => i.mat_no && i.id !== editing && i.is_active && !i.is_operation)
+                            .map(i => ({ mat_no: i.mat_no, name: i.name,
+                              rank: i.line_name === form.line_name ? 0 : bomMats.has(norm(i.mat_no)) ? 1 : 2,
+                              tag: i.line_name === form.line_name ? '🏭ไลน์นี้' : bomMats.has(norm(i.mat_no)) ? '📦BOMไลน์นี้' : null }));
+                          const seen = new Set(real.map(o => norm(o.mat_no)));
+                          const bought = pmParts
+                            .filter(p => p.mat_no && !seen.has(norm(p.mat_no)))
+                            .map(p => ({ mat_no: p.mat_no, name: `${p.part_name || ''} · ทะเบียน/ซื้อนอก`,
+                              rank: bomMats.has(norm(p.mat_no)) ? 1 : 3,
+                              tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
+                          return [...real, ...bought];
+                        })()}
                         placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ยังไม่ผูก ยอดนับซ้ำ)"
-                        hint="ลิสต์เรียงตามเลข · แสดงเฉพาะพาร์ทจริงที่ใช้งานอยู่ (รายการ OP ด้วยกัน + สินค้าที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ)" />
+                        hint="เรียงตามความเกี่ยวข้อง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ · รายการ OP ด้วยกัน + ของที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
@@ -2372,9 +2401,12 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
-                  <select style={inputSt} value={masterForm.category} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
-                    {PKG_CATEGORIES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select></div>
+                  {/* datalist = ค่ามาตรฐาน + หมวดที่มีใช้จริง — พิมพ์หมวดใหม่ได้เลยไม่ต้องแก้โค้ด (QC audit 2026-08-19) */}
+                  <input style={inputSt} list="pkg-category-opts" value={masterForm.category}
+                    onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))} placeholder="เช่น BOX, RACK" />
+                  <datalist id="pkg-category-opts">
+                    {[...new Set([...PKG_CATEGORIES, ...masters.map(m => m.category).filter(Boolean)])].map(t => <option key={t} value={t} />)}
+                  </datalist></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
                 <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
               </div>

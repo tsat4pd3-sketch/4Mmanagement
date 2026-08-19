@@ -21,6 +21,8 @@ import { defectUnitCost, fmtBaht } from '../utils/costSaving';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { visibleInterval } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
@@ -181,14 +183,21 @@ function MiniTrend({ data, dataKey, color, target, metric }) {
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>เทรนด์ 10 วันล่าสุด</div>
-      <ResponsiveContainer width="100%" height={58}>
-        <BarChart data={rows} margin={{ top: 2, right: 2, left: 2, bottom: 0 }} barCategoryGap={1}>
+      {/* ⚠️ ต้องมีแกน Y + ตัวเลขบนแท่ง (UI-CONVENTIONS §5.2) — เดิม YAxis hide + ไม่มี label
+          ทำให้อ่านค่าไม่ได้เลยถ้าไม่ hover (จอ TV/จอทัชไม่มี hover) */}
+      <ResponsiveContainer width="100%" height={96}>
+        <BarChart data={rows} margin={{ top: 14, right: 4, left: 0, bottom: 0 }} barCategoryGap={1}>
           <ReferenceLine y={target} stroke={color} strokeDasharray="3 3" strokeOpacity={0.7} />
           <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval="preserveStartEnd" axisLine={false} tickLine={false} height={16} />
-          <YAxis hide domain={[0, 100]} />
+          <YAxis domain={[0, 100]} width={30} ticks={[0, 50, 100]} tickFormatter={(v) => `${v}%`}
+            tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
           <Tooltip cursor={{ fill: 'var(--bg3)', opacity: 0.4 }} content={<MiniTrendTip dataKey={dataKey} metric={metric} />} />
           <Bar dataKey="_stub" stackId="v" fill="var(--border)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
-          <Bar dataKey={dataKey} stackId="v" fill={color} radius={[2, 2, 0, 0]} opacity={0.85} />
+          <Bar dataKey={dataKey} stackId="v" fill={color} radius={[2, 2, 0, 0]} opacity={0.85}>
+            <LabelList dataKey={dataKey} position="top" offset={4}
+              formatter={(v) => (v == null ? '' : Math.round(v))}
+              style={{ fontSize: 11, fontWeight: 700, fill: 'var(--text2)' }} />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -496,8 +505,8 @@ export default function OEEAnalytics() {
   // Auto refresh ทุก 60 วิ เฉพาะตอนอยู่ tab วันนี้ + เปิด auto refresh
   useEffect(() => {
     if (viewTab !== 'today' || !autoRefresh) return;
-    const t = setInterval(() => { loadToday(); loadTdHistory(); }, 60000);
-    return () => clearInterval(t);
+    const stopPoll = visibleInterval(() => { loadToday(); loadTdHistory(); }, RATE.ANALYTIC);
+    return () => stopPoll();
   }, [viewTab, autoRefresh, loadToday, loadTdHistory]);
 
   const tdSessionsTeamFiltered = useMemo(() => {

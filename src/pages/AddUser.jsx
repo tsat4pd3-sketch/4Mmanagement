@@ -409,18 +409,17 @@ export default function AddUser() {
               <Th label="Section" sortKey="section" style={{ textAlign: 'center', minWidth: 80 }} />
               <Th label="ไลน์ / Group" sortKey="line" style={{ minWidth: 140 }} />
               <Th label="Team" sortKey="team" style={{ textAlign: 'center', minWidth: 80 }} />
-              <th style={{ minWidth: 180 }}>📬 Notify Email</th>
               <Th label="สร้างเมื่อ" sortKey="created_at" style={{ textAlign: 'center', minWidth: 96 }} />
               <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
             </tr>
           </thead>
           <tbody>
             {fetchingUsers ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>กำลังโหลด...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบข้อมูลผู้ใช้</td></tr>
             ) : view.length === 0 ? (
-              <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 28, fontSize: 13 }}>ไม่พบ user ที่ตรงกับตัวกรอง — ลองล้างตัวกรอง</td></tr>
             ) : view.map(u => {
               const rc      = ROLES.find(r => r.value === u.role);
               const lineName = lines.find(l => l.id === u.line_id)?.name || '—';
@@ -451,11 +450,6 @@ export default function AddUser() {
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: u.team ? 'var(--text)' : 'var(--muted)' }}>
                     {u.team ? `Team ${u.team}` : '—'}
-                  </td>
-                  <td style={{ fontSize: 12 }}>
-                    {u.notify_email
-                      ? <span style={{ color: 'var(--green)' }}>📬 {u.notify_email}</span>
-                      : <span style={{ color: 'var(--muted)' }}>—</span>}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 12, color: u.created_at ? 'var(--text2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
                     {u.created_at ? new Date(u.created_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: '2-digit' }) : '—'}
@@ -748,18 +742,13 @@ export default function AddUser() {
                 </div>
               )}
 
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelSt}>📬 Notify Email (รับการแจ้งเตือน)</label>
-                <input
-                  type="email"
-                  placeholder="notify@company.com (เว้นว่างถ้าใช้ email login)"
-                  value={form.notifyEmail}
-                  onChange={e => setF('notifyEmail', e.target.value)}
-                />
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  ระบุ email ที่จะรับการแจ้งเตือนจากระบบ (4M Changes, ขาดงาน ฯลฯ) เว้นว่างเพื่อใช้ email login แทน
-                </div>
-              </div>
+              {/* ⚠️ ช่อง "📬 Notify Email" ถูกถอดออก 2026-08-17 (คำสั่ง user "เราไม่ได้มีระบบ email")
+                  ระบบไม่มีการส่งอีเมลเลย — ไม่มี provider ใดๆ ในโปรเจค (resend/sendgrid/smtp/nodemailer = 0 จุด)
+                  แจ้งเตือนทั้งหมดไป Telegram (notification_rules) + in-app (notifications) + Web Push
+                  ของเดิมเขียนว่า "รับการแจ้งเตือนจากระบบ (4M Changes, ขาดงาน ฯลฯ)" = คำสัญญาที่ระบบทำไม่ได้
+                  แอดมินที่กรอกจะเชื่อว่าคนนั้นได้เมล ทั้งที่ไม่มีอะไรถูกส่ง (ตอนถอด: กรอกไว้ 0 จาก 64 คน)
+                  คอลัมน์ `profiles.notify_email` **ยังอยู่** (ไม่ drop — ไม่มีข้อมูล ไม่รีบ และเผื่อวันหน้าทำระบบเมลจริง)
+                  ถ้าจะเปิดใช้ ต้องมีตัวส่งเมลจริงก่อน แล้วค่อยเอาช่องนี้กลับมา */}
 
               {error && (
                 <div style={{ gridColumn: '1 / -1', padding: '8px 12px', background: 'rgba(231,76,60,0.08)', border: '1px solid rgba(231,76,60,0.2)', borderRadius: 7, color: 'var(--red)', fontSize: 13 }}>

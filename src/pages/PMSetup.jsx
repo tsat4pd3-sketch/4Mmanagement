@@ -8,6 +8,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
+import { toHierarchicalOptions } from '../utils/lineHierarchy'
 import { teamsForUser } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
@@ -480,8 +481,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
       .then(({ data }) => setMachineOptions(data ?? []))
     // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLineOptions((data ?? []).map(l => l.name).filter(Boolean)))
+    // เก็บเป็น object (id/name/parent_line_name) เพื่อ render จัดชั้นตามผัง (§5.3 ข้อ 8)
+    // ตั้งใจไม่ scope ตาม section — config นับ shot อ้างไลน์ข้ามส่วนงานได้ (เช่นแม่พิมพ์ย้ายเครื่อง)
+    supabase.from('production_lines').select('id, name, parent_line_name').order('name')
+      .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
   }, [])
 
   useEffect(() => {
@@ -1055,7 +1058,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                   <label style={S.label}>นับยอดจากไลน์</label>
                   <select value={usageLine} onChange={e => setUsageLine(e.target.value)}>
                     <option value="">— ใช้ไลน์ของอุปกรณ์{lineName ? ` (${lineName})` : ''} —</option>
-                    {(usageLine && !lineOptions.includes(usageLine) ? [usageLine, ...lineOptions] : lineOptions).map(l => <option key={l} value={l}>{l}</option>)}
+                    {/* ค่าที่ตั้งไว้เดิมแต่ไม่อยู่ในลิสต์ (ไลน์ถูกลบ/เปลี่ยนชื่อ) ยังต้องเลือกค้างไว้ได้ — ห้ามหายเงียบ */}
+                    {usageLine && !lineOptions.some(l => l.name === usageLine) && <option value={usageLine}>{usageLine}</option>}
+                    {toHierarchicalOptions(lineOptions).map(({ line: l, depth }) => (
+                      <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                    ))}
                   </select>
                 </div>
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
