@@ -115,6 +115,7 @@ const PAGE_GROUPS = [
       { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
       { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
+      { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
     ],
   },
 ];

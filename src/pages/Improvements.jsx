@@ -85,8 +85,8 @@ export default function Improvements() {
   const [workDaysMonth, setWorkDaysMonth] = useState(22); // วันทำงาน/เดือน จากปฏิทินบริษัท (แปลง บาท/วัน → บาท/เดือน)
   // ก้อน rate ที่นับเป็น saving (DL/OH/DP) — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · จำต่อเครื่อง
   const [costComps, setCostComps] = useState(() => {
-    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : ['dl', 'oh', 'dp']; }
-    catch { return ['dl', 'oh', 'dp']; }
+    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : RATE_COMPONENTS.map(c => c.key); }
+    catch { return RATE_COMPONENTS.map(c => c.key); }
   });
   const toggleComp = (key) => setCostComps(prev => {
     const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
@@ -363,7 +363,8 @@ export default function Improvements() {
     if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
     else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
 
-    const comp = { dl: 0, oh: 0, dp: 0 };  // บาท/วัน แยกก้อน (โชว์ครบ 3 เสมอ — ก้อนที่ไม่เลือกไม่เข้ายอดรวม)
+    // บาท/วัน แยกก้อน — โชว์ครบทุกก้อนเสมอ (ก้อนที่ไม่เลือกไม่เข้ายอดรวม) · วนจาก RATE_COMPONENTS ห้าม hardcode
+    const comp = Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0]));
     let matPerDay = 0;                      // มูลค่าวัสดุ/standard cost (defect — นับเสมอ ไม่ขึ้นกับก้อนที่เลือก)
     let repairPerDay = 0;                   // mtn: ค่าซ่อมจริงจากใบ MO
     const defectParts = [], defectNoCost = new Set();

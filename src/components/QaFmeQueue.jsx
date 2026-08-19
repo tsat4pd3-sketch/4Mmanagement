@@ -31,7 +31,7 @@ const REASON_LABEL = {
   model_change_out: 'จบรุ่น (กำลังเปลี่ยนรุ่น)', shift_end: 'ปิดกะ',
 };
 /* สเตจในคิว ↔ stage ของใบตรวจ (qa_inspection_sheets.stage) */
-export const FME_SHEET_STAGE = { first: 'setup_first', middle: 'inprocess', end: 'final' };
+// FME_SHEET_STAGE ย้ายไป utils/qaStages.js (single source of truth) — re-export ไว้เผื่อของเดิมอ้างถึง
 
 const fmtTime = (iso) => {
   if (!iso) return '-';

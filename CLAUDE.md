@@ -844,6 +844,15 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **บนบอร์ด Heijunka (Dashboard/Management):** การ์ด manual ใช้ไอคอน ✍️ + ยอด `ทำได้/เป้า` และแถบ fill ในการ์ดวิ่งตาม qty_actual (ใบสแกนปกติแสดงเหมือนเดิม)
 - migration: `20260712_prod_orders_manual_mode.sql` (DR, additive — ใบสแกนปกติไม่กระทบ)
 
+### บอร์ด Heijunka — ตู้รวม + ตัวกรอง (Dashboard) · กันผังถูกบีบ (Management) (2026-08-19)
+
+- **ตู้ Heijunka รวมทุกไลน์ = section บอร์ดใน `/dashboard` อยู่แล้ว** (การ์ดบอร์ดต่อกลุ่มไลน์ เรียงลงมาทั้งหน้า + เลือกวันย้อนหลัง) — **ห้ามสร้างหน้าตู้รวมใหม่** ต่อยอดที่นี่ · เพิ่ม filter bar แล้ว: ชิปกลุ่มไลน์ + ช่องค้นพาร์ท/MAT/เลขใบ (`boardLineSel`/`boardQuery`)
+  - **⚠️ กรองที่ "ชั้นแสดงผลแถว" (`visRows`) เท่านั้น — ห้ามกรอง cards ก่อนคำนวณคิว** ตำแหน่งใบ/เวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อนคำนวณ = เวลาเพี้ยนทั้งแถว · สรุปหัวการ์ด (ผลิต/เป้า/ล่าช้า) ยังนับทุกแถวตามจริงโดยตั้งใจ
+  - แถวที่ถูกกรองซ่อน = แถบนับ "ซ่อน N พาร์ท" เสมอ (ห้ามหายเงียบ) · ชิปไลน์ที่เลือกไว้แต่ไม่มีในวันนั้น = ตกกลับ "ทุกไลน์" (§5.3)
+- **Management `boardWouldSquish` ตัดสินจาก "ความสูงจริงที่วัดได้" ห้ามกลับไปใช้สูตรเดา** — เดิมเดา 64px/แถว (แถวจริง ~88px: รูป 46 + 2 เลน + chips/PLANNER เหนือบอร์ด) → ระบบคิดว่า "โชว์ผัง+บอร์ดคู่กันพอ" ทั้งที่ไม่พอ → **ผังไลน์เหลือที่ ~100px marker คน/เครื่อง/จุดงานถูก clamp กองทับกันเป็นก้อนล่างจอ** (เจอจริง 2026-08-19 LINE APRON ASSY 8 แถว)
+  - วัดด้วย **`scrollHeight` ของ section wrapper** (`boardSectionRef` — ได้ความสูงเนื้อหาธรรมชาติแม้ตอนถูก clip ในโหมด scroll จึงไม่ oscillate) ใน effect หลัง render ไม่ใช่ ResizeObserver (เนื้อหาโตโดย wrapper ไม่ resize ได้เมื่อทั้งคู่โดน clip) · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish เด้งกลับ · สูตรเดา (88px/แถว) เหลือเป็น fallback เฟรมแรกเท่านั้น
+  - **บทเรียน: เงื่อนไข layout ที่ตัดสินจาก "ค่าประมาณ" จะ drift เมื่อ UI จริงเปลี่ยน** (เพิ่มแถบ PLANNER/chips แล้วไม่มีใครไปแก้สูตร) — ตัดสินจากการวัดจริงเสมอเมื่อวัดได้
+
 ### ใบผลิต "ปิดก่อนเปิด" (confirmed_at < opened_at) — กัน 3 ชั้นแล้ว (2026-07-30)
 
 เคยพบ 33 ใบที่ `confirmed_at < opened_at` จาก 2 สาเหตุ: (ก) **clock skew** — เปิดใบใช้ now() ฝั่ง DB (default) แต่ปิดใบใช้ `new Date()` ฝั่งเครื่อง client ที่นาฬิกาช้ากว่า ~25 วิ → ใบสแกนเปิด-ปิดไวติดลบไม่กี่วินาที (ข) **ยิงย้อนหลังกรอกเวลาอนาคต** — guard เดิมกันแค่หลุดกรอบกะ ไม่ได้กันเวลาที่ยังมาไม่ถึง (เจอจริง: ปิด 04:35 กรอกเริ่ม 05:17 → ติดลบได้เป็นชั่วโมง)
@@ -1176,7 +1185,13 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - สิทธิ์: ทุก role เข้าดูได้ · สร้าง/แก้/ลบ/เปลี่ยนสถานะ + จัดการ milestone = `can('improvements','manage')` (seed: admin/manager/supervisor/leader)
 - Scope: leader เห็นเฉพาะ family ไลน์ตัวเอง · role อื่นกรองตาม `sections` (pattern มาตรฐาน)
 - **💰 Cost Saving (2026-08-11 · คำสั่ง user):** การ์ดโปรเจคแปลงผลก่อน/หลังเป็น **บาท/วัน + บาท/เดือน + ระยะคืนทุน** — โมเดล standard costing ของบัญชี:
-  - **Activity rate ต่อ cost center** (DL/OH/DP บาท/ชม.) = ตาราง **`cost_center_rates`** (Main · migration `20260811_cost_center_rates_main.sql` · audit+updated_at ผูกแล้ว) — จัดการที่ **`/org-setup` แผง "💰 Activity Rate"** (`src/components/CostCenterRatePanel.jsx`) · เก็บแบบ **`effective_from`** (บช. ปรับรายปี — เพิ่มแถวใหม่ ไม่ทับประวัติ โปรเจคเก่าคำนวณด้วย rate ณ start_date)
+  - **Activity rate ต่อ cost center** (**DL/DP/IDP/OH** บาท/ชม. — ตรงกับ activity type ใน SAP · user ยืนยัน 2026-08-19: `ACT_DLAB` ค่าแรง · `ACT_DP_MAC_*` ค่าเสื่อมทางตรง · **`ACT_IDP_MAC` ค่าเสื่อมทางอ้อม รวมค่าซ่อม** ← งานลด breakdown เข้าก้อนนี้ · `ACT_OH_OTH` ค่าโสหุ้ย · **ไม่เก็บ `ACT_DP_DIE_*`/`Dep.Die&Mo`** ตามที่ user สั่ง — ในข้อมูลจริงเป็น 0.01 แทบทั้งหมด รวมทั้งโรงงาน 72 บาท/ชม.) = ตาราง **`cost_center_rates`** (Main · migration `20260811_cost_center_rates_main.sql` · audit+updated_at ผูกแล้ว) — จัดการที่ **`/org-setup` แผง "💰 Activity Rate"** (`src/components/CostCenterRatePanel.jsx`) · เก็บแบบ **`effective_from`** (บช. ปรับรายปี — เพิ่มแถวใหม่ ไม่ทับประวัติ โปรเจคเก่าคำนวณด้วย rate ณ start_date)
+  - **✅ seed ข้อมูลจริงจาก SAP แล้ว 52 cost center (2026-08-19 · migration `20260819_cost_center_rates_seed.sql` · apply แล้ว)** — จับคู่กับไลน์/ผังในระบบได้ **14 cost center** ที่เหลือเป็นไลน์โรงอื่นที่ยังไม่ลงทะเบียน (seed ไว้รอ) · **แก้ `cost_center` ของ LINE A ที่พิมพ์เกินหลักด้วย** (`21040661101` → `2140661101`) ไม่งั้นไลน์ A หา rate ไม่เจอตลอดไป
+  - **⚠️ หัวตาราง/colSpan/ฟอร์ม ต้อง generate จาก `RATE_COMPONENTS` ทั้งหมด** — เคยพลาด: หัวตาราง hardcode 3 ก้อน (DL/OH/DP) แต่ body วน 4 ก้อน → **คอลัมน์เลื่อนกันทั้งตาราง** (IDP ไปโผล่ใต้หัว OH · ยอดรวมจริงไปอยู่ใต้ Effective) ตัวเลขในฐานถูกแต่คนอ่านผิดหมด
+- **⚠️ เพิ่มก้อน rate ใหม่ = เพิ่ม entry ใน `RATE_COMPONENTS` (`src/utils/costSaving.js`) + คอลัมน์ใน `cost_center_rates` เท่านั้น** — ฟอร์ม/ตาราง/ยอดรวม/ตัวเลือกก้อนใน `/improvements` วนจาก array นี้ทั้งหมด **ห้ามพิมพ์ชื่อคอลัมน์ rate ซ้ำในหน้าใดๆ**
+  - **⚠️ บัญชีปรับ rate รอบใหม่ = กดปุ่ม “＋ rate ใหม่” (เพิ่มแถวใหม่ที่ `effective_from`) ห้าม update ทับ** (โปรเจคเก่าต้องคำนวณด้วย rate ณ ช่วงเวลานั้น) · ปุ่ม ✏️ ในตารางไว้แก้เฉพาะตอน**กรอกตัวเลขผิด** จึงทำให้จืดกว่าโดยตั้งใจ · หน้า `/org-setup` เป็น **admin-only** อยู่แล้ว (`page:/org-setup` seed แค่ admin · `dept_admin` เป็น bucket ที่โค้ดบล็อก `page:*` ไว้) ไม่ต้องเพิ่ม gate ซ้ำ
+  - **⚠️ วัน Effective ตอนแก้แถวเดิม = ล็อกกันพลาด แต่ปลดได้ด้วยปุ่ม 🔓 (confirm ก่อน)** — ล็อกตายไม่ได้ เพราะแถวที่ seed มาต้องแก้วันจริงทีหลัง (ทางตัน: ไม่งั้นต้องลบทิ้งสร้างใหม่ = audit ขาด) · **ห้ามใช้ `disabled` กับ input ที่ต้องดูเหมือนช่องปกติ** — `input[type=date]` ที่ disabled ไม่มีไอคอนปฏิทิน ทำให้โมดัลแก้กับเพิ่มใหม่หน้าตาคนละแบบ (ใช้ `readOnly` + หรี่ opacity แทน)
+  - **ชุดแรก = rate ปี 2026** (user ยืนยัน 2026-08-19) — seed ตอนแรกใส่ `2000-01-01` ไว้ก่อนให้ครอบทุกโปรเจค แล้วเปลี่ยนเป็น **`2026-01-01`** ตอนรู้ปีจริง (migration `20260819_cost_center_rates_effective_2026.sql` · **apply แล้ว 2026-08-19** · ปลอดภัยเพราะ `improvements` = 0 แถว) · ผลที่ตั้งใจ: โปรเจคที่เริ่มก่อน 2026 = "ไม่รู้ rate" (null) แทนการเอา rate ปี 2026 ไปคิดย้อนหลัง
   - **⚠️ rate มีที่ "ระดับกลุ่ม" (cost center ชุด 21406 — org kind='line'/production_lines) เท่านั้น (คำสั่ง user 2026-08-11)** — ระดับส่วน (21404)/แผนก (21405) **ไม่กรอก rate** · ยอดระดับบน = **sum ขึ้นตาม hierarchy จากกลุ่ม** (แถบสรุปใน /improvements: กลุ่ม → ส่วน → รวม) · แผง rate จึงลิสต์เฉพาะรหัสระดับกลุ่ม (+ ปุ่มแสดงทั้งหมด · รหัสที่ไลน์ใช้แต่ไม่ขึ้นต้น 21406 = badge เตือน data drift — เจอจริง: GOR/LWR BAR ใช้ 21405xxxx, LINE A พิมพ์ 21040661101 เกินหลัก)
   - **ต้นทุน/ชิ้น** = `parts_master.material_cost` (raw mat) + **`standard_cost`** (บช. คำนวณ รวม mat+DL+OH+DP — **มีค่าแล้วชนะ material_cost เสมอ**) — กรอก/นำเข้า CSV ที่ Product Master → 🗂 Parts Master (คอลัมน์ CSV ใหม่ optional — ไฟล์เก่า/เซลล์ว่างไม่ล้างค่าเดิม · ⚠ PostgREST bulk upsert บังคับทุก object คีย์ชุดเดียวกัน ห้าม spread รายแถว — เติมค่าเดิมกลับแทน) · migration `20260811_improvement_cost_saving_dr.sql` (DR — + `improvements.invest_cost` เงินลงทุน→payback)
   - **สูตร (helper `src/utils/costSaving.js` + `costSavingOf` ใน Improvements.jsx):** downtime = Δนาที/วัน × rate/60 · defect = Δชิ้น/วัน ราย mat × ต้นทุน/ชิ้น (standard_cost ‖ material_cost + conversion CT×rate/3600) · mtn = **Δค่าซ่อมจริง** (`mtn_orders.labor_cost+parts_cost` ต่อใบ) + Δนาที breakdown × rate · cost center ของไลน์ = `lineCostCenter` (ลูกไม่กรอก = ตกทอดไลน์แม่ pattern เดิม) · บาท/เดือน = × `countWorkingDaysInMonth` (ปฏิทินบริษัท)
@@ -1850,7 +1865,19 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **`updated_at` + trigger `fn_set_updated_at()`** เพิ่มให้ตาราง master ที่ผูก audit (BEFORE UPDATE set now())
 - **ดูประวัติ:** หน้า `/product-history` (ProductHistory) โชว์ audit ของ `dr_products` แถวนั้น (line_name/CT/PN เปลี่ยนโดยใคร) · จุดอื่นที่อยากโชว์ audit ให้ query `audit_log` ด้วย `table_name`+`row_pk`
 - **`employee_skills` (คะแนนทักษะรายคน) ผูก audit แล้ว 2026-08-17** — แต่ใช้ **`fn_audit_manual_only()` ไม่ใช่ `fn_audit()`**: log เฉพาะตอนมี `auth.uid()` (คนกดในแอป) · **cron ไม่ log โดยตั้งใจ** เพราะ daily skill farm เขียนตารางนี้หลายร้อยแถว/วัน → ผูก generic audit จะบวม ~100MB/ปี บน free tier 500MB และ log ว่า "cron +1 EXP" ก็ไม่ตอบคำถามที่คนถามจริง ("ใครไปแก้คะแนน") · **ตารางอื่นที่ job อัตโนมัติเขียนถี่ ให้ใช้ `fn_audit_manual_only` แบบเดียวกัน**
-  - **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
+  - **📜 จอกลางดูประวัติทั้งระบบ = หน้า `/audit-log`** (หมวดตั้งค่าโปรแกรม,ฐานข้อมูล · 2026-08-19 · user ทักว่าเดิมอยู่ผิดที่)
+  - เดิมจอดู audit ตัวเดียวถูกฝังใน `/mtn-repair` → ⚙️ ข้อมูลตั้งต้น ซึ่งกรองไว้แค่ **9 ตารางของทีมช่าง** ทั้งที่ระบบมี audit trigger **~74 ตาราง 2 project** → ของสำคัญไม่มีหน้าไหนดูได้เลย (`role_permissions` 309 แถว = ใครแก้สิทธิ์ · `profiles` · `employees` 308 · `machines` 1,494 · `dr_products` 287)
+  - **component กลาง `src/components/AuditLogViewer.jsx`** — ใช้ร่วมทั้งหน้า `/audit-log` และแท็บใน `/mtn-repair` (ส่ง prop `tables` จำกัดขอบเขต) · **ห้ามเขียนจอดู audit ใหม่ที่อื่น**
+  - **ป้ายไทยของตาราง/ฟิลด์อยู่ที่ `src/utils/auditLabels.js` จุดเดียว** — ไม่รู้จัก = แสดงชื่อดิบ (ไม่พัง) · เพิ่ม audit ให้ตารางใหม่แล้วอยากได้ชื่อไทย มาเติมที่นี่
+  - **แยกฝั่งด้วยแท็บ ไม่ query รวม** — `audit_log` มีคนละชุดต่อ project (คนละ database join กันไม่ได้)
+  - ตัวเลือกตาราง/คนแก้ในตัวกรอง **สร้างจากข้อมูลจริงที่โหลดมา** ไม่ hardcode → ตารางใหม่โผล่เอง
+  - สิทธิ์ `page:/audit-log` seed **admin/manager เท่านั้น** (เห็นการเปลี่ยนสิทธิ์ + ข้อมูลพนักงาน = อ่อนไหว) · role อื่นเปิดเองที่ `/permissions` · migration `20260819_audit_log_page.sql` (**apply แล้ว**)
+- **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
+  - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
+  - ผลต่ออายุ free tier: DR เต็มใน **~2.6 ปี → ~4.5 ปี** · (3 เดือนได้ 4.7 ปี ต่างแค่ 0.2 ปีแต่เสียประวัติครึ่งหนึ่ง = ไม่คุ้ม)
+  - **⚠️ สืบย้อนได้แค่ 6 เดือนล่าสุด** — ต้องเก็บยาวกว่านี้เพื่อ audit ภายนอก (IATF ฯลฯ) ให้ export ออกก่อน หรือยืด interval ใน cron
+  - **ไม่กระทบบันทึกคุณภาพ** — `lpa_audit_answers` / `ojt_*` / `four_m_logs` / `pe_doc_revisions` เก็บในตารางของตัวเอง ไม่ใช่ `audit_log`
+- **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
   - **บนจอต้องเขียนกำกับว่า log เฉพาะการแก้ด้วยมือ** ไม่งั้นคนอ่านจะเข้าใจว่าคะแนนที่ขยับเองคือไม่มีใครแตะ · **โหลดไม่สำเร็จต้องขึ้น "โหลดไม่ได้" ห้ามแสดงเป็น "ไม่มีประวัติ"** (ว่างเปล่ากับอ่านไม่ได้ คนละเรื่อง)
 - **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
 
@@ -2107,6 +2134,28 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 > **ทำแล้ว:** FactoryMap (4 loop) · Management (2) · Dashboard · DailyPM · DeptHub · DowntimeSiren · LineStock · RundownStock · StoreMonitor · Transport · OEEAnalytics
 > **ตัวจับเวลาที่เป็นแค่นาฬิกา (`setNow`/`setNowMs`/`setNowForBoard`/`setFrameIdx`) ไม่ต้องแตะ** — ไม่ยิง DB ไม่กิน egress
 > **แนวทางที่ถูกที่สุดคือ realtime + poll ห่างๆ เป็นตัวสำรอง** (Dashboard/DailyPM ทำแบบนี้อยู่แล้ว — push เฉพาะแถวที่เปลี่ยน กิน egress น้อยกว่า poll มาก) · จอใหม่ให้ทำตาม pattern นี้
+>
+> #### 📊 งบ Free tier ครบทุกลิมิต (ตรวจ 2026-08-19 · แผน 15 จอ) — เช็คตัวนี้ก่อนเพิ่มของหนักๆ
+> **⚠️ Egress ของ Supabase เป็น "unified" — รวม DB + Storage + Realtime + Edge Function ในถังเดียว 5 GB**
+> (เคยเข้าใจผิดว่า realtime อยู่นอกถัง — ไม่ใช่ · แต่ push ยังถูกกว่า poll เป็นร้อยเท่าอยู่ดี)
+>
+> | ลิมิต Free | เพดาน | คาดใช้ที่ 15 จอ | เหลือ |
+> |---|---|---|---|
+> | **Egress (รวมทุกอย่าง)** | 5 GB/เดือน | **~3.8 GB** (poll 3.6 + realtime 0.16) | 🟡 24% |
+> | Realtime messages | 2,000,000/เดือน | ~315,000 | ✅ 84% |
+> | Realtime concurrent | 200 | ~25 (15 จอ + มือถือ/PC) | ✅ 88% |
+> | Edge Function calls | 500,000/เดือน | ~19,500 (cron 3 ตัว + แจ้งเตือน) | ✅ 96% |
+> | DB ต่อ project | 500 MB | Main 35 · DR 53 | ✅ 90%+ |
+> | Storage | 1 GB | 233 MB | ✅ 77% |
+> | MAU | 50,000 | <300 | ✅ 99% |
+> | Active projects | 2 | 2 (Main + DR) | ⚠️ **เต็ม — สร้าง project ที่ 3 ไม่ได้** |
+>
+> **ที่มาของ realtime estimate:** write บนตารางที่ subscribe ≈ 700 events/วัน
+> (prod_orders เปิดใบ 154 + แก้ยอด 82 · downtime 118 · sessions 18 · defect 2 · mtn 0 — เฉลี่ย 7 วัน)
+> × 15 จอ = ~10,500 msg/วัน · **โตตามจำนวนจอแบบเชิงเส้น** เพิ่มจอเยอะๆ ให้คำนวณใหม่
+>
+> **⚠️ ตัวที่ตึงที่สุดคือ Egress (24% ของงบ) — ก่อนเพิ่มจอ/หน้า/realtime channel ให้ประเมินตรงนี้ก่อนเสมอ**
+> **`/version.json` ไม่นับ** — 25 bytes เสิร์ฟจาก **Render static site** คนละถังกับ Supabase (Render free 100 GB)
 
 - **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — **ตรวจล่าสุด 2026-08-17: Main DB 34MB (~7%) · DR DB 51MB (~10%)** (2026-08-05: Main 27MB · DR 33MB · Storage Main ~165MB 17% · DR ~63MB 6%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ
   - **ตรวจขนาดเป็นระยะ:** `select pg_size_pretty(pg_database_size(current_database()))` และหาตัวหนักด้วย `pg_stat_user_tables` (⚠️ อย่า join กับ `pg_tables` — คอลัมน์ `schemaname` ชนกัน ใช้ตัวเดียวพอ)

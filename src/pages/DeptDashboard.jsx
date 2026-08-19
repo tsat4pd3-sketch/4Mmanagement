@@ -6,6 +6,7 @@ import { wavg } from '../utils/oee';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import useIsMobile from '../utils/useIsMobile';
+import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 
 /* ══ 📊 Dashboard รายส่วนงาน — หน้าเดียว สลับส่วนงานด้วย ?dept= ══════════════════════════
@@ -46,25 +47,11 @@ const isOpenDT = (d) => !d.ended_at && d.duration_min == null;
 const FOURM_TAB = '/report?tab=4';
 const fourMLink = (f) => `${FOURM_TAB}&status=${encodeURIComponent(f.status || '')}&from=${f.work_date}&focus=${f.id}`;
 
-/* ขอบเขตไลน์ตามสิทธิ์ (pattern มาตรฐาน): leader = ครอบครัวไลน์ตัวเอง · role อื่น = ตาม sections
-   คืน null = ไม่จำกัด */
-function scopeLineNames(lines, { role, lineId, sections }) {
-  const parentOf = {}; lines.forEach(l => { if (l.parent_line_name) parentOf[l.name] = l.parent_line_name; });
-  const topOf = (n) => { let c = n, g = 0; while (parentOf[c] && g++ < 6) c = parentOf[c]; return c; };
-  if (role === 'leader' && lineId) {
-    const own = lines.find(l => l.id === lineId); if (!own) return null;
-    const top = topOf(own.name);
-    return new Set(lines.filter(l => topOf(l.name) === top).map(l => l.name));
-  }
-  if (sections?.length) {
-    const secs = sections.map(s => String(s).trim().toLowerCase());
-    const inSec = new Set(lines.filter(l => secs.includes(String(l.section || '').trim().toLowerCase())).map(l => l.name));
-    // ไลน์ลูกของไลน์ที่อยู่ใน scope ก็อยู่ใน scope ด้วย
-    lines.forEach(l => { if (inSec.has(topOf(l.name))) inSec.add(l.name); });
-    return inSec;
-  }
-  return null;
-}
+/* ขอบเขตไลน์ตามสิทธิ์ — ใช้ helper กลาง `scopedLineNames` (utils/sectionScope.js) เท่านั้น
+   เดิมหน้านี้เขียน pattern เองแล้ว **drift จากของกลาง 2 จุด** (audit 2026-08-19):
+     1. ไม่มีเงื่อนไข admin / MAINTENANCE_ROLES → mtn/engineer ที่ถูกตั้ง sections จะโดนจำกัด
+        ทั้งที่กฎคือ "หน่วยงานช่างเห็นทั้งโรงงาน" (แท็บซ่อมบำรุงของหน้านี้เองก็โดน)
+     2. lines ยังไม่โหลด + มี sections → คืน Set ว่าง = เห็น 0 ไลน์ (ของกลางคืน null = ไม่จำกัด) */
 
 /* ── UI atoms (ใช้ร่วมทุกส่วนงาน) ────────────────────────────────────────────────────── */
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 };
@@ -733,7 +720,11 @@ export default function DeptDashboard() {
       .then(({ data }) => setLines(data || []));
   }, []);
 
-  const scopeSet = useMemo(() => lines.length ? scopeLineNames(lines, { role, lineId, sections }) : null, [lines, role, lineId, sections]);
+  // helper กลางคืน array (null = ไม่จำกัด) → แปลงเป็น Set ตรงนี้เพื่อให้ inScope เช็คเร็ว
+  const scopeSet = useMemo(() => {
+    const names = scopedLineNames({ role, lineId, sections, lines });
+    return names ? new Set(names) : null;
+  }, [lines, role, lineId, sections]);
   const inScope = useCallback((name) => !scopeSet || !name || scopeSet.has(name), [scopeSet]);
 
   const ctx = useMemo(() => ({
