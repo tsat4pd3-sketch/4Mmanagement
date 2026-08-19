@@ -20,7 +20,7 @@ STATS = dict(
     shifts="822", orders="8,337", downtime="4,740", four_m="1,086",
     checkins="8,885", employees="202", lines="27", equipment="518",
     products="109", oee="79.3", skills="2,250", lpa="190",
-    fmea="898", cp="680", forms="35", pages="56", roles="11",
+    fmea="898", cp="680", forms="35", pages="57", roles="11",
 )
 
 # ── วงจรการทำงานประจำวัน (แกนกลางของหน้า) ────────────────────────────────
