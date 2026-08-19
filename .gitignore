@@ -4,3 +4,6 @@ dist/
 .env.local
 .env.*.local
 .claude/worktrees/
+
+# ไฟล์ชั่วคราวของสคริปต์สร้างเอกสารใน docs/
+docs/__pycache__/
