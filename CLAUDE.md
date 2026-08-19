@@ -180,7 +180,7 @@
 | การตรวจสอบและซ่อมบำรุง | `/pm-coordination` | PmCoordination — 🗓️ แผนประสานงาน PM ข้ามวัน (แบบเมล MTN แจ้ง Production): งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน + ช่วง Production Support → แจ้ง Telegram + พิมพ์ใบ (ดู section "PM Coordination") | ทุก role (ดู) · `pm_coord:manage` = admin/mgr/sv/mtn/engineer/leader |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
-| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — 6 แท็บ: Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ") | admin/manager/supervisor/leader/qa/doc_control |
+| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
 | วิเคราะห์ & รายงาน | `/vsm` | **VSM — แผนผังสายธารคุณค่า (Value Stream Map)** เลือก FG (เบอร์ 1) + เดือน → generate ผังจากข้อมูลจริง (CT/%OEE/C-O/LOT/คงคลัง/TT/PLT/PT/%VA) → แก้ค่าที่ระบบไม่รู้ → บันทึก (snapshot) → พิมพ์ A3 · ดู section "Value Stream Mapping" | ทุก role (ดู) · `vsm:manage` = admin/mgr/sv/leader/engineer |
@@ -1215,6 +1215,33 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - **พิมพ์/บันทึก PDF (`src/lib/scrapPrint.js` · 2026-08-05):** ปุ่ม 🖨️ PDF ข้างปุ่ม Excel ในลิสต์ใบ — window.open + print (pattern เดียวกับ LPA/OJT/MO) วาด HTML layout เดียวกับ Excel (A4 portrait) · **เลขฟอร์ม/Rev/ช่องลายเซ็น/โลโก้ อ่านจากทะเบียนเอกสารเดียวกัน** (`getDocForm('scrap_report')` + `urlToDataUrl(df.logo_url || tsLogoUrl)` + `fullCode` มุมล่างขวา) — แก้ที่ `/doc-forms` มีผลทั้ง Excel และ PDF · เซฟ PDF จาก dialog พิมพ์เบราว์เซอร์ · popup ถูกบล็อก = toast บอก · **เลขฟอร์ม/Rev/ป้ายช่องลายเซ็น 5 ช่อง อ่านจากทะเบียนเอกสาร `getDocForm('scrap_report', {fallback})` — register แล้ว (`20260724_doc_form_scrap_report.sql`) แก้ที่ /doc-forms ได้ · fullCode พิมพ์มุมล่างขวา (2026-07-24)** · CODE legend A-E เป็น form body ไม่อยู่ใน registry
 - **สิทธิ์:** ดู = `page:/scrap-report` (admin/mgr/sv/leader/qa/doc_control) · `scrap:record` (สร้าง/แก้) = admin/mgr/sv/leader/qa · `scrap:manage` (อนุมัติ/ลบ) = admin/mgr/qa
 - เลขเอกสาร running รายวัน `TSAT4-PDX NNNN/เดือน-ปี` (นับใบในเดือน)
+
+---
+
+## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน)
+
+หัวหน้ากลุ่ม Assy2 แจ้งว่ายัง**เขียนมือทุกครั้ง** 3 ใบ (ปัญหาการผลิต · ถังเหลือง · ถังแดง) ทั้งที่ข้อมูลอยู่ในระบบแล้ว → ทำเป็น export/paperless
+
+### 📝 ใบรายงานปัญหาการผลิต — `src/lib/prodProblemReport.js`
+
+ปุ่ม **📝 ใบรายงานปัญหา** ในหัว session ของ `/daily-report` (โผล่เมื่อกะนั้นมี downtime หรือของเสียอย่างน้อย 1 รายการ)
+- **generate จากข้อมูลกะนั้นล้วน ไม่ต้องคีย์ซ้ำ:** `defect_logs` → คอลัมน์คุณภาพ · downtime **นอกแผน ≥ 30 นาที** → คอลัมน์เครื่องจักร หรือ การรอ (แยกด้วย `WAIT_WORDS`)
+- **⚠️ เกณฑ์ 30 นาที + ตัด planned ออก มาจากคำพูดหัวหน้าเอง** ("หยุด/รอ เกิน 30 นาที ต้องเขียนใบ") — หยุดตามแผนไม่ใช่ปัญหาที่ต้องรายงาน (หลักเดียวกับ Pareto/Andon ที่กัน planned ออกทุกจุด)
+- **ติ๊ก checkbox เป็น best-effort จากคำในข้อความ แต่ข้อความจริงถูกพิมพ์ลง "รายละเอียดของปัญหา" เสมอ** → ติ๊กไม่ตรงก็ไม่มีข้อมูลหาย · ตัวนับ "ตัดรายการสั้นกว่าเกณฑ์: N รายการ" พิมพ์ท้ายใบ **ห้ามตัดเงียบ**
+- **⚠️ กับดักที่เจอจริงตอนเทส: คำสั้นเกินไปจับผิดตัว** — keyword `'รู'` (จาก `ขอบงาน-รูรั่ง`) ไป match "เสีย**รู**ป" ทำให้ติ๊กผิดช่อง · **keyword ต้องยาวพอที่จะไม่เป็นสับสตริงของคำอื่น** — เพิ่มคำใหม่ต้องเทสกับข้อความจริงก่อนเสมอ
+- doc_key **`prod_problem_report`** (A4 แนวตั้ง · `layout_locked=true` — 3 คอลัมน์ตายตัว) · ยังไม่มีเลขฟอร์มทางการ seed `form_code=null` (หน้าตาเดิมเป๊ะ) doc_control ตั้งเองที่ `/doc-forms`
+- **⚠️ ข้อความ checkbox (`QUALITY_BOXES`/`MACHINE_BOXES`/`WAIT_BOXES`) ถอดจากฟอร์มกระดาษที่สแกนมา — ยังไม่ได้ตรวจกับใบจริง** ถ้าหัวหน้าทักว่าคำไม่ตรง แก้ที่ 3 const นี้จุดเดียว
+
+### 🗑️ ถังเหลือง / ถังแดง — แท็บใน `/qa` (`src/components/QualityBins.jsx`)
+
+- **ตารางเดียว `quality_bin_records` (DR) แยกด้วยคอลัมน์ `bin` ('yellow'|'red') — ห้ามแตก 2 ตาราง** เพราะหมายเหตุท้ายฟอร์มกระดาษเขียนสายงานไว้เอง: *ถังเหลือง → ซ่อม → NG → ติดแท็กแดง → ลงบันทึกชิ้นงานเสีย → วางตะกร้าแดง* · แตกตารางแล้ว**สืบไม่ได้ว่าชิ้นในถังแดงมาจากใบเหลืองใบไหน** → ปุ่ม **➡️ ย้ายเข้าถังแดง** สร้างแถวแดงพร้อม `from_yellow_id` ชี้กลับ
+- ถังเหลือง = ชิ้นงานต้องสงสัย (มีช่องซ่อม → ผลซ่อม OK/NG → วันนำกลับเข้ากระบวนการ) · ถังแดง = ของเสียยืนยันแล้ว (ผู้กำจัดทำลาย + ตำแหน่ง ระดับหัวหน้ากลุ่ม/วิศวกรขึ้นไปตาม DOA)
+- **ชื่อคนเก็บเป็นข้อความไม่ใช่ FK โดยตั้งใจ** (snapshot pattern เดียวกับ `ojt_training_attendees.emp_name`) — ใบเก่าต้องอ่านออกแม้คนลาออก
+- ลบ = **soft delete (`is_active=false`)** ไม่ลบจริง (บันทึกคุณภาพ)
+- **พิมพ์ = `src/lib/qualityBinPrint.js`** (A4 แนวนอน · 15 แถว/หน้า ตามฟอร์มกระดาษ · หัวตาราง 2 ชั้นสำหรับ "ผลการซ่อมชิ้นงาน OK|NG") · doc_key **`qbin_yellow`** / **`qbin_red`**
+- **ไม่เพิ่ม permission key ใหม่ — reuse `scrap:record` / `scrap:manage`** (งานของเสียกลุ่มเดียวกัน คนกลุ่มเดียวกันดูแล) เลี่ยงกับดัก seed `enum_range` ที่ทำให้ role ใหม่ fail-closed
+- **`scrap_report_id`** เตรียมไว้ผูกใบขออนุมัติทำลายกับ `scrap_reports` — **ยังไม่มี UI เชื่อม** (เฟสถัดไป)
+- migration: `20260819_quality_bin_records.sql` (DR) + `20260819_doc_forms_prod_problem_qbin.sql` (Main) — **apply แล้วทั้งคู่ 2026-08-19**
 
 ---
 
