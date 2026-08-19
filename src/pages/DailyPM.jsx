@@ -7,7 +7,7 @@ import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from 
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
-import { getLineFamilyNames } from '../utils/lineHierarchy'
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy'
 import useTabParam from '../utils/useTabParam'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
@@ -415,8 +415,8 @@ export default function DailyPM() {
                                 <select defaultValue="" onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
                                   style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
                                   <option value="" disabled>📍 เลือกไลน์ให้เครื่องนี้…</option>
-                                  {scopedProdLines.map(l => (
-                                    <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
+                                  {toHierarchicalOptions(scopedProdLines).map(({ line: l, depth }) => (
+                                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
                                   ))}
                                 </select>
                               )}
@@ -426,8 +426,8 @@ export default function DailyPM() {
                                   title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย"
                                   style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
                                   {!scopedProdLines.some(l => l.name === line) && <option value={line}>{line}</option>}
-                                  {scopedProdLines.map(l => (
-                                    <option key={l.name} value={l.name}>{l.parent_line_name ? `↳ ${l.name}` : l.name}</option>
+                                  {toHierarchicalOptions(scopedProdLines).map(({ line: l, depth }) => (
+                                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
                                   ))}
                                 </select>
                               )}

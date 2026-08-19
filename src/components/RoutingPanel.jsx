@@ -14,6 +14,7 @@ import { toast } from '../components/Toast';
 import { activeProcessTypes } from '../utils/processTypes';
 import { nextSeq } from '../utils/routing';
 import useIsMobile from '../utils/useIsMobile';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 const BLANK = {
   step_name: '', line_name: '', machine_no: '', process_type: '',
@@ -154,7 +155,12 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
     loadSteps(sel.mat_no); loadAll();
   };
 
-  const lineNames = useMemo(() => [...new Set(lines.map(l => l.name).filter(Boolean))].sort(), [lines]);
+  // dropdown ไลน์จัดชั้นตามผัง (§5.3 ข้อ 8) — dedupe ด้วยชื่อ (กันข้อมูลซ้ำ) แล้วให้ helper เรียงแม่→ลูก
+  const lineOptions = useMemo(() => {
+    const seen = new Set();
+    const uniq = lines.filter(l => l.name && !seen.has(l.name) && seen.add(l.name));
+    return toHierarchicalOptions(uniq);
+  }, [lines]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(260px, 340px) 1fr', gap: 16, alignItems: 'start' }}>
@@ -290,7 +296,9 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                   <label style={lbl}>ไลน์ที่ทำ *</label>
                   <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inp}>
                     <option value="">— เลือกไลน์ —</option>
-                    {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    {lineOptions.map(({ line: l, depth }) => (
+                      <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
    ทะเบียนอุปกรณ์ต่อไลน์ (pokayoke_devices) + บันทึกทดสอบด้วยชิ้น master NG (pokayoke_checks)
@@ -124,7 +124,9 @@ export default function PokaYokeCheck() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
         <div><div style={lb}>ไลน์ / พื้นที่</div>
           <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ minWidth: 200 }}>
-            {visibleLines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+            {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
+              <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+            ))}
           </select>
         </div>
         <div><div style={lb}>กะ</div>
