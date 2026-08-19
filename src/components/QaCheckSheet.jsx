@@ -24,7 +24,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { nextDocNo } from '../utils/qaDocNo';
 import CalloutPin from './CalloutPin';
-import QaFmeQueue, { FME_SHEET_STAGE } from './QaFmeQueue';
+import QaFmeQueue from './QaFmeQueue';
+import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -37,13 +38,7 @@ const getCurrentShift = () => {
   return (h >= 8 && h < 20) ? 'day' : 'night';
 };
 
-const STAGE = {
-  incoming:    { label: 'รับเข้า', color: '#a78bfa' },
-  setup_first: { label: 'ชิ้นแรกหลังตั้งเครื่อง', color: '#f59e0b' },
-  inprocess:   { label: 'ในกระบวนการ', color: '#4d9fff' },
-  final:       { label: 'ตรวจสุดท้าย', color: '#22c55e' },
-  patrol:      { label: 'Patrol / รายกะ', color: '#fb923c' },
-};
+const STAGE = QA_STAGES;
 const RANK = { M: { label: 'M', color: '#f59e0b' }, SC: { label: 'SC', color: '#ef4444' } };
 const JUDGE = {
   ok: { label: 'ผ่าน', color: '#22c55e' },

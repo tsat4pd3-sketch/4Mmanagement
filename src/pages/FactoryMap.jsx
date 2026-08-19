@@ -15,6 +15,7 @@ import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
+import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -283,6 +284,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
   const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
+  const [dieZones, setDieZones] = useState({});        // 🔨 โซนคลังแม่พิมพ์: normName → { id, name, total, mo, moPending } (DR die_storage_areas)
   const [energyStatus, setEnergyStatus] = useState({});  // ⚡ พลังงานรายเดือน: name → { qty, prev, cost, source } (DR · เฟส 1 กรอกมือ)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -769,6 +771,38 @@ export default function FactoryMap({ setupMode = false }) {
   }, []);
   usePolling(loadSupply, RATE.ANDON);
 
+  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/die-registry?tab=layout · 2026-08-19) ──
+     กรอบบนผังรวมที่ "ชื่อตรงกับชื่อผังจัดเก็บแม่พิมพ์" (die_storage_areas.name · จับคู่ normalize
+     trim+lowercase) = โซนคลังแม่พิมพ์ — pattern เดียวกับโซน facility ↔ pm_facility_areas
+     (ข้าม project Main↔DR ทำ FK ไม่ได้ ชื่อคือกุญแจ — เปลี่ยนชื่อผังใน DieLayout จะ cascade ชื่อกรอบให้)
+     health: แม่พิมพ์ในโซนมีใบซ่อม MO ค้าง → แดง (รอรับงาน = กระพริบ) · ปกติ = เขียว + จำนวนตัว */
+  const loadDieZones = useCallback(async () => {
+    const { data: areas, error } = await supabaseDR.from('die_storage_areas').select('id, name').eq('is_active', true);
+    if (error || !areas?.length) { setDieZones({}); return; }   // ยังไม่ apply migration 20260819 / ยังไม่มีผัง = ไม่มีโซน
+    const [{ data: exts }, { data: dieRows }, { data: mos }] = await Promise.all([
+      supabaseDR.from('equipment_die').select('machine_id, area_id').not('area_id', 'is', null),
+      supabaseDR.from('machines').select('id, machine_no').eq('equipment_kind', 'die'),
+      supabaseDR.from('mtn_orders').select('machine_no, status').in('status', OPEN_MO_STATUSES),
+    ]);
+    const normNo = (s) => String(s || '').trim().toUpperCase();
+    const noById = {}; (dieRows || []).forEach(m => { noById[m.id] = normNo(m.machine_no); });
+    const moByNo = {}; (mos || []).forEach(o => { const k = normNo(o.machine_no); if (k) (moByNo[k] ||= []).push(o); });
+    const byArea = {}; (exts || []).forEach(e => { (byArea[e.area_id] ||= []).push(e.machine_id); });
+    const out = {};
+    areas.forEach(a => {
+      const ids = byArea[a.id] || [];
+      let mo = 0, moPending = 0;
+      ids.forEach(id => {
+        const list = moByNo[noById[id]] || [];
+        if (list.length) { mo++; if (list.some(o => o.status === 'pending')) moPending++; }
+      });
+      out[String(a.name || '').trim().toLowerCase()] = { id: a.id, name: a.name, total: ids.length, mo, moPending };
+    });
+    setDieZones(out);
+  }, []);
+  usePolling(loadDieZones, RATE.ANALYTIC);
+  const dieZoneOf = (name) => dieZones[String(name || '').trim().toLowerCase()] || null;
+
   /* ── Realtime — ผังเปลี่ยนสี "ทันที" ที่หน้างานบันทึก ไม่ต้องรอรอบ poll (2026-08-19) ────
      เดิมหน้านี้เป็น polling ล้วน (0 channel) เลยต้องตั้ง 30 วิ เพื่อให้ Andon ทัน = กิน egress หนัก
      ตอนนี้ push มาก่อน · poll เหลือเป็นแค่ "กันเหนียวเผื่อ realtime หลุด" → ยืดเป็นหลักนาทีได้
@@ -783,10 +817,11 @@ export default function FactoryMap({ setupMode = false }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          () => bump(loadSupply))
+      // mtn_orders กระทบทั้ง supply route และโซนคลังแม่พิมพ์ (MO ค้างของแม่พิมพ์) — refresh คู่กัน
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          () => bump(() => { loadSupply(); loadDieZones(); }))
       .subscribe();
     return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
-  }, [loadStatus, loadSupply]);
+  }, [loadStatus, loadSupply, loadDieZones]);
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
@@ -991,6 +1026,9 @@ export default function FactoryMap({ setupMode = false }) {
   //   (เดิมคลิกแล้วเด้งไปผังคนทันที ซึ่งดูปัญหาของวันไม่ได้ · 2026-08-03 คำสั่ง user)
   // date = วันที่ที่จะสรุป · ไม่ส่ง = วันงานปัจจุบัน (คลิกจากผัง live) · ส่ง reviewDate = คลิกจากแถบทบทวนขวา
   const openLine = (name, date) => {
+    // 🔨 โซนคลังแม่พิมพ์ → เปิดผังจัดเก็บแม่พิมพ์ของโซนนั้นเลย (ต้องเช็คก่อน isFac — ชื่อโซนแม่พิมพ์ก็ไม่ใช่ไลน์ผลิตเหมือนกัน)
+    const dz = dieZoneOf(name);
+    if (dz) { setHoverLine(null); navigate(`/die-registry?tab=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
     setHoverLine(null); setStoryDate(date || getWorkDate()); setStoryLine(name);
   };
@@ -1026,6 +1064,8 @@ export default function FactoryMap({ setupMode = false }) {
       const fs = facilitySupply[name];
       if (fs) { agg.supList = fs.machines; agg.supAtRisk = fs.atRisk; agg.supFeeds = fs.feeds; agg.isFac = true; }
       else agg.isFac = true;
+      const dz = dieZoneOf(name);
+      if (dz) agg.die = dz;    // 🔨 โซนคลังแม่พิมพ์ — health จากใบซ่อม MO ของแม่พิมพ์ที่วางในโซน
     }
     const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
     agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
@@ -1033,8 +1073,12 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
   // โซน MTN/facility (metric ผลิต): default เขียว "ปกติ" ถ้าไม่มีเหตุผิดปกติ — แดง/ส้มเฉพาะเมื่อมีเครื่องซ่อม/PM ค้าง (คำสั่ง user)
-  const facHealth = (st) => (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+  const facHealth = (st) => {
+    if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
+    return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+  };
   const facHealthText = (st) => {
+    if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
     if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
     if (st.dtActive) return '🔴 หยุด';
     if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
@@ -1067,7 +1111,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -1154,6 +1198,8 @@ export default function FactoryMap({ setupMode = false }) {
     return out;
   };
   const assignableFacility = () => { const f = framedNames(); return facilityZones.filter(n => !f.has(n)); };
+  // 🔨 ผังจัดเก็บแม่พิมพ์ (die_storage_areas) ที่ยังไม่ถูกตีกรอบ — ตีกรอบชื่อเดียวกัน = คลิกแล้วเด้งเข้าผังแม่พิมพ์
+  const assignableDie = () => { const f = framedNames(); return Object.values(dieZones).map(z => z.name).filter(n => !f.has(n)).sort((a, b) => a.localeCompare(b)); };
   // กรอบแม่อัตโนมัติ (2026-08-04): แม่ไม่ได้ตีเอง + ลูกถูกตีแล้ว → เส้นประล้อมกรอบลูกทั้งหมด + ป้ายยอดรวม family
   // แก้ปัญหา "เช็คชื่อกันที่ไลน์แม่" — ข้อมูลที่ผูกชื่อแม่ (คน ฯลฯ) โผล่บนผังโดยไม่ต้องตีกรอบแม่ทับลูก
   const autoHulls = useMemo(() => {
@@ -1283,7 +1329,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
     return out;
     // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1563,7 +1609,7 @@ export default function FactoryMap({ setupMode = false }) {
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
-                      {st.isFac && '🔧 '}{r.line_name}
+                      {st.isFac && (st.die ? '🔨 ' : '🔧 ')}{r.line_name}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
@@ -1755,7 +1801,7 @@ export default function FactoryMap({ setupMode = false }) {
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
               {Object.entries(METRICS).map(([k, m]) => {
-                const skip = st.isFac && m.facilityNA; const c = CAT[skip ? "idle" : m.cat(st)]; const t = skip ? "🔧 Facility" : m.text(st); const isCur = k === metric;
+                const skip = st.isFac && m.facilityNA; const c = CAT[skip ? "idle" : m.cat(st)]; const t = skip ? (st.die ? "🔨 คลังแม่พิมพ์" : "🔧 Facility") : m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
@@ -2120,7 +2166,7 @@ export default function FactoryMap({ setupMode = false }) {
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
                 {Object.entries(METRICS).map(([k, m]) => {
-                  const skip = st.isFac && m.facilityNA; const cat = skip ? "idle" : m.cat(st); const meta = CAT[cat]; const txt = skip ? "🔧 Facility" : m.text(st);
+                  const skip = st.isFac && m.facilityNA; const cat = skip ? "idle" : m.cat(st); const meta = CAT[cat]; const txt = skip ? (st.die ? "🔨 คลังแม่พิมพ์" : "🔧 Facility") : m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>
                       <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>
@@ -2173,7 +2219,7 @@ export default function FactoryMap({ setupMode = false }) {
       {assignFor && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
-            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); return <>
+            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); const dieOpts = assignableDie(); return <>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
@@ -2181,6 +2227,7 @@ export default function FactoryMap({ setupMode = false }) {
               {prodOpts.length > 0 && <optgroup label="🏭 ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {dieOpts.length > 0 && <optgroup label="🔨 คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
             {assignLine === '__new__' && (

@@ -230,6 +230,17 @@ export default function Management() {
     ro.observe(node); boardRoRef.current = ro;
     setBoardW(node.getBoundingClientRect().width);
   }, []);
+  /* ความสูงจริงทั้ง section บอร์ด (chips + legend + PLANNER + timeline) — ตัวตัดสิน boardWouldSquish
+     วัดด้วย scrollHeight ของ wrapper: ได้ความสูง "เนื้อหาธรรมชาติ" เสมอ แม้ตอน wrapper เป็น flex:1 +
+     overflow auto (โหมด squish) เนื้อหาถูก clip แต่ scrollHeight ไม่ถูก clip → ไม่เกิดเด้งกลับไปมา
+     · วัดใน effect หลัง render (ไม่ใช่ RO) เพราะเนื้อหาโตโดย wrapper ไม่ resize ได้ (ทั้งคู่โดน clip)
+     · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish หลุดกลับ false */
+  const [boardSectionH, setBoardSectionH] = useState(0);
+  const boardSectionRef = useRef(null);
+  useEffect(() => {
+    const el = boardSectionRef.current;
+    if (el) setBoardSectionH(el.scrollHeight);
+  }, [lineProdData, boardW, isMobile]);
 
   const [canvasH, setCanvasH] = useState(0);
   // โหลด master งานนอกไลน์ (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม — ห้ามลิสต์ว่าง)
@@ -263,9 +274,16 @@ export default function Management() {
     }));
     return keys.size;
   }, [lineProdData]);
-  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดโดยประมาณ (chrome หัวบอร์ด ~210 + 64px/แถว) + ผังขั้นต่ำ ~220
-  // เกินพื้นที่ canvas → โผล่ปุ่มสลับ · ไม่เกิน → โชว์คู่กัน (เอนเอียงไปทางโชว์คู่จนกว่าจะล้นจริง ตามคำสั่ง user)
-  const boardWouldSquish = !!lineProdData && canvasH > 0 && (210 + boardRowCount * 64 + 220) > canvasH;
+  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดจริงที่วัดได้ (boardSectionH) + ผังขั้นต่ำ ~260 เกินพื้นที่ canvas
+  // → โผล่ปุ่มสลับ ดูทีละมุม · ไม่เกิน → โชว์คู่กัน
+  // ⚠️ ห้ามกลับไปใช้สูตรเดา (64px/แถว) เป็นตัวตัดสินหลัก — แถวจริงสูง ~88px (รูป 46 + 2 เลนกะเช้า/ดึก)
+  //    เดาต่ำกว่าจริงแล้วระบบคิดว่า "พอโชว์คู่" ทั้งที่ไม่พอ → ผังเหลือที่ ~100px → marker คน/เครื่อง/จุดงาน
+  //    ถูก clamp กองทับกันเป็นก้อนล่างจอ (เจอจริง 2026-08-19 LINE APRON ASSY 8 แถว) · สูตรเดาเหลือไว้
+  //    เฉพาะ fallback เฟรมแรกก่อน effect วัดจะทัน
+  const MIN_MAP_H = 260;
+  const boardWouldSquish = !!lineProdData && canvasH > 0 && (
+    boardSectionH > 0 ? (boardSectionH + MIN_MAP_H) > canvasH
+                      : (210 + boardRowCount * 88 + MIN_MAP_H) > canvasH);
   const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
@@ -1338,7 +1356,7 @@ export default function Management() {
         {/* Heijunka: โชว์เมื่อ (แสดงคู่กัน = ไม่ squish) หรือ (โหมดสลับ + เลือก heijunka)
             · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
         {(!boardWouldSquish || mainView === 'heijunka') && (
-        <div style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
+        <div ref={boardSectionRef} style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
         {boardWouldSquish && !lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {

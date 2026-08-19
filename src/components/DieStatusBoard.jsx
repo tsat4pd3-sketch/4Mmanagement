@@ -16,7 +16,7 @@ const thStyle = { padding: '6px 8px', fontWeight: 700, fontSize: 11.5, color: 'v
 const tdStyle = { padding: '6px 8px', fontSize: 12, verticalAlign: 'top' };
 
 export default function DieStatusBoard({
-  dies, setsById, areas, openMos, canEdit, fullName, ready, patchDieExt, onShowOnMap,
+  dies, setsById, areas, openMos, products = [], canEdit, fullName, ready, patchDieExt, onShowOnMap,
 }) {
   const [fStatus, setFStatus] = useState('');   // '' | key | 'unset' | 'mo' | 'regrind'
   const [fLine, setFLine] = useState('');
@@ -30,6 +30,13 @@ export default function DieStatusBoard({
     [activeDies]);
   const areaNameOf = (id) => areas.find(a => a.id === id)?.name || null;
   const setNameOf = (d) => setsById[d.ext?.die_set_id]?.part_name || null;
+  // 🏭 link แม่พิมพ์ ↔ ไลน์ผลิต: ชุด → MAT → dr_products.line_name (ไลน์ที่ใช้พาร์ทของชุดนี้)
+  const matLine = useMemo(() => {
+    const m = {};
+    products.forEach(p => { if (p.mat_no && p.line_name) m[p.mat_no] = p.line_name; });
+    return m;
+  }, [products]);
+  const feedLineOf = (d) => { const s = setsById[d.ext?.die_set_id]; return s?.mat_no ? matLine[s.mat_no] || null : null; };
 
   const counts = useMemo(() => {
     const per = {}; let unset = 0, mo = 0, regrind = 0;
@@ -200,6 +207,7 @@ export default function DieStatusBoard({
                       <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.machine_no}>{d.machine_no}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {setNameOf(d) || '—'}{e.op_seq != null ? ` · OP${e.op_seq}` : ''}
+                        {feedLineOf(d) ? <> · 🏭 ป้อนไลน์ <b style={{ color: 'var(--text2)' }}>{feedLineOf(d)}</b></> : null}
                       </div>
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.line_name || '—'}</td>

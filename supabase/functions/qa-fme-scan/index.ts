@@ -101,7 +101,7 @@ type Sess = { id: string; work_date: string; line_name: string; shift: string; s
 type Ord  = { id: string; session_id: string; mat_no: string | null; part_name: string | null;
               status: string; opened_at: string | null; confirmed_at: string | null };
 type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null;
-              is_operation: boolean | null; op_parent_mat: string | null };
+              p_no: string | null; is_operation: boolean | null; op_parent_mat: string | null };
 
 const STAGE_LABEL: Record<string, string> = { first: 'ชิ้นแรก (First)', middle: 'ระหว่างผลิต (Middle)', end: 'ชิ้นสุดท้าย (End)' };
 const REASON_LABEL: Record<string, string> = {
@@ -152,16 +152,18 @@ Deno.serve(async (req) => {
     const sIds = sessions.map(s => s.id);
     const orders = await dr<Ord>(
       `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at&session_id=in.(${sIds.join(',')})`);
-    const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,is_operation,op_parent_mat');
+    const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
 
     /* ── 2) จับคู่ RH/LH เป็น "รุ่นเดียวกัน" — ตัวแทนกลุ่ม = mat ที่เรียงน้อยกว่า ── */
     const pairOf = new Map<string, string>();
     const nameOf = new Map<string, string>();
     const opParent = new Map<string, string>();   // รายการขั้นตอน (OP) → พาร์ทจริง
     const opNoParent = new Set<string>();         // OP ที่ยังไม่ผูกพาร์ทจริง (ต้องบอก ห้ามซ่อน)
+    const pnoOf = new Map<string, string>();      // mat SAP → เลขพาร์ทลูกค้า (เส้นที่เชื่อมกับ QA)
     for (const p of products) {
       if (!p.mat_no) continue;
       if (p.name) nameOf.set(p.mat_no, p.name);
+      if (p.p_no) pnoOf.set(p.mat_no, p.p_no);
       if (p.pair_mat_no) pairOf.set(p.mat_no, p.pair_mat_no);
       if (p.is_operation) {
         if (p.op_parent_mat) opParent.set(p.mat_no, p.op_parent_mat);
@@ -254,11 +256,19 @@ Deno.serve(async (req) => {
       if (p.mat_no) byMat.set(norm(p.mat_no), p.id);       // คอลัมน์ผูกตรง (แม่นสุด)
       if (p.part_no) byNo.set(norm(p.part_no), p.id);      // ถอยไปเทียบ part_no แบบ normalize
     }
-    // ลองทั้งเลขพาร์ทจริงหลังยุบ OP (canonMat) และเลขที่ปรากฏบนใบงานจริง
+    // ⚠️ เส้นที่เชื่อม QA ↔ ผลิต คือ **เลขพาร์ทลูกค้า (`dr_products.p_no`)** ไม่ใช่เลข SAP
+    //    QA ตรวจตามแบบ/เลขลูกค้า → 1 พาร์ท QA ครอบหลายเลข SAP ได้โดยธรรมชาติ
+    //    (ข้อมูลจริง: p_no `RB3B-16E061-BA` → mat 10100335 / 10100401 / 10106791 ทั้งหมด Line 61)
+    //    ⇒ เทียบ p_no ก่อน แล้วค่อยถอยไปเทียบเลข SAP · `qa_parts.mat_no` เป็นตัวผูกตรงเมื่ออยากล็อกรายเลข
     const resolvePart = (mats: string[], canonMat: string) => {
       const all = [canonMat, ...mats];
-      for (const m of all) { const hit = byMat.get(norm(m)); if (hit) return hit; }
-      for (const m of all) { const hit = byNo.get(norm(m)); if (hit) return hit; }
+      for (const m of all) { const hit = byMat.get(norm(m)); if (hit) return hit; }         // ผูกตรงรายเลข SAP
+      for (const m of all) {                                                                // เลขพาร์ทลูกค้า
+        const pn = pnoOf.get(m);
+        const hit = pn ? byNo.get(norm(pn)) : null;
+        if (hit) return hit;
+      }
+      for (const m of all) { const hit = byNo.get(norm(m)); if (hit) return hit; }          // part_no = เลข SAP
       return null;
     };
 

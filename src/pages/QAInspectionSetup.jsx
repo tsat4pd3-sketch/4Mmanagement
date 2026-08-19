@@ -17,6 +17,7 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
+import { QA_STAGES } from '../utils/qaStages';
 import CalloutPin from '../components/CalloutPin';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -41,13 +42,6 @@ const calcViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window ==
 const thSt = { padding: '7px 10px', textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border2)' };
 const tdSt = { padding: '7px 10px', fontSize: 12.5, color: 'var(--text)', borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
 
-const STAGE = {
-  incoming:    { label: 'รับเข้า (Incoming)',        color: '#a78bfa' },
-  setup_first: { label: 'ชิ้นแรกหลังตั้งเครื่อง',     color: '#f59e0b' },
-  inprocess:   { label: 'ในกระบวนการ',               color: '#4d9fff' },
-  final:       { label: 'ตรวจสุดท้าย (Final)',        color: '#22c55e' },
-  patrol:      { label: 'Patrol / รายกะ',            color: '#fb923c' },
-};
 
 /* ตามฟอร์ม FM-QA-112: Part Classification + Rank ของจุดตรวจ */
 const PART_RANK = {
@@ -60,6 +54,7 @@ const PART_KIND = {
   component:    'Component, Child part',
   raw_material: 'Raw material',
 };
+const STAGE = QA_STAGES;
 const RANK = {
   M:  { label: 'M',  color: '#f59e0b' },
   SC: { label: 'SC', color: '#ef4444' },
