@@ -28,6 +28,7 @@ function getWorkDate() {
   if (d.getHours() < 8) d.setDate(d.getDate() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+/* บวกวันบน 'YYYY-MM-DD' แบบ local — ห้าม toISOString (UTC เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
 const dayAdd = (s, n) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); } catch { return s; } };
@@ -532,22 +533,38 @@ async function loadQa(ctx) {
   ]);
   const scoped = (sess || []).filter(s => inScope(s.line_name));
   const ids = scoped.map(s => s.id);
-  const [{ data: defs }, { data: orders }] = await Promise.all([
-    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, mat_no, dr_defect_types(name)').in('session_id', ids) : { data: [] },
-    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [] },
+  /* ⚠️ defect_logs **ไม่มีคอลัมน์ `mat_no`** (mat มาจาก prod_orders) และ dr_defect_types ใช้ `name_th` ไม่ใช่ `name`
+     เดิม select ผิดทั้ง 2 จุด → 42703 → `defs = []` เงียบๆ → KPI ของเสีย/PPM/พาเรโตของ QA เป็น 0 มาตลอด
+     → เช็ค error ด้วย ไม่งั้นบั๊กชนิดเดียวกันซ่อนตัวได้อีก (supabase-js คืน { error } ไม่ throw) */
+  const [defRes, ordRes] = await Promise.all([
+    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, prod_orders(mat_no), dr_defect_types(name_th)').in('session_id', ids) : { data: [], error: null },
+    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [], error: null },
   ]);
+  if (defRes.error) console.warn('[deptDashboard/qa] โหลดของเสียไม่สำเร็จ', defRes.error);
+  if (ordRes.error) console.warn('[deptDashboard/qa] โหลดใบผลิตไม่สำเร็จ', ordRes.error);
+  const defs = defRes.data, orders = ordRes.data;
   /* ลูปปิด 8D → PE: CAPA ที่ปิดแล้ว เอกสาร PFMEA/Control Plan ตามแก้หรือยัง (IATF §10.2.3/10.2.4)
      ⚠️ best-effort — ยังไม่ apply migration 20260817 = คอลัมน์/ตารางไม่มี ต้องไม่ทำทั้งหน้าพัง */
   let capa = [], crOpen = 0, claims = [];
   try {
-    const [{ data: cp }, { count: n }, { data: cl }] = await Promise.all([
-      supabase.from('qa_capa').select('id, capa_no, title, status, due_date, pe_review_status, closed_at').order('created_at', { ascending: false }).limit(200),
+    /* ⚠️ คอลัมน์ของเฟส 4 (eff_*) อาจยังไม่ apply → ลองเต็มก่อน เจอ 42703 ค่อยถอยไปชุดเดิม
+       ห้ามให้ column เดียวที่ขาด ทำ KPI ลูปปิดหายทั้งแผง */
+    const capaFull = 'id, capa_no, title, status, due_date, pe_review_status, closed_at, d6_effective_from, eff_window_days, eff_verdict';
+    const [cpRes, { count: n }, { data: cl }] = await Promise.all([
+      supabase.from('qa_capa').select(capaFull).order('created_at', { ascending: false }).limit(200),
       supabase.from('pe_change_requests').select('id', { count: 'exact', head: true }).in('status', ['proposed', 'accepted']),
       supabase.from('qa_customer_claims').select('id, claim_no, claim_date, customer, part_no, defect_desc, status, due_reply_date, replied_at, capa_id').order('claim_date', { ascending: false }).limit(200),
     ]);
-    capa = cp || []; crOpen = n || 0; claims = cl || [];
+    capa = cpRes.data || [];
+    if (cpRes.error?.code === '42703') {
+      const { data: cp2 } = await supabase.from('qa_capa')
+        .select('id, capa_no, title, status, due_date, pe_review_status, closed_at').order('created_at', { ascending: false }).limit(200);
+      capa = cp2 || [];
+    }
+    crOpen = n || 0; claims = cl || [];
   } catch { /* ไม่มีตาราง = ถือว่ายังไม่เปิดใช้ ลูปนี้ */ }
   return { sess: scoped, defs: defs || [], orders: orders || [], capa, crOpen, claims,
+    loadErr: !!(defRes.error || ordRes.error),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), lpa: (lpa.data || []).filter(a => inScope(a.line_name)) };
 }
 
@@ -581,6 +598,17 @@ function QaView({ d, ctx }) {
   /* ปิดปัญหาไปแล้วแต่ยังไม่ตอบเรื่องเอกสาร = ช่องว่างที่ auditor ถามแน่ */
   const capaNoPe = capaClosed.filter(c => (c.pe_review_status || 'pending') === 'pending');
 
+  /* ── ประสิทธิผล (เฟส 4 · IATF §10.2.4) ──
+     ปิดใบไปแล้วแต่ตัวเลขจริงบอกว่าของเสียไม่ลด = ปัญหายังอยู่ ต้องเปิดใหม่
+     ⚠️ นับเฉพาะใบที่ "วัดได้จริง" — verdict กลุ่ม too_early/no_* คือ "ยังไม่รู้" ไม่ใช่ "ไม่ได้ผล" */
+  const capaBadEff = capaClosed.filter(c => c.eff_verdict === 'not_effective' || c.eff_verdict === 'worse');
+  const capaMeasured = capaClosed.filter(c => ['effective', 'partial', 'not_effective', 'worse'].includes(c.eff_verdict));
+  const effRate = capaMeasured.length
+    ? Math.round(capaMeasured.filter(c => c.eff_verdict === 'effective').length / capaMeasured.length * 100) : null;
+  /* ใบที่ส่งตรวจประสิทธิผลแล้ว และหน้าต่างวัดผลครบแล้ว = ถึงเวลาสรุป (ไม่ใช่ปล่อยค้าง) */
+  const capaDueVerify = capa.filter(c => c.status === 'verify' && c.d6_effective_from
+    && dayAdd(c.d6_effective_from, Number(c.eff_window_days) || 30) <= workDate);
+
   /* ── เคลมลูกค้า — ของเสียที่หลุดออกไปถึงลูกค้าแล้ว (ระดับความเร่งด่วนสูงสุดของ QA) ── */
   const claims = d.claims || [];
   const claimOpen = claims.filter(c => c.status !== 'closed');
@@ -588,8 +616,8 @@ function QaView({ d, ctx }) {
   const claimNo8D = claimOpen.filter(c => !c.capa_id);
 
   const defRecords = d.defs.map(x => ({
-    cat: x.dr_defect_types?.name || 'ไม่ระบุประเภท', value: (+x.qty_ng || 0) + (+x.qty_suspect || 0),
-    line: sMap[x.session_id]?.line_name || '-', product: x.mat_no || '(ไม่ระบุ)',
+    cat: x.dr_defect_types?.name_th || 'ไม่ระบุประเภท', value: (+x.qty_ng || 0) + (+x.qty_suspect || 0),
+    line: sMap[x.session_id]?.line_name || '-', product: x.prod_orders?.mat_no || '(ไม่ระบุ)',
     shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
   })).filter(r => r.value > 0);
 
@@ -603,6 +631,13 @@ function QaView({ d, ctx }) {
     ...claimNo8D.slice(0, 5).map(c => ({ icon: '📮', title: `${c.claim_no} ยังไม่ได้เปิด 8D`,
       detail: `${c.customer} · ${(c.defect_desc || '').slice(0, 40)}`, age: daysSince(`${c.claim_date}T08:00:00`),
       tag: 'ต้องมี 8D', tagColor: '#f59e0b', to: '/qa?tab=claims' })),
+    /* ปิดไปแล้วแต่ของเสียไม่ลด — แรงกว่าเรื่องเอกสาร เพราะปัญหายังเกิดอยู่จริง */
+    ...capaBadEff.slice(0, 5).map(c => ({ icon: '📉', title: `${c.capa_no} ปิดแล้ว แต่ของเสีย${c.eff_verdict === 'worse' ? 'เพิ่มขึ้น' : 'ยังไม่ลด'}`,
+      detail: `${(c.title || '').slice(0, 40)} — ต้องกลับไปทบทวน D4 สาเหตุราก`, age: c.closed_at ? daysSince(c.closed_at) : null,
+      tag: 'ไม่ได้ผล', tagColor: '#ef4444', to: '/qa?tab=capa' })),
+    ...capaDueVerify.slice(0, 5).map(c => ({ icon: '⏱️', title: `${c.capa_no} ครบกำหนดวัดผลแล้ว — ยังไม่สรุป`,
+      detail: `มาตรการมีผล ${c.d6_effective_from} · ครบ ${c.eff_window_days || 30} วันแล้ว`, age: daysSince(`${c.d6_effective_from}T08:00:00`),
+      tag: 'รอสรุปผล', tagColor: '#f59e0b', to: '/qa?tab=capa' })),
     ...capaNoPe.slice(0, 5).map(c => ({ icon: '🔗', title: `${c.capa_no} ปิดแล้ว แต่ยังไม่ทบทวน PFMEA/Control Plan`,
       detail: (c.title || '').slice(0, 45), age: c.closed_at ? daysSince(c.closed_at) : null,
       tag: 'IATF 10.2.4', tagColor: '#ef4444', to: '/qa?tab=capa' })),
@@ -612,6 +647,12 @@ function QaView({ d, ctx }) {
   ];
 
   return (<>
+    {/* "0 ของเสีย" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — ไม่งั้นจอที่พังอยู่ดูเหมือนจอที่ทุกอย่างปกติ */}
+    {d.loadErr && (
+      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+        🔴 โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ — ตัวเลขของเสีย · PPM · พาเรโต ด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
+      </div>
+    )}
     <Section title="🚨 ต้องทำตอนนี้" sub={`4M รออนุมัติ QA ${d.fourM.length} · ไลน์ที่ยังไม่บันทึกของเสียวันนี้ ${noLog.length} · LPA พบปัญหา 30 วัน ${lpaIssues.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
@@ -633,6 +674,12 @@ function QaView({ d, ctx }) {
         sub={capaClosed.length ? `${peDone}/${capaClosed.length} ใบ · IATF §10.2.4` : 'ยังไม่มี 8D ที่ปิด'} />
       <Kpi label="🛠 8D ค้างดำเนินการ" value={capaOpen.length} unit="ใบ" color={capaOpen.length ? '#f59e0b' : '#22c55e'}
         sub={d.crOpen ? `คำขอแก้เอกสารค้าง ${d.crOpen}` : 'ไม่มีคำขอแก้เอกสารค้าง'} />
+      {/* วัดจาก defect_logs จริง ไม่ใช่ข้อความที่คนพิมพ์ — ใบที่ยังวัดไม่ได้ ไม่ถูกนับเป็นทั้งได้ผล/ไม่ได้ผล */}
+      <Kpi label="📉 8D ที่ของเสียลดจริง" value={effRate == null ? '—' : `${effRate}%`}
+        color={effRate == null ? undefined : effRate >= 80 ? '#22c55e' : effRate >= 50 ? '#f59e0b' : '#ef4444'}
+        sub={capaMeasured.length
+          ? `วัดได้ ${capaMeasured.length} ใบ${capaBadEff.length ? ` · ยังไม่ลด ${capaBadEff.length}` : ''}`
+          : 'ยังไม่มีใบที่วัดผลได้ — ต้องกรอกวันที่มาตรการมีผล'} />
     </div>
 
     <ParetoAbcChart title="🚫 ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"

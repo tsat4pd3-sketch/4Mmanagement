@@ -19,6 +19,7 @@ import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
 import CalloutPin from '../components/CalloutPin';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -181,8 +182,9 @@ export default function QAInspectionSetup() {
   useEffect(() => { loadParts(); }, [loadParts]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('name').order('name')
-      .then(({ data }) => setLines((data || []).map(l => l.name)));
+    // เก็บเป็น object (id/name/parent_line_name) — dropdown จัดชั้นตามผัง (§5.3 ข้อ 8)
+    supabase.from('production_lines').select('id, name, parent_line_name').order('name')
+      .then(({ data }) => setLines(data || []));
   }, []);
 
   const loadItems = useCallback(async (partId) => {
@@ -359,7 +361,7 @@ export default function QAInspectionSetup() {
       part_no: o.part_no || f.part_no,
       part_name: o.part_name || f.part_name,
       customer: o.customer || f.customer,
-      line_name: lines.includes(o.line_name) ? o.line_name : f.line_name,
+      line_name: lines.some(l => l.name === o.line_name) ? o.line_name : f.line_name,
     }));
     setBomSearch('');
   };
@@ -946,7 +948,9 @@ export default function QAInspectionSetup() {
             <Field label="ไลน์ผลิต">
               <select style={inputSt} value={partModal.line_name} onChange={e => setPartModal(f => ({ ...f, line_name: e.target.value }))}>
                 <option value="">— ไม่ระบุ —</option>
-                {lines.map(l => <option key={l} value={l}>{l}</option>)}
+                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
+                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
+                ))}
               </select>
             </Field>
             <Field label="Dwg. No."><input style={inputSt} placeholder="เช่น 97/3" value={partModal.dwg_no} onChange={e => setPartModal(f => ({ ...f, dwg_no: e.target.value }))} /></Field>

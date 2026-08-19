@@ -30,6 +30,8 @@ const inputSt = {
 };
 
 const dateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/* วันงานปัจจุบัน (ตัด 08:00 ตามกฎโปรเจค — ห้ามใช้ toISOString) */
+const workDateStr = () => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); return dateStr(d); };
 const monthFirst = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 const monthLabel = (iso) => {
   const [y, m] = iso.split('-').map(Number);
@@ -356,16 +358,36 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           if (error) throw error;
         }
       } else {
-        // เก็บใบที่เตรียม/ส่งไปแล้ว — ลบเฉพาะ pending จาก EDI ในช่วง horizon แล้วลงฉบับใหม่ (ไม่ insert ซ้ำ slot ที่ทำไปแล้ว)
+        /* เก็บใบที่เตรียม/ส่งไปแล้ว — ลบเฉพาะ pending จาก EDI ในช่วง horizon แล้วลงฉบับใหม่
+           (ไม่ insert ซ้ำ slot ที่ทำไปแล้ว)
+
+           ⚠️ กฎเหล็ก — **ห้ามลบออเดอร์ที่วันส่งผ่านไปแล้ว** (2026-08-19 · คำสั่ง user "ของเดิมไม่หายทำได้มั้ย")
+           EDI 862 คือการ *แก้ไขคำสั่งซื้อในอนาคต* — รายการของวันที่ผ่านไปแล้วเป็น **ข้อเท็จจริงย้อนหลัง**
+           (ลูกค้าเคยสั่งเท่านี้จริง) ลบทิ้งแล้วจะตอบไม่ได้ตลอดกาลว่า "ที่ผ่านมาผลิตพอกับที่ลูกค้าสั่งไหม"
+           เดิมตัดที่ `edi.dateFrom` = วันแรกที่มีในไฟล์ → ไฟล์ที่พ่วงรายการวันเก่ามาด้วย (EDI ทำประจำ)
+           จะลบประวัติทับแบบเงียบๆ · ตัดที่ max(dateFrom, วันงานปัจจุบัน) แทน
+           ผลข้างเคียงที่ตั้งใจ: ใบค้างส่งของวันเก่าไม่ถูกล้างโดยการอัพไฟล์ — ต้องเคลียร์ที่หน้า Delivery
+           (ซึ่งถูกแล้ว: ของที่ยังไม่ส่งและลูกค้าไม่ได้ยกเลิก คือคำถามที่ยังค้างอยู่จริง) */
+        const wd = workDateStr();
+        const delFrom = edi.dateFrom > wd ? edi.dateFrom : wd;
         const { data: keepRows } = await supabaseDR.from('customer_shipping_orders')
           .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
-          .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).neq('status', 'pending');
+          .in('customer', edi.shipTos).gte('due_date', delFrom).neq('status', 'pending');
         const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
         const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
-          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', edi.dateFrom);
+          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', delFrom);
         if (eDel) throw eDel;
+        /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
+        const pastKeys = new Set();
+        if (edi.dateFrom < delFrom) {
+          const { data: pastRows } = await supabaseDR.from('customer_shipping_orders')
+            .select('customer, customer_part_no, mat_no, due_date, ship_time')
+            .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom);
+          (pastRows || []).forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        }
         const recs = edi.records
-          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
+          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)
+            && !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
           .map(r => ({
             batch_id: batch.id, order_no: r.po || null, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
             customer_part_no: r.part, qty: r.qty, due_date: r.date, ship_time: r.time, dock_code: r.dock || null, source: 'edi_862',

@@ -113,6 +113,14 @@ model: inherit
   ตัวแม่ที่เลือก + เปลี่ยนตัวแม่ต้องล้างค่าตัวลูก (ดู UI-CONVENTIONS §5.3) — จับ: select แผนกที่
   options มาจาก org_nodes ทั้งหมดโดยไม่กรอง parent_id/section · query org_nodes department ที่ไม่ select
   parent_id · ข้อยกเว้น: AddUser (กำหนด scope), ShiftOrganize merge (section/line ทางเลือก)
+- **F10b** dropdown ไลน์ต้องจัดชั้นแม่→ลูกผ่าน `toHierarchicalOptions` (utils/lineHierarchy — §5.3 ข้อ 8
+  · กวาดทั้งระบบแล้ว 2026-08-18) — จับ: `<option` ที่ map จากลิสต์ไลน์แบนเรียง ก-ฮ (`.sort()`/
+  `localeCompare`/`.order('name')` แล้ว map ตรง) · pattern ห้ามตรงตัว: เติม `'↳ '` เองจาก
+  `parent_line_name` โดยไม่จัดลำดับ · query production_lines ที่ select แค่ `name` (ไม่มี
+  parent_line_name = จัดชั้นไม่ได้) · cascade แผนกต้องใช้ helper `deptOptionsFor`/`ORPHAN_SECTION`
+  (sectionScope) ห้ามเขียน `parent_id === secNode.id` เอง — เขียนเองแล้วแผนกขึ้นตรงฝ่ายหาย
+  (เคยพัง OjtTraining: ออกใบให้ช่าง MTN ไม่ได้) · ข้อยกเว้น: ลิสต์ derive จากข้อมูลจริงที่เป็น
+  string ล้วน (เช่น line filter จาก sessions) = ยอมรับได้ · datalist พิมพ์อิสระ = ไม่บังคับ
   (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์
   ห้ามมีโหมด auto ซ่อนตามความแน่น) คุมทุกชนิดจุด · label บนปุ่มบอก action ที่จะเกิดเมื่อกด
   (Management + LineSetup + MachineFloorMap ต้อง behavior ตรงกัน — WYSIWYG)

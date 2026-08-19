@@ -10,11 +10,10 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
-} from '../utils/sectionScope';
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
-import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL } from '../utils/skillLevels';
+import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -74,6 +73,18 @@ export default function Operator() {
   //   (trigger trg_audit_employee_skills → ดูได้ที่แผง 🕓 ประวัติการแก้คะแนน ในโมดัลนี้)
   //   RLS ฝั่ง DB ก็คุมด้วย skills:edit เช่นกัน → ยิงทั้งที่ไม่มีสิทธิ์ = error ทับการบันทึกที่สำเร็จไปแล้ว
   const canEditSkills = can('skills', 'edit', role);
+  // เพดานคะแนนที่พิมพ์ใส่เองได้ — leader ตั้งได้ถึง 50 (คำสั่ง user 2026-08-18)
+  //   มี `skills:edit_high` → ถึง 100 เหมือนเดิม · ไม่มี → ตันที่ SKILL_EDIT_CAP
+  //   ยังไม่ seed key นี้ → ทุก role ตั้งได้ถึง 100 เหมือนเดิม (pattern เดียวกับ editAllSections)
+  // ⚠️ นี่คือชั้น UI เท่านั้น — ฝั่ง DB มี RLS WITH CHECK กันซ้ำ (ยิง API ตรงก็ไม่ผ่าน)
+  const canEditHighSkill = !isActionSeeded('skills', 'edit_high')
+    || can('skills', 'edit_high', role);
+  const scoreCap = canEditHighSkill ? 100 : SKILL_EDIT_CAP;
+  // ใบเซอร์ค่าฝีมือ (หมวด allowance_skill) แคบกว่าสกิลทั่วไป — ระดับหัวหน้าแผนกขึ้นไป
+  //   เพราะมี/ไม่มี ใบนี้กระทบ "สิทธิ์ค่าฝีมือ" = เรื่องเงิน (คำสั่ง user 2026-08-18)
+  //   ยังไม่ seed key นี้ → ใครแก้สกิลได้ก็ติ๊กได้เหมือนเดิม (pattern เดียวกับ editAllSections)
+  const canEditAllowance = !isActionSeeded('skills', 'edit_allowance')
+    || can('skills', 'edit_allowance', role);
 
   // ── สิทธิ์ "แก้ได้เฉพาะคนของหน่วยงานตัวเอง" (2026-08-17) ────────────────────
   // บางหน่วยงาน (คลัง/สโตร์) ต้องเห็นพนักงานทั้งโรงงานเพื่อทำงาน logistic ได้ตามปกติ
@@ -95,6 +106,16 @@ export default function Operator() {
   /** แก้แถวนี้ได้ไหม — ต้องมีสิทธิ์ employees:edit และอยู่ในส่วนงานที่ตัวเองดูแล */
   const canEditEmp = (emp) => can('employees', 'edit', role)
     && (editAllSections || (!!homeSection && inSectionScope([homeSection], emp?.section)));
+  /** สิทธิ์แก้ "สกิล" ของแถวนี้ — แยกจากสิทธิ์แก้ประวัติพนักงาน (feedback หน้างาน 2026-08-19:
+   *  ช่างเพิ่มสกิลให้ทีมตัวเองไม่ได้ ทั้งที่ RLS employee_skills เปิด skills:edit ให้แล้ว —
+   *  เดิมแผงสกิลไปมัดกับ employees:edit + เทียบ section ซึ่งพนักงานสนับสนุนเป็น null ไม่ตรงกับใครเลย)
+   *  กติกา: มี skills:edit + (แก้ได้ทุกส่วน ‖ section ตรงส่วนงานตัวเอง ‖
+   *  พนักงานสนับสนุนขึ้นตรงฝ่าย (section null) ให้ role หน่วยงานช่างแก้ได้ — MAINTENANCE_ROLES
+   *  เห็นทั้งโรงงานตามกฎ scopedLineNames อยู่แล้ว) · RLS ฝั่ง DB ยังคุมชั้นสุดท้ายเสมอ */
+  const canEditSkillsFor = (emp) => canEditSkills
+    && (editAllSections
+        || (!!homeSection && inSectionScope([homeSection], emp?.section))
+        || (!emp?.section && MAINTENANCE_ROLES.includes(role)));
 
   // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
   // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
@@ -410,19 +431,27 @@ export default function Operator() {
       // ที่ไม่ติ๊ก (รวมตัวที่ไม่เคยมีแถวอยู่แล้ว) → แตะ employee_skills ทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป
       // ทำให้คนที่ไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ
       let skillWarn = '';
-      if (canEditSkills && canEditEmp(editingEmp)) {
+      if (canEditSkillsFor(editingEmp)) {
         const origMap = new Map((editingEmp.employee_skills || []).map(s => [s.skill_name, s]));
         const upserts = [];
         const removals = [];
         skillDefs.forEach(sd => {
+          // หมวดค่าฝีมือคุมด้วยสิทธิ์แยก — ไม่มีสิทธิ์ = ข้ามไปเลย ไม่ส่งให้ DB ตีกลับ
+          if (sd.category === 'allowance_skill' && !canEditAllowance) return;
           const on = !!editingEmp.skillEnabled?.[sd.name];
           const orig = origMap.get(sd.name);
           if (on) {
-            const score = sd.category === 'allowance_skill' ? 100 : Number(editingEmp.skillScores?.[sd.name] ?? 0);
+            // clamp ตามเพดานของสิทธิ์ (ชั้นสุดท้ายฝั่ง client — RLS กันซ้ำอยู่แล้ว)
+            const score = sd.category === 'allowance_skill'
+              ? 100
+              : Math.min(Math.max(Number(editingEmp.skillScores?.[sd.name] ?? 0) || 0, 0), scoreCap);
+            // สกิลที่คะแนนเดิมเกินเพดานของเรา = ไม่ใช่ของที่เราดูแล อย่าไปแตะ
+            if (!canEditHighSkill && Number(orig?.score ?? 0) > scoreCap) return;
             if (!orig || Number(orig.score) !== score) {
               upserts.push({ employee_id: editingEmp.id, skill_name: sd.name, score, updated_at: new Date().toISOString() });
             }
           } else if (orig) {
+            if (!canEditHighSkill && Number(orig.score) > scoreCap) return;
             removals.push(sd.name);   // ลบเฉพาะที่เคยมีแถวจริง
           }
         });
@@ -443,6 +472,12 @@ export default function Operator() {
 
       // ⚠️ ข้อมูลพนักงานถูกบันทึกไปแล้วข้างบน — ถ้าสกิลพลาดห้าม throw รวม (จะอ่านเหมือนไม่ได้บันทึกอะไรเลย)
       //    แต่ก็ห้ามเงียบ: บอกให้ชัดว่าส่วนไหนสำเร็จ ส่วนไหนไม่
+      // RLS ตีกลับ (42501) = ชนเพดาน/หมวดค่าฝีมือ — แปลงเป็นภาษาคน อย่าโยน error ดิบใส่หน้างาน
+      if (skillWarn && /row-level security|42501|violates/i.test(skillWarn)) {
+        skillWarn = canEditHighSkill
+          ? 'ไม่มีสิทธิ์ตั้งค่าสกิลบางตัว (ใบเซอร์ค่าฝีมือต้องหัวหน้าแผนกขึ้นไป)'
+          : `ตั้งคะแนนได้ไม่เกิน ${scoreCap} — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง`;
+      }
       if (skillWarn) toast.error('บันทึกข้อมูลพนักงานแล้ว แต่ระดับทักษะยังบันทึกไม่ได้: ' + skillWarn);
       else toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
@@ -880,7 +915,7 @@ export default function Operator() {
                   <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>วันเริ่มงาน</th>
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
-                      <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
+                      <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {sd.label}</div>
                       {sd.scope_section && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
                     </th>
                   ))}
@@ -1189,11 +1224,9 @@ export default function Operator() {
                       <label style={labelSt}>ประเภทสกิล</label>
                       <select value={editingSkill.category || 'hard_skill'}
                         onChange={e => setEditingSkill({ ...editingSkill, category: e.target.value })}>
-                        <option value="hard_skill">🔧 Hard Skill</option>
-                        <option value="machine_skill">⚙️ Machine Skill</option>
-                        <option value="product_skill">📦 Product Skill</option>
-                        <option value="soft_skill">🧠 Soft Skill</option>
-                        <option value="allowance_skill">🎫 ใบเซอร์ค่าฝีมือ</option>
+                        {Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => (
+                          <option key={k} value={k}>{m.icon} {m.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -1542,9 +1575,17 @@ export default function Operator() {
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
                 <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>📊 ระดับทักษะ</label>
-                {!(canEditSkills && canEditEmp(editingEmp)) && (
+                {!canEditSkillsFor(editingEmp) && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
                     🔒 ดูอย่างเดียว — {canEditSkills ? `แก้ได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}` : 'บัญชีนี้ไม่มีสิทธิ์แก้ระดับทักษะ'} (ข้อมูลอื่นในฟอร์มยังแก้ได้ตามปกติ)
+                  </div>
+                )}
+                {canEditSkillsFor(editingEmp) && !canEditHighSkill && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b40', borderRadius: 6, padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
+                    ⚖️ ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> (ระดับ “{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                      คะแนนที่สะสมเองจากการทำงานจริงยังขึ้นเกิน {scoreCap} ได้ตามปกติ ผ่านด่านอนุมัติอัพระดับ
+                    </div>
                   </div>
                 )}
                 {(() => {
@@ -1564,16 +1605,27 @@ export default function Operator() {
                           const score = Number(editingEmp.skillScores?.[sd.name] ?? 0);
                           const lv = enabled ? getLevel(score) : null;
                           const pending = editingEmp.employee_skills?.find(s => s.skill_name === sd.name)?.pending_level;
+                          // คะแนนที่อยู่ใน DB จริง (ไม่ใช่ค่าที่กำลังพิมพ์) — ใช้ตัดสินว่าล็อกช่องไหม
+                          const origScore = Number(editingEmp.employee_skills?.find(s => s.skill_name === sd.name)?.score ?? 0);
+                          // สกิลที่คะแนนเกินเพดานอยู่แล้ว → ล็อกไว้ ไม่ให้แก้ (กันเผลอกดคะแนนคนลง
+                          // และถึงแก้ไปก็โดน RLS ตีกลับ) · คนที่มี skills:edit_high ไม่โดนล็อก
+                          const lockedHigh = !canEditHighSkill && origScore > scoreCap;
+                          // ใบเซอร์ค่าฝีมือ = คนละสิทธิ์กับสกิลทั่วไป (หัวหน้าแผนกขึ้นไป)
+                          const isAllowance = sd.category === 'allowance_skill';
+                          const lockedAllowance = isAllowance && !canEditAllowance;
+                          const rowEditable = canEditSkillsFor(editingEmp) && !lockedAllowance;
                           return (
                             <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: (canEditSkills && canEditEmp(editingEmp)) ? 'pointer' : 'default' }}>
-                                <input type="checkbox" checked={enabled} disabled={!(canEditSkills && canEditEmp(editingEmp))}
+                              <label
+                                title={lockedAllowance ? 'ใบเซอร์ค่าฝีมือ ต้องระดับหัวหน้าแผนกขึ้นไปเป็นคนติ๊ก' : undefined}
+                                style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: rowEditable ? 'pointer' : 'default' }}>
+                                <input type="checkbox" checked={enabled} disabled={!rowEditable}
                                   onChange={e => setEditingEmp({
                                     ...editingEmp,
                                     skillEnabled: { ...editingEmp.skillEnabled, [sd.name]: e.target.checked },
                                   })}
-                                  style={{ width: 14, height: 14, cursor: (canEditSkills && canEditEmp(editingEmp)) ? 'pointer' : 'default' }} />
+                                  style={{ width: 14, height: 14, cursor: rowEditable ? 'pointer' : 'default' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
                                   {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
@@ -1590,18 +1642,33 @@ export default function Operator() {
                               {enabled && g.key === 'allowance_skill' ? (
                                 <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
                               ) : enabled ? (
-                                <input type="number" value={score} disabled={!(canEditSkills && canEditEmp(editingEmp))}
-                                  onChange={e => setEditingEmp({
-                                    ...editingEmp,
-                                    skillScores: { ...editingEmp.skillScores, [sd.name]: e.target.value },
-                                  })}
-                                  min={0} max={100}
+                                <input type="number" value={score}
+                                  disabled={!rowEditable || lockedHigh}
+                                  title={lockedHigh
+                                    ? `คะแนนปัจจุบัน ${origScore} สูงกว่าเพดานที่คุณตั้งได้ (${scoreCap}) — ต้องให้หัวหน้าส่วนขึ้นไปแก้`
+                                    : undefined}
+                                  onChange={e => {
+                                    // clamp ที่เพดานของสิทธิ์ — พิมพ์เกินแล้วเด้งลงทันที ไม่ปล่อยไปโดน RLS ตีกลับ
+                                    const raw = e.target.value;
+                                    const v = raw === '' ? '' : String(Math.min(Math.max(Number(raw) || 0, 0), scoreCap));
+                                    setEditingEmp({
+                                      ...editingEmp,
+                                      skillScores: { ...editingEmp.skillScores, [sd.name]: v },
+                                    });
+                                  }}
+                                  min={0} max={scoreCap}
                                   style={{ width: '100%', boxSizing: 'border-box' }} />
                               ) : (
                                 <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>ไม่เกี่ยวข้อง</div>
                               )}
                               {pending && (
                                 <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
+                              )}
+                              {lockedHigh && (
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 เกินเพดาน {scoreCap} — แก้ไม่ได้</div>
+                              )}
+                              {lockedAllowance && (
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 หัวหน้าแผนกขึ้นไปเท่านั้น</div>
                               )}
                             </div>
                           );
