@@ -70,6 +70,15 @@ model: inherit
   label/สี/desc ของ role ซ้ำในหน้า และข้อความ UI ห้ามเรียก role ด้วยคำตำแหน่งบริษัท (Manager/Supervisor/Leader)
   · grep: `ROLE_LABELS\s*=|label: 'Manager'|'Supervisor'|'Leader'` ใน `src/` (ยกเว้น roleMeta.js
   และคำที่หมายถึง "ตำแหน่งงานจริง" เช่น ป้ายลายเซ็นบนแบบฟอร์มพิมพ์ / employees level)
+- **C6** หน้า /permissions ต้อง mirror sidebar (2026-08-19) —
+  (ก) `PAGE_GROUPS` ใน PermissionsManagement.jsx ต้องมีหมวด/ลำดับหมวด/ลำดับหน้า/ชื่อหน้า
+  ตรงกับ `NAV_ITEMS` + `NAV_GROUP_ORDER` ใน App.jsx (เพิ่มหน้าใหม่ต้องเพิ่ม 2 ที่ให้ตรงกัน) ·
+  (ข) migration ที่ seed `permission_catalog` ต้องใช้ `group_name` เป็นชื่อหมวดใน
+  `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด (ภาพรวม 1xx · ฝ่ายผลิต 2xx ·
+  วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic - Store 5xx · การตรวจสอบและซ่อมบำรุง 6xx ·
+  ควบคุมคุณภาพ QA/QC 7xx · วิศวกรรม (PE) 8xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 9xx — ห้ามซ้ำเลขเดิม)
+  พิมพ์ชื่อหมวดเองเมื่อไหร่ = หมวดกำพร้าโผล่กลางตาราง (เคยเกิด: 'ซ่อมบำรุง'/'ประชุมแถวเช้า')
+  · grep: `group_name` ใน supabase/migrations/ เทียบกับ NAV_GROUP_ORDER
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext
