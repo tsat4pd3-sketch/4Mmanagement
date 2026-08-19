@@ -47,3 +47,22 @@ ok('อัตรา = 420 (ไม่ใช่ 280)', prodRate({'a':340,'b':500,'
 ok('ไม่มีข้อมูล = null', prodRate({}), null);
 
 console.log(bad.length?`\n❌\n  ${bad.join('\n  ')}\n\nผ่าน ${pass} ล้มเหลว ${bad.length}`:`\n✅ ผ่านทั้งหมด ${pass} เคส`);
+
+/* ── กฎเหล็ก: ห้าม net สต็อก/ออเดอร์ข้ามเลข MAT SAP (2026-08-19 · คำสั่ง user) ──
+   product เดียวกันที่แยกเลขตามปลายทางลูกค้า แลกของกันไม่ได้จริง (ยอดใน SAP เพี้ยน)
+   → ต้องตัดสินราย MAT · รวมกลุ่มแล้วบอก "พอ" = คำตอบผิด */
+{
+  const G=[{mat:'10100384',stock:6119,dem:7350},{mat:'10100385',stock:8829,dem:0},{mat:'10106790',stock:1270,dem:0}];
+  const perMat=G.map(g=>{
+    const D=demandByDay(g.dem?[{due_date:'2026-08-20',qty:g.dem}]:[],[]);
+    if(!Object.keys(D.byDay).length) return {mat:g.mat,verdict:null};
+    const sim=simulate({from:'2026-08-17',to:'2026-09-01',prodByDay:{},demByDay:D.byDay,openingStock:g.stock,today:'2026-08-19'});
+    return {mat:g.mat,verdict:advise(sim,400).key,end:sim.endStock};
+  });
+  ok('ตัดสินราย MAT: 10100384 ขาด', perMat[0].verdict, 'short');
+  ok('เลขที่ไม่มีออเดอร์ = ไม่ตัดสิน (ไม่ใช่ "พอ")', [perMat[1].verdict,perMat[2].verdict], [null,null]);
+  const netStock=G.reduce((a,g)=>a+g.stock,0), netDem=G.reduce((a,g)=>a+g.dem,0);
+  ok('ถ้า net รวม จะได้คำตอบผิดว่าเหลือ 8,868', netStock-netDem, 8868);
+  ok('แต่ราย MAT ตัวจริงติดลบ', perMat[0].end < 0, true);
+}
+console.log('✅ + กฎห้าม net ข้ามเลข SAP');
