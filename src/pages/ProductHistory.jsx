@@ -6,6 +6,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
 import PageHeader from '../components/PageHeader';
 import DailyBars from '../components/DailyBars';
+import DemandVsProduction from '../components/DemandVsProduction';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -162,6 +163,12 @@ export default function ProductHistory() {
     return out;
   }, [rows, to]);
   const dailyMax = Math.max(1, ...daily.map(d => (d.produced || 0) + (d.ng || 0)));
+  // ผลิตต่อวัน (เฉพาะยอดดี) — ป้อนให้แผงเทียบความต้องการลูกค้า
+  const prodByDay = useMemo(() => {
+    const m = {};
+    rows.forEach(r => { if (r.work_date) m[r.work_date] = (m[r.work_date] || 0) + (r.produced || 0); });
+    return m;
+  }, [rows]);
 
   // ตัวเลือกสินค้าต้อง scope ด้วย (กฎ dropdown-scope 2026-07-23) — สินค้าไลน์นอก scope ไม่โชว์ให้เลือก
   // สินค้าที่ยังไม่ระบุไลน์คงโชว์ไว้ (fail-open เฉพาะ null — ไม่ใช่ข้ามส่วนงาน)
@@ -351,6 +358,13 @@ export default function ProductHistory() {
               </div>
             </CollapseCard>
           )}
+
+          {/* ── ผลิตเทียบกับความต้องการลูกค้า (2026-08-19 · คำสั่ง user) ──
+              ตอบ "ผลิตพอกับที่ลูกค้าสั่งไหม · ต้องเร่งหรือชะลอ" ซึ่งเดิมดูไม่ได้เลย
+              ⚠️ ไม่ผูกกับ daily.length — ไม่มีการผลิตเลย ยิ่งต้องเห็นว่าลูกค้าสั่งอยู่เท่าไหร่ */}
+          <CollapseCard id="demand" title="📦 ผลิตเทียบกับความต้องการลูกค้า" count="ออเดอร์ + forecast">
+            <DemandVsProduction product={selMat} prodByDay={prodByDay} today={todayStr()} />
+          </CollapseCard>
 
           {/* trend รายวัน */}
           {daily.length > 0 && (
