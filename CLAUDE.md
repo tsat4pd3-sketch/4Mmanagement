@@ -1265,6 +1265,24 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - `nextDocNo` ย้ายจาก QualityControl.jsx → **`src/utils/qaDocNo.js`** (ใบตรวจเรียกใช้ตัวเดียวกันโดยไม่เกิด circular import)
 - **ยังไม่ทำ:** ผลตรวจยังไม่ไหลเข้า SPC อัตโนมัติ (จุด variable ที่กรอกค่าในใบตรวจ ยังไม่สร้าง `qa_measurements` ให้เอง — ต้องกด "ส่งเข้า SPC" ที่ setup แล้วกรอกที่แท็บ SPC เหมือนเดิม) · ยังไม่มีฟอร์มพิมพ์ใบตรวจ (ถ้าจะทำ ต้อง register ใน `/doc-forms` ตามกฎเอกสาร)
 
+### 🔔 ผลิตเรียก QA มาตรวจ — FME (First–Middle–End) · โค้ดครบ **ยังไม่ apply/deploy** (2026-08-19)
+
+"ระบบ 2" ตาม `docs/INSPECTION_ALARM_SYSTEMS.md` (ระบบ 1 = `pm-daily-scan` · ระบบ 3 = `pm-plan-reminder` ใช้งานอยู่แล้ว) — เดิมไม่มีช่องทางให้ผลิตเรียก QA เลย ใบตรวจเป็น **pull** (QA เดินไปตรวจเอง) ระบบจึงไม่มีทางรู้ว่า "ตรวจตก" ไปกี่รุ่น
+
+> #### ⚠️ กฎเหล็ก — หน่วยงานตรวจ = **ไลน์ × วันงาน × กะ × รุ่น** ห้ามผูกกับออเดอร์ (คำสั่ง user)
+> *"เฉพาะเปลี่ยนรุ่น หรือ เปลี่ยนกะ ไม่มองเป็นออเดอร์ เพราะบางงาน ลอทนึงมี 50 เลขออเดอร์"*
+> → ผูกกับออเดอร์ = เรียก QA 50 ครั้งต่อลอต · unique key ของ `qa_fme_obligations` คือ
+> `(line_name, work_date, shift, mat_no, stage)` — **นี่คือหัวใจ อย่าเผลอเติม order id เข้าไปในคีย์**
+> **งานคู่ RH/LH = รุ่นเดียวกัน** จับกลุ่มด้วย `dr_products.pair_mat_no` (ตัวแทน = mat ที่เรียงน้อยกว่า) ไม่งั้นสลับ LH/RH ถูกอ่านเป็นเปลี่ยนรุ่นทุกครั้ง แล้วเรียกรัวๆ
+
+- **trigger (derive จากข้อมูลผลิตล้วน ไม่ต้องให้ใครกดแจ้ง):** `first` = รุ่นโผล่ในกะครั้งแรก (ครอบทั้ง **เปลี่ยนกะ** และ **เปลี่ยนรุ่น**) · `end` = รุ่นปิดใบครบแล้วมีรุ่นอื่นเริ่มต่อ หรือปิดกะ · `middle` = รุ่นวิ่งเกิน `mid_after_min` (**default 0 = ปิด** เพราะ user ระบุ "เฉพาะ" 2 เหตุแรก)
+- **completion 2 ระดับ: เปิดใบตรวจ = รับงาน (หยุดเตือนทันที) · ปิดใบ = จบงาน** — ห้ามเตือนซ้ำหลังคนรับงานแล้ว · ผูกแม่นยำผ่าน `sheet_id` เมื่อกดจากคิว · QA เปิดใบเองก็จับคู่ได้ด้วย (พาร์ท+วัน+กะ+`stage`) → **`qa_inspection_sheets.stage` ถูกเขียนจริงแล้ว** (เดิมมีคอลัมน์แต่ไม่มีใครเขียน)
+- **จับคู่พาร์ท QA ↔ เลข SAP:** `qa_parts.mat_no` (คอลัมน์ใหม่ ผูกตรง) → ถอยไปเทียบ `part_no` แบบ normalize · **จับคู่ไม่ได้ = ยังสร้างงานตรวจอยู่ดี** (part_id null + ขึ้นเตือนในคิว + ปุ่มเปิดใบถูกปิด) — **ห้ามข้ามการเรียกเพราะ map ไม่เจอ** จะกลายเป็นตรวจตกแบบไม่มีใครรู้
+- **Telegram:** `qa_fme_call` / `qa_fme_overdue` (หมวด quality) ตั้งห้อง/ปิด/แก้ข้อความที่ `/notification-config` ตาม pattern เดิม
+- **ไม่เพิ่ม permission key ใหม่** — ใช้ `qa:record` (รับงาน/ยกเลิก) + `qa:manage` (ตั้งค่า) เลี่ยงกับดัก seed `enum_range`
+- **ไม่สร้าง `qa_piece_inspections` แยกตามที่เอกสารเดิมเสนอ** — `qa_inspection_sheets` (สร้างทีหลังเอกสาร) ทำหน้าที่นั้นครบแล้ว สร้างตารางที่ 2 = ผลตรวจแตก 2 ที่
+- **⚠️ ยังไม่ apply/deploy — ต้องทำ 3 ขั้นตามลำดับ:** (1) migration `20260819_qa_fme_call.sql` (Main) (2) deploy edge `qa-fme-scan` **`verify_jwt=false`** + `20260819_qa_fme_scan_cron.sql` (3) เปิดสวิตช์ที่ `/qa` ⚙️ · **`is_enabled` default = false โดยตั้งใจ** (ยิงเข้าห้อง Telegram จริง ต้องให้เจ้าของระบบกดเปิดเอง) · `skip_older_min` (120) กันเรียกย้อนหลังท่วมห้องแชทตอนเพิ่งเปิด
+
 ---
 
 ## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
@@ -1947,6 +1965,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
+| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
 | `downtime-open-scan` | DR (pg_cron ทุก 5 นาที) | สแกน Downtime ที่เปิดค้างเกิน `dt_alert_config.open_alert_min` นาที → POST `downtime_open_15min` ไป send-notification ฝั่ง Main + stamp `open_alerted_at` กันซ้ำ (2026-07-14) |
 | `send-mtn-notification` | Main | แจ้งเตือนใบแจ้งซ่อม MO — **แจ้งครบทุกสเตป 1-7** (`mtn_reported`/`assigned`/`repaired`/`checked`/`qa`/`handover`/`closed`) · **แยกไฟล์จาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules/telegram_channels เดียวกัน** → ตั้งค่า/ปิด/เลือกห้อง/แก้ข้อความได้จาก `/notification-config` (category maintenance) · **route ตามทีม:** มีห้องแท็ก `telegram_channels.team` = `mtn_dept` → เข้าห้องทีม, ไม่มี → ห้องรวม (smart maintenance/fallback) · **v5 (2026-07-22): แต่ละสเตปต่อท้าย "⏳ ขั้นต่อไป: รอ…"** ให้ห้องแชทรู้ว่ารออะไรต่อ (map `NEXT` ในไฟล์) · payload `{ event, mo: {...} }` |
 | `mtn-daily-summary` | Main (pg_cron 02:00 UTC = **09:00 ไทย**) | **สรุปงานซ่อม (MO) ค้างประจำวัน** (2026-07-22) — อ่าน `mtn_orders` ฝั่ง DR (`DR_URL`/`DR_ANON_KEY`, status ไม่ใช่ closed/rejected) นับตามทีม (`mtn_dept`) + ขั้นที่ค้าง (pending→รอรับงาน … handover→รออนุมัติปิด) → ส่งภาพรวมเข้าห้องรวม (event `mtn_daily_summary`) + แยกรายทีมเข้าห้องที่แท็ก team ไว้ · verify_jwt=false (cron เรียกได้ไม่ต้อง JWT) · ปิด/แก้ห้องได้ที่ `/notification-config` · migration `20260722_mtn_daily_summary_rule.sql` (rule) + `20260722_mtn_daily_summary_cron.sql` (cron Main) |
