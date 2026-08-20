@@ -137,6 +137,7 @@ export default function Energy() {
       const { data, error } = await supabaseDR.from('prod_orders')
         .select('mat_no, qty, qty_ok, qty_actual, status, production_sessions!inner(work_date)')
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
+        .order('id')   // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (error) { setProdErr(error.message); setProd({}); return }
       all.push(...(data || []));

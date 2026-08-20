@@ -1068,7 +1068,7 @@ function StationLogTab() {
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, shift, employees(name, employee_id_code, image_url, team, section)')
       .eq('assigned_line', selectedStation)
       .gte('work_date', from).lte('work_date', to)
-      .order('work_date', { ascending: false }));
+      .order('work_date', { ascending: false }).order('id'));   // .order('id') = ตัวตัดสินให้ลำดับ unique
     setRows(data);
     setLoading(false);
   };
@@ -1249,7 +1249,7 @@ function RangeTab() {
     setLoading(true);
     const data = await fetchAllRows(() => supabase.from('daily_production_logs')
       .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
-      .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id'));
+      .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id').order('id'));
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
     const scoped = (data || []).filter(l => {
       if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
@@ -3396,7 +3396,7 @@ function SkillAllowanceTab() {
       .eq('has_boots', true)
       .eq('has_gloves', true)
       .in('assigned_line', stationIds)
-      .order('work_date').order('employee_id'));
+      .order('work_date').order('employee_id').order('id'));
 
     // group by employee, แยกตามกะ (day=กะ01 / night=กะ02)
     const empMap = {};

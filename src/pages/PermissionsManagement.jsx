@@ -144,7 +144,8 @@ export default function PermissionsManagement() {
       const PAGE = 1000; const out = [];
       for (let from = 0; ; from += PAGE) {
         const { data } = await supabase.from('role_permissions')
-          .select('role, permission_key, allowed').range(from, from + PAGE - 1);
+          // ⚠️ .range() ต้องมี .order() ครบคีย์ unique เสมอ ไม่งั้นแถวหลุดระหว่างหน้า (ดู utils/permissions.js)
+          .select('role, permission_key, allowed').order('role').order('permission_key').range(from, from + PAGE - 1);
         if (!data) break;
         out.push(...data);
         if (data.length < PAGE) break;

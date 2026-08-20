@@ -790,7 +790,8 @@ export default function OEEAnalytics() {
       for (let i = 0; sessionIds.length && i < 40; i++) {
         const { data: od } = await supabaseDR.from('prod_orders')
           .select('session_id, mat_no, status, qty, qty_ok, qty_actual')
-          .in('session_id', sessionIds).range(i * 1000, (i + 1) * 1000 - 1);
+          // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า (ตัวเลข OEE จะเพี้ยนเงียบ)
+          .in('session_id', sessionIds).order('id').range(i * 1000, (i + 1) * 1000 - 1);
         ordersAll.push(...(od || []));
         if (!od || od.length < 1000) break;
       }
