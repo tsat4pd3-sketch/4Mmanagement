@@ -26,6 +26,7 @@ const PAGE_GROUPS = [
       { key: 'page:/',            label: 'หน้าหลัก' },
       { key: 'page:/dashboard',   label: 'Dashboard' },
       { key: 'page:/dept-dashboard', label: 'Dashboard ส่วนงาน' },
+      { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
