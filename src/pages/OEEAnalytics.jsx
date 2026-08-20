@@ -1039,7 +1039,27 @@ export default function OEEAnalytics() {
     const capacityLines = regNames.size
       ? ranNames.filter(n => regNames.has(n) && !dupParents.includes(n))
       : ranNames;
-    const calMin = capacityLines.length * dayCount * 1440;
+
+    /* ⚠️⚠️ ปฏิทินของแต่ละไลน์ต้องเริ่มนับ "วันที่ไลน์นั้นเข้าระบบ" ไม่ใช่วันเริ่มช่วงที่เลือก
+       (user 2026-08-20: "ควรคิดตั้งแต่ระบบเริ่มนะ สตาร์ทช่วง 1/7/26")
+       ข้อมูลจริง: ระบบเริ่มใช้จริงสัปดาห์ 29/6 · แต่ละไลน์ทยอยเข้าคนละวัน (2/7 ถึง 23/7)
+       ไม่มีไลน์ไหนเริ่มตั้งแต่ 22/5 (วัน default ของช่วง 90 วัน) เลยสักไลน์
+       → นับปฏิทินเต็มช่วงให้ทุกไลน์ = **อ้างว่าไลน์ว่างงาน ทั้งที่ความจริงคือยังไม่ได้เข้าระบบ**
+         ซึ่งเป็นคำกล่าวอ้างเท็จ ไม่ใช่แค่ตัวเลขเพี้ยน (1,183 → 510 วัน-ไลน์ · TEEP 11.4% → ~26%)
+       ⚠️ ไลน์ที่หยุดไปเฉยๆ หลังเข้าระบบแล้ว **ยังถูกนับเต็ม** — นั่นคือกำลังผลิตที่ว่างจริง
+          ตัวนี้ต่างจาก "ยังไม่เข้าระบบ" คนละเรื่อง ห้ามยุบรวมกัน
+       ⚠️ กติกานี้ทำให้คำสั่ง user ก่อนหน้า ("PD1/PD2 ยังไม่ได้ใช้ มีเมื่อไหร่ค่อยเริ่มคิด")
+          ทำงานเองอัตโนมัติ — ไลน์ใหม่เริ่มนับปฏิทินวันที่เปิดกะแรก ไม่ต้องไปตั้งค่าอะไร */
+    const firstDay = {};
+    valid.forEach(r => {
+      const d = r.work_date;
+      if (!d) return;
+      if (!firstDay[r.line_name] || d < firstDay[r.line_name]) firstDay[r.line_name] = d;
+    });
+    const daysTo = (d) => Math.max(1, Math.round(
+      (new Date(`${dateTo}T00:00:00`) - new Date(`${d}T00:00:00`)) / 86400000) + 1);
+    const lineDays = capacityLines.reduce((a, n) => a + daysTo(firstDay[n] || dateFrom), 0);
+    const calMin = lineDays * 1440;
     const r1 = (v) => (v == null ? null : +v.toFixed(1));
     return {
       oee, a: wavg(rows, r => r.calcA, wLoad),
@@ -1049,9 +1069,12 @@ export default function OEEAnalytics() {
       teep: oee != null && calMin  > 0 ? r1(oee * (sumNetAvail / calMin))   : null,
       netAvailMin: Math.round(sumNetAvail), shiftMinTotal: Math.round(sumShift),
       breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
-      teepLines: capacityLines.length, teepDays: dayCount,
+      teepLines: capacityLines.length, teepDays: dayCount, teepLineDays: lineDays,
       // ตัดอะไรออกจากตัวหารบ้าง — ต้องโชว์บนจอ ห้ามตัดเงียบ
       teepRan: lineSet.size, teepDupParents: dupParents, teepUnreg: unregNames,
+      // ไลน์แรกสุดเข้าระบบวันไหน — ใช้บอกว่าปฏิทินเริ่มนับตรงไหน
+      teepFirstDay: capacityLines.length
+        ? capacityLines.map(n => firstDay[n]).filter(Boolean).sort()[0] || null : null,
       sessions: rows.length, total: trTotalQty,
       // ── ที่มาของ A / P / Q — user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที
       //    ของ work time · Q เท่านั้นมาจากดี/เสียเท่าไหร่" → แนบตัวตั้ง/ตัวหารของแต่ละตัวไปเลย
@@ -1760,7 +1783,7 @@ export default function OEEAnalytics() {
           </>} />
         <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
           color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
-          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ × ${kpi.teepDays} วัน`}
+          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ · รวม ${kpi.teepLineDays.toLocaleString()} วัน-ไลน์`}
           calc={<>
             รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ ปฏิทิน <b>{kpi.calMin.toLocaleString()}</b> น.<br />
             = <b>{kpi.calMin > 0 ? (kpi.netAvailMin / kpi.calMin * 100).toFixed(1) : '—'}%</b> ของเวลาที่มีทั้งหมด ×
@@ -1768,7 +1791,12 @@ export default function OEEAnalytics() {
             {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
               ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
-              {' · '}ไลน์ที่ยังไม่เคยเปิดกะในช่วงนี้ไม่ถูกนับ
+            </div>
+            {/* ปฏิทินของแต่ละไลน์เริ่มนับวันที่มันเข้าระบบ ไม่ใช่วันเริ่มช่วง — ต้องบอก ไม่งั้นคนคิดว่านับเต็มช่วง */}
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              ปฏิทินเริ่มนับ<b> วันที่แต่ละไลน์เข้าระบบ</b> ไม่ใช่วันเริ่มช่วง
+              {kpi.teepFirstDay && <> (ไลน์แรกสุด {kpi.teepFirstDay})</>} —
+              ช่วงก่อนหน้านั้นคือ “ยังไม่ได้ใช้ระบบ” ไม่ใช่ “ไลน์ว่าง”
             </div>
             {/* ตัดอะไรออกจากตัวหารบ้าง — ต้องเห็น ไม่งั้นคนสงสัยว่าทำไมเลขไลน์ไม่ตรงกับที่เห็นในลิสต์ */}
             {(kpi.teepDupParents.length > 0 || kpi.teepUnreg.length > 0) && (
