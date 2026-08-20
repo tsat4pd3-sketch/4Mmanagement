@@ -18,7 +18,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
 import { buildCtMap } from '../utils/oee';
-import { buildVsmModel } from '../lib/vsmModel';
+import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
 import { buildVsmLive, LIVE_STATUS } from '../lib/vsmLive';
 import { printVsm } from '../lib/vsmPrint';
 import { printVsmA3 } from '../lib/vsmA3Print';
@@ -664,7 +664,9 @@ export default function VSM() {
             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>สรุปสายธาร</div>
             {[
               ['PLT (Production Lead Time)', model.totals.pltDays == null ? '—' : `${model.totals.pltDays} วัน`],
-              ['PT (Processing Time)', `${(model.totals.ptSec || 0).toLocaleString('th-TH')} sec`],
+              ['PT (Processing Time)', fmtMinSec(model.totals.ptSec) || '—'],
+              // MCT = headline ของใบจริง TSAT (skill: vsm-tsat-reference)
+              ['MCT (PLT + PT)', fmtMct(model.totals.pltDays, model.totals.ptSec) || '—'],
               ['%VA (Value Added)', model.totals.vaPct == null ? '—' : `${model.totals.vaPct}%`],
               ['Takt Time', model.info.ttSec == null ? '—' : `${model.info.ttSec} sec`],
               ['Available Time', model.info.atSec == null ? '—' : `${model.info.atSec.toLocaleString('th-TH')} sec/วัน`],
@@ -841,7 +843,8 @@ export default function VSM() {
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>สรุปสายธาร (จากคงคลังปัจจุบัน)</div>
               {[
                 ['PLT (Production Lead Time)', liveModel.totals.pltDays == null ? '—' : `${liveModel.totals.pltDays} วัน`],
-                ['PT (Processing Time)', `${(liveModel.totals.ptSec || 0).toLocaleString('th-TH')} sec`],
+                ['PT (Processing Time)', fmtMinSec(liveModel.totals.ptSec) || '—'],
+                ['MCT (PLT + PT)', fmtMct(liveModel.totals.pltDays, liveModel.totals.ptSec) || '—'],
                 ['%VA (Value Added)', liveModel.totals.vaPct == null ? '—' : `${liveModel.totals.vaPct}%`],
                 ['Takt Time', liveModel.info.ttSec == null ? '—' : `${liveModel.info.ttSec} sec`],
               ].map(([k, v]) => (

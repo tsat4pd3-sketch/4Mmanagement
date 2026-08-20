@@ -13,6 +13,7 @@
  * โครง: supplier (ซ้าย) → สายป้อน (บน) + สายหลัก (กลาง) → ลูกค้า (ขวา) · บันไดเวลา (ล่าง)
  */
 import { LIVE_STATUS } from '../lib/vsmLive';
+import { fmtMct, fmtMinSec } from '../lib/vsmModel';
 
 export const PALETTE_LIGHT = {
   bg: '#ffffff', ink: '#111827', sub: '#4b5563', line: '#374151', faint: '#9ca3af',
@@ -285,7 +286,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
   const Y_PROC = yFeedTop + feeders.length * FEED_H + (feeders.length ? 26 : 46);
   const Y_DATA = Y_PROC + BOX_H;
   const Y_LAD = Y_DATA + DATA_H + 58;
-  const H = Y_LAD + 104;
+  const H = Y_LAD + 122;                 // เผื่อกล่องสรุปสูงขึ้นจากบรรทัด MCT (headline ใบจริง)
   const W = PAD_L + n * COL_W + PAD_R;
   const colX = i => PAD_L + i * COL_W + (COL_W - BOX_W) / 2;
 
@@ -427,17 +428,21 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
       <text x={26} y={Y_LAD + 2} fontSize="9" fill={P.nva}>NVA (รอ)</text>
       <text x={26} y={Y_LAD + 26} fontSize="9" fill={P.va}>VA (ทำงาน)</text>
 
-      {/* ── สรุปมุมล่างขวา ── */}
+      {/* ── สรุปมุมล่างขวา — MCT เป็น headline ตัวแดงใหญ่ ตามธรรมเนียมใบจริง TSAT
+            (skill: vsm-tsat-reference — "MCT = 8.97 Days 4 min 17 second") ── */}
       <g>
-        <rect x={W - 336} y={Y_LAD + 40} width="316" height="56" fill={P.data} stroke={P.line} strokeWidth="1.2" />
-        <text x={W - 326} y={Y_LAD + 57} fontSize="10.5" fill={P.ink}>
+        <rect x={W - 336} y={Y_LAD + 40} width="316" height="74" fill={P.data} stroke={P.line} strokeWidth="1.2" />
+        <text x={W - 326} y={Y_LAD + 56} fontSize="10.5" fill={P.ink}>
           PLT = <tspan fontWeight="800">{fmt(T.pltDays, 2)}</tspan> วัน
-          <tspan dx="16">PT = <tspan fontWeight="800">{fmt(T.ptSec)}</tspan> sec</tspan>
+          <tspan dx="16">PT = <tspan fontWeight="800">{fmtMinSec(T.ptSec) || '—'}</tspan></tspan>
         </text>
-        <text x={W - 326} y={Y_LAD + 73} fontSize="10.5" fill={P.ink}>
+        <text x={W - 326} y={Y_LAD + 74} fontSize="12.5" fontWeight="900" fill={P.nva}>
+          MCT = {fmtMct(T.pltDays, T.ptSec) || '—'}
+        </text>
+        <text x={W - 326} y={Y_LAD + 90} fontSize="10.5" fill={P.ink}>
           %VA = VA ÷ (VA+NVA) × 100 = <tspan fontWeight="800" fill={P.va}>{T.vaPct == null ? '—' : `${fmt(T.vaPct, 2)}%`}</tspan>
         </text>
-        <text x={W - 326} y={Y_LAD + 88} fontSize="9" fill={P.sub}>
+        <text x={W - 326} y={Y_LAD + 104} fontSize="9" fill={P.sub}>
           {fmt(T.vaSec)} ÷ ({fmt(T.vaSec)} + {fmt(T.pltDays, 2)} × {fmt(I.atSec)} ) × 100 · NVA = PLT × A/T
         </text>
       </g>

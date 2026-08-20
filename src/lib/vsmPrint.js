@@ -9,6 +9,7 @@
  *    (กฎ CLAUDE.md: ห้ามจำลอง layout ใบจริงมาไว้ในตัวพิมพ์ จะกลายเป็น layout ชุดที่ 2 ที่ต้องตามแก้)
  */
 import { getDocForm, fullCode, withDocFoot, sigAt, pageCss } from '../utils/docForms';
+import { fmtMct, fmtMinSec } from './vsmModel';
 import tsLogoUrl from '../assets/TS logo.png';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -112,7 +113,8 @@ export async function printVsm({ map, model, svgHtml, legendHtml, section = null
     </div>
   </div>
   <div class="note">
-    PLT = ${T.pltDays ?? '—'} วัน · PT = ${(T.ptSec ?? 0).toLocaleString('th-TH')} sec ·
+    PLT = ${T.pltDays ?? '—'} วัน · PT = ${fmtMinSec(T.ptSec) ?? '—'} ·
+    <b style="color:#dc2626">MCT = ${fmtMct(T.pltDays, T.ptSec) ?? '—'}</b> ·
     %VA = VA ÷ (VA + NVA) × 100 = ${T.vaPct == null ? '—' : T.vaPct + '%'}
     &nbsp;(NVA = PLT × A/T)
     ${code ? '' : ' · เอกสารนี้ยังไม่ได้ตั้งเลขฟอร์มในทะเบียน (/doc-forms)'}

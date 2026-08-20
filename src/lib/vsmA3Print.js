@@ -15,6 +15,7 @@
  * เลขฟอร์ม/Rev/ช่องเซ็น/โลโก้ อ่านจากทะเบียนกลาง doc_key 'vsm' — ห้าม hardcode
  */
 import { getDocForm, fullCode, withDocFoot, sigAt, pageCss } from '../utils/docForms';
+import { fmtMct, fmtMinSec } from './vsmModel';
 import tsLogoUrl from '../assets/TS logo.png';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -41,7 +42,7 @@ async function urlToDataUrl(url) {
 export function currentConditionFacts(model) {
   const f = [];
   const T = model.totals, I = model.info;
-  if (T.pltDays != null) f.push(`Lead time รวม (PLT) = <b>${fmt(T.pltDays, 2)} วัน</b> · เวลางานจริง (PT) = <b>${fmt(T.ptSec)} วินาที</b>`);
+  if (T.pltDays != null) f.push(`Lead time รวม (PLT) = <b>${fmt(T.pltDays, 2)} วัน</b> · เวลางานจริง (PT) = <b>${fmtMinSec(T.ptSec) || '—'}</b> · <b style="color:#dc2626">MCT = ${fmtMct(T.pltDays, T.ptSec) || '—'}</b>`);
   if (T.vaPct != null) f.push(`สัดส่วนงานที่สร้างคุณค่า <b>%VA = ${fmt(T.vaPct, 2)}%</b> — เวลาที่เหลือคือของรออยู่ในสายการผลิต`);
   if (I.ttSec != null) f.push(`Takt time = <b>${fmt(I.ttSec, 1)} วินาที</b> (ลูกค้าต้องการ ${fmt(I.orderDay)} ชิ้น/วัน)`);
 
