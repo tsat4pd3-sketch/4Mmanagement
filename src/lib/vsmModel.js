@@ -162,7 +162,8 @@ export function buildVsmModel(input) {
   } = input;
 
   const warnings = [];
-  const W = (level, text) => warnings.push({ level, text });
+  // code = ตัวจับคู่ให้ worklist (lib/vsmGaps.js) ผูกลิงก์ "ไปแก้ที่ไหน" — code ใหม่ต้องไปเติม FIX ที่นั่นด้วย
+  const W = (level, text, code = null) => warnings.push({ level, text, code });
 
   const sessionsByLine = {}, downtimesByLine = {};
   sessions.forEach(s => { (sessionsByLine[s.line_name] ||= []).push(s); });
@@ -170,14 +171,14 @@ export function buildVsmModel(input) {
 
   // ── ความต้องการลูกค้า + TT ────────────────────────────────────────────────
   const demand = demandOf({ forecasts, orders: shippingOrders, monthKey, workingDays });
-  if (!demand.perMonth) W('error', 'ไม่มี forecast/ออเดอร์ของพาร์ทนี้ในเดือนที่เลือก — TT และ PLT คำนวณไม่ได้');
-  else if (demand.source === 'order') W('warn', 'ไม่มี forecast — ใช้ยอดออเดอร์จริงที่ส่งในช่วงแทน');
-  if (!workingDays) W('error', 'ปฏิทินบริษัทยังไม่ได้ตั้งวันทำงานของเดือนนี้');
+  if (!demand.perMonth) W('error', 'ไม่มี forecast/ออเดอร์ของพาร์ทนี้ในเดือนที่เลือก — TT และ PLT คำนวณไม่ได้', 'no_demand');
+  else if (demand.source === 'order') W('warn', 'ไม่มี forecast — ใช้ยอดออเดอร์จริงที่ส่งในช่วงแทน', 'demand_from_order');
+  if (!workingDays) W('error', 'ปฏิทินบริษัทยังไม่ได้ตั้งวันทำงานของเดือนนี้', 'no_working_days');
 
   const fgSess = sessionsByLine[fg.line_name] || [];
   const { atSec: lineAt } = availableTimeSec({ sessions: fgSess, breakPolicies, processType: fg.process_type });
   const atSec = num(overrides.__at_sec) ?? lineAt;
-  if (!atSec) W('error', `ไม่มีกะที่ปิดแล้วของไลน์ ${fg.line_name || '—'} ในช่วงที่เลือก — AT/TT/%OEE คำนวณไม่ได้`);
+  if (!atSec) W('error', `ไม่มีกะที่ปิดแล้วของไลน์ ${fg.line_name || '—'} ในช่วงที่เลือก — AT/TT/%OEE คำนวณไม่ได้`, 'no_sessions');
 
   const ttSec = atSec && demand.perDay ? round(atSec / demand.perDay, 1) : null;
 
@@ -186,8 +187,8 @@ export function buildVsmModel(input) {
 
   // ── แตกโครงสาย ────────────────────────────────────────────────────────────
   const fgSteps = stepsFor(fg.mat_no, routings, products);
-  if (!fgSteps.length) W('error', `${fg.mat_no} ยังไม่ได้ลงลำดับกระบวนการ และไม่มีไลน์ผลิตใน Product Master`);
-  else if (fgSteps.some(s => s.is_fallback)) W('warn', `${fg.mat_no} ยังไม่ได้ลงลำดับกระบวนการ — ใช้ไลน์เดียวจาก Product Master ไปก่อน (ลงที่ Product Master → 🔀 Routing)`);
+  if (!fgSteps.length) W('error', `${fg.mat_no} ยังไม่ได้ลงลำดับกระบวนการ และไม่มีไลน์ผลิตใน Product Master`, 'no_routing');
+  else if (fgSteps.some(s => s.is_fallback)) W('warn', `${fg.mat_no} ยังไม่ได้ลงลำดับกระบวนการ — ใช้ไลน์เดียวจาก Product Master ไปก่อน (ลงที่ Product Master → 🔀 Routing)`, 'fallback_routing');
 
   const children = bomItems.map(b => {
     const prod = products.find(p => p.mat_no === b.mat_no);
@@ -216,8 +217,8 @@ export function buildVsmModel(input) {
     // ❌ ระบบยังไม่เก็บรอบส่ง supplier (7:1:1) — รับจากที่คนกรอกในใบเท่านั้น ห้ามเดา
     deliveryPattern: (overrides.__supplier_pattern || {})[c.matNo] || null,
   }));
-  if (suppliers.length && suppliers.every(s => s.qty == null)) W('warn', 'ยังไม่มียอดคงคลังของพาร์ทซื้อนอกในระบบ — ▲ ฝั่ง supplier จะว่าง');
-  if (suppliers.length) W('info', 'รอบส่งของ supplier (เช่น 7:1:1) ระบบยังไม่เก็บ — กรอกเองในใบ');
+  if (suppliers.length && suppliers.every(s => s.qty == null)) W('warn', 'ยังไม่มียอดคงคลังของพาร์ทซื้อนอกในระบบ — ▲ ฝั่ง supplier จะว่าง', 'no_supplier_stock');
+  if (suppliers.length) W('info', 'รอบส่งของ supplier (เช่น 7:1:1) ระบบยังไม่เก็บ — กรอกเองในใบ', 'supplier_pattern');
 
   // ── สายหลัก: ขั้นของลูกสายหลัก + ขั้นของ FG ───────────────────────────────
   const chain = [
@@ -225,9 +226,16 @@ export function buildVsmModel(input) {
     ...fgSteps.map(s => boxOf(s, fg.mat_no)),
   ];
   chain.forEach(b => {
-    if (b.ct == null) W('warn', `ขั้น "${b.name}" ยังไม่มี Cycle Time — ตั้งที่ Product Master หรือกรอกทับในใบ`);
-    if (b.isOutsourced && !b.vendor) W('warn', `ขั้น "${b.name}" เป็นงานจ้างนอกแต่ยังไม่ได้ระบุผู้รับจ้าง`);
+    if (b.ct == null) W('warn', `ขั้น "${b.name}" ยังไม่มี Cycle Time — ตั้งที่ Product Master หรือกรอกทับในใบ`, 'no_ct');
+    if (b.isOutsourced && !b.vendor) W('warn', `ขั้น "${b.name}" เป็นงานจ้างนอกแต่ยังไม่ได้ระบุผู้รับจ้าง`, 'no_vendor');
   });
+  // %OEE / C/O ที่ยังไม่มีข้อมูล — รวมเป็นรายการเดียวต่อเรื่อง (จาก audit 2026-08-20: ไลน์ปั๊มยังไม่เปิดกะ
+  // + C/O มีเฉพาะไลน์ที่จัดหมวด setup แล้ว) · จ้างนอกไม่นับ (ไม่มีกะ/ดาวไทม์ของเราให้วัด)
+  const listNames = arr => arr.slice(0, 3).map(b => `"${b.name}"`).join(', ') + (arr.length > 3 ? ` +อีก ${arr.length - 3} ขั้น` : '');
+  const noOee = chain.filter(b => !b.isOutsourced && b.oeePct == null);
+  if (noOee.length) W('warn', `ขั้น ${listNames(noOee)} ยังไม่มี %OEE — ไลน์ยังไม่มีกะที่ปิดแล้วในเดือนที่เลือก`, 'no_oee');
+  const noSetup = chain.filter(b => !b.isOutsourced && b.setupSec == null);
+  if (noSetup.length) W('info', `C/O (เวลาตั้งเครื่อง) ยังไม่มีข้อมูลในขั้น ${listNames(noSetup)} — ต้องมี downtime ที่จัดหมวด "ตั้งเครื่อง (setup)" หรือกรอกทับในตาราง`, 'no_setup');
 
   // ── คงคลังระหว่างทาง ──────────────────────────────────────────────────────
   const invDays = qty => (demand.perDay && qty != null ? round(qty / demand.perDay, 2) : null);
@@ -259,7 +267,7 @@ export function buildVsmModel(input) {
     manual: false, kanban: kbOf(fg.mat_no) });
 
   const missingWip = inventories.filter(v => v.manual && v.qty == null).length;
-  if (missingWip) W('warn', `คงคลังระหว่างทาง ${missingWip} จุดยังไม่ได้กรอก — PLT จะต่ำกว่าความจริง (กรอกในตารางด้านล่าง)`);
+  if (missingWip) W('warn', `คงคลังระหว่างทาง ${missingWip} จุดยังไม่ได้กรอก — PLT จะต่ำกว่าความจริง (กรอกในตารางด้านล่าง)`, 'missing_wip');
 
   // ── บันไดเวลา / PLT / PT / %VA ────────────────────────────────────────────
   const ptSec = chain.reduce((s, b) => s + (b.ct || 0), 0);

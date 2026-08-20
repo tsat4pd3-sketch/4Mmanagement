@@ -8,6 +8,7 @@
  *    หน้านี้ทำหน้าที่ "โหลดข้อมูล + แสดงผล" เท่านั้น ห้ามคำนวณ OEE/CT/AT เองที่นี่
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -19,6 +20,8 @@ import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCa
 import { groupRoutings } from '../utils/routing';
 import { buildCtMap } from '../utils/oee';
 import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
+import { buildVsmGaps } from '../lib/vsmGaps';
+import { matchDocSet } from '../utils/peLink';
 import { buildVsmLive, LIVE_STATUS } from '../lib/vsmLive';
 import { printVsm } from '../lib/vsmPrint';
 import { printVsmA3 } from '../lib/vsmA3Print';
@@ -64,6 +67,7 @@ export default function VSM() {
   const [lines, setLines] = useState([]);
   const [products, setProducts] = useState([]);
   const [savedMaps, setSavedMaps] = useState([]);
+  const [peSets, setPeSets] = useState([]);           // ชุด PFC/FMEA/CP (Main) — worklist ใช้ชี้ "เสนอ routing จาก PFC"
 
   const [matNo, setMatNo] = useState('');
   const [monthKey, setMonthKey] = useState(monthKeyNow());
@@ -101,6 +105,8 @@ export default function VSM() {
     supabaseDR.from('dr_products')
       .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active')
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
+    supabase.from('pe_doc_sets').select('id, part_no, mat_no, line_name, status')
+      .then(({ data }) => setPeSets((data || []).filter(s => s.status !== 'obsolete')));
     loadCompanyCalendar();
   }, []);
 
@@ -131,6 +137,13 @@ export default function VSM() {
     fgOptions.forEach(p => { (g[p.line_name || '— ไม่ระบุไลน์'] ||= []).push(p); });
     return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
   }, [fgOptions]);
+
+  // ชุด PFC (/pe-docs) ที่ตรงกับ FG นี้ — worklist ใช้ชี้ปุ่ม "เสนอ routing จาก PFC" ให้ตรงชุด
+  const peSetForFg = useMemo(() => {
+    const fg = products.find(p => p.mat_no === matNo);
+    if (!fg || !peSets.length) return null;
+    return peSets.find(s => s.mat_no === fg.mat_no) || matchDocSet(peSets, fg.p_no, fg.line_name).set;
+  }, [matNo, products, peSets]);
 
   const loadSaved = useCallback(async () => {
     const { data } = await supabaseDR.from('vsm_maps')
@@ -575,17 +588,41 @@ export default function VSM() {
       )}
 
       {model && <>
-        {/* ── ช่องที่ระบบไม่มีข้อมูล (ห้ามเดาแทนผู้ใช้) ── */}
-        {!!model.warnings.length && (
-          <div style={{ marginBottom: 12, display: 'grid', gap: 6 }}>
-            {model.warnings.map((w, i) => {
-              const st = WARN_STYLE[w.level] || WARN_STYLE.info;
-              return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
-                {st.icon} {w.text}
-              </div>;
-            })}
-          </div>
-        )}
+        {/* ── 📋 worklist "ข้อมูลที่ VSM ยังขาด" (คำขอ user 2026-08-20 หลัง audit) ──
+            แทนที่บล็อก warning เดิม: ข้อความชุดเดียวกัน (จาก model.warnings — single source)
+            + ปุ่มลิงก์ "ไปลงข้อมูลที่ไหน" จาก lib/vsmGaps.js · ครบแล้วก็ต้องบอก ห้ามซ่อนแผง */}
+        {(() => {
+          const gaps = buildVsmGaps(model, { peSet: peSetForFg });
+          return (
+            <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: gaps.length ? 8 : 0 }}>
+                📋 ข้อมูลที่ VSM ยังขาด{gaps.length ? ` · ${gaps.length} รายการ` : ''}
+                {gaps.length > 0 && <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--muted)' }}> — กดปุ่มท้ายรายการเพื่อไปลงข้อมูลที่ต้นทาง</span>}
+              </div>
+              {!gaps.length && <div style={{ fontSize: 12.5, color: 'var(--accent)', marginTop: 6 }}>✅ ข้อมูลครบทุกช่องของใบนี้แล้ว</div>}
+              <div style={{ display: 'grid', gap: 6 }}>
+                {gaps.map((g, i) => {
+                  const st = WARN_STYLE[g.level] || WARN_STYLE.info;
+                  return (
+                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ flex: '1 1 340px' }}>{st.icon} {g.text}</span>
+                      <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {g.actions.map((a, j) => a.to ? (
+                          <Link key={j} to={a.to}
+                            style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 10px', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                            {a.label} →
+                          </Link>
+                        ) : (
+                          <span key={j} style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{a.label}</span>
+                        ))}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── ผัง ── */}
         <div style={{ ...S.card, padding: 8, marginBottom: 14, overflowX: 'auto' }}>

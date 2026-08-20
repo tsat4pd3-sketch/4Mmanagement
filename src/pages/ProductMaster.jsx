@@ -9,6 +9,7 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
+import useTabParam from '../utils/useTabParam';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -192,7 +193,8 @@ export default function ProductMaster() {
   const canCreate = can('products', 'create', role);
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
-  const [mainTab, setMainTab] = useState('products');
+  // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
+  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'export'], 'products');
 
   /* ── state ── */
   const [items,   setItems]   = useState([]);
