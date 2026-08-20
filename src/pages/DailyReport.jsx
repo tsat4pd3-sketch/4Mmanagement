@@ -274,6 +274,12 @@ function LiveTab({ role }) {
   const [defectLogs, setDefectLogs]     = useState([]);
   const [showDefect, setShowDefect]     = useState(false);
   const [defectForm, setDefectForm]     = useState({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
+  /* ใบสแกนใบไหนกางช่อง "ทำได้กี่ชิ้น" อยู่ — ค่าเริ่มต้นพับหมด
+     เหตุผล: ระบบดึง (kanban) เปิดค้างทีละ 20-30 ใบได้ แต่ "ใบที่ทำค้างจริง" มีไม่กี่ใบ
+     ที่เหลือคือยังไม่เริ่ม (ยกเต็มใบ) หรือเดี๋ยวสแกนปิดเต็มใบ → กางช่องทุกใบ = จอรก
+     และชวนให้เข้าใจผิดว่าต้องกรอกครบทุกใบ (หัวหน้าแผนกทักจริง 2026-08-20) */
+  const [qtyEditIds, setQtyEditIds]     = useState(() => new Set());
+  const openQtyEdit = (id) => setQtyEditIds(prev => new Set(prev).add(id));
   const [savingDefect, setSavingDefect] = useState(false);
 
   // SV review-before-approve modal for pending_close requests
@@ -2711,8 +2717,11 @@ function LiveTab({ role }) {
                       {outOpen.length > 0 && <>ใบที่ยังไม่ปิด <b style={{ color: 'var(--text2)' }}>{openQty}</b> ชิ้น ({outOpen.length} ใบ)</>}
                     </div>
                     {unfilled > 0 && (
-                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3 }}>
-                        ⚠ {unfilled} ใบยังไม่ได้กรอกยอดที่ทำได้ — ตัวเลขจึงนับเต็มใบไว้ก่อน กรอกในการ์ดเพื่อให้แม่นขึ้น
+                      /* เดิมเขียนว่า "N ใบยังไม่ได้กรอกยอด" → อ่านแล้วเหมือนต้องไล่กรอกให้ครบทุกใบ
+                         ความจริงคือใบที่ทำค้างมีไม่กี่ใบ ที่เหลือยกเต็มใบซึ่งถูกอยู่แล้ว (2026-08-20) */
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                        นับเต็มใบไว้ก่อน {unfilled} ใบ — <b style={{ color: 'var(--text2)' }}>ถ้ามีใบที่ทำค้างอยู่ กรอกเฉพาะใบนั้น</b>
+                        {' '}(ปุ่ม ✏️ ในการ์ด) · ใบที่ยังไม่เริ่ม/จะสแกนปิดเต็มใบ ไม่ต้องกรอก
                       </div>
                     )}
                   </div>
@@ -2875,7 +2884,18 @@ function LiveTab({ role }) {
                       {/* แถวอัพเดทยอดสะสม — ใบ manual กรอกทุกช่วงเบรคตาม break policy (บังคับ)
                           ใบสแกน กรอกได้แบบไม่บังคับ เพื่อให้รู้ยอดที่จะส่งต่อกะหน้าก่อนถึงตอนปิดกะ
                           (ใบสแกนยังปิดด้วยการสแกนเหมือนเดิม — ไม่มีปุ่มปิดด้วยมือ กันเสีย traceability) */}
-                      {(manualOpen || scanOpen) && canScan && (
+                      {/* ใบสแกนที่ยังไม่กาง = โชว์แค่ปุ่มเล็ก ไม่กินที่ (กรอกเฉพาะใบที่ทำค้างจริง) */}
+                      {scanOpen && canScan && !qtyEditIds.has(o.id) && !(o.qty_actual > 0) && (
+                        <div style={{ paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
+                          <button onClick={() => openQtyEdit(o.id)}
+                            title="ใบนี้ทำค้างอยู่? กรอกยอดที่ทำได้ เพื่อให้ยอดส่งต่อกะหน้าแม่นขึ้น (ไม่บังคับ)"
+                            style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 7, padding: '3px 10px',
+                              fontSize: 11, fontWeight: 700, color: 'var(--muted)', cursor: 'pointer' }}>
+                            ✏️ ใบนี้ทำค้าง — กรอกยอด
+                          </button>
+                        </div>
+                      )}
+                      {(manualOpen || (scanOpen && (qtyEditIds.has(o.id) || o.qty_actual > 0))) && canScan && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
                             {manualOpen ? 'ยอดสะสมตอนนี้:' : 'ทำได้แล้วกี่ชิ้น:'}
@@ -2896,9 +2916,7 @@ function LiveTab({ role }) {
                             </button>
                           )}
                           {scanOpen && (
-                            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-                              ไม่บังคับ — กรอกไว้ให้เห็นยอดที่จะส่งต่อกะหน้า · ปิดใบยังใช้สแกนเหมือนเดิม
-                            </span>
+                            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>ปิดใบยังใช้สแกนเหมือนเดิม</span>
                           )}
                         </div>
                       )}
