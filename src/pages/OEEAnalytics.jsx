@@ -1729,12 +1729,28 @@ export default function OEEAnalytics() {
 
       {/* ── OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" · เห็นเวลาที่หายไปกับแผน/ไม่ได้เปิดกะ (2026-08-04) ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'stretch' }}>
+        {/* OOE/TEEP ต่างจาก OEE ที่ "ตัวหาร" อย่างเดียว — กางตัวเศษ/ตัวหารให้เห็นเหมือน A/P/Q
+            (user 2026-08-20: "ให้สองค่านี้เห็นแบบ %A ด้วย") · สูตร = OEE × (รับภาระ ÷ ฐาน) */}
         <KpiCard label="OOE (Overall Operations Effectiveness)" value={kpi.ooe}
           color={kpi.ooe != null ? oeeColor(kpi.ooe) : undefined}
-          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)" />
+          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)"
+          calc={<>
+            รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ เวลากะ <b>{kpi.shiftMinTotal.toLocaleString()}</b> น.<br />
+            = <b>{kpi.shiftMinTotal > 0 ? (kpi.netAvailMin / kpi.shiftMinTotal * 100).toFixed(1) : '—'}%</b> ของเวลากะ ×
+            OEE {kpi.oee ?? '—'}%
+          </>} />
         <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
           color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
-          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ × ${kpi.teepDays} วัน`} />
+          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ × ${kpi.teepDays} วัน`}
+          calc={<>
+            รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ ปฏิทิน <b>{kpi.calMin.toLocaleString()}</b> น.<br />
+            = <b>{kpi.calMin > 0 ? (kpi.netAvailMin / kpi.calMin * 100).toFixed(1) : '—'}%</b> ของเวลาที่มีทั้งหมด ×
+            OEE {kpi.oee ?? '—'}%
+            {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
+            </div>
+          </>} />
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', flex: '2 1 320px', minWidth: 260 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
           {kpi.shiftMinTotal > 0 ? (<>
