@@ -28,6 +28,10 @@ function toDateStr(d) {
 export default function ShiftOrganize() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
+  // 🏢 แก้ตารางกะ "หน่วยงานสนับสนุน" แยกคีย์ได้ — หัวหน้าทีมช่างตั้งกะแผนกตัวเองได้
+  // โดยไม่ได้สิทธิ์แตะกะไลน์ผลิต/override รายคน/ยุบกะ (migration 20260820_shift_schedule_edit_dept)
+  // ⚠️ `edit` ครอบ `edit_dept` เสมอ — คนเดิมจึงไม่มีอะไรเปลี่ยน
+  const canEditDept = canEdit || can('shift_schedule', 'edit_dept', role);
   const canDel  = canDelete('shift_schedule', 'edit', role);  // สิทธิ์ลบ/ยุบกะ แยกจากแก้ไข
 
   const [weekRef,   setWeekRef]   = useState(new Date());
@@ -221,7 +225,7 @@ export default function ShiftOrganize() {
 
   const deptTeamOf = (name) => (pendingDept[name] !== undefined ? pendingDept[name] : (weekDeptTeams[name] ?? null));
   const toggleDept = (name) => {
-    if (!canEdit) return;
+    if (!canEditDept) return;
     setPendingDept(p => ({ ...p, [name]: deptTeamOf(name) === 'A' ? 'B' : 'A' }));
   };
   const deptNoLineTotal = deptRows.reduce((s, d) => s + d.noLine, 0);
@@ -233,8 +237,9 @@ export default function ShiftOrganize() {
     const userId = userData?.user?.id;
 
     // ไลน์ที่ต้องเขียน = ที่แก้ (pending) + ไลน์ลูกที่ "ตามไลน์แม่" ซึ่งแม่อยู่ใน pending (cascade)
-    const affected = new Set(Object.keys(pending).map(k => Number(k)));
-    scopedLines.forEach(l => {
+    // ⚠️ กันชั้นที่สอง: ผู้ถือ edit_dept อย่างเดียว ห้ามเขียนแถวไลน์ผลิต (ปุ่มซ่อนอยู่แล้ว แต่ state อาจค้าง)
+    const affected = new Set(canEdit ? Object.keys(pending).map(k => Number(k)) : []);
+    if (canEdit) scopedLines.forEach(l => {
       const pid = parentIdOf(l.id);
       if (pid != null && !manualOf(l.id) && pending[pid] !== undefined) affected.add(l.id);
     });
@@ -250,7 +255,7 @@ export default function ShiftOrganize() {
     });
     // แถวของหน่วยงาน — line_id = null + dept_name = ชื่อแผนก (คนละ unique index กับไลน์)
     const deptRowsToSave = [];
-    Object.entries(pendingDept).forEach(([name, team]) => {
+    if (canEditDept) Object.entries(pendingDept).forEach(([name, team]) => {
       if (!team) return;
       for (const d of weekDates) {
         deptRowsToSave.push({ work_date: toDateStr(d), line_id: null, dept_name: name, day_team: team, created_by: userId });
@@ -384,7 +389,7 @@ export default function ShiftOrganize() {
         <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
           🗓 ตารางกะการทำงาน
         </h2>
-        {canEdit && pendingCount > 0 && (
+        {(canEdit || canEditDept) && pendingCount > 0 && (
           <button
             onClick={handleSave}
             disabled={isSaving}
@@ -401,15 +406,28 @@ export default function ShiftOrganize() {
            คนเลยเข้าใจว่าระบบพัง/ทำไม่เสร็จ = ความล้มเหลวแบบเงียบ) */}
       {!canEdit && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
-          🔒 <b>โหมดดูอย่างเดียว — บัญชีนี้ยังไม่มีสิทธิ์แก้ตารางกะ</b> จึงไม่มีปุ่ม ⇄ สลับ และปุ่มบันทึก
-          <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            ให้ admin เปิดสิทธิ์ <code>ตารางกะ: แก้กะ/override/ยุบกะ</code> (<code>shift_schedule:edit</code>)
-            ให้ role <b>{roleLabel(role)}</b> ที่หน้า <b>จัดการสิทธิ์ (/permissions)</b> → แท็บ <b>สิทธิ์การทำงาน</b>
-            <div style={{ marginTop: 3, opacity: 0.85 }}>
-              ค่าตั้งต้นของระบบให้เฉพาะ ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย / สิทธิ์ระดับส่วน —
-              role ที่เพิ่มเข้าระบบทีหลัง (เช่น ซ่อมบำรุง) จะยังไม่มีสิทธิ์นี้จนกว่าจะติ๊กเปิดเอง
-            </div>
-          </div>
+          {canEditDept ? (
+            <>
+              🏢 <b>บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”</b> (ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว
+              <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+                ถ้าต้องแก้กะไลน์ผลิต/override รายคน/ยุบกะด้วย ให้ admin เปิดสิทธิ์{' '}
+                <code>shift_schedule:edit</code> ให้ role <b>{roleLabel(role)}</b> เพิ่ม
+              </div>
+            </>
+          ) : (
+            <>
+              🔒 <b>โหมดดูอย่างเดียว — บัญชีนี้ยังไม่มีสิทธิ์แก้ตารางกะ</b> จึงไม่มีปุ่ม ⇄ สลับ และปุ่มบันทึก
+              <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+                ให้ admin เปิดสิทธิ์ <code>ตารางกะ: แก้กะ/override/ยุบกะ</code> (<code>shift_schedule:edit</code>)
+                หรือเฉพาะหน่วยงานสนับสนุน (<code>shift_schedule:edit_dept</code>)
+                ให้ role <b>{roleLabel(role)}</b> ที่หน้า <b>จัดการสิทธิ์ (/permissions)</b> → แท็บ <b>สิทธิ์การทำงาน</b>
+                <div style={{ marginTop: 3, opacity: 0.85 }}>
+                  ค่าตั้งต้นของระบบให้เฉพาะ ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย / สิทธิ์ระดับส่วน —
+                  role ที่เพิ่มเข้าระบบทีหลัง (เช่น ซ่อมบำรุง) จะยังไม่มีสิทธิ์นี้จนกว่าจะติ๊กเปิดเอง
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -540,7 +558,7 @@ export default function ShiftOrganize() {
                   <th style={{ minWidth: 120 }}>พนักงาน</th>
                   <th style={{ textAlign: 'center', minWidth: 130 }}>☀️ กะเช้า</th>
                   <th style={{ textAlign: 'center', minWidth: 130 }}>🌙 กะดึก</th>
-                  {canEdit && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
+                  {canEditDept && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
                 </tr>
               </thead>
               <tbody>
@@ -584,7 +602,7 @@ export default function ShiftOrganize() {
                           }}>Team {night}</span>
                         ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>}
                       </td>
-                      {canEdit && (
+                      {canEditDept && (
                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                           <button onClick={() => toggleDept(d.name)}
                             style={{
@@ -604,6 +622,18 @@ export default function ShiftOrganize() {
             </table>
           </div>
         </>
+      )}
+
+      {/* ⚠️ มีสิทธิ์แก้หน่วยงาน แต่ไม่มีแถวให้แก้ = ต้องอธิบายว่าทำไม ห้ามให้จอหายเฉยๆ
+          เหตุที่พบจริง: ถูกตั้ง profiles.sections ไว้ → แผนกขึ้นตรงฝ่าย (MTN/JIG/DIE) หลุด scope */}
+      {deptRows.length === 0 && canEditDept && role !== 'leader' && (
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 12px', marginBottom: 24, fontSize: 12.5, lineHeight: 1.65, color: 'var(--text2)' }}>
+          🏢 <b style={{ color: 'var(--text)' }}>ยังไม่มีหน่วยงานให้ตั้งกะ</b> — ตารางหน่วยงานลิสต์เฉพาะแผนกที่มีพนักงานอยู่จริง
+          {scopeSecs.length > 0
+            ? <> · บัญชีนี้ถูกจำกัดส่วนงาน (<b>{scopeSecs.join(', ')}</b>) จึงเห็นเฉพาะแผนกใต้ส่วนงานนั้น —
+                <b> แผนกที่ขึ้นตรงฝ่าย (MTN / JIG MTN / DIE MTN / QA) จะไม่โผล่</b> ให้ admin ล้างช่อง “ส่วนงาน” ของบัญชีนี้ที่หน้า <b>/add-user</b></>
+            : <> · ตรวจว่าพนักงานในแผนกกรอกช่อง “แผนก” ไว้แล้วหรือยัง ที่หน้า <b>ฐานข้อมูลพนักงาน (/operator)</b></>}
+        </div>
       )}
 
       {/* Individual Overrides */}
