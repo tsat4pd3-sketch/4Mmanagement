@@ -1,17 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
+import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 
-const KIND_LABEL = { division: 'Division / ฝ่าย', section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
+const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
   const [nodes, setNodes] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selDiv, setSelDiv] = useState(null);
   const [selSection, setSelSection] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [modal, setModal] = useState(null); // { kind, parentId, editing }
@@ -20,6 +20,8 @@ export default function OrgSetup() {
   const [formCostCenter, setFormCostCenter] = useState('');
   const [formRefLineId, setFormRefLineId] = useState('');
   const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
+  const [formDivision, setFormDivision] = useState('');        // ฝ่าย — ติดที่ node ระดับบนสุด ลูกตกทอด
+  const [divReady, setDivReady] = useState(0);
   const [saving, setSaving] = useState(false);
   // ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup) — เก็บใน section_signers keyed by production_lines.section
   const [signersMap, setSignersMap] = useState({});   // sectionKey → {manager_name, ta_name, hrm_name}
@@ -47,12 +49,7 @@ export default function OrgSetup() {
   };
 
   const ORPHAN = '__ORPHAN__';
-  const ORPHAN_DIV = '__NODIV__';
-  const divisions = useMemo(() => nodes.filter(n => n.kind === 'division'), [nodes]);
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
-  // ส่วนงานที่ยังไม่ได้ระบุฝ่าย = worklist ให้คนมาจัด **ห้ามซ่อน** (pattern เดียวกับ 'ขึ้นตรงฝ่าย' ของแผนก)
-  const orphanSections = useMemo(() => sections.filter(s2 => !s2.parent_id), [sections]);
-  const sectionsOf = (divId) => divId === ORPHAN_DIV ? orphanSections : sections.filter(s2 => s2.parent_id === divId);
   const allDepts = useMemo(() => nodes.filter(n => n.kind === 'department'), [nodes]);
   const orphanDepts = useMemo(() => nodes.filter(n => n.kind === 'department' && !n.parent_id), [nodes]);
   const deptsOf = (sectionId) => sectionId === ORPHAN
@@ -68,7 +65,6 @@ export default function OrgSetup() {
   const isLinkedLine = (node) => node?.kind === 'line' && !!node?.ref_line_id;
 
   const parentOptionsFor = (kind) => {
-    if (kind === 'section') return divisions.map(d => ({ id: d.id, label: d.name }));
     if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
     if (kind === 'line') return allDepts.map(d => {
       const sec = sections.find(s => s.id === d.parent_id);
@@ -76,16 +72,11 @@ export default function OrgSetup() {
     });
     return [];
   };
-  const PARENT_LABEL = { section: 'อยู่ภายใต้ ฝ่าย (Division)', department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
+  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
 
   useEffect(() => {
-    if (!selDiv && divisions.length) setSelDiv(divisions[0].id);
-  }, [divisions]); // eslint-disable-line
-  const visibleSections = selDiv ? sectionsOf(selDiv) : sections;
-  useEffect(() => {
-    if (!selSection && visibleSections.length) setSelSection(visibleSections[0].id);
-    if (selSection && selSection !== ORPHAN && !visibleSections.some(v => v.id === selSection)) setSelSection(visibleSections[0]?.id ?? null);
-  }, [selDiv, nodes]); // eslint-disable-line
+    if (!selSection && sections.length) setSelSection(sections[0].id);
+  }, [sections]); // eslint-disable-line
 
   const currentDepts = selSection ? deptsOf(selSection) : [];
   useEffect(() => {
@@ -121,15 +112,17 @@ export default function OrgSetup() {
     setSgSaving(false);
   };
 
+  useEffect(() => { loadDivisions().then(() => setDivReady(v => v + 1)); }, []);
+
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
-    setFormLaborType('direct');
+    setFormLaborType('direct'); setFormDivision('');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
     setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(lineCostCenter(node));
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
-    setFormLaborType(node.labor_type || 'direct');
+    setFormLaborType(node.labor_type || 'direct'); setFormDivision(node.division || '');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
 
@@ -158,6 +151,8 @@ export default function OrgSetup() {
       // ประเภทแรงงาน — ตั้งได้ทั้ง section และ department (ช่างส่วนใหญ่อยู่ระดับแผนก)
       // พนักงาน derive จาก department ก่อน แล้ว section
       ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
+      // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
+      ...(['section', 'department'].includes(modal.kind) ? { division: formDivision || null } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -214,51 +209,26 @@ export default function OrgSetup() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-          {/* Divisions / ฝ่าย — ชั้นบนสุดตามผังจริง ORG001 Rev.09 */}
-          <div style={colStyle} className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DIVISION / ฝ่าย ({divisions.length})</strong>
-              <button className="tbtn" onClick={() => openCreate('division', null)} style={addBtnSt}>➕</button>
-            </div>
-            {divisions.map(dv => (
-              <div key={dv.id} style={itemStyle(selDiv === dv.id)} onClick={() => setSelDiv(dv.id)}>
-                <span style={{ fontSize: 13, color: dv.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: dv.is_active ? 'none' : 'line-through' }}>
-                  {dv.name}
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({sectionsOf(dv.id).length} ส่วน)</span>
-                  {dv.cost_center && <CostBadge code={dv.cost_center} />}
-                </span>
-                <RowActions node={dv} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
-              </div>
-            ))}
-            {!divisions.length && <Empty text="ยังไม่มีฝ่าย" />}
-            {/* ส่วนงานที่ยังไม่ระบุฝ่าย — worklist ห้ามซ่อน */}
-            <div style={itemStyle(selDiv === ORPHAN_DIV)} onClick={() => setSelDiv(ORPHAN_DIV)}>
-              <span style={{ fontSize: 13, color: orphanSections.length ? '#f59e0b' : 'var(--text2)' }}>
-                {orphanSections.length ? '⚠️' : '✓'} ยังไม่ระบุฝ่าย
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanSections.length} ส่วน)</span>
-              </span>
-            </div>
-          </div>
-
           {/* Sections */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({visibleSections.length})</strong>
-              <button className="tbtn" onClick={() => openCreate('section', selDiv === ORPHAN_DIV ? null : selDiv)} style={addBtnSt}>➕</button>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
+              <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
             </div>
             <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
-            {visibleSections.map(s => (
+            {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
                   {s.name}
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
                   {s.cost_center && <CostBadge code={s.cost_center} />}
                   <LaborBadge type={s.labor_type} />
+                  <DivBadge node={s} nodes={nodes} />
                 </span>
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
             ))}
-            {!visibleSections.length && <Empty text="ฝ่ายนี้ยังไม่มี Section" />}
+            {!sections.length && <Empty text="ยังไม่มี Section" />}
             <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
               <span style={{ fontSize: 13, color: 'var(--text2)' }}>
                 🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
@@ -281,6 +251,7 @@ export default function OrgSetup() {
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
                   <LaborBadge type={d.labor_type} />
+                  <DivBadge node={d} nodes={nodes} />
                 </span>
                 <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -390,6 +361,19 @@ export default function OrgSetup() {
                   </div>
                 </div>
               )}
+              {['section', 'department'].includes(modal.kind) && (
+                <div>
+                  <label style={labelSt}>ฝ่าย (Division)</label>
+                  <select value={formDivision} onChange={e => setFormDivision(e.target.value)}>
+                    <option value="">— ตกทอดจากตัวแม่ / ยังไม่ระบุ —</option>
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
+                    {modal.parentId ? ' (ตัวนี้มีแม่อยู่แล้ว ปล่อยว่างได้)' : ''}
+                  </div>
+                </div>
+              )}
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
@@ -429,6 +413,24 @@ function CostBadge({ code }) {
   return (
     <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
+    </span>
+  );
+}
+
+/** ป้ายฝ่าย — ตัวที่ไม่ได้ติดเองจะโชว์ค่าที่ตกทอดจากแม่แบบจาง (ให้เห็นว่าผลลัพธ์จริงคืออะไร) */
+function DivBadge({ node, nodes }) {
+  const own = node.division || null;
+  const eff = own || divisionOfNode(node.id, nodes);
+  if (!eff) return null;
+  const m = divisionsSync().find(d => d.code === eff);
+  return (
+    <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
+      style={{
+        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 999,
+        border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
+        color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
+      }}>
+      {m?.icon} {m?.label || eff}{own ? '' : ' (ตกทอด)'}
     </span>
   );
 }

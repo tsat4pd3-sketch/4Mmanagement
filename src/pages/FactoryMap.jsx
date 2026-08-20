@@ -187,7 +187,11 @@ const expandHull = (pts, f = 1.045) => {
    ประมาณขนาดกล่องจากความยาวข้อความ (วัดของจริงตอนคำนวณ layout ไม่ได้) แล้ว
    **กำหนด width ให้ป้ายเท่าที่จองไว้** → พื้นที่ที่จองกับที่วาดจริงตรงกันเสมอ
    (pattern เดียวกับ de-overlap ป้ายประเทศใน WorldFactoryMap) */
-const estLabelPx = (name, txt, big, plain) => {
+/* การ์ด KPI พลังงาน — ขนาดคงที่ (ไม่ขึ้นกับความยาวข้อความ) เพราะเลขใหญ่ + sparkline กินที่ตายตัว
+   ทีมส่งภาพอ้างอิงมา (โรงงาน 3D + การ์ด kW ลอยเหนืออุปกรณ์) → โครงการ์ด: ชื่อ / เลขใหญ่+หน่วย / %เทียบ / กราฟจิ๋ว */
+const KPI_W = 152, KPI_H = 68;
+const estLabelPx = (name, txt, big, plain, kpi) => {
+  if (kpi) return { w: KPI_W, h: KPI_H };
   const nf = big ? 8.6 : 7.8, vf = big ? 7.4 : 7.0;   // px ต่อตัวอักษร (ตัวหนา Sarabun)
   // plain = ข้อความล้วนวางในกรอบไลน์ตัวเอง (ไม่มีการ์ด/พื้นหลัง) → เล็กกว่าเยอะ ใส่ข้อมูลได้ครบกว่า
   if (plain) return { w: Math.max(40, (name || '').length * nf, (txt || '').length * vf) + 6, h: txt ? 30 : 16 };
@@ -195,6 +199,19 @@ const estLabelPx = (name, txt, big, plain) => {
     w: Math.max(72, (name || '').length * nf, (txt || '').length * vf) + 22,
     h: txt ? (big ? 42 : 37) : (big ? 26 : 23),
   };
+};
+/** กราฟจิ๋วบนการ์ด KPI — inline SVG ไม่ใช้ lib (การ์ดเล็กมาก ลาก Recharts มาไม่คุ้ม)
+ *  ต้องมีอย่างน้อย 2 จุดถึงจะเป็นเส้น · จุดเดียว = ไม่วาด (ลากเส้นแบนๆ หลอกว่า "ทรงตัว") */
+const Spark = ({ data, color, w = 46, h = 16 }) => {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data), min = Math.min(...data), span = max - min || 1;
+  const pts = data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / span) * h}`).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+      <circle cx={w} cy={h - ((data[data.length - 1] - min) / span) * h} r="1.9" fill={color} />
+    </svg>
+  );
 };
 const boxHit = (a, b, pad = 0.35) =>
   a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y;
@@ -636,10 +653,19 @@ export default function FactoryMap({ setupMode = false }) {
     for (const r of data || []) {
       if (r.scope_kind === 'plant') continue;
       if (r.month_key !== cur && r.month_key !== prev) continue;
-      const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null });
+      const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null, series: [] });
       if (r.month_key === cur) { o.qty = Number(r.qty) || 0; o.cost = Number(r.cost) || 0; o.source = r.source; }
-      else o.prev = Number(r.qty) || 0;
+      else if (r.month_key === prev) o.prev = Number(r.qty) || 0;
     }
+    // ชุดข้อมูลย้อนหลังสำหรับกราฟจิ๋วบนการ์ด (เรียงเก่า→ใหม่ · เดือนที่ไม่มีข้อมูล = ข้าม ไม่เติม 0)
+    const seriesOf = {};
+    for (const r of data || []) {
+      if (r.scope_kind === 'plant' || r.qty == null || r.month_key > cur) continue;
+      (seriesOf[r.scope_name] ||= []).push({ mk: r.month_key, v: Number(r.qty) || 0 });
+    }
+    Object.entries(seriesOf).forEach(([n, arr]) => {
+      if (out[n]) out[n].series = arr.sort((a, b) => a.mk.localeCompare(b.mk)).map(x => x.v);
+    });
     setEnergyMonth(cur);
     setEnergyStatus(out);
     // ⚠️ EF โหลดแยก best-effort — ยังไม่ apply migration C1 = ไม่มี tCO2e แต่ kWh ยังขึ้นปกติ
@@ -1100,7 +1126,7 @@ export default function FactoryMap({ setupMode = false }) {
       // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
       //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
       const en = energyStatus[n];
-      if (en) { agg.kwh = (agg.kwh || 0) + (en.qty || 0); agg.kwhPrev = (agg.kwhPrev || 0) + (en.prev || 0); agg.kwhCost = (agg.kwhCost || 0) + (en.cost || 0); agg.kwhSrc = agg.kwhSrc || en.source; }
+      if (en) { agg.kwh = (agg.kwh || 0) + (en.qty || 0); agg.kwhPrev = (agg.kwhPrev || 0) + (en.prev || 0); agg.kwhCost = (agg.kwhCost || 0) + (en.cost || 0); agg.kwhSrc = agg.kwhSrc || en.source; if (!agg.kwhSeries?.length) agg.kwhSeries = en.series || []; }
     });
     // โซน facility เอง: Supply Route = เครื่องในโซนนี้ down (open MO) มั้ย (มุมมองต่างจากไลน์ผลิตที่เป็น "ถูกจ่าย")
     if (isFac(name)) {
@@ -1294,7 +1320,7 @@ export default function FactoryMap({ setupMode = false }) {
       const x0 = Math.min(...xs), y0 = Math.min(...ys) / aspect;
       regionRect[r.line_name] = { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) / aspect - y0 };
     });
-    const place = (bbPts, big, levels, ownNames) => {
+    const place = (bbPts, big, levels, ownNames, kpi) => {
       const xs = bbPts.map(p => p[0]), ys = bbPts.map(p => p[1]);
       const x0 = Math.min(...xs), x1 = Math.max(...xs);
       const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
@@ -1307,7 +1333,7 @@ export default function FactoryMap({ setupMode = false }) {
            กรอบไลน์มีพื้นสีอ่อนอยู่แล้ว ไม่ต้องมีการ์ด/ขอบซ้อนอีก → ป้ายเล็กลงมาก
            วัดแล้ว: จอ 1800px มี 17/27 ใบลงในกรอบตัวเองได้ · 1250px ข้อมูลเต็มเพิ่ม 20→21
            และ "เหลือชื่ออย่างเดียว" ลดจาก 3 เหลือ 1 */
-        if (!big) {
+        if (!big && !kpi) {
           const { w: pw, h: ph } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, true);
           const w2 = Math.min(toN(pw), 34), h2 = toN(ph);
           const p2 = toN(2), bx2 = (x0 + x1) / 2 - w2 / 2;
@@ -1323,8 +1349,8 @@ export default function FactoryMap({ setupMode = false }) {
             }
           }
         }
-        const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big);
-        const w = Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
+        const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, false, kpi);
+        const w = kpi ? toN(wpx) : Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
         const cands = big
           ? [ // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
               { x: bx, y: y1 + g }, { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },
@@ -1369,8 +1395,12 @@ export default function FactoryMap({ setupMode = false }) {
         const levels = [{ name: r.line_name, txt: full }];
         if (sh !== full) levels.push({ name: r.line_name, txt: sh });
         if (levels[levels.length - 1].txt !== '') levels.push({ name: r.line_name, txt: '' });
-        const box = place(r.points, false, levels, new Set([r.line_name]));
-        if (box) out.region[r.id] = box; else out.hidden.push(r.line_name);
+        // ⚡ เฉพาะจุดที่ "มีค่าไฟจริง" ถึงได้การ์ดใหญ่ — ที่เหลือคงป้ายเล็กเหมือนเดิม
+        //    (ถ้าให้ทุกกรอบเป็นการ์ดใหญ่ ผังจะเต็มไปด้วยการ์ด "ยังไม่กรอก" แล้วชนกันจนซ่อนเพียบ
+        //     ภาพอ้างอิงเองก็มีการ์ดแค่ 4 ใบบนผังทั้งโรง)
+        const isKpi = metric === 'energy' && st.kwh != null;
+        const box = place(r.points, false, isKpi ? [levels[0]] : levels, new Set([r.line_name]), isKpi);
+        if (box) out.region[r.id] = { ...box, kpi: isKpi }; else out.hidden.push(r.line_name);
       });
     return out;
     // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
@@ -1663,6 +1693,41 @@ export default function FactoryMap({ setupMode = false }) {
               const posStyle = box
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
                 : { left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%, 2px)', maxWidth: '30%' };
+              /* ⚡ การ์ด KPI พลังงาน — โครงตามภาพอ้างอิงที่ทีมส่งมา (การ์ด kW ลอยเหนืออุปกรณ์บนผังโรงงาน)
+                 ชื่อจุด (เล็ก) / เลขใหญ่ + หน่วย / ป้าย %เทียบเดือนก่อน / กราฟจิ๋วย้อนหลัง
+                 ⚠️ เฉพาะจุดที่มีค่าไฟจริง — จุดที่ยังไม่กรอกคงป้ายเล็กเหมือนเดิม ไม่งั้นผังเต็มไปด้วยการ์ดเปล่า */
+              if (box?.kpi) {
+                const d = energyDelta(st);
+                const dCol = d == null ? 'rgba(255,255,255,0.55)' : d <= -5 ? '#22c55e' : d > 10 ? '#ef4444' : 'rgba(255,255,255,0.75)';
+                return (
+                  <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                    <div style={{
+                      background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
+                      border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
+                      borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
+                      textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                    }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
+                        {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
+                        {st.isFac ? '🔧 ' : ''}{r.line_name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
+                        <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtKwh(st.kwh)}
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
+                        <span style={{ marginLeft: 'auto' }}><Spark data={st.kwhSeries} color={meta.color} /></span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2 }}>
+                        <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
+                        {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· 🌱 {fmtTco2e(st.kwhCo2)} t</span>}
+                        {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
                   {/* ป้ายที่ลงในกรอบไลน์ตัวเองได้ = ข้อความล้วน ไม่มีการ์ด/ขอบ (กรอบมีพื้นสีอ่อนอยู่แล้ว
@@ -1865,8 +1930,12 @@ export default function FactoryMap({ setupMode = false }) {
               สถานะ: <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
-              {Object.entries(METRICS).map(([k, m]) => {
-                const skip = st.isFac && m.facilityNA; const c = CAT[skip ? "idle" : m.cat(st)]; const t = skip ? (st.die ? "🔨 คลังแม่พิมพ์" : "🔧 Facility") : m.text(st); const isCur = k === metric;
+              {/* ⚠️ โซน utility/facility ไม่ใช่ไลน์ผลิต — metric ผลิต (ยอดผลิต/OEE/DT/ของเสีย/คน) ไม่มีความหมาย
+                  ของเดิมโชว์ครบ 7 แถวโดย 5 แถวเขียนว่า "🔧 Facility" เฉยๆ = การ์ดยาวแต่ไม่มีข้อมูล
+                  (user ทัก 2026-08-20 "box card จุดที่เป็นระบบ utility มันโชว์หลาย")
+                  → ตัดแถวที่ N/A ออก แล้ว **บอกด้วยบรรทัดเดียวว่าตัดอะไรไป** (ห้ามหายเงียบ) */}
+              {Object.entries(METRICS).filter(([, m]) => !(st.isFac && m.facilityNA)).map(([k, m]) => {
+                const c = CAT[m.cat(st)]; const t = m.text(st); const isCur = k === metric;
                 return (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     background: isCur ? `${c.color}22` : 'var(--bg3)', border: isCur ? `1px solid ${c.color}55` : '1px solid var(--border2)',
@@ -1895,6 +1964,12 @@ export default function FactoryMap({ setupMode = false }) {
                 );
               })}
             </div>
+            {st.isFac && (
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+                {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน (utility)'} — ไม่ใช่ไลน์ผลิต
+                จึงไม่มี {Object.values(METRICS).filter(m => m.facilityNA).map(m => m.label.replace(/^\S+\s/, '')).join(' / ')}
+              </div>
+            )}
             <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 9, textAlign: 'center', fontWeight: 700 }}>
               {hasFloor ? '🏭 คลิกเพื่อเปิดผังไลน์ + พนักงาน' : 'คลิกเพื่อดูรายละเอียด + แยกไลน์ย่อย'}
             </div>
@@ -2277,8 +2352,9 @@ export default function FactoryMap({ setupMode = false }) {
 
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
-                {Object.entries(METRICS).map(([k, m]) => {
-                  const skip = st.isFac && m.facilityNA; const cat = skip ? "idle" : m.cat(st); const meta = CAT[cat]; const txt = skip ? (st.die ? "🔨 คลังแม่พิมพ์" : "🔧 Facility") : m.text(st);
+                {/* โซน utility ตัด metric ผลิตออกเหมือนการ์ด hover — ไม่โชว์ช่อง "Facility" เปล่าๆ 5 ใบ */}
+                {Object.entries(METRICS).filter(([, m]) => !(st.isFac && m.facilityNA)).map(([k, m]) => {
+                  const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${meta.color}55`, borderLeft: `3px solid ${meta.color}`, borderRadius: 8, padding: '9px 11px' }}>
                       <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>

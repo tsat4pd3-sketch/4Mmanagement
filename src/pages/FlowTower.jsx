@@ -7,7 +7,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
-import { loadOrgDivisions, divisionIndex } from '../utils/orgDivisions';
+import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -26,10 +26,10 @@ import { loadOrgDivisions, divisionIndex } from '../utils/orgDivisions';
    • เปิดหลายจอพร้อมกันได้ — realtime บน prod_orders/sessions ทำให้ทุกจอขยับพร้อมกันตอนเดโม
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
-/* ── ฝ่าย: **ชื่อ/cost center มาจากผังองค์กรจริง (org_nodes kind='division')** ──
-   ที่นี่เก็บได้แค่ "code ที่อ้างถึง" กับ "สี" (การแสดงผล) — ห้าม hardcode ชื่อฝ่าย/เลข cost
-   เปลี่ยนชื่อฝ่ายที่ /org-setup แล้วหน้านี้ต้องตามเอง · ดู src/utils/orgDivisions.js */
-const DIV_COLOR = { LOG: '#0ea5e9', PRD: '#22c55e', ENG: '#a855f7', MTN: '#f97316', SUP: '#64748b' };
+/* ── ฝ่าย: **ชื่อ/ไอคอน/สี มาจากผังองค์กร (ตาราง `org_divisions` + ป้าย `org_nodes.division`)** ──
+   ห้าม hardcode ชื่อฝ่ายในไฟล์นี้ — อ้างด้วย `code` แล้วดึงชื่อผ่าน `src/utils/orgDivisions.js`
+   ⚠️ ผังไม่มี "ฝ่าย" เป็น node โดยตั้งใจ (ดูคำเตือนใน orgDivisions.js) — เป็นป้ายที่ node ระดับบนสุด
+   แก้ชื่อ/สีฝ่ายที่ `/org-setup` แล้วหน้านี้ตามทันที */
 
 const fmt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 function getWorkDate() {
@@ -52,7 +52,7 @@ export default function FlowTower() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
-  const [divs, setDivs] = useState([]);
+  const [divs, setDivs] = useState([]);   // เก็บไว้ trigger re-render หลัง cache ฝ่ายโหลดเสร็จ
   const canFix = can('products', 'edit', role);
   const workDate = getWorkDate();
 
@@ -115,7 +115,7 @@ export default function FlowTower() {
     } catch (e) { setErr(String(e.message || e)); }
   }, [workDate]);
 
-  useEffect(() => { loadOrgDivisions().then(setDivs); }, []);
+  useEffect(() => { loadDivisions().then(setDivs); }, []);
   useEffect(() => { load(); }, [load]);
   usePolling(load, RATE.ANALYTIC);
   // เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
@@ -145,30 +145,30 @@ export default function FlowTower() {
   /* ── สถานี: 1 ใบ = 1 ช่วงของสายธาร ── */
   const S = d || {};
   const stations = [
-    { key: 'sales', divCode: 'LOG', icon: '🛒', name: 'ลูกค้า / Sales',
+    { key: 'sales', divCode: 'logistic', icon: '🛒', name: 'ลูกค้า / Sales',
       lines: [[`${fmt(S.orderCnt)} รอบ`, 'ออเดอร์ค้างส่ง'], [fmt(S.orderQty), 'ชิ้นที่ต้องส่ง']],
       to: '/customer-demand', st: S.orderCnt > 0 ? 'flow' : 'idle' },
-    { key: 'fgwh', divCode: 'LOG', icon: '🏬', name: 'คลัง FG',
+    { key: 'fgwh', divCode: 'logistic', icon: '🏬', name: 'คลัง FG',
       lines: [[fmt(S.fgStock), 'ชิ้นคงเหลือ'], [`${fmt(S.fgParts)} พาร์ท`, 'ในคลัง']],
       to: '/line-stock', st: S.fgStock > 0 ? 'flow' : 'idle' },
-    { key: 'prod', divCode: 'PRD', icon: '🏭', name: 'ผลิต FG',
+    { key: 'prod', divCode: 'production', icon: '🏭', name: 'ผลิต FG',
       lines: [[fmt(S.producedToday), 'ชิ้นวันนี้'], [`${fmt(S.sessAll)} กะ`, `เปิดอยู่ ${fmt(S.sessOpen)}`]],
       to: '/daily-report', st: S.producedToday > 0 ? 'flow' : 'idle' },
-    { key: 'wip', divCode: 'PRD', icon: '🔄', name: 'WIP หน้าไลน์',
+    { key: 'wip', divCode: 'production', icon: '🔄', name: 'WIP หน้าไลน์',
       lines: [[`${fmt(S.wipPts)} จุด`, 'buffer ที่ตั้งไว้'], [`${fmt(S.wipReq)} ใบ`, 'ใบเติมของ']],
       to: '/linesetup', st: S.wipReq > 0 ? 'flow' : 'idle' },
-    { key: 'store', divCode: 'LOG', icon: '📦', name: 'สโตร์พาร์ทย่อย',
+    { key: 'store', divCode: 'logistic', icon: '📦', name: 'สโตร์พาร์ทย่อย',
       lines: [[fmt(S.subStock), 'ชิ้นคงเหลือ'], [`${fmt(S.subParts)} พาร์ท`, 'ในสโตร์']],
       to: '/line-stock', st: S.subStock > 0 ? 'flow' : 'idle' },
-    { key: 'press', divCode: 'PRD', icon: '🔨', name: 'ผลิตพาร์ทย่อย (ปั๊ม)',
+    { key: 'press', divCode: 'production', icon: '🔨', name: 'ผลิตพาร์ทย่อย (ปั๊ม)',
       lines: [[`${fmt(S.lotPending)} ใบ`, 'รอผลิต'], [`${fmt(S.lotDoing)} ใบ`, 'กำลังผลิต']],
       to: '/heijunka', st: (S.lotPending + S.lotDoing) > 0 ? 'flow' : 'idle' },
-    { key: 'raw', divCode: 'LOG', icon: '🗄️', name: 'สโตร์วัตถุดิบ / พาร์ทซื้อ',
+    { key: 'raw', divCode: 'logistic', icon: '🗄️', name: 'สโตร์วัตถุดิบ / พาร์ทซื้อ',
       lines: [[fmt(S.rawStock), 'ชิ้นคงเหลือ'], [`${fmt(S.rawPending)} ใบ`, 'ใบเบิกค้าง']],
       to: '/line-stock', st: S.rawStock > 0 ? 'flow' : 'idle' },
     // ⚠️ สั่งซื้อ "วัตถุดิบ/พาร์ทที่ใช้ผลิต" = งานของ Planning (ฝ่าย Logistic & Sales)
     //    ไม่ใช่ส่วนจัดซื้อในผัง (ซึ่งดูแค่หา supplier + ของใช้ทั่วไป) — user ยืนยัน 2026-08-19
-    { key: 'buy', divCode: 'LOG', icon: '🧾', name: 'สั่งซื้อวัตถุดิบ (Planning)',
+    { key: 'buy', divCode: 'logistic', icon: '🧾', name: 'สั่งซื้อวัตถุดิบ (Planning)',
       lines: [[`${fmt(S.purchPending)} ใบ`, 'ใบสั่งซื้อรอดำเนินการ'], [`${fmt(S.blocks?.length)} พาร์ท`, 'ยังออกใบไม่ได้']],
       to: '/heijunka', st: S.purchPending > 0 ? 'block' : (S.blocks?.length ? 'block' : 'idle'),
       note: 'ระบบคำนวณและออกใบให้อัตโนมัติจากการระเบิด BOM — Planning เป็นผู้ดำเนินการต่อ' },
@@ -185,14 +185,12 @@ export default function FlowTower() {
     { from: 'raw', label: 'ใบสั่งซื้อวัตถุดิบ', st: S.purchPending > 0 ? 'block' : 'idle' },
   ];
 
-  // ฝ่ายของแต่ละสถานี — เอาชื่อจากผังจริง ถ้าผังยังไม่มี code นั้นให้บอกตรงๆ ห้ามเดาชื่อ
-  const dix = divisionIndex(divs);
+  // ฝ่ายของแต่ละสถานี — ชื่อ/สี/ไอคอนจากผังองค์กร · ไม่รู้จัก code = บอกตรงๆ ห้ามเดาชื่อ
   const divOf = (code) => {
-    const node = dix.byCode(code);
-    return { code, color: DIV_COLOR[code] || '#64748b', name: node?.name || null, cost_center: node?.cost_center || null };
+    const m = divisionMeta(code);
+    return { code, color: m?.color || '#64748b', name: m?.label || null, icon: m?.icon || '' };
   };
-  const usedDivs = [...new Set(stations.map(st2 => st2.divCode))]
-    .map(divOf).filter(x => x.name);
+  const usedDivs = [...new Set(stations.map(st2 => st2.divCode))].map(divOf).filter(x => x.name);
 
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 };
 
@@ -218,7 +216,7 @@ export default function FlowTower() {
           </span>
         ) : usedDivs.map(dv => (
           <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${dv.color}18`, border: `1px solid ${dv.color}55` }}>
-            {dv.name}{dv.cost_center ? ` · ${dv.cost_center}` : ''}
+            {dv.icon} {dv.name}
           </span>
         ))}
         <button onClick={() => navigate('/org-setup')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>
