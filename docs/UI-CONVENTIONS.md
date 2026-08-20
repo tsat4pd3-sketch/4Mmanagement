@@ -558,6 +558,29 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
 - **ยังเหลือกับดักทรงเดียวกัน (ยังไม่แก้ รอยืนยันว่ากระทบผู้ใช้จริงไหม):** `MachineDatabase:302` (มีย่อ/กางกลุ่มแล้ว ถอดกล่องได้เลย) · `DailyPM:371` · `OrgSetup:210` · `PMSchedule:417`
   — คอมเมนต์ในโค้ดเดิมอ้าง "§137" ซึ่ง**ไม่เคยมีอยู่จริงในเอกสารนี้** (กฎที่ถูกอ้างลอยๆ แล้วก๊อปต่อกันไป) ให้ยึด §6.8 นี้แทน
 
+## 6.9 ⚠️ ซ่อนปุ่ม/คอลัมน์ตามสิทธิ์ได้ — **ห้ามซ่อนเหตุผล** (2026-08-20 · feedback หน้างาน)
+
+**เคสที่ทำให้ต้องเขียนกฎนี้:** หัวหน้าทีมช่างเปิด `/shift-organize` ได้ ตั้งกะในฐานข้อมูลครบแล้ว
+แต่ **ไม่มีปุ่ม ⇄ สลับกะ** เพราะ role ไม่มี `shift_schedule:edit` — **หน้าจอไม่ได้บอกอะไรเลย**
+เขาจึงแจ้งกลับมาว่า "ระบบพัง / ทำไม่เสร็จ" = ความล้มเหลวแบบเงียบที่ไม่มีใครดีบักได้จากฝั่งเรา
+
+- **ทุกหน้าที่ซ่อน UI ด้วย `can()` ต้องมี `<ReadOnlyNote>`** (`src/components/ReadOnlyNote.jsx`) —
+  บอกว่า "ทำอะไรไม่ได้ · ต้องเปิดคีย์ไหน · ให้ role ไหน · ที่หน้าไหน"
+  ```jsx
+  <ReadOnlyNote show={!canEdit} role={role} what="แก้ทะเบียนสินค้า" permKey="products:edit" />
+  ```
+- **ห้ามเขียนแถบแบบนี้เองซ้ำในหน้าใดๆ** — ข้อความ/สี/ทางไปแก้ ต้องเหมือนกันทั้งระบบ
+- **ต้นเหตุที่เจอซ้ำ = กับดัก seed รายชื่อ role ตายตัว** — action key ที่ seed ไว้ตั้งแต่ก่อน
+  role นั้นเกิด (mtn / engineer / planner_store / dept_admin เพิ่มทีหลังทั้งหมด) = ไม่มีแถว = fail-closed
+  · คีย์ที่ seed 2026-07-08 ด้วยลิสต์ "ทุก role ณ ตอนนั้น" (7 role) แล้วยังไม่มีใครตามเปิดให้ role ใหม่:
+  **`report:export` · `heijunka:operate` · `rack_center:operate` · `checkin:record`**
+- **"ไม่มีของให้แก้" ก็ต้องบอกเหตุผลเช่นกัน** — ตารางที่กรองด้วย scope แล้วเหลือ 0 แถว
+  ต้องอธิบายว่าถูกกรองด้วยอะไร + แก้ที่ไหน (เช่นตารางหน่วยงานใน `/shift-organize`
+  ที่ `profiles.sections` ไม่ว่างจะกรองแผนกขึ้นตรงฝ่ายทิ้งหมด)
+- **ทำแล้ว 18 จุด:** ShiftOrganize · Report · ProductMaster · MachineDatabase · LineStock ·
+  HeijunkaKanban · RackCenter · ScrapReport · QualityBins · SparePartMaster · Improvements ·
+  OjtTraining · PmCoordination · PEDocs · VSM · Transport · DieRegistry · QrLabels
+
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
 - `index.css` ตั้ง `input{width:100%}` ทั้งแอป — input ใน flex row ต้องกำหนด width เอง (checkbox/radio มี rule ยกเว้น `width:auto` แล้ว — ห้ามลบ)
