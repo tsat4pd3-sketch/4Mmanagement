@@ -169,7 +169,7 @@
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
-| Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
+| Logistic - Store | `/heijunka` | HeijunkaKanban · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter · **QR เรียกภาชนะ (2026-08-03):** deep-link `?line=&ctype=&qty=` → เปิดฟอร์มกรอกครบ เหลือกดยืนยัน · ปุ่ม 🏷️ ป้าย QR (พิมพ์แผ่น A4 ไลน์×ชนิดภาชนะ — lazy import `qrcode` · doc_key `rack_qr_labels` ผ่าน withDocFoot, migration `20260803_doc_form_rack_qr_labels.sql` Main) · ปุ่ม 📷 สแกน (BarcodeDetector ในแอป + ช่องปืนยิง keyboard-wedge — parse URL ตัวเดียวกัน) · กล้องมือถือสแกนตรงก็ได้ (เปิดลิงก์) | ทุก role |
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
