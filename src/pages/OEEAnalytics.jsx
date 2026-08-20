@@ -1022,7 +1022,24 @@ export default function OEEAnalytics() {
     // TEEP: ฐาน = เวลาปฏิทินทั้งหมดในช่วงที่เลือก × จำนวนไลน์ — **ต้องรวมวันที่ไม่ได้เปิดกะด้วย**
     // (ตามตำรา "Not Scheduled Time / ไม่มีแผนเปิดกะ" อยู่ในฐาน TEEP — ถ้านับเฉพาะวันที่เปิดกะ TEEP จะสูงเกินจริง)
     const dayCount = Math.max(1, Math.round((new Date(`${dateTo}T00:00:00`) - new Date(`${dateFrom}T00:00:00`)) / 86400000) + 1);
-    const calMin = lineSet.size * dayCount * 1440;
+
+    /* ⚠️⚠️ กำลังผลิตต้องนับ "ไลน์ละครั้งเดียว" — user จับได้ 2026-08-20 ว่า TEEP ต่ำผิดปกติ
+       ตัดออก 2 กลุ่ม เพราะเป็น "ของชิ้นเดียวกันที่นับไปแล้ว" ไม่ใช่กำลังผลิตเพิ่ม:
+       1. ไลน์แม่ที่ไลน์ลูกก็เปิดกะ (HYDROFORM/GOR/LWR BAR/LINE APRON ASSY) — งานเกิดบนลูกอยู่แล้ว
+       2. ชื่อที่ไม่อยู่ในทะเบียน production_lines (เปิดกะด้วยชื่อ "เครื่อง" เช่น SP-72) — เครื่องใน
+          ไลน์ที่นับไปแล้ว · ข้อมูลจริง 7 ชื่อนี้กินตัวหาร 29% แต่มีเวลากะรวมแค่ 1%
+       ⚠️ ตัดเฉพาะ "ตัวหาร" — เวลากะ/เวลารับภาระของกะพวกนั้นยังนับในตัวเศษ (เป็นเวลาผลิตจริง)
+       ⚠️ ไลน์ที่ไม่เคยเปิดกะเลย (PD1/PD2 ตอนนี้) ไม่เข้าตัวหารอยู่แล้ว เพราะ lineSet มาจากกะจริง
+          — ตรงกับที่ user สั่ง "ยังไม่มียอดผลิต ยังไม่ต้องนับ มีเมื่อไหร่ค่อยคิด" */
+    const regNames = new Set(linesFull.map(l => l.name));
+    const ranNames = [...lineSet];
+    const unregNames = regNames.size ? ranNames.filter(n => !regNames.has(n)) : [];
+    const dupParents = ranNames.filter(n => (parentChildrenMap[n] || []).some(k => lineSet.has(k)));
+    // ทะเบียนยังไม่โหลด = อย่าเพิ่งตัดอะไร (ไม่งั้นตัวหารเป็น 0 แล้ว TEEP หายทั้งแผง)
+    const capacityLines = regNames.size
+      ? ranNames.filter(n => regNames.has(n) && !dupParents.includes(n))
+      : ranNames;
+    const calMin = capacityLines.length * dayCount * 1440;
     const r1 = (v) => (v == null ? null : +v.toFixed(1));
     return {
       oee, a: wavg(rows, r => r.calcA, wLoad),
@@ -1032,7 +1049,9 @@ export default function OEEAnalytics() {
       teep: oee != null && calMin  > 0 ? r1(oee * (sumNetAvail / calMin))   : null,
       netAvailMin: Math.round(sumNetAvail), shiftMinTotal: Math.round(sumShift),
       breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
-      teepLines: lineSet.size, teepDays: dayCount,
+      teepLines: capacityLines.length, teepDays: dayCount,
+      // ตัดอะไรออกจากตัวหารบ้าง — ต้องโชว์บนจอ ห้ามตัดเงียบ
+      teepRan: lineSet.size, teepDupParents: dupParents, teepUnreg: unregNames,
       sessions: rows.length, total: trTotalQty,
       // ── ที่มาของ A / P / Q — user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที
       //    ของ work time · Q เท่านั้นมาจากดี/เสียเท่าไหร่" → แนบตัวตั้ง/ตัวหารของแต่ละตัวไปเลย
@@ -1042,7 +1061,7 @@ export default function OEEAnalytics() {
       okQtyTotal: rows.reduce((a, r) => a + (Number(r.okQty) || 0), 0),
       ngQtyTotal: rows.reduce((a, r) => a + (Number(r.ngQty) || 0), 0),
     };
-  }, [rows, breakPols, dateFrom, dateTo, trTotalQty]);
+  }, [rows, breakPols, dateFrom, dateTo, trTotalQty, linesFull, parentChildrenMap]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
   // แถวดิบสำหรับ Pareto + เจาะลึก (ParetoAbcChart รวมยอด/จัด ABC/เจาะมิติเอง)
@@ -1749,7 +1768,24 @@ export default function OEEAnalytics() {
             {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
               ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
+              {' · '}ไลน์ที่ยังไม่เคยเปิดกะในช่วงนี้ไม่ถูกนับ
             </div>
+            {/* ตัดอะไรออกจากตัวหารบ้าง — ต้องเห็น ไม่งั้นคนสงสัยว่าทำไมเลขไลน์ไม่ตรงกับที่เห็นในลิสต์ */}
+            {(kpi.teepDupParents.length > 0 || kpi.teepUnreg.length > 0) && (
+              <div style={{ color: '#f59e0b', marginTop: 3 }}>
+                เปิดกะ {kpi.teepRan} ชื่อ → นับเป็นกำลังผลิต {kpi.teepLines} ไลน์
+                {kpi.teepDupParents.length > 0 && (
+                  <div title={kpi.teepDupParents.join(' · ')}>
+                    − {kpi.teepDupParents.length} ไลน์แม่ที่ไลน์ลูกก็เปิดกะ (ของชิ้นเดียวกัน)
+                  </div>
+                )}
+                {kpi.teepUnreg.length > 0 && (
+                  <div title={kpi.teepUnreg.join(' · ')}>
+                    − {kpi.teepUnreg.length} ชื่อที่ไม่อยู่ในทะเบียนไลน์ (เปิดกะด้วยชื่อเครื่อง)
+                  </div>
+                )}
+              </div>
+            )}
           </>} />
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', flex: '2 1 320px', minWidth: 260 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
