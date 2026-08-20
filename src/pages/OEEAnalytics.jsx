@@ -98,6 +98,18 @@ const policyBreakMin = (row, policies) => policyBreakForShift({
 // ⚠️ ห้ามใช้ toISOString() เพื่อคำนวณวันที่ local — จะเพี้ยนข้ามวันเพราะ UTC offset (ดู CLAUDE.md)
 const fmtMonthKey = d => d.slice(0, 7);          // YYYY-MM
 const fmtYearKey  = d => d.slice(0, 4);          // YYYY
+// สัปดาห์เริ่มวันจันทร์ (ธรรมเนียมโรงงาน) — key = วันที่จันทร์ของสัปดาห์นั้น (YYYY-MM-DD, sortable)
+const fmtWeekKey = d => {
+  const dt = new Date(`${d}T00:00:00`);
+  dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // จันทร์ = 0
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+// label ช่วง จันทร์–อาทิตย์ เช่น "5–11/8" (เดือนต่างกัน = "29/7–4/8")
+const fmtWeekLabel = k => {
+  const a = new Date(`${k}T00:00:00`), b = new Date(a.getTime() + 6 * 86400000);
+  const dm = x => `${x.getDate()}/${x.getMonth() + 1}`;
+  return a.getMonth() === b.getMonth() ? `${a.getDate()}–${dm(b)}` : `${dm(a)}–${dm(b)}`;
+};
 const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const fmtMonthLabel = k => { const [y, m] = k.split('-'); return `${thMonths[+m - 1]} ${(+y + 543).toString().slice(-2)}`; };
 const fmtDayLabel   = d => { const [,m,dd] = d.split('-'); return `${+dd}/${+m}`; };
@@ -737,7 +749,7 @@ export default function OEEAnalytics() {
   const [loading,    setLoading]    = useState(true);
 
   // Filters
-  const [period,     setPeriod]     = useState('monthly'); // daily|monthly|yearly
+  const [period,     setPeriod]     = useState('monthly'); // daily|weekly|monthly|yearly
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
   const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
@@ -848,6 +860,8 @@ export default function OEEAnalytics() {
     for (const r of rows) {
       const key = period === 'daily'
         ? r.work_date
+        : period === 'weekly'
+        ? fmtWeekKey(r.work_date)
         : period === 'monthly'
         ? fmtMonthKey(r.work_date)
         : fmtYearKey(r.work_date);
@@ -857,7 +871,7 @@ export default function OEEAnalytics() {
     const out = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => {
       return {
         key,
-        label: period === 'daily' ? fmtDayLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
+        label: period === 'daily' ? fmtDayLabel(key) : period === 'weekly' ? fmtWeekLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
         oee:   wavg(items, i => i.calcOEE, wLoad),
         a:     wavg(items, i => i.calcA, wLoad),
         p:     wavg(items, i => i.calcP, wRun),
@@ -873,18 +887,19 @@ export default function OEEAnalytics() {
     // ไม่งั้นกราฟ "ข้ามวัน" ทำให้ระยะห่างบนแกนไม่ตรงเวลาจริง อ่านเทรนด์ผิด
     // (UI-CONVENTIONS · pattern เดียวกับกราฟรายวันใน /product-history · QC audit 2026-08-03)
     // เติมเฉพาะช่องว่างระหว่างวันแรก-วันสุดท้ายที่มีข้อมูล (ไม่ pad หัว-ท้ายช่วงที่เลือก) · cap 400 วันกันช่วงยาวผิดปกติ
-    if (period !== 'daily' || out.length < 2) return out;
+    if (!['daily', 'weekly'].includes(period) || out.length < 2) return out;
     const dayMs = 86400000;
+    const stepMs = period === 'weekly' ? 7 * dayMs : dayMs; // แกนสัปดาห์เดินทีละจันทร์
     const first = new Date(`${out[0].key}T00:00:00`), last = new Date(`${out[out.length - 1].key}T00:00:00`);
-    const span = Math.round((last - first) / dayMs) + 1;
+    const span = Math.round((last - first) / stepMs) + 1;
     if (!(span > out.length) || span > 400) return out;
     const byKey = Object.fromEntries(out.map(g => [g.key, g]));
     const filled = [];
-    for (let t = first.getTime(); t <= last.getTime(); t += dayMs) {
+    for (let t = first.getTime(); t <= last.getTime(); t += stepMs) {
       const d = new Date(t);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       filled.push(byKey[key] || {
-        key, label: fmtDayLabel(key), empty: true,
+        key, label: period === 'weekly' ? fmtWeekLabel(key) : fmtDayLabel(key), empty: true,
         oee: null, a: null, p: null, q: null,
         totalQty: 0, ngQty: 0, unplannedMin: 0, count: 0,
       });
@@ -1488,9 +1503,9 @@ export default function OEEAnalytics() {
       {/* Filters */}
       <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 4 }}>
-          {['daily','monthly','yearly'].map(p => (
+          {['daily','weekly','monthly','yearly'].map(p => (
             <button key={p} style={s.tab(period === p)} onClick={() => setPeriod(p)}>
-              {p === 'daily' ? 'รายวัน' : p === 'monthly' ? 'รายเดือน' : 'รายปี'}
+              {p === 'daily' ? 'รายวัน' : p === 'weekly' ? 'รายสัปดาห์' : p === 'monthly' ? 'รายเดือน' : 'รายปี'}
             </button>
           ))}
         </div>
