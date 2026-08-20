@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
-import { printProdProblemReport } from '../lib/prodProblemReport';
+import { printProdProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
@@ -18,6 +18,7 @@ import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
+import ProblemFixModal from '../components/ProblemFixModal';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
@@ -185,6 +186,8 @@ function LiveTab({ role }) {
   const [overdueAlert, setOverdueAlert] = useState([]);
   const [dtLogs, setDtLogs]         = useState([]);
   const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
+  // 🛠 ลงวิธีแก้ไข/ผลตรวจติดตามของปัญหา 1 รายการ — { kind:'downtime'|'defect', row, title }
+  const [fixTarget, setFixTarget]   = useState(null);
   const [selSession, setSelSession] = useState(null);
   // §139 ย่อ/ขยายกลุ่มไลน์ในลิสต์กะ — กะค้างไม่ปิดสะสมทำให้ลิสต์ยาวมาก (เจอจริง 34 กะ) · จำใน localStorage
   const [sessGroupCollapsed, setSessGroupCollapsed] = useState(() => {
@@ -2395,19 +2398,31 @@ function LiveTab({ role }) {
 
                   {/* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (ไม่ต้องเขียนมือ)
                       หน้างานออกใบนี้ทุกครั้งที่หยุด/คุณภาพ/รอ เกิน 30 นาที (feedback 2026-08-19) */}
-                  {(dtLogs.length > 0 || defectLogs.length > 0) && (
-                    <button onClick={async () => {
-                      const ok = await printProdProblemReport({
-                        session: selSession, downtimes: dtLogs, defects: defectLogs,
-                        section: lineMap?.[selSession.line_name]?.section || null,
-                      });
-                      if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
-                    }}
-                      style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
-                      title="พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ">
-                      📝 ใบรายงานปัญหา
-                    </button>
-                  )}
+                  {(dtLogs.length > 0 || defectLogs.length > 0) && (() => {
+                    const pend = countPendingFix({ downtimes: dtLogs, defects: defectLogs });
+                    return (
+                      <button onClick={async () => {
+                        const ok = await printProdProblemReport({
+                          session: selSession, downtimes: dtLogs, defects: defectLogs,
+                          section: lineMap?.[selSession.line_name]?.section || null,
+                        });
+                        if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+                      }}
+                        style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
+                        title={pend.total
+                          ? `พิมพ์ใบรายงานปัญหาการผลิต — ยังมี ${pend.total} รายการที่ยังไม่ลงวิธีแก้ไข (ช่องนั้นจะว่างต้องเขียนมือ)`
+                          : 'พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ'}>
+                        📝 ใบรายงานปัญหา
+                        {/* งานค้าง = ป้ายนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) — บอกว่าใบจะออกมาไม่ครบ */}
+                        {pend.total > 0 && (
+                          <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, padding: '1px 6px',
+                            borderRadius: 20, background: '#f59e0b', color: '#fff' }}>
+                            🛠 {pend.total}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })()}
 
                   {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — ลบได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ */}
                   {canDeleteSession && ['open', 'pending_close'].includes(selSession.status)
@@ -2951,6 +2966,24 @@ function LiveTab({ role }) {
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
                       </div>
+                      {/* 🛠 ของเสียทุกรายการเข้าใบรายงานปัญหา (ไม่มีเกณฑ์เวลา) → ต้องลงวิธีแก้ไขทุกแถว */}
+                      {canScan && (() => {
+                        const done = !!String(d.fix_action || '').trim();
+                        return (
+                          <button onClick={() => setFixTarget({ kind: 'defect', row: d,
+                            title: `${d.dr_defect_types?.name_th || 'ของเสีย'}${d.prod_orders?.mat_no ? ` · ${d.prod_orders.mat_no}` : ''}${d.qty_ng ? ` · NG ${d.qty_ng}` : ''}` })}
+                            title={done
+                              ? `ลงวิธีแก้ไขแล้ว${d.fix_by ? ` โดย ${d.fix_by}` : ''}${String(d.followup_result || '').trim() ? ' · มีผลตรวจติดตาม' : ' — ยังไม่ลงผลตรวจติดตาม'}`
+                              : 'ลงวิธีแก้ไข + ผลตรวจติดตาม (เติมลงใบรายงานปัญหาให้อัตโนมัติ)'}
+                            style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
+                              borderRadius: 20, padding: '3px 10px',
+                              color: done ? '#22c55e' : '#f59e0b',
+                              background: done ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)',
+                              border: `1px solid ${done ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.4)'}` }}>
+                            {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
+                          </button>
+                        );
+                      })()}
                       {canEditRecords && (
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button className="tbtn" onClick={() => { setDefectForm({ id: d.id, mat_no: d.prod_orders?.mat_no || '', defect_type_id: d.defect_type_id || '', qty_ng: String(d.qty_ng||0), qty_suspect: String(d.qty_suspect||0), qty_repair: String(d.qty_repair||0), description: d.description || '', is_trial: d.is_trial === true }); setShowDefect(true); }}
@@ -3021,6 +3054,26 @@ function LiveTab({ role }) {
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
                         <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#7c6cf0', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📝 เปิดใบซ่อม</button>
                       )}
+                      {/* 🛠 วิธีแก้ไข + ผลตรวจติดตาม — โผล่เมื่อรายการนี้ยาวถึงเกณฑ์ใบรายงานปัญหา (นอกแผน ≥30 นาที)
+                          feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเกิน 30 นาที ให้มีไอคอนขึ้นมาให้ลงวิธีแก้ไข"
+                          ยังไม่ลง = ส้มเตือน (นิ่ง ไม่กระพริบ — เป็นงานค้าง ไม่ใช่ alarm) · ลงแล้ว = เขียวเงียบ */}
+                      {canScan && dtNeedsFix(d) && (() => {
+                        const done = !!String(d.fix_action || '').trim();
+                        return (
+                          <button onClick={() => setFixTarget({ kind: 'downtime', row: d,
+                            title: `${d.dr_downtime_types?.name_th || 'Downtime'}${d.machine_no ? ` · ${d.machine_no}` : ''} · ${fmtMin(d.duration_min)}` })}
+                            title={done
+                              ? `ลงวิธีแก้ไขแล้ว${d.fix_by ? ` โดย ${d.fix_by}` : ''}${String(d.followup_result || '').trim() ? ' · มีผลตรวจติดตาม' : ' — ยังไม่ลงผลตรวจติดตาม'}`
+                              : `หยุดเกิน ${PROBLEM_MIN_MINUTES} นาที — ต้องลงวิธีแก้ไข + ผลตรวจติดตาม`}
+                            style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
+                              borderRadius: 20, padding: '4px 11px',
+                              color: done ? '#22c55e' : '#fff',
+                              background: done ? 'rgba(34,197,94,0.12)' : '#f59e0b',
+                              border: done ? '1px solid rgba(34,197,94,0.35)' : 'none' }}>
+                            {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
+                          </button>
+                        );
+                      })()}
                       {/* 💬 คอมเมนต์ใต้รายการ downtime — คุยหน้างาน/ส่งต่อกะ + mention แจ้งเตือน */}
                       <button className="tbtn" onClick={() => setDtCmOpen(v => v === d.id ? null : d.id)}
                         title="คอมเมนต์/ส่งต่อข้อมูลรายการนี้"
@@ -3064,6 +3117,19 @@ function LiveTab({ role }) {
               );
             })()}
           </>
+        )}
+
+        {/* 🛠 ลงวิธีแก้ไข + ผลตรวจติดตาม ของรายการปัญหา 1 แถว */}
+        {fixTarget && (
+          <ProblemFixModal
+            kind={fixTarget.kind} row={fixTarget.row} title={fixTarget.title}
+            actorName={fullName}
+            onClose={() => setFixTarget(null)}
+            onSaved={() => {
+              if (fixTarget.kind === 'downtime') loadDT(selSession.id);
+              else loadDefectLogs(selSession.id);
+            }}
+          />
         )}
 
         {/* Open session modal */}

@@ -12,6 +12,7 @@
  * layout เป็น auto-layout จากโมเดล (ไม่ใช่ลากวางอิสระ) → regenerate แล้วผังจัดใหม่ให้เอง
  * โครง: supplier (ซ้าย) → สายป้อน (บน) + สายหลัก (กลาง) → ลูกค้า (ขวา) · บันไดเวลา (ล่าง)
  */
+import { LIVE_STATUS } from '../lib/vsmLive';
 
 export const PALETTE_LIGHT = {
   bg: '#ffffff', ink: '#111827', sub: '#4b5563', line: '#374151', faint: '#9ca3af',
@@ -200,9 +201,24 @@ const KanbanCard = ({ x, y, P, kind = 'P' }) => (
   </g>
 );
 
-/** กล่องกระบวนการ + กล่องข้อมูล */
-function ProcBox({ b, x, yProc, P, small = false }) {
+/** กล่องกระบวนการ + กล่องข้อมูล
+ *  lv = สถานะสดจาก `lib/vsmLive.js` (แท็บ ⚡ สายธารสด) — ไม่ส่ง = render เหมือนเดิมเป๊ะ
+ *  (ใบพิมพ์ clone SVG จากแท็บเอกสารซึ่งไม่ส่ง live → ไม่กระทบ)
+ *  สี/ความหมายสถานะอยู่ที่ LIVE_STATUS ใน vsmLive.js — ที่นี่แค่เลือกใช้ ห้ามนิยามสีใหม่ */
+function ProcBox({ b, x, yProc, P, small = false, lv = null }) {
   const w = small ? FEED_BOX_W : BOX_W, h = small ? FEED_BOX_H : BOX_H;
+  // ขอบตามสถานะสด: down แดง(กระพริบ — Andon แดงเท่านั้นที่กระพริบ) · run เขียว · idle เส้นประจาง
+  const lvStroke = lv ? ({ down: P.nva, run: P.va }[lv.status] || null) : null;
+  const lvDash = lv?.status === 'idle' ? '5 3' : undefined;
+  // ข้อความสถานะอ่านจาก LIVE_STATUS (vsmLive.js) — ห้ามพิมพ์ป้ายสถานะซ้ำที่นี่ เดี๋ยว drift
+  const lvTitle = lv ? [
+    (LIVE_STATUS[lv.status] || LIVE_STATUS.unknown).label
+      + (lv.status === 'down' ? ` ${lv.alarms?.length || 0} รายการ` : ''),
+    lv.live?.oee != null ? `OEE สด ${lv.live.oee}%` : null,
+    lv.produced != null ? `วันนี้ ${lv.produced}/${lv.target || '—'} ชิ้น` : null,
+  ].filter(Boolean).join(' · ') : null;
+  // จอ TV โหมดเบา (data-perf="lite") งดกระพริบตาม UI §1.7 — ขอบแดงนิ่งยังบอกสถานะครบ
+  const perfLite = typeof document !== 'undefined' && document.documentElement.dataset.perf === 'lite';
   const rows = [
     ['C/T', b.ct == null ? '—' : `${fmt(b.ct, 1)} sec`],
     ['T/T', b.ttSec == null ? '—' : `${fmt(b.ttSec, 1)} sec`],
@@ -214,8 +230,15 @@ function ProcBox({ b, x, yProc, P, small = false }) {
   ];
   return (
     <g>
+      {lvTitle && <title>{lvTitle}</title>}
       <rect x={x} y={yProc} width={w} height={h} rx="2"
-        fill={b.isOutsourced ? P.outsource : P.box} stroke={P.line} strokeWidth="1.4" />
+        fill={b.isOutsourced ? P.outsource : P.box}
+        stroke={lvStroke || (lv?.status === 'idle' ? P.faint : P.line)}
+        strokeWidth={lvStroke ? 2.2 : 1.4} strokeDasharray={lvDash}>
+        {lv?.status === 'down' && !perfLite && (
+          <animate attributeName="stroke-opacity" values="1;0.25;1" dur="1.1s" repeatCount="indefinite" />
+        )}
+      </rect>
       <rect x={x} y={yProc} width={w} height="15" fill={P.boxHead} stroke={P.line} strokeWidth="1.1" />
       <text x={x + w / 2} y={yProc + 11} fontSize="8.5" fill={P.ink} textAnchor="middle" fontWeight="600">
         {b.isOutsourced ? `จ้างนอก · ${b.vendor || 'ยังไม่ระบุ'}` : (b.line || '—')}
@@ -249,9 +272,10 @@ function ProcBox({ b, x, yProc, P, small = false }) {
 }
 
 /* ── ตัวหลัก ──────────────────────────────────────────────────────────────── */
-export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null }) {
+export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null, live = null }) {
   const P = palette;
   if (!model?.chain?.length) return null;
+  const lvOf = key => live?.byKey?.[key] || null;   // สถานะสดต่อกล่อง (แท็บ ⚡ เท่านั้น)
 
   const n = model.chain.length;
   const feeders = model.feeders || [];
@@ -332,7 +356,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null 
             {f.boxes.map((b, bi) => {
               const bx = startX + bi * (FEED_BOX_W + 34);
               return <g key={b.key}>
-                <ProcBox b={b} x={bx} yProc={y} P={P} small />
+                <ProcBox b={b} x={bx} yProc={y} P={P} small lv={lvOf(b.key)} />
                 {bi < f.boxes.length - 1 && <Push x1={bx + FEED_BOX_W + 2} x2={bx + FEED_BOX_W + 32} y={y + FEED_BOX_H / 2} P={P} />}
               </g>;
             })}
@@ -365,7 +389,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null 
         const nx = invAt(`after:${b.key}`);
         const midX = x + BOX_W + (COL_W - BOX_W) / 2;
         return <g key={b.key}>
-          <ProcBox b={b} x={x} yProc={Y_PROC} P={P} />
+          <ProcBox b={b} x={x} yProc={Y_PROC} P={P} lv={lvOf(b.key)} />
           {i < n - 1 && <>
             <InvPoint cx={midX} y={Y_PROC + 6} P={P} inv={nx} />
             {nx?.kanban
