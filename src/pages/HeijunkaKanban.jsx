@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -35,6 +35,21 @@ const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะด�
    ⚠️ เดิมเทียบ 3 ตัวแรก ('200'/'300'/'500') ซึ่งพังเมื่อเลขรันทะลุช่วง
       (FG เจอจริงแล้ว: 100xxxxx → 101xxxxx) — ห้ามกลับไปเทียบหลายหลักอีก */
 const MAT_PREFIXES = MAT_CLASSES.filter(c => c.digit !== '1').map(c => ({ prefix: c.digit, label: c.short, color: c.color }));
+
+/* 📊 กระโดดไปบอร์ด Heijunka จริงของไลน์ (หน้า Management — มุมเดียวกับที่ไลน์ผลิตเห็น:
+   ใบงานบนไทม์ไลน์/สถานะสด/ดีเลย์/คาดเสร็จ) — ใช้บอร์ดตัวจริง ไม่ก๊อปมาซ้ำ (กัน drift)
+   ผู้ใช้ที่ scope ไม่ถึงไลน์นั้น Management จะ fallback ไลน์แรกใน scope ตัวเองตามกติกาเดิม */
+function LineBoardLink({ line }) {
+  const navigate = useNavigate();
+  return (
+    <button onClick={(e) => { e.stopPropagation(); navigate(`/management?line=${encodeURIComponent(line)}&view=heijunka`); }}
+      title="เปิดบอร์ด Heijunka ของไลน์นี้ (จอเดียวกับที่ไลน์ผลิตเห็น)"
+      style={{ padding: '2px 9px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+        background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', flexShrink: 0 }}>
+      📊 บอร์ดไลน์
+    </button>
+  );
+}
 
 /* ─── helpers ───────────────────────────────────────────────────────────────
    addMinutes/timeStrToMs/dayFrameMs/roundDeliveryMin/getRoundStatus ย้ายไป
@@ -86,6 +101,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
                 {demand.parts.length} พาร์ท · {demand.totalKanban} การ์ด (ทั้งวัน)
               </span>
+              <LineBoardLink line={lineName} />
             </div>
             {!lineRounds.length ? (
               <div style={{ padding: '12px 14px', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 10, fontSize: 12, color: 'var(--muted)' }}>
@@ -391,8 +407,8 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
         const demand = groupDemand[lineName] || { parts: [], totalKanban: 0 };
         return (
           <div key={lineName} style={{ border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '8px 14px', background: 'var(--bg2)', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>🏭 {lineName}</span>
+            <div style={{ padding: '8px 14px', background: 'var(--bg2)', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 8 }}>🏭 {lineName} <LineBoardLink line={lineName} /></span>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด (ทั้งวัน)</span>
             </div>
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
@@ -481,8 +497,8 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 12 }}>
           {Object.keys(byLine).sort().map(lineName => (
             <div key={lineName} style={{ background: 'var(--bg2)', borderRadius: 8, padding: 12, border: '1px solid var(--border2)' }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>
-                🏭 {lineName}
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🏭 {lineName} <LineBoardLink line={lineName} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {byLine[lineName].map(r => {
