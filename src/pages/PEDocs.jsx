@@ -10,6 +10,7 @@ import { fmtDate } from '../utils/dateFormat';
 import PeExcelImportModal from '../components/PeExcelImportModal';
 import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 import PeChangeRequests from '../components/PeChangeRequests';
+import PeRoutingSuggest from '../components/PeRoutingSuggest';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -73,6 +74,7 @@ export default function PEDocs() {
   const { role, fullName } = useContext(UserContext);
   const canEdit = can('pe', 'edit', role);
   const canApprove = can('pe', 'approve', role);
+  const canRouting = can('routing', 'manage', role);   // เขียน part_routings (ฝั่ง VSM) — คนละ key กับ pe:edit
 
   const [sets, setSets] = useState([]);
   const [procs, setProcs] = useState([]);       // ของ set ที่เลือก
@@ -106,6 +108,7 @@ export default function PEDocs() {
   const printChartRef = useRef(null);                    // ผังชุดสีสว่างซ่อนไว้ ใช้ตอนพิมพ์
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
+  const [routingOpen, setRoutingOpen] = useState(false); // 🔀 เสนอ routing เข้า VSM จาก PFC
 
   const loadSets = useCallback(async () => {
     setLoading(true);
@@ -381,9 +384,18 @@ export default function PEDocs() {
                 <PeFlowChart procs={procs} mode="light" />
                 <div data-legend><FlowLegend procs={procs} mode="light" /></div>
               </div>
-              {canEdit && (
-                <button style={{ ...btnPrim, marginBottom: 10 }} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>➕ เพิ่ม Process (OP)</button>
-              )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                {canEdit && (
+                  <button style={btnPrim} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>➕ เพิ่ม Process (OP)</button>
+                )}
+                {/* (ข) PFC → routing ของ VSM — ระบบเสนอ คนยืนยันก่อน insert (utils/peRouting.js) */}
+                {canRouting && procs.length > 0 && (
+                  <button style={btnSm} onClick={() => setRoutingOpen(true)}
+                    title="แปลงรายการ OP เป็นลำดับกระบวนการ (part_routings) ให้ใบ VSM ใช้ — ตรวจและกดยืนยันก่อนบันทึก">
+                    🔀 เสนอ routing เข้า VSM
+                  </button>
+                )}
+              </div>
               <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
@@ -567,6 +579,11 @@ export default function PEDocs() {
             </div>
           )}
         </>
+      )}
+
+      {/* ══ modal: เสนอ routing เข้า VSM ══ */}
+      {routingOpen && curSet && (
+        <PeRoutingSuggest set={curSet} procs={procs} lines={lines} onClose={() => setRoutingOpen(false)} />
       )}
 
       {/* ══ modal: ชุดเอกสาร ══ */}

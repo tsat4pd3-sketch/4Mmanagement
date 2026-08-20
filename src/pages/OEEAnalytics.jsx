@@ -23,6 +23,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
+import { fetchByIds } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
@@ -135,11 +136,18 @@ function dateStrAdd(dateStr, deltaDays) {
 }
 
 // ── KPI Card ─────────────────────────────────────────────────────
-const KpiCard = ({ label, value, color, sub }) => (
+/* `calc` = ที่มาของตัวเลข (user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที")
+   — เป็นตัวเลขอธิบาย ไม่ใช่ตัวที่เอาไปคำนวณซ้ำ · ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ */
+const KpiCard = ({ label, value, color, sub, calc }) => (
   <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
     <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
     {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+    {calc && (
+      <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
+        {calc}
+      </div>
+    )}
   </div>
 );
 
@@ -323,6 +331,7 @@ export default function OEEAnalytics() {
 
   const [tdSessions,  setTdSessions]  = useState([]);
   const [tdDowntimes, setTdDowntimes] = useState([]);
+  const [tdLoadWarn,  setTdLoadWarn]  = useState(null);
   const [tdDefects,   setTdDefects]   = useState([]);
   const [tdHistory,   setTdHistory]   = useState([]); // last 10 days, closed sessions, lightweight
   const [tdProductsByMat, setTdProductsByMat] = useState({}); // mat_no -> part name
@@ -427,26 +436,27 @@ export default function OEEAnalytics() {
       const { data: sess } = await q;
 
       const sessionIds = (sess || []).map(s => s.id);
-      const [{ data: dt }, { data: def }, { data: ord }] = await Promise.all([
-        sessionIds.length
-          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
+      // วันเดียวมีกะไม่มาก แต่ใช้ helper เดียวกับแท็บแนวโน้มไว้ — กันพลาดซ้ำถ้าวันหน้าไลน์เยอะขึ้น
+      // และได้เช็ค error ในตัว (เดิมรับแค่ data → ล้มเหลวแล้วโชว์ 0 เหมือนไม่มีข้อมูลจริง)
+      const [dtRes, defRes, ordRes] = await Promise.all([
+        fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
+          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', c)),
       ]);
+      const ord = ordRes.rows;
 
       setTdSessions(sess || []);
-      setTdDowntimes(dt || []);
-      setTdDefects(def || []);
+      setTdDowntimes(dtRes.rows);
+      setTdDefects(defRes.rows);
+      setTdLoadWarn([dtRes, defRes, ordRes].find(r => r.error)?.error || null);
       const obs = {};
-      (ord || []).forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
+      ord.forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
       setTdOrdersBySession(obs);
       // pair_mat_no ของ mat ที่มีในกะวันนี้ (นับงานคู่ RH/LH เป็น 1 คู่/stroke — ดู pairTotals.js)
-      const mats = [...new Set((ord || []).map(o => o.mat_no).filter(Boolean))];
+      const mats = [...new Set(ord.map(o => o.mat_no).filter(Boolean))];
       if (mats.length) {
         // + cycle_time_sec/name: ใช้คำนวณ OEE สดของกะที่ยังไม่ปิด (computeLiveOee) และแสดงชื่อพาร์ทในการ์ดกำลังผลิต
         // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products)
@@ -617,6 +627,25 @@ export default function OEEAnalytics() {
     return days;
   }, [tdHistory, tdDate]);
 
+  /* วันนี้เทียบ "ค่าเฉลี่ย 9 วันก่อนหน้า" — ตอบคำถามที่คนอ่านกราฟ 10 วันแล้วต้องกวาดตาเอาเอง
+     ⚠️ ต้องถ่วงน้ำหนักด้วย wavg เหมือนทุกที่ (กฎ CLAUDE.md: ห้าม mean-of-percentages / mean-of-means
+        — เฉลี่ยค่ารายวันตรงๆ จะทำให้วันที่ผลิตน้อยถ่วงเท่าวันที่ผลิตเยอะ)
+     ⚠️ ตัด "วันนี้" ออกจากตัวเฉลี่ยเสมอ ไม่งั้นเทียบกับตัวเอง */
+  const tdVsAvg = useMemo(() => {
+    const past = tdHistory.filter(r => r.work_date !== tdDate);
+    const days = new Set(past.map(r => r.work_date)).size;
+    const W = { oee: wLoad, a: wLoad, p: wRun, q: wProd };
+    const F = { oee: i => (i.oee != null ? +i.oee : null), a: i => (i.oee_a != null ? +i.oee_a : null),
+                p: i => (i.oee_p != null ? +i.oee_p : null), q: i => (i.oee_q != null ? +i.oee_q : null) };
+    const out = { days };
+    for (const k of ['oee', 'a', 'p', 'q']) {
+      const avg = wavg(past, F[k], W[k]);
+      const now = tdKpi[k];
+      out[k] = { avg, now, diff: (avg != null && now != null) ? +(now - avg).toFixed(1) : null };
+    }
+    return out;
+  }, [tdHistory, tdDate, tdKpi]);
+
   // Live/latest session card
   const tdLiveSession = useMemo(() => {
     const running = tdSessionsTeamFiltered.filter(s => s.status === 'open' || s.status === 'pending_close')
@@ -678,7 +707,8 @@ export default function OEEAnalytics() {
     for (const d of tdDowntimesScoped) {
       const name = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
       const cat  = d.dr_downtime_types?.category || 'unplanned';
-      if (!map[name]) map[name] = { name, min: 0, category: cat };
+      // typeId ไว้ query ย้อนหลังของสาเหตุนี้ตอนกดเจาะ (ชื่อเป็น snapshot เทียบตรงๆ ไม่ได้)
+      if (!map[name]) map[name] = { name, min: 0, category: cat, typeId: d.downtime_type_id || null };
       map[name].min += d.duration_min || 0;
     }
     const rows = Object.values(map).sort((a, b) => b.min - a.min);
@@ -712,6 +742,49 @@ export default function OEEAnalytics() {
     const total = Object.values(map).reduce((s, d) => s + d.min, 0);
     return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
   }, [tdDowntimesScoped, tdProductsByMat]);
+
+  /* "สาเหตุนี้เกิดซ้ำแค่ไหน" — ย้อนหลัง 30 วันของ downtime type ที่กดเจาะ
+     ⚠️ ยิงตอนเปิดโมดัลเท่านั้น (user กดเอง ไม่ใช่ polling) และกรองฝั่ง server ให้แคบที่สุด
+        — embed production_sessions!inner เพื่อกรองวัน/ไลน์ในคิวรีเดียว ไม่ดึง session ทั้งช่วงมากรองเอง
+     ⚠️ ไม่มี typeId (ข้อมูลเก่าไม่ผูก type) = ไม่ query ห้ามเดา */
+  const [tdDrillHist, setTdDrillHist] = useState(null);
+  useEffect(() => {
+    if (!tdDtDrill || tdDtDrill.kind !== 'cause' || !tdDtDrill.typeId) { setTdDrillHist(null); return; }
+    let dead = false;
+    setTdDrillHist({ loading: true });
+    (async () => {
+      const from = dateStrAdd(tdDate, -29);
+      let q = supabaseDR.from('downtime_logs')
+        .select('duration_min, production_sessions!inner(work_date, line_name)')
+        .eq('downtime_type_id', tdDtDrill.typeId)
+        .gte('production_sessions.work_date', from)
+        .lte('production_sessions.work_date', tdDate)
+        .limit(3000);
+      if (tdScopeLines?.length === 1) q = q.eq('production_sessions.line_name', tdScopeLines[0]);
+      else if (tdScopeLines?.length > 1) q = q.in('production_sessions.line_name', tdScopeLines);
+      const { data, error } = await q;
+      if (dead) return;
+      if (error) { setTdDrillHist({ error: error.message }); return; }   // ห้ามเงียบ
+      const byDay = {};
+      for (const r of data || []) {
+        const d = r.production_sessions?.work_date;
+        if (!d) continue;
+        byDay[d] = (byDay[d] || 0) + (r.duration_min || 0);
+      }
+      const days = [];
+      for (let i = 29; i >= 0; i--) {
+        const key = dateStrAdd(tdDate, -i);
+        days.push({ key, min: +(byDay[key] || 0).toFixed(1) });
+      }
+      const hitDays = days.filter(d => d.min > 0).length;
+      setTdDrillHist({
+        days, hitDays, count: (data || []).length,
+        total: +days.reduce((a, d) => a + d.min, 0).toFixed(1),
+        max: Math.max(...days.map(d => d.min), 1),
+      });
+    })();
+    return () => { dead = true; };
+  }, [tdDtDrill, tdDate, tdScopeLines]);
 
   /* รายการดิบของแถวที่กดในแผง 2.2 / 2.3 — ตอบ "ปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง ใครลง"
      ⚠️ ต้องกรองจาก tdDowntimesScoped (ชุดเดียวกับที่รวมยอดในแผง) ไม่งั้นตัวเลขในโมดัลไม่ตรงกับแถว
@@ -747,6 +820,7 @@ export default function OEEAnalytics() {
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [trLoadWarn, setTrLoadWarn] = useState(null);  // โหลดแถวลูกไม่ครบ = ตัวเลขต่ำกว่าจริง ต้องบอก
 
   // Filters
   const [period,     setPeriod]     = useState('monthly'); // daily|weekly|monthly|yearly
@@ -790,21 +864,22 @@ export default function OEEAnalytics() {
 
       const sessionIds = (sess || []).map(s => s.id);
 
-      const [{ data: dt }, { data: def }, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
-        sessionIds.length
-          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
+      // ⚠️ ห้าม .in('session_id', sessionIds) ตรงๆ — ช่วง 90 วัน = 800+ กะ → URL ~31,700 ตัวอักษร
+      //    โดนตัด → คิวรีล้มเหลว → DT/ของเสีย/Pareto/มูลค่าเป็น 0 เงียบๆ ขณะที่ A/P/Q (ค่า stamp)
+      //    ยังโชว์ค่าจริง = จอขัดแย้งกันเอง (บั๊กจริงที่ user จับได้ 2026-08-20)
+      const [dtRes, defRes, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
+        fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
+          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('production_sessions').select('line_name').eq('status', 'closed'),
       ]);
 
       setSessions(sess || []);
-      setDowntimes(dt || []);
-      setDefects(def || []);
+      setDowntimes(dtRes.rows);
+      setDefects(defRes.rows);
       // ต้นทุน/ชิ้น สำหรับแผง "มูลค่าของเสีย" — best-effort (ยังไม่กรอกต้นทุน = แผงบอกว่าขาดอะไร ไม่เดา)
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true)
         .then(({ data: pm }) => setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r]))))
@@ -816,17 +891,18 @@ export default function OEEAnalytics() {
       // เดิมแท็บนี้บวก actual_qty ตรงๆ (ไม่ pair-aware) ขณะที่แท็บ "ภาพรวมวันนี้" นับคู่แล้ว
       // → ยอดผลิตของช่วงเดียวกันไม่ตรงกันระหว่าง 2 แท็บในหน้าเดียว (แก้ 2026-08-05)
       // ⚠️ Supabase คืนสูงสุด 1000 แถว/ครั้ง → ต้องแบ่งหน้า ไม่งั้นช่วงยาวยอดขาดเงียบๆ
-      const ordersAll = [];
-      for (let i = 0; sessionIds.length && i < 40; i++) {
-        const { data: od } = await supabaseDR.from('prod_orders')
-          .select('session_id, mat_no, status, qty, qty_ok, qty_actual')
-          // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า (ตัวเลข OEE จะเพี้ยนเงียบ)
-          .in('session_id', sessionIds).order('id').range(i * 1000, (i + 1) * 1000 - 1);
-        ordersAll.push(...(od || []));
-        if (!od || od.length < 1000) break;
-      }
-      setTrOrders(ordersAll);
-      const trMats = [...new Set(ordersAll.map(o => o.mat_no).filter(Boolean))];
+      // ⚠️ เดิมแบ่งหน้าอย่างเดียวแต่ยัด id ทั้ง 800+ ตัวใน .in() → URL ยาวเกิน คืน 0 แถว
+      //    แล้ว trTotalQty ถอยไปใช้ actual_qty เงียบๆ (ยอดที่เห็นเลยตรงกับ sum(actual_qty) เป๊ะ)
+      const ordRes = await fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
+        .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c));
+      setTrOrders(ordRes.rows);
+      // โหลดไม่ครบ = ตัวเลขรวมต่ำกว่าจริง ต้องบอกบนจอ ห้ามเงียบ
+      setTrLoadWarn(
+        [dtRes, defRes, ordRes].some(r => r.error || r.truncated)
+          ? (dtRes.error || defRes.error || ordRes.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน)')
+          : null,
+      );
+      const trMats = [...new Set(ordRes.rows.map(o => o.mat_no).filter(Boolean))];
       await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ trTotalQty ยุบขั้นซ้ำก่อนรวมยอด
       if (trMats.length) {
         const pm = {};
@@ -946,7 +1022,44 @@ export default function OEEAnalytics() {
     // TEEP: ฐาน = เวลาปฏิทินทั้งหมดในช่วงที่เลือก × จำนวนไลน์ — **ต้องรวมวันที่ไม่ได้เปิดกะด้วย**
     // (ตามตำรา "Not Scheduled Time / ไม่มีแผนเปิดกะ" อยู่ในฐาน TEEP — ถ้านับเฉพาะวันที่เปิดกะ TEEP จะสูงเกินจริง)
     const dayCount = Math.max(1, Math.round((new Date(`${dateTo}T00:00:00`) - new Date(`${dateFrom}T00:00:00`)) / 86400000) + 1);
-    const calMin = lineSet.size * dayCount * 1440;
+
+    /* ⚠️⚠️ กำลังผลิตต้องนับ "ไลน์ละครั้งเดียว" — user จับได้ 2026-08-20 ว่า TEEP ต่ำผิดปกติ
+       ตัดออก 2 กลุ่ม เพราะเป็น "ของชิ้นเดียวกันที่นับไปแล้ว" ไม่ใช่กำลังผลิตเพิ่ม:
+       1. ไลน์แม่ที่ไลน์ลูกก็เปิดกะ (HYDROFORM/GOR/LWR BAR/LINE APRON ASSY) — งานเกิดบนลูกอยู่แล้ว
+       2. ชื่อที่ไม่อยู่ในทะเบียน production_lines (เปิดกะด้วยชื่อ "เครื่อง" เช่น SP-72) — เครื่องใน
+          ไลน์ที่นับไปแล้ว · ข้อมูลจริง 7 ชื่อนี้กินตัวหาร 29% แต่มีเวลากะรวมแค่ 1%
+       ⚠️ ตัดเฉพาะ "ตัวหาร" — เวลากะ/เวลารับภาระของกะพวกนั้นยังนับในตัวเศษ (เป็นเวลาผลิตจริง)
+       ⚠️ ไลน์ที่ไม่เคยเปิดกะเลย (PD1/PD2 ตอนนี้) ไม่เข้าตัวหารอยู่แล้ว เพราะ lineSet มาจากกะจริง
+          — ตรงกับที่ user สั่ง "ยังไม่มียอดผลิต ยังไม่ต้องนับ มีเมื่อไหร่ค่อยคิด" */
+    const regNames = new Set(linesFull.map(l => l.name));
+    const ranNames = [...lineSet];
+    const unregNames = regNames.size ? ranNames.filter(n => !regNames.has(n)) : [];
+    const dupParents = ranNames.filter(n => (parentChildrenMap[n] || []).some(k => lineSet.has(k)));
+    // ทะเบียนยังไม่โหลด = อย่าเพิ่งตัดอะไร (ไม่งั้นตัวหารเป็น 0 แล้ว TEEP หายทั้งแผง)
+    const capacityLines = regNames.size
+      ? ranNames.filter(n => regNames.has(n) && !dupParents.includes(n))
+      : ranNames;
+
+    /* ⚠️⚠️ ปฏิทินของแต่ละไลน์ต้องเริ่มนับ "วันที่ไลน์นั้นเข้าระบบ" ไม่ใช่วันเริ่มช่วงที่เลือก
+       (user 2026-08-20: "ควรคิดตั้งแต่ระบบเริ่มนะ สตาร์ทช่วง 1/7/26")
+       ข้อมูลจริง: ระบบเริ่มใช้จริงสัปดาห์ 29/6 · แต่ละไลน์ทยอยเข้าคนละวัน (2/7 ถึง 23/7)
+       ไม่มีไลน์ไหนเริ่มตั้งแต่ 22/5 (วัน default ของช่วง 90 วัน) เลยสักไลน์
+       → นับปฏิทินเต็มช่วงให้ทุกไลน์ = **อ้างว่าไลน์ว่างงาน ทั้งที่ความจริงคือยังไม่ได้เข้าระบบ**
+         ซึ่งเป็นคำกล่าวอ้างเท็จ ไม่ใช่แค่ตัวเลขเพี้ยน (1,183 → 510 วัน-ไลน์ · TEEP 11.4% → ~26%)
+       ⚠️ ไลน์ที่หยุดไปเฉยๆ หลังเข้าระบบแล้ว **ยังถูกนับเต็ม** — นั่นคือกำลังผลิตที่ว่างจริง
+          ตัวนี้ต่างจาก "ยังไม่เข้าระบบ" คนละเรื่อง ห้ามยุบรวมกัน
+       ⚠️ กติกานี้ทำให้คำสั่ง user ก่อนหน้า ("PD1/PD2 ยังไม่ได้ใช้ มีเมื่อไหร่ค่อยเริ่มคิด")
+          ทำงานเองอัตโนมัติ — ไลน์ใหม่เริ่มนับปฏิทินวันที่เปิดกะแรก ไม่ต้องไปตั้งค่าอะไร */
+    const firstDay = {};
+    valid.forEach(r => {
+      const d = r.work_date;
+      if (!d) return;
+      if (!firstDay[r.line_name] || d < firstDay[r.line_name]) firstDay[r.line_name] = d;
+    });
+    const daysTo = (d) => Math.max(1, Math.round(
+      (new Date(`${dateTo}T00:00:00`) - new Date(`${d}T00:00:00`)) / 86400000) + 1);
+    const lineDays = capacityLines.reduce((a, n) => a + daysTo(firstDay[n] || dateFrom), 0);
+    const calMin = lineDays * 1440;
     const r1 = (v) => (v == null ? null : +v.toFixed(1));
     return {
       oee, a: wavg(rows, r => r.calcA, wLoad),
@@ -956,10 +1069,22 @@ export default function OEEAnalytics() {
       teep: oee != null && calMin  > 0 ? r1(oee * (sumNetAvail / calMin))   : null,
       netAvailMin: Math.round(sumNetAvail), shiftMinTotal: Math.round(sumShift),
       breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
-      teepLines: lineSet.size, teepDays: dayCount,
+      teepLines: capacityLines.length, teepDays: dayCount, teepLineDays: lineDays,
+      // ตัดอะไรออกจากตัวหารบ้าง — ต้องโชว์บนจอ ห้ามตัดเงียบ
+      teepRan: lineSet.size, teepDupParents: dupParents, teepUnreg: unregNames,
+      // ไลน์แรกสุดเข้าระบบวันไหน — ใช้บอกว่าปฏิทินเริ่มนับตรงไหน
+      teepFirstDay: capacityLines.length
+        ? capacityLines.map(n => firstDay[n]).filter(Boolean).sort()[0] || null : null,
       sessions: rows.length, total: trTotalQty,
+      // ── ที่มาของ A / P / Q — user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที
+      //    ของ work time · Q เท่านั้นมาจากดี/เสียเท่าไหร่" → แนบตัวตั้ง/ตัวหารของแต่ละตัวไปเลย
+      //    ⚠️ เป็น "ตัวเลขอธิบาย" ไม่ใช่ตัวที่เอาไปคำนวณ A/P/Q ซ้ำ — ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ
+      //       (รวมทั้งช่วงแบบนี้จะได้ค่าใกล้ๆ แต่ไม่เท่าเป๊ะ เพราะของจริงคิดรายกะแล้วถ่วงน้ำหนัก) ── */
+      unplannedMinTotal: Math.round(rows.reduce((a, r) => a + (Number(r.unplannedMin) || 0), 0)),
+      okQtyTotal: rows.reduce((a, r) => a + (Number(r.okQty) || 0), 0),
+      ngQtyTotal: rows.reduce((a, r) => a + (Number(r.ngQty) || 0), 0),
     };
-  }, [rows, breakPols, dateFrom, dateTo, trTotalQty]);
+  }, [rows, breakPols, dateFrom, dateTo, trTotalQty, linesFull, parentChildrenMap]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
   // แถวดิบสำหรับ Pareto + เจาะลึก (ParetoAbcChart รวมยอด/จัด ABC/เจาะมิติเอง)
@@ -1094,6 +1219,16 @@ export default function OEEAnalytics() {
           )}
         </>}
       />
+
+      {/* โหลดแถวลูก (downtime/ของเสีย/ใบงาน) ไม่ครบ = ตัวเลขรวมต่ำกว่าจริง — ห้ามแสดง 0 เหมือนไม่มีข้อมูล */}
+      {(viewTab === 'today' ? tdLoadWarn : viewTab === 'trend' ? trLoadWarn : null) && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 9, padding: '9px 13px', marginBottom: 12, fontSize: 12.5, color: '#ef4444', lineHeight: 1.6 }}>
+          ⚠ <b>ตัวเลขบางส่วนโหลดไม่ครบ</b> — Downtime / ของเสีย / ยอดผลิต อาจต่ำกว่าความจริง
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+            {viewTab === 'today' ? tdLoadWarn : trLoadWarn} · ลองย่อช่วงวันให้สั้นลงแล้วกดโหลดใหม่
+          </div>
+        </div>
+      )}
 
       {viewTab === 'today' ? (
         <>
@@ -1298,25 +1433,54 @@ export default function OEEAnalytics() {
             ); })()}
           </div>
 
-          {/* 1.2 Daily OEE chart */}
-          <div style={s.section}>
-            <div style={s.title}>OEE แต่ละวัน (10 วันล่าสุด)</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <ComposedChart data={tdHistoryGrouped} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
-                <Tooltip content={<OEETooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={tdTarget.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${tdTarget.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
-                <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 11, fill: 'var(--text)' }} />
-                </Bar>
-                <Line type="monotone" dataKey="a" name="A%" stroke="#22c55e" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="p" name="P%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="q" name="Q%" stroke="#a78bfa" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+          {/* 1.2 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
+              ในการ์ด A/P/Q ที่อยู่เหนือมันเอง (ข) ซ้ำกับกราฟแนวโน้มรายวันในแท็บ 📊 แนวโน้ม/ประวัติ
+              ซึ่งให้ตัวเลขเท่ากันเป๊ะ (ตารางเดียวกัน · closed เหมือนกัน · wavg สูตรเดียวกัน)
+              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20) */}
+          <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
+            <div style={{ flex: '0 0 auto' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : 'ยังไม่มีข้อมูลย้อนหลัง'}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 260 }}>
+              {['oee', 'a', 'p', 'q'].map(k => {
+                const v = tdVsAvg[k];
+                const up = v.diff != null && v.diff > 0.05;
+                const dn = v.diff != null && v.diff < -0.05;
+                return (
+                  <div key={k} style={{ flex: '1 1 120px', minWidth: 110, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 11px' }}>
+                    <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</div>
+                    <div style={{ fontSize: 17, fontWeight: 900, color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>
+                      {v.now ?? '—'}{v.now != null ? '%' : ''}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
+                      {v.diff == null ? 'เทียบไม่ได้' : `${up ? '▲ +' : dn ? '▼ ' : '● '}${v.diff} จุด`}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                      เฉลี่ย {v.avg ?? '—'}{v.avg != null ? '%' : ''}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+              <button onClick={() => { setPeriod('daily'); setDateFrom(dateStrAdd(tdDate, -29)); setDateTo(tdDate); setViewTab('trend'); }}
+                title="เปิดแท็บแนวโน้ม/ประวัติ พร้อมตั้งช่วง 30 วันล่าสุดให้"
+                style={{ ...s.tab(false), color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.4)', whiteSpace: 'nowrap' }}>
+                📈 ดูย้อนหลังเต็ม (30 วัน)
+              </button>
+              {/* ⚠️ ตัวกรองทีมมีผลกับตัวเลข "วันนี้" แต่ไม่มีผลกับค่าเฉลี่ยย้อนหลัง (ตารางกะโหลดมาแค่วันที่เลือก)
+                  — ห้ามปล่อยให้คนอ่านคิดว่าเทียบทีมเดียวกัน */}
+              {tdTeam && (
+                <div style={{ fontSize: 10.5, color: '#f59e0b', maxWidth: 220, textAlign: 'right', lineHeight: 1.45 }}>
+                  ⚠ ค่าเฉลี่ยย้อนหลัง <b>ไม่ได้กรองทีม {tdTeam}</b> — เทียบกับทุกทีม
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
@@ -1375,7 +1539,7 @@ export default function OEEAnalytics() {
                         const planned = d.category === 'planned';
                         return (
                           <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%) · กดเพื่อดูรายการ`}
-                            onClick={() => setTdDtDrill({ kind: 'cause', key: d.name, label: d.name })}
+                            onClick={() => setTdDtDrill({ kind: 'cause', key: d.name, label: d.name, typeId: d.typeId })}
                             style={{ cursor: 'pointer' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
                               <span style={{ color: planned ? 'var(--muted)' : 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
@@ -1455,6 +1619,50 @@ export default function OEEAnalytics() {
                     <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
                   </div>
                   <div style={{ flex: 1, overflow: 'auto', padding: '4px 14px 14px' }}>
+                    {/* 🔁 เกิดซ้ำแค่ไหน — ย้อนหลัง 30 วันของสาเหตุนี้ (ตอบว่าเป็นปัญหาเรื้อรังหรือเหตุการณ์เดียว) */}
+                    {tdDtDrill.kind === 'cause' && tdDrillHist && (
+                      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', margin: '10px 0 4px' }}>
+                        {tdDrillHist.loading ? (
+                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดย้อนหลัง 30 วัน…</div>
+                        ) : tdDrillHist.error ? (
+                          <div style={{ fontSize: 12, color: '#ef4444' }}>โหลดย้อนหลังไม่สำเร็จ — {tdDrillHist.error}</div>
+                        ) : (<>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 7 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>🔁 ย้อนหลัง 30 วัน</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                              เกิด <b style={{ color: 'var(--text)' }}>{tdDrillHist.hitDays}</b> วัน · <b style={{ color: 'var(--text)' }}>{tdDrillHist.count}</b> ครั้ง ·
+                              รวม <b style={{ color: '#a855f7' }}>{Math.round(tdDrillHist.total).toLocaleString()}</b> นาที
+                            </div>
+                          </div>
+                          {/* แท่งรายวัน — วันที่เลือกอยู่เน้นสี · วันไม่เกิด = ตอเทาเตี้ย (ไม่ปล่อยว่างจนดูเหมือนวันหาย) */}
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 44 }}>
+                            {tdDrillHist.days.map(d => (
+                              <div key={d.key} title={`${d.key} — ${Math.round(d.min).toLocaleString()} นาที`}
+                                style={{ flex: 1, minWidth: 3, borderRadius: '2px 2px 0 0',
+                                  height: `${Math.max(3, (d.min / tdDrillHist.max) * 100)}%`,
+                                  background: d.min > 0 ? (d.key === tdDate ? '#f59e0b' : '#a855f7') : 'var(--border)',
+                                  opacity: d.min > 0 ? 0.9 : 1 }} />
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                            <span>{dateStrAdd(tdDate, -29)}</span>
+                            <span style={{ color: '#f59e0b' }}>■ วันที่เลือก</span>
+                            <span>{tdDate}</span>
+                          </div>
+                          {tdDrillHist.hitDays >= 10 && (
+                            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 7, lineHeight: 1.5 }}>
+                              ⚠ เกิด {tdDrillHist.hitDays} วันจาก 30 วัน = ปัญหาเรื้อรัง ไม่ใช่เหตุการณ์เดียว —
+                              ควรเปิดโปรเจคปรับปรุงที่ <b>/improvements</b> แทนการแก้ซ้ำทุกวัน
+                            </div>
+                          )}
+                        </>)}
+                      </div>
+                    )}
+                    {tdDtDrill.kind === 'cause' && !tdDtDrill.typeId && (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '10px 0 4px' }}>
+                        (รายการกลุ่มนี้ไม่ได้ผูกกับประเภท Downtime — ดูย้อนหลังให้ไม่ได้)
+                      </div>
+                    )}
                     {tdDrillRows.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีรายการ</div>
                     ) : (
@@ -1540,21 +1748,73 @@ export default function OEEAnalytics() {
       {/* KPI Cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <KpiCard label="OEE เฉลี่ย"     value={kpi.oee} color={kpi.oee != null ? oeeColor(kpi.oee) : undefined} sub={`${kpi.sessions} กะ · เป้า ≥ ${trTarget.oee}%`} />
-        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`} />
-        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`} />
-        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`} />
+        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`}
+          calc={<>
+            เวลารับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> น.<br />
+            − หยุดนอกแผน <b style={{ color: '#a855f7' }}>{kpi.unplannedMinTotal.toLocaleString()}</b> น.<br />
+            = เดินเครื่อง <b>{Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()}</b> น.
+          </>} />
+        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`}
+          calc={<>
+            เวลาที่ควรใช้ตาม CT ÷ เวลาเดินเครื่อง<br />
+            <span style={{ color: 'var(--muted)' }}>ผลิต {kpi.total.toLocaleString()} ชิ้น ใน {Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()} น.</span>
+          </>} />
+        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`}
+          calc={<>
+            ของดี <b style={{ color: '#22c55e' }}>{kpi.okQtyTotal.toLocaleString()}</b> ชิ้น<br />
+            ของเสีย <b style={{ color: '#ef4444' }}>{kpi.ngQtyTotal.toLocaleString()}</b> ชิ้น<br />
+            = ผลิตจริง <b>{(kpi.okQtyTotal + kpi.ngQtyTotal).toLocaleString()}</b> ชิ้น
+          </>} />
         <KpiCard label="ผลิตรวม" value={null} sub={`${kpi.total.toLocaleString()} ชิ้น`}
           color="var(--text)" />
       </div>
 
       {/* ── OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" · เห็นเวลาที่หายไปกับแผน/ไม่ได้เปิดกะ (2026-08-04) ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'stretch' }}>
+        {/* OOE/TEEP ต่างจาก OEE ที่ "ตัวหาร" อย่างเดียว — กางตัวเศษ/ตัวหารให้เห็นเหมือน A/P/Q
+            (user 2026-08-20: "ให้สองค่านี้เห็นแบบ %A ด้วย") · สูตร = OEE × (รับภาระ ÷ ฐาน) */}
         <KpiCard label="OOE (Overall Operations Effectiveness)" value={kpi.ooe}
           color={kpi.ooe != null ? oeeColor(kpi.ooe) : undefined}
-          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)" />
+          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)"
+          calc={<>
+            รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ เวลากะ <b>{kpi.shiftMinTotal.toLocaleString()}</b> น.<br />
+            = <b>{kpi.shiftMinTotal > 0 ? (kpi.netAvailMin / kpi.shiftMinTotal * 100).toFixed(1) : '—'}%</b> ของเวลากะ ×
+            OEE {kpi.oee ?? '—'}%
+          </>} />
         <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
           color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
-          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ × ${kpi.teepDays} วัน`} />
+          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ · รวม ${kpi.teepLineDays.toLocaleString()} วัน-ไลน์`}
+          calc={<>
+            รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ ปฏิทิน <b>{kpi.calMin.toLocaleString()}</b> น.<br />
+            = <b>{kpi.calMin > 0 ? (kpi.netAvailMin / kpi.calMin * 100).toFixed(1) : '—'}%</b> ของเวลาที่มีทั้งหมด ×
+            OEE {kpi.oee ?? '—'}%
+            {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
+            </div>
+            {/* ปฏิทินของแต่ละไลน์เริ่มนับวันที่มันเข้าระบบ ไม่ใช่วันเริ่มช่วง — ต้องบอก ไม่งั้นคนคิดว่านับเต็มช่วง */}
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              ปฏิทินเริ่มนับ<b> วันที่แต่ละไลน์เข้าระบบ</b> ไม่ใช่วันเริ่มช่วง
+              {kpi.teepFirstDay && <> (ไลน์แรกสุด {kpi.teepFirstDay})</>} —
+              ช่วงก่อนหน้านั้นคือ “ยังไม่ได้ใช้ระบบ” ไม่ใช่ “ไลน์ว่าง”
+            </div>
+            {/* ตัดอะไรออกจากตัวหารบ้าง — ต้องเห็น ไม่งั้นคนสงสัยว่าทำไมเลขไลน์ไม่ตรงกับที่เห็นในลิสต์ */}
+            {(kpi.teepDupParents.length > 0 || kpi.teepUnreg.length > 0) && (
+              <div style={{ color: '#f59e0b', marginTop: 3 }}>
+                เปิดกะ {kpi.teepRan} ชื่อ → นับเป็นกำลังผลิต {kpi.teepLines} ไลน์
+                {kpi.teepDupParents.length > 0 && (
+                  <div title={kpi.teepDupParents.join(' · ')}>
+                    − {kpi.teepDupParents.length} ไลน์แม่ที่ไลน์ลูกก็เปิดกะ (ของชิ้นเดียวกัน)
+                  </div>
+                )}
+                {kpi.teepUnreg.length > 0 && (
+                  <div title={kpi.teepUnreg.join(' · ')}>
+                    − {kpi.teepUnreg.length} ชื่อที่ไม่อยู่ในทะเบียนไลน์ (เปิดกะด้วยชื่อเครื่อง)
+                  </div>
+                )}
+              </div>
+            )}
+          </>} />
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', flex: '2 1 320px', minWidth: 260 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
           {kpi.shiftMinTotal > 0 ? (<>

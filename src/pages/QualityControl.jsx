@@ -18,6 +18,7 @@ import {
   CartesianGrid, Tooltip, Legend, ReferenceLine, Cell, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchByIds } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
@@ -297,10 +298,15 @@ function QualityDashboard() {
       if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
       const { data: ss } = await ssQ.order('work_date');
       const ids = (ss || []).map(s => s.id);
-      const [{ data: oo }, { data: dd }] = ids.length ? await Promise.all([
-        supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', ids),
-        supabaseDR.from('defect_logs').select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', ids),
-      ]) : [{ data: [] }, { data: [] }];
+      // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
+      //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
+      const [ooRes, ddRes] = await Promise.all([
+        fetchByIds(ids, c => supabaseDR.from('prod_orders')
+          .select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('defect_logs')
+          .select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', c)),
+      ]);
+      const oo = ooRes.rows, dd = ddRes.rows;
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
       let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed');
       if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);

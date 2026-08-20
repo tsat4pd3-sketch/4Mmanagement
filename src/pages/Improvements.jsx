@@ -6,6 +6,7 @@ import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
 import { normCode } from '../utils/qrCode';
+import { fetchByIds } from '../utils/fetchByIds';
 import { fmtDate } from '../utils/dateFormat';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
@@ -356,12 +357,16 @@ export default function Improvements() {
 
     let rows = [];
     if (imp.problem_source === 'downtime') {
-      let q = supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
-        .in('session_id', allIds);
-      if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
-      if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
-      rows = (await q).data || [];
+      // ⚠️ ห้าม .in('session_id', allIds) ตรงๆ — หน้าต่าง 90 วัน = หลายร้อยกะ → URL ยาวเกิน
+      //    คิวรีล้มเหลวเงียบ แล้วผลก่อน/หลังจะเป็น 0 ทั้งคู่ = โปรเจคดูเหมือน "แก้หายสนิท" ทั้งที่วัดไม่ได้
+      rows = (await fetchByIds(allIds, c => {
+        let q = supabaseDR.from('downtime_logs')
+          .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
+          .in('session_id', c);
+        if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
+        if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
+        return q;
+      })).rows;
       // กรองเครื่องฝั่ง client ด้วย normCode — .eq ตรงๆ จะพลาด log ที่พิมพ์เว้นวรรค ("RB- 107")
       if (imp.machine_no) rows = rows.filter(r => sameMc(r.machine_no, imp.machine_no));
       // นับเฉพาะ downtime "นอกแผน" เหมือน KPI หลัก (planned = นับสต็อก/ไม่มีแผนผลิต ไม่ใช่ loss)
@@ -379,11 +384,13 @@ export default function Improvements() {
       };
     }
     // defect: qty NG — กรองสินค้า (ถ้าระบุ) ผ่าน prod_orders.mat_no
-    let q = supabaseDR.from('defect_logs')
-      .select('session_id, qty_ng, prod_orders(mat_no)')
-      .in('session_id', allIds);
-    if (imp.problem_type_id) q = q.eq('defect_type_id', imp.problem_type_id);
-    rows = ((await q).data || []).filter(r => !imp.mat_no || r.prod_orders?.mat_no === imp.mat_no);
+    rows = (await fetchByIds(allIds, c => {
+      let q = supabaseDR.from('defect_logs')
+        .select('session_id, qty_ng, prod_orders(mat_no)')
+        .in('session_id', c);
+      if (imp.problem_type_id) q = q.eq('defect_type_id', imp.problem_type_id);
+      return q;
+    })).rows.filter(r => !imp.mat_no || r.prod_orders?.mat_no === imp.mat_no);
     const sum = (arr) => arr.reduce((a, r) => a + (Number(r.qty_ng) || 0), 0);
     const bRows = rows.filter(r => !idSetAfter.has(r.session_id));
     const aRows = rows.filter(r => idSetAfter.has(r.session_id));

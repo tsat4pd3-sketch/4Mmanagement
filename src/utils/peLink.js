@@ -6,7 +6,7 @@
    ⚠️ "จับคู่ไม่ได้" ไม่ใช่ความเงียบ — ต้องคืนข้อเสนอชนิด `missing` ออกไปให้จอขึ้นสีแดง
       เพราะนั่นคือคำตอบที่มีค่าที่สุด: *ตอนออกแบบไม่เคยคิดถึงอาการนี้เลย* */
 
-import { noteSimilarity, normalizeNote, CLUSTER_THRESHOLD } from './textCluster';
+import { noteSimilarity, normalizeNote, CLUSTER_THRESHOLD } from './textCluster.js'; // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 /* ── กลุ่มคำของชิ้นส่วน/อาการ ที่คนเขียนต่างกันได้ (ไทย/อังกฤษ) ──────────────
    จำเป็นเพราะ FMEA เขียน "Missing nut" แต่ลูกค้า/หน้างานเขียน "นัทไม่มี"
