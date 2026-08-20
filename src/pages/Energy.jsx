@@ -61,6 +61,10 @@ export default function Energy() {
   const [showUnmetered, setShowUnmetered] = useState(false);
   const [prod, setProd] = useState(null);   // month → ชิ้นที่ผลิตได้ทั้งโรงงาน (null = ยังไม่โหลด)
   const [prodErr, setProdErr] = useState('');
+  /* 📡 MQTT ยัง "พักไว้" (user 2026-08-20: "คิดต่อไว้เฉยๆ ยังไม่ต้องทำ")
+     → ซ่อนแท็บจนกว่าจะ apply migration · โชว์แท็บที่กดแล้วเจอแถบแดง = รบกวนคนใช้งานเปล่าๆ
+     วันที่ apply เมื่อไหร่ แท็บโผล่เอง ไม่ต้องแก้โค้ด */
+  const [mqttReady, setMqttReady] = useState(false);
 
   /* ── scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่น = ตาม sections ── */
   const scopedLines = useMemo(() => {
@@ -102,6 +106,8 @@ export default function Energy() {
     setCfgMissing(!!pcErr);
     setPointCfg(pc || []);
     setFactors(ef || []);
+    const { error: mqErr } = await supabaseDR.from('energy_meter_topics').select('id', { count: 'exact', head: true });
+    setMqttReady(!mqErr);
 
     // "utility นี้จ่ายให้ไลน์ไหน" — ของจริงอยู่ facility_supply_links (ห้ามเก็บซ้ำที่อื่น)
     const { data: sl } = await supabaseDR.from('facility_supply_links').select('machine_id, line_name');
@@ -385,7 +391,8 @@ export default function Energy() {
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={`${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
-        tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' }, { key: 'mqtt', label: '📡 มิเตอร์ / MQTT' }]}
+        tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' },
+          ...(mqttReady ? [{ key: 'mqtt', label: '📡 มิเตอร์ / MQTT' }] : [])]}
         tab={tab} onTab={setTab}
         actions={
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -659,8 +666,13 @@ export default function Energy() {
             </div>
           </>
         ) : tab === 'mqtt' ? (
-          /* 📡 ทะเบียน MQTT topic — ให้ทีมช่างเพิ่มเองได้ (ยังไม่มี bridge → หน้าบอกไว้ชัด) */
-          <EnergyMqttTopics points={points} canEdit={canEdit} />
+          /* 📡 ทะเบียน MQTT topic — ให้ทีมช่างเพิ่มเองได้ (ยังไม่มี bridge → หน้าบอกไว้ชัด)
+             deep-link มาตอนยังไม่ apply migration = บอกตรงๆ ห้ามเด้งไปแท็บอื่นเงียบๆ */
+          mqttReady ? <EnergyMqttTopics points={points} canEdit={canEdit} />
+            : <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)' }}>
+                📡 <b>ส่วนรับค่าจากมิเตอร์ (MQTT) ยังไม่เปิดใช้</b> — ต้อง apply migration
+                <code> 20260820_energy_mqtt_topics</code> ก่อน แล้วแท็บจะโผล่เอง (แจ้ง admin)
+              </div>
         ) : (
           /* ⚙️ ค่าการปล่อย (EF) */
           <EfSetup factors={factors} canEdit={canEdit} cfgMissing={cfgMissing} onSaved={load} month={month} />
