@@ -446,6 +446,17 @@ export default function Management() {
       }
       setLines(visible);
 
+      // deep-link ?line=NAME&view=heijunka (จากหน้า Kanban Board — ปุ่ม 📊 บอร์ดไลน์)
+      // เคารพ scope: ไลน์นอก scope ของ user = ตกไปค่าเริ่มต้นปกติ
+      const qp = new URLSearchParams(window.location.search);
+      const wantedLine = qp.get('line');
+      const hit = wantedLine ? visible.find(l => l.name === wantedLine) : null;
+      if (hit) {
+        setSelectedLine(hit.name);
+        if (qp.get('view') === 'heijunka') switchView('heijunka');
+        window.history.replaceState({}, '', window.location.pathname);   // ล้าง param กันเปิดซ้ำตอน refresh
+        return;
+      }
       // ค่าเริ่มต้น: leader เริ่มที่ไลน์ตัวเอง / role อื่นเริ่มที่ไลน์หลักตัวแรก
       const own = isLeader && userLineId ? visible.find(l => l.id === userLineId) : null;
       const topLevel = visible.filter(l => !l.parent_line_name);

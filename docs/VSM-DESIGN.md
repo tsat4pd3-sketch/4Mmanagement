@@ -1,6 +1,6 @@
 # Value Stream Mapping (VSM) — ออกแบบก่อนลงมือ
 
-> สถานะ: **เฟส 1 ทำแล้ว 2026-08-13** (หน้า `/vsm` + routing master) · **แท็บ ⚡ สายธารสด (Realtime) ทำแล้ว 2026-08-19** (ดู §8) — เฟส 2-4 (future state/kaizen burst) ยังไม่ทำ
+> สถานะ: **เฟส 1 ทำแล้ว 2026-08-13** (หน้า `/vsm` + routing master) · **แท็บ ⚡ สายธารสด (Realtime) ทำแล้ว 2026-08-19** (ดู §8) · **worklist ข้อมูลที่ขาด + เสนอ routing จาก PFC ทำแล้ว 2026-08-20** (ดู §9) — เฟส 2-4 (future state/kaizen burst) ยังไม่ทำ
 > **📎 reference สไตล์ใบจริงของโรงงาน (user แชร์ 2026-08-20) อยู่ที่ skill `.claude/skills/vsm-tsat-reference/SKILL.md`** — งานที่แตะ VSM ให้โหลด skill นั้นคู่กับไฟล์นี้เสมอ (ธรรมเนียม MCT headline · kaizen burst · future state · ชุดคำบนเส้นข้อมูล) · MCT/PT format ผ่าน `fmtMct`/`fmtMinSec` ใน `src/lib/vsmModel.js` (เพิ่ม 2026-08-20)
 > ที่มา: คำสั่ง user 2026-08-06 "อยากได้ tab สร้าง VSM มาตรฐานสากล กดเลือก main product
 > (100XXXXX) แล้วโปรแกรมสร้างให้" · user เลือก **"เพิ่ม master routing ก่อน"** + **"เฟสแรก = Current state + พิมพ์ A3"**
@@ -203,3 +203,28 @@ NVA = PLT (วัน) × AT (วินาที/วัน)        ← ไม่�
 - egress: realtime channel `vsm-live` (downtime_logs/prod_orders/defect_logs/production_sessions —
   อยู่ใน publication ครบ) + `usePolling(RATE.BOARD)` กันเหนียว · query สดกรองตามไลน์ในสาย payload เล็ก
   · query พลาด = flag `partial` แถบส้ม ห้ามเงียบ
+
+## 9. 📋 Worklist "ข้อมูลที่ VSM ยังขาด" + 🔀 เสนอ routing จาก PFC — ทำแล้ว 2026-08-20
+
+จาก audit ข้อมูลจริง 2026-08-20 (FG 44 ตัวยังไม่มี routing เลย · CT ครบแค่ 13/44 · forecast ผูก FG 5/44)
+— ปิดลูป "รู้ว่าขาด → ไปลงที่ไหน" ด้วย 2 ชิ้น:
+
+**(ก) Worklist บนหน้า `/vsm` (แท็บเอกสาร)** — แทนบล็อก warning เดิม
+- การตรวจ "ขาดอะไร" อยู่ที่ `buildVsmModel` ที่เดียว (warning มี `code` กำกับ) ·
+  `src/lib/vsmGaps.js` แค่จับคู่ code → ปุ่มลิงก์ "ไปลงข้อมูลที่ต้นทาง"
+- **เพิ่ม warning ใหม่ในโมเดล = ใส่ code + เติม FIX ใน vsmGaps** — code ที่ไม่รู้จักยังแสดง (ไม่มีลิงก์)
+- warning รวมใหม่ 2 ตัว: `no_oee` (ไลน์ของขั้นไม่มีกะปิดในเดือน) · `no_setup` (ไม่มี downtime หมวด setup)
+- FG ที่มีชุด PFC ใน `/pe-docs` → ปุ่ม routing ชี้ `?set=<id>` ตรงชุด (จับคู่ mat_no ก่อน แล้ว `matchDocSet`)
+- ProductMaster ผูกแท็บกับ URL แล้ว (`useTabParam`) → `/products?tab=routing` deep-link ได้
+
+**(ข) ปุ่ม "🔀 เสนอ routing เข้า VSM" ใน `/pe-docs` แท็บ Flow** — PFC → `part_routings`
+- **ระบบเสนอ คนยืนยัน** (กฎ AI intake) — ตัวแปลง pure `src/utils/peRouting.js` (เทส 5 เคส):
+  `process`/`inspection` → ขั้น routing (ติ๊กออกได้) · `storage` → `wip_label` ของขั้นก่อนหน้า ·
+  incoming_insp/transport/rework/warehouse/delivery ข้ามแบบรายงาน (ห้ามตัดเงียบ)
+- MAT ผูกผ่าน `resolveMatForSet`: `pe_doc_sets.mat_no` → เทียบ `part_no` กับ `dr_products.p_no`
+  แบบ normalize · **กำกวมหลายตัว = ให้คนเลือกเอง ห้ามเดา** (p_no ยังไม่ unique จริง — กฎ matResolve)
+- มี routing เดิม = confirm แล้วปิดชุดเดิม (`is_active=false` เก็บประวัติ ตาม partial unique index)
+  ก่อน insert · insert พลาด = กู้ชุดเดิมกลับ + toast
+- สิทธิ์ = `routing:manage` เดิม (ไม่ seed key ใหม่ — เลี่ยงกับดัก enum_range) ·
+  `part_routings` อยู่ใน `DR_AUDIT_TABLES` → updated_by_name ถูก stamp เอง · ติ๊กเกิน 10 ขั้นมีคำแนะนำ
+  (ใบ VSM อ่านง่ายมักมี 5–8 กล่อง) แต่ไม่บล็อก

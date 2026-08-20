@@ -169,7 +169,7 @@
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
-| Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
+| Logistic - Store | `/heijunka` | HeijunkaKanban · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter · **QR เรียกภาชนะ (2026-08-03):** deep-link `?line=&ctype=&qty=` → เปิดฟอร์มกรอกครบ เหลือกดยืนยัน · ปุ่ม 🏷️ ป้าย QR (พิมพ์แผ่น A4 ไลน์×ชนิดภาชนะ — lazy import `qrcode` · doc_key `rack_qr_labels` ผ่าน withDocFoot, migration `20260803_doc_form_rack_qr_labels.sql` Main) · ปุ่ม 📷 สแกน (BarcodeDetector ในแอป + ช่องปืนยิง keyboard-wedge — parse URL ตัวเดียวกัน) · กล้องมือถือสแกนตรงก็ได้ (เปิดลิงก์) | ทุก role |
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
@@ -182,6 +182,7 @@
 | การตรวจสอบและซ่อมบำรุง | `/pm-coordination` | PmCoordination — 🗓️ แผนประสานงาน PM ข้ามวัน (แบบเมล MTN แจ้ง Production): งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน + ช่วง Production Support → แจ้ง Telegram + พิมพ์ใบ (ดู section "PM Coordination") | ทุก role (ดู) · `pm_coord:manage` = admin/mgr/sv/mtn/engineer/leader |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
+| การตรวจสอบและซ่อมบำรุง | `/energy` | **Energy — ⚡ พลังงานไฟฟ้า + 🌱 คาร์บอน** · 4 แท็บ: 📝 กรอกรายเดือน (3 ชั้น: บิลทั้งโรงงาน / จุดที่มีมิเตอร์ / จุดที่ยังไม่มีมิเตอร์ — ผลรวมที่วัดได้ cumulate ขึ้นมา) · 📊 สรุป & วิเคราะห์ (เทรนด์ 12 เดือน+YoY · **"อะไรทำให้เดือนนี้เปลี่ยน" = contribution to change** · สัดส่วนการใช้ · SEC kWh/ชิ้น) · ⚙️ ค่าการปล่อย (EF ตาม TGO — **ไม่ seed ค่าให้ ต้องกรอกพร้อมที่มา**) · 📡 มิเตอร์/MQTT (**ซ่อนจนกว่าจะ apply migration**) · สูตรทั้งหมดอยู่ `src/utils/energy.js` ที่เดียว **ห้ามคำนวณเองในหน้า ห้ามแตกไฟล์ util พลังงาน/คาร์บอนเพิ่ม** · ดู `docs/ENERGY_MONITORING_DESIGN.md` | ทุก role (ดู) · `energy:record` = admin/mgr/mtn/engineer/dept_admin |
 | ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
@@ -269,9 +270,13 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 **ขาออกยังไม่ถูกบันทึก (adoption gap ไม่ใช่ bug):** 2xx/3xx/5xx ตัดออก = 0 ทุกกลุ่ม · 30 วันล่าสุด รับเข้า 3,580 : ตัดออก 33
 · UI ใช้ได้จริง (warehouse1 เคยตัด 32 รายการ) แค่ยังไม่ใช้ต่อเนื่อง · ผลข้างเคียง: มินิสโตร์ในระบบ = 0 → backflush หักไม่ได้ ทุกอย่างไหลเข้า accumulator
 
-**นอกขอบเขต (user 2026-08-19 "ฝ่ายสนับสนุนอาจจะยังไม่ต้องสนใจ"):** ส่วนจัดซื้ออยู่ใต้**ฝ่ายสนับสนุนกลาง**
-ซึ่งยังไม่ถูกขยายผลเข้าระบบเลย (ไม่มี org node / user / role) → `purchase_requests` ค้าง pending 1,024 ใบ
-**ไม่ใช่รอยรั่วของเรา** — สายข้อมูลของเราจบที่ "ระบบออกใบสั่งซื้อให้แล้ว" = ส่งถึงขอบเขตฝ่ายอื่น
+> ### ⚠️ กฎเหล็ก — "สั่งซื้อวัตถุดิบผลิต" เป็นงานของ **Planning** ไม่ใช่ส่วนจัดซื้อ (user แก้ให้ 2026-08-19)
+> - **วัตถุดิบ/พาร์ทที่ใช้ผลิต (3xx/5xx) → Planning (ฝ่าย Logistic & Sales) เป็นผู้สั่งซื้อ** = **อยู่ในขอบเขต มีเจ้าภาพ**
+> - **ส่วนจัดซื้อ (ฝ่ายสนับสนุนกลาง · 2100414300) ทำแค่ หา supplier + ซื้อของใช้ทั่วไป** ที่ไม่ใช่วัตถุดิบผลิต
+> - ดังนั้น `purchase_requests` ที่ทริกเกอร์ออกให้ (ค้าง pending 1,024 ใบ) = **คิวงานของ Planning ต้องตามต่อ**
+>   ห้ามตีเป็น "นอกขอบเขต/รอฝ่ายอื่น" (ผมเคยสรุปผิดแบบนั้นรอบแรก — แก้แล้ว)
+> - ที่ user บอกว่า "ฝ่ายสนับสนุนยังไม่ต้องสนใจ" = ฝ่ายสนับสนุนกลาง (บัญชี/HRM/CIC/QSM/จัดซื้อของใช้)
+>   **ไม่ได้หมายถึงการสั่งซื้อวัตถุดิบผลิต**
 
 ### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
 มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**
@@ -304,6 +309,20 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >   → สายธารความต้องการเกือบทั้งสาย (ยกเว้นช่วงผลิต) เป็นของฝ่ายเดียว ใช้จัดกลุ่มใน `/flow-tower`
 > - **ระบบยุบ 2 ส่วนของ Logistic เหลือ section เดียว `Planning&Store`** → บัญชีทั้ง 7 กองรวมกัน แยกสิทธิ์ตามงานจริงไม่ได้
 > - **ฝ่ายสนับสนุนกลาง (รวมจัดซื้อ) ยังไม่ถูกขยายผลเข้าระบบเลย** — นอกขอบเขตรอบนี้ (user ยืนยัน 2026-08-19)
+> ### ⚠️ กฎเหล็ก — "ฝ่าย (Division)" เป็น **ป้ายที่ node** ไม่ใช่ชั้นใน tree (2026-08-18 · ย้ำอีกครั้ง 2026-08-19)
+> ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/quality/logistic/office)
+> + คอลัมน์ **`org_nodes.division`** ติดป้ายที่ node ระดับบนสุด แล้ว**ลูกตกทอดขึ้นไปหา** (`divisionOfNode`)
+> — หลักเดียวกับ `cost_center`/`head_name` ที่ไลน์ลูกตกทอดจากไลน์แม่
+> - ติดป้ายแล้ว: PD1–PD4→production · Planning&Store→logistic · MTN/JIG MTN/DIE MTN→maintenance · QA→quality
+> - ตั้งค่าที่ `/org-setup` (dropdown ฝ่ายในโมดัลแก้ไข section/department) · อ่านผ่าน **`src/utils/orgDivisions.js`**
+>   (`loadDivisions`/`divisionsSync`/`divisionMeta`/`divisionLabel`/`divisionOfNode`/`divisionOfEmployee`)
+> - **🔴 ห้ามเพิ่ม `kind='division'` เป็น node ชั้นใหม่ใน `org_nodes`** — จะพัง cascade section→department ทุกหน้า
+>   และกลายเป็นแหล่งความจริงที่ 2 ของเรื่องเดียวกัน
+>   **เคยพลาดจริง 2026-08-19:** ผมเพิ่ม node ชั้นฝ่าย + คอลัมน์ใน `/org-setup` + util ซ้อนอีกตัว
+>   ทั้งที่ main ทำเสร็จแล้วคนละแบบ → ถอยออกทั้งหมด (migration `20260819_revert_org_division_level`)
+>   **บทเรียน: ก่อนเพิ่มแนวคิดระดับ master ให้ `grep` หาของเดิมก่อนเสมอ — โปรเจคนี้มีหลาย session ทำขนานกัน**
+> - หน้าที่อยากรู้ "ช่วงงานนี้เป็นของฝ่ายไหน" ให้อ้างด้วย **`code`** แล้วเอาชื่อ/สี/ไอคอนจาก util (เช่น `/flow-tower`)
+
 > - **ห้ามสรุปจากชื่อ role ว่าใครอยู่ฝ่ายไหน** — ข้อมูลจริง: คนของ Logistic&Sales 7 บัญชีใช้ role `sale`
 >   ส่วน `planner_store` มีบัญชีเดียว (อัจฉรา โสภาบุญ · +แอดมินหน่วยงาน) ที่เป็นคนลงข้อมูลให้เกือบทั้งฝ่าย
 
@@ -679,6 +698,18 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > - **policy ที่ต้องการหลาย key ให้ `or` กัน** (`employee_skills` = `skills:edit` ∨ `skills:approve_levelup` ∨ `skills:delete`) แล้วปรับต่อที่ `/permissions` ได้เลยไม่ต้องเขียน migration ใหม่
 > - **⚠️ RLS ปฏิเสธ UPDATE/DELETE = 0 rows ไม่ error** (เงียบ!) มีแต่ INSERT/upsert ที่โยน 42501 → **โค้ดที่เขียนตารางซึ่งคุมด้วย RLS ต้อง gate ด้วย `can()` ฝั่ง UI ให้ตรงกับ policy ด้วย** อย่าหวังพึ่ง error
 > - **ผลของการแก้ (วัดกับผู้ใช้จริง):** ได้สิทธิ์เพิ่ม mtn 8 + planner_store(dept_admin) 1 · **เสียสิทธิ์ leader 17 คน** (ตรงตามที่ `role_permissions` ตั้งไว้)
+> #### ⚠️ ขอบเขตสกิล 2 ระดับ: ฝ่าย → เจาะจงหน่วยงาน (2026-08-18 · คำสั่ง user)
+> **ที่มา:** ช่างแผนก MTN เปิดโมดัลแก้ไขพนักงานแล้วเจอสกิลฝ่ายผลิต 29 ตัวขึ้น "ไม่เกี่ยวข้อง" เรียงยาวจนหาของตัวเองไม่เจอ
+> - **ผังองค์กร *ไม่มี* ชั้นฝ่ายเป็น node โดยตั้งใจ** — ระดับบนสุดคือ **ส่วนงาน** (PD1-4, Planning&Store) กับ **แผนกขึ้นตรงฝ่าย** (MTN, JIG MTN, DIE MTN, QA) · แทรก node ชั้นใหม่จะไปพัง cascade section→department ทุกหน้า
+> → ใช้ **ติดป้าย `org_nodes.division` ที่ node ระดับบนสุด แล้วลูกตกทอด** (หลักเดียวกับ `cost_center`/`head_name` ที่ไลน์ลูกตกทอดจากไลน์แม่) · master `org_divisions` (production/maintenance/quality/logistic/office — เพิ่มฝ่ายได้ไม่ต้องแก้โค้ด) · ตั้งที่ `/org-setup` (ช่อง "ฝ่าย (Division)" + ป้ายในลิสต์ที่บอกด้วยว่าค่าไหน "ตกทอด")
+> - **`skill_definitions` มี 2 ช่อง:** `scope_division` (ว่าง = ทุกฝ่าย) + `scope_section` (ว่าง = ทั้งฝ่าย) → เลือกได้ 3 แบบ: สกิลกลาง · ทั้งฝ่ายผลิต · ฝ่ายผลิตเฉพาะ PD3
+> - **อ่านผ่าน `src/utils/orgDivisions.js` เท่านั้น** (`divisionOfNode`/`divisionOfEmployee`/`skillInScope`/`scopeUnitsForDivision`/`skillScopeLabel`) — **ห้ามเดาฝ่ายจากชื่อ section/department** (ชื่อเปลี่ยนได้ + โรงงานอื่นตอน rollout เรียกไม่เหมือนกัน)
+> - **⚠️ ระดับเจาะจงต้องเทียบทั้ง `section` และ `department`** — พนักงานฝ่ายช่าง/คุณภาพมี `section` เป็น **null** (สังกัดแผนกขึ้นตรงฝ่าย) เทียบ section อย่างเดียว = ไม่มีวันตรง · `scopeUnitsForDivision` จึงคืนทั้ง section และ department ระดับบนสุด
+> - **⚠️ ห้ามซ่อนเงียบ** — สกิลที่พนักงาน **มีอยู่แล้ว โชว์เสมอ** แม้นอกขอบเขต (การถือสกิลข้ามส่วนงานเป็นเรื่องปกติ: PD2 31 คนถือสกิล PD3 93 แถว · PD4 31 คนถือสกิล PD3 77 แถว) + แถบบอกว่ากรองอยู่ + ปุ่มกางดูพร้อมจำนวน + เตือนเมื่อส่วนงานนั้น**ยังไม่ได้ติดป้ายฝ่าย**
+> - **backward-compatible:** สกิลที่มี `scope_section` แต่ไม่มี `scope_division` (ข้อมูลเก่า) เทียบด้วยหน่วยงานอย่างเดียวเหมือนเดิม · ยังไม่ apply migration = `division` เป็น undefined = ทุกสกิลเป็นของทุกฝ่าย = พฤติกรรมเดิมเป๊ะ (operator.jsx มี fallback select ตัดคอลัมน์เมื่อเจอ 42703)
+> - **ผลกับข้อมูลจริง (จาก 44 สกิล):** ช่าง MTN/DIE/JIG 25 คน เห็น **15** · PD3 เห็น 34 · PD4 เห็น 25 · **PD1/PD2 ยังเห็น 15** เพราะสกิลผลิตถูก scope เจาะจง PD3/PD4 ไว้ → **แก้ที่ข้อมูล ไม่ต้องแก้โค้ด** (ล้างช่อง "เจาะจงส่วนงาน" ให้เหลือแค่ฝ่ายผลิต แล้วทุก PD เห็นทันที)
+> - migration `20260818_org_divisions.sql` (**apply แล้ว**) · สิทธิ์แก้ฝ่าย = `org:manage_divisions` (admin/manager)
+>
 > #### ⚠️ สิทธิ์แก้คะแนนทักษะแบ่ง 3 ชั้น ห้ามยุบเป็นสวิตช์เดียว (2026-08-18 · คำสั่ง user)
 > | key | ครอบอะไร | ผู้ถือ (seed) |
 > |---|---|---|
@@ -1665,6 +1696,8 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
   - `VsmCanvas` รับ prop `live` (additive — ไม่ส่ง = render เดิมเป๊ะ ใบพิมพ์ clone จากแท็บเอกสารจึงไม่กระทบ): ขอบกล่อง **แดงกระพริบ (SMIL `<animate>` — Andon แดงเท่านั้นที่กระพริบ) = DT ค้าง** · เขียว = กำลังผลิต · เส้นประจาง = ยังไม่เปิดกะ + `<title>` tooltip · สี/ป้ายสถานะรวมศูนย์ที่ `LIVE_STATUS` ใน vsmLive.js **ห้ามนิยามซ้ำ**
   - **`isOpenDT/isPlannedDT/isAlarmingDT/dtElapsedMin` ย้ายไป `src/utils/downtimeRules.js` (pure)** — `downtimeAlarm.js` re-export ให้ import เดิม (Dashboard/Management/DeptHub) ใช้ได้เหมือนเดิม · เหตุผล: lib ที่รันใน node:test ห้ามลาก supabaseClient (`import.meta.env` พังนอก Vite) · **นิยาม Andon แก้ที่ downtimeRules.js ที่เดียว**
   - **ไม่มี migration/permission ใหม่** — read-only ใช้ `page:/vsm` เดิม (เลี่ยงกับดัก seed `enum_range`)
+- **📋 worklist "ข้อมูลที่ VSM ยังขาด" (2026-08-20 · คำขอ user หลัง audit):** แผงบนแท็บเอกสารแทนบล็อก warning เดิม — ข้อความชุดเดียวกับ `model.warnings` (single source: การตรวจอยู่ `buildVsmModel` ที่เดียว) + **ปุ่มลิงก์ "ไปลงข้อมูลที่ต้นทาง"** ผ่าน `src/lib/vsmGaps.js` (จับคู่ `warning.code` → ลิงก์) · **เพิ่ม warning ใหม่ในโมเดลต้องใส่ `code` + เติม `FIX` ใน vsmGaps ด้วย** — code ที่ไม่รู้จักยังแสดง (ไม่มีลิงก์) ห้ามหายเงียบ · เพิ่ม warning รวม 2 ตัว: `no_oee` (ขั้นที่ไลน์ไม่มีกะปิดเดือนนั้น) + `no_setup` (C/O ไม่มี downtime หมวด setup) · routing ชี้ไป **`/pe-docs?set=<id>` เมื่อ FG มีชุด PFC** (จับคู่ `pe_doc_sets.mat_no` ก่อน แล้ว `matchDocSet` ด้วย p_no) · ครบทุกช่อง = ขึ้น ✅ ห้ามซ่อนแผง · **ProductMaster แท็บผูก URL แล้ว (`useTabParam` — `/products?tab=routing` deep-link ได้)**
+- **🔀 ปุ่ม "เสนอ routing เข้า VSM" ใน `/pe-docs` แท็บ Flow (2026-08-20):** แปลง OP ของ PFC → ร่าง `part_routings` — **ระบบเสนอ คนตรวจ/ติ๊ก/แก้ แล้วกดยืนยันถึง insert** (กฎ AI intake) · ตัวแปลง pure `src/utils/peRouting.js` (เทส 5 เคส): `process`/`inspection` = ขั้น · **`storage` = wip_label ของขั้นก่อนหน้า** (ไม่ใช่กล่อง) · incoming_insp/transport/rework ข้ามแบบรายงาน (ห้ามตัดเงียบ) · MAT ผูกด้วย `resolveMatForSet` (set.mat_no → เทียบ p_no normalize · **กำกวม = ให้คนเลือก ห้ามเดา**) · มี routing เดิม = confirm แล้ว**ปิดชุดเดิม (is_active=false เก็บประวัติ) ก่อน insert** — insert พลาดต้องกู้ชุดเดิมกลับ · สิทธิ์ปุ่ม = `routing:manage` (ไม่ seed key ใหม่) · UI `src/components/PeRoutingSuggest.jsx`
 - **📎 reference สไตล์ใบจริงของโรงงาน = skill `vsm-tsat-reference` (`.claude/skills/vsm-tsat-reference/SKILL.md` · 2026-08-20 — ถอดจากใบตัวอย่าง 4 ใบที่ user แชร์)** — งานที่แตะ VSM ให้โหลด skill นี้ก่อนเสมอ · quick win ที่ทำแล้วตามใบ: **MCT (PLT+PT) headline ตัวแดง + PT รูปแบบ "X min Y second"** ทั้งบนผัง/การ์ดสรุป/ใบพิมพ์ — format ผ่าน `fmtMct`/`fmtMinSec` ใน `src/lib/vsmModel.js` จุดเดียว **ห้ามเขียน format ซ้ำ** · ที่ยังไม่ทำ (เฟส 2 ตามใบ): kaizen burst แดง (เกณฑ์เสนออัตโนมัติ C/T > T/T) + future state เทียบ current
 - migration: `20260813_part_routings.sql` + `20260813_vsm_maps.sql` (DR) · `20260813_vsm_permission.sql` (Main) — **apply แล้วทั้ง 3 · 2026-08-13**
 - **⚠️ กับดักที่เจอตอน apply (จดไว้กัน session ถัดไปเสียเวลา):** `permission_catalog` ใช้คอลัมน์

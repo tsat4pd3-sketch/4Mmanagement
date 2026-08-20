@@ -199,6 +199,26 @@ export function co2ePerPiece(kgCo2e, pieces) {
  * ⚠️ แต่ `collapseOps` **ต้องใช้เสมอ** — รายการขั้นตอน (OP) คือชิ้นเดิมที่เดินผ่านสถานี ไม่ใช่ชิ้นใหม่
  *    ไม่ยุบ = ชิ้นเดียวถูกนับ 2-3 รอบ แล้ว SEC ต่ำกว่าความจริงเป็นเท่าตัว
  */
+/* ── 📡 MQTT — ค่าที่อ่านจาก topic ได้ (ดู docs/ENERGY_MONITORING_DESIGN.md §14) ──
+   ⚠️ kW ≠ kWh — kW = กินอยู่ตอนนี้ (เตือนก่อนชน peak) · kWh = สะสม (บิล/คาร์บอน/SEC)
+      มิเตอร์ส่วนใหญ่ส่งทั้งคู่ · kwh_total เป็น "เลขสะสม" ต้องคิดผลต่างเอง (ระวัง counter reset) */
+export const MQTT_FIELDS = [
+  { key: 'kw',         label: 'กำลังไฟ ณ ตอนนี้', unit: 'kW',   desc: 'ใช้เตือนก่อนชน peak / จับโหลดผี' },
+  { key: 'kwh_total',  label: 'หน่วยสะสม',        unit: 'kWh',  desc: 'เลขสะสมหน้ามิเตอร์ — ระบบคิดผลต่างเอง' },
+  { key: 'kvar',       label: 'กำลังรีแอกทีฟ',     unit: 'kVAr', desc: 'ไว้ดู power factor' },
+  { key: 'pf',         label: 'เพาเวอร์แฟกเตอร์',  unit: '',     desc: 'ต่ำ = โดนค่าปรับ' },
+]
+export const mqttField = (k) => MQTT_FIELDS.find(f => f.key === k) || { key: k, label: k, unit: '' }
+
+/** ค่าล่าสุดเก่าเกินกี่นาที = ถือว่าขาดการติดต่อ (bridge ส่งราย 15 นาที → เผื่อ 2 รอบ) */
+export const LIVE_STALE_MIN = 35
+export function liveAgeMin(readAt, nowMs = null) {
+  if (!readAt) return null
+  const t = new Date(readAt).getTime()
+  if (!Number.isFinite(t)) return null
+  return Math.round(((nowMs ?? Date.now()) - t) / 60000)
+}
+
 export const PIECE_BASIS = 'physical'
 export const PIECE_BASIS_LABEL = 'นับชิ้นจริง (งานคู่ LH/RH = 2 ชิ้น)'
 
