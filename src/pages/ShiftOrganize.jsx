@@ -27,7 +27,7 @@ function toDateStr(d) {
 }
 
 export default function ShiftOrganize() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
   // 🏢 แก้ตารางกะ "หน่วยงานสนับสนุน" แยกคีย์ได้ — หัวหน้าทีมช่างตั้งกะแผนกตัวเองได้
   // โดยไม่ได้สิทธิ์แตะกะไลน์ผลิต/override รายคน/ยุบกะ (migration 20260820_shift_schedule_edit_dept)
@@ -188,6 +188,13 @@ export default function ShiftOrganize() {
   // พนักงานกลุ่มนี้ไม่มี line_id → ไม่มีแถวในตารางกะให้ตั้ง (ดู utils/shiftAssign.js)
   // ตั้งกะทั้งแผนกทีเดียว หมุน A/B เหมือนไลน์ผลิต · คนที่ไม่หมุนกะ = Team C (กลไกเดิมรองรับอยู่แล้ว)
   const nrm = (s) => (s || '').toString().trim().toLowerCase();
+  // 🏠 "หน่วยงานของฉัน" = `profiles.section` (คอลัมน์เดี่ยว)
+  // ⚠️ ห้ามใช้ `profiles.sections[]` ทำเรื่องนี้ — นั่นเป็น scope ระดับทั้งระบบ
+  //    ตั้งเมื่อไหร่ StoreMonitor/PlannerSales/RundownStock/Dashboard/Report ของคนนั้นเหลือ 0 แถว
+  //    (กฎเหล็ก CLAUDE.md) · ส่วน section เดี่ยวไม่กระทบ scope — precedent: employees:edit_all_sections
+  // ค่านี้จับคู่ได้ทั้ง "ชื่อแผนก" (MTN/QA — แผนกขึ้นตรงฝ่าย) และ "ส่วนงาน" (PD1 — แผนกใต้ section)
+  const myUnit = nrm(mySection);
+  const isMyUnit = (d) => !!myUnit && (nrm(d.name) === myUnit || nrm(d.sec) === myUnit);
   const secCodeById = {};
   sectionNodes.forEach(s => { secCodeById[s.id] = s.code || s.name; });
 
@@ -215,6 +222,9 @@ export default function ShiftOrganize() {
     });
     return Object.values(stat)
       .filter(d => {
+        // ✅ หน่วยงานของตัวเองเห็นเสมอ — แม้เป็นแผนกขึ้นตรงฝ่าย หรือถูกจำกัด scope ไว้
+        //    (ไม่งั้นแอดมิน QA/คลัง ที่ถูกตั้ง sections จะมองไม่เห็นแผนกตัวเองเลย)
+        if (isMyUnit(d)) return true;
         if (!scopeSecs.length) return true;
         // user ที่ถูกจำกัด scope: เห็นเฉพาะแผนกใต้ส่วนงานของตัวเอง
         // แผนกขึ้นตรงฝ่าย (ไม่มี section) = ของทั้งโรงงาน เห็นเฉพาะ user ที่ไม่ถูกจำกัด
@@ -225,8 +235,16 @@ export default function ShiftOrganize() {
   })();
 
   const deptTeamOf = (name) => (pendingDept[name] !== undefined ? pendingDept[name] : (weekDeptTeams[name] ?? null));
+  // สิทธิ์ระดับ "แถว" — ผู้ถือ edit_dept ที่ตั้งหน่วยงานของตัวเองไว้ แก้ได้เฉพาะของตัวเอง
+  const canEditDeptRow = (d) => {
+    if (canEdit) return true;                 // สิทธิ์เต็ม = ทุกหน่วยงาน
+    if (!canEditDept) return false;
+    if (!myUnit) return true;                 // ยังไม่ตั้งหน่วยงานให้ user = ไม่จำกัด (พฤติกรรมเดิม)
+    return isMyUnit(d);
+  };
   const toggleDept = (name) => {
-    if (!canEditDept) return;
+    const row = deptRows.find(d => d.name === name);
+    if (!row || !canEditDeptRow(row)) return;
     setPendingDept(p => ({ ...p, [name]: deptTeamOf(name) === 'A' ? 'B' : 'A' }));
   };
   const deptNoLineTotal = deptRows.reduce((s, d) => s + d.noLine, 0);
@@ -255,8 +273,12 @@ export default function ShiftOrganize() {
       }
     });
     // แถวของหน่วยงาน — line_id = null + dept_name = ชื่อแผนก (คนละ unique index กับไลน์)
+    // ⚠️ กันชั้นที่สอง: เขียนเฉพาะหน่วยงานที่ user แก้ได้จริง (ปุ่มซ่อนอยู่แล้ว แต่ state อาจค้าง)
     const deptRowsToSave = [];
-    if (canEditDept) Object.entries(pendingDept).forEach(([name, team]) => {
+    Object.entries(pendingDept).filter(([name]) => {
+      const row = deptRows.find(d => d.name === name);
+      return row && canEditDeptRow(row);
+    }).forEach(([name, team]) => {
       if (!team) return;
       for (const d of weekDates) {
         deptRowsToSave.push({ work_date: toDateStr(d), line_id: null, dept_name: name, day_team: team, created_by: userId });
@@ -407,8 +429,10 @@ export default function ShiftOrganize() {
            คนเลยเข้าใจว่าระบบพัง/ทำไม่เสร็จ = ความล้มเหลวแบบเงียบ) */}
       {!canEdit && canEditDept && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
-          🏢 <b>บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”</b> (ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว
+          🏢 <b>บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”</b>{myUnit ? <> — เฉพาะหน่วยงาน <b>{mySection}</b></> : ''} (ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+            {!myUnit && <>ยังไม่ได้ตั้ง “หน่วยงาน” ให้บัญชีนี้ → แก้ได้ทุกหน่วยงานที่เห็น ·
+              ถ้าต้องการจำกัดเฉพาะหน่วยงานตัวเอง ให้ admin ตั้งช่องส่วนงานที่ <b>/add-user</b><br /></>}
             ถ้าต้องแก้กะไลน์ผลิต/override รายคน/ยุบกะด้วย ให้ admin เปิดสิทธิ์{' '}
             <code>shift_schedule:edit</code> ให้ role <b>{roleLabel(role)}</b> เพิ่ม
           </div>
@@ -537,6 +561,7 @@ export default function ShiftOrganize() {
             พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก
             {deptNoLineTotal > 0 && <> · ตอนนี้มี <b style={{ color: 'var(--amber)' }}>{deptNoLineTotal} คน</b> ที่ยังไม่มีกะเพราะไม่ได้ผูกไลน์</>}
             {' '}· คนที่ไม่หมุนกะให้ตั้งเป็น <b>Team C</b> (เข้ากะเช้าตลอด)
+            {!canEdit && canEditDept && myUnit && <> · <b style={{ color: '#22c55e' }}>บัญชีนี้แก้ได้เฉพาะ 🏠 {mySection}</b> หน่วยงานอื่นดูได้อย่างเดียว</>}
           </div>
           <div className="card table-sticky" style={{ marginBottom: 24, overflowX: 'auto' }}>
             <table>
@@ -565,6 +590,7 @@ export default function ShiftOrganize() {
                           </span>
                         )}
                         {d.orphan && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }} title="แผนกขึ้นตรงฝ่าย ไม่สังกัดส่วนงานผลิต">🏛️ ขึ้นตรงฝ่าย</span>}
+                        {isMyUnit(d) && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#22c55e' }} title="หน่วยงานที่บัญชีนี้ดูแล">🏠 หน่วยงานของฉัน</span>}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>
                         {d.total} คน
@@ -592,6 +618,12 @@ export default function ShiftOrganize() {
                       </td>
                       {canEditDept && (
                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {!canEditDeptRow(d) ? (
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}
+                              title={`หน่วยงานนี้ไม่ใช่ของคุณ — บัญชีนี้ตั้งหน่วยงานไว้เป็น "${mySection}"`}>
+                              🔒 ของหน่วยงานอื่น
+                            </span>
+                          ) : (
                           <button onClick={() => toggleDept(d.name)}
                             style={{
                               padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
@@ -601,6 +633,7 @@ export default function ShiftOrganize() {
                             }}>
                             {team ? '⇄ สลับ' : '+ กำหนด'}
                           </button>
+                          )}
                         </td>
                       )}
                     </tr>
@@ -619,7 +652,11 @@ export default function ShiftOrganize() {
           🏢 <b style={{ color: 'var(--text)' }}>ยังไม่มีหน่วยงานให้ตั้งกะ</b> — ตารางหน่วยงานลิสต์เฉพาะแผนกที่มีพนักงานอยู่จริง
           {scopeSecs.length > 0
             ? <> · บัญชีนี้ถูกจำกัดส่วนงาน (<b>{scopeSecs.join(', ')}</b>) จึงเห็นเฉพาะแผนกใต้ส่วนงานนั้น —
-                <b> แผนกที่ขึ้นตรงฝ่าย (MTN / JIG MTN / DIE MTN / QA) จะไม่โผล่</b> ให้ admin ล้างช่อง “ส่วนงาน” ของบัญชีนี้ที่หน้า <b>/add-user</b></>
+                <b> แผนกที่ขึ้นตรงฝ่าย (MTN / JIG MTN / DIE MTN / QA) จะไม่โผล่</b>
+                {myUnit
+                  ? <> · ตั้งหน่วยงานไว้เป็น <b>{mySection}</b> แต่ยังไม่มีพนักงานคนไหนกรอกแผนกนี้ไว้ —
+                      ตรวจที่ <b>ฐานข้อมูลพนักงาน (/operator)</b></>
+                  : <> ให้ admin ตั้งช่อง “ส่วนงาน” ของบัญชีนี้เป็นหน่วยงานที่ดูแล (เช่น MTN / QA) ที่หน้า <b>/add-user</b></>}</>
             : <> · ตรวจว่าพนักงานในแผนกกรอกช่อง “แผนก” ไว้แล้วหรือยัง ที่หน้า <b>ฐานข้อมูลพนักงาน (/operator)</b></>}
         </div>
       )}
