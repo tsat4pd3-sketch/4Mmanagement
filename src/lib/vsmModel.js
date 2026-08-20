@@ -106,8 +106,10 @@ export function processBox({ step, matNo, ctx, overrides = {} }) {
   const dts = (line && downtimesByLine[line]) || [];
 
   // CT — routing ทับ master ได้ (บางขั้นเร็ว/ช้าต่างจากค่ากลางของพาร์ท)
-  const ctAuto = num(step.ct_sec) ?? ctForMat(matNo, { kanbanStds, products });
-  const ct = pick(overrides.ct_sec, ctAuto, num(step.ct_sec) != null ? 'routing' : 'master');
+  // ⚠️ ctForMat คืน 0 เมื่อไม่รู้ (ไม่ใช่ null) และ CT 0 วินาทีเป็นไปไม่ได้จริง
+  //    → 0 = "ยังไม่ตั้งค่า" ต้องเป็น null ห้ามโชว์ "C/T 0s" เหมือนเป็นค่าจริง (กฎ ไม่รู้ = ไม่รู้)
+  const ctAuto = num(step.ct_sec) || ctForMat(matNo, { kanbanStds, products }) || null;
+  const ct = pick(overrides.ct_sec, ctAuto, num(step.ct_sec) ? 'routing' : 'master');
 
   // %OEE — ถ่วงน้ำหนักด้วยเวลารับภาระ (กฎ CLAUDE.md ห้าม mean-of-percentages)
   const oeeAuto = sess.length ? wavg(sess, s => num(s.oee), wLoad) : null;
@@ -121,8 +123,8 @@ export function processBox({ step, matNo, ctx, overrides = {} }) {
   const { atSec, shifts } = availableTimeSec({ sessions: sess, breakPolicies, processType: step.process_type });
 
   const ks = (kanbanStds || []).find(k => k.mat_no === matNo);
-  const lotAuto = num(step.lot_size) ?? num(ks?.lot_size);
-  const lot = pick(overrides.lot_size, lotAuto, num(step.lot_size) != null ? 'routing' : 'kanban');
+  const lotAuto = num(step.lot_size) || num(ks?.lot_size) || null;   // LOT 0 = ยังไม่ตั้ง ไม่ใช่ค่าจริง
+  const lot = pick(overrides.lot_size, lotAuto, num(step.lot_size) ? 'routing' : 'kanban');
 
   const opAuto = num(step.operators) ?? (line ? (stdCapacityOf(lines, line, 'day') || null) : null);
   const op = pick(overrides.operators, opAuto, num(step.operators) != null ? 'routing' : 'std_manpower');
@@ -288,6 +290,14 @@ export function buildVsmModel(input) {
       orderYear: demand.perYear, orderMonth: demand.perMonth, orderDay: demand.perDay,
       demandSource: demand.source,
       atSec, ttSec,
+      /* ── ข้อเท็จจริงของ "เส้นข้อมูล" บนผัง — นับจากข้อมูลจริง ห้าม canvas hardcode เอง
+         (คำสั่ง user 2026-08-20: text บนผังต้องมาจากข้อมูลจริง ไม่รู้ = บอกว่าไม่รู้) ── */
+      forecastMonths: new Set(forecasts.map(f => String(f.period_month || '').slice(0, 7)).filter(Boolean)).size || null,
+      forecastSource: forecasts.some(f => f.source === 'edi_830') ? 'EDI 830' : (forecasts.length ? 'กรอกมือ' : null),
+      orderCount: shippingOrders.length || null,
+      orderSource: [...new Set(shippingOrders.map(o =>
+        o.source === 'edi_862' ? 'EDI 862' : o.source === 'manual' ? 'คีย์มือ' : null).filter(Boolean))].join('+') || null,
+      planDays: new Set(sessions.map(s => s.work_date)).size || 0,   // วันที่มีกะปิดจริงของไลน์ในสาย (เดือนที่เลือก)
     },
     suppliers,
     chain,
