@@ -185,7 +185,8 @@ export default function VSM() {
           : Promise.resolve({ data: [] }),
         supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('mat_no', allMats),
         supabaseDR.from('customer_forecasts').select('mat_no, qty, period_month, source').eq('mat_no', fg.mat_no),
-        supabaseDR.from('customer_shipping_orders').select('mat_no, qty, due_date').eq('mat_no', fg.mat_no)
+        // source ต้องมาด้วย — ผังใช้บอกว่า order มาจาก EDI 862 หรือคีย์มือ (ห้าม canvas เดา)
+        supabaseDR.from('customer_shipping_orders').select('mat_no, qty, due_date, source').eq('mat_no', fg.mat_no)
           .gte('due_date', from).lte('due_date', to),
         supabaseDR.from('break_policies').select('*').eq('is_active', true),
         supabaseDR.from('kanban_delivery_rounds').select('id, line_name').eq('is_active', true).limit(200),
