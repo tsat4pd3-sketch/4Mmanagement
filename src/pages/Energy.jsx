@@ -34,6 +34,7 @@ import {
 } from '../utils/energy';
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import EnergyMqttTopics from '../components/EnergyMqttTopics';
 
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
@@ -47,7 +48,7 @@ const GOOD = '#22c55e', BAD = '#ef4444', NEUTRAL = '#6b7f8c', ACCENT = '#38bdf8'
 export default function Energy() {
   const { role, lineId, sections: scopeSecs } = useContext(UserContext);
   const canEdit = can('energy', 'record', role);
-  const [tab, setTab] = useTabParam(['input', 'summary', 'setup'], 'input');
+  const [tab, setTab] = useTabParam(['input', 'summary', 'setup', 'mqtt'], 'input');
   const [month, setMonth] = useState(() => monthKeyOf());
   const [lines, setLines] = useState([]);
   const [zones, setZones] = useState([]);
@@ -384,7 +385,7 @@ export default function Energy() {
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={`${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
-        tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' }]}
+        tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' }, { key: 'mqtt', label: '📡 มิเตอร์ / MQTT' }]}
         tab={tab} onTab={setTab}
         actions={
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -657,6 +658,9 @@ export default function Energy() {
               </table>
             </div>
           </>
+        ) : tab === 'mqtt' ? (
+          /* 📡 ทะเบียน MQTT topic — ให้ทีมช่างเพิ่มเองได้ (ยังไม่มี bridge → หน้าบอกไว้ชัด) */
+          <EnergyMqttTopics points={points} canEdit={canEdit} />
         ) : (
           /* ⚙️ ค่าการปล่อย (EF) */
           <EfSetup factors={factors} canEdit={canEdit} cfgMissing={cfgMissing} onSaved={load} month={month} />
