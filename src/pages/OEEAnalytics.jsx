@@ -617,6 +617,25 @@ export default function OEEAnalytics() {
     return days;
   }, [tdHistory, tdDate]);
 
+  /* วันนี้เทียบ "ค่าเฉลี่ย 9 วันก่อนหน้า" — ตอบคำถามที่คนอ่านกราฟ 10 วันแล้วต้องกวาดตาเอาเอง
+     ⚠️ ต้องถ่วงน้ำหนักด้วย wavg เหมือนทุกที่ (กฎ CLAUDE.md: ห้าม mean-of-percentages / mean-of-means
+        — เฉลี่ยค่ารายวันตรงๆ จะทำให้วันที่ผลิตน้อยถ่วงเท่าวันที่ผลิตเยอะ)
+     ⚠️ ตัด "วันนี้" ออกจากตัวเฉลี่ยเสมอ ไม่งั้นเทียบกับตัวเอง */
+  const tdVsAvg = useMemo(() => {
+    const past = tdHistory.filter(r => r.work_date !== tdDate);
+    const days = new Set(past.map(r => r.work_date)).size;
+    const W = { oee: wLoad, a: wLoad, p: wRun, q: wProd };
+    const F = { oee: i => (i.oee != null ? +i.oee : null), a: i => (i.oee_a != null ? +i.oee_a : null),
+                p: i => (i.oee_p != null ? +i.oee_p : null), q: i => (i.oee_q != null ? +i.oee_q : null) };
+    const out = { days };
+    for (const k of ['oee', 'a', 'p', 'q']) {
+      const avg = wavg(past, F[k], W[k]);
+      const now = tdKpi[k];
+      out[k] = { avg, now, diff: (avg != null && now != null) ? +(now - avg).toFixed(1) : null };
+    }
+    return out;
+  }, [tdHistory, tdDate, tdKpi]);
+
   // Live/latest session card
   const tdLiveSession = useMemo(() => {
     const running = tdSessionsTeamFiltered.filter(s => s.status === 'open' || s.status === 'pending_close')
@@ -678,7 +697,8 @@ export default function OEEAnalytics() {
     for (const d of tdDowntimesScoped) {
       const name = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
       const cat  = d.dr_downtime_types?.category || 'unplanned';
-      if (!map[name]) map[name] = { name, min: 0, category: cat };
+      // typeId ไว้ query ย้อนหลังของสาเหตุนี้ตอนกดเจาะ (ชื่อเป็น snapshot เทียบตรงๆ ไม่ได้)
+      if (!map[name]) map[name] = { name, min: 0, category: cat, typeId: d.downtime_type_id || null };
       map[name].min += d.duration_min || 0;
     }
     const rows = Object.values(map).sort((a, b) => b.min - a.min);
@@ -712,6 +732,49 @@ export default function OEEAnalytics() {
     const total = Object.values(map).reduce((s, d) => s + d.min, 0);
     return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
   }, [tdDowntimesScoped, tdProductsByMat]);
+
+  /* "สาเหตุนี้เกิดซ้ำแค่ไหน" — ย้อนหลัง 30 วันของ downtime type ที่กดเจาะ
+     ⚠️ ยิงตอนเปิดโมดัลเท่านั้น (user กดเอง ไม่ใช่ polling) และกรองฝั่ง server ให้แคบที่สุด
+        — embed production_sessions!inner เพื่อกรองวัน/ไลน์ในคิวรีเดียว ไม่ดึง session ทั้งช่วงมากรองเอง
+     ⚠️ ไม่มี typeId (ข้อมูลเก่าไม่ผูก type) = ไม่ query ห้ามเดา */
+  const [tdDrillHist, setTdDrillHist] = useState(null);
+  useEffect(() => {
+    if (!tdDtDrill || tdDtDrill.kind !== 'cause' || !tdDtDrill.typeId) { setTdDrillHist(null); return; }
+    let dead = false;
+    setTdDrillHist({ loading: true });
+    (async () => {
+      const from = dateStrAdd(tdDate, -29);
+      let q = supabaseDR.from('downtime_logs')
+        .select('duration_min, production_sessions!inner(work_date, line_name)')
+        .eq('downtime_type_id', tdDtDrill.typeId)
+        .gte('production_sessions.work_date', from)
+        .lte('production_sessions.work_date', tdDate)
+        .limit(3000);
+      if (tdScopeLines?.length === 1) q = q.eq('production_sessions.line_name', tdScopeLines[0]);
+      else if (tdScopeLines?.length > 1) q = q.in('production_sessions.line_name', tdScopeLines);
+      const { data, error } = await q;
+      if (dead) return;
+      if (error) { setTdDrillHist({ error: error.message }); return; }   // ห้ามเงียบ
+      const byDay = {};
+      for (const r of data || []) {
+        const d = r.production_sessions?.work_date;
+        if (!d) continue;
+        byDay[d] = (byDay[d] || 0) + (r.duration_min || 0);
+      }
+      const days = [];
+      for (let i = 29; i >= 0; i--) {
+        const key = dateStrAdd(tdDate, -i);
+        days.push({ key, min: +(byDay[key] || 0).toFixed(1) });
+      }
+      const hitDays = days.filter(d => d.min > 0).length;
+      setTdDrillHist({
+        days, hitDays, count: (data || []).length,
+        total: +days.reduce((a, d) => a + d.min, 0).toFixed(1),
+        max: Math.max(...days.map(d => d.min), 1),
+      });
+    })();
+    return () => { dead = true; };
+  }, [tdDtDrill, tdDate, tdScopeLines]);
 
   /* รายการดิบของแถวที่กดในแผง 2.2 / 2.3 — ตอบ "ปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง ใครลง"
      ⚠️ ต้องกรองจาก tdDowntimesScoped (ชุดเดียวกับที่รวมยอดในแผง) ไม่งั้นตัวเลขในโมดัลไม่ตรงกับแถว
@@ -1298,25 +1361,54 @@ export default function OEEAnalytics() {
             ); })()}
           </div>
 
-          {/* 1.2 Daily OEE chart */}
-          <div style={s.section}>
-            <div style={s.title}>OEE แต่ละวัน (10 วันล่าสุด)</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <ComposedChart data={tdHistoryGrouped} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
-                <Tooltip content={<OEETooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={tdTarget.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${tdTarget.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
-                <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 11, fill: 'var(--text)' }} />
-                </Bar>
-                <Line type="monotone" dataKey="a" name="A%" stroke="#22c55e" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="p" name="P%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="q" name="Q%" stroke="#a78bfa" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+          {/* 1.2 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
+              ในการ์ด A/P/Q ที่อยู่เหนือมันเอง (ข) ซ้ำกับกราฟแนวโน้มรายวันในแท็บ 📊 แนวโน้ม/ประวัติ
+              ซึ่งให้ตัวเลขเท่ากันเป๊ะ (ตารางเดียวกัน · closed เหมือนกัน · wavg สูตรเดียวกัน)
+              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20) */}
+          <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
+            <div style={{ flex: '0 0 auto' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : 'ยังไม่มีข้อมูลย้อนหลัง'}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 260 }}>
+              {['oee', 'a', 'p', 'q'].map(k => {
+                const v = tdVsAvg[k];
+                const up = v.diff != null && v.diff > 0.05;
+                const dn = v.diff != null && v.diff < -0.05;
+                return (
+                  <div key={k} style={{ flex: '1 1 120px', minWidth: 110, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 11px' }}>
+                    <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</div>
+                    <div style={{ fontSize: 17, fontWeight: 900, color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>
+                      {v.now ?? '—'}{v.now != null ? '%' : ''}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
+                      {v.diff == null ? 'เทียบไม่ได้' : `${up ? '▲ +' : dn ? '▼ ' : '● '}${v.diff} จุด`}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                      เฉลี่ย {v.avg ?? '—'}{v.avg != null ? '%' : ''}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+              <button onClick={() => { setPeriod('daily'); setDateFrom(dateStrAdd(tdDate, -29)); setDateTo(tdDate); setViewTab('trend'); }}
+                title="เปิดแท็บแนวโน้ม/ประวัติ พร้อมตั้งช่วง 30 วันล่าสุดให้"
+                style={{ ...s.tab(false), color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.4)', whiteSpace: 'nowrap' }}>
+                📈 ดูย้อนหลังเต็ม (30 วัน)
+              </button>
+              {/* ⚠️ ตัวกรองทีมมีผลกับตัวเลข "วันนี้" แต่ไม่มีผลกับค่าเฉลี่ยย้อนหลัง (ตารางกะโหลดมาแค่วันที่เลือก)
+                  — ห้ามปล่อยให้คนอ่านคิดว่าเทียบทีมเดียวกัน */}
+              {tdTeam && (
+                <div style={{ fontSize: 10.5, color: '#f59e0b', maxWidth: 220, textAlign: 'right', lineHeight: 1.45 }}>
+                  ⚠ ค่าเฉลี่ยย้อนหลัง <b>ไม่ได้กรองทีม {tdTeam}</b> — เทียบกับทุกทีม
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
@@ -1375,7 +1467,7 @@ export default function OEEAnalytics() {
                         const planned = d.category === 'planned';
                         return (
                           <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%) · กดเพื่อดูรายการ`}
-                            onClick={() => setTdDtDrill({ kind: 'cause', key: d.name, label: d.name })}
+                            onClick={() => setTdDtDrill({ kind: 'cause', key: d.name, label: d.name, typeId: d.typeId })}
                             style={{ cursor: 'pointer' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
                               <span style={{ color: planned ? 'var(--muted)' : 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
@@ -1455,6 +1547,50 @@ export default function OEEAnalytics() {
                     <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
                   </div>
                   <div style={{ flex: 1, overflow: 'auto', padding: '4px 14px 14px' }}>
+                    {/* 🔁 เกิดซ้ำแค่ไหน — ย้อนหลัง 30 วันของสาเหตุนี้ (ตอบว่าเป็นปัญหาเรื้อรังหรือเหตุการณ์เดียว) */}
+                    {tdDtDrill.kind === 'cause' && tdDrillHist && (
+                      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', margin: '10px 0 4px' }}>
+                        {tdDrillHist.loading ? (
+                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดย้อนหลัง 30 วัน…</div>
+                        ) : tdDrillHist.error ? (
+                          <div style={{ fontSize: 12, color: '#ef4444' }}>โหลดย้อนหลังไม่สำเร็จ — {tdDrillHist.error}</div>
+                        ) : (<>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 7 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>🔁 ย้อนหลัง 30 วัน</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                              เกิด <b style={{ color: 'var(--text)' }}>{tdDrillHist.hitDays}</b> วัน · <b style={{ color: 'var(--text)' }}>{tdDrillHist.count}</b> ครั้ง ·
+                              รวม <b style={{ color: '#a855f7' }}>{Math.round(tdDrillHist.total).toLocaleString()}</b> นาที
+                            </div>
+                          </div>
+                          {/* แท่งรายวัน — วันที่เลือกอยู่เน้นสี · วันไม่เกิด = ตอเทาเตี้ย (ไม่ปล่อยว่างจนดูเหมือนวันหาย) */}
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 44 }}>
+                            {tdDrillHist.days.map(d => (
+                              <div key={d.key} title={`${d.key} — ${Math.round(d.min).toLocaleString()} นาที`}
+                                style={{ flex: 1, minWidth: 3, borderRadius: '2px 2px 0 0',
+                                  height: `${Math.max(3, (d.min / tdDrillHist.max) * 100)}%`,
+                                  background: d.min > 0 ? (d.key === tdDate ? '#f59e0b' : '#a855f7') : 'var(--border)',
+                                  opacity: d.min > 0 ? 0.9 : 1 }} />
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                            <span>{dateStrAdd(tdDate, -29)}</span>
+                            <span style={{ color: '#f59e0b' }}>■ วันที่เลือก</span>
+                            <span>{tdDate}</span>
+                          </div>
+                          {tdDrillHist.hitDays >= 10 && (
+                            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 7, lineHeight: 1.5 }}>
+                              ⚠ เกิด {tdDrillHist.hitDays} วันจาก 30 วัน = ปัญหาเรื้อรัง ไม่ใช่เหตุการณ์เดียว —
+                              ควรเปิดโปรเจคปรับปรุงที่ <b>/improvements</b> แทนการแก้ซ้ำทุกวัน
+                            </div>
+                          )}
+                        </>)}
+                      </div>
+                    )}
+                    {tdDtDrill.kind === 'cause' && !tdDtDrill.typeId && (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '10px 0 4px' }}>
+                        (รายการกลุ่มนี้ไม่ได้ผูกกับประเภท Downtime — ดูย้อนหลังให้ไม่ได้)
+                      </div>
+                    )}
                     {tdDrillRows.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีรายการ</div>
                     ) : (
