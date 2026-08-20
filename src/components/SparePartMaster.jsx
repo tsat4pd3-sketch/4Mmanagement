@@ -9,6 +9,7 @@
    - ตำแหน่งชั้นวาง (shelf) ใช้ "รหัสเดียวกันทั้งคลัง" (datalist ช่วยไม่ให้พิมพ์ใหม่ทุกครั้ง)
      — เป็นกุญแจที่แผนผังคลัง (rack map) จะใช้จับคู่ในเฟสถัดไป */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import ReadOnlyNote from './ReadOnlyNote';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { can, canDelete } from '../utils/permissions';
@@ -193,6 +194,9 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 
   return (
     <div>
+      <ReadOnlyNote show={!canEdit && !canMove} role={role} what="แก้ทะเบียนอะไหล่/รับเข้า-เบิก"
+        permKey="mtn_repair:manage_master, mtn_repair:service"
+        hint="ค้นหาอะไหล่/ดูตำแหน่งชั้นวางได้ตามปกติ (ตั้งใจให้ช่างทุกคนค้นของได้)" />
       {/* ── แถบเครื่องมือ ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นหา ชื่อ / รหัส / MAT / Part no. / ผู้ขาย / ชั้นวาง / ใช้กับ"

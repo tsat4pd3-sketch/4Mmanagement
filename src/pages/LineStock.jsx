@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -244,6 +245,8 @@ function StockTab({ role }) {
 
   return (
     <>
+      <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
+        permKey="line_stock:issue" hint="ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ" />
       {/* Header */}
       <div style={{ display:'flex', paddingRight: 52, justifyContent:'space-between', alignItems:'flex-end', gap:12, flexWrap:'wrap', marginBottom:18 }}>
         <div>

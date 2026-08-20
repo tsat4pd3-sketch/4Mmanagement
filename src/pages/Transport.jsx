@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -166,6 +167,9 @@ export default function Transport() {
         ]}
         tab={tab} onTab={setTab}
       />
+
+      <ReadOnlyNote show={!canManage} role={role} what="มอบหมายคนขับ/แก้ทะเบียนยานพาหนะ"
+        permKey="transport:manage" />
 
       {tab === 'assign' && (
         byLine.length === 0 ? (

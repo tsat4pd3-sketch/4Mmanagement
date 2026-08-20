@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -214,6 +215,7 @@ export default function Report({ mode = 'report' }) {
         tabs={tabIdxs.map(i => ({ key: String(i), label: TABS[i] }))}
         tab={String(activeTab)} onTab={setTabStr}
       />
+      <ExportNote />
       {activeTab === 0 && <DailyTab />}
       {activeTab === 1 && <PerEmployeeTab />}
       {activeTab === 2 && <StationLogTab />}
@@ -226,6 +228,16 @@ export default function Report({ mode = 'report' }) {
       {activeTab === 9 && <OtTransportBookingTab autoOpenMaster={autoOpenMaster} />}
     </div>
   );
+}
+
+/* ⚠️ `report:export` seed ไว้ตั้งแต่ 2026-07-08 = "ทุก role ณ ตอนนั้น" (7 role)
+   role ที่เพิ่มทีหลัง (mtn / engineer / planner_store / dept_admin) ไม่มีแถว = fail-closed
+   → เปิดหน้ารายงานได้ แต่ปุ่ม CSV/พิมพ์หายทุกแท็บ **โดยหน้าจอไม่บอกอะไรเลย** */
+function ExportNote() {
+  const { role } = useContext(UserContext);
+  return <ReadOnlyNote show={!can('report', 'export', role)} role={role}
+    what="ส่งออก/พิมพ์รายงาน" permKey="report:export"
+    hint="ดูตัวเลขบนหน้าจอได้ตามปกติ — ที่ปิดคือปุ่ม CSV / Excel / พิมพ์" />;
 }
 
 function OtTransportBookingTab({ autoOpenMaster }) {

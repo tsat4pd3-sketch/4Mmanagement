@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -240,6 +241,10 @@ export default function RackCenter() {
 
   return (
     <div style={{ padding: 'clamp(12px,2vw,24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+      {/* ⚠️ rack_center:operate seed ไว้ตั้งแต่ 2026-07-08 (ก่อนมี role mtn/engineer/planner_store/dept_admin)
+          → role ที่เพิ่มทีหลังเปิดหน้านี้ได้แต่เรียกภาชนะไม่ได้ ต้องบอกให้ชัด */}
+      <ReadOnlyNote show={!canOperate} role={role} what="เรียกภาชนะ/รับงาน"
+        permKey="rack_center:operate" />
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,2.5vw,24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>

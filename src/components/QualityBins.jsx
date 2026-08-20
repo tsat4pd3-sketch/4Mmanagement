@@ -11,6 +11,7 @@
  * (ไม่เพิ่ม permission key ใหม่ เลี่ยงกับดัก seed enum_range ที่ทำให้ role ใหม่ fail-closed)
  */
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import ReadOnlyNote from './ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -187,6 +188,8 @@ export default function QualityBins() {
 
   return (
     <div>
+      <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
+        permKey="scrap:record" />
       {/* ── เลือกถัง ── */}
       <div style={{ display: 'flex', gap: 6, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 14, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
         {BINS.map(b => (

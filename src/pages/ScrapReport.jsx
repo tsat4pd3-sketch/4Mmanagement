@@ -10,6 +10,7 @@
  * (anon เสมอ) · สิทธิ์: scrap:record = สร้าง/แก้ · scrap:manage = อนุมัติ/ลบ
  */
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -307,6 +308,8 @@ export default function ScrapReport() {
 
   return (
     <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
+      <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
+        permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>

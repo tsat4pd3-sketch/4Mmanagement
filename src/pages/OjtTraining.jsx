@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -458,6 +459,8 @@ table{border-collapse:collapse}
 
   return (
     <div className="page-content">
+      <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
+        permKey="ojt:record" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
       {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
         <div>

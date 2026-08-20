@@ -8,6 +8,7 @@
  * เอกสารพิมพ์ผ่านทะเบียนเอกสารกลาง (doc_key `qr_label`) ตามกฎ CLAUDE.md — ห้าม hardcode เลขฟอร์ม
  */
 import { useState, useEffect, useMemo, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -169,6 +170,7 @@ export default function QrLabels() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', background: 'var(--bg)', minHeight: '100%' }}>
+      <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
       <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: 0 }}>🏷️ พิมพ์ป้าย QR อุปกรณ์</h1>
       <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
         พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime

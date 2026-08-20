@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -663,6 +664,9 @@ export default function ProductMaster() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ข้อมูลหลักสินค้า"
+        permKey="products:edit, products:create"
+        hint="แอดมินหน่วยงาน (dept_admin) ก็เปิดสิทธิ์นี้ได้ — ติ๊กที่ /add-user แล้วเปิด action ให้ bucket 🛡️ ที่ /permissions" />
       {/* ── Main Tab Bar ── */}
       {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
