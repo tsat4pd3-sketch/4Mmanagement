@@ -679,6 +679,18 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > - **policy ที่ต้องการหลาย key ให้ `or` กัน** (`employee_skills` = `skills:edit` ∨ `skills:approve_levelup` ∨ `skills:delete`) แล้วปรับต่อที่ `/permissions` ได้เลยไม่ต้องเขียน migration ใหม่
 > - **⚠️ RLS ปฏิเสธ UPDATE/DELETE = 0 rows ไม่ error** (เงียบ!) มีแต่ INSERT/upsert ที่โยน 42501 → **โค้ดที่เขียนตารางซึ่งคุมด้วย RLS ต้อง gate ด้วย `can()` ฝั่ง UI ให้ตรงกับ policy ด้วย** อย่าหวังพึ่ง error
 > - **ผลของการแก้ (วัดกับผู้ใช้จริง):** ได้สิทธิ์เพิ่ม mtn 8 + planner_store(dept_admin) 1 · **เสียสิทธิ์ leader 17 คน** (ตรงตามที่ `role_permissions` ตั้งไว้)
+> #### ⚠️ ขอบเขตสกิล 2 ระดับ: ฝ่าย → เจาะจงหน่วยงาน (2026-08-18 · คำสั่ง user)
+> **ที่มา:** ช่างแผนก MTN เปิดโมดัลแก้ไขพนักงานแล้วเจอสกิลฝ่ายผลิต 29 ตัวขึ้น "ไม่เกี่ยวข้อง" เรียงยาวจนหาของตัวเองไม่เจอ
+> - **ผังองค์กร *ไม่มี* ชั้นฝ่ายเป็น node โดยตั้งใจ** — ระดับบนสุดคือ **ส่วนงาน** (PD1-4, Planning&Store) กับ **แผนกขึ้นตรงฝ่าย** (MTN, JIG MTN, DIE MTN, QA) · แทรก node ชั้นใหม่จะไปพัง cascade section→department ทุกหน้า
+> → ใช้ **ติดป้าย `org_nodes.division` ที่ node ระดับบนสุด แล้วลูกตกทอด** (หลักเดียวกับ `cost_center`/`head_name` ที่ไลน์ลูกตกทอดจากไลน์แม่) · master `org_divisions` (production/maintenance/quality/logistic/office — เพิ่มฝ่ายได้ไม่ต้องแก้โค้ด) · ตั้งที่ `/org-setup` (ช่อง "ฝ่าย (Division)" + ป้ายในลิสต์ที่บอกด้วยว่าค่าไหน "ตกทอด")
+> - **`skill_definitions` มี 2 ช่อง:** `scope_division` (ว่าง = ทุกฝ่าย) + `scope_section` (ว่าง = ทั้งฝ่าย) → เลือกได้ 3 แบบ: สกิลกลาง · ทั้งฝ่ายผลิต · ฝ่ายผลิตเฉพาะ PD3
+> - **อ่านผ่าน `src/utils/orgDivisions.js` เท่านั้น** (`divisionOfNode`/`divisionOfEmployee`/`skillInScope`/`scopeUnitsForDivision`/`skillScopeLabel`) — **ห้ามเดาฝ่ายจากชื่อ section/department** (ชื่อเปลี่ยนได้ + โรงงานอื่นตอน rollout เรียกไม่เหมือนกัน)
+> - **⚠️ ระดับเจาะจงต้องเทียบทั้ง `section` และ `department`** — พนักงานฝ่ายช่าง/คุณภาพมี `section` เป็น **null** (สังกัดแผนกขึ้นตรงฝ่าย) เทียบ section อย่างเดียว = ไม่มีวันตรง · `scopeUnitsForDivision` จึงคืนทั้ง section และ department ระดับบนสุด
+> - **⚠️ ห้ามซ่อนเงียบ** — สกิลที่พนักงาน **มีอยู่แล้ว โชว์เสมอ** แม้นอกขอบเขต (การถือสกิลข้ามส่วนงานเป็นเรื่องปกติ: PD2 31 คนถือสกิล PD3 93 แถว · PD4 31 คนถือสกิล PD3 77 แถว) + แถบบอกว่ากรองอยู่ + ปุ่มกางดูพร้อมจำนวน + เตือนเมื่อส่วนงานนั้น**ยังไม่ได้ติดป้ายฝ่าย**
+> - **backward-compatible:** สกิลที่มี `scope_section` แต่ไม่มี `scope_division` (ข้อมูลเก่า) เทียบด้วยหน่วยงานอย่างเดียวเหมือนเดิม · ยังไม่ apply migration = `division` เป็น undefined = ทุกสกิลเป็นของทุกฝ่าย = พฤติกรรมเดิมเป๊ะ (operator.jsx มี fallback select ตัดคอลัมน์เมื่อเจอ 42703)
+> - **ผลกับข้อมูลจริง (จาก 44 สกิล):** ช่าง MTN/DIE/JIG 25 คน เห็น **15** · PD3 เห็น 34 · PD4 เห็น 25 · **PD1/PD2 ยังเห็น 15** เพราะสกิลผลิตถูก scope เจาะจง PD3/PD4 ไว้ → **แก้ที่ข้อมูล ไม่ต้องแก้โค้ด** (ล้างช่อง "เจาะจงส่วนงาน" ให้เหลือแค่ฝ่ายผลิต แล้วทุก PD เห็นทันที)
+> - migration `20260818_org_divisions.sql` (**apply แล้ว**) · สิทธิ์แก้ฝ่าย = `org:manage_divisions` (admin/manager)
+>
 > #### ⚠️ สิทธิ์แก้คะแนนทักษะแบ่ง 3 ชั้น ห้ามยุบเป็นสวิตช์เดียว (2026-08-18 · คำสั่ง user)
 > | key | ครอบอะไร | ผู้ถือ (seed) |
 > |---|---|---|
