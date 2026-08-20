@@ -210,9 +210,12 @@ export default function FlowTower() {
 
       {/* แถบฝ่าย — ชื่อ/cost center มาจากผังองค์กรจริง (แก้ที่ /org-setup แล้วหน้านี้ตามทันที) */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
-        {usedDivs.length === 0 ? (
+        {/* ⚠️ ยังโหลดไม่เสร็จ ≠ ยังไม่ได้ตั้ง — ห้ามขึ้นคำเตือนหลอกระหว่างรอ */}
+        {divs.length === 0 ? (
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังอ่านผังองค์กร…</span>
+        ) : usedDivs.length === 0 ? (
           <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
-            ⚠️ ยังไม่ได้ตั้งชั้น "ฝ่าย" ในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นที่นี่เอง
+            ⚠️ ฝ่ายที่หน้านี้อ้างถึงยังไม่มีในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นเอง
           </span>
         ) : usedDivs.map(dv => (
           <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${dv.color}18`, border: `1px solid ${dv.color}55` }}>
