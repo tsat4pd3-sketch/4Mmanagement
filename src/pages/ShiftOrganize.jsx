@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
+import { roleLabel } from '../utils/roleMeta';
 import { toast } from '../components/Toast';
 
 function getWeekDates(refDate) {
@@ -393,6 +394,24 @@ export default function ShiftOrganize() {
           </button>
         )}
       </div>
+
+      {/* ⚠️ ไม่มีสิทธิ์แก้ = ต้องบอกให้ชัด ห้ามโชว์ตารางเปล่าๆ แล้วปล่อยให้เดาเอง
+          (feedback ทีมงาน 2026-08-20: "กำหนดกะในฐานข้อมูลแล้ว แต่ไม่มีปุ่มสลับกะ"
+           — ปุ่มไม่โผล่เพราะ role ไม่มี `shift_schedule:edit` แต่หน้าจอไม่ได้บอกเลย
+           คนเลยเข้าใจว่าระบบพัง/ทำไม่เสร็จ = ความล้มเหลวแบบเงียบ) */}
+      {!canEdit && (
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
+          🔒 <b>โหมดดูอย่างเดียว — บัญชีนี้ยังไม่มีสิทธิ์แก้ตารางกะ</b> จึงไม่มีปุ่ม ⇄ สลับ และปุ่มบันทึก
+          <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+            ให้ admin เปิดสิทธิ์ <code>ตารางกะ: แก้กะ/override/ยุบกะ</code> (<code>shift_schedule:edit</code>)
+            ให้ role <b>{roleLabel(role)}</b> ที่หน้า <b>จัดการสิทธิ์ (/permissions)</b> → แท็บ <b>สิทธิ์การทำงาน</b>
+            <div style={{ marginTop: 3, opacity: 0.85 }}>
+              ค่าตั้งต้นของระบบให้เฉพาะ ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย / สิทธิ์ระดับส่วน —
+              role ที่เพิ่มเข้าระบบทีหลัง (เช่น ซ่อมบำรุง) จะยังไม่มีสิทธิ์นี้จนกว่าจะติ๊กเปิดเอง
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Week Navigator */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
