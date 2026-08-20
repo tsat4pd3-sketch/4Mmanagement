@@ -4,13 +4,14 @@ import { toast } from '../components/Toast';
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 
-const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
+const KIND_LABEL = { division: 'Division / ฝ่าย', section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
   const [nodes, setNodes] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selDiv, setSelDiv] = useState(null);
   const [selSection, setSelSection] = useState(null);
   const [selDept, setSelDept] = useState(null);
   const [modal, setModal] = useState(null); // { kind, parentId, editing }
@@ -46,7 +47,12 @@ export default function OrgSetup() {
   };
 
   const ORPHAN = '__ORPHAN__';
+  const ORPHAN_DIV = '__NODIV__';
+  const divisions = useMemo(() => nodes.filter(n => n.kind === 'division'), [nodes]);
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
+  // ส่วนงานที่ยังไม่ได้ระบุฝ่าย = worklist ให้คนมาจัด **ห้ามซ่อน** (pattern เดียวกับ 'ขึ้นตรงฝ่าย' ของแผนก)
+  const orphanSections = useMemo(() => sections.filter(s2 => !s2.parent_id), [sections]);
+  const sectionsOf = (divId) => divId === ORPHAN_DIV ? orphanSections : sections.filter(s2 => s2.parent_id === divId);
   const allDepts = useMemo(() => nodes.filter(n => n.kind === 'department'), [nodes]);
   const orphanDepts = useMemo(() => nodes.filter(n => n.kind === 'department' && !n.parent_id), [nodes]);
   const deptsOf = (sectionId) => sectionId === ORPHAN
@@ -62,6 +68,7 @@ export default function OrgSetup() {
   const isLinkedLine = (node) => node?.kind === 'line' && !!node?.ref_line_id;
 
   const parentOptionsFor = (kind) => {
+    if (kind === 'section') return divisions.map(d => ({ id: d.id, label: d.name }));
     if (kind === 'department') return sections.map(s => ({ id: s.id, label: s.name }));
     if (kind === 'line') return allDepts.map(d => {
       const sec = sections.find(s => s.id === d.parent_id);
@@ -69,11 +76,16 @@ export default function OrgSetup() {
     });
     return [];
   };
-  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
+  const PARENT_LABEL = { section: 'อยู่ภายใต้ ฝ่าย (Division)', department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
 
   useEffect(() => {
-    if (!selSection && sections.length) setSelSection(sections[0].id);
-  }, [sections]); // eslint-disable-line
+    if (!selDiv && divisions.length) setSelDiv(divisions[0].id);
+  }, [divisions]); // eslint-disable-line
+  const visibleSections = selDiv ? sectionsOf(selDiv) : sections;
+  useEffect(() => {
+    if (!selSection && visibleSections.length) setSelSection(visibleSections[0].id);
+    if (selSection && selSection !== ORPHAN && !visibleSections.some(v => v.id === selSection)) setSelSection(visibleSections[0]?.id ?? null);
+  }, [selDiv, nodes]); // eslint-disable-line
 
   const currentDepts = selSection ? deptsOf(selSection) : [];
   useEffect(() => {
@@ -202,14 +214,40 @@ export default function OrgSetup() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          {/* Divisions / ฝ่าย — ชั้นบนสุดตามผังจริง ORG001 Rev.09 */}
+          <div style={colStyle} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DIVISION / ฝ่าย ({divisions.length})</strong>
+              <button className="tbtn" onClick={() => openCreate('division', null)} style={addBtnSt}>➕</button>
+            </div>
+            {divisions.map(dv => (
+              <div key={dv.id} style={itemStyle(selDiv === dv.id)} onClick={() => setSelDiv(dv.id)}>
+                <span style={{ fontSize: 13, color: dv.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: dv.is_active ? 'none' : 'line-through' }}>
+                  {dv.name}
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({sectionsOf(dv.id).length} ส่วน)</span>
+                  {dv.cost_center && <CostBadge code={dv.cost_center} />}
+                </span>
+                <RowActions node={dv} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+              </div>
+            ))}
+            {!divisions.length && <Empty text="ยังไม่มีฝ่าย" />}
+            {/* ส่วนงานที่ยังไม่ระบุฝ่าย — worklist ห้ามซ่อน */}
+            <div style={itemStyle(selDiv === ORPHAN_DIV)} onClick={() => setSelDiv(ORPHAN_DIV)}>
+              <span style={{ fontSize: 13, color: orphanSections.length ? '#f59e0b' : 'var(--text2)' }}>
+                {orphanSections.length ? '⚠️' : '✓'} ยังไม่ระบุฝ่าย
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanSections.length} ส่วน)</span>
+              </span>
+            </div>
+          </div>
+
           {/* Sections */}
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
-              <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({visibleSections.length})</strong>
+              <button className="tbtn" onClick={() => openCreate('section', selDiv === ORPHAN_DIV ? null : selDiv)} style={addBtnSt}>➕</button>
             </div>
             <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
-            {sections.map(s => (
+            {visibleSections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
                 <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
                   {s.name}
@@ -220,7 +258,7 @@ export default function OrgSetup() {
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
             ))}
-            {!sections.length && <Empty text="ยังไม่มี Section" />}
+            {!visibleSections.length && <Empty text="ฝ่ายนี้ยังไม่มี Section" />}
             <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
               <span style={{ fontSize: 13, color: 'var(--text2)' }}>
                 🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)

@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { loadOrgDivisions, divisionIndex } from '../utils/orgDivisions';
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -18,17 +19,17 @@ import { RATE } from '../utils/refreshRates';
        🔴 ตัน       = มีความต้องการค้างอยู่ แต่ไม่มีอะไรไหลออก  ← ต้องแก้
        ⚪ ยังไม่ใช้ = ไม่มีทั้งความต้องการและการเคลื่อนไหว = แผนกยังไม่เริ่มใช้ (ไม่ใช่ bug)
      โปรเจคนี้เป็น prototype ที่ทยอยขยายผลรายแผนก — เหมา "ไม่มีข้อมูล" เป็น "พัง" คือการอ่านผิด
-   • **จัดกลุ่มตามฝ่ายจริง** (ผัง ORG001 Rev.09) ให้ผู้บริหารเห็นว่าช่วงไหนเป็นของใคร
-     ฝ่ายสนับสนุนกลาง (จัดซื้อ/บัญชี/HRM) = นอกขอบเขต (user 2026-08-19) แสดงเป็น "ขอบเขตฝ่ายอื่น"
+   • **จัดกลุ่มตามฝ่ายจริง** — ชื่อฝ่ายอ่านจาก `org_nodes` (kind='division') **ห้าม hardcode**
+   • ⚠️ **การสั่งซื้อวัตถุดิบ/พาร์ทที่ใช้ผลิต เป็นงานของ Planning (ฝ่าย Logistic & Sales)**
+     ไม่ใช่ 'ส่วนจัดซื้อ' ในผัง — ส่วนจัดซื้อ (ฝ่ายสนับสนุนกลาง) ทำแค่หา supplier + ซื้อของใช้ทั่วไป
+     (user ยืนยัน 2026-08-19) → คิวใบสั่งซื้อวัตถุดิบจึง **อยู่ในขอบเขต** และมีเจ้าภาพคือ Planning
    • เปิดหลายจอพร้อมกันได้ — realtime บน prod_orders/sessions ทำให้ทุกจอขยับพร้อมกันตอนเดโม
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
-/* ── ฝ่าย (จากผังองค์กรจริง) ── */
-const DIV = {
-  log:  { label: 'ฝ่าย Logistic & Sales', color: '#0ea5e9', cost: '2140320000' },
-  prod: { label: 'ฝ่าย Production',        color: '#22c55e', cost: '2140360000' },
-  out:  { label: 'ขอบเขตฝ่ายอื่น',          color: '#64748b', cost: null },
-};
+/* ── ฝ่าย: **ชื่อ/cost center มาจากผังองค์กรจริง (org_nodes kind='division')** ──
+   ที่นี่เก็บได้แค่ "code ที่อ้างถึง" กับ "สี" (การแสดงผล) — ห้าม hardcode ชื่อฝ่าย/เลข cost
+   เปลี่ยนชื่อฝ่ายที่ /org-setup แล้วหน้านี้ต้องตามเอง · ดู src/utils/orgDivisions.js */
+const DIV_COLOR = { LOG: '#0ea5e9', PRD: '#22c55e', ENG: '#a855f7', MTN: '#f97316', SUP: '#64748b' };
 
 const fmt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 function getWorkDate() {
@@ -51,6 +52,7 @@ export default function FlowTower() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState('');
+  const [divs, setDivs] = useState([]);
   const canFix = can('products', 'edit', role);
   const workDate = getWorkDate();
 
@@ -113,6 +115,7 @@ export default function FlowTower() {
     } catch (e) { setErr(String(e.message || e)); }
   }, [workDate]);
 
+  useEffect(() => { loadOrgDivisions().then(setDivs); }, []);
   useEffect(() => { load(); }, [load]);
   usePolling(load, RATE.ANALYTIC);
   // เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
@@ -142,30 +145,33 @@ export default function FlowTower() {
   /* ── สถานี: 1 ใบ = 1 ช่วงของสายธาร ── */
   const S = d || {};
   const stations = [
-    { key: 'sales', div: 'log', icon: '🛒', name: 'ลูกค้า / Sales',
+    { key: 'sales', divCode: 'LOG', icon: '🛒', name: 'ลูกค้า / Sales',
       lines: [[`${fmt(S.orderCnt)} รอบ`, 'ออเดอร์ค้างส่ง'], [fmt(S.orderQty), 'ชิ้นที่ต้องส่ง']],
       to: '/customer-demand', st: S.orderCnt > 0 ? 'flow' : 'idle' },
-    { key: 'fgwh', div: 'log', icon: '🏬', name: 'คลัง FG',
+    { key: 'fgwh', divCode: 'LOG', icon: '🏬', name: 'คลัง FG',
       lines: [[fmt(S.fgStock), 'ชิ้นคงเหลือ'], [`${fmt(S.fgParts)} พาร์ท`, 'ในคลัง']],
       to: '/line-stock', st: S.fgStock > 0 ? 'flow' : 'idle' },
-    { key: 'prod', div: 'prod', icon: '🏭', name: 'ผลิต FG',
+    { key: 'prod', divCode: 'PRD', icon: '🏭', name: 'ผลิต FG',
       lines: [[fmt(S.producedToday), 'ชิ้นวันนี้'], [`${fmt(S.sessAll)} กะ`, `เปิดอยู่ ${fmt(S.sessOpen)}`]],
       to: '/daily-report', st: S.producedToday > 0 ? 'flow' : 'idle' },
-    { key: 'wip', div: 'prod', icon: '🔄', name: 'WIP หน้าไลน์',
+    { key: 'wip', divCode: 'PRD', icon: '🔄', name: 'WIP หน้าไลน์',
       lines: [[`${fmt(S.wipPts)} จุด`, 'buffer ที่ตั้งไว้'], [`${fmt(S.wipReq)} ใบ`, 'ใบเติมของ']],
       to: '/linesetup', st: S.wipReq > 0 ? 'flow' : 'idle' },
-    { key: 'store', div: 'log', icon: '📦', name: 'สโตร์พาร์ทย่อย',
+    { key: 'store', divCode: 'LOG', icon: '📦', name: 'สโตร์พาร์ทย่อย',
       lines: [[fmt(S.subStock), 'ชิ้นคงเหลือ'], [`${fmt(S.subParts)} พาร์ท`, 'ในสโตร์']],
       to: '/line-stock', st: S.subStock > 0 ? 'flow' : 'idle' },
-    { key: 'press', div: 'prod', icon: '🔨', name: 'ผลิตพาร์ทย่อย (ปั๊ม)',
+    { key: 'press', divCode: 'PRD', icon: '🔨', name: 'ผลิตพาร์ทย่อย (ปั๊ม)',
       lines: [[`${fmt(S.lotPending)} ใบ`, 'รอผลิต'], [`${fmt(S.lotDoing)} ใบ`, 'กำลังผลิต']],
       to: '/heijunka', st: (S.lotPending + S.lotDoing) > 0 ? 'flow' : 'idle' },
-    { key: 'raw', div: 'log', icon: '🗄️', name: 'สโตร์วัตถุดิบ / พาร์ทซื้อ',
+    { key: 'raw', divCode: 'LOG', icon: '🗄️', name: 'สโตร์วัตถุดิบ / พาร์ทซื้อ',
       lines: [[fmt(S.rawStock), 'ชิ้นคงเหลือ'], [`${fmt(S.rawPending)} ใบ`, 'ใบเบิกค้าง']],
       to: '/line-stock', st: S.rawStock > 0 ? 'flow' : 'idle' },
-    { key: 'buy', div: 'out', icon: '🚛', name: 'จัดซื้อ (ฝ่ายสนับสนุน)',
-      lines: [[`${fmt(S.purchPending)} ใบ`, 'ระบบออกให้แล้ว'], ['—', 'ยังไม่ได้ขยายผล']],
-      to: null, st: 'idle', note: 'อยู่ใต้ฝ่ายสนับสนุนกลาง — นอกขอบเขตรอบนี้' },
+    // ⚠️ สั่งซื้อ "วัตถุดิบ/พาร์ทที่ใช้ผลิต" = งานของ Planning (ฝ่าย Logistic & Sales)
+    //    ไม่ใช่ส่วนจัดซื้อในผัง (ซึ่งดูแค่หา supplier + ของใช้ทั่วไป) — user ยืนยัน 2026-08-19
+    { key: 'buy', divCode: 'LOG', icon: '🧾', name: 'สั่งซื้อวัตถุดิบ (Planning)',
+      lines: [[`${fmt(S.purchPending)} ใบ`, 'ใบสั่งซื้อรอดำเนินการ'], [`${fmt(S.blocks?.length)} พาร์ท`, 'ยังออกใบไม่ได้']],
+      to: '/heijunka', st: S.purchPending > 0 ? 'block' : (S.blocks?.length ? 'block' : 'idle'),
+      note: 'ระบบคำนวณและออกใบให้อัตโนมัติจากการระเบิด BOM — Planning เป็นผู้ดำเนินการต่อ' },
   ];
 
   /* ── ข้อต่อระหว่างสถานี ── */
@@ -176,8 +182,17 @@ export default function FlowTower() {
     { from: 'wip', label: 'เบิกเข้าไลน์', st: S.wipReq > 0 ? 'flow' : 'idle' },
     { from: 'store', label: 'ระเบิด BOM (อัตโนมัติ)', st: 'flow' },
     { from: 'press', label: 'ใบสั่งผลิตลูก', st: S.lotAll > 0 ? 'flow' : 'idle' },
-    { from: 'raw', label: 'ใบสั่งซื้อ', st: S.purchPending > 0 ? 'flow' : 'idle' },
+    { from: 'raw', label: 'ใบสั่งซื้อวัตถุดิบ', st: S.purchPending > 0 ? 'block' : 'idle' },
   ];
+
+  // ฝ่ายของแต่ละสถานี — เอาชื่อจากผังจริง ถ้าผังยังไม่มี code นั้นให้บอกตรงๆ ห้ามเดาชื่อ
+  const dix = divisionIndex(divs);
+  const divOf = (code) => {
+    const node = dix.byCode(code);
+    return { code, color: DIV_COLOR[code] || '#64748b', name: node?.name || null, cost_center: node?.cost_center || null };
+  };
+  const usedDivs = [...new Set(stations.map(st2 => st2.divCode))]
+    .map(divOf).filter(x => x.name);
 
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 };
 
@@ -195,20 +210,27 @@ export default function FlowTower() {
         </div>
       )}
 
-      {/* แถบฝ่าย — ให้ผู้บริหารเห็นว่าช่วงไหนของใคร */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        {Object.entries(DIV).map(([k, v]) => (
-          <span key={k} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: v.color, background: `${v.color}18`, border: `1px solid ${v.color}55` }}>
-            {v.label}{v.cost ? ` · ${v.cost}` : ''}
+      {/* แถบฝ่าย — ชื่อ/cost center มาจากผังองค์กรจริง (แก้ที่ /org-setup แล้วหน้านี้ตามทันที) */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
+        {usedDivs.length === 0 ? (
+          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
+            ⚠️ ยังไม่ได้ตั้งชั้น "ฝ่าย" ในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นที่นี่เอง
+          </span>
+        ) : usedDivs.map(dv => (
+          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${dv.color}18`, border: `1px solid ${dv.color}55` }}>
+            {dv.name}{dv.cost_center ? ` · ${dv.cost_center}` : ''}
           </span>
         ))}
+        <button onClick={() => navigate('/org-setup')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>
+          จัดการผังองค์กร
+        </button>
       </div>
 
       {/* ── สายธาร ── */}
       <div style={{ overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, minWidth: 1180 }}>
           {stations.map((s, i) => {
-            const dv = DIV[s.div]; const st = ST[s.st] || ST.idle;
+            const dv = divOf(s.divCode); const st = ST[s.st] || ST.idle;
             const lk = links[i];
             return (
               <div key={s.key} style={{ display: 'flex', alignItems: 'stretch' }}>
@@ -218,7 +240,7 @@ export default function FlowTower() {
                   style={{
                     ...card, width: 158, padding: '10px 12px', borderTop: `3px solid ${dv.color}`,
                     cursor: s.to ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 4,
-                    opacity: s.div === 'out' ? 0.72 : 1,
+                    opacity: 1,
                   }}>
                   <div style={{ fontSize: 20, lineHeight: 1 }}>{s.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', lineHeight: 1.25, minHeight: 30 }}>{s.name}</div>
@@ -319,7 +341,7 @@ export default function FlowTower() {
                 ['ผลิต FG → สโตร์ย่อย', 'ระเบิด BOM + หักมินิสโตร์ (trigger)', 'flow', `สโตร์ย่อยคงเหลือ ${fmt(S.subStock)} ชิ้น`],
                 ['สโตร์ย่อย → ไลน์ปั๊ม', 'ใบสั่งผลิตลูกตามขนาดล็อต', S.lotAll > 0 ? 'flow' : 'idle', `${fmt(S.lotAll)} ใบ · รู้ไลน์ปลายทางแล้ว ${fmt(S.lotRouted)} ใบ`],
                 ['ไลน์ปั๊ม → สโตร์วัตถุดิบ', 'ใบเบิกวัตถุดิบตามสูตรของพาร์ทลูก', S.rawAll > 0 ? 'flow' : 'idle', `ใบเบิก ${fmt(S.rawAll)} ใบ · ค้าง ${fmt(S.rawPending)}`],
-                ['→ จัดซื้อ', 'ระบบออกใบสั่งซื้อให้อัตโนมัติ', 'idle', `ออกให้แล้ว ${fmt(S.purchPending)} ใบ — ฝ่ายสนับสนุนยังไม่ได้ขยายผล (นอกขอบเขต)`],
+                ['→ สั่งซื้อวัตถุดิบ (Planning)', 'ระเบิด BOM → ออกใบสั่งซื้ออัตโนมัติ', S.purchPending > 0 ? 'block' : 'idle', `ออกใบให้แล้ว ${fmt(S.purchPending)} ใบรอดำเนินการ · อีก ${fmt(S.blocks?.length)} พาร์ทออกใบไม่ได้เพราะยังไม่ตั้งขนาดล็อต`],
                 ['WIP หน้าไลน์', 'ใบเติมของจากจุด buffer', S.wipReq > 0 ? 'flow' : 'idle', `ตั้งจุดไว้ ${fmt(S.wipPts)} จุด · ใบเติม ${fmt(S.wipReq)} ใบ (ยังไม่เริ่มใช้)`],
               ].map(([seg, mech, st, ev]) => (
                 <tr key={seg} style={{ borderTop: '1px solid var(--border)' }}>
