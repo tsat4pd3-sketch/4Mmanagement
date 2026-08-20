@@ -21,6 +21,7 @@ import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COM
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 
@@ -658,6 +659,8 @@ export default function OEEAnalytics() {
   // จัดอันดับสาเหตุ (pareto) — สีตาม "ประเภท" เท่านั้น: นอกแผน = ม่วง (เด่น) / ในแผน = เทา (จาง)
   // ห้ามกลับไปไล่สีตามลำดับแถว (hue-cycling อ่านไม่ออกว่าสีสื่ออะไร — เคยเป็นโดนัท 25 สี)
   const [tdDtShowAll, setTdDtShowAll] = useState(false);
+  // เจาะดูรายการดิบของแถวที่กด — { kind: 'cause'|'part', key, label }
+  const [tdDtDrill, setTdDtDrill] = useState(null);
   const tdDtByCause = useMemo(() => {
     const map = {};
     for (const d of tdDowntimesScoped) {
@@ -697,6 +700,21 @@ export default function OEEAnalytics() {
     const total = Object.values(map).reduce((s, d) => s + d.min, 0);
     return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
   }, [tdDowntimesScoped, tdProductsByMat]);
+
+  /* รายการดิบของแถวที่กดในแผง 2.2 / 2.3 — ตอบ "ปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง ใครลง"
+     ⚠️ ต้องกรองจาก tdDowntimesScoped (ชุดเดียวกับที่รวมยอดในแผง) ไม่งั้นตัวเลขในโมดัลไม่ตรงกับแถว
+     ⚠️ แผง 2.3 นับเฉพาะ "นอกแผน" → ตอนเจาะต้องกรอง planned ออกให้ตรงกันด้วย */
+  const tdDrillRows = useMemo(() => {
+    if (!tdDtDrill) return [];
+    const sMap = {};
+    for (const s of tdSessions) sMap[s.id] = s;
+    return tdDowntimesScoped
+      .filter(d => (tdDtDrill.kind === 'cause'
+        ? (d.dr_downtime_types?.name_th || 'ไม่ระบุ') === tdDtDrill.key
+        : d.dr_downtime_types?.category !== 'planned' && (d.mat_no || 'ไม่ระบุ MAT.NO') === tdDtDrill.key))
+      .map(d => ({ ...d, _s: sMap[d.session_id] || null }))
+      .sort((a, b) => (b.duration_min || 0) - (a.duration_min || 0));
+  }, [tdDtDrill, tdDowntimesScoped, tdSessions]);
 
   /* ══════════════════════════════════════════════════════════════════════
      TAB: TREND — historical range analytics (เดิม)
@@ -1341,7 +1359,9 @@ export default function OEEAnalytics() {
                       {shown.map(d => {
                         const planned = d.category === 'planned';
                         return (
-                          <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%)`}>
+                          <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%) · กดเพื่อดูรายการ`}
+                            onClick={() => setTdDtDrill({ kind: 'cause', key: d.name, label: d.name })}
+                            style={{ cursor: 'pointer' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
                               <span style={{ color: planned ? 'var(--muted)' : 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                                 {d.name}{planned && <span style={{ marginLeft: 5, fontSize: 11 }}>📅</span>}
@@ -1375,7 +1395,9 @@ export default function OEEAnalytics() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {tdDtByPart.map((d, i) => (
-                      <div key={d.mat} title={`${d.part} — ${d.min} นาที (${d.pct}%)`}>
+                      <div key={d.mat} title={`${d.part} — ${d.min} นาที (${d.pct}%) · กดเพื่อดูรายการ`}
+                        onClick={() => setTdDtDrill({ kind: 'part', key: d.mat, label: d.part })}
+                        style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
                           <span style={{ color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                             <span style={{ color: 'var(--muted)', fontWeight: 700, marginRight: 6, fontVariantNumeric: 'tabular-nums' }}>{i + 1}.</span>{d.part}
@@ -1394,6 +1416,70 @@ export default function OEEAnalytics() {
               </div>
             </div>
           </div>
+
+          {/* เจาะรายการดิบของแถวที่กด (แผง 2.2 / 2.3) — ตอบว่าปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง */}
+          {tdDtDrill && (() => {
+            const totMin = tdDrillRows.reduce((a, d) => a + (d.duration_min || 0), 0);
+            const th = { padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
+            const td = { padding: '6px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
+            return (
+              <div className="modal-scroll" onClick={() => setTdDtDrill(null)}
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+                <div onClick={e => e.stopPropagation()}
+                  style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 900px)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '13px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {tdDtDrill.kind === 'cause' ? '⏱ ' : '📦 '}{tdDtDrill.label}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+                        {tdDate} · {tdDrillRows.length} รายการ · รวม <b style={{ color: '#a855f7' }}>{Math.round(totMin).toLocaleString()}</b> นาที
+                        {tdDtDrill.kind === 'part' && ' · เฉพาะนอกแผน'}
+                      </div>
+                    </div>
+                    <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                  </div>
+                  <div style={{ flex: 1, overflow: 'auto', padding: '4px 14px 14px' }}>
+                    {tdDrillRows.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีรายการ</div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+                        <thead><tr style={{ background: 'var(--bg2)' }}>
+                          {['ไลน์', 'กะ', 'เวลา', 'เครื่อง', 'ชิ้นงาน', 'นาที', 'หมายเหตุ / ผู้บันทึก'].map((h, i) =>
+                            <th key={i} style={th}>{h}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {tdDrillRows.map(d => (
+                            <tr key={d.id}>
+                              <td style={td}>{d._s?.line_name || '—'}</td>
+                              <td style={td}>{d._s?.shift === 'night' ? '🌙 ดึก' : '☀️ เช้า'}</td>
+                              <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                                {d.started_at ? fmtTime(new Date(d.started_at)) : '—'}
+                                {d.ended_at && <> – {fmtTime(new Date(d.ended_at))}</>}
+                                {/* ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่ ต้องเห็นชัด */}
+                                {d.started_at && !d.ended_at && <span style={{ color: '#ef4444', fontWeight: 700 }}> · ยังไม่ปิด</span>}
+                              </td>
+                              <td style={td}>{d.machine_no || '—'}</td>
+                              <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>{d.mat_no || '—'}</td>
+                              <td style={{ ...td, fontWeight: 800, textAlign: 'right', color: d.dr_downtime_types?.category === 'planned' ? 'var(--muted)' : '#a855f7' }}>
+                                {Math.round(d.duration_min || 0).toLocaleString()}
+                              </td>
+                              <td style={{ ...td, minWidth: 200 }}>
+                                {d.description || <span style={{ color: 'var(--muted)' }}>— ไม่ได้กรอกหมายเหตุ —</span>}
+                                {d.reported_by_name && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{d.reported_by_name}</div>}
+                                {/* วิธีแก้ไขที่หัวหน้ากลุ่มลงไว้ (feedback 2026-08-19) */}
+                                {d.fix_action && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>🛠 {d.fix_action}</div>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </>
       ) : viewTab === 'insight' ? (
         <OeeInsightPanel lines={linesFull} />
