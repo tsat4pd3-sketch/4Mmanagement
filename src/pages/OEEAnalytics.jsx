@@ -23,6 +23,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
+import { fetchByIds } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
@@ -135,11 +136,18 @@ function dateStrAdd(dateStr, deltaDays) {
 }
 
 // ── KPI Card ─────────────────────────────────────────────────────
-const KpiCard = ({ label, value, color, sub }) => (
+/* `calc` = ที่มาของตัวเลข (user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที")
+   — เป็นตัวเลขอธิบาย ไม่ใช่ตัวที่เอาไปคำนวณซ้ำ · ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ */
+const KpiCard = ({ label, value, color, sub, calc }) => (
   <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
     <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
     {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+    {calc && (
+      <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
+        {calc}
+      </div>
+    )}
   </div>
 );
 
@@ -323,6 +331,7 @@ export default function OEEAnalytics() {
 
   const [tdSessions,  setTdSessions]  = useState([]);
   const [tdDowntimes, setTdDowntimes] = useState([]);
+  const [tdLoadWarn,  setTdLoadWarn]  = useState(null);
   const [tdDefects,   setTdDefects]   = useState([]);
   const [tdHistory,   setTdHistory]   = useState([]); // last 10 days, closed sessions, lightweight
   const [tdProductsByMat, setTdProductsByMat] = useState({}); // mat_no -> part name
@@ -427,26 +436,27 @@ export default function OEEAnalytics() {
       const { data: sess } = await q;
 
       const sessionIds = (sess || []).map(s => s.id);
-      const [{ data: dt }, { data: def }, { data: ord }] = await Promise.all([
-        sessionIds.length
-          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
+      // วันเดียวมีกะไม่มาก แต่ใช้ helper เดียวกับแท็บแนวโน้มไว้ — กันพลาดซ้ำถ้าวันหน้าไลน์เยอะขึ้น
+      // และได้เช็ค error ในตัว (เดิมรับแค่ data → ล้มเหลวแล้วโชว์ 0 เหมือนไม่มีข้อมูลจริง)
+      const [dtRes, defRes, ordRes] = await Promise.all([
+        fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
+          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', c)),
       ]);
+      const ord = ordRes.rows;
 
       setTdSessions(sess || []);
-      setTdDowntimes(dt || []);
-      setTdDefects(def || []);
+      setTdDowntimes(dtRes.rows);
+      setTdDefects(defRes.rows);
+      setTdLoadWarn([dtRes, defRes, ordRes].find(r => r.error)?.error || null);
       const obs = {};
-      (ord || []).forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
+      ord.forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
       setTdOrdersBySession(obs);
       // pair_mat_no ของ mat ที่มีในกะวันนี้ (นับงานคู่ RH/LH เป็น 1 คู่/stroke — ดู pairTotals.js)
-      const mats = [...new Set((ord || []).map(o => o.mat_no).filter(Boolean))];
+      const mats = [...new Set(ord.map(o => o.mat_no).filter(Boolean))];
       if (mats.length) {
         // + cycle_time_sec/name: ใช้คำนวณ OEE สดของกะที่ยังไม่ปิด (computeLiveOee) และแสดงชื่อพาร์ทในการ์ดกำลังผลิต
         // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products)
@@ -810,6 +820,7 @@ export default function OEEAnalytics() {
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [trLoadWarn, setTrLoadWarn] = useState(null);  // โหลดแถวลูกไม่ครบ = ตัวเลขต่ำกว่าจริง ต้องบอก
 
   // Filters
   const [period,     setPeriod]     = useState('monthly'); // daily|weekly|monthly|yearly
@@ -853,21 +864,22 @@ export default function OEEAnalytics() {
 
       const sessionIds = (sess || []).map(s => s.id);
 
-      const [{ data: dt }, { data: def }, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
-        sessionIds.length
-          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
+      // ⚠️ ห้าม .in('session_id', sessionIds) ตรงๆ — ช่วง 90 วัน = 800+ กะ → URL ~31,700 ตัวอักษร
+      //    โดนตัด → คิวรีล้มเหลว → DT/ของเสีย/Pareto/มูลค่าเป็น 0 เงียบๆ ขณะที่ A/P/Q (ค่า stamp)
+      //    ยังโชว์ค่าจริง = จอขัดแย้งกันเอง (บั๊กจริงที่ user จับได้ 2026-08-20)
+      const [dtRes, defRes, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
+        fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
+          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('production_sessions').select('line_name').eq('status', 'closed'),
       ]);
 
       setSessions(sess || []);
-      setDowntimes(dt || []);
-      setDefects(def || []);
+      setDowntimes(dtRes.rows);
+      setDefects(defRes.rows);
       // ต้นทุน/ชิ้น สำหรับแผง "มูลค่าของเสีย" — best-effort (ยังไม่กรอกต้นทุน = แผงบอกว่าขาดอะไร ไม่เดา)
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true)
         .then(({ data: pm }) => setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r]))))
@@ -879,17 +891,18 @@ export default function OEEAnalytics() {
       // เดิมแท็บนี้บวก actual_qty ตรงๆ (ไม่ pair-aware) ขณะที่แท็บ "ภาพรวมวันนี้" นับคู่แล้ว
       // → ยอดผลิตของช่วงเดียวกันไม่ตรงกันระหว่าง 2 แท็บในหน้าเดียว (แก้ 2026-08-05)
       // ⚠️ Supabase คืนสูงสุด 1000 แถว/ครั้ง → ต้องแบ่งหน้า ไม่งั้นช่วงยาวยอดขาดเงียบๆ
-      const ordersAll = [];
-      for (let i = 0; sessionIds.length && i < 40; i++) {
-        const { data: od } = await supabaseDR.from('prod_orders')
-          .select('session_id, mat_no, status, qty, qty_ok, qty_actual')
-          // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า (ตัวเลข OEE จะเพี้ยนเงียบ)
-          .in('session_id', sessionIds).order('id').range(i * 1000, (i + 1) * 1000 - 1);
-        ordersAll.push(...(od || []));
-        if (!od || od.length < 1000) break;
-      }
-      setTrOrders(ordersAll);
-      const trMats = [...new Set(ordersAll.map(o => o.mat_no).filter(Boolean))];
+      // ⚠️ เดิมแบ่งหน้าอย่างเดียวแต่ยัด id ทั้ง 800+ ตัวใน .in() → URL ยาวเกิน คืน 0 แถว
+      //    แล้ว trTotalQty ถอยไปใช้ actual_qty เงียบๆ (ยอดที่เห็นเลยตรงกับ sum(actual_qty) เป๊ะ)
+      const ordRes = await fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
+        .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c));
+      setTrOrders(ordRes.rows);
+      // โหลดไม่ครบ = ตัวเลขรวมต่ำกว่าจริง ต้องบอกบนจอ ห้ามเงียบ
+      setTrLoadWarn(
+        [dtRes, defRes, ordRes].some(r => r.error || r.truncated)
+          ? (dtRes.error || defRes.error || ordRes.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน)')
+          : null,
+      );
+      const trMats = [...new Set(ordRes.rows.map(o => o.mat_no).filter(Boolean))];
       await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ trTotalQty ยุบขั้นซ้ำก่อนรวมยอด
       if (trMats.length) {
         const pm = {};
@@ -1021,6 +1034,13 @@ export default function OEEAnalytics() {
       breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
       teepLines: lineSet.size, teepDays: dayCount,
       sessions: rows.length, total: trTotalQty,
+      // ── ที่มาของ A / P / Q — user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที
+      //    ของ work time · Q เท่านั้นมาจากดี/เสียเท่าไหร่" → แนบตัวตั้ง/ตัวหารของแต่ละตัวไปเลย
+      //    ⚠️ เป็น "ตัวเลขอธิบาย" ไม่ใช่ตัวที่เอาไปคำนวณ A/P/Q ซ้ำ — ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ
+      //       (รวมทั้งช่วงแบบนี้จะได้ค่าใกล้ๆ แต่ไม่เท่าเป๊ะ เพราะของจริงคิดรายกะแล้วถ่วงน้ำหนัก) ── */
+      unplannedMinTotal: Math.round(rows.reduce((a, r) => a + (Number(r.unplannedMin) || 0), 0)),
+      okQtyTotal: rows.reduce((a, r) => a + (Number(r.okQty) || 0), 0),
+      ngQtyTotal: rows.reduce((a, r) => a + (Number(r.ngQty) || 0), 0),
     };
   }, [rows, breakPols, dateFrom, dateTo, trTotalQty]);
 
@@ -1157,6 +1177,16 @@ export default function OEEAnalytics() {
           )}
         </>}
       />
+
+      {/* โหลดแถวลูก (downtime/ของเสีย/ใบงาน) ไม่ครบ = ตัวเลขรวมต่ำกว่าจริง — ห้ามแสดง 0 เหมือนไม่มีข้อมูล */}
+      {(viewTab === 'today' ? tdLoadWarn : viewTab === 'trend' ? trLoadWarn : null) && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 9, padding: '9px 13px', marginBottom: 12, fontSize: 12.5, color: '#ef4444', lineHeight: 1.6 }}>
+          ⚠ <b>ตัวเลขบางส่วนโหลดไม่ครบ</b> — Downtime / ของเสีย / ยอดผลิต อาจต่ำกว่าความจริง
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+            {viewTab === 'today' ? tdLoadWarn : trLoadWarn} · ลองย่อช่วงวันให้สั้นลงแล้วกดโหลดใหม่
+          </div>
+        </div>
+      )}
 
       {viewTab === 'today' ? (
         <>
@@ -1676,9 +1706,23 @@ export default function OEEAnalytics() {
       {/* KPI Cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <KpiCard label="OEE เฉลี่ย"     value={kpi.oee} color={kpi.oee != null ? oeeColor(kpi.oee) : undefined} sub={`${kpi.sessions} กะ · เป้า ≥ ${trTarget.oee}%`} />
-        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`} />
-        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`} />
-        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`} />
+        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`}
+          calc={<>
+            เวลารับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> น.<br />
+            − หยุดนอกแผน <b style={{ color: '#a855f7' }}>{kpi.unplannedMinTotal.toLocaleString()}</b> น.<br />
+            = เดินเครื่อง <b>{Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()}</b> น.
+          </>} />
+        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`}
+          calc={<>
+            เวลาที่ควรใช้ตาม CT ÷ เวลาเดินเครื่อง<br />
+            <span style={{ color: 'var(--muted)' }}>ผลิต {kpi.total.toLocaleString()} ชิ้น ใน {Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()} น.</span>
+          </>} />
+        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`}
+          calc={<>
+            ของดี <b style={{ color: '#22c55e' }}>{kpi.okQtyTotal.toLocaleString()}</b> ชิ้น<br />
+            ของเสีย <b style={{ color: '#ef4444' }}>{kpi.ngQtyTotal.toLocaleString()}</b> ชิ้น<br />
+            = ผลิตจริง <b>{(kpi.okQtyTotal + kpi.ngQtyTotal).toLocaleString()}</b> ชิ้น
+          </>} />
         <KpiCard label="ผลิตรวม" value={null} sub={`${kpi.total.toLocaleString()} ชิ้น`}
           color="var(--text)" />
       </div>
