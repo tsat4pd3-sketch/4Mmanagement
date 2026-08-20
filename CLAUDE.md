@@ -153,6 +153,7 @@
 | ภาพรวม | `/` | DeptHub — หน้า Hub เลือกโมดูล (เต็มจอ ไม่มี sidebar, ชิปเมนูดึงจาก NAV_ITEMS) | ทุก role |
 | (ไม่อยู่ในเมนูหมวด) | `/remote` | RemoteControl — 🎮 รีโมทจอ: มือถือคุมจอ TV · ลิงก์ 🎮 + ปุ่ม 📺 รับรีโมท อยู่คู่กันใน**แผงโปรไฟล์ 👤** (desktop rail) / เมนูโปรไฟล์ท้าย drawer (มือถือ) เห็นเมื่อมีสิทธิ์ `page:/remote` (ดู section "Remote Control") | ทุก role (ปรับที่ /permissions) |
 | ภาพรวม | `/dashboard` | Dashboard (ย้ายกลับหมวด ภาพรวม 2026-07-20 — โซนจอแสดงผล) | ทุก role |
+| ภาพรวม | `/flow-tower` | **FlowTower — 🔗 สายธารความต้องการ (Flow Control Tower)** ตอบคำถามเดียว: *ความต้องการของลูกค้าไหลย้อนกลับไปถึงวัตถุดิบครบหรือยัง ตันตรงไหน* · ผังสถานี 8 ช่วง (ลูกค้า→คลัง FG→ผลิต FG→WIP→สโตร์ย่อย→ปั๊ม→สโตร์วัตถุดิบ→จัดซื้อ) + ลูกศรบอกกลไก/สถานะ · **จัดกลุ่มตามฝ่ายจริงตามผัง ORG001 Rev.09** · กดสถานีเปิดหน้าที่ทำงานจริง · realtime บน `prod_orders`/`production_sessions` → **เปิดหลายจอพร้อมกันแล้วขยับพร้อมกัน** (คอนเซปต์เดโมให้ผู้บริหาร) · **อ่านอย่างเดียว ยกเว้นปุ่ม "ตั้งล็อต"** ที่แก้จุดตันโดยตรง (สิทธิ์ `products:edit`) · ดู section "สายธารความต้องการ" | ทุก role |
 | ภาพรวม | `/factory-map` | FactoryMap — ผังรวมโรงงาน: วาด polygon ล้อมแต่ละไลน์บนผังใหญ่ผังเดียว ระบายสีตามสถานะการผลิต (ดู section "Factory Master Map") | ทุก role (edit: admin/mgr/sv) |
 | ภาพรวม | `/dept-dashboard` | **DeptDashboard — 📋 Dashboard ส่วนงาน** หน้าเดียวสลับส่วนงานด้วย `?dept=production\|maintenance\|store\|qa` · **เลย์เอาต์ 4 ชั้นเหมือนกันทุกใบ** (🚨 ต้องทำตอนนี้ → 📊 KPI → 📈 ชี้เป้าให้แก้ → 🔗 ทางลัด) · **อ่านอย่างเดียว** ทุก action = ลิงก์ไปหน้าที่ทำงานจริง · เพิ่มส่วนงานใหม่ = เพิ่ม entry ใน `DEPTS` (loader + View) **ห้ามสร้างหน้า dashboard แยกต่อส่วนงาน** · ดู section "Dashboard ส่วนงาน" + `docs/DASHBOARD-DESIGN.md` | ทุก role (ข้อมูลกรองตาม scope) |
 | ภาพรวม | `/group-overview` | **GroupOverview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท)** ตัวอย่างหน้าจอตอบโจทย์ผู้บริหาร "ระบบดูหลายบริษัทในกลุ่มพร้อมกันได้มั้ย" — **แผนที่ภาคกลาง+ตะวันออก (โซนบางนา/โซนตะวันออก)** + drill-down 2 แกน `TSG → โซน\|กลุ่มธุรกิจ → บริษัท → ไลน์` · **TSAT4 = ข้อมูลจริง** ที่เหลือ **จำลอง** จากข้อมูลชุดเดียวกัน (ดู section "Group Overview") | admin/manager (seed) |
@@ -184,7 +185,7 @@
 | ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
-| วิเคราะห์ & รายงาน | `/vsm` | **VSM — แผนผังสายธารคุณค่า (Value Stream Map)** เลือก FG (เบอร์ 1) + เดือน → generate ผังจากข้อมูลจริง (CT/%OEE/C-O/LOT/คงคลัง/TT/PLT/PT/%VA) → แก้ค่าที่ระบบไม่รู้ → บันทึก (snapshot) → พิมพ์ A3 · ดู section "Value Stream Mapping" | ทุก role (ดู) · `vsm:manage` = admin/mgr/sv/leader/engineer |
+| วิเคราะห์ & รายงาน | `/vsm` | **VSM — แผนผังสายธารคุณค่า (Value Stream Map)** เลือก FG (เบอร์ 1) + เดือน → generate ผังจากข้อมูลจริง (CT/%OEE/C-O/LOT/คงคลัง/TT/PLT/PT/%VA) → แก้ค่าที่ระบบไม่รู้ → บันทึก (snapshot) → พิมพ์ A3 · **2 แท็บ (2026-08-19): 📋 เอกสาร (snapshot) / ⚡ สายธารสด (realtime — ไม่บันทึก/ไม่พิมพ์)** · ดู section "Value Stream Mapping" | ทุก role (ดู) · `vsm:manage` = admin/mgr/sv/leader/engineer |
 | วิศวกรรม (PE) | `/pe-docs` | **PEDocs — 📐 PE Core Tools: Process Flow / PFMEA / Control Plan** (ดู section "PE Core Tools") | ทุก role (ดู) · แก้ = `pe:edit` (admin/mgr/engineer) · revision = `pe:approve` |
 | วิเคราะห์ & รายงาน | `/report` | Report | ทุก role (7 tabs: รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M/ใบบันทึก/จองรถ OT + CSV export) · **Changing Point Control Record ย้ายเข้าทะเบียนกลาง `doc_forms`/`doc_form_revisions` doc_key `changing_point` แล้ว (2026-07-30)** — แผง "⚙️ จัดการเอกสาร" ในแท็บ 4M กับหน้า `/doc-forms` แก้ข้อมูลชุดเดียวกัน · ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้ (คงไว้เป็นประวัติ ห้าม drop จนกว่าจะยืนยันข้อมูลครบ) · **deep-link (2026-08-11): `?tab=` ของหน้านี้เป็น "เลข index ของ `TABS`"** (สัญญาเดิม ต่างจากหน้าอื่นที่ใช้ key ข้อความ — ดู UI-CONVENTIONS §6.8) → **สลับลำดับ TABS = ลิงก์ข้างนอกพาไปผิดแท็บเงียบๆ** · ที่อ้างอยู่ตอนนี้: `?tab=4` (4M Changes) จาก `/dept-dashboard` · **แท็บ 4M รับต่ออีก 3 param: `status` (ตัวกรองสถานะ · validate กับ `STATUS_META`) · `from=YYYY-MM-DD` (วันเริ่มช่วง) · `focus=<log id>` (เน้นแถว + เลื่อนไปหา)** → กระโดดเข้าคิวอนุมัติใบนั้นแล้วกด Approve ได้เลย · **ต้องส่ง `from` มาด้วยเสมอ** — ช่วง default คือ 7 วันล่าสุด ใบค้างมักเก่ากว่านั้น (ค้างจริง 60-80 วัน) ไม่ส่งจะเปิดมาเจอจอว่าง · หา `focus` ไม่เจอ = ขึ้นแถบแดงอธิบาย + ปุ่มล้างตัวกรอง (**ห้ามเงียบ**) |
 | พนักงาน & ทักษะ | `/skills-report` | `<Report mode="skills" />` — 3 แท็บสกิลที่แยกจาก /report (Skill Matrix / ค่าฝีมือ / Multi-Skill Form) component อยู่ใน Report.jsx เดิมทั้งหมด (`SKILL_TAB_IDXS`) | ทุก role |
@@ -229,9 +230,83 @@
 - **"ใช้บ่อย"** = `src/utils/navRecent.js` (localStorage ต่อเครื่อง · decay ครึ่งชีวิต 14 วัน ไม่ค้างบนสุดเพราะเคยกดรัวๆ) · `trackVisit` เรียกจากจุดเดียวใน `App.jsx` (ProtectedLayout ตอน pathname เปลี่ยน)
 - **4 หน้าที่ไม่มีหัวเรื่องโดยตั้งใจ:** `Login` (มีแบรนด์เอง) · `Dashboard`/`Management` (บอร์ดจอ TV หัวเรื่องกินที่แนวตั้ง) · `LineSetup` (ถูกฝังในแท็บหน้าอื่น หัวเรื่องอยู่ที่หน้าแม่)
 
+## 🔗 สายธารความต้องการ (Demand Flow) — `/flow-tower` (audit + หน้าจริง · 2026-08-19)
+
+**โจทย์จาก user:** ไล่ audit การส่งต่อ "ความต้องการ" ตั้งแต่ Sales → Warehouse → Production FG → WIP →
+Store sub part → Production sub part (Stamping) → Store raw/purchase → Purchase ให้เห็นภาพครบ
+แล้วเปิดหลายจอให้เห็นข้อมูลไหลหากัน
+
+### กลไกจริง — ทริกเกอร์ตัวเดียวขับทั้งสาย
+**`fn_explode_child_demand`** (DR · AFTER UPDATE/INSERT บน `prod_orders` เมื่อ `status='confirmed'`)
+ทำ 4 อย่างในจังหวะเดียวตอน "ปิดใบผลิต FG":
+1. ระเบิด BOM (`bom_items`) → ความต้องการรวมของพาร์ทลูก
+2. **หักมินิสโตร์ของไลน์** (`line_stock_summary` ของ *ไลน์ที่ผลิต*) → เขียน `line_stock_transactions` type `consume`
+3. ส่วนที่ขาด → สะสมใน **`child_demand_accumulator`** → ครบ `kanban_standards.lot_size` เมื่อไหร่ ออกใบ:
+   MAT ขึ้นต้น **3/5 → `purchase_requests`** · อื่นๆ → **`child_lot_requests`** + ระเบิดสูตรลูกต่อเป็น `raw_withdrawal_requests`
+4. `product_packaging` → `packaging_withdrawal_requests`
+
+> **⚠️ กฎเหล็ก — ไม่ตั้ง `lot_size` = ความต้องการค้างถาวรแบบเงียบ**
+> ทริกเกอร์ `continue` ข้ามพาร์ทที่ไม่มี lot_size · ความต้องการยังสะสมใน accumulator เรื่อยๆ แต่**ไม่มีวันกลายเป็นใบสั่ง**
+> ข้อมูลจริง 2026-08-19: **44 พาร์ท · 1.28-1.34 ล้านชิ้น** ค้างแบบนี้ (นัต M8 258K · นัต 6MM 233K · นัต M6 137K)
+> **ห้ามให้ migration/โค้ดเดา lot_size แทนคน** ("สั่งครั้งละกี่ชิ้น" เป็นการตัดสินใจของ planner)
+> → ทำให้ *เห็น* แทน: วิว **`v_demand_flow_blocks`** (มี `suggested_lot` = 1 กล่องตามบรรจุจริง เป็น**ค่าเสนอให้กดยืนยัน**)
+> แสดงในแผง "🚧 จุดที่ตัน" ของ `/flow-tower` พร้อมปุ่มตั้งล็อตทีละพาร์ท
+
+> **⚠️ กฎเหล็ก — "พาร์ทลูกนี้ผลิตที่ไลน์ไหน" = `dr_products.line_name`**
+> `bom_items.source_line` เป็น **override รายสูตร** (กรอกแล้วชนะ) แต่ข้อมูลจริง**ว่างทั้ง 408 แถว**
+> → เดิม `child_lot_requests.source_line` เลยว่าง 0/54 ใบ = ใบสั่งผลิตลูกไม่รู้ว่าส่งให้ไลน์ปั๊มไหน (ข้อต่อขาด)
+> แก้ที่ทริกเกอร์ให้ fallback ไป `dr_products.line_name` (migration `20260819_demand_flow_routing.sql` · apply แล้ว) → รู้ไลน์ 44/54
+
+### สถานะข้อต่อ — 3 อย่าง ห้ามยุบเป็นอย่างเดียว
+โปรเจคเป็น **prototype ที่ทยอยขยายผลรายแผนก** (คำสั่ง user 2026-08-19) — เหมา "ไม่มีข้อมูล" = "พัง" คืออ่านผิด
+| สถานะ | ความหมาย | ตัวอย่างจริง |
+|---|---|---|
+| ✅ **ไหลจริง** | มีรายการเคลื่อนไหวจริง | ปิดใบ→เข้าคลัง (auto 5,468 รายการ) · ระเบิด BOM |
+| 🔴 **ตัน** | มีความต้องการค้าง แต่ไม่ไหลออก — **ต้องแก้** | lot_size ไม่ตั้ง → 1.3 ล้านชิ้นค้าง |
+| ⚪ **ยังไม่ใช้** | ไม่มีทั้งความต้องการและการเคลื่อนไหว = **แผนกยังไม่เริ่มใช้** | WIP 9 จุด/ใบเติม 0 · ใบเบิกวัตถุดิบ 3 ใบ |
+| 🟠 **ส่งต่อด้วยคน** | ยังไม่มีเส้นข้อมูลอัตโนมัติ | คลัง FG → ผลิต FG (สแกนบัตรคัมบัง) |
+
+**ขาออกยังไม่ถูกบันทึก (adoption gap ไม่ใช่ bug):** 2xx/3xx/5xx ตัดออก = 0 ทุกกลุ่ม · 30 วันล่าสุด รับเข้า 3,580 : ตัดออก 33
+· UI ใช้ได้จริง (warehouse1 เคยตัด 32 รายการ) แค่ยังไม่ใช้ต่อเนื่อง · ผลข้างเคียง: มินิสโตร์ในระบบ = 0 → backflush หักไม่ได้ ทุกอย่างไหลเข้า accumulator
+
+**นอกขอบเขต (user 2026-08-19 "ฝ่ายสนับสนุนอาจจะยังไม่ต้องสนใจ"):** ส่วนจัดซื้ออยู่ใต้**ฝ่ายสนับสนุนกลาง**
+ซึ่งยังไม่ถูกขยายผลเข้าระบบเลย (ไม่มี org node / user / role) → `purchase_requests` ค้าง pending 1,024 ใบ
+**ไม่ใช่รอยรั่วของเรา** — สายข้อมูลของเราจบที่ "ระบบออกใบสั่งซื้อให้แล้ว" = ส่งถึงขอบเขตฝ่ายอื่น
+
+### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
+มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**
+การสะสมล็อตของจริงเกิดที่ `fn_explode_child_demand` แทน — **อย่าไปต่อยอดบน `kanban_scans`**
+
 ## Organizational Hierarchy (Thai Summit Group)
 
 ลำดับชั้นองค์กรที่สอดคล้องกันทั้งระบบ — **ห้ามเพิ่มฟีเจอร์ที่ขัดกับลำดับชั้นนี้**
+
+> ### 📄 ผังองค์กรจริงของโรงงาน — ORG001_TSAT4_Overall **Rev.09** (user แนบไฟล์ให้ 2026-08-19)
+> ผังจริงมี **3 ชั้น: ฝ่าย → ส่วน → แผนก/กลุ่ม** แต่ `org_nodes` ในระบบมีแค่ `section` → `department`
+> (**ยังไม่มีชั้น "ฝ่าย"**) และ PD1–PD4 เป็นรหัสภายในของระบบ **ไม่ตรงกับชื่อ "ส่วน" ในผังจริง**
+> ```
+> HEAD OF SPG TSAT (ผู้อำนวยการ)
+> └── ฝ่าย Steel Auto Office Plant 4 · 2140900002 · ผจก.ทั่วไป (G2)
+>     ├── ฝ่าย Logistic and Sales · 2140320000
+>     │   ├── ส่วน Log&Sales/Planning&Store · 21404290000 · ผจก.(M1)
+>     │   └── ส่วน W/H&DEL/Rack Center · 214025000 · รก.ผจก.(S2)
+>     ├── ฝ่าย Engineering · 2140340000
+>     │   ├── ส่วน Quality Assurance · 2140441000 · ผจก.(M2)     ← **QA ไม่ใช่ฝ่ายแยก**
+>     │   └── ส่วน Process Engineering · 2140446000 · รก.ผจก.(S1)
+>     ├── ฝ่าย Production · 2140360000
+>     │   ├── ส่วน Assembly 1 · 2140470000      ├── ส่วน Assembly 2 · 2140471000
+>     │   ├── ส่วน Press Production · 2140461000 └── ส่วน Tooling MTN. · 2140459100
+>     │   └── ส่วน Hydroforming · 2140462000
+>     ├── (คอลัมน์ 4) └── ส่วน Maintenance · 2140456000 · รก.ผจก.(S1)
+>     └── ฝ่าย สนับสนุนกลาง — ส่วนสนับสนุนบัญชี · HRM · **จัดซื้อ (2100414300)** · CIC · QSM
+> ```
+> - **งาน Warehouse / Delivery / Rack Center / Store / Planning / Sales อยู่ใต้ ฝ่าย Logistic and Sales ทั้งหมด**
+>   → สายธารความต้องการเกือบทั้งสาย (ยกเว้นช่วงผลิต) เป็นของฝ่ายเดียว ใช้จัดกลุ่มใน `/flow-tower`
+> - **ระบบยุบ 2 ส่วนของ Logistic เหลือ section เดียว `Planning&Store`** → บัญชีทั้ง 7 กองรวมกัน แยกสิทธิ์ตามงานจริงไม่ได้
+> - **ฝ่ายสนับสนุนกลาง (รวมจัดซื้อ) ยังไม่ถูกขยายผลเข้าระบบเลย** — นอกขอบเขตรอบนี้ (user ยืนยัน 2026-08-19)
+> - **ห้ามสรุปจากชื่อ role ว่าใครอยู่ฝ่ายไหน** — ข้อมูลจริง: คนของ Logistic&Sales 7 บัญชีใช้ role `sale`
+>   ส่วน `planner_store` มีบัญชีเดียว (อัจฉรา โสภาบุญ · +แอดมินหน่วยงาน) ที่เป็นคนลงข้อมูลให้เกือบทั้งฝ่าย
+
 
 ```
 ระดับส่วน (Section)      → org_nodes.kind='section'  cost center 21404XXXX
@@ -1561,6 +1636,15 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
   (กฎ CLAUDE.md: ห้ามจำลอง layout ใบจริงมาไว้ในตัวพิมพ์) — หน้าจอ render SVG ซ้ำแบบชุดสีสว่างซ่อนไว้สำหรับพิมพ์
   · เลขฟอร์ม/Rev/ช่องเซ็น/โลโก้/แนวกระดาษ อ่านจากทะเบียน doc_key **`vsm`** (`layout_locked=false` เปลี่ยนแนวกระดาษได้จริง)
 - **Scope มาตรฐาน:** leader = family ไลน์ตัวเอง · role อื่น = ตาม `sections` — **ตัวเลือกสินค้าก็ scope ด้วย**
+- **⚡ แท็บ "สายธารสด (Realtime)" (2026-08-19 · คำสั่ง user "อัพเกรดเป็น VSM realtime"):** หน้า `/vsm` เป็น 2 แท็บผ่าน `PageHeader`+`useTabParam` — `doc` (เอกสาร snapshot เดิม พฤติกรรมเดิมทุกอย่าง) / `live` (มุมมองสด)
+  - **ไม่แตะกฎ snapshot** — ใบที่บันทึก/พิมพ์ยังเป็น snapshot เท่านั้น · โหมดสด**ไม่บันทึก/ไม่พิมพ์** (บอกบนจอ) — **ห้ามเอาค่าสดไป stamp ทับใบ VSM**
+  - โครงค่ามาตรฐาน (CT/C-O/%OEE เฉลี่ย/AT/TT/BOM/routing) = ข้อมูล**เดือนปัจจุบัน**ผ่าน `fetchRaw` (query ชุดเดียวกับปุ่ม generate — refactor ให้ใช้ร่วมกัน ห้าม duplicate) โหลด**ครั้งเดียวต่อ FG** · ชั้นสด = **`src/lib/vsmLive.js` (pure · เทส 7 เคส `src/lib/__tests__/vsmLive.test.mjs`)**: สถานะไลน์ down/run/closed/idle · OEE กะปัจจุบันผ่าน `computeLiveOee` (null + เหตุผล ตามกฎ "ประเมินไม่ได้ = null ห้ามเป็น 0") · OEE กะปิดแล้ววันนี้ = ค่า stamp ผ่าน `wavg`+`wLoad` · NG ผ่าน `sumDefectQty(rows,'line')` (query join `dr_defect_types(excl_from_q)`) · ยอดวันนี้ต่อขั้น = สูตรบังคับ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` · Andon ผ่าน `isOpenDT/isPlannedDT` — planned ค้างไม่แดง แต่โชว์แยกแบบสงบ (ห้ามซ่อน)
+  - **▲ คงคลัง → PLT/%VA ในโหมดสด rebuild จาก `line_stock_summary` ปัจจุบัน** (สูตรเดิมใน vsmModel — WIP กลางทางยังไม่มีข้อมูล จอเตือนว่า PLT อาจต่ำกว่าจริง)
+  - refresh ตามกฎ egress: **realtime channel `vsm-live` (4 ตารางใน publication) เป็นหลัก + `usePolling(RATE.BOARD)` กันเหนียว** (แท็บซ่อน = หยุดยิง DB) · query สดกรอง `.in('line_name', chainLines)`/`.in('session_id', ids)` payload เล็ก · query พลาด = flag `partial` ขึ้นแถบส้ม **ห้ามเงียบ**
+  - `VsmCanvas` รับ prop `live` (additive — ไม่ส่ง = render เดิมเป๊ะ ใบพิมพ์ clone จากแท็บเอกสารจึงไม่กระทบ): ขอบกล่อง **แดงกระพริบ (SMIL `<animate>` — Andon แดงเท่านั้นที่กระพริบ) = DT ค้าง** · เขียว = กำลังผลิต · เส้นประจาง = ยังไม่เปิดกะ + `<title>` tooltip · สี/ป้ายสถานะรวมศูนย์ที่ `LIVE_STATUS` ใน vsmLive.js **ห้ามนิยามซ้ำ**
+  - **`isOpenDT/isPlannedDT/isAlarmingDT/dtElapsedMin` ย้ายไป `src/utils/downtimeRules.js` (pure)** — `downtimeAlarm.js` re-export ให้ import เดิม (Dashboard/Management/DeptHub) ใช้ได้เหมือนเดิม · เหตุผล: lib ที่รันใน node:test ห้ามลาก supabaseClient (`import.meta.env` พังนอก Vite) · **นิยาม Andon แก้ที่ downtimeRules.js ที่เดียว**
+  - **ไม่มี migration/permission ใหม่** — read-only ใช้ `page:/vsm` เดิม (เลี่ยงกับดัก seed `enum_range`)
+- **📎 reference สไตล์ใบจริงของโรงงาน = skill `vsm-tsat-reference` (`.claude/skills/vsm-tsat-reference/SKILL.md` · 2026-08-20 — ถอดจากใบตัวอย่าง 4 ใบที่ user แชร์)** — งานที่แตะ VSM ให้โหลด skill นี้ก่อนเสมอ · quick win ที่ทำแล้วตามใบ: **MCT (PLT+PT) headline ตัวแดง + PT รูปแบบ "X min Y second"** ทั้งบนผัง/การ์ดสรุป/ใบพิมพ์ — format ผ่าน `fmtMct`/`fmtMinSec` ใน `src/lib/vsmModel.js` จุดเดียว **ห้ามเขียน format ซ้ำ** · ที่ยังไม่ทำ (เฟส 2 ตามใบ): kaizen burst แดง (เกณฑ์เสนออัตโนมัติ C/T > T/T) + future state เทียบ current
 - migration: `20260813_part_routings.sql` + `20260813_vsm_maps.sql` (DR) · `20260813_vsm_permission.sql` (Main) — **apply แล้วทั้ง 3 · 2026-08-13**
 - **⚠️ กับดักที่เจอตอน apply (จดไว้กัน session ถัดไปเสียเวลา):** `permission_catalog` ใช้คอลัมน์
   **`(resource, action, label, group_name, sort)` ไม่ใช่ `permission_key`/`category`** (key ที่โค้ดเช็คคือ `resource:action`

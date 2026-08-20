@@ -74,7 +74,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       .gte('work_date', from).lte('work_date', to)
       .in('line_name', allLineNames)
       .in('status', ['closed'])
-      .order('work_date'),
+      .order('work_date').order('id'),   // ⚠️ ต้องมีตัวตัดสินท้ายที่ unique ไม่งั้นแถววันเดียวกันสลับข้ามหน้า
   );
   const sessIds = sessions.map(s => s.id);
   const sessById = Object.fromEntries(sessions.map(s => [s.id, s]));

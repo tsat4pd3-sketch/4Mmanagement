@@ -23,6 +23,23 @@ import { stepsFor } from '../utils/routing';
 const num = v => (v === null || v === undefined || v === '' ? null : (Number.isFinite(+v) ? +v : null));
 const round = (v, d = 2) => (v == null ? null : Math.round(v * 10 ** d) / 10 ** d);
 
+/* ── formatter ตามธรรมเนียมใบ VSM จริงของ TSAT (skill: vsm-tsat-reference · 2026-08-20) ──
+   ใบจริงเขียน PT เป็น "X min Y second" (ไม่ใช่วินาทีดิบ) และมี MCT เป็น headline ตัวแดงใหญ่
+   เช่น "MCT = 8.97 Days 4 min 17 second" — format ที่นี่จุดเดียว ใช้ทั้งจอ/ใบพิมพ์ ห้ามเขียนซ้ำ */
+export function fmtMinSec(sec) {
+  if (sec == null || !Number.isFinite(+sec)) return null;
+  const m = Math.floor(+sec / 60), s = Math.round(+sec % 60);
+  return m > 0 ? `${m} min ${s} second` : `${s} second`;
+}
+/** MCT (Manufacturing Cycle Time) = PLT (วัน) + PT (นาที/วินาที) */
+export function fmtMct(pltDays, ptSec) {
+  const parts = [];
+  if (pltDays != null) parts.push(`${pltDays} Days`);
+  const ms = fmtMinSec(ptSec);
+  if (ms && ptSec > 0) parts.push(ms);
+  return parts.length ? parts.join(' ') : null;
+}
+
 /** ค่ากลาง (median) — ทนค่าโดดกว่าค่าเฉลี่ย ใช้กับเวลา setup ที่มีทั้งเคสปกติและเคสพัง */
 export function median(arr) {
   const a = arr.filter(x => Number.isFinite(x)).sort((x, y) => x - y);

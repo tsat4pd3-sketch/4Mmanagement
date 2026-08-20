@@ -1,4 +1,5 @@
 import { supabaseDR } from '../supabaseClient';
+import { isOpenDT, isPlannedDT } from './downtimeRules';
 
 // ─── Downtime Alarm ──────────────────────────────────────────────
 // เครื่องจักรถือว่า "กำลัง Alarm" เมื่อมี downtime ที่ยังไม่ปิดรายการ
@@ -10,18 +11,11 @@ import { supabaseDR } from '../supabaseClient';
 // นับสต๊อก / ไม่มีแผนผลิต / 5ส ไม่ใช่ความเสียหาย ไม่มีอะไรให้ "ดำเนินการทันที"
 // (เคสจริง: SP-88 "นับสต๊อก / ไม่มีแผนผลิต" ค้าง 349 นาที เด้ง ANDON RED ทั้งวัน)
 // ยังเห็นได้จาก plannedList/plannedByLine — แสดงแยกแบบสงบ ห้ามซ่อนหาย
-
-// รายการยังเปิดค้างอยู่จริง (ไม่สนประเภท)
-export function isOpenDT(d) {
-  return !d.ended_at && d.duration_min == null;
-}
-// หยุดตามแผน (ไม่มี join ประเภทมาด้วย = ถือว่านอกแผนไว้ก่อน — ปลอดภัยกว่า)
-export function isPlannedDT(d) {
-  return d?.dr_downtime_types?.category === 'planned';
-}
-export function isAlarmingDT(d) {
-  return isOpenDT(d) && !isPlannedDT(d);
-}
+//
+// นิยาม isOpenDT/isPlannedDT/isAlarmingDT/dtElapsedMin ย้ายไป `./downtimeRules` (pure —
+// 2026-08-19 เพื่อให้ lib ที่เทสด้วย node ได้ import โดยไม่ลาก supabaseClient) — re-export
+// จากที่นี่ให้ทุก import เดิมใช้ได้เหมือนเดิม · แก้นิยามให้แก้ที่ downtimeRules.js ที่เดียว
+export { isOpenDT, isPlannedDT, isAlarmingDT, dtElapsedMin } from './downtimeRules';
 
 // work date เดียวกับกฎทั้งระบบ: ก่อน 08:00 นับเป็นวันก่อนหน้า (กะดึกข้ามวัน)
 function getWorkDate() {
@@ -61,11 +55,4 @@ export async function fetchActiveDowntimes(lineNames = null) {
   });
   plannedList.forEach(d => { if (d.line_name) (plannedByLine[d.line_name] ||= []).push(d); });
   return { byMachine, byLine, list, plannedList, plannedByLine };
-}
-
-// นาทีที่ผ่านไปตั้งแต่ downtime เริ่ม (ใช้โชว์ "หยุดมาแล้ว X นาที")
-export function dtElapsedMin(d, nowMs = Date.now()) {
-  const start = d.started_at || d.created_at;
-  if (!start) return null;
-  return Math.max(0, Math.round((nowMs - new Date(start).getTime()) / 60000));
 }

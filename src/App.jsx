@@ -43,6 +43,7 @@ const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
+const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
@@ -94,6 +95,7 @@ export const NAV_ITEMS = [
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
   { to: '/dept-dashboard', icon: '📋', label: 'Dashboard ส่วนงาน',  group: 'ภาพรวม' },
+  { to: '/flow-tower', icon: '🔗', label: 'สายธารความต้องการ',   group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
@@ -1445,6 +1447,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
+              } />
+              <Route path="/flow-tower" element={
+                <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
               } />
               <Route path="/adoption-outlook" element={
                 <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
