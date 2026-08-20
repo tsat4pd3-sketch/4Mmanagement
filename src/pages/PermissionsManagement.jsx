@@ -14,7 +14,11 @@ const ROLES = PERMISSION_COLUMN_ROLES;
 //   → ติ๊กช่องนั้นไม่มีทางมีผล = ช่องตายที่ทำให้คนตั้งค่าเข้าใจผิดว่าเปิดหน้าให้แอดมินหน่วยงานได้
 const PAGE_COLS = ROLES.filter(r => !r.bucket);
 
-// ชื่อหน้าให้ตรงกับ NAV_ITEMS ใน App.jsx — จัดกลุ่มตามหมวดใน sidebar
+// ⚠️ ต้อง mirror NAV_ITEMS + NAV_GROUP_ORDER ใน App.jsx เสมอ — หมวด/ลำดับหมวด/ลำดับหน้า/ชื่อหน้า
+//   ให้ตรงกับ sidebar ทั้งหมด (audit 2026-08-19: เดิมหมวด "พนักงาน & ทักษะ" หายทั้งหมวด ·
+//   oee-analytics/scrap-report/event-log อยู่ผิดหมวด · ลำดับสลับ — คนตั้งสิทธิ์หาหน้าไม่เจอ)
+//   เพิ่มหน้าใหม่ = เพิ่มที่นี่ให้ตรงตำแหน่งเดียวกับที่เพิ่มใน NAV_ITEMS
+//   หน้าที่ไม่อยู่ในเมนู (/remote, /linesetup, แท็บใน Daily Checker) คงไว้พร้อมหมายเหตุ — สิทธิ์ยังต้องตั้งได้
 const PAGE_GROUPS = [
   {
     group: 'ภาพรวม',
@@ -25,23 +29,43 @@ const PAGE_GROUPS = [
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
-      { key: 'page:/remote',      label: 'รีโมทจอ' },
+      { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
     ],
   },
   {
     group: 'ฝ่ายผลิต',
     pages: [
+      { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
+      { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
       { key: 'page:/daily-checker', label: 'Daily Checker (ศูนย์รวมเช็ค — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)' },
       { key: 'page:/daily-pm',     label: '— แท็บ Autonomous Maintenance (AM) (ใน Daily Checker)' },
       { key: 'page:/pokayoke',     label: '— แท็บ Poka-Yoke Check (ใน Daily Checker)' },
-      { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
-      { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
-      { key: 'page:/oee-analytics', label: 'OEE' },
-      { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
       { key: 'page:/lpa',          label: '— แท็บ Layer Process Audit (ใน Daily Checker)' },
+      { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
+      { key: 'page:/scrap-report', label: 'ใบรายงานของเสีย (Scrap)' },
+    ],
+  },
+  {
+    group: 'วิเคราะห์ & รายงาน',
+    pages: [
+      { key: 'page:/oee-analytics', label: 'OEE' },
+      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
+      { key: 'page:/vsm',       label: 'VSM สายธารคุณค่า' },
+      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
+      { key: 'page:/report',    label: 'รายงาน' },
+    ],
+  },
+  {
+    group: 'พนักงาน & ทักษะ',
+    pages: [
+      { key: 'page:/register',      label: 'เพิ่มพนักงาน' },
+      { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
+      { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
+      { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },
+      { key: 'page:/shift-organize', label: 'ตารางกะ' },
     ],
   },
   {
@@ -63,11 +87,19 @@ const PAGE_GROUPS = [
       { key: 'page:/mtn-repair',  label: 'แจ้งซ่อม MTN (MO)' },
       { key: 'page:/pm-check',    label: 'ตรวจสอบอุปกรณ์เครื่องจักร' },
       { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
-      { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
-      { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
       { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
+      { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
+      { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
+    ],
+  },
+  {
+    group: 'ควบคุมคุณภาพ QA/QC',
+    pages: [
+      { key: 'page:/qa',       label: 'Quality Control Center' },
+      { key: 'page:/qa-setup', label: 'มาตรฐานการตรวจ & Drawing' },
+      { key: 'page:/event-log', label: 'CQI-15 Event Log' },
     ],
   },
   {
@@ -77,45 +109,22 @@ const PAGE_GROUPS = [
     ],
   },
   {
-    group: 'ควบคุมคุณภาพ QA/QC',
-    pages: [
-      { key: 'page:/qa',       label: 'Quality Control Center' },
-      { key: 'page:/qa-setup', label: 'มาตรฐานการตรวจ & Drawing' },
-      { key: 'page:/scrap-report', label: 'ใบรายงานของเสีย' },
-    ],
-  },
-  {
-    group: 'รายงาน',
-    pages: [
-      { key: 'page:/report',    label: 'รายงาน' },
-      { key: 'page:/event-log', label: 'CQI-15 Event Log' },
-      { key: 'page:/product-history', label: 'ประวัติผลิต (by Product)' },
-      { key: 'page:/order-trace', label: 'สอบกลับ Order (Trace)' },
-      { key: 'page:/vsm',       label: 'VSM สายธารคุณค่า' },
-    ],
-  },
-  {
     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล',
     pages: [
       { key: 'page:/org-setup',         label: 'แผนผังองค์กร' },
-      { key: 'page:/register',          label: 'เพิ่มพนักงาน' },
-      { key: 'page:/operator',          label: 'ฐานข้อมูลพนักงาน' },
-      { key: 'page:/skills-report',     label: 'รายงานทักษะพนักงาน' },
-      { key: 'page:/ojt-training',      label: 'ใบอบรม OJT' },
       { key: 'page:/products',          label: 'Product Master' },
-      { key: 'page:/linesetup',         label: 'ตั้งค่าผังไลน์' },
+      { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
+      { key: 'page:/linesetup',         label: '— ตั้งค่าผังไลน์ (ไม่อยู่ในเมนู — ฝังเป็นแท็บใน ตั้งค่าผัง/Floorplan)' },
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/die-registry',      label: 'ทะเบียนแม่พิมพ์' },
-      { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
-      { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
-      { key: 'page:/shift-organize',    label: 'ตารางกะ' },
+      { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/company-calendar',  label: 'ปฏิทินบริษัท' },
+      { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
+      { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
       { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
-      { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
-      { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
     ],
   },
 ];
@@ -135,7 +144,8 @@ export default function PermissionsManagement() {
       const PAGE = 1000; const out = [];
       for (let from = 0; ; from += PAGE) {
         const { data } = await supabase.from('role_permissions')
-          .select('role, permission_key, allowed').range(from, from + PAGE - 1);
+          // ⚠️ .range() ต้องมี .order() ครบคีย์ unique เสมอ ไม่งั้นแถวหลุดระหว่างหน้า (ดู utils/permissions.js)
+          .select('role, permission_key, allowed').order('role').order('permission_key').range(from, from + PAGE - 1);
         if (!data) break;
         out.push(...data);
         if (data.length < PAGE) break;

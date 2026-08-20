@@ -57,7 +57,8 @@ export default function WipBetweenSteps() {
         for (let fromIdx = 0; ; fromIdx += 1000) {
           const { data, error } = await supabaseDR.from('prod_orders')
             .select('mat_no, status, qty, qty_ok, qty_actual, opened_at, production_sessions!inner(line_name)')
-            .in('mat_no', mats).range(fromIdx, fromIdx + 999);
+            // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
+            .in('mat_no', mats).order('id').range(fromIdx, fromIdx + 999);
           if (error) throw error;
           (data || []).forEach(o => all.push({ ...o, line_name: o.production_sessions?.line_name }));
           if (!data || data.length < 1000) break;

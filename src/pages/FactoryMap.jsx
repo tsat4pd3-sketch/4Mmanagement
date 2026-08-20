@@ -1003,7 +1003,21 @@ export default function FactoryMap({ setupMode = false }) {
             a: s.oee_a, p: s.oee_p, q: s.oee_q, target: t, produced: p, dt, ng };
         }).sort((a, b) => (a.shift === 'day' ? 0 : 1) - (b.shift === 'day' ? 0 : 1));
 
+        /* 🔗 สายการไหลระหว่างไลน์ (2026-08-19) — "หยุดที่นี่ กระทบไลน์ไหน"
+           รวมทั้งครอบครัว แล้วตัดเส้นที่วิ่งอยู่ในครอบครัวเดียวกันทิ้ง (เป็นการไหลภายใน ไม่ใช่ผลกระทบข้ามกลุ่ม)
+           best-effort: ยังไม่ apply migration = ไม่มีบล็อกนี้ ไม่ทำ modal พัง */
+        let flowDown = [], flowUp = [];
+        try {
+          const famSet = new Set(fam);
+          const { data: fl } = await supabaseDR.from('line_flow_links').select('*').eq('is_active', true);
+          for (const l of fl || []) {
+            if (famSet.has(l.from_line) && !famSet.has(l.to_line)) flowDown.push(l);
+            if (famSet.has(l.to_line) && !famSet.has(l.from_line)) flowUp.push(l);
+          }
+        } catch { /* best-effort */ }
+
         setStory({
+          flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
           dtUnplannedMin: dtUnplanned.reduce((a, d) => a + d.mins, 0),
@@ -2070,6 +2084,46 @@ export default function FactoryMap({ setupMode = false }) {
                             })}
                           </tbody>
                         </table>
+                      </div>
+                    </StorySection>
+                  )}
+
+                  {/* 🔗 สายการไหล — "หยุดที่นี่ กระทบใคร / ของมาจากไหน" (2026-08-19)
+                      ⚠️ ยังไม่ผูกกับเวลาหยุดจริง (ต้องรู้ buffer ครบก่อนถึงบอกได้ว่ากระทบเมื่อไหร่)
+                         ตอนนี้บอกแค่ "เชื่อมกับใคร" ซึ่งก็ยังดีกว่าไม่มีอะไรเลย — ห้ามเขียนให้ดูเหมือนคำตอบสำเร็จรูป */}
+                  {(s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
+                    <StorySection title="🔗 สายการไหลระหว่างไลน์">
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        {s.flowDown?.length > 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+                            <b style={{ color: s.dtUnplannedMin > 0 ? '#f59e0b' : 'var(--text)' }}>➡️ ป้อนงานให้:</b>{' '}
+                            {s.flowDown.map((l, i) => (
+                              <span key={l.id}>
+                                {i > 0 && ' · '}
+                                <b style={{ color: 'var(--text)' }}>{l.to_line}</b>
+                                {l.buffer_qty != null
+                                  ? <span style={{ color: 'var(--muted)' }}> (buffer {Number(l.buffer_qty).toLocaleString()} ชิ้น)</span>
+                                  : <span style={{ color: 'var(--muted)' }}> (ยังไม่ระบุ buffer)</span>}
+                              </span>
+                            ))}
+                            {s.dtUnplannedMin > 0 && (
+                              <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>
+                                ⚠ วันนี้ไลน์นี้หยุดนอกแผน {fmtNum(s.dtUnplannedMin)} นาที — เช็คที่ไลน์ปลายน้ำว่ามี “รอชิ้นงาน” ตามมาไหม
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {s.flowUp?.length > 0 && (
+                          <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+                            <b style={{ color: 'var(--text)' }}>⬅️ รับของจาก:</b>{' '}
+                            {s.flowUp.map((l, i) => (
+                              <span key={l.id}>{i > 0 && ' · '}<b style={{ color: 'var(--text)' }}>{l.from_line}</b></span>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                          ตั้งสายการไหลที่ หน้าจัดการไลน์ → 🔗 สายการไหลระหว่างไลน์
+                        </div>
                       </div>
                     </StorySection>
                   )}

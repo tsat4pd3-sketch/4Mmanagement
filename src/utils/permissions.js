@@ -30,8 +30,14 @@ export async function loadPermissions(forceRefresh = false) {
     const PAGE = 1000;
     const rows = [];
     for (let from = 0; ; from += PAGE) {
+      // ⚠️⚠️ ต้อง .order() ให้ครบคีย์ที่ unique เสมอเมื่อใช้ .range() แบ่งหน้า
+      // PostgreSQL ไม่รับประกันลำดับแถวถ้าไม่สั่ง ORDER BY → พอมีคนกดแก้สิทธิ์ที่ /permissions
+      // (UPDATE ทำให้แถวขยับตำแหน่งใน heap) ลำดับของหน้า 1 กับหน้า 2 จะไม่ต่อกัน
+      // → **บางแถวไม่โผล่ในหน้าไหนเลย** = สิทธิ์มีอยู่ใน DB แต่ปุ่ม/เมนูไม่ขึ้น แบบสุ่มคนสุ่มรอบ
+      // (เคสจริง 2026-08-19: planner_store มี line_stock:manage_rounds แต่ปุ่ม "+ เพิ่มรอบจัดส่ง" หาย)
       const { data, error } = await supabase.from('role_permissions')
         .select('role, permission_key, allowed')
+        .order('role').order('permission_key')
         .range(from, from + PAGE - 1);
       // ⚠️ ห้ามเขียนทับ cache ด้วยผลลัพธ์ว่าง/บางส่วนตอน fetch ล้ม (network/RLS สะดุด) —
       // ถ้าหน้าไหนล้ม ให้คืน cache เดิมทั้งก้อน (Map ที่ขาดแถว = non-admin โดนล็อกเมนูค้างถาวร)
