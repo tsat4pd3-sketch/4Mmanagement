@@ -169,7 +169,7 @@
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
-| Logistic - Store | `/heijunka` | HeijunkaKanban | ทุก role |
+| Logistic - Store | `/heijunka` | HeijunkaKanban · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter · **QR เรียกภาชนะ (2026-08-03):** deep-link `?line=&ctype=&qty=` → เปิดฟอร์มกรอกครบ เหลือกดยืนยัน · ปุ่ม 🏷️ ป้าย QR (พิมพ์แผ่น A4 ไลน์×ชนิดภาชนะ — lazy import `qrcode` · doc_key `rack_qr_labels` ผ่าน withDocFoot, migration `20260803_doc_form_rack_qr_labels.sql` Main) · ปุ่ม 📷 สแกน (BarcodeDetector ในแอป + ช่องปืนยิง keyboard-wedge — parse URL ตัวเดียวกัน) · กล้องมือถือสแกนตรงก็ได้ (เปิดลิงก์) | ทุก role |
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
@@ -269,9 +269,13 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 **ขาออกยังไม่ถูกบันทึก (adoption gap ไม่ใช่ bug):** 2xx/3xx/5xx ตัดออก = 0 ทุกกลุ่ม · 30 วันล่าสุด รับเข้า 3,580 : ตัดออก 33
 · UI ใช้ได้จริง (warehouse1 เคยตัด 32 รายการ) แค่ยังไม่ใช้ต่อเนื่อง · ผลข้างเคียง: มินิสโตร์ในระบบ = 0 → backflush หักไม่ได้ ทุกอย่างไหลเข้า accumulator
 
-**นอกขอบเขต (user 2026-08-19 "ฝ่ายสนับสนุนอาจจะยังไม่ต้องสนใจ"):** ส่วนจัดซื้ออยู่ใต้**ฝ่ายสนับสนุนกลาง**
-ซึ่งยังไม่ถูกขยายผลเข้าระบบเลย (ไม่มี org node / user / role) → `purchase_requests` ค้าง pending 1,024 ใบ
-**ไม่ใช่รอยรั่วของเรา** — สายข้อมูลของเราจบที่ "ระบบออกใบสั่งซื้อให้แล้ว" = ส่งถึงขอบเขตฝ่ายอื่น
+> ### ⚠️ กฎเหล็ก — "สั่งซื้อวัตถุดิบผลิต" เป็นงานของ **Planning** ไม่ใช่ส่วนจัดซื้อ (user แก้ให้ 2026-08-19)
+> - **วัตถุดิบ/พาร์ทที่ใช้ผลิต (3xx/5xx) → Planning (ฝ่าย Logistic & Sales) เป็นผู้สั่งซื้อ** = **อยู่ในขอบเขต มีเจ้าภาพ**
+> - **ส่วนจัดซื้อ (ฝ่ายสนับสนุนกลาง · 2100414300) ทำแค่ หา supplier + ซื้อของใช้ทั่วไป** ที่ไม่ใช่วัตถุดิบผลิต
+> - ดังนั้น `purchase_requests` ที่ทริกเกอร์ออกให้ (ค้าง pending 1,024 ใบ) = **คิวงานของ Planning ต้องตามต่อ**
+>   ห้ามตีเป็น "นอกขอบเขต/รอฝ่ายอื่น" (ผมเคยสรุปผิดแบบนั้นรอบแรก — แก้แล้ว)
+> - ที่ user บอกว่า "ฝ่ายสนับสนุนยังไม่ต้องสนใจ" = ฝ่ายสนับสนุนกลาง (บัญชี/HRM/CIC/QSM/จัดซื้อของใช้)
+>   **ไม่ได้หมายถึงการสั่งซื้อวัตถุดิบผลิต**
 
 ### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
 มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**
@@ -304,6 +308,20 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >   → สายธารความต้องการเกือบทั้งสาย (ยกเว้นช่วงผลิต) เป็นของฝ่ายเดียว ใช้จัดกลุ่มใน `/flow-tower`
 > - **ระบบยุบ 2 ส่วนของ Logistic เหลือ section เดียว `Planning&Store`** → บัญชีทั้ง 7 กองรวมกัน แยกสิทธิ์ตามงานจริงไม่ได้
 > - **ฝ่ายสนับสนุนกลาง (รวมจัดซื้อ) ยังไม่ถูกขยายผลเข้าระบบเลย** — นอกขอบเขตรอบนี้ (user ยืนยัน 2026-08-19)
+> ### ⚠️ กฎเหล็ก — "ฝ่าย (Division)" เป็น **ป้ายที่ node** ไม่ใช่ชั้นใน tree (2026-08-18 · ย้ำอีกครั้ง 2026-08-19)
+> ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/quality/logistic/office)
+> + คอลัมน์ **`org_nodes.division`** ติดป้ายที่ node ระดับบนสุด แล้ว**ลูกตกทอดขึ้นไปหา** (`divisionOfNode`)
+> — หลักเดียวกับ `cost_center`/`head_name` ที่ไลน์ลูกตกทอดจากไลน์แม่
+> - ติดป้ายแล้ว: PD1–PD4→production · Planning&Store→logistic · MTN/JIG MTN/DIE MTN→maintenance · QA→quality
+> - ตั้งค่าที่ `/org-setup` (dropdown ฝ่ายในโมดัลแก้ไข section/department) · อ่านผ่าน **`src/utils/orgDivisions.js`**
+>   (`loadDivisions`/`divisionsSync`/`divisionMeta`/`divisionLabel`/`divisionOfNode`/`divisionOfEmployee`)
+> - **🔴 ห้ามเพิ่ม `kind='division'` เป็น node ชั้นใหม่ใน `org_nodes`** — จะพัง cascade section→department ทุกหน้า
+>   และกลายเป็นแหล่งความจริงที่ 2 ของเรื่องเดียวกัน
+>   **เคยพลาดจริง 2026-08-19:** ผมเพิ่ม node ชั้นฝ่าย + คอลัมน์ใน `/org-setup` + util ซ้อนอีกตัว
+>   ทั้งที่ main ทำเสร็จแล้วคนละแบบ → ถอยออกทั้งหมด (migration `20260819_revert_org_division_level`)
+>   **บทเรียน: ก่อนเพิ่มแนวคิดระดับ master ให้ `grep` หาของเดิมก่อนเสมอ — โปรเจคนี้มีหลาย session ทำขนานกัน**
+> - หน้าที่อยากรู้ "ช่วงงานนี้เป็นของฝ่ายไหน" ให้อ้างด้วย **`code`** แล้วเอาชื่อ/สี/ไอคอนจาก util (เช่น `/flow-tower`)
+
 > - **ห้ามสรุปจากชื่อ role ว่าใครอยู่ฝ่ายไหน** — ข้อมูลจริง: คนของ Logistic&Sales 7 บัญชีใช้ role `sale`
 >   ส่วน `planner_store` มีบัญชีเดียว (อัจฉรา โสภาบุญ · +แอดมินหน่วยงาน) ที่เป็นคนลงข้อมูลให้เกือบทั้งฝ่าย
 

@@ -86,6 +86,8 @@ export default function VSM() {
   const [liveModel, setLiveModel] = useState(null);
   const [liveData, setLiveData] = useState(null);
   const [liveBusy, setLiveBusy] = useState(false);
+  const [liveErr, setLiveErr] = useState(null);    // โหลดโครงพลาด (เช่นเน็ตสะดุด) — ต้องมีปุ่มลองใหม่ ห้ามจอว่างตัน
+  const [liveTick, setLiveTick] = useState(0);     // bump เพื่อสั่ง initLive ลองใหม่
 
   const printRef = useRef(null);
   const isLight = typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light';
@@ -271,9 +273,13 @@ export default function VSM() {
     if (liveRaw?.fgMat === matNo) return;                    // โครงของ FG นี้มีแล้ว
     const fg = products.find(p => p.mat_no === matNo);
     if (!fg) return;                                         // master ยังไม่มา — effect วิ่งซ้ำเอง
+    // ⚠️ ต้องรอ production_lines ก่อน (กฎ CLAUDE.md) — ไม่งั้น family ว่าง = โหลดโครงโดยไม่มีกะ/OEE
+    //    แล้ว guard fgMat ด้านบนจะกันไม่ให้โหลดซ้ำตลอดไป (fetchRaw ผูก lines ใน deps → effect วิ่งซ้ำเองเมื่อมา)
+    if (!lines.length) return;
     let dead = false;
     (async () => {
       setLiveBusy(true);
+      setLiveErr(null);
       setLiveModel(null);                                    // กันผังของ FG เก่าค้างระหว่างโหลดตัวใหม่
       setLiveData(null);
       try {
@@ -290,11 +296,16 @@ export default function VSM() {
           allMats: [fg.mat_no, ...raw.bomItems.map(b => b.mat_no)].filter(Boolean),
         });
       } catch (e) {
-        if (!dead) toast.error(e.message || 'โหลดโครงสายธารไม่สำเร็จ');
+        // "Failed to fetch" = เน็ตฝั่งเครื่องผู้ใช้สะดุด (ตรวจ log ฝั่ง Supabase แล้ว server ปกติ)
+        // ต้องเหลือทางลองใหม่บนจอเสมอ — toast อย่างเดียวหายไปแล้วกลายเป็นจอว่างตัน (เคสจริง 2026-08-20)
+        if (!dead) {
+          setLiveErr(e.message || 'โหลดโครงสายธารไม่สำเร็จ');
+          toast.error(e.message || 'โหลดโครงสายธารไม่สำเร็จ');
+        }
       } finally { if (!dead) setLiveBusy(false); }
     })();
     return () => { dead = true; };
-  }, [tab, matNo, liveRaw, products, fetchRaw]);
+  }, [tab, matNo, liveRaw, products, lines, fetchRaw, liveTick]);
 
   // รอบ refresh สด: กะวันนี้ของไลน์ในสาย + ใบงาน/DT/ของเสีย + คงคลังปัจจุบัน (payload เล็ก)
   const loadLive = useCallback(async () => {
@@ -725,6 +736,18 @@ export default function VSM() {
           )}
           {matNo && liveBusy && !liveModel && (
             <div style={{ ...S.card, textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดโครงสายธาร…</div>
+          )}
+          {/* โหลดโครงพลาด (เน็ตสะดุด ฯลฯ) — ห้ามจอว่างตัน ต้องมีปุ่มลองใหม่ */}
+          {matNo && !liveBusy && !liveModel && liveErr && (
+            <div style={{ ...S.card, textAlign: 'center', padding: 30 }}>
+              <div style={{ fontSize: 13.5, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+                ⛔ โหลดโครงสายธารไม่สำเร็จ
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+                {liveErr} — มักเป็นสัญญาณเน็ตสะดุดชั่วคราว ลองใหม่ได้เลย
+              </div>
+              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>🔄 ลองใหม่</button>
+            </div>
           )}
 
           {matNo && liveModel && <>
