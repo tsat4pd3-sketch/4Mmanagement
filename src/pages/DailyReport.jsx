@@ -19,6 +19,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
+import QualityBinLinkModal from '../components/QualityBinLinkModal';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
@@ -188,6 +189,9 @@ function LiveTab({ role }) {
   const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   // 🛠 ลงวิธีแก้ไข/ผลตรวจติดตามของปัญหา 1 รายการ — { kind:'downtime'|'defect', row, title }
   const [fixTarget, setFixTarget]   = useState(null);
+  // 🗑️ ส่งของเสียเข้าถังเหลือง/แดง — { [defect_log_id]: { yellow, red } } จำนวนที่ลงถังไปแล้ว
+  const [binTarget, setBinTarget]   = useState(null);
+  const [binLinks, setBinLinks]     = useState({});
   const [selSession, setSelSession] = useState(null);
   // §139 ย่อ/ขยายกลุ่มไลน์ในลิสต์กะ — กะค้างไม่ปิดสะสมทำให้ลิสต์ยาวมาก (เจอจริง 34 กะ) · จำใน localStorage
   const [sessGroupCollapsed, setSessGroupCollapsed] = useState(() => {
@@ -500,6 +504,19 @@ function LiveTab({ role }) {
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     setDefectLogs(data || []);
+
+    // ของเสียแถวไหนถูกส่งลงถังเหลือง/แดงไปแล้วบ้าง (ยิงรวมครั้งเดียว ไม่ยิงรายแถว)
+    const ids = (data || []).map(d => d.id);
+    if (!ids.length) { setBinLinks({}); return; }
+    const { data: bins, error: binErr } = await supabaseDR.from('quality_bin_records')
+      .select('bin, qty, defect_log_id').in('defect_log_id', ids).eq('is_active', true);
+    if (binErr) { console.warn('[bin links]', binErr.message); setBinLinks({}); return; }
+    const m = {};
+    (bins || []).forEach(r => {
+      if (!m[r.defect_log_id]) m[r.defect_log_id] = { yellow: 0, red: 0 };
+      m[r.defect_log_id][r.bin] += Number(r.qty) || 0;
+    });
+    setBinLinks(m);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -2966,6 +2983,28 @@ function LiveTab({ role }) {
                           {d.reported_by_name && ` · ${d.reported_by_name}`}
                         </div>
                       </div>
+                      {/* 🗑️ ส่งของเสีย/งานต้องสงสัย เข้าถังแดง/ถังเหลือง — ไม่ต้องคีย์ใบใหม่ทั้งใบ
+                          feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเป็นงานเสียขอผูกกับเอกสารตัวนี้ รวมถึงงานต้องสงสัยด้วย"
+                          ⚠️ ไม่สร้างใบให้อัตโนมัติ — "เอาของลงถัง" เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน */}
+                      {canScan && ((d.qty_ng || 0) > 0 || (d.qty_suspect || 0) > 0) && (() => {
+                        const lk = binLinks[d.id];
+                        const done = !!lk && (lk.yellow > 0 || lk.red > 0);
+                        return (
+                          <button onClick={() => setBinTarget({ defect: d, existing: lk })}
+                            title={done
+                              ? `ลงถังแล้ว${lk.yellow ? ` · 🟡 ${lk.yellow} ชิ้น` : ''}${lk.red ? ` · 🔴 ${lk.red} ชิ้น` : ''} — กดเพื่อลงเพิ่ม`
+                              : 'ส่งเข้าถังเหลือง (ต้องสงสัย) / ถังแดง (เสีย) โดยไม่ต้องคีย์ใบใหม่'}
+                            style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
+                              borderRadius: 20, padding: '3px 10px',
+                              color: done ? '#22c55e' : '#e05252',
+                              background: done ? 'rgba(34,197,94,0.12)' : 'rgba(224,82,82,0.12)',
+                              border: `1px solid ${done ? 'rgba(34,197,94,0.35)' : 'rgba(224,82,82,0.4)'}` }}>
+                            {done
+                              ? `🗑️ ลงถังแล้ว${lk.yellow ? ` 🟡${lk.yellow}` : ''}${lk.red ? ` 🔴${lk.red}` : ''}`
+                              : '🗑️ ลงถัง'}
+                          </button>
+                        );
+                      })()}
                       {/* 🛠 ของเสียทุกรายการเข้าใบรายงานปัญหา (ไม่มีเกณฑ์เวลา) → ต้องลงวิธีแก้ไขทุกแถว */}
                       {canScan && (() => {
                         const done = !!String(d.fix_action || '').trim();
@@ -3129,6 +3168,16 @@ function LiveTab({ role }) {
               if (fixTarget.kind === 'downtime') loadDT(selSession.id);
               else loadDefectLogs(selSession.id);
             }}
+          />
+        )}
+
+        {/* 🗑️ ส่งของเสีย/งานต้องสงสัย ลงถังเหลือง-แดง */}
+        {binTarget && (
+          <QualityBinLinkModal
+            defect={binTarget.defect} session={selSession} actorName={fullName}
+            existing={binTarget.existing}
+            onClose={() => setBinTarget(null)}
+            onSaved={() => loadDefectLogs(selSession.id)}
           />
         )}
 

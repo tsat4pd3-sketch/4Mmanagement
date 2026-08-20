@@ -242,6 +242,13 @@ export default function QualityBins() {
                 <td style={td}>
                   <div style={{ fontWeight: 700 }}>{r.part_name || '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_no || r.mat_no || ''}</div>
+                  {/* มาจากบันทึกงานเสียใน Daily Report — บอกที่มาไว้ กันคีย์ซ้ำ */}
+                  {r.defect_log_id && (
+                    <div style={{ fontSize: 10.5, color: '#0ea5e9' }}
+                      title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
+                      📋 จาก Daily Report
+                    </div>
+                  )}
                 </td>
                 {!isY && <td style={td}>{r.line_name || '—'}</td>}
                 <td style={{ ...td, fontWeight: 700 }}>{Number(r.qty || 0).toLocaleString('th-TH')}</td>
