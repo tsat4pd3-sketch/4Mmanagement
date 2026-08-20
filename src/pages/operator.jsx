@@ -15,6 +15,7 @@ import {
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
+import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -128,13 +129,17 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
-  // กางสกิลนอกส่วนงานในโมดัลแก้ไขพนักงาน (default ปิด — ดูหัวข้อ visibleSkillDefs)
+  // กางสกิลนอกขอบเขตในโมดัลแก้ไขพนักงาน (default ปิด — ดูหัวข้อ visibleSkillDefs)
   const [showAllSkills, setShowAllSkills] = useState(false);
+  const [orgAllNodes, setOrgAllNodes] = useState([]);   // ผังทั้งก้อน — ใช้ไล่หาฝ่ายแบบตกทอด
+  const [divisionsReady, setDivisionsReady] = useState(0); // bump เมื่อ master ฝ่ายโหลดเสร็จ
+  // หน่วยงานที่เจาะจงได้ใต้ฝ่ายนั้น (ส่วนงาน + แผนกขึ้นตรงฝ่าย เช่น MTN/QA)
+  const sectionOptsForDivision = (div) => scopeUnitsForDivision(div, orgAllNodes);
   const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
   const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
+  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' });
   const skillColorTouched = useRef(false); // ผู้ใช้เลือกสีเองแล้ว — อย่าสุ่มทับ
   // สกิลโหลดเสร็จ → เสนอสีที่ยังไม่ซ้ำเป็นค่าตั้งต้น (เฉพาะตอนผู้ใช้ยังไม่แตะช่องสี)
   useEffect(() => {
@@ -182,16 +187,29 @@ export default function Operator() {
         (data || []).forEach(r => { (map[r.skill_name] ||= []).push(r); });
         setSubItemsByskill(map);
       });
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
-      .then(({ data }) => {
+    const applyOrgNodes = (orgNodes) => {
+      setOrgAllNodes(orgNodes);
+      const secNodes = orgNodes.filter(n => n.kind === 'section');
+      setOrgSectionNodes(secNodes);
+      setOrgSectionOpts(secNodes.map(n => n.code || n.name));
+      setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
+      setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
+    };
+    // ⚠️ ต้อง select `division` ด้วย — ใช้ไล่หา "ฝ่าย" ของพนักงานแบบตกทอดจาก node แม่
+    //    (คอลัมน์ใหม่ 2026-08-18 · ถ้ายังไม่ apply migration จะได้ undefined = ทุกสกิลเป็นของทุกฝ่าย
+    //     ซึ่งคือพฤติกรรมเดิมเป๊ะ ไม่พัง)
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division').eq('is_active', true).order('sort_order')
+      .then(({ data, error }) => {
         if (!alive) return;
-        const orgNodes = data || [];
-        const secNodes = orgNodes.filter(n => n.kind === 'section');
-        setOrgSectionNodes(secNodes);
-        setOrgSectionOpts(secNodes.map(n => n.code || n.name));
-        setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
-        setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
+        // คอลัมน์ division ยังไม่มี (42703) → ถอยไป select ชุดเดิม อย่าให้ทั้งหน้าพัง
+        if (error) {
+          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
+            .then(({ data: d2 }) => { if (alive) applyOrgNodes(d2 || []); });
+          return;
+        }
+        applyOrgNodes(data || []);
       });
+    loadDivisions().then(() => { if (alive) setDivisionsReady(v => v + 1); });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
@@ -494,12 +512,13 @@ export default function Operator() {
       label: lbl,
       color: newSkill.color,
       category: newSkill.category,
+      scope_division: newSkill.scope_division || null,
       scope_section: newSkill.scope_section.trim() || null,
       allowance_type: newSkill.category === 'allowance_skill' ? (newSkill.allowance_type || null) : null,
       sort_order: skillDefs.length + 1,
     }]);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else { skillColorTouched.current = false; setNewSkill({ label: '', color: pickUnusedColor([...skillDefs.map(d => d.color), newSkill.color]), category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
+    else { skillColorTouched.current = false; setNewSkill({ label: '', color: pickUnusedColor([...skillDefs.map(d => d.color), newSkill.color]), category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
 
@@ -523,6 +542,7 @@ export default function Operator() {
       label:          editingSkill.label.trim(),
       color:          editingSkill.color,
       category:       editingSkill.category,
+      scope_division: editingSkill.scope_division || null,
       scope_section:  editingSkill.scope_section || null,
       allowance_type: editingSkill.category === 'allowance_skill' ? (editingSkill.allowance_type || null) : null,
     }).eq('id', editingSkill.id);
@@ -909,7 +929,7 @@ export default function Operator() {
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
                       <div>{{ hard_skill:'🔧', machine_skill:'⚙️', product_skill:'📦', soft_skill:'🧠' }[sd.category || 'hard_skill']} {sd.label}</div>
-                      {sd.scope_section && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
+                      {(sd.scope_division || sd.scope_section) && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{skillScopeLabel(sd)}</div>}
                     </th>
                   ))}
                   <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
@@ -1099,9 +1119,9 @@ export default function Operator() {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 13 }}>{sd.label}</div>
                           <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
-                            {sd.scope_section && (
+                            {(sd.scope_division || sd.scope_section) && (
                               <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
-                                📍 {sd.scope_section}
+                                📍 {skillScopeLabel(sd)}
                               </span>
                             )}
                             {sd.allowance_type && (
@@ -1119,7 +1139,7 @@ export default function Operator() {
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>📝</button>
                         )}
                         {can('skills', 'edit', role) && (
-                          <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
+                          <button onClick={() => setEditingSkill({ ...sd, scope_division: sd.scope_division || '', scope_section: sd.scope_section || '' })}
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
                         {can('skills', 'delete', role) && (
@@ -1152,10 +1172,22 @@ export default function Operator() {
                   </select>
                 </div>
                 <div>
-                  <label style={labelSt}>ส่วนงาน (ถ้าจำเพาะ)</label>
-                  <select value={newSkill.scope_section} onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })}>
-                    <option value="">— ทุกส่วนงาน —</option>
-                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                  <label style={labelSt}>ฝ่ายที่ใช้สกิลนี้</label>
+                  {/* เปลี่ยนฝ่าย = ล้างส่วนงานที่เลือกไว้ (กฎ cascade UI-CONVENTIONS §5.3) */}
+                  <select value={newSkill.scope_division}
+                    onChange={e => setNewSkill({ ...newSkill, scope_division: e.target.value, scope_section: '' })}>
+                    <option value="">— ทุกฝ่าย (สกิลกลาง) —</option>
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelSt}>เจาะจงส่วนงาน (ถ้ามี)</label>
+                  <select value={newSkill.scope_section}
+                    disabled={!newSkill.scope_division}
+                    title={!newSkill.scope_division ? 'เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้' : undefined}
+                    onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })}>
+                    <option value="">— ทั้งฝ่าย —</option>
+                    {sectionOptsForDivision(newSkill.scope_division).map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 {newSkill.category === 'allowance_skill' && (
@@ -1225,11 +1257,21 @@ export default function Operator() {
                       </select>
                     </div>
                     <div>
-                      <label style={labelSt}>ส่วนงาน</label>
+                      <label style={labelSt}>ฝ่ายที่ใช้สกิลนี้</label>
+                      <select value={editingSkill.scope_division || ''}
+                        onChange={e => setEditingSkill({ ...editingSkill, scope_division: e.target.value, scope_section: '' })}>
+                        <option value="">— ทุกฝ่าย (สกิลกลาง) —</option>
+                        {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelSt}>เจาะจงส่วนงาน (ถ้ามี)</label>
                       <select value={editingSkill.scope_section || ''}
+                        disabled={!editingSkill.scope_division}
+                        title={!editingSkill.scope_division ? 'เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้' : undefined}
                         onChange={e => setEditingSkill({ ...editingSkill, scope_section: e.target.value })}>
-                        <option value="">— ทุกส่วนงาน —</option>
-                        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                        <option value="">— ทั้งฝ่าย —</option>
+                        {sectionOptsForDivision(editingSkill.scope_division).map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     {editingSkill.category === 'allowance_skill' && (
@@ -1592,17 +1634,16 @@ export default function Operator() {
                   // ⚠️ ห้ามซ่อนเงียบ — สกิลที่พนักงาน "มีอยู่แล้ว" ต้องโชว์เสมอแม้นอกส่วนงาน
                   //   (ไม่งั้นข้อมูลที่มีอยู่จะมองไม่เห็น/แก้ไม่ได้) + มีปุ่มกางดูของที่ซ่อน พร้อมบอกจำนวน
                   const empSec = editingEmp.section || null;
+                  const empDiv = divisionOfEmployee(editingEmp, orgAllNodes);
                   const isOwned = (sd) => !!editingEmp.skillEnabled?.[sd.name]
                     || (editingEmp.employee_skills || []).some(s => s.skill_name === sd.name);
-                  const inScope = (sd) => {
-                    const sc = (sd.scope_section || '').trim();
-                    if (!sc) return true;                       // สกิลกลาง
-                    return !!empSec && inSectionScope([empSec], sc);
-                  };
                   const visibleSkillDefs = showAllSkills
                     ? skillDefs
-                    : skillDefs.filter(sd => inScope(sd) || isOwned(sd));
+                    : skillDefs.filter(sd => skillInScope(sd, { division: empDiv, section: empSec, department: editingEmp.department }) || isOwned(sd));
                   const hiddenCount = skillDefs.length - visibleSkillDefs.length;
+                  const empDivLabel = empDiv
+                    ? (divisionsSync().find(d => d.code === empDiv)?.label || empDiv)
+                    : null;
 
                   // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
                   const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
@@ -1613,8 +1654,13 @@ export default function Operator() {
                       <span>
                         {showAllSkills
                           ? `แสดงทุกสกิล (${skillDefs.length})`
-                          : `แสดงสกิลของ ${empSec || 'ส่วนกลาง'} + สกิลกลาง (${visibleSkillDefs.length}/${skillDefs.length})`}
+                          : `แสดงสกิลของ ${empDivLabel || 'ยังไม่ได้ติดป้ายฝ่าย'}${empSec ? ` · ${empSec}` : ''} + สกิลกลาง (${visibleSkillDefs.length}/${skillDefs.length})`}
                       </span>
+                      {!empDiv && !showAllSkills && (
+                        <span style={{ color: '#f59e0b' }} title="ไปติดป้ายฝ่ายให้ส่วนงาน/แผนกนี้ที่หน้าผังองค์กร">
+                          ⚠️ ส่วนงานนี้ยังไม่ได้ติดป้ายฝ่าย — เห็นเฉพาะสกิลกลาง
+                        </span>
+                      )}
                       {hiddenCount > 0 && !showAllSkills && (
                         <button type="button" onClick={() => setShowAllSkills(true)}
                           style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
@@ -1666,7 +1712,7 @@ export default function Operator() {
                                   style={{ width: 14, height: 14, cursor: rowEditable ? 'pointer' : 'default' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
-                                  {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
+                                  {(sd.scope_division || sd.scope_section) && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {skillScopeLabel(sd)}</span>}
                                 </span>
                                 {enabled && lv && (
                                   <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
+import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 
@@ -19,6 +20,8 @@ export default function OrgSetup() {
   const [formCostCenter, setFormCostCenter] = useState('');
   const [formRefLineId, setFormRefLineId] = useState('');
   const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
+  const [formDivision, setFormDivision] = useState('');        // ฝ่าย — ติดที่ node ระดับบนสุด ลูกตกทอด
+  const [divReady, setDivReady] = useState(0);
   const [saving, setSaving] = useState(false);
   // ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup) — เก็บใน section_signers keyed by production_lines.section
   const [signersMap, setSignersMap] = useState({});   // sectionKey → {manager_name, ta_name, hrm_name}
@@ -109,15 +112,17 @@ export default function OrgSetup() {
     setSgSaving(false);
   };
 
+  useEffect(() => { loadDivisions().then(() => setDivReady(v => v + 1)); }, []);
+
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
-    setFormLaborType('direct');
+    setFormLaborType('direct'); setFormDivision('');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
     setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(lineCostCenter(node));
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
-    setFormLaborType(node.labor_type || 'direct');
+    setFormLaborType(node.labor_type || 'direct'); setFormDivision(node.division || '');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
 
@@ -146,6 +151,8 @@ export default function OrgSetup() {
       // ประเภทแรงงาน — ตั้งได้ทั้ง section และ department (ช่างส่วนใหญ่อยู่ระดับแผนก)
       // พนักงาน derive จาก department ก่อน แล้ว section
       ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
+      // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
+      ...(['section', 'department'].includes(modal.kind) ? { division: formDivision || null } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -216,6 +223,7 @@ export default function OrgSetup() {
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
                   {s.cost_center && <CostBadge code={s.cost_center} />}
                   <LaborBadge type={s.labor_type} />
+                  <DivBadge node={s} nodes={nodes} />
                 </span>
                 <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -243,6 +251,7 @@ export default function OrgSetup() {
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
                   <LaborBadge type={d.labor_type} />
+                  <DivBadge node={d} nodes={nodes} />
                 </span>
                 <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
               </div>
@@ -352,6 +361,19 @@ export default function OrgSetup() {
                   </div>
                 </div>
               )}
+              {['section', 'department'].includes(modal.kind) && (
+                <div>
+                  <label style={labelSt}>ฝ่าย (Division)</label>
+                  <select value={formDivision} onChange={e => setFormDivision(e.target.value)}>
+                    <option value="">— ตกทอดจากตัวแม่ / ยังไม่ระบุ —</option>
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
+                    {modal.parentId ? ' (ตัวนี้มีแม่อยู่แล้ว ปล่อยว่างได้)' : ''}
+                  </div>
+                </div>
+              )}
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
@@ -391,6 +413,24 @@ function CostBadge({ code }) {
   return (
     <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
+    </span>
+  );
+}
+
+/** ป้ายฝ่าย — ตัวที่ไม่ได้ติดเองจะโชว์ค่าที่ตกทอดจากแม่แบบจาง (ให้เห็นว่าผลลัพธ์จริงคืออะไร) */
+function DivBadge({ node, nodes }) {
+  const own = node.division || null;
+  const eff = own || divisionOfNode(node.id, nodes);
+  if (!eff) return null;
+  const m = divisionsSync().find(d => d.code === eff);
+  return (
+    <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
+      style={{
+        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 999,
+        border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
+        color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
+      }}>
+      {m?.icon} {m?.label || eff}{own ? '' : ' (ตกทอด)'}
     </span>
   );
 }
