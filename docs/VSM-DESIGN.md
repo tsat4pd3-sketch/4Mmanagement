@@ -1,6 +1,6 @@
 # Value Stream Mapping (VSM) — ออกแบบก่อนลงมือ
 
-> สถานะ: **เฟส 1 ทำแล้ว 2026-08-13** (หน้า `/vsm` + routing master) — เฟส 2-4 ยังไม่ทำ
+> สถานะ: **เฟส 1 ทำแล้ว 2026-08-13** (หน้า `/vsm` + routing master) · **แท็บ ⚡ สายธารสด (Realtime) ทำแล้ว 2026-08-19** (ดู §8) — เฟส 2-4 (future state/kaizen burst) ยังไม่ทำ
 > ที่มา: คำสั่ง user 2026-08-06 "อยากได้ tab สร้าง VSM มาตรฐานสากล กดเลือก main product
 > (100XXXXX) แล้วโปรแกรมสร้างให้" · user เลือก **"เพิ่ม master routing ก่อน"** + **"เฟสแรก = Current state + พิมพ์ A3"**
 > อ่านคู่กับ `docs/ENGINEERING-PRINCIPLES.md` + `docs/UI-CONVENTIONS.md`
@@ -173,3 +173,32 @@ NVA = PLT (วัน) × AT (วินาที/วัน)        ← ไม่�
 
 **ตรวจแล้วกับข้อมูลจำลองที่ถอดจากใบจริง:** Order/วัน 19,517÷21 = **929** ตรงใบ ·
 คงคลัง 3,000 ชิ้น = **3.23 วัน** ตรงใบ · OEE ถ่วงน้ำหนักถูก · เคสข้อมูลว่างไม่พัง (คืน null + เตือน 3 error)
+
+---
+
+## 8. ⚡ แท็บ "สายธารสด (Realtime)" — ทำแล้ว 2026-08-19 (คำสั่ง user "อัพเกรดเป็น VSM realtime")
+
+**mini-ADR:** โจทย์คือ "VSM realtime" แต่กฎเดิมของโมดูลคือ *เอกสาร VSM = snapshot ห้ามคำนวณสดตอนเปิดดู*
+(§4.1 — ใบที่อนุมัติแล้วห้ามเปลี่ยนตัวเลขเองเงียบๆ) → ทางที่เลือก: **แยกเป็นแท็บใหม่ อยู่คู่ของเดิม**
+(หลัก rollout ข้อ 2 ใน ENGINEERING-PRINCIPLES §11) ไม่ใช่เปลี่ยนเอกสารให้สด
+· ทางเลือกที่ตัดทิ้ง: (ก) auto-refresh ตัว generate — ไม่ใช่ realtime จริง (ใช้กะปิดแล้ว)
+(ข) เปลี่ยน snapshot เป็นคำนวณสด — ทำลายความน่าเชื่อถือของใบที่เซ็นแล้ว
+
+| ส่วน | มาจากไหน | ความสด |
+|---|---|---|
+| โครงสาย + ค่ามาตรฐาน (CT · C/O · %OEE เฉลี่ย · AT · TT · demand) | `fetchRaw` เดือนปัจจุบัน (query ชุดเดียวกับ generate) | โหลดครั้งเดียวต่อ FG |
+| สถานะไลน์ / OEE กะนี้ / ยอดวันนี้ / DT ค้าง | `src/lib/vsmLive.js` (pure · เทส 7 เคส) จากกะวันงานนี้ | realtime + poll `RATE.BOARD` |
+| ▲ คงคลัง → PLT / %VA | `line_stock_summary` ปัจจุบัน → rebuild `buildVsmModel` | ทุกรอบ refresh |
+
+- **สูตรทุกตัวยังมาจาก util กลาง** — `computeLiveOee` / `wavg`+`wLoad` / `sumDefectQty(rows,'line')` /
+  สูตรผลิตระหว่างกะ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` / `isOpenDT`+`isPlannedDT`
+  (ย้ายไป `src/utils/downtimeRules.js` pure — downtimeAlarm.js re-export)
+- **"ประเมินไม่ได้" = null + เหตุผลบนจอเสมอ** (กะเพิ่งเปิด <10 นาที · ยังไม่ผลิตชิ้นแรก · ไม่ตั้ง CT ·
+  ยังไม่เปิดกะ) — ห้ามโชว์ 0%
+- **planned DT ค้างไม่เป็น Andon แดง แต่โชว์แยกแบบสงบ** (กฎ downtimeAlarm เดิม)
+- **VsmCanvas prop `live` เป็น additive** — ไม่ส่ง = render เดิมเป๊ะ · ใบพิมพ์ clone SVG จากแท็บเอกสาร
+  จึงไม่กระทบ · ขอบกล่อง: แดงกระพริบ (SMIL) = DT ค้าง · เขียว = กำลังผลิต · เส้นประจาง = ยังไม่เปิดกะ
+- **โหมดสดไม่บันทึก/ไม่พิมพ์** — กันคนเอาภาพสดไปใช้แทนเอกสารทางการ (จอบอกชัด + ปุ่มบันทึก/พิมพ์อยู่แท็บ 📋 เท่านั้น)
+- egress: realtime channel `vsm-live` (downtime_logs/prod_orders/defect_logs/production_sessions —
+  อยู่ใน publication ครบ) + `usePolling(RATE.BOARD)` กันเหนียว · query สดกรองตามไลน์ในสาย payload เล็ก
+  · query พลาด = flag `partial` แถบส้ม ห้ามเงียบ
