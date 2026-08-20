@@ -1,6 +1,7 @@
 # Value Stream Mapping (VSM) — ออกแบบก่อนลงมือ
 
 > สถานะ: **เฟส 1 ทำแล้ว 2026-08-13** (หน้า `/vsm` + routing master) · **แท็บ ⚡ สายธารสด (Realtime) ทำแล้ว 2026-08-19** (ดู §8) — เฟส 2-4 (future state/kaizen burst) ยังไม่ทำ
+> **📎 reference สไตล์ใบจริงของโรงงาน (user แชร์ 2026-08-20) อยู่ที่ skill `.claude/skills/vsm-tsat-reference/SKILL.md`** — งานที่แตะ VSM ให้โหลด skill นั้นคู่กับไฟล์นี้เสมอ (ธรรมเนียม MCT headline · kaizen burst · future state · ชุดคำบนเส้นข้อมูล) · MCT/PT format ผ่าน `fmtMct`/`fmtMinSec` ใน `src/lib/vsmModel.js` (เพิ่ม 2026-08-20)
 > ที่มา: คำสั่ง user 2026-08-06 "อยากได้ tab สร้าง VSM มาตรฐานสากล กดเลือก main product
 > (100XXXXX) แล้วโปรแกรมสร้างให้" · user เลือก **"เพิ่ม master routing ก่อน"** + **"เฟสแรก = Current state + พิมพ์ A3"**
 > อ่านคู่กับ `docs/ENGINEERING-PRINCIPLES.md` + `docs/UI-CONVENTIONS.md`
