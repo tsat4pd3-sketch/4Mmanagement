@@ -15,6 +15,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd } from '../utils/oee';
+import { fetchByIds } from '../utils/fetchByIds';
 
 /* ── TSG palette (hex ไม่มี # — ตาม pptxgenjs) ── */
 const C = {
@@ -79,20 +80,20 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   const sessIds = sessions.map(s => s.id);
   const sessById = Object.fromEntries(sessions.map(s => [s.id, s]));
 
-  // downtime / defect / orders — ดึงเป็น chunk ตาม session_id
-  const downtimes = []; const defects = []; const orders = [];
-  for (const ids of chunk(sessIds, 150)) {
-    const [dt, df, od] = await Promise.all([
-      supabaseDR.from('downtime_logs')
-        .select('id, session_id, machine_no, description, duration_min, started_at, dr_downtime_types(name, category)')
-        .in('session_id', ids),
-      supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', ids),
-      supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', ids),
-    ]);
-    downtimes.push(...(dt.data || []));
-    defects.push(...(df.data || []));
-    orders.push(...(od.data || []));
-  }
+  // downtime / defect / orders — ผ่าน fetchByIds (แบ่งก้อน id + แบ่งหน้า + เช็ค error)
+  // ⚠️ เดิมแบ่งก้อน 150 แต่ไม่แบ่งหน้า → 1 ก้อนมี downtime เกิน 1000 แถวได้ในเดือนที่หยุดเยอะ
+  //    แล้วเด็คผู้บริหารจะโชว์ Top Downtime ต่ำกว่าจริงแบบเงียบๆ (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
+  const [dtRes, defRes, ordRes] = await Promise.all([
+    fetchByIds(sessIds, c => supabaseDR.from('downtime_logs')
+      .select('id, session_id, machine_no, description, duration_min, started_at, dr_downtime_types(name, category)')
+      .in('session_id', c)),
+    fetchByIds(sessIds, c => supabaseDR.from('defect_logs')
+      .select('session_id, qty_ng, qty_suspect').in('session_id', c)),
+    fetchByIds(sessIds, c => supabaseDR.from('prod_orders')
+      .select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
+  ]);
+  const downtimes = dtRes.rows, defects = defRes.rows, orders = ordRes.rows;
+  const dataWarn = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
 
   // pair map สำหรับนับ output แบบ 1 คู่/stroke (กฎ pairAwareTotal)
   await loadOpInfo(); // map รายการขั้นตอน (OP งานขับนัท) — output เด็คไม่นับซ้ำ
@@ -212,7 +213,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   }).filter(d => d.nSess > 0);
 
   if (!depts.length) throw new Error('เดือนนี้ไม่มีกะที่ปิดแล้วใน scope ที่เลือก');
-  return { monthKey, from, to, depts };
+  return { monthKey, from, to, depts, dataWarn };
 }
 
 /* ═══════════════════════════════════════════════════════════════════

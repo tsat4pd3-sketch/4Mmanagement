@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 import { wavg, wLoad, buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { fetchByIds } from '../utils/fetchByIds';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -64,13 +65,21 @@ export default function OeeInsightPanel({ lines }) {
       const ids = sess.map(s => s.id);
       const sessById = Object.fromEntries(sess.map(s => [s.id, s]));
 
-      const [{ data: dts }, { data: defs }, { data: orders }, { data: kstd }, { data: prodCt }] = await Promise.all([
-        supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', ids),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th, six_big_loss, waste_type)').in('session_id', ids),
-        supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, status').in('session_id', ids).in('status', ['confirmed', 'carry_over', 'imported']),
+      // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — ช่วง 90 วันมี 800+ กะ → URL ยาวเกิน คิวรีล้มเหลวเงียบ
+      //    แล้วแผงนี้จะสรุปว่า "ไม่มี Downtime เรื้อรัง / ไม่มีของเสียกระจุก" ทั้งที่มี (บั๊กชนิดเดียว
+      //    กับที่เจอในตารางสรุป OEE 2026-08-20) — วิเคราะห์สาเหตุที่บอกว่า "ไม่มีปัญหา" อันตรายที่สุด
+      const [dtRes, defRes, ordRes, { data: kstd }, { data: prodCt }] = await Promise.all([
+        fetchByIds(ids, c => supabaseDR.from('downtime_logs')
+          .select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('defect_logs')
+          .select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th, six_big_loss, waste_type)').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, qty, qty_ok, status').in('session_id', c).in('status', ['confirmed', 'carry_over', 'imported'])),
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
         supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
       ]);
+      const dts = dtRes.rows, defs = defRes.rows, orders = ordRes.rows;
+      const loadErr = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
       // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (เดิม kanban ล้วน → บาง MAT ได้ CT=0)
       const ctMapAll = buildCtMap({ kanbanStds: kstd || [], products: prodCt || [] });
       const ctOf = (mat) => ctMapAll[mat] || 0;
@@ -275,7 +284,7 @@ export default function OeeInsightPanel({ lines }) {
 
       out.sort((a, b) => ({ high: 0, med: 1, info: 2 }[a.sev] - { high: 0, med: 1, info: 2 }[b.sev]) || b.impact - a.impact);
       setInsights(out);
-      setMeta({ from, to, nSess: sess.length, dtMin: Math.round(dtMinUnpl) });
+      setMeta({ from, to, nSess: sess.length, dtMin: Math.round(dtMinUnpl), loadErr });
     } catch (e) {
       setInsights([]); setLean(null);
       setMeta({ error: e.message });
@@ -301,6 +310,12 @@ export default function OeeInsightPanel({ lines }) {
           {[14, 30, 60, 90].map(d => <option key={d} value={d}>ย้อนหลัง {d} วัน</option>)}
         </select>
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
+        {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
+        {meta?.loadErr && (
+          <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>
+            ⚠ ข้อมูลโหลดไม่ครบ — ผลวิเคราะห์อาจตกหล่น ({meta.loadErr})
+          </span>
+        )}
       </div>
 
       {/* ── Lean: 6 Big Losses / 8 Wastes — จำแนกจาก master (dr_downtime_types.six_big_loss/waste_type)
