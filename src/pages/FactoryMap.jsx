@@ -14,7 +14,7 @@ import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty } fro
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
-import { monthKeyOf, shiftMonth, fmtKwh, deltaPct, energyCat } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
@@ -286,6 +286,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
   const [dieZones, setDieZones] = useState({});        // 🔨 โซนคลังแม่พิมพ์: normName → { id, name, total, mo, moPending } (DR die_storage_areas)
   const [energyStatus, setEnergyStatus] = useState({});  // ⚡ พลังงานรายเดือน: name → { qty, prev, cost, source } (DR · เฟส 1 กรอกมือ)
+  const [energyMonth, setEnergyMonth] = useState(null);  // เดือนที่ผังกำลังโชว์ (ไม่ใช่ live — ต้องประกาศบนจอ)
+  const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
@@ -612,22 +614,49 @@ export default function FactoryMap({ setupMode = false }) {
   usePolling(loadStatus, RATE.ANDON);
 
   /* ── ⚡ พลังงานไฟฟ้ารายเดือน (DR · เฟส 1 กรอกมือที่ /energy) ──────────────────
-     ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน — โหลดเดือนปัจจุบัน + เดือนก่อนไว้เทียบ
-     ไม่ต้อง refresh ถี่ (ข้อมูลรายเดือน) โหลดครั้งเดียวตอนเปิดหน้าพอ */
+     ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน
+     ⚠️ **ข้อมูลพลังงานเป็นรายเดือน ไม่ใช่ live** — ของเดิมล็อกไว้ที่ `monthKeyOf()` (เดือนปัจจุบัน)
+        ค่าไฟบิลจริงมาช้าเป็นสัปดาห์ → ต้นเดือนยังไม่มีใครกรอก **ทั้งผังขึ้น "ยังไม่กรอก" ทุกกรอบ**
+        ทั้งที่เดือนก่อนกรอกครบแล้ว (เจอจริง 2026-08-20: ข้อมูลอยู่ ก.ค. แต่ผังมองหา ส.ค.)
+     → ถอยหาเดือนล่าสุดที่มีข้อมูลจริง (ไม่เกิน 6 เดือน) แล้ว **ประกาศเดือนที่ใช้บนหน้าจอเสมอ**
+        (จอนี้เป็นจอ live ทุก metric อื่น — ไม่บอกเดือน คนจะอ่านเป็นค่าปัจจุบัน)
+     ⚠️ key ต้องมี scope_kind ด้วย — ไลน์กับโซนชื่อชนกันได้ (เดิมใช้ scope_name ล้วน) */
   const loadEnergy = useCallback(async () => {
-    const cur = monthKeyOf(), prev = shiftMonth(cur, -1);
+    const win = monthRange(monthKeyOf(), 7);          // 6 เดือนย้อนหลัง + เดือนปัจจุบัน
     const { data, error } = await supabaseDR.from('energy_monthly')
-      .select('scope_name, month_key, qty, cost, source').eq('utility', 'electric').in('month_key', [cur, prev]);
+      .select('scope_kind, scope_name, month_key, qty, cost, source').eq('utility', 'electric')
+      .gte('month_key', win[0]).lte('month_key', win[win.length - 1]);
     if (error) return;                       // ยังไม่ apply migration = metric ขึ้น "ยังไม่กรอก" ไม่พัง
+    // เดือนล่าสุดที่มีตัวเลขจริงของ "จุดวัด" (ไม่นับแถวบิลทั้งโรงงานอย่างเดียว — ผังโชว์รายจุด)
+    const filled = new Set((data || [])
+      .filter(r => r.qty != null && r.scope_kind !== 'plant').map(r => r.month_key));
+    const cur = [...win].reverse().find(mk => filled.has(mk)) || monthKeyOf();
+    const prev = shiftMonth(cur, -1);
     const out = {};
     for (const r of data || []) {
+      if (r.scope_kind === 'plant') continue;
+      if (r.month_key !== cur && r.month_key !== prev) continue;
       const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null });
       if (r.month_key === cur) { o.qty = Number(r.qty) || 0; o.cost = Number(r.cost) || 0; o.source = r.source; }
       else o.prev = Number(r.qty) || 0;
     }
+    setEnergyMonth(cur);
     setEnergyStatus(out);
+    // ⚠️ EF โหลดแยก best-effort — ยังไม่ apply migration C1 = ไม่มี tCO2e แต่ kWh ยังขึ้นปกติ
+    const { data: ef } = await supabaseDR.from('energy_emission_factors')
+      .select('utility_key, kg_co2e, effective_from');
+    setEnergyEf(efFor('electric', cur, ef || []));
   }, []);
   useEffect(() => { loadEnergy(); }, [loadEnergy]);
+
+  /* จุดที่กรอกค่าไฟไว้แต่ **ยังไม่ได้ตีกรอบบนผัง** = ตัวเลขหายไปเฉยๆ ไม่มีใครเห็น
+     ห้ามเงียบ — ขึ้นชิปเตือนพร้อมรายชื่อ (หลักเดียวกับ "จอแคบ · ซ่อนป้าย N ไลน์") */
+  const energyNoRegion = useMemo(() => {
+    if (metric !== 'energy') return [];
+    const drawn = new Set(regions.map(r => r.line_name));
+    return Object.entries(energyStatus)
+      .filter(([n, v]) => v.qty != null && !drawn.has(n)).map(([n]) => n);
+  }, [metric, regions, energyStatus]);
 
   /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
   const loadManpower = useCallback(async () => {
@@ -1069,6 +1098,8 @@ export default function FactoryMap({ setupMode = false }) {
     }
     const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
     agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
+    // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
+    agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
@@ -1449,6 +1480,26 @@ export default function FactoryMap({ setupMode = false }) {
         {Object.entries(METRICS).map(([k, m]) => (
           <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
         ))}
+        {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
+            ไม่งั้นคนอ่านเป็นค่าปัจจุบัน (จอนี้ทุกอย่างสดหมด) */}
+        {!editing && metric === 'energy' && (
+          <span style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
+            <b style={{ color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px' }}>
+              📅 {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
+            </b>
+            <span style={{ color: 'var(--muted)' }}>
+              {energyMonth && energyMonth !== monthKeyOf() && <b style={{ color: '#f59e0b' }}>เดือนล่าสุดที่มีข้อมูล · </b>}
+              สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)
+              {!energyEf && <> · <span title="ตั้งค่าที่ /energy แท็บ ⚙️">ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e</span></>}
+            </span>
+          </span>
+        )}
+        {!editing && metric === 'energy' && !!energyNoRegion.length && (
+          <span title={`ยังไม่ได้ตีกรอบ: ${energyNoRegion.join(', ')}`}
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap' }}>
+            ⚠ กรอกค่าไฟไว้แต่ยังไม่ได้ตีกรอบบนผัง {energyNoRegion.length} จุด — ตัวเลขไม่โผล่
+          </span>
+        )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
           <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1811,6 +1862,13 @@ export default function FactoryMap({ setupMode = false }) {
                       {t || '—'}
                       {/* ไลน์เครื่องขนาน: บอกว่า "ควรได้" คิดจากเครื่องที่เดินได้จริงกี่เครื่อง
                           ไม่งั้นคนอ่านไม่ออกว่าทำไมตัวเลขเปลี่ยนไปตามวัน (คนมาไม่เท่ากัน) */}
+                      {k === 'energy' && st.kwh != null && (
+                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
+                          {st.kwhCost ? `${fmtBaht(st.kwhCost)} บาท · ` : ''}
+                          {st.kwhCo2 != null ? `🌱 ${fmtTco2e(st.kwhCo2)} tCO2e · ` : ''}
+                          {energyMonth ? monthLabel(energyMonth) : ''}
+                        </span>
+                      )}
                       {k === 'productivity' && st.capN > 1 && (
                         <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginTop: 1 }}>
                           {st.runN < st.capN
