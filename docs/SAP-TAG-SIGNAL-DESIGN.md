@@ -96,6 +96,62 @@ PART `NUT WELD 10MM HF THDLS 10` / `W520783-S300` / MAT.SAP `30046828`
 
 ---
 
+## 2.8 ⭐⭐⭐ โปรแกรม SAP ต้นทาง: `Program Print TAG Card for KANBAN`
+
+user เปิดหน้าจอจริงให้ดู (2026-08-21) — **เป็น ALV list มีข้อมูลครบทุกช่องที่เราต้องการอยู่แล้ว**
+
+| คอลัมน์ในจอ SAP | ตัวอย่าง | ตรงกับอะไร |
+|---|---|---|
+| Production date | 19.08.2026 / 20.08.2026 | วันสั่งผลิต |
+| **Production order** | 32140276983 / **32140277033** | = PROD.NO. บนบัตร |
+| **Material number** | **10100384** | = MAT.NO |
+| Plant | 2140 | |
+| **Batch** | 0060556874 / **0060582391** | = BATCH NO บนบัตร |
+| Reprint | 1 | **นับจำนวนครั้งที่พิมพ์ซ้ำ** |
+| **ID KANBAN** | **0012039215 / 0012039032** | ← **ตัวตนของบัตร** |
+| **No.** | 246 / 198 / 063 | = KANBAN No. บนบัตร |
+| **Status** | **Empty** | ← **SAP รู้สถานะบัตรอยู่แล้ว** |
+| Date / Time | 20.08.2026 06:36:13 | |
+| User Print | S214PD04 | ใครสั่งพิมพ์ |
+| Date Print / Time Prt | 21.08.2026 08:42:35 | = PRINT DATE บนบัตร |
+
+→ **ไม่ต้องออกแบบข้อมูลใหม่เลย** โครงตาราง `sap_prod_orders` ลอกจากหน้าจอนี้ได้ตรงๆ
+
+### ⚠️ กฎเหล็ก 4 — เลขบัตรมี 2 encoding ต้อง normalize เป็น "core 8 หลัก"
+
+**พิสูจน์กับข้อมูลจริงแล้ว (mat ตรงกันทั้ง 2 คู่):**
+
+| ที่มา | รูปแบบ | ตัวอย่าง |
+|---|---|---|
+| **จอ SAP (ID KANBAN)** | `00` + core8 | `0012039457` · `0012039994` |
+| **บาร์โค้ดขวาล่างบนบัตร (ที่หน้างานสแกน)** | `0` + core8 + check | `0120394570` · `0120399940` |
+| **core 8 หลัก = ตัวตนจริงของบัตร** | | `12039457` · `12039994` |
+
+**ข้อมูลจริงในระบบ:** 8,237 ใบเป็นแบบบาร์โค้ด (`01…`) · **2 ใบเป็นแบบจอ SAP (`00…`)**
+→ 2 ใบนั้น **ระบบมองเป็นคนละบัตร ทั้งที่เป็นใบเดียวกัน** (เทียบ core แล้วตรง + mat ตรง)
+
+**เมื่อทำตัวนำเข้า ต้อง normalize ทั้ง 2 ฝั่งเป็น core 8 หลักก่อนจับคู่เสมอ**
+ไม่งั้นรายการที่ planner อัพเข้า (จากจอ SAP) จะไม่มีวันจับคู่กับใบที่หน้างานสแกน (จากบาร์โค้ด)
+→ helper ตัวนี้ต้องอยู่**จุดเดียว** (เสนอ `src/utils/kanbanCardNo.js`) พร้อมเทส
+
+### 2.9 ⚠️ โปรแกรม SAP นี้ **สั่งพิมพ์ได้ แต่ export ไม่ได้** (user แจ้ง 2026-08-21)
+
+toolbar มีปุ่มพิมพ์/ค้นหา/กรอง แต่ไม่มีปุ่ม export → **แผน "planner อัพไฟล์" ยังไม่พร้อมทันที**
+
+**ทางออกเรียงตามความง่าย:**
+
+| # | ทาง | หมายเหตุ |
+|---|---|---|
+| 1 | เมนู **System → List → Save → Local File** (หรือ `List → Export`) | ทางมาตรฐาน SAP ใช้ได้กับ list ส่วนใหญ่แม้ toolbar ไม่มีปุ่ม — **ลองก่อนเสมอ** |
+| 2 | **Ctrl+Y เลือกบล็อก → Ctrl+C → วางในระบบเรา** | **ALV copy ได้เสมอ ไม่มีทางถูกปิด** |
+| 3 | ขอ IT/ABAP เปิดสิทธิ์ export หรือเพิ่มปุ่มในโปรแกรม | ช้ากว่า แต่ยั่งยืนสุด |
+| 4 | พิมพ์เป็นไฟล์ (print to file) แล้ว parse | ข้อมูลอาจเพี้ยนจากการจัดหน้า |
+
+**→ ออกแบบตัวนำเข้าให้รับ "การวางข้อความ (paste)" เป็นทางหลัก และรับไฟล์เป็นทางเสริม**
+เพราะทาง 2 ใช้ได้แน่นอนโดยไม่ต้องรอใคร · แยกคอลัมน์ด้วย tab/ช่องว่างหลายตัว · **พรีวิวก่อนบันทึกเสมอ**
+
+---
+
 ## 3. สภาพข้อมูลจริงในระบบ (ตรวจ 2026-08-21)
 
 ### 3.1 ใครสแกนบัตร ใครยังไม่มีบัตร
@@ -170,19 +226,22 @@ ESM  ── ใครต้องทำอะไร / ของอยู่ไ�
 
 **ตารางใหม่ `sap_prod_orders` (DR)**
 ```
-sap_prod_no text      -- PROD.NO. จริงจาก SAP (32140277033)
-mat_no text           -- MAT.NO (10100384)
-p_no text             -- P/NO เลขลูกค้า (RB3B 16E060 BA)
-qty_total integer     -- ยอดทั้งใบสั่ง
+card_core text        -- ⭐ core 8 หลักของ ID KANBAN (12039457) = กุญแจจับคู่ ห้ามใช้เลขดิบ
+kanban_no text        -- No. บนจอ SAP / KANBAN No. บนบัตร (246)
+sap_prod_no text      -- Production order (32140277033)
+mat_no text           -- Material number (10100384)
+batch_no text         -- Batch (0060582391)
+plant text            -- Plant (2140)
+prod_date date        -- Production date
 qty_per_container int -- QUANTITY บนบัตร = กี่ชิ้นต่อภาชนะ
-line_name text        -- ไลน์ที่ผลิต (จาก dr_products.line_name ถ้าไฟล์ไม่มี)
-receiver text         -- RECEIVER (W403)
-batch_no text
-due_date date
-status text           -- open | running | done | cancelled
-source text           -- upload | manual
+line_name text        -- ไลน์ที่ผลิต (จาก dr_products.line_name ถ้าต้นทางไม่มี)
+sap_status text       -- Status จากจอ SAP (Empty/…)
+reprint int           -- Reprint
+printed_by text       -- User Print · printed_at timestamptz
+status text           -- open | running | done | cancelled  (สถานะฝั่งเรา)
+source text           -- paste | upload | manual
 uploaded_by / uploaded_at
-unique (sap_prod_no, mat_no)
+unique (card_core)
 ```
 
 **flow:** planner อัพไฟล์ (พรีวิวก่อนเสมอ แบบเดียวกับตัวนำเข้า Parts Master / PE Excel)
