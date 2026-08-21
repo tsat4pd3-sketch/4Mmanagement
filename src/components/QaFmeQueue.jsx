@@ -166,6 +166,8 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                     min={0.1} step={0.1} onSave={v => saveCfg({ mid_lot_ratio: v })} />
                   <Num label="เพดานต่อรอบ (ครั้ง)" value={cfg.mid_max_per_run ?? 12}
                     min={1} onSave={v => saveCfg({ mid_max_per_run: v })} />
+                  <Num label="คาบต่ำสุดที่ยอมรับ (ชิ้น)" value={cfg.mid_min_pcs ?? 10}
+                    min={1} onSave={v => saveCfg({ mid_min_pcs: v })} />
                 </>
               ) : String(cfg.mid_mode) === 'min' ? (
                 <Num label="รุ่นวิ่งเกินกี่นาทีถึงเรียก" value={cfg.mid_after_min} onSave={v => saveCfg({ mid_after_min: v })} />
@@ -177,6 +179,8 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 ตัวคูณข้างบน — ลอทใหญ่ผลิตทั้งวันจะถูกเรียกหลายครั้ง · ลอทสั้นที่ผลิตไม่ถึง 1 ล็อตจะไม่ถูกเรียกเลย
                 <br /><b style={{ color: '#f59e0b' }}>พาร์ทที่ยังไม่ตั้ง lot size จะไม่มีการตรวจ Middle</b> (ระบบไม่เดาให้)
                 — First / End ยังทำงานตามปกติ
+                <br />พาร์ทที่ตั้ง lot size ไว้ <b>เล็กกว่า "คาบต่ำสุดที่ยอมรับ"</b> (เช่น ตั้งไว้ 1 ชิ้น)
+                ถือว่ายังตั้งไม่ถูก — ระบบจะไม่ตั้ง Middle ให้ แล้วรายงานไว้ให้ไปแก้ที่ Kanban Std
               </div>
             )}
           </div>
