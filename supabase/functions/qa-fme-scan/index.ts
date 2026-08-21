@@ -172,10 +172,13 @@ Deno.serve(async (req) => {
        ลงคอลัมน์นี้เมื่อ calc_type = production → ค่า 1 = "1 ใบต่อล็อต" ไม่ใช่ 1 ชิ้น
        ข้อมูลจริง: 8 พาร์ทได้ 1 · 4 พาร์ทได้ 3,000-6,000 · 13 พาร์ทไม่มีค่า = ไม่มีตัวไหนเป็นล็อตผลิต
 
-       ขนาดล็อตจริง (หน่วยชิ้น) ที่ planner กรอกเอง อยู่ที่ `kanban_calc_params`
-         · calc_type = production  → `lot_qty`   (ล็อตผลิตของไลน์ปั๊ม)
-         · calc_type = withdrawal  → `lot_size`  (ล็อตเบิกถอน)
-       ลำดับ: lot_qty → lot_size(param) → lot_size(kanban_standards · ท้ายสุด เพราะปนหน่วย) */
+       ⚠️ `kanban_calc_params.lot_size` (ช่อง LOT ในแท็บ Withdrawal) ก็เป็น **"ใบ" ไม่ใช่ "ชิ้น"**
+          พิสูจน์จากสูตร: `totalKanban = maxKanban + lotSize` (บวกกับจำนวนใบตรงๆ)
+          ตรงกับหน้าจอจริง MAX 88 + LOT 300 = TOTAL 388 → ห้ามเอามาเป็นคาบตรวจ
+
+       เหลือช่องเดียวที่เป็น "ชิ้น" แน่นอน = `kanban_calc_params.lot_qty` (แท็บ Production)
+         พิสูจน์: `infoLT = lot_qty × CT` (เวลา = ชิ้น × วินาที/ชิ้น) และ `⌈lot_qty / packaging⌉` = ใบ/ล็อต
+       ⇒ พาร์ทฝั่งประกอบ (withdrawal) **ไม่มีขนาดล็อตผลิตอยู่ในระบบเลย** ต้องรอต่อกับ Control Plan */
     type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null; lot_size: number | null };
     const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size');
     const paramRows = new Map<string, Kparam>();
@@ -187,12 +190,9 @@ Deno.serve(async (req) => {
     const pos = (v: unknown) => { const n = Number(v); return n > 0 ? n : 0; };
     for (const mat of new Set([...lotRows.keys(), ...paramRows.keys()])) {
       const p = paramRows.get(mat);
-      const cand: [string, number][] = [
-        ['calc_params.lot_qty', pos(p?.lot_qty)],
-        ['calc_params.lot_size', pos(p?.lot_size)],
-      ];
-      const hit = cand.find(([, v]) => v > 0);
-      if (hit) { lotByMat.set(mat, hit[1]); lotSource.set(mat, hit[0]); continue; }
+      // ช่องเดียวที่หน่วยเป็น "ชิ้น" แน่นอน — ที่เหลือเป็น "ใบ" ห้ามเอามาใช้เป็นคาบตรวจ
+      const lotQty = pos(p?.lot_qty);
+      if (lotQty > 0) { lotByMat.set(mat, lotQty); lotSource.set(mat, 'calc_params.lot_qty'); continue; }
       // ท้ายสุดค่อยใช้ kanban_standards (ปนหน่วย "ใบ" กับ "ชิ้น" — ด่าน mid_min_pcs จะกรองอีกชั้น)
       const vals = [...new Set((lotRows.get(mat) ?? []).map(r => pos(r.lot_size)).filter(v => v > 0))];
       if (vals.length === 1) { lotByMat.set(mat, vals[0]); lotSource.set(mat, 'kanban_standards.lot_size'); }
