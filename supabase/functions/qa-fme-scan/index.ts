@@ -156,10 +156,21 @@ Deno.serve(async (req) => {
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
     /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
        ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
-    const kstd = await dr<{ mat_no: string; lot_size: number | null }>(
-      'kanban_standards?select=mat_no,lot_size&is_active=eq.true');
+    type Kstd = { mat_no: string; lot_size: number | null; qty_per_kanban: number | null;
+                  min_qty: number | null; max_qty: number | null; line_name: string | null };
+    const kstd = await dr<Kstd>(
+      'kanban_standards?select=mat_no,lot_size,qty_per_kanban,min_qty,max_qty,line_name&is_active=eq.true');
+    /* ⚠️ 1 mat มีได้หลายแถว (คนละไลน์/ปลายทาง) — เดิม `set()` ทับกันไปเรื่อยๆ แถวสุดท้ายชนะ
+       = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
+    const lotRows = new Map<string, Kstd[]>();
+    for (const k of kstd) if (k.mat_no) lotRows.set(k.mat_no, [...(lotRows.get(k.mat_no) ?? []), k]);
     const lotByMat = new Map<string, number>();
-    for (const k of kstd) if (k.mat_no && (k.lot_size ?? 0) > 0) lotByMat.set(k.mat_no, k.lot_size as number);
+    const lotConflict = new Map<string, number[]>();
+    for (const [mat, rows] of lotRows) {
+      const vals = [...new Set(rows.map(r => Number(r.lot_size) || 0).filter(v => v > 0))];
+      if (vals.length === 1) lotByMat.set(mat, vals[0]);
+      else if (vals.length > 1) lotConflict.set(mat, vals.sort((a, b) => a - b));
+    }
     const { data: partRules } = await supabase.from('qa_fme_part_rules').select('*');
     const ruleByMat = new Map<string, { mid_every_pcs: number | null; is_active: boolean }>();
     for (const r of partRules ?? []) ruleByMat.set(r.mat_no, r);
@@ -266,6 +277,8 @@ Deno.serve(async (req) => {
           return every;
         }
       }
+      // ค่าไม่ตรงกันระหว่างแถว = "ไม่รู้ว่าอันไหนใช่" ไม่ใช่ "ไม่มี" — แยกให้ขาด (รายงานคนละช่อง)
+      if ([r.mat, ...r.mats].some(m => lotConflict.has(m))) return null;
       noLot.add(r.mat);        // ยังไม่ตั้ง lot_size → รายงานออกไป ไม่เงียบ
       return null;
     };
@@ -380,6 +393,14 @@ Deno.serve(async (req) => {
           // ตั้ง lot_size ไว้ แต่เล็กจนไม่น่าใช่ขนาดล็อตจริง (เช่น 1) → ไม่ตั้ง Middle · ต้องไปแก้ master
           middle_lot_too_small: [...tooSmall].map(([mat, every]) => ({ mat, every, min: midMin })),
           mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every })),
+          // lot_size ไม่ตรงกันระหว่างแถวของ mat เดียวกัน → ไม่เลือกให้เอง ต้องไปจัดข้อมูล/ตั้ง override
+          middle_lot_conflict: [...lotConflict].map(([mat, lots]) => ({ mat, lots })),
+          // ค่าดิบจาก kanban_standards ของ mat ที่อยู่ในรอบจริง — ไว้ยืนยันว่าระบบอ่านอะไรมา (ห้ามเดา)
+          kanban_rows: [...new Set(list.flatMap(r => [r.mat_no, ...r.mat_group]))]
+            .flatMap(m => (lotRows.get(m) ?? []).map(k => ({
+              mat: m, line: k.line_name, lot_size: k.lot_size,
+              qty_per_kanban: k.qty_per_kanban, min_qty: k.min_qty, max_qty: k.max_qty,
+            }))),
           mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
           mid_min_pcs: midMin, mid_max_per_run: Number(cfg.mid_max_per_run ?? 12),
         },
