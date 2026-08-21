@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -327,6 +328,12 @@ export default function DieRegistry() {
         ]}
         tab={tab} onTab={setTab}
       />
+
+      {/* ⚠️ /die-registry เปิดให้ role `mtn` ด้วย — ถ้าวันหน้าถอด machines:edit ออกจาก mtn
+          ปุ่มแก้จะหายทั้งหน้าโดยไม่มีคำอธิบาย (กับดักเดียวกับตารางกะ) */}
+      <ReadOnlyNote show={!canEdit} role={role} what="แก้ทะเบียนแม่พิมพ์"
+        permKey="machines:edit"
+        hint="แม่พิมพ์ใช้ตัวตนเดียวกับเครื่องจักร จึงคุมด้วยสิทธิ์เดียวกัน" />
 
       {tab === 'layout' && (
         <DieLayout

@@ -8,6 +8,7 @@
  *    หน้านี้ทำหน้าที่ "โหลดข้อมูล + แสดงผล" เท่านั้น ห้ามคำนวณ OEE/CT/AT เองที่นี่
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -480,6 +481,9 @@ export default function VSM() {
           ? 'มุมมองสด: สถานะไลน์ · OEE กะปัจจุบัน · คงคลัง ▲ ปัจจุบัน — ไม่ใช่เอกสารทางการ'
           : 'เลือกสินค้าสำเร็จรูป → ระบบดึง CT · %OEE · C/O · LOT · คงคลัง · TT จากข้อมูลจริงมาสร้างผังให้'}
         tabs={TABS} tab={tab} onTab={setTab} />
+
+      <ReadOnlyNote show={!canManage} role={role} what="สร้าง/แก้ใบ VSM"
+        permKey="vsm:manage" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
 
       {tab === 'doc' && <>
       {/* ── แถบควบคุม ── */}

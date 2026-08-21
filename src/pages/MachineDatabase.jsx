@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -250,6 +251,8 @@ export default function MachineDatabase() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ทะเบียนเครื่องจักร"
+        permKey="machines:edit, machines:create" />
       <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -147,6 +148,8 @@ export default function PmCoordination() {
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1400px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canManage} role={role} what="สร้าง/แก้แผนประสานงาน PM"
+        permKey="pm_coord:manage" hint="ฝ่ายผลิตดูแผนที่ถูกนัดและพิมพ์ใบได้ตามปกติ (ตั้งใจให้เห็นทุก role)" />
       <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🗓️ แผนประสานงาน PM / งานเครื่องจักร</h1>
         <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>งาน PM/แก้เครื่องหลายวัน · แจ้ง Production ล่วงหน้า</span>

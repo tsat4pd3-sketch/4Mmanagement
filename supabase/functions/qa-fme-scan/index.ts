@@ -99,7 +99,8 @@ async function dr<T>(path: string): Promise<T[]> {
 
 type Sess = { id: string; work_date: string; line_name: string; shift: string; status: string; closed_at: string | null };
 type Ord  = { id: string; session_id: string; mat_no: string | null; part_name: string | null;
-              status: string; opened_at: string | null; confirmed_at: string | null };
+              status: string; opened_at: string | null; confirmed_at: string | null;
+              qty: number | null; qty_ok: number | null; qty_actual: number | null };
 type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null;
               p_no: string | null; is_operation: boolean | null; op_parent_mat: string | null };
 
@@ -151,8 +152,17 @@ Deno.serve(async (req) => {
 
     const sIds = sessions.map(s => s.id);
     const orders = await dr<Ord>(
-      `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at&session_id=in.(${sIds.join(',')})`);
+      `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at,qty,qty_ok,qty_actual&session_id=in.(${sIds.join(',')})`);
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
+    /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
+       ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
+    const kstd = await dr<{ mat_no: string; lot_size: number | null }>(
+      'kanban_standards?select=mat_no,lot_size&is_active=eq.true');
+    const lotByMat = new Map<string, number>();
+    for (const k of kstd) if (k.mat_no && (k.lot_size ?? 0) > 0) lotByMat.set(k.mat_no, k.lot_size as number);
+    const { data: partRules } = await supabase.from('qa_fme_part_rules').select('*');
+    const ruleByMat = new Map<string, { mid_every_pcs: number | null; is_active: boolean }>();
+    for (const r of partRules ?? []) ruleByMat.set(r.mat_no, r);
 
     /* ── 2) จับคู่ RH/LH เป็น "รุ่นเดียวกัน" — ตัวแทนกลุ่ม = mat ที่เรียงน้อยกว่า ── */
     const pairOf = new Map<string, string>();
@@ -183,7 +193,7 @@ Deno.serve(async (req) => {
 
     /* ── 3) แตกเป็น "run" ต่อ (กะ × รุ่น) ── */
     type Run = { sess: Sess; mat: string; mats: Set<string>; name: string;
-                 firstOpen: string; lastAct: string; allDone: boolean };
+                 firstOpen: string; lastAct: string; allDone: boolean; list: Ord[] };
     const runs = new Map<string, Run>();
     const sessById = new Map(sessions.map(s => [s.id, s]));
     for (const o of orders) {
@@ -194,8 +204,9 @@ Deno.serve(async (req) => {
       const key = `${sess.id}|${mat}`;
       const r = runs.get(key) ?? {
         sess, mat, mats: new Set<string>(), name: nameOf.get(mat) || o.part_name || '',
-        firstOpen: o.opened_at, lastAct: o.opened_at, allDone: true,
+        firstOpen: o.opened_at, lastAct: o.opened_at, allDone: true, list: [],
       };
+      r.list.push(o);
       r.mats.add(o.mat_no);
       if (o.opened_at < r.firstOpen) r.firstOpen = o.opened_at;
       const act = o.confirmed_at || o.opened_at;
@@ -208,17 +219,42 @@ Deno.serve(async (req) => {
     const skipBefore = new Date(now.getTime() - cfg.skip_older_min * 60_000).toISOString();
     type Want = { work_date: string; shift: string; line_name: string; mat_no: string; mat_group: string[];
                   product_name: string; stage: string; trigger_reason: string; session_id: string;
-                  triggered_at: string; due_at: string };
+                  triggered_at: string; due_at: string; seq: number; at_qty: number | null };
     const want: Want[] = [];
-    const add = (r: Run, stage: string, reason: string, at: string, dueMin: number) => {
+    const add = (r: Run, stage: string, reason: string, at: string, dueMin: number,
+                 seq = 1, atQty: number | null = null) => {
       if (at < skipBefore) return;      // เก่าเกินไป (เพิ่งเปิดสวิตช์) — ไม่ย้อนหลังให้ท่วมห้องแชท
       want.push({
         work_date: r.sess.work_date, shift: r.sess.shift, line_name: r.sess.line_name,
         mat_no: r.mat, mat_group: [...r.mats], product_name: r.name,
         stage, trigger_reason: reason, session_id: r.sess.id,
         triggered_at: at, due_at: new Date(new Date(at).getTime() + dueMin * 60_000).toISOString(),
+        seq, at_qty: atQty,
       });
     };
+
+    /* คาบตรวจ Middle ของรุ่นนี้ (ชิ้น) — override รายพาร์ท > lot_size × ratio > ไม่รู้ = null
+       ⚠️ null = ข้ามการตรวจ Middle ของพาร์ทนั้น **ห้ามเดาเป็นค่า default** */
+    const noLot = new Set<string>();
+    const midEveryFor = (r: Run): number | null => {
+      for (const m of [r.mat, ...r.mats]) {
+        const rule = ruleByMat.get(m);
+        if (rule) {
+          if (rule.is_active === false) return null;             // ตั้งใจปิดพาร์ทนี้
+          if ((rule.mid_every_pcs ?? 0) > 0) return rule.mid_every_pcs as number;
+        }
+      }
+      for (const m of [r.mat, ...r.mats]) {
+        const lot = lotByMat.get(m);
+        if (lot) return Math.max(1, Math.round(lot * Number(cfg.mid_lot_ratio ?? 1)));
+      }
+      noLot.add(r.mat);        // ยังไม่ตั้ง lot_size → รายงานออกไป ไม่เงียบ
+      return null;
+    };
+    // ยอดผลิตของ 1 ใบ — สูตรบังคับของโปรเจค (CLAUDE.md): ปิดแล้วใช้ qty_ok ?? qty · ยังเปิดใช้ qty_actual
+    const qtyOf = (o: Ord) => o.status === 'confirmed'
+      ? (Number(o.qty_ok ?? o.qty) || 0)
+      : (Number(o.qty_actual) || 0);
 
     const bySess = new Map<string, Run[]>();
     for (const r of runs.values()) {
@@ -233,8 +269,31 @@ Deno.serve(async (req) => {
         // first — รุ่นแรกของกะ = "เปลี่ยนกะ" · รุ่นถัดมา = "เปลี่ยนรุ่น"
         add(r, 'first', i === 0 ? 'shift_start' : 'model_change', r.firstOpen, cfg.first_due_min);
 
-        // middle — เฉพาะเมื่อเปิดใช้ (default 0 = ปิด ตามที่ user ระบุ "เฉพาะเปลี่ยนรุ่น/เปลี่ยนกะ")
-        if (cfg.mid_after_min > 0) {
+        /* middle — คาบตาม "ยอดผลิตรายพาร์ท" คำนวณจาก lot_size (คำสั่ง user 2026-08-20)
+           ไล่ใบตามเวลา สะสมยอด · ทุกครั้งที่ข้ามหลัก N ชิ้น = ถึงคิวตรวจ 1 ครั้ง
+           ⇒ ลอทใหญ่ผลิตทั้งวันได้หลายครั้ง · ลอทสั้นจบก่อนถึงหลักแรก = ไม่มีเลย (ถูกต้อง)
+           เวลาที่ใช้ = เวลาของใบที่ทำให้ยอดข้ามหลักนั้น (ไม่ใช่เวลาที่สแกนเจอ) */
+        const midMode = String(cfg.mid_mode ?? 'lot');
+        if (midMode === 'lot') {
+          const every = midEveryFor(r);
+          if (every) {
+            const evts = r.list
+              .map(o => ({ at: o.confirmed_at || o.opened_at, q: qtyOf(o) }))
+              .filter(e => !!e.at && e.q > 0)
+              .sort((a, b) => (a.at as string) < (b.at as string) ? -1 : 1);
+            const cap = Number(cfg.mid_max_per_run ?? 12);
+            let acc = 0, k = 0;
+            for (const e of evts) {
+              acc += e.q;
+              while (acc >= (k + 1) * every && k < cap) {
+                k += 1;
+                add(r, 'middle', 'mid_run', e.at as string, cfg.first_due_min, k, k * every);
+              }
+              if (k >= cap) break;   // เพดานกัน QA ถูกเรียกรัวจนใช้งานไม่ได้
+            }
+          }
+        } else if (midMode === 'min' && cfg.mid_after_min > 0) {
+          // โหมดเดิม (ตามเวลา) — เก็บไว้เผื่อบางไลน์อยากใช้ ไม่ใช่ค่าเริ่มต้นแล้ว
           const midAt = new Date(new Date(r.firstOpen).getTime() + cfg.mid_after_min * 60_000);
           if (midAt <= now && !r.allDone) add(r, 'middle', 'mid_run', midAt.toISOString(), cfg.first_due_min);
         }
@@ -278,7 +337,7 @@ Deno.serve(async (req) => {
     const seen = new Set<string>();
     const rows = want
       .filter(w => {
-        const k = `${w.line_name}|${w.work_date}|${w.shift}|${w.mat_no}|${w.stage}`;
+        const k = `${w.line_name}|${w.work_date}|${w.shift}|${w.mat_no}|${w.stage}|${w.seq}`;
         if (seen.has(k)) return false;
         seen.add(k); return true;
       })
@@ -287,9 +346,9 @@ Deno.serve(async (req) => {
     // ── โหมดทดลอง: บอกว่า "จะเรียกอะไรบ้าง" แล้วจบ (ไม่เขียน ไม่ส่ง) ──
     if (dry) {
       const { data: already } = await supabase.from('qa_fme_obligations')
-        .select('line_name, work_date, shift, mat_no, stage').gte('work_date', yest);
-      const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}`));
-      const list = rows.filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`));
+        .select('line_name, work_date, shift, mat_no, stage, seq').gte('work_date', yest);
+      const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}|${o.seq ?? 1}`));
+      const list = rows.filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}|${r.seq}`));
       return json({
         ok: true, dry: true, enabled: cfg.is_enabled,
         scanned: { sessions: sessions.length, orders: orders.length, runs: runs.size },
@@ -298,12 +357,16 @@ Deno.serve(async (req) => {
           // part_linked = กดปุ่ม "เปิดใบตรวจ" จากคิวได้จริงกี่รายการ (ต้องผูก qa_parts.mat_no ก่อน)
           part_linked: list.filter(r => r.part_id).length,
           op_unlinked: [...new Set(list.flatMap(r => r.mat_group.filter(m => opNoParent.has(m))))],
+          // พาร์ทที่ยังไม่ตั้ง lot_size → ไม่มีการตรวจ Middle เลย (First/End ยังทำงาน) — ต้องเห็น ห้ามเงียบ
+          middle_no_lot_size: [...noLot],
+          mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
         },
         would_create: list.map(r => ({
           line: r.line_name, shift: r.shift, work_date: r.work_date,
           mat: r.mat_no, mats: r.mat_group, product: r.product_name,
           stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
           at: hhmm(r.triggered_at), due: hhmm(r.due_at),
+          seq: r.seq, at_qty: r.at_qty,
           part_linked: !!r.part_id,
         })),
         note: 'โหมดทดลอง — ยังไม่เขียนอะไรลงฐานข้อมูลและไม่ส่ง Telegram',
@@ -312,7 +375,7 @@ Deno.serve(async (req) => {
 
     if (rows.length) {
       const { data: ins, error } = await supabase.from('qa_fme_obligations')
-        .upsert(rows, { onConflict: 'line_name,work_date,shift,mat_no,stage', ignoreDuplicates: true })
+        .upsert(rows, { onConflict: 'line_name,work_date,shift,mat_no,stage,seq', ignoreDuplicates: true })
         .select('id');
       if (error) throw new Error(`สร้างงานตรวจไม่สำเร็จ: ${error.message}`);
       created = ins?.length ?? 0;

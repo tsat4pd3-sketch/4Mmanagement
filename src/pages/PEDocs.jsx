@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -259,6 +260,10 @@ export default function PEDocs() {
           { key: 'rev',  label: `🕘 Revisions (${revs.length})` },
         ] : undefined}
         tab={tab} onTab={setTab} />
+
+      <ReadOnlyNote show={!canEdit} role={role} what="แก้เอกสาร PE"
+        permKey="pe:edit"
+        hint="ดูเอกสาร/นำเข้า/ส่งออกได้ตามปกติ — ที่ปิดคือการเพิ่ม/แก้/ลบแถวในเอกสาร" />
 
       {/* ── เลือกชุดเอกสาร (1 พาร์ท = 1 ชุด PFC+FMEA+CP) ── */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>

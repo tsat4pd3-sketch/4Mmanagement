@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -662,6 +663,8 @@ export default function Improvements() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canManage} role={role} what="เปิด/แก้โปรเจคปรับปรุง"
+        permKey="improvements:manage" hint="ยังดูโปรเจค พาเรโต้ และผลก่อน/หลังได้ตามปกติ" />
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
         <div>

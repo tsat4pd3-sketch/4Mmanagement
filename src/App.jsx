@@ -15,6 +15,8 @@ import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
+import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
+const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -278,7 +280,7 @@ function SplashScreen({ onDone }) {
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
-export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin }) {
+export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs }) {
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
@@ -425,6 +427,18 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
       <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
     </button>
+
+    {/* 🎭 จำลองมุมมอง role — admin จริงเท่านั้น (ตรวจว่า role อื่นเห็นเมนู/ปุ่มอะไร โดยไม่ต้องสลับบัญชี) */}
+    {realRole === 'admin' && onOpenViewAs && (
+      <button
+        onClick={() => { onOpenViewAs(); closeNav?.(); }}
+        className="nav-link"
+        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#c084fc' }}
+      >
+        <span style={{ fontSize: 15, flexShrink: 0 }}>🎭</span>
+        <span style={{ whiteSpace: 'nowrap' }}>จำลองมุมมอง role (ทดสอบ)</span>
+      </button>
+    )}
 
     {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
         🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
@@ -1295,7 +1309,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -1327,8 +1341,33 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // เพดานกะ (สิ้นกะ+60นาที เตะออก) ใช้กับ role หน้างานที่ทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน
   // = หัวหน้าไลน์ (leader) + หัวหน้าส่วน (supervisor) · admin/manager/office ทำงานเครื่องตัวเอง
   // ไม่ต้องโดนเตะรายกะ (มี idle-logout 30 นาทีคุมอยู่แล้ว) · แก้ขอบเขตที่ list นี้จุดเดียว
-  const shiftCapped = ['leader', 'supervisor'].includes(userRole);
+  // ⚠️ เพดานกะตัดสินจาก "role จริง" — admin ที่จำลองมุมมอง leader ต้องไม่โดนเตะออกท้ายกะ
+  const shiftCapped = !viewAs && ['leader', 'supervisor'].includes(userRole);
   const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
+
+  // 🎭 โหมดจำลองมุมมอง role — modal เลือก role (admin จริงเท่านั้น) + ป้ายลอยบอกว่าอยู่ในโหมด
+  const [viewAsOpen, setViewAsOpen] = useState(false);
+  const viewAsBanner = viewAs ? (
+    <div style={{
+      position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
+      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999,
+      background: 'rgba(147,51,234,0.16)', border: '1.5px solid #a855f7', color: '#c084fc',
+      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
+      maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
+    }}>
+      <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}</span>
+      <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>การบันทึกยังเป็นสิทธิ์จริงของ admin</span>
+      <button onClick={() => onApplyViewAs(null)}
+        style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: '#a855f7', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
+        ✕ ออกจากโหมด
+      </button>
+    </div>
+  ) : null;
+  const viewAsModal = (realRole === 'admin' && viewAsOpen) ? (
+    <Suspense fallback={null}>
+      <ViewAsModal current={viewAs} onClose={() => setViewAsOpen(false)} onApply={onApplyViewAs} />
+    </Suspense>
+  ) : null;
 
   // 🔎 ค้นหาเมนู (Ctrl/⌘+K) — เมนู 51 รายการ 8 หมวด หาไม่เจอถ้าไม่มีทางลัด (NAVIGATION-REVIEW §2.5)
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1374,18 +1413,20 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
             userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved} />
         </Suspense>
+        {viewAsBanner}
+        {viewAsModal}
       </UserContext.Provider>
     );
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, sidebarOpen: isOpen }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -1421,7 +1462,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           onOpenPalette={() => setPaletteOpen(true)}
           pinned={railPinned}
           onTogglePin={toggleRailPin}
+          realRole={realRole}
+          onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
         />
+        {viewAsBanner}
+        {viewAsModal}
 
         <main style={{
           flex: 1,
@@ -1656,6 +1701,40 @@ export default function App() {
   // bump เมื่อ role_permissions เปลี่ยน (realtime) เพื่อให้ sidebar/route ที่อ่าน cache แบบ sync re-render
   const [permsVersion,  setPermsVersion]  = useState(0);
 
+  /* ── 🎭 โหมดจำลองมุมมอง role (admin เท่านั้น · 2026-08-19) ──────────────────────
+     admin สลับดูระบบเป็น role อื่นเพื่อตรวจว่า "user เห็นเมนู/ปุ่ม/ข้อมูลอะไรบ้าง"
+     - เก็บใน sessionStorage = ต่อแท็บ (เปิดแท็บใหม่ = ยังเป็น admin ปกติ · refresh คงโหมดไว้)
+     - จำลองเฉพาะฝั่งจอ (UI gating + scope) — RLS ฝั่ง DB ยังเป็น admin จริง การบันทึกใช้สิทธิ์จริงเสมอ
+     - honored เฉพาะเมื่อ role จริง = admin (แก้ sessionStorage มือจาก role อื่น = เมิน — จำลองได้แต่ "ลดสิทธิ์"
+       อยู่แล้ว แต่กันความสับสน) */
+  const [viewAs] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('esm-view-as') || 'null'); } catch { return null; }
+  });
+  const impersonating = userRole === 'admin' && !!viewAs?.role;
+  const applyViewAs = (cfg) => {
+    try {
+      if (cfg) sessionStorage.setItem('esm-view-as', JSON.stringify(cfg));
+      else sessionStorage.removeItem('esm-view-as');
+    } catch { /* private mode */ }
+    // full reload ไปหน้าหลัก — ล้าง state ของหน้าที่ mount ค้าง (data ถูก query ด้วย scope ของ role เดิม)
+    window.location.assign('/');
+  };
+  // bucket dept_admin ของ hasPermission เป็น module-flag — ต้องตามโหมดจำลองด้วย
+  useEffect(() => {
+    if (!profileLoaded) return;
+    setDeptAdmin(impersonating ? !!viewAs?.deptAdmin : userIsDeptAdmin);
+  }, [profileLoaded, impersonating, viewAs, userIsDeptAdmin]);
+  // ค่า effective ที่ส่งเข้า layout ทั้งต้น (จำลอง = ทับด้วยค่าที่เลือกในโหมด)
+  const effRole     = impersonating ? viewAs.role : userRole;
+  const effLineId   = impersonating ? (viewAs.lineId ?? null) : userLineId;
+  const effTeam     = impersonating ? (viewAs.team ?? null) : userTeam;
+  const effSection  = impersonating ? ((viewAs.sections || [])[0] ?? null) : userSection;
+  const effSections = impersonating
+    ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null)
+    : userSections;
+  const effMtnTeams = impersonating ? (Array.isArray(viewAs.mtnTeams) ? viewAs.mtnTeams : []) : userMtnTeams;
+  const effDeptAdmin = impersonating ? !!viewAs.deptAdmin : userIsDeptAdmin;
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('4m-theme', theme);
@@ -1782,13 +1861,16 @@ export default function App() {
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 permsVersion={permsVersion}
-                userRole={userRole}
-                userLineId={userLineId}
-                userTeam={userTeam}
-                userSection={userSection}
-                userSections={userSections}
-                userMtnTeams={userMtnTeams}
-                userIsDeptAdmin={userIsDeptAdmin}
+                userRole={effRole}
+                realRole={userRole}
+                viewAs={impersonating ? viewAs : null}
+                onApplyViewAs={applyViewAs}
+                userLineId={effLineId}
+                userTeam={effTeam}
+                userSection={effSection}
+                userSections={effSections}
+                userMtnTeams={effMtnTeams}
+                userIsDeptAdmin={effDeptAdmin}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

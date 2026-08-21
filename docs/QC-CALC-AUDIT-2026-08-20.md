@@ -3,8 +3,19 @@
 ตรวจ **7 โดเมนขนานกัน** ครอบทุกฟังก์ชันคำนวณในระบบ · พบ **~114 ข้อ** (🔴 26 · 🟡 48 · 🔵 40)
 ทุกข้อมี "อินพุตจริง → ผลลัพธ์ผิด" กำกับ · ฟังก์ชัน pure พิสูจน์ด้วย `node` แล้ว
 
-> **สถานะ: ยังไม่แก้อะไรทั้งสิ้น** — เอกสารนี้เป็นผลตรวจอย่างเดียว รอตกลงลำดับกับ user ก่อนลงมือ
-> อัพเดทสถานะรายข้อในตารางท้ายเอกสารเมื่อแก้แล้ว
+> **สถานะ: รอบ 1 แก้แล้ว 2026-08-20** (T1-1 · T1-2 · T1-4 · T1-5 · T1-6 · T1-8 · T1-9 · T3-1 · T3-2 · T3-15)
+> รอบ 2-5 ยังไม่แตะ · อัพเดทสถานะที่นี่ทุกครั้งที่แก้
+>
+> **การตัดสินใจของ user (2026-08-20):**
+> 1. **backfill เฉพาะที่พิสูจน์ได้ ถ้าพิสูจน์ไม่ได้ปล่อยไป** (ค่าที่ stamp ผิดจาก T1-5/T3-1)
+> 2. **`lot_size = 1` = "ผลิตตามสั่ง ไม่รอสะสมล็อต" (lot-for-lot)** — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ
+>    · ตรวจข้อมูลจริงแล้ว 22 แถวเป็น `1` เป๊ะทุกแถว (ไม่มี 2-50) และยังไม่สร้างใบสั่งผิดเลย
+>    · **ตัวที่ค้างจริงคือ `lot_size = null`** (30045438 = 275,342 ชิ้น · 30044771 = 257,409 …)
+>    · แก้ label/placeholder ใน `/products` แล้ว — เดิมเขียน "เว้นว่าง = ไม่สะสมเป็นล็อต" ซึ่ง**บอกตรงข้ามกับที่ระบบทำ**
+> 3. **สกิลเฉพาะต้องประจำสถานีเดิม** → T3-38 (`group by assigned_line`) = **ไม่ใช่บั๊ก ปิดเคส**
+>    แต่ T1-8 (สกิลที่ไม่ผูกจุดงานเลย) ยังต้องแก้ — เอา "ไม่รู้" ไปตัดสินว่า "ไม่ได้ใช้"
+> 4. **IDP (จาก SAP) กับค่าซ่อมที่ช่างลง เป็นคนละเรื่องกัน** → ไม่ตัดตัวไหนออก
+>    แต่ต้องทำ "ค่าซ่อมจริง" เป็น toggle ตัวที่ 5 + เขียนกำกับว่าอาจทับกัน (รอบ 3)
 
 **ขอบเขต:** `utils/oee.js` · `DailyReport.computeOEE` · FactoryMap/Dashboard/OEEAnalytics/MorningMeeting/DeptDashboard/monthlyReviewPptx · costSaving/Improvements/capaEffect · capacityModel/ProductionPlan/kanbanCalc/companyCalendar/stdManpower/pmPredictive/vsmModel · pairTotals/opItems/wipChain/demandSupply/matResolve/lineHierarchy/RundownStock/LineStock · QualityControl(SPC/FTT/PPM)/spareRank/pmSchedule/skill farm(SQL)/textCluster/individualSkillPrint · transportGraph/energy/lineFlow/markerScale/timeFrame/navRecent/seededRandom/PeFlowChart/spareImport
 
