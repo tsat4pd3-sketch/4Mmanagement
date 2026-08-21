@@ -262,7 +262,18 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 
 > **⚠️⚠️ กฎเหล็ก — `lot_size` ที่เล็กผิดปกติ = ใบระเบิดเป็นพันใบในวินาทีเดียว (2026-08-21)**
 > ทริกเกอร์ออกใบด้วย `while pending >= lot` = **1 ใบต่อ 1 ล็อต** → `lot_size` เล็ก = จำนวนใบพุ่งเป็น `pending ÷ lot`
-> **เคสจริง:** 4/8 มีคนตั้ง `lot_size = 1` ให้ `50031601` (คอยล์ · กล่องละ 100) ปิดใบผลิตใบเดียว
+> **🔴 ต้นเหตุที่แท้จริง (พบ 2026-08-21 · user ถาม "lot ใบ คือยังไง มันคูณกันอยู่ใช่มั้ย" → ไม่ได้คูณ):**
+> **`kanban_standards.lot_size` เก็บเป็น "ชิ้น" แต่ปุ่ม Apply ของแท็บ 🎴 คำนวณ Kanban เขียนเป็น "ใบ"**
+> — param "Lot" ของแท็บ Withdrawal เป็นจำนวนใบตามสูตร `Total(K/B) = Max + Lot` แต่ `doApply` เอาค่านั้นลง DB ตรงๆ
+> ขณะที่ทุกฝั่งที่อ่านตีความเป็นชิ้น (`fn_explode_child_demand` · ProductMaster · FlowTower · Heijunka · VSM · RoutingPanel)
+> ⇒ **คนกรอกไม่ได้พิมพ์ผิด** เขาใส่ "1 ใบ" ตามหน่วยที่จอบอก แต่โค้ดลืมคูณ Pkg → กลายเป็น "สะสมครบ 1 ชิ้น ออกใบ"
+> - แก้ที่ต้นเหตุแล้ว: **`lotPcsOf(calcType, pp)` ใน `PlannerSales.jsx` จุดเดียว** (ตาราง/Preview/Apply อ่านตัวเดียวกัน)
+>   · withdrawal = ใบ × Pkg · production = `lot_qty` ที่กรอกเป็นชิ้นอยู่แล้ว (เดิมใช้ `kanbanPerLot` ซึ่งเป็นใบเหมือนกัน)
+> - จอต้องเห็นค่าที่จะถูกบันทึกจริง: ใต้ช่อง Lot มี "= N ชิ้น" + Preview มีคอลัมน์ **ขนาดล็อต (ชิ้น) เดิม → ใหม่**
+> - ตามเก็บข้อมูลเก่า: `20260821_fix_lot_size_card_units.sql` (**apply แล้ว · 14 แถว** เช่น 20065715 pkg 100 lot 1→100 · 10100333 pkg 35 lot 15→525)
+>   **แก้เฉพาะแถวที่พิสูจน์ได้ว่ามาจากปุ่ม Apply** (มีแถวคู่ใน `kanban_calc_params` ที่ `lot_size` ตรงกัน = ลายนิ้วมือของ `doApply`)
+>   · อีก 11 แถวที่ `lot_size < pkg` แต่ไม่มี param → **ไม่แตะ** อาจเป็น lot-for-lot ที่ตั้งใจตั้งเองจาก Product Master
+> - **เคสจริงที่เกิดจากบั๊กนี้:** 4/8 `50031601` (คอยล์ · กล่องละ 100) ได้ `lot_size = 1` ปิดใบผลิตใบเดียว
 > → ออก `purchase_requests` **984 ใบ ใบละ 1 ชิ้น** · คิวใบสั่งซื้อพองจาก 40 → 1,024 ใบ (96% ขยะ) จนคิวจริงถูกกลบ
 > แล้วมีคนล้าง `lot_size` กลับเป็น null วันเดียวกัน → **ไม่มีใบสั่งซื้อออกอีกเลย 17 วัน** (คนคิดว่าระบบพัง)
 > - **อุดที่ทริกเกอร์แล้ว: เพดาน `MAX_LOTS = 50` ใบต่อพาร์ทต่อการปิดออเดอร์ 1 ครั้ง** (migration `20260821_explode_demand_lot_guard.sql` · apply แล้ว)
@@ -1041,7 +1052,14 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 - **⚠️ PI (Production) กับ PW (Withdrawal) ไม่คำนวณพาร์ทร่วมกัน — แยกด้วย `dr_products.process_type` ไม่ใช่เลข MAT (2026-08-03 · คำสั่ง user):** Production kanban สั่งไลน์**ปั๊ม/ผลิตเป็น lot** · Withdrawal เบิกถอน/ป้อนไลน์**ประกอบ** · **ห้ามแยกด้วยเลข MAT SAP** — งานปั๊มที่ขายตรงก็เป็น FG เบอร์ 1 ได้ (เลข MAT บอกไม่ได้ว่าปั๊มหรือประกอบ) · เกณฑ์จริง (`procMatchesTab` ใน KanbanCalcTab): Production = `process_type==='metal_forming'` · Withdrawal = `!== 'metal_forming'` (welding_assembly + พาร์ทที่ยังไม่ตั้ง process ซึ่ง default = welding_assembly) · `'common'` (ทุกกระบวนการ) = แสดงทั้ง 2 แท็บ · banner บนแต่ละแท็บนับ "ซ่อน N พาร์ทที่เป็นอีกกระบวนการ" (โปร่งใส ไม่ปล่อยหายเงียบ) + ชี้ให้ตั้ง process_type ที่ Product Master · **ถ้าพาร์ทปั๊มไม่ขึ้นแท็บ Production = process_type ยังไม่ตั้งเป็น metal_forming (data ไม่ใช่ logic)** — แก้ที่ `/products`
 - **เดือน default = เดือนถัดไป** (`nextMonthKey` — planner คำนวณปลายเดือนสำหรับเดือนหน้า) · **วันทำงาน/เดือน ลิงก์ปฏิทินบริษัท** (`countWorkingDays`: จ-ศ − วันหยุด + เสาร์/อาทิตย์ที่มาร์ค `working` · แก้ทับได้) · Production เพิ่มช่อง ชม.ทำงาน/วัน (default 16) คิด available time
 - **flow:** แก้ param ในตาราง (edit ชั่วคราว > param บันทึก `kanban_calc_params` > default จาก master) → ค่าคำนวณอัปเดตทันที → **Preview & Apply**
-- **⚠️ param ที่เป็น "คุณสมบัติสินค้า" ต้องดึงจาก master ไม่ให้กรอกเองทุกเดือน (2026-08-03 · คำสั่ง user "ไม่ควรต้องมากรอกเอง"):** `paramOf` default chain (ใน `firstPos` = ตัวแรกที่ >0): **PKG (จำนวน/กล่อง)** = `parts_master.qty_per_pkg` → `kanban_standards.qty_per_kanban` · **CAP/ชม.** = `3600 ÷ dr_products.cycle_time_sec` · **LOT** = `kanban_standards.lot_size` → 1 · ที่เหลือ (เตรียม/ผันผวน/รอบส่ง/safety/process/setup) = นโยบายวางแผน เก็บใน `kanban_calc_params` ตอน Apply → prefill รอบหน้าเอง (ไม่กรอกซ้ำ) · **PKG ยังว่าง = master ไม่มีค่า (data ไม่ใช่ logic)** → กรอก `qty_per_kanban` ที่ Product Master · **⚠️ `qty_per_kanban` อยู่ตาราง `kanban_standards` ไม่ใช่ `dr_products`** (ห้าม select จาก dr_products = 42703 พังทั้ง tab) → เขียน `kanban_standards` (`min_qty`/`max_qty` = ชิ้น, `qty_per_kanban` = pkg, `total_kanban` = ใบ, `lot_size`) — **Store (LineStock) ดึง min/max ตรงนี้ต่อ = จุดเดียวที่ Store↔Planner sync** · param ที่ใช้จำลง `kanban_calc_params` (รอบหน้า prefill) · **export CSV** (Production แนบตารางสรุป capacity ท้ายไฟล์)
+- **⚠️ param ที่เป็น "คุณสมบัติสินค้า" ต้องดึงจาก master ไม่ให้กรอกเองทุกเดือน (2026-08-03 · คำสั่ง user "ไม่ควรต้องมากรอกเอง"):** `paramOf` default chain (ใน `firstPos` = ตัวแรกที่ >0): **PKG (จำนวน/กล่อง)** = `parts_master.qty_per_pkg` → `kanban_standards.qty_per_kanban` · **CAP/ชม.** = `3600 ÷ dr_products.cycle_time_sec` · **LOT** = `kanban_standards.lot_size` → 1
+- **⚠️ CAP/ชม. ตั้งต้นเป็น "กำลังทางทฤษฎี" ไม่หัก downtime/ของเสีย (user ทัก 2026-08-21):** ระบบมีโมเดลกำลังจริงอยู่แล้วที่
+  **`src/utils/capacityModel.js`** (ProductionPlan ใช้ — median ยอดดีต่อกะ 60 วัน ซึ่ง "บวก OEE/เบรค/NG ไว้ในตัวแล้ว")
+  แต่ Kanban Calc ไม่เคยคุยกับมัน = **มี 2 นิยามของ "กำลังผลิต" ในระบบเดียว**
+  → แท็บ 🎴 โชว์ **"จริง ~N"** ใต้ช่อง CAP = `(3600 ÷ CT) × OEE ของไลน์นั้น` (กะที่ปิดแล้ว 90 วัน · เฉลี่ยด้วย `wavg`+`wLoad` ตามกฎ OEE)
+  ตรงกับสูตร fallback ของ `capacityModel.js` เป๊ะ · **คลิกแล้วเติมค่าให้ แต่ระบบไม่แทนค่าเอง** (จะวางแผนด้วยกำลังทฤษฎี
+  หรือกำลังจริง เป็นการตัดสินใจของผู้วางแผน) · ห่างกัน ≥ 20% = ขึ้นแถบส้มนับให้
+  **⚠️ CAP เพี้ยนกระทบ 2 ทาง:** withdrawal → `prep` เพี้ยน → Max/จำนวนใบเพี้ยน · production → work-time เพี้ยน → **%load ต่ำเกินจริง คิดว่าไลน์ว่างทั้งที่เต็ม** · ที่เหลือ (เตรียม/ผันผวน/รอบส่ง/safety/process/setup) = นโยบายวางแผน เก็บใน `kanban_calc_params` ตอน Apply → prefill รอบหน้าเอง (ไม่กรอกซ้ำ) · **PKG ยังว่าง = master ไม่มีค่า (data ไม่ใช่ logic)** → กรอก `qty_per_kanban` ที่ Product Master · **⚠️ `qty_per_kanban` อยู่ตาราง `kanban_standards` ไม่ใช่ `dr_products`** (ห้าม select จาก dr_products = 42703 พังทั้ง tab) → เขียน `kanban_standards` (`min_qty`/`max_qty` = ชิ้น, `qty_per_kanban` = pkg, `total_kanban` = ใบ, `lot_size`) — **Store (LineStock) ดึง min/max ตรงนี้ต่อ = จุดเดียวที่ Store↔Planner sync** · param ที่ใช้จำลง `kanban_calc_params` (รอบหน้า prefill) · **export CSV** (Production แนบตารางสรุป capacity ท้ายไฟล์)
 - **สรุปภาระการผลิต (Production):** Σ work-time/ไลน์ [(setup+lot×CT)×(order/lot)] เทียบ available (ชม./วัน×วันทำงาน) = **%load** ต่อไลน์ (<85 เขียว · 85–100 เหลือง · >100 แดง=เกิน capacity)
 - **⚠️ กุญแจ sync = `mat_no` (เลข SAP ภายใน) เท่านั้น:** ตอนอัพโหลด forecast ระบบ map เลขพาร์ทลูกค้า → SAP ผ่าน **`p_no`** ใน `dr_products`/`kanban_standards` (normalize ตัดขีด/ช่องว่าง · FG ขึ้นต้น 1 ชนะ) · **จับคู่ไม่ได้ = เก็บเลขพาร์ทลูกค้าไว้ใน `mat_no` ไปก่อน** (`PlannerSales.jsx` insert: `mat_no: hit ? hit.mat_no : r.part`) → แถวนั้นคำนวณ kanban ไม่ได้ + Store/Production ที่ใช้เลข SAP จะไม่เห็น · **ปุ่ม 🔗 จับคู่เลข SAP** ในแท็บ (banner เตือน N พาร์ท) เขียน `p_no` ให้ dr_products (auto-map รอบหน้า) + re-point `customer_forecasts.mat_no` เดิม → ต้องเติม p_no ให้ครบ Store/Planner ถึง sync จริง · modal มี **auto-suggest จับคู่ด้วย base part** (`baseOfPart` — ตัด revision token ตัวท้าย ≤2 ตัว แล้วเทียบ p_no ที่มีในระบบ · เช่น forecast `MB3B 16C274 CE` ↔ dr `MB3B-16C274`) ตัวเดียวชัด = เติมให้อัตโนมัติ · กำกวมหลายตัว = โชว์ชิปเขียวให้กดเลือก · พาร์ทที่ไม่มีใน Product Master เลยต้องไปสร้างก่อน
 - **⚠️ Order/Month รวม forecast source เดียว กัน double-count (2026-07-21):** `customer_forecasts.period_month` เก็บ 2 grain ปนกัน — EDI 830 = วันราย週 (`period_month = r.date`) · manual = ต้นเดือน (`monthFirst`) · ตอนรวม Order/Month ต่อ mat ถ้าบวกทุก row จะซ้ำเมื่อ mat มีทั้ง 2 source ในเดือนเดียว → **รวมเฉพาะ source เดียว: EDI 830 (official) ก่อน ไม่มีค่อยใช้ manual** (`fBySrc` ใน KanbanCalcTab `load()`) · weekly ที่คาบเกี่ยวขอบเดือนยังนับตามเดือนที่ `period_month` ตก (calendar-month bucket — accept ได้)
@@ -1367,11 +1385,17 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 >   ชื่อ OP เป็นข้อความอิสระที่คนตั้งเอง จะขึ้นต้นด้วยเลขอะไรก็ได้ · ล้างของเก่า `20260820_purge_phantom_op_stock.sql`
 >   (snapshot ลง `line_stock_txn_bak_op_20260820` ก่อนลบ — ย้อนได้ · ลบเฉพาะ `created_by='auto' and type='issue'`
 >   **ไม่แตะแถวที่คนคีย์เอง และไม่แตะ `prod_orders`** ประวัติการผลิตของขั้นตอนยังอยู่ครบ)
-> - **⚠️ พาร์ทแม่เป็น OP ไม่ได้ — เจอข้อมูลขัดกันเองที่ `50031601`** (WSS-M1A367-A36 คอยล์ 5xx ของ LASER-345)
->   ถูกติดธง `is_operation` โดยคนเมื่อ 19/08 ทั้งที่อยู่ใน **BOM 9 แถว + parts_master + kanban active**
->   และเป็น **`op_parent_mat` ของ `90031601`/`90031602`** เอง · ไม่ถูกล้าง (แถวสต๊อกเป็น manual ล้วน)
->   **ห้ามปลดธงให้เอง** — คนกดเองไม่ใช่บั๊ก ให้ทีมตัดสิน · แต่ตราบใดที่ธงยังอยู่ พาร์ทนี้จะถูกกรองออกจาก BOM picker
->   และไม่มีวันเข้าคลังอัตโนมัติ
+> - **✅ เคส `50031601` — เลขคอยล์ถูกเอาไปใช้เป็นชื่อขั้นตอน · แก้แล้ว 2026-08-21 (user เคาะ "เอา ทำเลยรันเลขต่อจากเดิม")**
+>   ไล่จาก `audit_log` ได้ครบ: 15/06 `50031601` เข้า parts_master เป็นคอยล์ WSS-M1A367-A36 → ใช้ใน **BOM 9 สูตร**
+>   → **17/08 10:09 มีคนสร้างแถว `dr_products` ของ `50031601`/`50031602` แล้วติดธง `is_operation` ในวินาทีเดียวกัน**
+>   (ต้องการให้ LASER-345 มีใบงานของตัวเอง เลยหยิบเลขคอยล์มาใช้เป็นชื่อขั้น) → 19/08 ย้าย parent ของ
+>   `90031601`/`90031602` จาก `10100385` ไปชี้ `50031601` = **OP ชี้ OP**
+>   **ทางแก้: ให้ขั้นเลเซอร์มีเลขของตัวเองต่อจากชุดเดิม** — migration `20260821_laser345_own_op_numbers.sql` (**apply แล้ว**)
+>   · สร้าง `90031603` (RH) / `90031604` (LH) ที่ LASER-345 `op_seq=20` · ย้ายใบผลิต 12 ใบ (เปิดค้าง 2 ใบ) มาเลขใหม่
+>   · คืน parent ของ `90031601`→`10100385` / `90031602`→`20065715` (`op_seq=10` — HYDROFORM ป้อน LASER)
+>   · ปลดธง OP ของ `50031601`/`50031602` → กลับเข้า BOM picker และเข้าคลังได้ตามปกติ
+>   **บทเรียน: อยากมอนิเตอร์ขั้นตอนใหม่ ให้ตั้งเลข 900 ใหม่เสมอ ห้ามหยิบเลข SAP ของวัตถุดิบ/พาร์ทจริงมาใช้ซ้ำ**
+>   (เลขเดียว 2 ความหมาย = BOM picker กรองทิ้ง + ไม่เข้าคลัง + `collapseOps` ยุบยอดไม่ถูก)
 > - **ห้ามแก้ปัญหาด้วยการเปลี่ยนเลข OP เป็นเลขจริง** (เช่น M6→20058626) — จะกลายเป็น mat เดียวหลายใบซ้อน ยิ่งนับซ้ำหนักกว่าเดิม
 > - **เฟสถัดไป (ยังไม่ทำ):** ผูก OP กับ `part_routings` (routing master จาก VSM) + ใบผลิตหลายขั้นจริง (1 ใบไหลผ่านหลายเครื่อง) · ตอนปิดกะ ค่า stamp (`actual_qty`) ของกะเก่ายังเป็นค่ารวมแบบเดิม — ไม่ backfill (กฎห้าม recompute ย้อนหลัง)
 
