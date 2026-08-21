@@ -166,11 +166,36 @@ Deno.serve(async (req) => {
        = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
     const lotRows = new Map<string, Kstd[]>();
     for (const k of kstd) if (k.mat_no) lotRows.set(k.mat_no, [...(lotRows.get(k.mat_no) ?? []), k]);
+
+    /* ⚠️⚠️ `kanban_standards.lot_size` ใช้เป็นขนาดล็อตผลิตไม่ได้ (พิสูจน์จาก dry-run จริง 2026-08-21)
+       PlannerSales ตอนกด Apply เขียน **จำนวนใบคัมบังต่อล็อต** (`kanbanPerLot = ⌈lot_qty/packaging⌉`)
+       ลงคอลัมน์นี้เมื่อ calc_type = production → ค่า 1 = "1 ใบต่อล็อต" ไม่ใช่ 1 ชิ้น
+       ข้อมูลจริง: 8 พาร์ทได้ 1 · 4 พาร์ทได้ 3,000-6,000 · 13 พาร์ทไม่มีค่า = ไม่มีตัวไหนเป็นล็อตผลิต
+
+       ขนาดล็อตจริง (หน่วยชิ้น) ที่ planner กรอกเอง อยู่ที่ `kanban_calc_params`
+         · calc_type = production  → `lot_qty`   (ล็อตผลิตของไลน์ปั๊ม)
+         · calc_type = withdrawal  → `lot_size`  (ล็อตเบิกถอน)
+       ลำดับ: lot_qty → lot_size(param) → lot_size(kanban_standards · ท้ายสุด เพราะปนหน่วย) */
+    type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null; lot_size: number | null };
+    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size');
+    const paramRows = new Map<string, Kparam>();
+    for (const p of kparam) if (p.mat_no) paramRows.set(p.mat_no, p);
+
     const lotByMat = new Map<string, number>();
+    const lotSource = new Map<string, string>();   // mat → เอาค่ามาจากช่องไหน (ต้องบอกได้เสมอ)
     const lotConflict = new Map<string, number[]>();
-    for (const [mat, rows] of lotRows) {
-      const vals = [...new Set(rows.map(r => Number(r.lot_size) || 0).filter(v => v > 0))];
-      if (vals.length === 1) lotByMat.set(mat, vals[0]);
+    const pos = (v: unknown) => { const n = Number(v); return n > 0 ? n : 0; };
+    for (const mat of new Set([...lotRows.keys(), ...paramRows.keys()])) {
+      const p = paramRows.get(mat);
+      const cand: [string, number][] = [
+        ['calc_params.lot_qty', pos(p?.lot_qty)],
+        ['calc_params.lot_size', pos(p?.lot_size)],
+      ];
+      const hit = cand.find(([, v]) => v > 0);
+      if (hit) { lotByMat.set(mat, hit[1]); lotSource.set(mat, hit[0]); continue; }
+      // ท้ายสุดค่อยใช้ kanban_standards (ปนหน่วย "ใบ" กับ "ชิ้น" — ด่าน mid_min_pcs จะกรองอีกชั้น)
+      const vals = [...new Set((lotRows.get(mat) ?? []).map(r => pos(r.lot_size)).filter(v => v > 0))];
+      if (vals.length === 1) { lotByMat.set(mat, vals[0]); lotSource.set(mat, 'kanban_standards.lot_size'); }
       else if (vals.length > 1) lotConflict.set(mat, vals.sort((a, b) => a - b));
     }
     const { data: partRules } = await supabase.from('qa_fme_part_rules').select('*');
@@ -396,7 +421,8 @@ Deno.serve(async (req) => {
           middle_no_lot_size: [...noLot],
           // ตั้ง lot_size ไว้ แต่เล็กจนไม่น่าใช่ขนาดล็อตจริง (เช่น 1) → ไม่ตั้ง Middle · ต้องไปแก้ master
           middle_lot_too_small: [...tooSmall].map(([mat, every]) => ({ mat, every, min: midMin })),
-          mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every })),
+          // every มาจากช่องไหน ต้องบอกได้เสมอ — ไม่งั้นวินิจฉัยไม่ออกว่าหยิบผิดตารางอีกหรือเปล่า
+          mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every, from: lotSource.get(mat) ?? 'rule' })),
           // lot_size ไม่ตรงกันระหว่างแถวของ mat เดียวกัน → ไม่เลือกให้เอง ต้องไปจัดข้อมูล/ตั้ง override
           middle_lot_conflict: [...lotConflict].map(([mat, lots]) => ({ mat, lots })),
           /* ⚠️ would_create = 0 ต้องอธิบายได้เสมอ ห้ามให้เดาเอง
@@ -405,10 +431,19 @@ Deno.serve(async (req) => {
           // ค่าดิบจาก kanban_standards ของ **ทุก mat ที่อยู่ในรอบจริง** (ไม่ผูกกับ would_create
           // ไม่งั้นรอบที่ไม่มีอะไรจะสร้าง = ดัมพ์ว่างเปล่า ซึ่งเป็นรอบที่อยากดูข้อมูลที่สุด)
           kanban_rows: [...new Set([...runs.values()].flatMap(r => [r.mat, ...r.mats]))]
-            .flatMap(m => (lotRows.get(m) ?? []).map(k => ({
-              mat: m, product_id: k.product_id, lot_size: k.lot_size,
-              qty_per_kanban: k.qty_per_kanban, min_qty: k.min_qty, max_qty: k.max_qty,
-            }))),
+            .map(m => ({
+              mat: m,
+              std: (lotRows.get(m) ?? []).map(k => ({
+                lot_size: k.lot_size, qty_per_kanban: k.qty_per_kanban,
+                min_qty: k.min_qty, max_qty: k.max_qty,
+              })),
+              param: paramRows.get(m)
+                ? { calc_type: paramRows.get(m)!.calc_type, lot_qty: paramRows.get(m)!.lot_qty,
+                    lot_size: paramRows.get(m)!.lot_size }
+                : null,
+              used: lotByMat.get(m) ?? null, from: lotSource.get(m) ?? null,
+            }))
+            .filter(x => x.std.length || x.param),
           mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
           mid_min_pcs: midMin, mid_max_per_run: Number(cfg.mid_max_per_run ?? 12),
         },
