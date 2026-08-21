@@ -14,7 +14,7 @@ import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listCheckli
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
-import cropPortrait from '../utils/cropPortrait'
+import ImageCropModal from '../components/ImageCropModal'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 
@@ -409,11 +409,14 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         </div>
       )}
 
-      {/* รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+      {/* 📷 รูปโคลสอัพของจุดนี้ (คอลัมน์ Picture ของฟอร์ม)
+          = ตัวที่คนตรวจแตะหมุดบนภาพรวมแล้วซูมเข้ามาเห็น — ตั้งชื่อให้สื่อ ไม่งั้นไม่มีใครใช้
+          (feedback 2026-08-21: หน้างานไปอัปรูปโคลสอัพเป็น "เฟรม" แยกแทน แล้วดูไม่ออกว่าอยู่ตรงไหน) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
         {cp._imgPreview ? (
           <>
             <img src={cp._imgPreview} alt="" style={{ height: 44, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)' }} />
+            <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>🔍 รูปเจาะจุดนี้</span>
             <label style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }}>
               <input type="file" accept="image/*" onChange={onCpImage} style={{ display: 'none' }} />เปลี่ยนรูป
             </label>
@@ -423,7 +426,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         ) : (
           <label style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <input type="file" accept="image/*" onChange={onCpImage} style={{ display: 'none' }} />
-            🖼 แนบรูปอ้างอิง (Picture)
+            📷 แนบรูปจุดนี้ (โคลสอัพ) — คนตรวจแตะหมุด 🔍 แล้วซูมดู
           </label>
         )}
       </div>
@@ -627,27 +630,41 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     return [...prev.slice(0, i + 1), copy, ...prev.slice(i + 1)]
   })
 
-  // TASK 3: รูปอ้างอิงต่อ checkpoint — บีบอัดตอนเลือก อัพโหลดจริงตอน save
+  /* รูปโคลสอัพต่อจุดตรวจ — บีบอัดตอนเลือก อัพโหลดจริงตอน save
+     ⚠️ ไม่ crop โดยตั้งใจ (ข้อยกเว้นในกติกา: รูปที่ต้องเห็นทั้งใบ/คมชัด ให้ "บีบ" ไม่ใช่ "ครอบ")
+     ขยายจาก 900px/0.2MB → 1280px/0.3MB เพราะตอนนี้มันเป็นรูป "ซูมเข้าไปดูให้ชัด" ของหน้างานจริง
+     (เล็กเกินไปแล้วซูมดูไม่ออก = เสียประโยชน์ของฟีเจอร์) */
   const handleCpImage = async (key, e) => {
     const file = e.target.files[0]
     if (!file) return
-    const compressed = await imageCompression(file, { maxSizeMB: 0.2, maxWidthOrHeight: 900 })
+    const compressed = await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1280 })
     updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
   }
 
-  // spin frames — บังคับ crop แนวตั้ง 3:4 + ลดขนาด ตอนเลือกรูป (upload ตอน save)
-  //   normalize EXIF orientation ด้วย imageCompression ก่อน แล้ว center-crop เป็นแนวตั้ง (cropPortrait)
+  /* spin frames — ⚠️ เลิก center-crop อัตโนมัติแล้ว (feedback หน้างาน 2026-08-21)
+     เดิมบังคับ crop 3:4 กลางภาพทันทีที่เลือกรูป → **ผู้ใช้เลือกไม่ได้ว่าจะเก็บส่วนไหน**
+     จุดตรวจที่อยู่ริมภาพโดนตัดทิ้งโดยไม่มีทางแก้ (ต้องไปครอบในแอปอื่นก่อนแล้วค่อยอัป)
+     ตอนนี้เข้า ImageCropModal (ลาก/ซูมเลือกกรอบเองได้ + ติ๊ก "ใช้ทั้งรูป") ตามกติกา
+     UI-CONVENTIONS: "อัปโหลดรูปทุกหน้าต้องผ่าน ImageCropModal"
+     เลือกหลายไฟล์ = เข้าคิวครอบทีละใบ (cropQueue) */
+  const [cropQueue, setCropQueue] = useState([])          // File[] ที่รอครอบ (ตัวแรก = กำลังครอบ)
   const addFrames = async (fileList) => {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
     setImgBusy(true)
     try {
-      const added = []
-      for (const file of Array.from(fileList)) {
-        const norm = await imageCompression(file, { maxSizeMB: 0.5, maxWidthOrHeight: 1600 }) // ปรับ orientation + ลดเบื้องต้น
-        const cropped = await cropPortrait(norm, { ratio: 3 / 4, maxLongSide: 1200, quality: 0.82 })
-        added.push({ _key: crypto.randomUUID(), _file: cropped, _preview: URL.createObjectURL(cropped), title: null })
+      // normalize EXIF orientation + ลดขนาดเบื้องต้นก่อนเข้ากรอบครอบ (กันรูปมือถือหมุนผิด)
+      const norm = []
+      for (const f of files) {
+        try { norm.push(await imageCompression(f, { maxSizeMB: 0.8, maxWidthOrHeight: 2000 })) }
+        catch { norm.push(f) }   // บีบไม่ผ่าน (ฟอร์แมตแปลก) → ส่งไฟล์เดิมให้ modal จัดการ/แจ้ง error เอง
       }
-      setFrames(prev => [...prev, ...added])
+      setCropQueue(q => [...q, ...norm])
     } finally { setImgBusy(false) }
+  }
+  const pushFrame = (croppedFile) => {
+    setFrames(prev => [...prev, { _key: crypto.randomUUID(), _file: croppedFile, _preview: URL.createObjectURL(croppedFile), title: null }])
+    setCropQueue(q => q.slice(1))
   }
   const removeFrame = (key) => {
     setFrames(prev => {
@@ -1096,8 +1113,18 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                     color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
                 onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
                 onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
-                onAddFrames={addFrames} onRemoveFrame={removeFrame} />
+                onAddFrames={addFrames} onRemoveFrame={removeFrame}
+                pinHasDetail={Object.fromEntries(checkpoints.map(c => [c._key, !!(c._imgPreview || c.image_path)]))} />
               {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
+              {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
+              {cropQueue[0] && (
+                <ImageCropModal
+                  file={cropQueue[0]} aspect={3 / 4} outputSize={900} quality={0.82}
+                  allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — สำหรับรูปภาพรวมเครื่อง"
+                  title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
+                  onCancel={() => setCropQueue(q => q.slice(1))}
+                  onConfirm={pushFrame} />
+              )}
             </div>
           )}
 

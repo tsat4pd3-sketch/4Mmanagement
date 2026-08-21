@@ -19,6 +19,8 @@ import CalloutPin from './CalloutPin'
 export default function SpinAnnotator({
   frames = [], frameIdx = 0, setFrameIdx, pins = [], arming,
   onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
+  // { pinKey: true } — จุดที่มี "รูปเจาะจุด" แล้ว (โชว์ 🔍 บนหมุด ให้คนตั้งค่าเห็นว่าจุดไหนยังไม่มี)
+  pinHasDetail = {},
 }) {
   const boxRef = useRef(null)
   const layerRef = useRef(null)
@@ -83,7 +85,8 @@ export default function SpinAnnotator({
           <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {pins.map(p => (
               <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                label={p.label} color={p.color || 'var(--accent)'} title={`${p.label} — คลิกเพื่อลบ`}
+                label={p.label} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
+                title={`${p.label} — คลิกเพื่อลบ${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
                 onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} />
             ))}
           </div>
@@ -120,6 +123,13 @@ export default function SpinAnnotator({
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         {spin ? '🔄 หลายมุม — ลากรูปซ้าย/ขวาปัดดูรอบเครื่อง · pin ผูกกับเฟรมที่วาง (ยิ่งเยอะยิ่งลื่น)' : frames.length === 1 ? '🖼️ รูปเดียว — เพิ่มรูป (+) หลายมุมเพื่อปัดดูรอบเครื่องได้ (ไม่บังคับจำนวน)' : 'เพิ่มรูปหลายมุม (+) — 1 รูป = ปกติ, ตั้งแต่ 2 รูปปัดดูรอบเครื่องได้'}
+      </div>
+      {/* ⚠️ วิธีใช้ที่ถูก (feedback หน้างาน 2026-08-21) — รูปมุมแคบอย่าอัปเป็นเฟรมแยก
+         เพราะคนตรวจจะไม่รู้ว่ามันอยู่ตรงไหนของเครื่อง */}
+      <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', lineHeight: 1.65 }}>
+        💡 <b>รูปตรงนี้ = “แผนที่” ให้เห็นทั้งเครื่องแล้วปักหมุด</b> — ส่วนรูปโคลสอัพของแต่ละจุด
+        ให้แนบที่ช่อง <b>📷 รูปจุด</b> ในแถวจุดตรวจด้านล่าง (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
+        <div style={{ marginTop: 3, opacity: 0.85 }}>อัปรูปโคลสอัพเป็นเฟรมแยกตรงนี้ = คนตรวจไม่รู้ว่าอยู่ตรงไหนของเครื่อง</div>
       </div>
     </div>
   )
