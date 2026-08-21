@@ -19,6 +19,8 @@ import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
+import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
+import { teamKeyOf } from '../utils/mtnTeams';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -178,6 +180,7 @@ export default function Operator() {
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
+  const [mtnTeamRows,     setMtnTeamRows]     = useState(pmTeamsSync());  // ทีมช่างซ่อม (data-driven) — ช่อง 🔧 ในโมดัลแก้ไข
   const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
   useEffect(() => {
@@ -219,6 +222,7 @@ export default function Operator() {
         applyOrgNodes(data || []);
       });
     loadDivisions().then(() => { if (alive) setDivisionsReady(v => v + 1); });
+    loadPmTeams().then(rows => { if (alive) setMtnTeamRows(rows || []); });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
@@ -436,6 +440,24 @@ export default function Operator() {
         start_date: editingEmp.start_date || null,
       }).eq('id', editingEmp.id);
       if (error) throw error;
+
+      /* 🔧 ทีมช่างซ่อม — เขียนแยก best-effort เพราะคอลัมน์อาจยังไม่ apply migration
+         ⚠️ ห้ามยัดลง payload ก้อนบน: ไม่มีคอลัมน์ = 42703 = **บันทึกพนักงานพังทั้งใบ**
+         ⚠️ และห้ามใช้ try/catch เปล่า — supabase-js "คืน" error ไม่ throw (กฎเหล็ก CLAUDE.md)
+            ต้องอ่าน error จริงแล้วบอกผู้ใช้ ห้ามเงียบ */
+      {
+        const nextTeam = editingEmp.mtn_team || null;
+        const prevTeam = employees.find(e => e.id === editingEmp.id)?.mtn_team ?? null;
+        if (nextTeam !== prevTeam) {
+          const { error: mtErr } = await supabase.from('employees')
+            .update({ mtn_team: nextTeam }).eq('id', editingEmp.id);
+          if (mtErr) {
+            toast.error(mtErr.code === '42703'
+              ? 'บันทึกข้อมูลพนักงานแล้ว แต่ยังตั้ง “ทีมช่างซ่อม” ไม่ได้ — ยังไม่ได้ apply migration 20260821_production_technician_setup (แจ้ง admin)'
+              : 'บันทึกข้อมูลพนักงานแล้ว แต่ตั้งทีมช่างซ่อมไม่ได้: ' + mtErr.message);
+          }
+        }
+      }
 
       // เปลี่ยนรูปสำเร็จแล้วค่อยลบไฟล์รูปเดิมทิ้ง — ไฟล์ใหม่ได้ชื่อใหม่เสมอ (emp_<timestamp>)
       // ถ้าไม่ลบ ไฟล์เก่าจะกองเป็นขยะใน storage (เคยสะสมกว่า 100MB) · fire-and-forget ลบพลาดไม่ต้อง error
@@ -1557,6 +1579,25 @@ export default function Operator() {
                   <option value="B">Team B (กะดึก)</option>
                   <option value="C">Team C (ไม่มีพันธะกะ)</option>
                 </select>
+              </div>
+
+              {/* 🔧 ทีมช่างซ่อม — ทำให้คนนี้ "เลือกได้" ในช่องมอบหมายช่างของใบซ่อม MO ขั้น 2
+                  จำเป็นกับ **ช่างฝ่ายผลิต** โดยเฉพาะ: ระบบเดาทีมจากชื่อแผนกได้แค่ JIG/DIE/MTN
+                  ส่วนงานผลิตมีหลายชื่อ (PD1/PD2/GOR…) เดาเหมาจะไปโดน QA/ธุรการด้วย
+                  → ต้องติ๊กเอง ไม่งั้นช่างฝ่ายผลิตไม่มีวันโผล่ในลิสต์ (feedback 2026-08-21) */}
+              <div>
+                <label style={labelSt}>🔧 ทีมช่างซ่อม (เฉพาะคนที่เป็นช่าง)</label>
+                <select value={teamKeyOf(editingEmp.mtn_team) || ''}
+                  onChange={e => setEditingEmp({ ...editingEmp, mtn_team: e.target.value || null })}>
+                  <option value="">— ไม่ใช่ช่าง —</option>
+                  {(mtnTeamRows.length ? mtnTeamRows : DEFAULT_TEAMS).map(t => (
+                    <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || t.label || t.key}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                  ตั้งแล้วชื่อจะขึ้นให้เลือกในช่อง “มอบหมายช่างซ่อม” ของใบแจ้งซ่อม (ขั้นที่ 2)
+                  {' '}· ช่างฝ่ายผลิตเลือก <b>AM (ผลิตตรวจเอง)</b>
+                </div>
               </div>
               <div>
                 <label style={labelSt}>Group / กลุ่ม (Line)</label>

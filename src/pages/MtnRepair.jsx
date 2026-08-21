@@ -253,15 +253,23 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
       supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
-      // ช่าง = พนักงาน (Main) ที่แผนก/ส่วนเป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
-      supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name'),
+      // ช่าง = พนักงาน (Main) — ทีมมาจาก `employees.mtn_team` (ติ๊กเองที่ /operator) ก่อน แล้วค่อยเดาจากแผนก
+      //   ⚠️ tolerant: ยังไม่ apply migration 20260821_production_technician_setup = ไม่มีคอลัมน์ (42703)
+      //      → ถอยไป select ชุดเดิม ไม่งั้นทั้งหน้าโหลด master ไม่ขึ้นเลย
+      supabase.from('employees').select('id, name, section, department, employee_id_code, mtn_team').eq('is_active', true).order('name')
+        .then(r => r.error ? supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name') : r),
       // supply route: utility/facility จ่ายให้ไลน์ไหน — ใช้โชว์ผลกระทบตอนซ่อม (best-effort ถ้ายังไม่ apply migration)
       supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
     ]);
-    // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
-    // ช่างส่วนใหญ่อยู่ระดับแผนก (department) → เช็คแผนกก่อน แล้ว section
+    /* แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
+       ลำดับที่มาของทีม:
+         1. `employees.mtn_team` — ติ๊กเองที่ /operator (**ชนะเสมอ**)
+            จำเป็นสำหรับ **ช่างฝ่ายผลิต** ซึ่ง `teamForSection` เดาไม่ได้โดยตั้งใจ
+            (ส่วนงานผลิตมีหลายชื่อ PD1/PD2/GOR… เดาเหมาจะไปโดน QA/ธุรการด้วย)
+            → ก่อนมีคอลัมน์นี้ ช่างฝ่ายผลิต "ไม่มีวันโผล่" ในลิสต์มอบหมายช่าง
+         2. เดาจาก department แล้ว section (backward-compat — จับได้แค่ JIG/DIE/MTN) */
     const empTechs = (emps || [])
-      .map(e => ({ ...e, team: teamForSection(e.department) || teamForSection(e.section) }))
+      .map(e => ({ ...e, team: teamKeyOf(e.mtn_team) || teamForSection(e.department) || teamForSection(e.section) }))
       .filter(e => e.team)
       .map(e => ({ id: `emp_${e.id}`, name: e.name, dept: e.team, from_employee: true, emp_code: e.employee_id_code }));
     const empNames = new Set(empTechs.map(t => t.name.trim()));
@@ -807,7 +815,7 @@ function printMoReportMtn(o, dparts = [], logo0) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
@@ -818,8 +826,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
+  /* 🔧 ช่างของทีมนี้ทำขั้น 2-4 ของ "ใบทีมตัวเอง" ได้ (feedback หน้างาน 2026-08-21)
+     ที่มา: ช่างฝ่ายผลิตอยู่ระหว่างระดับส่วนกับระดับกลุ่ม — role ที่มีอยู่ไม่มีตัวไหนพอดี
+     แทนที่จะเพิ่ม role ใหม่ (กฎเหล็ก: เจอแกนใหม่ให้เพิ่ม attribute) ใช้ 2 ชั้นคู่กัน:
+       role ต้องถือ `mtn_repair:service_own_team`  **และ**  ตัวบุคคลต้องถูกตั้ง
+       "ทีมช่างซ่อม" (profiles.mtn_teams ที่ /add-user) ให้ตรงกับทีมของใบนั้น
+     → ติ๊กให้ role `leader` ก็ไม่ได้แปลว่าหัวหน้ากลุ่มทุกคนแตะใบซ่อมได้
+       (ไม่ได้ตั้งทีม = userTeams ว่าง = ไม่ผ่าน) */
+  const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
+  const ownTeamService = can('mtn_repair', 'service_own_team', role)
+    && userTeams.some(t => sameTeam(t, orderTeam));
   // แก้ไขได้: หัวหน้า (manage_master) หรือผู้มีสิทธิ์ทำสเตปนั้น
-  const canEditStep = (step) => can('mtn_repair', 'manage_master', role) || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role)) || (step === 1 && can('mtn_repair', 'report', role));
+  const canEditStep = (step) => can('mtn_repair', 'manage_master', role)
+    || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role))
+    || (STEP_PERM[step] === 'service' && ownTeamService)
+    || (step === 1 && can('mtn_repair', 'report', role));
 
   // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
   const [resubDept, setResubDept] = useState(dept);
@@ -953,6 +974,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           </div>
         </div>
       </div>
+      {/* ⚠️ ปุ่มขั้นถัดไปหายเพราะสิทธิ์ = ต้องบอกเหตุผล ห้ามให้เดาเอง (UI-CONVENTIONS §6.9)
+             เคสที่เจอจริง: ช่างฝ่ายผลิตเปิดใบได้แต่กดรับงานไม่ได้ แล้วไม่มีอะไรอธิบาย */}
+      {next && !(can('mtn_repair', next.perm, role) || (next.perm === 'service' && ownTeamService)) && (
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
+          🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> ({next.label})
+          {next.perm === 'service' && (
+            <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+              ถ้าเป็น <b>ช่างของทีม {deptNameOf(orderTeam) || 'นี้'}</b> ให้ admin ตั้ง 2 อย่าง:
+              <div>① เปิดสิทธิ์ <code>mtn_repair:service_own_team</code> ให้ role นี้ที่ <b>/permissions</b></div>
+              <div>② ตั้ง “🔧 ทีมช่างซ่อม” ของบัญชีนี้เป็น <b>{deptNameOf(orderTeam) || '—'}</b> ที่ <b>/add-user</b></div>
+              <div style={{ marginTop: 2, opacity: 0.85 }}>ครบทั้งสองอย่างถึงจะทำขั้น 2-4 ของ<u>ใบทีมตัวเอง</u>ได้ (ใบทีมอื่นยังทำไม่ได้)</div>
+            </div>
+          )}
+        </div>
+      )}
       {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
@@ -966,7 +1002,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             printMoReport(o, dparts, logo);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
-          {next && can('mtn_repair', next.perm, role) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
+          {next && (can('mtn_repair', next.perm, role) || (next.perm === 'service' && ownTeamService)) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
       </div>
     </ModalShell>
