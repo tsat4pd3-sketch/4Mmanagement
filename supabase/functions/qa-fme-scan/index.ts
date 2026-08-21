@@ -172,15 +172,16 @@ Deno.serve(async (req) => {
        ลงคอลัมน์นี้เมื่อ calc_type = production → ค่า 1 = "1 ใบต่อล็อต" ไม่ใช่ 1 ชิ้น
        ข้อมูลจริง: 8 พาร์ทได้ 1 · 4 พาร์ทได้ 3,000-6,000 · 13 พาร์ทไม่มีค่า = ไม่มีตัวไหนเป็นล็อตผลิต
 
-       ⚠️ `kanban_calc_params.lot_size` (ช่อง LOT ในแท็บ Withdrawal) ก็เป็น **"ใบ" ไม่ใช่ "ชิ้น"**
-          พิสูจน์จากสูตร: `totalKanban = maxKanban + lotSize` (บวกกับจำนวนใบตรงๆ)
-          ตรงกับหน้าจอจริง MAX 88 + LOT 300 = TOTAL 388 → ห้ามเอามาเป็นคาบตรวจ
-
-       เหลือช่องเดียวที่เป็น "ชิ้น" แน่นอน = `kanban_calc_params.lot_qty` (แท็บ Production)
-         พิสูจน์: `infoLT = lot_qty × CT` (เวลา = ชิ้น × วินาที/ชิ้น) และ `⌈lot_qty / packaging⌉` = ใบ/ล็อต
-       ⇒ พาร์ทฝั่งประกอบ (withdrawal) **ไม่มีขนาดล็อตผลิตอยู่ในระบบเลย** ต้องรอต่อกับ Control Plan */
-    type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null; lot_size: number | null };
-    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size');
+       ขนาดล็อตจริงอยู่ที่ `kanban_calc_params` (ค่าที่ planner กรอกเองในแท็บคำนวณ Kanban):
+         · production → `lot_qty`  = **ชิ้น** อยู่แล้ว (พิสูจน์: `infoLT = lot_qty × CT` เวลา = ชิ้น × วิ/ชิ้น)
+         · withdrawal → `lot_size` = **ใบคัมบัง** (พิสูจน์: `totalKanban = maxKanban + lotSize` บวกกับจำนวนใบ
+           · ตรงกับหน้าจอจริง MAX 121 + LOT 40 = TOTAL 161)
+           **1 ใบ = 1 กล่อง = packaging ชิ้น** ⇒ ชิ้น = `lot_size × packaging`
+           ตรวจกับข้อมูลจริง 2026-08-21: 10100335 = 50×10 · 10101158 = 40×14 · 10100333 = 15×35
+           → ออกมา 500-600 ชิ้นทุกตัว = ล็อตที่ตั้งใจตั้งไว้จริง ไม่ใช่ค่ามั่ว */
+    type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null;
+                    lot_size: number | null; packaging: number | null };
+    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size,packaging');
     const paramRows = new Map<string, Kparam>();
     for (const p of kparam) if (p.mat_no) paramRows.set(p.mat_no, p);
 
@@ -190,9 +191,18 @@ Deno.serve(async (req) => {
     const pos = (v: unknown) => { const n = Number(v); return n > 0 ? n : 0; };
     for (const mat of new Set([...lotRows.keys(), ...paramRows.keys()])) {
       const p = paramRows.get(mat);
-      // ช่องเดียวที่หน่วยเป็น "ชิ้น" แน่นอน — ที่เหลือเป็น "ใบ" ห้ามเอามาใช้เป็นคาบตรวจ
+      // (1) ล็อตผลิต (แท็บ Production) เป็น "ชิ้น" อยู่แล้ว
       const lotQty = pos(p?.lot_qty);
-      if (lotQty > 0) { lotByMat.set(mat, lotQty); lotSource.set(mat, 'calc_params.lot_qty'); continue; }
+      if (lotQty > 0) { lotByMat.set(mat, lotQty); lotSource.set(mat, 'calc_params.lot_qty (ชิ้น)'); continue; }
+      // (2) ล็อตเบิกถอน (แท็บ Withdrawal) เป็น "ใบ" → × packaging (ชิ้น/กล่อง) ให้เป็นชิ้น
+      //     ไม่รู้ packaging = แปลงไม่ได้ → ไม่เดา ปล่อยตกไปข้อถัดไป
+      const lotCards = pos(p?.lot_size);
+      const pkg = pos(p?.packaging) || pos((lotRows.get(mat) ?? []).find(k => pos(k.qty_per_kanban))?.qty_per_kanban);
+      if (lotCards > 0 && pkg > 0) {
+        lotByMat.set(mat, lotCards * pkg);
+        lotSource.set(mat, `calc_params.lot_size ${lotCards} ใบ × ${pkg} ชิ้น/กล่อง`);
+        continue;
+      }
       // ท้ายสุดค่อยใช้ kanban_standards (ปนหน่วย "ใบ" กับ "ชิ้น" — ด่าน mid_min_pcs จะกรองอีกชั้น)
       const vals = [...new Set((lotRows.get(mat) ?? []).map(r => pos(r.lot_size)).filter(v => v > 0))];
       if (vals.length === 1) { lotByMat.set(mat, vals[0]); lotSource.set(mat, 'kanban_standards.lot_size'); }
@@ -439,7 +449,7 @@ Deno.serve(async (req) => {
               })),
               param: paramRows.get(m)
                 ? { calc_type: paramRows.get(m)!.calc_type, lot_qty: paramRows.get(m)!.lot_qty,
-                    lot_size: paramRows.get(m)!.lot_size }
+                    lot_size_cards: paramRows.get(m)!.lot_size, packaging: paramRows.get(m)!.packaging }
                 : null,
               used: lotByMat.get(m) ?? null, from: lotSource.get(m) ?? null,
             }))
