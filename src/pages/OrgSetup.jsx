@@ -4,6 +4,7 @@ import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
+import LineSelect from '../components/LineSelect';
 
 import InfoMore from '../components/InfoMore';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
@@ -380,10 +381,8 @@ export default function OrgSetup() {
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                  <select value={formRefLineId} onChange={e => setFormRefLineId(e.target.value)}>
-                    <option value="">— ไม่ผูก —</option>
-                    {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                    placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

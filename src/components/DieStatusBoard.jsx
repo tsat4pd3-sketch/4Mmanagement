@@ -5,6 +5,8 @@
    • ยังไม่ระบุสถานะ = worklist (ตัวนับส้ม + กรองดูเฉพาะได้) ห้ามซ่อน                      */
 import { useState, useMemo } from 'react';
 import { toast } from './Toast';
+import LineSelect from './LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 import {
   DIE_STATUSES, DIE_STATUS_UNSET, dieStatusMeta, buildOpenMoMap, openMosOf,
   regrindOver, saveDieStatus, MO_STATUS_LABEL, MIGRATION_HINT,
@@ -25,6 +27,7 @@ export default function DieStatusBoard({
 
   const moMap = useMemo(() => buildOpenMoMap(openMos), [openMos]);
   const activeDies = useMemo(() => dies.filter(d => d.is_active), [dies]);
+  const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const lineNames = useMemo(
     () => [...new Set(activeDies.map(d => d.line_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [activeDies]);
@@ -148,10 +151,14 @@ export default function DieStatusBoard({
       {/* ตัวกรอง */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา เลขแม่พิมพ์ / พาร์ท / หมายเหตุ" style={{ ...inp, width: 260 }} />
-        <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 190 }}>
-          <option value="">ทุกไลน์</option>
-          {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
+        {/* ⚠️ ไลน์ของแม่พิมพ์ = ชื่อ "กลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งบางชื่อ
+            ไม่มีในทะเบียนไลน์ผลิต → ตัวที่ตรงจัดลำดับชั้นตามผัง ที่เหลือแยก optgroup ไว้
+            (ห้ามตัดทิ้ง ไม่งั้นกรองหาแม่พิมพ์ของกลุ่มนั้นไม่ได้เลย) */}
+        <LineSelect
+          lines={prodLines.filter(l => lineNames.includes(l.name))}
+          value={fLine} onChange={setFLine} placeholder="ทุกไลน์" style={{ ...inp, width: 190 }}
+          extraGroups={[{ label: '🔨 กลุ่มเครื่องปั๊ม', options: lineNames.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+        />
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>แสดง {rows.length} ตัว</span>
       </div>
 

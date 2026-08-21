@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
@@ -857,6 +859,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const changedRows = rows.filter(r => r.changed);
 
   // (#2) พาร์ทที่ forecast จับคู่เลข SAP ภายในไม่ได้ = ไม่มีใน dr_products/parts_master/kanban_standards เลย
@@ -1068,10 +1071,12 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         {lines.length > 0 && (
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
-            <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 150 }}>
-              <option value="">ทุกไลน์</option>
-              {lines.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
+            {/* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */}
+            <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
+              value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
+              style={{ ...inputSt, width: 150 }}
+              extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            />
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>

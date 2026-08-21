@@ -12,6 +12,7 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import LineSelect from '../components/LineSelect';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 
@@ -56,7 +57,7 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
 /* ─────────────────────────────────────────────────────────────────────────────
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
-function StockTab({ role }) {
+function StockTab({ role, scope }) {
   const { fullName } = useContext(UserContext);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
@@ -72,6 +73,11 @@ function StockTab({ role }) {
   const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
 
   const [lineFilter, setLineFilter] = useState('');
+  // คลังปลายทางที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง + กฎรับเข้าอัตโนมัติ ไม่ hardcode ชื่อคลัง
+  const warehouseNames = useMemo(
+    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(),
+    [stock, lines],
+  );
   const [showTxn,    setShowTxn]    = useState(false);
   // ย่อ/ขยายกลุ่มไลน์-คลัง — จำ override ของ user (default = กาง) · ดู docs/UI-CONVENTIONS.md §6.8
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
@@ -100,7 +106,9 @@ function StockTab({ role }) {
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
+      //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
       supabaseDR.from('line_stock_summary').select('*').order('line_name').order('mat_no'),
       supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
@@ -346,13 +354,13 @@ function StockTab({ role }) {
         ))}
         <div style={{ ...card, padding:'10px 16px' }}>
           <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>🔍 กรองไลน์</div>
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, padding:'5px 8px' }}>
-            <option value="">ทุกไลน์/คลัง</option>
-            {/* คลังปลายทางที่มีของแต่ไม่ใช่ไลน์ผลิต (เช่น FG WAREHOUSE, STORE) ต้องกรองได้ด้วย */}
-            {[...new Set(stock.map(s => s.line_name))].filter(n => !lines.some(l => l.name === n)).sort()
-              .map(n => <option key={n} value={n}>🏬 {n}</option>)}
-            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
+              ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
+          <LineSelect
+            lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+            placeholder="ทุกไลน์/คลัง" style={{ ...inputSt, padding:'5px 8px' }}
+            extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+          />
         </div>
       </div>
 
@@ -538,10 +546,11 @@ function StockTab({ role }) {
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
-                  <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
-                    <option value="">เลือกไลน์...</option>
-                    {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-                  </select>
+                  <LineSelect
+                    lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
+                    onChange={v => setForm(f => ({ ...f, line_name: v }))}
+                    extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+                  />
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
@@ -688,7 +697,7 @@ function addMins(timeStr, mins) {
   return `${String(Math.floor(total/60)%24).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
 }
 
-function DeliveryRoundsTab({ canEdit, fullName }) {
+function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');
@@ -700,7 +709,9 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
   const load = useCallback(async () => {
     const [{ data: rnd }, { data: ln }] = await Promise.all([
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
+      //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
     ]);
     setRounds(rnd || []);
     setLines(ln || []);
@@ -821,10 +832,8 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
           <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width:180 }}>
-            <option value="">ทุกไลน์</option>
-            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+            placeholder="ทุกไลน์" style={{ ...inputSt, width:180 }} />
           {canEdit && (
             <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
           )}
@@ -918,16 +927,12 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
-                <input
-                  list="dl-lines"
-                  style={inputSt}
-                  value={form.line_name}
-                  onChange={e => setForm(f => ({ ...f, line_name: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(e.target.value, f.shift)) }))}
-                  placeholder="เลือกหรือพิมพ์ชื่อไลน์..."
+                {/* เดิมเป็น input+datalist (พิมพ์เองได้) → รอบจัดส่งที่ชื่อไลน์พิมพ์ผิดจะกำพร้าเงียบ
+                    ไม่มีวันแสดงคู่กับไลน์ไหนเลย · เปลี่ยนเป็น LineSelect ให้เลือกจากทะเบียนอย่างเดียว */}
+                <LineSelect
+                  lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
+                  onChange={v => setForm(f => ({ ...f, line_name: v, round_no: editId ? f.round_no : String(nextRoundNo(v, f.shift)) }))}
                 />
-                <datalist id="dl-lines">
-                  {lines.map(l => <option key={l.name} value={l.name} />)}
-                </datalist>
               </div>
 
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
@@ -1161,16 +1166,23 @@ function DeliveryTimeBoardTab() {
 function InflowRulesTab({ canEdit }) {
   const [rules, setRules] = useState([]);
   const [lines, setLines] = useState([]);
+  // ปลายทางที่มีอยู่จริง — derive จากคลังที่มีของ ไม่ hardcode 'FG WAREHOUSE'/'STORE'
+  // (ตั้งคลังใหม่แล้วต้องโผล่เองโดยไม่ต้องแก้โค้ด)
+  const [dests, setDests] = useState([]);
   const [form, setForm] = useState({ match_type: 'prefix', match_value: '', dest_line_name: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: r }, { data: ln }] = await Promise.all([
+    const [{ data: r }, { data: ln }, { data: st }] = await Promise.all([
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
+      //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabaseDR.from('line_stock_summary').select('line_name'),
     ]);
     setRules(r || []);
     setLines(ln || []);
+    setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort());
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -1279,9 +1291,8 @@ function InflowRulesTab({ canEdit }) {
               <input list="inflow-dest-options" value={form.dest_line_name} onChange={e => setForm(f => ({ ...f, dest_line_name: e.target.value }))}
                 placeholder="FG WAREHOUSE" style={{ ...inputSt, width: 220 }} />
               <datalist id="inflow-dest-options">
-                <option value="FG WAREHOUSE" />
-                <option value="STORE" />
-                {lines.map(l => <option key={l.name} value={l.name} />)}
+                {dests.filter(d => !lines.some(l => l.name === d)).map(d => <option key={d} value={d} />)}
+                {lines.filter(l => l.is_active !== false).map(l => <option key={l.name} value={l.name} />)}
               </datalist>
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', '#08130a'), opacity: saving ? 0.6 : 1 }}>
@@ -1311,9 +1322,11 @@ const TABS = [
 ];
 
 export default function LineStock() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, lineId, sections } = useContext(UserContext);
   const canEdit = can('line_stock', 'manage_rounds', role);
   const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stock');
+  // scope มาตรฐานส่งต่อให้ทุกแท็บ — dropdown ไลน์ต้องกรองด้วย ไม่ใช่แค่ query (CLAUDE.md)
+  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
 
   return (
     <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
@@ -1323,9 +1336,9 @@ export default function LineStock() {
         tabs={TABS} tab={activeTab} onTab={setActiveTab}
       />
 
-      {activeTab === 'stock'     && <StockTab role={role} />}
+      {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
-      {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
+      {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}
     </div>
