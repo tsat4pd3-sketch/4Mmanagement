@@ -234,19 +234,37 @@ Deno.serve(async (req) => {
     };
 
     /* คาบตรวจ Middle ของรุ่นนี้ (ชิ้น) — override รายพาร์ท > lot_size × ratio > ไม่รู้ = null
-       ⚠️ null = ข้ามการตรวจ Middle ของพาร์ทนั้น **ห้ามเดาเป็นค่า default** */
+       ⚠️ null = ข้ามการตรวจ Middle ของพาร์ทนั้น **ห้ามเดาเป็นค่า default**
+
+       ⚠️ ด่านความสมเหตุสมผล (dry-run 2026-08-21): พาร์ท FG หลายตัวตั้ง `lot_size = 1`
+          (ค่า placeholder ไม่ใช่ขนาดล็อตจริง) → คาบ = 1 ชิ้น = เรียก QA ทุกชิ้นจนชนเพดาน
+          รอบเดียว 12 ครั้ง · เจอจริง 4 พาร์ท = 46 จาก 91 งานตรวจ
+          กติกา: คาบที่คำนวณได้ต่ำกว่า `mid_min_pcs` = **ถือว่า master ยังใช้ไม่ได้ → ไม่ตั้ง Middle
+          แล้วรายงานออกไปพร้อมค่าที่คำนวณได้** (ห้ามเดาค่าแทน · ห้ามเงียบ) */
+    const midMin = Math.max(1, Number(cfg.mid_min_pcs ?? 10));
     const noLot = new Set<string>();
+    const tooSmall = new Map<string, number>();   // mat → คาบที่คำนวณได้ (ต่ำเกินจนไม่น่าใช่ค่าจริง)
+    const everyByMat = new Map<string, number>(); // mat → คาบที่ใช้จริง (ไว้ตรวจสอบใน dry-run)
     const midEveryFor = (r: Run): number | null => {
       for (const m of [r.mat, ...r.mats]) {
         const rule = ruleByMat.get(m);
         if (rule) {
           if (rule.is_active === false) return null;             // ตั้งใจปิดพาร์ทนี้
-          if ((rule.mid_every_pcs ?? 0) > 0) return rule.mid_every_pcs as number;
+          // override รายพาร์ทคือค่าที่คนตั้งมาเอง → เชื่อตามนั้น ไม่ต้องผ่านด่าน midMin
+          if ((rule.mid_every_pcs ?? 0) > 0) {
+            everyByMat.set(r.mat, rule.mid_every_pcs as number);
+            return rule.mid_every_pcs as number;
+          }
         }
       }
       for (const m of [r.mat, ...r.mats]) {
         const lot = lotByMat.get(m);
-        if (lot) return Math.max(1, Math.round(lot * Number(cfg.mid_lot_ratio ?? 1)));
+        if (lot) {
+          const every = Math.max(1, Math.round(lot * Number(cfg.mid_lot_ratio ?? 1)));
+          if (every < midMin) { tooSmall.set(r.mat, every); return null; }
+          everyByMat.set(r.mat, every);
+          return every;
+        }
       }
       noLot.add(r.mat);        // ยังไม่ตั้ง lot_size → รายงานออกไป ไม่เงียบ
       return null;
@@ -359,7 +377,11 @@ Deno.serve(async (req) => {
           op_unlinked: [...new Set(list.flatMap(r => r.mat_group.filter(m => opNoParent.has(m))))],
           // พาร์ทที่ยังไม่ตั้ง lot_size → ไม่มีการตรวจ Middle เลย (First/End ยังทำงาน) — ต้องเห็น ห้ามเงียบ
           middle_no_lot_size: [...noLot],
+          // ตั้ง lot_size ไว้ แต่เล็กจนไม่น่าใช่ขนาดล็อตจริง (เช่น 1) → ไม่ตั้ง Middle · ต้องไปแก้ master
+          middle_lot_too_small: [...tooSmall].map(([mat, every]) => ({ mat, every, min: midMin })),
+          mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every })),
           mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
+          mid_min_pcs: midMin, mid_max_per_run: Number(cfg.mid_max_per_run ?? 12),
         },
         would_create: list.map(r => ({
           line: r.line_name, shift: r.shift, work_date: r.work_date,
