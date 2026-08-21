@@ -1038,7 +1038,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
        { t: 'Pkg', u: 'ชิ้น/กล่อง' },
        { t: 'รอบส่ง', u: 'รอบ/วัน' },
        { t: 'CAP/ชม.', u: 'ชิ้น/ชม.' },
-       { t: 'Lot', u: 'ใบ', tip: 'จำนวนใบคัมบังที่บวกเพิ่มจาก Max → Total(K/B) = Max + Lot · ไม่ใช่จำนวนชิ้น' },
+       { t: 'Lot', u: 'ใบ', tip: 'ขนาดล็อตเป็นจำนวนใบคัมบัง — 1 ใบ = 1 กล่อง = Pkg ชิ้น · คิดเป็นชิ้น = Lot × Pkg · Total(K/B) = Max + Lot' },
        { t: 'Safety', u: 'วัน' }];
 
   return (
@@ -1154,13 +1154,23 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                       <td style={{ ...tdc, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', textAlign: 'left' }}>{row.mat}</td>
                       <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 800 }}>{fmt(row.order)}</td>
-                      {NCOLS.map(c => (
-                        <td key={c} style={{ ...tdc, textAlign: 'center' }}>
-                          <input type="number" value={row.pp[c]} disabled={!canApply}
-                            onChange={e => setEdit(row.mat, c, e.target.value)}
-                            style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? '#0ea5e9' : 'var(--border)' }} />
-                        </td>
-                      ))}
+                      {NCOLS.map(c => {
+                        // ช่องที่หน่วยเป็น "ใบ" โชว์ค่าเทียบเป็นชิ้นใต้ช่องเสมอ (= ใบ × Pkg)
+                        // ไม่งั้นคนกรอกต้องคูณในหัวเอง — เป็นต้นเหตุที่บางพาร์ทถูกใส่ 1
+                        const pcs = c === 'lot_size' ? Number(row.pp.lot_size) * Number(row.pp.packaging) : 0;
+                        return (
+                          <td key={c} style={{ ...tdc, textAlign: 'center' }}>
+                            <input type="number" value={row.pp[c]} disabled={!canApply}
+                              onChange={e => setEdit(row.mat, c, e.target.value)}
+                              style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? '#0ea5e9' : 'var(--border)' }} />
+                            {c === 'lot_size' && (
+                              <div style={{ fontSize: 9.5, color: pcs > 0 ? 'var(--muted)' : '#f59e0b', marginTop: 2 }}>
+                                {pcs > 0 ? `= ${fmt(pcs)} ชิ้น` : 'ต้องมี Pkg'}
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 700 }}>{r.valid ? r.minKanban : '—'}</td>
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 700 }}>{r.valid ? r.maxKanban : '—'}</td>
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 900, color: r.valid ? 'var(--accent)' : 'var(--muted)', fontSize: 14 }}>{r.valid ? r.totalKanban : '—'}</td>
