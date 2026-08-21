@@ -234,9 +234,11 @@ Deno.serve(async (req) => {
                   product_name: string; stage: string; trigger_reason: string; session_id: string;
                   triggered_at: string; due_at: string; seq: number; at_qty: number | null };
     const want: Want[] = [];
+    // นับสิ่งที่ "ถูกตัดทิ้งเพราะเก่าเกินเกณฑ์" ไว้รายงาน — ไม่งั้น would_create = 0 แล้วอ่านไม่ออกว่าทำไม
+    const skippedOld: Record<string, number> = {};
     const add = (r: Run, stage: string, reason: string, at: string, dueMin: number,
                  seq = 1, atQty: number | null = null) => {
-      if (at < skipBefore) return;      // เก่าเกินไป (เพิ่งเปิดสวิตช์) — ไม่ย้อนหลังให้ท่วมห้องแชท
+      if (at < skipBefore) { skippedOld[stage] = (skippedOld[stage] ?? 0) + 1; return; }  // เก่าเกิน (เพิ่งเปิดสวิตช์)
       want.push({
         work_date: r.sess.work_date, shift: r.sess.shift, line_name: r.sess.line_name,
         mat_no: r.mat, mat_group: [...r.mats], product_name: r.name,
@@ -397,8 +399,12 @@ Deno.serve(async (req) => {
           mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every })),
           // lot_size ไม่ตรงกันระหว่างแถวของ mat เดียวกัน → ไม่เลือกให้เอง ต้องไปจัดข้อมูล/ตั้ง override
           middle_lot_conflict: [...lotConflict].map(([mat, lots]) => ({ mat, lots })),
-          // ค่าดิบจาก kanban_standards ของ mat ที่อยู่ในรอบจริง — ไว้ยืนยันว่าระบบอ่านอะไรมา (ห้ามเดา)
-          kanban_rows: [...new Set(list.flatMap(r => [r.mat_no, ...r.mat_group]))]
+          /* ⚠️ would_create = 0 ต้องอธิบายได้เสมอ ห้ามให้เดาเอง
+             เหตุที่พบบ่อยคือ "เหตุการณ์เก่ากว่า skip_older_min" ไม่ใช่ระบบไม่ทำงาน */
+          skipped_old: skippedOld, skip_older_min: cfg.skip_older_min,
+          // ค่าดิบจาก kanban_standards ของ **ทุก mat ที่อยู่ในรอบจริง** (ไม่ผูกกับ would_create
+          // ไม่งั้นรอบที่ไม่มีอะไรจะสร้าง = ดัมพ์ว่างเปล่า ซึ่งเป็นรอบที่อยากดูข้อมูลที่สุด)
+          kanban_rows: [...new Set([...runs.values()].flatMap(r => [r.mat, ...r.mats]))]
             .flatMap(m => (lotRows.get(m) ?? []).map(k => ({
               mat: m, product_id: k.product_id, lot_size: k.lot_size,
               qty_per_kanban: k.qty_per_kanban, min_qty: k.min_qty, max_qty: k.max_qty,
