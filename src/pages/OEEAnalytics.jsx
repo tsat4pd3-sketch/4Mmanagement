@@ -26,6 +26,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
+import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
 // ── Colour helpers ───────────────────────────────────────────────
@@ -161,7 +162,7 @@ const KpiCard = ({ label, value, color, sub, calc, more }) => {
                 marginTop: 5, padding: '2px 7px', borderRadius: 6, cursor: 'pointer',
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
                 color: 'var(--muted)', fontSize: 10, fontWeight: 700,
-              }}>{open ? '▴ ย่อ' : 'ⓘ อ่านเพิ่ม'}</button>
+              }}>{open ? '▴ ย่อ' : `${MORE_MARK} อ่านเพิ่ม`}</button>
               {open && <div style={{ marginTop: 5 }}>{more}</div>}
             </>
           )}

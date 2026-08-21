@@ -6,6 +6,7 @@ import { positionOptions, positionLabel, loadPositions, levelOfPosition, mainten
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 
+import InfoMore from '../components/InfoMore';
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
 // (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
 // admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
@@ -669,10 +670,12 @@ export default function AddUser() {
                     );
                   })}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                  เลือกได้หลายส่วนงาน — user จะเห็นข้อมูลเฉพาะส่วนงานที่ติ๊กไว้ (ใช้ได้กับทุกชุดสิทธิ์ เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน) · ไม่ติ๊กเลย = เห็นทุกส่วนงาน
+                {/* กติกาสำคัญ (ไม่ติ๊ก = เห็นทุกส่วนงาน) เห็นตลอด · เหตุผล/ข้อควรระวังพับไว้ */}
+                <InfoMore size={11} style={{ marginTop: 4 }} id="au_sections"
+                  lead={<>เลือกได้หลายส่วนงาน — เห็นข้อมูลเฉพาะที่ติ๊ก · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน</b></>}>
+                  ใช้ได้กับทุกชุดสิทธิ์ (เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน)
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
-                </div>
+                </InfoMore>
               </div>
 
               {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
@@ -712,9 +715,12 @@ export default function AddUser() {
                     <input type="checkbox" checked={!!form.deptAdmin} onChange={e => setF('deptAdmin', e.target.checked)} style={{ margin: 0, width: 'auto' }} />
                     <span style={{ fontSize: 13, fontWeight: 700, color: form.deptAdmin ? '#eab308' : 'var(--text)' }}>🛡️ เป็นแอดมินหน่วยงาน</span>
                   </label>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                    ให้สิทธิ์ <b>แก้ข้อมูล master/ตั้งค่า/อนุมัติ</b> ในหน้าที่ role นี้เข้าถึงได้ — <b>เฉพาะหน่วยงาน/scope ของตัวเอง</b> (ไม่ใช่ admin ระบบ · ไม่ได้จัดการสิทธิ์/ผังองค์กร/เพิ่ม user ทั้งระบบ) · ไม่ติ๊ก = ใช้งานได้อย่างเดียว แก้ไม่ได้ · ปรับ "แอดมินหน่วยงานทำอะไรได้" ที่หน้าจัดการสิทธิ์ คอลัมน์ 🛡️
-                  </div>
+                  <InfoMore size={11} style={{ marginTop: 4 }} id="au_deptadmin"
+                    lead={<>ให้สิทธิ์ <b>แก้ข้อมูล master/ตั้งค่า/อนุมัติ</b> เฉพาะหน่วยงานของตัวเอง · ไม่ติ๊ก = ใช้งานได้อย่างเดียว</>}>
+                    ครอบเฉพาะหน้าที่ role นี้เข้าถึงได้อยู่แล้ว — <b>ไม่ใช่ admin ระบบ</b>
+                    (ไม่ได้จัดการสิทธิ์ / ผังองค์กร / เพิ่ม user ทั้งระบบ)
+                    <br />ปรับว่า "แอดมินหน่วยงานทำอะไรได้" ที่หน้าจัดการสิทธิ์ คอลัมน์ 🛡️
+                  </InfoMore>
                 </div>
               )}
 

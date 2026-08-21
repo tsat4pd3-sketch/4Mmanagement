@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { DAY_TYPE_META } from '../utils/companyCalendar';
 
+import InfoMore from '../components/InfoMore';
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 const DAY_TYPES = ['working', 'ot15', 'ot2', 'shutdown75'];
@@ -178,9 +179,12 @@ export default function CompanyCalendar() {
       )}
 
       {canEdit && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>
-          💡 คลิกที่ตัวเลขวันที่เพื่อสลับสถานะ: วันทำงาน → OT×1.5 → OT×2 → หยุดจ่าย 75% → วันทำงาน — ยังไม่บันทึกจนกว่าจะกด "บันทึก" ด้านล่าง · <b>หยุดจ่าย 75% (ม.75)</b> = หยุดชั่วคราวเหตุลูกค้าลด order: หยุดได้ค่าจ้าง 75% · มาทำงาน = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด)
-        </div>
+        <InfoMore size={11} style={{ marginBottom: 14 }} id="cal_help"
+          lead={<>💡 คลิกตัวเลขวันที่เพื่อสลับสถานะ — <b>ยังไม่บันทึกจนกว่าจะกด "บันทึก"</b></>}>
+          ลำดับที่สลับ: วันทำงาน → OT×1.5 → OT×2 → หยุดจ่าย 75% → วันทำงาน
+          <br /><b>หยุดจ่าย 75% (ม.75)</b> = หยุดชั่วคราวเหตุลูกค้าลด order — หยุดได้ค่าจ้าง 75% ·
+          มาทำงาน = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด)
+        </InfoMore>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 14, opacity: loading ? 0.5 : 1 }}>

@@ -15,6 +15,7 @@ import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../util
 import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
+import InfoMore from '../components/InfoMore';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1114,9 +1115,11 @@ export default function ProductMaster() {
                   <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP) · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
-                </div>
+                <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
+                  lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
+                  ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP)
+                  <br />ยอดรวมภาพใหญ่จะนับที่<b>พาร์ทจริง</b> ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                </InfoMore>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
