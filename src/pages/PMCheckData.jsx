@@ -116,7 +116,8 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [zoomCp, setZoomCp] = useState(null)   // จุดที่กำลังเปิดรูปซูม (มี image_path)
-  useEffect(() => { setFrameIdx(0); setPlaying(false) }, [frames])
+  // เปลี่ยนอุปกรณ์ = รีเซ็ตทุกอย่าง รวมรูปซูมที่ค้างอยู่ (ไม่งั้นค้างรูปของเครื่องก่อนหน้า)
+  useEffect(() => { setFrameIdx(0); setPlaying(false); setZoomCp(null) }, [frames])
   const boxRef = useRef(null)
   const drag = useRef(null) // { startX, startIdx, moved }
   const spin = frames.length >= 2
@@ -234,6 +235,11 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
    ภาพรวม = แผนที่ว่าจุดอยู่ตรงไหน · ตัวนี้ = ซูมเข้าไปดูว่าต้องดูอะไรตรงนั้น */
 function CpZoom({ cp, idx, onClose }) {
   const url = getPublicUrl(cp.image_path)
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') onClose?.() }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [onClose])
   return (
     <div onClick={onClose} className="modal-scroll"
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>

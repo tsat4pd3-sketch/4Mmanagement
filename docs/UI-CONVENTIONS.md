@@ -600,6 +600,7 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
 - สิทธิ์ action ใช้ `can(resource, action, role)` จาก `src/utils/permissions.js` — ห้าม hardcode `['admin',...].includes(role)` เพิ่ม (ดู docs/PERMISSIONS-DESIGN.md)
 - วันที่งาน: `getWorkDate()` เท่านั้น (ก่อน 08:00 = วันก่อนหน้า) ห้าม `toISOString()`
 - อัปโหลดรูป: ผ่าน `ImageCropModal` (รูปนิ่งบีบอัตโนมัติ · GIF ส่งทั้งไฟล์ ≤2MB คงการขยับ — ห้ามถอด cap) — ยกเว้นรูปที่ crop ไม่เหมาะ (ผัง/drawing/หลักฐาน) ให้บีบก่อนอัปโหลดแทน ห้ามส่งรูปดิบ + เปลี่ยน/ลบรูปแล้วลบไฟล์เก่าจาก storage เสมอ (2026-07-10 — รายชื่อหน้า+ข้อยกเว้นดู CLAUDE.md "Storage & รูปภาพ")
+  - **⚠️ ห้าม crop อัตโนมัติโดยที่ผู้ใช้เลือกกรอบเองไม่ได้ (2026-08-21 · feedback หน้างาน)** — PMSetup เคย center-crop 3:4 ทันทีที่เลือกรูป ผลคือ**จุดสำคัญริมภาพโดนตัดทิ้งแบบแก้ไม่ได้** · ต้องการสัดส่วนคงที่ให้ส่ง `aspect` เข้า `ImageCropModal` (ลาก/ซูมเลือกเอง) · รูปที่ครอบแล้วเสียข้อมูลให้เปิด **`allowFull`** เพิ่มตัวเลือก "ใช้ทั้งรูป (ไม่ครอบ)" · เลือกหลายไฟล์ = เข้าคิวครอบทีละใบ **ห้ามครอบให้เองเงียบๆ**
 - หน้าที่ query ตาม section: กรองด้วย `sections` array จาก UserContext (`inSectionScope` / `.in('section', ...)`) ไม่ใช่ `section` เดี่ยว (2026-07-09 — ดู CLAUDE.md "Section/Line/Team Scoping")
 
 ---
