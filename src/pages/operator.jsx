@@ -16,6 +16,7 @@ import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/labo
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
 import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
 import { pickUnusedColor } from '../utils/colorPick';
+import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
@@ -1551,12 +1552,25 @@ export default function Operator() {
 
               <div>
                 <label style={labelSt}>Team / กะ</label>
-                <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
-                  <option value="">— เลือก —</option>
-                  <option value="A">Team A (กะเช้า)</option>
-                  <option value="B">Team B (กะดึก)</option>
-                  <option value="C">Team C (ไม่มีพันธะกะ)</option>
-                </select>
+                {/* ⚠️ ห้ามเขียน "Team A (กะเช้า)" — A/B หมุนสลับกันรายสัปดาห์ตามตารางกะ
+                    ป้ายกำกับมาจาก teamLabel() (shiftAssign.js) ที่เดียว · ลิสต์ทีมดึงจากผังองค์กร
+                    (org_nodes kind='team' เหมือน /register) ผังยังไม่มีทีม = ถอยไป A/B/C เดิม */}
+                {(() => {
+                  const orgTeams = [...new Set(orgAllNodes.filter(n => n.kind === 'team').map(n => n.code || n.name).filter(Boolean))];
+                  const opts = orgTeams.length ? orgTeams : ['A', 'B', 'C'];
+                  // ค่าเดิมของพนักงานที่ไม่มีในลิสต์ ต้องยังโชว์ได้ ไม่งั้นเปิดแก้ไขแล้วทีมหายเงียบ
+                  const cur = editingEmp.team;
+                  const all = cur && !opts.includes(cur) ? [cur, ...opts] : opts;
+                  return (
+                    <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
+                      <option value="">— เลือก —</option>
+                      {all.map(t => <option key={t} value={t}>{teamLabel(t)}</option>)}
+                    </select>
+                  );
+                })()}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>
+                  A/B สลับเช้า-ดึกรายสัปดาห์ — ดู/ตั้งรอบหมุนที่ <Link to="/shift-organize" style={{ color: 'var(--accent)' }}>ตารางกะ</Link>
+                </div>
               </div>
               <div>
                 <label style={labelSt}>Group / กลุ่ม (Line)</label>

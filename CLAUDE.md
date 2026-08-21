@@ -431,6 +431,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > **ลำดับตัดสิน (ห้ามสลับ):** `shift_overrides` รายคน → `shift_merge_events` (ไลน์ชนะ section) → **ตารางกะ: ไลน์ผลิตก่อน → ไม่มีค่อยใช้ของหน่วยงาน**
 > - `buildScheduleMaps(rows)` → `{ byLine, byDept, count }` · `scheduleTeamFor(emp, maps)` · `shiftFromTeam(dayTeam, empTeam)` · `resolveAssignedShift(emp, {overrideShift, mergeShift, maps})`
 > - **`Team C` = กะเช้าตลอด ไม่หมุน A/B** — ห้ามตัดเงื่อนไขนี้ออก คนจะหายจากจอ · ทีมที่ไม่รู้จัก → `null` (ไม่เดา)
+> - **⚠️ ป้ายกำกับทีมบนจอต้องผ่าน `teamLabel()` — ห้ามเขียน "Team A (กะเช้า)" ตายตัวเด็ดขาด** (พบจริง 2026-08-21 ที่ dropdown "Team / กะ" ใน `/operator` — เขียน A=กะเช้า · B=กะดึก · C=ไม่มีพันธะกะ **ผิดทั้ง 3 บรรทัด**: A/B หมุนสลับกันรายสัปดาห์ตาม `shift_schedules.day_team` จึงเขียนไว้ในป้ายไม่ได้ · ส่วน C ที่คงที่จริงกลับเขียนว่า "ไม่มีพันธะกะ" ซึ่งตรงข้ามกับกติกา) · จุดอื่นทั้ง 9 dropdown เขียน "Team A" เปล่าๆ ถูกอยู่แล้ว · **ลิสต์ทีมดึงจากผังองค์กร** (`org_nodes` kind='team' เหมือน `/register`) ผังยังไม่มีทีม = ถอยไป A/B/C · ค่าเดิมของพนักงานที่ไม่อยู่ในลิสต์ต้องยังโชว์ได้ (ไม่งั้นเปิดแก้ไขแล้วทีมหายเงียบ)
 >
 > #### 🏢 กะของ "หน่วยงานสนับสนุน" — `shift_schedules.dept_name` (2026-08-11 · user แจ้ง "set กะให้พนักงานซัพพอร์ทยังทำไม่ได้")
 > ตารางกะเดิมผูก `(work_date, line_id)` เท่านั้น → **พนักงานที่ไม่มี `line_id` (ช่าง MTN/JIG/DIE · QA · คลัง) ไม่มีแถวให้ตั้งกะเลย** `assignedShift` เป็น null ตลอด เหลือทางเดียวคือ `shift_overrides` ทีละคน-ทีละวัน (14 คน × 30 วัน = ใช้จริงไม่ไหว)
