@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import LineSelect from '../components/LineSelect';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { visibleInterval } from '../utils/usePolling';
@@ -49,7 +50,7 @@ export default function StoreMonitor() {
       supabaseDR.from('kanban_delivery_rounds').select('line_name, shift, round_no, cutoff_time, delivery_time, points_count, time_per_point_min, is_active').eq('is_active', true),
       supabaseDR.from('kanban_deliveries').select('line_name, shift, round_no, confirmed_at, received_status').eq('work_date', today),
       supabaseDR.from('purchase_requests').select('mat_no, part_name, dest_line, supplier, status, work_date, created_at').in('status', ['pending', 'ordered']),
-      supabase.from('production_lines').select('id, name, section, parent_line_name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name, is_active'),
     ]);
     setProdLines(lines || []);
     setSummary(sum || []);
@@ -181,11 +182,14 @@ export default function StoreMonitor() {
           }}>{l}</button>
         ))}
         {lines.length > 0 && (
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)}
-            style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 200, marginLeft: 'auto' }}>
-            <option value="">ทุกไลน์</option>
-            {lines.map(l => <option key={l} value={l}>{l}</option>)}
-          </select>
+          /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
+             scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
+          <LineSelect
+            lines={prodLines.filter(l => lines.includes(l.name))}
+            value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
+            style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 200, marginLeft: 'auto' }}
+            extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          />
         )}
       </div>
 

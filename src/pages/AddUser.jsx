@@ -5,6 +5,7 @@ import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
 import { positionOptions, positionLabel, loadPositions, levelOfPosition, maintenanceKindOfPosition, levelMeta } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
+import LineSelect from '../components/LineSelect';
 
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
 // (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
@@ -728,10 +729,8 @@ export default function AddUser() {
 
               <div>
                 <label style={labelSt}>ไลน์ผลิต / Group {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
-                <select value={form.lineId} onChange={e => setF('lineId', e.target.value)}>
-                  <option value="">— เลือกไลน์ —</option>
-                  {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                </select>
+                <LineSelect lines={lines} value={form.lineId} valueKey="id"
+                  onChange={v => setF('lineId', v)} />
               </div>
 
               {(form.role === 'supervisor' || form.role === 'leader') && (

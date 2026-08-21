@@ -12,6 +12,8 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
+import { MAT_CLASSES, matDigit, matClassOf } from '../utils/matPrefix';
+import { invalidateProductionLines } from '../utils/useProductionLines';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -205,7 +207,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
 
   const fetchLines = async () => {
-    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name';
+    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, is_active';
     let { data, error } = await supabase.from('production_lines').select(`${BASE}, line_type, flow_mode, parallel_stations`).order('name');
     if (error) {
       // คอลัมน์เสริมยังไม่ apply (migration 20260722 line_type / 20260723 flow_mode)
@@ -289,6 +291,26 @@ export default function LineSetup({ embedded = false } = {}) {
       setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
     }
+  };
+
+  /** ปลดระวาง/คืนสถานะไลน์ — บันทึกทันทีแยกจากปุ่ม 💾 (เป็น action ไม่ใช่ค่าในฟอร์ม) */
+  const handleToggleRetire = async (retire) => {
+    const lineObj = lines.find(l => l.name === selectedLine);
+    if (!lineObj) return;
+    if (retire && !window.confirm(`ปลดระวางไลน์ "${lineObj.name}" ?\n\nไลน์จะไม่โผล่ใน dropdown ให้เลือกใหม่ทุกหน้า\nแต่ข้อมูลเก่าที่อ้างชื่อไลน์นี้ยังอ่านได้ครบ (ไม่ใช่การลบ)`)) return;
+    const { data, error } = await supabase.from('production_lines')
+      .update({ is_active: !retire }).eq('id', lineObj.id).select('id');
+    if (error) {
+      toast.error(/is_active/.test(error.message || '')
+        ? 'ยังไม่ได้ apply migration 20260821_production_lines_is_active — แจ้ง admin'
+        : error.message);
+      return;
+    }
+    // ⚠️ RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถว ไม่ error → ต้องนับแถวเสมอ (กฎ CLAUDE.md)
+    if (!data?.length) { toast.error('ไม่มีแถวถูกแก้ — ตรวจสิทธิ์การแก้ทะเบียนไลน์'); return; }
+    toast.success(retire ? `⏸ ปลดระวาง ${lineObj.name} แล้ว` : `▶ คืนสถานะ ${lineObj.name} แล้ว`);
+    invalidateProductionLines();   // ให้หน้าอื่นเห็นทันที ไม่ต้องรอ cache หมดอายุ
+    fetchLines();
   };
 
   const handleSaveStdManpower = async () => {
@@ -1526,12 +1548,17 @@ export default function LineSetup({ embedded = false } = {}) {
 
                   {wipForm.point_type === 'material' ? (
                     <>
-                      <select value={wipForm.material_category}
+                      {/* ⚠️ เดิม hardcode 200/300/500 — ขัดกฎ matPrefix.js ที่บอกว่าเลข SAP
+                          รันทะลุช่วงเดิมไปแล้ว ต้องแยกด้วย "เลขตัวแรกตัวเดียว" เท่านั้น
+                          (เบอร์ 1 = FG หายไปจากลิสต์เดิมด้วย ทั้งที่จุด WIP เก็บ FG ได้) */}
+                      {/* ข้อมูลเก่าเก็บ '200'/'300'/'500' — normalize ด้วย matDigit ตอนแสดง
+                          ค่าเดิมจึงไม่หายจากช่อง (จะถูกเขียนเป็นเลขตัวเดียวเมื่อบันทึกครั้งถัดไป) */}
+                      <select value={matDigit(wipForm.material_category)}
                         onChange={e => setWipForm({ ...wipForm, material_category: e.target.value })}>
-                        <option value="">-- ประเภทวัสดุ (200/300/500) --</option>
-                        <option value="200">200</option>
-                        <option value="300">300</option>
-                        <option value="500">500</option>
+                        <option value="">-- ประเภทวัสดุ --</option>
+                        {MAT_CLASSES.map(c => (
+                          <option key={c.digit} value={c.digit}>{c.digit} · {c.label}</option>
+                        ))}
                       </select>
                       <input list="dr-mat-no-list" placeholder="เลขที่วัสดุ (mat no.) — พิมพ์เพื่อค้นจาก Product Master" value={wipForm.mat_no}
                         onChange={e => setWipForm({ ...wipForm, mat_no: e.target.value })} />
@@ -1609,7 +1636,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           {p.point_type === 'packaging'
                             ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
-                            : `${p.material_category ? `cat.${p.material_category} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
+                            : `${p.material_category ? `${matClassOf(p.material_category)?.short || `cat.${p.material_category}`} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
                           คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
                         </div>
                       </div>
@@ -1912,7 +1939,18 @@ export default function LineSetup({ embedded = false } = {}) {
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {/* ⏸ ปลดระวางไลน์ — ทางเลือกแทนการ "ลบไลน์" ซึ่งทำให้ชื่อไลน์ที่ถูกเก็บเป็น text
+                  ในหลายสิบตาราง 2 project กำพร้าเงียบทันที (ดูกฎ rename cascade ใน CLAUDE.md)
+                  ปลดระวาง = ไม่โผล่ใน dropdown ให้เลือกใหม่ แต่ข้อมูลเก่ายังอ่านออกครบ */}
+              {canEdit && selLineObj && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: selLineObj.is_active === false ? '#f59e0b' : 'var(--muted)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
+                  <span>⏸ ปลดระวางไลน์นี้ {selLineObj.is_active === false
+                    ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
+                    : '— ใช้แทนการลบ เมื่อเลิกใช้ไลน์'}</span>
+                </label>
+              )}
               {canEdit && (
               <button onClick={handleSaveStdManpower} disabled={mpSaving}
                 style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>

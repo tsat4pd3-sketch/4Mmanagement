@@ -6,6 +6,7 @@
 อัพเดทล่าสุด: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
+อัพเดท 2026-08-21: §5.3 ข้อ 9 ใหม่ — **dropdown เลือกไลน์ต้องใช้ `<LineSelect>` เท่านั้น** (ลำดับชั้น + scope + ตัดไลน์ปลดระวาง) · `production_lines.is_active` = ปลดระวางไลน์แทนการลบ
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
 อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
 อัพเดท 2026-08-04: §5.1 viewer วางจุด default = **พอดีกรอบทั้ง 2 แกน** (เดิมเต็มความกว้าง → รูปแนวนอนสูงล้นจนตารางตกจอ) · §5.1 จอ "ตรวจจริง" ต้อง sync สีหมุดกับผลตรวจ + แตะหมุด↔แถว สองทาง
@@ -387,7 +388,28 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 
 8. **dropdown ไลน์ตัวเดียว (ไม่ cascade) ต้องเรียงตามลำดับชั้นผ่าน `toHierarchicalOptions(lines)` (`src/utils/lineHierarchy.js`) — 2026-08-04** คืน `[{line, depth}]` เรียงแม่ → ลูกใต้แม่ แล้ว render ย่อหน้าตาม `depth` (`↳`) · **ห้าม `lines.map()` ตรงๆ แล้วเติม `↳` ให้ลูก** — ลิสต์จะเรียงตามลำดับที่ query มา ลูกลอยไปคนละที่กับแม่ (เจอจริง: แผง 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics` โชว์ `↳ Assy GOR` อยู่**เหนือ** `GOR`, `↳ HDF1/HDF2` เหนือ `HYDROFORM`)
 
-ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes), `OeeInsightPanel.jsx` (dropdown ไลน์เดี่ยวผ่าน `toHierarchicalOptions`)
+9. **⭐ dropdown เลือกไลน์ = `<LineSelect>` เท่านั้น ห้ามเขียน `lines.map(l => <option>)` เองอีก — 2026-08-21 (คำสั่ง user)**
+   `src/components/LineSelect.jsx` + hook `useProductionLines()` (`src/utils/useProductionLines.js`)
+
+   **ที่มา:** user เปิด `/line-stock` แล้วเจอ dropdown "กรองไลน์" เป็นลิสต์แบนเรียงตัวอักษร ปน `FG WAREHOUSE` /
+   ไลน์ผลิต / ไลน์ `test`,`test child`,`test child 2` — ไล่ตรวจแล้วเจอ **26 จุดทั่วระบบ** เขียน pattern เดียวกัน
+   **ต้นเหตุ: หลายหน้า `select('name')` อย่างเดียว** → ไม่มี `parent_line_name` (จัดลำดับชั้นไม่ได้)
+   ไม่มี `section` (กรอง scope ไม่ได้) ไม่มี `is_active` (ไลน์ปลดระวางโผล่ปน)
+
+   `<LineSelect lines={...} value onChange {...scope} />` รับประกันให้เหมือนกันทุกหน้า:
+   - เรียงลำดับชั้น (แม่ → `↳` ลูก) ผ่าน `toHierarchicalOptions`
+   - ตัดไลน์ `is_active=false` ออก แต่ **ค่าที่เลือกไว้แล้วยังโชว์** พร้อมป้าย `⏸ ปลดระวาง` / `(นอกขอบเขตของคุณ)` /
+     `⚠ ไม่มีในทะเบียนไลน์` — **ห้ามให้ค่าเดิมหายเงียบจากฟอร์ม**
+   - กรอง scope มาตรฐาน (leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม `sections`)
+   - `extraGroups` สำหรับตัวเลือกที่ **ไม่ใช่ไลน์ผลิต** (คลัง FG/STORE · กลุ่มเครื่องปั๊มของแม่พิมพ์) —
+     แยก `<optgroup>` ให้ชัด **ห้ามกองปนกับไลน์ผลิต** (คนละความหมายกัน)
+   - `valueKey="id"` เมื่อ dropdown เก็บ `line_id` แทนชื่อ (AddUser / OrgSetup / Report)
+
+   **ปลดระวางไลน์ ≠ ลบไลน์** — `production_lines.is_active` (migration `20260821_production_lines_is_active.sql`)
+   ตั้งได้ที่ `/linesetup` แผง ⚙️ ตั้งค่าไลน์ · **ห้ามลบไลน์เพื่อให้ dropdown สะอาด** ชื่อไลน์ถูกเก็บเป็น text
+   ในหลายสิบตาราง 2 project ลบแล้วข้อมูลเก่ากำพร้าเงียบทันที (ดูกฎ rename cascade ใน CLAUDE.md)
+
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes), `LineStock.jsx` / `RackCenter.jsx` (dropdown ไลน์ + optgroup คลัง ผ่าน `<LineSelect>`)
 
 ---
 
