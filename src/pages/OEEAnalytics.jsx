@@ -138,18 +138,38 @@ function dateStrAdd(dateStr, deltaDays) {
 // ── KPI Card ─────────────────────────────────────────────────────
 /* `calc` = ที่มาของตัวเลข (user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที")
    — เป็นตัวเลขอธิบาย ไม่ใช่ตัวที่เอาไปคำนวณซ้ำ · ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ */
-const KpiCard = ({ label, value, color, sub, calc }) => (
-  <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
-    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-    <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
-    {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
-    {calc && (
-      <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
-        {calc}
-      </div>
-    )}
-  </div>
-);
+/* KpiCard — ตัวเลข + ที่มาของสูตร
+   `calc` = **ตัวเลขที่มา (ตัวตั้ง ÷ ตัวหาร = ผล) เห็นตลอด** — คือสิ่งที่ user ขอไว้
+            ("จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที") ห้ามเอาไปซ่อน
+   `more`  = คำอธิบายเชิงแนวคิด/ข้อควรระวัง → พับไว้หลังปุ่ม ⓘ (user 2026-08-21:
+            "รายละเอียดที่อธิบายเยอะๆ เป็น tooltips ดีมั้ย") เพราะกำแพงข้อความบนการ์ด
+            ทำให้เลขจริงจมหาย
+   ⚠️ ใช้ "กดเปิด" ไม่ใช่ hover tooltip — จอสัมผัส/จอ TV ไม่มีเมาส์ (UI-CONVENTIONS §6) */
+const KpiCard = ({ label, value, color, sub, calc, more }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+      {calc && (
+        <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
+          {calc}
+          {more && (
+            <>
+              <button onClick={() => setOpen(o => !o)} style={{
+                marginTop: 5, padding: '2px 7px', borderRadius: 6, cursor: 'pointer',
+                border: '1px solid var(--border2)', background: 'var(--bg3)',
+                color: 'var(--muted)', fontSize: 10, fontWeight: 700,
+              }}>{open ? '▴ ย่อ' : 'ⓘ อ่านเพิ่ม'}</button>
+              {open && <div style={{ marginTop: 5 }}>{more}</div>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── Custom tooltip ───────────────────────────────────────────────
 const OEETooltip = ({ active, payload, label }) => {
@@ -1794,8 +1814,12 @@ export default function OEEAnalytics() {
             → <b>{kpi.a != null && kpi.calMin > 0 ? (kpi.a * kpi.netAvailMin / kpi.calMin).toFixed(1) : '—'}%</b>
             <span style={{ color: 'var(--muted)' }}> (OEE ใช้ {kpi.a ?? '—'}%)</span><br />
             <span style={{ color: 'var(--muted)' }}>P {kpi.p ?? '—'}% · Q {kpi.q ?? '—'}% เหมือน OEE ทุกตัว</span>
+          </>}
+          /* คำอธิบายยาว → พับหลัง ⓘ · **แต่ยังต้องอยู่บนจอ ห้ามตัดทิ้ง**
+             ทั้ง 3 ก้อนนี้ตอบคำถามที่ถูกถามจริงมาแล้ว (ทำไมต่ำ · ปฏิทินเริ่มตรงไหน · ตัดไลน์อะไรออก) */
+          more={<>
             {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
-            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+            <div style={{ color: 'var(--muted)' }}>
               ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
             </div>
             {/* ปฏิทินของแต่ละไลน์เริ่มนับวันที่มันเข้าระบบ ไม่ใช่วันเริ่มช่วง — ต้องบอก ไม่งั้นคนคิดว่านับเต็มช่วง */}
