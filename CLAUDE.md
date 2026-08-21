@@ -670,7 +670,22 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 - **derive ผ่าน `src/utils/laborType.js`** (`buildLaborMap(orgNodes)` รวมทั้ง section+department → `laborTypeOf(section, department, laborMap)` เช็คแผนกก่อน · fallback heuristic: ชื่อเข้าเกณฑ์สนับสนุน MTN/JIG/DIE/QA/คลัง/ธุรการ/ขาย = indirect ก่อน แล้วเกณฑ์ผลิต = direct) — **ห้าม hardcode ว่า node ไหน direct/indirect ในหน้า** อ่านจาก org_nodes เสมอ
 - แสดง/กรองในหน้า `/operator` (badge 🔧/🗂️ + ปุ่มกรอง Direct/Indirect) — direct = 🔧 เขียว, indirect = 🗂️ ฟ้า
 - **ช่างซ่อมบำรุง = พนักงานแผนก/ส่วน MTN/JIG/DIE** (indirect) มี `employee_skills` เหมือน operator (สกิลซ่อมบำรุง) · สร้างแผนก/ส่วน MTN/JIG/DIE ใน OrgSetup (ตั้ง labor_type = indirect) แล้วลงทะเบียนช่างที่ Register/operator ปกติ
-- **MtnRepair dropdown "มอบหมายช่าง" ดึงจาก employees ทีมช่าง** (`teamForSection` ใน `mtnTeams.js` map **department ก่อน แล้ว section** →ทีม) + รวมกับ `mtn_technicians` เดิม (ช่างเฉพาะกิจนอกฐานพนักงาน — fallback ไม่ลบ) · **ช่างเดิมทั้ง 14 คน (JIG MTN 7 + MTN 7) ย้ายเข้า employees แล้ว 2026-07-22** (รหัสชั่วคราว TECH-JIG-xx/TECH-MTN-xx รอเติมรหัสจริง · mtn_technicians ทุกแถวถูกปิด is_active=false เหลือไว้เป็นประวัติ — migration `20260722_migrate_technicians_to_employees.sql`) · `assigned_to` ยังเก็บเป็น **ชื่อ (text)** เหมือนเดิม (backward-compatible) · ⚙️ MasterTab: ช่างจากฐานพนักงานแสดง read-only (แก้ที่หน้าพนักงาน) เพิ่มได้เฉพาะช่างเฉพาะกิจ · **MtnRepair อ่าน employees ผ่าน client `supabase` (Main, authenticated)** ไม่ใช่ supabaseDR
+> ### ⚠️ กฎเหล็ก — "ช่างของฝ่ายผลิต" ต้องติ๊กเอง ระบบเดาให้ไม่ได้ (2026-08-21 · feedback หน้างาน)
+> *"ช่างของผลิต role มันไม่มีให้เลือก เค้าอยู่ระหว่างระดับส่วนกับระดับกลุ่ม ในลำดับขั้นการรับ-จ่ายงานซ่อม ขั้นตอนที่ 2 ไป 3"*
+> **ติด 2 ชั้น แก้ทั้งคู่ · migration `20260821_production_technician_setup.sql` (Main)**
+>
+> | ชั้น | อาการ | แก้ด้วย |
+> |---|---|---|
+> | ① เลือกเป็น "ช่างผู้รับผิดชอบ" ขั้น 2 ไม่ได้ | ลิสต์ช่างมาจาก `employees` โดย**เดาทีมจากชื่อแผนก** (`teamForSection`) ซึ่งจับได้แค่ JIG/DIE/MTN — **ทีม `production` เดาไม่ได้โดยตั้งใจ** (ส่วนงานผลิตมีหลายชื่อ PD1/PD2/GOR… เดาเหมาจะไปโดน QA/ธุรการ) ⇒ ช่างฝ่ายผลิต **ไม่มีวันโผล่** ไม่ว่ากรอกข้อมูลยังไง | คอลัมน์ **`employees.mtn_team`** — ติ๊กที่ `/operator` ช่อง 🔧 ทีมช่างซ่อม · **ชนะการเดาเสมอ** (null = ไม่ใช่ช่าง/เดาเหมือนเดิม) |
+> | ② ทำขั้น 2-4 ไม่ได้ | `mtn_repair:service` seed ไว้แค่ admin/manager/mtn | คีย์ใหม่ **`mtn_repair:service_own_team`** = ทำได้เฉพาะ**ใบของทีมตัวเอง** |
+>
+> - **⚠️ ห้ามเพิ่ม role "ช่างฝ่ายผลิต"** — กฎเหล็ก "เจอแกนใหม่ให้เพิ่ม attribute ห้ามเพิ่ม role" · แกน "เป็นช่างของทีมไหน" มีที่อยู่แล้วคือ `profiles.mtn_teams`
+> - **คีย์ใหม่คุม 2 ชั้นพร้อมกัน:** role ต้องถือคีย์ **และ** ตัวบุคคลต้องถูกตั้ง `profiles.mtn_teams` ให้ตรงกับทีมของใบนั้น → **ติ๊กให้ role `leader` ไม่ได้แปลว่าหัวหน้ากลุ่มทุกคนแตะใบซ่อมได้** (ไม่ได้ตั้งทีม = `userTeams` ว่าง = ไม่ผ่าน) — วิธีนี้ได้ granularity ระดับคนโดยไม่ต้องมี role ใหม่
+> - `canEditStep` + ปุ่มขั้นถัดไป เช็ค `ownTeamService` เพิ่มจาก `service` เดิม · **ใบทีมอื่นยังทำไม่ได้**
+> - **ปุ่มขั้นถัดไปหายเพราะสิทธิ์ = ขึ้นแถบบอกว่าต้องตั้งอะไรที่ไหน** (UI-CONVENTIONS §6.9) — เดิมหายเงียบ คนถึงต้องมาถาม
+> - `employees.mtn_team` เขียนเป็น **update แยก best-effort** ใน `/operator` — ยัดลง payload หลักไม่ได้ (42703 = บันทึกพนักงานพังทั้งใบ) · select ใน MtnRepair ก็ tolerant (ไม่มีคอลัมน์ = ถอยไปชุดเดิม)
+>
+- **MtnRepair dropdown "มอบหมายช่าง" ดึงจาก employees ทีมช่าง** (`employees.mtn_team` ก่อน → ไม่มีค่อยเดาด้วย `teamForSection` ใน `mtnTeams.js` map **department ก่อน แล้ว section** →ทีม) + รวมกับ `mtn_technicians` เดิม (ช่างเฉพาะกิจนอกฐานพนักงาน — fallback ไม่ลบ) · **ช่างเดิมทั้ง 14 คน (JIG MTN 7 + MTN 7) ย้ายเข้า employees แล้ว 2026-07-22** (รหัสชั่วคราว TECH-JIG-xx/TECH-MTN-xx รอเติมรหัสจริง · mtn_technicians ทุกแถวถูกปิด is_active=false เหลือไว้เป็นประวัติ — migration `20260722_migrate_technicians_to_employees.sql`) · `assigned_to` ยังเก็บเป็น **ชื่อ (text)** เหมือนเดิม (backward-compatible) · ⚙️ MasterTab: ช่างจากฐานพนักงานแสดง read-only (แก้ที่หน้าพนักงาน) เพิ่มได้เฉพาะช่างเฉพาะกิจ · **MtnRepair อ่าน employees ผ่าน client `supabase` (Main, authenticated)** ไม่ใช่ supabaseDR
 
 ---
 
