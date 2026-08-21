@@ -1579,6 +1579,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
                   สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
               <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
               <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
+              <Route path="/bbs" element={<Navigate to="/daily-checker?tab=bbs" replace />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />

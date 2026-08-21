@@ -45,6 +45,7 @@ const PAGE_GROUPS = [
       { key: 'page:/daily-pm',     label: '— แท็บ Autonomous Maintenance (AM) (ใน Daily Checker)' },
       { key: 'page:/pokayoke',     label: '— แท็บ Poka-Yoke Check (ใน Daily Checker)' },
       { key: 'page:/lpa',          label: '— แท็บ Layer Process Audit (ใน Daily Checker)' },
+      { key: 'page:/bbs',          label: '— แท็บ สังเกตพฤติกรรมความปลอดภัย BBS (ใน Daily Checker)' },
       { key: 'page:/improvements', label: 'Improvements (Kaizen)' },
       { key: 'page:/scrap-report', label: 'ใบรายงานของเสีย (Scrap)' },
     ],

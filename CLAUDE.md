@@ -164,7 +164,7 @@
 | ฝ่ายผลิต | `/daily-report` | DailyReport | ทุก role |
 | ฝ่ายผลิต | `/production-plan` | ProductionPlan — วางแผนการผลิต (active planner ดู section "Production Plan") | admin/manager/supervisor/leader/planner_store/sale |
 | วิเคราะห์ & รายงาน | `/oee-analytics` | OEEAnalytics · **ปุ่ม 📽️ รายงานเดือน (2026-07-30): generate เด็ค Monthly Performance Review เป็นไฟล์ `.pptx` ตาม template TSG** (Tahoma · เขียว 0D3D14 + ส้ม C0561E) จากข้อมูลกะปิดแล้วของเดือนที่เลือก — Executive Summary → OEE/A/P/Q รายส่วน/ไลน์ → Top Downtime + การแก้ไข (ผูก `mtn_orders.solution` ผ่าน source_downtime_id) → Next-month Focus พร้อม story rule-based · `src/lib/monthlyReviewPptx.js` (builder — **pptxgenjs dynamic import เป็น lazy chunk ห้าม import แบบ static**) + `src/components/MonthlyReviewExport.jsx` (modal เลือกเดือน/ส่วนงาน scope ตาม sections) · สิทธิ์ `oee:export_review` (admin/mgr/sv) · doc_key `monthly_review` ใน doc_forms · migration `20260730_monthly_review_pptx.sql` · output นับ pair-aware + carry_over ตามกฎ · DT นับเฉพาะนอกแผน | ทุก role |
-| ฝ่ายผลิต | `/daily-checker` | **DailyChecker** — 🗂️ ศูนย์รวมระบบเช็ครายวัน (แท็บ: 🔧 Autonomous Maintenance (AM) [=Daily PM ฝ่ายผลิต เดิม · เปลี่ยนชื่อแสดงผลให้ตรงศัพท์ TPM 2026-07-23 · department ยังเป็น `production`] / 🛡️ Poka-Yoke Check [`/pokayoke` — TPM daily poka-yoke verification ด้วยชิ้น master NG · ตาราง `pokayoke_devices`+`pokayoke_checks` Main · สิทธิ์ `pokayoke:record`/`pokayoke:manage` · migration `20260723_pokayoke_check.sql`] / 📋 LPA / +ระบบเช็คอื่นในอนาคต) · embed component หน้าเดิมทั้งดุ้น (`DailyPM`/`LayerProcessAudit`) · แท็บโผล่ตามสิทธิ์หน้าย่อย · **สิทธิ์เข้าหน้า piggyback** `page:/daily-pm`‖`page:/lpa` (canAccessPage special-case ใน permissions.js — ไม่ต้อง seed permission ใหม่) · เพิ่มระบบเช็คใหม่ = เพิ่ม entry ใน `TABS` (DailyChecker.jsx) · `?tab=pm\|lpa` deep-link (2026-07-23) | ทุก role (ตามแท็บ) |
+| ฝ่ายผลิต | `/daily-checker` | **DailyChecker** — 🗂️ ศูนย์รวมระบบเช็ครายวัน (แท็บ: 🔧 Autonomous Maintenance (AM) [=Daily PM ฝ่ายผลิต เดิม · เปลี่ยนชื่อแสดงผลให้ตรงศัพท์ TPM 2026-07-23 · department ยังเป็น `production`] / 🛡️ Poka-Yoke Check [`/pokayoke` — TPM daily poka-yoke verification ด้วยชิ้น master NG · ตาราง `pokayoke_devices`+`pokayoke_checks` Main · สิทธิ์ `pokayoke:record`/`pokayoke:manage` · migration `20260723_pokayoke_check.sql`] / 📋 LPA / **🦺 BBS สังเกตพฤติกรรมความปลอดภัย** [`/bbs` · ดู section "BBS"] / +ระบบเช็คอื่นในอนาคต) · embed component หน้าเดิมทั้งดุ้น (`DailyPM`/`LayerProcessAudit`) · แท็บโผล่ตามสิทธิ์หน้าย่อย · **สิทธิ์เข้าหน้า piggyback** `page:/daily-pm`‖`page:/pokayoke`‖`page:/lpa`‖`page:/bbs` (canAccessPage special-case ใน permissions.js — ไม่ต้อง seed `page:/daily-checker`) · เพิ่มระบบเช็คใหม่ = เพิ่ม entry ใน `TABS` (DailyChecker.jsx) **+ route redirect ใน App.jsx + key ใน `PAGE_GROUPS` + special-case ใน permissions.js** (4 จุด ไม่งั้นแท็บโผล่แต่ admin ปรับสิทธิ์ไม่ได้) · `?tab=pm\|pokayoke\|lpa\|bbs` deep-link (2026-07-23) | ทุก role (ตามแท็บ) |
 | (ไม่อยู่ใน sidebar) | `/daily-pm` | DailyPM — ยังเป็น route แยก (เป็นแท็บใน Daily Checker + deep-link) | ทุก role |
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
@@ -1586,6 +1586,56 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - **ไม่เพิ่ม permission key ใหม่** — ใช้ `qa:record` (รับงาน/ยกเลิก) + `qa:manage` (ตั้งค่า) เลี่ยงกับดัก seed `enum_range`
 - **ไม่สร้าง `qa_piece_inspections` แยกตามที่เอกสารเดิมเสนอ** — `qa_inspection_sheets` (สร้างทีหลังเอกสาร) ทำหน้าที่นั้นครบแล้ว สร้างตารางที่ 2 = ผลตรวจแตก 2 ที่
 - **⚠️ ยังไม่ apply/deploy — ต้องทำ 3 ขั้นตามลำดับ:** (1) migration `20260819_qa_fme_call.sql` (Main) (2) deploy edge `qa-fme-scan` **`verify_jwt=false`** + `20260819_qa_fme_scan_cron.sql` (3) เปิดสวิตช์ที่ `/qa` ⚙️ · **`is_enabled` default = false โดยตั้งใจ** (ยิงเข้าห้อง Telegram จริง ต้องให้เจ้าของระบบกดเปิดเอง) · `skip_older_min` (120) กันเรียกย้อนหลังท่วมห้องแชทตอนเพิ่งเปิด
+
+---
+
+## 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21)
+
+แท็บ **🦺 BBS** ใน `/daily-checker` (`src/pages/BbsCheck.jsx`) — user ส่งฟอร์ม Excel มา
+*"เพิ่มเข้าระบบ + link ข้อมูลกับการตรวจ PPE พนักงาน ดึงลายเซ็นหัวหน้าที่ตรวจใส่ให้พร้อมเลย"*
+
+**โครง: 1 ใบ = เดือน × พื้นที่/ไลน์ × กะ · แถว = พนักงาน · คอลัมน์ = วันที่ 1-31**
+สัญลักษณ์ (source of truth `src/utils/bbsMarks.js` — **ห้ามพิมพ์ซ้ำในไฟล์อื่น** จอกับใบพิมพ์อ่านตัวเดียวกัน):
+`✓` เหมาะสม · **เลขข้อ 1-13** ไม่เหมาะสม · `m` ปรับแก้แล้วหลังผู้ตรวจแนะนำ · `✗` ไม่ได้ตรวจ
+(ฟอร์มกระดาษใช้ Wingdings `ü/û` — บนเว็บใช้ตัวอักษรจริงแทน ไม่ต้องพึ่งฟอนต์ที่เครื่องอาจไม่มี)
+
+| ตาราง (Main) | เก็บอะไร |
+|---|---|
+| `bbs_agreements` | ข้อตกลงความปลอดภัย 1-13 (`seq`/`text`/**`auto_source`**/`is_active`) |
+| `bbs_sheets` | หัวใบ (`month_key`/`line_name`/`section`/`dept`/`shift`/`inspector_name`/`inspector_code`/**`inspector_sig_url`**) · unique(เดือน, ไลน์, กะ) |
+| `bbs_observations` | 1 แถว = พนักงาน × วัน (`mark` ok\|ng\|fixed\|na · `agreement_seq` · **`source`** ppe\|manual) |
+
+migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21** · RLS ผ่าน `has_perm('bbs:record')`/`has_perm('bbs:manage')`
+· **เทสกับ RLS จริงแล้ว** สวมบท `authenticated`: supervisor สร้างใบ/แก้ข้อตกลงได้ · leader บันทึกผลได้แต่แก้ข้อตกลง = 0 แถว)
+
+> ### ⚠️ กฎเหล็ก 1 — "เติมอัตโนมัติ" ครอบแค่ 3 ข้อจาก 13 ห้ามให้ใบอ้างเกินจริง
+> ระบบเก็บ PPE จริงแค่ **หมวก/รองเท้า/ถุงมือ** (`daily_production_logs.has_helmet/boots/gloves`)
+> — `ppe_requirements`/`ppe_checks` มี **0 แถว ไม่เคยถูกใช้** อย่าไปพึ่ง
+> → ปุ่ม ⚡ เติมจากผลตรวจ PPE เติมได้เฉพาะข้อที่ตั้ง `bbs_agreements.auto_source` ไว้
+> **ต้องเขียนกำกับทั้งบนจอ (แถบส้ม) และบนใบพิมพ์ (แถบ ◆ ท้ายใบ) ว่าครอบกี่ข้อจากทั้งหมดกี่ข้อ — ห้ามถอด**
+> ช่องที่ระบบเติมมีพื้นเขียวจาง แยกจากช่องที่คนกรอกเอง (`source` ppe vs manual) **ห้ามทำให้กลืนกัน**
+
+> ### ⚠️ กฎเหล็ก 2 — "ไม่รู้" ≠ "ไม่ได้ตรวจ" ≠ "ผ่าน" (`ppeToMark` ใน bbsMarks.js)
+> **ไม่มีแถวเช็คชื่อของวันนั้น = ไม่เติมอะไรเลย ปล่อยว่าง** (ปล่อยเป็น ✓ = สร้างหลักฐานเท็จว่าตรวจแล้ว)
+> · `is_present=false` → `na` (✗) · PPE ครบ → `ok` · ขาดชิ้นไหน → `ng` + เลขข้อของ PPE ชิ้นนั้น
+> (ขาดหลายชิ้น = ช่องใส่เลขได้ตัวเดียวตามฟอร์มกระดาษ → เอาข้อแรก ที่เหลือลง `note`)
+> · **ไม่เติมวันในอนาคต** · **ไม่ทับช่องที่ `source='manual'`** แล้วรายงานว่าข้ามไปกี่ช่อง
+
+- **หัวใบเกิดตอน "บันทึกครั้งแรก" เท่านั้น (`ensureSheet`) ห้ามสร้างตอนเปิดดู** — หลักเดียวกับ checklist ของ PM
+  ที่เคยสร้างเงาเปล่าค้างจนเครื่องไปโผล่ผิดแท็บ (24 แถว)
+- **ลายเซ็นผู้ตรวจ:** dropdown ลิสต์จาก `profiles` ที่มี `signature_url` → เลือกแล้ว snapshot ชื่อ+URL ลงหัวใบ
+  (คนย้าย/ลาออก ใบเก่าต้องยังอ่านออก — pattern เดียวกับ `ojt_training_attendees.emp_name`)
+- **ข้อความ 13 ข้อในไฟล์ Excel ต้นฉบับฝังเป็น OLE object แกะไม่ได้** → seed เฉพาะ **3 ข้อที่ผูก PPE**
+  ที่เหลือกรอกเองที่ปุ่ม 📋 ข้อตกลง (สิทธิ์ `bbs:manage`) — **ห้าม seed ข้อความเดา** และดีกว่า hardcode อยู่แล้ว
+  เพราะแต่ละแผนก/โรงงานข้อไม่เหมือนกัน · เอาข้อออก = **soft delete (`is_active=false`)** ใบเก่าที่อ้างเลขข้อต้องยังอ่านออก
+- **การกรอก = "แปรง"** เลือกสัญลักษณ์บนแถบแล้วคลิกช่อง (เร็วกว่าเปิด popover ทีละช่องใน 620 ช่อง)
+  · คลิกซ้ำด้วยแปรงเดิม = ล้างช่อง (ทางออกจากการทาผิด)
+- **พิมพ์** `src/lib/bbsPrint.js` — A4 แนวนอน · `layout_locked=true` (ตารางกว้างตามจำนวนวัน เปลี่ยนแนวกระดาษแล้วใบพัง)
+  · doc_key **`bbs_observation`** ยังไม่มีเลขฟอร์มทางการ (`form_code=null` = หน้าตาเดิมเป๊ะ) doc_control ตั้งเองที่ `/doc-forms`
+  · เติมแถวเปล่าให้ครบ 14 แถวเท่าฟอร์มกระดาษ (เขียนเพิ่มด้วยมือหน้างานได้)
+- **สิทธิ์:** `bbs:record` (admin/mgr/sv/leader) · `bbs:manage` (admin/mgr/sv) · `page:/bbs` (ทุก role — ปรับที่ `/permissions`)
+  · scope มาตรฐาน (leader = family ไลน์ตัวเอง · อื่น = ตาม `sections`) ครอบทั้ง dropdown ไลน์และรายชื่อพนักงาน
+- **ยังไม่ทำ:** ยังไม่มีสรุป KPI ข้ามเดือน/ข้ามไลน์ (พาเรโตว่าข้อไหนผิดบ่อย) · ยังไม่ผูกกับ 4M/CAPA เมื่อพบพฤติกรรมซ้ำ
 
 ---
 
