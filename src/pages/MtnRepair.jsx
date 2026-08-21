@@ -1013,6 +1013,31 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
+  /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
+     "หัวหน้าช่าง MTN ต้องเห็นทีมช่างตัวเอง ไม่ใช่เห็นมั่ว")
+     ⚠️ **ไม่ตัดทีมอื่นทิ้ง** — งานข้ามทีมมีจริง (เช่นงาน JIG ที่ MTN รับไปทำ)
+        แค่แยกกลุ่มให้ไม่ปนกัน (หลักเดียวกับ optgroup "ในผัง/นอกผัง" ที่อื่นในระบบ) */
+  const techGroups = useMemo(() => {
+    const tk = teamKeyOf(order?.mtn_dept || '');
+    const mine = [], others = [];
+    for (const t of techs || []) (tk && sameTeam(t.dept, tk) ? mine : others).push(t);
+    return { teamKey: tk, mine, others };
+  }, [techs, order?.mtn_dept]);
+  // ตัวเลือกช่างแบบจัดกลุ่ม — ใช้ร่วมทุกช่องที่เลือกช่าง (ขั้น 2 มอบหมาย · ขั้น 3 ช่างหลัก/รอง)
+  const techOpts = (
+    <>
+      {techGroups.mine.length > 0 && (
+        <optgroup label={`👷 ช่างทีม ${deptNameOf(techGroups.teamKey)} (${techGroups.mine.length})`}>
+          {techGroups.mine.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+        </optgroup>
+      )}
+      {techGroups.others.length > 0 && (
+        <optgroup label={`— ทีมอื่น (${techGroups.others.length}) · เลือกได้ถ้ารับงานข้ามทีม —`}>
+          {techGroups.others.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}
+        </optgroup>
+      )}
+    </>
+  );
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -1140,7 +1165,21 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
-            <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
+            <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
+              <select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}>
+                <option value="">— เลือกช่าง —</option>
+                {techOpts}
+              </select>
+              {/* ⚠️ ไม่มีช่างในทีมของใบเลย = ต้องบอกว่าเพราะอะไรและแก้ที่ไหน ห้ามปล่อยให้ไล่หาเอง
+                  เคสที่เจอจริง: ช่างฝ่ายผลิตยังไม่ถูกติ๊ก employees.mtn_team จึงไม่โผล่สักคน */}
+              {techGroups.teamKey && techGroups.mine.length === 0 && (
+                <div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
+                  ⚠️ ยังไม่มีใครถูกตั้งเป็นช่างทีม <b>{deptNameOf(techGroups.teamKey)}</b> เลย
+                  <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>🔧 ทีมช่างซ่อม</b></div>
+                  <div style={{ opacity: 0.85 }}>ระหว่างนี้เลือกช่างทีมอื่นไปก่อนได้</div>
+                </div>
+              )}
+            </Field>
             <DateField label="กำหนดเสร็จ" value={f.target_done_at} onChange={v => set('target_done_at', v)} />
             <Field label="ระบุรายละเอียด"><input value={f.assign_note} onChange={e => set('assign_note', e.target.value)} style={inp} /></Field>
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ)</div>}
@@ -1150,8 +1189,8 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="สาเหตุปัญหาที่เกิด"><textarea value={f.root_cause} onChange={e => set('root_cause', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <Field label="วิธีการแก้ไข"><textarea value={f.solution} onChange={e => set('solution', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
-            <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
+            <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
+            <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
           </div>
           <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={setAfterFile} />
           <div>
