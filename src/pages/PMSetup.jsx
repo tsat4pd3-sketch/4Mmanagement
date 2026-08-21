@@ -747,7 +747,20 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
       const cl = await getOrCreateChecklist(jigId, 'mtn', department, userId)
       if (!cl) throw new Error('Failed to create checklist')
-      await setChecklistFrequency(cl.id, frequency)
+      /* ⚠️ ตั้งความถี่แบบ "ไม่ล้มทั้งใบ" (feedback หน้างาน 2026-08-21: เลือกรายไตรมาสแล้วเซฟไม่ได้)
+         เดิม throw → จุดตรวจที่พิมพ์มาทั้งหมดหายไปด้วย ทั้งที่ปัญหาอยู่แค่ค่าความถี่ค่าเดียว
+         (สาเหตุ: check constraint ของ `checklists.frequency` ในฐานเก่าไม่รู้จัก 'quarterly'
+          — ตาราง checklists สร้างนอก migration folder จึงไม่มีนิยามในรีโปให้ตรวจ)
+         กติกา: งานหลักต้องสำเร็จ + บอกให้ชัดว่าอะไรไม่ถูกบันทึกและต้องทำอะไร **ห้ามเงียบ** */
+      let freqWarn = null
+      try {
+        await setChecklistFrequency(cl.id, frequency)
+      } catch (e) {
+        const constraint = e?.code === '23514' || /check constraint|violates/i.test(e?.message || '')
+        freqWarn = constraint
+          ? `บันทึกจุดตรวจเรียบร้อย แต่ตั้งความถี่เป็น “${FREQ_LABEL[frequency] ?? frequency}” ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ (ความถี่ยังเป็นค่าเดิม) · แจ้ง admin ให้รัน migration 20260821_checklists_frequency_values`
+          : `บันทึกจุดตรวจเรียบร้อย แต่ตั้งความถี่ไม่ได้: ${e?.message || e}`
+      }
 
       // Phase 2 — persist the plan type + usage rule (row exists via trigger; upsert on checklist_id)
       {
@@ -820,8 +833,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         }
         initialImagePathsRef.current = finalPaths
       }
-      toast.success('บันทึกสำเร็จ')
-      onSaved()
+      // ⚠️ ตั้งความถี่ไม่ผ่าน = **ไม่ปิดโมดัล** ค้างข้อความแดงไว้ให้อ่าน (toast หายเร็วเกินจะทัน)
+      //    จุดตรวจถูกบันทึกแล้ว · กดบันทึกซ้ำได้ปลอดภัย (จุดตรวจเป็น delete→insert = idempotent)
+      if (freqWarn) { toast.error(freqWarn); setError(freqWarn) }
+      else toast.success('บันทึกสำเร็จ')
+      onSaved(freqWarn)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -1315,7 +1331,9 @@ export default function PMSetup() {
 
   const openCreate = () => { setEditJig(null); setShowModal(true) }
   const openEdit = (jig) => { setEditJig(jig); setShowModal(true) }
-  const handleSaved = () => { setShowModal(false); fetchData() }
+  // warn = บันทึกจุดตรวจสำเร็จ แต่มีบางฟิลด์ที่ DB ไม่รับ (เช่นความถี่รายไตรมาสในฐานเก่า)
+  // → รีเฟรชลิสต์ แต่ **ไม่ปิดโมดัล** เพื่อให้ข้อความอธิบายค้างอยู่บนจอ ไม่หายไปพร้อมโมดัล
+  const handleSaved = (warn) => { if (!warn) setShowModal(false); fetchData() }
 
   return (
     <div style={S.page}>
