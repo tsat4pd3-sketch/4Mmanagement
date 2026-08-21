@@ -1777,17 +1777,23 @@ export default function OEEAnalytics() {
           color={kpi.ooe != null ? oeeColor(kpi.ooe) : undefined}
           sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)"
           calc={<>
-            รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ เวลากะ <b>{kpi.shiftMinTotal.toLocaleString()}</b> น.<br />
-            = <b>{kpi.shiftMinTotal > 0 ? (kpi.netAvailMin / kpi.shiftMinTotal * 100).toFixed(1) : '—'}%</b> ของเวลากะ ×
-            OEE {kpi.oee ?? '—'}%
+            {/* ⚠️ ไม่ใช่ "เอา OEE ไปคูณเพิ่ม" — พีชคณิตยุบแล้วเป็น A×P×Q ชุดเดียวกับ OEE
+                เปลี่ยนแค่ตัวหารของ A (user ทัก 2026-08-20 ว่าคำอธิบายเดิมทำให้เข้าใจผิด) */}
+            เป็น <b>A × P × Q</b> ชุดเดียวกับ OEE — เปลี่ยนแค่ตัวหารของ A<br />
+            A = เดินเครื่อง ÷ <b>เวลากะทั้งหมด {kpi.shiftMinTotal.toLocaleString()}</b> น.
+            → <b>{kpi.a != null && kpi.shiftMinTotal > 0 ? (kpi.a * kpi.netAvailMin / kpi.shiftMinTotal).toFixed(1) : '—'}%</b>
+            <span style={{ color: 'var(--muted)' }}> (OEE ใช้ {kpi.a ?? '—'}%)</span><br />
+            <span style={{ color: 'var(--muted)' }}>P {kpi.p ?? '—'}% · Q {kpi.q ?? '—'}% เหมือน OEE ทุกตัว</span>
           </>} />
         <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
           color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
           sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ · รวม ${kpi.teepLineDays.toLocaleString()} วัน-ไลน์`}
           calc={<>
-            รับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> ÷ ปฏิทิน <b>{kpi.calMin.toLocaleString()}</b> น.<br />
-            = <b>{kpi.calMin > 0 ? (kpi.netAvailMin / kpi.calMin * 100).toFixed(1) : '—'}%</b> ของเวลาที่มีทั้งหมด ×
-            OEE {kpi.oee ?? '—'}%
+            เป็น <b>A × P × Q</b> ชุดเดียวกับ OEE — เปลี่ยนแค่ตัวหารของ A<br />
+            A = เดินเครื่อง ÷ <b>ปฏิทิน {kpi.calMin.toLocaleString()}</b> น.
+            → <b>{kpi.a != null && kpi.calMin > 0 ? (kpi.a * kpi.netAvailMin / kpi.calMin).toFixed(1) : '—'}%</b>
+            <span style={{ color: 'var(--muted)' }}> (OEE ใช้ {kpi.a ?? '—'}%)</span><br />
+            <span style={{ color: 'var(--muted)' }}>P {kpi.p ?? '—'}% · Q {kpi.q ?? '—'}% เหมือน OEE ทุกตัว</span>
             {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
               ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
