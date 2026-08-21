@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
+import { wavg, wLoad } from '../utils/oee';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -740,6 +741,17 @@ function countWorkingDays(monthKey, calRows) {
   return wd;
 }
 
+/* ⚠️ กฎเหล็ก — `kanban_standards.lot_size` เก็บเป็น **ชิ้น** ทุกฝั่งที่อ่านตีความเป็นชิ้นหมด:
+     fn_explode_child_demand (สะสม demand เป็นชิ้นแล้วเทียบตรงๆ) · ProductMaster (ป้ายเขียน "ชิ้น")
+     · FlowTower (suggested_lot = 1 กล่อง) · Heijunka (pending_qty ÷ lot) · VSM · RoutingPanel
+   แต่ param "Lot" ของแท็บ Withdrawal เป็น **ใบ** (สูตร Total(K/B) = Max + Lot บวกกับจำนวนใบ)
+   → ต้องคูณ Pkg ก่อนเขียน ไม่งั้น 1 ใบ (= 1 กล่อง) กลายเป็น 1 ชิ้น
+   เคสจริง 4/8/2026: 50031601 กล่องละ 100 ถูกเขียน lot_size=1 → ปิดใบผลิตใบเดียวออกใบสั่งซื้อ 984 ใบ
+   ⇒ ค่าที่จะเขียนต้องมาจากฟังก์ชันนี้ที่เดียว (ตาราง/Preview/Apply อ่านตัวเดียวกัน ห้ามคำนวณซ้ำ) */
+const lotPcsOf = (calcType, pp) => (calcType === 'production'
+  ? Number(pp.lot_qty) || 0                                      // production กรอกเป็นชิ้นอยู่แล้ว (Info LT = lot × CT)
+  : (Number(pp.lot_size) || 0) * (Number(pp.packaging) || 0));   // withdrawal: ใบ × ชิ้น/กล่อง
+
 function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const [settings, setSettings] = useState({ working_days: 20, efficiency_pct: 80, hours_per_day: 16 });
   const [calcType, setCalcType] = useState('withdrawal');   // 'withdrawal' (เบิกถอน FG) | 'production' (ผลิต press)
@@ -757,6 +769,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const [mapModal, setMapModal] = useState(false); // จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน
   const [mapSel, setMapSel]     = useState({});    // customerPart → sap ที่เลือก
   const [mapping, setMapping]   = useState(false);
+  const [oeeByLine, setOeeByLine] = useState({});   // ไลน์ → { oee, n } จากกะที่ปิดแล้ว 90 วัน
 
   const monthRange = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
@@ -776,6 +789,19 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
       supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
     ]);
+    /* CAP/ชม. ที่กรอกเป็น "กำลังทางทฤษฎี" (3600 ÷ CT) — ไลน์จริงไม่มีทางเดินได้เท่านั้นทั้งกะ
+       → ดึง OEE ของกะที่ปิดแล้ว 90 วัน มาเทียบให้เห็นว่า "จริงๆ ออกกี่ชิ้น/ชม."
+       ⚠️ เฉลี่ยด้วย `wavg` + `wLoad` เท่านั้น (กฎ OEE: ห้าม mean-of-percentages)
+          ที่นี่ไม่ได้โหลด downtime → `plannedMin` = 0 → wLoad ตกไปถ่วงด้วย shift_min
+          ยอมรับได้เพราะเป็น "ตัวเลขให้ดูเทียบ" ไม่ใช่ค่าที่ stamp ที่ไหน */
+    const oeeFrom = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+    const { data: sess } = await supabaseDR.from('production_sessions')
+      .select('line_name, oee, shift_min').eq('status', 'closed').gte('work_date', oeeFrom).not('oee', 'is', null);
+    const byLine = {};
+    (sess || []).forEach(s => { if (s.line_name) (byLine[s.line_name] = byLine[s.line_name] || []).push(s); });
+    setOeeByLine(Object.fromEntries(Object.entries(byLine)
+      .map(([ln, arr]) => [ln, { oee: wavg(arr, s => Number(s.oee), wLoad), n: arr.length }])
+      .filter(([, v]) => v.oee != null)));
     // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
     const wdCal = countWorkingDays(month, cal || []);
     setSettings({ working_days: wdCal || st?.working_days || 20, efficiency_pct: st ? st.efficiency_pct : 80, hours_per_day: st?.hours_per_day ?? 16 });
@@ -849,10 +875,24 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       const name = pmMap[mat]?.part_name || dr.name || ks.part_name || '';
       const line = dr.line_name || '';
       const changed = r.valid && (Number(ks.max_qty) !== r.maxPcs || Number(ks.min_qty) !== r.minPcs || Number(ks.total_kanban) !== r.totalKanban);
-      return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed };
+      /* CAP จริง = (3600 ÷ CT) × OEE ของไลน์นั้น — ตรงกับสูตร fallback ของ capacityModel.js
+         (แผนผลิตใช้ median ยอดจริงต่อกะ ซึ่งบวก OEE/เบรค/NG ไว้ในตัวแล้ว · ที่นี่คิดจาก CT×OEE
+          เพราะ kanban คิดเป็น "ชิ้น/ชม." ไม่ใช่ "ชิ้น/กะ")
+         ⚠️ เป็นตัวเลขให้ "เห็นแล้วตัดสินใจ" — ระบบไม่แทนค่าให้เอง (ห้ามเดาแทนคนวางแผน) */
+      const lo = oeeByLine[line];
+      const capReal = (dr.cycle_time_sec > 0 && lo?.oee > 0)
+        ? Math.round((3600 / Number(dr.cycle_time_sec)) * (lo.oee / 100)) : null;
+      return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed,
+               capReal, oeePct: lo?.oee ?? null, oeeN: lo?.n ?? 0 };
     }).filter(row => !lineFilter || row.line === lineFilter)
       .sort((a, b) => a.mat.localeCompare(b.mat));
-  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType, procMatchesTab]);
+  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType, procMatchesTab, oeeByLine]);
+
+  // พาร์ทที่ CAP ที่กรอกห่างจากกำลังจริง ≥ 20% — ตัวเลข kanban ที่ออกมาจะเพี้ยนตาม
+  const capGap = useMemo(() => rows.filter(r => {
+    const cur = Number(r.pp.capacity_pc_hr) || 0;
+    return r.capReal > 0 && cur > 0 && Math.abs(cur - r.capReal) / r.capReal >= 0.2;
+  }), [rows]);
 
   // นับพาร์ทที่ถูกกรองออกเพราะเป็นอีกกระบวนการ (โปร่งใส — ไม่ปล่อยหายเงียบ)
   const otherProcCount = useMemo(() => Object.keys(forecast)
@@ -984,7 +1024,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         }
         if (pErr) throw pErr;
         // 2) เขียนผลเข้า kanban_standards (min/max = ชิ้น, total_kanban = ใบ) — ใช้คอลัมน์เดิม ทำงานได้ทั้ง 2 type
-        const lotStd = calcType === 'production' ? r.kanbanPerLot : Number(pp.lot_size);
+        const lotStd = lotPcsOf(calcType, pp);   // ← ชิ้นเสมอ (ดูกฎเหล็กที่ lotPcsOf)
         const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: lotStd, total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
         if (row.ks && row.ks.mat_no) await supabaseDR.from('kanban_standards').update(patch).eq('mat_no', row.mat);
         else await supabaseDR.from('kanban_standards').insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
@@ -1038,7 +1078,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
        { t: 'Pkg', u: 'ชิ้น/กล่อง' },
        { t: 'รอบส่ง', u: 'รอบ/วัน' },
        { t: 'CAP/ชม.', u: 'ชิ้น/ชม.' },
-       { t: 'Lot', u: 'ใบ', tip: 'จำนวนใบคัมบังที่บวกเพิ่มจาก Max → Total(K/B) = Max + Lot · ไม่ใช่จำนวนชิ้น' },
+       { t: 'Lot', u: 'ใบ', tip: 'จำนวนใบคัมบังที่บวกเพิ่มจาก Max → Total(K/B) = Max + Lot · ไม่ใช่จำนวนชิ้น\nตอน Apply ระบบคูณ Pkg ให้เองก่อนบันทึก (ขนาดล็อตในระบบดึงเก็บเป็น "ชิ้น") — ดูตัวเลขจริงใต้ช่อง' },
        { t: 'Safety', u: 'วัน' }];
 
   return (
@@ -1112,6 +1152,21 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           : '📖 Withdrawal Kanban (คัมบังเบิกถอน FG). Order/เดือน = ผลรวม forecast ของเดือนที่เลือก · แก้ param ในตารางแล้วค่าคำนวณอัปเดตทันที · Apply = เขียนเข้า kanban_standards (ระบบดึงใช้ต่อ)'}
       </div>
 
+      {/* CAP/ชม. ที่กรอก vs กำลังจริงจาก OEE — ไม่แทนค่าให้เอง แต่ต้องเห็นว่าห่างกันแค่ไหน */}
+      {capGap.length > 0 && (
+        <div style={{ ...card, marginBottom: 12, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.06)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 22 }}>⚡</span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{capGap.length} พาร์ท CAP/ชม. ที่กรอก ห่างจากกำลังจริง ≥ 20%</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+              ช่อง CAP/ชม. ตั้งต้นเป็น <b>กำลังทางทฤษฎี</b> (3600 ÷ CT) ซึ่งไม่หัก downtime/ของเสีย ·
+              ตัวเลข <b style={{ color: '#f59e0b' }}>จริง ~</b> ใต้ช่อง = (3600 ÷ CT) × OEE จริงของไลน์นั้น (กะที่ปิดแล้ว 90 วัน) <b>คลิกเพื่อใช้ค่านั้น</b>
+              <div style={{ marginTop: 2 }}>⚠️ ระบบ<b>ไม่แทนค่าให้เอง</b> — จะวางแผนด้วยกำลังทฤษฎีหรือกำลังจริงเป็นการตัดสินใจของผู้วางแผน</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* (#2) แจ้งเตือนพาร์ทที่จับคู่เลข SAP ไม่ได้ */}
       {unmapped.length > 0 && (
         <div style={{ ...card, marginBottom: 12, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.06)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1159,6 +1214,30 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                           <input type="number" value={row.pp[c]} disabled={!canApply}
                             onChange={e => setEdit(row.mat, c, e.target.value)}
                             style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? '#0ea5e9' : 'var(--border)' }} />
+                          {/* ช่อง Lot กรอกเป็น "ใบ" แต่ค่าที่บันทึกลง kanban_standards เป็น "ชิ้น"
+                              → ต้องเห็นตัวเลขที่จะถูกบันทึกจริงตรงนี้ ห้ามให้ไปรู้ตอนของระเบิดแล้ว */}
+                          {c === 'lot_size' && (
+                            <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 2, whiteSpace: 'nowrap' }}>
+                              = {fmt(lotPcsOf(calcType, row.pp))} ชิ้น
+                            </div>
+                          )}
+                          {/* CAP ที่กรอกเป็นกำลังทางทฤษฎี — โชว์กำลังจริงจาก OEE ให้เทียบ กดแล้วเติมให้ (คนกดเอง) */}
+                          {c === 'capacity_pc_hr' && (row.capReal
+                            ? (() => {
+                                const cur = Number(row.pp.capacity_pc_hr) || 0;
+                                const far = cur > 0 && Math.abs(cur - row.capReal) / row.capReal >= 0.2;
+                                return (
+                                  <div
+                                    onClick={() => canApply && setEdit(row.mat, 'capacity_pc_hr', row.capReal)}
+                                    title={`กำลังจริง = (3600 ÷ CT) × OEE ${row.oeePct.toFixed(1)}% ของไลน์ ${row.line}\nจากกะที่ปิดแล้ว ${row.oeeN} กะ ใน 90 วัน\nคลิกเพื่อใช้ค่านี้`}
+                                    style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
+                                             color: far ? '#f59e0b' : 'var(--muted)', fontWeight: far ? 800 : 500, textDecoration: canApply ? 'underline dotted' : 'none' }}>
+                                    จริง ~{fmt(row.capReal)}
+                                  </div>
+                                );
+                              })()
+                            : <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 2, opacity: 0.6 }} title="ยังไม่มีกะที่ปิดแล้วของไลน์นี้ใน 90 วัน หรือยังไม่ได้ตั้ง CT ที่ Product Master">จริง —</div>
+                          )}
                         </td>
                       ))}
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 700 }}>{r.valid ? r.minKanban : '—'}</td>
@@ -1270,19 +1349,30 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>เขียนค่า Min/Max/Total ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+              เขียนค่า Min/Max/Total + <b>ขนาดล็อต</b> ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)
+              <div style={{ marginTop: 3 }}>⚠️ <b>ขนาดล็อต</b> คือตัวที่ระบบใช้ตัดสินว่าสะสมความต้องการครบเมื่อไหร่ถึงออกใบสั่ง — ตั้งเล็กเกินจริง = ใบสั่งพุ่งเป็นร้อยใบ</div>
+            </div>
             <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม','→ ใหม่','Max (pcs)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม (ใบ)','→ ใหม่ (ใบ)','Max (ชิ้น)','ขนาดล็อต (ชิ้น)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {preview.map(row => (
+                  {preview.map(row => {
+                    // ขนาดล็อตคือค่าที่ทริกเกอร์ระเบิดความต้องการใช้ตรงๆ — เปลี่ยนแล้วกระทบจำนวนใบสั่งทันที ต้องเห็นก่อนกดยืนยัน
+                    const lotNew = lotPcsOf(calcType, row.pp), lotOld = row.ks?.lot_size;
+                    const lotDiff = lotOld != null && Number(lotOld) !== lotNew;
+                    return (
                     <tr key={row.mat}>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', color: '#0ea5e9' }}>{row.mat}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--muted)' }}>{row.ks.total_kanban ?? '—'}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>{row.r.totalKanban}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(row.r.maxPcs)}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: lotDiff ? 800 : 500, color: lotDiff ? '#f59e0b' : 'var(--muted)' }}>
+                        {lotDiff && <span style={{ opacity: 0.7, fontWeight: 500 }}>{fmt(lotOld)} → </span>}{lotNew > 0 ? fmt(lotNew) : '—'}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
