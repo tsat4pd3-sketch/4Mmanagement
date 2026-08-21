@@ -13,6 +13,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 
 export default function ViewAsModal({ current, onClose, onApply }) {
   const [role, setRole] = useState(current?.role || 'leader');
@@ -20,8 +21,10 @@ export default function ViewAsModal({ current, onClose, onApply }) {
   const [lineId, setLineId] = useState(current?.lineId ? String(current.lineId) : '');
   const [team, setTeam] = useState(current?.team || '');
   const [sections, setSections] = useState(current?.sections || []);
+  const [mtnTeams, setMtnTeams] = useState(current?.mtnTeams || []);
   const [lines, setLines] = useState([]);
   const [orgSections, setOrgSections] = useState([]);
+  const [teamRows, setTeamRows] = useState(pmTeamsSync());
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name')
@@ -30,6 +33,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
     supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name)));
+    loadPmTeams().then(rows => setTeamRows(rows || []));
   }, []);
 
   // role ที่จำลองได้ = base role ทั้งหมดยกเว้น admin (จำลอง admin = ไม่มีอะไรเปลี่ยน)
@@ -38,6 +42,9 @@ export default function ViewAsModal({ current, onClose, onApply }) {
   const toggleSection = (s) =>
     setSections(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
+  const toggleMtnTeam = (k) =>
+    setMtnTeams(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]);
+
   const apply = () => {
     onApply({
       role,
@@ -45,6 +52,9 @@ export default function ViewAsModal({ current, onClose, onApply }) {
       lineId: isLeader && lineId ? Number(lineId) : null,
       team: isLeader ? (team || null) : null,
       sections: isLeader ? [] : sections,
+      // ⚠️ ต้องส่งไปด้วย ไม่งั้นโหมดจำลอง = ทีมช่างว่างเสมอ → ทดสอบสิทธิ์ที่ผูกกับทีมไม่ได้เลย
+      //    (เช่น mtn_repair:service_own_team ที่ต้อง "ทีมของคน = ทีมของใบ" ถึงจะผ่าน)
+      mtnTeams: role === 'display' ? [] : mtnTeams,
     });
   };
 
@@ -111,6 +121,27 @@ export default function ViewAsModal({ current, onClose, onApply }) {
                     background: sections.includes(s) ? 'var(--accent-dim)' : 'var(--bg3)',
                     color: sections.includes(s) ? 'var(--accent)' : 'var(--text2)',
                   }}>{s}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 🔧 ทีมช่างซ่อม (profiles.mtn_teams) — จำเป็นกับสิทธิ์ที่ผูกกับ "ทีมของตัวเอง"
+            เช่นใบซ่อมขั้น 2-4 ของทีมตัวเอง · ไม่ติ๊ก = เหมือน user ที่ยังไม่ถูกตั้งทีม */}
+        {role !== 'display' && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
+              🔧 ทีมช่างซ่อมที่สังกัด (ไม่ติ๊ก = ไม่ได้ถูกตั้งทีม — ใบซ่อมขั้น 2-4 จะทำไม่ได้)
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {(teamRows || []).map(t => (
+                <button key={t.key} onClick={() => toggleMtnTeam(t.key)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: mtnTeams.includes(t.key) ? '2px solid var(--accent)' : '1px solid var(--border2)',
+                    background: mtnTeams.includes(t.key) ? 'var(--accent-dim)' : 'var(--bg3)',
+                    color: mtnTeams.includes(t.key) ? 'var(--accent)' : 'var(--text2)',
+                  }}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || t.label || t.key}</button>
               ))}
             </div>
           </div>

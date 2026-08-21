@@ -1355,7 +1355,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
       maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
     }}>
-      <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}</span>
+      <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}{viewAs.mtnTeams?.length ? ` + 🔧 ${viewAs.mtnTeams.length} ทีมช่าง` : ''}</span>
       <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>การบันทึกยังเป็นสิทธิ์จริงของ admin</span>
       <button onClick={() => onApplyViewAs(null)}
         style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: '#a855f7', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
