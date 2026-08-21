@@ -100,7 +100,8 @@ function TimeInput24({ value = '', onChange, style = {} }) {
   const inputStyleLocal = {
     fontFamily: 'monospace', fontWeight: 700, fontSize: style.fontSize || 18,
     background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
-    borderRadius: 6, padding: '6px 8px', colorScheme: 'dark', ...style,
+    // color-scheme ตามธีมกลางใน index.css แล้ว — ห้าม hardcode 'dark' (จะกลับด้านพังใน light mode)
+    borderRadius: 6, padding: '6px 8px', ...style,
   };
 
   return (

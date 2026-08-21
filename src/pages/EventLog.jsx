@@ -21,7 +21,7 @@ function TimeInput24({ value = '', onChange, style = {} }) {
         onChange={e => onChange?.({ target: { value: e.target.value } })}
         style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, flex: '1 1 auto', minWidth: 0,
           background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
-          borderRadius: 6, padding: '5px 8px', colorScheme: 'dark', ...style }} />
+          borderRadius: 6, padding: '5px 8px', ...style }} />
       <button type="button" title="ใช้เวลาปัจจุบัน"
         onClick={() => onChange?.({ target: { value: new Date().toTimeString().slice(0,5) } })}
         style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
