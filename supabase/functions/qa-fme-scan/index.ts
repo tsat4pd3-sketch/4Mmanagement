@@ -156,10 +156,12 @@ Deno.serve(async (req) => {
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
     /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
        ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
-    type Kstd = { mat_no: string; lot_size: number | null; qty_per_kanban: number | null;
-                  min_qty: number | null; max_qty: number | null; line_name: string | null };
+    /* ⚠️ kanban_standards ไม่มีคอลัมน์ line_name (เจอตอน dry-run 2026-08-21 → 42703)
+       ไลน์ผูกผ่าน product_id → dr_products.line_name · ที่นี่เอาแค่ product_id พอสำหรับแยกแถวซ้ำ */
+    type Kstd = { mat_no: string; product_id: string | null; lot_size: number | null;
+                  qty_per_kanban: number | null; min_qty: number | null; max_qty: number | null };
     const kstd = await dr<Kstd>(
-      'kanban_standards?select=mat_no,lot_size,qty_per_kanban,min_qty,max_qty,line_name&is_active=eq.true');
+      'kanban_standards?select=mat_no,product_id,lot_size,qty_per_kanban,min_qty,max_qty&is_active=eq.true');
     /* ⚠️ 1 mat มีได้หลายแถว (คนละไลน์/ปลายทาง) — เดิม `set()` ทับกันไปเรื่อยๆ แถวสุดท้ายชนะ
        = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
     const lotRows = new Map<string, Kstd[]>();
@@ -398,7 +400,7 @@ Deno.serve(async (req) => {
           // ค่าดิบจาก kanban_standards ของ mat ที่อยู่ในรอบจริง — ไว้ยืนยันว่าระบบอ่านอะไรมา (ห้ามเดา)
           kanban_rows: [...new Set(list.flatMap(r => [r.mat_no, ...r.mat_group]))]
             .flatMap(m => (lotRows.get(m) ?? []).map(k => ({
-              mat: m, line: k.line_name, lot_size: k.lot_size,
+              mat: m, product_id: k.product_id, lot_size: k.lot_size,
               qty_per_kanban: k.qty_per_kanban, min_qty: k.min_qty, max_qty: k.max_qty,
             }))),
           mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
