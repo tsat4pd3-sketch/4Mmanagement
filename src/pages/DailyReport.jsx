@@ -27,6 +27,8 @@ import { resolveMachine } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -98,7 +100,8 @@ function TimeInput24({ value = '', onChange, style = {} }) {
   const inputStyleLocal = {
     fontFamily: 'monospace', fontWeight: 700, fontSize: style.fontSize || 18,
     background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
-    borderRadius: 6, padding: '6px 8px', colorScheme: 'dark', ...style,
+    // color-scheme ตามธีมกลางใน index.css แล้ว — ห้าม hardcode 'dark' (จะกลับด้านพังใน light mode)
+    borderRadius: 6, padding: '6px 8px', ...style,
   };
 
   return (
@@ -292,7 +295,6 @@ function LiveTab({ role }) {
 
   // Close Shift modal (OEE)
   const [showCloseShift, setShowCloseShift] = useState(false);
-  const [closeNg, setCloseNg]               = useState('0');
   // หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — คู่กับ close_approve_note/close_reject_reason ฝั่ง SV
   const [closeNote, setCloseNote]           = useState('');
   const [closeEndTime, setCloseEndTime]     = useState(nowTime());
@@ -675,8 +677,8 @@ function LiveTab({ role }) {
         }
       }
       // คำนวณ OEE ใหม่ด้วยเวลาที่แก้
-      const totalQtyNg = defectLogs.reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
-      const { A, P, Q, oee, shiftMin, totalProduced } = computeOEE(totalQtyNg, closeEndTime, closeStartTime);
+      // NG เข้าสูตร Q ต้องไม่รวมงานทดลอง (เหมือน handleCloseSession)
+      const { A, P, Q, oee, shiftMin, totalProduced } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime);
       const startChanged = closeStartTime && closeStartTime !== selSession.start_time;
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
       // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
@@ -1567,8 +1569,13 @@ function LiveTab({ role }) {
   const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) => {
     const dtl = dtLogsOverride || dtLogs;
     const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
-    // Also count qty_actual from open orders being carried over
-    const carryActualQty = prodOrders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+    /* ยอดของใบที่ "ไม่ปิด" — ตอนปิดกะใบยังเป็น open + ค่าอยู่ใน state carryQtyActual
+       แต่ตอน "✏️ แก้เวลากะ" (กะปิดไปแล้ว) ใบกลายเป็น carry_over/cancelled และ state ว่าง
+       → ต้อง fallback ไป o.qty_actual ไม่งั้นยอดที่ยกยอดหายจากการคำนวณทั้งก้อน
+       เคสหนัก: กะที่ผลิตไม่จบสักใบ → totalProduced = 0 → noProduction → stamp A/Q/OEE เป็น null ทั้งกะ */
+    const carryActualQty = prodOrders
+      .filter(o => ['open', 'carry_over', 'cancelled'].includes(o.status))
+      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
     const totalProduced  = confirmedQty + carryActualQty;
     // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — ของเสียจากการลองแม่พิมพ์/ลองงานใหม่
     // ไม่ควรลงโทษ OEE ของไลน์ · ยอดเต็มยังอยู่ครบใน defect_logs ให้เอาไปคิดมูลค่าของเสีย
@@ -1677,8 +1684,10 @@ function LiveTab({ role }) {
     let unknownQty = 0;
     matNosForP.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
+      // ต้องนับใบที่ไม่ปิดเหมือนกับ totalProduced ข้างบน (ไม่งั้น %P ของ MAT นั้นหายตอนแก้เวลากะ)
       const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                + orders.filter(o => o.status === 'open').reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+                + orders.filter(o => ['open', 'carry_over', 'cancelled'].includes(o.status))
+                        .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
       if (!qty) return;
       const ctSec = ctForMatNo(matNo);
       if (ctSec <= 0) { unknownQty += qty; return; }
@@ -1909,7 +1918,12 @@ function LiveTab({ role }) {
     // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
     const totalQtyOk      = totalProducedFinal;
 
-    const { A, P, Q, oee, shiftMin } = computeOEE(totalQtyNg + totalQtySuspect, closeEndTime, closeStartTime, updatedDtLogs);
+    /* ⚠️ NG ที่เข้าสูตร Q ต้อง "ไม่รวมงานทดลอง" — ใช้ sumDefectQty(...,'line') เท่านั้น
+       เดิมส่ง totalQtyNg + totalQtySuspect (ผลรวมดิบทุกแถว) → ธง is_trial/excl_from_q
+       ไม่เคยมีผลกับค่าที่ stamp เลย ขณะที่จอสด (FactoryMap/Dashboard) กรองถูก = Q คนละตัวระหว่าง 2 จอ
+       ส่วน qty_ng/qty_suspect ที่เขียนลง production_sessions ยังเป็น "ผลรวมดิบ" ตามเดิม
+       (เป็นยอดรายงานของเสียทั้งหมด ไม่ใช่ตัวคิด Q — ห้ามกรอง ตามกฎ oee.js §7) */
+    const { A, P, Q, oee, shiftMin } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime, updatedDtLogs);
     // กะที่ไม่มีผลผลิตเลย (เปิดผิด/นับสต๊อก) — A/Q ไม่มีความหมายกับ OEE (P/OEE เป็น null อยู่แล้ว)
     // ต้อง stamp oee_a/oee_q เป็น null ด้วย ไม่งั้นเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์
     // (สอดคล้อง cleanup migration 20260715_oee_null_noproduction_cleanup.sql — กันไม่ให้ค้างตั้งแต่ปิดกะ)
@@ -2395,7 +2409,7 @@ function LiveTab({ role }) {
                   {/* open — request/direct close button */}
                   {selSession.status === 'open' && canRequestClose && (
                     <button onClick={() => {
-                      setCloseNg('0'); setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
+                      setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
                       setDtCarryDecisions({}); setDtCloseTimes({}); setCloseNote('');
                       // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
                       setCarryQtyActual(m => {
@@ -3599,7 +3613,10 @@ function LiveTab({ role }) {
         })()}
 
         {showCloseShift && selSession && (() => {
-          const ng = parseInt(closeNg) || 0;
+          /* ⚠️ NG ของ OEE preview ต้องมาจาก defect_logs จริง (ไม่รวมงานทดลอง) ให้ตรงกับที่ปิดกะจะ stamp
+             เดิมอ่าน state `closeNg` ซึ่งถูกเซ็ตเป็น '0' ที่เดียวและไม่มี input ผูกอยู่เลย
+             → Q = 100% ตลอด · SV เห็น OEE สูงเกินจริงก่อนกดอนุมัติ แล้วค่าที่บันทึกไม่ตรงกับที่เห็น */
+          const ng = sumDefectQty(defectLogs, 'line');
           // Downtime เปิดค้าง: ถ้าตัดสินใจแล้ว ให้ OEE preview คิดนาทีตามการตัดสินใจทันที (ยังไม่เขียน DB จนกดปิดกะ)
           const modalOpenDT = dtLogs.filter(d => d.duration_min == null);
           const previewDtLogs = !modalOpenDT.length ? dtLogs : dtLogs.map(d => {
@@ -3744,7 +3761,10 @@ function LiveTab({ role }) {
                   const trep = defectLogs.reduce((s,d) => s+(d.qty_repair||0), 0);
                   if (!defectLogs.length) return null;
                   const prod  = prodOrders.filter(o => o.status === 'confirmed').reduce((s,o) => s+o.qty, 0);
-                  const tok   = Math.max(0, prod - tng - tsus - trep);
+                  /* ⚠️ ห้ามใช้ `ดี − NG` — ยอดที่สแกนปิดใบ = ของดีล้วนอยู่แล้ว (กฎ Q · 2026-08-02)
+                     สูตรเดิม `max(0, prod−ng−sus−rep)` ขัดกับ qty_ok ที่ stamp (= ยอดสแกนเต็ม)
+                     และ max(0,...) ยังกลบเคสติดลบ (NG > ยอดสแกน) ซึ่งเป็นสัญญาณข้อมูลผิดที่ควรเห็น */
+                  const tok   = prod;
                   return (
                     <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 8 }}>🔴 สรุปงานเสีย ({defectLogs.length} รายการ)</div>
@@ -3752,7 +3772,7 @@ function LiveTab({ role }) {
                         {tng  > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>🔴 NG: {tng}</span>}
                         {tsus > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>🟡 สงสัย: {tsus}</span>}
                         {trep > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: '#a78bfa' }}>🔧 ซ่อม: {trep}</span>}
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✅ ดี (ประมาณ): {tok}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }} title="ยอดที่สแกนปิดใบ = ของดีล้วน (ของเสียถูกผลิตเพิ่มต่างหาก ไม่หักจากยอดนี้)">✅ ยอดสแกน (ของดี): {tok}</span>
                       </div>
                     </div>
                   );
@@ -4875,6 +4895,7 @@ function HistoryTab({ role }) {
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
   const [lineNames, setLineNames] = useState([]);
+  const allLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const [expanded, setExpanded]   = useState(null);
   const [dtMap, setDtMap]         = useState({});
   const [defectMap, setDefectMap] = useState({});
@@ -4991,10 +5012,9 @@ function HistoryTab({ role }) {
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} style={{ ...inputStyle, width: 160 }} />
-        <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...inputStyle, width: 200 }}>
-          <option value="">ทุกไลน์</option>
-          {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
+        <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
+          placeholder="ทุกไลน์" style={{ ...inputStyle, width: 200 }}
+          onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
         <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>ล้าง</button>
       </div>
 
@@ -5293,6 +5313,7 @@ function ExportTab() {
 
   const [filter, setFilter]       = useState({ date_from: firstOfMonth(), date_to: today(), line_name: '' });
   const [lineNames, setLineNames] = useState([]);
+  const allLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const [allowedLineNames, setAllowedLineNames] = useState(null); // null = ไม่จำกัด (admin/manager/qa/...)
   const [loading, setLoading]     = useState(false);
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
@@ -5737,10 +5758,9 @@ function ExportTab() {
           {/* minWidth:0 บังคับให้ flex item ยอมหด — ไม่งั้นกว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
           <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, width: '100%', minWidth: 0 }}>
-              <option value="">ทุกไลน์</option>
-              {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
+              placeholder="ทุกไลน์" style={{ ...sel, width: '100%', minWidth: 0 }}
+              onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
           </div>
           {loading && <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังโหลด...</div>}
         </div>
@@ -6506,10 +6526,8 @@ function ProductSetup({ role }) {
                 </select>
               </Field>
               <Field label="ไลน์ผลิตหลัก">
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
-                  <option value="">ไม่ระบุ</option>
-                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                </select>
+                <LineSelect lines={lines} value={form.line_name} placeholder="ไม่ระบุ" style={inputStyle}
+                  onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputStyle} /></Field>

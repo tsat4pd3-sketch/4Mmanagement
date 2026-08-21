@@ -10,6 +10,7 @@ import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
+import { lineOptions } from '../components/LineSelect';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -241,7 +242,9 @@ export default function Register() {
                   setLineId(line?.id || null);
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                  {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {lineOptions(lineOpts, { current: groupName }).map(o => (
+                    <option key={o.value} value={o.value}>{`${'\u00a0\u00a0'.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`}</option>
+                  ))}
                 </select>
               );
             })()}

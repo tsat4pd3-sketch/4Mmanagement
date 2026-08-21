@@ -4,7 +4,9 @@ import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
+import LineSelect from '../components/LineSelect';
 
+import InfoMore from '../components/InfoMore';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
@@ -291,9 +293,11 @@ export default function OrgSetup() {
                     {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                   </button>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                  ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ — ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้ (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
-                </div>
+                <InfoMore size={11} style={{ marginBottom: 10 }} id="org_signers"
+                  lead={<>ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ</>}>
+                  ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้
+                  (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
+                </InfoMore>
                 {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                   <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4 }} /></div>
@@ -377,10 +381,8 @@ export default function OrgSetup() {
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                  <select value={formRefLineId} onChange={e => setFormRefLineId(e.target.value)}>
-                    <option value="">— ไม่ผูก —</option>
-                    {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                    placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>

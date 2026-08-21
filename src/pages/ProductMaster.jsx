@@ -15,6 +15,7 @@ import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../util
 import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
+import InfoMore from '../components/InfoMore';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1114,9 +1115,11 @@ export default function ProductMaster() {
                   <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP) · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
-                </div>
+                <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
+                  lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
+                  ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP)
+                  <br />ยอดรวมภาพใหญ่จะนับที่<b>พาร์ทจริง</b> ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                </InfoMore>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
@@ -2616,13 +2619,28 @@ function KanbanStdPanel({ canEdit, fullName }) {
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>Lot size (สะสม demand ครบเท่านี้ → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบ อัตโนมัติ)</label>
+                {/* ⚠️ ข้อความเดิม "เว้นว่าง = ไม่สะสมเป็นล็อต" บอกตรงข้ามกับที่ระบบทำจริง
+                    เว้นว่าง = ทริกเกอร์ `continue` ข้ามพาร์ทนี้ → demand สะสมใน accumulator เรื่อยๆ
+                    แต่ไม่มีวันกลายเป็นใบสั่ง (ข้อมูลจริง 2026-08: 44 พาร์ท 1.3 ล้านชิ้นค้างแบบนี้)
+                    พาร์ทพิเศษที่ "ผลิตตามสั่ง ไม่รอสะสม" → ใส่ 1 (lot-for-lot) ไม่ใช่เว้นว่าง */}
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
+                  Lot size — สะสม demand ครบเท่านี้ (<strong>ชิ้น</strong>) → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบอัตโนมัติ
+                </label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
-                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="เว้นว่าง = ไม่สะสมเป็นล็อต" />
+                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="พาร์ทพิเศษ/ผลิตตามสั่ง → ใส่ 1" />
+                <div style={{ fontSize: 10.5, lineHeight: 1.6, marginTop: 4, color: 'var(--muted)' }}>
+                  <b style={{ color: 'var(--text)' }}>1</b> = ผลิตตามที่สั่ง ไม่ต้องรอสะสมล็อต (lot-for-lot — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ)
+                </div>
+                {!String(form.lot_size || '').trim() && (
+                  <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 5, color: '#f59e0b', background: '#f59e0b14', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 8px' }}>
+                    ⚠️ <b>เว้นว่าง = ความต้องการค้างถาวร</b> — ระบบจะสะสม demand ของพาร์ทนี้ไปเรื่อยๆ แต่<b>ไม่มีวันออกใบสั่ง</b>
+                    <div style={{ opacity: 0.85, marginTop: 2 }}>ถ้าเป็นพาร์ทที่ผลิตตามสั่ง ให้ใส่ <b>1</b> · จุดที่ค้างอยู่ตอนนี้ดูได้ที่หน้า 🔗 สายธารความต้องการ</div>
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                 UOM: <strong style={{ color: 'var(--text)' }}>{parts.find(p => p.mat_no === form.mat_no)?.uom || '—'}</strong> (จาก Parts Master)
-                · Min-Max คุมการเติมที่สโตร์ · Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย
+                · Min-Max คุมการเติมที่สโตร์ (ชิ้น) · Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย (ชิ้น)
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

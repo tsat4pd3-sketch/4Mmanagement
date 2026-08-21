@@ -361,13 +361,19 @@ function QualityDashboard() {
       const defBySession = new Map();
       // ⚠️ FTT/PPM = คุณภาพของไลน์ผลิต → ไม่นับ "งานทดลอง" (มาตรฐานเดียวกับ %Q ใน OEE · 2026-08-17)
       //    แต่พาเรโตประเภทของเสีย (addType) ยังนับครบทุกรายการ — งานทดลองก็เป็นของเสียจริงที่ต้องเห็น
+      /* ⚠️ ต้องแยก "กะนี้มีแถวของเสียไหม" ออกจาก "กะนี้มี NG ที่นับไหม"
+         เดิมใช้ defBySession.has() ตัดสิน → กะที่ของเสีย **ทุกแถว** เป็นงานทดลอง จะไม่มี key ใน Map
+         แล้วตกไป fallback s.qty_ng ซึ่งเป็น rollup ที่รวมงานทดลองไว้ครบ = ของที่เพิ่งกรองออก
+         กลับเข้ามาทางประตูหลัง (วัดแล้ว PPM สูงเกินจริงได้ถึง 10 เท่า) */
+      const sessHasDefect = new Set();
       shownDefects.forEach(d => {
+        sessHasDefect.add(d.session_id);
         if (!isTrialDefect(d)) defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + defectQty(d));
         addType(d);
       });
       shownSessions.forEach(s => {
         const t = s.actual_qty || 0;
-        const g = defBySession.has(s.id) ? defBySession.get(s.id) : (s.qty_ng || 0);
+        const g = sessHasDefect.has(s.id) ? (defBySession.get(s.id) || 0) : (s.qty_ng || 0);
         total += t; ng += g;
         addDate(s.work_date, t, g); addLine(s.line_name || '—', t, g);
       });

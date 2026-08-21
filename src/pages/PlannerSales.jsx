@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
@@ -857,6 +859,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const changedRows = rows.filter(r => r.changed);
 
   // (#2) พาร์ทที่ forecast จับคู่เลข SAP ภายในไม่ได้ = ไม่มีใน dr_products/parts_master/kanban_standards เลย
@@ -1017,9 +1020,26 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const NCOLS = calcType === 'production'
     ? ['packaging','capacity_pc_hr','process_count','lot_qty','setup_time_sec','safety_days']
     : ['prep_time_min','fluctuation_pct','packaging','delivery_cycle','capacity_pc_hr','lot_size','safety_days'];
+  /* ⚠️ หัวคอลัมน์ต้องบอก "หน่วย" เสมอ (user แจ้ง 2026-08-21: ทั้งตารางไม่มีหน่วยสักช่อง)
+     ช่องที่เจ็บสุดคือ **Lot ของแท็บ Withdrawal ซึ่งเป็น "ใบ" ไม่ใช่ "ชิ้น"**
+     (สูตร `totalKanban = maxKanban + lotSize` บวกกับจำนวนใบตรงๆ — ตรวจกับหน้าจอจริง 88 + 300 = 388)
+     พอไม่มีหน่วยบอก คนกรอกเลยใส่ 1 บ้าง 300 บ้าง แล้วค่านั้นถูก Apply เขียนลง
+     `kanban_standards.lot_size` ซึ่ง fn_explode_child_demand อ่านเป็น "ชิ้น" → ล็อตระเบิดความต้องการเพี้ยน
+     หน่วยของช่องที่คูณกับ CT (lot_qty / process_count) ยืนยันด้วยมิติ: ค่า × วินาที/ชิ้น = วินาที ⇒ เป็น "ชิ้น" */
   const NHEAD = calcType === 'production'
-    ? ['Pkg','CAP/ชม.','Process','Lot Qty','Setup(s)','Safety(วัน)']
-    : ['เตรียม(min)','ผันผวน%','Pkg','รอบส่ง','CAP/ชม.','Lot','Safety(วัน)'];
+    ? [{ t: 'Pkg', u: 'ชิ้น/กล่อง' },
+       { t: 'CAP/ชม.', u: 'ชิ้น/ชม.' },
+       { t: 'Process', u: 'ชิ้น', tip: 'Process LT = ค่านี้ × CT' },
+       { t: 'Lot Qty', u: 'ชิ้น', tip: 'ขนาดล็อตผลิต · Info LT = ค่านี้ × CT · ใบ/ล็อต = ⌈ค่านี้ ÷ Pkg⌉' },
+       { t: 'Setup', u: 'วินาที' },
+       { t: 'Safety', u: 'วัน' }]
+    : [{ t: 'เตรียม', u: 'นาที' },
+       { t: 'ผันผวน', u: '%' },
+       { t: 'Pkg', u: 'ชิ้น/กล่อง' },
+       { t: 'รอบส่ง', u: 'รอบ/วัน' },
+       { t: 'CAP/ชม.', u: 'ชิ้น/ชม.' },
+       { t: 'Lot', u: 'ใบ', tip: 'จำนวนใบคัมบังที่บวกเพิ่มจาก Max → Total(K/B) = Max + Lot · ไม่ใช่จำนวนชิ้น' },
+       { t: 'Safety', u: 'วัน' }];
 
   return (
     <div>
@@ -1068,10 +1088,12 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         {lines.length > 0 && (
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
-            <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 150 }}>
-              <option value="">ทุกไลน์</option>
-              {lines.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
+            {/* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */}
+            <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
+              value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
+              style={{ ...inputSt, width: 150 }}
+              extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            />
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1112,8 +1134,15 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
                 <tr style={{ background: 'var(--bg2)' }}>
-                  {['Mat SAP','Part / ไลน์','Order/เดือน', ...NHEAD, 'Min(K/B)','Max(K/B)','Total(K/B)','Min→Max (pcs)','สถานะ'].map(h => (
-                    <th key={h} style={{ padding: '8px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                  {[{ t: 'Mat SAP' }, { t: 'Part / ไลน์' }, { t: 'Order/เดือน', u: 'ชิ้น' }, ...NHEAD,
+                    { t: 'Min', u: 'ใบ' }, { t: 'Max', u: 'ใบ' },
+                    { t: 'Total', u: 'ใบ', tip: 'Total = Max + Lot' },
+                    { t: 'Min→Max', u: 'ชิ้น', tip: 'แปลงเป็นชิ้นแล้ว = ใบ × Pkg' }, { t: 'สถานะ' }].map(h => (
+                    <th key={h.t} title={h.tip || ''} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase', cursor: h.tip ? 'help' : undefined }}>
+                      <div>{h.t}{h.tip ? ' ⓘ' : ''}</div>
+                      {/* หน่วยต้องเห็นตลอด ห้ามซ่อนใน tooltip — คนกรอกไม่มีทางรู้ว่าช่องนี้เป็นใบหรือชิ้น */}
+                      {h.u && <div style={{ fontSize: 9.5, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
+                    </th>
                   ))}
                 </tr>
               </thead>

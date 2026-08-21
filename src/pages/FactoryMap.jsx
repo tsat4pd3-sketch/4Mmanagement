@@ -10,7 +10,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
@@ -434,7 +434,9 @@ export default function FactoryMap({ setupMode = false }) {
   const loadStatus = useCallback(async () => {
     const workDate = getWorkDate();
     const { data: sessions } = await supabaseDR
-      .from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
+      // ⚠️ ต้อง select `shift` — ตัวกรองนโยบายพักเทียบ b.shift === s.shift ถ้าไม่มีจะเป็น undefined
+      //    แล้วเหลือแค่ b.shift === 'both' ซึ่ง break_policies ไม่มีสักแถว = ไม่หักเวลาพักเลยทั้งระบบ
+      .from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }, { data: defs }, prods, breaks, kstds] = await Promise.all([
@@ -503,6 +505,8 @@ export default function FactoryMap({ setupMode = false }) {
       // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
       //   dtMin = สะสมทั้งวันงาน (ใช้ sidebar อันดับ) · dtMinHour = สะสมเฉพาะชั่วโมงปัจจุบัน (ใช้สีบนแผนที่)
       let dtMin = 0, dtMinHour = 0, dtActive = false, plannedDtMin = 0;
+      const plannedRows = [];   // เก็บช่วงจริงไว้ clamp กับหน้าต่าง [anchor, now] ทีหลัง (ดูหมายเหตุที่ availMin)
+      let plannedNoTime = 0;    // หยุดตามแผนที่ไม่มีเวลาเริ่ม — ไม่รู้ว่าตกช่วงไหน
       dl.forEach(d => {
         if (d.dr_downtime_types?.category === 'planned') {
           // หยุดตามแผน — ไม่นับเป็น loss แต่ต้องหักออกจาก "เวลาที่มีให้ผลิต" ตอนคิดว่าควรผลิตได้เท่าไหร่
@@ -511,7 +515,8 @@ export default function FactoryMap({ setupMode = false }) {
             const pe = d.ended_at ? new Date(d.ended_at).getTime()
                      : d.duration_min != null ? ps + Number(d.duration_min) * 60000 : nowMs;
             plannedDtMin += Math.max(0, (Math.min(pe, nowMs) - ps) / 60000);
-          } else plannedDtMin += Number(d.duration_min) || 0;
+            plannedRows.push({ ps, pe });
+          } else { plannedDtMin += Number(d.duration_min) || 0; plannedNoTime += Number(d.duration_min) || 0; }
           return;
         }
         const active = !d.ended_at && d.duration_min == null;
@@ -541,20 +546,20 @@ export default function FactoryMap({ setupMode = false }) {
         const anchor = Math.max(shiftStart, firstOpen ?? shiftStart);
         const capMs = shiftStart + (s.shift_min || 570) * 60000;   // ไม่นับเลยเวลาเลิกกะ
         let availMin = (Math.min(nowMs, capMs) - anchor) / 60000;
-        // หักเวลาพักตามแผนที่ผ่านไปแล้ว (break_policies · เทียบ process ของสินค้าที่วิ่งในกะ)
+        // หักเวลาพักตามแผนที่ผ่านไปแล้ว — ใช้สูตรกลางจาก utils/oee.js (เดิมเขียน overlap ซ้ำที่นี่เป็นก๊อปที่ 4)
         const procOfSess = os.map(o => procMap[o.mat_no]).find(Boolean) || null;
-        breaks.forEach(b => {
-          if (!(b.shift === 'both' || b.shift === s.shift)) return;
-          if (!(b.process_type === 'common' || !b.process_type || b.process_type === procOfSess)) return;
-          const [bh, bm] = String(b.start_time || '00:00').split(':').map(Number);
-          let bStart = new Date(`${workDate}T${String(bh).padStart(2, '0')}:${String(bm).padStart(2, '0')}:00`).getTime();
-          if (bStart < shiftStart) bStart += 86400000;             // พักหลังเที่ยงคืน (กะดึก)
-          const bEnd = bStart + (b.duration_min || 0) * 60000;
-          const ov = Math.min(bEnd, nowMs, capMs) - Math.max(bStart, anchor);
-          if (ov > 0) availMin -= ov / 60000;
+        availMin -= policyBreakOverlapMin({
+          policies: breaks, startMs: anchor, endMs: Math.min(nowMs, capMs),
+          workDate, shift: s.shift, processType: procOfSess,
         });
-        // หักหยุดตามแผน (planned downtime) ที่เกิดไปแล้ว — ไม่หัก unplanned (ต้องเห็นว่าตามหลัง)
-        availMin -= plannedDtMin;
+        /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
+           เดิมหัก plannedDtMin ทั้งก้อน ซึ่งสะสมตั้งแต่ต้นกะ → หยุดตามแผนที่เกิด "ก่อนเปิดใบแรก"
+           ถูกหักออกจากหน้าต่างที่ไม่ได้ครอบมันอยู่ → "ควรผลิตได้" ต่ำเกินจริงมาก
+           (เคสหนัก: planned ≥ หน้าต่าง → availMin = 0 → guard คืน 100% คงที่ = ตัวชี้วัดตายทั้งไลน์)
+           แถวที่ไม่มีเวลาเริ่ม = ไม่รู้ว่าตกช่วงไหน → ไม่หัก แต่ยังนับใน plannedDtMin สำหรับ wLoad */
+        const winEndMs = Math.min(nowMs, capMs);
+        availMin -= plannedRows.reduce((a, r) =>
+          a + Math.max(0, (Math.min(r.pe, winEndMs) - Math.max(r.ps, anchor)) / 60000), 0);
         availMin = Math.max(0, availMin);
         // CT เฉลี่ยถ่วงตามสัดส่วนเป้าของแต่ละ mat ในกะนี้
         let ctW = 0, ctQ = 0;
@@ -608,7 +613,11 @@ export default function FactoryMap({ setupMode = false }) {
         ng: acc.ng + (ngBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0),
         // เฉลี่ย OEE ของไลน์ (กะเช้า+ดึก) ต้องถ่วงด้วยเวลารับภาระ ห้าม mean ธรรมดา (util กลาง oeeAvg.js)
         // เดิม oeeSum/oeeN ทำให้ผังสด กับแผงขวาโหมดทบทวน (ซึ่งถ่วงถูก) โชว์คนละเลขของไลน์เดียวกัน
-        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min, plannedMin: plannedDtMinAll }] : [])],
+        /* ⚠️ shift_min ถูกเขียนตอน "ปิดกะ" เท่านั้น → กะที่ยังเปิดเป็น null → wLoad = 0
+           → wavg ข้ามแถวนั้นทั้งแถว (และไม่ตกไป plain mean เพราะมีแถวกะปิดแล้ว)
+           = ทุกเย็นผังรวมโชว์ OEE ของกะเช้าที่จบไปแล้ว โดยติดป้ายว่าเป็นค่า "สด"
+           ใช้ || 570 ให้ตรงกับ path แผงทบทวน (บรรทัด ~886) ที่ทำถูกอยู่แล้ว */
+        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll }] : [])],
         oeeLive: acc.oeeLive || isLive,
         // ประเมิน OEE ไม่ได้เพราะยังไม่ตั้ง CT ของชิ้นงานที่ผลิต — ต้องบอกบนจอ ไม่ใช่เงียบเป็นช่องว่าง
         oeeNoCt: acc.oeeNoCt || !!(lr && lr.noCt),
@@ -884,7 +893,9 @@ export default function FactoryMap({ setupMode = false }) {
     setReviewLoading(true);
     try {
       const [{ data: sessions }, empRes, plRes, logRes] = await Promise.all([
-        supabaseDR.from('production_sessions').select('id, line_name, status, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
+        // ⚠️ ต้องมี `shift` — ตาราง "กางวิธีคิด OEE" (oeeRows) โชว์กะ ถ้าไม่ select จะขึ้น "—" ทุกแถว
+        //    ซึ่งเป็นแผงที่มีไว้ตอบคำถาม "ทำไมบวกหารแล้วไม่ตรง" โดยเฉพาะ (กะเช้า/ดึกแยกไม่ออก)
+        supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
         supabase.from('production_lines').select('id, name'),
         supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),

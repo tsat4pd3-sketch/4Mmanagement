@@ -8,6 +8,7 @@ import { getLineFamilyIds } from '../utils/lineHierarchy';
 import { roleLabel } from '../utils/roleMeta';
 import { toast } from '../components/Toast';
 
+import InfoMore from '../components/InfoMore';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -546,9 +547,11 @@ export default function ShiftOrganize() {
       </div>
 
       {canEdit && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 24, padding: '0 4px' }}>
-          การตั้งค่าจะมีผลกับทุกวันในสัปดาห์ (จันทร์–อาทิตย์) กด ⇄ สลับ แล้วกด 💾 บันทึก · <b>ตั้งกะที่ไลน์แม่แล้วไลน์ลูกวิ่งตามอัตโนมัติ</b> (↳ ตามไลน์แม่) · สลับกะที่ไลน์ลูกเอง = ✎ แก้เอง (ไม่ตามแม่แล้ว) กด "↳ ตามแม่" เพื่อกลับไปตามไลน์แม่
-        </div>
+        <InfoMore size={11} style={{ marginBottom: 24, padding: '0 4px' }} id="so_help"
+          lead={<>กด ⇄ สลับ แล้วกด 💾 บันทึก — มีผลทุกวันในสัปดาห์ (จันทร์–อาทิตย์)</>}>
+          <b>ตั้งกะที่ไลน์แม่แล้วไลน์ลูกวิ่งตามอัตโนมัติ</b> (↳ ตามไลน์แม่)
+          <br />สลับกะที่ไลน์ลูกเอง = ✎ แก้เอง (ไม่ตามแม่แล้ว) · กด "↳ ตามแม่" เพื่อกลับไปตามไลน์แม่
+        </InfoMore>
       )}
 
       {/* ── หน่วยงานสนับสนุน — พนักงานที่ไม่ได้สังกัดไลน์ผลิต (ช่าง/QA/คลัง) ── */}

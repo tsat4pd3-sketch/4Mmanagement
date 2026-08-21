@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 import { MTN_TEAMS, deptNameOf } from '../utils/mtnTeams'
 import { ROLE_OPTIONS } from '../utils/roleMeta'
+import InfoMore from '../components/InfoMore'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -300,16 +301,21 @@ export default function NotificationConfig() {
         <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
         </button>
-        <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
-          บันทึก Downtime ใหม่จะ<b>ไม่แจ้งทันที</b> (ปิดรายการแล้ว→สรุปตอนปิดกะ) · ถ้ายังเปิดค้างนานเกินเวลานี้ ระบบจะส่งเข้า Telegram + เตือนเสียงหน้า Production · ปุ่ม “เรียกช่าง MTN” ในหน้า Daily Report แจ้งทันทีเสมอ (เตือนเสียงหน้า Maintenance)
-        </div>
+        <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
+          lead={<>เปิดค้างนานเกินเวลานี้ → ส่ง Telegram + เตือนเสียงหน้า Production</>}>
+          บันทึก Downtime ใหม่จะ<b>ไม่แจ้งทันที</b> (ปิดรายการแล้ว → สรุปตอนปิดกะ)
+          <br />ปุ่ม “เรียกช่าง MTN” ในหน้า Daily Report แจ้งทันทีเสมอ (เตือนเสียงหน้า Maintenance)
+        </InfoMore>
       </div>
 
       {/* ── Rooms ── */}
       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ห้องแจ้งเตือน</div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-        🔧 <b>แจ้งซ่อม MTN แยกทีม:</b> ตั้ง “ทีม” ให้ห้อง (JIG/DIE/MTN/PRODUCTION) แล้วใส่ chat_id ของกลุ่มทีมนั้น → ใบแจ้งซ่อม MO ที่แจ้งถึงทีมนี้จะเข้า<b>เฉพาะห้องของทีม</b> · ทีมที่ยังไม่มีห้องเฉพาะ = เข้าห้องรวม (ตามที่เลือกในกฎ maintenance ด้านล่าง)
-      </div>
+      <InfoMore style={{ marginBottom: 10 }} id="nc_rooms" label="แจ้งซ่อมแยกทีม"
+        lead={<>🔧 ตั้ง “ทีม” ให้ห้องได้ — ใบแจ้งซ่อมของทีมนั้นจะเข้าเฉพาะห้องของทีม</>}>
+        ใส่ chat_id ของกลุ่มทีมนั้น (JIG/DIE/MTN/PRODUCTION) → ใบแจ้งซ่อม MO ที่แจ้งถึงทีมนี้
+        จะเข้า<b>เฉพาะห้องของทีม</b>
+        <br />ทีมที่ยังไม่มีห้องเฉพาะ = เข้าห้องรวม (ตามที่เลือกในกฎ maintenance ด้านล่าง)
+      </InfoMore>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {rooms.map(room => (
           <div key={room.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>

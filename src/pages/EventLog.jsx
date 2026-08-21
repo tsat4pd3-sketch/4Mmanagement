@@ -11,6 +11,7 @@ loadDocForms(); // ทะเบียนเอกสาร — ใบพิม�
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import LineSelect from '../components/LineSelect';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -20,7 +21,7 @@ function TimeInput24({ value = '', onChange, style = {} }) {
         onChange={e => onChange?.({ target: { value: e.target.value } })}
         style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, flex: '1 1 auto', minWidth: 0,
           background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
-          borderRadius: 6, padding: '5px 8px', colorScheme: 'dark', ...style }} />
+          borderRadius: 6, padding: '5px 8px', ...style }} />
       <button type="button" title="ใช้เวลาปัจจุบัน"
         onClick={() => onChange?.({ target: { value: new Date().toTimeString().slice(0,5) } })}
         style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
@@ -120,7 +121,7 @@ export default function EventLog() {
     // เดิม limit(200) ทั้งโรงงานก่อนกรอง scope ฝั่ง client ทำให้ leader/section เห็น event ตัวเองน้อย/0
     // (200 ใบล่าสุดถูกไลน์อื่นกินหมด) — bug เดียวกับที่ CLAUDE.md เตือนไว้
     const { data: lineData } = await supabase.from('production_lines')
-      .select('id, name, section, parent_line_name').order('name');
+      .select('id, name, section, parent_line_name, is_active').order('name');
     let scopedNames = null; // null = ไม่จำกัด (admin/qa/manager ที่ไม่ถูก scope)
     let visibleLines = lineData || [];
     if (role === 'leader' && userLineId) {
@@ -379,10 +380,8 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
 
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์ผลิต *</label>
-          <select value={form.line_name} onChange={e => f('line_name', e.target.value)}>
-            <option value="">-- เลือกไลน์ --</option>
-            {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-          </select>
+          <LineSelect lines={lines} value={form.line_name} placeholder="-- เลือกไลน์ --"
+            onChange={v => f('line_name', v)} />
         </div>
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

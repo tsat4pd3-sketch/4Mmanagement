@@ -24,6 +24,7 @@ import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/chan
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import LineSelect from '../components/LineSelect';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -2317,10 +2318,8 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
           {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       )}
-      <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={selSt}>
-        <option value="">ทุกไลน์</option>
-        {visibleLines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-      </select>
+      <LineSelect lines={visibleLines} value={filterLine} valueKey="id"
+        placeholder="ทุกไลน์" style={selSt} onChange={setFilterLine} />
       <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={selSt}>
         <option value="">ทุก Team</option>
         <option value="A">Team A</option>

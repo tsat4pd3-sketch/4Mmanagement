@@ -28,6 +28,7 @@ import RackMap from '../components/RackMap';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
+import InfoMore from '../components/InfoMore';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -1332,9 +1333,11 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const legacyCount = techs.filter(t => !t.from_employee).length;
   const TechList = () => (
     <div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px' }}>
-        💡 ช่าง = <b>พนักงานที่ section เป็นทีมช่าง</b> (MTN/JIG/DIE) จากฐานข้อมูลพนักงาน — เพิ่ม/แก้ที่หน้า <b>ฐานข้อมูลพนักงาน</b> (มีสกิลได้เหมือน operator) · ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
-      </div>
+      <InfoMore style={{ marginBottom: 8 }} id="mtn_tech"
+        lead={<>💡 ช่างมาจาก<b>ฐานข้อมูลพนักงาน</b> — เพิ่ม/แก้ที่หน้านั้น</>}>
+        ช่าง = พนักงานที่ section เป็นทีมช่าง (MTN/JIG/DIE) · มีสกิลได้เหมือน operator
+        <br />ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
+      </InfoMore>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
         <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่างเฉพาะกิจ (นอกฐานพนักงาน)" style={{ ...inp, width: 260 }} />
         <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 150 }}><TeamOpts list={mtnDepts} /></select>

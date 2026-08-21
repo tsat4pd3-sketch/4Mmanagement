@@ -6,6 +6,7 @@
 อัพเดทล่าสุด: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
+อัพเดท 2026-08-21: §5.3 ข้อ 9 ใหม่ — **dropdown เลือกไลน์ต้องใช้ `<LineSelect>` เท่านั้น** (ลำดับชั้น + scope + ตัดไลน์ปลดระวาง) · `production_lines.is_active` = ปลดระวางไลน์แทนการลบ
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
 อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
 อัพเดท 2026-08-04: §5.1 viewer วางจุด default = **พอดีกรอบทั้ง 2 แกน** (เดิมเต็มความกว้าง → รูปแนวนอนสูงล้นจนตารางตกจอ) · §5.1 จอ "ตรวจจริง" ต้อง sync สีหมุดกับผลตรวจ + แตะหมุด↔แถว สองทาง
@@ -387,7 +388,28 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } = markerSca
 
 8. **dropdown ไลน์ตัวเดียว (ไม่ cascade) ต้องเรียงตามลำดับชั้นผ่าน `toHierarchicalOptions(lines)` (`src/utils/lineHierarchy.js`) — 2026-08-04** คืน `[{line, depth}]` เรียงแม่ → ลูกใต้แม่ แล้ว render ย่อหน้าตาม `depth` (`↳`) · **ห้าม `lines.map()` ตรงๆ แล้วเติม `↳` ให้ลูก** — ลิสต์จะเรียงตามลำดับที่ query มา ลูกลอยไปคนละที่กับแม่ (เจอจริง: แผง 🧠 วิเคราะห์สาเหตุ ใน `/oee-analytics` โชว์ `↳ Assy GOR` อยู่**เหนือ** `GOR`, `↳ HDF1/HDF2` เหนือ `HYDROFORM`)
 
-ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes), `OeeInsightPanel.jsx` (dropdown ไลน์เดี่ยวผ่าน `toHierarchicalOptions`)
+9. **⭐ dropdown เลือกไลน์ = `<LineSelect>` เท่านั้น ห้ามเขียน `lines.map(l => <option>)` เองอีก — 2026-08-21 (คำสั่ง user)**
+   `src/components/LineSelect.jsx` + hook `useProductionLines()` (`src/utils/useProductionLines.js`)
+
+   **ที่มา:** user เปิด `/line-stock` แล้วเจอ dropdown "กรองไลน์" เป็นลิสต์แบนเรียงตัวอักษร ปน `FG WAREHOUSE` /
+   ไลน์ผลิต / ไลน์ `test`,`test child`,`test child 2` — ไล่ตรวจแล้วเจอ **26 จุดทั่วระบบ** เขียน pattern เดียวกัน
+   **ต้นเหตุ: หลายหน้า `select('name')` อย่างเดียว** → ไม่มี `parent_line_name` (จัดลำดับชั้นไม่ได้)
+   ไม่มี `section` (กรอง scope ไม่ได้) ไม่มี `is_active` (ไลน์ปลดระวางโผล่ปน)
+
+   `<LineSelect lines={...} value onChange {...scope} />` รับประกันให้เหมือนกันทุกหน้า:
+   - เรียงลำดับชั้น (แม่ → `↳` ลูก) ผ่าน `toHierarchicalOptions`
+   - ตัดไลน์ `is_active=false` ออก แต่ **ค่าที่เลือกไว้แล้วยังโชว์** พร้อมป้าย `⏸ ปลดระวาง` / `(นอกขอบเขตของคุณ)` /
+     `⚠ ไม่มีในทะเบียนไลน์` — **ห้ามให้ค่าเดิมหายเงียบจากฟอร์ม**
+   - กรอง scope มาตรฐาน (leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม `sections`)
+   - `extraGroups` สำหรับตัวเลือกที่ **ไม่ใช่ไลน์ผลิต** (คลัง FG/STORE · กลุ่มเครื่องปั๊มของแม่พิมพ์) —
+     แยก `<optgroup>` ให้ชัด **ห้ามกองปนกับไลน์ผลิต** (คนละความหมายกัน)
+   - `valueKey="id"` เมื่อ dropdown เก็บ `line_id` แทนชื่อ (AddUser / OrgSetup / Report)
+
+   **ปลดระวางไลน์ ≠ ลบไลน์** — `production_lines.is_active` (migration `20260821_production_lines_is_active.sql`)
+   ตั้งได้ที่ `/linesetup` แผง ⚙️ ตั้งค่าไลน์ · **ห้ามลบไลน์เพื่อให้ dropdown สะอาด** ชื่อไลน์ถูกเก็บเป็น text
+   ในหลายสิบตาราง 2 project ลบแล้วข้อมูลเก่ากำพร้าเงียบทันที (ดูกฎ rename cascade ใน CLAUDE.md)
+
+ต้นแบบที่ถูก: `Register.jsx` (ฟอร์ม + group จาก org_nodes kind='line'), `OEEAnalytics.jsx` TargetDashboard (filter bar), `Report.jsx` hook `useOrgDepts` → `deptsOf(section)`, `operator.jsx` (filter bar Dept+Group แบบ ในผัง/นอกผัง + modal cascade org_nodes), `LineStock.jsx` / `RackCenter.jsx` (dropdown ไลน์ + optgroup คลัง ผ่าน `<LineSelect>`)
 
 ---
 
@@ -580,6 +602,49 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
 - **ทำแล้ว 18 จุด:** ShiftOrganize · Report · ProductMaster · MachineDatabase · LineStock ·
   HeijunkaKanban · RackCenter · ScrapReport · QualityBins · SparePartMaster · Improvements ·
   OjtTraining · PmCoordination · PEDocs · VSM · Transport · DieRegistry · QrLabels
+
+## 6.10 ⓘ คำอธิบายยาว = พับหลังปุ่ม `<InfoMore>` (2026-08-21 · คำสั่ง user)
+
+*"รายละเอียดที่อธิบายเยอะๆ เป็น hardcode ให้ใช้เครื่องหมายเพื่ออ่านเพิ่ม"* — หลายหน้าสะสมคำอธิบายจนกลายเป็น
+**กำแพงข้อความคร่อม UI ที่ใช้งานจริง** (เคสต้นเรื่อง: การ์ด TEEP ใน `/oee-analytics` โต 7 บรรทัดจนตัวเลขจริงจมหาย)
+
+- **component กลาง `src/components/InfoMore.jsx`** — `lead` (เห็นตลอด) + `children` (พับ) + `id` (จำสถานะเปิด/ปิด)
+  · **ห้ามเขียนปุ่มย่อ/ขยายคำอธิบายเองซ้ำในหน้าใดๆ**
+- **เครื่องหมาย = `MORE_MARK` (`ⓘ`) ค่าเดียวทั้งระบบ** — **ห้ามใช้ `!` / `⚠️`** เพราะในระบบนี้สัญลักษณ์เตือน
+  แปลว่า *"ผิดปกติ ต้องไปแก้"* (Andon) เอามาใช้กับข้อความอธิบายเฉยๆ คนหน้างานจะนึกว่ามีปัญหา
+- **⚠️ ใช้ "กดเปิด" ไม่ใช่ hover tooltip** — จอสัมผัส/จอ TV ไม่มีเมาส์ (§6) · `title=` ใช้ได้เฉพาะรายละเอียด
+  ที่ขาดไปก็ยังอ่านรู้เรื่อง (เช่นรายชื่อไลน์ที่ถูกตัดออกจากตัวหาร)
+
+| พับได้ ✅ | **ห้ามพับ** ❌ |
+|---|---|
+| วิธีใช้ · เหตุผลเบื้องหลัง · ข้อควรระวังที่อ่านรอบเดียวพอ | **ตัวเลข/ที่มาของสูตร** (ตัวตั้ง ÷ ตัวหาร = ผล) |
+| ตัวอย่าง · คำอธิบายศัพท์ | **คำเตือนสถานะจริง** (ข้อมูลไม่ครบ · โหลดไม่สำเร็จ · ยังไม่ apply migration) |
+| | **ป้ายกันอ้างเกินจริง** (🧪 MOCKUP · "เติมอัตโนมัติครอบแค่ N ข้อ" · `ReadOnlyNote`) |
+
+> ซ่อน 3 อย่างขวา = กลับไป**ผิดเงียบ** ซึ่งเป็นสิ่งที่โปรเจคนี้ห้ามที่สุด
+> **กติกาแยกง่ายๆ: "ถ้าไม่อ่านแล้วตัดสินใจผิด" = ห้ามพับ · "ไม่อ่านก็ใช้งานถูก" = พับได้**
+
+> ### 🚫 ข้อยกเว้น — **เอกสาร/รายงาน ห้ามพับทุกกรณี** (คำสั่ง user 2026-08-21: "ยกเว้นพวกรายงานนะ")
+> **บนกระดาษกดปุ่มไม่ได้** — ข้อความที่พับไว้จะหายไปจากใบที่พิมพ์ออกมาโดยไม่มีใครรู้
+> และหมายเหตุ/legend/คำอธิบายบนใบเป็น**ส่วนหนึ่งของเอกสารควบคุม** (ทะเบียน `doc_forms` คุมอยู่ · §6.6)
+> ครอบทั้ง:
+> - **ตัวสร้างใบพิมพ์ทุกตัว** — `src/lib/*Print.js` · `*ExportExcel.js` · `monthlyReviewPptx.js`
+>   (**ห้าม import `InfoMore` เข้าไฟล์พวกนี้เด็ดขาด** — เป็น React component ใบพิมพ์เป็น HTML string อยู่แล้ว)
+> - **หน้าที่ผลลัพธ์คือ "ตัวเอกสาร"** — `/report` · `/skills-report` · ScrapReport · OjtTraining ·
+>   LayerProcessAudit · QualityBins · VSM (แท็บเอกสาร) · PEDocs · BbsCheck · DocFormsRegistry
+> - **ส่วนที่เป็น preview ของสิ่งที่จะพิมพ์** ในหน้าใดก็ตาม
+>
+> หน้าวิเคราะห์ที่มีคำว่า "รายงาน" ในชื่อหมวดเมนู (เช่น `/oee-analytics`) **ไม่นับ** — มันเป็นจอวิเคราะห์
+> ไม่ใช่ใบเอกสาร · เกณฑ์ตัดสินคือ **"ข้อความนี้จะถูกพิมพ์ลงกระดาษไหม"** ไม่ใช่ชื่อหมวด
+
+- **`KpiCard` ใน `/oee-analytics` ใช้หลักเดียวกัน:** prop `calc` (ตัวเลข เห็นตลอด) vs `more` (คำอธิบาย พับ)
+- **ทำแล้ว:** OEEAnalytics (TEEP) · AddUser (ขอบเขตส่วนงาน · แอดมินหน่วยงาน) · ShiftOrganize ·
+  CompanyCalendar · NotificationConfig (2 จุด) · ProductMaster (OP) · MtnRepair (ช่าง) · OrgSetup (ผู้เซ็น)
+- **ยังเหลืออีกเยอะ** — ไล่เก็บเมื่อไปแตะหน้านั้น (ตัวหนักสุดตามลำดับ: `AdoptionOutlook` · `DailyReport` ·
+  `FactoryMap` · `OrderTrace` · `LineSetup` · `GroupOverview`) · **หน้าใหม่ให้ใช้ `InfoMore` ตั้งแต่แรก
+  ห้ามเขียนคำอธิบายยาวเป็นบล็อกลอยอีก** — ยกเว้นฝั่งเอกสาร/รายงานตามข้อยกเว้นด้านบน
+  - ⚠️ `GroupOverview` มีข้อความ **🧪 MOCKUP / จริง-จำลอง** ซึ่งอยู่ในกลุ่ม "ป้ายกันอ้างเกินจริง" → **ห้ามพับ**
+    พับได้เฉพาะย่อหน้าอธิบายโครงองค์กร/วิธีคิดตัวเลข
 
 ## 7. เบ็ดเตล็ดที่เคยกัด
 
