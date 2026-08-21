@@ -8,7 +8,7 @@ import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/compa
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildScheduleMaps, resolveAssignedShift } from '../utils/shiftAssign';
+import { buildScheduleMaps, resolveAssignedShift, seesAllTeams } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 
@@ -215,7 +215,9 @@ export default function Checkin() {
         const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
         empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
       }
-      if (team)   empQ = empQ.eq('team', team);
+      // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
+      //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
+      if (!seesAllTeams(team)) empQ = empQ.eq('team', team);
     } else if (scopeSecs.length) {
       // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
       empQ = empQ.in('section', scopeSecs);
@@ -903,7 +905,9 @@ export default function Checkin() {
           const famIdsQ = getLineFamilyIds(lines, Number(lineId));
           empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
         }
-        if (team)   empQ = empQ.eq('team', team);
+        // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
+      //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
+      if (!seesAllTeams(team)) empQ = empQ.eq('team', team);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);
       }

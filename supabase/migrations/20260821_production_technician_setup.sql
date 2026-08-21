@@ -38,11 +38,25 @@ create index if not exists employees_mtn_team_idx
   on public.employees (mtn_team) where mtn_team is not null;
 
 -- ── ② สิทธิ์ทำขั้น 2-4 ของ "ทีมตัวเอง" ──────────────────────────────────────
+-- ⚠️ 2 จุดที่ต้องระวัง (กับดักที่ CLAUDE.md บันทึกไว้แล้ว — เคยโดนมาแล้วรอบหนึ่ง):
+--   1) group_name ต้องเป็นชื่อหมวดตาม NAV_GROUP_ORDER เป๊ะ = 'การตรวจสอบและซ่อมบำรุง'
+--      พิมพ์ 'ซ่อมบำรุง' เอง = หมวดกำพร้าโผล่กลางตาราง /permissions
+--      (audit 2026-08-19 เจอ 'ซ่อมบำรุง'/'ประชุมแถวเช้า' แบบนี้ ต้องรื้อจัดใหม่ทั้งตาราง)
+--   2) sort ต้องไม่ชนของเดิม — 615 เป็นของ am:record อยู่แล้ว
+--      ใช้ 607 ให้อยู่ติดกับ mtn_repair:service (606) จะได้อ่านคู่กันรู้เรื่อง
+--      แล้วเลื่อนคีย์ mtn_repair ที่เหลือลง 1 (ตั้งค่าตรงๆ ไม่ใช่ sort+1 → รันซ้ำได้)
+update permission_catalog as c set sort = v.s
+  from (values ('report', 605), ('service', 606), ('qa', 608),
+               ('approve', 609), ('manage_master', 610), ('delete', 611)) as v(a, s)
+ where c.resource = 'mtn_repair' and c.action = v.a;
+
 insert into permission_catalog (resource, action, label, group_name, sort)
 values ('mtn_repair', 'service_own_team',
         'ใบซ่อม: รับงาน/ซ่อม/ตรวจ (ขั้น 2-4) — เฉพาะใบของทีมตัวเอง',
-        'ซ่อมบำรุง', 615)
-on conflict (resource, action) do nothing;
+        'การตรวจสอบและซ่อมบำรุง', 607)
+-- do update (ไม่ใช่ do nothing) → ถ้าเคยรันเวอร์ชันที่หมวด/sort ผิดไปแล้ว รันซ้ำแล้วหายเอง
+on conflict (resource, action) do update
+  set label = excluded.label, group_name = excluded.group_name, sort = excluded.sort;
 
 insert into role_permissions (role, permission_key, allowed)
 select r.role, 'mtn_repair:service_own_team',

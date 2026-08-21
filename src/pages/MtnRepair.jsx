@@ -1010,7 +1010,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
+function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   const o = order;
@@ -1048,6 +1048,19 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   const save = async () => {
     setSaving(true);
     try {
+      /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
+         RLS ของ mtn_orders ฝั่ง DR เป็น anon เปิดหมด → UI คือด่านเดียวจริงๆ
+         (ผู้ถือ manage_master ข้ามได้ตามเดิม = สิทธิ์แก้ย้อนหลังของทุกขั้น) */
+      const perm = STEP_PERM[step];
+      const myTeam = userTeams.some(t => sameTeam(t, teamKeyOf(o.mtn_dept || deptForItem(o.item_type))));
+      const allowed = can('mtn_repair', 'manage_master', role) || can('mtn_repair', perm, role)
+        || (perm === 'service' && can('mtn_repair', 'service_own_team', role) && myTeam);
+      if (!allowed) {
+        setSaving(false);
+        return toast.error(perm === 'service' && can('mtn_repair', 'service_own_team', role)
+          ? `ใบนี้แจ้งถึงทีม ${deptNameOf(o.mtn_dept || deptForItem(o.item_type))} — คุณทำได้เฉพาะใบของทีมตัวเอง`
+          : 'ไม่มีสิทธิ์ทำขั้นนี้');
+      }
       const upd = { updated_at: new Date().toISOString() };
       if (step === 2) {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
