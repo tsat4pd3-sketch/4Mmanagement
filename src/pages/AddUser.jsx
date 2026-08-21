@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
@@ -29,7 +29,11 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
 ));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '' };
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '',
+  // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
+  //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
+  // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
+  accountKind: 'person', employeeId: '' };
 
 // flag "แอดมินหน่วยงาน" โผล่เฉพาะ role หน่วยงานสนับสนุน (indirect) — ไม่ใช่ admin (ได้ทุกอย่างแล้ว)
 // / display (ดูอย่างเดียว) · role ฝ่ายผลิต (supervisor/leader) ก็ให้ตั้งได้ (หัวหน้าส่วน/ไลน์ = แอดมินของหน่วยตัวเอง)
@@ -69,12 +73,16 @@ export default function AddUser() {
   const [resetPw,       setResetPw]       = useState(''); // ช่องตั้งรหัสใหม่ใน modal แก้ไข
   const [resetPwBusy,   setResetPwBusy]   = useState(false);
 
+  const [emps, setEmps] = useState([]);      // ฐานพนักงาน — ใช้เป็นตัวตนของบัญชีแบบ 'person'
+  const [empSearch, setEmpSearch] = useState('');
   const [posVer, setPosVer] = useState(0);   // bump เมื่อ master ตำแหน่งโหลดเสร็จ → dropdown/ป้ายระดับ re-render
 
   useEffect(() => {
     // master ตำแหน่งงาน (positions) — ต้องโหลดก่อน positionLabel()/levelOfPosition() ถึงได้ค่าจาก DB
     Promise.all([loadPositions(), loadPermissions()]).then(() => setPosVer(v => v + 1));
-    supabase.from('production_lines').select('id, name').order('name')
+    // ⚠️ <LineSelect> ต้องการ parent_line_name (ลำดับชั้น) + section (กรอง scope) + is_active
+    //    select แค่ id,name = ได้ลิสต์แบนไม่มีลำดับชั้น (กับดักที่เขียนไว้ในหัว LineSelect.jsx)
+    supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
@@ -82,6 +90,10 @@ export default function AddUser() {
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
         setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
       });
+    supabase.from('employees')
+      .select('id, employee_id_code, name, team, line_id, section, department, position')
+      .eq('is_active', true).order('name')
+      .then(({ data }) => setEmps(data || []));
     fetchUsers();
   }, []);
 
@@ -89,7 +101,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, position, line_id, section, sections, team, notify_email');
+      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const authMap = {};
@@ -115,6 +127,20 @@ export default function AddUser() {
   };
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
+  const empById = useMemo(() => Object.fromEntries(emps.map(e => [e.id, e])), [emps]);
+  const lineName = (id) => lines.find(l => String(l.id) === String(id))?.name || '';
+  /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — ฐานพนักงานคือค่าจริง (หัวหน้าแผนกดูแล) */
+  const syncFromEmployee = async (u) => {
+    const e = empById[u.employee_id];
+    if (!e) return;
+    const { data, error } = await supabase.from('profiles')
+      .update({ team: e.team || null, line_id: e.line_id || null, section: e.section || null })
+      .eq('id', u.id).select('id');
+    // RLS ปฏิเสธ update = 0 แถว ไม่ error → ต้องนับแถว ห้ามขึ้นว่าสำเร็จลอยๆ
+    if (error || !data?.length) { setError('อัปเดตไม่สำเร็จ: ' + (error?.message || 'ไม่มีสิทธิ์แก้บัญชีนี้')); return; }
+    setMessage(`อัปเดต "${u.full_name}" ให้ตรงกับฐานพนักงานแล้ว`);
+    fetchUsers();
+  };
 
   // เขียน mtn_teams แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260722 · create-user edge ยังไม่รู้จัก field นี้)
   //   role ที่ไม่เกี่ยวงานซ่อม → เคลียร์เป็น null · error (ยังไม่ apply migration) = เงียบ ไม่ทำ flow หลักพัง
@@ -122,6 +148,18 @@ export default function AddUser() {
     if (!id) return;
     const val = isMtnTeamRole(form.role) && form.mtnTeams.length ? form.mtnTeams : null;
     await supabase.from('profiles').update({ mtn_teams: val }).eq('id', id); // ignore error โดยตั้งใจ
+  };
+
+  // เขียน employee_id / account_kind แยก best-effort (create-user edge ยังไม่รู้จัก field พวกนี้)
+  //   บัญชีหน่วยงาน = ไม่ผูกพนักงาน (employee_id null) โดยตั้งใจ
+  const saveEmpLink = async (id) => {
+    if (!id) return;
+    const kind = form.accountKind || null;
+    const eid  = kind === 'person' ? (form.employeeId || null) : null;
+    const { error } = await supabase.from('profiles')
+      .update({ employee_id: eid, account_kind: kind }).eq('id', id).select('id');
+    // ⚠️ ห้ามเงียบ — ยังไม่ apply migration แล้วบอกว่าสำเร็จ = คนเข้าใจผิดว่าผูกแล้ว
+    if (error) setError('บันทึกบัญชีแล้ว แต่ยังผูกกับพนักงานไม่ได้: ' + error.message);
   };
 
   // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
@@ -164,6 +202,8 @@ export default function AddUser() {
       lineId:      u.line_id      ? String(u.line_id) : '',
       team:        u.team         || '',
       notifyEmail: u.notify_email || '',
+      accountKind: u.account_kind || (u.employee_id ? 'person' : ''),
+      employeeId:  u.employee_id  || '',
     });
     setPosCustom(!!u.position && !posOpts().some(p => p.value === u.position));
     setEditingId(u.id);
@@ -212,6 +252,7 @@ export default function AddUser() {
       // mtn_teams เขียนตามหลัง best-effort (edge ยังไม่รู้จัก field นี้)
       await saveMtnTeams(data.user?.id);
       await saveDeptAdmin(data.user?.id);
+      await saveEmpLink(data.user?.id);
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
       setShowModal(false);
@@ -294,6 +335,7 @@ export default function AddUser() {
       if (err) throw err;
       await saveMtnTeams(editingId); // best-effort แยก กัน edit พังถ้ายังไม่ apply migration
       await saveDeptAdmin(editingId); // best-effort แยก (migration 20260803)
+      await saveEmpLink(editingId);   // best-effort แยก (migration 20260821)
       setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
       setShowModal(false);
       fetchUsers();
@@ -399,6 +441,62 @@ export default function AddUser() {
           <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
         </span>
       </div>
+
+      {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
+          ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
+             เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี */}
+      {(() => {
+        const mism = users.filter(u => u.employee_id && empById[u.employee_id] && (
+          (u.team || '') !== (empById[u.employee_id].team || '') ||
+          String(u.line_id || '') !== String(empById[u.employee_id].line_id || '')
+        ));
+        const unset = users.filter(u => !u.account_kind);
+        if (!mism.length && !unset.length) return null;
+        return (
+          <div className="card" style={{ marginBottom: 12, padding: 12, borderLeft: '3px solid #f59e0b' }}>
+            {mism.length > 0 && (
+              <div style={{ marginBottom: unset.length ? 10 : 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b', marginBottom: 6 }}>
+                  ⚠️ ตัวตนไม่ตรงกับฐานข้อมูลพนักงาน · {mism.length} บัญชี
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.5 }}>
+                  หน้าเช็คชื่อกรองรายชื่อด้วยทีมของ<b>บัญชี</b> — ไม่ตรงแปลว่าเขาเห็นกะของคนอื่น
+                  · ค่าที่ถูกคือค่าในฐานพนักงาน (หัวหน้าแผนกเป็นคนดูแล)
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {mism.map(u => {
+                    const e = empById[u.employee_id];
+                    return (
+                      <div key={u.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px' }}>
+                        <b style={{ minWidth: 150 }}>{u.full_name}</b>
+                        <span style={{ color: 'var(--muted)' }}>
+                          บัญชี: ทีม {u.team || '—'} · ไลน์ {lineName(u.line_id) || '—'}
+                        </span>
+                        <span style={{ color: '#22c55e' }}>
+                          → ฐานพนักงาน: ทีม {e.team || '—'} · ไลน์ {lineName(e.line_id) || '—'}
+                        </span>
+                        <button type="button" onClick={() => syncFromEmployee(u)}
+                          style={{ width: 'auto', marginLeft: 'auto', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
+                          ใช้ค่าจากฐานพนักงาน
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {unset.length > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                <b style={{ color: '#f59e0b' }}>ยังไม่ระบุประเภทบัญชี · {unset.length} บัญชี</b>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                  ระบบไม่เดาให้ว่าบัญชีไหนเป็นของคนหรือของหน่วยงาน — เปิดแก้ไขแล้วเลือกประเภท
+                  บัญชีของคนจะได้ผูกตัวตนกับฐานพนักงาน ส่วนบัญชีหน่วยงาน/อุปกรณ์ไม่ต้องผูก
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* User Table */}
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16, maxHeight: '65vh' }}>
@@ -564,8 +662,76 @@ export default function AddUser() {
               )}
 
               <div>
-                <label style={labelSt}>ชื่อ - นามสกุล</label>
-                <input type="text" placeholder="ชื่อเต็ม" value={form.fullName} onChange={e => setF('fullName', e.target.value)} />
+                <label style={labelSt}>ประเภทบัญชี</label>
+                {/* ⚠️ บัญชีของคน ต้องผูกตัวตนจากฐานพนักงาน — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่นที่เดียว
+                    บัญชีหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  {[
+                    { k: 'person', icon: '👤', label: 'บัญชีของคน', desc: 'ผูกกับพนักงานในฐานข้อมูล' },
+                    { k: 'shared', icon: '🏢', label: 'บัญชีหน่วยงาน/อุปกรณ์', desc: 'ไม่มีตัวตนพนักงาน' },
+                  ].map(o => (
+                    <button key={o.k} type="button"
+                      onClick={() => { setF('accountKind', o.k); if (o.k === 'shared') setF('employeeId', ''); }}
+                      style={{
+                        flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '8px 10px',
+                        borderRadius: 8, fontSize: 12,
+                        border: `1px solid ${form.accountKind === o.k ? 'var(--accent)' : 'var(--border2)'}`,
+                        background: form.accountKind === o.k ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+                        color: form.accountKind === o.k ? 'var(--text)' : 'var(--text2)',
+                      }}>
+                      <div style={{ fontWeight: 700 }}>{o.icon} {o.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.desc}</div>
+                    </button>
+                  ))}
+                </div>
+                {!form.accountKind && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6 }}>
+                    ⚠️ บัญชีนี้ยังไม่ได้ระบุประเภท — เลือกให้ถูก แล้วระบบจะรู้ว่าต้องผูกตัวตนไหม
+                  </div>
+                )}
+
+                {form.accountKind === 'person' ? (
+                  <>
+                    <label style={labelSt}>พนักงาน (ตัวตนของบัญชีนี้) <span style={{ color: 'var(--red)' }}>*</span></label>
+                    <input type="text" placeholder="ค้นด้วยรหัส / ชื่อ" value={empSearch}
+                      onChange={e => setEmpSearch(e.target.value)} style={{ marginBottom: 6 }} />
+                    <select value={form.employeeId}
+                      onChange={e => {
+                        const emp = emps.find(x => x.id === e.target.value);
+                        setF('employeeId', e.target.value);
+                        // ตัวตนมาจากฐานพนักงาน — เติมให้ครบในจังหวะเดียว admin ไม่ต้องเดา
+                        if (emp) setForm(f => ({
+                          ...f, employeeId: emp.id, fullName: emp.name || '',
+                          team: emp.team || '', lineId: emp.line_id ? String(emp.line_id) : '',
+                          sections: emp.section ? [emp.section] : f.sections,
+                          position: emp.position || f.position,
+                        }));
+                      }}>
+                      <option value="">— เลือกพนักงาน —</option>
+                      {emps
+                        .filter(e2 => {
+                          const q = empSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return (e2.name || '').toLowerCase().includes(q)
+                              || (e2.employee_id_code || '').toLowerCase().includes(q);
+                        })
+                        .slice(0, 300)
+                        .map(e2 => (
+                          <option key={e2.id} value={e2.id}>
+                            {e2.employee_id_code} · {e2.name}{e2.team ? ` · ทีม ${e2.team}` : ''}{e2.section ? ` · ${e2.section}` : ''}
+                          </option>
+                        ))}
+                    </select>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                      ทีม / ไลน์ / ส่วนงาน จะมาจากฐานพนักงานอัตโนมัติ — หัวหน้าแผนกแก้ที่นั่นแล้วถือเป็นค่าจริง
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label style={labelSt}>ชื่อ - นามสกุล</label>
+                    <input type="text" placeholder="ชื่อเต็ม" value={form.fullName} onChange={e => setF('fullName', e.target.value)} />
+                  </>
+                )}
               </div>
 
               <div>
@@ -725,19 +891,35 @@ export default function AddUser() {
                 </div>
               )}
 
-              <div>
-                <label style={labelSt}>Team {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
-                <select value={form.team} onChange={e => setF('team', e.target.value)}>
-                  <option value="">— เลือก —</option>
-                  {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
-                </select>
-              </div>
+              {/* บัญชีของคนที่ผูกพนักงานแล้ว → ทีม/ไลน์ มาจากฐานพนักงาน ล็อกไม่ให้ admin กรอกทับ
+                  (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
+              {(() => {
+                const linked = form.accountKind === 'person' && !!form.employeeId;
+                return (<>
+                  <div>
+                    <label style={labelSt}>
+                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                    </label>
+                    <select value={form.team} disabled={linked}
+                      title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
+                      onChange={e => setF('team', e.target.value)}>
+                      <option value="">— เลือก —</option>
+                      {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
+                    </select>
+                  </div>
 
-              <div>
-                <label style={labelSt}>ไลน์ผลิต / Group {form.role === 'leader' && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}</label>
-                <LineSelect lines={lines} value={form.lineId} valueKey="id"
-                  onChange={v => setF('lineId', v)} />
-              </div>
+                  {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
+                  <div title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}>
+                    <label style={labelSt}>
+                      ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                    </label>
+                    <LineSelect lines={lines} value={form.lineId} valueKey="id"
+                      disabled={linked} onChange={v => setF('lineId', v)} />
+                  </div>
+                </>);
+              })()}
 
               {(form.role === 'supervisor' || form.role === 'leader') && (
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, lineHeight: 1.5 }}>
