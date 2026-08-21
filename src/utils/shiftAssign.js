@@ -64,6 +64,24 @@ export function shiftFromTeam(dayTeam, empTeam) {
 }
 
 /**
+ * ป้ายกำกับทีมสำหรับ dropdown/แสดงผล — **ห้ามเขียน "Team A (กะเช้า)" ตายตัวในหน้าใดๆ**
+ * (เจอจริง 2026-08-21 ที่ `/operator`: dropdown เขียน A=กะเช้า B=กะดึก C=ไม่มีพันธะกะ — ผิดทั้ง 3 บรรทัด)
+ *
+ * ความจริงตาม `shiftFromTeam` ข้างบน:
+ *   · A/B **หมุนสลับกันรายสัปดาห์** ตาม `shift_schedules.day_team` — สัปดาห์นี้ A เช้า สัปดาห์หน้า A ดึก
+ *     ⇒ ไม่มีทางเขียนไว้ในป้ายได้ ต้องดูตารางกะของสัปดาห์นั้นเท่านั้น
+ *   · **C คือทีมเดียวที่คงที่จริง** = กะเช้าตลอด ไม่หมุน
+ *   · ทีมอื่นที่อาจมีในผังองค์กร (org_nodes kind='team') → `shiftFromTeam` คืน null
+ *     = ระบบยังไม่รู้กติกาหมุนกะของทีมนั้น **ห้ามเดาให้** ป้ายจึงบอกแค่ชื่อทีม
+ */
+export function teamLabel(team) {
+  const t = (team ?? '').toString().trim().toUpperCase();
+  if (t === 'C') return `Team ${team} · กะเช้าตลอด (ไม่หมุนกะ)`;
+  if (t === 'A' || t === 'B') return `Team ${team} · หมุนกะรายสัปดาห์`;
+  return `Team ${team}`;
+}
+
+/**
  * กะที่พนักงานเข้าในวันนั้น ตามลำดับความสำคัญของระบบ:
  *   1. shift_overrides รายบุคคล  2. shift_merge_events (ไลน์ชนะ section)  3. ตารางกะ (ไลน์ → หน่วยงาน)
  * @param {object} emp                พนักงาน (ต้องมี line_id, team และ department ถ้าจะใช้กะระดับหน่วยงาน)
