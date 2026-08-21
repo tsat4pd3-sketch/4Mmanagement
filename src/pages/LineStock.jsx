@@ -13,6 +13,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
 import LineSelect from '../components/LineSelect';
+import StockMoveToChild from '../components/StockMoveToChild';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 
@@ -78,6 +79,12 @@ function StockTab({ role, scope }) {
     () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(),
     [stock, lines],
   );
+  // ไลน์แม่ (มีไลน์ลูก) = ระดับแผนก — ใช้เตือนตอนจ่ายพาร์ท และตรวจสต๊อกที่ค้างผิดชั้น
+  const childLinesOf = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { if (l.parent_line_name) (m[l.parent_line_name] ||= []).push(l.name); });
+    return m;
+  }, [lines]);
   const [showTxn,    setShowTxn]    = useState(false);
   // ย่อ/ขยายกลุ่มไลน์-คลัง — จำ override ของ user (default = กาง) · ดู docs/UI-CONVENTIONS.md §6.8
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
@@ -340,6 +347,12 @@ function StockTab({ role, scope }) {
         </div>
       )}
 
+      {/* 🔀 สต๊อกค้างที่ "ไลน์แม่" — ระบบหักตอนผลิตไม่ได้ (ดู StockMoveToChild.jsx) */}
+      <StockMoveToChild
+        lines={lines} stock={stock} products={products} productBom={productBom}
+        canIssue={canIssue} fullName={fullName} workDate={getToday()} onDone={load}
+      />
+
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
         {[
@@ -551,6 +564,16 @@ function StockTab({ role, scope }) {
                     onChange={v => setForm(f => ({ ...f, line_name: v }))}
                     extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
                   />
+                  {/* ⚠️ ไลน์แม่ = ระดับแผนก งานผลิตเปิดกะที่ไลน์ลูก — ของที่ฝากไว้ที่ไลน์แม่
+                      จะถูกหักตอนปิดใบผลิตไม่ได้เลย (backflush หาด้วยชื่อไลน์ที่เปิดกะ)
+                      เตือนอย่างเดียว ไม่บล็อก — บางกรณีอาจตั้งใจฝากไว้ที่แผนกจริง */}
+                  {childLinesOf[form.line_name]?.length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.6 }}>
+                      ⚠️ <b>{form.line_name}</b> เป็นไลน์ระดับแผนก (มีไลน์ลูก {childLinesOf[form.line_name].join(' · ')})
+                      — ของที่จ่ายเข้าที่นี่ <b>ระบบจะหักตอนปิดใบผลิตไม่ได้</b> เพราะงานเปิดกะที่ไลน์ลูก
+                      <br />แนะนำให้เลือก<b>ไลน์ลูก</b>ที่ใช้พาร์ทนี้จริงแทน
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
