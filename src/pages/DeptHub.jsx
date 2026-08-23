@@ -1,15 +1,19 @@
-import { useState, useEffect, useRef, useContext, useMemo } from 'react';
+import { useState, useEffect, useRef, useContext, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { navItemsForGroups, UserContext } from '../App';
 import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
+import { positionLabel } from '../utils/positions';   // position เก็บเป็น key — แสดงต้องแปลงชื่อเสมอ
+import { canAccessPage } from '../utils/permissions';
+import { buildProfileMenu } from '../utils/profileMenu';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
 import { toast } from '../components/Toast';
-import { saveMyProfileMedia } from '../utils/profileSelf';
+import { uploadMyAvatar } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+const FeedbackModal = lazy(() => import('../components/FeedbackModal'));  // 💬 ช่องรับ feedback (ชุดเดียวกับ sidebar)
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 
@@ -203,41 +207,46 @@ function getWorkDate() {
 }
 
 export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition,
-  userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved }) {
+  userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved,
+  realRole, onOpenViewAs, remoteCode, onToggleRemote }) {
   const navigate = useNavigate();
   // scope ของผู้ใช้ (DeptHub อยู่ใน UserContext.Provider ของ App แล้ว)
   const { lineId: userLineId, sections: userSections = [] } = useContext(UserContext);
 
-  // ── โปรไฟล์เมนู: เปลี่ยนรูป / ลายเซ็น / เปลี่ยนรหัสผ่าน (2026-07-14) ──
+  // ── โปรไฟล์เมนู: รายการมาจาก buildProfileMenu (utils/profileMenu.js) ชุดเดียวกับ sidebar ──
+  //    เดิมหน้านี้เขียนเมนูของตัวเองแล้ว drift (ขาด 💬 แจ้งปัญหา / 🎭 จำลองมุมมอง / รีโมทจอ)
   const [profileOpen, setProfileOpen] = useState(false);
   const [cropFile, setCropFile] = useState(null);
   const [sigOpen, setSigOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [fbOpen, setFbOpen] = useState(false);
   const fileRef = useRef(null);
 
   const onAvatarCropped = async (file) => {
     setCropFile(null);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('ยังไม่ได้เข้าสู่ระบบ'); return; }
-      const path = `${user.id}/avatar_${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
-      if (upErr) throw upErr;
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error (บั๊กเดียวกับลายเซ็น 2026-08-17)
-      const res = await saveMyProfileMedia('avatar_url', publicUrl);
-      if (!res.ok) throw new Error(res.message);
-      // ลบไฟล์เก่า best-effort หลัง DB update สำเร็จเท่านั้น (กฎ Storage E2) — เฉพาะโฟลเดอร์ตัวเอง
-      if (userAvatarUrl?.includes('/avatars/')) {
-        const old = decodeURIComponent(userAvatarUrl.split('/avatars/')[1] || '').split('?')[0];
-        if (old && old.startsWith(`${user.id}/`)) supabase.storage.from('avatars').remove([old]).catch(() => {});
-      }
-      onAvatarSaved?.(publicUrl);
-      toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
-    } catch (err) {
-      toast.error(`อัพโหลดรูปไม่สำเร็จ: ${err?.message || 'ลองใหม่อีกครั้ง'}`);
-    }
+    // helper กลาง (utils/profileSelf) — อัปโหลด + เขียน profiles ผ่าน RPC + ลบไฟล์เก่า
+    // ⚠️ ห้าม update profiles ตรง: RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error (บั๊กลายเซ็น 2026-08-17)
+    const res = await uploadMyAvatar(file, userAvatarUrl);
+    if (!res.ok) { toast.error(res.message); return; }
+    onAvatarSaved?.(res.url);
+    toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
   };
+
+  const profileItems = buildProfileMenu({
+    realRole: realRole ?? userRole,
+    canRemote: canAccessPage('/remote', userRole),
+    remoteCode, theme,
+    on: {
+      avatar:       () => fileRef.current?.click(),
+      signature:    () => setSigOpen(true),
+      password:     () => setPwdOpen(true),
+      feedback:     () => setFbOpen(true),
+      viewAs:       onOpenViewAs,
+      toggleRemote: onToggleRemote,
+      toggleTheme:  onToggleTheme,   // มีปุ่มธีมแยกข้างนอกด้วย (layout ของหน้านี้) — ในเมนูก็ต้องมีให้ครบชุด
+      logout:       onLogout,
+    },
+  });
 
   // นาฬิกา/กะสด — display เท่านั้น (ขอบกะตรง getCurrentShift: day 08:00–19:59)
   const [now, setNow] = useState(() => new Date());
@@ -346,7 +355,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 {/* จุดเขียว ONLINE นิ่ง+เรืองแสง */}
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 4px 1px rgba(61,214,92,0.6)' }} />
-                {userPosition ? `${userPosition} · ` : ''}{roleLabel(userRole)}
+                {/* ⚠️ position เก็บเป็น key ต้องผ่าน positionLabel() เสมอ ไม่งั้นขึ้น 'operator' ดิบ (กฎ CLAUDE.md) */}
+                {userPosition ? `${positionLabel(userPosition)} · ` : ''}{roleLabel(userRole)}
               </span>
             )}
           </div>
@@ -380,32 +390,45 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                       ? <img src={userAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--accent)' }}>{(userFullName || '?').trim().charAt(0)}</span>}
                   </div>
-                  <div style={{ minWidth: 0 }}>
+                  {/* เนื้อหาตัวตนชุดเดียวกับการ์ด user ใน sidebar: ชื่อ · ตำแหน่ง(แปลชื่อแล้ว)+อีเมล · ป้าย role */}
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userFullName || '—'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roleLabel(userRole)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ') || roleLabel(userRole)}
+                    </div>
                   </div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                    background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.3)',
+                  }}>{userRole?.toUpperCase() || '—'}</span>
                 </div>
-                {[
-                  { icon: '📷', label: 'เปลี่ยนรูปโปรไฟล์', act: () => { setProfileOpen(false); fileRef.current?.click(); } },
-                  { icon: '✍️', label: 'ตั้งค่าลายเซ็น', act: () => { setProfileOpen(false); setSigOpen(true); } },
-                  { icon: '🔐', label: 'เปลี่ยนรหัสผ่าน', act: () => { setProfileOpen(false); setPwdOpen(true); } },
-                ].map(m => (
-                  <button key={m.label} onClick={m.act} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
-                    background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
-                    color: 'var(--text2)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
-                    fontFamily: 'var(--font-body)',
-                  }}>
-                    <span style={{ fontSize: 15 }}>{m.icon}</span>{m.label}
+                {/* รายการเมนู = descriptor ชุดเดียวกับ sidebar (utils/profileMenu.js) — ห้ามเติมปุ่มตรงนี้ */}
+                {profileItems.map(it => (
+                  <button key={it.key}
+                    onClick={() => {
+                      setProfileOpen(false);
+                      if (it.to) { navigate(it.to); return; }
+                      it.onClick?.();
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
+                      background: 'transparent', border: 'none',
+                      borderBottom: it.key === 'logout' ? 'none' : '1px solid var(--border)',
+                      color: it.color || 'var(--text2)', fontSize: 13, fontWeight: it.danger ? 700 : 600,
+                      cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)',
+                      justifyContent: it.kind === 'toggle' ? 'space-between' : 'flex-start',
+                    }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
+                    </span>
+                    {it.kind === 'toggle' && (
+                      <span style={{ width: 32, height: 18, borderRadius: 9, flexShrink: 0, position: 'relative', background: it.on ? 'var(--accent)' : 'var(--border2)', transition: 'background 0.25s' }}>
+                        <span style={{ position: 'absolute', top: 2, left: it.on ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
+                      </span>
+                    )}
                   </button>
                 ))}
-                <button onClick={() => { setProfileOpen(false); onLogout?.(); }} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
-                  background: 'transparent', border: 'none', color: '#ef4444', fontSize: 13, fontWeight: 700,
-                  cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)',
-                }}>
-                  <span style={{ fontSize: 15 }}>🚪</span>ออกจากระบบ
-                </button>
               </div>
             </>
           )}
@@ -557,6 +580,11 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       <SignatureModal open={sigOpen} onClose={() => setSigOpen(false)}
         currentSignatureUrl={userSignatureUrl} onSaved={(url) => onSignatureSaved?.(url)} />
       <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} userEmail={userEmail} />
+      {fbOpen && (
+        <Suspense fallback={null}>
+          <FeedbackModal onClose={() => setFbOpen(false)} />
+        </Suspense>
+      )}
 
       {/* ── Footer ── */}
       <div style={{
