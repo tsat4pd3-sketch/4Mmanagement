@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import resizeImg from '../utils/resizeImage';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -32,22 +33,8 @@ const PHASES = {
 /* ── helpers ─────────────────────────────────────────────────── */
 
 // รูปหลักฐาน before/after — บีบก่อนอัปโหลดตามกติกา CLAUDE.md "Storage & รูปภาพ" (ห้ามส่งรูปดิบ)
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 const todayStr = () => {
   const d = new Date();

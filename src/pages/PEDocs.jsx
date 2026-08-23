@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
+import resizeImg from '../utils/resizeImage';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -22,22 +23,8 @@ import LineSelect from '../components/LineSelect';
 
 /* รูป product/drawing + รูปประกอบ OP — bucket pe-images (Main) · บีบ 2560px/q0.9 (tier drawing ต้องซูมอ่านได้)
    GIF ส่งดิบ ≤2MB ตามกติกา storage (วาดลง canvas = การขยับหายเงียบ) */
-function resizeImage(file, maxPx = 2560, quality = 0.9) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 2560, quality = 0.9) => resizeImg(file, maxPx, quality);
 const peImagePath = (url) => { const p = url?.split('/pe-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removePeImage = (url) => { const p = peImagePath(url); if (p) supabase.storage.from('pe-images').remove([p]).catch(() => {}); };
 

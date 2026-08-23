@@ -5,6 +5,7 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
+import resizeImg from '../utils/resizeImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -40,23 +41,8 @@ async function logoDataUrl(overrideUrl) {
   } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
 }
 
-// รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
-function resizeImage(file, maxPx = 1024, quality = 0.8) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality);
 const getWorkDate = () => {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
@@ -1071,6 +1057,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   };
 
   const save = async () => {
+    if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
     setSaving(true);
     try {
       /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
@@ -1103,8 +1090,16 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
-        if (afterFile) { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+        // ⚠️ รูปพังห้ามลากบันทึกทั้งใบล้ม (feedback 2026-08-21: อ่านไฟล์รูปไม่ได้ →
+        //    วิธีการแก้ไข/ช่างหลัก/ช่างรอง ที่พิมพ์มาหายหมด ช่างกดบันทึกซ้ำ 13 ครั้ง)
+        //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
+        let imgWarn = null;
+        if (afterFile) {
+          try { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+          catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
+        }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+        if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
         for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
@@ -1130,7 +1125,11 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
       } else if (step === 5) {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s });
-        if (qaFile) { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+        // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
+        if (qaFile) {
+          try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+          catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
+        }
         if (!editMode) { upd.status = 'qa'; upd.current_step = 5; upd.qa_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 6) {
