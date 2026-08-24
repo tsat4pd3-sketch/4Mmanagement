@@ -143,16 +143,28 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
       const FULL = 'session_id, qty_ng, qty_suspect, is_trial, defect_type_id, prod_orders(mat_no), dr_defect_types(excl_from_q)';
       const SLIM = 'session_id, qty_ng, qty_suspect, defect_type_id, prod_orders(mat_no)';
       let sel = FULL, noTrialFlag = false, rows = [];
-      for (let i = 0; i < ids.length; i += 120) {           // .in() ยาวเกินไป proxy ตัด
-        const run = async (s) => {
-          let q = supabaseDR.from('defect_logs').select(s).in('session_id', ids.slice(i, i + 120));
+      // ⚠️ ต้องครบ 3 ชั้นตามกฎ: แบ่งก้อน id (120) + **แบ่งหน้า (1000)** + .order() คู่กับ .range()
+      //    เดิมมีแค่ชั้นแรก → 120 กะ × ของเสีย อาจเกิน 1000 แถวแล้วหายเงียบ
+      //    ⇒ ผลวัดประสิทธิผล 8D (IATF §10.2.4) ต่ำกว่าจริง แล้ว stamp ค้างไว้ในใบ
+      //    ใช้ลูปเองแทน fetchByIds เพราะต้องรองรับ fallback select ตอนคอลัมน์ธง trial ยังไม่ apply
+      const runChunk = async (chunk, s) => {
+        const out = [];
+        for (let pg = 0; pg < 60; pg++) {
+          let q = supabaseDR.from('defect_logs').select(s).in('session_id', chunk);
           if (capa.eff_defect_type_id) q = q.eq('defect_type_id', capa.eff_defect_type_id);
-          return q;
-        };
-        let { data: d, error: e2 } = await run(sel);
+          const { data, error } = await q.order('id').range(pg * 1000, (pg + 1) * 1000 - 1);
+          if (error) return { error };
+          out.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        return { data: out };
+      };
+      for (let i = 0; i < ids.length; i += 120) {           // .in() ยาวเกินไป proxy ตัด
+        const chunk = ids.slice(i, i + 120);
+        let { data: d, error: e2 } = await runChunk(chunk, sel);
         if (e2?.code === '42703' && sel === FULL) {
           sel = SLIM; noTrialFlag = true;
-          ({ data: d, error: e2 } = await run(SLIM));
+          ({ data: d, error: e2 } = await runChunk(chunk, SLIM));
         }
         if (e2) throw e2;
         rows = rows.concat(d || []);

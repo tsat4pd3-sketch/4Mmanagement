@@ -246,12 +246,16 @@ export default function ScrapReport() {
   const pullFromDefectLogs = async () => {
     const { report } = editor;
     if (!report.line_name || !report.report_date) { toast.error('เลือกไลน์และวันที่ก่อน'); return; }
-    const { data: sess } = await supabaseDR.from('production_sessions').select('id')
+    // ⚠️ ต้องเช็ค error — ไม่งั้นคิวรีพังจะขึ้น "ไม่พบ session ผลิต" / "ไม่มีของเสียบันทึกไว้"
+    //    = บอกข้อเท็จจริงที่ผิดบนใบรายงานของเสีย ซึ่งเป็นบันทึกคุณภาพ (ห้ามล้มเหลวเงียบ)
+    const { data: sess, error: sErr } = await supabaseDR.from('production_sessions').select('id')
       .eq('line_name', report.line_name).eq('work_date', report.report_date);
+    if (sErr) { toast.error('ดึงข้อมูลกะไม่สำเร็จ: ' + sErr.message); return; }
     const ids = (sess || []).map(s => s.id);
     if (!ids.length) { toast.info('ไม่พบ session ผลิตของไลน์/วันนี้'); return; }
-    const { data: defs } = await supabaseDR.from('defect_logs')
+    const { data: defs, error: dErr } = await supabaseDR.from('defect_logs')
       .select('qty_ng, prod_orders(mat_no, part_name)').in('session_id', ids);
+    if (dErr) { toast.error('ดึงข้อมูลของเสียไม่สำเร็จ: ' + dErr.message); return; }
     const byMat = new Map();
     (defs || []).forEach(d => {
       const mat = d.prod_orders?.mat_no || '—';

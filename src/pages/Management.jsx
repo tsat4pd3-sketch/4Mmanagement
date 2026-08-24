@@ -7,6 +7,7 @@ import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { can } from '../utils/permissions';
+import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
@@ -16,23 +17,11 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
-    };
-    img.src = url;
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+// ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
+//    in-app browser ของ LINE) ทำให้ Promise ค้างตลอดกาล — ปุ่มบันทึกหมุนไม่จบ ไม่มี error ไม่มี toast
+//    ตัวกลางลอง createImageBitmap ก่อน · revoke object URL ทุกทาง · โยน error ที่บอกวิธีแก้
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 function getWorkDate() {
   const now = new Date();
@@ -785,7 +774,13 @@ export default function Management() {
 
     let request_image_url = null;
     if (reqImageFile) {
-      const resized = await resizeImage(reqImageFile);
+      // ⚠️ resizeImage โยน error เมื่ออ่านไฟล์ไม่ได้ (.heic / in-app browser) — ต้องรับไว้เอง
+      //    ฟังก์ชันนี้ไม่มี try/catch ครอบ ถ้าปล่อยหลุดจะเป็น unhandled rejection
+      //    = ปุ่มบันทึกค้างหมุน (setIsSaving4M ไม่ถูก reset) และไม่มีข้อความบอกอะไรเลย
+      //    ข้อมูล 4M ที่พิมพ์ไว้ยังอยู่ในฟอร์ม (return ก่อนล้าง) เหมือน path อัปโหลดพลาดด้านล่าง
+      let resized;
+      try { resized = await resizeImage(reqImageFile); }
+      catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsSaving4M(false); return; }
       const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
       const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
       if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsSaving4M(false); return; }

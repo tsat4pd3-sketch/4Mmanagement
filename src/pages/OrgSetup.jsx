@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
+import { can } from '../utils/permissions';
+import { UserContext } from '../App';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
 
@@ -11,6 +13,8 @@ const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department 
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
+  const { role } = useContext(UserContext);
+  const canDivisions = can('org', 'manage_divisions', role);
   const [nodes, setNodes] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -154,7 +158,7 @@ export default function OrgSetup() {
       // พนักงาน derive จาก department ก่อน แล้ว section
       ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
-      ...(['section', 'department'].includes(modal.kind) ? { division: formDivision || null } : {}),
+      ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -368,13 +372,18 @@ export default function OrgSetup() {
               {['section', 'department'].includes(modal.kind) && (
                 <div>
                   <label style={labelSt}>ฝ่าย (Division)</label>
-                  <select value={formDivision} onChange={e => setFormDivision(e.target.value)}>
+                  {/* gate ด้วย org:manage_divisions — คีย์นี้ถูกลงทะเบียนใน permission_catalog
+                      + ใช้เป็น RLS ของตาราง org_divisions อยู่แล้ว แต่ไม่เคยมีโค้ดฝั่ง UI เรียก
+                      = ติ๊กใน /permissions แล้วไม่มีผล (กฎ: ห้ามลงทะเบียน key ที่โค้ดไม่ใช้) */}
+                  <select value={formDivision} disabled={!canDivisions}
+                    onChange={e => setFormDivision(e.target.value)}>
                     <option value="">— ตกทอดจากตัวแม่ / ยังไม่ระบุ —</option>
                     {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
                     {modal.parentId ? ' (ตัวนี้มีแม่อยู่แล้ว ปล่อยว่างได้)' : ''}
+                    {!canDivisions && ' · 🔒 ต้องมีสิทธิ์ org:manage_divisions ถึงแก้ได้'}
                   </div>
                 </div>
               )}

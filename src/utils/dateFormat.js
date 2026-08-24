@@ -16,6 +16,17 @@ const toDate = (v) => {
   return isNaN(d) ? null : d;
 };
 
+/**
+ * วันที่ "วันนี้" ตามเครื่อง (local) รูปแบบ YYYY-MM-DD — สำหรับใส่ใน <input type="date">
+ * หรือคอลัมน์ date ที่หมายถึงวันตามปฏิทิน (เช่น pe_doc_revisions.rev_date)
+ *
+ * ⚠️ ห้ามใช้ `new Date().toISOString().slice(0,10)` — นั่นคือ UTC ช่วง 00:00-06:59 ไทย
+ *    จะได้วันที่ย้อนหลัง 1 วัน (เอกสารควบคุมลงวันที่ผิด)
+ * ⚠️ คนละตัวกับ `getWorkDate()` ที่ตัด 08:00 ตามกะ — อันนั้นใช้กับ "วันงาน" เท่านั้น
+ */
+export const todayLocal = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 /** DD/MM/YY  e.g. 05/06/26 */
 export const fmtDate = (v) => {
   const d = toDate(v);

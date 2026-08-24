@@ -554,9 +554,14 @@ export default function Improvements() {
     if (source === 'downtime') {
       // ดึง category (planned/unplanned) + description มาด้วย — งานในแผนเป็น priority รอง
       // และ note พนักงานคือตัวบอกว่า "อื่นๆ" จริงๆ คือปัญหาอะไร
-      const { data } = await supabaseDR.from('downtime_logs')
-        .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
-        .in('session_id', ids);
+      // ⚠️ ต้องผ่าน fetchByIds (กฎ CLAUDE.md) — หน้าต่างเลือกได้ถึง 90 วัน = ~180 กะ
+      //    × downtime กะละ ~10 = ~1,800 แถว > เพดาน 1000 ⇒ ถูกตัดเงียบ พาเรโต้ชี้เป้าผิด
+      //    (บรรทัด 379/404 ในไฟล์นี้ใช้ fetchByIds อยู่แล้ว ตัวนี้ตกสำรวจ)
+      const { rows: data, error: pErr, truncated: pTrunc } = await fetchByIds(ids, (c) =>
+        supabaseDR.from('downtime_logs')
+          .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
+          .in('session_id', c));
+      if (pErr || pTrunc) toast.error('โหลด downtime ไม่ครบ — พาเรโต้อาจชี้เป้าไม่ตรง');
       (data || []).forEach(r => {
         const key = `${r.downtime_type_id || ''}::${normCode(r.machine_no)}`; // เครื่องเดียวกันที่พิมพ์ไม่เป๊ะ = แถวเดียวกัน
         const cur = agg.get(key) || { type_id: r.downtime_type_id, machine_no: r.machine_no || '', value: 0, count: 0, planned: r.dr_downtime_types?.category === 'planned', descCount: new Map() };
@@ -565,8 +570,10 @@ export default function Improvements() {
         agg.set(key, cur);
       });
     } else {
-      const { data } = await supabaseDR.from('defect_logs')
-        .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', ids);
+      const { rows: data, error: pErr, truncated: pTrunc } = await fetchByIds(ids, (c) =>
+        supabaseDR.from('defect_logs')
+          .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', c));
+      if (pErr || pTrunc) toast.error('โหลดของเสียไม่ครบ — พาเรโต้อาจชี้เป้าไม่ตรง');
       (data || []).forEach(r => {
         const mat = r.prod_orders?.mat_no || '';
         const key = `${r.defect_type_id || ''}::${mat}`;

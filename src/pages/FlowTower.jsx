@@ -58,7 +58,9 @@ export default function FlowTower() {
 
   const load = useCallback(async () => {
     try {
-      const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      // ห้าม toISOString (UTC) — ใช้วันที่เครื่อง (local) แบบเดียวกับ getWorkDate ในไฟล์นี้
+  const sinceD = new Date(); sinceD.setDate(sinceD.getDate() - 7);
+  const since = `${sinceD.getFullYear()}-${String(sinceD.getMonth() + 1).padStart(2, '0')}-${String(sinceD.getDate()).padStart(2, '0')}`;
       const [stock, ordersOpen, prodToday, childLots, rawReq, purch, blocks, wipPts, wipReq, fcast] = await Promise.all([
         supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand'),
         supabaseDR.from('customer_shipping_orders').select('qty, status').neq('status', 'shipped'),

@@ -6,6 +6,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
+import resizeImg from '../utils/resizeImage';
 // recharts ไม่ต้อง import ที่นี่แล้ว — radar ย้ายไปอยู่ใน SkillRadarPanel (2026-08-06)
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
@@ -42,25 +43,11 @@ function useWidth() {
   return w;
 }
 
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(blob ? new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }) : null), 'image/jpeg', quality);
-    };
-    // ไฟล์เสีย/ฟอร์แมตไม่รองรับ (เช่น HEIC) — ต้อง resolve(null) ไม่งั้น await ค้างถาวร ปุ่มบันทึกแขวน
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-    img.src = url;
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+// ก๊อปเดิมที่นี่มี onerror แล้ว (ไม่ค้างเหมือนของ Management/operator) แต่ยังเป็นสำเนาที่ 3
+// ของ logic เดียวกัน — ตัวกลางลอง createImageBitmap ก่อน (รองรับฟอร์แมตกว้างกว่า) และ
+// **โยน error พร้อมวิธีแก้** แทนการคืน null เฉยๆ → ผู้เรียกต้อง try/catch
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1555,8 +1542,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       let qa_image_url = null;
       if (qaImageFile) {
-        const resized = await resizeImage(qaImageFile);
-        if (!resized) { toast.error('อ่านไฟล์รูปไม่สำเร็จ — ลองใช้ JPG/PNG'); return; }
+        let resized;
+        try { resized = await resizeImage(qaImageFile); }
+        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่สำเร็จ — ลองใช้ JPG/PNG'); return; }
         const path = `qa/${Date.now()}_${user.id}.jpg`;
         const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
         if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }

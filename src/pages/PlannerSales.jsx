@@ -780,7 +780,10 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
        ⚠️ เฉลี่ยด้วย `wavg` + `wLoad` เท่านั้น (กฎ OEE: ห้าม mean-of-percentages)
           ที่นี่ไม่ได้โหลด downtime → `plannedMin` = 0 → wLoad ตกไปถ่วงด้วย shift_min
           ยอมรับได้เพราะเป็น "ตัวเลขให้ดูเทียบ" ไม่ใช่ค่าที่ stamp ที่ไหน */
-    const oeeFrom = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+    // ⚠️ ห้าม toISOString (UTC) กับขอบเขตของ work_date — ช่วง 00:00-06:59 ไทยจะได้ขอบเขตเลื่อน 1 วัน
+    //    ทำให้ตัวเลข "CAP จริง" ขยับตามเวลาที่เปิดหน้า · ไฟล์นี้มี dateStr() (local) อยู่แล้ว
+    const oeeD = new Date(); oeeD.setDate(oeeD.getDate() - 90);
+    const oeeFrom = dateStr(oeeD);
     const { data: sess } = await supabaseDR.from('production_sessions')
       .select('line_name, oee, shift_min').eq('status', 'closed').gte('work_date', oeeFrom).not('oee', 'is', null);
     const byLine = {};
