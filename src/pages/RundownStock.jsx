@@ -3,6 +3,7 @@ import { supabaseDR } from '../supabaseClient';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
+import { fetchAllPages } from '../utils/fetchByIds';
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -23,15 +24,20 @@ export default function RundownStock() {
   const [shipToMap, setShipToMap] = useState({});
   const [pnIdx, setPnIdx] = useState(() => new Map());
   const [fgDest, setFgDest] = useState(null);   // คลังที่ FG เข้าไปรอส่ง (จาก stock_inflow_rules)
+  const [loadWarn, setLoadWarn] = useState('');  // โหลดไม่ครบ = บอกบนจอ ห้ามโชว์ตัวเลขเหมือนครบ (T3-26)
 
   const load = useCallback(async () => {
     const from = workDateStr();
     const toD = new Date(`${from}T12:00:00`);
     toD.setDate(toD.getDate() + HORIZON);
-    const [{ data: stk }, { data: ods }, { data: st }, { data: rules }, { data: dp }, { data: ks }] = await Promise.all([
-      supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
-      supabaseDR.from('customer_shipping_orders').select('*')
-        .lt('due_date', dateStr(toD)).neq('status', 'shipped'),
+    /* ⚠️ orders ค้างส่ง (ไม่มีขอบล่างวันที่ = ตั้งใจ — ใบเก่าที่ยังไม่ส่งคือหนี้ที่ยังค้างจริง)
+       ตอนนี้ ~923 รอบ ใกล้เพดาน 1000 แถวมาก → ต้องแบ่งหน้า ไม่งั้นแถวหายเงียบ
+       = Balance เกินจริง = ไม่เห็นว่าของจะขาด (QC audit 2026-08-20 · T3-26) · สต็อกก็เช่นกัน */
+    const [stkR, odsR, { data: st }, { data: rules }, { data: dp }, { data: ks }] = await Promise.all([
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
+        { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
+      fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('*')
+        .lt('due_date', dateStr(toD)).neq('status', 'shipped')),
       supabaseDR.from('ship_to_plants').select('*'),
       // คลังปลายทางของ FG มาจากกฎรับเข้าอัตโนมัติ — ไม่ hardcode 'FG WAREHOUSE'
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
@@ -40,8 +46,9 @@ export default function RundownStock() {
       supabaseDR.from('dr_products').select('mat_no, p_no').eq('is_active', true),
       supabaseDR.from('kanban_standards').select('mat_no, p_no').eq('is_active', true),
     ]);
-    setStockRows(stk || []);
-    setOrders(ods || []);
+    setLoadWarn(stkR.error || odsR.error || (stkR.truncated || odsR.truncated ? 'ข้อมูลเกินเพดานที่ดึงได้' : ''));
+    setStockRows(stkR.rows);
+    setOrders(odsR.rows);
     setPnIdx(buildPnIndex([...(dp || []), ...(ks || [])]));
     setFgDest((rules || []).find(r => r.match_type === 'prefix' && r.match_value === '1')?.dest_line_name || null);
     const m = {};
@@ -126,6 +133,11 @@ export default function RundownStock() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {loadWarn && (
+          <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.08)', fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>
+            ⚠ ข้อมูลบางส่วนโหลดไม่ครบ ({loadWarn}) — Balance ที่เห็นอาจสูงกว่าจริง ห้ามใช้ตัดสินใจจนกว่าจะรีเฟรชสำเร็จ
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {[
             { icon: '🔩', label: 'พาร์ทที่มี order ค้างส่ง', value: view.length },

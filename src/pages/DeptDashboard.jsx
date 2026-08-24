@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { fetchByIds } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
@@ -147,15 +148,19 @@ async function loadProduction(ctx) {
   const sess = (sess2 || []).filter(s => inScope(s.line_name));
   const ids = sess.map(s => s.id);
   const ids7 = (sess7 || []).filter(s => inScope(s.line_name)).map(s => s.id);
-  const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }, { data: dt7 }] = await Promise.all([
-    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', ids) : { data: [] },
-    ids.length ? supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', ids) : { data: [] },
-    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', ids) : { data: [] },
+  /* ⚠️ ids7 = 7 วัน ≈ 200 กะ → `.in()` ตรงๆ URL ยาวเกิน + แถวลูกทะลุ 1000 ได้
+     → ผ่าน fetchByIds ทุกคิวรีที่ยิงด้วย id list (QC audit 2026-08-20 · T3-14) */
+  const [ordRes, dtRes, defRes, { data: prods }, dt7Res] = await Promise.all([
+    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
     supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
-    ids7.length ? supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', ids7) : { data: [] },
-    loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 6 ไม่เข้า destructure แค่ให้ cache พร้อม
+    fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', c)),
+    loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
-  return { sess, sess7: sess7 || [], orders: orders || [], dts: dts || [], defs: defs || [], prods: prods || [], dt7: dt7 || [], fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
+  return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
+    loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error),
+    fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
 
 function ProductionView({ d, ctx }) {
@@ -234,6 +239,12 @@ function ProductionView({ d, ctx }) {
   }, [d]);
 
   return (<>
+    {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน (กติกาเดียวกับ QaView) */}
+    {d.loadErr && (
+      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+        🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
+      </div>
+    )}
     <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · เครื่องหยุดค้าง ${openDT.length} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
@@ -523,13 +534,15 @@ async function loadQa(ctx) {
   /* ⚠️ defect_logs **ไม่มีคอลัมน์ `mat_no`** (mat มาจาก prod_orders) และ dr_defect_types ใช้ `name_th` ไม่ใช่ `name`
      เดิม select ผิดทั้ง 2 จุด → 42703 → `defs = []` เงียบๆ → KPI ของเสีย/PPM/พาเรโตของ QA เป็น 0 มาตลอด
      → เช็ค error ด้วย ไม่งั้นบั๊กชนิดเดียวกันซ่อนตัวได้อีก (supabase-js คืน { error } ไม่ throw) */
+  /* ⚠️ 7 วัน ≈ 200 กะ → prod_orders ~700+ แถวและโตตาม adoption — ต้องผ่าน fetchByIds
+     (แบ่งก้อน id + แบ่งหน้า) ไม่งั้นตัวส่วน PPM ขาดเงียบ = PPM สูงเกินจริง (QC audit · T3-14) */
   const [defRes, ordRes] = await Promise.all([
-    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, prod_orders(mat_no), dr_defect_types(name_th)').in('session_id', ids) : { data: [], error: null },
-    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [], error: null },
+    fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, description, prod_orders(mat_no), dr_defect_types(name_th)').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual').in('session_id', c)),
   ]);
   if (defRes.error) console.warn('[deptDashboard/qa] โหลดของเสียไม่สำเร็จ', defRes.error);
   if (ordRes.error) console.warn('[deptDashboard/qa] โหลดใบผลิตไม่สำเร็จ', ordRes.error);
-  const defs = defRes.data, orders = ordRes.data;
+  const defs = defRes.rows, orders = ordRes.rows;
   /* ลูปปิด 8D → PE: CAPA ที่ปิดแล้ว เอกสาร PFMEA/Control Plan ตามแก้หรือยัง (IATF §10.2.3/10.2.4)
      ⚠️ best-effort — ยังไม่ apply migration 20260817 = คอลัมน์/ตารางไม่มี ต้องไม่ทำทั้งหน้าพัง */
   let capa = [], crOpen = 0, claims = [];
