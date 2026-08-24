@@ -154,7 +154,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   try {
     for (const ids of chunk(downtimes.map(d => d.id), 120)) {
       const { data } = await supabaseDR.from('mtn_orders')
-        .select('source_downtime_id, mo_no, root_cause, solution, mtn_dept, status')
+        .select('source_downtime_id, mo_no, root_cause, solution, mtn_dept, status, before_img, after_img')
         .in('source_downtime_id', ids);
       (data || []).forEach(o => { moByDt[o.source_downtime_id] = o; });
     }
@@ -192,9 +192,9 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       .in('line_name', allLineNames);
     fourMAll = data || [];
   } catch { /* ข้าม */ }
-  try { // โปรเจคปรับปรุง (Kaizen) ที่กำลังติดตามผล — action ระยะยาวที่เปิดไว้แล้ว
+  try { // โปรเจคปรับปรุง (Kaizen) ที่กำลังติดตามผล — action ระยะยาวที่เปิดไว้แล้ว (+รูปก่อน/หลัง)
     const { data } = await supabaseDR.from('improvements')
-      .select('id, title, problem_label, line_name, status')
+      .select('id, title, problem_label, line_name, status, image_before_url, image_after_url')
       .eq('status', 'monitoring')
       .in('line_name', allLineNames);
     impsAll = data || [];
@@ -368,13 +368,27 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     const byCat = {};
     fms.forEach(f => { byCat[f.category] = (byCat[f.category] || 0) + 1; });
     const fourM = fms.length ? { total: fms.length, byCat, pending: fms.filter(f => ['pending', 'pending_qa'].includes(f.status)).length } : null;
-    // โปรเจค Kaizen ที่กำลังติดตามผล
-    const imps = impsAll.filter(i => inLines(i.line_name)).map(i => ({ title: i.title || i.problem_label || '' }));
+    // โปรเจค Kaizen ที่กำลังติดตามผล (+รูปก่อน/หลัง)
+    const imps = impsAll.filter(i => inLines(i.line_name)).map(i => ({
+      title: i.title || i.problem_label || '', before: i.image_before_url, after: i.image_after_url,
+    }));
+    // 📷 รูปหลักฐาน ก่อน → หลัง ที่หน้างานแนบไว้ (ใบซ่อม MO เรียงตามนาทีหยุดมากสุด + Kaizen) — cap 3 คู่/ส่วนงาน
+    const seenMo = new Set();
+    const photoPairs = [];
+    ss.length && unplanned.slice().sort((a, b) => (Number(b.duration_min) || 0) - (Number(a.duration_min) || 0)).forEach(dd => {
+      const mo = moByDt[dd.id];
+      if (!mo || (!mo.before_img && !mo.after_img)) return;
+      const key = mo.mo_no || `dt${dd.id}`;
+      if (seenMo.has(key)) return;
+      seenMo.add(key);
+      photoPairs.push({ label: [mo.mo_no, dd.machine_no].filter(Boolean).join(' · ') || 'ใบซ่อม MO', before: mo.before_img, after: mo.after_img });
+    });
+    imps.forEach(i => { if (i.before || i.after) photoPairs.push({ label: `Kaizen: ${i.title}`.slice(0, 40), before: i.before, after: i.after }); });
     return {
       code: sec.code, ...agg, output, dtHr, ppm: ppmOf(ss, output), trialQty: trialQtyOf(ss),
       lines, dtGroups: dtGroupsOf(unplanned), defGroups: defGroupsOf(ss),
       fixCov: fixCoverage(unplanned), machineTop: machineStatsOf(unplanned),
-      moOpen, act, fourM, imps,
+      moOpen, act, fourM, imps, photoPairs: photoPairs.slice(0, 3),
     };
   }).filter(d => d.nSess > 0);
 
@@ -530,6 +544,27 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
   const { default: PptxGen } = await import('pptxgenjs');
   const pres = new PptxGen();
   pres.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in
+
+  /* 📷 โหลดรูปหลักฐาน (MO ก่อน/หลังซ่อม + Kaizen) เป็น dataURL — best-effort: โหลดไม่ได้ = ข้ามรูปนั้น เด็คห้ามพัง */
+  const imgData = async (url) => {
+    if (!url) return null;
+    if (url.startsWith('data:')) return url;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+      const b64 = typeof btoa !== 'undefined' ? btoa(bin) : globalThis.Buffer.from(buf).toString('base64');
+      return `data:${res.headers.get('content-type') || 'image/jpeg'};base64,${b64}`;
+    } catch { return null; }
+  };
+  const photoUrlMap = {}; // url → dataURL (โหลดครั้งเดียวข้ามทุกส่วนงาน)
+  {
+    const urls = [...new Set(data.depts.flatMap(d => (d.photoPairs || []).flatMap(p => [p.before, p.after])).filter(Boolean))];
+    const loaded = await Promise.all(urls.map(u => imgData(u)));
+    urls.forEach((u, i) => { if (loaded[i]) photoUrlMap[u] = loaded[i]; });
+  }
   const MON = monthLabel(data.monthKey);
   const NEXT = nextMonthLabel(data.monthKey);
   let pageNo = 0;
@@ -722,11 +757,16 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       footer(s);
     }
     // Loss detail (top downtime + การแก้ไขที่หัวหน้างานลงในระบบ + ใบซ่อม MO)
+    // มีรูปหลักฐาน = ตาราง 2 กลุ่ม + แถบรูป ก่อน→หลัง · ไม่มีรูป = 3 กลุ่มเต็มเหมือนเดิม
     {
       const s = newSlide();
       head(s, `${d.code} LOSS DETAIL : TOP DOWNTIME`, `FROM OEE LOSS TO ACTION — ${MON}`);
+      const pairs = (d.photoPairs || [])
+        .map(p => ({ ...p, beforeData: photoUrlMap[p.before] || null, afterData: photoUrlMap[p.after] || null }))
+        .filter(p => p.beforeData || p.afterData);
+      const nGroups = pairs.length ? 2 : 3;
       const rows = [];
-      d.dtGroups.slice(0, 3).forEach(g => {
+      d.dtGroups.slice(0, nGroups).forEach(g => {
         const detail = g.items.map((it, i) =>
           `(${i + 1}) ${it.date.slice(8, 10)}/${it.date.slice(5, 7)} ${it.machine ? it.machine + ' ' : ''}${it.desc || '-'} (${it.min} min)${it.fix ? `\n     → ${it.fix}` : ''}`).join('\n');
         rows.push([`${g.name}\n${hr1(g.min)}h / ${g.count} ครั้ง`, detail || '—', `${g.fixed}/${g.count}`]);
@@ -735,12 +775,29 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       tsgTable(s, ['Loss / เวลาสูญเสีย', 'รายละเอียดปัญหา + การแก้ไข (จากหน้างาน + ใบซ่อม MO)', 'ลงวิธีแก้'], rows,
         { y: 1.72, rowH: 1.42, headRowH: 0.32, colW: [2.3, 8.9, 1.1], fontSize: 9.5, leftCols: [1] });
       const cov = d.fixCov;
-      bullets(s, [
-        cov.total
-          ? `${d.code}: countermeasures logged on ${cov.fixed}/${cov.total} unplanned stops${data.fixSlim ? ' (fix columns not yet migrated on this DB)' : ''} — unresolved items carry to ${NEXT}.`
-          : `${d.code}: no unplanned downtime recorded this month.`,
-        'Use daily line meeting to confirm top stop category and owner — escalate repeats until closure.',
-      ], 0.6, 6.2, 12.1, 11);
+      if (pairs.length) {
+        // 📷 แถบหลักฐาน ก่อน → หลัง (รูปที่ช่าง/หัวหน้างานแนบในใบซ่อม MO / Kaizen)
+        const stripY = 1.72 + 0.32 + rows.length * 1.42 + 0.15;
+        s.addText(`หลักฐานการแก้ไข ก่อน → หลัง (รูปจากใบซ่อม MO / Kaizen ที่หน้างานแนบ) · countermeasures ${cov.fixed}/${cov.total} รายการ`,
+          { x: 0.6, y: stripY, w: 12.1, h: 0.26, fontFace: FONT, fontSize: 10.5, bold: true, color: C.green, align: 'left', margin: 0 });
+        pairs.slice(0, 3).forEach((p, i) => {
+          const px = 0.6 + i * 4.15;
+          const py = stripY + 0.3;
+          s.addText(cut(p.label, 34), { x: px, y: py, w: 3.9, h: 0.2, fontFace: FONT, fontSize: 9, bold: true, color: C.green, align: 'left', margin: 0 });
+          if (p.beforeData) s.addImage({ data: p.beforeData, x: px, y: py + 0.22, w: 1.72, h: 1.02, sizing: { type: 'cover', w: 1.72, h: 1.02 } });
+          else s.addText('ไม่มีรูปก่อน', { x: px, y: py + 0.22, w: 1.72, h: 1.02, fontFace: FONT, fontSize: 8, color: C.grey, align: 'center', valign: 'middle', margin: 0 });
+          s.addText('→', { x: px + 1.74, y: py + 0.22, w: 0.4, h: 1.02, fontFace: FONT, fontSize: 18, bold: true, color: C.orange, align: 'center', valign: 'middle', margin: 0 });
+          if (p.afterData) s.addImage({ data: p.afterData, x: px + 2.16, y: py + 0.22, w: 1.72, h: 1.02, sizing: { type: 'cover', w: 1.72, h: 1.02 } });
+          else s.addText('ไม่มีรูปหลัง', { x: px + 2.16, y: py + 0.22, w: 1.72, h: 1.02, fontFace: FONT, fontSize: 8, color: C.grey, align: 'center', valign: 'middle', margin: 0 });
+        });
+      } else {
+        bullets(s, [
+          cov.total
+            ? `${d.code}: countermeasures logged on ${cov.fixed}/${cov.total} unplanned stops${data.fixSlim ? ' (fix columns not yet migrated on this DB)' : ''} — unresolved items carry to ${NEXT}.`
+            : `${d.code}: no unplanned downtime recorded this month.`,
+          'Use daily line meeting to confirm top stop category and owner — escalate repeats until closure.',
+        ], 0.6, 6.2, 12.1, 11);
+      }
       footer(s);
     }
     // Quality detail — โชว์เมื่อมีของเสีย (ดึง fix_action ของหัวหน้างานฝั่ง defect ด้วย)
