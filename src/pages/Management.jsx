@@ -2116,7 +2116,7 @@ export default function Management() {
               {imgBox && (() => {
                 // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
                 const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
-                  markerScale(imgBox.rw, { machineCount: machinePoints.length });
+                  markerScale(imgBox.rw, { machineCount: machinePoints.length, points: machinePoints, mapHeight: imgBox.rh });
                 // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
                 const pillsOn = showPills;
                 const stationPillsOn = showPills;

@@ -2529,8 +2529,9 @@ export default function Dashboard() {
                   // ขนาด marker จาก util กลาง (ห้ามตั้งสูตรเองในหน้า — UI-CONVENTIONS §1)
                   // ต้องส่ง machineCount ด้วย (SUB เป็น density-aware) ไม่งั้นวงเครื่องจักรบนผังนี้
                   // ใหญ่กว่าหน้าอื่น (Management/LineSetup/MachineFloorMap) ที่ส่งครบ — ผิดหลัก WYSIWYG · QC audit 2026-08-03
-                  const mcCount = machinePoints.filter(p => cardLineNames.includes(p.line_name)).length;
-                  const { MK, SUB, subPillFont, subPillMaxW } = markerScale(boxW, { machineCount: mcCount });
+                  const mcPts = machinePoints.filter(p => cardLineNames.includes(p.line_name));
+                  const { MK, SUB, subPillFont, subPillMaxW } =
+                    markerScale(boxW, { machineCount: mcPts.length, points: mcPts, mapHeight: boxH });
                   const MIN_PX_X = MK * 1.2, MIN_PX_Y = MK * 1.6; // ระยะห่างขั้นต่ำรวม nametag+badge
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {

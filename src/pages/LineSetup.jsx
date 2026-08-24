@@ -905,7 +905,7 @@ export default function LineSetup({ embedded = false } = {}) {
   // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
   // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น
   const { MK, SUB, pillFont: PILL_FONT, subPillFont, badgeFont, pillMaxW, subPillMaxW } =
-    markerScale(imgBox?.rw, { machineCount: machinePoints.length });
+    markerScale(imgBox?.rw, { machineCount: machinePoints.length, points: machinePoints, mapHeight: imgBox?.rh });
   // ปุ่ม 🏷️ โชว์/ซ่อนป้ายทุกชนิดจุด (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
   const pillsOn = showPills;
   const stationPillsOn = showPills;
