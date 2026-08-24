@@ -1,27 +1,57 @@
 /*
-  Monthly Performance Review — Export .pptx (TSG corporate template)
-  ==================================================================
+  Monthly Performance Review — Export .pptx (TSG corporate template **R01**)
+  ==========================================================================
   สร้างไฟล์ PowerPoint "Monthly Performance Review" อัตโนมัติจากข้อมูลจริงในระบบ
   (production_sessions / prod_orders / downtime_logs / defect_logs / mtn_orders)
-  ตาม template ทางการ Thai Summit Group: Tahoma · เขียวเข้ม 0D3D14 + ส้ม C0561E
-  โครงเรื่อง: Executive Summary → per-dept OEE/A/P/Q drilldown → Loss detail → Focus
+
+  ⚠️ ธีมอ้างอิง "Presentation_template_VX_R01.pptx" (user ส่งให้ 2026-08-24) — แกะสเปคจากไฟล์จริง:
+    - พื้นขาวทุกสไลด์ (เลิกพื้นเขียวเข้มของ R00) · ฟอนต์ Tahoma ล้วน
+    - เขียวหลักข้อความ/หัวเรื่อง/footer = #068734 (RGB 6/135/52 — annotation ในไฟล์ระบุเอง)
+    - เขียวเข้ม #0D3D14 เหลือใช้เฉพาะ "Headline box" (กล่องหัวข้อพื้นเข้มตัวขาว) + หัวตาราง + เส้นขอบกราฟ
+    - ส้ม accent = #D95323 (จาก prompt palette ในสไลด์ checklist ของ template)
+    - column chart = ส้มไล่เฉด F6CCBE→AE5A21 · ป้ายตัวเลข/แกน = เขียว 068734 Tahoma 11
+    - ตำแหน่งตายตัว: หัวเรื่อง (0.28,0.28) 36 Bold · subtitle (0.42,1.05) 20 Bold ·
+      footer โลโก้ (0.273,7.052 0.26×0.26) + "THAI SUMMIT GROUP" (0.505,6.948) Tahoma 20 Bold ·
+      เลขหน้า (10.28,7.12) Tahoma 12 ขวา — ห้ามขยับข้ามหน้า (กฎ check list ในไฟล์)
+    - สไลด์ divider: รูปโรงงานฝั่งขวา + ขอบเฉียงขาว + "Agenda : xxx" 40 Bold เขียวฝั่งซ้าย
+    - โลโก้ใหม่ (ตัว T เขียว + S ส้ม โค้งมน) — asset `src/assets/tsg/ts-logo-r01.png`
+      (doc_forms.logo_url ยัง override ได้ตามกฎทะเบียนเอกสาร)
+
+  ⚠️ บั๊กที่เคยทำ "Top Downtime + การแก้ไข" ว่างทั้งเด็ค (JULY 2026):
+    เดิม select `dr_downtime_types(name, category)` แต่คอลัมน์จริงชื่อ **name_th**
+    → query ล้ม 42703 ทุกก้อนแบบเงียบ → DT = 0h ทุกส่วนงาน + "No unplanned downtime"
+    ทั้งที่เดือนนั้นมี downtime หลักพันแถว — ตอนนี้ใช้ name_th แล้ว และ error ใดๆ
+    ถูกส่งกลับใน data.dataWarn ให้ modal โชว์ toast (ห้ามเงียบ)
+
+  รายละเอียดที่หัวหน้างานลงในระบบ ถูกดึงเข้าเด็คแล้ว:
+    - downtime_logs.fix_action / followup_result (วิธีแก้ + ผลตรวจติดตาม — migration 20260819)
+    - defect_logs.fix_action / followup_result → สไลด์ QUALITY DETAIL ต่อส่วนงาน (เมื่อมี NG)
+    - mtn_orders.solution ผ่าน source_downtime_id (ของเดิม)
+    select แบบ tolerant: คอลัมน์ fix ยังไม่ apply → ถอยไป select ชุดเดิม + ติดธง slim บอกบนสไลด์
 
   การใช้: import แบบ dynamic จาก MonthlyReviewExport.jsx เท่านั้น (โค้ดหนัก — lazy chunk)
   pptxgenjs ก็ dynamic import ในนี้อีกชั้น เพื่อไม่ปนเข้า bundle หลัก
+  ไฟล์นี้จงใจ "ไม่ import รูป asset เอง" — modal ส่ง dataURL เข้ามาทาง opts
+  (ทำให้ extract ฟังก์ชันวาดไปรัน QA ใน harness ได้โดยไม่ติด import.meta.env)
 
   Doc control: doc_key 'monthly_review' ใน doc_forms (โลโก้/เลขฟอร์ม override ได้จาก /doc-forms)
 */
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd } from '../utils/oee';
 import { fetchByIds } from '../utils/fetchByIds';
 
-/* ── TSG palette (hex ไม่มี # — ตาม pptxgenjs) ── */
+/* ── TSG R01 palette (hex ไม่มี # — ตาม pptxgenjs) ── */
 const C = {
-  greenDark: '0D3D14', green: '2C5F2D', greenTint: 'ECF1E9', greenRow: 'D8E4D0',
-  orange: 'C0561E', orangeLight: 'FD8342', gold: 'EBD9B0', palegreen: 'CFE0C8',
-  grey: '555555', amber: 'C88A00', white: 'FFFFFF',
+  green: '068734',      // เขียวหลัก R01 — หัวเรื่อง/ข้อความ/ป้าย/footer
+  greenDark: '0D3D14',  // Headline box + หัวตาราง + เส้นขอบกราฟ (คงจาก R00 ตาม template)
+  orange: 'D95323',     // ส้ม accent R01 (ตัวเลข stat)
+  barOrange: 'E2772E',  // แท่งกราฟ (กลางช่วง ramp ของ template)
+  tint: 'F2F2F2',       // แถวสลับตาราง (อยู่ใน prompt palette ทางการ)
+  border: 'D9D9D9',
+  grey: '555555',
+  white: 'FFFFFF',
 };
 const FONT = 'Tahoma';
 
@@ -29,6 +59,7 @@ const r1 = v => (v == null || Number.isNaN(v) ? null : Math.round(v * 10) / 10);
 const pct = v => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
 const num = v => (v == null ? '—' : Number(v).toLocaleString('en-US'));
 const hr1 = min => Math.round((min / 60) * 10) / 10;
+const cut = (s, n) => { const t = String(s || '').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
 
 const MONTH_EN = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
 const monthLabel = (monthKey) => { // '2026-05' → 'MAY 2026'
@@ -55,10 +86,21 @@ async function fetchAll(builder) {
 }
 const chunk = (arr, n) => { const o = []; for (let i = 0; i < arr.length; i += n) o.push(arr.slice(i, i + n)); return o; };
 
+/* select แบบ tolerant: คอลัมน์ fix_action/followup_result อาจยังไม่ apply บางเครื่อง
+   → ลอง FULL ก่อน เจอ 42703/column ค่อยถอย SLIM แล้วติดธง slim (บอกบนสไลด์ ไม่เงียบ) */
+async function fetchByIdsTolerant(ids, mk, full, slim) {
+  let res = await fetchByIds(ids, c => mk(full, c));
+  if (res.error && /column|42703/i.test(String(res.error?.message || res.error))) {
+    res = await fetchByIds(ids, c => mk(slim, c));
+    return { ...res, slim: true };
+  }
+  return { ...res, slim: false };
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    1) รวบรวม + aggregate ข้อมูลรายเดือน
    sections = [{ code, lines: [lineName...] }] — ไลน์ leaf ใน scope ที่เลือกแล้ว
-   คืน { monthKey, depts: [{ code, oee,a,p,q, output, ppm, dtHr, lines:[...], dtGroups:[...], story }] }
+   (hierarchy picker ใน modal เลือกเจาะถึงระดับไลน์ได้ — lines คือผลการติ๊ก)
 ═══════════════════════════════════════════════════════════════════ */
 export async function buildMonthlyReviewData({ monthKey, sections }) {
   const [y, m] = monthKey.split('-').map(Number);
@@ -80,19 +122,21 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   const sessIds = sessions.map(s => s.id);
   const sessById = Object.fromEntries(sessions.map(s => [s.id, s]));
 
-  // downtime / defect / orders — ผ่าน fetchByIds (แบ่งก้อน id + แบ่งหน้า + เช็ค error)
-  // ⚠️ เดิมแบ่งก้อน 150 แต่ไม่แบ่งหน้า → 1 ก้อนมี downtime เกิน 1000 แถวได้ในเดือนที่หยุดเยอะ
-  //    แล้วเด็คผู้บริหารจะโชว์ Top Downtime ต่ำกว่าจริงแบบเงียบๆ (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
+  // downtime / defect / orders — fetchByIds (แบ่งก้อน id + แบ่งหน้า + เช็ค error)
+  // ⚠️ dr_downtime_types/dr_defect_types คอลัมน์ชื่อ **name_th** ไม่ใช่ name
+  //    (เคยเขียน name → query ล้มเงียบทั้งเด็ค DT=0h — ต้นเหตุรายงาน JULY 2026 ว่าง)
+  const DT_FULL = 'id, session_id, machine_no, description, duration_min, fix_action, followup_result, dr_downtime_types(name_th, category)';
+  const DT_SLIM = 'id, session_id, machine_no, description, duration_min, dr_downtime_types(name_th, category)';
+  const DEF_FULL = 'session_id, qty_ng, qty_suspect, description, fix_action, followup_result, dr_defect_types(name_th)';
+  const DEF_SLIM = 'session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)';
   const [dtRes, defRes, ordRes] = await Promise.all([
-    fetchByIds(sessIds, c => supabaseDR.from('downtime_logs')
-      .select('id, session_id, machine_no, description, duration_min, started_at, dr_downtime_types(name, category)')
-      .in('session_id', c)),
-    fetchByIds(sessIds, c => supabaseDR.from('defect_logs')
-      .select('session_id, qty_ng, qty_suspect').in('session_id', c)),
+    fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('downtime_logs').select(sel).in('session_id', c), DT_FULL, DT_SLIM),
+    fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('defect_logs').select(sel).in('session_id', c), DEF_FULL, DEF_SLIM),
     fetchByIds(sessIds, c => supabaseDR.from('prod_orders')
       .select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
   ]);
   const downtimes = dtRes.rows, defects = defRes.rows, orders = ordRes.rows;
+  const fixSlim = dtRes.slim || defRes.slim; // คอลัมน์วิธีแก้ยังไม่ apply — บอกบนสไลด์
   const dataWarn = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
 
   // pair map สำหรับนับ output แบบ 1 คู่/stroke (กฎ pairAwareTotal)
@@ -107,7 +151,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   // การแก้ไขจากใบซ่อม MO ที่เปิดจาก downtime (best-effort)
   const moByDt = {};
   try {
-    for (const ids of chunk(downtimes.map(d => d.id), 150)) {
+    for (const ids of chunk(downtimes.map(d => d.id), 120)) {
       const { data } = await supabaseDR.from('mtn_orders')
         .select('source_downtime_id, mo_no, root_cause, solution, mtn_dept, status')
         .in('source_downtime_id', ids);
@@ -120,8 +164,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   defects.forEach(d => { ngBySession[d.session_id] = (ngBySession[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
 
   /* ── aggregate ต่อกลุ่มไลน์ ── */
-  // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oeeAvg.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
-  // เดิมเป็น mean ธรรมดา → เด็คที่ส่งผู้บริหารไม่ตรงกับ /oee-analytics ของเดือนเดียวกัน (แก้ 2026-08-05)
+  // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oee.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
   const plannedMinOf = (sid) => downtimes
     .filter(d => d.session_id === sid && d.dr_downtime_types?.category === 'planned')
     .reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
@@ -168,30 +211,65 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     return base > 0 ? Math.round((ng / base) * 1e6) : 0;
   };
 
+  // ข้อความ "การแก้ไข" ต่อรายการ: หัวหน้างานลงในระบบ (fix_action/followup) ก่อน → ใบซ่อม MO ตาม
+  const fixTextOf = (d, mo) => {
+    const parts = [];
+    if (d.fix_action) parts.push(`แก้ไข: ${cut(d.fix_action, 70)}`);
+    if (d.followup_result) parts.push(`ติดตาม: ${cut(d.followup_result, 50)}`);
+    if (mo?.solution) parts.push(`MO${mo.mo_no ? ` ${mo.mo_no}` : ''}: ${cut(mo.solution, 60)}`);
+    else if (mo?.mo_no) parts.push(`MO ${mo.mo_no}`);
+    return parts.join(' · ');
+  };
+
   // จัดกลุ่ม downtime ตามประเภท + รายละเอียดรายครั้ง (สำหรับสไลด์ loss detail)
   const dtGroupsOf = (unplanned) => {
     const g = {};
     unplanned.forEach(d => {
-      const k = d.dr_downtime_types?.name || 'อื่น ๆ';
-      g[k] = g[k] || { name: k, min: 0, count: 0, items: [] };
+      const k = d.dr_downtime_types?.name_th || 'อื่น ๆ';
+      g[k] = g[k] || { name: k, min: 0, count: 0, fixed: 0, items: [] };
       g[k].min += Number(d.duration_min) || 0;
       g[k].count += 1;
+      if (d.fix_action || moByDt[d.id]?.solution) g[k].fixed += 1;
       g[k].items.push(d);
     });
     return Object.values(g).sort((a, b) => b.min - a.min).map(grp => ({
       ...grp,
       min: Math.round(grp.min),
-      items: grp.items.sort((a, b) => (Number(b.duration_min) || 0) - (Number(a.duration_min) || 0)).slice(0, 4)
+      items: grp.items.sort((a, b) => (Number(b.duration_min) || 0) - (Number(a.duration_min) || 0)).slice(0, 3)
         .map(d => {
           const s = sessById[d.session_id];
-          const mo = moByDt[d.id];
           return {
-            date: s?.work_date || '', machine: d.machine_no || '', desc: d.description || '',
+            date: s?.work_date || '', machine: d.machine_no || '', desc: cut(d.description, 60),
             min: Math.round(Number(d.duration_min) || 0),
-            fix: mo ? [mo.solution, mo.mo_no ? `(${mo.mo_no})` : ''].filter(Boolean).join(' ') : '',
+            fix: fixTextOf(d, moByDt[d.id]),
           };
         }),
     }));
+  };
+
+  // จัดกลุ่มของเสียตามประเภท (สไลด์ quality detail — โชว์เมื่อมี NG)
+  const defGroupsOf = (ss) => {
+    const ids = new Set(ss.map(s => s.id));
+    const g = {};
+    defects.filter(d => ids.has(d.session_id)).forEach(d => {
+      const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+      if (!qty) return;
+      const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
+      g[k] = g[k] || { name: k, qty: 0, count: 0, items: [] };
+      g[k].qty += qty; g[k].count += 1;
+      g[k].items.push({ qty, desc: cut(d.description, 55), fix: fixTextOf(d, null) });
+    });
+    return Object.values(g).sort((a, b) => b.qty - a.qty).map(grp => ({
+      ...grp,
+      items: grp.items.sort((a, b) => b.qty - a.qty).slice(0, 2),
+    }));
+  };
+
+  // อัตราการลงวิธีแก้ของหัวหน้างาน (accountability — โชว์บนสไลด์ loss)
+  const fixCoverage = (unplanned) => {
+    const n = unplanned.length;
+    const fixed = unplanned.filter(d => d.fix_action || moByDt[d.id]?.solution).length;
+    return { fixed, total: n };
   };
 
   const depts = sections.map(sec => {
@@ -208,12 +286,13 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     }).filter(l => l.nSess > 0);
     return {
       code: sec.code, ...agg, output, dtHr, ppm: ppmOf(ss, output),
-      lines, dtGroups: dtGroupsOf(unplanned),
+      lines, dtGroups: dtGroupsOf(unplanned), defGroups: defGroupsOf(ss),
+      fixCov: fixCoverage(unplanned),
     };
   }).filter(d => d.nSess > 0);
 
   if (!depts.length) throw new Error('เดือนนี้ไม่มีกะที่ปิดแล้วใน scope ที่เลือก');
-  return { monthKey, from, to, depts, dataWarn };
+  return { monthKey, from, to, depts, dataWarn, fixSlim };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -233,8 +312,8 @@ function execStory(depts) {
     const gap = r1((sorted[0].oee ?? 0) - (sorted[1].oee ?? 0));
     if (gap >= 0.5) out.push(`${sorted[0].code} leads ${sorted[1].code} by +${gap} pts OEE, supported by stronger ${lowestDriver(sorted[1]) === 'A' ? 'Availability' : 'Performance'}.`);
   }
-  const drill = depts.map(d => `${d.code} ${d.lines.map(l => l.name).join('/')}`).join(' and ');
-  out.push(`Drilldown focus: ${drill}.`);
+  const cov = depts.reduce((a, d) => ({ fixed: a.fixed + d.fixCov.fixed, total: a.total + d.fixCov.total }), { fixed: 0, total: 0 });
+  if (cov.total) out.push(`Countermeasures recorded on ${cov.fixed}/${cov.total} unplanned stops — close the remaining gap in daily meetings.`);
   return out;
 }
 function deptStory(d) {
@@ -257,9 +336,11 @@ function lineReadout(l) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   3) วาดสไลด์ pptxgenjs ตาม template TSG
+   3) วาดสไลด์ pptxgenjs ตาม template TSG R01
+   opts.photos = { strip: [dataUrl×4 — แถบรูปท้ายสไลด์ปก], dividers: [dataUrl...] }
+   modal เป็นคนโหลด asset แล้วส่ง dataURL เข้ามา (ไฟล์นี้ห้าม import รูปเอง)
 ═══════════════════════════════════════════════════════════════════ */
-export async function generateMonthlyReviewPptx(data, { logoDataUrl, presenter, position, orgLine, docForm }) {
+export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, presenter, position, orgLine, docForm }) {
   const { default: PptxGen } = await import('pptxgenjs');
   const pres = new PptxGen();
   pres.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in
@@ -268,26 +349,32 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, presenter, 
   let pageNo = 0;
 
   const T = (t, o) => ({ text: t, options: o });
+
+  /* ── ตำแหน่งตายตัวตาม template R01 (กฎ: ห้ามขยับข้ามหน้า) ── */
   const footer = (s) => {
-    pageNo += 1;
-    if (pageNo === 1) return;
-    if (logoDataUrl) s.addImage({ data: logoDataUrl, x: 0.42, y: 6.92, w: 0.4, h: 0.42 });
-    s.addText('THAI SUMMIT GROUP', { x: 0.86, y: 6.92, w: 3, h: 0.4, fontFace: FONT, fontSize: 13, bold: true, color: C.greenDark, align: 'left', valign: 'middle', margin: 0 });
-    s.addText(String(pageNo), { x: 12.3, y: 6.95, w: 0.7, h: 0.35, fontFace: FONT, fontSize: 12, color: C.grey, align: 'right', margin: 0 });
+    if (logoDataUrl) s.addImage({ data: logoDataUrl, x: 0.273, y: 7.052, w: 0.26, h: 0.26 });
+    // x จริงของ template = 0.505 แต่กล่องนั้นมี inset ภายใน — เราตั้ง margin 0 จึงขยับ x ให้เท่า "จุดที่ตัวอักษรเริ่มจริง" (ไม่งั้นทับโลโก้)
+    s.addText('THAI SUMMIT GROUP', { x: 0.62, y: 6.948, w: 3.55, h: 0.438, fontFace: FONT, fontSize: 20, bold: true, color: C.green, align: 'left', valign: 'middle', margin: 0 });
+    s.addText(String(pageNo), { x: 10.28, y: 7.12, w: 2.75, h: 0.32, fontFace: FONT, fontSize: 12, color: C.green, align: 'right', valign: 'top', margin: 0 });
   };
   const head = (s, title, subtitle) => {
-    s.addText(title, { x: 0.5, y: 0.28, w: 11.9, h: 0.95, fontFace: FONT, fontSize: 30, bold: true, color: C.greenDark, align: 'left', valign: 'top', margin: 0 });
-    if (subtitle) s.addText(subtitle, { x: 0.55, y: 1.05, w: 11.9, h: 0.5, fontFace: FONT, fontSize: 17, bold: true, color: C.green, align: 'left', valign: 'top', margin: 0 });
+    s.addText(title, { x: 0.28, y: 0.28, w: 12.5, h: 0.71, fontFace: FONT, fontSize: 36, bold: true, color: C.green, align: 'left', valign: 'top', margin: 0, fit: 'shrink' });
+    if (subtitle) s.addText(subtitle, { x: 0.42, y: 1.05, w: 12.3, h: 0.44, fontFace: FONT, fontSize: 20, bold: true, color: C.green, align: 'left', valign: 'top', margin: 0, fit: 'shrink' });
+  };
+  // Headline box ตาม template: พื้นเขียวเข้ม 0D3D14 ตัวขาว Tahoma 20 Bold
+  const headline = (s, text, x, y, w = 2.6) => {
+    s.addShape('rect', { x, y, w, h: 0.44, fill: { color: C.greenDark } });
+    s.addText(text, { x, y, w, h: 0.44, fontFace: FONT, fontSize: 20, bold: true, color: C.white, align: 'center', valign: 'middle', margin: 0, fit: 'shrink' });
   };
   const stat = (s, x, y, valueTxt, label, w = 2.6) => {
     s.addText(valueTxt, { x, y, w, h: 0.62, fontFace: FONT, fontSize: 30, bold: true, color: C.orange, align: 'center', margin: 0 });
-    s.addText(label, { x, y: y + 0.58, w, h: 0.32, fontFace: FONT, fontSize: 11, color: C.grey, align: 'center', margin: 0 });
+    s.addText(label, { x, y: y + 0.58, w, h: 0.32, fontFace: FONT, fontSize: 11, color: C.green, align: 'center', margin: 0 });
   };
   const bullets = (s, items, x, y, w, fs = 13) => {
     s.addText(items.map((t, i) => T(t, { bullet: { code: '2022' }, breakLine: i < items.length - 1, paraSpaceAfter: 6 })),
       { x, y, w, h: 0.42 * items.length + 0.2, fontFace: FONT, fontSize: fs, color: C.green, align: 'left', valign: 'top', margin: 0 });
   };
-  // ตาราง TSG: หัวเขียวเข้ม ตัวขาว · แถวสลับ tint
+  // ตาราง R01: หัวเขียวเข้มตัวขาว · body เขียว 068734 · แถวสลับเทาอ่อน F2F2F2
   const tsgTable = (s, headRow, rows, opts = {}) => {
     const tableRows = [
       headRow.map(h => ({ text: h, options: { fontFace: FONT, fontSize: 11.5, bold: true, color: C.white, fill: { color: C.greenDark }, align: 'center', valign: 'middle' } })),
@@ -295,52 +382,64 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, presenter, 
         text: String(cell ?? '—'),
         options: {
           fontFace: FONT, fontSize: opts.fontSize || 11.5, color: C.green, bold: ci === 0,
-          fill: { color: ri % 2 === 0 ? C.greenTint : C.white },
+          fill: { color: ri % 2 === 0 ? C.tint : C.white },
           align: ci === 0 || opts.leftCols?.includes(ci) ? 'left' : 'center', valign: 'middle',
         },
       }))),
     ];
-    // rowH: ตัวเลขเดียว = ทุกแถว · ส่ง headRowH มาด้วย = หัวตารางเตี้ยกว่าแถวข้อมูล
     const rowH = opts.headRowH != null ? [opts.headRowH, ...rows.map(() => opts.rowH ?? 0.34)] : (opts.rowH ?? 0.34);
-    s.addTable(tableRows, { x: opts.x ?? 0.5, y: opts.y ?? 2.0, w: opts.w ?? 12.3, colW: opts.colW, border: { type: 'solid', color: C.greenRow, pt: 0.75 }, rowH, autoPage: false });
+    s.addTable(tableRows, { x: opts.x ?? 0.5, y: opts.y ?? 2.0, w: opts.w ?? 12.3, colW: opts.colW, border: { type: 'solid', color: C.border, pt: 0.75 }, rowH, autoPage: false });
   };
+  // สไลด์ divider ตาม template: รูปเต็มฝั่งขวา + ระนาบขาวขอบเฉียง + หัวข้อเขียว 40 Bold ฝั่งซ้าย (ไม่มี footer)
+  const divider = (s, title, photo) => {
+    if (photo) s.addImage({ data: photo, x: 5.92, y: 0, w: 7.41, h: 7.5, sizing: { type: 'cover', w: 7.41, h: 7.5 } });
+    s.addShape('rect', { x: -0.05, y: 0, w: 6.1, h: 7.5, fill: { color: C.white } });
+    s.addShape('rtTriangle', { x: 6.05, y: 0, w: 1.31, h: 7.5, flipV: true, fill: { color: C.white } });
+    // กล่องแคบกว่า template เล็กน้อย (6.3 แทน 7.27) — หัวข้อของเรายาวกว่า "Agenda : xxx" ต้องไม่ชนขอบเฉียง
+    s.addText(title, { x: 0.1, y: 2.98, w: 6.3, h: 0.77, fontFace: FONT, fontSize: 36, bold: true, color: C.green, align: 'center', valign: 'middle', margin: 0, fit: 'shrink' });
+  };
+  const newSlide = () => { pageNo += 1; return pres.addSlide(); };
 
-  /* ── Slide 1: Title ── */
+  /* ── Slide 1: Title (R01 — พื้นขาว โลโก้บนกลาง แถบรูปท้ายสไลด์) ── */
   {
-    const s = pres.addSlide();
-    s.background = { color: C.greenDark };
-    if (logoDataUrl) s.addImage({ data: logoDataUrl, x: 5.87, y: 0.55, w: 1.6, h: 1.66 });
-    s.addText(`MONTHLY PERFORMANCE REVIEW ${MON}`, { x: 0.8, y: 2.7, w: 11.7, h: 0.9, fontFace: FONT, fontSize: 40, bold: true, color: C.white, align: 'center', margin: 0 });
-    if (presenter) s.addText(presenter, { x: 0.8, y: 3.75, w: 11.7, h: 0.45, fontFace: FONT, fontSize: 16, color: C.white, align: 'center', margin: 0 });
-    if (position) s.addText(position, { x: 0.8, y: 4.15, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 14, color: C.palegreen, align: 'center', margin: 0 });
-    if (orgLine) s.addText(orgLine, { x: 0.8, y: 4.5, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 14, color: C.palegreen, align: 'center', margin: 0 });
-    s.addText('My Quality Declaration', { x: 0.8, y: 5.35, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 15, bold: true, color: C.gold, align: 'center', margin: 0 });
-    s.addText('“I will not accept, produce and deliver non-quality work”', { x: 0.8, y: 5.72, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 14, italic: true, color: C.gold, align: 'center', margin: 0 });
-    s.addText('“ผมจะไม่รับ, ไม่ทำ และไม่ส่งมอบงานที่ไม่มีคุณภาพ”', { x: 0.8, y: 6.08, w: 11.7, h: 0.4, fontFace: FONT, fontSize: 13, italic: true, color: C.gold, align: 'center', margin: 0 });
-    pageNo = 1;
+    const s = newSlide();
+    if (logoDataUrl) s.addImage({ data: logoDataUrl, x: 5.92, y: 0.28, w: 1.25, h: 1.25 });
+    s.addText(`MONTHLY PERFORMANCE REVIEW ${MON}`, { x: 0.6, y: 1.72, w: 12.13, h: 0.77, fontFace: FONT, fontSize: 40, bold: true, color: C.green, align: 'center', valign: 'middle', margin: 0, fit: 'shrink' });
+    const who = [presenter, position].filter(Boolean).join(', ');
+    s.addText([
+      ...(who ? [T(who, { breakLine: true })] : []),
+      T([orgLine, MON].filter(Boolean).join(', '), {}),
+    ], { x: 3.03, y: 2.76, w: 7.27, h: 0.95, fontFace: FONT, fontSize: 18, color: C.green, align: 'center', valign: 'top', margin: 0 });
+    s.addText('My Quality Declaration', { x: 5.07, y: 4.33, w: 3.16, h: 0.4, fontFace: FONT, fontSize: 18, bold: true, italic: true, color: C.green, align: 'center', margin: 0 });
+    s.addText('“I will not accept, produce and deliver non-quality work”', { x: 2.30, y: 5.10, w: 9.12, h: 0.4, fontFace: FONT, fontSize: 18, color: C.green, align: 'center', margin: 0 });
+    s.addText('“ผมจะไม่รับ, ไม่ทำและไม่ส่งมอบงานที่ไม่มีคุณภาพ”', { x: 3.78, y: 5.64, w: 5.78, h: 0.4, fontFace: FONT, fontSize: 18, color: C.green, align: 'center', margin: 0, fit: 'shrink' });
+    // แถบรูปท้ายสไลด์ปก — ตำแหน่งตรง template (ใบสุดท้ายบลีดออกขอบขวาตามต้นฉบับ)
+    const strip = photos?.strip || [];
+    const POSN = [
+      { x: 4.85, y: 6.10, w: 2.10, h: 1.27 }, { x: 7.08, y: 6.10, w: 2.03, h: 1.26 },
+      { x: 9.23, y: 6.07, w: 2.02, h: 1.30 }, { x: 12.69, y: 6.35, w: 2.02, h: 1.27 },
+    ];
+    POSN.forEach((p, i) => { if (strip[i]) s.addImage({ data: strip[i], ...p, sizing: { type: 'cover', w: p.w, h: p.h } }); });
   }
 
-  /* ── Slide 2: Agenda ── */
+  /* ── Slide 2: Agenda (R01 — ลิสต์เลขสีเขียว ไม่มีวงกลมส้มแล้ว) ── */
   {
-    const s = pres.addSlide();
+    const s = newSlide();
     head(s, `MONTHLY PERFORMANCE REVIEW ${MON}`, 'Agenda');
     const items = [
       `EXECUTIVE SUMMARY : ${data.depts.map(d => d.code).join(' <> ')} OEE / A / P / Q`,
+      'OEE ACTUAL BY LINE',
       ...data.depts.map(d => `${d.code} REVIEW : Overall → ${d.lines.map(l => l.name).join(' / ')}`),
       `KEY LOSS DRIVER & ${NEXT.toUpperCase()} FOCUS`,
     ];
-    items.forEach((t, i) => {
-      const y = 2.0 + i * 0.95;
-      s.addShape('ellipse', { x: 0.7, y, w: 0.55, h: 0.55, fill: { color: C.orange } });
-      s.addText(String(i + 1), { x: 0.7, y, w: 0.55, h: 0.55, fontFace: FONT, fontSize: 20, bold: true, color: C.white, align: 'center', valign: 'middle', margin: 0 });
-      s.addText(t, { x: 1.5, y: y + 0.02, w: 10.6, h: 0.55, fontFace: FONT, fontSize: 17, bold: true, color: C.greenDark, align: 'left', valign: 'middle', margin: 0 });
-    });
+    s.addText(items.map((t, i) => T(`${i + 1}.   ${t}`, { breakLine: i < items.length - 1, paraSpaceAfter: 10 })),
+      { x: 1.56, y: 1.93, w: 11.0, h: 0.42 * items.length + 0.3, fontFace: FONT, fontSize: 16, color: C.green, align: 'left', valign: 'top', margin: 0 });
     footer(s);
   }
 
   /* ── Slide 3: Executive summary ── */
   {
-    const s = pres.addSlide();
+    const s = newSlide();
     head(s, `EXECUTIVE SUMMARY : ${data.depts.map(d => d.code).join(' <> ')} OEE / A / P / Q`, `${MON} PERFORMANCE STORY`);
     const n = data.depts.length;
     const statW = Math.min(2.9, 12.3 / (n * 2));
@@ -353,13 +452,34 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, presenter, 
       ['Dept / Line', 'OEE', 'A', 'P', 'Q', 'Output', 'PPM', 'DT Hr'],
       data.depts.map(d => [`${d.code} Overall`, pct(d.oee), pct(d.a), pct(d.p), pct(d.q), num(d.output), num(d.ppm), d.dtHr]),
       { y: 3.3, rowH: 0.4 });
-    bullets(s, execStory(data.depts), 0.6, 3.5 + (data.depts.length + 1) * 0.42 + 0.35, 12.1);
+    const storyY = Math.min(3.5 + (data.depts.length + 1) * 0.42 + 0.35, 5.7);
+    bullets(s, execStory(data.depts).slice(0, 3), 0.6, storyY, 12.1, 12.5);
     footer(s);
   }
 
-  /* ── Slide 4: OEE breakdown all areas ── */
+  /* ── Slide 4: OEE ACTUAL BY LINE — column chart ตาม template (แท่งส้ม + ป้ายเขียว Tahoma 11) ── */
   {
-    const s = pres.addSlide();
+    const s = newSlide();
+    head(s, 'OEE ACTUAL BY LINE', `${MON} — CLOSED SHIFTS ONLY`);
+    const lines = data.depts.flatMap(d => d.lines.map(l => ({ ...l, dept: d.code })));
+    headline(s, `OEE % — ${MON}`, 5.37, 1.62, 2.6);
+    const labels = lines.map(l => l.name);
+    const values = lines.map(l => r1(l.oee) ?? 0);
+    s.addChart(pres.ChartType.bar, [{ name: 'OEE %', labels, values }], {
+      x: 0.5, y: 2.2, w: 12.33, h: 4.3, barDir: 'col', barGapWidthPct: 60,
+      chartColors: [C.barOrange],
+      showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: lines.length > 12 ? 9 : 11, dataLabelFormatCode: '0.0',
+      catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: lines.length > 12 ? 9 : 11,
+      valAxisHidden: true, valAxisMaxVal: 110, valAxisMinVal: 0,
+      valGridLine: { style: 'none' }, catGridLine: { style: 'none' },
+      showLegend: false, showTitle: false,
+    });
+    footer(s);
+  }
+
+  /* ── Slide 5: OEE breakdown all areas ── */
+  {
+    const s = newSlide();
     head(s, 'OEE BREAKDOWN : WHY OEE MOVED', 'A / P / Q COMPARISON');
     const rows = [];
     data.depts.forEach(d => {
@@ -368,54 +488,85 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, presenter, 
         rows.push([l.name, pct(l.oee), pct(l.a), pct(l.p), pct(l.q), `${lineReadout(l)} focus`, l.dtGroups[0] ? `${l.dtGroups[0].name}` : 'Hold standard']);
       });
     });
-    tsgTable(s, ['Area', 'OEE', 'Availability', 'Performance', 'Quality', 'Primary readout', 'Focus'], rows,
+    tsgTable(s, ['Area', 'OEE', 'Availability', 'Performance', 'Quality', 'Primary readout', 'Focus'], rows.slice(0, 12),
       { y: 1.85, rowH: 0.38, colW: [2.1, 1.2, 1.4, 1.5, 1.2, 2.7, 2.2], fontSize: 11 });
+    if (rows.length > 12) { // ตัดแถวเกินหน้า — ต้องบอก ห้ามหายเงียบ
+      s.addText(`+ อีก ${rows.length - 12} ไลน์ — ดูรายไลน์ครบในสไลด์ REVIEW ของแต่ละส่วนงาน`,
+        { x: 0.5, y: 1.85 + 13 * 0.38 + 0.1, w: 12.3, h: 0.3, fontFace: FONT, fontSize: 10.5, italic: true, color: C.grey, align: 'left', margin: 0 });
+    }
     footer(s);
   }
 
-  /* ── per dept: overview + loss detail ── */
-  for (const d of data.depts) {
+  /* ── per dept: divider + overview + loss detail + quality detail ── */
+  data.depts.forEach((d, di) => {
+    // Divider (R01) — รูปโรงงานสลับกันต่อส่วนงาน · ไม่มี footer ตาม template
+    {
+      const s = newSlide();
+      const dv = photos?.dividers?.length ? photos.dividers[di % photos.dividers.length] : null;
+      divider(s, `Agenda : ${d.code} REVIEW`, dv);
+    }
     // Overview
     {
-      const s = pres.addSlide();
+      const s = newSlide();
       head(s, `${d.code} REVIEW : OVERALL OEE / A / P / Q`, `${d.code} OVERVIEW`);
       [['OEE', d.oee], ['A', d.a], ['P', d.p], ['Q', d.q]].forEach(([lb, v], i) => {
-        stat(s, 0.6 + i * 3.05, 1.8, pct(v), lb === 'OEE' ? `Overall ${d.code}` : lb === 'A' ? 'Availability' : lb === 'P' ? 'Performance' : 'Quality', 2.9);
+        stat(s, 0.6 + i * 3.05, 1.7, pct(v), lb === 'OEE' ? `Overall ${d.code}` : lb === 'A' ? 'Availability' : lb === 'P' ? 'Performance' : 'Quality', 2.9);
       });
-      // กันชนขอบล่าง: ไลน์เยอะ → ตัดแถวโชว์ 6 + ลดจำนวน bullet
+      // กันชนขอบล่าง: ไลน์เยอะ → ตัดแถวโชว์ 6 + story ตามพื้นที่ที่เหลือจริง (เคยล้นทับ footer)
       const showLines = d.lines.slice(0, 6);
       tsgTable(s,
         ['Line', 'OEE', 'A', 'P', 'Q', 'Output', 'PPM', 'DT Hr'],
         showLines.map(l => [l.name, pct(l.oee), pct(l.a), pct(l.p), pct(l.q), num(l.output), num(l.ppm), l.dtHr]),
-        { y: 3.05, rowH: 0.4 });
-      const storyY = 3.25 + (showLines.length + 1) * 0.44 + 0.35;
-      bullets(s, deptStory(d).slice(0, showLines.length > 3 ? 2 : 3), 0.6, storyY, 12.1, showLines.length > 4 ? 11.5 : 13);
+        { y: 2.95, rowH: 0.36 });
+      const tableEnd = 2.95 + (showLines.length + 1) * 0.38 + 0.2;
+      const room = 6.8 - tableEnd;
+      const nB = Math.max(1, Math.min(3, Math.floor(room / 0.4)));
+      bullets(s, deptStory(d).slice(0, nB), 0.6, tableEnd, 12.1, 11.5);
       footer(s);
     }
-    // Loss detail (top downtime + การแก้ไข)
+    // Loss detail (top downtime + การแก้ไขที่หัวหน้างานลงในระบบ + ใบซ่อม MO)
     {
-      const s = pres.addSlide();
-      head(s, `${d.code} LOSS DETAIL : TOP DOWNTIME`, `FROM OEE LOSS TO ACTION FOCUS — ${MON}`);
+      const s = newSlide();
+      head(s, `${d.code} LOSS DETAIL : TOP DOWNTIME`, `FROM OEE LOSS TO ACTION — ${MON}`);
       const rows = [];
       d.dtGroups.slice(0, 3).forEach(g => {
         const detail = g.items.map((it, i) =>
-          `(${i + 1}) ${it.date.slice(8, 10)}/${it.date.slice(5, 7)} ${it.machine ? it.machine + ' ' : ''}${it.desc || '-'} (${it.min} min)${it.fix ? ` → ${it.fix}` : ''}`).join('\n');
-        rows.push([`${g.name}\n${hr1(g.min)}h / ${g.count} ครั้ง`, detail || '—', NEXT]);
+          `(${i + 1}) ${it.date.slice(8, 10)}/${it.date.slice(5, 7)} ${it.machine ? it.machine + ' ' : ''}${it.desc || '-'} (${it.min} min)${it.fix ? `\n     → ${it.fix}` : ''}`).join('\n');
+        rows.push([`${g.name}\n${hr1(g.min)}h / ${g.count} ครั้ง`, detail || '—', `${g.fixed}/${g.count}`]);
       });
       if (!rows.length) rows.push(['—', 'No unplanned downtime recorded this month', '—']);
-      tsgTable(s, ['Loss / เวลาสูญเสีย', 'รายละเอียดปัญหา + การแก้ไข', 'Target'], rows,
-        { y: 1.72, rowH: 1.28, headRowH: 0.32, colW: [2.4, 8.6, 1.3], fontSize: 10, leftCols: [1] });
+      tsgTable(s, ['Loss / เวลาสูญเสีย', 'รายละเอียดปัญหา + การแก้ไข (จากหน้างาน + ใบซ่อม MO)', 'ลงวิธีแก้'], rows,
+        { y: 1.72, rowH: 1.42, headRowH: 0.32, colW: [2.3, 8.9, 1.1], fontSize: 9.5, leftCols: [1] });
+      const cov = d.fixCov;
       bullets(s, [
-        `${d.code}: attack top downtime categories first; OEE will move through ${lowestDriver(d) === 'A' ? 'Availability' : 'Performance'}.`,
+        cov.total
+          ? `${d.code}: countermeasures logged on ${cov.fixed}/${cov.total} unplanned stops${data.fixSlim ? ' (fix columns not yet migrated on this DB)' : ''} — unresolved items carry to ${NEXT}.`
+          : `${d.code}: no unplanned downtime recorded this month.`,
         'Use daily line meeting to confirm top stop category and owner — escalate repeats until closure.',
-      ], 0.6, 6.12, 12.1, 11.5);
+      ], 0.6, 6.2, 12.1, 11);
       footer(s);
     }
-  }
+    // Quality detail — โชว์เมื่อมีของเสีย (ดึง fix_action ของหัวหน้างานฝั่ง defect ด้วย)
+    if (d.defGroups.length) {
+      const s = newSlide();
+      head(s, `${d.code} QUALITY DETAIL : TOP DEFECTS`, `NG + SUSPECT — ${MON} (PPM ${num(d.ppm)})`);
+      const rows = d.defGroups.slice(0, 4).map(g => {
+        const detail = g.items.map((it, i) =>
+          `(${i + 1}) ${it.desc || '-'} (${num(it.qty)} ชิ้น)${it.fix ? `\n     → ${it.fix}` : ''}`).join('\n');
+        return [`${g.name}\n${num(g.qty)} ชิ้น / ${g.count} ครั้ง`, detail || '—'];
+      });
+      tsgTable(s, ['Defect / จำนวน', 'ตัวอย่างปัญหา + การแก้ไข (จากหน้างาน)'], rows,
+        { y: 1.72, rowH: 1.05, headRowH: 0.32, colW: [2.9, 9.4], fontSize: 9.5, leftCols: [1] });
+      bullets(s, [
+        `Quality holds ${pct(d.q)} — verify countermeasures above prevented recurrence before closing in ${NEXT}.`,
+      ], 0.6, 6.35, 12.1, 11);
+      footer(s);
+    }
+  });
 
   /* ── Key loss driver & next-month focus ── */
   {
-    const s = pres.addSlide();
+    const s = newSlide();
     head(s, `KEY LOSS DRIVER & ${NEXT.toUpperCase()} FOCUS`, 'WHAT TO SAY IN REVIEW');
     const allGroups = {};
     data.depts.forEach(d => d.dtGroups.forEach(g => {
@@ -434,13 +585,12 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, presenter, 
     footer(s);
   }
 
-  /* ── Closing ── */
+  /* ── Closing (R01 — พื้นขาว คำขวัญเขียว 36 Bold + footer) ── */
   {
-    const s = pres.addSlide();
-    s.background = { color: C.greenDark };
-    s.addText('Before We Build Parts, We Build People', { x: 0.8, y: 3.0, w: 11.7, h: 0.8, fontFace: FONT, fontSize: 32, bold: true, color: C.white, align: 'center', margin: 0 });
-    s.addText('Thank you', { x: 0.8, y: 3.95, w: 11.7, h: 0.5, fontFace: FONT, fontSize: 18, color: C.gold, align: 'center', margin: 0 });
-    if (docForm?.form_code) s.addText([docForm.form_code, docForm.rev].filter(Boolean).join(' '), { x: 10.8, y: 7.05, w: 2.3, h: 0.3, fontFace: FONT, fontSize: 9, color: C.palegreen, align: 'right', margin: 0 });
+    const s = newSlide();
+    s.addText('Before We Build Parts, We Build People', { x: 0.9, y: 3.04, w: 11.54, h: 0.71, fontFace: FONT, fontSize: 36, bold: true, color: C.green, align: 'center', valign: 'middle', margin: 0 });
+    if (docForm?.form_code) s.addText([docForm.form_code, docForm.rev].filter(Boolean).join(' '), { x: 10.6, y: 6.6, w: 2.45, h: 0.3, fontFace: FONT, fontSize: 9, color: C.grey, align: 'right', margin: 0 });
+    footer(s);
   }
 
   const fname = `Monthly_Performance_Review_${MON.replace(' ', '_')}.pptx`;
