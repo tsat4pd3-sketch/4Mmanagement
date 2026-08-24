@@ -69,6 +69,24 @@ Deno.serve(async () => {
       return own.length ? own : (steps ?? []).filter((s) => s.customer == null);
     };
 
+    /* ⚠️ เฟสกลาง (ยืนยัน/เตรียม/โหลด) จะเตือนได้ก็ต่อเมื่อ "มีคนใช้จริง"
+       ข้อมูลจริง 2026-08-24: customer_shipping_orders มีแค่ pending 434 / shipped 38
+       — ไม่มีใบไหนอยู่สถานะกลางเลยสักใบ (ทีมกดจาก pending ไป "ส่งแล้ว" ตรงๆ)
+       ⇒ ทุกใบที่ยัง pending ทริกครบทุกเฟส = 66–224 แจ้งเตือน/วัน เข้าห้องเดียวกับเรื่องที่ต้องอ่านจริง
+         (และตั้งแต่ 21/8 ที่เปิด inapp_roles ให้หมวด logistic ก็ไปเด้งกระดิ่ง + Web Push ด้วย)
+       → ถ้า 30 วันล่าสุด "ไม่มีใบไหนอยู่สถานะกลางเลย" = ยังไม่ได้ใช้ walkback → ข้ามเฟสกลาง
+         เตือนเฉพาะเฟสสุดท้าย (ต้องส่งถึงลูกค้า) ซึ่งทีมทำจริง
+       ⚠️ self-healing: วันไหนเริ่มกดยืนยัน/เตรียม/โหลด เฟสนั้นกลับมาเตือนเองทันที ไม่ต้องแก้โค้ด
+       ⚠️ ห้ามข้ามเงียบ — คืนจำนวนที่ข้ามใน response เสมอ */
+    const since = addDays(work.y, work.mo, work.d, -30);
+    const { data: recent } = await db.from('customer_shipping_orders')
+      .select('status').gte('due_date', `${since.y}-${pad(since.mo)}-${pad(since.d)}`);
+    const workflowLive = (recent ?? []).some((r) => {
+      const s = String(r.status);
+      return s !== 'pending' && s !== 'shipped';
+    });
+    let skippedUnused = 0;
+
     // เฟสที่หลุด deadline และยังไม่เคยแจ้ง
     const { data: seen } = await db.from('shipping_phase_alerts').select('order_id, step_id').in('order_id', orders.map((o) => o.id));
     const seenKeys = new Set((seen ?? []).map((a) => `${a.order_id}|${a.step_id}`));
@@ -82,10 +100,11 @@ Deno.serve(async () => {
         if (nowMs < deadlineMs) continue;
         if (STATUS_RANK[String(o.status)] >= STATUS_RANK[String(st.requires_status)]) continue;
         if (seenKeys.has(`${o.id}|${st.id}`)) continue;
+        if (!workflowLive && String(st.requires_status) !== 'shipped') { skippedUnused++; continue; }
         misses.push({ order: o, step: st, deadlineMs });
       }
     }
-    if (!misses.length) return new Response(JSON.stringify({ ok: true, checked: orders.length, missed: 0 }), { status: 200 });
+    if (!misses.length) return new Response(JSON.stringify({ ok: true, checked: orders.length, missed: 0, workflow_live: workflowLive, skipped_unused_phases: skippedUnused }), { status: 200 });
 
     // mark ก่อนส่ง — ยิงครั้งเดียวต่อ (รอบ, เฟส) แม้ scan ซ้อน
     const { error: insErr } = await db.from('shipping_phase_alerts').upsert(
@@ -127,7 +146,7 @@ Deno.serve(async () => {
       body: JSON.stringify({ event: 'shipping_phase_alert', alert: { work_date: workDate, total: misses.length, groups } }),
     }).catch(() => {});
 
-    return new Response(JSON.stringify({ ok: true, checked: orders.length, missed: misses.length }), { status: 200 });
+    return new Response(JSON.stringify({ ok: true, checked: orders.length, missed: misses.length, workflow_live: workflowLive, skipped_unused_phases: skippedUnused }), { status: 200 });
   } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: String(err) }), { status: 500 });

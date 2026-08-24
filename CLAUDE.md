@@ -1027,6 +1027,19 @@ Reject → status: "rejected" + reject_reason
   บนชาร์ตรวมเป็นชิป ⏳ ท้ายแถว, การ์ดโชว์ "⏳ ไม่ระบุเวลา"
 - **แจ้งเตือนหลุดเฟสเป็นหน้าที่ scanner ฝั่ง server** (`shipping-phase-scan` pg_cron ทุก 10 นาที
   + dedup ใน `shipping_phase_alerts`) — ห้ามย้ายกลับมา client (ทำงานแม้ไม่มีใครเปิดหน้า)
+> ### ⚠️ กฎเหล็ก — แจ้งเตือน "ขั้นตอนที่ยังไม่มีใครใช้" = สแปมที่กลบเรื่องจริง (2026-08-24)
+> **เคสจริง:** `customer_shipping_orders` มีแค่ **pending 434 / shipped 38** — สถานะกลาง
+> (`confirmed`/`prepared`/`loaded`) **ไม่เคยถูกใช้เลยสักใบ** ทีมกดจาก pending ไป "ส่งแล้ว" ตรงๆ
+> ⇒ ทุกใบที่ยัง pending หลุดครบทุกเฟส → **66–224 แจ้งเตือน/วัน** (17/8=118 · 19/8=212 · 20/8=224)
+> เข้า**ห้อง Telegram เดียวกัน**กับ `edi_import`/`shipping_overdue`/`store_abnormal` ทั้งหมด
+> และตั้งแต่ 21/8 ที่เปิด `inapp_roles` ให้หมวด logistic → ไปเด้ง**กระดิ่ง + Web Push** ด้วย
+> (24/8 มี notification 169 แถว/13 คน ทั้งที่เรื่องจริงมีแค่ 13 = สรุปสโตร์รายวัน)
+> - **แก้ที่ scanner ไม่ใช่ปิดสวิตช์**: ถ้า 30 วันล่าสุดไม่มีใบไหน**อยู่**สถานะกลางเลย = ยังไม่ได้ใช้ walkback
+>   → ข้ามเฟสกลาง เตือนเฉพาะเฟสสุดท้าย (ต้องส่งถึงลูกค้า) ที่ทีมทำจริง
+> - **self-healing** — วันไหนเริ่มกดยืนยัน/เตรียม/โหลด เฟสนั้นกลับมาเตือนเอง **ไม่ต้องแก้โค้ด**
+> - **ห้ามข้ามเงียบ** — คืน `workflow_live` + `skipped_unused_phases` ใน response ทุกครั้ง
+> - **หลักที่ใช้ซ้ำได้: ก่อนเปิด `inapp_roles` ให้ event ไหน ต้องวัดความถี่จริงก่อนเสมอ**
+>   event ที่ยิงเกิน ~5 ครั้ง/วัน ไม่ควรเข้ากระดิ่ง/Push (ให้อยู่ Telegram หรือยุบเป็นสรุปรายวันแบบ `store_abnormal`)
 
 ### วงจร FG stock (ครบ loop — ห้ามตัดขาตอนแก้)
 
@@ -2602,7 +2615,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `send-cqi15-notification` | Main | แจ้งเตือน CQI-15 Event Log + approval แยกจาก send-notification |
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
-| `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
+| `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
 | `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
 | `store-daily-scan` | DR (pg_cron 01:30 UTC = **08:30 ไทย**) | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
 | `send-store-notification` | Main | **ผู้ส่งฝั่ง Store** — รับ event `store_abnormal` · **แยกไฟล์จาก send-notification โดยตั้งใจ (กันไฟล์ 47KB พัง) แต่ route ผ่าน `notification_rules`/`telegram_channels` ชุดเดียวกัน** (precedent เดียวกับ `send-mtn-notification`) → เปิด/ปิด/เลือกห้อง/แก้ข้อความ/เลือก role ที่เข้ากระดิ่ง ทำที่ `/notification-config` เหมือนทุกเรื่อง · verify_jwt=false |
