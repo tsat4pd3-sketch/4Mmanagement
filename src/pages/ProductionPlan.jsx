@@ -6,6 +6,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+import { fetchByIds } from '../utils/fetchByIds';
+import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import {
@@ -123,11 +125,15 @@ export default function ProductionPlan() {
       const oeeByLine = {};
       (sess || []).forEach(s => { if (s.oee != null) (oeeByLine[s.line_name] = oeeByLine[s.line_name] || []).push(Number(s.oee)); });
       const sessIds = (sess || []).map(s => s.id);
-      const orderRows = [];
-      for (let i = 0; i < sessIds.length; i += 300) {
-        const { data: po } = await supabaseDR.from('prod_orders')
-          .select('session_id, mat_no, qty_ok, qty, opened_at, confirmed_at').eq('status', 'confirmed').in('session_id', sessIds.slice(i, i + 300));
-        if (po) orderRows.push(...po);
+      // ⚠️ ต้องผ่าน fetchByIds (กฎ CLAUDE.md) — เดิมแบ่งก้อนเอง 300 id แต่ **ไม่แบ่งหน้า**
+      //    300 กะ × ใบปิด ~5 ใบ = ~1,500 แถว > เพดาน 1000 ⇒ ถูกตัดเกือบทุกก้อน แบบเงียบสนิท
+      //    ผล: median กำลังผลิตต่ำกว่าจริง → หน้านี้บอกให้เปิด OT/กะดึก/มี backlog เกินความจำเป็น
+      const poRes = await fetchByIds(sessIds, (c) => supabaseDR.from('prod_orders')
+        .select('session_id, mat_no, qty_ok, qty, opened_at, confirmed_at')
+        .eq('status', 'confirmed').in('session_id', c));
+      const orderRows = poRes.rows;
+      if (poRes.error || poRes.truncated) {
+        toast.error('โหลดใบผลิตย้อนหลังไม่ครบ — กำลังผลิตที่คำนวณได้อาจต่ำกว่าจริง (แผน OT/กะดึกจะเกินจำเป็น)');
       }
       // sum ต่อ (session, mat) = ยอด + เวลาวิ่งรวม (นาที) ของ mat นั้นในกะนั้น
       const perSessMat = {};

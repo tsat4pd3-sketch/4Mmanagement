@@ -20,6 +20,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
 import { buildCtMap } from '../utils/oee';
+import { fetchByIds } from '../utils/fetchByIds';
 import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
 import { buildVsmGaps } from '../lib/vsmGaps';
 import { matchDocSet } from '../utils/peLink';
@@ -80,6 +81,9 @@ export default function VSM() {
   const [overrides, setOverrides] = useState({});
   const [busy, setBusy] = useState(false);
   const [rawRef, setRawRef] = useState(null);         // ข้อมูลดิบที่ใช้ generate (คำนวณซ้ำตอนแก้ override)
+  // คิวรีดิบโหลดไม่ครบ (เกินเพดานแถว/URL ยาว) — ต้องเตือนค้างบนจอ ไม่ใช่ toast ที่หายไป
+  // เพราะใบ VSM ถูก "บันทึกเป็น snapshot ถาวร" ตัวเลขที่ขาดจะค้างอยู่ในเอกสารที่พิมพ์ออกไปแล้ว
+  const [loadWarn, setLoadWarn] = useState(null);
   const [showLoad, setShowLoad] = useState(false);
   const [a3, setA3] = useState({});                    // เนื้อหา A3 Report (เก็บใน vsm_maps.data.a3)
   const [showA3, setShowA3] = useState(false);
@@ -158,6 +162,7 @@ export default function VSM() {
         และแท็บสด (โครงสร้างค่ามาตรฐานเดือนปัจจุบัน) ห้าม duplicate query ── */
   const fetchRaw = useCallback(async (fg, mk) => {
     {
+      setLoadWarn(null);           // เริ่มรอบใหม่ = ล้างคำเตือนรอบก่อน (ห้ามค้างจนคนเข้าใจผิด)
       const { from, to } = monthBounds(mk);
       const famNames = fg.line_name ? getLineFamilyNames(lines, fg.line_name) : [];
 
@@ -196,13 +201,15 @@ export default function VSM() {
       const sessions = sess.data || [];
       const sessionIds = sessions.map(s => s.id);
       // downtime — join ประเภทเพื่อเอา category (planned → เวลารับภาระ) + six_big_loss (setup → C/O)
-      let dtRaw = [];
-      for (let i = 0; i < sessionIds.length; i += 900) {        // .in() ยาวเกินไปจะโดนตัด
-        const { data } = await supabaseDR.from('downtime_logs')
-          .select('session_id, duration_min, dr_downtime_types(category, six_big_loss)')
-          .in('session_id', sessionIds.slice(i, i + 900));
-        dtRaw = dtRaw.concat(data || []);
-      }
+      // ⚠️ ต้องผ่าน fetchByIds เสมอ (กฎ CLAUDE.md) — เดิมแบ่งก้อนเอง 900 id
+      //    = URL ~35,000 ตัวอักษร (มากกว่าเคส 813 กะ ที่เคยทำให้คิวรีล้มเหลวเงียบ) + ไม่แบ่งหน้า
+      //    + `const { data }` กลืน error ⇒ C/O (setup) กับเวลาหยุดตามแผน ต่ำกว่าจริง/เป็น 0
+      //    แล้ว **ค้างอยู่ใน snapshot ที่พิมพ์ออกไปแล้ว** (VSM เก็บถาวร แก้ย้อนหลังไม่ได้)
+      const dtRes = await fetchByIds(sessionIds, (c) => supabaseDR.from('downtime_logs')
+        .select('session_id, duration_min, dr_downtime_types(category, six_big_loss)')
+        .in('session_id', c));
+      const dtRaw = dtRes.rows;
+      if (dtRes.error || dtRes.truncated) setLoadWarn('โหลด downtime ไม่ครบ — ค่า C/O และเวลาหยุดตามแผนอาจต่ำกว่าจริง (อย่าเพิ่งบันทึกเป็นเอกสาร)');
       const lineOf = Object.fromEntries(sessions.map(s => [s.id, s.line_name]));
       const downtimes = dtRaw.map(d => ({
         line_name: lineOf[d.session_id],
@@ -593,6 +600,14 @@ export default function VSM() {
       )}
 
       {model && <>
+        {/* ⚠️ ข้อมูลดิบโหลดไม่ครบ — ต่างจาก worklist ข้างล่าง (นั่นคือ "ยังไม่มีใครลงข้อมูล")
+            อันนี้คือ "มีข้อมูลแต่ดึงมาไม่หมด" ⇒ ตัวเลขต่ำกว่าจริง ห้ามบันทึกเป็นเอกสาร */}
+        {loadWarn && (
+          <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px', border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.10)' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>⚠️ {loadWarn}</div>
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>ลองกด "↻ ดึงข้อมูลใหม่" อีกครั้ง — ถ้ายังขึ้นซ้ำให้แจ้งผู้ดูแลระบบ</div>
+          </div>
+        )}
         {/* ── 📋 worklist "ข้อมูลที่ VSM ยังขาด" (คำขอ user 2026-08-20 หลัง audit) ──
             แทนที่บล็อก warning เดิม: ข้อความชุดเดียวกัน (จาก model.warnings — single source)
             + ปุ่มลิงก์ "ไปลงข้อมูลที่ไหน" จาก lib/vsmGaps.js · ครบแล้วก็ต้องบอก ห้ามซ่อนแผง */}

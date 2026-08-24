@@ -407,7 +407,12 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }
     let debounceTimer = null;
-    const refresh = () => fetchActiveDowntimes(viewLineNames).then(setDtAlarms).catch(() => {});
+    // ⚠️ คิวรีพลาด = **คงสัญญาณเดิมไว้ ห้ามล้างเป็นว่าง** — ล้างแล้วหมุดเครื่องที่กำลังหยุดจะเลิกกระพริบ
+    //    ทั้งที่เครื่องยังหยุดอยู่จริง (Andon ดับเพราะเน็ตสะดุด = อันตรายกว่าไม่รีเฟรช)
+    //    รอบถัดไป (realtime push หรือ interval) จะได้ของจริงมาทับเอง
+    const refresh = () => fetchActiveDowntimes(viewLineNames)
+      .then(r => { if (!r?.error) setDtAlarms(r); })
+      .catch(() => {});
     const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
     refresh();
     const stopPoll = visibleInterval(refresh, RATE.BACKUP);
@@ -1003,7 +1008,7 @@ export default function Management() {
         {/* 🤝 ยืมตัวมาจากไลน์อื่นกะนี้ (line_helpers) */}
         {helperMap[worker.employee_id] && (
           <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
-            style={{ fontSize: 10, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            style={{ fontSize: 11, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
             🤝 ยืมตัว
           </div>
         )}
@@ -1206,12 +1211,12 @@ export default function Management() {
                 <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>👷 กำลังคนกลุ่มนี้</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
               </div>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                 ประจำสถานี · บนผังนี้ {familyManpower.onMap}{familyManpower.hiddenTotal ? ` · ไลน์ย่อย(ผังแยก) ${familyManpower.hiddenTotal}` : ''}
               </div>
               {familyManpower.hidden.length > 0 && (
                 <div style={{ marginTop: 7, display: 'grid', gap: 4 }}>
-                  <div style={{ fontSize: 9.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)</div>
                   {familyManpower.hidden.map(h => {
                     const open = openSubLine === h.lineName;
                     return (
@@ -2114,9 +2119,19 @@ export default function Management() {
                 }
               `}</style>
               {imgBox && (() => {
-                // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
+                // ⚠️ หมุดที่เอาไปคิด "ความแน่น" ต้องเป็นชุดเดียวกับที่ **วาดบนผังใบนี้จริง**
+                //   machinePoints/wipPoints โหลดมาทั้งครอบครัวไลน์ แต่ไลน์ลูกที่มีผังเป็นของตัวเอง
+                //   ใช้พิกัด % ที่อ้างอิงรูปคนละใบ — เอามาคิดระยะเพื่อนบ้านจะเพี้ยน (วงเล็กเกินจริง)
+                //   และ WIP วาดด้วย SUB เหมือนกัน จึงต้องนับเข้าความแน่นด้วย ไม่งั้นผังที่มีเครื่อง 3 ตัว
+                //   แต่จุด WIP 20 จุดกระจุกกัน จะได้วงใหญ่สุดแล้วเบียดกัน (อาการเดียวกับที่เพิ่งแก้ไป)
+                const shownMcPts = machinePoints.filter(p => belongsToShownMap(p.line_name));
+                const shownWipPts = wipPoints.filter(p => belongsToShownMap(p.line_name));
                 const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
-                  markerScale(imgBox.rw, { machineCount: machinePoints.length, points: machinePoints, mapHeight: imgBox.rh });
+                  markerScale(imgBox.rw, {
+                    machineCount: shownMcPts.length,
+                    points: [...shownMcPts, ...shownWipPts],
+                    mapHeight: imgBox.rh,
+                  });
                 // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
                 const pillsOn = showPills;
                 const stationPillsOn = showPills;
@@ -2358,7 +2373,7 @@ export default function Management() {
               </div>
             );
           })}
-                    {filterWip && wipPoints.filter(p => belongsToShownMap(p.line_name)).map(p => {
+                    {filterWip && shownWipPts.map(p => {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
@@ -2400,7 +2415,7 @@ export default function Management() {
                         </div>
                       );
                     })}
-                    {machinePoints.filter(p => belongsToShownMap(p.line_name)).map(p => {
+                    {shownMcPts.map(p => {
                       const alarms = dtAlarms.byMachine[p.machine_no];
                       // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
                       if (!filterMachine && !alarms) return null;
@@ -2526,7 +2541,7 @@ export default function Management() {
 
       {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
       {radarWorker && createPortal(
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
@@ -3255,7 +3270,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
 
   return (
     <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: 'var(--card)', border: `1px solid ${accent}55`, borderRadius: 16, padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
         <style>{`@keyframes pdIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>

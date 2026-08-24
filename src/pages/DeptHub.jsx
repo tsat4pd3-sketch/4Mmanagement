@@ -137,6 +137,14 @@ const DEPT_CSS = `
   .more-chip {
     background: transparent; border: 1px dashed var(--border2); color: var(--muted);
   }
+  /* จอสัมผัส: ชิปเมนูสูงจริง ~23px กดพลาดง่ายเมื่อใส่ถุงมือ — เพิ่ม padding ให้สูง ~34px
+     ⚠️ ใช้ padding (ขนาดจริง) ไม่ใช่ ::before ขยาย hit area แบบกฎกลางใน index.css
+     เพราะชิปเรียงห่างกันแค่ 6px → hit area 40px ของชิปข้างกันจะทับกันแล้วแย่งการกด
+     (และกฎกลางไม่ครอบอยู่แล้ว: button:not(:has(*)) ไม่จับปุ่มที่มี span ข้างใน) */
+  @media (pointer: coarse) {
+    .dept-chip { padding: 9px 12px; }
+    .star-chip { padding: 10px 14px; }
+  }
   /* มือถือ ≤768px: top bar (ชื่อ user/ธีม/ออกจากระบบ) เลิกลอย absolute — กลับเข้า flow ชิดขวา
      กันทับหัวข้อ (desktop ไม่เปลี่ยน: media ไม่ match) */
   @media (max-width: 768px) {
@@ -242,7 +250,7 @@ function getWorkDate() {
 
 export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition,
   userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved,
-  realRole, onOpenViewAs, remoteCode, onToggleRemote, onOpenSearch }) {
+  realRole, onOpenViewAs, remoteCode, onToggleRemote, onOpenSearch, permsVersion }) {
   const navigate = useNavigate();
   // scope ของผู้ใช้ (DeptHub อยู่ใน UserContext.Provider ของ App แล้ว)
   const { lineId: userLineId, sections: userSections = [] } = useContext(UserContext);
@@ -336,8 +344,15 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
         const [s, a, m, dts] = await Promise.all([qs, qa, qm, fetchActiveDowntimes(scopeNames)]);
         if (!alive) return;
-        setTele({ lines: s.count ?? 0, present: a.count ?? 0, fourM: m.count ?? 0, dt: dts.list.length });
-      } catch { /* เงียบ — telemetry เป็นของเสริม */ }
+        // ⚠️ count query คืน { error, count: null } **ไม่ throw** → `?? 0` จะแปลง "โหลดไม่ได้"
+        //    เป็น "ไม่มีไลน์เดินเลย / ไม่มีคนมาเช็คชื่อ / Downtime 0 (เขียว)" ซึ่งเป็นคำกล่าวอ้างเท็จ
+        //    ส่ง null แทน → TeleTile แสดง "–" (รองรับอยู่แล้ว) = บอกว่า "ยังไม่รู้" ไม่ใช่ "เป็นศูนย์"
+        const num = (r) => (r?.error ? null : (r?.count ?? 0));
+        setTele({
+          lines: num(s), present: num(a), fourM: num(m),
+          dt: dts?.error ? null : dts.list.length,
+        });
+      } catch { if (alive) setTele({ lines: null, present: null, dt: null, fourM: null }); }
     };
     load();
     const stopPoll = visibleInterval(load, RATE.ANALYTIC);
@@ -370,10 +385,14 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   // ใช้ 2 ที่: เลือกว่าชิปไหนได้โผล่ก่อนเมื่อการ์ดมีเมนูเกิน CHIP_CAP · แถว ⭐ ใช้บ่อย ด้านบน
   const [useRank] = useState(() => new Map(topPaths(40).map((p, i) => [p, i])));
 
+  /* ⚠️ deps ต้องมี permsVersion ด้วย — 2 memo นี้เรียก canAccessPage() ที่อ่าน permission cache
+     แบบ sync · App ยิง permsVersion ลงมาเมื่อ realtime แจ้งว่า role_permissions เปลี่ยน
+     ถ้าไม่ใส่ใน deps การ์ด/ชิปหน้า Home จะค้างเวอร์ชันเดิมจนกว่าจะ reload
+     ขณะที่ sidebar (คำนวณ inline) อัปเดตทันที = 2 ที่ไม่ตรงกันชั่วคราว */
   const favItems = useMemo(() => {
     const allowed = navItemsForGroups(NAV_GROUP_ORDER, userRole);
     return topPaths(8).map(p => allowed.find(i => i.to === p)).filter(Boolean).slice(0, 6);
-  }, [userRole]);
+  }, [userRole, permsVersion]);
 
   const [expanded, setExpanded] = useState({});   // การ์ดไหนกาง "ดูทั้งหมด" อยู่
 
@@ -391,7 +410,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   // การ์ดที่ role นี้เข้าไม่ได้สักเมนู = ไม่ต้องโชว์ (เดิมโชว์แล้วกดเข้าไปโดนเด้งกลับ)
   const cards = useMemo(
     () => DEPTS.map(d => ({ ...d, items: menuItemsOf(d) })).filter(d => d.items.length > 0),
-    [userRole],   // eslint-disable-line react-hooks/exhaustive-deps -- menuItemsOf อ่านจาก NAV_ITEMS (คงที่) + userRole
+    [userRole, permsVersion],   // eslint-disable-line react-hooks/exhaustive-deps -- menuItemsOf อ่านจาก NAV_ITEMS (คงที่) + userRole
   );
 
   const openMenu = (e, to) => {
@@ -472,7 +491,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                     </div>
                   </div>
                   <span style={{
-                    fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                    fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
                     background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.3)',
                   }}>{userRole?.toUpperCase() || '—'}</span>
                 </div>
@@ -632,6 +651,11 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             className="smart-card active"
             style={{ '--mc': d.color, animation: `hub-fade-up 0.55s ease ${0.12 + 0.06 * i}s both` }}
             onClick={() => navigate(route)}
+            /* การ์ดทั้งใบเป็นจุดคลิก (ของเดิม) — เป็น div เพราะข้างในมีปุ่มชิป ซ้อน <button> ไม่ได้
+               จึงต้องใส่ role/tabIndex/onKeyDown เองให้คีย์บอร์ดเข้าถึงได้ */
+            role="button" tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(route); } }}
+            aria-label={`${d.label} — ${d.labelTh}`}
           >
             <div className="edge" />
 

@@ -25,8 +25,14 @@ const BINS = [
   { key: 'red',    label: '🔴 ถังแดง — ชิ้นงานเสีย',        short: 'ถังแดง',   color: '#e05252' },
 ];
 
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/* ⚠️ work date ต้องตัด 08:00 เหมือนทั้งระบบ — คอลัมน์ `quality_bin_records.work_date` นี้
+   ถูกเขียนจาก 2 ทาง: ที่นี่ (QA คีย์เอง) กับ QualityBinLinkModal ที่ใช้ `session.work_date`
+   (วันงานของกะ) · เดิมที่นี่ใช้วันปฏิทินดิบ → กะดึกลงถังตอน 01:00-07:59 ได้ "วันถัดไป"
+   ส่วนแถวที่ส่งมาจาก Daily Report ได้วันงานจริง = เหตุการณ์เดียวกันมีวันต่างกัน 1 วัน
+   ตัวกรองช่วงวันจับไม่ครบ และเทียบกับ defect_logs ไม่ตรง (QC audit 2026-08-24) */
+const today = () => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); return ymd(d); };
+const daysAgo = n => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - n); return ymd(d); };
 const numOrNull = v => (v === '' || v == null ? null : (Number.isFinite(+v) ? +v : null));
 
 const BLANK = {

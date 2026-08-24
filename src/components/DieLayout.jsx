@@ -61,6 +61,7 @@ export default function DieLayout({
   const [showLabels, setShowLabels] = useState(true); // 🏷️ สองสถานะ default โชว์ (UI §1)
   const [areaForm, setAreaForm] = useState(null);
   const [mapW, setMapW] = useState(800);
+  const [mapH, setMapH] = useState(450);
   const wrapRef = useRef(null);
   const moveRef = useRef(null);
 
@@ -95,7 +96,8 @@ export default function DieLayout({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => setMapW(el.clientWidth || 800));
+    // ต้องวัดความสูงด้วย — markerScale คิดความแน่นจาก "ระยะเพื่อนบ้านเป็น px" ซึ่งต้องรู้ทั้ง 2 แกน
+    const ro = new ResizeObserver(() => { setMapW(el.clientWidth || 800); setMapH(el.clientHeight || 450); });
     ro.observe(el);
     return () => ro.disconnect();
   }, [area?.image_url, ready]);
@@ -116,7 +118,17 @@ export default function DieLayout({
     () => activeDies.filter(d => !(d.ext?.area_id && d.ext?.pos_x != null && d.ext?.pos_y != null)),
     [activeDies]);
 
-  const mk = useMemo(() => markerScale(mapW, { machineCount: placedHere.length }), [mapW, placedHere.length]);
+  // ⚠️ ต้องส่ง points+mapHeight ให้ครบเหมือน caller อื่น ไม่งั้นตกไป fallback สูตรนับจำนวนแบบเดิม
+  //    = ผังจัดเก็บแม่พิมพ์ได้ขนาดหมุดคนละมาตรฐานกับผังอื่นทั้งระบบ (ผิดหลัก WYSIWYG ที่ util นี้มีไว้แก้)
+  //    `pctOf` ใน markerScale รับคีย์ x/y อยู่แล้ว
+  const mk = useMemo(
+    () => markerScale(mapW, {
+      machineCount: placedHere.length,
+      points: placedHere.map(d => ({ x: d.ext.pos_x, y: d.ext.pos_y })),
+      mapHeight: mapH,
+    }),
+    [mapW, mapH, placedHere],
+  );
 
   const selDie = activeDies.find(d => d.id === selId) || null;
   const placingDie = activeDies.find(d => d.id === placingId) || null;
