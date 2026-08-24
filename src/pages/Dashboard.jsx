@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeAlarm';
-import { sumDefectQty } from '../utils/oee';
+import { sumDefectQty, computeLiveOee } from '../utils/oee';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -14,7 +14,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE } from '../utils/refreshRates';
@@ -335,98 +335,30 @@ export default function Dashboard() {
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
     }
 
-    // ประมาณ OEE "สด" ของกะที่กำลังผลิตอยู่ (ยังไม่ปิดกะ) — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
-    // ใช้ work_date + start_time (เวลาเปิดกะจริงที่ตั้งไว้) เป็นจุดเริ่ม ไม่ใช่ created_at ที่อาจคลาดเคลื่อน
-    // และคิด CT แยกตาม MAT.NO ของแต่ละ order ไม่ใช่ CT เดียวของ session เพราะกะเดียวอาจผลิตหลาย MAT.NO
+    /* OEE สดของกะที่ยังไม่ปิด — ใช้สูตรกลาง computeLiveOee จาก utils/oee.js เท่านั้น
+       (QC audit 2026-08-20 · T1-3) เดิมหน้านี้เขียน computeSessionOEE เอง ~90 บรรทัด แล้วเพี้ยน 3 ทาง:
+       (ก) DT ที่ยังเปิดค้าง (ไม่มี ended_at/duration_min) ถูกนับเป็น 0 นาที
+           → เครื่องหยุดตั้งแต่ 10:00 ดูตอน 14:00: ผังรวมบอก A=33% แต่จอนี้ (จอ Andon!) บอก 100%
+       (ข) นับผลิตเฉพาะใบ confirmed ทิ้ง qty_actual ของใบเปิด → P=null ทั้งที่ไลน์กำลังเดิน
+       (ค) ไม่มี parallelCap → SUB APRON P raw 842% โดน min(1,..) กลืน → OEE ~99% ปลอม
+       ⚠️ computeLiveOee คืน A/P/Q/oee เป็น "เปอร์เซ็นต์ 0-100" — แปลงกลับเป็นสัดส่วน 0-1
+       ให้ตรงกับที่ตัว render การ์ดใช้ (คูณ 100 ตอนแสดง) จะได้ไม่ต้องรื้อจุดแสดงผล */
     const computeSessionOEE = (s) => {
-      const openedAt = (s.work_date && s.start_time)
-        ? new Date(`${s.work_date}T${s.start_time.slice(0,5)}:00`)
-        : (s.created_at ? new Date(s.created_at) : null);
-      const closedAt  = new Date();
-      if (!openedAt) return null;
-      const shiftMin  = Math.round((closedAt - openedAt) / 60000);
-      const dts       = dtBySession[s.id] || [];
-      // ไลน์เครื่องขนาน (เช่น LASER-345/789 N=3): DT ที่ระบุเครื่อง = เครื่องเดียวหยุด หักแค่ 1/N
-      // ของนาทีที่ลง — สูตรเดียวกับ computeOEE ใน DailyReport (N จาก parallel_stations · แยกจาก flow_mode)
-      const parallelN = parallelUnitsOf(linesRef.current.find(l => l.name === s.line_name));
-      const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
-      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
-      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
-      // Policy breaks overlap
-      const wDate = s.work_date;
-      const policyBreak = (breakPolicies || [])
-        .filter(p => p.shift === 'both' || p.shift === s.shift)
-        .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
-        .reduce((sum, p) => {
-          const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-          let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-          let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-          if (pStart < openedAt && pEnd < openedAt) {
-            pStart = new Date(pStart.getTime() + 86400000);
-            pEnd   = new Date(pEnd.getTime() + 86400000);
-          }
-          return sum + Math.max(0, (Math.min(pEnd, closedAt) - Math.max(pStart, openedAt)) / 60000);
-        }, 0);
-      const netAvail = Math.max(0, shiftMin - plannedDT - policyBreak);
-      const runMin   = Math.max(0, netAvail - unplannedDT);
-      const orders   = ordersBySession[s.id] || [];
-      let producedMin = 0, knownQty = 0;
-      const produced = orders.filter(o => o.status === 'confirmed').reduce((a, o) => a + o.qty, 0);
-      orders.filter(o => o.status === 'confirmed').forEach(o => {
-        const ct = ctMap[o.mat_no] || s.dr_products?.cycle_time_sec || 0;
-        if (ct > 0) { producedMin += o.qty * ct / 60; knownQty += o.qty; }
+      const line = linesRef.current.find(l => l.name === s.line_name);
+      const live = computeLiveOee({
+        session: s,
+        orders: ordersBySession[s.id] || [],
+        downtimes: dtBySession[s.id] || [],
+        ctMap,
+        ngQty: sumDefectQty(defectBySession[s.id] || [], 'line'),
+        workDate: s.work_date,
+        parallelN: parallelUnitsOf(line),
+        parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
       });
-      // ⚠️ Q ไม่นับงานทดลอง (มาตรฐานเดียวกับ computeOEE ตอนปิดกะ)
-      const ngQty    = sumDefectQty(defectBySession[s.id] || [], 'line');
-      // Availability: ถ้ากะนี้มีหลาย MAT.NO วิ่งคนละช่วงเวลากัน ให้แยกคำนวณ netAvail/runMin ตามช่วงเปิด-ปิดของแต่ละ
-      // MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์เดียว — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
-      const dtOverlapMinLive = (startMs, endMs, pred = () => true) => {
-        if (!startMs || !endMs || endMs <= startMs) return 0;
-        return dts.filter(pred).reduce((sum, d) => {
-          if (!d.started_at) return sum;
-          const s0 = new Date(d.started_at).getTime();
-          const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
-          const ov0 = Math.max(s0, startMs), ov1 = Math.min(e0, endMs);
-          return ov1 > ov0 ? sum + ((ov1 - ov0) / 60000) * dtW(d) : sum;
-        }, 0);
-      };
-      let totalNetAvailByMat = 0, totalRunMinByMat = 0;
-      const matNosForA = Array.from(new Set(orders.map(o => o.mat_no)));
-      matNosForA.forEach(matNo => {
-        const matOrders = orders.filter(o => o.mat_no === matNo);
-        const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-        const closedTimes = matOrders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-        const matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
-        const matEndMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
-        if (matStartMs == null || matEndMs <= matStartMs) return;
-        const windowMin = (matEndMs - matStartMs) / 60000;
-        const matPolicyBreakMin = (breakPolicies || [])
-          .filter(p => p.shift === 'both' || p.shift === s.shift)
-          .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
-          .reduce((sum, p) => {
-            const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-            let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-            let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-            if (pStart.getTime() < matStartMs && pEnd.getTime() < matStartMs) {
-              pStart = new Date(pStart.getTime() + 86400000);
-              pEnd   = new Date(pEnd.getTime() + 86400000);
-            }
-            return sum + Math.max(0, (Math.min(pEnd.getTime(), matEndMs) - Math.max(pStart.getTime(), matStartMs)) / 60000);
-          }, 0);
-        const matLoggedPlanned   = dtOverlapMinLive(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned');
-        const matLoggedUnplanned = dtOverlapMinLive(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned');
-        const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
-        const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
-        totalNetAvailByMat += matNetAvail;
-        totalRunMinByMat   += matRunMin;
-      });
-      const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
-        : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
-      // ไม่มี Cycle Time ของ MAT.NO ที่ผลิตเลย → P คำนวณไม่ได้ ห้าม default เป็น 100%
-      const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
-      const Q = produced > 0 ? produced / (produced + ngQty) : 1; // produced = ของดี(สแกน) → ดี/(ดี+เสีย) ไม่หักซ้ำ
-      const oee = P != null ? A * P * Q : null;
-      return { A, P, Q, oee, runMin, netAvail, shiftMin };
+      if (!live) return null;   // เพิ่งเปิดกะ (< LIVE_MIN_ELAPSED นาที) / ไม่มี start_time = ยังประเมินไม่ได้
+      const f = v => (v == null ? null : v / 100);
+      return { A: f(live.A), P: f(live.P), Q: f(live.Q), oee: f(live.oee),
+        noOutput: live.noOutput, noCt: live.noCt, pOver: live.pOver };
     };
 
     const ps = (sessions || []).map(s => {
