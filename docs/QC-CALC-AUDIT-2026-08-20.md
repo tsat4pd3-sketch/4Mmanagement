@@ -5,7 +5,8 @@
 
 > **สถานะ: รอบ 1 แก้แล้ว 2026-08-20** (T1-1 · T1-2 · T1-4 · T1-5 · T1-6 · T1-8 · T1-9 · T3-1 · T3-2 · T3-15)
 > **รอบ 2 แก้แล้ว 2026-08-24** (T1-3 Dashboard OEE สด → wrapper computeLiveOee · T1-7 Cpk ตัดแถวที่ไม่ตรง n + แถบเตือน ห้ามตัดเงียบ · T1-10 sessActual คิดจากใบงาน orderTotal ทั้ง MorningMeeting+OEEAnalytics · T3-12 ordersProducedOf รวมสูตรตารางเทรนด์=KPI · T3-35 จุดกราฟ SPC โยงวันถูกผ่าน keptRows)
-> รอบ 3-5 ยังไม่แตะ · อัพเดทสถานะที่นี่ทุกครั้งที่แก้
+> **รอบ 3 แก้แล้ว 2026-08-24** (T2-1 ฝั่งอ่าน — default Lot แปลงชิ้น÷Pkg เป็นใบ [ฝั่งเขียน+หน่วยหัวตาราง session ขนานแก้ไปแล้ว 2026-08-21 ผ่าน `lotPcsOf`+migration ตามเก็บ 14 แถว] · T2-6 RundownStock ผ่าน matResolve แล้ว [session ขนาน 2026-08-21] · T2-7 computeResult ตัดกะ open + guard ไม่มี baseline ห้ามขึ้น "ต้นทุนเพิ่ม" · T2-8 นาที mtn = downtime ที่ผูกใบ ไม่ใช่ lead time ใบซ่อม + รายงานใบที่ไม่มี DT ผูก · T2-9 CapaEffectiveness resolve เลขลูกค้า→SAP ผ่าน matResolve + โชว์ matched/raw ห้ามเงียบ · T2-10 ตัวหาร Rank = max(อายุแถว, เดือนที่มีข้อมูล) + เทส spareRank 5 เคส · ข้อ 4 ของ user: "ค่าซ่อมจริง" เป็น toggle ก้อนที่ 5 [key ใหม่ imp_cost_comps2 — migrate ค่าเก่า+repair = พฤติกรรมเดิม] + เขียนกำกับว่าอาจทับซ้อน IDP)
+> รอบ 4-5 ยังไม่แตะ · อัพเดทสถานะที่นี่ทุกครั้งที่แก้
 >
 > **การตัดสินใจของ user (2026-08-20):**
 > 1. **backfill เฉพาะที่พิสูจน์ได้ ถ้าพิสูจน์ไม่ได้ปล่อยไป** (ค่าที่ stamp ผิดจาก T1-5/T3-1)

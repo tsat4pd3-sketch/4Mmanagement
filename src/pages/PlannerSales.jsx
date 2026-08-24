@@ -831,14 +831,20 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const paramOf = useCallback((mat) => {
     const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {}, ks = ksMap[mat] || {};
     const g = (k, dflt) => e[k] ?? p[k] ?? dflt;
+    // PKG (จำนวน/กล่อง) = คุณสมบัติสินค้า → ดึงจาก master: parts_master.qty_per_pkg → kanban_standards.qty_per_kanban
+    const pkg = g('packaging', firstPos(pm.qty_per_pkg, ks.qty_per_kanban));
+    /* ⚠️ ks.lot_size เก็บเป็น "ชิ้น" (กฎเหล็กที่ lotPcsOf) แต่ param Lot ของแท็บนี้เป็น "ใบ"
+       → default ต้องหารด้วย Pkg ก่อน ไม่งั้นล็อต 3,000 ชิ้น กลายเป็น 3,000 ใบ
+       (totalKanban เฟ้อ 188 เท่า — QC audit 2026-08-20 · T2-1 ฝั่งอ่าน) · ไม่รู้ Pkg = ไม่เดา */
+    const lotPcs = Number(ks.lot_size) || 0;
+    const lotCards = lotPcs > 0 && Number(pkg) > 0 ? Math.max(1, Math.ceil(lotPcs / Number(pkg) - 1e-9)) : '';
     return {
       prep_time_min:  g('prep_time_min', 30),
       fluctuation_pct: g('fluctuation_pct', 7),
-      // PKG (จำนวน/กล่อง) = คุณสมบัติสินค้า → ดึงจาก master: parts_master.qty_per_pkg → kanban_standards.qty_per_kanban
-      packaging:      g('packaging', firstPos(pm.qty_per_pkg, ks.qty_per_kanban)),
+      packaging:      pkg,
       delivery_cycle: g('delivery_cycle', 1),
       capacity_pc_hr: g('capacity_pc_hr', dr.cycle_time_sec ? Math.round(3600 / dr.cycle_time_sec) : ''),
-      lot_size:       g('lot_size', firstPos(ks.lot_size, 1) || 1),
+      lot_size:       g('lot_size', firstPos(lotCards, 1) || 1),
       safety_days:    g('safety_days', 1),
       // production (Type B)
       process_count:  g('process_count', 1),
