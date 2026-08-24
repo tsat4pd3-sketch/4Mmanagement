@@ -27,6 +27,8 @@ import { resolveMachine } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -98,7 +100,8 @@ function TimeInput24({ value = '', onChange, style = {} }) {
   const inputStyleLocal = {
     fontFamily: 'monospace', fontWeight: 700, fontSize: style.fontSize || 18,
     background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
-    borderRadius: 6, padding: '6px 8px', colorScheme: 'dark', ...style,
+    // color-scheme ตามธีมกลางใน index.css แล้ว — ห้าม hardcode 'dark' (จะกลับด้านพังใน light mode)
+    borderRadius: 6, padding: '6px 8px', ...style,
   };
 
   return (
@@ -4892,6 +4895,7 @@ function HistoryTab({ role }) {
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
   const [lineNames, setLineNames] = useState([]);
+  const allLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const [expanded, setExpanded]   = useState(null);
   const [dtMap, setDtMap]         = useState({});
   const [defectMap, setDefectMap] = useState({});
@@ -5008,10 +5012,9 @@ function HistoryTab({ role }) {
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} style={{ ...inputStyle, width: 160 }} />
-        <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...inputStyle, width: 200 }}>
-          <option value="">ทุกไลน์</option>
-          {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
+        <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
+          placeholder="ทุกไลน์" style={{ ...inputStyle, width: 200 }}
+          onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
         <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>ล้าง</button>
       </div>
 
@@ -5310,6 +5313,7 @@ function ExportTab() {
 
   const [filter, setFilter]       = useState({ date_from: firstOfMonth(), date_to: today(), line_name: '' });
   const [lineNames, setLineNames] = useState([]);
+  const allLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const [allowedLineNames, setAllowedLineNames] = useState(null); // null = ไม่จำกัด (admin/manager/qa/...)
   const [loading, setLoading]     = useState(false);
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
@@ -5754,10 +5758,9 @@ function ExportTab() {
           {/* minWidth:0 บังคับให้ flex item ยอมหด — ไม่งั้นกว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
           <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-            <select value={filter.line_name} onChange={e => setFilter(f => ({ ...f, line_name: e.target.value }))} style={{ ...sel, width: '100%', minWidth: 0 }}>
-              <option value="">ทุกไลน์</option>
-              {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
+              placeholder="ทุกไลน์" style={{ ...sel, width: '100%', minWidth: 0 }}
+              onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
           </div>
           {loading && <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังโหลด...</div>}
         </div>
@@ -6523,10 +6526,8 @@ function ProductSetup({ role }) {
                 </select>
               </Field>
               <Field label="ไลน์ผลิตหลัก">
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
-                  <option value="">ไม่ระบุ</option>
-                  {lines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                </select>
+                <LineSelect lines={lines} value={form.line_name} placeholder="ไม่ระบุ" style={inputStyle}
+                  onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputStyle} /></Field>

@@ -5,6 +5,7 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
+import resizeImg from '../utils/resizeImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -40,23 +41,8 @@ async function logoDataUrl(overrideUrl) {
   } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
 }
 
-// รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
-function resizeImage(file, maxPx = 1024, quality = 0.8) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality);
 const getWorkDate = () => {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
@@ -253,15 +239,23 @@ export default function MtnRepair() {
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
       supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
-      // ช่าง = พนักงาน (Main) ที่แผนก/ส่วนเป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
-      supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name'),
+      // ช่าง = พนักงาน (Main) — ทีมมาจาก `employees.mtn_team` (ติ๊กเองที่ /operator) ก่อน แล้วค่อยเดาจากแผนก
+      //   ⚠️ tolerant: ยังไม่ apply migration 20260821_production_technician_setup = ไม่มีคอลัมน์ (42703)
+      //      → ถอยไป select ชุดเดิม ไม่งั้นทั้งหน้าโหลด master ไม่ขึ้นเลย
+      supabase.from('employees').select('id, name, section, department, employee_id_code, mtn_team').eq('is_active', true).order('name')
+        .then(r => r.error ? supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name') : r),
       // supply route: utility/facility จ่ายให้ไลน์ไหน — ใช้โชว์ผลกระทบตอนซ่อม (best-effort ถ้ายังไม่ apply migration)
       supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
     ]);
-    // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
-    // ช่างส่วนใหญ่อยู่ระดับแผนก (department) → เช็คแผนกก่อน แล้ว section
+    /* แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
+       ลำดับที่มาของทีม:
+         1. `employees.mtn_team` — ติ๊กเองที่ /operator (**ชนะเสมอ**)
+            จำเป็นสำหรับ **ช่างฝ่ายผลิต** ซึ่ง `teamForSection` เดาไม่ได้โดยตั้งใจ
+            (ส่วนงานผลิตมีหลายชื่อ PD1/PD2/GOR… เดาเหมาจะไปโดน QA/ธุรการด้วย)
+            → ก่อนมีคอลัมน์นี้ ช่างฝ่ายผลิต "ไม่มีวันโผล่" ในลิสต์มอบหมายช่าง
+         2. เดาจาก department แล้ว section (backward-compat — จับได้แค่ JIG/DIE/MTN) */
     const empTechs = (emps || [])
-      .map(e => ({ ...e, team: teamForSection(e.department) || teamForSection(e.section) }))
+      .map(e => ({ ...e, team: teamKeyOf(e.mtn_team) || teamForSection(e.department) || teamForSection(e.section) }))
       .filter(e => e.team)
       .map(e => ({ id: `emp_${e.id}`, name: e.name, dept: e.team, from_employee: true, emp_code: e.employee_id_code }));
     const empNames = new Set(empTechs.map(t => t.name.trim()));
@@ -807,7 +801,7 @@ function printMoReportMtn(o, dparts = [], logo0) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
@@ -818,8 +812,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
+  /* 🔧 ช่างของทีมนี้ทำขั้น 2-4 ของ "ใบทีมตัวเอง" ได้ (feedback หน้างาน 2026-08-21)
+     ที่มา: ช่างฝ่ายผลิตอยู่ระหว่างระดับส่วนกับระดับกลุ่ม — role ที่มีอยู่ไม่มีตัวไหนพอดี
+     แทนที่จะเพิ่ม role ใหม่ (กฎเหล็ก: เจอแกนใหม่ให้เพิ่ม attribute) ใช้ 2 ชั้นคู่กัน:
+       role ต้องถือ `mtn_repair:service_own_team`  **และ**  ตัวบุคคลต้องถูกตั้ง
+       "ทีมช่างซ่อม" (profiles.mtn_teams ที่ /add-user) ให้ตรงกับทีมของใบนั้น
+     → ติ๊กให้ role `leader` ก็ไม่ได้แปลว่าหัวหน้ากลุ่มทุกคนแตะใบซ่อมได้
+       (ไม่ได้ตั้งทีม = userTeams ว่าง = ไม่ผ่าน) */
+  const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
+  const ownTeamService = can('mtn_repair', 'service_own_team', role)
+    && userTeams.some(t => sameTeam(t, orderTeam));
   // แก้ไขได้: หัวหน้า (manage_master) หรือผู้มีสิทธิ์ทำสเตปนั้น
-  const canEditStep = (step) => can('mtn_repair', 'manage_master', role) || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role)) || (step === 1 && can('mtn_repair', 'report', role));
+  const canEditStep = (step) => can('mtn_repair', 'manage_master', role)
+    || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role))
+    || (STEP_PERM[step] === 'service' && ownTeamService)
+    || (step === 1 && can('mtn_repair', 'report', role));
 
   // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
   const [resubDept, setResubDept] = useState(dept);
@@ -953,6 +960,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           </div>
         </div>
       </div>
+      {/* ⚠️ ปุ่มขั้นถัดไปหายเพราะสิทธิ์ = ต้องบอกเหตุผล ห้ามให้เดาเอง (UI-CONVENTIONS §6.9)
+             เคสที่เจอจริง: ช่างฝ่ายผลิตเปิดใบได้แต่กดรับงานไม่ได้ แล้วไม่มีอะไรอธิบาย */}
+      {next && !(can('mtn_repair', next.perm, role) || (next.perm === 'service' && ownTeamService)) && (
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
+          🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> ({next.label})
+          {next.perm === 'service' && (
+            <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+              ถ้าเป็น <b>ช่างของทีม {deptNameOf(orderTeam) || 'นี้'}</b> ให้ admin ตั้ง 2 อย่าง:
+              <div>① เปิดสิทธิ์ <code>mtn_repair:service_own_team</code> ให้ role นี้ที่ <b>/permissions</b></div>
+              <div>② ตั้ง “🔧 ทีมช่างซ่อม” ของบัญชีนี้เป็น <b>{deptNameOf(orderTeam) || '—'}</b> ที่ <b>/add-user</b></div>
+              <div style={{ marginTop: 2, opacity: 0.85 }}>ครบทั้งสองอย่างถึงจะทำขั้น 2-4 ของ<u>ใบทีมตัวเอง</u>ได้ (ใบทีมอื่นยังทำไม่ได้)</div>
+            </div>
+          )}
+        </div>
+      )}
       {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
@@ -966,7 +988,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             printMoReport(o, dparts, logo);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
-          {next && can('mtn_repair', next.perm, role) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
+          {next && (can('mtn_repair', next.perm, role) || (next.perm === 'service' && ownTeamService)) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
       </div>
     </ModalShell>
@@ -974,9 +996,34 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
+function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
+  /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
+     "หัวหน้าช่าง MTN ต้องเห็นทีมช่างตัวเอง ไม่ใช่เห็นมั่ว")
+     ⚠️ **ไม่ตัดทีมอื่นทิ้ง** — งานข้ามทีมมีจริง (เช่นงาน JIG ที่ MTN รับไปทำ)
+        แค่แยกกลุ่มให้ไม่ปนกัน (หลักเดียวกับ optgroup "ในผัง/นอกผัง" ที่อื่นในระบบ) */
+  const techGroups = useMemo(() => {
+    const tk = teamKeyOf(order?.mtn_dept || '');
+    const mine = [], others = [];
+    for (const t of techs || []) (tk && sameTeam(t.dept, tk) ? mine : others).push(t);
+    return { teamKey: tk, mine, others };
+  }, [techs, order?.mtn_dept]);
+  // ตัวเลือกช่างแบบจัดกลุ่ม — ใช้ร่วมทุกช่องที่เลือกช่าง (ขั้น 2 มอบหมาย · ขั้น 3 ช่างหลัก/รอง)
+  const techOpts = (
+    <>
+      {techGroups.mine.length > 0 && (
+        <optgroup label={`👷 ช่างทีม ${deptNameOf(techGroups.teamKey)} (${techGroups.mine.length})`}>
+          {techGroups.mine.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+        </optgroup>
+      )}
+      {techGroups.others.length > 0 && (
+        <optgroup label={`— ทีมอื่น (${techGroups.others.length}) · เลือกได้ถ้ารับงานข้ามทีม —`}>
+          {techGroups.others.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}
+        </optgroup>
+      )}
+    </>
+  );
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -1010,8 +1057,22 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   };
 
   const save = async () => {
+    if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
     setSaving(true);
     try {
+      /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
+         RLS ของ mtn_orders ฝั่ง DR เป็น anon เปิดหมด → UI คือด่านเดียวจริงๆ
+         (ผู้ถือ manage_master ข้ามได้ตามเดิม = สิทธิ์แก้ย้อนหลังของทุกขั้น) */
+      const perm = STEP_PERM[step];
+      const myTeam = userTeams.some(t => sameTeam(t, teamKeyOf(o.mtn_dept || deptForItem(o.item_type))));
+      const allowed = can('mtn_repair', 'manage_master', role) || can('mtn_repair', perm, role)
+        || (perm === 'service' && can('mtn_repair', 'service_own_team', role) && myTeam);
+      if (!allowed) {
+        setSaving(false);
+        return toast.error(perm === 'service' && can('mtn_repair', 'service_own_team', role)
+          ? `ใบนี้แจ้งถึงทีม ${deptNameOf(o.mtn_dept || deptForItem(o.item_type))} — คุณทำได้เฉพาะใบของทีมตัวเอง`
+          : 'ไม่มีสิทธิ์ทำขั้นนี้');
+      }
       const upd = { updated_at: new Date().toISOString() };
       if (step === 2) {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
@@ -1029,8 +1090,16 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
-        if (afterFile) { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+        // ⚠️ รูปพังห้ามลากบันทึกทั้งใบล้ม (feedback 2026-08-21: อ่านไฟล์รูปไม่ได้ →
+        //    วิธีการแก้ไข/ช่างหลัก/ช่างรอง ที่พิมพ์มาหายหมด ช่างกดบันทึกซ้ำ 13 ครั้ง)
+        //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
+        let imgWarn = null;
+        if (afterFile) {
+          try { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+          catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
+        }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+        if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
         for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
@@ -1056,7 +1125,11 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
       } else if (step === 5) {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s });
-        if (qaFile) { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+        // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
+        if (qaFile) {
+          try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+          catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
+        }
         if (!editMode) { upd.status = 'qa'; upd.current_step = 5; upd.qa_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 6) {
@@ -1091,7 +1164,21 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
-            <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
+            <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
+              <select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}>
+                <option value="">— เลือกช่าง —</option>
+                {techOpts}
+              </select>
+              {/* ⚠️ ไม่มีช่างในทีมของใบเลย = ต้องบอกว่าเพราะอะไรและแก้ที่ไหน ห้ามปล่อยให้ไล่หาเอง
+                  เคสที่เจอจริง: ช่างฝ่ายผลิตยังไม่ถูกติ๊ก employees.mtn_team จึงไม่โผล่สักคน */}
+              {techGroups.teamKey && techGroups.mine.length === 0 && (
+                <div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
+                  ⚠️ ยังไม่มีใครถูกตั้งเป็นช่างทีม <b>{deptNameOf(techGroups.teamKey)}</b> เลย
+                  <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>🔧 ทีมช่างซ่อม</b></div>
+                  <div style={{ opacity: 0.85 }}>ระหว่างนี้เลือกช่างทีมอื่นไปก่อนได้</div>
+                </div>
+              )}
+            </Field>
             <DateField label="กำหนดเสร็จ" value={f.target_done_at} onChange={v => set('target_done_at', v)} />
             <Field label="ระบุรายละเอียด"><input value={f.assign_note} onChange={e => set('assign_note', e.target.value)} style={inp} /></Field>
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ)</div>}
@@ -1101,8 +1188,8 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="สาเหตุปัญหาที่เกิด"><textarea value={f.root_cause} onChange={e => set('root_cause', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <Field label="วิธีการแก้ไข"><textarea value={f.solution} onChange={e => set('solution', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
-            <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
+            <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
+            <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
           </div>
           <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={setAfterFile} />
           <div>

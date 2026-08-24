@@ -3,6 +3,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import InternalTimeBoard from '../components/InternalTimeBoard';
@@ -51,7 +52,8 @@ const parseCallQr = (text) => {
 };
 
 export default function RackCenter() {
-  const { fullName, role } = useContext(UserContext);
+  const { fullName, role, lineId, sections } = useContext(UserContext);
+  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
   const canOperate = can('rack_center', 'operate', role);
 
   const [lines,          setLines]          = useState([]);
@@ -77,7 +79,8 @@ export default function RackCenter() {
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ select ให้ครบ — ขาด parent_line_name/section/is_active = dropdown ไม่มีลำดับชั้น/ไม่กรอง scope
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
@@ -262,10 +265,8 @@ export default function RackCenter() {
                 border: `1px solid ${view === v.id ? 'var(--accent)' : 'var(--border)'}` }}>{v.label}</button>
           ))}
           <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 160 }}>
-            <option value="">ทุกไลน์</option>
-            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+            placeholder="ทุกไลน์" style={{ ...inputSt, width: 160 }} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
             แสดงที่รับแล้ว
@@ -496,10 +497,8 @@ export default function RackCenter() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์การผลิต *</label>
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
-                  <option value="">เลือกไลน์...</option>
-                  {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-                </select>
+                <LineSelect lines={lines} value={form.line_name} {...scope} style={inputSt}
+                  placeholder="เลือกไลน์..." onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชนิดภาชนะ *</label>

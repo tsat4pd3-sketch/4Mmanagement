@@ -14,6 +14,16 @@ npx vite --config audit/vite.audit.mjs        # เปิดที่ :5199
 ```
 `?p=<ชื่อไฟล์ใน src/pages ไม่ต้องมี .jsx>` เช่น `?p=Checkin`
 
+**หน้าที่ต้องส่ง props ถึงจะเรนเดอร์จริง มี harness แยก** (main.jsx mount แบบ `<C/>` ไม่ส่ง props):
+
+| URL | วัดอะไร |
+|---|---|
+| `?p=__sidebar` | sidebar แบบ D (rail + แผงลอย) — `window.__setPin(true/false)` สลับปักหมุด |
+| `hub.html[?role=admin]` | หน้า Home (DeptHub) — นับการ์ด/ชิป/แถว ⭐ · seed `localStorage['nav_recent_v1']` เพื่อทดสอบ "ใช้บ่อย" |
+
+> ⚠️ harness ไม่มีตาราง `role_permissions` → เมนูโผล่ครบเฉพาะ `role=admin` (โค้ด bypass ให้ admin)
+> role อื่นจะเห็นการ์ดว่าง — เป็นข้อจำกัดของ harness ไม่ใช่บั๊กของหน้า
+
 กวาดทั้งโปรเจค (60 หน้า × 3 ความกว้าง × กดปุ่ม/แท็บ) — ใช้เวลา ~10 นาที:
 ```bash
 npm i -D playwright   # ครั้งแรกเท่านั้น (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 ใช้ chromium ที่มีอยู่)

@@ -12,6 +12,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
+import LineSelect from './LineSelect';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -62,7 +63,7 @@ export default function QualityBins() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name')
       .then(({ data }) => setLines(data || []));
     supabaseDR.from('dr_products').select('mat_no, name, p_no, line_name').eq('is_active', true)
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
@@ -106,8 +107,9 @@ export default function QualityBins() {
     });
   }, [rows, search, lineFilter]);
 
-  const lineOpts = useMemo(
-    () => (scopeNames || lines.map(l => l.name)).slice().sort(),
+  // ไลน์ที่เลือกได้ (หลังกรอง scope) — ส่งเป็น "อ็อบเจกต์" ให้ <LineSelect> จัดลำดับชั้นเอง
+  const lineObjs = useMemo(
+    () => (scopeNames ? lines.filter(l => scopeNames.includes(l.name)) : lines),
     [scopeNames, lines],
   );
 
@@ -207,10 +209,8 @@ export default function QualityBins() {
         <div><label style={lbl}>ตั้งแต่</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inp, width: 150 }} /></div>
         <div><label style={lbl}>ถึง</label><input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ ...inp, width: 150 }} /></div>
         <div><label style={lbl}>ไลน์</label>
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inp, width: 180 }}>
-            <option value="">ทุกไลน์</option>
-            {lineOpts.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter}
+            placeholder="ทุกไลน์" style={{ ...inp, width: 180 }} />
         </div>
         <div style={{ flex: '1 1 200px', minWidth: 160 }}><label style={lbl}>ค้นหา</label>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ชิ้นงาน / สาเหตุ / ผู้แจ้ง…" style={inp} />
@@ -294,10 +294,8 @@ export default function QualityBins() {
               <div><label style={lbl}>วันที่ลงถัง *</label>
                 <input type="date" value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date: e.target.value }))} style={inp} /></div>
               <div><label style={lbl}>ไลน์การผลิต</label>
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inp}>
-                  <option value="">— เลือกไลน์ —</option>
-                  {lineOpts.map(n => <option key={n} value={n}>{n}</option>)}
-                </select></div>
+                <LineSelect lines={lineObjs} value={form.line_name} style={inp}
+                  onChange={v => setForm(f => ({ ...f, line_name: v }))} /></div>
               <div><label style={lbl}>จำนวน (ชิ้น) *</label>
                 <input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={inp} /></div>
 

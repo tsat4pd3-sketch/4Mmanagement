@@ -251,13 +251,19 @@ export default function MorningMeeting() {
     if (s.target_qty) return s.target_qty;
     return orderTotal(os, o => o.qty_target ?? o.qty ?? 0, () => null, opInfoSync());
   };
-  // ยอดจริงของกะ: qty_ok (ปิดกะแล้ว) → actual_qty → รวมยอดจริงจากใบงาน (qty_ok ?? qty_actual)
+  /* ยอดจริงของกะ — คิดจาก "ใบงาน" ผ่าน orderTotal (pair-aware + op-aware) เสมอเมื่อมีใบให้ดึง
+     (QC audit 2026-08-20 · T1-10) เดิม fallback ไป s.qty_ok/s.actual_qty ก่อน ซึ่งเป็น "ผลรวมดิบ"
+     ที่ stamp ตอนปิดกะ ไม่ผ่าน collapseOps → กะ SUB APRON ที่ชิ้นเดียวผ่าน 3 ขั้นขับนัท
+     โชว์ 1,500 แทน 500 (นับซ้ำ 3 เท่า) ขณะที่ sessTarget collapse ถูก → % สำเร็จเพี้ยนเป็น 300%
+     ค่า stamp ใช้เป็น fallback เฉพาะตอนไม่มีใบงานให้ดึงเท่านั้น
+     pick ตามสูตรบังคับ: confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)
+     — แบบเดิม (qty_ok ?? qty_actual) พลาดใบ confirmed ที่สองช่องว่างทั้งคู่ (ใบเคยถอยใบ/แถวเก่า) */
+  const pickActual = (o) => o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
   const sessActual = (s) => {
-    const os = ordersBySession[s.id] || [];
-    if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
+    const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported'].includes(o.status));
+    if (os.length) return orderTotal(os, pickActual, m => pairMat[m] || null, opInfoSync());
     if (s.qty_ok != null) return s.qty_ok;
-    if (s.actual_qty) return s.actual_qty;
-    return orderTotal(os, o => o.qty_ok ?? o.qty_actual ?? 0, () => null, opInfoSync());
+    return s.actual_qty || 0;
   };
   const sum = useMemo(() => {
     let actual = 0, target = 0;

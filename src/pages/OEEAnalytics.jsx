@@ -581,11 +581,15 @@ export default function OEEAnalytics() {
     // ผลิตจริง: actual_qty เขียนตอน "ปิดกะ" เท่านั้น → กะที่ยังเปิดต้องรวมจากใบงานสด
     // (เดิม non-pair คืน r.totalQty ตรงๆ → การ์ด "ผลิตรวมวันนี้" เป็น 0 ทั้งที่ผลิตอยู่ · แก้ 2026-08-05
     //  pattern เดียวกับบั๊ก sessTarget) · pair-aware ทำถูกอยู่แล้วทั้งสองเส้นทาง
-    const ordSum = os => orderTotal(os, o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), () => null, opInfoSync());
+    /* ⚠️ ต้องคิดจากใบงานเสมอเมื่อมีใบ (pair-aware + op-aware ผ่าน orderTotal)
+       เดิม non-pair คืน r.totalQty (= actual_qty ที่ stamp ตอนปิดกะ = ผลรวมดิบ ไม่ผ่าน collapseOps)
+       → กะ SUB APRON ที่ชิ้นเดียวผ่าน 3 ขั้นขับนัท นับ 1,500 แทน 500 (QC audit 2026-08-20 · T1-10)
+       ค่า stamp เป็น fallback เฉพาะตอนไม่มีใบงานเท่านั้น */
+    const pickA = o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0));
     const sessActual = r => {
       const os = tdOrdersBySession[r.id] || [];
-      if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
-      return r.totalQty || ordSum(os);
+      if (os.length) return orderTotal(os, pickA, m => tdPairMat[m] || null, opInfoSync());
+      return r.totalQty || 0;
     };
     // OOE/TEEP ของวันนี้ — ฐาน: OOE = เวลากะทั้งหมด · TEEP = ปฏิทิน 24 ชม. ของไลน์ที่เปิดกะวันนี้
     const tdOee = wavg(tdRows, r => r.calcOEE, wLoad);
@@ -951,6 +955,24 @@ export default function OEEAnalytics() {
   // ── Computed rows ──────────────────────────────────────────────
   const rows = useMemo(() => calcOEE(sessions, downtimes, defects), [sessions, downtimes, defects]);
 
+  /* ยอดผลิตจากใบงาน (pair-aware + op-aware) ของกลุ่ม session ใดๆ — ใช้ทั้ง KPI หัวแท็บ และตารางรายช่วง
+     (QC audit 2026-08-20 · T3-12: เดิมตารางรายช่วงบวก actual_qty ดิบ → บวกกันแล้วไม่เท่า KPI หัวแท็บ
+     ในหน้าเดียวกัน — งานคู่โชว์ 2,000 ในตาราง แต่ KPI โชว์ 1,000) · ไม่มีใบงาน = fallback ค่า stamp */
+  const ordersProducedOf = useCallback((sessIds) => {
+    const os = trOrders.filter(o => sessIds.has(o.session_id));
+    if (!os.length) return null;   // ให้ผู้เรียกถอยไปใช้ค่า stamp เอง
+    const perMat = {}; let nullSum = 0;
+    os.forEach(o => {
+      const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
+        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
+      if (!q) return;
+      if (!o.mat_no) { nullSum += q; return; }
+      (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
+    });
+    // ⚠️ pairAwareTotal คืน { target, produced } เท่านั้น · collapseOps ยุบชั้น OP ไม่บวกซ้ำ
+    return pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => trPairMat[m] || null).produced + nullSum;
+  }, [trOrders, trPairMat]);
+
   // ── Group by period ────────────────────────────────────────────
   const grouped = useMemo(() => {
     const map = {};
@@ -973,7 +995,8 @@ export default function OEEAnalytics() {
         a:     wavg(items, i => i.calcA, wLoad),
         p:     wavg(items, i => i.calcP, wRun),
         q:     wavg(items, i => i.calcQ, wProd),
-        totalQty:   items.reduce((s, i) => s + (i.totalQty || 0), 0),
+        // pair+op aware ให้ตรงกับ KPI หัวแท็บ — ไม่มีใบงานค่อยถอยไปค่า stamp
+        totalQty:   ordersProducedOf(new Set(items.map(i => i.id))) ?? items.reduce((s, i) => s + (i.totalQty || 0), 0),
         ngQty:      items.reduce((s, i) => s + (i.ngQty || 0), 0),
         unplannedMin: items.reduce((s, i) => s + i.unplannedMin, 0),
         count: items.length,
@@ -1002,27 +1025,14 @@ export default function OEEAnalytics() {
       });
     }
     return filled;
-  }, [rows, period]);
+  }, [rows, period, ordersProducedOf]);
 
   // ── Overall KPIs ───────────────────────────────────────────────
   // ผลิตรวมของช่วง — นับงานคู่ RH/LH เป็น 1 คู่/stroke (เหมือนแท็บภาพรวมวันนี้ · util pairAwareTotal)
   // ไม่มีใบงาน (ยังโหลดไม่เสร็จ/ข้อมูลเก่า) → ถอยไปใช้ actual_qty ที่ stamp ไว้
   const trTotalQty = useMemo(() => {
-    const ids = new Set(rows.map(r => r.id));
-    const os = trOrders.filter(o => ids.has(o.session_id));
-    if (!os.length) return rows.reduce((s2, r) => s2 + (r.totalQty || 0), 0);
-    const perMat = {}; let nullSum = 0;
-    os.forEach(o => {
-      const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
-        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
-      if (!q) return;
-      if (!o.mat_no) { nullSum += q; return; }
-      (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
-    });
-    // ⚠️ pairAwareTotal คืน { target, produced } เท่านั้น — ชื่อฟิลด์อื่นได้ undefined เงียบๆ
-    // collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่บวกซ้ำ
-    return pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => trPairMat[m] || null).produced + nullSum;
-  }, [rows, trOrders, trPairMat]);
+    return ordersProducedOf(new Set(rows.map(r => r.id))) ?? rows.reduce((s2, r) => s2 + (r.totalQty || 0), 0);
+  }, [rows, ordersProducedOf]);
 
   const kpi = useMemo(() => {
     // ถ่วงน้ำหนักตรงจากทุกกะใน scope (ไม่ใช่เฉลี่ยของค่าเฉลี่ยรายวันอีกชั้น — mean-of-means ทำให้

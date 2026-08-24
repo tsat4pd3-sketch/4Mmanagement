@@ -83,8 +83,21 @@ const stddev = a => {
 function computeSPC(rows, char) {
   const n = char?.subgroup_size || 1;
   const c = SPC_CONST[Math.min(Math.max(n, 1), 10)];
-  const groups = rows.map(r => (r.readings || []).map(Number).filter(v => Number.isFinite(v))).filter(g => g.length);
-  if (!groups.length) return null;
+  /* ⚠️ SPC ต้องการ subgroup ขนาด "คงที่ = n" — ค่าคงที่ A2/D3/D4/d2 ผูกกับ n ตัวเดียว
+     (QC audit 2026-08-20 · T1-7) เดิมรับทุกแถวไม่ตรวจความยาว → แถวที่ค่าน้อยกว่า n
+     (เช่นแถวค่าเดียวปนในชุด n=5) มี Range เล็กผิดปกติ ดึง R̄ ลง → σ_within เล็กเกิน
+     → Cpk เฟ้อทางเดียว (วัดจริง +52%) = false pass บนเลขที่รายงานลูกค้า
+     → ตัดแถวที่ขนาดไม่ตรง n ออกจากการคำนวณ แล้ว "รายงานจำนวนที่ตัด" (excluded) ห้ามตัดเงียบ
+     ⚠️ จับคู่ row↔group ไว้ด้วยกันก่อน filter — เดิม filter แค่ groups แล้ว points ไปอ่าน
+     rows[i].work_date ด้วย index ที่เลื่อน → จุดหลุด control limit โยงผิดวัน (T3-35) */
+  const paired = rows
+    .map(r => ({ r, g: (r.readings || []).map(Number).filter(v => Number.isFinite(v)) }))
+    .filter(x => x.g.length);
+  const kept = paired.filter(x => x.g.length === n);
+  const excluded = paired.length - kept.length;
+  const groups = kept.map(x => x.g);
+  const keptRows = kept.map(x => x.r);
+  if (!groups.length) return excluded > 0 ? { excluded, allExcluded: true } : null;
 
   const all = groups.flat();
   const xbars = groups.map(g => mean(g));
@@ -126,7 +139,7 @@ function computeSPC(rows, char) {
     idx: i + 1,
     xbar: +xbars[i].toFixed(4),
     range: ranges[i] != null ? +ranges[i].toFixed(4) : null,
-    date: rows[i].work_date,
+    date: keptRows[i].work_date,
     oocX: xbars[i] > uclX || xbars[i] < lclX,
     oocR: ranges[i] != null && uclR != null && (ranges[i] > uclR || ranges[i] < lclR),
     run: false,
@@ -143,7 +156,7 @@ function computeSPC(rows, char) {
 
   return {
     points, all, n, xbarbar, rbar, uclX, lclX, uclR, lclR,
-    sigmaWithin, sigmaOverall, cp, cpk, pp, ppk, oos, usl, lsl,
+    sigmaWithin, sigmaOverall, cp, cpk, pp, ppk, oos, usl, lsl, excluded,
   };
 }
 
@@ -548,7 +561,11 @@ function SPCTab({ lineObjs, canRecord, canManage }) {
     setReadings(Array(sel?.subgroup_size || 1).fill(''));
   }, [selId, sel?.subgroup_size]);
 
-  const spc = useMemo(() => sel ? computeSPC(rows, sel) : null, [rows, sel]);
+  const spcRaw = useMemo(() => sel ? computeSPC(rows, sel) : null, [rows, sel]);
+  // แถวที่จำนวนค่าวัดไม่ตรง n ถูกตัดออกจากการคำนวณ (ค่าคงที่ SPC ผูกกับ n คงที่ —
+  // กลุ่มไม่เท่ากันทำ Cpk เฟ้อแบบ false pass) · allExcluded = ตัดหมดทุกแถว → ไม่มีอะไรคำนวณได้
+  const spc = spcRaw && !spcRaw.allExcluded ? spcRaw : null;
+  const spcExcluded = spcRaw?.excluded || 0;
 
   const hist = useMemo(() => {
     if (!spc || spc.all.length < 2) return [];
@@ -649,6 +666,19 @@ function SPCTab({ lineObjs, canRecord, canManage }) {
           </div>
         )}
       </div>
+
+      {sel && spcExcluded > 0 && (
+        <div style={{ ...cardSt, borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.07)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, color: '#f59e0b', marginBottom: 4 }}>
+            ⚠️ ตัดออก {spcExcluded} กลุ่มที่จำนวนค่าวัดไม่ตรง n={sel.subgroup_size}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+            ค่าคงที่ control chart (A2/D3/D4/d2) ผูกกับขนาด subgroup คงที่ — กลุ่มที่กรอกไม่ครบ/เกินจะทำ Cpk เพี้ยน จึงไม่ถูกนำมาคำนวณ
+            {spc ? ` (คำนวณจาก ${spc.points.length} กลุ่มที่ครบ n)` : ' — ทุกกลุ่มถูกตัดออก จึงยังคำนวณไม่ได้'}
+            {' '}· แก้โดยกรอกค่าวัดให้ครบ {sel.subgroup_size} ค่าต่อกลุ่ม หรือปรับ n ของจุดควบคุมให้ตรงกับที่วัดจริง
+          </div>
+        </div>
+      )}
 
       {sel && (
         <>

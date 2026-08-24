@@ -40,6 +40,17 @@ export function scheduleTeamFor(emp, maps) {
 }
 
 /**
+ * ทีมที่ "ไม่หมุนกะ" — ไม่ได้ผูกกับกะใดกะหนึ่ง (ปัจจุบันมีตัวเดียวคือ C)
+ * ⚠️ ใช้ตัดสิน **ขอบเขตการมองเห็นของหัวหน้า** ด้วย ไม่ใช่แค่เรื่องกะ (2026-08-21 · feedback หน้างาน)
+ *   Team C = หัวหน้าที่ไม่ได้ยืนหน้างานสลับกะกับใคร → ต้องเห็นคนทั้งไลน์ทุกทีม ไม่ใช่เห็นแต่ทีม C กันเอง
+ *   (เดิม Checkin กรอง `.eq('team', team)` ตรงตัว → หัวหน้าทีม C เห็นเฉพาะคนทีม C
+ *    และ /add-user บังคับ role ระดับไลน์ต้องกรอก Team เสมอ = ไม่มีทางเลี่ยงด้วยการเว้นว่าง)
+ * ⚠️ ขอบเขต "ไลน์" ยังคุมเหมือนเดิม — ปลดเฉพาะแกนทีม
+ */
+export const NON_ROTATING_TEAMS = ['C'];
+export const seesAllTeams = (team) => !team || NON_ROTATING_TEAMS.includes(String(team).trim().toUpperCase());
+
+/**
  * ทีมที่เข้ากะเช้า (A/B) + ทีมของพนักงาน → กะที่เข้าจริง
  * ⚠️ Team C = กะเช้าตลอด ไม่หมุน A/B (กฎเดิมของระบบ — ห้ามตัดออก คนจะหายจากบอร์ด)
  */
@@ -50,6 +61,24 @@ export function shiftFromTeam(dayTeam, empTeam) {
   if (empTeam === dayTeam) return 'day';
   if (empTeam === nightTeam) return 'night';
   return null;
+}
+
+/**
+ * ป้ายกำกับทีมสำหรับ dropdown/แสดงผล — **ห้ามเขียน "Team A (กะเช้า)" ตายตัวในหน้าใดๆ**
+ * (เจอจริง 2026-08-21 ที่ `/operator`: dropdown เขียน A=กะเช้า B=กะดึก C=ไม่มีพันธะกะ — ผิดทั้ง 3 บรรทัด)
+ *
+ * ความจริงตาม `shiftFromTeam` ข้างบน:
+ *   · A/B **หมุนสลับกันรายสัปดาห์** ตาม `shift_schedules.day_team` — สัปดาห์นี้ A เช้า สัปดาห์หน้า A ดึก
+ *     ⇒ ไม่มีทางเขียนไว้ในป้ายได้ ต้องดูตารางกะของสัปดาห์นั้นเท่านั้น
+ *   · **C คือทีมเดียวที่คงที่จริง** = กะเช้าตลอด ไม่หมุน
+ *   · ทีมอื่นที่อาจมีในผังองค์กร (org_nodes kind='team') → `shiftFromTeam` คืน null
+ *     = ระบบยังไม่รู้กติกาหมุนกะของทีมนั้น **ห้ามเดาให้** ป้ายจึงบอกแค่ชื่อทีม
+ */
+export function teamLabel(team) {
+  const t = (team ?? '').toString().trim().toUpperCase();
+  if (t === 'C') return `Team ${team} · กะเช้าตลอด (ไม่หมุนกะ)`;
+  if (t === 'A' || t === 'B') return `Team ${team} · หมุนกะรายสัปดาห์`;
+  return `Team ${team}`;
 }
 
 /**

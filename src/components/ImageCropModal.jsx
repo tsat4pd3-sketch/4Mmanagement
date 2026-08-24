@@ -21,8 +21,14 @@ const GIF_MAX_BYTES = 2 * 1024 * 1024;
 export default function ImageCropModal({
   file, aspect = 1, shape = 'rect', outputSize = 480,
   title = 'จัดตำแหน่งรูปภาพให้ตรงกรอบ', quality = 0.85,
+  // 🖼️ allowFull = ให้ผู้ใช้เลือก "ใช้ทั้งรูป (ไม่ครอบ)" ได้ — opt-in ต่อจุดที่เรียก
+  //   ใช้กับรูปที่ครอบแล้วเสียข้อมูล เช่นรูปภาพรวมเครื่องจักรที่มีจุดตรวจกระจายทั้งภาพ
+  //   (feedback หน้างาน 2026-08-21: "ปรับตำแหน่งที่จะโดน crop ให้เห็นจุดสำคัญครบไม่ได้")
+  //   ปิดเป็นค่าเริ่มต้น → จุดที่เรียกอยู่เดิม (รูปพนักงาน/โปรไฟล์) ไม่เปลี่ยนพฤติกรรม
+  allowFull = false, fullLabel = 'ใช้ทั้งรูป (ไม่ครอบ)',
   onCancel, onConfirm,
 }) {
+  const [useFull, setUseFull] = useState(false);
   const [imgUrl, setImgUrl] = useState(null);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
   const [scale, setScale] = useState(1);
@@ -97,6 +103,25 @@ export default function ImageCropModal({
       return;
     }
     const canvas = document.createElement('canvas');
+    const ctx0 = canvas.getContext('2d');
+    if (useFull) {
+      // ใช้ทั้งรูป: คงสัดส่วนเดิม ย่อให้ด้านยาวไม่เกินด้านยาวของกรอบ (ไม่ตัดอะไรทิ้ง)
+      const cap = Math.max(outputSize, Math.round(outputSize / aspect));
+      const s = Math.min(1, cap / Math.max(natural.w, natural.h));
+      canvas.width = Math.max(1, Math.round(natural.w * s));
+      canvas.height = Math.max(1, Math.round(natural.h * s));
+      const imgF = new Image();
+      imgF.onload = () => {
+        ctx0.drawImage(imgF, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          const fileName = (file.name || 'image').replace(/\.\w+$/, '.jpg');
+          onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+      imgF.onerror = () => { toast.error('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ'); onCancel?.(); };
+      imgF.src = imgUrl;
+      return;
+    }
     canvas.width = outputSize;
     canvas.height = Math.round(outputSize / aspect);
     const ctx = canvas.getContext('2d');
@@ -127,31 +152,44 @@ export default function ImageCropModal({
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(380px,100%)' }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{title}</div>
         <div
-          onPointerDown={onPointerDown}
+          onPointerDown={useFull ? undefined : onPointerDown}
           style={{
             width: FRAME_W, height: FRAME_H, margin: '0 auto', position: 'relative', overflow: 'hidden',
             borderRadius: shape === 'circle' ? '50%' : 8, border: '2px solid var(--accent)', background: '#000',
-            cursor: 'grab', touchAction: 'none',
+            cursor: useFull ? 'default' : 'grab', touchAction: 'none',
           }}>
           {imgUrl && natural.w > 0 && (
             <img src={imgUrl} draggable={false}
               style={{
                 position: 'absolute', left: '50%', top: '50%',
-                width: natural.w * scale, height: natural.h * scale,
-                transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)`,
-                userSelect: 'none', pointerEvents: 'none', maxWidth: 'none',
+                // โหมด "ใช้ทั้งรูป" — โชว์ทั้งภาพในกรอบ (contain) ให้เห็นว่าจะได้อะไรจริงๆ
+                ...(useFull
+                  ? { width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', transform: 'translate(-50%,-50%)' }
+                  : { width: natural.w * scale, height: natural.h * scale,
+                      transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)` }),
+                userSelect: 'none', pointerEvents: 'none', maxWidth: useFull ? '100%' : 'none',
               }} />
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
-          <span style={{ fontSize: 13 }}>🔍</span>
-          <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
-            onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
-        </div>
+        {!useFull && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+            <span style={{ fontSize: 13 }}>🔍</span>
+            <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
+              onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
+          </div>
+        )}
+        {allowFull && !isGif && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={useFull} onChange={e => setUseFull(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
+            🖼️ {fullLabel}
+          </label>
+        )}
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           {isGif
             ? '🎞️ รูปขยับ (GIF) จะถูกใช้ทั้งภาพเพื่อคงการเคลื่อนไหว — การ crop/ซูมในกรอบนี้ไม่มีผลกับไฟล์จริง'
-            : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}
+            : useFull
+              ? 'เก็บทั้งภาพไว้ ไม่ตัดอะไรทิ้ง — เหมาะกับรูปภาพรวมที่มีจุดตรวจกระจายทั้งภาพ'
+              : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator

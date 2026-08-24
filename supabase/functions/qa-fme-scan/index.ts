@@ -156,10 +156,58 @@ Deno.serve(async (req) => {
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
     /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
        ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
-    const kstd = await dr<{ mat_no: string; lot_size: number | null }>(
-      'kanban_standards?select=mat_no,lot_size&is_active=eq.true');
+    /* ⚠️ kanban_standards ไม่มีคอลัมน์ line_name (เจอตอน dry-run 2026-08-21 → 42703)
+       ไลน์ผูกผ่าน product_id → dr_products.line_name · ที่นี่เอาแค่ product_id พอสำหรับแยกแถวซ้ำ */
+    type Kstd = { mat_no: string; product_id: string | null; lot_size: number | null;
+                  qty_per_kanban: number | null; min_qty: number | null; max_qty: number | null };
+    const kstd = await dr<Kstd>(
+      'kanban_standards?select=mat_no,product_id,lot_size,qty_per_kanban,min_qty,max_qty&is_active=eq.true');
+    /* ⚠️ 1 mat มีได้หลายแถว (คนละไลน์/ปลายทาง) — เดิม `set()` ทับกันไปเรื่อยๆ แถวสุดท้ายชนะ
+       = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
+    const lotRows = new Map<string, Kstd[]>();
+    for (const k of kstd) if (k.mat_no) lotRows.set(k.mat_no, [...(lotRows.get(k.mat_no) ?? []), k]);
+
+    /* ⚠️⚠️ `kanban_standards.lot_size` ใช้เป็นขนาดล็อตผลิตไม่ได้ (พิสูจน์จาก dry-run จริง 2026-08-21)
+       PlannerSales ตอนกด Apply เขียน **จำนวนใบคัมบังต่อล็อต** (`kanbanPerLot = ⌈lot_qty/packaging⌉`)
+       ลงคอลัมน์นี้เมื่อ calc_type = production → ค่า 1 = "1 ใบต่อล็อต" ไม่ใช่ 1 ชิ้น
+       ข้อมูลจริง: 8 พาร์ทได้ 1 · 4 พาร์ทได้ 3,000-6,000 · 13 พาร์ทไม่มีค่า = ไม่มีตัวไหนเป็นล็อตผลิต
+
+       ขนาดล็อตจริงอยู่ที่ `kanban_calc_params` (ค่าที่ planner กรอกเองในแท็บคำนวณ Kanban):
+         · production → `lot_qty`  = **ชิ้น** อยู่แล้ว (พิสูจน์: `infoLT = lot_qty × CT` เวลา = ชิ้น × วิ/ชิ้น)
+         · withdrawal → `lot_size` = **ใบคัมบัง** (พิสูจน์: `totalKanban = maxKanban + lotSize` บวกกับจำนวนใบ
+           · ตรงกับหน้าจอจริง MAX 121 + LOT 40 = TOTAL 161)
+           **1 ใบ = 1 กล่อง = packaging ชิ้น** ⇒ ชิ้น = `lot_size × packaging`
+           ตรวจกับข้อมูลจริง 2026-08-21: 10100335 = 50×10 · 10101158 = 40×14 · 10100333 = 15×35
+           → ออกมา 500-600 ชิ้นทุกตัว = ล็อตที่ตั้งใจตั้งไว้จริง ไม่ใช่ค่ามั่ว */
+    type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null;
+                    lot_size: number | null; packaging: number | null };
+    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size,packaging');
+    const paramRows = new Map<string, Kparam>();
+    for (const p of kparam) if (p.mat_no) paramRows.set(p.mat_no, p);
+
     const lotByMat = new Map<string, number>();
-    for (const k of kstd) if (k.mat_no && (k.lot_size ?? 0) > 0) lotByMat.set(k.mat_no, k.lot_size as number);
+    const lotSource = new Map<string, string>();   // mat → เอาค่ามาจากช่องไหน (ต้องบอกได้เสมอ)
+    const lotConflict = new Map<string, number[]>();
+    const pos = (v: unknown) => { const n = Number(v); return n > 0 ? n : 0; };
+    for (const mat of new Set([...lotRows.keys(), ...paramRows.keys()])) {
+      const p = paramRows.get(mat);
+      // (1) ล็อตผลิต (แท็บ Production) เป็น "ชิ้น" อยู่แล้ว
+      const lotQty = pos(p?.lot_qty);
+      if (lotQty > 0) { lotByMat.set(mat, lotQty); lotSource.set(mat, 'calc_params.lot_qty (ชิ้น)'); continue; }
+      // (2) ล็อตเบิกถอน (แท็บ Withdrawal) เป็น "ใบ" → × packaging (ชิ้น/กล่อง) ให้เป็นชิ้น
+      //     ไม่รู้ packaging = แปลงไม่ได้ → ไม่เดา ปล่อยตกไปข้อถัดไป
+      const lotCards = pos(p?.lot_size);
+      const pkg = pos(p?.packaging) || pos((lotRows.get(mat) ?? []).find(k => pos(k.qty_per_kanban))?.qty_per_kanban);
+      if (lotCards > 0 && pkg > 0) {
+        lotByMat.set(mat, lotCards * pkg);
+        lotSource.set(mat, `calc_params.lot_size ${lotCards} ใบ × ${pkg} ชิ้น/กล่อง`);
+        continue;
+      }
+      // ท้ายสุดค่อยใช้ kanban_standards (ปนหน่วย "ใบ" กับ "ชิ้น" — ด่าน mid_min_pcs จะกรองอีกชั้น)
+      const vals = [...new Set((lotRows.get(mat) ?? []).map(r => pos(r.lot_size)).filter(v => v > 0))];
+      if (vals.length === 1) { lotByMat.set(mat, vals[0]); lotSource.set(mat, 'kanban_standards.lot_size'); }
+      else if (vals.length > 1) lotConflict.set(mat, vals.sort((a, b) => a - b));
+    }
     const { data: partRules } = await supabase.from('qa_fme_part_rules').select('*');
     const ruleByMat = new Map<string, { mid_every_pcs: number | null; is_active: boolean }>();
     for (const r of partRules ?? []) ruleByMat.set(r.mat_no, r);
@@ -221,9 +269,11 @@ Deno.serve(async (req) => {
                   product_name: string; stage: string; trigger_reason: string; session_id: string;
                   triggered_at: string; due_at: string; seq: number; at_qty: number | null };
     const want: Want[] = [];
+    // นับสิ่งที่ "ถูกตัดทิ้งเพราะเก่าเกินเกณฑ์" ไว้รายงาน — ไม่งั้น would_create = 0 แล้วอ่านไม่ออกว่าทำไม
+    const skippedOld: Record<string, number> = {};
     const add = (r: Run, stage: string, reason: string, at: string, dueMin: number,
                  seq = 1, atQty: number | null = null) => {
-      if (at < skipBefore) return;      // เก่าเกินไป (เพิ่งเปิดสวิตช์) — ไม่ย้อนหลังให้ท่วมห้องแชท
+      if (at < skipBefore) { skippedOld[stage] = (skippedOld[stage] ?? 0) + 1; return; }  // เก่าเกิน (เพิ่งเปิดสวิตช์)
       want.push({
         work_date: r.sess.work_date, shift: r.sess.shift, line_name: r.sess.line_name,
         mat_no: r.mat, mat_group: [...r.mats], product_name: r.name,
@@ -266,6 +316,8 @@ Deno.serve(async (req) => {
           return every;
         }
       }
+      // ค่าไม่ตรงกันระหว่างแถว = "ไม่รู้ว่าอันไหนใช่" ไม่ใช่ "ไม่มี" — แยกให้ขาด (รายงานคนละช่อง)
+      if ([r.mat, ...r.mats].some(m => lotConflict.has(m))) return null;
       noLot.add(r.mat);        // ยังไม่ตั้ง lot_size → รายงานออกไป ไม่เงียบ
       return null;
     };
@@ -379,7 +431,29 @@ Deno.serve(async (req) => {
           middle_no_lot_size: [...noLot],
           // ตั้ง lot_size ไว้ แต่เล็กจนไม่น่าใช่ขนาดล็อตจริง (เช่น 1) → ไม่ตั้ง Middle · ต้องไปแก้ master
           middle_lot_too_small: [...tooSmall].map(([mat, every]) => ({ mat, every, min: midMin })),
-          mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every })),
+          // every มาจากช่องไหน ต้องบอกได้เสมอ — ไม่งั้นวินิจฉัยไม่ออกว่าหยิบผิดตารางอีกหรือเปล่า
+          mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every, from: lotSource.get(mat) ?? 'rule' })),
+          // lot_size ไม่ตรงกันระหว่างแถวของ mat เดียวกัน → ไม่เลือกให้เอง ต้องไปจัดข้อมูล/ตั้ง override
+          middle_lot_conflict: [...lotConflict].map(([mat, lots]) => ({ mat, lots })),
+          /* ⚠️ would_create = 0 ต้องอธิบายได้เสมอ ห้ามให้เดาเอง
+             เหตุที่พบบ่อยคือ "เหตุการณ์เก่ากว่า skip_older_min" ไม่ใช่ระบบไม่ทำงาน */
+          skipped_old: skippedOld, skip_older_min: cfg.skip_older_min,
+          // ค่าดิบจาก kanban_standards ของ **ทุก mat ที่อยู่ในรอบจริง** (ไม่ผูกกับ would_create
+          // ไม่งั้นรอบที่ไม่มีอะไรจะสร้าง = ดัมพ์ว่างเปล่า ซึ่งเป็นรอบที่อยากดูข้อมูลที่สุด)
+          kanban_rows: [...new Set([...runs.values()].flatMap(r => [r.mat, ...r.mats]))]
+            .map(m => ({
+              mat: m,
+              std: (lotRows.get(m) ?? []).map(k => ({
+                lot_size: k.lot_size, qty_per_kanban: k.qty_per_kanban,
+                min_qty: k.min_qty, max_qty: k.max_qty,
+              })),
+              param: paramRows.get(m)
+                ? { calc_type: paramRows.get(m)!.calc_type, lot_qty: paramRows.get(m)!.lot_qty,
+                    lot_size_cards: paramRows.get(m)!.lot_size, packaging: paramRows.get(m)!.packaging }
+                : null,
+              used: lotByMat.get(m) ?? null, from: lotSource.get(m) ?? null,
+            }))
+            .filter(x => x.std.length || x.param),
           mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
           mid_min_pcs: midMin, mid_max_per_run: Number(cfg.mid_max_per_run ?? 12),
         },

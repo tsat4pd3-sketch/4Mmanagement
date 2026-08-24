@@ -79,6 +79,11 @@ model: inherit
   ควบคุมคุณภาพ QA/QC 7xx · วิศวกรรม (PE) 8xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 9xx — ห้ามซ้ำเลขเดิม)
   พิมพ์ชื่อหมวดเองเมื่อไหร่ = หมวดกำพร้าโผล่กลางตาราง (เคยเกิด: 'ซ่อมบำรุง'/'ประชุมแถวเช้า')
   · grep: `group_name` ใน supabase/migrations/ เทียบกับ NAV_GROUP_ORDER
+- **C7** หน้า Home ต้องเข้าถึงได้ทุกหมวด (2026-08-24) — `DEPTS` ใน `src/pages/DeptHub.jsx`
+  ต้อง derive จาก `NAV_GROUP_ORDER.map(...)` **ห้ามเขียน array หมวดมือ / ห้ามมี `navGroups:`**
+  (เคยเกิด: เพิ่มหมวด 'วิศวกรรม (PE)' แล้วไม่มีใครเพิ่มการ์ด → `/pe-docs` เข้าจากหน้า Home ไม่ได้เลย
+  โดยไม่มีอะไรฟ้อง) · key ของ `CARD_META` ต้องเป็นชื่อหมวดใน NAV_GROUP_ORDER เท่านั้น
+  · เทสล็อกไว้แล้ว: `node --test 'src/utils/__tests__/*.test.mjs'` (homeCoverage)
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext

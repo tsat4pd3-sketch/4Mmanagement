@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
+import resizeImg from '../utils/resizeImage';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -12,6 +13,7 @@ import PeExcelImportModal from '../components/PeExcelImportModal';
 import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 import PeChangeRequests from '../components/PeChangeRequests';
 import PeRoutingSuggest from '../components/PeRoutingSuggest';
+import LineSelect from '../components/LineSelect';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -21,22 +23,8 @@ import PeRoutingSuggest from '../components/PeRoutingSuggest';
 
 /* รูป product/drawing + รูปประกอบ OP — bucket pe-images (Main) · บีบ 2560px/q0.9 (tier drawing ต้องซูมอ่านได้)
    GIF ส่งดิบ ≤2MB ตามกติกา storage (วาดลง canvas = การขยับหายเงียบ) */
-function resizeImage(file, maxPx = 2560, quality = 0.9) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 2560, quality = 0.9) => resizeImg(file, maxPx, quality);
 const peImagePath = (url) => { const p = url?.split('/pe-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removePeImage = (url) => { const p = peImagePath(url); if (p) supabase.storage.from('pe-images').remove([p]).catch(() => {}); };
 
@@ -605,10 +593,8 @@ export default function PEDocs() {
             <label style={lbl}>Model<input value={setModal.model || ''} onChange={e => setSetModal({ ...setModal, model: e.target.value })} placeholder="P703" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Customer<input value={setModal.customer || ''} onChange={e => setSetModal({ ...setModal, customer: e.target.value })} placeholder="FORD" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>ไลน์หลักที่ผลิต
-              <select value={setModal.line_name || ''} onChange={e => setSetModal({ ...setModal, line_name: e.target.value })} style={{ marginTop: 4 }}>
-                <option value="">— ไม่ระบุ —</option>
-                {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
+              <LineSelect lines={lineOpts} value={setModal.line_name || ''} placeholder="— ไม่ระบุ —"
+                style={{ marginTop: 4 }} onChange={v => setSetModal({ ...setModal, line_name: v })} />
             </label>
             <label style={lbl}>สถานะ
               <select value={setModal.status} onChange={e => setSetModal({ ...setModal, status: e.target.value })} style={{ marginTop: 4 }}>
@@ -688,10 +674,8 @@ export default function PEDocs() {
               <datalist id="pe-machines">{machines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_name || ''} · {m.line_name || ''}</option>)}</datalist>
             </label>
             <label style={lbl}>ไลน์/พื้นที่
-              <select value={procModal.line_name || ''} onChange={e => setProcModal({ ...procModal, line_name: e.target.value })} style={{ marginTop: 4 }}>
-                <option value="">— ไม่ระบุ —</option>
-                {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
+              <LineSelect lines={lineOpts} value={procModal.line_name || ''} placeholder="— ไม่ระบุ —"
+                style={{ marginTop: 4 }} onChange={v => setProcModal({ ...procModal, line_name: v })} />
             </label>
             <label style={lbl}>ตัวเชื่อมผัง (A-G)<input value={procModal.connector || ''} onChange={e => setProcModal({ ...procModal, connector: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Special Char.

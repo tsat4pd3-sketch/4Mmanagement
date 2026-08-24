@@ -16,6 +16,9 @@ import ScrollHint from './components/ScrollHint';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
+import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
+import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
+const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
 const Register     = lazy(() => import('./pages/Register'));
@@ -280,13 +283,16 @@ function SplashScreen({ onDone }) {
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
-export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs }) {
+export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs, onAvatarSaved }) {
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  // 📷 เปลี่ยนรูปโปรไฟล์ — เดิมมีเฉพาะหน้า Home (DeptHub) sidebar ไม่มี (drift · แก้ 2026-08-21)
+  const avatarRef = useRef(null);
+  const [avatarFile, setAvatarFile] = useState(null);   // ไฟล์ที่เลือก → ส่งเข้า ImageCropModal
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
   const [footerOpen, setFooterOpen] = useState(() => { try { return localStorage.getItem('sb_footer_open') === '1'; } catch { return false; } });
   const toggleFooter = () => setFooterOpen(v => { try { localStorage.setItem('sb_footer_open', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
@@ -397,111 +403,86 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     </div>
   );
 
-  // เมนูโปรไฟล์ชุดเดียว ใช้ทั้ง drawer มือถือ + แผง '__me' บน desktop — ห้าม copy JSX ซ้ำ
+  /* ── เมนูโปรไฟล์ — render จาก descriptor กลาง `buildProfileMenu` (src/utils/profileMenu.js)
+     รายการเมนู "มีอะไรบ้าง" อยู่ที่ไฟล์นั้นที่เดียว ใช้ร่วมกับ dropdown มุมขวาบนของหน้า Home
+     (DeptHub) — เดิมเขียนแยกกัน 2 ชุดแล้ว drift (หน้า Home ไม่มี 💬/🎭/รีโมท · sidebar ไม่มี 📷)
+     ที่นี่รับผิดชอบแค่ "หน้าตา" ของแถวเมนู · JSX ชุดนี้ใช้ทั้ง drawer มือถือ + แผง '__me' desktop */
+  const profileItems = buildProfileMenu({
+    realRole, canRemote: canAccessPage('/remote', userRole), remoteCode, theme,
+    on: {
+      avatar:       () => avatarRef.current?.click(),
+      signature:    () => setSigModalOpen(true),
+      password:     () => setPwdModalOpen(true),
+      feedback:     () => setFbOpen(true),
+      viewAs:       onOpenViewAs,
+      toggleRemote: onToggleRemote,
+      toggleTheme:  onToggleTheme,
+      logout:       onLogout,
+    },
+  });
+
   const profileActions = (closeNav) => (<>
-    <button
-      onClick={() => setSigModalOpen(true)}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-    >
-      <span style={{ fontSize: 15, flexShrink: 0 }}>✍️</span>
-      <span style={{ whiteSpace: 'nowrap' }}>ลายเซ็น</span>
-    </button>
-
-    <button
-      onClick={() => setPwdModalOpen(true)}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-    >
-      <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
-      <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
-    </button>
-
-    {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
-        admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
-    <button
-      onClick={() => setFbOpen(true)}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-    >
-      <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
-      <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
-    </button>
-
-    {/* 🎭 จำลองมุมมอง role — admin จริงเท่านั้น (ตรวจว่า role อื่นเห็นเมนู/ปุ่มอะไร โดยไม่ต้องสลับบัญชี) */}
-    {realRole === 'admin' && onOpenViewAs && (
-      <button
-        onClick={() => { onOpenViewAs(); closeNav?.(); }}
-        className="nav-link"
-        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#c084fc' }}
-      >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>🎭</span>
-        <span style={{ whiteSpace: 'nowrap' }}>จำลองมุมมอง role (ทดสอบ)</span>
-      </button>
-    )}
-
-    {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
-        🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
-    {canAccessPage('/remote', userRole) && (<>
-      <Link
-        to="/remote"
-        onClick={closeNav}
-        className="nav-link"
-        style={{ color: location.pathname === '/remote' ? 'var(--accent)' : 'var(--text2)' }}
-      >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>🎮</span>
-        <span style={{ whiteSpace: 'nowrap' }}>รีโมทจอ (คุมจากมือถือ)</span>
-      </Link>
-      <button
-        onClick={onToggleRemote}
-        className="nav-link"
-        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
-      >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
-        <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
-      </button>
-    </>)}
-
-    <button
-      onClick={onToggleTheme}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 15, flexShrink: 0 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
-        <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>
-          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-        </span>
-      </div>
-      <div style={{
-        width: 36, height: 20, borderRadius: 10, flexShrink: 0,
-        background: theme === 'dark' ? 'var(--accent)' : 'var(--border2)',
-        position: 'relative',
-        transition: 'background 0.25s',
-      }}>
-        <div style={{
-          position: 'absolute', top: 2,
-          left: theme === 'dark' ? 18 : 2,
-          width: 16, height: 16, borderRadius: '50%',
-          background: '#fff',
-          transition: 'left 0.25s',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-        }} />
-      </div>
-    </button>
-
-    <button
-      onClick={onLogout}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#ff6b6b' }}
-    >
-      <span style={{ fontSize: 15 }}>🚪</span>
-      <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
-    </button>
+    {profileItems.map(it => {
+      const style = { background: 'none', border: 'none', width: '100%', textAlign: 'left', color: it.color || 'var(--text2)' };
+      if (it.to) {
+        return (
+          <Link key={it.key} to={it.to} onClick={closeNav} className="nav-link"
+            style={{ color: location.pathname === it.to ? 'var(--accent)' : (it.color || 'var(--text2)') }}>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
+          </Link>
+        );
+      }
+      if (it.kind === 'toggle') {
+        return (
+          <button key={it.key} onClick={it.onClick} className="nav-link"
+            style={{ ...style, justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+              <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{it.label}</span>
+            </div>
+            <div style={{
+              width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+              background: it.on ? 'var(--accent)' : 'var(--border2)',
+              position: 'relative', transition: 'background 0.25s',
+            }}>
+              <div style={{
+                position: 'absolute', top: 2, left: it.on ? 18 : 2,
+                width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }} />
+            </div>
+          </button>
+        );
+      }
+      return (
+        <button key={it.key} onClick={() => { it.onClick?.(); if (it.key !== 'logout') closeNav?.(); }}
+          className="nav-link" style={style}>
+          <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+          <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
+        </button>
+      );
+    })}
+    {/* input ไฟล์ของ 📷 เปลี่ยนรูปโปรไฟล์ — ซ่อนไว้ กดผ่านรายการเมนูด้านบน */}
+    <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }}
+      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setAvatarFile(f); }} />
   </>);
 
   const modals = (<>
     {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
+    {avatarFile && (
+      <Suspense fallback={null}>
+        <ImageCropModal file={avatarFile} aspect={1} shape="circle" outputSize={480}
+          title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setAvatarFile(null)}
+          onConfirm={async (blob) => {
+            setAvatarFile(null);
+            const res = await uploadMyAvatar(blob, userAvatarUrl);   // helper กลาง (ใช้ร่วมกับหน้า Home)
+            if (!res.ok) { toast.error(res.message); return; }
+            onAvatarSaved?.(res.url);
+            toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
+          }} />
+      </Suspense>
+    )}
     <SignatureModal
       open={sigModalOpen}
       onClose={() => setSigModalOpen(false)}
@@ -1355,7 +1336,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
       maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
     }}>
-      <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}</span>
+      <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}{viewAs.mtnTeams?.length ? ` + 🔧 ${viewAs.mtnTeams.length} ทีมช่าง` : ''}</span>
       <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>การบันทึกยังเป็นสิทธิ์จริงของ admin</span>
       <button onClick={() => onApplyViewAs(null)}
         style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: '#a855f7', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
@@ -1417,8 +1398,22 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
-            userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved} />
+            userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved}
+            realRole={realRole} onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+            remoteCode={remoteCode} onToggleRemote={onToggleRemote}
+            onOpenSearch={() => setPaletteOpen(true)} />
         </Suspense>
+        {/* 🔎 ค้นหาเมนู — หน้า Home ต้องมีเหมือนหน้าอื่น (Ctrl+K ที่ผูกไว้ด้านบนทำงานทุกหน้าอยู่แล้ว
+            แต่เดิม mount palette เฉพาะ branch ล่าง → กด Ctrl+K ที่หน้า Home แล้วไม่มีอะไรขึ้น) */}
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
+        </Suspense>
+        {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
+        {remoteCode && (
+          <Suspense fallback={null}>
+            <RemoteReceiver code={remoteCode} onStop={onToggleRemote} />
+          </Suspense>
+        )}
         {viewAsBanner}
         {viewAsModal}
       </UserContext.Provider>
@@ -1464,6 +1459,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           onTogglePin={toggleRailPin}
           realRole={realRole}
           onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+          onAvatarSaved={onAvatarSaved}
         />
         {viewAsBanner}
         {viewAsModal}
@@ -1752,7 +1748,10 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin').eq('id', user.id).single();
+    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
+    let { data, error } = await supabase.from('profiles').select(COLS + ', employee_id').eq('id', user.id).single();
+    // คอลัมน์ employee_id ยังไม่ apply (42703) → ถอยไป select ชุดเดิม ห้ามให้ login พังทั้งระบบ
+    if (error?.code === '42703') ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1768,15 +1767,36 @@ export default function App() {
       // เพราะ localStorage แชร์ข้ามแท็บ เดี๋ยวพาแท็บอื่นที่ดีๆ อยู่หลุดไปด้วย
       return;
     }
+    // ── ตัวตน (ทีม/ไลน์/ส่วนงาน) = **ฐานพนักงาน** เมื่อบัญชีผูกกับพนักงานแล้ว ────────────
+    //   เดิมอ่านจาก profiles ล้วน ซึ่ง admin กรอกเองตอนสร้าง user → ไม่ตรงกับที่หัวหน้าแผนกตั้งไว้
+    //   เคสจริง: หัวหน้า 2 คนทีมสลับกัน → Checkin กรองด้วย team ของบัญชี = มองไม่เห็นกะตัวเอง
+    //
+    // ⚠️ fallback รายฟิลด์ (`??`) จำเป็นระหว่างเปลี่ยนผ่าน **ห้ามถอดจนกว่าจะผูกครบทุกบัญชี**
+    //   ยังไม่ผูก / ฐานพนักงานเว้นช่องนั้นว่าง → ใช้ค่าเดิมในบัญชี
+    //   ถ้าถอดตอนนี้: leader 11 คนเสีย line_id+team ทันที = เปิดหน้าเช็คชื่อไม่เห็นใครเลย
+    //   (วัดแล้ว 2026-08-21 — ดูกฎ "ตัวตนของคนอยู่ที่ employees" ใน CLAUDE.md)
+    //
+    // ⚠️ `sections[]` **ไม่ย้าย** — เป็น "ขอบเขตที่ admin ให้" ไม่ใช่ตัวตน และ employees ไม่มีของเทียบเท่า
+    let ident = { team: data?.team ?? null, line_id: data?.line_id ?? null, section: data?.section ?? null };
+    if (data?.employee_id) {
+      const { data: emp } = await supabase.from('employees')
+        .select('team, line_id, section').eq('id', data.employee_id).maybeSingle();
+      if (emp) ident = {
+        team:    emp.team    ?? ident.team,
+        line_id: emp.line_id ?? ident.line_id,
+        section: emp.section ?? ident.section,
+      };
+    }
+
     setUserRole(data?.role ?? null);
-    setUserLineId(data?.line_id ?? null);
+    setUserLineId(ident.line_id);
     setUserFullName(data?.full_name ?? null);
     setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
-    setUserTeam(data?.team ?? null);
-    setUserSection(data?.section ?? null);
+    setUserTeam(ident.team);
+    setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
     loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
-    setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
+    setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง
