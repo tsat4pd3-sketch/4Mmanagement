@@ -169,13 +169,20 @@ function ImgField({ label, value, onPick, required }) {
     </div>
   );
 }
-function ModalShell({ title, onClose, children, wide }) {
+/* ⚠️ backdrop **ไม่มี onClick โดยตั้งใจ** — ฟอร์มขั้น 1-7 ยาว เผลอแตะข้างนอกแล้วปิด = กรอกใหม่ทั้งใบ
+   (UI-CONVENTIONS §5 · ห้ามเติม onClick={onClose} ที่ div ชั้นนอก)
+   ส่วน ✕ / ยกเลิก เป็นการกดที่ "ตั้งใจ" → ถามยืนยันเมื่อกรอกอะไรไปแล้ว (prop `dirty`) */
+function confirmDiscard() {
+  return window.confirm('ปิดหน้าต่างนี้? ข้อมูลที่กรอกไว้ยังไม่ได้บันทึก — จะหายทั้งหมด');
+}
+function ModalShell({ title, onClose, children, wide, dirty }) {
+  const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '4vh 2vw' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: wide ? 'min(96vw, 1200px)' : 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <button onClick={askClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ padding: 18 }}>{children}</div>
       </div>
@@ -402,7 +409,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   const [beforeFile, setBeforeFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ฟอร์มนี้ยาว กรอกใหม่ทั้งใบเจ็บมาก)
+  const [dirty, setDirty] = useState(false);
+  const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
+  const pickBefore = (file) => { setDirty(true); setBeforeFile(file); };
+  const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
   // แจ้งซ่อม "แม่พิมพ์" หรือ "เครื่องจักร"? — ตัดสินจากชนิดอุปกรณ์ที่เลือก แล้วค่อยดูทีมที่แจ้งถึง
   //   ⚠️ แม่พิมพ์ผูก line_name เป็น "ชื่อกลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งไม่มีใน production_lines
   //      → กรองด้วยไลน์ที่เลือกในฟอร์มจะไม่มีวันเจอแม่พิมพ์เลย (เจอจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01)
@@ -504,7 +515,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   };
 
   return (
-    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} wide>
+    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty} wide>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
@@ -576,11 +587,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
         <Field label="ผู้แจ้ง (ผลิต)"><input value={f.reporter_prod} onChange={e => set('reporter_prod', e.target.value)} style={inp} /></Field>
         <Field label="ผู้แจ้ง (คุณภาพ)"><input value={f.reporter_qa} onChange={e => set('reporter_qa', e.target.value)} style={inp} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={setBeforeFile} /></div>
+        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={pickBefore} /></div>
         <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
+        <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : 'บันทึกใบแจ้งซ่อม'}</button>
       </div>
       {scanOpen && (
@@ -1041,13 +1052,17 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   const [sig, setSig] = useState({ mode: signatureUrl ? 'profile' : 'draw', url: signatureUrl, blob: null });
   const [usedParts, setUsedParts] = useState([]);
   const [saving, setSaving] = useState(false);
-  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ขั้น 3 มีทั้งอะไหล่/รูป/ลายเซ็น กรอกใหม่ทั้งขั้นเจ็บมาก)
+  const [dirty, setDirty] = useState(false);
+  const touch = () => setDirty(true);
+  const set = (k, v) => { touch(); setF(p => ({ ...p, [k]: v })); };
+  const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
   const isReject = step === 2 && f.repair_type === 'Reject MO';
   const needSign = [4, 5, 6, 7].includes(step);
 
-  const addPart = () => setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]);
-  const setPart = (i, k, v) => setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x));
-  const pickPart = (i, id) => { const pt = parts.find(p => p.id === id); setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id, name: pt?.name || '', unit: pt?.unit || '' } : x)); };
+  const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]); };
+  const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
+  const pickPart = (i, id) => { touch(); const pt = parts.find(p => p.id === id); setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id, name: pt?.name || '', unit: pt?.unit || '' } : x)); };
 
   const resolveSign = async (field) => {
     if (sig.mode === 'profile' && sig.url) return sig.url;
@@ -1158,7 +1173,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 
   const titles = { 2: '🔧 รับ/จ่ายงานซ่อม (Step 2)', 3: '🛠 ดำเนินการซ่อม (Step 3)', 4: '🔎 ตรวจสอบหลังซ่อม (Step 4)', 5: '🧪 คุณภาพหลังซ่อม (Step 5)', 6: '🤝 รับมอบ/ติดตาม (Step 6)', 7: '✅ อนุมัติปิด MO (Step 7)' };
   return (
-    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${titles[step]}`} onClose={onClose}>
+    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${titles[step]}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
         {step === 2 && <>
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
@@ -1191,7 +1206,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
             <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
             <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
           </div>
-          <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={setAfterFile} />
+          <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={f2 => { touch(); setAfterFile(f2); }} />
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ (เบิก — หักสต็อกอัตโนมัติ)</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
             {usedParts.map((p, i) => (
@@ -1199,7 +1214,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
                 <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: '2 1 140px' }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
                 <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: '2 1 120px' }} />
                 <input type="number" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 70 }} />
-                <button type="button" onClick={() => setUsedParts(x => x.filter((_, j) => j !== i))} className="tbtn" style={{ ...btnGhost, padding: '6px 8px' }}>✕</button>
+                <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px' }}>✕</button>
               </div>
             ))}
             {editMode && <div style={{ fontSize: 11, color: 'var(--muted)' }}>* แก้ไข: เพิ่มอะไหล่ใหม่ได้ (รายการเดิมที่หักสต็อกไปแล้วไม่ถูกลบ)</div>}
@@ -1225,7 +1240,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           <Field label="ชื่อผู้ตรวจสอบ (QA)"><input value={f.qa_checker} onChange={e => set('qa_checker', e.target.value)} style={inp} /></Field>
-          <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={setQaFile} />
+          <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
         {step === 6 && <>
           <Field label="ติดตามหลังซ่อม"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
@@ -1253,10 +1268,10 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="ชื่อผู้อนุมัติ"><input value={f.approver_name} onChange={e => set('approver_name', e.target.value)} style={inp} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
-        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: 'approve_sign' }[step]]} onChange={setSig} /></Field>}
+        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: 'approve_sign' }[step]]} onChange={v => { touch(); setSig(v); }} /></Field>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
+        <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
       </div>
     </ModalShell>

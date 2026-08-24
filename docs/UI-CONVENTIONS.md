@@ -248,10 +248,22 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 
 ## 5. Modal & Popup
 
-### Modal ที่มีฟอร์มกรอกข้อมูล (คำสั่ง user 2026-07-09)
+### Modal ที่มีฟอร์มกรอกข้อมูล (คำสั่ง user 2026-07-09 · audit ทั้งระบบ 2026-08-21)
 - **ห้ามปิดจากการคลิกพื้นหลัง (backdrop)** — เผลอแตะแล้วข้อมูลที่พิมพ์อยู่หายทั้งฟอร์ม ปิดได้จากปุ่ม ✕ / ยกเลิก เท่านั้น
-- popup ที่**แสดงผลอย่างเดียว** (ไม่มี input) ปิดจากคลิกนอกกรอบ/auto-hide ได้ตามเดิม
-- ต้นแบบ: `QualityControl.jsx`, `QAInspectionSetup.jsx` (Modal กลาง), `PMCheckData.jsx` (HistoryModal)
+  - เขียนโค้ดคือ **ห้ามใส่ `onClick={onClose}` ที่ `<div>` ชั้นนอก** (ตัวที่ `position:fixed; inset:0`)
+  - ใส่คอมเมนต์กำกับที่ tag ชั้นนอกด้วยเสมอ ไม่งั้นคนถัดไป "ช่วยเติมให้" กลับมา — greppable: `ไม่ปิดจาก backdrop`
+  - `onClick={e => e.stopPropagation()}` ที่การ์ดชั้นในปล่อยไว้ได้ (ไม่มีผล แต่กันพลาดถ้าวันหน้ามีใครเติม handler)
+- **✕ / ยกเลิก = การกดที่ "ตั้งใจ" → ถามยืนยันเมื่อกรอกไปแล้ว** (ฟอร์มยาว/หลายขั้น) — เก็บ state `dirty`
+  ตั้งเป็น true ในตัว setter ทุกทาง (ช่องกรอก · แนบรูป · เพิ่ม-ลบแถว · ลายเซ็น) แล้วค่อย `window.confirm`
+  · ต้นแบบ: `ModalShell` + `confirmDiscard()` ใน `MtnRepair.jsx` (ขั้น 1-7)
+  · **ฟอร์มสั้น 2-3 ช่องไม่ต้องทำ** — ถามยืนยันพร่ำเพรื่อแล้วคนกดผ่านโดยไม่อ่าน
+- popup ที่**แสดงผลอย่างเดียว** (ไม่มี input) ปิดจากคลิกนอกกรอบ/auto-hide ได้ตามเดิม —
+  ตัวที่ตั้งใจคงไว้: modal เรื่องราวไลน์/OEE ใน `FactoryMap` · lightbox รูปใน `PEDocs` · ประวัติอะไหล่ใน
+  `SparePartMaster` · `DayModal` ใน `PMSchedule` · preview ใน `PlannerSales` · ตัวรับคลิกนอก popover (`zIndex:998`)
+- **⚠️ modal ที่ "เลือกไว้เยอะ" ก็นับเป็นฟอร์ม** ถึงไม่มีช่องพิมพ์ — เช่นติ๊กเลือกไลน์×ชนิดภาชนะ (QR label),
+  พรีวิวผลนำเข้าไฟล์ที่ parse มาแล้ว · เผลอแตะแล้วต้องเลือกใหม่ทั้งชุด = เสียงานเท่ากัน
+- ต้นแบบ: `QualityControl.jsx`, `QAInspectionSetup.jsx` (Modal กลาง), `PMCheckData.jsx` (HistoryModal),
+  `MtnRepair.jsx` (`ModalShell` — ครอบ ReportModal + DetailDrawer + StepModal ทั้ง 7 ขั้น)
 
 ### Modal ที่โชว์รูปผัง
 - ต้อง fit **จอเดียว ไม่มี scroll**: `width: fit-content; maxWidth: 97vw; maxHeight: 97vh; overflow: hidden` + รูป `maxWidth/maxHeight + width/height: auto` (จำกัดสองแกน)
