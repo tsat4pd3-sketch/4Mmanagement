@@ -230,18 +230,23 @@ export default function FlowTower() {
       </div>
 
       {/* ── สายธาร ── */}
-      <div style={{ overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, minWidth: 1180 }}>
+      {/* ⚠️ ห้ามให้ล้นออกนอกจอแนวนอน (user 2026-08-24 — สถานีที่ 8 ถูกตัดขอบขวา)
+          8 สถานี × 158 + 7 ลูกศร × 96 = 1,936px ซึ่งเกินความกว้างจอทำงานจริง (~1,830px)
+          → การ์ดคงขนาดเท่ากันทุกใบ (อ่านเทียบกันได้) แต่ **ลูกศรเป็นตัวยืด-หด**
+            กว้างพอ = ลูกศรยาวขึ้นเต็มแถวเดียว · แคบลง = ลูกศรหดถึง 40px แล้วค่อย **ตัดลงแถวใหม่**
+          ลูกศรติดไปกับการ์ดต้นทางเสมอ (อยู่ใน wrapper เดียวกัน) → ตัดแถวแล้วไม่มีลูกศรกำพร้าลอยหัวแถว */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap', rowGap: 10 }}>
           {stations.map((s, i) => {
             const dv = divOf(s.divCode); const st = ST[s.st] || ST.idle;
             const lk = links[i];
             return (
-              <div key={s.key} style={{ display: 'flex', alignItems: 'stretch' }}>
+              <div key={s.key} style={{ display: 'flex', alignItems: 'stretch', flex: '1 1 auto' }}>
                 <div
                   onClick={() => s.to && navigate(s.to)}
                   title={s.note || (s.to ? `เปิดหน้า ${s.to}` : '')}
                   style={{
-                    ...card, width: 158, padding: '10px 12px', borderTop: `3px solid ${dv.color}`,
+                    ...card, width: 158, flexShrink: 0, padding: '10px 12px', borderTop: `3px solid ${dv.color}`,
                     cursor: s.to ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 4,
                     opacity: 1,
                   }}>
@@ -259,7 +264,7 @@ export default function FlowTower() {
                   </div>
                 </div>
                 {lk && i < stations.length - 1 && (
-                  <div style={{ width: 96, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                  <div style={{ flex: '1 1 96px', minWidth: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
                     <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{lk.label}</div>
                     <div style={{ width: '100%', height: 2, background: ST[lk.st].dot, opacity: 0.75, position: 'relative' }}>
                       <span style={{ position: 'absolute', right: -1, top: -4, color: ST[lk.st].dot, fontSize: 11, lineHeight: 1 }}>▶</span>
