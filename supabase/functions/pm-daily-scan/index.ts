@@ -79,8 +79,16 @@ Deno.serve(async () => {
     (sessions ?? []).forEach(s => { sessLine[s.id] = s.line_name; });
     const firstOrder: Record<string, string> = {};
     if (sessions && sessions.length) {
-      const { data: orders } = await db.from('prod_orders').select('session_id, confirmed_at').in('session_id', sessions.map(s => s.id)).not('confirmed_at', 'is', null).order('confirmed_at', { ascending: true });
-      for (const o of orders ?? []) { const ln = sessLine[o.session_id]; if (ln && !firstOrder[ln]) firstOrder[ln] = o.confirmed_at; }
+      /* ⚠️ "เริ่มผลิต" = `opened_at` (เปิดใบ) ไม่ใช่ `confirmed_at` (ปิดใบ = ผลิตเสร็จ)
+         ต้องตรงกับหน้า /daily-checker?tab=pm ไม่งั้นจอกับตัวเตือนตัดสินคนละเวลา
+         (แก้ 2026-08-24 — เดิมนาฬิกาเริ่มนับตอนใบแรกจบ ใบที่กินหลายชั่วโมงเลยไม่เคยถูกเตือน) */
+      const { data: orders } = await db.from('prod_orders').select('session_id, opened_at, confirmed_at').in('session_id', sessions.map(s => s.id));
+      for (const o of orders ?? []) {
+        const ln = sessLine[o.session_id];
+        const at = o.opened_at || o.confirmed_at;
+        if (!ln || !at) continue;
+        if (!firstOrder[ln] || at < firstOrder[ln]) firstOrder[ln] = at;
+      }
     }
 
     const now = Date.now();
