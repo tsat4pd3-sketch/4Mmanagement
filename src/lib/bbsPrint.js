@@ -34,10 +34,11 @@ async function urlToDataUrl(url) {
  * @param {number} p.days       จำนวนวันในเดือน
  * @param {Array}  p.employees  [{ id, employee_id_code, name }]
  * @param {object} p.cells      { `${empId}|${day}`: { mark, agreement_seq, source } }
+ * @param {object} p.rowNotes   { [empId]: 'หมายเหตุท้ายแถว' } — คอลัมน์สุดท้ายของใบกระดาษ
  * @param {Array}  p.agreements [{ seq, text, auto_source }]
  * @param {number} p.autoCount  จำนวนข้อที่ระบบเติมให้ได้ (มี auto_source)
  */
-export async function printBbsSheet({ sheet, days, employees = [], cells = {}, agreements = [], autoCount = 0 }) {
+export async function printBbsSheet({ sheet, days, employees = [], cells = {}, rowNotes = {}, agreements = [], autoCount = 0 }) {
   const df = await getDocForm('bbs_observation', {
     title: 'แบบฟอร์มสังเกตพฤติกรรมความปลอดภัย (BBS)',
     sig_blocks: ['ผู้ตรวจสอบ'],
@@ -63,7 +64,8 @@ export async function printBbsSheet({ sheet, days, employees = [], cells = {}, a
       return `<td class="d ${cls}">${esc(g)}</td>`;
     }).join('');
     return `<tr><td class="n">${i + 1}</td><td class="c">${esc(e.employee_id_code || '')}</td>`
-      + `<td class="nm">${esc(e.name || '')}</td>${tds}<td class="rm"></td></tr>`;
+      + `<td class="nm">${esc(e.name || '')}</td>${tds}`
+      + `<td class="rm">${esc(rowNotes[e.id] || '')}</td></tr>`;
   }).join('');
 
   // ตารางต้องมีแถวเท่าฟอร์มกระดาษเป็นอย่างน้อย (14 แถว) เพื่อให้เขียนเพิ่มด้วยมือได้
@@ -97,7 +99,7 @@ export async function printBbsSheet({ sheet, days, employees = [], cells = {}, a
   td.n, th.n { width: 16px; }
   td.c, th.c { width: 42px; font-size: 8px; }
   td.nm, th.nm { width: 92px; text-align: left; padding-left: 3px; font-size: 8px; white-space: nowrap; }
-  td.rm, th.rm { width: 46px; }
+  td.rm, th.rm { width: 74px; text-align: left; padding-left: 3px; font-size: 7.5px; }
   td.d, th.d { font-size: 8.5px; font-weight: 700; }
   td.m-ng { color: #b91c1c; }
   td.m-na { color: #777; }

@@ -1804,9 +1804,19 @@ migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_req
 | `bbs_agreements` | ข้อตกลงความปลอดภัย 1-13 (`seq`/`text`/**`auto_source`**/`is_active`) |
 | `bbs_sheets` | หัวใบ (`month_key`/`line_name`/`section`/`dept`/`shift`/`inspector_name`/`inspector_code`/**`inspector_sig_url`**) · unique(เดือน, ไลน์, กะ) |
 | `bbs_observations` | 1 แถว = พนักงาน × วัน (`mark` ok\|ng\|fixed\|na · `agreement_seq` · **`source`** ppe\|manual) |
+| `bbs_row_notes` | คอลัมน์ "หมายเหตุ" ท้ายแถวในใบกระดาษ — **1 ช่องต่อพนักงาน 1 คนต่อใบ** (คนละตัวกับ `bbs_observations.note` ที่เป็นหมายเหตุของ**ช่องวันนั้น**) |
 
 migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21** · RLS ผ่าน `has_perm('bbs:record')`/`has_perm('bbs:manage')`
 · **เทสกับ RLS จริงแล้ว** สวมบท `authenticated`: supervisor สร้างใบ/แก้ข้อตกลงได้ · leader บันทึกผลได้แต่แก้ข้อตกลง = 0 แถว)
+
+> ### ⚠️ กับดัก — unique index ของหัวใบต้องเป็น "แบบธรรมดา" ห้าม expression/partial (พังจริง 2026-08-21)
+> เดิมเขียน `unique (month_key, coalesce(line_name,''), coalesce(shift,''))` เพื่อกัน null — **แต่ PostgREST upsert
+> ส่ง `on_conflict=month_key,line_name,shift` เป็นชื่อคอลัมน์เปล่าๆ** infer index ที่มี expression ไม่ได้
+> → error `there is no unique or exclusion constraint matching the ON CONFLICT specification` (42P10)
+> **กับดักตัวเดียวกับ `shift_schedules.dept_name`** ที่จดไว้แล้วในกฎกะหน่วยงานสนับสนุน แต่พลาดซ้ำตอนเขียน BBS
+> **แก้:** บังคับ `line_name`/`shift` เป็น `not null default ''` แล้ว unique index ตรงคอลัมน์ตรงๆ
+> **กติกาใหม่: unique index ที่ PostgREST upsert จะ `on_conflict` ผ่าน ต้องเป็น plain column index เท่านั้น
+> ห้ามมี `coalesce()`/`where` — ถ้าต้องกัน null ให้บังคับ `not null default` ที่คอลัมน์แทน**
 
 > ### ⚠️ กฎเหล็ก 1 — "เติมอัตโนมัติ" ครอบแค่ 3 ข้อจาก 13 ห้ามให้ใบอ้างเกินจริง
 > ระบบเก็บ PPE จริงแค่ **หมวก/รองเท้า/ถุงมือ** (`daily_production_logs.has_helmet/boots/gloves`)
@@ -1835,6 +1845,8 @@ migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21
   · เติมแถวเปล่าให้ครบ 14 แถวเท่าฟอร์มกระดาษ (เขียนเพิ่มด้วยมือหน้างานได้)
 - **สิทธิ์:** `bbs:record` (admin/mgr/sv/leader) · `bbs:manage` (admin/mgr/sv) · `page:/bbs` (ทุก role — ปรับที่ `/permissions`)
   · scope มาตรฐาน (leader = family ไลน์ตัวเอง · อื่น = ตาม `sections`) ครอบทั้ง dropdown ไลน์และรายชื่อพนักงาน
+- **⚠️ ยังไม่ได้กรอกข้อตกลงครบ 13 ข้อ** — จอมีแถบส้มเตือนเมื่อ `agreements.length < 13` ชี้ทางไปปุ่ม 📋 ข้อตกลง
+  (ข้อ 1-3 seed ไว้แล้วเพราะผูก PPE ได้ · 10 ข้อที่เหลืออ่านจากไฟล์ต้นฉบับไม่ได้ ต้องให้คนกรอกเอง)
 - **ยังไม่ทำ:** ยังไม่มีสรุป KPI ข้ามเดือน/ข้ามไลน์ (พาเรโตว่าข้อไหนผิดบ่อย) · ยังไม่ผูกกับ 4M/CAPA เมื่อพบพฤติกรรมซ้ำ
 
 ---

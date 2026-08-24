@@ -48,6 +48,7 @@ export default function BbsCheck() {
   const [signers, setSigners] = useState([]);      // profiles ที่มีลายเซ็น
   const [sheet, setSheet] = useState(null);
   const [cells, setCells] = useState({});
+  const [rowNotes, setRowNotes] = useState({});   // คอลัมน์ "หมายเหตุ" ท้ายแถว (1 ช่อง/คน/ใบ)
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadWarn, setLoadWarn] = useState('');
@@ -133,8 +134,15 @@ export default function BbsCheck() {
         const map = {};
         (obs || []).forEach(o => { map[cellKey(o.employee_id, o.day)] = o; });
         setCells(map);
+
+        const { data: rn } = await supabase.from('bbs_row_notes')
+          .select('employee_id, note').eq('sheet_id', sh.id);
+        const nm = {};
+        (rn || []).forEach(r => { nm[r.employee_id] = r.note || ''; });
+        setRowNotes(nm);
       } else {
         setCells({});
+        setRowNotes({});
       }
     } finally { setLoading(false); }
   }, [lineObj, lines, month, shift]);
@@ -193,6 +201,23 @@ export default function BbsCheck() {
       .upsert(payload, { onConflict: 'sheet_id,employee_id,day' }).select().single();
     if (error) return toast.error(`บันทึกไม่สำเร็จ: ${error.message}`);
     setCells(c => ({ ...c, [key]: data }));
+  };
+
+  /* ── หมายเหตุท้ายแถว (คอลัมน์ "หมายเหตุ" ในใบกระดาษ) ── */
+  const saveRowNote = async (empId, text) => {
+    if (!canRecord) return;
+    const cur = rowNotes[empId] || '';
+    if (cur === text) return;                       // ไม่เปลี่ยน = ไม่ยิง DB
+    const sh = await ensureSheet();
+    if (!sh) return;
+    setRowNotes(m => ({ ...m, [empId]: text }));
+    const { error } = await supabase.from('bbs_row_notes').upsert(
+      { sheet_id: sh.id, employee_id: empId, note: text || null, updated_by_name: fullName || null },
+      { onConflict: 'sheet_id,employee_id' });
+    if (error) {
+      setRowNotes(m => ({ ...m, [empId]: cur }));   // คืนค่าเดิม ไม่ให้จอโกหกว่าบันทึกแล้ว
+      toast.error(`บันทึกหมายเหตุไม่สำเร็จ: ${error.message}`);
+    }
   };
 
   /* ── เติมจากผลตรวจ PPE ──────────────────────────────────────────────────
@@ -298,7 +323,7 @@ export default function BbsCheck() {
   const doPrint = async () => {
     if (!sheet) return toast.error('ยังไม่มีใบของเดือน/ไลน์นี้ — บันทึกอย่างน้อย 1 ช่องก่อน');
     const ok = await printBbsSheet({
-      sheet, days, employees: emps, cells, agreements, autoCount: autoAgreements.length,
+      sheet, days, employees: emps, cells, rowNotes, agreements, autoCount: autoAgreements.length,
     });
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้ก่อน');
   };
@@ -391,6 +416,13 @@ export default function BbsCheck() {
             ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ<b>ไม่ทับ</b>ช่องที่กรอกเอง
             และ<b>ไม่เติม</b>วันที่ไม่มีบันทึกเช็คชื่อ
           </div>
+          {/* ⚠️ ข้อความ 13 ข้อในไฟล์ Excel ต้นฉบับฝังเป็น OLE object แกะไม่ได้ → ต้องให้คนกรอกเอง
+              ห้ามเดาข้อความ · แต่ต้องบอกว่ายังไม่ครบ ไม่งั้นคนคิดว่าระบบมีแค่นี้ */}
+          {agreements.length < 13 && (
+            <div style={{ color: '#f59e0b', marginTop: 3, fontWeight: 700 }}>
+              📋 ยังมีข้อตกลงแค่ {agreements.length} ข้อ — ใบจริงมี 13 ข้อ กด “ข้อตกลง” เพื่อเพิ่มให้ครบ
+            </div>
+          )}
         </div>
       </div>
 
@@ -439,6 +471,7 @@ export default function BbsCheck() {
                 {Array.from({ length: days }, (_, i) => i + 1).map(d => (
                   <th key={d} style={{ ...th(26), color: `${month}-${String(d).padStart(2, '0')}` === today ? 'var(--accent)' : undefined }}>{d}</th>
                 ))}
+                <th style={th(150, 'left')}>หมายเหตุ</th>
               </tr>
             </thead>
             <tbody>
@@ -462,6 +495,13 @@ export default function BbsCheck() {
                         }}>{markGlyph(c)}</td>
                     );
                   })}
+                  {/* คอลัมน์ "หมายเหตุ" ตามใบกระดาษ — 1 ช่องต่อคนต่อใบ (ไม่ใช่ต่อวัน) */}
+                  <td style={{ ...td(), padding: 2 }}>
+                    <input defaultValue={rowNotes[e.id] || ''} readOnly={!canRecord}
+                      onBlur={ev => saveRowNote(e.id, ev.target.value.trim())}
+                      placeholder={canRecord ? '—' : ''}
+                      style={{ width: '100%', padding: '3px 5px', fontSize: 11, border: '1px solid transparent', background: 'transparent', color: 'var(--text)' }} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -536,7 +576,13 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         seq: r.seq, text: String(r.text).trim(), auto_source: r.auto_source || null, is_active: true,
       }));
       const { error } = await supabase.from('bbs_agreements').upsert(up).select('id');
-      if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+      if (error) {
+        // 23505 = ชนกับ unique index ของเลขข้อ (bbs_agree_seq_uniq) — แปลเป็นภาษาคน
+        toast.error(error.code === '23505'
+          ? 'เลขข้อซ้ำกับข้อที่มีอยู่แล้ว — เปลี่ยนเลขข้อแล้วบันทึกใหม่'
+          : `บันทึกไม่สำเร็จ: ${error.message}`);
+        return;
+      }
 
       // ข้อที่ถูกลบออกจากลิสต์ = ปิดใช้งาน (soft delete — ใบเก่าที่อ้างเลขข้อต้องยังอ่านออก)
       const keep = new Set(up.filter(u => u.id).map(u => u.id));

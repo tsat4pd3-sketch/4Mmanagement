@@ -33,10 +33,10 @@ create unique index if not exists bbs_agree_seq_uniq on public.bbs_agreements (s
 create table if not exists public.bbs_sheets (
   id            uuid primary key default gen_random_uuid(),
   month_key     text not null,               -- 'YYYY-MM'
-  line_name     text,                        -- ไลน์/พื้นที่ (ตรงกับ production_lines.name)
+  line_name     text not null default '',    -- ไลน์/พื้นที่ (ตรงกับ production_lines.name)
   section       text,                        -- ส่วนงาน
   dept          text,                        -- แผนก
-  shift         text,                        -- day | night | '' (ทั้งวัน)
+  shift         text not null default '',    -- day | night | '' (ทั้งวัน)
   -- ผู้ตรวจสอบ + ลายเซ็น — snapshot ตอนบันทึก (คนเปลี่ยนตำแหน่ง/ลาออก ใบเก่าต้องอ่านออก)
   inspector_name text,
   inspector_code text,
@@ -47,8 +47,13 @@ create table if not exists public.bbs_sheets (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
+-- ⚠️ ต้องเป็น unique index "แบบธรรมดา" ห้าม expression/partial
+--    PostgREST upsert ส่ง on_conflict เป็นชื่อคอลัมน์เปล่า ๆ → infer coalesce()/where ไม่ได้
+--    → error 42P10 "no unique or exclusion constraint matching the ON CONFLICT specification"
+--    (เคยพลาดจริง 2026-08-21 · กับดักตัวเดียวกับ shift_schedules.dept_name)
+--    จึงบังคับ line_name/shift ไม่เป็น null (ใช้ '' แทน) แล้ว unique ตรงคอลัมน์
 create unique index if not exists bbs_sheet_uniq
-  on public.bbs_sheets (month_key, coalesce(line_name,''), coalesce(shift,''));
+  on public.bbs_sheets (month_key, line_name, shift);
 
 /* ── 3) ผลสังเกตรายวัน (1 แถว = พนักงาน × วัน) ───────────────────────────── */
 create table if not exists public.bbs_observations (
@@ -70,10 +75,24 @@ create table if not exists public.bbs_observations (
 create unique index if not exists bbs_obs_uniq on public.bbs_observations (sheet_id, employee_id, day);
 create index if not exists bbs_obs_sheet_idx on public.bbs_observations (sheet_id);
 
+/* ── 4) หมายเหตุท้ายแถว (คอลัมน์ "หมายเหตุ" ในใบกระดาษ) ─────────────────────
+   1 ช่องต่อพนักงาน 1 คนต่อใบ — ⚠️ คนละตัวกับ bbs_observations.note ที่เป็นหมายเหตุของช่องวันนั้น */
+create table if not exists public.bbs_row_notes (
+  id          uuid primary key default gen_random_uuid(),
+  sheet_id    uuid not null references public.bbs_sheets(id) on delete cascade,
+  employee_id uuid not null references public.employees(id) on delete cascade,
+  note        text,
+  updated_by_name text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create unique index if not exists bbs_row_note_uniq on public.bbs_row_notes (sheet_id, employee_id);
+
 /* ── RLS — Main project = authenticated (ต่างจากฝั่ง DR ที่เป็น anon) ────── */
 alter table public.bbs_agreements   enable row level security;
 alter table public.bbs_sheets       enable row level security;
 alter table public.bbs_observations enable row level security;
+alter table public.bbs_row_notes    enable row level security;
 
 drop policy if exists bbs_agree_read on public.bbs_agreements;
 create policy bbs_agree_read on public.bbs_agreements for select to authenticated using (true);
@@ -87,6 +106,12 @@ drop policy if exists bbs_sheet_write on public.bbs_sheets;
 create policy bbs_sheet_write on public.bbs_sheets for all to authenticated
   using (public.has_perm('bbs:record')) with check (public.has_perm('bbs:record'));
 
+drop policy if exists bbs_rn_read on public.bbs_row_notes;
+create policy bbs_rn_read on public.bbs_row_notes for select to authenticated using (true);
+drop policy if exists bbs_rn_write on public.bbs_row_notes;
+create policy bbs_rn_write on public.bbs_row_notes for all to authenticated
+  using (public.has_perm('bbs:record')) with check (public.has_perm('bbs:record'));
+
 drop policy if exists bbs_obs_read on public.bbs_observations;
 create policy bbs_obs_read on public.bbs_observations for select to authenticated using (true);
 drop policy if exists bbs_obs_write on public.bbs_observations;
@@ -95,7 +120,7 @@ create policy bbs_obs_write on public.bbs_observations for all to authenticated
 
 /* ── updated_at + audit (ตาราง master ที่แก้ไขได้ ต้องมี audit ตามกฎ) ───── */
 do $$ declare t text; begin
-  foreach t in array array['bbs_agreements','bbs_sheets','bbs_observations'] loop
+  foreach t in array array['bbs_agreements','bbs_sheets','bbs_observations','bbs_row_notes'] loop
     execute format('drop trigger if exists trg_set_updated_at on public.%I', t);
     execute format('create trigger trg_set_updated_at before update on public.%I
                     for each row execute function public.fn_set_updated_at()', t);
@@ -156,7 +181,7 @@ values ('bbs_observation', 'แบบฟอร์มสังเกตพฤต�
 on conflict (doc_key) do nothing;
 
 -- Rollback:
---   drop table public.bbs_observations, public.bbs_sheets, public.bbs_agreements;
+--   drop table public.bbs_row_notes, public.bbs_observations, public.bbs_sheets, public.bbs_agreements;
 --   delete from public.doc_forms where doc_key = 'bbs_observation';
 --   delete from public.permission_catalog where resource = 'bbs';
 --   delete from public.role_permissions where permission_key like 'bbs:%';
