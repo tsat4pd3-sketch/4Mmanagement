@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -9,6 +9,8 @@ import { fetchByIds } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+// แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
+const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 
 /* ══ 📊 Dashboard รายส่วนงาน — หน้าเดียว สลับส่วนงานด้วย ?dept= ══════════════════════════
    ออกแบบเต็มอยู่ที่ `docs/DASHBOARD-DESIGN.md` · เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA
@@ -716,6 +718,10 @@ export default function DeptDashboard() {
      (ช่างเปิดมาเจอซ่อมบำรุง · QA เจอ QA) ถ้าใช้ hook ตัวนั้น แท็บที่เป็น default จะถูกตัดออกจาก URL
      → แชร์ลิงก์ให้คนละ role แล้วเห็นคนละส่วนงาน · ที่นี่จึงเขียน ?dept= ลง URL เสมอทุกครั้ง */
   const setDept = (k) => { const n = new URLSearchParams(sp); n.set('dept', k); setSp(n); };
+  // มุมมอง: 'now' = งานวันนี้ (เดิม) · 'kpi' = 📑 KPI รายเดือน (2026-08-24 · คำสั่ง user — แทนแพ็คกระดาษ
+  // Internal Defect/OEE รายเดือนที่ปริ้นเซ็นกัน) — ใช้ param แยกจาก ?dept= ตามกฎแท็บซ้อนแท็บ §6.8
+  const view = sp.get('view') === 'kpi' ? 'kpi' : 'now';
+  const setView = (v) => { const n = new URLSearchParams(sp); if (v === 'now') n.delete('view'); else n.set('view', v); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
   const [lines, setLines] = useState([]);
@@ -767,7 +773,20 @@ export default function DeptDashboard() {
         <button onClick={load} style={{ padding: '7px 12px', fontSize: 13, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer' }}>🔄 รีเฟรช</button>
       </div>
 
-      {/* เลือกส่วนงาน */}
+      {/* สลับมุมมอง: งานวันนี้ / KPI รายเดือน */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {[{ k: 'now', label: '⚡ งานวันนี้' }, { k: 'kpi', label: '📑 KPI รายเดือน' }].map(v => (
+          <button key={v.k} onClick={() => setView(v.k)} style={{
+            fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 8, cursor: 'pointer',
+            background: view === v.k ? 'var(--bg3)' : 'transparent',
+            color: view === v.k ? 'var(--text)' : 'var(--muted)',
+            border: `1px solid ${view === v.k ? 'var(--border2)' : 'transparent'}`,
+          }}>{v.label}</button>
+        ))}
+      </div>
+
+      {/* เลือกส่วนงาน — เฉพาะมุมมองงานวันนี้ (KPI มี section picker ของตัวเองยึด org_nodes) */}
+      {view === 'now' && (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {DEPTS.map(t => (
           <button key={t.key} onClick={() => setDept(t.key)} style={{
@@ -778,12 +797,19 @@ export default function DeptDashboard() {
           }}>{t.icon} {t.label}</button>
         ))}
       </div>
+      )}
 
-      {loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
-      {err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
+      {view === 'kpi' && (
+        <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
+          <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />
+        </Suspense>
+      )}
+
+      {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
+      {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
       {/* render เฉพาะเมื่อข้อมูลที่ถืออยู่เป็นของส่วนงานที่กำลังดู */}
-      {!loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
-      {!loading && !err && data && data.dept !== dept &&
+      {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
+      {view === 'now' && !loading && !err && data && data.dept !== dept &&
         <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
     </div>
   );
