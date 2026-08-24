@@ -1091,9 +1091,12 @@ function LiveTab({ role }) {
       return;
     }
 
-    const qty    = parseInt(openProdForm.qty);
-    const ctSec  = ctForMatNo(matNo);
     const std    = kanbanStds.find(s => s.mat_no === matNo);
+    /* ⚠️ มีมาตรฐานคัมบัง = ใช้ค่ามาตรฐานเสมอ ไม่อ่านจากช่องกรอก
+       ช่องถูกล็อก readOnly อยู่แล้ว แต่ state อาจค้างค่าเก่าได้ถ้ามีคนพิมพ์ MAT เองแล้วสลับไปมา
+       จำนวนต่อใบเป็นข้อเท็จจริงของมาตรฐาน ไม่ใช่ค่าที่ฟอร์มถือ (คำสั่ง user 2026-08-24) */
+    const qty    = std?.qty_per_kanban > 0 ? Number(std.qty_per_kanban) : parseInt(openProdForm.qty);
+    const ctSec  = ctForMatNo(matNo);
 
     // ── Capacity check ──────────────────────────────────────────────
     if (ctSec > 0) {
@@ -4425,13 +4428,31 @@ function LiveTab({ role }) {
                   </div>
                 )}
 
-                <Field label={openProdStd ? `Qty (auto จาก Standard: ${openProdStd.qty_per_kanban} ชิ้น)` : 'Qty ต่อ Tag Card (ชิ้น) *'}>
+                {/* ⚠️ จำนวนต่อ Tag Card = มาตรฐาน SAP/คัมบัง **ห้ามแก้** (คำสั่ง user 2026-08-24)
+                    1 ใบ = จำนวนที่ตั้งไว้ใน kanban_standards.qty_per_kanban เสมอ — ไม่ใช่ค่าที่คนกรอกเอง
+                    เดิมเปิดให้พิมพ์ทับ → มีการแก้เยอะมากทั้งที่เป็นการสแกนใบตามมาตรฐาน
+                    = ยอดผลิต/สต็อก/backflush เพี้ยนตามแบบไล่ย้อนไม่ได้ว่าใบไหนถูกแก้
+                    ยังไม่มีมาตรฐาน (พาร์ทใหม่/ยังไม่ตั้ง) = ยังต้องพิมพ์ได้ ไม่งั้นเปิดใบไม่ได้เลย */}
+                <Field label={openProdStd ? `Qty ต่อ Tag Card — 🔒 ล็อกตามมาตรฐาน (${openProdStd.qty_per_kanban} ชิ้น/ใบ)` : 'Qty ต่อ Tag Card (ชิ้น) *'}>
                   <input id="open-qty-input" type="number" min="1" value={openProdForm.qty}
-                    onChange={e => setOpenProdForm(f => ({ ...f, qty: e.target.value }))}
+                    readOnly={!!openProdStd}
+                    title={openProdStd ? 'จำนวนต่อใบมาจากมาตรฐานคัมบัง แก้ที่ Product Master → 🎴 Kanban Std' : undefined}
+                    onChange={e => { if (!openProdStd) setOpenProdForm(f => ({ ...f, qty: e.target.value })); }}
                     onKeyDown={e => { if (e.key === 'Enter') handleScanOpen(); }}
                     style={{ ...inputStyle, fontSize: 22, fontWeight: 900, textAlign: 'center',
                       background: openProdStd ? 'rgba(34,197,94,0.08)' : 'var(--bg)',
-                      color: openProdStd ? '#22c55e' : 'var(--text)' }} />
+                      color: openProdStd ? '#22c55e' : 'var(--text)',
+                      cursor: openProdStd ? 'not-allowed' : undefined }} />
+                  {openProdStd
+                    ? <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                        ใบนี้เป็นการสแกนตามมาตรฐาน — จำนวนต่อใบแก้ที่นี่ไม่ได้
+                        {' '}· ถ้าจำนวนจริงไม่ตรง ให้แก้มาตรฐานที่ <b>Product Master → 🎴 Kanban Std</b>
+                        {' '}· ผลิตไม่ครบใบให้กรอก <b>ยอดที่ทำได้</b> บนการ์ดใบแทน
+                      </div>
+                    : <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                        ⚠️ พาร์ทนี้ยังไม่ได้ตั้งจำนวนต่อใบ (Kanban Std) — กรอกเองได้ครั้งนี้
+                        {' '}แต่ควรไปตั้งที่ <b>Product Master → 🎴 Kanban Std</b> ให้เรียบร้อย
+                      </div>}
                 </Field>
 
                 {/* Duplicate warning */}
