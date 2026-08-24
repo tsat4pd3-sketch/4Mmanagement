@@ -36,10 +36,10 @@
 
   Doc control: doc_key 'monthly_review' ใน doc_forms (โลโก้/เลขฟอร์ม override ได้จาก /doc-forms)
 */
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { wavg, wLoad, wRun, wProd } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, isTrialDefect } from '../utils/oee';
 import { fetchByIds } from '../utils/fetchByIds';
 
 /* ── TSG R01 palette (hex ไม่มี # — ตาม pptxgenjs) ── */
@@ -126,9 +126,9 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   // downtime / defect / orders — fetchByIds (แบ่งก้อน id + แบ่งหน้า + เช็ค error)
   // ⚠️ dr_downtime_types/dr_defect_types คอลัมน์ชื่อ **name_th** ไม่ใช่ name
   //    (เคยเขียน name → query ล้มเงียบทั้งเด็ค DT=0h — ต้นเหตุรายงาน JULY 2026 ว่าง)
-  const DT_FULL = 'id, session_id, machine_no, description, duration_min, fix_action, followup_result, dr_downtime_types(name_th, category)';
+  const DT_FULL = 'id, session_id, machine_no, description, duration_min, fix_action, fix_by, followup_result, followup_by, dr_downtime_types(name_th, category)';
   const DT_SLIM = 'id, session_id, machine_no, description, duration_min, dr_downtime_types(name_th, category)';
-  const DEF_FULL = 'session_id, qty_ng, qty_suspect, description, fix_action, followup_result, dr_defect_types(name_th)';
+  const DEF_FULL = 'session_id, qty_ng, qty_suspect, description, is_trial, fix_action, fix_by, followup_result, dr_defect_types(name_th, excl_from_q)';
   const DEF_SLIM = 'session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)';
   const [dtRes, defRes, ordRes] = await Promise.all([
     fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('downtime_logs').select(sel).in('session_id', c), DT_FULL, DT_SLIM),
@@ -161,8 +161,44 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   } catch { /* ตาราง/สิทธิ์ไม่พร้อม — ข้าม */ }
 
   // NG ต่อกะ (ยึด defect_logs · นับ suspect เป็นของเสียตามกฎ Q) — ใช้ถ่วงน้ำหนัก Q
+  // ⚠️ line-mode ตามกฎ utils/oee §7: งานทดลอง (is_trial / excl_from_q) ไม่นับใน Q/PPM
+  //    (ให้ตรงกับ oee_q ที่ stamp ตอนปิดกะ + FTT/PPM ใน /qa) — แต่ยังแสดงในลิสต์ defect เสมอ ติดชิป 🧪
   const ngBySession = {};
-  defects.forEach(d => { ngBySession[d.session_id] = (ngBySession[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
+  defects.forEach(d => {
+    if (isTrialDefect(d)) return;
+    ngBySession[d.session_id] = (ngBySession[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+  });
+
+  /* ── ข้อมูลที่ user ลงในระบบนอกเหนือ downtime/defect — ดึงมาตอบ Issue & Action (best-effort ทุกก้อน) ── */
+  const todayStr = (() => { const dd = new Date(); return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`; })();
+  let moOpenAll = [], actAll = [], fourMAll = [], impsAll = [];
+  try { // ใบซ่อม MO ที่ยังค้าง ณ ตอนสร้างรายงาน (คิวงาน MTN ที่ผู้แจ้ง/ช่างลงไว้)
+    const { data } = await supabaseDR.from('mtn_orders')
+      .select('id, mo_no, machine_no, line_name, status, report_at, created_at')
+      .in('line_name', allLineNames)
+      .not('status', 'in', '("closed","rejected")');
+    moOpenAll = data || [];
+  } catch { /* ข้าม */ }
+  try { // Action item จากประชุมแถวเช้า (Main) — สิ่งที่ทีมรับปากไว้แล้วยังไม่ปิด
+    const { data } = await supabase.from('meeting_action_items')
+      .select('id, line_name, section, problem, assignee, due_date, status')
+      .in('status', ['open', 'doing']);
+    actAll = data || [];
+  } catch { /* ข้าม */ }
+  try { // 4M changing points ของเดือน (Main) — บริบทการเปลี่ยนแปลงที่คนลงไว้
+    const { data } = await supabase.from('four_m_logs')
+      .select('id, line_name, category, status')
+      .gte('work_date', from).lte('work_date', to)
+      .in('line_name', allLineNames);
+    fourMAll = data || [];
+  } catch { /* ข้าม */ }
+  try { // โปรเจคปรับปรุง (Kaizen) ที่กำลังติดตามผล — action ระยะยาวที่เปิดไว้แล้ว
+    const { data } = await supabaseDR.from('improvements')
+      .select('id, title, problem_label, line_name, status')
+      .eq('status', 'monitoring')
+      .in('line_name', allLineNames);
+    impsAll = data || [];
+  } catch { /* ข้าม */ }
 
   /* ── aggregate ต่อกลุ่มไลน์ ── */
   // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oee.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
@@ -207,18 +243,25 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       unplanned,
     };
   };
-  const ppmOf = (ss, output) => {
+  const ppmOf = (ss, output) => { // line-mode: ไม่รวมงานทดลอง (ตรงกับ FTT/PPM ใน /qa)
     const ids = new Set(ss.map(s => s.id));
-    const ng = defects.filter(d => ids.has(d.session_id)).reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
+    const ng = defects.filter(d => ids.has(d.session_id) && !isTrialDefect(d))
+      .reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
     const base = output + ng;
     return base > 0 ? Math.round((ng / base) * 1e6) : 0;
   };
+  const trialQtyOf = (ss) => { // ของเสียงานทดลอง — โชว์แยก ห้ามหายเงียบ (กฎ §7)
+    const ids = new Set(ss.map(s => s.id));
+    return defects.filter(d => ids.has(d.session_id) && isTrialDefect(d))
+      .reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
+  };
 
-  // ข้อความ "การแก้ไข" ต่อรายการ: หัวหน้างานลงในระบบ (fix_action/followup) ก่อน → ใบซ่อม MO ตาม
+  // ข้อความ "การแก้ไข" ต่อรายการ: หัวหน้างานลงในระบบ (fix_action/followup + ชื่อคนลง) ก่อน → ใบซ่อม MO (root cause + solution) ตาม
   const fixTextOf = (d, mo) => {
     const parts = [];
-    if (d.fix_action) parts.push(`แก้ไข: ${cut(d.fix_action, 70)}`);
-    if (d.followup_result) parts.push(`ติดตาม: ${cut(d.followup_result, 50)}`);
+    if (d.fix_action) parts.push(`แก้ไข: ${cut(d.fix_action, 70)}${d.fix_by ? ` (${cut(d.fix_by, 18)})` : ''}`);
+    if (d.followup_result) parts.push(`ติดตาม: ${cut(d.followup_result, 50)}${d.followup_by ? ` (${cut(d.followup_by, 18)})` : ''}`);
+    if (mo?.root_cause) parts.push(`สาเหตุ: ${cut(mo.root_cause, 50)}`);
     if (mo?.solution) parts.push(`MO${mo.mo_no ? ` ${mo.mo_no}` : ''}: ${cut(mo.solution, 60)}`);
     else if (mo?.mo_no) parts.push(`MO ${mo.mo_no}`);
     return parts.join(' · ');
@@ -260,7 +303,8 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
       g[k] = g[k] || { name: k, qty: 0, count: 0, items: [] };
       g[k].qty += qty; g[k].count += 1;
-      g[k].items.push({ qty, desc: cut(d.description, 55), fix: fixTextOf(d, null) });
+      // 🧪 = งานทดลอง — โชว์ในลิสต์เสมอ (แค่ไม่นับใน PPM) ตามกฎ §7 ห้ามกรองทิ้ง
+      g[k].items.push({ qty, desc: `${isTrialDefect(d) ? '🧪 ' : ''}${cut(d.description, 55)}`, fix: fixTextOf(d, null) });
     });
     return Object.values(g).sort((a, b) => b.qty - a.qty).map(grp => ({
       ...grp,
@@ -302,10 +346,35 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       const ld = dtStats(ls);
       return { name: ln, ...la, output: lo, dtHr: ld.dtHr, ppm: ppmOf(ls, lo), dtGroups: dtGroupsOf(ld.unplanned) };
     }).filter(l => l.nSess > 0);
+    /* ── ข้อมูลที่ user ลงในโมดูลอื่น ผูกเข้าส่วนงานนี้ ── */
+    const inLines = (ln) => sec.lines.includes(ln);
+    const secKey = sec.code.trim().toLowerCase();
+    // ใบซ่อม MO ค้าง — pending ล้วน = ยังไม่มีใครรับงาน (OPEN)
+    const mos = moOpenAll.filter(o => inLines(o.line_name));
+    const dayOf = (t) => t ? Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 864e5)) : null;
+    const oldestMo = mos.slice().sort((a, b) => new Date(a.report_at || a.created_at || 0) - new Date(b.report_at || b.created_at || 0))[0];
+    const moOpen = mos.length ? {
+      count: mos.length,
+      oldestDays: oldestMo ? dayOf(oldestMo.report_at || oldestMo.created_at) : null,
+      sample: oldestMo ? { mo_no: oldestMo.mo_no, machine_no: oldestMo.machine_no } : null,
+      allPending: mos.every(o => o.status === 'pending'),
+    } : null;
+    // action item ประชุมเช้า — จับทั้งราย line และราย section
+    const acts = actAll.filter(a => inLines(a.line_name) || (a.section || '').trim().toLowerCase() === secKey);
+    const overdue = acts.filter(a => a.due_date && a.due_date < todayStr);
+    const act = acts.length ? { open: acts.length, overdue: overdue.length, sample: overdue[0] || acts[0] } : null;
+    // 4M changing points ของเดือน
+    const fms = fourMAll.filter(f => inLines(f.line_name));
+    const byCat = {};
+    fms.forEach(f => { byCat[f.category] = (byCat[f.category] || 0) + 1; });
+    const fourM = fms.length ? { total: fms.length, byCat, pending: fms.filter(f => ['pending', 'pending_qa'].includes(f.status)).length } : null;
+    // โปรเจค Kaizen ที่กำลังติดตามผล
+    const imps = impsAll.filter(i => inLines(i.line_name)).map(i => ({ title: i.title || i.problem_label || '' }));
     return {
-      code: sec.code, ...agg, output, dtHr, ppm: ppmOf(ss, output),
+      code: sec.code, ...agg, output, dtHr, ppm: ppmOf(ss, output), trialQty: trialQtyOf(ss),
       lines, dtGroups: dtGroupsOf(unplanned), defGroups: defGroupsOf(ss),
       fixCov: fixCoverage(unplanned), machineTop: machineStatsOf(unplanned),
+      moOpen, act, fourM, imps,
     };
   }).filter(d => d.nSess > 0);
 
@@ -354,6 +423,11 @@ function deptStory(d) {
     const best = sorted[0]; const worst = sorted[sorted.length - 1];
     const gap = r1((best.oee ?? 0) - (worst.oee ?? 0));
     if (gap >= 0.5) out.push(`${worst.name} trails ${best.name} by ${gap} pts OEE — benchmark ${best.name}; ${worst.name} loss = ${worst.dtGroups[0] ? `${worst.dtGroups[0].name} ${hr1(worst.dtGroups[0].min)}h` : `${lowestDriver(worst)} gap`}.`);
+  }
+  // 4M changing points — บริบทการเปลี่ยนแปลงที่คนลงไว้ ใช้เทียบกับ loss ข้างบน
+  if (d.fourM?.total) {
+    const cats = ['Man', 'Machine', 'Material', 'Method'].map(c => d.fourM.byCat[c] ? `${c} ${d.fourM.byCat[c]}` : null).filter(Boolean).join(' · ');
+    out.push(`Changing points (4M): ${d.fourM.total} logged this month${cats ? ` (${cats})` : ''}${d.fourM.pending ? ` — ${d.fourM.pending} pending approval` : ''}.`);
   }
   const topDt = d.dtGroups[0];
   if (topDt) out.push(`Top downtime: ${topDt.name} ${hr1(topDt.min)}h (${topDt.count} events, ${topDt.fixed}/${topDt.count} with countermeasure) — owner confirms closure in daily meeting.`);
@@ -412,10 +486,35 @@ function issueRowsOf(d, NEXT) {
       status: td.items.some(i => i.fix) ? 'ON GOING' : 'OPEN',
     });
   }
+  // ใบซ่อม MO ค้าง — คิวงานที่ผู้แจ้ง/ช่างลงไว้แล้วยังไม่ปิด (pending ล้วน = ยังไม่มีคนรับงาน)
+  if (d.moOpen?.count) {
+    const smp = d.moOpen.sample ? ` — ${[d.moOpen.sample.mo_no, d.moOpen.sample.machine_no].filter(Boolean).join(' ')}` : '';
+    rows.push({
+      issue: `ใบซ่อม MO ค้าง ${d.moOpen.count} ใบ${d.moOpen.oldestDays != null ? ` (เก่าสุด ${d.moOpen.oldestDays} วัน${smp})` : ''}`,
+      action: d.moOpen.allPending ? 'ยังไม่มีช่างรับงานสักใบ — MTN รับ/จ่ายงานใน daily meeting' : `MTN อัพเดทสถานะ/ปิดใบก่อนประชุม ${NEXT}`,
+      status: d.moOpen.allPending ? 'OPEN' : 'ON GOING',
+    });
+  }
+  // action item จากประชุมแถวเช้า — สิ่งที่ทีมรับปากไว้เอง
+  if (d.act?.open) {
+    rows.push({
+      issue: `Action ประชุมเช้าค้าง ${d.act.open} รายการ${d.act.overdue ? ` (เกินกำหนด ${d.act.overdue})` : ''}`,
+      action: d.act.sample ? `${cut(d.act.sample.problem, 90)}${d.act.sample.assignee ? ` — ผู้รับผิดชอบ: ${d.act.sample.assignee}` : ''}` : `ทวนในประชุมเช้า ${NEXT}`,
+      status: d.act.overdue ? 'OPEN' : 'ON GOING',
+    });
+  }
   if (d.fixCov.total && d.fixCov.fixed < d.fixCov.total) {
     rows.push({
       issue: `ลงวิธีแก้แล้ว ${d.fixCov.fixed}/${d.fixCov.total} รายการหยุดนอกแผน`,
       action: `ตามเก็บ ${d.fixCov.total - d.fixCov.fixed} รายการค้างก่อนประชุม ${NEXT}`,
+      status: 'ON GOING',
+    });
+  }
+  // โปรเจค Kaizen ที่เปิดไว้ = action ระยะยาวที่เดินอยู่แล้ว (ข่าวดี — ให้ห้องประชุมเห็นว่ามีเจ้าภาพ)
+  if (d.imps?.length) {
+    rows.push({
+      issue: `โปรเจคปรับปรุง (Kaizen) กำลังติดตามผล ${d.imps.length} โปรเจค`,
+      action: d.imps.slice(0, 2).map(i => cut(i.title, 60)).filter(Boolean).join(' · ') || 'ดูผลก่อน/หลังใน /improvements',
       status: 'ON GOING',
     });
   }
@@ -657,7 +756,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
         { y: 1.72, rowH: 1.05, headRowH: 0.32, colW: [2.9, 9.4], fontSize: 9.5, leftCols: [1] });
       bullets(s, [
         `Quality holds ${pct(d.q)} — verify countermeasures above prevented recurrence before closing in ${NEXT}.`,
-      ], 0.6, 6.35, 12.1, 11);
+        ...(d.trialQty ? [`🧪 Try-out defects ${num(d.trialQty)} ชิ้น — แสดงในรายการแต่ไม่นับใน PPM ตามกฎ Q (ไลน์ไม่ถูกลงโทษจากงานทดลอง)`] : []),
+      ], 0.6, 6.2, 12.1, 11);
       footer(s);
     }
     // ISSUE & ACTION ต่อส่วนงาน — ผลวิเคราะห์ทุกตัว (lever/top DT/เครื่องเรื้อรัง/defect/coverage)
@@ -665,13 +765,14 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     {
       const s = newSlide();
       head(s, `${d.code} ISSUE & ACTION`, `ANSWERED FROM CENTRALIZED SHOPFLOOR DATA — ${MON}`);
-      const rows = issueRowsOf(d, NEXT).slice(0, 6).map(rw => [
+      const allRows = issueRowsOf(d, NEXT);
+      const rows = allRows.slice(0, 7).map(rw => [
         rw.issue, cut(rw.action, 150), STATUS_CELL[rw.status] || rw.status,
       ]);
-      tsgTable(s, ['Issue (จากการวิเคราะห์ข้อมูล)', 'Action (จากหน้างาน + ใบซ่อม MO)', 'Status'], rows,
-        { y: 1.72, rowH: 0.72, headRowH: 0.32, colW: [4.6, 6.5, 1.2], fontSize: 9.5, leftCols: [1] });
-      s.addText('Issue คำนวณจากบันทึกจริงทั้งเดือน · Action คือข้อความที่หัวหน้างาน/ช่างลงในระบบ — แถว OPEN = ยังไม่มีใครลงวิธีแก้ ต้องมอบหมายในที่ประชุมนี้',
-        { x: 0.6, y: 1.72 + 0.32 + rows.length * 0.72 + 0.15, w: 12.1, h: 0.35, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
+      tsgTable(s, ['Issue (จากการวิเคราะห์ข้อมูล)', 'Action (จากหน้างาน + MO + ประชุมเช้า + Kaizen)', 'Status'], rows,
+        { y: 1.72, rowH: 0.62, headRowH: 0.32, colW: [4.6, 6.5, 1.2], fontSize: 9.5, leftCols: [1] });
+      s.addText(`Issue คำนวณจากบันทึกจริงทั้งเดือน · Action คือข้อความที่หัวหน้างาน/ช่างลงในระบบ — แถว OPEN = ยังไม่มีใครลงวิธีแก้ ต้องมอบหมายในที่ประชุมนี้${allRows.length > rows.length ? ` · +อีก ${allRows.length - rows.length} ประเด็นดูในระบบ` : ''}`,
+        { x: 0.6, y: 1.72 + 0.32 + rows.length * 0.62 + 0.15, w: 12.1, h: 0.35, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
       footer(s);
     }
   });
@@ -699,7 +800,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       `${NEXT} priority: ${worstLine.name} OEE ${pct(worstLine.oee)} — attack ${worstLine.dtGroups[0]?.name || lowestDriver(worstLine) + ' loss'} first, report as A/P/Q movement next month.`,
     ], 0.6, Math.min(tblEnd + 0.15, 6.15), 12.1, 12);
     // 🎯 จุดขาย: ทั้งเด็คตอบจากข้อมูลกลางชุดเดียว — บันทึกหน้างานครั้งเดียว ไหลถึงห้องประชุมเอง
-    s.addText('All issues & actions in this deck are answered from ESM centralized shopfloor records (downtime · countermeasures · MO · defects) — entered once at the line, no manual collation.',
+    s.addText('All issues & actions in this deck are answered from ESM centralized shopfloor records — downtime · countermeasures · MO work orders · defects · morning-meeting actions · 4M changing points · kaizen projects — entered once at the line, no manual collation.',
       { x: 0.6, y: 6.55, w: 12.1, h: 0.3, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
     footer(s);
   }
