@@ -46,8 +46,9 @@ import { fetchByIds } from '../utils/fetchByIds';
 const C = {
   green: '068734',      // เขียวหลัก R01 — หัวเรื่อง/ข้อความ/ป้าย/footer
   greenDark: '0D3D14',  // Headline box + หัวตาราง + เส้นขอบกราฟ (คงจาก R00 ตาม template)
-  orange: 'D95323',     // ส้ม accent R01 (ตัวเลข stat)
+  orange: 'D95323',     // ส้ม accent R01 (ตัวเลข stat + สถานะ OPEN)
   barOrange: 'E2772E',  // แท่งกราฟ (กลางช่วง ramp ของ template)
+  amber: 'C88A00',      // สถานะ ON GOING (ศัพท์สถานะ TSG: watch)
   tint: 'F2F2F2',       // แถวสลับตาราง (อยู่ใน prompt palette ทางการ)
   border: 'D9D9D9',
   grey: '555555',
@@ -179,6 +180,8 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       oee: wavg(rows, r => r.oee, wLoad), a: wavg(rows, r => r.oee_a, wLoad),
       p: wavg(rows, r => r.oee_p, wRun), q: wavg(rows, r => r.oee_q, wProd),
       nSess: ss.length,
+      // เวลารับภาระรวม (ชม.) — ใช้แปลง gap ของ A/P เป็น "ชั่วโมงที่หายไป" บนสไลด์ Issue
+      loadHr: hr1(rows.reduce((a, r) => a + Math.max(0, (Number(r.shift_min) || 0) - (r.plannedMin || 0)), 0)),
     };
   };
   const outputOf = (ss) => {
@@ -272,6 +275,21 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     return { fixed, total: n };
   };
 
+  // เครื่องที่หยุดซ้ำ (chronic) — จัดกลุ่ม unplanned ตามหมายเลขเครื่อง สำหรับสไลด์ Issue & Action
+  const machineStatsOf = (unplanned) => {
+    const g = {};
+    unplanned.forEach(d => {
+      const k = (d.machine_no || '').trim();
+      if (!k) return;
+      g[k] = g[k] || { machine: k, count: 0, min: 0, fixes: [] };
+      g[k].count += 1; g[k].min += Number(d.duration_min) || 0;
+      const f = fixTextOf(d, moByDt[d.id]);
+      if (f) g[k].fixes.push(f);
+    });
+    return Object.values(g).sort((a, b) => b.min - a.min).slice(0, 5)
+      .map(m => ({ ...m, min: Math.round(m.min) }));
+  };
+
   const depts = sections.map(sec => {
     const ss = sessions.filter(s => sec.lines.includes(s.line_name));
     const agg = aggSessions(ss);
@@ -287,7 +305,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     return {
       code: sec.code, ...agg, output, dtHr, ppm: ppmOf(ss, output),
       lines, dtGroups: dtGroupsOf(unplanned), defGroups: defGroupsOf(ss),
-      fixCov: fixCoverage(unplanned),
+      fixCov: fixCoverage(unplanned), machineTop: machineStatsOf(unplanned),
     };
   }).filter(d => d.nSess > 0);
 
@@ -303,36 +321,105 @@ function lowestDriver(d) { // ตัวไหนฉุด OEE: เทียบ g
   gaps.sort((x, y) => x[1] - y[1]);
   return gaps[0][0];
 }
+// "ชั่วโมงที่หายไป" ต่อ lever — แปลง gap ของ A/P เป็นเวลาจริงจากเวลารับภาระ (โปร่งใส อธิบายได้)
+//   A loss ≈ dtHr ตรงๆ (เวลาหยุดนอกแผน) · P loss ≈ เวลาเดินเครื่อง × (1 − P) = load × A × (1−P)
+function lostHrP(d) {
+  if (d.loadHr == null || d.a == null || d.p == null) return null;
+  return r1(d.loadHr * (d.a / 100) * (1 - d.p / 100));
+}
 function execStory(depts) {
   const out = [];
   const qStable = depts.every(d => (d.q ?? 0) >= 99);
-  if (qStable) out.push('Quality is stable on all departments; OEE loss is mainly ' + (lowestDriver(depts[0]) === 'A' ? 'Availability.' : 'Performance.'));
+  const dtSum = r1(depts.reduce((a, d) => a + (d.dtHr || 0), 0));
+  const pSum = r1(depts.reduce((a, d) => a + (lostHrP(d) || 0), 0));
+  if (qStable) out.push(`Quality stable (all depts ≥ 99%) — OEE loss sits in Availability ${dtSum}h unplanned stops + Performance ~${pSum}h slow-cycle/minor-stop equivalent.`);
+  else out.push(`Quality below 99% on ${depts.filter(d => (d.q ?? 0) < 99).map(d => d.code).join('/')} — defect detail per dept follows.`);
   if (depts.length >= 2) {
     const sorted = [...depts].sort((a, b) => (b.oee ?? 0) - (a.oee ?? 0));
     const gap = r1((sorted[0].oee ?? 0) - (sorted[1].oee ?? 0));
-    if (gap >= 0.5) out.push(`${sorted[0].code} leads ${sorted[1].code} by +${gap} pts OEE, supported by stronger ${lowestDriver(sorted[1]) === 'A' ? 'Availability' : 'Performance'}.`);
+    if (gap >= 0.5) out.push(`${sorted[0].code} leads ${sorted[1].code} by +${gap} pts OEE — gap is ${lowestDriver(sorted[1])} on ${sorted[1].code} (top loss: ${sorted[1].dtGroups[0]?.name || '—'}).`);
   }
   const cov = depts.reduce((a, d) => ({ fixed: a.fixed + d.fixCov.fixed, total: a.total + d.fixCov.total }), { fixed: 0, total: 0 });
-  if (cov.total) out.push(`Countermeasures recorded on ${cov.fixed}/${cov.total} unplanned stops — close the remaining gap in daily meetings.`);
+  if (cov.total) out.push(`Countermeasures recorded on ${cov.fixed}/${cov.total} unplanned stops — remaining ${cov.total - cov.fixed} items need owners (see Issue & Action summary).`);
   return out;
 }
 function deptStory(d) {
   const out = [];
   const drv = lowestDriver(d);
-  out.push(`${d.code} story: ${drv} is the lever; ${drv === 'A' ? 'P and Q do not explain the main OEE gap' : 'recover cycle stability while holding Quality'}.`);
+  if (drv === 'A') out.push(`${d.code}: Availability ${pct(d.a)} is the lever — ${d.dtHr}h unplanned stops on ~${d.loadHr ?? '—'}h loading time (top: ${d.dtGroups[0]?.name || '—'}).`);
+  else if (drv === 'P') out.push(`${d.code}: Performance ${pct(d.p)} is the lever — ~${lostHrP(d) ?? '—'}h equivalent lost to slow cycles/minor stops on ~${d.loadHr ?? '—'}h loading time.`);
+  else out.push(`${d.code}: Quality ${pct(d.q)} is the lever — PPM ${num(d.ppm)} (top defect: ${d.defGroups[0]?.name || '—'}).`);
   if (d.lines.length >= 2) {
     const sorted = [...d.lines].sort((a, b) => (b.oee ?? 0) - (a.oee ?? 0));
     const best = sorted[0]; const worst = sorted[sorted.length - 1];
     const gap = r1((best.oee ?? 0) - (worst.oee ?? 0));
-    if (gap >= 0.5) out.push(`${worst.name} trails ${best.name} by ${gap} pts OEE — keep ${best.name} as benchmark and move ${worst.name} through ${lowestDriver(worst) === 'A' ? 'Availability recovery' : 'Performance recovery'}.`);
+    if (gap >= 0.5) out.push(`${worst.name} trails ${best.name} by ${gap} pts OEE — benchmark ${best.name}; ${worst.name} loss = ${worst.dtGroups[0] ? `${worst.dtGroups[0].name} ${hr1(worst.dtGroups[0].min)}h` : `${lowestDriver(worst)} gap`}.`);
   }
   const topDt = d.dtGroups[0];
-  if (topDt) out.push(`Top downtime: ${topDt.name} ${hr1(topDt.min)}h (${topDt.count} events) — confirm owner and closure date in daily meeting.`);
+  if (topDt) out.push(`Top downtime: ${topDt.name} ${hr1(topDt.min)}h (${topDt.count} events, ${topDt.fixed}/${topDt.count} with countermeasure) — owner confirms closure in daily meeting.`);
   return out;
 }
 function lineReadout(l) {
   const drv = lowestDriver(l);
   return drv === 'A' ? 'Availability' : drv === 'P' ? 'Performance' : 'Quality';
+}
+/* ── Issue & Action engine — ทุกแถวต้องชี้กลับข้อมูลจริงได้ (ตัวเลข/เครื่อง/วิธีแก้ที่หัวหน้างานลง)
+   status: CLOSED = ทุกรายการในกลุ่มมีวิธีแก้แล้ว · ON GOING = มีบางส่วน · OPEN = ยังไม่มีใครลงเลย ── */
+function issueRowsOf(d, NEXT) {
+  const rows = [];
+  const drv = lowestDriver(d);
+  if (drv === 'A') {
+    rows.push({
+      issue: `Availability ${pct(d.a)} — หยุดนอกแผน ${d.dtHr}h จากเวลารับภาระ ~${d.loadHr ?? '—'}h`,
+      action: d.dtGroups[0] ? `โฟกัส ${d.dtGroups[0].name} (${hr1(d.dtGroups[0].min)}h) เป็นตัวแรกใน ${NEXT}` : `คุมรอบ PM/การรอคอยใน ${NEXT}`,
+      status: 'ON GOING',
+    });
+  } else if (drv === 'P') {
+    const lost = lostHrP(d);
+    rows.push({
+      issue: `Performance ${pct(d.p)}${lost != null ? ` — เทียบเท่าเวลาหาย ~${lost}h (cycle ช้า/หยุดสั้น)` : ''}`,
+      action: `เก็บ micro-stop รายเครื่อง + เทียบ CT จริงกับมาตรฐานใน ${NEXT}`,
+      status: 'ON GOING',
+    });
+  } else {
+    rows.push({
+      issue: `Quality ${pct(d.q)} — PPM ${num(d.ppm)}`,
+      action: d.defGroups[0]?.items?.find(i => i.fix)?.fix || `ทวนมาตรการกับ QA ก่อนปิด ${NEXT}`,
+      status: 'ON GOING',
+    });
+  }
+  d.dtGroups.slice(0, 2).forEach(g => {
+    const withFix = g.items.find(it => it.fix);
+    const issue = `${g.name} ${hr1(g.min)}h / ${g.count} ครั้ง`;
+    if (withFix) rows.push({ issue, action: `${withFix.fix}${g.fixed > 1 ? ` (+อีก ${g.fixed - 1} รายการลงวิธีแก้แล้ว)` : ''}`, status: g.fixed >= g.count ? 'CLOSED' : 'ON GOING' });
+    else rows.push({ issue, action: 'ยังไม่ลงวิธีแก้ในระบบ — มอบหมายเจ้าของใน daily meeting', status: 'OPEN' });
+  });
+  const chronic = (d.machineTop || []).find(mch => mch.count >= 3);
+  if (chronic) {
+    rows.push({
+      issue: `${chronic.machine} หยุดซ้ำ ${chronic.count} ครั้ง (${hr1(chronic.min)}h)`,
+      action: chronic.fixes[0]
+        ? `${chronic.fixes[0]}${chronic.fixes.length < chronic.count ? ` — ยังซ้ำ เปิดโปรเจคปรับปรุง (/improvements)` : ''}`
+        : 'ซ้ำหลายครั้งแต่ยังไม่มีวิธีแก้ในระบบ — เปิดโปรเจคปรับปรุง (/improvements)',
+      status: chronic.fixes.length ? 'ON GOING' : 'OPEN',  // มี action แล้วห้ามขึ้น OPEN (ขัดกันเอง)
+    });
+  }
+  const td = d.defGroups[0];
+  if (td) {
+    rows.push({
+      issue: `${td.name} ${num(td.qty)} ชิ้น / ${td.count} ครั้ง`,
+      action: td.items.find(i => i.fix)?.fix || 'ยังไม่ลงวิธีแก้ในระบบ — QA/ไลน์ตามปิด',
+      status: td.items.some(i => i.fix) ? 'ON GOING' : 'OPEN',
+    });
+  }
+  if (d.fixCov.total && d.fixCov.fixed < d.fixCov.total) {
+    rows.push({
+      issue: `ลงวิธีแก้แล้ว ${d.fixCov.fixed}/${d.fixCov.total} รายการหยุดนอกแผน`,
+      action: `ตามเก็บ ${d.fixCov.total - d.fixCov.fixed} รายการค้างก่อนประชุม ${NEXT}`,
+      status: 'ON GOING',
+    });
+  }
+  return rows;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -349,6 +436,12 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
   let pageNo = 0;
 
   const T = (t, o) => ({ text: t, options: o });
+  // สถานะ Issue & Action — ศัพท์/สีตามชุดสถานะ TSG (เขียว=จบ · amber=กำลังทำ · ส้ม=ยังไม่มีเจ้าของ)
+  const STATUS_CELL = {
+    'CLOSED': { t: 'CLOSED', color: C.green, bold: true },
+    'ON GOING': { t: 'ON GOING', color: C.amber, bold: true },
+    'OPEN': { t: 'OPEN', color: C.orange, bold: true },
+  };
 
   /* ── ตำแหน่งตายตัวตาม template R01 (กฎ: ห้ามขยับข้ามหน้า) ── */
   const footer = (s) => {
@@ -375,17 +468,22 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       { x, y, w, h: 0.42 * items.length + 0.2, fontFace: FONT, fontSize: fs, color: C.green, align: 'left', valign: 'top', margin: 0 });
   };
   // ตาราง R01: หัวเขียวเข้มตัวขาว · body เขียว 068734 · แถวสลับเทาอ่อน F2F2F2
+  // เซลล์เป็น object { t, color, bold } ได้ — ใช้กับคอลัมน์สถานะ Issue & Action (OPEN ส้ม / ON GOING amber / CLOSED เขียว)
   const tsgTable = (s, headRow, rows, opts = {}) => {
+    const normCell = (cell) => (cell && typeof cell === 'object' && 't' in cell) ? cell : { t: cell };
     const tableRows = [
       headRow.map(h => ({ text: h, options: { fontFace: FONT, fontSize: 11.5, bold: true, color: C.white, fill: { color: C.greenDark }, align: 'center', valign: 'middle' } })),
-      ...rows.map((row, ri) => row.map((cell, ci) => ({
-        text: String(cell ?? '—'),
-        options: {
-          fontFace: FONT, fontSize: opts.fontSize || 11.5, color: C.green, bold: ci === 0,
-          fill: { color: ri % 2 === 0 ? C.tint : C.white },
-          align: ci === 0 || opts.leftCols?.includes(ci) ? 'left' : 'center', valign: 'middle',
-        },
-      }))),
+      ...rows.map((row, ri) => row.map((cell, ci) => {
+        const c0 = normCell(cell);
+        return {
+          text: String(c0.t ?? '—'),
+          options: {
+            fontFace: FONT, fontSize: opts.fontSize || 11.5, color: c0.color || C.green, bold: c0.bold ?? (ci === 0),
+            fill: { color: ri % 2 === 0 ? C.tint : C.white },
+            align: ci === 0 || opts.leftCols?.includes(ci) ? 'left' : 'center', valign: 'middle',
+          },
+        };
+      })),
     ];
     const rowH = opts.headRowH != null ? [opts.headRowH, ...rows.map(() => opts.rowH ?? 0.34)] : (opts.rowH ?? 0.34);
     s.addTable(tableRows, { x: opts.x ?? 0.5, y: opts.y ?? 2.0, w: opts.w ?? 12.3, colW: opts.colW, border: { type: 'solid', color: C.border, pt: 0.75 }, rowH, autoPage: false });
@@ -429,8 +527,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     const items = [
       `EXECUTIVE SUMMARY : ${data.depts.map(d => d.code).join(' <> ')} OEE / A / P / Q`,
       'OEE ACTUAL BY LINE',
-      ...data.depts.map(d => `${d.code} REVIEW : Overall → ${d.lines.map(l => l.name).join(' / ')}`),
-      `KEY LOSS DRIVER & ${NEXT.toUpperCase()} FOCUS`,
+      ...data.depts.map(d => `${d.code} REVIEW : Overall → ${d.lines.map(l => l.name).join(' / ')} → Issue & Action`),
+      `ISSUE & ACTION SUMMARY : ${NEXT.toUpperCase()} FOCUS`,
     ];
     s.addText(items.map((t, i) => T(`${i + 1}.   ${t}`, { breakLine: i < items.length - 1, paraSpaceAfter: 10 })),
       { x: 1.56, y: 1.93, w: 11.0, h: 0.42 * items.length + 0.3, fontFace: FONT, fontSize: 16, color: C.green, align: 'left', valign: 'top', margin: 0 });
@@ -562,26 +660,47 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       ], 0.6, 6.35, 12.1, 11);
       footer(s);
     }
+    // ISSUE & ACTION ต่อส่วนงาน — ผลวิเคราะห์ทุกตัว (lever/top DT/เครื่องเรื้อรัง/defect/coverage)
+    // ตกลงเป็นแถว Issue → Action → Status · Action มาจากที่หัวหน้างานลงจริง ไม่มี = OPEN ห้ามแต่งแทน
+    {
+      const s = newSlide();
+      head(s, `${d.code} ISSUE & ACTION`, `ANSWERED FROM CENTRALIZED SHOPFLOOR DATA — ${MON}`);
+      const rows = issueRowsOf(d, NEXT).slice(0, 6).map(rw => [
+        rw.issue, cut(rw.action, 150), STATUS_CELL[rw.status] || rw.status,
+      ]);
+      tsgTable(s, ['Issue (จากการวิเคราะห์ข้อมูล)', 'Action (จากหน้างาน + ใบซ่อม MO)', 'Status'], rows,
+        { y: 1.72, rowH: 0.72, headRowH: 0.32, colW: [4.6, 6.5, 1.2], fontSize: 9.5, leftCols: [1] });
+      s.addText('Issue คำนวณจากบันทึกจริงทั้งเดือน · Action คือข้อความที่หัวหน้างาน/ช่างลงในระบบ — แถว OPEN = ยังไม่มีใครลงวิธีแก้ ต้องมอบหมายในที่ประชุมนี้',
+        { x: 0.6, y: 1.72 + 0.32 + rows.length * 0.72 + 0.15, w: 12.1, h: 0.35, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
+      footer(s);
+    }
   });
 
-  /* ── Key loss driver & next-month focus ── */
+  /* ── ISSUE & ACTION SUMMARY — ทุกส่วนงาน + จุดโฟกัสเดือนถัดไป ── */
   {
     const s = newSlide();
-    head(s, `KEY LOSS DRIVER & ${NEXT.toUpperCase()} FOCUS`, 'WHAT TO SAY IN REVIEW');
+    head(s, `ISSUE & ACTION SUMMARY : ${NEXT.toUpperCase()} FOCUS`, 'TOP ISSUES ACROSS DEPTS — WHO CONFIRMED, WHAT IS STILL OPEN');
     const allGroups = {};
     data.depts.forEach(d => d.dtGroups.forEach(g => {
       allGroups[g.name] = allGroups[g.name] || { name: g.name, min: 0, count: 0 };
       allGroups[g.name].min += g.min; allGroups[g.name].count += g.count;
     }));
     const top = Object.values(allGroups).sort((a, b) => b.min - a.min).slice(0, 3);
-    top.forEach((g, i) => stat(s, 0.6 + i * 4.1, 1.9, `${hr1(g.min)}h`, `${g.name} (${g.count} ครั้ง)`, 3.9));
-    const worstDept = [...data.depts].sort((a, b) => (a.oee ?? 0) - (b.oee ?? 0))[0];
+    top.forEach((g, i) => stat(s, 0.6 + i * 4.1, 1.62, `${hr1(g.min)}h`, `${g.name} (${g.count} ครั้ง)`, 3.9));
+    // แถวสรุป: หยิบ 2 issue แรกของแต่ละส่วนงาน (lever + top DT) — เกิน 6 แถวตัด แล้วชี้ไปสไลด์รายส่วน
+    const sumRows = data.depts.flatMap(d => issueRowsOf(d, NEXT).slice(0, 2).map(rw => [
+      d.code, rw.issue, cut(rw.action, 120), STATUS_CELL[rw.status] || rw.status,
+    ])).slice(0, 6);
+    tsgTable(s, ['Dept', 'Issue', 'Action', 'Status'], sumRows,
+      { y: 2.78, rowH: 0.55, headRowH: 0.3, colW: [0.9, 4.7, 5.5, 1.2], fontSize: 9.5, leftCols: [1, 2] });
     const worstLine = data.depts.flatMap(d => d.lines).sort((a, b) => (a.oee ?? 0) - (b.oee ?? 0))[0];
-    bullets(s, [
-      ...execStory(data.depts).slice(0, 2),
-      worstLine ? `${worstLine.name} OEE ${pct(worstLine.oee)} is the priority line — drill down to ${worstLine.dtGroups[0]?.name || 'loss'} recurrence and confirm action dates.` : '',
-      `${NEXT} focus: lift ${lowestDriver(worstDept) === 'A' ? 'Availability' : 'Performance'} before chasing other levers; report next month as A/P/Q movement, not only action completion.`,
-    ].filter(Boolean), 0.6, 3.3, 12.1, 14);
+    const tblEnd = 2.78 + 0.3 + sumRows.length * 0.55;
+    if (worstLine) bullets(s, [
+      `${NEXT} priority: ${worstLine.name} OEE ${pct(worstLine.oee)} — attack ${worstLine.dtGroups[0]?.name || lowestDriver(worstLine) + ' loss'} first, report as A/P/Q movement next month.`,
+    ], 0.6, Math.min(tblEnd + 0.15, 6.15), 12.1, 12);
+    // 🎯 จุดขาย: ทั้งเด็คตอบจากข้อมูลกลางชุดเดียว — บันทึกหน้างานครั้งเดียว ไหลถึงห้องประชุมเอง
+    s.addText('All issues & actions in this deck are answered from ESM centralized shopfloor records (downtime · countermeasures · MO · defects) — entered once at the line, no manual collation.',
+      { x: 0.6, y: 6.55, w: 12.1, h: 0.3, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
     footer(s);
   }
 
