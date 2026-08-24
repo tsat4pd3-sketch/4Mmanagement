@@ -1752,7 +1752,10 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin').eq('id', user.id).single();
+    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
+    let { data, error } = await supabase.from('profiles').select(COLS + ', employee_id').eq('id', user.id).single();
+    // คอลัมน์ employee_id ยังไม่ apply (42703) → ถอยไป select ชุดเดิม ห้ามให้ login พังทั้งระบบ
+    if (error?.code === '42703') ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1768,15 +1771,36 @@ export default function App() {
       // เพราะ localStorage แชร์ข้ามแท็บ เดี๋ยวพาแท็บอื่นที่ดีๆ อยู่หลุดไปด้วย
       return;
     }
+    // ── ตัวตน (ทีม/ไลน์/ส่วนงาน) = **ฐานพนักงาน** เมื่อบัญชีผูกกับพนักงานแล้ว ────────────
+    //   เดิมอ่านจาก profiles ล้วน ซึ่ง admin กรอกเองตอนสร้าง user → ไม่ตรงกับที่หัวหน้าแผนกตั้งไว้
+    //   เคสจริง: หัวหน้า 2 คนทีมสลับกัน → Checkin กรองด้วย team ของบัญชี = มองไม่เห็นกะตัวเอง
+    //
+    // ⚠️ fallback รายฟิลด์ (`??`) จำเป็นระหว่างเปลี่ยนผ่าน **ห้ามถอดจนกว่าจะผูกครบทุกบัญชี**
+    //   ยังไม่ผูก / ฐานพนักงานเว้นช่องนั้นว่าง → ใช้ค่าเดิมในบัญชี
+    //   ถ้าถอดตอนนี้: leader 11 คนเสีย line_id+team ทันที = เปิดหน้าเช็คชื่อไม่เห็นใครเลย
+    //   (วัดแล้ว 2026-08-21 — ดูกฎ "ตัวตนของคนอยู่ที่ employees" ใน CLAUDE.md)
+    //
+    // ⚠️ `sections[]` **ไม่ย้าย** — เป็น "ขอบเขตที่ admin ให้" ไม่ใช่ตัวตน และ employees ไม่มีของเทียบเท่า
+    let ident = { team: data?.team ?? null, line_id: data?.line_id ?? null, section: data?.section ?? null };
+    if (data?.employee_id) {
+      const { data: emp } = await supabase.from('employees')
+        .select('team, line_id, section').eq('id', data.employee_id).maybeSingle();
+      if (emp) ident = {
+        team:    emp.team    ?? ident.team,
+        line_id: emp.line_id ?? ident.line_id,
+        section: emp.section ?? ident.section,
+      };
+    }
+
     setUserRole(data?.role ?? null);
-    setUserLineId(data?.line_id ?? null);
+    setUserLineId(ident.line_id);
     setUserFullName(data?.full_name ?? null);
     setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
-    setUserTeam(data?.team ?? null);
-    setUserSection(data?.section ?? null);
+    setUserTeam(ident.team);
+    setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
     loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
-    setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
+    setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง

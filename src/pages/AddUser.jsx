@@ -460,8 +460,8 @@ export default function AddUser() {
                   ⚠️ ตัวตนไม่ตรงกับฐานข้อมูลพนักงาน · {mism.length} บัญชี
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.5 }}>
-                  หน้าเช็คชื่อกรองรายชื่อด้วยทีมของ<b>บัญชี</b> — ไม่ตรงแปลว่าเขาเห็นกะของคนอื่น
-                  · ค่าที่ถูกคือค่าในฐานพนักงาน (หัวหน้าแผนกเป็นคนดูแล)
+                  ระบบ<b>ใช้ค่าจากฐานพนักงานแล้ว</b> (หัวหน้าแผนกเป็นคนดูแล) — ค่าในบัญชีที่ต่างอยู่คือค่าเก่าที่ไม่ถูกใช้
+                  · กดปุ่มเพื่อล้างให้ตรงกัน จะได้ไม่สับสนตอนเปิดดู
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {mism.map(u => {
@@ -485,6 +485,25 @@ export default function AddUser() {
                 </div>
               </div>
             )}
+            {(() => {
+              // ⚠️ ผูกแล้วแต่ฐานพนักงานเว้นช่องนั้นว่าง → ระบบตกกลับไปใช้ค่าในบัญชี
+              //    ต้องเห็นบนจอ ไม่งั้นเข้าใจผิดว่า single source แล้วทั้งที่ยังไม่ใช่
+              const fb = users.filter(u => {
+                const e = u.employee_id && empById[u.employee_id];
+                if (!e) return false;
+                return (!e.team && u.team) || (!e.line_id && u.line_id);
+              });
+              if (!fb.length) return null;
+              return (
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
+                  <b style={{ color: '#f59e0b' }}>ฐานพนักงานยังไม่ได้กรอก · {fb.length} บัญชี</b>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    {fb.map(u => u.full_name).join(', ')} — ระบบใช้ค่าเดิมในบัญชีไปก่อน
+                    ควรไปกรอกทีม/ไลน์ที่หน้าฐานข้อมูลพนักงาน แล้วค่าจะมาจากที่นั่นที่เดียว
+                  </div>
+                </div>
+              );
+            })()}
             {unset.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 <b style={{ color: '#f59e0b' }}>ยังไม่ระบุประเภทบัญชี · {unset.length} บัญชี</b>
