@@ -30,6 +30,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
+import SearchSelect from '../components/SearchSelect';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -175,6 +176,19 @@ function ImgField({ label, value, onPick, required }) {
 function confirmDiscard() {
   return window.confirm('ปิดหน้าต่างนี้? ข้อมูลที่กรอกไว้ยังไม่ได้บันทึก — จะหายทั้งหมด');
 }
+/** ดึงทุกแถว (แบ่งหน้าทีละ 1000) — ตารางที่โตเกินเพดานของ PostgREST ต้องผ่านตัวนี้เสมอ
+ *  order ต้องคงที่ (ใส่ .order('id') ปิดท้าย) ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า */
+async function fetchAllRows(client, table, cols, shape = q => q) {
+  const PAGE = 1000, out = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await shape(client.from(table).select(cols)).range(from, from + PAGE - 1);
+    if (error) return { data: out, error };
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return { data: out, error: null };
+}
+
 function ModalShell({ title, onClose, children, wide, dirty }) {
   const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
   return (
@@ -241,7 +255,9 @@ export default function MtnRepair() {
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_problem_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('mtn_spare_parts').select('*').eq('is_active', true).order('sort_order'),
+      /* ⚠️ ทะเบียนอะไหล่โตเกิน 1000 แถวได้ (หน้างาน: "อะไหล่เป็นพัน") — Supabase ตัดที่ 1000
+         ไม่แบ่งหน้า = อะไหล่ที่เกินมา **หายจากลิสต์เงียบๆ** ค้นยังไงก็ไม่เจอ (กฎเดียวกับ role_permissions) */
+      fetchAllRows(supabaseDR, 'mtn_spare_parts', '*', q => q.eq('is_active', true).order('sort_order').order('id')),
       supabaseDR.from('mtn_repair_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
@@ -1062,7 +1078,32 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 
   const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]); };
   const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
-  const pickPart = (i, id) => { touch(); const pt = parts.find(p => p.id === id); setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id, name: pt?.name || '', unit: pt?.unit || '' } : x)); };
+  /* เลือกอะไหล่ผ่าน <SearchSelect> — คืน { id, text, opt }
+     เลือกจากทะเบียน = ได้ part_id (หักสต็อกอัตโนมัติ) · พิมพ์เอง = part_id ว่าง เก็บแค่ชื่อ (ไม่หักสต็อก) */
+  const pickPart = (i, { id, text, opt }) => {
+    touch();
+    setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id || '', name: text || '', unit: opt?._unit ?? (id ? x.unit : '') } : x));
+  };
+  /* 🔩 ตัวเลือกอะไหล่ที่ "ค้นได้" (feedback หน้างาน 2026-08-24: อะไหล่หลักพัน <select> เลื่อนหาไม่เจอ)
+     จัดกลุ่ม "ทีมของใบนี้" ขึ้นก่อน แต่ **ไม่ตัดทีมอื่นทิ้ง** — หลักเดียวกับลิสต์มอบหมายช่าง
+     (ช่างหยิบอะไหล่ข้ามทีมมีจริง เช่นน็อต/แบริ่งที่ใช้ร่วมกัน) */
+  const partOpts = useMemo(() => {
+    const tk = teamKeyOf(order?.mtn_dept || '');
+    const grp = (p) => (tk && p.team && sameTeam(p.team, tk)) ? 0 : (p.team ? 2 : 1);
+    const gname = [`🔩 อะไหล่ทีม ${deptNameOf(tk) || ''}`.trim(), '🌐 ใช้ร่วมทุกทีม', '🔩 ทีมอื่น'];
+    return (parts || []).map(p => {
+      const g = grp(p), st = Number(p.stock_qty) || 0, lo = Number(p.min_qty) || 0;
+      return {
+        id: p.id, label: p.name || '(ไม่มีชื่อ)',
+        sub: [p.code, p.shelf && `ชั้น ${p.shelf}`, p.used_with && `ใช้กับ ${p.used_with}`].filter(Boolean).join(' · '),
+        badge: `${st}${p.unit ? ' ' + p.unit : ''}`,
+        badgeColor: st <= 0 ? '#ef4444' : (lo > 0 && st <= lo ? '#f59e0b' : 'var(--text2)'),
+        group: gname[g],
+        keywords: [p.code, p.mat_no, p.part_no, p.shelf, p.used_with, p.supplier].filter(Boolean).join(' '),
+        _g: g, _unit: p.unit || '', _stock: st,
+      };
+    }).sort((a, b) => a._g - b._g);   // sort เสถียร → ในกลุ่มเดียวกันคงลำดับ sort_order เดิม
+  }, [parts, order?.mtn_dept]);
 
   const resolveSign = async (field) => {
     if (sig.mode === 'profile' && sig.url) return sig.url;
@@ -1208,15 +1249,33 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           </div>
           <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={f2 => { touch(); setAfterFile(f2); }} />
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ (เบิก — หักสต็อกอัตโนมัติ)</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
-            {usedParts.map((p, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-                <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: '2 1 140px' }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
-                <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: '2 1 120px' }} />
-                <input type="number" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 70 }} />
-                <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px' }}>✕</button>
-              </div>
-            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ · เลือกจากทะเบียน = หักสต็อกให้ · พิมพ์ชื่อเองได้ถ้าไม่มีในคลัง</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
+            {usedParts.map((p, i) => {
+              const master = parts.find(x => x.id === p.part_id);
+              const over = master && Number(p.qty) > (Number(master.stock_qty) || 0);
+              return (
+                <div key={i} style={{ marginBottom: 6, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 7 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <SearchSelect
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={p.part_id} text={p.name} options={partOpts} allowFree
+                      placeholder="ค้นหาอะไหล่ — ชื่อ / รหัส / ชั้นวาง"
+                      emptyText="ไม่พบอะไหล่ที่ค้นหาในทะเบียน"
+                      onChange={(v) => pickPart(i, v)}
+                    />
+                    <input type="number" min="0" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 64, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: 'var(--muted)', width: 34, flexShrink: 0, paddingTop: 9, overflow: 'hidden' }}>{p.unit || ''}</span>
+                    <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
+                  </div>
+                  {/* ⚠️ เบิกเกินสต็อก — RPC mtn_stock_move กันติดลบอยู่แล้ว บอกก่อนกดบันทึกจะได้ไม่เสียเที่ยว */}
+                  {over && (
+                    <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 4 }}>
+                      ⚠ เบิก {p.qty} แต่คงเหลือ {master.stock_qty} {master.unit || ''} — บันทึกไม่ผ่าน ต้องรับเข้าคลังก่อน หรือลดจำนวน
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {editMode && <div style={{ fontSize: 11, color: 'var(--muted)' }}>* แก้ไข: เพิ่มอะไหล่ใหม่ได้ (รายการเดิมที่หักสต็อกไปแล้วไม่ถูกลบ)</div>}
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
