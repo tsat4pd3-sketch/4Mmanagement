@@ -584,10 +584,18 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
               {/* ถนนทั้งโรงงาน — เห็นครบทุกเส้น เส้นที่ไม่ได้ใช้ = เทาบาง (คำสั่ง user 2026-08-03) */}
               {edges.map(e => { const a = nById[e.a_node], b = nById[e.b_node]; if (!a || !b) return null;
                 return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeOpacity="0.55" strokeWidth="2" vectorEffect="non-scaling-stroke" />; })}
-              {/* เส้นทางที่เลือก (เด่น) */}
-              {routePts.length > 1 && (
-                <polyline points={routePts.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#4ade80" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-              )}
+              {/* เส้นทางที่เลือก (เด่น) — วาด "ราย segment เฉพาะที่หากันถึงจริง"
+                  ⚠️ ห้ามวาด polyline เดียวจาก nodePath: คู่ที่ถนนขาดจะกลายเป็นเส้นเขียว
+                  ลากตรงทะลุกำแพง ดูสมบูรณ์ทั้งที่ไปไม่ถึง (QC audit 2026-08-20 · T2-11) */}
+              {route.segments.filter(s => s.ok && s.path.length > 1).map((s, i) => (
+                <polyline key={`seg-${i}`} points={s.path.map(id => nById[id]).filter(Boolean).map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="none" stroke="#4ade80" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+              ))}
+              {/* คู่ที่ถนนขาด = เส้นประแดงตรงๆ ให้เห็นว่า "ตรงนี้ยังไปไม่ถึง" ไม่ใช่ซ่อนเงียบ */}
+              {route.segments.filter(s => !s.ok).map((s, i) => {
+                const a = nById[s.from], b = nById[s.to]; if (!a || !b) return null;
+                return <line key={`brk-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ef4444" strokeWidth="2.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
+              })}
             </svg>
             {/* node markers ทั้งหมด (จาง) + จุดจอดของรอบ (เลขลำดับ + บทบาท ⬆รับ/⬇ส่ง) */}
             {nodes.map(n => { const k = nodeKind(n.kind); const idx = stopIds.indexOf(n.id);

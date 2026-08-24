@@ -8,6 +8,7 @@ import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { wavg, wLoad } from '../utils/oee';
+import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -722,24 +723,9 @@ function baseOfPart(x) {
     .replace(/ /g, '');
 }
 
-function countWorkingDays(monthKey, calRows) {
-  const [y, m] = monthKey.split('-').map(Number);
-  const cal = {}; (calRows || []).forEach(r => { cal[r.work_date] = r.day_type; });
-  const days = new Date(y, m, 0).getDate();
-  let wd = 0;
-  for (let d = 1; d <= days; d++) {
-    const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay();                                   // 0=อา 6=เสา
-    const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const type = cal[key] || '';
-    // มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = ไม่นับ — เดิมใช้ regex /holiday|off|หยุด/
-    // ซึ่งไม่ match ค่า day_type จริงเลย ทำให้วันหยุดที่ตก จ-ศ ถูกนับเป็นวันทำงาน (บั๊กแก้ 2026-07-21)
-    if (type && type !== 'working') continue;
-    if (dow >= 1 && dow <= 5) wd++;                            // จ-ศ = วันทำงาน
-    else if (type === 'working') wd++;                        // เสาร์/อาทิตย์ที่มาร์คทำงาน
-  }
-  return wd;
-}
+/* วันทำงาน/เดือน → ใช้ countWorkingDaysInMonth (utils/companyCalendar) ที่เดียว
+   (QC audit 2026-08-20 · รอบ 5: เดิมไฟล์นี้ถือสูตรของตัวเองซ้ำกับ util กลาง — ความหมายเท่ากัน
+   แต่เป็น 2 ที่ที่ drift กันได้ทุกครั้งที่มีคนแก้ฝั่งเดียว) */
 
 /* ⚠️ กฎเหล็ก — `kanban_standards.lot_size` เก็บเป็น **ชิ้น** ทุกฝั่งที่อ่านตีความเป็นชิ้นหมด:
      fn_explode_child_demand (สะสม demand เป็นชิ้นแล้วเทียบตรงๆ) · ProductMaster (ป้ายเขียน "ชิ้น")
@@ -780,14 +766,14 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }, { data: cal }] = await Promise.all([
+    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }] = await Promise.all([
       supabaseDR.from('kanban_calc_settings').select('*').eq('id', 'default').maybeSingle(),
       supabaseDR.from('kanban_calc_params').select('*'),
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no, process_type').eq('is_active', true),
       supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
-      supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
+      loadCompanyCalendar(),   // ปฏิทินบริษัท (cache กลาง) — ใช้คิดวันทำงานผ่าน util เดียวกันทั้งระบบ
     ]);
     /* CAP/ชม. ที่กรอกเป็น "กำลังทางทฤษฎี" (3600 ÷ CT) — ไลน์จริงไม่มีทางเดินได้เท่านั้นทั้งกะ
        → ดึง OEE ของกะที่ปิดแล้ว 90 วัน มาเทียบให้เห็นว่า "จริงๆ ออกกี่ชิ้น/ชม."
@@ -803,7 +789,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       .map(([ln, arr]) => [ln, { oee: wavg(arr, s => Number(s.oee), wLoad), n: arr.length }])
       .filter(([, v]) => v.oee != null)));
     // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
-    const wdCal = countWorkingDays(month, cal || []);
+    const wdCal = countWorkingDaysInMonth(month, 0);
     setSettings({ working_days: wdCal || st?.working_days || 20, efficiency_pct: st ? st.efficiency_pct : 80, hours_per_day: st?.hours_per_day ?? 16 });
     setParams(Object.fromEntries((pr || []).map(r => [r.mat_no, r])));
     setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));

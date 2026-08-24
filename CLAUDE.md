@@ -477,7 +477,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >
 > | export | ใช้ตอบ | ใช้ที่ |
 > |---|---|---|
-> | `stdCapacityOf(lines, name, shift)` | การ์ดรายไลน์ + **ผลรวมทั้งลิสต์ (ไม่นับซ้ำ)** — ไลน์ลูกที่แม่ตั้งไว้แล้ว = 0 | Dashboard |
+> | `stdCapacityOf(lines, name, shift)` | การ์ดรายไลน์ + **ผลรวมทั้งลิสต์ (ไม่นับซ้ำ)** — **ไลน์ลูกที่แม่อยู่ในลิสต์ = 0 เสมอ** (แม่ถือยอดกลุ่ม own หรือ rollup — เดิม "ลูกนับตัวเองเมื่อแม่ไม่ตั้ง" ทำให้แม่ unset + ลูกตั้งค่า ถูกนับซ้ำ 2 เท่า · QC audit รอบ 5 2026-08-24 มีเทสคุม invariant Σ ครอบครัว = stdGroupOf) | Dashboard |
 > | `stdGroupOf(lines, name, shift)` | "กลุ่มนี้ทั้งกลุ่มกี่คน" | OrderTrace |
 > | `stdInheritedOf` / `hasNightShift` | **คุณสมบัติไลน์** (มีกะดึกไหม) — ⚠️ ห้ามใช้รวมยอด จะซ้ำกับแม่ | ProductionPlan |
 >
