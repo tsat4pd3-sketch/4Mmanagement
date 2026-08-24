@@ -74,7 +74,10 @@ Deno.serve(async () => {
     for (const i of insp ?? []) if (prodIds.has(i.checklist_id)) checked.add(i.jig_id);
 
     const lines = Object.keys(byLine);
-    const { data: sessions } = await db.from('production_sessions').select('id, line_name').eq('work_date', si.workDateStr).eq('shift', si.shift).in('line_name', lines);
+    /* ⚠️ ห้ามกรอง `.in('line_name', lines)` — อุปกรณ์ลงทะเบียน AM ไว้ที่ **ไลน์แม่** (HYDROFORM)
+       แต่กะเปิดที่ **ไลน์ลูก** (HDF1/HDF2) → กรองด้วยชื่อไลน์ที่ลงทะเบียน = ตัดกะจริงทิ้งหมด
+       ดึงกะของกะนี้ทั้งหมด (หลักสิบแถว) แล้วค่อยจับคู่ตามครอบครัวไลน์ด้านล่าง */
+    const { data: sessions } = await db.from('production_sessions').select('id, line_name').eq('work_date', si.workDateStr).eq('shift', si.shift);
     const sessLine: Record<string, string> = {};
     (sessions ?? []).forEach(s => { sessLine[s.id] = s.line_name; });
     const firstOrder: Record<string, string> = {};
@@ -91,11 +94,49 @@ Deno.serve(async () => {
       }
     }
 
+    /* ครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — `production_lines` อยู่ Main คนละ project กับ scan ตัวนี้
+       จึงอ่านผ่าน REST ด้วย anon key เดียวกับที่ใช้ POST แจ้งเตือน
+       ⚠️ อ่านไม่ได้ = ถอยไปเทียบชื่อตรงตัว (พฤติกรรมเดิม ไม่แย่ลง) **แต่ต้องรายงานออกมาใน response**
+          ไม่งั้นการ์ดไลน์แม่จะไม่มีวันเตือนโดยไม่มีใครรู้ว่าทำไม */
+    let hierarchy: 'ok' | 'unavailable' = 'unavailable';
+    const famOf: Record<string, string[]> = {};
+    try {
+      const res = await fetch(`${NOTIFY_URL.replace('/functions/v1/send-notification', '')}/rest/v1/production_lines?select=name,parent_line_name`,
+        { headers: { apikey: NOTIFY_KEY, Authorization: `Bearer ${NOTIFY_KEY}` } });
+      if (res.ok) {
+        const rows = await res.json() as { name: string; parent_line_name: string | null }[];
+        if (Array.isArray(rows) && rows.length) {
+          hierarchy = 'ok';
+          const childrenOf: Record<string, string[]> = {};
+          const parentOf: Record<string, string | null> = {};
+          for (const r of rows) {
+            parentOf[r.name] = r.parent_line_name;
+            if (r.parent_line_name) (childrenOf[r.parent_line_name] ||= []).push(r.name);
+          }
+          for (const l of lines) {
+            const fam = new Set<string>([l, ...(childrenOf[l] ?? [])]);
+            if (parentOf[l]) fam.add(parentOf[l] as string);
+            famOf[l] = [...fam];
+          }
+        }
+      }
+    } catch { /* เครือข่ายสะดุด → ถอยไปเทียบชื่อตรงตัว (รายงานผ่าน hierarchy) */ }
+
+    // เวลาเริ่มผลิตของไลน์ที่ลงทะเบียน = เวลาเร็วสุดในครอบครัวไลน์นั้น
+    const startedFor = (line: string): string | undefined => {
+      let best: string | undefined;
+      for (const n of (famOf[line] ?? [line])) {
+        const at = firstOrder[n];
+        if (at && (!best || at < best)) best = at;
+      }
+      return best;
+    };
+
     const now = Date.now();
     let sent = 0;
     for (const line of lines) {
       if (alerted.has(line)) continue;
-      const fo = firstOrder[line];
+      const fo = startedFor(line);
       if (!fo) continue;                                            // not producing yet
       if (now - new Date(fo).getTime() <= WINDOW_MIN * 60000) continue;  // still in the grace window
       const jigIds = byLine[line];
@@ -109,7 +150,8 @@ Deno.serve(async () => {
       await db.from('pm_daily_alerts').insert({ line_name: line, work_date: si.workDateStr, shift: si.shift, color: 'orange' });
       sent++;
     }
-    return new Response(JSON.stringify({ ok: true, lines: lines.length, sent }), { headers: { 'Content-Type': 'application/json' } });
+    // hierarchy = 'unavailable' → ไลน์แม่ที่กะเปิดอยู่ที่ไลน์ลูก จะไม่ถูกเตือน (ต้องเห็น ห้ามเงียบ)
+    return new Response(JSON.stringify({ ok: true, lines: lines.length, sent, hierarchy, shift: si.shift, work_date: si.workDateStr }), { headers: { 'Content-Type': 'application/json' } });
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
