@@ -477,7 +477,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >
 > | export | ใช้ตอบ | ใช้ที่ |
 > |---|---|---|
-> | `stdCapacityOf(lines, name, shift)` | การ์ดรายไลน์ + **ผลรวมทั้งลิสต์ (ไม่นับซ้ำ)** — ไลน์ลูกที่แม่ตั้งไว้แล้ว = 0 | Dashboard |
+> | `stdCapacityOf(lines, name, shift)` | การ์ดรายไลน์ + **ผลรวมทั้งลิสต์ (ไม่นับซ้ำ)** — **ไลน์ลูกที่แม่อยู่ในลิสต์ = 0 เสมอ** (แม่ถือยอดกลุ่ม own หรือ rollup — เดิม "ลูกนับตัวเองเมื่อแม่ไม่ตั้ง" ทำให้แม่ unset + ลูกตั้งค่า ถูกนับซ้ำ 2 เท่า · QC audit รอบ 5 2026-08-24 มีเทสคุม invariant Σ ครอบครัว = stdGroupOf) | Dashboard |
 > | `stdGroupOf(lines, name, shift)` | "กลุ่มนี้ทั้งกลุ่มกี่คน" | OrderTrace |
 > | `stdInheritedOf` / `hasNightShift` | **คุณสมบัติไลน์** (มีกะดึกไหม) — ⚠️ ห้ามใช้รวมยอด จะซ้ำกับแม่ | ProductionPlan |
 >
@@ -584,6 +584,15 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > **ห้ามปล่อยให้ทางตัน** — จอว่างต้องบอกด้วยว่า **แผนกไหนมีจุดตรวจของเครื่องนี้อยู่** (`listChecklistsByDept`) เป็นชิปกดสลับแท็บไปดูได้เลย ไม่ใช่ให้ไปไล่กดทีละแท็บเอง
 
 - **AM ฝ่ายผลิต แยกจาก PM หน่วยงานช่าง:** `/daily-pm` = operator/หัวหน้าไลน์เช็คเครื่อง**ผลิต**รายวัน (department `production` + registry `pm_daily_line_targets`) · ลิสต์ลงทะเบียน AM กรองเฉพาะ**เครื่องผลิต** (ตัด `equipment_type` jig/die + `equipment_category` facility/utility ออก — เดิมโชว์ทุกอย่างปนกัน · DailyPM.jsx `prodOnly`) · PM หน่วยงานช่าง (JIG/DIE/MTN) แยกตามส่วนงานที่หน้า PMSchedule/PMCheck/PMSetup ตามปกติ · **1 เครื่องมีได้ทั้ง checklist ผลิตรายวัน + checklist ช่างรายไตรมาส** (คนละ department คนละ checkpoints — pmChecklists key = equipment_id+module+department)
+> #### ⚠️ กฎเหล็ก — "เริ่มผลิต" ของนาฬิกา AM = **เปิดใบผลิต** ไม่ใช่ปิดใบ (2026-08-24 · feedback หน้างาน)
+> *"recheck ที เหมือนไม่สอดคล้องกับ daily report ที่กำลังเปิดกะ"* — จอ AM ขึ้น **"ยังไม่เริ่มผลิต" ทั้ง 7 ไลน์** ขณะกะเดินอยู่จริง
+> ต้นเหตุ 2 ชั้น (แก้แล้วทั้งคู่ · ต้อง **deploy edge `pm-daily-scan`** ด้วย ไม่งั้นจอกับตัวเตือนตัดสินคนละเวลา):
+> 1. **ใช้ `prod_orders.confirmed_at` (ปิดใบ = ผลิตเสร็จ) เป็นจุดเริ่มนับ** → ใบที่กินหลายชั่วโมงทำให้สถานะค้าง idle ทั้งเช้า
+>    แล้วนาฬิกา 60 นาทีเพิ่งเริ่มเดินตอนใบแรก*จบ* — ตรงข้ามกับ AM ที่ต้องตรวจ **ต้นกะ** · เปลี่ยนเป็น **`opened_at`** (fallback `confirmed_at` เผื่อใบเก่า)
+> 2. **เทียบชื่อไลน์ตรงตัว ไม่ดูครอบครัวไลน์** → อุปกรณ์ลงทะเบียนที่ไลน์แม่ (HYDROFORM) แต่กะเปิดที่ไลน์ลูก (HDF1/HDF2)
+>    = การ์ดไลน์แม่ค้าง "ยังไม่เริ่มผลิต" ตลอดกาล · ใช้ `getLineFamilyNames` แล้ว (pattern มาตรฐาน) · ชื่อไลน์ที่ไม่มีในทะเบียนยังคงไว้ ไม่ตกหาย
+> - **`idle` มี 2 ความหมาย ต้องแยกให้เห็นบนป้าย** — `ยังไม่เปิดกะ` vs `เปิดกะแล้ว · ยังไม่มีใบผลิต` (เดิมเขียนรวมว่า "ยังไม่เริ่มผลิต" = จอโกหกตอนกะเดินอยู่)
+> - จุดใหม่ที่ถามว่า "ไลน์นี้เริ่มผลิตหรือยัง" ให้ยึด `opened_at` ของใบแรก **ห้ามใช้ `confirmed_at`**
 - **ยึด `checklists.department` เป็นหลักในการแยกทีม** (คำสั่ง user — 1 เครื่องมี PM หลายทีมได้: ผลิตตรวจรายวัน / MTN เข้า PM รายไตรมาส = คนละ checklist คนละ department) · **PMCheckData เดิมกรองด้วย `equipment_type` (jig/die/machine)** ทำให้ของชิ้นเดียวโผล่คนละแท็บกับ PMSchedule → แก้เป็น union: โผล่ใต้ทีม D ถ้า **มี checklist ของ D อยู่แล้ว** (ตรงกับ PMSchedule) **หรือ** ประเภทอุปกรณ์ = `equip_type` default ของทีม (ให้เริ่ม checklist ใหม่ได้) · `clDeptByJig` (jig_id→Set(department)) ใน PMCheckData
 > #### ⚠️ กฎเหล็ก — checklist เกิดตอน "บันทึก" เท่านั้น ห้ามสร้างตอนเปิดดู (2026-08-05)
 > `checklists` แถวหนึ่ง = **การประกาศว่า "แผนกนี้รับผิดชอบตรวจเครื่องนี้"** — ทั้ง PMSchedule/PMCheckData/DailyPM ตัดสินว่าเครื่องโผล่ในแท็บแผนกไหนจากการมีอยู่ของแถวนี้ (`clDeptByJig`) · **แค่เปิดดูจึงต้องไม่สร้าง**
@@ -794,7 +803,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
   - **หน้าใหม่** → เพิ่ม `{ key: 'page:/xxx', label: '...' }` ใน **`PAGE_GROUPS`** (`src/pages/PermissionsManagement.jsx`) **ในคอมมิทเดียวกับที่เพิ่ม route** · ไม่เพิ่ม = สิทธิ์ล็อกตามที่ seed ไว้ ปรับไม่ได้ (audit 2026-08-06 เจอค้าง 8 หน้า: `/qr-labels` `/dept-dashboard` `/group-overview` `/adoption-outlook` `/energy` `/pe-docs` `/vsm` `/die-registry` — เปิดให้ทุก role แต่ปิดไม่ได้)
   - **action ใหม่** → insert แถวใน **`permission_catalog`** ด้วย · ไม่ insert = ไม่ขึ้นในตาราง (เคยตกหล่น 8 key: `lpa:*` 3 · `ojt:*` 2 · `doc_forms:manage` · `pm_coord:manage` · `transport:manage` — แก้แล้ว migration `20260806_permission_catalog_gaps.sql`)
     - ⚠️ **คอลัมน์คือ `resource` + `action` แยกกัน ไม่ใช่ `permission_key`** (key ที่โค้ดเช็คคือ `resource:action` ที่ประกอบขึ้นตอน runtime) · เขียน insert ผิดคอลัมน์ = error 42703
-    - ⚠️ **`group_name` ต้องเป็นชื่อหมวดตาม `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด** (ภาพรวม 1xx · ฝ่ายผลิต 2xx · วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic 5xx · ซ่อมบำรุง 6xx · QA/QC 7xx · PE 8xx · ตั้งค่า 9xx — เลือกเลขที่ยังว่าง ห้ามซ้ำ) — พิมพ์ชื่อหมวดเอง = หมวดกำพร้าโผล่กลางตาราง (audit 2026-08-19 เจอ 'ซ่อมบำรุง'/'ประชุมแถวเช้า' เป็นหมวดเดี่ยว + sort ชนกัน 8 คู่ → จัดใหม่ทั้งตารางด้วย migration `20260819_permission_catalog_regroup.sql` **apply แล้ว 2026-08-19** — cosmetic ล้วน ไม่แตะ role_permissions · ผลตรวจ: 9 หมวด 89 แถว ตรงเป๊ะ) · **`PAGE_GROUPS` ใน PermissionsManagement.jsx ต้อง mirror `NAV_ITEMS` เสมอ** (หมวด/ลำดับ/ชื่อ — เพิ่มหน้าใหม่แก้ 2 ที่ให้ตรงกัน) · QC checklist ข้อ C6
+    - ⚠️ **`group_name` ต้องเป็นชื่อหมวดตาม `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด** (ภาพรวม 1xx · ฝ่ายผลิต 2xx · วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic 5xx · ซ่อมบำรุง 6xx · QA/QC 7xx · PE 8xx · ตั้งค่า 9xx — เลือกเลขที่ยังว่าง ห้ามซ้ำ) — พิมพ์ชื่อหมวดเอง = หมวดกำพร้าโผล่กลางตาราง (audit 2026-08-19 เจอ 'ซ่อมบำรุง'/'ประชุมแถวเช้า' เป็นหมวดเดี่ยว + sort ชนกัน 8 คู่ → จัดใหม่ทั้งตารางด้วย migration `20260819_permission_catalog_regroup.sql` **apply แล้ว 2026-08-19** — cosmetic ล้วน ไม่แตะ role_permissions · ผลตรวจ: 9 หมวด 89 แถว ตรงเป๊ะ) · **⚠️ แล้วยังหลุดอีกรอบ:** `20260818_org_divisions.sql` seed `org:manage_divisions` ด้วย `group_name='ตั้งค่า/ฐานข้อมูล'` (ชื่อผิด) แต่ถูก apply **หลัง** audit รอบนั้น จึงตกสำรวจ → เก็บด้วย `20260824_permission_catalog_org_divisions_group.sql` (**apply แล้ว 2026-08-24** · ผลตรวจ: 9 หมวด 94 แถว · หมวดตั้งค่าฯ sort ถึง 940) — **บทเรียน: migration ที่ seed catalog แล้ว apply ทีหลัง ต้องตรวจ group_name ซ้ำเสมอ audit รอบเก่าไม่ครอบให้** · **`PAGE_GROUPS` ใน PermissionsManagement.jsx ต้อง mirror `NAV_ITEMS` เสมอ** (หมวด/ลำดับ/ชื่อ — เพิ่มหน้าใหม่แก้ 2 ที่ให้ตรงกัน) · QC checklist ข้อ C6
   - **ลงทะเบียนแล้วยังไม่จบ** — กับดัก `enum_range` (ดูย่อหน้าถัดไป) ทำให้ role ที่เพิ่มทีหลังไม่มีแถว ต้องไปติ๊กที่ `/permissions` เองอยู่ดี
   - **ห้ามใส่ key ลงทะเบียนโดยที่โค้ดไม่เรียกใช้** — ติ๊กแล้วไม่มีผล คนตั้งค่างง (ลบ `org:manage`/`users:manage`/`permissions:manage` ออกแล้ว — 3 หน้านั้นคุมด้วย `page:*` + admin-only พอ)
   - **คอลัมน์ 🛡️ แอดมินหน่วยงาน โผล่เฉพาะแท็บ "สิทธิ์การทำงาน"** (`PAGE_COLS` กรอง `bucket` ออกจากแท็บหน้า) เพราะ `hasPermission()` บล็อก `page:*` ของ bucket ไว้ — ติ๊กในแท็บหน้าไม่มีผลจริง **ห้ามเอาคอลัมน์นี้กลับเข้าแท็บการเข้าถึงหน้า**
@@ -859,7 +868,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > - **policy อื่นที่ยัง hardcode role array อยู่ ให้ทยอยย้ายมาใช้ `has_perm()`** เมื่อไปแตะตารางนั้น
 >
 > #### ⚠️ กฎเหล็ก — "เห็นได้ทั้งโรงงาน แต่แก้ได้เฉพาะส่วนงานตัวเอง" ห้ามใช้ `profiles.sections` ทำ (2026-08-17)
-> **`sections` เป็น scope ระดับทั้งระบบ ไม่ใช่ตัวกรองเฉพาะหน้าพนักงาน** — หน่วยงานสนับสนุน (คลัง/สโตร์ = section `Planning&Store`) **ไม่มีไลน์ผลิตสังกัดอยู่เลย** → ตั้ง `sections=['Planning&Store']` เมื่อไหร่ หน้าที่กรองด้วย section (**StoreMonitor · PlannerSales · RundownStock · Dashboard · Report**) เหลือ **0 แถวทันที** = พังงานประจำวันของเขาเอง แลกกับการซ่อนรายชื่อพนักงานฝ่ายผลิต
+> **`sections` เป็น scope ระดับทั้งระบบ ไม่ใช่ตัวกรองเฉพาะหน้าพนักงาน** — หน่วยงานสนับสนุน (คลัง/สโตร์ = section `Planning&Store`) **ไม่มีไลน์ผลิตสังกัดอยู่เลย** → ตั้ง `sections=['Planning&Store']` เมื่อไหร่ หน้าที่กรองด้วย section (**StoreMonitor · Dashboard · Report** — ตรวจโค้ดซ้ำ 2026-08-24: `PlannerSales`/`RundownStock` **ไม่ได้อ่าน `sections` เลย** จึงไม่กระทบ ที่เคยเขียนไว้ว่ากระทบด้วยคือผิด) เหลือ **0 แถวทันที** = พังงานประจำวันของเขาเอง แลกกับการซ่อนรายชื่อพนักงานฝ่ายผลิต
 > - **กลไกที่ถูก: คีย์ `employees:edit_all_sections`** (migration `20260817_sale_role_employee_management.sql`) — role ที่ **มี** = แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม) · **ไม่มี** = ปุ่ม ✏️/🚫 + แผงระดับทักษะ เปิดเฉพาะแถวที่ `employees.section` ตรงกับ **`profiles.section` (คอลัมน์เดี่ยว)** ของผู้ใช้ แถวอื่นขึ้น 🔒
 > - **ใช้ `profiles.section` เดี่ยว ไม่ใช่ `sections[]` โดยตั้งใจ** — `effectiveSections()` ข้อ 5 บอกว่า "role อื่นที่มีแค่ section เดี่ยว → ไม่จำกัด" → **scope ทั้งระบบคงเดิมเป๊ะ** ได้ค่า "ส่วนงานของฉัน" มาใช้ฟรีๆ · **ห้ามเผลอย้ายค่านี้ไปใส่ `sections[]`**
 > - seed = ทุก role ที่เคยแก้ได้ `true` → **พฤติกรรมเดิมไม่เปลี่ยนสำหรับใครเลย** · UI เช็คผ่าน `isActionSeeded()` → ก่อน apply migration ทุก role แก้ได้หมดเหมือนเดิม (pattern เดียวกับ `canDelete()`)
@@ -1027,6 +1036,19 @@ Reject → status: "rejected" + reject_reason
   บนชาร์ตรวมเป็นชิป ⏳ ท้ายแถว, การ์ดโชว์ "⏳ ไม่ระบุเวลา"
 - **แจ้งเตือนหลุดเฟสเป็นหน้าที่ scanner ฝั่ง server** (`shipping-phase-scan` pg_cron ทุก 10 นาที
   + dedup ใน `shipping_phase_alerts`) — ห้ามย้ายกลับมา client (ทำงานแม้ไม่มีใครเปิดหน้า)
+> ### ⚠️ กฎเหล็ก — แจ้งเตือน "ขั้นตอนที่ยังไม่มีใครใช้" = สแปมที่กลบเรื่องจริง (2026-08-24)
+> **เคสจริง:** `customer_shipping_orders` มีแค่ **pending 434 / shipped 38** — สถานะกลาง
+> (`confirmed`/`prepared`/`loaded`) **ไม่เคยถูกใช้เลยสักใบ** ทีมกดจาก pending ไป "ส่งแล้ว" ตรงๆ
+> ⇒ ทุกใบที่ยัง pending หลุดครบทุกเฟส → **66–224 แจ้งเตือน/วัน** (17/8=118 · 19/8=212 · 20/8=224)
+> เข้า**ห้อง Telegram เดียวกัน**กับ `edi_import`/`shipping_overdue`/`store_abnormal` ทั้งหมด
+> และตั้งแต่ 21/8 ที่เปิด `inapp_roles` ให้หมวด logistic → ไปเด้ง**กระดิ่ง + Web Push** ด้วย
+> (24/8 มี notification 169 แถว/13 คน ทั้งที่เรื่องจริงมีแค่ 13 = สรุปสโตร์รายวัน)
+> - **แก้ที่ scanner ไม่ใช่ปิดสวิตช์**: ถ้า 30 วันล่าสุดไม่มีใบไหน**อยู่**สถานะกลางเลย = ยังไม่ได้ใช้ walkback
+>   → ข้ามเฟสกลาง เตือนเฉพาะเฟสสุดท้าย (ต้องส่งถึงลูกค้า) ที่ทีมทำจริง
+> - **self-healing** — วันไหนเริ่มกดยืนยัน/เตรียม/โหลด เฟสนั้นกลับมาเตือนเอง **ไม่ต้องแก้โค้ด**
+> - **ห้ามข้ามเงียบ** — คืน `workflow_live` + `skipped_unused_phases` ใน response ทุกครั้ง
+> - **หลักที่ใช้ซ้ำได้: ก่อนเปิด `inapp_roles` ให้ event ไหน ต้องวัดความถี่จริงก่อนเสมอ**
+>   event ที่ยิงเกิน ~5 ครั้ง/วัน ไม่ควรเข้ากระดิ่ง/Push (ให้อยู่ Telegram หรือยุบเป็นสรุปรายวันแบบ `store_abnormal`)
 
 ### วงจร FG stock (ครบ loop — ห้ามตัดขาตอนแก้)
 
@@ -1917,6 +1939,11 @@ migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21
   - **ซ่อมบำรุง** — แผงเด่นคือ **"⚠️ เครื่องที่หยุดซ้ำ ≥2 ครั้งใน 30 วัน แต่ยังไม่มีใบแจ้งซ่อม"** (downtime 3,567 แถว vs ใบซ่อม 7 ใบ = ช่องว่างจริง) + PM เกินกำหนด/ใกล้ครบ
   - **QA** — แผงเด่นคือ **"ไลน์ที่เดินกะวันนี้แต่ยังไม่มีบันทึกของเสีย"** (ของดี 100% จริง หรือลืมลง?) + 4M รออนุมัติ QA + LPA ที่ตอบ N/T
 - **ห้ามโชว์เลขที่ดูสมบูรณ์ทั้งที่ยังขาด** — KPI ผลิตมีการ์ด "กะที่ยังไม่ปิด" กำกับว่าตัวเลขยังไม่ครบทั้งวัน
+- **📑 แท็บ "KPI รายเดือน" (`?view=kpi` · 2026-08-24 · คำสั่ง user):** แทนแพ็คกระดาษรายเดือนที่ปริ้นเซ็นกัน (Internal Defect Report ราย section + OEE รายเดือน — หลักฐานเบื้องหลังฟอร์ม KPI Monitoring FM-HRM-6-024) · component `src/components/KpiMonthly.jsx` (lazy) — ตาราง KPI × เดือน Jan-Dec + รวม/เฉลี่ย + Y/N เทียบเป้า เฉพาะตัวที่คำนวณอัตโนมัติได้: ยอดผลิต/ของเสีย/PPM/Cost of defect/OEE/DT นอกแผน
+  - **สูตรยึดมาตรฐานระบบทั้งหมด**: OEE เดือน = `wavg(oee stamped, wLoad)` · NG = defect_logs line-mode (ไม่รวม trial) · **PPM = NG÷(ยอดผลิต+NG)×1e6** (ต่างจากสูตรใบกระดาษเดิม NG÷ยอดผลิต ~0.03% ที่ระดับ PPM ต่ำ — จดกำกับบนจอ/ใบพิมพ์แล้ว ไม่ต้องมี 2 สูตร) · **ยอดผลิต = Σ actual_qty รายชิ้น ไม่ใช้ pairAwareTotal โดยตั้งใจ** (PPM ต้องหารด้วยชิ้น · ใบเดิมก็นับต่อไลน์ต่อชิ้น) · เป้า OEE จาก `oee_targets` เฉลี่ยรายกรุ๊ปตามกฎ
+  - โหลดครั้งเดียวตอนเปิด/เปลี่ยนปี ไม่ poll (กฎ egress) · sessions ปีละ ~1 หน้า + DT/defect chunk `.in()` 120 · นับเฉพาะกะปิดแล้ว เดือนปัจจุบันติดป้าย "ยังไม่จบ" · ของเสียที่ไม่มีต้นทุน/ชิ้น = รายงานจำนวน ห้ามเดา
+  - พิมพ์ผ่าน `withDocFoot(html, 'kpi_monthly')` (doc_forms seed `20260824_doc_form_kpi_monthly.sql` · apply แล้ว) · ใช้ `page:/dept-dashboard` เดิม ไม่มี permission ใหม่
+  - **เฟส 2 (ยังไม่ทำ):** KPI นอกระบบกรอกมือ (DL/OH % ของยอดขาย · Customer Satisfaction · Safety · HR — ช่อง "Data from Acc/QSM/HRM" ในฟอร์ม) + เป้า Commitment/Target รายปี (`kpi_definitions`+`kpi_manual_entries`) + export Excel ลงฟอร์ม FM-HRM-6-024 เดิม · ไฟล์ตัวอย่างจาก user: KPI Appraisal FY2023 (FM-HRM-6-022/024/025 — Appraisal ← Average จาก Monitoring ← แพ็คปริ้นรายเดือน)
 - **⚠️ กับดัก: หน้าเดียวหลาย View ต้องผูกข้อมูลกับ "ส่วนงานที่โหลดมา" (`data = { dept, d }`)** — ตอนสลับแท็บ React จะ render View ของส่วนงานใหม่ **ก่อน** effect โหลดข้อมูลจะวิ่ง ถ้าเก็บแต่ก้อนข้อมูลเปล่า View ใหม่จะได้ข้อมูล**รูปทรงของส่วนงานเก่า** → พังทันที (เจอจริง 2026-08-06: `Cannot read properties of undefined (reading 'forEach')` ตอนคลิกแท็บ) · render เฉพาะเมื่อ `data.dept === dept` เท่านั้น · **build/lint จับไม่ได้ (เป็น runtime shape mismatch) — หน้าใหม่ที่สลับ View ด้วย state ต้องใช้ pattern นี้เสมอ**
 
 ---
@@ -2614,7 +2641,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `send-cqi15-notification` | Main | แจ้งเตือน CQI-15 Event Log + approval แยกจาก send-notification |
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
-| `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 |
+| `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
 | `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
 | `store-daily-scan` | DR (pg_cron 01:30 UTC = **08:30 ไทย**) | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
 | `send-store-notification` | Main | **ผู้ส่งฝั่ง Store** — รับ event `store_abnormal` · **แยกไฟล์จาก send-notification โดยตั้งใจ (กันไฟล์ 47KB พัง) แต่ route ผ่าน `notification_rules`/`telegram_channels` ชุดเดียวกัน** (precedent เดียวกับ `send-mtn-notification`) → เปิด/ปิด/เลือกห้อง/แก้ข้อความ/เลือก role ที่เข้ากระดิ่ง ทำที่ `/notification-config` เหมือนทุกเรื่อง · verify_jwt=false |
@@ -2748,7 +2775,8 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 ```
 src/
 ├── App.jsx            # Router + Sidebar + UserContext + NAV_ITEMS (source of truth เมนู/หมวด)
-│                      #   exports: UserContext, navItemsForGroups, focusSidebarGroups, accessSummaryForRole
+│                      #   exports: UserContext, NAV_ITEMS, NAV_GROUP_ORDER, NAV_GROUP_META,
+│                      #            navItemsForGroups, accessSummaryForRole, Sidebar
 ├── main.jsx           # bootstrap + RootErrorBoundary + vite:preloadError auto-reload (ห้ามถอด)
 ├── index.css          # theme variables + CSS กลาง (.now-line/.now-chip, .dt-alarm-*, .person-alarm-*, .table-sticky)
 ├── supabaseClient.js  # 2 clients: supabase (Main) / supabaseDR (DR — anon เสมอ)
@@ -2779,7 +2807,7 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
                        #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
                        #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
-                       #   ENERGY_MONITORING_DESIGN.md (โมดูลพลังงาน — ออกแบบแล้ว ยังไม่เขียนโค้ด) ·
+                       #   ENERGY_MONITORING_DESIGN.md (โมดูลพลังงาน — ทำแล้ว หน้า /energy) ·
                        #   VSM-DESIGN.md (Value Stream Mapping — เฟส 1 ทำแล้ว) ·
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
                        #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
@@ -2869,6 +2897,13 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 2. **ทำงานให้สอดคล้องกับกฎ** — ถ้าสิ่งที่จะทำขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
 3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern, schema, สิทธิ์, หรือ workflow ที่ session อื่นต้องรู้ → อัพเดทเอกสารที่เกี่ยวข้อง (CLAUDE.md / UI-CONVENTIONS.md / PERMISSIONS-DESIGN.md) **ในคอมมิทเดียวกัน** พร้อมวันที่
 4. build ผ่าน (`npm run build`) ก่อน commit เสมอ · merge เข้า `main` = deploy จริง
+   - **⚠️ `npm run build` = `lint:critical` → `npm test` → `vite build` (เทสเข้าด่านแล้ว 2026-08-24)**
+     ก่อนหน้านี้มีไฟล์เทส 9 ไฟล์ / 51 เคส ที่เอกสารอ้างว่า "ล็อกไว้แล้ว" แต่ **ไม่มี script ไหนรันมันเลย**
+     → เทสที่เขียนไว้กันของพังไม่เคยถูกเรียกใช้จริงถ้าไม่มีคนพิมพ์คำสั่งเอง (พบตอน QC audit)
+     · ตัวรัน = `scripts/run-tests.mjs` ไล่หา `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่ไว้ใน
+     `__tests__/` ที่ไหนก็ได้ใต้ src/ แล้วมันถูกเก็บอัตโนมัติ ไม่ต้องแก้ script**
+     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'` ใน package.json** — node รองรับ glob ใน `--test` ตั้งแต่ v22
+     แต่ Vite 8 รับ Node 20.19+ ได้ ถ้า Render ใช้ Node 20 อยู่จะ **deploy ล่มทั้งที่โค้ดไม่ผิด**
    - **`npm run build` มีด่าน lint กฎ crash ในตัวแล้ว (2026-07-24)** — `eslint.critical.config.js` เช็ค `no-undef` ฯลฯ เฉพาะกฎที่ทำแอปพังตอน runtime (bundler ไม่จับ — เคยเกิดจริง: ใช้ useMemo โดยไม่ import → Daily Report จอขาวทั้งโรงงาน) · lint ไม่ผ่าน = build ไม่ผ่าน ห้าม bypass (`vite build` ตรงๆ) เพื่อหนีด่าน — แก้โค้ดให้ผ่านแทน · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
      - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว (2026-07-30)** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · เคสจริงที่ทำให้เปิดกฎ: MtnRepair (`useMemo` หลัง `if (loading) return`) ทำหน้าแจ้งซ่อม crash + ProtectedLayout (`if (!session) return` ก่อน useAutoLogout/useState) · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — ถ้าเจอ error นี้ตอน build ให้ย้าย hook ขึ้นก่อน return ห้าม disable กฎ
 

@@ -28,15 +28,20 @@ export const fmtKwh = (v) => (v == null || !Number.isFinite(Number(v)) ? '—'
   : Number(v) >= 1000 ? `${Math.round(Number(v) / 1000).toLocaleString()}k` : Math.round(Number(v)).toLocaleString())
 export const fmtBaht = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Math.round(Number(v)).toLocaleString())
 
-/** % เปลี่ยนแปลงเทียบฐาน — คืน null เมื่อเทียบไม่ได้ (ห้ามคืน 0 = "ไม่เปลี่ยน" ซึ่งคนละความหมาย) */
+/** % เปลี่ยนแปลงเทียบฐาน — คืน null เมื่อเทียบไม่ได้ (ห้ามคืน 0 = "ไม่เปลี่ยน" ซึ่งคนละความหมาย)
+ *  ⚠️ ต้องเช็ค null/'' ก่อน Number() — `Number(null) === 0` (finite!) เดิม deltaPct(null, base)
+ *  คืน −100 → ชิปเขียว "ลดลง 100%" บนแถวที่แค่ยังไม่กรอก (QC audit 2026-08-20 · T2-13) */
 export function deltaPct(cur, base) {
+  if (cur == null || cur === '' || base == null || base === '') return null
   const c = Number(cur), b = Number(base)
   if (!Number.isFinite(c) || !Number.isFinite(b) || b === 0) return null
   return Math.round(((c - b) / b) * 1000) / 10
 }
 
-/** บาทต่อหน่วย (จากค่าที่กรอก) — ใช้ตรวจว่ากรอกผิดหลักไหม โรงงานไทยปกติ 3.5-5 บาท/kWh */
+/** บาทต่อหน่วย (จากค่าที่กรอก) — ใช้ตรวจว่ากรอกผิดหลักไหม โรงงานไทยปกติ 3.5-5 บาท/kWh
+ *  ⚠️ กับดักเดียวกัน: bahtPerUnit(null, q) เคยคืน 0 → ขึ้น "0 ⚠" ส้มบนแถวที่ยังกรอกไม่ครบ */
 export function bahtPerUnit(cost, qty) {
+  if (cost == null || cost === '' || qty == null || qty === '') return null
   const c = Number(cost), q = Number(qty)
   if (!Number.isFinite(c) || !Number.isFinite(q) || q === 0) return null
   return Math.round((c / q) * 100) / 100

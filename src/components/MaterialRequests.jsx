@@ -335,7 +335,7 @@ export default function MaterialRequests() {
       )}
 
       {picker && (
-        <Modal title="เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Parts Master)" onClose={() => { setPicker(null); setPq(''); }}>
+        <Modal title="เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Parts Master)" dismissable onClose={() => { setPicker(null); setPq(''); }}>
           <input autoFocus value={pq} onChange={e => setPq(e.target.value)}
             placeholder="ค้นด้วยรหัส MAT หรือชื่อพาร์ท" style={{ ...inpSt, width: '100%', marginBottom: 8 }} />
           {!parts.length && (
@@ -382,7 +382,8 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
     <Modal title={`${req.id ? 'แก้ไข' : 'ออก'}ใบขอ${KIND_LABEL[req.kind]}สินค้าคงคลัง (FM-STO-003)`} onClose={onClose} width={1020}>
       <ReadOnlyNote show={ro} role={role} compact what="แก้ใบเบิก" permKey="scrap:record" />
 
-      <div style={grid3}>
+      {/* mgrid = กติกากลางของ grid ในโมดัล (UI-CONVENTIONS §4) — มือถือยุบเป็นคอลัมน์เดียว */}
+      <div className="mgrid" style={grid3}>
         <F label="เลขที่เอกสาร"><input value={req.doc_no || ''} readOnly={ro} onChange={e => setReq({ doc_no: e.target.value })} style={inpSt} /></F>
         <F label="ประเภท">
           <select value={req.kind} disabled={ro} onChange={e => changeKind(e.target.value)} style={inpSt}>
@@ -521,9 +522,13 @@ const F = ({ label, children, full }) => (
   </div>
 );
 
-function Modal({ title, onClose, children, width = 620 }) {
+/* ⚠️ `dismissable` default = false — modal ที่มีฟอร์มกรอก **ห้ามปิดจากการคลิกพื้นหลัง**
+   (UI-CONVENTIONS §5 · คำสั่ง user 2026-07-09: เผลอแตะแล้วข้อมูลที่พิมพ์อยู่หายทั้งฟอร์ม)
+   ใบขอเบิก FM-STO-003 มีช่องกรอก ~20 ช่อง + ตารางรายการที่คีย์ทีละแถว = เสียหายจริง
+   ส่วน popup เลือกของ (picker) ไม่มีอะไรให้เสีย จึงส่ง dismissable ได้ */
+function Modal({ title, onClose, children, width = 620, dismissable = false }) {
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '3vh 12px', overflowY: 'auto' }}>
+    <div className="modal-scroll" onClick={dismissable ? onClose : undefined} style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '3vh 12px', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, width: `min(${width}px, 97vw)`, maxHeight: '94vh', overflowY: 'auto', padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>

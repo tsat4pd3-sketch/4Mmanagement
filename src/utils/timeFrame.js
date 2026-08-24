@@ -17,7 +17,9 @@ export const breaksToFrame = (policies) => (policies || [])
   .map(p => {
     const s = frameMin(String(p.start_time || '').slice(0, 5));
     if (s == null || isNaN(s)) return null;
-    return { s, e: s + (p.duration_min || 0), label: p.name_th || p.name_en || 'พัก' };
+    // ⚠️ duration_min มาเป็น "ข้อความ" ได้ — `s + '45'` = ต่อสตริง "72045" → แถบพัก ~50 วัน
+    //    คลุมทั้งบอร์ด (oee.js coerce ไว้แล้ว ที่นี่ต้องมาตรฐานเดียวกัน · QC audit 2026-08-20 · T2-12)
+    return { s, e: s + (Number(p.duration_min) || 0), label: p.name_th || p.name_en || 'พัก' };
   })
   .filter(Boolean)
   .sort((a, b) => a.s - b.s);

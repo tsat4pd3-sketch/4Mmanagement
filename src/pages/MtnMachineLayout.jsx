@@ -270,7 +270,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
       const path = `facility/${areaId}.${ext}`
       const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, { upsert: true })
       if (upErr) throw upErr
-      await supabaseDR.from('pm_facility_areas').update({ image_path: path }).eq('id', areaId)
+      // ⚠️ เช็ค error ก่อนลบไฟล์เก่าเสมอ (supabase-js คืน { error } ไม่ throw) —
+      // ไม่เช็คแล้วลบต่อ = update พลาด แต่ไฟล์ผังเดิมหายไปแล้ว ⇒ โซนนั้นรูปเสียถาวร
+      // (deleteArea บรรทัดบนทำถูกอยู่แล้ว ใช้เป็นแบบ)
+      const { error: dbErr } = await supabaseDR.from('pm_facility_areas').update({ image_path: path }).eq('id', areaId)
+      if (dbErr) throw dbErr
       // path ผูกกับนามสกุลไฟล์ — อัปโหลด .png ทับโซนที่เดิมเป็น .jpg จะไม่ทับไฟล์เดิม ต้องลบทิ้ง (best-effort)
       const prevPath = areas.find(a => a.id === areaId)?.image_path
       if (prevPath && prevPath !== path) supabaseDR.storage.from('jig-images').remove([prevPath]).then(() => {}, () => {})

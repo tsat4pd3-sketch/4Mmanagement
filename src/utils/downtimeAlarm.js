@@ -28,19 +28,24 @@ function getWorkDate() {
 // lineNames = จำกัดเฉพาะไลน์ที่สนใจ (ไม่ส่ง = ทุกไลน์)
 // คืน { byMachine: { [machine_no]: [dt] }, byLine: { [line_name]: [dt] }, list: [dt] }
 export async function fetchActiveDowntimes(lineNames = null) {
-  const empty = { byMachine: {}, byLine: {}, list: [] };
+  const empty = { byMachine: {}, byLine: {}, list: [], plannedList: [], plannedByLine: {} };
   let q = supabaseDR.from('production_sessions')
     .select('id, line_name, shift, status')
     .eq('work_date', getWorkDate())
     .in('status', ['open', 'pending_close']);
   if (lineNames?.length) q = q.in('line_name', lineNames);
-  const { data: sessions } = await q;
+  const { data: sessions, error: sErr } = await q;
+  // ⚠️ ห้ามยุบ "คิวรีพัง" ให้กลายเป็น "ไม่มีเครื่องหยุด" — จอที่เรียก (DeptHub · Dashboard แผง Andon
+  //    · Management) จะขึ้นเขียวว่าปกติดี ทั้งที่ความจริงคือ "ไม่รู้" (กฎ CLAUDE.md: ห้ามล้มเหลวเงียบ)
+  //    คืน error มาให้ผู้เรียกตัดสินใจแสดงผลเอง
+  if (sErr) return { ...empty, error: sErr.message };
   if (!sessions?.length) return empty;
 
   const sessById = Object.fromEntries(sessions.map(s => [s.id, s]));
-  const { data: dts } = await supabaseDR.from('downtime_logs')
+  const { data: dts, error: dErr } = await supabaseDR.from('downtime_logs')
     .select('id, session_id, machine_no, mat_no, description, started_at, ended_at, duration_min, created_at, dr_downtime_types(name_th, category, color)')
     .in('session_id', sessions.map(s => s.id));
+  if (dErr) return { ...empty, error: dErr.message };
 
   const open = (dts || [])
     .filter(isOpenDT)

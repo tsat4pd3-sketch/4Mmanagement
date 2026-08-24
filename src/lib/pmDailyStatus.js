@@ -4,8 +4,14 @@
 // dashboard and the orange-alarm scheduler so both agree on what each colour means.
 
 // Grace window: a line may start production and still be within its allowed
-// window to complete the daily check. Per spec: no later than 1 hour after the
-// first order is confirmed.
+// window to complete the daily check — no later than 1 hour after production starts.
+//
+// ⚠️ "production starts" = the first order is OPENED (prod_orders.opened_at),
+//    NOT when it is confirmed/closed. Fixed 2026-08-24 after the floor reported
+//    every line stuck on "ยังไม่เริ่มผลิต" while shifts were clearly running:
+//    an order that takes hours to finish would keep the line idle all morning and
+//    only then start a 60-min clock — the opposite of a start-of-shift AM check.
+//    Both this dashboard and the pm-daily-scan edge function must use the same anchor.
 export const DAILY_PM_WINDOW_MIN = 60
 
 // Colours:
@@ -13,13 +19,13 @@ export const DAILY_PM_WINDOW_MIN = 60
 //   red     — at least one abnormal (NG) result (wins over incomplete)
 //   orange  — window elapsed and still incomplete (checked < total)
 //   pending — production started but still inside the grace window
-//   idle    — line hasn't confirmed an order yet (nothing to check against)
+//   idle    — line hasn't opened an order yet (nothing to check against)
 //   none    — line has no registered daily-PM equipment
 //
 // @param targets  [{ jig_id, name, machine_no }]  registered equipment for the line/shift
 // @param results  { [jig_id]: { status: 'pass'|'fail'|'pending', ngTopics: string[] } }
 //                 latest inspection outcome for this shift/day, keyed by jig
-// @param firstOrderAt  ISO string / Date of the first confirmed order, or null
+// @param firstOrderAt  ISO string / Date of the first order OPENED this shift, or null
 // @param now      reference time (defaults to current time)
 export function computeDailyPmStatus({ targets = [], results = {}, firstOrderAt = null, windowMin = DAILY_PM_WINDOW_MIN, now } = {}) {
   const nowMs = (now ? new Date(now) : new Date()).getTime()

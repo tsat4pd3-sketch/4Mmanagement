@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run lint:critical && vite build",
+    "build": "npm run lint:critical && npm test && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "lint:critical": "eslint -c eslint.critical.config.js src"
+    "lint:critical": "eslint -c eslint.critical.config.js src",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",

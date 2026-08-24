@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
+import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
@@ -28,23 +29,11 @@ import { teamKeyOf } from '../utils/mtnTeams';
 const SkillRadarPanel = lazy(() => import('../components/SkillRadarPanel'));
 
 
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
-    };
-    img.src = url;
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+// ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
+//    in-app browser ของ LINE) ทำให้ Promise ค้างตลอดกาล — ปุ่มบันทึกหมุนไม่จบ ไม่มี error ไม่มี toast
+//    ตัวกลางลอง createImageBitmap ก่อน · revoke object URL ทุกทาง · โยน error ที่บอกวิธีแก้
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 /* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
    — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
@@ -271,7 +260,9 @@ export default function Operator() {
       }
       let fileToUpload = luDocFile;
       if (luDocFile.type.startsWith('image/')) {
-        fileToUpload = await resizeImage(luDocFile);
+        // resizeImage โยน error เมื่อ decode ไม่ได้ — ต้องรับเอง ไม่งั้นปุ่มค้างหมุนแบบไม่มีข้อความ
+        try { fileToUpload = await resizeImage(luDocFile); }
+        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsReviewing(false); return; }
       }
       const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
       const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });

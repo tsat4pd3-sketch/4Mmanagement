@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
 import resizeImg from '../utils/resizeImage';
+import { todayLocal as localToday } from '../utils/dateFormat';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -537,7 +538,7 @@ export default function PEDocs() {
             <div>
               {canApprove && (
                 <button style={{ ...btnPrim, marginBottom: 10 }}
-                  onClick={() => setRevModal({ set_id: curSet.id, doc_type: 'fmea', rev_no: (Math.max(0, ...revs.filter(r => r.doc_type === 'fmea').map(r => r.rev_no || 0)) + 1), rev_date: new Date().toISOString().slice(0, 10), suffix: curSet.part_no, ecn_no: '', content: '', ref_kind: '', ref_id: '', issued_by: fullName || '', checked_by: '', approved_by: '' })}>
+                  onClick={() => setRevModal({ set_id: curSet.id, doc_type: 'fmea', rev_no: (Math.max(0, ...revs.filter(r => r.doc_type === 'fmea').map(r => r.rev_no || 0)) + 1), rev_date: localToday(), suffix: curSet.part_no, ecn_no: '', content: '', ref_kind: '', ref_id: '', issued_by: fullName || '', checked_by: '', approved_by: '' })}>
                   ➕ ออก Revision ใหม่
                 </button>
               )}

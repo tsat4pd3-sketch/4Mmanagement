@@ -30,6 +30,31 @@ export const PAGE_SIZE = 1000;
  * @param {{ chunk?:number, page?:number, orderBy?:string, maxPages?:number }} opt
  * @returns {Promise<{ rows:any[], error:string|null, failed:number, truncated:boolean }>}
  */
+/**
+ * fetchAllPages — ดึง "ทุกหน้า" ของ query เดี่ยว (ไม่มี id list)
+ * สำหรับตาราง/วิวที่โตเกิน 1000 แถวได้ (`.limit(5000)` ช่วยไม่ได้ — PostgREST clamp ที่
+ * max-rows=1000 เงียบๆ) · กติกาเดียวกับ fetchByIds: order คงที่คู่กับ range เสมอ + ห้ามกลืน error
+ * @param {() => any} run   คืน query builder ที่ยัง **ไม่** await และยังไม่ใส่ order/range
+ * @param {{ page?:number, orderBy?:string|string[], maxPages?:number }} opt
+ * @returns {Promise<{ rows:any[], error:string|null, truncated:boolean }>}
+ */
+export async function fetchAllPages(run, opt = {}) {
+  const { page = PAGE_SIZE, orderBy = 'id', maxPages = 60 } = opt;
+  const cols = Array.isArray(orderBy) ? orderBy : [orderBy];
+  const rows = [];
+  let error = null, truncated = false, p = 0;
+  for (; p < maxPages; p++) {
+    let q = run();
+    cols.forEach(c => { q = q.order(c); });
+    const { data, error: e } = await q.range(p * page, (p + 1) * page - 1);
+    if (e) { error = e.message; break; }
+    rows.push(...(data || []));
+    if (!data || data.length < page) break;
+  }
+  if (p >= maxPages) truncated = true;
+  return { rows, error, truncated };
+}
+
 export async function fetchByIds(ids, run, opt = {}) {
   const { chunk = IN_CHUNK, page = PAGE_SIZE, orderBy = 'id', maxPages = 60 } = opt;
   const rows = [];

@@ -16,6 +16,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import { suggestChanges, matchDocSet, LEG_META, CR_STATUS, DOC_LABEL } from '../utils/peLink';
+import { todayLocal as localToday } from '../utils/dateFormat';
 
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' };
@@ -222,8 +223,8 @@ export default function PeChangeRequests({
     setApplyFor(null); load();
   };
 
-  /* วันที่ revision ใช้วันที่เครื่อง (local) — toISOString() เป็น UTC เพี้ยนช่วงเช้ามืด */
-  const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  /* วันที่ revision ใช้วันที่เครื่อง (local) — ตัวกลาง utils/dateFormat.todayLocal
+     (เดิมเขียนเองที่นี่ แล้ว PEDocs ซึ่งเขียนคอลัมน์ rev_date เดียวกันใช้ UTC = คนละกติกา) */
   const openApply = (cr) => setApplyFor({
     cr, rev_no: '', rev_date: localToday(),
     content: cr.proposal.split('\n')[0].replace(/^🔴\s*/, '').slice(0, 200),

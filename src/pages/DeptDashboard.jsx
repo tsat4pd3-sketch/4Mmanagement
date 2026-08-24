@@ -1,13 +1,16 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { fetchByIds } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+// แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
+const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 
 /* ══ 📊 Dashboard รายส่วนงาน — หน้าเดียว สลับส่วนงานด้วย ?dept= ══════════════════════════
    ออกแบบเต็มอยู่ที่ `docs/DASHBOARD-DESIGN.md` · เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA
@@ -147,15 +150,19 @@ async function loadProduction(ctx) {
   const sess = (sess2 || []).filter(s => inScope(s.line_name));
   const ids = sess.map(s => s.id);
   const ids7 = (sess7 || []).filter(s => inScope(s.line_name)).map(s => s.id);
-  const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }, { data: dt7 }] = await Promise.all([
-    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', ids) : { data: [] },
-    ids.length ? supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', ids) : { data: [] },
-    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', ids) : { data: [] },
+  /* ⚠️ ids7 = 7 วัน ≈ 200 กะ → `.in()` ตรงๆ URL ยาวเกิน + แถวลูกทะลุ 1000 ได้
+     → ผ่าน fetchByIds ทุกคิวรีที่ยิงด้วย id list (QC audit 2026-08-20 · T3-14) */
+  const [ordRes, dtRes, defRes, { data: prods }, dt7Res] = await Promise.all([
+    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
     supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
-    ids7.length ? supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', ids7) : { data: [] },
-    loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 6 ไม่เข้า destructure แค่ให้ cache พร้อม
+    fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', c)),
+    loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
-  return { sess, sess7: sess7 || [], orders: orders || [], dts: dts || [], defs: defs || [], prods: prods || [], dt7: dt7 || [], fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
+  return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
+    loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error),
+    fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
 
 function ProductionView({ d, ctx }) {
@@ -234,6 +241,12 @@ function ProductionView({ d, ctx }) {
   }, [d]);
 
   return (<>
+    {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน (กติกาเดียวกับ QaView) */}
+    {d.loadErr && (
+      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+        🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
+      </div>
+    )}
     <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · เครื่องหยุดค้าง ${openDT.length} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
@@ -523,13 +536,15 @@ async function loadQa(ctx) {
   /* ⚠️ defect_logs **ไม่มีคอลัมน์ `mat_no`** (mat มาจาก prod_orders) และ dr_defect_types ใช้ `name_th` ไม่ใช่ `name`
      เดิม select ผิดทั้ง 2 จุด → 42703 → `defs = []` เงียบๆ → KPI ของเสีย/PPM/พาเรโตของ QA เป็น 0 มาตลอด
      → เช็ค error ด้วย ไม่งั้นบั๊กชนิดเดียวกันซ่อนตัวได้อีก (supabase-js คืน { error } ไม่ throw) */
+  /* ⚠️ 7 วัน ≈ 200 กะ → prod_orders ~700+ แถวและโตตาม adoption — ต้องผ่าน fetchByIds
+     (แบ่งก้อน id + แบ่งหน้า) ไม่งั้นตัวส่วน PPM ขาดเงียบ = PPM สูงเกินจริง (QC audit · T3-14) */
   const [defRes, ordRes] = await Promise.all([
-    ids.length ? supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, description, prod_orders(mat_no), dr_defect_types(name_th)').in('session_id', ids) : { data: [], error: null },
-    ids.length ? supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual').in('session_id', ids) : { data: [], error: null },
+    fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, description, prod_orders(mat_no), dr_defect_types(name_th)').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual').in('session_id', c)),
   ]);
   if (defRes.error) console.warn('[deptDashboard/qa] โหลดของเสียไม่สำเร็จ', defRes.error);
   if (ordRes.error) console.warn('[deptDashboard/qa] โหลดใบผลิตไม่สำเร็จ', ordRes.error);
-  const defs = defRes.data, orders = ordRes.data;
+  const defs = defRes.rows, orders = ordRes.rows;
   /* ลูปปิด 8D → PE: CAPA ที่ปิดแล้ว เอกสาร PFMEA/Control Plan ตามแก้หรือยัง (IATF §10.2.3/10.2.4)
      ⚠️ best-effort — ยังไม่ apply migration 20260817 = คอลัมน์/ตารางไม่มี ต้องไม่ทำทั้งหน้าพัง */
   let capa = [], crOpen = 0, claims = [];
@@ -703,6 +718,10 @@ export default function DeptDashboard() {
      (ช่างเปิดมาเจอซ่อมบำรุง · QA เจอ QA) ถ้าใช้ hook ตัวนั้น แท็บที่เป็น default จะถูกตัดออกจาก URL
      → แชร์ลิงก์ให้คนละ role แล้วเห็นคนละส่วนงาน · ที่นี่จึงเขียน ?dept= ลง URL เสมอทุกครั้ง */
   const setDept = (k) => { const n = new URLSearchParams(sp); n.set('dept', k); setSp(n); };
+  // มุมมอง: 'now' = งานวันนี้ (เดิม) · 'kpi' = 📑 KPI รายเดือน (2026-08-24 · คำสั่ง user — แทนแพ็คกระดาษ
+  // Internal Defect/OEE รายเดือนที่ปริ้นเซ็นกัน) — ใช้ param แยกจาก ?dept= ตามกฎแท็บซ้อนแท็บ §6.8
+  const view = sp.get('view') === 'kpi' ? 'kpi' : 'now';
+  const setView = (v) => { const n = new URLSearchParams(sp); if (v === 'now') n.delete('view'); else n.set('view', v); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
   const [lines, setLines] = useState([]);
@@ -754,7 +773,20 @@ export default function DeptDashboard() {
         <button onClick={load} style={{ padding: '7px 12px', fontSize: 13, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer' }}>🔄 รีเฟรช</button>
       </div>
 
-      {/* เลือกส่วนงาน */}
+      {/* สลับมุมมอง: งานวันนี้ / KPI รายเดือน */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {[{ k: 'now', label: '⚡ งานวันนี้' }, { k: 'kpi', label: '📑 KPI รายเดือน' }].map(v => (
+          <button key={v.k} onClick={() => setView(v.k)} style={{
+            fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 8, cursor: 'pointer',
+            background: view === v.k ? 'var(--bg3)' : 'transparent',
+            color: view === v.k ? 'var(--text)' : 'var(--muted)',
+            border: `1px solid ${view === v.k ? 'var(--border2)' : 'transparent'}`,
+          }}>{v.label}</button>
+        ))}
+      </div>
+
+      {/* เลือกส่วนงาน — เฉพาะมุมมองงานวันนี้ (KPI มี section picker ของตัวเองยึด org_nodes) */}
+      {view === 'now' && (
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {DEPTS.map(t => (
           <button key={t.key} onClick={() => setDept(t.key)} style={{
@@ -765,12 +797,19 @@ export default function DeptDashboard() {
           }}>{t.icon} {t.label}</button>
         ))}
       </div>
+      )}
 
-      {loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
-      {err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
+      {view === 'kpi' && (
+        <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
+          <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />
+        </Suspense>
+      )}
+
+      {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
+      {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
       {/* render เฉพาะเมื่อข้อมูลที่ถืออยู่เป็นของส่วนงานที่กำลังดู */}
-      {!loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
-      {!loading && !err && data && data.dept !== dept &&
+      {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
+      {view === 'now' && !loading && !err && data && data.dept !== dept &&
         <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
     </div>
   );

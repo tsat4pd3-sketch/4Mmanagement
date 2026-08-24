@@ -55,7 +55,9 @@ export default function DailyPM() {
   }, [prodLines, role, userLineId, scopeSecs])
   const [targets, setTargets] = useState([])
   const [resultByJig, setResultByJig] = useState({})   // jig_id -> { status }
-  const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO
+  const [firstOrderByLine, setFirstOrderByLine] = useState({})  // line_name -> ISO (เวลาเปิดใบผลิตใบแรก)
+  // ไลน์ที่ "เปิดกะแล้ว" กะนี้ — ใช้แยกว่า idle เพราะยังไม่เปิดกะ หรือเปิดกะแล้วแต่ยังไม่มีใบผลิต
+  const [openSessionLines, setOpenSessionLines] = useState(() => new Set())
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
 
@@ -117,7 +119,12 @@ export default function DailyPM() {
     }
     setResultByJig(resMap)
 
-    // first confirmed order per line this shift → starts the 1h clock
+    /* เวลาที่ "เริ่มผลิต" ของแต่ละไลน์กะนี้ → เริ่มนับนาฬิกา 60 นาที
+       ⚠️ ต้องใช้ `opened_at` (เปิดใบ = เริ่มผลิต) **ไม่ใช่ `confirmed_at`** (ปิดใบ = ผลิตเสร็จ)
+          feedback หน้างาน 2026-08-24: Daily Report เปิดกะเดินงานอยู่ แต่จอ AM ขึ้น "ยังไม่เริ่มผลิต" ทั้ง 7 ไลน์
+          เพราะยังไม่มีใบไหนถูกสแกนปิด · ใบที่ใช้เวลาหลายชั่วโมงจะทำให้สถานะค้าง idle ทั้งเช้า
+          แล้วนาฬิกาเพิ่งเริ่มเดินตอนใบแรกจบ = ผิดความหมายของ AM ที่ต้องตรวจ "ต้นกะ"
+       fallback ไป confirmed_at เผื่อใบเก่าที่ไม่มี opened_at (ข้อมูลก่อนมีคอลัมน์) */
     const { data: sessions } = await supabaseDR
       .from('production_sessions')
       .select('id, line_name')
@@ -125,27 +132,43 @@ export default function DailyPM() {
       .eq('shift', si.shift)
     const sessionLine = {}
     ;(sessions ?? []).forEach(s => { sessionLine[s.id] = s.line_name })
-    const firstOrder = {}
+    const startedRaw = {}
     if (sessions && sessions.length > 0) {
       const { data: orders } = await supabaseDR
         .from('prod_orders')
-        .select('session_id, confirmed_at')
+        .select('session_id, opened_at, confirmed_at')
         .in('session_id', sessions.map(s => s.id))
-        .not('confirmed_at', 'is', null)
-        .order('confirmed_at', { ascending: true })
       for (const o of orders ?? []) {
         const line = sessionLine[o.session_id]
-        if (line && !firstOrder[line]) firstOrder[line] = o.confirmed_at
+        const at = o.opened_at || o.confirmed_at
+        if (!line || !at) continue
+        if (!startedRaw[line] || at < startedRaw[line]) startedRaw[line] = at
       }
     }
-    setFirstOrderByLine(firstOrder)
+    /* ⚠️ ไลน์แม่-ไลน์ลูกต้องนับรวมกัน (pattern มาตรฐานของโปรเจค)
+       เคสจริง: อุปกรณ์ลงทะเบียน AM ไว้ที่ไลน์แม่ HYDROFORM แต่กะเปิดที่ไลน์ลูก HDF1/HDF2
+       เทียบชื่อไลน์ตรงตัว = การ์ด HYDROFORM ค้าง "ยังไม่เริ่มผลิต" ตลอดกาล */
+    const linesForFam = lineRows ?? []
+    const famStart = {}
+    for (const l of linesForFam) {
+      const fam = getLineFamilyNames(linesForFam, l.id)   // คืน array ของชื่อไลน์ (ตัวเอง+แม่+ลูก)
+      const names = fam?.length ? fam : [l.name]
+      for (const n of names) {
+        const at = startedRaw[n]
+        if (at && (!famStart[l.name] || at < famStart[l.name])) famStart[l.name] = at
+      }
+    }
+    // ชื่อไลน์ที่มี session แต่ไม่มีในทะเบียนไลน์ (เช่นเปิดกะด้วยชื่อเครื่อง) — ต้องไม่หายไป
+    for (const [n, at] of Object.entries(startedRaw)) if (!famStart[n]) famStart[n] = at
+    setFirstOrderByLine(famStart)
+    setOpenSessionLines(new Set(Object.values(sessionLine)))
     setLoading(false)
   }, [])
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-on-mount (load is useCallback([]))
   useEffect(() => { load() }, [load])
 
-  // สถานะต้องขยับเองแบบจอ TV: ตรวจเสร็จ (inspections) / ออร์เดอร์แรกยืนยัน (prod_orders) /
+  // สถานะต้องขยับเองแบบจอ TV: ตรวจเสร็จ (inspections) / เปิดใบผลิตใบแรก (prod_orders) /
   // เปิด-ปิดกะ (production_sessions) → refresh ทันที + interval 5 นาทีกัน event หลุด
   useEffect(() => {
     let timer = null
@@ -178,6 +201,8 @@ export default function DailyPM() {
     return Object.entries(byLine)
       .map(([line_name, tg]) => ({
         line_name,
+        // idle มีได้ 2 แบบ ต้องแยกให้ผู้ใช้เห็น ไม่งั้น "ยังไม่เริ่มผลิต" ตอนกะเดินอยู่ = จอโกหก
+        hasSession: openSessionLines.has(line_name),
         ...computeDailyPmStatus({
           targets: tg,
           results: resultByJig,
@@ -189,7 +214,7 @@ export default function DailyPM() {
         const ord = { red: 0, orange: 1, pending: 2, idle: 3, green: 4, none: 5 }
         return (ord[a.status] ?? 9) - (ord[b.status] ?? 9)
       })
-  }, [targets, jigs, resultByJig, firstOrderByLine, shiftInfo.shift, now])
+  }, [targets, jigs, resultByJig, firstOrderByLine, openSessionLines, shiftInfo.shift, now])
 
   const registeredKey = useMemo(() => {
     const s = new Set()
@@ -256,7 +281,7 @@ export default function DailyPM() {
           </h1>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
             พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
-            {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังยืนยันออร์เดอร์แรก
+            {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก
           </div>
         </div>
         <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' }}>
@@ -301,13 +326,19 @@ export default function DailyPM() {
                   style={{ background: 'var(--card)', border: `1px solid ${meta.color}40`, borderLeft: `4px solid ${meta.color}`, borderRadius: 12, padding: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{row.line_name === '—' ? '⚠ ยังไม่ระบุไลน์' : row.line_name}</div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}40` }}>
-                      {row.status === 'red' && <span className="dt-alarm-icon" style={{ marginRight: 3 }}>🚨</span>}{meta.label}
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}40` }}
+                      title={row.status === 'idle'
+                        ? (row.hasSession ? 'เปิดกะแล้ว แต่ยังไม่มีใบผลิตเปิด — นาฬิกาตรวจเริ่มนับตอนเปิดใบผลิตใบแรก'
+                                          : 'ยังไม่มีการเปิดกะของไลน์นี้ในกะปัจจุบัน')
+                        : undefined}>
+                      {row.status === 'red' && <span className="dt-alarm-icon" style={{ marginRight: 3 }}>🚨</span>}
+                      {/* idle 2 แบบ ต้องอ่านออกจากป้ายเลย ไม่ใช่ให้เดา (เคสจริง: กะเดินอยู่แต่จอบอกยังไม่เริ่มผลิต) */}
+                      {row.status === 'idle' ? (row.hasSession ? 'เปิดกะแล้ว · ยังไม่มีใบผลิต' : 'ยังไม่เปิดกะ') : meta.label}
                     </span>
                   </div>
                   <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text2)' }}>
                     ตรวจแล้ว <b style={{ color: meta.color }}>{row.checked}/{row.total}</b> เครื่อง
-                    {row.firstOrderAt && <span style={{ color: 'var(--muted)', marginLeft: 8 }}>· ออร์เดอร์แรก {fmtTime(row.firstOrderAt)}</span>}
+                    {row.firstOrderAt && <span style={{ color: 'var(--muted)', marginLeft: 8 }}>· เริ่มผลิต {fmtTime(row.firstOrderAt)}</span>}
                   </div>
                   {row.status === 'pending' && dueDiffMin != null && (
                     <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: dueDiffMin <= 15 ? '#f59a3f' : 'var(--muted)' }}>
@@ -362,7 +393,7 @@ export default function DailyPM() {
                 { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
                 { n: '2', title: 'ลงทะเบียนที่แท็บนี้', desc: 'ติ๊กเครื่องที่ "ต้องตรวจทุกต้นกะ" ของแต่ละไลน์ — ตัวเลข N ของไลน์มาจากตรงนี้' },
                 { n: '3', title: 'พนักงานตรวจต้นกะ', desc: <>ที่หน้า <Link to="/pm-check?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตรวจสอบอุปกรณ์ → แท็บ ฝ่ายผลิต</Link> เลือกเครื่อง ติ๊กผ่าน/NG แล้วบันทึก</> },
-                { n: '4', title: 'ระบบเฝ้าเอง', desc: 'ยืนยันออร์เดอร์แรกของไลน์ → เริ่มนับ 60 นาที · ครบ+ผ่าน = 🟢 แจ้ง Telegram · พบ NG = 🔴 · เกินเวลายังไม่ครบ = 🟠' },
+                { n: '4', title: 'ระบบเฝ้าเอง', desc: 'เปิดใบผลิตใบแรกของไลน์ → เริ่มนับ 60 นาที · ครบ+ผ่าน = 🟢 แจ้ง Telegram · พบ NG = 🔴 · เกินเวลายังไม่ครบ = 🟠' },
               ].map(s => (
                 <div key={s.n} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.n}</span>
@@ -393,7 +424,7 @@ export default function DailyPM() {
                     </div>
                     {noLine && (
                       <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-                        อุปกรณ์กลุ่มนี้ยังไม่ถูกระบุว่าอยู่ไลน์ไหน — ระบบจับคู่กับออร์เดอร์แรกของไลน์เพื่อเริ่มนับเวลาไม่ได้ (สถานะจะค้าง "ยังไม่เริ่มผลิต" ตลอด)
+                        อุปกรณ์กลุ่มนี้ยังไม่ถูกระบุว่าอยู่ไลน์ไหน — ระบบจับคู่กับใบผลิตใบแรกของไลน์เพื่อเริ่มนับเวลาไม่ได้ (สถานะจะค้าง "ยังไม่เริ่มผลิต" ตลอด)
                         {' '}<b>เลือกไลน์ในการ์ดด้านล่างได้เลย</b> อุปกรณ์จะย้ายเข้ากลุ่มไลน์นั้นแล้วติ๊กลงทะเบียนต่อได้ทันที (หรือแก้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM → ฝ่ายผลิต</Link> ก็ได้)
                       </div>
                     )}

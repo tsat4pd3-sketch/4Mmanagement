@@ -95,15 +95,27 @@ export default function Improvements() {
   const [ccRates, setCcRates] = useState([]);          // cost_center_rates (Main — ตั้งที่ /org-setup)
   const [partCostByMat, setPartCostByMat] = useState({}); // mat_no -> {material_cost, standard_cost}
   const [workDaysMonth, setWorkDaysMonth] = useState(22); // วันทำงาน/เดือน จากปฏิทินบริษัท (แปลง บาท/วัน → บาท/เดือน)
-  // ก้อน rate ที่นับเป็น saving (DL/OH/DP) — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · จำต่อเครื่อง
+  // ก้อน rate ที่นับเป็น saving (DL/DP/IDP/OH) + ก้อนที่ 5 "ค่าซ่อมจริง" — นโยบายบัญชีบางที่
+  // ไม่นับ DP (sunk cost) · จำต่อเครื่อง
+  // ⚠️ ค่าซ่อมจริง (ช่างกรอกในใบ MO) กับ IDP (SAP คำนวณ — ค่าเสื่อมทางอ้อม "รวมค่าซ่อม")
+  //    เป็นคนละแหล่งข้อมูล user ยืนยัน 2026-08-20 ว่าไม่ตัดตัวไหนออก แต่เปิดทั้งคู่อาจนับ
+  //    ทับซ้อนบางส่วน → ทำเป็น toggle ให้เลือกตามนโยบายบัญชี + เขียนกำกับ (QC audit · ข้อ 4)
+  // key เก็บใหม่ imp_cost_comps2 — ค่าเดิม (ไม่มี 'repair') migrate โดยเติม repair ให้
+  // ครั้งเดียว = พฤติกรรมเดิมเป๊ะ (เดิม repairPerDay ถูกบวกเสมอไม่มีสวิตช์)
+  const COMP_KEYS = [...RATE_COMPONENTS.map(c => c.key), 'repair'];
   const [costComps, setCostComps] = useState(() => {
-    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : RATE_COMPONENTS.map(c => c.key); }
-    catch { return RATE_COMPONENTS.map(c => c.key); }
+    try {
+      const v2 = JSON.parse(localStorage.getItem('imp_cost_comps2'));
+      if (Array.isArray(v2) && v2.length) return v2;
+      const v1 = JSON.parse(localStorage.getItem('imp_cost_comps'));
+      if (Array.isArray(v1) && v1.length) return [...new Set([...v1, 'repair'])];
+    } catch { /* ตกไปใช้ default */ }
+    return COMP_KEYS;
   });
   const toggleComp = (key) => setCostComps(prev => {
     const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
     if (!next.length) return prev; // ต้องเหลืออย่างน้อย 1 ก้อน
-    localStorage.setItem('imp_cost_comps', JSON.stringify(next));
+    localStorage.setItem('imp_cost_comps2', JSON.stringify(next));
     return next;
   });
 
@@ -136,7 +148,7 @@ export default function Improvements() {
       supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
       supabaseDR.from('mtn_problem_types').select('characteristic').eq('is_active', true).order('sort_order'),
       // ใบซ่อม MO (ไม่รวมที่ถูก reject) — ใช้วัดผล/พาเรโต้/cross-ref · labor_cost/parts_cost = ค่าซ่อมจริง → cost saving
-      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost').neq('status', 'rejected').limit(4000),
+      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost, source_downtime_id').neq('status', 'rejected').limit(4000),
       // 2 ตัวล่างเป็น best-effort (migration cost saving ยังไม่ apply = แผง 💰 ขึ้น "ยังตั้งต้นทุนไม่ครบ" — หน้าหลักไม่พัง)
       supabase.from('cost_center_rates').select('*'),
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),
@@ -308,8 +320,12 @@ export default function Improvements() {
     const from = addDays(imp.start_date, -imp.baseline_days);
     const afterEnd = addDays(imp.start_date, imp.baseline_days - 1);
     const to = todayStr() < afterEnd ? todayStr() : afterEnd;
+    // ⚠️ ตัดกะที่ยัง `open` — กะเพิ่งเปิด 1 ชม. ถูกนับเป็น "วันผลิตเต็มวัน" ในตัวหาร
+    //    ขณะที่ตัวตั้ง (ของเสีย/DT) มีแค่ชั่วโมงเดียว → อัตราต่อวันต่ำเกินจริง = ผลดูดีเกิน
+    //    (pending_close = กะจบแล้วรออนุมัติ ข้อมูลครบ → นับได้) (QC audit 2026-08-20 · T2-7)
     const { data: sessions } = await supabaseDR.from('production_sessions')
       .select('id, work_date').eq('line_name', imp.line_name)
+      .neq('status', 'open')
       .gte('work_date', from).lte('work_date', to);
     if (!sessions?.length) return { noData: true };
 
@@ -329,8 +345,20 @@ export default function Improvements() {
       const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
       const bMO = inWin.filter(m => { const d = dOf(m); return d >= from && d < imp.start_date; });
       const aMO = inWin.filter(m => { const d = dOf(m); return d >= imp.start_date && d <= to; });
-      const mins = (m) => (m.report_at && m.repair_done_at ? Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000) : 0);
-      const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + mins(m), 0));
+      /* ⏱ นาที "เครื่องหยุดจริง" = downtime ที่ผูกใบ (source_downtime_id → downtime_logs)
+         ⚠️ ห้ามใช้ repair_done_at − report_at — นั่นคือ lead time ของใบซ่อม (รวมกลางคืน/
+         วันหยุด/รอช่าง) เอาไปคูณ rate ผลิตแล้วเกินจริง 30+ เท่า (ศุกร์ 16:00 → จันทร์
+         09:00 = 65 ชม./ใบ ทั้งที่เครื่องหยุดผลิตจริงไม่กี่สิบนาที) (QC audit 2026-08-20 · T2-8)
+         ใบที่ไม่มี DT ผูก = ไม่รู้นาทีเครื่องหยุด → นับ 0 + รายงานจำนวนใบ ห้ามเดา */
+      const dtIds = [...bMO, ...aMO].map(m => m.source_downtime_id).filter(Boolean);
+      const dtMin = {};
+      if (dtIds.length) {
+        const { rows: dtRows } = await fetchByIds(dtIds, c =>
+          supabaseDR.from('downtime_logs').select('id, duration_min').in('id', c));
+        dtRows.forEach(d => { dtMin[d.id] = Number(d.duration_min) || 0; });
+      }
+      const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + (dtMin[m.source_downtime_id] || 0), 0));
+      const unlinked = (arr) => arr.filter(m => !m.source_downtime_id || dtMin[m.source_downtime_id] == null).length;
       // ค่าซ่อมจริงต่อใบ (ช่างกรอกขั้นซ่อม step 3) — ใช้คิด cost saving ตรงๆ ไม่ต้องประมาณ
       const sumCost = (arr) => arr.reduce((a, m) => a + (Number(m.labor_cost) || 0) + (Number(m.parts_cost) || 0), 0);
       return {
@@ -339,6 +367,7 @@ export default function Improvements() {
         beforePerDay: beforeDays.size ? bMO.length / beforeDays.size : 0,
         afterPerDay: afterDays.size ? aMO.length / afterDays.size : 0,
         beforeMin: sumMin(bMO), afterMin: sumMin(aMO),
+        beforeMinUnlinked: unlinked(bMO), afterMinUnlinked: unlinked(aMO),
         beforeCost: sumCost(bMO), afterCost: sumCost(aMO),
       };
     }
@@ -422,6 +451,12 @@ export default function Improvements() {
     const missing = [];
     if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
     else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
+    // ไม่มีกะปิดแล้วก่อนวันเริ่ม = ไม่มีฐานเทียบ — เดิม beforePerDay=0 ทำให้ขึ้น
+    // "ต้นทุนเพิ่ม X บาท/วัน" ทั้งที่แค่ยังไม่มีข้อมูล (QC audit 2026-08-20 · T2-7)
+    if (!r.beforeDays) {
+      missing.push('ไม่มีกะที่ปิดแล้วในช่วงก่อนวันเริ่มแก้ (baseline) — เทียบก่อน/หลังไม่ได้ · ขยายหน้าต่างเทียบ (baseline_days) หรือตรวจวันเริ่มโปรเจค');
+      return { cc, rate, missing, comp: Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0])), matPerDay: 0, repairPerDay: 0, defectParts: [], defectNoCost: [], totalPerDay: null, totalPerMonth: null, payback: null, invest: Number(imp.invest_cost) || 0, computable: false };
+    }
 
     // บาท/วัน แยกก้อน — โชว์ครบทุกก้อนเสมอ (ก้อนที่ไม่เลือกไม่เข้ายอดรวม) · วนจาก RATE_COMPONENTS ห้าม hardcode
     const comp = Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0]));
@@ -464,8 +499,10 @@ export default function Improvements() {
       if (defectNoCost.size) missing.push(`พาร์ทยังไม่ตั้งต้นทุน/ชิ้น (${[...defectNoCost].join(', ')}) — กรอก standard/material cost ที่ Product Master → 🗂 Parts Master`);
     }
 
-    const compSelected = costComps.reduce((a, k) => a + comp[k], 0);
-    const totalPerDay = computable ? compSelected + matPerDay + repairPerDay : null;
+    // ค่าซ่อมจริงเข้ายอดรวมเฉพาะเมื่อ toggle 'repair' เปิด (อาจทับซ้อนกับ IDP ของ SAP — ให้ผู้ใช้เลือกตามนโยบายบัญชี)
+    const compSelected = costComps.filter(k => k !== 'repair').reduce((a, k) => a + (comp[k] || 0), 0);
+    const repairSelected = costComps.includes('repair') ? repairPerDay : 0;
+    const totalPerDay = computable ? compSelected + matPerDay + repairSelected : null;
     const totalPerMonth = totalPerDay != null ? totalPerDay * workDaysMonth : null;
     const invest = Number(imp.invest_cost) || 0;
     const payback = invest > 0 && totalPerMonth > 0 ? invest / totalPerMonth : null;
@@ -517,9 +554,14 @@ export default function Improvements() {
     if (source === 'downtime') {
       // ดึง category (planned/unplanned) + description มาด้วย — งานในแผนเป็น priority รอง
       // และ note พนักงานคือตัวบอกว่า "อื่นๆ" จริงๆ คือปัญหาอะไร
-      const { data } = await supabaseDR.from('downtime_logs')
-        .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
-        .in('session_id', ids);
+      // ⚠️ ต้องผ่าน fetchByIds (กฎ CLAUDE.md) — หน้าต่างเลือกได้ถึง 90 วัน = ~180 กะ
+      //    × downtime กะละ ~10 = ~1,800 แถว > เพดาน 1000 ⇒ ถูกตัดเงียบ พาเรโต้ชี้เป้าผิด
+      //    (บรรทัด 379/404 ในไฟล์นี้ใช้ fetchByIds อยู่แล้ว ตัวนี้ตกสำรวจ)
+      const { rows: data, error: pErr, truncated: pTrunc } = await fetchByIds(ids, (c) =>
+        supabaseDR.from('downtime_logs')
+          .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
+          .in('session_id', c));
+      if (pErr || pTrunc) toast.error('โหลด downtime ไม่ครบ — พาเรโต้อาจชี้เป้าไม่ตรง');
       (data || []).forEach(r => {
         const key = `${r.downtime_type_id || ''}::${normCode(r.machine_no)}`; // เครื่องเดียวกันที่พิมพ์ไม่เป๊ะ = แถวเดียวกัน
         const cur = agg.get(key) || { type_id: r.downtime_type_id, machine_no: r.machine_no || '', value: 0, count: 0, planned: r.dr_downtime_types?.category === 'planned', descCount: new Map() };
@@ -528,8 +570,10 @@ export default function Improvements() {
         agg.set(key, cur);
       });
     } else {
-      const { data } = await supabaseDR.from('defect_logs')
-        .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', ids);
+      const { rows: data, error: pErr, truncated: pTrunc } = await fetchByIds(ids, (c) =>
+        supabaseDR.from('defect_logs')
+          .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', c));
+      if (pErr || pTrunc) toast.error('โหลดของเสียไม่ครบ — พาเรโต้อาจชี้เป้าไม่ตรง');
       (data || []).forEach(r => {
         const mat = r.prod_orders?.mat_no || '';
         const key = `${r.defect_type_id || ''}::${mat}`;
@@ -820,9 +864,14 @@ export default function Improvements() {
                           </span>
                         </div>
                       ))}
-                      {r.source === 'mtn' && (r.beforeMin || r.afterMin) ? (
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>⏱ breakdown รวม: <b style={{ color: '#ef4444' }}>{r.beforeMin}</b> → <b style={{ color: '#22c55e' }}>{r.afterMin}</b> นาที</div>
-                      ) : null}
+                      {r.source === 'mtn' && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          ⏱ เครื่องหยุดจริง (จาก downtime ที่ผูกใบ): <b style={{ color: '#ef4444' }}>{r.beforeMin}</b> → <b style={{ color: '#22c55e' }}>{r.afterMin}</b> นาที
+                          {(r.beforeMinUnlinked || 0) + (r.afterMinUnlinked || 0) > 0 && (
+                            <span style={{ color: '#f59e0b' }}> · ⚠ {(r.beforeMinUnlinked || 0) + (r.afterMinUnlinked || 0)} ใบไม่มี downtime ผูก — นาทีส่วนนั้นไม่ถูกนับ (เปิดใบซ่อมจากแถว Downtime ใน Daily Report จะผูกให้เอง)</span>
+                          )}
+                        </div>
+                      )}
                       {r.afterDays === 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>⏳ ยังไม่มีวันผลิตหลังวันเริ่มแก้ — รอข้อมูล</div>}
                     </div>
                   )}
@@ -846,9 +895,13 @@ export default function Improvements() {
                           <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({tooEarly ? 'จาก baseline ที่วัดแล้ว' : 'ประมาณการจากผลจริง'}{cs.cc ? ` · CC ${cs.cc}` : ''})</span>
                         </span>
                         {/* เลือกก้อน rate ที่นับเป็น saving — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · มีผลทุกการ์ด */}
-                        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>นับ:</span>
-                          {RATE_COMPONENTS.map(c => {
+                          {[...RATE_COMPONENTS,
+                            // ก้อนที่ 5 — เฉพาะโปรเจค mtn (ค่าซ่อมจริงมีแต่ฝั่งใบ MO)
+                            ...(imp.problem_source === 'mtn'
+                              ? [{ key: 'repair', label: 'ค่าซ่อม', full: 'ค่าซ่อมจริงจากใบ MO (labor+parts ที่ช่างกรอก) — คนละแหล่งกับ IDP ของ SAP ซึ่งเป็นค่าเสื่อมทางอ้อม "รวมค่าซ่อม" ที่บัญชีคำนวณ · เปิดทั้งคู่อาจนับทับซ้อนบางส่วน เลือกตามนโยบายบัญชี' }]
+                              : [])].map(c => {
                             const on = costComps.includes(c.key);
                             return (
                               <button key={c.key} onClick={() => toggleComp(c.key)} title={`${c.full} — ${on ? 'นับในยอดรวม (กดเพื่อไม่นับ)' : 'ไม่นับในยอดรวม (กดเพื่อนับ)'}`}
@@ -887,9 +940,19 @@ export default function Improvements() {
                               </span>
                             ))}
                             {imp.problem_source === 'defect' && <span>วัสดุ/Std {fmtBaht(cs.matPerDay)}</span>}
-                            {imp.problem_source === 'mtn' && <span>ค่าซ่อมจริง {fmtBaht(cs.repairPerDay)}</span>}
+                            {imp.problem_source === 'mtn' && (
+                              <span style={{ textDecoration: costComps.includes('repair') ? 'none' : 'line-through', opacity: costComps.includes('repair') ? 1 : 0.5 }}
+                                title="ค่าซ่อมจริงจากใบ MO — คนละแหล่งกับ IDP (SAP) ซึ่งรวมค่าซ่อมไว้ในค่าเสื่อมทางอ้อม เปิดทั้งคู่อาจทับซ้อนบางส่วน">
+                                ค่าซ่อมจริง {fmtBaht(cs.repairPerDay)}
+                              </span>
+                            )}
                             <span style={{ color: 'var(--muted)' }}>(บาท/วัน)</span>
                           </div>
+                          {imp.problem_source === 'mtn' && costComps.includes('repair') && costComps.includes('idp') && (
+                            <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                              ℹ️ IDP (SAP — ค่าเสื่อมทางอ้อม "รวมค่าซ่อม") กับ ค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล — เปิดนับทั้งคู่อาจทับซ้อนบางส่วน เลือกปิดก้อนใดก้อนหนึ่งได้ตามนโยบายบัญชี
+                            </div>
+                          )}
                           {imp.problem_source === 'defect' && cs.defectParts.length > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               {cs.defectParts.map(p => (

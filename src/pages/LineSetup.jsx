@@ -509,7 +509,12 @@ export default function LineSetup({ embedded = false } = {}) {
       const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob);
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
-      await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
+      // ⚠️ ต้องเช็ค error ก่อนลบไฟล์เก่าเสมอ — supabase-js **คืน { error } ไม่ throw**
+      // เดิมไม่เช็คแล้วลบไฟล์เก่าต่อทันที: upsert พลาด (RLS/เน็ตสะดุด) = DB ยังชี้ URL เก่า
+      // แต่ไฟล์เก่าถูกลบไปแล้ว ⇒ **ผังไลน์นั้นกลายเป็นรูปเสียถาวร กู้ไม่ได้** และ toast ยังขึ้นว่าสำเร็จ
+      const { error: dbErr } = await supabase.from('line_layouts')
+        .upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
+      if (dbErr) throw dbErr;
       // ลบไฟล์ผังเดิมของไลน์นี้ทิ้ง กันไฟล์เก่ากองเป็นขยะใน storage
       // (เฉพาะผังของตัวเองเท่านั้น — ผังที่ยืมแสดงจากไลน์แม่ห้ามลบ เพราะไลน์แม่ยังใช้อยู่)
       if (!usingParentLayout && layoutImage?.includes('/employee-photos/layouts/')) {
@@ -904,8 +909,12 @@ export default function LineSetup({ embedded = false } = {}) {
   // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล
   // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
   // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น
+  // หมุดรองที่วาดบนผังจริงในแท็บที่เปิดอยู่ (เครื่องจักร/WIP วาดด้วย SUB ตัวเดียวกัน)
+  // ⚠️ ต้องคิดความแน่นจากชุดที่แสดงจริง — ไม่งั้นแท็บ WIP ที่มีจุดกระจุก 20 จุดจะได้วงใหญ่สุด
+  //    เพราะสูตรไปนับ machinePoints ที่มีแค่ 3 ตัว แล้วเบียดกัน (อาการเดียวกับที่เพิ่งแก้)
+  const subPoints = activeTab === 'wip' ? wipPoints : machinePoints;
   const { MK, SUB, pillFont: PILL_FONT, subPillFont, badgeFont, pillMaxW, subPillMaxW } =
-    markerScale(imgBox?.rw, { machineCount: machinePoints.length });
+    markerScale(imgBox?.rw, { machineCount: subPoints.length, points: subPoints, mapHeight: imgBox?.rh });
   // ปุ่ม 🏷️ โชว์/ซ่อนป้ายทุกชนิดจุด (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
   const pillsOn = showPills;
   const stationPillsOn = showPills;

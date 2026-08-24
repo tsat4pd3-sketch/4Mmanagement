@@ -1290,7 +1290,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -1401,7 +1401,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
             userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved}
             realRole={realRole} onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
             remoteCode={remoteCode} onToggleRemote={onToggleRemote}
-            onOpenSearch={() => setPaletteOpen(true)} />
+            onOpenSearch={() => setPaletteOpen(true)} permsVersion={permsVersion} />
         </Suspense>
         {/* 🔎 ค้นหาเมนู — หน้า Home ต้องมีเหมือนหน้าอื่น (Ctrl+K ที่ผูกไว้ด้านบนทำงานทุกหน้าอยู่แล้ว
             แต่เดิม mount palette เฉพาะ branch ล่าง → กด Ctrl+K ที่หน้า Home แล้วไม่มีอะไรขึ้น) */}

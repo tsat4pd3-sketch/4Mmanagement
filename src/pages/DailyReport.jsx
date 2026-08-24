@@ -1543,27 +1543,21 @@ function LiveTab({ role }) {
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
-  const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) => {
-    if (!openedAt) return 0;
-    const matchShift = (p) => p.shift === 'both' || p.shift === sessionShift;
-    const matchProc  = (p) => p.process_type === 'common' || p.process_type === processType;
-    return breakPolicies.filter(p => matchShift(p) && matchProc(p)).reduce((sum, p) => {
-      // Build policy window anchored to the session's work date
-      const sessWorkDate = selSession?.work_date || workDate(openedAt);
-      const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-      let pStart = new Date(`${sessWorkDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-      let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-      // For night shift break that crosses midnight, shift the whole window forward a day if it ended before session start
-      if (pEnd < openedAt) {
-        pStart = new Date(pStart.getTime() + 86400000);
-        pEnd   = new Date(pEnd.getTime() + 86400000);
-      }
-      const overlapStart = Math.max(pStart.getTime(), openedAt.getTime());
-      const overlapEnd   = Math.min(pEnd.getTime(), closedAt.getTime());
-      const overlapMin   = Math.max(0, (overlapEnd - overlapStart) / 60000);
-      return sum + overlapMin;
-    }, 0);
-  };
+  /* wrapper บาง ๆ ครอบ policyBreakOverlapMin (utils/oee §3) — สูตรพักนโยบายมี "ที่เดียว"
+     (QC audit 2026-08-20 · รอบ 5: เดิมไฟล์นี้ถือสูตรเอง 1 ชุด ขณะที่แท็บประวัติ
+     (histBreakOverlapMin) ครอบ util กลางอยู่แล้ว = ไฟล์เดียว 2 มาตรฐาน → ยุบเหลือกลาง)
+     ⚠️ ต่างจากของเดิม 1 จุดโดยตั้งใจ: policy ที่ process_type = null/'' นับด้วย
+     (null = ไม่ระบุ = ใช้ทุกกระบวนการ — มาตรฐานเดียวกับแท็บประวัติ/OEE Analytics/FactoryMap
+     ของเดิมตัด null ทิ้ง = ไฟล์เดียวกันตอบเวลาพักไม่เท่ากันระหว่างจอปิดกะกับจอประวัติ) */
+  const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) =>
+    policyBreakOverlapMin({
+      policies: breakPolicies,
+      startMs: openedAt ? openedAt.getTime() : 0,
+      endMs: closedAt ? closedAt.getTime() : 0,
+      workDate: selSession?.work_date || (openedAt ? workDate(openedAt) : null),
+      shift: sessionShift,
+      processType,
+    });
 
   // dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างไปใน call เดียวกัน — state dtLogs ยังเป็นค่าเก่า
   const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) => {

@@ -23,6 +23,7 @@ import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { printBbsSheet } from '../lib/bbsPrint';
 
@@ -77,7 +78,9 @@ export default function BbsCheck() {
       const fam = getLineFamilyIds(lines, Number(lineId));
       return fam.size ? lines.filter(l => fam.has(l.id)) : lines;
     }
-    if (sections.length) return lines.filter(l => sections.includes(l.section));
+    // ⚠️ ต้องเทียบผ่าน inSectionScope (trim+lowercase) — `section` เป็น free text ที่พิมพ์มือได้
+    //    `.includes()` ตรงตัวจะทำให้ 'PD1 ' / 'pd1' หลุด scope เงียบๆ (หัวหน้าเปิดมาแล้วไลน์ตัวเองหาย)
+    if (sections.length) return lines.filter(l => inSectionScope(sections, l.section));
     return lines;
   }, [lines, role, lineId, sections]);
 

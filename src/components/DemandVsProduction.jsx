@@ -16,6 +16,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import DailyBars from './DailyBars';
 import {
   demandKeysOf, rowMatchesProduct, demandByDay, simulate, prodRate, advise, addDay, demandOf, demandSrcOf,
@@ -57,18 +58,21 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
       const from = addDay(today, -60);
       const to = addDay(today, 180);
       /* ⚠️ ดึงทั้งช่วงแล้วกรองฝั่ง client — ออเดอร์อ้าง "เลขลูกค้า" ที่เว้นวรรค/ขีดไม่ตรงกับ p_no
-         ใน master (RB3B 16E060 BA vs RB3B-16E060-BA) → เทียบใน SQL ตรงๆ ไม่เจอ */
+         ใน master (RB3B 16E060 BA vs RB3B-16E060-BA) → เทียบใน SQL ตรงๆ ไม่เจอ
+         ⚠️ ต้องแบ่งหน้าเสมอ — `.limit(5000)` ถูก PostgREST clamp ที่ 1000 เงียบๆ
+         สต็อกโดนตัด = แถวหาย = "🔴 ของจะขาด" ปลอม (QC audit 2026-08-20 · T3-25) */
       const [o, f, s] = await Promise.all([
-        supabaseDR.from('customer_shipping_orders')
-          .select('mat_no, customer_part_no, qty, due_date, status').gte('due_date', from).lte('due_date', to).limit(5000),
-        supabaseDR.from('customer_forecasts')
-          .select('mat_no, customer_part_no, qty, period_month').gte('period_month', from).lte('period_month', to).limit(5000),
-        supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand'),
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
+          .select('id, mat_no, customer_part_no, qty, due_date, status').gte('due_date', from).lte('due_date', to)),
+        fetchAllPages(() => supabaseDR.from('customer_forecasts')
+          .select('id, mat_no, customer_part_no, qty, period_month').gte('period_month', from).lte('period_month', to)),
+        fetchAllPages(() => supabaseDR.from('line_stock_summary').select('mat_no, line_name, qty_on_hand'),
+          { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
       ]);
       if (!alive) return;
       const e = o.error || f.error || s.error;
-      if (e) { setErr(e.message || String(e)); setRaw({ orders: [], fcs: [], stock: [] }); return; }
-      setRaw({ orders: o.data || [], fcs: f.data || [], stock: s.data || [] });
+      if (e) { setErr(e || String(e)); setRaw({ orders: [], fcs: [], stock: [] }); return; }
+      setRaw({ orders: o.rows, fcs: f.rows, stock: s.rows });
     })();
     return () => { alive = false; };
   }, [today]);
