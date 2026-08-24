@@ -27,6 +27,7 @@ import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarch
 import { inSectionScope } from '../utils/sectionScope';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import MaterialRequests from '../components/MaterialRequests';
 import { nextDocNo } from '../utils/qaDocNo';
 import QaCheckSheet from '../components/QaCheckSheet';
 import PeChangeRequests from '../components/PeChangeRequests';
@@ -1543,6 +1544,8 @@ const TABS = [
   // ถังเหลือง/แดง = บันทึกหน้ากล่องก่อนถึง NCR/Scrap (ฟอร์มกระดาษเดิม 2 ใบ · 2026-08-19)
   { key: 'bins',        icon: '🗑️', label: 'ถังเหลือง / ถังแดง' },
   { key: 'claims',      icon: '📮', label: 'เคลมลูกค้า' },
+  // ใบเบิกชิ้นงานไปทดสอบ (FM-STO-003) — ของที่ทดสอบแล้วถูกดึงเข้าใบรายงานของเสีย (2026-08-24)
+  { key: 'matreq',      icon: '📦', label: 'ใบเบิกทดสอบ' },
   { key: 'capa',        icon: '🛠', label: 'CAPA / 8D' },
   { key: 'instruments', icon: '📏', label: 'เครื่องมือวัด' },
 ];
@@ -1594,6 +1597,7 @@ export default function QualityControl() {
       {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}
       {tab === 'bins' && <QualityBins />}
+      {tab === 'matreq' && <MaterialRequests />}
       {tab === 'claims' && <QaClaims lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
     </div>

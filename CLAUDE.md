@@ -183,7 +183,7 @@
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
 | การตรวจสอบและซ่อมบำรุง | `/pm-setup` | PMSetup | admin/manager/supervisor |
 | การตรวจสอบและซ่อมบำรุง | `/energy` | **Energy — ⚡ พลังงานไฟฟ้า + 🌱 คาร์บอน** · 4 แท็บ: 📝 กรอกรายเดือน (3 ชั้น: บิลทั้งโรงงาน / จุดที่มีมิเตอร์ / จุดที่ยังไม่มีมิเตอร์ — ผลรวมที่วัดได้ cumulate ขึ้นมา) · 📊 สรุป & วิเคราะห์ (เทรนด์ 12 เดือน+YoY · **"อะไรทำให้เดือนนี้เปลี่ยน" = contribution to change** · สัดส่วนการใช้ · SEC kWh/ชิ้น) · ⚙️ ค่าการปล่อย (EF ตาม TGO — **ไม่ seed ค่าให้ ต้องกรอกพร้อมที่มา**) · 📡 มิเตอร์/MQTT (**ซ่อนจนกว่าจะ apply migration**) · สูตรทั้งหมดอยู่ `src/utils/energy.js` ที่เดียว **ห้ามคำนวณเองในหน้า ห้ามแตกไฟล์ util พลังงาน/คาร์บอนเพิ่ม** · ดู `docs/ENERGY_MONITORING_DESIGN.md` | ทุก role (ดู) · `energy:record` = admin/mgr/mtn/engineer/dept_admin |
-| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
+| ควบคุมคุณภาพ QA/QC | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · **📦 ใบเบิกทดสอบ (FM-STO-003 — ดู section)** · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
 | ควบคุมคุณภาพ QA/QC | `/qa-setup` | QAInspectionSetup — **หน้า setup เท่านั้น** (มาตรฐาน+drawing+balloon) ผลตรวจจริงอยู่แท็บใบตรวจใน `/qa` | admin/manager/qa |
 | ควบคุมคุณภาพ QA/QC | `/event-log` | EventLog | admin/manager/supervisor/leader/qa (CQI-15 + Approval) |
 | วิเคราะห์ & รายงาน | `/vsm` | **VSM — แผนผังสายธารคุณค่า (Value Stream Map)** เลือก FG (เบอร์ 1) + เดือน → generate ผังจากข้อมูลจริง (CT/%OEE/C-O/LOT/คงคลัง/TT/PLT/PT/%VA) → แก้ค่าที่ระบบไม่รู้ → บันทึก (snapshot) → พิมพ์ A3 · **2 แท็บ (2026-08-19): 📋 เอกสาร (snapshot) / ⚡ สายธารสด (realtime — ไม่บันทึก/ไม่พิมพ์)** · ดู section "Value Stream Mapping" | ทุก role (ดู) · `vsm:manage` = admin/mgr/sv/leader/engineer |
@@ -1483,6 +1483,12 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 หน้า `/scrap-report` (`ScrapReport.jsx`, **กลุ่มฝ่ายผลิต** — ฝ่ายผลิตเป็นผู้ใช้งานหลัก) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" ที่เขียนมือ · ลงยอด scrap ต่อ **ไลน์/วัน** แล้ว export Excel ตรงฟอร์ม 100% · ⚠️ `production_lines` อยู่ **Main project** (client `supabase`) ไม่ใช่ DR — dropdown ไลน์ต้องดึงจาก `supabase` (เคยพลาดใช้ `supabaseDR` แล้ว dropdown ว่าง)
 
 - **ตาราง (DR project — anon RLS):** `scrap_reports` (หัวใบ: report_date, line_name, dept/section/division, product_categories[], storage_location, doc_no, สายอนุมัติ inspector/requester/approver_qa/pd/gm, sender/receiver, status draft/submitted/approved) · `scrap_report_items` (รายการต่อพาร์ท: source main/sub, part_no/part_name/mat_no/model/code A-E/bom_ref, qty, m_cause m1-m5, stage in_process/post_process, confirm_qty, defect_codes, src_defect_from_logs) · `scrap_defect_types` (master P1-P20 กระบวนการ / A1-A18 ประกอบ-เชื่อม — seed จากชีท Defect Type จริง) · migration `20260716_scrap_report.sql` (DR) + `20260716_scrap_report_permissions.sql` (Main)
+- **⭐ ดึงเข้าใบได้ 2 ทาง (2026-08-24 · user: "scrap report ดึงได้ 2 ทาง จาก daily report และ ใบเบิกของ QA")**
+  1. **⤵ ดึงจาก Daily Report** — ของเสียที่เกิดจากการผลิต (`defect_logs` → ธง `src_defect_from_logs`)
+  2. **⤵ ดึงจากใบเบิก QA** — ชิ้นงานที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003 · ดู section ถัดไป)
+     → ผูกกลับด้วย **`scrap_report_items.src_request_item_id`** (FK จริง อยู่ DR project เดียวกัน ·
+     `on delete set null` — ใบ scrap เป็นบันทึกคุณภาพ ต้องอยู่ต่อแม้ใบเบิกถูกลบ) · แถวติดไอคอน 📦
+     · ตั้ง `code='D' (TRY-OUT)` + `stage='post_process'` ให้เป็นค่าตั้งต้น (แก้ทับได้)
 - **sync = ดึงตั้งต้น + แก้เองได้ (คำสั่ง user):** ปุ่ม "⤵ ดึงจาก Daily Report" รวม `defect_logs.qty_ng` ของ session ไลน์+วันนั้น group ตาม `prod_orders.mat_no` → เติมแถว main product (flag `src_defect_from_logs`) แล้วแก้/เพิ่มได้ · **พาร์ทย่อย** (nut/สกรู ที่เสียก่อนเข้ากระบวนการหลัก — ไม่มีใน production session) เพิ่มเองผ่านปุ่ม "เพิ่มจาก SAP/BOM" (ดึง `dr_products` main + `bom_items` sub + **`parts_master` sub (2026-08-06)** — พาร์ทซื้อนอก 300/วัตถุดิบ 500 ที่ยังไม่ถูกผูกใน BOM ใดเลย (~257 รายการ) เดิมไม่ขึ้นให้เลือกต้องกรอกมือ · dedupe ด้วย mat_no ลำดับ dr_products > bom_items > parts_master) หรือกรอกมือ
 - **⚠️ กับดัก: `dr_products.p_no` บางไลน์ถูกกรอกเป็น "หมายเลขเครื่อง" ไม่ใช่เลขพาร์ท (2026-08-05)** — เจอจริง **SUB APRON** 4 แถว p_no = `SP-72/74/83/88` (ตรงกับ `machines.machine_no` เป๊ะ) + `mat_no` เป็นข้อความ ("M10 ไม่มีเกลียว") ไม่ใช่เลข SAP → ใบ Scrap พิมพ์ PART NO. เป็นหมายเลขเครื่อง · **เป็นปัญหา data ไม่ใช่ logic — ต้องไปแก้ที่ `/products`** · โค้ดไม่ปล่อยเงียบ: SAP/BOM picker โหลด `machines.machine_no` มาเทียบ เจอ p_no ตรงหมายเลขเครื่อง → **ไม่เอามาเป็น part_no (ปล่อยว่างให้กรอกเอง) + ป้าย ⚠ ในลิสต์ + toast เตือนตอนเลือก** (flag `badMaster`) · หน้าอื่นที่ใช้ `p_no` เป็นเลขพาร์ทลูกค้า (Planner&Sales map EDI, Production Plan `resolveMat`) เจอปัญหาเดียวกันได้ — master ผิดกระทบทุกที่ที่ map ด้วย p_no
 - **export Excel (`src/lib/scrapExportExcel.js`):** ExcelJS วาดตรง layout FM-PD2-002 Rev.06 (หัวบริษัท, ตาราง A-S: ลำดับ/PART NO/NAME/MAT SAP/รูป/MODEL/CODE/BOM/Q'TY/M1-M5/ยืนยัน/รหัสงานเสีย, TOTAL, CODE legend A-E, สายอนุมัติ 5 ขั้น, ผู้ส่ง/รับ HRM) · **⚠️ ช่อง M1-M5 = เครื่องหมายติ๊ก `✓` ว่าเสียเพราะสาเหตุไหน ไม่ใช่จำนวน** (จำนวนอยู่คอลัมน์ Q'TY/ยืนยันแล้ว — เดิมใส่ `qty` ทำให้ดูเหมือนยอดของเสียซ้ำสองที่ · แถว TOTAL ของ M1-M5 = **จำนวนรายการ**ที่ติ๊กสาเหตุนั้น · แก้ 2026-08-05) · ตรึง 27 แถวเหมือนกระดาษ
@@ -1491,6 +1497,44 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 - เลขเอกสาร running รายวัน `TSAT4-PDX NNNN/เดือน-ปี` (นับใบในเดือน)
 
 ---
+
+## 📦 ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 Rev.01 (paperless · 2026-08-24)
+
+แท็บ **📦 ใบเบิกทดสอบ** ใน `/qa` (`src/components/MaterialRequests.jsx`) — user ส่งใบกระดาษมา
+*"QA ต้องคอยเขียนเบิกชิ้นงานขอจากฝ่ายผลิต และผลิตมาออกใบ scrap report"*
+
+**สายงานที่ปิดได้:** QA ออกใบเบิก → หัวหน้าอนุมัติ → สโตร์จ่ายของ → ทดสอบแบบทำลาย →
+**ดึงเข้าใบรายงานของเสียที่ `/scrap-report`** (ทางที่ 2 ของการดึง)
+
+| ตาราง (DR) | เก็บอะไร |
+|---|---|
+| `material_requests` | หัวใบ · `kind` (withdraw/return) · `move_code` (prefix SAP 311/261/201/907/202/908) · `doc_no` · plant/storage · `detail` · `line_name` · ลายเซ็น 5 ช่อง (ชื่อ+รูป+วันที่) · `status` |
+| `material_request_items` | รายการ · `mat_no` · `description` · `qty` · `unit` · **`qty_issued`** (สโตร์กรอก) · `produced_date` · `batch_no` |
+
+migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_request.sql` (Main) — **apply แล้วทั้งคู่ 2026-08-24**
+
+> ### ⚠️ ทำไมอยู่ DR ไม่ใช่ Main (ทั้งที่ QA module อยู่ Main)
+> 1. ปลายทางคือ `scrap_report_items` (DR) — **อยู่ project เดียวกันถึงผูก FK ได้จริง** (ข้าม project ต้องเทียบข้อความ ซึ่งขาดง่าย)
+> 2. ตัวเลือกรหัสสินค้ามาจาก **`parts_master` (DR) = ทะเบียนกลางของทุก mat** ตามกฎ CLAUDE.md
+> 3. precedent ตรงตัว: **`scrap_reports` ก็เป็นฟอร์มอนุมัติหลายขั้นของ QA และอยู่ DR อยู่แล้ว**
+>
+> → DR เป็น anon ไม่มี RLS จริง **สิทธิ์คุมที่ UI ด้วยคีย์เดิม `scrap:record` / `scrap:manage`**
+> **ไม่เพิ่ม permission key ใหม่** (เลี่ยงกับดัก seed `enum_range` ที่ทำให้ role ใหม่ fail-closed)
+> — `scrap:record` = admin/mgr/sv/leader/**qa** ซึ่งครอบคนที่ต้องใช้พอดีอยู่แล้ว
+
+- **⚠️ ดึงเข้าใบ scrap ได้เฉพาะสถานะ `approved` / `issued` (`PULLABLE` ใน `src/utils/materialRequest.js`)**
+  — ใบที่ยังไม่อนุมัติแปลว่า**ยังไม่ได้ของ** จะรายงานว่าทำลายไปแล้วไม่ได้ · **เกณฑ์อยู่ที่ util ห้ามเขียนซ้ำในหน้า**
+- **⚠️ จำนวนที่ดึงยึด `qty_issued` (จ่ายจริง) ก่อนเสมอ ไม่มีค่อยใช้ `qty` (ที่ขอ)** — helper `effQty()`
+  · สโตร์จ่ายไม่ครบเป็นเรื่องปกติ ใช้ยอดที่ขอจะรายงานของเสียเกินจริง
+- **ดึงซ้ำไม่เพิ่มของซ้ำ** — เทียบ `src_request_item_id` ที่มีอยู่ในใบแล้ว
+- ตัวเลือก move_code / สถานะ / `effQty` / `nextReqNo` อยู่ **`src/utils/materialRequest.js` (pure)** จุดเดียว
+  · ใบพิมพ์ `src/lib/materialRequestPrint.js` (A4 แนวตั้ง · `layout_locked=true` · doc_key **`material_request`**
+  · seed เลขฟอร์ม/Rev/Effective จากใบจริงได้เลย เพราะพิมพ์อยู่บนกระดาษ)
+- **เปลี่ยนประเภท เบิก↔คืน แล้วต้องล้าง `move_code` ที่ไม่มีในชุดใหม่** (§5.3 cascade) — ทำแล้วใน `changeKind`
+- ฟอร์มยัง**ใช้ได้ทั่วไปทุกหน่วยงาน** (ใบกระดาษเป็นฟอร์มสโตร์กลาง) แค่ทางเข้าอยู่ที่ QA และ default
+  `requester_dept = 'QUALITY'` — แก้ได้
+- **ยังไม่ทำ:** ยังไม่ตัดสต็อกจริง (`line_stock_transactions`) ตอนสโตร์จ่ายของ — ใบนี้เป็น "เอกสารขอ"
+  ยอดจริงยังเดินทาง SAP เหมือนเดิม · ยังไม่มี KPI ว่าเบิกไปทดสอบเดือนละเท่าไหร่
 
 ## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน)
 
