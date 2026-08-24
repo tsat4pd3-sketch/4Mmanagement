@@ -1400,7 +1400,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
             userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved}
             realRole={realRole} onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
-            remoteCode={remoteCode} onToggleRemote={onToggleRemote} />
+            remoteCode={remoteCode} onToggleRemote={onToggleRemote}
+            onOpenSearch={() => setPaletteOpen(true)} />
+        </Suspense>
+        {/* 🔎 ค้นหาเมนู — หน้า Home ต้องมีเหมือนหน้าอื่น (Ctrl+K ที่ผูกไว้ด้านบนทำงานทุกหน้าอยู่แล้ว
+            แต่เดิม mount palette เฉพาะ branch ล่าง → กด Ctrl+K ที่หน้า Home แล้วไม่มีอะไรขึ้น) */}
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
         </Suspense>
         {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
         {remoteCode && (
