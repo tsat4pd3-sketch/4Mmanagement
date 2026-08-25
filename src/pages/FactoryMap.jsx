@@ -16,6 +16,7 @@ import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
+import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -302,6 +303,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
   const [dieZones, setDieZones] = useState({});        // 🔨 โซนคลังแม่พิมพ์: normName → { id, name, total, mo, moPending } (DR die_storage_areas)
+  const [storeZones, setStoreZones] = useState({});    // 🏬 โซนคลังสินค้า (WMS): normName → { ...zone, fill, cat, text, nameMap } (DR storage_zones)
+  const [storeZoneModal, setStoreZoneModal] = useState(null); // คลิกโซนคลัง → popup รายการ MAT ในโซน
   const [energyStatus, setEnergyStatus] = useState({});  // ⚡ พลังงานรายเดือน: name → { qty, prev, cost, source } (DR · เฟส 1 กรอกมือ)
   const [energyMonth, setEnergyMonth] = useState(null);  // เดือนที่ผังกำลังโชว์ (ไม่ใช่ live — ต้องประกาศบนจอ)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
@@ -867,6 +870,43 @@ export default function FactoryMap({ setupMode = false }) {
   usePolling(loadDieZones, RATE.ANALYTIC);
   const dieZoneOf = (name) => dieZones[String(name || '').trim().toLowerCase()] || null;
 
+  /* ── 🏬 โซนคลังสินค้า (WMS เฟส 1 · 2026-08-25) — link ผังรวม ↔ ทะเบียนโซนใน /line-stock ──
+     กรอบที่ "ชื่อตรงกับ storage_zones.name" = โซนคลัง (ชื่อคือกุญแจ trim+lowercase — pattern เดียวกับ die)
+     สถานะคำนวณสดจากสต็อกจริง: line_stock_summary คลังกลาง (FG WAREHOUSE/STORE) ของ MAT ที่ผูกกับโซน
+     + kanban min/max + ขนาดกล่อง (parts_master.qty_per_pkg ‖ kanban_standards.qty_per_kanban)
+     สูตร เต็ม/ขาด/นับกล่อง อยู่ src/utils/storageZones.js ที่เดียว — ห้ามเขียนซ้ำในหน้า
+     ⚠️ เฟส 1 ยอดเป็น "ยอดรวมของ MAT ในคลังกลาง" ไม่ใช่ยอดรายโซนจริง (ledger ยังไม่รู้จักโซน) — popup บอกกำกับ */
+  const loadStoreZones = useCallback(async () => {
+    const { data: zs, error } = await supabaseDR.from('storage_zones')
+      .select('id, name, kind, capacity_pkg, mat_nos, note').eq('is_active', true);
+    if (error || !zs?.length) { setStoreZones({}); return; }   // ยังไม่ apply migration 20260825 / ยังไม่มีโซน = เงียบ (ฟีเจอร์ opt-in)
+    const mats = [...new Set(zs.flatMap(z => z.mat_nos || []))];
+    const stock = {}, pkgMap = {}, stdMap = {}, nameMap = {};
+    for (let i = 0; i < mats.length; i += 120) {               // กฎ .in() แบ่งก้อนละ 120
+      const c = mats.slice(i, i + 120);
+      const [{ data: st }, { data: pm }, { data: ks }] = await Promise.all([
+        supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('line_name', WAREHOUSE_LOCATIONS).in('mat_no', c),
+        supabaseDR.from('parts_master').select('mat_no, name, qty_per_pkg').in('mat_no', c),
+        supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty, qty_per_kanban').eq('is_active', true).in('mat_no', c),
+      ]);
+      (st || []).forEach(r => { stock[r.mat_no] = (stock[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
+      (pm || []).forEach(p => { pkgMap[p.mat_no] = p.qty_per_pkg; nameMap[p.mat_no] = p.name; });
+      (ks || []).forEach(k => { stdMap[k.mat_no] = k; });
+    }
+    const pkgOf = (m) => Number(pkgMap[m]) || Number(stdMap[m]?.qty_per_kanban) || null; // ไม่รู้ = null ห้ามเป็น 0
+    const stdOf = (m) => stdMap[m] || null;
+    const out = {};
+    zs.forEach(z => {
+      const fill = zoneFill(z, stock, pkgOf, stdOf);
+      out[String(z.name || '').trim().toLowerCase()] = {
+        ...z, fill, cat: zoneHealth(fill), text: `${zoneKindMeta(z.kind).icon} ${zoneHealthText(fill)}`, nameMap,
+      };
+    });
+    setStoreZones(out);
+  }, []);
+  usePolling(loadStoreZones, RATE.ANALYTIC);
+  const storeZoneOf = (name) => storeZones[String(name || '').trim().toLowerCase()] || null;
+
   /* ── Realtime — ผังเปลี่ยนสี "ทันที" ที่หน้างานบันทึก ไม่ต้องรอรอบ poll (2026-08-19) ────
      เดิมหน้านี้เป็น polling ล้วน (0 channel) เลยต้องตั้ง 30 วิ เพื่อให้ Andon ทัน = กิน egress หนัก
      ตอนนี้ push มาก่อน · poll เหลือเป็นแค่ "กันเหนียวเผื่อ realtime หลุด" → ยืดเป็นหลักนาทีได้
@@ -1109,6 +1149,9 @@ export default function FactoryMap({ setupMode = false }) {
     // 🔨 โซนคลังแม่พิมพ์ → เปิดผังจัดเก็บแม่พิมพ์ของโซนนั้นเลย (ต้องเช็คก่อน isFac — ชื่อโซนแม่พิมพ์ก็ไม่ใช่ไลน์ผลิตเหมือนกัน)
     const dz = dieZoneOf(name);
     if (dz) { setHoverLine(null); navigate(`/die-registry?tab=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
+    // 🏬 โซนคลังสินค้า → popup รายการ MAT ในโซน (เต็ม/ขาด) — เช็คก่อน isFac เหมือนโซนแม่พิมพ์
+    const sz = storeZoneOf(name);
+    if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }
     if (isFac(name)) { setHoverLine(null); navigate(`/mtn-layout?view=facility&zone=${encodeURIComponent(name)}&from=factory-map`); return; }
     setHoverLine(null); setStoryDate(date || getWorkDate()); setStoryLine(name);
   };
@@ -1146,6 +1189,8 @@ export default function FactoryMap({ setupMode = false }) {
       else agg.isFac = true;
       const dz = dieZoneOf(name);
       if (dz) agg.die = dz;    // 🔨 โซนคลังแม่พิมพ์ — health จากใบซ่อม MO ของแม่พิมพ์ที่วางในโซน
+      const sz = storeZoneOf(name);
+      if (sz) agg.storeZone = sz; // 🏬 โซนคลังสินค้า — health จากสต็อกจริง (เต็ม/ใกล้เต็ม/ต่ำกว่า Min)
     }
     const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
     agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
@@ -1156,10 +1201,12 @@ export default function FactoryMap({ setupMode = false }) {
   const catColor = (name) => CAT[M.cat(stOf(name))];
   // โซน MTN/facility (metric ผลิต): default เขียว "ปกติ" ถ้าไม่มีเหตุผิดปกติ — แดง/ส้มเฉพาะเมื่อมีเครื่องซ่อม/PM ค้าง (คำสั่ง user)
   const facHealth = (st) => {
+    if (st.storeZone) return st.storeZone.cat;   // 🏬 โซนคลัง: แดง "นิ่ง" = ต่ำกว่า Min/ล้นความจุ (งานคลังไม่ใช่ alarm เครื่องหยุด — ห้ามกระพริบ)
     if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
     return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
   };
   const facHealthText = (st) => {
+    if (st.storeZone) return st.storeZone.text;
     if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
     if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
     if (st.dtActive) return '🔴 หยุด';
@@ -1193,7 +1240,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -1282,6 +1329,8 @@ export default function FactoryMap({ setupMode = false }) {
   const assignableFacility = () => { const f = framedNames(); return facilityZones.filter(n => !f.has(n)); };
   // 🔨 ผังจัดเก็บแม่พิมพ์ (die_storage_areas) ที่ยังไม่ถูกตีกรอบ — ตีกรอบชื่อเดียวกัน = คลิกแล้วเด้งเข้าผังแม่พิมพ์
   const assignableDie = () => { const f = framedNames(); return Object.values(dieZones).map(z => z.name).filter(n => !f.has(n)).sort((a, b) => a.localeCompare(b)); };
+  // 🏬 โซนคลังสินค้า (storage_zones) ที่ยังไม่ถูกตีกรอบ — ทะเบียนจัดการที่ /line-stock แท็บ "โซนคลัง (ผัง)"
+  const assignableStore = () => { const f = framedNames(); return Object.values(storeZones).map(z => z.name).filter(n => !f.has(n)).sort((a, b) => a.localeCompare(b)); };
   // กรอบแม่อัตโนมัติ (2026-08-04): แม่ไม่ได้ตีเอง + ลูกถูกตีแล้ว → เส้นประล้อมกรอบลูกทั้งหมด + ป้ายยอดรวม family
   // แก้ปัญหา "เช็คชื่อกันที่ไลน์แม่" — ข้อมูลที่ผูกชื่อแม่ (คน ฯลฯ) โผล่บนผังโดยไม่ต้องตีกรอบแม่ทับลูก
   const autoHulls = useMemo(() => {
@@ -1415,7 +1464,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
     return out;
     // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1721,7 +1770,7 @@ export default function FactoryMap({ setupMode = false }) {
                       <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
                         {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
-                        {st.isFac ? '🔧 ' : ''}{r.line_name}
+                        {st.isFac ? (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ') : ''}{r.line_name}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
@@ -1750,7 +1799,7 @@ export default function FactoryMap({ setupMode = false }) {
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
-                      {st.isFac && (st.die ? '🔨 ' : '🔧 ')}{r.line_name}
+                      {st.isFac && (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ')}{r.line_name}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(10px,0.9vw,12.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25, opacity: 0.95 }}>{txt}</div>}
                   </div>
@@ -2415,10 +2464,63 @@ export default function FactoryMap({ setupMode = false }) {
         );
       })()}
 
+      {/* 🏬 popup โซนคลังสินค้า — read-only viewer (ตั้งใจให้ปิดจาก backdrop ได้ · UI-CONVENTIONS §5) */}
+      {storeZoneModal && (() => {
+        const z = storeZoneModal; const f = z.fill; const km = zoneKindMeta(z.kind);
+        const stColor = { good: 'var(--accent)', ok: '#f59e0b', bad: '#ef4444', idle: 'var(--muted)' }[z.cat] || 'var(--muted)';
+        return (
+          <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setStoreZoneModal(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: `1px solid ${stColor}`, borderRadius: 14, padding: '20px 22px', width: '100%', maxWidth: 640, maxHeight: '88vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 4 }}>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{km.icon} {z.name}</div>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{km.label}</span>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: stColor }}>{zoneHealthText(f)}</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+                รวม {f.totQty.toLocaleString()} ชิ้น · {f.unknownPkg ? `${f.totPkgs}+? กล่อง (ไม่รู้ขนาดกล่อง ${f.unknownPkg} MAT)` : `${f.totPkgs} กล่อง`}
+                {z.capacity_pkg ? ` · ความจุ ${z.capacity_pkg} กล่อง${f.fillPct != null ? ` (${f.fillPct}%)` : ''}` : ' · ⚠ ยังไม่กรอกความจุ'}
+                {z.note ? ` · ${z.note}` : ''}
+              </div>
+              {f.mats.length ? (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                    <thead><tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
+                      {['MAT', 'ชื่อพาร์ท', 'คงเหลือ', 'กล่อง', 'Min', 'Max', 'สถานะ'].map(h => <th key={h} style={{ padding: '4px 6px', borderBottom: '1px solid var(--border2)' }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {f.mats.slice().sort((a, b) => (b.short ? 1 : 0) - (a.short ? 1 : 0) || b.qty - a.qty).map(m => (
+                        <tr key={m.mat_no} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '5px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>{m.mat_no}</td>
+                          <td style={{ padding: '5px 6px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{z.nameMap?.[m.mat_no] || '—'}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{m.qty.toLocaleString()}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right' }}>{m.pkgs ?? '—'}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--muted)' }}>{m.min ?? '—'}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--muted)' }}>{m.max ?? '—'}</td>
+                          <td style={{ padding: '5px 6px' }}>{m.short ? <span style={{ color: '#ef4444', fontWeight: 700 }}>🟥 ต่ำกว่า Min</span> : m.over ? <span style={{ color: '#f59e0b' }}>⚠ เกิน Max</span> : <span style={{ color: 'var(--accent)' }}>ปกติ</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div style={{ fontSize: 13, color: 'var(--muted)' }}>ยังไม่ผูก MAT กับโซนนี้ — ไปผูกที่ /line-stock แท็บ "โซนคลัง (ผัง)"</div>}
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+                * ยอด = สต็อกของ MAT ที่ผูกกับโซน จาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่บันทึกยอด "รายโซน" จริง (เฟสถัดไป)
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button onClick={() => navigate('/line-stock?tab=zones')} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>🏬 จัดการโซน / ผูก MAT</button>
+                <button onClick={() => navigate('/rundown-stock')} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>📉 Rundown Stock</button>
+                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>ปิด</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {assignFor && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
-            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); const dieOpts = assignableDie(); return <>
+            {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); const dieOpts = assignableDie(); const storeOpts = assignableStore(); return <>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
@@ -2427,6 +2529,7 @@ export default function FactoryMap({ setupMode = false }) {
               {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {dieOpts.length > 0 && <optgroup label="🔨 คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {storeOpts.length > 0 && <optgroup label="🏬 โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
             {assignLine === '__new__' && (

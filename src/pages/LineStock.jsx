@@ -12,6 +12,7 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import StorageZonePanel from '../components/StorageZonePanel';
 import LineSelect from '../components/LineSelect';
 import StockMoveToChild from '../components/StockMoveToChild';
 import { visibleInterval } from '../utils/usePolling';
@@ -1339,6 +1340,7 @@ function InflowRulesTab({ canEdit }) {
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
   { key:'wip',       label:'🔩 WIP ระหว่างขั้น' },
+  { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
   { key:'timeboard', label:'🕐 บอร์ดเวลา' },
   { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
@@ -1361,6 +1363,7 @@ export default function LineStock() {
 
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
+      {activeTab === 'zones'     && <StorageZonePanel />}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}
