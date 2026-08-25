@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 
@@ -67,13 +68,20 @@ export default function FlowTower() {
       // ห้าม toISOString (UTC) — ใช้วันที่เครื่อง (local) แบบเดียวกับ getWorkDate ในไฟล์นี้
   const sinceD = new Date(); sinceD.setDate(sinceD.getDate() - 7);
   const since = `${sinceD.getFullYear()}-${String(sinceD.getMonth() + 1).padStart(2, '0')}-${String(sinceD.getDate()).padStart(2, '0')}`;
-      const [stock, ordersOpen, prodToday, childLots, rawReq, purch, blocks, wipPts, wipReq, fcast] = await Promise.all([
-        supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand'),
+      // ⚠️ ตารางที่โตเกิน 1000 แถวได้ (line_stock_summary/child_lot_requests) ต้องแบ่งหน้า —
+      //    select เฉยๆ โดน PostgREST ตัดที่ 1000 เงียบๆ แล้วยอด/ตัวนับต่ำเกินจริง (QC flow-audit #19/#36)
+      //    ส่วน purchase_requests เคยพองเป็น 1,024 ใบ (96% เป็น cancelled จากบั๊ก lot_size) →
+      //    ที่ต้องใช้คือ "จำนวน" อย่างเดียว ใช้ count query ไม่ดึงแถว = ไม่มีเพดาน 1000
+      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, blocks, wipPts, wipReq, fcast] = await Promise.all([
+        fetchAllPages((from, to) => supabaseDR.from('line_stock_summary')
+          .select('line_name, mat_no, qty_on_hand').range(from, to), { orderBy: ['line_name', 'mat_no'] }),
         supabaseDR.from('customer_shipping_orders').select('qty, status').neq('status', 'shipped'),
         supabaseDR.from('production_sessions').select('id, line_name, status').eq('work_date', workDate),
-        supabaseDR.from('child_lot_requests').select('status, lot_qty, source_line'),
-        supabaseDR.from('raw_withdrawal_requests').select('id, status'),
-        supabaseDR.from('purchase_requests').select('status, qty'),
+        fetchAllPages((from, to) => supabaseDR.from('child_lot_requests')
+          .select('id, status, lot_qty, source_line').range(from, to), { orderBy: 'id' }),
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }),
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'done'),
+        supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabaseDR.from('v_demand_flow_blocks').select('*').order('pending_qty', { ascending: false }),
         supabase.from('wip_buffer_points').select('id'),
         supabase.from('wip_replenish_requests').select('id, status'),
@@ -81,14 +89,19 @@ export default function FlowTower() {
       ]);
       // ⚠️ view/ตารางไหนโหลดไม่ได้ ต้องบอก ห้ามโชว์ 0 (0 = "มี 0 รายการ" คนละเรื่องกับ "อ่านไม่ได้")
       const bad = [['สต๊อก', stock], ['ออเดอร์', ordersOpen], ['ใบผลิต', prodToday],
-                   ['ใบสั่งผลิตลูก', childLots], ['จุดที่ตัน', blocks]].filter(([, r]) => r.error);
-      setErr(bad.length ? `โหลดไม่ได้: ${bad.map(([n]) => n).join(', ')}` : '');
+                   ['ใบสั่งผลิตลูก', childLots], ['ใบเบิกวัตถุดิบ', rawAllQ], ['ใบเบิกวัตถุดิบ (ค้าง)', rawPendQ],
+                   ['ใบสั่งซื้อ', purchQ], ['จุดที่ตัน', blocks]].filter(([, r]) => r.error);
+      const trunc = [['สต๊อก', stock], ['ใบสั่งผลิตลูก', childLots]].filter(([, r]) => r.truncated).map(([n]) => n);
+      setErr([
+        bad.length ? `โหลดไม่ได้: ${bad.map(([n]) => n).join(', ')}` : '',
+        trunc.length ? `⚠ โหลดได้ไม่ครบ (ข้อมูลเยอะเกินเพดาน): ${trunc.join(', ')}` : '',
+      ].filter(Boolean).join(' · '));
 
-      const S = stock.data || [];
+      const S = stock.rows || [];
       const byPrefix = (p) => S.filter(r => String(r.mat_no || '').startsWith(p));
       const sum = (rows) => rows.reduce((a, r) => a + (Number(r.qty_on_hand) || 0), 0);
       const orders = ordersOpen.data || [];
-      const lots = childLots.data || [];
+      const lots = childLots.rows || [];
       const lotBy = (st) => lots.filter(l => l.status === st);
 
       // ยอดผลิตวันนี้ (ใบที่ปิดแล้ว + ยอดสะสมของใบที่ยังเปิด) — สูตรบังคับของระบบ
@@ -114,8 +127,10 @@ export default function FlowTower() {
         producedToday, orderRows: po.length,
         lotPending: lotBy('pending').length, lotDoing: lotBy('producing').length, lotDone: lotBy('done').length,
         lotRouted: lots.filter(l => (l.source_line || '').trim()).length, lotAll: lots.length,
-        rawPending: (rawReq.data || []).filter(r => r.status !== 'done').length, rawAll: (rawReq.data || []).length,
-        purchPending: (purch.data || []).filter(p => p.status === 'pending').length,
+        // count query: error = ไม่รู้ (null) — จอโชว์ "—" ผ่าน fmt ห้ามกลายเป็น 0
+        rawPending: rawPendQ.error ? null : (rawPendQ.count ?? 0),
+        rawAll: rawAllQ.error ? null : (rawAllQ.count ?? 0),
+        purchPending: purchQ.error ? null : (purchQ.count ?? 0),
         wipPts: (wipPts.data || []).length, wipReq: (wipReq.data || []).length,
         blocks: blocks.data || [],
         blockQty: (blocks.data || []).reduce((a, b) => a + (Number(b.pending_qty) || 0), 0),

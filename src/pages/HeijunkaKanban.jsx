@@ -912,6 +912,9 @@ const PURCHASE_STATUS = {
   pending:  { label: '🆕 รอสั่งซื้อ',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
   ordered:  { label: '🚚 รอของเข้า',   color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
   received: { label: '✅ รับเข้าแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)',  next: null,       nextLabel: null },
+  // ใบที่ถูกยกเลิก (เช่นล้างใบขยะจากบั๊ก lot_size) — ปกติถูกกรองออกตั้งแต่ query แล้ว
+  // แต่ต้องมี meta กันหลุด: เดิม fallback ไป pending ทำใบยกเลิกโชว์เป็น "🆕 รอสั่งซื้อ" + มีปุ่มเดินต่อ
+  cancelled: { label: '⛔ ยกเลิกแล้ว', color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
 };
 const PURCHASE_FILTERS = [
   { key: '',  label: 'ทั้งหมด' },
@@ -1367,9 +1370,10 @@ export default function HeijunkaKanban() {
       const patch = { status: next };
       if (next === 'ordered')  { patch.ordered_by = fullName || 'จัดซื้อ'; patch.ordered_at = new Date().toISOString(); }
       if (next === 'received') { patch.received_by = fullName || 'สโตร์'; patch.received_at = new Date().toISOString(); }
-      // อัปเดตแบบมีเงื่อนไข กันกดซ้ำ/สองแท็บ ไม่ให้เติม stock ซ้ำ
+      // อัปเดตแบบ compare-and-swap: เดินหน้าได้เฉพาะจากสถานะที่เราเห็นตอนกดเท่านั้น
+      // (เดิม .neq(next) อย่างเดียว → ใบที่ถูก "ยกเลิก" ไปแล้วยังถูกกดเดินหน้าเป็น ordered/received ได้ = ชุบชีวิตใบขยะ)
       const { data: updated, error } = await supabaseDR.from('purchase_requests')
-        .update(patch).eq('id', pr.id).neq('status', next).select('id');
+        .update(patch).eq('id', pr.id).eq('status', pr.status).select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
       if (next === 'received' && pr.dest_line) {
