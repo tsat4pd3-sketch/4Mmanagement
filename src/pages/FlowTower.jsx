@@ -318,6 +318,7 @@ export default function FlowTower() {
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
           ระบบระเบิด BOM แล้วสะสมความต้องการไว้ แต่**ยังออกใบสั่งไม่ได้เพราะไม่ได้ตั้ง "ขนาดล็อต"** (จะสั่งครั้งละกี่ชิ้น)
           — เป็นการตัดสินใจของคน ระบบจึงไม่ตั้งให้เอง · ค่าที่เสนอ = 1 กล่องตามบรรจุจริง กดยืนยันแล้วแก้ทีหลังได้
+          · แถว ⏳ = ตั้งล็อตแล้วแต่ยอดค้างเกินเพดานออกใบต่อรอบ (MAX_LOTS) — จะทยอยออกใบเองทุกครั้งที่ปิดใบผลิต
         </div>
         {!d ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</div>
           : S.blocks.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ทุกพาร์ทตั้งขนาดล็อตครบแล้ว</div>
@@ -340,7 +341,11 @@ export default function FlowTower() {
                         </td>
                         <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 700 }}>{b.suggested_lot ? fmt(b.suggested_lot) : '—'}</td>
                         <td style={{ padding: '7px 12px' }}>
-                          {canFix && b.suggested_lot > 0 && (
+                          {/* backlog_capped = ตั้งล็อตแล้ว (ค้างเพราะเพดาน MAX_LOTS) — ห้ามโชว์ปุ่มตั้งล็อต
+                              (กดแล้วจะเขียนทับ lot_size ที่คนตั้งไว้ด้วยค่าเสนอ 1 กล่อง) · วิวเก่าไม่มีคอลัมน์นี้ = undefined = พฤติกรรมเดิม */}
+                          {b.block_reason === 'backlog_capped'
+                            ? <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                            : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
                               style={{ padding: '4px 10px', borderRadius: 7, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
                               {busy === b.mat_no ? '…' : '✓ ตั้งล็อต'}
