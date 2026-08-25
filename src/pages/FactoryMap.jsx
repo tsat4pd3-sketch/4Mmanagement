@@ -343,6 +343,25 @@ export default function FactoryMap({ setupMode = false }) {
   const [newZoneType, setNewZoneType] = useState('fac'); // โซนใหม่เป็นอะไร: 'fac' MTN/facility (เดิม) | 'store' โซนคลังสินค้า (สร้างทะเบียน storage_zones ให้ด้วย)
   const [newZoneKind, setNewZoneKind] = useState('fg');  // ชนิดโซนคลัง (ZONE_KINDS) เมื่อเลือก store
   const [wrapW, setWrapW] = useState(0);      // ความกว้างผังจริง (px) — แปลงขนาดป้าย px → % ตอนกันป้ายทับกัน
+  /* ── ขนาดป้ายต่อเครื่อง (2026-08-25 · user: "สเกลเพี้ยนๆ พอเปิดหลายจอทีวี") ──────────────
+     ต้นเหตุ: จอ TV แต่ละตัวตั้ง OS display scaling ไม่เท่ากัน (150–300%) → CSS px ใหญ่ไม่เท่ากัน
+     - ผังถูกย่อให้พอดีจอ แต่ "ป้าย" คิดขนาดเป็น CSS px → สัดส่วนป้าย/ผังโตตาม scaling = ป้ายล้น/ทับกัน
+     - viewport CSS แคบลง (1920@150% = 1280px) หัก rail+แผงขวาแล้ว wrapW ต่ำกว่า COMPACT_W
+       → ขึ้น "จอแคบ · ซ่อนป้าย" ทั้งที่จอใหญ่มาก
+     ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
+     (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
+  const [lblScale, setLblScale] = useState(() => {
+    try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
+    catch { return 1; }
+  });
+  const applyScale = (v) => {
+    const nv = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10));
+    setLblScale(nv);
+    try { localStorage.setItem('fm_lbl_scale', String(nv)); } catch { /* per-device pref เท่านั้น */ }
+  };
+  // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
+  const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
+  const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
@@ -1293,8 +1312,10 @@ export default function FactoryMap({ setupMode = false }) {
      "มือถือลดข้อมูลได้ · PC/จอ display ต้องครบ") · ป้ายกว้างเท่าข้อความยาวสุด
      ผังแคบจึงจัดยังไงก็ทับ — ย่อข้อความคือทางเดียวที่ไม่ต้องซ่อนไลน์ทิ้ง
      ⚠️ COMPACT_W ต้องต่ำกว่าความกว้างผังบนโน้ตบุ๊ก/จอ TV เสมอ ไม่งั้นจอใหญ่โดนย่อไปด้วย
-        (จอ 1366 หัก sidebar 252 + แผงขวา 360 ≈ 720 → มือถือ/แท็บเล็ตแนวตั้งเท่านั้นที่เข้าเกณฑ์) */
-  const compactLbl = wrapW > 0 && wrapW < COMPACT_W;
+        (จอ 1366 หัก sidebar 252 + แผงขวา 360 ≈ 720 → มือถือ/แท็บเล็ตแนวตั้งเท่านั้นที่เข้าเกณฑ์)
+     ⚠️ เกณฑ์ต้องคูณ lblScale — ป้ายถูกย่อ 0.7× ก็กินที่น้อยลง 0.7× (จอ TV ที่ OS scaling สูง
+        wrapW แคบลงเทียม กด A− แล้วต้องหลุดจากโหมดย่อได้ ไม่ใช่ติด COMPACT ตายตัว) */
+  const compactLbl = wrapW > 0 && wrapW < COMPACT_W * lblScale;
   const shortText = (st) => {
     if (st.isFac && M.facilityNA) return facHealth(st) === 'good' ? '' : facHealthText(st);
     return M.short ? M.short(st) : regText(st);
@@ -1427,6 +1448,11 @@ export default function FactoryMap({ setupMode = false }) {
     if (!wrapW || !aspect) return out;           // รูปยังไม่โหลด → render ถอยไปวางแบบเดิม
     out.ready = true;
     const toN = (px) => (px / wrapW) * 100;      // px → หน่วย N (% ของความกว้าง)
+    // ขนาดป้ายตามที่เครื่องนี้ตั้ง (A−/A+) — ตัวจองพื้นที่กับตัววาด (zoom) ต้องคูณตัวเดียวกันเสมอ
+    const est = (name, txt, big, plain, kpi) => {
+      const r = estLabelPx(name, txt, big, plain, kpi);
+      return lblScale === 1 ? r : { w: r.w * lblScale, h: r.h * lblScale };
+    };
     const maxY = 100 / aspect;                   // ความสูงผังในหน่วย N
     const g = toN(5);                            // ระยะห่างขั้นต่ำจากขอบกรอบ
     const placed = [];
@@ -1469,7 +1495,7 @@ export default function FactoryMap({ setupMode = false }) {
            วัดแล้ว: จอ 1800px มี 17/27 ใบลงในกรอบตัวเองได้ · 1250px ข้อมูลเต็มเพิ่ม 20→21
            และ "เหลือชื่ออย่างเดียว" ลดจาก 3 เหลือ 1 */
         if (!big && !kpi) {
-          const { w: pw, h: ph } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, true);
+          const { w: pw, h: ph } = est(levels[lvl].name, levels[lvl].txt, big, true);
           const w2 = Math.min(toN(pw), 34), h2 = toN(ph);
           const p2 = toN(2), bx2 = (x0 + x1) / 2 - w2 / 2;
           for (const c of [
@@ -1484,7 +1510,7 @@ export default function FactoryMap({ setupMode = false }) {
             }
           }
         }
-        const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, false, kpi);
+        const { w: wpx, h: hpx } = est(levels[lvl].name, levels[lvl].txt, big, false, kpi);
         const w = kpi ? toN(wpx) : Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
         const cands = big
           ? [ // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
@@ -1541,7 +1567,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
     return out;
     // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lblScale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1667,7 +1693,7 @@ export default function FactoryMap({ setupMode = false }) {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · ผังอัปเดตสดทุก 30 วิ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
       </div>
@@ -1714,15 +1740,33 @@ export default function FactoryMap({ setupMode = false }) {
           </span>
         )}
         {!editing && !!labelLayout.hidden.length && (
-          // จอแคบวางป้ายไม่ครบ — ต้องบอกว่าขาดไปกี่ไลน์ ห้ามให้หายเงียบ
-          <span title={`ไม่มีที่วางป้าย: ${labelLayout.hidden.join(', ')}`}
+          // จอแคบวางป้ายไม่ครบ — ต้องบอกว่าขาดไปกี่ไลน์ ห้ามให้หายเงียบ + ชี้ทางแก้ (ลดขนาดป้าย/ซ่อนแผงขวา)
+          <span title={`ไม่มีที่วางป้าย: ${labelLayout.hidden.join(', ')}\nจอ TV ที่ตั้ง scaling สูงจะเข้าเคสนี้ทั้งที่จอใหญ่ — กด A− ลดขนาดป้าย หรือซ่อนแผงขวา`}
             style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, fontWeight: 700, color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap' }}>
-            จอแคบ · ซ่อนป้าย {labelLayout.hidden.length} ไลน์ — แตะกรอบเพื่อดู
+            ที่ไม่พอ · ซ่อนป้าย {labelLayout.hidden.length} ไลน์ — ลองกด A− / ซ่อนแผงขวา
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
           <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
+          </span>
+        )}
+        {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
+            ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
+        {!editing && (
+          <span style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+            title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
+            <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
+              style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
+            <span style={{ fontSize: 11, fontWeight: 700, color: lblScale === 1 ? 'var(--muted)' : 'var(--accent)', minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+              ป้าย {Math.round(lblScale * 100)}%
+            </span>
+            <button onClick={() => applyScale(lblScale + 0.1)} disabled={lblScale >= 1.6}
+              style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale >= 1.6 ? 0.4 : 1 }}>A+</button>
+            <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
+              title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
+              {panelHide ? '▶ แผงขวา' : '◀ ซ่อนแผงขวา'}
+            </button>
           </span>
         )}
       </div>
@@ -1838,7 +1882,8 @@ export default function FactoryMap({ setupMode = false }) {
                 : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
               return (
                 <div key={`hlbl-${h.name}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
+                  {/* zoom = ตัวเดียวกับที่ est ในการจองพื้นที่คูณไว้ — ใช้ zoom (ลด layout จริง) ไม่ใช่ transform (ภาพลวงตา) ตามบทเรียน fitOnePage */}
+                  <div style={{ ...(lblScale !== 1 ? { zoom: lblScale } : {}), background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
                     <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
                       {kids > 0 && <span style={{ fontSize: '0.72em', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
@@ -1919,6 +1964,7 @@ export default function FactoryMap({ setupMode = false }) {
                 return (
                   <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
                     <div style={{
+                      ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
@@ -1950,9 +1996,12 @@ export default function FactoryMap({ setupMode = false }) {
                   {/* ป้ายที่ลงในกรอบไลน์ตัวเองได้ = ข้อความล้วน ไม่มีการ์ด/ขอบ (กรอบมีพื้นสีอ่อนอยู่แล้ว
                       ซ้อนการ์ดอีกชั้นทั้งเปลืองที่ทั้งรก) · ป้ายที่ต้องออกไปอยู่นอกกรอบยังใช้การ์ด
                       ไม่งั้นตัวหนังสือลอยบนรูปถ่ายผังอ่านไม่ออก */}
-                  <div style={box?.plain
-                    ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
-                    : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
+                  <div style={{
+                    ...(lblScale !== 1 ? { zoom: lblScale } : {}),
+                    ...(box?.plain
+                      ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
+                      : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }),
+                  }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
@@ -1978,8 +2027,9 @@ export default function FactoryMap({ setupMode = false }) {
           </div>
           </div>
 
-          {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ── */}
-          {!editing && (
+          {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ──
+              จอ TV ซ่อนได้ (ปุ่ม ◀ ในแถบ metric) — คืนความกว้างให้ผัง ~360px แล้ว wrapW มักพ้นเกณฑ์ compact */}
+          {!editing && !panelHide && (
             <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               {/* สลับโหมดแผง */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
