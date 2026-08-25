@@ -80,6 +80,7 @@ const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
+const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
@@ -102,6 +103,8 @@ export const NAV_ITEMS = [
   { to: '/dept-dashboard', icon: '📋', label: 'Dashboard ส่วนงาน',  group: 'ภาพรวม' },
   { to: '/flow-tower', icon: '🔗', label: 'สายธารความต้องการ',   group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
+  // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
+  { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอไลน์)',  group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
@@ -1509,6 +1512,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
+              } />
+              <Route path="/line-oee" element={
+                <RoleRoute path="/line-oee" userRole={role}><LineOeeBoard /></RoleRoute>
               } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
