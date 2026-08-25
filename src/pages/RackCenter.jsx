@@ -591,7 +591,7 @@ function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
     background: on ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)',
     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}` });
   return (
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🏷️ พิมพ์ป้าย QR เรียกภาชนะ</span>

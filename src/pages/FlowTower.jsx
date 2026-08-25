@@ -46,8 +46,14 @@ const ST = {
   human: { dot: '#f59e0b', label: 'ส่งต่อด้วยคน', bg: 'rgba(245,158,11,0.10)' },
 };
 
+/* ⚠️ ข้อยกเว้นทางการ — หน้านี้ **ไม่ scope ตามส่วนงาน ทุก role เห็นทั้งโรงงาน**
+   (คำสั่ง user 2026-08-24 · หลัง QC audit ทัก) — หลักเดียวกับ `/factory-map`:
+   เป็นจอ "สายธารความต้องการทั้งเส้น" สำหรับผู้บริหาร/เปิดหลายจอพร้อมกัน
+   กรองเหลือเฉพาะส่วนงานตัวเองแล้วสายธารขาดกลางทาง = หมดความหมายของหน้า
+   → **ห้ามเติม scope filter ให้หน้านี้** เว้นแต่ user สั่งเปลี่ยน
+   (เดิม destructure `sections` มาแต่ไม่เคยใช้ = ดูเหมือนลืมทำ ทั้งที่ตั้งใจ — ถอดออกแล้ว) */
 export default function FlowTower() {
-  const { role, sections } = useContext(UserContext);
+  const { role } = useContext(UserContext);
   const navigate = useNavigate();
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');

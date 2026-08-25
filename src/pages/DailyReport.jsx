@@ -130,6 +130,14 @@ const workDate = (at = new Date()) => {
   return localDateStr(d);
 };
 const nowTime = () => new Date().toTimeString().slice(0, 5);
+/* อายุกะค้าง (วัน) เทียบ work date ปัจจุบัน — ใช้ escalation กะที่ไม่ยอมปิด/อนุมัติ
+   เป้าหมายทีม: เคลียร์ภายใน STALE_SESSION_DAYS วัน (นโยบาย 2026-08-25 — เตือนดัง ไม่ auto-ปิด:
+   ปิดกะ = stamp OEE จากยอดที่คนยืนยัน · auto-approve = โกหกว่ามีคนพิจารณา หลักเดียวกับเคส 4M [Auto]) */
+const STALE_SESSION_DAYS = 7;
+const sessionAgeDays = (wdStr) => {
+  if (!wdStr) return 0;
+  return Math.max(0, Math.round((new Date(`${workDate()}T00:00:00`) - new Date(`${wdStr}T00:00:00`)) / 864e5));
+};
 // กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
 const shiftStart = (shift) => shift === 'night' ? '20:00' : '08:00';
 const currentShift = () => { const h = new Date().getHours(); return (h >= 20 || h < 8) ? 'night' : 'day'; };
@@ -399,8 +407,9 @@ function LiveTab({ role }) {
     }
 
     // Check overdue: open/pending_close sessions from previous dates
+    // status + close_requested_by_name → banner บอกได้ว่า "ลูกบอลอยู่ฝั่งใคร" (รอ SV อนุมัติ vs หัวหน้ากลุ่มยังไม่ขอปิด)
     const { data: overdue } = await supabaseDR.from('production_sessions')
-      .select('id, line_name, shift, work_date, section')
+      .select('id, line_name, shift, work_date, section, status, close_requested_by_name')
       .in('status', ['open', 'pending_close'])
       .lt('work_date', workDate()); // เทียบกับ work date (ตัด 08:00) — ไม่งั้นกะดึกหลังเที่ยงคืนโดนแจ้ง "ค้างปิดกะ" ทั้งที่ยังรันอยู่
     setOverdueAlert((overdue || []).filter(o => {
@@ -1091,9 +1100,12 @@ function LiveTab({ role }) {
       return;
     }
 
-    const qty    = parseInt(openProdForm.qty);
-    const ctSec  = ctForMatNo(matNo);
     const std    = kanbanStds.find(s => s.mat_no === matNo);
+    /* ⚠️ มีมาตรฐานคัมบัง = ใช้ค่ามาตรฐานเสมอ ไม่อ่านจากช่องกรอก
+       ช่องถูกล็อก readOnly อยู่แล้ว แต่ state อาจค้างค่าเก่าได้ถ้ามีคนพิมพ์ MAT เองแล้วสลับไปมา
+       จำนวนต่อใบเป็นข้อเท็จจริงของมาตรฐาน ไม่ใช่ค่าที่ฟอร์มถือ (คำสั่ง user 2026-08-24) */
+    const qty    = std?.qty_per_kanban > 0 ? Number(std.qty_per_kanban) : parseInt(openProdForm.qty);
+    const ctSec  = ctForMatNo(matNo);
 
     // ── Capacity check ──────────────────────────────────────────────
     if (ctSec > 0) {
@@ -2295,7 +2307,18 @@ function LiveTab({ role }) {
                           style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {fmtDate(s.work_date)}</span>
+                      {/* ชิปอายุกะค้าง — เหลืองนิ่ง ≥3 วัน · แดงนิ่งเกิน STALE_SESSION_DAYS (งานค้าง ไม่ใช่ alarm ห้ามกระพริบ) */}
+                      {(() => { const age = sessionAgeDays(s.work_date); if (age < 3) return null;
+                        const late = age > STALE_SESSION_DAYS;
+                        return <span title={late ? `ค้างเกินเป้า ${STALE_SESSION_DAYS} วัน — OEE ของกะนี้ยังไม่เข้ารายงานเดือน` : 'ค้างจากวันก่อน — ปิด/อนุมัติให้ครบ'}
+                          style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 5px', borderRadius: 8, whiteSpace: 'nowrap',
+                            background: late ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.15)',
+                            color: late ? '#ef4444' : '#f59e0b',
+                            border: `1px solid ${late ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.4)'}` }}>⏰ {age}ว</span>;
+                      })()}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -2310,23 +2333,46 @@ function LiveTab({ role }) {
         {/* Overdue alert — พับ/กางได้ + จำกัดความสูงเลื่อนในตัว (list ยาว 60+ กะจะไม่ล้นจอ · UI-CONVENTIONS §137) */}
         {overdueAlert.length > 0 && (() => {
           const open = !liveCollapsed('overdue');
+          /* escalation ladder (2026-08-25 · คำสั่ง user "บีบหัวหน้าแผนกให้เร่งทำงานตามเวลา"):
+             เรียงเก่าสุดขึ้นบน + ชิปอายุ + บอกว่า "ลูกบอลอยู่ฝั่งใคร" (รอ SV อนุมัติ — ขอโดยใคร
+             vs หัวหน้ากลุ่มยังไม่ขอปิด) · เกิน STALE_SESSION_DAYS = แดง นับแยกบนหัว banner
+             ⚠️ ตั้งใจ "เตือนดัง" ไม่ auto-ปิด/auto-อนุมัติ — จะกลายเป็น stamp OEE ที่ไม่มีคนยืนยัน */
+          const rows = [...overdueAlert].map(o => ({ ...o, age: sessionAgeDays(o.work_date) })).sort((a, b) => b.age - a.age);
+          const over7 = rows.filter(o => o.age > STALE_SESSION_DAYS);
           return (
           <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
-            <div onClick={() => toggleLiveCollapse('overdue')} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 13, fontWeight: 800, color: '#ef4444' }}>
+            <div onClick={() => toggleLiveCollapse('overdue')} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', fontSize: 13, fontWeight: 800, color: '#ef4444', flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
               ⚠ มีกะที่ยังไม่ปิด ({overdueAlert.length} กะ)
+              {over7.length > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(239,68,68,0.25)', border: '1px solid rgba(239,68,68,0.6)' }}>
+                  ⏰ เกิน {STALE_SESSION_DAYS} วัน {over7.length} กะ · เก่าสุด {rows[0].age} วัน
+                </span>
+              )}
               <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, opacity: 0.85 }}>{open ? '▾ ซ่อน' : '▸ แสดง'}</span>
             </div>
             {open && (
               <>
                 <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 6, paddingRight: 4 }}>
-                  {overdueAlert.map(o => (
-                    <div key={o.id} style={{ fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>
-                      • {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · วันที่ {fmtDate(o.work_date)}
+                  {rows.map(o => (
+                    <div key={o.id} style={{ fontSize: 12, color: 'var(--text)', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span>• {o.line_name} · {o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(o.work_date)}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 8, whiteSpace: 'nowrap',
+                        background: o.age > STALE_SESSION_DAYS ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.15)',
+                        color: o.age > STALE_SESSION_DAYS ? '#ef4444' : '#f59e0b',
+                        border: `1px solid ${o.age > STALE_SESSION_DAYS ? 'rgba(239,68,68,0.5)' : 'rgba(245,158,11,0.4)'}` }}>
+                        ⏰ ค้าง {o.age} วัน
+                      </span>
+                      {/* ลูกบอลอยู่ฝั่งใคร — ไม่บอก คนก็โทษกันไปมา */}
+                      {o.status === 'pending_close'
+                        ? <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>รอ SV อนุมัติ{o.close_requested_by_name ? ` (ขอโดย ${o.close_requested_by_name})` : ''}</span>
+                        : <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>หัวหน้ากลุ่มยังไม่ขอปิดกะ</span>}
                     </div>
                   ))}
                 </div>
-                <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>กะเหล่านี้ค้างจากวันก่อน กรุณาปิด/อนุมัติให้ครบ (เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ)</div>
+                <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>
+                  เป้าหมาย: เคลียร์ภายใน {STALE_SESSION_DAYS} วัน — กะที่ไม่ปิด = OEE/ยอดผลิตของวันนั้น<b>หายจากรายงานเดือน</b> (ระบบนับเฉพาะกะที่ปิดแล้ว) · เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ
+                </div>
               </>
             )}
           </div>
@@ -4425,13 +4471,31 @@ function LiveTab({ role }) {
                   </div>
                 )}
 
-                <Field label={openProdStd ? `Qty (auto จาก Standard: ${openProdStd.qty_per_kanban} ชิ้น)` : 'Qty ต่อ Tag Card (ชิ้น) *'}>
+                {/* ⚠️ จำนวนต่อ Tag Card = มาตรฐาน SAP/คัมบัง **ห้ามแก้** (คำสั่ง user 2026-08-24)
+                    1 ใบ = จำนวนที่ตั้งไว้ใน kanban_standards.qty_per_kanban เสมอ — ไม่ใช่ค่าที่คนกรอกเอง
+                    เดิมเปิดให้พิมพ์ทับ → มีการแก้เยอะมากทั้งที่เป็นการสแกนใบตามมาตรฐาน
+                    = ยอดผลิต/สต็อก/backflush เพี้ยนตามแบบไล่ย้อนไม่ได้ว่าใบไหนถูกแก้
+                    ยังไม่มีมาตรฐาน (พาร์ทใหม่/ยังไม่ตั้ง) = ยังต้องพิมพ์ได้ ไม่งั้นเปิดใบไม่ได้เลย */}
+                <Field label={openProdStd ? `Qty ต่อ Tag Card — 🔒 ล็อกตามมาตรฐาน (${openProdStd.qty_per_kanban} ชิ้น/ใบ)` : 'Qty ต่อ Tag Card (ชิ้น) *'}>
                   <input id="open-qty-input" type="number" min="1" value={openProdForm.qty}
-                    onChange={e => setOpenProdForm(f => ({ ...f, qty: e.target.value }))}
+                    readOnly={!!openProdStd}
+                    title={openProdStd ? 'จำนวนต่อใบมาจากมาตรฐานคัมบัง แก้ที่ Product Master → 🎴 Kanban Std' : undefined}
+                    onChange={e => { if (!openProdStd) setOpenProdForm(f => ({ ...f, qty: e.target.value })); }}
                     onKeyDown={e => { if (e.key === 'Enter') handleScanOpen(); }}
                     style={{ ...inputStyle, fontSize: 22, fontWeight: 900, textAlign: 'center',
                       background: openProdStd ? 'rgba(34,197,94,0.08)' : 'var(--bg)',
-                      color: openProdStd ? '#22c55e' : 'var(--text)' }} />
+                      color: openProdStd ? '#22c55e' : 'var(--text)',
+                      cursor: openProdStd ? 'not-allowed' : undefined }} />
+                  {openProdStd
+                    ? <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                        ใบนี้เป็นการสแกนตามมาตรฐาน — จำนวนต่อใบแก้ที่นี่ไม่ได้
+                        {' '}· ถ้าจำนวนจริงไม่ตรง ให้แก้มาตรฐานที่ <b>Product Master → 🎴 Kanban Std</b>
+                        {' '}· ผลิตไม่ครบใบให้กรอก <b>ยอดที่ทำได้</b> บนการ์ดใบแทน
+                      </div>
+                    : <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                        ⚠️ พาร์ทนี้ยังไม่ได้ตั้งจำนวนต่อใบ (Kanban Std) — กรอกเองได้ครั้งนี้
+                        {' '}แต่ควรไปตั้งที่ <b>Product Master → 🎴 Kanban Std</b> ให้เรียบร้อย
+                      </div>}
                 </Field>
 
                 {/* Duplicate warning */}

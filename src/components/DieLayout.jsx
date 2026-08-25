@@ -619,7 +619,7 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
 
   const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังจัดเก็บแม่พิมพ์' : '⚙️ แก้ไขผังจัดเก็บ'}</div>
         <div style={{ display: 'grid', gap: 10 }}>

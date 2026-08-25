@@ -140,12 +140,16 @@ const KPI_GRID = (isMobile) => ({ display: 'grid', gap: 10, gridTemplateColumns:
 async function loadProduction(ctx) {
   const { workDate, prevDate, inScope } = ctx;
   const d7 = dayAdd(workDate, -6);
-  const [{ data: sess2 }, { data: sess7 }, fourM, logsRes, empRes] = await Promise.all([
+  const [{ data: sess2 }, { data: sess7 }, fourM, logsRes, empRes, { data: staleRaw }] = await Promise.all([
     supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
     supabase.from('four_m_logs').select('id, work_date, line_name, category, description, status, created_by_name').in('status', ['pending', 'pending_qa']).order('work_date', { ascending: true }).limit(100),
     supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', workDate),
     supabase.from('employees').select('id, line_id').eq('is_active', true),
+    // กะค้างจากวันก่อนที่ยังไม่ปิด/ไม่อนุมัติ — คิว escalation (2026-08-25 · "บีบให้เคลียร์ใน 7 วัน")
+    // ⚠️ OEE นับเฉพาะกะปิดแล้ว → กะพวกนี้คือรูโหว่ของรายงานเดือน ไม่ใช่แค่รก
+    supabaseDR.from('production_sessions').select('id, line_name, shift, work_date, status, close_requested_by_name')
+      .in('status', ['open', 'pending_close']).lt('work_date', workDate).order('work_date', { ascending: true }).limit(400),
   ]);
   const sess = (sess2 || []).filter(s => inScope(s.line_name));
   const ids = sess.map(s => s.id);
@@ -162,6 +166,7 @@ async function loadProduction(ctx) {
   ]);
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error),
+    stale: (staleRaw || []).filter(s => inScope(s.line_name)),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
 
@@ -220,7 +225,17 @@ function ProductionView({ d, ctx }) {
 
   const openDT = d.dts.filter(isOpenDT);
   const pendingClose = today.rows.filter(r => r.status === 'pending_close');
+  /* กะค้างจากวันก่อน — ยุบเป็นแถวเดียว ไม่แตกรายกะ (57 กะจะกลบคิวงานจริง — บทเรียน 4M [Auto]
+     323 ใบกลบใบจริง 19 ใบ) · เกิน 7 วัน = แดง · แถวพาไป /daily-report ที่มี banner รายกะเต็มๆ */
+  const staleRows = (d.stale || []).map(s => ({ ...s, age: daysSince(`${s.work_date}T08:00:00`) }));
+  const staleOver7 = staleRows.filter(s => s.age > 7);
   const actions = [
+    ...(staleRows.length ? [{
+      icon: '⏰', title: `กะค้างยังไม่ปิด/ไม่อนุมัติ ${staleRows.length} กะ`,
+      detail: `${staleOver7.length ? `เกินเป้า 7 วัน ${staleOver7.length} กะ · เก่าสุด ${Math.max(...staleRows.map(s => s.age))} วัน — ` : ''}OEE ของกะพวกนี้ยังไม่เข้ารายงานเดือน`,
+      tag: staleOver7.length ? `เกิน 7 วัน (${staleOver7.length})` : 'ค้างจากวันก่อน',
+      tagColor: staleOver7.length ? '#ef4444' : '#f59e0b', to: '/daily-report',
+    }] : []),
     ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: '#f59e0b', to: '/daily-report' })),
     ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: '#ef4444', to: '/daily-report' })),
     ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: '#f59e0b', to: fourMLink(f) })),
@@ -247,7 +262,7 @@ function ProductionView({ d, ctx }) {
         🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · เครื่องหยุดค้าง ${openDT.length} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 

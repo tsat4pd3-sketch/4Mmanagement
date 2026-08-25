@@ -25,11 +25,11 @@ from importlib.machinery import SourceFileLoader
 HERE = pathlib.Path(__file__).parent
 IMG = SourceFileLoader("_a", str(HERE / ".infographic_assets.py")).load_module().IMG
 
-# ── ตัวเลขจริง ณ 2026-08-19 (นับจาก DB ทั้ง 2 project) ────────────────────
+# ── ตัวเลขจริง ณ 2026-08-25 (นับจาก DB ทั้ง 2 project) ────────────────────
 STATS = dict(
-    shifts="822", orders="8,337", downtime="4,740", four_m="1,086",
-    checkins="8,885", employees="202", lines="27", equipment="518",
-    products="109", oee="79.3", fmea="898", forms="35", pages="57", roles="11",
+    shifts="931", orders="9,458", downtime="5,465", four_m="1,104",
+    checkins="9,433", employees="202", lines="27", equipment="518",
+    products="109", oee="79.5", fmea="898", forms="38", pages="57", roles="11",
 )
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -113,11 +113,17 @@ EN = dict(
          ("Change control that holds",
           "Any Man / Machine / Material / Method change raises a 4M record needing supervisor + QA "
           "approval before it runs. {forms} controlled forms print from the system.")],
+    h_plan="ROLL-OUT PLAN", h_plan_sub="100% complete by 31 Oct 2026 &mdash; then sustain",
+    plan=[("AUG", "Setup &amp; access", "org chart &middot; users &middot; roles &middot; alerts", "done"),
+          ("AUG&ndash;SEP", "Master data complete", "every function, checked against the go-live list", "now"),
+          ("SEP", "All functions daily", "maintenance &middot; quality &middot; store on the same loop", "next"),
+          ("OCT", "Every line live", "paper retired &middot; one source of numbers", "next"),
+          ("31 OCT", "100% COMPLETE", "Nov onward &mdash; sustain: KPI &ge;95%, keep it running", "goal")],
     strip=[("photo_press2500t", "2,500-ton press line", "stamping &middot; die shot counter feeds PM"),
            ("photo_robots", "Robot welding cells", "downtime by machine, straight from the floor"),
            ("photo_hotpress", "Hot-press forming", "cycle time drives the OEE performance rate")],
     motto="Before we build parts, we build people.",
-    foot="ESM overview &middot; figures measured from the live system on 19 Aug 2026",
+    foot="ESM overview &middot; figures measured from the live system on 25 Aug 2026",
 )
 
 TH = dict(
@@ -197,11 +203,17 @@ TH = dict(
          ("ควบคุมการเปลี่ยนแปลงได้จริง",
           "เปลี่ยน คน / เครื่อง / วัตถุดิบ / วิธีการ ต้องเปิดใบ 4M ผ่านหัวหน้าส่วนและ QA "
           "ก่อนเดินงาน · {forms} ฟอร์มควบคุมพิมพ์จากระบบได้เลย")],
+    h_plan="แผนนำไปใช้", h_plan_sub="สมบูรณ์ 100% ภายใน 31 ต.ค. 2569 &mdash; หลังจากนั้นคือรักษาระดับ",
+    plan=[("ส.ค.", "ตั้งค่าระบบ + สิทธิ์", "ผังองค์กร &middot; ผู้ใช้ &middot; สิทธิ์ &middot; แจ้งเตือน", "done"),
+          ("ส.ค.&ndash;ก.ย.", "ข้อมูลตั้งต้นครบ", "ทุกส่วนงานกรอกครบตามใบตรวจความพร้อม", "now"),
+          ("ก.ย.", "ทุกส่วนงานใช้ทุกวัน", "ช่าง &middot; คุณภาพ &middot; คลัง เข้ามาอยู่ในวงจรเดียวกัน", "next"),
+          ("ต.ค.", "ครบทุกไลน์", "เลิกกระดาษ &middot; ตัวเลขมาจากที่เดียวกันทั้งโรงงาน", "next"),
+          ("31 ต.ค.", "สมบูรณ์ 100%", "พ.ย. เป็นต้นไป &mdash; รักษาระดับ KPI &ge;95% ให้เดินต่อเอง", "goal")],
     strip=[("photo_press2500t", "ไลน์เพรส 2,500 ตัน", "งานปั๊ม &middot; ตัวนับ shot ส่งต่อให้แผน PM"),
            ("photo_robots", "เซลล์หุ่นยนต์เชื่อม", "เครื่องหยุดถูกบันทึกรายเครื่องจากหน้างานจริง"),
            ("photo_hotpress", "งานขึ้นรูปร้อน", "รอบเวลาผลิตเป็นตัวกำหนดค่า P ใน OEE")],
     motto="ก่อนสร้างชิ้นงาน เราสร้างคนก่อน",
-    foot="ภาพรวมระบบ ESM &middot; ตัวเลขวัดจากระบบที่ใช้งานจริง ณ 19 ส.ค. 2569",
+    foot="ภาพรวมระบบ ESM &middot; ตัวเลขวัดจากระบบที่ใช้งานจริง ณ 25 ส.ค. 2569",
 )
 
 
@@ -351,6 +363,22 @@ h2 small{{float:right;font-size:{p(6.5)};color:#C0561E;letter-spacing:0;font-wei
 .out b{{display:block;font-size:{p(6.6)};color:#0D3D14;margin-bottom:.3mm;line-height:1.3}}
 .out span{{display:block;font-size:{p(5.8)};color:#4a5a4d;line-height:{lh}}}
 
+.plan{{flex:0 0 19mm;display:flex;gap:1.4mm;padding:1.6mm 7mm .6mm;align-items:stretch}}
+.plan .plh{{flex:0 0 {28 if th else 26}mm;display:flex;flex-direction:column;justify-content:center;
+ border-right:1.3pt solid #C0561E;padding-right:2mm}}
+.plan .plh b{{font-size:{p(8.4)};color:#0D3D14;line-height:1.3;font-weight:700}}
+.plan .plh span{{font-size:{p(5.9)};color:#C0561E;line-height:1.4;margin-top:.4mm;display:block}}
+.plan .pc{{flex:1;border:.4pt solid #D8E4D0;border-top:1.1mm solid #2C5F2D;border-radius:1.1mm;
+ padding:1.2mm 1.8mm;display:flex;flex-direction:column;justify-content:center;background:#fff}}
+.plan .pc.done{{background:#ECF1E9}}
+.plan .pc.now{{border-top-color:#C0561E;background:#FDF3EC}}
+.plan .pc.goal{{flex:1.35;background:#0D3D14;border-color:#0D3D14;border-top-color:#FD8342}}
+.plan .mo{{font-size:{p(6.1)};font-weight:700;color:#C0561E;line-height:1.25}}
+.plan .pt{{font-size:{p(7.4)};font-weight:700;color:#0D3D14;line-height:1.3;margin-top:.2mm}}
+.plan .pd{{font-size:{p(5.8)};color:#5a6b5d;line-height:1.4;margin-top:.4mm}}
+.plan .pc.goal .mo{{color:#FD8342}}
+.plan .pc.goal .pt{{color:#fff}} .plan .pc.goal .pd{{color:#CFE0C8}}
+.plan .ok{{float:right;font-size:{p(5.4)};color:#2C5F2D;font-weight:700}}
 .strip{{flex:0 0 19mm;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:15mm;
  gap:2mm;padding:2mm 7mm 2mm}}
 .sp{{position:relative;border-radius:1.2mm;overflow:hidden;height:15mm}}
@@ -393,6 +421,13 @@ def build(L):
     strip = "".join(f'<div class="sp"><img src="data:image/jpeg;base64,{IMG[k]}" alt="">'
                     f'<div class="ov"><b>{t}</b><span>{c}</span></div></div>'
                     for k, t, c in L["strip"])
+    # ⚠️ แถบแผนงานมาแทนแถบรูป 3 ใบ (พื้นที่ 1 หน้าเต็มแล้ว รูปเป็นของตกแต่ง แผนคือเนื้อหา)
+    #    หน้ายังมีรูปอยู่ 1 ใบในคอลัมน์ซ้าย
+    plan = (f'<div class="plh"><b>{L["h_plan"]}</b><span>{L["h_plan_sub"]}</span></div>') + "".join(
+        f'<div class="pc {st}"><div class="mo">{mo}'
+        + ('<span class="ok">&#10003;</span>' if st == "done" else "")
+        + f'</div><div class="pt">{t}</div><div class="pd">{d}</div></div>'
+        for mo, t, d, st in L["plan"])
 
     return f"""<!doctype html>
 <html lang="{L['lang']}"><head><meta charset="utf-8">
@@ -442,7 +477,7 @@ def build(L):
     </section>
   </div>
 
-  <div class="strip">{strip}</div>
+  <div class="plan">{plan}</div>
 
   <footer class="ft">
     <i class="lg"></i>

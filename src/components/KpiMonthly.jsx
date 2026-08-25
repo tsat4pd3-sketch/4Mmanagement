@@ -2,14 +2,23 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty } from '../utils/oee';
-import { defectUnitCost, fmtBaht } from '../utils/costSaving';
-import { getDocForm, withDocFoot, loadDocForms } from '../utils/docForms';
+import { defectUnitCost } from '../utils/costSaving';
+import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
+import { usePerms } from '../utils/usePerms';
+import ReadOnlyNote from './ReadOnlyNote';
 
-/* ═══ 📑 KPI รายเดือน (เฟส 1 · 2026-08-24 · คำสั่ง user) ═══
+/* ═══ 📑 KPI รายเดือน (เฟส 1 · 2026-08-24 — เฟส 2 กรอกมือ + Excel 3 ชีท + drill-down · คำสั่ง user) ═══
    แทน "แพ็คกระดาษรายเดือน" ที่ปริ้นเซ็นกัน (Internal Defect Report ราย section + OEE รายเดือน)
-   ซึ่งเป็นหลักฐานเบื้องหลังฟอร์ม KPI Monitoring FM-HRM-6-024 — เฉพาะ KPI ที่คำนวณอัตโนมัติได้:
-     ยอดผลิต · ของเสีย · PPM · Cost of defect · OEE (เทียบเป้า oee_targets + Y/N) · DT นอกแผน
-   เฟส 2 (ยังไม่ทำ): KPI นอกระบบกรอกมือ (DL/OH/Satisfaction/Safety/HR) + เป้ารายปี + export Excel ลงฟอร์มเดิม
+   ซึ่งเป็นหลักฐานเบื้องหลังฟอร์ม KPI Monitoring FM-HRM-6-024
+
+   เฟส 1 — KPI ที่คำนวณอัตโนมัติได้: ยอดผลิต · ของเสีย · PPM · Cost of defect · OEE (เทียบเป้า) · DT นอกแผน
+   เฟส 2 (2026-08-24):
+   - KPI นอกระบบกรอกมือ (DL/OH/Satisfaction/Safety/HR) — ตาราง kpi_definitions + kpi_manual_entries (Main)
+     สิทธิ์กรอก/จัดการ = kpi:manage (RLS ผ่าน has_perm ด้วย) · นิยามผูก (year, section) · section null = ทุกส่วนงาน
+   - export Excel 3 ชีทตามโครงไฟล์จริง (Appraisal FM-HRM-6-022 / Monitoring FM-HRM-6-024 / Action FM-HRM-6-025)
+     ผ่าน src/lib/kpiExportExcel.js (exceljs dynamic import)
+   - drill-down ส่วน → กลุ่มไลน์ (top-level group) — cascade ล้างกลุ่มเมื่อเปลี่ยนส่วน (§5.3)
+     ⚠️ KPI กรอกมือผูกกับ "ส่วนงาน" — เลือกกลุ่มไลน์แล้วตัวเลขอัตโนมัติกรองตาม แต่ KPI กรอกมือไม่กรอง (บอกบนจอ)
 
    กติกาที่ยึด (ห้ามละเมิด):
    - OEE เดือน = wavg(oee ที่ stamp, ถ่วง wLoad = shift_min − plannedMin) — ห้าม mean-of-percentages
@@ -20,10 +29,19 @@ import { getDocForm, withDocFoot, loadDocForms } from '../utils/docForms';
      · PPM ต้องหารด้วยชิ้นอยู่แล้ว จึงไม่ใช้ pairAwareTotal ที่นับคู่สำหรับยอดภาพใหญ่)
    - Cost of defect ผ่าน defectUnitCost (standard ชนะ → material) · ตีมูลค่าไม่ได้ = รายงานจำนวน ห้ามเดา
    - นับเฉพาะกะที่ปิดแล้ว — เดือนปัจจุบันติดป้าย "ยังไม่จบ" · กะเปิดค้างไม่ถูกนับ (บอกบนจอ)
-   - โหลดครั้งเดียวตอนเปิด/เปลี่ยนปี ไม่ poll (กฎ egress) */
+   - โหลดครั้งเดียวตอนเปิด/เปลี่ยนปี ไม่ poll (กฎ egress)
+   - ตารางกรอกมือยังไม่ apply migration (42P01) = แถบเตือนชัดๆ ห้ามเงียบ (rollback safety)
+   - update นิยาม KPI ต้องนับแถวที่เขียนจริง (.select('id')) — กฎ RLS-เงียบ */
 
 const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const DEFAULT_APQ = { a: 90, p: 90, q: 99 }; // ค่ามาตรฐานเมื่อกรุ๊ปยังไม่ตั้ง target (กฎ oee_targets)
+const CATS = [
+  { key: 'financial', label: '💰 Financial' },
+  { key: 'customer', label: '🤝 Customer' },
+  { key: 'internal', label: '🏭 Internal Process' },
+  { key: 'learning', label: '📚 Learning & Growth' },
+];
+const catLabel = k => CATS.find(c => c.key === k)?.label || k;
 
 /* ดึงทุกแถวแบบแบ่งหน้า — กับดัก Supabase ตัด 1000 แถว/query */
 async function pageAll(buildQuery, onProg) {
@@ -38,15 +56,40 @@ async function pageAll(buildQuery, onProg) {
 }
 const chunk = (arr, n = 120) => { const o = []; for (let i = 0; i < arr.length; i += n) o.push(arr.slice(i, i + n)); return o; };
 
+/* ช่องกรอกค่ารายเดือน — local state + commit ตอน blur/Enter (ไม่ยิง DB ทุก keystroke) */
+function CellInput({ value, onCommit, disabled }) {
+  const [v, setV] = useState(value == null ? '' : String(value));
+  useEffect(() => { setV(value == null ? '' : String(value)); }, [value]);
+  return (
+    <input
+      value={v} disabled={disabled}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => onCommit(v.trim())}
+      onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+      style={{ width: 64, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 6,
+        background: disabled ? 'transparent' : 'var(--bg2)', border: disabled ? '1px solid transparent' : '1px solid var(--border)',
+        color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}
+    />
+  );
+}
+
 export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const nowYear = new Date().getFullYear();
+  const { can, role } = usePerms();
+  const canManage = can('kpi', 'manage');
   const [year, setYear] = useState(nowYear);
   const [section, setSection] = useState('');
+  const [group, setGroup] = useState(''); // drill-down กลุ่มไลน์ (top-level)
   const [orgSections, setOrgSections] = useState(null); // null = ยังโหลด · [] = ผังว่าง → fallback
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
   const [err, setErr] = useState(null);
   const [data, setData] = useState(null); // { key, sessions, dtBySession, dtUnpBySession, defects, partCost, targets }
+  // ── KPI กรอกมือ (เฟส 2) ──
+  const [defs, setDefs] = useState(null);          // null = ยังโหลด
+  const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
+  const [kpiMissing, setKpiMissing] = useState(false); // ตารางยังไม่ apply migration
+  const [editDef, setEditDef] = useState(null);    // null | {} (ใหม่) | def (แก้)
 
   /* ตัวเลือกส่วนงานยึด org_nodes (kind='section') ตามกฎ — fallback เดาจาก production_lines เมื่อผังว่าง */
   useEffect(() => {
@@ -59,16 +102,25 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return fromOrg.length ? fromOrg : [...inScopeSecs].sort();
   }, [orgSections, lines, scopeSet]);
 
-  /* ไลน์ในขอบเขตที่เลือก (scope ก่อน แล้วค่อย filter section ทับ — pattern มาตรฐาน) */
+  /* กลุ่มไลน์บนสุด (parent หรือไลน์เดี่ยว) ในขอบเขต+ส่วนที่เลือก */
+  const groupOpts = useMemo(() => {
+    let ls = lines.filter(l => !scopeSet || scopeSet.has(l.name));
+    if (section) ls = ls.filter(l => (l.section || '') === section);
+    return [...new Set(ls.map(l => l.parent_line_name || l.name))].sort();
+  }, [lines, scopeSet, section]);
+  useEffect(() => { if (group && !groupOpts.includes(group)) setGroup(''); }, [group, groupOpts]);
+
+  /* ไลน์ในขอบเขตที่เลือก (scope ก่อน → section → กลุ่มไลน์ทับ — pattern มาตรฐาน) */
   const targetLineNames = useMemo(() => {
     let ls = lines.filter(l => !scopeSet || scopeSet.has(l.name));
     if (section) ls = ls.filter(l => (l.section || '') === section);
+    if (group) ls = ls.filter(l => (l.parent_line_name || l.name) === group);
     return ls.map(l => l.name);
-  }, [lines, scopeSet, section]);
+  }, [lines, scopeSet, section, group]);
 
   const load = useCallback(async () => {
     if (!lines.length) return;
-    const key = `${year}|${section}|${targetLineNames.length}`;
+    const key = `${year}|${section}|${group}|${targetLineNames.length}`;
     setLoading(true); setErr(null); setProg('');
     try {
       // 1) กะปิดแล้วทั้งปี (slim)
@@ -117,8 +169,58 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     } catch (e) {
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null);
     } finally { setLoading(false); setProg(''); }
-  }, [lines.length, year, section, targetLineNames]);
+  }, [lines.length, year, section, group, targetLineNames]);
   useEffect(() => { load(); }, [load]);
+
+  /* ── โหลดนิยาม KPI กรอกมือ + ค่ารายเดือน (tolerant — ยังไม่ apply migration ต้องไม่พังทั้งแท็บ) ── */
+  const loadDefs = useCallback(async () => {
+    const { data: d, error } = await supabase.from('kpi_definitions').select('*')
+      .eq('year', year).eq('is_active', true)
+      .order('category').order('seq').order('created_at');
+    if (error) {
+      setKpiMissing((error.code || '') === '42P01');
+      setDefs([]); setEntries({});
+      return;
+    }
+    setKpiMissing(false);
+    // section null = ทุกส่วนงาน · เลือกส่วนแล้วเห็น common + ของส่วนนั้น · ไม่เลือก = เห็นทั้งหมด (ติดป้ายส่วน)
+    const rows = (d || []).filter(x => !section || !x.section || x.section === section);
+    setDefs(rows);
+    if (!rows.length) { setEntries({}); return; }
+    const map = {};
+    for (const c of chunk(rows.map(r => r.id))) {
+      const { data: es, error: e2 } = await supabase.from('kpi_manual_entries')
+        .select('kpi_id, month, value').in('kpi_id', c);
+      if (e2) { toast.error('โหลดค่า KPI กรอกมือไม่สำเร็จ: ' + e2.message); return; }
+      (es || []).forEach(e => { (map[e.kpi_id] = map[e.kpi_id] || {})[e.month] = e.value != null ? Number(e.value) : null; });
+    }
+    setEntries(map);
+  }, [year, section]);
+  useEffect(() => { loadDefs(); }, [loadDefs]);
+
+  const saveCell = async (kpiId, month, raw) => {
+    const value = raw === '' ? null : Number(raw);
+    if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
+    const prev = entries[kpiId]?.[month] ?? null;
+    if (prev === value) return;
+    const { error } = await supabase.from('kpi_manual_entries')
+      .upsert({ kpi_id: kpiId, month, value }, { onConflict: 'kpi_id,month' });
+    if (error) {
+      toast.error((error.code === '42501' ? 'ไม่มีสิทธิ์กรอก KPI (ต้องมี kpi:manage) — ' : 'บันทึกไม่สำเร็จ: ') + error.message);
+      setEntries(p => ({ ...p })); // trigger sync กลับค่าเดิม
+      return;
+    }
+    setEntries(p => ({ ...p, [kpiId]: { ...(p[kpiId] || {}), [month]: value } }));
+  };
+
+  const manualYn = (def, v) => {
+    if (v == null || def.target_value == null || !def.direction) return null;
+    return def.direction === 'up' ? v >= Number(def.target_value) : v <= Number(def.target_value);
+  };
+  const manualAvg = def => {
+    const vs = Array.from({ length: 12 }, (_, i) => entries[def.id]?.[i + 1]).filter(v => v != null);
+    return vs.length ? vs.reduce((s, v) => s + v, 0) / vs.length : null;
+  };
 
   /* เป้า OEE ของขอบเขต = เฉลี่ยของกรุ๊ป (ไลน์บนสุด) ในขอบเขต — กฎ oee_targets: section ไม่เก็บใน DB */
   const targetOee = useMemo(() => {
@@ -147,9 +249,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       m.produce += Number(s.actual_qty) || 0;
       m.dtMin += data.dtUnplanned[s.id] || 0;
       m.sess.push({ oee: s.oee != null ? Number(s.oee) : null, shift_min: s.shift_min, plannedMin: data.dtPlanned[s.id] || 0 });
-      const defs = defBySession[s.id] || [];
-      m.ng += sumDefectQty(defs, 'line');
-      defs.forEach(d => {
+      const defs2 = defBySession[s.id] || [];
+      m.ng += sumDefectQty(defs2, 'line');
+      defs2.forEach(d => {
         if (d.is_trial || d.dr_defect_types?.excl_from_q) return; // ฐานเดียวกับ PPM (line-mode)
         const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
         if (!qty) return;
@@ -191,6 +293,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     { key: 'dt',      label: 'Downtime นอกแผน (นาที)', get: m => nf(m.dtMin), warnPos: true },
   ], [targetOee]);
 
+  const scopeLabel = section
+    ? section + (group ? ` › ${group}` : '')
+    : (group ? group : 'ทุกส่วนงานในขอบเขต');
+
   /* พิมพ์ — รายงานภายในห่อ withDocFoot ตามกฎทะเบียนเอกสาร (doc_key: kpi_monthly) */
   const handlePrint = async () => {
     await loadDocForms(); // component ร่วม/lazy chunk ต้องโหลดเอง ห้ามพึ่งหน้าแม่ (กับดัก docFormSync)
@@ -200,8 +306,16 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const rows = ROWS.map(r => `<tr><td style="${td};text-align:left;font-weight:bold">${r.label}</td>${
       months.out.map((m, i) => `<td style="${td}">${m.n ? r.get(m) : ''}${r.yn && m.n && r.yn(m) != null ? ` <b>${r.yn(m) ? '✓' : '✗'}</b>` : ''}${i === curMonthIdx ? '<div style="font-size:8px;color:#b45309">ยังไม่จบ</div>' : ''}</td>`).join('')
     }<td style="${td};font-weight:bold">${r.get(months.tot)}</td></tr>`).join('');
+    const manRows = (defs || []).map(d2 => {
+      const cells = Array.from({ length: 12 }, (_, i) => {
+        const v = entries[d2.id]?.[i + 1];
+        return `<td style="${td}">${v == null ? '' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>`;
+      }).join('');
+      const avg = manualAvg(d2);
+      return `<tr><td style="${td};text-align:left">${d2.name}${d2.section ? ` (${d2.section})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
+    }).join('');
     const html = `
-      <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${section || 'ทุกส่วนงานในขอบเขต'}</h2>
+      <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${scopeLabel}</h2>
       <div style="font-size:11px;color:#555;margin-bottom:8px">
         จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · OEE ถ่วงน้ำหนักเวลารับภาระ ·
         PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
@@ -209,6 +323,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       <table style="border-collapse:collapse;width:100%">
         <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">รวม/เฉลี่ย</th></tr>
         ${rows}
+        ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">📝 KPI กรอกมือ (นอกระบบ)${group ? ' — ระดับส่วนงาน ไม่กรองตามกลุ่มไลน์' : ''}</td></tr>${manRows}` : ''}
       </table>
       ${months.tot.costMissQty > 0 ? `<div style="font-size:10px;color:#b45309;margin-top:6px">⚠ ของเสีย ${months.tot.costMissQty.toLocaleString()} ชิ้นยังตีมูลค่าไม่ได้ (พาร์ทไม่มีต้นทุน/ชิ้นใน Parts Master) — Cost of defect จึงต่ำกว่าจริง</div>` : ''}
       <table style="margin-top:26px;width:60%"><tr>${(Array.isArray(df?.sig_blocks) && df.sig_blocks.length ? df.sig_blocks : ['Issued', 'Checked', 'Approved']).map(s2 => `<td style="text-align:center;font-size:11px;padding-top:30px;border-top:1px solid #999">${typeof s2 === 'string' ? s2 : s2?.label || ''}</td>`).join('')}</tr></table>`;
@@ -219,31 +334,117 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     setTimeout(() => w.print(), 350);
   };
 
+  /* Excel 3 ชีทตามฟอร์มเดิม (FM-HRM-6-022/024/025) */
+  const handleExcel = async () => {
+    try {
+      await loadDocForms();
+      const df = await getDocForm('kpi_monthly', {});
+      const autoRows = [
+        { key: 'produce', name: 'ยอดผลิต (ชิ้น)', formula: 'Σ ยอดผลิตจริงของกะที่ปิดแล้ว', val: m => (m.n ? m.produce : null), sum: months.tot.produce },
+        { key: 'ng', name: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', formula: 'Σ defect_logs (qty_ng + qty_suspect)', val: m => (m.n ? m.ng : null), sum: months.tot.ng },
+        { key: 'ppm', name: 'Internal defect (PPM)', formula: 'ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶', val: m => (m.n ? m.ppm : null), sum: months.tot.ppm },
+        { key: 'cost', name: 'Cost of defect (บาท)', formula: 'Σ ของเสีย × ต้นทุน/ชิ้น (standard → material)', val: m => (m.n ? m.cost : null), sum: months.tot.cost },
+        { key: 'oee', name: 'OEE (%)', formula: 'OEE stamp ถ่วงน้ำหนักเวลารับภาระ',
+          commitment: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '', target: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '',
+          val: m => (m.n ? m.oee : null), sum: months.tot.oee,
+          yn: m => (m.n && m.oee != null && targetOee != null ? m.oee >= targetOee : null),
+          ynTotal: months.tot.oee != null && targetOee != null ? months.tot.oee >= targetOee : null },
+        { key: 'dt', name: 'Downtime นอกแผน (นาที)', formula: 'Σ downtime นอกแผนของกะที่ปิดแล้ว', val: m => (m.n ? m.dtMin : null), sum: months.tot.dtMin },
+      ].map(r => ({
+        category: 'internal', name: r.name, formula: r.formula, scope: 'คำนวณอัตโนมัติจาก ESM',
+        commitment: r.commitment || '', target: r.target || '',
+        monthVals: months.out.map(r.val), summary: r.sum,
+        ynVals: r.yn ? months.out.map(r.yn) : null, ynTotal: r.ynTotal ?? null,
+        weight: null, actionPlan: '', actionOwner: '', sectionTag: '',
+      }));
+      const manualRows = (defs || []).map(d2 => {
+        const monthVals = Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null);
+        const avg = manualAvg(d2);
+        return {
+          category: d2.category, name: d2.name, formula: d2.formula_text || '', scope: d2.scope_text || '',
+          commitment: d2.commitment || '', target: d2.target || '',
+          monthVals, summary: avg,
+          ynVals: monthVals.map(v => manualYn(d2, v)), ynTotal: manualYn(d2, avg),
+          weight: d2.weight, actionPlan: d2.action_plan || '', actionOwner: d2.action_owner || '',
+          sectionTag: !section && d2.section ? d2.section : '',
+        };
+      });
+      const { exportKpiExcel } = await import('../lib/kpiExportExcel');
+      await exportKpiExcel({
+        year, sectionLabel: scopeLabel, rows: [...manualRows, ...autoRows],
+        formCode: fullCode(df || {}),
+        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ (ยอดผลิต+ของเสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${group ? ` · ตัวเลขอัตโนมัติกรองกลุ่ม ${group} — KPI กรอกมือเป็นระดับส่วนงาน` : ''}`,
+      });
+    } catch (e) {
+      toast.error('export Excel ไม่สำเร็จ: ' + (e?.message || e));
+    }
+  };
+
+  /* บันทึกนิยาม KPI (insert/update — update ต้องนับแถว กฎ RLS-เงียบ) */
+  const saveDef = async form => {
+    const payload = {
+      year, section: form.section || null, category: form.category || 'internal',
+      seq: Number(form.seq) || 0, name: (form.name || '').trim(),
+      formula_text: form.formula_text || null, scope_text: form.scope_text || null,
+      commitment: form.commitment || null, target: form.target || null,
+      target_value: form.target_value === '' || form.target_value == null ? null : Number(form.target_value),
+      direction: form.direction || null, weight: form.weight === '' || form.weight == null ? null : Number(form.weight),
+      action_plan: form.action_plan || null, action_owner: form.action_owner || null,
+    };
+    if (!payload.name) { toast.error('กรอกชื่อ KPI ก่อน'); return false; }
+    if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
+    if (form.id) {
+      const { data: d, error } = await supabase.from('kpi_definitions').update(payload).eq('id', form.id).select('id');
+      if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
+    } else {
+      const { error } = await supabase.from('kpi_definitions').insert(payload);
+      if (error) { toast.error('เพิ่มไม่สำเร็จ: ' + error.message); return false; }
+    }
+    toast.success('บันทึก KPI แล้ว');
+    loadDefs();
+    return true;
+  };
+  const removeDef = async d2 => {
+    if (!window.confirm(`ปิดใช้งาน KPI "${d2.name}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) เปิดคืนได้จากฐานข้อมูล`)) return;
+    const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
+    if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
+    loadDefs();
+  };
+
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px' };
   const thSt = { padding: '6px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right', borderBottom: '1px solid var(--border2)' };
   const tdSt = { padding: '6px 8px', fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap', textAlign: 'right', borderBottom: '1px solid var(--border)', fontVariantNumeric: 'tabular-nums' };
+  const selSt = w => ({ width: w, padding: '5px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' });
+  const btnSt = { padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...card, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>📑 KPI รายเดือน</span>
         {/* width กัน index.css input/select width:100% */}
-        <select value={year} onChange={e => setYear(+e.target.value)} style={{ width: 110, padding: '5px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+        <select value={year} onChange={e => setYear(+e.target.value)} style={selSt(110)}>
           {[nowYear, nowYear - 1, nowYear - 2].map(y => <option key={y} value={y}>{y + 543}</option>)}
         </select>
-        <select value={section} onChange={e => setSection(e.target.value)} style={{ width: 190, padding: '5px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+        <select value={section} onChange={e => { setSection(e.target.value); setGroup(''); }} style={selSt(190)}>
           <option value="">ทุกส่วนงานในขอบเขต</option>
           {sectionOpts.map(s2 => <option key={s2} value={s2}>{s2}</option>)}
         </select>
+        <select value={group} onChange={e => setGroup(e.target.value)} style={selSt(210)}>
+          <option value="">ทุกกลุ่มไลน์{section ? `ใน ${section}` : ''}</option>
+          {groupOpts.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
         {months && !loading && (
-          <button onClick={handlePrint} style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>🖨️ พิมพ์ / PDF</button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button onClick={handleExcel} style={btnSt}>⬇️ Excel 3 ชีท</button>
+            <button onClick={handlePrint} style={btnSt}>🖨️ พิมพ์ / PDF</button>
+          </div>
         )}
       </div>
 
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         นับเฉพาะ<b>กะที่ปิดแล้ว</b> — กะที่เปิดค้างยังไม่ถูกนับ · OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
         PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ ไม่รวมงานทดลอง (ต่างจากสูตรใบเดิม ของเสีย ÷ ยอดผลิต ~0.03% ที่ระดับ PPM ปัจจุบัน) ·
-        KPI นอกระบบ (DL/OH/Satisfaction/Safety/HR) = เฟสถัดไป
+        Excel export ตามโครง 3 ชีทของฟอร์ม FM-HRM-6-022/024/025
       </div>
 
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลดข้อมูลทั้งปี... {prog}</div>}
@@ -251,6 +452,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       {!loading && !err && months && (
         <div style={{ ...card, overflowX: 'auto' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>
+            🤖 KPI คำนวณอัตโนมัติ — {scopeLabel}
+          </div>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
             <thead>
               <tr>
@@ -293,6 +497,204 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           </div>
         </div>
       )}
+
+      {/* ═ KPI กรอกมือ (เฟส 2) ═ */}
+      {kpiMissing && (
+        <div style={{ ...card, borderColor: '#f59e0b', color: '#f59e0b', fontSize: 12.5 }}>
+          ⚠ KPI กรอกมือยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260824_kpi_definitions_main.sql</code> (Main) · แจ้ง admin
+        </div>
+      )}
+      {!kpiMissing && defs && (
+        <div style={{ ...card, overflowX: 'auto' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
+              📝 KPI นอกระบบ (กรอกมือ) — DL/OH % · Satisfaction · Safety · HR
+            </span>
+            {canManage && (
+              <button onClick={() => setEditDef({})} style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>＋ เพิ่ม KPI</button>
+            )}
+            {group && (
+              <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
+                ⚠ KPI กรอกมือผูกกับ "ส่วนงาน" — ไม่กรองตามกลุ่มไลน์ที่เลือก
+              </span>
+            )}
+          </div>
+          <ReadOnlyNote show={!canManage} role={role} compact
+            what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
+          {!defs.length ? (
+            <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+              ยังไม่มี KPI กรอกมือของปี {year + 543}{section ? ` (ส่วน ${section} + ส่วนกลาง)` : ''}
+              {canManage ? ' — กด ＋ เพิ่ม KPI (เช่น DL ≤ 1.452% · Customer Satisfaction ≥ 95%)' : ''}
+            </div>
+          ) : (
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1000 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...thSt, textAlign: 'left' }}>KPI</th>
+                  {TH_M.map(m => <th key={m} style={thSt}>{m}</th>)}
+                  <th style={{ ...thSt, color: 'var(--text)' }}>เฉลี่ย</th>
+                  {canManage && <th style={thSt} />}
+                </tr>
+              </thead>
+              <tbody>
+                {CATS.filter(c => defs.some(d2 => d2.category === c.key)).map(c => (
+                  [
+                    <tr key={c.key}>
+                      <td colSpan={15 + (canManage ? 1 : 0)} style={{ ...tdSt, textAlign: 'left', fontWeight: 800, color: 'var(--text)', background: 'var(--bg2)' }}>{c.label}</td>
+                    </tr>,
+                    ...defs.filter(d2 => d2.category === c.key).map(d2 => {
+                      const avg = manualAvg(d2);
+                      const ynT = manualYn(d2, avg);
+                      return (
+                        <tr key={d2.id}>
+                          <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
+                            <b style={{ color: 'var(--text)' }}>{d2.name}</b>
+                            {!section && d2.section && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--muted)' }}>({d2.section})</span>}
+                            <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                              {[d2.commitment && `เป้า ${d2.commitment}`, d2.scope_text].filter(Boolean).join(' · ')}
+                            </div>
+                          </td>
+                          {Array.from({ length: 12 }, (_, i) => {
+                            const v = entries[d2.id]?.[i + 1] ?? null;
+                            const yn = manualYn(d2, v);
+                            return (
+                              <td key={i} style={{ ...tdSt, padding: '3px 4px' }}>
+                                <CellInput value={v} disabled={!canManage} onCommit={raw => saveCell(d2.id, i + 1, raw)} />
+                                {yn != null && <b style={{ marginLeft: 2, color: yn ? '#22c55e' : '#ef4444', fontSize: 10 }}>{yn ? 'Y' : 'N'}</b>}
+                              </td>
+                            );
+                          })}
+                          <td style={{ ...tdSt, fontWeight: 800, color: 'var(--text)' }}>
+                            {avg == null ? '—' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {ynT != null && <b style={{ marginLeft: 4, color: ynT ? '#22c55e' : '#ef4444' }}>{ynT ? 'Y' : 'N'}</b>}
+                          </td>
+                          {canManage && (
+                            <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
+                              <button onClick={() => setEditDef(d2)} title="แก้นิยาม KPI" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
+                              <button onClick={() => removeDef(d2)} title="ปิดใช้งาน" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>🗑</button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    }),
+                  ]
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+            กรอกแล้วบันทึกทันทีตอนออกจากช่อง (Enter/คลิกที่อื่น) · ลบค่า = เว้นว่าง ·
+            Y/N ตัดสินจากเป้าตัวเลข + ทิศทาง (≥/≤) ที่ตั้งในนิยาม KPI
+          </div>
+        </div>
+      )}
+
+      {editDef && (
+        <DefModal
+          init={editDef} year={year} section={section} sectionOpts={sectionOpts}
+          onClose={() => setEditDef(null)}
+          onSave={async f => { if (await saveDef(f)) setEditDef(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ── */
+function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
+  const [f, setF] = useState(() => ({
+    id: init.id || null,
+    section: init.id ? (init.section || '') : (section || ''),
+    category: init.category || 'internal',
+    seq: init.seq ?? 0,
+    name: init.name || '',
+    formula_text: init.formula_text || '',
+    scope_text: init.scope_text || '',
+    commitment: init.commitment || '',
+    target: init.target || '',
+    target_value: init.target_value ?? '',
+    direction: init.direction || '',
+    weight: init.weight ?? '',
+    action_plan: init.action_plan || '',
+    action_owner: init.action_owner || '',
+  }));
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const inp = { width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
+  const lbl = { fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 3 };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(680px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>
+          {f.id ? '✏️ แก้นิยาม KPI' : '＋ เพิ่ม KPI กรอกมือ'} — ปี {year + 543}
+        </div>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={lbl}>ชื่อ KPI *</div>
+            <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder="เช่น DL cost ต่อยอดขาย (%)" />
+          </div>
+          <div>
+            <div style={lbl}>หมวด (ตามใบ Appraisal)</div>
+            <select style={inp} value={f.category} onChange={e => set('category', e.target.value)}>
+              {CATS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={lbl}>ส่วนงาน (ว่าง = ทุกส่วนงาน)</div>
+            <select style={inp} value={f.section} onChange={e => set('section', e.target.value)}>
+              <option value="">🌐 ทุกส่วนงาน</option>
+              {sectionOpts.map(s2 => <option key={s2} value={s2}>{s2}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={lbl}>Commitment (ข้อความ เช่น ≤ 1.452%)</div>
+            <input style={inp} value={f.commitment} onChange={e => set('commitment', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>Target (ข้อความ)</div>
+            <input style={inp} value={f.target} onChange={e => set('target', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>เป้าตัวเลข (ใช้ตัดสิน Y/N)</div>
+            <input style={inp} type="number" step="any" value={f.target_value} onChange={e => set('target_value', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>ทิศทาง</div>
+            <select style={inp} value={f.direction} onChange={e => set('direction', e.target.value)}>
+              <option value="">— ไม่ตัดสิน Y/N —</option>
+              <option value="up">ยิ่งมากยิ่งดี (≥ เป้า = Y)</option>
+              <option value="down">ยิ่งน้อยยิ่งดี (≤ เป้า = Y)</option>
+            </select>
+          </div>
+          <div>
+            <div style={lbl}>Weight (ใบ Appraisal)</div>
+            <input style={inp} type="number" step="any" value={f.weight} onChange={e => set('weight', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>ลำดับในหมวด</div>
+            <input style={inp} type="number" value={f.seq} onChange={e => set('seq', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>Formula (คอลัมน์ในชีท Monitoring)</div>
+            <input style={inp} value={f.formula_text} onChange={e => set('formula_text', e.target.value)} placeholder="เช่น DL ÷ ยอดขาย × 100" />
+          </div>
+          <div>
+            <div style={lbl}>Scope / ที่มาข้อมูล</div>
+            <input style={inp} value={f.scope_text} onChange={e => set('scope_text', e.target.value)} placeholder="เช่น Data from Acc / QSM / HRM" />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={lbl}>IMPROVEMENT ACTIVITY (ชีท Action FM-HRM-6-025)</div>
+            <textarea style={{ ...inp, minHeight: 54, resize: 'vertical' }} value={f.action_plan} onChange={e => set('action_plan', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>RESPONSIBILITY</div>
+            <input style={inp} value={f.action_owner} onChange={e => set('action_owner', e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+        </div>
+      </div>
     </div>
   );
 }
