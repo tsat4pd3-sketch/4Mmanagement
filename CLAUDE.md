@@ -1639,6 +1639,26 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
   - **🔁 ในโมดัลเจาะ "สาเหตุ" มีแถบย้อนหลัง 30 วัน** (เกิดกี่วัน/กี่ครั้ง/รวมนาที + แท่งรายวัน) — ตอบว่าเป็น**ปัญหาเรื้อรังหรือเหตุการณ์เดียว** · เกิด ≥10 วันจาก 30 = ขึ้นเตือนให้ไปเปิดโปรเจคที่ `/improvements` แทนการแก้ซ้ำทุกวัน (ข้อมูลจริง 2026-08-20: "JIG มีปัญหา" เกิด **19/30 วัน · 253 ครั้ง · 3,610 นาที**)
   - **⚠️ ยิงคิวรีตอนเปิดโมดัลเท่านั้น (user กดเอง ไม่ใช่ polling) + กรองฝั่ง server ให้แคบสุด** — embed `production_sessions!inner(work_date, line_name)` แล้วกรองวัน/ไลน์ในคิวรีเดียว **ห้ามดึง session ทั้งช่วงมา `.in()` รายการ id** (30 วัน = ~1,200 session → URL ยาวเกินจน proxy ตัด · กฎ `.in()` แบ่งก้อนละ 120) · ไม่มี `downtime_type_id` = ไม่ query **ห้ามเดาจากชื่อ**
 
+> ### 🔴 กฎเหล็ก — งานค้างที่ "ยังไม่หาย" ต้องเตือนซ้ำ ห้ามเตือนครั้งเดียวแล้วเงียบ (2026-08-25 · feedback หน้างาน)
+> *"pm ไม่เห็น link กัน · มีเครื่องที่เลยเวลา มีเครื่องที่ต้อง pm อีกไม่กี่วัน ก็ไม่มีอะไรแจ้งเตือน"*
+> **ตัวเตือน PM ทำงานอยู่ แต่เงียบด้วย 2 เหตุที่ต่างกัน — แก้แล้วทั้งคู่:**
+> 1. **dedup กลืนสถานะ "เกินกำหนด" ตลอดกาล** — `pm_plan_reminders` unique `(plan_id, due_date, stage)`
+>    และ `stageFor()` คืน `'overdue'` ตัวเดียว ⇒ ยิงครั้งเดียวตอนเลยกำหนดวันแรก **แล้วเงียบสนิท**
+>    แม้ค้างต่ออีกเป็นเดือน (เจอจริง: แผนครบ 23 ก.ค. ยังไม่ทำถึง 25 ส.ค. = เงียบ 33 วัน)
+>    → แตก stage เป็นรายสัปดาห์ `overdue` → `overdue_w1` → `overdue_w2` … = **เตือนซ้ำสัปดาห์ละครั้ง**
+>    (ไม่ใช่รายวัน — จะกลายเป็นสแปมแล้วคนเลิกอ่านทั้งห้อง) · ไม่ต้อง migration (`stage` เป็น text)
+>    **⚠️ ต้อง deploy edge `pm-plan-reminder` ใหม่** ถึงจะมีผล
+> 2. **PM ไม่เคยเข้ากระดิ่ง/Web Push** — แถว rule ถูก seed ตั้งแต่ 2026-07-09 ซึ่ง**ก่อน**คอลัมน์
+>    `inapp_roles` จะมี (2026-07-31) → ค่าเป็น `'{}'` = ส่งแต่ Telegram ใครไม่เฝ้าห้องแชทก็ไม่เห็นอะไร
+>    (ปัญหาเดียวกับหมวด logistic ที่เคยเก็บไปแล้ว) → migration `20260825_pm_reminder_inapp.sql`
+> - **⚠️ migration ที่เป็น `cron.schedule()` ล้วน ตรวจด้วยวิธีเดิมไม่เจอ** — audit "migration ค้าง"
+>   (2026-08-06) สแกนจาก **schema object** (ตาราง/คอลัมน์/ฟังก์ชัน) แต่ `cron.schedule()` ไม่สร้าง object ใดๆ
+>   → **cron migration เป็นจุดบอดของ audit นั้น** ต้องตรวจจาก `cron.job` โดยตรง:
+>   `select jobname, schedule, active from cron.job;` (ฝั่ง DR — ควรมี pm-plan-reminder · pm-daily-scan ·
+>   downtime-open-scan · shipping-phase-scan · store-daily-scan · purge-cron-logs)
+> - **หลักที่ใช้ซ้ำได้:** event ที่บอก "งานค้างอยู่" (เกินกำหนด/ยังไม่ปิด/รออนุมัติ) ต้องเตือน**เป็นระยะ**
+>   จนกว่าจะหาย · ส่วน event ที่บอก "เกิดเหตุการณ์" (แจ้งซ่อมใหม่/ปิดกะ) เตือนครั้งเดียวพอ
+
 > ### 🔴 กฎเหล็ก — คอลัมน์ชื่อประเภทของ `dr_*_types` คือ **`name_th`** ใส่ `name` = คิวรีล้มทั้งก้อนเงียบ (พบซ้ำ 2026-08-24)
 > เคยเจอแล้วที่เด็ค Monthly Review (จดไว้ในหัวข้อ `/oee-analytics`) — **แล้วหลุดซ้ำที่ `/dept-dashboard` อีก 3 จุด**
 > `select('… dr_downtime_types(name, category)')` → PostgREST 42703 → **ทั้งคิวรีคืน null** และโค้ดที่รับแค่ `{ data }` แปลงเป็น `[]`
@@ -2868,7 +2888,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `daily-4m-summary` | Main | สรุป 4M รายวันส่ง Telegram — default = **work date เมื่อวาน** (ตัด 08:00 ตามกฎ getWorkDate ไม่ใช่วันปฏิทิน — แก้ 2026-07-12 v3) |
 | `send-cqi15-notification` | Main | แจ้งเตือน CQI-15 Event Log + approval แยกจาก send-notification |
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
-| `pm-plan-reminder` | DR (pg_cron รายวัน) | เตือน Planned PM ตามขั้น 30/14/3 วัน/เกินกำหนด → POST ไป send-notification ฝั่ง Main |
+| `pm-plan-reminder` | DR (pg_cron รายวัน 01:00 UTC = 08:00 ไทย) | เตือน Planned PM ตามขั้น 30/14/3 วัน + **เกินกำหนด (ซ้ำสัปดาห์ละครั้ง)** → POST ไป send-notification ฝั่ง Main · ดูกฎ "เตือน PM" ด้านล่าง |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
 | `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
 | `store-daily-scan` | DR (pg_cron 01:30 UTC = **08:30 ไทย**) | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
