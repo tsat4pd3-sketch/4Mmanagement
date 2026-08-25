@@ -3023,9 +3023,12 @@ function LiveTab({ role }) {
                 </div>
                 {defOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* flexWrap ที่แถว: ปุ่ม action ท้ายแถว (🗑️/🛠/✎/✕) เป็น nowrap ทั้งหมด — จอมือถือแถวไม่ wrap = ปุ่มตกขอบจอกดไม่ได้
+                      (feedback หน้างาน 2026-08-25: "เข้าแก้ไขเวลาเสร็จในดาวน์ไทม์ในมือถือไม่ได้") */}
                   {defectLogs.map(d => (
-                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
+                      {/* flex-basis 240: จอแคบให้ปุ่มตกบรรทัดใหม่แทนการบีบข้อความจนอ่านไม่ออก · จอกว้าง = แถวเดียวเหมือนเดิม */}
+                      <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{d.dr_defect_types?.name_th || '—'}</span>
                           {d.prod_orders?.mat_no && (
@@ -3135,9 +3138,11 @@ function LiveTab({ role }) {
                   const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                   return (
                     <div key={d.id}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                    {/* flexWrap: แถวนี้มีปุ่ม nowrap ต่อท้ายถึง 6 ตัว (📞/📝/🛠/💬/✎/✕) — จอมือถือไม่ wrap = ปุ่ม ✎ ตกขอบจอ
+                        แก้เวลาเสร็จ downtime บนมือถือไม่ได้ (feedback หน้างาน 2026-08-25) · จอกว้าง = แถวเดียวเหมือนเดิม */}
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '10px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_downtime_types?.color || '#aaa'}` }}>
+                      <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 2 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: cat.bg, color: cat.color }}>{cat.label}</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{d.dr_downtime_types?.name_th || '—'}</span>
                           {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}

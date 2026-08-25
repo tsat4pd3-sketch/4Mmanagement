@@ -35,7 +35,19 @@ export function scopeLines(lines, { role, lineId, sections } = {}) {
     if (fam.size) return lines.filter(l => fam.has(l.name));
     return lines;
   }
-  if (sections?.length) return lines.filter(l => inSectionScope(sections, l.section));
+  if (sections?.length) {
+    const inScope = lines.filter(l => inSectionScope(sections, l.section));
+    /* 🔴 ส่วนงานที่ "ไม่มีไลน์ผลิตสังกัดอยู่เลย" ต้องไม่ถูกล็อกจนเลือกอะไรไม่ได้ (2026-08-24)
+       เคสจริง: แอดมินหน่วยงานฝั่งคลัง (section `Planning&Store`) เปิดฟอร์มเพิ่มรอบจัดส่ง
+       แล้ว dropdown ไลน์ **ว่างเปล่า** — เพราะ production_lines ไม่มีแถวไหน section = Planning&Store
+       (ตรวจแล้ว = 0 แถว) เช่นเดียวกับ QA / MTN / JIG / DIE ที่เป็นหน่วยงานสนับสนุน
+       ⇒ หน่วยงานพวกนี้ทำงาน "ให้ทุกไลน์" อยู่แล้ว การกรองด้วย section จึงไม่มีความหมาย
+         และการคืนลิสต์ว่างคือ fail-closed ที่ทำให้ใช้ฟีเจอร์ไม่ได้ทั้งหน้า
+       หลักเดียวกับ branch ของ leader ข้างบน: **กรองแล้วไม่เหลืออะไร = ไม่กรอง**
+       (ไลน์ผลิตจริงของ supervisor/leader ยังถูกกรองตามปกติ เพราะส่วนงานเขามีไลน์อยู่แล้ว) */
+    if (inScope.length) return inScope;
+    return lines;
+  }
   return lines;
 }
 

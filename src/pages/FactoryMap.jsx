@@ -1651,7 +1651,7 @@ export default function FactoryMap({ setupMode = false }) {
             {uploading ? '⏳ กำลังอัปโหลด...' : (imageUrl ? '🖼️ เปลี่ยนรูปผัง' : '🖼️ อัปโหลดรูปผังโรงงาน')}
             <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: 'none' }} />
           </label>
-          {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>✏️ วาดกรอบไลน์ใหม่</button>}
+          {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>✏️ วาดกรอบใหม่ (ไลน์ / 🏬 โซนคลัง / 🔧 facility)</button>}
           {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ (Ctrl+Z)">↩️ Undo</button>}
           {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>}
           {drawing && (
