@@ -70,9 +70,15 @@ export default function StoreMonitor() {
     if (scopeSecs?.length) return new Set(prodLines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
     return null;
   }, [prodLines, role, lineId, scopeSecs]);
+  // ⚠️ แถวของ "คลังกลาง" (STORE / FG WAREHOUSE — line ที่ไม่ใช่ไลน์ผลิตในทะเบียน) ต้องผ่าน scope เสมอ
+  //    เหมือน line ว่าง — ไม่งั้น role ที่ถูกจำกัด sections/leader มองไม่เห็น shortage ของคลังกลางเลย
+  //    ทั้งที่เป็นของส่วนกลางที่ทุกคนพึ่ง (QC flow-audit #33)
+  const allProdNames = useMemo(() => new Set(prodLines.map(l => l.name)), [prodLines]);
   const scoped = useMemo(
-    () => (scopeLineNames ? findings.filter(f => !f.line || scopeLineNames.has(f.line)) : findings),
-    [findings, scopeLineNames]);
+    () => (scopeLineNames
+      ? findings.filter(f => !f.line || !allProdNames.has(f.line) || scopeLineNames.has(f.line))
+      : findings),
+    [findings, scopeLineNames, allProdNames]);
 
   const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(), [scoped]);
   const shown = scoped

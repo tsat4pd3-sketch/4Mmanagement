@@ -5,7 +5,7 @@ import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
@@ -451,7 +451,9 @@ async function loadStore(ctx) {
   const { workDate, inScope } = ctx;
   const next = dayAdd(workDate, 1);
   const [stk, std, rounds, deliv, pr, ordToday] = await Promise.all([
-    supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
+    // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ยอด on-hand หายเงียบแล้ว Min/Max เตือนผิด (QC flow-audit #30)
+    fetchAllPages(() => supabaseDR.from('line_stock_summary')
+      .select('line_name, mat_no, part_name, qty_on_hand'), { orderBy: ['line_name', 'mat_no'] }),
     supabaseDR.from('kanban_standards').select('mat_no, part_name, min_qty, max_qty').eq('is_active', true),
     supabaseDR.from('kanban_delivery_rounds').select('line_name, shift, round_no, delivery_time, cutoff_time').eq('is_active', true),
     supabaseDR.from('kanban_deliveries').select('line_name, shift, round_no, confirmed_at, received_status').eq('work_date', workDate),
@@ -459,7 +461,7 @@ async function loadStore(ctx) {
     supabaseDR.from('customer_shipping_orders').select('*').in('due_date', [workDate, next]),
   ]);
   return {
-    stk: (stk.data || []).filter(s => !s.line_name || inScope(s.line_name)),
+    stk: (stk.rows || []).filter(s => !s.line_name || inScope(s.line_name)),
     std: std.data || [], rounds: (rounds.data || []).filter(r => inScope(r.line_name)),
     deliv: deliv.data || [], pr: pr.data || [], ord: ordToday.data || [],
   };

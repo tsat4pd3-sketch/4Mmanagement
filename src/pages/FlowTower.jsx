@@ -72,20 +72,25 @@ export default function FlowTower() {
       //    select เฉยๆ โดน PostgREST ตัดที่ 1000 เงียบๆ แล้วยอด/ตัวนับต่ำเกินจริง (QC flow-audit #19/#36)
       //    ส่วน purchase_requests เคยพองเป็น 1,024 ใบ (96% เป็น cancelled จากบั๊ก lot_size) →
       //    ที่ต้องใช้คือ "จำนวน" อย่างเดียว ใช้ count query ไม่ดึงแถว = ไม่มีเพดาน 1000
-      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, blocks, wipPts, wipReq, fcast] = await Promise.all([
-        fetchAllPages((from, to) => supabaseDR.from('line_stock_summary')
-          .select('line_name, mat_no, qty_on_hand').range(from, to), { orderBy: ['line_name', 'mat_no'] }),
+      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, purchMovedQ, blocks, wipPts, wipReq] = await Promise.all([
+        fetchAllPages(() => supabaseDR.from('line_stock_summary')
+          .select('line_name, mat_no, qty_on_hand'), { orderBy: ['line_name', 'mat_no'] }),
         supabaseDR.from('customer_shipping_orders').select('qty, status').neq('status', 'shipped'),
         supabaseDR.from('production_sessions').select('id, line_name, status').eq('work_date', workDate),
-        fetchAllPages((from, to) => supabaseDR.from('child_lot_requests')
-          .select('id, status, lot_qty, source_line').range(from, to), { orderBy: 'id' }),
+        fetchAllPages(() => supabaseDR.from('child_lot_requests')
+          .select('id, status, lot_qty, source_line')),
         supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }),
         supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'done'),
         supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        // มิติเวลาของสถานีสั่งซื้อ: มีใบขยับ (สั่งซื้อ/รับเข้า) ใน 7 วัน = ✅ ไหลจริง (QC flow-audit #22 —
+        // เดิมสถานีนี้ไม่มีทางเป็น flow เลย ขัดนิยาม 4 สถานะของหน้าตัวเอง)
+        supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true })
+          .in('status', ['ordered', 'received']).gte('ordered_at', since),
         supabaseDR.from('v_demand_flow_blocks').select('*').order('pending_qty', { ascending: false }),
         supabase.from('wip_buffer_points').select('id'),
         supabase.from('wip_replenish_requests').select('id, status'),
-        supabaseDR.from('customer_forecasts').select('qty').gte('period_month', since),
+        // (ตัด customer_forecasts ทิ้ง — fcastQty ไม่เคยถูกแสดงผลที่ไหน แต่จ่าย egress ทุกรอบ poll + realtime event
+        //  แถมโดน cap 1000 แถวเงียบ · QC flow-audit #25 · จะใช้จริงให้ sum ฝั่ง server เป็น view/rpc)
       ]);
       // ⚠️ view/ตารางไหนโหลดไม่ได้ ต้องบอก ห้ามโชว์ 0 (0 = "มี 0 รายการ" คนละเรื่องกับ "อ่านไม่ได้")
       const bad = [['สต๊อก', stock], ['ออเดอร์', ordersOpen], ['ใบผลิต', prodToday],
@@ -121,7 +126,6 @@ export default function FlowTower() {
         rawStock: sum(byPrefix('3')) + sum(byPrefix('5')),
         rawParts: byPrefix('3').length + byPrefix('5').length,
         orderCnt: orders.length, orderQty: orders.reduce((a, o) => a + (Number(o.qty) || 0), 0),
-        fcastQty: (fcast.data || []).reduce((a, f) => a + (Number(f.qty) || 0), 0),
         sessOpen: (prodToday.data || []).filter(s => s.status === 'open').length,
         sessAll: (prodToday.data || []).length,
         producedToday, orderRows: po.length,
@@ -131,6 +135,7 @@ export default function FlowTower() {
         rawPending: rawPendQ.error ? null : (rawPendQ.count ?? 0),
         rawAll: rawAllQ.error ? null : (rawAllQ.count ?? 0),
         purchPending: purchQ.error ? null : (purchQ.count ?? 0),
+        purchMoved7d: purchMovedQ.error ? null : (purchMovedQ.count ?? 0),
         wipPts: (wipPts.data || []).length, wipReq: (wipReq.data || []).length,
         blocks: blocks.data || [],
         blockQty: (blocks.data || []).reduce((a, b) => a + (Number(b.pending_qty) || 0), 0),
@@ -193,7 +198,7 @@ export default function FlowTower() {
     //    ไม่ใช่ส่วนจัดซื้อในผัง (ซึ่งดูแค่หา supplier + ของใช้ทั่วไป) — user ยืนยัน 2026-08-19
     { key: 'buy', divCode: 'logistic', icon: '🧾', name: 'สั่งซื้อวัตถุดิบ (Planning)',
       lines: [[`${fmt(S.purchPending)} ใบ`, 'ใบสั่งซื้อรอดำเนินการ'], [`${fmt(S.blocks?.length)} พาร์ท`, 'ยังออกใบไม่ได้']],
-      to: '/heijunka', st: S.purchPending > 0 ? 'block' : (S.blocks?.length ? 'block' : 'idle'),
+      to: '/heijunka', st: S.purchMoved7d > 0 ? 'flow' : (S.purchPending > 0 || S.blocks?.length ? 'block' : 'idle'),
       note: 'ระบบคำนวณและออกใบให้อัตโนมัติจากการระเบิด BOM — Planning เป็นผู้ดำเนินการต่อ' },
   ];
 
@@ -205,7 +210,7 @@ export default function FlowTower() {
     { from: 'wip', label: 'เบิกเข้าไลน์', st: S.wipReq > 0 ? 'flow' : 'idle' },
     { from: 'store', label: 'ระเบิด BOM (อัตโนมัติ)', st: 'flow' },
     { from: 'press', label: 'ใบสั่งผลิตลูก', st: S.lotAll > 0 ? 'flow' : 'idle' },
-    { from: 'raw', label: 'ใบสั่งซื้อวัตถุดิบ', st: S.purchPending > 0 ? 'block' : 'idle' },
+    { from: 'raw', label: 'ใบสั่งซื้อวัตถุดิบ', st: S.purchMoved7d > 0 ? 'flow' : (S.purchPending > 0 ? 'block' : 'idle') },
   ];
 
   // ฝ่ายของแต่ละสถานี — ชื่อ/สี/ไอคอนจากผังองค์กร · ไม่รู้จัก code = บอกตรงๆ ห้ามเดาชื่อ
@@ -370,7 +375,7 @@ export default function FlowTower() {
                 ['ผลิต FG → สโตร์ย่อย', 'ระเบิด BOM + หักมินิสโตร์ (trigger)', 'flow', `สโตร์ย่อยคงเหลือ ${fmt(S.subStock)} ชิ้น`],
                 ['สโตร์ย่อย → ไลน์ปั๊ม', 'ใบสั่งผลิตลูกตามขนาดล็อต', S.lotAll > 0 ? 'flow' : 'idle', `${fmt(S.lotAll)} ใบ · รู้ไลน์ปลายทางแล้ว ${fmt(S.lotRouted)} ใบ`],
                 ['ไลน์ปั๊ม → สโตร์วัตถุดิบ', 'ใบเบิกวัตถุดิบตามสูตรของพาร์ทลูก', S.rawAll > 0 ? 'flow' : 'idle', `ใบเบิก ${fmt(S.rawAll)} ใบ · ค้าง ${fmt(S.rawPending)}`],
-                ['→ สั่งซื้อวัตถุดิบ (Planning)', 'ระเบิด BOM → ออกใบสั่งซื้ออัตโนมัติ', S.purchPending > 0 ? 'block' : 'idle', `ออกใบให้แล้ว ${fmt(S.purchPending)} ใบรอดำเนินการ · อีก ${fmt(S.blocks?.length)} พาร์ทออกใบไม่ได้เพราะยังไม่ตั้งขนาดล็อต`],
+                ['→ สั่งซื้อวัตถุดิบ (Planning)', 'ระเบิด BOM → ออกใบสั่งซื้ออัตโนมัติ', S.purchMoved7d > 0 ? 'flow' : (S.purchPending > 0 ? 'block' : 'idle'), `ออกใบให้แล้ว ${fmt(S.purchPending)} ใบรอดำเนินการ · อีก ${fmt(S.blocks?.length)} พาร์ทออกใบไม่ได้เพราะยังไม่ตั้งขนาดล็อต`],
                 ['WIP หน้าไลน์', 'ใบเติมของจากจุด buffer', S.wipReq > 0 ? 'flow' : 'idle', `ตั้งจุดไว้ ${fmt(S.wipPts)} จุด · ใบเติม ${fmt(S.wipReq)} ใบ (ยังไม่เริ่มใช้)`],
               ].map(([seg, mech, st, ev]) => (
                 <tr key={seg} style={{ borderTop: '1px solid var(--border)' }}>

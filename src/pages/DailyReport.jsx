@@ -1048,9 +1048,15 @@ function LiveTab({ role }) {
   };
 
   // ผูกเครื่องกับใบ (ไลน์ parallel_machine) — เขียนแยก best-effort กันพังถ้ายังไม่ apply migration prod_orders.machine_no
+  // ⚠️ supabase-js คืน { error } ไม่ throw — try/catch เปล่าคือกลืน error ทิ้ง (กฎเหล็ก 2026-08-10)
+  //    ใบเปิดสำเร็จแล้ว การผูกเครื่องพลาดห้ามทำ flow หลักพัง แต่ต้องบอกผู้ใช้ (บอร์ดเลนจะจัดใบผิดเลน)
   const attachMachine = async (orderId) => {
     if (!orderId || !openMachineNo) return;
-    try { await supabaseDR.from('prod_orders').update({ machine_no: openMachineNo }).eq('id', orderId); } catch { /* คอลัมน์อาจยังไม่มี */ }
+    const { error } = await supabaseDR.from('prod_orders').update({ machine_no: openMachineNo }).eq('id', orderId);
+    if (error) {
+      console.warn('attachMachine failed', error);
+      toast.error(`เปิดใบสำเร็จ แต่ผูกเครื่อง ${openMachineNo} ไม่ได้ — ${error.code === '42703' ? 'ยังไม่ apply migration 20260723_prod_orders_machine.sql (แจ้ง admin)' : error.message}`);
+    }
   };
 
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
@@ -1069,6 +1075,11 @@ function LiveTab({ role }) {
       opened_by:   fullName,
       ...(opened_at ? { opened_at } : {}),
     }).select().single();
+    // กันเปิดใบซ้ำจาก 2 เครื่องพร้อมกัน — dup check ฝั่ง client (state) มีหน้าต่าง race ~1-2 วิ
+    // ด่านจริงคือ partial unique index (session_id, prod_no) ฝั่ง DB (migration 20260825) → แปลง 23505 เป็นภาษาคน
+    if (error?.code === '23505') {
+      return { error: { ...error, message: `PROD.NO ${prodNo} ถูกเปิดโดยเครื่องอื่นแล้วในกะนี้ — รีเฟรชรายการก่อน` }, data: null };
+    }
     if (!error && status === 'open' && data?.id) await attachMachine(data.id);
     return { error, data };
   };
@@ -1552,6 +1563,11 @@ function LiveTab({ role }) {
         qty:          remainQty,
         status:       'open',
         opened_by:    fullName,
+        // ⚠️ ธงใบ manual ต้องตามใบยกยอดไปด้วย (QC flow-audit #13) — เดิมหายเงียบ:
+        //    ใบ manual ที่ยกมาถูกมองเป็นใบสแกน → ปุ่ม "✓ ปิดใบนี้ (ยอดจริง)" หาย
+        //    ต้องพิมพ์ MANUAL-... ปิดแบบสแกน = qty_ok ถูกตั้งเป็นเป้าแทนยอดจริง
+        ...(o.is_manual ? { is_manual: true, qty_target: remainQty } : {}),
+        qty_actual:   0,
         carry_over_from_session_id: o.session_id,
         carry_over_note: o.carry_over_note || `ค้างจากกะก่อน (ทำได้ ${o.qty_actual || 0}/${o.qty} ชิ้น)`,
         ...(opened_at ? { opened_at } : {}),
@@ -1892,9 +1908,15 @@ function LiveTab({ role }) {
           carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)}`,
         }).eq('id', order.id);
       } else if (decision === 'confirm') {
+        // ⚠️ ใบ manual ทำ "เกินเป้า" ได้ (guard จำนวนยกเว้น is_manual) — เขียนทับด้วยเป้า (order.qty)
+        //    = ยอดจริงส่วนเกินหาย + เข้าคลังต่ำกว่าจริง (QC flow-audit #15) → ใช้ยอดจริงแบบ handleManualClose
+        //    ใบสแกนปกติ qty = จำนวนการ์ดคัมบัง (ของดีตายตัว) คงพฤติกรรมเดิม
+        const isManual = !!order.is_manual;
+        const finalQty = isManual ? Math.max(qActual, order.qty_actual || 0, order.qty || 0) : order.qty;
         await supabaseDR.from('prod_orders').update({
           status:       'confirmed',
-          qty_actual:   order.qty,
+          qty_actual:   finalQty,
+          ...(isManual ? { qty: finalQty, qty_ok: finalQty } : {}),
           stopped_at:   stoppedAt,
           confirmed_at: stoppedAt,
           confirmed_by: fullName,
