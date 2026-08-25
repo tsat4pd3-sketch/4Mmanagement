@@ -888,11 +888,11 @@ export default function FactoryMap({ setupMode = false }) {
       const c = mats.slice(i, i + 120);
       const [{ data: st }, { data: pm }, { data: ks }] = await Promise.all([
         supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('line_name', WAREHOUSE_LOCATIONS).in('mat_no', c),
-        supabaseDR.from('parts_master').select('mat_no, name, qty_per_pkg').in('mat_no', c),
+        supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').in('mat_no', c), // ⚠️ คอลัมน์คือ part_name ไม่ใช่ name (42703 เงียบ)
         supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty, qty_per_kanban').eq('is_active', true).in('mat_no', c),
       ]);
       (st || []).forEach(r => { stock[r.mat_no] = (stock[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
-      (pm || []).forEach(p => { pkgMap[p.mat_no] = p.qty_per_pkg; nameMap[p.mat_no] = p.name; });
+      (pm || []).forEach(p => { pkgMap[p.mat_no] = p.qty_per_pkg; nameMap[p.mat_no] = p.part_name; });
       (ks || []).forEach(k => { stdMap[k.mat_no] = k; });
     }
     const pkgOf = (m) => Number(pkgMap[m]) || Number(stdMap[m]?.qty_per_kanban) || null; // ไม่รู้ = null ห้ามเป็น 0
