@@ -170,7 +170,7 @@
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock · **แท็บ 🏬 โซนคลัง (ผัง) = ทะเบียนโซนจัดเก็บ WMS เฟส 1** (`StorageZonePanel` — ดู section "โซนคลังสินค้า (WMS เฟส 1)") | ทุก role (จัดการโซน: `storage:manage`) |
-| Logistic - Store | `/heijunka` | HeijunkaKanban · **แถบ 📤 สั่งผลิตไปไลน์ไหน · ทำได้ตามที่มอบหมายไหม (2026-08-24 · คำขอ user "สโตร์ควรเห็น kanban board ของฝ่ายผลิตด้วย"):** `src/components/ProdProgressStrip.jsx` เหนือปุ่มสลับมุมมอง เห็นทุก view — เป้า/ทำได้/% รายไลน์ของวันงาน · **เป็น "สรุปยอด" ไม่ใช่บอร์ด** (กดชื่อไลน์ = เด้งไปบอร์ดตัวจริง) · ตัวเลขผ่าน `orderTotal` (นับคู่ RH/LH ครั้งเดียว + ยุบชั้น OP) · ผลิตได้ = `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` · **ยังไม่เปิดกะ = บอกตรงๆ ห้ามโชว์ 0% แดง** · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) | ทุก role |
+| Logistic - Store | `/heijunka` | HeijunkaKanban · **แถบ 📤 สั่งผลิตไปไลน์ไหน · ทำได้ตามที่มอบหมายไหม (2026-08-24 · คำขอ user "สโตร์ควรเห็น kanban board ของฝ่ายผลิตด้วย"):** `src/components/ProdProgressStrip.jsx` เหนือปุ่มสลับมุมมอง เห็นทุก view — เป้า/ทำได้/% รายไลน์ของวันงาน · **เป็น "สรุปยอด" ไม่ใช่บอร์ด** (กดชื่อไลน์ = เด้งไปบอร์ดตัวจริง) · ตัวเลขผ่าน `orderTotal` (นับคู่ RH/LH ครั้งเดียว + ยุบชั้น OP) · ผลิตได้ = `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` · **ยังไม่เปิดกะ = บอกตรงๆ ห้ามโชว์ 0% แดง** · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) · **แถบนี้พับเก็บเป็นค่าเริ่มต้นแล้ว (2026-08-25)** — 15 ไลน์ = 15 การ์ด ดันคิวงานจริงลงครึ่งจอ · ยอดรวม + "ตามหลัง N ไลน์" ยังเห็นตลอดแม้พับ (`esm_prod_strip_open`) | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter · **QR เรียกภาชนะ (2026-08-03):** deep-link `?line=&ctype=&qty=` → เปิดฟอร์มกรอกครบ เหลือกดยืนยัน · ปุ่ม 🏷️ ป้าย QR (พิมพ์แผ่น A4 ไลน์×ชนิดภาชนะ — lazy import `qrcode` · doc_key `rack_qr_labels` ผ่าน withDocFoot, migration `20260803_doc_form_rack_qr_labels.sql` Main) · ปุ่ม 📷 สแกน (BarcodeDetector ในแอป + ช่องปืนยิง keyboard-wedge — parse URL ตัวเดียวกัน) · กล้องมือถือสแกนตรงก็ได้ (เปิดลิงก์) | ทุก role |
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
@@ -364,6 +364,49 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >   ห้ามตีเป็น "นอกขอบเขต/รอฝ่ายอื่น" (ผมเคยสรุปผิดแบบนั้นรอบแรก — แก้แล้ว)
 > - ที่ user บอกว่า "ฝ่ายสนับสนุนยังไม่ต้องสนใจ" = ฝ่ายสนับสนุนกลาง (บัญชี/HRM/CIC/QSM/จัดซื้อของใช้)
 >   **ไม่ได้หมายถึงการสั่งซื้อวัตถุดิบผลิต**
+
+### 🏪 บอร์ดสโตร์ (`/heijunka` → 🗄️ ตู้ Kanban รวม) — กฎกันจอรก (2026-08-25 · feedback หน้างาน)
+
+*"ตอนนี้ฟีเจอร์ store ใช้งานยากมากก · ดูรก และอะไรเยอะไปหมด · ระบบ filter ก็ไม่ดี"*
+ตรวจแล้วเป็น **2 เรื่องคนละชั้น อย่าแก้แค่ layout**
+
+| ชั้น | อาการจริง | แก้ด้วย |
+|---|---|---|
+| **ข้อมูล** | `child_lot_requests` cancelled **100 ใบ** + `purchase_requests` cancelled **984 ใบ** ยังถูก render เต็มบอร์ด | กรอง `cancelled` ตั้งแต่ query (precedent เดิม: `rackRequests`) |
+| **จอ** | ตัวเลขบนแท็บ ≠ จำนวนการ์ดที่เห็น | default โชว์เฉพาะงานค้าง + ปุ่มสลับ "รวมที่เสร็จแล้ว" |
+
+> #### ⚠️ กฎเหล็ก 1 — ตัวเลขบนแท็บต้องเท่ากับจำนวนการ์ดที่เห็น
+> เดิมแท็บนับ**เฉพาะงานค้าง** (`status !== 'done'`) แต่ลิสต์ `.map()` **ทุกแถวที่โหลดมา**
+> ⇒ Store Child แท็บบอก 58 แต่การ์ด 163 ใบ · จัดซื้อบอก 12 แต่การ์ด 300 ใบ
+> **นี่คือต้นเหตุหลักของ "ดูรก" ไม่ใช่เรื่อง CSS** · แถบ 👁 "ซ่อนอยู่ · เสร็จแล้ว N · ไม่ตรงคำค้น N"
+> ต้องขึ้นเสมอเมื่อกรองอะไรออก (ห้ามหายเงียบ) · **ตัวนับแยกต่อแท็บ (`tally`) ห้ามนับรวม** ไม่งั้นบอกเลขของแท็บอื่นปนมา
+>
+> #### ⚠️ กฎเหล็ก 2 — คิวที่ระบบออกใบอัตโนมัติ ต้องรวมยอด "รายพาร์ท" ห้ามโชว์รายใบ
+> `fn_explode_child_demand` ออก **1 ใบต่อ 1 ล็อต** (เพดาน `MAX_LOTS=50` ต่อการปิดออเดอร์ 1 ครั้ง)
+> ยอดค้างหลักล้านชิ้น ⇒ ทุกครั้งที่ปิดใบ FG เติมอีก 50 ใบ · ข้อมูลจริง 25/08:
+> **2,211 ใบ = แค่ ~25 พาร์ท** (`30045438` 900×**330 ใบ** · `50031601` **401 ใบ** · `30042570` 900×173)
+> — ทั้งหมดเกิด 24-25/08 วันเดียว · **โชว์รายใบ = กำแพงการ์ดที่อ่านไม่ได้และตอบไม่ได้ว่าต้องสั่งเท่าไหร่**
+> - อ่านผ่านวิว **`v_purchase_open_summary`** (DR · migration `20260825_v_purchase_open_summary.sql` · **apply แล้ว**)
+>   `mat_no × status → slips / total_qty / min_lot / max_lot / first_id`
+> - **⚠️ ห้ามกลับไปดึงแถวดิบมา group ที่หน้า** — PostgREST group by ไม่ได้ → ต้องดึง `limit(N)`
+>   แล้วยอดรวมต่อพาร์ท**ไม่ใช่ยอดจริง** (โชว์ยอดไม่ครบให้คนเอาไปสั่งซื้อ อันตรายกว่าไม่โชว์)
+>   จะดึงครบ 2,211 แถวก็ไม่ได้ — ~550 KB ต่อรอบ poll ทุก 10 นาที (งบ egress ทั้งเดือน 5 GB) · วิวคืน ~25 แถว ≈ 4 KB
+> - **แท็บนับ "พาร์ทที่ต้องสั่ง" ไม่ใช่จำนวนใบ** (จำนวนใบไม่ใช่ปริมาณงานจริง)
+> - **ปุ่มเลื่อนสถานะยังทำทีละใบ** (`first_id` = ใบเก่าสุด) · **ต้อง fetch ใบจริงก่อนเสมอ**
+>   qty แต่ละใบไม่เท่ากันได้ (`50031601` มี 100–1,000) เดาจาก min/max แล้วโพสต์ stock = ยอดเข้าคลังผิด
+>   · สั่งซื้อรวมยอดหลายใบพร้อมกัน = เฟสถัดไป (ต้องคุยเรื่อง `line_stock_transactions` ก่อน — รับ 330 ใบ = 330 แถว)
+>
+> #### ⚠️ กฎเหล็ก 3 — ทุกแท็บต้องมีช่องค้นหา
+> คิวจริงหลักร้อยใบ ไม่มีช่องค้นก็หาของไม่เจอ · ช่องเดียวคุมทุกแท็บ (รหัส/ชื่อพาร์ท/ไลน์ปลายทาง)
+> **⚠️ input ใน flex row ต้องกำหนด `width` เอง** (`index.css` ตั้ง `input{width:100%}` จะดันปุ่มแตกแถว)
+>
+> **หัวเพจต้องไม่กินที่:** KPI 4 การ์ดใหญ่ → แถบเดียว · รายชื่อ "Product ไม่มี BOM" (12 ชิป 2 แถว) พับไว้
+> แต่**ตัวเลขยังเห็นบนแถบสรุปเสมอ** · `ProdProgressStrip` พับเป็นค่าเริ่มต้น
+>
+> **ล้างใบขยะ:** `20260824_void_tiny_lot_requests.sql` (**apply แล้ว · 100 ใบ**) — ใบล็อต ≤1 ชิ้น
+> จากบั๊กหน่วย `lot_size` (แก้ไป 21/08) ตั้ง `status='cancelled'` + เหตุผลต่อท้ายชื่อพาร์ท **ไม่ลบ**
+> · backup `child_lot_req_bak_tiny_20260824` · ความต้องการจริงไม่หาย (ยังอยู่ใน `child_demand_accumulator`
+> จะออกใบใหม่ด้วยขนาดล็อตที่ถูกหน่วยแล้ว) · precedent เดียวกับล้าง `purchase_requests` 984 ใบ และ 4M `[Auto]` 323 ใบ
 
 ### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
 มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**

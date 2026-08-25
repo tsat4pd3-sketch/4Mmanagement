@@ -954,14 +954,38 @@ const RACK_STATUS = {
   delivered: { label: '🚚 จัดส่งแล้ว', color: '#a855f7', bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.3)', next: '✅ ยืนยันรับ' },
   received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
 };
+/* ⚠️ กฎของบอร์ดสโตร์ (2026-08-25 · user: "ใช้งานยากมาก · ดูรก · ระบบ filter ก็ไม่ดี")
+   1. **ตัวเลขบนแท็บต้องเท่ากับจำนวนการ์ดที่เห็น** — เดิมแท็บนับเฉพาะงานค้าง แต่ลิสต์ render ทุกแถวที่โหลดมา
+      (Store Child แท็บบอก 58 แต่การ์ด 163 ใบ · จัดซื้อบอก 12 แต่การ์ด 300 ใบ) = ต้นเหตุหลักของ "ดูรก"
+      → default โชว์เฉพาะงานค้าง + ปุ่ม "รวมที่เสร็จแล้ว" สลับได้ และ**ต้องบอกจำนวนที่ซ่อนเสมอ**
+   2. **มีช่องค้นหาทุกแท็บ** — คิวจริงหลักร้อยใบ ไม่มีช่องค้นก็หาของไม่เจอ
+   3. **ของซื้อจัดกลุ่มตามพาร์ท** — trigger ออกใบละล็อต พาร์ทเดียวได้ 300+ ใบเหมือนกันเป๊ะ
+      โชว์แยกใบ = กำแพงการ์ดที่อ่านไม่ได้ · จัดกลุ่มแล้วเหลือ ~10 แถวและตอบโจทย์ "ต้องสั่งอะไรบ้าง" ตรงกว่า  */
+const isDoneRow = {
+  child:    (r) => r.status === 'done',
+  purchase: (r) => r.status === 'received',
+  raw:      (r) => r.status === 'issued',
+  wip:      (r) => r.status === 'delivered',
+  rack:     (r) => r.status === 'received',
+  pkg:      (r) => r.status === 'issued',
+};
+const matchQ = (q, ...fields) => {
+  if (!q) return true;
+  const s = q.trim().toLowerCase();
+  return fields.some(f => String(f ?? '').toLowerCase().includes(s));
+};
+
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, fmt, workDate, nowMs, canOperate }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
-  const [buyFilter, setBuyFilter] = useState('');   // '' | '300' | '500'
+  const [buyFilter, setBuyFilter] = useState('');   // '' | '3' | '5'
+  const [q, setQ] = useState('');                   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
+  const [showDone, setShowDone] = useState(false);  // default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
 
+  // แท็บจัดซื้อนับ "พาร์ทที่ต้องสั่ง" ไม่ใช่จำนวนใบ (2,211 ใบ = ~25 พาร์ท — เลขใบไม่ใช่ปริมาณงานจริง)
   const openPurchases = purchaseRequests.filter(p => p.status !== 'received' && p.status !== 'cancelled');
   const counts = {
     fg: rounds.filter(r => !confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`)).length,
@@ -971,11 +995,44 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
     wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
-  const filteredPurchases = buyFilter ? purchaseRequests.filter(p => matMatches(p.mat_no, buyFilter)) : purchaseRequests;
+
+  /* ตัวกรองกลาง — ใช้ทุกแท็บให้เหมือนกัน แล้วรายงานว่าซ่อนอะไรไปบ้าง (ห้ามหายเงียบ)
+     ⚠️ ตัวนับต้องแยกต่อแท็บ — นับรวมทุกแท็บแล้วแถบ "ซ่อนอยู่" จะบอกเลขของแท็บอื่นปนมา */
+  const tally = { fg: { done: 0, search: 0 }, child: { done: 0, search: 0 }, raw: { done: 0, search: 0 }, rack: { done: 0, search: 0 }, wip: { done: 0, search: 0 } };
+  const sift = (rows, kind, tab, ...fieldsOf) => rows.filter(r => {
+    if (!showDone && isDoneRow[kind]?.(r)) { tally[tab].done++; return false; }
+    if (!matchQ(q, ...fieldsOf.map(f => f(r)))) { tally[tab].search++; return false; }
+    return true;
+  });
+
+  const vLots  = sift(lotRequests, 'child', 'child', r => r.child_mat_no, r => r.part_name, r => r.source_line);
+  const vRaws  = sift(rawRequests, 'raw',   'raw',   r => r.raw_mat_no,   r => r.part_name);
+  const vRacks = sift(rackRequests, 'rack', 'rack',  r => r.container_name, r => r.line_name);
+  const vPkgs  = sift(pkgRequests, 'pkg',   'rack',  r => r.packaging_code, r => r.packaging_name, r => r.source_line);
+  const vWips  = sift(wipRequests, 'wip',   'wip',   r => r.mat_no, r => r.point_name, r => r.line_name);
+  const vRounds = rounds.filter(r => {
+    if (!matchQ(q, r.line_name, `รอบ ${r.round_no}`)) { tally.fg.search++; return false; }
+    return true;
+  });
+
+  /* ของซื้อ: purchaseRequests = แถวสรุป "รายพาร์ท" จากวิว (ไม่ใช่รายใบ) */
+  const purGroups = useMemo(() => purchaseRequests.filter(p => {
+    if (!showDone && p.status === 'received') return false;
+    if (buyFilter && !matMatches(p.mat_no, buyFilter)) return false;
+    return matchQ(q, p.mat_no, p.part_name, p.supplier, p.dest_line);
+  }), [purchaseRequests, buyFilter, q, showDone]);
+  const purShown = purGroups.reduce((a, g) => a + (g.slips || 0), 0);
+
+  const hid = tally[store] || { done: 0, search: 0 };
+  const hiddenNote = (hid.done || hid.search) ? (
+    <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
+      👁 ซ่อนอยู่{hid.done ? ` · เสร็จแล้ว ${hid.done} รายการ` : ''}{hid.search ? ` · ไม่ตรงคำค้น ${hid.search} รายการ` : ''}
+    </div>
+  ) : null;
 
   return (
     <div style={{ padding: 16 }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {STORE_TABS.map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
             style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
@@ -987,10 +1044,26 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         ))}
       </div>
 
-      {store === 'fg' && (
-        rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรอบจัดส่ง</div> :
+      {/* ── ค้นหา + สลับงานค้าง/ทั้งหมด (ใช้ได้ทุกแท็บ) ── */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นหา รหัส / ชื่อพาร์ท / ไลน์…"
+          style={{ width: 'min(320px, 100%)', padding: '8px 12px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+        {q && (
+          <button onClick={() => setQ('')} style={{ padding: '7px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>✕ ล้าง</button>
+        )}
+        <button onClick={() => setShowDone(v => !v)} style={{
+          padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+          background: showDone ? 'var(--bg2)' : 'var(--accent)', color: showDone ? 'var(--text2)' : '#08130a',
+          border: `1px solid ${showDone ? 'var(--border)' : 'var(--accent)'}`,
+        }}>{showDone ? '📋 ทั้งหมด (รวมที่เสร็จแล้ว)' : '⏳ เฉพาะงานค้าง'}</button>
+      </div>
+
+      {store === 'fg' && (<>
+        {hiddenNote}
+        {rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรอบจัดส่ง</div> :
+        vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
-          {rounds.map(r => {
+          {vRounds.map(r => {
             const key = `${r.line_name}|${r.shift}|${r.round_no}`;
             const status = getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs);
             const isConf = confirmedSet.has(key);
@@ -1007,13 +1080,15 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 meta={`ส่ง ${r.delivery_time?.slice(0,5) || '—'} · ตัดยอด ${r.cutoff_time?.slice(0,5) || '—'} · ${alloc.parts.length} พาร์ท`} />
             );
           })}
-        </div>
-      )}
+        </div>}
+      </>)}
 
-      {store === 'child' && (
-        lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
+      {store === 'child' && (<>
+        {hiddenNote}
+        {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
+        vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
-          {lotRequests.map(lot => {
+          {vLots.map(lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name}
@@ -1023,8 +1098,8 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 meta={lot.source_prod_no ? `จาก FG ${lot.source_prod_no}` : ''} />
             );
           })}
-        </div>
-      )}
+        </div>}
+      </>)}
 
       {store === 'purchase' && (
         <>
@@ -1036,27 +1111,44 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                   border: `1px solid ${buyFilter === f.key ? 'var(--accent)' : 'var(--border)'}` }}>{f.label}</button>
             ))}
           </div>
-          {filteredPurchases.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรายการจัดซื้อ — เกิดอัตโนมัติเมื่อของซื้อ (300/500) ในสโตร์ไม่พอต่อแผนผลิต</div> : (
+          {purchaseErr && (
+            <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 10 }}>🔴 โหลดคิวจัดซื้อไม่ได้ — {purchaseErr}</div>
+          )}
+          {purGroups.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+            {purchaseRequests.length === 0 ? 'ยังไม่มีรายการจัดซื้อ — เกิดอัตโนมัติเมื่อของซื้อ (300/500) ในสโตร์ไม่พอต่อแผนผลิต' : `ไม่มีรายการที่ตรงกับตัวกรอง${q ? ` / คำค้น "${q}"` : ''}`}
+          </div> : (<>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
+              🧮 รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
+              {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต สั่งซื้อรวมยอดเดียวได้'}
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
-              {filteredPurchases.map(pr => {
-                const st = PURCHASE_STATUS[pr.status] || PURCHASE_STATUS.pending;
+              {purGroups.map(g => {
+                const st = PURCHASE_STATUS[g.status] || PURCHASE_STATUS.pending;
+                const many = g.slips > 1;
+                const lot = Number(g.min_lot) === Number(g.max_lot)
+                  ? `${fmt(g.min_lot)} ชิ้น × ${fmt(g.slips)} ใบ`
+                  : `${fmt(g.min_lot)}–${fmt(g.max_lot)} ชิ้น/ใบ × ${fmt(g.slips)} ใบ`;
                 return (
-                  <QueueCard key={pr.id} code={pr.mat_no} name={pr.part_name}
-                    qty={fmt(pr.qty)} unit="ชิ้น" destination={pr.dest_line || '—'}
-                    statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                    actionLabel={canOperate ? st.nextLabel : null} busy={busy === pr.id} onAction={() => onAdvancePurchase(pr, st.next)}
-                    meta={[pr.supplier ? `🏢 ${pr.supplier}` : '', pr.source_prod_no ? `FG ${pr.source_prod_no}` : ''].filter(Boolean).join(' · ')} />
+                  <QueueCard key={`${g.mat_no}|${g.status}`} code={g.mat_no} name={g.part_name}
+                    qty={fmt(g.total_qty)} unit="ชิ้น" destination={g.dest_line || '—'}
+                    statusLabel={many ? `${st.label} · ${fmt(g.slips)} ใบ` : st.label}
+                    statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                    actionLabel={canOperate && st.nextLabel ? (many ? `${st.nextLabel} (ทีละใบ)` : st.nextLabel) : null}
+                    busy={busy === g.first_id} onAction={() => onAdvancePurchase(g, st.next)}
+                    meta={[many ? lot : '', g.supplier ? `🏢 ${g.supplier}` : ''].filter(Boolean).join(' · ')} />
                 );
               })}
             </div>
-          )}
+          </>)}
         </>
       )}
 
-      {store === 'raw' && (
-        rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
+      {store === 'raw' && (<>
+        {hiddenNote}
+        {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
+        vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
-          {rawRequests.map(r => {
+          {vRaws.map(r => {
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
             return (
@@ -1068,11 +1160,12 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 meta={`สำหรับ ${r.lot_request_id ? parentLot?.child_mat_no || '' : ''}`} />
             );
           })}
-        </div>
-      )}
+        </div>}
+      </>)}
 
       {store === 'rack' && (
         <>
+          {hiddenNote}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>👁️ แสดงคิวภาชนะ/Packaging แบบอ่านอย่างเดียว — เลื่อนสถานะ/จ่ายที่หน้า Rack Center (เจ้าของเดียว กันแข่งกันเขียน)</span>
             <Link to="/rack-center" style={{ fontSize: 12, fontWeight: 800, color: '#0ea5e9', textDecoration: 'none', padding: '5px 12px', borderRadius: 8, border: '1px solid rgba(14,165,233,0.4)', background: 'rgba(14,165,233,0.08)', whiteSpace: 'nowrap' }}>
@@ -1080,9 +1173,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             </Link>
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>🗃️ ภาชนะ (แร็ค/ถาด)</div>
-          {rackRequests.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีการเรียกภาชนะ</div> : (
+          {vRacks.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>{rackRequests.length === 0 ? 'ยังไม่มีการเรียกภาชนะ' : 'ไม่มีการเรียกภาชนะที่ค้างอยู่'}</div> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
-              {rackRequests.map(r => {
+              {vRacks.map(r => {
                 const st = RACK_STATUS[r.status] || RACK_STATUS.requested;
                 return (
                   <QueueCard key={r.id} code={r.container_name || 'ภาชนะ'} name={null}
@@ -1095,9 +1188,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             </div>
           )}
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>📦 Packaging (จากการผลิต)</div>
-          {pkgRequests.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิก packaging</div> : (
+          {vPkgs.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>{pkgRequests.length === 0 ? 'ยังไม่มีใบเบิก packaging' : 'ไม่มีใบเบิก packaging ที่ค้างอยู่'}</div> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
-              {pkgRequests.map(p => {
+              {vPkgs.map(p => {
                 const issued = p.status === 'issued';
                 return (
                   <QueueCard key={p.id} code={p.packaging_code} name={p.packaging_name}
@@ -1113,10 +1206,12 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         </>
       )}
 
-      {store === 'wip' && (
-        wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีคำขอเติมจุด WIP — เกิดจากกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP</div> :
+      {store === 'wip' && (<>
+        {hiddenNote}
+        {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีคำขอเติมจุด WIP — เกิดจากกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP</div> :
+        vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
-          {wipRequests.map(w => {
+          {vWips.map(w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
             return (
@@ -1127,8 +1222,8 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 meta={w.point_type === 'packaging' ? '📦 packaging' : '🧱 material'} />
             );
           })}
-        </div>
-      )}
+        </div>}
+      </>)}
     </div>
   );
 }
@@ -1165,8 +1260,10 @@ export default function HeijunkaKanban() {
   const [rackRequests, setRackRequests] = useState([]);
   const [pkgRequests, setPkgRequests]   = useState([]);
   const [wipRequests, setWipRequests]   = useState([]);
-  const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500
+  const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
+  const [purchaseErr, setPurchaseErr]           = useState('');
   const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
 
   useEffect(() => {
@@ -1182,16 +1279,26 @@ export default function HeijunkaKanban() {
   }, []);
 
   const loadPull = useCallback(async () => {
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: purchases }] = await Promise.all([
-      supabaseDR.from('child_lot_requests').select('*').order('created_at', { ascending: false }).limit(200),
+    // ⚠️ กรอง cancelled ตั้งแต่ query — ใบยกเลิกไม่ใช่งานค้าง แต่เดิมถูก render เต็มบอร์ด
+    //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
+    //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
+    //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: purchases, error: purErr }] = await Promise.all([
+      supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
       supabase.from('wip_replenish_requests').select('*').order('requested_at', { ascending: false }).limit(200),
-      supabaseDR.from('purchase_requests').select('*').order('created_at', { ascending: false }).limit(300),
+      // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
+      //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
+      supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
     ]);
+    // ยังไม่ apply migration (42P01) = บอกบนจอ ห้ามโชว์ว่างเปล่าเหมือนไม่มีของต้องสั่ง
+    setPurchaseErr(purErr ? (purErr.code === '42P01'
+      ? 'ยังไม่ได้ apply migration 20260825_v_purchase_open_summary.sql (แจ้ง admin)'
+      : purErr.message) : '');
     setLotRequests(lots || []);
     setRawRequests(raws || []);
     setAccumulator(acc || []);
@@ -1247,9 +1354,15 @@ export default function HeijunkaKanban() {
   };
 
   // จัดซื้อ (ของ 300/500): pending → ordered (สั่งซื้อแล้ว) → received (รับเข้า = เติม stock ที่ dest_line)
-  const advancePurchase = async (pr, next) => {
-    if (pr.status === next) return;
-    setPullBusy(pr.id);
+  /* g = แถวสรุปรายพาร์ทจากวิว (mat_no/status/slips/first_id) — เลื่อนสถานะ "ใบเก่าสุด 1 ใบ"
+     ⚠️ ต้องดึงใบจริงมาก่อน: qty ของแต่ละใบไม่เท่ากันได้ (50031601 มีตั้งแต่ 100 ถึง 1,000)
+        เดาจาก min/max แล้วโพสต์ stock = ยอดเข้าคลังผิด */
+  const advancePurchase = async (g, next) => {
+    if (!g?.first_id || g.status === next) return;
+    setPullBusy(g.first_id);
+    const { data: pr, error: eFetch } = await supabaseDR.from('purchase_requests')
+      .select('*').eq('id', g.first_id).maybeSingle();
+    if (eFetch || !pr) { toast.error(eFetch?.message || 'ไม่พบใบสั่งซื้อใบนี้แล้ว'); setPullBusy(null); await loadPull(); return; }
     try {
       const patch = { status: next };
       if (next === 'ordered')  { patch.ordered_by = fullName || 'จัดซื้อ'; patch.ordered_at = new Date().toISOString(); }
@@ -1770,24 +1883,28 @@ export default function HeijunkaKanban() {
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 16 }}>
+      {/* Summary — แถบเดียว ไม่ใช่การ์ดใหญ่ 4 ใบ (2026-08-25: หัวหน้าสโตร์ทักว่าหัวหน้าเพจกินครึ่งจอ
+          กว่าจะถึงคิวงานจริงต้องเลื่อนลงไปเยอะ — ตัวเลขชุดเดิมครบ แค่ไม่กินที่) */}
+      <div style={{ ...card, padding: '9px 14px', marginBottom: 10, display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'baseline' }}>
         {[
           { label: 'ไลน์ที่มีแผนผลิต', value: view.cols.length, icon: '🏭' },
           { label: 'พาร์ทย่อยที่ต้องใช้', value: view.rowList.length, icon: '🔩' },
-          { label: 'Kanban NET ที่ต้องเตรียม', value: view.totalKanban, icon: '🎴' },
-          { label: 'Product ไม่มี BOM', value: view.noBom.length, icon: '⚠️', warn: view.noBom.length > 0 },
+          { label: 'Kanban NET', value: view.totalKanban, icon: '🎴' },
         ].map(c => (
-          <div key={c.label} style={{ ...card, padding: '12px 16px', borderColor: c.warn ? 'rgba(245,158,11,0.4)' : 'var(--border)' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
-            <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'var(--font-display)', color: c.warn ? '#f59e0b' : 'var(--text)', marginTop: 2 }}>{c.value}</div>
-          </div>
+          <span key={c.label} style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
+            {c.icon} {c.label} <b style={{ fontSize: 17, fontFamily: 'var(--font-display)', color: 'var(--text)', marginLeft: 2 }}>{c.value}</b>
+          </span>
         ))}
+        {view.noBom.length > 0 && (
+          <span onClick={() => setShowNoBom(v => !v)} style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', cursor: 'pointer', marginLeft: 'auto' }}>
+            {showNoBom ? '▾' : '▸'} ⚠️ Product ไม่มี BOM <b style={{ fontSize: 17, fontFamily: 'var(--font-display)' }}>{view.noBom.length}</b>
+          </span>
+        )}
       </div>
 
-      {/* No-BOM warning */}
-      {view.noBom.length > 0 && (
-        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.05)', marginBottom: 16, padding: '12px 16px' }}>
+      {/* No-BOM warning — พับไว้ (12 ชิป 2 แถวดันเนื้อหาลงไปฟรีๆ) แต่ตัวเลขบนแถบสรุปยังเห็นเสมอ */}
+      {view.noBom.length > 0 && showNoBom && (
+        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.05)', marginBottom: 12, padding: '12px 16px' }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>⚠️ มีแผนผลิตที่ยังแตกพาร์ทย่อยไม่ได้ — product เหล่านี้ยังไม่มี BOM</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {view.noBom.map(p => (
@@ -1831,7 +1948,7 @@ export default function HeijunkaKanban() {
             store={unifiedStore} setStore={setUnifiedStore}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
-            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests}
+            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
           />
