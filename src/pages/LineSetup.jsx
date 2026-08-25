@@ -14,6 +14,7 @@ import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
 import { MAT_CLASSES, matDigit, matClassOf } from '../utils/matPrefix';
 import { invalidateProductionLines } from '../utils/useProductionLines';
+import { notifyEvent } from '../utils/notifyEvent';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -43,7 +44,7 @@ const POINT_H = 46;
 export default function LineSetup({ embedded = false } = {}) {
   // embedded=true เมื่อฝังในแท็บ "ผลิต" ของ /layout-setup — ปรับ height/padding ให้พอดีในกรอบแท็บ (ไม่ใช้ 100vh)
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
-  const { role, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
   const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
@@ -845,6 +846,16 @@ export default function LineSetup({ embedded = false } = {}) {
       request_qty: qty || 1,
     });
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'wip_replenish', type: 'info', ref_table: 'wip_replenish_requests',
+      line_name: selectedLine, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${selectedLine}`,
+        `📍 จุด: ${p.point_name}${p.point_type ? ` (${p.point_type})` : ''}`,
+        `🔩 ${p.mat_no || '—'} · ขอเติม ${qty || 1} ชิ้น`,
+        `📊 คงเหลือ ${p.current_qty ?? 0} / min ${p.min_qty ?? 0} · max ${p.max_qty ?? 0}`,
+      ],
+    });
     toast.success(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
   };
 

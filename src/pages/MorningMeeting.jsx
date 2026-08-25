@@ -12,6 +12,7 @@ import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad } from '../utils/oee';
+import { notifyEvent } from '../utils/notifyEvent';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -428,6 +429,19 @@ export default function MorningMeeting() {
         created_by: user?.id || null, created_by_name: fullName || null,
       });
       if (error) throw error;
+      notifyEvent({
+        event: 'meeting_action_assigned', type: 'info', ref_table: 'meeting_action_items',
+        line_name: actModal.line_name || null,
+        section: actModal.line_name ? (secByLine[actModal.line_name] || secFilter || null) : (secFilter || null),
+        actor: fullName,
+        lines: [
+          `📌 ${actModal.problem.trim()}`,
+          `🏭 ไลน์: ${actModal.line_name || '—'} · 📅 ประชุม ${meetingDate}`,
+          `🙋 ผู้รับผิดชอบ: ${actModal.assignee?.trim() || '(ยังไม่ระบุ)'}`,
+          actModal.due_date ? `⏰ กำหนดเสร็จ ${actModal.due_date}` : '',
+          actModal.root_cause?.trim() ? `🔍 ${actModal.root_cause.trim()}` : '',
+        ],
+      });
       toast.success('บันทึก Action Item แล้ว');
       setActModal(null);
       load();

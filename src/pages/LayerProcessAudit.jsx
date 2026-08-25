@@ -9,6 +9,7 @@ import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import useTabParam from '../utils/useTabParam';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -515,6 +516,19 @@ export default function LayerProcessAudit() {
         }))
       );
       if (insErr) throw insErr;
+      // แจ้งเฉพาะ "เจอข้อบกพร่อง" (ตอบ N/T) — ตรวจผ่านล้วนไม่ต้องรบกวนใคร
+      const finds = auditQuestions.filter(q => ['N', 'T'].includes(draft.answers[q.id]?.answer));
+      if (finds.length) notifyEvent({
+        event: 'lpa_finding', type: 'error', ref_table: 'lpa_audits', ref_id: saved.id,
+        line_name: selLine, actor: draft.auditor_name || fullName,
+        lines: [
+          `🏭 ไลน์: ${selLine} · ${SHIFT_META[selShift]} · 📅 ${thDate(auditDate)}`,
+          `🔍 ชั้น ${LAYERS.find(l => l.key === auditLayer)?.label || auditLayer}${draft.station ? ` · จุด ${draft.station}` : ''}`,
+          `❗ พบ ${finds.length} ข้อ จากทั้งหมด ${auditQuestions.length} ข้อ`,
+          ...finds.slice(0, 5).map(q => `  • [${draft.answers[q.id].answer}] ข้อ ${q.seq} ${q.question.slice(0, 70)} — ${draft.answers[q.id].note?.trim() || ''}`),
+          finds.length > 5 ? `  • …และอีก ${finds.length - 5} ข้อ` : '',
+        ],
+      });
       toast.success(`บันทึกผลตรวจ LPA ${thDate(auditDate)} เรียบร้อย`);
       setDraft(prev => ({ ...prev, id: saved.id }));
       loadMonth();

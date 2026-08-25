@@ -23,6 +23,7 @@ import {
   movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, isPullable,
 } from '../utils/materialRequest';
 import { printMaterialRequest } from '../lib/materialRequestPrint';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const today = () => {
   const d = new Date();
@@ -190,6 +191,17 @@ export default function MaterialRequests() {
     const { error: eUp } = await supabaseDR.from('material_request_items').upsert(up);
     if (eUp) return toast.error(`บันทึกรายการไม่สำเร็จ: ${eUp.message}`);
 
+    // แจ้งเมื่อใบถูก "ส่งขออนุมัติ" (ไม่ใช่ตอนร่าง) — คนอนุมัติต้องรู้ว่ามีใบรออยู่
+    if (nextStatus && nextStatus !== 'draft') notifyEvent({
+      event: 'material_request', type: 'info', ref_table: 'material_requests', ref_id: id,
+      line_name: req.line_name || null, actor: fullName,
+      lines: [
+        `📄 ${req.doc_no || '(ยังไม่ออกเลขใบ)'} · ${req.kind === 'return' ? 'คืนของ' : 'เบิกของ'}${req.move_code ? ` (${req.move_code})` : ''}`,
+        `🏭 ไลน์: ${req.line_name || '—'} · หน่วยงาน: ${req.requester_dept || '—'}`,
+        `📦 ${real.length} รายการ · รวม ${real.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
+        req.detail ? `📝 ${String(req.detail).slice(0, 200)}` : '',
+      ],
+    });
     toast.success(nextStatus ? `บันทึกและเปลี่ยนสถานะเป็น "${statusMeta(nextStatus).label}" ✓` : 'บันทึกแล้ว ✓');
     setEditor(null);
     load();

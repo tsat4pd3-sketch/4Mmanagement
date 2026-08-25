@@ -8,6 +8,7 @@ import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, o
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -256,6 +257,16 @@ export default function OjtTraining() {
         }))
       );
       if (insErr) throw insErr;
+      if (editing.isNew) notifyEvent({
+        event: 'ojt_training', type: 'info', ref_table: 'ojt_trainings', ref_id: editing.id,
+        section: sectionValueForSave(editing.section) || null, actor: fullName,
+        lines: [
+          `🎓 ${editing.topic || '(ไม่ระบุหัวข้อ)'}`,
+          `📅 ${editing.train_date}${editing.time_from ? ` ${editing.time_from}-${editing.time_to || ''}` : ''}`,
+          `🏢 ${[editing.section, editing.department].filter(Boolean).join(' · ') || '—'}`,
+          `👥 ผู้เข้าอบรม ${editing.attendees.length} คน · ผู้สอน ${editing.trainer_name || '—'}`,
+        ],
+      });
       toast.success('บันทึกใบอบรม OJT เรียบร้อย');
       setEditing(null);
       load();

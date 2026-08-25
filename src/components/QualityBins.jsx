@@ -19,6 +19,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { scopedLineNames } from '../utils/sectionScope';
 import { printQualityBin } from '../lib/qualityBinPrint';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const BINS = [
   { key: 'yellow', label: '🟡 ถังเหลือง — ชิ้นงานต้องสงสัย', short: 'ถังเหลือง', color: '#f5b942' },
@@ -156,6 +157,16 @@ export default function QualityBins() {
       : await supabaseDR.from('quality_bin_records').update(payload).eq('id', editing.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    if (editing === 'new') notifyEvent({
+      event: 'quality_bin_added', type: bin === 'red' ? 'error' : 'info',
+      ref_table: 'quality_bin_records', line_name: payload.line_name || null, actor: fullName,
+      lines: [
+        `${bin === 'red' ? '🔴 ถังแดง (ของเสียยืนยันแล้ว)' : '🟡 ถังเหลือง (ต้องสงสัย)'}`,
+        `🏭 ไลน์: ${payload.line_name || '—'} · ${payload.part_name || payload.mat_no || '—'}`,
+        `🔢 ${payload.qty} ชิ้น`,
+        payload.cause ? `📝 ${payload.cause}` : '',
+      ],
+    });
     toast.success(editing === 'new' ? 'บันทึกแล้ว' : 'แก้ไขแล้ว');
     setEditing(null); load();
   };
