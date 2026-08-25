@@ -1560,6 +1560,13 @@ export default function Operator() {
                             หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
                           </div>
                         )}
+                        {/* ส่วนงานที่ยังไม่มีแผนกในผัง = แก้ผ่านฟอร์มไม่ได้ ต้องบอกให้ชัด ห้ามปล่อยว่างเงียบ
+                            (กฎเดิมในหัวข้อ "บาง section แก้ผ่านฟอร์มไม่ได้" — เดิมมีแค่แถบรวมด้านบน ไม่ได้บอกตรงช่อง) */}
+                        {empSection && empSection !== ORPHAN_SECTION && deptOpts.length === 0 && (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                            ⚠️ ส่วนงาน <b>{empSection}</b> ยังไม่มีแผนกในผังองค์กร — เพิ่มที่ <b>/org-setup</b> ก่อนถึงจะเลือกได้
+                          </div>
+                        )}
                       </>
                     );
                   })()}
