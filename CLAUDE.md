@@ -3038,7 +3038,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
                        #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง) ·
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
-                       #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18)
+                       #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
+                       #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
+                       #     45+3 findings + สถานะแก้ — ฝั่ง client เคลียร์แล้ว · ค้างฝั่ง DB/edge ดู §สถานะรวม)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
