@@ -16,7 +16,7 @@ import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
-import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
+import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -339,6 +339,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [assignFor, setAssignFor] = useState(null);
   const [assignLine, setAssignLine] = useState('');
   const [newZone, setNewZone] = useState(''); // พิมพ์ชื่อโซน MTN/facility ใหม่ (ไม่มีใน master)
+  const [newZoneType, setNewZoneType] = useState('fac'); // โซนใหม่เป็นอะไร: 'fac' MTN/facility (เดิม) | 'store' โซนคลังสินค้า (สร้างทะเบียน storage_zones ให้ด้วย)
+  const [newZoneKind, setNewZoneKind] = useState('fg');  // ชนิดโซนคลัง (ZONE_KINDS) เมื่อเลือก store
   const [wrapW, setWrapW] = useState(0);      // ความกว้างผังจริง (px) — แปลงขนาดป้าย px → % ตอนกันป้ายทับกัน
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
@@ -1502,17 +1504,33 @@ export default function FactoryMap({ setupMode = false }) {
     const pts = draft;
     setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false);
     if (pts.length < 3) return;
-    setAssignLine(''); setNewZone(''); setAssignFor(pts); // ตีกรอบได้เสมอ (ไลน์ผลิต / โซน facility / พิมพ์ชื่อโซนใหม่)
+    setAssignLine(''); setNewZone(''); setNewZoneType('fac'); setNewZoneKind('fg'); setAssignFor(pts); // ตีกรอบได้เสมอ (ไลน์ผลิต / โซน facility / โซนคลัง / พิมพ์ชื่อโซนใหม่)
   };
   const confirmAssign = async () => {
     const target = (assignLine === '__new__' ? newZone.trim() : assignLine).trim();
     if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
     if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);
+    const isNewStore = assignLine === '__new__' && newZoneType === 'store'; // จับก่อน reset state
+    const storeKind = newZoneKind;
     const pts = assignFor; setAssignFor(null); setNewZone('');
     hist.pushHistory();
     const { data, error } = await supabase.from('factory_line_regions').insert({ line_name: target, points: pts }).select().single();
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     setRegions(prev => [...prev, { ...data, points: pts }]);
+    // 🏬 โซนคลังใหม่จากจอ setup แผนผังโดยตรง — สร้างทะเบียน storage_zones ให้ในขั้นเดียว
+    // (คำสั่ง user 2026-08-25 "อ้างอิงจากระบบ setup แผนผัง" — ไม่ต้องไปเริ่มที่ /line-stock ก่อน)
+    if (isNewStore) {
+      const { error: ze } = await supabaseDR.from('storage_zones').insert({ name: target, kind: storeKind });
+      if (ze) {
+        // 42P01 = ยังไม่ apply migration · unique = มีทะเบียนอยู่แล้ว (กรอบจับคู่ได้เอง ไม่เป็นไร)
+        if (ze.code === '23505') toast.info(`"${target}" มีทะเบียนโซนคลังอยู่แล้ว — กรอบจับคู่ให้อัตโนมัติ`);
+        else toast.error(`ตีกรอบแล้ว แต่สร้างทะเบียนโซนคลังไม่สำเร็จ (${ze.message}) — สร้างเองที่ /line-stock แท็บโซนคลัง`);
+      } else {
+        toast.success(`ตีกรอบ + สร้างทะเบียนโซนคลัง "${target}" แล้ว — ไปผูก MAT/ความจุ ที่ /line-stock แท็บ 🏬 โซนคลัง`);
+        loadStoreZones();
+        return;
+      }
+    }
     toast.success(`ตีกรอบ ${target} แล้ว`);
   };
   const cancelDraw = () => { setDraft([]); setHoverPt(null); setSnapFirst(false); setDrawing(false); };
@@ -2533,8 +2551,28 @@ export default function FactoryMap({ setupMode = false }) {
               <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
             {assignLine === '__new__' && (
-              <input value={newZone} onChange={e => setNewZone(e.target.value)} autoFocus placeholder="เช่น ห้องปั๊มลม, MTN Workshop, ระบบหล่อเย็น"
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: 16, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box' }} />
+              <div style={{ marginBottom: 16, display: 'grid', gap: 8 }}>
+                {/* โซนใหม่เป็นอะไร — 'store' = สร้างทะเบียน storage_zones ให้ในขั้นเดียว (setup จบในจอแผนผัง) */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[['fac', '🔧 โซน MTN / Facility'], ['store', '🏬 โซนคลังสินค้า (WMS)']].map(([v, lb]) => (
+                    <button key={v} onClick={() => setNewZoneType(v)}
+                      style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${newZoneType === v ? 'var(--accent)' : 'var(--border2)'}`, background: newZoneType === v ? 'rgba(74,222,128,0.12)' : 'var(--bg3)', color: newZoneType === v ? 'var(--accent)' : 'var(--text2)' }}>
+                      {lb}
+                    </button>
+                  ))}
+                </div>
+                <input value={newZone} onChange={e => setNewZone(e.target.value)} autoFocus
+                  placeholder={newZoneType === 'store' ? 'เช่น FG OUT LANE 1, WIP APRON, STORE SUB PART' : 'เช่น ห้องปั๊มลม, MTN Workshop, ระบบหล่อเย็น'}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box' }} />
+                {newZoneType === 'store' && (
+                  <>
+                    <select value={newZoneKind} onChange={e => setNewZoneKind(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 13 }}>
+                      {ZONE_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+                    </select>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ระบบจะสร้างทะเบียนโซนคลังให้เลย — ผูก MAT/ความจุต่อที่ /line-stock แท็บ 🏬 โซนคลัง</div>
+                  </>
+                )}
+              </div>
             )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setAssignFor(null); setNewZone(''); }} style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>

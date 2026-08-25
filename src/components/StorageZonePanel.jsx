@@ -31,6 +31,8 @@ export default function StorageZonePanel() {
   const [stds, setStds] = useState({});            // mat_no → { min_qty, max_qty, qty_per_kanban }
   const [stockByMat, setStockByMat] = useState({}); // mat_no → qty รวมในคลังกลาง
   const [framed, setFramed] = useState(new Set()); // ชื่อกรอบบนผังรวม (normalize) — บอกว่าโซนไหนตีกรอบแล้ว
+  const [frameNames, setFrameNames] = useState([]); // ชื่อกรอบตัวจริง (คงตัวพิมพ์เดิม) — ใช้เสนอ "กรอบที่ยังไม่มีทะเบียน"
+  const [claimedElsewhere, setClaimedElsewhere] = useState(new Set()); // ชื่อที่เป็นของระบบอื่นแล้ว (ไลน์ผลิต/โซนแม่พิมพ์/facility)
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState(null);          // null | {} (ใหม่) | zone (แก้)
 
@@ -52,7 +54,23 @@ export default function StorageZonePanel() {
     setStds(km);
     const st = {}; (sRes.data || []).forEach(r => { st[r.mat_no] = (st[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
     setStockByMat(st);
-    setFramed(new Set((rRes.data || []).map(r => String(r.line_name || '').trim().toLowerCase())));
+    const frames = [...new Set((rRes.data || []).map(r => String(r.line_name || '').trim()).filter(Boolean))];
+    setFrameNames(frames);
+    setFramed(new Set(frames.map(n => n.toLowerCase())));
+    // ชื่อกรอบที่ "เป็นของระบบอื่นแล้ว" — เอาไว้กรองข้อเสนอ "ลงทะเบียนกรอบเดิมเป็นโซนคลัง"
+    // (ไลน์ผลิต · โซนคลังแม่พิมพ์ · โซน facility ที่ลงทะเบียน · ชื่อระบบของเครื่อง facility) — best-effort ทุกก้อน
+    const claimed = new Set();
+    const addAll = (rows, key) => (rows || []).forEach(r => { const v = String(r[key] || '').trim().toLowerCase(); if (v) claimed.add(v); });
+    try {
+      const [pl, da, fa, fm] = await Promise.all([
+        supabase.from('production_lines').select('name'),
+        supabaseDR.from('die_storage_areas').select('name').eq('is_active', true),
+        supabaseDR.from('pm_facility_areas').select('name'),
+        supabaseDR.from('machines').select('line_name').in('equipment_category', ['facility', 'utility']),
+      ]);
+      addAll(pl.data, 'name'); addAll(da.data, 'name'); addAll(fa.data, 'name'); addAll(fm.data, 'line_name');
+    } catch { /* ตาราง/สิทธิ์ไม่พร้อม — ข้อเสนออาจมีชื่อระบบอื่นปน (คนเป็นผู้ตัดสินอยู่แล้ว) */ }
+    setClaimedElsewhere(claimed);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -84,6 +102,16 @@ export default function StorageZonePanel() {
 
   const [showAllUnassigned, setShowAllUnassigned] = useState(false);
 
+  /* 🗺️ อ้างอิงแผนผังที่มีอยู่แล้ว (คำสั่ง user 2026-08-25): กรอบบนผังรวมที่ยังไม่มีทะเบียนระบบไหนเลย
+     → เสนอให้ "ลงทะเบียนเป็นโซนคลัง" (ระบบเสนอ คนตัดสิน — กรอบพวกนี้อาจเป็นโซนช่างที่พิมพ์ชื่ออิสระก็ได้) */
+  const unclaimedFrames = useMemo(() => {
+    const zoneNames = new Set(zones.map(z => String(z.name || '').trim().toLowerCase()));
+    return frameNames.filter(n => {
+      const k = n.toLowerCase();
+      return !zoneNames.has(k) && !claimedElsewhere.has(k);
+    }).sort((a, b) => a.localeCompare(b));
+  }, [frameNames, zones, claimedElsewhere]);
+
   return (
     <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
       {missing && (
@@ -96,7 +124,8 @@ export default function StorageZonePanel() {
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)' }}>
-          ทะเบียนโซนจัดเก็บในคลัง — ตั้งที่นี่แล้วไป <b>ตีกรอบบนผังรวม</b> ด้วยชื่อเดียวกัน
+          ทะเบียนโซนจัดเก็บในคลัง — เริ่มจาก<b>ระบบ setup แผนผัง</b>ก็ได้: วาดกรอบบนผังรวม → เลือก
+          "🏬 โซนคลังสินค้า" ระบบสร้างทะเบียนให้เลย แล้วค่อยมาผูก MAT/ความจุที่นี่
           (ผังคำนวณ เต็ม/ใกล้เต็ม/ต่ำกว่า Min จากสต็อกจริงให้เอง)
         </div>
         <div style={{ flex: 1 }} />
@@ -105,6 +134,24 @@ export default function StorageZonePanel() {
       </div>
 
       {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
+
+      {/* 🗺️ กรอบเดิมบนผังรวมที่ยังไม่มีทะเบียน — หยิบมาลงทะเบียนเป็นโซนคลังได้เลย (อ้างอิงแผนผังที่วาดไว้แล้ว) */}
+      {!loading && !missing && canManage && unclaimedFrames.length > 0 && (
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
+          🗺️ กรอบบนผังรวมที่<b>ยังไม่มีทะเบียนโซน {unclaimedFrames.length} กรอบ</b> —
+          ถ้ากรอบไหนคือพื้นที่คลัง กด ➕ ลงทะเบียนได้เลย (ชื่อตรงกัน = จับคู่กรอบเดิมอัตโนมัติ ไม่ต้องวาดใหม่)
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {unclaimedFrames.map(n => (
+              <button key={n} onClick={() => setEdit({ name: n })} style={{ ...btnSec, fontSize: 12, padding: '4px 10px' }}>
+                ➕ {n}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
+            * กรอบที่เป็นโซนช่าง/facility ที่พิมพ์ชื่ออิสระไว้ ก็โผล่ในลิสต์นี้ — ไม่ใช่พื้นที่คลังก็ไม่ต้องกด
+          </div>
+        </div>
+      )}
 
       {!loading && !missing && !zones.length && (
         <div style={{ background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 8, padding: 18, fontSize: 13, color: 'var(--text2)' }}>
@@ -183,6 +230,7 @@ export default function StorageZonePanel() {
       {edit !== null && (
         <ZoneFormModal
           zone={edit.id ? edit : null}
+          initialName={!edit.id ? edit.name : undefined} /* ลงทะเบียนจากกรอบเดิมบนผัง — prefill ชื่อให้ตรงกรอบ */
           parts={parts}
           stockByMat={stockByMat}
           onClose={() => setEdit(null)}
@@ -194,8 +242,8 @@ export default function StorageZonePanel() {
 }
 
 /* ── ฟอร์มเพิ่ม/แก้โซน — ไม่ปิดจาก backdrop (ฟอร์มมีข้อมูลกรอกค้าง · UI-CONVENTIONS §5) ── */
-function ZoneFormModal({ zone, parts, stockByMat, onClose, onSaved }) {
-  const [name, setName] = useState(zone?.name || '');
+function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved }) {
+  const [name, setName] = useState(zone?.name || initialName || '');
   const [kind, setKind] = useState(zone?.kind || 'fg');
   const [cap, setCap] = useState(zone?.capacity_pkg ?? '');
   const [note, setNote] = useState(zone?.note || '');
