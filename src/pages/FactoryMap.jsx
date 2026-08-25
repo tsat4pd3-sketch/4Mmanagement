@@ -10,7 +10,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
@@ -190,7 +190,7 @@ const expandHull = (pts, f = 1.045) => {
    (pattern เดียวกับ de-overlap ป้ายประเทศใน WorldFactoryMap) */
 /* การ์ด KPI พลังงาน — ขนาดคงที่ (ไม่ขึ้นกับความยาวข้อความ) เพราะเลขใหญ่ + sparkline กินที่ตายตัว
    ทีมส่งภาพอ้างอิงมา (โรงงาน 3D + การ์ด kW ลอยเหนืออุปกรณ์) → โครงการ์ด: ชื่อ / เลขใหญ่+หน่วย / %เทียบ / กราฟจิ๋ว */
-const KPI_W = 152, KPI_H = 68;
+const KPI_W = 152, KPI_H = 82;   // 82 = เผื่อบรรทัด A·P·Q ของการ์ด OEE (จองพื้นที่เท่ากันทุกการ์ด KPI)
 const estLabelPx = (name, txt, big, plain, kpi) => {
   if (kpi) return { w: KPI_W, h: KPI_H };
   const nf = big ? 8.6 : 7.8, vf = big ? 7.4 : 7.0;   // px ต่อตัวอักษร (ตัวหนา Sarabun)
@@ -442,7 +442,7 @@ export default function FactoryMap({ setupMode = false }) {
     const { data: sessions } = await supabaseDR
       // ⚠️ ต้อง select `shift` — ตัวกรองนโยบายพักเทียบ b.shift === s.shift ถ้าไม่มีจะเป็น undefined
       //    แล้วเหลือแค่ b.shift === 'both' ซึ่ง break_policies ไม่มีสักแถว = ไม่หักเวลาพักเลยทั้งระบบ
-      .from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
+      .from('production_sessions').select('id, line_name, status, shift, oee, oee_a, oee_p, oee_q, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }, { data: defs }, prods, breaks, kstds] = await Promise.all([
@@ -623,7 +623,17 @@ export default function FactoryMap({ setupMode = false }) {
            → wavg ข้ามแถวนั้นทั้งแถว (และไม่ตกไป plain mean เพราะมีแถวกะปิดแล้ว)
            = ทุกเย็นผังรวมโชว์ OEE ของกะเช้าที่จบไปแล้ว โดยติดป้ายว่าเป็นค่า "สด"
            ใช้ || 570 ให้ตรงกับ path แผงทบทวน (บรรทัด ~886) ที่ทำถูกอยู่แล้ว */
-        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll }] : [])],
+        /* A/P/Q แนบไปกับแถวด้วย (การ์ด KPI ต้องแตกให้เห็น — user ทัก "บอกแต่ OEE ก็ทำแต่ OEE หรอ" 2026-08-25)
+           ปิดกะ = ค่า stamp · เปิดกะ = ค่าสดจาก computeLiveOee (⚠️ util คืน key ตัวใหญ่ A/P/Q)
+           calcA/totalQty/ngQty = ตัวถ่วง wRun/wProd ตอน rollup (กฎ: P ถ่วง wRun · Q ถ่วง wProd) */
+        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{
+          oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll,
+          a: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
+          p: s.oee != null ? (s.oee_p != null ? Number(s.oee_p) : null) : (lr?.P ?? null),
+          q: s.oee != null ? (s.oee_q != null ? Number(s.oee_q) : null) : (lr?.Q ?? null),
+          calcA: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
+          totalQty: actual, ngQty: ngBySess[s.id] || 0,
+        }] : [])],
         oeeLive: acc.oeeLive || isLive,
         // ประเมิน OEE ไม่ได้เพราะยังไม่ตั้ง CT ของชิ้นงานที่ผลิต — ต้องบอกบนจอ ไม่ใช่เงียบเป็นช่องว่าง
         oeeNoCt: acc.oeeNoCt || !!(lr && lr.noCt),
@@ -1221,6 +1231,10 @@ export default function FactoryMap({ setupMode = false }) {
     }
     const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
     agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
+    // A/P/Q รวมครอบครัว — ถ่วงน้ำหนักตามกฎ (A=wLoad · P=wRun · Q=wProd) ใช้บนการ์ด KPI metric OEE
+    agg.oeeA = wavg(agg.oeeRows, r => r.a, wLoad);
+    agg.oeeP = wavg(agg.oeeRows, r => r.p, wRun);
+    agg.oeeQ = wavg(agg.oeeRows, r => r.q, wProd);
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
     return agg;
@@ -1787,13 +1801,22 @@ export default function FactoryMap({ setupMode = false }) {
               )}
               {/* เส้นโยงป้าย↔กรอบ — เฉพาะป้ายที่ต้องขยับออกจากกรอบเพื่อหลบป้ายอื่น
                   (ป้ายที่ยังติดกรอบไม่มีเส้น จะได้ไม่รกโดยไม่จำเป็น) */}
+              {/* เส้นโยง 3 ชั้น: halo ดำ + เส้นสี + จุดปลายฝั่งกรอบ — เดิมเส้นเดียวจาง 0.55 มองไม่เห็นบนภาพถ่ายผัง
+                  (user ทัก 2026-08-25 "เส้นไกด์ที่ชี้กลับไปที่ไลน์มองไม่เห็นเลย")
+                  ⚠️ จุดปลายใช้ line ยาว 0 + linecap round (วาดเป็นวงกลมขนาด px คงที่) — ห้ามใช้ <circle r="%">
+                  เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
               {!editing && [
                 ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
                 ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
               ].filter(([l]) => l).map(([l, color, key]) => (
-                <line key={key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                  stroke={color} strokeWidth="1.2" strokeDasharray="3 2" opacity={0.55}
-                  vectorEffect="non-scaling-stroke" pointerEvents="none" />
+                <g key={key} pointerEvents="none">
+                  <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                    stroke="rgba(4,8,14,0.85)" strokeWidth="4.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                  <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                    stroke={color} strokeWidth="1.8" strokeDasharray="5 3" opacity={0.95} vectorEffect="non-scaling-stroke" />
+                  <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
+                    stroke={color} strokeWidth="7" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                </g>
               ))}
             </svg>
 
@@ -1878,6 +1901,14 @@ export default function FactoryMap({ setupMode = false }) {
                         {st.oeeCtPartial && <span style={{ color: '#f59e0b' }}>· ⚠CT ไม่ครบ</span>}
                         {st.oeePOver && <span style={{ color: '#f59e0b' }}>· ⚠%P ตัน</span>}
                       </div>
+                      {/* แตก A·P·Q ให้เห็นบนการ์ด (user 2026-08-25 "บอกแต่ OEE ก็ทำแต่ OEE หรอ") — ถ่วงน้ำหนักตามกฎแล้วใน stOf */}
+                      {(st.oeeA != null || st.oeeP != null || st.oeeQ != null) && (
+                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 9.5, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
+                          <span style={{ color: '#4ade80' }}>A {st.oeeA != null ? Math.round(st.oeeA) : '–'}</span>
+                          <span style={{ color: '#60a5fa' }}>P {st.oeeP != null ? Math.round(st.oeeP) : '–'}</span>
+                          <span style={{ color: '#c084fc' }}>Q {st.oeeQ != null ? Math.round(st.oeeQ) : '–'}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
