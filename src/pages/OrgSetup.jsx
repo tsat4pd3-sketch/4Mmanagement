@@ -6,8 +6,6 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
-import { can } from '../utils/permissions';
-import { UserContext } from '../App';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
 
