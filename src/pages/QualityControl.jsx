@@ -35,6 +35,7 @@ import QaClaims from '../components/QaClaims';
 import QualityBins from '../components/QualityBins';
 import CapaEffectiveness from '../components/CapaEffectiveness';
 import { VERDICTS as EFF_V } from '../utils/capaEffect';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -914,6 +915,16 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa }) {
       created_by: fullName || null,
     });
     if (error) { toast.error(`สร้าง NCR ไม่สำเร็จ: ${error.message}`); return; }
+    notifyEvent({
+      event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr',
+      line_name: f.line_name || null, actor: fullName,
+      lines: [
+        `📄 ${ncr_no} · ${f.severity === 'critical' ? '🔴 critical' : f.severity === 'major' ? '🟠 major' : '🟡 minor'}`,
+        `🏭 ไลน์: ${f.line_name || '—'} · พาร์ท: ${f.part_no.trim() || '—'}`,
+        `🚫 NG ${parseInt(f.qty_ng) || 0} / ตรวจ ${parseInt(f.qty_found) || 0}`,
+        `📝 ${f.defect_desc.trim()}`,
+      ],
+    });
     toast.success(`เปิด ${ncr_no} แล้ว ✓`);
     setCreateModal(null);
     load();
@@ -1197,6 +1208,17 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
       if (!error) toast.error('บันทึกแล้ว แต่ยังเก็บ "ผลวัดประสิทธิผล" ไม่ได้ — ยังไม่ได้ apply migration 20260818_capa_effectiveness (แจ้ง admin)');
     }
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+    // แจ้งเฉพาะตอน "เปิดใบใหม่" — แก้ระหว่างทาง/ปิดใบไม่ต้องเด้งซ้ำ
+    if (!f.id) notifyEvent({
+      event: 'qa_capa_opened', type: 'info', ref_table: 'qa_capa',
+      line_name: f.line_name || null, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${f.line_name || '—'} · พาร์ท: ${f.part_no || '—'}`,
+        f.d2_problem ? `📝 ${String(f.d2_problem).slice(0, 300)}` : '',
+        f.owner_name ? `🙋 ผู้รับผิดชอบ: ${f.owner_name}` : '',
+        f.due_date ? `📅 กำหนดเสร็จ: ${f.due_date}` : '',
+      ],
+    });
     toast.success(msg);
     setDetail(null);
     load();

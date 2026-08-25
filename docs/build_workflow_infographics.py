@@ -25,6 +25,11 @@
 import pathlib, sys
 from importlib.machinery import SourceFileLoader
 
+# ⚠️ 2 ฉบับจากเนื้อหาชุดเดียวกัน — ห้ามแยกไฟล์เนื้อหา (แยกแล้วจะ drift แน่นอน)
+#    full = เล่มอ้างอิง/แจกหลังพรีเซนต์  ·  lite = แผ่นสำหรับ "พูด" (ตัวใหญ่ ข้อความน้อย)
+#    lite ตัดโดย "เอา n ตัวแรกของลิสต์" → เรียงลิสต์ให้ตัวสำคัญอยู่บนเสมอ
+LITE = False
+
 HERE = pathlib.Path(__file__).parent
 IMG = SourceFileLoader("_a", str(HERE / ".infographic_assets.py")).load_module().IMG
 
@@ -352,8 +357,10 @@ P4 = dict(
 
 def css():
     f = '"Noto Sans Thai","Sarabun",Tahoma,sans-serif'
-    b = 0.45                              # ไทยดูเล็กกว่าอังกฤษที่ pt เท่ากัน
+    # lite ฉายบนจอ/มองจากที่นั่งประชุม → ตัวต้องใหญ่กว่าเล่มอ้างอิงที่ถืออ่านใกล้ๆ
+    b = 1.55 if LITE else 0.45                              # ไทยดูเล็กกว่าอังกฤษที่ pt เท่ากัน
     def p(x): return f"{x + b:.2f}pt"
+    RH = 34 if LITE else 42
     return f"""
 @page{{size:297mm 210mm;margin:0}}
 *{{margin:0;padding:0;box-sizing:border-box;letter-spacing:0}}
@@ -384,7 +391,7 @@ h2 small{{float:right;font-size:{p(6.3)};color:#C0561E;font-weight:400;padding-t
 /* ── 8 ขั้น (หน้า 1-3) ─────────────────────────────────── */
 .bd{{flex:1;display:flex;flex-direction:column;gap:2.6mm;padding:3mm 7mm 0;min-height:0}}
 .steps{{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);
- grid-auto-rows:minmax(42mm,auto);gap:2.2mm}}
+ grid-auto-rows:minmax({RH}mm,auto);gap:2.2mm}}
 .st{{border:.4pt solid #D8E4D0;border-top:1.1mm solid #2C5F2D;border-radius:1.2mm;
  padding:2.2mm 2.4mm;display:flex;flex-direction:column;background:#fff;overflow:hidden}}
 .st:nth-child(n+7){{border-top-color:#C0561E}}
@@ -505,6 +512,11 @@ def _ft():
   </footer>"""
 
 
+def cut(items, n):
+    """lite = เอาแค่ n ตัวแรก · full = ครบ"""
+    return items[:n] if LITE else items
+
+
 def _nums(P):
     fx = lambda s: s.format(**S)
     return "".join(f'<div class="{"o" if o else ""}"><b>{fx(v)}</b><span>{k}</span></div>'
@@ -517,11 +529,11 @@ def page_cycle(P):
     steps = "".join(
         f'<div class="st"><div class="hh"><span class="no">{n}</span>'
         f'<span class="tt">{t}</span></div><div class="scr">{scr}</div><ul>'
-        + "".join(f"<li>{x}</li>" for x in items) + "</ul></div>"
+        + "".join(f"<li>{x}</li>" for x in cut(items, 2)) + "</ul></div>"
         for n, t, scr, items in P["steps"])
     guard = "".join(f"<li>{x}</li>" for x in P["guard"])
     hand = "".join(f"<div><b>{a}</b><span>{b}</span></div>" for a, b in P["hand"])
-    more = "".join(f"<li>{fx(x)}</li>" for x in P["more"])
+    more = "".join(f"<li>{fx(x)}</li>" for x in cut(P["more"], 8))
     # รูปอยู่ท้ายคอลัมน์กลาง · note อยู่ท้ายคอลัมน์ขวา → 3 คอลัมน์สูงใกล้กัน
     photo = (f'<div class="photo"><img src="data:image/jpeg;base64,{IMG[P["photo"]]}" alt="">'
              f'<div class="cap">{P["cap"]}</div></div>')
@@ -551,15 +563,17 @@ def page_overview(P):
             spine += '<div class="sar">&#9656;</div>'
     lvl = "".join(f'<div class="lv"><span class="n">{n}</span><div><b>{t}<i>{tag}</i></b>'
                   f'<span>{d}</span></div></div>' for n, t, d, tag in P["lvl"])
-    q = "".join(f'<div class="qq"><b>{a}</b><span>{b}</span></div>' for a, b in P["q"])
+    q = "".join(f'<div class="qq"><b>{a}</b><span>{b}</span></div>' for a, b in cut(P["q"], 4))
     loop = ""
     for i, (a, b) in enumerate(P["loop"]):
         loop += f'<div class="lpc"><b>{a}</b><span>{b}</span></div>'
         if i < len(P["loop"]) - 1:
             loop += '<div class="sar">&#9656;</div>'
-    why = "".join(f"<div><b>{a}</b><span>{b}</span></div>" for a, b in P["why"])
-    std = "".join(f"<div><b>{a}</b><span>{b}</span></div>" for a, b in P["std"])
-    todo = "".join(f"<div><b>{a}</b><span>{fx(b)}</span></div>" for a, b in P["todo"])
+    why = "".join(f"<div><b>{a}</b><span>{b}</span></div>" for a, b in cut(P["why"], 3))
+    std = ("" if LITE else
+           f'<h2 style="margin-top:2.6mm">{P["std_h"]}</h2><div class="td">'
+           + "".join(f"<div><b>{a}</b><span>{b}</span></div>" for a, b in P["std"]) + "</div>")
+    todo = "".join(f"<div><b>{a}</b><span>{fx(b)}</span></div>" for a, b in cut(P["todo"], 4))
     plan = (f'<div class="plh"><b>{P["plan_h"]}</b><span>{P["plan_sub"]}</span></div>') + "".join(
         f'<div class="pc {st}"><div class="mo">{mo}'
         + ('<span class="ok">&#10003;</span>' if st == "done" else "")
@@ -579,7 +593,7 @@ def page_overview(P):
         <h2 style="margin-top:2.4mm">{P['loop_h']}</h2>
         <div class="lp">{loop}</div>
         <div style="font-size:6.9pt;color:#4a5a4d;line-height:1.6">{P['loop_note']}</div>
-        <h2 style="margin-top:2.6mm">{P['std_h']}</h2><div class="td">{std}</div>
+        {std}
       </section>
       <section><h2>{P['q_h']}</h2>{q}
         <h2 style="margin-top:2.6mm">{P['todo_h']}</h2><div class="td">{todo}</div></section>
@@ -609,6 +623,13 @@ def build():
 
 
 if __name__ == "__main__":
-    p = HERE / "ESM_Workflow_By_Function_TH.html"
-    p.write_text(build(), encoding="utf-8")
-    print(f"✓ {p.name}  ({p.stat().st_size/1024:.0f} KB)")
+    want = sys.argv[1].lower() if len(sys.argv) > 1 else "all"
+    for lite, name in [(False, "ESM_Workflow_By_Function_TH"),
+                       (True, "ESM_Workflow_By_Function_TH_Lite")]:
+        if want not in ("all", "lite" if lite else "full"):
+            continue
+        LITE = lite
+        globals()["LITE"] = lite
+        p = HERE / f"{name}.html"
+        p.write_text(build(), encoding="utf-8")
+        print(f"✓ {p.name}  ({p.stat().st_size/1024:.0f} KB)")

@@ -28,6 +28,7 @@ const PAGE_GROUPS = [
       { key: 'page:/dept-dashboard', label: 'Dashboard ส่วนงาน' },
       { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
+      { key: 'page:/line-oee', label: 'OEE รายไลน์ (จอไลน์)' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },

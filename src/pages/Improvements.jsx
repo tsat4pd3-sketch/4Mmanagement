@@ -13,6 +13,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import PeChangeRequests from '../components/PeChangeRequests';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -650,7 +651,19 @@ export default function Improvements() {
         if (imgPayload.image_after_url && row.image_after_url) removeImpImage(row.image_after_url);
       }
       // โปรเจคใหม่ seed ขั้นงานมาตรฐาน PDCA 5 ขั้นให้เลย (ปรับ/เพิ่ม/ลบได้ใน Gantt ของการ์ด)
-      if (!modal.id) await seedMilestones(row);
+      if (!modal.id) {
+        await seedMilestones(row);
+        notifyEvent({
+          event: 'improvement_opened', type: 'info', ref_table: 'improvements', ref_id: row.id,
+          line_name: row.line_name || null, actor: fullName,
+          lines: [
+            `💡 ${row.title || '(ไม่ระบุชื่อโปรเจค)'}`,
+            `🏭 ไลน์: ${row.line_name || '—'}`,
+            row.problem_label ? `🎯 เป้า: ${row.problem_label}` : '',
+            row.start_date ? `📅 เริ่ม ${row.start_date} · เทียบผล ${row.baseline_days || 30} วัน` : '',
+          ],
+        });
+      }
       toast.success(modal.id ? 'บันทึกการแก้ไขแล้ว' : 'สร้างโปรเจคปรับปรุงแล้ว — วางแผนขั้นงานใน 🗓 แผนงาน ได้เลย');
       setModal(null);
       setResults(prev => { const p = { ...prev }; delete p[row.id]; return p; }); // คำนวณผลใหม่
@@ -881,7 +894,9 @@ export default function Improvements() {
                 {/* ── 💰 Cost Saving — แปลงผลจริงเป็นบาทด้วย activity rate (DL/OH/DP) + ต้นทุน/ชิ้น (2026-08-11)
                     2 โหมด (2026-08-19 · user ทัก "ประมาณการเอามาจากไหน ในเมื่อยังไม่มีข้อมูลว่าจะลดได้เท่าไหร่"):
                     หลังแก้ ≥5 วันผลิต = "ประหยัดจริง" · น้อยกว่านั้น = "มูลค่าปัญหา (เพดานประหยัด)" จาก baseline ล้วน ── */}
-                {(() => {
+                {/* ⚠️ ต้อง guard `r` (undefined ระหว่างคำนวณ async) — เคยอ่าน r.afterDays ตรงๆ แล้วหน้าพังทันที
+                    ที่มีโปรเจคแรก (บั๊กเงียบมาตั้งแต่ 2026-08-19 เพราะตาราง improvements ว่าง — เจอ 2026-08-25) */}
+                {r && !r.noData && (() => {
                   const tooEarly = (r.afterDays || 0) < MIN_AFTER_DAYS;
                   const cs = costSavingOf(imp, r, tooEarly);
                   if (!cs) return null;
