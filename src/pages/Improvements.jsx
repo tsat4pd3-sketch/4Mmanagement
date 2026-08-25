@@ -62,6 +62,24 @@ const removeImpImage = (url) => {
    ไม่งั้น dropdown แสดงค่าไม่ได้ + ผลก่อน/หลังนับตกหล่นเงียบๆ (feedback 2026-08-19) */
 const sameMc = (a, b) => normCode(a) === normCode(b);
 
+/** ช่วงที่พาเรโต้ในโมดัลนับอยู่ — ต้องเขียนกำกับใน optgroup ไม่งั้นคนอ่านไม่รู้ว่า "เคยเกิด" นับจากกี่วัน */
+const modalDaysLabel = (m) => `ย้อนหลัง ${Number(m?.baseline_days) || 30} วัน`;
+
+/**
+ * ดัชนี "ปัญหา → เครื่อง/สินค้าที่เคยเกิดจริง" จากผลรวมพาเรโต้
+ *
+ * ⚠️ ต้องสร้างจาก **ผลรวมทั้งหมด** ไม่ใช่ rows ที่ slice(0,10) ไปโชว์บนจอ —
+ *    ไม่งั้นเครื่องอันดับ 11+ หายจาก dropdown ทั้งที่ระบบมีข้อมูลว่าเคยเกิดจริง (ตัดเงียบ)
+ * ใช้ "เสนอ" ลำดับใน dropdown เท่านั้น — ไม่บังคับ/ไม่ตัดตัวเลือกอื่นทิ้ง (คนตัดสินเอง
+ * เพราะปัญหาอาจเพิ่งย้ายไปเกิดที่เครื่องใหม่ที่ยังไม่มีประวัติ)
+ */
+const buildParetoIndex = (all, keyOf) => {
+  const m = {};
+  for (const r of all) (m[keyOf(r)] ||= []).push(r);
+  Object.values(m).forEach(list => list.sort((a, b) => b.value - a.value));
+  return m;
+};
+
 const STATUS_META = {
   monitoring: { label: '👁 กำลังติดตามผล', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
   done:       { label: '✅ สำเร็จ',          color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
@@ -143,7 +161,9 @@ export default function Improvements() {
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
+      // equipment_kind: แยกแม่พิมพ์ (262 ตัว) ออกจากเครื่องจักร ไม่งั้นปนใน dropdown เลือกเครื่อง
+      // (กฎเดียวกับ /machine-database ที่ default กรอง equipment_kind='machine')
+      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       // cycle_time_sec: conversion cost ของเสีย = rate × CT/3600
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name, cycle_time_sec').eq('is_active', true).order('name'),
       supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
@@ -539,8 +559,11 @@ export default function Improvements() {
         if (m.report_at && m.repair_done_at) cur.mins += Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000);
         agg.set(key, cur);
       });
-      const rows = [...agg.values()].filter(r => r.value > 0).map(r => ({ ...r, mins: Math.round(r.mins), topDescs: [] })).sort((a, b) => b.value - a.value).slice(0, 10);
-      setPareto({ loading: false, rows }); return;
+      const all = [...agg.values()].filter(r => r.value > 0).map(r => ({ ...r, mins: Math.round(r.mins), topDescs: [] }));
+      // คีย์ต้องตรงกับที่ modal เก็บ (problem_label) — แถว 'ทุกอาการ' = ใบที่ไม่ได้ระบุอาการ เก็บเป็นค่าว่าง
+      const byKey = buildParetoIndex(all, r => (r.label === 'ทุกอาการ' ? '' : r.label) || '');
+      const rows = [...all].sort((a, b) => b.value - a.value).slice(0, 10);
+      setPareto({ loading: false, rows, byKey }); return;
     }
     const { data: sessions } = await supabaseDR.from('production_sessions')
       .select('id').eq('line_name', line_name).gte('work_date', from);
@@ -586,11 +609,13 @@ export default function Improvements() {
     }
     // เรียง: งานนอกแผน (unplanned) มาก่อนเสมอ · งานในแผน (planned เช่น 5ส./นับสต็อก) เป็น priority รองท้ายลิสต์
     // แต่ละแถวแนบ note พนักงานที่พบบ่อยสุด (สำคัญกับประเภท "อื่นๆ" ที่ชื่อประเภทบอกอะไรไม่ได้)
-    const rows = [...agg.values()].filter(r => r.value > 0)
-      .map(r => ({ ...r, topDescs: [...r.descCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3) }))
+    const all = [...agg.values()].filter(r => r.value > 0)
+      .map(r => ({ ...r, topDescs: [...r.descCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3) }));
+    const byKey = buildParetoIndex(all, r => r.type_id || '');
+    const rows = [...all]
       .sort((a, b) => (a.planned ? 1 : 0) - (b.planned ? 1 : 0) || b.value - a.value)
       .slice(0, 10);
-    setPareto({ loading: false, rows });
+    setPareto({ loading: false, rows, byKey });
   }, [mtnOrders]);
 
   useEffect(() => {
@@ -698,11 +723,48 @@ export default function Improvements() {
   // เครื่องของ "ครอบครัวไลน์" ไม่ใช่ชื่อไลน์ตรงเป๊ะ — กะมักเปิดบนไลน์ลูกแต่เครื่องลงทะเบียน
   // ใต้ไลน์แม่/พี่น้อง (pattern เดียวกับ sessionProcessTypesAll ใน DailyReport) · family ว่าง = fallback ตรงเป๊ะ
   const modalFamNames = modal?.line_name ? getLineFamilyNames(lines, modal.line_name) : [];
-  const machineOpts = machines.filter(m => modalFamNames.length
-    ? modalFamNames.includes(m.line_name) : m.line_name === modal?.line_name);
+  const inFam = (name) => (modalFamNames.length ? modalFamNames.includes(name) : name === modal?.line_name);
+  const lineEquip = machines.filter(m => inFam(m.line_name));
   // แปลงหมายเลขเครื่องจาก log (คนพิมพ์ ไม่เป๊ะ) → หมายเลขตามทะเบียนเครื่อง ถ้าจับคู่ได้
   const canonMc = (raw) => (raw ? (machines.find(m => sameMc(m.machine_no, raw))?.machine_no || raw) : '');
-  const productOpts = products.filter(p => p.line_name === modal?.line_name && p.mat_no);
+
+  /* ── ผูก dropdown เข้ากับ "ปัญหาที่เลือก" (feedback หน้างาน 2026-08-25) ───────────
+     อาการเดิม 3 อย่างในโมดัลเดียว:
+       1. เลือกปัญหาแล้วลิสต์เครื่องไม่ขยับเลย ทั้งที่พาเรโต้ข้างๆ บอกอยู่ว่าเกิดที่เครื่องไหน
+       2. แม่พิมพ์ (equipment_kind='die' · ชื่อยาวเป็นชื่อพาร์ท) ปนอยู่ในลิสต์ "เครื่องจักร"
+       3. ลิสต์สินค้าว่างเปล่า เพราะกรอง line_name **ตรงเป๊ะ** ขณะที่เครื่องกรองแบบครอบครัวไลน์
+          → ไลน์ลูก (HDF1) ที่สินค้าผูกไว้กับไลน์แม่ = เลือกพาร์ทไม่ได้เลย
+     กติกา: **เสนอลำดับ ไม่ตัดตัวเลือกทิ้ง** — ปัญหาย้ายไปเกิดที่เครื่องใหม่ที่ยังไม่มีประวัติได้ */
+  const paretoHits = pareto.byKey?.[
+    modal?.problem_source === 'mtn' ? (modal?.problem_label || '') : (modal?.problem_type_id || '')
+  ] || [];
+  const hitUnit = modal?.problem_source === 'defect' ? 'ชิ้น' : modal?.problem_source === 'mtn' ? 'ใบ' : 'นาที';
+  const hitMc = new Map();    // normCode → แถวพาเรโต้ (เครื่องที่เคยเกิดปัญหานี้)
+  const hitMat = new Map();   // mat_no   → แถวพาเรโต้ (สินค้าที่เคยเสียด้วยปัญหานี้)
+  paretoHits.forEach(h => {
+    const k = normCode(h.machine_no);
+    if (k && !hitMc.has(k)) hitMc.set(k, h);
+    if (h.mat_no && !hitMat.has(h.mat_no)) hitMat.set(h.mat_no, h);
+  });
+  const byHit = (get) => (a, b) => (get(b)?.value || 0) - (get(a)?.value || 0);
+
+  const isDie   = (m) => m.equipment_kind === 'die';
+  const mcOfHit = (m) => hitMc.get(normCode(m.machine_no));
+  const mcHit   = lineEquip.filter(m => !isDie(m) && mcOfHit(m)).sort(byHit(mcOfHit));
+  const mcRest  = lineEquip.filter(m => !isDie(m) && !mcOfHit(m));
+  const mcDie   = lineEquip.filter(isDie);
+  // หมายเลขที่บันทึกไว้ใน log แต่ไม่มีในทะเบียนเครื่องของไลน์ — ต้องเลือกได้ ไม่งั้นตั้งเป้าโปรเจค
+  // ให้ตรงกับที่บันทึกจริงไม่ได้ (ตัววัดผลก่อน/หลังกรองด้วย machine_no ตัวนี้)
+  const mcRegistered = new Set(lineEquip.map(m => normCode(m.machine_no)));
+  const mcUnreg = [...hitMc.values()].filter(h => h.machine_no && !mcRegistered.has(normCode(h.machine_no)));
+  const machineOpts = [...mcHit, ...mcRest, ...mcDie];
+  const mcListed = (no) => !!no && (machineOpts.some(m => m.machine_no === no) || mcUnreg.some(h => h.machine_no === no));
+
+  const prodAll  = products.filter(p => p.mat_no && inFam(p.line_name));
+  const matOfHit = (p) => hitMat.get(p.mat_no);
+  const prodHit  = prodAll.filter(matOfHit).sort(byHit(matOfHit));
+  const prodRest = prodAll.filter(p => !matOfHit(p));
+  const prodUnreg = [...hitMat.keys()].filter(mat => !prodAll.some(p => p.mat_no === mat));
   const typeOpts = modal?.problem_source === 'defect' ? defectTypes : dtTypes;
 
   return (
@@ -1173,17 +1235,73 @@ export default function Improvements() {
                       <option value="">— ทั้งไลน์ —</option>
                       {/* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน (เช่นชื่อที่พิมพ์ในบันทึก downtime) ต้องยังแสดงได้ —
                           ไม่งั้น select โชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ = โกหกคนอ่าน */}
-                      {modal.machine_no && !machineOpts.some(m => m.machine_no === modal.machine_no) && (
+                      {modal.machine_no && !mcListed(modal.machine_no) && (
                         <option value={modal.machine_no}>⚠ {modal.machine_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)</option>
                       )}
-                      {machineOpts.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
+                      {/* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ = คำตอบที่คนกำลังหา */}
+                      {mcHit.length > 0 && (
+                        <optgroup label={`⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`}>
+                          {mcHit.map(m => (
+                            <option key={m.id} value={m.machine_no}>
+                              {m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''} — {Math.round(mcOfHit(m).value).toLocaleString()} {hitUnit} · {mcOfHit(m).count} ครั้ง
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {mcUnreg.length > 0 && (
+                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง">
+                          {mcUnreg.map(h => (
+                            <option key={`u-${h.machine_no}`} value={h.machine_no}>
+                              {h.machine_no} — {Math.round(h.value).toLocaleString()} {hitUnit} · {h.count} ครั้ง
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label={mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์'}>
+                        {mcRest.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
+                      </optgroup>
+                      {/* แม่พิมพ์แยกกลุ่มท้ายสุด — เดิมปนกลางลิสต์เครื่องจักร (ชื่อยาวเป็นชื่อพาร์ท) */}
+                      {mcDie.length > 0 && (
+                        <optgroup label="🔨 แม่พิมพ์">
+                          {mcDie.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>สินค้า
                     <select value={modal.mat_no || ''} onChange={e => setModal({ ...modal, mat_no: e.target.value })} style={{ marginTop: 4 }}>
                       <option value="">— ทุกสินค้า —</option>
-                      {productOpts.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
+                      {modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) && (
+                        <option value={modal.mat_no}>⚠ {modal.mat_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)</option>
+                      )}
+                      {prodHit.length > 0 && (
+                        <optgroup label={`⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`}>
+                          {prodHit.map(p => (
+                            <option key={p.id} value={p.mat_no}>
+                              {p.mat_no} · {p.name} — {Math.round(matOfHit(p).value).toLocaleString()} {hitUnit}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {prodUnreg.length > 0 && (
+                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้">
+                          {prodUnreg.map(mat => (
+                            <option key={`um-${mat}`} value={mat}>
+                              {mat} — {Math.round(hitMat.get(mat).value).toLocaleString()} {hitUnit}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label={prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์'}>
+                        {prodRest.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
+                      </optgroup>
                     </select>
+                    {/* ลิสต์ว่าง = ต้องบอกว่าทำไม ห้ามปล่อยให้ดูเหมือน dropdown เสีย */}
+                    {prodAll.length === 0 && prodUnreg.length === 0 && (
+                      <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>
+                        ยังไม่มีสินค้าผูกกับไลน์ {modal.line_name} (หรือไลน์แม่/ลูก) ใน Product Master — ตั้ง “ไลน์” ของสินค้าที่ /products ก่อน
+                      </div>
+                    )}
                   </label>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
