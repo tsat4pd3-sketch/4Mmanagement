@@ -904,12 +904,26 @@ function ShipToTab({ canEdit, onChanged }) {
   const [rows, setRows] = useState([]);
   const [draft, setDraft] = useState({});     // code → { customer_name, plant_name, note }
   const [newCode, setNewCode] = useState('');
+  /* ⚠️ "ชื่อลูกค้า" ช่องนี้ไม่ใช่ข้อความสวยงาม — มันคือ **กุญแจจับคู่**
+     ตอนนำเข้า EDI ระบบใช้ค่านี้เทียบกับ `dr_products.customer` เพื่อแยกว่า
+     เลขพาร์ทลูกค้าตัวเดียวกันเป็นออเดอร์ของเลข SAP ไหน (ดูกฎเหล็กใน CLAUDE.md)
+     ⇒ พิมพ์เองแล้วสะกดต่างนิดเดียว = แยกไม่ออก ออเดอร์ทุกเจ้าไปกองเลขเดียวเงียบๆ
+     → ต้องเลือกจากรายชื่อลูกค้าที่ Product Master ใช้จริง (ยังพิมพ์เองได้ แต่ต้องเตือน) */
+  const [custOpts, setCustOpts] = useState([]);   // [{ name, n }] จาก dr_products.customer
+  const [freeText, setFreeText] = useState({});   // code → true = โหมดพิมพ์เอง
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabaseDR.from('ship_to_plants').select('*').order('code');
+    const [{ data }, { data: prods }] = await Promise.all([
+      supabaseDR.from('ship_to_plants').select('*').order('code'),
+      supabaseDR.from('dr_products').select('customer').eq('is_active', true),
+    ]);
     setRows(data || []);
+    const cnt = {};
+    (prods || []).forEach(p => { const c = String(p.customer || '').trim(); if (c) cnt[c] = (cnt[c] || 0) + 1; });
+    setCustOpts(Object.entries(cnt).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)));
     setDraft({});
+    setFreeText({});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -952,6 +966,11 @@ function ShipToTab({ canEdit, onChanged }) {
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ Ship-to Plant Config</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         ตั้งชื่อลูกค้าให้ code ปลายทางจากไฟล์ EDI (เช่น GRBNA → AAT) — ชื่อนี้จะแสดงแทน code ในทุกหน้าจอ · code ใหม่จากไฟล์ EDI จะถูกเพิ่มเข้าลิสต์นี้อัตโนมัติ
+        <div style={{ marginTop: 5, color: '#f59e0b' }}>
+          ⚠️ ชื่อนี้ถูกใช้เป็น<b>กุญแจแยกออเดอร์</b> ตอนนำเข้า EDI — เลขพาร์ทลูกค้าตัวเดียวมีได้หลายเลข SAP ต่างกันที่ลูกค้าปลายทาง
+          <b> ต้องสะกดตรงกับช่อง "ลูกค้า" ใน Product Master</b> ไม่งั้นแยกไม่ออก แล้วออเดอร์ทุกเจ้าจะไปกองที่เลขเดียว
+          <div style={{ color: 'var(--muted)', marginTop: 2 }}>→ เลือกจากลิสต์ (ดึงจาก Product Master) แทนการพิมพ์เอง · พิมพ์เองได้ถ้าเป็นลูกค้าใหม่ที่ยังไม่มีสินค้า</div>
+        </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
@@ -964,7 +983,11 @@ function ShipToTab({ canEdit, onChanged }) {
             {rows.map(r => (
               <tr key={r.code}>
                 <td style={{ ...cell, fontFamily: 'monospace', fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>{r.code}</td>
-                <td style={cell}>{canEdit ? <input value={val(r, 'customer_name')} onChange={e => setVal(r, 'customer_name', e.target.value)} style={edSt} placeholder="เช่น AAT / FTM" /> : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
+                <td style={cell}>{canEdit ? <CustomerPicker
+                    value={val(r, 'customer_name')} code={r.code} opts={custOpts}
+                    free={!!freeText[r.code]} setFree={(v) => setFreeText(f => ({ ...f, [r.code]: v }))}
+                    onChange={(v) => setVal(r, 'customer_name', v)} edSt={edSt} />
+                  : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'plant_name')} onChange={e => setVal(r, 'plant_name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.plant_name || '—'}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'note')} onChange={e => setVal(r, 'note', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.note || ''}</span>}</td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
@@ -1035,6 +1058,43 @@ export default function CustomerDemand() {
 
       {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap)} />}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
+    </div>
+  );
+}
+
+/* เลือก "ชื่อลูกค้า" จากรายชื่อที่ Product Master ใช้จริง — กันพิมพ์ผิดจนแยกออเดอร์ไม่ออก
+   ⚠️ ไม่บังคับให้เลือกจากลิสต์อย่างเดียว (ลูกค้าใหม่ที่ยังไม่มีสินค้าต้องกรอกได้)
+      แต่ค่าที่ไม่ตรงกับใครเลย **ต้องขึ้นเตือน ห้ามเงียบ** */
+function CustomerPicker({ value, code, opts, free, setFree, onChange, edSt }) {
+  const v = String(value || '').trim();
+  const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const hit = opts.find(o => norm(o.name) === norm(v));
+  const unset = !v || norm(v) === norm(code);          // ยังไม่ตั้ง = ชื่อเท่ากับ code เอง
+  const showFree = free || (!hit && !unset);           // ค่าเดิมที่ไม่อยู่ในลิสต์ → เปิดโหมดพิมพ์เองให้แก้ได้
+  return (
+    <div>
+      {showFree ? (
+        <div style={{ display: 'flex', gap: 5 }}>
+          <input value={v} onChange={e => onChange(e.target.value)} style={edSt} placeholder="พิมพ์ชื่อลูกค้า" autoFocus={free} />
+          <button type="button" onClick={() => { setFree(false); onChange(''); }}
+            title="กลับไปเลือกจากลิสต์" style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>☰</button>
+        </div>
+      ) : (
+        <select value={hit ? hit.name : ''} style={edSt}
+          onChange={e => { if (e.target.value === '__free') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
+          <option value="">— ยังไม่ตั้ง —</option>
+          {opts.map(o => <option key={o.name} value={o.name}>{o.name} ({o.n} สินค้า)</option>)}
+          <option value="__free">✏️ พิมพ์เอง (ลูกค้าใหม่)</option>
+        </select>
+      )}
+      {/* บอกผลการจับคู่ทันที — "SOUTH ARFIGA" ต้องเห็นว่าไม่ตรงกับใครตั้งแต่ยังไม่กดบันทึก */}
+      {unset ? (
+        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้</div>
+      ) : hit ? (
+        <div style={{ fontSize: 10, color: '#22c55e', marginTop: 2 }}>✓ ตรงกับ {hit.n} สินค้าใน Product Master</div>
+      ) : (
+        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>⚠ ไม่มีสินค้าไหนใช้ชื่อลูกค้านี้ — แยกออเดอร์ไม่ได้ (ตรวจตัวสะกด หรือไปตั้งช่อง "ลูกค้า" ที่ Product Master)</div>
+      )}
     </div>
   );
 }
