@@ -307,6 +307,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [storeZoneModal, setStoreZoneModal] = useState(null); // คลิกโซนคลัง → popup รายการ MAT ในโซน
   const [energyStatus, setEnergyStatus] = useState({});  // ⚡ พลังงานรายเดือน: name → { qty, prev, cost, source } (DR · เฟส 1 กรอกมือ)
   const [energyMonth, setEnergyMonth] = useState(null);  // เดือนที่ผังกำลังโชว์ (ไม่ใช่ live — ต้องประกาศบนจอ)
+  const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -698,6 +699,30 @@ export default function FactoryMap({ setupMode = false }) {
       .filter(([n, v]) => v.qty != null && !drawn.has(n)).map(([n]) => n);
   }, [metric, regions, energyStatus]);
 
+  /* ── ⚙️ ประวัติ OEE 7 วันก่อนหน้า — sparkline + Δ บนการ์ด KPI ของ metric OEE (2026-08-25) ──
+     โหลด "ครั้งเดียว" ตอนกดแท็บ OEE ครั้งแรก ไม่ poll (ค่า stamp ของกะปิดแล้วไม่เปลี่ยนระหว่างวัน — กฎ egress)
+     ⚠️ ค่าเฉลี่ยรายวันต้อง wavg ถ่วง wLoad (= shift_min − plannedMin) ตามกฎ OEE → ต้องดึง planned DT ต่อกะ
+     7 วัน ≈ 250 กะ ไม่มีทางถึงเพดาน 1000 แถว (ทั้งระบบเปิดกะ ~35/วัน) — chunk .in 120 ตามกฎ URL ยาว */
+  const loadOeeHist = useCallback(async () => {
+    const to = shiftDate(getWorkDate(), -1), from = shiftDate(getWorkDate(), -7);
+    const { data: sess, error } = await supabaseDR.from('production_sessions')
+      .select('id, line_name, work_date, oee, shift_min')
+      .eq('status', 'closed').gte('work_date', from).lte('work_date', to).order('id').limit(1000);
+    if (error) { setOeeHistRaw([]); return; }   // โหลดไม่ได้ = การ์ดไม่มี sparkline/Δ (ค่า OEE หลักยังขึ้นปกติ)
+    const rows = (sess || []).filter(s => s.oee != null);
+    const planned = {};
+    for (let i = 0; i < rows.length; i += 120) {
+      const ids = rows.slice(i, i + 120).map(s => s.id);
+      const { data: dts } = await supabaseDR.from('downtime_logs')
+        .select('session_id, duration_min, dr_downtime_types(category)').in('session_id', ids);
+      (dts || []).forEach(r => {
+        if (r.dr_downtime_types?.category === 'planned') planned[r.session_id] = (planned[r.session_id] || 0) + (Number(r.duration_min) || 0);
+      });
+    }
+    setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: planned[s.id] || 0 })));
+  }, []);
+  useEffect(() => { if (metric === 'oee' && oeeHistRaw == null) loadOeeHist(); }, [metric, oeeHistRaw, loadOeeHist]);
+
   /* ── manpower รายไลน์ (Main: employees + daily_production_logs วันนี้) — refresh 60 วิ ── */
   const loadManpower = useCallback(async () => {
     const workDate = getWorkDate();
@@ -888,11 +913,11 @@ export default function FactoryMap({ setupMode = false }) {
       const c = mats.slice(i, i + 120);
       const [{ data: st }, { data: pm }, { data: ks }] = await Promise.all([
         supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('line_name', WAREHOUSE_LOCATIONS).in('mat_no', c),
-        supabaseDR.from('parts_master').select('mat_no, name, qty_per_pkg').in('mat_no', c),
+        supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').in('mat_no', c), // ⚠️ คอลัมน์คือ part_name ไม่ใช่ name (42703 เงียบ)
         supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty, qty_per_kanban').eq('is_active', true).in('mat_no', c),
       ]);
       (st || []).forEach(r => { stock[r.mat_no] = (stock[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
-      (pm || []).forEach(p => { pkgMap[p.mat_no] = p.qty_per_pkg; nameMap[p.mat_no] = p.name; });
+      (pm || []).forEach(p => { pkgMap[p.mat_no] = p.qty_per_pkg; nameMap[p.mat_no] = p.part_name; });
       (ks || []).forEach(k => { stdMap[k.mat_no] = k; });
     }
     const pkgOf = (m) => Number(pkgMap[m]) || Number(stdMap[m]?.qty_per_kanban) || null; // ไม่รู้ = null ห้ามเป็น 0
@@ -1218,6 +1243,38 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
   const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
+  /* 🫥 "กรอบขึ้นตามสิ่งที่กด" (2026-08-25 · คำสั่ง user): metric ที่โซนสนับสนุนไม่มีข้อมูล (facilityNA เช่น
+     คน & จุดงาน/ยอดผลิต/OEE) → ซ่อนกรอบโซน MTN/utility/คลัง/แม่พิมพ์ที่ "สถานะปกติ" ออกจากผัง ไม่ให้รกจอ
+     ⚠️ โซนที่มีเหตุผิดปกติ (เหลือง/แดง/กระพริบ — เครื่องซ่อม/PM ค้าง/สต็อกต่ำ) ยังโชว์เสมอ
+        ตามกฎ Andon "สัญญาณต้องไม่ถูกซ่อน" · โหมดแก้ผังเห็นครบทุกกรอบ (ต้องแก้ได้)
+     ⚠️ ซ่อนแล้วนับบอกบนจอ (ชิป 🫥) — ห้ามหายเงียบ */
+  const facHidden = (name) => {
+    if (editing || !M.facilityNA || !isFac(name)) return false;
+    const h = facHealth(stOf(name));
+    return h === 'good' || h === 'idle';
+  };
+  const facHiddenList = useMemo(
+    () => (editing || !M.facilityNA) ? [] : regions.map(r => r.line_name).filter(n => facHidden(n)),
+    // facHidden อ่านสถานะปัจจุบันผ่าน stOf — ใส่ state ที่พึ่งพาเป็น deps แทน (pattern เดียวกับ ranked)
+    [regions, metric, editing, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ⚙️ ซีรีส์ OEE รายวันต่อกรอบ (รวมครอบครัวไลน์) — คำนวณครั้งเดียวจาก oeeHistRaw ไม่คิดใน stOf (stOf ถูกเรียกถี่มาก)
+     series = wavg รายวันถ่วง wLoad (สูตรบังคับ) เรียงเก่า→ใหม่ · prev = วันล่าสุดที่มีข้อมูล (ฐานเทียบ Δ ของวันนี้) */
+  const oeeHistBy = useMemo(() => {
+    if (!oeeHistRaw?.length) return {};
+    const names = new Set([...regions.map(r => r.line_name), ...topNames]);
+    const out = {};
+    names.forEach(n => {
+      if (isFac(n)) return;
+      const fam = new Set(familyNames(n));
+      const byDay = {};
+      oeeHistRaw.forEach(s => { if (fam.has(s.line_name)) (byDay[s.work_date] ||= []).push(s); });
+      const series = Object.keys(byDay).sort().map(d => wavg(byDay[d], x => x.oee, wLoad)).filter(v => v != null);
+      if (series.length) out[n] = { series, prev: series[series.length - 1] };
+    });
+    return out;
+    // familyNames/isFac derive จาก lines — ใส่ lines เป็น dep แทน
+  }, [oeeHistRaw, regions, topNames, lines]); // eslint-disable-line react-hooks/exhaustive-deps
   /* ป้ายบนผังแคบ (มือถือ/จอเล็ก) — ย่อข้อความให้เหลือตัวเลขสำคัญ (คำสั่ง user 2026-08-06:
      "มือถือลดข้อมูลได้ · PC/จอ display ต้องครบ") · ป้ายกว้างเท่าข้อความยาวสุด
      ผังแคบจึงจัดยังไงก็ทับ — ย่อข้อความคือทางเดียวที่ไม่ต้องซ่อนไลน์ทิ้ง
@@ -1234,7 +1291,9 @@ export default function FactoryMap({ setupMode = false }) {
   const ranked = useMemo(() => {
     // แสดงไลน์บนสุด (หน่วยปฏิบัติการ) + กรอบที่ไม่ใช่ไลน์ลูก — ไม่ลิสต์ลูกแยก (รวมใน rollup ของแม่แล้ว กันนับซ้ำในสายตา)
     const names = new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n])]);
-    const arr = [...names].map(name => { const st = stOf(name); return { name, st, val: M.value(st), cat: regCat(st) }; });
+    const arr = [...names]
+      .filter(n => !facHidden(n))   // 🫥 โซนที่ซ่อนตาม metric ไม่เข้าอันดับด้วย (จะได้ไม่มีแถว "ปกติ" ของโซนช่างปนในอันดับผลิต)
+      .map(name => { const st = stOf(name); return { name, st, val: M.value(st), cat: regCat(st) }; });
     arr.sort((a, b) => {
       const av = a.val, bv = b.val;
       if (av == null && bv == null) return a.name.localeCompare(b.name);
@@ -1242,7 +1301,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -1452,21 +1511,23 @@ export default function FactoryMap({ setupMode = false }) {
     [...regions]
       .sort((a, b) => sev(b.line_name) - sev(a.line_name) || polyArea(b.points) - polyArea(a.points))
       .forEach(r => {
+        if (facHidden(r.line_name)) return;   // 🫥 โซนที่ถูกซ่อนตาม metric — ไม่วางป้าย (นับบอกที่ชิปแยก ไม่เข้า out.hidden ของจอแคบ)
         const st = stOf(r.line_name);
         const full = lblText(st), sh = shortText(st);
         const levels = [{ name: r.line_name, txt: full }];
         if (sh !== full) levels.push({ name: r.line_name, txt: sh });
         if (levels[levels.length - 1].txt !== '') levels.push({ name: r.line_name, txt: '' });
-        // ⚡ เฉพาะจุดที่ "มีค่าไฟจริง" ถึงได้การ์ดใหญ่ — ที่เหลือคงป้ายเล็กเหมือนเดิม
+        // ⚡/⚙️ เฉพาะจุดที่ "มีข้อมูลจริง" ถึงได้การ์ดใหญ่ — ที่เหลือคงป้ายเล็กเหมือนเดิม
         //    (ถ้าให้ทุกกรอบเป็นการ์ดใหญ่ ผังจะเต็มไปด้วยการ์ด "ยังไม่กรอก" แล้วชนกันจนซ่อนเพียบ
         //     ภาพอ้างอิงเองก็มีการ์ดแค่ 4 ใบบนผังทั้งโรง)
-        const isKpi = metric === 'energy' && st.kwh != null;
+        //    OEE ใช้การ์ดสไตล์เดียวกับพลังงาน (2026-08-25 · คำสั่ง user "รูปแบบคล้ายๆ เรื่องไฟ")
+        const isKpi = (metric === 'energy' && st.kwh != null) || (metric === 'oee' && st.oee != null);
         const box = place(r.points, false, isKpi ? [levels[0]] : levels, new Set([r.line_name]), isKpi);
         if (box) out.region[r.id] = { ...box, kpi: isKpi }; else out.hidden.push(r.line_name);
       });
     return out;
-    // stOf/regCat/lblText อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
+    // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1622,6 +1683,13 @@ export default function FactoryMap({ setupMode = false }) {
             ⚠ กรอกค่าไฟไว้แต่ยังไม่ได้ตีกรอบบนผัง {energyNoRegion.length} จุด — ตัวเลขไม่โผล่
           </span>
         )}
+        {/* 🫥 โซนสนับสนุนที่ถูกซ่อนตาม metric — ห้ามหายเงียบ (โซนผิดปกติยังโชว์เสมอ) */}
+        {!editing && !!facHiddenList.length && (
+          <span title={`ซ่อน (สถานะปกติ): ${facHiddenList.join(', ')} — โซนที่มีเหตุผิดปกติยังโชว์บนผังเสมอ`}
+            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            🫥 ซ่อนโซนสนับสนุน {facHiddenList.length} โซน (ปกติ · ไม่มีข้อมูล{M.label.replace(/^[^ ]+ /, ' ')})
+          </span>
+        )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
           <span style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1699,6 +1767,7 @@ export default function FactoryMap({ setupMode = false }) {
                 );
               })}
               {regions.map(r => {
+                if (facHidden(r.line_name)) return null;   // 🫥 กรอบขึ้นตาม metric ที่กด — โซนสนับสนุนสถานะปกติไม่วาด (นับที่ชิป 🫥)
                 const cat = regCat(stOf(r.line_name)); const meta = CAT[cat]; const hl = highlight === r.line_name || hoverLine === r.line_name;
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
@@ -1762,6 +1831,7 @@ export default function FactoryMap({ setupMode = false }) {
                 ไลน์ที่เป็น "ลูก" ของกลุ่ม นำหน้าด้วย ↳ ให้อ่านออกว่าอยู่ใต้กลุ่มไหน (2026-08-06)
                 ข้อมูลครบทุกตัวเหมือนเดิม (คำสั่ง user 2026-08-04) */}
             {regions.map(r => {
+              if (facHidden(r.line_name)) return null;      // 🫥 โซนที่ซ่อนตาม metric — ป้ายก็ไม่วาด
               const box = labelLayout.region[r.id];
               if (labelLayout.ready && !box) return null;   // จอแคบ ไม่มีที่ว่างจริง → กรอบสียังบอกสถานะ แตะดูรายละเอียดได้
               const [cx, cy] = labelAnchor(r.points);
@@ -1774,6 +1844,44 @@ export default function FactoryMap({ setupMode = false }) {
               /* ⚡ การ์ด KPI พลังงาน — โครงตามภาพอ้างอิงที่ทีมส่งมา (การ์ด kW ลอยเหนืออุปกรณ์บนผังโรงงาน)
                  ชื่อจุด (เล็ก) / เลขใหญ่ + หน่วย / ป้าย %เทียบเดือนก่อน / กราฟจิ๋วย้อนหลัง
                  ⚠️ เฉพาะจุดที่มีค่าไฟจริง — จุดที่ยังไม่กรอกคงป้ายเล็กเหมือนเดิม ไม่งั้นผังเต็มไปด้วยการ์ดเปล่า */
+              /* ⚙️ การ์ด KPI OEE — สไตล์เดียวกับการ์ดพลังงาน (2026-08-25 · คำสั่ง user "รูปแบบคล้ายๆ เรื่องไฟ")
+                 ชื่อไลน์ / เลข OEE ใหญ่ + สปาร์คไลน์ 7 วัน / Δ เทียบวันก่อนเป็น "จุด" (ไม่ใช่ %เปลี่ยน — OEE เป็น % อยู่แล้ว)
+                 ทิศสีกลับด้านกับไฟ: OEE ขึ้น = เขียว · ลง = แดง · ไม่มีวันก่อนให้เทียบ = บอกตรงๆ ห้ามเดา */
+              if (box?.kpi && metric === 'oee') {
+                const hist = oeeHistBy[r.line_name];
+                const d = hist?.prev != null && st.oee != null ? Math.round((st.oee - hist.prev) * 10) / 10 : null;
+                const dCol = d == null ? 'rgba(255,255,255,0.55)' : d >= 1 ? '#22c55e' : d <= -1 ? '#ef4444' : 'rgba(255,255,255,0.75)';
+                const series = hist ? [...hist.series, st.oee] : null;
+                return (
+                  <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                    <div style={{
+                      background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
+                      border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
+                      borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
+                      textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                    }}>
+                      <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
+                        {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
+                        {parent && <span style={{ color: 'rgba(255,255,255,0.5)' }}>↳ </span>}{r.line_name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
+                        <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                          {Math.round(st.oee)}
+                        </span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
+                        <span style={{ marginLeft: 'auto' }}><Spark data={series} color={meta.color} /></span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2 }}>
+                        <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·เทียบวันก่อน`}</span>
+                        {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· สด</span>}
+                        {st.oeeCtPartial && <span style={{ color: '#f59e0b' }}>· ⚠CT ไม่ครบ</span>}
+                        {st.oeePOver && <span style={{ color: '#f59e0b' }}>· ⚠%P ตัน</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               if (box?.kpi) {
                 const d = energyDelta(st);
                 const dCol = d == null ? 'rgba(255,255,255,0.55)' : d <= -5 ? '#22c55e' : d > 10 ? '#ef4444' : 'rgba(255,255,255,0.75)';
@@ -1996,6 +2104,55 @@ export default function FactoryMap({ setupMode = false }) {
         let top = hoverXY.y - 40;
         if (top + H > vh - 8) top = vh - H - 8;
         if (top < 8) top = 8;
+        /* 🏬 โซนคลังสินค้า — การ์ด hover เฉพาะคลัง (user ทัก 2026-08-25 "พื้นที่คลังไม่ควรแสดงเหมือนไลน์ผลิต")
+           ห้ามโชว์ metric ผลิต/พลังงาน/PM — ข้อมูลที่มีความหมายคือ ของ/กล่อง/ความจุ/Min-Max */
+        if (st.storeZone) {
+          const z = st.storeZone; const f = z.fill; const km = zoneKindMeta(z.kind);
+          const zm = CAT[z.cat] || CAT.idle;
+          const topMats = f.mats.slice().sort((a, b) => (b.short ? 1 : 0) - (a.short ? 1 : 0) || b.qty - a.qty).slice(0, 4);
+          const row = (label, val, color) => (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '4px 8px' }}>
+              <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{label}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: color || 'var(--text)', textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>{val}</span>
+            </div>
+          );
+          return (
+            <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
+              background: 'var(--card)', border: `1px solid ${zm.color}66`, borderTop: `3px solid ${zm.color}`, borderRadius: 12,
+              boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: zm.color, flexShrink: 0 }} />
+                <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{km.icon} {hoverLine}</div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, marginLeft: 19 }}>
+                โซนคลังสินค้า · {km.label} — <span style={{ color: zm.color, fontWeight: 700 }}>{zoneHealthText(f)}</span>
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {row('📦 ของในโซน', f.mats.length ? `${f.totQty.toLocaleString()} ชิ้น · ${f.unknownPkg ? `${f.totPkgs}+?` : f.totPkgs} กล่อง` : 'ยังไม่ผูก MAT', f.mats.length ? undefined : 'var(--muted)')}
+                {row('🧺 ความจุ', z.capacity_pkg ? `${z.capacity_pkg} กล่อง${f.fillPct != null ? ` · ใช้ไป ${f.fillPct}%` : ''}` : 'ยังไม่กรอก', z.capacity_pkg ? undefined : 'var(--muted)')}
+                {row('🏷 MAT ที่ผูก', `${f.mats.length} รายการ`)}
+                {f.shortCount > 0 && row('🟥 ต่ำกว่า Min', `${f.shortCount} รายการ`, '#ef4444')}
+                {f.overMaxCount > 0 && row('⚠ เกิน Max', `${f.overMaxCount} รายการ`, '#f59e0b')}
+              </div>
+              {topMats.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+                  {topMats.map(m => (
+                    <span key={m.mat_no} style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 6, border: `1px solid ${m.short ? '#ef4444' : 'var(--border2)'}`, color: m.short ? '#ef4444' : 'var(--text2)' }}>
+                      {m.mat_no} · {m.qty.toLocaleString()}
+                    </span>
+                  ))}
+                  {f.mats.length > topMats.length && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>+อีก {f.mats.length - topMats.length}</span>}
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+                ยอดจาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่นับยอดรายโซนจริง
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8, textAlign: 'center', fontWeight: 700 }}>
+                🏬 คลิกเพื่อดูรายการ MAT ทั้งหมดในโซน
+              </div>
+            </div>
+          );
+        }
         return (
           <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
             background: 'var(--card)', border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
