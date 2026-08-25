@@ -894,7 +894,9 @@ export default function Improvements() {
                 {/* ── 💰 Cost Saving — แปลงผลจริงเป็นบาทด้วย activity rate (DL/OH/DP) + ต้นทุน/ชิ้น (2026-08-11)
                     2 โหมด (2026-08-19 · user ทัก "ประมาณการเอามาจากไหน ในเมื่อยังไม่มีข้อมูลว่าจะลดได้เท่าไหร่"):
                     หลังแก้ ≥5 วันผลิต = "ประหยัดจริง" · น้อยกว่านั้น = "มูลค่าปัญหา (เพดานประหยัด)" จาก baseline ล้วน ── */}
-                {(() => {
+                {/* ⚠️ ต้อง guard `r` (undefined ระหว่างคำนวณ async) — เคยอ่าน r.afterDays ตรงๆ แล้วหน้าพังทันที
+                    ที่มีโปรเจคแรก (บั๊กเงียบมาตั้งแต่ 2026-08-19 เพราะตาราง improvements ว่าง — เจอ 2026-08-25) */}
+                {r && !r.noData && (() => {
                   const tooEarly = (r.afterDays || 0) < MIN_AFTER_DAYS;
                   const cs = costSavingOf(imp, r, tooEarly);
                   if (!cs) return null;
