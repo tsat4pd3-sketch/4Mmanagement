@@ -869,22 +869,38 @@ function playNotifChime() {
 }
 
 /* ─── Notification Bell ─────────────────────────────────────── */
-function NotificationBell({ userId }) {
+// map ที่มาของแจ้งเตือน → หน้าที่เปิดตอนกด — **ต้อง mirror กับ `routeFor()` ใน edge `send-push`**
+// (Web Push กดแล้วเปิดหน้าไหน กระดิ่งในแอปต้องพาไปหน้าเดียวกัน — แก้ฝั่งไหนให้ตามไปแก้อีกฝั่งด้วย)
+// feedback หน้างาน 2026-08-25: "เปิด MO แล้วอยากให้ช่างรับงานได้ทันที" — เดิมกดแจ้งเตือนแล้วแค่ mark อ่าน ไม่พาไปไหน
+const NOTIF_ROUTE = {
+  four_m_logs:   '/event-log',
+  mtn_orders:    '/mtn-repair',
+  downtime_logs: '/daily-report',
+};
+
+function NotificationBell({ userId, role }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
   const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
+  const navigate                = useNavigate();
 
   const load = useCallback(async () => {
     if (!userId) return;
     const { data } = await supabase
       .from('notifications')
-      .select('id, title, body, type, is_read, created_at')
+      .select('id, title, body, type, is_read, created_at, ref_table, ref_id')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
     setNotifs(data || []);
   }, [userId]);
+
+  // ปลายทางต้องผ่าน canAccessPage ก่อนเสมอ (กฎเดียวกับ telemetry บนหน้า Home) — ไม่มีสิทธิ์ = กดแล้วแค่ mark อ่าน ไม่พาไปแล้วโดนเด้ง
+  const notifTarget = useCallback((n) => {
+    const path = NOTIF_ROUTE[n?.ref_table];
+    return path && canAccessPage(path, role) ? path : null;
+  }, [role]);
 
   // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
   useEffect(() => {
@@ -1050,7 +1066,13 @@ function NotificationBell({ userId }) {
             ) : notifs.map(n => (
               <div
                 key={n.id}
-                onClick={() => markOne(n.id)}
+                onClick={() => {
+                  markOne(n.id);
+                  // แจ้งเตือนที่ผูกใบงาน (ref_table) → เปิดหน้าที่ทำงานจริงให้เลย เหมือนกด Web Push
+                  const target = notifTarget(n);
+                  if (target) { setOpen(false); navigate(target); }
+                }}
+                title={notifTarget(n) ? 'กดเพื่อเปิดหน้าที่เกี่ยวข้อง' : undefined}
                 style={{
                   padding: '9px 14px', borderBottom: '1px solid var(--border)',
                   background: n.is_read ? 'transparent' : 'var(--accent-dim)',
@@ -1069,6 +1091,8 @@ function NotificationBell({ userId }) {
                       {fmtDateTime(n.created_at)}
                     </div>
                   </div>
+                  {/* ลูกศรบอกว่ากดแล้วเปิดหน้าที่เกี่ยวข้องได้ — มือถือไม่มี hover ให้อ่าน title */}
+                  {notifTarget(n) && <span style={{ flexShrink: 0, alignSelf: 'center', fontSize: 14, color: 'var(--muted)' }}>›</span>}
                 </div>
               </div>
             ))}
@@ -1427,7 +1451,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
-        <NotificationBell userId={userId} />
+        <NotificationBell userId={userId} role={role} />
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>

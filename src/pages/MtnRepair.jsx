@@ -328,11 +328,16 @@ export default function MtnRepair() {
     if (fStatus === 'open') rows = rows.filter(o => !['closed', 'rejected'].includes(o.status));
     else if (fStatus === 'closed') rows = rows.filter(o => o.status === 'closed');
     else if (fStatus !== 'all') rows = rows.filter(o => o.status === fStatus);
-    if (fLine) rows = rows.filter(o => o.line_name === fLine);
+    if (fLine) {
+      // กางครอบครัวไลน์เสมอ — MO เก็บชื่อ "ไลน์ลูก" (HDF1/SUB APRON) แต่ dropdown เลือกระดับแม่ (HYDROFORM/LINE APRON ASSY) ได้
+      // เทียบตรงตัวทำให้เลือกแม่แล้วใบของลูกหายหมด (feedback หน้างาน 2026-08-25) · fam ว่าง (ไลน์ไม่อยู่ในทะเบียน) = ถอยไปเทียบตรงตัว
+      const fam = new Set(getLineFamilyNames(lines, fLine));
+      rows = fam.size ? rows.filter(o => fam.has(o.line_name)) : rows.filter(o => o.line_name === fLine);
+    }
     if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
     if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
-  }, [orders, scopeLines, fStatus, fLine, fDept, fText]);
+  }, [orders, scopeLines, fStatus, fLine, fDept, fText, lines]);
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
   // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
@@ -1341,7 +1346,13 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 function KpiTab({ orders, scopeLines, lineObjs = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
-  const rows = useMemo(() => { const since = new Date(); since.setDate(since.getDate() - Number(days)); return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && (!line || o.line_name === line) && new Date(o.report_at) >= since && o.repair_done_at); }, [orders, scopeLines, line, days]);
+  const rows = useMemo(() => {
+    const since = new Date(); since.setDate(since.getDate() - Number(days));
+    // กางครอบครัวไลน์เหมือนลิสต์หลัก — เลือกไลน์แม่ต้องนับใบของไลน์ลูกด้วย (fam ว่าง = ถอยไปเทียบตรงตัว)
+    const fam = line ? new Set(getLineFamilyNames(lineObjs, line)) : null;
+    const inLine = (o) => !line || (fam?.size ? fam.has(o.line_name) : o.line_name === line);
+    return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && o.repair_done_at);
+  }, [orders, scopeLines, line, days, lineObjs]);
   const [openGroup, setOpenGroup] = useState(null);   // กลุ่มที่กางดูหัวข้อย่อยในพาเรโต้
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
