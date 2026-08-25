@@ -1923,6 +1923,7 @@ export default function FactoryMap({ setupMode = false }) {
                 return (
                   <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
                     <div style={{
+                      ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
