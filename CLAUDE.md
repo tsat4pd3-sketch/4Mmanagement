@@ -170,7 +170,7 @@
 | ฝ่ายผลิต | `/improvements` | Improvements (Kaizen — ดู section "Improvements") | ทุก role (manage: admin/mgr/sv/leader) |
 | (ไม่อยู่ใน sidebar) | `/lpa` | LayerProcessAudit — LPA paperless (แท็บใน Daily Checker + deep-link · ดู section "Layer Process Audit") | ทุก role (record: mgr/sv/leader/engineer/qa · manage: mgr/sv · delete: mgr) |
 | Logistic - Store | `/line-stock` | LineStock | ทุก role |
-| Logistic - Store | `/heijunka` | HeijunkaKanban · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) | ทุก role |
+| Logistic - Store | `/heijunka` | HeijunkaKanban · **แถบ 📤 สั่งผลิตไปไลน์ไหน · ทำได้ตามที่มอบหมายไหม (2026-08-24 · คำขอ user "สโตร์ควรเห็น kanban board ของฝ่ายผลิตด้วย"):** `src/components/ProdProgressStrip.jsx` เหนือปุ่มสลับมุมมอง เห็นทุก view — เป้า/ทำได้/% รายไลน์ของวันงาน · **เป็น "สรุปยอด" ไม่ใช่บอร์ด** (กดชื่อไลน์ = เด้งไปบอร์ดตัวจริง) · ตัวเลขผ่าน `orderTotal` (นับคู่ RH/LH ครั้งเดียว + ยุบชั้น OP) · ผลิตได้ = `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` · **ยังไม่เปิดกะ = บอกตรงๆ ห้ามโชว์ 0% แดง** · **ปุ่ม 📊 บอร์ดไลน์ (2026-08-20):** หัวกลุ่มไลน์ทุก view เด้งไปบอร์ด Heijunka จริงที่ไลน์เห็น (`/management?line=X&view=heijunka` — Management รับ deep-link แล้ว เคารพ scope: ไลน์นอก scope ตกไป default) — **ห้ามก๊อปบอร์ด production มา render ซ้ำในหน้านี้** (กัน drift ใช้บอร์ดตัวจริง หลักเดียวกับ FactoryMap→Dashboard) | ทุก role |
 | Logistic - Store | `/rack-center` | RackCenter · **QR เรียกภาชนะ (2026-08-03):** deep-link `?line=&ctype=&qty=` → เปิดฟอร์มกรอกครบ เหลือกดยืนยัน · ปุ่ม 🏷️ ป้าย QR (พิมพ์แผ่น A4 ไลน์×ชนิดภาชนะ — lazy import `qrcode` · doc_key `rack_qr_labels` ผ่าน withDocFoot, migration `20260803_doc_form_rack_qr_labels.sql` Main) · ปุ่ม 📷 สแกน (BarcodeDetector ในแอป + ช่องปืนยิง keyboard-wedge — parse URL ตัวเดียวกัน) · กล้องมือถือสแกนตรงก็ได้ (เปิดลิงก์) | ทุก role |
 | Logistic - Store | `/planner-sales` | PlannerSales | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/rundown-stock` | RundownStock | manager/supervisor/leader/qa/sale/planner_store |
@@ -1019,6 +1019,19 @@ Reject → status: "rejected" + reject_reason
 
 - การจับคู่เลขพาร์ทลูกค้า → mat ภายใน: normalize (ตัด ขีด/ช่องว่าง, uppercase) เทียบ `p_no`
   ใน kanban_standards/dr_products — FG (ขึ้นต้น 1) ชนะ child · จับคู่ไม่ได้ = เก็บด้วยเลขพาร์ทลูกค้าไปก่อน
+> ### 🔴 กฎเหล็ก — เลขพาร์ทลูกค้า 1 ตัว = หลายเลข SAP (ต่างที่ "ลูกค้าปลายทาง") ต้องแยกด้วย ship-to (2026-08-24)
+> **เคสจริง (user ทัก "ออเดอร์ลูกค้าอื่นไม่เห็นเลย มีเจ้าเดียวเรียกงาน"):** `RB3B-16E060-BA` ชี้ได้ 4 เลข
+> `10100384` (FTM) · `10100385` (AAT) · `10106790` (FVL) · `10104955` (FVL unpack) — **FG สะอาดทั้งหมด**
+> ตัวจับคู่ตอนนำเข้า EDI เดิมเก็บ p_no ละ 1 ตัว (ตัวไหนมาก่อนชนะ)
+> ⇒ **ออเดอร์ของทุกลูกค้าไปกองที่เลขเดียว** (ข้อมูลจริง: GRBNA 4,050 + GBL9A 3,300 ลงที่ 10100384 หมด)
+> → เลขอื่นดูเหมือน "ไม่มีใครสั่ง" (ไม่มีใครผลิต) · เลขที่รับไปหมดดูเหมือน "ของจะขาด 11,052" — **ผิดทั้งคู่**
+> - **แยกด้วย `ship_to_plants.customer_name` เทียบ `dr_products.customer`** — master มีอยู่แล้ว
+>   ตั้งที่ 🚚 Delivery → ⚙️ Ship-to Plant Config (เช่น GRBNA → AAT) · **ข้อมูลจริงยังไม่มีใครกรอก ทั้ง 7 code = ชื่อเท่ากับ code**
+> - **ยังไม่ตั้งชื่อ = แยกไม่ออก → คงพฤติกรรมเดิม (FG ตัวแรกชนะ) แต่ต้องขึ้นแถบแดงบอกว่า "เดา"**
+>   ห้ามหยุด import (งานส่งของหยุดทั้งวัน) และห้ามเงียบ (ออเดอร์ไปผิดเลขโดยไม่มีใครรู้)
+> - `matMap` เก็บเป็น **array ของผู้สมัคร** ไม่ใช่ตัวเดียว — จุดใหม่ที่ map p_no → mat ห้ามกลับไปเก็บตัวเดียว
+> - หน้า **ผลิตเทียบความต้องการ** (`/product-history`) เตือนเองเมื่อ "ทั้งกลุ่มมีออเดอร์อยู่เลขเดียว"
+
 - นำเข้า EDI ซ้ำ = **แทนที่ฉบับเดิมของ ship-to เดียวกัน** (ยอดไม่ทบ) เก็บใบที่เลย pending ไปแล้วเสมอ
 - **order เข้าระบบได้ 3 ทาง:** (1) EDI 862 (source `edi_862`) (2) Excel manual mapping (3) ปุ่ม
   "➕ เพิ่ม order ด่วน" บนหน้า Delivery คีย์ทีละใบ (source `manual` · สิทธิ์ `can('shipping','config')` ·
