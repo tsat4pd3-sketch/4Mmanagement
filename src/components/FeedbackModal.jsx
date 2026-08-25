@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
@@ -74,6 +75,15 @@ export default function FeedbackModal({ onClose }) {
         : `ส่งไม่สำเร็จ: ${error.message}`);
       return;
     }
+    notifyEvent({
+      event: 'user_feedback', type: 'info', ref_table: 'user_feedback',
+      actor: fullName || user?.email || null,
+      lines: [
+        (() => { const k = KINDS.find(x => x.key === kind); return k ? `${k.icon} ${k.label}` : kind; })(),
+        `📄 หน้า: ${location.pathname}`,
+        `💬 ${body.slice(0, 400)}`,
+      ],
+    });
     toast.success('ส่งแล้ว ขอบคุณครับ 🙏 ทีมงานจะตามให้');
     setMsg(''); load();
   };

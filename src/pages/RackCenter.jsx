@@ -6,6 +6,7 @@ import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { notifyEvent } from '../utils/notifyEvent';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
@@ -209,6 +210,15 @@ export default function RackCenter() {
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'rack_request', type: 'info', ref_table: 'rack_requests',
+      line_name: form.line_name, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${form.line_name}`,
+        `📦 ${ctype?.name || '—'} · ${qty} ใบ`,
+        form.note.trim() ? `📝 ${form.note.trim()}` : '',
+      ],
+    });
     toast.success('🔔 เรียกภาชนะแล้ว — รอ Rack Center เตรียม');
     setShowForm(false);
     setForm(EMPTY_FORM);
