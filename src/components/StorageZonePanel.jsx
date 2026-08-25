@@ -27,7 +27,7 @@ export default function StorageZonePanel() {
 
   const [zones, setZones] = useState([]);
   const [missing, setMissing] = useState(false);   // ตาราง storage_zones ยังไม่ apply (42P01) — ห้ามเงียบ
-  const [parts, setParts] = useState([]);          // parts_master: mat_no, name, qty_per_pkg
+  const [parts, setParts] = useState([]);          // parts_master: mat_no, part_name, qty_per_pkg
   const [stds, setStds] = useState({});            // mat_no → { min_qty, max_qty, qty_per_kanban }
   const [stockByMat, setStockByMat] = useState({}); // mat_no → qty รวมในคลังกลาง
   const [framed, setFramed] = useState(new Set()); // ชื่อกรอบบนผังรวม (normalize) — บอกว่าโซนไหนตีกรอบแล้ว
@@ -40,7 +40,8 @@ export default function StorageZonePanel() {
     setLoading(true);
     const [zRes, pRes, kRes, sRes, rRes] = await Promise.all([
       supabaseDR.from('storage_zones').select('*').order('sort_order').order('name'),
-      supabaseDR.from('parts_master').select('mat_no, name, qty_per_pkg').eq('is_active', true).order('mat_no'),
+      // ⚠️ parts_master ใช้คอลัมน์ `part_name` ไม่ใช่ `name` (บั๊กจริง 2026-08-25: select name → 42703 เงียบ ลิสต์ค้น MAT ว่างทั้งช่อง)
+      supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true).order('mat_no'),
       supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty, qty_per_kanban').eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', WAREHOUSE_LOCATIONS),
       supabase.from('factory_line_regions').select('line_name'),
@@ -89,7 +90,7 @@ export default function StorageZonePanel() {
     const assigned = new Set(activeZones.flatMap(z => z.mat_nos || []));
     return Object.entries(stockByMat)
       .filter(([mat, qty]) => qty > 0 && !assigned.has(mat))
-      .map(([mat, qty]) => ({ mat, qty, name: partByMat[mat]?.name || '' }))
+      .map(([mat, qty]) => ({ mat, qty, name: partByMat[mat]?.part_name || '' }))
       .sort((a, b) => b.qty - a.qty);
   }, [activeZones, stockByMat, partByMat]);
 
@@ -182,7 +183,7 @@ export default function StorageZonePanel() {
               {f.mats.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {f.mats.slice(0, 6).map(m => (
-                    <span key={m.mat_no} title={partByMat[m.mat_no]?.name || ''} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 6, border: `1px solid ${m.short ? '#e5484d' : 'var(--border)'}`, color: m.short ? '#e5484d' : 'var(--text2)' }}>
+                    <span key={m.mat_no} title={partByMat[m.mat_no]?.part_name || ''} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 6, border: `1px solid ${m.short ? '#e5484d' : 'var(--border)'}`, color: m.short ? '#e5484d' : 'var(--text2)' }}>
                       {m.mat_no} · {m.qty.toLocaleString()}{m.short ? ' 🟥' : m.over ? ' ⚠' : ''}
                     </span>
                   ))}
@@ -256,7 +257,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
     const t = q.trim().toLowerCase();
     const sel = new Set(mats);
     let list = parts.filter(p => !sel.has(p.mat_no));
-    if (t) list = list.filter(p => p.mat_no.toLowerCase().includes(t) || (p.name || '').toLowerCase().includes(t));
+    if (t) list = list.filter(p => p.mat_no.toLowerCase().includes(t) || (p.part_name || '').toLowerCase().includes(t));
     // ของที่มีสต็อกในคลังกลางขึ้นก่อน (คือตัวที่ต้องหาที่เก็บจริง)
     return list.sort((a, b) => (Number(stockByMat[b.mat_no]) || 0) - (Number(stockByMat[a.mat_no]) || 0)).slice(0, 30);
   }, [parts, mats, q, stockByMat]);
@@ -331,7 +332,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
               {options.map(p => (
                 <button key={p.mat_no} onClick={() => { setMats(v => [...v, p.mat_no]); }} style={{ ...btnSec, textAlign: 'left', fontSize: 12, display: 'flex', gap: 8 }}>
                   <b>{p.mat_no}</b>
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || ''}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
                   <span style={{ color: 'var(--muted)' }}>{stockByMat[p.mat_no] ? `คงเหลือ ${Number(stockByMat[p.mat_no]).toLocaleString()}` : '—'}</span>
                 </button>
               ))}

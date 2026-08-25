@@ -127,7 +127,8 @@ const teamName = (v?: string | null): string => TEAM_NAME[teamKey(v)] || String(
       send-notification ซึ่งมี notifyInApp อยู่แล้ว) — user แจ้ง 2026-08-19
 
    ผู้รับ = รวม 2 ทาง (ไม่ซ้ำกัน):
-     1. role ที่ admin ตั้งไว้ที่ /notification-config (`notification_rules.inapp_roles`) — data-driven
+     1. ผู้รับตามทะเบียนที่ /notification-config — **role × ส่วนงาน × แผนก** ผ่าน RPC `notify_recipients`
+        (RPC เดียวกับ edge อื่นทั้งระบบ · ตั้ง "เฉพาะส่วนงานที่เกิดเหตุ" ได้ → ใบของ Line 60 ไม่ไปกวนส่วนงานอื่น)
      2. **ช่างในทีมที่ใบนี้แจ้งถึง** (`profiles.mtn_teams` มีทีมนั้น) — เจาะจงกว่าการยิงทั้ง role
         ทีม DIE MTN ไม่ควรโดนเด้งใบของ JIG MTN
    ⚠️ payload ส่ง mtn_dept มาเป็น "ชื่อทีม" ต้อง teamKey() แปลงเป็นรหัสก่อนเทียบ
@@ -137,6 +138,35 @@ async function usersByRole(roles: string[]): Promise<string[]> {
   if (!roles.length) return [];
   const { data } = await supabase.from('profiles').select('id').in('role', roles);
   return (data ?? []).map((p) => p.id as string);
+}
+// หา section ของไลน์ (ไลน์ลูกไม่ตั้ง section → ตกทอดจากไลน์แม่ ตามกฎ hierarchy ของโปรเจค)
+async function sectionOfLine(lineName?: string | null): Promise<string | null> {
+  if (!lineName || lineName === '-') return null;
+  try {
+    const { data } = await supabase.from('production_lines')
+      .select('section, parent_line_name').eq('name', lineName).maybeSingle();
+    if (data?.section) return String(data.section);
+    if (data?.parent_line_name) {
+      const { data: p } = await supabase.from('production_lines')
+        .select('section').eq('name', data.parent_line_name).maybeSingle();
+      return p?.section ? String(p.section) : null;
+    }
+  } catch { /* หาไม่เจอ = ไม่กรอง ดีกว่าเงียบ */ }
+  return null;
+}
+// ผู้รับตามทะเบียน (role × ส่วนงาน × แผนก) — RPC เดียวกับ edge อื่นทั้งระบบ
+async function usersByRule(event: string, roles: string[], lineName?: string | null): Promise<string[]> {
+  if (!roles.length) return [];
+  try {
+    const { data, error } = await supabase.rpc('notify_recipients',
+      { p_event: event, p_section: await sectionOfLine(lineName) });
+    if (error) throw error;
+    return (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  } catch (e) {
+    console.error('notify_recipients', e);
+    return usersByRole(roles);      // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+  }
 }
 async function usersInTeam(dept?: string | null): Promise<string[]> {
   const want = teamKey(dept);
@@ -166,7 +196,7 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
     //    คนที่ต้องรู้คือ "ผู้แจ้ง" ที่ต้องไปแก้แผนกแล้วส่งใหม่
     const wantTeam = event !== 'mtn_returned';
     const [byRole, byTeam] = await Promise.all([
-      usersByRole(routes[event]?.inappRoles ?? []),
+      usersByRule(event, routes[event]?.inappRoles ?? [], v.line_name),
       wantTeam ? usersInTeam(dept) : Promise.resolve([] as string[]),
     ]);
     // ผู้แจ้งได้รับทุกขั้นเสมอ — ใบของตัวเองเดินไปถึงไหนต้องรู้ (มาจาก mtn_orders.reported_by_uid)

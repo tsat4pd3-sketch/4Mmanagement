@@ -20,6 +20,7 @@ import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
 import QualityBinLinkModal from '../components/QualityBinLinkModal';
+import StoreLotQueue from '../components/StoreLotQueue';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
@@ -29,6 +30,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import { notifyEvent } from '../utils/notifyEvent';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -1479,6 +1481,16 @@ function LiveTab({ role }) {
     setSavingDefect(false);
     if (error) { toast.error(error.message); return; }
     const label = [ng ? `NG ${ng}` : '', suspect ? `สงสัย ${suspect}` : '', repair ? `ซ่อม ${repair}` : ''].filter(Boolean).join(' · ');
+    if (!defectForm.id) notifyEvent({
+      event: 'defect_recorded', type: 'error', ref_table: 'defect_logs',
+      line_name: selSession.line_name, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${selSession.line_name} · ${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · 📅 ${selSession.work_date}`,
+        `🚫 ${defectTypes.find(t => t.id === defectForm.defect_type_id)?.name_th || '(ไม่ระบุประเภท)'}${defectForm.is_trial ? ' 🧪 งานทดลอง' : ''}`,
+        `🔩 ${defectForm.mat_no || '(ไม่ระบุชิ้นงาน)'} · ${label}`,
+        defectForm.description ? `📝 ${defectForm.description}` : '',
+      ],
+    });
     toast.success(defectForm.id ? `แก้ไขงานเสีย: ${label} ✓` : `บันทึกงานเสีย: ${label} ✓`);
     setShowDefect(false);
     setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false });
@@ -2673,6 +2685,11 @@ function LiveTab({ role }) {
                 </>
               );
             })()}
+
+            {/* คิวสั่งผลิตจากสโตร์ (ไลน์ปั๊ม/พาร์ทลูก) — วางเหนือ Prod Orders โดยตั้งใจ:
+                "สโตร์อยากได้อะไร" ต้องมาก่อน "เราเปิดใบอะไรไปแล้ว"
+                ไลน์ที่ไม่มีคิว + ไม่มีของค้าง component จะไม่ render อะไรเลย (ไม่รกจอไลน์ประกอบ) */}
+            <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
 
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
