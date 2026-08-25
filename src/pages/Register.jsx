@@ -202,6 +202,15 @@ export default function Register() {
                   หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
                 </div>
               )}
+              {/* 🔴 เลือก Section แล้วแต่ dropdown แผนกว่าง = ส่วนงานนั้นยังไม่มีแผนกในผังองค์กร
+                  (เคสจริง 2026-08-24: `Planning&Store` มี 0 แผนก · ผังมีแผนกแค่ใต้ PD1-4 + 4 แผนกขึ้นตรงฝ่าย)
+                  เดิมปล่อยว่างเงียบ → คนกรอกนึกว่าระบบพัง ต้องบอกว่าติดตรงไหนและไปแก้ที่ไหน */}
+              {!isOrphanSec && section && deptOpts.length === 0 && (
+                <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                  ⚠️ ส่วนงาน <b>{section}</b> ยังไม่มีแผนกในผังองค์กร — เลือกแผนกไม่ได้จนกว่าจะเพิ่มก่อน
+                  <div style={{ color: 'var(--muted)' }}>เพิ่มที่ <b>ตั้งค่า → ผังองค์กร (/org-setup)</b></div>
+                </div>
+              )}
             </div>
             <div>
               <label style={labelSt}>Team / กะ</label>
