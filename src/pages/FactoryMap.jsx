@@ -1996,6 +1996,55 @@ export default function FactoryMap({ setupMode = false }) {
         let top = hoverXY.y - 40;
         if (top + H > vh - 8) top = vh - H - 8;
         if (top < 8) top = 8;
+        /* 🏬 โซนคลังสินค้า — การ์ด hover เฉพาะคลัง (user ทัก 2026-08-25 "พื้นที่คลังไม่ควรแสดงเหมือนไลน์ผลิต")
+           ห้ามโชว์ metric ผลิต/พลังงาน/PM — ข้อมูลที่มีความหมายคือ ของ/กล่อง/ความจุ/Min-Max */
+        if (st.storeZone) {
+          const z = st.storeZone; const f = z.fill; const km = zoneKindMeta(z.kind);
+          const zm = CAT[z.cat] || CAT.idle;
+          const topMats = f.mats.slice().sort((a, b) => (b.short ? 1 : 0) - (a.short ? 1 : 0) || b.qty - a.qty).slice(0, 4);
+          const row = (label, val, color) => (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '4px 8px' }}>
+              <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{label}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: color || 'var(--text)', textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>{val}</span>
+            </div>
+          );
+          return (
+            <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
+              background: 'var(--card)', border: `1px solid ${zm.color}66`, borderTop: `3px solid ${zm.color}`, borderRadius: 12,
+              boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: '12px 14px', color: 'var(--text)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: zm.color, flexShrink: 0 }} />
+                <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{km.icon} {hoverLine}</div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, marginLeft: 19 }}>
+                โซนคลังสินค้า · {km.label} — <span style={{ color: zm.color, fontWeight: 700 }}>{zoneHealthText(f)}</span>
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {row('📦 ของในโซน', f.mats.length ? `${f.totQty.toLocaleString()} ชิ้น · ${f.unknownPkg ? `${f.totPkgs}+?` : f.totPkgs} กล่อง` : 'ยังไม่ผูก MAT', f.mats.length ? undefined : 'var(--muted)')}
+                {row('🧺 ความจุ', z.capacity_pkg ? `${z.capacity_pkg} กล่อง${f.fillPct != null ? ` · ใช้ไป ${f.fillPct}%` : ''}` : 'ยังไม่กรอก', z.capacity_pkg ? undefined : 'var(--muted)')}
+                {row('🏷 MAT ที่ผูก', `${f.mats.length} รายการ`)}
+                {f.shortCount > 0 && row('🟥 ต่ำกว่า Min', `${f.shortCount} รายการ`, '#ef4444')}
+                {f.overMaxCount > 0 && row('⚠ เกิน Max', `${f.overMaxCount} รายการ`, '#f59e0b')}
+              </div>
+              {topMats.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+                  {topMats.map(m => (
+                    <span key={m.mat_no} style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 6, border: `1px solid ${m.short ? '#ef4444' : 'var(--border2)'}`, color: m.short ? '#ef4444' : 'var(--text2)' }}>
+                      {m.mat_no} · {m.qty.toLocaleString()}
+                    </span>
+                  ))}
+                  {f.mats.length > topMats.length && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>+อีก {f.mats.length - topMats.length}</span>}
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
+                ยอดจาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่นับยอดรายโซนจริง
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8, textAlign: 'center', fontWeight: 700 }}>
+                🏬 คลิกเพื่อดูรายการ MAT ทั้งหมดในโซน
+              </div>
+            </div>
+          );
+        }
         return (
           <div ref={hoverCardRef} style={{ position: 'fixed', left, top, width: W, zIndex: 1250, pointerEvents: 'none',
             background: 'var(--card)', border: `1px solid ${meta.color}66`, borderTop: `3px solid ${meta.color}`, borderRadius: 12,
