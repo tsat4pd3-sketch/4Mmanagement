@@ -553,3 +553,36 @@ select ps.line_name, count(*) confirmed_orders from prod_orders o join productio
 select mat_no, array_agg(line_name order by line_name) locs from line_stock_summary
 where abs(qty_on_hand) > 0 group by mat_no having count(distinct line_name) > 1;
 ```
+
+---
+
+## 🔁 รอบเสริม D1 — โดเมนขาเข้า (Sales/EDI → forecast → แผนผลิต) · agent แยก 2026-08-25
+
+> โดเมนแรกของ workflow ล้มด้วย StructuredOutput cap → รันใหม่เป็น agent แยก (ตรวจโต้แย้งกับโค้ดปัจจุบัน
+> หลัง commit 20-24/8 แล้ว — ข้อที่ session ขนานแก้ไปแล้ว เช่น ship-to disambiguation ไม่รายงานซ้ำ)
+> ได้ 12 ข้อ (แดง 2 · เหลือง 8 · ฟ้า 2) — **แก้ครบทั้ง 12 ใน batch 3 (2026-08-25)**
+
+| # | สี | ไฟล์ | เรื่อง | สถานะ |
+|---|---|---|---|---|
+| D1-1 | 🔴 | `ProductionPlan.jsx` | แผนรายวันตัดออเดอร์ค้างส่งที่เลยดิวทิ้ง — backlog เริ่ม 0 เสมอ ("กะเช้าพอ" ปลอม) | ✅ โหลด pending ย้อน 30 วัน seed เป็น backlog วันแรก + ชิป "⏰ ยกมาจากค้างส่งเก่า N ชิ้น" |
+| D1-2 | 🔴 | `PlannerSales.jsx` | import เดา mat เมื่อ p_no กำกวม + kanban_standards ไม่กรอง is_active + std ชนะ prods (เสีย customer) | ✅ ship-to disambiguation มีอยู่แล้ว (session ขนาน) · เติม is_active + สลับ prods มาก่อน (entry มี customer ชนะ slot) |
+| D1-3 | 🟡 | `PlannerSales.jsx` | ลบ 862 ไม่มีขอบบน — ไฟล์ horizon สั้นลบ pending อนาคตทิ้งถาวร | ✅ เติม `.lte('due_date', edi.dateTo)` (semantics เดียวกับ path 830) |
+| D1-4 | 🟡 | `PlannerSales.jsx` | doApply เขียน kanban_standards ไม่เช็ค error — พังเงียบใต้ toast เขียว | ✅ destructure error + นับแถว + ระบุ mat ที่พลาด |
+| D1-5 | 🟡 | `PlannerSales.jsx` | 🗑 ลบ batch cascade ลบใบ shipped/ประวัติวันเก่า — ประตูหลังของกฎห้ามลบประวัติ | ✅ detach ใบประวัติ (batch_id=null) ก่อนลบ + confirm บอกจำนวน |
+| D1-6 | 🟡 | `DemandVsProduction.jsx` | forecast ไม่ dedup ต่อ source + ก้อน manual รายเดือนถูกอัด 7 วัน → "ของจะขาด" ปลอม | ✅ `dedupeForecastRows` + เกลี่ยตาม grain (edi=7วัน · manual=วันจริงของเดือน) ใน `demandSupply.js` + เทส |
+| D1-7 | 🟡 | `PlannerSales.jsx` (PlannerTab) | แท็บ Forecast Planner บวกทุก source — เลขไม่ตรงกับแท็บ 🎴 ข้างๆ | ✅ ใช้ `dedupeForecastRows` ตัวเดียวกัน (KanbanCalcTab ก็ย้ายมาใช้ helper กลาง) |
+| D1-8 | 🟡 | `ProductionPlan.jsx` | แท็บรายเดือนไม่ dedup source (T2-2 ค้าง) — shiftsNeeded เฟ้อ 2 เท่า | ✅ select source + dedupe ตอนโหลด |
+| D1-9 | 🟡 | `PlannerSales.jsx` (PlannerTab) | โหลด forecast/orders ไม่แบ่งหน้า — horizon 12 เดือนทะลุ 1000 แถว | ✅ fetchAllPages ทั้งคู่ |
+| D1-10 | 🟡 | `PlannerSales.jsx` | คิวรี OEE 90 วัน ("CAP จริง ~") ไม่แบ่งหน้า — กะปิดแล้วทะลุ 1000 | ✅ fetchAllPages |
+| D1-11 | 🟡 | `PlannerSales.jsx` | base-part fallback ตอน import จับคู่ข้าม revision เงียบๆ (เคส EC เข้าเลขเก่า) | ✅ ติดธง `baseMatched` + แถบ 💡 ในพรีวิว EDI ให้คนตรวจก่อนยืนยัน (ระบบเสนอ คนตรวจ) |
+| D1-12 | 🔵 | `PlannerSales.jsx` | dedupe ในไฟล์ 862 ไม่มี PO ใน key — 2 release ต่าง PO slot เดียวกันเหลือใบเดียว | ✅ เติม `|po` ใน key ชั้นในไฟล์ (key เทียบ DB คงเดิม) |
+
+**SQL เช็คขนาดผลกระทบ (DR — optional ให้ user รันดูได้):**
+```sql
+-- D1-1: ออเดอร์ค้างส่งที่เลยดิว (ก้อนที่เดิมหายจากแผน)
+select count(*) n, coalesce(sum(qty),0) pcs from customer_shipping_orders
+  where status <> 'shipped' and due_date < (now() at time zone 'Asia/Bangkok')::date;
+-- D1-6/7/8: mat×เดือนที่มี forecast 2 source ชนกัน (ก้อนที่เคยถูกนับซ้ำ)
+select mat_no, to_char(period_month,'YYYY-MM') m, count(distinct source)
+  from customer_forecasts group by 1,2 having count(distinct source) > 1;
+```

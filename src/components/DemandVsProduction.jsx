@@ -19,7 +19,7 @@ import { supabaseDR } from '../supabaseClient';
 import { fetchAllPages } from '../utils/fetchByIds';
 import DailyBars from './DailyBars';
 import {
-  demandKeysOf, rowMatchesProduct, demandByDay, simulate, prodRate, advise, addDay, demandOf, demandSrcOf,
+  demandKeysOf, rowMatchesProduct, demandByDay, dedupeForecastRows, simulate, prodRate, advise, addDay, demandOf, demandSrcOf,
 } from '../utils/demandSupply';
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
@@ -65,7 +65,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
         fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
           .select('id, mat_no, customer_part_no, qty, due_date, status').gte('due_date', from).lte('due_date', to)),
         fetchAllPages(() => supabaseDR.from('customer_forecasts')
-          .select('id, mat_no, customer_part_no, qty, period_month').gte('period_month', from).lte('period_month', to)),
+          .select('id, mat_no, customer_part_no, qty, period_month, source').gte('period_month', from).lte('period_month', to)),
         fetchAllPages(() => supabaseDR.from('line_stock_summary').select('mat_no, line_name, qty_on_hand'),
           { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
       ]);
@@ -86,7 +86,8 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
          → นับเข้า mat ที่ระบบบันทึกไว้จริงเท่านั้น (mat_no ตรง) ส่วนที่อ้างเลขลูกค้าล้วน
             ยกไปเป็น "ของกลุ่ม" แล้วรายงานแยก ไม่เดาว่าเป็นของใคร */
       const mine = (rows, f) => rows.filter((r) => normK(r.mat_no) === normK(p.mat_no) && (!f || f(r)));
-      const D = demandByDay(mine(raw.orders), mine(raw.fcs));
+      // dedupe ข้าม source (edi ชนะ manual ต่อเดือน) ก่อนเกลี่ยรายวัน — กันนับซ้ำ 2 grain
+      const D = demandByDay(mine(raw.orders), dedupeForecastRows(mine(raw.fcs)));
       const stRows = raw.stock.filter((r) => normK(r.mat_no) === normK(p.mat_no));
       const stock = stRows.length ? stRows.reduce((a, r) => a + (Number(r.qty_on_hand) || 0), 0) : null;
       const pbd = prodByDay?.[p.mat_no] || {};
