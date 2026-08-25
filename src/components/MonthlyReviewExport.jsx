@@ -100,7 +100,13 @@ export default function MonthlyReviewExport({ onClose }) {
   });
 
   const selSections = useMemo(() =>
-    tree.map(s => ({ code: s.code, lines: linesOfSec(s).filter(l => selLines.has(l)) })).filter(s => s.lines.length),
+    tree.map(s => ({
+      code: s.code,
+      lines: linesOfSec(s).filter(l => selLines.has(l)),
+      // ชื่อไลน์แม่ (กลุ่ม) ที่มี leaf ถูกติ๊ก — builder ใช้จับข้อมูลเสริมที่อ้างชื่อไลน์แม่
+      // (LPA/เครื่อง PM/MO/4M มักผูกกับไลน์แม่ ไม่ใช่ไลน์ลูกที่เปิดกะ) · optional ไม่กระทบสัญญาเดิม
+      groups: s.groups.filter(g => g.lines.some(l => selLines.has(l))).map(g => g.name),
+    })).filter(s => s.lines.length),
   [tree, selLines]);
   const totalSel = useMemo(() => selSections.reduce((a, s) => a + s.lines.length, 0), [selSections]);
 

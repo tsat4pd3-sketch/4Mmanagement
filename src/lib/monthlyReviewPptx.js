@@ -110,6 +110,10 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
 
   const allLineNames = sections.flatMap(s => s.lines);
   if (!allLineNames.length) throw new Error('ไม่มีไลน์ใน scope ที่เลือก');
+  // ชื่อไลน์แม่ (กลุ่ม) จาก modal — ข้อมูลเสริมหลายตัวผูกกับชื่อไลน์แม่ ไม่ใช่ไลน์ลูกที่เปิดกะ
+  // (LPA ตั้งแผนที่ระดับกลุ่ม · เครื่อง PM ลงทะเบียนใต้ไลน์แม่ · MO/4M บางใบอ้างไลน์แม่)
+  // sections.groups เป็น optional — caller เก่าที่ไม่ส่งมา = พฤติกรรมเดิม (จับเฉพาะไลน์ leaf)
+  const matchNames = [...new Set([...allLineNames, ...sections.flatMap(s => s.groups || [])])];
 
   // กะที่ปิดแล้วของเดือน (ค่า OEE stamp ตอนปิดกะ — ห้ามคำนวณซ้ำ)
   const sessions = await fetchAll(
@@ -175,7 +179,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   try { // ใบซ่อม MO ที่ยังค้าง ณ ตอนสร้างรายงาน (คิวงาน MTN ที่ผู้แจ้ง/ช่างลงไว้)
     const { data } = await supabaseDR.from('mtn_orders')
       .select('id, mo_no, machine_no, line_name, status, report_at, created_at')
-      .in('line_name', allLineNames)
+      .in('line_name', matchNames)
       .not('status', 'in', '("closed","rejected")');
     moOpenAll = data || [];
   } catch { /* ข้าม */ }
@@ -189,15 +193,47 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     const { data } = await supabase.from('four_m_logs')
       .select('id, line_name, category, status')
       .gte('work_date', from).lte('work_date', to)
-      .in('line_name', allLineNames);
+      .in('line_name', matchNames);
     fourMAll = data || [];
   } catch { /* ข้าม */ }
   try { // โปรเจคปรับปรุง (Kaizen) ที่กำลังติดตามผล — action ระยะยาวที่เปิดไว้แล้ว (+รูปก่อน/หลัง)
     const { data } = await supabaseDR.from('improvements')
       .select('id, title, problem_label, line_name, status, image_before_url, image_after_url')
       .eq('status', 'monitoring')
-      .in('line_name', allLineNames);
+      .in('line_name', matchNames);
     impsAll = data || [];
+  } catch { /* ข้าม */ }
+  // 💬 หมายเหตุปิดกะ — หัวหน้ากะอธิบายเอง (close_request_note) + remark ผู้อนุมัติ (close_approve_note)
+  //    คอลัมน์ additive อาจยังไม่ apply → แยกก้อน best-effort ห้ามพ่วงใน select หลัก (42703 = sessions ล่มทั้งเด็ค)
+  let closeNotes = [];
+  try {
+    const r = await fetchByIds(sessIds, c => supabaseDR.from('production_sessions')
+      .select('id, line_name, work_date, shift, close_request_note, close_approve_note').in('id', c));
+    closeNotes = (r.rows || []).filter(s => String(s.close_request_note || '').trim() || String(s.close_approve_note || '').trim());
+  } catch { /* ข้าม */ }
+  // 📋 LPA (Main) — ครั้งตรวจของเดือน + ข้อที่ตอบ N/T (note = รายละเอียดปัญหา บังคับกรอกตอนตรวจ)
+  let lpaAll = [];
+  try {
+    const { data } = await supabase.from('lpa_audits')
+      .select('id, audit_date, line_name, shift, layer, station, lpa_audit_answers(question_text, answer, note)')
+      .gte('audit_date', from).lte('audit_date', to)
+      .in('line_name', matchNames);
+    lpaAll = data || [];
+  } catch { /* ข้าม */ }
+  // 🛠 ตรวจ PM/AM ที่พบผิดปกติ (inspections.status เทียบตรงตัว fail/warning ตามกฎ — ห้าม regex)
+  //    เครื่อง (jigs) มักลงทะเบียนใต้ไลน์แม่ → ใช้ matchNames
+  let pmFailAll = []; const pmJigById = {};
+  try {
+    const { data: jigRows } = await supabaseDR.from('jigs').select('id, name, line_name').in('line_name', matchNames);
+    (jigRows || []).forEach(j => { pmJigById[j.id] = j; });
+    const jigIds = (jigRows || []).map(j => j.id);
+    if (jigIds.length) {
+      const r = await fetchByIds(jigIds, c => supabaseDR.from('inspections')
+        .select('id, jig_id, status, inspected_at, notes')
+        .in('jig_id', c).in('status', ['fail', 'warning'])
+        .gte('inspected_at', from).lte('inspected_at', `${to}T23:59:59`));
+      pmFailAll = r.rows || [];
+    }
   } catch { /* ข้าม */ }
 
   /* ── aggregate ต่อกลุ่มไลน์ ── */
@@ -347,7 +383,9 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       return { name: ln, ...la, output: lo, dtHr: ld.dtHr, ppm: ppmOf(ls, lo), dtGroups: dtGroupsOf(ld.unplanned) };
     }).filter(l => l.nSess > 0);
     /* ── ข้อมูลที่ user ลงในโมดูลอื่น ผูกเข้าส่วนงานนี้ ── */
-    const inLines = (ln) => sec.lines.includes(ln);
+    // จับทั้งชื่อไลน์ leaf และชื่อไลน์แม่ (กลุ่ม) — ข้อมูลเสริมหลายตัวอ้างไลน์แม่
+    const secNameSet = new Set([...sec.lines, ...(sec.groups || [])]);
+    const inLines = (ln) => secNameSet.has(ln);
     const secKey = sec.code.trim().toLowerCase();
     // ใบซ่อม MO ค้าง — pending ล้วน = ยังไม่มีใครรับงาน (OPEN)
     const mos = moOpenAll.filter(o => inLines(o.line_name));
@@ -368,6 +406,30 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
     const byCat = {};
     fms.forEach(f => { byCat[f.category] = (byCat[f.category] || 0) + 1; });
     const fourM = fms.length ? { total: fms.length, byCat, pending: fms.filter(f => ['pending', 'pending_qa'].includes(f.status)).length } : null;
+    // 💬 หมายเหตุปิดกะ — คำอธิบายจริงจากหัวหน้ากะว่าทำไมยอด/เวลาเป็นแบบนี้ (กะเป็นของไลน์ leaf เสมอ)
+    const cns = closeNotes.filter(s => sec.lines.includes(s.line_name))
+      .sort((a, b) => String(a.work_date || '').localeCompare(String(b.work_date || '')));
+    const shiftNotes = cns.length ? {
+      count: cns.length,
+      items: cns.slice(-3).map(s => ({
+        date: s.work_date, line: s.line_name, shift: s.shift,
+        req: cut(s.close_request_note, 80), appr: cut(s.close_approve_note, 60),
+      })),
+    } : null;
+    // 📋 LPA — ครั้งตรวจ + ข้อ N/T (ไม่มีครั้งตรวจเลย = null ไม่ใช่ "ผ่านหมด")
+    const lpAud = lpaAll.filter(a => inLines(a.line_name));
+    const lpaNt = lpAud.flatMap(a => (a.lpa_audit_answers || [])
+      .filter(x => x.answer === 'N' || x.answer === 'T')
+      .map(x => ({ date: a.audit_date, line: a.line_name, layer: a.layer, station: a.station,
+                   q: cut(x.question_text, 60), note: cut(x.note, 60), answer: x.answer })));
+    const lpa = lpAud.length ? { audits: lpAud.length, nt: lpaNt.length, items: lpaNt.slice(0, 3) } : null;
+    // 🛠 ตรวจ PM/AM พบผิดปกติ (fail/warning)
+    const pfs = pmFailAll.filter(i => inLines(pmJigById[i.jig_id]?.line_name));
+    const pmFail = pfs.length ? {
+      count: pfs.length,
+      equips: [...new Set(pfs.map(i => pmJigById[i.jig_id]?.name).filter(Boolean))].slice(0, 3),
+      sample: pfs.map(i => i.notes).find(Boolean) || null,
+    } : null;
     // โปรเจค Kaizen ที่กำลังติดตามผล (+รูปก่อน/หลัง)
     const imps = impsAll.filter(i => inLines(i.line_name)).map(i => ({
       title: i.title || i.problem_label || '', before: i.image_before_url, after: i.image_after_url,
@@ -389,6 +451,7 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       lines, dtGroups: dtGroupsOf(unplanned), defGroups: defGroupsOf(ss),
       fixCov: fixCoverage(unplanned), machineTop: machineStatsOf(unplanned),
       moOpen, act, fourM, imps, photoPairs: photoPairs.slice(0, 3),
+      shiftNotes, lpa, pmFail,
     };
   }).filter(d => d.nSess > 0);
 
@@ -445,6 +508,15 @@ function deptStory(d) {
   }
   const topDt = d.dtGroups[0];
   if (topDt) out.push(`Top downtime: ${topDt.name} ${hr1(topDt.min)}h (${topDt.count} events, ${topDt.fixed}/${topDt.count} with countermeasure) — owner confirms closure in daily meeting.`);
+  // LPA — มีครั้งตรวจถึงพูด (ไม่มีเลย = ไม่อ้างว่าผ่าน)
+  if (d.lpa) out.push(d.lpa.nt
+    ? `LPA: ${d.lpa.audits} audits — ${d.lpa.nt} N/T findings (top: ${d.lpa.items[0]?.q || '—'}).`
+    : `LPA: ${d.lpa.audits} audits this month — no N/T findings.`);
+  // หมายเหตุปิดกะ — เสียงจริงจากหัวหน้ากะ (กะล่าสุดก่อน)
+  if (d.shiftNotes) {
+    const last = d.shiftNotes.items[d.shiftNotes.items.length - 1];
+    out.push(`Shift-close notes: ${d.shiftNotes.count} shifts flagged by leaders — latest: «${last?.req || last?.appr || '—'}» (${last?.line || ''} ${String(last?.date || '').slice(5)}).`);
+  }
   return out;
 }
 function lineReadout(l) {
@@ -476,12 +548,15 @@ function issueRowsOf(d, NEXT) {
       status: 'ON GOING',
     });
   }
-  d.dtGroups.slice(0, 2).forEach(g => {
+  // ลำดับแถว = หนึ่งแถวต่อแหล่งข้อมูลก่อน (breadth) แล้วค่อยแถวเสริม — สไลด์โชว์ 8 แถวแรก ที่เหลือขึ้น "+อีก N"
+  const dtRowOf = (g) => {
     const withFix = g.items.find(it => it.fix);
     const issue = `${g.name} ${hr1(g.min)}h / ${g.count} ครั้ง`;
-    if (withFix) rows.push({ issue, action: `${withFix.fix}${g.fixed > 1 ? ` (+อีก ${g.fixed - 1} รายการลงวิธีแก้แล้ว)` : ''}`, status: g.fixed >= g.count ? 'CLOSED' : 'ON GOING' });
-    else rows.push({ issue, action: 'ยังไม่ลงวิธีแก้ในระบบ — มอบหมายเจ้าของใน daily meeting', status: 'OPEN' });
-  });
+    return withFix
+      ? { issue, action: `${withFix.fix}${g.fixed > 1 ? ` (+อีก ${g.fixed - 1} รายการลงวิธีแก้แล้ว)` : ''}`, status: g.fixed >= g.count ? 'CLOSED' : 'ON GOING' }
+      : { issue, action: 'ยังไม่ลงวิธีแก้ในระบบ — มอบหมายเจ้าของใน daily meeting', status: 'OPEN' };
+  };
+  if (d.dtGroups[0]) rows.push(dtRowOf(d.dtGroups[0]));
   const chronic = (d.machineTop || []).find(mch => mch.count >= 3);
   if (chronic) {
     rows.push({
@@ -509,6 +584,32 @@ function issueRowsOf(d, NEXT) {
       status: d.moOpen.allPending ? 'OPEN' : 'ON GOING',
     });
   }
+  // 📋 LPA พบข้อไม่สอดคล้อง — note คือรายละเอียดปัญหาที่ผู้ตรวจลงไว้ (LPA ไม่มีช่องวิธีแก้ → OPEN เสมอ)
+  if (d.lpa?.nt) {
+    const it = d.lpa.items[0];
+    rows.push({
+      issue: `LPA พบ N/T ${d.lpa.nt} ข้อ จาก ${d.lpa.audits} ครั้งตรวจ${it ? ` — ${it.q}${it.note ? ` (${it.note})` : ''}` : ''}`,
+      action: 'ยังไม่มีบันทึกการแก้ในระบบ — หัวหน้าไลน์ตามปิด + ทวนใน LPA รอบถัดไป',
+      status: 'OPEN',
+    });
+  }
+  // 🛠 ตรวจ PM/AM พบผิดปกติ (fail/warning) — เครื่องที่ผู้ตรวจติ๊กไม่ผ่านเอง
+  if (d.pmFail?.count) {
+    rows.push({
+      issue: `ตรวจ PM/AM พบผิดปกติ ${d.pmFail.count} รายการ${d.pmFail.equips.length ? ` (${d.pmFail.equips.join(', ')})` : ''}${d.pmFail.sample ? ` — ${cut(d.pmFail.sample, 50)}` : ''}`,
+      action: 'ออกใบซ่อม MO / แก้ให้จบแล้วตรวจซ้ำ',
+      status: 'OPEN',
+    });
+  }
+  // 💬 หมายเหตุปิดกะ — issue = ข้อความหัวหน้ากะ · action = remark ผู้อนุมัติ (ข้อความจริงทั้งคู่ ไม่แต่งแทน)
+  if (d.shiftNotes?.count) {
+    const last = d.shiftNotes.items[d.shiftNotes.items.length - 1];
+    rows.push({
+      issue: `หัวหน้ากะลงหมายเหตุปิดกะ ${d.shiftNotes.count} กะ — «${last?.req || last?.appr || '—'}» (${last?.line || ''} ${String(last?.date || '').slice(5)})`,
+      action: last?.appr ? `SV: ${last.appr}` : 'ทวนสาเหตุในประชุมเช้า + ผูกเป็น action item',
+      status: last?.appr ? 'ON GOING' : 'OPEN',
+    });
+  }
   // action item จากประชุมแถวเช้า — สิ่งที่ทีมรับปากไว้เอง
   if (d.act?.open) {
     rows.push({
@@ -517,6 +618,8 @@ function issueRowsOf(d, NEXT) {
       status: d.act.overdue ? 'OPEN' : 'ON GOING',
     });
   }
+  // แถวเสริม (second tier): DT อันดับ 2 · fix coverage · Kaizen — โผล่เมื่อสไลด์ยังมีที่
+  if (d.dtGroups[1]) rows.push(dtRowOf(d.dtGroups[1]));
   if (d.fixCov.total && d.fixCov.fixed < d.fixCov.total) {
     rows.push({
       issue: `ลงวิธีแก้แล้ว ${d.fixCov.fixed}/${d.fixCov.total} รายการหยุดนอกแผน`,
@@ -752,7 +855,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
         { y: 2.95, rowH: 0.36 });
       const tableEnd = 2.95 + (showLines.length + 1) * 0.38 + 0.2;
       const room = 6.8 - tableEnd;
-      const nB = Math.max(1, Math.min(3, Math.floor(room / 0.4)));
+      const nB = Math.max(1, Math.min(5, Math.floor(room / 0.4))); // deptStory มีถึง 6 หัวข้อแล้ว (รวม LPA/หมายเหตุปิดกะ) — โชว์เท่าที่ที่เหลือพอ
       bullets(s, deptStory(d).slice(0, nB), 0.6, tableEnd, 12.1, 11.5);
       footer(s);
     }
@@ -823,13 +926,14 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       const s = newSlide();
       head(s, `${d.code} ISSUE & ACTION`, `ANSWERED FROM CENTRALIZED SHOPFLOOR DATA — ${MON}`);
       const allRows = issueRowsOf(d, NEXT);
-      const rows = allRows.slice(0, 7).map(rw => [
+      // 8 แถว × 0.56" — จบก่อน footer (7.05) · แหล่งละแถวเรียงก่อน (issueRowsOf) ที่เหลือขึ้น "+อีก N"
+      const rows = allRows.slice(0, 8).map(rw => [
         rw.issue, cut(rw.action, 150), STATUS_CELL[rw.status] || rw.status,
       ]);
       tsgTable(s, ['Issue (จากการวิเคราะห์ข้อมูล)', 'Action (จากหน้างาน + MO + ประชุมเช้า + Kaizen)', 'Status'], rows,
-        { y: 1.72, rowH: 0.62, headRowH: 0.32, colW: [4.6, 6.5, 1.2], fontSize: 9.5, leftCols: [1] });
+        { y: 1.72, rowH: 0.56, headRowH: 0.32, colW: [4.6, 6.5, 1.2], fontSize: 9.5, leftCols: [1] });
       s.addText(`Issue คำนวณจากบันทึกจริงทั้งเดือน · Action คือข้อความที่หัวหน้างาน/ช่างลงในระบบ — แถว OPEN = ยังไม่มีใครลงวิธีแก้ ต้องมอบหมายในที่ประชุมนี้${allRows.length > rows.length ? ` · +อีก ${allRows.length - rows.length} ประเด็นดูในระบบ` : ''}`,
-        { x: 0.6, y: 1.72 + 0.32 + rows.length * 0.62 + 0.15, w: 12.1, h: 0.35, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
+        { x: 0.6, y: 1.72 + 0.32 + rows.length * 0.56 + 0.12, w: 12.1, h: 0.35, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
       footer(s);
     }
   });
@@ -857,7 +961,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       `${NEXT} priority: ${worstLine.name} OEE ${pct(worstLine.oee)} — attack ${worstLine.dtGroups[0]?.name || lowestDriver(worstLine) + ' loss'} first, report as A/P/Q movement next month.`,
     ], 0.6, Math.min(tblEnd + 0.15, 6.15), 12.1, 12);
     // 🎯 จุดขาย: ทั้งเด็คตอบจากข้อมูลกลางชุดเดียว — บันทึกหน้างานครั้งเดียว ไหลถึงห้องประชุมเอง
-    s.addText('All issues & actions in this deck are answered from ESM centralized shopfloor records — downtime · countermeasures · MO work orders · defects · morning-meeting actions · 4M changing points · kaizen projects — entered once at the line, no manual collation.',
+    s.addText('All issues & actions in this deck are answered from ESM centralized shopfloor records — downtime · countermeasures · MO work orders · defects · morning-meeting actions · 4M changing points · kaizen projects · shift-close notes · LPA audits · PM/AM inspections — entered once at the line, no manual collation.',
       { x: 0.6, y: 6.55, w: 12.1, h: 0.3, fontFace: FONT, fontSize: 10, italic: true, color: C.grey, align: 'left', margin: 0 });
     footer(s);
   }
