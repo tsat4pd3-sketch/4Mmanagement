@@ -8,6 +8,7 @@ import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import { addMinutes, timeStrToMs, dayFrameMs, roundDeliveryMin, getRoundStatus } from '../utils/deliveryRounds';
 import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
+import ProdProgressStrip from '../components/ProdProgressStrip';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -1134,6 +1135,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
 export default function HeijunkaKanban() {
   const { fullName, role } = useContext(UserContext);
+  const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
@@ -1800,6 +1802,11 @@ export default function HeijunkaKanban() {
 
       {/* Smart Scheduling Planner */}
       <PlannerStrip rounds={rounds} deliveries={deliveries} roundAlloc={view.roundAlloc} workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} />
+
+      {/* Store ต้องเห็นด้วยว่า "สั่งผลิตไปไลน์ไหน ทำได้ตามที่มอบหมายไหม" ไม่ใช่เห็นแค่ฝั่งเบิก-ส่ง
+          (สรุปยอดเท่านั้น — บอร์ดตัวจริงอยู่ที่ฝ่ายผลิต กดชื่อไลน์แล้วเด้งไป ห้าม render ซ้ำที่นี่) */}
+      <ProdProgressStrip workDate={workDate}
+        onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
 
       {/* View mode toggle */}
       {/* flexWrap: จอแคบปุ่มสลับมุมมองตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม) */}

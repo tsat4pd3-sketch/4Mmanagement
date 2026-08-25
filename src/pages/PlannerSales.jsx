@@ -184,30 +184,62 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         ediFiles.forEach(f => f.rows.forEach(r => byKey.set(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`, r)));
         const rows2 = [...byKey.values()];
         if (!rows2.length) { toast.error('ไม่พบรายการที่มีจำนวน > 0 ในไฟล์ EDI'); return; }
-        // map Part Num ลูกค้า → mat_no ภายใน ผ่าน p_no (normalize ตัด ขีด/ช่องว่าง) — FG (ขึ้นต้น 1) ชนะ child
+        /* map Part Num ลูกค้า → mat_no ภายใน ผ่าน p_no (normalize ตัด ขีด/ช่องว่าง)
+           ⚠️ เลขพาร์ทลูกค้าตัวเดียว **มีได้หลายเลข SAP** — ต่างกันที่ "ลูกค้าปลายทาง"
+              ข้อมูลจริง 2026-08-24: `RB3B-16E060-BA` → 10100384 (FTM) · 10100385 (AAT)
+              · 10106790 (FVL) · 10104955 (FVL unpack)  = 4 เลข ทั้งหมดเป็น FG สะอาด
+              เดิมเก็บ p_no ละ 1 ตัว (ตัวไหนมาก่อนชนะ) ⇒ **ออเดอร์ของทุกลูกค้าไปกองที่เลขเดียว**
+              → เลขอื่นดูเหมือนไม่มีใครสั่ง (ไม่ผลิต) ส่วนเลขที่รับไปหมดดูเหมือนของจะขาด = ตัดสินใจผิดทั้งคู่
+           → แยกด้วย **ship-to → ชื่อลูกค้า** (`ship_to_plants.customer_name` เทียบ `dr_products.customer`)
+              ตั้งค่าที่ 🚚 Delivery → ⚙️ Ship-to Plant Config (เช่น GRBNA → AAT)
+           ⚠️ ยังไม่ได้ตั้งชื่อลูกค้า = แยกไม่ออก → คงพฤติกรรมเดิม (FG ตัวแรกชนะ) **แต่ต้องรายงานว่าเดา**
+              ห้ามเงียบ และห้ามหยุด import (ไม่งั้นงานส่งของหยุดทั้งวัน) */
         const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const [{ data: stds }, { data: prods }] = await Promise.all([
+        const [{ data: stds }, { data: prods }, { data: shipTos }] = await Promise.all([
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').not('p_no', 'is', null),
-          supabaseDR.from('dr_products').select('mat_no, p_no, name').eq('is_active', true).not('p_no', 'is', null),
+          supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null),
+          supabaseDR.from('ship_to_plants').select('code, customer_name'),
         ]);
+        // ship-to code → ชื่อลูกค้า (ยังไม่ตั้ง = customer_name เท่ากับ code เอง → ถือว่า "ไม่รู้")
+        const custOfShipTo = {};
+        (shipTos || []).forEach(t => {
+          const cn = String(t.customer_name || '').trim();
+          if (cn && norm(cn) !== norm(t.code)) custOfShipTo[String(t.code)] = norm(cn);
+        });
         const matMap = {}, baseMap = {};
-        const put = (pno, mat, name) => {
+        const put = (pno, mat, name, customer) => {
           const k = norm(pno);
           if (!k || !mat) return;
-          const cur = matMap[k];
-          if (!cur || (!isFgMat(cur.mat_no) && isFgMat(mat))) matMap[k] = { mat_no: mat, name };
+          const list = (matMap[k] = matMap[k] || []);
+          if (!list.some(e => e.mat_no === mat)) list.push({ mat_no: mat, name, customer: norm(customer) });
           // ดัชนี base part (ตัด revision) สำหรับ fallback — เก็บทุกตัวเพื่อเช็คกำกวม
           const b = baseOfPart(pno);
           if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }
         };
-        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name));
-        (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name));
+        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
+        (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name, x.customer));
+        // FG (ขึ้นต้น 1) ชนะ child เสมอ — เรียงให้ FG มาก่อนในทุกลิสต์
+        Object.values(matMap).forEach(l => l.sort((a, b) => (isFgMat(b.mat_no) ? 1 : 0) - (isFgMat(a.mat_no) ? 1 : 0)));
         const unmatched = new Set();
+        const guessed = new Map();     // part → { shipTos:Set, mats:[...] } = แยกลูกค้าไม่ออก ต้องตั้ง ship-to
         const records = rows2.map(r => {
-          let hit = matMap[norm(r.part)];
+          const cands = matMap[norm(r.part)] || [];
+          let hit = null;
+          if (cands.length === 1) hit = cands[0];
+          else if (cands.length > 1) {
+            const want = custOfShipTo[r.shipTo];
+            const byCust = want ? cands.filter(c => c.customer && c.customer === want) : [];
+            if (byCust.length === 1) hit = byCust[0];
+            else {
+              hit = cands[0];                                   // เดาตัวแรก (FG ก่อน) แบบเดิม — แต่แจ้ง
+              const g = guessed.get(r.part) || { shipTos: new Set(), mats: cands.map(c => c.mat_no) };
+              g.shipTos.add(r.shipTo);
+              guessed.set(r.part, g);
+            }
+          }
           if (!hit) {                                   // fallback: จับ base part เฉพาะที่ชัดตัวเดียว (กำกวม = ไม่เดา)
-            const cands = baseMap[baseOfPart(r.part)];
-            if (cands && cands.length === 1) hit = cands[0];
+            const bc = baseMap[baseOfPart(r.part)];
+            if (bc && bc.length === 1) hit = bc[0];
           }
           if (!hit) unmatched.add(r.part);
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
@@ -216,6 +248,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           kind: is862 ? 'orders' : 'forecast',
           files: ediFiles.map(f => f.fName),
           records, unmatched: [...unmatched],
+          ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats })),
           shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
           dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
           dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
@@ -473,6 +506,26 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                       <span key={pn} style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
                     ))}
                   </div>
+                </div>
+              )}
+              {/* เลขพาร์ทลูกค้าเดียวมีหลายเลข SAP (ต่างที่ลูกค้าปลายทาง) แล้วยังแยกไม่ออก
+                  → ระบบยังเดาให้เพื่อไม่ให้งานส่งของหยุด แต่ต้องบอกให้ชัดว่าเดา ไม่งั้นออเดอร์ทุกเจ้าไปกองเลขเดียว */}
+              {edi.ambiguous?.length > 0 && (
+                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                    🔴 {edi.ambiguous.length} พาร์ท แยกลูกค้าไม่ออก — ออเดอร์ทุกเจ้าจะไปกองที่เลข SAP เดียว
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
+                    เลขพาร์ทลูกค้าตัวเดียวมีหลายเลข SAP (ต่างกันที่ลูกค้าปลายทาง) แต่ ship-to ยังไม่ได้ตั้งชื่อลูกค้า
+                    → ระบบเลือกตัวแรกให้ก่อน <b>เลขที่เหลือจะดูเหมือนไม่มีใครสั่ง</b> · แก้ที่
+                    <b> 🚚 Delivery → ⚙️ Ship-to Plant Config</b> (ตั้งชื่อลูกค้าให้ code เช่น GRBNA → AAT) แล้วอัพไฟล์ใหม่
+                  </div>
+                  {edi.ambiguous.slice(0, 6).map(a => (
+                    <div key={a.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>
+                      {a.part} · ship-to {a.shipTos.join(',')} → {a.mats.join(' | ')}
+                    </div>
+                  ))}
+                  {edi.ambiguous.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
