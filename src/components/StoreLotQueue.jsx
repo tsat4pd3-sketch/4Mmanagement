@@ -64,8 +64,10 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
     try {
       // 1) คิวใบสั่งที่ยังไม่ปิด — ทั้งระบบมีหลักสิบแถว ดึงมาแล้วกรองครอบครัวไลน์ฝั่ง client
       //    (`source_line` เป็น text snapshot — `.in()` ตรงตัวพลาดง่ายเมื่อชื่อไลน์เคยถูกแก้)
+      //    ⚠️ ต้องตัด `cancelled` ด้วย — ใบยกเลิกไม่ใช่งานค้าง (25/08 มี 100 ใบจากบั๊กหน่วย lot_size)
+      //    ปล่อยไว้ = ไลน์ปั๊มเห็นคิวปลอมเต็มจอ (บั๊กเดียวกับที่เพิ่งแก้ที่บอร์ดสโตร์)
       const { data: lotRows, error: e1 } = await supabaseDR.from('child_lot_requests')
-        .select('*').neq('status', 'done').order('created_at', { ascending: true }).limit(500);
+        .select('*').not('status', 'in', '("done","cancelled")').order('created_at', { ascending: true }).limit(500);
       if (e1) throw e1;
       const mine = (lotRows || []).filter(l => famSet.has(norm(l.source_line)));
       mine.sort((a, b) => {

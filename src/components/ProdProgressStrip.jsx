@@ -17,13 +17,25 @@ import { RATE } from '../utils/refreshRates';
    • เป้า    = `qty_target ?? qty`
    • งานคู่ RH/LH นับเป็น 1 ครั้งปั๊ม + ยุบชั้น OP เข้าพาร์ทจริง → `orderTotal(...)`
    • ยังไม่เปิดกะ = บอกตรงๆ ห้ามโชว์ 0% แดง (ไม่ใช่ว่าไลน์ทำไม่ได้ แต่ยังไม่เริ่ม)
+
+   ⚠️ **พับเก็บเป็นค่าเริ่มต้น** (user 2026-08-25: "ดูรก และอะไรเยอะไปหมด") — 15 ไลน์ = 15 การ์ด
+      ดันเนื้อหาจริงของหน้า Store ลงไปครึ่งจอ · แถวสรุป (รวม X/Y ชิ้น + ไลน์ที่ตามหลัง)
+      ยังเห็นตลอด **ห้ามซ่อนตัวเลขรวม** — พับแค่รายไลน์
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const fmt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
+const OPEN_KEY = 'esm_prod_strip_open';
 
 export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenLine }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
+  });
+  const toggle = () => setOpen(o => {
+    try { localStorage.setItem(OPEN_KEY, o ? '0' : '1'); } catch { /* private mode */ }
+    return !o;
+  });
 
   const load = useCallback(async () => {
     try {
@@ -82,19 +94,31 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
   const totPct = tot.target > 0 ? (tot.made / tot.target) * 100 : null;
   const col = (p) => (p == null ? 'var(--muted)' : p >= 100 ? '#22c55e' : p >= 85 ? '#f59e0b' : '#ef4444');
 
+  // ไลน์ที่ยังตามหลัง (<85%) — เลขนี้ต้องเห็นแม้พับอยู่ ไม่งั้นพับแล้วปัญหาหายไปด้วย
+  const behind = d.lines.filter(l => l.pct != null && l.pct < 85).length;
+
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: d.lines.length ? 8 : 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-display)' }}>📤 สั่งผลิตไปไลน์ไหน · ทำได้ตามที่มอบหมายไหม</span>
+      <div onClick={toggle} style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', cursor: 'pointer', marginBottom: open && d.lines.length ? 8 : 0 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-display)' }}>
+          {open ? '▾' : '▸'} 📤 สั่งผลิตไปไลน์ไหน · ทำได้ตามที่มอบหมายไหม
+        </span>
         {totPct != null && (
           <span style={{ fontSize: 12, fontWeight: 800, color: col(totPct) }}>
             รวม {fmt(tot.made)}/{fmt(tot.target)} ชิ้น ({totPct.toFixed(0)}%)
           </span>
         )}
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>วันงาน {workDate} · กดชื่อไลน์เพื่อเปิดบอร์ดจริงของไลน์นั้น</span>
+        {!open && behind > 0 && (
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444' }}>· ตามหลัง {behind} ไลน์</span>
+        )}
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+          วันงาน {workDate}
+          {d.noShift ? ' · ยังไม่มีไลน์ไหนเปิดกะ'
+            : open ? ' · กดชื่อไลน์เพื่อเปิดบอร์ดจริงของไลน์นั้น' : ` · แตะดูรายไลน์ (${d.lines.length})`}
+        </span>
       </div>
 
-      {d.noShift ? (
+      {!open ? null : d.noShift ? (
         /* ยังไม่เปิดกะ ≠ ไลน์ทำไม่ได้ — ห้ามโชว์ 0% แดง */
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>— ยังไม่มีไลน์ไหนเปิดกะของวันงานนี้</div>
       ) : (
