@@ -330,6 +330,9 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
   };
 
   // จัดกลุ่มของเสียตามประเภท (สไลด์ quality detail — โชว์เมื่อมี NG)
+  // ⚠️ 2026-08-25 บั๊กที่ user จับได้จริง: item เดิมไม่มี date/line เลย (ต่างจาก dtGroupsOf ที่มีทั้งคู่)
+  //    → สไลด์ TOP DEFECTS บอกได้แค่ "ประเภท + จำนวน" แต่ตอบไม่ได้ว่าเกิดวันไหน/ไลน์ไหน
+  //    หัวหน้ากลุ่มไล่หาย้อนหลังในระบบไม่เจอ ต้องกลับมาถามในแชท — เติม date/line ให้เหมือน dtGroupsOf
   const defGroupsOf = (ss) => {
     const ids = new Set(ss.map(s => s.id));
     const g = {};
@@ -339,8 +342,12 @@ export async function buildMonthlyReviewData({ monthKey, sections }) {
       const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
       g[k] = g[k] || { name: k, qty: 0, count: 0, items: [] };
       g[k].qty += qty; g[k].count += 1;
+      const s2 = sessById[d.session_id];
       // 🧪 = งานทดลอง — โชว์ในลิสต์เสมอ (แค่ไม่นับใน PPM) ตามกฎ §7 ห้ามกรองทิ้ง
-      g[k].items.push({ qty, desc: `${isTrialDefect(d) ? '🧪 ' : ''}${cut(d.description, 55)}`, fix: fixTextOf(d, null) });
+      g[k].items.push({
+        qty, date: s2?.work_date || '', line: s2?.line_name || '',
+        desc: `${isTrialDefect(d) ? '🧪 ' : ''}${cut(d.description, 55)}`, fix: fixTextOf(d, null),
+      });
     });
     return Object.values(g).sort((a, b) => b.qty - a.qty).map(grp => ({
       ...grp,
@@ -908,8 +915,9 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       const s = newSlide();
       head(s, `${d.code} QUALITY DETAIL : TOP DEFECTS`, `NG + SUSPECT — ${MON} (PPM ${num(d.ppm)})`);
       const rows = d.defGroups.slice(0, 4).map(g => {
+        // วัน+ไลน์ต้องขึ้นก่อนตัวอาการเสมอ — ไม่งั้นหัวหน้ากลุ่มไล่หาย้อนหลังในระบบไม่เจอว่าเกิดวันไหน
         const detail = g.items.map((it, i) =>
-          `(${i + 1}) ${it.desc || '-'} (${num(it.qty)} ชิ้น)${it.fix ? `\n     → ${it.fix}` : ''}`).join('\n');
+          `(${i + 1}) ${it.date ? `${it.date.slice(8, 10)}/${it.date.slice(5, 7)} ` : ''}${it.line ? `${it.line} ` : ''}${it.desc || '-'} (${num(it.qty)} ชิ้น)${it.fix ? `\n     → ${it.fix}` : ''}`).join('\n');
         return [`${g.name}\n${num(g.qty)} ชิ้น / ${g.count} ครั้ง`, detail || '—'];
       });
       tsgTable(s, ['Defect / จำนวน', 'ตัวอย่างปัญหา + การแก้ไข (จากหน้างาน)'], rows,
