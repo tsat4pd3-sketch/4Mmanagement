@@ -140,9 +140,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [armedMachine, setArmedMachine] = useState(null) // machine ที่กำลังจะวาง (สร้าง shadow jig ตอนวาง)
   // สถานะโซน (โหมดดู) — ใบซ่อม MO ค้างของเครื่องในโซน + พลังงานไฟฟ้าเดือนล่าสุดของโซน
   const [zoneMo, setZoneMo] = useState([])
+  const [zonePm, setZonePm] = useState(null)          // { rows:[{name, status, nextDue, dept, placed}], equipCount, unplaced }
   const [zoneEnergy, setZoneEnergy] = useState(null)   // { qty, prev, cost, month } | null
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
+  const detailRef = useRef(null)
 
   // ─── Undo/Redo — เฉพาะจุดอุปกรณ์บนผังโซนปัจจุบัน (pm_facility_points) ───
   // เพิ่ม/ลบโซน + อัปโหลดรูป ไม่เข้า history (มีไฟล์ใน storage ย้อนคืนไม่ได้ — ใช้ confirm dialog กันพลาดแทน)
@@ -179,6 +181,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   useEffect(() => { if (view === 'production' && selectedLine) loadProduction() }, [selectedLine, view]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === 'facility' && areaId) loadFacilityArea() }, [areaId, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  // เลือกหมุดแล้วต้อง "เห็น" รายละเอียด — ผังสูงเกือบเต็มจอ แผงข้างล่างจึงอยู่ใต้ field of view
+  useEffect(() => { if (selId) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [selId])
 
   /* ── production (read-only, uses production's machine_points) ── */
   const loadProduction = async () => {
@@ -237,7 +241,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
     const { data: allPts } = await supabaseDR.from('pm_facility_points').select('jig_id')
     setPlacedAnyZone(new Set((allPts || []).map(p => p.jig_id)))
     // facility/utility equipment + PM status (all zones share the same equipment pool)
-    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
+    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id, line_name').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
     const pm = await loadPmForJigs((jigs || []).map(j => j.id))
     const info = {}
     ;(jigs || []).forEach(j => { info[j.id] = { name: j.name || '-', jig_no: j.jig_no || '', checklists: pm[j.id] || [] } })
@@ -253,15 +257,31 @@ export default function MtnMachineLayout({ setupMode = false }) {
        ใบซ่อมค้าง: จับคู่ mtn_orders.machine_no กับเลขเครื่องของอุปกรณ์ที่วางในโซนนี้ (jig_no ของ shadow jig)
        พลังงาน: energy_monthly ราย "จุดวัด" — ชื่อจุดวัดต้องตรงชื่อโซน (trim+lowercase · กติกาเดียวกับ /factory-map) */
     const jigById = Object.fromEntries((jigs || []).map(j => [j.id, j]))
-    const zoneNos = new Set((pts || [])
-      .map(p => String(jigById[p.jig_id]?.jig_no || '').trim().toUpperCase()).filter(Boolean))
+    const zName = String(area?.name || '').trim().toLowerCase()
+
+    /* 🛠️ "เครื่องไหนกำลังจะถึงคิว PM" (2026-08-26 · user ทัก "กดเข้ามาไม่เห็นมีเลย")
+       ⚠️ ต้องนับจาก **อุปกรณ์ที่สังกัดโซน** (`jigs.line_name` = ชื่อโซน) ไม่ใช่แค่ "หมุดที่วางบนผัง"
+          — ผังรวมโรงงานนับแบบแรก (loadPM group ตาม jigs.line_name) การ์ดนี้เคยนับแบบหลัง
+          ⇒ ผังบอก "PM ใกล้ครบ 2" แต่การ์ดบอก "ยังไม่มีเช็คลิสต์ PM ในโซนนี้" = จอเดียวกันขัดกันเอง
+       อุปกรณ์ที่มีแผนแต่ยังไม่วางบนผัง **ห้ามซ่อน** — ติดป้ายบอกให้ไปวาง */
+    const ptIds = new Set((pts || []).map(p => p.jig_id))
+    const zoneJigs = (jigs || []).filter(j => String(j.line_name || '').trim().toLowerCase() === zName || ptIds.has(j.id))
+    const pmRows = []
+    zoneJigs.forEach(j => (pm[j.id] || []).forEach(c => pmRows.push({
+      jigId: j.id, name: j.jig_no || j.name || '-', sub: j.jig_no && j.name && j.jig_no !== j.name ? j.name : '',
+      placed: ptIds.has(j.id), ...c,
+    })))
+    pmRows.sort((a, b) => (STATUS_META[a.status]?.order ?? 9) - (STATUS_META[b.status]?.order ?? 9)
+      || (a.nextDue?.getTime() ?? 9e15) - (b.nextDue?.getTime() ?? 9e15))
+    setZonePm({ rows: pmRows, equipCount: zoneJigs.length, unplaced: zoneJigs.filter(j => !ptIds.has(j.id)).length })
+
+    const zoneNos = new Set(zoneJigs.map(j => String(j.jig_no || '').trim().toUpperCase()).filter(Boolean))
     const { data: mos, error: moErr } = await supabaseDR.from('mtn_orders')
       .select('id, mo_no, machine_no, status, report_at')
       .not('status', 'in', '("closed","rejected")')
     setZoneMo(moErr ? [] : (mos || [])
       .filter(o => zoneNos.has(String(o.machine_no || '').trim().toUpperCase()))
       .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || ''))))
-    const zName = String(area?.name || '').trim().toLowerCase()
     const win = monthRange(monthKeyOf(), 7)   // ถอยหาเดือนล่าสุดที่มีข้อมูลจริง — บิลไฟมาช้าเป็นสัปดาห์ (กติกา /factory-map)
     const { data: en, error: enErr } = await supabaseDR.from('energy_monthly')
       .select('scope_kind, scope_name, month_key, qty, cost').eq('utility', 'electric')
@@ -467,7 +487,9 @@ export default function MtnMachineLayout({ setupMode = false }) {
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
           {sel && selInfo && (
-            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+            /* ⚠️ ผังสูงเกือบเต็มจอ → แผงรายละเอียดอยู่ใต้ fold: คลิกหมุดแล้ว "เหมือนคลิกได้เฉยๆ ไม่มีอะไรขึ้น"
+               (user ทัก 2026-08-26) → เลื่อนมาให้เห็นเองทุกครั้งที่เลือกหมุด */
+            <div ref={detailRef} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⚙️ {selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
                 <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
@@ -527,18 +549,56 @@ export default function MtnMachineLayout({ setupMode = false }) {
               return (
                 <div style={{ border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 11 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>📊 สถานะโซนนี้</div>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>🛠️ PM อุปกรณ์ · {facPoints.length} จุดบนผัง</div>
-                    {facPoints.length === 0
-                      ? <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีอุปกรณ์วางบนผังโซนนี้</div>
-                      : Object.keys(counts).length
-                        ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 4 }}>
-                            {Object.entries(STATUS_META).filter(([k]) => counts[k]).map(([k, m]) => (
-                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.label} {counts[k]}</span>
+                  {/* 🛠️ PM — นับจากอุปกรณ์ที่สังกัดโซน (เกณฑ์เดียวกับผังรวมโรงงาน) ไม่ใช่แค่หมุดบนผัง */}
+                  {(() => {
+                    const rows = (zonePm?.rows || []).filter(r => dept === 'all' || r.dept === dept)
+                    const cnt = {}; rows.forEach(r => { cnt[r.status] = (cnt[r.status] || 0) + 1 })
+                    const due = rows.filter(r => r.status === 'overdue' || r.status === 'due_soon' || r.status === 'never')
+                    return (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
+                          🛠️ PM อุปกรณ์ · {zonePm?.equipCount ?? 0} ตัวในโซน{facPoints.length ? ` · ${facPoints.length} จุดบนผัง` : ''}
+                        </div>
+                        {!rows.length ? (
+                          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+                            ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} ในโซนนี้ — ตั้งจุดตรวจที่หน้า PM Setup
+                          </div>
+                        ) : (<>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 4 }}>
+                            {Object.entries(STATUS_META).filter(([k]) => cnt[k]).map(([k, m]) => (
+                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.label} {cnt[k]}</span>
                             ))}
                           </div>
-                        : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} ในโซนนี้</div>}
-                  </div>
+                          {/* ⭐ ตัวที่ user ถามหา: "เครื่องไหนจะถึงคิว PM" — บอกชื่อ+วันครบ ไม่ใช่แค่ตัวเลขรวม */}
+                          {due.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
+                              {due.slice(0, 6).map((r, i) => {
+                                const m = STATUS_META[r.status] ?? STATUS_META.ok
+                                const dd = r.nextDue ? daysUntilDue(r.nextDue) : null
+                                return (
+                                  <div key={`${r.jigId}-${i}`} onClick={() => { const p = facPoints.find(p => p.jig_id === r.jigId); if (p) setSelId(p.id) }}
+                                    title={r.clName || ''} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, cursor: r.placed ? 'pointer' : 'default' }}>
+                                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+                                    <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                                    <span style={{ marginLeft: 'auto', flexShrink: 0, color: m.color, fontWeight: 700 }}>
+                                      {dd == null ? m.label : dd < 0 ? `เกิน ${Math.abs(dd)} วัน` : dd === 0 ? 'ครบวันนี้' : `อีก ${dd} วัน`}
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                              {due.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
+                            </div>
+                          )}
+                          {/* มีแผน PM แต่ยังไม่ได้วางบนผัง = หาไม่เจอบนจอ ห้ามซ่อน */}
+                          {zonePm?.unplaced > 0 && (
+                            <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 5 }}>
+                              ⚠ อุปกรณ์ในโซนนี้ {zonePm.unplaced} ตัวยังไม่ได้วางบนผัง — กด “✏️ แก้ผังโซน” เพื่อวาง
+                            </div>
+                          )}
+                        </>)}
+                      </div>
+                    )
+                  })()}
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ค้างของโซนนี้</div>
                     <div style={{ fontSize: zoneMo.length ? 17 : 12, fontWeight: 900, color: zoneMo.length ? '#f59e0b' : '#22c55e', marginTop: 3 }}>
