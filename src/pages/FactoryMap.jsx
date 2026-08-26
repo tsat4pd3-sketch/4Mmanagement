@@ -1243,7 +1243,54 @@ export default function FactoryMap({ setupMode = false }) {
           }
         } catch { /* best-effort */ }
 
+        /* ── 🧭 มิติอื่นของไลน์ที่ "ไม่ผูกกับกะ" — PM รายแผน + ใบซ่อม MO ค้าง (2026-08-26)
+           user ทัก: "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง · มันควรโชว์ทุกเรื่อง
+           เพราะจะดูรายละเอียดของไลน์นั้นแล้ว" — เดิม modal มีแต่เรื่องผลิต และวันที่ไม่ได้เปิดกะ
+           จะขึ้นข้อความบรรทัดเดียวแล้วจบ ทั้งที่ PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
+           ⚠️ ทั้งก้อนเป็น best-effort — พลาดแล้วซ่อนเฉพาะบล็อกนั้น ห้ามทำ modal พังทั้งใบ
+           ⚠️ equipment ของไลน์ = jigs ที่ line_name ตรง **หรือ** แถวเงาของเครื่องในไลน์ (machine_id)
+              (กฎเดียวกับ loadPM — checklists.equipment_id ชี้ jigs.id ไม่ใช่ machines.id) */
+        let pmRows = null, moRows = null;
+        try {
+          const { data: mcRows } = await supabaseDR.from('machines')
+            .select('id, machine_no, machine_name').eq('is_active', true).in('line_name', fam);
+          const mcIds = (mcRows || []).map(m => m.id);
+          const [jgLine, jgMc] = await Promise.all([
+            supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_id').eq('module', 'mtn').in('line_name', fam),
+            mcIds.length ? fetchByIds(mcIds, c => supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_id').eq('module', 'mtn').in('machine_id', c)) : { rows: [] },
+          ]);
+          const jigById = {};
+          [...(jgLine.data || []), ...(jgMc.rows || [])].forEach(j => { jigById[j.id] = j; });
+          const jigIds = Object.keys(jigById);
+          if (jigIds.length) {
+            const clRes = await fetchByIds(jigIds, c => supabaseDR.from('checklists')
+              .select('id, equipment_id, department, name, frequency').eq('module', 'mtn').in('equipment_id', c));
+            const clById = {}; clRes.rows.forEach(c => { clById[c.id] = c; });
+            const plRes = await fetchByIds(clRes.rows.map(c => c.id), c => supabaseDR.from('pm_plans')
+              .select('checklist_id, next_due_date, last_done_at').eq('is_active', true).in('checklist_id', c));
+            const today = getWorkDate();
+            pmRows = plRes.rows.map(p => {
+              const cl = clById[p.checklist_id], j = jigById[cl?.equipment_id];
+              const days = p.next_due_date
+                ? Math.round((new Date(`${p.next_due_date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 864e5) : null;
+              return { key: p.checklist_id, name: j?.jig_no || j?.name || 'อุปกรณ์ (ไม่พบชื่อ)',
+                sub: j?.jig_no && j?.name && j.jig_no !== j.name ? j.name : '', dept: cl?.department,
+                due: p.next_due_date, days, lastDone: p.last_done_at };
+            }).sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
+          } else pmRows = [];
+          // ใบซ่อมค้าง — ใบเปิดมีไม่มาก ดึงทั้งชุดแล้วกรองด้วยไลน์/เลขเครื่องของไลน์นี้
+          const famSet = new Set(fam);
+          const nos = new Set((mcRows || []).map(m => String(m.machine_no || '').trim().toUpperCase()).filter(Boolean));
+          const { data: mos } = await supabaseDR.from('mtn_orders')
+            .select('id, mo_no, machine_no, line_name, status, report_at, problem_characteristic')
+            .in('status', OPEN_MO_STATUSES);
+          moRows = (mos || [])
+            .filter(o => famSet.has(o.line_name) || nos.has(String(o.machine_no || '').trim().toUpperCase()))
+            .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || '')));
+        } catch { /* best-effort — บล็อก PM/ใบซ่อมจะไม่ขึ้น แต่ modal ยังใช้ได้ */ }
+
         setStory({
+          pmRows, moRows,
           flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
@@ -2536,10 +2583,19 @@ export default function FactoryMap({ setupMode = false }) {
               <div style={{ overflowY: 'auto', padding: '16px 20px 20px' }}>
                 {storyLoading ? (
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
-                ) : !s || !s.sessionCount ? (
-                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีการเปิดกะของไลน์นี้ในวันที่เลือก</div>
+                ) : !s ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ — ลองปิดแล้วเปิดใหม่</div>
                 ) : (<>
+                  {/* ไม่ได้เปิดกะ = บอกแล้วไปต่อ ห้ามจบแค่บรรทัดเดียว — PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
+                      (2026-08-26 · user ทัก "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง") */}
+                  {!s.sessionCount && (
+                    <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--text2)' }}>
+                      ⏸ <b>ไม่มีการเปิดกะของไลน์นี้ใน{fmtThaiDate(storyDate)}</b> — ไม่มียอดผลิต/OEE/Downtime ของวันนี้
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>ด้านล่างคือสถานะปัจจุบันของไลน์ (PM · ใบซ่อม · คน · ไฟฟ้า) ซึ่งไม่ผูกกับวันที่เลือก</div>
+                    </div>
+                  )}
                   {/* สรุปหัวเรื่อง */}
+                  {s.sessionCount > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px,1fr))', gap: 8, marginBottom: 18 }}>
                     {[
                       { k: 'ผลิตได้ / เป้า', v: `${fmtNum(s.totProduced)}/${fmtNum(s.totTarget)}`, sub: pct != null ? `${pct}%` : '', c: pctCol(pct) },
@@ -2555,8 +2611,10 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                     ))}
                   </div>
+                  )}
 
                   {/* รายกะ */}
+                  {s.sessionCount > 0 && (
                   <StorySection title="🕐 แยกตามกะ">
                     <div style={{ display: 'grid', gap: 6 }}>
                       {s.shifts.map(x => {
@@ -2582,6 +2640,7 @@ export default function FactoryMap({ setupMode = false }) {
                       })}
                     </div>
                   </StorySection>
+                  )}
 
                   {/* ผลิตรายพาร์ท */}
                   {s.parts.length > 0 && (
@@ -2656,6 +2715,7 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
 
                   {/* Downtime + เหตุผล */}
+                  {s.sessionCount > 0 && (<>
                   <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
                     {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
@@ -2700,6 +2760,7 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                     )}
                   </StorySection>
+                  </>)}
 
                   {/* 4M */}
                   {s.fourM.length > 0 && (
@@ -2717,6 +2778,112 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                     </StorySection>
                   )}
+
+                  {/* ══ 🧭 สถานะปัจจุบันของไลน์ (ไม่ผูกกับวันที่เลือก) ══════════════════════
+                      2026-08-26 · user: "อันนี้โชว์แค่เกี่ยวกับการผลิตหรอ มันควรโชว์ทุกเรื่องนะ
+                      เพราะจะดูรายละเอียดของไลน์นั้นๆ แล้ว"
+                      ⚠️ PM/ใบซ่อม/คน/ไฟ เป็น "สถานะตอนนี้" ไม่ใช่ของวันที่เลือก — ต้องเขียนกำกับ
+                         ไม่งั้นคนอ่านเข้าใจว่าเป็นข้อมูลย้อนหลังของวันนั้น */}
+                  {(() => {
+                    const st = stOf(storyLine);
+                    const pmDue = (s.pmRows || []).filter(r => r.days == null || r.days <= 7);
+                    const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
+                    return (
+                      <StorySection title="🧭 สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
+                        <div style={{ display: 'grid', gap: 9 }}>
+                          {/* 🛠️ PM — ตัวที่ผังโชว์บนป้าย ต้องกดเข้ามาแล้วเห็นว่า "เครื่องไหน" */}
+                          <div>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>
+                              🛠️ PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
+                            </div>
+                            {s.pmRows == null ? (
+                              <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ ดึงรายการ PM ไม่สำเร็จ</div>
+                            ) : !s.pmRows.length ? (
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีแผน PM ของอุปกรณ์ในไลน์นี้ — ตั้งที่หน้า PM Setup</div>
+                            ) : (<>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 4, fontSize: 12, fontWeight: 800 }}>
+                                <span style={{ color: st.pmOverdue ? '#ef4444' : 'var(--muted)' }}>เกินกำหนด {st.pmOverdue || 0}</span>
+                                <span style={{ color: st.pmDueSoon ? '#f59e0b' : 'var(--muted)' }}>ใกล้ครบ {st.pmDueSoon || 0}</span>
+                                <span style={{ color: 'var(--muted)' }}>ทั้งหมด {st.pmTotal || 0}</span>
+                              </div>
+                              {pmDue.length > 0 && (
+                                <div style={{ display: 'grid', gap: 3, marginTop: 6 }}>
+                                  {pmDue.slice(0, 6).map((r, i2) => (
+                                    <div key={`${r.key}-${i2}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
+                                      <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }} />
+                                      <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                                      {r.sub && <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub}</span>}
+                                      <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 700, color: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }}>
+                                        {r.days == null ? 'ไม่มีรอบตายตัว' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {pmDue.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {pmDue.length - 6} รายการ</div>}
+                                </div>
+                              )}
+                              <Link to="/pm-schedule" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
+                            </>)}
+                          </div>
+
+                          {/* 🔧 ใบซ่อม MO ค้าง */}
+                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ที่ยังไม่ปิด</div>
+                            {s.moRows == null ? (
+                              <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ ดึงใบซ่อมไม่สำเร็จ</div>
+                            ) : !s.moRows.length ? (
+                              <div style={{ fontSize: 12, fontWeight: 800, color: '#22c55e', marginTop: 3 }}>✅ ไม่มีใบค้าง</div>
+                            ) : (<>
+                              <div style={{ fontSize: 15, fontWeight: 900, color: '#f59e0b', marginTop: 2 }}>{s.moRows.length} ใบ</div>
+                              <div style={{ display: 'grid', gap: 3, marginTop: 4 }}>
+                                {s.moRows.slice(0, 5).map(o => (
+                                  <div key={o.id} onClick={() => navigate('/mtn-repair')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, cursor: 'pointer' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>{o.mo_no || '⏳ รอออกเลข'}</span>
+                                    <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {o.machine_no || 'ไม่ระบุเครื่อง'}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
+                                    </span>
+                                  </div>
+                                ))}
+                                {s.moRows.length > 5 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
+                              </div>
+                            </>)}
+                          </div>
+
+                          {/* 👷 คน & จุดงาน · ⚡ ไฟฟ้า · 🔗 Supply route — ตัวเลขชุดเดียวกับแท็บบนผัง */}
+                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>👷 คน & จุดงาน (ตอนนี้)</div>
+                              {st.headTotal || st.stationTotal ? (
+                                <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
+                                  มา {fmtNum(st.present)}/{fmtNum(st.headTotal)} คน
+                                  {st.stationTotal > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · เข้าจุด {fmtNum(st.stationFilled)}/{fmtNum(st.stationTotal)}</span>}
+                                  {st.ppeBad > 0 && <span style={{ color: '#ef4444' }}> · ⚠PPE {fmtNum(st.ppeBad)}</span>}
+                                </div>
+                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีข้อมูลเช็คชื่อ</div>}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>⚡ ไฟฟ้า{energyMonth ? ` · ${monthLabel(energyMonth)}` : ''}</div>
+                              {st.kwh != null ? (
+                                <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
+                                  {fmtKwh(st.kwh)} kWh
+                                  {eDelta != null && <span style={{ color: eDelta <= -5 ? '#22c55e' : eDelta > 10 ? '#ef4444' : 'var(--muted)' }}> · {eDelta > 0 ? '+' : ''}{eDelta}%</span>}
+                                  {st.kwhCost > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · {fmtBaht(st.kwhCost)} บาท</span>}
+                                </div>
+                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของไลน์นี้</div>}
+                            </div>
+                            {st.supList?.length > 0 && (
+                              <div>
+                                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔗 ระบบสนับสนุนที่จ่ายให้</div>
+                                <div style={{ fontSize: 12, color: st.supAtRisk ? '#ef4444' : 'var(--text2)', marginTop: 3, fontWeight: st.supAtRisk ? 800 : 500 }}>
+                                  {st.supAtRisk ? '⚠ มีเครื่องกำลังซ่อม: ' : 'ปกติ · '}
+                                  {[...new Set(st.supList.filter(x => !st.supAtRisk || x.atRisk).map(x => x.name || x.no))].slice(0, 4).join(' · ')}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </StorySection>
+                    );
+                  })()}
                 </>)}
               </div>
             </div>
