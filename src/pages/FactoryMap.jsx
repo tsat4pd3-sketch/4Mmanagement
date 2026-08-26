@@ -18,6 +18,7 @@ import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
+import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
@@ -84,7 +85,7 @@ const facHealthTextOf = (st) => {
 // ไลน์ผลิต — รวมทุกสัญญาณ เอาตัวแย่สุดตัดสินสี · ข้อความต้องบอก "เหตุผล" เสมอ ห้ามให้เดาจากสี
 const prodHealthSignals = (s) => {
   const sig = [];
-  if (s.dtActive) sig.push({ cat: 'down', txt: `🔴 หยุด${s.dtMinHour ? ` ${s.dtMinHour} น.` : ''}` });
+  if (s.dtActive) sig.push({ cat: 'down', txt: `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` });
   if (s.supAtRisk) sig.push({ cat: 'down', txt: '⚠ utility ที่จ่ายไลน์กำลังซ่อม' });
   if (s.target > 0 && s.onTimeTarget >= 1) {
     const p = s.actual / s.onTimeTarget * 100;   // เกณฑ์เดียวกับแท็บยอดผลิต (≥95 เขียว / ≥80 เหลือง)
@@ -173,13 +174,13 @@ const METRICS = {
     label: '🔧 Downtime', worstFirst: true, desc: true, facilityNA: true,
     // sidebar อันดับ = สะสมทั้งวันงาน (นอกแผน + รวมเวลาที่กำลังหยุด)
     value: s => s.dtMin,
-    text: s => s.dtActive ? `🔴 หยุด ${s.dtMin} น.` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
+    text: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
     cat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMin === 0 ? 'idle' : s.dtMin === 0 ? 'good' : s.dtMin < 30 ? 'ok' : 'bad',
     // สีบนแผนที่ = downtime "สะสมเฉพาะชั่วโมงปัจจุบัน" (รีเซ็ตทุกต้นชั่วโมง) — ≤5น.เขียว · ≤15น.เหลือง · >15น.แดง
     //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
     mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
-    mapText: s => s.dtActive ? `🔴 หยุด ${s.dtMinHour} น.` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
-    short: s => s.dtActive ? `🔴 ${s.dtMinHour}น.` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
+    mapText: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
+    short: s => s.dtActive ? `🔴 ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
     label: '🚫 ของเสีย', worstFirst: true, desc: true, facilityNA: true,
@@ -362,7 +363,7 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtOpenMin: null, dtOpenUnknown: false, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
   supList: [], supAtRisk: false };
@@ -623,6 +624,11 @@ export default function FactoryMap({ setupMode = false }) {
       // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
       //   dtMin = สะสมทั้งวันงาน (ใช้ sidebar อันดับ) · dtMinHour = สะสมเฉพาะชั่วโมงปัจจุบัน (ใช้สีบนแผนที่)
       let dtMin = 0, dtMinHour = 0, dtActive = false, plannedDtMin = 0;
+      /* ⏱ dtOpenMin = "หยุดมาแล้วกี่นาที" ของรายการที่ยัง**เปิดค้าง** (นานสุดในไลน์)
+         ⚠️ คนละตัวกับ dtMinHour (นาทีที่เสียใน "ชั่วโมงนี้") — เดิมป้ายเขียน "🔴 หยุด 52 น."
+            จาก dtMinHour ขณะที่ Dashboard/จอห้องช่างบอก 194 นาที = จอเดียวกันตอบคนละเลข
+            (user ทัก 2026-08-26) · "หยุดมาแล้วกี่นาที" ต้องเป็นเลขเดียวกันทุกจอ */
+      let dtOpenMin = null, dtOpenUnknown = false;
       const plannedRows = [];   // เก็บช่วงจริงไว้ clamp กับหน้าต่าง [anchor, now] ทีหลัง (ดูหมายเหตุที่ availMin)
       let plannedNoTime = 0;    // หยุดตามแผนที่ไม่มีเวลาเริ่ม — ไม่รู้ว่าตกช่วงไหน
       dl.forEach(d => {
@@ -640,6 +646,10 @@ export default function FactoryMap({ setupMode = false }) {
         const active = !d.ended_at && d.duration_min == null;
         if (active) dtActive = true;
         const s0 = d.started_at ? new Date(d.started_at).getTime() : null;
+        if (active) {
+          if (s0 != null) dtOpenMin = Math.max(dtOpenMin ?? 0, Math.round((nowMs - s0) / 60000));
+          else dtOpenUnknown = true;   // ไม่รู้เวลาเริ่ม = "ไม่รู้" ห้ามตีเป็น 0
+        }
         if (s0 != null) {
           const e0 = d.ended_at ? new Date(d.ended_at).getTime()
                    : active ? nowMs
@@ -727,6 +737,8 @@ export default function FactoryMap({ setupMode = false }) {
         runN: Math.max(acc.runN || 0, runN), capN: Math.max(acc.capN || 0, capN),
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + dtMin, dtMinHour: acc.dtMinHour + dtMinHour, dtActive: acc.dtActive || dtActive,
+        dtOpenMin: dtOpenMin == null ? acc.dtOpenMin : Math.max(acc.dtOpenMin ?? 0, dtOpenMin),
+        dtOpenUnknown: acc.dtOpenUnknown || dtOpenUnknown,
         // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — กะเก่า column=0 ทั้งที่มี NG จริง · CLAUDE.md)
         ng: acc.ng + (ngBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0),
         // เฉลี่ย OEE ของไลน์ (กะเช้า+ดึก) ต้องถ่วงด้วยเวลารับภาระ ห้าม mean ธรรมดา (util กลาง oeeAvg.js)
@@ -1421,7 +1433,7 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; agg.oeeNoCt = agg.oeeNoCt || p.oeeNoCt; agg.oeeCtPartial = agg.oeeCtPartial || p.oeeCtPartial; agg.oeePOver = agg.oeePOver || p.oeePOver; agg.oeePRaw = Math.max(agg.oeePRaw || 0, p.oeePRaw || 0); }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; if (p.dtOpenMin != null) agg.dtOpenMin = Math.max(agg.dtOpenMin ?? 0, p.dtOpenMin); agg.dtOpenUnknown = agg.dtOpenUnknown || p.dtOpenUnknown; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; agg.oeeNoCt = agg.oeeNoCt || p.oeeNoCt; agg.oeeCtPartial = agg.oeeCtPartial || p.oeeCtPartial; agg.oeePOver = agg.oeePOver || p.oeePOver; agg.oeePRaw = Math.max(agg.oeePRaw || 0, p.oeePRaw || 0); }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];

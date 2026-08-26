@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabaseDR } from '../supabaseClient'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
+import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -10,7 +11,10 @@ import { RATE } from '../utils/refreshRates'
    ข้อจำกัด: เบราว์เซอร์บล็อก autoplay จนมี user gesture → resume AudioContext ตอนคลิกครั้งแรก
             (จอ display ล้วนที่ไม่มีใครแตะ จะเห็นแถบเตือนแต่ไม่มีเสียง — ตั้งใจ) */
 export default function DowntimeSiren({ mode = 'open_15min' }) {
-  const [alerts, setAlerts] = useState([])
+  const [raw, setRaw] = useState([])       // แถวดิบที่ยังไม่รับทราบ (กะเปิดอยู่)
+  const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
+  const [, setTick] = useState(0)          // นาฬิกา — ให้ "ครบเกณฑ์" เกิดเองโดยไม่ต้องยิง DB
+  const [muted, setMuted] = useState(false) // เบราว์เซอร์บล็อกเสียงอยู่ (ยังไม่มีใครแตะจอ)
   const acRef = useRef(null)
   const loopRef = useRef(null)
 
@@ -20,13 +24,24 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
 
   const fetchAlerts = useCallback(async () => {
     let q = supabaseDR.from('downtime_logs')
-      .select('id, machine_no, description, started_at, call_mtn_at, open_alerted_at, dr_downtime_types(name_th), production_sessions(line_name, status)')
+      .select('id, machine_no, description, started_at, call_mtn_at, open_alerted_at, dr_downtime_types(name_th, category), production_sessions(line_name, status)')
       .is('duration_min', null).is('ended_at', null).is(ackField, null)
-    q = mode === 'call_mtn' ? q.eq('call_mtn', true) : q.not('open_alerted_at', 'is', null)
+    if (mode === 'call_mtn') q = q.eq('call_mtn', true)
     const { data } = await q
+    loadDtAlertMin().then(setThr)
     // เอาเฉพาะรายการของกะที่ยังเปิดอยู่ (เครื่องยังหยุดจริง)
-    setAlerts((data || []).filter(d => ['open', 'pending_close'].includes(d.production_sessions?.status)))
+    setRaw((data || []).filter(d => ['open', 'pending_close'].includes(d.production_sessions?.status)))
   }, [mode, ackField])
+
+  /* 🔴 open_15min: ตัดสิน "เกินเกณฑ์" จาก **เวลาที่ผ่านไปจริง** ไม่ใช่ธง `open_alerted_at`
+     (ธงนั้นคือตัวกันแจ้ง Telegram ซ้ำ — edge `downtime-open-scan` stamp ให้เฉพาะตอน POST สำเร็จ
+      ⇒ Telegram ล่ม/ปิด rule = ธงไม่ถูกตั้ง → **ไซเรนบนจอไม่เคยดังเลย** · เจอจริง 2026-08-26)
+     ⚠️ ต้องกรอง planned เองด้วย — เดิมพึ่งว่า scanner stamp เฉพาะนอกแผน
+     ⚠️ คำนวณใหม่ทุกนาทีจากข้อมูลที่โหลดมาแล้ว (ไม่ยิง DB) — ไม่งั้นต้องรอรอบ poll ถัดไปถึงจะดัง */
+  const alerts = useMemo(() => (mode === 'call_mtn'
+    ? raw
+    : raw.filter(d => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT))
+  ), [raw, mode, thr])
 
   useEffect(() => {
     fetchAlerts()
@@ -34,12 +49,14 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
     const ch = supabaseDR.channel(`dt-siren-${mode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(fetchAlerts, 400))
       .subscribe()
-    return () => { stopPoll(); supabaseDR.removeChannel(ch) }
+    // นาฬิกาอย่างเดียว ไม่ยิง DB — ให้รายการที่ "ครบเกณฑ์ระหว่างเปิดจออยู่" ดังเองภายใน 1 นาที
+    const clk = setInterval(() => setTick(t => t + 1), 60000)
+    return () => { stopPoll(); supabaseDR.removeChannel(ch); clearInterval(clk) }
   }, [mode, fetchAlerts])
 
   // ปลดล็อกเสียงตอน user แตะครั้งแรก (นโยบาย autoplay)
   useEffect(() => {
-    const unlock = () => { try { acRef.current?.resume() } catch { /* ignore */ } }
+    const unlock = () => { try { acRef.current?.resume().then(() => setMuted(false), () => {}) } catch { /* ignore */ } }
     window.addEventListener('pointerdown', unlock, { once: false })
     return () => window.removeEventListener('pointerdown', unlock)
   }, [])
@@ -65,6 +82,9 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
       })
     }
     beep()
+    /* จอ TV ที่ไม่มีใครแตะ = เบราว์เซอร์บล็อก autoplay → "เห็นแถบแต่ไม่มีเสียง"
+       ห้ามเงียบ: บอกบนแถบเลยว่าต้องแตะจอ 1 ครั้ง (เจอจริง 2026-08-26 "เสียงก็ไม่มี") */
+    setMuted(!ac || ac.state !== 'running')
     loopRef.current = setInterval(beep, 1300)
     return () => { clearInterval(loopRef.current); loopRef.current = null }
   }, [alerts.length])
@@ -72,7 +92,7 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   useEffect(() => () => { clearInterval(loopRef.current); try { acRef.current?.close() } catch { /* ignore */ } }, [])
 
   const ack = async (id) => {
-    setAlerts(prev => prev.filter(a => a.id !== id))
+    setRaw(prev => prev.filter(a => a.id !== id))
     await supabaseDR.from('downtime_logs').update({ [ackField]: new Date().toISOString() }).eq('id', id)
   }
 
@@ -89,6 +109,12 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
               {a.description ? ` — ${a.description}` : ''}
             </div>
           </div>
+          {muted && (
+            <span onClick={() => { try { acRef.current?.resume().then(() => setMuted(false), () => {}) } catch { /* ignore */ } }}
+              title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
+              🔇 แตะเพื่อเปิดเสียง
+            </span>
+          )}
           <button onClick={() => ack(a.id)} style={{ flexShrink: 0, background: color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
         </div>
       ))}
