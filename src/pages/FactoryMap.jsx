@@ -994,12 +994,26 @@ export default function FactoryMap({ setupMode = false }) {
       const planById = {}; (coPlans || []).forEach(pl => { planById[pl.id] = pl; });
       if (coPlans?.length) {
         const tkRes = await fetchByIds(coPlans.map(pl => pl.id),
-          c => supabaseDR.from('pm_coordination_tasks').select('plan_id, task_date, done, description').eq('task_date', today).in('plan_id', c));
-        (tkRes.rows || []).filter(t => !t.done).forEach(t => {
-          const pl = planById[t.plan_id]; const ln = pl?.line_name; if (!ln) return;
+          c => supabaseDR.from('pm_coordination_tasks').select('plan_id, task_date, done').in('plan_id', c));
+        /* ⚠️ "กำลังทำ PM" = **วันนี้อยู่ในช่วงงานของแผนที่ยังไม่ปิด** ไม่ใช่แค่ "มีขั้นงานลงวันนี้"
+           งาน PM กินหลายวัน (เจอจริง: PM LASER LS-07 วิ่ง 26→28/08) ระหว่างนั้นเครื่องอยู่ในมือช่างตลอด
+           — เช็คเฉพาะขั้นที่ลงวันนี้ จะเงียบในวันที่ขั้นนั้นถูกติ๊กเสร็จไปแล้ว ทั้งที่งานยังไม่จบ
+           (วันที่เป็น 'YYYY-MM-DD' เทียบสตริงตรงกับเทียบเวลาอยู่แล้ว) */
+        const byPlan = {};
+        (tkRes.rows || []).forEach(t => {
+          if (!t.task_date) return;
+          const g = byPlan[t.plan_id] || (byPlan[t.plan_id] = { min: t.task_date, max: t.task_date, left: 0 });
+          if (t.task_date < g.min) g.min = t.task_date;
+          if (t.task_date > g.max) g.max = t.task_date;
+          if (!t.done) g.left++;
+        });
+        Object.entries(byPlan).forEach(([pid, g]) => {
+          if (g.min > today || g.max < today) return;         // นอกช่วงงาน = ไม่ใช่ "กำลังทำ"
+          const pl = planById[pid]; const ln = pl?.line_name; if (!ln) return;
           const o = out[ln] || blank();
           o.pmBusy++;
-          if (!o.pmBusyText) o.pmBusyText = [pl.machine_no, pl.title].filter(Boolean).join(' · ');
+          if (!o.pmBusyText) o.pmBusyText = [pl.machine_no, pl.title].filter(Boolean).join(' · ')
+            + (g.left ? ` (เหลือ ${g.left} ขั้น)` : '');
           out[ln] = o;
         });
       }
