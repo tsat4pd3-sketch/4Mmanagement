@@ -450,6 +450,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const focus = focusRef.current && ss.find(x => x.id === focusRef.current);
       if (hit) setSelSession(hit);
       else if (focus) { setSelSession(focus); onFocusDoneRef.current?.(); }
+      // ⚠️ ห้ามลืม branch นี้ — ไม่มี = ไม่มีกะไหนถูกเลือกเลย จอหลักว่างทั้งหน้า (เคยหลุดตอน rebase)
+      else setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0]);
     } else {
       setSelSession(null);
     }
