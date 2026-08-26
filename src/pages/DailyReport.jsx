@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
@@ -8,7 +8,7 @@ import { printProdProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTE
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
-import { can } from '../utils/permissions';
+import { can, canAccessPage } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -137,6 +137,10 @@ const nowTime = () => new Date().toTimeString().slice(0, 5);
    เป้าหมายทีม: เคลียร์ภายใน STALE_SESSION_DAYS วัน (นโยบาย 2026-08-25 — เตือนดัง ไม่ auto-ปิด:
    ปิดกะ = stamp OEE จากยอดที่คนยืนยัน · auto-approve = โกหกว่ามีคนพิจารณา หลักเดียวกับเคส 4M [Auto]) */
 const STALE_SESSION_DAYS = 7;
+/* คีย์ sentinel ของถัง "กะค้างจากวันก่อน" ใน sessGroupCollapsed
+   ⚠️ ความหมายกลับด้านกับกลุ่มไลน์: มีคีย์ = "ผู้ใช้กางเอง" (ถังนี้ค่าเริ่มต้นคือพับ)
+   ตั้งชื่อขึ้นต้น __ กันชนกับชื่อไลน์จริง */
+const STALE_BUCKET_KEY = '__stale_bucket__';
 const sessionAgeDays = (wdStr) => {
   if (!wdStr) return 0;
   return Math.max(0, Math.round((new Date(`${workDate()}T00:00:00`) - new Date(`${wdStr}T00:00:00`)) / 864e5));
@@ -193,6 +197,7 @@ function LiveTab({ role }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะยุบมาซ้อนบนเนื้อหา (desktop ไม่เปลี่ยน)
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
+  const navigate = useNavigate();
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -431,12 +436,36 @@ function LiveTab({ role }) {
 
     setSessions(ss || []);
     if (ss?.length) {
-      setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0]);
+      /* deep-link ?line=NAME (จากปุ่ม "📊 Daily Report" ในหน้าจัดการไลน์)
+         → เลือกกะของไลน์นั้นให้เลย ไม่ต้องมาไล่หาใน sidebar อีกรอบ
+         เคารพ scope: ไลน์ที่ไม่มีกะเปิดใน scope = ตกไปค่าเริ่มต้นปกติ (ห้ามจอว่าง) */
+      const qp = new URLSearchParams(window.location.search);
+      const wantLine = qp.get('line');
+      const hit = wantLine ? (ss.find(x => x.line_name === wantLine) || null) : null;
+      if (wantLine) {
+        // ล้างเฉพาะ line — ห้ามล้างทั้ง search (จะพา ?tab= ของ useTabParam หายไปด้วย)
+        qp.delete('line');
+        const q = qp.toString();
+        window.history.replaceState({}, '', window.location.pathname + (q ? `?${q}` : ''));
+      }
+      if (hit) setSelSession(hit);
+      else setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0]);
     } else {
       setSelSession(null);
     }
     setLoading(false);
   }, [role, scopeSecs, userLineId]);
+
+  /* ── แยก "กะที่กำลังทำอยู่" ออกจาก "กะค้างจากวันก่อน" (2026-08-26 · feedback "ปวดหัวกับกะที่รก ค้างจังเลย")
+     ข้อมูลจริงที่หน้างานเจอ: sidebar ขึ้น 49 กะ ในนั้น 37 กะเป็นของวันก่อนที่ยังไม่ปิด
+     → กะของวันนี้ (สิ่งที่ต้องกรอกตอนนี้) จมอยู่ในกำแพงการ์ด
+     ⚠️ กะค้าง "ห้ามซ่อนหาย" — ยุบเป็นถังพับไว้ + ตัวนับบนหัว + banner เดิมยังนับครบเหมือนเดิม */
+  const [freshSessions, staleSessions] = useMemo(() => {
+    const wd = workDate();
+    const fresh = [], stale = [];
+    (sessions || []).forEach(s => ((s.work_date || '') >= wd ? fresh : stale).push(s));
+    return [fresh, stale];
+  }, [sessions]);
 
   // ไลน์ที่เปิดกะได้ตาม scope (leader→family · role อื่น→sections · admin/qa→null=ทั้งหมด) — กันเปิดกะไลน์ข้ามส่วนงาน
   const openScopeLineNames = useMemo(() => {
@@ -2305,9 +2334,13 @@ function LiveTab({ role }) {
             const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
             return (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexShrink: 0 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>กะที่เปิดอยู่ ({sessions.length})</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  กะที่เปิดอยู่ ({freshSessions.length}{staleSessions.length ? ` + ค้าง ${staleSessions.length}` : ''})
+                </div>
                 {groupNames.length > 1 && (
-                  <button onClick={() => persistSessGroups(allCollapsed ? new Set() : new Set(groupNames))}
+                  // ⚠️ คง STALE_BUCKET_KEY ไว้เสมอ — ปุ่มนี้คุม "กลุ่มไลน์" ไม่ใช่ถังกะค้าง (ถังมีปุ่มของตัวเอง)
+                  <button onClick={() => { const keep = sessGroupCollapsed.has(STALE_BUCKET_KEY) ? [STALE_BUCKET_KEY] : [];
+                    persistSessGroups(new Set(allCollapsed ? keep : [...groupNames, ...keep])); }}
                     title={allCollapsed ? 'กางทุกกลุ่ม' : 'ย่อทุกกลุ่ม'}
                     style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
                     {allCollapsed ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
@@ -2319,8 +2352,9 @@ function LiveTab({ role }) {
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
           {(() => {
             // จัดกลุ่มตามไลน์แม่ (ไลน์เดี่ยว = เป็นกลุ่มของตัวเอง)
+            const renderGroups = (list) => {
             const groups = {};
-            sessions.forEach(s => {
+            list.forEach(s => {
               const parent = lineMap[s.line_name]?.parent_line_name || s.line_name;
               if (!groups[parent]) groups[parent] = [];
               groups[parent].push(s);
@@ -2376,6 +2410,36 @@ function LiveTab({ role }) {
               </div>
               );
             });
+            };
+
+            /* กะค้าง = ถังพับ (ค่าเริ่มต้นพับ) — กางเองเมื่อกะที่เลือกอยู่ในถัง ไม่งั้นคลิกจาก banner แล้วหาการ์ดไม่เจอ */
+            const staleHasSel = staleSessions.some(s => s.id === selSession?.id);
+            // เก็บ flag เป็น "ผู้ใช้กางเอง" (ไม่ใช่ "ย่อ") เพราะค่าเริ่มต้นของถังนี้คือ "พับ"
+            const staleOpen   = sessGroupCollapsed.has(STALE_BUCKET_KEY) || staleHasSel;
+            return (
+              <>
+                {renderGroups(freshSessions)}
+                {freshSessions.length === 0 && staleSessions.length > 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px 4px', lineHeight: 1.5 }}>
+                    ยังไม่มีกะของวันนี้ — เหลือแต่กะค้างด้านล่าง
+                  </div>
+                )}
+                {staleSessions.length > 0 && (
+                  <div style={{ marginTop: freshSessions.length ? 10 : 4, paddingTop: freshSessions.length ? 8 : 0, borderTop: freshSessions.length ? '1px dashed var(--border2)' : 'none' }}>
+                    <button onClick={() => toggleSessGroup(STALE_BUCKET_KEY)}
+                      title="กะของวันก่อนที่ยังไม่ปิด — เปิดกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอ"
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', cursor: 'pointer',
+                        fontSize: 11, fontWeight: 800, padding: '6px 8px', borderRadius: 8, letterSpacing: '0.3px',
+                        background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b' }}>
+                      <span style={{ fontSize: 9 }}>{staleOpen ? '▼' : '▶'}</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⏰ ค้างจากวันก่อน</span>
+                      <span style={{ fontWeight: 700 }}>{staleSessions.length}</span>
+                    </button>
+                    {staleOpen && <div style={{ marginTop: 4 }}>{renderGroups(staleSessions)}</div>}
+                  </div>
+                )}
+              </>
+            );
           })()}
           </div>
         </div>
@@ -2467,6 +2531,14 @@ function LiveTab({ role }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {/* 🔄 ไปจัดกำลังคน "ของไลน์นี้" — พาบริบทไปด้วย (?line=) แล้วมีปุ่มกลับที่ส่ง line กลับมา
+                      = สลับ 2 หน้าโดยไม่ต้องเลือกไลน์ใหม่ทุกครั้ง (ไม่รวมเป็นหน้าเดียว: คนละ layout — บอร์ดจอ TV vs หน้ากรอกข้อมูล)
+                      ⚠️ เช็คสิทธิ์ก่อนเสมอ ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
+                  {canAccessPage('/management', role) && (
+                    <button onClick={() => navigate(`/management?line=${encodeURIComponent(selSession.line_name)}&from=daily-report`)}
+                      title={`จัดกำลังคน / ผังไลน์ ของ ${selSession.line_name}`}
+                      style={{ ...cancelBtnStyle, fontWeight: 700 }}>🔄 จัดกำลังคน</button>
+                  )}
                   {/* เปิดกะใหม่ได้เสมอไม่ว่ากะที่เลือกอยู่จะสถานะไหน — กะรออนุมัติ SV (pending_close)
                       ไม่ควรบล็อกการเริ่มกะถัดไป เพราะ SV ทำงานแค่กะเช้าแต่ไลน์ผลิตทำงาน 24 ชม.
                       (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว ป้องกันเปิดทับกะเดิมจริงๆ) */}

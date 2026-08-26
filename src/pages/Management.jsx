@@ -6,7 +6,8 @@ import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { can } from '../utils/permissions';
+import { useNavigate } from 'react-router-dom';
+import { can, canAccessPage } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
@@ -138,6 +139,7 @@ const MAN_CASE_META = {
 
 export default function Management() {
   const { role, lineId: userLineId, team: userTeam, sections: scopeSecs = [], fullName, user, sidebarOpen = true } = useContext(UserContext);
+  const navigate = useNavigate();
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
 
@@ -1319,6 +1321,21 @@ export default function Management() {
                 {cat === 'Machine' ? '⚙️' : cat === 'Material' ? '📦' : '📋'} {cat}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* ── ทางลัดกลับ Daily Report ของ "ไลน์ที่เลือกอยู่" (2026-08-26) ──
+            คู่กับปุ่ม "🔄 จัดกำลังคน" ในหัวกะของ Daily Report → สลับ 2 หน้าโดยไม่ต้องเลือกไลน์ใหม่ทุกครั้ง
+            (จงใจไม่รวมเป็นหน้าเดียว: หน้านี้เป็นบอร์ดจอ TV เต็มความกว้าง ส่วน Daily Report เป็นหน้ากรอกข้อมูล — layout คนละแบบ)
+            ⚠️ เช็คสิทธิ์ก่อน ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
+        {selectedLine && canAccessPage('/daily-report', role) && (
+          <div style={{ paddingTop: 10, marginTop: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+            <button onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
+              title={`บันทึกผลผลิต / Downtime ของ ${selectedLine}`}
+              style={{ width: '100%', padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
+                background: 'rgba(14,165,233,0.12)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.3)', fontWeight: 700 }}>
+              📊 Daily Report ({selectedLine})
+            </button>
           </div>
         )}
         </>)} {/* /panelCollapsed */}
