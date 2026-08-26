@@ -13,8 +13,14 @@
 
    จอนี้ตอบ 3 คำถามของช่าง เรียงตามความเร่งด่วน — อ่านจากอีกฝั่งห้องได้:
      ① ตอนนี้เครื่องไหนหยุด · อยู่ตรงไหนของโรงงาน · กี่นาทีแล้ว   ← ใหญ่สุด + มีเสียง
-     ② ใบซ่อมที่รับไปแล้วค้างอยู่ขั้นไหน
-     ③ PM ที่เกินกำหนด/ครบวันนี้
+     ② PM ที่เกินกำหนด / กำลังจะถึงกำหนด (เครื่องไหน · ไลน์ไหน · อีกกี่วัน)
+     ③ ใบซ่อมที่รับไปแล้วค้างอยู่ขั้นไหน
+
+   รอบ 3 (2026-08-26): *"PM จะถึงกำหนดกลับ ไม่มีอะไรแจ้งเลย ในหน้าแดชบอร์ดจอห้องช่าง"*
+     → เดิม ② กับ ③ สลับกัน · การ์ด PM อยู่ล่างสุดของคอลัมน์ที่ยาวกว่าจอ = **มองไม่เห็นตลอดกาล**
+       และแถบบนนับเฉพาะ "เกินกำหนด" → งานที่ *กำลังจะ* ถึงกำหนดไม่มีสัญญาณใดๆ เลย
+     → PM ขึ้นก่อนใบซ่อม · แถบบนบอกทั้ง 2 ระดับ · การ์ดโชว์ชื่ออุปกรณ์+ไลน์ ไม่ใช่แค่ตัวนับ
+     → หน้าต่าง "ใกล้ครบ" ยืด 3 → 7 วัน ให้ตรงกับผังรวมโรงงาน (2 จอต้องตอบตรงกัน)
 
    ⚠️ กฎที่ห้ามแหก (Andon · CLAUDE.md):
      · **หยุดตามแผน (planned) ห้ามแดง ห้ามส่งเสียง** — นับสต๊อก/5ส/ไม่มีแผนผลิต ไม่ใช่ความเสียหาย
@@ -39,10 +45,15 @@ import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES, MO_STATUS_LABEL } from '../utils/dieStatus';
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamsForUser, teamForEquipmentKind } from '../utils/mtnTeams';
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import DowntimeSiren from './DowntimeSiren';
 import FactoryMiniMap from './FactoryMiniMap';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
+/* หน้าต่าง "ใกล้ครบกำหนด" — ใช้ 7 วันเท่าผังรวมโรงงาน (`/factory-map` metric PM)
+   ⚠️ เดิมจอนี้ใช้ 3 วัน → ผังบอก "PM ใกล้ครบ 2" แต่จอห้องช่างเงียบ = 2 จอตอบคนละอย่าง
+      (user ทัก 2026-08-26 "PM จะถึงกำหนดกลับ ไม่มีอะไรแจ้งเลย ในหน้าแดชบอร์ดจอห้องช่าง") */
+const PM_SOON_DAYS = 7;
 /* ⚠️ downtime ที่กรอกแค่จำนวนนาที (ไม่มี started_at) จะไม่รู้ว่าหยุดมากี่นาที — ต้องบอกว่า "ไม่รู้"
    ห้ามแปลงเป็น 0 (0 น. อ่านเป็น "เพิ่งหยุด" ซึ่งคนละเรื่องกับ "ไม่รู้เวลาเริ่ม")
    รูปแบบเดียวกับผังรวม/Dashboard — แก้ที่ downtimeRules.js ที่เดียว */
@@ -118,6 +129,9 @@ export default function MtnAndonBoard({ d, ctx }) {
   }, [inScope, workDate]);
 
   useEffect(() => { loadDtAlertMin().then(setThr); }, []);
+  /* โหลด mtn_teams ครั้งเดียว — `isAmTeam()` เป็น sync ที่อ่าน cache ตัวนี้
+     ไม่โหลด = ตกไปใช้ fallback เดาจาก key ('production' = AM) ซึ่งพังเงียบเมื่อแยก AM รายส่วนงาน */
+  useEffect(() => { loadPmTeams().then(() => setTick(t => t + 1)); }, []);
 
   useEffect(() => {
     load();
@@ -213,20 +227,28 @@ export default function MtnAndonBoard({ d, ctx }) {
     const m = {}; mo.forEach(o => { m[o.status] = (m[o.status] || 0) + 1; }); return m;
   }, [mo]);
 
-  /* ── PM เกินกำหนด / ครบใน 3 วัน (กรองทีมด้วย `checklists.department` = ตัวจริงว่าใครตรวจ) ── */
-  const pm = useMemo(() => {
+  /* ── PM เกินกำหนด / ใกล้ครบกำหนด (กรองทีมด้วย `checklists.department` = ตัวจริงว่าใครตรวจ) ──
+     ⚠️ แยก AM (ผลิตตรวจเอง) ออกจาก PM (ช่าง) ด้วยแกนข้อมูล `mtn_teams.kind` — ห้าม hardcode 'production'
+        ไม่ตัดทิ้ง (ตอน "ทุกทีม" ต้องเห็นครบ) แต่ต้อง **ติดป้ายบอก** ไม่งั้นงานของผลิตถูกอ่านเป็นงานช่าง */
+  const allPm = useMemo(() => {
     const clById = {}; (d.cls || []).forEach(c => { clById[c.id] = c; });
     const jigById = {}; (d.jigs || []).forEach(j => { jigById[j.id] = j; });
     return (d.plans || []).filter(p => p.next_due_date).map(p => {
       const cl = clById[p.checklist_id];
       const j = jigById[cl?.equipment_id];
+      const dept = teamKeyOf(cl?.department);
       return {
-        ...p, dept: teamKeyOf(cl?.department),
+        ...p, dept, am: isAmTeam(dept),
         name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '',
         days: Math.round((new Date(`${p.next_due_date}T00:00:00`) - new Date(`${workDate}T00:00:00`)) / 86400000),
       };
-    }).filter(p => p.days <= 3 && (!team || !p.dept || p.dept === team)).sort((a, b) => a.days - b.days);
-  }, [d, workDate, team]);
+    }).filter(p => p.days <= PM_SOON_DAYS).sort((a, b) => a.days - b.days);
+  }, [d, workDate]);
+  // ทีมที่ไม่รู้ (checklist ไม่ได้ตั้ง department) ต้องเห็นเสมอ — หลักเดียวกับ downtime ที่ไม่ระบุเครื่อง
+  const pm = useMemo(() => (team ? allPm.filter(p => !p.dept || p.dept === team) : allPm), [allPm, team]);
+  const pmHidden = allPm.length - pm.length;
+  const pmOver = pm.filter(p => p.days < 0).length;
+  const pmToday = pm.filter(p => p.days === 0).length;
 
   const big = isMobile ? 1 : 2;   // ตัวคูณขนาดตัวอักษรสำหรับจอ TV
 
@@ -256,16 +278,24 @@ export default function MtnAndonBoard({ d, ctx }) {
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· ตั้งต้นตามทีมของบัญชีนี้</span>
           )}
         </div>
+        {/* ⚠️ เดิมชิปนี้นับเฉพาะ "เกินกำหนด" → งานที่ *กำลังจะ* ถึงกำหนดไม่มีสัญญาณใดๆ บนจอเลย
+            (user 2026-08-26) · ตอนนี้บอกทั้ง 2 ระดับ และกดไปหน้าแผน PM ได้ */}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12.5 * big, fontWeight: 800 }}>
           <span style={{ color: mo.length ? '#f59e0b' : '#22c55e' }}>🛠️ ใบซ่อมค้าง {mo.length}</span>
-          <span style={{ color: pm.filter(p => p.days < 0).length ? '#ef4444' : 'var(--muted)' }}>📅 PM เกินกำหนด {pm.filter(p => p.days < 0).length}</span>
+          <span onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', color: pmOver ? '#ef4444' : (pmToday || pm.length) ? '#f59e0b' : '#22c55e' }}>
+            📅 {pmOver ? `PM เกินกำหนด ${pmOver}` : '✅ ไม่มี PM เกินกำหนด'}
+            {pm.length - pmOver > 0 && (
+              <span style={{ color: '#f59e0b' }}> · ถึงกำหนดใน {PM_SOON_DAYS} วัน {pm.length - pmOver}</span>
+            )}
+          </span>
         </div>
       </div>
 
-      {/* ⚠️ กรองทีมแล้วต้องบอกว่าซ่อนอะไรไป — การจับคู่เครื่อง↔ทีมเป็นการเดาจากชนิดอุปกรณ์ */}
-      {team && (hiddenByTeam > 0 || moHidden > 0) && (
+      {/* ⚠️ กรองทีมแล้วต้องบอกว่าซ่อนอะไรไป — การจับคู่เครื่อง↔ทีมเป็นการเดาจากชนิดอุปกรณ์
+          (PM เดาไม่ได้ ใช้ `checklists.department` = ตัวจริง แต่ก็ยังต้องบอกว่าซ่อนไปกี่แผน) */}
+      {team && (hiddenByTeam > 0 || moHidden > 0 || pmHidden > 0) && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          👁 ซ่อนของทีมอื่น: เครื่องหยุด {hiddenByTeam} · ใบซ่อม {moHidden} — กด “ทุกทีม” เพื่อดูครบ
+          👁 ซ่อนของทีมอื่น: เครื่องหยุด {hiddenByTeam} · ใบซ่อม {moHidden} · แผน PM {pmHidden} — กด “ทุกทีม” เพื่อดูครบ
           (เครื่องที่ยังไม่รู้ว่าทีมไหนดูแล จะแสดงให้ทุกทีมเห็นเสมอ)
         </div>
       )}
@@ -303,10 +333,13 @@ export default function MtnAndonBoard({ d, ctx }) {
           </div>
         </div>
 
-        {/* ══ ① เครื่องหยุด ② ใบซ่อม ③ PM ══
-            ⚠️ จอ TV ไม่มีใครเลื่อนหน้าจอ — เดิมคอลัมน์นี้ยาวกว่าจอจนการ์ด PM หลุดใต้ fold
-            สูงเท่า "ผังที่วัดได้จริง" แล้วเลื่อนในกรอบแทน (ห้ามเดา 100vh − Npx · กฎ §6.8)
-            ยอดรวม (ใบซ่อมค้าง / PM เกินกำหนด) อยู่บนแถบสรุปด้านบนซึ่งเห็นเสมอ → ไม่มีอะไรหายเงียบ */}
+        {/* ══ ① เครื่องหยุด ② PM ③ ใบซ่อม ══
+            ⚠️ จอ TV ไม่มีใครเลื่อนหน้าจอ → **อะไรอยู่ล่างสุดของคอลัมน์นี้ = มองไม่เห็นตลอดกาล**
+            เดิมวาง PM ไว้ท้ายแล้วปลอบใจว่า "ยอดรวมอยู่บนแถบสรุปแล้วไม่มีอะไรหายเงียบ" —
+            **ไม่จริง**: เลข 3 เฉยๆ ตอบไม่ได้ว่าต้องไปทำเครื่องไหน (user ทัก 2026-08-26)
+            → เรียงตาม "ต้องเห็นแค่ไหน" ไม่ใช่ลำดับ workflow · ใบซ่อมค้างเป็นคิวยาวที่สรุปได้จริง
+              (ยอด + ขั้นที่ค้าง) จึงเป็นตัวที่ยอมให้เลื่อนตกไป
+            สูงเท่า "ผังที่วัดได้จริง" แล้วเลื่อนในกรอบแทน (ห้ามเดา 100vh − Npx · กฎ §6.8) */}
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 10,
           maxHeight: leftH || undefined, overflowY: leftH ? 'auto' : undefined,
@@ -376,6 +409,47 @@ export default function MtnAndonBoard({ d, ctx }) {
             </div>
           )}
 
+          {/* ⚠️ PM มาก่อนใบซ่อมค้างโดยตั้งใจ (2026-08-26) — คอลัมน์นี้ยาวกว่าจอ TV และไม่มีใครเลื่อน
+              → อะไรอยู่ล่างสุด = มองไม่เห็นตลอดกาล · ใบซ่อมค้างเป็น "คิวงาน" ที่มีหน้าของตัวเอง
+              และสรุปครบบนแถบบนแล้ว (ยอด + ขั้นที่ค้าง) ส่วน PM เป็น **งานที่มีวันกำหนดและจะเลยเงียบๆ**
+              เลขรวมอย่างเดียวตอบไม่ได้ว่าต้องไปทำเครื่องไหน → ต้องเห็นชื่ออุปกรณ์ ไม่ใช่แค่ตัวนับ */}
+          <div style={{ ...card, borderColor: pmOver ? '#ef4444' : pm.length ? '#f59e0b' : 'var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>📅 PM ที่ต้องทำ</span>
+              <span style={{ marginLeft: 'auto', fontSize: 10.5 * big, color: 'var(--muted)', fontWeight: 700 }}>
+                เกินกำหนด {pmOver} · วันนี้ {pmToday}
+              </span>
+            </div>
+            {!pm.length && (
+              <div style={{ fontSize: 11.5 * big, fontWeight: 700, color: allPm.length ? 'var(--muted)' : '#22c55e' }}>
+                {/* "ไม่มีแผนถึงกำหนด" ≠ "ไม่มีแผนเลย" — ถ้าทั้งระบบไม่มีแผน PM ต้องบอกให้ไปตั้ง ไม่ใช่ขึ้นเขียวว่าปกติดี */}
+                {(d.plans || []).length
+                  ? `✅ ไม่มีแผนที่ถึงกำหนดใน ${PM_SOON_DAYS} วัน (แผนที่ใช้งานอยู่ ${(d.plans || []).length})`
+                  : '⚠ ยังไม่มีแผน PM ในระบบ — ตั้งจุดตรวจ/รอบเวลาที่ ⚙️ ตั้งค่าจุดตรวจ'}
+              </div>
+            )}
+            {pm.slice(0, 8).map(p => (
+              <div key={p.id} onClick={() => navigate('/pm?tab=plan')}
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
+                <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <b style={{ color: 'var(--text)' }}>{p.name}</b>
+                  {/* ช่างต้องรู้ว่าต้องเดินไปไหน — ชื่ออุปกรณ์อย่างเดียวไม่พอ */}
+                  {p.line && <span style={{ color: 'var(--muted)' }}> · {p.line}</span>}
+                  {/* AM = ผลิตตรวจเอง ไม่ใช่งานของช่าง — ต้องแยกให้ขาดตอนดู "ทุกทีม" */}
+                  {p.am && <span style={{ color: '#3dd65c', fontWeight: 800 }}> · AM</span>}
+                </span>
+                <b style={{ flexShrink: 0, color: p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
+                  {p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
+                </b>
+              </div>
+            ))}
+            {pm.length > 8 && (
+              <div onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', fontSize: 10.5 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
+                + อีก {pm.length - 8} แผน — ดูทั้งหมดที่แผน PM ›
+              </div>
+            )}
+          </div>
+
           <div style={card}>
             <div style={{ fontSize: 12.5 * big, fontWeight: 900, marginBottom: 8 }}>🛠️ ใบซ่อมค้าง ({mo.length})</div>
             {!mo.length && <div style={{ fontSize: 11.5 * big, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มีใบค้าง</div>}
@@ -402,20 +476,6 @@ export default function MtnAndonBoard({ d, ctx }) {
                 );
               })}
             </>)}
-          </div>
-
-          <div style={card}>
-            <div style={{ fontSize: 12.5 * big, fontWeight: 900, marginBottom: 8 }}>📅 PM ที่ต้องทำ</div>
-            {!pm.length && <div style={{ fontSize: 11.5 * big, color: 'var(--muted)' }}>ไม่มีแผนที่ครบกำหนดใน 3 วัน</div>}
-            {pm.slice(0, 6).map(p => (
-              <div key={p.id} onClick={() => navigate('/pm?tab=plan')}
-                style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
-                <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
-                <b style={{ flexShrink: 0, color: p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
-                  {p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
-                </b>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -484,12 +544,14 @@ export default function MtnAndonBoard({ d, ctx }) {
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>📅 PM ที่ถึงกำหนด (ภายใน 3 วัน)</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>📅 PM ที่ถึงกำหนด (ภายใน {PM_SOON_DAYS} วัน)</div>
                   {!zPm.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีแผนที่ถึงกำหนดของไลน์นี้</div> : (
                     <div style={{ display: 'grid', gap: 4 }}>
                       {zPm.map(p => (
                         <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                          <span style={{ color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                          <span style={{ color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {p.name}{p.am && <span style={{ color: '#3dd65c', fontWeight: 800 }}> · AM</span>}
+                          </span>
                           <b style={{ marginLeft: 'auto', flexShrink: 0, color: p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
                             {p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
                           </b>
@@ -501,7 +563,8 @@ export default function MtnAndonBoard({ d, ctx }) {
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
                   <button onClick={() => navigate('/mtn-repair')} style={chip(true)}>🔧 ใบแจ้งซ่อม</button>
-                  <button onClick={() => navigate('/pm-schedule')} style={chip(false)}>🗓️ แผน PM</button>
+                  {/* ⚠️ ชี้ปลายทางจริง ไม่เด้งผ่าน redirect — `/pm-schedule` เป็น route เก่าที่ยุบเข้าศูนย์ PM แล้ว */}
+                  <button onClick={() => navigate('/pm?tab=plan')} style={chip(false)}>🗓️ แผน PM</button>
                   <button onClick={() => navigate(`/factory-map`)} style={chip(false)}>🗺️ ผังรวมโรงงาน</button>
                 </div>
               </div>
