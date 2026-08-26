@@ -315,6 +315,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
   const [metric, setMetric] = useState('productivity');
+  const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
   const [panelMode, setPanelMode] = useState('review');
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
@@ -1257,20 +1258,20 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
   const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
-  /* 🫥 "กรอบขึ้นตามสิ่งที่กด" (2026-08-25 · คำสั่ง user): metric ที่โซนสนับสนุนไม่มีข้อมูล (facilityNA เช่น
-     คน & จุดงาน/ยอดผลิต/OEE) → ซ่อนกรอบโซน MTN/utility/คลัง/แม่พิมพ์ที่ "สถานะปกติ" ออกจากผัง ไม่ให้รกจอ
-     ⚠️ โซนที่มีเหตุผิดปกติ (เหลือง/แดง/กระพริบ — เครื่องซ่อม/PM ค้าง/สต็อกต่ำ) ยังโชว์เสมอ
-        ตามกฎ Andon "สัญญาณต้องไม่ถูกซ่อน" · โหมดแก้ผังเห็นครบทุกกรอบ (ต้องแก้ได้)
-     ⚠️ ซ่อนแล้วนับบอกบนจอ (ชิป 🫥) — ห้ามหายเงียบ */
-  const facHidden = (name) => {
-    if (editing || !M.facilityNA || !isFac(name)) return false;
-    const h = facHealth(stOf(name));
-    return h === 'good' || h === 'idle';
-  };
-  const facHiddenList = useMemo(
-    () => (editing || !M.facilityNA) ? [] : regions.map(r => r.line_name).filter(n => facHidden(n)),
-    // facHidden อ่านสถานะปัจจุบันผ่าน stOf — ใส่ state ที่พึ่งพาเป็น deps แทน (pattern เดียวกับ ranked)
-    [regions, metric, editing, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* 🫥 "กรอบขึ้นตามสิ่งที่กด" (2026-08-25 · คำสั่ง user — เข้มขึ้นรอบ 2 หลัง user ทัก "OEE ผังจะโชว์คลังสินค้าทำไม"):
+     metric ที่โซนสนับสนุนไม่มีข้อมูล (facilityNA เช่น คน/ยอดผลิต/OEE/DT/ของเสีย)
+     → ซ่อนกรอบโซน MTN/utility/คลัง/แม่พิมพ์ **ทั้งหมด ไม่ว่าสถานะอะไร** (รอบแรกเว้นโซนผิดปกติไว้
+       แล้วกล่องคลัง "เกิน Max" ไปโผล่บนแท็บ OEE — แท็บไหนต้องพูดแต่เรื่องของแท็บนั้น)
+     ⚠️ สัญญาณผิดปกติไม่หายเงียบ — ยุบเป็นตัวนับ ⚠ บนชิป (title = รายชื่อ+อาการ) + กดชิปเปิดดูชั่วคราวได้
+     · โหมดแก้ผังเห็นครบทุกกรอบ (ต้องแก้ได้) · metric ของโซนเอง (พลังงาน/PM/Supply Route) โชว์ปกติ */
+  const facHidden = (name) => !editing && !showFac && M.facilityNA && isFac(name);
+  const facZones = useMemo(() => {
+    if (editing || !M.facilityNA) return { all: [], warn: [] };
+    const all = regions.map(r => r.line_name).filter(n => isFac(n));
+    const warn = all.filter(n => { const h = facHealth(stOf(n)); return h !== 'good' && h !== 'idle'; });
+    return { all, warn };
+    // facHealth อ่านสถานะปัจจุบันผ่าน stOf — ใส่ state ที่พึ่งพาเป็น deps แทน (pattern เดียวกับ ranked)
+  }, [regions, metric, editing, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ⚙️ ซีรีส์ OEE รายวันต่อกรอบ (รวมครอบครัวไลน์) — คำนวณครั้งเดียวจาก oeeHistRaw ไม่คิดใน stOf (stOf ถูกเรียกถี่มาก)
      series = wavg รายวันถ่วง wLoad (สูตรบังคับ) เรียงเก่า→ใหม่ · prev = วันล่าสุดที่มีข้อมูล (ฐานเทียบ Δ ของวันนี้) */
@@ -1315,7 +1316,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, showFac, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -1541,7 +1542,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
     return out;
     // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, showFac, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1697,12 +1698,19 @@ export default function FactoryMap({ setupMode = false }) {
             ⚠ กรอกค่าไฟไว้แต่ยังไม่ได้ตีกรอบบนผัง {energyNoRegion.length} จุด — ตัวเลขไม่โผล่
           </span>
         )}
-        {/* 🫥 โซนสนับสนุนที่ถูกซ่อนตาม metric — ห้ามหายเงียบ (โซนผิดปกติยังโชว์เสมอ) */}
-        {!editing && !!facHiddenList.length && (
-          <span title={`ซ่อน (สถานะปกติ): ${facHiddenList.join(', ')} — โซนที่มีเหตุผิดปกติยังโชว์บนผังเสมอ`}
-            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            🫥 ซ่อนโซนสนับสนุน {facHiddenList.length} โซน (ปกติ · ไม่มีข้อมูล{M.label.replace(/^[^ ]+ /, ' ')})
-          </span>
+        {/* 🫥 โซนสนับสนุนถูกซ่อนตาม metric ที่กด — สัญญาณผิดปกติยุบเป็นตัวนับ ⚠ บนชิป (ไม่หายเงียบ) · กดชิปเปิดดูชั่วคราว */}
+        {!editing && !!facZones.all.length && (
+          <button onClick={() => setShowFac(v => !v)}
+            title={facZones.warn.length
+              ? `โซนที่มีสัญญาณ: ${facZones.warn.map(n => `${n} (${facHealthText(stOf(n))})`).join(' · ')}`
+              : `ซ่อน: ${facZones.all.join(', ')}`}
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap',
+              background: showFac ? 'var(--bg3)' : facZones.warn.length ? '#f59e0b1a' : 'transparent',
+              border: `1px solid ${showFac ? 'var(--border2)' : facZones.warn.length ? '#f59e0b55' : 'var(--border)'}`,
+              color: facZones.warn.length ? '#f59e0b' : 'var(--muted)' }}>
+            {showFac ? '👁 กำลังแสดงโซนสนับสนุน — แตะเพื่อซ่อน'
+              : `🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''} — แตะเพื่อดู`}
+          </button>
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
