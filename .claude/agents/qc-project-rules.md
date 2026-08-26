@@ -55,6 +55,13 @@ model: inherit
   แล้วเครื่องค้างในแท็บนั้นถาวร — เคยเกิด 24 แถว) ต้องใช้ `findChecklist(...)` ตอนอ่าน
   (CLAUDE.md "กฎเหล็ก — checklist เกิดตอนบันทึกเท่านั้น")
   · grep: `getOrCreateChecklist` ใน `src/` แล้วดูว่าอยู่ใน handler บันทึกจริงหรือ effect ตอนเปิดดู
+- **B6** subscribe realtime (`postgres_changes`) ต้องผ่าน **`liveChannel(client, 'ชื่อ')`**
+  ห้ามเรียก `client.channel('ชื่อคงที่')` ตรงๆ — `channel()` dedupe ตาม topic + `removeChannel()` เป็น async
+  (teardown หลัง server ack) → effect รอบใหม่ได้ channel เก่าที่ยังไม่ถูกถอด แล้ว `.on()` push binding ทบไปเรื่อยๆ
+  → หน่วงขึ้นทุกครั้งที่ effect re-run จนค้าง (เจอจริง 2026-08-26 หน้า Management)
+  (CLAUDE.md "กฎเหล็ก — subscribe realtime ต้องผ่าน liveChannel")
+  · grep: `\.channel\(` ใน `src/` — ทุกตัวที่ไม่ผ่าน `liveChannel` = ผิด
+  · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —

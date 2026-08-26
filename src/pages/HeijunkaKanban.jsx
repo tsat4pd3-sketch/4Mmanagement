@@ -296,7 +296,24 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
     .filter(Boolean)
     .sort((a, b) => a[0] - b[0]);
 
-  // เรียงรอบตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่ดันออกทางขวาเกินเวลาจริง ไม่สร้างแถวใหม่) และหลบช่วงเวลาพัก
+  /* รอบที่ "ตกอยู่ในครึ่งวันนี้" — ใช้ทั้งวาดบล็อกและนับเลขบนป้ายซ้าย (ต้องเป็นชุดเดียวกันเสมอ
+     ไม่งั้นป้ายบอก 3 รอบ แต่แถวว่างเปล่า = จอขัดกันเอง) */
+  const roundsInHalf = (lineRounds, half) => lineRounds.map(r => {
+    const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
+    if (startMs == null) return null;
+    const endMs = startMs + roundDeliveryMin(r) * 60000;
+    if (endMs <= half.startMs || startMs >= half.startMs + 12 * 3600000) return null;
+    return { r, startMs, endMs };
+  }).filter(Boolean).sort((a, b) => a.startMs - b.startMs);
+
+  /* ⚠️⚠️ กฎเหล็ก — บล็อกต้องอยู่ที่ "เวลาส่งจริง" เสมอ ห้ามขยับ (user 2026-08-26 "เช็คเรื่องเวลาที เราว่าไม่น่าใช่")
+     เดิมโค้ดนี้ขยับบล็อก 2 ชั้น: (1) ต่อคิวไม่ให้ทับรอบก่อนหน้า `max(start, queueEnd)`
+     (2) วนหนีช่วงเวลาพัก `while (overlap) realStart = breakEnd`
+     ⇒ รอบที่ตั้งไว้ 17:30 ถูกวาดที่ 18:00 (ปลายช่วงพัก 17:10-18:00) ขณะที่ tooltip ยังเขียน "ส่ง 17:30"
+        = **ชาร์ตเวลาที่โกหกเรื่องเวลา** ซึ่งเป็นหน้าที่เดียวของมัน
+     รอบจัดส่งคือ "นัดหมาย" ไม่ใช่คิวงานที่เลื่อนได้ — ชนเวลาพัก = ข้อมูลที่หัวหน้าต้องเห็นแล้วไปขยับเวลาเอง
+     ไม่ใช่สิ่งที่จอควรซ่อนด้วยการเลื่อนบล็อก · ตอนนี้ชนแล้วติด ⚠ ไว้บนบล็อก + บอกใน tooltip
+     **ห้ามเอา queue/break push กลับมาไม่ว่ากรณีใด** */
   const renderTimeline = (lineRounds, half, rowKey) => (
     <div key={rowKey} style={{ flex: 1, position: 'relative', display: 'flex' }}>
       {half.hours.map((h, i) => {
@@ -332,51 +349,29 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
       {(() => {
         const MIN_W_PCT = 1.5;
         const breaks = getBreakIntervals(half);
-        const items = lineRounds.map(r => {
-          const startMs = timeToMs((r.delivery_time || '').slice(0, 5));
-          if (startMs == null) return null;
-          const endMs = startMs + roundDeliveryMin(r) * 60000;
-          if (endMs <= half.startMs || startMs >= half.startMs + 12 * 3600000) return null;
-          return { r, startMs, endMs };
-        }).filter(Boolean).sort((a, b) => a.startMs - b.startMs);
-        let queueEndMs = -Infinity;
-        const positioned = items.map(({ r, startMs, endMs }) => {
-          const durationMs = Math.max(endMs - startMs, 0);
-          let realStartMs = Math.max(startMs, queueEndMs);
-          let realEndMs = realStartMs + durationMs;
-          let pushed = true;
-          while (pushed) {
-            pushed = false;
-            for (const [bs, be] of breaks) {
-              if (realStartMs < be && realEndMs > bs) {
-                realStartMs = be;
-                realEndMs = realStartMs + durationMs;
-                pushed = true;
-              }
-            }
-          }
-          queueEndMs = realEndMs;
-          const leftPct = Math.max(0, (realStartMs - half.startMs) * pctPerMs);
-          const rightPct = Math.min(100, (realEndMs - half.startMs) * pctPerMs);
-          const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
-          return { r, leftPct, widthPct };
-        });
-        return positioned.map(({ r, leftPct, widthPct }) => {
+        return roundsInHalf(lineRounds, half).map(({ r, startMs, endMs }) => {
+          const leftPct = Math.max(0, (startMs - half.startMs) * pctPerMs);
           if (leftPct >= 100) return null;
+          const rightPct = Math.min(100, (endMs - half.startMs) * pctPerMs);
+          const widthPct = Math.max(MIN_W_PCT, rightPct - leftPct);
+          // ชนเวลาพัก = แจ้งให้เห็น ไม่เลื่อนบล็อกหนี (ดูกฎเหล็กด้านบน)
+          const hitBreak = breaks.some(([bs, be]) => startMs < be && endMs > bs);
           const status = getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs);
           const cards = roundAlloc[r.id]?.totalKanban || 0;
+          const hhmm = (r.delivery_time || '').slice(0, 5);
           const expandKey = `${r.line_name}|${r.shift}|${r.round_no}`;
           return (
-            <div key={r.id} title={`รอบ ${r.round_no} (${r.shift === 'night' ? 'กะดึก' : 'กะเช้า'}) · ส่ง ${(r.delivery_time||'').slice(0,5)} · ${cards} การ์ด · ${status.label}`}
+            <div key={r.id} title={`รอบ ${r.round_no} (${r.shift === 'night' ? 'กะดึก' : 'กะเช้า'}) · ส่ง ${hhmm} · ${cards} การ์ด · ${status.label}${hitBreak ? ' · ⚠ เวลาส่งตรงกับช่วงพัก — ไลน์ไม่รับของ ควรขยับเวลารอบ' : ''}`}
               onClick={() => setExpanded(expanded === expandKey ? null : expandKey)}
               style={{
-                position: 'absolute', top: 4, bottom: 4, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 22,
-                background: `${status.top}28`, border: `1.5px solid ${status.top}cc`,
+                position: 'absolute', top: 4, bottom: 4, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 46,
+                background: `${status.top}28`, border: `1.5px solid ${hitBreak ? '#f59e0b' : `${status.top}cc`}`,
                 borderRadius: 4, overflow: 'hidden', cursor: 'pointer', zIndex: 1,
                 display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px',
               }}>
+              {/* ⚠️ ต้องพิมพ์ "เวลาส่งจริง" บนบล็อกเสมอ — จอกับข้อมูลจะได้ไม่มีทางเถียงกันเงียบๆ อีก */}
               <div style={{ fontSize: 11, fontWeight: 800, color: status.top, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                🎴 รอบ {r.round_no}{cards > 0 ? ` · ${cards}ใบ` : ''}
+                {hitBreak ? '⚠' : '🎴'}{hhmm}{cards > 0 ? ` · ${cards}ใบ` : ''}
               </div>
             </div>
           );
@@ -416,17 +411,23 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
             </div>
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
             <div style={isMobile ? { minWidth: 620 } : undefined}>
-            {HALVES.map(half => (
+            {HALVES.map(half => {
+              /* ⚠️ ป้ายซ้ายต้องนับ "รอบในครึ่งวันนี้" ไม่ใช่ทั้งวัน — เดิมเขียน {lineRounds.length} รอบ
+                 ทำให้แถวกะดึกขึ้น "3 รอบ" ทั้งที่ว่างเปล่า (ทั้งระบบยังไม่มีรอบกะดึกเลยสักรอบ)
+                 คนอ่านแล้วนึกว่าบล็อกหาย/เวลาเพี้ยน ทั้งที่ของจริงคือ "ยังไม่มีใครตั้งรอบกะดึก" */
+              const nHalf = roundsInHalf(lineRounds, half).length;
+              return (
               <div key={half.key} style={{ borderTop: half.key === 'pm' ? '2px solid var(--border2)' : 'none' }}>
                 {hourHeader(half.hours, half.startMs)}
                 <div style={{ display: 'flex', minHeight: 36 }}>
-                  <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 11, color: 'var(--muted)', fontWeight: 700, ...stickyL('var(--card)') }}>
-                    {lineRounds.length} รอบ
+                  <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', alignItems: 'center', fontSize: 11, color: nHalf ? 'var(--muted)' : 'var(--border2)', fontWeight: 700, ...stickyL('var(--card)') }}>
+                    {nHalf ? `${nHalf} รอบ` : `— ไม่มีรอบ${half.key === 'pm' ? 'กะดึก' : 'กะเช้า'}`}
                   </div>
                   {renderTimeline(lineRounds, half, `${lineName}-${half.key}`)}
                 </div>
               </div>
-            ))}
+              );
+            })}
             </div>
             </div>
             {/* expanded round detail — demand เฉพาะรอบนั้น */}

@@ -10,6 +10,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -117,7 +118,7 @@ export default function RackCenter() {
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
   useEffect(() => {
-    const ch = supabaseDR.channel('rack-requests-live')
+    const ch = liveChannel(supabaseDR, 'rack-requests-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rack_requests' }, load)
       .subscribe();
     return () => { supabaseDR.removeChannel(ch); };

@@ -12,7 +12,7 @@
 
    stateOf(lineName) → { color, blink, label } | null   (null = ไม่มีข้อมูล → เทาจาง)
    ══════════════════════════════════════════════════════════════════════════ */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster } from '../utils/masterCache';
 
@@ -22,14 +22,23 @@ const anchorOf = (pts) => (pts?.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50]);
 
-const DIM = { color: '#4b5563', blink: false, label: null };
+// สี "ไม่ได้เปิดกะ" = CAT.idle ของ /factory-map (ห้ามใช้สีอื่น — จอเดียวกันต้องอ่านสีเหมือนกัน)
+const DIM = { color: '#6b7280', blink: false, label: null };
 
 export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100vh - 300px)' }) {
   const [map, setMap] = useState(null);      // { image_url }
   const [regions, setRegions] = useState([]);
   const [err, setErr] = useState(null);
-  // aspect ratio จริงของรูป (naturalWidth/Height) — ใช้คุมความสูงผ่าน maxWidth (ดูคอมเมนต์ตอน render)
+  /* aspect ratio จริงของรูป (naturalWidth/Height) — ใช้คุมความสูงผ่าน maxWidth (ดูคอมเมนต์ตอน render)
+     ⚠️ อ่านผ่าน ref ด้วย ไม่พึ่ง onLoad อย่างเดียว: รูปผังถูก cache ไว้แล้ว (จอ TV เปิดค้างทั้งวัน
+     refresh บ่อย) บางจังหวะ browser โหลดเสร็จก่อน React ผูก handler → onLoad ไม่ยิง → ar ค้าง null
+     → maxWidth หายไป เหลือแต่ clamp ความสูง = **รูปโดนตัด** ซึ่งคืออาการ "สเกลแย่" ที่หน้างานเห็น */
   const [ar, setAr] = useState(null);
+  const imgRef = useRef(null);
+  const readAr = useCallback(() => {
+    const t = imgRef.current;
+    if (t?.naturalWidth > 0 && t?.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight);
+  }, []);
 
   useEffect(() => {
     let dead = false;
@@ -56,6 +65,9 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
     return () => { dead = true; };
   }, []);
 
+  // รูปที่อยู่ใน cache อาจ complete ไปแล้วตั้งแต่ก่อน React ผูก onLoad → อ่าน naturalWidth เองอีกทาง
+  useEffect(() => { readAr(); }, [map?.image_url, readAr]);
+
   /* ป้ายชื่อวาดเฉพาะไลน์ที่ "ผิดปกติ" — จอ TV ต้องกวาดตาเจอจุดที่ต้องไปทันที
      (ถ้าวาดครบทุกไลน์จะทับกันเอง ซึ่ง /factory-map มีอัลกอริทึมกันทับของตัวเอง — ที่นี่ไม่ต้อง) */
   const marks = useMemo(() => regions
@@ -79,11 +91,13 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
         position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
         border: '1px solid var(--border)', background: '#0a0a0f',
         maxWidth: ar ? `calc(${maxHeight} * ${ar})` : undefined,
+        /* กันภาพสูงพรวดก่อน onLoad (ยังไม่รู้ aspect) — ตั้งให้ **ใหญ่กว่าสูตรความกว้าง 10px**
+           เหมือน /factory-map (สูตร 210px vs clamp 200px) → สูตรความกว้างชนะเสมอ ไม่มีทาง crop */
+        maxHeight: `calc(${maxHeight} + 10px)`,
       }}>
-        <img src={map.image_url} alt="ผังโรงงาน"
-          onLoad={(e) => { const t = e.currentTarget; if (t.naturalWidth > 0 && t.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight); }}
+        <img ref={imgRef} src={map.image_url} alt="ผังโรงงาน" onLoad={readAr}
           style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none' }} />
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.30)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
 
         {/* ⚠️ preserveAspectRatio=none + vector-effect: non-scaling-stroke — พิกัดเป็น % ของรูปจริง
             (สูตรเดียวกับ /factory-map · เปลี่ยนแล้วกรอบจะเลื่อนไม่ตรงผัง) */}
@@ -94,9 +108,11 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
             return (
               <polygon key={r.id} points={ptsStr(r.points)}
                 className={st.blink ? 'region-alarm' : undefined}
-                fill={st.blink ? undefined : `${st.color}${st.label ? '4d' : '1f'}`}
+                /* ค่าเดียวกับ /factory-map เป๊ะ: ปกติ = fill 2b / stroke 1.75 · ไลน์ที่มีปัญหาใช้ค่า
+                   "ไฮไลต์" ของผังรวม (55 / 3.5) — ต่างกันได้แค่ "เน้น" ห้ามต่างกันที่สเกล/สี */
+                fill={st.blink ? undefined : `${st.color}${st.label ? '55' : '2b'}`}
                 stroke={st.blink ? undefined : st.color}
-                strokeWidth={st.label ? '3' : '1.4'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
+                strokeWidth={st.label ? '3.5' : '1.75'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                 style={{ pointerEvents: onPick ? 'auto' : 'none', cursor: onPick ? 'pointer' : 'default' }}
                 onClick={onPick ? () => onPick(r.line_name) : undefined} />
             );
