@@ -260,7 +260,8 @@ export default function MtnAndonBoard({ d, ctx }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1.35fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
+      {/* ผังคือพระเอกของจอนี้ (2fr) — เดิม 1.35fr ผังเล็กกว่า /factory-map เกือบครึ่ง user ทักว่าสเกลแย่ */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
         {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง ══ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <FactoryMiniMap stateOf={stateOf} onPick={() => navigate('/mtn-repair')} />
