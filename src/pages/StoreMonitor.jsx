@@ -30,6 +30,7 @@ export default function StoreMonitor() {
   const [prodLines, setProdLines] = useState([]); // production_lines (id/name/section/parent) — ใช้คิด scope
   const [findings, setFindings] = useState([]);
   const [loadErr, setLoadErr] = useState('');
+  const [cutMsg, setCutMsg] = useState('');   // ชนเพดานแถว — ข้อมูลมาแล้วแต่ไม่ครบ (คนละเรื่องกับโหลดพัง)
   const [lineFilter, setLineFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');   // all | shortage | over
   const [loading, setLoading] = useState(true);
@@ -38,13 +39,28 @@ export default function StoreMonitor() {
     // ⚠️ เงื่อนไขตรวจทั้ง 5 เคสอยู่ในวิว `v_store_abnormal` (DR) ที่เดียว —
     //    ตัวแจ้งเตือน (edge store-daily-scan) อ่านวิวตัวเดียวกัน จึงไม่มีทาง drift
     //    ห้ามย้ายเงื่อนไขกลับมาคิดในหน้า
-    const [{ data: f, error }, { data: lines }] = await Promise.all([
-      supabaseDR.from('v_store_abnormal').select('*'),
-      supabase.from('production_lines').select('id, name, section, parent_line_name, is_active'),
-    ]);
+    /* 🔴 กับดักเพดาน 1000 แถว (แก้ 2026-08-26) — เดิม `.select('*')` เฉยๆ ตัดที่ 1000 แถวเงียบ
+       ⇒ ตัวนับบนจอเป็นเลขปลอม และเคสที่เกินหายไปโดยไม่มีใครรู้ (แจ้งเตือนก็เจอบั๊กเดียวกัน)
+       เรียงรุนแรงก่อน — ชนเพดานเมื่อไหร่จะได้ตัดตัวเบาทิ้ง ไม่ใช่ตัดตัวหนัก
+       ⚠️ `.range()` ต้องคู่กับ `.order()` ที่คงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า */
+    const PAGE = 1000, MAX_PAGES = 12;
+    const rows = []; let error = null, cut = false, p = 0;
+    for (; p < MAX_PAGES; p++) {
+      const { data, error: e } = await supabaseDR.from('v_store_abnormal').select('*')
+        .order('sev', { ascending: false }).order('code').order('mat_no')
+        .range(p * PAGE, (p + 1) * PAGE - 1);
+      if (e) { error = e; break; }
+      rows.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    if (p >= MAX_PAGES) cut = true;
+    const { data: lines } = await supabase.from('production_lines').select('id, name, section, parent_line_name, is_active');
+    const f = rows;
     setProdLines(lines || []);
     // โหลดไม่สำเร็จ ≠ ไม่มีเรื่องผิดปกติ — ต้องบอกให้รู้ ห้ามขึ้นจอเขียว "ปกติดี"
     setLoadErr(error ? (error.message || 'โหลดไม่สำเร็จ') : '');
+    // ⚠️ ชนเพดาน ≠ โหลดพัง — คนละข้อความ (ข้อมูลมาแล้วแค่ไม่ครบ) แต่ห้ามเงียบเหมือนกัน
+    setCutMsg(!error && cut ? `${PAGE * MAX_PAGES}` : '');
     setFindings(error ? [] : (f || []).map(r => ({
       kind: r.kind, code: r.code, title: r.title,
       line: r.line_name || '', mat: r.mat_no || '', part: r.part_name || '',
@@ -138,6 +154,11 @@ export default function StoreMonitor() {
       {loadErr && (
         <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>
           ⚠ โหลดข้อมูลเฝ้าระวังไม่สำเร็จ — <b>ไม่ได้แปลว่าไม่มีเรื่องผิดปกติ</b> ({loadErr})
+        </div>
+      )}
+      {cutMsg && (
+        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
+          ⚠ รายการผิดปกติเกิน {cutMsg} รายการ — แสดงเฉพาะที่รุนแรงที่สุด <b>ตัวเลขบนจอยังไม่ครบ</b>
         </div>
       )}
       {loading ? (

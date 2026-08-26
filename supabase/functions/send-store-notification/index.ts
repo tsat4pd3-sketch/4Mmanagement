@@ -117,6 +117,9 @@ Deno.serve(async (req) => {
         `📅 วันงาน: ${a.work_date}`,
         `🟥 จะขาด ${a.shortage} · 🟧 ล้น ${a.over}`,
       ];
+      /* ⚠️ ดึงแถวมาไม่ครบ (ชนเพดานหน้า) = ตัวเลขแยกรายกลุ่มข้างล่างยังไม่ครบ — ต้องบอก ห้ามเงียบ
+         หัวข้อ "พบ N รายการ" เป็นของจริงเสมอ (มาจาก head-count) จึงไม่ต้องแก้ */
+      if (a.truncated) lines.push(`⚠️ ลิสต์ข้างล่างแสดงได้ ${a.sampled} จาก ${a.total} รายการ (ตัวเลขแยกกลุ่มยังไม่ครบ)`);
       for (const g of groups) {
         lines.push(``, `${g.kind === 'over' ? '🟧' : '🟥'} <b>${g.title}</b> — ${g.count} รายการ:`);
         for (const it of g.items ?? []) {

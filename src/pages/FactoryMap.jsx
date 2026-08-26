@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -14,6 +14,7 @@ import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, de
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
+import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
@@ -364,6 +365,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
+  const [pmOrphan, setPmOrphan] = useState({ total: 0, overdue: 0 });  // แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ห้ามหายเงียบ
   const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
   const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
@@ -891,27 +893,53 @@ export default function FactoryMap({ setupMode = false }) {
   }, []);
   usePolling(loadManpower, RATE.BOARD);
 
-  /* ── PM เครื่องจักรรายไลน์ (DR: machines → checklists → pm_plans) — refresh 5 นาที ── */
+  /* ── PM เครื่องจักรรายไลน์ (DR: checklists → **jigs** → pm_plans) — refresh 30 นาที ──
+     🔴 บั๊กที่แก้ 2026-08-26 (user: "PM ยังไม่ขึ้นหน้าแดชบอร์ดผังโรงงาน"):
+        เดิมเขียน `.in('equipment_id', machines.map(m => m.id))` — แต่ **`checklists.equipment_id`
+        ชี้ไป `jigs.id` ไม่ใช่ `machines.id`** (กฎ: `jigs` คือทะเบียน "อุปกรณ์ที่มีแผน PM"
+        เครื่องจักรมี "แถวเงา" ใน jigs ที่ `machine_id` ชี้กลับ machines)
+        ⇒ เทียบ uuid คนละตาราง = ไม่แมตช์สักแถว → `cls` ว่าง → `setPmStatus({})`
+          → ทุกไลน์ขึ้น "—" ตลอดกาล **ทั้งที่มีแผน PM เกินกำหนดอยู่จริง**
+        (`/dept-dashboard` และ edge `pm-plan-reminder` ทำถูกอยู่แล้ว — จอผังตกสำรวจจุดเดียว)
+     ⚠️ ไลน์เอาจาก `jigs.line_name` ก่อน (เป็นของอุปกรณ์ตัวนั้นเอง) ไม่มีค่อยถอยไปไลน์ของเครื่องที่ผูก
+     ⚠️ query ล้มเหลว = **คงค่าเดิมไว้ ห้ามล้างเป็น {}** (ล้างแล้วจอบอก "ไม่มีแผน PM" ซึ่งเป็นคำตอบผิด) */
   const loadPM = useCallback(async () => {
-    const machines = await cachedMaster('machines:idline', async () =>
-      (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []);
-    if (!machines?.length) { setPmStatus({}); return; }
-    const lineOfMachine = {}; machines.forEach(m => { lineOfMachine[m.id] = m.line_name; });
-    const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').in('equipment_id', machines.map(m => m.id));
-    if (!cls?.length) { setPmStatus({}); return; }
-    const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfMachine[c.equipment_id]; });
-    const { data: plans } = await supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', cls.map(c => c.id));
+    const { data: cls, error: clErr } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn');
+    if (clErr) { console.warn('loadPM checklists', clErr.message); return; }
+    const eqIds = [...new Set((cls || []).map(c => c.equipment_id).filter(Boolean))];
+    if (!eqIds.length) { setPmStatus({}); return; }
+    /* ⚠️ ผ่าน fetchByIds เสมอ — checklists/jigs หลักร้อยแถว `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด
+       แล้วคืนค่าว่าง "เงียบ" (บทเรียนเดิม: จอโชว์ 0 ทั้งที่มีของจริง) */
+    const [jgRes, machines] = await Promise.all([
+      fetchByIds(eqIds, c => supabaseDR.from('jigs').select('id, line_name, machine_id').in('id', c)),
+      cachedMaster('machines:idline', async () =>
+        (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []),
+    ]);
+    if (jgRes.error) { console.warn('loadPM jigs', jgRes.error); return; }
+    const lineOfMachine = {}; (machines || []).forEach(m => { lineOfMachine[m.id] = m.line_name; });
+    const lineOfEq = {}; jgRes.rows.forEach(j => { lineOfEq[j.id] = j.line_name || lineOfMachine[j.machine_id] || ''; });
+    const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfEq[c.equipment_id]; });
+    const plRes = await fetchByIds((cls || []).map(c => c.id),
+      c => supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', c));
+    if (plRes.error) { console.warn('loadPM plans', plRes.error); return; }
+    const plans = plRes.rows;
     const now = new Date(); const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const soon = new Date(now.getTime() + 7 * 864e5); const soonStr = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
     const out = {};
+    /* ⚠️ อุปกรณ์ที่ยังไม่ได้ผูกไลน์ = วางบนผังไม่ได้ **แต่ห้ามทิ้งเงียบ** — โดยเฉพาะตัวที่เกินกำหนด
+       (แผน PM ที่ไม่รู้ว่าอยู่ไลน์ไหน จะหายจากทุกจอที่จัดกลุ่มตามไลน์) → นับไว้โชว์เป็นชิป */
+    const orphan = { total: 0, overdue: 0 };
     (plans || []).forEach(p => {
-      const ln = lineOfChecklist[p.checklist_id]; if (!ln) return;
+      const overdue = p.next_due_date && p.next_due_date < today;
+      const ln = lineOfChecklist[p.checklist_id];
+      if (!ln) { orphan.total++; if (overdue) orphan.overdue++; return; }
       const o = out[ln] || { pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
       o.pmTotal++;
-      if (p.next_due_date && p.next_due_date < today) o.pmOverdue++;
+      if (overdue) o.pmOverdue++;
       else if (p.next_due_date && p.next_due_date <= soonStr) o.pmDueSoon++;
       out[ln] = o;
     });
+    setPmOrphan(orphan);
     setPmStatus(out);
   }, []);
   usePolling(loadPM, RATE.SLOW);
@@ -1799,6 +1827,17 @@ export default function FactoryMap({ setupMode = false }) {
             {showFac ? '👁 กำลังแสดงโซนสนับสนุน — แตะเพื่อซ่อน'
               : `🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''} — แตะเพื่อดู`}
           </button>
+        )}
+        {/* 🛠️ แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ต้องรู้ว่ามีค้างอยู่ (ห้ามหายเงียบ) */}
+        {!editing && metric === 'pm' && pmOrphan.total > 0 && (
+          <Link to="/pm-setup"
+            title="ไปตั้ง 'ไลน์' ให้อุปกรณ์ที่ PM Setup — ตั้งแล้วแผนจะขึ้นบนกรอบไลน์นั้นเอง"
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', borderRadius: 6, padding: '3px 8px',
+              color: pmOrphan.overdue ? '#ef4444' : '#f59e0b',
+              background: pmOrphan.overdue ? '#ef44441a' : '#f59e0b1a',
+              border: `1px solid ${pmOrphan.overdue ? '#ef444455' : '#f59e0b55'}` }}>
+            ⚠ แผน PM {pmOrphan.total} รายการยังไม่ผูกไลน์ — ไม่ขึ้นบนผัง{pmOrphan.overdue ? ` · เกินกำหนดแล้ว ${pmOrphan.overdue}` : ''}
+          </Link>
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
