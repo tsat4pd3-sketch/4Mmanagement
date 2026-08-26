@@ -28,7 +28,7 @@
        "ไลน์นี้เปิดกะอยู่ / มีคนลง downtime ค้างไว้" **ห้ามเขียนว่า online/พลังงานเรียลไทม์**
      · **อ่านอย่างเดียว** ทุกอย่างที่กดได้ = ลิงก์ไปหน้าที่ทำงานจริง
    ══════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -75,6 +75,21 @@ export default function MtnAndonBoard({ d, ctx }) {
   const [thr, setThr] = useState(DT_OPEN_ALERT_MIN_DEFAULT);  // เกณฑ์ "หยุดเกินกี่นาที" (dt_alert_config)
   const [zoom, setZoom] = useState(null);           // ไลน์ที่กดจากผัง → เจาะดูปัญหาของไลน์นั้น
   const [, setTick] = useState(0);                  // นาฬิกาเดิน — ให้ "กี่นาทีแล้ว" ขยับเอง
+
+  /* ความสูงคอลัมน์ขวา = **ความสูงจริงของผัง** (วัดด้วย ResizeObserver ไม่ใช่เดา `100vh - Npx`)
+     จอ TV ไม่มีใครเลื่อนหน้าจอ — เดิมการ์ด PM หลุดใต้ fold มองไม่เห็นตลอดกาล
+     ⚠️ กฎ UI §6.8: ถ้าจำเป็นต้องมีกรอบเลื่อน **ห้ามเดาความสูง header** ต้องวัดจริง
+        (เดาแล้วกล่องยื่นพ้นจอ = สกรอลบาร์อยู่นอกจอ เนื้อหาท้ายเข้าไม่ถึงถาวร — เคสจริง /line-stock)
+     ที่นี่วัดจากพี่น้องในกริดเดียวกันจึงตรงเสมอ และไม่เกิดลูป (คอลัมน์ซ้ายสูงตามเนื้อหาตัวเอง) */
+  const leftRef = useRef(null);
+  const [leftH, setLeftH] = useState(null);
+  useEffect(() => {
+    const el = leftRef.current;
+    if (!el || isMobile || typeof ResizeObserver === 'undefined') { setLeftH(null); return; }
+    const ro = new ResizeObserver(() => setLeftH(el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile]);
 
   /* ── ทีมที่กำลังดู — อยู่ใน URL เพื่อให้จอแต่ละห้องบุ๊กมาร์กของตัวเองได้ ──
      ยังไม่เลือก = ทีมของบัญชีที่เปิดจอ (ถ้ามีทีมเดียว) · ไม่งั้น = ทุกทีม */
@@ -214,26 +229,14 @@ export default function MtnAndonBoard({ d, ctx }) {
   }, [d, workDate, team]);
 
   const big = isMobile ? 1 : 2;   // ตัวคูณขนาดตัวอักษรสำหรับจอ TV
-  const teamName = team ? `${TEAM_ICON[team] || '🔧'} ${deptNameOf(team)}` : '👁 ทุกทีม';
 
   return (
     <>
       <DowntimeSiren mode="call_mtn" />
 
-      {/* ── ชิปเลือกทีม — จอแต่ละห้องบุ๊กมาร์ก URL ของตัวเอง (?team=…) ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-        {MTN_TEAMS.map(t => (
-          <button key={t} onClick={() => setTeam(t)} style={chip(team === t)}>
-            {TEAM_ICON[t] || '🔧'} {deptNameOf(t)}
-          </button>
-        ))}
-        <button onClick={() => setTeam(null)} style={chip(!team)}>👁 ทุกทีม</button>
-        {myTeams.length === 1 && !sp.get('team') && (
-          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· ตั้งต้นตามทีมของบัญชีนี้</span>
-        )}
-      </div>
-
-      {/* ── แถบสรุปบนสุด — อ่านจากอีกฝั่งห้องได้ ── */}
+      {/* ── แถบสรุปบนสุด — อ่านจากอีกฝั่งห้องได้ · ชิปเลือกทีมอยู่ในแถวนี้ด้วย ──
+          ⚠️ ชิปทีมเคยเป็นแถวของตัวเองเหนือแถบสรุป — ยุบเข้ามาเพราะบนจอ TV ทุกแถวที่เพิ่ม
+          คือความสูงที่ผังเสียไป (ผังคือพระเอกของจอนี้) · ยังเลือกทีมได้ครบเหมือนเดิม */}
       <div style={{
         ...card, display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', justifyContent: 'space-between',
         borderColor: nCall ? '#ef4444' : live.length ? '#f59e0b' : 'var(--border)',
@@ -241,7 +244,17 @@ export default function MtnAndonBoard({ d, ctx }) {
       }}>
         <div style={{ fontSize: 15 * big, fontWeight: 900, color: nCall ? '#ef4444' : live.length ? '#f59e0b' : '#22c55e' }}>
           {nCall ? `📞 เรียกช่าง ${nCall} เครื่อง` : live.length ? `🔧 เครื่องหยุดอยู่ ${live.length} เครื่อง` : '✅ ไม่มีเครื่องหยุดอยู่ตอนนี้'}
-          <span style={{ fontSize: 11 * big, fontWeight: 700, color: 'var(--muted)', marginLeft: 10 }}>{teamName}</span>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          {MTN_TEAMS.map(t => (
+            <button key={t} onClick={() => setTeam(t)} style={chip(team === t)}>
+              {TEAM_ICON[t] || '🔧'} {deptNameOf(t)}
+            </button>
+          ))}
+          <button onClick={() => setTeam(null)} style={chip(!team)}>👁 ทุกทีม</button>
+          {myTeams.length === 1 && !sp.get('team') && (
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>· ตั้งต้นตามทีมของบัญชีนี้</span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12.5 * big, fontWeight: 800 }}>
           <span style={{ color: mo.length ? '#f59e0b' : '#22c55e' }}>🛠️ ใบซ่อมค้าง {mo.length}</span>
@@ -272,27 +285,33 @@ export default function MtnAndonBoard({ d, ctx }) {
       {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**
           ผังตอบ "อยู่ตรงไหน" · ลิสต์ตอบ "อะไร/นานแค่ไหน" ช่างต้องได้ทั้งคู่จากที่นั่งเดียว
           → ผังกินพื้นที่มากขึ้น (1.7fr) + สูงขึ้น · ลิสต์ยังกว้างพอไม่ตัดบรรทัด (≥300px) */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1.7fr) minmax(300px,1fr)', gap: 12, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2.8fr) minmax(300px,1fr)', gap: 12, alignItems: 'start' }}>
         {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง · กดกรอบ = เจาะดูปัญหาของไลน์นั้น ══ */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <FactoryMiniMap stateOf={stateOf} onPick={setZoom} maxHeight="calc(100vh - 250px)" />
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>👆 กดกรอบไลน์บนผังเพื่อดูรายละเอียดปัญหาของไลน์นั้น</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11.5, color: 'var(--muted)' }}>
+        <div ref={leftRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <FactoryMiniMap stateOf={stateOf} onPick={setZoom} maxHeight="calc(100vh - 205px)" />
+          {/* คำอธิบายทั้งหมดยุบเหลือ "บรรทัดเดียว" — ทุกบรรทัดใต้ผังคือความสูงที่ผังเสียไป
+              ⚠️ ห้ามตัดข้อความทิ้ง: legend บอกว่าสีไหนแปลว่าอะไร · ประโยคท้ายกันคนเข้าใจว่า
+              เป็นสถานะเครื่องเรียลไทม์ (ยังไม่มี SCADA/มิเตอร์รายเครื่อง — กฎ CLAUDE.md) */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 11px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
+            <span>👆 กดกรอบไลน์ = ดูปัญหาของไลน์นั้น</span>
             <span><b style={{ color: '#ef4444' }}>■</b> เรียกช่าง (กระพริบ)</span>
             <span><b style={{ color: '#f59e0b' }}>■</b> หยุดเกินเกณฑ์</span>
             <span><b style={{ color: '#facc15' }}>■</b> เพิ่งหยุด</span>
-            <span><b style={{ color: '#22c55e' }}>■</b> เปิดกะอยู่ ไม่มีแจ้งหยุด</span>
-            <span><b style={{ color: '#4b5563' }}>■</b> ไม่ได้เปิดกะ</span>
-          </div>
-          {/* ⚠️ ห้ามให้คนอ่านเข้าใจว่าเป็นสถานะเครื่องแบบเรียลไทม์ */}
-          <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.55 }}>
-            สีมาจาก <b>กะที่เปิด + downtime ที่คนลงไว้</b> — ยังไม่มีสัญญาณรายเครื่อง (online/พลังงานเรียลไทม์)
-            เพราะต้องต่อ SCADA/มิเตอร์ก่อน
+            <span><b style={{ color: '#22c55e' }}>■</b> เปิดกะอยู่</span>
+            <span><b style={{ color: '#6b7280' }}>■</b> ไม่ได้เปิดกะ</span>
+            <span>· สีมาจาก <b>กะที่เปิด + downtime ที่คนลงไว้</b> ยังไม่มีสัญญาณรายเครื่อง (ต้องต่อ SCADA/มิเตอร์ก่อน)</span>
           </div>
         </div>
 
-        {/* ══ ① เครื่องหยุด ② ใบซ่อม ③ PM ══ */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* ══ ① เครื่องหยุด ② ใบซ่อม ③ PM ══
+            ⚠️ จอ TV ไม่มีใครเลื่อนหน้าจอ — เดิมคอลัมน์นี้ยาวกว่าจอจนการ์ด PM หลุดใต้ fold
+            สูงเท่า "ผังที่วัดได้จริง" แล้วเลื่อนในกรอบแทน (ห้ามเดา 100vh − Npx · กฎ §6.8)
+            ยอดรวม (ใบซ่อมค้าง / PM เกินกำหนด) อยู่บนแถบสรุปด้านบนซึ่งเห็นเสมอ → ไม่มีอะไรหายเงียบ */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 10,
+          maxHeight: leftH || undefined, overflowY: leftH ? 'auto' : undefined,
+          paddingRight: leftH ? 4 : undefined,
+        }}>
           <div style={{ fontSize: 13 * big, fontWeight: 900 }}>🚨 เครื่องที่หยุดอยู่ตอนนี้</div>
 
           {!live.length && (
