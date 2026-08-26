@@ -58,7 +58,72 @@ const CAT = {
 /** % เปลี่ยนแปลงพลังงานเทียบเดือนก่อน — ต้องมีฐานจริงถึงจะเทียบ (0 = ไม่มีข้อมูล ไม่ใช่ "ไม่เปลี่ยน") */
 const energyDelta = (s) => (s.kwhPrev ? deltaPct(s.kwh, s.kwhPrev) : null)
 
+/* ── 🚦 สุขภาพรวม (แท็บ default · 2026-08-26 คำสั่ง user "ทุกอย่างปกติก็เขียว ไม่ปกติก็แล้วแต่สีที่กำหนด
+   ส่วนแท็บอื่นดูเรื่องของตัวเองพอ") — pure functions ระดับ module ให้ METRICS เรียกได้
+   ⚠️ เกณฑ์ทุกตัว "ยืม" จาก metric เจ้าของเรื่อง (pace 95/80 · NG 20 · PM overdue/dueSoon · คน 80)
+      ห้ามตั้งเกณฑ์ชุดใหม่ — ไม่งั้นแท็บรวมกับแท็บเจาะตอบไม่ตรงกัน */
+const HEALTH_RANK = { down: 4, bad: 3, ok: 2, good: 1, waiting: 1, idle: 0 };
+// โซนสนับสนุน (MTN/utility/คลัง/แม่พิมพ์) — ย้ายขึ้นมาจาก component (ใช้แค่ field บน st · pure)
+const facHealthOf = (st) => {
+  if (st.storeZone) return st.storeZone.cat;   // 🏬 โซนคลัง: แดง "นิ่ง" = ต่ำกว่า Min/ล้นความจุ (งานคลังไม่ใช่ alarm เครื่องหยุด — ห้ามกระพริบ)
+  if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
+  return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+};
+const facHealthTextOf = (st) => {
+  if (st.storeZone) return st.storeZone.text;
+  if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
+  if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
+  if (st.dtActive) return '🔴 หยุด';
+  if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
+  if (st.pmDueSoon) return `PM ใกล้ครบ ${st.pmDueSoon}`;
+  return '🔧 ปกติ';
+};
+// ไลน์ผลิต — รวมทุกสัญญาณ เอาตัวแย่สุดตัดสินสี · ข้อความต้องบอก "เหตุผล" เสมอ ห้ามให้เดาจากสี
+const prodHealthSignals = (s) => {
+  const sig = [];
+  if (s.dtActive) sig.push({ cat: 'down', txt: `🔴 หยุด${s.dtMinHour ? ` ${s.dtMinHour} น.` : ''}` });
+  if (s.supAtRisk) sig.push({ cat: 'down', txt: '⚠ utility ที่จ่ายไลน์กำลังซ่อม' });
+  if (s.target > 0 && s.onTimeTarget >= 1) {
+    const p = s.actual / s.onTimeTarget * 100;   // เกณฑ์เดียวกับแท็บยอดผลิต (≥95 เขียว / ≥80 เหลือง)
+    if (p < 80) sig.push({ cat: 'bad', txt: `ตามหลังจังหวะ ${Math.round(p)}%` });
+    else if (p < 95) sig.push({ cat: 'ok', txt: `หลุดจังหวะ ${Math.round(p)}%` });
+  }
+  if (s.ng >= 20) sig.push({ cat: 'bad', txt: `NG ${s.ng}` });        // เกณฑ์เดียวกับแท็บของเสีย
+  else if (s.ng > 0) sig.push({ cat: 'ok', txt: `NG ${s.ng}` });
+  if (s.pmOverdue) sig.push({ cat: 'bad', txt: `PM เกิน ${s.pmOverdue}` });
+  else if (s.pmDueSoon) sig.push({ cat: 'ok', txt: `PM ใกล้ครบ ${s.pmDueSoon}` });
+  if (s.hasOpen && s.headTotal > 0) {
+    const pp = s.present / s.headTotal * 100;    // เกณฑ์ "แย่" ของแท็บคน (<80)
+    if (pp < 80) sig.push({ cat: 'ok', txt: `คนมา ${s.present}/${s.headTotal}` });
+  }
+  return sig.sort((a, b) => HEALTH_RANK[b.cat] - HEALTH_RANK[a.cat]);
+};
+const prodHealthCat = (s) => {
+  const sig = prodHealthSignals(s);
+  if (!sig.length) return s.hasOpen ? 'good' : 'idle';
+  return sig[0].cat;
+};
+const prodHealthText = (s) => {
+  const sig = prodHealthSignals(s);
+  if (!sig.length) return s.hasOpen ? '✓ ปกติ' : '⏸ ยังไม่เปิดกะ';
+  const t = sig.slice(0, 2).map(x => x.txt).join(' · ');
+  return sig.length > 2 ? `${t} +${sig.length - 2}` : t;   // เกิน 2 เหตุ = นับบอก ห้ามตัดเงียบ
+};
+
 const METRICS = {
+  /* 🚦 แท็บ default — ตอบ "ทั้งโรงงานปกติไหม" ในแวบเดียว: เขียวหมด = จบ · ผิดปกติ = สีตามเรื่องของมัน
+     + ข้อความบอกเหตุผล · โซนสนับสนุนโชว์ด้วย (นี่คือบ้านของภาพรวม) · แท็บอื่น = มุมเจาะรายเรื่อง */
+  health: {
+    label: '🚦 ปกติ/ผิดปกติ', desc: true,
+    value: s => HEALTH_RANK[s.isFac ? facHealthOf(s) : prodHealthCat(s)] || 0,
+    cat: s => (s.isFac ? facHealthOf(s) : prodHealthCat(s)),
+    text: s => (s.isFac ? facHealthTextOf(s) : prodHealthText(s)),
+    short: s => {
+      if (s.isFac) return facHealthOf(s) === 'good' ? '' : facHealthTextOf(s);
+      const sig = prodHealthSignals(s);
+      return sig.length ? sig[0].txt : (s.hasOpen ? '✓' : '');
+    },
+  },
   /* ⚡ พลังงานไฟฟ้า — ทีมขอ "show ค่า kWh บริเวณ Line บนผัง อยากดูละเอียดค่อยกดเข้าไป"
      เฟส 1 ตัวเลขมาจากการกรอกมือรายเดือนที่ /energy → ป้ายต้องบอกที่มา ห้ามดูเหมือนค่าที่วัดสด
      สี = เทียบเดือนก่อน (ลดลง=เขียว) · ไม่มีฐานเทียบ = เทา ไม่ใช่เขียว
@@ -314,7 +379,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState('productivity');
+  const [metric, setMetric] = useState('health'); // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
   const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
   const [panelMode, setPanelMode] = useState('review');
@@ -1261,20 +1326,9 @@ export default function FactoryMap({ setupMode = false }) {
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
   // โซน MTN/facility (metric ผลิต): default เขียว "ปกติ" ถ้าไม่มีเหตุผิดปกติ — แดง/ส้มเฉพาะเมื่อมีเครื่องซ่อม/PM ค้าง (คำสั่ง user)
-  const facHealth = (st) => {
-    if (st.storeZone) return st.storeZone.cat;   // 🏬 โซนคลัง: แดง "นิ่ง" = ต่ำกว่า Min/ล้นความจุ (งานคลังไม่ใช่ alarm เครื่องหยุด — ห้ามกระพริบ)
-    if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
-    return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
-  };
-  const facHealthText = (st) => {
-    if (st.storeZone) return st.storeZone.text;
-    if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
-    if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
-    if (st.dtActive) return '🔴 หยุด';
-    if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
-    if (st.pmDueSoon) return `PM ใกล้ครบ ${st.pmDueSoon}`;
-    return '🔧 ปกติ';
-  };
+  // ตัวจริงย้ายไประดับ module (facHealthOf/facHealthTextOf — METRICS.health ใช้ร่วม) · alias คงชื่อเดิมให้ call site ทั้งไฟล์
+  const facHealth = facHealthOf;
+  const facHealthText = facHealthTextOf;
   const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
   const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
   /* 🫥 "กรอบขึ้นตามสิ่งที่กด" (2026-08-25 · คำสั่ง user — เข้มขึ้นรอบ 2 หลัง user ทัก "OEE ผังจะโชว์คลังสินค้าทำไม"):
