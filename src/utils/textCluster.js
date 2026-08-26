@@ -160,15 +160,16 @@ export const CLUSTER_THRESHOLD = 0.45;
  * @param {(r)=>number} valueOf  ดึงค่าที่จะรวม (นาที/ชิ้น)
  * @param {{threshold?:number}} opts
  * @returns {{ clusters:Array<{name,value,count,variants:number,samples:string[],recs:Array}>,
- *             missing:{value:number,count:number} }}
+ *             missing:{value:number,count:number,recs:Array} }}
  */
 export function clusterNotes(records, noteOf, valueOf, opts = {}) {
   const threshold = opts.threshold ?? CLUSTER_THRESHOLD;
-  const missing = { value: 0, count: 0 };
+  // recs ติดมาด้วย — ผู้เรียกบางที่ต้องรวมค่าอื่นต่อ (เช่นมูลค่าเป็นบาท) จากแถวดิบของกลุ่มนี้
+  const missing = { value: 0, count: 0, recs: [] };
   const withNote = [];
   records.forEach(r => {
     const n = normalizeNote(noteOf(r));
-    if (!n) { missing.value += Number(valueOf(r)) || 0; missing.count++; return; }
+    if (!n) { missing.value += Number(valueOf(r)) || 0; missing.count++; missing.recs.push(r); return; }
     withNote.push({ r, raw: String(noteOf(r)).trim(), ...prep(noteOf(r)), v: Number(valueOf(r)) || 0 });
   });
 

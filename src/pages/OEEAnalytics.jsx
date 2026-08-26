@@ -1128,17 +1128,32 @@ export default function OEEAnalytics() {
   // เดิมรวมทั้งสองประเภท → "นับสต๊อก / ไม่มีแผนผลิต" ครองอันดับ 1 ที่ 50% ทั้งที่ไม่ใช่ปัญหาที่ต้องแก้
   // (บั๊กเดียวกับที่เคยแก้ในแผง Top Downtime 2026-07-15 แต่ Pareto ตกหล่น · user เจอ 2026-08-05)
   // toggle "รวมหยุดตามแผน" ให้ดูได้เมื่อต้องการ — ไม่ซ่อนข้อมูล แค่ไม่ให้ปนกับ loss จริงโดยปริยาย
+  /* 💰 บาทต่อแถว — ใส่ไว้กับ record ตั้งแต่ต้นทาง เพื่อให้ "เจาะมิติไหนก็เห็นเงิน" โดยไม่ต้อง query ใหม่
+     (คำสั่ง user 2026-08-26 "แปลง loss เป็นตัวเงินคือหมัดเด็ด — เจาะเข้าไปต่อได้มั้ย")
+     ⚠️ คืน `null` เมื่อไลน์ไม่มี cost center / ไม่มี activity rate — **ห้ามคืน 0**
+        เพราะพาเรโตที่เรียงตามเงินจะชี้เป้าผิด (ไลน์ที่ตีราคาไม่ได้จะกลายเป็น "ไม่มีความสูญเสีย") */
+  const priceMin = useCallback((min, lineName, workDate) => {
+    if (!(min > 0) || !lineName) return null;
+    const cc = lineCostCenter(linesFull, lineName);
+    const rate = cc ? rateFor(ccRates, cc, workDate) : null;
+    if (!rate) return null;
+    return (min / 60) * ratePerHour(rate, RATE_COMPONENTS.map(c => c.key));
+  }, [linesFull, ccRates]);
+
   const dtRecords = useMemo(() => downtimes.filter(d => dtIncludePlanned || d.dr_downtime_types?.category !== 'planned').map(d => {
     const s = sessById[d.session_id] || {};
+    const min = Number(d.duration_min) || 0;
     return {
       cat: d.dr_downtime_types?.name_th || 'ไม่ระบุ',
-      value: Number(d.duration_min) || 0,
+      value: min,
+      // หยุดตามแผนไม่ใช่ loss → ไม่ตีเป็นเงิน (กฎเดียวกับ dtCost) แต่ยังอยู่ในพาเรโตตอนติ๊ก "รวมในแผน"
+      baht: d.dr_downtime_types?.category === 'planned' ? null : priceMin(min, s.line_name, s.work_date),
       machine: d.machine_no || '', line: s.line_name || '',
       product: d.mat_no || '', shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [downtimes, sessById, dtIncludePlanned]);
+  }), [downtimes, sessById, dtIncludePlanned, priceMin]);
   const dtPlannedMin = useMemo(() => downtimes.filter(d => d.dr_downtime_types?.category === 'planned')
     .reduce((a, d) => a + (Number(d.duration_min) || 0), 0), [downtimes]);
   /* 💰 มูลค่าดาวไทม์นอกแผน (2026-08-19 · คำสั่ง user "รายละเอียดดาวไทม์ควร link เรื่องเงินออกมาให้เห็น")
@@ -1170,15 +1185,20 @@ export default function OEEAnalytics() {
   }, [downtimes, sessById, linesFull, ccRates]);
   const defRecords = useMemo(() => defects.map(d => {
     const s = sessById[d.session_id] || {};
+    const qty = (d.qty_ng || 0) + (d.qty_suspect || 0);
+    const mat = d.prod_orders?.mat_no || null;
+    const { unit: unitCost } = defectUnitCost(mat ? partCost[mat] : null);
     return {
       cat: d.dr_defect_types?.name_th || 'ไม่ระบุ',
-      value: (d.qty_ng || 0) + (d.qty_suspect || 0),
+      value: qty,
+      // พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master = null (ตีมูลค่าไม่ได้) ห้ามเดาเป็น 0
+      baht: unitCost == null ? null : qty * unitCost,
       product: d.prod_orders?.mat_no || '', line: s.line_name || '',
       shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [defects, sessById]);
+  }), [defects, sessById, partCost]);
   /* 💰 มูลค่าของเสีย — แยก "ทั้งหมด" กับ "เฉพาะไลน์ผลิต (ไม่รวมงานทดลอง)" (2026-08-17 · คำสั่ง user)
      ตัวหลัง = ก้อนเดียวกับที่ถูกนับใน %Q ของ OEE · ต้นทุน/ชิ้นใช้ util กลาง defectUnitCost
      ⚠️ พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master → ไม่เดาราคา แต่รายงานจำนวนให้เห็นบนจอ */
@@ -1770,7 +1790,7 @@ export default function OEEAnalytics() {
           })()}
         </>
       ) : viewTab === 'insight' ? (
-        <OeeInsightPanel lines={linesFull} />
+        <OeeInsightPanel lines={linesFull} ccRates={ccRates} />
       ) : (
       <>
       {/* Filters */}
@@ -1958,6 +1978,11 @@ export default function OEEAnalytics() {
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {Math.round(v.min).toLocaleString()} น.</span>
                   </div>
                 ))}
+                {/* ชี้ทางเจาะต่อ — ยอดรวมอย่างเดียวตอบไม่ได้ว่า "เงินก้อนนี้เกิดที่เครื่องไหน กะไหน วันไหน" */}
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                  🔍 เจาะต่อได้ที่ <b>Pareto ด้านล่าง</b> — กดปุ่ม <b style={{ color: 'var(--accent)' }}>฿ บาท</b> เพื่อเรียงตามเงิน
+                  แล้วคลิกแท่งเพื่อแยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/คนบันทึก/วัน (เห็นบาทรายแถวและรายการดิบ)
+                </div>
               </div>
             )}
           </div>
