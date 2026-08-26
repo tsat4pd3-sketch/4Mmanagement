@@ -3557,6 +3557,31 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 --radius-lg: 8px
 ```
 
+### 📺 เพดานเบราว์เซอร์ที่ต้องรองรับ = **จอ TV ไม่ใช่ PC** (วัดกับบันเดิลจริง 2026-08-26)
+
+จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 / 8.4.0 = Chromium 94** (user ยืนยัน "ส่วนใหญ่รุ่นนี้หรือใหม่กว่า")
+· เทียบรุ่น: webOS 22 = Chromium 87 · webOS 23 = **94** · webOS 24 = 108 · webOS 25 = 120
+
+**พื้นจริงของโค้ดตอนนี้ (grep จาก `dist/assets/` หลัง build):**
+
+| ฟีเจอร์ | ต้องการ | อยู่ในชิ้นไหน | ผลถ้าไม่รองรับ |
+|---|---|---|---|
+| `??=` `\|\|=` `&&=` | Cr 85 | **ทุกชิ้นรวม `index-*.js`** | **จอขาว** (parse error ทั้งไฟล์) |
+| `crypto.randomUUID` | Cr 92 | 5 หน้า (OjtTraining · PMSetup · QualityControl · ScrapReport · operator) | หน้านั้นพัง |
+| `Object.hasOwn` | Cr 93 | Recharts (`CategoricalChart`/`Tooltip`) · exceljs · jspdf | **หน้าที่มีกราฟพัง** |
+| `structuredClone` | Cr 98 | Recharts `Tooltip` — เฉพาะ branch `instanceof Error` | ไม่เกิดจริง (ข้อมูลกราฟไม่มี Error) |
+
+⇒ **webOS 23 (Cr 94) ผ่านทุกหน้า** · webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่า webOS 22 = จอขาว
+
+> #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
+> - **ห้ามใช้ `color-mix()` (Cr 111)** — ค่าที่ parse ไม่ได้ = **ทั้งบรรทัด declaration ถูกทิ้ง**
+>   เคยหลุดจริง 1 จุด (`StoreMonitor` การ์ดผิดปกติ → พื้นโปร่งบนจอ TV) · แทนด้วย
+>   `background: 'var(--card)'` + `backgroundImage: linear-gradient(${c}14, ${c}14)` (2 stop สีเดียว = เคลือบทับ ได้ผลเท่ากัน)
+>   หรือ alpha-hex `${color}14` แบบที่ทั้งระบบใช้อยู่แล้ว
+> - ตัวอื่นที่ห้ามเช่นกัน: `@container` (105) · CSS nesting (112) · `text-wrap:balance` (114) · หน่วย `dvh/svh/lvh` (108) · `:has()` **ในที่ที่พังแล้วเสียการใช้งาน**
+> - **`:has()` ที่มีอยู่ (`index.css` touch target) ปล่อยไว้ได้** — เบราว์เซอร์เก่าทิ้งทั้ง **rule** (ไม่ใช่ทั้งไฟล์) = กลับไปพฤติกรรมเดิม ไม่พัง (มีคอมเมนต์กำกับแล้ว)
+> - **ตรวจก่อน merge:** `grep -oF "color-mix(" dist/assets/*` ต้องได้ 0
+
 ### ⚠️ กับดัก CSS ที่เจอซ้ำหลายจุด — จำไว้
 
 - **`color-scheme` ต้องประกาศคู่กับธีมเสมอ** (`:root { color-scheme: dark }` + `[data-theme="light"] { color-scheme: light }` — แก้แล้ว 2026-08-21 จาก feedback หน้างาน "Mode dark มองไม่เห็น"): ไอคอนปฏิทิน/นาฬิกาใน `input type=date/time` + ลูกศร select + popup ปฏิทิน เป็นของ browser วาดเอง ไม่ประกาศ = browser ถือว่าหน้าเป็น light → วาดไอคอน**สีดำ**ทับพื้นเขียวเข้ม มองไม่เห็นทั้งระบบ (วัดจริง: โซนไอคอน 0 pixel สว่าง → 77 หลังแก้) · **ห้ามแก้รายจุดด้วย `filter: invert()` ที่ input ตัวใดตัวหนึ่ง** — ประกาศที่ธีมครอบทุก native control ทีเดียว
