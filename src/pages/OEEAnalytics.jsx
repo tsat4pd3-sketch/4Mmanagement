@@ -13,6 +13,7 @@ import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import DowntimeTimeline from '../components/DowntimeTimeline';
 import { pairAwareTotal, collapseOps, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -347,6 +348,8 @@ export default function OEEAnalytics() {
   const [tdDept,   setTdDept]   = useState('');
   const [tdLine,   setTdLine]   = useState('');
   const [tdTeam,   setTdTeam]   = useState('');
+  // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
+  const [tdCmpOpen, setTdCmpOpen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate,  setLastUpdate]  = useState(null);
 
@@ -1464,17 +1467,46 @@ export default function OEEAnalytics() {
             ); })()}
           </div>
 
-          {/* 1.2 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
+          {/* 1.2 ⏱ ไทม์ไลน์เครื่องหยุด — "หยุดตอนไหนของวัน" (user 2026-08-26)
+              แท็บนี้เป็นภาพวันเดียว คำถามที่ตอบไม่ได้มาตลอดคือ "26 นาทีนั้นกระจุกช่วงไหน"
+              ซึ่งเปลี่ยนวิธีแก้คนละเรื่อง — ยอดรวม/พาเรโต้ด้านล่างตอบแค่ "ประเภทไหนมากสุด" */}
+          <div style={s.section}>
+            <div style={s.title}>⏱ ไทม์ไลน์เครื่องหยุด — {tdDate}</div>
+            <DowntimeTimeline sessions={tdSessionsTeamFiltered} downtimes={tdDowntimesScoped} workDate={tdDate} isMobile={isMobile} />
+          </div>
+
+          {/* 1.3 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
               ในการ์ด A/P/Q ที่อยู่เหนือมันเอง (ข) ซ้ำกับกราฟแนวโน้มรายวันในแท็บ 📊 แนวโน้ม/ประวัติ
               ซึ่งให้ตัวเลขเท่ากันเป๊ะ (ตารางเดียวกัน · closed เหมือนกัน · wavg สูตรเดียวกัน)
-              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20) */}
-          <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
-            <div style={{ flex: '0 0 auto' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : 'ยังไม่มีข้อมูลย้อนหลัง'}
-              </div>
+              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20)
+              → 2026-08-26 พับเป็นค่าเริ่มต้น: หน้านี้คือ "วันนี้" การเทียบย้อนหลังมีบ้านอยู่แล้วที่แท็บแนวโน้ม
+                 (ไม่ลบทิ้ง — ยังมีค่าตอนกะปิดครบแล้ว แค่ไม่ควรกินที่เหนือไทม์ไลน์/พาเรโต้) */}
+          <div style={{ ...s.section, paddingBottom: tdCmpOpen ? undefined : 10 }}>
+            <div onClick={() => setTdCmpOpen(o => !o)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', transform: tdCmpOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : ''}</span>
+              {!tdCmpOpen && (
+                <span style={{ fontSize: 11.5, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {['oee', 'a', 'p', 'q'].map(k => {
+                    const v = tdVsAvg[k];
+                    const up = v.diff != null && v.diff > 0.05, dn = v.diff != null && v.diff < -0.05;
+                    return (
+                      <span key={k}>
+                        <b style={{ color: 'var(--muted)' }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</b>{' '}
+                        <b style={{ color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>{v.now ?? '—'}{v.now != null ? '%' : ''}</b>
+                        <span style={{ color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
+                          {v.diff == null ? ' (เทียบไม่ได้)' : ` (${up ? '▲+' : dn ? '▼' : '●'}${v.diff})`}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </span>
+              )}
             </div>
+          {tdCmpOpen && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginTop: 10 }}>
+            {!tdVsAvg.days && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีข้อมูลย้อนหลัง</div>}
 
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 260 }}>
               {['oee', 'a', 'p', 'q'].map(k => {
@@ -1512,6 +1544,8 @@ export default function OEEAnalytics() {
                 </div>
               )}
             </div>
+          </div>
+          )}
           </div>
 
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
