@@ -12,6 +12,7 @@ import { isParallelLine } from '../utils/lineTypes';
 import { noteSimilarity, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import { PART_WORDS, wordGroups } from '../utils/peLink';
 import PageHeader from '../components/PageHeader';
+import { inspMeta } from '../utils/inspectionStatus';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -36,15 +37,10 @@ const STATUS_META = {
   imported: { label: '⏬ ถูกยกไปกะถัดไป', color: 'var(--muted)' },
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
-/* ผลตรวจ PM/AM — `inspections.status` มีได้ 4 ค่า: pending | pass | fail | warning
-   ⚠️ ห้ามเทียบด้วย regex /fail|ng/ : "pe**nd**ing" กับ "warni**ng**" ติดทั้งคู่
-      → "ตรวจไม่ครบทุกจุด" (pending = ค่า default ของคอลัมน์ เจอบ่อยมาก) จะขึ้นแดงว่า
-        "พบผิดปกติ" = สร้างหลักฐานเท็จในแผงที่ใช้สอบสวนคุณภาพ ต้องเทียบตรงตัวเท่านั้น */
-const INSP_NG = new Set(['fail', 'warning', 'ng']);   // 'ng' เผื่อข้อมูลเก่าก่อนมี check constraint
+/* ผลตรวจ PM/AM — นิยาม/กฎ "ห้ามเทียบด้วย regex" อยู่ที่ `src/utils/inspectionStatus.js` ที่เดียว */
 const inspVerdict = raw => {
-  const s = String(raw || '').toLowerCase();
-  if (s === 'pending' || !s) return <span style={{ color: 'var(--muted)' }}>ตรวจไม่ครบทุกจุด</span>;
-  return <span style={{ color: INSP_NG.has(s) ? '#ef4444' : '#22c55e' }}>{INSP_NG.has(s) ? 'พบผิดปกติ' : 'ปกติ'}</span>;
+  const m = inspMeta(raw);
+  return <span style={{ color: m.color }}>{m.label}</span>;
 };
 /* เกณฑ์ "สแกนรวบ" = ช่องว่างระหว่างสแกน < BATCH_FRAC × เวลาที่ต้องใช้ผลิตของใบนั้น (qty × CT)
    0.5 = ต้องผลิตเร็วกว่ามาตรฐาน "2 เท่า" ถึงจะทันในช่วงนั้น → เป็นไปไม่ได้ = สแกนรวบแน่นอน
