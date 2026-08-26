@@ -24,7 +24,8 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
-import { resolveMachine } from '../utils/qrCode';
+import SearchSelect from '../components/SearchSelect';
+import { resolveMachine, normCode } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -761,7 +762,24 @@ function LiveTab({ role }) {
     // แต่ไม่ปล่อยข้ามเงียบ: ถ้า unplanned แล้วไม่เลือกเครื่อง เด้งถามยืนยันก่อน (planned ไม่ผูกเครื่องอยู่แล้ว ไม่ถาม)
     const dtCat = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.category;
     if (dtCat !== 'planned' && !dtForm.machine_no) {
-      const ok = window.confirm('Downtime นอกแผนนี้ยังไม่ได้เลือกเครื่องจักร\nเครื่องเสียส่วนใหญ่ควรระบุเครื่อง (เพื่อออกใบซ่อม/คิด OEE รายเครื่อง)\n\nยืนยันบันทึกโดยไม่เลือกเครื่อง? — เช่น พาร์ทหมด / ไฟดับทั้งโรงงาน');
+      /* หน้างานมักพิมพ์เลขเครื่องลงช่อง "รายละเอียด" แทนการเลือกจากลิสต์ (เจอจริง "Robot 103 …")
+         → ถ้าข้อความมีเลขที่ **ตรงกับทะเบียนจริง** ให้บอกไปเลยว่าน่าจะหมายถึงเครื่องไหน
+         ⚠️ เสนอเท่านั้น ห้ามเติมให้เอง — เดาผิดแล้วประวัติเครื่องเพี้ยนย้อนยาก
+         ⚠️ เทียบเฉพาะเลขยาว ≥3 ตัวอักษร (หลัง normCode) กัน false positive จากรหัสสั้นๆ */
+      const noteHits = (() => {
+        const n = normCode(dtForm.description || '');
+        if (n.length < 3) return [];
+        return (machines || [])
+          .filter(m => m.machine_no && normCode(m.machine_no).length >= 3 && n.includes(normCode(m.machine_no)))
+          .map(m => m.machine_no);
+      })();
+      const hint = noteHits.length
+        ? `\n\n💡 หมายเหตุที่พิมพ์ไว้มีเลขเครื่อง: ${noteHits.slice(0, 3).join(', ')}\n   ถ้าใช่ กด "ยกเลิก" แล้วเลือกในช่องเครื่องจักร (ค้นหาได้ทั้งทะเบียน)`
+        : '\n\n(ช่องเครื่องจักรค้นหาได้ทั้งทะเบียน — พิมพ์เลขเครื่องแล้วเลือกจากลิสต์)';
+      const ok = window.confirm(
+        'Downtime นอกแผนนี้ยังไม่ได้เลือกเครื่องจักร\n' +
+        'ไม่ระบุเครื่อง = ต่อใบซ่อม / คิด OEE รายเครื่อง / จัดคิวให้ทีมช่างที่ถูก ไม่ได้' + hint +
+        '\n\nยืนยันบันทึกโดยไม่เลือกเครื่อง? — เช่น พาร์ทหมด / ไฟดับทั้งโรงงาน');
       if (!ok) return;
     }
     setSavingDT(true);
@@ -4789,6 +4807,39 @@ function LiveTab({ role }) {
             kanbanStds.filter(s => inFam(s.dr_products?.line_name)).forEach(s => add(s.mat_no, s.dr_products?.name || s.part_name, 'kanban'));
             return [...seen.values()];
           })();
+          /* ตัวเลือก "เครื่องจักร" ของฟอร์ม Downtime — บั๊กเดียวกับ dtMatOptions ข้างบน แต่ตกสำรวจ
+             ⚠️ เดิมกรอง `m.line_name === selSession.line_name` **ตรงเป๊ะ** → เครื่องที่ลงทะเบียน
+                ไว้ใต้ไลน์แม่/ไลน์พี่น้อง **ไม่โผล่ในลิสต์เลย** (กะมักเปิดที่ไลน์ลูก)
+                ⇒ หน้างานไม่มีทางเลือกเครื่อง เลยไปพิมพ์เลขเครื่องลงช่อง "รายละเอียด" แทน
+                  แล้ว `machine_no` เป็น null → จอห้องช่างจัดเป็น "ไม่ระบุเครื่อง" ต่อทีมไม่ได้
+                  (เจอจริง 2026-08-26: Assy LWR ลง "Robot 103 …" ในหมายเหตุ · กฎเดียวกับ
+                   machineOpts ของ /improvements ที่แก้ไปแล้ว 2026-08-19)
+             กติกา: ไลน์นี้ก่อน → ครอบครัวไลน์ → เครื่องอื่นทั้งโรงงาน → แม่พิมพ์ท้ายสุด
+                    **ไม่ตัดอะไรทิ้ง** (ค้นเจอได้หมด) แต่เรียงให้ตัวที่น่าจะใช่อยู่บนสุด */
+          const dtMachineOptions = (() => {
+            const line = (selSession?.line_name || '').trim().toLowerCase();
+            const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
+            const G = ['🏭 เครื่องในไลน์นี้', '🔗 เครื่องในกลุ่มไลน์', '🏢 เครื่องอื่นในโรงงาน', '🔨 แม่พิมพ์'];
+            const rank = (m) => {
+              if (m.equipment_kind === 'die') return 3;      // แม่พิมพ์ผูกชื่อกลุ่มเครื่องปั๊ม ไม่ใช่ไลน์ผลิต
+              const s = (m.line_name || '').trim().toLowerCase();
+              if (s && s === line) return 0;
+              if (s && fam.has(s)) return 1;
+              return 2;
+            };
+            return (machines || [])
+              .map((m, i) => {
+                const r = rank(m);
+                return {
+                  id: m.machine_no, _r: r, _i: i, group: G[r],
+                  label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`,
+                  sub: r === 0 ? '' : (m.line_name || 'ไม่ระบุไลน์'),
+                  keywords: `${m.machine_name || ''} ${m.line_name || ''} ${m.machine_type || ''}`,
+                };
+              })
+              .filter(o => o.id)
+              .sort((a, b) => a._r - b._r || a._i - b._i);   // _i = ลำดับจาก DB (line_name, sort_order)
+          })();
           const MODES = [
             { key: 'start_end', label: 'เริ่ม → จบ',   desc: 'กรอกเวลาเริ่มหยุด + เวลากลับมา → คำนวณนาทีอัตโนมัติ' },
             { key: 'start_dur', label: 'เริ่ม + นาที',  desc: 'กรอกเวลาเริ่มหยุด + จำนวนนาที → คำนวณเวลากลับมา' },
@@ -4905,22 +4956,19 @@ function LiveTab({ role }) {
                     <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                        {(() => {
-                          const lineMachines = machines.filter(m => m.line_name === selSession.line_name);
-                          if (!lineMachines.length) {
-                            return <input type="text" value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} placeholder="เช่น MC-01" style={inputStyle} />;
-                          }
-                          return (
-                            <select value={dtForm.machine_no} onChange={e => setDtForm(f => ({ ...f, machine_no: e.target.value }))} style={inputStyle}>
-                              <option value="">เลือกเครื่องจักร...</option>
-                              {lineMachines.map(m => (
-                                <option key={m.id} value={m.machine_no}>
-                                  {m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          );
-                        })()}
+                        {/* ค้นได้ทั้งทะเบียน (เครื่องจักร 500+ ตัว) — ห้ามกลับไปเป็น <select> ที่กรองไลน์ตรงเป๊ะ
+                            พิมพ์เองยังได้ (เครื่องที่ยังไม่ลงทะเบียน) แต่ SearchSelect ติดป้ายบอกว่าอยู่นอกทะเบียน */}
+                        <SearchSelect
+                          value={machines.some(m => m.machine_no === dtForm.machine_no) ? dtForm.machine_no : ''}
+                          text={dtForm.machine_no}
+                          options={dtMachineOptions}
+                          allowFree
+                          placeholder="ค้นหาเครื่อง — เลขเครื่อง / ชื่อ / ไลน์"
+                          emptyText="ไม่พบเครื่องนี้ในทะเบียน"
+                          freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
+                          inputStyle={inputStyle}
+                          onChange={({ id, text }) => setDtForm(f => ({ ...f, machine_no: id || text }))}
+                        />
                         </div>
                         {/* สแกน QR ที่ติดเครื่อง — เครื่องเสียต้องรีบ ไม่ต้องไล่หาในลิสต์ */}
                         <button type="button" className="tbtn" onClick={() => setDtScanOpen(true)} title="สแกน QR บนเครื่อง"
@@ -4967,11 +5015,18 @@ function LiveTab({ role }) {
                     title="สแกนเครื่องจักร"
                     hint="ส่องกล้องที่ป้าย QR บนเครื่อง หรือยิงด้วยเครื่องสแกน"
                     onScan={(parsed) => {
-                      // ค้นทั้งโรงงานก่อน แล้วค่อยเตือนถ้าเครื่องอยู่คนละไลน์กับกะที่เปิดอยู่
+                      // ค้นทั้งโรงงานก่อน แล้วค่อยดูว่าอยู่ในครอบครัวไลน์เดียวกันไหม
                       const mc = resolveMachine(parsed, machines);
                       if (!mc) return `ไม่พบเครื่องนี้ในฐานข้อมูล (${parsed.raw})`;
-                      if (mc.line_name && mc.line_name !== selSession.line_name) {
-                        return `เครื่อง ${mc.machine_no} อยู่ไลน์ ${mc.line_name} ไม่ใช่ ${selSession.line_name}`;
+                      /* ⚠️ เดิม **บล็อก** เมื่อ line_name ไม่ตรงเป๊ะ → สแกน QR ที่ติดอยู่บนเครื่องตรงหน้า
+                         แล้วโดนปฏิเสธ เพราะเครื่องลงทะเบียนไว้ใต้ไลน์แม่/ไลน์พี่น้อง
+                         กติกา: อยู่ในครอบครัวไลน์ = รับเลย · นอกครอบครัว = **เตือนแล้วให้ยืนยัน ไม่บล็อก**
+                         (เครื่องกลาง/utility ที่จ่ายหลายไลน์มีจริง — บล็อกแล้วลง downtime ไม่ได้เลย) */
+                      const fam = new Set(getLineFamilyNames(lines, selSession.line_name).map(n => (n || '').trim().toLowerCase()));
+                      const mcLine = (mc.line_name || '').trim().toLowerCase();
+                      if (mcLine && !fam.has(mcLine)) {
+                        const ok = window.confirm(`เครื่อง ${mc.machine_no} ลงทะเบียนไว้ที่ไลน์ "${mc.line_name}"\nไม่ใช่ "${selSession.line_name}" ที่เปิดกะอยู่\n\nยืนยันเลือกเครื่องนี้?`);
+                        if (!ok) return `ยกเลิก — เครื่อง ${mc.machine_no} อยู่ไลน์ ${mc.line_name}`;
                       }
                       setDtForm(f => ({ ...f, machine_no: mc.machine_no || f.machine_no }));
                       toast.success(`เลือกเครื่อง ${mc.machine_no}`);

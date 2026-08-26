@@ -1266,6 +1266,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
                       value={p.part_id} text={p.name} options={partOpts} allowFree
                       placeholder="ค้นหาอะไหล่ — ชื่อ / รหัส / ชั้นวาง"
                       emptyText="ไม่พบอะไหล่ที่ค้นหาในทะเบียน"
+                      freeHint="ไม่หักสต็อก"
                       onChange={(v) => pickPart(i, v)}
                     />
                     <input type="number" min="0" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 64, flexShrink: 0 }} />

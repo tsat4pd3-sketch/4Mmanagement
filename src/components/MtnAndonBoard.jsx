@@ -297,9 +297,16 @@ export default function MtnAndonBoard({ d, ctx }) {
                 background: r._s.k === 'call' ? 'rgba(239,68,68,0.12)' : 'var(--card)',
               }}>
               <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-                <div style={{ fontSize: 15 * big, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15 }}>
-                  {r.machine_no || 'ไม่ระบุเครื่อง'}
+                <div style={{ fontSize: 15 * big, fontWeight: 900, color: r.machine_no ? 'var(--text)' : 'var(--accent2)', lineHeight: 1.15 }}>
+                  {r.machine_no || '⚠ ไม่ระบุเครื่อง'}
                 </div>
+                {/* ⚠️ ไม่มี machine_no = จับคู่ทีมไม่ได้ → ขึ้นให้ทุกทีมเห็น และต่อประวัติเครื่อง/ใบซ่อมไม่ได้
+                    บอกทางแก้ตรงนี้เลย ไม่ปล่อยให้ช่างเดาว่าทำไมบางแถวไม่มีเลขเครื่อง */}
+                {!r.machine_no && (
+                  <div style={{ fontSize: 10 * big, color: 'var(--accent2)', marginTop: 2 }}>
+                    ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (แสดงให้ทุกทีม)
+                  </div>
+                )}
                 <div style={{ fontSize: 11.5 * big, color: 'var(--text2)', marginTop: 2 }}>
                   {r.production_sessions?.line_name || '-'} · {r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}
                 </div>
