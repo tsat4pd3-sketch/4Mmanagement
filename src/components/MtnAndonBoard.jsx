@@ -73,6 +73,7 @@ export default function MtnAndonBoard({ d, ctx }) {
   const [mcKind, setMcKind] = useState({});         // machine_no → equipment_kind
   const [dtErr, setDtErr] = useState(null);
   const [thr, setThr] = useState(DT_OPEN_ALERT_MIN_DEFAULT);  // เกณฑ์ "หยุดเกินกี่นาที" (dt_alert_config)
+  const [zoom, setZoom] = useState(null);           // ไลน์ที่กดจากผัง → เจาะดูปัญหาของไลน์นั้น
   const [, setTick] = useState(0);                  // นาฬิกาเดิน — ให้ "กี่นาทีแล้ว" ขยับเอง
 
   /* ── ทีมที่กำลังดู — อยู่ใน URL เพื่อให้จอแต่ละห้องบุ๊กมาร์กของตัวเองได้ ──
@@ -268,11 +269,14 @@ export default function MtnAndonBoard({ d, ctx }) {
         </div>
       )}
 
-      {/* ผังคือพระเอกของจอนี้ (2fr) — เดิม 1.35fr ผังเล็กกว่า /factory-map เกือบครึ่ง user ทักว่าสเกลแย่ */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1.5fr) minmax(320px,1fr)', gap: 12, alignItems: 'start' }}>
-        {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง ══ */}
+      {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**
+          ผังตอบ "อยู่ตรงไหน" · ลิสต์ตอบ "อะไร/นานแค่ไหน" ช่างต้องได้ทั้งคู่จากที่นั่งเดียว
+          → ผังกินพื้นที่มากขึ้น (1.7fr) + สูงขึ้น · ลิสต์ยังกว้างพอไม่ตัดบรรทัด (≥300px) */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1.7fr) minmax(300px,1fr)', gap: 12, alignItems: 'start' }}>
+        {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง · กดกรอบ = เจาะดูปัญหาของไลน์นั้น ══ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <FactoryMiniMap stateOf={stateOf} onPick={() => navigate('/mtn-repair')} />
+          <FactoryMiniMap stateOf={stateOf} onPick={setZoom} maxHeight="calc(100vh - 250px)" />
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>👆 กดกรอบไลน์บนผังเพื่อดูรายละเอียดปัญหาของไลน์นั้น</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11.5, color: 'var(--muted)' }}>
             <span><b style={{ color: '#ef4444' }}>■</b> เรียกช่าง (กระพริบ)</span>
             <span><b style={{ color: '#f59e0b' }}>■</b> หยุดเกินเกณฑ์</span>
@@ -396,6 +400,96 @@ export default function MtnAndonBoard({ d, ctx }) {
           </div>
         </div>
       </div>
+
+      {/* ══ 🔎 กดกรอบบนผัง → เจาะดูปัญหาของไลน์นั้น (2026-08-26 · user "กดเข้าไปดูในกรอบที่มีปัญหา") ══
+          ⚠️ ใช้ข้อมูลที่โหลดมาแล้วทั้งหมด **ไม่ยิง DB เพิ่ม** — จอนี้เปิดค้างทั้งวัน (กฎ egress)
+          ⚠️ ไลน์ที่ไม่มีปัญหาก็กดได้ ต้องตอบว่า "ปกติ" ไม่ใช่จอว่าง */}
+      {zoom && (() => {
+        const z = String(zoom).trim().toUpperCase();
+        const eqOf = (v) => String(v || '').trim().toUpperCase() === z;
+        const zDt = rows.filter(r => eqOf(r.production_sessions?.line_name));
+        const zNos = new Set(zDt.map(r => normNo(r.machine_no)).filter(Boolean));
+        const zMo = mo.filter(o => eqOf(o.line_name) || zNos.has(normNo(o.machine_no)));
+        const zPm = pm.filter(p => eqOf(p.line));
+        const zLive = zDt.filter(r => r._s.k !== 'planned');
+        return (
+          <div onClick={() => setZoom(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 19, fontWeight: 900, color: 'var(--text)' }}>🔎 {zoom}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                    {zLive.length ? `🔴 เครื่องหยุดอยู่ ${zLive.length} รายการ` : '✅ ไม่มีเครื่องหยุดอยู่ตอนนี้'}
+                    {' · '}🛠️ ใบซ่อมค้าง {zMo.length}{' · '}📅 PM ถึงกำหนด {zPm.length}
+                  </div>
+                </div>
+                <button onClick={() => setZoom(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+              </div>
+
+              <div style={{ overflowY: 'auto', padding: '14px 18px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>🚨 เครื่องที่หยุดอยู่</div>
+                  {!zDt.length ? <div style={{ fontSize: 12.5, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มีรายการหยุดค้างของไลน์นี้</div> : (
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {zDt.map(r => (
+                        <div key={r.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 8, padding: '7px 10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <b style={{ fontSize: 13, color: r.machine_no ? 'var(--text)' : 'var(--accent2)' }}>{r.machine_no || '⚠ ไม่ระบุเครื่อง'}</b>
+                            <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}</span>
+                            <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 900, color: r._s.color }}>{fmtMin(r._min)}</span>
+                          </div>
+                          <div style={{ fontSize: 11.5, color: r._s.color, fontWeight: 700, marginTop: 2 }}>{r._s.label}</div>
+                          {r.description && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>💬 {r.description}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>🛠️ ใบซ่อมที่ยังไม่ปิด</div>
+                  {!zMo.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีใบค้างของไลน์นี้</div> : (
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      {zMo.slice(0, 8).map(o => (
+                        <div key={o.id} onClick={() => navigate('/mtn-repair')} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                          <b style={{ color: 'var(--text)', flexShrink: 0 }}>{o.mo_no || '⏳ รอออกเลข'}</b>
+                          <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {o.machine_no || 'ไม่ระบุเครื่อง'}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
+                          </span>
+                          <span style={{ marginLeft: 'auto', flexShrink: 0, color: '#f59e0b', fontWeight: 700 }}>{MO_STATUS_LABEL[o.status] || o.status}</span>
+                        </div>
+                      ))}
+                      {zMo.length > 8 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {zMo.length - 8} ใบ</div>}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>📅 PM ที่ถึงกำหนด (ภายใน 3 วัน)</div>
+                  {!zPm.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีแผนที่ถึงกำหนดของไลน์นี้</div> : (
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      {zPm.map(p => (
+                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                          <span style={{ color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                          <b style={{ marginLeft: 'auto', flexShrink: 0, color: p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
+                            {p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
+                          </b>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                  <button onClick={() => navigate('/mtn-repair')} style={chip(true)}>🔧 ใบแจ้งซ่อม</button>
+                  <button onClick={() => navigate('/pm-schedule')} style={chip(false)}>🗓️ แผน PM</button>
+                  <button onClick={() => navigate(`/factory-map`)} style={chip(false)}>🗺️ ผังรวมโรงงาน</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
