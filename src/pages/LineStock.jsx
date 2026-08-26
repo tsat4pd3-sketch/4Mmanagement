@@ -971,11 +971,19 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
+                  {/* ⚠️ ถอด "🔄 ทุกกะ (all)" ออกแล้ว (2026-08-26) — เป็นตัวเลือกที่ล้มเหลวเงียบ:
+                      ตัวจัดสรร demand ใน HeijunkaKanban จับคู่รอบกับกะด้วยคีย์ `${กลุ่มไลน์}|${shift}`
+                      แล้วเทียบกับ `production_sessions.shift` ซึ่งมีแค่ 'day'/'night'
+                      ⇒ รอบที่ตั้ง 'all' ไม่มีวัน match → ขึ้นบนบอร์ดแต่ได้ 0 พาร์ทตลอดกาล
+                      (ตรวจแล้วไม่มีแถวไหนใช้ 'all' เลย — ถอดได้ไม่กระทบใคร)
+                      จะรองรับจริงต้องแก้ `roundWindows`/`roundAlloc` ให้แยกคีย์ตามกะด้วย ไม่ใช่แค่ปล่อยตัวเลือกไว้ */}
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
-                    <option value="all">🔄 ทุกกะ (all)</option>
                   </select>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
+                  </div>
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>รอบที่ *</label>
