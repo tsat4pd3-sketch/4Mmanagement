@@ -7,6 +7,7 @@ import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { fetchByIds } from '../utils/fetchByIds';
+import { dedupeForecastRows } from '../utils/demandSupply';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -56,7 +57,8 @@ export default function ProductionPlan() {
   const [prodByMat, setProdByMat] = useState({}); // mat_no → { line, ct }
   const [pnoToMat, setPnoToMat] = useState({});   // normalize(p_no) → mat_no (map เลขลูกค้า → SAP เหมือนหน้า Planner&Sales)
   const [capByMat, setCapByMat] = useState({});   // mat_no → estimateCapacity result
-  const [orders, setOrders] = useState([]);       // open shipping orders (future)
+  const [orders, setOrders] = useState([]);
+  const [overdueOrders, setOverdueOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
 
   const today = getWorkDate();
@@ -97,19 +99,25 @@ export default function ProductionPlan() {
     (async () => {
       setLoading(true);
       const histStart = addDays(today, -HISTORY_DAYS);
-      const [{ data: cal }, { data: prods }, { data: sess }, { data: ord }, { data: fc }] = await Promise.all([
+      const [{ data: cal }, { data: prods }, { data: sess }, { data: ord }, { data: fc }, { data: past }] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no').eq('is_active', true).not('mat_no', 'is', null),
         supabaseDR.from('production_sessions').select('id, line_name, shift, oee').eq('status', 'closed').gte('work_date', histStart).limit(2000),
         supabaseDR.from('customer_shipping_orders').select('mat_no, part_name, customer, qty, due_date, status')
           .neq('status', 'shipped').gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON)).limit(2000),
-        supabaseDR.from('customer_forecasts').select('mat_no, part_name, customer, qty, period_month')
+        supabaseDR.from('customer_forecasts').select('mat_no, part_name, customer, qty, period_month, source')
           .gte('period_month', `${monthKey(today)}-01`).limit(4000),
+        // ⚠️ ออเดอร์ค้างส่งที่เลยดิว (pending วันเก่า ย้อน 30 วัน) — เดิมถูกตัดทิ้งทั้งก้อน
+        //    แผนรายวันเริ่ม backlog=0 แล้วบอก "กะเช้าพอ" ทั้งที่มีของค้างส่งจริง (QC flow-audit D1 · red)
+        supabaseDR.from('customer_shipping_orders').select('mat_no, qty, due_date')
+          .neq('status', 'shipped').gte('due_date', addDays(today, -30)).lt('due_date', today).limit(2000),
       ]);
       setCalMap(Object.fromEntries((cal || []).map(c => [c.work_date, c.day_type])));
       setOrders(ord || []);
-      setForecasts(fc || []);
+      setOverdueOrders(past || []);
+      // dedupe ข้าม source (edi ชนะ manual ต่อ mat×เดือน) — กัน shiftsNeeded เฟ้อ 2 เท่า (T2-2/QC flow-audit D1)
+      setForecasts(dedupeForecastRows(fc || []));
 
       const pmap = {};
       const pnoMap = {};
@@ -231,8 +239,17 @@ export default function ProductionPlan() {
         else unknownCap += qty;
       });
       const hasNight = hasNightShift(viewLines, line.name);
+      // ยอดค้างส่งที่เลยดิวของไลน์นี้ = backlog ตั้งต้นวันแรก (convention เดียวกับ Rundown "ค้างเก่ารวมเข้าวันนี้")
+      let carryPcs = 0, carryLoad = 0;
+      overdueOrders.forEach(o => {
+        if (lineOfMat(o.mat_no) !== line.name) return;
+        const { perShift } = capOfMat(o.mat_no);
+        const qty = Number(o.qty) || 0;
+        carryPcs += qty;
+        if (perShift > 0) carryLoad += qty / perShift; else unknownCap += qty;
+      });
       // เดินวัน: กะเช้า 1 shift → กะดึก (ถ้ามี) → OT · วันหยุดทำเฉพาะเมื่อ backlog
-      let backlog = 0;
+      let backlog = carryLoad;
       const days = dates.map(date => {
         const dtype = calOf(date);
         const holiday = dtype !== 'working';
@@ -261,9 +278,9 @@ export default function ProductionPlan() {
       // มาตรการ ม.75 รายไลน์: วัน shutdown75 ในช่วง — ไลน์นี้หยุดได้กี่วัน / ต้องเรียกมากี่วัน
       const sd75Total = days.filter(d => d.sd75).length;
       const sd75Stoppable = days.filter(d => d.sd75 && !d.plan.includes('recall75')).length;
-      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length };
-    }).filter(r => r.orderCount > 0 || r.unknownCap > 0);
-  }, [loading, viewLines, orders, today, capOfMat, lineOfMat, calOf]);
+      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length, carryPcs };
+    }).filter(r => r.orderCount > 0 || r.unknownCap > 0 || r.carryPcs > 0);
+  }, [loading, viewLines, orders, overdueOrders, today, capOfMat, lineOfMat, calOf]);
 
   /* ═══ รายเดือน: forecast → shift ที่ต้องการ vs วันทำงานที่มี ═══ */
   const monthly = useMemo(() => {
@@ -391,7 +408,7 @@ export default function ProductionPlan() {
             </div>
           );
         })()}
-        {daily.map(({ line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, orderCount }) => (
+        {daily.map(({ line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, orderCount, carryPcs }) => (
           <div key={line.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{line.name}</span>
@@ -405,6 +422,7 @@ export default function ProductionPlan() {
               {sd75Total > 0 && (recall75Days > 0
                 ? <span style={chip('#a78bfa')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
                 : <span style={chip('#22c55e')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
+              {carryPcs > 0 && <span style={chip('#f59e0b')} title="ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)">⏰ ยกมาจากค้างส่งเก่า {Math.round(carryPcs).toLocaleString()} ชิ้น</span>}
               {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
             {/* แถบปฏิทินวันต่อวัน */}

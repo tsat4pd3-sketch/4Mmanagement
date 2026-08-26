@@ -151,9 +151,15 @@ export default function RackCenter() {
   }, [lines, containerTypes]);
 
   // deep-link จาก QR ที่สแกนด้วยกล้องมือถือ: /rack-center?line=..&ctype=.. → เปิดฟอร์มให้เลย
+  // ⚠️ ต้อง guard สิทธิ์ค่าจาก URL ด้วย ไม่ใช่แค่ซ่อนปุ่ม (กฎ useTabParam-guard) — คนแปะลิงก์ให้กันได้
   useEffect(() => {
     const line = searchParams.get('line'), ctype = searchParams.get('ctype');
     if (!line || !ctype || !lines.length || !containerTypes.length) return;
+    if (!canOperate) {
+      toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate) — ให้ผู้มีสิทธิ์เป็นคนสแกน');
+      setSearchParams({}, { replace: true });
+      return;
+    }
     applyScan({ line, ctype, qty: searchParams.get('qty') || '1' });
     setSearchParams({}, { replace: true });   // ล้าง param กันเปิดซ้ำตอน refresh
   }, [lines, containerTypes]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -194,6 +200,7 @@ export default function RackCenter() {
   };
 
   const handleRequest = async () => {
+    if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate)'); return; }
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.container_type_id) { toast.error('เลือกชนิดภาชนะ'); return; }
     const qty = parseInt(form.qty) || 0;

@@ -27,6 +27,28 @@ export function demandKeysOf(product) {
 export const rowMatchesProduct = (row, keys) =>
   keys.has(norm(row?.mat_no)) || keys.has(norm(row?.customer_part_no));
 
+/** จำนวนวันของเดือนที่วันนั้นอยู่ (รับ 'YYYY-MM-DD'/'YYYY-MM') — ใช้เกลี่ย forecast รายเดือน */
+export const daysInMonthOf = (s) => {
+  const [y, m] = String(s || '').split('-').map(Number);
+  if (!y || !m) return 30;
+  return new Date(y, m, 0).getDate();
+};
+
+/**
+ * กัน double-count ข้าม source: mat×เดือน ที่มีแถว EDI 830 (official) แล้ว → ทิ้งแถว source อื่นของเดือนนั้น
+ * (กฎ CLAUDE.md "Order/Month รวม forecast source เดียว" — เดิมกติกานี้อยู่แค่ใน KanbanCalcTab
+ *  จอที่เหลือบวกทุก source แล้ว demand เฟ้อ 2 เท่า · QC flow-audit D1 2026-08-25)
+ * ⚠️ ต้อง select คอลัมน์ `source` มาด้วย — แถวไม่มี source ถูกมองเป็น manual
+ */
+export function dedupeForecastRows(rows) {
+  const hasEdi = new Set();
+  (rows || []).forEach((r) => {
+    if (r?.source === 'edi_830') hasEdi.add(`${r.mat_no}|${String(r.period_month || '').slice(0, 7)}`);
+  });
+  return (rows || []).filter((r) =>
+    r?.source === 'edi_830' || !hasEdi.has(`${r?.mat_no}|${String(r?.period_month || '').slice(0, 7)}`));
+}
+
 /**
  * รวมความต้องการรายวัน
  * @param {Array} orders    customer_shipping_orders ที่กรองเป็นของสินค้านี้แล้ว
@@ -43,13 +65,17 @@ export function demandByDay(orders, forecasts, spreadDays = 7) {
     byDay[d][src] += q;
   };
   (orders || []).forEach((o) => { add(o.due_date, Number(o.qty) || 0, 'order'); if (o.due_date) orderDays.add(o.due_date); });
-  /* forecast ราย 7 วัน → เกลี่ยเป็นรายวัน เพื่อวาดบนแกนวันเดียวกับ order ได้
-     (เกลี่ยเท่าๆ กัน ไม่เดาว่าวันไหนหนักกว่า — ระบบไม่รู้ตารางส่งจริงของสัปดาห์นั้น) */
+  /* forecast → เกลี่ยเป็นรายวัน เพื่อวาดบนแกนวันเดียวกับ order ได้
+     (เกลี่ยเท่าๆ กัน ไม่เดาว่าวันไหนหนักกว่า — ระบบไม่รู้ตารางส่งจริงของสัปดาห์นั้น)
+     ⚠️ grain ต่างกันตาม source: EDI 830 = ราย 7 วัน · manual = ก้อนทั้งเดือน (period_month = วันที่ 1)
+     เดิมเกลี่ยทุกแถวด้วย 7 วัน → ก้อน manual ทั้งเดือนถูกอัดลงสัปดาห์แรก = demand เข้มข้น ~4.3 เท่า
+     → simulate ติดลบปลอม ขึ้น "ของจะขาด" ทั้งที่พอ (QC flow-audit D1) */
   (forecasts || []).forEach((f) => {
     const q = Number(f.qty) || 0;
     if (!f.period_month || !(q > 0)) return;
-    const per = q / spreadDays;
-    for (let i = 0; i < spreadDays; i++) add(addDay(String(f.period_month).slice(0, 10), i), per, 'forecast');
+    const days = f.source === 'edi_830' ? spreadDays : daysInMonthOf(f.period_month);
+    const per = q / days;
+    for (let i = 0; i < days; i++) add(addDay(String(f.period_month).slice(0, 10), i), per, 'forecast');
   });
   return {
     byDay, orderDays,

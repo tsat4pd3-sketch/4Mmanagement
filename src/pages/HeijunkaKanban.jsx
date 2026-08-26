@@ -525,13 +525,15 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                         if (!tp) return null;
                         return (
                           <div style={{ fontSize: 11, marginTop: 2, color: tp.trips > 1 ? '#f59e0b' : 'var(--muted)', fontWeight: tp.trips > 1 ? 700 : 400 }}
-                            title={tp.assigned ? 'คิดจากรถของคนขับที่มอบหมายรอบนี้ (หน้า มอบหมายขนส่ง)' : 'ยังไม่มอบหมายคนขับ — คิดจากรถที่จุมากสุด'}>
-                            {tp.veh.icon} {alloc.totalKanban} กล่อง ÷ จุ {tp.cap} = <b>{tp.trips} เที่ยว</b>{tp.assigned ? '' : ' (ยังไม่มอบหมายรถ)'}
+                            title={tp.assigned ? 'คิดจากรถของคนขับที่มอบหมายรอบนี้ (หน้า มอบหมายขนส่ง)' : (tp.capFallback ? 'รถของคนขับที่มอบหมายยังไม่ตั้งความจุ — คิดจากคันจุมากสุดในระบบแทน (ตั้งจุที่หน้า มอบหมายขนส่ง)' : 'ยังไม่มอบหมายคนขับ — คิดจากรถที่จุมากสุด')}>
+                            {tp.veh.icon} {alloc.totalKanban} กล่อง ÷ จุ {tp.cap} = <b>{tp.trips} เที่ยว</b>{tp.assigned ? '' : (tp.capFallback ? ' (รถคนขับยังไม่ตั้งจุ)' : ' (ยังไม่มอบหมายรถ)')}
                           </div>
                         );
                       })()}
                       {confirmedBy && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
-                      {canOperate && !isConf && (
+                      {/* gate เดียวกับ StoreBoardView/UnifiedStoreBoard — ยืนยันได้เฉพาะตอนถึงจังหวะจริง
+                          (⏳ กำลังเตรียม / 🔴 ค้างส่ง) ไม่ใช่ตั้งแต่ ⬜ รอ ก่อน cutoff (QC flow-audit #38) */}
+                      {canOperate && !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง') && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
                           style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
@@ -912,6 +914,9 @@ const PURCHASE_STATUS = {
   pending:  { label: '🆕 รอสั่งซื้อ',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
   ordered:  { label: '🚚 รอของเข้า',   color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
   received: { label: '✅ รับเข้าแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)',  next: null,       nextLabel: null },
+  // ใบที่ถูกยกเลิก (เช่นล้างใบขยะจากบั๊ก lot_size) — ปกติถูกกรองออกตั้งแต่ query แล้ว
+  // แต่ต้องมี meta กันหลุด: เดิม fallback ไป pending ทำใบยกเลิกโชว์เป็น "🆕 รอสั่งซื้อ" + มีปุ่มเดินต่อ
+  cancelled: { label: '⛔ ยกเลิกแล้ว', color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
 };
 const PURCHASE_FILTERS = [
   { key: '',  label: 'ทั้งหมด' },
@@ -1330,8 +1335,13 @@ export default function HeijunkaKanban() {
         if (lot.source_line) {
           txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
             type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
-          // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก
-          rawRequests.filter(r => r.lot_request_id === lot.id).forEach(r => {
+          // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
+          //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
+          //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
+          const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
+            .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
+          if (eRaw) throw eRaw;
+          (lotRaws || []).forEach(r => {
             txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
               type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
           });
@@ -1367,9 +1377,10 @@ export default function HeijunkaKanban() {
       const patch = { status: next };
       if (next === 'ordered')  { patch.ordered_by = fullName || 'จัดซื้อ'; patch.ordered_at = new Date().toISOString(); }
       if (next === 'received') { patch.received_by = fullName || 'สโตร์'; patch.received_at = new Date().toISOString(); }
-      // อัปเดตแบบมีเงื่อนไข กันกดซ้ำ/สองแท็บ ไม่ให้เติม stock ซ้ำ
+      // อัปเดตแบบ compare-and-swap: เดินหน้าได้เฉพาะจากสถานะที่เราเห็นตอนกดเท่านั้น
+      // (เดิม .neq(next) อย่างเดียว → ใบที่ถูก "ยกเลิก" ไปแล้วยังถูกกดเดินหน้าเป็น ordered/received ได้ = ชุบชีวิตใบขยะ)
       const { data: updated, error } = await supabaseDR.from('purchase_requests')
-        .update(patch).eq('id', pr.id).neq('status', next).select('id');
+        .update(patch).eq('id', pr.id).eq('status', pr.status).select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
       if (next === 'received' && pr.dest_line) {
@@ -1380,7 +1391,12 @@ export default function HeijunkaKanban() {
         });
         if (e2) throw e2;
       }
-      toast.success(next === 'ordered' ? `🛒 บันทึกสั่งซื้อ ${pr.mat_no}` : `✅ รับเข้าสโตร์ ${pr.mat_no} +${pr.qty}`);
+      // dest_line ว่าง = ไม่รู้ปลายทางสโตร์ → สต็อกไม่ถูกเติม ห้าม toast เขียวเหมือนสำเร็จ (QC flow-audit #42)
+      if (next === 'received' && !pr.dest_line) {
+        toast.error(`รับสถานะ ${pr.mat_no} แล้ว แต่ใบนี้ไม่ได้ระบุปลายทางสโตร์ — สต็อกยังไม่ถูกเติม ไปบันทึกรับเข้าเองที่ Line Stock`);
+      } else {
+        toast.success(next === 'ordered' ? `🛒 บันทึกสั่งซื้อ ${pr.mat_no}` : `✅ รับเข้าสโตร์ ${pr.mat_no} +${pr.qty}`);
+      }
       await loadPull();
       await load();
     } catch (err) { toast.error(err.message); }
@@ -1396,11 +1412,14 @@ export default function HeijunkaKanban() {
     [arr[i], arr[j]] = [arr[j], arr[i]];
     setPullBusy(lot.id);
     try {
-      await Promise.all(arr.map((l, k) =>
+      // supabase-js คืน {error} ไม่ throw — ต้องเช็คผลรายตัว ไม่งั้น seq เขียนไม่ครบแบบเงียบ (2 ล็อต seq ซ้ำ)
+      const rs = await Promise.all(arr.map((l, k) =>
         supabaseDR.from('child_lot_requests').update({ seq_no: k + 1 }).eq('id', l.id)
       ));
+      const bad = rs.find(r => r.error);
+      if (bad) throw bad.error;
       await loadPull();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error('เรียงคิวไม่สำเร็จ (ลำดับอาจเขียนไม่ครบ — รีเฟรชแล้วลองใหม่): ' + err.message); }
     setPullBusy(null);
   };
 
@@ -1427,8 +1446,11 @@ export default function HeijunkaKanban() {
     try {
       const payload = { status: next };
       if (next === 'delivered') { payload.delivered_by = fullName || 'สโตร์'; payload.delivered_at = new Date().toISOString(); }
-      const { error } = await supabase.from('wip_replenish_requests').update(payload).eq('id', w.id);
+      // compare-and-swap กันกดซ้ำ/2 เครื่อง — ไม่งั้น delivered ซ้ำ = บวก current_qty จุด WIP สองรอบ
+      const { data: updated, error } = await supabase.from('wip_replenish_requests')
+        .update(payload).eq('id', w.id).eq('status', w.status).select('id');
       if (error) throw error;
+      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
       if (next === 'delivered' && w.wip_point_id) {
         const { data: point } = await supabase.from('wip_buffer_points').select('current_qty, max_qty').eq('id', w.wip_point_id).single();
         if (point) {
@@ -1547,11 +1569,18 @@ export default function HeijunkaKanban() {
     const asg = transport.assigns.find(a => a.round_id === roundId);
     const carrier = asg?.carrier_id ? transport.carriers.find(c => c.id === asg.carrier_id) : null;
     const codes = carrier?.vehicles?.length ? carrier.vehicles : transport.vehicles.map(v => v.code);
-    const cand = codes.map(c => transport.vehicles.find(v => v.code === c)).filter(v => v && Number(v.capacity_pkg) > 0);
+    let cand = codes.map(c => transport.vehicles.find(v => v.code === c)).filter(v => v && Number(v.capacity_pkg) > 0);
+    let capFallback = false;
+    // รถของคนขับที่มอบหมายไม่มีคันไหนตั้งจุเลย → fallback ไปรถจุมากสุดในระบบ + หมายเหตุ
+    // (เดิม return null = บรรทัดเที่ยวหายทั้งก้อน "เฉพาะรอบที่มอบหมายแล้ว" — สวนสัญชาตญาณ · QC flow-audit #44)
+    if (!cand.length && carrier) {
+      cand = transport.vehicles.filter(v => Number(v.capacity_pkg) > 0);
+      capFallback = true;
+    }
     if (!cand.length) return null;
     const veh = cand.reduce((b, v) => (Number(v.capacity_pkg) > Number(b.capacity_pkg) ? v : b), cand[0]);
     const cap = Number(veh.capacity_pkg);
-    return { trips: Math.ceil(cards / cap), veh, cap, assigned: !!carrier };
+    return { trips: Math.ceil(cards / cap), veh, cap, assigned: !!carrier && !capFallback, capFallback };
   }, [transport]);
 
   useEffect(() => { loadDeliveries(); }, [loadDeliveries]);
@@ -1599,10 +1628,20 @@ export default function HeijunkaKanban() {
     setReceiving(true);
     try {
       let shortageNote = '';
+      let shortRows = [];
       if (mode === 'partial') {
-        const shortRows = [];
+        // ตรวจค่าที่กรอกก่อนคิด shortfall — ช่องว่าง ('') coerce เป็น 0 = ตีความว่า "รับ 0 ชิ้น"
+        // แล้ว consume เต็มจำนวนเงียบๆ · ค่าลบ/เกินยอดส่ง ก็บล็อกก่อน (QC flow-audit #41)
+        for (const p of parts.filter(p => p.netTotal > 0)) {
+          const raw = actualQtyByMat[p.mat_no];
+          if (raw === '' || raw == null) continue;             // ไม่กรอก = รับครบตามยอด (default เดิม)
+          const n = Number(raw);
+          if (!Number.isFinite(n) || n < 0) throw new Error(`จำนวนรับจริงของ ${p.mat_no} ไม่ถูกต้อง (${raw})`);
+          if (n > p.netTotal) throw new Error(`จำนวนรับจริงของ ${p.mat_no} (${n}) มากกว่ายอดส่ง (${p.netTotal}) — ตรวจตัวเลขอีกครั้ง`);
+        }
         parts.filter(p => p.netTotal > 0).forEach(p => {
-          const actual = actualQtyByMat[p.mat_no] ?? p.netTotal;
+          const raw = actualQtyByMat[p.mat_no];
+          const actual = (raw === '' || raw == null) ? p.netTotal : Number(raw);
           const shortfall = p.netTotal - actual;
           if (shortfall > 0) {
             shortRows.push({
@@ -1613,17 +1652,28 @@ export default function HeijunkaKanban() {
             });
           }
         });
-        if (shortRows.length) {
-          const { error } = await supabaseDR.from('line_stock_transactions').insert(shortRows);
-          if (error) throw error;
-        }
         shortageNote = shortRows.map(s => `${s.mat_no} ขาด ${s.qty}`).join(', ');
       }
-      const { error } = await supabaseDR.from('kanban_deliveries').update({
+      // claim สถานะก่อนแล้วค่อยเขียน consume — 2 เครื่องกดพร้อมกันมีแค่คนเดียวที่ claim ได้
+      // (เดิม insert consume ก่อน update = กดซ้ำ consume shortfall สองรอบ · pattern เดียวกับ confirmRound)
+      const { data: claimed, error } = await supabaseDR.from('kanban_deliveries').update({
         received_at: new Date().toISOString(), received_by: fullName || 'ผลิต',
         received_status: mode, received_note: shortageNote || null,
-      }).match({ work_date: workDate, line_name: round.line_name, shift: round.shift, round_no: round.round_no });
+      }).match({ work_date: workDate, line_name: round.line_name, shift: round.shift, round_no: round.round_no })
+        .is('received_status', null).select('id');
       if (error) throw error;
+      if (!claimed || claimed.length === 0) {
+        toast.error('รอบนี้ถูกบันทึกรับของโดยคนอื่นไปแล้ว — รีเฟรชให้ใหม่');
+        setReceiveModal(null);
+        await loadDeliveries();
+        setReceiving(false);
+        return;
+      }
+      if (shortRows.length) {
+        const { error: eShort } = await supabaseDR.from('line_stock_transactions').insert(shortRows);
+        // สถานะรับถูกบันทึกไปแล้ว — consume พลาดต้องบอกชัด ห้ามเงียบ (ยอดสต็อกจะสูงเกินจริง)
+        if (eShort) throw new Error(`บันทึกสถานะรับแล้ว แต่ปรับยอดของที่ขาดไม่สำเร็จ — แจ้ง admin: ${eShort.message}`);
+      }
       toast.success(mode === 'full' ? '✔️ ยืนยันรับครบแล้ว' : '⚠️ บันทึกรับไม่ครบแล้ว');
       setReceiveModal(null);
       await loadDeliveries();

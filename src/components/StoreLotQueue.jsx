@@ -245,7 +245,9 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                   <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{b.mat_no}</span>
                   <span style={{ color: 'var(--text2)', flex: 1, minWidth: 100 }}>{b.part_name || '—'}</span>
                   <span style={{ color: '#f59e0b', fontWeight: 700 }}>ค้าง {fmt(b.pending_qty)} ชิ้น</span>
-                  {b.suggested_lot > 0 && <span style={{ color: 'var(--muted)' }}>· เสนอล็อตละ {fmt(b.suggested_lot)}</span>}
+                  {b.block_reason === 'backlog_capped'
+                    ? <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดเกินเพดานออกใบต่อรอบ จะทยอยออกใบเมื่อปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                    : b.suggested_lot > 0 && <span style={{ color: 'var(--muted)' }}>· เสนอล็อตละ {fmt(b.suggested_lot)}</span>}
                 </div>
               ))}
               {blocks.length > 8 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>… อีก {blocks.length - 8} พาร์ท (ดูทั้งหมดที่ 🔗 สายธารความต้องการ)</div>}
