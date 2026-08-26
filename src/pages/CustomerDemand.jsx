@@ -215,6 +215,25 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     const own = wfSteps.filter(st => st.customer === customer);
     return own.length ? own : wfSteps.filter(st => st.customer == null);
   };
+  /* ⭐ "เฟสท้ายสุดที่ตั้งไว้ = จบงาน" — ลูกค้าที่มารับเองด้วยรถ milk run ของตัวเอง
+     พอโหลดขึ้นรถแล้วงานของเราจบตรงนั้น ไม่มีขั้น "ส่งถึงลูกค้า" ให้กดอีก
+     ⚠️ สถานะจบใน DB ยังเป็น 'shipped' เสมอ (ห้ามเปลี่ยน) — RundownStock/StoreMonitor/
+     FlowTower/DeptDashboard/scanner ทั้งระบบกรองด้วย neq('status','shipped')
+     ตั้งเฟสท้ายเป็นอะไร = แค่บอกว่า "คลิกไหนคือคลิกสุดท้าย" ไม่ใช่เปลี่ยนโมเดลสถานะ */
+  const finalStatusOf = (customer) => {
+    const list = stepsForCust(customer);
+    if (!list.length) return 'shipped';
+    return list.reduce((best, st) =>
+      (SHIP_RANK[st.requires_status] ?? -1) > (SHIP_RANK[best] ?? -1) ? st.requires_status : best, 'pending');
+  };
+  /* จุดหักสต็อก — ตรงกับ SAP ที่ตัดออกจาก warehouse ตั้งแต่ "เตรียมของไปพื้นที่ shipping area"
+     (ก่อนโหลดขึ้นรถ) · ไม่ติ๊กเฟสไหนเลย = หักตอนจบงานเหมือนเดิมเป๊ะ */
+  const deductStatusOf = (customer) => {
+    const marked = stepsForCust(customer).filter(st => st.deducts_stock);
+    if (!marked.length) return 'shipped';
+    return marked.reduce((best, st) =>
+      (SHIP_RANK[st.requires_status] ?? 9) < (SHIP_RANK[best] ?? 9) ? st.requires_status : best, 'shipped');
+  };
   const phaseList = (o) => {
     const tw = frameMin(o.ship_time);
     if (tw == null || !wfSteps.length) return [];
@@ -227,6 +246,27 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     });
   };
   const phaseLate = (o) => o.status !== 'shipped' && !isOverdue(o) && phaseList(o).some(ph => ph.missed);
+
+  /* ปุ่ม "ขั้นถัดไป" ของใบนี้ — คืน { to, label, color, terminal } หรือ null (จบแล้ว)
+     ก้าวที่ทำให้ถึง/เลย "เฟสท้ายสุดที่ตั้งไว้" = ปิดรอบส่งเลย (to = 'shipped')
+     ⚠️ ชุดเฟสที่จบด้วย 'shipped' (ค่ามาตรฐานเดิม) จะได้พฤติกรรมเดิมทุกประการ */
+  const nextStep = (o) => {
+    const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
+    if (!st.next) return null;
+    const fin = finalStatusOf(o.customer);
+    if ((SHIP_RANK[st.next] ?? 9) < (SHIP_RANK[fin] ?? 4)) return { to: st.next, label: st.nextLabel, color: st.color, terminal: false };
+    const terminal = fin !== 'shipped';
+    // ใบเก่าที่ค้างอยู่ "เลยเฟสท้าย" อยู่แล้ว (เช่นเคยกดถึง loaded ก่อนเปลี่ยนค่า) → เหลือแค่ปิดรอบ
+    const past = (SHIP_RANK[o.status] ?? 0) >= (SHIP_RANK[fin] ?? 4);
+    return {
+      to: 'shipped',
+      label: !terminal ? st.nextLabel : past ? '✅ จบงาน (ปิดรอบส่ง)' : `${st.nextLabel} · จบงาน`,
+      color: st.color, terminal,
+    };
+  };
+  // ชุดเฟสที่จบก่อน 'shipped' → คำว่า "ส่งแล้ว" ไม่ตรงความจริง (ของขึ้นรถลูกค้าไปแล้ว = จบงานของเรา)
+  const statusLabel = (o) => (o.status === 'shipped' && finalStatusOf(o.customer) !== 'shipped')
+    ? '✅ จบงาน' : (SHIP_STATUS[o.status] || SHIP_STATUS.pending).label;
 
   const byCustomer = useMemo(() => {
     const m = {};
@@ -260,22 +300,36 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   }, [orders, fgStock, matMap]);
 
   const advance = async (o) => {
-    const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
-    if (!st.next) return;
+    const step = nextStep(o);
+    if (!step) return;
+    const to = step.to;
     setBusy(o.id);
-    const payload = { status: st.next };
-    if (st.next === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
+    const payload = { status: to };
+    if (to === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
     // guard สถานะปัจจุบันแบบ atomic — กันกดรัว/2 เครื่องเลื่อนสถานะเดียวกันซ้ำ
     // (เครื่องสโตร์ใช้บัญชีร่วม) ถ้าไม่ guard จะหักสต็อก + ยิง Telegram ซ้ำ 2 รอบต่อการส่ง 1 ครั้ง
     const { data: updated, error } = await supabaseDR.from('customer_shipping_orders')
       .update(payload).eq('id', o.id).eq('status', o.status).select('id');
     if (error) { toast.error(error.message); setBusy(null); return; }
     if (!updated || updated.length === 0) { setBusy(null); await load(); return; } // มีคนเลื่อนไปก่อนแล้ว
-    // ส่งแล้ว → หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (ไลน์ที่มีของมากสุดก่อน)
-    // ⚠️ ผลลัพธ์ 3 แบบ (เต็ม/ขาด/ไม่ได้หักเลย) ต้องรายงานให้เห็นเสมอ — ห้ามขึ้น "ส่งแล้ว" เขียวล้วน
-    //    ตอนที่ยอดไม่ถูกหักจริง (เคยเงียบมาตลอด: ส่งไป 3,279 ชิ้น หักจริง 508 โดยไม่มีใครรู้)
+    /* หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (คลัง FG ก่อน แล้วคลังอื่น)
+       ⏱️ หักตอนไหน = เฟสที่ติ๊ก "หักสต็อก" ไว้ (ไม่ติ๊ก = ตอนจบงาน เหมือนเดิม)
+          SAP ตัดออกจาก warehouse ตั้งแต่ย้ายของไปพื้นที่ shipping area (ก่อนขึ้นรถ)
+       ⚠️ ผลลัพธ์ 3 แบบ (เต็ม/ขาด/ไม่ได้หักเลย) ต้องรายงานให้เห็นเสมอ — ห้ามขึ้นเขียวล้วน
+          ตอนที่ยอดไม่ถูกหักจริง (เคยเงียบมาตลอด: ส่งไป 3,279 ชิ้น หักจริง 508 โดยไม่มีใครรู้) */
     let shipMsg = null;   // ข้อความสรุปผลการหักสต็อก (null = หักครบตามยอดส่ง)
-    if (st.next === 'shipped') {
+    const cutAt = deductStatusOf(o.customer);
+    let doCut = (SHIP_RANK[to] ?? 0) >= (SHIP_RANK[cutAt] ?? 4);
+    if (doCut) {
+      /* กันหักซ้ำแบบ idempotent — ผูกด้วย ref_shipment_id ที่เขียนไว้ตอนหักครั้งแรก
+         จำเป็นเมื่อจุดหักอยู่ก่อนขั้นสุดท้าย (prepared → shipped ยังมีอีกคลิก)
+         และตอนย้ายจุดหักจาก 'shipped' มา 'prepared' ใบที่ค้างกลางทางจะได้ไม่หลุด/ไม่ซ้ำ
+         ⚠️ query พลาด (เช่นคอลัมน์ยังไม่ apply) = ถือว่ายังไม่เคยหัก → เดินต่อแบบเดิม */
+      const { data: prevTxn, error: ePrev } = await supabaseDR.from('line_stock_transactions')
+        .select('id').eq('ref_shipment_id', o.id).limit(1);
+      if (!ePrev && (prevTxn?.length || 0) > 0) doCut = false;
+    }
+    if (doCut) {
       // เลข SAP ที่ของอยู่จริง — order อาจอ้างเลขลูกค้า ต้อง resolve ก่อนเสมอ
       const res = matMap[o.mat_no] || { mat: null, status: 'none', candidates: [] };
       const sap = res.mat;
@@ -335,23 +389,25 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         }
         if (e2) { cut = 0; insertFailed = true; toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message); }
       }
+      // ขั้นที่หักสต็อกอาจไม่ใช่ "ส่งแล้ว" อีกต่อไป (SAP หักตอนเตรียมของ) → ข้อความต้องตรงกับขั้นที่เพิ่งกด
+      const at = to === 'shipped' ? 'จบงาน' : (SHIP_STATUS[to]?.label || to);
       if (insertFailed) {
         // insert ล้มด้วย error จริง — สาเหตุคือระบบ/สิทธิ์ ไม่ใช่ "ของไม่เคยเข้าคลัง"
         // ห้ามไหลเข้าข้อความวินิจฉัย master ข้างล่าง (ชี้ทางแก้ผิดเรื่อง — คนจะไปไล่ p_no ฟรี)
-        shipMsg = `🔴 ส่ง ${o.mat_no} แล้ว — ตัดสต็อกไม่สำเร็จ (ระบบ) ยอดคงเหลือยังไม่ถูกหัก · ลองใหม่/แจ้ง admin`;
+        shipMsg = `🔴 ${at} ${o.mat_no} แล้ว — ตัดสต็อกไม่สำเร็จ (ระบบ) ยอดคงเหลือยังไม่ถูกหัก · ลองใหม่/แจ้ง admin`;
       } else if (cut <= 0) {
         // ยอดคลังไม่ขยับ → ยอดคงเหลือจะสูงกว่าความจริงไปเรื่อยๆ ต้องบอกให้รู้ว่าติดตรงไหน
         // แยก 2 สาเหตุที่คนละวิธีแก้: จับคู่เลขไม่ได้ (แก้ master) vs จับคู่ได้แต่ของไม่เคยเข้าคลัง (แก้การปิดออเดอร์ผลิต)
         const why = matIssueText(o.mat_no, res);
-        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก · `
+        shipMsg = `⚠️ ${at} ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก · `
           + (why || `ไม่มีข้อมูลสต็อกของ ${sap} ในคลัง (ของยังไม่เคยถูกบันทึกเข้า — เช็คการปิดออเดอร์ผลิต/กฎรับเข้าอัตโนมัติ)`);
       } else if (cut < want) {
-        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — หักสต็อกได้ ${cut.toLocaleString()}/${want.toLocaleString()} ชิ้น (สต็อกในระบบไม่พอ ขาด ${(want - cut).toLocaleString()})`;
+        shipMsg = `⚠️ ${at} ${o.mat_no} แล้ว — หักสต็อกได้ ${cut.toLocaleString()}/${want.toLocaleString()} ชิ้น (สต็อกในระบบไม่พอ ขาด ${(want - cut).toLocaleString()})`;
       } else if (cutOffFg > 0) {
-        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — หักครบ แต่ ${cutOffFg.toLocaleString()} ชิ้นถูกหักจากคลังนอก FG (ของยังไม่ผ่านรับเข้าคลัง FG — เช็คขั้นแพ็ค/รับเข้า)`;
+        shipMsg = `⚠️ ${at} ${o.mat_no} แล้ว — หักครบ แต่ ${cutOffFg.toLocaleString()} ชิ้นถูกหักจากคลังนอก FG (ของยังไม่ผ่านรับเข้าคลัง FG — เช็คขั้นแพ็ค/รับเข้า)`;
       }
     }
-    if (st.next === 'shipped') {
+    if (to === 'shipped') {
       supabase.functions.invoke('send-notification', {
         body: { event: 'shipping_shipped', ship: {
           ship_time: (o.ship_time || '').slice(0, 5), due_date: o.due_date,
@@ -361,8 +417,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         } },
       }).catch(() => {});
     }
-    if (shipMsg) toast.error(shipMsg);   // ส่งสำเร็จ แต่สต็อกไม่ตรง — ต้องมีคนไปตามแก้ ห้ามกลบด้วยเขียว
-    else toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`);
+    if (shipMsg) toast.error(shipMsg);   // เลื่อนสถานะสำเร็จ แต่สต็อกไม่ตรง — ต้องมีคนไปตามแก้ ห้ามกลบด้วยเขียว
+    else toast.success(`${step.label} — ${o.mat_no}`);
     await load();
     setBusy(null);
   };
@@ -667,7 +723,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 6 }}>
@@ -704,12 +760,17 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                     )}
                     {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by}</div>}
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                      {st.next && (
-                        <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
-                          style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${st.color}22`, color: st.color, border: `1px solid ${st.color}55`, fontFamily: 'var(--font-body)' }}>
-                          {busy === o.id ? '...' : st.nextLabel}
-                        </button>
-                      )}
+                      {(() => {
+                        const nx = nextStep(o);
+                        if (!nx) return null;
+                        return (
+                          <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
+                            title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                            style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${nx.color}22`, color: nx.color, border: `1px solid ${nx.color}55`, fontFamily: 'var(--font-body)' }}>
+                            {busy === o.id ? '...' : nx.label}
+                          </button>
+                        );
+                      })()}
                       <button onClick={() => goToCard(o)}
                         style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
                         ⬇ ไปที่การ์ด
@@ -763,7 +824,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}{o.due_date !== day ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {(o.due_date || '').slice(5)})</span> : null}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
                     </div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
                       {o.mat_no}{o.customer_part_no && o.customer_part_no !== o.mat_no ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {o.customer_part_no}</span> : null}
@@ -797,12 +858,17 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                               : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(coverage[o.id].short)} ชิ้น ต้องผลิต!</div>
                     )}
                     {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
-                    {st.next && (
-                      <button onClick={() => advance(o)} disabled={busy === o.id}
-                        style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.color}55`, fontFamily: 'var(--font-body)' }}>
-                        {busy === o.id ? '...' : st.nextLabel}
-                      </button>
-                    )}
+                    {(() => {
+                      const nx = nextStep(o);
+                      if (!nx) return null;
+                      return (
+                        <button onClick={() => advance(o)} disabled={busy === o.id}
+                          title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                          style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: nx.color, border: `1px solid ${nx.color}55`, fontFamily: 'var(--font-body)' }}>
+                          {busy === o.id ? '...' : nx.label}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -849,7 +915,7 @@ function WorkflowSection({ canEdit }) {
     const { data: defs } = await supabaseDR.from('shipping_workflow_steps').select('*').is('customer', null).eq('is_active', true).order('step_no');
     if (!defs?.length) { toast.error('ยังไม่มีค่ามาตรฐานให้คัดลอก'); return; }
     const { error } = await supabaseDR.from('shipping_workflow_steps')
-      .insert(defs.map(d => ({ customer: scope, step_no: d.step_no, name: d.name, offset_min: d.offset_min, requires_status: d.requires_status })));
+      .insert(defs.map(d => ({ customer: scope, step_no: d.step_no, name: d.name, offset_min: d.offset_min, requires_status: d.requires_status, deducts_stock: d.deducts_stock ?? false })));
     if (error) toast.error(error.message);
     else { toast.success(`สร้างชุดเฟสของ ${scope} จากค่ามาตรฐานแล้ว`); await load(); }
   };
@@ -861,11 +927,18 @@ function WorkflowSection({ canEdit }) {
     const d = draft[r.id];
     if (!d) return;
     setBusy(r.id);
-    const { error } = await supabaseDR.from('shipping_workflow_steps').update({
+    const base = {
       name: String(d.name ?? r.name).trim() || r.name,
       offset_min: Math.max(0, parseInt(d.offset_min ?? r.offset_min) || 0),
       requires_status: d.requires_status ?? r.requires_status,
-    }).eq('id', r.id);
+    };
+    const wantCut = d.deducts_stock ?? r.deducts_stock ?? false;
+    let { error } = await supabaseDR.from('shipping_workflow_steps').update({ ...base, deducts_stock: wantCut }).eq('id', r.id);
+    // คอลัมน์ deducts_stock ยังไม่ apply (42703) → บันทึกส่วนที่เหลือให้ได้ก่อน แต่ต้องบอกว่าอะไรไม่ถูกบันทึก
+    if (error?.code === '42703') {
+      ({ error } = await supabaseDR.from('shipping_workflow_steps').update(base).eq('id', r.id));
+      if (!error) toast.info('บันทึกแล้ว แต่ "หักสต็อก" ยังตั้งไม่ได้ — ยังไม่ได้ apply migration 20260826_shipping_step_deducts_stock (แจ้ง admin)');
+    }
     if (error) toast.error(error.message);
     else { toast.success('บันทึกเฟสแล้ว'); await load(); }
     setBusy(null);
@@ -889,6 +962,12 @@ function WorkflowSection({ canEdit }) {
   const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
   const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
 
+  // เฟสท้ายสุด = สถานะสูงสุดที่ตั้งไว้ (ไม่ใช่ step_no ท้ายสุด — คนสลับลำดับได้) · เฟสหักสต็อก = ตัวที่ติ๊กแล้วสถานะต่ำสุด
+  const rank = (s) => REQ_STATUS_OPTIONS.findIndex(x => x.value === s);
+  const lastStep = steps.length ? steps.reduce((a, b) => (rank(b.requires_status) > rank(a.requires_status) ? b : a)) : null;
+  const cutStep = steps.filter(s => s.deducts_stock)
+    .reduce((a, b) => (a == null || rank(b.requires_status) < rank(a.requires_status) ? b : a), null);
+
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🚛 Standard Workflow การส่งงาน (walkback)</div>
@@ -896,6 +975,15 @@ function WorkflowSection({ canEdit }) {
         นับถอยหลังจาก<strong>เวลาส่งถึงลูกค้า</strong> — แต่ละเฟสต้องถึงสถานะที่กำหนดก่อน deadline (เวลาส่ง − นาที walkback)
         ระบบสแกนทุก 10 นาที เฟสไหนหลุดจะแจ้งเข้า Smart Logistic ทันที ไม่ต้องรอตก due ลูกค้า
         · เพิ่ม/ลดจำนวนเฟสได้ตามความเหมาะสมของแต่ละลูกค้า
+      </div>
+      {/* ⭐ 2 กติกาที่คนตั้งค่าต้องเห็น ไม่งั้นตั้งแล้วไม่รู้ว่าจะเกิดอะไรขึ้นหน้างาน */}
+      <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, lineHeight: 1.65 }}>
+        🏁 <strong>เฟสท้ายสุด = จบงาน</strong> — พอกดถึงเฟสล่างสุดของตาราง ระบบปิดรอบส่งให้เลย ไม่มีปุ่มให้กดต่อ
+        {lastStep && <> (ตอนนี้คือ <strong style={{ color: '#a855f7' }}>{lastStep.name}</strong>)</>}
+        {lastStep && lastStep.requires_status !== 'shipped' && <> · เหมาะกับลูกค้าที่<strong>เอารถ milk run มารับเอง</strong> — ของขึ้นรถแล้วงานของเราจบตรงนั้น</>}
+        <br />
+        📦 <strong>หักสต็อก</strong> — ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (ให้ตรงกับ SAP ที่ตัดตั้งแต่ย้ายของไปพื้นที่ shipping area ก่อนขึ้นรถ)
+        {' '}ตอนนี้หักตอน <strong style={{ color: '#0ea5e9' }}>{cutStep ? cutStep.name : 'จบงาน (ค่าเริ่มต้น — ยังไม่ติ๊กเฟสไหน)'}</strong> · หักครั้งเดียวต่อรอบส่งเสมอ ติ๊กหลายเฟสจะยึดเฟสแรกสุด
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชุดเฟสของ:</span>
@@ -915,9 +1003,9 @@ function WorkflowSection({ canEdit }) {
         )}
       </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', ''].map(h => (
+            {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', '📦 หักสต็อก', ''].map(h => (
               <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
             ))}
           </tr></thead>
@@ -932,6 +1020,17 @@ function WorkflowSection({ canEdit }) {
                     {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
                   </select>
                 ) : <span style={{ fontSize: 12 }}>{REQ_STATUS_OPTIONS.find(x => x.value === r.requires_status)?.label || r.requires_status}</span>}</td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>
+                  {canEdit ? (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', color: 'var(--text2)' }}
+                      title="ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (SAP ตัดตั้งแต่ย้ายเข้าพื้นที่ shipping area)">
+                      <input type="checkbox" checked={!!val(r, 'deducts_stock')}
+                        onChange={e => setVal(r, 'deducts_stock', e.target.checked)} style={{ width: 'auto', margin: 0 }} />
+                      หักที่เฟสนี้
+                    </label>
+                  ) : <span style={{ fontSize: 12 }}>{r.deducts_stock ? '📦 หักที่เฟสนี้' : '—'}</span>}
+                  {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#0ea5e9' }}>← จุดหักจริง</span>}
+                </td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.id] && (
                     <button className="tbtn" onClick={() => save(r)} disabled={busy === r.id}
@@ -954,8 +1053,9 @@ function WorkflowSection({ canEdit }) {
       {canEdit && (
         <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>➕ เพิ่มเฟส</button>
       )}
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-        ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
+        ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00<br />
+        รถลูกค้ามารับเอง (milk run): ตั้งแค่ 3 เฟสจบที่ <em>โหลดขึ้นรถ</em> แล้วติ๊กหักสต็อกที่ <em>เตรียมงานเสร็จ</em> → กดโหลดขึ้นรถ = ปิดรอบส่งเลย
       </div>
     </div>
   );
