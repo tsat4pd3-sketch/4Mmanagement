@@ -9,6 +9,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { addMinutes, timeStrToMs, dayFrameMs, roundDeliveryMin, getRoundStatus } from '../utils/deliveryRounds';
 import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
+import StoreTimeChart from '../components/StoreTimeChart';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -1247,6 +1248,7 @@ export default function HeijunkaKanban() {
   const [bomMap, setBomMap]       = useState({});
   const [kanbanStd, setKanbanStd] = useState({});
   const [lineStock, setLineStock] = useState({});
+  const [storeStock, setStoreStock] = useState({});   // mat_no → qty ในคลัง STORE (ของที่จะหยิบไปส่งไลน์)
   const [rounds, setRounds]       = useState([]);
   const [deliveries, setDeliveries] = useState([]);
   const [transport, setTransport] = useState({ assigns: [], carriers: [], vehicles: [] }); // มอบหมายคนขับ+ความจุรถ (คำนวณเที่ยว)
@@ -1526,7 +1528,9 @@ export default function HeijunkaKanban() {
       setBomMap(bm);
 
       const childMats = [...new Set((boms || []).map(b => b.mat_no))];
-      const lineNames = [...new Set((sess || []).map(s => s.line_name))];
+      // + 'STORE' — ต้องรู้ว่า "ของที่จะส่งเข้าไลน์ มีอยู่ในสโตร์ไหม" (Store Time Chart)
+      //   คนละตัวกับ stock ในไลน์: stock ในไลน์ = หักออกจาก demand · stock ในสโตร์ = ของที่จะหยิบไปส่ง
+      const lineNames = [...new Set([...(sess || []).map(s => s.line_name), 'STORE'])];
       if (childMats.length) {
         const [{ data: stds }, { data: stockRows }] = await Promise.all([
           supabaseDR.from('kanban_standards').select('mat_no, qty_per_kanban').in('mat_no', childMats).eq('is_active', true),
@@ -1535,10 +1539,15 @@ export default function HeijunkaKanban() {
         const ks = {};
         (stds || []).forEach(s => { ks[s.mat_no] = s.qty_per_kanban; });
         setKanbanStd(ks);
-        const ls = {};
-        (stockRows || []).forEach(r => { ls[`${r.line_name}|${r.mat_no}`] = parseFloat(r.qty_on_hand) || 0; });
+        const ls = {}, ss = {};
+        (stockRows || []).forEach(r => {
+          const q = parseFloat(r.qty_on_hand) || 0;
+          if (r.line_name === 'STORE') ss[r.mat_no] = q;
+          else ls[`${r.line_name}|${r.mat_no}`] = q;
+        });
         setLineStock(ls);
-      } else { setKanbanStd({}); setLineStock({}); }
+        setStoreStock(ss);   // mat ที่ไม่มีคีย์ = "ไม่มีข้อมูลสต็อก" ≠ "ของหมด" (จอต้องแยกให้ออก)
+      } else { setKanbanStd({}); setLineStock({}); setStoreStock({}); }
     } catch (err) {
       toast.error('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
     }
@@ -1978,7 +1987,7 @@ export default function HeijunkaKanban() {
       {/* View mode toggle */}
       {/* flexWrap: จอแคบปุ่มสลับมุมมองตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {[{ id: 'unified', label: '🗄️ ตู้ Kanban รวม' }, { id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+        {[{ id: 'unified', label: '🗄️ ตู้ Kanban รวม' }, { id: 'chart', label: '🕐 Store Time Chart' }, { id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
             background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
@@ -2001,6 +2010,15 @@ export default function HeijunkaKanban() {
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
+          />
+        ) : viewMode === 'chart' ? (
+          /* ฝาแฝดของ Shipping Time Chart แต่เป็นขาสโตร์ → ไลน์ (user 2026-08-26) */
+          <StoreTimeChart
+            rounds={rounds} deliveries={deliveries} view={view}
+            storeStock={storeStock} kanbanStd={kanbanStd} lineMap={lineMap}
+            workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} fmt={fmt}
+            canOperate={canOperate} onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
+            onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)}
           />
         ) : viewMode === 'board' ? (
           <StoreBoardView
