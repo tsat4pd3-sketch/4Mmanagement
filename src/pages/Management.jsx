@@ -17,6 +17,7 @@ import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { liveChannel } from '../utils/liveChannel';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -407,7 +408,7 @@ export default function Management() {
     const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
     refresh();
     const stopPoll = visibleInterval(refresh, RATE.BACKUP);
-    const ch = supabaseDR.channel('mgmt-dt-alarm')
+    const ch = liveChannel(supabaseDR, 'mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();

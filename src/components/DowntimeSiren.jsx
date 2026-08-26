@@ -3,6 +3,7 @@ import { supabaseDR } from '../supabaseClient'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
+import { liveChannel } from '../utils/liveChannel'
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -46,7 +47,7 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   useEffect(() => {
     fetchAlerts()
     const stopPoll = visibleInterval(fetchAlerts, RATE.BACKUP) // กันเหนียวเผื่อ realtime หลุด
-    const ch = supabaseDR.channel(`dt-siren-${mode}`)
+    const ch = liveChannel(supabaseDR, `dt-siren-${mode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(fetchAlerts, 400))
       .subscribe()
     // นาฬิกาอย่างเดียว ไม่ยิง DB — ให้รายการที่ "ครบเกณฑ์ระหว่างเปิดจออยู่" ดังเองภายใน 1 นาที

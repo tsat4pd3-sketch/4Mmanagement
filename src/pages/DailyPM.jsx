@@ -11,6 +11,7 @@ import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarch
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
+import { liveChannel } from '../utils/liveChannel';
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -173,7 +174,7 @@ export default function DailyPM() {
   useEffect(() => {
     let timer = null
     const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(), 1500) }
-    const ch = supabaseDR.channel('daily-pm')
+    const ch = liveChannel(supabaseDR, 'daily-pm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)

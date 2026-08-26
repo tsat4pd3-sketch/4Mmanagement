@@ -19,6 +19,7 @@ import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE } from '../utils/refreshRates';
 import { visibleInterval } from '../utils/usePolling';
+import { liveChannel } from '../utils/liveChannel';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -568,7 +569,7 @@ export default function Dashboard() {
       clearTimeout(timer);
       timer = setTimeout(() => fetchProdStatus(), 1500);
     };
-    const ch = supabaseDR.channel('dash-dr')
+    const ch = liveChannel(supabaseDR, 'dash-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         refresh)

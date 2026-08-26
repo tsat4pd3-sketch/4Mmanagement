@@ -33,6 +33,7 @@ import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
+import { liveChannel } from '../utils/liveChannel';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -586,7 +587,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       clearTimeout(timers[key]);
       timers[key] = setTimeout(fn, ms);
     };
-    const ch = supabaseDR.channel('live-dr')
+    const ch = liveChannel(supabaseDR, 'live-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => debounce('sess', () => load()))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => debounce('ord',  () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => debounce('dt',   () => { if (selSession) loadDT(selSession.id); }))

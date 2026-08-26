@@ -48,6 +48,7 @@ import { MTN_TEAMS, deptNameOf, teamKeyOf, teamsForUser, teamForEquipmentKind } 
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import DowntimeSiren from './DowntimeSiren';
 import FactoryMiniMap from './FactoryMiniMap';
+import { liveChannel } from '../utils/liveChannel';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 /* หน้าต่าง "ใกล้ครบกำหนด" — ใช้ 7 วันเท่าผังรวมโรงงาน (`/factory-map` metric PM)
@@ -136,7 +137,7 @@ export default function MtnAndonBoard({ d, ctx }) {
   useEffect(() => {
     load();
     const stopPoll = visibleInterval(load, RATE.ANDON);      // กันเหนียวเผื่อ realtime หลุด
-    const ch = supabaseDR.channel('mtn-andon')
+    const ch = liveChannel(supabaseDR, 'mtn-andon')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(load, 400))
       .subscribe();
     const clk = setInterval(() => setTick(t => t + 1), 30000); // นาฬิกาอย่างเดียว ไม่ยิง DB

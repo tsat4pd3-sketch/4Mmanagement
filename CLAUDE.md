@@ -3297,6 +3297,30 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 > จอที่มี realtime: Dashboard · Management · DailyPM · DowntimeSiren · **FactoryMap (เพิ่ม 2026-08-19 — เดิม polling ล้วน 0 channel จึงต้องตั้ง 30 วิ)**
 > **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ** — `mtn_orders` เคยตกหล่น (migration `20260819_realtime_mtn_orders.sql` · **apply แล้ว**) · ตอนนี้ครบ 5: `downtime_logs` `prod_orders` `defect_logs` `production_sessions` `mtn_orders`
 >
+> #### 🔴🔴 กฎเหล็ก — subscribe realtime ต้องผ่าน **`liveChannel(client, name)`** ห้ามเรียก `client.channel('ชื่อคงที่')` (2026-08-26 · feedback หน้างาน)
+> *"หน้า line management เปิดไปเปิดมา โชว์สกิลพนักงาน ซักพักหน่วงๆ ละค้างไปเลย"* — **ไม่ใช่เรื่องกราฟ/การ์ดสกิล**
+> เป็นบั๊ก realtime ที่ **สะสมทุกครั้งที่ effect re-run** และซ่อนอยู่ใน **12 จุดทั่วแอป**
+> 2 พฤติกรรมของ supabase-js ที่มาบรรจบกัน (ยืนยันจากซอร์สใน `node_modules`):
+> - `client.channel(topic)` **dedupe ตามชื่อ topic** — เจอตัวเดิมใน `client.channels` = **คืนตัวเดิม**
+> - `client.removeChannel(ch)` เป็น **async** — `await ch.unsubscribe()` (รอ server ack ของ `phx_leave`
+>   1 round trip หรือจนกว่าจะ timeout ~10 วิ) แล้ว**ค่อย** `teardown()` ซึ่งเป็นจังหวะที่ถูกถอดออกจริง
+>
+> React cleanup ไม่ await → ลำดับที่เกิดจริงตอนเปลี่ยนไลน์/เปลี่ยนกะ/นำทางกลับเข้าหน้า:
+> `removeChannel(ch)` (ยังค้างในลิสต์) → `channel('ชื่อเดิม')` **คืนตัวที่กำลังจะตาย** → `.on().on()`
+> **push binding เพิ่มเสมอ (`_on` ไม่มี dedupe)** → `.subscribe()` ไม่ทำอะไร (re-join เฉพาะตอน closed)
+> ⇒ **สลับไลน์ N ครั้ง = N ชุด binding บน channel เดียว** · DB event เข้า 1 ครั้ง เรียก callback N ตัว
+> (คนละ closure คนละ debounce timer) → N query + N setState + N render → **หน่วงขึ้นเรื่อยๆ จนค้าง**
+> · closure เก่ายังถือ scope เดิม → `setState` ของไลน์เก่า **เขียนทับไลน์ที่กำลังดูอยู่** (Andon โชว์ผิดไลน์)
+>
+> - **`src/utils/liveChannel.js`** ตั้ง topic ไม่ซ้ำต่อการ subscribe 1 ครั้ง (prefix ยังเป็นชื่อเดิม อ่านออกใน devtools)
+> - **`postgres_changes` ชื่อ topic เป็นแค่ตัวระบุฝั่ง client** (ตัวกรองตาราง/เงื่อนไขส่งไปใน payload ตอน join) → ตั้งไม่ซ้ำได้ปลอดภัย
+> - **⚠️ `broadcast`/`presence` ห้ามใช้ liveChannel** — topic คือ "ห้อง" ที่ 2 ฝั่งต้องตรงกัน
+>   (รีโมทจอ `esm-remote-<code>` ใน `RemoteReceiver`/`RemoteControl` — **2 จุดนี้ตั้งใจคงชื่อคงที่ ห้ามแตะ**)
+> - **⚠️ `[]` deps ไม่ใช่ข้ออ้าง** — ตรวจแล้ว **ไม่มีสักจุดที่ deps ว่าง** (ทุกจุดพึ่ง state/useCallback) และ
+>   ต่อให้ deps ว่างจริง การนำทางออก-เข้าหน้าเร็วๆ ก็ชน race เดียวกัน
+> - เทสล็อกไว้แล้ว `src/utils/__tests__/liveChannel.test.mjs` — จำลอง client ตามพฤติกรรมจริง
+>   แล้วพิสูจน์ทั้ง 2 ทาง: ชื่อคงที่ = binding ทบเป็น 10 หลังสลับ 5 ครั้ง · `liveChannel` = คงที่ 2 เสมอ
+>
 > **งบ (แผน ~15 จอ): จอที่เปิดหน้าหนักสุด ≈ 0.24 GB/เดือน/จอ → 15 จอ ≈ 3.6 GB** เหลือให้มือถือ/PC ~1.4 GB
 > เกินงบให้ยืด `ANDON`/`ANALYTIC` ก่อน — **อย่าลด realtime** (ถูกและเร็วกว่า ตัดออกต้องกลับไป poll ถี่ซึ่งแพงกว่ามาก) · **ยืดเกิน 10 นาทีไม่คุ้ม**
 > **ผลรวม: FactoryMap จาก ~18.4 MB/ชม. เหลือ ~0.33 MB/ชม. = ลด 98%**
