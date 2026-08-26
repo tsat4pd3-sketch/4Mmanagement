@@ -178,7 +178,7 @@ export default function PMSchedule() {
   const teamMeta = teams.find(t => t.key === department)
   const deptColor = teamMeta?.color ?? DEPT_COLORS[department] ?? '#3dd65c'
   const today = atMidnight(new Date())
-  const goCheck = (equipId) => navigate(`/pm-check?dept=${department}&equip=${equipId}`)
+  const goCheck = (equipId) => navigate(`/pm?tab=check&dept=${department}&equip=${equipId}`)
 
   return (
     <div style={S.page}>
@@ -308,7 +308,7 @@ export default function PMSchedule() {
                           ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
                           : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">⏭ เลื่อนแผน</button>)}
                         <button
-                          onClick={() => navigate(`/pm-check?dept=${department}&equip=${cl.equipment_id}`)}
+                          onClick={() => navigate(`/pm?tab=check&dept=${department}&equip=${cl.equipment_id}`)}
                           style={S.actionBtn(deptColor)}
                         >
                           ✓ ตรวจ

@@ -379,7 +379,7 @@ function MaintenanceView({ d, ctx }) {
   const actions = [
     ...callMtn.map(x => ({ icon: '📞', title: `เรียกช่างแล้วยังไม่ปิด — ${x.machine_no || 'ไม่ระบุเครื่อง'}`, detail: x.dr_downtime_types?.name_th || x.description || '', tag: 'ด่วน', tagColor: '#ef4444', to: '/mtn-repair' })),
     ...stale.map(o => ({ icon: '🛠️', title: `${o.mo_no || 'ใบซ่อม'} — ${o.machine_no || o.line_name || ''}`, detail: o.problem_characteristic || '', age: daysSince(o.report_at), tag: o.status, tagColor: '#f59e0b', to: '/mtn-repair' })),
-    ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: '#ef4444', to: '/pm-schedule' })),
+    ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: '#ef4444', to: '/pm?tab=plan' })),
   ];
 
   return (<>
@@ -441,7 +441,7 @@ function MaintenanceView({ d, ctx }) {
     </Section>
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/dept-dashboard?dept=maintenance&view=andon', '🚨 จอห้องช่าง (Andon)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm-schedule', '📅 แผน PM', overdue.length], ['/pm-forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
+      <Links navigate={navigate} items={[['/dept-dashboard?dept=maintenance&view=andon', '🚨 จอห้องช่าง (Andon)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
 }

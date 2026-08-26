@@ -1931,7 +1931,7 @@ export default function FactoryMap({ setupMode = false }) {
         )}
         {/* 🛠️ แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ต้องรู้ว่ามีค้างอยู่ (ห้ามหายเงียบ) */}
         {!editing && metric === 'pm' && pmOrphan.total > 0 && (
-          <Link to="/pm-setup"
+          <Link to="/pm?tab=setup"
             title="ไปตั้ง 'ไลน์' ให้อุปกรณ์ที่ PM Setup — ตั้งแล้วแผนจะขึ้นบนกรอบไลน์นั้นเอง"
             style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', borderRadius: 6, padding: '3px 8px',
               color: pmOrphan.overdue ? '#ef4444' : '#f59e0b',
@@ -2875,7 +2875,7 @@ export default function FactoryMap({ setupMode = false }) {
                                   {pmDue.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {pmDue.length - 6} รายการ</div>}
                                 </div>
                               )}
-                              <Link to="/pm-schedule" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
+                              <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
                             </>)}
                           </div>
 

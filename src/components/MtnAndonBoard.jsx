@@ -369,7 +369,7 @@ export default function MtnAndonBoard({ d, ctx }) {
             <div style={{ fontSize: 12.5 * big, fontWeight: 900, marginBottom: 8 }}>📅 PM ที่ต้องทำ</div>
             {!pm.length && <div style={{ fontSize: 11.5 * big, color: 'var(--muted)' }}>ไม่มีแผนที่ครบกำหนดใน 3 วัน</div>}
             {pm.slice(0, 6).map(p => (
-              <div key={p.id} onClick={() => navigate('/pm-schedule')}
+              <div key={p.id} onClick={() => navigate('/pm?tab=plan')}
                 style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
                 <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                 <b style={{ flexShrink: 0, color: p.days < 0 ? '#ef4444' : p.days === 0 ? '#f59e0b' : 'var(--muted)' }}>
