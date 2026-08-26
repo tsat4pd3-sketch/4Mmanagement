@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
-import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeAlarm';
+import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
 import { sumDefectQty, computeLiveOee } from '../utils/oee';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -980,7 +980,7 @@ export default function Dashboard() {
                   <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                   {elapsed != null && (
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {elapsed} นาที</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
                   )}
                 </div>
               );

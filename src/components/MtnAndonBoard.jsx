@@ -32,7 +32,8 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules';
+import { isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed, isOverDtThreshold, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeRules';
+import { loadDtAlertMin } from '../utils/downtimeAlarm';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
@@ -43,18 +44,22 @@ import FactoryMiniMap from './FactoryMiniMap';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 /* ⚠️ downtime ที่กรอกแค่จำนวนนาที (ไม่มี started_at) จะไม่รู้ว่าหยุดมากี่นาที — ต้องบอกว่า "ไม่รู้"
-   ห้ามแปลงเป็น 0 (0 น. อ่านเป็น "เพิ่งหยุด" ซึ่งคนละเรื่องกับ "ไม่รู้เวลาเริ่ม") */
-const fmtMin = (m) => (m == null ? '—' : m >= 60 ? `${Math.floor(m / 60)} ชม. ${m % 60} น.` : `${m} น.`);
+   ห้ามแปลงเป็น 0 (0 น. อ่านเป็น "เพิ่งหยุด" ซึ่งคนละเรื่องกับ "ไม่รู้เวลาเริ่ม")
+   รูปแบบเดียวกับผังรวม/Dashboard — แก้ที่ downtimeRules.js ที่เดียว */
+const fmtMin = fmtDtElapsed;
 const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null);
 const normNo = (s) => String(s || '').trim().toUpperCase();
 
 const TEAM_ICON = { maintenance: '🔧', jig_maintenance: '🗜️', die_maintenance: '🔨', production: '🏭' };
 
-/** จัดระดับความเร่งด่วนของ downtime ที่ยังเปิดค้าง — ใช้ทั้งสี ลำดับ และการกระพริบบนผัง */
-function severity(x) {
+/** จัดระดับความเร่งด่วนของ downtime ที่ยังเปิดค้าง — ใช้ทั้งสี ลำดับ และการกระพริบบนผัง
+    ⚠️ "เกินเกณฑ์" ตัดสินจาก **เวลาที่ผ่านไปจริง** ไม่ใช่ธง `open_alerted_at`
+       (ธงนั้น edge stamp ให้เฉพาะตอนแจ้ง Telegram สำเร็จ — Telegram ล่ม = จอนี้อ่านเครื่องที่หยุด
+        มา 3 ชม. ว่า "⏱️ เพิ่งหยุด" · เจอจริง 2026-08-26) */
+function severity(x, thrMin) {
   if (isPlannedDT(x)) return { k: 'planned', rank: 3, color: '#6b7280', label: '🗓️ หยุดตามแผน', blink: false };
   if (x.call_mtn && !x.call_mtn_ack_at) return { k: 'call', rank: 0, color: '#ef4444', label: '📞 เรียกช่าง', blink: true };
-  if (x.open_alerted_at && !x.open_ack_at) return { k: 'over', rank: 1, color: '#f59e0b', label: '⏰ หยุดเกินเกณฑ์', blink: false };
+  if (isOverDtThreshold(x, thrMin)) return { k: 'over', rank: 1, color: '#f59e0b', label: '⏰ หยุดเกินเกณฑ์', blink: false };
   return { k: 'new', rank: 2, color: '#facc15', label: '⏱️ เพิ่งหยุด', blink: false };
 }
 
@@ -67,6 +72,7 @@ export default function MtnAndonBoard({ d, ctx }) {
   const [openLines, setOpenLines] = useState([]);   // ไลน์ที่เปิดกะอยู่วันนี้
   const [mcKind, setMcKind] = useState({});         // machine_no → equipment_kind
   const [dtErr, setDtErr] = useState(null);
+  const [thr, setThr] = useState(DT_OPEN_ALERT_MIN_DEFAULT);  // เกณฑ์ "หยุดเกินกี่นาที" (dt_alert_config)
   const [, setTick] = useState(0);                  // นาฬิกาเดิน — ให้ "กี่นาทีแล้ว" ขยับเอง
 
   /* ── ทีมที่กำลังดู — อยู่ใน URL เพื่อให้จอแต่ละห้องบุ๊กมาร์กของตัวเองได้ ──
@@ -94,6 +100,8 @@ export default function MtnAndonBoard({ d, ctx }) {
       .filter(s => ['open', 'pending_close'].includes(s.status) && inScope(s.line_name))
       .map(s => s.line_name))]);
   }, [inScope, workDate]);
+
+  useEffect(() => { loadDtAlertMin().then(setThr); }, []);
 
   useEffect(() => {
     load();
@@ -137,8 +145,8 @@ export default function MtnAndonBoard({ d, ctx }) {
 
   const allRows = useMemo(() => dts
     .filter(isOpenDT)
-    .map(x => ({ ...x, _s: severity(x), _min: dtElapsedMin(x), _team: teamOfDt(x) }))
-    .sort((a, b) => a._s.rank - b._s.rank || (b._min ?? -1) - (a._min ?? -1)), [dts, teamOfDt]);
+    .map(x => ({ ...x, _s: severity(x, thr), _min: dtElapsedMin(x), _team: teamOfDt(x) }))
+    .sort((a, b) => a._s.rank - b._s.rank || (b._min ?? -1) - (a._min ?? -1)), [dts, teamOfDt, thr]);
 
   // ทีมที่ไม่ระบุ (ไม่รู้เครื่อง) ต้องเห็นเสมอ — ปล่อยหลุดจอไม่ได้
   const rows = useMemo(() => (team ? allRows.filter(r => !r._team || r._team === team) : allRows), [allRows, team]);
@@ -261,7 +269,7 @@ export default function MtnAndonBoard({ d, ctx }) {
       )}
 
       {/* ผังคือพระเอกของจอนี้ (2fr) — เดิม 1.35fr ผังเล็กกว่า /factory-map เกือบครึ่ง user ทักว่าสเกลแย่ */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2fr) minmax(0,1fr)', gap: 12, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,1.5fr) minmax(320px,1fr)', gap: 12, alignItems: 'start' }}>
         {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง ══ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <FactoryMiniMap stateOf={stateOf} onPick={() => navigate('/mtn-repair')} />
@@ -289,35 +297,43 @@ export default function MtnAndonBoard({ d, ctx }) {
             </div>
           )}
 
+          {/* ⚠️ เรียงข้อมูลตามที่ช่างต้องรู้: **ไลน์ (ไปที่ไหน) + หยุดมานานแค่ไหน** มาก่อน
+              แล้วค่อยเครื่อง/ประเภท/หมายเหตุ · คำอธิบายยาวไปท้ายสุดเป็นตัวเล็ก
+              (เดิมเอา "⚠ ไม่ระบุเครื่อง" เป็นหัวเรื่องตัวใหญ่ + คำอธิบาย 2 บรรทัด แล้วเวลาถูกดันไปขวา
+               พอคอลัมน์แคบบนจอ ultrawide ข้อความตัดบรรทัดจนอ่านไม่ออก · user ทัก 2026-08-26) */}
           {live.map(r => (
             <div key={r.id} className={r._s.blink ? 'dt-alarm-blink' : undefined}
               onClick={() => navigate('/mtn-repair')}
               style={{
-                ...card, cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+                ...card, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3,
                 borderColor: r._s.color, borderLeft: `7px solid ${r._s.color}`,
                 background: r._s.k === 'call' ? 'rgba(239,68,68,0.12)' : 'var(--card)',
               }}>
-              <div style={{ minWidth: 0, flex: '1 1 180px' }}>
-                <div style={{ fontSize: 15 * big, fontWeight: 900, color: r.machine_no ? 'var(--text)' : 'var(--accent2)', lineHeight: 1.15 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                <span style={{ fontSize: 14 * big, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.production_sessions?.line_name || 'ไม่ระบุไลน์'}
+                </span>
+                <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 16 * big, fontWeight: 900, color: r._s.color, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                  {fmtMin(r._min)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11 * big }}>
+                <span style={{ fontWeight: 800, color: r.machine_no ? 'var(--text2)' : 'var(--accent2)' }}>
                   {r.machine_no || '⚠ ไม่ระบุเครื่อง'}
-                </div>
-                {/* ⚠️ ไม่มี machine_no = จับคู่ทีมไม่ได้ → ขึ้นให้ทุกทีมเห็น และต่อประวัติเครื่อง/ใบซ่อมไม่ได้
-                    บอกทางแก้ตรงนี้เลย ไม่ปล่อยให้ช่างเดาว่าทำไมบางแถวไม่มีเลขเครื่อง */}
-                {!r.machine_no && (
-                  <div style={{ fontSize: 10 * big, color: 'var(--accent2)', marginTop: 2 }}>
-                    ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (แสดงให้ทุกทีม)
-                  </div>
-                )}
-                <div style={{ fontSize: 11.5 * big, color: 'var(--text2)', marginTop: 2 }}>
-                  {r.production_sessions?.line_name || '-'} · {r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}
-                </div>
-                {r.description && <div style={{ fontSize: 10.5 * big, color: 'var(--muted)', marginTop: 2 }}>💬 {r.description}</div>}
+                </span>
+                <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}
+                </span>
+                <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 800, color: r._s.color }}>{r._s.label}</span>
               </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 16 * big, fontWeight: 900, color: r._s.color, lineHeight: 1 }}>{fmtMin(r._min)}</div>
-                {r._min == null && <div style={{ fontSize: 10 * big, color: 'var(--muted)' }}>ไม่ได้ระบุเวลาเริ่ม</div>}
-                <div style={{ fontSize: 10.5 * big, fontWeight: 800, color: r._s.color, marginTop: 3 }}>{r._s.label}</div>
-              </div>
+              {r.description && <div style={{ fontSize: 10.5 * big, color: 'var(--muted)' }}>💬 {r.description}</div>}
+              {r._min == null && <div style={{ fontSize: 10 * big, color: 'var(--muted)' }}>⏱ ไม่ได้ระบุเวลาเริ่ม — บอกไม่ได้ว่าหยุดมานานแค่ไหน</div>}
+              {/* ⚠️ ไม่มี machine_no = จับคู่ทีมไม่ได้ → ขึ้นให้ทุกทีมเห็น และต่อประวัติเครื่อง/ใบซ่อมไม่ได้ */}
+              {!r.machine_no && (
+                <div style={{ fontSize: 10 * big, color: 'var(--accent2)', lineHeight: 1.4 }}>
+                  ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (จึงแสดงให้ทุกทีม)
+                </div>
+              )}
             </div>
           ))}
 
