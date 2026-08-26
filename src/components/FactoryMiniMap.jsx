@@ -12,7 +12,7 @@
 
    stateOf(lineName) → { color, blink, label } | null   (null = ไม่มีข้อมูล → เทาจาง)
    ══════════════════════════════════════════════════════════════════════════ */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster } from '../utils/masterCache';
 
@@ -29,8 +29,16 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
   const [map, setMap] = useState(null);      // { image_url }
   const [regions, setRegions] = useState([]);
   const [err, setErr] = useState(null);
-  // aspect ratio จริงของรูป (naturalWidth/Height) — ใช้คุมความสูงผ่าน maxWidth (ดูคอมเมนต์ตอน render)
+  /* aspect ratio จริงของรูป (naturalWidth/Height) — ใช้คุมความสูงผ่าน maxWidth (ดูคอมเมนต์ตอน render)
+     ⚠️ อ่านผ่าน ref ด้วย ไม่พึ่ง onLoad อย่างเดียว: รูปผังถูก cache ไว้แล้ว (จอ TV เปิดค้างทั้งวัน
+     refresh บ่อย) บางจังหวะ browser โหลดเสร็จก่อน React ผูก handler → onLoad ไม่ยิง → ar ค้าง null
+     → maxWidth หายไป เหลือแต่ clamp ความสูง = **รูปโดนตัด** ซึ่งคืออาการ "สเกลแย่" ที่หน้างานเห็น */
   const [ar, setAr] = useState(null);
+  const imgRef = useRef(null);
+  const readAr = useCallback(() => {
+    const t = imgRef.current;
+    if (t?.naturalWidth > 0 && t?.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight);
+  }, []);
 
   useEffect(() => {
     let dead = false;
@@ -56,6 +64,9 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
     })();
     return () => { dead = true; };
   }, []);
+
+  // รูปที่อยู่ใน cache อาจ complete ไปแล้วตั้งแต่ก่อน React ผูก onLoad → อ่าน naturalWidth เองอีกทาง
+  useEffect(() => { readAr(); }, [map?.image_url, readAr]);
 
   /* ป้ายชื่อวาดเฉพาะไลน์ที่ "ผิดปกติ" — จอ TV ต้องกวาดตาเจอจุดที่ต้องไปทันที
      (ถ้าวาดครบทุกไลน์จะทับกันเอง ซึ่ง /factory-map มีอัลกอริทึมกันทับของตัวเอง — ที่นี่ไม่ต้อง) */
@@ -84,8 +95,7 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
            เหมือน /factory-map (สูตร 210px vs clamp 200px) → สูตรความกว้างชนะเสมอ ไม่มีทาง crop */
         maxHeight: `calc(${maxHeight} + 10px)`,
       }}>
-        <img src={map.image_url} alt="ผังโรงงาน"
-          onLoad={(e) => { const t = e.currentTarget; if (t.naturalWidth > 0 && t.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight); }}
+        <img ref={imgRef} src={map.image_url} alt="ผังโรงงาน" onLoad={readAr}
           style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none' }} />
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
 
