@@ -22,7 +22,8 @@ const anchorOf = (pts) => (pts?.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50]);
 
-const DIM = { color: '#4b5563', blink: false, label: null };
+// สี "ไม่ได้เปิดกะ" = CAT.idle ของ /factory-map (ห้ามใช้สีอื่น — จอเดียวกันต้องอ่านสีเหมือนกัน)
+const DIM = { color: '#6b7280', blink: false, label: null };
 
 export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100vh - 300px)' }) {
   const [map, setMap] = useState(null);      // { image_url }
@@ -79,11 +80,14 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
         position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
         border: '1px solid var(--border)', background: '#0a0a0f',
         maxWidth: ar ? `calc(${maxHeight} * ${ar})` : undefined,
+        /* กันภาพสูงพรวดก่อน onLoad (ยังไม่รู้ aspect) — ตั้งให้ **ใหญ่กว่าสูตรความกว้าง 10px**
+           เหมือน /factory-map (สูตร 210px vs clamp 200px) → สูตรความกว้างชนะเสมอ ไม่มีทาง crop */
+        maxHeight: `calc(${maxHeight} + 10px)`,
       }}>
         <img src={map.image_url} alt="ผังโรงงาน"
           onLoad={(e) => { const t = e.currentTarget; if (t.naturalWidth > 0 && t.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight); }}
           style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none' }} />
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.30)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.14)', pointerEvents: 'none' }} />
 
         {/* ⚠️ preserveAspectRatio=none + vector-effect: non-scaling-stroke — พิกัดเป็น % ของรูปจริง
             (สูตรเดียวกับ /factory-map · เปลี่ยนแล้วกรอบจะเลื่อนไม่ตรงผัง) */}
@@ -94,9 +98,11 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
             return (
               <polygon key={r.id} points={ptsStr(r.points)}
                 className={st.blink ? 'region-alarm' : undefined}
-                fill={st.blink ? undefined : `${st.color}${st.label ? '4d' : '1f'}`}
+                /* ค่าเดียวกับ /factory-map เป๊ะ: ปกติ = fill 2b / stroke 1.75 · ไลน์ที่มีปัญหาใช้ค่า
+                   "ไฮไลต์" ของผังรวม (55 / 3.5) — ต่างกันได้แค่ "เน้น" ห้ามต่างกันที่สเกล/สี */
+                fill={st.blink ? undefined : `${st.color}${st.label ? '55' : '2b'}`}
                 stroke={st.blink ? undefined : st.color}
-                strokeWidth={st.label ? '3' : '1.4'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
+                strokeWidth={st.label ? '3.5' : '1.75'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                 style={{ pointerEvents: onPick ? 'auto' : 'none', cursor: onPick ? 'pointer' : 'default' }}
                 onClick={onPick ? () => onPick(r.line_name) : undefined} />
             );
