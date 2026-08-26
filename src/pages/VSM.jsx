@@ -32,6 +32,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { liveChannel } from '../utils/liveChannel';
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 // วันงานตามกฎระบบ: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน)
@@ -384,7 +385,7 @@ export default function VSM() {
     if (tab !== 'live' || !liveRaw) return;
     let timer = null;
     const bump = () => { clearTimeout(timer); timer = setTimeout(() => loadLive(), 1500); };
-    const ch = supabaseDR.channel('vsm-live')
+    const ch = liveChannel(supabaseDR, 'vsm-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' }, bump)

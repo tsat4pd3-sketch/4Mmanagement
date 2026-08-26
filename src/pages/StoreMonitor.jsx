@@ -178,7 +178,12 @@ export default function StoreMonitor() {
             return (
               <div key={i} className={blink ? 'mo-card-alert' : undefined} style={{
                 border: `1px solid ${tone}`, borderLeft: `3px solid ${tone}`, borderRadius: 11, padding: 12,
-                background: `color-mix(in srgb, ${tone} 8%, var(--card))`,
+                // พื้นการ์ด = สีการ์ด + เคลือบสีสถานะจางๆ
+                // ⚠️ ห้ามใช้ color-mix() — Chromium ต้อง 111+ แต่จอ TV ที่ใช้จริง (LG webOS 23) = Chromium 94
+                //    ค่าที่ parse ไม่ได้ = ทั้งบรรทัด background ถูกทิ้ง → การ์ดพื้นโปร่งบนจอ TV
+                //    ใช้ gradient 2 stop สีเดียวแทน = เคลือบทับสีการ์ดเหมือนกันเป๊ะ แต่รองรับทุกเบราว์เซอร์
+                background: 'var(--card)',
+                backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
                   <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{f.title}</span>

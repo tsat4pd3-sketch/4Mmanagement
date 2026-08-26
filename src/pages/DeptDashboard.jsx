@@ -9,6 +9,7 @@ import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import PageHeader from '../components/PageHeader';
 // แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 /* 🚨 จอห้องช่าง — lazy: มี realtime + siren โหลดเฉพาะตอนเปิดจริง */
@@ -60,6 +61,12 @@ const fourMLink = (f) => `${FOURM_TAB}&status=${encodeURIComponent(f.status || '
 
 /* ── UI atoms (ใช้ร่วมทุกส่วนงาน) ────────────────────────────────────────────────────── */
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 };
+// ปุ่มเล็กบนหัวจอ TV ห้องช่าง — เล็กโดยตั้งใจ (พื้นที่แนวตั้งเป็นของผัง ไม่ใช่ของปุ่ม)
+const tvBtn = (on) => ({
+  fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 8, cursor: 'pointer',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+});
 
 function Section({ title, sub, children, tone }) {
   const bd = tone === 'alert' ? '#ef4444' : tone === 'warn' ? '#f59e0b' : 'var(--border)';
@@ -759,6 +766,20 @@ export default function DeptDashboard() {
   const [err, setErr] = useState(null);
   const workDate = getWorkDate();
 
+  /* ⛶ เต็มจอ — จอ TV ห้องช่างเปิดค้างทั้งวัน แถบ tab ของเบราว์เซอร์ + taskbar กินแนวตั้ง ~100px
+     ซึ่งเป็นพื้นที่ที่ "ผัง" ต้องการที่สุด (feedback 2026-08-26 "ยังสเกลแย่อยู่เลย")
+     ⚠️ ต้องเป็นปุ่มให้คนกดเอง — requestFullscreen ต้องมาจาก user gesture เรียกเองไม่ได้ */
+  const [fs, setFs] = useState(false);
+  useEffect(() => {
+    const on = () => setFs(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', on);
+    return () => document.removeEventListener('fullscreenchange', on);
+  }, []);
+  const toggleFs = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else document.documentElement.requestFullscreen?.().catch(() => {});
+  };
+
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name')
       .then(({ data }) => setLines(data || []));
@@ -789,42 +810,60 @@ export default function DeptDashboard() {
   return (
     // จอห้องช่าง (andon) เป็นบอร์ด TV — ไม่ cap 1800px (กติกาเดียวกับ Dashboard/Management ที่ใช้เต็มจอ)
     <div style={{ maxWidth: view === 'andon' ? undefined : 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', paddingRight: 52 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23 }}>📊 Dashboard ส่วนงาน</h2>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
-            {view === 'andon'
-              ? <>จอ TV ห้องช่าง · วันงาน {fmtDate(workDate)} · {scopeText} · อัปเดตเอง มีเสียงเตือนเมื่อมีคนกด “เรียกช่าง”</>
-              : <>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
+      {/* ══ จอ TV ห้องช่าง = หัวเพจแถวเดียว ══
+          เดิม หัวเรื่อง+คำอธิบาย / แถบมุมมอง / แถบส่วนงาน = 3 แถว ≈ 130px บนจอที่สูงราว 700px
+          → ผังเหลือไม่ถึงครึ่งจอ (user ทัก 2026-08-26 "ยังสเกลแย่อยู่เลย")
+          บนจอนี้ 2 ใน 3 แถวไม่มีใครกด: ส่วนงานล็อกที่ "ซ่อมบำรุง" อยู่แล้ว (andon มีเฉพาะส่วนงานนี้)
+          ส่วนแถบมุมมองยุบเป็นปุ่มเล็กท้ายแถว — ยังกดกลับได้ครบ ไม่ได้ตัดทางออกของใคร */}
+      {view === 'andon' ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', paddingRight: 52 }}>
+          <h2 style={{ margin: 0, fontSize: isMobile ? 17 : 20 }}>🚨 จอห้องช่าง</h2>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+            วันงาน {fmtDate(workDate)} · {scopeText} · มีเสียงเตือนเมื่อมีคนกด “เรียกช่าง”
+          </span>
+          <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <button onClick={toggleFs} title="ซ่อนแถบเบราว์เซอร์ + taskbar เพื่อให้ผังใหญ่ขึ้น" style={tvBtn(fs)}>
+              {fs ? '⛶ ออกจากเต็มจอ' : '⛶ เต็มจอ'}
+            </button>
+            <button onClick={() => setView('now')} style={tvBtn(false)}>⚡ งานวันนี้</button>
+            <button onClick={() => setView('kpi')} style={tvBtn(false)}>📑 KPI</button>
+            <button onClick={load} style={tvBtn(false)}>🔄</button>
           </div>
         </div>
-        <button onClick={load} style={{ padding: '7px 12px', fontSize: 13, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer' }}>🔄 รีเฟรช</button>
-      </div>
-
-      {/* สลับมุมมอง: งานวันนี้ / KPI รายเดือน */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-        {[{ k: 'now', label: '⚡ งานวันนี้' }, ...(dept === 'maintenance' ? [{ k: 'andon', label: '🚨 จอห้องช่าง' }] : []), { k: 'kpi', label: '📑 KPI รายเดือน' }].map(v => (
-          <button key={v.k} onClick={() => setView(v.k)} style={{
-            fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 8, cursor: 'pointer',
-            background: view === v.k ? 'var(--bg3)' : 'transparent',
-            color: view === v.k ? 'var(--text)' : 'var(--muted)',
-            border: `1px solid ${view === v.k ? 'var(--border2)' : 'transparent'}`,
-          }}>{v.label}</button>
-        ))}
-      </div>
-
-      {/* เลือกส่วนงาน — เฉพาะมุมมองงานวันนี้ (KPI มี section picker ของตัวเองยึด org_nodes) */}
-      {view !== 'kpi' && (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-        {DEPTS.map(t => (
-          <button key={t.key} onClick={() => setDept(t.key)} style={{
-            fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
-            background: dept === t.key ? 'var(--accent)' : 'var(--bg3)',
-            color: dept === t.key ? '#08120a' : 'var(--text)',
-            border: `1px solid ${dept === t.key ? 'var(--accent)' : 'var(--border2)'}`,
-          }}>{t.icon} {t.label}</button>
-        ))}
-      </div>
+      ) : (
+        /* ── หน้าปกติ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
+           (เดิมหน้านี้วาดหัวเรื่อง + แถบแท็บเองรวม 3 แถว ทรงปุ่มไม่ตรงกับหน้าอื่น
+            ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
+           ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role)
+              และ `?view=andon` ใช้ได้เฉพาะส่วนงานซ่อมบำรุง ซึ่ง hook ตัวนั้นไม่รองรับเงื่อนไขข้ามแท็บ
+              (เหตุผลเต็มอยู่ในคอมเมนต์ของ setDept/setView ด้านบน) */
+        <PageHeader
+          title="Dashboard ส่วนงาน" icon="📊"
+          sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
+          actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
+          tabs={[
+            { key: 'now', label: '⚡ งานวันนี้' },
+            ...(dept === 'maintenance' ? [{ key: 'andon', label: '🚨 จอห้องช่าง' }] : []),
+            { key: 'kpi', label: '📑 KPI รายเดือน' },
+          ]}
+          tab={view} onTab={setView}
+        >
+          {/* เลือกส่วนงาน = "ตัวกรอง" คนละแกนกับแท็บมุมมอง — ติดป้ายกำกับไว้ไม่ให้อ่านเป็นแท็บชั้นที่ 2
+              (KPI รายเดือนมี section picker ของตัวเองที่ยึด org_nodes จึงไม่ต้องมีแถวนี้) */}
+          {view === 'now' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ส่วนงาน:</span>
+              {DEPTS.map(t => (
+                <button key={t.key} onClick={() => setDept(t.key)} style={{
+                  fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
+                  background: dept === t.key ? 'var(--bg3)' : 'transparent',
+                  color: dept === t.key ? 'var(--text)' : 'var(--muted)',
+                  border: `1px solid ${dept === t.key ? 'var(--border2)' : 'var(--border)'}`,
+                }}>{t.icon} {t.label}</button>
+              ))}
+            </div>
+          )}
+        </PageHeader>
       )}
 
       {view === 'kpi' && (

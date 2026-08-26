@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
@@ -241,8 +241,20 @@ export default function MtnMachineLayout({ setupMode = false }) {
     const { data: allPts } = await supabaseDR.from('pm_facility_points').select('jig_id')
     setPlacedAnyZone(new Set((allPts || []).map(p => p.jig_id)))
     // facility/utility equipment + PM status (all zones share the same equipment pool)
-    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id, line_name').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
-    const pm = await loadPmForJigs((jigs || []).map(j => j.id))
+    /* ⚠️ ดึง jigs ของโมดูล mtn ทั้งหมด (ตารางนี้เล็ก คิวรีเดียวพอ) แล้วค่อยแยกใช้ 2 วัตถุประสงค์:
+         · `jigs` (กรอง facility/utility) = pool ให้ "ลากมาวางบนผัง"
+         · `zoneJigs` (จับด้วยชื่อโซน/หมุด **ไม่กรอง category**) = ใช้ตอบ "โซนนี้มี PM อะไรค้าง"
+       🔴 เดิมใช้ pool ที่กรอง category ตอบทั้ง 2 เรื่อง → อุปกรณ์ที่มีแผน PM แต่ `equipment_category`
+          ไม่ใช่ facility/utility ถูกกรองทิ้งตั้งแต่ต้น ⇒ การ์ดบอก "ยังไม่มีเช็คลิสต์ PM ในโซนนี้"
+          ขณะที่ผังรวมโรงงาน (loadPM ไม่กรอง category) บอก "PM ใกล้ครบ 2" = **จอขัดกันเอง**
+          (user เจอจริงที่โซน Airbooster 26/08: "บอกมีแผนจะต้อง PM แต่กดเข้าไปไม่มีอะไรบอกเลย") */
+    const { data: allJigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id, line_name').eq('module', 'mtn')
+    const jigs = (allJigs || []).filter(j => FACILITY_CATS.includes(j.equipment_category))
+    const zNameKey = String(area?.name || '').trim().toLowerCase()
+    const pinIds = new Set((pts || []).map(p => p.jig_id))
+    const zoneJigs = (allJigs || []).filter(j =>
+      (zNameKey && String(j.line_name || '').trim().toLowerCase() === zNameKey) || pinIds.has(j.id))
+    const pm = await loadPmForJigs([...new Set([...jigs.map(j => j.id), ...zoneJigs.map(j => j.id)])])
     const info = {}
     ;(jigs || []).forEach(j => { info[j.id] = { name: j.name || '-', jig_no: j.jig_no || '', checklists: pm[j.id] || [] } })
     setJigInfo(info)
@@ -256,16 +268,14 @@ export default function MtnMachineLayout({ setupMode = false }) {
     /* ── สถานะโซนสำหรับการ์ดโหมดดู (best-effort — พลาดแล้วผัง/PM ยังใช้ได้ปกติ) ──
        ใบซ่อมค้าง: จับคู่ mtn_orders.machine_no กับเลขเครื่องของอุปกรณ์ที่วางในโซนนี้ (jig_no ของ shadow jig)
        พลังงาน: energy_monthly ราย "จุดวัด" — ชื่อจุดวัดต้องตรงชื่อโซน (trim+lowercase · กติกาเดียวกับ /factory-map) */
-    const jigById = Object.fromEntries((jigs || []).map(j => [j.id, j]))
-    const zName = String(area?.name || '').trim().toLowerCase()
+    const zName = zNameKey
 
     /* 🛠️ "เครื่องไหนกำลังจะถึงคิว PM" (2026-08-26 · user ทัก "กดเข้ามาไม่เห็นมีเลย")
        ⚠️ ต้องนับจาก **อุปกรณ์ที่สังกัดโซน** (`jigs.line_name` = ชื่อโซน) ไม่ใช่แค่ "หมุดที่วางบนผัง"
           — ผังรวมโรงงานนับแบบแรก (loadPM group ตาม jigs.line_name) การ์ดนี้เคยนับแบบหลัง
           ⇒ ผังบอก "PM ใกล้ครบ 2" แต่การ์ดบอก "ยังไม่มีเช็คลิสต์ PM ในโซนนี้" = จอเดียวกันขัดกันเอง
        อุปกรณ์ที่มีแผนแต่ยังไม่วางบนผัง **ห้ามซ่อน** — ติดป้ายบอกให้ไปวาง */
-    const ptIds = new Set((pts || []).map(p => p.jig_id))
-    const zoneJigs = (jigs || []).filter(j => String(j.line_name || '').trim().toLowerCase() === zName || ptIds.has(j.id))
+    const ptIds = pinIds
     const pmRows = []
     zoneJigs.forEach(j => (pm[j.id] || []).forEach(c => pmRows.push({
       jigId: j.id, name: j.jig_no || j.name || '-', sub: j.jig_no && j.name && j.jig_no !== j.name ? j.name : '',
@@ -561,7 +571,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         </div>
                         {!rows.length ? (
                           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
-                            ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} ในโซนนี้ — ตั้งจุดตรวจที่หน้า PM Setup
+                            ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} ในโซนนี้ —{' '}
+                            <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งจุดตรวจที่ ศูนย์ PM → ตั้งค่าจุดตรวจ</Link>
                           </div>
                         ) : (<>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 4 }}>
@@ -583,10 +594,19 @@ export default function MtnMachineLayout({ setupMode = false }) {
                                     <span style={{ marginLeft: 'auto', flexShrink: 0, color: m.color, fontWeight: 700 }}>
                                       {dd == null ? m.label : dd < 0 ? `เกิน ${Math.abs(dd)} วัน` : dd === 0 ? 'ครบวันนี้' : `อีก ${dd} วัน`}
                                     </span>
+                                    {/* ปิดลูป: เห็นว่าถึงคิวแล้วกดไปตรวจได้เลย ไม่ต้องไปไล่หาเองในหน้า PM */}
+                                    <Link to={`/pm?tab=check&dept=${r.dept || 'maintenance'}&equip=${r.jigId}`}
+                                      onClick={e => e.stopPropagation()} title="ไปบันทึกผลตรวจของเครื่องนี้"
+                                      style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
                                   </div>
                                 )
                               })}
                               {due.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
+                              {/* ทางออกไปหน้าที่ทำงานจริง — จอนี้อ่านอย่างเดียว */}
+                              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                                <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
+                                <Link to="/pm?tab=coord" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
+                              </div>
                             </div>
                           )}
                           {/* มีแผน PM แต่ยังไม่ได้วางบนผัง = หาไม่เจอบนจอ ห้ามซ่อน */}
