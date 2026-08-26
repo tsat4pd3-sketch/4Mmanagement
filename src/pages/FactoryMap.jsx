@@ -1536,7 +1536,7 @@ export default function FactoryMap({ setupMode = false }) {
       const x0 = Math.min(...xs), y0 = Math.min(...ys) / aspect;
       regionRect[r.line_name] = { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) / aspect - y0 };
     });
-    const place = (bbPts, big, levels, ownNames, kpi) => {
+    const place = (bbPts, big, levels, ownNames) => {
       const xs = bbPts.map(p => p[0]), ys = bbPts.map(p => p[1]);
       const x0 = Math.min(...xs), x1 = Math.max(...xs);
       const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
@@ -1545,6 +1545,10 @@ export default function FactoryMap({ setupMode = false }) {
       const obstacles = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
       const okIn = (b) => !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
       for (let lvl = 0; lvl < levels.length; lvl++) {
+        /* kpi เป็นคุณสมบัติ "ราย level" (2026-08-26 · user ทัก "box ทับกันเละ") — เดิมเป็น flag ทั้ง call
+           แล้วการ์ด KPI ถูกส่งมาระดับเดียว = มันคือ level สุดท้ายทันที → เข้าโหมด "ยอมทับ" ทั้งที่ยังย่อได้
+           ตอนนี้ chain = [การ์ด KPI, ป้ายเต็ม, ป้ายย่อ, ชื่ออย่างเดียว] — ที่ไม่พอ = สละการ์ด ไม่ใช่ไปทับเพื่อน */
+        const kpi = !!levels[lvl].kpi;
         /* ⭐ ป้ายไลน์: ลอง "ข้อความล้วนในกรอบตัวเอง" ก่อน (คำสั่ง user 2026-08-06)
            กรอบไลน์มีพื้นสีอ่อนอยู่แล้ว ไม่ต้องมีการ์ด/ขอบซ้อนอีก → ป้ายเล็กลงมาก
            วัดแล้ว: จอ 1800px มี 17/27 ใบลงในกรอบตัวเองได้ · 1250px ข้อมูลเต็มเพิ่ม 20→21
@@ -1583,7 +1587,7 @@ export default function FactoryMap({ setupMode = false }) {
               { x: bx, y: y0 + h + g }, { x: bx, y: cyn - h / 2 }];
         const last = lvl === levels.length - 1;
         const box = placeBox(cands, w, h, placed, maxY, bb, obstacles, last && compactLbl, last);
-        if (box) { placed.push(box); return { ...box, lvl, link: linkOf(box, bb) }; }
+        if (box) { placed.push(box); return { ...box, lvl, kpi, link: linkOf(box, bb) }; }
       }
       return null;
     };
@@ -1617,8 +1621,12 @@ export default function FactoryMap({ setupMode = false }) {
         //     ภาพอ้างอิงเองก็มีการ์ดแค่ 4 ใบบนผังทั้งโรง)
         //    OEE ใช้การ์ดสไตล์เดียวกับพลังงาน (2026-08-25 · คำสั่ง user "รูปแบบคล้ายๆ เรื่องไฟ")
         const isKpi = (metric === 'energy' && st.kwh != null) || (metric === 'oee' && st.oee != null);
-        const box = place(r.points, false, isKpi ? [levels[0]] : levels, new Set([r.line_name]), isKpi);
-        if (box) out.region[r.id] = { ...box, kpi: isKpi }; else out.hidden.push(r.line_name);
+        // การ์ด = level แรกของ chain เดียวกับป้ายปกติ — ที่ไม่พอ "สละการ์ด" ย่อเป็นป้าย ไม่ไปทับเพื่อน
+        // lvl ที่เก็บถูกปรับกลับเป็น index ของ levels เดิม (renderer แปลง lvl→ข้อความด้วย mapping เดิม)
+        const lv = isKpi ? [{ ...levels[0], kpi: true }, ...levels] : levels;
+        const box = place(r.points, false, lv, new Set([r.line_name]));
+        if (box) out.region[r.id] = box.kpi ? box : { ...box, lvl: box.lvl - (isKpi ? 1 : 0) };
+        else out.hidden.push(r.line_name);
       });
     return out;
     // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
@@ -1915,13 +1923,12 @@ export default function FactoryMap({ setupMode = false }) {
                 ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
                 ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
               ].filter(([l]) => l).map(([l, color, key]) => (
-                <g key={key} pointerEvents="none">
+                // เส้นบาง + drop-shadow จางๆ พออ่านออกบนภาพถ่าย — ห้ามกลับไปใช้ halo ดำหนา (user: "พอเป็นสีดำดูอึดอัด")
+                <g key={key} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 1.2px rgba(0,0,0,0.9))' }}>
                   <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                    stroke="rgba(4,8,14,0.85)" strokeWidth="4.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                  <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                    stroke={color} strokeWidth="1.8" strokeDasharray="5 3" opacity={0.95} vectorEffect="non-scaling-stroke" />
+                    stroke={color} strokeWidth="1.6" strokeDasharray="4 3" opacity={0.9} vectorEffect="non-scaling-stroke" />
                   <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
-                    stroke={color} strokeWidth="7" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                    stroke={color} strokeWidth="4.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
                 </g>
               ))}
             </svg>
@@ -1943,7 +1950,12 @@ export default function FactoryMap({ setupMode = false }) {
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
                 : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
               return (
-                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                <div key={`hlbl-${h.name}`}
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(h.name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(h.name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === h.name ? null : hv)}>
                   {/* zoom = ตัวเดียวกับที่ est ในการจองพื้นที่คูณไว้ — ใช้ zoom (ลด layout จริง) ไม่ใช่ transform (ภาพลวงตา) ตามบทเรียน fitOnePage */}
                   <div style={{ ...(lblScale !== 1 ? { zoom: lblScale } : {}), background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
                     <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
@@ -1983,13 +1995,20 @@ export default function FactoryMap({ setupMode = false }) {
                 const dCol = d == null ? 'rgba(255,255,255,0.55)' : d >= 1 ? '#22c55e' : d <= -1 ? '#ef4444' : 'rgba(255,255,255,0.75)';
                 const series = hist ? [...hist.series, st.oee] : null;
                 return (
-                  <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  <div key={`lbl-${r.id}`}
+                  /* ป้าย/การ์ดต้องคลิกได้ = เข้าไลน์ของป้ายเสมอ (2026-08-26 · user ทัก "คลิก box LASER ดันเข้า HYDRO
+                     เพราะ box ลอยทับกรอบไลน์อื่น") — เดิม pointerEvents:none คลิกทะลุไปโดนกรอบข้างใต้ */
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(r.line_name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === r.line_name ? null : hv)}>
                     <div style={{
                       ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
-                      textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                      textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
                       <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
@@ -2003,15 +2022,16 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={series} color={meta.color} /></span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2 }}>
-                        <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·เทียบวันก่อน`}</span>
+                      {/* แถวเนื้อหาการ์ดทุกแถวต้อง nowrap — ข้อความยาวห้ามดันการ์ดสูงเกิน KPI_H ที่ layout จองไว้ (2026-08-26 "box ทับกันเละ") */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                        <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·วันก่อน`}</span>
                         {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· สด</span>}
                         {st.oeeCtPartial && <span style={{ color: '#f59e0b' }}>· ⚠CT ไม่ครบ</span>}
                         {st.oeePOver && <span style={{ color: '#f59e0b' }}>· ⚠%P ตัน</span>}
                       </div>
                       {/* แตก A·P·Q ให้เห็นบนการ์ด (user 2026-08-25 "บอกแต่ OEE ก็ทำแต่ OEE หรอ") — ถ่วงน้ำหนักตามกฎแล้วใน stOf */}
                       {(st.oeeA != null || st.oeeP != null || st.oeeQ != null) && (
-                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 9.5, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
+                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 9.5, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                           <span style={{ color: '#4ade80' }}>A {st.oeeA != null ? Math.round(st.oeeA) : '–'}</span>
                           <span style={{ color: '#60a5fa' }}>P {st.oeeP != null ? Math.round(st.oeeP) : '–'}</span>
                           <span style={{ color: '#c084fc' }}>Q {st.oeeQ != null ? Math.round(st.oeeQ) : '–'}</span>
@@ -2025,13 +2045,20 @@ export default function FactoryMap({ setupMode = false }) {
                 const d = energyDelta(st);
                 const dCol = d == null ? 'rgba(255,255,255,0.55)' : d <= -5 ? '#22c55e' : d > 10 ? '#ef4444' : 'rgba(255,255,255,0.75)';
                 return (
-                  <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  <div key={`lbl-${r.id}`}
+                  /* ป้าย/การ์ดต้องคลิกได้ = เข้าไลน์ของป้ายเสมอ (2026-08-26 · user ทัก "คลิก box LASER ดันเข้า HYDRO
+                     เพราะ box ลอยทับกรอบไลน์อื่น") — เดิม pointerEvents:none คลิกทะลุไปโดนกรอบข้างใต้ */
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(r.line_name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === r.line_name ? null : hv)}>
                     <div style={{
                       ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
-                      textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                      textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
                       <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
@@ -2045,7 +2072,7 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={st.kwhSeries} color={meta.color} /></span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
                         {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· 🌱 {fmtTco2e(st.kwhCo2)} t</span>}
                         {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
@@ -2055,7 +2082,14 @@ export default function FactoryMap({ setupMode = false }) {
                 );
               }
               return (
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                <div key={`lbl-${r.id}`}
+                  /* ป้าย/การ์ดต้องคลิกได้ = เข้าไลน์ของป้ายเสมอ (2026-08-26 · user ทัก "คลิก box LASER ดันเข้า HYDRO
+                     เพราะ box ลอยทับกรอบไลน์อื่น") — เดิม pointerEvents:none คลิกทะลุไปโดนกรอบข้างใต้ */
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(r.line_name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === r.line_name ? null : hv)}>
                   {/* ป้ายที่ลงในกรอบไลน์ตัวเองได้ = ข้อความล้วน ไม่มีการ์ด/ขอบ (กรอบมีพื้นสีอ่อนอยู่แล้ว
                       ซ้อนการ์ดอีกชั้นทั้งเปลืองที่ทั้งรก) · ป้ายที่ต้องออกไปอยู่นอกกรอบยังใช้การ์ด
                       ไม่งั้นตัวหนังสือลอยบนรูปถ่ายผังอ่านไม่ออก */}
