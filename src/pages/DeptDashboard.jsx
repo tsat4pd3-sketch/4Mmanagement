@@ -787,7 +787,8 @@ export default function DeptDashboard() {
   const scopeText = scopeSet ? `${scopeSet.size} ไลน์ในขอบเขตของคุณ` : 'ทุกไลน์';
 
   return (
-    <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    // จอห้องช่าง (andon) เป็นบอร์ด TV — ไม่ cap 1800px (กติกาเดียวกับ Dashboard/Management ที่ใช้เต็มจอ)
+    <div style={{ maxWidth: view === 'andon' ? undefined : 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', paddingRight: 52 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23 }}>📊 Dashboard ส่วนงาน</h2>

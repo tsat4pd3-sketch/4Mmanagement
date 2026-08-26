@@ -24,10 +24,12 @@ const anchorOf = (pts) => (pts?.length
 
 const DIM = { color: '#4b5563', blink: false, label: null };
 
-export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100vh - 320px)', minHeight }) {
+export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100vh - 300px)' }) {
   const [map, setMap] = useState(null);      // { image_url }
   const [regions, setRegions] = useState([]);
   const [err, setErr] = useState(null);
+  // aspect ratio จริงของรูป (naturalWidth/Height) — ใช้คุมความสูงผ่าน maxWidth (ดูคอมเมนต์ตอน render)
+  const [ar, setAr] = useState(null);
 
   useEffect(() => {
     let dead = false;
@@ -67,12 +69,20 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
   }
 
   return (
-    <div style={{
-      position: 'relative', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border)',
-      background: '#0a0a0f', maxHeight, minHeight, display: 'flex', justifyContent: 'center',
-    }}>
-      <div style={{ position: 'relative', width: '100%' }}>
-        <img src={map.image_url} alt="ผังโรงงาน" style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none' }} />
+    /* ⚠️ สเกล = "กติกาเดียวกับ /factory-map": img width:100% height:auto (aspect จริง width-driven)
+       ห้ามกลับไปใช้ maxHeight + overflow:hidden บนกรอบ — นั่นคือการ "ตัดรูป" ไม่ใช่ย่อ
+       (user ทัก 2026-08-26 "สเกลภาพแย่มาก ทำไมใช้คนละสเกลกับผังรวมโรงงาน")
+       ความสูงคุมด้วย maxWidth = maxHeight × aspect (contain) — overlay inset:0 ยังตรงรูปเป๊ะ
+       เพราะ wrapper กว้างเท่ารูปเสมอ (ถ้าไปคุมที่ img ตรงๆ รูปจะแคบกว่า wrapper แล้วกรอบเลื่อน) */
+    <div style={{ display: 'flex', justifyContent: 'center' }}>
+      <div style={{
+        position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
+        border: '1px solid var(--border)', background: '#0a0a0f',
+        maxWidth: ar ? `calc(${maxHeight} * ${ar})` : undefined,
+      }}>
+        <img src={map.image_url} alt="ผังโรงงาน"
+          onLoad={(e) => { const t = e.currentTarget; if (t.naturalWidth > 0 && t.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight); }}
+          style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none' }} />
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.30)', pointerEvents: 'none' }} />
 
         {/* ⚠️ preserveAspectRatio=none + vector-effect: non-scaling-stroke — พิกัดเป็น % ของรูปจริง
