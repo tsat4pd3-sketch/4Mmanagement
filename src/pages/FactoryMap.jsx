@@ -14,6 +14,7 @@ import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, de
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
@@ -53,6 +54,7 @@ const CAT = {
   down: { color: '#ef4444', label: 'Downtime', blink: true },
   idle: { color: '#6b7280', label: 'ไม่มีแผน/ปิดกะ' },
   waiting: { color: '#38bdf8', label: 'เปิดกะ · ยังไม่มี order' },
+  busy: { color: '#38bdf8', label: 'กำลังทำ PM' },   // งานตามแผนที่กำลังทำอยู่ — ไม่ใช่ alarm ห้ามกระพริบ
 };
 
 // นิยาม metric แต่ละตัว — value(ค่าเรียงอันดับ) · text(บนกรอบ) · cat(หมวดสี) · worstFirst(เรียง side panel)
@@ -91,8 +93,13 @@ const prodHealthSignals = (s) => {
   }
   if (s.ng >= 20) sig.push({ cat: 'bad', txt: `NG ${s.ng}` });        // เกณฑ์เดียวกับแท็บของเสีย
   else if (s.ng > 0) sig.push({ cat: 'ok', txt: `NG ${s.ng}` });
+  /* ⚠️ PM (ช่าง) กับ AM (ผลิตตรวจเอง) แยกกันเสมอ — คนละคนรับผิดชอบ รวมเป็นก้อนเดียวแล้วตอบไม่ได้ว่าใครต้องไปทำ
+     "กำลังทำ PM อยู่" ไม่ใช่ปัญหา แต่ต้องเห็นบนป้าย (ไม่งั้นคนอ่านคิดว่าไลน์หยุดเพราะเสีย) */
+  if (s.pmBusy) sig.push({ cat: 'good', txt: '🔧 กำลังทำ PM' });
   if (s.pmOverdue) sig.push({ cat: 'bad', txt: `PM เกิน ${s.pmOverdue}` });
   else if (s.pmDueSoon) sig.push({ cat: 'ok', txt: `PM ใกล้ครบ ${s.pmDueSoon}` });
+  if (s.amOverdue) sig.push({ cat: 'bad', txt: `AM เกิน ${s.amOverdue}` });
+  else if (s.amDueSoon) sig.push({ cat: 'ok', txt: `AM ใกล้ครบ ${s.amDueSoon}` });
   if (s.hasOpen && s.headTotal > 0) {
     const pp = s.present / s.headTotal * 100;    // เกณฑ์ "แย่" ของแท็บคน (<80)
     if (pp < 80) sig.push({ cat: 'ok', txt: `คนมา ${s.present}/${s.headTotal}` });
@@ -204,12 +211,29 @@ const METRICS = {
       return s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal}` : '';
     },
   },
+  /* 🛠️ PM ของ "ช่าง" เท่านั้น — AM (ผลิตตรวจเอง) ถูกแยกออกโดยตั้งใจ (คำสั่ง user 2026-08-26)
+     กฎเหล็ก CLAUDE.md: AM ≠ PM คนละงาน คนละทะเบียน คนละสิทธิ์ · แยกด้วยแกนข้อมูล `mtn_teams.kind`
+     ผ่าน `isAmTeam(checklists.department)` **ห้าม hardcode `department === 'production'`**
+     ⚠️ AM ไม่ได้หายไปไหน — โชว์เป็นบรรทัดแยกในการ์ด hover (ห้ามซ่อนเงียบ) และมีแท็บ 🏭 AM ของตัวเอง
+     ⚠️ "กำลังทำ PM อยู่วันนี้" มาจาก **แผนประสานงาน PM** (pm_coordination_*) คนละตารางกับ pm_plans
+        — pm_plans บอกแค่ "ครบกำหนดเมื่อไหร่" ไม่ได้บอกว่าช่างลงมือวันไหน · ตัวนี้ชนะทุกสถานะ
+        (สิ่งที่เกิดอยู่ตอนนี้สำคัญกว่าสิ่งที่ค้าง) และเป็นสีฟ้า **ไม่ใช่ alarm ห้ามกระพริบ** */
   pm: {
-    label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
-    value: s => s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null,   // overdue สำคัญกว่า due-soon เสมอ
-    text: s => s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
-    cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
-    short: s => !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
+    label: '🛠️ PM ช่าง (Preventive)', worstFirst: true, desc: true,
+    value: s => s.pmBusy ? 2000 + s.pmBusy : (s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null),
+    text: s => s.pmBusy ? `🔧 กำลังทำ PM วันนี้${s.pmBusyText ? ` · ${s.pmBusyText}` : ''}`
+      : s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
+    cat: s => s.pmBusy ? 'busy' : !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
+    short: s => s.pmBusy ? '🔧 PM' : !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
+  },
+  /* 🏭 AM — ผลิตตรวจเครื่องเองทุกต้นกะ (checklists.department ที่ mtn_teams.kind = 'am')
+     แยกแท็บจาก PM เพราะเป็นคนละงาน คนละคนรับผิดชอบ — เอามารวมนับก็ตอบไม่ได้ว่าใครต้องไปทำ */
+  am: {
+    label: '🏭 AM (ผลิตตรวจเอง)', worstFirst: true, desc: true,
+    value: s => s.amTotal ? s.amOverdue * 1000 + s.amDueSoon : null,
+    text: s => s.amTotal ? (s.amOverdue ? `⚠ เกินกำหนด ${s.amOverdue}` : s.amDueSoon ? `ใกล้ครบ ${s.amDueSoon}` : `AM ปกติ (${s.amTotal})`) : '',
+    cat: s => !s.amTotal ? 'idle' : s.amOverdue ? 'bad' : s.amDueSoon ? 'ok' : 'good',
+    short: s => !s.amTotal ? '' : s.amOverdue ? `⚠ ${s.amOverdue}` : s.amDueSoon ? `~${s.amDueSoon}` : '',
   },
   supply: {
     // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
@@ -340,6 +364,7 @@ const labelAnchor = (pts) => pts.length
   : [50, 50];
 const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
+  amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
 // รวมชื่อ utility ที่จ่ายไลน์นี้ — dedup ตามเลขเครื่องก่อน แล้วยุบชื่อที่ซ้ำเป็น "ชื่อ ×N" (กันโชว์ชื่อเดียวซ้ำหลายรอบ)
@@ -904,7 +929,8 @@ export default function FactoryMap({ setupMode = false }) {
      ⚠️ ไลน์เอาจาก `jigs.line_name` ก่อน (เป็นของอุปกรณ์ตัวนั้นเอง) ไม่มีค่อยถอยไปไลน์ของเครื่องที่ผูก
      ⚠️ query ล้มเหลว = **คงค่าเดิมไว้ ห้ามล้างเป็น {}** (ล้างแล้วจอบอก "ไม่มีแผน PM" ซึ่งเป็นคำตอบผิด) */
   const loadPM = useCallback(async () => {
-    const { data: cls, error: clErr } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn');
+    await loadPmTeams().catch(() => {});   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (โหลดพลาด = fallback เดาจาก key)
+    const { data: cls, error: clErr } = await supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn');
     if (clErr) { console.warn('loadPM checklists', clErr.message); return; }
     const eqIds = [...new Set((cls || []).map(c => c.equipment_id).filter(Boolean))];
     if (!eqIds.length) { setPmStatus({}); return; }
@@ -919,6 +945,9 @@ export default function FactoryMap({ setupMode = false }) {
     const lineOfMachine = {}; (machines || []).forEach(m => { lineOfMachine[m.id] = m.line_name; });
     const lineOfEq = {}; jgRes.rows.forEach(j => { lineOfEq[j.id] = j.line_name || lineOfMachine[j.machine_id] || ''; });
     const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfEq[c.equipment_id]; });
+    /* แยก AM / PM ด้วยแกนข้อมูล `mtn_teams.kind` — ห้าม hardcode `department === 'production'`
+       (กฎเหล็ก: แยก AM รายส่วนงาน/rollout โรงงานที่เรียกทีมคนละชื่อ แล้วจะพังเงียบ) */
+    const amOfChecklist = {}; (cls || []).forEach(c => { amOfChecklist[c.id] = isAmTeam(c.department); });
     const plRes = await fetchByIds((cls || []).map(c => c.id),
       c => supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', c));
     if (plRes.error) { console.warn('loadPM plans', plRes.error); return; }
@@ -929,17 +958,40 @@ export default function FactoryMap({ setupMode = false }) {
     /* ⚠️ อุปกรณ์ที่ยังไม่ได้ผูกไลน์ = วางบนผังไม่ได้ **แต่ห้ามทิ้งเงียบ** — โดยเฉพาะตัวที่เกินกำหนด
        (แผน PM ที่ไม่รู้ว่าอยู่ไลน์ไหน จะหายจากทุกจอที่จัดกลุ่มตามไลน์) → นับไว้โชว์เป็นชิป */
     const orphan = { total: 0, overdue: 0 };
+    const blank = () => ({ pmTotal: 0, pmOverdue: 0, pmDueSoon: 0, amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '' });
     (plans || []).forEach(p => {
       const overdue = p.next_due_date && p.next_due_date < today;
       const ln = lineOfChecklist[p.checklist_id];
       if (!ln) { orphan.total++; if (overdue) orphan.overdue++; return; }
-      const o = out[ln] || { pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
-      o.pmTotal++;
-      if (overdue) o.pmOverdue++;
-      else if (p.next_due_date && p.next_due_date <= soonStr) o.pmDueSoon++;
+      const o = out[ln] || blank();
+      const k = amOfChecklist[p.checklist_id] ? 'am' : 'pm';
+      o[`${k}Total`]++;
+      if (overdue) o[`${k}Overdue`]++;
+      else if (p.next_due_date && p.next_due_date <= soonStr) o[`${k}DueSoon`]++;
       out[ln] = o;
     });
     setPmOrphan(orphan);
+
+    /* 🔧 "กำลังทำ PM อยู่วันนี้" — จาก **แผนประสานงาน PM** (คนละตารางกับ pm_plans)
+       pm_plans บอกแค่ "ครบกำหนดเมื่อไหร่" · ตัวที่บอกว่า *ช่างลงมือวันไหน* คือ pm_coordination_tasks
+       ⇒ ไม่ดึงตัวนี้ = ผังขึ้น "PM ปกติ" เขียวทั้งที่ MTN ยืนทำ PM อยู่หน้าเครื่อง (user เจอจริง 26/08)
+       ⚠️ best-effort — ล้มเหลวห้ามลาก metric PM พังทั้งตัว (แค่ไม่มีสถานะ "กำลังทำ") */
+    try {
+      const { data: coPlans } = await supabaseDR.from('pm_coordination_plans')
+        .select('id, line_name, title, machine_no, status').not('status', 'in', '("done","cancelled")');
+      const planById = {}; (coPlans || []).forEach(pl => { planById[pl.id] = pl; });
+      if (coPlans?.length) {
+        const tkRes = await fetchByIds(coPlans.map(pl => pl.id),
+          c => supabaseDR.from('pm_coordination_tasks').select('plan_id, task_date, done, description').eq('task_date', today).in('plan_id', c));
+        (tkRes.rows || []).filter(t => !t.done).forEach(t => {
+          const pl = planById[t.plan_id]; const ln = pl?.line_name; if (!ln) return;
+          const o = out[ln] || blank();
+          o.pmBusy++;
+          if (!o.pmBusyText) o.pmBusyText = [pl.machine_no, pl.title].filter(Boolean).join(' · ');
+          out[ln] = o;
+        });
+      }
+    } catch (e) { console.warn('loadPM coordination', e?.message || e); }
     setPmStatus(out);
   }, []);
   usePolling(loadPM, RATE.SLOW);
@@ -1373,7 +1425,9 @@ export default function FactoryMap({ setupMode = false }) {
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
-      if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
+      if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0;
+               agg.amTotal += pm.amTotal || 0; agg.amOverdue += pm.amOverdue || 0; agg.amDueSoon += pm.amDueSoon || 0;
+               agg.pmBusy += pm.pmBusy || 0; if (!agg.pmBusyText) agg.pmBusyText = pm.pmBusyText || ''; }
       // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
       //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
       const en = energyStatus[n];
