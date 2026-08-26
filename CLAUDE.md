@@ -277,13 +277,27 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 แล้วเปิดหลายจอให้เห็นข้อมูลไหลหากัน
 
 ### กลไกจริง — ทริกเกอร์ตัวเดียวขับทั้งสาย
-**`fn_explode_child_demand`** (DR · AFTER UPDATE/INSERT บน `prod_orders` เมื่อ `status='confirmed'`)
+**`fn_explode_child_demand`** (DR · AFTER UPDATE/INSERT บน `prod_orders` เมื่อ `status='confirmed'`
+**หรือยกยอด/ยกเลิกที่มี `qty_actual` > 0** — ดูกฎ partial ด้านล่าง)
 ทำ 4 อย่างในจังหวะเดียวตอน "ปิดใบผลิต FG":
 1. ระเบิด BOM (`bom_items`) → ความต้องการรวมของพาร์ทลูก
 2. **หักมินิสโตร์ของไลน์** (`line_stock_summary` ของ *ไลน์ที่ผลิต*) → เขียน `line_stock_transactions` type `consume`
 3. ส่วนที่ขาด → สะสมใน **`child_demand_accumulator`** → ครบ `kanban_standards.lot_size` เมื่อไหร่ ออกใบ:
    MAT ขึ้นต้น **3/5 → `purchase_requests`** · อื่นๆ → **`child_lot_requests`** + ระเบิดสูตรลูกต่อเป็น `raw_withdrawal_requests`
 4. `product_packaging` → `packaging_withdrawal_requests`
+
+> **⚠️ กฎเหล็ก — 1 ใบผลิต ระเบิด BOM ได้ครั้งเดียวตลอดชีวิตใบ (`child_demand_explosions` · apply แล้ว 2026-08-25)**
+> QC flow-audit จับได้ว่า **↩️ ถอยใบแล้วสแกนปิดใหม่ = ระเบิดซ้ำ 2 เท่า** (หักมินิสโตร์ซ้ำ + demand สะสมซ้ำ +
+> ใบสั่งซื้อ/ล็อตออกซ้ำ) — ฝั่ง inflow มี guard (แถว ledger `ref_order_id`) แต่ explode ไม่มีอะไรกันเลย
+> → ตาราง marker `child_demand_explosions` (order_id PK) — trigger insert เป็นตัว claim แบบ atomic ก่อนทำงาน
+> ชน unique = เคยระเบิดแล้ว ออกเงียบ · **ถอยใบไม่ถอน demand คืน ดังนั้นปิดใหม่ต้องไม่ระเบิดซ้ำ = ถูกต้อง**
+> · seed ให้ใบ confirmed + ใบที่เคยถูกถอย (reopen_count>0) ในอดีตแล้ว 8,985 ใบ
+> **⚠️ ใบยกยอด/ยกเลิกตอนปิดกะที่มี `qty_actual` > 0 = โพสต์เข้าคลัง + ระเบิด BOM ด้วย "ยอดที่ทำจริงบางส่วน"**
+> (migration `20260825_partial_output_and_explode_dedup.sql` — เดิมยอดกะแรกของใบยกยอด **หายถาวร**:
+> ทำได้ 18/35 → 18 ชิ้นไม่เคยเข้าคลัง/ไม่เคย backflush เพราะใบกะถัดไปเป็นแถวใหม่ qty = ส่วนที่เหลือ)
+> ใบกะถัดไปโพสต์/ระเบิดส่วนที่เหลือตอนปิด → รวมกันพอดีไม่ซ้ำไม่ขาด · **ยอดเก่าก่อน apply ไม่ backfill โดยตั้งใจ**
+> · trigger ทั้งคู่ถูกสร้างใหม่เป็น `AFTER INSERT OR UPDATE` ไม่มี WHEN (branch ใหม่ต้องเห็นทุก transition)
+> · **ห้ามเพิ่ม WHEN clause ที่จำกัดเฉพาะ confirmed กลับเข้าไป** — partial branch จะตายเงียบ
 
 > **⚠️ กฎเหล็ก — ไม่ตั้ง `lot_size` = ความต้องการค้างถาวรแบบเงียบ**
 > ทริกเกอร์ `continue` ข้ามพาร์ทที่ไม่มี lot_size · ความต้องการยังสะสมใน accumulator เรื่อยๆ แต่**ไม่มีวันกลายเป็นใบสั่ง**
