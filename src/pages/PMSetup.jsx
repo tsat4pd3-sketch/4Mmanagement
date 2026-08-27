@@ -1339,7 +1339,7 @@ export default function PMSetup() {
     <div style={S.page}>
       <div style={S.header}>
         <div>
-          <h1 style={S.h1}>PM Setup — อุปกรณ์ & จุดตรวจ</h1>
+          <h1 style={S.h1}>ตั้งจุดตรวจ PM — อุปกรณ์ &amp; จุดตรวจ</h1>
           <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
           {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
           <p style={{ ...S.sub, marginTop: 2 }}>

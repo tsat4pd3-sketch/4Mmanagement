@@ -137,7 +137,7 @@ export default function PmForecast() {
   return (
     <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 }}>🔧 PM ล่วงหน้า (Planner)</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 }}>🔧 PM ที่จะครบกำหนด</h1>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>คาดวันที่จะต้อง PM ล่วงหน้า + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุด · sync ให้วางแผน/ผลิตเตรียมตัว</p>
       </div>
 

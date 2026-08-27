@@ -746,7 +746,7 @@ export default function DeptDashboard() {
     <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', paddingRight: 52 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23 }}>📊 Dashboard ส่วนงาน</h2>
+          <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23 }}>📋 งานค้างของส่วนงาน</h2>
           <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
             วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)
           </div>

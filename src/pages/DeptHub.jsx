@@ -139,7 +139,7 @@ const DEPTS = [
   },
   {
     key: 'qa', code: 'QUA·04', label: 'Quality QA/QC', labelTh: 'ควบคุมคุณภาพ', icon: '🔍',
-    color: '#4d9fff', route: '/qa', navGroups: ['ควบคุมคุณภาพ QA/QC'], available: true,
+    color: '#4d9fff', route: '/qa', navGroups: ['คุณภาพ & วิศวกรรม'], available: true,
     desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, ใบรายงานของเสีย, CQI-15',
   },
   {

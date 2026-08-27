@@ -1049,7 +1049,7 @@ export default function OrderTrace() {
                   <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--muted)' }}>
                     พาร์ทนี้ <b style={{ color: 'var(--text2)' }}>ยังไม่มีเอกสาร PFMEA / Control Plan ในระบบ</b> —
                     จึงยังโฟกัสตามอาการไม่ได้ (ทั้งระบบลงไปแล้ว {trace.pe?.totalSets ?? 0} พาร์ท)
-                    <div style={{ marginTop: 5 }}>ลงเอกสารได้ที่หน้า <b>วิศวกรรม (PE) → Flow / PFMEA / Control Plan</b></div>
+                    <div style={{ marginTop: 5 }}>ลงเอกสารได้ที่หน้า <b>คุณภาพ & วิศวกรรม → Flow / PFMEA / Control Plan</b></div>
                   </div>
                 ) : (
                   <>
