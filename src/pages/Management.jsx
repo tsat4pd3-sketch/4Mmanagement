@@ -200,6 +200,15 @@ export default function Management() {
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
   const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
+  /* กะที่กำลังดู — เดิมผังคนล็อก getCurrentShift() ตายตัว หัวหน้าจึงเห็นได้แค่กะปัจจุบัน
+     และเลือกวันย้อนหลังแล้ว "คน" ก็ไม่ตามไปด้วย (จอบอกว่าย้อนหลังแต่โชว์คนของวันนี้ = จอโกหก)
+     feedback หน้างาน 2026-08-27: "เลือกกะไม่ได้ กลายเป็นแสดงแค่กะเช้าอย่างเดียว" */
+  const [viewShift,       setViewShift]       = useState(() => getCurrentShift());
+  const todayWorkDate = getWorkDate();
+  /* "ดูสด" = วันนี้ + กะปัจจุบันเท่านั้น → จัดคนได้
+     กะอื่น/วันย้อนหลัง = **อ่านอย่างเดียว** เพราะการลากคนจะไปเขียน daily_production_logs ของวันนั้น
+     และ station_assignment_logs ที่ stamp เวลา "ตอนนี้" = ประวัติเพี้ยนย้อนแก้ยาก */
+  const isLiveView = boardDate === todayWorkDate && viewShift === getCurrentShift();
   // มุมมองหลักของ Canvas Area: สลับดูทีละมุม — 'map' = ผังไลน์+คน (floor map) · 'heijunka' = บอร์ด Heijunka
   // ดูทีละมุมได้พื้นที่เต็มจอ เห็นรายละเอียดครบ ไม่ถูกบีบ/ย่อ (แก้ปัญหา kanban เยอะแล้วบอร์ดดันผังหลุดจอ)
   // · default = map (งานหลักคือจัดคนลงสถานี) · จำสถานะใน localStorage
@@ -466,7 +475,7 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchData();
-  }, [selectedLine]);
+  }, [selectedLine, boardDate, viewShift]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // viewKey อยู่ใน deps ด้วย — ตอน mount allLines มาถึงช้ากว่า selectedLine ได้
   // พอ hierarchy resolve เสร็จ (viewLineNames เปลี่ยน) ต้อง refetch จุดงานของทั้งครอบครัวไลน์
@@ -500,21 +509,23 @@ export default function Management() {
   };
 
   const fetchData = async () => {
-    const today = getWorkDate();
+    // ⚠️ ยึด "วัน/กะที่กำลังดู" ไม่ใช่ตอนนี้ — ไม่งั้นเลือกย้อนหลังแล้วยังโชว์คนของกะปัจจุบัน
+    const today = boardDate;
+    const shiftV = viewShift;
     const { data: workerData } = await supabase
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
-      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
+      .eq('work_date', today).eq('shift', shiftV).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     // คนที่เช็คชื่อแล้วแต่ PPE ไม่ครบ — ไม่เข้า pool (ห้ามจัดลงสถานี) แต่ต้องกระพริบเตือนบนหัวผัง
     const { data: ppeData } = await supabase
       .from('daily_production_logs')
       .select('id, employee_id, has_helmet, has_boots, has_gloves, employees(id, name, image_url, team, line_id)')
-      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
+      .eq('work_date', today).eq('shift', shiftV).eq('is_present', true)
       .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
     setPpeAlerts(ppeData || []);
     // 🤝 ยืมตัวข้ามไลน์กะนี้ (line_helpers) — best-effort: ยังไม่ apply migration = พฤติกรรมเดิม
     const { data: helperData, error: eHelper } = await supabase.from('line_helpers')
-      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', getCurrentShift());
+      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', shiftV);
     if (!eHelper) {
       const hm = {};
       (helperData || []).forEach(h => { hm[h.employee_id] = h.to_line_id; });
@@ -547,6 +558,8 @@ export default function Management() {
 
   /* ── Assign worker ── shared between drag-drop and touch-tap */
   const assignWorker = async (logId, stationId) => {
+    // guard ชั้นสุดท้าย — โหมดย้อนหลัง/กะอื่น ห้ามเขียนอะไรทั้งสิ้น (ซ่อนปุ่มอย่างเดียวไม่พอ)
+    if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — จัดกำลังคนได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
     const prevAssign = droppedWorker?.assigned_line ?? null;
@@ -894,6 +907,7 @@ export default function Management() {
   }, [workers, dynamicStations, viewLineNames, belongsToShownMap]);
 
   const assignSpecialTask = async (worker, taskType) => {
+    if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — กำหนดงานนอกไลน์ได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const today = getWorkDate();
     await supabase.from('operator_special_tasks').upsert(
       { employee_id: worker.employee_id, task_type: taskType, work_date: today },
@@ -913,7 +927,7 @@ export default function Management() {
   /* ── Special Pool Card ── */
   const SpecialCard = ({ worker }) => {
     const task = specialTasks.find(t => t.employee_id === worker.employee_id);
-    const canDrag = can('management', 'assign_manpower', role);
+    const canDrag = can('management', 'assign_manpower', role) && isLiveView;
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
@@ -966,12 +980,12 @@ export default function Management() {
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
-        draggable={!isMobile}
-        onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
+        draggable={!isMobile && isLiveView}
+        onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        onClick={() => handlePoolTap(worker)}
+        onClick={() => isLiveView && handlePoolTap(worker)}
         style={{
           position: 'relative',
           width: '100%',
@@ -1030,12 +1044,12 @@ export default function Management() {
     const pend4m = man4mPendingFor(worker.employees?.name);
     return (
       <div
-        draggable={!isMobile}
-        onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
+        draggable={!isMobile && isLiveView}
+        onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : (isLiveView ? 'grab' : 'default'), userSelect: 'none' }}
         title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}
       >
         {/* photo only — score & name live in the hover popup card + the fit badge below the pill */}
@@ -1202,6 +1216,40 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* ── วัน/กะที่กำลังดู (2026-08-27 · feedback "เลือกกะไม่ได้ แสดงแค่กะเช้า") ──
+               ต้อง render เสมอ แม้กะนั้นไม่มีคนสักคน — ไม่งั้นสลับไปกะดึกที่ว่างแล้ว
+               จะไม่มีปุ่มให้สลับกลับ (ทางตันที่มองไม่เห็น) */}
+          {selectedLine && (
+            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 10,
+              background: isLiveView ? 'var(--bg3)' : 'rgba(168,85,247,0.12)',
+              border: `1px solid ${isLiveView ? 'var(--border2)' : 'rgba(168,85,247,0.5)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>กะที่ดู</span>
+                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                  {[['day', '☀️ เช้า'], ['night', '🌙 ดึก']].map(([k, t]) => (
+                    <button key={k} onClick={() => setViewShift(k)}
+                      style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                        background: viewShift === k ? 'var(--accent)' : 'var(--bg)',
+                        border: `1px solid ${viewShift === k ? 'var(--accent)' : 'var(--border)'}`,
+                        color: viewShift === k ? '#08130a' : 'var(--text2)' }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                📅 {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
+              </div>
+              {!isLiveView && (
+                <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4, lineHeight: 1.5 }}>
+                  👁 โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
+                  <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
+                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                    ⟳ กลับมาดูสด
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── กำลังคนทั้งกลุ่มไลน์ (รวมไลน์ย่อย) + รายชื่อคนไลน์ย่อยที่มีผังแยก (2026-08-03) ── */}
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
             <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
@@ -1278,7 +1326,7 @@ export default function Management() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
-            {can('management', 'assign_manpower', role) && specialWorkers.length > 0 && (
+            {can('management', 'assign_manpower', role) && isLiveView && specialWorkers.length > 0 && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
@@ -1311,6 +1359,13 @@ export default function Management() {
         {selectedLine && !isMobile && (
           <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>บันทึก 4M ไลน์</div>
+            {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
+                ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
+            {!isLiveView && (
+              <div style={{ fontSize: 10.5, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+                ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
+              </div>
+            )}
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
@@ -1763,7 +1818,7 @@ export default function Management() {
             });
             return chips;
           })();
-          const todayWd = getWorkDate();
+          const todayWd = todayWorkDate;
           const shiftBoardDate = (days) => {
             const d = new Date(`${boardDate}T12:00:00`);
             d.setDate(d.getDate() + days);
