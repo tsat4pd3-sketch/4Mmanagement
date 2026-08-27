@@ -264,6 +264,15 @@ export default function Dashboard() {
   // ⚠️ กรองเฉพาะ "ชั้นแสดงผล" — ห้ามกรอง cards ก่อนคำนวณคิว (ตำแหน่ง/เวลาคาดเสร็จผูกกับคิวทั้งไลน์)
   const [boardLineSel,  setBoardLineSel]  = useState('');
   const [boardQuery,    setBoardQuery]    = useState('');
+  /* ✍️ แถวที่มีแต่ "ใบเปิดเอง" (ไลน์ที่ไม่มีบัตรคัมบังให้สแกน) ยุบไว้เป็นค่าเริ่มต้น —
+     บอร์ดนี้เป็นจอภาพรวม ของหลักคือใบสั่งที่สแกนจาก SAP (user 2026-08-27)
+     จำต่อเครื่อง (จอ TV ตั้งครั้งเดียวจบ) · กางดูได้เสมอ ไม่ได้ตัดข้อมูลทิ้ง */
+  const [showManualRows, setShowManualRows] = useState(() => {
+    try { return localStorage.getItem('esm_board_manual') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('esm_board_manual', showManualRows ? '1' : '0'); } catch { /* โหมดส่วนตัว/ปิด site data */ }
+  }, [showManualRows]);
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
@@ -1442,13 +1451,25 @@ export default function Dashboard() {
                       const rowKey = multiSubLine ? `${c.line_name || ''}|${c.productKey}` : c.productKey;
                       (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
-                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    /* ⭐ ใบสั่งจาก SAP (สแกนบัตรคัมบัง) คือของหลักบนบอร์ดนี้ — ใบที่เปิดเองด้วยมือ
+                       (ไลน์ที่ไม่มีบาร์โค้ดให้สแกน) ดันขึ้นบนสุดตามลำดับตัวอักษรจนบังของจริง
+                       (user 2026-08-27: "อยากให้เน้นชิ้นงานที่เป็น order จาก SAP เป็นหลัก · manual ยุบไว้ได้")
+                       ⚠️ แถวที่ **มีใบสแกนปนอยู่แม้ใบเดียว = ไม่ใช่แถว manual** ห้ามยุบ (จะพาใบ SAP หายไปด้วย) */
+                    const isManualRow = (row) => row.cards.length > 0 && row.cards.every(c => c.is_manual);
+                    const productRows = Object.values(groups).sort((a, b) =>
+                      // แถว manual ไปท้ายเสมอ (แม้ตอนกางดู) — ของหลักต้องอยู่บนสุด
+                      (isManualRow(a) ? 1 : 0) - (isManualRow(b) ? 1 : 0) ||
+                      a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
                     // ตัวกรองพาร์ท (boardQuery) — กรองเฉพาะแถวที่จะวาด · สรุปหัวการ์ด/pace ยังนับทุกแถวตามจริง
                     const bq = boardQuery.trim().toUpperCase();
-                    const visRows = !bq ? productRows : productRows.filter(row =>
+                    const qRows = !bq ? productRows : productRows.filter(row =>
                       (row.label || '').toUpperCase().includes(bq) ||
                       row.cards.some(c => String(c.mat_no || '').toUpperCase().includes(bq) || String(c.prod_no || '').toUpperCase().includes(bq)));
-                    const hiddenRowCount = productRows.length - visRows.length;
+                    const hiddenRowCount = productRows.length - qRows.length;
+                    /* ⚠️ ยุบ "การแสดงผล" เท่านั้น — ห้ามกรองก่อนคำนวณคิว/ตำแหน่งการ์ด
+                       (ตำแหน่งใบและเวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อน = เวลาเพี้ยนทั้งแถว) */
+                    const manualRows = qRows.filter(isManualRow);
+                    const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -2024,7 +2045,22 @@ export default function Dashboard() {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{visRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                          </div>
+                        )}
+                        {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
+                            (ยอดผลิต/pace บนหัวการ์ดยังนับใบพวกนี้ครบตามจริง — ยุบแค่การแสดงผลรายแถว) */}
+                        {manualRows.length > 0 && (
+                          <div onClick={() => setShowManualRows(v => !v)}
+                            style={{
+                              padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                              color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
+                            }}>
+                            <span style={{ fontWeight: 800, color: 'var(--text2)' }}>{showManualRows ? '▼' : '▶'}</span>
+                            <span>✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) · {manualRows.length} พาร์ท</span>
+                            <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--accent)' }}>
+                              {showManualRows ? 'ยุบเก็บ (ทั้งบอร์ด)' : 'กางดู (ทั้งบอร์ด)'}
+                            </span>
                           </div>
                         )}
                         {visRows.map((row, ri) => {
