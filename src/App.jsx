@@ -18,6 +18,7 @@ import { loadPositions, positionLabel } from './utils/positions';   // ตำแ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
+import { liveChannel } from './utils/liveChannel';
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -910,8 +911,7 @@ function NotificationBell({ userId, role }) {
   useEffect(() => {
     load();
     if (!userId) return;
-    const ch = supabase
-      .channel(`notif-${userId}`)
+    const ch = liveChannel(supabase, `notif-${userId}`)
       // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
       .subscribe();
@@ -1867,8 +1867,7 @@ export default function App() {
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
-    const ch = supabase
-      .channel('role-permissions-sync')
+    const ch = liveChannel(supabase, 'role-permissions-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
         await loadPermissions(true);
         setPermsVersion(v => v + 1);

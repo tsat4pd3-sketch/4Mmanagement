@@ -9,6 +9,7 @@ import { usePolling } from '../utils/usePolling';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -148,7 +149,7 @@ export default function FlowTower() {
   usePolling(load, RATE.ANALYTIC);
   // เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
   useEffect(() => {
-    const ch = supabaseDR.channel('flow-tower')
+    const ch = liveChannel(supabaseDR, 'flow-tower')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, load)
       .subscribe();

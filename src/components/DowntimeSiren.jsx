@@ -3,13 +3,21 @@ import { supabaseDR } from '../supabaseClient'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
+import { liveChannel } from '../utils/liveChannel'
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
      mode='open_15min' → ดังหน้า Production  (เครื่องเปิดค้างเกินเกณฑ์นาที · scanner mark open_alerted_at)
    เสียงสร้างด้วย Web Audio (ไม่ต้องมีไฟล์) วนจนกด "รับทราบ" (set *_ack_at) แล้วดับ
-   ข้อจำกัด: เบราว์เซอร์บล็อก autoplay จนมี user gesture → resume AudioContext ตอนคลิกครั้งแรก
-            (จอ display ล้วนที่ไม่มีใครแตะ จะเห็นแถบเตือนแต่ไม่มีเสียง — ตั้งใจ) */
+
+   ⚠️⚠️ กฎเหล็ก — จอที่ "เปิดทิ้งไว้เฉยๆ" ต้องรู้ตัวว่าเสียงยังไม่พร้อม **ก่อน**เกิดเหตุ
+   เบราว์เซอร์บล็อก autoplay จนกว่าจะมี user gesture → AudioContext เริ่มที่ state 'suspended'
+   เดิมสร้าง AudioContext ตอนมี alert แล้วค่อยโชว์ "🔇 แตะเพื่อเปิดเสียง" **ในแถบ alert**
+   ⇒ จอห้องช่างที่รีบูตกลางคืน (ไฟดับ/deploy ใหม่/เบราว์เซอร์ restart) จะไม่มีอะไรบอกเลย
+      จนกระทั่งเครื่องหยุดจริง — แล้ว**เสียงแรกที่ควรดังที่สุดกลับเงียบ**
+   → ตอนนี้สร้าง AudioContext ตั้งแต่ mount (suspended = ถูกต้อง ไม่เปลือง) + ฟัง statechange
+     แล้วโชว์ชิปเล็กๆ สงบๆ ตลอดเวลาที่เสียงยังล็อก **แม้ยังไม่มี alert**
+   ⚠️ ชิปนี้ **ห้ามกระพริบ/ห้ามใช้สีแดง** — เป็นสถานะความพร้อม ไม่ใช่ alarm (UI-CONVENTIONS §2) */
 export default function DowntimeSiren({ mode = 'open_15min' }) {
   const [raw, setRaw] = useState([])       // แถวดิบที่ยังไม่รับทราบ (กะเปิดอยู่)
   const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
@@ -46,7 +54,7 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   useEffect(() => {
     fetchAlerts()
     const stopPoll = visibleInterval(fetchAlerts, RATE.BACKUP) // กันเหนียวเผื่อ realtime หลุด
-    const ch = supabaseDR.channel(`dt-siren-${mode}`)
+    const ch = liveChannel(supabaseDR, `dt-siren-${mode}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(fetchAlerts, 400))
       .subscribe()
     // นาฬิกาอย่างเดียว ไม่ยิง DB — ให้รายการที่ "ครบเกณฑ์ระหว่างเปิดจออยู่" ดังเองภายใน 1 นาที
@@ -54,11 +62,27 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
     return () => { stopPoll(); supabaseDR.removeChannel(ch); clearInterval(clk) }
   }, [mode, fetchAlerts])
 
-  // ปลดล็อกเสียงตอน user แตะครั้งแรก (นโยบาย autoplay)
+  /* เตรียม AudioContext ตั้งแต่ mount — ต้องรู้สถานะเสียง "ก่อน" มี alert (ดูกฎหัวไฟล์)
+     ฟัง statechange เพื่อให้ชิปหายเองทันทีที่ปลดล็อกได้ ไม่ว่าจะปลดจากทางไหน */
   useEffect(() => {
-    const unlock = () => { try { acRef.current?.resume().then(() => setMuted(false), () => {}) } catch { /* ignore */ } }
-    window.addEventListener('pointerdown', unlock, { once: false })
-    return () => window.removeEventListener('pointerdown', unlock)
+    let ac = acRef.current
+    if (!ac) {
+      try { ac = acRef.current = new (window.AudioContext || window.webkitAudioContext)() } catch { ac = null }
+    }
+    if (!ac) { setMuted(true); return }   // เบราว์เซอร์ไม่มี Web Audio = ไม่มีทางมีเสียง ต้องบอก
+    const sync = () => setMuted(ac.state !== 'running')
+    sync()
+    ac.addEventListener?.('statechange', sync)
+    // ลอง resume ทันที — บนเครื่องที่เพิ่งคลิกมา (นำทางจากเมนู) มักผ่านเลย ชิปจะไม่ขึ้นกวน
+    try { ac.resume().then(sync, sync) } catch { /* ignore */ }
+    const unlock = () => { try { ac.resume().then(sync, () => {}) } catch { /* ignore */ } }
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)   // รีโมท TV บางรุ่นส่ง key ไม่ใช่ pointer
+    return () => {
+      ac.removeEventListener?.('statechange', sync)
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
   }, [])
 
   // เล่น/หยุดไซเรน ตามว่ามี alert ค้างไหม
@@ -91,12 +115,32 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
 
   useEffect(() => () => { clearInterval(loopRef.current); try { acRef.current?.close() } catch { /* ignore */ } }, [])
 
+  // ปลดล็อกเสียงด้วยการแตะ (ใช้ร่วมทั้งชิป standby และปุ่มในแถบ alert — อย่าเขียนซ้ำ)
+  const unlockNow = useCallback(() => {
+    const ac = acRef.current
+    if (!ac) return
+    try { ac.resume().then(() => setMuted(ac.state !== 'running'), () => {}) } catch { /* ignore */ }
+  }, [])
+
   const ack = async (id) => {
     setRaw(prev => prev.filter(a => a.id !== id))
     await supabaseDR.from('downtime_logs').update({ [ackField]: new Date().toISOString() }).eq('id', id)
   }
 
-  if (!alerts.length) return null
+  /* ยังไม่มีเหตุ แต่เสียงล็อกอยู่ = ต้องบอกตั้งแต่ตอนนี้ (จอห้องช่างที่เปิดทิ้งไว้)
+     ชิปเล็ก มุมล่างขวา สีเหลืองนิ่ง ไม่กระพริบ — เป็นสถานะความพร้อม ไม่ใช่ alarm */
+  if (!alerts.length) {
+    if (!muted) return null
+    return (
+      <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
+        style={{ position: 'fixed', bottom: 12, right: 12, zIndex: 4000, cursor: 'pointer',
+                 display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
+                 border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10, padding: '7px 11px',
+                 fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' }}>
+        🔇 เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
+      </div>
+    )
+  }
   return (
     <div style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 4000, width: 'min(96vw, 620px)', display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
       {alerts.map(a => (
@@ -110,7 +154,7 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
             </div>
           </div>
           {muted && (
-            <span onClick={() => { try { acRef.current?.resume().then(() => setMuted(false), () => {}) } catch { /* ignore */ } }}
+            <span onClick={unlockNow}
               title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
               🔇 แตะเพื่อเปิดเสียง
             </span>
