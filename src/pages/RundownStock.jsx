@@ -144,7 +144,7 @@ export default function RundownStock() {
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📉 Rundown Stock — Balance FG รายวัน
+          📉 คาดการณ์ของจะขาด — Balance FG รายวัน
         </h1>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
           stock พร้อมส่ง{fgDest ? ` (คลัง ${fgDest})` : ''} − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง
