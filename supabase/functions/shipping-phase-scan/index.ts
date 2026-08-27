@@ -106,9 +106,17 @@ Deno.serve(async () => {
     }
     if (!misses.length) return new Response(JSON.stringify({ ok: true, checked: orders.length, missed: 0, workflow_live: workflowLive, skipped_unused_phases: skippedUnused }), { status: 200 });
 
-    // mark ก่อนส่ง — ยิงครั้งเดียวต่อ (รอบ, เฟส) แม้ scan ซ้อน
+    /* mark ก่อนส่ง — ยิงครั้งเดียวต่อ (รอบ, เฟส) แม้ scan ซ้อน
+       ⚠️⚠️ แต่ mark ก่อนส่ง + กลืน error ตอนส่ง = **เงียบถาวร** (แก้ 2026-08-26)
+       PK คือ (order_id, step_id) → ถ้า Telegram/send-notification ล่มตอนนั้น แถว mark ยังอยู่
+       ⇒ รอบส่งนั้นจะไม่มีวันถูกแจ้งอีกเลย และ response ยังตอบ ok:true = ไม่มีใครรู้
+       (บั๊ก class เดียวกับ pm-plan-reminder ที่ dedup ด้วยธงที่ตั้งเฉพาะตอน POST สำเร็จ)
+       กติกา: mark ก่อน (กัน scan ซ้อนยิงซ้ำ) แต่ **ส่งพลาดต้องถอน mark คืน** ให้รอบหน้าลองใหม่
+       ถอนแบบเจาะจงด้วย `notified_at = runStamp` — แถวที่เคย mark ไว้รอบก่อนมี stamp คนละค่า
+       จึงไม่โดนลบไปด้วย (PK ไม่มี surrogate id ให้ลบทีละคู่ในคำสั่งเดียว) */
+    const runStamp = new Date().toISOString();
     const { error: insErr } = await db.from('shipping_phase_alerts').upsert(
-      misses.map((m) => ({ order_id: m.order.id, step_id: m.step.id })),
+      misses.map((m) => ({ order_id: m.order.id, step_id: m.step.id, notified_at: runStamp })),
       { onConflict: 'order_id,step_id', ignoreDuplicates: true },
     );
     if (insErr) throw insErr;
@@ -140,11 +148,28 @@ Deno.serve(async () => {
         })),
       }));
 
-    await fetch(NOTIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NOTIFY_KEY}`, apikey: NOTIFY_KEY },
-      body: JSON.stringify({ event: 'shipping_phase_alert', alert: { work_date: workDate, total: misses.length, groups } }),
-    }).catch(() => {});
+    let notifyErr: string | null = null;
+    try {
+      const res = await fetch(NOTIFY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NOTIFY_KEY}`, apikey: NOTIFY_KEY },
+        body: JSON.stringify({ event: 'shipping_phase_alert', alert: { work_date: workDate, total: misses.length, groups } }),
+      });
+      if (!res.ok) notifyErr = `HTTP ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`;
+    } catch (e) {
+      notifyErr = String(e);
+    }
+
+    // ส่งไม่สำเร็จ → ถอน mark ของรอบนี้ ให้ scan รอบถัดไปแจ้งซ้ำได้ (ห้ามเงียบถาวร)
+    if (notifyErr) {
+      console.error('[shipping-phase-scan] notify failed, rolling back marks:', notifyErr);
+      const { error: rbErr } = await db.from('shipping_phase_alerts').delete().eq('notified_at', runStamp);
+      if (rbErr) console.error('[shipping-phase-scan] rollback failed — เฟสเหล่านี้จะไม่ถูกแจ้งอีก:', rbErr);
+      return new Response(JSON.stringify({
+        ok: false, notify_error: notifyErr, rolled_back: !rbErr,
+        checked: orders.length, missed: misses.length, workflow_live: workflowLive, skipped_unused_phases: skippedUnused,
+      }), { status: 502 });
+    }
 
     return new Response(JSON.stringify({ ok: true, checked: orders.length, missed: misses.length, workflow_live: workflowLive, skipped_unused_phases: skippedUnused }), { status: 200 });
   } catch (err) {

@@ -6,6 +6,10 @@ import { defectUnitCost } from '../utils/costSaving';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
+import {
+  ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
+  CartesianGrid, ReferenceLine, LabelList, Cell,
+} from 'recharts';
 
 /* ═══ 📑 KPI รายเดือน (เฟส 1 · 2026-08-24 — เฟส 2 กรอกมือ + Excel 3 ชีท + drill-down · คำสั่ง user) ═══
    แทน "แพ็คกระดาษรายเดือน" ที่ปริ้นเซ็นกัน (Internal Defect Report ราย section + OEE รายเดือน)
@@ -55,6 +59,86 @@ async function pageAll(buildQuery, onProg) {
   }
 }
 const chunk = (arr, n = 120) => { const o = []; for (let i = 0; i < arr.length; i += n) o.push(arr.slice(i, i + n)); return o; };
+
+/* ── มินิกราฟ 12 เดือนท้ายแถว (inline SVG — 10+ แถว ลาก Recharts มาทุกแถวไม่คุ้ม · pattern เดียวกับ Spark ของ FactoryMap)
+   กติกาที่ตกลงกับ user (2026-08-25 "กราฟแบบไหนเหมาะ"):
+   - ปริมาณรายเดือน (ยอดผลิต/ของเสีย/DT/Cost) = แท่ง — ผลรวมของช่วงเวลา เส้นจะชวนตีความว่ามีค่าระหว่างเดือน
+   - อัตรา/% เทียบเป้า (OEE/PPM/KPI กรอกมือ) = เส้น + เส้นเป้าประ
+   - แกนเดือนต่อเนื่อง ม.ค.–ธ.ค. เสมอ (เดือนไม่มีข้อมูล = เว้น ไม่ข้ามเดือน)
+   - เดือนปัจจุบัน "ยังไม่จบ" = โปร่ง/จาง ห้ามดูเหมือนเดือนจบแล้ว
+   - สี: มีเป้า+ทิศทาง → เดือนผ่านเป้าเขียว/พลาดแดง · ไม่มีเป้า → สีกลางเดียว */
+const missTarget = (v, target, dir) => {
+  if (v == null || target == null || !dir) return null;
+  return dir === 'up' ? v < target : v > target;
+};
+function MiniChart({ vals, kind, target, dir, curIdx }) {
+  const W = 150, H = 30, PAD = 2, n = 12, step = W / n;
+  const nums = vals.filter(v => v != null && Number.isFinite(v));
+  if (!nums.length) return <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>·</span>;
+  const isBar = kind === 'bar';
+  const lo = isBar ? 0 : Math.min(...nums, target ?? Infinity);
+  const hi = Math.max(...nums, target ?? -Infinity, isBar ? 1 : -Infinity);
+  const span = hi - lo || 1;
+  const y = v => H - PAD - ((v - lo) / span) * (H - PAD * 2);
+  const colorOf = (v) => { const m = missTarget(v, target, dir); return m == null ? 'var(--accent)' : m ? '#ef4444' : '#22c55e'; };
+  const pts = vals.map((v, i) => (v == null ? null : { x: i * step + step / 2, y: y(v), v, i })).filter(Boolean);
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }} aria-hidden>
+      {target != null && <line x1={0} y1={y(target)} x2={W} y2={y(target)} stroke="#f59e0b" strokeWidth="1" strokeDasharray="4 3" opacity="0.8" />}
+      {isBar
+        ? pts.map(p => (
+          <rect key={p.i} x={p.i * step + 2} y={p.y} width={step - 4} height={Math.max(1.5, H - PAD - p.y)} rx="1.5"
+            fill={colorOf(p.v)} fillOpacity={p.i === curIdx ? 0.35 : 0.9}
+            stroke={p.i === curIdx ? colorOf(p.v) : 'none'} strokeDasharray={p.i === curIdx ? '2 2' : undefined} strokeWidth="1" />))
+        : (<>
+          <polyline points={pts.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.75" />
+          {pts.map(p => <circle key={p.i} cx={p.x} cy={p.y} r={p.i === curIdx ? 2.6 : 2} fill={p.i === curIdx ? 'transparent' : colorOf(p.v)} stroke={colorOf(p.v)} strokeWidth={p.i === curIdx ? 1.2 : 0} />)}
+        </>)}
+    </svg>
+  );
+}
+
+/* กราฟใหญ่ (คลิกจากแถว) — Recharts เต็มแกน + เส้นเป้า · ตัวเลขชุดเดียวกับตาราง ห้ามคำนวณใหม่ */
+function ChartModal({ c, curIdx, onClose }) {
+  const data = TH_M.map((m, i) => ({ m: m.replace('.', ''), v: c.vals[i] != null && Number.isFinite(c.vals[i]) ? +Number(c.vals[i]).toFixed(c.dec ?? 0) : null, i }));
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: '16px 18px', width: 'min(860px, 96vw)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+          <b style={{ fontSize: 14.5, color: 'var(--text)' }}>📈 {c.title}</b>
+          <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer' }}>✕</button>
+        </div>
+        <ResponsiveContainer width="100%" height={300}>
+          <ComposedChart data={data} margin={{ top: 22, left: 0, right: 12, bottom: 0 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="m" tick={{ fontSize: 12, fill: 'var(--text2)' }} />
+            <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={62} domain={c.kind === 'line' ? ['auto', 'auto'] : [0, 'auto']} />
+            {c.target != null && (
+              <ReferenceLine y={c.target} stroke="#f59e0b" strokeDasharray="6 4"
+                label={{ value: `เป้า ${c.dir === 'down' ? '≤' : '≥'} ${Number(c.target).toLocaleString(undefined, { maximumFractionDigits: 1 })}`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 12, fontWeight: 800 }} />
+            )}
+            {c.kind === 'bar' ? (
+              <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+                <LabelList dataKey="v" position="top" formatter={v => (v == null ? '' : Number(v).toLocaleString())} style={{ fontSize: 10.5, fontWeight: 700, fill: 'var(--text2)' }} />
+                {data.map(d => {
+                  const m = missTarget(d.v, c.target, c.dir);
+                  return <Cell key={d.i} fill={m == null ? 'var(--accent)' : m ? '#ef4444' : '#22c55e'} fillOpacity={d.i === curIdx ? 0.4 : 0.9} />;
+                })}
+              </Bar>
+            ) : (
+              <Line dataKey="v" type="monotone" stroke="var(--accent)" strokeWidth={2.4} connectNulls
+                isAnimationActive={false} dot={{ r: 3.5 }} label={{ position: 'top', fontSize: 10.5, fill: 'var(--text2)' }} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+          ตัวเลขชุดเดียวกับตาราง (นับเฉพาะกะปิดแล้ว){curIdx >= 0 ? ` · ${TH_M[curIdx]} ยังไม่จบเดือน (แสดงจาง)` : ''}
+          {c.target != null && c.dir ? ` · ${c.dir === 'up' ? 'เขียว = ≥ เป้า' : 'เขียว = ≤ เป้า'} · แดง = พลาดเป้า` : ''}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ช่องกรอกค่ารายเดือน — local state + commit ตอน blur/Enter (ไม่ยิง DB ทุก keystroke) */
 function CellInput({ value, onCommit, disabled }) {
@@ -282,16 +366,25 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const curMonthIdx = year === nowYear ? new Date().getMonth() : -1;
   const nf = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 }));
 
-  /* แถวของตาราง — เพิ่ม KPI ใหม่ = เพิ่ม entry ตรงนี้ */
+  /* แถวของตาราง — เพิ่ม KPI ใหม่ = เพิ่ม entry ตรงนี้
+     kind: bar = ปริมาณต่อเดือน · line = อัตรา/% (มินิกราฟ+กราฟใหญ่เลือกทรงตามนี้) */
   const ROWS = useMemo(() => [
-    { key: 'produce', label: 'ยอดผลิต (ชิ้น)', get: m => nf(m.produce) },
-    { key: 'ng',      label: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', get: m => nf(m.ng), warnPos: true },
-    { key: 'ppm',     label: 'Internal defect (PPM)', get: m => nf(m.ppm), warnPos: true },
-    { key: 'cost',    label: 'Cost of defect (บาท)', get: m => nf(m.cost), warnPos: true },
+    { key: 'produce', label: 'ยอดผลิต (ชิ้น)', get: m => nf(m.produce), val: m => (m.n ? m.produce : null), kind: 'bar' },
+    { key: 'ng',      label: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', get: m => nf(m.ng), warnPos: true, val: m => (m.n ? m.ng : null), kind: 'bar' },
+    { key: 'ppm',     label: 'Internal defect (PPM)', get: m => nf(m.ppm), warnPos: true, val: m => (m.n ? m.ppm : null), kind: 'line', dec: 0 },
+    { key: 'cost',    label: 'Cost of defect (บาท)', get: m => nf(m.cost), warnPos: true, val: m => (m.n ? m.cost : null), kind: 'bar' },
     { key: 'oee',     label: `OEE (%)${targetOee != null ? ` · เป้า ≥ ${targetOee.toFixed(1)}` : ''}`, get: m => nf(m.oee, 1),
-      yn: m => (m.oee == null || targetOee == null ? null : m.oee >= targetOee) },
-    { key: 'dt',      label: 'Downtime นอกแผน (นาที)', get: m => nf(m.dtMin), warnPos: true },
+      yn: m => (m.oee == null || targetOee == null ? null : m.oee >= targetOee),
+      val: m => (m.n ? m.oee : null), kind: 'line', target: targetOee, dir: 'up', dec: 1 },
+    { key: 'dt',      label: 'Downtime นอกแผน (นาที)', get: m => nf(m.dtMin), warnPos: true, val: m => (m.n ? m.dtMin : null), kind: 'bar' },
   ], [targetOee]);
+  const [chart, setChart] = useState(null); // payload กราฟใหญ่ { title, vals, kind, target, dir, dec }
+  const openRowChart = r => setChart({ title: r.label, vals: months.out.map(r.val), kind: r.kind, target: r.target ?? null, dir: r.dir ?? null, dec: r.dec });
+  const openDefChart = d2 => setChart({
+    title: d2.name + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
+    vals: Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null),
+    target: d2.target_value != null ? Number(d2.target_value) : null, dir: d2.direction || null,
+  });
 
   const scopeLabel = section
     ? section + (group ? ` › ${group}` : '')
@@ -455,7 +548,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>
             🤖 KPI คำนวณอัตโนมัติ — {scopeLabel}
           </div>
-          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1060 }}>
             <thead>
               <tr>
                 <th style={{ ...thSt, textAlign: 'left' }}>KPI</th>
@@ -465,6 +558,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                   </th>
                 ))}
                 <th style={{ ...thSt, color: 'var(--text)' }}>รวม/เฉลี่ย</th>
+                <th style={{ ...thSt, textAlign: 'center' }}>เทรนด์ (คลิกดูใหญ่)</th>
               </tr>
             </thead>
             <tbody>
@@ -483,6 +577,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                   <td style={{ ...tdSt, fontWeight: 800, color: 'var(--text)' }}>
                     {r.get(months.tot)}
                     {r.yn && months.tot.n ? (() => { const yn = r.yn(months.tot); return yn == null ? null : <b style={{ marginLeft: 4, color: yn ? '#22c55e' : '#ef4444' }}>{yn ? 'Y' : 'N'}</b>; })() : null}
+                  </td>
+                  <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
+                    onClick={() => openRowChart(r)}>
+                    <MiniChart vals={months.out.map(r.val)} kind={r.kind} target={r.target ?? null} dir={r.dir ?? null} curIdx={curMonthIdx} />
                   </td>
                 </tr>
               ))}
@@ -527,12 +625,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               {canManage ? ' — กด ＋ เพิ่ม KPI (เช่น DL ≤ 1.452% · Customer Satisfaction ≥ 95%)' : ''}
             </div>
           ) : (
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1000 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1160 }}>
               <thead>
                 <tr>
                   <th style={{ ...thSt, textAlign: 'left' }}>KPI</th>
                   {TH_M.map(m => <th key={m} style={thSt}>{m}</th>)}
                   <th style={{ ...thSt, color: 'var(--text)' }}>เฉลี่ย</th>
+                  <th style={{ ...thSt, textAlign: 'center' }}>เทรนด์</th>
                   {canManage && <th style={thSt} />}
                 </tr>
               </thead>
@@ -540,7 +639,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                 {CATS.filter(c => defs.some(d2 => d2.category === c.key)).map(c => (
                   [
                     <tr key={c.key}>
-                      <td colSpan={15 + (canManage ? 1 : 0)} style={{ ...tdSt, textAlign: 'left', fontWeight: 800, color: 'var(--text)', background: 'var(--bg2)' }}>{c.label}</td>
+                      <td colSpan={16 + (canManage ? 1 : 0)} style={{ ...tdSt, textAlign: 'left', fontWeight: 800, color: 'var(--text)', background: 'var(--bg2)' }}>{c.label}</td>
                     </tr>,
                     ...defs.filter(d2 => d2.category === c.key).map(d2 => {
                       const avg = manualAvg(d2);
@@ -568,6 +667,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             {avg == null ? '—' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             {ynT != null && <b style={{ marginLeft: 4, color: ynT ? '#22c55e' : '#ef4444' }}>{ynT ? 'Y' : 'N'}</b>}
                           </td>
+                          <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
+                            onClick={() => openDefChart(d2)}>
+                            <MiniChart vals={Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null)} kind="line"
+                              target={d2.target_value != null ? Number(d2.target_value) : null} dir={d2.direction || null} curIdx={curMonthIdx} />
+                          </td>
                           {canManage && (
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                               <button onClick={() => setEditDef(d2)} title="แก้นิยาม KPI" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
@@ -588,6 +692,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           </div>
         </div>
       )}
+
+      {chart && <ChartModal c={chart} curIdx={curMonthIdx} onClose={() => setChart(null)} />}
 
       {editDef && (
         <DefModal

@@ -18,6 +18,7 @@ import { loadPositions, positionLabel } from './utils/positions';   // ตำแ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
+import { liveChannel } from './utils/liveChannel';
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -57,13 +58,9 @@ const LineStock      = lazy(() => import('./pages/LineStock'));
 const CompanyCalendar = lazy(() => import('./pages/CompanyCalendar'));
 const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
-const PMSetup     = lazy(() => import('./pages/PMSetup'));
-const PMCheckData = lazy(() => import('./pages/PMCheckData'));
-const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const Energy = lazy(() => import('./pages/Energy'));
-const PmForecast  = lazy(() => import('./pages/PmForecast'));
-const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const DailyChecker = lazy(() => import('./pages/DailyChecker'));
@@ -80,6 +77,7 @@ const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
+const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
@@ -102,6 +100,8 @@ export const NAV_ITEMS = [
   { to: '/dept-dashboard', icon: '📋', label: 'Dashboard ส่วนงาน',  group: 'ภาพรวม' },
   { to: '/flow-tower', icon: '🔗', label: 'สายธารความต้องการ',   group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
+  // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
+  { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอไลน์)',  group: 'ภาพรวม' },
   // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
@@ -130,13 +130,11 @@ export const NAV_ITEMS = [
   { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - Store' },
 
   { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-forecast', icon: '🔧', label: 'PM ล่วงหน้า (Planner)',            group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-coordination', icon: '🗓️', label: 'แผนประสานงาน PM (แจ้งผลิต)',   group: 'การตรวจสอบและซ่อมบำรุง' },
+  // 🔧 ศูนย์ PM — ยุบ 5 หน้า (ตรวจ/แผน/ล่วงหน้า/ประสานงาน/ตั้งค่า) เป็นแท็บใน PmHub
+  //    route เดิมทั้ง 5 redirect เข้าแท็บ · ไม่อยู่ในเมนู (pattern เดียวกับ Daily Checker)
+  { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
   { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
   { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
@@ -913,8 +911,7 @@ function NotificationBell({ userId, role }) {
   useEffect(() => {
     load();
     if (!userId) return;
-    const ch = supabase
-      .channel(`notif-${userId}`)
+    const ch = liveChannel(supabase, `notif-${userId}`)
       // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
       .subscribe();
@@ -1510,6 +1507,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
               } />
+              <Route path="/line-oee" element={
+                <RoleRoute path="/line-oee" userRole={role}><LineOeeBoard /></RoleRoute>
+              } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
               } />
@@ -1664,21 +1664,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/company-calendar" element={
                 <RoleRoute path="/company-calendar" userRole={role}><CompanyCalendar /></RoleRoute>
               } />
-              <Route path="/pm-setup"    element={
-                <RoleRoute path="/pm-setup" userRole={role}><PMSetup /></RoleRoute>
+              {/* 🔧 ศูนย์ PM — 5 หน้างานซ่อมบำรุงตามแผนเป็นแท็บในหน้าเดียว (2026-08-26 · feedback หน้างาน)
+                  สิทธิ์ piggyback บน page:/pm-check‖/pm-schedule‖/pm-forecast‖/pm-coordination‖/pm-setup
+                  (permissions.js) — ไม่ต้อง seed page:/pm · แท็บโผล่ตามสิทธิ์ย่อยของแต่ละหน้า */}
+              <Route path="/pm" element={
+                <RoleRoute path="/pm" userRole={role}><PmHub /></RoleRoute>
               } />
-              <Route path="/pm-check"    element={
-                <RoleRoute path="/pm-check" userRole={role}><PMCheckData /></RoleRoute>
-              } />
-              <Route path="/pm-schedule" element={
-                <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
-              } />
-              <Route path="/pm-coordination" element={
-                <RoleRoute path="/pm-coordination" userRole={role}><PmCoordination /></RoleRoute>
-              } />
-              <Route path="/pm-forecast" element={
-                <RoleRoute path="/pm-forecast" userRole={role}><PmForecast /></RoleRoute>
-              } />
+              {/* ⤵ route เก่าที่ยุบเข้าแท็บแล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้ · ห้าม render ซ้ำ 2 ทาง) */}
+              <Route path="/pm-check"        element={<Navigate to="/pm?tab=check" replace />} />
+              <Route path="/pm-schedule"     element={<Navigate to="/pm?tab=plan" replace />} />
+              <Route path="/pm-forecast"     element={<Navigate to="/pm?tab=forecast" replace />} />
+              <Route path="/pm-coordination" element={<Navigate to="/pm?tab=coord" replace />} />
+              <Route path="/pm-setup"        element={<Navigate to="/pm?tab=setup" replace />} />
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
@@ -1870,8 +1867,7 @@ export default function App() {
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
-    const ch = supabase
-      .channel('role-permissions-sync')
+    const ch = liveChannel(supabase, 'role-permissions-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
         await loadPermissions(true);
         setPermsVersion(v => v + 1);

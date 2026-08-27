@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { clusterNotes } from '../utils/textCluster';
 
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
@@ -33,12 +33,23 @@ export function classifyAbc(items, valueOf) {
   });
 }
 
+/* 💰 มูลค่าเป็นบาทต่อแถว (`r.baht`) — optional
+   `baht == null` = **ตีมูลค่าไม่ได้** (ไลน์ไม่มี activity rate / พาร์ทไม่มีต้นทุน)
+   ห้ามตีเป็น 0 เพราะจะทำให้พาเรโตเรียงตามเงินชี้เป้าผิด → นับแยกเป็น `unpriced` แล้วบอกบนจอ */
+const sumBaht = (recs) => {
+  let baht = 0, unpriced = 0;
+  recs.forEach(r => { if (r?.baht == null) unpriced++; else baht += Number(r.baht) || 0; });
+  return { baht, unpriced };
+};
+
 const groupBy = (records, keyOf) => {
   const m = {};
   records.forEach(r => {
     const k = keyOf(r) || '(ไม่ระบุ)';
-    (m[k] || (m[k] = { name: k, value: 0, count: 0 })).value += r.value || 0;
-    m[k].count++;
+    const g = m[k] || (m[k] = { name: k, value: 0, count: 0, baht: 0, unpriced: 0 });
+    g.value += r.value || 0;
+    g.count++;
+    if (r.baht == null) g.unpriced++; else g.baht += Number(r.baht) || 0;
   });
   return Object.values(m);
 };
@@ -46,14 +57,27 @@ const groupBy = (records, keyOf) => {
 export default function ParetoAbcChart({
   title, records = [], dims = [], unit, height = 240,
   emptyText = 'ไม่มีข้อมูล', sectionStyle, titleStyle,
+  /* focus = สั่งเปิดหน้าต่างเจาะจากภายนอก (เช่นการ์ด "💰 มูลค่าดาวไทม์" กด Top-5 แล้วเจาะทันที)
+     รูปแบบ { cat, measure?, dim?, n } — `n` เป็น nonce: กดชื่อเดิมซ้ำต้องเปิดใหม่ได้
+     ⚠️ ตั้ง measure ให้ตรงกับสิ่งที่คนกดมา (กดจากการ์ดเงิน = ต้องได้แกนบาท ไม่งั้นเรียงคนละชุดกับที่เห็น) */
+  focus = null,
 }) {
   const [open, setOpen] = useState(false);
   const [drill, setDrill] = useState(null);           // ชื่อประเภทที่กำลังเจาะ
   // ดีฟอลต์ = มิติปกติตัวแรก (มิติ cluster ถูกเลือกให้อัตโนมัติเฉพาะตอนเจาะ "อื่นๆ")
   const [dimKey, setDimKey] = useState(dims.find(d => !d.cluster)?.key || dims[0]?.key || null);
+  /* แกนที่ใช้จัดอันดับ/แบ่ง ABC — 'value' (นาที/ชิ้น) หรือ 'baht'
+     ⚠️ default = 'value' โดยตั้งใจ: ตัวเลขที่คนหน้างานคุ้นเคยต้องไม่เปลี่ยนเองหลัง deploy
+     แต่ "เรียงตามเงิน" คือคำถามของผู้บริหาร — 5 นาทีของไลน์แพงอาจสำคัญกว่า 30 นาทีของไลน์ถูก */
+  const [measure, setMeasure] = useState('value');
+  const hasMoney = useMemo(() => records.some(r => r?.baht != null), [records]);
+  const money = hasMoney && measure === 'baht';
+  const valOf = (d) => (money ? (d.baht || 0) : (d.value || 0));
+  const unitOf = money ? 'บาท' : unit;
 
-  const rows = useMemo(() => classifyAbc(groupBy(records, r => r.cat), d => d.value), [records]);
+  const rows = useMemo(() => classifyAbc(groupBy(records, r => r.cat), valOf), [records, money]); // eslint-disable-line react-hooks/exhaustive-deps
   const total = rows.reduce((s, d) => s + d._val, 0);
+  const recTotals = useMemo(() => sumBaht(records), [records]);
   const groups = useMemo(() => {
     const g = { A: [], B: [], C: [] };
     rows.forEach(r => g[r._cls].push(r));
@@ -68,15 +92,18 @@ export default function ParetoAbcChart({
     ? clusterNotes(drillRecs, r => r[dimKey], r => r.value) : null), [drillDim, drillRecs, dimKey]);
   const drillRows = useMemo(() => {
     if (!dimKey) return [];
-    if (!drillCluster) return classifyAbc(groupBy(drillRecs, r => r[dimKey]), d => d.value);
+    if (!drillCluster) return classifyAbc(groupBy(drillRecs, r => r[dimKey]), valOf);
     // แถวที่ไม่ได้กรอกหมายเหตุนับรวมในพาเรโตด้วย — ถ้ามันขึ้นกลุ่ม A แปลว่าปัญหาอยู่ที่วินัยการบันทึก
+    // มูลค่าเป็นบาทของแต่ละกลุ่มคำ = รวมจาก `recs` ของกลุ่มนั้น (clusterNotes คืนแถวดิบมาให้)
     const m = drillCluster.missing;
-    const items = m.count > 0
-      ? [...drillCluster.clusters, { name: '(ไม่ได้กรอกหมายเหตุ)', value: m.value, count: m.count, _noNote: true }]
-      : drillCluster.clusters;
-    return classifyAbc(items, d => d.value);
-  }, [drillRecs, dimKey, drillCluster]);
-  const drillTotal = drillRecs.reduce((s, r) => s + (r.value || 0), 0);
+    const items = [
+      ...drillCluster.clusters.map(c => ({ ...c, ...sumBaht(c.recs || []) })),
+      ...(m.count > 0 ? [{ name: '(ไม่ได้กรอกหมายเหตุ)', value: m.value, count: m.count, _noNote: true, ...sumBaht(m.recs || []) }] : []),
+    ];
+    return classifyAbc(items, valOf);
+  }, [drillRecs, dimKey, drillCluster, money]); // eslint-disable-line react-hooks/exhaustive-deps
+  const drillTotal = drillRecs.reduce((s, r) => s + (money ? (Number(r.baht) || 0) : (r.value || 0)), 0);
+  const drillTotals = useMemo(() => sumBaht(drillRecs), [drillRecs]);
 
   // ประเภทที่ "ไม่บอกอะไร" (อื่นๆ/ไม่ระบุ) — ถ้าติดกลุ่ม A ต้องชวนให้ไปเจาะ ไม่ปล่อยเป็นอันดับ 1 ลอยๆ
   const noteDim = dims.find(d => d.cluster) || null;
@@ -91,6 +118,17 @@ export default function ParetoAbcChart({
     else if (!dimKey) setDimKey((dims.find(d => !d.cluster) || dims[0])?.key || null);
   };
 
+  /* เปิดการเจาะจากภายนอกตาม prop focus — ผูกกับ n (nonce) เพื่อให้กดชื่อเดิมซ้ำแล้วเปิดใหม่ได้
+     ⚠️ ประเภทที่ส่งมาต้องมีอยู่จริงในชุดข้อมูล ไม่งั้นได้หน้าต่างเปล่า → เช็คก่อนเปิด */
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (!focus?.cat || !dims.length) return;
+    if (!records.some(r => (r.cat || '(ไม่ระบุ)') === focus.cat)) return;
+    if (focus.measure === 'baht' && hasMoney) setMeasure('baht');
+    else if (focus.measure === 'value') setMeasure('value');
+    openDrill(focus.cat, focus.dim);
+  }, [focusN]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const tip = ({ active, payload }) => {
     if (!active || !payload?.length) return null;
     const d = payload[0].payload; const m = ABC[d._cls];
@@ -98,7 +136,7 @@ export default function ParetoAbcChart({
       <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `3px solid ${m.color}`, borderRadius: 7, padding: '8px 11px', fontSize: 12, maxWidth: 290 }}>
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>{d.name}</div>
         <div style={{ color: m.color, fontWeight: 700 }}>กลุ่ม {m.label} · {m.desc}</div>
-        <div style={{ color: 'var(--text2)', marginTop: 3 }}>{fmt(d._val)} {unit} · <b>{d._pct.toFixed(1)}%</b> ของทั้งหมด · {d.count} ครั้ง</div>
+        <div style={{ color: 'var(--text2)', marginTop: 3 }}>{fmt(d._val)} {unitOf} · <b>{d._pct.toFixed(1)}%</b> ของทั้งหมด · {d.count} ครั้ง</div>
         <div style={{ color: 'var(--muted)' }}>สะสมถึงรายการนี้ {d._cum.toFixed(1)}%</div>
         {dims.length > 0 && <div style={{ color: 'var(--accent)', marginTop: 4, fontWeight: 700 }}>🔍 คลิกเพื่อเจาะลึก</div>}
       </div>
@@ -126,7 +164,8 @@ export default function ParetoAbcChart({
     const nameShown = showName || cfg.name;
     return (
       <div key={i} onClick={() => dims.length && openDrill(d.name)}
-        title={`${d.name} · ${fmt(d._val)} ${unit} (${d._pct.toFixed(1)}%) · ${d.count} ครั้ง · สะสม ${d._cum.toFixed(1)}%`}
+        title={`${d.name} · ${fmt(d._val)} ${unitOf} (${d._pct.toFixed(1)}%) · ${d.count} ครั้ง · สะสม ${d._cum.toFixed(1)}%`
+          + (hasMoney ? ` · ${money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}${d.unpriced ? ` · ตีมูลค่าไม่ได้ ${d.unpriced} รายการ` : ''}` : '')}
         style={{ display: 'grid', gridTemplateColumns: nameShown ? `minmax(0, ${compact ? '38%' : '30%'}) 1fr auto` : '1fr auto',
           alignItems: 'center', gap: 8, cursor: dims.length ? 'pointer' : 'default',
           padding: d._cls === 'A' ? '3px 0' : '1.5px 0' }}>
@@ -154,7 +193,7 @@ export default function ParetoAbcChart({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {[...groups.A, ...groups.B].map((d, i) => barRow(d, i, { compact: true }))}
         {groups.C.length > 0 && (
-          <div onClick={() => setOpen(true)} title={`กลุ่ม C ${groups.C.length} รายการ · ${fmt(cSum)} ${unit} — กดดูรายละเอียด`}
+          <div onClick={() => setOpen(true)} title={`กลุ่ม C ${groups.C.length} รายการ · ${fmt(cSum)} ${unitOf} — กดดูรายละเอียด`}
             style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 38%) 1fr auto', alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
             <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>C · {groups.C.length} รายการ (หางยาว)</span>
             <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: 6 }}>
@@ -179,7 +218,7 @@ export default function ParetoAbcChart({
       {['A', 'B', 'C'].map(k => {
         const sum = groups[k].reduce((s, d) => s + d._val, 0);
         return sum > 0 ? <div key={k} style={{ width: `${sum / total * 100}%`, background: ABC[k].color, opacity: OPA[k] }}
-          title={`${k}: ${groups[k].length} รายการ · ${fmt(sum)} ${unit}`} /> : null;
+          title={`${k}: ${groups[k].length} รายการ · ${fmt(sum)} ${unitOf}`} /> : null;
       })}
     </div>
   );
@@ -197,9 +236,32 @@ export default function ParetoAbcChart({
     <div style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={titleStyle}>{title}</div>
+        {/* 💰 สลับแกนจัดอันดับ นาที ↔ บาท — "5 นาทีของไลน์แพง อาจสำคัญกว่า 30 นาทีของไลน์ถูก"
+            เปลี่ยนทั้งลำดับและการแบ่งกลุ่ม ABC (ไม่ใช่แค่โชว์ตัวเลขเพิ่ม) */}
+        {hasMoney && (
+          <div style={{ flexShrink: 0, display: 'flex', gap: 4, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: 2 }}>
+            {[['value', unit], ['baht', '฿ บาท']].map(([k, lb]) => (
+              <button key={k} onClick={() => setMeasure(k)}
+                title={k === 'baht' ? 'เรียงตามมูลค่าความสูญเสีย (นาที/60 × activity rate ของไลน์)' : `เรียงตาม${unit}`}
+                style={{ background: measure === k ? 'var(--accent)' : 'transparent', color: measure === k ? '#04140a' : 'var(--text2)',
+                  border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 800, padding: '3px 9px', cursor: 'pointer' }}>{lb}</button>
+            ))}
+          </div>
+        )}
         <button onClick={() => setOpen(true)} title="ขยายดูทุกรายการ"
           style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
       </div>
+      {/* มูลค่ารวม + ส่วนที่ตีมูลค่าไม่ได้ — ห้ามเงียบ ไม่งั้นยอดเงินดูเหมือนครบทั้งที่ขาด */}
+      {hasMoney && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.55 }}>
+          💰 มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} บาท</b>
+          {recTotals.unpriced > 0 && (
+            <span style={{ color: '#f59e0b' }}> · ⚠ ตีมูลค่าไม่ได้ {recTotals.unpriced} รายการ
+              (ไลน์ยังไม่ตั้ง cost center / activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate)</span>
+          )}
+          {money && <span> · กำลังเรียงตามเงิน — ลำดับและกลุ่ม ABC เปลี่ยนตามมูลค่า ไม่ใช่{unit}</span>}
+        </div>
+      )}
       {strip}
       {/* "อื่นๆ / ไม่ระบุ" ติดกลุ่ม A = อันดับต้นๆ แต่บอกอะไรไม่ได้ → ชี้ทางไปดูหมายเหตุจริงทันที */}
       {vagueA.map((d, i) => (
@@ -227,7 +289,7 @@ export default function ParetoAbcChart({
         {groups.A.map((d, i) => (
           <span key={i} onClick={() => dims.length && openDrill(d.name)}
             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${ABC.A.color}1e`, border: `1px solid ${ABC.A.color}55`, color: ABC.A.color, fontWeight: 700, cursor: dims.length ? 'pointer' : 'default' }}>
-            {d.name}: {fmt(d._val)} {unit} ({d._pct.toFixed(0)}%)
+            {d.name}: {fmt(d._val)} {unitOf} ({d._pct.toFixed(0)}%)
           </span>
         ))}
       </div>
@@ -240,7 +302,7 @@ export default function ParetoAbcChart({
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                  ABC Analysis · รวม {fmt(total)} {unit} · {rows.length} รายการ — <b style={{ color: ABC.A.color }}>กลุ่ม A {groups.A.length} รายการ = {(groups.A.reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%</b>
+                  ABC Analysis · รวม {fmt(total)} {unitOf} · {rows.length} รายการ — <b style={{ color: ABC.A.color }}>กลุ่ม A {groups.A.length} รายการ = {(groups.A.reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%</b>
                 </div>
               </div>
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
@@ -251,7 +313,7 @@ export default function ParetoAbcChart({
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                     <th style={thL}>#</th><th style={thL}>รายการ</th><th style={thC}>กลุ่ม</th>
-                    <th style={thR}>{unit}</th><th style={thR}>ครั้ง</th><th style={thR}>%</th><th style={thR}>สะสม %</th>
+                    <th style={thR}>{unitOf}</th>{hasMoney && <th style={thR}>{money ? unit : 'บาท'}</th>}<th style={thR}>ครั้ง</th><th style={thR}>%</th><th style={thR}>สะสม %</th>
                   </tr></thead>
                   <tbody>
                     {rows.map((d, i) => (
@@ -261,6 +323,7 @@ export default function ParetoAbcChart({
                         <td style={{ padding: '6px 7px', fontWeight: d._cls === 'A' ? 700 : 400 }}>{d.name}</td>
                         <td style={{ padding: '6px 7px', textAlign: 'center' }}><span style={clsChip(d._cls)}>{d._cls}</span></td>
                         <td style={{ padding: '6px 7px', textAlign: 'right', fontWeight: 700 }}>{fmt(d._val)}</td>
+                      {hasMoney && <td style={{ padding: '6px 7px', textAlign: 'right', color: 'var(--text2)' }}>{fmt(money ? d.value : d.baht)}{d.unpriced ? ' *' : ''}</td>}
                         <td style={{ padding: '6px 7px', textAlign: 'right', color: 'var(--muted)' }}>{d.count}</td>
                         <td style={{ padding: '6px 7px', textAlign: 'right' }}>{d._pct.toFixed(1)}%</td>
                         <td style={{ padding: '6px 7px', textAlign: 'right', color: 'var(--muted)' }}>{d._cum.toFixed(1)}%</td>
@@ -287,7 +350,8 @@ export default function ParetoAbcChart({
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>🔍 เจาะลึก · {title}</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{drill}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                  {fmt(drillTotal)} {unit} · {drillRecs.length} ครั้ง · {(drillTotal / total * 100).toFixed(1)}% ของทั้งหมด
+                  {fmt(drillTotal)} {unitOf} · {drillRecs.length} ครั้ง · {(drillTotal / total * 100).toFixed(1)}% ของทั้งหมด
+                        {hasMoney && <> · <b style={{ color: '#fbbf24' }}>{money ? `${fmt(drillRecs.reduce((s, r) => s + (r.value || 0), 0))} ${unit}` : `${fmt(drillTotals.baht)} บาท`}</b>{drillTotals.unpriced > 0 && <span style={{ color: '#f59e0b' }}> · ตีมูลค่าไม่ได้ {drillTotals.unpriced} รายการ</span>}</>}
                 </div>
               </div>
               <button onClick={() => setDrill(null)} style={closeBtn}>✕</button>
@@ -332,7 +396,8 @@ export default function ParetoAbcChart({
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: drillCluster ? 'normal' : 'nowrap' }}>
                           {d._noNote ? '⚠️ ' : ''}{d.name}
                         </span>
-                        <span style={{ fontSize: 12.5, fontWeight: 800, color: ABC[d._cls].color, whiteSpace: 'nowrap' }}>{fmt(d._val)} {unit}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: ABC[d._cls].color, whiteSpace: 'nowrap' }}>{fmt(d._val)} {unitOf}
+                          {hasMoney && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>{money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}</span>}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', width: 76, textAlign: 'right' }}>{d._pct.toFixed(1)}% · {d.count} ครั้ง</span>
                       </div>
                       {/* กลุ่มคำ: บอกว่ารวมข้อความที่เขียนต่างกันกี่แบบ + ตัวอย่าง — โปร่งใสว่าจับกลุ่มอะไรเข้ามา */}
@@ -357,7 +422,7 @@ export default function ParetoAbcChart({
                 {[...drillRecs].sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 40).map((r, i) => (
                   <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '6px 9px', fontSize: 11.5 }}>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <b style={{ color: ABC.A.color, whiteSpace: 'nowrap' }}>{fmt(r.value)} {unit}</b>
+                      <b style={{ color: ABC.A.color, whiteSpace: 'nowrap' }}>{fmt(r.value)} {unit}{r.baht != null && <span style={{ color: '#fbbf24', marginLeft: 5 }}>· {fmt(r.baht)} บาท</span>}</b>
                       {dims.filter(dm => !dm.cluster).map(dm => r[dm.key] ? (
                         <span key={dm.key} style={{ color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                           <span style={{ color: 'var(--muted)' }}>{dm.label}</span> {r[dm.key]}

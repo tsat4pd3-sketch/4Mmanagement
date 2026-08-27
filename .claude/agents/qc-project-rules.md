@@ -55,6 +55,13 @@ model: inherit
   แล้วเครื่องค้างในแท็บนั้นถาวร — เคยเกิด 24 แถว) ต้องใช้ `findChecklist(...)` ตอนอ่าน
   (CLAUDE.md "กฎเหล็ก — checklist เกิดตอนบันทึกเท่านั้น")
   · grep: `getOrCreateChecklist` ใน `src/` แล้วดูว่าอยู่ใน handler บันทึกจริงหรือ effect ตอนเปิดดู
+- **B6** subscribe realtime (`postgres_changes`) ต้องผ่าน **`liveChannel(client, 'ชื่อ')`**
+  ห้ามเรียก `client.channel('ชื่อคงที่')` ตรงๆ — `channel()` dedupe ตาม topic + `removeChannel()` เป็น async
+  (teardown หลัง server ack) → effect รอบใหม่ได้ channel เก่าที่ยังไม่ถูกถอด แล้ว `.on()` push binding ทบไปเรื่อยๆ
+  → หน่วงขึ้นทุกครั้งที่ effect re-run จนค้าง (เจอจริง 2026-08-26 หน้า Management)
+  (CLAUDE.md "กฎเหล็ก — subscribe realtime ต้องผ่าน liveChannel")
+  · grep: `\.channel\(` ใน `src/` — ทุกตัวที่ไม่ผ่าน `liveChannel` = ผิด
+  · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
@@ -104,6 +111,11 @@ model: inherit
   ทำแล้ว: operator, LineSetup (ห้ามลบผังยืมจากไลน์แม่), ProductMaster (guard รูปแชร์), QAInspectionSetup,
   PMSetup, SignatureModal — จุดอัปโหลดใหม่ที่ไม่ลบของเก่า = ไฟล์กำพร้าสะสม
 - **E3** GIF cap ≤ 2MB ต้องยังอยู่**ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) — ห้ามมีใครถอดออก
+- **E4** ทุกจุดที่รับไฟล์รูปจากผู้ใช้ต้องผ่าน **`toDecodableImage()`** (`src/utils/heicToJpeg.js`) ก่อน decode/บีบ
+  — กล้องมือถือถ่ายเป็น HEIC/HEIF ซึ่ง Chrome อ่านไม่ได้ · grep: `imageCompression(` / `new Image()` / `createImageBitmap(`
+  ที่รับไฟล์จาก `<input type="file">` แล้ว**ไม่มี `toDecodableImage` นำหน้า** = ผิด · ห้ามเขียนตัวเช็ค/แปลง HEIC เองซ้ำ
+  · `heic2any` ต้อง **dynamic import เท่านั้น** (static = bundle หลักบวม 1.35MB) · ข้อความ error เรื่อง decode
+  ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **F1** marker บนผังไลน์ = วงกลม+ป้ายใต้เท่านั้น (ห้ามกล่องเหลี่ยม) · สูตร MK สเกลตาม

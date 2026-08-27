@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -491,10 +492,12 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleUploadImage = async (e) => {
-    const file = e.target.files[0];
+    let file = e.target.files[0];
     if (!file) return;
     try {
       setIsUploading(true);
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อนทุกอย่าง เพื่อให้ ext/ชนิดที่ derive ต่อจากนี้ถูกต้องตาม
+      file = await toDecodableImage(file);
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;

@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -10,13 +11,17 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
+import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
+import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
+import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -52,13 +57,84 @@ const CAT = {
   down: { color: '#ef4444', label: 'Downtime', blink: true },
   idle: { color: '#6b7280', label: 'ไม่มีแผน/ปิดกะ' },
   waiting: { color: '#38bdf8', label: 'เปิดกะ · ยังไม่มี order' },
+  busy: { color: '#38bdf8', label: 'กำลังทำ PM' },   // งานตามแผนที่กำลังทำอยู่ — ไม่ใช่ alarm ห้ามกระพริบ
 };
 
 // นิยาม metric แต่ละตัว — value(ค่าเรียงอันดับ) · text(บนกรอบ) · cat(หมวดสี) · worstFirst(เรียง side panel)
 /** % เปลี่ยนแปลงพลังงานเทียบเดือนก่อน — ต้องมีฐานจริงถึงจะเทียบ (0 = ไม่มีข้อมูล ไม่ใช่ "ไม่เปลี่ยน") */
 const energyDelta = (s) => (s.kwhPrev ? deltaPct(s.kwh, s.kwhPrev) : null)
 
+/* ── 🚦 สุขภาพรวม (แท็บ default · 2026-08-26 คำสั่ง user "ทุกอย่างปกติก็เขียว ไม่ปกติก็แล้วแต่สีที่กำหนด
+   ส่วนแท็บอื่นดูเรื่องของตัวเองพอ") — pure functions ระดับ module ให้ METRICS เรียกได้
+   ⚠️ เกณฑ์ทุกตัว "ยืม" จาก metric เจ้าของเรื่อง (pace 95/80 · NG 20 · PM overdue/dueSoon · คน 80)
+      ห้ามตั้งเกณฑ์ชุดใหม่ — ไม่งั้นแท็บรวมกับแท็บเจาะตอบไม่ตรงกัน */
+const HEALTH_RANK = { down: 4, bad: 3, ok: 2, good: 1, waiting: 1, idle: 0 };
+// โซนสนับสนุน (MTN/utility/คลัง/แม่พิมพ์) — ย้ายขึ้นมาจาก component (ใช้แค่ field บน st · pure)
+const facHealthOf = (st) => {
+  if (st.storeZone) return st.storeZone.cat;   // 🏬 โซนคลัง: แดง "นิ่ง" = ต่ำกว่า Min/ล้นความจุ (งานคลังไม่ใช่ alarm เครื่องหยุด — ห้ามกระพริบ)
+  if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
+  return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
+};
+const facHealthTextOf = (st) => {
+  if (st.storeZone) return st.storeZone.text;
+  if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
+  if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
+  if (st.dtActive) return '🔴 หยุด';
+  if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
+  if (st.pmDueSoon) return `PM ใกล้ครบ ${st.pmDueSoon}`;
+  return '🔧 ปกติ';
+};
+// ไลน์ผลิต — รวมทุกสัญญาณ เอาตัวแย่สุดตัดสินสี · ข้อความต้องบอก "เหตุผล" เสมอ ห้ามให้เดาจากสี
+const prodHealthSignals = (s) => {
+  const sig = [];
+  if (s.dtActive) sig.push({ cat: 'down', txt: `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` });
+  if (s.supAtRisk) sig.push({ cat: 'down', txt: '⚠ utility ที่จ่ายไลน์กำลังซ่อม' });
+  if (s.target > 0 && s.onTimeTarget >= 1) {
+    const p = s.actual / s.onTimeTarget * 100;   // เกณฑ์เดียวกับแท็บยอดผลิต (≥95 เขียว / ≥80 เหลือง)
+    if (p < 80) sig.push({ cat: 'bad', txt: `ตามหลังจังหวะ ${Math.round(p)}%` });
+    else if (p < 95) sig.push({ cat: 'ok', txt: `หลุดจังหวะ ${Math.round(p)}%` });
+  }
+  if (s.ng >= 20) sig.push({ cat: 'bad', txt: `NG ${s.ng}` });        // เกณฑ์เดียวกับแท็บของเสีย
+  else if (s.ng > 0) sig.push({ cat: 'ok', txt: `NG ${s.ng}` });
+  /* ⚠️ PM (ช่าง) กับ AM (ผลิตตรวจเอง) แยกกันเสมอ — คนละคนรับผิดชอบ รวมเป็นก้อนเดียวแล้วตอบไม่ได้ว่าใครต้องไปทำ
+     "กำลังทำ PM อยู่" ไม่ใช่ปัญหา แต่ต้องเห็นบนป้าย (ไม่งั้นคนอ่านคิดว่าไลน์หยุดเพราะเสีย) */
+  if (s.pmBusy) sig.push({ cat: 'good', txt: '🔧 กำลังทำ PM' });
+  if (s.pmOverdue) sig.push({ cat: 'bad', txt: `PM เกิน ${s.pmOverdue}` });
+  else if (s.pmDueSoon) sig.push({ cat: 'ok', txt: `PM ใกล้ครบ ${s.pmDueSoon}` });
+  if (s.amOverdue) sig.push({ cat: 'bad', txt: `AM เกิน ${s.amOverdue}` });
+  else if (s.amDueSoon) sig.push({ cat: 'ok', txt: `AM ใกล้ครบ ${s.amDueSoon}` });
+  if (s.hasOpen && s.headTotal > 0) {
+    const pp = s.present / s.headTotal * 100;    // เกณฑ์ "แย่" ของแท็บคน (<80)
+    if (pp < 80) sig.push({ cat: 'ok', txt: `คนมา ${s.present}/${s.headTotal}` });
+  }
+  return sig.sort((a, b) => HEALTH_RANK[b.cat] - HEALTH_RANK[a.cat]);
+};
+const prodHealthCat = (s) => {
+  const sig = prodHealthSignals(s);
+  if (!sig.length) return s.hasOpen ? 'good' : 'idle';
+  return sig[0].cat;
+};
+const prodHealthText = (s) => {
+  const sig = prodHealthSignals(s);
+  if (!sig.length) return s.hasOpen ? '✓ ปกติ' : '⏸ ยังไม่เปิดกะ';
+  const t = sig.slice(0, 2).map(x => x.txt).join(' · ');
+  return sig.length > 2 ? `${t} +${sig.length - 2}` : t;   // เกิน 2 เหตุ = นับบอก ห้ามตัดเงียบ
+};
+
 const METRICS = {
+  /* 🚦 แท็บ default — ตอบ "ทั้งโรงงานปกติไหม" ในแวบเดียว: เขียวหมด = จบ · ผิดปกติ = สีตามเรื่องของมัน
+     + ข้อความบอกเหตุผล · โซนสนับสนุนโชว์ด้วย (นี่คือบ้านของภาพรวม) · แท็บอื่น = มุมเจาะรายเรื่อง */
+  health: {
+    label: '🚦 ปกติ/ผิดปกติ', desc: true,
+    value: s => HEALTH_RANK[s.isFac ? facHealthOf(s) : prodHealthCat(s)] || 0,
+    cat: s => (s.isFac ? facHealthOf(s) : prodHealthCat(s)),
+    text: s => (s.isFac ? facHealthTextOf(s) : prodHealthText(s)),
+    short: s => {
+      if (s.isFac) return facHealthOf(s) === 'good' ? '' : facHealthTextOf(s);
+      const sig = prodHealthSignals(s);
+      return sig.length ? sig[0].txt : (s.hasOpen ? '✓' : '');
+    },
+  },
   /* ⚡ พลังงานไฟฟ้า — ทีมขอ "show ค่า kWh บริเวณ Line บนผัง อยากดูละเอียดค่อยกดเข้าไป"
      เฟส 1 ตัวเลขมาจากการกรอกมือรายเดือนที่ /energy → ป้ายต้องบอกที่มา ห้ามดูเหมือนค่าที่วัดสด
      สี = เทียบเดือนก่อน (ลดลง=เขียว) · ไม่มีฐานเทียบ = เทา ไม่ใช่เขียว
@@ -100,13 +176,13 @@ const METRICS = {
     label: '🔧 Downtime', worstFirst: true, desc: true, facilityNA: true,
     // sidebar อันดับ = สะสมทั้งวันงาน (นอกแผน + รวมเวลาที่กำลังหยุด)
     value: s => s.dtMin,
-    text: s => s.dtActive ? `🔴 หยุด ${s.dtMin} น.` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
+    text: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
     cat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMin === 0 ? 'idle' : s.dtMin === 0 ? 'good' : s.dtMin < 30 ? 'ok' : 'bad',
     // สีบนแผนที่ = downtime "สะสมเฉพาะชั่วโมงปัจจุบัน" (รีเซ็ตทุกต้นชั่วโมง) — ≤5น.เขียว · ≤15น.เหลือง · >15น.แดง
     //   กำลังหยุดอยู่ (ยังไม่กลับมารัน) = แดงต่อเนื่อง · เพิ่งกลับมารัน = คิดตามนาทีที่หยุดในชั่วโมงนี้
     mapCat: s => s.dtActive ? 'down' : !s.hasOpen && s.dtMinHour === 0 ? 'idle' : s.dtMinHour <= 5 ? 'good' : s.dtMinHour <= 15 ? 'ok' : 'bad',
-    mapText: s => s.dtActive ? `🔴 หยุด ${s.dtMinHour} น.` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
-    short: s => s.dtActive ? `🔴 ${s.dtMinHour}น.` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
+    mapText: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour} น./ชม.นี้` : (s.hasOpen ? '✓ ปกติ' : ''),
+    short: s => s.dtActive ? `🔴 ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
     label: '🚫 ของเสีย', worstFirst: true, desc: true, facilityNA: true,
@@ -138,12 +214,29 @@ const METRICS = {
       return s.stationTotal > 0 ? `${s.stationFilled}/${s.stationTotal}` : '';
     },
   },
+  /* 🛠️ PM ของ "ช่าง" เท่านั้น — AM (ผลิตตรวจเอง) ถูกแยกออกโดยตั้งใจ (คำสั่ง user 2026-08-26)
+     กฎเหล็ก CLAUDE.md: AM ≠ PM คนละงาน คนละทะเบียน คนละสิทธิ์ · แยกด้วยแกนข้อมูล `mtn_teams.kind`
+     ผ่าน `isAmTeam(checklists.department)` **ห้าม hardcode `department === 'production'`**
+     ⚠️ AM ไม่ได้หายไปไหน — โชว์เป็นบรรทัดแยกในการ์ด hover (ห้ามซ่อนเงียบ) และมีแท็บ 🏭 AM ของตัวเอง
+     ⚠️ "กำลังทำ PM อยู่วันนี้" มาจาก **แผนประสานงาน PM** (pm_coordination_*) คนละตารางกับ pm_plans
+        — pm_plans บอกแค่ "ครบกำหนดเมื่อไหร่" ไม่ได้บอกว่าช่างลงมือวันไหน · ตัวนี้ชนะทุกสถานะ
+        (สิ่งที่เกิดอยู่ตอนนี้สำคัญกว่าสิ่งที่ค้าง) และเป็นสีฟ้า **ไม่ใช่ alarm ห้ามกระพริบ** */
   pm: {
-    label: '🛠️ PM เครื่องจักร', worstFirst: true, desc: true,
-    value: s => s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null,   // overdue สำคัญกว่า due-soon เสมอ
-    text: s => s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
-    cat: s => !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
-    short: s => !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
+    label: '🛠️ PM ช่าง (Preventive)', worstFirst: true, desc: true,
+    value: s => s.pmBusy ? 2000 + s.pmBusy : (s.pmTotal ? s.pmOverdue * 1000 + s.pmDueSoon : null),
+    text: s => s.pmBusy ? `🔧 กำลังทำ PM วันนี้${s.pmBusyText ? ` · ${s.pmBusyText}` : ''}`
+      : s.pmTotal ? (s.pmOverdue ? `⚠ เกินกำหนด ${s.pmOverdue}` : s.pmDueSoon ? `ใกล้ครบ ${s.pmDueSoon}` : `PM ปกติ (${s.pmTotal})`) : '',
+    cat: s => s.pmBusy ? 'busy' : !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
+    short: s => s.pmBusy ? '🔧 PM' : !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
+  },
+  /* 🏭 AM — ผลิตตรวจเครื่องเองทุกต้นกะ (checklists.department ที่ mtn_teams.kind = 'am')
+     แยกแท็บจาก PM เพราะเป็นคนละงาน คนละคนรับผิดชอบ — เอามารวมนับก็ตอบไม่ได้ว่าใครต้องไปทำ */
+  am: {
+    label: '🏭 AM (ผลิตตรวจเอง)', worstFirst: true, desc: true,
+    value: s => s.amTotal ? s.amOverdue * 1000 + s.amDueSoon : null,
+    text: s => s.amTotal ? (s.amOverdue ? `⚠ เกินกำหนด ${s.amOverdue}` : s.amDueSoon ? `ใกล้ครบ ${s.amDueSoon}` : `AM ปกติ (${s.amTotal})`) : '',
+    cat: s => !s.amTotal ? 'idle' : s.amOverdue ? 'bad' : s.amDueSoon ? 'ok' : 'good',
+    short: s => !s.amTotal ? '' : s.amOverdue ? `⚠ ${s.amOverdue}` : s.amDueSoon ? `~${s.amDueSoon}` : '',
   },
   supply: {
     // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
@@ -190,7 +283,7 @@ const expandHull = (pts, f = 1.045) => {
    (pattern เดียวกับ de-overlap ป้ายประเทศใน WorldFactoryMap) */
 /* การ์ด KPI พลังงาน — ขนาดคงที่ (ไม่ขึ้นกับความยาวข้อความ) เพราะเลขใหญ่ + sparkline กินที่ตายตัว
    ทีมส่งภาพอ้างอิงมา (โรงงาน 3D + การ์ด kW ลอยเหนืออุปกรณ์) → โครงการ์ด: ชื่อ / เลขใหญ่+หน่วย / %เทียบ / กราฟจิ๋ว */
-const KPI_W = 152, KPI_H = 68;
+const KPI_W = 152, KPI_H = 82;   // 82 = เผื่อบรรทัด A·P·Q ของการ์ด OEE (จองพื้นที่เท่ากันทุกการ์ด KPI)
 const estLabelPx = (name, txt, big, plain, kpi) => {
   if (kpi) return { w: KPI_W, h: KPI_H };
   const nf = big ? 8.6 : 7.8, vf = big ? 7.4 : 7.0;   // px ต่อตัวอักษร (ตัวหนา Sarabun)
@@ -272,8 +365,9 @@ const centroid = (pts) => pts.length
 const labelAnchor = (pts) => pts.length
   ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
   : [50, 50];
-const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtActive: false, ng: 0,
+const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtOpenMin: null, dtOpenUnknown: false, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
+  amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
 // รวมชื่อ utility ที่จ่ายไลน์นี้ — dedup ตามเลขเครื่องก่อน แล้วยุบชื่อที่ซ้ำเป็น "ชื่อ ×N" (กันโชว์ชื่อเดียวซ้ำหลายรอบ)
@@ -299,6 +393,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
+  const [pmOrphan, setPmOrphan] = useState({ total: 0, overdue: 0 });  // แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ห้ามหายเงียบ
   const [supplyStatus, setSupplyStatus] = useState({}); // supply route: line_name → { suppliers:[{no,name,atRisk}], atRisk } (DR)
   const [facilityZones, setFacilityZones] = useState([]); // ชื่อโซน MTN/facility (pm_facility_areas + facility machine line_names) — ตัวเลือกตีกรอบ
   const [facilitySupply, setFacilitySupply] = useState({}); // zone → { machines:[{no,name,atRisk}], atRisk, feeds:[line] } (มุมมองโซน facility เอง)
@@ -314,7 +409,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
   const [aspect, setAspect] = useState(null);
-  const [metric, setMetric] = useState('productivity');
+  const [metric, setMetric] = useState('health'); // 🚦 default = ปกติ/ผิดปกติ (2026-08-26 คำสั่ง user) — เปิดมาตอบก่อนว่าทั้งโรงงานโอเคไหม
+  const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
   const [panelMode, setPanelMode] = useState('review');
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
@@ -343,6 +439,25 @@ export default function FactoryMap({ setupMode = false }) {
   const [newZoneType, setNewZoneType] = useState('fac'); // โซนใหม่เป็นอะไร: 'fac' MTN/facility (เดิม) | 'store' โซนคลังสินค้า (สร้างทะเบียน storage_zones ให้ด้วย)
   const [newZoneKind, setNewZoneKind] = useState('fg');  // ชนิดโซนคลัง (ZONE_KINDS) เมื่อเลือก store
   const [wrapW, setWrapW] = useState(0);      // ความกว้างผังจริง (px) — แปลงขนาดป้าย px → % ตอนกันป้ายทับกัน
+  /* ── ขนาดป้ายต่อเครื่อง (2026-08-25 · user: "สเกลเพี้ยนๆ พอเปิดหลายจอทีวี") ──────────────
+     ต้นเหตุ: จอ TV แต่ละตัวตั้ง OS display scaling ไม่เท่ากัน (150–300%) → CSS px ใหญ่ไม่เท่ากัน
+     - ผังถูกย่อให้พอดีจอ แต่ "ป้าย" คิดขนาดเป็น CSS px → สัดส่วนป้าย/ผังโตตาม scaling = ป้ายล้น/ทับกัน
+     - viewport CSS แคบลง (1920@150% = 1280px) หัก rail+แผงขวาแล้ว wrapW ต่ำกว่า COMPACT_W
+       → ขึ้น "จอแคบ · ซ่อนป้าย" ทั้งที่จอใหญ่มาก
+     ทางแก้ที่เลือก: ให้แต่ละเครื่องปรับขนาดป้ายเอง (A− / A+) จำใน localStorage — ตั้งครั้งเดียวต่อจอ
+     (แก้จาก OS ก็ได้แต่หน้างานเข้า settings จอ TV ไม่ได้/ไม่กล้า) · คู่กับปุ่มซ่อนแผงขวาคืนพื้นที่ให้ผัง */
+  const [lblScale, setLblScale] = useState(() => {
+    try { const v = parseFloat(localStorage.getItem('fm_lbl_scale')); return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1; }
+    catch { return 1; }
+  });
+  const applyScale = (v) => {
+    const nv = Math.min(1.6, Math.max(0.6, Math.round(v * 10) / 10));
+    setLblScale(nv);
+    try { localStorage.setItem('fm_lbl_scale', String(nv)); } catch { /* per-device pref เท่านั้น */ }
+  };
+  // ซ่อนแผงขวา (จอ TV เอาพื้นที่คืนให้ผัง — จำต่อเครื่อง) · ปุ่มอยู่แถบ metric
+  const [panelHide, setPanelHide] = useState(() => { try { return localStorage.getItem('fm_panel_hide') === '1'; } catch { return false; } });
+  const togglePanelHide = () => setPanelHide(v => { const nv = !v; try { localStorage.setItem('fm_panel_hide', nv ? '1' : '0'); } catch { /* ignore */ } return nv; });
   const wrapRef = useRef(null);
   const hoverCardRef = useRef(null); // วัดความสูงจริงของการ์ด hover เพื่อกันตกขอบ
   const dragRef = useRef(null);
@@ -442,7 +557,7 @@ export default function FactoryMap({ setupMode = false }) {
     const { data: sessions } = await supabaseDR
       // ⚠️ ต้อง select `shift` — ตัวกรองนโยบายพักเทียบ b.shift === s.shift ถ้าไม่มีจะเป็น undefined
       //    แล้วเหลือแค่ b.shift === 'both' ซึ่ง break_policies ไม่มีสักแถว = ไม่หักเวลาพักเลยทั้งระบบ
-      .from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
+      .from('production_sessions').select('id, line_name, status, shift, oee, oee_a, oee_p, oee_q, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
     if (!sessions?.length) { setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
     const [{ data: orders }, { data: dts }, { data: defs }, prods, breaks, kstds] = await Promise.all([
@@ -511,6 +626,11 @@ export default function FactoryMap({ setupMode = false }) {
       // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
       //   dtMin = สะสมทั้งวันงาน (ใช้ sidebar อันดับ) · dtMinHour = สะสมเฉพาะชั่วโมงปัจจุบัน (ใช้สีบนแผนที่)
       let dtMin = 0, dtMinHour = 0, dtActive = false, plannedDtMin = 0;
+      /* ⏱ dtOpenMin = "หยุดมาแล้วกี่นาที" ของรายการที่ยัง**เปิดค้าง** (นานสุดในไลน์)
+         ⚠️ คนละตัวกับ dtMinHour (นาทีที่เสียใน "ชั่วโมงนี้") — เดิมป้ายเขียน "🔴 หยุด 52 น."
+            จาก dtMinHour ขณะที่ Dashboard/จอห้องช่างบอก 194 นาที = จอเดียวกันตอบคนละเลข
+            (user ทัก 2026-08-26) · "หยุดมาแล้วกี่นาที" ต้องเป็นเลขเดียวกันทุกจอ */
+      let dtOpenMin = null, dtOpenUnknown = false;
       const plannedRows = [];   // เก็บช่วงจริงไว้ clamp กับหน้าต่าง [anchor, now] ทีหลัง (ดูหมายเหตุที่ availMin)
       let plannedNoTime = 0;    // หยุดตามแผนที่ไม่มีเวลาเริ่ม — ไม่รู้ว่าตกช่วงไหน
       dl.forEach(d => {
@@ -528,6 +648,10 @@ export default function FactoryMap({ setupMode = false }) {
         const active = !d.ended_at && d.duration_min == null;
         if (active) dtActive = true;
         const s0 = d.started_at ? new Date(d.started_at).getTime() : null;
+        if (active) {
+          if (s0 != null) dtOpenMin = Math.max(dtOpenMin ?? 0, Math.round((nowMs - s0) / 60000));
+          else dtOpenUnknown = true;   // ไม่รู้เวลาเริ่ม = "ไม่รู้" ห้ามตีเป็น 0
+        }
         if (s0 != null) {
           const e0 = d.ended_at ? new Date(d.ended_at).getTime()
                    : active ? nowMs
@@ -615,6 +739,8 @@ export default function FactoryMap({ setupMode = false }) {
         runN: Math.max(acc.runN || 0, runN), capN: Math.max(acc.capN || 0, capN),
         hasOpen: acc.hasOpen || s.status === 'open',
         dtMin: acc.dtMin + dtMin, dtMinHour: acc.dtMinHour + dtMinHour, dtActive: acc.dtActive || dtActive,
+        dtOpenMin: dtOpenMin == null ? acc.dtOpenMin : Math.max(acc.dtOpenMin ?? 0, dtOpenMin),
+        dtOpenUnknown: acc.dtOpenUnknown || dtOpenUnknown,
         // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ — กะเก่า column=0 ทั้งที่มี NG จริง · CLAUDE.md)
         ng: acc.ng + (ngBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0),
         // เฉลี่ย OEE ของไลน์ (กะเช้า+ดึก) ต้องถ่วงด้วยเวลารับภาระ ห้าม mean ธรรมดา (util กลาง oeeAvg.js)
@@ -623,7 +749,17 @@ export default function FactoryMap({ setupMode = false }) {
            → wavg ข้ามแถวนั้นทั้งแถว (และไม่ตกไป plain mean เพราะมีแถวกะปิดแล้ว)
            = ทุกเย็นผังรวมโชว์ OEE ของกะเช้าที่จบไปแล้ว โดยติดป้ายว่าเป็นค่า "สด"
            ใช้ || 570 ให้ตรงกับ path แผงทบทวน (บรรทัด ~886) ที่ทำถูกอยู่แล้ว */
-        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{ oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll }] : [])],
+        /* A/P/Q แนบไปกับแถวด้วย (การ์ด KPI ต้องแตกให้เห็น — user ทัก "บอกแต่ OEE ก็ทำแต่ OEE หรอ" 2026-08-25)
+           ปิดกะ = ค่า stamp · เปิดกะ = ค่าสดจาก computeLiveOee (⚠️ util คืน key ตัวใหญ่ A/P/Q)
+           calcA/totalQty/ngQty = ตัวถ่วง wRun/wProd ตอน rollup (กฎ: P ถ่วง wRun · Q ถ่วง wProd) */
+        oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{
+          oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll,
+          a: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
+          p: s.oee != null ? (s.oee_p != null ? Number(s.oee_p) : null) : (lr?.P ?? null),
+          q: s.oee != null ? (s.oee_q != null ? Number(s.oee_q) : null) : (lr?.Q ?? null),
+          calcA: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
+          totalQty: actual, ngQty: ngBySess[s.id] || 0,
+        }] : [])],
         oeeLive: acc.oeeLive || isLive,
         // ประเมิน OEE ไม่ได้เพราะยังไม่ตั้ง CT ของชิ้นงานที่ผลิต — ต้องบอกบนจอ ไม่ใช่เงียบเป็นช่องว่าง
         oeeNoCt: acc.oeeNoCt || !!(lr && lr.noCt),
@@ -796,27 +932,94 @@ export default function FactoryMap({ setupMode = false }) {
   }, []);
   usePolling(loadManpower, RATE.BOARD);
 
-  /* ── PM เครื่องจักรรายไลน์ (DR: machines → checklists → pm_plans) — refresh 5 นาที ── */
+  /* ── PM เครื่องจักรรายไลน์ (DR: checklists → **jigs** → pm_plans) — refresh 30 นาที ──
+     🔴 บั๊กที่แก้ 2026-08-26 (user: "PM ยังไม่ขึ้นหน้าแดชบอร์ดผังโรงงาน"):
+        เดิมเขียน `.in('equipment_id', machines.map(m => m.id))` — แต่ **`checklists.equipment_id`
+        ชี้ไป `jigs.id` ไม่ใช่ `machines.id`** (กฎ: `jigs` คือทะเบียน "อุปกรณ์ที่มีแผน PM"
+        เครื่องจักรมี "แถวเงา" ใน jigs ที่ `machine_id` ชี้กลับ machines)
+        ⇒ เทียบ uuid คนละตาราง = ไม่แมตช์สักแถว → `cls` ว่าง → `setPmStatus({})`
+          → ทุกไลน์ขึ้น "—" ตลอดกาล **ทั้งที่มีแผน PM เกินกำหนดอยู่จริง**
+        (`/dept-dashboard` และ edge `pm-plan-reminder` ทำถูกอยู่แล้ว — จอผังตกสำรวจจุดเดียว)
+     ⚠️ ไลน์เอาจาก `jigs.line_name` ก่อน (เป็นของอุปกรณ์ตัวนั้นเอง) ไม่มีค่อยถอยไปไลน์ของเครื่องที่ผูก
+     ⚠️ query ล้มเหลว = **คงค่าเดิมไว้ ห้ามล้างเป็น {}** (ล้างแล้วจอบอก "ไม่มีแผน PM" ซึ่งเป็นคำตอบผิด) */
   const loadPM = useCallback(async () => {
-    const machines = await cachedMaster('machines:idline', async () =>
-      (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []);
-    if (!machines?.length) { setPmStatus({}); return; }
-    const lineOfMachine = {}; machines.forEach(m => { lineOfMachine[m.id] = m.line_name; });
-    const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').in('equipment_id', machines.map(m => m.id));
-    if (!cls?.length) { setPmStatus({}); return; }
-    const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfMachine[c.equipment_id]; });
-    const { data: plans } = await supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', cls.map(c => c.id));
+    await loadPmTeams().catch(() => {});   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (โหลดพลาด = fallback เดาจาก key)
+    const { data: cls, error: clErr } = await supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn');
+    if (clErr) { console.warn('loadPM checklists', clErr.message); return; }
+    const eqIds = [...new Set((cls || []).map(c => c.equipment_id).filter(Boolean))];
+    if (!eqIds.length) { setPmStatus({}); return; }
+    /* ⚠️ ผ่าน fetchByIds เสมอ — checklists/jigs หลักร้อยแถว `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด
+       แล้วคืนค่าว่าง "เงียบ" (บทเรียนเดิม: จอโชว์ 0 ทั้งที่มีของจริง) */
+    const [jgRes, machines] = await Promise.all([
+      fetchByIds(eqIds, c => supabaseDR.from('jigs').select('id, line_name, machine_id').in('id', c)),
+      cachedMaster('machines:idline', async () =>
+        (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []),
+    ]);
+    if (jgRes.error) { console.warn('loadPM jigs', jgRes.error); return; }
+    const lineOfMachine = {}; (machines || []).forEach(m => { lineOfMachine[m.id] = m.line_name; });
+    const lineOfEq = {}; jgRes.rows.forEach(j => { lineOfEq[j.id] = j.line_name || lineOfMachine[j.machine_id] || ''; });
+    const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfEq[c.equipment_id]; });
+    /* แยก AM / PM ด้วยแกนข้อมูล `mtn_teams.kind` — ห้าม hardcode `department === 'production'`
+       (กฎเหล็ก: แยก AM รายส่วนงาน/rollout โรงงานที่เรียกทีมคนละชื่อ แล้วจะพังเงียบ) */
+    const amOfChecklist = {}; (cls || []).forEach(c => { amOfChecklist[c.id] = isAmTeam(c.department); });
+    const plRes = await fetchByIds((cls || []).map(c => c.id),
+      c => supabaseDR.from('pm_plans').select('checklist_id, next_due_date').eq('is_active', true).in('checklist_id', c));
+    if (plRes.error) { console.warn('loadPM plans', plRes.error); return; }
+    const plans = plRes.rows;
     const now = new Date(); const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const soon = new Date(now.getTime() + 7 * 864e5); const soonStr = `${soon.getFullYear()}-${String(soon.getMonth() + 1).padStart(2, '0')}-${String(soon.getDate()).padStart(2, '0')}`;
     const out = {};
+    /* ⚠️ อุปกรณ์ที่ยังไม่ได้ผูกไลน์ = วางบนผังไม่ได้ **แต่ห้ามทิ้งเงียบ** — โดยเฉพาะตัวที่เกินกำหนด
+       (แผน PM ที่ไม่รู้ว่าอยู่ไลน์ไหน จะหายจากทุกจอที่จัดกลุ่มตามไลน์) → นับไว้โชว์เป็นชิป */
+    const orphan = { total: 0, overdue: 0 };
+    const blank = () => ({ pmTotal: 0, pmOverdue: 0, pmDueSoon: 0, amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '' });
     (plans || []).forEach(p => {
-      const ln = lineOfChecklist[p.checklist_id]; if (!ln) return;
-      const o = out[ln] || { pmTotal: 0, pmOverdue: 0, pmDueSoon: 0 };
-      o.pmTotal++;
-      if (p.next_due_date && p.next_due_date < today) o.pmOverdue++;
-      else if (p.next_due_date && p.next_due_date <= soonStr) o.pmDueSoon++;
+      const overdue = p.next_due_date && p.next_due_date < today;
+      const ln = lineOfChecklist[p.checklist_id];
+      if (!ln) { orphan.total++; if (overdue) orphan.overdue++; return; }
+      const o = out[ln] || blank();
+      const k = amOfChecklist[p.checklist_id] ? 'am' : 'pm';
+      o[`${k}Total`]++;
+      if (overdue) o[`${k}Overdue`]++;
+      else if (p.next_due_date && p.next_due_date <= soonStr) o[`${k}DueSoon`]++;
       out[ln] = o;
     });
+    setPmOrphan(orphan);
+
+    /* 🔧 "กำลังทำ PM อยู่วันนี้" — จาก **แผนประสานงาน PM** (คนละตารางกับ pm_plans)
+       pm_plans บอกแค่ "ครบกำหนดเมื่อไหร่" · ตัวที่บอกว่า *ช่างลงมือวันไหน* คือ pm_coordination_tasks
+       ⇒ ไม่ดึงตัวนี้ = ผังขึ้น "PM ปกติ" เขียวทั้งที่ MTN ยืนทำ PM อยู่หน้าเครื่อง (user เจอจริง 26/08)
+       ⚠️ best-effort — ล้มเหลวห้ามลาก metric PM พังทั้งตัว (แค่ไม่มีสถานะ "กำลังทำ") */
+    try {
+      const { data: coPlans } = await supabaseDR.from('pm_coordination_plans')
+        .select('id, line_name, title, machine_no, status').not('status', 'in', '("done","cancelled")');
+      const planById = {}; (coPlans || []).forEach(pl => { planById[pl.id] = pl; });
+      if (coPlans?.length) {
+        const tkRes = await fetchByIds(coPlans.map(pl => pl.id),
+          c => supabaseDR.from('pm_coordination_tasks').select('plan_id, task_date, done').in('plan_id', c));
+        /* ⚠️ "กำลังทำ PM" = **วันนี้อยู่ในช่วงงานของแผนที่ยังไม่ปิด** ไม่ใช่แค่ "มีขั้นงานลงวันนี้"
+           งาน PM กินหลายวัน (เจอจริง: PM LASER LS-07 วิ่ง 26→28/08) ระหว่างนั้นเครื่องอยู่ในมือช่างตลอด
+           — เช็คเฉพาะขั้นที่ลงวันนี้ จะเงียบในวันที่ขั้นนั้นถูกติ๊กเสร็จไปแล้ว ทั้งที่งานยังไม่จบ
+           (วันที่เป็น 'YYYY-MM-DD' เทียบสตริงตรงกับเทียบเวลาอยู่แล้ว) */
+        const byPlan = {};
+        (tkRes.rows || []).forEach(t => {
+          if (!t.task_date) return;
+          const g = byPlan[t.plan_id] || (byPlan[t.plan_id] = { min: t.task_date, max: t.task_date, left: 0 });
+          if (t.task_date < g.min) g.min = t.task_date;
+          if (t.task_date > g.max) g.max = t.task_date;
+          if (!t.done) g.left++;
+        });
+        Object.entries(byPlan).forEach(([pid, g]) => {
+          if (g.min > today || g.max < today) return;         // นอกช่วงงาน = ไม่ใช่ "กำลังทำ"
+          const pl = planById[pid]; const ln = pl?.line_name; if (!ln) return;
+          const o = out[ln] || blank();
+          o.pmBusy++;
+          if (!o.pmBusyText) o.pmBusyText = [pl.machine_no, pl.title].filter(Boolean).join(' · ')
+            + (g.left ? ` (เหลือ ${g.left} ขั้น)` : '');
+          out[ln] = o;
+        });
+      }
+    } catch (e) { console.warn('loadPM coordination', e?.message || e); }
     setPmStatus(out);
   }, []);
   usePolling(loadPM, RATE.SLOW);
@@ -943,7 +1146,7 @@ export default function FactoryMap({ setupMode = false }) {
   useEffect(() => {
     let timer = null;
     const bump = (fn) => { clearTimeout(timer); timer = setTimeout(fn, 1500); };
-    const ch = supabaseDR.channel('factory-map-live')
+    const ch = liveChannel(supabaseDR, 'factory-map-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => bump(loadStatus))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
@@ -1120,7 +1323,54 @@ export default function FactoryMap({ setupMode = false }) {
           }
         } catch { /* best-effort */ }
 
+        /* ── 🧭 มิติอื่นของไลน์ที่ "ไม่ผูกกับกะ" — PM รายแผน + ใบซ่อม MO ค้าง (2026-08-26)
+           user ทัก: "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง · มันควรโชว์ทุกเรื่อง
+           เพราะจะดูรายละเอียดของไลน์นั้นแล้ว" — เดิม modal มีแต่เรื่องผลิต และวันที่ไม่ได้เปิดกะ
+           จะขึ้นข้อความบรรทัดเดียวแล้วจบ ทั้งที่ PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
+           ⚠️ ทั้งก้อนเป็น best-effort — พลาดแล้วซ่อนเฉพาะบล็อกนั้น ห้ามทำ modal พังทั้งใบ
+           ⚠️ equipment ของไลน์ = jigs ที่ line_name ตรง **หรือ** แถวเงาของเครื่องในไลน์ (machine_id)
+              (กฎเดียวกับ loadPM — checklists.equipment_id ชี้ jigs.id ไม่ใช่ machines.id) */
+        let pmRows = null, moRows = null;
+        try {
+          const { data: mcRows } = await supabaseDR.from('machines')
+            .select('id, machine_no, machine_name').eq('is_active', true).in('line_name', fam);
+          const mcIds = (mcRows || []).map(m => m.id);
+          const [jgLine, jgMc] = await Promise.all([
+            supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_id').eq('module', 'mtn').in('line_name', fam),
+            mcIds.length ? fetchByIds(mcIds, c => supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_id').eq('module', 'mtn').in('machine_id', c)) : { rows: [] },
+          ]);
+          const jigById = {};
+          [...(jgLine.data || []), ...(jgMc.rows || [])].forEach(j => { jigById[j.id] = j; });
+          const jigIds = Object.keys(jigById);
+          if (jigIds.length) {
+            const clRes = await fetchByIds(jigIds, c => supabaseDR.from('checklists')
+              .select('id, equipment_id, department, name, frequency').eq('module', 'mtn').in('equipment_id', c));
+            const clById = {}; clRes.rows.forEach(c => { clById[c.id] = c; });
+            const plRes = await fetchByIds(clRes.rows.map(c => c.id), c => supabaseDR.from('pm_plans')
+              .select('checklist_id, next_due_date, last_done_at').eq('is_active', true).in('checklist_id', c));
+            const today = getWorkDate();
+            pmRows = plRes.rows.map(p => {
+              const cl = clById[p.checklist_id], j = jigById[cl?.equipment_id];
+              const days = p.next_due_date
+                ? Math.round((new Date(`${p.next_due_date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 864e5) : null;
+              return { key: p.checklist_id, name: j?.jig_no || j?.name || 'อุปกรณ์ (ไม่พบชื่อ)',
+                sub: j?.jig_no && j?.name && j.jig_no !== j.name ? j.name : '', dept: cl?.department,
+                due: p.next_due_date, days, lastDone: p.last_done_at };
+            }).sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9));
+          } else pmRows = [];
+          // ใบซ่อมค้าง — ใบเปิดมีไม่มาก ดึงทั้งชุดแล้วกรองด้วยไลน์/เลขเครื่องของไลน์นี้
+          const famSet = new Set(fam);
+          const nos = new Set((mcRows || []).map(m => String(m.machine_no || '').trim().toUpperCase()).filter(Boolean));
+          const { data: mos } = await supabaseDR.from('mtn_orders')
+            .select('id, mo_no, machine_no, line_name, status, report_at, problem_characteristic')
+            .in('status', OPEN_MO_STATUSES);
+          moRows = (mos || [])
+            .filter(o => famSet.has(o.line_name) || nos.has(String(o.machine_no || '').trim().toUpperCase()))
+            .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || '')));
+        } catch { /* best-effort — บล็อก PM/ใบซ่อมจะไม่ขึ้น แต่ modal ยังใช้ได้ */ }
+
         setStory({
+          pmRows, moRows,
           flowDown, flowUp,
           totTarget, totProduced, parts,
           dtUnplanned, dtPlanned,
@@ -1199,11 +1449,13 @@ export default function FactoryMap({ setupMode = false }) {
       const sp = supplyStatus[n];
       if (sp) { agg.supList.push(...sp.suppliers); agg.supAtRisk = agg.supAtRisk || sp.atRisk; }
       const p = lineStatus[n];
-      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; agg.oeeNoCt = agg.oeeNoCt || p.oeeNoCt; agg.oeeCtPartial = agg.oeeCtPartial || p.oeeCtPartial; agg.oeePOver = agg.oeePOver || p.oeePOver; agg.oeePRaw = Math.max(agg.oeePRaw || 0, p.oeePRaw || 0); }
+      if (p) { agg.actual += p.actual || 0; agg.target += p.target || 0; agg.onTimeTarget += p.onTimeTarget || 0; agg.runN = Math.max(agg.runN || 0, p.runN || 0); agg.capN = Math.max(agg.capN || 0, p.capN || 0); agg.hasOpen = agg.hasOpen || p.hasOpen; agg.dtMin += p.dtMin || 0; agg.dtMinHour += p.dtMinHour || 0; if (p.dtOpenMin != null) agg.dtOpenMin = Math.max(agg.dtOpenMin ?? 0, p.dtOpenMin); agg.dtOpenUnknown = agg.dtOpenUnknown || p.dtOpenUnknown; agg.dtActive = agg.dtActive || p.dtActive; agg.ng += p.ng || 0; agg.oeeRows.push(...(p.oeeRows || [])); agg.oeeLive = agg.oeeLive || p.oeeLive; agg.oeeNoCt = agg.oeeNoCt || p.oeeNoCt; agg.oeeCtPartial = agg.oeeCtPartial || p.oeeCtPartial; agg.oeePOver = agg.oeePOver || p.oeePOver; agg.oeePRaw = Math.max(agg.oeePRaw || 0, p.oeePRaw || 0); }
       const m = manpower[n];
       if (m) { agg.headTotal += m.headTotal || 0; agg.present += m.present || 0; agg.ppeBad += m.ppeBad || 0; agg.stationTotal += m.stationTotal || 0; agg.stationFilled += m.stationFilled || 0; }
       const pm = pmStatus[n];
-      if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0; }
+      if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0;
+               agg.amTotal += pm.amTotal || 0; agg.amOverdue += pm.amOverdue || 0; agg.amDueSoon += pm.amDueSoon || 0;
+               agg.pmBusy += pm.pmBusy || 0; if (!agg.pmBusyText) agg.pmBusyText = pm.pmBusyText || ''; }
       // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
       //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
       const en = energyStatus[n];
@@ -1221,42 +1473,35 @@ export default function FactoryMap({ setupMode = false }) {
     }
     const aggAvg = wavg(agg.oeeRows, r => r.oee, wLoad);
     agg.oee = aggAvg != null ? Math.round(aggAvg) : null;
+    // A/P/Q รวมครอบครัว — ถ่วงน้ำหนักตามกฎ (A=wLoad · P=wRun · Q=wProd) ใช้บนการ์ด KPI metric OEE
+    agg.oeeA = wavg(agg.oeeRows, r => r.a, wLoad);
+    agg.oeeP = wavg(agg.oeeRows, r => r.p, wRun);
+    agg.oeeQ = wavg(agg.oeeRows, r => r.q, wProd);
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
     return agg;
   };
   const catColor = (name) => CAT[M.cat(stOf(name))];
   // โซน MTN/facility (metric ผลิต): default เขียว "ปกติ" ถ้าไม่มีเหตุผิดปกติ — แดง/ส้มเฉพาะเมื่อมีเครื่องซ่อม/PM ค้าง (คำสั่ง user)
-  const facHealth = (st) => {
-    if (st.storeZone) return st.storeZone.cat;   // 🏬 โซนคลัง: แดง "นิ่ง" = ต่ำกว่า Min/ล้นความจุ (งานคลังไม่ใช่ alarm เครื่องหยุด — ห้ามกระพริบ)
-    if (st.die) return st.die.moPending ? 'down' : st.die.mo ? 'bad' : 'good';   // โซนแม่พิมพ์: MO รอรับงาน = กระพริบ (Andon)
-    return (st.supAtRisk || st.dtActive) ? 'down' : st.pmOverdue ? 'bad' : st.pmDueSoon ? 'ok' : 'good';
-  };
-  const facHealthText = (st) => {
-    if (st.storeZone) return st.storeZone.text;
-    if (st.die) return st.die.mo ? `⚠ แม่พิมพ์ใบซ่อมค้าง ${st.die.mo} ตัว` : `🔨 แม่พิมพ์ ${st.die.total} ตัว`;
-    if (st.supAtRisk) return '⚠ เครื่องซ่อมอยู่';
-    if (st.dtActive) return '🔴 หยุด';
-    if (st.pmOverdue) return `⚠ PM เกิน ${st.pmOverdue}`;
-    if (st.pmDueSoon) return `PM ใกล้ครบ ${st.pmDueSoon}`;
-    return '🔧 ปกติ';
-  };
+  // ตัวจริงย้ายไประดับ module (facHealthOf/facHealthTextOf — METRICS.health ใช้ร่วม) · alias คงชื่อเดิมให้ call site ทั้งไฟล์
+  const facHealth = facHealthOf;
+  const facHealthText = facHealthTextOf;
   const regCat = (st) => (st.isFac && M.facilityNA) ? facHealth(st) : (M.mapCat || M.cat)(st);
   const regText = (st) => (st.isFac && M.facilityNA) ? facHealthText(st) : (M.mapText || M.text)(st);
-  /* 🫥 "กรอบขึ้นตามสิ่งที่กด" (2026-08-25 · คำสั่ง user): metric ที่โซนสนับสนุนไม่มีข้อมูล (facilityNA เช่น
-     คน & จุดงาน/ยอดผลิต/OEE) → ซ่อนกรอบโซน MTN/utility/คลัง/แม่พิมพ์ที่ "สถานะปกติ" ออกจากผัง ไม่ให้รกจอ
-     ⚠️ โซนที่มีเหตุผิดปกติ (เหลือง/แดง/กระพริบ — เครื่องซ่อม/PM ค้าง/สต็อกต่ำ) ยังโชว์เสมอ
-        ตามกฎ Andon "สัญญาณต้องไม่ถูกซ่อน" · โหมดแก้ผังเห็นครบทุกกรอบ (ต้องแก้ได้)
-     ⚠️ ซ่อนแล้วนับบอกบนจอ (ชิป 🫥) — ห้ามหายเงียบ */
-  const facHidden = (name) => {
-    if (editing || !M.facilityNA || !isFac(name)) return false;
-    const h = facHealth(stOf(name));
-    return h === 'good' || h === 'idle';
-  };
-  const facHiddenList = useMemo(
-    () => (editing || !M.facilityNA) ? [] : regions.map(r => r.line_name).filter(n => facHidden(n)),
-    // facHidden อ่านสถานะปัจจุบันผ่าน stOf — ใส่ state ที่พึ่งพาเป็น deps แทน (pattern เดียวกับ ranked)
-    [regions, metric, editing, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* 🫥 "กรอบขึ้นตามสิ่งที่กด" (2026-08-25 · คำสั่ง user — เข้มขึ้นรอบ 2 หลัง user ทัก "OEE ผังจะโชว์คลังสินค้าทำไม"):
+     metric ที่โซนสนับสนุนไม่มีข้อมูล (facilityNA เช่น คน/ยอดผลิต/OEE/DT/ของเสีย)
+     → ซ่อนกรอบโซน MTN/utility/คลัง/แม่พิมพ์ **ทั้งหมด ไม่ว่าสถานะอะไร** (รอบแรกเว้นโซนผิดปกติไว้
+       แล้วกล่องคลัง "เกิน Max" ไปโผล่บนแท็บ OEE — แท็บไหนต้องพูดแต่เรื่องของแท็บนั้น)
+     ⚠️ สัญญาณผิดปกติไม่หายเงียบ — ยุบเป็นตัวนับ ⚠ บนชิป (title = รายชื่อ+อาการ) + กดชิปเปิดดูชั่วคราวได้
+     · โหมดแก้ผังเห็นครบทุกกรอบ (ต้องแก้ได้) · metric ของโซนเอง (พลังงาน/PM/Supply Route) โชว์ปกติ */
+  const facHidden = (name) => !editing && !showFac && M.facilityNA && isFac(name);
+  const facZones = useMemo(() => {
+    if (editing || !M.facilityNA) return { all: [], warn: [] };
+    const all = regions.map(r => r.line_name).filter(n => isFac(n));
+    const warn = all.filter(n => { const h = facHealth(stOf(n)); return h !== 'good' && h !== 'idle'; });
+    return { all, warn };
+    // facHealth อ่านสถานะปัจจุบันผ่าน stOf — ใส่ state ที่พึ่งพาเป็น deps แทน (pattern เดียวกับ ranked)
+  }, [regions, metric, editing, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ⚙️ ซีรีส์ OEE รายวันต่อกรอบ (รวมครอบครัวไลน์) — คำนวณครั้งเดียวจาก oeeHistRaw ไม่คิดใน stOf (stOf ถูกเรียกถี่มาก)
      series = wavg รายวันถ่วง wLoad (สูตรบังคับ) เรียงเก่า→ใหม่ · prev = วันล่าสุดที่มีข้อมูล (ฐานเทียบ Δ ของวันนี้) */
@@ -1279,8 +1524,10 @@ export default function FactoryMap({ setupMode = false }) {
      "มือถือลดข้อมูลได้ · PC/จอ display ต้องครบ") · ป้ายกว้างเท่าข้อความยาวสุด
      ผังแคบจึงจัดยังไงก็ทับ — ย่อข้อความคือทางเดียวที่ไม่ต้องซ่อนไลน์ทิ้ง
      ⚠️ COMPACT_W ต้องต่ำกว่าความกว้างผังบนโน้ตบุ๊ก/จอ TV เสมอ ไม่งั้นจอใหญ่โดนย่อไปด้วย
-        (จอ 1366 หัก sidebar 252 + แผงขวา 360 ≈ 720 → มือถือ/แท็บเล็ตแนวตั้งเท่านั้นที่เข้าเกณฑ์) */
-  const compactLbl = wrapW > 0 && wrapW < COMPACT_W;
+        (จอ 1366 หัก sidebar 252 + แผงขวา 360 ≈ 720 → มือถือ/แท็บเล็ตแนวตั้งเท่านั้นที่เข้าเกณฑ์)
+     ⚠️ เกณฑ์ต้องคูณ lblScale — ป้ายถูกย่อ 0.7× ก็กินที่น้อยลง 0.7× (จอ TV ที่ OS scaling สูง
+        wrapW แคบลงเทียม กด A− แล้วต้องหลุดจากโหมดย่อได้ ไม่ใช่ติด COMPACT ตายตัว) */
+  const compactLbl = wrapW > 0 && wrapW < COMPACT_W * lblScale;
   const shortText = (st) => {
     if (st.isFac && M.facilityNA) return facHealth(st) === 'good' ? '' : facHealthText(st);
     return M.short ? M.short(st) : regText(st);
@@ -1301,7 +1548,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, showFac, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -1342,12 +1589,14 @@ export default function FactoryMap({ setupMode = false }) {
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return; e.target.value = '';
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const isGif = file.type === 'image/gif' || ext === 'gif';
-    if (isGif && file.size > 2 * 1024 * 1024) return toast.error('GIF ต้องไม่เกิน 2MB');
+    let file = e.target.files?.[0]; if (!file) return; e.target.value = '';
     try {
       setUploading(true);
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
+      file = await toDecodableImage(file);
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const isGif = file.type === 'image/gif' || ext === 'gif';
+      if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
       const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
       const path = `factory/map_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob);
@@ -1413,6 +1662,11 @@ export default function FactoryMap({ setupMode = false }) {
     if (!wrapW || !aspect) return out;           // รูปยังไม่โหลด → render ถอยไปวางแบบเดิม
     out.ready = true;
     const toN = (px) => (px / wrapW) * 100;      // px → หน่วย N (% ของความกว้าง)
+    // ขนาดป้ายตามที่เครื่องนี้ตั้ง (A−/A+) — ตัวจองพื้นที่กับตัววาด (zoom) ต้องคูณตัวเดียวกันเสมอ
+    const est = (name, txt, big, plain, kpi) => {
+      const r = estLabelPx(name, txt, big, plain, kpi);
+      return lblScale === 1 ? r : { w: r.w * lblScale, h: r.h * lblScale };
+    };
     const maxY = 100 / aspect;                   // ความสูงผังในหน่วย N
     const g = toN(5);                            // ระยะห่างขั้นต่ำจากขอบกรอบ
     const placed = [];
@@ -1441,7 +1695,7 @@ export default function FactoryMap({ setupMode = false }) {
       const x0 = Math.min(...xs), y0 = Math.min(...ys) / aspect;
       regionRect[r.line_name] = { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) / aspect - y0 };
     });
-    const place = (bbPts, big, levels, ownNames, kpi) => {
+    const place = (bbPts, big, levels, ownNames) => {
       const xs = bbPts.map(p => p[0]), ys = bbPts.map(p => p[1]);
       const x0 = Math.min(...xs), x1 = Math.max(...xs);
       const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
@@ -1450,12 +1704,16 @@ export default function FactoryMap({ setupMode = false }) {
       const obstacles = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
       const okIn = (b) => !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
       for (let lvl = 0; lvl < levels.length; lvl++) {
+        /* kpi เป็นคุณสมบัติ "ราย level" (2026-08-26 · user ทัก "box ทับกันเละ") — เดิมเป็น flag ทั้ง call
+           แล้วการ์ด KPI ถูกส่งมาระดับเดียว = มันคือ level สุดท้ายทันที → เข้าโหมด "ยอมทับ" ทั้งที่ยังย่อได้
+           ตอนนี้ chain = [การ์ด KPI, ป้ายเต็ม, ป้ายย่อ, ชื่ออย่างเดียว] — ที่ไม่พอ = สละการ์ด ไม่ใช่ไปทับเพื่อน */
+        const kpi = !!levels[lvl].kpi;
         /* ⭐ ป้ายไลน์: ลอง "ข้อความล้วนในกรอบตัวเอง" ก่อน (คำสั่ง user 2026-08-06)
            กรอบไลน์มีพื้นสีอ่อนอยู่แล้ว ไม่ต้องมีการ์ด/ขอบซ้อนอีก → ป้ายเล็กลงมาก
            วัดแล้ว: จอ 1800px มี 17/27 ใบลงในกรอบตัวเองได้ · 1250px ข้อมูลเต็มเพิ่ม 20→21
            และ "เหลือชื่ออย่างเดียว" ลดจาก 3 เหลือ 1 */
         if (!big && !kpi) {
-          const { w: pw, h: ph } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, true);
+          const { w: pw, h: ph } = est(levels[lvl].name, levels[lvl].txt, big, true);
           const w2 = Math.min(toN(pw), 34), h2 = toN(ph);
           const p2 = toN(2), bx2 = (x0 + x1) / 2 - w2 / 2;
           for (const c of [
@@ -1470,7 +1728,7 @@ export default function FactoryMap({ setupMode = false }) {
             }
           }
         }
-        const { w: wpx, h: hpx } = estLabelPx(levels[lvl].name, levels[lvl].txt, big, false, kpi);
+        const { w: wpx, h: hpx } = est(levels[lvl].name, levels[lvl].txt, big, false, kpi);
         const w = kpi ? toN(wpx) : Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
         const cands = big
           ? [ // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
@@ -1488,7 +1746,7 @@ export default function FactoryMap({ setupMode = false }) {
               { x: bx, y: y0 + h + g }, { x: bx, y: cyn - h / 2 }];
         const last = lvl === levels.length - 1;
         const box = placeBox(cands, w, h, placed, maxY, bb, obstacles, last && compactLbl, last);
-        if (box) { placed.push(box); return { ...box, lvl, link: linkOf(box, bb) }; }
+        if (box) { placed.push(box); return { ...box, lvl, kpi, link: linkOf(box, bb) }; }
       }
       return null;
     };
@@ -1522,12 +1780,16 @@ export default function FactoryMap({ setupMode = false }) {
         //     ภาพอ้างอิงเองก็มีการ์ดแค่ 4 ใบบนผังทั้งโรง)
         //    OEE ใช้การ์ดสไตล์เดียวกับพลังงาน (2026-08-25 · คำสั่ง user "รูปแบบคล้ายๆ เรื่องไฟ")
         const isKpi = (metric === 'energy' && st.kwh != null) || (metric === 'oee' && st.oee != null);
-        const box = place(r.points, false, isKpi ? [levels[0]] : levels, new Set([r.line_name]), isKpi);
-        if (box) out.region[r.id] = { ...box, kpi: isKpi }; else out.hidden.push(r.line_name);
+        // การ์ด = level แรกของ chain เดียวกับป้ายปกติ — ที่ไม่พอ "สละการ์ด" ย่อเป็นป้าย ไม่ไปทับเพื่อน
+        // lvl ที่เก็บถูกปรับกลับเป็น index ของ levels เดิม (renderer แปลง lvl→ข้อความด้วย mapping เดิม)
+        const lv = isKpi ? [{ ...levels[0], kpi: true }, ...levels] : levels;
+        const box = place(r.points, false, lv, new Set([r.line_name]));
+        if (box) out.region[r.id] = box.kpi ? box : { ...box, lvl: box.lvl - (isKpi ? 1 : 0) };
+        else out.hidden.push(r.line_name);
       });
     return out;
     // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, showFac, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lblScale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -1653,7 +1915,7 @@ export default function FactoryMap({ setupMode = false }) {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · ผังอัปเดตสดทุก 30 วิ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
       </div>
@@ -1683,12 +1945,30 @@ export default function FactoryMap({ setupMode = false }) {
             ⚠ กรอกค่าไฟไว้แต่ยังไม่ได้ตีกรอบบนผัง {energyNoRegion.length} จุด — ตัวเลขไม่โผล่
           </span>
         )}
-        {/* 🫥 โซนสนับสนุนที่ถูกซ่อนตาม metric — ห้ามหายเงียบ (โซนผิดปกติยังโชว์เสมอ) */}
-        {!editing && !!facHiddenList.length && (
-          <span title={`ซ่อน (สถานะปกติ): ${facHiddenList.join(', ')} — โซนที่มีเหตุผิดปกติยังโชว์บนผังเสมอ`}
-            style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            🫥 ซ่อนโซนสนับสนุน {facHiddenList.length} โซน (ปกติ · ไม่มีข้อมูล{M.label.replace(/^[^ ]+ /, ' ')})
-          </span>
+        {/* 🫥 โซนสนับสนุนถูกซ่อนตาม metric ที่กด — สัญญาณผิดปกติยุบเป็นตัวนับ ⚠ บนชิป (ไม่หายเงียบ) · กดชิปเปิดดูชั่วคราว */}
+        {!editing && !!facZones.all.length && (
+          <button onClick={() => setShowFac(v => !v)}
+            title={facZones.warn.length
+              ? `โซนที่มีสัญญาณ: ${facZones.warn.map(n => `${n} (${facHealthText(stOf(n))})`).join(' · ')}`
+              : `ซ่อน: ${facZones.all.join(', ')}`}
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap',
+              background: showFac ? 'var(--bg3)' : facZones.warn.length ? '#f59e0b1a' : 'transparent',
+              border: `1px solid ${showFac ? 'var(--border2)' : facZones.warn.length ? '#f59e0b55' : 'var(--border)'}`,
+              color: facZones.warn.length ? '#f59e0b' : 'var(--muted)' }}>
+            {showFac ? '👁 กำลังแสดงโซนสนับสนุน — แตะเพื่อซ่อน'
+              : `🫥 ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''} — แตะเพื่อดู`}
+          </button>
+        )}
+        {/* 🛠️ แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ต้องรู้ว่ามีค้างอยู่ (ห้ามหายเงียบ) */}
+        {!editing && metric === 'pm' && pmOrphan.total > 0 && (
+          <Link to="/pm?tab=setup"
+            title="ไปตั้ง 'ไลน์' ให้อุปกรณ์ที่ PM Setup — ตั้งแล้วแผนจะขึ้นบนกรอบไลน์นั้นเอง"
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', borderRadius: 6, padding: '3px 8px',
+              color: pmOrphan.overdue ? '#ef4444' : '#f59e0b',
+              background: pmOrphan.overdue ? '#ef44441a' : '#f59e0b1a',
+              border: `1px solid ${pmOrphan.overdue ? '#ef444455' : '#f59e0b55'}` }}>
+            ⚠ แผน PM {pmOrphan.total} รายการยังไม่ผูกไลน์ — ไม่ขึ้นบนผัง{pmOrphan.overdue ? ` · เกินกำหนดแล้ว ${pmOrphan.overdue}` : ''}
+          </Link>
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
@@ -1700,15 +1980,33 @@ export default function FactoryMap({ setupMode = false }) {
           </span>
         )}
         {!editing && !!labelLayout.hidden.length && (
-          // จอแคบวางป้ายไม่ครบ — ต้องบอกว่าขาดไปกี่ไลน์ ห้ามให้หายเงียบ
-          <span title={`ไม่มีที่วางป้าย: ${labelLayout.hidden.join(', ')}`}
+          // จอแคบวางป้ายไม่ครบ — ต้องบอกว่าขาดไปกี่ไลน์ ห้ามให้หายเงียบ + ชี้ทางแก้ (ลดขนาดป้าย/ซ่อนแผงขวา)
+          <span title={`ไม่มีที่วางป้าย: ${labelLayout.hidden.join(', ')}\nจอ TV ที่ตั้ง scaling สูงจะเข้าเคสนี้ทั้งที่จอใหญ่ — กด A− ลดขนาดป้าย หรือซ่อนแผงขวา`}
             style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, fontWeight: 700, color: '#f59e0b', background: '#f59e0b1a', border: '1px solid #f59e0b55', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap' }}>
-            จอแคบ · ซ่อนป้าย {labelLayout.hidden.length} ไลน์ — แตะกรอบเพื่อดู
+            ที่ไม่พอ · ซ่อนป้าย {labelLayout.hidden.length} ไลน์ — ลองกด A− / ซ่อนแผงขวา
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
           <span style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
+          </span>
+        )}
+        {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
+            ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
+        {!editing && (
+          <span style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
+            title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
+            <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
+              style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
+            <span style={{ fontSize: 11, fontWeight: 700, color: lblScale === 1 ? 'var(--muted)' : 'var(--accent)', minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
+              ป้าย {Math.round(lblScale * 100)}%
+            </span>
+            <button onClick={() => applyScale(lblScale + 0.1)} disabled={lblScale >= 1.6}
+              style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale >= 1.6 ? 0.4 : 1 }}>A+</button>
+            <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
+              title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
+              {panelHide ? '▶ แผงขวา' : '◀ ซ่อนแผงขวา'}
+            </button>
           </span>
         )}
       </div>
@@ -1787,13 +2085,21 @@ export default function FactoryMap({ setupMode = false }) {
               )}
               {/* เส้นโยงป้าย↔กรอบ — เฉพาะป้ายที่ต้องขยับออกจากกรอบเพื่อหลบป้ายอื่น
                   (ป้ายที่ยังติดกรอบไม่มีเส้น จะได้ไม่รกโดยไม่จำเป็น) */}
+              {/* เส้นโยง 3 ชั้น: halo ดำ + เส้นสี + จุดปลายฝั่งกรอบ — เดิมเส้นเดียวจาง 0.55 มองไม่เห็นบนภาพถ่ายผัง
+                  (user ทัก 2026-08-25 "เส้นไกด์ที่ชี้กลับไปที่ไลน์มองไม่เห็นเลย")
+                  ⚠️ จุดปลายใช้ line ยาว 0 + linecap round (วาดเป็นวงกลมขนาด px คงที่) — ห้ามใช้ <circle r="%">
+                  เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
               {!editing && [
                 ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lk-r-${r.id}`]),
                 ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lk-h-${h.name}`]),
               ].filter(([l]) => l).map(([l, color, key]) => (
-                <line key={key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                  stroke={color} strokeWidth="1.2" strokeDasharray="3 2" opacity={0.55}
-                  vectorEffect="non-scaling-stroke" pointerEvents="none" />
+                // เส้นบาง + drop-shadow จางๆ พออ่านออกบนภาพถ่าย — ห้ามกลับไปใช้ halo ดำหนา (user: "พอเป็นสีดำดูอึดอัด")
+                <g key={key} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 1.2px rgba(0,0,0,0.9))' }}>
+                  <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                    stroke={color} strokeWidth="1.6" strokeDasharray="4 3" opacity={0.9} vectorEffect="non-scaling-stroke" />
+                  <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
+                    stroke={color} strokeWidth="4.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                </g>
               ))}
             </svg>
 
@@ -1814,8 +2120,14 @@ export default function FactoryMap({ setupMode = false }) {
                 ? { left: `${box.x}%`, top: `${box.y * aspect}%`, width: `${box.w}%` }
                 : { left: `${centroid(h.hull)[0]}%`, top: `${centroid(h.hull)[1]}%`, transform: 'translate(-50%,-50%)', maxWidth: '32%' };
               return (
-                <div key={`hlbl-${h.name}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
+                <div key={`hlbl-${h.name}`}
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(h.name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(h.name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === h.name ? null : hv)}>
+                  {/* zoom = ตัวเดียวกับที่ est ในการจองพื้นที่คูณไว้ — ใช้ zoom (ลด layout จริง) ไม่ใช่ transform (ภาพลวงตา) ตามบทเรียน fitOnePage */}
+                  <div style={{ ...(lblScale !== 1 ? { zoom: lblScale } : {}), background: 'linear-gradient(180deg, rgba(8,10,16,0.93), rgba(8,10,16,0.82))', border: `2px dashed ${meta.color}`, borderRadius: 9, padding: '3px 9px 4px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: `0 3px 14px rgba(0,0,0,0.45), inset 0 0 0 1px ${meta.color}22` }}>
                     <div style={{ fontSize: 'clamp(12px,1.15vw,16px)', fontWeight: 800, color: '#fff', letterSpacing: 0.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}▣ {h.name}
                       {kids > 0 && <span style={{ fontSize: '0.72em', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
@@ -1853,12 +2165,20 @@ export default function FactoryMap({ setupMode = false }) {
                 const dCol = d == null ? 'rgba(255,255,255,0.55)' : d >= 1 ? '#22c55e' : d <= -1 ? '#ef4444' : 'rgba(255,255,255,0.75)';
                 const series = hist ? [...hist.series, st.oee] : null;
                 return (
-                  <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  <div key={`lbl-${r.id}`}
+                  /* ป้าย/การ์ดต้องคลิกได้ = เข้าไลน์ของป้ายเสมอ (2026-08-26 · user ทัก "คลิก box LASER ดันเข้า HYDRO
+                     เพราะ box ลอยทับกรอบไลน์อื่น") — เดิม pointerEvents:none คลิกทะลุไปโดนกรอบข้างใต้ */
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(r.line_name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === r.line_name ? null : hv)}>
                     <div style={{
+                      ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
-                      textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                      textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
                       <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
@@ -1872,12 +2192,21 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={series} color={meta.color} /></span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2 }}>
-                        <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·เทียบวันก่อน`}</span>
+                      {/* แถวเนื้อหาการ์ดทุกแถวต้อง nowrap — ข้อความยาวห้ามดันการ์ดสูงเกิน KPI_H ที่ layout จองไว้ (2026-08-26 "box ทับกันเละ") */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                        <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·วันก่อน`}</span>
                         {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· สด</span>}
                         {st.oeeCtPartial && <span style={{ color: '#f59e0b' }}>· ⚠CT ไม่ครบ</span>}
                         {st.oeePOver && <span style={{ color: '#f59e0b' }}>· ⚠%P ตัน</span>}
                       </div>
+                      {/* แตก A·P·Q ให้เห็นบนการ์ด (user 2026-08-25 "บอกแต่ OEE ก็ทำแต่ OEE หรอ") — ถ่วงน้ำหนักตามกฎแล้วใน stOf */}
+                      {(st.oeeA != null || st.oeeP != null || st.oeeQ != null) && (
+                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 9.5, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                          <span style={{ color: '#4ade80' }}>A {st.oeeA != null ? Math.round(st.oeeA) : '–'}</span>
+                          <span style={{ color: '#60a5fa' }}>P {st.oeeP != null ? Math.round(st.oeeP) : '–'}</span>
+                          <span style={{ color: '#c084fc' }}>Q {st.oeeQ != null ? Math.round(st.oeeQ) : '–'}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1886,12 +2215,20 @@ export default function FactoryMap({ setupMode = false }) {
                 const d = energyDelta(st);
                 const dCol = d == null ? 'rgba(255,255,255,0.55)' : d <= -5 ? '#22c55e' : d > 10 ? '#ef4444' : 'rgba(255,255,255,0.75)';
                 return (
-                  <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                  <div key={`lbl-${r.id}`}
+                  /* ป้าย/การ์ดต้องคลิกได้ = เข้าไลน์ของป้ายเสมอ (2026-08-26 · user ทัก "คลิก box LASER ดันเข้า HYDRO
+                     เพราะ box ลอยทับกรอบไลน์อื่น") — เดิม pointerEvents:none คลิกทะลุไปโดนกรอบข้างใต้ */
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(r.line_name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === r.line_name ? null : hv)}>
                     <div style={{
+                      ...(lblScale !== 1 ? { zoom: lblScale } : {}),
                       background: 'linear-gradient(180deg, rgba(6,10,18,0.94), rgba(6,10,18,0.86))',
                       border: `1px solid ${meta.color}88`, borderLeft: `3px solid ${meta.color}`,
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
-                      textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                      textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
                       <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
@@ -1905,7 +2242,7 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={st.kwhSeries} color={meta.color} /></span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
                         {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· 🌱 {fmtTco2e(st.kwhCo2)} t</span>}
                         {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
@@ -1915,13 +2252,23 @@ export default function FactoryMap({ setupMode = false }) {
                 );
               }
               return (
-                <div key={`lbl-${r.id}`} style={{ position: 'absolute', ...posStyle, pointerEvents: 'none' }}>
+                <div key={`lbl-${r.id}`}
+                  /* ป้าย/การ์ดต้องคลิกได้ = เข้าไลน์ของป้ายเสมอ (2026-08-26 · user ทัก "คลิก box LASER ดันเข้า HYDRO
+                     เพราะ box ลอยทับกรอบไลน์อื่น") — เดิม pointerEvents:none คลิกทะลุไปโดนกรอบข้างใต้ */
+                  style={{ position: 'absolute', ...posStyle, pointerEvents: editing ? 'none' : 'auto', cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); openLine(r.line_name); }}
+                  onPointerEnter={(e) => { if (e.pointerType === 'mouse') { setHoverLine(r.line_name); setHoverXY({ x: e.clientX, y: e.clientY }); } }}
+                  onPointerMove={(e) => { if (e.pointerType === 'mouse') setHoverXY({ x: e.clientX, y: e.clientY }); }}
+                  onPointerLeave={() => setHoverLine(hv => hv === r.line_name ? null : hv)}>
                   {/* ป้ายที่ลงในกรอบไลน์ตัวเองได้ = ข้อความล้วน ไม่มีการ์ด/ขอบ (กรอบมีพื้นสีอ่อนอยู่แล้ว
                       ซ้อนการ์ดอีกชั้นทั้งเปลืองที่ทั้งรก) · ป้ายที่ต้องออกไปอยู่นอกกรอบยังใช้การ์ด
                       ไม่งั้นตัวหนังสือลอยบนรูปถ่ายผังอ่านไม่ออก */}
-                  <div style={box?.plain
-                    ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
-                    : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }}>
+                  <div style={{
+                    ...(lblScale !== 1 ? { zoom: lblScale } : {}),
+                    ...(box?.plain
+                      ? { textAlign: 'center', textShadow: '0 1px 2px #000, 0 0 7px rgba(0,0,0,0.95)' }
+                      : { background: 'linear-gradient(180deg, rgba(8,10,16,0.78), rgba(8,10,16,0.58))', border: `1px solid ${meta.color}66`, borderBottom: `2.5px solid ${meta.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center', textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: '0 2px 10px rgba(0,0,0,0.35)' }),
+                  }}>
                     <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                       {parent && <span title={`ไลน์ย่อยของ ${parent}`} style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 700, marginRight: 2 }}>↳</span>}
@@ -1947,8 +2294,9 @@ export default function FactoryMap({ setupMode = false }) {
           </div>
           </div>
 
-          {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ── */}
-          {!editing && (
+          {/* ── side panel: สรุปทบทวนรายวัน (default) / จัดอันดับสด (ใช้พื้นที่ข้าง) ──
+              จอ TV ซ่อนได้ (ปุ่ม ◀ ในแถบ metric) — คืนความกว้างให้ผัง ~360px แล้ว wrapW มักพ้นเกณฑ์ compact */}
+          {!editing && !panelHide && (
             <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               {/* สลับโหมดแผง */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -2319,10 +2667,19 @@ export default function FactoryMap({ setupMode = false }) {
               <div style={{ overflowY: 'auto', padding: '16px 20px 20px' }}>
                 {storyLoading ? (
                   <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
-                ) : !s || !s.sessionCount ? (
-                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีการเปิดกะของไลน์นี้ในวันที่เลือก</div>
+                ) : !s ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ — ลองปิดแล้วเปิดใหม่</div>
                 ) : (<>
+                  {/* ไม่ได้เปิดกะ = บอกแล้วไปต่อ ห้ามจบแค่บรรทัดเดียว — PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
+                      (2026-08-26 · user ทัก "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง") */}
+                  {!s.sessionCount && (
+                    <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--text2)' }}>
+                      ⏸ <b>ไม่มีการเปิดกะของไลน์นี้ใน{fmtThaiDate(storyDate)}</b> — ไม่มียอดผลิต/OEE/Downtime ของวันนี้
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>ด้านล่างคือสถานะปัจจุบันของไลน์ (PM · ใบซ่อม · คน · ไฟฟ้า) ซึ่งไม่ผูกกับวันที่เลือก</div>
+                    </div>
+                  )}
                   {/* สรุปหัวเรื่อง */}
+                  {s.sessionCount > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px,1fr))', gap: 8, marginBottom: 18 }}>
                     {[
                       { k: 'ผลิตได้ / เป้า', v: `${fmtNum(s.totProduced)}/${fmtNum(s.totTarget)}`, sub: pct != null ? `${pct}%` : '', c: pctCol(pct) },
@@ -2338,8 +2695,10 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                     ))}
                   </div>
+                  )}
 
                   {/* รายกะ */}
+                  {s.sessionCount > 0 && (
                   <StorySection title="🕐 แยกตามกะ">
                     <div style={{ display: 'grid', gap: 6 }}>
                       {s.shifts.map(x => {
@@ -2365,6 +2724,7 @@ export default function FactoryMap({ setupMode = false }) {
                       })}
                     </div>
                   </StorySection>
+                  )}
 
                   {/* ผลิตรายพาร์ท */}
                   {s.parts.length > 0 && (
@@ -2439,6 +2799,7 @@ export default function FactoryMap({ setupMode = false }) {
                   )}
 
                   {/* Downtime + เหตุผล */}
+                  {s.sessionCount > 0 && (<>
                   <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
                     {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
@@ -2483,6 +2844,7 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                     )}
                   </StorySection>
+                  </>)}
 
                   {/* 4M */}
                   {s.fourM.length > 0 && (
@@ -2500,6 +2862,112 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                     </StorySection>
                   )}
+
+                  {/* ══ 🧭 สถานะปัจจุบันของไลน์ (ไม่ผูกกับวันที่เลือก) ══════════════════════
+                      2026-08-26 · user: "อันนี้โชว์แค่เกี่ยวกับการผลิตหรอ มันควรโชว์ทุกเรื่องนะ
+                      เพราะจะดูรายละเอียดของไลน์นั้นๆ แล้ว"
+                      ⚠️ PM/ใบซ่อม/คน/ไฟ เป็น "สถานะตอนนี้" ไม่ใช่ของวันที่เลือก — ต้องเขียนกำกับ
+                         ไม่งั้นคนอ่านเข้าใจว่าเป็นข้อมูลย้อนหลังของวันนั้น */}
+                  {(() => {
+                    const st = stOf(storyLine);
+                    const pmDue = (s.pmRows || []).filter(r => r.days == null || r.days <= 7);
+                    const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
+                    return (
+                      <StorySection title="🧭 สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
+                        <div style={{ display: 'grid', gap: 9 }}>
+                          {/* 🛠️ PM — ตัวที่ผังโชว์บนป้าย ต้องกดเข้ามาแล้วเห็นว่า "เครื่องไหน" */}
+                          <div>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>
+                              🛠️ PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
+                            </div>
+                            {s.pmRows == null ? (
+                              <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ ดึงรายการ PM ไม่สำเร็จ</div>
+                            ) : !s.pmRows.length ? (
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีแผน PM ของอุปกรณ์ในไลน์นี้ — ตั้งที่หน้า PM Setup</div>
+                            ) : (<>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 4, fontSize: 12, fontWeight: 800 }}>
+                                <span style={{ color: st.pmOverdue ? '#ef4444' : 'var(--muted)' }}>เกินกำหนด {st.pmOverdue || 0}</span>
+                                <span style={{ color: st.pmDueSoon ? '#f59e0b' : 'var(--muted)' }}>ใกล้ครบ {st.pmDueSoon || 0}</span>
+                                <span style={{ color: 'var(--muted)' }}>ทั้งหมด {st.pmTotal || 0}</span>
+                              </div>
+                              {pmDue.length > 0 && (
+                                <div style={{ display: 'grid', gap: 3, marginTop: 6 }}>
+                                  {pmDue.slice(0, 6).map((r, i2) => (
+                                    <div key={`${r.key}-${i2}`} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
+                                      <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }} />
+                                      <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                                      {r.sub && <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub}</span>}
+                                      <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 700, color: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }}>
+                                        {r.days == null ? 'ไม่มีรอบตายตัว' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {pmDue.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {pmDue.length - 6} รายการ</div>}
+                                </div>
+                              )}
+                              <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
+                            </>)}
+                          </div>
+
+                          {/* 🔧 ใบซ่อม MO ค้าง */}
+                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ที่ยังไม่ปิด</div>
+                            {s.moRows == null ? (
+                              <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ ดึงใบซ่อมไม่สำเร็จ</div>
+                            ) : !s.moRows.length ? (
+                              <div style={{ fontSize: 12, fontWeight: 800, color: '#22c55e', marginTop: 3 }}>✅ ไม่มีใบค้าง</div>
+                            ) : (<>
+                              <div style={{ fontSize: 15, fontWeight: 900, color: '#f59e0b', marginTop: 2 }}>{s.moRows.length} ใบ</div>
+                              <div style={{ display: 'grid', gap: 3, marginTop: 4 }}>
+                                {s.moRows.slice(0, 5).map(o => (
+                                  <div key={o.id} onClick={() => navigate('/mtn-repair')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, cursor: 'pointer' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>{o.mo_no || '⏳ รอออกเลข'}</span>
+                                    <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {o.machine_no || 'ไม่ระบุเครื่อง'}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
+                                    </span>
+                                  </div>
+                                ))}
+                                {s.moRows.length > 5 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
+                              </div>
+                            </>)}
+                          </div>
+
+                          {/* 👷 คน & จุดงาน · ⚡ ไฟฟ้า · 🔗 Supply route — ตัวเลขชุดเดียวกับแท็บบนผัง */}
+                          <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>👷 คน & จุดงาน (ตอนนี้)</div>
+                              {st.headTotal || st.stationTotal ? (
+                                <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
+                                  มา {fmtNum(st.present)}/{fmtNum(st.headTotal)} คน
+                                  {st.stationTotal > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · เข้าจุด {fmtNum(st.stationFilled)}/{fmtNum(st.stationTotal)}</span>}
+                                  {st.ppeBad > 0 && <span style={{ color: '#ef4444' }}> · ⚠PPE {fmtNum(st.ppeBad)}</span>}
+                                </div>
+                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีข้อมูลเช็คชื่อ</div>}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>⚡ ไฟฟ้า{energyMonth ? ` · ${monthLabel(energyMonth)}` : ''}</div>
+                              {st.kwh != null ? (
+                                <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
+                                  {fmtKwh(st.kwh)} kWh
+                                  {eDelta != null && <span style={{ color: eDelta <= -5 ? '#22c55e' : eDelta > 10 ? '#ef4444' : 'var(--muted)' }}> · {eDelta > 0 ? '+' : ''}{eDelta}%</span>}
+                                  {st.kwhCost > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · {fmtBaht(st.kwhCost)} บาท</span>}
+                                </div>
+                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของไลน์นี้</div>}
+                            </div>
+                            {st.supList?.length > 0 && (
+                              <div>
+                                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔗 ระบบสนับสนุนที่จ่ายให้</div>
+                                <div style={{ fontSize: 12, color: st.supAtRisk ? '#ef4444' : 'var(--text2)', marginTop: 3, fontWeight: st.supAtRisk ? 800 : 500 }}>
+                                  {st.supAtRisk ? '⚠ มีเครื่องกำลังซ่อม: ' : 'ปกติ · '}
+                                  {[...new Set(st.supList.filter(x => !st.supAtRisk || x.atRisk).map(x => x.name || x.no))].slice(0, 4).join(' · ')}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </StorySection>
+                    );
+                  })()}
                 </>)}
               </div>
             </div>

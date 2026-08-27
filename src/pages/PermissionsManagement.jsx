@@ -28,6 +28,7 @@ const PAGE_GROUPS = [
       { key: 'page:/dept-dashboard', label: 'Dashboard ส่วนงาน' },
       { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
+      { key: 'page:/line-oee', label: 'OEE รายไลน์ (จอไลน์)' },
       { key: 'page:/group-overview', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)' },
       { key: 'page:/adoption-outlook', label: 'ภาพเมื่อข้อมูลเชื่อมกัน' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
@@ -87,13 +88,14 @@ const PAGE_GROUPS = [
     group: 'การตรวจสอบและซ่อมบำรุง',
     pages: [
       { key: 'page:/mtn-repair',  label: 'แจ้งซ่อม MTN (MO)' },
-      { key: 'page:/pm-check',    label: 'ตรวจสอบอุปกรณ์เครื่องจักร' },
-      { key: 'page:/pm-schedule', label: 'แผน PM อุปกรณ์เครื่องจักร' },
-      { key: 'page:/pm-forecast', label: 'PM ล่วงหน้า (Planner)' },
-      { key: 'page:/pm-coordination', label: 'แผนประสานงาน PM (แจ้งผลิต)' },
+      // 5 คีย์ล่างนี้เป็น "แท็บ" ใน 🔧 ศูนย์ PM (/pm) — เข้าหน้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง
+      { key: 'page:/pm-check',    label: '— แท็บ ตรวจอุปกรณ์ (ใน ศูนย์ PM)' },
+      { key: 'page:/pm-schedule', label: '— แท็บ แผน PM (ใน ศูนย์ PM)' },
+      { key: 'page:/pm-forecast', label: '— แท็บ PM ล่วงหน้า / Planner (ใน ศูนย์ PM)' },
+      { key: 'page:/pm-coordination', label: '— แท็บ ประสานงาน PM (แจ้งผลิต) (ใน ศูนย์ PM)' },
+      { key: 'page:/pm-setup',    label: '— แท็บ ตั้งค่าจุดตรวจ (ใน ศูนย์ PM)' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
-      { key: 'page:/pm-setup',    label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร' },
     ],
   },
   {

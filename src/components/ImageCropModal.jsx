@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from './Toast';
+import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
 
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
@@ -29,6 +30,10 @@ export default function ImageCropModal({
   onCancel, onConfirm,
 }) {
   const [useFull, setUseFull] = useState(false);
+  // srcFile = ไฟล์ที่ใช้จริงในโมดัล — HEIC จากกล้องมือถือถูกแปลงเป็น JPEG แล้ว (ไฟล์อื่น = ตัวเดิม)
+  // ⚠️ ทุกจุดที่เคยอ้าง `file` ข้างใน (ชนิด/ชื่อ/ตัวส่งออก) ต้องอ้าง srcFile แทน ไม่งั้นได้ไฟล์ที่อ่านไม่ออก
+  const [srcFile, setSrcFile] = useState(null);
+  const [converting, setConverting] = useState(false);
   const [imgUrl, setImgUrl] = useState(null);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
   const [scale, setScale] = useState(1);
@@ -39,34 +44,50 @@ export default function ImageCropModal({
   const FRAME_W = 300;
   const FRAME_H = Math.round(FRAME_W / aspect);
 
-  const isGif = file?.type === 'image/gif';
+  const isGif = srcFile?.type === 'image/gif';
 
   useEffect(() => {
     if (!file) return;
-    if (isGif && file.size > GIF_MAX_BYTES) {
-      toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(file.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
-      onCancel?.();
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setImgUrl(url);
-    const img = new Image();
-    img.onload = () => {
-      setNatural({ w: img.width, h: img.height });
-      const s = Math.max(FRAME_W / img.width, FRAME_H / img.height);
-      setScale(s);
-      setMinScale(s);
-      setPos({ x: 0, y: 0 });
-    };
-    img.onerror = () => {
-      // เบราว์เซอร์ไม่รองรับฟอร์แมตไฟล์นี้ (HEIF/HEIC จากกล้องมือถือ — ทั้ง Samsung และ iPhone) — ถ้าไม่ดักไว้
-      // กรอบครอบรูปจะว่างเปล่าแบบไม่มี error ใดๆ ผู้ใช้กดยืนยันไปได้โดยไม่มีรูปติดไปด้วย
-      // ⚠️ ข้อความต้องชี้ที่ "ฟอร์แมต + วิธีตั้งกล้อง" ห้ามพูดเรื่องขนาดไฟล์ (บทเรียน IMG_READ_ERROR ใน resizeImage.js)
-      toast.error('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ — ไฟล์น่าจะเป็นฟอร์แมต HEIF/HEIC ที่เบราว์เซอร์ไม่รองรับ · ตั้งกล้องให้ถ่ายเป็น JPEG แล้วลองใหม่ (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")');
-      onCancel?.();
-    };
-    img.src = url;
-    return () => URL.revokeObjectURL(url);
+    let url = null;
+    let cancelled = false;
+    (async () => {
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิมทันที ไม่มี overhead)
+      let f = file;
+      if (isHeicFile(file)) {
+        setConverting(true);
+        try { f = await toDecodableImage(file); }
+        catch (e) { if (!cancelled) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); onCancel?.(); } return; }
+        finally { if (!cancelled) setConverting(false); }
+      }
+      if (cancelled) return;
+      // เช็คขนาด GIF หลังแปลงเสมอ (ไฟล์ที่แปลงแล้วเป็น JPEG ไม่เข้าเงื่อนไขนี้)
+      if (f.type === 'image/gif' && f.size > GIF_MAX_BYTES) {
+        toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(f.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
+        onCancel?.();
+        return;
+      }
+      setSrcFile(f);
+      url = URL.createObjectURL(f);
+      setImgUrl(url);
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        setNatural({ w: img.width, h: img.height });
+        const s = Math.max(FRAME_W / img.width, FRAME_H / img.height);
+        setScale(s);
+        setMinScale(s);
+        setPos({ x: 0, y: 0 });
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        // เบราว์เซอร์อ่านไฟล์นี้ไม่ออกแม้ผ่านตัวแปลงแล้ว — ถ้าไม่ดักไว้ กรอบครอบรูปจะว่างเปล่าแบบไม่มี error
+        // ผู้ใช้กดยืนยันไปได้โดยไม่มีรูปติดไปด้วย · ⚠️ ข้อความต้องชี้ "ฟอร์แมต + วิธีตั้งกล้อง" ห้ามพูดเรื่องขนาดไฟล์
+        toast.error('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ — ไฟล์น่าจะเป็นฟอร์แมตที่เบราว์เซอร์ไม่รองรับ · ตั้งกล้องให้ถ่ายเป็น JPEG แล้วลองใหม่ (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")');
+        onCancel?.();
+      };
+      img.src = url;
+    })();
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
   }, [file]);
 
   const clampPos = (x, y, s) => {
@@ -98,9 +119,10 @@ export default function ImageCropModal({
   };
 
   const handleConfirm = () => {
+    if (!srcFile) return;                 // ยังแปลง/โหลดไม่เสร็จ — กันกดยืนยันแล้วได้ไฟล์ว่าง
     if (isGif) {
       // ส่งต้นฉบับทั้งไฟล์เพื่อคงการเคลื่อนไหว (ขนาดถูกเช็คแล้วตอนเลือกไฟล์)
-      onConfirm(file);
+      onConfirm(srcFile);
       return;
     }
     const canvas = document.createElement('canvas');
@@ -115,7 +137,7 @@ export default function ImageCropModal({
       imgF.onload = () => {
         ctx0.drawImage(imgF, 0, 0, canvas.width, canvas.height);
         canvas.toBlob(blob => {
-          const fileName = (file.name || 'image').replace(/\.\w+$/, '.jpg');
+          const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '.jpg');
           onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
         }, 'image/jpeg', quality);
       };
@@ -135,7 +157,7 @@ export default function ImageCropModal({
       const cy = canvas.height / 2 - pos.y * renderScale;
       ctx.drawImage(img, cx - dispW / 2, cy - dispH / 2, dispW, dispH);
       canvas.toBlob(blob => {
-        const fileName = (file.name || 'image').replace(/\.\w+$/, '.jpg');
+        const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '.jpg');
         onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
       }, 'image/jpeg', quality);
     };
@@ -159,6 +181,13 @@ export default function ImageCropModal({
             borderRadius: shape === 'circle' ? '50%' : 8, border: '2px solid var(--accent)', background: '#000',
             cursor: useFull ? 'default' : 'grab', touchAction: 'none',
           }}>
+          {/* แปลง HEIC ใช้เวลา 1-3 วิ (โหลดตัวแปลง + decode) — ต้องบอกว่ากำลังทำอะไรอยู่ ห้ามปล่อยกรอบดำเงียบ */}
+          {converting && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--text2)', fontSize: 12, textAlign: 'center', padding: 12 }}>
+              <span style={{ fontSize: 22 }}>⏳</span>
+              กำลังแปลงรูปจากกล้อง (HEIC)…<br />ครั้งแรกอาจใช้เวลาสักครู่
+            </div>
+          )}
           {imgUrl && natural.w > 0 && (
             <img src={imgUrl} draggable={false}
               style={{
@@ -196,7 +225,10 @@ export default function ImageCropModal({
           {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator
               ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
           <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button type="button" onClick={handleConfirm} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✓ ใช้รูปนี้</button>
+          <button type="button" onClick={handleConfirm} disabled={!srcFile || converting}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
+            {converting ? 'กำลังแปลง…' : '✓ ใช้รูปนี้'}
+          </button>
         </div>
       </div>
     </div>

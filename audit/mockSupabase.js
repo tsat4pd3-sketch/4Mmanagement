@@ -23,7 +23,22 @@ const ROW = (i) => ({
   employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },
 })
-const ROWS = Array.from({ length: 14 }, (_, i) => ROW(i + 1))
+/* ⚠️ แถวสุดท้ายเป็น "แถวข้อมูลไม่ครบ" โดยตั้งใจ (2026-08-26)
+   คอลัมน์ตัวเลข/ข้อความในฐานจริงส่วนใหญ่ nullable — แถวเดียวที่เป็น null ทำให้ทั้งหน้าพังได้
+   (`undefined.toLocaleString()` / `.toFixed()` / `.map()`) และ build+lint จับไม่ได้เลย
+   เคสจริงที่เจอ: /products แท็บ Kanban Std พังทั้งแท็บ · /improvements พังตอนมีโปรเจคแรก
+   → mock ต้องมีแถวแบบนี้เสมอ ไม่งั้น harness ผ่านหมดแต่ของจริงพัง
+   ห้ามใส่ null ทุกคอลัมน์ (หน้าจะ error ตั้งแต่ key หลักจนวัดอะไรไม่ได้) — null เฉพาะค่าที่ nullable จริง */
+const NULLISH = (i) => ({
+  ...ROW(i),
+  qty: null, qty_ng: null, qty_ok: null, qty_actual: null, qty_target: null, qty_suspect: null,
+  duration_min: null, cycle_time_sec: null, oee: null, oee_a: null, oee_p: null, oee_q: null,
+  qty_per_pkg: null, qty_per_kanban: null, min_qty: null, max_qty: null, lot_size: null,
+  section: null, parent_line_name: null, machine_no: null, description: null, note: null, remark: null,
+  image_url: null, started_at: null, ended_at: null, position: null, customer: null, model: null,
+  material_cost: null, standard_cost: null, capacity_pkg: null, mat_nos: null,
+})
+const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
 const thenable = () => {
   const res = { data: ROWS, error: null, count: ROWS.length }

@@ -33,6 +33,7 @@ export default function SearchSelect({
   allowFree = false,     // พิมพ์ชื่อที่ไม่มีในลิสต์ได้ไหม
   placeholder = 'ค้นหา…',
   emptyText = 'ไม่พบรายการที่ค้นหา',
+  freeHint = '',         // ต่อท้ายข้อความ "ใช้ … เป็นชื่อที่พิมพ์เองได้" (ผลข้างเคียงเฉพาะหน้านั้น)
   maxRows = 60,
   disabled = false,
   inputStyle,
@@ -146,7 +147,7 @@ export default function SearchSelect({
             {rows.length === 0 && (
               <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)' }}>
                 {emptyText}
-                {allowFree && q.trim() !== '' && <div style={{ marginTop: 3, color: 'var(--accent2)', fontSize: 11.5 }}>ใช้ “{q.trim()}” เป็นชื่อที่พิมพ์เองได้ — กดนอกกรอบเพื่อยืนยัน (ไม่หักสต็อก)</div>}
+                {allowFree && q.trim() !== '' && <div style={{ marginTop: 3, color: 'var(--accent2)', fontSize: 11.5 }}>ใช้ “{q.trim()}” เป็นชื่อที่พิมพ์เองได้ — กดนอกกรอบเพื่อยืนยัน{freeHint ? ` (${freeHint})` : ''}</div>}
               </div>
             )}
           </div>

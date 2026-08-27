@@ -7,6 +7,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
+import { inspMeta } from '../utils/inspectionStatus'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -82,6 +83,7 @@ export default function PMSchedule() {
   const department = searchParams.get('dept') || 'maintenance'
 
   const [rows, setRows] = useState([])
+  const [insps, setInsps] = useState([])   // ผลตรวจจริง (ใช้วาดชั้น "ทำจริง" บนปฏิทิน)
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('timeline')
   const [deferFor, setDeferFor] = useState(null)   // แถวที่กำลังเลื่อนแผน
@@ -118,7 +120,7 @@ export default function PMSchedule() {
 
     const [{ data: jigs }, { data: inspections }, { data: plans }] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
-      supabaseDR.from('inspections').select('checklist_id, inspected_at').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
+      supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
       // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
       // the query just returns null and we fall back to computing due dates live.
       supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, next_due_reason, last_done_at, health_score, plan_type, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
@@ -154,6 +156,13 @@ export default function PMSchedule() {
       return (ORDER[a.status] ?? 5) - (ORDER[b.status] ?? 5)
     })
 
+    /* ⚠️ ผลตรวจจริงต้องย้อนกลับเข้า "แผน" ด้วย (feedback หน้างาน 2026-08-25:
+       "เตือนแล้วไม่ทำ · ไม่มี input กลับมาว่าผลทำเป็นยังไง")
+       เดิมดึง inspections มาแล้วใช้แค่ตัวล่าสุดต่อ checklist — ที่เหลือถูกทิ้ง
+       ทำให้ปฏิทินเป็น "แผนล้วน" ไม่มีร่องรอยว่าวันไหนทำจริง/ผลเป็นยังไง */
+    const eqNameByCl = {}
+    checklists.forEach(c => { eqNameByCl[c.id] = jigMap[c.equipment_id]?.name ?? '—' })
+    setInsps((inspections ?? []).map(i => ({ ...i, eqName: eqNameByCl[i.checklist_id] ?? '—' })))
     setRows(built)
     setLoading(false)
   }
@@ -169,7 +178,7 @@ export default function PMSchedule() {
   const teamMeta = teams.find(t => t.key === department)
   const deptColor = teamMeta?.color ?? DEPT_COLORS[department] ?? '#3dd65c'
   const today = atMidnight(new Date())
-  const goCheck = (equipId) => navigate(`/pm-check?dept=${department}&equip=${equipId}`)
+  const goCheck = (equipId) => navigate(`/pm?tab=check&dept=${department}&equip=${equipId}`)
 
   return (
     <div style={S.page}>
@@ -299,7 +308,7 @@ export default function PMSchedule() {
                           ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
                           : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">⏭ เลื่อนแผน</button>)}
                         <button
-                          onClick={() => navigate(`/pm-check?dept=${department}&equip=${cl.equipment_id}`)}
+                          onClick={() => navigate(`/pm?tab=check&dept=${department}&equip=${cl.equipment_id}`)}
                           style={S.actionBtn(deptColor)}
                         >
                           ✓ ตรวจ
@@ -315,7 +324,7 @@ export default function PMSchedule() {
       ) : view === 'timeline' ? (
         <TimelineView rows={rows} today={today} onCheck={goCheck} />
       ) : view === 'calendar' ? (
-        <CalendarView rows={rows} today={today} onCheck={goCheck} />
+        <CalendarView rows={rows} insps={insps} today={today} onCheck={goCheck} />
       ) : (
         <BucketView rows={rows} today={today} onCheck={goCheck} />
       )}
@@ -458,12 +467,20 @@ function TimelineView({ rows, today, onCheck }) {
 }
 
 // ── ปฏิทินรายเดือน ──
-function CalendarView({ rows, today, onCheck }) {
+function CalendarView({ rows, insps = [], today, onCheck }) {
   const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [daySel, setDaySel] = useState(null)
   const navBtn = { width: 34, height: 34, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13, cursor: 'pointer', flexShrink: 0 }
   const byDay = {}
   rows.forEach(r => { if (r.nextDue) { const k = dayKey(r.nextDue); (byDay[k] ||= []).push(r) } })
+  /* ชั้น "ทำจริง" — ผลตรวจที่เกิดขึ้นวันนั้น (คนละชั้นกับ "แผน" ที่ครบกำหนดวันนั้น)
+     ⚠️ status เทียบตรงตัวผ่าน inspMeta เท่านั้น ห้าม regex (pending/warning จะติด /fail|ng/) */
+  const doneByDay = {}
+  insps.forEach(i => {
+    if (!i.inspected_at) return
+    const k = dayKey(new Date(i.inspected_at))
+    ;(doneByDay[k] ||= []).push({ ...i, meta: inspMeta(i.status) })
+  })
   const overdue = rows.filter(r => r.nextDue && daysBetween(today, r.nextDue) < 0)
   const y = cursor.getFullYear(), mo = cursor.getMonth()
   const startPad = new Date(y, mo, 1).getDay()
@@ -493,12 +510,30 @@ function CalendarView({ rows, today, onCheck }) {
         {DOW_TH.map(d => <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: 'var(--muted)', padding: '2px 0' }}>{d}</div>)}
         {cells.map((date, i) => {
           if (!date) return <div key={i} />
-          const items = byDay[dayKey(date)] ?? []
-          const isToday = dayKey(date) === todayKey
+          const k = dayKey(date)
+          const items = byDay[k] ?? []
+          const done = doneByDay[k] ?? []
+          const isToday = k === todayKey
+          /* ⚠️ วันที่เลยมาแล้วแต่ยังไม่ได้ทำ ต้อง "แดงค้าง" ทั้งช่อง ไม่ใช่เทาไปเฉยๆ
+             (feedback หน้างาน: "ในแผนที่ควรแดงค้างรึป่าว ไม่ใช่เทาไปเลย")
+             เดิมทั้งช่องเป็นเทาเสมอ มีแค่ชิปเล็กๆ ข้างในเป็นสี — มองผ่านๆ ไม่เห็น */
+          const missed = items.some(r => r.status === 'overdue')
+          const bg = isToday ? 'var(--accent-dim)' : missed ? 'rgba(224,92,74,0.16)' : 'var(--bg3)'
+          const bd = missed ? '#e05c4a' : isToday ? 'var(--accent)' : 'var(--border)'
+          const clickable = items.length || done.length
           return (
-            <div key={i} onClick={() => items.length && setDaySel({ label: fmtDay(date), items })}
-              style={{ minHeight: 76, borderRadius: 8, border: `1px solid ${isToday ? 'var(--accent)' : 'var(--border)'}`, background: isToday ? 'var(--accent-dim)' : 'var(--bg3)', padding: 5, cursor: items.length ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: isToday ? 'var(--accent)' : 'var(--text2)' }}>{date.getDate()}</div>
+            <div key={i} onClick={() => clickable && setDaySel({ label: fmtDay(date), items, done })}
+              style={{ minHeight: 76, borderRadius: 8, border: `1px solid ${bd}`, borderWidth: missed ? 2 : 1, background: bg, padding: 5, cursor: clickable ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: missed ? '#e05c4a' : isToday ? 'var(--accent)' : 'var(--text2)' }}>{date.getDate()}</span>
+                {/* ผลตรวจที่ "ทำจริง" วันนั้น — ✅ ปกติ / ⚠️ พบผิดปกติ / ⏳ ตรวจไม่ครบ */}
+                {done.length > 0 && (
+                  <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800 }} title={`ตรวจจริง ${done.length} รายการ`}>
+                    {[...new Set(done.map(x => x.meta.icon))].join('')}
+                    <span style={{ color: 'var(--muted)', marginLeft: 2 }}>{done.length}</span>
+                  </span>
+                )}
+              </div>
               {items.slice(0, 3).map(r => {
                 const meta = STATUS_META[r.status] ?? STATUS_META.ok
                 return <div key={r.cl.id} title={r.eq.name} style={{ fontSize: 11, color: '#fff', background: meta.color, borderRadius: 4, padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name}</div>
@@ -522,6 +557,10 @@ function DayModal({ sel, onClose, onCheck }) {
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>📅 {sel.label}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
+        {/* ── ① แผนที่ครบกำหนดวันนี้ ── */}
+        {sel.items.length > 0 && (
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>📋 แผนที่ครบกำหนดวันนี้</div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sel.items.map(r => {
             const meta = STATUS_META[r.status] ?? STATUS_META.ok
@@ -536,6 +575,35 @@ function DayModal({ sel, onClose, onCheck }) {
             )
           })}
         </div>
+
+        {/* ── ② ผลตรวจที่ "ทำจริง" วันนั้น — ปิดลูป แผน → เตือน → ทำ → ผล ── */}
+        {(sel.done?.length ?? 0) > 0 && (
+          <>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--muted)', margin: '14px 0 6px' }}>✅ ตรวจจริงวันนี้ ({sel.done.length})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {sel.done.map(x => (
+                <div key={x.id} style={{ display: 'flex', alignItems: 'center', gap: 9, borderLeft: `3px solid ${x.meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '7px 12px' }}>
+                  <span style={{ fontSize: 14 }}>{x.meta.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.eqName}</div>
+                    <div style={{ fontSize: 11, color: x.meta.color, fontWeight: 700 }}>{x.meta.label}</div>
+                  </div>
+                  <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--muted)' }}>
+                    {new Date(x.inspected_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ⚠️ วันที่เลยมาแล้ว มีแผน แต่ไม่มีผลตรวจเลย = ตกไปจริงๆ ต้องพูดออกมา ห้ามเงียบ */}
+        {sel.items.some(r => r.status === 'overdue') && (sel.done?.length ?? 0) === 0 && (
+          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.12)', border: '1px solid #e05c4a55', fontSize: 12, color: '#e05c4a', lineHeight: 1.6 }}>
+            🔴 <b>ยังไม่มีผลตรวจของวันนี้</b> — แผนเลยกำหนดมาแล้วและไม่มีใครบันทึกว่าทำ
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>ทำแล้วให้กด “✓ ตรวจ” เพื่อบันทึกผล · ทำไม่ได้ให้เลื่อนแผนพร้อมเหตุผล จะได้ไม่ค้างแดงไปเรื่อยๆ</div>
+          </div>
+        )}
       </div>
     </div>
   )

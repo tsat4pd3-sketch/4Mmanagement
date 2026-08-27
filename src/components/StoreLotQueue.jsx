@@ -64,8 +64,10 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
     try {
       // 1) คิวใบสั่งที่ยังไม่ปิด — ทั้งระบบมีหลักสิบแถว ดึงมาแล้วกรองครอบครัวไลน์ฝั่ง client
       //    (`source_line` เป็น text snapshot — `.in()` ตรงตัวพลาดง่ายเมื่อชื่อไลน์เคยถูกแก้)
+      //    ⚠️ ต้องตัด `cancelled` ด้วย — ใบยกเลิกไม่ใช่งานค้าง (25/08 มี 100 ใบจากบั๊กหน่วย lot_size)
+      //    ปล่อยไว้ = ไลน์ปั๊มเห็นคิวปลอมเต็มจอ (บั๊กเดียวกับที่เพิ่งแก้ที่บอร์ดสโตร์)
       const { data: lotRows, error: e1 } = await supabaseDR.from('child_lot_requests')
-        .select('*').neq('status', 'done').order('created_at', { ascending: true }).limit(500);
+        .select('*').not('status', 'in', '("done","cancelled")').order('created_at', { ascending: true }).limit(500);
       if (e1) throw e1;
       const mine = (lotRows || []).filter(l => famSet.has(norm(l.source_line)));
       mine.sort((a, b) => {
@@ -243,7 +245,9 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                   <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{b.mat_no}</span>
                   <span style={{ color: 'var(--text2)', flex: 1, minWidth: 100 }}>{b.part_name || '—'}</span>
                   <span style={{ color: '#f59e0b', fontWeight: 700 }}>ค้าง {fmt(b.pending_qty)} ชิ้น</span>
-                  {b.suggested_lot > 0 && <span style={{ color: 'var(--muted)' }}>· เสนอล็อตละ {fmt(b.suggested_lot)}</span>}
+                  {b.block_reason === 'backlog_capped'
+                    ? <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดเกินเพดานออกใบต่อรอบ จะทยอยออกใบเมื่อปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                    : b.suggested_lot > 0 && <span style={{ color: 'var(--muted)' }}>· เสนอล็อตละ {fmt(b.suggested_lot)}</span>}
                 </div>
               ))}
               {blocks.length > 8 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>… อีก {blocks.length - 8} พาร์ท (ดูทั้งหมดที่ 🔗 สายธารความต้องการ)</div>}
