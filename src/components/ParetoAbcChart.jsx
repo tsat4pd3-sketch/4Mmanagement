@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { clusterNotes } from '../utils/textCluster';
 
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
@@ -57,6 +57,10 @@ const groupBy = (records, keyOf) => {
 export default function ParetoAbcChart({
   title, records = [], dims = [], unit, height = 240,
   emptyText = 'ไม่มีข้อมูล', sectionStyle, titleStyle,
+  /* focus = สั่งเปิดหน้าต่างเจาะจากภายนอก (เช่นการ์ด "💰 มูลค่าดาวไทม์" กด Top-5 แล้วเจาะทันที)
+     รูปแบบ { cat, measure?, dim?, n } — `n` เป็น nonce: กดชื่อเดิมซ้ำต้องเปิดใหม่ได้
+     ⚠️ ตั้ง measure ให้ตรงกับสิ่งที่คนกดมา (กดจากการ์ดเงิน = ต้องได้แกนบาท ไม่งั้นเรียงคนละชุดกับที่เห็น) */
+  focus = null,
 }) {
   const [open, setOpen] = useState(false);
   const [drill, setDrill] = useState(null);           // ชื่อประเภทที่กำลังเจาะ
@@ -113,6 +117,17 @@ export default function ParetoAbcChart({
     if (want) setDimKey(want);
     else if (!dimKey) setDimKey((dims.find(d => !d.cluster) || dims[0])?.key || null);
   };
+
+  /* เปิดการเจาะจากภายนอกตาม prop focus — ผูกกับ n (nonce) เพื่อให้กดชื่อเดิมซ้ำแล้วเปิดใหม่ได้
+     ⚠️ ประเภทที่ส่งมาต้องมีอยู่จริงในชุดข้อมูล ไม่งั้นได้หน้าต่างเปล่า → เช็คก่อนเปิด */
+  const focusN = focus?.n;
+  useEffect(() => {
+    if (!focus?.cat || !dims.length) return;
+    if (!records.some(r => (r.cat || '(ไม่ระบุ)') === focus.cat)) return;
+    if (focus.measure === 'baht' && hasMoney) setMeasure('baht');
+    else if (focus.measure === 'value') setMeasure('value');
+    openDrill(focus.cat, focus.dim);
+  }, [focusN]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tip = ({ active, payload }) => {
     if (!active || !payload?.length) return null;
