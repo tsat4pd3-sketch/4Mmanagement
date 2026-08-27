@@ -95,6 +95,10 @@ export default function MtnAndonBoard({ d, ctx }) {
      ที่นี่วัดจากพี่น้องในกริดเดียวกันจึงตรงเสมอ และไม่เกิดลูป (คอลัมน์ซ้ายสูงตามเนื้อหาตัวเอง) */
   const leftRef = useRef(null);
   const [leftH, setLeftH] = useState(null);
+  // ความสูงจริงของบรรทัดคำอธิบายใต้ผัง — ส่งให้ผังหักออกจากพื้นที่ที่มันใช้ได้ (ห้ามเดาเป็นตัวเลขคงที่
+  // เพราะบรรทัดนี้ตัดคำเป็น 2 แถวเองเมื่อคอลัมน์แคบ)
+  const legRef = useRef(null);
+  const [legH, setLegH] = useState(30);
   useEffect(() => {
     const el = leftRef.current;
     if (!el || isMobile || typeof ResizeObserver === 'undefined') { setLeftH(null); return; }
@@ -102,6 +106,13 @@ export default function MtnAndonBoard({ d, ctx }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [isMobile]);
+  useEffect(() => {
+    const el = legRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setLegH(Math.round(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   /* ── ทีมที่กำลังดู — อยู่ใน URL เพื่อให้จอแต่ละห้องบุ๊กมาร์กของตัวเองได้ ──
      ยังไม่เลือก = ทีมของบัญชีที่เปิดจอ (ถ้ามีทีมเดียว) · ไม่งั้น = ทุกทีม */
@@ -319,11 +330,11 @@ export default function MtnAndonBoard({ d, ctx }) {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0,2.8fr) minmax(300px,1fr)', gap: 12, alignItems: 'start' }}>
         {/* ══ 🗺️ ผังโรงงาน — ไลน์ที่แจ้งกระพริบตรงตำแหน่งจริง · กดกรอบ = เจาะดูปัญหาของไลน์นั้น ══ */}
         <div ref={leftRef} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <FactoryMiniMap stateOf={stateOf} onPick={setZoom} maxHeight="calc(100vh - 205px)" />
+          <FactoryMiniMap stateOf={stateOf} onPick={setZoom} bottomReserve={legH + 14} />
           {/* คำอธิบายทั้งหมดยุบเหลือ "บรรทัดเดียว" — ทุกบรรทัดใต้ผังคือความสูงที่ผังเสียไป
               ⚠️ ห้ามตัดข้อความทิ้ง: legend บอกว่าสีไหนแปลว่าอะไร · ประโยคท้ายกันคนเข้าใจว่า
               เป็นสถานะเครื่องเรียลไทม์ (ยังไม่มี SCADA/มิเตอร์รายเครื่อง — กฎ CLAUDE.md) */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 11px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
+          <div ref={legRef} style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 11px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
             <span>👆 กดกรอบไลน์ = ดูปัญหาของไลน์นั้น</span>
             <span><b style={{ color: '#ef4444' }}>■</b> เรียกช่าง (กระพริบ)</span>
             <span><b style={{ color: '#f59e0b' }}>■</b> หยุดเกินเกณฑ์</span>
