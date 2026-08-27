@@ -50,6 +50,7 @@ import { MTN_TEAMS, deptNameOf, teamKeyOf, teamsForUser, teamForEquipmentKind } 
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import DowntimeSiren from './DowntimeSiren';
 import FactoryMiniMap from './FactoryMiniMap';
+import ProdProgressStrip from './ProdProgressStrip';
 import { liveChannel } from '../utils/liveChannel';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -78,7 +79,7 @@ function severity(x, thrMin) {
 }
 
 export default function MtnAndonBoard({ d, ctx }) {
-  const { inScope, navigate, isMobile, workDate } = ctx;
+  const { inScope, navigate, isMobile, workDate, scopeNames } = ctx;
   const { mtnTeams, sections } = useContext(UserContext);
   const [sp, setSp] = useSearchParams();
 
@@ -332,6 +333,14 @@ export default function MtnAndonBoard({ d, ctx }) {
           ⚠ ข้อมูล downtime ย้อนหลังโหลดไม่ครบ — ตัวเลขสรุปอาจต่ำกว่าจริง
         </div>
       )}
+
+      {/* 📤 ยอดผลิตเทียบเป้า — สำหรับห้องที่มี ผจก.ฝ่ายผลิตนั่งด้วย (user 2026-08-27)
+          ⚠️ **ห้ามเขียนตัวนับยอดผลิตใหม่ที่นี่** — reuse `<ProdProgressStrip>` ตัวเดียวกับ `/heijunka`
+             (สูตรบังคับ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` + งานคู่ RH/LH + ยุบชั้น OP
+              อยู่ใน `orderTotal` แล้ว · เขียนเองเมื่อไหร่ = ตัวเลข 2 จอไม่ตรงกันทันที)
+          พับเป็นค่าเริ่มต้นในตัว — ยอดรวม + "ตามหลัง N ไลน์" ยังเห็นตลอดแม้พับ จึงไม่กินความสูงจอ */}
+      <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
+        onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
 
       {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**
           ผังตอบ "อยู่ตรงไหน" · ลิสต์ตอบ "อะไร/นานแค่ไหน" ช่างต้องได้ทั้งคู่จากที่นั่งเดียว

@@ -803,7 +803,9 @@ export default function DeptDashboard() {
 
   const ctx = useMemo(() => ({
     workDate, prevDate: dayAdd(workDate, -1), lines, inScope, navigate, isMobile, role,
-  }), [workDate, lines, inScope, navigate, isMobile, role]);
+    // รายชื่อไลน์ในขอบเขต (null = ไม่จำกัด) — component ที่โหลดข้อมูลเองต้องกรองฝั่ง server ได้ด้วย
+    scopeNames: scopeSet ? [...scopeSet] : null,
+  }), [workDate, lines, inScope, navigate, isMobile, role, scopeSet]);
 
   const load = useCallback(async () => {
     if (!lines.length) return;
