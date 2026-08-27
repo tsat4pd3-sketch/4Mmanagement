@@ -85,6 +85,7 @@ const PAGE_GROUPS = [
     group: 'การตรวจสอบและซ่อมบำรุง',
     pages: [
       { key: 'page:/mtn-repair',  label: 'แจ้งซ่อม MTN (MO)' },
+      { key: 'page:/pm',          label: 'ศูนย์ PM (เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)' },
       // 5 คีย์ล่างนี้เป็น "แท็บ" ใน 🔧 ศูนย์ PM (/pm) — เข้าหน้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง
       { key: 'page:/pm-check',    label: '— แท็บ บันทึกผลตรวจ PM (ใน ศูนย์ PM)' },
       { key: 'page:/pm-schedule', label: '— แท็บ ปฏิทินแผน PM (ใน ศูนย์ PM)' },
