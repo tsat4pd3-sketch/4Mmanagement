@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty } from '../utils/oee';
@@ -174,6 +174,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
   const [kpiMissing, setKpiMissing] = useState(false); // ตารางยังไม่ apply migration
   const [editDef, setEditDef] = useState(null);    // null | {} (ใหม่) | def (แก้)
+  const reqRef = useRef(0);                        // ลำดับคำขอโหลด — กันผลเก่าทับผลใหม่
 
   /* ตัวเลือกส่วนงานยึด org_nodes (kind='section') ตามกฎ — fallback เดาจาก production_lines เมื่อผังว่าง */
   useEffect(() => {
@@ -205,6 +206,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const load = useCallback(async () => {
     if (!lines.length) return;
     const key = `${year}|${section}|${group}|${targetLineNames.length}`;
+    const seq = ++reqRef.current;      // กันผลโหลดเก่าทับผลใหม่ (เปลี่ยนปี/ส่วนงานรัวๆ)
     setLoading(true); setErr(null); setProg('');
     try {
       // 1) กะปิดแล้วทั้งปี (slim)
@@ -249,10 +251,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (e4) throw e4;
       if (e5) throw e5;
       const partCost = Object.fromEntries((parts || []).map(p => [p.mat_no, p]));
+      if (seq !== reqRef.current) return;               // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({ key, sessions, dtPlanned, dtUnplanned, defects, partCost, targets: targets || [] });
     } catch (e) {
+      if (seq !== reqRef.current) return;
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null);
-    } finally { setLoading(false); setProg(''); }
+    } finally { if (seq === reqRef.current) { setLoading(false); setProg(''); } }
   }, [lines.length, year, section, group, targetLineNames]);
   useEffect(() => { load(); }, [load]);
 
@@ -324,7 +328,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (!data) return null;
     const defBySession = {};
     data.defects.forEach(d => (defBySession[d.session_id] = defBySession[d.session_id] || []).push(d));
-    const out = Array.from({ length: 12 }, () => ({ produce: 0, ng: 0, cost: 0, costMissQty: 0, dtMin: 0, sess: [], n: 0 }));
+    const out = Array.from({ length: 12 }, () => ({ produce: 0, ng: 0, cost: 0, costQty: 0, costMissQty: 0, dtMin: 0, sess: [], n: 0 }));
     data.sessions.forEach(s => {
       const mi = Number(s.work_date?.slice(5, 7)) - 1;
       if (mi < 0 || mi > 11) return;
@@ -342,24 +346,30 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         const mat = d.prod_orders?.mat_no || null;
         const { unit } = defectUnitCost(mat ? data.partCost[mat] : null);
         if (unit == null) m.costMissQty += qty;
-        else m.cost += qty * unit;
+        else { m.cost += qty * unit; m.costQty += qty; }
       });
     });
     out.forEach(m => {
       m.oee = m.sess.length ? wavg(m.sess, x => x.oee, wLoad) : null;
       m.ppm = (m.produce + m.ng) > 0 ? (m.ng / (m.produce + m.ng)) * 1e6 : null;
+      /* ⚠️ "ตีมูลค่าไม่ได้" ≠ "ไม่มีต้นทุน" — ของเสียมีจริงแต่ไม่มีพาร์ทไหนตีมูลค่าได้เลย
+         ต้องเป็น "—" ห้ามเป็น 0 (กฎเดียวกับ OEE: ประเมินไม่ได้ = null ห้ามแปลงเป็นศูนย์)
+         ไม่มีของเสียเลย → 0 ถูกต้อง                                                     */
+      m.costKnown = m.costQty > 0 || m.costMissQty === 0;
     });
     const allSess = out.flatMap(m => m.sess);
     const tot = {
       produce: out.reduce((s, m) => s + m.produce, 0),
       ng: out.reduce((s, m) => s + m.ng, 0),
       cost: out.reduce((s, m) => s + m.cost, 0),
+      costQty: out.reduce((s, m) => s + m.costQty, 0),
       costMissQty: out.reduce((s, m) => s + m.costMissQty, 0),
       dtMin: out.reduce((s, m) => s + m.dtMin, 0),
       n: out.reduce((s, m) => s + m.n, 0),
       oee: allSess.length ? wavg(allSess, x => x.oee, wLoad) : null,
     };
     tot.ppm = (tot.produce + tot.ng) > 0 ? (tot.ng / (tot.produce + tot.ng)) * 1e6 : null;
+    tot.costKnown = tot.costQty > 0 || tot.costMissQty === 0;
     return { out, tot };
   }, [data]);
 
@@ -372,7 +382,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     { key: 'produce', label: 'ยอดผลิต (ชิ้น)', get: m => nf(m.produce), val: m => (m.n ? m.produce : null), kind: 'bar' },
     { key: 'ng',      label: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', get: m => nf(m.ng), warnPos: true, val: m => (m.n ? m.ng : null), kind: 'bar' },
     { key: 'ppm',     label: 'Internal defect (PPM)', get: m => nf(m.ppm), warnPos: true, val: m => (m.n ? m.ppm : null), kind: 'line', dec: 0 },
-    { key: 'cost',    label: 'Cost of defect (บาท)', get: m => nf(m.cost), warnPos: true, val: m => (m.n ? m.cost : null), kind: 'bar' },
+    { key: 'cost',    label: 'Cost of defect (บาท)', get: m => (m.costKnown ? nf(m.cost) : '—'), warnPos: true,
+      val: m => (m.n && m.costKnown ? m.cost : null), kind: 'bar' },
     { key: 'oee',     label: `OEE (%)${targetOee != null ? ` · เป้า ≥ ${targetOee.toFixed(1)}` : ''}`, get: m => nf(m.oee, 1),
       yn: m => (m.oee == null || targetOee == null ? null : m.oee >= targetOee),
       val: m => (m.n ? m.oee : null), kind: 'line', target: targetOee, dir: 'up', dec: 1 },
@@ -436,7 +447,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         { key: 'produce', name: 'ยอดผลิต (ชิ้น)', formula: 'Σ ยอดผลิตจริงของกะที่ปิดแล้ว', val: m => (m.n ? m.produce : null), sum: months.tot.produce },
         { key: 'ng', name: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', formula: 'Σ defect_logs (qty_ng + qty_suspect)', val: m => (m.n ? m.ng : null), sum: months.tot.ng },
         { key: 'ppm', name: 'Internal defect (PPM)', formula: 'ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶', val: m => (m.n ? m.ppm : null), sum: months.tot.ppm },
-        { key: 'cost', name: 'Cost of defect (บาท)', formula: 'Σ ของเสีย × ต้นทุน/ชิ้น (standard → material)', val: m => (m.n ? m.cost : null), sum: months.tot.cost },
+        { key: 'cost', name: 'Cost of defect (บาท)', formula: 'Σ ของเสีย × ต้นทุน/ชิ้น (standard → material)',
+          val: m => (m.n && m.costKnown ? m.cost : null), sum: months.tot.costKnown ? months.tot.cost : null },
         { key: 'oee', name: 'OEE (%)', formula: 'OEE stamp ถ่วงน้ำหนักเวลารับภาระ',
           commitment: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '', target: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '',
           val: m => (m.n ? m.oee : null), sum: months.tot.oee,

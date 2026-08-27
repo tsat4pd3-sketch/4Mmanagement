@@ -26,6 +26,7 @@ const PAGE_GROUPS = [
       { key: 'page:/',            label: 'หน้าหลัก' },
       { key: 'page:/dashboard',   label: 'Dashboard' },
       { key: 'page:/dept-dashboard', label: 'Dashboard ส่วนงาน' },
+      { key: 'page:/obeya', label: 'OBEYA — บอร์ด KPI ส่วนงาน (SQCDM)' },
       { key: 'page:/flow-tower', label: 'สายธารความต้องการ (Flow Tower)' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
       { key: 'page:/line-oee', label: 'OEE รายไลน์ (จอไลน์)' },

@@ -1,0 +1,600 @@
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase, supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
+import { usePerms } from '../utils/usePerms';
+import { wavg, wLoad, sumDefectQty } from '../utils/oee';
+import { orderTotal } from '../utils/pairTotals';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
+import { scopedLineNames } from '../utils/sectionScope';
+import { canAccessPage } from '../utils/permissions';
+import usePolling from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
+import useIsMobile from '../utils/useIsMobile';
+import PageHeader from '../components/PageHeader';
+import ReadOnlyNote from '../components/ReadOnlyNote';
+import SafetyEventModal from '../components/SafetyEventModal';
+import {
+  ST, stMeta, worstStatus, statusVsTarget, statusVsBaseline,
+  safetyKind, isInjury, safetyStatus, daysWithoutLti, ymd, dayAdd, dayAxis, sumByDay, avgOfDays,
+} from '../utils/obeya';
+
+/* ══ 📋 OBEYA — บอร์ด KPI ส่วนงาน (SQCDM) · 2026-08-27 ═══════════════════════════════
+   แทนกระดาษ "OBEYA KPI monitoring" ที่แปะผนังห้องประชุมหน้างาน (คำสั่งนายใหญ่ผ่าน user)
+   user เคาะ 3 ข้อ: ① แยกรายส่วนงาน ② ตัวไหนวิ่งทุกกะให้อัพเดทรายวัน ③ มีแกน Safety
+
+   ═══ ทำไมเป็นหน้าใหม่ ไม่ใช่แท็บใน /dept-dashboard ═══════════════════════════
+   `/dept-dashboard` แบ่งด้วย `?dept=` = **หน้าที่/ฝ่าย** (ผลิต·ซ่อมบำรุง·สโตร์·QA)
+   แต่ Obeya แบ่งด้วย **ส่วนงาน (PD1..PD4)** และ *ข้ามฝ่ายโดยนิยาม* — บอร์ดใบเดียวมีทั้ง
+   คุณภาพ(QA) · เครื่องหยุด(ซ่อมบำรุง) · คน(HR) · ความปลอดภัย → ยัดใต้ `?dept=production`
+   จะผิดความหมายของแกนนั้นทันที · อีกอย่างคือมันเป็น "บอร์ดติดผนังห้อง" ที่ต้อง bookmark
+   ต่อจอ (`?section=PD3`) เหมือน `/factory-map` · จึงแยกหน้าและอยู่หมวด "ภาพรวม"
+
+   ═══ กฎที่ยึด ═══════════════════════════════════════════════════════════════
+   • **อ่านอย่างเดียว** ยกเว้นปุ่มบันทึกเหตุการณ์ความปลอดภัย (ระบบยังไม่มีที่เก็บมาก่อน)
+     ทุกการ์ดกดแล้วเด้งไป "หน้าที่ทำงานจริง" — ห้าม re-implement บอร์ด/กราฟของหน้าอื่นมาไว้ที่นี่
+   • **สูตรห้ามเขียนเอง** — OEE ผ่าน wavg/wLoad · NG ผ่าน sumDefectQty('line') ·
+     ยอดผลิตนับคู่ RH/LH + ยุบชั้น OP ผ่าน orderTotal · สถานะ/วันปลอดอุบัติเหตุผ่าน utils/obeya
+   • **ไม่มีเป้า ≠ ผ่าน** — ตัวที่ยังไม่มีเป้าในระบบ เทียบ "ค่าเฉลี่ยตัวเอง 14 วัน" แล้ว
+     เขียนบนการ์ดว่าเทียบกับอะไร (กฎ ③ ใน utils/obeya)
+   • **โหลดไม่ครบต้องพูด** — ทุกคิวรีเช็ค error → แถบส้ม "ตัวเลขบางส่วนโหลดไม่ครบ"
+     ห้ามแสดง 0 เหมือนไม่มีข้อมูลจริง (บทเรียน `.in()` ยาวเกินจน query ล้มเงียบ)
+   • egress: usePolling(RATE.BOARD) — แท็บซ่อน = หยุดยิง DB · `.in()` ผ่าน fetchByIds เสมอ
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const TREND_DAYS = 14;
+const DEFAULT_APQ = { a: 90, p: 90, q: 99 };   // ค่ามาตรฐานเมื่อกรุ๊ปยังไม่ตั้งเป้า (กฎ oee_targets)
+
+/* วันงาน — ตัด 08:00 ตามกฎ Date/Time (ห้าม toISOString) */
+function workDateNow() {
+  const d = new Date();
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return ymd(d);
+}
+const nf = (v, d = 0) => (v == null || !Number.isFinite(Number(v)) ? '—'
+  : Number(v).toLocaleString('en-US', { maximumFractionDigits: d }));
+
+/* ── สปาร์คไลน์ 14 วัน (inline SVG — 6 การ์ด ลาก Recharts มาทุกใบไม่คุ้ม) ───────────
+   แกนวันต่อเนื่องเสมอ · วันไม่มีข้อมูล = เว้นช่อง ห้ามข้ามวัน (กฎกราฟเทรนด์ทั้งระบบ) */
+function Spark({ days, map, color, dir }) {
+  const W = 240, H = 34, PAD = 3;
+  const vals = days.map(d => (map?.[d] == null ? null : Number(map[d])));
+  const nums = vals.filter(v => v != null && Number.isFinite(v));
+  if (!nums.length) return <div style={{ height: H, fontSize: 10.5, color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>ยังไม่มีข้อมูลใน {days.length} วันนี้</div>;
+  const hi = Math.max(...nums, 0), lo = Math.min(...nums, 0);
+  const span = (hi - lo) || 1;
+  const step = W / days.length;
+  const y = v => H - PAD - ((v - lo) / span) * (H - PAD * 2);
+  return (
+    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }} aria-hidden>
+      {vals.map((v, i) => (v == null ? null : (
+        <rect key={i} x={i * step + 1} y={y(v)} width={Math.max(1.5, step - 2)}
+          height={Math.max(1.5, H - PAD - y(v))} rx="1.5"
+          fill={color} fillOpacity={i === vals.length - 1 ? 1 : 0.42} />
+      )))}
+    </svg>
+  );
+}
+
+/* ── การ์ด 1 แกนของ SQCDM ─────────────────────────────────────────────────────── */
+function AxisCard({ axis, onOpen, isMobile }) {
+  const m = stMeta(axis.status);
+  return (
+    <div
+      onClick={axis.to ? onOpen : undefined}
+      title={axis.to ? 'กดเพื่อเปิดหน้าที่ทำงานจริง' : undefined}
+      style={{
+        background: 'var(--card)', border: `1px solid ${axis.status === ST.unknown ? 'var(--border)' : m.color}`,
+        borderLeft: `5px solid ${m.color}`, borderRadius: 12, padding: '12px 14px',
+        display: 'flex', flexDirection: 'column', gap: 6, minHeight: 172,
+        cursor: axis.to ? 'pointer' : 'default',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{
+          fontSize: 11, fontWeight: 900, color: m.color, border: `1.5px solid ${m.color}`,
+          borderRadius: 6, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>{axis.letter}</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{axis.icon} {axis.title}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 13 }} title={m.label}>{m.dot}</span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: isMobile ? 26 : 30, fontWeight: 900, color: 'var(--text)', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
+          {axis.value}
+        </span>
+        {axis.unit && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{axis.unit}</span>}
+      </div>
+
+      {/* เทียบกับอะไร — ต้องเขียนเสมอ ห้ามโชว์สีเฉยๆ แล้วให้เดา */}
+      <div style={{ fontSize: 11.5, color: axis.status === ST.bad ? m.color : 'var(--text2)', lineHeight: 1.5, minHeight: 32 }}>
+        {axis.compare}
+      </div>
+
+      <Spark days={axis.days} map={axis.trend} color={m.color} dir={axis.dir} />
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10.5, color: 'var(--muted)' }}>
+        <span>{TREND_DAYS} วันล่าสุด</span>
+        {axis.monthText && <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>{axis.monthText}</span>}
+      </div>
+    </div>
+  );
+}
+
+export default function Obeya() {
+  const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const { role, lineId, sections } = useContext(UserContext);
+  const { can } = usePerms();
+  const canRecord = can('safety', 'record');
+  const [sp, setSp] = useSearchParams();
+
+  const [lines, setLines] = useState([]);
+  const [orgSections, setOrgSections] = useState(null);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [showSafety, setShowSafety] = useState(null);   // null | {} | event
+  const [full, setFull] = useState(false);
+  const rootRef = useRef(null);
+  const reqRef = useRef(0);                             // กันผลโหลดเก่าทับผลใหม่
+
+  /* วัน + ส่วนงาน อยู่ใน URL → จอ TV bookmark ได้ (?section=PD3) */
+  const today = workDateNow();
+  const date = sp.get('date') || today;
+  const section = sp.get('section') || '';
+  const setParam = useCallback((k, v) => {
+    setSp(prev => {
+      const n = new URLSearchParams(prev);
+      if (v) n.set(k, v); else n.delete(k);
+      return n;
+    }, { replace: true });
+  }, [setSp]);
+
+  useEffect(() => {
+    supabase.from('production_lines').select('id, name, section, parent_line_name')
+      .then(({ data: d }) => setLines(d || []));
+    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').order('sort_order')
+      .then(({ data: d, error }) => setOrgSections(error ? [] : (d || [])));
+    loadOpInfo().catch(() => {});
+  }, []);
+
+  /* scope มาตรฐาน — helper กลางคืน null = ไม่จำกัด (ห้ามคืน [] ไม่งั้น .in() ว่าง = ไม่เห็นอะไร) */
+  const scopeSet = useMemo(() => {
+    const names = scopedLineNames({ role, lineId, sections, lines });
+    return names ? new Set(names) : null;
+  }, [role, lineId, sections, lines]);
+
+  /* ตัวเลือกส่วนงาน — ยึด org_nodes ตามกฎ · fallback เดาจาก production_lines เมื่อผังว่าง */
+  const sectionOpts = useMemo(() => {
+    const inScope = new Set(lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.section).filter(Boolean));
+    const fromOrg = (orgSections || []).map(s => s.code || s.name).filter(s => inScope.has(s));
+    return fromOrg.length ? fromOrg : [...inScope].sort();
+  }, [orgSections, lines, scopeSet]);
+
+  /* ยังไม่เลือก = ส่วนงานของ user เอง ถ้าอยู่ในลิสต์ ไม่งั้นตัวแรก */
+  useEffect(() => {
+    if (section || !sectionOpts.length) return;
+    const mine = (sections || []).find(s => sectionOpts.includes(s));
+    setParam('section', mine || sectionOpts[0]);
+  }, [section, sectionOpts, sections, setParam]);
+
+  const lineNames = useMemo(() => lines
+    .filter(l => (!scopeSet || scopeSet.has(l.name)) && (!section || (l.section || '') === section))
+    .map(l => l.name), [lines, scopeSet, section]);
+
+  const days = useMemo(() => dayAxis(date, TREND_DAYS), [date]);
+  const monthStart = `${date.slice(0, 7)}-01`;
+  const from = days[0] < monthStart ? days[0] : monthStart;   // ชุดเดียวครอบทั้งเทรนด์ + เดือนนี้
+
+  /* ── โหลด ───────────────────────────────────────────────────────────────────
+     ทุกก้อนเช็ค error → warn[] เพื่อขึ้นแถบ "โหลดไม่ครบ" ห้ามเงียบ            */
+  const load = useCallback(async () => {
+    if (!lines.length || !section) return;
+    const seq = ++reqRef.current;
+    setLoading(true); setErr(null);
+    const warn = [];
+    try {
+      if (!lineNames.length) {
+        if (seq === reqRef.current) { setData({ empty: true }); setLoading(false); }
+        return;
+      }
+      // 1) กะของไลน์ในส่วนงาน (ปิดแล้ว = มีตัวเลขจริง · เปิดค้าง = นับแยกไว้บอกว่ายังไม่ครบ)
+      const sess = await fetchAllPages(() => supabaseDR.from('production_sessions')
+        .select('id, line_name, work_date, shift, status, shift_min, oee, actual_qty')
+        .gte('work_date', from).lte('work_date', date).in('line_name', lineNames));
+      if (sess.error) warn.push('กะการผลิต');
+      const closed = sess.rows.filter(s => s.status === 'closed');
+      const ids = closed.map(s => s.id);
+
+      // 2) downtime → planned (ตัวถ่วง wLoad) + นอกแผน (แกน C)
+      const dt = await fetchByIds(ids, part => supabaseDR.from('downtime_logs')
+        .select('session_id, duration_min, dr_downtime_types(category)').in('session_id', part));
+      if (dt.error) warn.push('Downtime');
+
+      // 3) ของเสีย (line-mode — ต้อง select excl_from_q ไม่งั้นตกหล่นเงียบ)
+      const df = await fetchByIds(ids, part => supabaseDR.from('defect_logs')
+        .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)').in('session_id', part));
+      if (df.error) warn.push('ของเสีย');
+
+      // 4) ใบผลิต → แกน D (ทำได้ตามเป้ากี่ %)
+      const po = await fetchByIds(ids, part => supabaseDR.from('prod_orders')
+        .select('session_id, mat_no, qty, qty_target, qty_ok, qty_actual, status').in('session_id', part));
+      if (po.error) warn.push('ใบผลิต');
+
+      // 5) เป้า OEE + คู่ RH/LH
+      const [tg, pr] = await Promise.all([
+        supabase.from('oee_targets').select('group_name, target_a, target_p, target_q'),
+        supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+      ]);
+      if (tg.error) warn.push('เป้า OEE');
+      if (pr.error) warn.push('คู่ RH/LH');
+
+      // 6) ความปลอดภัย — ดึงทั้งหมดของส่วนงาน (streak ต้องมองย้อนไกลกว่าหน้าต่างเทรนด์)
+      const sf = await supabase.from('safety_events')
+        .select('*').eq('is_active', true).lte('event_date', date)
+        .order('event_date', { ascending: false }).limit(500);
+      const safetyMissing = (sf.error?.code || '') === '42P01';
+      if (sf.error && !safetyMissing) warn.push('เหตุการณ์ความปลอดภัย');
+      const safety = (sf.data || []).filter(e => !section || (e.section || '') === section);
+
+      // 7) คนมาทำงาน — daily_production_logs ผูกไลน์ผ่าน employees.line_id
+      const empRes = await supabase.from('employees').select('id, line_id').eq('is_active', true);
+      if (empRes.error) warn.push('ทะเบียนพนักงาน');
+      const lineById = Object.fromEntries(lines.map(l => [String(l.id), l.name]));
+      const inSec = new Set(lineNames);
+      const empIds = (empRes.data || []).filter(e => inSec.has(lineById[String(e.line_id)])).map(e => e.id);
+      let att = { rows: [], error: null };
+      if (empIds.length) {
+        att = await fetchByIds(empIds, part => supabase.from('daily_production_logs')
+          .select('work_date, employee_id, is_present, has_helmet, has_boots, has_gloves')
+          .gte('work_date', days[0]).lte('work_date', date).in('employee_id', part));
+        if (att.error) warn.push('เช็คชื่อ');
+      }
+
+      if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
+      setData({
+        sessions: sess.rows, closed, dt: dt.rows, df: df.rows, po: po.rows,
+        targets: tg.data || [], pairs: pr.data || [], safety, safetyMissing,
+        att: att.rows, headcount: empIds.length, warn,
+        openSess: sess.rows.filter(s => s.status !== 'closed' && s.work_date === date).length,
+      });
+    } catch (e) {
+      if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
+    } finally {
+      if (seq === reqRef.current) setLoading(false);
+    }
+  }, [lines, lineNames, section, from, date, days]);
+
+  useEffect(() => { load(); }, [load]);
+  usePolling(load, RATE.BOARD);
+
+  /* ── คำนวณ 6 แกน ───────────────────────────────────────────────────────────── */
+  const axes = useMemo(() => {
+    if (!data || data.empty) return null;
+    const { closed, dt, df, po, targets, pairs, safety, att } = data;
+    const opMap = opInfoSync();
+    const pairOf = (() => { const m = Object.fromEntries((pairs || []).map(p => [p.mat_no, p.pair_mat_no])); return x => m[x] || null; })();
+
+    // จัดกลุ่มรายกะ
+    const plannedBy = {}, unplannedBy = {};
+    (dt || []).forEach(r => {
+      const m = Number(r.duration_min) || 0;
+      const t = r.dr_downtime_types?.category === 'planned' ? plannedBy : unplannedBy;
+      t[r.session_id] = (t[r.session_id] || 0) + m;
+    });
+    const defBy = {};
+    (df || []).forEach(r => (defBy[r.session_id] = defBy[r.session_id] || []).push(r));
+    const poBy = {};
+    (po || []).forEach(r => (poBy[r.session_id] = poBy[r.session_id] || []).push(r));
+
+    const sessOf = d => closed.filter(s => s.work_date === d);
+    const inMonth = closed.filter(s => s.work_date >= monthStart);
+
+    /* ── ตัวช่วยรวมค่าแบบ "ต่อวัน" ── */
+    const oeeOf = ss => wavg(ss.map(s => ({ oee: s.oee != null ? Number(s.oee) : null, shift_min: s.shift_min, plannedMin: plannedBy[s.id] || 0 })), x => x.oee, wLoad);
+    const ngOf = ss => ss.reduce((a, s) => a + sumDefectQty(defBy[s.id] || [], 'line'), 0);
+    const qtyOf = ss => ss.reduce((a, s) => a + (Number(s.actual_qty) || 0), 0);
+    const dtOf = ss => ss.reduce((a, s) => a + (unplannedBy[s.id] || 0), 0);
+    const planOf = (ss) => {
+      const orders = ss.flatMap(s => poBy[s.id] || []);
+      const tgt = orderTotal(orders, o => (o.qty_target ?? o.qty), pairOf, opMap);
+      const got = orderTotal(orders, o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty) : (o.qty_actual ?? 0)), pairOf, opMap);
+      return { tgt, got, pct: tgt > 0 ? (got / tgt) * 100 : null };
+    };
+
+    // เทรนด์รายวัน
+    const tOee = {}, tNg = {}, tDt = {}, tPlan = {}, tAtt = {}, tSafe = {};
+    days.forEach(d => {
+      const ss = sessOf(d);
+      if (ss.length) {
+        const o = oeeOf(ss); if (o != null) tOee[d] = o;
+        const q = qtyOf(ss), n = ngOf(ss);
+        tNg[d] = (q + n) > 0 ? (n / (q + n)) * 1e6 : 0;
+        tDt[d] = dtOf(ss);
+        const p = planOf(ss); if (p.pct != null) tPlan[d] = p.pct;
+      }
+    });
+    const attByDay = {};
+    (att || []).forEach(r => {
+      const b = attByDay[r.work_date] = attByDay[r.work_date] || { present: 0, ppeNg: 0, n: 0 };
+      b.n += 1;
+      if (r.is_present) {
+        b.present += 1;
+        if (!(r.has_helmet && r.has_boots && r.has_gloves)) b.ppeNg += 1;
+      }
+    });
+    days.forEach(d => { const b = attByDay[d]; if (b && b.n) tAtt[d] = (b.present / b.n) * 100; });
+    Object.assign(tSafe, sumByDay((safety || []).filter(e => days.includes(e.event_date)), e => e.event_date));
+    days.forEach(d => { if (tSafe[d] == null && closed.some(s => s.work_date === d)) tSafe[d] = 0; });
+
+    /* ── เป้า OEE ของส่วนงาน = เฉลี่ยของกรุ๊ปในส่วนงาน (กฎ oee_targets: ระดับ section ไม่เก็บใน DB) ── */
+    const tops = new Set(lines.filter(l => lineNames.includes(l.name)).map(l => l.parent_line_name || l.name));
+    const tByG = Object.fromEntries((targets || []).map(t => [t.group_name, t]));
+    const tVals = [...tops].map(g => {
+      const t = tByG[g] || {};
+      return (Number(t.target_a) || DEFAULT_APQ.a) * (Number(t.target_p) || DEFAULT_APQ.p) * (Number(t.target_q) || DEFAULT_APQ.q) / 10000;
+    });
+    const oeeTarget = tVals.length ? tVals.reduce((s, v) => s + v, 0) / tVals.length : null;
+
+    const todaySess = sessOf(date);
+    const prevDays = days.slice(0, -1);   // ค่าเฉลี่ยย้อนหลัง = ไม่รวมวันที่กำลังดู (ห้ามเทียบกับตัวเอง)
+
+    /* ── S · Safety ────────────────────────────────────────────────────────── */
+    const streak = daysWithoutLti(safety, date);
+    const sfMonth = (safety || []).filter(e => e.event_date >= monthStart);
+    const sfInjM = sfMonth.filter(isInjury).length;
+    const sfToday = (safety || []).filter(e => e.event_date === date);
+    /* ⚠️ "ไม่มีบันทึก" ห้ามขึ้นเขียว — ดูกฎเหล็กใน utils/obeya.safetyStatus */
+    const sfNone = !(safety || []).length;
+    const sfStatus = safetyStatus(safety, { todayEvents: sfToday, monthInjuries: sfInjM, tableMissing: data.safetyMissing });
+
+    /* ── M · คน ─────────────────────────────────────────────────────────────── */
+    const aToday = attByDay[date];
+    const attPct = aToday && aToday.n ? (aToday.present / aToday.n) * 100 : null;
+    const attBase = avgOfDays(tAtt, prevDays);
+    const attCmp = statusVsBaseline(attPct, attBase, 'up');
+
+    /* ── Q · คุณภาพ ─────────────────────────────────────────────────────────── */
+    const qToday = qtyOf(todaySess), ngToday = ngOf(todaySess);
+    const ppmToday = (qToday + ngToday) > 0 ? (ngToday / (qToday + ngToday)) * 1e6 : null;
+    const ppmBase = avgOfDays(tNg, prevDays);
+    const ppmCmp = statusVsBaseline(ppmToday, ppmBase, 'down');
+    const ngMonth = ngOf(inMonth), qMonth = qtyOf(inMonth);
+
+    /* ── C · ต้นทุน (เวลาที่เสียไป) ──────────────────────────────────────────── */
+    const dtToday = todaySess.length ? dtOf(todaySess) : null;
+    const dtBase = avgOfDays(tDt, prevDays);
+    const dtCmp = statusVsBaseline(dtToday, dtBase, 'down');
+
+    /* ── D · ทำได้ตามเป้า ───────────────────────────────────────────────────── */
+    const planT = planOf(todaySess);
+    const planCmp = statusVsTarget(planT.pct, 100, 'up', 0.1);
+
+    /* ── P · OEE ────────────────────────────────────────────────────────────── */
+    const oeeToday = todaySess.length ? oeeOf(todaySess) : null;
+    const oeeMonth = oeeOf(inMonth);
+    const oeeStatus = statusVsTarget(oeeToday, oeeTarget, 'up');
+
+    const baseNote = (cmp, unit, dirWord) => {
+      if (cmp.base == null) return 'ยังไม่มีค่าเฉลี่ยย้อนหลังให้เทียบ';
+      const up = (cmp.deltaPct ?? 0) >= 0;
+      return `เทียบค่าเฉลี่ย ${TREND_DAYS - 1} วันก่อน (${nf(cmp.base, 0)}${unit}) — ${up ? '▲' : '▼'} ${nf(Math.abs(cmp.deltaPct), 0)}% · ${dirWord}`;
+    };
+
+    return [
+      {
+        key: 'S', letter: 'S', icon: '🛡️', title: 'ความปลอดภัย', status: sfStatus, dir: 'down',
+        value: data.safetyMissing ? '—' : (streak.unknown ? '—' : nf(streak.days)),
+        unit: data.safetyMissing ? '' : (streak.unknown ? '' : 'วัน'),
+        compare: data.safetyMissing
+          ? '⚠ ยังไม่ได้ apply migration safety_events — แจ้ง admin'
+          : sfNone
+            ? 'ยังไม่มีใครบันทึกเหตุการณ์ความปลอดภัยของส่วนงานนี้เลย — ประเมินสถานะยังไม่ได้ (0 ที่บันทึกไว้ ≠ 0 ที่เกิดจริง)'
+            : streak.unknown
+              ? 'มีบันทึกแล้วแต่ยังไม่เคยมีอุบัติเหตุถึงขั้นหยุดงาน — ถ้าเคยเกิดก่อนใช้ระบบ ให้บันทึกครั้งล่าสุดเพื่อเริ่มนับ'
+              : `ปลอดอุบัติเหตุถึงขั้นหยุดงาน (ล่าสุด ${streak.since}) · เป้าเดือนนี้ 0 ครั้ง`,
+        monthText: data.safetyMissing ? '' : `เดือนนี้ บาดเจ็บ ${sfInjM} · แจ้งทั้งหมด ${sfMonth.length}`,
+        days, trend: tSafe, to: null,
+      },
+      {
+        key: 'Q', letter: 'Q', icon: '✅', title: 'คุณภาพ', status: ppmCmp.status, dir: 'down',
+        value: ppmToday == null ? '—' : nf(ppmToday), unit: 'PPM',
+        compare: ppmToday == null ? 'วันนี้ยังไม่มีกะที่ปิดแล้ว' : baseNote(ppmCmp, '', ppmCmp.status === ST.good ? 'ดีขึ้น/เท่าเดิม' : 'แย่ลง'),
+        monthText: `เดือนนี้ ของเสีย ${nf(ngMonth)} ชิ้น`,
+        days, trend: tNg, to: '/qa',
+      },
+      {
+        key: 'C', letter: 'C', icon: '💰', title: 'ต้นทุน — เวลาที่เสียไป', status: dtCmp.status, dir: 'down',
+        value: dtToday == null ? '—' : nf(dtToday), unit: 'นาที (นอกแผน)',
+        compare: dtToday == null ? 'วันนี้ยังไม่มีกะที่ปิดแล้ว' : baseNote(dtCmp, ' น.', dtCmp.status === ST.good ? 'ดีขึ้น/เท่าเดิม' : 'แย่ลง'),
+        monthText: `เดือนนี้ ${nf(dtOf(inMonth))} นาที`,
+        days, trend: tDt, to: '/oee-analytics',
+      },
+      {
+        key: 'D', letter: 'D', icon: '🚚', title: 'ส่งมอบ — ทำได้ตามเป้า', status: planCmp, dir: 'up',
+        value: planT.pct == null ? '—' : nf(planT.pct), unit: '%',
+        compare: planT.pct == null
+          ? 'วันนี้ยังไม่มีใบผลิตที่ตั้งเป้าไว้'
+          : `ทำได้ ${nf(planT.got)} / เป้า ${nf(planT.tgt)} ชิ้น (นับคู่ RH/LH เป็น 1) · เป้า 100%`,
+        monthText: (() => { const p = planOf(inMonth); return p.pct == null ? '' : `เดือนนี้ ${nf(p.pct)}%`; })(),
+        days, trend: tPlan, to: '/daily-report',
+      },
+      {
+        key: 'M', letter: 'M', icon: '👷', title: 'กำลังคน', status: attCmp.status, dir: 'up',
+        value: attPct == null ? '—' : nf(attPct), unit: '% มาทำงาน',
+        compare: attPct == null
+          ? 'วันนี้ยังไม่มีการเช็คชื่อ'
+          : `มา ${aToday.present} / ${aToday.n} คน${aToday.ppeNg ? ` · ⚠ PPE ไม่ครบ ${aToday.ppeNg} คน` : ''}`,
+        monthText: data.headcount ? `ทะเบียน ${data.headcount} คน` : '',
+        days, trend: tAtt, to: '/checkin',
+      },
+      {
+        key: 'P', letter: 'P', icon: '⚙️', title: 'ประสิทธิภาพ (OEE)', status: oeeStatus, dir: 'up',
+        value: oeeToday == null ? '—' : nf(oeeToday, 1), unit: '%',
+        compare: oeeToday == null
+          ? 'วันนี้ยังไม่มีกะที่ปิดแล้ว'
+          : oeeTarget == null ? 'ยังไม่ได้ตั้งเป้า OEE ของกลุ่มไลน์ในส่วนงานนี้'
+            : `เป้า ≥ ${nf(oeeTarget, 1)}% (เฉลี่ยเป้าของกลุ่มไลน์ในส่วนงาน)`,
+        monthText: oeeMonth == null ? '' : `เดือนนี้ ${nf(oeeMonth, 1)}%`,
+        days, trend: tOee, to: '/oee-analytics',
+      },
+    ];
+  }, [data, days, date, monthStart, lines, lineNames]);
+
+  const overall = useMemo(() => (axes ? worstStatus(axes.map(a => a.status)) : ST.unknown), [axes]);
+
+  const openAxis = a => {
+    if (!a.to) return;
+    if (!canAccessPage(a.to, role)) return;   // ไม่มีสิทธิ์ = ไม่พาไปแล้วโดนเด้ง (กฎ telemetry)
+    navigate(a.to);
+  };
+
+  const toggleFull = () => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) { document.exitFullscreen?.(); setFull(false); }
+    else { el.requestFullscreen?.().then(() => setFull(true)).catch(() => {}); }
+  };
+  useEffect(() => {
+    const h = () => setFull(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', h);
+    return () => document.removeEventListener('fullscreenchange', h);
+  }, []);
+
+  const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px' };
+  const sel = w => ({ width: w, padding: '6px 9px', fontSize: 13.5, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' });
+  const btn = { padding: '6px 13px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' };
+
+  const recent = (data?.safety || []).slice(0, 6);
+
+  return (
+    <div ref={rootRef} style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', background: full ? 'var(--bg)' : undefined, padding: full ? 14 : 0 }}>
+      <PageHeader
+        title="OBEYA — บอร์ด KPI ส่วนงาน" icon="📋"
+        sub={`SQCDM รายวัน · วันงาน ${date}${section ? ` · ${section}` : ''}`}
+        actions={<>
+          {canRecord && (
+            <button onClick={() => setShowSafety({})} style={{ ...btn, background: '#ef4444', color: '#fff', borderColor: '#ef4444' }}>
+              ＋ บันทึกเหตุการณ์ความปลอดภัย
+            </button>
+          )}
+          <button onClick={toggleFull} style={btn}>{full ? '⛶ ออกจากเต็มจอ' : '⛶ เต็มจอ'}</button>
+        </>}
+      />
+
+      {/* แถบควบคุม + ไฟรวม */}
+      <div style={{ ...card, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+        <select value={section} onChange={e => setParam('section', e.target.value)} style={sel(190)}>
+          {!sectionOpts.length && <option value="">— ไม่มีส่วนงานในขอบเขต —</option>}
+          {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button onClick={() => setParam('date', dayAdd(date, -1))} style={{ ...btn, padding: '6px 10px' }}>◀</button>
+          {/* width กัน index.css input{width:100%} ดันปุ่มแตกแถว */}
+          <input type="date" value={date} max={today} onChange={e => e.target.value && setParam('date', e.target.value)} style={{ ...sel(150) }} />
+          <button onClick={() => setParam('date', dayAdd(date, 1))} disabled={date >= today}
+            style={{ ...btn, padding: '6px 10px', opacity: date >= today ? 0.4 : 1 }}>▶</button>
+          {date !== today && <button onClick={() => setParam('date', '')} style={{ ...btn, padding: '6px 10px' }}>วันนี้</button>}
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>สถานะรวม</span>
+          <span style={{
+            fontSize: 13.5, fontWeight: 900, color: stMeta(overall).color,
+            border: `1.5px solid ${stMeta(overall).color}`, borderRadius: 8, padding: '4px 12px',
+          }}>{stMeta(overall).dot} {stMeta(overall).label}</span>
+        </div>
+      </div>
+
+      {loading && !data && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>}
+      {err && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', marginBottom: 12 }}>
+        โหลดไม่สำเร็จ: {err} <button onClick={load} style={{ ...btn, marginLeft: 8 }}>ลองใหม่</button>
+      </div>}
+
+      {/* โหลดไม่ครบต้องพูด — ห้ามแสดง 0 เหมือนไม่มีข้อมูลจริง */}
+      {!!data?.warn?.length && (
+        <div style={{ ...card, borderColor: '#f59e0b', color: '#f59e0b', fontSize: 12.5, marginBottom: 12 }}>
+          ⚠ ตัวเลขบางส่วนโหลดไม่ครบ ({data.warn.join(' · ')}) — ค่าที่เห็นอาจต่ำกว่าความจริง
+        </div>
+      )}
+      {data?.empty && (
+        <div style={{ ...card, borderColor: '#f59e0b', color: '#f59e0b', fontSize: 12.5, marginBottom: 12 }}>
+          ส่วนงาน {section} ยังไม่มีไลน์ผลิตในทะเบียน — ตั้งได้ที่ ⚙️ ตั้งค่าไลน์
+        </div>
+      )}
+      {data && !data.empty && data.openSess > 0 && (
+        <div style={{ ...card, borderColor: '#f59e0b', color: '#f59e0b', fontSize: 12.5, marginBottom: 12 }}>
+          ⏳ วันนี้ยังมี {data.openSess} กะที่ยังไม่ปิด — ตัวเลขของวันนี้ยังไม่ครบทั้งวัน
+        </div>
+      )}
+
+      {axes && (
+        <div style={{
+          display: 'grid', gap: 12, marginBottom: 12,
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', alignContent: 'start',
+        }}>
+          {axes.map(a => <AxisCard key={a.key} axis={a} isMobile={isMobile} onOpen={() => openAxis(a)} />)}
+        </div>
+      )}
+
+      {/* เหตุการณ์ความปลอดภัยล่าสุด — บอร์ด Obeya ที่มีแต่กราฟ ไม่มี action = ไม่ใช่ Obeya */}
+      {data && !data.safetyMissing && (
+        <div style={card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <b style={{ fontSize: 13, color: 'var(--text)' }}>🛡️ เหตุการณ์ความปลอดภัยล่าสุด — {section || 'ทุกส่วนงาน'}</b>
+            {canRecord && <button onClick={() => setShowSafety({})} style={{ ...btn, padding: '4px 10px', fontSize: 12 }}>＋ บันทึก</button>}
+          </div>
+          <ReadOnlyNote show={!canRecord} role={role} compact what="บันทึกเหตุการณ์ความปลอดภัย" permKey="safety:record" />
+          {!recent.length ? (
+            <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+              ยังไม่มีการบันทึกเหตุการณ์ในส่วนงานนี้
+              {canRecord ? ' — เริ่มจากบันทึกอุบัติเหตุครั้งล่าสุด (ถ้ามี) เพื่อให้ระบบนับวันปลอดอุบัติเหตุได้' : ''}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {recent.map(e => {
+                const k = safetyKind(e.kind);
+                return (
+                  <div key={e.id} onClick={canRecord ? () => setShowSafety(e) : undefined}
+                    style={{
+                      display: 'flex', gap: 9, alignItems: 'flex-start', padding: '7px 9px', borderRadius: 8,
+                      background: 'var(--bg2)', borderLeft: `4px solid ${k.color}`, cursor: canRecord ? 'pointer' : 'default',
+                    }}>
+                    <span style={{ fontSize: 15 }}>{k.icon}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
+                        <b style={{ color: k.color }}>{k.short}</b>
+                        {k.unknown && <span style={{ color: '#f59e0b', fontSize: 10.5 }}> (ชนิดไม่รู้จัก)</span>}
+                        <span style={{ color: 'var(--muted)' }}> · {e.event_date}{e.line_name ? ` · ${e.line_name}` : ''}</span>
+                        {e.status === 'open' && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#f59e0b', fontWeight: 800 }}>ยังไม่ปิด</span>}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{e.description}</div>
+                      {!e.countermeasure && e.status === 'open' && (
+                        <div style={{ fontSize: 10.5, color: '#f59e0b' }}>⚠ ยังไม่ได้ลงมาตรการแก้ไข</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
+        ตัวเลขรายวันนับเฉพาะ<b>กะที่ปิดแล้ว</b> · OEE = ค่าที่ stamp ตอนปิดกะ ถ่วงน้ำหนักเวลารับภาระ ·
+        PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ ไม่รวมงานทดลอง · Downtime นับเฉพาะนอกแผน ·
+        แกนที่ยังไม่มีเป้าในระบบจะเทียบกับ<b>ค่าเฉลี่ยตัวเอง {TREND_DAYS - 1} วันก่อน</b> (เขียนกำกับบนการ์ด)
+      </div>
+
+      {showSafety && (
+        <SafetyEventModal
+          init={showSafety} section={section} date={date}
+          lineOpts={lineNames} sectionOpts={sectionOpts}
+          onClose={() => setShowSafety(null)}
+          onSaved={() => { setShowSafety(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}

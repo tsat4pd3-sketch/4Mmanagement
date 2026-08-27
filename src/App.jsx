@@ -48,6 +48,8 @@ const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
+// 📋 OBEYA — บอร์ด KPI ส่วนงาน (SQCDM) แทนกระดาษที่แปะผนังห้องประชุมหน้างาน
+const Obeya = lazy(() => import('./pages/Obeya'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
@@ -97,6 +99,8 @@ export const NAV_ITEMS = [
   { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
   { to: '/dept-dashboard', icon: '📋', label: 'Dashboard ส่วนงาน',  group: 'ภาพรวม' },
+  // 📋 บอร์ด OBEYA รายส่วนงาน (SQCDM) — บอร์ดติดผนังห้องประชุม · deep-link ?section=PD3 ต่อจอ
+  { to: '/obeya', icon: '📋', label: 'OBEYA — KPI ส่วนงาน', group: 'ภาพรวม' },
   { to: '/flow-tower', icon: '🔗', label: 'สายธารความต้องการ',   group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
@@ -1512,6 +1516,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
+              } />
+              <Route path="/obeya" element={
+                <RoleRoute path="/obeya" userRole={role}><Obeya /></RoleRoute>
               } />
               <Route path="/flow-tower" element={
                 <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
