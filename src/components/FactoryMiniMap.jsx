@@ -25,7 +25,7 @@ const anchorOf = (pts) => (pts?.length
 // สี "ไม่ได้เปิดกะ" = CAT.idle ของ /factory-map (ห้ามใช้สีอื่น — จอเดียวกันต้องอ่านสีเหมือนกัน)
 const DIM = { color: '#6b7280', blink: false, label: null };
 
-export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100vh - 300px)' }) {
+export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) {
   const [map, setMap] = useState(null);      // { image_url }
   const [regions, setRegions] = useState([]);
   const [err, setErr] = useState(null);
@@ -39,6 +39,30 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
     const t = imgRef.current;
     if (t?.naturalWidth > 0 && t?.naturalHeight > 0) setAr(t.naturalWidth / t.naturalHeight);
   }, []);
+
+  /* ⛔ ความสูงที่ผังมีให้ใช้ = **วัดจริง** ห้ามเดา `calc(100vh - Npx)` (กฎ UI §6.8)
+     เดาแล้วพังทุกครั้งที่ header เปลี่ยน — ซึ่งเกิดจริง 3 รอบ (ยุบแถบแท็บ / ชิปทีมขึ้นบรรทัดใหม่ /
+     แถบเตือนโผล่) แล้วผู้ใช้เห็นเป็น "สเกลแย่" ทุกครั้ง
+     ⚠️ ใช้ `rect.top + scrollY` (ตำแหน่งเทียบ *เอกสาร*) ไม่ใช่ `rect.top` เฉยๆ —
+        ไม่งั้นพอเลื่อนหน้า ผังจะโตขึ้นเรื่อยๆ แล้วหน้ายิ่งยาว
+     ไม่เกิดลูป: ความสูงของผังเองไม่กระทบตำแหน่งบนของผัง (ผังอยู่ใต้ header เสมอ) */
+  const wrapRef = useRef(null);
+  const [availH, setAvailH] = useState(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => {
+      const docTop = el.getBoundingClientRect().top + window.scrollY;
+      setAvailH(Math.max(220, Math.round(window.innerHeight - docTop - bottomReserve)));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(document.body);   // header สูงเปลี่ยนได้เอง (ชิปขึ้นบรรทัดใหม่ / แถบเตือนโผล่)
+    return () => { window.removeEventListener('resize', measure); ro?.disconnect(); };
+    // ⚠️ ต้องมี map?.image_url ใน deps — ก่อนโหลดผังเสร็จ wrapper ยังไม่ mount (ref เป็น null)
+    //    ถ้าไม่ใส่ effect จะวิ่งรอบเดียวตอน mount แล้วไม่มีวันได้วัดเลย
+  }, [bottomReserve, map?.image_url]);
 
   useEffect(() => {
     let dead = false;
@@ -84,16 +108,16 @@ export default function FactoryMiniMap({ stateOf, onPick, maxHeight = 'calc(100v
     /* ⚠️ สเกล = "กติกาเดียวกับ /factory-map": img width:100% height:auto (aspect จริง width-driven)
        ห้ามกลับไปใช้ maxHeight + overflow:hidden บนกรอบ — นั่นคือการ "ตัดรูป" ไม่ใช่ย่อ
        (user ทัก 2026-08-26 "สเกลภาพแย่มาก ทำไมใช้คนละสเกลกับผังรวมโรงงาน")
-       ความสูงคุมด้วย maxWidth = maxHeight × aspect (contain) — overlay inset:0 ยังตรงรูปเป๊ะ
+       ความสูงคุมด้วย maxWidth = availH × aspect (contain) — overlay inset:0 ยังตรงรูปเป๊ะ
        เพราะ wrapper กว้างเท่ารูปเสมอ (ถ้าไปคุมที่ img ตรงๆ รูปจะแคบกว่า wrapper แล้วกรอบเลื่อน) */
-    <div style={{ display: 'flex', justifyContent: 'center' }}>
+    <div ref={wrapRef} style={{ display: 'flex', justifyContent: 'center' }}>
       <div style={{
         position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
         border: '1px solid var(--border)', background: '#0a0a0f',
-        maxWidth: ar ? `calc(${maxHeight} * ${ar})` : undefined,
+        maxWidth: ar && availH ? availH * ar : undefined,
         /* กันภาพสูงพรวดก่อน onLoad (ยังไม่รู้ aspect) — ตั้งให้ **ใหญ่กว่าสูตรความกว้าง 10px**
            เหมือน /factory-map (สูตร 210px vs clamp 200px) → สูตรความกว้างชนะเสมอ ไม่มีทาง crop */
-        maxHeight: `calc(${maxHeight} + 10px)`,
+        maxHeight: availH ? availH + 10 : undefined,
       }}>
         <img ref={imgRef} src={map.image_url} alt="ผังโรงงาน" onLoad={readAr}
           style={{ display: 'block', width: '100%', height: 'auto', userSelect: 'none' }} />
