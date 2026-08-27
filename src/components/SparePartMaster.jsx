@@ -15,6 +15,7 @@ import { toast } from './Toast';
 import { can, canDelete } from '../utils/permissions';
 import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf, filterByTeam } from '../utils/mtnTeams';
+import { loadSpareSections, spareSectionsSync, sectionOptions, inSectionScope, sectionLabel, sectionKeyOf, guessSectionFromCode, COMMON_SECTION_LABEL } from '../utils/spareSection';
 import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
 import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import ImageCropModal from './ImageCropModal';
@@ -55,13 +56,15 @@ function RankChip({ rank, overridden, size = 'md' }) {
 /* ══════════════════════════════════════════════════════════════════════════
    Main
    ══════════════════════════════════════════════════════════════════════════ */
-export default function SparePartMaster({ parts = [], reload, fullName, role, myTeams = [] }) {
+export default function SparePartMaster({ parts = [], reload, fullName, role, myTeams = [], mySection = '' }) {
   const [cats, setCats] = useState([]);
+  const [orgSecs, setOrgSecs] = useState([]);      // ส่วนงานจากผังองค์กร (org_nodes kind='section')
   const [usage, setUsage] = useState({});          // part_id → [usage rows]
   const [loading, setLoading] = useState(true);
 
   const [q, setQ] = useState('');
   const [fTeam, setFTeam] = useState('');
+  const [fSection, setFSection] = useState('');
   const [fCat, setFCat] = useState('');
   const [fRank, setFRank] = useState('');
   const [fState, setFState] = useState('');
@@ -83,6 +86,10 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
     if (myTeams.length === 1) { setFTeam(teamKeyOf(myTeams[0])); didInitTeam.current = true; }
     else if (myTeams.length) didInitTeam.current = true;
   }, [myTeams]);
+
+  // ส่วนงานเจ้าของอะไหล่ — ยึด org_nodes (kind='section') ตามกฎ ห้าม derive จาก production_lines
+  useEffect(() => { loadSpareSections().then(setOrgSecs); }, []);
+  const secOpts = useMemo(() => sectionOptions(parts, orgSecs), [parts, orgSecs]);
 
   const loadAux = useCallback(async () => {
     setLoading(true);
@@ -117,6 +124,8 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
     const kw = q.trim().toLowerCase();
     return rows.filter(p => {
       if (fTeam && teamKeyOf(p.team) !== fTeam) return false;
+      // หน่วยงาน: null/ว่าง = ของกลาง เห็นเสมอ (pattern เดียวกับ team null = common)
+      if (!inSectionScope(p.section, fSection)) return false;
       if (fCat && (p.category || '') !== fCat) return false;
       if (fRank && (p._rank.rank || '') !== fRank) return false;
       if (fState && p._state.key !== fState) return false;
@@ -131,7 +140,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       if (rk(a) !== rk(b)) return rk(a) - rk(b);
       return String(a.name || '').localeCompare(String(b.name || ''), 'th');
     });
-  }, [rows, q, fTeam, fCat, fRank, fState]);
+  }, [rows, q, fTeam, fSection, fCat, fRank, fState]);
 
   const summary = useMemo(() => {
     const s = { total: filtered.length, A: 0, B: 0, C: 0, none: 0, out: 0, low: 0, value: 0, noSafety: 0 };
@@ -144,6 +153,23 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
     return s;
   }, [filtered]);
 
+  /* จำนวนที่ถูกกรองออกเพราะ "หน่วยงานอื่น" — ต้องบอกเสมอ ห้ามให้ของหายเงียบ
+     (นับจาก rows ที่ผ่านเงื่อนไขอื่นครบแล้ว ต่างกันแค่แกนหน่วยงาน) */
+  const hiddenBySection = useMemo(() => {
+    if (!fSection) return 0;
+    const kw = q.trim().toLowerCase();
+    return rows.filter(p => {
+      if (inSectionScope(p.section, fSection)) return false;
+      if (fTeam && teamKeyOf(p.team) !== fTeam) return false;
+      if (fCat && (p.category || '') !== fCat) return false;
+      if (fRank && (p._rank.rank || '') !== fRank) return false;
+      if (fState && p._state.key !== fState) return false;
+      if (!kw) return true;
+      return [p.name, p.code, p.mat_no, p.part_no, p.supplier, p.shelf, p.used_with, p.note]
+        .some(v => String(v || '').toLowerCase().includes(kw));
+    }).length;
+  }, [rows, q, fTeam, fSection, fCat, fRank, fState]);
+
   const doDelete = async (p) => {
     if (!confirm(`ลบอะไหล่ "${p.name}" ออกจากคลัง?\n(ประวัติการเบิก-รับยังอยู่ ไม่ถูกลบ)`)) return;
     const { error } = await supabaseDR.from('mtn_spare_parts').update({ is_active: false }).eq('id', p.id);
@@ -155,9 +181,10 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
     const df = docFormSync('spare_part_list', {});
     const code = fullCode(df);
     const teamLabel = fTeam ? (teams.find(t => t.key === fTeam)?.dept_name || fTeam) : 'ทุกทีม';
-    const head = ['ลำดับ', 'รหัส', 'ชื่ออะไหล่', 'MAT SAP', 'Part no.', 'หมวด', 'ชั้นวาง', 'คงเหลือ', 'ขั้นต่ำ', 'สูงสุด', 'Rank', 'ใช้เฉลี่ย/เดือน', 'Leadtime (วัน)', 'ผู้ขาย', 'ใช้กับ'];
+    const secText = fSection ? `${sectionLabel(fSection, orgSecs)} (รวมของกลาง)` : 'ทุกหน่วยงาน';
+    const head = ['ลำดับ', 'หน่วยงาน', 'รหัส', 'ชื่ออะไหล่', 'MAT SAP', 'Part no.', 'หมวด', 'ชั้นวาง', 'คงเหลือ', 'ขั้นต่ำ', 'สูงสุด', 'Rank', 'ใช้เฉลี่ย/เดือน', 'Leadtime (วัน)', 'ผู้ขาย', 'ใช้กับ'];
     const body = filtered.map((p, i) => [
-      i + 1, p.code || '', p.name || '', p.mat_no || '', p.part_no || '',
+      i + 1, p.section || 'ของกลาง', p.code || '', p.name || '', p.mat_no || '', p.part_no || '',
       catOf(p.category)?.label || p.category || '', p.shelf || '',
       `${fmtNum(p.stock_qty)} ${p.unit || ''}`, fmtNum(p.min_qty), fmtNum(p.max_qty),
       p._rank.rank || '-', p._rank.rank ? fmtNum(p._rank.avgPerMonth, 1) : '-',
@@ -172,7 +199,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       th{background:#eee;font-size:9.5px}tr{page-break-inside:avoid}</style></head><body>
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><h2>${esc(df.title || 'รายการอะไหล่สำรอง (Spare part list)')}</h2>
-        <div class="sub">ทีม: ${esc(teamLabel)} · จำนวน ${filtered.length} รายการ · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</div></div>
+        <div class="sub">ทีม: ${esc(teamLabel)} · หน่วยงาน: ${esc(secText)} · จำนวน ${filtered.length} รายการ · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</div></div>
         ${code ? `<div style="font-size:10px;text-align:right">${esc(code)}${df.effective_date ? `<br>Effective: ${esc(df.effective_date)}` : ''}</div>` : ''}
       </div>
       <table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
@@ -204,6 +231,11 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={{ ...inp, width: 160 }}>
           <option value="">ทุกทีม</option>
           {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+        </select>
+        <select value={fSection} onChange={e => setFSection(e.target.value)} style={{ ...inp, width: 175 }}
+          title="คลังของหน่วยงานไหน — เลือกแล้วยังเห็นของกลางของทีมด้วยเสมอ">
+          <option value="">ทุกหน่วยงาน</option>
+          {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
         </select>
         <select value={fCat} onChange={e => setFCat(e.target.value)} style={{ ...inp, width: 170 }}>
           <option value="">ทุกหมวด</option>
@@ -237,6 +269,15 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         {chip('ต่ำกว่าขั้นต่ำ', summary.low, summary.low ? '#f59e0b' : undefined)}
         {chip('มูลค่าคงคลัง', `฿${fmtNum(summary.value)}`)}
       </div>
+
+      {/* กรองหน่วยงานแล้วซ่อนอะไรไปบ้าง — ห้ามหายเงียบ (กฎเดียวกับตัวกรองทีมใน ⚙️ ข้อมูลตั้งต้น) */}
+      {!!hiddenBySection && (
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', marginBottom: 10, fontSize: 12.5, color: 'var(--text2)' }}>
+          👁 กำลังดูคลังของ <b style={{ color: 'var(--text)' }}>{sectionLabel(fSection, orgSecs)}</b> (รวมของกลาง) ·
+          ซ่อนอยู่ <b>{hiddenBySection}</b> รายการของหน่วยงานอื่น
+          <button onClick={() => setFSection('')} style={{ ...btnGhost, padding: '3px 10px', fontSize: 11.5, marginLeft: 8 }}>ดูทุกหน่วยงาน</button>
+        </div>
+      )}
 
       {/* Rank A/B ที่ยังไม่ตั้ง Safety Stock — เตือนนิ่ง (ไม่กระพริบ ไม่ใช่ alarm) */}
       {!!summary.noSafety && (
@@ -278,8 +319,12 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                   </td>
                   <td style={td}>
                     <div style={{ fontWeight: 700 }}>{p.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {p.code ? `${p.code} · ` : ''}{p.used_with ? `ใช้กับ ${p.used_with}` : ''}
+                    <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {/* หน่วยงานเจ้าของ — ตอบ "ของใคร/ใครดูแล" ซึ่งเป็นโจทย์ของ feedback ต้องเห็นทุกแถว */}
+                      {p.section
+                        ? <span title="หน่วยงานเจ้าของ" style={{ padding: '0 6px', borderRadius: 4, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{sectionKeyOf(p.section)}</span>
+                        : <span title="ไม่ได้ระบุหน่วยงาน = ของกลางของทีม ทุกหน่วยงานใช้ร่วม" style={{ color: 'var(--muted)' }}>🌐</span>}
+                      <span>{p.code ? `${p.code} · ` : ''}{p.used_with ? `ใช้กับ ${p.used_with}` : ''}</span>
                     </div>
                   </td>
                   <td style={{ ...td, fontSize: 11.5 }}>
@@ -340,10 +385,12 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       {movePart && <StockMoveModal {...movePart} fullName={fullName} onClose={() => setMovePart(null)} onDone={reloadAll} />}
       {histPart && <HistoryModal part={histPart} usageRows={usage[histPart.id] || []} onClose={() => setHistPart(null)} />}
       {editPart && <PartEditModal part={editPart === 'new' ? null : editPart} cats={cats} teams={teams} shelfOpts={shelfOpts}
+        secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection}
         usageRows={editPart === 'new' ? [] : (usage[editPart.id] || [])} count={parts.length}
         onClose={() => setEditPart(null)} onSaved={reloadAll} />}
       {showCats && <CategoryModal cats={cats} teams={teams} onClose={() => setShowCats(false)} onSaved={loadAux} />}
       {showImport && <ImportModal parts={parts} cats={cats} teams={teams} fullName={fullName}
+        secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection}
         onClose={() => setShowImport(false)} onDone={reloadAll} />}
     </div>
   );
@@ -419,11 +466,13 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
 /* ══════════════════════════════════════════════════════════════════════════
    เพิ่ม / แก้ไขอะไหล่ (FM-JIG-009)
    ══════════════════════════════════════════════════════════════════════════ */
-function PartEditModal({ part, cats, teams, shelfOpts, usageRows, count, onClose, onSaved }) {
+function PartEditModal({ part, cats, teams, shelfOpts, secOpts = [], orgSecs = [], defSection = '', usageRows, count, onClose, onSaved }) {
   const isNew = !part;
   const [f, setF] = useState(() => ({
     code: part?.code || '', name: part?.name || '', unit: part?.unit || 'ชิ้น',
     team: part?.team || 'maintenance', mat_no: part?.mat_no || '', part_no: part?.part_no || '',
+    // หน่วยงานเจ้าของ — ของใหม่ตั้งต้นจากหน่วยงานที่กำลังกรอง/ของผู้ใช้เอง · ว่าง = ของกลาง
+    section: part?.section || (part ? '' : sectionKeyOf(defSection)),
     supplier: part?.supplier || '', category: part?.category || '', shelf: part?.shelf || '',
     min_qty: part?.min_qty ?? 0, max_qty: part?.max_qty ?? 0,
     unit_price: part?.unit_price ?? '', lead_time_days: part?.lead_time_days ?? '',
@@ -478,7 +527,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, usageRows, count, onClose
     setSaving(true);
     const payload = {
       code: f.code.trim() || null, name: f.name.trim(), unit: f.unit.trim() || 'ชิ้น',
-      team: f.team, mat_no: f.mat_no.trim() || null, part_no: f.part_no.trim() || null,
+      team: f.team, section: sectionKeyOf(f.section) || null, mat_no: f.mat_no.trim() || null, part_no: f.part_no.trim() || null,
       supplier: f.supplier.trim() || null, category: f.category || null, shelf: f.shelf.trim() || null,
       min_qty: Number(f.min_qty) || 0, max_qty: Number(f.max_qty) || 0,
       unit_price: num(f.unit_price), lead_time_days: num(f.lead_time_days),
@@ -542,6 +591,29 @@ function PartEditModal({ part, cats, teams, shelfOpts, usageRows, count, onClose
                 <select value={f.team} onChange={e => set('team', e.target.value)} style={inp}>
                   {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
                 </select>
+              </Field>
+              <Field label="หน่วยงานเจ้าของ" hint="ใครดูแล/เก็บที่ไหน — เว้นว่าง = ของกลางของทีม ทุกหน่วยงานใช้ร่วม">
+                <select value={sectionKeyOf(f.section)} onChange={e => set('section', e.target.value)} style={inp}>
+                  <option value="">{COMMON_SECTION_LABEL}</option>
+                  {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+                  {/* ค่าเดิมที่ไม่อยู่ในลิสต์ต้องยังเลือกได้ ไม่งั้นเปิดแก้ไขแล้วหน่วยงานหายเงียบ */}
+                  {f.section && !secOpts.some(o => o.code === sectionKeyOf(f.section)) &&
+                    <option value={f.section}>⚠ {f.section} (ไม่มีในผัง)</option>}
+                </select>
+                {/* หน้างานตั้งรหัสเองเป็น PD3-xxx อยู่แล้ว → เสนอให้กดใช้ (ห้ามเติมให้เอง เดาผิดสต็อกไปผิดหน่วยงาน) */}
+                {(() => {
+                  const g = guessSectionFromCode(f.code, orgSecs);
+                  if (!g || sectionKeyOf(f.section) === g) return null;
+                  return (
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                      รหัสขึ้นต้นด้วย <b>{g}</b> —{' '}
+                      <button type="button" onClick={() => set('section', g)}
+                        style={{ background: 'none', border: 'none', color: '#f59e0b', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', padding: 0 }}>
+                        ใช้ {g} เป็นหน่วยงานเจ้าของ
+                      </button>
+                    </div>
+                  );
+                })()}
               </Field>
               <Field label="หมวดอะไหล่">
                 <select value={f.category} onChange={e => set('category', e.target.value)} style={inp}>
@@ -744,17 +816,20 @@ function HistoryModal({ part, usageRows, onClose }) {
 /* ══════════════════════════════════════════════════════════════════════════
    นำเข้า/อัพเดทจากไฟล์ Excel/CSV — อัพโหลดไฟล์เดิมซ้ำได้ ระบบอัพเดททับไม่สร้างซ้ำ
    ══════════════════════════════════════════════════════════════════════════ */
-function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
+function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [], defSection = '', onClose, onDone }) {
   const [keyField, setKeyField] = useState('code');
+  const [impSection, setImpSection] = useState(sectionKeyOf(defSection));   // หน่วยงานเจ้าของของทั้งไฟล์
   const [withStock, setWithStock] = useState(false);
   const [parsed, setParsed] = useState(null);      // { rows, unknown, monthCols }
   const [fileName, setFileName] = useState('');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
 
+  /* ⚠️ ส่ง section เข้าไปเสมอ → จับคู่เฉพาะในหน่วยงานเดียวกัน
+     ไม่งั้น PD1 นำเข้าไฟล์ตัวเองแล้วไปอัพเดททับสต็อกของ PD3 ที่ใช้เลข MAT เดียวกันแบบเงียบๆ */
   const matched = useMemo(
-    () => (parsed ? matchExisting(parsed.rows, parts, keyField) : []),
-    [parsed, parts, keyField]);
+    () => (parsed ? matchExisting(parsed.rows, parts, keyField, { section: impSection }) : []),
+    [parsed, parts, keyField, impSection]);
   const stat = useMemo(() => ({
     create: matched.filter(r => r.action === 'create').length,
     update: matched.filter(r => r.action === 'update').length,
@@ -814,7 +889,7 @@ function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
           updated++;
         } else {
           const { data, error } = await supabaseDR.from('mtn_spare_parts')
-            .insert({ ...r.data, stock_qty: 0, sort_order: parts.length + i + 1 }).select('id').single();
+            .insert({ ...r.data, section: impSection || null, stock_qty: 0, sort_order: parts.length + i + 1 }).select('id').single();
           if (error) throw error;
           pid = data.id; created++;
         }
@@ -862,6 +937,17 @@ function ImportModal({ parts, cats, teams, fullName, onClose, onDone }) {
           </label>
           <button onClick={template} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</button>
           {fileName && <span style={{ fontSize: 12, color: 'var(--muted)' }}>📎 {fileName}</span>}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10, fontSize: 12.5 }}>
+          <span style={{ fontWeight: 700, color: 'var(--text2)' }}>นำเข้าเป็นของหน่วยงาน:</span>
+          <select value={impSection} onChange={e => setImpSection(e.target.value)} style={{ ...inp, width: 200 }}>
+            <option value="">{COMMON_SECTION_LABEL}</option>
+            {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+          </select>
+          <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>
+            1 ไฟล์ = 1 หน่วยงาน · จับคู่ของเดิม<b>เฉพาะในหน่วยงานนี้</b> (ไม่ทับคลังของหน่วยงานอื่นที่ใช้เลขเดียวกัน)
+          </span>
         </div>
 
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12, fontSize: 12.5 }}>
