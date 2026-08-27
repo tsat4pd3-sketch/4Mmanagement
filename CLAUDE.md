@@ -1951,6 +1951,31 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 >   (pm-daily-scan · downtime-open-scan · shipping-phase-scan · store-daily-scan · pm-refresh-plans ·
 >   purge-audit-log · purge-cron-logs ครบหมด) ⇒ ที่เงียบคือบั๊ก dedup ล้วน **deploy edge แล้วจบ**
 >
+> ### 🔴🔴 กฎเหล็ก — "mark กัน้ำ" ต้องถอนคืนเมื่อส่งไม่สำเร็จ · และห้าม `.catch(() => {})` (2026-08-26)
+> ตัวสแกนที่ dedup ด้วยตาราง/ธง แล้ว **mark ก่อนส่ง** จะเงียบถาวรทันทีที่การส่งล้มเหลว —
+> เพราะรอบถัดไปเห็น mark แล้วข้ามไป และ `.catch(() => {})` ทำให้ response ยังตอบ `ok:true`
+> ⇒ ไม่มีทั้งข้อความ ไม่มีทั้ง error · cron log ขึ้น succeeded · **ไม่มีใครรู้ว่ามีอะไรหายไป**
+> - **เจอ 2 ที่ (แก้แล้ว):** `shipping-phase-scan` (mark `shipping_phase_alerts` ก่อน POST — PK
+>   `(order_id, step_id)` ⇒ ส่งพลาดครั้งเดียว รอบส่งนั้น**ไม่มีวันถูกแจ้งอีกเลย**) · `store-daily-scan`
+>   (ไม่มี dedup ให้เสีย แต่กลืน error ⇒ สรุปรายวันหายเงียบ)
+> - **pattern ที่ถูก:** mark ก่อน (กัน scan ซ้อนยิงซ้ำ) → เช็ค `res.ok` → **ส่งพลาด = ลบ mark ของรอบนี้คืน**
+>   → ตอบ `502` + `notify_error` · ถอนแบบเจาะจงด้วย **`notified_at = runStamp`** (stamp ต่อการรัน 1 ครั้ง)
+>   เพราะ PK ไม่มี surrogate id ให้ลบทีละคู่ในคำสั่งเดียว · `ignoreDuplicates` ทำให้แถวเก่าคง stamp เดิม = ไม่โดนลบตาม
+> - **ตัวที่ไม่มี dedup (สรุปรายวัน) ไม่ต้อง retry** — พรุ่งนี้ยิงใหม่เองอยู่แล้ว แค่ต้อง**ดังพอให้เห็นใน log + response**
+> - **ข้อยกเว้นที่ยอมให้เงียบได้:** ของแนบ best-effort ที่ข้อความหลักส่งไปแล้ว (`sendPhoto`/`sendMediaGroup`
+>   ใน `send-notification`) — แต่ยัง **ต้อง `console.error`** ไม่ใช่ `.catch(() => {})` เปล่าๆ
+> - **ตรวจ:** `grep -rn "catch(() => {})" supabase/functions/*/index.ts` ต้องไม่มีตัวที่ครอบการส่งจริง
+>
+> ### 🔴 กฎเหล็ก — เวลาสแกนต้องอยู่ใน "วันงานที่จะรายงาน" (2026-08-26)
+> ทั้ง edge และวิวคิดวันงานด้วยกฎตัด 08:00 เหมือนกัน ⇒ **ยิงสแกนหลัง 08:00 = รายงานวันที่เพิ่งเริ่ม**
+> เคสที่ผูกกับเวลาในวันจึงเป็น 0 เสมอ **ไม่ใช่เพราะไม่มีปัญหา แต่เพราะยังไม่ถึงเวลาให้มีปัญหา**
+> - **เจอจริง:** `store-daily-scan` ยิง 08:30 → `now_frame_min = 30` แต่รอบส่ง 10:00/13:00/16:00
+>   = frame 120/300/480 ⇒ **เคส C (รอบส่งเลยเวลา) และ D (รับไม่ครบ) ไม่มีทางเข้า Telegram ได้เลยตลอดกาล**
+>   (จอ `/store-monitor` เห็นครบเพราะประเมินสด — ที่ขาดคือฝั่งแจ้งเตือน)
+> - **แก้:** เลื่อนเป็น **00:50 UTC = 07:50 ไทย** → work_date = เมื่อวาน · frame 1430/1440 = ครอบเกือบทั้งวันงาน
+>   (migration `20260826_store_daily_scan_time.sql`) · เว้น 10 นาทีท้ายไว้กัน cron ดีเลย์แล้วหลุดข้ามวัน
+> - **สรุปรายวันตัวใหม่ ให้ตั้งเวลาก่อน 08:00 น. ไทยเสมอ** ถ้าจำเป็นต้องยิงหลัง 08:00 ต้องส่งวันงานเข้าไปเป็นพารามิเตอร์ ไม่ใช่ให้วิวคิดเอง
+>
 > ### 🔴 กฎเหล็ก — "แผน" ต้องรับผลกลับมาด้วย (2026-08-25 · feedback หน้างาน)
 > *"เตือนแล้วไม่ทำ · ไม่มี input กลับมาว่าผลทำเป็นยังไง · ในแผนที่ควรแดงค้างรึป่าว ไม่ใช่เทาไปเลย"*
 > ปฏิทินใน `/pm-schedule` เดิมเป็น **"แผนล้วน"** — วาดจาก `pm_plans.next_due_date` อย่างเดียว
@@ -3285,7 +3310,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-plan-reminder` | DR (pg_cron รายวัน 01:00 UTC = 08:00 ไทย) | เตือน Planned PM ตามขั้น 30/14/3 วัน + **เกินกำหนด (ซ้ำสัปดาห์ละครั้ง)** → POST ไป send-notification ฝั่ง Main · ดูกฎ "เตือน PM" ด้านล่าง |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
 | `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
-| `store-daily-scan` | DR (pg_cron 01:30 UTC = **08:30 ไทย**) | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
+| `store-daily-scan` | DR (pg_cron 00:50 UTC = **07:50 ไทย** — ดูกฎ "เวลาสแกนต้องอยู่ในวันงานที่จะรายงาน") | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
 | `send-store-notification` | Main | **ผู้ส่งฝั่ง Store** — รับ event `store_abnormal` · **แยกไฟล์จาก send-notification โดยตั้งใจ (กันไฟล์ 47KB พัง) แต่ route ผ่าน `notification_rules`/`telegram_channels` ชุดเดียวกัน** (precedent เดียวกับ `send-mtn-notification`) → เปิด/ปิด/เลือกห้อง/แก้ข้อความ/เลือก role ที่เข้ากระดิ่ง ทำที่ `/notification-config` เหมือนทุกเรื่อง · verify_jwt=false |
 | `send-event-notification` | Main | **ผู้ส่งกลาง generic (2026-08-25)** — รับ `{ event, lines[], title?, section?, line_name?, ref_table?, ref_id?, vars? }` แล้วส่งทั้ง **Telegram + ในแอป** จากแถว `notification_rules` เดียวกัน · resolve ส่วนงานจาก `line_name` เอง (ไลน์ลูกตกทอดจากไลน์แม่) · ผู้รับผ่าน RPC `notify_recipients` · **เพิ่มเรื่องใหม่ = insert แถว rule + เรียก `notifyEvent()` ไม่ต้องแตะ edge ตัวไหนอีก** · เรียกจาก client ผ่าน `src/utils/notifyEvent.js` และจาก DB trigger ผ่าน pg_net · verify_jwt=false |
 | `downtime-open-scan` | DR (pg_cron ทุก 5 นาที) | สแกน Downtime ที่เปิดค้างเกิน `dt_alert_config.open_alert_min` นาที → POST `downtime_open_15min` ไป send-notification ฝั่ง Main + stamp `open_alerted_at` กันซ้ำ (2026-07-14) |
