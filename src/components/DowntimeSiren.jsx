@@ -8,6 +8,13 @@ import { liveChannel } from '../utils/liveChannel'
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
      mode='open_15min' → ดังหน้า Production  (เครื่องเปิดค้างเกินเกณฑ์นาที · scanner mark open_alerted_at)
+     mode='all'        → ดังทั้งสองแบบในจอเดียว (ห้องที่นั่งรวมกัน เช่นออฟฟิศที่มีทั้ง ผจก.ผลิต + ช่าง JIG
+                         · user 2026-08-27) — ป้าย/สี/ปุ่มรับทราบ แยกตามชนิดของแต่ละแถว
+
+   ⚠️⚠️ ห้าม mount 2 ตัวเพื่อให้ได้เสียงทั้งสองแบบ — ทั้งแถบเตือนและชิป standby เป็น `position:fixed`
+   ตำแหน่งเดียวกัน จะทับกันสนิท (เห็นอันเดียว) + เสียง 2 ลูปซ้อนกัน + ยิง DB 2 ชุด
+   → ใช้ mode='all' ซึ่งรวมอยู่ใน component เดียว (query เดียว แถบเดียว ลูปเสียงเดียว)
+
    เสียงสร้างด้วย Web Audio (ไม่ต้องมีไฟล์) วนจนกด "รับทราบ" (set *_ack_at) แล้วดับ
 
    ⚠️⚠️ กฎเหล็ก — จอที่ "เปิดทิ้งไว้เฉยๆ" ต้องรู้ตัวว่าเสียงยังไม่พร้อม **ก่อน**เกิดเหตุ
@@ -26,30 +33,40 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   const acRef = useRef(null)
   const loopRef = useRef(null)
 
-  const ackField = mode === 'call_mtn' ? 'call_mtn_ack_at' : 'open_ack_at'
-  const label = mode === 'call_mtn' ? '📞 เรียกช่าง MTN เข้าหน้างาน' : '🚨 เครื่องหยุดเกินกำหนด'
-  const color = mode === 'call_mtn' ? '#e05c4a' : '#f59a3f'
+  /* ชนิดของแต่ละแถว — โหมด 'all' มีได้ทั้ง 2 ชนิดพร้อมกัน จึงตัดสินรายแถว ไม่ใช่ราย component
+     "เรียกช่างแล้วยังไม่รับทราบ" ชนะเสมอ (ด่วนกว่า + ปุ่มรับทราบต้องไปลงช่องที่ถูก) */
+  const kindOf = (d) => (d.call_mtn && !d.call_mtn_ack_at ? 'call' : 'open')
+  const META = {
+    call: { ackField: 'call_mtn_ack_at', label: '📞 เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },
+    open: { ackField: 'open_ack_at',     label: '🚨 เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
+  }
+  const metaOf = (d) => META[mode === 'call_mtn' ? 'call' : mode === 'open_15min' ? 'open' : kindOf(d)]
 
   const fetchAlerts = useCallback(async () => {
     let q = supabaseDR.from('downtime_logs')
-      .select('id, machine_no, description, started_at, call_mtn_at, open_alerted_at, dr_downtime_types(name_th, category), production_sessions(line_name, status)')
-      .is('duration_min', null).is('ended_at', null).is(ackField, null)
-    if (mode === 'call_mtn') q = q.eq('call_mtn', true)
+      .select('id, machine_no, description, started_at, call_mtn, call_mtn_at, call_mtn_ack_at, open_alerted_at, open_ack_at, dr_downtime_types(name_th, category), production_sessions(line_name, status)')
+      .is('duration_min', null).is('ended_at', null)
+    // โหมด 'all' กรอง ack รายแถวตอนจัดชนิด (แถวเดียวมี 2 ช่อง ack) — downtime ที่เปิดค้างพร้อมกันมีไม่กี่แถว
+    if (mode === 'call_mtn') q = q.eq('call_mtn', true).is('call_mtn_ack_at', null)
+    else if (mode === 'open_15min') q = q.is('open_ack_at', null)
     const { data } = await q
     loadDtAlertMin().then(setThr)
     // เอาเฉพาะรายการของกะที่ยังเปิดอยู่ (เครื่องยังหยุดจริง)
     setRaw((data || []).filter(d => ['open', 'pending_close'].includes(d.production_sessions?.status)))
-  }, [mode, ackField])
+  }, [mode])
 
   /* 🔴 open_15min: ตัดสิน "เกินเกณฑ์" จาก **เวลาที่ผ่านไปจริง** ไม่ใช่ธง `open_alerted_at`
      (ธงนั้นคือตัวกันแจ้ง Telegram ซ้ำ — edge `downtime-open-scan` stamp ให้เฉพาะตอน POST สำเร็จ
       ⇒ Telegram ล่ม/ปิด rule = ธงไม่ถูกตั้ง → **ไซเรนบนจอไม่เคยดังเลย** · เจอจริง 2026-08-26)
      ⚠️ ต้องกรอง planned เองด้วย — เดิมพึ่งว่า scanner stamp เฉพาะนอกแผน
      ⚠️ คำนวณใหม่ทุกนาทีจากข้อมูลที่โหลดมาแล้ว (ไม่ยิง DB) — ไม่งั้นต้องรอรอบ poll ถัดไปถึงจะดัง */
-  const alerts = useMemo(() => (mode === 'call_mtn'
-    ? raw
-    : raw.filter(d => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT))
-  ), [raw, mode, thr])
+  const alerts = useMemo(() => {
+    const overThr = (d) => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT)
+    if (mode === 'call_mtn') return raw
+    if (mode === 'open_15min') return raw.filter(overThr)
+    // 'all' = เรียกช่างที่ยังไม่รับทราบ ∪ เครื่องหยุดเกินเกณฑ์ที่ยังไม่รับทราบ (แถวเดียวนับครั้งเดียว)
+    return raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at) || (overThr(d) && !d.open_ack_at))
+  }, [raw, mode, thr])
 
   useEffect(() => {
     fetchAlerts()
@@ -122,9 +139,9 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
     try { ac.resume().then(() => setMuted(ac.state !== 'running'), () => {}) } catch { /* ignore */ }
   }, [])
 
-  const ack = async (id) => {
-    setRaw(prev => prev.filter(a => a.id !== id))
-    await supabaseDR.from('downtime_logs').update({ [ackField]: new Date().toISOString() }).eq('id', id)
+  const ack = async (a) => {
+    setRaw(prev => prev.filter(x => x.id !== a.id))
+    await supabaseDR.from('downtime_logs').update({ [metaOf(a).ackField]: new Date().toISOString() }).eq('id', a.id)
   }
 
   /* ยังไม่มีเหตุ แต่เสียงล็อกอยู่ = ต้องบอกตั้งแต่ตอนนี้ (จอห้องช่างที่เปิดทิ้งไว้)
@@ -143,11 +160,13 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   }
   return (
     <div style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 4000, width: 'min(96vw, 620px)', display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
-      {alerts.map(a => (
-        <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${color}`, borderRadius: 12, padding: '10px 14px', boxShadow: '0 6px 28px rgba(0,0,0,0.6)' }}>
-          <span style={{ fontSize: 22 }}>{mode === 'call_mtn' ? '🔧' : '🚨'}</span>
+      {alerts.map(a => {
+        const m = metaOf(a)
+        return (
+        <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: '0 6px 28px rgba(0,0,0,0.6)' }}>
+          <span style={{ fontSize: 22 }}>{m.icon}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{label}</div>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{m.label}</div>
             <div style={{ fontSize: 12, color: '#f0c9c2' }}>
               <b>{a.production_sessions?.line_name || '—'}</b> · {a.machine_no || 'ไม่ระบุเครื่อง'} · {a.dr_downtime_types?.name_th || 'Downtime'}
               {a.description ? ` — ${a.description}` : ''}
@@ -159,9 +178,10 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
               🔇 แตะเพื่อเปิดเสียง
             </span>
           )}
-          <button onClick={() => ack(a.id)} style={{ flexShrink: 0, background: color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
+          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
