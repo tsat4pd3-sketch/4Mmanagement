@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
@@ -260,9 +261,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setAreaId(prev => prev === id ? null : prev); await reloadAreas()
   }
   const uploadImage = async (e) => {
-    const file = e.target.files?.[0]; if (!file || !areaId || !canEdit) return
+    let file = e.target.files?.[0]; if (!file || !areaId || !canEdit) return
     setBusy(true)
     try {
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ext ด้านล่าง derive จากชื่อไฟล์ จึงต้องแปลงก่อน)
+      file = await toDecodableImage(file)
       // รูปผัง/layout มีจำนวนน้อย (ไม่เกิน ~20 รูปทั้งระบบ) แต่ต้องซูมอ่านรายละเอียดได้ —
       // บีบเบากว่ารูปพนักงานมาก (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้
       const compressed = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 })

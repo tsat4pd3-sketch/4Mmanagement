@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
@@ -635,8 +636,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
      ขยายจาก 900px/0.2MB → 1280px/0.3MB เพราะตอนนี้มันเป็นรูป "ซูมเข้าไปดูให้ชัด" ของหน้างานจริง
      (เล็กเกินไปแล้วซูมดูไม่ออก = เสียประโยชน์ของฟีเจอร์) */
   const handleCpImage = async (key, e) => {
-    const file = e.target.files[0]
+    let file = e.target.files[0]
     if (!file) return
+    // ช่างถ่ายจุดตรวจด้วยมือถือ → HEIC/HEIF ต้องแปลงก่อน ไม่งั้น imageCompression decode ไม่ออก
+    try { file = await toDecodableImage(file) }
+    catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return }
     const compressed = await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1280 })
     updateCp(key, { _imgFile: compressed, _imgPreview: URL.createObjectURL(compressed) })
   }
@@ -656,8 +660,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       // normalize EXIF orientation + ลดขนาดเบื้องต้นก่อนเข้ากรอบครอบ (กันรูปมือถือหมุนผิด)
       const norm = []
       for (const f of files) {
-        try { norm.push(await imageCompression(f, { maxSizeMB: 0.8, maxWidthOrHeight: 2000 })) }
-        catch { norm.push(f) }   // บีบไม่ผ่าน (ฟอร์แมตแปลก) → ส่งไฟล์เดิมให้ modal จัดการ/แจ้ง error เอง
+        // HEIC/HEIF จากมือถือ → แปลงก่อน (ไฟล์อื่นคืนตัวเดิม) · แปลงไม่ได้ = ส่งต่อให้ ImageCropModal แจ้ง error เอง
+        let src = f
+        try { src = await toDecodableImage(f) } catch { /* ปล่อยให้ modal ปลายทางเป็นคนบอกผู้ใช้ */ }
+        try { norm.push(await imageCompression(src, { maxSizeMB: 0.8, maxWidthOrHeight: 2000 })) }
+        catch { norm.push(src) }   // บีบไม่ผ่าน (ฟอร์แมตแปลก) → ส่งไฟล์เดิมให้ modal จัดการ/แจ้ง error เอง
       }
       setCropQueue(q => [...q, ...norm])
     } finally { setImgBusy(false) }

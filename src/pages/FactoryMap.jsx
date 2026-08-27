@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -1283,12 +1284,14 @@ export default function FactoryMap({ setupMode = false }) {
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return; e.target.value = '';
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const isGif = file.type === 'image/gif' || ext === 'gif';
-    if (isGif && file.size > 2 * 1024 * 1024) return toast.error('GIF ต้องไม่เกิน 2MB');
+    let file = e.target.files?.[0]; if (!file) return; e.target.value = '';
     try {
       setUploading(true);
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
+      file = await toDecodableImage(file);
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const isGif = file.type === 'image/gif' || ext === 'gif';
+      if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
       const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
       const path = `factory/map_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob);

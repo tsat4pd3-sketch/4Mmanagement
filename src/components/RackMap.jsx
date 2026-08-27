@@ -10,6 +10,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { supabaseDR } from '../supabaseClient';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import { toast } from './Toast';
 import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
@@ -24,6 +25,8 @@ const fmtNum = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number
 /* รูปผังต้องอ่านป้ายบนชั้นออก — บีบเบากว่ารูปทั่วไปตามกฎ Storage (2560px / q0.9)
    ห้ามลดลงไปกว่านี้ เคยบีบแรงจนผังเบลออ่านไม่ออกมาแล้ว (ดู CLAUDE.md "Storage & รูปภาพ") */
 async function compressPlan(file) {
+  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิม · แปลงไม่ได้ = โยนข้อความบอกวิธีตั้งกล้อง)
+  file = await toDecodableImage(file);
   if (file.type === 'image/gif') { if (file.size > 2 * 1024 * 1024) throw new Error('GIF ต้องไม่เกิน 2MB'); return file; }
   const img = await new Promise((res, rej) => {
     const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file);
