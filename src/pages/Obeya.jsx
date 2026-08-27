@@ -252,8 +252,18 @@ export default function Obeya() {
         if (att.error) warn.push('เช็คชื่อ');
       }
 
+      // 8) งานที่ต้องตามแก้จากประชุมเช้า — "บอร์ดที่มีแต่กราฟ ไม่มี action = ไม่ใช่ Obeya"
+      let acts = { data: [], error: null };
+      acts = await supabase.from('meeting_action_items')
+        .select('id, meeting_date, section, line_name, problem, assignee, due_date, status')
+        .in('status', ['open', 'doing']).order('due_date', { ascending: true, nullsFirst: false }).limit(60);
+      const actsMissing = (acts.error?.code || '') === '42P01';
+      if (acts.error && !actsMissing) warn.push('งานติดตามจากประชุมเช้า');
+      const actions = (acts.data || []).filter(a => !section || (a.section || '') === section);
+
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
+        actions, actsMissing,
         sessions: sess.rows, closed, dt: dt.rows, df: df.rows, po: po.rows,
         targets: tg.data || [], pairs: pr.data || [], safety, safetyMissing,
         att: att.rows, headcount: empIds.length, warn,
@@ -468,6 +478,31 @@ export default function Obeya() {
 
   const recent = (data?.safety || []).slice(0, 6);
 
+  /* งานค้างที่ต้องตามแก้ — รวม action item จากประชุมเช้า + เหตุการณ์ความปลอดภัยที่ยังไม่ปิด
+     เรียง "เกินกำหนดก่อน แล้วเก่าก่อน" — บอร์ด Obeya ต้องพาไปถึงสิ่งที่ต้องลงมือ ไม่ใช่แค่โชว์สี */
+  const todo = useMemo(() => {
+    if (!data) return [];
+    const acts = (data.actions || []).map(a => ({
+      id: `a-${a.id}`, icon: '📋', kind: 'action',
+      title: a.problem || '(ไม่ได้ระบุปัญหา)',
+      meta: [a.line_name, a.assignee ? `ผู้รับผิดชอบ ${a.assignee}` : null, a.meeting_date ? `ประชุม ${a.meeting_date}` : null]
+        .filter(Boolean).join(' · '),
+      due: a.due_date || null, color: '#3b82f6', to: '/morning-meeting',
+    }));
+    const sf = (data.safety || []).filter(e => e.status === 'open').map(e => {
+      const k = safetyKind(e.kind);
+      return {
+        id: `s-${e.id}`, icon: k.icon, kind: 'safety', ev: e,
+        title: `${k.short} — ${e.description}`,
+        meta: [e.line_name, e.employee_name].filter(Boolean).join(' · ') || 'ยังไม่ปิดเคส',
+        due: null, color: k.color, to: null,
+        warn: !e.countermeasure ? 'ยังไม่ได้ลงมาตรการแก้ไข' : null,
+      };
+    });
+    const over = x => (x.due && x.due < date ? 0 : 1);
+    return [...sf, ...acts].sort((a, b) => (over(a) - over(b)) || String(a.due || '9999').localeCompare(String(b.due || '9999')));
+  }, [data, date]);
+
   return (
     <div ref={rootRef} style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', background: full ? 'var(--bg)' : undefined, padding: full ? 14 : 0 }}>
       <PageHeader
@@ -537,7 +572,60 @@ export default function Obeya() {
         </div>
       )}
 
-      {/* เหตุการณ์ความปลอดภัยล่าสุด — บอร์ด Obeya ที่มีแต่กราฟ ไม่มี action = ไม่ใช่ Obeya */}
+      {/* 🚨 งานที่ต้องตามแก้ — หัวใจของ Obeya: ทุกตัวแดงต้องมีคนถืองานอยู่ */}
+      {data && !data.empty && (
+        <div style={{ ...card, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+            <b style={{ fontSize: 13, color: 'var(--text)' }}>🚨 งานที่ต้องตามแก้ ({todo.length})</b>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              จากประชุมเช้า + เหตุการณ์ความปลอดภัยที่ยังไม่ปิด · เกินกำหนดขึ้นก่อน
+            </span>
+            {canAccessPage('/morning-meeting', role) && (
+              <button onClick={() => navigate('/morning-meeting')} style={{ ...btn, marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }}>
+                📋 ประชุมแถวเช้า
+              </button>
+            )}
+          </div>
+          {!todo.length ? (
+            <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
+              ✅ ไม่มีงานค้างในส่วนงานนี้
+              {data.actsMissing ? ' (⚠ ตาราง meeting_action_items ยังไม่มี — แจ้ง admin)' : ''}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {todo.slice(0, 8).map(t => {
+                const overdue = t.due && t.due < date;
+                return (
+                  <div key={t.id}
+                    onClick={t.kind === 'safety' && canRecord ? () => setShowSafety(t.ev) : (t.to && canAccessPage(t.to, role) ? () => navigate(t.to) : undefined)}
+                    style={{
+                      display: 'flex', gap: 9, alignItems: 'flex-start', padding: '7px 9px', borderRadius: 8,
+                      background: 'var(--bg2)', borderLeft: `4px solid ${overdue ? '#ef4444' : t.color}`,
+                      cursor: (t.kind === 'safety' && canRecord) || (t.to && canAccessPage(t.to, role)) ? 'pointer' : 'default',
+                    }}>
+                    <span style={{ fontSize: 15 }}>{t.icon}</span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12.5, color: 'var(--text)' }}>{t.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        {t.meta}
+                        {t.due && <span style={{ color: overdue ? '#ef4444' : 'var(--muted)', fontWeight: overdue ? 800 : 400 }}>
+                          {t.meta ? ' · ' : ''}{overdue ? '⏰ เกินกำหนด ' : 'กำหนด '}{t.due}
+                        </span>}
+                      </div>
+                      {t.warn && <div style={{ fontSize: 10.5, color: '#f59e0b' }}>⚠ {t.warn}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+              {todo.length > 8 && (
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {todo.length - 8} รายการ</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* เหตุการณ์ความปลอดภัยล่าสุด (รวมที่ปิดแล้ว) */}
       {data && !data.safetyMissing && (
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>

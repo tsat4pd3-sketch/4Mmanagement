@@ -24,6 +24,7 @@ const CATEGORY_LABEL = {
   manpower: '🧑‍🏭 Manpower', production: '🏭 Production', quality: '🔍 Quality',
   maintenance: '🔧 Maintenance', pull: '🎴 Pull System', stock: '📦 Stock',
   logistic: '🚚 Logistic',
+  safety: '🛡️ Safety',
 }
 
 // Starting point shown when an admin first customizes a message. NULL template

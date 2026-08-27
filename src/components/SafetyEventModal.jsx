@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { SAFETY_KINDS, safetyKind } from '../utils/obeya';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ══ 🛡️ บันทึกเหตุการณ์ความปลอดภัย (OBEYA แกน S) · 2026-08-27 ═══════════════════
    ระบบเดิม "ไม่มีที่เก็บอุบัติเหตุเลย" — ตรวจ 2026-08-27: ไม่มีตาราง accident/incident/injury
@@ -77,9 +78,28 @@ export default function SafetyEventModal({ init, section, date, lineOpts = [], s
         if (error) throw error;
         if (!data?.length) { toast.error('บันทึกไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ safety:record'); return; }
       } else {
-        const { error } = await supabase.from('safety_events')
-          .insert({ ...payload, reported_by_name: fullName || null });
+        const { data, error } = await supabase.from('safety_events')
+          .insert({ ...payload, reported_by_name: fullName || null }).select('id').single();
         if (error) throw error;
+        /* แจ้งเตือน — ยิงตอน "บันทึกใหม่" เท่านั้น ห้ามยิงตอนแก้ไข (แก้ typo ทีนึงเด้งใหม่ทุกครั้ง)
+           fire-and-forget: แจ้งเตือนพลาดห้ามทำให้การบันทึกของผู้ใช้พัง */
+        notifyEvent({
+          event: 'safety_event',
+          title: `${kindMeta.icon} ${kindMeta.label}`,
+          section: payload.section || undefined,
+          line_name: payload.line_name || undefined,
+          actor: fullName || undefined,
+          type: kindMeta.severity >= 2 ? 'error' : 'info',
+          ref_table: 'safety_events', ref_id: data?.id,
+          lines: [
+            `📅 ${payload.event_date}${payload.shift ? ` · ${payload.shift === 'night' ? 'กะดึก' : 'กะเช้า'}` : ''}`,
+            `🏭 ${payload.section || 'ไม่ระบุส่วนงาน'}${payload.line_name ? ` · ${payload.line_name}` : ''}`,
+            `📝 ${payload.description}`,
+            payload.employee_name ? `👤 ${payload.employee_name}${payload.body_part ? ` · ${payload.body_part}` : ''}` : '',
+            payload.lost_days > 0 ? `🚑 หยุดงาน ${payload.lost_days} วัน` : '',
+            kindMeta.resetsStreak ? '🔴 ตัวนับ "วันปลอดอุบัติเหตุ" ของส่วนงานนี้ถูกรีเซ็ต' : '',
+          ],
+        });
       }
       toast.success(editing ? 'แก้ไขเหตุการณ์แล้ว' : 'บันทึกเหตุการณ์แล้ว');
       onSaved?.();
