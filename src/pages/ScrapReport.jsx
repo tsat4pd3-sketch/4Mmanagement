@@ -22,6 +22,7 @@ import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 import { printScrapReport } from '../lib/scrapPrint';
 import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialRequest';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -334,6 +335,15 @@ export default function ScrapReport() {
       const { error } = await supabaseDR.from('scrap_report_items').insert(rows);
       if (error) { toast.error(error.message); return; }
     }
+    if (report.status === 'submitted') notifyEvent({
+      event: 'scrap_report_submitted', type: 'info', ref_table: 'scrap_reports', ref_id: repId,
+      line_name: report.line_name || null, section: report.section || null, actor: fullName,
+      lines: [
+        `📄 ใบ ${doc_no}`,
+        `🏭 ไลน์: ${report.line_name || '—'}${report.section ? ` · ${report.section}` : ''}`,
+        `🗑️ ${items.length} รายการ · รวม ${items.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
+      ],
+    });
     toast.success(`บันทึกใบ ${doc_no} แล้ว ✓`);
     setEditor(null);
     loadReports();

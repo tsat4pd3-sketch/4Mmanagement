@@ -13,6 +13,7 @@ import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import DowntimeTimeline from '../components/DowntimeTimeline';
 import { pairAwareTotal, collapseOps, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -347,6 +348,8 @@ export default function OEEAnalytics() {
   const [tdDept,   setTdDept]   = useState('');
   const [tdLine,   setTdLine]   = useState('');
   const [tdTeam,   setTdTeam]   = useState('');
+  // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
+  const [tdCmpOpen, setTdCmpOpen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate,  setLastUpdate]  = useState(null);
 
@@ -837,6 +840,9 @@ export default function OEEAnalytics() {
     supabase.from('cost_center_rates').select('*').then(({ data, error }) => { if (!error) setCcRates(data || []); });
   }, []);
   const [dtIncludePlanned, setDtIncludePlanned] = useState(false); // Pareto DT: default นับเฉพาะนอกแผน
+  // สั่ง Pareto ให้เจาะประเภทที่กดจากการ์ด 💰 (nonce = กดชื่อเดิมซ้ำต้องเปิดใหม่ได้)
+  const [dtFocus, setDtFocus]   = useState(null);
+  const [defFocus, setDefFocus] = useState(null);
   const [trOrders, setTrOrders]   = useState([]);   // ใบงานของช่วงที่เลือก (ทำ pair-aware total)
   const [trPairMat, setTrPairMat] = useState({});
   const [defects,    setDefects]    = useState([]);
@@ -1125,17 +1131,32 @@ export default function OEEAnalytics() {
   // เดิมรวมทั้งสองประเภท → "นับสต๊อก / ไม่มีแผนผลิต" ครองอันดับ 1 ที่ 50% ทั้งที่ไม่ใช่ปัญหาที่ต้องแก้
   // (บั๊กเดียวกับที่เคยแก้ในแผง Top Downtime 2026-07-15 แต่ Pareto ตกหล่น · user เจอ 2026-08-05)
   // toggle "รวมหยุดตามแผน" ให้ดูได้เมื่อต้องการ — ไม่ซ่อนข้อมูล แค่ไม่ให้ปนกับ loss จริงโดยปริยาย
+  /* 💰 บาทต่อแถว — ใส่ไว้กับ record ตั้งแต่ต้นทาง เพื่อให้ "เจาะมิติไหนก็เห็นเงิน" โดยไม่ต้อง query ใหม่
+     (คำสั่ง user 2026-08-26 "แปลง loss เป็นตัวเงินคือหมัดเด็ด — เจาะเข้าไปต่อได้มั้ย")
+     ⚠️ คืน `null` เมื่อไลน์ไม่มี cost center / ไม่มี activity rate — **ห้ามคืน 0**
+        เพราะพาเรโตที่เรียงตามเงินจะชี้เป้าผิด (ไลน์ที่ตีราคาไม่ได้จะกลายเป็น "ไม่มีความสูญเสีย") */
+  const priceMin = useCallback((min, lineName, workDate) => {
+    if (!(min > 0) || !lineName) return null;
+    const cc = lineCostCenter(linesFull, lineName);
+    const rate = cc ? rateFor(ccRates, cc, workDate) : null;
+    if (!rate) return null;
+    return (min / 60) * ratePerHour(rate, RATE_COMPONENTS.map(c => c.key));
+  }, [linesFull, ccRates]);
+
   const dtRecords = useMemo(() => downtimes.filter(d => dtIncludePlanned || d.dr_downtime_types?.category !== 'planned').map(d => {
     const s = sessById[d.session_id] || {};
+    const min = Number(d.duration_min) || 0;
     return {
       cat: d.dr_downtime_types?.name_th || 'ไม่ระบุ',
-      value: Number(d.duration_min) || 0,
+      value: min,
+      // หยุดตามแผนไม่ใช่ loss → ไม่ตีเป็นเงิน (กฎเดียวกับ dtCost) แต่ยังอยู่ในพาเรโตตอนติ๊ก "รวมในแผน"
+      baht: d.dr_downtime_types?.category === 'planned' ? null : priceMin(min, s.line_name, s.work_date),
       machine: d.machine_no || '', line: s.line_name || '',
       product: d.mat_no || '', shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [downtimes, sessById, dtIncludePlanned]);
+  }), [downtimes, sessById, dtIncludePlanned, priceMin]);
   const dtPlannedMin = useMemo(() => downtimes.filter(d => d.dr_downtime_types?.category === 'planned')
     .reduce((a, d) => a + (Number(d.duration_min) || 0), 0), [downtimes]);
   /* 💰 มูลค่าดาวไทม์นอกแผน (2026-08-19 · คำสั่ง user "รายละเอียดดาวไทม์ควร link เรื่องเงินออกมาให้เห็น")
@@ -1167,21 +1188,27 @@ export default function OEEAnalytics() {
   }, [downtimes, sessById, linesFull, ccRates]);
   const defRecords = useMemo(() => defects.map(d => {
     const s = sessById[d.session_id] || {};
+    const qty = (d.qty_ng || 0) + (d.qty_suspect || 0);
+    const mat = d.prod_orders?.mat_no || null;
+    const { unit: unitCost } = defectUnitCost(mat ? partCost[mat] : null);
     return {
       cat: d.dr_defect_types?.name_th || 'ไม่ระบุ',
-      value: (d.qty_ng || 0) + (d.qty_suspect || 0),
+      value: qty,
+      // พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master = null (ตีมูลค่าไม่ได้) ห้ามเดาเป็น 0
+      baht: unitCost == null ? null : qty * unitCost,
       product: d.prod_orders?.mat_no || '', line: s.line_name || '',
       shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [defects, sessById]);
+  }), [defects, sessById, partCost]);
   /* 💰 มูลค่าของเสีย — แยก "ทั้งหมด" กับ "เฉพาะไลน์ผลิต (ไม่รวมงานทดลอง)" (2026-08-17 · คำสั่ง user)
      ตัวหลัง = ก้อนเดียวกับที่ถูกนับใน %Q ของ OEE · ต้นทุน/ชิ้นใช้ util กลาง defectUnitCost
      ⚠️ พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master → ไม่เดาราคา แต่รายงานจำนวนให้เห็นบนจอ */
   const defectCost = useMemo(() => {
     const acc = { all: 0, line: 0, trial: 0, qtyAll: 0, qtyLine: 0, qtyTrial: 0 };
     const noCost = new Map();   // mat -> จำนวนชิ้นที่ตีมูลค่าไม่ได้
+    const byType = new Map();   // ประเภทของเสีย -> { qty, baht }
     defects.forEach(d => {
       const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
       if (!qty) return;
@@ -1196,8 +1223,14 @@ export default function OEEAnalytics() {
       }
       const v = qty * unit;
       acc.all += v; if (trial) acc.trial += v; else acc.line += v;
+      /* Top ประเภทตามมูลค่า — ตอบคนละคำถามกับ Pareto รายจำนวน
+         ("ประเภทไหนแพงสุด" ≠ "ประเภทไหนเยอะสุด" — ของเสีย 5 ชิ้นของพาร์ทแพง กินเงินกว่า 50 ชิ้นของพาร์ทถูก) */
+      const t = d.dr_defect_types?.name_th || 'ไม่ระบุ';
+      const cur = byType.get(t) || { qty: 0, baht: 0 };
+      cur.qty += qty; cur.baht += v; byType.set(t, cur);
     });
-    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]) };
+    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]),
+      byType: [...byType.entries()].sort((a, b) => b[1].baht - a[1].baht) };
   }, [defects, partCost]);
 
   // `cluster: true` = จับกลุ่มจากข้อความอิสระ (ทางเดียวที่จะเจาะ "อื่นๆ" ซึ่งบังคับกรอกรายละเอียดอยู่แล้ว)
@@ -1464,17 +1497,46 @@ export default function OEEAnalytics() {
             ); })()}
           </div>
 
-          {/* 1.2 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
+          {/* 1.2 ⏱ ไทม์ไลน์เครื่องหยุด — "หยุดตอนไหนของวัน" (user 2026-08-26)
+              แท็บนี้เป็นภาพวันเดียว คำถามที่ตอบไม่ได้มาตลอดคือ "26 นาทีนั้นกระจุกช่วงไหน"
+              ซึ่งเปลี่ยนวิธีแก้คนละเรื่อง — ยอดรวม/พาเรโต้ด้านล่างตอบแค่ "ประเภทไหนมากสุด" */}
+          <div style={s.section}>
+            <div style={s.title}>⏱ ไทม์ไลน์เครื่องหยุด — {tdDate}</div>
+            <DowntimeTimeline sessions={tdSessionsTeamFiltered} downtimes={tdDowntimesScoped} workDate={tdDate} isMobile={isMobile} />
+          </div>
+
+          {/* 1.3 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
               ในการ์ด A/P/Q ที่อยู่เหนือมันเอง (ข) ซ้ำกับกราฟแนวโน้มรายวันในแท็บ 📊 แนวโน้ม/ประวัติ
               ซึ่งให้ตัวเลขเท่ากันเป๊ะ (ตารางเดียวกัน · closed เหมือนกัน · wavg สูตรเดียวกัน)
-              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20) */}
-          <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
-            <div style={{ flex: '0 0 auto' }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย</div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : 'ยังไม่มีข้อมูลย้อนหลัง'}
-              </div>
+              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20)
+              → 2026-08-26 พับเป็นค่าเริ่มต้น: หน้านี้คือ "วันนี้" การเทียบย้อนหลังมีบ้านอยู่แล้วที่แท็บแนวโน้ม
+                 (ไม่ลบทิ้ง — ยังมีค่าตอนกะปิดครบแล้ว แค่ไม่ควรกินที่เหนือไทม์ไลน์/พาเรโต้) */}
+          <div style={{ ...s.section, paddingBottom: tdCmpOpen ? undefined : 10 }}>
+            <div onClick={() => setTdCmpOpen(o => !o)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', transform: tdCmpOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : ''}</span>
+              {!tdCmpOpen && (
+                <span style={{ fontSize: 11.5, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {['oee', 'a', 'p', 'q'].map(k => {
+                    const v = tdVsAvg[k];
+                    const up = v.diff != null && v.diff > 0.05, dn = v.diff != null && v.diff < -0.05;
+                    return (
+                      <span key={k}>
+                        <b style={{ color: 'var(--muted)' }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</b>{' '}
+                        <b style={{ color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>{v.now ?? '—'}{v.now != null ? '%' : ''}</b>
+                        <span style={{ color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
+                          {v.diff == null ? ' (เทียบไม่ได้)' : ` (${up ? '▲+' : dn ? '▼' : '●'}${v.diff})`}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </span>
+              )}
             </div>
+          {tdCmpOpen && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginTop: 10 }}>
+            {!tdVsAvg.days && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีข้อมูลย้อนหลัง</div>}
 
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 260 }}>
               {['oee', 'a', 'p', 'q'].map(k => {
@@ -1512,6 +1574,8 @@ export default function OEEAnalytics() {
                 </div>
               )}
             </div>
+          </div>
+          )}
           </div>
 
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
@@ -1736,7 +1800,7 @@ export default function OEEAnalytics() {
           })()}
         </>
       ) : viewTab === 'insight' ? (
-        <OeeInsightPanel lines={linesFull} />
+        <OeeInsightPanel lines={linesFull} ccRates={ccRates} />
       ) : (
       <>
       {/* Filters */}
@@ -1918,12 +1982,24 @@ export default function OEEAnalytics() {
             {dtCost.byType.length > 0 && (
               <div style={{ flex: 1, minWidth: 260 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>Top ประเภทตามมูลค่า</div>
+                {/* กดแถวแล้วเจาะทันที — ยอดรวมอย่างเดียวตอบไม่ได้ว่า "เงินก้อนนี้เกิดที่เครื่องไหน กะไหน วันไหน"
+                    ซึ่งเป็นคำถามเดียวที่ทำให้เอาไปแก้ได้จริง · ส่ง measure='baht' ไปด้วยให้เรียงตามเงินตรงกับที่เห็น */}
                 {dtCost.byType.slice(0, 5).map(([t, v]) => (
-                  <div key={t} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '2px 0' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
+                  <div key={t} role="button" tabIndex={0}
+                    onClick={() => setDtFocus({ cat: t, measure: 'baht', n: Date.now() })}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDtFocus({ cat: t, measure: 'baht', n: Date.now() }); } }}
+                    title={`เจาะดู "${t}" — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/วัน`}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {Math.round(v.min).toLocaleString()} น.</span>
                   </div>
                 ))}
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                  🔍 <b>คลิกแถวเพื่อเจาะ</b> — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/คนบันทึก/วัน (เห็นบาทรายแถวและรายการดิบ)
+                  · หรือเลื่อนลงไปที่ <b>Pareto</b> แล้วกดปุ่ม <b style={{ color: 'var(--accent)' }}>฿ บาท</b> เพื่อเรียงทั้งกราฟตามเงิน
+                </div>
               </div>
             )}
           </div>
@@ -1944,7 +2020,7 @@ export default function OEEAnalytics() {
         {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
         <div>
           <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
-            records={dtRecords} dims={DT_DIMS} unit="นาที"
+            records={dtRecords} dims={DT_DIMS} unit="นาที" focus={dtFocus}
             emptyText={dtIncludePlanned ? 'ไม่มีข้อมูล Downtime' : 'ไม่มี Downtime นอกแผนในช่วงนี้'}
             sectionStyle={s.section} titleStyle={s.title} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
@@ -1974,6 +2050,28 @@ export default function OEEAnalytics() {
                 </div>
               ))}
             </div>
+            {/* Top ประเภทตามมูลค่า — กดแล้วเจาะทันที (ยอดรวมตอบไม่ได้ว่าเงินก้อนนี้เกิดที่ไลน์ไหน พาร์ทไหน วันไหน) */}
+            {defectCost.byType.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>Top ประเภทตามมูลค่า</div>
+                {defectCost.byType.slice(0, 5).map(([t, v]) => (
+                  <div key={t} role="button" tabIndex={0}
+                    onClick={() => setDefFocus({ cat: t, measure: 'baht', n: Date.now() })}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDefFocus({ cat: t, measure: 'baht', n: Date.now() }); } }}
+                    title={`เจาะดู "${t}" — แยกตามไลน์/ชิ้นงาน/กะ/วัน`}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {v.qty.toLocaleString()} ชิ้น</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                  🔍 <b>คลิกแถวเพื่อเจาะ</b> — "ประเภทไหนแพงสุด" ตอบคนละคำถามกับ "ประเภทไหนเยอะสุด" ใน Pareto ด้านล่าง
+                  · <b>ประเภทที่ยังตีมูลค่าไม่ได้ไม่โผล่ในลิสต์นี้</b> (ดูแถบเตือนด้านล่าง)
+                </div>
+              </div>
+            )}
             {defectCost.noCost.length > 0 && (
               <div style={{ marginTop: 10, fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.7 }}>
                 ⚠ ยังตีมูลค่าไม่ได้ {defectCost.noCost.length} พาร์ท ({defectCost.noCost.reduce((a, x) => a + x[1], 0).toLocaleString()} ชิ้น) — ยอดบาทข้างบนจึงต่ำกว่าความจริง
@@ -1986,7 +2084,7 @@ export default function OEEAnalytics() {
           </div>
         )}
 
-        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น"
+        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น" focus={defFocus}
           emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
       </div>
 

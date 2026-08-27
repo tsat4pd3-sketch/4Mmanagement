@@ -67,12 +67,56 @@ const stripConnectors = (flat) => {
   return out;
 };
 
+/* ── ชื่ออุปกรณ์/อาการเดียวกัน คนละภาษา-คนละคำ (2026-08-25 รอบ 2 · user จับได้จริง) ──────────
+   "คอนเวเย่อพัง" (ทับศัพท์ไทย) ↔ "conveyor เสีย" (อังกฤษ+ไทย) หมายถึงเรื่องเดียวกัน แต่เป็นคนละ
+   ตัวอักษรกันทั้งหมด — connector-stripping ข้างบนช่วยไม่ได้เลย เพราะไม่ใช่ปัญหาคำแทรก
+   เป็นปัญหา "คำพ้องความหมาย" (ทับศัพท์เครื่องจักร + คำไทยหลายคำที่แปลว่า "เสีย")
+
+   แนวทางเดียวกับ EQUIP_SYN ใน AdoptionOutlook.jsx (จับคู่ downtime↔defect ข้ามภาษา) แต่ที่นี่
+   "แทนที่" คำพ้องด้วยคำกลางก่อนคำนวณ n-gram (ไม่ใช่แค่ label ไว้เทียบ) — คัดเฉพาะกลุ่มที่ไม่กำกวม
+   ในบริบทโรงงานนี้เท่านั้น (ตัด "ปั๊ม"/"เชื่อม" ออก เพราะซ้อนกับ "ไลน์ปั๊ม"/"งานเชื่อม" ที่มีความหมาย
+   อื่นอยู่แล้วในระบบ — ผสมกลุ่มคำที่กำกวมจะทำให้ของคนละเรื่องถูกจับกลุ่มผิด) */
+const EQUIP_GROUPS = [
+  ['conveyor', 'คอนเวเย่อ', 'คอนเวเยอร์', 'คอนเวเยอ', 'คอนเวย์เยอร์'],
+  ['robot', 'โรบอท', 'หุ่นยนต์'],
+  ['motor', 'มอเตอร์'],
+  ['sensor', 'เซนเซอร์'],
+  ['die', 'แม่พิมพ์'],
+  ['jig', 'จิ๊ก'],
+  ['cylinder', 'กระบอกลม', 'ไซลินเดอร์'],
+  ['plc', 'พีแอลซี'],
+  ['gripper', 'กริปเปอร์', 'กิ๊บเปอร์', 'กิ๊ปเปอร์'],
+  ['bearing', 'แบริ่ง', 'ตลับลูกปืน'],
+  ['inverter', 'อินเวอร์เตอร์'],
+  ['clamp', 'แคลมป์'],
+  ['hydraulic', 'ไฮดรอลิก'],
+];
+const STATUS_GROUP = ['พัง', 'เสีย', 'ชำรุด', 'ขัดข้อง'];
+const SYN_GROUPS = [...EQUIP_GROUPS, STATUS_GROUP];
+
+const applySynonyms = (flat) => {
+  let out = flat;
+  SYN_GROUPS.forEach(group => {
+    const canon = group[0];
+    // เรียงยาวก่อนสั้น กันคำสั้นในกลุ่มไปตัดกลางคำยาวของกลุ่มเดียวกันแทนที่ผิดจังหวะ
+    [...group].sort((a, b) => b.length - a.length).forEach(variant => {
+      if (variant !== canon && out.includes(variant)) out = out.split(variant).join(canon);
+    });
+  });
+  return out;
+};
+
 const prep = (s) => {
   const n = normalizeNote(s);
   const flat = n.replace(/ /g, '');
   const flatX = stripConnectors(flat);
-  // เท่ากับ flat เดิม (ไม่มีคำเชื่อมให้ตัด) = ไม่ต้องคำนวณ n-gram ซ้ำ ประหยัดงาน
-  return { flat, gram: ngramsFromFlat(flat), flatX, gramX: flatX === flat ? null : ngramsFromFlat(flatX) };
+  const flatY = applySynonyms(flatX);
+  // เท่ากับตัวก่อนหน้า (ไม่มีอะไรให้ตัด/แทน) = ไม่ต้องคำนวณ n-gram ซ้ำ ประหยัดงาน
+  return {
+    flat, gram: ngramsFromFlat(flat),
+    flatX, gramX: flatX === flat ? null : ngramsFromFlat(flatX),
+    flatY, gramY: flatY === flatX ? null : ngramsFromFlat(flatY),
+  };
 };
 
 /** ความเหมือน 0-1 จากค่าที่ prep ไว้แล้ว — ใช้ร่วมทั้ง noteSimilarity และ clusterNotes (กันสูตรแตกสองที่) */
@@ -91,6 +135,16 @@ function simCore(a, b) {
     if (s2.length >= MIN_CONTAIN && l2.includes(s2)) return 1;
     sim = Math.max(sim, jaccard(a.gramX ?? a.gram, b.gramX ?? b.gram));
   }
+
+  // ลองอีกรอบแบบแทนคำพ้อง (ทับศัพท์เครื่องจักร/คำ "เสีย" หลายแบบ) เป็นคำกลาง — "คอนเวเย่อพัง"
+  // กับ "conveyor เสีย" กลายเป็นสตริงเดียวกันหลังขั้นนี้
+  const ay = a.flatY ?? af, by = b.flatY ?? bf;
+  if (ay && by && (a.gramY || b.gramY)) {
+    if (ay === by) return 1;
+    const [s3, l3] = ay.length <= by.length ? [ay, by] : [by, ay];
+    if (s3.length >= MIN_CONTAIN && l3.includes(s3)) return 1;
+    sim = Math.max(sim, jaccard(a.gramY ?? a.gram, b.gramY ?? b.gram));
+  }
   return sim;
 }
 
@@ -106,15 +160,16 @@ export const CLUSTER_THRESHOLD = 0.45;
  * @param {(r)=>number} valueOf  ดึงค่าที่จะรวม (นาที/ชิ้น)
  * @param {{threshold?:number}} opts
  * @returns {{ clusters:Array<{name,value,count,variants:number,samples:string[],recs:Array}>,
- *             missing:{value:number,count:number} }}
+ *             missing:{value:number,count:number,recs:Array} }}
  */
 export function clusterNotes(records, noteOf, valueOf, opts = {}) {
   const threshold = opts.threshold ?? CLUSTER_THRESHOLD;
-  const missing = { value: 0, count: 0 };
+  // recs ติดมาด้วย — ผู้เรียกบางที่ต้องรวมค่าอื่นต่อ (เช่นมูลค่าเป็นบาท) จากแถวดิบของกลุ่มนี้
+  const missing = { value: 0, count: 0, recs: [] };
   const withNote = [];
   records.forEach(r => {
     const n = normalizeNote(noteOf(r));
-    if (!n) { missing.value += Number(valueOf(r)) || 0; missing.count++; return; }
+    if (!n) { missing.value += Number(valueOf(r)) || 0; missing.count++; missing.recs.push(r); return; }
     withNote.push({ r, raw: String(noteOf(r)).trim(), ...prep(noteOf(r)), v: Number(valueOf(r)) || 0 });
   });
 
@@ -134,8 +189,14 @@ export function clusterNotes(records, noteOf, valueOf, opts = {}) {
       best.raws[item.raw] = (best.raws[item.raw] || 0) + 1;
     } else {
       clusters.push({
-        // seed ต้องพก flatX/gramX ไปด้วย ไม่งั้นสมาชิกถัดไปเทียบกับ seed แล้วเสียสัญญาณตัดคำเชื่อมไป
-        seed: { flat: item.flat, gram: item.gram, flatX: item.flatX, gramX: item.gramX }, value: item.v, count: 1,
+        // seed ต้องพก flatX/gramX/flatY/gramY ไปด้วย ไม่งั้นสมาชิกถัดไปเทียบกับ seed แล้วเสียสัญญาณ
+        // ตัดคำเชื่อม/แทนคำพ้องไป (บั๊กที่เคยเจอมาแล้วรอบก่อน — เพิ่มฟิลด์ใหม่ต้องเติมที่นี่เสมอ)
+        seed: {
+          flat: item.flat, gram: item.gram,
+          flatX: item.flatX, gramX: item.gramX,
+          flatY: item.flatY, gramY: item.gramY,
+        },
+        value: item.v, count: 1,
         recs: [item.r], raws: { [item.raw]: 1 },
       });
     }

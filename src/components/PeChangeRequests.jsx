@@ -17,6 +17,7 @@ import { toast } from './Toast';
 import { UserContext } from '../App';
 import { suggestChanges, matchDocSet, LEG_META, CR_STATUS, DOC_LABEL } from '../utils/peLink';
 import { todayLocal as localToday } from '../utils/dateFormat';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' };
@@ -168,6 +169,15 @@ export default function PeChangeRequests({
     const { error } = await supabase.from('pe_change_requests').insert(payload);
     setBusy(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'pe_change_request', type: 'info', ref_table: 'pe_change_requests', actor: fullName,
+      lines: [
+        `📐 คำขอแก้เอกสาร ${chosen.length} รายการ`,
+        `🔗 ที่มา: ${source.label || source.kind}`,
+        ...chosen.slice(0, 4).map((x) => `  • ${String(x.doc_type).toUpperCase()} — ${String(x.proposal).slice(0, 90)}`),
+        chosen.length > 4 ? `  • …และอีก ${chosen.length - 4} รายการ` : '',
+      ],
+    });
     toast.success(`ส่งคำขอแก้เอกสาร ${chosen.length} รายการให้ทีม PE แล้ว`);
     setSugs(null); load();
   };
@@ -184,6 +194,14 @@ export default function PeChangeRequests({
     });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'pe_change_request', type: 'info', ref_table: 'pe_change_requests', actor: fullName,
+      lines: [
+        `📐 คำขอแก้ ${String(manual.doc_type).toUpperCase()}`,
+        `🔗 ที่มา: ${source.label || source.kind}`,
+        `📝 ${manual.proposal.trim().slice(0, 300)}`,
+      ],
+    });
     toast.success('เพิ่มคำขอแล้ว'); setManual(null); load();
   };
 

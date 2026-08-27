@@ -15,7 +15,23 @@ import { isOpenDT, isPlannedDT } from './downtimeRules';
 // นิยาม isOpenDT/isPlannedDT/isAlarmingDT/dtElapsedMin ย้ายไป `./downtimeRules` (pure —
 // 2026-08-19 เพื่อให้ lib ที่เทสด้วย node ได้ import โดยไม่ลาก supabaseClient) — re-export
 // จากที่นี่ให้ทุก import เดิมใช้ได้เหมือนเดิม · แก้นิยามให้แก้ที่ downtimeRules.js ที่เดียว
-export { isOpenDT, isPlannedDT, isAlarmingDT, dtElapsedMin } from './downtimeRules';
+export { isOpenDT, isPlannedDT, isAlarmingDT, dtElapsedMin, fmtDtElapsed, isOverDtThreshold, DT_OPEN_ALERT_MIN_DEFAULT } from './downtimeRules';
+
+/* เกณฑ์ "หยุดเกินกี่นาทีถึงเตือน" — ตั้งที่ /notification-config (dt_alert_config ฝั่ง DR แถวเดียว)
+   cache ระดับ module: จอที่ใช้ค่านี้เป็นจอเปิดค้างทั้งวัน ไม่ต้องยิงซ้ำ (กฎ egress)
+   โหลดไม่ได้ = ค่า default 15 — **ห้ามคืน null แล้วให้จอเงียบ** (เกณฑ์หายไม่ใช่เหตุให้ไม่เตือน) */
+let _dtAlertMin = null, _dtAlertPromise = null;
+export function dtAlertMinSync() { return _dtAlertMin ?? DT_OPEN_ALERT_MIN_DEFAULT_LOCAL; }
+const DT_OPEN_ALERT_MIN_DEFAULT_LOCAL = 15;
+export function loadDtAlertMin() {
+  if (_dtAlertMin != null) return Promise.resolve(_dtAlertMin);
+  if (!_dtAlertPromise) {
+    _dtAlertPromise = supabaseDR.from('dt_alert_config').select('open_alert_min').eq('id', 1).maybeSingle()
+      .then(({ data }) => { _dtAlertMin = Math.max(1, Number(data?.open_alert_min ?? DT_OPEN_ALERT_MIN_DEFAULT_LOCAL)); return _dtAlertMin; })
+      .catch(() => DT_OPEN_ALERT_MIN_DEFAULT_LOCAL);
+  }
+  return _dtAlertPromise;
+}
 
 // work date เดียวกับกฎทั้งระบบ: ก่อน 08:00 นับเป็นวันก่อนหน้า (กะดึกข้ามวัน)
 function getWorkDate() {

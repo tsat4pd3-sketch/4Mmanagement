@@ -67,12 +67,24 @@ async function sendTelegram(message: string, chatId?: string[] | null): Promise<
     }).then((r) => r.ok).catch(() => false)));
   return res.some(Boolean);
 }
-// แจ้งในแอป (กระดิ่ง + เสียง + Web Push ผ่าน trigger trg_notify_push) ตาม role ที่ตั้งไว้
+// แจ้งในแอป (กระดิ่ง + เสียง + Web Push ผ่าน trigger trg_notify_push)
+// ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
+//    ตั้งที่ /notification-config — **ห้ามกรองด้วย role อย่างเดียวในไฟล์นี้**
 async function notifyInApp(routes: Record<string, Route>, event: string, htmlMessage: string) {
   const roles = routes[event]?.inappRoles ?? [];
-  if (!roles.length) return;
-  const { data } = await supabase.from('profiles').select('id').in('role', roles);
-  const ids = [...new Set((data ?? []).map((p) => p.id as string))].filter(Boolean);
+  if (!roles.length) return;                    // ไม่ตั้ง role = ไม่แจ้งในแอป
+  let ids: string[] = [];
+  try {
+    const { data, error } = await supabase.rpc('notify_recipients', { p_event: event, p_section: null });
+    if (error) throw error;
+    ids = (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  } catch (e) {
+    console.error('notify_recipients', e);      // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    const { data } = await supabase.from('profiles').select('id').in('role', roles);
+    ids = (data ?? []).map((p) => p.id as string);
+  }
+  ids = [...new Set(ids)].filter(Boolean);
   if (!ids.length) return;
   const title = routes[event]?.label || event;
   const body = String(htmlMessage).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -105,6 +117,9 @@ Deno.serve(async (req) => {
         `📅 วันงาน: ${a.work_date}`,
         `🟥 จะขาด ${a.shortage} · 🟧 ล้น ${a.over}`,
       ];
+      /* ⚠️ ดึงแถวมาไม่ครบ (ชนเพดานหน้า) = ตัวเลขแยกรายกลุ่มข้างล่างยังไม่ครบ — ต้องบอก ห้ามเงียบ
+         หัวข้อ "พบ N รายการ" เป็นของจริงเสมอ (มาจาก head-count) จึงไม่ต้องแก้ */
+      if (a.truncated) lines.push(`⚠️ ลิสต์ข้างล่างแสดงได้ ${a.sampled} จาก ${a.total} รายการ (ตัวเลขแยกกลุ่มยังไม่ครบ)`);
       for (const g of groups) {
         lines.push(``, `${g.kind === 'over' ? '🟧' : '🟥'} <b>${g.title}</b> — ${g.count} รายการ:`);
         for (const it of g.items ?? []) {

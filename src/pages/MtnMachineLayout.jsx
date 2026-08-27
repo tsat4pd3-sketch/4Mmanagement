@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
 import { supabase, supabaseDR } from '../supabaseClient'
@@ -14,6 +14,7 @@ import DowntimeSiren from '../components/DowntimeSiren'
 import FactoryMap from './FactoryMap'
 import { jigEquipTypeOf } from '../utils/equipmentKinds'
 import useTabParam from '../utils/useTabParam'
+import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -96,6 +97,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
   // (mtn/admin/manager/supervisor) ได้ทั้งบน /mtn-layout และ /layout-setup — facility เป็น domain ของช่าง
   // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
   const canEdit = can('pm', 'setup', role)
+  /* ⚠️ facility เปิดมาเป็น "โหมดดูสถานะ" เสมอ — เครื่องมือจัดผัง (＋โซน/ลบ/อัปรูป/วางจุด/Undo)
+     ต้องกด "✏️ แก้ผังโซน" เองก่อนถึงโผล่ (2026-08-26 · user ทัก "ผู้บริหารคลิกโซนจากผังรวม
+     แล้วกลายเป็นหน้า setup แผนผังเฉยเลย — ควรเห็นแผนผังจริง + การ์ดสถานะ PM/ไฟฟ้าแบบ energy") */
+  const [facEdit, setFacEdit] = useState(false)
+  const editMode = canEdit && facEdit
   // เปิดหน้ามาเจอ "ภาพรวมทั้งโรงงาน" ก่อน (ฝัง FactoryMap display ตัวเดียวกับ /factory-map) แล้วค่อยเจาะไลน์
   // deep-link จากผังรวมโรงงาน: ?view=facility&zone=<ชื่อโซน>&from=factory-map → เปิดแท็บ Facility ที่โซนนั้นเลย
   const navigate = useNavigate()
@@ -133,8 +139,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const [facMachines, setFacMachines] = useState([])   // facility/utility จากฐานเครื่องจักร (ยังไม่มี shadow jig)
   const [placedAnyZone, setPlacedAnyZone] = useState(() => new Set()) // jig_id ที่ถูกวางไว้แล้ว "ทุกโซน" — ลิสต์ยังไม่วางต้องซ่อนของที่วางโซนอื่นแล้ว
   const [armedMachine, setArmedMachine] = useState(null) // machine ที่กำลังจะวาง (สร้าง shadow jig ตอนวาง)
+  // สถานะโซน (โหมดดู) — ใบซ่อม MO ค้างของเครื่องในโซน + พลังงานไฟฟ้าเดือนล่าสุดของโซน
+  const [zoneMo, setZoneMo] = useState([])
+  const [zonePm, setZonePm] = useState(null)          // { rows:[{name, status, nextDue, dept, placed}], equipCount, unplaced }
+  const [zoneEnergy, setZoneEnergy] = useState(null)   // { qty, prev, cost, month } | null
   const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
+  const detailRef = useRef(null)
 
   // ─── Undo/Redo — เฉพาะจุดอุปกรณ์บนผังโซนปัจจุบัน (pm_facility_points) ───
   // เพิ่ม/ลบโซน + อัปโหลดรูป ไม่เข้า history (มีไฟล์ใน storage ย้อนคืนไม่ได้ — ใช้ confirm dialog กันพลาดแทน)
@@ -159,7 +170,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setFacPoints(snap.points)
     return true
   }
-  const hist = useUndoHistory({ snapOf: pointSnap, applySnapshot: applyPointSnapshot, enabled: canEdit && view === 'facility' })
+  const hist = useUndoHistory({ snapOf: pointSnap, applySnapshot: applyPointSnapshot, enabled: editMode && view === 'facility' })
   useEffect(() => { hist.clear() }, [areaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -171,6 +182,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   useEffect(() => { if (view === 'production' && selectedLine) loadProduction() }, [selectedLine, view]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === 'facility' && areaId) loadFacilityArea() }, [areaId, view]) // eslint-disable-line react-hooks/exhaustive-deps
+  // เลือกหมุดแล้วต้อง "เห็น" รายละเอียด — ผังสูงเกือบเต็มจอ แผงข้างล่างจึงอยู่ใต้ field of view
+  useEffect(() => { if (selId) detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [selId])
 
   /* ── production (read-only, uses production's machine_points) ── */
   const loadProduction = async () => {
@@ -229,8 +242,20 @@ export default function MtnMachineLayout({ setupMode = false }) {
     const { data: allPts } = await supabaseDR.from('pm_facility_points').select('jig_id')
     setPlacedAnyZone(new Set((allPts || []).map(p => p.jig_id)))
     // facility/utility equipment + PM status (all zones share the same equipment pool)
-    const { data: jigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id').eq('module', 'mtn').in('equipment_category', FACILITY_CATS)
-    const pm = await loadPmForJigs((jigs || []).map(j => j.id))
+    /* ⚠️ ดึง jigs ของโมดูล mtn ทั้งหมด (ตารางนี้เล็ก คิวรีเดียวพอ) แล้วค่อยแยกใช้ 2 วัตถุประสงค์:
+         · `jigs` (กรอง facility/utility) = pool ให้ "ลากมาวางบนผัง"
+         · `zoneJigs` (จับด้วยชื่อโซน/หมุด **ไม่กรอง category**) = ใช้ตอบ "โซนนี้มี PM อะไรค้าง"
+       🔴 เดิมใช้ pool ที่กรอง category ตอบทั้ง 2 เรื่อง → อุปกรณ์ที่มีแผน PM แต่ `equipment_category`
+          ไม่ใช่ facility/utility ถูกกรองทิ้งตั้งแต่ต้น ⇒ การ์ดบอก "ยังไม่มีเช็คลิสต์ PM ในโซนนี้"
+          ขณะที่ผังรวมโรงงาน (loadPM ไม่กรอง category) บอก "PM ใกล้ครบ 2" = **จอขัดกันเอง**
+          (user เจอจริงที่โซน Airbooster 26/08: "บอกมีแผนจะต้อง PM แต่กดเข้าไปไม่มีอะไรบอกเลย") */
+    const { data: allJigs } = await supabaseDR.from('jigs').select('id, name, jig_no, equipment_category, machine_id, line_name').eq('module', 'mtn')
+    const jigs = (allJigs || []).filter(j => FACILITY_CATS.includes(j.equipment_category))
+    const zNameKey = String(area?.name || '').trim().toLowerCase()
+    const pinIds = new Set((pts || []).map(p => p.jig_id))
+    const zoneJigs = (allJigs || []).filter(j =>
+      (zNameKey && String(j.line_name || '').trim().toLowerCase() === zNameKey) || pinIds.has(j.id))
+    const pm = await loadPmForJigs([...new Set([...jigs.map(j => j.id), ...zoneJigs.map(j => j.id)])])
     const info = {}
     ;(jigs || []).forEach(j => { info[j.id] = { name: j.name || '-', jig_no: j.jig_no || '', checklists: pm[j.id] || [] } })
     setJigInfo(info)
@@ -240,10 +265,51 @@ export default function MtnMachineLayout({ setupMode = false }) {
     const { data: fm } = await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category, equipment_kind').eq('is_active', true).in('equipment_category', FACILITY_CATS)
     setFacMachines((fm || []).filter(m => !linkedMachineIds.has(m.id)))
     setLoading(false)
+
+    /* ── สถานะโซนสำหรับการ์ดโหมดดู (best-effort — พลาดแล้วผัง/PM ยังใช้ได้ปกติ) ──
+       ใบซ่อมค้าง: จับคู่ mtn_orders.machine_no กับเลขเครื่องของอุปกรณ์ที่วางในโซนนี้ (jig_no ของ shadow jig)
+       พลังงาน: energy_monthly ราย "จุดวัด" — ชื่อจุดวัดต้องตรงชื่อโซน (trim+lowercase · กติกาเดียวกับ /factory-map) */
+    const zName = zNameKey
+
+    /* 🛠️ "เครื่องไหนกำลังจะถึงคิว PM" (2026-08-26 · user ทัก "กดเข้ามาไม่เห็นมีเลย")
+       ⚠️ ต้องนับจาก **อุปกรณ์ที่สังกัดโซน** (`jigs.line_name` = ชื่อโซน) ไม่ใช่แค่ "หมุดที่วางบนผัง"
+          — ผังรวมโรงงานนับแบบแรก (loadPM group ตาม jigs.line_name) การ์ดนี้เคยนับแบบหลัง
+          ⇒ ผังบอก "PM ใกล้ครบ 2" แต่การ์ดบอก "ยังไม่มีเช็คลิสต์ PM ในโซนนี้" = จอเดียวกันขัดกันเอง
+       อุปกรณ์ที่มีแผนแต่ยังไม่วางบนผัง **ห้ามซ่อน** — ติดป้ายบอกให้ไปวาง */
+    const ptIds = pinIds
+    const pmRows = []
+    zoneJigs.forEach(j => (pm[j.id] || []).forEach(c => pmRows.push({
+      jigId: j.id, name: j.jig_no || j.name || '-', sub: j.jig_no && j.name && j.jig_no !== j.name ? j.name : '',
+      placed: ptIds.has(j.id), ...c,
+    })))
+    pmRows.sort((a, b) => (STATUS_META[a.status]?.order ?? 9) - (STATUS_META[b.status]?.order ?? 9)
+      || (a.nextDue?.getTime() ?? 9e15) - (b.nextDue?.getTime() ?? 9e15))
+    setZonePm({ rows: pmRows, equipCount: zoneJigs.length, unplaced: zoneJigs.filter(j => !ptIds.has(j.id)).length })
+
+    const zoneNos = new Set(zoneJigs.map(j => String(j.jig_no || '').trim().toUpperCase()).filter(Boolean))
+    const { data: mos, error: moErr } = await supabaseDR.from('mtn_orders')
+      .select('id, mo_no, machine_no, status, report_at')
+      .not('status', 'in', '("closed","rejected")')
+    setZoneMo(moErr ? [] : (mos || [])
+      .filter(o => zoneNos.has(String(o.machine_no || '').trim().toUpperCase()))
+      .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || ''))))
+    const win = monthRange(monthKeyOf(), 7)   // ถอยหาเดือนล่าสุดที่มีข้อมูลจริง — บิลไฟมาช้าเป็นสัปดาห์ (กติกา /factory-map)
+    const { data: en, error: enErr } = await supabaseDR.from('energy_monthly')
+      .select('scope_kind, scope_name, month_key, qty, cost').eq('utility', 'electric')
+      .neq('scope_kind', 'plant').gte('month_key', win[0]).lte('month_key', win[win.length - 1])
+    if (enErr) { setZoneEnergy(null) } else {
+      const mine = (en || []).filter(r => String(r.scope_name || '').trim().toLowerCase() === zName && r.qty != null)
+      const mk = [...win].reverse().find(m => mine.some(r => r.month_key === m))
+      if (!mk) { setZoneEnergy(null) } else {
+        const cur = mine.find(r => r.month_key === mk)
+        const prevRow = mine.find(r => r.month_key === shiftMonth(mk, -1))
+        setZoneEnergy({ qty: Number(cur.qty) || 0, cost: Number(cur.cost) || 0, prev: prevRow ? (Number(prevRow.qty) || 0) : null, month: mk })
+      }
+    }
   }
 
   const addArea = async () => {
-    if (!canEdit) return
+    if (!editMode) return
     const name = window.prompt('ชื่อโซน facility (เช่น ห้องปั๊มลม, โซน MDB, ระบบน้ำ RO)')
     if (!name?.trim()) return
     const { data, error } = await supabaseDR.from('pm_facility_areas').insert({ name: name.trim(), sort_order: areas.length }).select().single()
@@ -251,7 +317,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
     await reloadAreas(); setAreaId(data.id)
   }
   const deleteArea = async (id) => {
-    if (!canEdit) return
+    if (!editMode) return
     if (!window.confirm('ลบโซนนี้? (อุปกรณ์ที่วางบนโซนนี้จะถูกเอาออกจากผัง แต่ตัวอุปกรณ์+ประวัติ PM ไม่หาย)')) return
     const oldPath = areas.find(a => a.id === id)?.image_path
     const { error } = await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
@@ -261,7 +327,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setAreaId(prev => prev === id ? null : prev); await reloadAreas()
   }
   const uploadImage = async (e) => {
-    let file = e.target.files?.[0]; if (!file || !areaId || !canEdit) return
+    let file = e.target.files?.[0]; if (!file || !areaId || !editMode) return
     setBusy(true)
     try {
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ext ด้านล่าง derive จากชื่อไฟล์ จึงต้องแปลงก่อน)
@@ -287,7 +353,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
     } catch (err) { toast.error(err.message) } finally { setBusy(false); if (fileRef.current) fileRef.current.value = '' }
   }
   const placeJig = async (pct) => {
-    if (!areaId || !canEdit) return
+    if (!areaId || !editMode) return
     let jigId = armedJig
     // วาง machine จากฐานเครื่องจักร → สร้าง shadow jig (ผูก machine_id) ก่อน แล้วค่อยวาง
     if (!jigId && armedMachine) {
@@ -309,13 +375,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
     setArmedJig(null); setArmedMachine(null); loadFacilityArea()
   }
   const movePoint = async (pointId, pct) => {
-    if (!canEdit) return
+    if (!editMode) return
     hist.pushHistory()
     setFacPoints(prev => prev.map(p => p.id === pointId ? { ...p, pos_top: pct.top, pos_left: pct.left } : p))
     await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId)
   }
   const removePoint = async (pointId) => {
-    if (!canEdit) return
+    if (!editMode) return
     hist.pushHistory()
     setFacPoints(prev => prev.filter(p => p.id !== pointId))
     await supabaseDR.from('pm_facility_points').delete().eq('id', pointId)
@@ -393,6 +459,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
         {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
         {view === 'facility' && canEdit && (
+          <button onClick={() => setFacEdit(v => { if (v) { setArmedJig(null); setArmedMachine(null) } return !v })}
+            style={S.viewBtn(facEdit)} title={facEdit ? 'กลับสู่โหมดดูสถานะ' : 'เปิดเครื่องมือจัดผัง (เพิ่มโซน/อัปรูป/วางจุด)'}>
+            {facEdit ? '✓ เสร็จสิ้นการแก้ผัง' : '✏️ แก้ผังโซน'}
+          </button>
+        )}
+        {view === 'facility' && editMode && (
           <>
             <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ — จุดบนผังโซนนี้ (Ctrl+Z)">↩️ Undo</button>
             <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
@@ -423,12 +495,14 @@ export default function MtnMachineLayout({ setupMode = false }) {
             : <MachineFloorMap
                 imageUrl={view === 'production' ? prodImage : facImage}
                 points={enrichedPoints} selectedId={selId} onSelect={p => setSelId(p.id)}
-                editable={view === 'facility' && canEdit} armed={!!armedJig || !!armedMachine}
+                editable={view === 'facility' && editMode} armed={!!armedJig || !!armedMachine}
                 height="clamp(360px, calc(100vh - 260px), 1100px)"
                 onImageClick={placeJig} onMarkerDragEnd={movePoint} onMarkerRemove={removePoint} />}
 
           {sel && selInfo && (
-            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+            /* ⚠️ ผังสูงเกือบเต็มจอ → แผงรายละเอียดอยู่ใต้ fold: คลิกหมุดแล้ว "เหมือนคลิกได้เฉยๆ ไม่มีอะไรขึ้น"
+               (user ทัก 2026-08-26) → เลื่อนมาให้เห็นเองทุกครั้งที่เลือกหมุด */
+            <div ref={detailRef} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⚙️ {selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
                 <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
@@ -468,21 +542,125 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <div style={S.side}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>โซน Facility ({areas.length})</span>
-              {canEdit && <button onClick={addArea} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
+              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
               {areas.map(a => (
                 <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <div onClick={() => setAreaId(a.id)} style={{ ...S.rowBtn(areaId === a.id, false), flex: 1 }}>{a.image_path ? '🗺️' : '▫️'} {a.name}</div>
-                  {canEdit && <button className="tbtn" onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
+                  {editMode && <button className="tbtn" onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
                 </div>
               ))}
-              {!areas.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีโซน — กด “+ โซน” เพื่อเริ่ม</div>}
+              {!areas.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{canEdit ? 'ยังไม่มีโซน — กด “✏️ แก้ผังโซน” แล้ว “+ โซน” เพื่อเริ่ม' : 'ยังไม่มีโซน — ให้ทีมช่างตั้งค่าก่อน'}</div>}
             </div>
 
-            {areaId && (
+            {/* ── โหมดดู (default): การ์ดสถานะโซน — PM / ใบซ่อมค้าง / พลังงาน (สไตล์การ์ด energy)
+                   ผู้บริหารคลิกโซนจากผังรวมต้องเจอ "สถานะ" ไม่ใช่เครื่องมือ setup (2026-08-26) ── */}
+            {areaId && !editMode && (() => {
+              const d = zoneEnergy?.prev != null ? deltaPct(zoneEnergy.qty, zoneEnergy.prev) : null
+              const dCol = d == null ? 'var(--muted)' : d <= -5 ? '#22c55e' : d > 10 ? '#ef4444' : 'var(--text2)'
+              return (
+                <div style={{ border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 11 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>📊 สถานะโซนนี้</div>
+                  {/* 🛠️ PM — นับจากอุปกรณ์ที่สังกัดโซน (เกณฑ์เดียวกับผังรวมโรงงาน) ไม่ใช่แค่หมุดบนผัง */}
+                  {(() => {
+                    const rows = (zonePm?.rows || []).filter(r => dept === 'all' || r.dept === dept)
+                    const cnt = {}; rows.forEach(r => { cnt[r.status] = (cnt[r.status] || 0) + 1 })
+                    const due = rows.filter(r => r.status === 'overdue' || r.status === 'due_soon' || r.status === 'never')
+                    return (
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
+                          🛠️ PM อุปกรณ์ · {zonePm?.equipCount ?? 0} ตัวในโซน{facPoints.length ? ` · ${facPoints.length} จุดบนผัง` : ''}
+                        </div>
+                        {!rows.length ? (
+                          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+                            ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} ในโซนนี้ —{' '}
+                            <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งจุดตรวจที่ ศูนย์ PM → ตั้งค่าจุดตรวจ</Link>
+                          </div>
+                        ) : (<>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 4 }}>
+                            {Object.entries(STATUS_META).filter(([k]) => cnt[k]).map(([k, m]) => (
+                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.label} {cnt[k]}</span>
+                            ))}
+                          </div>
+                          {/* ⭐ ตัวที่ user ถามหา: "เครื่องไหนจะถึงคิว PM" — บอกชื่อ+วันครบ ไม่ใช่แค่ตัวเลขรวม */}
+                          {due.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
+                              {due.slice(0, 6).map((r, i) => {
+                                const m = STATUS_META[r.status] ?? STATUS_META.ok
+                                const dd = r.nextDue ? daysUntilDue(r.nextDue) : null
+                                return (
+                                  <div key={`${r.jigId}-${i}`} onClick={() => { const p = facPoints.find(p => p.jig_id === r.jigId); if (p) setSelId(p.id) }}
+                                    title={r.clName || ''} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, cursor: r.placed ? 'pointer' : 'default' }}>
+                                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+                                    <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
+                                    <span style={{ marginLeft: 'auto', flexShrink: 0, color: m.color, fontWeight: 700 }}>
+                                      {dd == null ? m.label : dd < 0 ? `เกิน ${Math.abs(dd)} วัน` : dd === 0 ? 'ครบวันนี้' : `อีก ${dd} วัน`}
+                                    </span>
+                                    {/* ปิดลูป: เห็นว่าถึงคิวแล้วกดไปตรวจได้เลย ไม่ต้องไปไล่หาเองในหน้า PM */}
+                                    <Link to={`/pm?tab=check&dept=${r.dept || 'maintenance'}&equip=${r.jigId}`}
+                                      onClick={e => e.stopPropagation()} title="ไปบันทึกผลตรวจของเครื่องนี้"
+                                      style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
+                                  </div>
+                                )
+                              })}
+                              {due.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
+                              {/* ทางออกไปหน้าที่ทำงานจริง — จอนี้อ่านอย่างเดียว */}
+                              <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                                <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
+                                <Link to="/pm?tab=coord" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
+                              </div>
+                            </div>
+                          )}
+                          {/* มีแผน PM แต่ยังไม่ได้วางบนผัง = หาไม่เจอบนจอ ห้ามซ่อน */}
+                          {zonePm?.unplaced > 0 && (
+                            <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 5 }}>
+                              ⚠ อุปกรณ์ในโซนนี้ {zonePm.unplaced} ตัวยังไม่ได้วางบนผัง — กด “✏️ แก้ผังโซน” เพื่อวาง
+                            </div>
+                          )}
+                        </>)}
+                      </div>
+                    )
+                  })()}
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ค้างของโซนนี้</div>
+                    <div style={{ fontSize: zoneMo.length ? 17 : 12, fontWeight: 900, color: zoneMo.length ? '#f59e0b' : '#22c55e', marginTop: 3 }}>
+                      {zoneMo.length ? `${zoneMo.length} ใบ` : '✅ ไม่มีใบค้าง'}
+                    </div>
+                    {zoneMo.slice(0, 3).map(o => (
+                      <div key={o.id} onClick={() => navigate('/mtn-repair')} style={{ fontSize: 11, color: 'var(--text2)', cursor: 'pointer', marginTop: 2 }}>
+                        {o.mo_no || '⏳ รอออกเลข'} · {o.machine_no}
+                      </div>
+                    ))}
+                    {zoneMo.length > 3 && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>+ อีก {zoneMo.length - 3} ใบ — ดูที่ใบแจ้งซ่อม</div>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>⚡ พลังงานไฟฟ้า{zoneEnergy ? ` · ${monthLabel(zoneEnergy.month)}` : ''}</div>
+                    {zoneEnergy ? (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 2 }}>
+                          <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{fmtKwh(zoneEnergy.qty)}</span>
+                          <span style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.9 }}>kWh</span>
+                          {d != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: dCol, lineHeight: 1.8 }}>{d > 0 ? '+' : ''}{d}% เทียบเดือนก่อน</span>}
+                        </div>
+                        {zoneEnergy.cost > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>≈ {fmtBaht(zoneEnergy.cost)} บาท</div>}
+                      </>
+                    ) : (
+                      /* "ไม่มีข้อมูล" ≠ 0 — บอกตรงๆ ว่ายังไม่กรอก + กรอกที่ไหน (ห้ามเงียบ) */
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของโซนนี้ — กรอกที่หน้า ⚡ พลังงาน (ชื่อจุดวัดต้องตรงชื่อโซน)</div>
+                    )}
+                  </div>
+                  {/* ⚠️ ห้ามเขียนว่า uptime/online — ยังไม่มีสัญญาณรายเครื่อง (กฎ SCADA) */}
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px dashed var(--border)', paddingTop: 7 }}>
+                    ⏱ Uptime รายเครื่องยังไม่มีสัญญาณ (ต้องต่อ SCADA/มิเตอร์ก่อน) — สีบนผังมาจากรอบ PM ที่คนบันทึก
+                  </div>
+                </div>
+              )
+            })()}
+
+            {areaId && editMode && (
               <>
-                {canEdit && (
+                {editMode && (
                   <label style={{ display: 'block', marginBottom: 12 }}>
                     <input ref={fileRef} type="file" accept="image/*" hidden onChange={uploadImage} disabled={busy} />
                     <span style={{ display: 'block', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>

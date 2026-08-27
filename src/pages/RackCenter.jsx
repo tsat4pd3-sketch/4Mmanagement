@@ -6,9 +6,11 @@ import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { notifyEvent } from '../utils/notifyEvent';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -116,7 +118,7 @@ export default function RackCenter() {
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
   useEffect(() => {
-    const ch = supabaseDR.channel('rack-requests-live')
+    const ch = liveChannel(supabaseDR, 'rack-requests-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rack_requests' }, load)
       .subscribe();
     return () => { supabaseDR.removeChannel(ch); };
@@ -150,9 +152,15 @@ export default function RackCenter() {
   }, [lines, containerTypes]);
 
   // deep-link จาก QR ที่สแกนด้วยกล้องมือถือ: /rack-center?line=..&ctype=.. → เปิดฟอร์มให้เลย
+  // ⚠️ ต้อง guard สิทธิ์ค่าจาก URL ด้วย ไม่ใช่แค่ซ่อนปุ่ม (กฎ useTabParam-guard) — คนแปะลิงก์ให้กันได้
   useEffect(() => {
     const line = searchParams.get('line'), ctype = searchParams.get('ctype');
     if (!line || !ctype || !lines.length || !containerTypes.length) return;
+    if (!canOperate) {
+      toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate) — ให้ผู้มีสิทธิ์เป็นคนสแกน');
+      setSearchParams({}, { replace: true });
+      return;
+    }
     applyScan({ line, ctype, qty: searchParams.get('qty') || '1' });
     setSearchParams({}, { replace: true });   // ล้าง param กันเปิดซ้ำตอน refresh
   }, [lines, containerTypes]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -193,6 +201,7 @@ export default function RackCenter() {
   };
 
   const handleRequest = async () => {
+    if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate)'); return; }
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.container_type_id) { toast.error('เลือกชนิดภาชนะ'); return; }
     const qty = parseInt(form.qty) || 0;
@@ -209,6 +218,15 @@ export default function RackCenter() {
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'rack_request', type: 'info', ref_table: 'rack_requests',
+      line_name: form.line_name, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${form.line_name}`,
+        `📦 ${ctype?.name || '—'} · ${qty} ใบ`,
+        form.note.trim() ? `📝 ${form.note.trim()}` : '',
+      ],
+    });
     toast.success('🔔 เรียกภาชนะแล้ว — รอ Rack Center เตรียม');
     setShowForm(false);
     setForm(EMPTY_FORM);

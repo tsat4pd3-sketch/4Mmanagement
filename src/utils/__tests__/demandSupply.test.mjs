@@ -1,4 +1,4 @@
-import { demandByDay, simulate, prodRate, advise, demandKeysOf, rowMatchesProduct, demandOf } from '../demandSupply.js';
+import { demandByDay, simulate, prodRate, advise, demandKeysOf, rowMatchesProduct, demandOf, dedupeForecastRows, daysInMonthOf } from '../demandSupply.js';
 let pass=0; const bad=[];
 const ok=(n,g,w)=>{const a=JSON.stringify(g),b=JSON.stringify(w); a===b?pass++:bad.push(`${n}\n   got ${a}\n   want ${b}`)};
 
@@ -31,9 +31,10 @@ ok('firstShort ถูกวัน', s2.firstShort, '2026-08-18');
 console.log('  →', a2.icon, a2.text);
 
 // ── กฎข้อ 2: order ชนะ forecast ห้ามบวกทับ ──
-const D3=demandByDay([{due_date:'2026-08-17',qty:900}],[{period_month:'2026-08-17',qty:4020}]);
+// (2026-08-25: แถว edi_830 = เกลี่ย 7 วัน · แถวไม่มี source = manual เกลี่ยทั้งเดือน — เทสแยกท้ายไฟล์)
+const D3=demandByDay([{due_date:'2026-08-17',qty:900}],[{period_month:'2026-08-17',qty:4020,source:'edi_830'}]);
 ok('วันที่มีทั้งคู่ → ใช้ order เท่านั้น', demandOf(D3.byDay['2026-08-17']), 900);
-ok('วันที่มีแต่ forecast → เกลี่ย 7 วัน', Math.round(demandOf(D3.byDay['2026-08-20'])), Math.round(4020/7));
+ok('วันที่มีแต่ forecast (edi) → เกลี่ย 7 วัน', Math.round(demandOf(D3.byDay['2026-08-20'])), Math.round(4020/7));
 
 // ── จับคู่เลขลูกค้า ──
 const keys=demandKeysOf({mat_no:'10100384',p_no:'RB3B-16E060-BA'});
@@ -66,3 +67,29 @@ console.log(bad.length?`\n❌\n  ${bad.join('\n  ')}\n\nผ่าน ${pass} ล
   ok('แต่ราย MAT ตัวจริงติดลบ', perMat[0].end < 0, true);
 }
 console.log('✅ + กฎห้าม net ข้ามเลข SAP');
+
+
+/* ── dedupe forecast ข้าม source + เกลี่ยตาม grain (QC flow-audit D1 · 2026-08-25) ── */
+{
+  const rows = [
+    { mat_no: 'A', period_month: '2026-09-01', qty: 1000, source: 'edi_830' },
+    { mat_no: 'A', period_month: '2026-09-08', qty: 1000, source: 'edi_830' },
+    { mat_no: 'A', period_month: '2026-09-01', qty: 4000, source: 'manual' },   // เดือนเดียวกับ edi → ทิ้ง
+    { mat_no: 'A', period_month: '2026-10-01', qty: 3000, source: 'manual' },   // เดือนที่ไม่มี edi → เก็บ
+    { mat_no: 'B', period_month: '2026-09-01', qty: 500 },                       // ไม่มี source = manual · mat ไม่มี edi → เก็บ
+  ];
+  const d = dedupeForecastRows(rows);
+  ok('edi ชนะ manual เฉพาะ mat×เดือนเดียวกัน', d.map(r => `${r.mat_no}:${r.period_month}:${r.qty}`),
+     ['A:2026-09-01:1000', 'A:2026-09-08:1000', 'A:2026-10-01:3000', 'B:2026-09-01:500']);
+  ok('อินพุตว่างไม่พัง', dedupeForecastRows(null), []);
+
+  // manual (ก้อนทั้งเดือน) เกลี่ยด้วยจำนวนวันของเดือน ไม่ใช่ 7 วัน
+  ok('วันของเดือน ก.ย.', daysInMonthOf('2026-09-01'), 30);
+  ok('วันของเดือน ก.พ. (อธิกสุรทิน)', daysInMonthOf('2028-02'), 29);
+  const Dm = demandByDay([], [{ period_month: '2026-09-01', qty: 3000, source: 'manual' }]);
+  ok('manual เกลี่ย 30 วัน = 100/วัน', Math.round(Dm.byDay['2026-09-01'].forecast), 100);
+  ok('วันที่ 30 ยังมี demand (ไม่ถูกอัดลง 7 วันแรก)', Math.round(Dm.byDay['2026-09-30']?.forecast || 0), 100);
+  const De = demandByDay([], [{ period_month: '2026-09-01', qty: 700, source: 'edi_830' }]);
+  ok('edi ยังเกลี่ย 7 วันเหมือนเดิม', [Math.round(De.byDay['2026-09-01'].forecast), De.byDay['2026-09-08']], [100, undefined]);
+}
+console.log('✅ + dedupe/เกลี่ย forecast ตาม source');

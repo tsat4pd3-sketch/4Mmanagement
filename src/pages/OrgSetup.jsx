@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
+import { can } from '../utils/permissions';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
-import { can } from '../utils/permissions';
-import { UserContext } from '../App';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
 
@@ -13,8 +14,17 @@ const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department 
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
-  const { role } = useContext(UserContext);
+  /* ⚠️ หน้านี้เคยเป็น admin-only ล้วน → หน่วยงานสนับสนุนที่ยังไม่มีแผนกในผัง
+     (เคสจริง 2026-08-24: `Planning&Store` มี 0 แผนก) ติดทางตัน — ระบบบอกให้มาเพิ่มที่นี่
+     แต่เข้าหน้านี้ไม่ได้ และ bucket `dept_admin` ปลดล็อก `page:*` ไม่ได้โดยดีไซน์
+     → เปิดหน้าให้ role สนับสนุน "ดูได้" + ให้ผู้ถือ `org:manage_own_unit`
+       **แก้ได้เฉพาะแผนก/กลุ่มใต้ส่วนงานของตัวเอง** (precedent เดียวกับ `shift_schedule:edit_dept`)
+     ⚠️ "ส่วนงานของฉัน" = `profiles.section` (คอลัมน์เดี่ยว) ห้ามใช้ `sections[]` — sections[] เป็น scope ทั้งระบบ
+     ⚠️ โครงบริษัทระดับ Section ยังเป็นของ admin เท่านั้น (เพิ่ม/แก้/ลบ section ไม่เปิดให้หน่วยงาน) */
+  const { role, section: myUnit } = useContext(UserContext);
   const canDivisions = can('org', 'manage_divisions', role);
+  const isAdmin  = role === 'admin';
+  const canOwn   = can('org', 'manage_own_unit', role);   // ผ่าน bucket dept_admin ได้
   const [nodes, setNodes] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +72,33 @@ export default function OrgSetup() {
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
+
+  /* id ของ section ที่ผู้ใช้สังกัด — เทียบทั้ง code และ name (บาง section ไม่มี code) */
+  const mySecId = useMemo(() => {
+    if (!myUnit) return null;
+    const k = String(myUnit).trim().toLowerCase();
+    const hit = sections.find(x => String(x.code || '').trim().toLowerCase() === k
+                               || String(x.name || '').trim().toLowerCase() === k);
+    return hit ? hit.id : null;
+  }, [sections, myUnit]);
+  /* แก้ได้ไหม — admin ทำได้ทุก node · ผู้ถือ manage_own_unit ทำได้เฉพาะแผนก/กลุ่มใต้ส่วนงานตัวเอง
+     (section เป็นโครงบริษัท ไม่เปิดให้หน่วยงานแก้ ป้องกันการเปลี่ยนชื่อ/ลบส่วนงานอื่นแล้ว cascade ทั้งระบบ) */
+  const canEditNode = (node) => {
+    if (isAdmin) return true;
+    if (!canOwn || !mySecId || !node) return false;
+    if (node.kind === 'department') return node.parent_id === mySecId;
+    if (node.kind === 'line') {
+      const dep = allDepts.find(d => d.id === node.parent_id);
+      return !!dep && dep.parent_id === mySecId;
+    }
+    return false;                       // section = admin เท่านั้น
+  };
+  const canAddDeptHere = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
+  const canAddLineHere = (deptId) => {
+    if (isAdmin) return true;
+    const dep = allDepts.find(d => d.id === deptId);
+    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
+  };
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
   const lineCostCenter = (node) => {
@@ -134,6 +171,12 @@ export default function OrgSetup() {
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
+    // guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ (โมดัลอาจถูกเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
+    if (!isAdmin) {
+      const okAdd = modal.editing ? canEditNode(modal.editing)
+        : (modal.kind === 'department' ? canAddDeptHere(modal.parentId) : modal.kind === 'line' ? canAddLineHere(modal.parentId) : false);
+      if (!okAdd) return toast.error('แก้ได้เฉพาะแผนก/กลุ่มใต้ส่วนงานของคุณ');
+    }
     // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
     const linkedLine = modal.kind === 'line' && !!formRefLineId;
     const linkedCC = linkedLine ? (lineById[String(formRefLineId)]?.cost_center || '') : '';
@@ -211,6 +254,22 @@ export default function OrgSetup() {
         </p>
       </div>
 
+      {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
+      {!isAdmin && (
+        canOwn && mySecId ? (
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.07)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+            🛠️ คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
+          </div>
+        ) : canOwn && !mySecId ? (
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)', fontSize: 12, color: '#f59e0b', lineHeight: 1.6 }}>
+            ⚠️ บัญชีคุณมีสิทธิ์แก้ผังของหน่วยงานตัวเอง แต่ <b>ยังไม่ได้ตั้งว่าสังกัดส่วนงานไหน</b> จึงยังแก้อะไรไม่ได้
+            <div style={{ color: 'var(--muted)' }}>ให้ผู้ดูแลระบบตั้งช่อง <b>Section</b> ให้บัญชีนี้ที่ <b>ตั้งค่า → จัดการผู้ใช้งาน</b>{myUnit ? '' : ' (ตอนนี้ว่างอยู่)'}</div>
+          </div>
+        ) : (
+          <ReadOnlyNote permKey="org:manage_own_unit" what="แก้ผังองค์กรของหน่วยงานตัวเอง" />
+        )
+      )}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : (
@@ -219,7 +278,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
-              <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
+              {isAdmin && <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>}
             </div>
             <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
@@ -231,7 +290,7 @@ export default function OrgSetup() {
                   <LaborBadge type={s.labor_type} />
                   <DivBadge node={s} nodes={nodes} />
                 </span>
-                <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+                {canEditNode(s) && <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {!sections.length && <Empty text="ยังไม่มี Section" />}
@@ -248,7 +307,9 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
-              <button className="tbtn" onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              {(selSection === ORPHAN ? isAdmin : canAddDeptHere(selSection)) && (
+                <button className="tbtn" onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              )}
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
@@ -259,7 +320,7 @@ export default function OrgSetup() {
                   <LaborBadge type={d.labor_type} />
                   <DivBadge node={d} nodes={nodes} />
                 </span>
-                <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+                {canEditNode(d) && <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {selSection && !currentDepts.length && <Empty text="ยังไม่มีแผนกในนี้" />}
@@ -269,7 +330,9 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>GROUP / กลุ่ม ({currentLines.length})</strong>
-              <button className="tbtn" onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
+              {canAddLineHere(selDept) && (
+                <button className="tbtn" onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
+              )}
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(false)}>
@@ -277,7 +340,7 @@ export default function OrgSetup() {
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
                   {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
                 </span>
-                <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+                {canEditNode(l) && <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}

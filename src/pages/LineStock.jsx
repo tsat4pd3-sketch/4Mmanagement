@@ -16,6 +16,7 @@ import StorageZonePanel from '../components/StorageZonePanel';
 import LineSelect from '../components/LineSelect';
 import StockMoveToChild from '../components/StockMoveToChild';
 import { visibleInterval } from '../utils/usePolling';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
@@ -113,11 +114,13 @@ function StockTab({ role, scope }) {
   const [rejectReason,setRejectReason]= useState('');
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
+    const [{ data: ln }, { rows: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
-      supabaseDR.from('line_stock_summary').select('*').order('line_name').order('mat_no'),
+      // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
+        { orderBy: ['line_name', 'mat_no'] }),
       supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
       supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
@@ -175,16 +178,22 @@ function StockTab({ role, scope }) {
   useEffect(() => { loadPending(); }, [loadPending]);
   useEffect(() => { if (showTxn) loadTxns(); }, [showTxn, loadTxns, lineFilter]);
 
-  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') ทำให้ปลอดภัยจากการกดซ้ำ/สองคน
+  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') กันเขียนซ้ำ แต่ update ที่ match 0 แถว
+  // "คืนสำเร็จไม่มี error" → ต้องนับแถวจริงเสมอ ไม่งั้นคนที่สองได้ toast อนุมัติทั้งที่อีกคนปฏิเสธไปแล้ว
   const reviewTxn = async (txn, decision, reason) => {
     setReviewing(txn.id);
     const patch = decision === 'approved'
       ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
       : { status:'rejected', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: (reason || '').trim() || 'ไม่ระบุเหตุผล' };
-    const { error } = await supabaseDR.from('line_stock_transactions')
-      .update(patch).eq('id', txn.id).eq('status', 'pending');
+    const { data: updated, error } = await supabaseDR.from('line_stock_transactions')
+      .update(patch).eq('id', txn.id).eq('status', 'pending').select('id');
     setReviewing(null);
     if (error) { toast.error(error.message); return; }
+    if (!updated || updated.length === 0) {
+      toast.error('รายการนี้ถูกอนุมัติ/ปฏิเสธโดยคนอื่นไปแล้ว — รีเฟรชคิวให้ใหม่');
+      loadPending(); load(); if (showTxn) loadTxns();
+      return;
+    }
     toast.success(decision === 'approved' ? '✅ อนุมัติแล้ว — เข้า stock' : '❌ ปฏิเสธแล้ว');
     setRejectTx(null); setRejectReason('');
     loadPending(); load(); if (showTxn) loadTxns();
@@ -962,11 +971,19 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
+                  {/* ⚠️ ถอด "🔄 ทุกกะ (all)" ออกแล้ว (2026-08-26) — เป็นตัวเลือกที่ล้มเหลวเงียบ:
+                      ตัวจัดสรร demand ใน HeijunkaKanban จับคู่รอบกับกะด้วยคีย์ `${กลุ่มไลน์}|${shift}`
+                      แล้วเทียบกับ `production_sessions.shift` ซึ่งมีแค่ 'day'/'night'
+                      ⇒ รอบที่ตั้ง 'all' ไม่มีวัน match → ขึ้นบนบอร์ดแต่ได้ 0 พาร์ทตลอดกาล
+                      (ตรวจแล้วไม่มีแถวไหนใช้ 'all' เลย — ถอดได้ไม่กระทบใคร)
+                      จะรองรับจริงต้องแก้ `roundWindows`/`roundAlloc` ให้แยกคีย์ตามกะด้วย ไม่ใช่แค่ปล่อยตัวเลือกไว้ */}
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
-                    <option value="all">🔄 ทุกกะ (all)</option>
                   </select>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
+                  </div>
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>รอบที่ *</label>
@@ -1197,12 +1214,14 @@ function InflowRulesTab({ canEdit }) {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: r }, { data: ln }, { data: st }] = await Promise.all([
+    const [{ data: r }, { data: ln }, { rows: st }] = await Promise.all([
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
-      supabaseDR.from('line_stock_summary').select('line_name'),
+      // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ชื่อคลังท้ายลำดับหายจาก dropdown เงียบ (QC flow-audit #30)
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
+        { orderBy: ['line_name', 'mat_no'] }),
     ]);
     setRules(r || []);
     setLines(ln || []);

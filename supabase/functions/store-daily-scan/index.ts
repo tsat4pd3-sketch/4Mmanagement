@@ -38,9 +38,32 @@ const CODE_ORDER = ['C', 'D', 'A', 'E', 'B'];
 Deno.serve(async () => {
   try {
     const workDate = workDateBangkok();
-    const { data, error } = await db.from('v_store_abnormal').select('*');
-    if (error) throw error;
-    const rows = data ?? [];
+
+    /* 🔴 กับดักเพดาน 1000 แถว (แก้ 2026-08-26 · user เห็นแจ้งเตือน "พบ 1000 รายการ" เป๊ะๆ):
+       เดิม `.select('*')` เฉยๆ → PostgREST ตัดที่ 1000 แถว → `rows.length` = 1000 พอดี
+       ⇒ **ตัวเลขบนแจ้งเตือนเป็นเลขปลอม** (ของจริงอาจ 1,200 หรือ 5,000 ก็ได้) และแถวที่เกิน
+         ถูกตัดทิ้งเงียบ = เคสรุนแรงอาจหลุดออกจากลิสต์ไปเลย
+       กติกา: **จำนวนที่โชว์ต้องมาจาก head-count (ไม่ดึงแถว = ไม่ติดเพดาน) เสมอ**
+              ส่วนตัวแถวค่อยดึงแบบแบ่งหน้า และถ้าดึงไม่ครบต้องบอกตรงๆ ห้ามเงียบ */
+    const { count: exactTotal, error: cntErr } = await db.from('v_store_abnormal')
+      .select('*', { count: 'exact', head: true });
+    if (cntErr) throw cntErr;
+    if (!exactTotal) return new Response(JSON.stringify({ ok: true, findings: 0 }), { status: 200 });
+
+    const PAGE = 1000, MAX_PAGES = 12;   // เพดาน 12,000 แถว — พอสำหรับงานรายวัน ไม่ระเบิด egress
+    const rows: Record<string, unknown>[] = [];
+    let page = 0;
+    for (; page < MAX_PAGES; page++) {
+      // ⚠️ `.range()` ต้องคู่กับ `.order()` ที่คงที่ — ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
+      //    เรียงรุนแรงก่อน เผื่อชนเพดาน จะได้ตัดตัวเบาทิ้ง ไม่ใช่ตัดตัวหนัก
+      const { data, error } = await db.from('v_store_abnormal').select('*')
+        .order('sev', { ascending: false }).order('code').order('mat_no')
+        .range(page * PAGE, (page + 1) * PAGE - 1);
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      if (!data || data.length < PAGE) break;
+    }
+    const truncated = rows.length < exactTotal;
     if (!rows.length) return new Response(JSON.stringify({ ok: true, findings: 0 }), { status: 200 });
 
     const byCode = new Map<string, { code: string; title: string; kind: string; items: Record<string, unknown>[] }>();
@@ -63,13 +86,32 @@ Deno.serve(async () => {
     const shortage = rows.filter((r) => r.kind === 'shortage').length;
     const over = rows.filter((r) => r.kind === 'over').length;
 
-    await fetch(NOTIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NOTIFY_KEY}`, apikey: NOTIFY_KEY },
-      body: JSON.stringify({ event: 'store_abnormal', alert: { work_date: workDate, total: rows.length, shortage, over, groups } }),
-    }).catch(() => {});
+    /* ⚠️ ส่งไม่สำเร็จต้องรายงาน ห้าม `.catch(() => {})` แล้วตอบ ok:true (แก้ 2026-08-26)
+       เดิมกลืน error ทิ้ง → Telegram ล่ม / rule ถูกปิด / send-store-notification พัง
+       = สรุปสโตร์รายวันหายไปเฉยๆ โดยไม่มีใครรู้ (cron log ก็ขึ้น succeeded)
+       ตัวนี้เป็นสรุปรายวัน ไม่มีตาราง dedup ให้ถอน → รอบหน้าพรุ่งนี้แจ้งใหม่เองอยู่แล้ว
+       จึงแค่ต้อง "ดังพอให้เห็นใน cron log + response" ไม่ต้อง retry */
+    let notifyErr: string | null = null;
+    try {
+      const res = await fetch(NOTIFY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NOTIFY_KEY}`, apikey: NOTIFY_KEY },
+        // total = ของจริงจาก head-count · sampled/truncated = บอกว่าลิสต์ข้างล่างครบไหม
+        body: JSON.stringify({ event: 'store_abnormal', alert: { work_date: workDate, total: exactTotal, sampled: rows.length, truncated, shortage, over, groups } }),
+      });
+      if (!res.ok) notifyErr = `HTTP ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`;
+    } catch (e) {
+      notifyErr = String(e);
+    }
+    if (notifyErr) {
+      console.error('[store-daily-scan] notify failed:', notifyErr);
+      return new Response(JSON.stringify({
+        ok: false, notify_error: notifyErr,
+        findings: exactTotal, sampled: rows.length, truncated, shortage, over,
+      }), { status: 502 });
+    }
 
-    return new Response(JSON.stringify({ ok: true, findings: rows.length, shortage, over }), { status: 200 });
+    return new Response(JSON.stringify({ ok: true, findings: exactTotal, sampled: rows.length, truncated, shortage, over }), { status: 200 });
   } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: String(err) }), { status: 500 });

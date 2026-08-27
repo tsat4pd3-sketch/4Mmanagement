@@ -80,6 +80,16 @@ export function canAccessPage(path, role) {
         || hasPermission('page:/lpa', role)
         || hasPermission('page:/bbs', role);
   }
+  // ศูนย์ PM = ศูนย์รวมแท็บงานซ่อมบำรุงตามแผน (ตรวจ/แผน/ล่วงหน้า/ประสานงาน/ตั้งค่า)
+  // piggyback สิทธิ์หน้าเดิมทั้ง 5 — ไม่ต้อง seed page:/pm · แท็บใน PmHub.jsx โผล่ตามสิทธิ์ย่อย
+  if (path === '/pm') {
+    return hasPermission('page:/pm', role)
+        || hasPermission('page:/pm-check', role)
+        || hasPermission('page:/pm-schedule', role)
+        || hasPermission('page:/pm-forecast', role)
+        || hasPermission('page:/pm-coordination', role)
+        || hasPermission('page:/pm-setup', role);
+  }
   return hasPermission(`page:${path}`, role);
 }
 
