@@ -9,6 +9,7 @@ import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
@@ -740,6 +741,19 @@ export default function Dashboard() {
     [logs, selectedShift, passAll, visibleLineIds],
   );
 
+  /* ⚠️ เช็คชื่อแล้วแต่ "จัดเข้ากะไม่ได้" — assignedShift = null (ไลน์นั้นยังไม่มีตารางกะของวันที่เลือก)
+     คนกลุ่มนี้ตกทั้งกะเช้าและกะดึกพร้อมกันแบบเงียบๆ → KPI โชว์ 0 คน ซึ่งคนอ่านเป็น "ไม่มีใครมาทำงาน"
+     ทั้งที่ความจริงคือ "ยังไม่ได้ตั้งตารางกะ" — คนละเรื่องกัน (กฎ: ประเมินไม่ได้ ต้องบอก ห้ามกลายเป็น 0)
+     เคสจริง 2026-08-27: ทุกไลน์ PD4 ตารางกะหมดที่ 23/08 แต่คนเช็คชื่อครบทุกวัน 20-28 คน */
+  const noShiftLogs = useMemo(() => {
+    const base = logs.filter(l => l.assignedShift == null && l.is_present);
+    return passAll ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
+  }, [logs, passAll, visibleLineIds]);
+  const noShiftLineNames = useMemo(() => {
+    const byId = new Map(visibleLines.map(l => [l.id, l.name]));
+    return [...new Set(noShiftLogs.map(l => byId.get(l.employees?.line_id)).filter(Boolean))].sort();
+  }, [noShiftLogs, visibleLines]);
+
   const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);
   const absent   = useMemo(() => shiftLogs.filter(l => !l.is_present), [shiftLogs]);
   const ppeReady = useMemo(() => present.filter(l => l.has_helmet && l.has_boots && l.has_gloves), [present]);
@@ -897,6 +911,35 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* คนที่ยังจัดเข้ากะไม่ได้ — ห้ามปล่อยให้ KPI โชว์ 0 เฉยๆ (งานค้าง = ป้ายนิ่ง ไม่กระพริบ) */}
+      {selectedShift !== 'all' && noShiftLogs.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
+              ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+              ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
+              {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
+            </div>
+          </div>
+          <button onClick={() => setSelectedShift('all')} style={{
+            padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)',
+            background: 'transparent', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>👁 ดูรวมทุกกะ</button>
+          {canAccessPage('/shift-organize', role) && (
+            <button onClick={() => navigate('/shift-organize')} style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>🗓️ ไปตั้งตารางกะ</button>
+          )}
+        </div>
+      )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
