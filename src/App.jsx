@@ -49,6 +49,8 @@ const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
+// 📺 จอ TV แขวนห้อง — เปลือกเต็มจอของ <MtnAndonBoard> (ดูหัวไฟล์ TvBoard.jsx · ไม่ใช่บอร์ดใบใหม่)
+const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
@@ -102,6 +104,9 @@ export const NAV_ITEMS = [
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
   { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอไลน์)',  group: 'ภาพรวม' },
+  /* 📺 จอ TV แขวนห้อง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
+     render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
+  { to: '/tv', icon: '📺', label: 'จอ TV แขวนห้อง',            group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -1443,6 +1448,22 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     ? (railPinned ? 'calc(var(--rail-w) + var(--sidebar-w))' : 'var(--rail-w)')
     : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
+
+  /* 📺 จอ TV (`/tv`) — แสดงเต็มจอ ไม่มี sidebar / rail / กระดิ่ง / RemoteReceiver / CommandPalette
+     จอนี้ "แขวนไว้อย่างเดียว" ไม่มีคนกด → chrome ทุกชิ้นคือ DOM ที่เปลืองเปล่าบนเบราว์เซอร์สมาร์ททีวี
+     และพื้นที่แนวตั้งที่ผังต้องการ (บทเรียน 2026-08-26) · ยังผ่าน canAccessPage ตามปกติ */
+  if (location.pathname === '/tv') {
+    if (!canAccessPage('/tv', role)) return <Navigate to="/" replace />;
+    return (
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
+          <TvBoard />
+        </Suspense>
+        {viewAsBanner}
+        {viewAsModal}
+      </UserContext.Provider>
+    );
+  }
 
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {

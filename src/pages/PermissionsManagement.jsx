@@ -28,6 +28,7 @@ const PAGE_GROUPS = [
       { key: 'page:/dept-dashboard', label: 'งานค้างของส่วนงาน' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
       { key: 'page:/line-oee', label: 'OEE รายไลน์ (จอไลน์)' },
+      { key: 'page:/tv', label: 'จอ TV แขวนห้อง' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
     ],
   },
