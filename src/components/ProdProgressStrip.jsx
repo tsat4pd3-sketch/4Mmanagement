@@ -26,11 +26,17 @@ import { RATE } from '../utils/refreshRates';
 const fmt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const OPEN_KEY = 'esm_prod_strip_open';
 
-export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenLine }) {
+/* `defaultOpen` = ค่าตั้งต้นเมื่อ **เครื่องนี้ยังไม่เคยเลือก** — ใช้กับจอ TV ของฝ่ายผลิต
+   ที่ยอดผลิตคือเนื้อหาหลักของจอ (ไม่ใช่ของแถมเหมือนบนหน้า Store)
+   ⚠️ ห้ามบังคับเปิดตายตัว: คนกดพับแล้วต้องพับอยู่ (ค่าที่เก็บไว้ชนะเสมอ) */
+export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenLine, defaultOpen = false }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem(OPEN_KEY) === '1'; } catch { return false; }
+    try {
+      const v = localStorage.getItem(OPEN_KEY);
+      return v == null ? defaultOpen : v === '1';
+    } catch { return defaultOpen; }
   });
   const toggle = () => setOpen(o => {
     try { localStorage.setItem(OPEN_KEY, o ? '0' : '1'); } catch { /* private mode */ }
