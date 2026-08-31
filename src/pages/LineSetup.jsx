@@ -13,7 +13,10 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
-import { MAT_CLASSES, matDigit, matClassOf } from '../utils/matPrefix';
+import { MAT_CLASSES, matDigit, matClassOf, matMatches } from '../utils/matPrefix';
+import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat } from '../utils/wipMatOptions';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import SearchSelect from '../components/SearchSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 
@@ -102,7 +105,9 @@ export default function LineSetup({ embedded = false } = {}) {
   // packaging (เรียกภาชนะเปล่าจาก Tact Center — rack/box/basket แยกด้วย packaging no.)
   const [wipPoints, setWipPoints] = useState([]);
   const [wipTempPos, setWipTempPos] = useState(null);
-  const [drProducts, setDrProducts] = useState([]);
+  const [drProducts, setDrProducts] = useState([]);   // ทะเบียน mat ทั้งหมด + ไลน์ที่ผลิต (ใช้จัดลำดับ picker จุด WIP)
+  const [upstreamLines, setUpstreamLines] = useState(new Set());
+  const [wipMatAllCat, setWipMatAllCat] = useState(false); // กด "ดูทุกประเภท" ในช่องเลือกวัสดุของจุด WIP
   const [containerTypes, setContainerTypes] = useState([]);
   const emptyWipForm = { id: null, point_type: 'material', point_name: '', mat_no: '', material_category: '', packaging_no: '', packaging_type: '', min_qty: 0, max_qty: 0, current_qty: 0 };
   const [wipForm, setWipForm] = useState(emptyWipForm);
@@ -196,6 +201,18 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
+  /* ตัวเลือกวัสดุของจุด WIP — สูตร/ลำดับกลุ่มอยู่ใน src/utils/wipMatOptions.js ที่เดียว
+     (เสนอลำดับ ไม่ตัดอะไรทิ้ง · กรองตามประเภทได้แต่ต้องบอกว่าซ่อนไปกี่รายการ) */
+  const wipMatOptions = useMemo(
+    () => buildWipMatOptions(drProducts, { line: selectedLine, lines, upstreamLines }),
+    [drProducts, lines, selectedLine, upstreamLines],
+  );
+  const wipMatCat = matDigit(wipForm.material_category);
+  const { rows: wipMatShown, hidden: wipMatHidden } = useMemo(
+    () => filterWipMatByCat(wipMatOptions, wipMatCat, wipMatAllCat),
+    [wipMatOptions, wipMatCat, wipMatAllCat],
+  );
+
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
@@ -278,8 +295,31 @@ export default function LineSetup({ embedded = false } = {}) {
     setPlacedMachineNos(new Set((placedMp || []).map(p => p.machine_no).filter(Boolean)));
     const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
     setMachineTypes(drMt || []);
-    const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
-    setDrProducts(drPd || []);
+    /* ⚠️⚠️ พาร์ทของจุด WIP ต้องมาจาก "ทะเบียนกลาง parts_master" ไม่ใช่ dr_products ของไลน์นี้
+       เดิม: dr_products .eq('line_name', selectedLine) → ลิสต์เหลือไม่กี่ตัว (feedback "พาร์ทโชว์ไม่ครบ")
+       ผิด 3 ชั้นซ้อนกัน:
+        (ก) `dr_products` = **มุมการผลิต** เก็บเฉพาะของที่ผลิตในไลน์ → พาร์ทซื้อนอก (3xx) และ
+            วัตถุดิบ (5xx) ไม่มีทางโผล่เลย ทั้งที่จุด WIP เก็บของพวกนี้ได้ และ placeholder ก็เขียนว่า
+            "ค้นจาก Product Master" ซึ่งทะเบียนจริงคือ parts_master (กฎ: parts_master = ทะเบียนกลางของทุก mat)
+        (ข) กรอง line_name **ตรงเป๊ะ** = บั๊ก class เดียวกับ picker เครื่องจักร/ชิ้นงานที่แก้ไปแล้ว 3 รอบ
+            (dtMatOptions · machineOpts /improvements · dtMachineOptions) — ของที่ลงทะเบียนไว้ที่ไลน์แม่
+            หรือไลน์พี่น้องหายหมด · สังเกตว่าคิวรี machines เหนือบรรทัดนี้ใช้ familyLines อยู่แล้ว ตกหล่นแค่ตัวนี้
+        (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
+            (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
+       → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
+    const [{ data: pmRows }, { data: drPd }, { data: flRows }] = await Promise.all([
+      supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
+      // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
+      supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).not('mat_no', 'is', null),
+      supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
+    ]);
+    setDrProducts(mergeMatRegistry(pmRows || [], drPd || []));
+    /* ไลน์ต้นน้ำที่ป้อนงานให้ไลน์นี้ (โหลดไม่ได้ = ไม่มีกลุ่ม "ต้นน้ำ" เฉยๆ ลิสต์ยังครบ)
+       ⚠️ เทียบทั้งครอบครัวไลน์ ไม่ใช่ `familyLines` ของ machines (นั่นคือ ตัวเอง+ลูก สำหรับวางเครื่องบนผัง)
+       — ป้อนงานให้ไลน์แม่ = ป้อนให้งานที่ไลน์ลูกทำด้วย */
+    const famAll = new Set(getLineFamilyNames(lines, selectedLine));
+    famAll.add(selectedLine);
+    setUpstreamLines(new Set((flRows || []).filter(l => famAll.has(l.to_line)).map(l => l.from_line)));
     // ภาชนะ — ดึงจาก container_types (supabaseDR) ตารางกลางเดียวกับ Packaging/Rack Center
     const { data: ctData } = await supabaseDR.from('container_types').select('code, name, category').eq('is_active', true).order('code');
     setContainerTypes(ctData || []);
@@ -1583,13 +1623,35 @@ export default function LineSetup({ embedded = false } = {}) {
                           <option key={c.digit} value={c.digit}>{c.digit} · {c.label}</option>
                         ))}
                       </select>
-                      <input list="dr-mat-no-list" placeholder="เลขที่วัสดุ (mat no.) — พิมพ์เพื่อค้นจาก Product Master" value={wipForm.mat_no}
-                        onChange={e => setWipForm({ ...wipForm, mat_no: e.target.value })} />
-                      <datalist id="dr-mat-no-list">
-                        {drProducts.map(p => (
-                          <option key={p.mat_no} value={p.mat_no}>{p.name}</option>
-                        ))}
-                      </datalist>
+                      {/* ⚠️ ทะเบียนพาร์ทหลักร้อยรายการ — <datalist> ค้นได้แค่ "ขึ้นต้นตรง" ใช้กับชื่อไทยไม่ได้
+                          ใช้ SearchSelect ตามกฎ UI-CONVENTIONS §5.1.1 (ลิสต์เกิน ~30 แถวห้ามเป็น select/datalist)
+                          allowFree = พาร์ทที่ยังไม่เข้าทะเบียนยังพิมพ์เองได้ (ติดป้ายบอกว่าอยู่นอกทะเบียน) */}
+                      <SearchSelect
+                        value={wipMatOptions.some(o => o.id === wipForm.mat_no) ? wipForm.mat_no : ''}
+                        text={wipForm.mat_no}
+                        options={wipMatShown}
+                        allowFree
+                        freeHint="ยังไม่มีในทะเบียนพาร์ท"
+                        placeholder="เลขที่วัสดุ (mat no.) — พิมพ์รหัส/ชื่อเพื่อค้น"
+                        emptyText={wipMatCat && !wipMatAllCat ? `ไม่พบในประเภท ${wipMatCat} — ลองกด "ดูทุกประเภท"` : 'ไม่พบพาร์ทที่ค้นหา'}
+                        onChange={({ id, text }) => setWipForm(f => ({ ...f, mat_no: id || text }))}
+                      />
+                      {/* ห้ามซ่อนเงียบ — บอกเสมอว่าตัวกรองประเภทซ่อนไปกี่รายการ + ทางออก */}
+                      {wipMatCat !== '' && wipMatHidden > 0 && (
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
+                          กรองด้วยประเภท {wipMatCat} · ซ่อน {wipMatHidden} รายการ
+                          <button type="button" onClick={() => setWipMatAllCat(v => !v)}
+                            style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 10.5, padding: 0, textDecoration: 'underline' }}>
+                            {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
+                          </button>
+                        </div>
+                      )}
+                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน) */}
+                      {wipForm.mat_no && wipMatCat && !matMatches(wipForm.mat_no, wipMatCat) && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          ⚠ {wipForm.mat_no} ขึ้นต้นด้วย {matDigit(wipForm.mat_no) || '—'} ({matClassOf(wipForm.mat_no)?.label || 'ไม่รู้จัก'}) ไม่ตรงประเภทที่เลือก ({wipMatCat})
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
