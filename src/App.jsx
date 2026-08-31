@@ -874,6 +874,7 @@ const NOTIF_ROUTE = {
   four_m_logs:   '/event-log',
   mtn_orders:    '/mtn-repair',
   downtime_logs: '/daily-report',
+  shift_schedules: '/shift-organize',
 };
 
 function NotificationBell({ userId, role }) {
