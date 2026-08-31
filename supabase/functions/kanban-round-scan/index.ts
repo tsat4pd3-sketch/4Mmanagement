@@ -53,11 +53,31 @@ Deno.serve(async () => {
 
     // ── ผังไลน์แม่-ลูก อยู่ Main (join ข้าม project ในวิวไม่ได้ จึงมารวมที่นี่) ──
     // รอบจัดส่ง seed ไว้ที่ "ไลน์บนสุด" แต่กะเปิดที่ไลน์ลูก → ต้อง map ลูก→แม่ก่อนจับคู่
+    //
+    // ⚠️⚠️ อ่านผ่าน RPC `line_parent_map()` (SECURITY DEFINER เปิดให้ anon) ไม่ใช่อ่านตารางตรง
+    //    ตารางฝั่ง Main เป็น RLS ของ authenticated → anon อ่านได้ `[]` **โดยไม่มี error**
+    //    ปล่อยผ่าน = groupOf() ตกเป็น identity → ใบผลิตบนไลน์ลูกไม่มีวันจับคู่รอบบนไลน์แม่
+    //    → รายงาน "0 พาร์ท" ทุกวันเงียบๆ (เกิดจริง 27/08 08:30 — 32 ใบในหน้าต่าง แต่จับได้ 0)
     const main = createClient(MAIN_URL, MAIN_ANON);
-    const { data: lines, error: lnErr } = await main.from('production_lines').select('name, parent_line_name');
-    if (lnErr) throw lnErr;
+    let lines: Row[] | null = null;
+    const { data: rpcLines, error: rpcErr } = await main.rpc('line_parent_map');
+    if (rpcErr) console.warn('kanban-round-scan: line_parent_map() ใช้ไม่ได้ —', rpcErr.message);
+    if (rpcLines?.length) lines = rpcLines;
+    if (!lines) {   // ยังไม่ apply migration → ลองอ่านตารางตรง (เผื่อ RLS เปิดให้ anon อยู่แล้ว)
+      const { data, error } = await main.from('production_lines').select('name, parent_line_name');
+      if (error) console.warn('kanban-round-scan: อ่าน production_lines ตรงไม่ได้ —', error.message);
+      if (data?.length) lines = data;
+    }
+    // ผังไลน์ว่าง = "อ่านไม่ได้" ไม่ใช่ "ไม่มีไลน์" — โรงงานมีไลน์อยู่แล้วเสมอ
+    // throw เพื่อให้ตกไป catch → คืน 500 → **ไม่ mark** → cron รอบหน้าลองใหม่เองเมื่อแก้แล้ว
+    if (!lines?.length) {
+      throw new Error(
+        'อ่านผังไลน์จาก Main ไม่ได้ (ทั้ง RPC line_parent_map() และตาราง production_lines คืนค่าว่าง) — ' +
+        'ยังไม่ได้ apply migration 20260827_line_parent_map_rpc.sql?',
+      );
+    }
     const parentOf = new Map<string, string>();
-    (lines ?? []).forEach((l: Row) => parentOf.set(l.name, l.parent_line_name || l.name));
+    lines.forEach((l: Row) => parentOf.set(l.name, l.parent_line_name || l.name));
     const groupOf = (n: string) => parentOf.get(n) || n;
 
     // ── กะ + ใบผลิตของวันงานนี้ ──
@@ -91,6 +111,8 @@ Deno.serve(async () => {
 
     // ── รวมยอดต่อรอบ ──
     const dayStartMs = new Date(due[0].win_start_ts).getTime();   // รอบแรกเริ่มที่ต้นวันงานเสมอ
+    // ⚠️ ตัวนับว่า "ใบถูกข้ามเพราะอะไร" — จับคู่ไม่ได้ต้องบอกได้ว่าพลาดตรงไหน ห้ามคืน 0 เฉยๆ
+    const skip = { cancelled: 0, shift: 0, group: 0, noOpened: 0, window: 0 };
     const stats: Record<string, { orders: number; parts: number; gross: number }> = {};
     for (const r of due) {
       const winStart = new Date(r.win_start_ts).getTime();
@@ -98,13 +120,14 @@ Deno.serve(async () => {
       const mats = new Map<string, number>();
       let nOrders = 0;
       for (const o of orders) {
-        if (o.status === 'cancelled' || !num(o.qty)) continue;
+        if (o.status === 'cancelled' || !num(o.qty)) { skip.cancelled++; continue; }
         const s = sessById.get(o.session_id);
-        if (!s || s.shift !== r.shift || groupOf(s.line_name) !== r.line_name) continue;
-        if (!o.opened_at) continue;   // ไม่มีเวลาสแกน = เกลี่ยทุกรอบฝั่งหน้าเว็บ — ที่นี่ไม่นับ กันบอกเกินจริง
+        if (!s || s.shift !== r.shift) { skip.shift++; continue; }
+        if (groupOf(s.line_name) !== r.line_name) { skip.group++; continue; }
+        if (!o.opened_at) { skip.noOpened++; continue; }   // ไม่มีเวลาสแกน = เกลี่ยทุกรอบฝั่งหน้าเว็บ — ที่นี่ไม่นับ กันบอกเกินจริง
         // ใบที่เปิดก่อนต้นวันงาน (ยกยอดข้ามวัน) นับเป็นต้นวันงาน — ตรงกับ roundIdForOrder ฝั่งหน้าเว็บ
         const t = Math.max(new Date(o.opened_at).getTime(), dayStartMs);
-        if (!(t >= winStart && t < winEnd)) continue;
+        if (!(t >= winStart && t < winEnd)) { skip.window++; continue; }
         nOrders++;
         const pid = prodByMat.get(o.mat_no);
         for (const b of bomByProduct.get(pid ?? '') ?? []) {
@@ -117,7 +140,15 @@ Deno.serve(async () => {
 
     // ── ข้อความเดียวรวมทุกรอบที่เพิ่งตัดยอด ──
     const hot = due.filter((r) => stats[r.round_id].parts > 0);
-    if (!hot.length) return await markAll(due, stats, 'ไม่มีพาร์ทต้องเตรียม');
+    if (!hot.length) {
+      // ⚠️ "ไม่มีของต้องเตรียม" กับ "จับคู่ไม่ติด" หน้าตาเหมือนกันจากข้างนอก — ต้องบอกให้แยกออก
+      console.log('kanban-round-scan: ไม่มีพาร์ทต้องเตรียม', JSON.stringify({
+        rounds: due.length, sessions: sess.length, orders: orders.length, skip,
+        roundLines: [...new Set(due.map((r) => r.line_name))],
+        sessionLines: [...new Set(sess.map((s) => `${s.line_name}→${groupOf(s.line_name)}`))],
+      }));
+      return await markAll(due, stats, 'ไม่มีพาร์ทต้องเตรียม', false, skip);
+    }
 
     hot.sort((a, b) => String(a.line_name).localeCompare(String(b.line_name)));
     const lines_: string[] = [];
@@ -172,10 +203,23 @@ Deno.serve(async () => {
   }
 });
 
-/** บันทึกว่าตรวจรอบนี้แล้ว — รอบที่ไม่มีของต้องเตรียมก็ mark ด้วย (notified=false) กันคำนวณซ้ำทุก 10 นาที */
-async function markAll(due: Row[], stats: Record<string, any>, _why: string | null, notified = false) {
+/**
+ * บันทึกผลการตรวจรอบนี้
+ *
+ * ⚠️ แถว `notified=false` เป็น **บันทึกว่า "ตรวจแล้ว ณ เวลานี้" ไม่ใช่การปิดรอบ**
+ *    วิว `v_kanban_round_due` กันแจ้งซ้ำด้วย `notified = true` เท่านั้น → รอบที่ยังไม่ได้แจ้ง
+ *    กลับมาถูกตรวจใหม่ทุก 10 นาทีจนหมดหน้าต่าง 90 นาที
+ *    เดิมวิวตัดทุกแถวที่มีอยู่ ⇒ ตรวจพลาดรอบเดียว (เช่นผังไลน์อ่านไม่ได้) = **รอบนั้นเงียบถาวรทั้งวัน**
+ *    แม้จะแก้ปัญหาได้ภายใน 5 นาที · ค่าที่จ่ายคือคิวรีซ้ำ ≤9 รอบ/วัน ซึ่งถูกกว่าการแจ้งเตือนที่หายไป
+ */
+async function markAll(
+  due: Row[], stats: Record<string, any>, _why: string | null,
+  notified = false, diag?: Record<string, number>,
+) {
+  const now = new Date().toISOString();
   const rows = due.map((r) => ({
     work_date: r.work_date, round_id: r.round_id,
+    alerted_at: now,   // แจ้งแล้ว = เวลาส่ง · ยังไม่แจ้ง = เวลาที่ตรวจล่าสุด
     orders: stats[r.round_id]?.orders ?? 0,
     parts: stats[r.round_id]?.parts ?? 0,
     gross_qty: stats[r.round_id]?.gross ?? 0,
@@ -183,7 +227,7 @@ async function markAll(due: Row[], stats: Record<string, any>, _why: string | nu
   }));
   const { error } = await db.from('kanban_round_alerts').upsert(rows, { onConflict: 'work_date,round_id' });
   if (error) console.error('kanban-round-scan: mark ไม่สำเร็จ —', error.message);
-  return json({ ok: true, due: due.length, notified: rows.filter((r) => r.notified).length, note: _why });
+  return json({ ok: true, due: due.length, notified: rows.filter((r) => r.notified).length, note: _why, skip: diag });
 }
 
 function json(body: unknown, status = 200) {

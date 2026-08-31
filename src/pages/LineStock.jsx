@@ -1162,7 +1162,7 @@ function DeliveryTimeBoardTab() {
     <>
       <InternalTimeBoard
         title={`🕐 บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
-        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 Kanban Board"
+        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง"
         groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
       />
@@ -1358,10 +1358,10 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
-  { key:'wip',       label:'🔩 WIP ระหว่างขั้น' },
+  { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
-  { key:'timeboard', label:'🕐 บอร์ดเวลา' },
+  { key:'timeboard', label:'🕐 บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
   { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
 ];
 

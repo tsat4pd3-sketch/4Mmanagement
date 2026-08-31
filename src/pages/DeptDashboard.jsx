@@ -780,6 +780,15 @@ export default function DeptDashboard() {
     else document.documentElement.requestFullscreen?.().catch(() => {});
   };
 
+  /* ขอบเขตเสียงของจอห้องช่าง — อยู่ใน URL (บุ๊กมาร์กต่อห้อง) · ตัว <DowntimeSiren> อ่าน param เดียวกัน
+     ไม่ตั้ง = เฉพาะ "เรียกช่าง" (พฤติกรรมเดิม ไม่กระทบจอที่แขวนอยู่แล้ว) */
+  const soundAll = sp.get('sound') === 'all';
+  const setSoundAll = (v) => {
+    const n = new URLSearchParams(sp);
+    if (v) n.set('sound', 'all'); else n.delete('sound');
+    setSp(n, { replace: true });
+  };
+
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name')
       .then(({ data }) => setLines(data || []));
@@ -794,7 +803,9 @@ export default function DeptDashboard() {
 
   const ctx = useMemo(() => ({
     workDate, prevDate: dayAdd(workDate, -1), lines, inScope, navigate, isMobile, role,
-  }), [workDate, lines, inScope, navigate, isMobile, role]);
+    // รายชื่อไลน์ในขอบเขต (null = ไม่จำกัด) — component ที่โหลดข้อมูลเองต้องกรองฝั่ง server ได้ด้วย
+    scopeNames: scopeSet ? [...scopeSet] : null,
+  }), [workDate, lines, inScope, navigate, isMobile, role, scopeSet]);
 
   const load = useCallback(async () => {
     if (!lines.length) return;
@@ -824,6 +835,14 @@ export default function DeptDashboard() {
           <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
             <button onClick={toggleFs} title="ซ่อนแถบเบราว์เซอร์ + taskbar เพื่อให้ผังใหญ่ขึ้น" style={tvBtn(fs)}>
               {fs ? '⛶ ออกจากเต็มจอ' : '⛶ เต็มจอ'}
+            </button>
+            {/* 🔊 ขอบเขตเสียงของจอนี้ — เก็บใน URL เพื่อให้แต่ละห้องบุ๊กมาร์กของตัวเอง (เหมือน `?team=`)
+                ห้องช่างล้วน = เฉพาะ "เรียกช่าง" · ห้องที่นั่งรวมกับฝ่ายผลิต = ทุกเครื่องที่หยุดเกินเกณฑ์ */}
+            <button onClick={() => setSoundAll(!soundAll)} style={tvBtn(soundAll)}
+              title={soundAll
+                ? 'ดังทั้งตอนเครื่องหยุดเกินเกณฑ์ และตอนมีคนกด "เรียกช่าง" — สำหรับห้องที่นั่งรวมกับฝ่ายผลิต'
+                : 'ดังเฉพาะตอนมีคนกด "เรียกช่าง" — เครื่องหยุดเฉยๆ เห็นด้วยตาบนผังแต่ไม่มีเสียง'}>
+              {soundAll ? '🔊 เสียง: ทุกเครื่องที่หยุด' : '🔔 เสียง: เฉพาะเรียกช่าง'}
             </button>
             <button onClick={() => setView('now')} style={tvBtn(false)}>⚡ งานวันนี้</button>
             <button onClick={() => setView('kpi')} style={tvBtn(false)}>📑 KPI</button>

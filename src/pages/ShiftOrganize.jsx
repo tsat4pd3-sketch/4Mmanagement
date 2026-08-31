@@ -9,6 +9,7 @@ import { roleLabel } from '../utils/roleMeta';
 import { toast } from '../components/Toast';
 
 import InfoMore from '../components/InfoMore';
+import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -47,6 +48,8 @@ export default function ShiftOrganize() {
   const [pending,   setPending]   = useState({}); // line_id → 'A' | 'B'
   const [pendingDept, setPendingDept] = useState({}); // dept_name → 'A' | 'B'
   const [isSaving,  setIsSaving]  = useState(false);
+  const [showAutoFill, setShowAutoFill] = useState(false);   // 🔁 เติมกะล่วงหน้าจากรอบเดิม
+
 
   const [overrides,    setOverrides]    = useState([]);
   const [employees,    setEmployees]    = useState([]);
@@ -270,7 +273,8 @@ export default function ShiftOrganize() {
       if (!team) return;
       const manual = parentIdOf(id) != null && manualOf(id);
       for (const d of weekDates) {
-        rows.push({ work_date: toDateStr(d), line_id: id, day_team: team, is_manual: manual, created_by: userId });
+        // note: null — คนแก้เองแล้วต้องล้างธง 'auto-rotate' ที่ตัวเติมล่วงหน้าใส่ไว้
+        rows.push({ work_date: toDateStr(d), line_id: id, day_team: team, is_manual: manual, note: null, created_by: userId });
       }
     });
     // แถวของหน่วยงาน — line_id = null + dept_name = ชื่อแผนก (คนละ unique index กับไลน์)
@@ -282,7 +286,7 @@ export default function ShiftOrganize() {
     }).forEach(([name, team]) => {
       if (!team) return;
       for (const d of weekDates) {
-        deptRowsToSave.push({ work_date: toDateStr(d), line_id: null, dept_name: name, day_team: team, created_by: userId });
+        deptRowsToSave.push({ work_date: toDateStr(d), line_id: null, dept_name: name, day_team: team, note: null, created_by: userId });
       }
     });
 
@@ -455,7 +459,27 @@ export default function ShiftOrganize() {
             จ. {fmtDate(weekDates[0])} — อา. {fmtDate(weekDates[6])}
           </span>
         </div>
+        {/* เติมกะล่วงหน้าจากรอบสลับที่ตั้งไว้จริง — ระบบเสนอ คนกดยืนยัน (ดู ShiftAutoFillModal) */}
+        {canEditDept && (
+          <button onClick={() => setShowAutoFill(true)}
+            title="ต่อรอบสลับกะที่ตั้งไว้แล้วไปข้างหน้า — ไม่ทับสัปดาห์ที่ตั้งไว้ และต้องดู preview ก่อนยืนยัน"
+            style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid rgba(77,159,255,0.5)',
+              background: 'rgba(77,159,255,0.12)', color: '#4d9fff', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+            🔁 เติมกะล่วงหน้า
+          </button>
+        )}
       </div>
+
+      {showAutoFill && (
+        <ShiftAutoFillModal
+          weekStart={weekStart}
+          lines={canEdit ? scopedLines : []}
+          deptRows={deptRows.filter(canEditDeptRow)}
+          canEdit={canEdit}
+          onClose={() => setShowAutoFill(false)}
+          onDone={() => { setShowAutoFill(false); fetchSchedules(); }}
+        />
+      )}
 
       {/* Weekly Shift Table — overflowX: ตารางกว้าง ~610px ให้เลื่อนแนวนอนบนมือถือ (desktop ไม่มี scrollbar เพราะพื้นที่พอ) */}
       <div className="card table-sticky" style={{ marginBottom: 8, overflowX: 'auto' }}>

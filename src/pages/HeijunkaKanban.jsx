@@ -908,8 +908,11 @@ const STORE_TABS = [
   { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยผลิตเอง (200) → เริ่มผลิต' },
   { key: 'purchase', icon: '🛒', label: 'จัดซื้อ',       desc: 'ของซื้อ (300/500) → รับเข้าสโตร์' },
   { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'เบิกวัตถุดิบเข้าการผลิต child' },
-  { key: 'rack',     icon: '📦', label: 'Rack Center',   desc: 'ภาชนะ + Packaging → ทุกไลน์' },
-  { key: 'wip',      icon: '🔄', label: 'WIP Point',     desc: 'จุด WIP ในไลน์ที่เรียกเติม → ไลน์นั้น' },
+  // ⚠️ แท็บนี้เป็นกระจกอ่านอย่างเดียวของหน้า /rack-center — ป้ายต้องบอกตั้งแต่บนแท็บ
+  //    (เดิมชื่อ 'Rack Center' ซ้ำกับเมนูเป๊ะ คนกดเข้ามาแล้วทำงานต่อไม่ได้โดยไม่รู้ล่วงหน้า)
+  { key: 'rack',     icon: '📦', label: 'ภาชนะ (ดูอย่างเดียว)', desc: 'ภาชนะ + Packaging → ทุกไลน์ · จัดการที่ ภาชนะ & Packaging' },
+  // ชื่อต้องต่างจากแท็บ 'WIP ค้างระหว่างขั้น' ใน สต๊อกในไลน์ — คนละเรื่องกัน (คิวเติม vs ยอดค้าง)
+  { key: 'wip',      icon: '🔄', label: 'คิวเติม WIP',   desc: 'จุด WIP ในไลน์ที่เรียกเติม → ไลน์นั้น' },
 ];
 // ของซื้อจาก supplier (300 child ซื้อ / 500 raw) — 2 สเต็ป: สั่งซื้อ → รับเข้า (เติม stock)
 const PURCHASE_STATUS = {
@@ -1901,7 +1904,7 @@ export default function HeijunkaKanban() {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🎴 Heijunka Kanban — Subcomponent Demand
+            🎴 บอร์ดคัมบัง (ทุกสโตร์) — Heijunka
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             ความต้องการพาร์ทย่อยตามแผนผลิตวันนี้ · แตกจาก BOM ของแต่ละ product

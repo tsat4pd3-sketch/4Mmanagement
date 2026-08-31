@@ -9,6 +9,7 @@ import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
@@ -264,6 +265,15 @@ export default function Dashboard() {
   // ⚠️ กรองเฉพาะ "ชั้นแสดงผล" — ห้ามกรอง cards ก่อนคำนวณคิว (ตำแหน่ง/เวลาคาดเสร็จผูกกับคิวทั้งไลน์)
   const [boardLineSel,  setBoardLineSel]  = useState('');
   const [boardQuery,    setBoardQuery]    = useState('');
+  /* ✍️ แถวที่มีแต่ "ใบเปิดเอง" (ไลน์ที่ไม่มีบัตรคัมบังให้สแกน) ยุบไว้เป็นค่าเริ่มต้น —
+     บอร์ดนี้เป็นจอภาพรวม ของหลักคือใบสั่งที่สแกนจาก SAP (user 2026-08-27)
+     จำต่อเครื่อง (จอ TV ตั้งครั้งเดียวจบ) · กางดูได้เสมอ ไม่ได้ตัดข้อมูลทิ้ง */
+  const [showManualRows, setShowManualRows] = useState(() => {
+    try { return localStorage.getItem('esm_board_manual') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('esm_board_manual', showManualRows ? '1' : '0'); } catch { /* โหมดส่วนตัว/ปิด site data */ }
+  }, [showManualRows]);
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
@@ -731,6 +741,19 @@ export default function Dashboard() {
     [logs, selectedShift, passAll, visibleLineIds],
   );
 
+  /* ⚠️ เช็คชื่อแล้วแต่ "จัดเข้ากะไม่ได้" — assignedShift = null (ไลน์นั้นยังไม่มีตารางกะของวันที่เลือก)
+     คนกลุ่มนี้ตกทั้งกะเช้าและกะดึกพร้อมกันแบบเงียบๆ → KPI โชว์ 0 คน ซึ่งคนอ่านเป็น "ไม่มีใครมาทำงาน"
+     ทั้งที่ความจริงคือ "ยังไม่ได้ตั้งตารางกะ" — คนละเรื่องกัน (กฎ: ประเมินไม่ได้ ต้องบอก ห้ามกลายเป็น 0)
+     เคสจริง 2026-08-27: ทุกไลน์ PD4 ตารางกะหมดที่ 23/08 แต่คนเช็คชื่อครบทุกวัน 20-28 คน */
+  const noShiftLogs = useMemo(() => {
+    const base = logs.filter(l => l.assignedShift == null && l.is_present);
+    return passAll ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
+  }, [logs, passAll, visibleLineIds]);
+  const noShiftLineNames = useMemo(() => {
+    const byId = new Map(visibleLines.map(l => [l.id, l.name]));
+    return [...new Set(noShiftLogs.map(l => byId.get(l.employees?.line_id)).filter(Boolean))].sort();
+  }, [noShiftLogs, visibleLines]);
+
   const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);
   const absent   = useMemo(() => shiftLogs.filter(l => !l.is_present), [shiftLogs]);
   const ppeReady = useMemo(() => present.filter(l => l.has_helmet && l.has_boots && l.has_gloves), [present]);
@@ -888,6 +911,35 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* คนที่ยังจัดเข้ากะไม่ได้ — ห้ามปล่อยให้ KPI โชว์ 0 เฉยๆ (งานค้าง = ป้ายนิ่ง ไม่กระพริบ) */}
+      {selectedShift !== 'all' && noShiftLogs.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
+              ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+              ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
+              {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
+            </div>
+          </div>
+          <button onClick={() => setSelectedShift('all')} style={{
+            padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)',
+            background: 'transparent', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>👁 ดูรวมทุกกะ</button>
+          {canAccessPage('/shift-organize', role) && (
+            <button onClick={() => navigate('/shift-organize')} style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>🗓️ ไปตั้งตารางกะ</button>
+          )}
+        </div>
+      )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
@@ -1442,13 +1494,25 @@ export default function Dashboard() {
                       const rowKey = multiSubLine ? `${c.line_name || ''}|${c.productKey}` : c.productKey;
                       (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
-                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    /* ⭐ ใบสั่งจาก SAP (สแกนบัตรคัมบัง) คือของหลักบนบอร์ดนี้ — ใบที่เปิดเองด้วยมือ
+                       (ไลน์ที่ไม่มีบาร์โค้ดให้สแกน) ดันขึ้นบนสุดตามลำดับตัวอักษรจนบังของจริง
+                       (user 2026-08-27: "อยากให้เน้นชิ้นงานที่เป็น order จาก SAP เป็นหลัก · manual ยุบไว้ได้")
+                       ⚠️ แถวที่ **มีใบสแกนปนอยู่แม้ใบเดียว = ไม่ใช่แถว manual** ห้ามยุบ (จะพาใบ SAP หายไปด้วย) */
+                    const isManualRow = (row) => row.cards.length > 0 && row.cards.every(c => c.is_manual);
+                    const productRows = Object.values(groups).sort((a, b) =>
+                      // แถว manual ไปท้ายเสมอ (แม้ตอนกางดู) — ของหลักต้องอยู่บนสุด
+                      (isManualRow(a) ? 1 : 0) - (isManualRow(b) ? 1 : 0) ||
+                      a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
                     // ตัวกรองพาร์ท (boardQuery) — กรองเฉพาะแถวที่จะวาด · สรุปหัวการ์ด/pace ยังนับทุกแถวตามจริง
                     const bq = boardQuery.trim().toUpperCase();
-                    const visRows = !bq ? productRows : productRows.filter(row =>
+                    const qRows = !bq ? productRows : productRows.filter(row =>
                       (row.label || '').toUpperCase().includes(bq) ||
                       row.cards.some(c => String(c.mat_no || '').toUpperCase().includes(bq) || String(c.prod_no || '').toUpperCase().includes(bq)));
-                    const hiddenRowCount = productRows.length - visRows.length;
+                    const hiddenRowCount = productRows.length - qRows.length;
+                    /* ⚠️ ยุบ "การแสดงผล" เท่านั้น — ห้ามกรองก่อนคำนวณคิว/ตำแหน่งการ์ด
+                       (ตำแหน่งใบและเวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อน = เวลาเพี้ยนทั้งแถว) */
+                    const manualRows = qRows.filter(isManualRow);
+                    const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -2024,7 +2088,22 @@ export default function Dashboard() {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{visRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                          </div>
+                        )}
+                        {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
+                            (ยอดผลิต/pace บนหัวการ์ดยังนับใบพวกนี้ครบตามจริง — ยุบแค่การแสดงผลรายแถว) */}
+                        {manualRows.length > 0 && (
+                          <div onClick={() => setShowManualRows(v => !v)}
+                            style={{
+                              padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                              color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
+                            }}>
+                            <span style={{ fontWeight: 800, color: 'var(--text2)' }}>{showManualRows ? '▼' : '▶'}</span>
+                            <span>✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) · {manualRows.length} พาร์ท</span>
+                            <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--accent)' }}>
+                              {showManualRows ? 'ยุบเก็บ (ทั้งบอร์ด)' : 'กางดู (ทั้งบอร์ด)'}
+                            </span>
                           </div>
                         )}
                         {visRows.map((row, ri) => {
