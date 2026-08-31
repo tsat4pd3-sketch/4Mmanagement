@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import useIsMobile from '../utils/useIsMobile';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryRounds';
+import { forecastRunout, byUrgency, RUNOUT_REASON } from '../utils/wipRunout';
 
 /* ═══ 🕐 Store Time Chart — สโตร์เตรียมของส่งเข้าไลน์ (2xx/3xx/5xx) ═══════════
    ที่มา (user 2026-08-26): "รอบการส่งของจาก Warehouse ไปลูกค้า ดูเข้าใจง่าย ชัดเจนที่สุด
@@ -159,35 +160,86 @@ export default function StoreTimeChart({
   const onDemandLines = Object.keys(groupDemand || {}).filter(g => !byLine[g]?.length);
   const hasRoundMode  = rounds.length > 0;
 
-  /* คิวโหมดส่งตามคำขอ — "เห็นความต้องการ → เรียง → ส่งเลย"
+  /* ── ⏳ forecast "ไลน์จะขาดของเมื่อไหร่" → เวลาบนไทม์ไลน์ + ลำดับส่งของ ────────
+     สูตรอยู่ `src/utils/wipRunout.js` ที่เดียว (เทส 11 เคส) — ห้ามคำนวณเองในจอ
+     ⚠️ เดินเวลาจาก `nowMs` จึงคำนวณที่นี่ ไม่ใช่ใน view memo ของหน้าแม่
+        (ยัดเข้า memo นั้น = คำนวณ demand/BOM/รอบ ใหม่ทั้งชุดทุกนาที) */
+  const runoutByLine = useMemo(() => {
+    const { groupOrders = {}, bomByMat = {}, ctByMat = {}, wipByGroup = {} } = view || {};
+    return onDemandLines.map(g => {
+      const f = forecastRunout({
+        orders: groupOrders[g] || [],
+        bomOf: (m) => bomByMat[m] || [],
+        wipOf: (m) => (wipByGroup[g]?.[m] ?? null),   // undefined/null = ไม่มีแถวสต็อก = ไม่รู้
+        ctOf: (m) => ctByMat[m] || 0,
+        nowMs,
+      });
+      // ผูกกับ demand ที่บอร์ดคำนวณไว้ เพื่อให้ "จำนวนที่ต้องส่ง/จำนวนการ์ด" ตรงกับที่อื่นในหน้า
+      const gd = groupDemand?.[g] || { parts: [], totalKanban: 0 };
+      const byMat = {};
+      gd.parts.forEach(p => { byMat[p.mat_no] = p; });
+      return {
+        line: g, ...f, cards: gd.totalKanban,
+        parts: f.parts.map(p => ({
+          ...p,
+          part_name: byMat[p.mat_no]?.part_name,
+          cards: byMat[p.mat_no]?.cards || 0,
+          netTotal: byMat[p.mat_no]?.netTotal ?? p.need,
+        })),
+      };
+    }).sort(byUrgency);
+  }, [onDemandLines, view, groupDemand, nowMs]);
+
+  // ตำแหน่งบนกรอบวันงาน 08:00→08:00 คิดจาก ms จริง (runout ข้ามวันได้ — แปลงผ่าน HH:MM จะเพี้ยน)
+  const frameStartMs = useMemo(() => {
+    const [y, m, d] = String(workDate).split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1, 8, 0, 0, 0).getTime();
+  }, [workDate]);
+  const FRAME_MS = 1440 * 60000;
+  const pctOfMs = (ms) => ((ms - frameStartMs) / FRAME_MS) * 100;
+  const clockOf = (ms) => {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+  const inMs = (ms) => {
+    const diff = ms - nowMs;
+    if (diff <= 0) return 'ขาดแล้ว';
+    const mn = Math.round(diff / 60000);
+    return mn < 60 ? `อีก ${mn} น.` : `อีก ${Math.floor(mn / 60)} ชม. ${mn % 60} น.`;
+  };
+  // สีตามความเร่งด่วน — แดง = ขาดแล้ว/กำลังจะขาด (ของหมดคือไลน์หยุด ไม่ใช่เรื่องเล็ก)
+  const urgTone = (ms) => (ms == null ? 'var(--muted)'
+    : ms <= nowMs ? '#ef4444'
+    : ms - nowMs < 2 * 3600000 ? '#f59e0b'
+    : 'var(--accent)');
+
+  /* คิวโหมดส่งตามคำขอ — เอา forecast มาผูกกับ "ของในสโตร์พอไหม" เป็นก้อนเดียว
+     ⚠️ ต้องเป็น memo เดียวกับ runoutByLine ห้ามแยก — แยกแล้วได้ 2 ลำดับที่เถียงกันเอง
+        (ลำดับบนไทม์ไลน์กับลำดับบนการ์ดต้องเป็นอันเดียวกันเสมอ)
      ⚠️ ของในสโตร์เป็น pool ร่วม: mat เดียวที่หลายไลน์ต้องใช้พร้อมกัน ต้องขึ้น "ต้องแบ่ง"
         ห้ามบอกว่าครบทั้ง 2 ไลน์ (ของมีชุดเดียว ส่งไลน์แรกไปแล้วไลน์ที่สองไม่เหลือ) */
   const onDemandQueue = useMemo(() => {
-    const ST = { ok: 0, split: 1, partial: 2, none: 3, unknown: 4 };
     const needByMat = {};
-    onDemandLines.forEach(g => (groupDemand?.[g]?.parts || []).forEach(p => {
+    runoutByLine.forEach(r => r.parts.forEach(p => {
       if (p.netTotal > 0) needByMat[p.mat_no] = (needByMat[p.mat_no] || 0) + p.netTotal;
     }));
-    return onDemandLines.map(g => {
-      const parts = (groupDemand?.[g]?.parts || [])
-        .filter(p => p.netTotal > 0)
-        .map(p => {
-          const tracked = p.mat_no in (storeStock || {});
-          const have = tracked ? (storeStock[p.mat_no] || 0) : null;
-          const state = !tracked ? 'unknown'                                   // ❔ ไม่รู้ ≠ ไม่มี
-            : have >= p.netTotal
-              ? (needByMat[p.mat_no] > have ? 'split' : 'ok')
-              : have > 0 ? 'partial' : 'none';
-          return { ...p, have, state };
-        })
-        .sort((a, b) => ST[a.state] - ST[b.state] || b.netTotal - a.netTotal);
-      const n = (s) => parts.filter(p => p.state === s).length;
+    return runoutByLine.map(r => {
+      const parts = r.parts.map(p => {
+        const tracked = p.mat_no in (storeStock || {});
+        const have = tracked ? (storeStock[p.mat_no] || 0) : null;
+        const store = !tracked ? 'unknown'                                     // ❔ ไม่รู้ ≠ ไม่มี
+          : have >= p.netTotal
+            ? (needByMat[p.mat_no] > have ? 'split' : 'ok')
+            : have > 0 ? 'partial' : 'none';
+        return { ...p, have, store };
+      });                                                                       // เรียงตาม runout มาแล้วจาก util
+      const n = (s) => parts.filter(p => p.store === s).length;
       return {
-        line: g, parts, cards: groupDemand?.[g]?.totalKanban || 0,
-        ok: n('ok'), split: n('split'), partial: n('partial'), none: n('none'), unknown: n('unknown'),
+        ...r, parts,
+        ok: n('ok'), split: n('split'), partial: n('partial'), none: n('none'), unknownStore: n('unknown'),
       };
-    }).sort((a, b) => (b.ok + b.split) - (a.ok + a.split) || b.cards - a.cards);
-  }, [onDemandLines, groupDemand, storeStock]);
+    });
+  }, [runoutByLine, storeStock]);
 
   const counts = {
     todo: rounds.filter(r => !isDone(r)).length,
@@ -454,9 +506,96 @@ export default function StoreTimeChart({
             </span>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-            ไลน์เหล่านี้ไม่ได้นัดเวลาไว้ — ระบบแตก BOM จากแผนผลิตมาให้แล้ว จัดตามลำดับแล้วส่งได้เลย
-            · <span style={{ color: '#f59e0b' }}>เรียงตาม “ของในสโตร์พร้อมแค่ไหน” ยังไม่ใช่เวลาที่ผลิตแจ้ง</span>
+            ไม่ได้นัดเวลาไว้ — เวลาบนไทม์ไลน์มาจาก <b>การคำนวณ</b>: หัก WIP ด้วยของที่ผลิตไปแล้ววันนี้
+            แล้วเดินเวลาด้วย cycle time ของใบที่ยังไม่ปิด → <b>ไลน์ไหนจะขาดของก่อน ไปส่งก่อน</b>
           </div>
+
+          {/* ── ⏳ ไทม์ไลน์ runout — พลอตจากเวลาที่คำนวณ ไม่ใช่รอบที่ตั้งไว้ ────────── */}
+          <div style={{ ...card, padding: 0, overflow: 'hidden', marginBottom: 12 }}>
+            <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
+              <div style={isMobile ? { minWidth: 780 } : undefined}>
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)' }}>
+                  <div style={{ width: leftW, flexShrink: 0, padding: '4px 8px', fontSize: 10.5, color: 'var(--muted)', fontWeight: 700, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
+                    ไลน์ · จะขาดของเมื่อไหร่
+                  </div>
+                  <div style={{ flex: 1, position: 'relative', height: 20 }}>
+                    {hourMarks.filter((_, i) => i % 2 === 0).map(m => (
+                      <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, top: 3, fontSize: 10, color: 'var(--muted)', transform: 'translateX(-50%)' }}>
+                        {fmtMin(m)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {onDemandQueue.map(q => {
+                  const first = q.firstRunoutMs;
+                  const tone = urgTone(first);
+                  const barL = Math.max(0, pctOfMs(Math.max(nowMs, frameStartMs)));
+                  const barR = first == null ? null : Math.min(100, pctOfMs(first));
+                  return (
+                    <div key={q.line} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
+                      <div style={{ width: leftW, flexShrink: 0, padding: '5px 10px', borderRight: '1px solid var(--border2)', overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.line}</div>
+                        <div style={{ fontSize: 10.5, fontWeight: 700, color: tone }}>
+                          {first == null ? '— ยังคำนวณเวลาไม่ได้' : `${clockOf(first)} · ${inMs(first)}`}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, position: 'relative', height: 34 }}>
+                        {hourMarks.map(m => (
+                          <div key={m} style={{ position: 'absolute', top: 0, bottom: 0, left: `${((m - tStart) / span) * 100}%`, width: 1, background: (m % 1440) === 1200 ? 'var(--border2)' : 'var(--border)' }} />
+                        ))}
+                        {breakBands.map((b, bi) => {
+                          const l = Math.max(0, ((b.s - tStart) / span) * 100);
+                          const w = Math.min(100 - l, ((b.e - b.s) / span) * 100);
+                          if (w <= 0) return null;
+                          return <div key={bi} title={`${b.label} — เวลาพัก`} style={{
+                            position: 'absolute', top: 0, bottom: 0, left: `${l}%`, width: `${w}%`, zIndex: 0, pointerEvents: 'none',
+                            background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
+                          }} />;
+                        })}
+                        {isToday && nowW >= tStart && nowW <= tStart + span && (
+                          <div className="now-line" style={{ left: `${((nowW - tStart) / span) * 100}%` }} />
+                        )}
+                        {/* แถบ "ของยังพอ" จากตอนนี้ถึงเวลาที่จะขาดตัวแรก */}
+                        {barR != null && barR > barL && (
+                          <div title={`ของพอถึง ${clockOf(first)}`} style={{
+                            position: 'absolute', top: 12, height: 10, left: `${barL}%`, width: `${barR - barL}%`,
+                            background: `${tone}33`, borderLeft: `2px solid ${tone}`, borderRadius: 3, zIndex: 1,
+                          }} />
+                        )}
+                        {/* จุด = พาร์ทแต่ละตัวจะหมดตอนไหน */}
+                        {q.parts.filter(p => p.runoutMs != null).map(p => {
+                          const x = pctOfMs(p.runoutMs);
+                          if (x < 0 || x > 100) return null;
+                          return (
+                            <div key={p.mat_no}
+                              title={`${p.mat_no} — ของที่ไลน์หมด ${clockOf(p.runoutMs)} (${inMs(p.runoutMs)}) · ต้องส่ง ${fmt(p.netTotal)}`}
+                              style={{
+                                position: 'absolute', top: 9, left: `${x}%`, width: 8, height: 8, marginLeft: -4,
+                                borderRadius: '50%', background: urgTone(p.runoutMs), zIndex: 2,
+                              }} />
+                          );
+                        })}
+                        {/* ไม่มีเวลาให้พลอตเลย = ต้องบอกว่าทำไม ห้ามปล่อยแถวว่าง */}
+                        {q.parts.every(p => p.runoutMs == null) && (
+                          <div style={{ position: 'absolute', top: 9, left: 8, fontSize: 10.5, color: 'var(--muted)', zIndex: 2 }}>
+                            {q.counts.unknown > 0 ? `❔ ${q.counts.unknown} พาร์ทยังไม่มียอด WIP ที่ไลน์ — คำนวณไม่ได้`
+                              : q.counts.no_ct > 0 ? `⚠️ ยังไม่ตั้ง cycle time (${q.noCtMats.slice(0, 2).join(' · ')}) — คำนวณเวลาไม่ได้`
+                              : q.counts.idle > 0 ? '⏸️ ไลน์ยังไม่มีใบผลิตเปิด'
+                              : '✅ ของที่ไลน์พอถึงจบแผนวันนี้'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div style={{ padding: '5px 10px', borderTop: '1px solid var(--border2)', fontSize: 10.5, color: 'var(--muted)' }}>
+              ⚠️ WIP ที่ใช้คำนวณ = ยอดในระบบ <b>หักด้วยของที่ผลิตไปแล้ววันนี้</b> (คำนวณจากใบผลิต ไม่ได้อ่านจากยอดตัดสต็อก
+              เพราะ backflush ยังไม่ทำงาน) · พาร์ทที่ยังไม่เคยตั้งยอดที่ไลน์ = <b>คำนวณไม่ได้</b> ไม่ใช่ “ของหมด”
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10 }}>
             {onDemandQueue.map((q, i) => {
               const open = !!qOpen[q.line];
@@ -471,17 +610,26 @@ export default function StoreTimeChart({
                       🏭 {q.line}
                     </button>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 4 }}>
+                  {/* บรรทัดเวลา = คำตอบหลักของการ์ด "ต้องไปเมื่อไหร่" */}
+                  <div style={{ marginTop: 4, fontSize: 12, fontWeight: 800, color: urgTone(q.firstRunoutMs) }}>
+                    {q.firstRunoutMs != null
+                      ? `⏳ ไลน์จะขาดของ ${clockOf(q.firstRunoutMs)} · ${inMs(q.firstRunoutMs)}`
+                      : q.counts.unknown > 0 ? '❔ คำนวณเวลาไม่ได้ — ยังไม่มียอด WIP ที่ไลน์'
+                      : q.counts.no_ct > 0   ? '⚠️ คำนวณเวลาไม่ได้ — ยังไม่ตั้ง cycle time'
+                      : q.counts.idle > 0    ? '⏸️ ไลน์ยังไม่มีใบผลิตเปิด'
+                      : '✅ ของที่ไลน์พอถึงจบแผนวันนี้'}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 2 }}>
                     <span style={{ fontSize: 19, fontWeight: 900, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{q.cards}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>การ์ด · {q.parts.length} พาร์ท</span>
                   </div>
-                  {/* สถานะของในสโตร์ — "ไม่รู้" แยกจาก "ไม่มี" เสมอ */}
+                  {/* สถานะของในสโตร์ (คนละเรื่องกับ WIP ที่ไลน์) — "ไม่รู้" แยกจาก "ไม่มี" เสมอ */}
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
-                    {q.ok > 0      && <span style={chip('rgba(34,197,94,0.14)', 'var(--accent)')}>✅ พร้อมส่ง {q.ok}</span>}
+                    {q.ok > 0      && <span style={chip('rgba(34,197,94,0.14)', 'var(--accent)')}>✅ สโตร์มีพร้อม {q.ok}</span>}
                     {q.split > 0   && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')} title="ของชุดนี้มีไลน์อื่นต้องใช้ด้วย — ส่งไลน์แรกไปแล้วอาจไม่เหลือ">🔀 ต้องแบ่ง {q.split}</span>}
-                    {q.partial > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ไม่พอ {q.partial}</span>}
-                    {q.none > 0    && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')}>🚨 ไม่มีของ {q.none}</span>}
-                    {q.unknown > 0 && <span style={chip('rgba(148,163,184,0.14)', 'var(--muted)')} title="พาร์ทนี้ไม่มีแถวสต็อกในคลัง STORE — เช็คไม่ได้ว่ามีของไหม (ไม่ได้แปลว่าไม่มี)">❔ เช็คไม่ได้ {q.unknown}</span>}
+                    {q.partial > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ สโตร์ไม่พอ {q.partial}</span>}
+                    {q.none > 0    && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')}>🚨 สโตร์ไม่มีของ {q.none}</span>}
+                    {q.unknownStore > 0 && <span style={chip('rgba(148,163,184,0.14)', 'var(--muted)')} title="พาร์ทนี้ไม่มีแถวสต็อกในคลัง STORE — เช็คไม่ได้ว่ามีของไหม (ไม่ได้แปลว่าไม่มี)">❔ เช็คไม่ได้ {q.unknownStore}</span>}
                   </div>
                   <button onClick={() => setQOpen(s => ({ ...s, [q.line]: !s[q.line] }))}
                     style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
@@ -491,16 +639,22 @@ export default function StoreTimeChart({
                   {open && (
                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 260, overflowY: 'auto' }}>
                       {q.parts.map(p => {
-                        const m = p.state === 'ok'    ? { c: 'var(--accent)', t: '✅' }
-                          : p.state === 'split'       ? { c: '#f59e0b', t: '🔀' }
-                          : p.state === 'partial'     ? { c: '#f59e0b', t: '⚠️' }
-                          : p.state === 'none'        ? { c: '#ef4444', t: '🚨' }
+                        const m = p.store === 'ok'    ? { c: 'var(--accent)', t: '✅' }
+                          : p.store === 'split'       ? { c: '#f59e0b', t: '🔀' }
+                          : p.store === 'partial'     ? { c: '#f59e0b', t: '⚠️' }
+                          : p.store === 'none'        ? { c: '#ef4444', t: '🚨' }
                           :                             { c: 'var(--muted)', t: '❔' };
+                        const rr = RUNOUT_REASON[p.reason] || RUNOUT_REASON.unknown;
                         return (
                           <div key={p.mat_no} style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 11.5 }}>
-                            <span style={{ color: m.c }}>{m.t}</span>
+                            <span style={{ color: m.c }} title={`ของในสโตร์: ${m.t}`}>{m.t}</span>
                             <span style={{ fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>{p.mat_no}</span>
                             <span style={{ color: 'var(--muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                            {/* เวลาที่ "ของที่ไลน์" จะหมด — คนละตัวกับของในสโตร์ */}
+                            <span title={`WIP ที่ไลน์: ${p.wipNow == null ? 'ไม่มียอด' : fmt(p.wipNow)} · ${rr.label}`}
+                              style={{ color: urgTone(p.runoutMs), whiteSpace: 'nowrap', fontSize: 10.5, fontWeight: 700 }}>
+                              {p.runoutMs != null ? `⏳ ${clockOf(p.runoutMs)}` : rr.icon}
+                            </span>
                             <span style={{ fontWeight: 800, color: m.c, whiteSpace: 'nowrap' }}>
                               {fmt(p.netTotal)}{p.cards > 0 ? ` · ${p.cards}ใบ` : ''}
                             </span>
