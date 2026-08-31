@@ -518,7 +518,8 @@ export default function LineSetup({ embedded = false } = {}) {
     for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
                      'jigs', 'pm_daily_line_targets', 'pm_daily_alerts', 'mtn_orders', 'improvements', 'scrap_reports',
                      'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries',
-                     'rack_requests', 'kanban_calc_params', 'transport_nodes']) {
+                     'rack_requests', 'kanban_calc_params', 'transport_nodes',
+                     'line_part_levels']) {   // min/max พาร์ทต่อไลน์ (ลูปเรียกของจากสโตร์)
       await bump(supabaseDR, t);
     }
     // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
