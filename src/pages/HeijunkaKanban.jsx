@@ -1500,9 +1500,11 @@ export default function HeijunkaKanban() {
 
       // 2) แผนผลิต: prod_orders + kanban_targets ของ sessions เหล่านี้
       const [{ data: orders }, { data: targets }, { data: products }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, mat_no, part_name, qty, status, opened_at').in('session_id', sessIds),
+        // qty_ok/qty_actual/confirmed_at → ใช้หัก WIP ด้วยของที่ผลิตไปแล้ว (forecast runout · utils/wipRunout.js)
+        supabaseDR.from('prod_orders').select('session_id, mat_no, part_name, qty, qty_ok, qty_actual, status, opened_at, confirmed_at').in('session_id', sessIds),
         supabaseDR.from('kanban_targets').select('session_id, mat_no, part_name, qty_target').in('session_id', sessIds),
-        supabaseDR.from('dr_products').select('id, name, mat_no').eq('is_active', true),
+        // cycle_time_sec → ใช้แปลง "ยอดที่เหลือ" เป็น "เวลา" บนไทม์ไลน์
+        supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true),
       ]);
       const prodByMat = {};
       (products || []).forEach(p => { if (p.mat_no) prodByMat[p.mat_no] = p; });
@@ -1514,11 +1516,19 @@ export default function HeijunkaKanban() {
       const dem = [];
       activeOrders.forEach(o => {
         if (!o.qty) return;
-        dem.push({ session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: o.qty, opened_at: o.opened_at, product: prodByMat[o.mat_no] || null });
+        dem.push({
+          session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: o.qty,
+          opened_at: o.opened_at, product: prodByMat[o.mat_no] || null,
+          qty_ok: o.qty_ok, qty_actual: o.qty_actual, confirmed: o.status === 'confirmed',
+        });
       });
       (targets || []).forEach(t => {
         if (sessionsWithOrders.has(t.session_id) || !t.qty_target) return;
-        dem.push({ session_id: t.session_id, mat_no: t.mat_no, part_name: t.part_name, qty: t.qty_target, opened_at: null, product: prodByMat[t.mat_no] || null });
+        dem.push({
+          session_id: t.session_id, mat_no: t.mat_no, part_name: t.part_name, qty: t.qty_target,
+          opened_at: null, product: prodByMat[t.mat_no] || null,
+          qty_ok: null, qty_actual: null, confirmed: false,
+        });
       });
       setDemands(dem);
 
@@ -1874,7 +1884,47 @@ export default function HeijunkaKanban() {
     });
     Object.values(groupDemand).forEach(gd => gd.parts.sort((a, b) => a.mat_no.localeCompare(b.mat_no)));
 
-    return { cols, rowList, noBom: [...noBom.values()], sessById, totalKanban, roundAlloc, groupDemand };
+    /* ── วัตถุดิบสำหรับ forecast "ไลน์จะขาดของเมื่อไหร่" (utils/wipRunout.js) ────
+       ⚠️ คำนวณ runout ที่จอ ไม่ใช่ที่นี่ — สูตรพึ่ง `nowMs` ซึ่งเดินทุกนาที
+          ยัดเข้า memo ก้อนนี้ = คำนวณ demand/BOM/รอบ ใหม่ทั้งชุดทุกนาที (แพงและไม่จำเป็น)
+       ⚠️ `wipByGroup[g][mat] === null` = **ไม่มีแถวสต็อกที่ไลน์ในกลุ่มนี้เลย = ไม่รู้**
+          ต่างจาก 0 (มีแถวแต่ของหมดจริง) — ห้ามยุบเป็นค่าเดียวกัน */
+    const groupOrders = {}, bomByMat = {}, ctByMat = {}, wipByGroup = {};
+    const linesOfGroup = {};
+    visibleSessions.forEach(s => {
+      const g = groupOf(s.line_name);
+      (linesOfGroup[g] = linesOfGroup[g] || new Set()).add(s.line_name);
+    });
+    demands.forEach(d => {
+      if (!visibleIds.has(d.session_id)) return;
+      const sess = sessById[d.session_id];
+      if (!sess) return;
+      const g = groupOf(sess.line_name);
+      (groupOrders[g] = groupOrders[g] || []).push({
+        matNo: d.mat_no, qty: d.qty, qtyOk: d.qty_ok, qtyActual: d.qty_actual,
+        confirmed: !!d.confirmed, openedAt: d.opened_at,
+      });
+      if (d.product) {
+        if (!(d.mat_no in bomByMat)) bomByMat[d.mat_no] = bomMap[d.product.id] || [];
+        if (d.product.cycle_time_sec) ctByMat[d.mat_no] = Number(d.product.cycle_time_sec);
+      }
+    });
+    Object.entries(linesOfGroup).forEach(([g, lns]) => {
+      const w = wipByGroup[g] = {};
+      Object.keys(rows).forEach(mat => {
+        let sum = null;
+        lns.forEach(ln => {
+          const v = lineStock[`${ln}|${mat}`];
+          if (v !== undefined) sum = (sum ?? 0) + (Number(v) || 0);
+        });
+        w[mat] = sum;                       // null = ไม่มีแถวเลย (ไม่รู้)
+      });
+    });
+
+    return {
+      cols, rowList, noBom: [...noBom.values()], sessById, totalKanban, roundAlloc, groupDemand,
+      groupOrders, bomByMat, ctByMat, wipByGroup,
+    };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
   const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
