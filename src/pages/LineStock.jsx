@@ -114,18 +114,32 @@ function StockTab({ role, scope }) {
   const [rejectReason,setRejectReason]= useState('');
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { rows: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
+    // ⚠️ ทุกตารางในนี้โตเกิน 1000 แถวได้ → ต้อง paginate ทั้งหมด (กฎ CLAUDE.md)
+    //    เดิม paginate แค่ line_stock_summary ตัวเดียว · ตัวที่เจ็บที่สุดคือ `bom_items`
+    //    เพราะมันเป็นที่มาของ "ไลน์ลูกปลายทาง" ใน StockMoveToChild — ตกหล่นเมื่อไหร่
+    //    พาร์ทนั้นจะกลายเป็น "ใช้หลายไลน์ ต้องเลือกเอง" ทั้งที่จริงชี้ไลน์เดียวชัดเจน
+    //    (เสนอผิดแบบเงียบ = คนเลือกปลายทางผิด แล้วหักสต็อกผิดตัว ย้อนยาก)
+    const [{ data: ln }, { rows: stk }, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
       // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
         { orderBy: ['line_name', 'mat_no'] }),
-      supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
-      supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
-      supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
-      supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+      fetchAllPages(() => supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
+        { orderBy: 'id' }),
+      fetchAllPages(() => supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true),
+        { orderBy: ['line_name', 'name', 'id'] }),
+      fetchAllPages(() => supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
+        { orderBy: 'id' }),
+      fetchAllPages(() => supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+        { orderBy: 'id' }),
     ]);
+    const boms = bomRes.rows, prods = prodRes.rows, ks = ksRes.rows, pm = pmRes.rows;
+    // ⚠️ โหลดไม่ครบ = ต้องบอก ห้ามเงียบ — จอจะดูปกติทุกอย่าง แต่ข้อเสนอปลายทาง/ชื่อพาร์ท/min-max หายไปเฉยๆ
+    const bad = [['สูตร BOM', bomRes], ['สินค้า', prodRes], ['ค่ามาตรฐานคัมบัง', ksRes], ['ทะเบียนพาร์ท', pmRes]]
+      .filter(([, r]) => r.error || r.truncated).map(([n]) => n);
+    if (bad.length) toast.error(`⚠ โหลดไม่ครบ: ${bad.join(' · ')} — ตัวเลข/ข้อเสนอบางส่วนอาจขาด ลองรีเฟรช`);
     setLines(ln || []);
     setStock(stk || []);
     setProducts(prods || []);
