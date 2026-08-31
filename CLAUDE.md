@@ -679,11 +679,11 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 | 5-7 หยิบ → ส่ง | สโตร์ | `/heijunka` → 🔄 คิวเติม WIP | ✅ (ยังไม่มีสแกน = เฟส 3-4) |
 | 8 ยืนยันรับ ครบ/ไม่ครบ | ผลิต | แผง 📦 | ✅ |
 
-- **`line_part_levels` (DR)** = min/max **ต่อไลน์** · migration `20260831_line_part_levels.sql`
+- **`line_part_levels` (DR)** = min/max **ต่อไลน์** · migration `20260831_line_part_levels.sql` (**apply แล้ว 2026-08-31**)
   **⚠️ คนละชั้นกับ `kanban_standards.min_qty/max_qty`** ซึ่งเป็นค่า **ต่อ mat ทั้งโรงงาน** (กฎ `v_store_abnormal` v3)
   — พาร์ทเดียวกันวางที่ 3 ไลน์ ต้องมี min คนละค่า · **ไม่ตั้ง = ไม่เตือน (ไม่เดาให้)** แล้วขึ้น worklist
   · ตั้งโดย **หัวหน้าไลน์ + หัวหน้าแผนกผลิต ไม่ใช่ Planning** (`line_levels:manage`)
-- **ใบขอเติม = `wip_replenish_requests` (Main) ตัวเดิม ห้ามสร้างตารางที่ 2** · migration `20260831_wip_replenish_pull_loop.sql`
+- **ใบขอเติม = `wip_replenish_requests` (Main) ตัวเดิม ห้ามสร้างตารางที่ 2** · migration `20260831_wip_replenish_pull_loop.sql` (**apply แล้ว 2026-08-31**)
   ของเดิมผูก "จุด WIP" (`wip_point_id`) · ของใหม่ผูก "พาร์ทของไลน์" (`wip_point_id = null`)
   — **อยู่คิวเดียวกัน สโตร์เห็นจอเดียว ห้ามแตกเป็น 2 จอ**
 - **ชื่อสถานะคงของเดิม** `pending`(=requested) · `preparing`(=picking) · `delivered` — เอกสารเสนอชื่อใหม่
