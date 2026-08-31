@@ -80,13 +80,33 @@ test('rankMat: ไม่มีไลน์ต้นน้ำ = ไม่ตก�
 test('กรองตามประเภท: เทียบเลขตัวแรกตัวเดียว + ทนค่าเก่า "200" + คืนจำนวนที่ซ่อน', () => {
   const opts = buildWipMatOptions(mergeMatRegistry(PM, DR), { line: 'Line 60', lines: LINES });
   const two = filterWipMatByCat(opts, '2');
-  assert.deepEqual(two.rows.map(o => o.id), ['20066636']);
-  assert.equal(two.hidden, 5, 'ต้องบอกจำนวนที่ซ่อน ห้ามหายเงียบ');
+  // 'M6 ไม่มีเกลียว' ไม่ใช่เลข SAP 8 หลัก → ตัดสินไม่ได้ ต้องคงไว้ (ไม่รู้ ≠ ไม่ใช่)
+  assert.deepEqual(two.rows.map(o => o.id).sort(), ['20066636', 'M6 ไม่มีเกลียว']);
+  assert.equal(two.hidden, 4, 'ต้องบอกจำนวนที่ซ่อน ห้ามหายเงียบ');
+  assert.equal(two.keptUnjudged, 1);
   // ค่าเก่าในฐานเป็น '200' — ต้องได้ผลเท่ากับ '2'
-  assert.deepEqual(filterWipMatByCat(opts, '200').rows.map(o => o.id), ['20066636']);
+  assert.deepEqual(filterWipMatByCat(opts, '200').rows.map(o => o.id).sort(), ['20066636', 'M6 ไม่มีเกลียว']);
   // ไม่เลือกประเภท / กด "ดูทุกประเภท" = ครบทุกแถว
   assert.equal(filterWipMatByCat(opts, '').rows.length, 6);
   assert.equal(filterWipMatByCat(opts, '2', true).rows.length, 6);
+});
+
+test('🔴 MAT SAP = ตัวเลข 8 หลักเท่านั้น — สั้น/ยาว/มีตัวอักษร ห้ามถูกตีเป็นประเภท', () => {
+  const opts = buildWipMatOptions(mergeMatRegistry(
+    [{ mat_no: '10100384', part_name: 'FG จริง' }],
+    [{ mat_no: '1234567', name: '7 หลัก' }, { mat_no: '101003840', name: '9 หลัก' },
+     { mat_no: '127 (M6 มีเกลียว)', name: 'ชื่อขั้นตอน' }, { mat_no: 'MB3B-16E060-CH', name: 'เลขลูกค้า' }],
+  ), { line: 'X', lines: [] });
+  const b = (id) => opts.find(o => o.id === id).badge;
+  assert.equal(b('10100384'), 'FG', '8 หลักคือของจริง ต้องได้ป้ายปกติ');
+  for (const bad of ['1234567', '101003840', '127 (M6 มีเกลียว)', 'MB3B-16E060-CH']) {
+    assert.equal(b(bad), '⚠ ไม่ใช่เลข SAP', `${bad} ต้องไม่ถูกตีเป็นประเภท`);
+  }
+  // ตัวกรอง "1 · FG" ต้องได้เฉพาะ FG จริง ส่วนที่ตัดสินไม่ได้คงไว้ (ไม่หายเงียบ)
+  const r = filterWipMatByCat(opts, '1');
+  assert.ok(r.rows.some(o => o.id === '10100384'));
+  assert.equal(r.hidden, 0, 'ตัวที่ตัดสินไม่ได้ต้องไม่ถูกซ่อน');
+  assert.equal(r.keptUnjudged, 4);
 });
 
 /* ── รายการขั้นตอน (Operation) ────────────────────────────────────────────
@@ -129,13 +149,15 @@ test('🔴 ตัวกรองประเภทต้องคง OP ไว�
   assert.ok(r.rows.some(o => o.id === 'E024 (M6 ไม่มีเกลียว)'), 'OP ต้องไม่ถูกกรองทิ้ง');
   assert.ok(r.rows.some(o => o.id === '30051864'), 'พาร์ท 3xx ยังอยู่');
   assert.ok(!r.rows.some(o => o.id === '10100384'), 'พาร์ทจริงเบอร์ 1 ถูกกรองออกตามปกติ');
-  assert.equal(r.opKept, 3, 'ต้องบอกจำนวน OP ที่คงไว้ ให้จอเขียนอธิบายได้');
+  // OP 3 ตัว + 'M6 ไม่มีเกลียว' ที่ไม่ใช่เลข SAP 8 หลัก = 4 รายการที่ตัดสินไม่ได้
+  assert.equal(r.keptUnjudged, 4, 'ต้องบอกจำนวนที่ตัดสินไม่ได้ ให้จอเขียนอธิบายได้');
 });
 
 test('ไม่ส่ง opMap = พฤติกรรมเดิมเป๊ะ (migration ยังไม่ apply / query ล้ม)', () => {
   const opts = buildWipMatOptions(mergeMatRegistry(PM, OP_DR), { line: 'SUB APRON', lines: LINES });
   assert.ok(opts.every(o => !o.isOp));
-  assert.equal(filterWipMatByCat(opts, '3').opKept, 0);
+  // OP ไม่ถูกติดธง แต่ 'ชื่อขั้นตอน' ก็ยังไม่ใช่เลข SAP 8 หลัก → คงไว้ด้วยเกณฑ์นั้นแทน
+  assert.ok(filterWipMatByCat(opts, '3').rows.some(o => o.id === 'E024 (M6 ไม่มีเกลียว)'));
 });
 
 test('ค้นได้ทั้งรหัส ชื่อ และไลน์ที่ผลิต', () => {

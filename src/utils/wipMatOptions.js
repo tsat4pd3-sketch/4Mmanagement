@@ -1,4 +1,4 @@
-import { matClassOf, matColor, matDigit, matMatches } from './matPrefix';
+import { matClassOf, matColor, matDigit, matMatches, isSapMat } from './matPrefix';
 import { getLineFamilyNames } from './lineHierarchy';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -83,8 +83,9 @@ export function buildWipMatOptions(parts = [], { line, lines = [], upstreamLines
       id: p.mat_no,
       label: `${p.mat_no}${p.name ? ` — ${p.name}` : ''}`,
       sub: [opSub, p.lines.length ? `ผลิตที่ ${p.lines.join(' · ')}` : (p.isOp ? '' : 'ไม่ได้ผูกไลน์ผลิต (พาร์ทซื้อนอก/วัตถุดิบ)')].filter(Boolean).join(' · '),
-      badge: p.isOp ? '🔩 OP' : (matClassOf(p.mat_no)?.short || matDigit(p.mat_no) || '—'),
-      badgeColor: p.isOp ? 'var(--accent2)' : matColor(p.mat_no),
+      // ไม่ใช่ OP และไม่ใช่เลข SAP 8 หลัก = ตอบไม่ได้ ห้ามเอาตัวแรกมาแปะเป็นประเภท ('M'/'E' มั่วๆ)
+      badge: p.isOp ? '🔩 OP' : (matClassOf(p.mat_no)?.short || (isSapMat(p.mat_no) ? '—' : '⚠ ไม่ใช่เลข SAP')),
+      badgeColor: p.isOp ? 'var(--accent2)' : (isSapMat(p.mat_no) ? matColor(p.mat_no) : 'var(--accent2)'),
       group: WIP_MAT_GROUPS[r],
       keywords: `${p.mat_no} ${p.name} ${p.lines.join(' ')}${p.isOp ? ` OP operation ขั้นตอน ${p.opParent || ''}` : ''}`,
       isOp: !!p.isOp,
@@ -97,17 +98,18 @@ export function buildWipMatOptions(parts = [], { line, lines = [], upstreamLines
  * กรองตามประเภทวัสดุที่เลือก (เลขตัวแรกตัวเดียว — matMatches ทนค่าเก่า '200'/'300')
  * คืน `hidden` ไปด้วยเสมอ — จอต้องบอกว่าซ่อนไปกี่รายการ ห้ามหายเงียบ
  *
- * ⚠️ รายการ OP **ไม่เข้าตัวกรองประเภท — โชว์เสมอ** เพราะ mat_no ของมันเป็นชื่อขั้นตอน
- * ไม่ใช่เลข SAP ⇒ ตอบไม่ได้ว่าเป็นประเภทไหน · กรองทิ้งคือการ *อ้าง* ว่าไม่ใช่ประเภทนั้น
- * (หลักเดียวกับ "ไม่รู้ ≠ ไม่มี" ที่ใช้ทั้งระบบ) · จำนวนน้อย (~12 รายการ) จึงไม่รกจอ
+ * ⚠️ **ของที่ไม่ใช่เลข MAT SAP (8 หลัก) ไม่เข้าตัวกรองประเภท — โชว์เสมอ**
+ * รายการ OP ใช้ช่อง mat_no เก็บ "ชื่อขั้นตอน" (`127 (M6 มีเกลียว)`) ⇒ ตอบไม่ได้ว่าประเภทไหน
+ * กรองทิ้งคือการ *อ้าง* ว่าไม่ใช่ประเภทนั้น (หลัก "ไม่รู้ ≠ ไม่ใช่") · จำนวนน้อยจึงไม่รกจอ
  */
 export function filterWipMatByCat(options = [], cat, showAll = false) {
   const d = matDigit(cat);
-  if (!d || showAll) return { rows: options, hidden: 0, opKept: 0 };
-  const rows = options.filter(o => o.isOp || matMatches(o.id, d));
+  if (!d || showAll) return { rows: options, hidden: 0, keptUnjudged: 0 };
+  const judgeable = (o) => isSapMat(o.id) && !o.isOp;
+  const rows = options.filter(o => !judgeable(o) || matMatches(o.id, d));
   return {
     rows,
     hidden: options.length - rows.length,
-    opKept: rows.filter(o => o.isOp).length,
+    keptUnjudged: rows.filter(o => !judgeable(o)).length,
   };
 }

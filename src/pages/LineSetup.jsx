@@ -13,7 +13,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
-import { MAT_CLASSES, matDigit, matClassOf, matMatches } from '../utils/matPrefix';
+import { MAT_CLASSES, matDigit, matClassOf, classByDigit, matMatches, isSapMat } from '../utils/matPrefix';
 import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat } from '../utils/wipMatOptions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadOpInfo } from '../utils/opItems';
@@ -209,7 +209,7 @@ export default function LineSetup({ embedded = false } = {}) {
     [drProducts, lines, selectedLine, upstreamLines],
   );
   const wipMatCat = matDigit(wipForm.material_category);
-  const { rows: wipMatShown, hidden: wipMatHidden, opKept: wipMatOpKept } = useMemo(
+  const { rows: wipMatShown, hidden: wipMatHidden, keptUnjudged: wipMatKept } = useMemo(
     () => filterWipMatByCat(wipMatOptions, wipMatCat, wipMatAllCat),
     [wipMatOptions, wipMatCat, wipMatAllCat],
   );
@@ -1645,7 +1645,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       {wipMatCat !== '' && wipMatHidden > 0 && (
                         <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
                           กรองด้วยประเภท {wipMatCat} · ซ่อน {wipMatHidden} รายการ
-                          {wipMatOpKept > 0 && ` · คง 🔩 รายการขั้นตอน (OP) ${wipMatOpKept} ตัวไว้ (ไม่มีเลข SAP จึงตอบไม่ได้ว่าประเภทไหน)`}
+                          {wipMatKept > 0 && ` · คงไว้ ${wipMatKept} รายการที่ไม่ใช่เลข MAT SAP 8 หลัก (ขั้นตอน/เลขชั่วคราว — ตอบไม่ได้ว่าประเภทไหน)`}
                           <button type="button" onClick={() => setWipMatAllCat(v => !v)}
                             style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 10.5, padding: 0, textDecoration: 'underline' }}>
                             {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
@@ -1653,10 +1653,17 @@ export default function LineSetup({ embedded = false } = {}) {
                         </div>
                       )}
                       {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน)
-                          ⚠️ ข้าม OP: mat_no เป็นชื่อขั้นตอน เอา prefix ไปตีความไม่ได้ (จะเตือนผิดทุกครั้ง) */}
-                      {wipForm.mat_no && wipMatCat && !wipMatIsOp && !matMatches(wipForm.mat_no, wipMatCat) && (
+                          ⚠️ เตือนเฉพาะเลข SAP 8 หลักที่ไม่ใช่ OP — อย่างอื่นตีความประเภทไม่ได้ จะเตือนผิดทุกครั้ง */}
+                      {wipForm.mat_no && wipMatCat && !wipMatIsOp && isSapMat(wipForm.mat_no) && !matMatches(wipForm.mat_no, wipMatCat) && (
                         <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
-                          ⚠ {wipForm.mat_no} ขึ้นต้นด้วย {matDigit(wipForm.mat_no) || '—'} ({matClassOf(wipForm.mat_no)?.label || 'ไม่รู้จัก'}) ไม่ตรงประเภทที่เลือก ({wipMatCat})
+                          ⚠ {wipForm.mat_no} ขึ้นต้นด้วย {matDigit(wipForm.mat_no)} ({matClassOf(wipForm.mat_no)?.label || 'ไม่รู้จัก'}) ไม่ตรงประเภทที่เลือก ({wipMatCat})
+                        </div>
+                      )}
+                      {/* ไม่ใช่เลข MAT SAP (8 หลัก) และไม่ใช่ OP = อาจพิมพ์ผิด/เป็นเลขลูกค้า — บอกไว้ ไม่บล็อก */}
+                      {wipForm.mat_no && !wipMatIsOp && !isSapMat(wipForm.mat_no) && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          ⚠ “{wipForm.mat_no}” ไม่ใช่เลข MAT SAP (ต้องเป็นตัวเลข 8 หลัก) — บันทึกได้
+                          แต่ระบบตอบไม่ได้ว่าเป็นวัสดุประเภทไหน · ถ้าเป็นขั้นตอนการผลิต ให้ติ๊ก 🔩 รายการขั้นตอน ที่ Product Master
                         </div>
                       )}
                       {/* เลือก OP = ตั้งใจได้ (บัฟเฟอร์เก็บของหลังขั้นนั้นจริง) แต่ต้องรู้ว่ามันไม่ใช่พาร์ทในทะเบียน */}
@@ -1732,10 +1739,12 @@ export default function LineSetup({ embedded = false } = {}) {
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                           {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 11, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
                         </div>
+                        {/* ⚠️ material_category เป็น "เลขประเภท" ไม่ใช่เลข MAT → ต้องใช้ classByDigit
+                            (matClassOf เข้มขึ้นแล้ว: ไม่ใช่เลข SAP 8 หลัก คืน null) */}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           {p.point_type === 'packaging'
                             ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
-                            : `${p.material_category ? `${matClassOf(p.material_category)?.short || `cat.${p.material_category}`} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
+                            : `${p.material_category ? `${classByDigit(p.material_category)?.short || `cat.${p.material_category}`} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
                           คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
                         </div>
                       </div>
