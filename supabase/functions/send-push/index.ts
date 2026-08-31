@@ -18,6 +18,7 @@ function routeFor(refTable?: string): string {
     case 'four_m_logs':  return '/event-log';
     case 'mtn_orders':   return '/mtn-repair';
     case 'downtime_logs':return '/daily-report';
+    case 'shift_schedules': return '/shift-organize';
     default:             return '/';
   }
 }
