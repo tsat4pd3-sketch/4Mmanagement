@@ -89,6 +89,55 @@ test('กรองตามประเภท: เทียบเลขตัว
   assert.equal(filterWipMatByCat(opts, '2', true).rows.length, 6);
 });
 
+/* ── รายการขั้นตอน (Operation) ────────────────────────────────────────────
+   OP อยู่เฉพาะใน dr_products (ห้ามเข้า parts_master) และ mat_no เป็น "ชื่อขั้นตอน"
+   ไม่ใช่เลข SAP → ห้ามตีความด้วย prefix และห้ามกรองทิ้ง (บัฟเฟอร์เก็บของหลัง OP นั้นจริง) */
+const OP_DR = [
+  ...DR,
+  { mat_no: '127 (M6 มีเกลียว)', name: 'ขับนัท M6', line_name: 'SUB APRON' },
+  { mat_no: 'E024 (M6 ไม่มีเกลียว)', name: 'ขับนัท M6 ไม่มีเกลียว', line_name: 'SUB APRON' },
+];
+const OP_MAP = {
+  '90031601': { parent: '10100385', seq: 10 },
+  '127 (M6 มีเกลียว)': { parent: '20058626', seq: 20 },
+  'E024 (M6 ไม่มีเกลียว)': { parent: null, seq: null },
+};
+
+test('OP โผล่ในลิสต์ (มีแต่ใน dr_products ไม่ได้อยู่ในทะเบียน) + ติดป้าย 🔩 OP', () => {
+  const opts = buildWipMatOptions(mergeMatRegistry(PM, OP_DR, OP_MAP), { line: 'SUB APRON', lines: LINES });
+  const op = opts.find(o => o.id === 'E024 (M6 ไม่มีเกลียว)');
+  assert.ok(op, 'รายการ OP ต้องเลือกได้');
+  assert.equal(op.isOp, true);
+  assert.equal(op.badge, '🔩 OP');
+  assert.match(op.sub, /ขั้นตอน \(OP\)/);
+  assert.match(op.sub, /ยังไม่ผูกพาร์ทจริง/, 'OP ที่ยังไม่ผูก parent ต้องบอก ไม่เงียบ');
+  assert.match(opts.find(o => o.id === '127 (M6 มีเกลียว)').sub, /OP 20 ของ 20058626/);
+});
+
+test('🔴 OP ห้ามถูกตีป้ายประเภทตาม prefix — "127 (M6 มีเกลียว)" ไม่ใช่ FG', () => {
+  const opts = buildWipMatOptions(mergeMatRegistry(PM, OP_DR, OP_MAP), { line: 'SUB APRON', lines: LINES });
+  const op = opts.find(o => o.id === '127 (M6 มีเกลียว)');
+  assert.notEqual(op.badge, 'FG', 'ขึ้นต้นด้วย 1 แต่เป็นงานขับนัท — ห้ามป้าย FG');
+  assert.equal(op.badge, '🔩 OP');
+  // พาร์ทจริงเบอร์ 1 ยังได้ป้ายประเภทปกติ
+  assert.notEqual(opts.find(o => o.id === '10100384').badge, '🔩 OP');
+});
+
+test('🔴 ตัวกรองประเภทต้องคง OP ไว้เสมอ (ไม่รู้ ≠ ไม่ใช่) + นับให้เห็น', () => {
+  const opts = buildWipMatOptions(mergeMatRegistry(PM, OP_DR, OP_MAP), { line: 'SUB APRON', lines: LINES });
+  const r = filterWipMatByCat(opts, '3'); // ซื้อนอกอย่างเดียว
+  assert.ok(r.rows.some(o => o.id === 'E024 (M6 ไม่มีเกลียว)'), 'OP ต้องไม่ถูกกรองทิ้ง');
+  assert.ok(r.rows.some(o => o.id === '30051864'), 'พาร์ท 3xx ยังอยู่');
+  assert.ok(!r.rows.some(o => o.id === '10100384'), 'พาร์ทจริงเบอร์ 1 ถูกกรองออกตามปกติ');
+  assert.equal(r.opKept, 3, 'ต้องบอกจำนวน OP ที่คงไว้ ให้จอเขียนอธิบายได้');
+});
+
+test('ไม่ส่ง opMap = พฤติกรรมเดิมเป๊ะ (migration ยังไม่ apply / query ล้ม)', () => {
+  const opts = buildWipMatOptions(mergeMatRegistry(PM, OP_DR), { line: 'SUB APRON', lines: LINES });
+  assert.ok(opts.every(o => !o.isOp));
+  assert.equal(filterWipMatByCat(opts, '3').opKept, 0);
+});
+
 test('ค้นได้ทั้งรหัส ชื่อ และไลน์ที่ผลิต', () => {
   const o = buildWipMatOptions(mergeMatRegistry(PM, DR), { line: 'Line 60', lines: LINES })
     .find(x => x.id === '90031601');

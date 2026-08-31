@@ -16,6 +16,7 @@ import LineFlowPanel from '../components/LineFlowPanel';
 import { MAT_CLASSES, matDigit, matClassOf, matMatches } from '../utils/matPrefix';
 import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat } from '../utils/wipMatOptions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { loadOpInfo } from '../utils/opItems';
 import SearchSelect from '../components/SearchSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -208,10 +209,11 @@ export default function LineSetup({ embedded = false } = {}) {
     [drProducts, lines, selectedLine, upstreamLines],
   );
   const wipMatCat = matDigit(wipForm.material_category);
-  const { rows: wipMatShown, hidden: wipMatHidden } = useMemo(
+  const { rows: wipMatShown, hidden: wipMatHidden, opKept: wipMatOpKept } = useMemo(
     () => filterWipMatByCat(wipMatOptions, wipMatCat, wipMatAllCat),
     [wipMatOptions, wipMatCat, wipMatAllCat],
   );
+  const wipMatIsOp = wipMatOptions.find(o => o.id === wipForm.mat_no)?.isOp;
 
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
@@ -307,13 +309,15 @@ export default function LineSetup({ embedded = false } = {}) {
         (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
             (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
        → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
-    const [{ data: pmRows }, { data: drPd }, { data: flRows }] = await Promise.all([
+    const [{ data: pmRows }, { data: drPd }, { data: flRows }, opMap] = await Promise.all([
       supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
       // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
       supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).not('mat_no', 'is', null),
       supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
+      // รายการขั้นตอน (OP) — ผ่าน util กลาง (cache ระดับ module · best-effort) เพื่อ "ติดป้าย" ไม่ใช่กรองทิ้ง
+      loadOpInfo(),
     ]);
-    setDrProducts(mergeMatRegistry(pmRows || [], drPd || []));
+    setDrProducts(mergeMatRegistry(pmRows || [], drPd || [], opMap));
     /* ไลน์ต้นน้ำที่ป้อนงานให้ไลน์นี้ (โหลดไม่ได้ = ไม่มีกลุ่ม "ต้นน้ำ" เฉยๆ ลิสต์ยังครบ)
        ⚠️ เทียบทั้งครอบครัวไลน์ ไม่ใช่ `familyLines` ของ machines (นั่นคือ ตัวเอง+ลูก สำหรับวางเครื่องบนผัง)
        — ป้อนงานให้ไลน์แม่ = ป้อนให้งานที่ไลน์ลูกทำด้วย */
@@ -1640,16 +1644,25 @@ export default function LineSetup({ embedded = false } = {}) {
                       {wipMatCat !== '' && wipMatHidden > 0 && (
                         <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
                           กรองด้วยประเภท {wipMatCat} · ซ่อน {wipMatHidden} รายการ
+                          {wipMatOpKept > 0 && ` · คง 🔩 รายการขั้นตอน (OP) ${wipMatOpKept} ตัวไว้ (ไม่มีเลข SAP จึงตอบไม่ได้ว่าประเภทไหน)`}
                           <button type="button" onClick={() => setWipMatAllCat(v => !v)}
                             style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 10.5, padding: 0, textDecoration: 'underline' }}>
                             {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
                           </button>
                         </div>
                       )}
-                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน) */}
-                      {wipForm.mat_no && wipMatCat && !matMatches(wipForm.mat_no, wipMatCat) && (
+                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน)
+                          ⚠️ ข้าม OP: mat_no เป็นชื่อขั้นตอน เอา prefix ไปตีความไม่ได้ (จะเตือนผิดทุกครั้ง) */}
+                      {wipForm.mat_no && wipMatCat && !wipMatIsOp && !matMatches(wipForm.mat_no, wipMatCat) && (
                         <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
                           ⚠ {wipForm.mat_no} ขึ้นต้นด้วย {matDigit(wipForm.mat_no) || '—'} ({matClassOf(wipForm.mat_no)?.label || 'ไม่รู้จัก'}) ไม่ตรงประเภทที่เลือก ({wipMatCat})
+                        </div>
+                      )}
+                      {/* เลือก OP = ตั้งใจได้ (บัฟเฟอร์เก็บของหลังขั้นนั้นจริง) แต่ต้องรู้ว่ามันไม่ใช่พาร์ทในทะเบียน */}
+                      {wipMatIsOp && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทในทะเบียน SAP · สโตร์ไม่มีของตัวนี้ให้เบิก
+                          จุดนี้จึงเป็น <b>บัฟเฟอร์ระหว่างขั้นในไลน์</b> (Min/Max ใช้ดูจังหวะงาน ไม่ใช่จุดสั่งเติมจากสโตร์)
                         </div>
                       )}
                     </>

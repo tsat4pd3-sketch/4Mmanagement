@@ -29,7 +29,7 @@ export const WIP_MAT_GROUPS = [
  * mat ที่มีใน dr_products แต่ยังไม่เข้าทะเบียน **ต้องไม่หาย** (ข้อมูลจริงยังมีเลขชั่วคราวอยู่)
  * @returns [{ mat_no, name, lines[] }] เรียงตาม mat_no
  */
-export function mergeMatRegistry(partsMaster = [], drProducts = []) {
+export function mergeMatRegistry(partsMaster = [], drProducts = [], opMap = {}) {
   const byMat = new Map();
   for (const p of partsMaster) {
     if (!p?.mat_no) continue;
@@ -41,6 +41,13 @@ export function mergeMatRegistry(partsMaster = [], drProducts = []) {
     if (!cur.name) cur.name = p.name || '';
     if (p.line_name && !cur.lines.includes(p.line_name)) cur.lines.push(p.line_name);
     byMat.set(p.mat_no, cur);
+  }
+  /* รายการขั้นตอน (Operation) — อยู่เฉพาะใน dr_products (กฎ: ห้ามเอา OP เข้าทะเบียน parts_master)
+     ⚠️ ต้อง "ติดป้าย" ไม่ใช่กรองทิ้ง: บัฟเฟอร์ระหว่างขั้นเก็บของหลัง OP นั้นๆ จริง
+     (90031601 = ชิ้นงาน HDF1 ที่รอเข้า LASER-345) — เป็นเนื้อหาหลักของจุด WIP เลยด้วยซ้ำ */
+  for (const [mat, info] of Object.entries(opMap || {})) {
+    const cur = byMat.get(mat);
+    if (cur) { cur.isOp = true; cur.opParent = info?.parent || null; cur.opSeq = info?.seq ?? null; }
   }
   return [...byMat.values()].sort((a, b) => String(a.mat_no).localeCompare(String(b.mat_no)));
 }
@@ -67,14 +74,20 @@ export function buildWipMatOptions(parts = [], { line, lines = [], upstreamLines
   family.add(line);
   return parts.map(p => {
     const r = rankMat(p, { line, family, upstream: upstreamLines });
+    /* ⚠️ mat_no ของรายการ OP เป็น "ชื่อขั้นตอน" ไม่ใช่เลข SAP → เอา prefix ไปตีความไม่ได้
+       ("127 (M6 มีเกลียว)" ขึ้นต้น 1 แต่ไม่ใช่ FG ส่งลูกค้า) · ติดป้าย 🔩 OP แทนป้ายประเภท */
+    const opSub = p.isOp
+      ? `🔩 ขั้นตอน (OP)${p.opSeq != null ? ` · OP ${p.opSeq}` : ''}${p.opParent ? ` ของ ${p.opParent}` : ' · ยังไม่ผูกพาร์ทจริง'}`
+      : '';
     return {
       id: p.mat_no,
       label: `${p.mat_no}${p.name ? ` — ${p.name}` : ''}`,
-      sub: p.lines.length ? `ผลิตที่ ${p.lines.join(' · ')}` : 'ไม่ได้ผูกไลน์ผลิต (พาร์ทซื้อนอก/วัตถุดิบ)',
-      badge: matClassOf(p.mat_no)?.short || matDigit(p.mat_no) || '—',
-      badgeColor: matColor(p.mat_no),
+      sub: [opSub, p.lines.length ? `ผลิตที่ ${p.lines.join(' · ')}` : (p.isOp ? '' : 'ไม่ได้ผูกไลน์ผลิต (พาร์ทซื้อนอก/วัตถุดิบ)')].filter(Boolean).join(' · '),
+      badge: p.isOp ? '🔩 OP' : (matClassOf(p.mat_no)?.short || matDigit(p.mat_no) || '—'),
+      badgeColor: p.isOp ? 'var(--accent2)' : matColor(p.mat_no),
       group: WIP_MAT_GROUPS[r],
-      keywords: `${p.mat_no} ${p.name} ${p.lines.join(' ')}`,
+      keywords: `${p.mat_no} ${p.name} ${p.lines.join(' ')}${p.isOp ? ` OP operation ขั้นตอน ${p.opParent || ''}` : ''}`,
+      isOp: !!p.isOp,
       _r: r,
     };
   }).sort((a, b) => a._r - b._r || a.id.localeCompare(b.id));
@@ -83,10 +96,18 @@ export function buildWipMatOptions(parts = [], { line, lines = [], upstreamLines
 /**
  * กรองตามประเภทวัสดุที่เลือก (เลขตัวแรกตัวเดียว — matMatches ทนค่าเก่า '200'/'300')
  * คืน `hidden` ไปด้วยเสมอ — จอต้องบอกว่าซ่อนไปกี่รายการ ห้ามหายเงียบ
+ *
+ * ⚠️ รายการ OP **ไม่เข้าตัวกรองประเภท — โชว์เสมอ** เพราะ mat_no ของมันเป็นชื่อขั้นตอน
+ * ไม่ใช่เลข SAP ⇒ ตอบไม่ได้ว่าเป็นประเภทไหน · กรองทิ้งคือการ *อ้าง* ว่าไม่ใช่ประเภทนั้น
+ * (หลักเดียวกับ "ไม่รู้ ≠ ไม่มี" ที่ใช้ทั้งระบบ) · จำนวนน้อย (~12 รายการ) จึงไม่รกจอ
  */
 export function filterWipMatByCat(options = [], cat, showAll = false) {
   const d = matDigit(cat);
-  if (!d || showAll) return { rows: options, hidden: 0 };
-  const rows = options.filter(o => matMatches(o.id, d));
-  return { rows, hidden: options.length - rows.length };
+  if (!d || showAll) return { rows: options, hidden: 0, opKept: 0 };
+  const rows = options.filter(o => o.isOp || matMatches(o.id, d));
+  return {
+    rows,
+    hidden: options.length - rows.length,
+    opKept: rows.filter(o => o.isOp).length,
+  };
 }
