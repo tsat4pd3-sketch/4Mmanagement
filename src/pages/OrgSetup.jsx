@@ -1,13 +1,30 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { UserContext } from '../App';
+import { can } from '../utils/permissions';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
+import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
+import LineSelect from '../components/LineSelect';
 
+import InfoMore from '../components/InfoMore';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
+  /* ⚠️ หน้านี้เคยเป็น admin-only ล้วน → หน่วยงานสนับสนุนที่ยังไม่มีแผนกในผัง
+     (เคสจริง 2026-08-24: `Planning&Store` มี 0 แผนก) ติดทางตัน — ระบบบอกให้มาเพิ่มที่นี่
+     แต่เข้าหน้านี้ไม่ได้ และ bucket `dept_admin` ปลดล็อก `page:*` ไม่ได้โดยดีไซน์
+     → เปิดหน้าให้ role สนับสนุน "ดูได้" + ให้ผู้ถือ `org:manage_own_unit`
+       **แก้ได้เฉพาะแผนก/กลุ่มใต้ส่วนงานของตัวเอง** (precedent เดียวกับ `shift_schedule:edit_dept`)
+     ⚠️ "ส่วนงานของฉัน" = `profiles.section` (คอลัมน์เดี่ยว) ห้ามใช้ `sections[]` — sections[] เป็น scope ทั้งระบบ
+     ⚠️ โครงบริษัทระดับ Section ยังเป็นของ admin เท่านั้น (เพิ่ม/แก้/ลบ section ไม่เปิดให้หน่วยงาน) */
+  const { role, section: myUnit } = useContext(UserContext);
+  const canDivisions = can('org', 'manage_divisions', role);
+  const isAdmin  = role === 'admin';
+  const canOwn   = can('org', 'manage_own_unit', role);   // ผ่าน bucket dept_admin ได้
   const [nodes, setNodes] = useState([]);
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +36,8 @@ export default function OrgSetup() {
   const [formCostCenter, setFormCostCenter] = useState('');
   const [formRefLineId, setFormRefLineId] = useState('');
   const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
+  const [formDivision, setFormDivision] = useState('');        // ฝ่าย — ติดที่ node ระดับบนสุด ลูกตกทอด
+  const [divReady, setDivReady] = useState(0);
   const [saving, setSaving] = useState(false);
   // ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup) — เก็บใน section_signers keyed by production_lines.section
   const [signersMap, setSignersMap] = useState({});   // sectionKey → {manager_name, ta_name, hrm_name}
@@ -53,6 +72,33 @@ export default function OrgSetup() {
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
+
+  /* id ของ section ที่ผู้ใช้สังกัด — เทียบทั้ง code และ name (บาง section ไม่มี code) */
+  const mySecId = useMemo(() => {
+    if (!myUnit) return null;
+    const k = String(myUnit).trim().toLowerCase();
+    const hit = sections.find(x => String(x.code || '').trim().toLowerCase() === k
+                               || String(x.name || '').trim().toLowerCase() === k);
+    return hit ? hit.id : null;
+  }, [sections, myUnit]);
+  /* แก้ได้ไหม — admin ทำได้ทุก node · ผู้ถือ manage_own_unit ทำได้เฉพาะแผนก/กลุ่มใต้ส่วนงานตัวเอง
+     (section เป็นโครงบริษัท ไม่เปิดให้หน่วยงานแก้ ป้องกันการเปลี่ยนชื่อ/ลบส่วนงานอื่นแล้ว cascade ทั้งระบบ) */
+  const canEditNode = (node) => {
+    if (isAdmin) return true;
+    if (!canOwn || !mySecId || !node) return false;
+    if (node.kind === 'department') return node.parent_id === mySecId;
+    if (node.kind === 'line') {
+      const dep = allDepts.find(d => d.id === node.parent_id);
+      return !!dep && dep.parent_id === mySecId;
+    }
+    return false;                       // section = admin เท่านั้น
+  };
+  const canAddDeptHere = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
+  const canAddLineHere = (deptId) => {
+    if (isAdmin) return true;
+    const dep = allDepts.find(d => d.id === deptId);
+    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
+  };
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
   const lineCostCenter = (node) => {
@@ -109,20 +155,28 @@ export default function OrgSetup() {
     setSgSaving(false);
   };
 
+  useEffect(() => { loadDivisions().then(() => setDivReady(v => v + 1)); }, []);
+
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
-    setFormLaborType('direct');
+    setFormLaborType('direct'); setFormDivision('');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
     setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(lineCostCenter(node));
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
-    setFormLaborType(node.labor_type || 'direct');
+    setFormLaborType(node.labor_type || 'direct'); setFormDivision(node.division || '');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
+    // guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ (โมดัลอาจถูกเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
+    if (!isAdmin) {
+      const okAdd = modal.editing ? canEditNode(modal.editing)
+        : (modal.kind === 'department' ? canAddDeptHere(modal.parentId) : modal.kind === 'line' ? canAddLineHere(modal.parentId) : false);
+      if (!okAdd) return toast.error('แก้ได้เฉพาะแผนก/กลุ่มใต้ส่วนงานของคุณ');
+    }
     // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
     const linkedLine = modal.kind === 'line' && !!formRefLineId;
     const linkedCC = linkedLine ? (lineById[String(formRefLineId)]?.cost_center || '') : '';
@@ -146,6 +200,8 @@ export default function OrgSetup() {
       // ประเภทแรงงาน — ตั้งได้ทั้ง section และ department (ช่างส่วนใหญ่อยู่ระดับแผนก)
       // พนักงาน derive จาก department ก่อน แล้ว section
       ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
+      // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
+      ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -198,6 +254,22 @@ export default function OrgSetup() {
         </p>
       </div>
 
+      {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
+      {!isAdmin && (
+        canOwn && mySecId ? (
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.07)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+            🛠️ คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
+          </div>
+        ) : canOwn && !mySecId ? (
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)', fontSize: 12, color: '#f59e0b', lineHeight: 1.6 }}>
+            ⚠️ บัญชีคุณมีสิทธิ์แก้ผังของหน่วยงานตัวเอง แต่ <b>ยังไม่ได้ตั้งว่าสังกัดส่วนงานไหน</b> จึงยังแก้อะไรไม่ได้
+            <div style={{ color: 'var(--muted)' }}>ให้ผู้ดูแลระบบตั้งช่อง <b>Section</b> ให้บัญชีนี้ที่ <b>ตั้งค่า → จัดการผู้ใช้งาน</b>{myUnit ? '' : ' (ตอนนี้ว่างอยู่)'}</div>
+          </div>
+        ) : (
+          <ReadOnlyNote permKey="org:manage_own_unit" what="แก้ผังองค์กรของหน่วยงานตัวเอง" />
+        )
+      )}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : (
@@ -206,7 +278,7 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>SECTION / ส่วน ({sections.length})</strong>
-              <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>
+              {isAdmin && <button className="tbtn" onClick={() => openCreate('section', null)} style={addBtnSt}>➕</button>}
             </div>
             <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
@@ -216,8 +288,9 @@ export default function OrgSetup() {
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
                   {s.cost_center && <CostBadge code={s.cost_center} />}
                   <LaborBadge type={s.labor_type} />
+                  <DivBadge node={s} nodes={nodes} />
                 </span>
-                <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+                {canEditNode(s) && <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {!sections.length && <Empty text="ยังไม่มี Section" />}
@@ -234,7 +307,9 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>DEPARTMENT / แผนก ({currentDepts.length})</strong>
-              <button className="tbtn" onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              {(selSection === ORPHAN ? isAdmin : canAddDeptHere(selSection)) && (
+                <button className="tbtn" onClick={() => selSection && openCreate('department', selSection === ORPHAN ? null : selSection)} disabled={!selSection} style={addBtnSt}>➕</button>
+              )}
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
@@ -243,8 +318,9 @@ export default function OrgSetup() {
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
                   {d.cost_center && <CostBadge code={d.cost_center} />}
                   <LaborBadge type={d.labor_type} />
+                  <DivBadge node={d} nodes={nodes} />
                 </span>
-                <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+                {canEditNode(d) && <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {selSection && !currentDepts.length && <Empty text="ยังไม่มีแผนกในนี้" />}
@@ -254,7 +330,9 @@ export default function OrgSetup() {
           <div style={colStyle} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <strong style={{ fontSize: 13, color: 'var(--text2)' }}>GROUP / กลุ่ม ({currentLines.length})</strong>
-              <button className="tbtn" onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
+              {canAddLineHere(selDept) && (
+                <button className="tbtn" onClick={() => selDept && openCreate('line', selDept)} disabled={!selDept} style={addBtnSt}>➕</button>
+              )}
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(false)}>
@@ -262,7 +340,7 @@ export default function OrgSetup() {
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
                   {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
                 </span>
-                <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />
+                {canEditNode(l) && <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
@@ -282,9 +360,11 @@ export default function OrgSetup() {
                     {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                   </button>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                  ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ — ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้ (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
-                </div>
+                <InfoMore size={11} style={{ marginBottom: 10 }} id="org_signers"
+                  lead={<>ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ</>}>
+                  ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้
+                  (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
+                </InfoMore>
                 {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                   <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4 }} /></div>
@@ -352,13 +432,29 @@ export default function OrgSetup() {
                   </div>
                 </div>
               )}
+              {['section', 'department'].includes(modal.kind) && (
+                <div>
+                  <label style={labelSt}>ฝ่าย (Division)</label>
+                  {/* gate ด้วย org:manage_divisions — คีย์นี้ถูกลงทะเบียนใน permission_catalog
+                      + ใช้เป็น RLS ของตาราง org_divisions อยู่แล้ว แต่ไม่เคยมีโค้ดฝั่ง UI เรียก
+                      = ติ๊กใน /permissions แล้วไม่มีผล (กฎ: ห้ามลงทะเบียน key ที่โค้ดไม่ใช้) */}
+                  <select value={formDivision} disabled={!canDivisions}
+                    onChange={e => setFormDivision(e.target.value)}>
+                    <option value="">— ตกทอดจากตัวแม่ / ยังไม่ระบุ —</option>
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
+                    {modal.parentId ? ' (ตัวนี้มีแม่อยู่แล้ว ปล่อยว่างได้)' : ''}
+                    {!canDivisions && ' · 🔒 ต้องมีสิทธิ์ org:manage_divisions ถึงแก้ได้'}
+                  </div>
+                </div>
+              )}
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                  <select value={formRefLineId} onChange={e => setFormRefLineId(e.target.value)}>
-                    <option value="">— ไม่ผูก —</option>
-                    {lines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                    placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -391,6 +487,24 @@ function CostBadge({ code }) {
   return (
     <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
+    </span>
+  );
+}
+
+/** ป้ายฝ่าย — ตัวที่ไม่ได้ติดเองจะโชว์ค่าที่ตกทอดจากแม่แบบจาง (ให้เห็นว่าผลลัพธ์จริงคืออะไร) */
+function DivBadge({ node, nodes }) {
+  const own = node.division || null;
+  const eff = own || divisionOfNode(node.id, nodes);
+  if (!eff) return null;
+  const m = divisionsSync().find(d => d.code === eff);
+  return (
+    <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
+      style={{
+        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 999,
+        border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
+        color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
+      }}>
+      {m?.icon} {m?.label || eff}{own ? '' : ' (ตกทอด)'}
     </span>
   );
 }

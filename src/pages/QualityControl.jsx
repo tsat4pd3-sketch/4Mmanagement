@@ -18,6 +18,7 @@ import {
   CartesianGrid, Tooltip, Legend, ReferenceLine, Cell, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchByIds } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
@@ -26,6 +27,7 @@ import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarch
 import { inSectionScope } from '../utils/sectionScope';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import MaterialRequests from '../components/MaterialRequests';
 import { nextDocNo } from '../utils/qaDocNo';
 import QaCheckSheet from '../components/QaCheckSheet';
 import PeChangeRequests from '../components/PeChangeRequests';
@@ -33,6 +35,7 @@ import QaClaims from '../components/QaClaims';
 import QualityBins from '../components/QualityBins';
 import CapaEffectiveness from '../components/CapaEffectiveness';
 import { VERDICTS as EFF_V } from '../utils/capaEffect';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -81,8 +84,21 @@ const stddev = a => {
 function computeSPC(rows, char) {
   const n = char?.subgroup_size || 1;
   const c = SPC_CONST[Math.min(Math.max(n, 1), 10)];
-  const groups = rows.map(r => (r.readings || []).map(Number).filter(v => Number.isFinite(v))).filter(g => g.length);
-  if (!groups.length) return null;
+  /* ⚠️ SPC ต้องการ subgroup ขนาด "คงที่ = n" — ค่าคงที่ A2/D3/D4/d2 ผูกกับ n ตัวเดียว
+     (QC audit 2026-08-20 · T1-7) เดิมรับทุกแถวไม่ตรวจความยาว → แถวที่ค่าน้อยกว่า n
+     (เช่นแถวค่าเดียวปนในชุด n=5) มี Range เล็กผิดปกติ ดึง R̄ ลง → σ_within เล็กเกิน
+     → Cpk เฟ้อทางเดียว (วัดจริง +52%) = false pass บนเลขที่รายงานลูกค้า
+     → ตัดแถวที่ขนาดไม่ตรง n ออกจากการคำนวณ แล้ว "รายงานจำนวนที่ตัด" (excluded) ห้ามตัดเงียบ
+     ⚠️ จับคู่ row↔group ไว้ด้วยกันก่อน filter — เดิม filter แค่ groups แล้ว points ไปอ่าน
+     rows[i].work_date ด้วย index ที่เลื่อน → จุดหลุด control limit โยงผิดวัน (T3-35) */
+  const paired = rows
+    .map(r => ({ r, g: (r.readings || []).map(Number).filter(v => Number.isFinite(v)) }))
+    .filter(x => x.g.length);
+  const kept = paired.filter(x => x.g.length === n);
+  const excluded = paired.length - kept.length;
+  const groups = kept.map(x => x.g);
+  const keptRows = kept.map(x => x.r);
+  if (!groups.length) return excluded > 0 ? { excluded, allExcluded: true } : null;
 
   const all = groups.flat();
   const xbars = groups.map(g => mean(g));
@@ -124,7 +140,7 @@ function computeSPC(rows, char) {
     idx: i + 1,
     xbar: +xbars[i].toFixed(4),
     range: ranges[i] != null ? +ranges[i].toFixed(4) : null,
-    date: rows[i].work_date,
+    date: keptRows[i].work_date,
     oocX: xbars[i] > uclX || xbars[i] < lclX,
     oocR: ranges[i] != null && uclR != null && (ranges[i] > uclR || ranges[i] < lclR),
     run: false,
@@ -141,7 +157,7 @@ function computeSPC(rows, char) {
 
   return {
     points, all, n, xbarbar, rbar, uclX, lclX, uclR, lclR,
-    sigmaWithin, sigmaOverall, cp, cpk, pp, ppk, oos, usl, lsl,
+    sigmaWithin, sigmaOverall, cp, cpk, pp, ppk, oos, usl, lsl, excluded,
   };
 }
 
@@ -297,10 +313,15 @@ function QualityDashboard() {
       if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
       const { data: ss } = await ssQ.order('work_date');
       const ids = (ss || []).map(s => s.id);
-      const [{ data: oo }, { data: dd }] = ids.length ? await Promise.all([
-        supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', ids),
-        supabaseDR.from('defect_logs').select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', ids),
-      ]) : [{ data: [] }, { data: [] }];
+      // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
+      //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
+      const [ooRes, ddRes] = await Promise.all([
+        fetchByIds(ids, c => supabaseDR.from('prod_orders')
+          .select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('defect_logs')
+          .select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', c)),
+      ]);
+      const oo = ooRes.rows, dd = ddRes.rows;
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
       let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed');
       if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);
@@ -355,13 +376,19 @@ function QualityDashboard() {
       const defBySession = new Map();
       // ⚠️ FTT/PPM = คุณภาพของไลน์ผลิต → ไม่นับ "งานทดลอง" (มาตรฐานเดียวกับ %Q ใน OEE · 2026-08-17)
       //    แต่พาเรโตประเภทของเสีย (addType) ยังนับครบทุกรายการ — งานทดลองก็เป็นของเสียจริงที่ต้องเห็น
+      /* ⚠️ ต้องแยก "กะนี้มีแถวของเสียไหม" ออกจาก "กะนี้มี NG ที่นับไหม"
+         เดิมใช้ defBySession.has() ตัดสิน → กะที่ของเสีย **ทุกแถว** เป็นงานทดลอง จะไม่มี key ใน Map
+         แล้วตกไป fallback s.qty_ng ซึ่งเป็น rollup ที่รวมงานทดลองไว้ครบ = ของที่เพิ่งกรองออก
+         กลับเข้ามาทางประตูหลัง (วัดแล้ว PPM สูงเกินจริงได้ถึง 10 เท่า) */
+      const sessHasDefect = new Set();
       shownDefects.forEach(d => {
+        sessHasDefect.add(d.session_id);
         if (!isTrialDefect(d)) defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + defectQty(d));
         addType(d);
       });
       shownSessions.forEach(s => {
         const t = s.actual_qty || 0;
-        const g = defBySession.has(s.id) ? defBySession.get(s.id) : (s.qty_ng || 0);
+        const g = sessHasDefect.has(s.id) ? (defBySession.get(s.id) || 0) : (s.qty_ng || 0);
         total += t; ng += g;
         addDate(s.work_date, t, g); addLine(s.line_name || '—', t, g);
       });
@@ -535,7 +562,11 @@ function SPCTab({ lineObjs, canRecord, canManage }) {
     setReadings(Array(sel?.subgroup_size || 1).fill(''));
   }, [selId, sel?.subgroup_size]);
 
-  const spc = useMemo(() => sel ? computeSPC(rows, sel) : null, [rows, sel]);
+  const spcRaw = useMemo(() => sel ? computeSPC(rows, sel) : null, [rows, sel]);
+  // แถวที่จำนวนค่าวัดไม่ตรง n ถูกตัดออกจากการคำนวณ (ค่าคงที่ SPC ผูกกับ n คงที่ —
+  // กลุ่มไม่เท่ากันทำ Cpk เฟ้อแบบ false pass) · allExcluded = ตัดหมดทุกแถว → ไม่มีอะไรคำนวณได้
+  const spc = spcRaw && !spcRaw.allExcluded ? spcRaw : null;
+  const spcExcluded = spcRaw?.excluded || 0;
 
   const hist = useMemo(() => {
     if (!spc || spc.all.length < 2) return [];
@@ -636,6 +667,19 @@ function SPCTab({ lineObjs, canRecord, canManage }) {
           </div>
         )}
       </div>
+
+      {sel && spcExcluded > 0 && (
+        <div style={{ ...cardSt, borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.07)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, color: '#f59e0b', marginBottom: 4 }}>
+            ⚠️ ตัดออก {spcExcluded} กลุ่มที่จำนวนค่าวัดไม่ตรง n={sel.subgroup_size}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+            ค่าคงที่ control chart (A2/D3/D4/d2) ผูกกับขนาด subgroup คงที่ — กลุ่มที่กรอกไม่ครบ/เกินจะทำ Cpk เพี้ยน จึงไม่ถูกนำมาคำนวณ
+            {spc ? ` (คำนวณจาก ${spc.points.length} กลุ่มที่ครบ n)` : ' — ทุกกลุ่มถูกตัดออก จึงยังคำนวณไม่ได้'}
+            {' '}· แก้โดยกรอกค่าวัดให้ครบ {sel.subgroup_size} ค่าต่อกลุ่ม หรือปรับ n ของจุดควบคุมให้ตรงกับที่วัดจริง
+          </div>
+        </div>
+      )}
 
       {sel && (
         <>
@@ -871,6 +915,16 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa }) {
       created_by: fullName || null,
     });
     if (error) { toast.error(`สร้าง NCR ไม่สำเร็จ: ${error.message}`); return; }
+    notifyEvent({
+      event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr',
+      line_name: f.line_name || null, actor: fullName,
+      lines: [
+        `📄 ${ncr_no} · ${f.severity === 'critical' ? '🔴 critical' : f.severity === 'major' ? '🟠 major' : '🟡 minor'}`,
+        `🏭 ไลน์: ${f.line_name || '—'} · พาร์ท: ${f.part_no.trim() || '—'}`,
+        `🚫 NG ${parseInt(f.qty_ng) || 0} / ตรวจ ${parseInt(f.qty_found) || 0}`,
+        `📝 ${f.defect_desc.trim()}`,
+      ],
+    });
     toast.success(`เปิด ${ncr_no} แล้ว ✓`);
     setCreateModal(null);
     load();
@@ -1154,6 +1208,17 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
       if (!error) toast.error('บันทึกแล้ว แต่ยังเก็บ "ผลวัดประสิทธิผล" ไม่ได้ — ยังไม่ได้ apply migration 20260818_capa_effectiveness (แจ้ง admin)');
     }
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+    // แจ้งเฉพาะตอน "เปิดใบใหม่" — แก้ระหว่างทาง/ปิดใบไม่ต้องเด้งซ้ำ
+    if (!f.id) notifyEvent({
+      event: 'qa_capa_opened', type: 'info', ref_table: 'qa_capa',
+      line_name: f.line_name || null, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${f.line_name || '—'} · พาร์ท: ${f.part_no || '—'}`,
+        f.d2_problem ? `📝 ${String(f.d2_problem).slice(0, 300)}` : '',
+        f.owner_name ? `🙋 ผู้รับผิดชอบ: ${f.owner_name}` : '',
+        f.due_date ? `📅 กำหนดเสร็จ: ${f.due_date}` : '',
+      ],
+    });
     toast.success(msg);
     setDetail(null);
     load();
@@ -1531,6 +1596,8 @@ const TABS = [
   // ถังเหลือง/แดง = บันทึกหน้ากล่องก่อนถึง NCR/Scrap (ฟอร์มกระดาษเดิม 2 ใบ · 2026-08-19)
   { key: 'bins',        icon: '🗑️', label: 'ถังเหลือง / ถังแดง' },
   { key: 'claims',      icon: '📮', label: 'เคลมลูกค้า' },
+  // ใบเบิกชิ้นงานไปทดสอบ (FM-STO-003) — ของที่ทดสอบแล้วถูกดึงเข้าใบรายงานของเสีย (2026-08-24)
+  { key: 'matreq',      icon: '📦', label: 'ใบเบิกทดสอบ' },
   { key: 'capa',        icon: '🛠', label: 'CAPA / 8D' },
   { key: 'instruments', icon: '📏', label: 'เครื่องมือวัด' },
 ];
@@ -1582,6 +1649,7 @@ export default function QualityControl() {
       {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}
       {tab === 'bins' && <QualityBins />}
+      {tab === 'matreq' && <MaterialRequests />}
       {tab === 'claims' && <QaClaims lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
     </div>

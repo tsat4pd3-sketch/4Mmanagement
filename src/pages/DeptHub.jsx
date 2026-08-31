@@ -1,15 +1,20 @@
-import { useState, useEffect, useRef, useContext, useMemo } from 'react';
+import { useState, useEffect, useRef, useContext, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { navItemsForGroups, UserContext } from '../App';
+import { navItemsForGroups, NAV_GROUP_META, NAV_GROUP_ORDER, UserContext } from '../App';
+import { topPaths } from '../utils/navRecent';
 import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
+import { positionLabel } from '../utils/positions';   // position เก็บเป็น key — แสดงต้องแปลงชื่อเสมอ
+import { canAccessPage } from '../utils/permissions';
+import { buildProfileMenu } from '../utils/profileMenu';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
 import { toast } from '../components/Toast';
-import { saveMyProfileMedia } from '../utils/profileSelf';
+import { uploadMyAvatar } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+const FeedbackModal = lazy(() => import('../components/FeedbackModal'));  // 💬 ช่องรับ feedback (ชุดเดียวกับ sidebar)
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 
@@ -101,13 +106,45 @@ const DEPT_CSS = `
   }
   .tele-tile { transition: transform 0.2s ease, border-color 0.2s ease; }
   /* กริดโมดูล — ใช้พื้นที่แนวนอนเต็มที่ (กฎ user 2026-07-14: ห้ามเหลือขอบข้างว่างเยอะ)
-     6 การ์ดจัดคอลัมน์ให้สมดุล: แคบ=auto · ≥1200px = 3 คอลัมน์ (2 แถว) · ≥1900px = 6 คอลัมน์แถวเดียว (จอ TV) */
+     9 การ์ด (= 9 หมวด sidebar) → ≥1200px จัด 3 คอลัมน์ ลงตัวพอดี 3×3
+     จำนวนการ์ดลดลงได้ตามสิทธิ์ของ role (การ์ดที่ไม่มีเมนูให้เข้าเลยถูกซ่อน) → auto-fill รับได้ */
   .hub-grid {
     display: grid; gap: clamp(12px, 1.6vw, 20px);
-    grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   }
-  @media (min-width: 1200px) { .hub-grid { grid-template-columns: repeat(4, 1fr); } }
-  @media (min-width: 1900px) { .hub-grid { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1200px) { .hub-grid { grid-template-columns: repeat(3, 1fr); } }
+  /* แถบค้นหา — คลิกแล้วเปิด CommandPalette ตัวเดียวกับ Ctrl+K ของหน้าอื่น (ไม่เขียนตัวค้นใหม่) */
+  .hub-search {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 10px 14px; border-radius: 10px; cursor: text;
+    background: var(--card); border: 1px solid var(--border2);
+    color: var(--muted); font-size: 14px; font-family: var(--font-body); text-align: left;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  @media (hover: hover) {
+    .hub-search:hover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(61,214,92,0.08); }
+  }
+  .star-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 13px; border-radius: 9px; cursor: pointer;
+    background: var(--card); border: 1px solid var(--border2);
+    color: var(--text2); font-size: 13px; font-weight: 700; font-family: var(--font-body);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+  @media (hover: hover) {
+    .star-chip:hover { transform: translateY(-2px); border-color: var(--accent); color: var(--text); }
+  }
+  .more-chip {
+    background: transparent; border: 1px dashed var(--border2); color: var(--muted);
+  }
+  /* จอสัมผัส: ชิปเมนูสูงจริง ~23px กดพลาดง่ายเมื่อใส่ถุงมือ — เพิ่ม padding ให้สูง ~34px
+     ⚠️ ใช้ padding (ขนาดจริง) ไม่ใช่ ::before ขยาย hit area แบบกฎกลางใน index.css
+     เพราะชิปเรียงห่างกันแค่ 6px → hit area 40px ของชิปข้างกันจะทับกันแล้วแย่งการกด
+     (และกฎกลางไม่ครอบอยู่แล้ว: button:not(:has(*)) ไม่จับปุ่มที่มี span ข้างใน) */
+  @media (pointer: coarse) {
+    .dept-chip { padding: 9px 12px; }
+    .star-chip { padding: 10px 14px; }
+  }
   /* มือถือ ≤768px: top bar (ชื่อ user/ธีม/ออกจากระบบ) เลิกลอย absolute — กลับเข้า flow ชิดขวา
      กันทับหัวข้อ (desktop ไม่เปลี่ยน: media ไม่ match) */
   @media (max-width: 768px) {
@@ -115,45 +152,44 @@ const DEPT_CSS = `
   }
 `;
 
-// 7 หมวดตรงกับกลุ่มเมนูใน sidebar (จัดหมวดใหม่ 2026-07-20) — เมนูย่อยบนการ์ดดึงจาก NAV_ITEMS ผ่าน navGroups อัตโนมัติ
-// (ห้ามพิมพ์รายชื่อเมนูซ้ำที่นี่ — เคยมี list มือแล้ว drift ไม่ตรงกับ sidebar)
-const DEPTS = [
-  {
-    key: 'production', code: 'PRD·01', label: 'Production', labelTh: 'ฝ่ายผลิต', icon: '🏭',
-    color: '#3dd65c', route: '/dashboard', navGroups: ['ภาพรวม', 'ฝ่ายผลิต'], available: true,
-    desc: 'เช็คชื่อ-PPE, จัดการไลน์ผลิต, Daily Report, OEE, Daily PM, ใบรายงานของเสีย',
-  },
-  {
-    key: 'logistic', code: 'LOG·02', label: 'Logistic & Store', labelTh: 'คลังวัสดุ & จัดส่ง', icon: '📦',
-    color: '#f59e0b', route: '/line-stock', navGroups: ['Logistic - Store'], available: true,
-    desc: 'Stock ในไลน์, Kanban Board, เรียกภาชนะ, Customer Demand',
-  },
-  {
-    key: 'maintenance', code: 'MTN·03', label: 'Inspection & Maintenance', labelTh: 'การตรวจสอบและซ่อมบำรุง', icon: '⚙️',
-    color: '#fb923c', route: '/pm-check?dept=maintenance', navGroups: ['การตรวจสอบและซ่อมบำรุง'], available: true,
-    desc: 'ตรวจสอบอุปกรณ์/เครื่องจักร, แผน PM, ซ่อมบำรุง & JIG',
-  },
-  {
-    key: 'qa', code: 'QUA·04', label: 'Quality QA/QC', labelTh: 'ควบคุมคุณภาพ', icon: '🔍',
-    color: '#4d9fff', route: '/qa', navGroups: ['ควบคุมคุณภาพ QA/QC'], available: true,
-    desc: 'Quality Control Center, มาตรฐานการตรวจ & Drawing, ใบรายงานของเสีย, CQI-15',
-  },
-  {
-    key: 'report', code: 'RPT·05', label: 'Analytics & Reports', labelTh: 'วิเคราะห์ & รายงาน', icon: '📋',
-    color: '#c084fc', route: '/report', navGroups: ['วิเคราะห์ & รายงาน'], available: true,
-    desc: 'OEE Analytics, รายงานเช็คชื่อ/สรุป, อนุมัติ 4M, จองรถ OT (PDF/CSV)',
-  },
-  {
-    key: 'people', code: 'HRM·06', label: 'People & Skills', labelTh: 'พนักงาน & ทักษะ', icon: '👥',
-    color: '#22d3ee', route: '/operator', navGroups: ['พนักงาน & ทักษะ'], available: true,
-    desc: 'ฐานข้อมูลพนักงาน, สกิล & Level Up, OJT, Skill Matrix, ตารางกะ',
-  },
-  {
-    key: 'settings', code: 'SET·07', label: 'Master Data & Settings', labelTh: 'ตั้งค่าโปรแกรม, ฐานข้อมูล', icon: '🛠️',
-    color: '#34d399', route: '/products', navGroups: ['ตั้งค่าโปรแกรม,ฐานข้อมูล'], available: true,
-    desc: 'Product Master, ผังไลน์, เครื่องจักร, ปฏิทิน, สิทธิ์, แจ้งเตือน',
-  },
-];
+/* ⚠️ กฎเหล็ก — "1 การ์ด = 1 หมวดใน sidebar" และรายการการ์ด **derive จาก NAV_GROUP_ORDER**
+   ห้ามพิมพ์รายชื่อหมวดเป็น array มือที่นี่ (2026-08-24)
+
+   ที่มา: เดิมการ์ดถูกเขียนมือ 7 ใบ แล้วยุบ 'ภาพรวม' เข้าการ์ดฝ่ายผลิต · พอเพิ่มหมวด
+   'วิศวกรรม (PE)' ทีหลัง **ไม่มีใครมาเพิ่มการ์ด** → `/pe-docs` เข้าจากหน้า Home ไม่ได้เลย
+   (เจอตอน review หน้า Home — ผู้ใช้บอก "หาหน้าไม่เจอ") · derive แล้วหมวดใหม่ได้การ์ดเอง
+   แม้ไม่มีใครมาเติม meta (ตกลงมาที่ไอคอน/สีสำรอง) — เทส home-coverage ล็อกไว้อีกชั้น
+
+   ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
+   ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
+const CARD_META = {
+  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/dashboard',    label: 'Overview & Control',      desc: 'จอผลิตรวม (TV) · งานค้างของส่วนงาน · ผังรวมโรงงาน · OEE รายไลน์' },
+  'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#22c55e', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
+  'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
+  'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
+  'Logistic - Store':         { code: 'LOG·05', color: '#f59e0b', route: '/line-stock',   label: 'Logistic & Store',        desc: 'สต๊อกในไลน์ · บอร์ดคัมบัง · ภาชนะ & Packaging · จัดส่งลูกค้า · ขนส่ง' },
+  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·06', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
+  'คุณภาพ & วิศวกรรม':        { code: 'QUA·07', color: '#4d9fff', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
+  'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·09', color: '#34d399', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
+  'ผู้บริหาร & เดโม':         { code: 'EXE·09', color: '#a78bfa', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
+};
+
+const DEPTS = NAV_GROUP_ORDER.map((group, i) => {
+  const m = CARD_META[group] || {};
+  return {
+    key: group,
+    group,
+    code: m.code || `MOD·${String(i + 1).padStart(2, '0')}`,
+    label: m.label || group,           // ชื่ออังกฤษบนหัวการ์ด (หมวดใหม่ที่ยังไม่ตั้ง = ใช้ชื่อหมวดไปก่อน)
+    labelTh: group,                    // ชื่อไทย = ชื่อหมวดใน sidebar เป๊ะ (ห้ามตั้งชื่อใหม่ให้ต่างจากเมนู)
+    icon: NAV_GROUP_META[group]?.icon || '📁',
+    color: m.color || '#94a3b8',       // ต้องเป็น hex — ใช้ต่อสตริง `${color}15` ทำพื้นชิป (CSS var ใช้ไม่ได้)
+    route: m.route,                    // ไม่ตั้ง = ใช้เมนูตัวแรกของหมวดที่ user เข้าได้ (คำนวณตอน render)
+    desc: m.desc || '',
+  };
+});
+
+const CHIP_CAP = 6;   // ชิปต่อการ์ดสูงสุด — ที่เหลือพับหลังปุ่ม "ดูทั้งหมด" (เดิม 15 ชิปใบเดียวจนอ่านไม่ออก)
 
 // ตัวเลขวิ่งขึ้นสู่ค่าจริง (count-up) — เอฟเฟกต์ตอนโหลด/ค่าเปลี่ยน ไม่ใช่ไฟกระพริบ (Andon §2 ไม่เกี่ยว)
 function useCountUp(target, dur = 700) {
@@ -178,10 +214,13 @@ function useCountUp(target, dur = 700) {
   return target == null ? null : val;
 }
 
-function TeleTile({ t }) {
+/* ตัวเลขบนแถบ telemetry ต้อง "กดต่อได้" — เห็นว่ามี Downtime ค้าง 3 จุดแล้วต้องไปดูได้ทันที
+   (เดิมเป็นป้ายอ่านอย่างเดียว ผู้ใช้ต้องไปไล่หาหน้าเองว่าดูที่ไหน)
+   ⚠️ ปลายทางต้องผ่าน canAccessPage — role ที่เข้าหน้านั้นไม่ได้ ให้เป็นป้ายเฉยๆ ห้ามพาไปแล้วโดนเด้ง */
+function TeleTile({ t, onGo }) {
   const shown = useCountUp(t.val);
-  return (
-    <div className="tele-tile" style={{ '--tc': t.color }}>
+  const body = (
+    <>
       <div className="scan" />
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : t.color, fontVariantNumeric: 'tabular-nums' }}>
@@ -190,9 +229,16 @@ function TeleTile({ t }) {
         <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{t.unit}</span>
       </div>
       <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{t.label}</div>
-      <div style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</div>
-    </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</span>
+        {onGo && <span style={{ fontSize: 11, color: t.color, marginLeft: 'auto' }}>↗</span>}
+      </div>
+    </>
   );
+  const style = { '--tc': t.color };
+  return onGo
+    ? <button type="button" className="tele-tile" style={{ ...style, cursor: 'pointer' }} onClick={onGo} title={t.goTitle}>{body}</button>
+    : <div className="tele-tile" style={style}>{body}</div>;
 }
 
 // work date เดียวกับกฎทั้งระบบ: ก่อน 08:00 นับเป็นวันก่อนหน้า (ห้าม toISOString)
@@ -203,41 +249,46 @@ function getWorkDate() {
 }
 
 export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, userRole, userPosition,
-  userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved }) {
+  userEmail, userAvatarUrl, onAvatarSaved, userSignatureUrl, onSignatureSaved,
+  realRole, onOpenViewAs, remoteCode, onToggleRemote, onOpenSearch, permsVersion }) {
   const navigate = useNavigate();
   // scope ของผู้ใช้ (DeptHub อยู่ใน UserContext.Provider ของ App แล้ว)
   const { lineId: userLineId, sections: userSections = [] } = useContext(UserContext);
 
-  // ── โปรไฟล์เมนู: เปลี่ยนรูป / ลายเซ็น / เปลี่ยนรหัสผ่าน (2026-07-14) ──
+  // ── โปรไฟล์เมนู: รายการมาจาก buildProfileMenu (utils/profileMenu.js) ชุดเดียวกับ sidebar ──
+  //    เดิมหน้านี้เขียนเมนูของตัวเองแล้ว drift (ขาด 💬 แจ้งปัญหา / 🎭 จำลองมุมมอง / รีโมทจอ)
   const [profileOpen, setProfileOpen] = useState(false);
   const [cropFile, setCropFile] = useState(null);
   const [sigOpen, setSigOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
+  const [fbOpen, setFbOpen] = useState(false);
   const fileRef = useRef(null);
 
   const onAvatarCropped = async (file) => {
     setCropFile(null);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('ยังไม่ได้เข้าสู่ระบบ'); return; }
-      const path = `${user.id}/avatar_${Date.now()}.jpg`;
-      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
-      if (upErr) throw upErr;
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
-      // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error (บั๊กเดียวกับลายเซ็น 2026-08-17)
-      const res = await saveMyProfileMedia('avatar_url', publicUrl);
-      if (!res.ok) throw new Error(res.message);
-      // ลบไฟล์เก่า best-effort หลัง DB update สำเร็จเท่านั้น (กฎ Storage E2) — เฉพาะโฟลเดอร์ตัวเอง
-      if (userAvatarUrl?.includes('/avatars/')) {
-        const old = decodeURIComponent(userAvatarUrl.split('/avatars/')[1] || '').split('?')[0];
-        if (old && old.startsWith(`${user.id}/`)) supabase.storage.from('avatars').remove([old]).catch(() => {});
-      }
-      onAvatarSaved?.(publicUrl);
-      toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
-    } catch (err) {
-      toast.error(`อัพโหลดรูปไม่สำเร็จ: ${err?.message || 'ลองใหม่อีกครั้ง'}`);
-    }
+    // helper กลาง (utils/profileSelf) — อัปโหลด + เขียน profiles ผ่าน RPC + ลบไฟล์เก่า
+    // ⚠️ ห้าม update profiles ตรง: RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error (บั๊กลายเซ็น 2026-08-17)
+    const res = await uploadMyAvatar(file, userAvatarUrl);
+    if (!res.ok) { toast.error(res.message); return; }
+    onAvatarSaved?.(res.url);
+    toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
   };
+
+  const profileItems = buildProfileMenu({
+    realRole: realRole ?? userRole,
+    canRemote: canAccessPage('/remote', userRole),
+    remoteCode, theme,
+    on: {
+      avatar:       () => fileRef.current?.click(),
+      signature:    () => setSigOpen(true),
+      password:     () => setPwdOpen(true),
+      feedback:     () => setFbOpen(true),
+      viewAs:       onOpenViewAs,
+      toggleRemote: onToggleRemote,
+      toggleTheme:  onToggleTheme,   // มีปุ่มธีมแยกข้างนอกด้วย (layout ของหน้านี้) — ในเมนูก็ต้องมีให้ครบชุด
+      logout:       onLogout,
+    },
+  });
 
   // นาฬิกา/กะสด — display เท่านั้น (ขอบกะตรง getCurrentShift: day 08:00–19:59)
   const [now, setNow] = useState(() => new Date());
@@ -293,25 +344,76 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
         const [s, a, m, dts] = await Promise.all([qs, qa, qm, fetchActiveDowntimes(scopeNames)]);
         if (!alive) return;
-        setTele({ lines: s.count ?? 0, present: a.count ?? 0, fourM: m.count ?? 0, dt: dts.list.length });
-      } catch { /* เงียบ — telemetry เป็นของเสริม */ }
+        // ⚠️ count query คืน { error, count: null } **ไม่ throw** → `?? 0` จะแปลง "โหลดไม่ได้"
+        //    เป็น "ไม่มีไลน์เดินเลย / ไม่มีคนมาเช็คชื่อ / Downtime 0 (เขียว)" ซึ่งเป็นคำกล่าวอ้างเท็จ
+        //    ส่ง null แทน → TeleTile แสดง "–" (รองรับอยู่แล้ว) = บอกว่า "ยังไม่รู้" ไม่ใช่ "เป็นศูนย์"
+        const num = (r) => (r?.error ? null : (r?.count ?? 0));
+        setTele({
+          lines: num(s), present: num(a), fourM: num(m),
+          dt: dts?.error ? null : dts.list.length,
+        });
+      } catch { if (alive) setTele({ lines: null, present: null, dt: null, fourM: null }); }
     };
     load();
     const stopPoll = visibleInterval(load, RATE.ANALYTIC);
     return () => { alive = false; stopPoll(); };
   }, [scopeNames, scopeLineIds]);
 
+  // ใบค้างเก่ากว่า 7 วัน default ของหน้ารายงาน → ส่ง from ย้อน 90 วันไปด้วย ไม่งั้นเปิดมาเจอจอว่าง
+  // (สัญญาของ /report: ?tab= เป็น "เลข index ของ TABS" · 4 = แท็บ 4M Changes — ดู CLAUDE.md)
+  const fourMLink = useMemo(() => {
+    const d = new Date(); d.setDate(d.getDate() - 90);
+    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return `/report?tab=4&from=${from}`;
+  }, []);
+
   const TELE = [
-    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   color: '#3dd65c', unit: 'ไลน์' },
-    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, color: '#4d9fff', unit: 'คน' },
-    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      color: tele.dt > 0 ? '#ef4444' : '#3dd65c', unit: 'จุด' },
-    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   color: tele.fourM > 0 ? '#f59e0b' : '#3dd65c', unit: 'รายการ' },
+    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   color: '#3dd65c', unit: 'ไลน์',
+      to: '/daily-report', goTitle: 'เปิด Daily Report — ดูกะที่เปิดอยู่' },
+    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, color: '#4d9fff', unit: 'คน',
+      to: '/checkin', goTitle: 'เปิดหน้าเช็คชื่อ & PPE' },
+    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      color: tele.dt > 0 ? '#ef4444' : '#3dd65c', unit: 'จุด',
+      to: '/dashboard', goTitle: 'เปิด Dashboard — แผง Andon เครื่องที่หยุดอยู่' },
+    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   color: tele.fourM > 0 ? '#f59e0b' : '#3dd65c', unit: 'รายการ',
+      to: fourMLink, goTitle: 'เปิดคิวอนุมัติ 4M (ย้อนหลัง 90 วัน)' },
   ];
 
   // ชิปเมนูย่อย = เมนูจริงจาก NAV_ITEMS (sidebar) กรองตามสิทธิ์ role — ตรงกับ sidebar เสมอ
-  const menuItemsOf = (d) => (d.navGroups ? navItemsForGroups(d.navGroups, userRole) : []);
+  const menuItemsOf = (d) => navItemsForGroups([d.group], userRole);
 
-  const openMenu = (e, d, to) => {
+  // อันดับ "ใช้บ่อย" ของเครื่องนี้ (navRecent · localStorage) — อ่านครั้งเดียวตอน mount ก็พอ
+  // ใช้ 2 ที่: เลือกว่าชิปไหนได้โผล่ก่อนเมื่อการ์ดมีเมนูเกิน CHIP_CAP · แถว ⭐ ใช้บ่อย ด้านบน
+  const [useRank] = useState(() => new Map(topPaths(40).map((p, i) => [p, i])));
+
+  /* ⚠️ deps ต้องมี permsVersion ด้วย — 2 memo นี้เรียก canAccessPage() ที่อ่าน permission cache
+     แบบ sync · App ยิง permsVersion ลงมาเมื่อ realtime แจ้งว่า role_permissions เปลี่ยน
+     ถ้าไม่ใส่ใน deps การ์ด/ชิปหน้า Home จะค้างเวอร์ชันเดิมจนกว่าจะ reload
+     ขณะที่ sidebar (คำนวณ inline) อัปเดตทันที = 2 ที่ไม่ตรงกันชั่วคราว */
+  const favItems = useMemo(() => {
+    const allowed = navItemsForGroups(NAV_GROUP_ORDER, userRole);
+    return topPaths(8).map(p => allowed.find(i => i.to === p)).filter(Boolean).slice(0, 6);
+  }, [userRole, permsVersion]);
+
+  const [expanded, setExpanded] = useState({});   // การ์ดไหนกาง "ดูทั้งหมด" อยู่
+
+  /** เลือกชิปที่โผล่: คัดด้วย "ใช้บ่อย" แต่ **เรียงตามลำดับเมนูเดิม** (ตำแหน่งชิปจะได้ไม่เต้นทุกวัน) */
+  const chipsOf = (d) => {
+    const items = menuItemsOf(d);
+    if (items.length <= CHIP_CAP) return { shown: items, hidden: [] };
+    const pick = new Set(
+      [...items].sort((a, b) => (useRank.get(a.to) ?? 999) - (useRank.get(b.to) ?? 999))
+        .slice(0, CHIP_CAP).map(i => i.to),
+    );
+    return { shown: items.filter(i => pick.has(i.to)), hidden: items.filter(i => !pick.has(i.to)) };
+  };
+
+  // การ์ดที่ role นี้เข้าไม่ได้สักเมนู = ไม่ต้องโชว์ (เดิมโชว์แล้วกดเข้าไปโดนเด้งกลับ)
+  const cards = useMemo(
+    () => DEPTS.map(d => ({ ...d, items: menuItemsOf(d) })).filter(d => d.items.length > 0),
+    [userRole, permsVersion],   // eslint-disable-line react-hooks/exhaustive-deps -- menuItemsOf อ่านจาก NAV_ITEMS (คงที่) + userRole
+  );
+
+  const openMenu = (e, to) => {
     e.stopPropagation(); // อย่าให้ card onClick ยิงซ้ำ
     navigate(to);   // rail/accordion ไฮไลต์+เปิดหมวดของหน้าปลายทางเองแล้ว ไม่ต้องสั่งโฟกัสหมวด
   };
@@ -346,7 +448,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 {/* จุดเขียว ONLINE นิ่ง+เรืองแสง */}
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 4px 1px rgba(61,214,92,0.6)' }} />
-                {userPosition ? `${userPosition} · ` : ''}{roleLabel(userRole)}
+                {/* ⚠️ position เก็บเป็น key ต้องผ่าน positionLabel() เสมอ ไม่งั้นขึ้น 'operator' ดิบ (กฎ CLAUDE.md) */}
+                {userPosition ? `${positionLabel(userPosition)} · ` : ''}{roleLabel(userRole)}
               </span>
             )}
           </div>
@@ -380,32 +483,45 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                       ? <img src={userAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--accent)' }}>{(userFullName || '?').trim().charAt(0)}</span>}
                   </div>
-                  <div style={{ minWidth: 0 }}>
+                  {/* เนื้อหาตัวตนชุดเดียวกับการ์ด user ใน sidebar: ชื่อ · ตำแหน่ง(แปลชื่อแล้ว)+อีเมล · ป้าย role */}
+                  <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userFullName || '—'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{roleLabel(userRole)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[positionLabel(userPosition), userEmail].filter(Boolean).join(' · ') || roleLabel(userRole)}
+                    </div>
                   </div>
+                  <span style={{
+                    fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
+                    background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.3)',
+                  }}>{userRole?.toUpperCase() || '—'}</span>
                 </div>
-                {[
-                  { icon: '📷', label: 'เปลี่ยนรูปโปรไฟล์', act: () => { setProfileOpen(false); fileRef.current?.click(); } },
-                  { icon: '✍️', label: 'ตั้งค่าลายเซ็น', act: () => { setProfileOpen(false); setSigOpen(true); } },
-                  { icon: '🔐', label: 'เปลี่ยนรหัสผ่าน', act: () => { setProfileOpen(false); setPwdOpen(true); } },
-                ].map(m => (
-                  <button key={m.label} onClick={m.act} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
-                    background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)',
-                    color: 'var(--text2)', fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
-                    fontFamily: 'var(--font-body)',
-                  }}>
-                    <span style={{ fontSize: 15 }}>{m.icon}</span>{m.label}
+                {/* รายการเมนู = descriptor ชุดเดียวกับ sidebar (utils/profileMenu.js) — ห้ามเติมปุ่มตรงนี้ */}
+                {profileItems.map(it => (
+                  <button key={it.key}
+                    onClick={() => {
+                      setProfileOpen(false);
+                      if (it.to) { navigate(it.to); return; }
+                      it.onClick?.();
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
+                      background: 'transparent', border: 'none',
+                      borderBottom: it.key === 'logout' ? 'none' : '1px solid var(--border)',
+                      color: it.color || 'var(--text2)', fontSize: 13, fontWeight: it.danger ? 700 : 600,
+                      cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)',
+                      justifyContent: it.kind === 'toggle' ? 'space-between' : 'flex-start',
+                    }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                      <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
+                    </span>
+                    {it.kind === 'toggle' && (
+                      <span style={{ width: 32, height: 18, borderRadius: 9, flexShrink: 0, position: 'relative', background: it.on ? 'var(--accent)' : 'var(--border2)', transition: 'background 0.25s' }}>
+                        <span style={{ position: 'absolute', top: 2, left: it.on ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.25s' }} />
+                      </span>
+                    )}
                   </button>
                 ))}
-                <button onClick={() => { setProfileOpen(false); onLogout?.(); }} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '11px 14px',
-                  background: 'transparent', border: 'none', color: '#ef4444', fontSize: 13, fontWeight: 700,
-                  cursor: 'pointer', textAlign: 'left', fontFamily: 'var(--font-body)',
-                }}>
-                  <span style={{ fontSize: 15 }}>🚪</span>ออกจากระบบ
-                </button>
               </div>
             </>
           )}
@@ -446,6 +562,19 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         <p style={{ margin: '8px 0 0', fontSize: 'clamp(13px, 2vw, 15px)', color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
           ศูนย์ควบคุมโรงงานอัจฉริยะ · Thai Summit Group — เลือกส่วนงานเพื่อเริ่มทำงาน
         </p>
+
+        {/* 🔎 ค้นหาเมนู — หน้า Home เคยเป็นหน้าเดียวในระบบที่ค้นหาไม่ได้ (หน้าอื่นมี Ctrl+K/ช่องค้นใน drawer)
+            ทั้งที่มีเมนู 58 รายการ 9 หมวด · เปิด CommandPalette ตัวเดียวกับหน้าอื่น ไม่เขียนตัวค้นใหม่ */}
+        {onOpenSearch && (
+          <button type="button" className="hub-search" onClick={onOpenSearch}
+            style={{ maxWidth: 460, marginTop: 14 }}>
+            <span style={{ fontSize: 15 }}>🔎</span>
+            <span style={{ flex: 1 }}>ค้นหาเมนู… (เช่น ซ่อม, oee, สต๊อก)</span>
+            <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+              Ctrl K
+            </span>
+          </button>
+        )}
         </div>
 
         {/* นาฬิกา + กะ — readout สด (ชิดขวาบนจอกว้าง) */}
@@ -481,39 +610,70 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>refresh 60s</span>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {TELE.map(t => <TeleTile key={t.key} t={t} />)}
+          {TELE.map(t => (
+            <TeleTile key={t.key} t={t}
+              onGo={t.to && canAccessPage(t.to.split('?')[0], userRole) ? () => navigate(t.to) : undefined} />
+          ))}
         </div>
       </div>
 
+      {/* ── ⭐ ใช้บ่อยของเครื่องนี้ — ไม่มีสถิติ (เครื่องใหม่) = ไม่โชว์บล็อกเปล่า
+             หลักเดียวกับ ⭐ บน rail/drawer ของ sidebar (navRecent ชุดเดียวกัน) ── */}
+      {favItems.length > 0 && (
+        <div style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(18px, 2.4vw, 26px)', animation: 'hub-fade-up 0.6s ease 0.1s both' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
+              ⭐ ใช้บ่อย
+            </span>
+            <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>this device</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {favItems.map(it => (
+              <button key={it.to} type="button" className="star-chip" onClick={() => navigate(it.to)} title={it.group}>
+                <span style={{ fontSize: 15 }}>{it.icon}</span>{it.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Module Grid ── */}
       <div className="hub-grid" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)' }}>
-        {DEPTS.map((d, i) => (
+        {cards.map((d, i) => {
+          const { shown, hidden } = chipsOf(d);
+          const open = !!expanded[d.key];
+          const chips = open ? d.items : shown;
+          const route = d.route || d.items[0].to;   // ไม่ตั้ง route = เข้าเมนูตัวแรกที่ user เข้าได้
+          return (
           <div
             key={d.key}
-            className={`smart-card ${d.available ? 'active' : 'soon'}`}
-            style={{ '--mc': d.color, animation: `hub-fade-up 0.55s ease ${0.12 + 0.07 * i}s both` }}
-            onClick={() => {
-              if (!d.available) return;
-              navigate(d.route);
-            }}
+            className="smart-card active"
+            style={{ '--mc': d.color, animation: `hub-fade-up 0.55s ease ${0.12 + 0.06 * i}s both` }}
+            onClick={() => navigate(route)}
+            /* การ์ดทั้งใบเป็นจุดคลิก (ของเดิม) — เป็น div เพราะข้างในมีปุ่มชิป ซ้อน <button> ไม่ได้
+               จึงต้องใส่ role/tabIndex/onKeyDown เองให้คีย์บอร์ดเข้าถึงได้ */
+            role="button" tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(route); } }}
+            aria-label={`${d.label} — ${d.labelTh}`}
           >
             <div className="edge" />
 
-            {/* แถวบน: รหัสโมดูล + สถานะ */}
+            {/* แถวบน: รหัสโมดูล + จำนวนหน้าที่ user คนนี้เข้าได้จริง */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: d.color, opacity: 0.9 }}>
                 {d.code}
               </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: d.available ? 'var(--text2)' : 'var(--muted)' }}>
-                {/* ไฟสถานะนิ่ง+เรืองแสง (ไม่กระพริบ) */}
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.available ? '#3dd65c' : 'var(--muted2)', boxShadow: d.available ? '0 0 5px 1px rgba(61,214,92,0.6)' : 'none' }} />
-                {d.available ? 'ONLINE' : 'SOON'}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text2)' }}>
+                {/* ไฟสถานะนิ่ง+เรืองแสง (ไม่กระพริบ — กระพริบสงวนให้ Andon แดง) */}
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 5px 1px rgba(61,214,92,0.6)' }} />
+                {d.items.length} หน้า
               </span>
             </div>
 
             {/* ไอคอน + ชื่อ */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <span style={{ fontSize: 30, lineHeight: 1, filter: d.available ? 'none' : 'grayscale(1)' }}>{d.icon}</span>
+              <span style={{ fontSize: 30, lineHeight: 1 }}>{d.icon}</span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {d.label}
@@ -525,26 +685,34 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             </div>
 
             {/* คำอธิบาย */}
-            <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginBottom: menuItemsOf(d).length > 0 ? 12 : 0, fontFamily: 'var(--font-body)' }}>
-              {d.desc}
-            </div>
-
-            {/* ชิปเมนูจริงจาก sidebar (NAV_ITEMS) — คลิกเข้าหน้านั้นได้เลย */}
-            {menuItemsOf(d).length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {menuItemsOf(d).map(item => (
-                  <button key={item.to} type="button" className="dept-chip"
-                    title={`เปิด ${item.label}`}
-                    onClick={e => openMenu(e, d, item.to)}
-                    style={{ background: `${d.color}15`, color: d.color, border: `1px solid ${d.color}30` }}>
-                    <span style={{ fontSize: 12 }}>{item.icon}</span>
-                    {item.label}
-                  </button>
-                ))}
+            {d.desc && (
+              <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 12, fontFamily: 'var(--font-body)' }}>
+                {d.desc}
               </div>
             )}
+
+            {/* ชิปเมนูจริงจาก sidebar (NAV_ITEMS) — คลิกเข้าหน้านั้นได้เลย
+                เกิน CHIP_CAP = พับไว้หลังปุ่ม "ดูทั้งหมด" (ห้ามซ่อนเงียบ — ต้องบอกจำนวนที่พับ) */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {chips.map(item => (
+                <button key={item.to} type="button" className="dept-chip"
+                  title={`เปิด ${item.label}`}
+                  onClick={e => openMenu(e, item.to)}
+                  style={{ background: `${d.color}15`, color: d.color, border: `1px solid ${d.color}30` }}>
+                  <span style={{ fontSize: 12 }}>{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+              {hidden.length > 0 && (
+                <button type="button" className="dept-chip more-chip"
+                  onClick={e => { e.stopPropagation(); setExpanded(s => ({ ...s, [d.key]: !open })); }}>
+                  {open ? '▲ ย่อ' : `▾ ดูทั้งหมด (${hidden.length})`}
+                </button>
+              )}
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* input เลือกรูปโปรไฟล์ (ซ่อน) → ImageCropModal crop วงกลม + บีบอัตโนมัติ */}
@@ -557,6 +725,11 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       <SignatureModal open={sigOpen} onClose={() => setSigOpen(false)}
         currentSignatureUrl={userSignatureUrl} onSaved={(url) => onSignatureSaved?.(url)} />
       <ChangePasswordModal open={pwdOpen} onClose={() => setPwdOpen(false)} userEmail={userEmail} />
+      {fbOpen && (
+        <Suspense fallback={null}>
+          <FeedbackModal onClose={() => setFbOpen(false)} />
+        </Suspense>
+      )}
 
       {/* ── Footer ── */}
       <div style={{

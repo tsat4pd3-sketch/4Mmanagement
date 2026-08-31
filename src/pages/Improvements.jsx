@@ -1,33 +1,41 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import resizeImg from '../utils/resizeImage';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyIds } from '../utils/lineHierarchy';
+import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
+import { normCode } from '../utils/qrCode';
+import { fetchByIds } from '../utils/fetchByIds';
 import { fmtDate } from '../utils/dateFormat';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
+import PeChangeRequests from '../components/PeChangeRequests';
+import { notifyEvent } from '../utils/notifyEvent';
+
+/* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
+   เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
+   — เป็น "ข้อมูล" ต่อขั้น ไม่ derive จากชื่อขั้น (ขั้นแก้ชื่อ/เพิ่มเองได้ เดาจากชื่อ = พังเงียบ)
+   · check = จุดที่ระบบเทียบผลก่อน/หลังจากข้อมูลจริงให้อัตโนมัติ (แผงผลบนการ์ดคือขั้น C ของโปรเจค)
+   · จังหวะ "เริ่มลงมือแก้จริง" ของโปรเจคผูกกับการติ๊กเริ่มขั้น phase='do' (ดู cycleMilestone) */
+/* หลังแก้ต้องมี "วันผลิตจริง" อย่างน้อยเท่านี้ ถึงสรุป "ประหยัดจริง" ได้ (เกณฑ์เดียวกับ capaEffect.js)
+   — หลังแก้ 0-1 วันแล้วลด 100% คือคำกล่าวอ้างที่ยังพิสูจน์ไม่ได้ ระหว่างรอให้โชว์ "เพดานประหยัด" จาก baseline แทน */
+const MIN_AFTER_DAYS = 5;
+
+const PHASES = {
+  plan:  { s: 'P', label: 'Plan — วิเคราะห์สาเหตุ/วางแผน', c: '#4d9fff' },
+  do:    { s: 'D', label: 'Do — ลงมือแก้ (จุดตั้งวันเริ่มแก้จริง)', c: '#f59e0b' },
+  check: { s: 'C', label: 'Check — ติดตามผล (ระบบเทียบข้อมูลจริงให้อัตโนมัติ)', c: '#22c55e' },
+  act:   { s: 'A', label: 'Act — สรุปผล/จัดทำมาตรฐาน (อัปเดตเอกสาร PE)', c: '#a855f7' },
+};
 
 /* ── helpers ─────────────────────────────────────────────────── */
 
 // รูปหลักฐาน before/after — บีบก่อนอัปโหลดตามกติกา CLAUDE.md "Storage & รูปภาพ" (ห้ามส่งรูปดิบ)
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 const todayStr = () => {
   const d = new Date();
@@ -49,6 +57,29 @@ const removeImpImage = (url) => {
   if (p) supabaseDR.storage.from('improvement-images').remove([p]).catch(() => {});
 };
 
+/* หมายเลขเครื่องใน downtime_logs/mtn_orders เป็นข้อความที่คนพิมพ์ — มี "RB- 107" ปนกับ "RB-107"
+   ทุกจุดที่เทียบเครื่องในหน้านี้ต้องเทียบผ่าน normCode (ตัดช่องว่าง/ขีด + uppercase)
+   ไม่งั้น dropdown แสดงค่าไม่ได้ + ผลก่อน/หลังนับตกหล่นเงียบๆ (feedback 2026-08-19) */
+const sameMc = (a, b) => normCode(a) === normCode(b);
+
+/** ช่วงที่พาเรโต้ในโมดัลนับอยู่ — ต้องเขียนกำกับใน optgroup ไม่งั้นคนอ่านไม่รู้ว่า "เคยเกิด" นับจากกี่วัน */
+const modalDaysLabel = (m) => `ย้อนหลัง ${Number(m?.baseline_days) || 30} วัน`;
+
+/**
+ * ดัชนี "ปัญหา → เครื่อง/สินค้าที่เคยเกิดจริง" จากผลรวมพาเรโต้
+ *
+ * ⚠️ ต้องสร้างจาก **ผลรวมทั้งหมด** ไม่ใช่ rows ที่ slice(0,10) ไปโชว์บนจอ —
+ *    ไม่งั้นเครื่องอันดับ 11+ หายจาก dropdown ทั้งที่ระบบมีข้อมูลว่าเคยเกิดจริง (ตัดเงียบ)
+ * ใช้ "เสนอ" ลำดับใน dropdown เท่านั้น — ไม่บังคับ/ไม่ตัดตัวเลือกอื่นทิ้ง (คนตัดสินเอง
+ * เพราะปัญหาอาจเพิ่งย้ายไปเกิดที่เครื่องใหม่ที่ยังไม่มีประวัติ)
+ */
+const buildParetoIndex = (all, keyOf) => {
+  const m = {};
+  for (const r of all) (m[keyOf(r)] ||= []).push(r);
+  Object.values(m).forEach(list => list.sort((a, b) => b.value - a.value));
+  return m;
+};
+
 const STATUS_META = {
   monitoring: { label: '👁 กำลังติดตามผล', color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
   done:       { label: '✅ สำเร็จ',          color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
@@ -59,6 +90,7 @@ const EMPTY_FORM = {
   id: null, title: '', line_name: '', machine_no: '', mat_no: '',
   problem_source: 'downtime', problem_type_id: '', problem_label: '',
   description: '', action_taken: '', start_date: todayStr(), baseline_days: 30,
+  target_mode: 'pct', target_value: '',
   invest_cost: '',
 };
 
@@ -83,15 +115,27 @@ export default function Improvements() {
   const [ccRates, setCcRates] = useState([]);          // cost_center_rates (Main — ตั้งที่ /org-setup)
   const [partCostByMat, setPartCostByMat] = useState({}); // mat_no -> {material_cost, standard_cost}
   const [workDaysMonth, setWorkDaysMonth] = useState(22); // วันทำงาน/เดือน จากปฏิทินบริษัท (แปลง บาท/วัน → บาท/เดือน)
-  // ก้อน rate ที่นับเป็น saving (DL/OH/DP) — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · จำต่อเครื่อง
+  // ก้อน rate ที่นับเป็น saving (DL/DP/IDP/OH) + ก้อนที่ 5 "ค่าซ่อมจริง" — นโยบายบัญชีบางที่
+  // ไม่นับ DP (sunk cost) · จำต่อเครื่อง
+  // ⚠️ ค่าซ่อมจริง (ช่างกรอกในใบ MO) กับ IDP (SAP คำนวณ — ค่าเสื่อมทางอ้อม "รวมค่าซ่อม")
+  //    เป็นคนละแหล่งข้อมูล user ยืนยัน 2026-08-20 ว่าไม่ตัดตัวไหนออก แต่เปิดทั้งคู่อาจนับ
+  //    ทับซ้อนบางส่วน → ทำเป็น toggle ให้เลือกตามนโยบายบัญชี + เขียนกำกับ (QC audit · ข้อ 4)
+  // key เก็บใหม่ imp_cost_comps2 — ค่าเดิม (ไม่มี 'repair') migrate โดยเติม repair ให้
+  // ครั้งเดียว = พฤติกรรมเดิมเป๊ะ (เดิม repairPerDay ถูกบวกเสมอไม่มีสวิตช์)
+  const COMP_KEYS = [...RATE_COMPONENTS.map(c => c.key), 'repair'];
   const [costComps, setCostComps] = useState(() => {
-    try { const v = JSON.parse(localStorage.getItem('imp_cost_comps')); return Array.isArray(v) && v.length ? v : ['dl', 'oh', 'dp']; }
-    catch { return ['dl', 'oh', 'dp']; }
+    try {
+      const v2 = JSON.parse(localStorage.getItem('imp_cost_comps2'));
+      if (Array.isArray(v2) && v2.length) return v2;
+      const v1 = JSON.parse(localStorage.getItem('imp_cost_comps'));
+      if (Array.isArray(v1) && v1.length) return [...new Set([...v1, 'repair'])];
+    } catch { /* ตกไปใช้ default */ }
+    return COMP_KEYS;
   });
   const toggleComp = (key) => setCostComps(prev => {
     const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
     if (!next.length) return prev; // ต้องเหลืออย่างน้อย 1 ก้อน
-    localStorage.setItem('imp_cost_comps', JSON.stringify(next));
+    localStorage.setItem('imp_cost_comps2', JSON.stringify(next));
     return next;
   });
 
@@ -100,7 +144,9 @@ export default function Improvements() {
   const [beforeFile, setBeforeFile] = useState(null);
   const [afterFile, setAfterFile] = useState(null);
   const [pareto, setPareto] = useState({ loading: false, rows: [] });
-  const [closeModal, setCloseModal] = useState(null);  // { imp, note } ตอนกดปิดจ๊อบ
+  const [closeModal, setCloseModal] = useState(null);  // { imp, note, peImpact } ตอนกดปิดจ๊อบ
+  const [doModal,    setDoModal]    = useState(null);  // { imp, action, date } จังหวะ "เริ่มลงมือแก้จริง" (ขั้น Do)
+  const [peModal,    setPeModal]    = useState(null);  // imp — เสนอ/ดูคำขอแก้เอกสาร PE (PFMEA/CP) ของโปรเจคนี้
   // milestone/Gantt ต่อโปรเจค (คำสั่ง user 2026-07-14: ตามงานโปรเจคทีมแบบ gantt ไม่ใช่ฟอร์มทีเดียวจบ)
   const [msByImp, setMsByImp] = useState({});          // improvement_id -> [milestones]
   const [ganttOpen, setGanttOpen] = useState({});      // improvement_id -> bool
@@ -116,13 +162,15 @@ export default function Improvements() {
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').eq('is_active', true).order('sort_order'),
+      // equipment_kind: แยกแม่พิมพ์ (262 ตัว) ออกจากเครื่องจักร ไม่งั้นปนใน dropdown เลือกเครื่อง
+      // (กฎเดียวกับ /machine-database ที่ default กรอง equipment_kind='machine')
+      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       // cycle_time_sec: conversion cost ของเสีย = rate × CT/3600
       supabaseDR.from('dr_products').select('id, name, mat_no, line_name, cycle_time_sec').eq('is_active', true).order('name'),
       supabaseDR.from('improvement_milestones').select('*').order('sort_order').order('created_at'),
       supabaseDR.from('mtn_problem_types').select('characteristic').eq('is_active', true).order('sort_order'),
       // ใบซ่อม MO (ไม่รวมที่ถูก reject) — ใช้วัดผล/พาเรโต้/cross-ref · labor_cost/parts_cost = ค่าซ่อมจริง → cost saving
-      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost').neq('status', 'rejected').limit(4000),
+      supabaseDR.from('mtn_orders').select('id, line_name, machine_no, item_type, problem_characteristic, report_at, repair_done_at, work_date, status, labor_cost, parts_cost, source_downtime_id').neq('status', 'rejected').limit(4000),
       // 2 ตัวล่างเป็น best-effort (migration cost saving ยังไม่ apply = แผง 💰 ขึ้น "ยังตั้งต้นทุนไม่ครบ" — หน้าหลักไม่พัง)
       supabase.from('cost_center_rates').select('*'),
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true),
@@ -174,26 +222,39 @@ export default function Improvements() {
     const span = Math.max(7, imp.baseline_days || 30);
     const seg = (a, b) => ({ planned_start: addDays(imp.start_date, Math.round(span * a)), planned_end: addDays(imp.start_date, Math.round(span * b)) });
     const rows = [
-      { title: '1. วิเคราะห์สาเหตุ (Plan)',        ...seg(0, 0.1) },
-      { title: '2. วางแผน/เตรียมการแก้ไข',        ...seg(0.1, 0.25) },
-      { title: '3. ดำเนินการแก้ไข (Do)',           ...seg(0.25, 0.5) },
-      { title: '4. ติดตามผลจากข้อมูลจริง (Check)', ...seg(0.5, 0.9) },
-      { title: '5. สรุปผล/จัดทำมาตรฐาน (Act)',     ...seg(0.9, 1) },
+      { title: '1. วิเคราะห์สาเหตุ (Plan)',        phase: 'plan',  ...seg(0, 0.1) },
+      { title: '2. วางแผน/เตรียมการแก้ไข',        phase: 'plan',  ...seg(0.1, 0.25) },
+      { title: '3. ดำเนินการแก้ไข (Do)',           phase: 'do',    ...seg(0.25, 0.5) },
+      { title: '4. ติดตามผลจากข้อมูลจริง (Check)', phase: 'check', ...seg(0.5, 0.9) },
+      { title: '5. สรุปผล/จัดทำมาตรฐาน (Act)',     phase: 'act',   ...seg(0.9, 1) },
     ].map((r, i) => ({ ...r, improvement_id: imp.id, sort_order: i }));
-    await supabaseDR.from('improvement_milestones').insert(rows).then(() => {}, () => {});
+    const { error } = await supabaseDR.from('improvement_milestones').insert(rows);
+    if (error) {
+      // ยังไม่ apply migration phase (42703) → seed แบบไม่มีเฟสให้แผนยังเกิด แต่ต้องบอก ห้ามเงียบ
+      const { error: e2 } = await supabaseDR.from('improvement_milestones')
+        .insert(rows.map(({ phase: _p, ...r }) => r));
+      if (!e2) toast.error('สร้างแผนได้ แต่ป้ายเฟส PDCA ยังบันทึกไม่ได้ — ยังไม่ apply migration 20260819_improvement_milestone_phase (แจ้ง admin)');
+    }
     reloadMilestones(imp.id);
   };
   const addMilestone = async (impId) => {
     const d = msDraft[impId] || {};
     if (!d.title?.trim()) { toast.error('กรอกชื่อขั้นงานก่อน'); return; }
     const cur = msByImp[impId] || [];
-    const { error } = await supabaseDR.from('improvement_milestones').insert({
+    const row = {
       improvement_id: impId, title: d.title.trim(), assignee: d.assignee?.trim() || null,
       planned_start: d.planned_start || null, planned_end: d.planned_end || null,
-      sort_order: cur.length,
-    });
-    if (error) { toast.error(error.message); return; }
-    setMsDraft(prev => ({ ...prev, [impId]: { title: '', assignee: '', planned_start: '', planned_end: '' } }));
+      sort_order: cur.length, phase: d.phase || null,
+    };
+    let { error } = await supabaseDR.from('improvement_milestones').insert(row);
+    if (error) {
+      // คอลัมน์ phase ยังไม่มี (42703) → ลงแบบไม่มีเฟส + บอก (ห้ามเงียบ)
+      const { phase: _p, ...noPhase } = row;
+      ({ error } = await supabaseDR.from('improvement_milestones').insert(noPhase));
+      if (error) { toast.error(error.message); return; }
+      if (d.phase) toast.error('เพิ่มขั้นได้ แต่ป้ายเฟส PDCA ยังบันทึกไม่ได้ — ยังไม่ apply migration 20260819_improvement_milestone_phase (แจ้ง admin)');
+    }
+    setMsDraft(prev => ({ ...prev, [impId]: { title: '', assignee: '', planned_start: '', planned_end: '', phase: '' } }));
     reloadMilestones(impId);
   };
   // คลิกสถานะ = วนขั้น todo → doing → done (stamp วันปิดจริงตอน done)
@@ -203,6 +264,32 @@ export default function Improvements() {
       .update({ status: next, done_at: next === 'done' ? todayStr() : null }).eq('id', m.id);
     if (error) { toast.error(error.message); return; }
     reloadMilestones(m.improvement_id);
+    /* จังหวะ 2 ของโปรเจค (2026-08-19): ติ๊กเริ่มขั้น Do = "เริ่มลงมือแก้จริง" — ถ้ายังไม่เคยบันทึกการแก้ไข
+       ชวนกรอก + ตั้ง start_date เป็นวันเริ่ม Do (start_date คือจุดตัดเทียบก่อน/หลัง ปล่อยเป็นวันเปิดโปรเจค
+       ทั้งที่ยังวิเคราะห์อยู่ = ช่วง "หลังแก้" ปนวันที่ยังไม่ได้แก้ → % ลด/Cost Saving ต่ำกว่าจริง
+       — บทเรียนเดียวกับ CAPA effectiveness ที่ pivot ต้องเป็นวันมาตรการมีผลจริง) */
+    if (next === 'doing' && m.phase === 'do') {
+      const imp = items.find(i => i.id === m.improvement_id);
+      if (imp && !imp.action_taken) setDoModal({ imp, action: '', date: todayStr() });
+    }
+  };
+  // บันทึก "เริ่มลงมือแก้จริง" — การแก้ไข + วันเริ่มแก้ (จุดตัดเทียบก่อน/หลังเลื่อนตาม → ล้างผลให้คำนวณใหม่)
+  const saveDoStart = async () => {
+    const { imp, action, date } = doModal;
+    if (!action.trim()) { toast.error('กรอกการแก้ไขที่ลงมือทำก่อน'); return; }
+    if (!date) { toast.error('เลือกวันเริ่มแก้จริงก่อน'); return; }
+    // do_started_at = สัญญาณเดียวที่ปลดล็อกการคำนวณ "ผลจริง" (ก่อนหน้านี้ระบบสรุปผลของงานที่ยังไม่ได้ทำ)
+    const base = { action_taken: action.trim(), start_date: date, updated_at: new Date().toISOString() };
+    let { error } = await supabaseDR.from('improvements').update({ ...base, do_started_at: date }).eq('id', imp.id);
+    if (error?.code === '42703') {   // ยังไม่ apply migration → บันทึกส่วนที่บันทึกได้ แต่ห้ามเงียบ
+      ({ error } = await supabaseDR.from('improvements').update(base).eq('id', imp.id));
+      if (!error) toast.error('บันทึกแล้ว แต่ยังไม่ได้ stamp "วันเริ่มลงมือ" — ยังไม่ได้ apply migration 20260826 (แจ้ง admin)');
+    }
+    if (error) { toast.error(error.message); return; }
+    setItems(prev => prev.map(i => (i.id === imp.id ? { ...i, action_taken: action.trim(), start_date: date, do_started_at: date } : i)));
+    setResults(prev => { const n = { ...prev }; delete n[imp.id]; return n; });
+    setDoModal(null);
+    toast.success('บันทึกการแก้ไข + วันเริ่มแก้จริงแล้ว — การเทียบก่อน/หลังยึดวันนี้เป็นจุดตัด');
   };
   const updateMilestone = async (m, patch) => {
     const { error } = await supabaseDR.from('improvement_milestones').update(patch).eq('id', m.id);
@@ -248,7 +335,7 @@ export default function Improvements() {
   // จำนวนใบ MO ตั้งแต่วันเริ่มแก้ (cross-ref บนการ์ด — D)
   const moCountSince = useCallback((imp) => {
     return mtnOrders.filter(m => m.line_name === imp.line_name
-      && (!imp.machine_no || m.machine_no === imp.machine_no)
+      && (!imp.machine_no || sameMc(m.machine_no, imp.machine_no))
       && (imp.problem_source !== 'mtn' || !imp.problem_label || m.problem_characteristic === imp.problem_label)
       && (m.work_date || String(m.report_at).slice(0, 10)) >= imp.start_date).length;
   }, [mtnOrders]);
@@ -260,8 +347,12 @@ export default function Improvements() {
     const from = addDays(imp.start_date, -imp.baseline_days);
     const afterEnd = addDays(imp.start_date, imp.baseline_days - 1);
     const to = todayStr() < afterEnd ? todayStr() : afterEnd;
+    // ⚠️ ตัดกะที่ยัง `open` — กะเพิ่งเปิด 1 ชม. ถูกนับเป็น "วันผลิตเต็มวัน" ในตัวหาร
+    //    ขณะที่ตัวตั้ง (ของเสีย/DT) มีแค่ชั่วโมงเดียว → อัตราต่อวันต่ำเกินจริง = ผลดูดีเกิน
+    //    (pending_close = กะจบแล้วรออนุมัติ ข้อมูลครบ → นับได้) (QC audit 2026-08-20 · T2-7)
     const { data: sessions } = await supabaseDR.from('production_sessions')
       .select('id, work_date').eq('line_name', imp.line_name)
+      .neq('status', 'open')
       .gte('work_date', from).lte('work_date', to);
     if (!sessions?.length) return { noData: true };
 
@@ -276,13 +367,25 @@ export default function Improvements() {
     // ── source = 'mtn' : วัดจากใบซ่อม MO (จำนวนใบ + นาที breakdown) ──
     if (imp.problem_source === 'mtn') {
       const inWin = mtnOrders.filter(m => m.line_name === imp.line_name
-        && (!imp.machine_no || m.machine_no === imp.machine_no)
+        && (!imp.machine_no || sameMc(m.machine_no, imp.machine_no))
         && (!imp.problem_label || m.problem_characteristic === imp.problem_label));
       const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
       const bMO = inWin.filter(m => { const d = dOf(m); return d >= from && d < imp.start_date; });
       const aMO = inWin.filter(m => { const d = dOf(m); return d >= imp.start_date && d <= to; });
-      const mins = (m) => (m.report_at && m.repair_done_at ? Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000) : 0);
-      const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + mins(m), 0));
+      /* ⏱ นาที "เครื่องหยุดจริง" = downtime ที่ผูกใบ (source_downtime_id → downtime_logs)
+         ⚠️ ห้ามใช้ repair_done_at − report_at — นั่นคือ lead time ของใบซ่อม (รวมกลางคืน/
+         วันหยุด/รอช่าง) เอาไปคูณ rate ผลิตแล้วเกินจริง 30+ เท่า (ศุกร์ 16:00 → จันทร์
+         09:00 = 65 ชม./ใบ ทั้งที่เครื่องหยุดผลิตจริงไม่กี่สิบนาที) (QC audit 2026-08-20 · T2-8)
+         ใบที่ไม่มี DT ผูก = ไม่รู้นาทีเครื่องหยุด → นับ 0 + รายงานจำนวนใบ ห้ามเดา */
+      const dtIds = [...bMO, ...aMO].map(m => m.source_downtime_id).filter(Boolean);
+      const dtMin = {};
+      if (dtIds.length) {
+        const { rows: dtRows } = await fetchByIds(dtIds, c =>
+          supabaseDR.from('downtime_logs').select('id, duration_min').in('id', c));
+        dtRows.forEach(d => { dtMin[d.id] = Number(d.duration_min) || 0; });
+      }
+      const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + (dtMin[m.source_downtime_id] || 0), 0));
+      const unlinked = (arr) => arr.filter(m => !m.source_downtime_id || dtMin[m.source_downtime_id] == null).length;
       // ค่าซ่อมจริงต่อใบ (ช่างกรอกขั้นซ่อม step 3) — ใช้คิด cost saving ตรงๆ ไม่ต้องประมาณ
       const sumCost = (arr) => arr.reduce((a, m) => a + (Number(m.labor_cost) || 0) + (Number(m.parts_cost) || 0), 0);
       return {
@@ -291,19 +394,25 @@ export default function Improvements() {
         beforePerDay: beforeDays.size ? bMO.length / beforeDays.size : 0,
         afterPerDay: afterDays.size ? aMO.length / afterDays.size : 0,
         beforeMin: sumMin(bMO), afterMin: sumMin(aMO),
+        beforeMinUnlinked: unlinked(bMO), afterMinUnlinked: unlinked(aMO),
         beforeCost: sumCost(bMO), afterCost: sumCost(aMO),
       };
     }
 
     let rows = [];
     if (imp.problem_source === 'downtime') {
-      let q = supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
-        .in('session_id', allIds);
-      if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
-      if (imp.machine_no) q = q.eq('machine_no', imp.machine_no);
-      if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
-      rows = (await q).data || [];
+      // ⚠️ ห้าม .in('session_id', allIds) ตรงๆ — หน้าต่าง 90 วัน = หลายร้อยกะ → URL ยาวเกิน
+      //    คิวรีล้มเหลวเงียบ แล้วผลก่อน/หลังจะเป็น 0 ทั้งคู่ = โปรเจคดูเหมือน "แก้หายสนิท" ทั้งที่วัดไม่ได้
+      rows = (await fetchByIds(allIds, c => {
+        let q = supabaseDR.from('downtime_logs')
+          .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
+          .in('session_id', c);
+        if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
+        if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
+        return q;
+      })).rows;
+      // กรองเครื่องฝั่ง client ด้วย normCode — .eq ตรงๆ จะพลาด log ที่พิมพ์เว้นวรรค ("RB- 107")
+      if (imp.machine_no) rows = rows.filter(r => sameMc(r.machine_no, imp.machine_no));
       // นับเฉพาะ downtime "นอกแผน" เหมือน KPI หลัก (planned = นับสต็อก/ไม่มีแผนผลิต ไม่ใช่ loss)
       // — ถ้าผู้ใช้ไม่ได้เจาะจงชนิด (ทุกประเภท) ต้องตัด planned ออก ไม่งั้นผลก่อน/หลังเพี้ยน
       if (!imp.problem_type_id) rows = rows.filter(r => r.dr_downtime_types?.category !== 'planned');
@@ -319,11 +428,13 @@ export default function Improvements() {
       };
     }
     // defect: qty NG — กรองสินค้า (ถ้าระบุ) ผ่าน prod_orders.mat_no
-    let q = supabaseDR.from('defect_logs')
-      .select('session_id, qty_ng, prod_orders(mat_no)')
-      .in('session_id', allIds);
-    if (imp.problem_type_id) q = q.eq('defect_type_id', imp.problem_type_id);
-    rows = ((await q).data || []).filter(r => !imp.mat_no || r.prod_orders?.mat_no === imp.mat_no);
+    rows = (await fetchByIds(allIds, c => {
+      let q = supabaseDR.from('defect_logs')
+        .select('session_id, qty_ng, prod_orders(mat_no)')
+        .in('session_id', c);
+      if (imp.problem_type_id) q = q.eq('defect_type_id', imp.problem_type_id);
+      return q;
+    })).rows.filter(r => !imp.mat_no || r.prod_orders?.mat_no === imp.mat_no);
     const sum = (arr) => arr.reduce((a, r) => a + (Number(r.qty_ng) || 0), 0);
     const bRows = rows.filter(r => !idSetAfter.has(r.session_id));
     const aRows = rows.filter(r => idSetAfter.has(r.session_id));
@@ -355,15 +466,27 @@ export default function Improvements() {
     return m;
   }, [products]);
 
-  const costSavingOf = useCallback((imp, r) => {
+  /* potential=true = โหมด "มูลค่าปัญหาก่อนแก้ (เพดานประหยัดถ้าแก้หายหมด)" — ใช้ตอนข้อมูลหลังแก้ยังน้อย
+     (afterDays < MIN_AFTER_DAYS): คิดจาก baseline ล้วน (after = 0) ซึ่งเป็นข้อเท็จจริงที่วัดแล้ว
+     ห้ามโชว์ "ประหยัดแล้ว X บาท" จากหลังแก้ 0-1 วัน — หลังแก้วันเดียวลด 100% = คำกล่าวอ้างที่ยังพิสูจน์ไม่ได้
+     (เกณฑ์ 5 วันผลิตจริง = มาตรฐานเดียวกับ CAPA effectiveness ใน capaEffect.js) */
+  const costSavingOf = useCallback((imp, r, potential = false) => {
     if (!r || r.noData) return null;
+    if (potential) r = { ...r, afterPerDay: 0, afterCost: 0, afterMin: 0, afterDays: 0, matAfter: {} };
     const cc = lineCostCenter(lines, imp.line_name);
     const rate = cc ? rateFor(ccRates, cc, imp.start_date) : null;
     const missing = [];
     if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
     else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
+    // ไม่มีกะปิดแล้วก่อนวันเริ่ม = ไม่มีฐานเทียบ — เดิม beforePerDay=0 ทำให้ขึ้น
+    // "ต้นทุนเพิ่ม X บาท/วัน" ทั้งที่แค่ยังไม่มีข้อมูล (QC audit 2026-08-20 · T2-7)
+    if (!r.beforeDays) {
+      missing.push('ไม่มีกะที่ปิดแล้วในช่วงก่อนวันเริ่มแก้ (baseline) — เทียบก่อน/หลังไม่ได้ · ขยายหน้าต่างเทียบ (baseline_days) หรือตรวจวันเริ่มโปรเจค');
+      return { cc, rate, missing, comp: Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0])), matPerDay: 0, repairPerDay: 0, defectParts: [], defectNoCost: [], totalPerDay: null, totalPerMonth: null, payback: null, invest: Number(imp.invest_cost) || 0, computable: false };
+    }
 
-    const comp = { dl: 0, oh: 0, dp: 0 };  // บาท/วัน แยกก้อน (โชว์ครบ 3 เสมอ — ก้อนที่ไม่เลือกไม่เข้ายอดรวม)
+    // บาท/วัน แยกก้อน — โชว์ครบทุกก้อนเสมอ (ก้อนที่ไม่เลือกไม่เข้ายอดรวม) · วนจาก RATE_COMPONENTS ห้าม hardcode
+    const comp = Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0]));
     let matPerDay = 0;                      // มูลค่าวัสดุ/standard cost (defect — นับเสมอ ไม่ขึ้นกับก้อนที่เลือก)
     let repairPerDay = 0;                   // mtn: ค่าซ่อมจริงจากใบ MO
     const defectParts = [], defectNoCost = new Set();
@@ -403,13 +526,46 @@ export default function Improvements() {
       if (defectNoCost.size) missing.push(`พาร์ทยังไม่ตั้งต้นทุน/ชิ้น (${[...defectNoCost].join(', ')}) — กรอก standard/material cost ที่ Product Master → 🗂 Parts Master`);
     }
 
-    const compSelected = costComps.reduce((a, k) => a + comp[k], 0);
-    const totalPerDay = computable ? compSelected + matPerDay + repairPerDay : null;
+    // ค่าซ่อมจริงเข้ายอดรวมเฉพาะเมื่อ toggle 'repair' เปิด (อาจทับซ้อนกับ IDP ของ SAP — ให้ผู้ใช้เลือกตามนโยบายบัญชี)
+    const compSelected = costComps.filter(k => k !== 'repair').reduce((a, k) => a + (comp[k] || 0), 0);
+    const repairSelected = costComps.includes('repair') ? repairPerDay : 0;
+    const totalPerDay = computable ? compSelected + matPerDay + repairSelected : null;
     const totalPerMonth = totalPerDay != null ? totalPerDay * workDaysMonth : null;
     const invest = Number(imp.invest_cost) || 0;
     const payback = invest > 0 && totalPerMonth > 0 ? invest / totalPerMonth : null;
     return { cc, rate, missing, comp, matPerDay, repairPerDay, defectParts, defectNoCost: [...defectNoCost], totalPerDay, totalPerMonth, payback, invest, computable };
   }, [lines, ccRates, partCostByMat, ctByMat, costComps, workDaysMonth]);
+
+  /* ── PDCA gate: "ผลจริง" คำนวณได้ก็ต่อเมื่อยืนยันแล้วว่า **เริ่มลงมือแก้จริง** ─────────────
+     (2026-08-26 · feedback หน้างาน "งานยังไม่ปิดว่าจบ คำนวณผลลัพธ์ได้หรอ")
+     เดิม start_date ถูกตั้งเป็นวันเปิดโปรเจคแล้วใช้เป็นจุดตัดเทียบทันที → โปรเจคที่แผนงาน 0/5 ขั้น
+     (ยังไม่ได้วิเคราะห์สาเหตุด้วยซ้ำ) ก็โชว์ "ผลจริง ▲95%" และดัน −13,924 บาท/เดือน เข้ายอดบริษัท
+     ⚠️ ยังไม่ apply migration = ไม่มีคีย์ `do_started_at` ในแถวเลย → ถอยไปพฤติกรรมเดิม (ใช้ action_taken)
+        ห้ามให้ทุกโปรเจคกลายเป็น "ยังไม่เริ่ม" เพราะ migration ยังไม่ถูกรัน */
+  const hasDoCol = items.length > 0 && Object.prototype.hasOwnProperty.call(items[0], 'do_started_at');
+  const doStarted = useCallback((imp) => (hasDoCol ? !!imp?.do_started_at : !!imp?.action_taken), [hasDoCol]);
+
+  /* สัดส่วนที่ตั้งเป้าจะลด (0-1) — null = ยังไม่ตั้งเป้า หรือคิดไม่ได้ (ไม่มี baseline)
+     `target_value` = ปริมาณที่ตั้งใจ "ลดลง" ทั้ง 2 โหมด (ไม่ใช่ค่าที่เหลือ) */
+  const targetFrac = useCallback((imp, r) => {
+    const v = Number(imp?.target_value);
+    if (!(v > 0)) return null;
+    if (imp.target_mode === 'per_day') {
+      const base = Number(r?.beforePerDay) || 0;
+      return base > 0 ? Math.min(1, v / base) : null;   // ไม่มี baseline = แปลงเป็น % ไม่ได้ ห้ามเดา
+    }
+    return Math.min(1, v / 100);
+  }, []);
+
+  /* เงินที่ "คาดว่าจะประหยัด" ตามเป้า = เพดาน (ถ้าแก้หายหมด) × สัดส่วนเป้า
+     เพดานมาจาก costSavingOf(..., potential=true) ซึ่งคิดจาก baseline ล้วน = ข้อเท็จจริงที่วัดแล้ว */
+  const targetSavingOf = useCallback((imp, r) => {
+    const frac = targetFrac(imp, r);
+    if (frac == null) return null;
+    const cap = costSavingOf(imp, r, true);
+    if (!cap || cap.totalPerMonth == null) return null;
+    return { frac, perMonth: cap.totalPerMonth * frac, capPerMonth: cap.totalPerMonth };
+  }, [targetFrac, costSavingOf]);
 
   useEffect(() => {
     let cancelled = false;
@@ -434,14 +590,17 @@ export default function Improvements() {
       const dOf = (m) => m.work_date || String(m.report_at).slice(0, 10);
       const agg = new Map();
       mtnOrders.filter(m => m.line_name === line_name && dOf(m) >= from).forEach(m => {
-        const key = `${m.problem_characteristic || ''}::${m.machine_no || ''}`;
+        const key = `${m.problem_characteristic || ''}::${normCode(m.machine_no)}`; // เครื่องเดียวกันที่พิมพ์ไม่เป๊ะ = แถวเดียวกัน
         const cur = agg.get(key) || { label: m.problem_characteristic || 'ทุกอาการ', machine_no: m.machine_no || '', value: 0, count: 0, planned: false, mins: 0, descCount: new Map() };
         cur.value += 1; cur.count += 1;
         if (m.report_at && m.repair_done_at) cur.mins += Math.max(0, (new Date(m.repair_done_at) - new Date(m.report_at)) / 60000);
         agg.set(key, cur);
       });
-      const rows = [...agg.values()].filter(r => r.value > 0).map(r => ({ ...r, mins: Math.round(r.mins), topDescs: [] })).sort((a, b) => b.value - a.value).slice(0, 10);
-      setPareto({ loading: false, rows }); return;
+      const all = [...agg.values()].filter(r => r.value > 0).map(r => ({ ...r, mins: Math.round(r.mins), topDescs: [] }));
+      // คีย์ต้องตรงกับที่ modal เก็บ (problem_label) — แถว 'ทุกอาการ' = ใบที่ไม่ได้ระบุอาการ เก็บเป็นค่าว่าง
+      const byKey = buildParetoIndex(all, r => (r.label === 'ทุกอาการ' ? '' : r.label) || '');
+      const rows = [...all].sort((a, b) => b.value - a.value).slice(0, 10);
+      setPareto({ loading: false, rows, byKey }); return;
     }
     const { data: sessions } = await supabaseDR.from('production_sessions')
       .select('id').eq('line_name', line_name).gte('work_date', from);
@@ -456,19 +615,26 @@ export default function Improvements() {
     if (source === 'downtime') {
       // ดึง category (planned/unplanned) + description มาด้วย — งานในแผนเป็น priority รอง
       // และ note พนักงานคือตัวบอกว่า "อื่นๆ" จริงๆ คือปัญหาอะไร
-      const { data } = await supabaseDR.from('downtime_logs')
-        .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
-        .in('session_id', ids);
+      // ⚠️ ต้องผ่าน fetchByIds (กฎ CLAUDE.md) — หน้าต่างเลือกได้ถึง 90 วัน = ~180 กะ
+      //    × downtime กะละ ~10 = ~1,800 แถว > เพดาน 1000 ⇒ ถูกตัดเงียบ พาเรโต้ชี้เป้าผิด
+      //    (บรรทัด 379/404 ในไฟล์นี้ใช้ fetchByIds อยู่แล้ว ตัวนี้ตกสำรวจ)
+      const { rows: data, error: pErr, truncated: pTrunc } = await fetchByIds(ids, (c) =>
+        supabaseDR.from('downtime_logs')
+          .select('downtime_type_id, machine_no, duration_min, description, dr_downtime_types(category)')
+          .in('session_id', c));
+      if (pErr || pTrunc) toast.error('โหลด downtime ไม่ครบ — พาเรโต้อาจชี้เป้าไม่ตรง');
       (data || []).forEach(r => {
-        const key = `${r.downtime_type_id || ''}::${r.machine_no || ''}`;
+        const key = `${r.downtime_type_id || ''}::${normCode(r.machine_no)}`; // เครื่องเดียวกันที่พิมพ์ไม่เป๊ะ = แถวเดียวกัน
         const cur = agg.get(key) || { type_id: r.downtime_type_id, machine_no: r.machine_no || '', value: 0, count: 0, planned: r.dr_downtime_types?.category === 'planned', descCount: new Map() };
         cur.value += Number(r.duration_min) || 0; cur.count += 1;
         pushDesc(cur, r.description);
         agg.set(key, cur);
       });
     } else {
-      const { data } = await supabaseDR.from('defect_logs')
-        .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', ids);
+      const { rows: data, error: pErr, truncated: pTrunc } = await fetchByIds(ids, (c) =>
+        supabaseDR.from('defect_logs')
+          .select('defect_type_id, qty_ng, description, prod_orders(mat_no)').in('session_id', c));
+      if (pErr || pTrunc) toast.error('โหลดของเสียไม่ครบ — พาเรโต้อาจชี้เป้าไม่ตรง');
       (data || []).forEach(r => {
         const mat = r.prod_orders?.mat_no || '';
         const key = `${r.defect_type_id || ''}::${mat}`;
@@ -480,11 +646,13 @@ export default function Improvements() {
     }
     // เรียง: งานนอกแผน (unplanned) มาก่อนเสมอ · งานในแผน (planned เช่น 5ส./นับสต็อก) เป็น priority รองท้ายลิสต์
     // แต่ละแถวแนบ note พนักงานที่พบบ่อยสุด (สำคัญกับประเภท "อื่นๆ" ที่ชื่อประเภทบอกอะไรไม่ได้)
-    const rows = [...agg.values()].filter(r => r.value > 0)
-      .map(r => ({ ...r, topDescs: [...r.descCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3) }))
+    const all = [...agg.values()].filter(r => r.value > 0)
+      .map(r => ({ ...r, topDescs: [...r.descCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3) }));
+    const byKey = buildParetoIndex(all, r => r.type_id || '');
+    const rows = [...all]
       .sort((a, b) => (a.planned ? 1 : 0) - (b.planned ? 1 : 0) || b.value - a.value)
       .slice(0, 10);
-    setPareto({ loading: false, rows });
+    setPareto({ loading: false, rows, byKey });
   }, [mtnOrders]);
 
   useEffect(() => {
@@ -493,7 +661,17 @@ export default function Improvements() {
 
   /* ── save / delete / status ── */
   const openCreate = () => { setBeforeFile(null); setAfterFile(null); setModal({ ...EMPTY_FORM, line_name: lineOptions[0]?.name || '' }); };
-  const openEdit = (imp) => { setBeforeFile(null); setAfterFile(null); setModal({ ...imp, baseline_days: imp.baseline_days || 30 }); };
+  // ⚠️ target_value null → input ต้องได้ '' ไม่ใช่ null (React controlled input จะเด้ง uncontrolled warning
+  //    แล้วพิมพ์ไม่ติด) · target_mode null = ยังไม่ตั้งเป้า → default 'pct'
+  const openEdit = (imp) => {
+    setBeforeFile(null); setAfterFile(null);
+    setModal({
+      ...imp,
+      baseline_days: imp.baseline_days || 30,
+      target_mode: imp.target_mode || 'pct',
+      target_value: imp.target_value ?? '',
+    });
+  };
 
   const handleSave = async () => {
     if (!modal.title.trim()) { toast.error('กรอกชื่อโปรเจคปรับปรุงก่อน'); return; }
@@ -514,20 +692,30 @@ export default function Improvements() {
         action_taken: modal.action_taken?.trim() || null,
         start_date: modal.start_date,
         baseline_days: Number(modal.baseline_days) || 30,
+        // เป้าหมาย (Plan) — แยกจากผลจริง · 0/ว่าง = ยังไม่ตั้งเป้า (DB check บังคับ > 0)
+        target_mode: modal.target_value !== '' && Number(modal.target_value) > 0 ? (modal.target_mode || 'pct') : null,
+        target_value: modal.target_value !== '' && Number(modal.target_value) > 0 ? Number(modal.target_value) : null,
         invest_cost: modal.invest_cost !== '' && modal.invest_cost != null ? Number(modal.invest_cost) : null,
         updated_at: new Date().toISOString(),
       };
       let row;
-      if (modal.id) {
-        const { data, error } = await supabaseDR.from('improvements').update(payload).eq('id', modal.id).select().single();
-        if (error) throw error;
-        row = data;
-      } else {
-        payload.created_by_name = fullName || null;
-        const { data, error } = await supabaseDR.from('improvements').insert(payload).select().single();
-        if (error) throw error;
-        row = data;
+      /* ⚠️ ยังไม่ apply migration 20260826 (target_mode/target_value) = 42703 → เปิดโปรเจคไม่ได้ทั้งใบ
+         ⇒ ลองเต็มก่อน เจอ 42703 ค่อยตัดคีย์ใหม่ทิ้งแล้วลองใหม่ + บอกผู้ใช้ว่าเป้าหมายยังไม่ถูกบันทึก
+         (pattern เดียวกับ close_approve_note — งานหลักต้องไม่พังเพราะฟิลด์เสริม แต่ห้ามเงียบ) */
+      const NEW_COLS = ['target_mode', 'target_value'];
+      const runSave = async (p) => (modal.id
+        ? supabaseDR.from('improvements').update(p).eq('id', modal.id).select().single()
+        : supabaseDR.from('improvements').insert(p).select().single());
+      if (!modal.id) payload.created_by_name = fullName || null;
+      let { data, error } = await runSave(payload);
+      if (error?.code === '42703') {
+        const slim = { ...payload };
+        NEW_COLS.forEach(k => delete slim[k]);
+        ({ data, error } = await runSave(slim));
+        if (!error) toast.error('บันทึกโปรเจคแล้ว แต่ "เป้าหมาย" ยังไม่ถูกบันทึก — ยังไม่ได้ apply migration 20260826_improvement_target_and_do_start (แจ้ง admin)');
       }
+      if (error) throw error;
+      row = data;
       // อัปโหลดรูป (บีบ 1280px) — update url แล้วค่อยลบรูปเก่า (ลบหลัง DB สำเร็จเท่านั้น, best-effort)
       const imgPayload = {};
       for (const [file, field] of [[beforeFile, 'image_before_url'], [afterFile, 'image_after_url']]) {
@@ -545,7 +733,19 @@ export default function Improvements() {
         if (imgPayload.image_after_url && row.image_after_url) removeImpImage(row.image_after_url);
       }
       // โปรเจคใหม่ seed ขั้นงานมาตรฐาน PDCA 5 ขั้นให้เลย (ปรับ/เพิ่ม/ลบได้ใน Gantt ของการ์ด)
-      if (!modal.id) await seedMilestones(row);
+      if (!modal.id) {
+        await seedMilestones(row);
+        notifyEvent({
+          event: 'improvement_opened', type: 'info', ref_table: 'improvements', ref_id: row.id,
+          line_name: row.line_name || null, actor: fullName,
+          lines: [
+            `💡 ${row.title || '(ไม่ระบุชื่อโปรเจค)'}`,
+            `🏭 ไลน์: ${row.line_name || '—'}`,
+            row.problem_label ? `🎯 เป้า: ${row.problem_label}` : '',
+            row.start_date ? `📅 เริ่ม ${row.start_date} · เทียบผล ${row.baseline_days || 30} วัน` : '',
+          ],
+        });
+      }
       toast.success(modal.id ? 'บันทึกการแก้ไขแล้ว' : 'สร้างโปรเจคปรับปรุงแล้ว — วางแผนขั้นงานใน 🗓 แผนงาน ได้เลย');
       setModal(null);
       setResults(prev => { const p = { ...prev }; delete p[row.id]; return p; }); // คำนวณผลใหม่
@@ -577,12 +777,57 @@ export default function Improvements() {
   /* ── render ── */
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
-  const machineOpts = machines.filter(m => m.line_name === modal?.line_name);
-  const productOpts = products.filter(p => p.line_name === modal?.line_name && p.mat_no);
+  // เครื่องของ "ครอบครัวไลน์" ไม่ใช่ชื่อไลน์ตรงเป๊ะ — กะมักเปิดบนไลน์ลูกแต่เครื่องลงทะเบียน
+  // ใต้ไลน์แม่/พี่น้อง (pattern เดียวกับ sessionProcessTypesAll ใน DailyReport) · family ว่าง = fallback ตรงเป๊ะ
+  const modalFamNames = modal?.line_name ? getLineFamilyNames(lines, modal.line_name) : [];
+  const inFam = (name) => (modalFamNames.length ? modalFamNames.includes(name) : name === modal?.line_name);
+  const lineEquip = machines.filter(m => inFam(m.line_name));
+  // แปลงหมายเลขเครื่องจาก log (คนพิมพ์ ไม่เป๊ะ) → หมายเลขตามทะเบียนเครื่อง ถ้าจับคู่ได้
+  const canonMc = (raw) => (raw ? (machines.find(m => sameMc(m.machine_no, raw))?.machine_no || raw) : '');
+
+  /* ── ผูก dropdown เข้ากับ "ปัญหาที่เลือก" (feedback หน้างาน 2026-08-25) ───────────
+     อาการเดิม 3 อย่างในโมดัลเดียว:
+       1. เลือกปัญหาแล้วลิสต์เครื่องไม่ขยับเลย ทั้งที่พาเรโต้ข้างๆ บอกอยู่ว่าเกิดที่เครื่องไหน
+       2. แม่พิมพ์ (equipment_kind='die' · ชื่อยาวเป็นชื่อพาร์ท) ปนอยู่ในลิสต์ "เครื่องจักร"
+       3. ลิสต์สินค้าว่างเปล่า เพราะกรอง line_name **ตรงเป๊ะ** ขณะที่เครื่องกรองแบบครอบครัวไลน์
+          → ไลน์ลูก (HDF1) ที่สินค้าผูกไว้กับไลน์แม่ = เลือกพาร์ทไม่ได้เลย
+     กติกา: **เสนอลำดับ ไม่ตัดตัวเลือกทิ้ง** — ปัญหาย้ายไปเกิดที่เครื่องใหม่ที่ยังไม่มีประวัติได้ */
+  const paretoHits = pareto.byKey?.[
+    modal?.problem_source === 'mtn' ? (modal?.problem_label || '') : (modal?.problem_type_id || '')
+  ] || [];
+  const hitUnit = modal?.problem_source === 'defect' ? 'ชิ้น' : modal?.problem_source === 'mtn' ? 'ใบ' : 'นาที';
+  const hitMc = new Map();    // normCode → แถวพาเรโต้ (เครื่องที่เคยเกิดปัญหานี้)
+  const hitMat = new Map();   // mat_no   → แถวพาเรโต้ (สินค้าที่เคยเสียด้วยปัญหานี้)
+  paretoHits.forEach(h => {
+    const k = normCode(h.machine_no);
+    if (k && !hitMc.has(k)) hitMc.set(k, h);
+    if (h.mat_no && !hitMat.has(h.mat_no)) hitMat.set(h.mat_no, h);
+  });
+  const byHit = (get) => (a, b) => (get(b)?.value || 0) - (get(a)?.value || 0);
+
+  const isDie   = (m) => m.equipment_kind === 'die';
+  const mcOfHit = (m) => hitMc.get(normCode(m.machine_no));
+  const mcHit   = lineEquip.filter(m => !isDie(m) && mcOfHit(m)).sort(byHit(mcOfHit));
+  const mcRest  = lineEquip.filter(m => !isDie(m) && !mcOfHit(m));
+  const mcDie   = lineEquip.filter(isDie);
+  // หมายเลขที่บันทึกไว้ใน log แต่ไม่มีในทะเบียนเครื่องของไลน์ — ต้องเลือกได้ ไม่งั้นตั้งเป้าโปรเจค
+  // ให้ตรงกับที่บันทึกจริงไม่ได้ (ตัววัดผลก่อน/หลังกรองด้วย machine_no ตัวนี้)
+  const mcRegistered = new Set(lineEquip.map(m => normCode(m.machine_no)));
+  const mcUnreg = [...hitMc.values()].filter(h => h.machine_no && !mcRegistered.has(normCode(h.machine_no)));
+  const machineOpts = [...mcHit, ...mcRest, ...mcDie];
+  const mcListed = (no) => !!no && (machineOpts.some(m => m.machine_no === no) || mcUnreg.some(h => h.machine_no === no));
+
+  const prodAll  = products.filter(p => p.mat_no && inFam(p.line_name));
+  const matOfHit = (p) => hitMat.get(p.mat_no);
+  const prodHit  = prodAll.filter(matOfHit).sort(byHit(matOfHit));
+  const prodRest = prodAll.filter(p => !matOfHit(p));
+  const prodUnreg = [...hitMat.keys()].filter(mat => !prodAll.some(p => p.mat_no === mat));
   const typeOpts = modal?.problem_source === 'defect' ? defectTypes : dtTypes;
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canManage} role={role} what="เปิด/แก้โปรเจคปรับปรุง"
+        permKey="improvements:manage" hint="ยังดูโปรเจค พาเรโต้ และผลก่อน/หลังได้ตามปกติ" />
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
         <div>
@@ -612,8 +857,24 @@ export default function Improvements() {
         const active = visibleItems.filter(i => i.status !== 'cancelled');
         const tree = new Map(); // section -> { total, groups: Map(group -> total) }
         let grand = 0, computed = 0, pending = 0;
+        let earlyCnt = 0, earlyCap = 0; // โปรเจคที่หลังแก้ยังไม่ถึงเกณฑ์ — นับแยกเป็น "เพดาน" ห้ามรวมกับประหยัดจริง
+        let planCnt = 0, planTarget = 0, planNoTarget = 0;  // ยังไม่เริ่มลงมือ = เป้าหมาย ไม่ใช่ผลจริง
         active.forEach(imp => {
-          const cs = costSavingOf(imp, results[imp.id]);
+          const rr = results[imp.id];
+          /* ⚠️ ยังไม่ยืนยัน "เริ่มลงมือแก้จริง" = ยังไม่มีผลจริงให้พูดถึง — ห้ามเข้ายอด Cost Saving ของบริษัท
+             (เดิมโปรเจคที่แผนงาน 0/5 ขั้น ดัน −13,924 บาท/เดือน ขึ้นหัวเพจ) */
+          if (!doStarted(imp)) {
+            planCnt += 1;
+            const t = targetSavingOf(imp, rr);
+            if (t) planTarget += t.perMonth; else planNoTarget += 1;
+            return;
+          }
+          if (rr && !rr.noData && (rr.afterDays || 0) < MIN_AFTER_DAYS) {
+            const cap = costSavingOf(imp, rr, true);
+            if (cap?.totalPerMonth != null) { earlyCnt += 1; earlyCap += cap.totalPerMonth; } else pending += 1;
+            return;
+          }
+          const cs = costSavingOf(imp, rr);
           if (!cs || cs.totalPerMonth == null) { pending += 1; return; }
           computed += 1; grand += cs.totalPerMonth;
           const li = lines.find(l => l.name === imp.line_name);
@@ -624,17 +885,28 @@ export default function Improvements() {
           s.groups.set(grp, (s.groups.get(grp) || 0) + cs.totalPerMonth);
           tree.set(sec, s);
         });
-        if (!computed) return null;
+        if (!computed && !earlyCnt && !planCnt) return null;
         const col = (v) => (v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : 'var(--muted)');
         return (
           <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>💰 Cost Saving รวม (บาท/เดือน)</span>
-              <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>
+              {computed > 0 && <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>}
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                จาก {computed} โปรเจค (ไม่รวมที่ยกเลิก){pending > 0 ? ` · อีก ${pending} โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด` : ''} · รวมขึ้นจากระดับกลุ่มตามผังองค์กร
+                {computed > 0 ? `จาก ${computed} โปรเจคที่ผลจริงยืนยันแล้ว (ลงมือแก้แล้ว · หลังแก้ ≥${MIN_AFTER_DAYS} วันผลิต · ไม่รวมที่ยกเลิก)` : 'ยังไม่มีโปรเจคที่ผลจริงยืนยันแล้ว'}
+                {earlyCnt > 0 ? ` · ⏳ อีก ${earlyCnt} โปรเจครอผลหลังแก้ (เพดานประหยัดถ้าแก้หายหมด ~${fmtBaht(earlyCap)}/เดือน — ยังไม่นับรวม)` : ''}
+                {pending > 0 ? ` · อีก ${pending} โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด` : ''} · รวมขึ้นจากระดับกลุ่มตามผังองค์กร
               </span>
             </div>
+            {/* เป้าหมายของโปรเจคที่ยังไม่ลงมือ — แยกบรรทัดให้ขาด ห้ามเอาไปปนกับยอดประหยัดจริง */}
+            {planCnt > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 5, lineHeight: 1.6 }}>
+                🎯 <b>เป้าหมายที่ตั้งไว้</b> (ยังไม่ลงมือแก้ · <b>ไม่นับรวมข้างบน</b>):{' '}
+                {planTarget > 0 ? <b style={{ color: '#f59e0b' }}>~{fmtBaht(planTarget)}/เดือน</b> : <span style={{ color: 'var(--muted)' }}>ยังตีเป็นเงินไม่ได้</span>}
+                {' '}จาก {planCnt} โปรเจค
+                {planNoTarget > 0 && <span style={{ color: '#f59e0b' }}> · ⚠ {planNoTarget} โปรเจคยังไม่ได้ตั้งเป้า (แก้ไขโปรเจคแล้วกรอกช่อง “เป้าหมาย”)</span>}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 6 }}>
               {[...tree.entries()].sort((a, b) => b[1].total - a[1].total).map(([sec, s]) => (
                 <div key={sec} style={{ fontSize: 11, color: 'var(--text2)' }}>
@@ -663,6 +935,9 @@ export default function Improvements() {
               : null;
             const improved = pct != null && pct > 0;
             const maxPerDay = r && !r.noData ? Math.max(r.beforePerDay, r.afterPerDay, 0.0001) : 1;
+            // PDCA gate — ยังไม่ยืนยัน "เริ่มลงมือแก้จริง" = ยังไม่มีผลจริง มีแต่ baseline + เป้าหมาย
+            const started = doStarted(imp);
+            const tgt = started ? null : targetSavingOf(imp, r);
             return (
               <div key={imp.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, height: '100%' }}>
                 {/* title + status */}
@@ -686,6 +961,19 @@ export default function Improvements() {
                 {/* description / action */}
                 {imp.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, lineHeight: 1.45 }}><b style={{ color: 'var(--muted)' }}>ปัญหา:</b> {imp.description}</div>}
                 {imp.action_taken && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.45 }}><b style={{ color: 'var(--muted)' }}>การแก้ไข:</b> {imp.action_taken}</div>}
+                {/* จังหวะ 2: ยังไม่ยืนยัน "เริ่มลงมือแก้จริง" = ยังอยู่ช่วงวิเคราะห์/วางแผน (Plan)
+                    ⚠️ เกณฑ์คือ `started` ไม่ใช่ `!action_taken` — เคสจริง 26/08 มีใบที่กรอกการแก้ไขไว้ตั้งแต่ตอนเปิด
+                       แต่แผนงาน 0/5 ขั้น (ยังไม่ได้ลงมือ) แล้วปุ่มนี้ไม่โผล่ = ไม่มีทางยืนยันได้เลย
+                    (หรือติ๊กเริ่มขั้น D ในแผนงาน ระบบจะเด้งฟอร์มเดียวกันให้) ห้ามซ่อนเงียบ */}
+                {!started && imp.status === 'monitoring' && canManage && (
+                  <button onClick={() => setDoModal({ imp, action: imp.action_taken || '', date: todayStr() })}
+                    style={{ marginTop: 6, padding: '6px 10px', borderRadius: 7, textAlign: 'left', width: '100%',
+                      border: '1px dashed rgba(245,158,11,0.6)', background: 'rgba(245,158,11,0.08)', color: '#f59e0b',
+                      fontSize: 11.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1.5 }}>
+                    🚀 ยังไม่ได้ลงมือแก้จริง (อยู่ช่วงวิเคราะห์/วางแผน) — เริ่มลงมือเมื่อไหร่กดที่นี่
+                    เพื่อยืนยันการแก้ไข + ตั้ง "วันเริ่มแก้" เป็นจุดตัดเทียบก่อน/หลัง แล้วผลจริงจะเริ่มคำนวณ
+                  </button>
+                )}
                 {/* before/after images */}
                 {(imp.image_before_url || imp.image_after_url) && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
@@ -702,11 +990,18 @@ export default function Improvements() {
                 {/* ผลลัพธ์จากข้อมูลจริง */}
                 <div style={{ marginTop: 10, padding: 10, background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>📈 ผลจากข้อมูลจริง <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(เริ่ม {fmtDate(imp.start_date)} · เทียบ {imp.baseline_days} วัน)</span></span>
-                    {pct != null && (
-                      <span style={{ fontSize: 14, fontWeight: 800, color: improved ? '#22c55e' : '#ef4444' }}>
-                        {improved ? '▼' : '▲'} {Math.abs(pct)}%
-                      </span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
+                      {started
+                        ? <>📈 ผลจากข้อมูลจริง <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(เริ่มแก้ {fmtDate(imp.start_date)} · เทียบ {imp.baseline_days} วัน)</span></>
+                        : <>📊 ระดับปัจจุบัน (ก่อนแก้) <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(ย้อนหลัง {imp.baseline_days} วัน)</span></>}
+                    </span>
+                    {started && pct != null && ((r?.afterDays || 0) < MIN_AFTER_DAYS
+                      /* หลังแก้ยังไม่ถึงเกณฑ์ — % จากตัวอย่างเล็กหลอกตา (1 วัน 0 นาที = ▼100%) ห้ามโชว์เหมือนยืนยันแล้ว */
+                      ? <span title={`หลังแก้มีข้อมูลแค่ ${r?.afterDays || 0} วันผลิต (ต้อง ≥${MIN_AFTER_DAYS}) — ยังสรุป % ไม่ได้`}
+                          style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b' }}>⏳ รอผล {r?.afterDays || 0}/{MIN_AFTER_DAYS} วัน</span>
+                      : <span style={{ fontSize: 14, fontWeight: 800, color: improved ? '#22c55e' : '#ef4444' }}>
+                          {improved ? '▼' : '▲'} {Math.abs(pct)}%
+                        </span>
                     )}
                   </div>
                   {!r ? (
@@ -715,8 +1010,10 @@ export default function Improvements() {
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ยังไม่มีข้อมูลการผลิตในช่วงเทียบ</div>
                   ) : (
                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {[['ก่อนแก้', r.beforePerDay, r.beforeTotal, r.beforeCount, r.beforeDays, '#ef4444'],
-                        ['หลังแก้', r.afterPerDay, r.afterTotal, r.afterCount, r.afterDays, improved || r.afterPerDay === 0 ? '#22c55e' : '#f59e0b']].map(([label, perDay, total, count, days, color]) => (
+                      {/* ยังไม่ลงมือแก้ = ไม่มีแถบ "หลังแก้" ให้ดู (ช่วงนั้นคือช่วงที่ยังไม่ได้แก้อะไรเลย) */}
+                      {[[started ? 'ก่อนแก้' : 'ปัจจุบัน', r.beforePerDay, r.beforeTotal, r.beforeCount, r.beforeDays, '#ef4444'],
+                        ...(started ? [['หลังแก้', r.afterPerDay, r.afterTotal, r.afterCount, r.afterDays, improved || r.afterPerDay === 0 ? '#22c55e' : '#f59e0b']] : [])
+                      ].map(([label, perDay, total, count, days, color]) => (
                         <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', width: 46, flexShrink: 0 }}>{label}</span>
                           <div style={{ flex: 1, height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
@@ -727,29 +1024,74 @@ export default function Improvements() {
                           </span>
                         </div>
                       ))}
-                      {r.source === 'mtn' && (r.beforeMin || r.afterMin) ? (
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>⏱ breakdown รวม: <b style={{ color: '#ef4444' }}>{r.beforeMin}</b> → <b style={{ color: '#22c55e' }}>{r.afterMin}</b> นาที</div>
-                      ) : null}
-                      {r.afterDays === 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>⏳ ยังไม่มีวันผลิตหลังวันเริ่มแก้ — รอข้อมูล</div>}
+                      {r.source === 'mtn' && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          ⏱ เครื่องหยุดจริง (จาก downtime ที่ผูกใบ): <b style={{ color: '#ef4444' }}>{r.beforeMin}</b> → <b style={{ color: '#22c55e' }}>{r.afterMin}</b> นาที
+                          {(r.beforeMinUnlinked || 0) + (r.afterMinUnlinked || 0) > 0 && (
+                            <span style={{ color: '#f59e0b' }}> · ⚠ {(r.beforeMinUnlinked || 0) + (r.afterMinUnlinked || 0)} ใบไม่มี downtime ผูก — นาทีส่วนนั้นไม่ถูกนับ (เปิดใบซ่อมจากแถว Downtime ใน Daily Report จะผูกให้เอง)</span>
+                          )}
+                        </div>
+                      )}
+                      {started && r.afterDays === 0 && <div style={{ fontSize: 11, color: '#f59e0b' }}>⏳ ยังไม่มีวันผลิตหลังวันเริ่มแก้ — รอข้อมูล</div>}
+                    </div>
+                  )}
+                  {/* ── ช่วง Plan: โชว์ "เป้าหมาย" แทน "ผลจริง" ── */}
+                  {!started && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)', fontSize: 11.5, lineHeight: 1.65 }}>
+                      {Number(imp.target_value) > 0 ? (
+                        <div style={{ color: 'var(--text2)' }}>
+                          🎯 <b style={{ color: '#f59e0b' }}>เป้าหมาย:</b>{' '}
+                          {imp.target_mode === 'per_day'
+                            ? <>ลดลง <b>{Number(imp.target_value).toLocaleString()} {r?.unit || ''}/วัน</b></>
+                            : <>ลด <b>{Number(imp.target_value)}%</b></>}
+                          {r && !r.noData && r.beforePerDay > 0 && tgt && (
+                            <> (จาก {r.beforePerDay.toFixed(1)} → {(r.beforePerDay * (1 - tgt.frac)).toFixed(1)} {r.unit}/วัน)</>
+                          )}
+                          {tgt?.perMonth != null && (
+                            <> · คาดว่าจะประหยัด <b style={{ color: '#f59e0b' }}>~{fmtBaht(tgt.perMonth)}/เดือน</b></>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ color: '#f59e0b' }}>
+                          🎯 <b>ยังไม่ได้ตั้งเป้าหมาย</b> — กด ✏️ แก้ไข แล้วกรอกช่อง “เป้าหมาย” เพื่อให้ระบบคำนวณเงินที่คาดว่าจะประหยัดได้
+                        </div>
+                      )}
+                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+                        ⏳ <b>ผลจริงยังไม่คำนวณ</b> — โปรเจคนี้ยังอยู่ช่วงวิเคราะห์/วางแผน (Plan)
+                        กดยืนยัน <b>“เริ่มลงมือแก้จริง”</b> เมื่อไหร่ ระบบจะเริ่มนับก่อน/หลังจากวันนั้น แล้วผลจึงเข้ายอด Cost Saving รวม
+                      </div>
                     </div>
                   )}
                   {imp.result_note && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6 }}><b style={{ color: 'var(--muted)' }}>สรุปผล:</b> {imp.result_note}</div>}
                 </div>
 
-                {/* ── 💰 Cost Saving — แปลงผลจริงเป็นบาทด้วย activity rate (DL/OH/DP) + ต้นทุน/ชิ้น (2026-08-11) ── */}
-                {(() => {
-                  const cs = costSavingOf(imp, r);
+                {/* ── 💰 Cost Saving — แปลงผลจริงเป็นบาทด้วย activity rate (DL/OH/DP) + ต้นทุน/ชิ้น (2026-08-11)
+                    2 โหมด (2026-08-19 · user ทัก "ประมาณการเอามาจากไหน ในเมื่อยังไม่มีข้อมูลว่าจะลดได้เท่าไหร่"):
+                    หลังแก้ ≥5 วันผลิต = "ประหยัดจริง" · น้อยกว่านั้น = "มูลค่าปัญหา (เพดานประหยัด)" จาก baseline ล้วน ── */}
+                {/* ⚠️ ต้อง guard `r` (undefined ระหว่างคำนวณ async) — เคยอ่าน r.afterDays ตรงๆ แล้วหน้าพังทันที
+                    ที่มีโปรเจคแรก (บั๊กเงียบมาตั้งแต่ 2026-08-19 เพราะตาราง improvements ว่าง — เจอ 2026-08-25) */}
+                {r && !r.noData && (() => {
+                  // ยังไม่ลงมือแก้ = ไม่มีผลจริง → บล็อกเงินสลับเป็นโหมด "มูลค่าปัญหา (เพดานประหยัด)" เสมอ
+                  const tooEarly = !started || (r.afterDays || 0) < MIN_AFTER_DAYS;
+                  const cs = costSavingOf(imp, r, tooEarly);
                   if (!cs) return null;
-                  const good = cs.totalPerDay != null && cs.totalPerDay > 0;
-                  const bad = cs.totalPerDay != null && cs.totalPerDay < 0;
+                  const good = !tooEarly && cs.totalPerDay != null && cs.totalPerDay > 0;
+                  const bad = !tooEarly && cs.totalPerDay != null && cs.totalPerDay < 0;
                   return (
-                    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: good ? 'rgba(34,197,94,0.07)' : 'var(--bg3)', border: `1px solid ${good ? 'rgba(34,197,94,0.3)' : 'var(--border)'}` }}>
+                    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: good ? 'rgba(34,197,94,0.07)' : 'var(--bg3)', border: `1px solid ${good ? 'rgba(34,197,94,0.3)' : tooEarly ? 'rgba(245,158,11,0.35)' : 'var(--border)'}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>💰 Cost Saving <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(ประมาณการจากผลจริง{cs.cc ? ` · CC ${cs.cc}` : ''})</span></span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
+                          {tooEarly ? '💰 มูลค่าปัญหานี้ (ก่อนแก้)' : '💰 Cost Saving'}{' '}
+                          <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({tooEarly ? 'จาก baseline ที่วัดแล้ว' : 'ประมาณการจากผลจริง'}{cs.cc ? ` · CC ${cs.cc}` : ''})</span>
+                        </span>
                         {/* เลือกก้อน rate ที่นับเป็น saving — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · มีผลทุกการ์ด */}
-                        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>นับ:</span>
-                          {RATE_COMPONENTS.map(c => {
+                          {[...RATE_COMPONENTS,
+                            // ก้อนที่ 5 — เฉพาะโปรเจค mtn (ค่าซ่อมจริงมีแต่ฝั่งใบ MO)
+                            ...(imp.problem_source === 'mtn'
+                              ? [{ key: 'repair', label: 'ค่าซ่อม', full: 'ค่าซ่อมจริงจากใบ MO (labor+parts ที่ช่างกรอก) — คนละแหล่งกับ IDP ของ SAP ซึ่งเป็นค่าเสื่อมทางอ้อม "รวมค่าซ่อม" ที่บัญชีคำนวณ · เปิดทั้งคู่อาจนับทับซ้อนบางส่วน เลือกตามนโยบายบัญชี' }]
+                              : [])].map(c => {
                             const on = costComps.includes(c.key);
                             return (
                               <button key={c.key} onClick={() => toggleComp(c.key)} title={`${c.full} — ${on ? 'นับในยอดรวม (กดเพื่อไม่นับ)' : 'ไม่นับในยอดรวม (กดเพื่อนับ)'}`}
@@ -771,10 +1113,17 @@ export default function Improvements() {
                       ) : (
                         <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <div style={{ fontSize: 14, fontWeight: 800, color: good ? '#22c55e' : bad ? '#ef4444' : 'var(--muted)' }}>
-                            {good ? 'ประหยัด' : bad ? 'ต้นทุนเพิ่มขึ้น' : '±0'} ~{fmtBaht(Math.abs(cs.totalPerDay))} บาท/วัน
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}> · ~{fmtBaht(Math.abs(cs.totalPerMonth))} บาท/เดือน</span>
+                            {tooEarly ? 'มูลค่าความสูญเสีย' : good ? 'ประหยัด' : bad ? 'ต้นทุนเพิ่มขึ้น' : '±0'} ~{fmtBaht(Math.abs(cs.totalPerDay))} บาท/วัน
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}> · ~{fmtBaht(Math.abs(cs.totalPerMonth))} บาท/เดือน{tooEarly ? ' = เพดานประหยัดถ้าแก้หายหมด' : ''}</span>
                             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> ({workDaysMonth} วันทำงาน/เดือน)</span>
                           </div>
+                          {tooEarly && (
+                            <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
+                              {!started
+                                ? <>⏳ ยังไม่ได้ลงมือแก้ (อยู่ช่วงวิเคราะห์/วางแผน) · ตัวเลขนี้คือ<b>มูลค่าปัญหาก่อนแก้</b> = เพดานถ้าแก้หายหมด <b>ไม่ใช่ยอดที่ประหยัดแล้ว</b></>
+                                : <>⏳ ผลจริงหลังแก้ยังสรุปไม่ได้ — มีข้อมูลหลังแก้ {r.afterDays || 0}/{MIN_AFTER_DAYS} วันผลิต · ตัวเลขนี้คือมูลค่าปัญหาก่อนแก้ ไม่ใช่ยอดที่ประหยัดแล้ว</>}
+                            </div>
+                          )}
                           {/* breakdown DL/OH/DP โชว์ครบ 3 ก้อนเสมอ (ตกลง user 2026-08-11) — ก้อนที่ไม่เลือกขีดฆ่า ไม่เข้ายอดรวม */}
                           <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                             {RATE_COMPONENTS.map(c => (
@@ -783,9 +1132,19 @@ export default function Improvements() {
                               </span>
                             ))}
                             {imp.problem_source === 'defect' && <span>วัสดุ/Std {fmtBaht(cs.matPerDay)}</span>}
-                            {imp.problem_source === 'mtn' && <span>ค่าซ่อมจริง {fmtBaht(cs.repairPerDay)}</span>}
+                            {imp.problem_source === 'mtn' && (
+                              <span style={{ textDecoration: costComps.includes('repair') ? 'none' : 'line-through', opacity: costComps.includes('repair') ? 1 : 0.5 }}
+                                title="ค่าซ่อมจริงจากใบ MO — คนละแหล่งกับ IDP (SAP) ซึ่งรวมค่าซ่อมไว้ในค่าเสื่อมทางอ้อม เปิดทั้งคู่อาจทับซ้อนบางส่วน">
+                                ค่าซ่อมจริง {fmtBaht(cs.repairPerDay)}
+                              </span>
+                            )}
                             <span style={{ color: 'var(--muted)' }}>(บาท/วัน)</span>
                           </div>
+                          {imp.problem_source === 'mtn' && costComps.includes('repair') && costComps.includes('idp') && (
+                            <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                              ℹ️ IDP (SAP — ค่าเสื่อมทางอ้อม "รวมค่าซ่อม") กับ ค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล — เปิดนับทั้งคู่อาจทับซ้อนบางส่วน เลือกปิดก้อนใดก้อนหนึ่งได้ตามนโยบายบัญชี
+                            </div>
+                          )}
                           {imp.problem_source === 'defect' && cs.defectParts.length > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               {cs.defectParts.map(p => (
@@ -798,7 +1157,7 @@ export default function Improvements() {
                           )}
                           {cs.invest > 0 && (
                             <div style={{ fontSize: 11, fontWeight: 700, color: cs.payback ? 'var(--accent)' : 'var(--muted)' }}>
-                              🏗 ลงทุน {fmtBaht(cs.invest)} บาท{cs.payback ? ` → คืนทุน ~${cs.payback < 10 ? cs.payback.toFixed(1) : Math.round(cs.payback)} เดือน` : ' — ยังไม่มี saving ให้คืนทุน'}
+                              🏗 ลงทุน {fmtBaht(cs.invest)} บาท{cs.payback ? ` → คืนทุน${tooEarly ? 'เร็วสุด (ถ้าแก้หายหมด)' : ''} ~${cs.payback < 10 ? cs.payback.toFixed(1) : Math.round(cs.payback)} เดือน` : ' — ยังไม่มี saving ให้คืนทุน'}
                             </div>
                           )}
                         </div>
@@ -826,6 +1185,11 @@ export default function Improvements() {
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', userSelect: 'none' }}>
                         <span style={{ fontSize: 11, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--muted)' }}>▶</span>
                         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🗓 แผนงาน {ms.length ? `${doneCnt}/${ms.length} ขั้น` : '(ยังไม่วางแผน)'}</span>
+                        {/* legend PDCA — บอกว่าแผนอิงหลักอะไร + ตัวอักษรสีตรงกับป้ายหน้าแต่ละขั้น */}
+                        <span title={Object.values(PHASES).map(p => `${p.s} = ${p.label}`).join('\n')}
+                          style={{ display: 'inline-flex', gap: 2, fontSize: 10, fontWeight: 900, flexShrink: 0 }}>
+                          {Object.values(PHASES).map(p => <span key={p.s} style={{ color: p.c }}>{p.s}</span>)}
+                        </span>
                         {ms.length > 0 && (
                           <div style={{ flex: 1, height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
                             <div style={{ width: `${(doneCnt / ms.length) * 100}%`, height: '100%', background: '#22c55e', borderRadius: 3, transition: 'width 0.4s' }} />
@@ -853,7 +1217,11 @@ export default function Improvements() {
                                   title={canManage ? 'กดเพื่อเปลี่ยนสถานะ' : ''}
                                   style={{ width: 142, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', cursor: canManage ? 'pointer' : 'default', padding: 0, textAlign: 'left' }}>
                                   <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? '#ef4444' : meta.c}` }} />
-                                  <span title={`${m.title}${m.assignee ? ` · ${m.assignee}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: m.status === 'done' ? 'line-through' : 'none', opacity: m.status === 'done' ? 0.65 : 1 }}>{m.title}</span>
+                                  {/* ป้ายเฟส PDCA — จากคอลัมน์ phase (null = ขั้นที่ยังไม่ระบุเฟส โชว์ "–" ไม่เดาให้) */}
+                                  {PHASES[m.phase]
+                                    ? <span title={PHASES[m.phase].label} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, fontSize: 9, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${PHASES[m.phase].c}26`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
+                                    : <span title="ยังไม่ระบุเฟส PDCA" style={{ width: 14, flexShrink: 0, fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>–</span>}
+                                  <span title={`${m.title}${m.assignee ? ` · ${m.assignee}` : ''}${m.phase === 'check' ? '\n🤖 ขั้นนี้ระบบเทียบผลก่อน/หลังจากข้อมูลจริงให้อัตโนมัติ (แผงผลบนการ์ด)' : ''}`} style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: m.status === 'done' ? 'line-through' : 'none', opacity: m.status === 'done' ? 0.65 : 1 }}>{m.phase === 'check' ? '🤖 ' : ''}{m.title}</span>
                                 </button>
                                 {/* แถบ gantt ตามแผน */}
                                 <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
@@ -883,6 +1251,13 @@ export default function Improvements() {
                               <input placeholder="ขั้นงานใหม่ เช่น สั่งทำ jig ใหม่" value={msDraft[imp.id]?.title || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], title: e.target.value } }))}
                                 style={{ width: 170, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              {/* เฟส PDCA ของขั้นใหม่ — ไม่เลือก = "–" (ไม่เดาให้) */}
+                              <select value={msDraft[imp.id]?.phase || ''} title="เฟส PDCA ของขั้นนี้"
+                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], phase: e.target.value } }))}
+                                style={{ width: 92, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                                <option value="">เฟส —</option>
+                                {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
+                              </select>
                               <input placeholder="ผู้รับผิดชอบ" value={msDraft[imp.id]?.assignee || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: e.target.value } }))}
                                 style={{ width: 100, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
@@ -907,13 +1282,15 @@ export default function Improvements() {
                   <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>{imp.created_by_name ? `โดย ${imp.created_by_name}` : ''}</span>
                   {canManage && imp.status === 'monitoring' && (
                     <>
-                      <button onClick={() => setCloseModal({ imp, note: '' })} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✅ ปิดจ๊อบ</button>
+                      <button onClick={() => setCloseModal({ imp, note: '', peImpact: null })} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✅ ปิดจ๊อบ</button>
                       <button onClick={() => setStatus(imp, 'cancelled')} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--muted)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✖ ยกเลิก</button>
                     </>
                   )}
                   {canManage && imp.status !== 'monitoring' && (
                     <button onClick={() => setStatus(imp, 'monitoring', imp.result_note)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>👁 ติดตามต่อ</button>
                   )}
+                  {/* 📐 คำขอแก้เอกสาร PE — เข้าได้ทุกเมื่อ (ดูสถานะคำขอ/เสนอเพิ่ม) ไม่ใช่ one-shot ตอนปิดจ๊อบ */}
+                  <button onClick={() => setPeModal(imp)} title="เสนอ/ดูคำขอแก้ PFMEA · Control Plan จากโปรเจคนี้" style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>📐 PE</button>
                   {canManage && <button onClick={() => openEdit(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✏️ แก้ไข</button>}
                   {canDel && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
                 </div>
@@ -971,18 +1348,97 @@ export default function Improvements() {
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
                     <select value={modal.machine_no || ''} onChange={e => setModal({ ...modal, machine_no: e.target.value })} style={{ marginTop: 4 }}>
                       <option value="">— ทั้งไลน์ —</option>
-                      {machineOpts.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
+                      {/* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน (เช่นชื่อที่พิมพ์ในบันทึก downtime) ต้องยังแสดงได้ —
+                          ไม่งั้น select โชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ = โกหกคนอ่าน */}
+                      {modal.machine_no && !mcListed(modal.machine_no) && (
+                        <option value={modal.machine_no}>⚠ {modal.machine_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)</option>
+                      )}
+                      {/* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ = คำตอบที่คนกำลังหา */}
+                      {mcHit.length > 0 && (
+                        <optgroup label={`⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`}>
+                          {mcHit.map(m => (
+                            <option key={m.id} value={m.machine_no}>
+                              {m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''} — {Math.round(mcOfHit(m).value).toLocaleString()} {hitUnit} · {mcOfHit(m).count} ครั้ง
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {mcUnreg.length > 0 && (
+                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง">
+                          {mcUnreg.map(h => (
+                            <option key={`u-${h.machine_no}`} value={h.machine_no}>
+                              {h.machine_no} — {Math.round(h.value).toLocaleString()} {hitUnit} · {h.count} ครั้ง
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label={mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์'}>
+                        {mcRest.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
+                      </optgroup>
+                      {/* แม่พิมพ์แยกกลุ่มท้ายสุด — เดิมปนกลางลิสต์เครื่องจักร (ชื่อยาวเป็นชื่อพาร์ท) */}
+                      {mcDie.length > 0 && (
+                        <optgroup label="🔨 แม่พิมพ์">
+                          {mcDie.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>สินค้า
                     <select value={modal.mat_no || ''} onChange={e => setModal({ ...modal, mat_no: e.target.value })} style={{ marginTop: 4 }}>
                       <option value="">— ทุกสินค้า —</option>
-                      {productOpts.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
+                      {modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) && (
+                        <option value={modal.mat_no}>⚠ {modal.mat_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)</option>
+                      )}
+                      {prodHit.length > 0 && (
+                        <optgroup label={`⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`}>
+                          {prodHit.map(p => (
+                            <option key={p.id} value={p.mat_no}>
+                              {p.mat_no} · {p.name} — {Math.round(matOfHit(p).value).toLocaleString()} {hitUnit}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {prodUnreg.length > 0 && (
+                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้">
+                          {prodUnreg.map(mat => (
+                            <option key={`um-${mat}`} value={mat}>
+                              {mat} — {Math.round(hitMat.get(mat).value).toLocaleString()} {hitUnit}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label={prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์'}>
+                        {prodRest.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
+                      </optgroup>
                     </select>
+                    {/* ลิสต์ว่าง = ต้องบอกว่าทำไม ห้ามปล่อยให้ดูเหมือน dropdown เสีย */}
+                    {prodAll.length === 0 && prodUnreg.length === 0 && (
+                      <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>
+                        ยังไม่มีสินค้าผูกกับไลน์ {modal.line_name} (หรือไลน์แม่/ลูก) ใน Product Master — ตั้ง “ไลน์” ของสินค้าที่ /products ก่อน
+                      </div>
+                    )}
                   </label>
                 </div>
+                {/* 🎯 เป้าหมาย (Plan) — ผลจริงจะคำนวณหลังกดยืนยัน "เริ่มลงมือแก้จริง" เท่านั้น */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title="ตั้งเป้าตอนเปิดโปรเจค (ขั้น Plan) — ระบบคำนวณเงินที่คาดว่าจะประหยัดให้">
+                    🎯 เป้าหมาย <span style={{ fontWeight: 600, fontSize: 11 }}>(ตั้งใจ “ลดลง” เท่าไหร่)</span>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <input type="number" min="0" step="any" placeholder="เช่น 50" value={modal.target_value}
+                        onChange={e => setModal({ ...modal, target_value: e.target.value })} style={{ width: 110 }} />
+                      <select value={modal.target_mode || 'pct'} onChange={e => setModal({ ...modal, target_mode: e.target.value })} style={{ width: 160 }}>
+                        <option value="pct">% ลดลง</option>
+                        <option value="per_day">{modal.problem_source === 'defect' ? 'ชิ้น/วัน ที่ลดลง' : modal.problem_source === 'mtn' ? 'ใบ/วัน ที่ลดลง' : 'นาที/วัน ที่ลดลง'}</option>
+                      </select>
+                    </div>
+                  </label>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, flex: 1, minWidth: 200, paddingBottom: 4 }}>
+                    เว้นว่างได้ แต่ไม่ตั้งเป้า = ระบบตอบไม่ได้ว่าโปรเจคนี้ควรได้เงินกลับมาเท่าไหร่<br />
+                    ผลจริงเริ่มนับหลังกดยืนยัน <b>“เริ่มลงมือแก้จริง”</b> (ขั้น Do) — ก่อนหน้านั้นการ์ดโชว์เป้าหมาย ไม่ใช่ผลลัพธ์
+                  </div>
+                </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันเริ่มแก้ไข *
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title="จุดตัดเทียบก่อน/หลัง — ถ้ายังไม่ได้ลงมือจริง ระบบจะเลื่อนให้ตอนกดเริ่มขั้น Do">วันเริ่มแก้ไข * <span style={{ fontWeight: 600, fontSize: 11 }}>(= จุดตัดเทียบก่อน/หลัง)</span>
                     {/* width กัน index.css input{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
                     <input type="date" value={modal.start_date} onChange={e => setModal({ ...modal, start_date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} />
                   </label>
@@ -1001,6 +1457,7 @@ export default function Improvements() {
                   <textarea value={modal.description || ''} onChange={e => setModal({ ...modal, description: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การแก้ไข (Action)
+                  <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}> — ยังวิเคราะห์อยู่ก็เว้นได้ การ์ดจะชวนกรอกตอนกดเริ่มขั้น Do (แยกจังหวะ Plan/Do ตามหลัก PDCA)</span>
                   <textarea value={modal.action_taken || ''} onChange={e => setModal({ ...modal, action_taken: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1033,18 +1490,22 @@ export default function Improvements() {
                       const isMtn = modal.problem_source === 'mtn';
                       const tn = isMtn ? row.label : (typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท');
                       const selected = isMtn
-                        ? (modal.problem_label || '') === (row.label === 'ทุกอาการ' ? '' : row.label) && (modal.machine_no || '') === row.machine_no
-                        : modal.problem_type_id === (row.type_id || '') && (modal.problem_source === 'downtime' ? (modal.machine_no || '') === row.machine_no : (modal.mat_no || '') === row.mat_no);
+                        ? (modal.problem_label || '') === (row.label === 'ทุกอาการ' ? '' : row.label) && sameMc(modal.machine_no, row.machine_no)
+                        : modal.problem_type_id === (row.type_id || '') && (modal.problem_source === 'downtime' ? sameMc(modal.machine_no, row.machine_no) : (modal.mat_no || '') === row.mat_no);
                       // งานในแผน (5ส./นับสต็อก ฯลฯ) = priority รอง: จางลง แถบเทา + ป้ายกำกับ — ไม่ใช่เป้าหลักของ Kaizen
                       const barColor = row.planned ? '#94a3b8' : isMtn ? '#f59e0b' : '#ef4444';
                       return (
-                        <button key={i} onClick={() => setModal({
-                          ...modal,
-                          ...(isMtn
-                            ? { problem_label: row.label === 'ทุกอาการ' ? '' : row.label, problem_type_id: '', machine_no: row.machine_no || '' }
-                            : { problem_type_id: row.type_id || '', problem_label: tn, ...(modal.problem_source === 'downtime' ? { machine_no: row.machine_no || '' } : { mat_no: row.mat_no || '' }) }),
-                          title: modal.title || (isMtn ? `ลดใบซ่อม ${tn} ${row.machine_no || ''}`.trim() : `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${row.machine_no || row.mat_no || ''}`.trim()),
-                        })} style={{
+                        <button key={i} onClick={() => {
+                          // เติมหมายเลขเครื่องเป็นชื่อตามทะเบียน (จับคู่แบบ normCode) — ให้ dropdown แสดงได้
+                          const mc = canonMc(row.machine_no);
+                          setModal({
+                            ...modal,
+                            ...(isMtn
+                              ? { problem_label: row.label === 'ทุกอาการ' ? '' : row.label, problem_type_id: '', machine_no: mc }
+                              : { problem_type_id: row.type_id || '', problem_label: tn, ...(modal.problem_source === 'downtime' ? { machine_no: mc } : { mat_no: row.mat_no || '' }) }),
+                            title: modal.title || (isMtn ? `ลดใบซ่อม ${tn} ${mc}`.trim() : `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${(modal.problem_source === 'downtime' ? mc : row.mat_no) || ''}`.trim()),
+                          });
+                        }} style={{
                           textAlign: 'left', padding: '6px 8px', borderRadius: 7, cursor: 'pointer',
                           border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
                           background: selected ? 'var(--accent-dim)' : 'var(--bg)',
@@ -1088,6 +1549,58 @@ export default function Improvements() {
         </div>
       )}
 
+      {/* ── modal "เริ่มลงมือแก้จริง" (จังหวะ 2 — เข้าจากแถบ 🚀 บนการ์ด หรือติ๊กเริ่มขั้น Do ในแผน) ── */}
+      {doModal && (
+        <div className="overlay">
+          <div className="modal">
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🚀 เริ่มลงมือแก้ — "{doModal.imp.title}"</h3>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.55 }}>
+              วันเริ่มแก้คือ<b>จุดตัดเทียบก่อน/หลัง</b> — ตั้งเป็นวันที่ลงมือจริง ตัวเลข % ลด/Cost Saving ถึงจะแม่น
+              (ปล่อยเป็นวันเปิดโปรเจคทั้งที่ยังวิเคราะห์อยู่ = ช่วง "หลังแก้" ปนวันที่ยังไม่ได้แก้)
+            </div>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การแก้ไขที่ลงมือทำ (Action) *
+              <textarea value={doModal.action} onChange={e => setDoModal({ ...doModal, action: e.target.value })} rows={3}
+                placeholder="เช่น แก้ JOB ROBOT จุดเชื่อม 12 · เปลี่ยน Reed sensor + ย้ายตำแหน่ง bracket" style={{ marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginTop: 8 }}>วันเริ่มแก้จริง *
+              {/* width กัน index.css input{width:100%} */}
+              <input type="date" value={doModal.date} onChange={e => setDoModal({ ...doModal, date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+              <button onClick={() => setDoModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>ไว้ก่อน</button>
+              <button onClick={saveDoStart} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#f59e0b', color: '#1b1204', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>🚀 บันทึกเริ่มลงมือ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── modal คำขอแก้เอกสาร PE (ลูปปิด Improvement → PFMEA/CP — ขั้น Act) ──
+          reuse PeChangeRequests mode="source" ตัวเดียวกับโมดัล 8D · ref_kind='improvement'
+          (vocabulary ขยายแล้ว — migration 20260819_pe_ref_kind_improvement_main) */}
+      {peModal && (
+        <div className="overlay" onClick={() => setPeModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, maxHeight: '86vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📐 เอกสาร PE — "{peModal.title}"</h3>
+              <button onClick={() => setPeModal(null)} style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+            </div>
+            <PeChangeRequests
+              mode="source"
+              canPropose={canManage}
+              canDecide={false}
+              source={{
+                kind: 'improvement', id: peModal.id, label: peModal.title,
+                partNo: peModal.mat_no || null, lineName: peModal.line_name,
+                symptom: [peModal.problem_label, peModal.description].filter(Boolean).join(' — '),
+                rootCause: peModal.description || '',
+                corrective: peModal.action_taken || '',
+                isCustomer: false,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* ── modal ปิดจ๊อบ + สรุปผล ── */}
       {closeModal && (
         <div className="overlay">
@@ -1096,9 +1609,30 @@ export default function Improvements() {
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>สรุปผลการปรับปรุง
               <textarea value={closeModal.note} onChange={e => setCloseModal({ ...closeModal, note: e.target.value })} rows={3} placeholder="เช่น ดาวไทม์ลดลง 70% หลังเปลี่ยน jig ใหม่" style={{ marginTop: 4 }} />
             </label>
+            {/* ── soft gate ขั้น Act (2026-08-19): การแก้วิธีการ/จิ๊ก/พารามิเตอร์ = process change ที่ IATF
+                ต้องทบทวน PFMEA/Control Plan — บังคับให้ "ตอบ" ก่อนปิด แต่ไม่บังคับให้แก้เอกสารเสร็จ
+                (หลักเดียวกับด่านปิด D8 — แข็งเกินไปคนจะเลี่ยงด้วยการไม่เปิดโปรเจคเลย ซึ่งแย่กว่า) ── */}
+            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>📐 การแก้ไขนี้กระทบเอกสาร PE (PFMEA / Control Plan) ไหม?</div>
+              <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
+                {[['yes', 'กระทบ — เสนอคำขอแก้เข้ากล่อง PE'], ['no', 'ไม่กระทบ']].map(([v, l]) => (
+                  <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+                    <input type="radio" name="peImpact" checked={closeModal.peImpact === v} onChange={() => setCloseModal({ ...closeModal, peImpact: v })} />
+                    {l}
+                  </label>
+                ))}
+              </div>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
               <button onClick={() => setCloseModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={() => { setStatus(closeModal.imp, 'done', closeModal.note.trim() || null); setCloseModal(null); }} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#22c55e', color: '#08130a', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>✅ ปิดจ๊อบ</button>
+              <button disabled={!closeModal.peImpact}
+                title={closeModal.peImpact ? '' : 'ตอบก่อนว่ากระทบเอกสาร PE ไหม (ขั้น Act ของ PDCA)'}
+                onClick={() => {
+                  setStatus(closeModal.imp, 'done', closeModal.note.trim() || null);
+                  if (closeModal.peImpact === 'yes') setPeModal(closeModal.imp);
+                  setCloseModal(null);
+                }}
+                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: closeModal.peImpact ? '#22c55e' : 'var(--bg3)', color: closeModal.peImpact ? '#08130a' : 'var(--muted)', fontWeight: 800, fontSize: 12, cursor: closeModal.peImpact ? 'pointer' : 'not-allowed' }}>✅ ปิดจ๊อบ</button>
             </div>
           </div>
         </div>

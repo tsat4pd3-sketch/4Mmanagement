@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
@@ -74,6 +75,15 @@ export default function FeedbackModal({ onClose }) {
         : `ส่งไม่สำเร็จ: ${error.message}`);
       return;
     }
+    notifyEvent({
+      event: 'user_feedback', type: 'info', ref_table: 'user_feedback',
+      actor: fullName || user?.email || null,
+      lines: [
+        (() => { const k = KINDS.find(x => x.key === kind); return k ? `${k.icon} ${k.label}` : kind; })(),
+        `📄 หน้า: ${location.pathname}`,
+        `💬 ${body.slice(0, 400)}`,
+      ],
+    });
     toast.success('ส่งแล้ว ขอบคุณครับ 🙏 ทีมงานจะตามให้');
     setMsg(''); load();
   };
@@ -130,7 +140,7 @@ export default function FeedbackModal({ onClose }) {
   );
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
 
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>

@@ -3,23 +3,25 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
-import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeAlarm';
-import { sumDefectQty } from '../utils/oee';
+import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
+import { sumDefectQty, computeLiveOee } from '../utils/oee';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { parallelUnitsOf } from '../utils/lineTypes';
+import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE } from '../utils/refreshRates';
 import { visibleInterval } from '../utils/usePolling';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
+import { liveChannel } from '../utils/liveChannel';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -259,6 +261,20 @@ export default function Dashboard() {
   const [breakPolicies, setBreakPolicies] = useState([]);
   // วันที่ของ Heijunka Board — เลือกดูย้อนหลังได้ (default = วันงานปัจจุบัน)
   const [boardDate,     setBoardDate]     = useState(() => getWorkDateStr(new Date()));
+  // ตัวกรองตู้ Heijunka รวม (2026-08-19 · คำขอ user): ดูทุกไลน์-ทุกพาร์ทในจอเดียวแล้วกรองได้
+  // boardLineSel = กลุ่มไลน์ ('' = ทุกไลน์) · boardQuery = ค้นชื่อพาร์ท/MAT/เลขใบ
+  // ⚠️ กรองเฉพาะ "ชั้นแสดงผล" — ห้ามกรอง cards ก่อนคำนวณคิว (ตำแหน่ง/เวลาคาดเสร็จผูกกับคิวทั้งไลน์)
+  const [boardLineSel,  setBoardLineSel]  = useState('');
+  const [boardQuery,    setBoardQuery]    = useState('');
+  /* ✍️ แถวที่มีแต่ "ใบเปิดเอง" (ไลน์ที่ไม่มีบัตรคัมบังให้สแกน) ยุบไว้เป็นค่าเริ่มต้น —
+     บอร์ดนี้เป็นจอภาพรวม ของหลักคือใบสั่งที่สแกนจาก SAP (user 2026-08-27)
+     จำต่อเครื่อง (จอ TV ตั้งครั้งเดียวจบ) · กางดูได้เสมอ ไม่ได้ตัดข้อมูลทิ้ง */
+  const [showManualRows, setShowManualRows] = useState(() => {
+    try { return localStorage.getItem('esm_board_manual') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('esm_board_manual', showManualRows ? '1' : '0'); } catch { /* โหมดส่วนตัว/ปิด site data */ }
+  }, [showManualRows]);
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
@@ -331,98 +347,30 @@ export default function Dashboard() {
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
     }
 
-    // ประมาณ OEE "สด" ของกะที่กำลังผลิตอยู่ (ยังไม่ปิดกะ) — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
-    // ใช้ work_date + start_time (เวลาเปิดกะจริงที่ตั้งไว้) เป็นจุดเริ่ม ไม่ใช่ created_at ที่อาจคลาดเคลื่อน
-    // และคิด CT แยกตาม MAT.NO ของแต่ละ order ไม่ใช่ CT เดียวของ session เพราะกะเดียวอาจผลิตหลาย MAT.NO
+    /* OEE สดของกะที่ยังไม่ปิด — ใช้สูตรกลาง computeLiveOee จาก utils/oee.js เท่านั้น
+       (QC audit 2026-08-20 · T1-3) เดิมหน้านี้เขียน computeSessionOEE เอง ~90 บรรทัด แล้วเพี้ยน 3 ทาง:
+       (ก) DT ที่ยังเปิดค้าง (ไม่มี ended_at/duration_min) ถูกนับเป็น 0 นาที
+           → เครื่องหยุดตั้งแต่ 10:00 ดูตอน 14:00: ผังรวมบอก A=33% แต่จอนี้ (จอ Andon!) บอก 100%
+       (ข) นับผลิตเฉพาะใบ confirmed ทิ้ง qty_actual ของใบเปิด → P=null ทั้งที่ไลน์กำลังเดิน
+       (ค) ไม่มี parallelCap → SUB APRON P raw 842% โดน min(1,..) กลืน → OEE ~99% ปลอม
+       ⚠️ computeLiveOee คืน A/P/Q/oee เป็น "เปอร์เซ็นต์ 0-100" — แปลงกลับเป็นสัดส่วน 0-1
+       ให้ตรงกับที่ตัว render การ์ดใช้ (คูณ 100 ตอนแสดง) จะได้ไม่ต้องรื้อจุดแสดงผล */
     const computeSessionOEE = (s) => {
-      const openedAt = (s.work_date && s.start_time)
-        ? new Date(`${s.work_date}T${s.start_time.slice(0,5)}:00`)
-        : (s.created_at ? new Date(s.created_at) : null);
-      const closedAt  = new Date();
-      if (!openedAt) return null;
-      const shiftMin  = Math.round((closedAt - openedAt) / 60000);
-      const dts       = dtBySession[s.id] || [];
-      // ไลน์เครื่องขนาน (เช่น LASER-345/789 N=3): DT ที่ระบุเครื่อง = เครื่องเดียวหยุด หักแค่ 1/N
-      // ของนาทีที่ลง — สูตรเดียวกับ computeOEE ใน DailyReport (N จาก parallel_stations · แยกจาก flow_mode)
-      const parallelN = parallelUnitsOf(linesRef.current.find(l => l.name === s.line_name));
-      const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
-      const plannedDT = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
-      const unplannedDT = dts.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0) * dtW(d), 0);
-      // Policy breaks overlap
-      const wDate = s.work_date;
-      const policyBreak = (breakPolicies || [])
-        .filter(p => p.shift === 'both' || p.shift === s.shift)
-        .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
-        .reduce((sum, p) => {
-          const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-          let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-          let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-          if (pStart < openedAt && pEnd < openedAt) {
-            pStart = new Date(pStart.getTime() + 86400000);
-            pEnd   = new Date(pEnd.getTime() + 86400000);
-          }
-          return sum + Math.max(0, (Math.min(pEnd, closedAt) - Math.max(pStart, openedAt)) / 60000);
-        }, 0);
-      const netAvail = Math.max(0, shiftMin - plannedDT - policyBreak);
-      const runMin   = Math.max(0, netAvail - unplannedDT);
-      const orders   = ordersBySession[s.id] || [];
-      let producedMin = 0, knownQty = 0;
-      const produced = orders.filter(o => o.status === 'confirmed').reduce((a, o) => a + o.qty, 0);
-      orders.filter(o => o.status === 'confirmed').forEach(o => {
-        const ct = ctMap[o.mat_no] || s.dr_products?.cycle_time_sec || 0;
-        if (ct > 0) { producedMin += o.qty * ct / 60; knownQty += o.qty; }
+      const line = linesRef.current.find(l => l.name === s.line_name);
+      const live = computeLiveOee({
+        session: s,
+        orders: ordersBySession[s.id] || [],
+        downtimes: dtBySession[s.id] || [],
+        ctMap,
+        ngQty: sumDefectQty(defectBySession[s.id] || [], 'line'),
+        workDate: s.work_date,
+        parallelN: parallelUnitsOf(line),
+        parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
       });
-      // ⚠️ Q ไม่นับงานทดลอง (มาตรฐานเดียวกับ computeOEE ตอนปิดกะ)
-      const ngQty    = sumDefectQty(defectBySession[s.id] || [], 'line');
-      // Availability: ถ้ากะนี้มีหลาย MAT.NO วิ่งคนละช่วงเวลากัน ให้แยกคำนวณ netAvail/runMin ตามช่วงเปิด-ปิดของแต่ละ
-      // MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์เดียว — สูตรเดียวกับ computeOEE() ใน DailyReport.jsx
-      const dtOverlapMinLive = (startMs, endMs, pred = () => true) => {
-        if (!startMs || !endMs || endMs <= startMs) return 0;
-        return dts.filter(pred).reduce((sum, d) => {
-          if (!d.started_at) return sum;
-          const s0 = new Date(d.started_at).getTime();
-          const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
-          const ov0 = Math.max(s0, startMs), ov1 = Math.min(e0, endMs);
-          return ov1 > ov0 ? sum + ((ov1 - ov0) / 60000) * dtW(d) : sum;
-        }, 0);
-      };
-      let totalNetAvailByMat = 0, totalRunMinByMat = 0;
-      const matNosForA = Array.from(new Set(orders.map(o => o.mat_no)));
-      matNosForA.forEach(matNo => {
-        const matOrders = orders.filter(o => o.mat_no === matNo);
-        const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-        const closedTimes = matOrders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-        const matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
-        const matEndMs   = closedTimes.length ? Math.max(...closedTimes) : closedAt.getTime();
-        if (matStartMs == null || matEndMs <= matStartMs) return;
-        const windowMin = (matEndMs - matStartMs) / 60000;
-        const matPolicyBreakMin = (breakPolicies || [])
-          .filter(p => p.shift === 'both' || p.shift === s.shift)
-          .filter(p => p.process_type === 'common' || p.process_type === s.dr_products?.process_type)
-          .reduce((sum, p) => {
-            const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-            let pStart = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`);
-            let pEnd = new Date(pStart.getTime() + p.duration_min * 60000);
-            if (pStart.getTime() < matStartMs && pEnd.getTime() < matStartMs) {
-              pStart = new Date(pStart.getTime() + 86400000);
-              pEnd   = new Date(pEnd.getTime() + 86400000);
-            }
-            return sum + Math.max(0, (Math.min(pEnd.getTime(), matEndMs) - Math.max(pStart.getTime(), matStartMs)) / 60000);
-          }, 0);
-        const matLoggedPlanned   = dtOverlapMinLive(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned');
-        const matLoggedUnplanned = dtOverlapMinLive(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned');
-        const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
-        const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
-        totalNetAvailByMat += matNetAvail;
-        totalRunMinByMat   += matRunMin;
-      });
-      const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
-        : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
-      // ไม่มี Cycle Time ของ MAT.NO ที่ผลิตเลย → P คำนวณไม่ได้ ห้าม default เป็น 100%
-      const P = knownQty > 0 ? (runMin > 0 ? Math.min(1, producedMin / runMin) : 0) : null;
-      const Q = produced > 0 ? produced / (produced + ngQty) : 1; // produced = ของดี(สแกน) → ดี/(ดี+เสีย) ไม่หักซ้ำ
-      const oee = P != null ? A * P * Q : null;
-      return { A, P, Q, oee, runMin, netAvail, shiftMin };
+      if (!live) return null;   // เพิ่งเปิดกะ (< LIVE_MIN_ELAPSED นาที) / ไม่มี start_time = ยังประเมินไม่ได้
+      const f = v => (v == null ? null : v / 100);
+      return { A: f(live.A), P: f(live.P), Q: f(live.Q), oee: f(live.oee),
+        noOutput: live.noOutput, noCt: live.noCt, pOver: live.pOver };
     };
 
     const ps = (sessions || []).map(s => {
@@ -632,7 +580,7 @@ export default function Dashboard() {
       clearTimeout(timer);
       timer = setTimeout(() => fetchProdStatus(), 1500);
     };
-    const ch = supabaseDR.channel('dash-dr')
+    const ch = liveChannel(supabaseDR, 'dash-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         refresh)
@@ -794,6 +742,19 @@ export default function Dashboard() {
     [logs, selectedShift, passAll, visibleLineIds],
   );
 
+  /* ⚠️ เช็คชื่อแล้วแต่ "จัดเข้ากะไม่ได้" — assignedShift = null (ไลน์นั้นยังไม่มีตารางกะของวันที่เลือก)
+     คนกลุ่มนี้ตกทั้งกะเช้าและกะดึกพร้อมกันแบบเงียบๆ → KPI โชว์ 0 คน ซึ่งคนอ่านเป็น "ไม่มีใครมาทำงาน"
+     ทั้งที่ความจริงคือ "ยังไม่ได้ตั้งตารางกะ" — คนละเรื่องกัน (กฎ: ประเมินไม่ได้ ต้องบอก ห้ามกลายเป็น 0)
+     เคสจริง 2026-08-27: ทุกไลน์ PD4 ตารางกะหมดที่ 23/08 แต่คนเช็คชื่อครบทุกวัน 20-28 คน */
+  const noShiftLogs = useMemo(() => {
+    const base = logs.filter(l => l.assignedShift == null && l.is_present);
+    return passAll ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
+  }, [logs, passAll, visibleLineIds]);
+  const noShiftLineNames = useMemo(() => {
+    const byId = new Map(visibleLines.map(l => [l.id, l.name]));
+    return [...new Set(noShiftLogs.map(l => byId.get(l.employees?.line_id)).filter(Boolean))].sort();
+  }, [noShiftLogs, visibleLines]);
+
   const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);
   const absent   = useMemo(() => shiftLogs.filter(l => !l.is_present), [shiftLogs]);
   const ppeReady = useMemo(() => present.filter(l => l.has_helmet && l.has_boots && l.has_gloves), [present]);
@@ -952,6 +913,35 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
+      {/* คนที่ยังจัดเข้ากะไม่ได้ — ห้ามปล่อยให้ KPI โชว์ 0 เฉยๆ (งานค้าง = ป้ายนิ่ง ไม่กระพริบ) */}
+      {selectedShift !== 'all' && noShiftLogs.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
+              ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+              ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
+              {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
+            </div>
+          </div>
+          <button onClick={() => setSelectedShift('all')} style={{
+            padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)',
+            background: 'transparent', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>👁 ดูรวมทุกกะ</button>
+          {canAccessPage('/shift-organize', role) && (
+            <button onClick={() => navigate('/shift-organize')} style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>🗓️ ไปตั้งตารางกะ</button>
+          )}
+        </div>
+      )}
+
       {/* ── KPI Row ─────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
@@ -1044,7 +1034,7 @@ export default function Dashboard() {
                   <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                   {elapsed != null && (
-                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {elapsed} นาที</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
                   )}
                 </div>
               );
@@ -1331,7 +1321,39 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {Object.entries(byLine).map(([lineName, sessions]) => {
+            {/* ── ตัวกรองตู้รวม: ชิปกลุ่มไลน์ + ช่องค้นพาร์ท/MAT/เลขใบ ──
+                ชิป = state ที่มองเห็น (ไลน์อื่นถูกซ่อนโดยผู้ใช้เลือกเอง ไม่ใช่หายเงียบ)
+                boardLineSel ที่ไม่มีในวันนั้น → ตกกลับ "ทุกไลน์" (กฎ cascade §5.3 ห้ามจอว่างเงียบ) */}
+            {(() => {
+              const lineNames = Object.keys(byLine).sort();
+              const effSel = lineNames.includes(boardLineSel) ? boardLineSel : '';
+              if (lineNames.length <= 1 && !boardQuery) return null;
+              const chip = (active) => ({
+                padding: '3px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                background: active ? 'var(--accent)' : 'var(--bg2)',
+                color: active ? '#08130a' : 'var(--text2)', fontFamily: 'var(--font-body)',
+              });
+              return (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                  {lineNames.length > 1 && [{ k: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ k: n, label: n }))].map(c => (
+                    <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
+                  ))}
+                  {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
+                  <input value={boardQuery} onChange={e => setBoardQuery(e.target.value)} placeholder="🔎 ค้นพาร์ท / MAT / เลขใบ"
+                    style={{ width: 210, marginLeft: 'auto', padding: '4px 10px', borderRadius: 7, fontSize: 12.5,
+                      background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  {(effSel || boardQuery) && (
+                    <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
+                      style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>
+                  )}
+                </div>
+              );
+            })()}
+
+            {Object.entries(byLine)
+              .filter(([n]) => !boardLineSel || !Object.keys(byLine).includes(boardLineSel) || n === boardLineSel)
+              .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
               const totalDelayed = sessions.reduce((acc, s) => {
                 const ctSec = s.dr_products?.cycle_time_sec || 0;
@@ -1473,7 +1495,25 @@ export default function Dashboard() {
                       const rowKey = multiSubLine ? `${c.line_name || ''}|${c.productKey}` : c.productKey;
                       (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
-                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    /* ⭐ ใบสั่งจาก SAP (สแกนบัตรคัมบัง) คือของหลักบนบอร์ดนี้ — ใบที่เปิดเองด้วยมือ
+                       (ไลน์ที่ไม่มีบาร์โค้ดให้สแกน) ดันขึ้นบนสุดตามลำดับตัวอักษรจนบังของจริง
+                       (user 2026-08-27: "อยากให้เน้นชิ้นงานที่เป็น order จาก SAP เป็นหลัก · manual ยุบไว้ได้")
+                       ⚠️ แถวที่ **มีใบสแกนปนอยู่แม้ใบเดียว = ไม่ใช่แถว manual** ห้ามยุบ (จะพาใบ SAP หายไปด้วย) */
+                    const isManualRow = (row) => row.cards.length > 0 && row.cards.every(c => c.is_manual);
+                    const productRows = Object.values(groups).sort((a, b) =>
+                      // แถว manual ไปท้ายเสมอ (แม้ตอนกางดู) — ของหลักต้องอยู่บนสุด
+                      (isManualRow(a) ? 1 : 0) - (isManualRow(b) ? 1 : 0) ||
+                      a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    // ตัวกรองพาร์ท (boardQuery) — กรองเฉพาะแถวที่จะวาด · สรุปหัวการ์ด/pace ยังนับทุกแถวตามจริง
+                    const bq = boardQuery.trim().toUpperCase();
+                    const qRows = !bq ? productRows : productRows.filter(row =>
+                      (row.label || '').toUpperCase().includes(bq) ||
+                      row.cards.some(c => String(c.mat_no || '').toUpperCase().includes(bq) || String(c.prod_no || '').toUpperCase().includes(bq)));
+                    const hiddenRowCount = productRows.length - qRows.length;
+                    /* ⚠️ ยุบ "การแสดงผล" เท่านั้น — ห้ามกรองก่อนคำนวณคิว/ตำแหน่งการ์ด
+                       (ตำแหน่งใบและเวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อน = เวลาเพี้ยนทั้งแถว) */
+                    const manualRows = qRows.filter(isManualRow);
+                    const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -1505,11 +1545,11 @@ export default function Dashboard() {
 
                     // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
                     // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
-                        // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
-                        // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
-                        const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
-                          breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
-                        });
+                    // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
+                    // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
+                    const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
+                      breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+                    });
 
                     // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบ "คนละพาร์ท" ของไลน์เดียวกันต้องต่อคิวกัน ──
                     // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
@@ -1937,7 +1977,28 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
-                        {productRows.map((row, ri) => {
+                        {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
+                        {hiddenRowCount > 0 && (
+                          <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
+                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                          </div>
+                        )}
+                        {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
+                            (ยอดผลิต/pace บนหัวการ์ดยังนับใบพวกนี้ครบตามจริง — ยุบแค่การแสดงผลรายแถว) */}
+                        {manualRows.length > 0 && (
+                          <div onClick={() => setShowManualRows(v => !v)}
+                            style={{
+                              padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                              color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
+                            }}>
+                            <span style={{ fontWeight: 800, color: 'var(--text2)' }}>{showManualRows ? '▼' : '▶'}</span>
+                            <span>✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) · {manualRows.length} พาร์ท</span>
+                            <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--accent)' }}>
+                              {showManualRows ? 'ยุบเก็บ (ทั้งบอร์ด)' : 'กางดู (ทั้งบอร์ด)'}
+                            </span>
+                          </div>
+                        )}
+                        {visRows.map((row, ri) => {
                           const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                           const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                           const doneCount = row.cards.filter(c => c.isDone).length;
@@ -2440,8 +2501,9 @@ export default function Dashboard() {
                   // ขนาด marker จาก util กลาง (ห้ามตั้งสูตรเองในหน้า — UI-CONVENTIONS §1)
                   // ต้องส่ง machineCount ด้วย (SUB เป็น density-aware) ไม่งั้นวงเครื่องจักรบนผังนี้
                   // ใหญ่กว่าหน้าอื่น (Management/LineSetup/MachineFloorMap) ที่ส่งครบ — ผิดหลัก WYSIWYG · QC audit 2026-08-03
-                  const mcCount = machinePoints.filter(p => cardLineNames.includes(p.line_name)).length;
-                  const { MK, SUB, subPillFont, subPillMaxW } = markerScale(boxW, { machineCount: mcCount });
+                  const mcPts = machinePoints.filter(p => cardLineNames.includes(p.line_name));
+                  const { MK, SUB, subPillFont, subPillMaxW } =
+                    markerScale(boxW, { machineCount: mcPts.length, points: mcPts, mapHeight: boxH });
                   const MIN_PX_X = MK * 1.2, MIN_PX_Y = MK * 1.6; // ระยะห่างขั้นต่ำรวม nametag+badge
                   const pxMarkers = markers.map(m => ({ ...m, px: m.left / 100 * boxW, py: m.top / 100 * boxH, dox: 0, doy: 0 }));
                   for (let pass = 0; pass < 60; pass++) {

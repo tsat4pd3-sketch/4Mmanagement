@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
+import { fetchAllPages } from '../utils/fetchByIds';
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -20,19 +22,35 @@ export default function RundownStock() {
   const [stockRows, setStockRows] = useState([]);
   const [orders, setOrders] = useState([]);
   const [shipToMap, setShipToMap] = useState({});
+  const [pnIdx, setPnIdx] = useState(() => new Map());
+  const [fgDest, setFgDest] = useState(null);   // คลังที่ FG เข้าไปรอส่ง (จาก stock_inflow_rules)
+  const [loadWarn, setLoadWarn] = useState('');  // โหลดไม่ครบ = บอกบนจอ ห้ามโชว์ตัวเลขเหมือนครบ (T3-26)
 
   const load = useCallback(async () => {
     const from = workDateStr();
     const toD = new Date(`${from}T12:00:00`);
     toD.setDate(toD.getDate() + HORIZON);
-    const [{ data: stk }, { data: ods }, { data: st }] = await Promise.all([
-      supabaseDR.from('line_stock_summary').select('mat_no, part_name, qty_on_hand'),
-      supabaseDR.from('customer_shipping_orders').select('*')
-        .lt('due_date', dateStr(toD)).neq('status', 'shipped'),
+    /* ⚠️ orders ค้างส่ง (ไม่มีขอบล่างวันที่ = ตั้งใจ — ใบเก่าที่ยังไม่ส่งคือหนี้ที่ยังค้างจริง)
+       ตอนนี้ ~923 รอบ ใกล้เพดาน 1000 แถวมาก → ต้องแบ่งหน้า ไม่งั้นแถวหายเงียบ
+       = Balance เกินจริง = ไม่เห็นว่าของจะขาด (QC audit 2026-08-20 · T3-26) · สต็อกก็เช่นกัน */
+    const [stkR, odsR, { data: st }, { data: rules }, { data: dp }, { data: ks }] = await Promise.all([
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
+        { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
+      fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('*')
+        .lt('due_date', dateStr(toD)).neq('status', 'shipped')),
       supabaseDR.from('ship_to_plants').select('*'),
+      // คลังปลายทางของ FG มาจากกฎรับเข้าอัตโนมัติ — ไม่ hardcode 'FG WAREHOUSE'
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
+      // ⚠️ order อ้าง "เลขลูกค้า" แต่คลังเก็บ "เลข SAP" — ต้อง resolve ผ่าน matResolve
+      //    เทียบตรงๆ จะได้ "ไม่มีของ" ทั้งที่ของเต็มคลังอยู่ใต้เลข SAP (กฎเหล็ก CLAUDE.md)
+      supabaseDR.from('dr_products').select('mat_no, p_no').eq('is_active', true),
+      supabaseDR.from('kanban_standards').select('mat_no, p_no').eq('is_active', true),
     ]);
-    setStockRows(stk || []);
-    setOrders(ods || []);
+    setLoadWarn(stkR.error || odsR.error || (stkR.truncated || odsR.truncated ? 'ข้อมูลเกินเพดานที่ดึงได้' : ''));
+    setStockRows(stkR.rows);
+    setOrders(odsR.rows);
+    setPnIdx(buildPnIndex([...(dp || []), ...(ks || [])]));
+    setFgDest((rules || []).find(r => r.match_type === 'prefix' && r.match_value === '1')?.dest_line_name || null);
     const m = {};
     (st || []).forEach(r => { m[r.code] = r; });
     setShipToMap(m);
@@ -57,8 +75,14 @@ export default function RundownStock() {
   }), [today]);
 
   const view = useMemo(() => {
+    // ⚠️ "stock พร้อมส่ง" = คลัง FG เท่านั้น — เดิมบวกทุกคลัง (mini-store ของไลน์ + STORE ก่อนแพ็ค)
+    //    ทำให้ balance สูงเกินจริง แล้วบอกว่า "พอ" ทั้งที่ของยังส่งลูกค้าไม่ได้
+    //    (เคสจริง 20059949: FG WAREHOUSE 1,000 + STORE 9,381 → เคยรวมเป็น 10,381)
     const onHand = {};
-    stockRows.forEach(s => { onHand[s.mat_no] = (onHand[s.mat_no] || 0) + (parseFloat(s.qty_on_hand) || 0); });
+    stockRows.filter(s => !fgDest || s.line_name === fgDest)
+      .forEach(s => { onHand[s.mat_no] = (onHand[s.mat_no] || 0) + (parseFloat(s.qty_on_hand) || 0); });
+    const hasStock = (m) => Object.prototype.hasOwnProperty.call(onHand, m);
+
     const byMat = {};
     orders.forEach(o => {
       const m = byMat[o.mat_no] = byMat[o.mat_no] || { mat_no: o.mat_no, part_name: o.part_name, customers: new Set(), overdue: 0, demand: {} };
@@ -67,22 +91,47 @@ export default function RundownStock() {
       if (o.due_date < today) m.overdue += Number(o.qty);            // ค้างส่งก่อนวันนี้ → รวมเข้าคอลัมน์วันแรก
       else m.demand[o.due_date] = (m.demand[o.due_date] || 0) + Number(o.qty);
     });
-    const rows = Object.values(byMat).map(m => {
-      const start = onHand[m.mat_no] ?? null;                        // null = ไม่มีบันทึก stock
+    /* ⚠️ รวมแถวที่ชี้ "สต็อกก้อนเดียวกัน" ก่อนคิด balance — order อาจอ้างทั้งเลขลูกค้า
+       (RB3B 8C306 BB → map เป็น 10100379) และเลข SAP ตรงๆ (10100379) ในชุดเดียวกัน
+       เดิมแตกเป็น 2 แถวแล้วแต่ละแถว start = onHand เต็มก้อนเท่ากัน = สต็อกถูกนับ 2 รอบ
+       → demand แบ่งครึ่ง ไม่มีแถวไหนติดลบ → shortCount 0 ทั้งที่ขาดจริง (ไม่เปิด OT · หลุดส่ง)
+       ⚠️ 'sap'/'mapped_nostock' = รู้เลขชัดแต่คลัง FG ไม่มีแถว = "ของพร้อมส่ง 0" (ความรู้ ไม่ใช่ความไม่รู้)
+       → tracked + start 0 ให้เห็นว่าจะขาด · unknown จริงๆ = resolve ไม่ได้ (ambiguous/placeholder/none) */
+    const byPool = {};
+    Object.values(byMat).forEach(m => {
+      const res = pickStockMat(m.mat_no, pnIdx, hasStock);
+      const tracked = !!res.mat;
+      const poolKey = tracked ? res.mat : `#unmapped:${m.mat_no}`;
+      const g = byPool[poolKey] = byPool[poolKey] || {
+        mat_no: m.mat_no, aliases: new Set(), part_name: m.part_name,
+        customers: new Set(), overdue: 0, demand: {}, res, tracked,
+      };
+      g.aliases.add(m.mat_no);
+      if (!g.part_name && m.part_name) g.part_name = m.part_name;
+      m.customers.forEach(c => g.customers.add(c));
+      g.overdue += m.overdue;
+      Object.entries(m.demand).forEach(([d, q]) => { g.demand[d] = (g.demand[d] || 0) + q; });
+    });
+    const rows = Object.values(byPool).map(g => {
+      const stockMat = g.tracked ? g.res.mat : null;
+      const start = g.tracked ? (onHand[stockMat] ?? 0) : null;
       let bal = start ?? 0;
       let firstShort = null;
       const cells = days.map((d, i) => {
-        const dq = (m.demand[d] || 0) + (i === 0 ? m.overdue : 0);
+        const dq = (g.demand[d] || 0) + (i === 0 ? g.overdue : 0);
         bal -= dq;
-        if (firstShort == null && bal < 0) firstShort = i;
+        if (g.tracked && firstShort == null && bal < 0) firstShort = i;
         return { d, dq, bal };
       });
-      return { ...m, start, cells, firstShort, tracked: start != null };
+      const aliases = [...g.aliases].filter(a => a !== stockMat);
+      return { ...g, aliases, start, cells, firstShort, stockMat,
+        mat_no: stockMat || g.mat_no,   // แถวรวมโชว์เลข SAP เป็นหลัก + เลขบน order เป็น alias
+        issue: g.tracked ? null : matIssueText(g.mat_no, g.res) };
     });
-    // จัดอันดับความเร่งด่วน: ขาดเร็วสุดขึ้นบน → ตามด้วยพาร์ทที่ยังพอ
+    // จัดอันดับความเร่งด่วน: ขาดเร็วสุดขึ้นบน → ตามด้วยพาร์ทที่ยังพอ → ตัวที่ยังเช็คไม่ได้ท้ายสุด
     rows.sort((a, b) => (a.firstShort ?? 99) - (b.firstShort ?? 99) || (b.cells[0]?.dq || 0) - (a.cells[0]?.dq || 0));
     return rows;
-  }, [stockRows, orders, days, today]);
+  }, [stockRows, orders, days, today, pnIdx, fgDest]);
 
   const shortCount = view.filter(r => r.firstShort != null).length;
   const untracked = view.filter(r => !r.tracked).length;
@@ -95,20 +144,25 @@ export default function RundownStock() {
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📉 Rundown Stock — Balance FG รายวัน
+          📉 คาดการณ์ของจะขาด — Balance FG รายวัน
         </h1>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          stock พร้อมส่ง − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง · refresh เองทุก 1 นาที
+          stock พร้อมส่ง{fgDest ? ` (คลัง ${fgDest})` : ''} − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง
         </p>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {loadWarn && (
+          <div style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.08)', fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>
+            ⚠ ข้อมูลบางส่วนโหลดไม่ครบ ({loadWarn}) — Balance ที่เห็นอาจสูงกว่าจริง ห้ามใช้ตัดสินใจจนกว่าจะรีเฟรชสำเร็จ
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {[
             { icon: '🔩', label: 'พาร์ทที่มี order ค้างส่ง', value: view.length },
             { icon: '🔴', label: `จะติดลบใน ${HORIZON} วัน`, value: shortCount, warn: shortCount > 0 },
             { icon: '✅', label: 'stock พอตลอดช่วง', value: view.filter(r => r.tracked && r.firstShort == null).length },
-            ...(untracked ? [{ icon: '⚠️', label: 'ยังไม่มีบันทึก stock (เริ่มนับจาก 0)', value: untracked, warn: true }] : []),
+            ...(untracked ? [{ icon: '❔', label: 'ยังเช็ค stock ไม่ได้ (เลขยังไม่จับคู่ MAT SAP)', value: untracked, warn: true }] : []),
           ].map(c => (
             <div key={c.label} style={{ flex: '1 1 160px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
@@ -144,19 +198,25 @@ export default function RundownStock() {
                   {view.map(r => (
                     <tr key={r.mat_no} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 12px', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.mat_no}</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>
+                          {r.mat_no}
+                          {r.aliases?.length > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--muted)' }} title="order อ้างหลายเลขที่ชี้สต็อกก้อนเดียวกัน — รวม demand แล้วกันนับสต็อกซ้ำ"> (+{r.aliases.join(', ')})</span>}
+                        </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', maxWidth: 190, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {r.part_name || ''}{r.customers.size ? ` · ${[...r.customers].map(custLabel).join(', ')}` : ''}
                         </div>
                         {r.overdue > 0 && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⏰ ค้างส่ง {fmt(r.overdue)} ชิ้น (รวมในวันนี้แล้ว)</div>}
                       </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: r.tracked ? 'var(--text)' : '#f59e0b' }}>
-                        {r.tracked ? fmt(r.start) : '—'}
+                      <td title={r.issue || ''} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: r.tracked ? 'var(--text)' : '#f59e0b' }}>
+                        {r.tracked ? fmt(r.start) : '❔'}
                       </td>
                       {r.cells.map((c, i) => (
-                        <td key={c.d} style={{ padding: '5px 6px', textAlign: 'center', background: c.bal < 0 ? 'rgba(239,68,68,0.10)' : i === 0 ? 'rgba(77,159,255,0.05)' : undefined }}>
+                        <td key={c.d} style={{ padding: '5px 6px', textAlign: 'center', background: (r.tracked && c.bal < 0) ? 'rgba(239,68,68,0.10)' : i === 0 ? 'rgba(77,159,255,0.05)' : undefined }}>
                           <div style={{ fontSize: 11, color: c.dq > 0 ? 'var(--text2)' : 'var(--border2)', fontWeight: 600 }}>{c.dq > 0 ? `−${fmt(c.dq)}` : '·'}</div>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: c.bal < 0 ? '#ef4444' : c.bal === 0 ? '#f59e0b' : '#22c55e' }}>{fmt(c.bal)}</div>
+                          {/* แถวที่ยังจับคู่เลขไม่ได้ = ไม่รู้ยอดตั้งต้น → ห้ามโชว์ balance (จะอ่านเป็น "จะขาด" ทั้งที่ยังไม่รู้) */}
+                          <div style={{ fontSize: 12, fontWeight: 800, color: !r.tracked ? 'var(--border2)' : c.bal < 0 ? '#ef4444' : c.bal === 0 ? '#f59e0b' : '#22c55e' }}>
+                            {r.tracked ? fmt(c.bal) : '·'}
+                          </div>
                         </td>
                       ))}
                     </tr>
@@ -167,7 +227,9 @@ export default function RundownStock() {
             <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border2)', fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
               Balance = stock พร้อมส่งตอนนี้ − ยอด order ที่ยังไม่ส่งสะสมรายวัน · stock เดินเองอัตโนมัติ
               (สแกนปิดออเดอร์ = รับเข้า · กด "ส่งแล้ว" = หักออก) จึงเป็นภาพ ณ ปัจจุบันเสมอ ไม่ต้องรอปิดกะ ·
-              พาร์ทที่ขึ้น ⚠️ ยังไม่ตั้งยอดตั้งต้น — ตั้งได้ที่ 📦 Store management → Stock (ปรับยอดเข้า FG WAREHOUSE)
+              นับเฉพาะของใน<b>คลัง FG</b>{fgDest ? ` (${fgDest})` : ''} — ของที่ยังอยู่ mini-store ของไลน์ / STORE ก่อนแพ็ค ยังส่งลูกค้าไม่ได้ จึงไม่นับ ·
+              แถวที่ขึ้น ❔ คือ<b>เลขบน order ยังจับคู่ MAT SAP ไม่ได้</b> (ไม่ได้แปลว่าไม่มีของ) — ตั้ง p_no ที่ Product Master
+              หรือกดปุ่ม 🔗 จับคู่เลข SAP ในหน้า 📈 Planner &amp; Sales แล้วจะคำนวณให้ทันที
             </div>
           </div>
         )}

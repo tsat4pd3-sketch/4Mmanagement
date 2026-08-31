@@ -12,6 +12,8 @@
  * layout เป็น auto-layout จากโมเดล (ไม่ใช่ลากวางอิสระ) → regenerate แล้วผังจัดใหม่ให้เอง
  * โครง: supplier (ซ้าย) → สายป้อน (บน) + สายหลัก (กลาง) → ลูกค้า (ขวา) · บันไดเวลา (ล่าง)
  */
+import { LIVE_STATUS } from '../lib/vsmLive';
+import { fmtMct, fmtMinSec } from '../lib/vsmModel';
 
 export const PALETTE_LIGHT = {
   bg: '#ffffff', ink: '#111827', sub: '#4b5563', line: '#374151', faint: '#9ca3af',
@@ -109,8 +111,10 @@ const Fact = ({ x, y, P, title, sub, sub2, w = FACT_W }) => (
   </g>
 );
 
-/** เส้นข้อมูล — electronic = หยัก (ฟ้าประ) · manual = ตรง */
-const InfoLine = ({ pts, P, electronic = true, label = null }) => {
+/** เส้นข้อมูล — electronic = หยัก (ฟ้าประ) · manual = ตรง
+    labelPos = [x,y] วางป้ายเอง (ค่า default วางเหนือจุดเริ่ม — เส้นที่ออกจากใต้กล่องจะทับกล่อง) */
+const InfoLine = ({ pts, P, electronic = true, label = null, labelPos = null }) => {
+  const [lx, ly] = labelPos || [(pts[0][0] + pts[pts.length - 1][0]) / 2, pts[0][1] - 5];
   if (electronic) {
     const out = [];
     for (let i = 0; i < pts.length - 1; i++) {
@@ -128,7 +132,7 @@ const InfoLine = ({ pts, P, electronic = true, label = null }) => {
     }
     return <g>
       <path d={out.join(' ')} fill="none" stroke={P.info} strokeWidth="1.15" />
-      {label && <text x={(pts[0][0] + pts[pts.length - 1][0]) / 2} y={pts[0][1] - 5} fontSize="9" fill={P.info} textAnchor="middle">{label}</text>}
+      {label && <text x={lx} y={ly} fontSize="9" fill={P.info} textAnchor="middle">{label}</text>}
     </g>;
   }
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ');
@@ -138,7 +142,7 @@ const InfoLine = ({ pts, P, electronic = true, label = null }) => {
     <path d={d} fill="none" stroke={P.info} strokeWidth="1.15" />
     <path d={`M${ex - 6 * Math.cos(a - 0.42)} ${ey - 6 * Math.sin(a - 0.42)} L${ex} ${ey} L${ex - 6 * Math.cos(a + 0.42)} ${ey - 6 * Math.sin(a + 0.42)}`}
       fill="none" stroke={P.info} strokeWidth="1.15" />
-    {label && <text x={(pts[0][0] + ex) / 2} y={pts[0][1] - 5} fontSize="9" fill={P.info} textAnchor="middle">{label}</text>}
+    {label && <text x={lx} y={ly} fontSize="9" fill={P.info} textAnchor="middle">{label}</text>}
   </g>;
 };
 
@@ -200,9 +204,24 @@ const KanbanCard = ({ x, y, P, kind = 'P' }) => (
   </g>
 );
 
-/** กล่องกระบวนการ + กล่องข้อมูล */
-function ProcBox({ b, x, yProc, P, small = false }) {
+/** กล่องกระบวนการ + กล่องข้อมูล
+ *  lv = สถานะสดจาก `lib/vsmLive.js` (แท็บ ⚡ สายธารสด) — ไม่ส่ง = render เหมือนเดิมเป๊ะ
+ *  (ใบพิมพ์ clone SVG จากแท็บเอกสารซึ่งไม่ส่ง live → ไม่กระทบ)
+ *  สี/ความหมายสถานะอยู่ที่ LIVE_STATUS ใน vsmLive.js — ที่นี่แค่เลือกใช้ ห้ามนิยามสีใหม่ */
+function ProcBox({ b, x, yProc, P, small = false, lv = null }) {
   const w = small ? FEED_BOX_W : BOX_W, h = small ? FEED_BOX_H : BOX_H;
+  // ขอบตามสถานะสด: down แดง(กระพริบ — Andon แดงเท่านั้นที่กระพริบ) · run เขียว · idle เส้นประจาง
+  const lvStroke = lv ? ({ down: P.nva, run: P.va }[lv.status] || null) : null;
+  const lvDash = lv?.status === 'idle' ? '5 3' : undefined;
+  // ข้อความสถานะอ่านจาก LIVE_STATUS (vsmLive.js) — ห้ามพิมพ์ป้ายสถานะซ้ำที่นี่ เดี๋ยว drift
+  const lvTitle = lv ? [
+    (LIVE_STATUS[lv.status] || LIVE_STATUS.unknown).label
+      + (lv.status === 'down' ? ` ${lv.alarms?.length || 0} รายการ` : ''),
+    lv.live?.oee != null ? `OEE สด ${lv.live.oee}%` : null,
+    lv.produced != null ? `วันนี้ ${lv.produced}/${lv.target || '—'} ชิ้น` : null,
+  ].filter(Boolean).join(' · ') : null;
+  // จอ TV โหมดเบา (data-perf="lite") งดกระพริบตาม UI §1.7 — ขอบแดงนิ่งยังบอกสถานะครบ
+  const perfLite = typeof document !== 'undefined' && document.documentElement.dataset.perf === 'lite';
   const rows = [
     ['C/T', b.ct == null ? '—' : `${fmt(b.ct, 1)} sec`],
     ['T/T', b.ttSec == null ? '—' : `${fmt(b.ttSec, 1)} sec`],
@@ -214,12 +233,20 @@ function ProcBox({ b, x, yProc, P, small = false }) {
   ];
   return (
     <g>
+      {lvTitle && <title>{lvTitle}</title>}
       <rect x={x} y={yProc} width={w} height={h} rx="2"
-        fill={b.isOutsourced ? P.outsource : P.box} stroke={P.line} strokeWidth="1.4" />
+        fill={b.isOutsourced ? P.outsource : P.box}
+        stroke={lvStroke || (lv?.status === 'idle' ? P.faint : P.line)}
+        strokeWidth={lvStroke ? 2.2 : 1.4} strokeDasharray={lvDash}>
+        {lv?.status === 'down' && !perfLite && (
+          <animate attributeName="stroke-opacity" values="1;0.25;1" dur="1.1s" repeatCount="indefinite" />
+        )}
+      </rect>
       <rect x={x} y={yProc} width={w} height="15" fill={P.boxHead} stroke={P.line} strokeWidth="1.1" />
       <text x={x + w / 2} y={yProc + 11} fontSize="8.5" fill={P.ink} textAnchor="middle" fontWeight="600">
-        {b.isOutsourced ? `จ้างนอก · ${b.vendor || 'ยังไม่ระบุ'}` : (b.line || '—')}
-        {b.machineNo ? ` · ${b.machineNo}` : ''}
+        {/* กล่อง fallback (ยังไม่ลง routing) ชื่อขั้น = ชื่อไลน์ — ไม่พิมพ์ซ้ำ 2 บรรทัด */}
+        {b.isOutsourced ? `จ้างนอก · ${b.vendor || 'ยังไม่ระบุ'}` : (b.line && b.line !== b.name ? b.line : (b.line ? '' : '—'))}
+        {b.machineNo ? `${b.isOutsourced || (b.line && b.line !== b.name) ? ' · ' : ''}${b.machineNo}` : ''}
       </text>
       <text x={x + w / 2} y={yProc + (small ? 31 : 34)} fontSize={small ? 10 : 11.5} fontWeight="800" fill={P.ink} textAnchor="middle">
         {(b.name || '').slice(0, small ? 20 : 24)}
@@ -249,20 +276,27 @@ function ProcBox({ b, x, yProc, P, small = false }) {
 }
 
 /* ── ตัวหลัก ──────────────────────────────────────────────────────────────── */
-export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null }) {
+export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null, live = null }) {
   const P = palette;
   if (!model?.chain?.length) return null;
+  const lvOf = key => live?.byKey?.[key] || null;   // สถานะสดต่อกล่อง (แท็บ ⚡ เท่านั้น)
 
   const n = model.chain.length;
   const feeders = model.feeders || [];
   const sups = model.suppliers || [];
 
-  const yFeedTop = 178;
+  // แถวสายป้อนต้องเริ่มใต้คอลัมน์ supplier เสมอ — เดิม fix 178 แล้วป้าย mat ของ feeder
+  // (x=26 คอลัมน์เดียวกับ supplier) วาดทับกล่อง supplier ตัวที่ 3 (เจอจริง 2026-08-20)
+  const supRows = sups.length ? Math.min(sups.length, 3) : 1;
+  const supBottom = Y_TOP + supRows * 78 + (sups.length > 3 ? 22 : 0);
+  const yFeedTop = Math.max(178, supBottom + 26);
   const Y_PROC = yFeedTop + feeders.length * FEED_H + (feeders.length ? 26 : 46);
   const Y_DATA = Y_PROC + BOX_H;
   const Y_LAD = Y_DATA + DATA_H + 58;
-  const H = Y_LAD + 104;
-  const W = PAD_L + n * COL_W + PAD_R;
+  const H = Y_LAD + 122;                 // เผื่อกล่องสรุปสูงขึ้นจากบรรทัด MCT (headline ใบจริง)
+  // ขั้นต่ำ 1080: แถวบน supplier + SALE&PLANNING + กล่อง Order/day (กว้าง 228) + customer
+  // ต้องไม่ทับกัน — สายสั้น (กล่อง 1-2 ใบ) เคยทำ customer จมหลังกล่องข้อมูล (เจอจริง 2026-08-20)
+  const W = Math.max(PAD_L + n * COL_W + PAD_R, 1080);
   const colX = i => PAD_L + i * COL_W + (COL_W - BOX_W) / 2;
 
   const invAt = pos => model.inventories.find(v => v.pos === pos);
@@ -300,24 +334,47 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null 
         </text>
       )}
 
-      <g>
-        <rect x={planX} y={Y_TOP} width={PLAN_W} height={PLAN_H} fill={P.box} stroke={P.line} strokeWidth="1.4" />
-        <rect x={planX} y={Y_TOP} width={PLAN_W} height="17" fill={P.boxHead} stroke={P.line} strokeWidth="1.1" />
-        <text x={planCx} y={Y_TOP + 12.5} fontSize="10.5" fontWeight="800" fill={P.ink} textAnchor="middle">SALE &amp; PLANNING</text>
-        <text x={planCx} y={Y_TOP + 32} fontSize="9.5" fill={P.sub} textAnchor="middle">SAP · Production Control</text>
-        <text x={planCx} y={Y_TOP + 46} fontSize="9.5" fill={P.sub} textAnchor="middle">Forecast 12 เดือน (EDI 830)</text>
-        <text x={planCx} y={Y_TOP + 60} fontSize="9.5" fill={P.sub} textAnchor="middle">Order รายวัน (EDI 862)</text>
-      </g>
+      {/* ── ข้อความเส้น/กล่องข้อมูล มาจาก model.info (นับจากข้อมูลจริง) ห้าม hardcode claim
+             (คำสั่ง user 2026-08-20: "อย่ามั่ว ไม่รู้ก็บอกไม่รู้") · snapshot เก่าที่ไม่มี field ใหม่
+             ใช้ fallback จาก demandSource — ห้ามตีความ undefined เป็น "ไม่มี" ── */}
+      {(() => {
+        const oldSnap = I.forecastMonths === undefined && I.orderCount === undefined;
+        const fcTxt = I.forecastMonths ? `Forecast ${fmt(I.forecastMonths)} เดือน (${I.forecastSource})`
+          : (oldSnap && I.demandSource === 'forecast') ? 'Forecast: มีในระบบ'
+          : 'Forecast: ยังไม่มีในระบบ';
+        const soTxt = I.orderCount ? `Order เดือนนี้ ${fmt(I.orderCount)} ใบ${I.orderSource ? ` (${I.orderSource})` : ''}`
+          : (oldSnap && I.demandSource === 'order') ? 'Order: มีในระบบ'
+          : 'Order เดือนนี้: ยังไม่มีในระบบ';
+        const hasFc = !fcTxt.includes('ยังไม่มี'), hasSo = !soTxt.includes('ยังไม่มี');
+        const custLabel = hasFc || hasSo
+          ? [hasFc && 'Forecast', hasSo && 'Order'].filter(Boolean).join(' / ')
+          : 'ยังไม่มี forecast/order ในระบบ';
+        const planLabel = I.planDays === undefined ? 'สั่งผลิตรายวัน'      // snapshot เก่า — ไม่รู้ ไม่อ้างเลข
+          : I.planDays ? `สั่งผลิตรายวัน (เปิดกะ ${fmt(I.planDays)} วันในเดือน)`
+          : 'สั่งผลิต: เดือนนี้ยังไม่มีกะปิด';
+        return <>
+          <g>
+            <rect x={planX} y={Y_TOP} width={PLAN_W} height={PLAN_H} fill={P.box} stroke={P.line} strokeWidth="1.4" />
+            <rect x={planX} y={Y_TOP} width={PLAN_W} height="17" fill={P.boxHead} stroke={P.line} strokeWidth="1.1" />
+            <text x={planCx} y={Y_TOP + 12.5} fontSize="10.5" fontWeight="800" fill={P.ink} textAnchor="middle">SALE &amp; PLANNING</text>
+            <text x={planCx} y={Y_TOP + 32} fontSize="9.5" fill={P.sub} textAnchor="middle">SAP · Production Control</text>
+            <text x={planCx} y={Y_TOP + 46} fontSize="9.5" fill={hasFc ? P.sub : P.nva} textAnchor="middle">{fcTxt}</text>
+            <text x={planCx} y={Y_TOP + 60} fontSize="9.5" fill={hasSo ? P.sub : P.nva} textAnchor="middle">{soTxt}</text>
+          </g>
+
+          {/* ── การไหลข้อมูล: ลูกค้า→วางแผน (electronic) · วางแผน→supplier (electronic) · วางแผน→ผลิต (manual) ── */}
+          <InfoLine P={P} electronic pts={[[custX, Y_TOP + 28], [planX + PLAN_W, Y_TOP + 28]]} label={custLabel} />
+          {/* ระบบยังไม่มีข้อมูลใบสั่งซื้อ supplier — บอกตรงๆ ห้ามแปะป้ายเหมือนมีข้อมูลจริง */}
+          <InfoLine P={P} electronic pts={[[planX, Y_TOP + 28], [26 + FACT_W, Y_TOP + 28]]} label="สั่งซื้อ (ยังไม่มีข้อมูลในระบบ)" />
+          <InfoLine P={P} electronic={false} label={planLabel}
+            labelPos={[(planCx + colX(0) + BOX_W / 2) / 2, Y_PROC - 40]}
+            pts={[[planCx, Y_TOP + PLAN_H], [planCx, Y_PROC - 34], [colX(0) + BOX_W / 2, Y_PROC - 34], [colX(0) + BOX_W / 2, Y_PROC - 6]]} />
+        </>;
+      })()}
 
       <Fact x={custX} y={Y_TOP} P={P}
         title={model.customer.name || model.header.customer || 'CUSTOMER'}
         sub={model.customer.pattern || (model.customer.roundsPerDay ? `${model.customer.roundsPerDay} รอบส่ง/วัน` : 'รอบส่ง: ยังไม่กรอก')} />
-
-      {/* ── การไหลข้อมูล: ลูกค้า→วางแผน (electronic) · วางแผน→supplier (electronic) · วางแผน→ผลิต (manual) ── */}
-      <InfoLine P={P} electronic pts={[[custX, Y_TOP + 28], [planX + PLAN_W, Y_TOP + 28]]} label="Forecast / Order" />
-      <InfoLine P={P} electronic pts={[[planX, Y_TOP + 28], [26 + FACT_W, Y_TOP + 28]]} label="สั่งซื้อ" />
-      <InfoLine P={P} electronic={false} label="แผนผลิตรายวัน"
-        pts={[[planCx, Y_TOP + PLAN_H], [planCx, Y_PROC - 34], [colX(0) + BOX_W / 2, Y_PROC - 34], [colX(0) + BOX_W / 2, Y_PROC - 6]]} />
       {n > 1 && <InfoLine P={P} electronic={false}
         pts={[[planCx, Y_PROC - 34], [colX(n - 1) + BOX_W / 2, Y_PROC - 34], [colX(n - 1) + BOX_W / 2, Y_PROC - 6]]} />}
 
@@ -332,7 +389,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null 
             {f.boxes.map((b, bi) => {
               const bx = startX + bi * (FEED_BOX_W + 34);
               return <g key={b.key}>
-                <ProcBox b={b} x={bx} yProc={y} P={P} small />
+                <ProcBox b={b} x={bx} yProc={y} P={P} small lv={lvOf(b.key)} />
                 {bi < f.boxes.length - 1 && <Push x1={bx + FEED_BOX_W + 2} x2={bx + FEED_BOX_W + 32} y={y + FEED_BOX_H / 2} P={P} />}
               </g>;
             })}
@@ -365,7 +422,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null 
         const nx = invAt(`after:${b.key}`);
         const midX = x + BOX_W + (COL_W - BOX_W) / 2;
         return <g key={b.key}>
-          <ProcBox b={b} x={x} yProc={Y_PROC} P={P} />
+          <ProcBox b={b} x={x} yProc={Y_PROC} P={P} lv={lvOf(b.key)} />
           {i < n - 1 && <>
             <InvPoint cx={midX} y={Y_PROC + 6} P={P} inv={nx} />
             {nx?.kanban
@@ -403,17 +460,21 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null 
       <text x={26} y={Y_LAD + 2} fontSize="9" fill={P.nva}>NVA (รอ)</text>
       <text x={26} y={Y_LAD + 26} fontSize="9" fill={P.va}>VA (ทำงาน)</text>
 
-      {/* ── สรุปมุมล่างขวา ── */}
+      {/* ── สรุปมุมล่างขวา — MCT เป็น headline ตัวแดงใหญ่ ตามธรรมเนียมใบจริง TSAT
+            (skill: vsm-tsat-reference — "MCT = 8.97 Days 4 min 17 second") ── */}
       <g>
-        <rect x={W - 336} y={Y_LAD + 40} width="316" height="56" fill={P.data} stroke={P.line} strokeWidth="1.2" />
-        <text x={W - 326} y={Y_LAD + 57} fontSize="10.5" fill={P.ink}>
+        <rect x={W - 336} y={Y_LAD + 40} width="316" height="74" fill={P.data} stroke={P.line} strokeWidth="1.2" />
+        <text x={W - 326} y={Y_LAD + 56} fontSize="10.5" fill={P.ink}>
           PLT = <tspan fontWeight="800">{fmt(T.pltDays, 2)}</tspan> วัน
-          <tspan dx="16">PT = <tspan fontWeight="800">{fmt(T.ptSec)}</tspan> sec</tspan>
+          <tspan dx="16">PT = <tspan fontWeight="800">{fmtMinSec(T.ptSec) || '—'}</tspan></tspan>
         </text>
-        <text x={W - 326} y={Y_LAD + 73} fontSize="10.5" fill={P.ink}>
+        <text x={W - 326} y={Y_LAD + 74} fontSize="12.5" fontWeight="900" fill={P.nva}>
+          MCT = {fmtMct(T.pltDays, T.ptSec) || '—'}
+        </text>
+        <text x={W - 326} y={Y_LAD + 90} fontSize="10.5" fill={P.ink}>
           %VA = VA ÷ (VA+NVA) × 100 = <tspan fontWeight="800" fill={P.va}>{T.vaPct == null ? '—' : `${fmt(T.vaPct, 2)}%`}</tspan>
         </text>
-        <text x={W - 326} y={Y_LAD + 88} fontSize="9" fill={P.sub}>
+        <text x={W - 326} y={Y_LAD + 104} fontSize="9" fill={P.sub}>
           {fmt(T.vaSec)} ÷ ({fmt(T.vaSec)} + {fmt(T.pltDays, 2)} × {fmt(I.atSec)} ) × 100 · NVA = PLT × A/T
         </text>
       </g>

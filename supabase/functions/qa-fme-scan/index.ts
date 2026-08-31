@@ -99,7 +99,8 @@ async function dr<T>(path: string): Promise<T[]> {
 
 type Sess = { id: string; work_date: string; line_name: string; shift: string; status: string; closed_at: string | null };
 type Ord  = { id: string; session_id: string; mat_no: string | null; part_name: string | null;
-              status: string; opened_at: string | null; confirmed_at: string | null };
+              status: string; opened_at: string | null; confirmed_at: string | null;
+              qty: number | null; qty_ok: number | null; qty_actual: number | null };
 type Prod = { mat_no: string | null; pair_mat_no: string | null; name: string | null;
               p_no: string | null; is_operation: boolean | null; op_parent_mat: string | null };
 
@@ -151,8 +152,71 @@ Deno.serve(async (req) => {
 
     const sIds = sessions.map(s => s.id);
     const orders = await dr<Ord>(
-      `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at&session_id=in.(${sIds.join(',')})`);
+      `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at,qty,qty_ok,qty_actual&session_id=in.(${sIds.join(',')})`);
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
+    /* ⚠️ PostgREST ตัดที่ 1000 แถวเงียบๆ (กฎ CLAUDE.md) — 2 master นี้ยังไม่ถึง แต่โตได้
+       ชนเพดานเมื่อไหร่ = พาร์ทที่หายไปจะไม่มี lot_size/pair/OP → ไม่มี Middle แบบไม่มีใครรู้
+       → ไม่แก้ให้เอง (ต้องไป paginate) แต่ **ต้องรายงานเสมอ ห้ามเงียบ** */
+    const truncated: string[] = [];
+    if (products.length >= 1000) truncated.push(`dr_products (${products.length})`);
+    /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
+       ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
+    /* ⚠️ kanban_standards ไม่มีคอลัมน์ line_name (เจอตอน dry-run 2026-08-21 → 42703)
+       ไลน์ผูกผ่าน product_id → dr_products.line_name · ที่นี่เอาแค่ product_id พอสำหรับแยกแถวซ้ำ */
+    type Kstd = { mat_no: string; product_id: string | null; lot_size: number | null;
+                  qty_per_kanban: number | null; min_qty: number | null; max_qty: number | null };
+    const kstd = await dr<Kstd>(
+      'kanban_standards?select=mat_no,product_id,lot_size,qty_per_kanban,min_qty,max_qty&is_active=eq.true');
+    if (kstd.length >= 1000) truncated.push(`kanban_standards (${kstd.length})`);
+    /* ⚠️ 1 mat มีได้หลายแถว (คนละไลน์/ปลายทาง) — เดิม `set()` ทับกันไปเรื่อยๆ แถวสุดท้ายชนะ
+       = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
+    const lotRows = new Map<string, Kstd[]>();
+    for (const k of kstd) if (k.mat_no) lotRows.set(k.mat_no, [...(lotRows.get(k.mat_no) ?? []), k]);
+
+    /* ⚠️⚠️ `kanban_standards.lot_size` ใช้เป็นขนาดล็อตผลิตไม่ได้ (พิสูจน์จาก dry-run จริง 2026-08-21)
+       PlannerSales ตอนกด Apply เขียน **จำนวนใบคัมบังต่อล็อต** (`kanbanPerLot = ⌈lot_qty/packaging⌉`)
+       ลงคอลัมน์นี้เมื่อ calc_type = production → ค่า 1 = "1 ใบต่อล็อต" ไม่ใช่ 1 ชิ้น
+       ข้อมูลจริง: 8 พาร์ทได้ 1 · 4 พาร์ทได้ 3,000-6,000 · 13 พาร์ทไม่มีค่า = ไม่มีตัวไหนเป็นล็อตผลิต
+
+       ขนาดล็อตจริงอยู่ที่ `kanban_calc_params` (ค่าที่ planner กรอกเองในแท็บคำนวณ Kanban):
+         · production → `lot_qty`  = **ชิ้น** อยู่แล้ว (พิสูจน์: `infoLT = lot_qty × CT` เวลา = ชิ้น × วิ/ชิ้น)
+         · withdrawal → `lot_size` = **ใบคัมบัง** (พิสูจน์: `totalKanban = maxKanban + lotSize` บวกกับจำนวนใบ
+           · ตรงกับหน้าจอจริง MAX 121 + LOT 40 = TOTAL 161)
+           **1 ใบ = 1 กล่อง = packaging ชิ้น** ⇒ ชิ้น = `lot_size × packaging`
+           ตรวจกับข้อมูลจริง 2026-08-21: 10100335 = 50×10 · 10101158 = 40×14 · 10100333 = 15×35
+           → ออกมา 500-600 ชิ้นทุกตัว = ล็อตที่ตั้งใจตั้งไว้จริง ไม่ใช่ค่ามั่ว */
+    type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null;
+                    lot_size: number | null; packaging: number | null };
+    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size,packaging');
+    const paramRows = new Map<string, Kparam>();
+    for (const p of kparam) if (p.mat_no) paramRows.set(p.mat_no, p);
+
+    const lotByMat = new Map<string, number>();
+    const lotSource = new Map<string, string>();   // mat → เอาค่ามาจากช่องไหน (ต้องบอกได้เสมอ)
+    const lotConflict = new Map<string, number[]>();
+    const pos = (v: unknown) => { const n = Number(v); return n > 0 ? n : 0; };
+    for (const mat of new Set([...lotRows.keys(), ...paramRows.keys()])) {
+      const p = paramRows.get(mat);
+      // (1) ล็อตผลิต (แท็บ Production) เป็น "ชิ้น" อยู่แล้ว
+      const lotQty = pos(p?.lot_qty);
+      if (lotQty > 0) { lotByMat.set(mat, lotQty); lotSource.set(mat, 'calc_params.lot_qty (ชิ้น)'); continue; }
+      // (2) ล็อตเบิกถอน (แท็บ Withdrawal) เป็น "ใบ" → × packaging (ชิ้น/กล่อง) ให้เป็นชิ้น
+      //     ไม่รู้ packaging = แปลงไม่ได้ → ไม่เดา ปล่อยตกไปข้อถัดไป
+      const lotCards = pos(p?.lot_size);
+      const pkg = pos(p?.packaging) || pos((lotRows.get(mat) ?? []).find(k => pos(k.qty_per_kanban))?.qty_per_kanban);
+      if (lotCards > 0 && pkg > 0) {
+        lotByMat.set(mat, lotCards * pkg);
+        lotSource.set(mat, `calc_params.lot_size ${lotCards} ใบ × ${pkg} ชิ้น/กล่อง`);
+        continue;
+      }
+      // ท้ายสุดค่อยใช้ kanban_standards (ปนหน่วย "ใบ" กับ "ชิ้น" — ด่าน mid_min_pcs จะกรองอีกชั้น)
+      const vals = [...new Set((lotRows.get(mat) ?? []).map(r => pos(r.lot_size)).filter(v => v > 0))];
+      if (vals.length === 1) { lotByMat.set(mat, vals[0]); lotSource.set(mat, 'kanban_standards.lot_size'); }
+      else if (vals.length > 1) lotConflict.set(mat, vals.sort((a, b) => a - b));
+    }
+    const { data: partRules } = await supabase.from('qa_fme_part_rules').select('*');
+    const ruleByMat = new Map<string, { mid_every_pcs: number | null; is_active: boolean }>();
+    for (const r of partRules ?? []) ruleByMat.set(r.mat_no, r);
 
     /* ── 2) จับคู่ RH/LH เป็น "รุ่นเดียวกัน" — ตัวแทนกลุ่ม = mat ที่เรียงน้อยกว่า ── */
     const pairOf = new Map<string, string>();
@@ -183,7 +247,7 @@ Deno.serve(async (req) => {
 
     /* ── 3) แตกเป็น "run" ต่อ (กะ × รุ่น) ── */
     type Run = { sess: Sess; mat: string; mats: Set<string>; name: string;
-                 firstOpen: string; lastAct: string; allDone: boolean };
+                 firstOpen: string; lastAct: string; allDone: boolean; list: Ord[] };
     const runs = new Map<string, Run>();
     const sessById = new Map(sessions.map(s => [s.id, s]));
     for (const o of orders) {
@@ -194,8 +258,9 @@ Deno.serve(async (req) => {
       const key = `${sess.id}|${mat}`;
       const r = runs.get(key) ?? {
         sess, mat, mats: new Set<string>(), name: nameOf.get(mat) || o.part_name || '',
-        firstOpen: o.opened_at, lastAct: o.opened_at, allDone: true,
+        firstOpen: o.opened_at, lastAct: o.opened_at, allDone: true, list: [],
       };
+      r.list.push(o);
       r.mats.add(o.mat_no);
       if (o.opened_at < r.firstOpen) r.firstOpen = o.opened_at;
       const act = o.confirmed_at || o.opened_at;
@@ -208,17 +273,64 @@ Deno.serve(async (req) => {
     const skipBefore = new Date(now.getTime() - cfg.skip_older_min * 60_000).toISOString();
     type Want = { work_date: string; shift: string; line_name: string; mat_no: string; mat_group: string[];
                   product_name: string; stage: string; trigger_reason: string; session_id: string;
-                  triggered_at: string; due_at: string };
+                  triggered_at: string; due_at: string; seq: number; at_qty: number | null };
     const want: Want[] = [];
-    const add = (r: Run, stage: string, reason: string, at: string, dueMin: number) => {
-      if (at < skipBefore) return;      // เก่าเกินไป (เพิ่งเปิดสวิตช์) — ไม่ย้อนหลังให้ท่วมห้องแชท
+    // นับสิ่งที่ "ถูกตัดทิ้งเพราะเก่าเกินเกณฑ์" ไว้รายงาน — ไม่งั้น would_create = 0 แล้วอ่านไม่ออกว่าทำไม
+    const skippedOld: Record<string, number> = {};
+    const add = (r: Run, stage: string, reason: string, at: string, dueMin: number,
+                 seq = 1, atQty: number | null = null) => {
+      if (at < skipBefore) { skippedOld[stage] = (skippedOld[stage] ?? 0) + 1; return; }  // เก่าเกิน (เพิ่งเปิดสวิตช์)
       want.push({
         work_date: r.sess.work_date, shift: r.sess.shift, line_name: r.sess.line_name,
         mat_no: r.mat, mat_group: [...r.mats], product_name: r.name,
         stage, trigger_reason: reason, session_id: r.sess.id,
         triggered_at: at, due_at: new Date(new Date(at).getTime() + dueMin * 60_000).toISOString(),
+        seq, at_qty: atQty,
       });
     };
+
+    /* คาบตรวจ Middle ของรุ่นนี้ (ชิ้น) — override รายพาร์ท > lot_size × ratio > ไม่รู้ = null
+       ⚠️ null = ข้ามการตรวจ Middle ของพาร์ทนั้น **ห้ามเดาเป็นค่า default**
+
+       ⚠️ ด่านความสมเหตุสมผล (dry-run 2026-08-21): พาร์ท FG หลายตัวตั้ง `lot_size = 1`
+          (ค่า placeholder ไม่ใช่ขนาดล็อตจริง) → คาบ = 1 ชิ้น = เรียก QA ทุกชิ้นจนชนเพดาน
+          รอบเดียว 12 ครั้ง · เจอจริง 4 พาร์ท = 46 จาก 91 งานตรวจ
+          กติกา: คาบที่คำนวณได้ต่ำกว่า `mid_min_pcs` = **ถือว่า master ยังใช้ไม่ได้ → ไม่ตั้ง Middle
+          แล้วรายงานออกไปพร้อมค่าที่คำนวณได้** (ห้ามเดาค่าแทน · ห้ามเงียบ) */
+    const midMin = Math.max(1, Number(cfg.mid_min_pcs ?? 10));
+    const noLot = new Set<string>();
+    const tooSmall = new Map<string, number>();   // mat → คาบที่คำนวณได้ (ต่ำเกินจนไม่น่าใช่ค่าจริง)
+    const everyByMat = new Map<string, number>(); // mat → คาบที่ใช้จริง (ไว้ตรวจสอบใน dry-run)
+    const midEveryFor = (r: Run): number | null => {
+      for (const m of [r.mat, ...r.mats]) {
+        const rule = ruleByMat.get(m);
+        if (rule) {
+          if (rule.is_active === false) return null;             // ตั้งใจปิดพาร์ทนี้
+          // override รายพาร์ทคือค่าที่คนตั้งมาเอง → เชื่อตามนั้น ไม่ต้องผ่านด่าน midMin
+          if ((rule.mid_every_pcs ?? 0) > 0) {
+            everyByMat.set(r.mat, rule.mid_every_pcs as number);
+            return rule.mid_every_pcs as number;
+          }
+        }
+      }
+      for (const m of [r.mat, ...r.mats]) {
+        const lot = lotByMat.get(m);
+        if (lot) {
+          const every = Math.max(1, Math.round(lot * Number(cfg.mid_lot_ratio ?? 1)));
+          if (every < midMin) { tooSmall.set(r.mat, every); return null; }
+          everyByMat.set(r.mat, every);
+          return every;
+        }
+      }
+      // ค่าไม่ตรงกันระหว่างแถว = "ไม่รู้ว่าอันไหนใช่" ไม่ใช่ "ไม่มี" — แยกให้ขาด (รายงานคนละช่อง)
+      if ([r.mat, ...r.mats].some(m => lotConflict.has(m))) return null;
+      noLot.add(r.mat);        // ยังไม่ตั้ง lot_size → รายงานออกไป ไม่เงียบ
+      return null;
+    };
+    // ยอดผลิตของ 1 ใบ — สูตรบังคับของโปรเจค (CLAUDE.md): ปิดแล้วใช้ qty_ok ?? qty · ยังเปิดใช้ qty_actual
+    const qtyOf = (o: Ord) => o.status === 'confirmed'
+      ? (Number(o.qty_ok ?? o.qty) || 0)
+      : (Number(o.qty_actual) || 0);
 
     const bySess = new Map<string, Run[]>();
     for (const r of runs.values()) {
@@ -233,8 +345,31 @@ Deno.serve(async (req) => {
         // first — รุ่นแรกของกะ = "เปลี่ยนกะ" · รุ่นถัดมา = "เปลี่ยนรุ่น"
         add(r, 'first', i === 0 ? 'shift_start' : 'model_change', r.firstOpen, cfg.first_due_min);
 
-        // middle — เฉพาะเมื่อเปิดใช้ (default 0 = ปิด ตามที่ user ระบุ "เฉพาะเปลี่ยนรุ่น/เปลี่ยนกะ")
-        if (cfg.mid_after_min > 0) {
+        /* middle — คาบตาม "ยอดผลิตรายพาร์ท" คำนวณจาก lot_size (คำสั่ง user 2026-08-20)
+           ไล่ใบตามเวลา สะสมยอด · ทุกครั้งที่ข้ามหลัก N ชิ้น = ถึงคิวตรวจ 1 ครั้ง
+           ⇒ ลอทใหญ่ผลิตทั้งวันได้หลายครั้ง · ลอทสั้นจบก่อนถึงหลักแรก = ไม่มีเลย (ถูกต้อง)
+           เวลาที่ใช้ = เวลาของใบที่ทำให้ยอดข้ามหลักนั้น (ไม่ใช่เวลาที่สแกนเจอ) */
+        const midMode = String(cfg.mid_mode ?? 'lot');
+        if (midMode === 'lot') {
+          const every = midEveryFor(r);
+          if (every) {
+            const evts = r.list
+              .map(o => ({ at: o.confirmed_at || o.opened_at, q: qtyOf(o) }))
+              .filter(e => !!e.at && e.q > 0)
+              .sort((a, b) => (a.at as string) < (b.at as string) ? -1 : 1);
+            const cap = Number(cfg.mid_max_per_run ?? 12);
+            let acc = 0, k = 0;
+            for (const e of evts) {
+              acc += e.q;
+              while (acc >= (k + 1) * every && k < cap) {
+                k += 1;
+                add(r, 'middle', 'mid_run', e.at as string, cfg.first_due_min, k, k * every);
+              }
+              if (k >= cap) break;   // เพดานกัน QA ถูกเรียกรัวจนใช้งานไม่ได้
+            }
+          }
+        } else if (midMode === 'min' && cfg.mid_after_min > 0) {
+          // โหมดเดิม (ตามเวลา) — เก็บไว้เผื่อบางไลน์อยากใช้ ไม่ใช่ค่าเริ่มต้นแล้ว
           const midAt = new Date(new Date(r.firstOpen).getTime() + cfg.mid_after_min * 60_000);
           if (midAt <= now && !r.allDone) add(r, 'middle', 'mid_run', midAt.toISOString(), cfg.first_due_min);
         }
@@ -278,7 +413,7 @@ Deno.serve(async (req) => {
     const seen = new Set<string>();
     const rows = want
       .filter(w => {
-        const k = `${w.line_name}|${w.work_date}|${w.shift}|${w.mat_no}|${w.stage}`;
+        const k = `${w.line_name}|${w.work_date}|${w.shift}|${w.mat_no}|${w.stage}|${w.seq}`;
         if (seen.has(k)) return false;
         seen.add(k); return true;
       })
@@ -287,9 +422,9 @@ Deno.serve(async (req) => {
     // ── โหมดทดลอง: บอกว่า "จะเรียกอะไรบ้าง" แล้วจบ (ไม่เขียน ไม่ส่ง) ──
     if (dry) {
       const { data: already } = await supabase.from('qa_fme_obligations')
-        .select('line_name, work_date, shift, mat_no, stage').gte('work_date', yest);
-      const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}`));
-      const list = rows.filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}`));
+        .select('line_name, work_date, shift, mat_no, stage, seq').gte('work_date', yest);
+      const have = new Set((already ?? []).map(o => `${o.line_name}|${o.work_date}|${o.shift}|${o.mat_no}|${o.stage}|${o.seq ?? 1}`));
+      const list = rows.filter(r => !have.has(`${r.line_name}|${r.work_date}|${r.shift}|${r.mat_no}|${r.stage}|${r.seq}`));
       return json({
         ok: true, dry: true, enabled: cfg.is_enabled,
         scanned: { sessions: sessions.length, orders: orders.length, runs: runs.size },
@@ -298,12 +433,44 @@ Deno.serve(async (req) => {
           // part_linked = กดปุ่ม "เปิดใบตรวจ" จากคิวได้จริงกี่รายการ (ต้องผูก qa_parts.mat_no ก่อน)
           part_linked: list.filter(r => r.part_id).length,
           op_unlinked: [...new Set(list.flatMap(r => r.mat_group.filter(m => opNoParent.has(m))))],
+          // พาร์ทที่ยังไม่ตั้ง lot_size → ไม่มีการตรวจ Middle เลย (First/End ยังทำงาน) — ต้องเห็น ห้ามเงียบ
+          middle_no_lot_size: [...noLot],
+          // ตั้ง lot_size ไว้ แต่เล็กจนไม่น่าใช่ขนาดล็อตจริง (เช่น 1) → ไม่ตั้ง Middle · ต้องไปแก้ master
+          middle_lot_too_small: [...tooSmall].map(([mat, every]) => ({ mat, every, min: midMin })),
+          // every มาจากช่องไหน ต้องบอกได้เสมอ — ไม่งั้นวินิจฉัยไม่ออกว่าหยิบผิดตารางอีกหรือเปล่า
+          mid_every_by_mat: [...everyByMat].map(([mat, every]) => ({ mat, every, from: lotSource.get(mat) ?? 'rule' })),
+          // lot_size ไม่ตรงกันระหว่างแถวของ mat เดียวกัน → ไม่เลือกให้เอง ต้องไปจัดข้อมูล/ตั้ง override
+          middle_lot_conflict: [...lotConflict].map(([mat, lots]) => ({ mat, lots })),
+          /* ⚠️ would_create = 0 ต้องอธิบายได้เสมอ ห้ามให้เดาเอง
+             เหตุที่พบบ่อยคือ "เหตุการณ์เก่ากว่า skip_older_min" ไม่ใช่ระบบไม่ทำงาน */
+          skipped_old: skippedOld, skip_older_min: cfg.skip_older_min,
+          // ค่าดิบจาก kanban_standards ของ **ทุก mat ที่อยู่ในรอบจริง** (ไม่ผูกกับ would_create
+          // ไม่งั้นรอบที่ไม่มีอะไรจะสร้าง = ดัมพ์ว่างเปล่า ซึ่งเป็นรอบที่อยากดูข้อมูลที่สุด)
+          kanban_rows: [...new Set([...runs.values()].flatMap(r => [r.mat, ...r.mats]))]
+            .map(m => ({
+              mat: m,
+              std: (lotRows.get(m) ?? []).map(k => ({
+                lot_size: k.lot_size, qty_per_kanban: k.qty_per_kanban,
+                min_qty: k.min_qty, max_qty: k.max_qty,
+              })),
+              param: paramRows.get(m)
+                ? { calc_type: paramRows.get(m)!.calc_type, lot_qty: paramRows.get(m)!.lot_qty,
+                    lot_size_cards: paramRows.get(m)!.lot_size, packaging: paramRows.get(m)!.packaging }
+                : null,
+              used: lotByMat.get(m) ?? null, from: lotSource.get(m) ?? null,
+            }))
+            .filter(x => x.std.length || x.param),
+          mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
+          mid_min_pcs: midMin, mid_max_per_run: Number(cfg.mid_max_per_run ?? 12),
+          // master ชนเพดาน 1000 แถวของ PostgREST = อ่านมาไม่ครบ → ผลด้านบนเชื่อไม่ได้ทั้งก้อน
+          master_truncated: truncated,
         },
         would_create: list.map(r => ({
           line: r.line_name, shift: r.shift, work_date: r.work_date,
           mat: r.mat_no, mats: r.mat_group, product: r.product_name,
           stage: STAGE_LABEL[r.stage], reason: REASON_LABEL[r.trigger_reason],
           at: hhmm(r.triggered_at), due: hhmm(r.due_at),
+          seq: r.seq, at_qty: r.at_qty,
           part_linked: !!r.part_id,
         })),
         note: 'โหมดทดลอง — ยังไม่เขียนอะไรลงฐานข้อมูลและไม่ส่ง Telegram',
@@ -312,7 +479,7 @@ Deno.serve(async (req) => {
 
     if (rows.length) {
       const { data: ins, error } = await supabase.from('qa_fme_obligations')
-        .upsert(rows, { onConflict: 'line_name,work_date,shift,mat_no,stage', ignoreDuplicates: true })
+        .upsert(rows, { onConflict: 'line_name,work_date,shift,mat_no,stage,seq', ignoreDuplicates: true })
         .select('id');
       if (error) throw new Error(`สร้างงานตรวจไม่สำเร็จ: ${error.message}`);
       created = ins?.length ?? 0;
@@ -377,18 +544,23 @@ Deno.serve(async (req) => {
       if (now < new Date(ob.due_at) || ob.alert_count >= cfg.max_alerts) continue;
       const since = ob.last_alerted_at ? (now.getTime() - new Date(ob.last_alerted_at).getTime()) / 60000 : 1e9;
       if (since < cfg.escalate_min) continue;
-      if (lateChats && lateChats.length) {
-        const lateMin = Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000);
-        await sendTelegram(
-          `🚨 <b>QA เกินเวลาตรวจ — ${STAGE_LABEL[ob.stage]}</b> (เตือนครั้งที่ ${ob.alert_count})\n${head}\n` +
-          `⏰ เลยกำหนดมาแล้ว <b>${lateMin} นาที</b> (ครบกำหนด ${hhmm(ob.due_at)})`, lateChats);
-        escalations++;
-      }
+      /* ⚠️ ยังไม่ตั้งห้อง / ปิด rule `qa_fme_overdue` ไว้ = ไม่บวก alert_count (หลักเดียวกับการเรียกครั้งแรก)
+         เดิมบวกทุกครั้งไม่ว่าส่งออกหรือไม่ → ตัวนับไต่ถึง max_alerts ตั้งแต่ยังไม่มีใครได้รับอะไร
+         พอไปเปิด rule ทีหลัง งานตรวจก้อนนั้นจะเงียบตลอดกาลทั้งที่ยังไม่เคยเตือนสักครั้ง */
+      if (!lateChats || !lateChats.length) continue;
+      const lateMin = Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000);
+      await sendTelegram(
+        `🚨 <b>QA เกินเวลาตรวจ — ${STAGE_LABEL[ob.stage]}</b> (เตือนครั้งที่ ${ob.alert_count})\n${head}\n` +
+        `⏰ เลยกำหนดมาแล้ว <b>${lateMin} นาที</b> (ครบกำหนด ${hhmm(ob.due_at)})`, lateChats);
+      escalations++;
       await supabase.from('qa_fme_obligations')
         .update({ alert_count: ob.alert_count + 1, last_alerted_at: now.toISOString() }).eq('id', ob.id);
     }
 
-    return json({ ok: true, scanned: { sessions: sessions.length, runs: runs.size }, created, closed, calls, escalations });
+    // master อ่านมาไม่ครบ = ต้องเห็นใน log ของ cron ด้วย ไม่ใช่เฉพาะ dry-run (ห้ามล้มเหลวเงียบ)
+    if (truncated.length) console.error('qa-fme-scan: master ชนเพดาน 1000 แถว →', truncated.join(', '));
+    return json({ ok: true, scanned: { sessions: sessions.length, runs: runs.size },
+      created, closed, calls, escalations, master_truncated: truncated });
   } catch (e) {
     console.error('qa-fme-scan', e);
     return json({ ok: false, error: String((e as Error)?.message ?? e) }, 500);

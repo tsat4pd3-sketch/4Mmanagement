@@ -99,8 +99,8 @@ const DEPTS = [
         label: 'เหตุเครื่องหยุดที่เปิดใบซ่อม', now: c.mo, total: c.dtUnplannedRows, unit: 'ใบ',
         gap: 'เครื่องหยุดถูกบันทึกครบ แต่แทบไม่มีใบซ่อมตามมา = ไม่มีใครตามแก้ต้นเหตุ', gapTo: '/mtn-repair',
       },
-      { label: 'เครื่องจักรที่มีแผน PM', now: c.pmPlans, total: c.machinesProd, unit: 'เครื่อง', gapTo: '/pm-setup' },
-      { label: 'ประวัติการตรวจที่บันทึก', now: c.inspections, total: null, unit: 'ครั้ง', gapTo: '/pm-check' },
+      { label: 'เครื่องจักรที่มีแผน PM', now: c.pmPlans, total: c.machinesProd, unit: 'เครื่อง', gapTo: '/pm?tab=setup' },
+      { label: 'ประวัติการตรวจที่บันทึก', now: c.inspections, total: null, unit: 'ครั้ง', gapTo: '/pm?tab=check' },
       { label: 'อะไหล่ในคลัง', now: c.spare, total: null, unit: 'รายการ', gap: 'ยังไม่ได้ย้ายจากไฟล์ Excel เข้าระบบ', gapTo: '/mtn-repair?tab=spare' },
       { label: 'แม่พิมพ์/จิ๊กที่ลงทะเบียนตรวจ', now: c.jigsReal, total: c.dies, unit: 'ตัว', gapTo: '/die-registry' },
     ],
@@ -306,7 +306,7 @@ const DIMENSIONS = [
           { d: 'ซ่อมบำรุง', l: 'ทีมช่าง/คิวงาน', have: c => c.mo > 0 },
           { d: 'สโตร์', l: 'ออเดอร์ที่รอไลน์นี้', have: c => c.shipOrders > 0 },
         ],
-        now: 1, full: 4, to: '/pm-forecast',
+        now: 1, full: 4, to: '/pm?tab=forecast',
         nowTxt: 'บอกได้แค่ว่า "ครบรอบแล้ว" — ยังไม่รู้ว่าควรทำวันไหนถึงกระทบผลิตน้อยที่สุด และของพร้อมหรือเปล่า',
         fullTxt: 'นี่คือ Prescriptive Maintenance เต็มรูป: ระบบเสนอ "ทำวันพฤหัส กะดึก · ใช้อะไหล่ 3 ตัวมีของครบ · ทีม MTN ว่าง · กระทบออเดอร์ลูกค้า 0 ใบ เพราะผลิตล่วงหน้าไว้แล้ว"',
         need: ['ลงข้อมูลอะไหล่คงคลัง', 'เปิดใบซ่อม/บันทึก PM ให้เป็นนิสัย', 'ผูกแผน PM กับยอดผลิตสะสม'],
@@ -576,7 +576,7 @@ async function loadAll() {
       .select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', c)) : [],
     ids.length ? inChunks(ids, c => supabaseDR.from('defect_logs')
       .select('session_id, qty_ng, qty_suspect').in('session_id', c)) : [],
-    supabase.from('cost_center_rates').select('cost_center, dl_rate, oh_rate, dp_rate, effective_from')
+    supabase.from('cost_center_rates').select('*')   // ก้อน rate มาจาก RATE_COMPONENTS — เพิ่มก้อนใหม่แล้วไม่ต้องมาแก้ select
       .then(r => r.data || []).catch(() => []),
   ]);
 

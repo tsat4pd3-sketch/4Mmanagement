@@ -15,6 +15,7 @@ import { toast } from './Toast';
 import { UserContext } from '../App';
 import { nextDocNo } from '../utils/qaDocNo';
 import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
@@ -114,6 +115,18 @@ export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa 
     }
     setBusy(false);
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return null; }
+    // แจ้งเฉพาะเคลมที่เพิ่งเปิดใหม่ — แก้ไข/ตอบกลับทีหลังไม่ต้องเด้งซ้ำ
+    if (!f.id) notifyEvent({
+      event: 'qa_claim_opened', type: 'error', ref_table: 'qa_customer_claims', ref_id: row?.id,
+      line_name: f.line_name || null, actor: fullName,
+      lines: [
+        `🏢 ลูกค้า: ${f.customer.trim()}${f.customer_ref ? ` · ref ${f.customer_ref.trim()}` : ''}`,
+        `🏭 ไลน์: ${f.line_name || '—'} · พาร์ท: ${f.part_no?.trim() || '—'}`,
+        `🚫 เคลม ${Number(f.qty_claim) || 0} ชิ้น · ${f.severity}`,
+        `📝 ${f.defect_desc.trim().slice(0, 300)}`,
+        f.due_reply_date ? `📅 ต้องตอบกลับภายใน ${f.due_reply_date}` : '',
+      ],
+    });
     toast.success(msg);
     setDetail(null); load();
     return row?.id || f.id;
@@ -134,6 +147,16 @@ export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa 
     }).select('id').single();
     if (error) { setBusy(false); toast.error(error.message); return; }
     await supabase.from('qa_customer_claims').update({ capa_id: data.id, status: c.status === 'open' ? 'investigating' : c.status }).eq('id', c.id);
+    notifyEvent({
+      event: 'qa_capa_opened', type: 'info', ref_table: 'qa_capa', ref_id: data.id,
+      line_name: c.line_name || null, actor: fullName,
+      lines: [
+        `📄 ${capa_no} — เปิดจากเคลม ${c.claim_no}`,
+        `🏢 ลูกค้า: ${c.customer}`,
+        `🏭 ไลน์: ${c.line_name || '—'} · พาร์ท: ${c.part_no || '—'}`,
+        `📝 ${String(c.defect_desc || '').slice(0, 300)}`,
+      ],
+    });
     setBusy(false);
     toast.success(`เปิด ${capa_no} จากเคลมนี้แล้ว`);
     load();
@@ -238,7 +261,7 @@ function ClaimModal({ detail, setDetail, lines, canRecord, canManage, busy, save
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
   const ro = !canRecord || detail.status === 'closed';
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }} onClick={() => setDetail(null)}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>📮 {detail.id ? detail.claim_no : 'รับเคลมลูกค้าใหม่'}</h3>
 

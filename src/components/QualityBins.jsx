@@ -11,20 +11,29 @@
  * (ไม่เพิ่ม permission key ใหม่ เลี่ยงกับดัก seed enum_range ที่ทำให้ role ใหม่ fail-closed)
  */
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import ReadOnlyNote from './ReadOnlyNote';
+import LineSelect from './LineSelect';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { scopedLineNames } from '../utils/sectionScope';
 import { printQualityBin } from '../lib/qualityBinPrint';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const BINS = [
   { key: 'yellow', label: '🟡 ถังเหลือง — ชิ้นงานต้องสงสัย', short: 'ถังเหลือง', color: '#f5b942' },
   { key: 'red',    label: '🔴 ถังแดง — ชิ้นงานเสีย',        short: 'ถังแดง',   color: '#e05252' },
 ];
 
-const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/* ⚠️ work date ต้องตัด 08:00 เหมือนทั้งระบบ — คอลัมน์ `quality_bin_records.work_date` นี้
+   ถูกเขียนจาก 2 ทาง: ที่นี่ (QA คีย์เอง) กับ QualityBinLinkModal ที่ใช้ `session.work_date`
+   (วันงานของกะ) · เดิมที่นี่ใช้วันปฏิทินดิบ → กะดึกลงถังตอน 01:00-07:59 ได้ "วันถัดไป"
+   ส่วนแถวที่ส่งมาจาก Daily Report ได้วันงานจริง = เหตุการณ์เดียวกันมีวันต่างกัน 1 วัน
+   ตัวกรองช่วงวันจับไม่ครบ และเทียบกับ defect_logs ไม่ตรง (QC audit 2026-08-24) */
+const today = () => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); return ymd(d); };
+const daysAgo = n => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - n); return ymd(d); };
 const numOrNull = v => (v === '' || v == null ? null : (Number.isFinite(+v) ? +v : null));
 
 const BLANK = {
@@ -61,7 +70,7 @@ export default function QualityBins() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name')
       .then(({ data }) => setLines(data || []));
     supabaseDR.from('dr_products').select('mat_no, name, p_no, line_name').eq('is_active', true)
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
@@ -105,8 +114,9 @@ export default function QualityBins() {
     });
   }, [rows, search, lineFilter]);
 
-  const lineOpts = useMemo(
-    () => (scopeNames || lines.map(l => l.name)).slice().sort(),
+  // ไลน์ที่เลือกได้ (หลังกรอง scope) — ส่งเป็น "อ็อบเจกต์" ให้ <LineSelect> จัดลำดับชั้นเอง
+  const lineObjs = useMemo(
+    () => (scopeNames ? lines.filter(l => scopeNames.includes(l.name)) : lines),
     [scopeNames, lines],
   );
 
@@ -147,6 +157,16 @@ export default function QualityBins() {
       : await supabaseDR.from('quality_bin_records').update(payload).eq('id', editing.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    if (editing === 'new') notifyEvent({
+      event: 'quality_bin_added', type: bin === 'red' ? 'error' : 'info',
+      ref_table: 'quality_bin_records', line_name: payload.line_name || null, actor: fullName,
+      lines: [
+        `${bin === 'red' ? '🔴 ถังแดง (ของเสียยืนยันแล้ว)' : '🟡 ถังเหลือง (ต้องสงสัย)'}`,
+        `🏭 ไลน์: ${payload.line_name || '—'} · ${payload.part_name || payload.mat_no || '—'}`,
+        `🔢 ${payload.qty} ชิ้น`,
+        payload.cause ? `📝 ${payload.cause}` : '',
+      ],
+    });
     toast.success(editing === 'new' ? 'บันทึกแล้ว' : 'แก้ไขแล้ว');
     setEditing(null); load();
   };
@@ -187,6 +207,8 @@ export default function QualityBins() {
 
   return (
     <div>
+      <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
+        permKey="scrap:record" />
       {/* ── เลือกถัง ── */}
       <div style={{ display: 'flex', gap: 6, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 14, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
         {BINS.map(b => (
@@ -204,10 +226,8 @@ export default function QualityBins() {
         <div><label style={lbl}>ตั้งแต่</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inp, width: 150 }} /></div>
         <div><label style={lbl}>ถึง</label><input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ ...inp, width: 150 }} /></div>
         <div><label style={lbl}>ไลน์</label>
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inp, width: 180 }}>
-            <option value="">ทุกไลน์</option>
-            {lineOpts.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter}
+            placeholder="ทุกไลน์" style={{ ...inp, width: 180 }} />
         </div>
         <div style={{ flex: '1 1 200px', minWidth: 160 }}><label style={lbl}>ค้นหา</label>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ชิ้นงาน / สาเหตุ / ผู้แจ้ง…" style={inp} />
@@ -242,6 +262,13 @@ export default function QualityBins() {
                 <td style={td}>
                   <div style={{ fontWeight: 700 }}>{r.part_name || '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_no || r.mat_no || ''}</div>
+                  {/* มาจากบันทึกงานเสียใน Daily Report — บอกที่มาไว้ กันคีย์ซ้ำ */}
+                  {r.defect_log_id && (
+                    <div style={{ fontSize: 10.5, color: '#0ea5e9' }}
+                      title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
+                      📋 จาก Daily Report
+                    </div>
+                  )}
                 </td>
                 {!isY && <td style={td}>{r.line_name || '—'}</td>}
                 <td style={{ ...td, fontWeight: 700 }}>{Number(r.qty || 0).toLocaleString('th-TH')}</td>
@@ -284,10 +311,8 @@ export default function QualityBins() {
               <div><label style={lbl}>วันที่ลงถัง *</label>
                 <input type="date" value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date: e.target.value }))} style={inp} /></div>
               <div><label style={lbl}>ไลน์การผลิต</label>
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inp}>
-                  <option value="">— เลือกไลน์ —</option>
-                  {lineOpts.map(n => <option key={n} value={n}>{n}</option>)}
-                </select></div>
+                <LineSelect lines={lineObjs} value={form.line_name} style={inp}
+                  onChange={v => setForm(f => ({ ...f, line_name: v }))} /></div>
               <div><label style={lbl}>จำนวน (ชิ้น) *</label>
                 <input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={inp} /></div>
 

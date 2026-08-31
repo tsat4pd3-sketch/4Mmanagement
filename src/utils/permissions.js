@@ -30,8 +30,14 @@ export async function loadPermissions(forceRefresh = false) {
     const PAGE = 1000;
     const rows = [];
     for (let from = 0; ; from += PAGE) {
+      // ⚠️⚠️ ต้อง .order() ให้ครบคีย์ที่ unique เสมอเมื่อใช้ .range() แบ่งหน้า
+      // PostgreSQL ไม่รับประกันลำดับแถวถ้าไม่สั่ง ORDER BY → พอมีคนกดแก้สิทธิ์ที่ /permissions
+      // (UPDATE ทำให้แถวขยับตำแหน่งใน heap) ลำดับของหน้า 1 กับหน้า 2 จะไม่ต่อกัน
+      // → **บางแถวไม่โผล่ในหน้าไหนเลย** = สิทธิ์มีอยู่ใน DB แต่ปุ่ม/เมนูไม่ขึ้น แบบสุ่มคนสุ่มรอบ
+      // (เคสจริง 2026-08-19: planner_store มี line_stock:manage_rounds แต่ปุ่ม "+ เพิ่มรอบจัดส่ง" หาย)
       const { data, error } = await supabase.from('role_permissions')
         .select('role, permission_key, allowed')
+        .order('role').order('permission_key')
         .range(from, from + PAGE - 1);
       // ⚠️ ห้ามเขียนทับ cache ด้วยผลลัพธ์ว่าง/บางส่วนตอน fetch ล้ม (network/RLS สะดุด) —
       // ถ้าหน้าไหนล้ม ให้คืน cache เดิมทั้งก้อน (Map ที่ขาดแถว = non-admin โดนล็อกเมนูค้างถาวร)
@@ -71,7 +77,18 @@ export function canAccessPage(path, role) {
     return hasPermission('page:/daily-checker', role)
         || hasPermission('page:/daily-pm', role)
         || hasPermission('page:/pokayoke', role)
-        || hasPermission('page:/lpa', role);
+        || hasPermission('page:/lpa', role)
+        || hasPermission('page:/bbs', role);
+  }
+  // ศูนย์ PM = ศูนย์รวมแท็บงานซ่อมบำรุงตามแผน (ตรวจ/แผน/ล่วงหน้า/ประสานงาน/ตั้งค่า)
+  // piggyback สิทธิ์หน้าเดิมทั้ง 5 — ไม่ต้อง seed page:/pm · แท็บใน PmHub.jsx โผล่ตามสิทธิ์ย่อย
+  if (path === '/pm') {
+    return hasPermission('page:/pm', role)
+        || hasPermission('page:/pm-check', role)
+        || hasPermission('page:/pm-schedule', role)
+        || hasPermission('page:/pm-forecast', role)
+        || hasPermission('page:/pm-coordination', role)
+        || hasPermission('page:/pm-setup', role);
   }
   return hasPermission(`page:${path}`, role);
 }

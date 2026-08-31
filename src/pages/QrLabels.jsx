@@ -8,6 +8,7 @@
  * เอกสารพิมพ์ผ่านทะเบียนเอกสารกลาง (doc_key `qr_label`) ตามกฎ CLAUDE.md — ห้าม hardcode เลขฟอร์ม
  */
 import { useState, useEffect, useMemo, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -16,6 +17,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { buildQrPayload, QR_KINDS } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 
 const SIZES = {
   sm: { key: 'sm', label: 'เล็ก 40×25mm', w: 40, h: 25, qr: 17, no: 8, sub: 4.6 },
@@ -94,6 +97,7 @@ export default function QrLabels() {
     });
   }, [rows, q, filterLine, scopedLineNames]);
 
+  const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const lineOpts = useMemo(() => {
     const s = new Set(rows.map(r => r.line_name).filter(Boolean)
       .filter(n => !scopedLineNames || scopedLineNames.has(n)));
@@ -169,6 +173,7 @@ export default function QrLabels() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', background: 'var(--bg)', minHeight: '100%' }}>
+      <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
       <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: 0 }}>🏷️ พิมพ์ป้าย QR อุปกรณ์</h1>
       <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
         พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime
@@ -182,11 +187,14 @@ export default function QrLabels() {
 
       {/* ตัวกรอง */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}
-          style={{ width: 200, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
-          <option value="">ทุกไลน์</option>
-          {lineOpts.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
+        {/* ไลน์ของอุปกรณ์ — จัดลำดับชั้นตามผัง · ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์
+            (เช่นไลน์แม่พิมพ์) แยก optgroup ไว้ท้าย ห้ามตัดทิ้ง ไม่งั้นกรองหาอุปกรณ์ไม่เจอ */}
+        <LineSelect
+          lines={prodLines.filter(l => lineOpts.includes(l.name))}
+          value={filterLine} onChange={setFilterLine} placeholder="ทุกไลน์"
+          style={{ width: 200, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}
+          extraGroups={[{ label: '🔧 อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+        />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา เลข/ชื่อ…"
           style={{ width: 220, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
         <select value={size} onChange={e => setSize(e.target.value)}

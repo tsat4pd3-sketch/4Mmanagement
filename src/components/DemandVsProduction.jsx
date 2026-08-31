@@ -16,9 +16,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import DailyBars from './DailyBars';
 import {
-  demandKeysOf, rowMatchesProduct, demandByDay, simulate, prodRate, advise, addDay, demandOf, demandSrcOf,
+  demandKeysOf, rowMatchesProduct, demandByDay, dedupeForecastRows, simulate, prodRate, advise, addDay, demandOf, demandSrcOf,
 } from '../utils/demandSupply';
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
@@ -57,18 +58,21 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
       const from = addDay(today, -60);
       const to = addDay(today, 180);
       /* ⚠️ ดึงทั้งช่วงแล้วกรองฝั่ง client — ออเดอร์อ้าง "เลขลูกค้า" ที่เว้นวรรค/ขีดไม่ตรงกับ p_no
-         ใน master (RB3B 16E060 BA vs RB3B-16E060-BA) → เทียบใน SQL ตรงๆ ไม่เจอ */
+         ใน master (RB3B 16E060 BA vs RB3B-16E060-BA) → เทียบใน SQL ตรงๆ ไม่เจอ
+         ⚠️ ต้องแบ่งหน้าเสมอ — `.limit(5000)` ถูก PostgREST clamp ที่ 1000 เงียบๆ
+         สต็อกโดนตัด = แถวหาย = "🔴 ของจะขาด" ปลอม (QC audit 2026-08-20 · T3-25) */
       const [o, f, s] = await Promise.all([
-        supabaseDR.from('customer_shipping_orders')
-          .select('mat_no, customer_part_no, qty, due_date, status').gte('due_date', from).lte('due_date', to).limit(5000),
-        supabaseDR.from('customer_forecasts')
-          .select('mat_no, customer_part_no, qty, period_month').gte('period_month', from).lte('period_month', to).limit(5000),
-        supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand'),
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
+          .select('id, mat_no, customer_part_no, qty, due_date, status').gte('due_date', from).lte('due_date', to)),
+        fetchAllPages(() => supabaseDR.from('customer_forecasts')
+          .select('id, mat_no, customer_part_no, qty, period_month, source').gte('period_month', from).lte('period_month', to)),
+        fetchAllPages(() => supabaseDR.from('line_stock_summary').select('mat_no, line_name, qty_on_hand'),
+          { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
       ]);
       if (!alive) return;
       const e = o.error || f.error || s.error;
-      if (e) { setErr(e.message || String(e)); setRaw({ orders: [], fcs: [], stock: [] }); return; }
-      setRaw({ orders: o.data || [], fcs: f.data || [], stock: s.data || [] });
+      if (e) { setErr(e || String(e)); setRaw({ orders: [], fcs: [], stock: [] }); return; }
+      setRaw({ orders: o.rows, fcs: f.rows, stock: s.rows });
     })();
     return () => { alive = false; };
   }, [today]);
@@ -82,7 +86,8 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
          → นับเข้า mat ที่ระบบบันทึกไว้จริงเท่านั้น (mat_no ตรง) ส่วนที่อ้างเลขลูกค้าล้วน
             ยกไปเป็น "ของกลุ่ม" แล้วรายงานแยก ไม่เดาว่าเป็นของใคร */
       const mine = (rows, f) => rows.filter((r) => normK(r.mat_no) === normK(p.mat_no) && (!f || f(r)));
-      const D = demandByDay(mine(raw.orders), mine(raw.fcs));
+      // dedupe ข้าม source (edi ชนะ manual ต่อเดือน) ก่อนเกลี่ยรายวัน — กันนับซ้ำ 2 grain
+      const D = demandByDay(mine(raw.orders), dedupeForecastRows(mine(raw.fcs)));
       const stRows = raw.stock.filter((r) => normK(r.mat_no) === normK(p.mat_no));
       const stock = stRows.length ? stRows.reduce((a, r) => a + (Number(r.qty_on_hand) || 0), 0) : null;
       const pbd = prodByDay?.[p.mat_no] || {};
@@ -201,6 +206,17 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
             ⚠️ <b>ตัดสินพอ/ขาดแยกทีละเลข SAP ไม่รวมยอดกัน</b> — product เดียวกันแต่คนละปลายทางลูกค้า
             แลกของกันไม่ได้ (ยอดใน SAP จะเพี้ยน) · เลขที่ไม่มีออเดอร์ผูก = ออเดอร์ถูกบันทึกใต้เลขอื่นของกลุ่ม ไม่ใช่ลูกค้าไม่สั่ง
           </div>
+          {/* ⚠️ เคสจริง 2026-08-24: ออเดอร์ของ "ทุกลูกค้า" ไปกองที่เลขเดียว เพราะตอนนำเข้า EDI
+              เลขพาร์ทลูกค้าตัวเดียวชี้ได้หลายเลข SAP แล้วระบบเลือกตัวแรกให้ (ยังไม่ได้ตั้งชื่อลูกค้าให้ ship-to)
+              → เลขที่เหลือดูเหมือนไม่มีใครสั่ง (ไม่ผลิต) · เลขที่รับไปหมดดูเหมือนของจะขาด — ผิดทั้งคู่
+              ห้ามซ่อน: ถ้ามีเลขเดียวในกลุ่มที่มีออเดอร์ ต้องเตือนให้ไปตรวจก่อนเร่งผลิต */}
+          {withDemand.length === 1 && perMat.length > 1 && (
+            <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.7, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '7px 10px' }}>
+              🔎 <b>ทั้งกลุ่มมีออเดอร์อยู่เลขเดียว</b> — ถ้าจริงๆ มีลูกค้าเจ้าอื่นสั่งพาร์ทนี้ด้วย แปลว่าตอนนำเข้า EDI
+              ระบบยัง<b>แยกปลายทางลูกค้าไม่ออก</b> แล้วยกออเดอร์มากองที่เลขเดียว
+              <div style={{ marginTop: 2, opacity: 0.9 }}>แก้: 🚚 Delivery → ⚙️ Ship-to Plant Config ตั้งชื่อลูกค้าให้ code ปลายทาง (เช่น GRBNA → AAT) แล้วอัพไฟล์ EDI ใหม่</div>
+            </div>
+          )}
         </>
       ) : (
         <div style={{ padding: '11px 13px', borderRadius: 9, border: `1px solid ${focus.adv.color}66`, background: `${focus.adv.color}14` }}>

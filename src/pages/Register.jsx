@@ -10,6 +10,7 @@ import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
+import { lineOptions } from '../components/LineSelect';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -201,6 +202,15 @@ export default function Register() {
                   หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
                 </div>
               )}
+              {/* 🔴 เลือก Section แล้วแต่ dropdown แผนกว่าง = ส่วนงานนั้นยังไม่มีแผนกในผังองค์กร
+                  (เคสจริง 2026-08-24: `Planning&Store` มี 0 แผนก · ผังมีแผนกแค่ใต้ PD1-4 + 4 แผนกขึ้นตรงฝ่าย)
+                  เดิมปล่อยว่างเงียบ → คนกรอกนึกว่าระบบพัง ต้องบอกว่าติดตรงไหนและไปแก้ที่ไหน */}
+              {!isOrphanSec && section && deptOpts.length === 0 && (
+                <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                  ⚠️ ส่วนงาน <b>{section}</b> ยังไม่มีแผนกในผังองค์กร — เลือกแผนกไม่ได้จนกว่าจะเพิ่มก่อน
+                  <div style={{ color: 'var(--muted)' }}>เพิ่มที่ <b>ตั้งค่า → ผังองค์กร (/org-setup)</b></div>
+                </div>
+              )}
             </div>
             <div>
               <label style={labelSt}>Team / กะ</label>
@@ -241,7 +251,9 @@ export default function Register() {
                   setLineId(line?.id || null);
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                  {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  {lineOptions(lineOpts, { current: groupName }).map(o => (
+                    <option key={o.value} value={o.value}>{`${'\u00a0\u00a0'.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`}</option>
+                  ))}
                 </select>
               );
             })()}

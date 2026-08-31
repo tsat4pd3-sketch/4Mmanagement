@@ -5,6 +5,7 @@ import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { buildWipChains, computeChainWip, netRequirement } from '../utils/wipChain';
+import { fetchAllPages } from '../utils/fetchByIds';
 
 /* ═══ 📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18) — แท็บใน /line-stock ═══
    ยอดค้างทุก buffer ของสาย OP คำนวณจากใบผลิตที่บันทึกอยู่แล้ว (Σขั้น − Σปลายทาง)
@@ -57,7 +58,8 @@ export default function WipBetweenSteps() {
         for (let fromIdx = 0; ; fromIdx += 1000) {
           const { data, error } = await supabaseDR.from('prod_orders')
             .select('mat_no, status, qty, qty_ok, qty_actual, opened_at, production_sessions!inner(line_name)')
-            .in('mat_no', mats).range(fromIdx, fromIdx + 999);
+            // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
+            .in('mat_no', mats).order('id').range(fromIdx, fromIdx + 999);
           if (error) throw error;
           (data || []).forEach(o => all.push({ ...o, line_name: o.production_sessions?.line_name }));
           if (!data || data.length < 1000) break;
@@ -81,16 +83,20 @@ export default function WipBetweenSteps() {
       }
 
       // baseline นับจริงล่าสุดต่อ buffer_key (best-effort — ตารางยังไม่มี = ว่าง + banner)
-      const { data: adj, error: aErr } = await supabaseDR.from('wip_adjustments')
-        .select('buffer_key, counted_qty, counted_at').order('counted_at', { ascending: false }).limit(500);
+      // ⚠️ ต้องดึงครบทั้งตาราง — เดิม limit(500) แถวล่าสุด: buffer ที่นับนานแล้วหลุดหน้าต่าง
+      //    → ไม่มี baseline แล้ว in-flight เด้งกลับไปคิดจากใบผลิตทั้งประวัติแบบเงียบ (QC flow-audit #34)
+      const { rows: adj, error: aErr } = await fetchAllPages(() =>
+        supabaseDR.from('wip_adjustments').select('id, buffer_key, counted_qty, counted_at'));
       if (aErr) {
         setBaselineTableMissing(true);
         setBaselines({});
       } else {
         setBaselineTableMissing(false);
         const b = {};
+        // เทียบเวลาเองไม่พึ่งลำดับแถว — เอาการนับ "ล่าสุด" ต่อ buffer จริงๆ
         (adj || []).forEach(a => {
-          if (!b[a.buffer_key]) b[a.buffer_key] = { qty: Number(a.counted_qty), ts: Date.parse(a.counted_at) };
+          const ts = Date.parse(a.counted_at);
+          if (!b[a.buffer_key] || ts > b[a.buffer_key].ts) b[a.buffer_key] = { qty: Number(a.counted_qty), ts };
         });
         setBaselines(b);
       }

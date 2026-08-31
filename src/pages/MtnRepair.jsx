@@ -5,10 +5,12 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
+import resizeImg from '../utils/resizeImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
@@ -27,6 +29,9 @@ import RackMap from '../components/RackMap';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
+import InfoMore from '../components/InfoMore';
+import SearchSelect from '../components/SearchSelect';
+import { liveChannel } from '../utils/liveChannel';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -38,23 +43,8 @@ async function logoDataUrl(overrideUrl) {
   } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
 }
 
-// รูปแจ้งซ่อม/หลักฐาน MTN — บีบ 1024px q0.8 (~120KB) สมดุลคม/ประหยัด storage (user เลือก B 2026-07-14)
-function resizeImage(file, maxPx = 1024, quality = 0.8) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality);
 const getWorkDate = () => {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
@@ -181,13 +171,33 @@ function ImgField({ label, value, onPick, required }) {
     </div>
   );
 }
-function ModalShell({ title, onClose, children, wide }) {
+/* ⚠️ backdrop **ไม่มี onClick โดยตั้งใจ** — ฟอร์มขั้น 1-7 ยาว เผลอแตะข้างนอกแล้วปิด = กรอกใหม่ทั้งใบ
+   (UI-CONVENTIONS §5 · ห้ามเติม onClick={onClose} ที่ div ชั้นนอก)
+   ส่วน ✕ / ยกเลิก เป็นการกดที่ "ตั้งใจ" → ถามยืนยันเมื่อกรอกอะไรไปแล้ว (prop `dirty`) */
+function confirmDiscard() {
+  return window.confirm('ปิดหน้าต่างนี้? ข้อมูลที่กรอกไว้ยังไม่ได้บันทึก — จะหายทั้งหมด');
+}
+/** ดึงทุกแถว (แบ่งหน้าทีละ 1000) — ตารางที่โตเกินเพดานของ PostgREST ต้องผ่านตัวนี้เสมอ
+ *  order ต้องคงที่ (ใส่ .order('id') ปิดท้าย) ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า */
+async function fetchAllRows(client, table, cols, shape = q => q) {
+  const PAGE = 1000, out = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await shape(client.from(table).select(cols)).range(from, from + PAGE - 1);
+    if (error) return { data: out, error };
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return { data: out, error: null };
+}
+
+function ModalShell({ title, onClose, children, wide, dirty }) {
+  const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '4vh 2vw' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: wide ? 'min(96vw, 1200px)' : 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <button onClick={askClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ padding: 18 }}>{children}</div>
       </div>
@@ -206,7 +216,7 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, section: mySection, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
@@ -246,20 +256,30 @@ export default function MtnRepair() {
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_problem_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('mtn_spare_parts').select('*').eq('is_active', true).order('sort_order'),
+      /* ⚠️ ทะเบียนอะไหล่โตเกิน 1000 แถวได้ (หน้างาน: "อะไหล่เป็นพัน") — Supabase ตัดที่ 1000
+         ไม่แบ่งหน้า = อะไหล่ที่เกินมา **หายจากลิสต์เงียบๆ** ค้นยังไงก็ไม่เจอ (กฎเดียวกับ role_permissions) */
+      fetchAllRows(supabaseDR, 'mtn_spare_parts', '*', q => q.eq('is_active', true).order('sort_order').order('id')),
       supabaseDR.from('mtn_repair_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('improvements').select('id, line_name, machine_no, title').eq('status', 'monitoring'),
       supabaseDR.from('mtn_labor_rates').select('*').eq('is_active', true).order('sort_order').then(r => r).catch(() => ({ data: [] })),
-      // ช่าง = พนักงาน (Main) ที่แผนก/ส่วนเป็นทีมช่าง — รวมฐานข้อมูลคนที่ employees ที่เดียว (2026-07-22)
-      supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name'),
+      // ช่าง = พนักงาน (Main) — ทีมมาจาก `employees.mtn_team` (ติ๊กเองที่ /operator) ก่อน แล้วค่อยเดาจากแผนก
+      //   ⚠️ tolerant: ยังไม่ apply migration 20260821_production_technician_setup = ไม่มีคอลัมน์ (42703)
+      //      → ถอยไป select ชุดเดิม ไม่งั้นทั้งหน้าโหลด master ไม่ขึ้นเลย
+      supabase.from('employees').select('id, name, section, department, employee_id_code, mtn_team').eq('is_active', true).order('name')
+        .then(r => r.error ? supabase.from('employees').select('id, name, section, department, employee_id_code').eq('is_active', true).order('name') : r),
       // supply route: utility/facility จ่ายให้ไลน์ไหน — ใช้โชว์ผลกระทบตอนซ่อม (best-effort ถ้ายังไม่ apply migration)
       supabaseDR.from('facility_supply_links').select('machine_id, line_name').then(r => r).catch(() => ({ data: [] })),
     ]);
-    // แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
-    // ช่างส่วนใหญ่อยู่ระดับแผนก (department) → เช็คแผนกก่อน แล้ว section
+    /* แปลงพนักงานทีมช่างเป็นรูปแบบ tech + รวมกับ mtn_technicians เดิม (พนักงานมาก่อน · กันชื่อซ้ำ)
+       ลำดับที่มาของทีม:
+         1. `employees.mtn_team` — ติ๊กเองที่ /operator (**ชนะเสมอ**)
+            จำเป็นสำหรับ **ช่างฝ่ายผลิต** ซึ่ง `teamForSection` เดาไม่ได้โดยตั้งใจ
+            (ส่วนงานผลิตมีหลายชื่อ PD1/PD2/GOR… เดาเหมาจะไปโดน QA/ธุรการด้วย)
+            → ก่อนมีคอลัมน์นี้ ช่างฝ่ายผลิต "ไม่มีวันโผล่" ในลิสต์มอบหมายช่าง
+         2. เดาจาก department แล้ว section (backward-compat — จับได้แค่ JIG/DIE/MTN) */
     const empTechs = (emps || [])
-      .map(e => ({ ...e, team: teamForSection(e.department) || teamForSection(e.section) }))
+      .map(e => ({ ...e, team: teamKeyOf(e.mtn_team) || teamForSection(e.department) || teamForSection(e.section) }))
       .filter(e => e.team)
       .map(e => ({ id: `emp_${e.id}`, name: e.name, dept: e.team, from_employee: true, emp_code: e.employee_id_code }));
     const empNames = new Set(empTechs.map(t => t.name.trim()));
@@ -299,7 +319,7 @@ export default function MtnRepair() {
   useEffect(() => {
     loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.key)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
-    const ch = supabaseDR.channel('mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
+    const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
     return () => { supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders]);
 
@@ -309,11 +329,16 @@ export default function MtnRepair() {
     if (fStatus === 'open') rows = rows.filter(o => !['closed', 'rejected'].includes(o.status));
     else if (fStatus === 'closed') rows = rows.filter(o => o.status === 'closed');
     else if (fStatus !== 'all') rows = rows.filter(o => o.status === fStatus);
-    if (fLine) rows = rows.filter(o => o.line_name === fLine);
+    if (fLine) {
+      // กางครอบครัวไลน์เสมอ — MO เก็บชื่อ "ไลน์ลูก" (HDF1/SUB APRON) แต่ dropdown เลือกระดับแม่ (HYDROFORM/LINE APRON ASSY) ได้
+      // เทียบตรงตัวทำให้เลือกแม่แล้วใบของลูกหายหมด (feedback หน้างาน 2026-08-25) · fam ว่าง (ไลน์ไม่อยู่ในทะเบียน) = ถอยไปเทียบตรงตัว
+      const fam = new Set(getLineFamilyNames(lines, fLine));
+      rows = fam.size ? rows.filter(o => fam.has(o.line_name)) : rows.filter(o => o.line_name === fLine);
+    }
     if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
     if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
-  }, [orders, scopeLines, fStatus, fLine, fDept, fText]);
+  }, [orders, scopeLines, fStatus, fLine, fDept, fText, lines]);
 
   const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
   // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
@@ -360,8 +385,8 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
-      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
-      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
+      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
+      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
@@ -406,7 +431,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   const [beforeFile, setBeforeFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ฟอร์มนี้ยาว กรอกใหม่ทั้งใบเจ็บมาก)
+  const [dirty, setDirty] = useState(false);
+  const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
+  const pickBefore = (file) => { setDirty(true); setBeforeFile(file); };
+  const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
   // แจ้งซ่อม "แม่พิมพ์" หรือ "เครื่องจักร"? — ตัดสินจากชนิดอุปกรณ์ที่เลือก แล้วค่อยดูทีมที่แจ้งถึง
   //   ⚠️ แม่พิมพ์ผูก line_name เป็น "ชื่อกลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งไม่มีใน production_lines
   //      → กรองด้วยไลน์ที่เลือกในฟอร์มจะไม่มีวันเจอแม่พิมพ์เลย (เจอจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01)
@@ -508,7 +537,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   };
 
   return (
-    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} wide>
+    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty} wide>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
@@ -580,11 +609,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
         <Field label="ผู้แจ้ง (ผลิต)"><input value={f.reporter_prod} onChange={e => set('reporter_prod', e.target.value)} style={inp} /></Field>
         <Field label="ผู้แจ้ง (คุณภาพ)"><input value={f.reporter_qa} onChange={e => set('reporter_qa', e.target.value)} style={inp} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={setBeforeFile} /></div>
+        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={pickBefore} /></div>
         <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
+        <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : 'บันทึกใบแจ้งซ่อม'}</button>
       </div>
       {scanOpen && (
@@ -805,7 +834,7 @@ function printMoReportMtn(o, dparts = [], logo0) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
@@ -816,8 +845,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
+  /* 🔧 ช่างของทีมนี้ทำขั้น 2-4 ของ "ใบทีมตัวเอง" ได้ (feedback หน้างาน 2026-08-21)
+     ที่มา: ช่างฝ่ายผลิตอยู่ระหว่างระดับส่วนกับระดับกลุ่ม — role ที่มีอยู่ไม่มีตัวไหนพอดี
+     แทนที่จะเพิ่ม role ใหม่ (กฎเหล็ก: เจอแกนใหม่ให้เพิ่ม attribute) ใช้ 2 ชั้นคู่กัน:
+       role ต้องถือ `mtn_repair:service_own_team`  **และ**  ตัวบุคคลต้องถูกตั้ง
+       "ทีมช่างซ่อม" (profiles.mtn_teams ที่ /add-user) ให้ตรงกับทีมของใบนั้น
+     → ติ๊กให้ role `leader` ก็ไม่ได้แปลว่าหัวหน้ากลุ่มทุกคนแตะใบซ่อมได้
+       (ไม่ได้ตั้งทีม = userTeams ว่าง = ไม่ผ่าน) */
+  const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
+  const ownTeamService = can('mtn_repair', 'service_own_team', role)
+    && userTeams.some(t => sameTeam(t, orderTeam));
   // แก้ไขได้: หัวหน้า (manage_master) หรือผู้มีสิทธิ์ทำสเตปนั้น
-  const canEditStep = (step) => can('mtn_repair', 'manage_master', role) || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role)) || (step === 1 && can('mtn_repair', 'report', role));
+  const canEditStep = (step) => can('mtn_repair', 'manage_master', role)
+    || (STEP_PERM[step] && can('mtn_repair', STEP_PERM[step], role))
+    || (STEP_PERM[step] === 'service' && ownTeamService)
+    || (step === 1 && can('mtn_repair', 'report', role));
 
   // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
   const [resubDept, setResubDept] = useState(dept);
@@ -951,6 +993,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           </div>
         </div>
       </div>
+      {/* ⚠️ ปุ่มขั้นถัดไปหายเพราะสิทธิ์ = ต้องบอกเหตุผล ห้ามให้เดาเอง (UI-CONVENTIONS §6.9)
+             เคสที่เจอจริง: ช่างฝ่ายผลิตเปิดใบได้แต่กดรับงานไม่ได้ แล้วไม่มีอะไรอธิบาย */}
+      {next && !(can('mtn_repair', next.perm, role) || (next.perm === 'service' && ownTeamService)) && (
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
+          🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> ({next.label})
+          {next.perm === 'service' && (
+            <div style={{ color: 'var(--text2)', marginTop: 3 }}>
+              ถ้าเป็น <b>ช่างของทีม {deptNameOf(orderTeam) || 'นี้'}</b> ให้ admin ตั้ง 2 อย่าง:
+              <div>① เปิดสิทธิ์ <code>mtn_repair:service_own_team</code> ให้ role นี้ที่ <b>/permissions</b></div>
+              <div>② ตั้ง “🔧 ทีมช่างซ่อม” ของบัญชีนี้เป็น <b>{deptNameOf(orderTeam) || '—'}</b> ที่ <b>/add-user</b></div>
+              <div style={{ marginTop: 2, opacity: 0.85 }}>ครบทั้งสองอย่างถึงจะทำขั้น 2-4 ของ<u>ใบทีมตัวเอง</u>ได้ (ใบทีมอื่นยังทำไม่ได้)</div>
+            </div>
+          )}
+        </div>
+      )}
       {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
@@ -964,7 +1021,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             printMoReport(o, dparts, logo);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
-          {next && can('mtn_repair', next.perm, role) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
+          {next && (can('mtn_repair', next.perm, role) || (next.perm === 'service' && ownTeamService)) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
       </div>
     </ModalShell>
@@ -972,9 +1029,34 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, onClose, onSaved }) {
+function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
+  /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
+     "หัวหน้าช่าง MTN ต้องเห็นทีมช่างตัวเอง ไม่ใช่เห็นมั่ว")
+     ⚠️ **ไม่ตัดทีมอื่นทิ้ง** — งานข้ามทีมมีจริง (เช่นงาน JIG ที่ MTN รับไปทำ)
+        แค่แยกกลุ่มให้ไม่ปนกัน (หลักเดียวกับ optgroup "ในผัง/นอกผัง" ที่อื่นในระบบ) */
+  const techGroups = useMemo(() => {
+    const tk = teamKeyOf(order?.mtn_dept || '');
+    const mine = [], others = [];
+    for (const t of techs || []) (tk && sameTeam(t.dept, tk) ? mine : others).push(t);
+    return { teamKey: tk, mine, others };
+  }, [techs, order?.mtn_dept]);
+  // ตัวเลือกช่างแบบจัดกลุ่ม — ใช้ร่วมทุกช่องที่เลือกช่าง (ขั้น 2 มอบหมาย · ขั้น 3 ช่างหลัก/รอง)
+  const techOpts = (
+    <>
+      {techGroups.mine.length > 0 && (
+        <optgroup label={`👷 ช่างทีม ${deptNameOf(techGroups.teamKey)} (${techGroups.mine.length})`}>
+          {techGroups.mine.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+        </optgroup>
+      )}
+      {techGroups.others.length > 0 && (
+        <optgroup label={`— ทีมอื่น (${techGroups.others.length}) · เลือกได้ถ้ารับงานข้ามทีม —`}>
+          {techGroups.others.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}
+        </optgroup>
+      )}
+    </>
+  );
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -992,13 +1074,42 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   const [sig, setSig] = useState({ mode: signatureUrl ? 'profile' : 'draw', url: signatureUrl, blob: null });
   const [usedParts, setUsedParts] = useState([]);
   const [saving, setSaving] = useState(false);
-  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ขั้น 3 มีทั้งอะไหล่/รูป/ลายเซ็น กรอกใหม่ทั้งขั้นเจ็บมาก)
+  const [dirty, setDirty] = useState(false);
+  const touch = () => setDirty(true);
+  const set = (k, v) => { touch(); setF(p => ({ ...p, [k]: v })); };
+  const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
   const isReject = step === 2 && f.repair_type === 'Reject MO';
   const needSign = [4, 5, 6, 7].includes(step);
 
-  const addPart = () => setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]);
-  const setPart = (i, k, v) => setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x));
-  const pickPart = (i, id) => { const pt = parts.find(p => p.id === id); setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id, name: pt?.name || '', unit: pt?.unit || '' } : x)); };
+  const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]); };
+  const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
+  /* เลือกอะไหล่ผ่าน <SearchSelect> — คืน { id, text, opt }
+     เลือกจากทะเบียน = ได้ part_id (หักสต็อกอัตโนมัติ) · พิมพ์เอง = part_id ว่าง เก็บแค่ชื่อ (ไม่หักสต็อก) */
+  const pickPart = (i, { id, text, opt }) => {
+    touch();
+    setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id || '', name: text || '', unit: opt?._unit ?? (id ? x.unit : '') } : x));
+  };
+  /* 🔩 ตัวเลือกอะไหล่ที่ "ค้นได้" (feedback หน้างาน 2026-08-24: อะไหล่หลักพัน <select> เลื่อนหาไม่เจอ)
+     จัดกลุ่ม "ทีมของใบนี้" ขึ้นก่อน แต่ **ไม่ตัดทีมอื่นทิ้ง** — หลักเดียวกับลิสต์มอบหมายช่าง
+     (ช่างหยิบอะไหล่ข้ามทีมมีจริง เช่นน็อต/แบริ่งที่ใช้ร่วมกัน) */
+  const partOpts = useMemo(() => {
+    const tk = teamKeyOf(order?.mtn_dept || '');
+    const grp = (p) => (tk && p.team && sameTeam(p.team, tk)) ? 0 : (p.team ? 2 : 1);
+    const gname = [`🔩 อะไหล่ทีม ${deptNameOf(tk) || ''}`.trim(), '🌐 ใช้ร่วมทุกทีม', '🔩 ทีมอื่น'];
+    return (parts || []).map(p => {
+      const g = grp(p), st = Number(p.stock_qty) || 0, lo = Number(p.min_qty) || 0;
+      return {
+        id: p.id, label: p.name || '(ไม่มีชื่อ)',
+        sub: [p.code, p.shelf && `ชั้น ${p.shelf}`, p.used_with && `ใช้กับ ${p.used_with}`].filter(Boolean).join(' · '),
+        badge: `${st}${p.unit ? ' ' + p.unit : ''}`,
+        badgeColor: st <= 0 ? '#ef4444' : (lo > 0 && st <= lo ? '#f59e0b' : 'var(--text2)'),
+        group: gname[g],
+        keywords: [p.code, p.mat_no, p.part_no, p.shelf, p.used_with, p.supplier].filter(Boolean).join(' '),
+        _g: g, _unit: p.unit || '', _stock: st,
+      };
+    }).sort((a, b) => a._g - b._g);   // sort เสถียร → ในกลุ่มเดียวกันคงลำดับ sort_order เดิม
+  }, [parts, order?.mtn_dept]);
 
   const resolveSign = async (field) => {
     if (sig.mode === 'profile' && sig.url) return sig.url;
@@ -1008,8 +1119,22 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   };
 
   const save = async () => {
+    if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
     setSaving(true);
     try {
+      /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
+         RLS ของ mtn_orders ฝั่ง DR เป็น anon เปิดหมด → UI คือด่านเดียวจริงๆ
+         (ผู้ถือ manage_master ข้ามได้ตามเดิม = สิทธิ์แก้ย้อนหลังของทุกขั้น) */
+      const perm = STEP_PERM[step];
+      const myTeam = userTeams.some(t => sameTeam(t, teamKeyOf(o.mtn_dept || deptForItem(o.item_type))));
+      const allowed = can('mtn_repair', 'manage_master', role) || can('mtn_repair', perm, role)
+        || (perm === 'service' && can('mtn_repair', 'service_own_team', role) && myTeam);
+      if (!allowed) {
+        setSaving(false);
+        return toast.error(perm === 'service' && can('mtn_repair', 'service_own_team', role)
+          ? `ใบนี้แจ้งถึงทีม ${deptNameOf(o.mtn_dept || deptForItem(o.item_type))} — คุณทำได้เฉพาะใบของทีมตัวเอง`
+          : 'ไม่มีสิทธิ์ทำขั้นนี้');
+      }
       const upd = { updated_at: new Date().toISOString() };
       if (step === 2) {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
@@ -1027,8 +1152,16 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
-        if (afterFile) { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+        // ⚠️ รูปพังห้ามลากบันทึกทั้งใบล้ม (feedback 2026-08-21: อ่านไฟล์รูปไม่ได้ →
+        //    วิธีการแก้ไข/ช่างหลัก/ช่างรอง ที่พิมพ์มาหายหมด ช่างกดบันทึกซ้ำ 13 ครั้ง)
+        //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
+        let imgWarn = null;
+        if (afterFile) {
+          try { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+          catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
+        }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+        if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
         for (const p of usable) {
           await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName });
@@ -1054,7 +1187,11 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
       } else if (step === 5) {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s });
-        if (qaFile) { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+        // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
+        if (qaFile) {
+          try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+          catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
+        }
         if (!editMode) { upd.status = 'qa'; upd.current_step = 5; upd.qa_at = new Date().toISOString(); }
         await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
       } else if (step === 6) {
@@ -1083,13 +1220,27 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 
   const titles = { 2: '🔧 รับ/จ่ายงานซ่อม (Step 2)', 3: '🛠 ดำเนินการซ่อม (Step 3)', 4: '🔎 ตรวจสอบหลังซ่อม (Step 4)', 5: '🧪 คุณภาพหลังซ่อม (Step 5)', 6: '🤝 รับมอบ/ติดตาม (Step 6)', 7: '✅ อนุมัติปิด MO (Step 7)' };
   return (
-    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${titles[step]}`} onClose={onClose}>
+    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${titles[step]}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
         {step === 2 && <>
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับปัญหางาน"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
-            <Field label="มอบหมายช่างซ่อม" required><select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}><option value="">— เลือกช่าง —</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
+            <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
+              <select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}>
+                <option value="">— เลือกช่าง —</option>
+                {techOpts}
+              </select>
+              {/* ⚠️ ไม่มีช่างในทีมของใบเลย = ต้องบอกว่าเพราะอะไรและแก้ที่ไหน ห้ามปล่อยให้ไล่หาเอง
+                  เคสที่เจอจริง: ช่างฝ่ายผลิตยังไม่ถูกติ๊ก employees.mtn_team จึงไม่โผล่สักคน */}
+              {techGroups.teamKey && techGroups.mine.length === 0 && (
+                <div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
+                  ⚠️ ยังไม่มีใครถูกตั้งเป็นช่างทีม <b>{deptNameOf(techGroups.teamKey)}</b> เลย
+                  <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>🔧 ทีมช่างซ่อม</b></div>
+                  <div style={{ opacity: 0.85 }}>ระหว่างนี้เลือกช่างทีมอื่นไปก่อนได้</div>
+                </div>
+              )}
+            </Field>
             <DateField label="กำหนดเสร็จ" value={f.target_done_at} onChange={v => set('target_done_at', v)} />
             <Field label="ระบุรายละเอียด"><input value={f.assign_note} onChange={e => set('assign_note', e.target.value)} style={inp} /></Field>
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ)</div>}
@@ -1099,20 +1250,39 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="สาเหตุปัญหาที่เกิด"><textarea value={f.root_cause} onChange={e => set('root_cause', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <Field label="วิธีการแก้ไข"><textarea value={f.solution} onChange={e => set('solution', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
-            <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techs.map(t => <option key={t.id} value={t.name}>{t.name}{t.dept ? ` · ${deptNameOf(t.dept)}` : ''}</option>)}</select></Field>
+            <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
+            <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
           </div>
-          <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={setAfterFile} />
+          <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={f2 => { touch(); setAfterFile(f2); }} />
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ (เบิก — หักสต็อกอัตโนมัติ)</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
-            {usedParts.map((p, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 5, alignItems: 'center', flexWrap: 'wrap' }}>
-                <select value={p.part_id} onChange={e => pickPart(i, e.target.value)} style={{ ...inp, flex: '2 1 140px' }}><option value="">อะไหล่…</option>{parts.map(pp => <option key={pp.id} value={pp.id}>{pp.name} (สต็อก {pp.stock_qty})</option>)}</select>
-                <input value={p.name} onChange={e => setPart(i, 'name', e.target.value)} placeholder="หรือพิมพ์ชื่อ" style={{ ...inp, flex: '2 1 120px' }} />
-                <input type="number" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 70 }} />
-                <button type="button" onClick={() => setUsedParts(x => x.filter((_, j) => j !== i))} className="tbtn" style={{ ...btnGhost, padding: '6px 8px' }}>✕</button>
-              </div>
-            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ · เลือกจากทะเบียน = หักสต็อกให้ · พิมพ์ชื่อเองได้ถ้าไม่มีในคลัง</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
+            {usedParts.map((p, i) => {
+              const master = parts.find(x => x.id === p.part_id);
+              const over = master && Number(p.qty) > (Number(master.stock_qty) || 0);
+              return (
+                <div key={i} style={{ marginBottom: 6, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 7 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <SearchSelect
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={p.part_id} text={p.name} options={partOpts} allowFree
+                      placeholder="ค้นหาอะไหล่ — ชื่อ / รหัส / ชั้นวาง"
+                      emptyText="ไม่พบอะไหล่ที่ค้นหาในทะเบียน"
+                      freeHint="ไม่หักสต็อก"
+                      onChange={(v) => pickPart(i, v)}
+                    />
+                    <input type="number" min="0" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 64, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: 'var(--muted)', width: 34, flexShrink: 0, paddingTop: 9, overflow: 'hidden' }}>{p.unit || ''}</span>
+                    <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
+                  </div>
+                  {/* ⚠️ เบิกเกินสต็อก — RPC mtn_stock_move กันติดลบอยู่แล้ว บอกก่อนกดบันทึกจะได้ไม่เสียเที่ยว */}
+                  {over && (
+                    <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 4 }}>
+                      ⚠ เบิก {p.qty} แต่คงเหลือ {master.stock_qty} {master.unit || ''} — บันทึกไม่ผ่าน ต้องรับเข้าคลังก่อน หรือลดจำนวน
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             {editMode && <div style={{ fontSize: 11, color: 'var(--muted)' }}>* แก้ไข: เพิ่มอะไหล่ใหม่ได้ (รายการเดิมที่หักสต็อกไปแล้วไม่ถูกลบ)</div>}
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1136,7 +1306,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           <Field label="ชื่อผู้ตรวจสอบ (QA)"><input value={f.qa_checker} onChange={e => set('qa_checker', e.target.value)} style={inp} /></Field>
-          <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={setQaFile} />
+          <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
         {step === 6 && <>
           <Field label="ติดตามหลังซ่อม"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
@@ -1164,10 +1334,10 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="ชื่อผู้อนุมัติ"><input value={f.approver_name} onChange={e => set('approver_name', e.target.value)} style={inp} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
-        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: 'approve_sign' }[step]]} onChange={setSig} /></Field>}
+        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: 'approve_sign' }[step]]} onChange={v => { touch(); setSig(v); }} /></Field>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
+        <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
       </div>
     </ModalShell>
@@ -1178,7 +1348,13 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
 function KpiTab({ orders, scopeLines, lineObjs = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
-  const rows = useMemo(() => { const since = new Date(); since.setDate(since.getDate() - Number(days)); return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && (!line || o.line_name === line) && new Date(o.report_at) >= since && o.repair_done_at); }, [orders, scopeLines, line, days]);
+  const rows = useMemo(() => {
+    const since = new Date(); since.setDate(since.getDate() - Number(days));
+    // กางครอบครัวไลน์เหมือนลิสต์หลัก — เลือกไลน์แม่ต้องนับใบของไลน์ลูกด้วย (fam ว่าง = ถอยไปเทียบตรงตัว)
+    const fam = line ? new Set(getLineFamilyNames(lineObjs, line)) : null;
+    const inLine = (o) => !line || (fam?.size ? fam.has(o.line_name) : o.line_name === line);
+    return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && o.repair_done_at);
+  }, [orders, scopeLines, line, days, lineObjs]);
   const [openGroup, setOpenGroup] = useState(null);   // กลุ่มที่กางดูหัวข้อย่อยในพาเรโต้
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
@@ -1280,97 +1456,19 @@ const AUDIT_TABLES = {
   equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
   die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
 };
-const AUDIT_FIELD = {
-  name: 'ชื่อ', characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', team: 'ทีม', dept: 'ทีม',
-  price: 'ราคา', unit: 'หน่วย', is_active: 'สถานะใช้งาน', shelf: 'ตำแหน่งชั้นวาง',
-  stock_qty: 'ยอดคงเหลือ', min_qty: 'ขั้นต่ำ', prefix: 'รหัสย่อ', sort_order: 'ลำดับ',
-  code: 'รหัส', mat_no: 'เลข MAT', rank_override: 'Rank (ตั้งเอง)', rank_note: 'เหตุผล Rank',
-  die_status: 'สถานะแม่พิมพ์', status_note: 'หมายเหตุสถานะ', area_id: 'ผังจัดเก็บ',
-  pos_x: 'ตำแหน่ง X (%)', pos_y: 'ตำแหน่ง Y (%)', regrind_count: 'เจียรไปแล้ว (ครั้ง)',
-  regrind_limit: 'เจียรได้สูงสุด', tonnage_ton: 'ขนาดตัน', op_seq: 'OP', note: 'หมายเหตุ',
-  image_url: 'รูปผัง',
-};
-const AUDIT_ACT = { INSERT: { t: '➕ เพิ่ม', c: '#22c55e' }, UPDATE: { t: '✏️ แก้ไข', c: '#f59e0b' }, DELETE: { t: '🗑 ลบ', c: '#ef4444' } };
 
 function MasterAuditLog({ teams = [] }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [fTable, setFTable] = useState('');
-  const keys = Object.keys(AUDIT_TABLES);
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true); setErr('');
-      const { data, error } = await supabaseDR.from('audit_log')
-        .select('*').in('table_name', keys).order('changed_at', { ascending: false }).limit(300);
-      if (!alive) return;
-      if (error) setErr(error.message); else setRows(data || []);
-      setLoading(false);
-    })();
-    return () => { alive = false; };
-  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-
+  // จอเดียวกับหน้า /audit-log (component กลาง) — ที่นี่จำกัดเฉพาะตารางของทีมช่าง
+  // ดูของทั้งระบบ (สิทธิ์/พนักงาน/สินค้า/เครื่องจักร ฯลฯ) ที่ ตั้งค่าโปรแกรม → 📜 ประวัติการแก้ไขข้อมูล
   const teamName = (k) => (k ? (teams.find(t => teamKeyOf(t.key) === teamKeyOf(k))?.dept_name || deptNameOf(k) || k) : '🌐 ใช้ร่วมทุกทีม');
-  const fmtVal = (f, v) => {
-    if (v === null || v === undefined || v === '') return '(ว่าง)';
-    if (f === 'team' || f === 'dept') return teamName(v);
-    if (f === 'is_active') return v === true || v === 'true' ? 'ใช้งาน' : 'ปิดใช้งาน';
-    return String(v);
-  };
-  const labelOf = (r) => {
-    const d = r.new_data || r.old_data || {};
-    return d.name || d.characteristic || d.code || '(ไม่ทราบชื่อ)';
-  };
-  const shown = fTable ? rows.filter(r => r.table_name === fTable) : rows;
-
   return (
-    <div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 11px' }}>
-        📜 ใครแก้อะไรในข้อมูลตั้งต้นของทีมช่าง — เรียงใหม่สุดก่อน (300 รายการล่าสุด) · ระบบบันทึกอัตโนมัติทุกครั้งที่มีการเพิ่ม/แก้/ลบ
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ดูเฉพาะ:</span>
-        <select value={fTable} onChange={e => setFTable(e.target.value)} style={{ ...inp, width: 220 }}>
-          <option value="">ทุกรายการ</option>
-          {keys.map(k => <option key={k} value={k}>{AUDIT_TABLES[k]}</option>)}
-        </select>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{shown.length} รายการ</span>
-      </div>
-
-      {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}
-      {!!err && <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8 }}>
-        ยังดูประวัติไม่ได้: {err}<br />(ถ้าเป็นตาราง audit_log ไม่มี — ต้อง apply migration 20260724_audit_log_dr.sql ก่อน)
-      </div>}
-      {!loading && !err && !shown.length && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>ยังไม่มีประวัติการแก้ไข</div>}
-
-      <div style={{ display: 'grid', gap: 6 }}>{shown.map(r => {
-        const act = AUDIT_ACT[r.action] || { t: r.action, c: 'var(--text2)' };
-        const fields = (r.changed_fields || []).filter(f => f !== 'updated_at' && f !== 'updated_by_name');
-        return (
-          <div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 8, padding: '9px 11px' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5 }}>
-              <b style={{ color: act.c }}>{act.t}</b>
-              <span style={{ color: 'var(--muted)' }}>{AUDIT_TABLES[r.table_name] || r.table_name}</span>
-              <b style={{ color: 'var(--text)' }}>{labelOf(r)}</b>
-              <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 11.5 }}>
-                👤 {r.actor || '—'} · {fmtDateTime(r.changed_at)}
-              </span>
-            </div>
-            {r.action === 'UPDATE' && !!fields.length && (
-              <div style={{ marginTop: 5, display: 'grid', gap: 2 }}>
-                {fields.map(f => (
-                  <div key={f} style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                    <span style={{ color: 'var(--muted)' }}>{AUDIT_FIELD[f] || f}:</span>{' '}
-                    <span style={{ textDecoration: 'line-through', opacity: 0.65 }}>{fmtVal(f, r.old_data?.[f])}</span>
-                    {' → '}<b>{fmtVal(f, r.new_data?.[f])}</b>
-                  </div>))}
-              </div>
-            )}
-          </div>);
-      })}</div>
-    </div>
+    <AuditLogViewer
+      client={supabaseDR}
+      tables={Object.keys(AUDIT_TABLES)}
+      fmtValue={(f, v) => ((f === 'team' || f === 'dept') && v !== undefined ? teamName(v) : undefined)}
+      intro={<>📜 ใครแก้อะไรใน<b>ข้อมูลตั้งต้นของทีมช่าง</b> — เรียงใหม่สุดก่อน · บันทึกอัตโนมัติทุกครั้งที่เพิ่ม/แก้/ลบ
+        <br /><span style={{ opacity: 0.85 }}>อยากดูของทั้งระบบ (สิทธิ์ · พนักงาน · สินค้า · เครื่องจักร …) ไปที่ <b>ตั้งค่าโปรแกรม,ฐานข้อมูล → 📜 ประวัติการแก้ไขข้อมูล</b></span></>}
+    />
   );
 }
 
@@ -1409,9 +1507,11 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   const legacyCount = techs.filter(t => !t.from_employee).length;
   const TechList = () => (
     <div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px' }}>
-        💡 ช่าง = <b>พนักงานที่ section เป็นทีมช่าง</b> (MTN/JIG/DIE) จากฐานข้อมูลพนักงาน — เพิ่ม/แก้ที่หน้า <b>ฐานข้อมูลพนักงาน</b> (มีสกิลได้เหมือน operator) · ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
-      </div>
+      <InfoMore style={{ marginBottom: 8 }} id="mtn_tech"
+        lead={<>💡 ช่างมาจาก<b>ฐานข้อมูลพนักงาน</b> — เพิ่ม/แก้ที่หน้านั้น</>}>
+        ช่าง = พนักงานที่ section เป็นทีมช่าง (MTN/JIG/DIE) · มีสกิลได้เหมือน operator
+        <br />ด้านล่างเพิ่มได้เฉพาะ "ช่างเฉพาะกิจ" ที่ไม่ได้อยู่ในฐานพนักงาน
+      </InfoMore>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
         <input value={ntech.name} onChange={e => setNtech(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อช่างเฉพาะกิจ (นอกฐานพนักงาน)" style={{ ...inp, width: 260 }} />
         <select value={ntech.dept} onChange={e => setNtech(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 150 }}><TeamOpts list={mtnDepts} /></select>

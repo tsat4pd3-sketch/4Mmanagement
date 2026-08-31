@@ -18,12 +18,12 @@ async function getBotToken(): Promise<string | undefined> {
   } catch { return TELEGRAM_BOT_TOKEN || undefined; }
 }
 
-type Route = { enabled: boolean; chats: string[]; template?: string | null };
+type Route = { enabled: boolean; chats: string[]; template?: string | null; label?: string; inappRoles?: string[] };
 // teamChats = ห้องที่แท็กทีมไว้ (JIG MTN/DIE MTN/MTN/PRODUCTION) → ส่งแจ้งเตือนเข้าห้องของทีมนั้นก่อน
 async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]>; chatTeam: Map<string, string> }> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
-      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template'),
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template, label, inapp_roles'),
       supabase.from('telegram_channels').select('id, chat_id, is_active, team'),
     ]);
     const chatById = new Map<string, string>();
@@ -42,7 +42,9 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
         ? ((r as Record<string, unknown>).channel_ids as string[])
         : (r as { channel_id?: string }).channel_id ? [(r as { channel_id: string }).channel_id] : [];
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
-      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template };
+      const inappRoles = Array.isArray((r as { inapp_roles?: string[] }).inapp_roles) ? (r as { inapp_roles: string[] }).inapp_roles : [];
+      map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template,
+        label: (r as { label?: string }).label, inappRoles };
     }
     return { map, teamChats, chatTeam };
   } catch { return { map: {}, teamChats: {}, chatTeam: new Map() }; }
@@ -118,6 +120,97 @@ const TEAM_NAME: Record<string, string> = {
   maintenance: 'MTN', jig_maintenance: 'JIG MTN', die_maintenance: 'DIE MTN', production: 'PRODUCTION',
 };
 const teamName = (v?: string | null): string => TEAM_NAME[teamKey(v)] || String(v || '');
+
+/* ── แจ้งเตือน "ในแอป" (กระดิ่ง + เสียง + Web Push ผ่าน trigger trg_notify_push) ──────────
+   ⚠️ เดิมไฟล์นี้ส่งแต่ Telegram → ใบแจ้งซ่อม **ไม่เคยเขียนตาราง `notifications` เลย**
+      ช่างที่ไม่ได้เปิดกลุ่มแชทค้างไว้จึงไม่รู้ว่ามีใบเข้า (ต่างจากงานส่ง/downtime ที่อยู่ใน
+      send-notification ซึ่งมี notifyInApp อยู่แล้ว) — user แจ้ง 2026-08-19
+
+   ผู้รับ = รวม 2 ทาง (ไม่ซ้ำกัน):
+     1. ผู้รับตามทะเบียนที่ /notification-config — **role × ส่วนงาน × แผนก** ผ่าน RPC `notify_recipients`
+        (RPC เดียวกับ edge อื่นทั้งระบบ · ตั้ง "เฉพาะส่วนงานที่เกิดเหตุ" ได้ → ใบของ Line 60 ไม่ไปกวนส่วนงานอื่น)
+     2. **ช่างในทีมที่ใบนี้แจ้งถึง** (`profiles.mtn_teams` มีทีมนั้น) — เจาะจงกว่าการยิงทั้ง role
+        ทีม DIE MTN ไม่ควรโดนเด้งใบของ JIG MTN
+   ⚠️ payload ส่ง mtn_dept มาเป็น "ชื่อทีม" ต้อง teamKey() แปลงเป็นรหัสก่อนเทียบ
+      (profiles.mtn_teams เก็บเป็นรหัสตามกฎ unify encoding 2026-08-06)
+   ⚠️ ล้มเหลวห้ามทำให้ Telegram พัง — ยิงหลังส่ง Telegram เสร็จ + ห่อ try/catch  */
+async function usersByRole(roles: string[]): Promise<string[]> {
+  if (!roles.length) return [];
+  const { data } = await supabase.from('profiles').select('id').in('role', roles);
+  return (data ?? []).map((p) => p.id as string);
+}
+// หา section ของไลน์ (ไลน์ลูกไม่ตั้ง section → ตกทอดจากไลน์แม่ ตามกฎ hierarchy ของโปรเจค)
+async function sectionOfLine(lineName?: string | null): Promise<string | null> {
+  if (!lineName || lineName === '-') return null;
+  try {
+    const { data } = await supabase.from('production_lines')
+      .select('section, parent_line_name').eq('name', lineName).maybeSingle();
+    if (data?.section) return String(data.section);
+    if (data?.parent_line_name) {
+      const { data: p } = await supabase.from('production_lines')
+        .select('section').eq('name', data.parent_line_name).maybeSingle();
+      return p?.section ? String(p.section) : null;
+    }
+  } catch { /* หาไม่เจอ = ไม่กรอง ดีกว่าเงียบ */ }
+  return null;
+}
+// ผู้รับตามทะเบียน (role × ส่วนงาน × แผนก) — RPC เดียวกับ edge อื่นทั้งระบบ
+async function usersByRule(event: string, roles: string[], lineName?: string | null): Promise<string[]> {
+  if (!roles.length) return [];
+  try {
+    const { data, error } = await supabase.rpc('notify_recipients',
+      { p_event: event, p_section: await sectionOfLine(lineName) });
+    if (error) throw error;
+    return (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  } catch (e) {
+    console.error('notify_recipients', e);
+    return usersByRole(roles);      // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+  }
+}
+async function usersInTeam(dept?: string | null): Promise<string[]> {
+  const want = teamKey(dept);
+  if (!want) return [];
+  try {
+    const { data } = await supabase.from('profiles').select('id, mtn_teams');
+    return (data ?? []).filter((p) => (p.mtn_teams as string[] | null ?? []).some((t) => teamKey(t) === want))
+      .map((p) => p.id as string);
+  } catch { return []; }   // ยังไม่ apply migration profiles.mtn_teams — ข้าม ไม่ทำให้พัง
+}
+const MO_INAPP: Record<string, { t: (v: Record<string, string>) => string; type: string }> = {
+  mtn_reported:  { t: (v) => `🛠️ แจ้งซ่อมใหม่ — ${v.line_name} · ${v.item_type}`,        type: 'error'   },
+  mtn_assigned:  { t: (v) => `📋 รับงานซ่อม ${v.mo_no} — ${v.assigned_to}`,               type: 'info'    },
+  mtn_repaired:  { t: (v) => `🔧 ซ่อมเสร็จ ${v.mo_no} — รอตรวจสอบ`,                        type: 'info'    },
+  mtn_checked:   { t: (v) => `🔎 ตรวจหลังซ่อมแล้ว ${v.mo_no}`,                             type: 'info'    },
+  mtn_qa:        { t: (v) => `🧪 ยืนยันคุณภาพแล้ว ${v.mo_no}`,                              type: 'info'    },
+  mtn_handover:  { t: (v) => `🤝 รับมอบงานซ่อม ${v.mo_no}`,                                type: 'info'    },
+  mtn_closed:    { t: (v) => `✅ ปิดใบแจ้งซ่อม ${v.mo_no}`,                                 type: 'success' },
+  mtn_returned:  { t: (v) => `↩️ ใบแจ้งซ่อมถูกตีกลับ — ${v.line_name} (แก้แผนกแล้วส่งใหม่)`, type: 'error'   },
+};
+async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Record<string, string>,
+                             message: string, dept: string | null | undefined, mo: Record<string, unknown>) {
+  try {
+    const meta = MO_INAPP[event];
+    if (!meta) return;
+    // ⚠️ ตีกลับ (mtn_returned) ไม่ส่งให้ทีมช่าง — ทีมนั่นแหละเป็นคนตีกลับ
+    //    คนที่ต้องรู้คือ "ผู้แจ้ง" ที่ต้องไปแก้แผนกแล้วส่งใหม่
+    const wantTeam = event !== 'mtn_returned';
+    const [byRole, byTeam] = await Promise.all([
+      usersByRule(event, routes[event]?.inappRoles ?? [], v.line_name),
+      wantTeam ? usersInTeam(dept) : Promise.resolve([] as string[]),
+    ]);
+    // ผู้แจ้งได้รับทุกขั้นเสมอ — ใบของตัวเองเดินไปถึงไหนต้องรู้ (มาจาก mtn_orders.reported_by_uid)
+    const reporter = typeof mo?.reported_by_uid === 'string' ? [mo.reported_by_uid as string] : [];
+    const ids = [...new Set([...byRole, ...byTeam, ...reporter])].filter(Boolean);
+    if (!ids.length) return;
+    const body = String(message).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    await supabase.from('notifications').insert(ids.map((uid) => ({
+      user_id: uid, title: meta.t(v), body, type: meta.type,
+      ref_table: 'mtn_orders', ref_id: mo?.id != null ? String(mo.id) : null,
+    })));
+  } catch (e) { console.error('notifyMoInApp', e); }   // แจ้งในแอปพลาด ห้ามทำให้ Telegram พัง
+}
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
@@ -204,6 +297,7 @@ Deno.serve(async (req) => {
       ? await sendTelegramPhoto(photo, message, chat).catch(() => [])
       : await sendTelegram(message, chat).catch(() => []);
     await recordSentRefs(sent || [], 'mtn_order', mo.id, event); // reply ใต้ข้อความนี้ = คอมเมนต์ใบ MO
+    await notifyMoInApp(routes, event, v, message, dept, mo);   // กระดิ่ง + เสียง + Web Push
     return json({ ok: true });
   } catch (err) {
     console.error(err);

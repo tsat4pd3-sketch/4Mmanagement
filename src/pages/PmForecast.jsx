@@ -24,7 +24,7 @@ export default function PmForecast() {
   const canManage = can('pm', 'setup', role)
   const canCoord = can('pm_coord', 'manage', role)
   const navigate = useNavigate()
-  // สร้าง "แผนประสานงาน PM" (แจ้ง Production) จากแถวนี้ — ส่ง prefill ผ่าน sessionStorage แล้วไป /pm-coordination
+  // สร้าง "แผนประสานงาน PM" (แจ้ง Production) จากแถวนี้ — ส่ง prefill ผ่าน sessionStorage แล้วไปแท็บประสานงาน
   const toCoordination = (r) => {
     const d = r.projected
     const due = d ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d) : null
@@ -32,7 +32,7 @@ export default function PmForecast() {
       pm_plan_id: r.plan.id, machine_name: r.eqName, line_name: r.line, next_due_date: due,
       checklist_name: r.eqName, title: r.eqName ? `PM ${r.eqName}` : '',
     }))
-    navigate('/pm-coordination')
+    navigate('/pm?tab=coord')
   }
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
@@ -137,7 +137,7 @@ export default function PmForecast() {
   return (
     <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 }}>🔧 PM ล่วงหน้า (Planner)</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 }}>🔧 PM ที่จะครบกำหนด</h1>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>คาดวันที่จะต้อง PM ล่วงหน้า + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุด · sync ให้วางแผน/ผลิตเตรียมตัว</p>
       </div>
 

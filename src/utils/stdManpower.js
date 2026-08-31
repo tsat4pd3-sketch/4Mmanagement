@@ -37,9 +37,10 @@ const childrenOf = (lines, name) =>
 
 /**
  * กำลังคนที่ "นับได้" ของไลน์นี้ — ปลอดภัยเมื่อเอาไปบวกรวมทั้งลิสต์ (ไม่ซ้ำกับไลน์แม่)
- *   - ไลน์ลูกที่แม่ตั้งตัวเลขไว้แล้ว → 0 (ตัวเลขเป็นของกลุ่ม นับที่แม่)
- *   - ไลน์ลูกที่แม่ไม่ได้ตั้ง        → ค่าของตัวเอง
+ *   - ไลน์ลูกที่แม่อยู่ในลิสต์      → 0 เสมอ (แม่ถือยอดกลุ่ม — own หรือ rollup จากลูก)
+ *   - ไลน์ลูกที่แม่โดน scope ตัด    → ค่าของตัวเอง (ไม่มีใครนับแทน)
  *   - ไลน์แม่/ไลน์เดี่ยว             → ค่าของตัวเอง · ถ้าไม่ได้ตั้ง = ผลรวมลูก
+ * invariant: Σ stdCapacityOf ทั้งครอบครัว = stdGroupOf ของราก (มีเทสคุม)
  */
 export function stdCapacityOf(lines, name, shift) {
   const self = findLine(lines, name);
@@ -48,8 +49,11 @@ export function stdCapacityOf(lines, name, shift) {
 
   if (self.parent_line_name) {
     const parent = findLine(lines, self.parent_line_name);
-    // แม่อยู่นอกลิสต์ (โดน scope ตัด) = ไม่มีใครนับแทน → นับที่ตัวเอง
-    if (parent && stdOwnOf(parent, shift) > 0) return 0;
+    /* ⚠️ ลูกที่ "แม่อยู่ในลิสต์" = 0 เสมอ — แม่เป็นคนถือยอดกลุ่ม (own หรือ rollup จากลูก)
+       เดิมลูกนับตัวเองเมื่อแม่ไม่ได้ตั้งค่า → แม่ rollup ลูกด้วย = Σ ทั้งลิสต์นับซ้ำ 2 เท่า
+       (เทสจับได้ 2026-08-24: แม่ 0/0 + ลูก 6+7 → รวมได้ 26 แทน 13 · QC audit รอบ 5)
+       แม่อยู่นอกลิสต์ (โดน scope ตัด) = ไม่มีใครนับแทน → นับที่ตัวเอง */
+    if (parent) return 0;
     return own;
   }
   if (own > 0) return own;

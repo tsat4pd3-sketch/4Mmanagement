@@ -14,11 +14,29 @@ npx vite --config audit/vite.audit.mjs        # เปิดที่ :5199
 ```
 `?p=<ชื่อไฟล์ใน src/pages ไม่ต้องมี .jsx>` เช่น `?p=Checkin`
 
+**หน้าที่ต้องส่ง props ถึงจะเรนเดอร์จริง มี harness แยก** (main.jsx mount แบบ `<C/>` ไม่ส่ง props):
+
+| URL | วัดอะไร |
+|---|---|
+| `?p=__sidebar` | sidebar แบบ D (rail + แผงลอย) — `window.__setPin(true/false)` สลับปักหมุด |
+| `hub.html[?role=admin]` | หน้า Home (DeptHub) — นับการ์ด/ชิป/แถว ⭐ · seed `localStorage['nav_recent_v1']` เพื่อทดสอบ "ใช้บ่อย" |
+
+> ⚠️ harness ไม่มีตาราง `role_permissions` → เมนูโผล่ครบเฉพาะ `role=admin` (โค้ด bypass ให้ admin)
+> role อื่นจะเห็นการ์ดว่าง — เป็นข้อจำกัดของ harness ไม่ใช่บั๊กของหน้า
+
 กวาดทั้งโปรเจค (60 หน้า × 3 ความกว้าง × กดปุ่ม/แท็บ) — ใช้เวลา ~10 นาที:
 ```bash
 npm i -D playwright   # ครั้งแรกเท่านั้น (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 ใช้ chromium ที่มีอยู่)
 node audit/sweep.mjs  # ต้องเปิด vite audit ค้างไว้ก่อน
 ```
+
+**`crashsweep.mjs` — กวาดหา "หน้าพัง" (คนละเรื่องกับ layout ล้น) ~3 นาที:**
+```bash
+node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค window.__crash
+```
+รันทุกครั้งที่ **merge งานหลาย session ชนกันในไฟล์เดียว** — `npm run build` (lint+เทส+vite) ผ่านได้
+ทั้งที่หน้าพังตอน runtime · เคสจริง: resolve conflict แล้วบรรทัด `setSelSession` หลุด → Daily Report
+จอหลักว่างทั้งหน้า · `/products` แท็บ Kanban Std พังจาก `undefined.toLocaleString()`
 `audit/probe.js` = **ตัวตรวจ "ล้นจอจริง"** ใช้ร่วมทุกสคริปต์ — pattern ที่ใช้จริง:
 
 | วัดอะไร | วิธี |
@@ -42,6 +60,9 @@ node audit/sweep.mjs  # ต้องเปิด vite audit ค้างไว�
 - **ตัวเลื่อนของหน้าคือ `<body>` ไม่ใช่ `<html>`** (`html,body{height:100%}` + `overflow-x:hidden`)
   → `document.scrollingElement` คืน `<html>` ซึ่ง **ไม่เลื่อน** ต้องไล่หาตัวที่ `scrollHeight > clientHeight`
 - mock คืนแถวปลอม 14 แถวเหมือนกันทุกตาราง — พอสำหรับวัด layout **แต่ไม่ใช่การเทส business logic**
+- **⚠️ แถวที่ 14 เป็น "แถวข้อมูลไม่ครบ" (`NULLISH`) โดยตั้งใจ ห้ามถอด** — คอลัมน์ตัวเลขในฐานจริง
+  ส่วนใหญ่ nullable แถวเดียวที่เป็น null ทำให้ทั้งหน้าพัง (`undefined.toLocaleString()`) และ
+  build/lint จับไม่ได้ · เพิ่มคอลัมน์ใหม่ใน `ROW()` ที่ nullable จริง **ให้เพิ่มใน `NULLISH()` ด้วย**
 - ถ้าหน้าไหน CRASH ใน harness ให้เช็คก่อนว่าเป็น "mock ไม่มีคอลัมน์นั้น" หรือ **โค้ดไม่ได้กัน null จริง**
   (รอบแรกเจอของจริง 3 จุด: `.slice()` บน `due_date`/`period_month` ที่เป็น null แล้วทำหน้าขาวทั้งหน้า)
 
@@ -51,4 +72,5 @@ node audit/sweep.mjs  # ต้องเปิด vite audit ค้างไว�
 - `mockSupabase.js` — client ปลอม (chainable + คืน `ROWS` 14 แถว) · เพิ่มคอลัมน์ใน `ROW()` ได้ตามต้องการ
 - `probe.js` — ตัวตรวจ "ล้นจอจริง" (ตัด false positive 3 แบบข้างบน) · **ใช้ตัวนี้ตัวเดียว ห้ามเขียนใหม่**
 - `sweep.mjs` — กวาดทุกหน้า × 320/360/390px × กดปุ่ม แล้วรายงานจุดที่ล้นพร้อม style ที่เป็นต้นเหตุ
+- `crashsweep.mjs` — กวาดทุกหน้าที่ desktop หา **หน้าที่ render พัง** (ใช้หลัง merge หลาย session)
 - `vite.audit.mjs` — alias `../supabaseClient` → mock · **ไม่กระทบ `npm run build` ปกติ**

@@ -10,6 +10,7 @@
  * (anon เสมอ) · สิทธิ์: scrap:record = สร้าง/แก้ · scrap:manage = อนุมัติ/ลบ
  */
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
@@ -20,6 +21,8 @@ import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 import { printScrapReport } from '../lib/scrapPrint';
 import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
+import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialRequest';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -48,6 +51,8 @@ const EMPTY_ITEM = () => ({
   _key: crypto.randomUUID(), source: 'main', part_no: '', part_name: '', mat_no: '', model: '',
   code: '', bom_ref: '', qty: '', m_cause: '', stage: 'in_process', confirm_qty: '', defect_codes: '',
   src_defect_from_logs: false,
+  // ผูกกลับไปที่รายการในใบเบิก QA (null = กรอกเอง/ดึงจาก Daily Report) — สืบย้อนได้ว่าชิ้นนี้เบิกด้วยใบไหน
+  src_request_item_id: null,
 });
 
 function Modal({ title, onClose, children, width = 560 }) {
@@ -98,6 +103,7 @@ export default function ScrapReport() {
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
   const [sapSearch, setSapSearch] = useState('');
+  const [reqPicker, setReqPicker] = useState(null); // ใบเบิก QA ที่ดึงเข้าใบนี้ได้ | null
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
   const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
 
@@ -192,15 +198,65 @@ export default function ScrapReport() {
   };
 
   /* ดึงยอดของเสียตั้งต้นจาก Daily Report (defect_logs) ของไลน์+วันในใบ */
+  /* ── ทางที่ 2: ดึงของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) ───────────────
+     ⚠️ ดึงได้เฉพาะใบที่อนุมัติแล้วขึ้นไป (PULLABLE) — ใบที่ยังไม่อนุมัติแปลว่ายังไม่ได้ของ
+        เอามารายงานว่าทำลายไปแล้วไม่ได้ · เกณฑ์อยู่ที่ utils/materialRequest.js ห้ามเขียนซ้ำ */
+  const openReqPicker = async () => {
+    const { report } = editor;
+    let q = supabaseDR.from('material_requests').select('*')
+      .in('status', PULLABLE).eq('kind', 'withdraw')
+      .order('request_date', { ascending: false }).limit(100);
+    const { data, error } = await q;
+    if (error) {
+      toast.error(error.code === '42P01'
+        ? 'ยังไม่ได้ apply migration ของใบเบิก — แจ้งผู้ดูแลระบบ'
+        : 'โหลดใบเบิกไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    // ใบของไลน์นี้ขึ้นก่อน แต่ไม่ตัดใบอื่นทิ้ง (ใบเบิกอาจไม่ได้ระบุไลน์ — ไม่ใช่ช่องบังคับบนใบกระดาษ)
+    const list = (data || []).slice().sort((a, b) =>
+      (b.line_name === report.line_name) - (a.line_name === report.line_name));
+    if (!list.length) { toast.info('ยังไม่มีใบเบิกที่อนุมัติแล้ว — ออกใบที่หน้า QA → ใบเบิกทดสอบ'); return; }
+    setReqPicker(list);
+  };
+
+  const applyRequest = async (r) => {
+    const { data, error } = await supabaseDR.from('material_request_items')
+      .select('*').eq('request_id', r.id).order('seq');
+    if (error) { toast.error('โหลดรายการในใบเบิกไม่สำเร็จ: ' + error.message); return; }
+    const src = (data || []).filter(it => effQty(it) > 0);
+    if (!src.length) { toast.info('ใบนี้ไม่มีรายการที่มีจำนวน'); return; }
+
+    setEditor(e => {
+      const have = new Set(e.items.map(it => it.src_request_item_id).filter(Boolean));
+      const add = src.filter(it => !have.has(it.id)).map(it => ({
+        ...EMPTY_ITEM(),
+        source: 'main', mat_no: it.mat_no || '', part_name: it.description || '',
+        qty: effQty(it), confirm_qty: effQty(it),
+        // ของที่เบิกไปทดสอบ = TRY-OUT ตาม legend ของใบ scrap (code D) · แก้ทับได้
+        code: 'D', stage: 'post_process',
+        src_request_item_id: it.id,
+      }));
+      if (!add.length) { toast.info('รายการของใบนี้ถูกดึงเข้าใบแล้วทั้งหมด'); return e; }
+      toast.success(`ดึง ${add.length} รายการจากใบเบิก ${r.doc_no || ''} ✓`);
+      return { ...e, items: [...e.items, ...add] };
+    });
+    setReqPicker(null);
+  };
+
   const pullFromDefectLogs = async () => {
     const { report } = editor;
     if (!report.line_name || !report.report_date) { toast.error('เลือกไลน์และวันที่ก่อน'); return; }
-    const { data: sess } = await supabaseDR.from('production_sessions').select('id')
+    // ⚠️ ต้องเช็ค error — ไม่งั้นคิวรีพังจะขึ้น "ไม่พบ session ผลิต" / "ไม่มีของเสียบันทึกไว้"
+    //    = บอกข้อเท็จจริงที่ผิดบนใบรายงานของเสีย ซึ่งเป็นบันทึกคุณภาพ (ห้ามล้มเหลวเงียบ)
+    const { data: sess, error: sErr } = await supabaseDR.from('production_sessions').select('id')
       .eq('line_name', report.line_name).eq('work_date', report.report_date);
+    if (sErr) { toast.error('ดึงข้อมูลกะไม่สำเร็จ: ' + sErr.message); return; }
     const ids = (sess || []).map(s => s.id);
     if (!ids.length) { toast.info('ไม่พบ session ผลิตของไลน์/วันนี้'); return; }
-    const { data: defs } = await supabaseDR.from('defect_logs')
+    const { data: defs, error: dErr } = await supabaseDR.from('defect_logs')
       .select('qty_ng, prod_orders(mat_no, part_name)').in('session_id', ids);
+    if (dErr) { toast.error('ดึงข้อมูลของเสียไม่สำเร็จ: ' + dErr.message); return; }
     const byMat = new Map();
     (defs || []).forEach(d => {
       const mat = d.prod_orders?.mat_no || '—';
@@ -274,10 +330,20 @@ export default function ScrapReport() {
         qty: Number(it.qty) || 0, m_cause: it.m_cause || null, stage: it.stage || null,
         confirm_qty: it.confirm_qty === '' || it.confirm_qty == null ? null : Number(it.confirm_qty),
         defect_codes: it.defect_codes || null, src_defect_from_logs: !!it.src_defect_from_logs,
+        src_request_item_id: it.src_request_item_id || null,
       }));
       const { error } = await supabaseDR.from('scrap_report_items').insert(rows);
       if (error) { toast.error(error.message); return; }
     }
+    if (report.status === 'submitted') notifyEvent({
+      event: 'scrap_report_submitted', type: 'info', ref_table: 'scrap_reports', ref_id: repId,
+      line_name: report.line_name || null, section: report.section || null, actor: fullName,
+      lines: [
+        `📄 ใบ ${doc_no}`,
+        `🏭 ไลน์: ${report.line_name || '—'}${report.section ? ` · ${report.section}` : ''}`,
+        `🗑️ ${items.length} รายการ · รวม ${items.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
+      ],
+    });
     toast.success(`บันทึกใบ ${doc_no} แล้ว ✓`);
     setEditor(null);
     loadReports();
@@ -307,6 +373,8 @@ export default function ScrapReport() {
 
   return (
     <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
+      <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
+        permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
       <div style={{ marginBottom: 14 }}>
         <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
@@ -385,6 +453,8 @@ export default function ScrapReport() {
             <div style={{ fontWeight: 800, fontSize: 13.5 }}>รายการของเสีย ({editor.items.length})</div>
             <div style={{ flex: 1 }} />
             <button style={btnSt('#4d9fff')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
+            {/* ทางที่ 2: ของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) — 2026-08-24 */}
+            <button style={btnSt('#a855f7')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
             <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>🔍 เพิ่มจาก SAP/BOM</button>
             <button style={ghostBtn} onClick={() => addItem('sub')}>+ พาร์ทย่อย (กรอกเอง)</button>
           </div>
@@ -400,7 +470,9 @@ export default function ScrapReport() {
               <tbody>
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
-                    <td style={tdSt}>{i + 1}{it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}</td>
+                    <td style={tdSt}>{i + 1}
+                      {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
+                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px' }} value={it.part_no} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px' }} value={it.part_name} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
@@ -490,6 +562,40 @@ export default function ScrapReport() {
               </button>
             ))}
             {sapSearch.trim().length >= 2 && sapMatches.length === 0 && sapOptions && <div style={{ fontSize: 12, color: 'var(--muted)', padding: 8 }}>ไม่พบ</div>}
+          </div>
+        </Modal>
+      )}
+
+      {/* ใบเบิก QA — เลือกใบที่จะดึงของเข้าใบรายงานของเสีย (2026-08-24) */}
+      {reqPicker && (
+        <Modal title="📦 เลือกใบเบิกทดสอบ (FM-STO-003)" onClose={() => setReqPicker(null)} width={640}>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
+            แสดงเฉพาะใบที่<b>อนุมัติแล้ว</b>ขึ้นไป · ใบของไลน์ “{editor.report.line_name || '—'}” ขึ้นก่อน<br />
+            จำนวนที่ดึงใช้ <b>จำนวนที่จ่ายจริง</b> ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ
+          </div>
+          <div style={{ maxHeight: 380, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {reqPicker.map(r => {
+              const st = statusMeta(r.status);
+              const mine = r.line_name === editor.report.line_name;
+              return (
+                <button key={r.id} onClick={() => applyRequest(r)} style={{
+                  textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                  background: 'var(--card)', border: `1px solid ${mine ? '#a855f7' : 'var(--border)'}`,
+                }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700 }}>
+                    {r.doc_no || '(ไม่มีเลขที่)'}
+                    <span style={{ color: st.color, fontWeight: 700, marginLeft: 8, fontSize: 11.5 }}>{st.label}</span>
+                    {mine && <span style={{ color: '#a855f7', marginLeft: 6, fontSize: 11 }}>· ไลน์นี้</span>}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
+                    {r.request_date} · {KIND_LABEL[r.kind] || r.kind} · {r.requester_dept || '—'}
+                    {r.requester_name ? ` · ${r.requester_name}` : ''}
+                    {r.line_name ? ` · ${r.line_name}` : ''}
+                  </div>
+                  {r.detail && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{r.detail}</div>}
+                </button>
+              );
+            })}
           </div>
         </Modal>
       )}

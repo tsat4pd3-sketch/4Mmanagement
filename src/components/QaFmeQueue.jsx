@@ -135,7 +135,54 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Num label="ส่งผลภายใน (นาที)" value={cfg.first_due_min} onSave={v => saveCfg({ first_due_min: v, end_due_min: v })} />
             <Num label="เกินเวลา เตือนซ้ำทุก (นาที)" value={cfg.escalate_min} onSave={v => saveCfg({ escalate_min: v })} />
-            <Num label="เรียกช่วงกลางเมื่อรุ่นวิ่งเกิน (นาที · 0 = ปิด)" value={cfg.mid_after_min} onSave={v => saveCfg({ mid_after_min: v })} />
+          </div>
+
+          {/* Middle = ตามยอดผลิตรายพาร์ท คำนวณจาก lot size (คำสั่ง user 2026-08-20)
+              เดิมเป็น "นาที" ตัวเดียวทั้งโรงงาน ซึ่งใช้กับของจริงไม่ได้ —
+              ไลน์ลอทใหญ่ผลิตทั้งวันต้องตรวจซ้ำ · ไลน์ลอทสั้นอาจไม่ต้องมีเลย */}
+          <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px dashed var(--border)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>🔁 ตรวจระหว่างผลิต (Middle)</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {[
+                { k: 'lot', label: 'ตามยอดผลิต (lot size)' },
+                { k: 'min', label: 'ตามเวลา (แบบเดิม)' },
+                { k: 'off', label: 'ไม่ตรวจช่วงกลาง' },
+              ].map(m => {
+                const on = String(cfg.mid_mode ?? 'lot') === m.k;
+                return (
+                  <button key={m.k} onClick={() => saveCfg({ mid_mode: m.k })} disabled={busy}
+                    style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                      border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                      background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)' }}>
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 9 }}>
+              {String(cfg.mid_mode ?? 'lot') === 'lot' ? (
+                <>
+                  <Num label="ตรวจทุกๆ กี่ล็อต (1 = ทุกล็อต · 0.5 = ครึ่งล็อต)" value={cfg.mid_lot_ratio ?? 1}
+                    min={0.1} step={0.1} onSave={v => saveCfg({ mid_lot_ratio: v })} />
+                  <Num label="เพดานต่อรอบ (ครั้ง)" value={cfg.mid_max_per_run ?? 12}
+                    min={1} onSave={v => saveCfg({ mid_max_per_run: v })} />
+                  <Num label="คาบต่ำสุดที่ยอมรับ (ชิ้น)" value={cfg.mid_min_pcs ?? 10}
+                    min={1} onSave={v => saveCfg({ mid_min_pcs: v })} />
+                </>
+              ) : String(cfg.mid_mode) === 'min' ? (
+                <Num label="รุ่นวิ่งเกินกี่นาทีถึงเรียก" value={cfg.mid_after_min} onSave={v => saveCfg({ mid_after_min: v })} />
+              ) : null}
+            </div>
+            {String(cfg.mid_mode ?? 'lot') === 'lot' && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 7, lineHeight: 1.7 }}>
+                คาบตรวจคิดจาก <b>lot size ของพาร์ทเอง</b> (ตั้งที่ Product Master → 🎴 Kanban Std) ×
+                ตัวคูณข้างบน — ลอทใหญ่ผลิตทั้งวันจะถูกเรียกหลายครั้ง · ลอทสั้นที่ผลิตไม่ถึง 1 ล็อตจะไม่ถูกเรียกเลย
+                <br /><b style={{ color: '#f59e0b' }}>พาร์ทที่ยังไม่ตั้ง lot size จะไม่มีการตรวจ Middle</b> (ระบบไม่เดาให้)
+                — First / End ยังทำงานตามปกติ
+                <br />พาร์ทที่ตั้ง lot size ไว้ <b>เล็กกว่า "คาบต่ำสุดที่ยอมรับ"</b> (เช่น ตั้งไว้ 1 ชิ้น)
+                ถือว่ายังตั้งไม่ถูก — ระบบจะไม่ตั้ง Middle ให้ แล้วรายงานไว้ให้ไปแก้ที่ Kanban Std
+              </div>
+            )}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
             ห้อง Telegram ที่รับแจ้ง ตั้งที่ <b>/notification-config</b> → หมวดคุณภาพ
@@ -165,6 +212,11 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>
+                  {o.stage === 'middle' && (o.seq > 1 || o.at_qty) && (
+                    <span style={{ color: 'var(--muted)' }}>
+                      {' '}· ครั้งที่ {o.seq || 1}{o.at_qty ? ` (ผลิตครบ ${Number(o.at_qty).toLocaleString()} ชิ้น)` : ''}
+                    </span>
+                  )}
                   {!o.part_id && (
                     <span style={{ color: '#f59e0b' }}> · ⚠️ ยังไม่ผูกกับพาร์ทในระบบตรวจ (ตั้งที่ /qa-setup)</span>
                   )}
@@ -204,14 +256,22 @@ function Box({ tone, children }) {
   );
 }
 
-function Num({ label, value, onSave }) {
+/* ⚠️ ต้องรองรับทศนิยม — ตัวคูณล็อต (mid_lot_ratio) ใส่ 0.5 ได้ และ DB บังคับ > 0
+   ถ้าใช้ parseInt เหมือนเดิม 0.5 จะกลายเป็น 0 แล้วเซฟไม่ผ่าน check constraint */
+function Num({ label, value, onSave, min = 0, step }) {
   const [v, setV] = useState(String(value ?? 0));
   useEffect(() => { setV(String(value ?? 0)); }, [value]);
+  const commit = () => {
+    const raw = step ? parseFloat(v) : parseInt(v, 10);
+    const n = Math.max(min, Number.isFinite(raw) ? raw : min);
+    if (n !== Number(value)) onSave(n);
+    setV(String(n));                       // สะท้อนค่าที่ถูก clamp กลับให้เห็น ไม่ปล่อยค่าที่ใช้ไม่ได้ค้างในช่อง
+  };
   return (
     <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 3 }}>
       {label}
-      <input type="number" min={0} value={v} onChange={e => setV(e.target.value)}
-        onBlur={() => { const n = Math.max(0, parseInt(v, 10) || 0); if (n !== value) onSave(n); }}
+      <input type="number" min={min} step={step || 1} value={v} onChange={e => setV(e.target.value)}
+        onBlur={commit}
         style={{ width: 90, padding: '5px 8px', borderRadius: 6, fontSize: 12.5 }} />
     </label>
   );

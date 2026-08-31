@@ -10,9 +10,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { supabaseDR } from '../supabaseClient';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import { toast } from './Toast';
 import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { loadSpareSections, sectionOptions, sectionKeyOf, COMMON_SECTION_LABEL } from '../utils/spareSection';
 import { stockState, computeSpareRank, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
@@ -24,6 +26,8 @@ const fmtNum = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number
 /* รูปผังต้องอ่านป้ายบนชั้นออก — บีบเบากว่ารูปทั่วไปตามกฎ Storage (2560px / q0.9)
    ห้ามลดลงไปกว่านี้ เคยบีบแรงจนผังเบลออ่านไม่ออกมาแล้ว (ดู CLAUDE.md "Storage & รูปภาพ") */
 async function compressPlan(file) {
+  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิม · แปลงไม่ได้ = โยนข้อความบอกวิธีตั้งกล้อง)
+  file = await toDecodableImage(file);
   if (file.type === 'image/gif') { if (file.size > 2 * 1024 * 1024) throw new Error('GIF ต้องไม่เกิน 2MB'); return file; }
   const img = await new Promise((res, rej) => {
     const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file);
@@ -51,10 +55,11 @@ function cellStatus(parts) {
   return { key: 'ok', color: '#22c55e', bg: 'rgba(34,197,94,0.24)', label: 'ปกติ' };
 }
 
-export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
+export default function RackMap({ parts = [], canEdit, myTeams = [], mySection = '' }) {
   const [usage, setUsage] = useState({});   // part_id → usage rows (ใช้โชว์ชิป Rank ในแผงขวา)
   const [racks, setRacks] = useState([]);
   const [rackId, setRackId] = useState('');
+  const [orgSecs, setOrgSecs] = useState([]);      // ส่วนงานจากผังองค์กร (ป้ายเจ้าของผัง)
   const [cells, setCells] = useState([]);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState(false);
@@ -68,6 +73,8 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
   const dragRef = useRef(null);
   const moveRef = useRef(null);
   const teams = pmTeamsSync();
+  useEffect(() => { loadSpareSections().then(setOrgSecs); }, []);
+  const secOpts = useMemo(() => sectionOptions(racks, orgSecs), [racks, orgSecs]);
 
   const rack = racks.find(r => r.id === rackId) || null;
 
@@ -300,7 +307,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <select value={rackId} onChange={e => setRackId(e.target.value)} style={{ ...inp, width: 250 }}>
           {!racks.length && <option value="">— ยังไม่มีผังชั้นวาง —</option>}
-          {racks.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          {racks.map(r => <option key={r.id} value={r.id}>{r.section ? `[${sectionKeyOf(r.section)}] ` : ''}{r.name}</option>)}
         </select>
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน"
           style={{ ...inp, width: 340, flex: '1 1 240px' }} />
@@ -488,7 +495,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [] }) {
       )}
 
       {showGrid && rack && <GridModal rackId={rack.id} existing={cells} onBeforeSave={() => hist.pushHistory()} onClose={() => setShowGrid(false)} onDone={() => { setShowGrid(false); loadCells(rack.id); }} />}
-      {showRackForm && <RackFormModal {...showRackForm} teams={teams} myTeams={myTeams} onClose={() => setShowRackForm(null)}
+      {showRackForm && <RackFormModal {...showRackForm} teams={teams} myTeams={myTeams} secOpts={secOpts} defSection={mySection} onClose={() => setShowRackForm(null)}
         onSaved={(id) => { setShowRackForm(null); loadRacks().then(() => id && setRackId(id)); }} />}
     </div>
   );
@@ -536,7 +543,7 @@ function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
 
   const nf = (k, v, o = area, set = setArea) => set({ ...o, [k]: Number(v) || 0 });
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>⊞ สร้างตารางช่องอัตโนมัติ</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>ชั้นวางส่วนใหญ่เป็นตาราง — กำหนดจำนวนแถว/คอลัมน์แล้วปรับตำแหน่งทีหลังได้</div>
@@ -574,9 +581,10 @@ function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
 }
 
 /* ── สร้าง/แก้ผังชั้นวาง ── */
-function RackFormModal({ mode, rack, teams, myTeams, onClose, onSaved }) {
+function RackFormModal({ mode, rack, teams, myTeams, secOpts = [], defSection = '', onClose, onSaved }) {
   const [name, setName] = useState(rack?.name || '');
   const [team, setTeam] = useState(rack?.team || (myTeams.length === 1 ? teamKeyOf(myTeams[0]) : 'maintenance'));
+  const [section, setSection] = useState(rack?.section || (rack ? '' : sectionKeyOf(defSection)));
   const [note, setNote] = useState(rack?.note || '');
   const [saving, setSaving] = useState(false);
 
@@ -585,13 +593,13 @@ function RackFormModal({ mode, rack, teams, myTeams, onClose, onSaved }) {
     setSaving(true);
     if (mode === 'new') {
       const { data, error } = await supabaseDR.from('mtn_rack_maps')
-        .insert({ name: name.trim(), team, note: note.trim() || null }).select('id').single();
+        .insert({ name: name.trim(), team, section: sectionKeyOf(section) || null, note: note.trim() || null }).select('id').single();
       setSaving(false);
       if (error) return toast.error(error.message);
       toast.success('สร้างผังแล้ว — อัปโหลดรูปชั้นวางต่อได้เลย'); onSaved(data.id);
     } else {
       const { error } = await supabaseDR.from('mtn_rack_maps')
-        .update({ name: name.trim(), team, note: note.trim() || null }).eq('id', rack.id);
+        .update({ name: name.trim(), team, section: sectionKeyOf(section) || null, note: note.trim() || null }).eq('id', rack.id);
       setSaving(false);
       if (error) return toast.error(error.message);
       toast.success('บันทึกแล้ว'); onSaved(rack.id);
@@ -605,7 +613,7 @@ function RackFormModal({ mode, rack, teams, myTeams, onClose, onSaved }) {
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังชั้นวาง' : '⚙️ แก้ไขผังชั้นวาง'}</div>
         <div style={{ display: 'grid', gap: 10 }}>
@@ -615,6 +623,15 @@ function RackFormModal({ mode, rack, teams, myTeams, onClose, onSaved }) {
             <select value={team} onChange={e => setTeam(e.target.value)} style={inp}>
               {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select></div>
+          <div><label style={lbl}>หน่วยงานเจ้าของ</label>
+            <select value={sectionKeyOf(section)} onChange={e => setSection(e.target.value)} style={inp}>
+              <option value="">{COMMON_SECTION_LABEL}</option>
+              {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              {/* ค่าเดิมนอกลิสต์ต้องยังเลือกได้ ไม่งั้นเปิดแก้ไขแล้วหน่วยงานหายเงียบ */}
+              {section && !secOpts.some(o => o.code === sectionKeyOf(section)) &&
+                <option value={section}>⚠ {section} (ไม่มีในผัง)</option>}
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>แต่ละหน่วยงานเก็บของคนละพื้นที่ — ระบุไว้จะได้รู้ว่าผังนี้ของใคร</div></div>
           <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

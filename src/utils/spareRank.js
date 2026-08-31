@@ -95,6 +95,10 @@ export function avgMonthlyUsage(rows = [], { months = RANK_RULE.windowMonths, cr
       divisor = Math.max(1, Math.min(keys.length, elapsed))
     }
   }
+  // ⚠️ ยอดย้อนหลังจาก Excel ครอบเดือน "ก่อนแถวถูกสร้าง" ได้ (import วันนี้ + ประวัติ 6 เดือน)
+  //    → ตัวหารต้องไม่น้อยกว่าจำนวนเดือนที่มีข้อมูลจริงในหน้าต่าง ไม่งั้นแถวใหม่หารด้วย 1
+  //    avg เฟ้อ 6 เท่า → Rank A ยกคลังตอนย้ายข้อมูลครั้งแรก (QC audit 2026-08-20 · T2-10)
+  divisor = Math.max(divisor, inWindow.length)
   // hasHistory = มีเดือนไหน "ถูกบันทึกไว้" บ้างในหน้าต่างนี้ (ledger หรือยอดย้อนหลังที่คีย์จาก Excel)
   //   ไม่มีเลย = ยังไม่รู้ว่าใช้เท่าไหร่ (≠ ใช้ 0) — ต้นทางของกฎ "ไม่มีข้อมูล = ไม่จัด Rank"
   return { avg: total / divisor, total, months: divisor, keys, byMonth, hasHistory: inWindow.length > 0 }

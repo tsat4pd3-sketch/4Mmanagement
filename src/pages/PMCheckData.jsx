@@ -115,7 +115,9 @@ function cpCheckStatus(cp, r) {
 function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300 }) {
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
-  useEffect(() => { setFrameIdx(0); setPlaying(false) }, [frames])
+  const [zoomCp, setZoomCp] = useState(null)   // จุดที่กำลังเปิดรูปซูม (มี image_path)
+  // เปลี่ยนอุปกรณ์ = รีเซ็ตทุกอย่าง รวมรูปซูมที่ค้างอยู่ (ไม่งั้นค้างรูปของเครื่องก่อนหน้า)
+  useEffect(() => { setFrameIdx(0); setPlaying(false); setZoomCp(null) }, [frames])
   const boxRef = useRef(null)
   const drag = useRef(null) // { startX, startIdx, moved }
   const spin = frames.length >= 2
@@ -186,8 +188,15 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
               return (
                 <CalloutPin key={c.id} xPct={c.x_pos * 100} yPct={c.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                   label={cpIndex[c.id] + 1} color={col} selected={active}
-                  title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}`}
-                  onClick={e => { e.stopPropagation(); onPinClick?.(c.id) }} />
+                  badge={c.image_path ? '🔍' : null}
+                  title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    onPinClick?.(c.id)
+                    // 🔍 มีรูปเจาะจุด → เปิดซูมทันที (ตอบ feedback: รูปมุมแคบต้องรู้ว่าอยู่ตรงไหนของเครื่อง
+                    //    → ภาพรวมเป็นแผนที่ · แตะหมุด = ซูมเข้าไปดูจุดนั้นชัดๆ)
+                    if (c.image_path) setZoomCp(c)
+                  }} />
               )
             })}
           </div>
@@ -211,18 +220,55 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
           ))}
         </div>
       )}
+      {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
+      {framePins.some(c => c.image_path) && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
+          🔍 หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
+        </div>
+      )}
+      {zoomCp && <CpZoom cp={zoomCp} idx={cpIndex[zoomCp.id]} onClose={() => setZoomCp(null)} />}
+    </div>
+  )
+}
+
+/* 🔍 รูปซูมของจุดตรวจ — เปิดในแอป (ไม่เด้งออกแท็บใหม่แบบเดิม เพราะหน้างานใช้มือถือ)
+   ภาพรวม = แผนที่ว่าจุดอยู่ตรงไหน · ตัวนี้ = ซูมเข้าไปดูว่าต้องดูอะไรตรงนั้น */
+function CpZoom({ cp, idx, onClose }) {
+  const url = getPublicUrl(cp.image_path)
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') onClose?.() }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [onClose])
+  return (
+    <div onClick={onClose} className="modal-scroll"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>
+      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', maxWidth: '100%' }}>
+        <span style={{ width: 26, height: 26, borderRadius: '50%', background: categoryColor(cp.category), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{(idx ?? 0) + 1}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</span>
+      </div>
+      <img src={url} alt={cp.name} onClick={e => e.stopPropagation()}
+        style={{ maxWidth: '100%', maxHeight: '74vh', objectFit: 'contain', borderRadius: 10, border: '2px solid rgba(255,255,255,0.25)' }} />
+      {cp.description && (
+        <div onClick={e => e.stopPropagation()} style={{ color: '#e5e7eb', fontSize: 12.5, maxWidth: 'min(560px, 94vw)', textAlign: 'center', lineHeight: 1.6 }}>{cp.description}</div>
+      )}
+      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
     </div>
   )
 }
 
 // รูปอ้างอิงต่อจุด (คอลัมน์ Picture ของฟอร์ม) — คลิกเปิดเต็มจอ
 function CpImage({ cp }) {
+  const [zoom, setZoom] = useState(false)
   if (!cp.image_path) return null
   const url = getPublicUrl(cp.image_path)
   return (
-    <a href={url} target="_blank" rel="noreferrer" title="เปิดรูปเต็มจอ">
-      <img src={url} alt="" style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block' }} />
-    </a>
+    <>
+      {/* เปิดซูมในแอป — เดิม <a target="_blank"> ซึ่งบนมือถือ = เด้งออกจากใบตรวจที่กรอกค้างอยู่ */}
+      <img src={url} alt="" title="แตะเพื่อดูรูปซูมของจุดนี้" onClick={() => setZoom(true)}
+        style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block', cursor: 'zoom-in' }} />
+      {zoom && <CpZoom cp={cp} onClose={() => setZoom(false)} />}
+    </>
   )
 }
 
@@ -832,7 +878,7 @@ export default function PMCheckData() {
       {showSidebar && (
       <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none' } : null) }}>
         <div style={S.sidebarHead}>
-          <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>PM ตรวจสอบ</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>บันทึกผลตรวจ PM</h2>
         </div>
         <div style={S.deptBar}>
           {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}

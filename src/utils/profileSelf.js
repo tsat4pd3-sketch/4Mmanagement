@@ -42,3 +42,35 @@ export async function saveMyProfileMedia(field, url) {
   }
   return { ok: true };
 }
+
+/**
+ * อัปโหลดรูปโปรไฟล์ของตัวเอง (bucket `avatars`) แล้วบันทึกลง profiles
+ * ⚠️ bucket `avatars` แยกจาก `employee-photos` โดยเจตนา — cleanup-orphan-photos สแกน
+ *    employee-photos เทียบ employees/line_layouts ถ้าเอา avatar ไปไว้ที่นั่นจะโดนลบ
+ * ลบไฟล์เก่า best-effort **หลัง DB สำเร็จเท่านั้น** (กฎ Storage) และเฉพาะโฟลเดอร์ของตัวเอง
+ * @param {File|Blob} file  รูปที่ crop/บีบแล้ว (jpeg)
+ * @param {string|null} currentUrl  URL รูปเดิม (เพื่อลบทิ้ง)
+ * @returns {Promise<{ok:true,url:string} | {ok:false,message:string}>}
+ */
+export async function uploadMyAvatar(file, currentUrl) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { ok: false, message: 'ยังไม่ได้เข้าสู่ระบบ' };
+
+    const path = `${user.id}/avatar_${Date.now()}.jpg`;
+    const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
+    if (upErr) throw upErr;
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+    const res = await saveMyProfileMedia('avatar_url', publicUrl);
+    if (!res.ok) return res;
+
+    if (currentUrl?.includes('/avatars/')) {
+      const old = decodeURIComponent(currentUrl.split('/avatars/')[1] || '').split('?')[0];
+      if (old && old.startsWith(`${user.id}/`)) supabase.storage.from('avatars').remove([old]).catch(() => {});
+    }
+    return { ok: true, url: publicUrl };
+  } catch (err) {
+    return { ok: false, message: `อัพโหลดรูปไม่สำเร็จ: ${err?.message || 'ลองใหม่อีกครั้ง'}` };
+  }
+}

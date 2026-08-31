@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -11,6 +12,14 @@ import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
+import LineFlowPanel from '../components/LineFlowPanel';
+import { MAT_CLASSES, matDigit, matClassOf, matMatches } from '../utils/matPrefix';
+import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat } from '../utils/wipMatOptions';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { loadOpInfo } from '../utils/opItems';
+import SearchSelect from '../components/SearchSelect';
+import { invalidateProductionLines } from '../utils/useProductionLines';
+import { notifyEvent } from '../utils/notifyEvent';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -40,7 +49,7 @@ const POINT_H = 46;
 export default function LineSetup({ embedded = false } = {}) {
   // embedded=true เมื่อฝังในแท็บ "ผลิต" ของ /layout-setup — ปรับ height/padding ให้พอดีในกรอบแท็บ (ไม่ใช้ 100vh)
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
-  const { role, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
   const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
@@ -97,7 +106,9 @@ export default function LineSetup({ embedded = false } = {}) {
   // packaging (เรียกภาชนะเปล่าจาก Tact Center — rack/box/basket แยกด้วย packaging no.)
   const [wipPoints, setWipPoints] = useState([]);
   const [wipTempPos, setWipTempPos] = useState(null);
-  const [drProducts, setDrProducts] = useState([]);
+  const [drProducts, setDrProducts] = useState([]);   // ทะเบียน mat ทั้งหมด + ไลน์ที่ผลิต (ใช้จัดลำดับ picker จุด WIP)
+  const [upstreamLines, setUpstreamLines] = useState(new Set());
+  const [wipMatAllCat, setWipMatAllCat] = useState(false); // กด "ดูทุกประเภท" ในช่องเลือกวัสดุของจุด WIP
   const [containerTypes, setContainerTypes] = useState([]);
   const emptyWipForm = { id: null, point_type: 'material', point_name: '', mat_no: '', material_category: '', packaging_no: '', packaging_type: '', min_qty: 0, max_qty: 0, current_qty: 0 };
   const [wipForm, setWipForm] = useState(emptyWipForm);
@@ -191,6 +202,19 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
 
+  /* ตัวเลือกวัสดุของจุด WIP — สูตร/ลำดับกลุ่มอยู่ใน src/utils/wipMatOptions.js ที่เดียว
+     (เสนอลำดับ ไม่ตัดอะไรทิ้ง · กรองตามประเภทได้แต่ต้องบอกว่าซ่อนไปกี่รายการ) */
+  const wipMatOptions = useMemo(
+    () => buildWipMatOptions(drProducts, { line: selectedLine, lines, upstreamLines }),
+    [drProducts, lines, selectedLine, upstreamLines],
+  );
+  const wipMatCat = matDigit(wipForm.material_category);
+  const { rows: wipMatShown, hidden: wipMatHidden, opKept: wipMatOpKept } = useMemo(
+    () => filterWipMatByCat(wipMatOptions, wipMatCat, wipMatAllCat),
+    [wipMatOptions, wipMatCat, wipMatAllCat],
+  );
+  const wipMatIsOp = wipMatOptions.find(o => o.id === wipForm.mat_no)?.isOp;
+
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
 
@@ -204,7 +228,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
 
   const fetchLines = async () => {
-    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name';
+    const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, is_active';
     let { data, error } = await supabase.from('production_lines').select(`${BASE}, line_type, flow_mode, parallel_stations`).order('name');
     if (error) {
       // คอลัมน์เสริมยังไม่ apply (migration 20260722 line_type / 20260723 flow_mode)
@@ -273,8 +297,33 @@ export default function LineSetup({ embedded = false } = {}) {
     setPlacedMachineNos(new Set((placedMp || []).map(p => p.machine_no).filter(Boolean)));
     const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
     setMachineTypes(drMt || []);
-    const { data: drPd } = await supabaseDR.from('dr_products').select('mat_no, name').eq('line_name', selectedLine).eq('is_active', true).not('mat_no', 'is', null).order('mat_no');
-    setDrProducts(drPd || []);
+    /* ⚠️⚠️ พาร์ทของจุด WIP ต้องมาจาก "ทะเบียนกลาง parts_master" ไม่ใช่ dr_products ของไลน์นี้
+       เดิม: dr_products .eq('line_name', selectedLine) → ลิสต์เหลือไม่กี่ตัว (feedback "พาร์ทโชว์ไม่ครบ")
+       ผิด 3 ชั้นซ้อนกัน:
+        (ก) `dr_products` = **มุมการผลิต** เก็บเฉพาะของที่ผลิตในไลน์ → พาร์ทซื้อนอก (3xx) และ
+            วัตถุดิบ (5xx) ไม่มีทางโผล่เลย ทั้งที่จุด WIP เก็บของพวกนี้ได้ และ placeholder ก็เขียนว่า
+            "ค้นจาก Product Master" ซึ่งทะเบียนจริงคือ parts_master (กฎ: parts_master = ทะเบียนกลางของทุก mat)
+        (ข) กรอง line_name **ตรงเป๊ะ** = บั๊ก class เดียวกับ picker เครื่องจักร/ชิ้นงานที่แก้ไปแล้ว 3 รอบ
+            (dtMatOptions · machineOpts /improvements · dtMachineOptions) — ของที่ลงทะเบียนไว้ที่ไลน์แม่
+            หรือไลน์พี่น้องหายหมด · สังเกตว่าคิวรี machines เหนือบรรทัดนี้ใช้ familyLines อยู่แล้ว ตกหล่นแค่ตัวนี้
+        (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
+            (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
+       → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
+    const [{ data: pmRows }, { data: drPd }, { data: flRows }, opMap] = await Promise.all([
+      supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
+      // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
+      supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).not('mat_no', 'is', null),
+      supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
+      // รายการขั้นตอน (OP) — ผ่าน util กลาง (cache ระดับ module · best-effort) เพื่อ "ติดป้าย" ไม่ใช่กรองทิ้ง
+      loadOpInfo(),
+    ]);
+    setDrProducts(mergeMatRegistry(pmRows || [], drPd || [], opMap));
+    /* ไลน์ต้นน้ำที่ป้อนงานให้ไลน์นี้ (โหลดไม่ได้ = ไม่มีกลุ่ม "ต้นน้ำ" เฉยๆ ลิสต์ยังครบ)
+       ⚠️ เทียบทั้งครอบครัวไลน์ ไม่ใช่ `familyLines` ของ machines (นั่นคือ ตัวเอง+ลูก สำหรับวางเครื่องบนผัง)
+       — ป้อนงานให้ไลน์แม่ = ป้อนให้งานที่ไลน์ลูกทำด้วย */
+    const famAll = new Set(getLineFamilyNames(lines, selectedLine));
+    famAll.add(selectedLine);
+    setUpstreamLines(new Set((flRows || []).filter(l => famAll.has(l.to_line)).map(l => l.from_line)));
     // ภาชนะ — ดึงจาก container_types (supabaseDR) ตารางกลางเดียวกับ Packaging/Rack Center
     const { data: ctData } = await supabaseDR.from('container_types').select('code, name, category').eq('is_active', true).order('code');
     setContainerTypes(ctData || []);
@@ -288,6 +337,26 @@ export default function LineSetup({ embedded = false } = {}) {
       setParallelStations(lineObj.parallel_stations != null ? String(lineObj.parallel_stations) : '');
       setSignerHead(lineObj.head_name ?? '');
     }
+  };
+
+  /** ปลดระวาง/คืนสถานะไลน์ — บันทึกทันทีแยกจากปุ่ม 💾 (เป็น action ไม่ใช่ค่าในฟอร์ม) */
+  const handleToggleRetire = async (retire) => {
+    const lineObj = lines.find(l => l.name === selectedLine);
+    if (!lineObj) return;
+    if (retire && !window.confirm(`ปลดระวางไลน์ "${lineObj.name}" ?\n\nไลน์จะไม่โผล่ใน dropdown ให้เลือกใหม่ทุกหน้า\nแต่ข้อมูลเก่าที่อ้างชื่อไลน์นี้ยังอ่านได้ครบ (ไม่ใช่การลบ)`)) return;
+    const { data, error } = await supabase.from('production_lines')
+      .update({ is_active: !retire }).eq('id', lineObj.id).select('id');
+    if (error) {
+      toast.error(/is_active/.test(error.message || '')
+        ? 'ยังไม่ได้ apply migration 20260821_production_lines_is_active — แจ้ง admin'
+        : error.message);
+      return;
+    }
+    // ⚠️ RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถว ไม่ error → ต้องนับแถวเสมอ (กฎ CLAUDE.md)
+    if (!data?.length) { toast.error('ไม่มีแถวถูกแก้ — ตรวจสิทธิ์การแก้ทะเบียนไลน์'); return; }
+    toast.success(retire ? `⏸ ปลดระวาง ${lineObj.name} แล้ว` : `▶ คืนสถานะ ${lineObj.name} แล้ว`);
+    invalidateProductionLines();   // ให้หน้าอื่นเห็นทันที ไม่ต้องรอ cache หมดอายุ
+    fetchLines();
   };
 
   const handleSaveStdManpower = async () => {
@@ -449,11 +518,15 @@ export default function LineSetup({ embedded = false } = {}) {
     for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
                      'jigs', 'pm_daily_line_targets', 'pm_daily_alerts', 'mtn_orders', 'improvements', 'scrap_reports',
                      'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries',
-                     'rack_requests', 'kanban_calc_params', 'transport_nodes']) {
+                     'rack_requests', 'kanban_calc_params', 'transport_nodes',
+                     'line_part_levels']) {   // min/max พาร์ทต่อไลน์ (ลูปเรียกของจากสโตร์)
       await bump(supabaseDR, t);
     }
     // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
     await bump(supabaseDR, 'pm_plans', 'usage_source_line');
+    // 🔗 สายการไหลระหว่างไลน์ — มี line_name 2 คอลัมน์ ต้อง bump ทั้งขาต้นน้ำและปลายน้ำ
+    await bump(supabaseDR, 'line_flow_links', 'from_line');
+    await bump(supabaseDR, 'line_flow_links', 'to_line');
     for (const t of ['bom_items', 'child_lot_requests', 'packaging_withdrawal_requests']) {
       await bump(supabaseDR, t, 'source_line');
     }
@@ -464,10 +537,12 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleUploadImage = async (e) => {
-    const file = e.target.files[0];
+    let file = e.target.files[0];
     if (!file) return;
     try {
       setIsUploading(true);
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อนทุกอย่าง เพื่อให้ ext/ชนิดที่ derive ต่อจากนี้ถูกต้องตาม
+      file = await toDecodableImage(file);
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
@@ -483,7 +558,12 @@ export default function LineSetup({ embedded = false } = {}) {
       const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob);
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
-      await supabase.from('line_layouts').upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
+      // ⚠️ ต้องเช็ค error ก่อนลบไฟล์เก่าเสมอ — supabase-js **คืน { error } ไม่ throw**
+      // เดิมไม่เช็คแล้วลบไฟล์เก่าต่อทันที: upsert พลาด (RLS/เน็ตสะดุด) = DB ยังชี้ URL เก่า
+      // แต่ไฟล์เก่าถูกลบไปแล้ว ⇒ **ผังไลน์นั้นกลายเป็นรูปเสียถาวร กู้ไม่ได้** และ toast ยังขึ้นว่าสำเร็จ
+      const { error: dbErr } = await supabase.from('line_layouts')
+        .upsert({ line_name: selectedLine, image_url: data.publicUrl }, { onConflict: 'line_name' });
+      if (dbErr) throw dbErr;
       // ลบไฟล์ผังเดิมของไลน์นี้ทิ้ง กันไฟล์เก่ากองเป็นขยะใน storage
       // (เฉพาะผังของตัวเองเท่านั้น — ผังที่ยืมแสดงจากไลน์แม่ห้ามลบ เพราะไลน์แม่ยังใช้อยู่)
       if (!usingParentLayout && layoutImage?.includes('/employee-photos/layouts/')) {
@@ -814,6 +894,16 @@ export default function LineSetup({ embedded = false } = {}) {
       request_qty: qty || 1,
     });
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'wip_replenish', type: 'info', ref_table: 'wip_replenish_requests',
+      line_name: selectedLine, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${selectedLine}`,
+        `📍 จุด: ${p.point_name}${p.point_type ? ` (${p.point_type})` : ''}`,
+        `🔩 ${p.mat_no || '—'} · ขอเติม ${qty || 1} ชิ้น`,
+        `📊 คงเหลือ ${p.current_qty ?? 0} / min ${p.min_qty ?? 0} · max ${p.max_qty ?? 0}`,
+      ],
+    });
     toast.success(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
   };
 
@@ -878,8 +968,12 @@ export default function LineSetup({ embedded = false } = {}) {
   // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล
   // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
   // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น
+  // หมุดรองที่วาดบนผังจริงในแท็บที่เปิดอยู่ (เครื่องจักร/WIP วาดด้วย SUB ตัวเดียวกัน)
+  // ⚠️ ต้องคิดความแน่นจากชุดที่แสดงจริง — ไม่งั้นแท็บ WIP ที่มีจุดกระจุก 20 จุดจะได้วงใหญ่สุด
+  //    เพราะสูตรไปนับ machinePoints ที่มีแค่ 3 ตัว แล้วเบียดกัน (อาการเดียวกับที่เพิ่งแก้)
+  const subPoints = activeTab === 'wip' ? wipPoints : machinePoints;
   const { MK, SUB, pillFont: PILL_FONT, subPillFont, badgeFont, pillMaxW, subPillMaxW } =
-    markerScale(imgBox?.rw, { machineCount: machinePoints.length });
+    markerScale(imgBox?.rw, { machineCount: subPoints.length, points: subPoints, mapHeight: imgBox?.rh });
   // ปุ่ม 🏷️ โชว์/ซ่อนป้ายทุกชนิดจุด (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
   const pillsOn = showPills;
   const stationPillsOn = showPills;
@@ -1522,20 +1616,56 @@ export default function LineSetup({ embedded = false } = {}) {
 
                   {wipForm.point_type === 'material' ? (
                     <>
-                      <select value={wipForm.material_category}
+                      {/* ⚠️ เดิม hardcode 200/300/500 — ขัดกฎ matPrefix.js ที่บอกว่าเลข SAP
+                          รันทะลุช่วงเดิมไปแล้ว ต้องแยกด้วย "เลขตัวแรกตัวเดียว" เท่านั้น
+                          (เบอร์ 1 = FG หายไปจากลิสต์เดิมด้วย ทั้งที่จุด WIP เก็บ FG ได้) */}
+                      {/* ข้อมูลเก่าเก็บ '200'/'300'/'500' — normalize ด้วย matDigit ตอนแสดง
+                          ค่าเดิมจึงไม่หายจากช่อง (จะถูกเขียนเป็นเลขตัวเดียวเมื่อบันทึกครั้งถัดไป) */}
+                      <select value={matDigit(wipForm.material_category)}
                         onChange={e => setWipForm({ ...wipForm, material_category: e.target.value })}>
-                        <option value="">-- ประเภทวัสดุ (200/300/500) --</option>
-                        <option value="200">200</option>
-                        <option value="300">300</option>
-                        <option value="500">500</option>
-                      </select>
-                      <input list="dr-mat-no-list" placeholder="เลขที่วัสดุ (mat no.) — พิมพ์เพื่อค้นจาก Product Master" value={wipForm.mat_no}
-                        onChange={e => setWipForm({ ...wipForm, mat_no: e.target.value })} />
-                      <datalist id="dr-mat-no-list">
-                        {drProducts.map(p => (
-                          <option key={p.mat_no} value={p.mat_no}>{p.name}</option>
+                        <option value="">-- ประเภทวัสดุ --</option>
+                        {MAT_CLASSES.map(c => (
+                          <option key={c.digit} value={c.digit}>{c.digit} · {c.label}</option>
                         ))}
-                      </datalist>
+                      </select>
+                      {/* ⚠️ ทะเบียนพาร์ทหลักร้อยรายการ — <datalist> ค้นได้แค่ "ขึ้นต้นตรง" ใช้กับชื่อไทยไม่ได้
+                          ใช้ SearchSelect ตามกฎ UI-CONVENTIONS §5.1.1 (ลิสต์เกิน ~30 แถวห้ามเป็น select/datalist)
+                          allowFree = พาร์ทที่ยังไม่เข้าทะเบียนยังพิมพ์เองได้ (ติดป้ายบอกว่าอยู่นอกทะเบียน) */}
+                      <SearchSelect
+                        value={wipMatOptions.some(o => o.id === wipForm.mat_no) ? wipForm.mat_no : ''}
+                        text={wipForm.mat_no}
+                        options={wipMatShown}
+                        allowFree
+                        freeHint="ยังไม่มีในทะเบียนพาร์ท"
+                        placeholder="เลขที่วัสดุ (mat no.) — พิมพ์รหัส/ชื่อเพื่อค้น"
+                        emptyText={wipMatCat && !wipMatAllCat ? `ไม่พบในประเภท ${wipMatCat} — ลองกด "ดูทุกประเภท"` : 'ไม่พบพาร์ทที่ค้นหา'}
+                        onChange={({ id, text }) => setWipForm(f => ({ ...f, mat_no: id || text }))}
+                      />
+                      {/* ห้ามซ่อนเงียบ — บอกเสมอว่าตัวกรองประเภทซ่อนไปกี่รายการ + ทางออก */}
+                      {wipMatCat !== '' && wipMatHidden > 0 && (
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
+                          กรองด้วยประเภท {wipMatCat} · ซ่อน {wipMatHidden} รายการ
+                          {wipMatOpKept > 0 && ` · คง 🔩 รายการขั้นตอน (OP) ${wipMatOpKept} ตัวไว้ (ไม่มีเลข SAP จึงตอบไม่ได้ว่าประเภทไหน)`}
+                          <button type="button" onClick={() => setWipMatAllCat(v => !v)}
+                            style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 10.5, padding: 0, textDecoration: 'underline' }}>
+                            {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
+                          </button>
+                        </div>
+                      )}
+                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน)
+                          ⚠️ ข้าม OP: mat_no เป็นชื่อขั้นตอน เอา prefix ไปตีความไม่ได้ (จะเตือนผิดทุกครั้ง) */}
+                      {wipForm.mat_no && wipMatCat && !wipMatIsOp && !matMatches(wipForm.mat_no, wipMatCat) && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          ⚠ {wipForm.mat_no} ขึ้นต้นด้วย {matDigit(wipForm.mat_no) || '—'} ({matClassOf(wipForm.mat_no)?.label || 'ไม่รู้จัก'}) ไม่ตรงประเภทที่เลือก ({wipMatCat})
+                        </div>
+                      )}
+                      {/* เลือก OP = ตั้งใจได้ (บัฟเฟอร์เก็บของหลังขั้นนั้นจริง) แต่ต้องรู้ว่ามันไม่ใช่พาร์ทในทะเบียน */}
+                      {wipMatIsOp && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทในทะเบียน SAP · สโตร์ไม่มีของตัวนี้ให้เบิก
+                          จุดนี้จึงเป็น <b>บัฟเฟอร์ระหว่างขั้นในไลน์</b> (Min/Max ใช้ดูจังหวะงาน ไม่ใช่จุดสั่งเติมจากสโตร์)
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -1605,7 +1735,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           {p.point_type === 'packaging'
                             ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
-                            : `${p.material_category ? `cat.${p.material_category} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
+                            : `${p.material_category ? `${matClassOf(p.material_category)?.short || `cat.${p.material_category}`} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
                           คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
                         </div>
                       </div>
@@ -1908,7 +2038,18 @@ export default function LineSetup({ embedded = false } = {}) {
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {/* ⏸ ปลดระวางไลน์ — ทางเลือกแทนการ "ลบไลน์" ซึ่งทำให้ชื่อไลน์ที่ถูกเก็บเป็น text
+                  ในหลายสิบตาราง 2 project กำพร้าเงียบทันที (ดูกฎ rename cascade ใน CLAUDE.md)
+                  ปลดระวาง = ไม่โผล่ใน dropdown ให้เลือกใหม่ แต่ข้อมูลเก่ายังอ่านออกครบ */}
+              {canEdit && selLineObj && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: selLineObj.is_active === false ? '#f59e0b' : 'var(--muted)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
+                  <span>⏸ ปลดระวางไลน์นี้ {selLineObj.is_active === false
+                    ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
+                    : '— ใช้แทนการลบ เมื่อเลิกใช้ไลน์'}</span>
+                </label>
+              )}
               {canEdit && (
               <button onClick={handleSaveStdManpower} disabled={mpSaving}
                 style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
@@ -1918,6 +2059,9 @@ export default function LineSetup({ embedded = false } = {}) {
             </div>
           </div>
           )}
+
+          {/* 🔗 สายการไหลระหว่างไลน์ — ไลน์นี้ป้อนงานให้ใคร / รับของจากใคร (2026-08-19) */}
+          <LineFlowPanel lineName={selectedLine} lines={lines} canEdit={canEdit} />
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />

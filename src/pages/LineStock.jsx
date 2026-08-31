@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -11,7 +12,11 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import StorageZonePanel from '../components/StorageZonePanel';
+import LineSelect from '../components/LineSelect';
+import StockMoveToChild from '../components/StockMoveToChild';
 import { visibleInterval } from '../utils/usePolling';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
@@ -55,7 +60,7 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
 /* ─────────────────────────────────────────────────────────────────────────────
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
-function StockTab({ role }) {
+function StockTab({ role, scope }) {
   const { fullName } = useContext(UserContext);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
@@ -71,7 +76,31 @@ function StockTab({ role }) {
   const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
 
   const [lineFilter, setLineFilter] = useState('');
+  // คลังปลายทางที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง + กฎรับเข้าอัตโนมัติ ไม่ hardcode ชื่อคลัง
+  const warehouseNames = useMemo(
+    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(),
+    [stock, lines],
+  );
+  // ไลน์แม่ (มีไลน์ลูก) = ระดับแผนก — ใช้เตือนตอนจ่ายพาร์ท และตรวจสต๊อกที่ค้างผิดชั้น
+  const childLinesOf = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { if (l.parent_line_name) (m[l.parent_line_name] ||= []).push(l.name); });
+    return m;
+  }, [lines]);
   const [showTxn,    setShowTxn]    = useState(false);
+  // ย่อ/ขยายกลุ่มไลน์-คลัง — จำ override ของ user (default = กาง) · ดู docs/UI-CONVENTIONS.md §6.8
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('ls_group_collapse') || '[]')); } catch { return new Set(); }
+  });
+  const persistCollapsed = (next) => {
+    try { localStorage.setItem('ls_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
+    setCollapsedGroups(next);
+  };
+  const toggleGroup = (name) => {
+    const next = new Set(collapsedGroups);
+    next.has(name) ? next.delete(name) : next.add(name);
+    persistCollapsed(next);
+  };
   const [showForm,   setShowForm]   = useState(false);
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
@@ -85,14 +114,32 @@ function StockTab({ role }) {
   const [rejectReason,setRejectReason]= useState('');
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
-      supabase.from('production_lines').select('name').order('name'),
-      supabaseDR.from('line_stock_summary').select('*').order('line_name').order('mat_no'),
-      supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
-      supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
-      supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
-      supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+    // ⚠️ ทุกตารางในนี้โตเกิน 1000 แถวได้ → ต้อง paginate ทั้งหมด (กฎ CLAUDE.md)
+    //    เดิม paginate แค่ line_stock_summary ตัวเดียว · ตัวที่เจ็บที่สุดคือ `bom_items`
+    //    เพราะมันเป็นที่มาของ "ไลน์ลูกปลายทาง" ใน StockMoveToChild — ตกหล่นเมื่อไหร่
+    //    พาร์ทนั้นจะกลายเป็น "ใช้หลายไลน์ ต้องเลือกเอง" ทั้งที่จริงชี้ไลน์เดียวชัดเจน
+    //    (เสนอผิดแบบเงียบ = คนเลือกปลายทางผิด แล้วหักสต็อกผิดตัว ย้อนยาก)
+    const [{ data: ln }, { rows: stk }, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
+      // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
+      //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
+        { orderBy: ['line_name', 'mat_no'] }),
+      fetchAllPages(() => supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
+        { orderBy: 'id' }),
+      fetchAllPages(() => supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true),
+        { orderBy: ['line_name', 'name', 'id'] }),
+      fetchAllPages(() => supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
+        { orderBy: 'id' }),
+      fetchAllPages(() => supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+        { orderBy: 'id' }),
     ]);
+    const boms = bomRes.rows, prods = prodRes.rows, ks = ksRes.rows, pm = pmRes.rows;
+    // ⚠️ โหลดไม่ครบ = ต้องบอก ห้ามเงียบ — จอจะดูปกติทุกอย่าง แต่ข้อเสนอปลายทาง/ชื่อพาร์ท/min-max หายไปเฉยๆ
+    const bad = [['สูตร BOM', bomRes], ['สินค้า', prodRes], ['ค่ามาตรฐานคัมบัง', ksRes], ['ทะเบียนพาร์ท', pmRes]]
+      .filter(([, r]) => r.error || r.truncated).map(([n]) => n);
+    if (bad.length) toast.error(`⚠ โหลดไม่ครบ: ${bad.join(' · ')} — ตัวเลข/ข้อเสนอบางส่วนอาจขาด ลองรีเฟรช`);
     setLines(ln || []);
     setStock(stk || []);
     setProducts(prods || []);
@@ -145,16 +192,22 @@ function StockTab({ role }) {
   useEffect(() => { loadPending(); }, [loadPending]);
   useEffect(() => { if (showTxn) loadTxns(); }, [showTxn, loadTxns, lineFilter]);
 
-  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') ทำให้ปลอดภัยจากการกดซ้ำ/สองคน
+  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') กันเขียนซ้ำ แต่ update ที่ match 0 แถว
+  // "คืนสำเร็จไม่มี error" → ต้องนับแถวจริงเสมอ ไม่งั้นคนที่สองได้ toast อนุมัติทั้งที่อีกคนปฏิเสธไปแล้ว
   const reviewTxn = async (txn, decision, reason) => {
     setReviewing(txn.id);
     const patch = decision === 'approved'
       ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
       : { status:'rejected', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: (reason || '').trim() || 'ไม่ระบุเหตุผล' };
-    const { error } = await supabaseDR.from('line_stock_transactions')
-      .update(patch).eq('id', txn.id).eq('status', 'pending');
+    const { data: updated, error } = await supabaseDR.from('line_stock_transactions')
+      .update(patch).eq('id', txn.id).eq('status', 'pending').select('id');
     setReviewing(null);
     if (error) { toast.error(error.message); return; }
+    if (!updated || updated.length === 0) {
+      toast.error('รายการนี้ถูกอนุมัติ/ปฏิเสธโดยคนอื่นไปแล้ว — รีเฟรชคิวให้ใหม่');
+      loadPending(); load(); if (showTxn) loadTxns();
+      return;
+    }
     toast.success(decision === 'approved' ? '✅ อนุมัติแล้ว — เข้า stock' : '❌ ปฏิเสธแล้ว');
     setRejectTx(null); setRejectReason('');
     loadPending(); load(); if (showTxn) loadTxns();
@@ -231,6 +284,8 @@ function StockTab({ role }) {
 
   return (
     <>
+      <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
+        permKey="line_stock:issue" hint="ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ" />
       {/* Header */}
       <div style={{ display:'flex', paddingRight: 52, justifyContent:'space-between', alignItems:'flex-end', gap:12, flexWrap:'wrap', marginBottom:18 }}>
         <div>
@@ -316,6 +371,12 @@ function StockTab({ role }) {
         </div>
       )}
 
+      {/* 🔀 สต๊อกค้างที่ "ไลน์แม่" — ระบบหักตอนผลิตไม่ได้ (ดู StockMoveToChild.jsx) */}
+      <StockMoveToChild
+        lines={lines} stock={stock} products={products} productBom={productBom}
+        canIssue={canIssue} fullName={fullName} workDate={getToday()} onDone={load}
+      />
+
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
         {[
@@ -330,19 +391,39 @@ function StockTab({ role }) {
         ))}
         <div style={{ ...card, padding:'10px 16px' }}>
           <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>🔍 กรองไลน์</div>
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, padding:'5px 8px' }}>
-            <option value="">ทุกไลน์/คลัง</option>
-            {/* คลังปลายทางที่มีของแต่ไม่ใช่ไลน์ผลิต (เช่น FG WAREHOUSE, STORE) ต้องกรองได้ด้วย */}
-            {[...new Set(stock.map(s => s.line_name))].filter(n => !lines.some(l => l.name === n)).sort()
-              .map(n => <option key={n} value={n}>🏬 {n}</option>)}
-            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
+              ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
+          <LineSelect
+            lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+            placeholder="ทุกไลน์/คลัง" style={{ ...inputSt, padding:'5px 8px' }}
+            extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+          />
         </div>
       </div>
 
-      {/* ── Stock view ── */}
+      {/* แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้ ไม่งั้นต้องเลื่อนยาวมากกว่าจะเจอไลน์ที่ต้องการ */}
+      {!showTxn && Object.keys(stockByLine).length > 1 && (() => {
+        const names = Object.keys(stockByLine);
+        const allFolded = names.every(n => collapsedGroups.has(n));
+        return (
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+            <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(names))}
+              style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
+              {allFolded ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+            </button>
+            <span style={{ fontSize:11, color:'var(--muted)' }}>{names.length} ไลน์/คลัง · แตะหัวกลุ่มเพื่อย่อ-กาง</span>
+          </div>
+        );
+      })()}
+
+      {/* ── Stock view ──
+          ⚠️ ห้ามครอบลิสต์นี้ด้วยกล่อง scroll ซ้อน (`maxHeight: calc(100vh - Npx)` + overflowY)
+          เคยทำแล้วพัง: หัวหน้าเพจจริง (แท็บ + ชื่อ + การ์ด KPI 4 ใบ + ตัวกรอง) สูงเกินค่า N ที่เดาไว้มาก
+          → กล่องยื่นพ้นขอบจอ สกรอลบาร์ของตัวเองอยู่นอกจอ เลื่อนหน้าเพจก็ไม่ช่วย
+          → การ์ดกลุ่มท้ายๆ ถูกตัดครึ่งจนเข้าไม่ถึง (สโตร์/แพลนนิ่งแจ้งว่าใช้งานไม่ได้ 2026-08-19)
+          ให้ทั้งหน้า scroll ตามปกติ + ย่อ/กางกลุ่มแทน — ดู docs/UI-CONVENTIONS.md §6.8 */}
       {!showTxn && (
-        <div style={{ display:'flex', flexDirection:'column', gap:14, maxHeight:'calc(100vh - 240px)', overflowY:'auto', paddingRight:4 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {Object.keys(stockByLine).length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
@@ -350,10 +431,13 @@ function StockTab({ role }) {
           ) : (
             Object.entries(stockByLine).map(([lineName, parts]) => {
               const lowParts = parts.filter(p => (p.qty_on_hand || 0) <= 0);
+              const folded  = collapsedGroups.has(lineName);
               return (
                 <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
-                  <div style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg2)', borderBottom:'1px solid var(--border)' }}>
-                    <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>
+                  <div onClick={() => toggleGroup(lineName)}
+                       style={{ padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', background:'var(--bg2)', borderBottom: folded ? 'none' : '1px solid var(--border)', cursor:'pointer', userSelect:'none' }}>
+                    <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)', display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:11, color:'var(--muted)', width:10 }}>{folded ? '▶' : '▼'}</span>
                       {lines.some(l => l.name === lineName) ? '📍' : '🏬'} {lineName}
                     </div>
                     <div style={{ display:'flex', gap:8, alignItems:'center' }}>
@@ -361,7 +445,7 @@ function StockTab({ role }) {
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{parts.length} พาร์ท</span>
                     </div>
                   </div>
-                  <div style={{ overflowX:'auto' }}>
+                  <div style={{ overflowX:'auto', display: folded ? 'none' : undefined }}>
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
@@ -499,10 +583,21 @@ function StockTab({ role }) {
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
-                  <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
-                    <option value="">เลือกไลน์...</option>
-                    {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-                  </select>
+                  <LineSelect
+                    lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
+                    onChange={v => setForm(f => ({ ...f, line_name: v }))}
+                    extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+                  />
+                  {/* ⚠️ ไลน์แม่ = ระดับแผนก งานผลิตเปิดกะที่ไลน์ลูก — ของที่ฝากไว้ที่ไลน์แม่
+                      จะถูกหักตอนปิดใบผลิตไม่ได้เลย (backflush หาด้วยชื่อไลน์ที่เปิดกะ)
+                      เตือนอย่างเดียว ไม่บล็อก — บางกรณีอาจตั้งใจฝากไว้ที่แผนกจริง */}
+                  {childLinesOf[form.line_name]?.length > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.6 }}>
+                      ⚠️ <b>{form.line_name}</b> เป็นไลน์ระดับแผนก (มีไลน์ลูก {childLinesOf[form.line_name].join(' · ')})
+                      — ของที่จ่ายเข้าที่นี่ <b>ระบบจะหักตอนปิดใบผลิตไม่ได้</b> เพราะงานเปิดกะที่ไลน์ลูก
+                      <br />แนะนำให้เลือก<b>ไลน์ลูก</b>ที่ใช้พาร์ทนี้จริงแทน
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
@@ -649,7 +744,7 @@ function addMins(timeStr, mins) {
   return `${String(Math.floor(total/60)%24).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
 }
 
-function DeliveryRoundsTab({ canEdit, fullName }) {
+function DeliveryRoundsTab({ canEdit, fullName, scope }) {
   const [rounds,     setRounds]     = useState([]);
   const [lines,      setLines]      = useState([]);
   const [lineFilter, setLineFilter] = useState('');
@@ -661,7 +756,9 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
   const load = useCallback(async () => {
     const [{ data: rnd }, { data: ln }] = await Promise.all([
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
+      //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
     ]);
     setRounds(rnd || []);
     setLines(ln || []);
@@ -782,10 +879,8 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
           <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
         </div>
         <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width:180 }}>
-            <option value="">ทุกไลน์</option>
-            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+            placeholder="ทุกไลน์" style={{ ...inputSt, width:180 }} />
           {canEdit && (
             <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
           )}
@@ -879,26 +974,30 @@ function DeliveryRoundsTab({ canEdit, fullName }) {
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
-                <input
-                  list="dl-lines"
-                  style={inputSt}
-                  value={form.line_name}
-                  onChange={e => setForm(f => ({ ...f, line_name: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(e.target.value, f.shift)) }))}
-                  placeholder="เลือกหรือพิมพ์ชื่อไลน์..."
+                {/* เดิมเป็น input+datalist (พิมพ์เองได้) → รอบจัดส่งที่ชื่อไลน์พิมพ์ผิดจะกำพร้าเงียบ
+                    ไม่มีวันแสดงคู่กับไลน์ไหนเลย · เปลี่ยนเป็น LineSelect ให้เลือกจากทะเบียนอย่างเดียว */}
+                <LineSelect
+                  lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
+                  onChange={v => setForm(f => ({ ...f, line_name: v, round_no: editId ? f.round_no : String(nextRoundNo(v, f.shift)) }))}
                 />
-                <datalist id="dl-lines">
-                  {lines.map(l => <option key={l.name} value={l.name} />)}
-                </datalist>
               </div>
 
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
+                  {/* ⚠️ ถอด "🔄 ทุกกะ (all)" ออกแล้ว (2026-08-26) — เป็นตัวเลือกที่ล้มเหลวเงียบ:
+                      ตัวจัดสรร demand ใน HeijunkaKanban จับคู่รอบกับกะด้วยคีย์ `${กลุ่มไลน์}|${shift}`
+                      แล้วเทียบกับ `production_sessions.shift` ซึ่งมีแค่ 'day'/'night'
+                      ⇒ รอบที่ตั้ง 'all' ไม่มีวัน match → ขึ้นบนบอร์ดแต่ได้ 0 พาร์ทตลอดกาล
+                      (ตรวจแล้วไม่มีแถวไหนใช้ 'all' เลย — ถอดได้ไม่กระทบใคร)
+                      จะรองรับจริงต้องแก้ `roundWindows`/`roundAlloc` ให้แยกคีย์ตามกะด้วย ไม่ใช่แค่ปล่อยตัวเลือกไว้ */}
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
-                    <option value="all">🔄 ทุกกะ (all)</option>
                   </select>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
+                  </div>
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>รอบที่ *</label>
@@ -1077,7 +1176,7 @@ function DeliveryTimeBoardTab() {
     <>
       <InternalTimeBoard
         title={`🕐 บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
-        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 Kanban Board"
+        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง"
         groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
       />
@@ -1122,16 +1221,25 @@ function DeliveryTimeBoardTab() {
 function InflowRulesTab({ canEdit }) {
   const [rules, setRules] = useState([]);
   const [lines, setLines] = useState([]);
+  // ปลายทางที่มีอยู่จริง — derive จากคลังที่มีของ ไม่ hardcode 'FG WAREHOUSE'/'STORE'
+  // (ตั้งคลังใหม่แล้วต้องโผล่เองโดยไม่ต้องแก้โค้ด)
+  const [dests, setDests] = useState([]);
   const [form, setForm] = useState({ match_type: 'prefix', match_value: '', dest_line_name: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: r }, { data: ln }] = await Promise.all([
+    const [{ data: r }, { data: ln }, { rows: st }] = await Promise.all([
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
+      //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ชื่อคลังท้ายลำดับหายจาก dropdown เงียบ (QC flow-audit #30)
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
+        { orderBy: ['line_name', 'mat_no'] }),
     ]);
     setRules(r || []);
     setLines(ln || []);
+    setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort());
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -1240,9 +1348,8 @@ function InflowRulesTab({ canEdit }) {
               <input list="inflow-dest-options" value={form.dest_line_name} onChange={e => setForm(f => ({ ...f, dest_line_name: e.target.value }))}
                 placeholder="FG WAREHOUSE" style={{ ...inputSt, width: 220 }} />
               <datalist id="inflow-dest-options">
-                <option value="FG WAREHOUSE" />
-                <option value="STORE" />
-                {lines.map(l => <option key={l.name} value={l.name} />)}
+                {dests.filter(d => !lines.some(l => l.name === d)).map(d => <option key={d} value={d} />)}
+                {lines.filter(l => l.is_active !== false).map(l => <option key={l.name} value={l.name} />)}
               </datalist>
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', '#08130a'), opacity: saving ? 0.6 : 1 }}>
@@ -1265,16 +1372,19 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
-  { key:'wip',       label:'🔩 WIP ระหว่างขั้น' },
+  { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
+  { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
-  { key:'timeboard', label:'🕐 บอร์ดเวลา' },
+  { key:'timeboard', label:'🕐 บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
   { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
 ];
 
 export default function LineStock() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, lineId, sections } = useContext(UserContext);
   const canEdit = can('line_stock', 'manage_rounds', role);
   const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stock');
+  // scope มาตรฐานส่งต่อให้ทุกแท็บ — dropdown ไลน์ต้องกรองด้วย ไม่ใช่แค่ query (CLAUDE.md)
+  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
 
   return (
     <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
@@ -1284,9 +1394,10 @@ export default function LineStock() {
         tabs={TABS} tab={activeTab} onTab={setActiveTab}
       />
 
-      {activeTab === 'stock'     && <StockTab role={role} />}
+      {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
-      {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} />}
+      {activeTab === 'zones'     && <StorageZonePanel />}
+      {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}
     </div>

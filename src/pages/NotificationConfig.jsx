@@ -3,12 +3,22 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 import { MTN_TEAMS, deptNameOf } from '../utils/mtnTeams'
 import { ROLE_OPTIONS } from '../utils/roleMeta'
+import InfoMore from '../components/InfoMore'
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 }
 const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
+
+/** สรุปว่า "ตอนนี้เรื่องนี้เด้งหาใคร" เป็นข้อความสั้นๆ — คนตั้งค่าต้องเห็นผลโดยไม่ต้องกางแผง */
+const targetSummary = (rule) => {
+  const parts = []
+  if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
+  if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
+  if (rule.inapp_depts?.length) parts.push(`แผนก: ${rule.inapp_depts.join(', ')}`)
+  return parts.length ? `● ${parts.join(' · ')}` : '○ ทุกส่วนงาน/ทุกแผนก'
+}
 
 const CATEGORY_LABEL = {
   manpower: '🧑‍🏭 Manpower', production: '🏭 Production', quality: '🔍 Quality',
@@ -111,6 +121,11 @@ export default function NotificationConfig() {
   const [editingTpl, setEditingTpl] = useState(null) // event_key being edited
   const [tplDraft, setTplDraft] = useState('')
   const [openMin, setOpenMin] = useState('15')      // เกณฑ์ "เปิดค้างเกินกี่นาทีถึงแจ้ง" (dt_alert_config — DR project)
+  // ตัวเลือกผู้รับระดับ "ส่วนงาน / แผนก" — ยึดผังองค์กรเป็นหลัก (กฎ section picker ของโปรเจค)
+  // แล้วเติมค่าที่พนักงานกรอกไว้แต่ยังไม่มีในผัง (⚠ นอกผัง) เพื่อไม่ให้เลือกไม่ได้ระหว่างจัดข้อมูล
+  const [secOpts, setSecOpts] = useState([])
+  const [deptOpts, setDeptOpts] = useState([])
+  const [openTarget, setOpenTarget] = useState(null)   // event_key ที่กางตัวเลือกส่วนงาน/แผนกอยู่
 
   const load = async () => {
     setLoading(true)
@@ -123,6 +138,21 @@ export default function NotificationConfig() {
     ])
     setRooms(rm ?? [])
     setRules(rl ?? [])
+    // โหลดแยก (ไม่บล็อกหน้าหลัก) — ล้มก็แค่ไม่มีตัวเลือกส่วนงาน/แผนก ไม่ทำให้หน้าพัง
+    supabase.from('org_nodes').select('kind, code, name, sort_order').in('kind', ['section', 'department'])
+      .then(({ data }) => {
+        const nodes = data ?? []
+        const bySort = (a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999)
+        setSecOpts([...new Set(nodes.filter(n => n.kind === 'section').sort(bySort).map(n => n.code || n.name).filter(Boolean))])
+        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').sort(bySort).map(n => n.name).filter(Boolean))])
+      })
+    supabase.from('employees').select('section, department').eq('is_active', true)
+      .then(({ data }) => {
+        const secs = [...new Set((data ?? []).map(e => e.section).filter(Boolean))]
+        const deps = [...new Set((data ?? []).map(e => e.department).filter(Boolean))]
+        setSecOpts(prev => [...prev, ...secs.filter(x => !prev.includes(x))])
+        setDeptOpts(prev => [...prev, ...deps.filter(x => !prev.includes(x))])
+      })
     if (ts) setTokenStatus(ts)
     if (dcfg?.open_alert_min != null) setOpenMin(String(dcfg.open_alert_min))
     setLoading(false)
@@ -235,6 +265,12 @@ export default function NotificationConfig() {
     const next = cur.includes(role) ? cur.filter(r => r !== role) : [...cur, role]
     updateRule(rule.event_key, { inapp_roles: next })
   }
+  // จำกัดผู้รับในแอปเป็นราย "ส่วนงาน / แผนก" — ว่าง = ไม่จำกัด (พฤติกรรมเดิม)
+  const toggleRuleList = (rule, field, val) => {
+    const cur = Array.isArray(rule[field]) ? rule[field] : []
+    const next = cur.includes(val) ? cur.filter(x => x !== val) : [...cur, val]
+    updateRule(rule.event_key, { [field]: next })
+  }
 
   /* ── template editor ── */
   const startEditTpl = (rule) => {
@@ -300,16 +336,21 @@ export default function NotificationConfig() {
         <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
         </button>
-        <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
-          บันทึก Downtime ใหม่จะ<b>ไม่แจ้งทันที</b> (ปิดรายการแล้ว→สรุปตอนปิดกะ) · ถ้ายังเปิดค้างนานเกินเวลานี้ ระบบจะส่งเข้า Telegram + เตือนเสียงหน้า Production · ปุ่ม “เรียกช่าง MTN” ในหน้า Daily Report แจ้งทันทีเสมอ (เตือนเสียงหน้า Maintenance)
-        </div>
+        <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
+          lead={<>เปิดค้างนานเกินเวลานี้ → ส่ง Telegram + เตือนเสียงหน้า Production</>}>
+          บันทึก Downtime ใหม่จะ<b>ไม่แจ้งทันที</b> (ปิดรายการแล้ว → สรุปตอนปิดกะ)
+          <br />ปุ่ม “เรียกช่าง MTN” ในหน้า Daily Report แจ้งทันทีเสมอ (เตือนเสียงหน้า Maintenance)
+        </InfoMore>
       </div>
 
       {/* ── Rooms ── */}
       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ห้องแจ้งเตือน</div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-        🔧 <b>แจ้งซ่อม MTN แยกทีม:</b> ตั้ง “ทีม” ให้ห้อง (JIG/DIE/MTN/PRODUCTION) แล้วใส่ chat_id ของกลุ่มทีมนั้น → ใบแจ้งซ่อม MO ที่แจ้งถึงทีมนี้จะเข้า<b>เฉพาะห้องของทีม</b> · ทีมที่ยังไม่มีห้องเฉพาะ = เข้าห้องรวม (ตามที่เลือกในกฎ maintenance ด้านล่าง)
-      </div>
+      <InfoMore style={{ marginBottom: 10 }} id="nc_rooms" label="แจ้งซ่อมแยกทีม"
+        lead={<>🔧 ตั้ง “ทีม” ให้ห้องได้ — ใบแจ้งซ่อมของทีมนั้นจะเข้าเฉพาะห้องของทีม</>}>
+        ใส่ chat_id ของกลุ่มทีมนั้น (JIG/DIE/MTN/PRODUCTION) → ใบแจ้งซ่อม MO ที่แจ้งถึงทีมนี้
+        จะเข้า<b>เฉพาะห้องของทีม</b>
+        <br />ทีมที่ยังไม่มีห้องเฉพาะ = เข้าห้องรวม (ตามที่เลือกในกฎ maintenance ด้านล่าง)
+      </InfoMore>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {rooms.map(room => (
           <div key={room.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
@@ -406,6 +447,79 @@ export default function NotificationConfig() {
                         )
                       })}
                     </div>
+
+                    {/* จำกัดผู้รับให้แคบลงอีก: ส่วนงาน / แผนก / เฉพาะคนที่ดูแลไลน์ที่เกิดเหตุ */}
+                    {(rule.inapp_roles || []).length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <button onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
+                            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+                            🎯 {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
+                          </button>
+                          <span style={{ fontSize: 11, color: (rule.inapp_sections?.length || rule.inapp_depts?.length || rule.inapp_match_section) ? 'var(--accent)' : 'var(--muted)' }}>
+                            {targetSummary(rule)}
+                          </span>
+                        </div>
+
+                        {openTarget === rule.event_key && (
+                          <div style={{ marginTop: 8, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={!!rule.inapp_match_section}
+                                onChange={e => updateRule(rule.event_key, { inapp_match_section: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
+                                  เช่น ของเสียที่ Line 60 → เด้งหาหัวหน้า PD2 เท่านั้น ไม่กวนส่วนงานอื่น ·
+                                  ผู้บริหาร (ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย) และคนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
+                                  เหตุการณ์ที่ไม่รู้ส่วนงาน = แจ้งทุกคนตาม role (ไม่เงียบ)
+                                </div>
+                              </span>
+                            </label>
+
+                            <div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
+                                🏢 เฉพาะส่วนงาน — ไม่เลือก = ทุกส่วนงาน
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {secOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีข้อมูลส่วนงาน —</span>}
+                                {secOpts.map(sc => {
+                                  const on = (rule.inapp_sections || []).includes(sc)
+                                  return (
+                                    <label key={sc} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer',
+                                      background: on ? 'var(--bg3)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                                      color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '3px 9px', userSelect: 'none' }}>
+                                      <input type="checkbox" checked={on} onChange={() => toggleRuleList(rule, 'inapp_sections', sc)} style={{ flexShrink: 0 }} />
+                                      {sc}
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
+                                🗂 เฉพาะแผนก — ไม่เลือก = ทุกแผนก
+                                <span style={{ marginLeft: 6 }}>(ใช้ได้เมื่อบัญชีผู้ใช้ถูกผูกกับพนักงานแล้วที่ “จัดการผู้ใช้งาน”)</span>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {deptOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีข้อมูลแผนก —</span>}
+                                {deptOpts.map(dp => {
+                                  const on = (rule.inapp_depts || []).includes(dp)
+                                  return (
+                                    <label key={dp} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer',
+                                      background: on ? 'var(--bg3)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                                      color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '3px 9px', userSelect: 'none' }}>
+                                      <input type="checkbox" checked={on} onChange={() => toggleRuleList(rule, 'inapp_depts', dp)} style={{ flexShrink: 0 }} />
+                                      {dp}
+                                    </label>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* ── message template editor ── */}

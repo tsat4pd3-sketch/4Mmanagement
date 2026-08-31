@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -101,7 +102,7 @@ export default function MachineDatabase() {
     setLoading(true);
     const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
       supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').order('line_name').order('sort_order'),
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'),
       supabaseDR.from('machine_types').select('*').order('sort_order'),
       supabaseDR.from('pm_facility_areas').select('name').order('sort_order').then(r => r).catch(() => ({ data: [] })),
     ]);
@@ -250,6 +251,8 @@ export default function MachineDatabase() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ทะเบียนเครื่องจักร"
+        permKey="machines:edit, machines:create" />
       <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
@@ -291,7 +294,7 @@ export default function MachineDatabase() {
               </>
             : <>
                 <option value="">— ทุกไลน์ —</option>
-                {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                {scopedLines.filter(l => l.is_active !== false && !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                 {Object.entries(parentChildrenMap).map(([parent, children]) => (
                   <optgroup key={parent} label={`▸ ${parent}`}>
                     <option value={parent}>{parent} — ทั้งกลุ่ม</option>
@@ -428,7 +431,7 @@ export default function MachineDatabase() {
                 <Field label="ไลน์การผลิต *">
                   <select value={editing.line_name} onChange={e => setEditing(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
                     <option value="">— เลือกไลน์ —</option>
-                    {scopedLines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    {scopedLines.filter(l => l.is_active !== false && !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                     {Object.entries(parentChildrenMap).map(([parent, children]) => (
                       <optgroup key={parent} label={`▸ ${parent}`}>
                         {/* ไลน์ใหญ่เลือกได้ด้วย — บางโรงงานใช้ผังไลน์ใหญ่เป็นผังจริงที่วางเครื่อง (เช่น HYDROFORM) */}

@@ -1,4 +1,7 @@
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
+import resizeImg from '../utils/resizeImage';
+import { todayLocal as localToday } from '../utils/dateFormat';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -10,6 +13,8 @@ import { fmtDate } from '../utils/dateFormat';
 import PeExcelImportModal from '../components/PeExcelImportModal';
 import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 import PeChangeRequests from '../components/PeChangeRequests';
+import PeRoutingSuggest from '../components/PeRoutingSuggest';
+import LineSelect from '../components/LineSelect';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -19,22 +24,8 @@ import PeChangeRequests from '../components/PeChangeRequests';
 
 /* รูป product/drawing + รูปประกอบ OP — bucket pe-images (Main) · บีบ 2560px/q0.9 (tier drawing ต้องซูมอ่านได้)
    GIF ส่งดิบ ≤2MB ตามกติกา storage (วาดลง canvas = การขยับหายเงียบ) */
-function resizeImage(file, maxPx = 2560, quality = 0.9) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ'))), 'image/jpeg', quality);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่ได้'));
-    img.src = URL.createObjectURL(file);
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+const resizeImage = (file, maxPx = 2560, quality = 0.9) => resizeImg(file, maxPx, quality);
 const peImagePath = (url) => { const p = url?.split('/pe-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removePeImage = (url) => { const p = peImagePath(url); if (p) supabase.storage.from('pe-images').remove([p]).catch(() => {}); };
 
@@ -73,6 +64,7 @@ export default function PEDocs() {
   const { role, fullName } = useContext(UserContext);
   const canEdit = can('pe', 'edit', role);
   const canApprove = can('pe', 'approve', role);
+  const canRouting = can('routing', 'manage', role);   // เขียน part_routings (ฝั่ง VSM) — คนละ key กับ pe:edit
 
   const [sets, setSets] = useState([]);
   const [procs, setProcs] = useState([]);       // ของ set ที่เลือก
@@ -106,6 +98,7 @@ export default function PEDocs() {
   const printChartRef = useRef(null);                    // ผังชุดสีสว่างซ่อนไว้ ใช้ตอนพิมพ์
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
+  const [routingOpen, setRoutingOpen] = useState(false); // 🔀 เสนอ routing เข้า VSM จาก PFC
 
   const loadSets = useCallback(async () => {
     setLoading(true);
@@ -257,6 +250,10 @@ export default function PEDocs() {
         ] : undefined}
         tab={tab} onTab={setTab} />
 
+      <ReadOnlyNote show={!canEdit} role={role} what="แก้เอกสาร PE"
+        permKey="pe:edit"
+        hint="ดูเอกสาร/นำเข้า/ส่งออกได้ตามปกติ — ที่ปิดคือการเพิ่ม/แก้/ลบแถวในเอกสาร" />
+
       {/* ── เลือกชุดเอกสาร (1 พาร์ท = 1 ชุด PFC+FMEA+CP) ── */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <select value={setId} onChange={e => pickSet(e.target.value)} style={{ width: 'auto', minWidth: 280, padding: '8px 10px', fontSize: 13, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
@@ -381,9 +378,18 @@ export default function PEDocs() {
                 <PeFlowChart procs={procs} mode="light" />
                 <div data-legend><FlowLegend procs={procs} mode="light" /></div>
               </div>
-              {canEdit && (
-                <button style={{ ...btnPrim, marginBottom: 10 }} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>➕ เพิ่ม Process (OP)</button>
-              )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+                {canEdit && (
+                  <button style={btnPrim} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>➕ เพิ่ม Process (OP)</button>
+                )}
+                {/* (ข) PFC → routing ของ VSM — ระบบเสนอ คนยืนยันก่อน insert (utils/peRouting.js) */}
+                {canRouting && procs.length > 0 && (
+                  <button style={btnSm} onClick={() => setRoutingOpen(true)}
+                    title="แปลงรายการ OP เป็นลำดับกระบวนการ (part_routings) ให้ใบ VSM ใช้ — ตรวจและกดยืนยันก่อนบันทึก">
+                    🔀 เสนอ routing เข้า VSM
+                  </button>
+                )}
+              </div>
               <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
@@ -532,7 +538,7 @@ export default function PEDocs() {
             <div>
               {canApprove && (
                 <button style={{ ...btnPrim, marginBottom: 10 }}
-                  onClick={() => setRevModal({ set_id: curSet.id, doc_type: 'fmea', rev_no: (Math.max(0, ...revs.filter(r => r.doc_type === 'fmea').map(r => r.rev_no || 0)) + 1), rev_date: new Date().toISOString().slice(0, 10), suffix: curSet.part_no, ecn_no: '', content: '', ref_kind: '', ref_id: '', issued_by: fullName || '', checked_by: '', approved_by: '' })}>
+                  onClick={() => setRevModal({ set_id: curSet.id, doc_type: 'fmea', rev_no: (Math.max(0, ...revs.filter(r => r.doc_type === 'fmea').map(r => r.rev_no || 0)) + 1), rev_date: localToday(), suffix: curSet.part_no, ecn_no: '', content: '', ref_kind: '', ref_id: '', issued_by: fullName || '', checked_by: '', approved_by: '' })}>
                   ➕ ออก Revision ใหม่
                 </button>
               )}
@@ -569,6 +575,11 @@ export default function PEDocs() {
         </>
       )}
 
+      {/* ══ modal: เสนอ routing เข้า VSM ══ */}
+      {routingOpen && curSet && (
+        <PeRoutingSuggest set={curSet} procs={procs} lines={lines} onClose={() => setRoutingOpen(false)} />
+      )}
+
       {/* ══ modal: ชุดเอกสาร ══ */}
       {setModal && (
         <div className="overlay"><div className="modal" style={{ width: 'min(640px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -583,10 +594,8 @@ export default function PEDocs() {
             <label style={lbl}>Model<input value={setModal.model || ''} onChange={e => setSetModal({ ...setModal, model: e.target.value })} placeholder="P703" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Customer<input value={setModal.customer || ''} onChange={e => setSetModal({ ...setModal, customer: e.target.value })} placeholder="FORD" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>ไลน์หลักที่ผลิต
-              <select value={setModal.line_name || ''} onChange={e => setSetModal({ ...setModal, line_name: e.target.value })} style={{ marginTop: 4 }}>
-                <option value="">— ไม่ระบุ —</option>
-                {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
+              <LineSelect lines={lineOpts} value={setModal.line_name || ''} placeholder="— ไม่ระบุ —"
+                style={{ marginTop: 4 }} onChange={v => setSetModal({ ...setModal, line_name: v })} />
             </label>
             <label style={lbl}>สถานะ
               <select value={setModal.status} onChange={e => setSetModal({ ...setModal, status: e.target.value })} style={{ marginTop: 4 }}>
@@ -666,10 +675,8 @@ export default function PEDocs() {
               <datalist id="pe-machines">{machines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_name || ''} · {m.line_name || ''}</option>)}</datalist>
             </label>
             <label style={lbl}>ไลน์/พื้นที่
-              <select value={procModal.line_name || ''} onChange={e => setProcModal({ ...procModal, line_name: e.target.value })} style={{ marginTop: 4 }}>
-                <option value="">— ไม่ระบุ —</option>
-                {lineOpts.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-              </select>
+              <LineSelect lines={lineOpts} value={procModal.line_name || ''} placeholder="— ไม่ระบุ —"
+                style={{ marginTop: 4 }} onChange={v => setProcModal({ ...procModal, line_name: v })} />
             </label>
             <label style={lbl}>ตัวเชื่อมผัง (A-G)<input value={procModal.connector || ''} onChange={e => setProcModal({ ...procModal, connector: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Special Char.

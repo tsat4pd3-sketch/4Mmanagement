@@ -6,7 +6,9 @@ import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
-import { can } from '../utils/permissions';
+import { useNavigate } from 'react-router-dom';
+import { can, canAccessPage } from '../utils/permissions';
+import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
@@ -16,24 +18,13 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
+import { liveChannel } from '../utils/liveChannel';
 
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
-    };
-    img.src = url;
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+// ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
+//    in-app browser ของ LINE) ทำให้ Promise ค้างตลอดกาล — ปุ่มบันทึกหมุนไม่จบ ไม่มี error ไม่มี toast
+//    ตัวกลางลอง createImageBitmap ก่อน · revoke object URL ทุกทาง · โยน error ที่บอกวิธีแก้
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 function getWorkDate() {
   const now = new Date();
@@ -150,6 +141,7 @@ const MAN_CASE_META = {
 
 export default function Management() {
   const { role, lineId: userLineId, team: userTeam, sections: scopeSecs = [], fullName, user, sidebarOpen = true } = useContext(UserContext);
+  const navigate = useNavigate();
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
 
@@ -209,6 +201,15 @@ export default function Management() {
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
   const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
+  /* กะที่กำลังดู — เดิมผังคนล็อก getCurrentShift() ตายตัว หัวหน้าจึงเห็นได้แค่กะปัจจุบัน
+     และเลือกวันย้อนหลังแล้ว "คน" ก็ไม่ตามไปด้วย (จอบอกว่าย้อนหลังแต่โชว์คนของวันนี้ = จอโกหก)
+     feedback หน้างาน 2026-08-27: "เลือกกะไม่ได้ กลายเป็นแสดงแค่กะเช้าอย่างเดียว" */
+  const [viewShift,       setViewShift]       = useState(() => getCurrentShift());
+  const todayWorkDate = getWorkDate();
+  /* "ดูสด" = วันนี้ + กะปัจจุบันเท่านั้น → จัดคนได้
+     กะอื่น/วันย้อนหลัง = **อ่านอย่างเดียว** เพราะการลากคนจะไปเขียน daily_production_logs ของวันนั้น
+     และ station_assignment_logs ที่ stamp เวลา "ตอนนี้" = ประวัติเพี้ยนย้อนแก้ยาก */
+  const isLiveView = boardDate === todayWorkDate && viewShift === getCurrentShift();
   // มุมมองหลักของ Canvas Area: สลับดูทีละมุม — 'map' = ผังไลน์+คน (floor map) · 'heijunka' = บอร์ด Heijunka
   // ดูทีละมุมได้พื้นที่เต็มจอ เห็นรายละเอียดครบ ไม่ถูกบีบ/ย่อ (แก้ปัญหา kanban เยอะแล้วบอร์ดดันผังหลุดจอ)
   // · default = map (งานหลักคือจัดคนลงสถานี) · จำสถานะใน localStorage
@@ -231,6 +232,17 @@ export default function Management() {
     ro.observe(node); boardRoRef.current = ro;
     setBoardW(node.getBoundingClientRect().width);
   }, []);
+  /* ความสูงจริงทั้ง section บอร์ด (chips + legend + PLANNER + timeline) — ตัวตัดสิน boardWouldSquish
+     วัดด้วย scrollHeight ของ wrapper: ได้ความสูง "เนื้อหาธรรมชาติ" เสมอ แม้ตอน wrapper เป็น flex:1 +
+     overflow auto (โหมด squish) เนื้อหาถูก clip แต่ scrollHeight ไม่ถูก clip → ไม่เกิดเด้งกลับไปมา
+     · วัดใน effect หลัง render (ไม่ใช่ RO) เพราะเนื้อหาโตโดย wrapper ไม่ resize ได้ (ทั้งคู่โดน clip)
+     · บอร์ด unmount (สลับไปมุมมองผัง) = คงค่าล่าสุด ห้าม reset เป็น 0 ไม่งั้น squish หลุดกลับ false */
+  const [boardSectionH, setBoardSectionH] = useState(0);
+  const boardSectionRef = useRef(null);
+  useEffect(() => {
+    const el = boardSectionRef.current;
+    if (el) setBoardSectionH(el.scrollHeight);
+  }, [lineProdData, boardW, isMobile]);
 
   const [canvasH, setCanvasH] = useState(0);
   // โหลด master งานนอกไลน์ (ตารางว่าง/ยังไม่ apply = ใช้ค่า default เดิม — ห้ามลิสต์ว่าง)
@@ -264,9 +276,16 @@ export default function Management() {
     }));
     return keys.size;
   }, [lineProdData]);
-  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดโดยประมาณ (chrome หัวบอร์ด ~210 + 64px/แถว) + ผังขั้นต่ำ ~220
-  // เกินพื้นที่ canvas → โผล่ปุ่มสลับ · ไม่เกิน → โชว์คู่กัน (เอนเอียงไปทางโชว์คู่จนกว่าจะล้นจริง ตามคำสั่ง user)
-  const boardWouldSquish = !!lineProdData && canvasH > 0 && (210 + boardRowCount * 64 + 220) > canvasH;
+  // บอร์ดจะเบียดผังจนพังไหม: ความสูงบอร์ดจริงที่วัดได้ (boardSectionH) + ผังขั้นต่ำ ~260 เกินพื้นที่ canvas
+  // → โผล่ปุ่มสลับ ดูทีละมุม · ไม่เกิน → โชว์คู่กัน
+  // ⚠️ ห้ามกลับไปใช้สูตรเดา (64px/แถว) เป็นตัวตัดสินหลัก — แถวจริงสูง ~88px (รูป 46 + 2 เลนกะเช้า/ดึก)
+  //    เดาต่ำกว่าจริงแล้วระบบคิดว่า "พอโชว์คู่" ทั้งที่ไม่พอ → ผังเหลือที่ ~100px → marker คน/เครื่อง/จุดงาน
+  //    ถูก clamp กองทับกันเป็นก้อนล่างจอ (เจอจริง 2026-08-19 LINE APRON ASSY 8 แถว) · สูตรเดาเหลือไว้
+  //    เฉพาะ fallback เฟรมแรกก่อน effect วัดจะทัน
+  const MIN_MAP_H = 260;
+  const boardWouldSquish = !!lineProdData && canvasH > 0 && (
+    boardSectionH > 0 ? (boardSectionH + MIN_MAP_H) > canvasH
+                      : (210 + boardRowCount * 88 + MIN_MAP_H) > canvasH);
   const [showLegendMobile, setShowLegendMobile] = useState(false); // มือถือ: legend สถานะยุบเข้าปุ่ม ℹ️
   const [imgBox,         setImgBox]         = useState(null); // actual rendered image bounds inside objectFit:contain
   const imgRef = useRef(null);
@@ -390,11 +409,16 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }
     let debounceTimer = null;
-    const refresh = () => fetchActiveDowntimes(viewLineNames).then(setDtAlarms).catch(() => {});
+    // ⚠️ คิวรีพลาด = **คงสัญญาณเดิมไว้ ห้ามล้างเป็นว่าง** — ล้างแล้วหมุดเครื่องที่กำลังหยุดจะเลิกกระพริบ
+    //    ทั้งที่เครื่องยังหยุดอยู่จริง (Andon ดับเพราะเน็ตสะดุด = อันตรายกว่าไม่รีเฟรช)
+    //    รอบถัดไป (realtime push หรือ interval) จะได้ของจริงมาทับเอง
+    const refresh = () => fetchActiveDowntimes(viewLineNames)
+      .then(r => { if (!r?.error) setDtAlarms(r); })
+      .catch(() => {});
     const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
     refresh();
     const stopPoll = visibleInterval(refresh, RATE.BACKUP);
-    const ch = supabaseDR.channel('mgmt-dt-alarm')
+    const ch = liveChannel(supabaseDR, 'mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();
@@ -429,6 +453,17 @@ export default function Management() {
       }
       setLines(visible);
 
+      // deep-link ?line=NAME&view=heijunka (จากหน้า Kanban Board — ปุ่ม 📊 บอร์ดไลน์)
+      // เคารพ scope: ไลน์นอก scope ของ user = ตกไปค่าเริ่มต้นปกติ
+      const qp = new URLSearchParams(window.location.search);
+      const wantedLine = qp.get('line');
+      const hit = wantedLine ? visible.find(l => l.name === wantedLine) : null;
+      if (hit) {
+        setSelectedLine(hit.name);
+        if (qp.get('view') === 'heijunka') switchView('heijunka');
+        window.history.replaceState({}, '', window.location.pathname);   // ล้าง param กันเปิดซ้ำตอน refresh
+        return;
+      }
       // ค่าเริ่มต้น: leader เริ่มที่ไลน์ตัวเอง / role อื่นเริ่มที่ไลน์หลักตัวแรก
       const own = isLeader && userLineId ? visible.find(l => l.id === userLineId) : null;
       const topLevel = visible.filter(l => !l.parent_line_name);
@@ -441,7 +476,7 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchData();
-  }, [selectedLine]);
+  }, [selectedLine, boardDate, viewShift]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // viewKey อยู่ใน deps ด้วย — ตอน mount allLines มาถึงช้ากว่า selectedLine ได้
   // พอ hierarchy resolve เสร็จ (viewLineNames เปลี่ยน) ต้อง refetch จุดงานของทั้งครอบครัวไลน์
@@ -475,21 +510,23 @@ export default function Management() {
   };
 
   const fetchData = async () => {
-    const today = getWorkDate();
+    // ⚠️ ยึด "วัน/กะที่กำลังดู" ไม่ใช่ตอนนี้ — ไม่งั้นเลือกย้อนหลังแล้วยังโชว์คนของกะปัจจุบัน
+    const today = boardDate;
+    const shiftV = viewShift;
     const { data: workerData } = await supabase
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
-      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
+      .eq('work_date', today).eq('shift', shiftV).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     // คนที่เช็คชื่อแล้วแต่ PPE ไม่ครบ — ไม่เข้า pool (ห้ามจัดลงสถานี) แต่ต้องกระพริบเตือนบนหัวผัง
     const { data: ppeData } = await supabase
       .from('daily_production_logs')
       .select('id, employee_id, has_helmet, has_boots, has_gloves, employees(id, name, image_url, team, line_id)')
-      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
+      .eq('work_date', today).eq('shift', shiftV).eq('is_present', true)
       .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
     setPpeAlerts(ppeData || []);
     // 🤝 ยืมตัวข้ามไลน์กะนี้ (line_helpers) — best-effort: ยังไม่ apply migration = พฤติกรรมเดิม
     const { data: helperData, error: eHelper } = await supabase.from('line_helpers')
-      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', getCurrentShift());
+      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', shiftV);
     if (!eHelper) {
       const hm = {};
       (helperData || []).forEach(h => { hm[h.employee_id] = h.to_line_id; });
@@ -522,6 +559,8 @@ export default function Management() {
 
   /* ── Assign worker ── shared between drag-drop and touch-tap */
   const assignWorker = async (logId, stationId) => {
+    // guard ชั้นสุดท้าย — โหมดย้อนหลัง/กะอื่น ห้ามเขียนอะไรทั้งสิ้น (ซ่อนปุ่มอย่างเดียวไม่พอ)
+    if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — จัดกำลังคนได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
     const prevAssign = droppedWorker?.assigned_line ?? null;
@@ -752,7 +791,13 @@ export default function Management() {
 
     let request_image_url = null;
     if (reqImageFile) {
-      const resized = await resizeImage(reqImageFile);
+      // ⚠️ resizeImage โยน error เมื่ออ่านไฟล์ไม่ได้ (.heic / in-app browser) — ต้องรับไว้เอง
+      //    ฟังก์ชันนี้ไม่มี try/catch ครอบ ถ้าปล่อยหลุดจะเป็น unhandled rejection
+      //    = ปุ่มบันทึกค้างหมุน (setIsSaving4M ไม่ถูก reset) และไม่มีข้อความบอกอะไรเลย
+      //    ข้อมูล 4M ที่พิมพ์ไว้ยังอยู่ในฟอร์ม (return ก่อนล้าง) เหมือน path อัปโหลดพลาดด้านล่าง
+      let resized;
+      try { resized = await resizeImage(reqImageFile); }
+      catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsSaving4M(false); return; }
       const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
       const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
       if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsSaving4M(false); return; }
@@ -863,6 +908,7 @@ export default function Management() {
   }, [workers, dynamicStations, viewLineNames, belongsToShownMap]);
 
   const assignSpecialTask = async (worker, taskType) => {
+    if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — กำหนดงานนอกไลน์ได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const today = getWorkDate();
     await supabase.from('operator_special_tasks').upsert(
       { employee_id: worker.employee_id, task_type: taskType, work_date: today },
@@ -882,7 +928,7 @@ export default function Management() {
   /* ── Special Pool Card ── */
   const SpecialCard = ({ worker }) => {
     const task = specialTasks.find(t => t.employee_id === worker.employee_id);
-    const canDrag = can('management', 'assign_manpower', role);
+    const canDrag = can('management', 'assign_manpower', role) && isLiveView;
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
@@ -935,12 +981,12 @@ export default function Management() {
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
-        draggable={!isMobile}
-        onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
+        draggable={!isMobile && isLiveView}
+        onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        onClick={() => handlePoolTap(worker)}
+        onClick={() => isLiveView && handlePoolTap(worker)}
         style={{
           position: 'relative',
           width: '100%',
@@ -975,7 +1021,7 @@ export default function Management() {
         {/* 🤝 ยืมตัวมาจากไลน์อื่นกะนี้ (line_helpers) */}
         {helperMap[worker.employee_id] && (
           <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
-            style={{ fontSize: 10, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            style={{ fontSize: 11, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
             🤝 ยืมตัว
           </div>
         )}
@@ -999,12 +1045,12 @@ export default function Management() {
     const pend4m = man4mPendingFor(worker.employees?.name);
     return (
       <div
-        draggable={!isMobile}
-        onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
+        draggable={!isMobile && isLiveView}
+        onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : (isLiveView ? 'grab' : 'default'), userSelect: 'none' }}
         title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}
       >
         {/* photo only — score & name live in the hover popup card + the fit badge below the pill */}
@@ -1171,6 +1217,40 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* ── วัน/กะที่กำลังดู (2026-08-27 · feedback "เลือกกะไม่ได้ แสดงแค่กะเช้า") ──
+               ต้อง render เสมอ แม้กะนั้นไม่มีคนสักคน — ไม่งั้นสลับไปกะดึกที่ว่างแล้ว
+               จะไม่มีปุ่มให้สลับกลับ (ทางตันที่มองไม่เห็น) */}
+          {selectedLine && (
+            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 10,
+              background: isLiveView ? 'var(--bg3)' : 'rgba(168,85,247,0.12)',
+              border: `1px solid ${isLiveView ? 'var(--border2)' : 'rgba(168,85,247,0.5)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>กะที่ดู</span>
+                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                  {[['day', '☀️ เช้า'], ['night', '🌙 ดึก']].map(([k, t]) => (
+                    <button key={k} onClick={() => setViewShift(k)}
+                      style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                        background: viewShift === k ? 'var(--accent)' : 'var(--bg)',
+                        border: `1px solid ${viewShift === k ? 'var(--accent)' : 'var(--border)'}`,
+                        color: viewShift === k ? '#08130a' : 'var(--text2)' }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                📅 {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
+              </div>
+              {!isLiveView && (
+                <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4, lineHeight: 1.5 }}>
+                  👁 โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
+                  <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
+                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                    ⟳ กลับมาดูสด
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── กำลังคนทั้งกลุ่มไลน์ (รวมไลน์ย่อย) + รายชื่อคนไลน์ย่อยที่มีผังแยก (2026-08-03) ── */}
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
             <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
@@ -1178,12 +1258,12 @@ export default function Management() {
                 <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>👷 กำลังคนกลุ่มนี้</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
               </div>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                 ประจำสถานี · บนผังนี้ {familyManpower.onMap}{familyManpower.hiddenTotal ? ` · ไลน์ย่อย(ผังแยก) ${familyManpower.hiddenTotal}` : ''}
               </div>
               {familyManpower.hidden.length > 0 && (
                 <div style={{ marginTop: 7, display: 'grid', gap: 4 }}>
-                  <div style={{ fontSize: 9.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)</div>
                   {familyManpower.hidden.map(h => {
                     const open = openSubLine === h.lineName;
                     return (
@@ -1247,7 +1327,7 @@ export default function Management() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
-            {can('management', 'assign_manpower', role) && specialWorkers.length > 0 && (
+            {can('management', 'assign_manpower', role) && isLiveView && specialWorkers.length > 0 && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
@@ -1280,6 +1360,13 @@ export default function Management() {
         {selectedLine && !isMobile && (
           <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>บันทึก 4M ไลน์</div>
+            {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
+                ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
+            {!isLiveView && (
+              <div style={{ fontSize: 10.5, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+                ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
+              </div>
+            )}
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
@@ -1291,6 +1378,21 @@ export default function Management() {
                 {cat === 'Machine' ? '⚙️' : cat === 'Material' ? '📦' : '📋'} {cat}
               </button>
             ))}
+          </div>
+        )}
+
+        {/* ── ทางลัดกลับ Daily Report ของ "ไลน์ที่เลือกอยู่" (2026-08-26) ──
+            คู่กับปุ่ม "🔄 จัดกำลังคน" ในหัวกะของ Daily Report → สลับ 2 หน้าโดยไม่ต้องเลือกไลน์ใหม่ทุกครั้ง
+            (จงใจไม่รวมเป็นหน้าเดียว: หน้านี้เป็นบอร์ดจอ TV เต็มความกว้าง ส่วน Daily Report เป็นหน้ากรอกข้อมูล — layout คนละแบบ)
+            ⚠️ เช็คสิทธิ์ก่อน ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
+        {selectedLine && canAccessPage('/daily-report', role) && (
+          <div style={{ paddingTop: 10, marginTop: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+            <button onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
+              title={`บันทึกผลผลิต / Downtime ของ ${selectedLine}`}
+              style={{ width: '100%', padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
+                background: 'rgba(14,165,233,0.12)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.3)', fontWeight: 700 }}>
+              📊 Daily Report ({selectedLine})
+            </button>
           </div>
         )}
         </>)} {/* /panelCollapsed */}
@@ -1339,7 +1441,7 @@ export default function Management() {
         {/* Heijunka: โชว์เมื่อ (แสดงคู่กัน = ไม่ squish) หรือ (โหมดสลับ + เลือก heijunka)
             · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
         {(!boardWouldSquish || mainView === 'heijunka') && (
-        <div style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
+        <div ref={boardSectionRef} style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
         {boardWouldSquish && !lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
@@ -1391,11 +1493,11 @@ export default function Management() {
           const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
           const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
 
-              // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
-              // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
-              const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
-                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
-              });
+          // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
+          // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
+          const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
+            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+          });
 
           // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
           const pctForHalf = (item, half) => {
@@ -1614,7 +1716,7 @@ export default function Management() {
             });
             return chips;
           })();
-          const todayWd = getWorkDate();
+          const todayWd = todayWorkDate;
           const shiftBoardDate = (days) => {
             const d = new Date(`${boardDate}T12:00:00`);
             d.setDate(d.getDate() + days);
@@ -1983,9 +2085,19 @@ export default function Management() {
                 }
               `}</style>
               {imgBox && (() => {
-                // ขนาด marker ทั้งหมดมาจาก util กลาง (WYSIWYG เดียวกับ LineSetup) — density-aware ตามจำนวนเครื่อง
+                // ⚠️ หมุดที่เอาไปคิด "ความแน่น" ต้องเป็นชุดเดียวกับที่ **วาดบนผังใบนี้จริง**
+                //   machinePoints/wipPoints โหลดมาทั้งครอบครัวไลน์ แต่ไลน์ลูกที่มีผังเป็นของตัวเอง
+                //   ใช้พิกัด % ที่อ้างอิงรูปคนละใบ — เอามาคิดระยะเพื่อนบ้านจะเพี้ยน (วงเล็กเกินจริง)
+                //   และ WIP วาดด้วย SUB เหมือนกัน จึงต้องนับเข้าความแน่นด้วย ไม่งั้นผังที่มีเครื่อง 3 ตัว
+                //   แต่จุด WIP 20 จุดกระจุกกัน จะได้วงใหญ่สุดแล้วเบียดกัน (อาการเดียวกับที่เพิ่งแก้ไป)
+                const shownMcPts = machinePoints.filter(p => belongsToShownMap(p.line_name));
+                const shownWipPts = wipPoints.filter(p => belongsToShownMap(p.line_name));
                 const { MK, SUB, ring: RING, subRing: SUB_RING, pillFont: PILL_F, subPillFont: SUB_PILL_F, badgeFont: FIT_F, pillMaxW: PILL_MAXW, subPillMaxW: SUB_PILL_MAXW } =
-                  markerScale(imgBox.rw, { machineCount: machinePoints.length });
+                  markerScale(imgBox.rw, {
+                    machineCount: shownMcPts.length,
+                    points: [...shownMcPts, ...shownWipPts],
+                    mapHeight: imgBox.rh,
+                  });
                 // ป้ายชื่อทุกชนิดจุด: ปุ่ม 🏷️ โชว์/ซ่อน อย่างเดียว (ป้ายเตือน alarm/below-min โชว์เสมอ)
                 const pillsOn = showPills;
                 const stationPillsOn = showPills;
@@ -2227,7 +2339,7 @@ export default function Management() {
               </div>
             );
           })}
-                    {filterWip && wipPoints.filter(p => belongsToShownMap(p.line_name)).map(p => {
+                    {filterWip && shownWipPts.map(p => {
                       const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
                       const wTop  = imgBox.offsetY + (parseFloat(p.pos_top) / 100) * imgBox.rh;
                       const wLeft = imgBox.offsetX + (parseFloat(p.pos_left) / 100) * imgBox.rw;
@@ -2269,7 +2381,7 @@ export default function Management() {
                         </div>
                       );
                     })}
-                    {machinePoints.filter(p => belongsToShownMap(p.line_name)).map(p => {
+                    {shownMcPts.map(p => {
                       const alarms = dtAlarms.byMachine[p.machine_no];
                       // เครื่องที่กำลัง Downtime ต้องโชว์เสมอแม้ปิด filter MACHINE — เป็น alarm ไม่ใช่แค่ข้อมูลผัง
                       if (!filterMachine && !alarms) return null;
@@ -2395,7 +2507,7 @@ export default function Management() {
 
       {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
       {radarWorker && createPortal(
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
@@ -3124,7 +3236,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
 
   return (
     <div onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
       <div onClick={e => e.stopPropagation()}
         style={{ background: 'var(--card)', border: `1px solid ${accent}55`, borderRadius: 16, padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
         <style>{`@keyframes pdIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 import { wavg, wLoad, buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
+import { fetchByIds } from '../utils/fetchByIds';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -36,7 +38,7 @@ const SEV = {
   info: { c: '#4d9fff', bg: 'rgba(77,159,255,0.07)', label: 'ข้อสังเกต' },
 };
 
-export default function OeeInsightPanel({ lines }) {
+export default function OeeInsightPanel({ lines, ccRates = [] }) {
   // ตัวเลือกไลน์เรียงตามผัง: ไลน์แม่ก่อน แล้วไลน์ลูกตามใต้แม่ (ไม่ใช่เรียงชื่อรวดเดียวจนลูกหลุดจากแม่)
   const lineOpts = useMemo(() => toHierarchicalOptions(lines || []), [lines]);
   const [days, setDays] = useState(30);
@@ -64,13 +66,21 @@ export default function OeeInsightPanel({ lines }) {
       const ids = sess.map(s => s.id);
       const sessById = Object.fromEntries(sess.map(s => [s.id, s]));
 
-      const [{ data: dts }, { data: defs }, { data: orders }, { data: kstd }, { data: prodCt }] = await Promise.all([
-        supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', ids),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th, six_big_loss, waste_type)').in('session_id', ids),
-        supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, status').in('session_id', ids).in('status', ['confirmed', 'carry_over', 'imported']),
+      // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — ช่วง 90 วันมี 800+ กะ → URL ยาวเกิน คิวรีล้มเหลวเงียบ
+      //    แล้วแผงนี้จะสรุปว่า "ไม่มี Downtime เรื้อรัง / ไม่มีของเสียกระจุก" ทั้งที่มี (บั๊กชนิดเดียว
+      //    กับที่เจอในตารางสรุป OEE 2026-08-20) — วิเคราะห์สาเหตุที่บอกว่า "ไม่มีปัญหา" อันตรายที่สุด
+      const [dtRes, defRes, ordRes, { data: kstd }, { data: prodCt }] = await Promise.all([
+        fetchByIds(ids, c => supabaseDR.from('downtime_logs')
+          .select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('defect_logs')
+          .select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th, six_big_loss, waste_type)').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, qty, qty_ok, status').in('session_id', c).in('status', ['confirmed', 'carry_over', 'imported'])),
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
         supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
       ]);
+      const dts = dtRes.rows, defs = defRes.rows, orders = ordRes.rows;
+      const loadErr = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
       // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (เดิม kanban ล้วน → บาง MAT ได้ CT=0)
       const ctMapAll = buildCtMap({ kanbanStds: kstd || [], products: prodCt || [] });
       const ctOf = (mat) => ctMapAll[mat] || 0;
@@ -275,7 +285,7 @@ export default function OeeInsightPanel({ lines }) {
 
       out.sort((a, b) => ({ high: 0, med: 1, info: 2 }[a.sev] - { high: 0, med: 1, info: 2 }[b.sev]) || b.impact - a.impact);
       setInsights(out);
-      setMeta({ from, to, nSess: sess.length, dtMin: Math.round(dtMinUnpl) });
+      setMeta({ from, to, nSess: sess.length, dtMin: Math.round(dtMinUnpl), loadErr });
     } catch (e) {
       setInsights([]); setLean(null);
       setMeta({ error: e.message });
@@ -301,6 +311,12 @@ export default function OeeInsightPanel({ lines }) {
           {[14, 30, 60, 90].map(d => <option key={d} value={d}>ย้อนหลัง {d} วัน</option>)}
         </select>
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
+        {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
+        {meta?.loadErr && (
+          <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>
+            ⚠ ข้อมูลโหลดไม่ครบ — ผลวิเคราะห์อาจตกหล่น ({meta.loadErr})
+          </span>
+        )}
       </div>
 
       {/* ── Lean: 6 Big Losses / 8 Wastes — จำแนกจาก master (dr_downtime_types.six_big_loss/waste_type)
@@ -310,6 +326,15 @@ export default function OeeInsightPanel({ lines }) {
         const maxMin = Math.max(1, ...rows.map(r => r.min));
         const totalMin = rows.reduce((a, r) => a + r.min, 0);
         const unclassified = rows.find(r => !r.key);
+        /* 💰 แปลงเวลาสูญเสียเป็นเงิน (คำสั่ง user 2026-08-26 "ทุกอย่างถ้ากระทบต้นทุนได้จะดีมาก")
+           แผงนี้วิเคราะห์ **ทีละไลน์** → rate เดียวใช้ได้ทั้งแผง (ต่างจากพาเรโตที่คร่อมหลายไลน์)
+           ⚠️ ไม่เลือกไลน์เจาะจง = หลายไลน์คนละ rate → **ไม่ตีเป็นเงิน** และบอกบนจอว่าทำไม
+           ⚠️ ของเสียถูกแปลงเป็นนาทีด้วย CT มาก่อนแล้ว → คูณ rate ต่อได้ตรงๆ (เวลาที่หายไป × ค่าแรงเครื่อง) */
+        const leanCc = selLine ? lineCostCenter(lines || [], selLine) : null;
+        const leanRate = leanCc ? rateFor(ccRates, leanCc) : null;
+        const perHr = leanRate ? ratePerHour(leanRate, RATE_COMPONENTS.map(c => c.key)) : null;
+        const baht = (min) => (perHr == null ? null : (min / 60) * perHr);
+        const fmtB = (v) => Math.round(v).toLocaleString('en-US');
         return (
           <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
@@ -325,8 +350,17 @@ export default function OeeInsightPanel({ lines }) {
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
               เวลาสูญเสียรวม {totalMin.toLocaleString()} นาที (นับทั้งในแผน/นอกแผน · ของเสียแปลงเป็นนาทีด้วย CT)
+              {perHr != null && <> · <b style={{ color: '#fbbf24' }}>≈ {fmtB(baht(totalMin))} บาท</b> <span style={{ opacity: 0.85 }}>(rate {Math.round(perHr).toLocaleString()} บาท/ชม. · CC {leanCc})</span></>}
               {unclassified ? ` · ⚠️ ยังไม่จัดหมวด ${unclassified.min.toLocaleString()} นาที — จัดได้ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime` : ''}
             </div>
+            {/* ตีเป็นเงินไม่ได้ = ต้องบอกเหตุผล ห้ามแค่ไม่โชว์เฉยๆ */}
+            {perHr == null && (
+              <div style={{ fontSize: 10.5, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
+                💰 ยังตีเป็นเงินไม่ได้ — {!selLine
+                  ? 'เลือกไลน์เจาะจง (แต่ละไลน์คนละ activity rate จึงรวมเป็นเงินก้อนเดียวไม่ได้)'
+                  : `ไลน์ ${selLine} ยังไม่ตั้ง cost center หรือยังไม่มี activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate`}
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {rows.map((r, i) => {
                 const c = r.meta?.color || 'var(--muted)';
@@ -339,6 +373,7 @@ export default function OeeInsightPanel({ lines }) {
                       {r.meta?.oee && <span style={{ fontSize: 10.5, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
                       <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' }}>
                         {r.min.toLocaleString()} น. · {r.count} ครั้ง{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
+                        {perHr != null && <b style={{ color: '#fbbf24', marginLeft: 6 }}>{fmtB(baht(r.min))} บาท</b>}
                         {totalMin > 0 ? <span style={{ color: 'var(--muted)' }}> ({Math.round(r.min / totalMin * 100)}%)</span> : null}
                       </span>
                     </div>
@@ -346,7 +381,7 @@ export default function OeeInsightPanel({ lines }) {
                       <div style={{ width: `${Math.max(1, r.min / maxMin * 100)}%`, height: '100%', background: c }} />
                     </div>
                     <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-                      {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.`).join(' · ')}
+                      {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.${perHr != null ? ` (${fmtB(baht(t.min))}฿)` : ''}`).join(' · ')}
                       {r.types.length > 3 ? ` +${r.types.length - 3} ประเภท` : ''}
                       {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>💡 {r.meta.fix}</div> : null}
                     </div>

@@ -13,6 +13,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { sumDefectQty } from '../utils/oee';
+import { cachedMaster } from '../utils/masterCache';
+import { buildPnIndex, resolveMatNo, normMat } from '../utils/matResolve';
 import {
   effectWindow, splitBeforeAfter, judgeEffect, effectSummaryText,
   VERDICTS, DEFAULT_WINDOW, todayStr,
@@ -70,7 +72,25 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
   const [noTrial, setNoTrial] = useState(false);  // ยังไม่มีธงงานทดลองในฐาน = ตัวเลขรวม try-out ปนมา
   const [typesErr, setTypesErr] = useState(false);
   const [capped, setCapped] = useState(false);    // หน้าต่างเทียบยังเดินไม่ครบ = ผลระหว่างทาง
+  const [pnIdx, setPnIdx] = useState(null);       // p_no → mat SAP (จับคู่เลขลูกค้า ↔ เลขในใบงาน)
   const seqRef = useRef(0);                       // กันผลลัพธ์เก่ากลับมาทับผลใหม่ (ช่องไลน์/พาร์ทพิมพ์อิสระ)
+
+  /* ⚠️ capa.part_no มักเป็น "เลขลูกค้า" (RB3B 8C306 BB) แต่ใบงานเก็บ "เลข SAP" —
+     เทียบตรงๆ ไม่มีวันเจอกัน → ของเสียถูกกรองทิ้งเกือบหมดแบบเงียบ แล้ว verdict
+     ตัดสินจาก sample บิดเบี้ยว + stamp ถาวรเข้า KPI (QC audit 2026-08-20 · T2-9)
+     → resolve ผ่าน matResolve เสมอ (กฎเหล็ก CLAUDE.md) */
+  useEffect(() => {
+    (async () => {
+      const rows = await cachedMaster('pn_index:src', async () => {
+        const [{ data: dp }, { data: ks }] = await Promise.all([
+          supabaseDR.from('dr_products').select('mat_no, p_no').eq('is_active', true),
+          supabaseDR.from('kanban_standards').select('mat_no, p_no').eq('is_active', true),
+        ]);
+        return [...(dp || []), ...(ks || [])];
+      });
+      setPnIdx(buildPnIndex(rows || []));
+    })();
+  }, []);
 
   const pivot = capa.d6_effective_from || '';
   const win = Number(capa.eff_window_days) || DEFAULT_WINDOW;
@@ -123,37 +143,57 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
       const FULL = 'session_id, qty_ng, qty_suspect, is_trial, defect_type_id, prod_orders(mat_no), dr_defect_types(excl_from_q)';
       const SLIM = 'session_id, qty_ng, qty_suspect, defect_type_id, prod_orders(mat_no)';
       let sel = FULL, noTrialFlag = false, rows = [];
-      for (let i = 0; i < ids.length; i += 120) {           // .in() ยาวเกินไป proxy ตัด
-        const run = async (s) => {
-          let q = supabaseDR.from('defect_logs').select(s).in('session_id', ids.slice(i, i + 120));
+      // ⚠️ ต้องครบ 3 ชั้นตามกฎ: แบ่งก้อน id (120) + **แบ่งหน้า (1000)** + .order() คู่กับ .range()
+      //    เดิมมีแค่ชั้นแรก → 120 กะ × ของเสีย อาจเกิน 1000 แถวแล้วหายเงียบ
+      //    ⇒ ผลวัดประสิทธิผล 8D (IATF §10.2.4) ต่ำกว่าจริง แล้ว stamp ค้างไว้ในใบ
+      //    ใช้ลูปเองแทน fetchByIds เพราะต้องรองรับ fallback select ตอนคอลัมน์ธง trial ยังไม่ apply
+      const runChunk = async (chunk, s) => {
+        const out = [];
+        for (let pg = 0; pg < 60; pg++) {
+          let q = supabaseDR.from('defect_logs').select(s).in('session_id', chunk);
           if (capa.eff_defect_type_id) q = q.eq('defect_type_id', capa.eff_defect_type_id);
-          return q;
-        };
-        let { data: d, error: e2 } = await run(sel);
+          const { data, error } = await q.order('id').range(pg * 1000, (pg + 1) * 1000 - 1);
+          if (error) return { error };
+          out.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        return { data: out };
+      };
+      for (let i = 0; i < ids.length; i += 120) {           // .in() ยาวเกินไป proxy ตัด
+        const chunk = ids.slice(i, i + 120);
+        let { data: d, error: e2 } = await runChunk(chunk, sel);
         if (e2?.code === '42703' && sel === FULL) {
           sel = SLIM; noTrialFlag = true;
-          ({ data: d, error: e2 } = await run(SLIM));
+          ({ data: d, error: e2 } = await runChunk(chunk, SLIM));
         }
         if (e2) throw e2;
         rows = rows.concat(d || []);
       }
       if (!fresh()) return;
       setNoTrial(noTrialFlag); setCapped(w.capped);
-      // จำกัดเฉพาะพาร์ทของใบนี้ ถ้าระบุ (mat_no ของ dr_products ≠ part_no ลูกค้าเสมอไป → เทียบทั้ง 2 ทาง)
-      const pn = (capa.part_no || '').trim().toUpperCase().replace(/[\s-]/g, '');
-      const filtered = pn
-        ? rows.filter((r) => {
-          const m = (r.prod_orders?.mat_no || '').toUpperCase().replace(/[\s-]/g, '');
-          return !m || m === pn;   // ไม่รู้ mat = ไม่ตัดทิ้ง (ดีกว่าตัดของจริงหาย)
-        })
-        : rows;
-      setData({ m: splitBeforeAfter(sessions, filtered, pivot, (r) => sumDefectQty(r, 'line')), matched: filtered.length, raw: rows.length });
+      // จำกัดเฉพาะพาร์ทของใบนี้ ถ้าระบุ — resolve เลขลูกค้า → SAP ผ่าน matResolve (T2-9)
+      //   ambiguous = พาร์ทเดียวกันแยกหลายเลขตามปลายทางลูกค้า → นับรวมทุก candidate
+      //   (วัดของเสียที่ไลน์ ไม่ใช่ตัดสต็อก — กฎห้าม net ข้าม MAT ไม่เกี่ยวกับการวัดนี้)
+      const rawPn = (capa.part_no || '').trim();
+      let filtered = rows, pnRes = null;
+      if (rawPn) {
+        pnRes = resolveMatNo(rawPn, pnIdx || new Map());
+        const accept = new Set([normMat(rawPn), ...pnRes.candidates.map(normMat)].filter(Boolean));
+        filtered = rows.filter((r) => {
+          const mm = normMat(r.prod_orders?.mat_no);
+          return !mm || accept.has(mm);   // ไม่รู้ mat = ไม่ตัดทิ้ง (ดีกว่าตัดของจริงหาย)
+        });
+      }
+      setData({
+        m: splitBeforeAfter(sessions, filtered, pivot, (r) => sumDefectQty(r, 'line')),
+        matched: filtered.length, raw: rows.length, pnRes,
+      });
     } catch (e) {
       if (!fresh()) return;
       setErr(e?.message || String(e));
       setData(null);
     } finally { if (fresh()) setLoading(false); }
-  }, [pivot, win, capa.line_name, capa.part_no, capa.eff_defect_type_id, stamped]);
+  }, [pivot, win, capa.line_name, capa.part_no, capa.eff_defect_type_id, stamped, pnIdx]);
 
   /* debounce — ไม่งั้นยิง query ทุกตัวอักษรที่พิมพ์ในช่องไลน์/เลขพาร์ท */
   useEffect(() => { const t = setTimeout(load, 450); return () => clearTimeout(t); }, [load]);
@@ -261,6 +301,22 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
               </Note>
             )}
           </>
+        )}
+        {/* ความโปร่งใสของตัวกรองพาร์ท — ห้ามเงียบ (T2-9): บอกว่าจับคู่เลขได้ยังไง กรองเหลือกี่แถว */}
+        {!stamped && data && !data.empty && capa.part_no && (
+          data.matched === 0 && data.raw > 0 ? (
+            <Note tone="bad">
+              🔴 เลขพาร์ท <b>{capa.part_no}</b> จับคู่กับใบงานในไลน์นี้<b>ไม่ได้เลย</b> (ของเสียทั้งไลน์มี {data.raw} รายการ แต่ตรงพาร์ทนี้ 0)
+              — ตัวเลขที่ว่างอาจเป็นเพราะ<b>กุญแจไม่ตรง</b> ไม่ใช่ไม่มีของเสีย
+              {data.pnRes?.status === 'none' && <> · เลขนี้ยังไม่ตั้ง p_no ใน Product Master → ตั้งแล้วระบบจะจับคู่ให้</>}
+            </Note>
+          ) : data.matched < data.raw ? (
+            <Note>
+              ℹ️ กรองเฉพาะพาร์ท {capa.part_no}: นับ <b>{data.matched}</b> จากของเสียทั้งไลน์ {data.raw} รายการ
+              {data.pnRes?.status === 'ambiguous' && <> · เลขนี้จับคู่ MAT SAP ได้หลายตัว ({data.pnRes.candidates.join(', ')}) — นับรวมทุกตัว (พาร์ทเดียวกันแยกเลขตามปลายทาง)</>}
+              {data.pnRes?.status === 'mapped' && <> · จับคู่เป็นเลข SAP {data.pnRes.mat}</>}
+            </Note>
+          ) : null
         )}
         {capped && m && <Note>⏳ หน้าต่างเทียบ {win} วัน<b>ยังเดินไม่ครบ</b> — ผลนี้เป็นค่าระหว่างทาง จะนิ่งขึ้นเมื่อครบหน้าต่าง</Note>}
         {data?.empty && <Note tone="warn">⚠️ ไม่พบกะที่เปิดผลิตของไลน์ <b>{capa.line_name}</b> ในช่วงที่วัด — ตรวจว่าชื่อไลน์ตรงกับที่ใช้ใน Daily Report ไหม</Note>}

@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
+import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
@@ -14,33 +15,25 @@ import {
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
+import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
 import { pickUnusedColor } from '../utils/colorPick';
+import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
+import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
+import { teamKeyOf } from '../utils/mtnTeams';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
 const SkillRadarPanel = lazy(() => import('../components/SkillRadarPanel'));
 
 
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', quality);
-    };
-    img.src = url;
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+// ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
+//    in-app browser ของ LINE) ทำให้ Promise ค้างตลอดกาล — ปุ่มบันทึกหมุนไม่จบ ไม่มี error ไม่มี toast
+//    ตัวกลางลอง createImageBitmap ก่อน · revoke object URL ทุกทาง · โยน error ที่บอกวิธีแก้
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 /* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
    — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
@@ -137,11 +130,17 @@ export default function Operator() {
   const [inactiveEmployees, setInactiveEmployees] = useState([]);
   const [showInactive, setShowInactive] = useState(false);
   const [editingEmp, setEditingEmp] = useState(null);
+  // กางสกิลนอกขอบเขตในโมดัลแก้ไขพนักงาน (default ปิด — ดูหัวข้อ visibleSkillDefs)
+  const [showAllSkills, setShowAllSkills] = useState(false);
+  const [orgAllNodes, setOrgAllNodes] = useState([]);   // ผังทั้งก้อน — ใช้ไล่หาฝ่ายแบบตกทอด
+  const [divisionsReady, setDivisionsReady] = useState(0); // bump เมื่อ master ฝ่ายโหลดเสร็จ
+  // หน่วยงานที่เจาะจงได้ใต้ฝ่ายนั้น (ส่วนงาน + แผนกขึ้นตรงฝ่าย เช่น MTN/QA)
+  const sectionOptsForDivision = (div) => scopeUnitsForDivision(div, orgAllNodes);
   const [radarEmp, setRadarEmp] = useState(null);          // พนักงานที่กดดูการ์ดสรุปทักษะ (เหมือนหน้า Skill Matrix)
   const [subItemsByskill, setSubItemsByskill] = useState({}); // หัวข้อการพิจารณาต่อสกิล — ใช้ตอนพิมพ์ใบประเมินรายบุคคล
   const [empCropFile, setEmpCropFile] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_section: '', allowance_type: '' });
+  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' });
   const skillColorTouched = useRef(false); // ผู้ใช้เลือกสีเองแล้ว — อย่าสุ่มทับ
   // สกิลโหลดเสร็จ → เสนอสีที่ยังไม่ซ้ำเป็นค่าตั้งต้น (เฉพาะตอนผู้ใช้ยังไม่แตะช่องสี)
   useEffect(() => {
@@ -171,6 +170,7 @@ export default function Operator() {
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
+  const [mtnTeamRows,     setMtnTeamRows]     = useState(pmTeamsSync());  // ทีมช่างซ่อม (data-driven) — ช่อง 🔧 ในโมดัลแก้ไข
   const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
   useEffect(() => {
@@ -189,16 +189,30 @@ export default function Operator() {
         (data || []).forEach(r => { (map[r.skill_name] ||= []).push(r); });
         setSubItemsByskill(map);
       });
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
-      .then(({ data }) => {
+    const applyOrgNodes = (orgNodes) => {
+      setOrgAllNodes(orgNodes);
+      const secNodes = orgNodes.filter(n => n.kind === 'section');
+      setOrgSectionNodes(secNodes);
+      setOrgSectionOpts(secNodes.map(n => n.code || n.name));
+      setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
+      setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
+    };
+    // ⚠️ ต้อง select `division` ด้วย — ใช้ไล่หา "ฝ่าย" ของพนักงานแบบตกทอดจาก node แม่
+    //    (คอลัมน์ใหม่ 2026-08-18 · ถ้ายังไม่ apply migration จะได้ undefined = ทุกสกิลเป็นของทุกฝ่าย
+    //     ซึ่งคือพฤติกรรมเดิมเป๊ะ ไม่พัง)
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division').eq('is_active', true).order('sort_order')
+      .then(({ data, error }) => {
         if (!alive) return;
-        const orgNodes = data || [];
-        const secNodes = orgNodes.filter(n => n.kind === 'section');
-        setOrgSectionNodes(secNodes);
-        setOrgSectionOpts(secNodes.map(n => n.code || n.name));
-        setOrgDeptNodes(orgNodes.filter(n => n.kind === 'department'));
-        setOrgLineNodes(orgNodes.filter(n => n.kind === 'line'));
+        // คอลัมน์ division ยังไม่มี (42703) → ถอยไป select ชุดเดิม อย่าให้ทั้งหน้าพัง
+        if (error) {
+          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
+            .then(({ data: d2 }) => { if (alive) applyOrgNodes(d2 || []); });
+          return;
+        }
+        applyOrgNodes(data || []);
       });
+    loadDivisions().then(() => { if (alive) setDivisionsReady(v => v + 1); });
+    loadPmTeams().then(rows => { if (alive) setMtnTeamRows(rows || []); });
     if (isLeader && userLineId) {
       supabase.from('production_lines').select('name').eq('id', userLineId).single()
         .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
@@ -246,7 +260,9 @@ export default function Operator() {
       }
       let fileToUpload = luDocFile;
       if (luDocFile.type.startsWith('image/')) {
-        fileToUpload = await resizeImage(luDocFile);
+        // resizeImage โยน error เมื่อ decode ไม่ได้ — ต้องรับเอง ไม่งั้นปุ่มค้างหมุนแบบไม่มีข้อความ
+        try { fileToUpload = await resizeImage(luDocFile); }
+        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsReviewing(false); return; }
       }
       const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
       const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
@@ -417,6 +433,24 @@ export default function Operator() {
       }).eq('id', editingEmp.id);
       if (error) throw error;
 
+      /* 🔧 ทีมช่างซ่อม — เขียนแยก best-effort เพราะคอลัมน์อาจยังไม่ apply migration
+         ⚠️ ห้ามยัดลง payload ก้อนบน: ไม่มีคอลัมน์ = 42703 = **บันทึกพนักงานพังทั้งใบ**
+         ⚠️ และห้ามใช้ try/catch เปล่า — supabase-js "คืน" error ไม่ throw (กฎเหล็ก CLAUDE.md)
+            ต้องอ่าน error จริงแล้วบอกผู้ใช้ ห้ามเงียบ */
+      {
+        const nextTeam = editingEmp.mtn_team || null;
+        const prevTeam = employees.find(e => e.id === editingEmp.id)?.mtn_team ?? null;
+        if (nextTeam !== prevTeam) {
+          const { error: mtErr } = await supabase.from('employees')
+            .update({ mtn_team: nextTeam }).eq('id', editingEmp.id);
+          if (mtErr) {
+            toast.error(mtErr.code === '42703'
+              ? 'บันทึกข้อมูลพนักงานแล้ว แต่ยังตั้ง “ทีมช่างซ่อม” ไม่ได้ — ยังไม่ได้ apply migration 20260821_production_technician_setup (แจ้ง admin)'
+              : 'บันทึกข้อมูลพนักงานแล้ว แต่ตั้งทีมช่างซ่อมไม่ได้: ' + mtErr.message);
+          }
+        }
+      }
+
       // เปลี่ยนรูปสำเร็จแล้วค่อยลบไฟล์รูปเดิมทิ้ง — ไฟล์ใหม่ได้ชื่อใหม่เสมอ (emp_<timestamp>)
       // ถ้าไม่ลบ ไฟล์เก่าจะกองเป็นขยะใน storage (เคยสะสมกว่า 100MB) · fire-and-forget ลบพลาดไม่ต้อง error
       if (editingEmp.newPhoto && editingEmp.image_url?.includes('/employee-photos/')) {
@@ -501,12 +535,13 @@ export default function Operator() {
       label: lbl,
       color: newSkill.color,
       category: newSkill.category,
+      scope_division: newSkill.scope_division || null,
       scope_section: newSkill.scope_section.trim() || null,
       allowance_type: newSkill.category === 'allowance_skill' ? (newSkill.allowance_type || null) : null,
       sort_order: skillDefs.length + 1,
     }]);
     if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
-    else { skillColorTouched.current = false; setNewSkill({ label: '', color: pickUnusedColor([...skillDefs.map(d => d.color), newSkill.color]), category: 'hard_skill', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
+    else { skillColorTouched.current = false; setNewSkill({ label: '', color: pickUnusedColor([...skillDefs.map(d => d.color), newSkill.color]), category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' }); fetchSkillDefs(); }
     setIsAddingSkill(false);
   };
 
@@ -530,6 +565,7 @@ export default function Operator() {
       label:          editingSkill.label.trim(),
       color:          editingSkill.color,
       category:       editingSkill.category,
+      scope_division: editingSkill.scope_division || null,
       scope_section:  editingSkill.scope_section || null,
       allowance_type: editingSkill.category === 'allowance_skill' ? (editingSkill.allowance_type || null) : null,
     }).eq('id', editingSkill.id);
@@ -916,7 +952,7 @@ export default function Operator() {
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
                       <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {sd.label}</div>
-                      {sd.scope_section && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{sd.scope_section}</div>}
+                      {(sd.scope_division || sd.scope_section) && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{skillScopeLabel(sd)}</div>}
                     </th>
                   ))}
                   <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
@@ -1106,9 +1142,9 @@ export default function Operator() {
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 700, fontSize: 13 }}>{sd.label}</div>
                           <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
-                            {sd.scope_section && (
+                            {(sd.scope_division || sd.scope_section) && (
                               <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
-                                📍 {sd.scope_section}
+                                📍 {skillScopeLabel(sd)}
                               </span>
                             )}
                             {sd.allowance_type && (
@@ -1126,7 +1162,7 @@ export default function Operator() {
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>📝</button>
                         )}
                         {can('skills', 'edit', role) && (
-                          <button onClick={() => setEditingSkill({ ...sd, scope_section: sd.scope_section || '' })}
+                          <button onClick={() => setEditingSkill({ ...sd, scope_division: sd.scope_division || '', scope_section: sd.scope_section || '' })}
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
                         {can('skills', 'delete', role) && (
@@ -1159,10 +1195,22 @@ export default function Operator() {
                   </select>
                 </div>
                 <div>
-                  <label style={labelSt}>ส่วนงาน (ถ้าจำเพาะ)</label>
-                  <select value={newSkill.scope_section} onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })}>
-                    <option value="">— ทุกส่วนงาน —</option>
-                    {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                  <label style={labelSt}>ฝ่ายที่ใช้สกิลนี้</label>
+                  {/* เปลี่ยนฝ่าย = ล้างส่วนงานที่เลือกไว้ (กฎ cascade UI-CONVENTIONS §5.3) */}
+                  <select value={newSkill.scope_division}
+                    onChange={e => setNewSkill({ ...newSkill, scope_division: e.target.value, scope_section: '' })}>
+                    <option value="">— ทุกฝ่าย (สกิลกลาง) —</option>
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelSt}>เจาะจงส่วนงาน (ถ้ามี)</label>
+                  <select value={newSkill.scope_section}
+                    disabled={!newSkill.scope_division}
+                    title={!newSkill.scope_division ? 'เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้' : undefined}
+                    onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })}>
+                    <option value="">— ทั้งฝ่าย —</option>
+                    {sectionOptsForDivision(newSkill.scope_division).map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 {newSkill.category === 'allowance_skill' && (
@@ -1230,11 +1278,21 @@ export default function Operator() {
                       </select>
                     </div>
                     <div>
-                      <label style={labelSt}>ส่วนงาน</label>
+                      <label style={labelSt}>ฝ่ายที่ใช้สกิลนี้</label>
+                      <select value={editingSkill.scope_division || ''}
+                        onChange={e => setEditingSkill({ ...editingSkill, scope_division: e.target.value, scope_section: '' })}>
+                        <option value="">— ทุกฝ่าย (สกิลกลาง) —</option>
+                        {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelSt}>เจาะจงส่วนงาน (ถ้ามี)</label>
                       <select value={editingSkill.scope_section || ''}
+                        disabled={!editingSkill.scope_division}
+                        title={!editingSkill.scope_division ? 'เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้' : undefined}
                         onChange={e => setEditingSkill({ ...editingSkill, scope_section: e.target.value })}>
-                        <option value="">— ทุกส่วนงาน —</option>
-                        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                        <option value="">— ทั้งฝ่าย —</option>
+                        {sectionOptsForDivision(editingSkill.scope_division).map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     {editingSkill.category === 'allowance_skill' && (
@@ -1494,6 +1552,13 @@ export default function Operator() {
                             หน่วยงานขึ้นตรงฝ่าย — ไม่มี Section · Group/Line เว้นว่างได้
                           </div>
                         )}
+                        {/* ส่วนงานที่ยังไม่มีแผนกในผัง = แก้ผ่านฟอร์มไม่ได้ ต้องบอกให้ชัด ห้ามปล่อยว่างเงียบ
+                            (กฎเดิมในหัวข้อ "บาง section แก้ผ่านฟอร์มไม่ได้" — เดิมมีแค่แถบรวมด้านบน ไม่ได้บอกตรงช่อง) */}
+                        {empSection && empSection !== ORPHAN_SECTION && deptOpts.length === 0 && (
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                            ⚠️ ส่วนงาน <b>{empSection}</b> ยังไม่มีแผนกในผังองค์กร — เพิ่มที่ <b>/org-setup</b> ก่อนถึงจะเลือกได้
+                          </div>
+                        )}
                       </>
                     );
                   })()}
@@ -1507,12 +1572,44 @@ export default function Operator() {
 
               <div>
                 <label style={labelSt}>Team / กะ</label>
-                <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
-                  <option value="">— เลือก —</option>
-                  <option value="A">Team A (กะเช้า)</option>
-                  <option value="B">Team B (กะดึก)</option>
-                  <option value="C">Team C (ไม่มีพันธะกะ)</option>
+                {/* ⚠️ ห้ามเขียน "Team A (กะเช้า)" — A/B หมุนสลับกันรายสัปดาห์ตามตารางกะ
+                    ป้ายกำกับมาจาก teamLabel() (shiftAssign.js) ที่เดียว · ลิสต์ทีมดึงจากผังองค์กร
+                    (org_nodes kind='team' เหมือน /register) ผังยังไม่มีทีม = ถอยไป A/B/C เดิม */}
+                {(() => {
+                  const orgTeams = [...new Set(orgAllNodes.filter(n => n.kind === 'team').map(n => n.code || n.name).filter(Boolean))];
+                  const opts = orgTeams.length ? orgTeams : ['A', 'B', 'C'];
+                  // ค่าเดิมของพนักงานที่ไม่มีในลิสต์ ต้องยังโชว์ได้ ไม่งั้นเปิดแก้ไขแล้วทีมหายเงียบ
+                  const cur = editingEmp.team;
+                  const all = cur && !opts.includes(cur) ? [cur, ...opts] : opts;
+                  return (
+                    <select value={editingEmp.team || ''} onChange={e => setEditingEmp({ ...editingEmp, team: e.target.value })}>
+                      <option value="">— เลือก —</option>
+                      {all.map(t => <option key={t} value={t}>{teamLabel(t)}</option>)}
+                    </select>
+                  );
+                })()}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>
+                  A/B สลับเช้า-ดึกรายสัปดาห์ — ดู/ตั้งรอบหมุนที่ <Link to="/shift-organize" style={{ color: 'var(--accent)' }}>ตารางกะ</Link>
+                </div>
+              </div>
+
+              {/* 🔧 ทีมช่างซ่อม — ทำให้คนนี้ "เลือกได้" ในช่องมอบหมายช่างของใบซ่อม MO ขั้น 2
+                  จำเป็นกับ **ช่างฝ่ายผลิต** โดยเฉพาะ: ระบบเดาทีมจากชื่อแผนกได้แค่ JIG/DIE/MTN
+                  ส่วนงานผลิตมีหลายชื่อ (PD1/PD2/GOR…) เดาเหมาจะไปโดน QA/ธุรการด้วย
+                  → ต้องติ๊กเอง ไม่งั้นช่างฝ่ายผลิตไม่มีวันโผล่ในลิสต์ (feedback 2026-08-21) */}
+              <div>
+                <label style={labelSt}>🔧 ทีมช่างซ่อม (เฉพาะคนที่เป็นช่าง)</label>
+                <select value={teamKeyOf(editingEmp.mtn_team) || ''}
+                  onChange={e => setEditingEmp({ ...editingEmp, mtn_team: e.target.value || null })}>
+                  <option value="">— ไม่ใช่ช่าง —</option>
+                  {(mtnTeamRows.length ? mtnTeamRows : DEFAULT_TEAMS).map(t => (
+                    <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || t.label || t.key}</option>
+                  ))}
                 </select>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                  ตั้งแล้วชื่อจะขึ้นให้เลือกในช่อง “มอบหมายช่างซ่อม” ของใบแจ้งซ่อม (ขั้นที่ 2)
+                  {' '}· ช่างฝ่ายผลิตเลือก <b>AM (ผลิตตรวจเอง)</b>
+                </div>
               </div>
               <div>
                 <label style={labelSt}>Group / กลุ่ม (Line)</label>
@@ -1589,11 +1686,58 @@ export default function Operator() {
                   </div>
                 )}
                 {(() => {
+                  // ── กรองสกิลที่ไม่เกี่ยวกับส่วนงานของพนักงานคนนี้ (2026-08-18 · คำสั่ง user) ──
+                  //   `skill_definitions.scope_section` ว่าง = สกิลกลาง ใช้ได้ทุกส่วน
+                  //   มีค่า (PD3/PD4/…) = ของส่วนงานนั้นโดยเฉพาะ
+                  //   เคสจริงที่ทำให้ต้องกรอง: ช่างแผนก MTN เปิดมาเจอสกิลฝ่ายผลิต 29 ตัว
+                  //   ขึ้น "ไม่เกี่ยวข้อง" เรียงยาวจนหาของตัวเองไม่เจอ (44 → เหลือ 15)
+                  // ⚠️ ห้ามซ่อนเงียบ — สกิลที่พนักงาน "มีอยู่แล้ว" ต้องโชว์เสมอแม้นอกส่วนงาน
+                  //   (ไม่งั้นข้อมูลที่มีอยู่จะมองไม่เห็น/แก้ไม่ได้) + มีปุ่มกางดูของที่ซ่อน พร้อมบอกจำนวน
+                  const empSec = editingEmp.section || null;
+                  const empDiv = divisionOfEmployee(editingEmp, orgAllNodes);
+                  const isOwned = (sd) => !!editingEmp.skillEnabled?.[sd.name]
+                    || (editingEmp.employee_skills || []).some(s => s.skill_name === sd.name);
+                  const visibleSkillDefs = showAllSkills
+                    ? skillDefs
+                    : skillDefs.filter(sd => skillInScope(sd, { division: empDiv, section: empSec, department: editingEmp.department }) || isOwned(sd));
+                  const hiddenCount = skillDefs.length - visibleSkillDefs.length;
+                  const empDivLabel = empDiv
+                    ? (divisionsSync().find(d => d.code === empDiv)?.label || empDiv)
+                    : null;
+
                   // ในโมดัลแก้ไขพนักงานโชว์แค่ชื่อหมวด (ไม่เอา desc — พื้นที่แน่นอยู่แล้ว)
                   const grouped = Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => ({
-                    key: k, ...m, desc: null, skills: skillDefs.filter(sd => (sd.category || 'hard_skill') === k),
+                    key: k, ...m, desc: null, skills: visibleSkillDefs.filter(sd => (sd.category || 'hard_skill') === k),
                   })).filter(g => g.skills.length > 0);
-                  return grouped.map(g => (
+                  const scopeBar = (hiddenCount > 0 || showAllSkills) ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      <span>
+                        {showAllSkills
+                          ? `แสดงทุกสกิล (${skillDefs.length})`
+                          : `แสดงสกิลของ ${empDivLabel || 'ยังไม่ได้ติดป้ายฝ่าย'}${empSec ? ` · ${empSec}` : ''} + สกิลกลาง (${visibleSkillDefs.length}/${skillDefs.length})`}
+                      </span>
+                      {!empDiv && !showAllSkills && (
+                        <span style={{ color: '#f59e0b' }} title="ไปติดป้ายฝ่ายให้ส่วนงาน/แผนกนี้ที่หน้าผังองค์กร">
+                          ⚠️ ส่วนงานนี้ยังไม่ได้ติดป้ายฝ่าย — เห็นเฉพาะสกิลกลาง
+                        </span>
+                      )}
+                      {hiddenCount > 0 && !showAllSkills && (
+                        <button type="button" onClick={() => setShowAllSkills(true)}
+                          style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
+                          + แสดงสกิลนอกส่วนงาน ({hiddenCount})
+                        </button>
+                      )}
+                      {showAllSkills && (
+                        <button type="button" onClick={() => setShowAllSkills(false)}
+                          style={{ width: 'auto', fontSize: 11, padding: '2px 8px', cursor: 'pointer' }}>
+                          ซ่อนสกิลนอกส่วนงาน
+                        </button>
+                      )}
+                    </div>
+                  ) : null;
+                  return (<>
+                  {scopeBar}
+                  {grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
                       <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
@@ -1628,7 +1772,7 @@ export default function Operator() {
                                   style={{ width: 14, height: 14, cursor: rowEditable ? 'pointer' : 'default' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {sd.label}
-                                  {sd.scope_section && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {sd.scope_section}</span>}
+                                  {(sd.scope_division || sd.scope_section) && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {skillScopeLabel(sd)}</span>}
                                 </span>
                                 {enabled && lv && (
                                   <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
@@ -1675,7 +1819,8 @@ export default function Operator() {
                         })}
                       </div>
                     </div>
-                  ));
+                  ))}
+                  </>);
                 })()}
 
                 {editingEmp.id && <SkillEditHistory employeeId={editingEmp.id} />}

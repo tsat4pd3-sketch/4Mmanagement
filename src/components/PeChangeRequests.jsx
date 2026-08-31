@@ -16,6 +16,8 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import { suggestChanges, matchDocSet, LEG_META, CR_STATUS, DOC_LABEL } from '../utils/peLink';
+import { todayLocal as localToday } from '../utils/dateFormat';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' };
@@ -167,6 +169,15 @@ export default function PeChangeRequests({
     const { error } = await supabase.from('pe_change_requests').insert(payload);
     setBusy(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'pe_change_request', type: 'info', ref_table: 'pe_change_requests', actor: fullName,
+      lines: [
+        `📐 คำขอแก้เอกสาร ${chosen.length} รายการ`,
+        `🔗 ที่มา: ${source.label || source.kind}`,
+        ...chosen.slice(0, 4).map((x) => `  • ${String(x.doc_type).toUpperCase()} — ${String(x.proposal).slice(0, 90)}`),
+        chosen.length > 4 ? `  • …และอีก ${chosen.length - 4} รายการ` : '',
+      ],
+    });
     toast.success(`ส่งคำขอแก้เอกสาร ${chosen.length} รายการให้ทีม PE แล้ว`);
     setSugs(null); load();
   };
@@ -183,6 +194,14 @@ export default function PeChangeRequests({
     });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'pe_change_request', type: 'info', ref_table: 'pe_change_requests', actor: fullName,
+      lines: [
+        `📐 คำขอแก้ ${String(manual.doc_type).toUpperCase()}`,
+        `🔗 ที่มา: ${source.label || source.kind}`,
+        `📝 ${manual.proposal.trim().slice(0, 300)}`,
+      ],
+    });
     toast.success('เพิ่มคำขอแล้ว'); setManual(null); load();
   };
 
@@ -222,8 +241,8 @@ export default function PeChangeRequests({
     setApplyFor(null); load();
   };
 
-  /* วันที่ revision ใช้วันที่เครื่อง (local) — toISOString() เป็น UTC เพี้ยนช่วงเช้ามืด */
-  const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  /* วันที่ revision ใช้วันที่เครื่อง (local) — ตัวกลาง utils/dateFormat.todayLocal
+     (เดิมเขียนเองที่นี่ แล้ว PEDocs ซึ่งเขียนคอลัมน์ rev_date เดียวกันใช้ UTC = คนละกติกา) */
   const openApply = (cr) => setApplyFor({
     cr, rev_no: '', rev_date: localToday(),
     content: cr.proposal.split('\n')[0].replace(/^🔴\s*/, '').slice(0, 200),
@@ -323,7 +342,7 @@ export default function PeChangeRequests({
 
       {/* ออก revision */}
       {applyFor && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: 16 }} onClick={() => setApplyFor(null)}>
+        <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, width: 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>✅ ออก revision — {DOC_LABEL[applyFor.cr.doc_type]}</h3>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>

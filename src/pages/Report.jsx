@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
+import resizeImg from '../utils/resizeImage';
 // recharts ไม่ต้อง import ที่นี่แล้ว — radar ย้ายไปอยู่ใน SkillRadarPanel (2026-08-06)
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
@@ -23,6 +25,7 @@ import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/chan
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import LineSelect from '../components/LineSelect';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -40,25 +43,11 @@ function useWidth() {
   return w;
 }
 
-function resizeImage(file, maxPx = 1280, quality = 0.85) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const { width: w, height: h } = img;
-      const scale = Math.min(1, maxPx / Math.max(w, h));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(w * scale);
-      canvas.height = Math.round(h * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(blob => resolve(blob ? new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }) : null), 'image/jpeg', quality);
-    };
-    // ไฟล์เสีย/ฟอร์แมตไม่รองรับ (เช่น HEIC) — ต้อง resolve(null) ไม่งั้น await ค้างถาวร ปุ่มบันทึกแขวน
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-    img.src = url;
-  });
-}
+// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
+// ก๊อปเดิมที่นี่มี onerror แล้ว (ไม่ค้างเหมือนของ Management/operator) แต่ยังเป็นสำเนาที่ 3
+// ของ logic เดียวกัน — ตัวกลางลอง createImageBitmap ก่อน (รองรับฟอร์แมตกว้างกว่า) และ
+// **โยน error พร้อมวิธีแก้** แทนการคืน null เฉยๆ → ผู้เรียกต้อง try/catch
+const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxPx, quality);
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -214,6 +203,7 @@ export default function Report({ mode = 'report' }) {
         tabs={tabIdxs.map(i => ({ key: String(i), label: TABS[i] }))}
         tab={String(activeTab)} onTab={setTabStr}
       />
+      <ExportNote />
       {activeTab === 0 && <DailyTab />}
       {activeTab === 1 && <PerEmployeeTab />}
       {activeTab === 2 && <StationLogTab />}
@@ -226,6 +216,16 @@ export default function Report({ mode = 'report' }) {
       {activeTab === 9 && <OtTransportBookingTab autoOpenMaster={autoOpenMaster} />}
     </div>
   );
+}
+
+/* ⚠️ `report:export` seed ไว้ตั้งแต่ 2026-07-08 = "ทุก role ณ ตอนนั้น" (7 role)
+   role ที่เพิ่มทีหลัง (mtn / engineer / planner_store / dept_admin) ไม่มีแถว = fail-closed
+   → เปิดหน้ารายงานได้ แต่ปุ่ม CSV/พิมพ์หายทุกแท็บ **โดยหน้าจอไม่บอกอะไรเลย** */
+function ExportNote() {
+  const { role } = useContext(UserContext);
+  return <ReadOnlyNote show={!can('report', 'export', role)} role={role}
+    what="ส่งออก/พิมพ์รายงาน" permKey="report:export"
+    hint="ดูตัวเลขบนหน้าจอได้ตามปกติ — ที่ปิดคือปุ่ม CSV / Excel / พิมพ์" />;
 }
 
 function OtTransportBookingTab({ autoOpenMaster }) {
@@ -1068,7 +1068,7 @@ function StationLogTab() {
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, shift, employees(name, employee_id_code, image_url, team, section)')
       .eq('assigned_line', selectedStation)
       .gte('work_date', from).lte('work_date', to)
-      .order('work_date', { ascending: false }));
+      .order('work_date', { ascending: false }).order('id'));   // .order('id') = ตัวตัดสินให้ลำดับ unique
     setRows(data);
     setLoading(false);
   };
@@ -1249,7 +1249,7 @@ function RangeTab() {
     setLoading(true);
     const data = await fetchAllRows(() => supabase.from('daily_production_logs')
       .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
-      .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id'));
+      .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id').order('id'));
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
     const scoped = (data || []).filter(l => {
       if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
@@ -1542,8 +1542,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       let qa_image_url = null;
       if (qaImageFile) {
-        const resized = await resizeImage(qaImageFile);
-        if (!resized) { toast.error('อ่านไฟล์รูปไม่สำเร็จ — ลองใช้ JPG/PNG'); return; }
+        let resized;
+        try { resized = await resizeImage(qaImageFile); }
+        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่สำเร็จ — ลองใช้ JPG/PNG'); return; }
         const path = `qa/${Date.now()}_${user.id}.jpg`;
         const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
         if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }
@@ -2305,10 +2306,8 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
           {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       )}
-      <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={selSt}>
-        <option value="">ทุกไลน์</option>
-        {visibleLines.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-      </select>
+      <LineSelect lines={visibleLines} value={filterLine} valueKey="id"
+        placeholder="ทุกไลน์" style={selSt} onChange={setFilterLine} />
       <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={selSt}>
         <option value="">ทุก Team</option>
         <option value="A">Team A</option>
@@ -3396,7 +3395,7 @@ function SkillAllowanceTab() {
       .eq('has_boots', true)
       .eq('has_gloves', true)
       .in('assigned_line', stationIds)
-      .order('work_date').order('employee_id'));
+      .order('work_date').order('employee_id').order('id'));
 
     // group by employee, แยกตามกะ (day=กะ01 / night=กะ02)
     const empMap = {};

@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { notifyEvent } from '../utils/notifyEvent';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -50,7 +54,8 @@ const parseCallQr = (text) => {
 };
 
 export default function RackCenter() {
-  const { fullName, role } = useContext(UserContext);
+  const { fullName, role, lineId, sections } = useContext(UserContext);
+  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
   const canOperate = can('rack_center', 'operate', role);
 
   const [lines,          setLines]          = useState([]);
@@ -76,7 +81,8 @@ export default function RackCenter() {
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
-      supabase.from('production_lines').select('name').order('name'),
+      // ⚠️ select ให้ครบ — ขาด parent_line_name/section/is_active = dropdown ไม่มีลำดับชั้น/ไม่กรอง scope
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
@@ -112,7 +118,7 @@ export default function RackCenter() {
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
   useEffect(() => {
-    const ch = supabaseDR.channel('rack-requests-live')
+    const ch = liveChannel(supabaseDR, 'rack-requests-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rack_requests' }, load)
       .subscribe();
     return () => { supabaseDR.removeChannel(ch); };
@@ -146,9 +152,15 @@ export default function RackCenter() {
   }, [lines, containerTypes]);
 
   // deep-link จาก QR ที่สแกนด้วยกล้องมือถือ: /rack-center?line=..&ctype=.. → เปิดฟอร์มให้เลย
+  // ⚠️ ต้อง guard สิทธิ์ค่าจาก URL ด้วย ไม่ใช่แค่ซ่อนปุ่ม (กฎ useTabParam-guard) — คนแปะลิงก์ให้กันได้
   useEffect(() => {
     const line = searchParams.get('line'), ctype = searchParams.get('ctype');
     if (!line || !ctype || !lines.length || !containerTypes.length) return;
+    if (!canOperate) {
+      toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate) — ให้ผู้มีสิทธิ์เป็นคนสแกน');
+      setSearchParams({}, { replace: true });
+      return;
+    }
     applyScan({ line, ctype, qty: searchParams.get('qty') || '1' });
     setSearchParams({}, { replace: true });   // ล้าง param กันเปิดซ้ำตอน refresh
   }, [lines, containerTypes]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -189,6 +201,7 @@ export default function RackCenter() {
   };
 
   const handleRequest = async () => {
+    if (!canOperate) { toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate)'); return; }
     if (!form.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
     if (!form.container_type_id) { toast.error('เลือกชนิดภาชนะ'); return; }
     const qty = parseInt(form.qty) || 0;
@@ -205,6 +218,15 @@ export default function RackCenter() {
     });
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    notifyEvent({
+      event: 'rack_request', type: 'info', ref_table: 'rack_requests',
+      line_name: form.line_name, actor: fullName,
+      lines: [
+        `🏭 ไลน์: ${form.line_name}`,
+        `📦 ${ctype?.name || '—'} · ${qty} ใบ`,
+        form.note.trim() ? `📝 ${form.note.trim()}` : '',
+      ],
+    });
     toast.success('🔔 เรียกภาชนะแล้ว — รอ Rack Center เตรียม');
     setShowForm(false);
     setForm(EMPTY_FORM);
@@ -240,10 +262,14 @@ export default function RackCenter() {
 
   return (
     <div style={{ padding: 'clamp(12px,2vw,24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+      {/* ⚠️ rack_center:operate seed ไว้ตั้งแต่ 2026-07-08 (ก่อนมี role mtn/engineer/planner_store/dept_admin)
+          → role ที่เพิ่มทีหลังเปิดหน้านี้ได้แต่เรียกภาชนะไม่ได้ ต้องบอกให้ชัด */}
+      <ReadOnlyNote show={!canOperate} role={role} what="เรียกภาชนะ/รับงาน"
+        permKey="rack_center:operate" />
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,2.5vw,24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🗃️ Rack Center — เรียกภาชนะ
+            🗃️ ภาชนะ &amp; Packaging — เรียกภาชนะ
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ
@@ -257,10 +283,8 @@ export default function RackCenter() {
                 border: `1px solid ${view === v.id ? 'var(--accent)' : 'var(--border)'}` }}>{v.label}</button>
           ))}
           <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 160 }}>
-            <option value="">ทุกไลน์</option>
-            {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+            placeholder="ทุกไลน์" style={{ ...inputSt, width: 160 }} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
             แสดงที่รับแล้ว
@@ -491,10 +515,8 @@ export default function RackCenter() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์การผลิต *</label>
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
-                  <option value="">เลือกไลน์...</option>
-                  {lines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-                </select>
+                <LineSelect lines={lines} value={form.line_name} {...scope} style={inputSt}
+                  placeholder="เลือกไลน์..." onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชนิดภาชนะ *</label>
@@ -587,7 +609,7 @@ function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
     background: on ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)',
     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}` });
   return (
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🏷️ พิมพ์ป้าย QR เรียกภาชนะ</span>

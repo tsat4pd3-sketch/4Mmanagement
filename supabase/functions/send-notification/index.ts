@@ -129,7 +129,9 @@ async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: str
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption, parse_mode: 'HTML' }),
-    }).catch(() => {}),
+      // รูปเป็นของแนบ best-effort (ข้อความหลักส่งแยกไปแล้ว) — พลาดได้ แต่ห้ามเงียบสนิท
+    }).then((r) => { if (!r.ok) console.error('[sendPhoto] HTTP', r.status, photoUrl); },
+            (e) => console.error('[sendPhoto]', String(e), photoUrl)),
   ));
 }
 
@@ -148,7 +150,9 @@ async function sendTelegramMediaGroup(photos: { url: string; caption: string }[]
           ...(i === 0 ? { caption: p.caption, parse_mode: 'HTML' } : {}),
         })),
       }),
-    }).catch(() => {}),
+      // เช่นเดียวกับ sendPhoto — พลาดได้ แต่ต้องเห็นใน edge log
+    }).then((r) => { if (!r.ok) console.error('[sendMediaGroup] HTTP', r.status); },
+            (e) => console.error('[sendMediaGroup]', String(e))),
   ));
 }
 
@@ -214,17 +218,54 @@ async function headsForLine(lineName: string | undefined): Promise<string[]> {
   }
   return ids;
 }
-// ผู้รับแจ้งเตือน "เครื่องหยุด" (urgent): ทีมช่างทั้งหมด + หัวหน้าของ section ไลน์นั้น
-async function recipientsForDowntime(lineName?: string): Promise<string[]> {
-  const [mtn, heads] = await Promise.all([usersByRole(['mtn']), headsForLine(lineName)]);
-  return [...mtn, ...heads];
+// หา section ของไลน์ (ไลน์ลูกไม่ได้ตั้ง section → ตกทอดจากไลน์แม่ ตามกฎ hierarchy ของโปรเจค)
+async function sectionOfLine(lineName?: string | null): Promise<string | null> {
+  if (!lineName) return null;
+  try {
+    const { data } = await supabase.from('production_lines')
+      .select('section, parent_line_name').eq('name', lineName).maybeSingle();
+    if (data?.section) return String(data.section);
+    if (data?.parent_line_name) {
+      const { data: p } = await supabase.from('production_lines')
+        .select('section').eq('name', data.parent_line_name).maybeSingle();
+      return p?.section ? String(p.section) : null;
+    }
+  } catch { /* หาไม่เจอ = ไม่กรอง ดีกว่าเงียบ */ }
+  return null;
 }
-// แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ role ที่ผูกไว้กับเรื่องนี้ในหน้า /notification-config (notification_rules.inapp_roles)
-// data-driven: admin ตั้ง role ผู้รับต่อเรื่องเองได้ ไม่ต้องแก้โค้ด · body = ข้อความ Telegram ที่ตัด HTML แล้ว
-async function notifyInApp(routes: Record<string, Route>, event: string, htmlMessage: string, type = 'info') {
-  const roles = routes[event]?.inappRoles ?? [];
-  if (!roles.length) return;
-  const users = await usersByRole(roles);
+// ผู้รับแจ้งเตือน "เครื่องหยุด" (urgent): ทีมช่างทั้งหมด + หัวหน้าของ section ไลน์นั้น
+//   + ผู้รับที่ admin ตั้งไว้ในทะเบียน (role × ส่วนงาน × แผนก) — ปรับเพิ่มได้จาก /notification-config
+// ⚠️ 2 ก้อนแรกเป็น "พื้นฐานที่ต้องได้เสมอ" ห้ามถอด (เครื่องหยุดคือเรื่องด่วน ตั้งค่าพลาดแล้วเงียบไม่ได้)
+async function recipientsForDowntime(lineName: string | undefined, event: string): Promise<string[]> {
+  const [mtn, heads] = await Promise.all([usersByRole(['mtn']), headsForLine(lineName)]);
+  let extra: string[] = [];
+  try {
+    const { data } = await supabase.rpc('notify_recipients', { p_event: event, p_section: await sectionOfLine(lineName) });
+    extra = (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  } catch (e) { console.error('notify_recipients downtime', e); }
+  return [...mtn, ...heads, ...extra];
+}
+// แจ้งในแอป (กระดิ่ง+เสียง+push) ตามที่ตั้งไว้ในหน้า /notification-config
+// ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
+//    **ห้ามกลับไปกรองด้วย role อย่างเดียวในไฟล์นี้** — Telegram กับในแอปต้องอ้างกติกาแถวเดียวกัน
+// ctx.line_name / ctx.section = ส่วนงานของเหตุการณ์ ใช้กับตัวเลือก "แจ้งเฉพาะส่วนงานที่เกิดเหตุ"
+async function notifyInApp(
+  routes: Record<string, Route>, event: string, htmlMessage: string, type = 'info',
+  ctx?: { line_name?: string | null; section?: string | null },
+) {
+  if (!(routes[event]?.inappRoles ?? []).length) return;    // ไม่ตั้ง role = ไม่แจ้งในแอป (เลี่ยง query เปล่า)
+  const section = ctx?.section ?? await sectionOfLine(ctx?.line_name);
+  let users: string[] = [];
+  try {
+    const { data, error } = await supabase.rpc('notify_recipients', { p_event: event, p_section: section });
+    if (error) throw error;
+    users = (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  } catch (e) {
+    console.error('notify_recipients', e);
+    users = await usersByRole(routes[event]?.inappRoles ?? []);   // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+  }
   if (!users.length) return;
   const title = routes[event]?.label || event;
   const body = String(htmlMessage).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -275,7 +316,7 @@ Deno.serve(async (req) => {
         checked_by: s.checked_by, start_time: s.start_time,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'checkin_summary', message);
+      await notifyInApp(routes, 'checkin_summary', message, 'info', { line_name: s.line_name });
       return json({ ok: true });
     }
 
@@ -299,7 +340,7 @@ Deno.serve(async (req) => {
         checked_by: s.checked_by, changed_count: s.changed_count, changed_names: s.changed_names,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'checkin_update', message);
+      await notifyInApp(routes, 'checkin_update', message, 'info', { line_name: s.line_name });
       return json({ ok: true });
     }
 
@@ -321,7 +362,7 @@ Deno.serve(async (req) => {
         shift_label: b.shift_label, count: b.count, items: b.items, booked_by: b.booked_by,
       }, builtin);
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'ot_booking', message);
+      await notifyInApp(routes, 'ot_booking', message, 'info', { line_name: b.line_name });
       return json({ ok: true });
     }
 
@@ -379,7 +420,7 @@ Deno.serve(async (req) => {
         reported_by: d.reported_by || '-', start_time: d.start_time || '', end_time: d.end_time || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'downtime', message);
+      await notifyInApp(routes, 'downtime', message, 'info', { line_name: d.line_name });
       return json({ ok: true });
     }
 
@@ -409,7 +450,7 @@ Deno.serve(async (req) => {
         reported_by: d.reported_by || '-', start_time: d.start_time || '', end_time: d.end_time || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'downtime_recovered', message);
+      await notifyInApp(routes, 'downtime_recovered', message, 'success', { line_name: d.line_name });
       return json({ ok: true });
     }
 
@@ -438,7 +479,7 @@ Deno.serve(async (req) => {
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_call_mtn').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
       // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
-      await insertNotifications(await recipientsForDowntime(d.line_name),
+      await insertNotifications(await recipientsForDowntime(d.line_name, 'downtime_call_mtn'),
         `📞 เรียกช่างด่วน — ${d.machine_no || d.line_name || '-'}`,
         `${d.line_name || ''} · ${d.type_name || 'Downtime'}${d.description ? ' · ' + d.description : ''}`,
         'error', 'downtime_logs', d.id);
@@ -470,7 +511,7 @@ Deno.serve(async (req) => {
       if (d.id) await sendTelegramTracked(message, chat, 'downtime', d.id, 'downtime_open_15min').catch(console.error);
       else await sendTelegram(message, chat).catch(console.error);
       // urgent → แจ้งในแอป (กระดิ่ง+เสียง+push) ให้ทีมช่าง
-      await insertNotifications(await recipientsForDowntime(d.line_name),
+      await insertNotifications(await recipientsForDowntime(d.line_name, 'downtime_open_15min'),
         `🚨 เครื่องยังหยุด เกิน ${d.open_min ?? ''} นาที — ${d.machine_no || d.line_name || '-'}`,
         `${d.line_name || ''} · ${d.type_name || 'Downtime'}`,
         'error', 'downtime_logs', d.id);
@@ -543,7 +584,7 @@ Deno.serve(async (req) => {
         requested_by: s.requested_by || '-',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'prod_close', message);
+      await notifyInApp(routes, 'prod_close', message, 'info', { line_name: s.line_name });
       return json({ ok: true });
     }
 
@@ -573,7 +614,7 @@ Deno.serve(async (req) => {
         missing: Array.isArray(p.missing) ? p.missing.join(', ') : '', ng: ngText,
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, key, message);
+      await notifyInApp(routes, key, message, key === 'pm_daily_red' ? 'error' : 'info', { line_name: p.line_name });
       return json({ ok: true });
     }
 
@@ -602,7 +643,7 @@ Deno.serve(async (req) => {
         part_name: p.part_name || '', checklist_name: p.checklist_name || '', frequency: p.frequency || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'pm_plan_reminder', message);
+      await notifyInApp(routes, 'pm_plan_reminder', message, 'info', { line_name: p.line_name });
       return json({ ok: true });
     }
 
@@ -628,7 +669,7 @@ Deno.serve(async (req) => {
         reason: p.reason || '', agreed_with: p.agreed_with || '', by_name: p.by_name || '', defer_count: p.defer_count || 1,
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'pm_deferred', message);
+      await notifyInApp(routes, 'pm_deferred', message, 'info', { line_name: p.line_name });
       return json({ ok: true });
     }
 
@@ -663,7 +704,7 @@ Deno.serve(async (req) => {
         line_name: p.line_name || '', remark: p.remark || '', by_name: p.by_name || '',
       }, lines.join('\n'));
       await sendTelegram(message, chat).catch(console.error);
-      await notifyInApp(routes, 'pm_coordination', message);
+      await notifyInApp(routes, 'pm_coordination', message, 'info', { line_name: p.line_name });
       return json({ ok: true });
     }
 
@@ -776,6 +817,19 @@ Deno.serve(async (req) => {
       await addProfilesByRole(['admin', 'manager']);
     }
 
+    // + ผู้รับที่ admin ตั้งไว้ในทะเบียน (role × ส่วนงาน × แผนก) — ให้ 4M ปรับผู้รับได้เหมือนเรื่องอื่น
+    // ลำดับข้างบน (ตามสถานะ workflow) ยังอยู่ครบ ตัวนี้เป็นการ "เพิ่ม" ไม่ใช่แทนที่
+    if ((routes['four_m_status']?.inappRoles ?? []).length) {
+      try {
+        const { data: extra } = await supabase.rpc('notify_recipients', {
+          p_event: 'four_m_status', p_section: await sectionOfLine(log.line_name as string),
+        });
+        for (const r of extra ?? []) {
+          const uid = typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients;
+          if (uid) targets.push({ userId: uid });
+        }
+      } catch (e) { console.error('notify_recipients four_m', e); }
+    }
     const seen = new Set<string>();
     const unique = targets.filter(t => { if (seen.has(t.userId)) return false; seen.add(t.userId); return true; });
 

@@ -28,8 +28,25 @@ function daysBetween(today: string, due: string): number {
   return Math.round((b - a) / 86400000);
 }
 // Map remaining days → the single stage bucket that applies (or null).
+//
+// ⚠️ กฎเหล็ก (feedback หน้างาน 2026-08-25: "มีเครื่องที่เลยเวลา ... ก็ไม่มีอะไรแจ้งเตือน"):
+//    **เกินกำหนดต้องเตือนซ้ำเป็นระยะ ห้ามเตือนครั้งเดียวแล้วเงียบตลอดกาล**
+//    ของเดิม stage = 'overdue' ตัวเดียว → dedup (plan|due|stage) ทำให้ยิงครั้งเดียวตอนเลยกำหนดวันแรก
+//    แล้วเงียบสนิท แม้จะค้างต่ออีกเป็นเดือน (เจอจริง: แผนครบ 23 ก.ค. ยังไม่ทำถึง 25 ส.ค. = เงียบ 33 วัน)
+//    → แตก stage เป็นรายสัปดาห์ `overdue` → `overdue_w1` → `overdue_w2` … = เตือนซ้ำสัปดาห์ละครั้ง
+//    (ไม่ใช่รายวัน — จะกลายเป็นสแปมแล้วคนเลิกอ่านทั้งห้อง · กฎ notification fatigue ใน CLAUDE.md)
+//    ไม่ต้อง migration: คอลัมน์ `stage` เป็น text อยู่แล้ว
 function stageFor(days: number): { stage: string; label: string } | null {
-  if (days < 0)  return { stage: 'overdue', label: '🔴 เกินกำหนด PM แล้ว' };
+  if (days < 0) {
+    const over = Math.abs(days);
+    const wk = Math.floor(over / 7);   // 0 = สัปดาห์แรก · 1 = ครบ 1 สัปดาห์ · …
+    return {
+      stage: wk === 0 ? 'overdue' : `overdue_w${wk}`,
+      label: wk === 0
+        ? '🔴 เกินกำหนด PM แล้ว'
+        : `🔴 ยังไม่ได้ทำ PM — เกินกำหนดมาแล้ว ${over} วัน`,
+    };
+  }
   if (days <= 3) return { stage: 'd3',  label: '⚠️ PM ใกล้ถึงกำหนด (ไม่เกิน 3 วัน)' };
   if (days <= 14) return { stage: 'd14', label: '⏳ PM อีก 2 สัปดาห์ — เตรียม stock / จัด shutdown' };
   if (days <= 30) return { stage: 'd30', label: '🗓️ PM อีก 1 เดือน — เริ่มวางแผน' };

@@ -9,6 +9,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import { toast } from './Toast';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
@@ -26,6 +27,8 @@ const warnBox = { background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(2
 /* รูปผังต้องซูมอ่านป้าย/เลขแม่พิมพ์ออก — สเปคเดียวกับรูปผังทั้งระบบ (2560px / q0.9 / ≤2.5MB)
    ห้ามบีบแรงกว่านี้ (ดู CLAUDE.md "Storage & รูปภาพ" — เคยบีบจนเบลอใช้ไม่ได้มาแล้ว) */
 async function compressPlan(file) {
+  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิม · แปลงไม่ได้ = โยนข้อความบอกวิธีตั้งกล้อง)
+  file = await toDecodableImage(file);
   if (file.type === 'image/gif') { if (file.size > 2 * 1024 * 1024) throw new Error('GIF ต้องไม่เกิน 2MB'); return file; }
   const img = await new Promise((res, rej) => {
     const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file);
@@ -61,6 +64,7 @@ export default function DieLayout({
   const [showLabels, setShowLabels] = useState(true); // 🏷️ สองสถานะ default โชว์ (UI §1)
   const [areaForm, setAreaForm] = useState(null);
   const [mapW, setMapW] = useState(800);
+  const [mapH, setMapH] = useState(450);
   const wrapRef = useRef(null);
   const moveRef = useRef(null);
 
@@ -95,7 +99,8 @@ export default function DieLayout({
   useEffect(() => {
     const el = wrapRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => setMapW(el.clientWidth || 800));
+    // ต้องวัดความสูงด้วย — markerScale คิดความแน่นจาก "ระยะเพื่อนบ้านเป็น px" ซึ่งต้องรู้ทั้ง 2 แกน
+    const ro = new ResizeObserver(() => { setMapW(el.clientWidth || 800); setMapH(el.clientHeight || 450); });
     ro.observe(el);
     return () => ro.disconnect();
   }, [area?.image_url, ready]);
@@ -116,7 +121,17 @@ export default function DieLayout({
     () => activeDies.filter(d => !(d.ext?.area_id && d.ext?.pos_x != null && d.ext?.pos_y != null)),
     [activeDies]);
 
-  const mk = useMemo(() => markerScale(mapW, { machineCount: placedHere.length }), [mapW, placedHere.length]);
+  // ⚠️ ต้องส่ง points+mapHeight ให้ครบเหมือน caller อื่น ไม่งั้นตกไป fallback สูตรนับจำนวนแบบเดิม
+  //    = ผังจัดเก็บแม่พิมพ์ได้ขนาดหมุดคนละมาตรฐานกับผังอื่นทั้งระบบ (ผิดหลัก WYSIWYG ที่ util นี้มีไว้แก้)
+  //    `pctOf` ใน markerScale รับคีย์ x/y อยู่แล้ว
+  const mk = useMemo(
+    () => markerScale(mapW, {
+      machineCount: placedHere.length,
+      points: placedHere.map(d => ({ x: d.ext.pos_x, y: d.ext.pos_y })),
+      mapHeight: mapH,
+    }),
+    [mapW, mapH, placedHere],
+  );
 
   const selDie = activeDies.find(d => d.id === selId) || null;
   const placingDie = activeDies.find(d => d.id === placingId) || null;
@@ -607,7 +622,7 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
 
   const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังจัดเก็บแม่พิมพ์' : '⚙️ แก้ไขผังจัดเก็บ'}</div>
         <div style={{ display: 'grid', gap: 10 }}>

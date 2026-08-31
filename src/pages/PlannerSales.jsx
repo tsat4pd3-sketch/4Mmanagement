@@ -1,13 +1,19 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
+import { wavg, wLoad } from '../utils/oee';
+import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { fetchAllPages } from '../utils/fetchByIds';
+import { dedupeForecastRows } from '../utils/demandSupply';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -176,34 +182,72 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         }
         const is862 = ediFiles[0].is862;
         // dedupe: EDI ออกบรรทัดซ้ำ key เดิมได้ — ใช้ตัวหลังสุด ไม่บวกทบ
+        // ⚠️ key ต้องรวม PO — 2 release ต่าง Purchase Order ที่ part/วัน/เวลาเดียวกันเป็นคนละใบจริง
+        //    (เดิมตัวหลังทับ = demand หายเงียบ · QC flow-audit D1) — บรรทัดซ้ำแท้ (ทุกช่องเท่ากัน) ยังถูก dedupe เหมือนเดิม
         const byKey = new Map();
-        ediFiles.forEach(f => f.rows.forEach(r => byKey.set(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`, r)));
+        ediFiles.forEach(f => f.rows.forEach(r => byKey.set(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}|${r.po || ''}`, r)));
         const rows2 = [...byKey.values()];
         if (!rows2.length) { toast.error('ไม่พบรายการที่มีจำนวน > 0 ในไฟล์ EDI'); return; }
-        // map Part Num ลูกค้า → mat_no ภายใน ผ่าน p_no (normalize ตัด ขีด/ช่องว่าง) — FG (ขึ้นต้น 1) ชนะ child
+        /* map Part Num ลูกค้า → mat_no ภายใน ผ่าน p_no (normalize ตัด ขีด/ช่องว่าง)
+           ⚠️ เลขพาร์ทลูกค้าตัวเดียว **มีได้หลายเลข SAP** — ต่างกันที่ "ลูกค้าปลายทาง"
+              ข้อมูลจริง 2026-08-24: `RB3B-16E060-BA` → 10100384 (FTM) · 10100385 (AAT)
+              · 10106790 (FVL) · 10104955 (FVL unpack)  = 4 เลข ทั้งหมดเป็น FG สะอาด
+              เดิมเก็บ p_no ละ 1 ตัว (ตัวไหนมาก่อนชนะ) ⇒ **ออเดอร์ของทุกลูกค้าไปกองที่เลขเดียว**
+              → เลขอื่นดูเหมือนไม่มีใครสั่ง (ไม่ผลิต) ส่วนเลขที่รับไปหมดดูเหมือนของจะขาด = ตัดสินใจผิดทั้งคู่
+           → แยกด้วย **ship-to → ชื่อลูกค้า** (`ship_to_plants.customer_name` เทียบ `dr_products.customer`)
+              ตั้งค่าที่ 🚚 Delivery → ⚙️ Ship-to Plant Config (เช่น GRBNA → AAT)
+           ⚠️ ยังไม่ได้ตั้งชื่อลูกค้า = แยกไม่ออก → คงพฤติกรรมเดิม (FG ตัวแรกชนะ) **แต่ต้องรายงานว่าเดา**
+              ห้ามเงียบ และห้ามหยุด import (ไม่งั้นงานส่งของหยุดทั้งวัน) */
         const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const [{ data: stds }, { data: prods }] = await Promise.all([
-          supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').not('p_no', 'is', null),
-          supabaseDR.from('dr_products').select('mat_no, p_no, name').eq('is_active', true).not('p_no', 'is', null),
+        const [{ data: stds }, { data: prods }, { data: shipTos }] = await Promise.all([
+          // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
+          supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
+          supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null),
+          supabaseDR.from('ship_to_plants').select('code, customer_name'),
         ]);
+        // ship-to code → ชื่อลูกค้า (ยังไม่ตั้ง = customer_name เท่ากับ code เอง → ถือว่า "ไม่รู้")
+        const custOfShipTo = {};
+        (shipTos || []).forEach(t => {
+          const cn = String(t.customer_name || '').trim();
+          if (cn && norm(cn) !== norm(t.code)) custOfShipTo[String(t.code)] = norm(cn);
+        });
         const matMap = {}, baseMap = {};
-        const put = (pno, mat, name) => {
+        const put = (pno, mat, name, customer) => {
           const k = norm(pno);
           if (!k || !mat) return;
-          const cur = matMap[k];
-          if (!cur || (!isFgMat(cur.mat_no) && isFgMat(mat))) matMap[k] = { mat_no: mat, name };
+          const list = (matMap[k] = matMap[k] || []);
+          if (!list.some(e => e.mat_no === mat)) list.push({ mat_no: mat, name, customer: norm(customer) });
           // ดัชนี base part (ตัด revision) สำหรับ fallback — เก็บทุกตัวเพื่อเช็คกำกวม
           const b = baseOfPart(pno);
           if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }
         };
-        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name));
-        (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name));
+        // dr_products ก่อน — ตัวเดียวที่รู้ "ลูกค้า" ของ mat (list dedupe ต่อ mat_no: ใครใส่ก่อนชนะ
+        // ถ้า kanban_standards ใส่ก่อน entry จะไม่มี customer แล้วการแยกด้วย ship-to ใช้ไม่ได้)
+        (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name, x.customer));
+        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
+        // FG (ขึ้นต้น 1) ชนะ child เสมอ — เรียงให้ FG มาก่อนในทุกลิสต์
+        Object.values(matMap).forEach(l => l.sort((a, b) => (isFgMat(b.mat_no) ? 1 : 0) - (isFgMat(a.mat_no) ? 1 : 0)));
         const unmatched = new Set();
+        const guessed = new Map();     // part → { shipTos:Set, mats:[...] } = แยกลูกค้าไม่ออก ต้องตั้ง ship-to
+        const baseHits = new Map();    // part → mat = จับคู่จาก base part (ตัด revision) — ต้องโชว์ให้คนเห็นก่อนยืนยัน
         const records = rows2.map(r => {
-          let hit = matMap[norm(r.part)];
+          const cands = matMap[norm(r.part)] || [];
+          let hit = null;
+          if (cands.length === 1) hit = cands[0];
+          else if (cands.length > 1) {
+            const want = custOfShipTo[r.shipTo];
+            const byCust = want ? cands.filter(c => c.customer && c.customer === want) : [];
+            if (byCust.length === 1) hit = byCust[0];
+            else {
+              hit = cands[0];                                   // เดาตัวแรก (FG ก่อน) แบบเดิม — แต่แจ้ง
+              const g = guessed.get(r.part) || { shipTos: new Set(), mats: cands.map(c => c.mat_no) };
+              g.shipTos.add(r.shipTo);
+              guessed.set(r.part, g);
+            }
+          }
           if (!hit) {                                   // fallback: จับ base part เฉพาะที่ชัดตัวเดียว (กำกวม = ไม่เดา)
-            const cands = baseMap[baseOfPart(r.part)];
-            if (cands && cands.length === 1) hit = cands[0];
+            const bc = baseMap[baseOfPart(r.part)];
+            if (bc && bc.length === 1) { hit = bc[0]; baseHits.set(r.part, bc[0].mat_no); }
           }
           if (!hit) unmatched.add(r.part);
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
@@ -212,6 +256,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           kind: is862 ? 'orders' : 'forecast',
           files: ediFiles.map(f => f.fName),
           records, unmatched: [...unmatched],
+          ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats })),
+          baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat })),
           shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
           dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
           dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
@@ -374,8 +420,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
           .in('customer', edi.shipTos).gte('due_date', delFrom).neq('status', 'pending');
         const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        /* ⚠️ ต้องมีขอบบน .lte(dateTo) ด้วย (semantics เดียวกับ path 830) — ไฟล์ horizon สั้น
+           จะลบ pending อนาคตที่เกินช่วงไฟล์ทิ้งถาวรโดยไม่มีอะไร insert คืน (QC flow-audit D1) */
         const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
-          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', delFrom);
+          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
+          .gte('due_date', delFrom).lte('due_date', edi.dateTo);
         if (eDel) throw eDel;
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
@@ -413,7 +462,27 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   };
 
   const deleteBatch = async (b) => {
+    /* ⚠️ batch_id เป็น FK on delete cascade — ลบ batch = ลบทุกใบที่ยังถืออยู่
+       ใบ shipped (ข้อเท็จจริงย้อนหลัง + จุดยึด ref_shipment_id ของแถวตัดสต็อก) และใบค้างส่งวันเก่า
+       ห้ามหายไปกับปุ่มลบไฟล์ — กฎเหล็ก "ห้ามลบออเดอร์ที่วันส่งผ่านไปแล้ว" (QC flow-audit D1)
+       → detach ใบประวัติออกจาก batch ก่อน (batch_id = null) แล้วค่อยลบ ให้ cascade โดนเฉพาะ pending อนาคต */
     if (!window.confirm(`ลบชุดข้อมูล "${b.file_name}" (${b.row_count} แถว)? ข้อมูลที่นำเข้าจากไฟล์นี้จะถูกลบทั้งหมด`)) return;
+    if (b.kind === 'orders') {
+      const wd = workDateStr();
+      const { data: hist, error: eH } = await supabaseDR.from('customer_shipping_orders')
+        .select('id, status, due_date').eq('batch_id', b.id)
+        .or(`status.neq.pending,due_date.lt.${wd}`);
+      if (eH) { toast.error(eH.message); return; }
+      if (hist?.length) {
+        const shipped = hist.filter(h => h.status !== 'pending').length;
+        if (!window.confirm(
+          `ไฟล์นี้มีใบที่เป็น "ประวัติ" ${hist.length} ใบ (เริ่ม workflow/ส่งแล้ว ${shipped} · วันส่งผ่านมาแล้ว ${hist.length - shipped})\n` +
+          `ใบพวกนี้จะถูก "เก็บไว้" (ไม่ลบ) — ลบเฉพาะใบ pending ในอนาคตของไฟล์นี้\nยืนยัน?`)) return;
+        const { error: eDet } = await supabaseDR.from('customer_shipping_orders')
+          .update({ batch_id: null }).in('id', hist.map(h => h.id));
+        if (eDet) { toast.error('แยกใบประวัติออกจากไฟล์ไม่สำเร็จ — ยกเลิกการลบ: ' + eDet.message); return; }
+      }
+    }
     const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', b.id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบชุดข้อมูลแล้ว');
@@ -469,6 +538,43 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                       <span key={pn} style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
                     ))}
                   </div>
+                </div>
+              )}
+              {/* เลขพาร์ทลูกค้าเดียวมีหลายเลข SAP (ต่างที่ลูกค้าปลายทาง) แล้วยังแยกไม่ออก
+                  → ระบบยังเดาให้เพื่อไม่ให้งานส่งของหยุด แต่ต้องบอกให้ชัดว่าเดา ไม่งั้นออเดอร์ทุกเจ้าไปกองเลขเดียว */}
+              {edi.ambiguous?.length > 0 && (
+                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                    🔴 {edi.ambiguous.length} พาร์ท แยกลูกค้าไม่ออก — ออเดอร์ทุกเจ้าจะไปกองที่เลข SAP เดียว
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
+                    เลขพาร์ทลูกค้าตัวเดียวมีหลายเลข SAP (ต่างกันที่ลูกค้าปลายทาง) แต่ ship-to ยังไม่ได้ตั้งชื่อลูกค้า
+                    → ระบบเลือกตัวแรกให้ก่อน <b>เลขที่เหลือจะดูเหมือนไม่มีใครสั่ง</b> · แก้ที่
+                    <b> 🚚 Delivery → ⚙️ Ship-to Plant Config</b> (ตั้งชื่อลูกค้าให้ code เช่น GRBNA → AAT) แล้วอัพไฟล์ใหม่
+                  </div>
+                  {edi.ambiguous.slice(0, 6).map(a => (
+                    <div key={a.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>
+                      {a.part} · ship-to {a.shipTos.join(',')} → {a.mats.join(' | ')}
+                    </div>
+                  ))}
+                  {edi.ambiguous.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
+                </div>
+              )}
+              {/* จับคู่จาก base part (ตัด revision) = การเดาข้าม rev — ถูกเกือบเสมอ แต่เคส EC ออกเลขใหม่
+                  จะพา demand เข้าเลขเก่าเงียบๆ → ต้องโชว์ให้คนกวาดตาก่อนกดยืนยัน (ระบบเสนอ คนตรวจ) */}
+              {edi.baseMatched?.length > 0 && (
+                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
+                    💡 {edi.baseMatched.length} พาร์ท จับคู่จาก base part (เลขตรง rev ไม่มีในระบบ) — ตรวจก่อนยืนยัน
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
+                    ถ้าเป็นพาร์ทเดิมที่ EDI สะกด rev ต่าง = ถูกต้อง · แต่ถ้าเพิ่งออก EC เป็นเลขใหม่
+                    ควรไปตั้ง P/N ของ MAT ใหม่ที่ Product Master ก่อน ไม่งั้น demand จะเข้าเลข rev เก่า
+                  </div>
+                  {edi.baseMatched.slice(0, 6).map(b => (
+                    <div key={b.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>{b.part} → {b.mat}</div>
+                  ))}
+                  {edi.baseMatched.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.baseMatched.length - 6} พาร์ท</div>}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
@@ -567,11 +673,13 @@ function PlannerTab({ refreshKey, custLabel }) {
       const from = months[0];
       const toD = new Date(months[months.length - 1]);
       const to = monthFirst(new Date(toD.getFullYear(), toD.getMonth() + 1, 1));
-      const [{ data: fc }, { data: od }] = await Promise.all([
-        supabaseDR.from('customer_forecasts').select('*').gte('period_month', from).lt('period_month', to),
-        supabaseDR.from('customer_shipping_orders').select('*').gte('due_date', from).lt('due_date', to),
+      // แบ่งหน้า — forecast มี ~1,463 แถวถึง ส.ค. 2027 · ช่วง 12 เดือนทะลุเพดาน 1000 แถวแล้วตัดเงียบ (QC flow-audit D1)
+      const [{ rows: fc }, { rows: od }] = await Promise.all([
+        fetchAllPages(() => supabaseDR.from('customer_forecasts').select('*').gte('period_month', from).lt('period_month', to)),
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('*').gte('due_date', from).lt('due_date', to)),
       ]);
-      setForecasts(fc || []);
+      // dedupe ข้าม source (edi ชนะ manual ต่อ mat×เดือน) — มาตรฐานเดียวกับแท็บ 🎴 (fBySrc เดิม)
+      setForecasts(dedupeForecastRows(fc || []));
       setOrders(od || []);
       const mats = [...new Set([...(fc || []), ...(od || [])].map(x => x.mat_no))];
       if (mats.length) {
@@ -719,24 +827,20 @@ function baseOfPart(x) {
     .replace(/ /g, '');
 }
 
-function countWorkingDays(monthKey, calRows) {
-  const [y, m] = monthKey.split('-').map(Number);
-  const cal = {}; (calRows || []).forEach(r => { cal[r.work_date] = r.day_type; });
-  const days = new Date(y, m, 0).getDate();
-  let wd = 0;
-  for (let d = 1; d <= days; d++) {
-    const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay();                                   // 0=อา 6=เสา
-    const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const type = cal[key] || '';
-    // มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = ไม่นับ — เดิมใช้ regex /holiday|off|หยุด/
-    // ซึ่งไม่ match ค่า day_type จริงเลย ทำให้วันหยุดที่ตก จ-ศ ถูกนับเป็นวันทำงาน (บั๊กแก้ 2026-07-21)
-    if (type && type !== 'working') continue;
-    if (dow >= 1 && dow <= 5) wd++;                            // จ-ศ = วันทำงาน
-    else if (type === 'working') wd++;                        // เสาร์/อาทิตย์ที่มาร์คทำงาน
-  }
-  return wd;
-}
+/* วันทำงาน/เดือน → ใช้ countWorkingDaysInMonth (utils/companyCalendar) ที่เดียว
+   (QC audit 2026-08-20 · รอบ 5: เดิมไฟล์นี้ถือสูตรของตัวเองซ้ำกับ util กลาง — ความหมายเท่ากัน
+   แต่เป็น 2 ที่ที่ drift กันได้ทุกครั้งที่มีคนแก้ฝั่งเดียว) */
+
+/* ⚠️ กฎเหล็ก — `kanban_standards.lot_size` เก็บเป็น **ชิ้น** ทุกฝั่งที่อ่านตีความเป็นชิ้นหมด:
+     fn_explode_child_demand (สะสม demand เป็นชิ้นแล้วเทียบตรงๆ) · ProductMaster (ป้ายเขียน "ชิ้น")
+     · FlowTower (suggested_lot = 1 กล่อง) · Heijunka (pending_qty ÷ lot) · VSM · RoutingPanel
+   แต่ param "Lot" ของแท็บ Withdrawal เป็น **ใบ** (สูตร Total(K/B) = Max + Lot บวกกับจำนวนใบ)
+   → ต้องคูณ Pkg ก่อนเขียน ไม่งั้น 1 ใบ (= 1 กล่อง) กลายเป็น 1 ชิ้น
+   เคสจริง 4/8/2026: 50031601 กล่องละ 100 ถูกเขียน lot_size=1 → ปิดใบผลิตใบเดียวออกใบสั่งซื้อ 984 ใบ
+   ⇒ ค่าที่จะเขียนต้องมาจากฟังก์ชันนี้ที่เดียว (ตาราง/Preview/Apply อ่านตัวเดียวกัน ห้ามคำนวณซ้ำ) */
+const lotPcsOf = (calcType, pp) => (calcType === 'production'
+  ? Number(pp.lot_qty) || 0                                      // production กรอกเป็นชิ้นอยู่แล้ว (Info LT = lot × CT)
+  : (Number(pp.lot_size) || 0) * (Number(pp.packaging) || 0));   // withdrawal: ใบ × ชิ้น/กล่อง
 
 function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const [settings, setSettings] = useState({ working_days: 20, efficiency_pct: 80, hours_per_day: 16 });
@@ -755,6 +859,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const [mapModal, setMapModal] = useState(false); // จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน
   const [mapSel, setMapSel]     = useState({});    // customerPart → sap ที่เลือก
   const [mapping, setMapping]   = useState(false);
+  const [oeeByLine, setOeeByLine] = useState({});   // ไลน์ → { oee, n } จากกะที่ปิดแล้ว 90 วัน
 
   const monthRange = useMemo(() => {
     const [y, m] = month.split('-').map(Number);
@@ -765,32 +870,47 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }, { data: cal }] = await Promise.all([
+    const [{ data: st }, { data: pr }, { data: ks }, { data: pm }, { data: dr }, { data: fc }] = await Promise.all([
       supabaseDR.from('kanban_calc_settings').select('*').eq('id', 'default').maybeSingle(),
       supabaseDR.from('kanban_calc_params').select('*'),
       supabaseDR.from('kanban_standards').select('mat_no, part_name, customer, qty_per_kanban, min_qty, max_qty, lot_size, total_kanban').eq('is_active', true),
       supabaseDR.from('parts_master').select('mat_no, part_name, qty_per_pkg').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, customer, line_name, name, p_no, process_type').eq('is_active', true),
       supabaseDR.from('customer_forecasts').select('mat_no, qty, source').gte('period_month', monthRange.start).lt('period_month', monthRange.end),
-      supabase.from('company_calendar').select('work_date, day_type').gte('work_date', monthRange.start).lt('work_date', monthRange.end),
+      loadCompanyCalendar(),   // ปฏิทินบริษัท (cache กลาง) — ใช้คิดวันทำงานผ่าน util เดียวกันทั้งระบบ
     ]);
+    /* CAP/ชม. ที่กรอกเป็น "กำลังทางทฤษฎี" (3600 ÷ CT) — ไลน์จริงไม่มีทางเดินได้เท่านั้นทั้งกะ
+       → ดึง OEE ของกะที่ปิดแล้ว 90 วัน มาเทียบให้เห็นว่า "จริงๆ ออกกี่ชิ้น/ชม."
+       ⚠️ เฉลี่ยด้วย `wavg` + `wLoad` เท่านั้น (กฎ OEE: ห้าม mean-of-percentages)
+          ที่นี่ไม่ได้โหลด downtime → `plannedMin` = 0 → wLoad ตกไปถ่วงด้วย shift_min
+          ยอมรับได้เพราะเป็น "ตัวเลขให้ดูเทียบ" ไม่ใช่ค่าที่ stamp ที่ไหน */
+    // ⚠️ ห้าม toISOString (UTC) กับขอบเขตของ work_date — ช่วง 00:00-06:59 ไทยจะได้ขอบเขตเลื่อน 1 วัน
+    //    ทำให้ตัวเลข "CAP จริง" ขยับตามเวลาที่เปิดหน้า · ไฟล์นี้มี dateStr() (local) อยู่แล้ว
+    const oeeD = new Date(); oeeD.setDate(oeeD.getDate() - 90);
+    const oeeFrom = dateStr(oeeD);
+    // แบ่งหน้า — กะปิดแล้ว 90 วันทะลุ 1000 แถวได้ (~130 กะ/สัปดาห์) → OEE บางไลน์ขาดเงียบ
+    // แล้วค่า "CAP จริง ~" ที่ planner คลิกใช้จะเพี้ยน (QC flow-audit D1)
+    const { rows: sess } = await fetchAllPages(() => supabaseDR.from('production_sessions')
+      .select('id, line_name, oee, shift_min').eq('status', 'closed').gte('work_date', oeeFrom).not('oee', 'is', null));
+    const byLine = {};
+    (sess || []).forEach(s => { if (s.line_name) (byLine[s.line_name] = byLine[s.line_name] || []).push(s); });
+    setOeeByLine(Object.fromEntries(Object.entries(byLine)
+      .map(([ln, arr]) => [ln, { oee: wavg(arr, s => Number(s.oee), wLoad), n: arr.length }])
+      .filter(([, v]) => v.oee != null)));
     // วันทำงานลิงก์ปฏิทินตามเดือนที่เลือก (แก้ทับได้) · efficiency = ค่ากลาง
-    const wdCal = countWorkingDays(month, cal || []);
+    const wdCal = countWorkingDaysInMonth(month, 0);
     setSettings({ working_days: wdCal || st?.working_days || 20, efficiency_pct: st ? st.efficiency_pct : 80, hours_per_day: st?.hours_per_day ?? 16 });
     setParams(Object.fromEntries((pr || []).map(r => [r.mat_no, r])));
     setKsMap(Object.fromEntries((ks || []).map(r => [r.mat_no, r])));
     setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
     setDrMap(Object.fromEntries((dr || []).map(r => [r.mat_no, r])));
     // กัน double-count: mat ที่มีทั้ง EDI 830 (รายสัปดาห์) และ manual (รายเดือน) ในเดือนเดียว
-    // → รวมเฉพาะ source เดียว (EDI 830 official ก่อน · ไม่มีค่อยใช้ manual) แทนการบวกทั้ง 2 grain (2026-07-21)
-    const fBySrc = {};
-    (fc || []).forEach(r => {
-      if (!r.mat_no) return;
-      const e = fBySrc[r.mat_no] || (fBySrc[r.mat_no] = { edi: 0, other: 0 });
-      e[r.source === 'edi_830' ? 'edi' : 'other'] += Number(r.qty) || 0;
-    });
+    // → ใช้ helper กลาง dedupeForecastRows (edi ชนะ manual ต่อ mat×เดือน) — สูตรเดียวกับทุกจอ (2026-08-25)
     const fmap = {};
-    Object.entries(fBySrc).forEach(([mat, e]) => { fmap[mat] = e.edi > 0 ? e.edi : e.other; });
+    dedupeForecastRows(fc || []).forEach(r => {
+      if (!r.mat_no) return;
+      fmap[r.mat_no] = (fmap[r.mat_no] || 0) + (Number(r.qty) || 0);
+    });
     setForecast(fmap);
     setEdits({});
     setLoading(false);
@@ -803,14 +923,20 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const paramOf = useCallback((mat) => {
     const p = params[mat] || {}, e = edits[mat] || {}, pm = pmMap[mat] || {}, dr = drMap[mat] || {}, ks = ksMap[mat] || {};
     const g = (k, dflt) => e[k] ?? p[k] ?? dflt;
+    // PKG (จำนวน/กล่อง) = คุณสมบัติสินค้า → ดึงจาก master: parts_master.qty_per_pkg → kanban_standards.qty_per_kanban
+    const pkg = g('packaging', firstPos(pm.qty_per_pkg, ks.qty_per_kanban));
+    /* ⚠️ ks.lot_size เก็บเป็น "ชิ้น" (กฎเหล็กที่ lotPcsOf) แต่ param Lot ของแท็บนี้เป็น "ใบ"
+       → default ต้องหารด้วย Pkg ก่อน ไม่งั้นล็อต 3,000 ชิ้น กลายเป็น 3,000 ใบ
+       (totalKanban เฟ้อ 188 เท่า — QC audit 2026-08-20 · T2-1 ฝั่งอ่าน) · ไม่รู้ Pkg = ไม่เดา */
+    const lotPcs = Number(ks.lot_size) || 0;
+    const lotCards = lotPcs > 0 && Number(pkg) > 0 ? Math.max(1, Math.ceil(lotPcs / Number(pkg) - 1e-9)) : '';
     return {
       prep_time_min:  g('prep_time_min', 30),
       fluctuation_pct: g('fluctuation_pct', 7),
-      // PKG (จำนวน/กล่อง) = คุณสมบัติสินค้า → ดึงจาก master: parts_master.qty_per_pkg → kanban_standards.qty_per_kanban
-      packaging:      g('packaging', firstPos(pm.qty_per_pkg, ks.qty_per_kanban)),
+      packaging:      pkg,
       delivery_cycle: g('delivery_cycle', 1),
       capacity_pc_hr: g('capacity_pc_hr', dr.cycle_time_sec ? Math.round(3600 / dr.cycle_time_sec) : ''),
-      lot_size:       g('lot_size', firstPos(ks.lot_size, 1) || 1),
+      lot_size:       g('lot_size', firstPos(lotCards, 1) || 1),
       safety_days:    g('safety_days', 1),
       // production (Type B)
       process_count:  g('process_count', 1),
@@ -847,16 +973,31 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       const name = pmMap[mat]?.part_name || dr.name || ks.part_name || '';
       const line = dr.line_name || '';
       const changed = r.valid && (Number(ks.max_qty) !== r.maxPcs || Number(ks.min_qty) !== r.minPcs || Number(ks.total_kanban) !== r.totalKanban);
-      return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed };
+      /* CAP จริง = (3600 ÷ CT) × OEE ของไลน์นั้น — ตรงกับสูตร fallback ของ capacityModel.js
+         (แผนผลิตใช้ median ยอดจริงต่อกะ ซึ่งบวก OEE/เบรค/NG ไว้ในตัวแล้ว · ที่นี่คิดจาก CT×OEE
+          เพราะ kanban คิดเป็น "ชิ้น/ชม." ไม่ใช่ "ชิ้น/กะ")
+         ⚠️ เป็นตัวเลขให้ "เห็นแล้วตัดสินใจ" — ระบบไม่แทนค่าให้เอง (ห้ามเดาแทนคนวางแผน) */
+      const lo = oeeByLine[line];
+      const capReal = (dr.cycle_time_sec > 0 && lo?.oee > 0)
+        ? Math.round((3600 / Number(dr.cycle_time_sec)) * (lo.oee / 100)) : null;
+      return { mat, name, line, customer: dr.customer || ks.customer, order: forecast[mat], pp, r, ks, changed,
+               capReal, oeePct: lo?.oee ?? null, oeeN: lo?.n ?? 0 };
     }).filter(row => !lineFilter || row.line === lineFilter)
       .sort((a, b) => a.mat.localeCompare(b.mat));
-  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType, procMatchesTab]);
+  }, [forecast, settings, paramOf, drMap, ksMap, pmMap, lineFilter, calcType, procMatchesTab, oeeByLine]);
+
+  // พาร์ทที่ CAP ที่กรอกห่างจากกำลังจริง ≥ 20% — ตัวเลข kanban ที่ออกมาจะเพี้ยนตาม
+  const capGap = useMemo(() => rows.filter(r => {
+    const cur = Number(r.pp.capacity_pc_hr) || 0;
+    return r.capReal > 0 && cur > 0 && Math.abs(cur - r.capReal) / r.capReal >= 0.2;
+  }), [rows]);
 
   // นับพาร์ทที่ถูกกรองออกเพราะเป็นอีกกระบวนการ (โปร่งใส — ไม่ปล่อยหายเงียบ)
   const otherProcCount = useMemo(() => Object.keys(forecast)
     .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
   const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const changedRows = rows.filter(r => r.changed);
 
   // (#2) พาร์ทที่ forecast จับคู่เลข SAP ภายในไม่ได้ = ไม่มีใน dr_products/parts_master/kanban_standards เลย
@@ -981,10 +1122,20 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         }
         if (pErr) throw pErr;
         // 2) เขียนผลเข้า kanban_standards (min/max = ชิ้น, total_kanban = ใบ) — ใช้คอลัมน์เดิม ทำงานได้ทั้ง 2 type
-        const lotStd = calcType === 'production' ? r.kanbanPerLot : Number(pp.lot_size);
+        // ⚠️ ต้อง destructure { error } + นับแถว — supabase-js คืน error ไม่ throw · เดิมไม่เช็คเลย
+        //    = kanban_standards ไม่ติดบางแถวใต้ toast เขียว "อัปเดตแล้ว" (QC flow-audit D1)
+        const lotStd = lotPcsOf(calcType, pp);   // ← ชิ้นเสมอ (ดูกฎเหล็กที่ lotPcsOf)
         const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: lotStd, total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
-        if (row.ks && row.ks.mat_no) await supabaseDR.from('kanban_standards').update(patch).eq('mat_no', row.mat);
-        else await supabaseDR.from('kanban_standards').insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
+        if (row.ks && row.ks.mat_no) {
+          const { data: upd, error: kErr } = await supabaseDR.from('kanban_standards')
+            .update(patch).eq('mat_no', row.mat).select('mat_no');
+          if (kErr) throw new Error(`เขียน kanban ของ ${row.mat} ไม่สำเร็จ: ${kErr.message}`);
+          if (!upd || upd.length === 0) throw new Error(`เขียน kanban ของ ${row.mat} ไม่ติด (0 แถว) — ตรวจว่าพาร์ทยังอยู่ในระบบ`);
+        } else {
+          const { error: kErr } = await supabaseDR.from('kanban_standards')
+            .insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
+          if (kErr) throw new Error(`เพิ่ม kanban ของ ${row.mat} ไม่สำเร็จ: ${kErr.message}`);
+        }
       }
       toast.success(`✅ อัปเดต kanban ${changedRows.length} รายการเข้าระบบดึงแล้ว`);
       if (paramWarn) toast.info('หมายเหตุ: param เฉพาะ Production ยังไม่ถูกจำ (ต้อง apply migration 20260716_kanban_production_calc)');
@@ -1017,9 +1168,26 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const NCOLS = calcType === 'production'
     ? ['packaging','capacity_pc_hr','process_count','lot_qty','setup_time_sec','safety_days']
     : ['prep_time_min','fluctuation_pct','packaging','delivery_cycle','capacity_pc_hr','lot_size','safety_days'];
+  /* ⚠️ หัวคอลัมน์ต้องบอก "หน่วย" เสมอ (user แจ้ง 2026-08-21: ทั้งตารางไม่มีหน่วยสักช่อง)
+     ช่องที่เจ็บสุดคือ **Lot ของแท็บ Withdrawal ซึ่งเป็น "ใบ" ไม่ใช่ "ชิ้น"**
+     (สูตร `totalKanban = maxKanban + lotSize` บวกกับจำนวนใบตรงๆ — ตรวจกับหน้าจอจริง 88 + 300 = 388)
+     พอไม่มีหน่วยบอก คนกรอกเลยใส่ 1 บ้าง 300 บ้าง แล้วค่านั้นถูก Apply เขียนลง
+     `kanban_standards.lot_size` ซึ่ง fn_explode_child_demand อ่านเป็น "ชิ้น" → ล็อตระเบิดความต้องการเพี้ยน
+     หน่วยของช่องที่คูณกับ CT (lot_qty / process_count) ยืนยันด้วยมิติ: ค่า × วินาที/ชิ้น = วินาที ⇒ เป็น "ชิ้น" */
   const NHEAD = calcType === 'production'
-    ? ['Pkg','CAP/ชม.','Process','Lot Qty','Setup(s)','Safety(วัน)']
-    : ['เตรียม(min)','ผันผวน%','Pkg','รอบส่ง','CAP/ชม.','Lot','Safety(วัน)'];
+    ? [{ t: 'Pkg', u: 'ชิ้น/กล่อง' },
+       { t: 'CAP/ชม.', u: 'ชิ้น/ชม.' },
+       { t: 'Process', u: 'ชิ้น', tip: 'Process LT = ค่านี้ × CT' },
+       { t: 'Lot Qty', u: 'ชิ้น', tip: 'ขนาดล็อตผลิต · Info LT = ค่านี้ × CT · ใบ/ล็อต = ⌈ค่านี้ ÷ Pkg⌉' },
+       { t: 'Setup', u: 'วินาที' },
+       { t: 'Safety', u: 'วัน' }]
+    : [{ t: 'เตรียม', u: 'นาที' },
+       { t: 'ผันผวน', u: '%' },
+       { t: 'Pkg', u: 'ชิ้น/กล่อง' },
+       { t: 'รอบส่ง', u: 'รอบ/วัน' },
+       { t: 'CAP/ชม.', u: 'ชิ้น/ชม.' },
+       { t: 'Lot', u: 'ใบ', tip: 'ขนาดล็อตเป็นจำนวนใบคัมบัง — 1 ใบ = 1 กล่อง = Pkg ชิ้น · Total(K/B) = Max + Lot\nตอน Apply ระบบคูณ Pkg ให้เองก่อนบันทึก (ขนาดล็อตในระบบดึงเก็บเป็น "ชิ้น") — ดูตัวเลขจริงใต้ช่อง' },
+       { t: 'Safety', u: 'วัน' }];
 
   return (
     <div>
@@ -1068,10 +1236,12 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         {lines.length > 0 && (
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
-            <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 150 }}>
-              <option value="">ทุกไลน์</option>
-              {lines.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
+            {/* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */}
+            <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
+              value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
+              style={{ ...inputSt, width: 150 }}
+              extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            />
           </div>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1089,6 +1259,21 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           ? '📖 Production Kanban (คัมบังสั่งผลิต press). Vol/Day = ⌈forecast/วันทำงาน⌉ · Kanban(sys) = ⌈(Info+Process+Safety)/CT/pkg⌉ · Min = Safety · Max = Min + Kanban/Lot · แก้ param แล้วค่าคำนวณอัปเดตทันที · มีสรุปภาระการผลิต (%load) ด้านล่าง'
           : '📖 Withdrawal Kanban (คัมบังเบิกถอน FG). Order/เดือน = ผลรวม forecast ของเดือนที่เลือก · แก้ param ในตารางแล้วค่าคำนวณอัปเดตทันที · Apply = เขียนเข้า kanban_standards (ระบบดึงใช้ต่อ)'}
       </div>
+
+      {/* CAP/ชม. ที่กรอก vs กำลังจริงจาก OEE — ไม่แทนค่าให้เอง แต่ต้องเห็นว่าห่างกันแค่ไหน */}
+      {capGap.length > 0 && (
+        <div style={{ ...card, marginBottom: 12, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.06)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 22 }}>⚡</span>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{capGap.length} พาร์ท CAP/ชม. ที่กรอก ห่างจากกำลังจริง ≥ 20%</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+              ช่อง CAP/ชม. ตั้งต้นเป็น <b>กำลังทางทฤษฎี</b> (3600 ÷ CT) ซึ่งไม่หัก downtime/ของเสีย ·
+              ตัวเลข <b style={{ color: '#f59e0b' }}>จริง ~</b> ใต้ช่อง = (3600 ÷ CT) × OEE จริงของไลน์นั้น (กะที่ปิดแล้ว 90 วัน) <b>คลิกเพื่อใช้ค่านั้น</b>
+              <div style={{ marginTop: 2 }}>⚠️ ระบบ<b>ไม่แทนค่าให้เอง</b> — จะวางแผนด้วยกำลังทฤษฎีหรือกำลังจริงเป็นการตัดสินใจของผู้วางแผน</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* (#2) แจ้งเตือนพาร์ทที่จับคู่เลข SAP ไม่ได้ */}
       {unmapped.length > 0 && (
@@ -1112,8 +1297,15 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
                 <tr style={{ background: 'var(--bg2)' }}>
-                  {['Mat SAP','Part / ไลน์','Order/เดือน', ...NHEAD, 'Min(K/B)','Max(K/B)','Total(K/B)','Min→Max (pcs)','สถานะ'].map(h => (
-                    <th key={h} style={{ padding: '8px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                  {[{ t: 'Mat SAP' }, { t: 'Part / ไลน์' }, { t: 'Order/เดือน', u: 'ชิ้น' }, ...NHEAD,
+                    { t: 'Min', u: 'ใบ' }, { t: 'Max', u: 'ใบ' },
+                    { t: 'Total', u: 'ใบ', tip: 'Total = Max + Lot' },
+                    { t: 'Min→Max', u: 'ชิ้น', tip: 'แปลงเป็นชิ้นแล้ว = ใบ × Pkg' }, { t: 'สถานะ' }].map(h => (
+                    <th key={h.t} title={h.tip || ''} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase', cursor: h.tip ? 'help' : undefined }}>
+                      <div>{h.t}{h.tip ? ' ⓘ' : ''}</div>
+                      {/* หน่วยต้องเห็นตลอด ห้ามซ่อนใน tooltip — คนกรอกไม่มีทางรู้ว่าช่องนี้เป็นใบหรือชิ้น */}
+                      {h.u && <div style={{ fontSize: 9.5, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -1130,6 +1322,30 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                           <input type="number" value={row.pp[c]} disabled={!canApply}
                             onChange={e => setEdit(row.mat, c, e.target.value)}
                             style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? '#0ea5e9' : 'var(--border)' }} />
+                          {/* ช่อง Lot กรอกเป็น "ใบ" แต่ค่าที่บันทึกลง kanban_standards เป็น "ชิ้น"
+                              → ต้องเห็นตัวเลขที่จะถูกบันทึกจริงตรงนี้ ห้ามให้ไปรู้ตอนของระเบิดแล้ว */}
+                          {c === 'lot_size' && (
+                            <div style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : '#f59e0b' }}>
+                              {lotPcsOf(calcType, row.pp) > 0 ? `= ${fmt(lotPcsOf(calcType, row.pp))} ชิ้น` : 'ต้องมี Pkg'}
+                            </div>
+                          )}
+                          {/* CAP ที่กรอกเป็นกำลังทางทฤษฎี — โชว์กำลังจริงจาก OEE ให้เทียบ กดแล้วเติมให้ (คนกดเอง) */}
+                          {c === 'capacity_pc_hr' && (row.capReal
+                            ? (() => {
+                                const cur = Number(row.pp.capacity_pc_hr) || 0;
+                                const far = cur > 0 && Math.abs(cur - row.capReal) / row.capReal >= 0.2;
+                                return (
+                                  <div
+                                    onClick={() => canApply && setEdit(row.mat, 'capacity_pc_hr', row.capReal)}
+                                    title={`กำลังจริง = (3600 ÷ CT) × OEE ${row.oeePct.toFixed(1)}% ของไลน์ ${row.line}\nจากกะที่ปิดแล้ว ${row.oeeN} กะ ใน 90 วัน\nคลิกเพื่อใช้ค่านี้`}
+                                    style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
+                                             color: far ? '#f59e0b' : 'var(--muted)', fontWeight: far ? 800 : 500, textDecoration: canApply ? 'underline dotted' : 'none' }}>
+                                    จริง ~{fmt(row.capReal)}
+                                  </div>
+                                );
+                              })()
+                            : <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 2, opacity: 0.6 }} title="ยังไม่มีกะที่ปิดแล้วของไลน์นี้ใน 90 วัน หรือยังไม่ได้ตั้ง CT ที่ Product Master">จริง —</div>
+                          )}
                         </td>
                       ))}
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 700 }}>{r.valid ? r.minKanban : '—'}</td>
@@ -1241,19 +1457,30 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>เขียนค่า Min/Max/Total ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+              เขียนค่า Min/Max/Total + <b>ขนาดล็อต</b> ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)
+              <div style={{ marginTop: 3 }}>⚠️ <b>ขนาดล็อต</b> คือตัวที่ระบบใช้ตัดสินว่าสะสมความต้องการครบเมื่อไหร่ถึงออกใบสั่ง — ตั้งเล็กเกินจริง = ใบสั่งพุ่งเป็นร้อยใบ</div>
+            </div>
             <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม','→ ใหม่','Max (pcs)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม (ใบ)','→ ใหม่ (ใบ)','Max (ชิ้น)','ขนาดล็อต (ชิ้น)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
                 <tbody>
-                  {preview.map(row => (
+                  {preview.map(row => {
+                    // ขนาดล็อตคือค่าที่ทริกเกอร์ระเบิดความต้องการใช้ตรงๆ — เปลี่ยนแล้วกระทบจำนวนใบสั่งทันที ต้องเห็นก่อนกดยืนยัน
+                    const lotNew = lotPcsOf(calcType, row.pp), lotOld = row.ks?.lot_size;
+                    const lotDiff = lotOld != null && Number(lotOld) !== lotNew;
+                    return (
                     <tr key={row.mat}>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', color: '#0ea5e9' }}>{row.mat}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--muted)' }}>{row.ks.total_kanban ?? '—'}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>{row.r.totalKanban}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(row.r.maxPcs)}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: lotDiff ? 800 : 500, color: lotDiff ? '#f59e0b' : 'var(--muted)' }}>
+                        {lotDiff && <span style={{ opacity: 0.7, fontWeight: 500 }}>{fmt(lotOld)} → </span>}{lotNew > 0 ? fmt(lotNew) : '—'}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

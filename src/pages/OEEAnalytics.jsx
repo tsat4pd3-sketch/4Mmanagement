@@ -13,17 +13,21 @@ import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
 import OeeInsightPanel from '../components/OeeInsightPanel';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import DowntimeTimeline from '../components/DowntimeTimeline';
 import { pairAwareTotal, collapseOps, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
-import { defectUnitCost, fmtBaht } from '../utils/costSaving';
+import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
+import { fetchByIds } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
+import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
 // ── Colour helpers ───────────────────────────────────────────────
@@ -97,6 +101,18 @@ const policyBreakMin = (row, policies) => policyBreakForShift({
 // ⚠️ ห้ามใช้ toISOString() เพื่อคำนวณวันที่ local — จะเพี้ยนข้ามวันเพราะ UTC offset (ดู CLAUDE.md)
 const fmtMonthKey = d => d.slice(0, 7);          // YYYY-MM
 const fmtYearKey  = d => d.slice(0, 4);          // YYYY
+// สัปดาห์เริ่มวันจันทร์ (ธรรมเนียมโรงงาน) — key = วันที่จันทร์ของสัปดาห์นั้น (YYYY-MM-DD, sortable)
+const fmtWeekKey = d => {
+  const dt = new Date(`${d}T00:00:00`);
+  dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // จันทร์ = 0
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+};
+// label ช่วง จันทร์–อาทิตย์ เช่น "5–11/8" (เดือนต่างกัน = "29/7–4/8")
+const fmtWeekLabel = k => {
+  const a = new Date(`${k}T00:00:00`), b = new Date(a.getTime() + 6 * 86400000);
+  const dm = x => `${x.getDate()}/${x.getMonth() + 1}`;
+  return a.getMonth() === b.getMonth() ? `${a.getDate()}–${dm(b)}` : `${dm(a)}–${dm(b)}`;
+};
 const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const fmtMonthLabel = k => { const [y, m] = k.split('-'); return `${thMonths[+m - 1]} ${(+y + 543).toString().slice(-2)}`; };
 const fmtDayLabel   = d => { const [,m,dd] = d.split('-'); return `${+dd}/${+m}`; };
@@ -122,13 +138,40 @@ function dateStrAdd(dateStr, deltaDays) {
 }
 
 // ── KPI Card ─────────────────────────────────────────────────────
-const KpiCard = ({ label, value, color, sub }) => (
-  <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
-    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-    <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
-    {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
-  </div>
-);
+/* `calc` = ที่มาของตัวเลข (user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที")
+   — เป็นตัวเลขอธิบาย ไม่ใช่ตัวที่เอาไปคำนวณซ้ำ · ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ */
+/* KpiCard — ตัวเลข + ที่มาของสูตร
+   `calc` = **ตัวเลขที่มา (ตัวตั้ง ÷ ตัวหาร = ผล) เห็นตลอด** — คือสิ่งที่ user ขอไว้
+            ("จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที") ห้ามเอาไปซ่อน
+   `more`  = คำอธิบายเชิงแนวคิด/ข้อควรระวัง → พับไว้หลังปุ่ม ⓘ (user 2026-08-21:
+            "รายละเอียดที่อธิบายเยอะๆ เป็น tooltips ดีมั้ย") เพราะกำแพงข้อความบนการ์ด
+            ทำให้เลขจริงจมหาย
+   ⚠️ ใช้ "กดเปิด" ไม่ใช่ hover tooltip — จอสัมผัส/จอ TV ไม่มีเมาส์ (UI-CONVENTIONS §6) */
+const KpiCard = ({ label, value, color, sub, calc, more }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+      {calc && (
+        <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
+          {calc}
+          {more && (
+            <>
+              <button onClick={() => setOpen(o => !o)} style={{
+                marginTop: 5, padding: '2px 7px', borderRadius: 6, cursor: 'pointer',
+                border: '1px solid var(--border2)', background: 'var(--bg3)',
+                color: 'var(--muted)', fontSize: 10, fontWeight: 700,
+              }}>{open ? '▴ ย่อ' : `${MORE_MARK} อ่านเพิ่ม`}</button>
+              {open && <div style={{ marginTop: 5 }}>{more}</div>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── Custom tooltip ───────────────────────────────────────────────
 const OEETooltip = ({ active, payload, label }) => {
@@ -274,7 +317,7 @@ export default function OEEAnalytics() {
   }, []);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => {
+    supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name').then(({ data }) => {
       let rows = data || [];
       if (role === 'leader' && userLineId) {
         const myLine = rows.find(l => String(l.id) === String(userLineId));
@@ -305,11 +348,14 @@ export default function OEEAnalytics() {
   const [tdDept,   setTdDept]   = useState('');
   const [tdLine,   setTdLine]   = useState('');
   const [tdTeam,   setTdTeam]   = useState('');
+  // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
+  const [tdCmpOpen, setTdCmpOpen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate,  setLastUpdate]  = useState(null);
 
   const [tdSessions,  setTdSessions]  = useState([]);
   const [tdDowntimes, setTdDowntimes] = useState([]);
+  const [tdLoadWarn,  setTdLoadWarn]  = useState(null);
   const [tdDefects,   setTdDefects]   = useState([]);
   const [tdHistory,   setTdHistory]   = useState([]); // last 10 days, closed sessions, lightweight
   const [tdProductsByMat, setTdProductsByMat] = useState({}); // mat_no -> part name
@@ -414,26 +460,27 @@ export default function OEEAnalytics() {
       const { data: sess } = await q;
 
       const sessionIds = (sess || []).map(s => s.id);
-      const [{ data: dt }, { data: def }, { data: ord }] = await Promise.all([
-        sessionIds.length
-          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('prod_orders').select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
+      // วันเดียวมีกะไม่มาก แต่ใช้ helper เดียวกับแท็บแนวโน้มไว้ — กันพลาดซ้ำถ้าวันหน้าไลน์เยอะขึ้น
+      // และได้เช็ค error ในตัว (เดิมรับแค่ data → ล้มเหลวแล้วโชว์ 0 เหมือนไม่มีข้อมูลจริง)
+      const [dtRes, defRes, ordRes] = await Promise.all([
+        fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
+          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', c)),
       ]);
+      const ord = ordRes.rows;
 
       setTdSessions(sess || []);
-      setTdDowntimes(dt || []);
-      setTdDefects(def || []);
+      setTdDowntimes(dtRes.rows);
+      setTdDefects(defRes.rows);
+      setTdLoadWarn([dtRes, defRes, ordRes].find(r => r.error)?.error || null);
       const obs = {};
-      (ord || []).forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
+      ord.forEach(o => { (obs[o.session_id] || (obs[o.session_id] = [])).push(o); });
       setTdOrdersBySession(obs);
       // pair_mat_no ของ mat ที่มีในกะวันนี้ (นับงานคู่ RH/LH เป็น 1 คู่/stroke — ดู pairTotals.js)
-      const mats = [...new Set((ord || []).map(o => o.mat_no).filter(Boolean))];
+      const mats = [...new Set(ord.map(o => o.mat_no).filter(Boolean))];
       if (mats.length) {
         // + cycle_time_sec/name: ใช้คำนวณ OEE สดของกะที่ยังไม่ปิด (computeLiveOee) และแสดงชื่อพาร์ทในการ์ดกำลังผลิต
         // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products)
@@ -537,11 +584,15 @@ export default function OEEAnalytics() {
     // ผลิตจริง: actual_qty เขียนตอน "ปิดกะ" เท่านั้น → กะที่ยังเปิดต้องรวมจากใบงานสด
     // (เดิม non-pair คืน r.totalQty ตรงๆ → การ์ด "ผลิตรวมวันนี้" เป็น 0 ทั้งที่ผลิตอยู่ · แก้ 2026-08-05
     //  pattern เดียวกับบั๊ก sessTarget) · pair-aware ทำถูกอยู่แล้วทั้งสองเส้นทาง
-    const ordSum = os => orderTotal(os, o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), () => null, opInfoSync());
+    /* ⚠️ ต้องคิดจากใบงานเสมอเมื่อมีใบ (pair-aware + op-aware ผ่าน orderTotal)
+       เดิม non-pair คืน r.totalQty (= actual_qty ที่ stamp ตอนปิดกะ = ผลรวมดิบ ไม่ผ่าน collapseOps)
+       → กะ SUB APRON ที่ชิ้นเดียวผ่าน 3 ขั้นขับนัท นับ 1,500 แทน 500 (QC audit 2026-08-20 · T1-10)
+       ค่า stamp เป็น fallback เฉพาะตอนไม่มีใบงานเท่านั้น */
+    const pickA = o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0));
     const sessActual = r => {
       const os = tdOrdersBySession[r.id] || [];
-      if (hasPairIn(os)) return pairSum(os, o => o.qty_ok ?? o.qty_actual ?? 0);
-      return r.totalQty || ordSum(os);
+      if (os.length) return orderTotal(os, pickA, m => tdPairMat[m] || null, opInfoSync());
+      return r.totalQty || 0;
     };
     // OOE/TEEP ของวันนี้ — ฐาน: OOE = เวลากะทั้งหมด · TEEP = ปฏิทิน 24 ชม. ของไลน์ที่เปิดกะวันนี้
     const tdOee = wavg(tdRows, r => r.calcOEE, wLoad);
@@ -604,6 +655,25 @@ export default function OEEAnalytics() {
     return days;
   }, [tdHistory, tdDate]);
 
+  /* วันนี้เทียบ "ค่าเฉลี่ย 9 วันก่อนหน้า" — ตอบคำถามที่คนอ่านกราฟ 10 วันแล้วต้องกวาดตาเอาเอง
+     ⚠️ ต้องถ่วงน้ำหนักด้วย wavg เหมือนทุกที่ (กฎ CLAUDE.md: ห้าม mean-of-percentages / mean-of-means
+        — เฉลี่ยค่ารายวันตรงๆ จะทำให้วันที่ผลิตน้อยถ่วงเท่าวันที่ผลิตเยอะ)
+     ⚠️ ตัด "วันนี้" ออกจากตัวเฉลี่ยเสมอ ไม่งั้นเทียบกับตัวเอง */
+  const tdVsAvg = useMemo(() => {
+    const past = tdHistory.filter(r => r.work_date !== tdDate);
+    const days = new Set(past.map(r => r.work_date)).size;
+    const W = { oee: wLoad, a: wLoad, p: wRun, q: wProd };
+    const F = { oee: i => (i.oee != null ? +i.oee : null), a: i => (i.oee_a != null ? +i.oee_a : null),
+                p: i => (i.oee_p != null ? +i.oee_p : null), q: i => (i.oee_q != null ? +i.oee_q : null) };
+    const out = { days };
+    for (const k of ['oee', 'a', 'p', 'q']) {
+      const avg = wavg(past, F[k], W[k]);
+      const now = tdKpi[k];
+      out[k] = { avg, now, diff: (avg != null && now != null) ? +(now - avg).toFixed(1) : null };
+    }
+    return out;
+  }, [tdHistory, tdDate, tdKpi]);
+
   // Live/latest session card
   const tdLiveSession = useMemo(() => {
     const running = tdSessionsTeamFiltered.filter(s => s.status === 'open' || s.status === 'pending_close')
@@ -658,12 +728,15 @@ export default function OEEAnalytics() {
   // จัดอันดับสาเหตุ (pareto) — สีตาม "ประเภท" เท่านั้น: นอกแผน = ม่วง (เด่น) / ในแผน = เทา (จาง)
   // ห้ามกลับไปไล่สีตามลำดับแถว (hue-cycling อ่านไม่ออกว่าสีสื่ออะไร — เคยเป็นโดนัท 25 สี)
   const [tdDtShowAll, setTdDtShowAll] = useState(false);
+  // เจาะดูรายการดิบของแถวที่กด — { kind: 'cause'|'part', key, label }
+  const [tdDtDrill, setTdDtDrill] = useState(null);
   const tdDtByCause = useMemo(() => {
     const map = {};
     for (const d of tdDowntimesScoped) {
       const name = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
       const cat  = d.dr_downtime_types?.category || 'unplanned';
-      if (!map[name]) map[name] = { name, min: 0, category: cat };
+      // typeId ไว้ query ย้อนหลังของสาเหตุนี้ตอนกดเจาะ (ชื่อเป็น snapshot เทียบตรงๆ ไม่ได้)
+      if (!map[name]) map[name] = { name, min: 0, category: cat, typeId: d.downtime_type_id || null };
       map[name].min += d.duration_min || 0;
     }
     const rows = Object.values(map).sort((a, b) => b.min - a.min);
@@ -698,12 +771,78 @@ export default function OEEAnalytics() {
     return arr.map(d => ({ ...d, min: +d.min.toFixed(1), pct: total > 0 ? +(d.min / total * 100).toFixed(1) : 0, barPct: max > 0 ? (d.min / max * 100) : 0 }));
   }, [tdDowntimesScoped, tdProductsByMat]);
 
+  /* "สาเหตุนี้เกิดซ้ำแค่ไหน" — ย้อนหลัง 30 วันของ downtime type ที่กดเจาะ
+     ⚠️ ยิงตอนเปิดโมดัลเท่านั้น (user กดเอง ไม่ใช่ polling) และกรองฝั่ง server ให้แคบที่สุด
+        — embed production_sessions!inner เพื่อกรองวัน/ไลน์ในคิวรีเดียว ไม่ดึง session ทั้งช่วงมากรองเอง
+     ⚠️ ไม่มี typeId (ข้อมูลเก่าไม่ผูก type) = ไม่ query ห้ามเดา */
+  const [tdDrillHist, setTdDrillHist] = useState(null);
+  useEffect(() => {
+    if (!tdDtDrill || tdDtDrill.kind !== 'cause' || !tdDtDrill.typeId) { setTdDrillHist(null); return; }
+    let dead = false;
+    setTdDrillHist({ loading: true });
+    (async () => {
+      const from = dateStrAdd(tdDate, -29);
+      let q = supabaseDR.from('downtime_logs')
+        .select('duration_min, production_sessions!inner(work_date, line_name)')
+        .eq('downtime_type_id', tdDtDrill.typeId)
+        .gte('production_sessions.work_date', from)
+        .lte('production_sessions.work_date', tdDate)
+        .limit(3000);
+      if (tdScopeLines?.length === 1) q = q.eq('production_sessions.line_name', tdScopeLines[0]);
+      else if (tdScopeLines?.length > 1) q = q.in('production_sessions.line_name', tdScopeLines);
+      const { data, error } = await q;
+      if (dead) return;
+      if (error) { setTdDrillHist({ error: error.message }); return; }   // ห้ามเงียบ
+      const byDay = {};
+      for (const r of data || []) {
+        const d = r.production_sessions?.work_date;
+        if (!d) continue;
+        byDay[d] = (byDay[d] || 0) + (r.duration_min || 0);
+      }
+      const days = [];
+      for (let i = 29; i >= 0; i--) {
+        const key = dateStrAdd(tdDate, -i);
+        days.push({ key, min: +(byDay[key] || 0).toFixed(1) });
+      }
+      const hitDays = days.filter(d => d.min > 0).length;
+      setTdDrillHist({
+        days, hitDays, count: (data || []).length,
+        total: +days.reduce((a, d) => a + d.min, 0).toFixed(1),
+        max: Math.max(...days.map(d => d.min), 1),
+      });
+    })();
+    return () => { dead = true; };
+  }, [tdDtDrill, tdDate, tdScopeLines]);
+
+  /* รายการดิบของแถวที่กดในแผง 2.2 / 2.3 — ตอบ "ปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง ใครลง"
+     ⚠️ ต้องกรองจาก tdDowntimesScoped (ชุดเดียวกับที่รวมยอดในแผง) ไม่งั้นตัวเลขในโมดัลไม่ตรงกับแถว
+     ⚠️ แผง 2.3 นับเฉพาะ "นอกแผน" → ตอนเจาะต้องกรอง planned ออกให้ตรงกันด้วย */
+  const tdDrillRows = useMemo(() => {
+    if (!tdDtDrill) return [];
+    const sMap = {};
+    for (const s of tdSessions) sMap[s.id] = s;
+    return tdDowntimesScoped
+      .filter(d => (tdDtDrill.kind === 'cause'
+        ? (d.dr_downtime_types?.name_th || 'ไม่ระบุ') === tdDtDrill.key
+        : d.dr_downtime_types?.category !== 'planned' && (d.mat_no || 'ไม่ระบุ MAT.NO') === tdDtDrill.key))
+      .map(d => ({ ...d, _s: sMap[d.session_id] || null }))
+      .sort((a, b) => (b.duration_min || 0) - (a.duration_min || 0));
+  }, [tdDtDrill, tdDowntimesScoped, tdSessions]);
+
   /* ══════════════════════════════════════════════════════════════════════
      TAB: TREND — historical range analytics (เดิม)
      ══════════════════════════════════════════════════════════════════════ */
   const [sessions,   setSessions]   = useState([]);
   const [downtimes,  setDowntimes]  = useState([]);
+  // activity rate ต่อ cost center (Main) — ใช้แปลงนาทีดาวไทม์เป็นบาท (best-effort · ว่าง = แผงบอกว่าขาด rate)
+  const [ccRates, setCcRates] = useState([]);
+  useEffect(() => {
+    supabase.from('cost_center_rates').select('*').then(({ data, error }) => { if (!error) setCcRates(data || []); });
+  }, []);
   const [dtIncludePlanned, setDtIncludePlanned] = useState(false); // Pareto DT: default นับเฉพาะนอกแผน
+  // สั่ง Pareto ให้เจาะประเภทที่กดจากการ์ด 💰 (nonce = กดชื่อเดิมซ้ำต้องเปิดใหม่ได้)
+  const [dtFocus, setDtFocus]   = useState(null);
+  const [defFocus, setDefFocus] = useState(null);
   const [trOrders, setTrOrders]   = useState([]);   // ใบงานของช่วงที่เลือก (ทำ pair-aware total)
   const [trPairMat, setTrPairMat] = useState({});
   const [defects,    setDefects]    = useState([]);
@@ -712,9 +851,10 @@ export default function OEEAnalytics() {
   const [defectTypes,setDefectTypes]= useState([]);
   const [lines,      setLines]      = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [trLoadWarn, setTrLoadWarn] = useState(null);  // โหลดแถวลูกไม่ครบ = ตัวเลขต่ำกว่าจริง ต้องบอก
 
   // Filters
-  const [period,     setPeriod]     = useState('monthly'); // daily|monthly|yearly
+  const [period,     setPeriod]     = useState('monthly'); // daily|weekly|monthly|yearly
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
   const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
@@ -755,21 +895,22 @@ export default function OEEAnalytics() {
 
       const sessionIds = (sess || []).map(s => s.id);
 
-      const [{ data: dt }, { data: def }, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
-        sessionIds.length
-          ? supabaseDR.from('downtime_logs').select('*, dr_downtime_types(name_th, category, color)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
-        sessionIds.length
-          ? supabaseDR.from('defect_logs').select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', sessionIds)
-          : Promise.resolve({ data: [] }),
+      // ⚠️ ห้าม .in('session_id', sessionIds) ตรงๆ — ช่วง 90 วัน = 800+ กะ → URL ~31,700 ตัวอักษร
+      //    โดนตัด → คิวรีล้มเหลว → DT/ของเสีย/Pareto/มูลค่าเป็น 0 เงียบๆ ขณะที่ A/P/Q (ค่า stamp)
+      //    ยังโชว์ค่าจริง = จอขัดแย้งกันเอง (บั๊กจริงที่ user จับได้ 2026-08-20)
+      const [dtRes, defRes, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
+        fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
+          .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
+        fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
+          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('production_sessions').select('line_name').eq('status', 'closed'),
       ]);
 
       setSessions(sess || []);
-      setDowntimes(dt || []);
-      setDefects(def || []);
+      setDowntimes(dtRes.rows);
+      setDefects(defRes.rows);
       // ต้นทุน/ชิ้น สำหรับแผง "มูลค่าของเสีย" — best-effort (ยังไม่กรอกต้นทุน = แผงบอกว่าขาดอะไร ไม่เดา)
       supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').eq('is_active', true)
         .then(({ data: pm }) => setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r]))))
@@ -781,16 +922,18 @@ export default function OEEAnalytics() {
       // เดิมแท็บนี้บวก actual_qty ตรงๆ (ไม่ pair-aware) ขณะที่แท็บ "ภาพรวมวันนี้" นับคู่แล้ว
       // → ยอดผลิตของช่วงเดียวกันไม่ตรงกันระหว่าง 2 แท็บในหน้าเดียว (แก้ 2026-08-05)
       // ⚠️ Supabase คืนสูงสุด 1000 แถว/ครั้ง → ต้องแบ่งหน้า ไม่งั้นช่วงยาวยอดขาดเงียบๆ
-      const ordersAll = [];
-      for (let i = 0; sessionIds.length && i < 40; i++) {
-        const { data: od } = await supabaseDR.from('prod_orders')
-          .select('session_id, mat_no, status, qty, qty_ok, qty_actual')
-          .in('session_id', sessionIds).range(i * 1000, (i + 1) * 1000 - 1);
-        ordersAll.push(...(od || []));
-        if (!od || od.length < 1000) break;
-      }
-      setTrOrders(ordersAll);
-      const trMats = [...new Set(ordersAll.map(o => o.mat_no).filter(Boolean))];
+      // ⚠️ เดิมแบ่งหน้าอย่างเดียวแต่ยัด id ทั้ง 800+ ตัวใน .in() → URL ยาวเกิน คืน 0 แถว
+      //    แล้ว trTotalQty ถอยไปใช้ actual_qty เงียบๆ (ยอดที่เห็นเลยตรงกับ sum(actual_qty) เป๊ะ)
+      const ordRes = await fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
+        .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c));
+      setTrOrders(ordRes.rows);
+      // โหลดไม่ครบ = ตัวเลขรวมต่ำกว่าจริง ต้องบอกบนจอ ห้ามเงียบ
+      setTrLoadWarn(
+        [dtRes, defRes, ordRes].some(r => r.error || r.truncated)
+          ? (dtRes.error || defRes.error || ordRes.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน)')
+          : null,
+      );
+      const trMats = [...new Set(ordRes.rows.map(o => o.mat_no).filter(Boolean))];
       await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ trTotalQty ยุบขั้นซ้ำก่อนรวมยอด
       if (trMats.length) {
         const pm = {};
@@ -818,12 +961,32 @@ export default function OEEAnalytics() {
   // ── Computed rows ──────────────────────────────────────────────
   const rows = useMemo(() => calcOEE(sessions, downtimes, defects), [sessions, downtimes, defects]);
 
+  /* ยอดผลิตจากใบงาน (pair-aware + op-aware) ของกลุ่ม session ใดๆ — ใช้ทั้ง KPI หัวแท็บ และตารางรายช่วง
+     (QC audit 2026-08-20 · T3-12: เดิมตารางรายช่วงบวก actual_qty ดิบ → บวกกันแล้วไม่เท่า KPI หัวแท็บ
+     ในหน้าเดียวกัน — งานคู่โชว์ 2,000 ในตาราง แต่ KPI โชว์ 1,000) · ไม่มีใบงาน = fallback ค่า stamp */
+  const ordersProducedOf = useCallback((sessIds) => {
+    const os = trOrders.filter(o => sessIds.has(o.session_id));
+    if (!os.length) return null;   // ให้ผู้เรียกถอยไปใช้ค่า stamp เอง
+    const perMat = {}; let nullSum = 0;
+    os.forEach(o => {
+      const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
+        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
+      if (!q) return;
+      if (!o.mat_no) { nullSum += q; return; }
+      (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
+    });
+    // ⚠️ pairAwareTotal คืน { target, produced } เท่านั้น · collapseOps ยุบชั้น OP ไม่บวกซ้ำ
+    return pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => trPairMat[m] || null).produced + nullSum;
+  }, [trOrders, trPairMat]);
+
   // ── Group by period ────────────────────────────────────────────
   const grouped = useMemo(() => {
     const map = {};
     for (const r of rows) {
       const key = period === 'daily'
         ? r.work_date
+        : period === 'weekly'
+        ? fmtWeekKey(r.work_date)
         : period === 'monthly'
         ? fmtMonthKey(r.work_date)
         : fmtYearKey(r.work_date);
@@ -833,12 +996,13 @@ export default function OEEAnalytics() {
     const out = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => {
       return {
         key,
-        label: period === 'daily' ? fmtDayLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
+        label: period === 'daily' ? fmtDayLabel(key) : period === 'weekly' ? fmtWeekLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
         oee:   wavg(items, i => i.calcOEE, wLoad),
         a:     wavg(items, i => i.calcA, wLoad),
         p:     wavg(items, i => i.calcP, wRun),
         q:     wavg(items, i => i.calcQ, wProd),
-        totalQty:   items.reduce((s, i) => s + (i.totalQty || 0), 0),
+        // pair+op aware ให้ตรงกับ KPI หัวแท็บ — ไม่มีใบงานค่อยถอยไปค่า stamp
+        totalQty:   ordersProducedOf(new Set(items.map(i => i.id))) ?? items.reduce((s, i) => s + (i.totalQty || 0), 0),
         ngQty:      items.reduce((s, i) => s + (i.ngQty || 0), 0),
         unplannedMin: items.reduce((s, i) => s + i.unplannedMin, 0),
         count: items.length,
@@ -849,44 +1013,32 @@ export default function OEEAnalytics() {
     // ไม่งั้นกราฟ "ข้ามวัน" ทำให้ระยะห่างบนแกนไม่ตรงเวลาจริง อ่านเทรนด์ผิด
     // (UI-CONVENTIONS · pattern เดียวกับกราฟรายวันใน /product-history · QC audit 2026-08-03)
     // เติมเฉพาะช่องว่างระหว่างวันแรก-วันสุดท้ายที่มีข้อมูล (ไม่ pad หัว-ท้ายช่วงที่เลือก) · cap 400 วันกันช่วงยาวผิดปกติ
-    if (period !== 'daily' || out.length < 2) return out;
+    if (!['daily', 'weekly'].includes(period) || out.length < 2) return out;
     const dayMs = 86400000;
+    const stepMs = period === 'weekly' ? 7 * dayMs : dayMs; // แกนสัปดาห์เดินทีละจันทร์
     const first = new Date(`${out[0].key}T00:00:00`), last = new Date(`${out[out.length - 1].key}T00:00:00`);
-    const span = Math.round((last - first) / dayMs) + 1;
+    const span = Math.round((last - first) / stepMs) + 1;
     if (!(span > out.length) || span > 400) return out;
     const byKey = Object.fromEntries(out.map(g => [g.key, g]));
     const filled = [];
-    for (let t = first.getTime(); t <= last.getTime(); t += dayMs) {
+    for (let t = first.getTime(); t <= last.getTime(); t += stepMs) {
       const d = new Date(t);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       filled.push(byKey[key] || {
-        key, label: fmtDayLabel(key), empty: true,
+        key, label: period === 'weekly' ? fmtWeekLabel(key) : fmtDayLabel(key), empty: true,
         oee: null, a: null, p: null, q: null,
         totalQty: 0, ngQty: 0, unplannedMin: 0, count: 0,
       });
     }
     return filled;
-  }, [rows, period]);
+  }, [rows, period, ordersProducedOf]);
 
   // ── Overall KPIs ───────────────────────────────────────────────
   // ผลิตรวมของช่วง — นับงานคู่ RH/LH เป็น 1 คู่/stroke (เหมือนแท็บภาพรวมวันนี้ · util pairAwareTotal)
   // ไม่มีใบงาน (ยังโหลดไม่เสร็จ/ข้อมูลเก่า) → ถอยไปใช้ actual_qty ที่ stamp ไว้
   const trTotalQty = useMemo(() => {
-    const ids = new Set(rows.map(r => r.id));
-    const os = trOrders.filter(o => ids.has(o.session_id));
-    if (!os.length) return rows.reduce((s2, r) => s2 + (r.totalQty || 0), 0);
-    const perMat = {}; let nullSum = 0;
-    os.forEach(o => {
-      const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
-        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
-      if (!q) return;
-      if (!o.mat_no) { nullSum += q; return; }
-      (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
-    });
-    // ⚠️ pairAwareTotal คืน { target, produced } เท่านั้น — ชื่อฟิลด์อื่นได้ undefined เงียบๆ
-    // collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่บวกซ้ำ
-    return pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => trPairMat[m] || null).produced + nullSum;
-  }, [rows, trOrders, trPairMat]);
+    return ordersProducedOf(new Set(rows.map(r => r.id))) ?? rows.reduce((s2, r) => s2 + (r.totalQty || 0), 0);
+  }, [rows, ordersProducedOf]);
 
   const kpi = useMemo(() => {
     // ถ่วงน้ำหนักตรงจากทุกกะใน scope (ไม่ใช่เฉลี่ยของค่าเฉลี่ยรายวันอีกชั้น — mean-of-means ทำให้
@@ -907,7 +1059,44 @@ export default function OEEAnalytics() {
     // TEEP: ฐาน = เวลาปฏิทินทั้งหมดในช่วงที่เลือก × จำนวนไลน์ — **ต้องรวมวันที่ไม่ได้เปิดกะด้วย**
     // (ตามตำรา "Not Scheduled Time / ไม่มีแผนเปิดกะ" อยู่ในฐาน TEEP — ถ้านับเฉพาะวันที่เปิดกะ TEEP จะสูงเกินจริง)
     const dayCount = Math.max(1, Math.round((new Date(`${dateTo}T00:00:00`) - new Date(`${dateFrom}T00:00:00`)) / 86400000) + 1);
-    const calMin = lineSet.size * dayCount * 1440;
+
+    /* ⚠️⚠️ กำลังผลิตต้องนับ "ไลน์ละครั้งเดียว" — user จับได้ 2026-08-20 ว่า TEEP ต่ำผิดปกติ
+       ตัดออก 2 กลุ่ม เพราะเป็น "ของชิ้นเดียวกันที่นับไปแล้ว" ไม่ใช่กำลังผลิตเพิ่ม:
+       1. ไลน์แม่ที่ไลน์ลูกก็เปิดกะ (HYDROFORM/GOR/LWR BAR/LINE APRON ASSY) — งานเกิดบนลูกอยู่แล้ว
+       2. ชื่อที่ไม่อยู่ในทะเบียน production_lines (เปิดกะด้วยชื่อ "เครื่อง" เช่น SP-72) — เครื่องใน
+          ไลน์ที่นับไปแล้ว · ข้อมูลจริง 7 ชื่อนี้กินตัวหาร 29% แต่มีเวลากะรวมแค่ 1%
+       ⚠️ ตัดเฉพาะ "ตัวหาร" — เวลากะ/เวลารับภาระของกะพวกนั้นยังนับในตัวเศษ (เป็นเวลาผลิตจริง)
+       ⚠️ ไลน์ที่ไม่เคยเปิดกะเลย (PD1/PD2 ตอนนี้) ไม่เข้าตัวหารอยู่แล้ว เพราะ lineSet มาจากกะจริง
+          — ตรงกับที่ user สั่ง "ยังไม่มียอดผลิต ยังไม่ต้องนับ มีเมื่อไหร่ค่อยคิด" */
+    const regNames = new Set(linesFull.map(l => l.name));
+    const ranNames = [...lineSet];
+    const unregNames = regNames.size ? ranNames.filter(n => !regNames.has(n)) : [];
+    const dupParents = ranNames.filter(n => (parentChildrenMap[n] || []).some(k => lineSet.has(k)));
+    // ทะเบียนยังไม่โหลด = อย่าเพิ่งตัดอะไร (ไม่งั้นตัวหารเป็น 0 แล้ว TEEP หายทั้งแผง)
+    const capacityLines = regNames.size
+      ? ranNames.filter(n => regNames.has(n) && !dupParents.includes(n))
+      : ranNames;
+
+    /* ⚠️⚠️ ปฏิทินของแต่ละไลน์ต้องเริ่มนับ "วันที่ไลน์นั้นเข้าระบบ" ไม่ใช่วันเริ่มช่วงที่เลือก
+       (user 2026-08-20: "ควรคิดตั้งแต่ระบบเริ่มนะ สตาร์ทช่วง 1/7/26")
+       ข้อมูลจริง: ระบบเริ่มใช้จริงสัปดาห์ 29/6 · แต่ละไลน์ทยอยเข้าคนละวัน (2/7 ถึง 23/7)
+       ไม่มีไลน์ไหนเริ่มตั้งแต่ 22/5 (วัน default ของช่วง 90 วัน) เลยสักไลน์
+       → นับปฏิทินเต็มช่วงให้ทุกไลน์ = **อ้างว่าไลน์ว่างงาน ทั้งที่ความจริงคือยังไม่ได้เข้าระบบ**
+         ซึ่งเป็นคำกล่าวอ้างเท็จ ไม่ใช่แค่ตัวเลขเพี้ยน (1,183 → 510 วัน-ไลน์ · TEEP 11.4% → ~26%)
+       ⚠️ ไลน์ที่หยุดไปเฉยๆ หลังเข้าระบบแล้ว **ยังถูกนับเต็ม** — นั่นคือกำลังผลิตที่ว่างจริง
+          ตัวนี้ต่างจาก "ยังไม่เข้าระบบ" คนละเรื่อง ห้ามยุบรวมกัน
+       ⚠️ กติกานี้ทำให้คำสั่ง user ก่อนหน้า ("PD1/PD2 ยังไม่ได้ใช้ มีเมื่อไหร่ค่อยเริ่มคิด")
+          ทำงานเองอัตโนมัติ — ไลน์ใหม่เริ่มนับปฏิทินวันที่เปิดกะแรก ไม่ต้องไปตั้งค่าอะไร */
+    const firstDay = {};
+    valid.forEach(r => {
+      const d = r.work_date;
+      if (!d) return;
+      if (!firstDay[r.line_name] || d < firstDay[r.line_name]) firstDay[r.line_name] = d;
+    });
+    const daysTo = (d) => Math.max(1, Math.round(
+      (new Date(`${dateTo}T00:00:00`) - new Date(`${d}T00:00:00`)) / 86400000) + 1);
+    const lineDays = capacityLines.reduce((a, n) => a + daysTo(firstDay[n] || dateFrom), 0);
+    const calMin = lineDays * 1440;
     const r1 = (v) => (v == null ? null : +v.toFixed(1));
     return {
       oee, a: wavg(rows, r => r.calcA, wLoad),
@@ -917,10 +1106,22 @@ export default function OEEAnalytics() {
       teep: oee != null && calMin  > 0 ? r1(oee * (sumNetAvail / calMin))   : null,
       netAvailMin: Math.round(sumNetAvail), shiftMinTotal: Math.round(sumShift),
       breakMinTotal: Math.round(sumBreak), plannedMinTotal: Math.round(sumPlanned), calMin,
-      teepLines: lineSet.size, teepDays: dayCount,
+      teepLines: capacityLines.length, teepDays: dayCount, teepLineDays: lineDays,
+      // ตัดอะไรออกจากตัวหารบ้าง — ต้องโชว์บนจอ ห้ามตัดเงียบ
+      teepRan: lineSet.size, teepDupParents: dupParents, teepUnreg: unregNames,
+      // ไลน์แรกสุดเข้าระบบวันไหน — ใช้บอกว่าปฏิทินเริ่มนับตรงไหน
+      teepFirstDay: capacityLines.length
+        ? capacityLines.map(n => firstDay[n]).filter(Boolean).sort()[0] || null : null,
       sessions: rows.length, total: trTotalQty,
+      // ── ที่มาของ A / P / Q — user 2026-08-20: "จะรู้ได้ไงว่า A เท่านี้มาจาก downtime กี่นาที
+      //    ของ work time · Q เท่านั้นมาจากดี/เสียเท่าไหร่" → แนบตัวตั้ง/ตัวหารของแต่ละตัวไปเลย
+      //    ⚠️ เป็น "ตัวเลขอธิบาย" ไม่ใช่ตัวที่เอาไปคำนวณ A/P/Q ซ้ำ — ค่าจริงยังเป็นค่าที่ stamp ตอนปิดกะ
+      //       (รวมทั้งช่วงแบบนี้จะได้ค่าใกล้ๆ แต่ไม่เท่าเป๊ะ เพราะของจริงคิดรายกะแล้วถ่วงน้ำหนัก) ── */
+      unplannedMinTotal: Math.round(rows.reduce((a, r) => a + (Number(r.unplannedMin) || 0), 0)),
+      okQtyTotal: rows.reduce((a, r) => a + (Number(r.okQty) || 0), 0),
+      ngQtyTotal: rows.reduce((a, r) => a + (Number(r.ngQty) || 0), 0),
     };
-  }, [rows, breakPols, dateFrom, dateTo, trTotalQty]);
+  }, [rows, breakPols, dateFrom, dateTo, trTotalQty, linesFull, parentChildrenMap]);
 
   // ── Downtime Pareto ────────────────────────────────────────────
   // แถวดิบสำหรับ Pareto + เจาะลึก (ParetoAbcChart รวมยอด/จัด ABC/เจาะมิติเอง)
@@ -930,36 +1131,84 @@ export default function OEEAnalytics() {
   // เดิมรวมทั้งสองประเภท → "นับสต๊อก / ไม่มีแผนผลิต" ครองอันดับ 1 ที่ 50% ทั้งที่ไม่ใช่ปัญหาที่ต้องแก้
   // (บั๊กเดียวกับที่เคยแก้ในแผง Top Downtime 2026-07-15 แต่ Pareto ตกหล่น · user เจอ 2026-08-05)
   // toggle "รวมหยุดตามแผน" ให้ดูได้เมื่อต้องการ — ไม่ซ่อนข้อมูล แค่ไม่ให้ปนกับ loss จริงโดยปริยาย
+  /* 💰 บาทต่อแถว — ใส่ไว้กับ record ตั้งแต่ต้นทาง เพื่อให้ "เจาะมิติไหนก็เห็นเงิน" โดยไม่ต้อง query ใหม่
+     (คำสั่ง user 2026-08-26 "แปลง loss เป็นตัวเงินคือหมัดเด็ด — เจาะเข้าไปต่อได้มั้ย")
+     ⚠️ คืน `null` เมื่อไลน์ไม่มี cost center / ไม่มี activity rate — **ห้ามคืน 0**
+        เพราะพาเรโตที่เรียงตามเงินจะชี้เป้าผิด (ไลน์ที่ตีราคาไม่ได้จะกลายเป็น "ไม่มีความสูญเสีย") */
+  const priceMin = useCallback((min, lineName, workDate) => {
+    if (!(min > 0) || !lineName) return null;
+    const cc = lineCostCenter(linesFull, lineName);
+    const rate = cc ? rateFor(ccRates, cc, workDate) : null;
+    if (!rate) return null;
+    return (min / 60) * ratePerHour(rate, RATE_COMPONENTS.map(c => c.key));
+  }, [linesFull, ccRates]);
+
   const dtRecords = useMemo(() => downtimes.filter(d => dtIncludePlanned || d.dr_downtime_types?.category !== 'planned').map(d => {
     const s = sessById[d.session_id] || {};
+    const min = Number(d.duration_min) || 0;
     return {
       cat: d.dr_downtime_types?.name_th || 'ไม่ระบุ',
-      value: Number(d.duration_min) || 0,
+      value: min,
+      // หยุดตามแผนไม่ใช่ loss → ไม่ตีเป็นเงิน (กฎเดียวกับ dtCost) แต่ยังอยู่ในพาเรโตตอนติ๊ก "รวมในแผน"
+      baht: d.dr_downtime_types?.category === 'planned' ? null : priceMin(min, s.line_name, s.work_date),
       machine: d.machine_no || '', line: s.line_name || '',
       product: d.mat_no || '', shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [downtimes, sessById, dtIncludePlanned]);
+  }), [downtimes, sessById, dtIncludePlanned, priceMin]);
   const dtPlannedMin = useMemo(() => downtimes.filter(d => d.dr_downtime_types?.category === 'planned')
     .reduce((a, d) => a + (Number(d.duration_min) || 0), 0), [downtimes]);
+  /* 💰 มูลค่าดาวไทม์นอกแผน (2026-08-19 · คำสั่ง user "รายละเอียดดาวไทม์ควร link เรื่องเงินออกมาให้เห็น")
+     บาท = นาที/60 × activity rate (DL+DP+IDP+OH เต็ม) ของ cost center ไลน์นั้น ณ วันเกิดเหตุ
+     · นับเฉพาะนอกแผน (planned ไม่ใช่ loss — กฎเดียวกับ Pareto) · ไลน์ไม่มี rate = กอง "ตีมูลค่าไม่ได้"
+       รายงานบนจอเสมอ ห้ามเดา (convention เดียวกับพาร์ทไม่มีต้นทุนในแผงมูลค่าของเสีย) */
+  const dtCost = useMemo(() => {
+    const allComps = RATE_COMPONENTS.map(c => c.key);
+    const byType = new Map();   // ประเภท -> { min, baht }
+    const noRate = new Map();   // ไลน์ -> นาทีที่ตีมูลค่าไม่ได้
+    let baht = 0, pricedMin = 0, totalMin = 0;
+    downtimes.forEach(d => {
+      if (d.dr_downtime_types?.category === 'planned') return;
+      const min = Number(d.duration_min) || 0;
+      if (!min) return;
+      totalMin += min;
+      const sess = sessById[d.session_id] || {};
+      const cc = sess.line_name ? lineCostCenter(linesFull, sess.line_name) : null;
+      const rate = cc ? rateFor(ccRates, cc, sess.work_date) : null;
+      if (!rate) { const k = sess.line_name || 'ไม่ระบุไลน์'; noRate.set(k, (noRate.get(k) || 0) + min); return; }
+      const v = (min / 60) * ratePerHour(rate, allComps);
+      baht += v; pricedMin += min;
+      const t = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
+      const cur = byType.get(t) || { min: 0, baht: 0 };
+      cur.min += min; cur.baht += v; byType.set(t, cur);
+    });
+    return { baht, pricedMin, totalMin, byType: [...byType.entries()].sort((a, b) => b[1].baht - a[1].baht),
+      noRate: [...noRate.entries()].sort((a, b) => b[1] - a[1]) };
+  }, [downtimes, sessById, linesFull, ccRates]);
   const defRecords = useMemo(() => defects.map(d => {
     const s = sessById[d.session_id] || {};
+    const qty = (d.qty_ng || 0) + (d.qty_suspect || 0);
+    const mat = d.prod_orders?.mat_no || null;
+    const { unit: unitCost } = defectUnitCost(mat ? partCost[mat] : null);
     return {
       cat: d.dr_defect_types?.name_th || 'ไม่ระบุ',
-      value: (d.qty_ng || 0) + (d.qty_suspect || 0),
+      value: qty,
+      // พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master = null (ตีมูลค่าไม่ได้) ห้ามเดาเป็น 0
+      baht: unitCost == null ? null : qty * unitCost,
       product: d.prod_orders?.mat_no || '', line: s.line_name || '',
       shift: s.shift === 'day' ? 'กะเช้า' : s.shift === 'night' ? 'กะดึก' : '',
       man: d.reported_by_name || '', date: s.work_date || '',
       note: d.description || '',
     };
-  }), [defects, sessById]);
+  }), [defects, sessById, partCost]);
   /* 💰 มูลค่าของเสีย — แยก "ทั้งหมด" กับ "เฉพาะไลน์ผลิต (ไม่รวมงานทดลอง)" (2026-08-17 · คำสั่ง user)
      ตัวหลัง = ก้อนเดียวกับที่ถูกนับใน %Q ของ OEE · ต้นทุน/ชิ้นใช้ util กลาง defectUnitCost
      ⚠️ พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master → ไม่เดาราคา แต่รายงานจำนวนให้เห็นบนจอ */
   const defectCost = useMemo(() => {
     const acc = { all: 0, line: 0, trial: 0, qtyAll: 0, qtyLine: 0, qtyTrial: 0 };
     const noCost = new Map();   // mat -> จำนวนชิ้นที่ตีมูลค่าไม่ได้
+    const byType = new Map();   // ประเภทของเสีย -> { qty, baht }
     defects.forEach(d => {
       const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
       if (!qty) return;
@@ -974,8 +1223,14 @@ export default function OEEAnalytics() {
       }
       const v = qty * unit;
       acc.all += v; if (trial) acc.trial += v; else acc.line += v;
+      /* Top ประเภทตามมูลค่า — ตอบคนละคำถามกับ Pareto รายจำนวน
+         ("ประเภทไหนแพงสุด" ≠ "ประเภทไหนเยอะสุด" — ของเสีย 5 ชิ้นของพาร์ทแพง กินเงินกว่า 50 ชิ้นของพาร์ทถูก) */
+      const t = d.dr_defect_types?.name_th || 'ไม่ระบุ';
+      const cur = byType.get(t) || { qty: 0, baht: 0 };
+      cur.qty += qty; cur.baht += v; byType.set(t, cur);
     });
-    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]) };
+    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]),
+      byType: [...byType.entries()].sort((a, b) => b[1].baht - a[1].baht) };
   }, [defects, partCost]);
 
   // `cluster: true` = จับกลุ่มจากข้อความอิสระ (ทางเดียวที่จะเจาะ "อื่นๆ" ซึ่งบังคับกรอกรายละเอียดอยู่แล้ว)
@@ -1028,6 +1283,16 @@ export default function OEEAnalytics() {
           )}
         </>}
       />
+
+      {/* โหลดแถวลูก (downtime/ของเสีย/ใบงาน) ไม่ครบ = ตัวเลขรวมต่ำกว่าจริง — ห้ามแสดง 0 เหมือนไม่มีข้อมูล */}
+      {(viewTab === 'today' ? tdLoadWarn : viewTab === 'trend' ? trLoadWarn : null) && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 9, padding: '9px 13px', marginBottom: 12, fontSize: 12.5, color: '#ef4444', lineHeight: 1.6 }}>
+          ⚠ <b>ตัวเลขบางส่วนโหลดไม่ครบ</b> — Downtime / ของเสีย / ยอดผลิต อาจต่ำกว่าความจริง
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+            {viewTab === 'today' ? tdLoadWarn : trLoadWarn} · ลองย่อช่วงวันให้สั้นลงแล้วกดโหลดใหม่
+          </div>
+        </div>
+      )}
 
       {viewTab === 'today' ? (
         <>
@@ -1232,25 +1497,85 @@ export default function OEEAnalytics() {
             ); })()}
           </div>
 
-          {/* 1.2 Daily OEE chart */}
+          {/* 1.2 ⏱ ไทม์ไลน์เครื่องหยุด — "หยุดตอนไหนของวัน" (user 2026-08-26)
+              แท็บนี้เป็นภาพวันเดียว คำถามที่ตอบไม่ได้มาตลอดคือ "26 นาทีนั้นกระจุกช่วงไหน"
+              ซึ่งเปลี่ยนวิธีแก้คนละเรื่อง — ยอดรวม/พาเรโต้ด้านล่างตอบแค่ "ประเภทไหนมากสุด" */}
           <div style={s.section}>
-            <div style={s.title}>OEE แต่ละวัน (10 วันล่าสุด)</div>
-            <ResponsiveContainer width="100%" height={260}>
-              <ComposedChart data={tdHistoryGrouped} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
-                <Tooltip content={<OEETooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={tdTarget.oee} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1} label={{ value: `TARGET ${tdTarget.oee}%`, fill: '#22c55e', fontSize: 11, position: 'insideTopRight' }} />
-                <Bar dataKey="oee" name="OEE %" fill="#22c55e" opacity={0.85} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="oee" position="top" formatter={v => v != null ? `${v}%` : ''} style={{ fontSize: 11, fill: 'var(--text)' }} />
-                </Bar>
-                <Line type="monotone" dataKey="a" name="A%" stroke="#22c55e" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="p" name="P%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-                <Line type="monotone" dataKey="q" name="Q%" stroke="#a78bfa" strokeWidth={1.5} dot={{ r: 3 }} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+            <div style={s.title}>⏱ ไทม์ไลน์เครื่องหยุด — {tdDate}</div>
+            <DowntimeTimeline sessions={tdSessionsTeamFiltered} downtimes={tdDowntimesScoped} workDate={tdDate} isMobile={isMobile} />
+          </div>
+
+          {/* 1.3 วันนี้เทียบ 9 วันก่อนหน้า — เดิมเป็นกราฟ 10 วันเต็มจอ ซึ่ง (ก) ซ้ำกับ sparkline
+              ในการ์ด A/P/Q ที่อยู่เหนือมันเอง (ข) ซ้ำกับกราฟแนวโน้มรายวันในแท็บ 📊 แนวโน้ม/ประวัติ
+              ซึ่งให้ตัวเลขเท่ากันเป๊ะ (ตารางเดียวกัน · closed เหมือนกัน · wavg สูตรเดียวกัน)
+              → ย่อเป็นแถบเทียบ + ปุ่มกระโดดไปดูย้อนหลังเต็มในแท็บที่ทำหน้าที่นั้นจริง (user 2026-08-20)
+              → 2026-08-26 พับเป็นค่าเริ่มต้น: หน้านี้คือ "วันนี้" การเทียบย้อนหลังมีบ้านอยู่แล้วที่แท็บแนวโน้ม
+                 (ไม่ลบทิ้ง — ยังมีค่าตอนกะปิดครบแล้ว แค่ไม่ควรกินที่เหนือไทม์ไลน์/พาเรโต้) */}
+          <div style={{ ...s.section, paddingBottom: tdCmpOpen ? undefined : 10 }}>
+            <div onClick={() => setTdCmpOpen(o => !o)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', cursor: 'pointer', userSelect: 'none' }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', transform: tdCmpOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>วันนี้เทียบค่าเฉลี่ย {tdVsAvg.days ? `${tdVsAvg.days} วันก่อนหน้า` : ''}</span>
+              {!tdCmpOpen && (
+                <span style={{ fontSize: 11.5, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {['oee', 'a', 'p', 'q'].map(k => {
+                    const v = tdVsAvg[k];
+                    const up = v.diff != null && v.diff > 0.05, dn = v.diff != null && v.diff < -0.05;
+                    return (
+                      <span key={k}>
+                        <b style={{ color: 'var(--muted)' }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</b>{' '}
+                        <b style={{ color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>{v.now ?? '—'}{v.now != null ? '%' : ''}</b>
+                        <span style={{ color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
+                          {v.diff == null ? ' (เทียบไม่ได้)' : ` (${up ? '▲+' : dn ? '▼' : '●'}${v.diff})`}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </span>
+              )}
+            </div>
+          {tdCmpOpen && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginTop: 10 }}>
+            {!tdVsAvg.days && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีข้อมูลย้อนหลัง</div>}
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, minWidth: 260 }}>
+              {['oee', 'a', 'p', 'q'].map(k => {
+                const v = tdVsAvg[k];
+                const up = v.diff != null && v.diff > 0.05;
+                const dn = v.diff != null && v.diff < -0.05;
+                return (
+                  <div key={k} style={{ flex: '1 1 120px', minWidth: 110, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 11px' }}>
+                    <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</div>
+                    <div style={{ fontSize: 17, fontWeight: 900, color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>
+                      {v.now ?? '—'}{v.now != null ? '%' : ''}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
+                      {v.diff == null ? 'เทียบไม่ได้' : `${up ? '▲ +' : dn ? '▼ ' : '● '}${v.diff} จุด`}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                      เฉลี่ย {v.avg ?? '—'}{v.avg != null ? '%' : ''}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+              <button onClick={() => { setPeriod('daily'); setDateFrom(dateStrAdd(tdDate, -29)); setDateTo(tdDate); setViewTab('trend'); }}
+                title="เปิดแท็บแนวโน้ม/ประวัติ พร้อมตั้งช่วง 30 วันล่าสุดให้"
+                style={{ ...s.tab(false), color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.4)', whiteSpace: 'nowrap' }}>
+                📈 ดูย้อนหลังเต็ม (30 วัน)
+              </button>
+              {/* ⚠️ ตัวกรองทีมมีผลกับตัวเลข "วันนี้" แต่ไม่มีผลกับค่าเฉลี่ยย้อนหลัง (ตารางกะโหลดมาแค่วันที่เลือก)
+                  — ห้ามปล่อยให้คนอ่านคิดว่าเทียบทีมเดียวกัน */}
+              {tdTeam && (
+                <div style={{ fontSize: 10.5, color: '#f59e0b', maxWidth: 220, textAlign: 'right', lineHeight: 1.45 }}>
+                  ⚠ ค่าเฉลี่ยย้อนหลัง <b>ไม่ได้กรองทีม {tdTeam}</b> — เทียบกับทุกทีม
+                </div>
+              )}
+            </div>
+          </div>
+          )}
           </div>
 
           {/* 2. Downtime — pareto bars สีตามประเภท (นอกแผนเด่น/ในแผนจาง) แทนโดนัทหลายสี + ตารางยาว */}
@@ -1308,7 +1633,9 @@ export default function OEEAnalytics() {
                       {shown.map(d => {
                         const planned = d.category === 'planned';
                         return (
-                          <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%)`}>
+                          <div key={d.name} title={`${d.name} — ${d.min} นาที (${d.pct}%) · กดเพื่อดูรายการ`}
+                            onClick={() => setTdDtDrill({ kind: 'cause', key: d.name, label: d.name, typeId: d.typeId })}
+                            style={{ cursor: 'pointer' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
                               <span style={{ color: planned ? 'var(--muted)' : 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                                 {d.name}{planned && <span style={{ marginLeft: 5, fontSize: 11 }}>📅</span>}
@@ -1342,7 +1669,9 @@ export default function OEEAnalytics() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {tdDtByPart.map((d, i) => (
-                      <div key={d.mat} title={`${d.part} — ${d.min} นาที (${d.pct}%)`}>
+                      <div key={d.mat} title={`${d.part} — ${d.min} นาที (${d.pct}%) · กดเพื่อดูรายการ`}
+                        onClick={() => setTdDtDrill({ kind: 'part', key: d.mat, label: d.part })}
+                        style={{ cursor: 'pointer' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, fontSize: 12, marginBottom: 3 }}>
                           <span style={{ color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
                             <span style={{ color: 'var(--muted)', fontWeight: 700, marginRight: 6, fontVariantNumeric: 'tabular-nums' }}>{i + 1}.</span>{d.part}
@@ -1361,17 +1690,125 @@ export default function OEEAnalytics() {
               </div>
             </div>
           </div>
+
+          {/* เจาะรายการดิบของแถวที่กด (แผง 2.2 / 2.3) — ตอบว่าปัญหานี้เกิดที่ไหน เครื่องไหน กี่โมง */}
+          {tdDtDrill && (() => {
+            const totMin = tdDrillRows.reduce((a, d) => a + (d.duration_min || 0), 0);
+            const th = { padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
+            const td = { padding: '6px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
+            return (
+              <div className="modal-scroll" onClick={() => setTdDtDrill(null)}
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+                <div onClick={e => e.stopPropagation()}
+                  style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 900px)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '13px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {tdDtDrill.kind === 'cause' ? '⏱ ' : '📦 '}{tdDtDrill.label}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+                        {tdDate} · {tdDrillRows.length} รายการ · รวม <b style={{ color: '#a855f7' }}>{Math.round(totMin).toLocaleString()}</b> นาที
+                        {tdDtDrill.kind === 'part' && ' · เฉพาะนอกแผน'}
+                      </div>
+                    </div>
+                    <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                  </div>
+                  <div style={{ flex: 1, overflow: 'auto', padding: '4px 14px 14px' }}>
+                    {/* 🔁 เกิดซ้ำแค่ไหน — ย้อนหลัง 30 วันของสาเหตุนี้ (ตอบว่าเป็นปัญหาเรื้อรังหรือเหตุการณ์เดียว) */}
+                    {tdDtDrill.kind === 'cause' && tdDrillHist && (
+                      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', margin: '10px 0 4px' }}>
+                        {tdDrillHist.loading ? (
+                          <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดย้อนหลัง 30 วัน…</div>
+                        ) : tdDrillHist.error ? (
+                          <div style={{ fontSize: 12, color: '#ef4444' }}>โหลดย้อนหลังไม่สำเร็จ — {tdDrillHist.error}</div>
+                        ) : (<>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 7 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>🔁 ย้อนหลัง 30 วัน</div>
+                            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                              เกิด <b style={{ color: 'var(--text)' }}>{tdDrillHist.hitDays}</b> วัน · <b style={{ color: 'var(--text)' }}>{tdDrillHist.count}</b> ครั้ง ·
+                              รวม <b style={{ color: '#a855f7' }}>{Math.round(tdDrillHist.total).toLocaleString()}</b> นาที
+                            </div>
+                          </div>
+                          {/* แท่งรายวัน — วันที่เลือกอยู่เน้นสี · วันไม่เกิด = ตอเทาเตี้ย (ไม่ปล่อยว่างจนดูเหมือนวันหาย) */}
+                          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 44 }}>
+                            {tdDrillHist.days.map(d => (
+                              <div key={d.key} title={`${d.key} — ${Math.round(d.min).toLocaleString()} นาที`}
+                                style={{ flex: 1, minWidth: 3, borderRadius: '2px 2px 0 0',
+                                  height: `${Math.max(3, (d.min / tdDrillHist.max) * 100)}%`,
+                                  background: d.min > 0 ? (d.key === tdDate ? '#f59e0b' : '#a855f7') : 'var(--border)',
+                                  opacity: d.min > 0 ? 0.9 : 1 }} />
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                            <span>{dateStrAdd(tdDate, -29)}</span>
+                            <span style={{ color: '#f59e0b' }}>■ วันที่เลือก</span>
+                            <span>{tdDate}</span>
+                          </div>
+                          {tdDrillHist.hitDays >= 10 && (
+                            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 7, lineHeight: 1.5 }}>
+                              ⚠ เกิด {tdDrillHist.hitDays} วันจาก 30 วัน = ปัญหาเรื้อรัง ไม่ใช่เหตุการณ์เดียว —
+                              ควรเปิดโปรเจคปรับปรุงที่ <b>/improvements</b> แทนการแก้ซ้ำทุกวัน
+                            </div>
+                          )}
+                        </>)}
+                      </div>
+                    )}
+                    {tdDtDrill.kind === 'cause' && !tdDtDrill.typeId && (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '10px 0 4px' }}>
+                        (รายการกลุ่มนี้ไม่ได้ผูกกับประเภท Downtime — ดูย้อนหลังให้ไม่ได้)
+                      </div>
+                    )}
+                    {tdDrillRows.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>ไม่มีรายการ</div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
+                        <thead><tr style={{ background: 'var(--bg2)' }}>
+                          {['ไลน์', 'กะ', 'เวลา', 'เครื่อง', 'ชิ้นงาน', 'นาที', 'หมายเหตุ / ผู้บันทึก'].map((h, i) =>
+                            <th key={i} style={th}>{h}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {tdDrillRows.map(d => (
+                            <tr key={d.id}>
+                              <td style={td}>{d._s?.line_name || '—'}</td>
+                              <td style={td}>{d._s?.shift === 'night' ? '🌙 ดึก' : '☀️ เช้า'}</td>
+                              <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                                {d.started_at ? fmtTime(new Date(d.started_at)) : '—'}
+                                {d.ended_at && <> – {fmtTime(new Date(d.ended_at))}</>}
+                                {/* ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่ ต้องเห็นชัด */}
+                                {d.started_at && !d.ended_at && <span style={{ color: '#ef4444', fontWeight: 700 }}> · ยังไม่ปิด</span>}
+                              </td>
+                              <td style={td}>{d.machine_no || '—'}</td>
+                              <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>{d.mat_no || '—'}</td>
+                              <td style={{ ...td, fontWeight: 800, textAlign: 'right', color: d.dr_downtime_types?.category === 'planned' ? 'var(--muted)' : '#a855f7' }}>
+                                {Math.round(d.duration_min || 0).toLocaleString()}
+                              </td>
+                              <td style={{ ...td, minWidth: 200 }}>
+                                {d.description || <span style={{ color: 'var(--muted)' }}>— ไม่ได้กรอกหมายเหตุ —</span>}
+                                {d.reported_by_name && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{d.reported_by_name}</div>}
+                                {/* วิธีแก้ไขที่หัวหน้ากลุ่มลงไว้ (feedback 2026-08-19) */}
+                                {d.fix_action && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>🛠 {d.fix_action}</div>}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </>
       ) : viewTab === 'insight' ? (
-        <OeeInsightPanel lines={linesFull} />
+        <OeeInsightPanel lines={linesFull} ccRates={ccRates} />
       ) : (
       <>
       {/* Filters */}
       <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: 4 }}>
-          {['daily','monthly','yearly'].map(p => (
+          {['daily','weekly','monthly','yearly'].map(p => (
             <button key={p} style={s.tab(period === p)} onClick={() => setPeriod(p)}>
-              {p === 'daily' ? 'รายวัน' : p === 'monthly' ? 'รายเดือน' : 'รายปี'}
+              {p === 'daily' ? 'รายวัน' : p === 'weekly' ? 'รายสัปดาห์' : p === 'monthly' ? 'รายเดือน' : 'รายปี'}
             </button>
           ))}
         </div>
@@ -1406,21 +1843,83 @@ export default function OEEAnalytics() {
       {/* KPI Cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <KpiCard label="OEE เฉลี่ย"     value={kpi.oee} color={kpi.oee != null ? oeeColor(kpi.oee) : undefined} sub={`${kpi.sessions} กะ · เป้า ≥ ${trTarget.oee}%`} />
-        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`} />
-        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`} />
-        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`} />
+        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`}
+          calc={<>
+            เวลารับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> น.<br />
+            − หยุดนอกแผน <b style={{ color: '#a855f7' }}>{kpi.unplannedMinTotal.toLocaleString()}</b> น.<br />
+            = เดินเครื่อง <b>{Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()}</b> น.
+          </>} />
+        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`}
+          calc={<>
+            เวลาที่ควรใช้ตาม CT ÷ เวลาเดินเครื่อง<br />
+            <span style={{ color: 'var(--muted)' }}>ผลิต {kpi.total.toLocaleString()} ชิ้น ใน {Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()} น.</span>
+          </>} />
+        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`}
+          calc={<>
+            ของดี <b style={{ color: '#22c55e' }}>{kpi.okQtyTotal.toLocaleString()}</b> ชิ้น<br />
+            ของเสีย <b style={{ color: '#ef4444' }}>{kpi.ngQtyTotal.toLocaleString()}</b> ชิ้น<br />
+            = ผลิตจริง <b>{(kpi.okQtyTotal + kpi.ngQtyTotal).toLocaleString()}</b> ชิ้น
+          </>} />
         <KpiCard label="ผลิตรวม" value={null} sub={`${kpi.total.toLocaleString()} ชิ้น`}
           color="var(--text)" />
       </div>
 
       {/* ── OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" · เห็นเวลาที่หายไปกับแผน/ไม่ได้เปิดกะ (2026-08-04) ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'stretch' }}>
+        {/* OOE/TEEP ต่างจาก OEE ที่ "ตัวหาร" อย่างเดียว — กางตัวเศษ/ตัวหารให้เห็นเหมือน A/P/Q
+            (user 2026-08-20: "ให้สองค่านี้เห็นแบบ %A ด้วย") · สูตร = OEE × (รับภาระ ÷ ฐาน) */}
         <KpiCard label="OOE (Overall Operations Effectiveness)" value={kpi.ooe}
           color={kpi.ooe != null ? oeeColor(kpi.ooe) : undefined}
-          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)" />
+          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)"
+          calc={<>
+            {/* ⚠️ ไม่ใช่ "เอา OEE ไปคูณเพิ่ม" — พีชคณิตยุบแล้วเป็น A×P×Q ชุดเดียวกับ OEE
+                เปลี่ยนแค่ตัวหารของ A (user ทัก 2026-08-20 ว่าคำอธิบายเดิมทำให้เข้าใจผิด) */}
+            เป็น <b>A × P × Q</b> ชุดเดียวกับ OEE — เปลี่ยนแค่ตัวหารของ A<br />
+            A = เดินเครื่อง ÷ <b>เวลากะทั้งหมด {kpi.shiftMinTotal.toLocaleString()}</b> น.
+            → <b>{kpi.a != null && kpi.shiftMinTotal > 0 ? (kpi.a * kpi.netAvailMin / kpi.shiftMinTotal).toFixed(1) : '—'}%</b>
+            <span style={{ color: 'var(--muted)' }}> (OEE ใช้ {kpi.a ?? '—'}%)</span><br />
+            <span style={{ color: 'var(--muted)' }}>P {kpi.p ?? '—'}% · Q {kpi.q ?? '—'}% เหมือน OEE ทุกตัว</span>
+          </>} />
         <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
           color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
-          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ × ${kpi.teepDays} วัน`} />
+          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ · รวม ${kpi.teepLineDays.toLocaleString()} วัน-ไลน์`}
+          calc={<>
+            เป็น <b>A × P × Q</b> ชุดเดียวกับ OEE — เปลี่ยนแค่ตัวหารของ A<br />
+            A = เดินเครื่อง ÷ <b>ปฏิทิน {kpi.calMin.toLocaleString()}</b> น.
+            → <b>{kpi.a != null && kpi.calMin > 0 ? (kpi.a * kpi.netAvailMin / kpi.calMin).toFixed(1) : '—'}%</b>
+            <span style={{ color: 'var(--muted)' }}> (OEE ใช้ {kpi.a ?? '—'}%)</span><br />
+            <span style={{ color: 'var(--muted)' }}>P {kpi.p ?? '—'}% · Q {kpi.q ?? '—'}% เหมือน OEE ทุกตัว</span>
+          </>}
+          /* คำอธิบายยาว → พับหลัง ⓘ · **แต่ยังต้องอยู่บนจอ ห้ามตัดทิ้ง**
+             ทั้ง 3 ก้อนนี้ตอบคำถามที่ถูกถามจริงมาแล้ว (ทำไมต่ำ · ปฏิทินเริ่มตรงไหน · ตัดไลน์อะไรออก) */
+          more={<>
+            {/* ต่ำเป็นเรื่องปกติ — ฐานรวมเวลาที่ไม่ได้เปิดกะด้วย ห้ามให้คนอ่านตกใจว่าโรงงานแย่ */}
+            <div style={{ color: 'var(--muted)' }}>
+              ต่ำเพราะฐานนับเวลาที่ยังไม่ได้เปิดกะด้วย — บอก "กำลังผลิตที่เหลืออยู่" ไม่ใช่ผลงานของไลน์
+            </div>
+            {/* ปฏิทินของแต่ละไลน์เริ่มนับวันที่มันเข้าระบบ ไม่ใช่วันเริ่มช่วง — ต้องบอก ไม่งั้นคนคิดว่านับเต็มช่วง */}
+            <div style={{ color: 'var(--muted)', marginTop: 3 }}>
+              ปฏิทินเริ่มนับ<b> วันที่แต่ละไลน์เข้าระบบ</b> ไม่ใช่วันเริ่มช่วง
+              {kpi.teepFirstDay && <> (ไลน์แรกสุด {kpi.teepFirstDay})</>} —
+              ช่วงก่อนหน้านั้นคือ “ยังไม่ได้ใช้ระบบ” ไม่ใช่ “ไลน์ว่าง”
+            </div>
+            {/* ตัดอะไรออกจากตัวหารบ้าง — ต้องเห็น ไม่งั้นคนสงสัยว่าทำไมเลขไลน์ไม่ตรงกับที่เห็นในลิสต์ */}
+            {(kpi.teepDupParents.length > 0 || kpi.teepUnreg.length > 0) && (
+              <div style={{ color: '#f59e0b', marginTop: 3 }}>
+                เปิดกะ {kpi.teepRan} ชื่อ → นับเป็นกำลังผลิต {kpi.teepLines} ไลน์
+                {kpi.teepDupParents.length > 0 && (
+                  <div title={kpi.teepDupParents.join(' · ')}>
+                    − {kpi.teepDupParents.length} ไลน์แม่ที่ไลน์ลูกก็เปิดกะ (ของชิ้นเดียวกัน)
+                  </div>
+                )}
+                {kpi.teepUnreg.length > 0 && (
+                  <div title={kpi.teepUnreg.join(' · ')}>
+                    − {kpi.teepUnreg.length} ชื่อที่ไม่อยู่ในทะเบียนไลน์ (เปิดกะด้วยชื่อเครื่อง)
+                  </div>
+                )}
+              </div>
+            )}
+          </>} />
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', flex: '2 1 320px', minWidth: 260 }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
           {kpi.shiftMinTotal > 0 ? (<>
@@ -1466,12 +1965,62 @@ export default function OEEAnalytics() {
         }
       </div>
 
+      {/* 💰 มูลค่าดาวไทม์นอกแผน — link นาทีที่เสียกับเงิน (คู่กับแผงมูลค่าของเสียด้านล่าง) */}
+      {dtCost.totalMin > 0 && (
+        <div style={s.section}>
+          <div style={s.title}>💰 มูลค่าดาวไทม์นอกแผน (ช่วงที่เลือก)</div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'stretch' }}>
+            <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.35)', borderLeft: '4px solid #ef4444', borderRadius: 10, padding: '10px 14px', minWidth: 210 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>รวมที่ตีมูลค่าได้</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444', lineHeight: 1.25 }}>
+                {fmtBaht(dtCost.baht)} <span style={{ fontSize: 12, fontWeight: 700 }}>บาท</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                {Math.round(dtCost.pricedMin).toLocaleString()} นาที · นาที/60 × activity rate (DL+DP+IDP+OH) ของ cost center ไลน์
+              </div>
+            </div>
+            {dtCost.byType.length > 0 && (
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>Top ประเภทตามมูลค่า</div>
+                {/* กดแถวแล้วเจาะทันที — ยอดรวมอย่างเดียวตอบไม่ได้ว่า "เงินก้อนนี้เกิดที่เครื่องไหน กะไหน วันไหน"
+                    ซึ่งเป็นคำถามเดียวที่ทำให้เอาไปแก้ได้จริง · ส่ง measure='baht' ไปด้วยให้เรียงตามเงินตรงกับที่เห็น */}
+                {dtCost.byType.slice(0, 5).map(([t, v]) => (
+                  <div key={t} role="button" tabIndex={0}
+                    onClick={() => setDtFocus({ cat: t, measure: 'baht', n: Date.now() })}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDtFocus({ cat: t, measure: 'baht', n: Date.now() }); } }}
+                    title={`เจาะดู "${t}" — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/วัน`}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {Math.round(v.min).toLocaleString()} น.</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                  🔍 <b>คลิกแถวเพื่อเจาะ</b> — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/คนบันทึก/วัน (เห็นบาทรายแถวและรายการดิบ)
+                  · หรือเลื่อนลงไปที่ <b>Pareto</b> แล้วกดปุ่ม <b style={{ color: 'var(--accent)' }}>฿ บาท</b> เพื่อเรียงทั้งกราฟตามเงิน
+                </div>
+              </div>
+            )}
+          </div>
+          {dtCost.noRate.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.7 }}>
+              ⚠ ตีมูลค่าไม่ได้ {Math.round(dtCost.noRate.reduce((a, x) => a + x[1], 0)).toLocaleString()} นาที — ไลน์ยังไม่มี cost center หรือยังไม่ตั้ง activity rate
+              (ตั้งที่ <b>ผังองค์กร → แผง 💰 Activity Rate</b>) · ยอดบาทข้างบนจึงต่ำกว่าความจริง
+              <div style={{ marginTop: 4, color: 'var(--muted)' }}>
+                {dtCost.noRate.slice(0, 8).map(([l, m]) => `${l} (${Math.round(m).toLocaleString()} น.)`).join(' · ')}{dtCost.noRate.length > 8 ? ' …' : ''}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Downtime Pareto + Defect side-by-side */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
         {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
         <div>
           <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
-            records={dtRecords} dims={DT_DIMS} unit="นาที"
+            records={dtRecords} dims={DT_DIMS} unit="นาที" focus={dtFocus}
             emptyText={dtIncludePlanned ? 'ไม่มีข้อมูล Downtime' : 'ไม่มี Downtime นอกแผนในช่วงนี้'}
             sectionStyle={s.section} titleStyle={s.title} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
@@ -1501,6 +2050,28 @@ export default function OEEAnalytics() {
                 </div>
               ))}
             </div>
+            {/* Top ประเภทตามมูลค่า — กดแล้วเจาะทันที (ยอดรวมตอบไม่ได้ว่าเงินก้อนนี้เกิดที่ไลน์ไหน พาร์ทไหน วันไหน) */}
+            {defectCost.byType.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>Top ประเภทตามมูลค่า</div>
+                {defectCost.byType.slice(0, 5).map(([t, v]) => (
+                  <div key={t} role="button" tabIndex={0}
+                    onClick={() => setDefFocus({ cat: t, measure: 'baht', n: Date.now() })}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDefFocus({ cat: t, measure: 'baht', n: Date.now() }); } }}
+                    title={`เจาะดู "${t}" — แยกตามไลน์/ชิ้นงาน/กะ/วัน`}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {v.qty.toLocaleString()} ชิ้น</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                  🔍 <b>คลิกแถวเพื่อเจาะ</b> — "ประเภทไหนแพงสุด" ตอบคนละคำถามกับ "ประเภทไหนเยอะสุด" ใน Pareto ด้านล่าง
+                  · <b>ประเภทที่ยังตีมูลค่าไม่ได้ไม่โผล่ในลิสต์นี้</b> (ดูแถบเตือนด้านล่าง)
+                </div>
+              </div>
+            )}
             {defectCost.noCost.length > 0 && (
               <div style={{ marginTop: 10, fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.7 }}>
                 ⚠ ยังตีมูลค่าไม่ได้ {defectCost.noCost.length} พาร์ท ({defectCost.noCost.reduce((a, x) => a + x[1], 0).toLocaleString()} ชิ้น) — ยอดบาทข้างบนจึงต่ำกว่าความจริง
@@ -1513,7 +2084,7 @@ export default function OEEAnalytics() {
           </div>
         )}
 
-        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น"
+        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น" focus={defFocus}
           emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
       </div>
 

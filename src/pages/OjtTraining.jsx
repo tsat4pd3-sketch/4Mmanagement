@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -7,6 +8,7 @@ import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, o
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -255,6 +257,16 @@ export default function OjtTraining() {
         }))
       );
       if (insErr) throw insErr;
+      if (editing.isNew) notifyEvent({
+        event: 'ojt_training', type: 'info', ref_table: 'ojt_trainings', ref_id: editing.id,
+        section: sectionValueForSave(editing.section) || null, actor: fullName,
+        lines: [
+          `🎓 ${editing.topic || '(ไม่ระบุหัวข้อ)'}`,
+          `📅 ${editing.train_date}${editing.time_from ? ` ${editing.time_from}-${editing.time_to || ''}` : ''}`,
+          `🏢 ${[editing.section, editing.department].filter(Boolean).join(' · ') || '—'}`,
+          `👥 ผู้เข้าอบรม ${editing.attendees.length} คน · ผู้สอน ${editing.trainer_name || '—'}`,
+        ],
+      });
       toast.success('บันทึกใบอบรม OJT เรียบร้อย');
       setEditing(null);
       load();
@@ -458,6 +470,8 @@ table{border-collapse:collapse}
 
   return (
     <div className="page-content">
+      <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
+        permKey="ojt:record" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
       {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
         <div>

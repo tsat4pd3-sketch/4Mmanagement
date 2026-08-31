@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -9,10 +10,12 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
+import useTabParam from '../utils/useTabParam';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
+import InfoMore from '../components/InfoMore';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -192,7 +195,8 @@ export default function ProductMaster() {
   const canCreate = can('products', 'create', role);
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
-  const [mainTab, setMainTab] = useState('products');
+  // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
+  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'export'], 'products');
 
   /* ── state ── */
   const [items,   setItems]   = useState([]);
@@ -661,6 +665,9 @@ export default function ProductMaster() {
 
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+      <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ข้อมูลหลักสินค้า"
+        permKey="products:edit, products:create"
+        hint="แอดมินหน่วยงาน (dept_admin) ก็เปิดสิทธิ์นี้ได้ — ติ๊กที่ /add-user แล้วเปิด action ให้ bucket 🛡️ ที่ /permissions" />
       {/* ── Main Tab Bar ── */}
       {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
@@ -1108,9 +1115,11 @@ export default function ProductMaster() {
                   <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
                   <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน · ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP) · ยอดรวมภาพใหญ่จะนับที่พาร์ทจริง ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
-                </div>
+                <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
+                  lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
+                  ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP)
+                  <br />ยอดรวมภาพใหญ่จะนับที่<b>พาร์ทจริง</b> ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                </InfoMore>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
                     <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
@@ -2540,7 +2549,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
                 <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
               )}
               {filtered.map(row => {
-                const mismatch = row.ks && row.qty_per_pkg != null && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
+                // ⚠️ ต้องเช็ค qty_per_kanban ด้วย — แถวที่ค่าว่างเทียบไม่ได้ (Number(undefined)=NaN ขึ้น ⚠️ มั่ว)
+                const mismatch = row.ks && row.ks.qty_per_kanban != null && row.qty_per_pkg != null
+                  && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
                 return (
                   <tr key={row.mat_no} style={{ opacity: row.ks ? 1 : 0.55 }}>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', fontSize: 13 }}>{row.mat_no}</td>
@@ -2549,7 +2560,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{row.uom || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)' }}>{row.qty_per_pkg != null ? row.qty_per_pkg.toLocaleString() : '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontWeight: 900, fontSize: 15, color: mismatch ? '#f59e0b' : row.ks ? 'var(--accent)' : 'var(--muted)' }}>
-                      {row.ks ? row.ks.qty_per_kanban.toLocaleString() : '—'}
+                      {/* ⚠️ `kanban_standards.qty_per_kanban` เป็น nullable (default 0 แต่ไม่ NOT NULL)
+                          แถวเดียวที่เป็น null เคยทำให้ทั้งแท็บพัง (undefined.toLocaleString) — guard เหมือนเซลล์อื่นในแถว */}
+                      {row.ks?.qty_per_kanban != null ? row.ks.qty_per_kanban.toLocaleString() : '—'}
                       {mismatch && <span title="ไม่ตรงกับ Qty/Pkg ใน Parts Master" style={{ marginLeft: 4 }}>⚠️</span>}
                     </td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.min_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.min_qty != null ? row.ks.min_qty.toLocaleString() : '—'}</td>
@@ -2610,13 +2623,28 @@ function KanbanStdPanel({ canEdit, fullName }) {
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>Lot size (สะสม demand ครบเท่านี้ → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบ อัตโนมัติ)</label>
+                {/* ⚠️ ข้อความเดิม "เว้นว่าง = ไม่สะสมเป็นล็อต" บอกตรงข้ามกับที่ระบบทำจริง
+                    เว้นว่าง = ทริกเกอร์ `continue` ข้ามพาร์ทนี้ → demand สะสมใน accumulator เรื่อยๆ
+                    แต่ไม่มีวันกลายเป็นใบสั่ง (ข้อมูลจริง 2026-08: 44 พาร์ท 1.3 ล้านชิ้นค้างแบบนี้)
+                    พาร์ทพิเศษที่ "ผลิตตามสั่ง ไม่รอสะสม" → ใส่ 1 (lot-for-lot) ไม่ใช่เว้นว่าง */}
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
+                  Lot size — สะสม demand ครบเท่านี้ (<strong>ชิ้น</strong>) → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบอัตโนมัติ
+                </label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
-                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="เว้นว่าง = ไม่สะสมเป็นล็อต" />
+                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="พาร์ทพิเศษ/ผลิตตามสั่ง → ใส่ 1" />
+                <div style={{ fontSize: 10.5, lineHeight: 1.6, marginTop: 4, color: 'var(--muted)' }}>
+                  <b style={{ color: 'var(--text)' }}>1</b> = ผลิตตามที่สั่ง ไม่ต้องรอสะสมล็อต (lot-for-lot — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ)
+                </div>
+                {!String(form.lot_size || '').trim() && (
+                  <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 5, color: '#f59e0b', background: '#f59e0b14', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 8px' }}>
+                    ⚠️ <b>เว้นว่าง = ความต้องการค้างถาวร</b> — ระบบจะสะสม demand ของพาร์ทนี้ไปเรื่อยๆ แต่<b>ไม่มีวันออกใบสั่ง</b>
+                    <div style={{ opacity: 0.85, marginTop: 2 }}>ถ้าเป็นพาร์ทที่ผลิตตามสั่ง ให้ใส่ <b>1</b> · จุดที่ค้างอยู่ตอนนี้ดูได้ที่หน้า 🔗 สายธารความต้องการ</div>
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                 UOM: <strong style={{ color: 'var(--text)' }}>{parts.find(p => p.mat_no === form.mat_no)?.uom || '—'}</strong> (จาก Parts Master)
-                · Min-Max คุมการเติมที่สโตร์ · Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย
+                · Min-Max คุมการเติมที่สโตร์ (ชิ้น) · Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย (ชิ้น)
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

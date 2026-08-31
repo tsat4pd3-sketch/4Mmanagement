@@ -15,6 +15,12 @@ import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
 import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
+import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
+import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
+import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
+import { liveChannel } from './utils/liveChannel';
+const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
+const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
 const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
@@ -43,6 +49,9 @@ const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
+// 📺 จอ TV แขวนห้อง — เปลือกเต็มจอของ <MtnAndonBoard> (ดูหัวไฟล์ TvBoard.jsx · ไม่ใช่บอร์ดใบใหม่)
+const TvBoard = lazy(() => import('./pages/TvBoard'));
+const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
@@ -51,13 +60,9 @@ const LineStock      = lazy(() => import('./pages/LineStock'));
 const CompanyCalendar = lazy(() => import('./pages/CompanyCalendar'));
 const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
-const PMSetup     = lazy(() => import('./pages/PMSetup'));
-const PMCheckData = lazy(() => import('./pages/PMCheckData'));
-const PMSchedule  = lazy(() => import('./pages/PMSchedule'));
+const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const Energy = lazy(() => import('./pages/Energy'));
-const PmForecast  = lazy(() => import('./pages/PmForecast'));
-const PmCoordination = lazy(() => import('./pages/PmCoordination'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
 const DailyChecker = lazy(() => import('./pages/DailyChecker'));
@@ -66,6 +71,7 @@ const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
+const AuditLog = lazy(() => import('./pages/AuditLog'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
@@ -73,6 +79,7 @@ const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
+const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
@@ -90,15 +97,16 @@ export const NAV_ITEMS = [
 
   // จัดหมวดเมนูใหม่ทั้งระบบ 2026-07-20 (คำสั่ง user): ภาพรวม = จอแสดงผล/ผู้บริหาร · ฝ่ายผลิต = งานประจำวัน
   // · วิเคราะห์ & รายงาน · พนักงาน & ทักษะ (ใหม่ — รวมเรื่องคนที่เคยกระจาย 3 หมวด)
-  { to: '/dashboard',   icon: '📊', label: 'Dashboard',           group: 'ภาพรวม' },
+  // ⚠️ ชื่อเมนูต้องบอกว่า "เข้าไปทำอะไร" ไม่ใช่บอกแค่ว่าเกี่ยวกับเรื่องอะไร (nav audit 2026-08-27)
+  { to: '/dashboard',   icon: '📊', label: 'จอผลิตรวม (TV)',       group: 'ภาพรวม' },
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
-  { to: '/dept-dashboard', icon: '📋', label: 'Dashboard ส่วนงาน',  group: 'ภาพรวม' },
+  { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
-  // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
-  { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ภาพรวม' },
-  // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
-  // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
-  { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ภาพรวม' },
+  // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
+  { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอไลน์)',  group: 'ภาพรวม' },
+  /* 📺 จอ TV แขวนห้อง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
+     render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
+  { to: '/tv', icon: '📺', label: 'จอ TV แขวนห้อง',            group: 'ภาพรวม' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -112,55 +120,72 @@ export const NAV_ITEMS = [
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
 
-  { to: '/line-stock',      icon: '📦', label: 'Store management',       group: 'Logistic - Store' },
-  { to: '/heijunka',       icon: '🎴', label: 'Kanban Board',             group: 'Logistic - Store' },
-  { to: '/rack-center',    icon: '🗃️', label: 'Rack Center management',  group: 'Logistic - Store' },
+  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: 'Logistic - Store' },
+  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: 'Logistic - Store' },
+  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: 'Logistic - Store' },
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
-  { to: '/rundown-stock',   icon: '📉', label: 'Rundown Stock',             group: 'Logistic - Store' },
-  { to: '/customer-demand', icon: '🚚', label: 'Delivery',                  group: 'Logistic - Store' },
+  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: 'Logistic - Store' },
+  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: 'Logistic - Store' },
   { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - Store' },
   { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - Store' },
 
+  // ⚠️ 4 เมนู PM เดิมขึ้นต้นด้วยคำชุดเดียวกัน ("...อุปกรณ์เครื่องจักร") จนแยกไม่ออกว่าอันไหนทำอะไร
+  //    ชื่อใหม่บอกการกระทำ: บันทึกผล / ดูปฏิทิน / ดูว่าจะครบกำหนด / ตั้งจุดที่ต้องตรวจ (nav audit 2026-08-27)
   { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-check',    icon: '✅', label: 'ตรวจสอบอุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-schedule', icon: '📅', label: 'แผน PM อุปกรณ์เครื่องจักร',        group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-forecast', icon: '🔧', label: 'PM ล่วงหน้า (Planner)',            group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-coordination', icon: '🗓️', label: 'แผนประสานงาน PM (แจ้งผลิต)',   group: 'การตรวจสอบและซ่อมบำรุง' },
+  // 🔧 ศูนย์ PM — ยุบ 5 หน้า (ตรวจ/แผน/ล่วงหน้า/ประสานงาน/ตั้งค่า) เป็นแท็บใน PmHub
+  //    route เดิมทั้ง 5 redirect เข้าแท็บ · ไม่อยู่ในเมนู (pattern เดียวกับ Daily Checker)
+  //    ⭐ วิธีนี้แก้ปัญหา "4 เมนู PM ชื่อขึ้นต้นเหมือนกันจนแยกไม่ออก" ได้แรงกว่าการเปลี่ยนชื่อ
+  //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
+  { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/pm-setup',    icon: '🔩', label: 'Setup การตรวจสอบอุปกรณ์เครื่องจักร', group: 'การตรวจสอบและซ่อมบำรุง' },
 
-  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'ควบคุมคุณภาพ QA/QC' },
-  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'ควบคุมคุณภาพ QA/QC' },
-
-  // หมวดวิศวกรรม (Process Engineering) — เพิ่ม 2026-08-13 (คำสั่ง user: โมดูล PFC/PFMEA/Control Plan)
-  { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'วิศวกรรม (PE)' },
+  // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
+  // กินที่บนแถบไอคอน rail เท่าหมวดใหญ่ · งาน PFMEA/CP เป็นงานคุณภาพสายเดียวกันอยู่แล้ว (ลูป 8D → PE)
+  { to: '/qa',             icon: '🔍', label: 'Quality Control Center', group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/qa-setup',       icon: '📐', label: 'มาตรฐานการตรวจ & Drawing', group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
-  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'พนักงาน & ทักษะ' },
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'พนักงาน & ทักษะ' },
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
-  { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/die-registry', icon: '🔨', label: 'ทะเบียนแม่พิมพ์', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
-  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
-  { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+
+  // ── จอผู้บริหาร/เดโม — แยกออกจาก "ภาพรวม" (nav audit 2026-08-27) ────────────────
+  // 3 หน้านี้เปิดตอนประชุม/เดโม ไม่ใช่หน้าที่หัวหน้ากะเปิดทุกวัน · เดิมนั่งปนกับ Dashboard/ผังรวม
+  { to: '/flow-tower', icon: '🔗', label: 'สายธารความต้องการ',   group: 'ผู้บริหาร & เดโม' },
+  // 🧪 mockup ตอบโจทย์ผู้บริหาร "ดูภาพรวมหลายโรงงาน" — โรงงานที่ 1 ข้อมูลจริง ที่เหลือจำลอง (seed: admin/manager)
+  { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ผู้บริหาร & เดโม' },
+  // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
+  // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
+  { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
+
+  // ── ตั้งค่า 13 เมนู แบ่ง 2 กลุ่มย่อยด้วย `sub` (nav audit 2026-08-27) ─────────────
+  // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
+  // ออกจาก "ของที่ตั้งครั้งเดียว" · ห้ามลืมใส่ `sub` ให้เมนูใหม่ในหมวดนี้ (ไม่ใส่ = ตกไปกลุ่มแรก)
+  { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  { to: '/die-registry', icon: '🔨', label: 'ทะเบียนแม่พิมพ์', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
+  { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+
+  { to: '/permissions', icon: '🔐', label: 'จัดการสิทธิ์',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   // จัดการผู้ใช้งาน ย้ายเข้าหมวดตั้งค่าฯ (คำสั่ง user 2026-07-20) — เดิมเป็นลิงก์พิเศษลอยท้าย sidebar
-  { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล' },
+  { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'ควบคุมคุณภาพ QA/QC', 'วิศวกรรม (PE)', 'ตั้งค่าโปรแกรม,ฐานข้อมูล'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
@@ -171,9 +196,9 @@ export const NAV_GROUP_META = {
   'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
   'Logistic - Store':          { icon: '📦', short: 'สโตร์' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
-  'ควบคุมคุณภาพ QA/QC':        { icon: '✅', short: 'QA/QC' },
-  'วิศวกรรม (PE)':             { icon: '📐', short: 'PE' },
+  'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
+  'ผู้บริหาร & เดโม':          { icon: '🔮', short: 'ผู้บริหาร' },
 };
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
@@ -274,13 +299,16 @@ function SplashScreen({ onDone }) {
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
-export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin }) {
+export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs, onAvatarSaved }) {
   const location = useLocation();
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  // 📷 เปลี่ยนรูปโปรไฟล์ — เดิมมีเฉพาะหน้า Home (DeptHub) sidebar ไม่มี (drift · แก้ 2026-08-21)
+  const avatarRef = useRef(null);
+  const [avatarFile, setAvatarFile] = useState(null);   // ไฟล์ที่เลือก → ส่งเข้า ImageCropModal
   // เมนูโปรไฟล์ท้าย sidebar (ลายเซ็น/รหัสผ่าน/รีโมท/ธีม/ออกจากระบบ) พับได้ — default ซ่อน ลดความรก
   const [footerOpen, setFooterOpen] = useState(() => { try { return localStorage.getItem('sb_footer_open') === '1'; } catch { return false; } });
   const toggleFooter = () => setFooterOpen(v => { try { localStorage.setItem('sb_footer_open', v ? '0' : '1'); } catch { /* private mode */ } return !v; });
@@ -391,99 +419,86 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     </div>
   );
 
-  // เมนูโปรไฟล์ชุดเดียว ใช้ทั้ง drawer มือถือ + แผง '__me' บน desktop — ห้าม copy JSX ซ้ำ
+  /* ── เมนูโปรไฟล์ — render จาก descriptor กลาง `buildProfileMenu` (src/utils/profileMenu.js)
+     รายการเมนู "มีอะไรบ้าง" อยู่ที่ไฟล์นั้นที่เดียว ใช้ร่วมกับ dropdown มุมขวาบนของหน้า Home
+     (DeptHub) — เดิมเขียนแยกกัน 2 ชุดแล้ว drift (หน้า Home ไม่มี 💬/🎭/รีโมท · sidebar ไม่มี 📷)
+     ที่นี่รับผิดชอบแค่ "หน้าตา" ของแถวเมนู · JSX ชุดนี้ใช้ทั้ง drawer มือถือ + แผง '__me' desktop */
+  const profileItems = buildProfileMenu({
+    realRole, canRemote: canAccessPage('/remote', userRole), remoteCode, theme,
+    on: {
+      avatar:       () => avatarRef.current?.click(),
+      signature:    () => setSigModalOpen(true),
+      password:     () => setPwdModalOpen(true),
+      feedback:     () => setFbOpen(true),
+      viewAs:       onOpenViewAs,
+      toggleRemote: onToggleRemote,
+      toggleTheme:  onToggleTheme,
+      logout:       onLogout,
+    },
+  });
+
   const profileActions = (closeNav) => (<>
-    <button
-      onClick={() => setSigModalOpen(true)}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-    >
-      <span style={{ fontSize: 15, flexShrink: 0 }}>✍️</span>
-      <span style={{ whiteSpace: 'nowrap' }}>ลายเซ็น</span>
-    </button>
-
-    <button
-      onClick={() => setPwdModalOpen(true)}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-    >
-      <span style={{ fontSize: 15, flexShrink: 0 }}>🔐</span>
-      <span style={{ whiteSpace: 'nowrap' }}>เปลี่ยนรหัสผ่าน</span>
-    </button>
-
-    {/* 💬 แจ้งปัญหา/ข้อเสนอแนะ — ทุก role ที่ login ส่งได้ (RLS ผูก auth.uid)
-        admin/manager เห็นแท็บกล่องขาเข้าในโมดัลเดียวกัน ไม่ต้องมีหน้าแยก */}
-    <button
-      onClick={() => setFbOpen(true)}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: 'var(--text2)' }}
-    >
-      <span style={{ fontSize: 15, flexShrink: 0 }}>💬</span>
-      <span style={{ whiteSpace: 'nowrap' }}>แจ้งปัญหา / ข้อเสนอแนะ</span>
-    </button>
-
-    {/* ── รีโมทจอ (คู่กัน) — เห็นเฉพาะ role ที่มีสิทธิ์ page:/remote (ปรับที่หน้าจัดการสิทธิ์) ──
-        🎮 = มือถือคุมจอ (ไปหน้ารีโมท) · 📺 = จอนี้เปิดรับรีโมทจากมือถือ (จอตาม) */}
-    {canAccessPage('/remote', userRole) && (<>
-      <Link
-        to="/remote"
-        onClick={closeNav}
-        className="nav-link"
-        style={{ color: location.pathname === '/remote' ? 'var(--accent)' : 'var(--text2)' }}
-      >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>🎮</span>
-        <span style={{ whiteSpace: 'nowrap' }}>รีโมทจอ (คุมจากมือถือ)</span>
-      </Link>
-      <button
-        onClick={onToggleRemote}
-        className="nav-link"
-        style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: remoteCode ? 'var(--accent)' : 'var(--text2)' }}
-      >
-        <span style={{ fontSize: 15, flexShrink: 0 }}>📺</span>
-        <span style={{ whiteSpace: 'nowrap' }}>{remoteCode ? `รับรีโมทอยู่ · ${remoteCode}` : 'รับรีโมทจอ (จอตาม)'}</span>
-      </button>
-    </>)}
-
-    <button
-      onClick={onToggleTheme}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', justifyContent: 'space-between' }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 15, flexShrink: 0 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
-        <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>
-          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-        </span>
-      </div>
-      <div style={{
-        width: 36, height: 20, borderRadius: 10, flexShrink: 0,
-        background: theme === 'dark' ? 'var(--accent)' : 'var(--border2)',
-        position: 'relative',
-        transition: 'background 0.25s',
-      }}>
-        <div style={{
-          position: 'absolute', top: 2,
-          left: theme === 'dark' ? 18 : 2,
-          width: 16, height: 16, borderRadius: '50%',
-          background: '#fff',
-          transition: 'left 0.25s',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-        }} />
-      </div>
-    </button>
-
-    <button
-      onClick={onLogout}
-      className="nav-link"
-      style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', color: '#ff6b6b' }}
-    >
-      <span style={{ fontSize: 15 }}>🚪</span>
-      <span style={{ whiteSpace: 'nowrap' }}>ออกจากระบบ</span>
-    </button>
+    {profileItems.map(it => {
+      const style = { background: 'none', border: 'none', width: '100%', textAlign: 'left', color: it.color || 'var(--text2)' };
+      if (it.to) {
+        return (
+          <Link key={it.key} to={it.to} onClick={closeNav} className="nav-link"
+            style={{ color: location.pathname === it.to ? 'var(--accent)' : (it.color || 'var(--text2)') }}>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
+          </Link>
+        );
+      }
+      if (it.kind === 'toggle') {
+        return (
+          <button key={it.key} onClick={it.onClick} className="nav-link"
+            style={{ ...style, justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+              <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{it.label}</span>
+            </div>
+            <div style={{
+              width: 36, height: 20, borderRadius: 10, flexShrink: 0,
+              background: it.on ? 'var(--accent)' : 'var(--border2)',
+              position: 'relative', transition: 'background 0.25s',
+            }}>
+              <div style={{
+                position: 'absolute', top: 2, left: it.on ? 18 : 2,
+                width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }} />
+            </div>
+          </button>
+        );
+      }
+      return (
+        <button key={it.key} onClick={() => { it.onClick?.(); if (it.key !== 'logout') closeNav?.(); }}
+          className="nav-link" style={style}>
+          <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+          <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
+        </button>
+      );
+    })}
+    {/* input ไฟล์ของ 📷 เปลี่ยนรูปโปรไฟล์ — ซ่อนไว้ กดผ่านรายการเมนูด้านบน */}
+    <input ref={avatarRef} type="file" accept="image/*" style={{ display: 'none' }}
+      onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setAvatarFile(f); }} />
   </>);
 
   const modals = (<>
     {fbOpen && <Suspense fallback={null}><FeedbackModal onClose={() => setFbOpen(false)} /></Suspense>}
+    {avatarFile && (
+      <Suspense fallback={null}>
+        <ImageCropModal file={avatarFile} aspect={1} shape="circle" outputSize={480}
+          title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setAvatarFile(null)}
+          onConfirm={async (blob) => {
+            setAvatarFile(null);
+            const res = await uploadMyAvatar(blob, userAvatarUrl);   // helper กลาง (ใช้ร่วมกับหน้า Home)
+            if (!res.ok) { toast.error(res.message); return; }
+            onAvatarSaved?.(res.url);
+            toast.success('เปลี่ยนรูปโปรไฟล์แล้ว');
+          }} />
+      </Suspense>
+    )}
     <SignatureModal
       open={sigModalOpen}
       onClose={() => setSigModalOpen(false)}
@@ -624,17 +639,27 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             </div>
 
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {panelItems && panelItems.map(item => (
-                <Link
-                  key={item.to} to={item.to} className="nav-link"
-                  style={location.pathname === item.to
-                    ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                    : {}}
-                  onClick={() => { if (!pinned) setPanel(null); }}
-                >
-                  <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                </Link>
+              {panelItems && panelItems.map((item, i) => (
+                <div key={item.to}>
+                  {/* หัวข้อย่อยในหมวด (`sub`) — คั่นเฉพาะตอนเปลี่ยนกลุ่ม ไม่เพิ่มหมวดบนแถบไอคอน */}
+                  {item.sub && item.sub !== panelItems[i - 1]?.sub && (
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
+                      padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
+                      borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                    }}>{item.sub}</div>
+                  )}
+                  <Link
+                    to={item.to} className="nav-link"
+                    style={location.pathname === item.to
+                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                      : {}}
+                    onClick={() => { if (!pinned) setPanel(null); }}
+                  >
+                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                  </Link>
+                </div>
               ))}
 
               {panel === '__star' && (
@@ -797,19 +822,28 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                     <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                   </button>
-                  {open && items.map(item => (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className="nav-link"
-                      style={location.pathname === item.to
-                        ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                        : {}}
-                      onClick={onClose}
-                    >
-                      <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                    </Link>
+                  {open && items.map((item, i) => (
+                    <div key={item.to}>
+                      {/* หัวข้อย่อย (`sub`) — เหมือนแผงบน desktop ให้ 2 โหมดเห็นโครงเดียวกัน */}
+                      {item.sub && item.sub !== items[i - 1]?.sub && (
+                        <div style={{
+                          fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
+                          padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
+                          borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                        }}>{item.sub}</div>
+                      )}
+                      <Link
+                        to={item.to}
+                        className="nav-link"
+                        style={location.pathname === item.to
+                          ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
+                          : {}}
+                        onClick={onClose}
+                      >
+                        <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+                      </Link>
+                    </div>
                   ))}
                 </div>
               );
@@ -870,22 +904,39 @@ function playNotifChime() {
 }
 
 /* ─── Notification Bell ─────────────────────────────────────── */
-function NotificationBell({ userId }) {
+// map ที่มาของแจ้งเตือน → หน้าที่เปิดตอนกด — **ต้อง mirror กับ `routeFor()` ใน edge `send-push`**
+// (Web Push กดแล้วเปิดหน้าไหน กระดิ่งในแอปต้องพาไปหน้าเดียวกัน — แก้ฝั่งไหนให้ตามไปแก้อีกฝั่งด้วย)
+// feedback หน้างาน 2026-08-25: "เปิด MO แล้วอยากให้ช่างรับงานได้ทันที" — เดิมกดแจ้งเตือนแล้วแค่ mark อ่าน ไม่พาไปไหน
+const NOTIF_ROUTE = {
+  four_m_logs:   '/event-log',
+  mtn_orders:    '/mtn-repair',
+  downtime_logs: '/daily-report',
+  shift_schedules: '/shift-organize',
+};
+
+function NotificationBell({ userId, role }) {
   const [notifs, setNotifs]     = useState([]);
   const [open,   setOpen]       = useState(false);
   const [muted,  setMuted]      = useState(() => localStorage.getItem('esm-notif-sound') === 'off');
   const dropRef                 = useRef(null);
+  const navigate                = useNavigate();
 
   const load = useCallback(async () => {
     if (!userId) return;
     const { data } = await supabase
       .from('notifications')
-      .select('id, title, body, type, is_read, created_at')
+      .select('id, title, body, type, is_read, created_at, ref_table, ref_id')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
     setNotifs(data || []);
   }, [userId]);
+
+  // ปลายทางต้องผ่าน canAccessPage ก่อนเสมอ (กฎเดียวกับ telemetry บนหน้า Home) — ไม่มีสิทธิ์ = กดแล้วแค่ mark อ่าน ไม่พาไปแล้วโดนเด้ง
+  const notifTarget = useCallback((n) => {
+    const path = NOTIF_ROUTE[n?.ref_table];
+    return path && canAccessPage(path, role) ? path : null;
+  }, [role]);
 
   // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
   useEffect(() => {
@@ -898,8 +949,7 @@ function NotificationBell({ userId }) {
   useEffect(() => {
     load();
     if (!userId) return;
-    const ch = supabase
-      .channel(`notif-${userId}`)
+    const ch = liveChannel(supabase, `notif-${userId}`)
       // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
       .subscribe();
@@ -1051,7 +1101,13 @@ function NotificationBell({ userId }) {
             ) : notifs.map(n => (
               <div
                 key={n.id}
-                onClick={() => markOne(n.id)}
+                onClick={() => {
+                  markOne(n.id);
+                  // แจ้งเตือนที่ผูกใบงาน (ref_table) → เปิดหน้าที่ทำงานจริงให้เลย เหมือนกด Web Push
+                  const target = notifTarget(n);
+                  if (target) { setOpen(false); navigate(target); }
+                }}
+                title={notifTarget(n) ? 'กดเพื่อเปิดหน้าที่เกี่ยวข้อง' : undefined}
                 style={{
                   padding: '9px 14px', borderBottom: '1px solid var(--border)',
                   background: n.is_read ? 'transparent' : 'var(--accent-dim)',
@@ -1070,6 +1126,8 @@ function NotificationBell({ userId }) {
                       {fmtDateTime(n.created_at)}
                     </div>
                   </div>
+                  {/* ลูกศรบอกว่ากดแล้วเปิดหน้าที่เกี่ยวข้องได้ — มือถือไม่มี hover ให้อ่าน title */}
+                  {notifTarget(n) && <span style={{ flexShrink: 0, alignSelf: 'center', fontSize: 14, color: 'var(--muted)' }}>›</span>}
                 </div>
               </div>
             ))}
@@ -1291,7 +1349,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -1323,8 +1381,33 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
   // เพดานกะ (สิ้นกะ+60นาที เตะออก) ใช้กับ role หน้างานที่ทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน
   // = หัวหน้าไลน์ (leader) + หัวหน้าส่วน (supervisor) · admin/manager/office ทำงานเครื่องตัวเอง
   // ไม่ต้องโดนเตะรายกะ (มี idle-logout 30 นาทีคุมอยู่แล้ว) · แก้ขอบเขตที่ list นี้จุดเดียว
-  const shiftCapped = ['leader', 'supervisor'].includes(userRole);
+  // ⚠️ เพดานกะตัดสินจาก "role จริง" — admin ที่จำลองมุมมอง leader ต้องไม่โดนเตะออกท้ายกะ
+  const shiftCapped = !viewAs && ['leader', 'supervisor'].includes(userRole);
   const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
+
+  // 🎭 โหมดจำลองมุมมอง role — modal เลือก role (admin จริงเท่านั้น) + ป้ายลอยบอกว่าอยู่ในโหมด
+  const [viewAsOpen, setViewAsOpen] = useState(false);
+  const viewAsBanner = viewAs ? (
+    <div style={{
+      position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
+      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999,
+      background: 'rgba(147,51,234,0.16)', border: '1.5px solid #a855f7', color: '#c084fc',
+      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
+      maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
+    }}>
+      <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}{viewAs.mtnTeams?.length ? ` + 🔧 ${viewAs.mtnTeams.length} ทีมช่าง` : ''}</span>
+      <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>การบันทึกยังเป็นสิทธิ์จริงของ admin</span>
+      <button onClick={() => onApplyViewAs(null)}
+        style={{ padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: '#a855f7', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}>
+        ✕ ออกจากโหมด
+      </button>
+    </div>
+  ) : null;
+  const viewAsModal = (realRole === 'admin' && viewAsOpen) ? (
+    <Suspense fallback={null}>
+      <ViewAsModal current={viewAs} onClose={() => setViewAsOpen(false)} onApply={onApplyViewAs} />
+    </Suspense>
+  ) : null;
 
   // 🔎 ค้นหาเมนู (Ctrl/⌘+K) — เมนู 51 รายการ 8 หมวด หาไม่เจอถ้าไม่มีทางลัด (NAVIGATION-REVIEW §2.5)
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1367,27 +1450,59 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
     : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
+  /* 📺 จอ TV (`/tv`) — แสดงเต็มจอ ไม่มี sidebar / rail / กระดิ่ง / RemoteReceiver / CommandPalette
+     จอนี้ "แขวนไว้อย่างเดียว" ไม่มีคนกด → chrome ทุกชิ้นคือ DOM ที่เปลืองเปล่าบนเบราว์เซอร์สมาร์ททีวี
+     และพื้นที่แนวตั้งที่ผังต้องการ (บทเรียน 2026-08-26) · ยังผ่าน canAccessPage ตามปกติ */
+  if (location.pathname === '/tv') {
+    if (!canAccessPage('/tv', role)) return <Navigate to="/" replace />;
+    return (
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
+          <TvBoard />
+        </Suspense>
+        {viewAsBanner}
+        {viewAsModal}
+      </UserContext.Provider>
+    );
+  }
+
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
-            userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved} />
+            userSignatureUrl={userSignatureUrl} onSignatureSaved={onSignatureSaved}
+            realRole={realRole} onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+            remoteCode={remoteCode} onToggleRemote={onToggleRemote}
+            onOpenSearch={() => setPaletteOpen(true)} permsVersion={permsVersion} />
         </Suspense>
+        {/* 🔎 ค้นหาเมนู — หน้า Home ต้องมีเหมือนหน้าอื่น (Ctrl+K ที่ผูกไว้ด้านบนทำงานทุกหน้าอยู่แล้ว
+            แต่เดิม mount palette เฉพาะ branch ล่าง → กด Ctrl+K ที่หน้า Home แล้วไม่มีอะไรขึ้น) */}
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} role={role} />
+        </Suspense>
+        {/* 📺 จอตามต้องรับรีโมทได้แม้ค้างอยู่หน้า Hub (เดิม mount เฉพาะหน้าอื่น — จอ TV ที่เปิดหน้านี้ทิ้งไว้สั่งไม่ได้) */}
+        {remoteCode && (
+          <Suspense fallback={null}>
+            <RemoteReceiver code={remoteCode} onStop={onToggleRemote} />
+          </Suspense>
+        )}
+        {viewAsBanner}
+        {viewAsModal}
       </UserContext.Provider>
     );
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, sidebarOpen: isOpen }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />
-        <NotificationBell userId={userId} />
+        <NotificationBell userId={userId} role={role} />
         {/* บอกว่า "ยังเลื่อนลงได้อีก" — มือถือไม่มี scrollbar ให้เห็น (ครอบทั้งหน้าเพจและ modal) */}
         <ScrollHint />
         <Suspense fallback={null}>
@@ -1417,7 +1532,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
           onOpenPalette={() => setPaletteOpen(true)}
           pinned={railPinned}
           onTogglePin={toggleRailPin}
+          realRole={realRole}
+          onOpenViewAs={realRole === 'admin' ? () => setViewAsOpen(true) : undefined}
+          onAvatarSaved={onAvatarSaved}
         />
+        {viewAsBanner}
+        {viewAsModal}
 
         <main style={{
           flex: 1,
@@ -1441,8 +1561,14 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/factory-map" element={
                 <RoleRoute path="/factory-map" userRole={role}><FactoryMap /></RoleRoute>
               } />
+              <Route path="/line-oee" element={
+                <RoleRoute path="/line-oee" userRole={role}><LineOeeBoard /></RoleRoute>
+              } />
               <Route path="/dept-dashboard" element={
                 <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
+              } />
+              <Route path="/flow-tower" element={
+                <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
               } />
               <Route path="/adoption-outlook" element={
                 <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
@@ -1498,6 +1624,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
               } />
+              <Route path="/audit-log" element={
+                <RoleRoute path="/audit-log" userRole={role}><AuditLog /></RoleRoute>
+              } />
               <Route path="/notification-config" element={
                 <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>
               } />
@@ -1524,6 +1653,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
                   สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
               <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
               <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
+              <Route path="/bbs" element={<Navigate to="/daily-checker?tab=bbs" replace />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
@@ -1588,21 +1718,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, userLineId, 
               <Route path="/company-calendar" element={
                 <RoleRoute path="/company-calendar" userRole={role}><CompanyCalendar /></RoleRoute>
               } />
-              <Route path="/pm-setup"    element={
-                <RoleRoute path="/pm-setup" userRole={role}><PMSetup /></RoleRoute>
+              {/* 🔧 ศูนย์ PM — 5 หน้างานซ่อมบำรุงตามแผนเป็นแท็บในหน้าเดียว (2026-08-26 · feedback หน้างาน)
+                  สิทธิ์ piggyback บน page:/pm-check‖/pm-schedule‖/pm-forecast‖/pm-coordination‖/pm-setup
+                  (permissions.js) — ไม่ต้อง seed page:/pm · แท็บโผล่ตามสิทธิ์ย่อยของแต่ละหน้า */}
+              <Route path="/pm" element={
+                <RoleRoute path="/pm" userRole={role}><PmHub /></RoleRoute>
               } />
-              <Route path="/pm-check"    element={
-                <RoleRoute path="/pm-check" userRole={role}><PMCheckData /></RoleRoute>
-              } />
-              <Route path="/pm-schedule" element={
-                <RoleRoute path="/pm-schedule" userRole={role}><PMSchedule /></RoleRoute>
-              } />
-              <Route path="/pm-coordination" element={
-                <RoleRoute path="/pm-coordination" userRole={role}><PmCoordination /></RoleRoute>
-              } />
-              <Route path="/pm-forecast" element={
-                <RoleRoute path="/pm-forecast" userRole={role}><PmForecast /></RoleRoute>
-              } />
+              {/* ⤵ route เก่าที่ยุบเข้าแท็บแล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้ · ห้าม render ซ้ำ 2 ทาง) */}
+              <Route path="/pm-check"        element={<Navigate to="/pm?tab=check" replace />} />
+              <Route path="/pm-schedule"     element={<Navigate to="/pm?tab=plan" replace />} />
+              <Route path="/pm-forecast"     element={<Navigate to="/pm?tab=forecast" replace />} />
+              <Route path="/pm-coordination" element={<Navigate to="/pm?tab=coord" replace />} />
+              <Route path="/pm-setup"        element={<Navigate to="/pm?tab=setup" replace />} />
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
@@ -1646,6 +1773,40 @@ export default function App() {
   // bump เมื่อ role_permissions เปลี่ยน (realtime) เพื่อให้ sidebar/route ที่อ่าน cache แบบ sync re-render
   const [permsVersion,  setPermsVersion]  = useState(0);
 
+  /* ── 🎭 โหมดจำลองมุมมอง role (admin เท่านั้น · 2026-08-19) ──────────────────────
+     admin สลับดูระบบเป็น role อื่นเพื่อตรวจว่า "user เห็นเมนู/ปุ่ม/ข้อมูลอะไรบ้าง"
+     - เก็บใน sessionStorage = ต่อแท็บ (เปิดแท็บใหม่ = ยังเป็น admin ปกติ · refresh คงโหมดไว้)
+     - จำลองเฉพาะฝั่งจอ (UI gating + scope) — RLS ฝั่ง DB ยังเป็น admin จริง การบันทึกใช้สิทธิ์จริงเสมอ
+     - honored เฉพาะเมื่อ role จริง = admin (แก้ sessionStorage มือจาก role อื่น = เมิน — จำลองได้แต่ "ลดสิทธิ์"
+       อยู่แล้ว แต่กันความสับสน) */
+  const [viewAs] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('esm-view-as') || 'null'); } catch { return null; }
+  });
+  const impersonating = userRole === 'admin' && !!viewAs?.role;
+  const applyViewAs = (cfg) => {
+    try {
+      if (cfg) sessionStorage.setItem('esm-view-as', JSON.stringify(cfg));
+      else sessionStorage.removeItem('esm-view-as');
+    } catch { /* private mode */ }
+    // full reload ไปหน้าหลัก — ล้าง state ของหน้าที่ mount ค้าง (data ถูก query ด้วย scope ของ role เดิม)
+    window.location.assign('/');
+  };
+  // bucket dept_admin ของ hasPermission เป็น module-flag — ต้องตามโหมดจำลองด้วย
+  useEffect(() => {
+    if (!profileLoaded) return;
+    setDeptAdmin(impersonating ? !!viewAs?.deptAdmin : userIsDeptAdmin);
+  }, [profileLoaded, impersonating, viewAs, userIsDeptAdmin]);
+  // ค่า effective ที่ส่งเข้า layout ทั้งต้น (จำลอง = ทับด้วยค่าที่เลือกในโหมด)
+  const effRole     = impersonating ? viewAs.role : userRole;
+  const effLineId   = impersonating ? (viewAs.lineId ?? null) : userLineId;
+  const effTeam     = impersonating ? (viewAs.team ?? null) : userTeam;
+  const effSection  = impersonating ? ((viewAs.sections || [])[0] ?? null) : userSection;
+  const effSections = impersonating
+    ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null)
+    : userSections;
+  const effMtnTeams = impersonating ? (Array.isArray(viewAs.mtnTeams) ? viewAs.mtnTeams : []) : userMtnTeams;
+  const effDeptAdmin = impersonating ? !!viewAs.deptAdmin : userIsDeptAdmin;
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('4m-theme', theme);
@@ -1662,7 +1823,10 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const { data, error } = await supabase.from('profiles').select('role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin').eq('id', user.id).single();
+    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
+    let { data, error } = await supabase.from('profiles').select(COLS + ', employee_id').eq('id', user.id).single();
+    // คอลัมน์ employee_id ยังไม่ apply (42703) → ถอยไป select ชุดเดิม ห้ามให้ login พังทั้งระบบ
+    if (error?.code === '42703') ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1678,15 +1842,36 @@ export default function App() {
       // เพราะ localStorage แชร์ข้ามแท็บ เดี๋ยวพาแท็บอื่นที่ดีๆ อยู่หลุดไปด้วย
       return;
     }
+    // ── ตัวตน (ทีม/ไลน์/ส่วนงาน) = **ฐานพนักงาน** เมื่อบัญชีผูกกับพนักงานแล้ว ────────────
+    //   เดิมอ่านจาก profiles ล้วน ซึ่ง admin กรอกเองตอนสร้าง user → ไม่ตรงกับที่หัวหน้าแผนกตั้งไว้
+    //   เคสจริง: หัวหน้า 2 คนทีมสลับกัน → Checkin กรองด้วย team ของบัญชี = มองไม่เห็นกะตัวเอง
+    //
+    // ⚠️ fallback รายฟิลด์ (`??`) จำเป็นระหว่างเปลี่ยนผ่าน **ห้ามถอดจนกว่าจะผูกครบทุกบัญชี**
+    //   ยังไม่ผูก / ฐานพนักงานเว้นช่องนั้นว่าง → ใช้ค่าเดิมในบัญชี
+    //   ถ้าถอดตอนนี้: leader 11 คนเสีย line_id+team ทันที = เปิดหน้าเช็คชื่อไม่เห็นใครเลย
+    //   (วัดแล้ว 2026-08-21 — ดูกฎ "ตัวตนของคนอยู่ที่ employees" ใน CLAUDE.md)
+    //
+    // ⚠️ `sections[]` **ไม่ย้าย** — เป็น "ขอบเขตที่ admin ให้" ไม่ใช่ตัวตน และ employees ไม่มีของเทียบเท่า
+    let ident = { team: data?.team ?? null, line_id: data?.line_id ?? null, section: data?.section ?? null };
+    if (data?.employee_id) {
+      const { data: emp } = await supabase.from('employees')
+        .select('team, line_id, section').eq('id', data.employee_id).maybeSingle();
+      if (emp) ident = {
+        team:    emp.team    ?? ident.team,
+        line_id: emp.line_id ?? ident.line_id,
+        section: emp.section ?? ident.section,
+      };
+    }
+
     setUserRole(data?.role ?? null);
-    setUserLineId(data?.line_id ?? null);
+    setUserLineId(ident.line_id);
     setUserFullName(data?.full_name ?? null);
     setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
-    setUserTeam(data?.team ?? null);
-    setUserSection(data?.section ?? null);
+    setUserTeam(ident.team);
+    setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
     loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
-    setUserSections(effectiveSections(data?.role, data?.sections, data?.section));
+    setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง
@@ -1736,8 +1921,7 @@ export default function App() {
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
-    const ch = supabase
-      .channel('role-permissions-sync')
+    const ch = liveChannel(supabase, 'role-permissions-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
         await loadPermissions(true);
         setPermsVersion(v => v + 1);
@@ -1772,13 +1956,16 @@ export default function App() {
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 permsVersion={permsVersion}
-                userRole={userRole}
-                userLineId={userLineId}
-                userTeam={userTeam}
-                userSection={userSection}
-                userSections={userSections}
-                userMtnTeams={userMtnTeams}
-                userIsDeptAdmin={userIsDeptAdmin}
+                userRole={effRole}
+                realRole={userRole}
+                viewAs={impersonating ? viewAs : null}
+                onApplyViewAs={applyViewAs}
+                userLineId={effLineId}
+                userTeam={effTeam}
+                userSection={effSection}
+                userSections={effSections}
+                userMtnTeams={effMtnTeams}
+                userIsDeptAdmin={effDeptAdmin}
                 userPosition={userPosition}
                 userEmail={userEmail}
                 userFullName={userFullName}

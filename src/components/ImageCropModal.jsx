@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from './Toast';
+import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
 
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
@@ -21,8 +22,18 @@ const GIF_MAX_BYTES = 2 * 1024 * 1024;
 export default function ImageCropModal({
   file, aspect = 1, shape = 'rect', outputSize = 480,
   title = 'จัดตำแหน่งรูปภาพให้ตรงกรอบ', quality = 0.85,
+  // 🖼️ allowFull = ให้ผู้ใช้เลือก "ใช้ทั้งรูป (ไม่ครอบ)" ได้ — opt-in ต่อจุดที่เรียก
+  //   ใช้กับรูปที่ครอบแล้วเสียข้อมูล เช่นรูปภาพรวมเครื่องจักรที่มีจุดตรวจกระจายทั้งภาพ
+  //   (feedback หน้างาน 2026-08-21: "ปรับตำแหน่งที่จะโดน crop ให้เห็นจุดสำคัญครบไม่ได้")
+  //   ปิดเป็นค่าเริ่มต้น → จุดที่เรียกอยู่เดิม (รูปพนักงาน/โปรไฟล์) ไม่เปลี่ยนพฤติกรรม
+  allowFull = false, fullLabel = 'ใช้ทั้งรูป (ไม่ครอบ)',
   onCancel, onConfirm,
 }) {
+  const [useFull, setUseFull] = useState(false);
+  // srcFile = ไฟล์ที่ใช้จริงในโมดัล — HEIC จากกล้องมือถือถูกแปลงเป็น JPEG แล้ว (ไฟล์อื่น = ตัวเดิม)
+  // ⚠️ ทุกจุดที่เคยอ้าง `file` ข้างใน (ชนิด/ชื่อ/ตัวส่งออก) ต้องอ้าง srcFile แทน ไม่งั้นได้ไฟล์ที่อ่านไม่ออก
+  const [srcFile, setSrcFile] = useState(null);
+  const [converting, setConverting] = useState(false);
   const [imgUrl, setImgUrl] = useState(null);
   const [natural, setNatural] = useState({ w: 0, h: 0 });
   const [scale, setScale] = useState(1);
@@ -33,33 +44,50 @@ export default function ImageCropModal({
   const FRAME_W = 300;
   const FRAME_H = Math.round(FRAME_W / aspect);
 
-  const isGif = file?.type === 'image/gif';
+  const isGif = srcFile?.type === 'image/gif';
 
   useEffect(() => {
     if (!file) return;
-    if (isGif && file.size > GIF_MAX_BYTES) {
-      toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(file.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
-      onCancel?.();
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setImgUrl(url);
-    const img = new Image();
-    img.onload = () => {
-      setNatural({ w: img.width, h: img.height });
-      const s = Math.max(FRAME_W / img.width, FRAME_H / img.height);
-      setScale(s);
-      setMinScale(s);
-      setPos({ x: 0, y: 0 });
-    };
-    img.onerror = () => {
-      // เบราว์เซอร์ไม่รองรับฟอร์แมตไฟล์นี้ (เช่นรูป .heic จากกล้อง iPhone) — ถ้าไม่ดักไว้
-      // กรอบครอบรูปจะว่างเปล่าแบบไม่มี error ใดๆ ผู้ใช้กดยืนยันไปได้โดยไม่มีรูปติดไปด้วย
-      toast.error('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone) — กรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
-      onCancel?.();
-    };
-    img.src = url;
-    return () => URL.revokeObjectURL(url);
+    let url = null;
+    let cancelled = false;
+    (async () => {
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิมทันที ไม่มี overhead)
+      let f = file;
+      if (isHeicFile(file)) {
+        setConverting(true);
+        try { f = await toDecodableImage(file); }
+        catch (e) { if (!cancelled) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); onCancel?.(); } return; }
+        finally { if (!cancelled) setConverting(false); }
+      }
+      if (cancelled) return;
+      // เช็คขนาด GIF หลังแปลงเสมอ (ไฟล์ที่แปลงแล้วเป็น JPEG ไม่เข้าเงื่อนไขนี้)
+      if (f.type === 'image/gif' && f.size > GIF_MAX_BYTES) {
+        toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(f.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
+        onCancel?.();
+        return;
+      }
+      setSrcFile(f);
+      url = URL.createObjectURL(f);
+      setImgUrl(url);
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        setNatural({ w: img.width, h: img.height });
+        const s = Math.max(FRAME_W / img.width, FRAME_H / img.height);
+        setScale(s);
+        setMinScale(s);
+        setPos({ x: 0, y: 0 });
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        // เบราว์เซอร์อ่านไฟล์นี้ไม่ออกแม้ผ่านตัวแปลงแล้ว — ถ้าไม่ดักไว้ กรอบครอบรูปจะว่างเปล่าแบบไม่มี error
+        // ผู้ใช้กดยืนยันไปได้โดยไม่มีรูปติดไปด้วย · ⚠️ ข้อความต้องชี้ "ฟอร์แมต + วิธีตั้งกล้อง" ห้ามพูดเรื่องขนาดไฟล์
+        toast.error('ไม่สามารถแสดงตัวอย่างรูปนี้ได้ — ไฟล์น่าจะเป็นฟอร์แมตที่เบราว์เซอร์ไม่รองรับ · ตั้งกล้องให้ถ่ายเป็น JPEG แล้วลองใหม่ (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")');
+        onCancel?.();
+      };
+      img.src = url;
+    })();
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
   }, [file]);
 
   const clampPos = (x, y, s) => {
@@ -91,12 +119,32 @@ export default function ImageCropModal({
   };
 
   const handleConfirm = () => {
+    if (!srcFile) return;                 // ยังแปลง/โหลดไม่เสร็จ — กันกดยืนยันแล้วได้ไฟล์ว่าง
     if (isGif) {
       // ส่งต้นฉบับทั้งไฟล์เพื่อคงการเคลื่อนไหว (ขนาดถูกเช็คแล้วตอนเลือกไฟล์)
-      onConfirm(file);
+      onConfirm(srcFile);
       return;
     }
     const canvas = document.createElement('canvas');
+    const ctx0 = canvas.getContext('2d');
+    if (useFull) {
+      // ใช้ทั้งรูป: คงสัดส่วนเดิม ย่อให้ด้านยาวไม่เกินด้านยาวของกรอบ (ไม่ตัดอะไรทิ้ง)
+      const cap = Math.max(outputSize, Math.round(outputSize / aspect));
+      const s = Math.min(1, cap / Math.max(natural.w, natural.h));
+      canvas.width = Math.max(1, Math.round(natural.w * s));
+      canvas.height = Math.max(1, Math.round(natural.h * s));
+      const imgF = new Image();
+      imgF.onload = () => {
+        ctx0.drawImage(imgF, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+          const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '.jpg');
+          onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+      imgF.onerror = () => { toast.error('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ'); onCancel?.(); };
+      imgF.src = imgUrl;
+      return;
+    }
     canvas.width = outputSize;
     canvas.height = Math.round(outputSize / aspect);
     const ctx = canvas.getContext('2d');
@@ -109,7 +157,7 @@ export default function ImageCropModal({
       const cy = canvas.height / 2 - pos.y * renderScale;
       ctx.drawImage(img, cx - dispW / 2, cy - dispH / 2, dispW, dispH);
       canvas.toBlob(blob => {
-        const fileName = (file.name || 'image').replace(/\.\w+$/, '.jpg');
+        const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '.jpg');
         onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
       }, 'image/jpeg', quality);
     };
@@ -127,37 +175,60 @@ export default function ImageCropModal({
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(380px,100%)' }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{title}</div>
         <div
-          onPointerDown={onPointerDown}
+          onPointerDown={useFull ? undefined : onPointerDown}
           style={{
             width: FRAME_W, height: FRAME_H, margin: '0 auto', position: 'relative', overflow: 'hidden',
             borderRadius: shape === 'circle' ? '50%' : 8, border: '2px solid var(--accent)', background: '#000',
-            cursor: 'grab', touchAction: 'none',
+            cursor: useFull ? 'default' : 'grab', touchAction: 'none',
           }}>
+          {/* แปลง HEIC ใช้เวลา 1-3 วิ (โหลดตัวแปลง + decode) — ต้องบอกว่ากำลังทำอะไรอยู่ ห้ามปล่อยกรอบดำเงียบ */}
+          {converting && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--text2)', fontSize: 12, textAlign: 'center', padding: 12 }}>
+              <span style={{ fontSize: 22 }}>⏳</span>
+              กำลังแปลงรูปจากกล้อง (HEIC)…<br />ครั้งแรกอาจใช้เวลาสักครู่
+            </div>
+          )}
           {imgUrl && natural.w > 0 && (
             <img src={imgUrl} draggable={false}
               style={{
                 position: 'absolute', left: '50%', top: '50%',
-                width: natural.w * scale, height: natural.h * scale,
-                transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)`,
-                userSelect: 'none', pointerEvents: 'none', maxWidth: 'none',
+                // โหมด "ใช้ทั้งรูป" — โชว์ทั้งภาพในกรอบ (contain) ให้เห็นว่าจะได้อะไรจริงๆ
+                ...(useFull
+                  ? { width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', transform: 'translate(-50%,-50%)' }
+                  : { width: natural.w * scale, height: natural.h * scale,
+                      transform: `translate(-50%, -50%) translate(${pos.x}px, ${pos.y}px)` }),
+                userSelect: 'none', pointerEvents: 'none', maxWidth: useFull ? '100%' : 'none',
               }} />
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
-          <span style={{ fontSize: 13 }}>🔍</span>
-          <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
-            onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
-        </div>
+        {!useFull && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
+            <span style={{ fontSize: 13 }}>🔍</span>
+            <input type="range" min={minScale * 0.4} max={minScale * 4} step={0.01} value={scale}
+              onChange={e => onScaleChange(Number(e.target.value))} style={{ flex: 1 }} />
+          </div>
+        )}
+        {allowFull && !isGif && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 12, fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={useFull} onChange={e => setUseFull(e.target.checked)} style={{ width: 'auto', margin: 0 }} />
+            🖼️ {fullLabel}
+          </label>
+        )}
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           {isGif
             ? '🎞️ รูปขยับ (GIF) จะถูกใช้ทั้งภาพเพื่อคงการเคลื่อนไหว — การ crop/ซูมในกรอบนี้ไม่มีผลกับไฟล์จริง'
-            : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}
+            : useFull
+              ? 'เก็บทั้งภาพไว้ ไม่ตัดอะไรทิ้ง — เหมาะกับรูปภาพรวมที่มีจุดตรวจกระจายทั้งภาพ'
+              : 'ลากรูปเพื่อขยับตำแหน่ง • เลื่อนแถบเพื่อซูม — กรอบนี้คือพื้นที่จริงที่จะแสดงผล'}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator
               ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
           <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button type="button" onClick={handleConfirm} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✓ ใช้รูปนี้</button>
+          <button type="button" onClick={handleConfirm} disabled={!srcFile || converting}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
+            {converting ? 'กำลังแปลง…' : '✓ ใช้รูปนี้'}
+          </button>
         </div>
       </div>
     </div>

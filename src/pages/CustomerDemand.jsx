@@ -48,7 +48,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   const [day, setDay] = useState(workDateStr());
   const [orders, setOrders] = useState([]);
   const [busy, setBusy] = useState(null);
-  const [fgStock, setFgStock] = useState({});   // **เลข SAP** → { total, lines } — stock FG พร้อมส่งใน warehouse
+  const [fgStock, setFgStock] = useState({});   // **เลข SAP** → { total, fg, lines } — fg = เฉพาะคลัง FG (ส่งได้จริง)
+  const [fgDest, setFgDest] = useState(null);   // ชื่อคลัง FG จาก stock_inflow_rules (null = ไม่รู้ → นับรวมแบบเดิม)
   // เลขบน order (อาจเป็นเลขลูกค้า) → ผลการจับคู่ MAT SAP · ดู utils/matResolve.js
   const [matMap, setMatMap] = useState({});
   const [cardFilter, setCardFilter] = useState('todo');   // 'todo' | 'overdue' | 'shipped' | 'all'
@@ -106,9 +107,12 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   // ลบได้เฉพาะใบที่คีย์มือและยังไม่เริ่ม workflow — ใบจาก EDI ให้จัดการด้วยการอัพโหลดแทนที่ตามปกติ
   const deleteManualOrder = async (o) => {
     if (!window.confirm(`ลบ order ${o.mat_no} × ${fmt(o.qty)} (คีย์มือ)?`)) return;
-    const { error } = await supabaseDR.from('customer_shipping_orders')
-      .delete().eq('id', o.id).eq('source', 'manual').eq('status', 'pending');
+    // นับแถวที่ลบจริง — เงื่อนไข source/status ไม่ตรง (ใบเริ่ม workflow ไปแล้ว) = ลบ 0 แถว
+    // ห้ามขึ้น "ลบแล้ว" ทั้งที่ใบยังอยู่ (กฎ RLS-เงียบ: สำเร็จ 0 แถว ≠ สำเร็จ)
+    const { data: del, error } = await supabaseDR.from('customer_shipping_orders')
+      .delete().eq('id', o.id).eq('source', 'manual').eq('status', 'pending').select('id');
     if (error) { toast.error(error.message); return; }
+    if (!del || del.length === 0) { toast.error('ลบไม่ได้ — ใบนี้เริ่ม workflow ไปแล้ว หรือไม่ใช่ใบคีย์มือ'); load(); return; }
     toast.success('ลบแล้ว');
     setPopup(null);
     load();
@@ -121,14 +125,22 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     const nd = nextDayOf(day);
     const back = new Date(`${day}T12:00:00`);
     back.setDate(back.getDate() - 14);
-    const [{ data: d1 }, { data: d2 }, { data: wfs }, { data: past }] = await Promise.all([
+    const [{ data: d1 }, { data: d2 }, { data: wfs }, { data: past }, { data: inflowRules }] = await Promise.all([
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', day),
       supabaseDR.from('customer_shipping_orders').select('*').eq('due_date', nd).not('ship_time', 'is', null).lt('ship_time', '08:00'),
       supabaseDR.from('shipping_workflow_steps').select('*').eq('is_active', true).order('step_no'),
       // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน) — เตือนบนหัวหน้า ไม่ให้ของเก่าหายเงียบตอนข้ามวัน
-      supabaseDR.from('customer_shipping_orders').select('id, due_date')
-        .gte('due_date', dateStr(back)).lt('due_date', day).neq('status', 'shipped'),
+      // ⚠️ ใบกะดึกของวันงาน D-1 มี due_date = D + ship_time < 08:00 (กรอบวันงาน 08:00→08:00)
+      //    เดิม .lt('due_date', day) อย่างเดียว → ใบกะดึกของวันงานที่เพิ่งจบหลุดจากตัวนับเงียบๆ
+      supabaseDR.from('customer_shipping_orders').select('id, due_date, ship_time')
+        .gte('due_date', dateStr(back)).neq('status', 'shipped')
+        .or(`due_date.lt.${day},and(due_date.eq.${day},ship_time.lt.08:00)`),
+      // คลังปลายทางของ FG จากกฎรับเข้าอัตโนมัติ — "ของพร้อมส่ง" ต้องเป็นของในคลัง FG เท่านั้น
+      // (ของใน STORE/มินิสโตร์ยังไม่ผ่านแพ็ค/รับเข้าคลัง ส่งลูกค้าไม่ได้ — กฎเดียวกับ RundownStock)
+      supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
     ]);
+    const fgDestName = (inflowRules || []).find(r => r.match_type === 'prefix' && r.match_value === '1')?.dest_line_name || null;
+    setFgDest(fgDestName);
     setWfSteps(wfs || []);
     setPastDue(past || []);
     const list = [
@@ -147,8 +159,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
       // (10100379) — เดิมหาด้วยเลขบน order ตรงๆ จึงไม่เจอสต็อกแล้วไม่หักแบบเงียบๆ
       // ⚠️ resolve เฉพาะที่ชัดตัวเดียว · กำกวม/ปลายทางไม่ใช่เลข SAP = ไม่เดา (ดู matResolve.js)
       const [{ data: dp }, { data: ks }] = await Promise.all([
-        supabaseDR.from('dr_products').select('mat_no, p_no').not('p_no', 'is', null),
-        supabaseDR.from('kanban_standards').select('mat_no, p_no').not('p_no', 'is', null),
+        // ⚠️ กรอง is_active — แถวที่ถูก EC แทน (superseded) ทำ p_no กลายเป็น ambiguous
+        //    แล้วการหัก/coverage หยุดทำงานทั้งที่ master ตัวจริงชัดเจน (มาตรฐานเดียวกับ Rundown)
+        supabaseDR.from('dr_products').select('mat_no, p_no').not('p_no', 'is', null).eq('is_active', true),
+        supabaseDR.from('kanban_standards').select('mat_no, p_no').not('p_no', 'is', null).eq('is_active', true),
       ]);
       const pnIdx = buildPnIndex([...(dp || []), ...(ks || [])]);
       // ดึงสต็อกของ "ทั้งเลขบน order และปลายทางที่ map ได้" แล้วค่อยเลือกตัวที่มีของจริง
@@ -158,13 +172,19 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
       const { data: st } = keys.length
         ? await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('mat_no', keys)
         : { data: [] };
+      /* แยก "ของในคลัง FG (ส่งได้จริง)" ออกจาก "ของที่อื่น (STORE/มินิสโตร์ — ยังส่งไม่ได้)"
+         เคสจริง 20059949: FG 1,000 + STORE 10,231 — เดิมรวมเป็น 11,231 แล้วขึ้น "พร้อมส่งครบ"
+         สวนกับ Rundown หน้าข้างๆ + ตอนกดส่งหักลง STORE (คลังผิด) เพราะเรียงตาม qty มากสุด
+         ไม่รู้จักคลัง FG (rules ว่าง) = ถอยไปนับรวมแบบเดิม (tolerant ห้ามทำจอพังทั้งหน้า) */
       const m = {};
       (st || []).forEach(r => {
         const q = parseFloat(r.qty_on_hand) || 0;
         if (q <= 0) return;
-        const e = m[r.mat_no] = m[r.mat_no] || { total: 0, lines: [] };
+        const isFg = !fgDestName || r.line_name === fgDestName;
+        const e = m[r.mat_no] = m[r.mat_no] || { total: 0, fg: 0, lines: [] };
         e.total += q;
-        e.lines.push({ line_name: r.line_name, qty: q });
+        if (isFg) e.fg += q;
+        e.lines.push({ line_name: r.line_name, qty: q, isFg });
       });
       setFgStock(m);
       const mm = {};
@@ -195,6 +215,25 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     const own = wfSteps.filter(st => st.customer === customer);
     return own.length ? own : wfSteps.filter(st => st.customer == null);
   };
+  /* ⭐ "เฟสท้ายสุดที่ตั้งไว้ = จบงาน" — ลูกค้าที่มารับเองด้วยรถ milk run ของตัวเอง
+     พอโหลดขึ้นรถแล้วงานของเราจบตรงนั้น ไม่มีขั้น "ส่งถึงลูกค้า" ให้กดอีก
+     ⚠️ สถานะจบใน DB ยังเป็น 'shipped' เสมอ (ห้ามเปลี่ยน) — RundownStock/StoreMonitor/
+     FlowTower/DeptDashboard/scanner ทั้งระบบกรองด้วย neq('status','shipped')
+     ตั้งเฟสท้ายเป็นอะไร = แค่บอกว่า "คลิกไหนคือคลิกสุดท้าย" ไม่ใช่เปลี่ยนโมเดลสถานะ */
+  const finalStatusOf = (customer) => {
+    const list = stepsForCust(customer);
+    if (!list.length) return 'shipped';
+    return list.reduce((best, st) =>
+      (SHIP_RANK[st.requires_status] ?? -1) > (SHIP_RANK[best] ?? -1) ? st.requires_status : best, 'pending');
+  };
+  /* จุดหักสต็อก — ตรงกับ SAP ที่ตัดออกจาก warehouse ตั้งแต่ "เตรียมของไปพื้นที่ shipping area"
+     (ก่อนโหลดขึ้นรถ) · ไม่ติ๊กเฟสไหนเลย = หักตอนจบงานเหมือนเดิมเป๊ะ */
+  const deductStatusOf = (customer) => {
+    const marked = stepsForCust(customer).filter(st => st.deducts_stock);
+    if (!marked.length) return 'shipped';
+    return marked.reduce((best, st) =>
+      (SHIP_RANK[st.requires_status] ?? 9) < (SHIP_RANK[best] ?? 9) ? st.requires_status : best, 'shipped');
+  };
   const phaseList = (o) => {
     const tw = frameMin(o.ship_time);
     if (tw == null || !wfSteps.length) return [];
@@ -208,6 +247,27 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   };
   const phaseLate = (o) => o.status !== 'shipped' && !isOverdue(o) && phaseList(o).some(ph => ph.missed);
 
+  /* ปุ่ม "ขั้นถัดไป" ของใบนี้ — คืน { to, label, color, terminal } หรือ null (จบแล้ว)
+     ก้าวที่ทำให้ถึง/เลย "เฟสท้ายสุดที่ตั้งไว้" = ปิดรอบส่งเลย (to = 'shipped')
+     ⚠️ ชุดเฟสที่จบด้วย 'shipped' (ค่ามาตรฐานเดิม) จะได้พฤติกรรมเดิมทุกประการ */
+  const nextStep = (o) => {
+    const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
+    if (!st.next) return null;
+    const fin = finalStatusOf(o.customer);
+    if ((SHIP_RANK[st.next] ?? 9) < (SHIP_RANK[fin] ?? 4)) return { to: st.next, label: st.nextLabel, color: st.color, terminal: false };
+    const terminal = fin !== 'shipped';
+    // ใบเก่าที่ค้างอยู่ "เลยเฟสท้าย" อยู่แล้ว (เช่นเคยกดถึง loaded ก่อนเปลี่ยนค่า) → เหลือแค่ปิดรอบ
+    const past = (SHIP_RANK[o.status] ?? 0) >= (SHIP_RANK[fin] ?? 4);
+    return {
+      to: 'shipped',
+      label: !terminal ? st.nextLabel : past ? '✅ จบงาน (ปิดรอบส่ง)' : `${st.nextLabel} · จบงาน`,
+      color: st.color, terminal,
+    };
+  };
+  // ชุดเฟสที่จบก่อน 'shipped' → คำว่า "ส่งแล้ว" ไม่ตรงความจริง (ของขึ้นรถลูกค้าไปแล้ว = จบงานของเรา)
+  const statusLabel = (o) => (o.status === 'shipped' && finalStatusOf(o.customer) !== 'shipped')
+    ? '✅ จบงาน' : (SHIP_STATUS[o.status] || SHIP_STATUS.pending).label;
+
   const byCustomer = useMemo(() => {
     const m = {};
     orders.forEach(o => {
@@ -220,8 +280,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   // จัดสรร stock พร้อมส่งให้รอบที่ยังไม่ส่ง เรียงตามเวลา (FIFO) — รอบไหนพร้อมส่ง/ขาดเท่าไหร่
   // ⚠️ pool แชร์ตามเลข SAP: order คนละเลขลูกค้าที่ชี้ SAP เดียวกันต้องแย่งของก้อนเดียวกัน
   const coverage = useMemo(() => {
+    // "พร้อมส่ง" = เฉพาะของในคลัง FG (v.fg) — ของใน STORE/มินิสโตร์ยังไม่ผ่านแพ็ค ส่งไม่ได้
+    // แต่รายงานแยกเป็น offFg เสมอ (ห้ามหายเงียบ — คนจะได้รู้ว่าของมีแต่ค้างขั้นรับเข้าคลัง)
     const remain = {};
-    Object.entries(fgStock).forEach(([m, v]) => { remain[m] = v.total; });
+    Object.entries(fgStock).forEach(([m, v]) => { remain[m] = v.fg; });
     const map = {};
     orders.forEach(o => {
       if (o.status === 'shipped') return;
@@ -231,48 +293,91 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
       if (sap) remain[sap] = avail - use;
       // ⚠️ unknown = จับคู่เลข SAP ไม่ได้ → "ไม่รู้ว่ามีของไหม" ห้ามแสดงเป็น "ไม่มีของ ต้องผลิต!"
       //    (ของอาจเต็มคลังอยู่ใต้เลข SAP — เตือนผิดทำให้ผลิตซ้ำโดยไม่จำเป็น)
-      map[o.id] = { covered: use, short: Number(o.qty) - use, tracked: !!(sap && fgStock[sap]), unknown: !sap };
+      const offFg = sap && fgStock[sap] ? Math.max(0, fgStock[sap].total - fgStock[sap].fg) : 0;
+      map[o.id] = { covered: use, short: Number(o.qty) - use, tracked: !!(sap && fgStock[sap]), unknown: !sap, offFg };
     });
     return map;
   }, [orders, fgStock, matMap]);
 
   const advance = async (o) => {
-    const st = SHIP_STATUS[o.status] || SHIP_STATUS.pending;
-    if (!st.next) return;
+    const step = nextStep(o);
+    if (!step) return;
+    const to = step.to;
     setBusy(o.id);
-    const payload = { status: st.next };
-    if (st.next === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
+    const payload = { status: to };
+    if (to === 'shipped') { payload.shipped_at = new Date().toISOString(); payload.shipped_by = fullName || 'Logistic'; }
     // guard สถานะปัจจุบันแบบ atomic — กันกดรัว/2 เครื่องเลื่อนสถานะเดียวกันซ้ำ
     // (เครื่องสโตร์ใช้บัญชีร่วม) ถ้าไม่ guard จะหักสต็อก + ยิง Telegram ซ้ำ 2 รอบต่อการส่ง 1 ครั้ง
     const { data: updated, error } = await supabaseDR.from('customer_shipping_orders')
       .update(payload).eq('id', o.id).eq('status', o.status).select('id');
     if (error) { toast.error(error.message); setBusy(null); return; }
     if (!updated || updated.length === 0) { setBusy(null); await load(); return; } // มีคนเลื่อนไปก่อนแล้ว
-    // ส่งแล้ว → หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (ไลน์ที่มีของมากสุดก่อน)
-    // ⚠️ ผลลัพธ์ 3 แบบ (เต็ม/ขาด/ไม่ได้หักเลย) ต้องรายงานให้เห็นเสมอ — ห้ามขึ้น "ส่งแล้ว" เขียวล้วน
-    //    ตอนที่ยอดไม่ถูกหักจริง (เคยเงียบมาตลอด: ส่งไป 3,279 ชิ้น หักจริง 508 โดยไม่มีใครรู้)
+    /* หักสต็อก FG จากคลังอัตโนมัติเท่าที่มีบันทึกไว้ (คลัง FG ก่อน แล้วคลังอื่น)
+       ⏱️ หักตอนไหน = เฟสที่ติ๊ก "หักสต็อก" ไว้ (ไม่ติ๊ก = ตอนจบงาน เหมือนเดิม)
+          SAP ตัดออกจาก warehouse ตั้งแต่ย้ายของไปพื้นที่ shipping area (ก่อนขึ้นรถ)
+       ⚠️ ผลลัพธ์ 3 แบบ (เต็ม/ขาด/ไม่ได้หักเลย) ต้องรายงานให้เห็นเสมอ — ห้ามขึ้นเขียวล้วน
+          ตอนที่ยอดไม่ถูกหักจริง (เคยเงียบมาตลอด: ส่งไป 3,279 ชิ้น หักจริง 508 โดยไม่มีใครรู้) */
     let shipMsg = null;   // ข้อความสรุปผลการหักสต็อก (null = หักครบตามยอดส่ง)
-    if (st.next === 'shipped') {
+    const cutAt = deductStatusOf(o.customer);
+    let doCut = (SHIP_RANK[to] ?? 0) >= (SHIP_RANK[cutAt] ?? 4);
+    if (doCut) {
+      /* กันหักซ้ำแบบ idempotent — ผูกด้วย ref_shipment_id ที่เขียนไว้ตอนหักครั้งแรก
+         จำเป็นเมื่อจุดหักอยู่ก่อนขั้นสุดท้าย (prepared → shipped ยังมีอีกคลิก)
+         และตอนย้ายจุดหักจาก 'shipped' มา 'prepared' ใบที่ค้างกลางทางจะได้ไม่หลุด/ไม่ซ้ำ
+         ⚠️ query พลาด (เช่นคอลัมน์ยังไม่ apply) = ถือว่ายังไม่เคยหัก → เดินต่อแบบเดิม */
+      const { data: prevTxn, error: ePrev } = await supabaseDR.from('line_stock_transactions')
+        .select('id').eq('ref_shipment_id', o.id).limit(1);
+      if (!ePrev && (prevTxn?.length || 0) > 0) doCut = false;
+    }
+    if (doCut) {
       // เลข SAP ที่ของอยู่จริง — order อาจอ้างเลขลูกค้า ต้อง resolve ก่อนเสมอ
       const res = matMap[o.mat_no] || { mat: null, status: 'none', candidates: [] };
       const sap = res.mat;
-      const entry = sap ? fgStock[sap] : null;
+      /* re-fetch สต็อกของ mat นี้ "สด" ณ ตอนกด — หน้านี้ไม่มี polling, snapshot ใน state
+         อาจค้างเป็นชั่วโมง (FG เพิ่งเข้าจากปิดใบผลิต/เพิ่งถูกใบอื่นหักไป) → หักจากตัวเลขเก่า
+         ผิดคลัง/ผิดจำนวนได้ · fetch พลาด = ถอยไปใช้ snapshot เดิม (งานหลักต้องเดินต่อ) */
+      let entry = sap ? fgStock[sap] : null;
+      if (sap) {
+        const { data: freshRows, error: eF } = await supabaseDR.from('line_stock_summary')
+          .select('line_name, mat_no, qty_on_hand').eq('mat_no', sap);
+        if (!eF && freshRows) {
+          const e = { total: 0, fg: 0, lines: [] };
+          freshRows.forEach(r => {
+            const q = parseFloat(r.qty_on_hand) || 0;
+            if (q <= 0) return;
+            const isFg = !fgDest || r.line_name === fgDest;
+            e.total += q; if (isFg) e.fg += q;
+            e.lines.push({ line_name: r.line_name, qty: q, isFg });
+          });
+          entry = e.lines.length ? e : null;
+        }
+      }
       const want = Number(o.qty) || 0;
       let left = want;
       const txns = [];
-      [...(entry?.lines || [])].sort((a, b) => b.qty - a.qty).forEach(l => {
-        if (left <= 0) return;
-        const use = Math.min(l.qty, left);
-        left -= use;
-        txns.push({
-          line_name: l.line_name, mat_no: sap, part_name: o.part_name, qty: use,
-          type: 'consume', work_date: workDateStr(),
-          note: `ส่งลูกค้า ${o.customer || ''} · ${o.due_date} ${o.ship_time || ''}${o.order_no ? ` · PO ${o.order_no}` : ''}`,
-          created_by: fullName || 'Logistic',
-          ref_shipment_id: o.id,   // ผูกกลับรอบส่งใบนี้ → /order-trace สอบกลับได้ตรงใบ ไม่ต้องเดาจากเวลา
+      /* ลำดับหัก: คลัง FG ก่อนเสมอ แล้วค่อยคลังอื่น (ภายในกลุ่มเรียง qty มาก→น้อย)
+         ⚠️ เดิมเรียง qty อย่างเดียว → mat ที่มีของ STORE เยอะกว่า FG ถูกหักลง STORE
+         = ledger ผิด 2 คลังพร้อมกัน (STORE โดนหักทั้งที่ของไม่ได้ออกตรงนั้น + FG ค้างยอดผี)
+         ยังหักคลังอื่นต่อเมื่อ FG ไม่พอ (คงยอดหักรวมเท่าเดิม — ของบางส่วนบันทึกใต้เลขลูกค้า
+         นอกคลัง FG จริง ตัดทิ้งจะ regress แบบที่กฎ matResolve เตือน) แต่ต้องรายงาน */
+      let cutOffFg = 0;
+      [...(entry?.lines || [])]
+        .sort((a, b) => (b.isFg - a.isFg) || (b.qty - a.qty))
+        .forEach(l => {
+          if (left <= 0) return;
+          const use = Math.min(l.qty, left);
+          left -= use;
+          if (!l.isFg) cutOffFg += use;
+          txns.push({
+            line_name: l.line_name, mat_no: sap, part_name: o.part_name, qty: use,
+            type: 'consume', work_date: workDateStr(),
+            note: `ส่งลูกค้า ${o.customer || ''} · ${o.due_date} ${o.ship_time || ''}${o.order_no ? ` · PO ${o.order_no}` : ''}`,
+            created_by: fullName || 'Logistic',
+            ref_shipment_id: o.id,   // ผูกกลับรอบส่งใบนี้ → /order-trace สอบกลับได้ตรงใบ ไม่ต้องเดาจากเวลา
+          });
         });
-      });
       let cut = want - left;
+      let insertFailed = false;
       if (txns.length) {
         let { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
         // คอลัมน์ ref_shipment_id ยังไม่ถูก apply (42703) → ตัดสต็อกให้ได้ก่อน (งานหลักต้องไม่พัง)
@@ -282,19 +387,27 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
             .insert(txns.map(({ ref_shipment_id, ...t }) => t)));   // eslint-disable-line no-unused-vars
           if (!e2) toast.info('ตัดสต็อกแล้ว แต่ยังผูกกับรอบส่งไม่ได้ — ยังไม่ได้ apply migration 20260811_stock_txn_ref_shipment (แจ้ง admin)');
         }
-        if (e2) { cut = 0; toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message); }
+        if (e2) { cut = 0; insertFailed = true; toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message); }
       }
-      if (cut <= 0) {
+      // ขั้นที่หักสต็อกอาจไม่ใช่ "ส่งแล้ว" อีกต่อไป (SAP หักตอนเตรียมของ) → ข้อความต้องตรงกับขั้นที่เพิ่งกด
+      const at = to === 'shipped' ? 'จบงาน' : (SHIP_STATUS[to]?.label || to);
+      if (insertFailed) {
+        // insert ล้มด้วย error จริง — สาเหตุคือระบบ/สิทธิ์ ไม่ใช่ "ของไม่เคยเข้าคลัง"
+        // ห้ามไหลเข้าข้อความวินิจฉัย master ข้างล่าง (ชี้ทางแก้ผิดเรื่อง — คนจะไปไล่ p_no ฟรี)
+        shipMsg = `🔴 ${at} ${o.mat_no} แล้ว — ตัดสต็อกไม่สำเร็จ (ระบบ) ยอดคงเหลือยังไม่ถูกหัก · ลองใหม่/แจ้ง admin`;
+      } else if (cut <= 0) {
         // ยอดคลังไม่ขยับ → ยอดคงเหลือจะสูงกว่าความจริงไปเรื่อยๆ ต้องบอกให้รู้ว่าติดตรงไหน
         // แยก 2 สาเหตุที่คนละวิธีแก้: จับคู่เลขไม่ได้ (แก้ master) vs จับคู่ได้แต่ของไม่เคยเข้าคลัง (แก้การปิดออเดอร์ผลิต)
         const why = matIssueText(o.mat_no, res);
-        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก · `
+        shipMsg = `⚠️ ${at} ${o.mat_no} แล้ว — แต่ไม่ได้หักสต็อก · `
           + (why || `ไม่มีข้อมูลสต็อกของ ${sap} ในคลัง (ของยังไม่เคยถูกบันทึกเข้า — เช็คการปิดออเดอร์ผลิต/กฎรับเข้าอัตโนมัติ)`);
       } else if (cut < want) {
-        shipMsg = `⚠️ ส่ง ${o.mat_no} แล้ว — หักสต็อกได้ ${cut.toLocaleString()}/${want.toLocaleString()} ชิ้น (สต็อกในระบบไม่พอ ขาด ${(want - cut).toLocaleString()})`;
+        shipMsg = `⚠️ ${at} ${o.mat_no} แล้ว — หักสต็อกได้ ${cut.toLocaleString()}/${want.toLocaleString()} ชิ้น (สต็อกในระบบไม่พอ ขาด ${(want - cut).toLocaleString()})`;
+      } else if (cutOffFg > 0) {
+        shipMsg = `⚠️ ${at} ${o.mat_no} แล้ว — หักครบ แต่ ${cutOffFg.toLocaleString()} ชิ้นถูกหักจากคลังนอก FG (ของยังไม่ผ่านรับเข้าคลัง FG — เช็คขั้นแพ็ค/รับเข้า)`;
       }
     }
-    if (st.next === 'shipped') {
+    if (to === 'shipped') {
       supabase.functions.invoke('send-notification', {
         body: { event: 'shipping_shipped', ship: {
           ship_time: (o.ship_time || '').slice(0, 5), due_date: o.due_date,
@@ -304,8 +417,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         } },
       }).catch(() => {});
     }
-    if (shipMsg) toast.error(shipMsg);   // ส่งสำเร็จ แต่สต็อกไม่ตรง — ต้องมีคนไปตามแก้ ห้ามกลบด้วยเขียว
-    else toast.success(st.next === 'shipped' ? `🚚 ส่ง ${o.mat_no} แล้ว` : `📦 เตรียม ${o.mat_no} แล้ว`);
+    if (shipMsg) toast.error(shipMsg);   // เลื่อนสถานะสำเร็จ แต่สต็อกไม่ตรง — ต้องมีคนไปตามแก้ ห้ามกลบด้วยเขียว
+    else toast.success(`${step.label} — ${o.mat_no}`);
     await load();
     setBusy(null);
   };
@@ -610,7 +723,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: od ? '#ef4444' : pl ? '#f97316' : st.color }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 6 }}>
@@ -626,9 +739,12 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                         ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</div>
                         : cov.short <= 0
                           ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                          : cov.covered > 0
-                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)} — ขาด {fmt(cov.short)} ชิ้น</div>
-                            : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(cov.short)} ชิ้น ต้องผลิต!</div>
+                          : cov.offFg >= cov.short
+                            /* ของมีพอแต่อยู่นอกคลัง FG (STORE/มินิสโตร์) — ปัญหาอยู่ขั้นแพ็ค/รับเข้าคลัง ไม่ใช่ "ต้องผลิต" */
+                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>🟠 คลัง FG มี {fmt(cov.covered)} — อีก {fmt(cov.short)} อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)</div>
+                            : cov.covered > 0 || cov.offFg > 0
+                              ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} — ขาด {fmt(cov.short)} ชิ้น</div>
+                              : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(cov.short)} ชิ้น ต้องผลิต!</div>
                     )}
                     {o.status !== 'shipped' && phases.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
@@ -644,12 +760,17 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                     )}
                     {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by}</div>}
                     <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                      {st.next && (
-                        <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
-                          style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${st.color}22`, color: st.color, border: `1px solid ${st.color}55`, fontFamily: 'var(--font-body)' }}>
-                          {busy === o.id ? '...' : st.nextLabel}
-                        </button>
-                      )}
+                      {(() => {
+                        const nx = nextStep(o);
+                        if (!nx) return null;
+                        return (
+                          <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
+                            title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                            style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${nx.color}22`, color: nx.color, border: `1px solid ${nx.color}55`, fontFamily: 'var(--font-body)' }}>
+                            {busy === o.id ? '...' : nx.label}
+                          </button>
+                        );
+                      })()}
                       <button onClick={() => goToCard(o)}
                         style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
                         ⬇ ไปที่การ์ด
@@ -703,7 +824,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>🕐 {(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}{o.due_date !== day ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> (เช้า {(o.due_date || '').slice(5)})</span> : null}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : st.label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: cardColor }}>{od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
                     </div>
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700, marginTop: 4 }}>
                       {o.mat_no}{o.customer_part_no && o.customer_part_no !== o.mat_no ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {o.customer_part_no}</span> : null}
@@ -730,17 +851,24 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
                         ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</div>
                         : coverage[o.id].short <= 0
                           ? <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 4 }}>📦 stock พร้อมส่งครบ</div>
-                          : coverage[o.id].covered > 0
-                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
-                            : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(coverage[o.id].short)} ชิ้น ต้องผลิต!</div>
+                          : coverage[o.id].offFg >= coverage[o.id].short
+                            ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>🟠 คลัง FG มี {fmt(coverage[o.id].covered)} — อีก {fmt(coverage[o.id].short)} อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)</div>
+                            : coverage[o.id].covered > 0 || coverage[o.id].offFg > 0
+                              ? <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(coverage[o.id].covered)}{coverage[o.id].offFg > 0 ? ` (+${fmt(coverage[o.id].offFg)} นอกคลัง FG)` : ''} — ขาด {fmt(coverage[o.id].short)} ชิ้น (รอผลิต)</div>
+                              : <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 800, marginTop: 4 }}>🚨 ไม่มี stock พร้อมส่ง — ขาด {fmt(coverage[o.id].short)} ชิ้น ต้องผลิต!</div>
                     )}
                     {o.shipped_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {o.shipped_by} · {o.shipped_at ? new Date(o.shipped_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }) : ''}</div>}
-                    {st.next && (
-                      <button onClick={() => advance(o)} disabled={busy === o.id}
-                        style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.color}55`, fontFamily: 'var(--font-body)' }}>
-                        {busy === o.id ? '...' : st.nextLabel}
-                      </button>
-                    )}
+                    {(() => {
+                      const nx = nextStep(o);
+                      if (!nx) return null;
+                      return (
+                        <button onClick={() => advance(o)} disabled={busy === o.id}
+                          title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                          style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: nx.color, border: `1px solid ${nx.color}55`, fontFamily: 'var(--font-body)' }}>
+                          {busy === o.id ? '...' : nx.label}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -787,7 +915,7 @@ function WorkflowSection({ canEdit }) {
     const { data: defs } = await supabaseDR.from('shipping_workflow_steps').select('*').is('customer', null).eq('is_active', true).order('step_no');
     if (!defs?.length) { toast.error('ยังไม่มีค่ามาตรฐานให้คัดลอก'); return; }
     const { error } = await supabaseDR.from('shipping_workflow_steps')
-      .insert(defs.map(d => ({ customer: scope, step_no: d.step_no, name: d.name, offset_min: d.offset_min, requires_status: d.requires_status })));
+      .insert(defs.map(d => ({ customer: scope, step_no: d.step_no, name: d.name, offset_min: d.offset_min, requires_status: d.requires_status, deducts_stock: d.deducts_stock ?? false })));
     if (error) toast.error(error.message);
     else { toast.success(`สร้างชุดเฟสของ ${scope} จากค่ามาตรฐานแล้ว`); await load(); }
   };
@@ -799,11 +927,18 @@ function WorkflowSection({ canEdit }) {
     const d = draft[r.id];
     if (!d) return;
     setBusy(r.id);
-    const { error } = await supabaseDR.from('shipping_workflow_steps').update({
+    const base = {
       name: String(d.name ?? r.name).trim() || r.name,
       offset_min: Math.max(0, parseInt(d.offset_min ?? r.offset_min) || 0),
       requires_status: d.requires_status ?? r.requires_status,
-    }).eq('id', r.id);
+    };
+    const wantCut = d.deducts_stock ?? r.deducts_stock ?? false;
+    let { error } = await supabaseDR.from('shipping_workflow_steps').update({ ...base, deducts_stock: wantCut }).eq('id', r.id);
+    // คอลัมน์ deducts_stock ยังไม่ apply (42703) → บันทึกส่วนที่เหลือให้ได้ก่อน แต่ต้องบอกว่าอะไรไม่ถูกบันทึก
+    if (error?.code === '42703') {
+      ({ error } = await supabaseDR.from('shipping_workflow_steps').update(base).eq('id', r.id));
+      if (!error) toast.info('บันทึกแล้ว แต่ "หักสต็อก" ยังตั้งไม่ได้ — ยังไม่ได้ apply migration 20260826_shipping_step_deducts_stock (แจ้ง admin)');
+    }
     if (error) toast.error(error.message);
     else { toast.success('บันทึกเฟสแล้ว'); await load(); }
     setBusy(null);
@@ -827,6 +962,12 @@ function WorkflowSection({ canEdit }) {
   const cell = { padding: '6px 10px', borderTop: '1px solid var(--border)' };
   const edSt = { ...inputSt, padding: '5px 8px', fontSize: 12, width: '100%', boxSizing: 'border-box' };
 
+  // เฟสท้ายสุด = สถานะสูงสุดที่ตั้งไว้ (ไม่ใช่ step_no ท้ายสุด — คนสลับลำดับได้) · เฟสหักสต็อก = ตัวที่ติ๊กแล้วสถานะต่ำสุด
+  const rank = (s) => REQ_STATUS_OPTIONS.findIndex(x => x.value === s);
+  const lastStep = steps.length ? steps.reduce((a, b) => (rank(b.requires_status) > rank(a.requires_status) ? b : a)) : null;
+  const cutStep = steps.filter(s => s.deducts_stock)
+    .reduce((a, b) => (a == null || rank(b.requires_status) < rank(a.requires_status) ? b : a), null);
+
   return (
     <div style={{ ...card, marginTop: 16 }}>
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🚛 Standard Workflow การส่งงาน (walkback)</div>
@@ -834,6 +975,15 @@ function WorkflowSection({ canEdit }) {
         นับถอยหลังจาก<strong>เวลาส่งถึงลูกค้า</strong> — แต่ละเฟสต้องถึงสถานะที่กำหนดก่อน deadline (เวลาส่ง − นาที walkback)
         ระบบสแกนทุก 10 นาที เฟสไหนหลุดจะแจ้งเข้า Smart Logistic ทันที ไม่ต้องรอตก due ลูกค้า
         · เพิ่ม/ลดจำนวนเฟสได้ตามความเหมาะสมของแต่ละลูกค้า
+      </div>
+      {/* ⭐ 2 กติกาที่คนตั้งค่าต้องเห็น ไม่งั้นตั้งแล้วไม่รู้ว่าจะเกิดอะไรขึ้นหน้างาน */}
+      <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, lineHeight: 1.65 }}>
+        🏁 <strong>เฟสท้ายสุด = จบงาน</strong> — พอกดถึงเฟสล่างสุดของตาราง ระบบปิดรอบส่งให้เลย ไม่มีปุ่มให้กดต่อ
+        {lastStep && <> (ตอนนี้คือ <strong style={{ color: '#a855f7' }}>{lastStep.name}</strong>)</>}
+        {lastStep && lastStep.requires_status !== 'shipped' && <> · เหมาะกับลูกค้าที่<strong>เอารถ milk run มารับเอง</strong> — ของขึ้นรถแล้วงานของเราจบตรงนั้น</>}
+        <br />
+        📦 <strong>หักสต็อก</strong> — ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (ให้ตรงกับ SAP ที่ตัดตั้งแต่ย้ายของไปพื้นที่ shipping area ก่อนขึ้นรถ)
+        {' '}ตอนนี้หักตอน <strong style={{ color: '#0ea5e9' }}>{cutStep ? cutStep.name : 'จบงาน (ค่าเริ่มต้น — ยังไม่ติ๊กเฟสไหน)'}</strong> · หักครั้งเดียวต่อรอบส่งเสมอ ติ๊กหลายเฟสจะยึดเฟสแรกสุด
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชุดเฟสของ:</span>
@@ -853,9 +1003,9 @@ function WorkflowSection({ canEdit }) {
         )}
       </div>
       <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', ''].map(h => (
+            {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', '📦 หักสต็อก', ''].map(h => (
               <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
             ))}
           </tr></thead>
@@ -870,6 +1020,17 @@ function WorkflowSection({ canEdit }) {
                     {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
                   </select>
                 ) : <span style={{ fontSize: 12 }}>{REQ_STATUS_OPTIONS.find(x => x.value === r.requires_status)?.label || r.requires_status}</span>}</td>
+                <td style={{ ...cell, whiteSpace: 'nowrap' }}>
+                  {canEdit ? (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', color: 'var(--text2)' }}
+                      title="ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (SAP ตัดตั้งแต่ย้ายเข้าพื้นที่ shipping area)">
+                      <input type="checkbox" checked={!!val(r, 'deducts_stock')}
+                        onChange={e => setVal(r, 'deducts_stock', e.target.checked)} style={{ width: 'auto', margin: 0 }} />
+                      หักที่เฟสนี้
+                    </label>
+                  ) : <span style={{ fontSize: 12 }}>{r.deducts_stock ? '📦 หักที่เฟสนี้' : '—'}</span>}
+                  {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#0ea5e9' }}>← จุดหักจริง</span>}
+                </td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.id] && (
                     <button className="tbtn" onClick={() => save(r)} disabled={busy === r.id}
@@ -892,8 +1053,9 @@ function WorkflowSection({ canEdit }) {
       {canEdit && (
         <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>➕ เพิ่มเฟส</button>
       )}
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-        ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
+        ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00<br />
+        รถลูกค้ามารับเอง (milk run): ตั้งแค่ 3 เฟสจบที่ <em>โหลดขึ้นรถ</em> แล้วติ๊กหักสต็อกที่ <em>เตรียมงานเสร็จ</em> → กดโหลดขึ้นรถ = ปิดรอบส่งเลย
       </div>
     </div>
   );
@@ -904,12 +1066,26 @@ function ShipToTab({ canEdit, onChanged }) {
   const [rows, setRows] = useState([]);
   const [draft, setDraft] = useState({});     // code → { customer_name, plant_name, note }
   const [newCode, setNewCode] = useState('');
+  /* ⚠️ "ชื่อลูกค้า" ช่องนี้ไม่ใช่ข้อความสวยงาม — มันคือ **กุญแจจับคู่**
+     ตอนนำเข้า EDI ระบบใช้ค่านี้เทียบกับ `dr_products.customer` เพื่อแยกว่า
+     เลขพาร์ทลูกค้าตัวเดียวกันเป็นออเดอร์ของเลข SAP ไหน (ดูกฎเหล็กใน CLAUDE.md)
+     ⇒ พิมพ์เองแล้วสะกดต่างนิดเดียว = แยกไม่ออก ออเดอร์ทุกเจ้าไปกองเลขเดียวเงียบๆ
+     → ต้องเลือกจากรายชื่อลูกค้าที่ Product Master ใช้จริง (ยังพิมพ์เองได้ แต่ต้องเตือน) */
+  const [custOpts, setCustOpts] = useState([]);   // [{ name, n }] จาก dr_products.customer
+  const [freeText, setFreeText] = useState({});   // code → true = โหมดพิมพ์เอง
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabaseDR.from('ship_to_plants').select('*').order('code');
+    const [{ data }, { data: prods }] = await Promise.all([
+      supabaseDR.from('ship_to_plants').select('*').order('code'),
+      supabaseDR.from('dr_products').select('customer').eq('is_active', true),
+    ]);
     setRows(data || []);
+    const cnt = {};
+    (prods || []).forEach(p => { const c = String(p.customer || '').trim(); if (c) cnt[c] = (cnt[c] || 0) + 1; });
+    setCustOpts(Object.entries(cnt).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)));
     setDraft({});
+    setFreeText({});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -952,6 +1128,11 @@ function ShipToTab({ canEdit, onChanged }) {
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ Ship-to Plant Config</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         ตั้งชื่อลูกค้าให้ code ปลายทางจากไฟล์ EDI (เช่น GRBNA → AAT) — ชื่อนี้จะแสดงแทน code ในทุกหน้าจอ · code ใหม่จากไฟล์ EDI จะถูกเพิ่มเข้าลิสต์นี้อัตโนมัติ
+        <div style={{ marginTop: 5, color: '#f59e0b' }}>
+          ⚠️ ชื่อนี้ถูกใช้เป็น<b>กุญแจแยกออเดอร์</b> ตอนนำเข้า EDI — เลขพาร์ทลูกค้าตัวเดียวมีได้หลายเลข SAP ต่างกันที่ลูกค้าปลายทาง
+          <b> ต้องสะกดตรงกับช่อง "ลูกค้า" ใน Product Master</b> ไม่งั้นแยกไม่ออก แล้วออเดอร์ทุกเจ้าจะไปกองที่เลขเดียว
+          <div style={{ color: 'var(--muted)', marginTop: 2 }}>→ เลือกจากลิสต์ (ดึงจาก Product Master) แทนการพิมพ์เอง · พิมพ์เองได้ถ้าเป็นลูกค้าใหม่ที่ยังไม่มีสินค้า</div>
+        </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
@@ -964,7 +1145,11 @@ function ShipToTab({ canEdit, onChanged }) {
             {rows.map(r => (
               <tr key={r.code}>
                 <td style={{ ...cell, fontFamily: 'monospace', fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>{r.code}</td>
-                <td style={cell}>{canEdit ? <input value={val(r, 'customer_name')} onChange={e => setVal(r, 'customer_name', e.target.value)} style={edSt} placeholder="เช่น AAT / FTM" /> : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
+                <td style={cell}>{canEdit ? <CustomerPicker
+                    value={val(r, 'customer_name')} code={r.code} opts={custOpts}
+                    free={!!freeText[r.code]} setFree={(v) => setFreeText(f => ({ ...f, [r.code]: v }))}
+                    onChange={(v) => setVal(r, 'customer_name', v)} edSt={edSt} />
+                  : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'plant_name')} onChange={e => setVal(r, 'plant_name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.plant_name || '—'}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'note')} onChange={e => setVal(r, 'note', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{r.note || ''}</span>}</td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
@@ -1035,6 +1220,43 @@ export default function CustomerDemand() {
 
       {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap)} />}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
+    </div>
+  );
+}
+
+/* เลือก "ชื่อลูกค้า" จากรายชื่อที่ Product Master ใช้จริง — กันพิมพ์ผิดจนแยกออเดอร์ไม่ออก
+   ⚠️ ไม่บังคับให้เลือกจากลิสต์อย่างเดียว (ลูกค้าใหม่ที่ยังไม่มีสินค้าต้องกรอกได้)
+      แต่ค่าที่ไม่ตรงกับใครเลย **ต้องขึ้นเตือน ห้ามเงียบ** */
+function CustomerPicker({ value, code, opts, free, setFree, onChange, edSt }) {
+  const v = String(value || '').trim();
+  const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const hit = opts.find(o => norm(o.name) === norm(v));
+  const unset = !v || norm(v) === norm(code);          // ยังไม่ตั้ง = ชื่อเท่ากับ code เอง
+  const showFree = free || (!hit && !unset);           // ค่าเดิมที่ไม่อยู่ในลิสต์ → เปิดโหมดพิมพ์เองให้แก้ได้
+  return (
+    <div>
+      {showFree ? (
+        <div style={{ display: 'flex', gap: 5 }}>
+          <input value={v} onChange={e => onChange(e.target.value)} style={edSt} placeholder="พิมพ์ชื่อลูกค้า" autoFocus={free} />
+          <button type="button" onClick={() => { setFree(false); onChange(''); }}
+            title="กลับไปเลือกจากลิสต์" style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>☰</button>
+        </div>
+      ) : (
+        <select value={hit ? hit.name : ''} style={edSt}
+          onChange={e => { if (e.target.value === '__free') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
+          <option value="">— ยังไม่ตั้ง —</option>
+          {opts.map(o => <option key={o.name} value={o.name}>{o.name} ({o.n} สินค้า)</option>)}
+          <option value="__free">✏️ พิมพ์เอง (ลูกค้าใหม่)</option>
+        </select>
+      )}
+      {/* บอกผลการจับคู่ทันที — "SOUTH ARFIGA" ต้องเห็นว่าไม่ตรงกับใครตั้งแต่ยังไม่กดบันทึก */}
+      {unset ? (
+        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้</div>
+      ) : hit ? (
+        <div style={{ fontSize: 10, color: '#22c55e', marginTop: 2 }}>✓ ตรงกับ {hit.n} สินค้าใน Product Master</div>
+      ) : (
+        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>⚠ ไม่มีสินค้าไหนใช้ชื่อลูกค้านี้ — แยกออเดอร์ไม่ได้ (ตรวจตัวสะกด หรือไปตั้งช่อง "ลูกค้า" ที่ Product Master)</div>
+      )}
     </div>
   );
 }

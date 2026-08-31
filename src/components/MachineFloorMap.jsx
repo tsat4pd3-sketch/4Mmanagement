@@ -100,7 +100,8 @@ export default function MachineFloorMap({
   }
 
   // ขนาดจาก util กลาง (docs/UI-CONVENTIONS.md §1) — density-aware: ผังที่เครื่องเยอะ หมุดย่อลง
-  const { SUB, subRing, subPillFont, subPillMaxW } = markerScale(imgBox?.rw, { machineCount: points.length })
+  const { SUB, subRing, subPillFont, subPillMaxW } =
+    markerScale(imgBox?.rw, { machineCount: points.length, points, mapHeight: imgBox?.rh })
   const size = SUB
   const borderW = subRing
   const pillFont = subPillFont

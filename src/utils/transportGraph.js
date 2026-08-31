@@ -90,8 +90,11 @@ export function routeThroughStops(nodes, edges, stopNodeIds) {
     out.segments.push({ from, to, path, distance, ok: okSeg })
     if (!okSeg) { out.ok = false; if (out.brokenAt < 0) out.brokenAt = i; continue }
     out.distance += distance
-    // ต่อ node path (กันซ้ำจุดเชื่อมระหว่าง segment)
-    const add = out.nodePath.length ? path.slice(1) : path
+    /* ต่อ node path — ตัดหัวซ้ำเฉพาะเมื่อ "ต่อเนื่องจริง" (จุดท้ายเดิม = จุดแรกใหม่)
+       ⚠️ เดิม slice(1) เสมอ → segment กลางขาด (A-C หาย) แล้ว C ถูกตัดทิ้งทั้งจุด
+       nodePath กลายเป็น [STORE,A,D] = เส้นทางปลอมลากทะลุกำแพง (QC audit 2026-08-20 · T2-11) */
+    const last = out.nodePath[out.nodePath.length - 1]
+    const add = last != null && last === path[0] ? path.slice(1) : path
     out.nodePath.push(...add)
   }
   return out
