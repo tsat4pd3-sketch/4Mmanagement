@@ -12,6 +12,12 @@ import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryR
       โครงเดียวกันเป๊ะ: แถบสรุป → ชาร์ต 24 ชม. → ชิปกรอง → การ์ดรายรอบ + walkback
       ต่างกันแค่ "ปลายทาง": ลูกค้า → **ไลน์ผลิต** · order → **รอบจัดส่งคัมบัง**
 
+   ⚠️⚠️ จอนี้มี **2 โหมด** ไม่ใช่โหมดเดียว (user เคาะ 2026-08-27):
+   • ไลน์ที่มีรอบ `is_active` → **กำหนดรอบ** = ชาร์ต 24 ชม. + walkback + การ์ดรายรอบ
+   • ไลน์ที่ไม่มีรอบ        → **ส่งตามคำขอ** = คิวงาน "เห็นความต้องการ → เรียง → ส่งเลย"
+   **"ไม่มีรอบ" ไม่ใช่ของขาด ห้ามเขียนว่า "ยังไม่ตั้งรอบ → ไปตั้ง"** — ทีมสโตร์เลือกไม่เดินเป็นรอบเอง
+   (เดิมจอไล่ให้ไปตั้งรอบทุกไลน์ ทั้งที่พักรอบทั้งหมดไปแล้วโดยตั้งใจ · docs/STORE-PULL-LOOP-DESIGN.md §6.1)
+
    ⚠️ กฎที่ยกมาจากฝั่ง Delivery ห้ามทิ้ง:
    • กรอบวันงาน 08:00 → 08:00 เสมอ (`FRAME_START`) — รอบกะดึกข้ามเที่ยงคืนต้องอยู่แถวเดียวกัน
    • **แดง = สิ่งที่ "คนพลาด" เท่านั้น** — ตัดยอด/เริ่มจัดของ เป็นหมุดเวลา ไม่ใช่ด่านที่คนต้องกด
@@ -48,6 +54,7 @@ export default function StoreTimeChart({
   const [sortMode, setSortMode]     = useState('urgent');
   const [highlightId, setHighlightId] = useState(null);
   const [expanded, setExpanded]     = useState(null);
+  const [qOpen, setQOpen]           = useState({});   // กางรายการพาร์ทของคิวส่งตามคำขอ
 
   const { roundAlloc, groupDemand } = view;
   const leftW = isMobile ? 96 : 150;
@@ -77,19 +84,19 @@ export default function StoreTimeChart({
   }, [deliveries]);
   const keyOf = (r) => `${r.line_name}|${r.shift}|${r.round_no}`;
 
-  /* ── แถว = กลุ่มไลน์ (ไลน์ลูกรวมใต้ไลน์แม่ เหมือนบอร์ดสโตร์เดิม) ────────────
-     ไลน์ที่มี demand แต่ยังไม่ตั้งรอบจัดส่ง ต้องโผล่ด้วย — ห้ามหายเงียบ
-     (นั่นคือสัญญาณว่า "ผลิตต้องใช้ของ แต่ยังไม่มีใครนัดรอบส่ง") */
+  /* ── แถวชาร์ต = กลุ่มไลน์ที่ **เดินเป็นรอบ** (ไลน์ลูกรวมใต้ไลน์แม่) ──────────
+     ⚠️ ไลน์ที่ไม่มีรอบ **ไม่เข้าชาร์ต** — ไปอยู่คิว "ส่งตามคำขอ" ด้านล่างแทน
+        (เดิมยัดเข้าชาร์ตเป็นแถวว่างพร้อมข้อความ "ยังไม่ตั้งรอบ" = ไลน์เดียวโผล่ 2 ที่
+         ด้วยคำอธิบายที่ขัดกันเอง) — แต่ยังต้องเห็นเสมอ ห้ามหายเงียบ */
   const byLine = useMemo(() => {
     const m = {};
     rounds.forEach(r => {
       const g = lineMap?.[r.line_name]?.parent_line_name || r.line_name;
       (m[g] = m[g] || []).push(r);
     });
-    Object.keys(groupDemand || {}).forEach(g => { if (!m[g]) m[g] = []; });
     Object.values(m).forEach(list => list.sort((a, b) => (frameMin(a.delivery_time) ?? 9e9) - (frameMin(b.delivery_time) ?? 9e9)));
     return m;
-  }, [rounds, groupDemand, lineMap]);
+  }, [rounds, lineMap]);
 
   /* ── ของในสโตร์พอไหม — จัดสรรแบบ FIFO ตามเวลาส่ง (รอบแรกได้ของก่อน) ────────
      กระจกบานเดียวกับ `coverage` ฝั่ง Delivery: pool ต่อ mat แชร์กันทุกรอบทั้งวัน
@@ -145,7 +152,42 @@ export default function StoreTimeChart({
   const overdueN   = rounds.filter(isOverdue).length;
   const shortN     = rounds.filter(r => !isDone(r) && (coverage[r.id]?.short || 0) > 0).length;
   const untrackedN = rounds.filter(r => !isDone(r) && (coverage[r.id]?.untracked || 0) > 0).length;
-  const noRoundLines = Object.entries(byLine).filter(([, list]) => !list.length).map(([g]) => g);
+  /* ── 2 โหมด: มีรอบ active = กำหนดรอบ · ไม่มีรอบ = ส่งตามคำขอ ───────────────
+     ⚠️ "ไม่มีรอบ" **ไม่ใช่ของขาด** — เป็นโหมดที่ทีมเลือก (docs/STORE-PULL-LOOP-DESIGN.md §6.1)
+     ทีมสโตร์ไม่ได้ทำงานเป็นรอบ: เห็นใครเบิกก่อนก็จัดของไปส่งก่อน
+     ⇒ ห้ามให้จอเขียนว่า "ยังไม่ตั้งรอบ → ไปตั้ง" เหมือนงานยังทำไม่เสร็จ */
+  const onDemandLines = Object.keys(groupDemand || {}).filter(g => !byLine[g]?.length);
+  const hasRoundMode  = rounds.length > 0;
+
+  /* คิวโหมดส่งตามคำขอ — "เห็นความต้องการ → เรียง → ส่งเลย"
+     ⚠️ ของในสโตร์เป็น pool ร่วม: mat เดียวที่หลายไลน์ต้องใช้พร้อมกัน ต้องขึ้น "ต้องแบ่ง"
+        ห้ามบอกว่าครบทั้ง 2 ไลน์ (ของมีชุดเดียว ส่งไลน์แรกไปแล้วไลน์ที่สองไม่เหลือ) */
+  const onDemandQueue = useMemo(() => {
+    const ST = { ok: 0, split: 1, partial: 2, none: 3, unknown: 4 };
+    const needByMat = {};
+    onDemandLines.forEach(g => (groupDemand?.[g]?.parts || []).forEach(p => {
+      if (p.netTotal > 0) needByMat[p.mat_no] = (needByMat[p.mat_no] || 0) + p.netTotal;
+    }));
+    return onDemandLines.map(g => {
+      const parts = (groupDemand?.[g]?.parts || [])
+        .filter(p => p.netTotal > 0)
+        .map(p => {
+          const tracked = p.mat_no in (storeStock || {});
+          const have = tracked ? (storeStock[p.mat_no] || 0) : null;
+          const state = !tracked ? 'unknown'                                   // ❔ ไม่รู้ ≠ ไม่มี
+            : have >= p.netTotal
+              ? (needByMat[p.mat_no] > have ? 'split' : 'ok')
+              : have > 0 ? 'partial' : 'none';
+          return { ...p, have, state };
+        })
+        .sort((a, b) => ST[a.state] - ST[b.state] || b.netTotal - a.netTotal);
+      const n = (s) => parts.filter(p => p.state === s).length;
+      return {
+        line: g, parts, cards: groupDemand?.[g]?.totalKanban || 0,
+        ok: n('ok'), split: n('split'), partial: n('partial'), none: n('none'), unknown: n('unknown'),
+      };
+    }).sort((a, b) => (b.ok + b.split) - (a.ok + a.split) || b.cards - a.cards);
+  }, [onDemandLines, groupDemand, storeStock]);
 
   const counts = {
     todo: rounds.filter(r => !isDone(r)).length,
@@ -198,9 +240,10 @@ export default function StoreTimeChart({
     setTimeout(() => setHighlightId(null), 3000);
   };
 
-  if (!Object.keys(byLine).length) return (
+  // ไม่มีทั้งรอบและ demand = วันนี้ผลิตยังไม่ต้องใช้ของ (ไม่ใช่ "ยังตั้งค่าไม่เสร็จ")
+  if (!hasRoundMode && !onDemandLines.length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีรอบจัดส่งเข้าไลน์ — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+      วันงานนี้ยังไม่มีความต้องการพาร์ทจากไลน์ผลิต — เปิดใบผลิตแล้วระบบจะแตก BOM มาให้เอง
     </div>
   );
 
@@ -208,7 +251,7 @@ export default function StoreTimeChart({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}>
       {/* ── แถบสรุป (โครงเดียวกับหัว Shipping Chart) ── */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
+        {hasRoundMode && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
           📦 {rounds.length} รอบส่งเข้าไลน์ · ✅ {doneN} รับของแล้ว
           {overdueN > 0 && <span style={{ color: '#ef4444' }}> · 🔴 {overdueN} ค้างส่ง</span>}
           {shortN > 0 && <span style={{ color: '#f59e0b' }}> · ⚠️ {shortN} รอบของในสโตร์ไม่พอ</span>}
@@ -217,17 +260,18 @@ export default function StoreTimeChart({
               {' '}· ❔ {untrackedN} รอบ ยังเช็คของไม่ได้
             </span>
           )}
-        </span>
-        {noRoundLines.length > 0 && (
-          <span title={noRoundLines.join(' · ')}
-            style={chip('rgba(245,158,11,0.12)', '#f59e0b', { border: '1px solid rgba(245,158,11,0.4)', padding: '4px 10px' })}>
-            ⚠️ {noRoundLines.length} ไลน์มีความต้องการแต่ยังไม่ตั้งรอบส่ง
+        </span>}
+        {onDemandLines.length > 0 && (
+          <span title={onDemandLines.join(' · ')}
+            style={chip('rgba(59,130,246,0.12)', '#60a5fa', { border: '1px solid rgba(59,130,246,0.35)', padding: '4px 10px' })}>
+            🚚 ส่งตามคำขอ {onDemandLines.length} ไลน์
           </span>
         )}
       </div>
 
-      {/* ── ชาร์ต 24 ชม. ── */}
-      <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+      {/* ── ชาร์ต 24 ชม. — เฉพาะไลน์ที่เดินเป็นรอบ ────────────────────────────
+          ไม่มีรอบเลย = ไม่วาดกริด 24 ชม. · กริดเปล่าไม่ได้บอกอะไร แถมทำให้ดูเหมือนจอพัง */}
+      {hasRoundMode && <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
             🕐 Store Time Chart — สโตร์ ➜ ไลน์ผลิต · วันงาน {workDate}
@@ -274,7 +318,7 @@ export default function StoreTimeChart({
                       <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{g}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
-                      {list.length ? `${list.length} รอบ · ✅ ${okN}` : '— ยังไม่ตั้งรอบ'}
+                      {`${list.length} รอบ · ✅ ${okN}`}
                       {gd ? ` · 🎴 ${gd.totalKanban}` : ''}
                     </span>
                   </div>
@@ -294,11 +338,6 @@ export default function StoreTimeChart({
                     })}
                     {isToday && nowW >= tStart && nowW <= tStart + span && (
                       <div className="now-line" style={{ left: `${((nowW - tStart) / span) * 100}%` }} />
-                    )}
-                    {!list.length && (
-                      <div style={{ position: 'absolute', top: 4, left: 8, fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
-                        ⚠️ มีความต้องการจากผลิต แต่ยังไม่ตั้งรอบจัดส่ง
-                      </div>
                     )}
                     {list.filter(r => frameMin(r.delivery_time) != null).map(r => {
                       const t = frameMin(r.delivery_time);
@@ -337,7 +376,7 @@ export default function StoreTimeChart({
             })}
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* ── Popup รายละเอียดรอบ ── */}
       {popup && (() => {
@@ -372,8 +411,8 @@ export default function StoreTimeChart({
         );
       })()}
 
-      {/* ── ชิปกรอง + เรียง (ตัวเลขต้องตรงกับจำนวนการ์ดที่เห็น) ── */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* ── ชิปกรอง + เรียง (ตัวเลขต้องตรงกับจำนวนการ์ดที่เห็น) — ของโหมดรอบเท่านั้น ── */}
+      {hasRoundMode && <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {[
           { k: 'todo', label: `⏳ ต้องทำ (${counts.todo})` },
           { k: 'overdue', label: `🔴 ค้างส่ง (${counts.overdue})` },
@@ -396,37 +435,86 @@ export default function StoreTimeChart({
             border: `1px solid ${sortMode === s.k ? 'var(--accent)' : 'var(--border)'}`,
           }}>{s.label}</button>
         ))}
-      </div>
+      </div>}
 
-      {/* ── ไลน์ที่ผลิตต้องใช้ของ แต่ยังไม่มีใครนัดรอบส่ง ──────────────────────
-          ⚠️ ข้อมูลจริง 26/08: ทั้งระบบมี `kanban_delivery_rounds` แค่ 2 รอบ (HYDROFORM + LINE APRON ASSY
-          กะเช้า 11:00) ขณะที่ฝั่งลูกค้ามี 62 รอบ/วัน เพราะ EDI ป้อนให้เอง
-          ⇒ ถ้าโชว์แต่ "รอบ" จอนี้จะว่างจนดูเหมือนพัง ทั้งที่ความต้องการมีจริง
-          ต้องโชว์ความต้องการที่รอเจ้าภาพด้วย = worklist ให้ไปตั้งรอบ ไม่ใช่จอเปล่า */}
-      {noRoundLines.length > 0 && (
-        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.05)', padding: '12px 14px' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
-            ⚠️ ผลิตต้องใช้ของ แต่ยังไม่ได้ตั้งรอบจัดส่ง — {noRoundLines.length} ไลน์
+      {/* ── 🚚 โหมดส่งตามคำขอ — ไลน์ที่ไม่ได้เดินเป็นรอบ ───────────────────────
+          ⚠️ นี่ไม่ใช่ worklist "ไปตั้งรอบ" — ทีมสโตร์ไม่ได้ทำงานเป็นรอบโดยเลือกเอง (user 27/08)
+             จอต้องเป็น **คิวงานที่หยิบส่งได้เลย**: เห็นความต้องการ → เรียง → ส่ง
+          ⚠️ ลำดับตอนนี้เรียงตาม "ความพร้อมของของ" ยังไม่ใช่ "เวลาที่ผลิตแจ้ง"
+             เวลาแจ้งจะมีจริงเมื่อเปิดคิวคำขอ (เฟส 2 · docs/STORE-PULL-LOOP-DESIGN.md §4.1)
+             ห้ามเขียนบนจอว่าเรียงตามเวลาแจ้งจนกว่าจะมี `requested_at` จริง */}
+      {onDemandQueue.length > 0 && (
+        <div style={{ ...card, borderColor: 'rgba(59,130,246,0.35)', background: 'rgba(59,130,246,0.04)', padding: '12px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa' }}>
+              🚚 ส่งตามคำขอ (delivery to order) — {onDemandQueue.length} ไลน์
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              อยากให้ไลน์ไหนเดินเป็นรอบ ตั้งได้ที่ <b>📦 Line Stock → ⏰ รอบจัดส่ง</b>
+            </span>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-            ระบบแตก BOM จากแผนผลิตให้แล้ว แต่ยังไม่มีรอบส่งให้ยึดเวลา → ของพวกนี้ยังไม่เข้าชาร์ตด้านบน
-            · ตั้งรอบที่ <b>📦 Line Stock → ⏰ รอบจัดส่ง</b>
+            ไลน์เหล่านี้ไม่ได้นัดเวลาไว้ — ระบบแตก BOM จากแผนผลิตมาให้แล้ว จัดตามลำดับแล้วส่งได้เลย
+            · <span style={{ color: '#f59e0b' }}>เรียงตาม “ของในสโตร์พร้อมแค่ไหน” ยังไม่ใช่เวลาที่ผลิตแจ้ง</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))', gap: 10 }}>
-            {noRoundLines.map(g => {
-              const gd = groupDemand?.[g] || { parts: [], totalKanban: 0 };
-              const netParts = gd.parts.filter(p => p.netTotal > 0);
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10 }}>
+            {onDemandQueue.map((q, i) => {
+              const open = !!qOpen[q.line];
+              const blocked = q.none + q.partial;
               return (
-                <div key={g} style={{ background: 'var(--bg2)', border: '1px dashed rgba(245,158,11,0.5)', borderRadius: 10, padding: '9px 12px' }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>🏭 {g}</div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 3 }}>
-                    <span style={{ fontSize: 19, fontWeight: 900, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>{gd.totalKanban}</span>
-                    <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>การ์ด · {netParts.length} พาร์ทที่ต้องส่ง</span>
+                <div key={q.line} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={chip('rgba(96,165,250,0.15)', '#60a5fa', { minWidth: 20, textAlign: 'center' })}>{i + 1}</span>
+                    <button onClick={() => onOpenLine?.(q.line)} title="เปิดบอร์ดของไลน์นี้"
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: onOpenLine ? 'pointer' : 'default',
+                        fontSize: 12.5, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-body)', textAlign: 'left' }}>
+                      🏭 {q.line}
+                    </button>
                   </div>
-                  {netParts.length > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}
-                      title={netParts.map(p => `${p.mat_no} ${fmt(p.netTotal)}`).join(' · ')}>
-                      {netParts.slice(0, 4).map(p => p.mat_no).join(' · ')}{netParts.length > 4 ? ` +${netParts.length - 4}` : ''}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 4 }}>
+                    <span style={{ fontSize: 19, fontWeight: 900, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{q.cards}</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>การ์ด · {q.parts.length} พาร์ท</span>
+                  </div>
+                  {/* สถานะของในสโตร์ — "ไม่รู้" แยกจาก "ไม่มี" เสมอ */}
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
+                    {q.ok > 0      && <span style={chip('rgba(34,197,94,0.14)', 'var(--accent)')}>✅ พร้อมส่ง {q.ok}</span>}
+                    {q.split > 0   && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')} title="ของชุดนี้มีไลน์อื่นต้องใช้ด้วย — ส่งไลน์แรกไปแล้วอาจไม่เหลือ">🔀 ต้องแบ่ง {q.split}</span>}
+                    {q.partial > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ไม่พอ {q.partial}</span>}
+                    {q.none > 0    && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')}>🚨 ไม่มีของ {q.none}</span>}
+                    {q.unknown > 0 && <span style={chip('rgba(148,163,184,0.14)', 'var(--muted)')} title="พาร์ทนี้ไม่มีแถวสต็อกในคลัง STORE — เช็คไม่ได้ว่ามีของไหม (ไม่ได้แปลว่าไม่มี)">❔ เช็คไม่ได้ {q.unknown}</span>}
+                  </div>
+                  <button onClick={() => setQOpen(s => ({ ...s, [q.line]: !s[q.line] }))}
+                    style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      fontSize: 11, fontWeight: 700, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
+                    {open ? '▾ ซ่อนรายการ' : `▸ ดูรายการที่ต้องหยิบ (${q.parts.length})`}
+                  </button>
+                  {open && (
+                    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 260, overflowY: 'auto' }}>
+                      {q.parts.map(p => {
+                        const m = p.state === 'ok'    ? { c: 'var(--accent)', t: '✅' }
+                          : p.state === 'split'       ? { c: '#f59e0b', t: '🔀' }
+                          : p.state === 'partial'     ? { c: '#f59e0b', t: '⚠️' }
+                          : p.state === 'none'        ? { c: '#ef4444', t: '🚨' }
+                          :                             { c: 'var(--muted)', t: '❔' };
+                        return (
+                          <div key={p.mat_no} style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 11.5 }}>
+                            <span style={{ color: m.c }}>{m.t}</span>
+                            <span style={{ fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>{p.mat_no}</span>
+                            <span style={{ color: 'var(--muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                            <span style={{ fontWeight: 800, color: m.c, whiteSpace: 'nowrap' }}>
+                              {fmt(p.netTotal)}{p.cards > 0 ? ` · ${p.cards}ใบ` : ''}
+                            </span>
+                            <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', fontSize: 10.5 }}>
+                              {p.have == null ? 'สโตร์ —' : `สโตร์ ${fmt(p.have)}`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {blocked > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 10.5, color: '#f59e0b' }}>
+                      ส่งได้ไม่ครบ — {blocked} พาร์ทของในสโตร์ไม่พอ
                     </div>
                   )}
                 </div>
@@ -436,12 +524,10 @@ export default function StoreTimeChart({
         </div>
       )}
 
-      {/* ── การ์ดรายรอบ + walkback + ของที่ต้องเตรียม ── */}
-      {cardsSorted.length === 0 ? (
+      {/* ── การ์ดรายรอบ + walkback + ของที่ต้องเตรียม (โหมดรอบเท่านั้น) ── */}
+      {!hasRoundMode ? null : cardsSorted.length === 0 ? (
         <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          {rounds.length === 0
-            ? 'ยังไม่มีรอบจัดส่งเข้าไลน์เลยทั้งระบบ — ตั้งรอบที่ 📦 Line Stock → ⏰ รอบจัดส่ง แล้วชาร์ตจะเดินเอง'
-            : 'ไม่มีรอบในตัวกรองนี้'}
+          ไม่มีรอบในตัวกรองนี้
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 12 }}>
