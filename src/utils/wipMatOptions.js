@@ -1,4 +1,4 @@
-import { matClassOf, matColor, matDigit, matMatches, isSapMat } from './matPrefix';
+import { MAT_CLASSES, classByDigit, matClassOf, matColor, matDigit, matMatches, isSapMat } from './matPrefix';
 import { getLineFamilyNames } from './lineHierarchy';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -81,8 +81,10 @@ export function buildWipMatOptions(parts = [], { line, lines = [], upstreamLines
       : '';
     return {
       id: p.mat_no,
-      label: `${p.mat_no}${p.name ? ` — ${p.name}` : ''}`,
-      sub: [opSub, p.lines.length ? `ผลิตที่ ${p.lines.join(' · ')}` : (p.isOp ? '' : 'ไม่ได้ผูกไลน์ผลิต (พาร์ทซื้อนอก/วัตถุดิบ)')].filter(Boolean).join(' · '),
+      /* ⚠️ label = เลข mat อย่างเดียว — ช่องเลือกอยู่ในแถบข้างที่แคบ ถ้าเอาชื่อมาต่อท้าย
+         ค่าที่เลือกแล้วจะถูกตัดกลางคำจนอ่านไม่ออก (feedback หน้างาน) · ชื่อไปอยู่ `sub` ซึ่งตัดบรรทัดได้ */
+      label: p.mat_no,
+      sub: [p.name, opSub, p.lines.length ? `ผลิตที่ ${p.lines.join(' · ')}` : (p.isOp ? '' : 'ไม่ได้ผูกไลน์ผลิต (พาร์ทซื้อนอก/วัตถุดิบ)')].filter(Boolean).join(' · '),
       // ไม่ใช่ OP และไม่ใช่เลข SAP 8 หลัก = ตอบไม่ได้ ห้ามเอาตัวแรกมาแปะเป็นประเภท ('M'/'E' มั่วๆ)
       badge: p.isOp ? '🔩 OP' : (matClassOf(p.mat_no)?.short || (isSapMat(p.mat_no) ? '—' : '⚠ ไม่ใช่เลข SAP')),
       badgeColor: p.isOp ? 'var(--accent2)' : (isSapMat(p.mat_no) ? matColor(p.mat_no) : 'var(--accent2)'),
@@ -94,22 +96,72 @@ export function buildWipMatOptions(parts = [], { line, lines = [], upstreamLines
   }).sort((a, b) => a._r - b._r || a.id.localeCompare(b.id));
 }
 
+/* ── ประเภทวัสดุของจุด WIP ────────────────────────────────────────────────
+   ⚠️ "ขั้นตอนย่อย (Operation)" เป็นตัวเลือกของตัวเอง **ไม่ใช่เบอร์ 9**
+   (feedback หน้างาน 2026-08-31: เลือก "9 · เลขภายใน" แล้วเจอแต่รายการ OP → อ่านว่า OP คือเบอร์ 9)
+   เบอร์ 9 = เลข SAP ภายในที่ทีมงานตั้งเอง **8 หลัก** (90031601) ซึ่งเป็นพาร์ทจริง
+   OP = ชั้นขั้นตอน ไม่มีเลข MAT เลย — คนละเรื่องกันคนละชั้น ห้ามยัดรวมกัน
+   ⚠️ ห้ามเพิ่ม OP เข้า `MAT_CLASSES` — นั่นคือ prefix ของเลข SAP ใช้ร่วมทั้งระบบ
+      (จะไปโผล่ในตัวกรองของ Parts Master / Heijunka ที่ไม่เกี่ยวข้อง) */
+export const WIP_CAT_OP = 'op';
+
+/** ตัวเลือกใน dropdown ประเภทวัสดุ (เลข SAP + ขั้นตอนย่อย) */
+export const wipCatOptions = () => [
+  ...MAT_CLASSES.map(c => ({ value: c.digit, label: `${c.digit} · ${c.label}` })),
+  { value: WIP_CAT_OP, label: '🔩 ขั้นตอนย่อย (Operation) — ไม่มีเลข MAT SAP' },
+];
+
+/** normalize ค่าที่เก็บใน DB → ค่าใน dropdown ('200'→'2' · 'op'→'op' · ว่าง→'') */
+export const wipCatValue = (cat) => {
+  const c = String(cat ?? '').trim();
+  if (!c) return '';
+  return c === WIP_CAT_OP ? WIP_CAT_OP : matDigit(c);
+};
+
+/** ชื่อประเภทสำหรับแสดงผล — ห้ามโชว์เลขดิบ ('9' อ่านไม่รู้เรื่อง) */
+export const wipCatLabel = (cat) => {
+  const v = wipCatValue(cat);
+  if (!v) return '';
+  if (v === WIP_CAT_OP) return '🔩 ขั้นตอนย่อย';
+  return classByDigit(v)?.label || `ประเภท ${v}`;
+};
+
 /**
- * กรองตามประเภทวัสดุที่เลือก (เลขตัวแรกตัวเดียว — matMatches ทนค่าเก่า '200'/'300')
- * คืน `hidden` ไปด้วยเสมอ — จอต้องบอกว่าซ่อนไปกี่รายการ ห้ามหายเงียบ
+ * ป้ายประเภทของ "จุด WIP" — ไม่ได้เลือกไว้ ก็อนุมานจากเลข mat ให้
+ * (`30052450` → Child Part ซื้อนอก · `is_operation` → ขั้นตอนย่อย)
  *
- * ⚠️ **ของที่ไม่ใช่เลข MAT SAP (8 หลัก) ไม่เข้าตัวกรองประเภท — โชว์เสมอ**
+ * ⚠️ **ป้ายอย่างเดียว ไม่เขียนลง DB** — `material_category` เป็นข้อมูลซ้ำที่ derive จาก mat_no ได้
+ * ปล่อยว่างไว้ก็ตอบได้ · แต่ถ้าเขียนทับให้เองแล้วคนเปลี่ยน mat ทีหลัง ป้ายจะค้างผิด (drift)
+ * @returns { text, derived } — `derived` = อนุมานจากเลข mat ไม่ใช่ค่าที่คนเลือก
+ */
+export const wipPointCat = (cat, mat, isOp = false) => {
+  const v = wipCatValue(cat);
+  if (v) return { text: wipCatLabel(v), derived: false };
+  if (isOp) return { text: '🔩 ขั้นตอนย่อย', derived: true };
+  const c = matClassOf(mat);
+  return c ? { text: c.label, derived: true } : { text: '', derived: false };
+};
+
+/**
+ * กรองตามประเภทที่เลือก · คืน `hidden` เสมอ — จอต้องบอกว่าซ่อนไปกี่รายการ ห้ามหายเงียบ
+ *
+ * ⚠️ **ของที่ไม่ใช่เลข MAT SAP (8 หลัก) ไม่เข้าตัวกรองเลข SAP — โชว์เสมอ**
  * รายการ OP ใช้ช่อง mat_no เก็บ "ชื่อขั้นตอน" (`127 (M6 มีเกลียว)`) ⇒ ตอบไม่ได้ว่าประเภทไหน
  * กรองทิ้งคือการ *อ้าง* ว่าไม่ใช่ประเภทนั้น (หลัก "ไม่รู้ ≠ ไม่ใช่") · จำนวนน้อยจึงไม่รกจอ
  */
 export function filterWipMatByCat(options = [], cat, showAll = false) {
-  const d = matDigit(cat);
-  if (!d || showAll) return { rows: options, hidden: 0, keptUnjudged: 0 };
-  const judgeable = (o) => isSapMat(o.id) && !o.isOp;
-  const rows = options.filter(o => !judgeable(o) || matMatches(o.id, d));
+  const v = wipCatValue(cat);
+  if (!v || showAll) return { rows: options, hidden: 0, keptUnjudged: 0 };
+  const noSap = (o) => o.isOp || !isSapMat(o.id);
+  // เลือก "ขั้นตอนย่อย" = เอาเฉพาะของที่ไม่มีเลข MAT SAP (ไม่ใช่ของแถมจากตัวกรองอื่น)
+  if (v === WIP_CAT_OP) {
+    const rows = options.filter(noSap);
+    return { rows, hidden: options.length - rows.length, keptUnjudged: 0 };
+  }
+  const rows = options.filter(o => noSap(o) || matMatches(o.id, v));
   return {
     rows,
     hidden: options.length - rows.length,
-    keptUnjudged: rows.filter(o => !judgeable(o)).length,
+    keptUnjudged: rows.filter(noSap).length,
   };
 }

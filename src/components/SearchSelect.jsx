@@ -35,6 +35,9 @@ export default function SearchSelect({
   emptyText = 'ไม่พบรายการที่ค้นหา',
   freeHint = '',         // ต่อท้ายข้อความ "ใช้ … เป็นชื่อที่พิมพ์เองได้" (ผลข้างเคียงเฉพาะหน้านั้น)
   maxRows = 60,
+  // ให้ข้อความในลิสต์ "ตัดบรรทัด" แทนตัดด้วย ellipsis — ใช้กับลิสต์ที่ชื่อยาวและกล่องแคบ
+  // (default false = พฤติกรรมเดิม แถวสูงเท่ากันหมด) ⚠️ opt-in เท่านั้น อย่าเปิดให้ทุกหน้า
+  wrapRows = false,
   disabled = false,
   inputStyle,
   style,
@@ -87,6 +90,11 @@ export default function SearchSelect({
     el?.scrollIntoView?.({ block: 'nearest' });
   }, [active]);
 
+  // ตัดบรรทัด (อ่านครบ) หรือ ellipsis (แถวสูงเท่ากัน) — เลือกด้วย prop `wrapRows`
+  const clampSt = wrapRows
+    ? { overflowWrap: 'anywhere', wordBreak: 'break-word' }
+    : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+
   const inp = {
     width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8,
     padding: '8px 30px 8px 10px', color: 'var(--text)', fontSize: 13, ...inputStyle,
@@ -134,8 +142,8 @@ export default function SearchSelect({
                       borderLeft: `3px solid ${i === active ? 'var(--accent)' : 'transparent'}`,
                     }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</div>
-                      {o.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sub}</div>}
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', ...clampSt }}>{o.label}</div>
+                      {o.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', ...clampSt }}>{o.sub}</div>}
                     </div>
                     {o.badge != null && (
                       <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: o.badgeColor || 'var(--text2)' }}>{o.badge}</span>
