@@ -20,6 +20,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import QaFmeBoard from './QaFmeBoard';
 
 const STAGE_META = {
   first:  { label: 'ชิ้นแรก',      icon: '1️⃣', color: '#f59e0b' },
@@ -47,6 +48,12 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
   const [showCfg, setShowCfg] = useState(false);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  /* มุมมอง: รายการ (คิวที่ต้องทำตอนนี้) / ไทม์ไลน์ (ทั้งวัน เห็นว่าจะต้องไปไลน์ไหนกี่โมง)
+     จำต่อเครื่องใน localStorage — QA แต่ละคนถนัดคนละแบบ (คำขอ user 2026-08-31) */
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem('qa_fme_view') === 'board' ? 'board' : 'list'; } catch { return 'list'; }
+  });
+  const setViewSaved = (v) => { setView(v); try { localStorage.setItem('qa_fme_view', v); } catch { /* โหมดส่วนตัว */ } };
 
   const load = useCallback(async () => {
     const [{ data: obs, error }, { data: c }] = await Promise.all([
@@ -113,6 +120,15 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 20, padding: 2 }}>
+          {[{ k: 'list', t: '📋 รายการ' }, { k: 'board', t: '🗓️ ไทม์ไลน์' }].map(v => (
+            <button key={v.k} onClick={() => setViewSaved(v.k)}
+              title={v.k === 'board' ? 'เห็นทั้งวันว่าต้องไปตรวจไลน์ไหน กี่โมง' : 'คิวที่ต้องทำตอนนี้'}
+              style={{ padding: '3px 11px', borderRadius: 18, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', border: 'none',
+                background: view === v.k ? 'var(--accent-dim)' : 'transparent',
+                color: view === v.k ? 'var(--accent)' : 'var(--muted)' }}>{v.t}</button>
+          ))}
+        </div>
         {canManage && (
           <button onClick={() => setShowCfg(v => !v)} style={btn('var(--bg3)', 'var(--text2)')}>⚙️ ตั้งค่าการเรียกตรวจ</button>
         )}
@@ -192,7 +208,9 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
         </div>
       )}
 
-      {!rows.length ? (
+      {view === 'board' ? (
+        <QaFmeBoard scopedLineNames={scopedLineNames} onOpen={onOpen} />
+      ) : !rows.length ? (
         <div style={{ fontSize: 13, color: '#22c55e' }}>✅ ไม่มีคิวรอตรวจ</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

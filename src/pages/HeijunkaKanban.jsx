@@ -1218,18 +1218,27 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'wip' && (<>
         {hiddenNote}
-        {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีคำขอเติมจุด WIP — เกิดจากกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP</div> :
+        {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          ยังไม่มีคำขอ — มาจาก 2 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · หรือกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP
+        </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {vWips.map(w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
+            /* ใบจากไลน์ (wip_point_id = null) ไม่มีชื่อจุด — ต้องบอกให้สโตร์รู้ว่าเอาไปส่ง "เข้าไลน์"
+               ไม่ใช่เติมจุด WIP จุดใดจุดหนึ่ง · เวลาที่ไลน์แจ้งคือคีย์เรียงคิว จึงโชว์ไว้ด้วย */
+            const fromLine = !w.wip_point_id;
+            const at = w.requested_at ? new Date(w.requested_at) : null;
             return (
-              <QueueCard key={w.id} code={code} name={w.point_name}
+              <QueueCard key={w.id} code={code}
+                name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
                 qty={fmt(w.request_qty)} unit="" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? st.next : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
-                meta={w.point_type === 'packaging' ? '📦 packaging' : '🧱 material'} />
+                meta={fromLine
+                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}`
+                  : (w.point_type === 'packaging' ? '📦 packaging' : '🧱 material')} />
             );
           })}
         </div>}
@@ -1301,7 +1310,13 @@ export default function HeijunkaKanban() {
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
-      supabase.from('wip_replenish_requests').select('*').order('requested_at', { ascending: false }).limit(200),
+      /* ⚠️⚠️ กรอง `suggested`/`hold` ออกเสมอ — 2 สถานะนี้ยัง "ไม่ใช่คำสั่ง"
+         suggested = ระบบเสนอแต่หัวหน้าไลน์ยังไม่ตัดสิน · hold = หัวหน้าเลือกพักไว้ก่อน
+         สโตร์เห็น = ไปหยิบของที่ยังไม่มีใครสั่ง (docs/STORE-PULL-LOOP-DESIGN.md §4.1)
+         `received` ก็ตัดออก — ปิดลูปแล้ว สโตร์ไปรายการถัดไป */
+      supabase.from('wip_replenish_requests').select('*')
+        .in('status', ['pending', 'preparing', 'delivered'])
+        .order('requested_at', { ascending: false }).limit(200),
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
@@ -1451,6 +1466,10 @@ export default function HeijunkaKanban() {
     setPullBusy(w.id);
     try {
       const payload = { status: next };
+      /* 4 หมุดเวลาต้องครบ ไม่งั้นตอบได้แค่ "ช้า" แต่ตอบไม่ได้ว่า **ช้าตรงไหน**
+         (รอสโตร์หยิบ? รอรถ? รอผลิตมาเซ็นรับ?) — docs/STORE-PULL-LOOP-DESIGN.md §4.1
+         requested_at (ไลน์กด) → picked_at (เริ่มจัด) → delivered_at (ส่งถึง) → received_at (ผลิตเซ็นรับ) */
+      if (next === 'preparing') { payload.picked_at = new Date().toISOString(); payload.picked_by_name = fullName || 'สโตร์'; }
       if (next === 'delivered') { payload.delivered_by = fullName || 'สโตร์'; payload.delivered_at = new Date().toISOString(); }
       // compare-and-swap กันกดซ้ำ/2 เครื่อง — ไม่งั้น delivered ซ้ำ = บวก current_qty จุด WIP สองรอบ
       const { data: updated, error } = await supabase.from('wip_replenish_requests')
@@ -1464,7 +1483,14 @@ export default function HeijunkaKanban() {
           await supabase.from('wip_buffer_points').update({ current_qty: newQty }).eq('id', w.wip_point_id);
         }
       }
-      toast.success(next === 'delivered' ? `✅ เติม ${w.point_name} เรียบร้อย` : `อัปเดต ${w.point_name} → ${next}`);
+      const what = w.point_name || w.mat_no || 'รายการนี้';
+      /* ⚠️ ใบจากไลน์: ลูปนี้เป็น "การสื่อสาร" ไม่ใช่ ledger — ไม่ตัด/บวกสต็อกให้เอง
+         (เขียนเองด้วย = สต็อกโผล่ 2 ที่ เพราะสโตร์บันทึกจ่ายเข้าไลน์อยู่แล้วอีกทาง)
+         ⇒ ต้องเตือนบนจอ ห้ามให้เข้าใจว่ายอดขยับให้แล้ว */
+      toast.success(next === 'delivered'
+        ? (w.wip_point_id ? `✅ เติม ${what} เรียบร้อย`
+                          : `🚚 ส่ง ${what} แล้ว — อย่าลืมบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Store ด้วย (ลูปนี้ไม่ตัดสต็อกให้)`)
+        : `อัปเดต ${what} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -1500,9 +1526,11 @@ export default function HeijunkaKanban() {
 
       // 2) แผนผลิต: prod_orders + kanban_targets ของ sessions เหล่านี้
       const [{ data: orders }, { data: targets }, { data: products }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('session_id, mat_no, part_name, qty, status, opened_at').in('session_id', sessIds),
+        // qty_ok/qty_actual/confirmed_at → ใช้หัก WIP ด้วยของที่ผลิตไปแล้ว (forecast runout · utils/wipRunout.js)
+        supabaseDR.from('prod_orders').select('session_id, mat_no, part_name, qty, qty_ok, qty_actual, status, opened_at, confirmed_at').in('session_id', sessIds),
         supabaseDR.from('kanban_targets').select('session_id, mat_no, part_name, qty_target').in('session_id', sessIds),
-        supabaseDR.from('dr_products').select('id, name, mat_no').eq('is_active', true),
+        // cycle_time_sec → ใช้แปลง "ยอดที่เหลือ" เป็น "เวลา" บนไทม์ไลน์
+        supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true),
       ]);
       const prodByMat = {};
       (products || []).forEach(p => { if (p.mat_no) prodByMat[p.mat_no] = p; });
@@ -1514,11 +1542,19 @@ export default function HeijunkaKanban() {
       const dem = [];
       activeOrders.forEach(o => {
         if (!o.qty) return;
-        dem.push({ session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: o.qty, opened_at: o.opened_at, product: prodByMat[o.mat_no] || null });
+        dem.push({
+          session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: o.qty,
+          opened_at: o.opened_at, product: prodByMat[o.mat_no] || null,
+          qty_ok: o.qty_ok, qty_actual: o.qty_actual, confirmed: o.status === 'confirmed',
+        });
       });
       (targets || []).forEach(t => {
         if (sessionsWithOrders.has(t.session_id) || !t.qty_target) return;
-        dem.push({ session_id: t.session_id, mat_no: t.mat_no, part_name: t.part_name, qty: t.qty_target, opened_at: null, product: prodByMat[t.mat_no] || null });
+        dem.push({
+          session_id: t.session_id, mat_no: t.mat_no, part_name: t.part_name, qty: t.qty_target,
+          opened_at: null, product: prodByMat[t.mat_no] || null,
+          qty_ok: null, qty_actual: null, confirmed: false,
+        });
       });
       setDemands(dem);
 
@@ -1874,7 +1910,47 @@ export default function HeijunkaKanban() {
     });
     Object.values(groupDemand).forEach(gd => gd.parts.sort((a, b) => a.mat_no.localeCompare(b.mat_no)));
 
-    return { cols, rowList, noBom: [...noBom.values()], sessById, totalKanban, roundAlloc, groupDemand };
+    /* ── วัตถุดิบสำหรับ forecast "ไลน์จะขาดของเมื่อไหร่" (utils/wipRunout.js) ────
+       ⚠️ คำนวณ runout ที่จอ ไม่ใช่ที่นี่ — สูตรพึ่ง `nowMs` ซึ่งเดินทุกนาที
+          ยัดเข้า memo ก้อนนี้ = คำนวณ demand/BOM/รอบ ใหม่ทั้งชุดทุกนาที (แพงและไม่จำเป็น)
+       ⚠️ `wipByGroup[g][mat] === null` = **ไม่มีแถวสต็อกที่ไลน์ในกลุ่มนี้เลย = ไม่รู้**
+          ต่างจาก 0 (มีแถวแต่ของหมดจริง) — ห้ามยุบเป็นค่าเดียวกัน */
+    const groupOrders = {}, bomByMat = {}, ctByMat = {}, wipByGroup = {};
+    const linesOfGroup = {};
+    visibleSessions.forEach(s => {
+      const g = groupOf(s.line_name);
+      (linesOfGroup[g] = linesOfGroup[g] || new Set()).add(s.line_name);
+    });
+    demands.forEach(d => {
+      if (!visibleIds.has(d.session_id)) return;
+      const sess = sessById[d.session_id];
+      if (!sess) return;
+      const g = groupOf(sess.line_name);
+      (groupOrders[g] = groupOrders[g] || []).push({
+        matNo: d.mat_no, qty: d.qty, qtyOk: d.qty_ok, qtyActual: d.qty_actual,
+        confirmed: !!d.confirmed, openedAt: d.opened_at,
+      });
+      if (d.product) {
+        if (!(d.mat_no in bomByMat)) bomByMat[d.mat_no] = bomMap[d.product.id] || [];
+        if (d.product.cycle_time_sec) ctByMat[d.mat_no] = Number(d.product.cycle_time_sec);
+      }
+    });
+    Object.entries(linesOfGroup).forEach(([g, lns]) => {
+      const w = wipByGroup[g] = {};
+      Object.keys(rows).forEach(mat => {
+        let sum = null;
+        lns.forEach(ln => {
+          const v = lineStock[`${ln}|${mat}`];
+          if (v !== undefined) sum = (sum ?? 0) + (Number(v) || 0);
+        });
+        w[mat] = sum;                       // null = ไม่มีแถวเลย (ไม่รู้)
+      });
+    });
+
+    return {
+      cols, rowList, noBom: [...noBom.values()], sessById, totalKanban, roundAlloc, groupDemand,
+      groupOrders, bomByMat, ctByMat, wipByGroup,
+    };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
   const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });

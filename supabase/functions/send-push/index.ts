@@ -13,11 +13,13 @@ const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 
 // map ที่มา → หน้าเปิดตอนกด notification
+// ⚠️ ต้อง mirror กับ NOTIF_ROUTE ใน src/App.jsx เสมอ (กระดิ่งกับ Web Push ต้องพาไปหน้าเดียวกัน)
 function routeFor(refTable?: string): string {
   switch (refTable) {
     case 'four_m_logs':  return '/event-log';
     case 'mtn_orders':   return '/mtn-repair';
     case 'downtime_logs':return '/daily-report';
+    case 'shift_schedules': return '/shift-organize';
     default:             return '/';
   }
 }
