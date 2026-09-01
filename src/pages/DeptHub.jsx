@@ -163,7 +163,9 @@ const DEPT_CSS = `
    ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
    ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
 const CARD_META = {
-  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/dashboard',    label: 'Overview & Control',      desc: 'จอผลิตรวม (TV) · งานค้างของส่วนงาน · ผังรวมโรงงาน · OEE รายไลน์' },
+  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/dept-dashboard', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
+  // 📺 จอที่ "แขวนทิ้งไว้" — แยกจากภาพรวมเพราะไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28)
+  'จอแสดงผล':              { code: 'TVB·02', color: '#38bdf8', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · จอเฝ้าระวังแขวนห้อง · OEE รายไลน์' },
   'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#22c55e', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
   'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
   'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
