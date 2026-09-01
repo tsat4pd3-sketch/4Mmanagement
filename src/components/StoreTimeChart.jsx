@@ -56,6 +56,18 @@ export default function StoreTimeChart({
   const [highlightId, setHighlightId] = useState(null);
   const [expanded, setExpanded]     = useState(null);
   const [qOpen, setQOpen]           = useState({});   // กางรายการพาร์ทของคิวส่งตามคำขอ
+  /* 📥 มอง WIP ที่ไลน์ = 0 สำหรับพาร์ทที่ยังไม่ได้ตั้งยอด (user 2026-09-01)
+     default = เปิด เพราะสภาพจริงคือพาร์ทส่วนใหญ่ยังไม่มีแถวสต็อกที่ไลน์
+     → ปิดไว้ = สโตร์เปิดจอมาแล้วไม่เห็นความต้องการอะไรเลย (ปัญหาที่ทำให้ต้องมีโหมดนี้)
+     ⚠️ เปิดแล้ว **ต้องมีแถบบอกและป้ายรายแถวเสมอ** ห้ามให้ตัวเลข gross ดูเหมือนยอดที่หักแล้ว */
+  const [assumeWip0, setAssumeWip0]  = useState(() => {
+    try { return localStorage.getItem('esm_store_assume_wip0') !== 'off'; } catch { return true; }
+  });
+  const toggleAssume = () => setAssumeWip0(v => {
+    const n = !v;
+    try { localStorage.setItem('esm_store_assume_wip0', n ? 'on' : 'off'); } catch { /* โหมดส่วนตัวจำไม่ได้ก็ไม่เป็นไร */ }
+    return n;
+  });
 
   const { roundAlloc, groupDemand } = view;
   const leftW = isMobile ? 96 : 150;
@@ -173,22 +185,23 @@ export default function StoreTimeChart({
         wipOf: (m) => (wipByGroup[g]?.[m] ?? null),   // undefined/null = ไม่มีแถวสต็อก = ไม่รู้
         ctOf: (m) => ctByMat[m] || 0,
         nowMs,
+        assumeZeroWip: assumeWip0,
       });
       // ผูกกับ demand ที่บอร์ดคำนวณไว้ เพื่อให้ "จำนวนที่ต้องส่ง/จำนวนการ์ด" ตรงกับที่อื่นในหน้า
       const gd = groupDemand?.[g] || { parts: [], totalKanban: 0 };
       const byMat = {};
       gd.parts.forEach(p => { byMat[p.mat_no] = p; });
-      return {
-        line: g, ...f, cards: gd.totalKanban,
-        parts: f.parts.map(p => ({
-          ...p,
-          part_name: byMat[p.mat_no]?.part_name,
-          cards: byMat[p.mat_no]?.cards || 0,
-          netTotal: byMat[p.mat_no]?.netTotal ?? p.need,
-        })),
-      };
+      const parts = f.parts.map(p => ({
+        ...p,
+        part_name: byMat[p.mat_no]?.part_name,
+        cards: byMat[p.mat_no]?.cards || 0,
+        netTotal: byMat[p.mat_no]?.netTotal ?? p.need,
+      }));
+      // เวลาแรกของไลน์มาจากพาร์ทที่ถูกสมมติ WIP=0 หรือเปล่า → คุมสี/ข้อความไม่ให้บอกว่า "ขาดแล้ว"
+      const firstTimed = parts.find(p => p.runoutMs != null);
+      return { line: g, ...f, cards: gd.totalKanban, parts, firstAssumed: !!firstTimed?.assumed };
     }).sort(byUrgency);
-  }, [onDemandLines, view, groupDemand, nowMs]);
+  }, [onDemandLines, view, groupDemand, nowMs, assumeWip0]);
 
   // ตำแหน่งบนกรอบวันงาน 08:00→08:00 คิดจาก ms จริง (runout ข้ามวันได้ — แปลงผ่าน HH:MM จะเพี้ยน)
   const frameStartMs = useMemo(() => {
@@ -201,14 +214,17 @@ export default function StoreTimeChart({
     const d = new Date(ms);
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
-  const inMs = (ms) => {
+  // ⚠️ assumed = ยังไม่รู้ว่ามีของที่ไลน์เท่าไหร่ → ห้ามเขียน "ขาดแล้ว" (ยังไม่ยืนยัน)
+  const inMs = (ms, assumed) => {
     const diff = ms - nowMs;
-    if (diff <= 0) return 'ขาดแล้ว';
+    if (diff <= 0) return assumed ? 'ไลน์เริ่มใช้แล้ว' : 'ขาดแล้ว';
     const mn = Math.round(diff / 60000);
     return mn < 60 ? `อีก ${mn} น.` : `อีก ${Math.floor(mn / 60)} ชม. ${mn % 60} น.`;
   };
   // สีตามความเร่งด่วน — แดง = ขาดแล้ว/กำลังจะขาด (ของหมดคือไลน์หยุด ไม่ใช่เรื่องเล็ก)
-  const urgTone = (ms) => (ms == null ? 'var(--muted)'
+  // ⚠️ พาร์ทที่สมมติ WIP=0 ห้ามเป็นแดง — สีแดงคือคำยืนยัน เราแค่ยังไม่รู้ (ส้ม = ต้องไปดู)
+  const urgTone = (ms, assumed) => (ms == null ? 'var(--muted)'
+    : assumed ? '#f59e0b'
     : ms <= nowMs ? '#ef4444'
     : ms - nowMs < 2 * 3600000 ? '#f59e0b'
     : 'var(--accent)');
@@ -240,6 +256,10 @@ export default function StoreTimeChart({
       };
     });
   }, [runoutByLine, storeStock]);
+
+  // พาร์ทที่ยังไม่มียอด WIP ที่ไลน์ — ต้องรายงานเสมอ ไม่ว่าโหมดจะเปิดหรือปิด
+  const assumedTotal = onDemandQueue.reduce((s, q) => s + (q.assumedCount || 0), 0);
+  const unknownTotal = onDemandQueue.reduce((s, q) => s + (q.counts?.unknown || 0), 0);
 
   const counts = {
     todo: rounds.filter(r => !isDone(r)).length,
@@ -510,6 +530,37 @@ export default function StoreTimeChart({
             แล้วเดินเวลาด้วย cycle time ของใบที่ยังไม่ปิด → <b>ไลน์ไหนจะขาดของก่อน ไปส่งก่อน</b>
           </div>
 
+          {/* 📥 โหมดมอง WIP=0 — ต้องบอกให้เห็นชัดทุกครั้งที่เปิด ห้ามให้ยอด gross ดูเหมือนยอดสุทธิ */}
+          {assumeWip0 && assumedTotal > 0 && (
+            <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)',
+              padding: '8px 11px', marginBottom: 10, display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 240, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.55 }}>
+                <b style={{ color: '#f59e0b' }}>📥 กำลังมอง WIP ที่ไลน์ = 0 · {assumedTotal} พาร์ท</b> (ยังไม่ได้ตั้งยอดที่ไลน์)
+                <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                  ยอดที่เห็นเป็น <b>ยอดเต็มตามสูตร BOM — ยังไม่หักของที่อาจมีอยู่ที่ไลน์แล้ว</b> ·
+                  เวลาที่พลอต = <b>เวลาที่ไลน์เริ่มต้องใช้ของชิ้นนั้น</b> (กำหนดส่ง) ไม่ใช่เวลาที่ของหมดจริง ·
+                  ลำดับส่งของยังถูกต้องตามคิวใบผลิต · ตั้งยอดจริงได้ที่ <b>📦 Line Stock → 🔩 WIP ค้างระหว่างขั้น</b>
+                </div>
+              </div>
+              <button onClick={toggleAssume} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8,
+                padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+                ปิดโหมดนี้
+              </button>
+            </div>
+          )}
+          {!assumeWip0 && unknownTotal > 0 && (
+            <div style={{ ...card, background: 'var(--bg2)', padding: '8px 11px', marginBottom: 10,
+              display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ flex: 1, minWidth: 240, fontSize: 11.5, color: 'var(--muted)' }}>
+                ❔ <b>{unknownTotal} พาร์ท</b> ยังไม่มียอด WIP ที่ไลน์ → คำนวณเวลาไม่ได้ ไม่ขึ้นบนไทม์ไลน์
+              </span>
+              <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8,
+                padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
+                📥 มอง WIP=0 เพื่อดู workflow
+              </button>
+            </div>
+          )}
+
           {/* ── ⏳ ไทม์ไลน์ runout — พลอตจากเวลาที่คำนวณ ไม่ใช่รอบที่ตั้งไว้ ────────── */}
           <div style={{ ...card, padding: 0, overflow: 'hidden', marginBottom: 12 }}>
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
@@ -528,7 +579,7 @@ export default function StoreTimeChart({
                 </div>
                 {onDemandQueue.map(q => {
                   const first = q.firstRunoutMs;
-                  const tone = urgTone(first);
+                  const tone = urgTone(first, q.firstAssumed);
                   const barL = Math.max(0, pctOfMs(Math.max(nowMs, frameStartMs)));
                   const barR = first == null ? null : Math.min(100, pctOfMs(first));
                   return (
@@ -536,7 +587,8 @@ export default function StoreTimeChart({
                       <div style={{ width: leftW, flexShrink: 0, padding: '5px 10px', borderRight: '1px solid var(--border2)', overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.line}</div>
                         <div style={{ fontSize: 10.5, fontWeight: 700, color: tone }}>
-                          {first == null ? '— ยังคำนวณเวลาไม่ได้' : `${clockOf(first)} · ${inMs(first)}`}
+                          {first == null ? '— ยังคำนวณเวลาไม่ได้'
+                            : `${q.firstAssumed ? '📥 ' : ''}${clockOf(first)} · ${inMs(first, q.firstAssumed)}`}
                         </div>
                       </div>
                       <div style={{ flex: 1, position: 'relative', height: 34 }}>
@@ -557,7 +609,9 @@ export default function StoreTimeChart({
                         )}
                         {/* แถบ "ของยังพอ" จากตอนนี้ถึงเวลาที่จะขาดตัวแรก */}
                         {barR != null && barR > barL && (
-                          <div title={`ของพอถึง ${clockOf(first)}`} style={{
+                          <div title={q.firstAssumed
+                            ? `ไลน์เริ่มต้องใช้ของตอน ${clockOf(first)} — ยังไม่รู้ว่ามีอยู่ที่ไลน์เท่าไหร่`
+                            : `ของพอถึง ${clockOf(first)}`} style={{
                             position: 'absolute', top: 12, height: 10, left: `${barL}%`, width: `${barR - barL}%`,
                             background: `${tone}33`, borderLeft: `2px solid ${tone}`, borderRadius: 3, zIndex: 1,
                           }} />
@@ -568,10 +622,14 @@ export default function StoreTimeChart({
                           if (x < 0 || x > 100) return null;
                           return (
                             <div key={p.mat_no}
-                              title={`${p.mat_no} — ของที่ไลน์หมด ${clockOf(p.runoutMs)} (${inMs(p.runoutMs)}) · ต้องส่ง ${fmt(p.netTotal)}`}
+                              title={p.assumed
+                                ? `${p.mat_no} — ไลน์เริ่มต้องใช้ ${clockOf(p.runoutMs)} (${inMs(p.runoutMs, true)}) · ต้องส่ง ${fmt(p.netTotal)} · 📥 ยังไม่ได้ตั้งยอด WIP ที่ไลน์ ยอดนี้ยังไม่หัก`
+                                : `${p.mat_no} — ของที่ไลน์หมด ${clockOf(p.runoutMs)} (${inMs(p.runoutMs)}) · ต้องส่ง ${fmt(p.netTotal)}`}
                               style={{
                                 position: 'absolute', top: 9, left: `${x}%`, width: 8, height: 8, marginLeft: -4,
-                                borderRadius: '50%', background: urgTone(p.runoutMs), zIndex: 2,
+                                borderRadius: '50%', background: urgTone(p.runoutMs, p.assumed), zIndex: 2,
+                                // วงแหวนกลวง = ตัวเลขที่ยังไม่ยืนยัน (แยกจากจุดทึบที่หักยอดจริงแล้ว)
+                                ...(p.assumed ? { background: 'transparent', border: '2px solid #f59e0b', width: 9, height: 9, marginLeft: -4.5 } : null),
                               }} />
                           );
                         })}
@@ -592,7 +650,9 @@ export default function StoreTimeChart({
             </div>
             <div style={{ padding: '5px 10px', borderTop: '1px solid var(--border2)', fontSize: 10.5, color: 'var(--muted)' }}>
               ⚠️ WIP ที่ใช้คำนวณ = ยอดในระบบ <b>หักด้วยของที่ผลิตไปแล้ววันนี้</b> (คำนวณจากใบผลิต ไม่ได้อ่านจากยอดตัดสต็อก
-              เพราะ backflush ยังไม่ทำงาน) · พาร์ทที่ยังไม่เคยตั้งยอดที่ไลน์ = <b>คำนวณไม่ได้</b> ไม่ใช่ “ของหมด”
+              เพราะ backflush ยังไม่ทำงาน) · {assumeWip0
+                ? <>พาร์ทที่ยังไม่เคยตั้งยอดที่ไลน์ ถูกมองเป็น <b>0</b> (วงแหวน 📥) — เป็น<b>กำหนดส่ง</b> ไม่ใช่ “ของหมดแล้ว”</>
+                : <>พาร์ทที่ยังไม่เคยตั้งยอดที่ไลน์ = <b>คำนวณไม่ได้</b> ไม่ใช่ “ของหมด”</>}
             </div>
           </div>
 
@@ -611,14 +671,22 @@ export default function StoreTimeChart({
                     </button>
                   </div>
                   {/* บรรทัดเวลา = คำตอบหลักของการ์ด "ต้องไปเมื่อไหร่" */}
-                  <div style={{ marginTop: 4, fontSize: 12, fontWeight: 800, color: urgTone(q.firstRunoutMs) }}>
+                  <div style={{ marginTop: 4, fontSize: 12, fontWeight: 800, color: urgTone(q.firstRunoutMs, q.firstAssumed) }}>
                     {q.firstRunoutMs != null
-                      ? `⏳ ไลน์จะขาดของ ${clockOf(q.firstRunoutMs)} · ${inMs(q.firstRunoutMs)}`
+                      ? (q.firstAssumed
+                        ? `📥 ต้องส่งก่อน ${clockOf(q.firstRunoutMs)} · ${inMs(q.firstRunoutMs, true)}`
+                        : `⏳ ไลน์จะขาดของ ${clockOf(q.firstRunoutMs)} · ${inMs(q.firstRunoutMs)}`)
                       : q.counts.unknown > 0 ? '❔ คำนวณเวลาไม่ได้ — ยังไม่มียอด WIP ที่ไลน์'
                       : q.counts.no_ct > 0   ? '⚠️ คำนวณเวลาไม่ได้ — ยังไม่ตั้ง cycle time'
                       : q.counts.idle > 0    ? '⏸️ ไลน์ยังไม่มีใบผลิตเปิด'
                       : '✅ ของที่ไลน์พอถึงจบแผนวันนี้'}
                   </div>
+                  {q.assumedCount > 0 && (
+                    <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 1 }}
+                      title="พาร์ทเหล่านี้ยังไม่ได้ตั้งยอด WIP ที่ไลน์ — ระบบมองเป็น 0 ยอดที่แสดงจึงยังไม่หักของที่อาจมีอยู่แล้ว">
+                      📥 {q.assumedCount} พาร์ทยังไม่ได้ตั้งยอดที่ไลน์ — ยอดนี้ยังไม่หัก
+                    </div>
+                  )}
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 2 }}>
                     <span style={{ fontSize: 19, fontWeight: 900, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{q.cards}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>การ์ด · {q.parts.length} พาร์ท</span>
@@ -650,10 +718,13 @@ export default function StoreTimeChart({
                             <span style={{ color: m.c }} title={`ของในสโตร์: ${m.t}`}>{m.t}</span>
                             <span style={{ fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>{p.mat_no}</span>
                             <span style={{ color: 'var(--muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
-                            {/* เวลาที่ "ของที่ไลน์" จะหมด — คนละตัวกับของในสโตร์ */}
-                            <span title={`WIP ที่ไลน์: ${p.wipNow == null ? 'ไม่มียอด' : fmt(p.wipNow)} · ${rr.label}`}
-                              style={{ color: urgTone(p.runoutMs), whiteSpace: 'nowrap', fontSize: 10.5, fontWeight: 700 }}>
-                              {p.runoutMs != null ? `⏳ ${clockOf(p.runoutMs)}` : rr.icon}
+                            {/* เวลาที่ "ของที่ไลน์" จะหมด — คนละตัวกับของในสโตร์
+                                📥 = ยังไม่ได้ตั้งยอดที่ไลน์ (มองเป็น 0) → เวลานี้คือกำหนดส่ง ไม่ใช่เวลาที่ของหมดจริง */}
+                            <span title={p.assumed
+                              ? `WIP ที่ไลน์: ยังไม่ได้ตั้งยอด — ระบบมองเป็น 0 · เวลานี้คือเวลาที่ไลน์เริ่มต้องใช้ (${rr.label})`
+                              : `WIP ที่ไลน์: ${p.wipNow == null ? 'ไม่มียอด' : fmt(p.wipNow)} · ${rr.label}`}
+                              style={{ color: urgTone(p.runoutMs, p.assumed), whiteSpace: 'nowrap', fontSize: 10.5, fontWeight: 700 }}>
+                              {p.runoutMs != null ? `${p.assumed ? '📥' : '⏳'} ${clockOf(p.runoutMs)}` : rr.icon}
                             </span>
                             <span style={{ fontWeight: 800, color: m.c, whiteSpace: 'nowrap' }}>
                               {fmt(p.netTotal)}{p.cards > 0 ? ` · ${p.cards}ใบ` : ''}

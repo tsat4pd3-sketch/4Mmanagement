@@ -140,3 +140,100 @@ test('byUrgency — ใครขาดก่อนไปก่อน · ไม�
   ].sort(byUrgency);
   assert.deepEqual(rows.map(r => r.line), ['B', 'A', 'C']);
 });
+
+/* ═══ 📥 โหมด assumeZeroWip — "ยังไม่ตั้งจุด WIP ก็ให้เห็น workflow" ═══════════ */
+
+test('📥 ไม่มีแถวสต็อก + เปิดโหมด → assumed (ไม่ใช่ out) และมีเวลาให้พลอต', () => {
+  const r = forecastRunout(mk({
+    orders: [{ matNo: 'A', qty: 100, openedAt: '2026-08-31T01:00:00Z' }],
+    wipOf: () => null,
+    assumeZeroWip: true,
+  }));
+  const x = r.parts[0];
+  assert.equal(x.reason, 'assumed');       // 🔴 ห้ามเป็น 'out' — ยังไม่ยืนยันว่าหมด
+  assert.equal(x.assumed, true);
+  assert.equal(x.wipLedger, null);         // ความจริงคงไว้: ไม่มีแถวสต็อก
+  assert.equal(x.wipNow, 0);
+  assert.equal(x.runoutMs, T0);
+  assert.equal(r.assumedCount, 1);
+  assert.equal(r.counts.assumed, 1);
+  assert.equal(r.counts.unknown, 0);
+});
+
+test('🔴 ปิดโหมด (default) = พฤติกรรมเดิมเป๊ะ — ยังเป็น unknown', () => {
+  const args = {
+    orders: [{ matNo: 'A', qty: 100, openedAt: '2026-08-31T01:00:00Z' }],
+    wipOf: () => null,
+  };
+  const off = forecastRunout(mk(args));
+  const explicit = forecastRunout(mk({ ...args, assumeZeroWip: false }));
+  assert.equal(off.parts[0].reason, 'unknown');
+  assert.equal(off.parts[0].assumed, false);
+  assert.equal(off.assumedCount, 0);
+  assert.deepEqual(explicit.parts, off.parts);
+});
+
+test('🔴 WIP = 0 จริง (มีแถว) ยังเป็น "ขาดแล้ว" แม้เปิดโหมด — ห้ามถูกกลืนเป็น assumed', () => {
+  const r = forecastRunout(mk({
+    orders: [{ matNo: 'A', qty: 100, openedAt: '2026-08-31T01:00:00Z' }],
+    wipOf: () => 0,
+    assumeZeroWip: true,
+  }));
+  assert.equal(r.parts[0].reason, 'out');
+  assert.equal(r.parts[0].assumed, false);
+  assert.equal(r.parts[0].wipLedger, 0);
+});
+
+test('⭐ WIP=0 ยังคงลำดับส่งของ — พาร์ทที่ใช้ในใบหลัง runout ทีหลัง ไม่ยุบเป็น "ตอนนี้" หมด', () => {
+  const r = forecastRunout(mk({
+    orders: [
+      { matNo: 'A', qty: 60, openedAt: '2026-08-31T01:00:00Z' },   // 1 ชม. ใช้ X
+      { matNo: 'B', qty: 60, openedAt: '2026-08-31T03:00:00Z' },   // ต่อจาก A ใช้ Y
+    ],
+    wipOf: () => null,
+    assumeZeroWip: true,
+  }));
+  const x = r.parts.find(p => p.mat_no === 'X');
+  const y = r.parts.find(p => p.mat_no === 'Y');
+  assert.equal(x.runoutMs, T0);
+  assert.equal(y.runoutMs, T0 + HOUR);        // ← ลำดับยังถูก นี่คือเหตุผลที่ WIP=0 ใช้ได้
+  assert.deepEqual(r.parts.map(p => p.mat_no), ['X', 'Y']);
+});
+
+test('พาร์ทที่มีแถวสต็อกจริง ไม่ถูกโหมดนี้แตะ — ปนกันได้ในกลุ่มเดียว', () => {
+  const r = forecastRunout(mk({
+    orders: [
+      { matNo: 'A', qty: 1000, openedAt: '2026-08-31T01:00:00Z' },
+      { matNo: 'B', qty: 60, openedAt: '2026-08-31T03:00:00Z' },
+    ],
+    wipOf: (m) => (m === 'X' ? 120 : null),
+    assumeZeroWip: true,
+  }));
+  const x = r.parts.find(p => p.mat_no === 'X');
+  const y = r.parts.find(p => p.mat_no === 'Y');
+  assert.equal(x.reason, 'soon');             // มีแถวจริง → คำนวณตามปกติ
+  assert.equal(x.assumed, false);
+  assert.equal(x.runoutMs, T0 + HOUR);
+  assert.equal(y.reason, 'assumed');
+  assert.equal(r.assumedCount, 1);
+});
+
+test('🔴 ไม่มี CT → no_ct ชนะ assumed (ห้ามบอก "ต้องส่งก่อนเวลานี้" ทั้งที่ไม่มีเวลา)', () => {
+  const r = forecastRunout(mk({
+    orders: [{ matNo: 'A', qty: 100, openedAt: '2026-08-31T01:00:00Z' }],
+    ctOf: () => 0,
+    wipOf: () => null,
+    assumeZeroWip: true,
+  }));
+  assert.equal(r.parts[0].reason, 'no_ct');
+  assert.equal(r.parts[0].runoutMs, null);
+  assert.equal(r.parts[0].assumed, true);     // ธงยังบอกว่ายอดนี้ยังไม่หัก WIP
+});
+
+test('byUrgency ชั้นที่ 3 — โหมด WIP=0 ทุกกลุ่มขาดพร้อมกัน ต้องเรียงตามจำนวนพาร์ทที่ต้องส่ง', () => {
+  const rows = [
+    { line: 'A', firstRunoutMs: T0, counts: { assumed: 1, unknown: 0 } },
+    { line: 'B', firstRunoutMs: T0, counts: { assumed: 5, unknown: 0 } },
+  ].sort(byUrgency);
+  assert.deepEqual(rows.map(r => r.line), ['B', 'A']);
+});
