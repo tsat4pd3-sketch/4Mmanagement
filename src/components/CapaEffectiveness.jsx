@@ -83,7 +83,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
     (async () => {
       const rows = await cachedMaster('pn_index:src', async () => {
         const [{ data: dp }, { data: ks }] = await Promise.all([
-          supabaseDR.from('dr_products').select('mat_no, p_no').eq('is_active', true),
+          supabaseDR.from('dr_products').select('mat_no, p_no, is_operation').eq('is_active', true),
           supabaseDR.from('kanban_standards').select('mat_no, p_no').eq('is_active', true),
         ]);
         return [...(dp || []), ...(ks || [])];
