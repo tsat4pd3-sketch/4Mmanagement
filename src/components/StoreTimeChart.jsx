@@ -535,16 +535,21 @@ export default function StoreTimeChart({
             <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)',
               padding: '8px 11px', marginBottom: 10, display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 240, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.55 }}>
-                <b style={{ color: '#f59e0b' }}>📥 กำลังมอง WIP ที่ไลน์ = 0 · {assumedTotal} พาร์ท</b> (ยังไม่ได้ตั้งยอดที่ไลน์)
+                <b style={{ color: '#f59e0b' }}>📥 {assumedTotal} พาร์ทยังไม่เคยมีการจ่ายเข้าไลน์ในระบบ → คิดเป็น 0 แล้วส่งเต็มจำนวนตาม BOM</b>
                 <div style={{ color: 'var(--muted)', marginTop: 2 }}>
-                  ยอดที่เห็นเป็น <b>ยอดเต็มตามสูตร BOM — ยังไม่หักของที่อาจมีอยู่ที่ไลน์แล้ว</b> ·
+                  ยอดที่เห็นเป็น <b>ยอดเต็ม ยังไม่หักของที่อาจมีอยู่ที่ไลน์แล้ว</b> ·
                   เวลาที่พลอต = <b>เวลาที่ไลน์เริ่มต้องใช้ของชิ้นนั้น</b> (กำหนดส่ง) ไม่ใช่เวลาที่ของหมดจริง ·
-                  ลำดับส่งของยังถูกต้องตามคิวใบผลิต · ตั้งยอดจริงได้ที่ <b>📦 Line Stock → 🔩 WIP ค้างระหว่างขั้น</b>
+                  ลำดับส่งของยังถูกต้องตามคิวใบผลิต
+                  <div style={{ marginTop: 2 }}>
+                    ส่งของแล้วบันทึกที่ <b>📦 Line Stock → + จ่ายพาร์ทเข้าไลน์</b> — แถวยอดจะขึ้นเอง
+                    แล้วรอบหน้าระบบหักให้ พาร์ทนั้นจะเลิกขึ้น 📥
+                  </div>
                 </div>
               </div>
-              <button onClick={toggleAssume} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8,
+              <button onClick={toggleAssume} title="ซ่อนพาร์ทที่ยังไม่มียอด WIP ออกจากไทม์ไลน์ (เหลือเฉพาะพาร์ทที่มีข้อมูลจริง)"
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8,
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
-                ปิดโหมดนี้
+                ดูเฉพาะที่มียอดจริง
               </button>
             </div>
           )}
@@ -552,11 +557,11 @@ export default function StoreTimeChart({
             <div style={{ ...card, background: 'var(--bg2)', padding: '8px 11px', marginBottom: 10,
               display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ flex: 1, minWidth: 240, fontSize: 11.5, color: 'var(--muted)' }}>
-                ❔ <b>{unknownTotal} พาร์ท</b> ยังไม่มียอด WIP ที่ไลน์ → คำนวณเวลาไม่ได้ ไม่ขึ้นบนไทม์ไลน์
+                ❔ <b>{unknownTotal} พาร์ท</b> ยังไม่มียอด WIP ที่ไลน์ → ถูกซ่อนอยู่ ไม่ขึ้นบนไทม์ไลน์
               </span>
               <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8,
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
-                📥 มอง WIP=0 เพื่อดู workflow
+                📥 คิดเป็น 0 แล้วส่งเต็มจำนวน
               </button>
             </div>
           )}
@@ -683,8 +688,8 @@ export default function StoreTimeChart({
                   </div>
                   {q.assumedCount > 0 && (
                     <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 1 }}
-                      title="พาร์ทเหล่านี้ยังไม่ได้ตั้งยอด WIP ที่ไลน์ — ระบบมองเป็น 0 ยอดที่แสดงจึงยังไม่หักของที่อาจมีอยู่แล้ว">
-                      📥 {q.assumedCount} พาร์ทยังไม่ได้ตั้งยอดที่ไลน์ — ยอดนี้ยังไม่หัก
+                      title="พาร์ทเหล่านี้ยังไม่เคยมีการจ่ายเข้าไลน์ในระบบ — คิดเป็น 0 ยอดที่แสดงจึงยังไม่หักของที่อาจมีอยู่แล้ว">
+                      📥 {q.assumedCount} พาร์ทส่งเต็มจำนวน — ยังไม่มียอดที่ไลน์ให้หัก
                     </div>
                   )}
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 2 }}>
