@@ -617,6 +617,11 @@ export default function Obeya() {
     /* ค่า KPI กรอกมือ: (line_group, ชื่อ KPI) → { def, ค่าเดือนนี้ } */
     const entByKpi = {};
     (kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
+    /* เป้าของแถวอัตโนมัติ — ตั้งที่ 📑 KPI รายเดือน (ปุ่ม 🎯) เก็บเป็น source='auto:<key>'
+       ⚠️ แหล่งเดียวกับตาราง KPI รายเดือน ห้ามให้ 2 จอตั้งเป้าคนละที่แล้วได้คนละเลข */
+    const autoDefOf = (grp, srcKey) => (kdefs || []).find(d =>
+      d.source === `auto:${srcKey}` && (d.line_group || '') === (grp || '')) || null;
+
     const manualOf = (grp, rowName) => {
       const nn = normName(rowName);
       const d = (kdefs || []).find(x =>
@@ -673,7 +678,9 @@ export default function Obeya() {
           note = tByG[g] ? 'เป้าจากทะเบียนเป้า OEE' : 'ยังไม่ตั้งเป้า OEE — ใช้ค่ามาตรฐาน 90×90×99';
         } else if (r.auto === 'ppm') {
           value = ppmOf(mSess); today = ppmOf(dSess);
-          target = man?.target ?? null;
+          const ad = autoDefOf(g, 'ppm');
+          target = ad?.target_value == null ? (man?.target ?? null) : Number(ad.target_value);
+          dir = ad?.direction || dir;
           series = {}; days.forEach(d => { const v = ppmOf(ss.filter(x => x.work_date === d)); if (v != null) series[d] = v; });
         } else if (r.auto === 'safety') {
           value = sfInj; today = (safety || []).filter(e => e.event_date === date && e.line_name && memberNames.has(e.line_name) && isInjury(e)).length;
@@ -691,7 +698,9 @@ export default function Obeya() {
           st = statusVsTarget(value, target, dir);
           why = `เทียบเป้า ${nf(target, 2)}${unit ? ' ' + unit : ''}`;
         } else {
-          why = 'ยังไม่ตั้งเป้า — ตั้งได้ที่ 📑 KPI รายเดือน';
+          why = r.auto
+            ? 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ปุ่ม 🎯 ท้ายแถว'
+            : 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ตอนแก้นิยาม KPI';
         }
         cells.push(st);
         return { ...r, value, today, target, unit, dir, series, st, why, manual: !r.auto, hasDef: !!man };
