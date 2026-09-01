@@ -6,6 +6,7 @@ import { defectUnitCost } from '../utils/costSaving';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
+import SearchSelect, { normSearch } from './SearchSelect';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -46,6 +47,12 @@ const CATS = [
   { key: 'learning', label: '📚 Learning & Growth' },
 ];
 const catLabel = k => CATS.find(c => c.key === k)?.label || k;
+
+/* ⚠️ ชื่อ KPI ที่แสดง/พิมพ์/export ต้องผ่านตัวนี้เสมอ — ห้ามอ่าน `d.name` ตรงๆ
+   ทะเบียน (`kpi_catalog`) เป็นเจ้าของชื่อ · `definitions.name` เป็นแค่ fallback ของแถวเก่า
+   ที่ยังไม่ผูกทะเบียน ⇒ แก้ชื่อในทะเบียนแล้วเปลี่ยนทุกปีทุกส่วนงานพร้อมกัน (ไม่มีทาง drift) */
+const defName = d => d?.kpi_catalog?.name || d?.name || '(ไม่มีชื่อ)';
+const defUnit = d => d?.kpi_catalog?.unit || '';
 
 /* ดึงทุกแถวแบบแบ่งหน้า — กับดัก Supabase ตัด 1000 แถว/query */
 async function pageAll(buildQuery, onProg) {
@@ -174,6 +181,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
   const [kpiMissing, setKpiMissing] = useState(false); // ตารางยังไม่ apply migration
   const [editDef, setEditDef] = useState(null);    // null | {} (ใหม่) | def (แก้)
+  const [catalog, setCatalog] = useState([]);      // ทะเบียนชื่อ KPI (kpi_catalog)
+  const [catMissing, setCatMissing] = useState(false);
+  const [showCat, setShowCat] = useState(false);   // โมดัลจัดการทะเบียนชื่อ
+  const [copying, setCopying] = useState(false);   // กำลังคัดลอกชุด KPI จากปีอื่น
   const reqRef = useRef(0);                        // ลำดับคำขอโหลด — กันผลเก่าทับผลใหม่
 
   /* ตัวเลือกส่วนงานยึด org_nodes (kind='section') ตามกฎ — fallback เดาจาก production_lines เมื่อผังว่าง */
@@ -261,10 +272,24 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   useEffect(() => { load(); }, [load]);
 
   /* ── โหลดนิยาม KPI กรอกมือ + ค่ารายเดือน (tolerant — ยังไม่ apply migration ต้องไม่พังทั้งแท็บ) ── */
+  /* ทะเบียนชื่อ KPI — โหลดครั้งเดียว ไม่ผูกปี/ส่วนงาน (ตัวตนเดียวใช้ข้ามปี) */
+  const loadCatalog = useCallback(async () => {
+    const { data, error } = await supabase.from('kpi_catalog').select('*')
+      .eq('is_active', true).order('sort_order').order('name');
+    if (error) { setCatMissing((error.code || '') === '42P01'); setCatalog([]); return; }
+    setCatMissing(false); setCatalog(data || []);
+  }, []);
+  useEffect(() => { loadCatalog(); }, [loadCatalog]);
+
   const loadDefs = useCallback(async () => {
-    const { data: d, error } = await supabase.from('kpi_definitions').select('*')
+    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals)';
+    const run = (cols) => supabase.from('kpi_definitions').select(cols)
       .eq('year', year).eq('is_active', true)
       .order('category').order('seq').order('created_at');
+    /* ยังไม่ apply migration kpi_catalog → embed พัง 42703/PGRST200 → ถอยไป select เดิม
+       (พฤติกรรมเดิมเป๊ะ ไม่ทำให้ทั้งแท็บล่ม) */
+    let { data: d, error } = await run(CAT_EMBED);
+    if (error && (error.code || '') !== '42P01') ({ data: d, error } = await run('*'));
     if (error) {
       setKpiMissing((error.code || '') === '42P01');
       setDefs([]); setEntries({});
@@ -392,7 +417,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [chart, setChart] = useState(null); // payload กราฟใหญ่ { title, vals, kind, target, dir, dec }
   const openRowChart = r => setChart({ title: r.label, vals: months.out.map(r.val), kind: r.kind, target: r.target ?? null, dir: r.dir ?? null, dec: r.dec });
   const openDefChart = d2 => setChart({
-    title: d2.name + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
+    title: defName(d2) + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
     vals: Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null),
     target: d2.target_value != null ? Number(d2.target_value) : null, dir: d2.direction || null,
   });
@@ -416,7 +441,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         return `<td style="${td}">${v == null ? '' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>`;
       }).join('');
       const avg = manualAvg(d2);
-      return `<tr><td style="${td};text-align:left">${d2.name}${d2.section ? ` (${d2.section})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
+      return `<tr><td style="${td};text-align:left">${defName(d2)}${d2.section ? ` (${d2.section})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
     }).join('');
     const html = `
       <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${scopeLabel}</h2>
@@ -466,7 +491,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         const monthVals = Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null);
         const avg = manualAvg(d2);
         return {
-          category: d2.category, name: d2.name, formula: d2.formula_text || '', scope: d2.scope_text || '',
+          category: d2.category, name: defName(d2), formula: d2.formula_text || d2.kpi_catalog?.formula_text || '',
+          scope: d2.scope_text || d2.kpi_catalog?.scope_text || '',
           commitment: d2.commitment || '', target: d2.target || '',
           monthVals, summary: avg,
           ynVals: monthVals.map(v => manualYn(d2, v)), ynTotal: manualYn(d2, avg),
@@ -487,9 +513,44 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* บันทึกนิยาม KPI (insert/update — update ต้องนับแถว กฎ RLS-เงียบ) */
   const saveDef = async form => {
+    /* ชื่อ KPI มาจากทะเบียน — เลือกตัวเดิม หรือ "ตั้งชื่อใหม่เข้าทะเบียน" (ตั้งใจเท่านั้น)
+       เก็บ `name` เป็น snapshot ด้วย เพื่อให้แถวยังอ่านออกถ้าทะเบียนถูกลบ (FK = set null) */
+    let catalogId = form.catalog_id || null;
+    const typed = (form.name || '').trim();
+    if (!catalogId && typed) {
+      const hit = catalog.find(c => normSearch(c.name) === normSearch(typed));
+      if (hit) catalogId = hit.id;
+      else {
+        const { data: nc, error: ce } = await supabase.from('kpi_catalog').insert({
+          name: typed, category: form.category || 'internal', unit: form.unit || null,
+          formula_text: form.formula_text || null, scope_text: form.scope_text || null,
+          direction: form.direction || null,
+        }).select('id').single();
+        if (ce) {
+          toast.error(ce.code === '23505' ? 'ชื่อนี้มีในทะเบียนแล้ว — เลือกจากลิสต์แทน'
+            : ce.code === '42P01' ? 'ยังไม่ได้ apply migration kpi_catalog — แจ้ง admin'
+              : 'เพิ่มชื่อเข้าทะเบียนไม่สำเร็จ: ' + ce.message);
+          return false;
+        }
+        catalogId = nc?.id || null;
+        loadCatalog();
+      }
+    }
+    /* หน่วยอยู่ที่ "ทะเบียน" (ใช้ทุกปี) ไม่ใช่ที่นิยามรายปี — แก้ในโมดัลแล้วต้องเขียนกลับทะเบียน
+       best-effort: พลาดแล้วบอก แต่ไม่ทำให้บันทึกนิยามล้ม (กฎ RLS-เงียบ: นับแถวที่เขียนจริง) */
+    if (catalogId && form.unit !== undefined) {
+      const cur = catalog.find(c => c.id === catalogId);
+      const u = (form.unit || '').trim() || null;
+      if (cur && (cur.unit || null) !== u) {
+        const { data: cu, error: ue } = await supabase.from('kpi_catalog').update({ unit: u }).eq('id', catalogId).select('id');
+        if (ue || !cu?.length) toast.error('บันทึกนิยามแล้ว แต่แก้ "หน่วย" ในทะเบียนไม่สำเร็จ' + (ue ? ': ' + ue.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
+        else loadCatalog();
+      }
+    }
     const payload = {
       year, section: form.section || null, category: form.category || 'internal',
-      seq: Number(form.seq) || 0, name: (form.name || '').trim(),
+      catalog_id: catalogId,
+      seq: Number(form.seq) || 0, name: typed,
       formula_text: form.formula_text || null, scope_text: form.scope_text || null,
       commitment: form.commitment || null, target: form.target || null,
       target_value: form.target_value === '' || form.target_value == null ? null : Number(form.target_value),
@@ -503,14 +564,58 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
     } else {
       const { error } = await supabase.from('kpi_definitions').insert(payload);
-      if (error) { toast.error('เพิ่มไม่สำเร็จ: ' + error.message); return false; }
+      if (error) {
+        toast.error(error.code === '23505'
+          ? `KPI นี้ถูกตั้งไว้ในปี ${year + 543}${form.section ? ` ส่วน ${form.section}` : ' (ส่วนกลาง)'} แล้ว — แก้ที่แถวเดิมแทน`
+          : 'เพิ่มไม่สำเร็จ: ' + error.message);
+        return false;
+      }
     }
     toast.success('บันทึก KPI แล้ว');
     loadDefs();
     return true;
   };
+  /* คัดลอกชุด KPI จากปีอื่นมาปีนี้ — ลงข้อมูลย้อนหลังโดยไม่ต้องพิมพ์ชื่อใหม่ (ต้นตอของการพิมพ์ผิด)
+     ⚠️ คัดลอกเฉพาะ "นิยาม" ไม่คัดลอกค่ารายเดือน (ค่าคือข้อเท็จจริงของปีนั้น ห้ามลอก) */
+  const copyFromYear = async () => {
+    const raw = window.prompt(`คัดลอกชุด KPI จากปีไหนมาปี ${year + 543}?\n(ใส่ปี พ.ศ. เช่น ${year + 542})`, String(year + 542));
+    if (raw == null) return;
+    const be = Number(String(raw).trim());
+    if (!Number.isFinite(be) || be < 2500 || be > 2700) { toast.error('ใส่ปี พ.ศ. 4 หลัก'); return; }
+    const src = be - 543;
+    if (src === year) { toast.error('เป็นปีเดียวกับที่เปิดอยู่'); return; }
+    setCopying(true);
+    try {
+      let q = supabase.from('kpi_definitions').select('*').eq('year', src).eq('is_active', true);
+      if (section) q = q.or(`section.eq.${section},section.is.null`);
+      const { data: srcRows, error } = await q;
+      if (error) { toast.error('อ่านชุดปี ' + be + ' ไม่สำเร็จ: ' + error.message); return; }
+      if (!srcRows?.length) { toast.error(`ปี ${be} ไม่มีชุด KPI${section ? ` ของส่วน ${section}` : ''}`); return; }
+      // ตัดตัวที่ปีนี้มีแล้ว (เทียบด้วย catalog_id ก่อน — ตกมาที่ชื่อเมื่อแถวเก่าไม่ผูกทะเบียน)
+      const haveCat = new Set(defs.map(d2 => d2.catalog_id).filter(Boolean));
+      const haveName = new Set(defs.map(d2 => normSearch(defName(d2))));
+      const todo = srcRows.filter(r => !(r.catalog_id ? haveCat.has(r.catalog_id) : haveName.has(normSearch(r.name || ''))));
+      const skipped = srcRows.length - todo.length;
+      if (!todo.length) { toast.info(`ปี ${year + 543} มีครบแล้วทั้ง ${srcRows.length} รายการ`); return; }
+      if (!window.confirm(
+        `คัดลอก ${todo.length} รายการจากปี ${be} มาปี ${year + 543}` +
+        (skipped ? `\n(ข้าม ${skipped} รายการที่ปีนี้มีอยู่แล้ว)` : '') +
+        '\n\nคัดลอกเฉพาะ "นิยาม" (ชื่อ/เป้า/สูตร/น้ำหนัก) — ค่ารายเดือนไม่ถูกคัดลอก')) return;
+      const payload = todo.map(r => ({
+        year, section: r.section, category: r.category, catalog_id: r.catalog_id || null,
+        seq: r.seq, name: r.name, formula_text: r.formula_text, scope_text: r.scope_text,
+        commitment: r.commitment, target: r.target, target_value: r.target_value,
+        direction: r.direction, weight: r.weight, action_plan: r.action_plan, action_owner: r.action_owner,
+      }));
+      const { data: ins, error: ie } = await supabase.from('kpi_definitions').insert(payload).select('id');
+      if (ie || !ins?.length) { toast.error('คัดลอกไม่สำเร็จ' + (ie ? ': ' + ie.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return; }
+      toast.success(`คัดลอก ${ins.length} รายการมาปี ${year + 543} แล้ว — กรอกค่ารายเดือนต่อได้เลย`);
+      loadDefs();
+    } finally { setCopying(false); }
+  };
+
   const removeDef = async d2 => {
-    if (!window.confirm(`ปิดใช้งาน KPI "${d2.name}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) เปิดคืนได้จากฐานข้อมูล`)) return;
+    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) เปิดคืนได้จากฐานข้อมูล`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
     loadDefs();
@@ -528,7 +633,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>📑 KPI รายเดือน</span>
         {/* width กัน index.css input/select width:100% */}
         <select value={year} onChange={e => setYear(+e.target.value)} style={selSt(110)}>
-          {[nowYear, nowYear - 1, nowYear - 2].map(y => <option key={y} value={y}>{y + 543}</option>)}
+          {[nowYear + 1, nowYear, nowYear - 1, nowYear - 2, nowYear - 3, nowYear - 4].map(y => <option key={y} value={y}>{y + 543}</option>)}
         </select>
         <select value={section} onChange={e => { setSection(e.target.value); setGroup(''); }} style={selSt(190)}>
           <option value="">ทุกส่วนงานในขอบเขต</option>
@@ -623,11 +728,27 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             {canManage && (
               <button onClick={() => setEditDef({})} style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>＋ เพิ่ม KPI</button>
             )}
+            {canManage && !catMissing && (
+              <>
+                <button onClick={copyFromYear} disabled={copying}
+                  title="คัดลอกรายการ KPI (ชื่อ/เป้า/สูตร) จากปีอื่นมาตั้งเป็นชุดของปีนี้ — ค่ารายเดือนไม่ถูกคัดลอก"
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12, opacity: copying ? 0.6 : 1 }}>
+                  {copying ? '⏳ กำลังคัดลอก…' : '📋 คัดลอกชุด KPI จากปีอื่น'}
+                </button>
+                <button onClick={() => setShowCat(true)} title="ดู/แก้ชื่อ KPI ในทะเบียน — แก้ชื่อแล้วเปลี่ยนพร้อมกันทุกปีทุกส่วนงาน"
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>🗂 ทะเบียนชื่อ KPI ({catalog.length})</button>
+              </>
+            )}
             {group && (
               <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
                 ⚠ KPI กรอกมือผูกกับ "ส่วนงาน" — ไม่กรองตามกลุ่มไลน์ที่เลือก
               </span>
             )}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
+            ⏪ <b>ลงย้อนหลังได้</b> — เลือกปีที่หัวเพจแล้วกรอกได้ครบทั้ง 12 เดือน (ไม่ล็อกเฉพาะเดือนปัจจุบัน) ·
+            ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
+            {!catMissing && ' · ชื่อ KPI ผูกกับทะเบียนกลาง ⇒ เทียบข้ามปีได้แม้เปลี่ยนชื่อทีหลัง'}
           </div>
           <ReadOnlyNote show={!canManage} role={role} compact
             what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
@@ -659,7 +780,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       return (
                         <tr key={d2.id}>
                           <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
-                            <b style={{ color: 'var(--text)' }}>{d2.name}</b>
+                            <b style={{ color: 'var(--text)' }}>{defName(d2)}</b>
+                            {defUnit(d2) && <span style={{ marginLeft: 4, fontSize: 10.5, color: 'var(--muted)' }}>({defUnit(d2)})</span>}
+                            {!d2.catalog_id && !catMissing && (
+                              <span title="ยังไม่ได้ผูกกับทะเบียนชื่อ KPI — เปิดแก้ไขแล้วเลือกชื่อจากทะเบียนเพื่อให้เทียบข้ามปีได้"
+                                style={{ marginLeft: 5, fontSize: 10, color: '#f59e0b' }}>⚠ ไม่ผูกทะเบียน</span>
+                            )}
                             {!section && d2.section && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--muted)' }}>({d2.section})</span>}
                             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
                               {[d2.commitment && `เป้า ${d2.commitment}`, d2.scope_text].filter(Boolean).join(' · ')}
@@ -707,9 +833,18 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       {chart && <ChartModal c={chart} curIdx={curMonthIdx} onClose={() => setChart(null)} />}
 
+      {showCat && (
+        <CatalogModal
+          rows={catalog} canManage={canManage} usedNames={defs.map(d2 => d2.catalog_id).filter(Boolean)}
+          onClose={() => setShowCat(false)}
+          onChanged={() => { loadCatalog(); loadDefs(); }}
+        />
+      )}
+
       {editDef && (
         <DefModal
           init={editDef} year={year} section={section} sectionOpts={sectionOpts}
+          catalog={catalog} catMissing={catMissing} usedIds={defs.map(d2 => d2.catalog_id).filter(Boolean)}
           onClose={() => setEditDef(null)}
           onSave={async f => { if (await saveDef(f)) setEditDef(null); }}
         />
@@ -718,14 +853,111 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   );
 }
 
-/* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ── */
-function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
+/* ── โมดัลทะเบียนชื่อ KPI ──
+   แก้ชื่อที่นี่ = เปลี่ยนพร้อมกันทุกปี/ทุกส่วนงาน (แถวอ้าง catalog_id ไม่ได้ก๊อปชื่อไป)
+   ⚠️ ปิดใช้งาน (soft delete) ไม่ลบจริง — นิยามปีเก่ายังอ้างอยู่ ต้องอ่านออกเสมอ */
+function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState('');
+  const used = useMemo(() => new Set(usedNames), [usedNames]);
+  const shown = useMemo(() => {
+    const nq = normSearch(q);
+    return nq ? rows.filter(r => normSearch(`${r.name} ${r.unit || ''} ${r.scope_text || ''}`).includes(nq)) : rows;
+  }, [rows, q]);
+
+  const rename = async (r) => {
+    const nv = window.prompt(`เปลี่ยนชื่อ KPI\n\n⚠️ มีผลกับทุกปีและทุกส่วนงานที่ใช้ชื่อนี้`, r.name);
+    if (nv == null) return;
+    const name = nv.trim();
+    if (!name || name === r.name) return;
+    setBusy(r.id);
+    try {
+      const { data, error } = await supabase.from('kpi_catalog').update({ name }).eq('id', r.id).select('id');
+      if (error || !data?.length) {
+        toast.error(error?.code === '23505' ? 'ชื่อนี้มีอยู่แล้วในทะเบียน'
+          : 'เปลี่ยนชื่อไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
+        return;
+      }
+      toast.success('เปลี่ยนชื่อแล้ว — มีผลทุกปีที่ใช้ชื่อนี้');
+      onChanged?.();
+    } finally { setBusy(''); }
+  };
+  const toggle = async (r) => {
+    if (r.is_active && used.has(r.id) &&
+      !window.confirm(`"${r.name}" ถูกใช้ในชุด KPI ของปีที่เปิดอยู่\nปิดใช้งานแล้วจะไม่โผล่ให้เลือกใหม่ (แถวเดิมยังอยู่)\n\nปิดใช้งาน?`)) return;
+    setBusy(r.id);
+    try {
+      const { data, error } = await supabase.from('kpi_catalog').update({ is_active: !r.is_active }).eq('id', r.id).select('id');
+      if (error || !data?.length) { toast.error('ทำไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
+      onChanged?.();
+    } finally { setBusy(''); }
+  };
+
+  const inp = { padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 260 };
+  const td = { padding: '5px 8px', fontSize: 12, color: 'var(--text2)', borderBottom: '1px solid var(--border)' };
+  return (
+    /* ⚠️ ไม่ใช่ฟอร์มที่กรอกค้าง — ปิดจาก backdrop ได้ (UI-CONVENTIONS §5) */
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(760px, 96vw)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🗂 ทะเบียนชื่อ KPI</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
+          ชื่อชุดเดียวใช้ทุกปีทุกส่วนงาน — <b>แก้ชื่อที่นี่แล้วเปลี่ยนพร้อมกันทั้งระบบ</b> (ใบ Monitoring เทียบปีต่อปีได้)
+          · เพิ่มชื่อใหม่ทำตอนกด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อที่ยังไม่มี
+        </div>
+        <input style={inp} value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อ KPI…" />
+        <div style={{ overflowY: 'auto', marginTop: 10, flex: 1 }}>
+          {!shown.length ? (
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '14px 4px' }}>
+              {rows.length ? 'ไม่พบชื่อที่ค้นหา' : 'ยังไม่มีชื่อ KPI ในทะเบียน — กด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อ ระบบจะเพิ่มเข้าทะเบียนให้'}
+            </div>
+          ) : (
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <tbody>
+                {shown.map(r => (
+                  <tr key={r.id} style={{ opacity: r.is_active ? 1 : 0.5 }}>
+                    <td style={{ ...td, width: '100%' }}>
+                      <b style={{ color: 'var(--text)' }}>{r.name}</b>
+                      {r.unit && <span style={{ marginLeft: 4, fontSize: 10.5, color: 'var(--muted)' }}>({r.unit})</span>}
+                      {!r.is_active && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#f59e0b' }}>ปิดใช้งาน</span>}
+                      {used.has(r.id) && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#22c55e' }}>ใช้ในปีที่เปิดอยู่</span>}
+                      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                        {[CATS.find(c => c.key === r.category)?.label, r.formula_text, r.scope_text].filter(Boolean).join(' · ')}
+                      </div>
+                    </td>
+                    {canManage && (
+                      <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        <button disabled={busy === r.id} onClick={() => rename(r)} title="เปลี่ยนชื่อ (มีผลทุกปี)"
+                          style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
+                        <button disabled={busy === r.id} onClick={() => toggle(r)} title={r.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งานคืน'}
+                          style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>{r.is_active ? '🗑' : '♻️'}</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ปิด</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ──
+   ⚠️ ชื่อ KPI เลือกจากทะเบียน (kpi_catalog) เป็นหลัก — พิมพ์เองได้แต่ต้องเห็นว่า
+   "กำลังสร้างชื่อใหม่" และถ้าคล้ายชื่อที่มีอยู่ต้องเตือนก่อน (ต้นตอของ KPI แตกหัวข้อ) */
+function DefModal({ init, year, section, sectionOpts, catalog = [], catMissing = false, usedIds = [], onClose, onSave }) {
   const [f, setF] = useState(() => ({
     id: init.id || null,
+    catalog_id: init.catalog_id || '',
     section: init.id ? (init.section || '') : (section || ''),
     category: init.category || 'internal',
     seq: init.seq ?? 0,
-    name: init.name || '',
+    name: init.kpi_catalog?.name || init.name || '',
+    unit: init.kpi_catalog?.unit || '',
     formula_text: init.formula_text || '',
     scope_text: init.scope_text || '',
     commitment: init.commitment || '',
@@ -737,6 +969,34 @@ function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
     action_owner: init.action_owner || '',
   }));
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const usedSet = useMemo(() => new Set(usedIds.filter(x => x !== init.catalog_id)), [usedIds, init.catalog_id]);
+  const catOpts = useMemo(() => catalog.map(c => ({
+    id: c.id, label: c.name, raw: c,
+    keywords: [c.unit, c.formula_text, c.scope_text].filter(Boolean).join(' '),
+    sub: [CATS.find(x => x.key === c.category)?.label, c.unit && `หน่วย ${c.unit}`, c.scope_text].filter(Boolean).join(' · '),
+    // KPI ที่ตั้งไว้ในปี+ส่วนงานนี้แล้ว — ยังเลือกได้ แต่ต้องเห็นว่าจะซ้ำ (DB มี unique index กันอยู่)
+    badge: usedSet.has(c.id) ? 'ตั้งไว้แล้วปีนี้' : '',
+    badgeColor: '#f59e0b',
+  })), [catalog, usedSet]);
+
+  /* คำอธิบายใต้ช่องชื่อ — เลือกแล้ว / จะสร้างใหม่ / คล้ายของเดิม (ต้นตอที่ทำให้ KPI แตกหัวข้อ) */
+  const nameNote = useMemo(() => {
+    const typed = (f.name || '').trim();
+    if (f.catalog_id) {
+      return usedSet.has(f.catalog_id)
+        ? { color: '#f59e0b', text: '⚠ KPI นี้ถูกตั้งไว้ในปี/ส่วนงานนี้แล้ว — บันทึกจะไม่ผ่าน ให้ไปแก้ที่แถวเดิมแทน' }
+        : { color: '#22c55e', text: '✓ ใช้ชื่อจากทะเบียน — แก้ชื่อที่ทะเบียนแล้วเปลี่ยนพร้อมกันทุกปี' };
+    }
+    if (!typed) return null;
+    const nq = normSearch(typed);
+    const exact = catalog.find(c => normSearch(c.name) === nq);
+    if (exact) return { color: '#22c55e', text: `✓ ตรงกับ “${exact.name}” ในทะเบียน — จะผูกให้อัตโนมัติ` };
+    const near = catalog.find(c => { const n = normSearch(c.name); return n.includes(nq) || nq.includes(n); });
+    if (near) return { color: '#f59e0b', text: `⚠ คล้ายกับ “${near.name}” ที่มีอยู่แล้ว — ถ้าเป็นตัวเดียวกันให้ใช้ชื่อเดิม ไม่งั้นจะแตกเป็นคนละหัวข้อ`, pick: near };
+    return { color: 'var(--muted)', text: `จะเพิ่ม “${typed}” เข้าทะเบียนชื่อ KPI (ใช้ต่อได้ทุกปี)` };
+  }, [f.catalog_id, f.name, catalog, usedSet]);
+
   const inp = { width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
   const lbl = { fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 3 };
   return (
@@ -747,9 +1007,54 @@ function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
         </div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={lbl}>ชื่อ KPI *</div>
-            <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder="เช่น DL cost ต่อยอดขาย (%)" />
+            <div style={lbl}>ชื่อ KPI * {!catMissing && <span style={{ fontWeight: 500 }}>(เลือกจากทะเบียน — พิมพ์ใหม่ได้ถ้ายังไม่มี)</span>}</div>
+            {catMissing ? (
+              <>
+                <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder="เช่น DL cost ต่อยอดขาย (%)" />
+                <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                  ⚠ ยังไม่ได้ apply migration ทะเบียนชื่อ KPI — พิมพ์ชื่อเองไปก่อน (เสี่ยงพิมพ์ต่างกันแล้วแตกเป็นคนละหัวข้อ)
+                </div>
+              </>
+            ) : (
+              <>
+                <SearchSelect
+                  value={f.catalog_id} text={f.name} options={catOpts} allowFree
+                  placeholder="พิมพ์เพื่อค้นชื่อ KPI ในทะเบียน…"
+                  emptyText="ยังไม่มีชื่อนี้ในทะเบียน — พิมพ์ต่อได้ ระบบจะเพิ่มให้ตอนบันทึก"
+                  freeHint="เป็นชื่อใหม่ (จะถูกเพิ่มเข้าทะเบียน)"
+                  inputStyle={inp}
+                  onChange={({ id, text, opt }) => setF(p => ({
+                    ...p, catalog_id: id || '', name: text,
+                    // เลือกจากทะเบียน = เติมค่าตั้งต้นให้ (ทับเฉพาะช่องที่ยังว่าง — ค่าที่คนกรอกเองต้องไม่หาย)
+                    ...(opt ? {
+                      category: opt.raw.category || p.category,
+                      unit: p.unit || opt.raw.unit || '',
+                      formula_text: p.formula_text || opt.raw.formula_text || '',
+                      scope_text: p.scope_text || opt.raw.scope_text || '',
+                      direction: p.direction || opt.raw.direction || '',
+                    } : {}),
+                  }))}
+                />
+                {nameNote && (
+                  <div style={{ fontSize: 11.5, marginTop: 5, color: nameNote.color, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span>{nameNote.text}</span>
+                    {nameNote.pick && (
+                      <button type="button" onClick={() => setF(p => ({ ...p, catalog_id: nameNote.pick.id, name: nameNote.pick.name }))}
+                        style={{ padding: '2px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>
+                        ใช้ชื่อนี้แทน
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
+          {!catMissing && (
+            <div>
+              <div style={lbl}>หน่วย (เก็บที่ทะเบียน ใช้ทุกปี)</div>
+              <input style={inp} value={f.unit} onChange={e => set('unit', e.target.value)} placeholder="เช่น % · บาท · ครั้ง" />
+            </div>
+          )}
           <div>
             <div style={lbl}>หมวด (ตามใบ Appraisal)</div>
             <select style={inp} value={f.category} onChange={e => set('category', e.target.value)}>
