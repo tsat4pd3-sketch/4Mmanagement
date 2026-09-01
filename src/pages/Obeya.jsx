@@ -20,9 +20,17 @@ import {
   safetyKind, isInjury, safetyStatus, daysWithoutLti, ymd, dayAdd, dayAxis, sumByDay, avgOfDays,
 } from '../utils/obeya';
 
-/* ══ 📋 OBEYA — บอร์ด KPI ส่วนงาน (SQCDM) · 2026-08-27 ═══════════════════════════════
+/* ══ 📋 OBEYA — บอร์ด KPI ส่วนงาน · 2026-08-27 · จัดโครงตามบอร์ดจริง 2026-09-01 ═════
    แทนกระดาษ "OBEYA KPI monitoring" ที่แปะผนังห้องประชุมหน้างาน (คำสั่งนายใหญ่ผ่าน user)
    user เคาะ 3 ข้อ: ① แยกรายส่วนงาน ② ตัวไหนวิ่งทุกกะให้อัพเดทรายวัน ③ มีแกน Safety
+
+   ═══ โครงจริงของบอร์ด (user ถ่ายรูป OBEYA HYDROFORM มาให้ 2026-09-01) ═══════════
+     [Key Performance PD3] [LINE HYDROFORM 1&2] [LINE APRON ASSY & SUP APRON] [ENGNEER PD3]
+      ตาราง KPI ส่วนงาน     cost 2140662101/102   cost 2140662201/202          แผน/กิจกรรม
+
+   **คอลัมน์ = กลุ่มไลน์ (ไลน์แม่) + เลข cost center กำกับ** · แต่ละคอลัมน์มี 8 หัวข้อ
+   เดียวกันเป๊ะพร้อมป้ายสถานะ G/Y/R → หน้านี้จึงเป็น "กริดคอลัมน์×8 แถว" ไม่ใช่การ์ด SQCDM
+   (SQCDM ยังอยู่ แต่ย้ายลงล่างเป็น "ภาพรวมส่วนงาน" — เป็นของแถมที่กระดาษไม่มี)
 
    ═══ ทำไมเป็นหน้าใหม่ ไม่ใช่แท็บใน /dept-dashboard ═══════════════════════════
    `/dept-dashboard` แบ่งด้วย `?dept=` = **หน้าที่/ฝ่าย** (ผลิต·ซ่อมบำรุง·สโตร์·QA)
@@ -45,6 +53,24 @@ import {
 
 const TREND_DAYS = 14;
 const DEFAULT_APQ = { a: 90, p: 90, q: 99 };   // ค่ามาตรฐานเมื่อกรุ๊ปยังไม่ตั้งเป้า (กฎ oee_targets)
+
+/* ── 8 หัวข้อบนบอร์ดจริง (ถอดจากป้ายเหลืองในรูปที่ user ถ่ายมา) ────────────────────
+   ⚠️ `name` ต้องตรงกับชื่อใน `kpi_catalog` ที่ seed ไว้ (migration 20260901_kpi_line_group)
+      จับคู่แบบ normSearch → เปลี่ยนตัวพิมพ์/ช่องว่างในทะเบียนแล้วยังหาเจอ
+   `auto` = ระบบคำนวณให้เอง อัพเดททุกวัน (ตอบข้อ ② ของ user)
+   `auto: null` = ต้องกรอกที่ 📑 KPI รายเดือน — ระบบไม่มีข้อมูลตั้งต้น (ยอดขาย/ค่าโสหุ้ยจริง)
+   ⚠️ ห้ามเดาค่าให้แถว manual — ไม่มีค่า = "ยังไม่กรอก" ไม่ใช่ 0 */
+const BOARD_ROWS = [
+  { key: 'dl',    name: 'Direct Labor',          auto: null },
+  { key: 'oh',    name: 'Overhead',              auto: null },
+  { key: 'inv',   name: 'Inventory Balance',     auto: null },
+  { key: 'csat',  name: 'Customer Satisfaction', auto: null },
+  { key: 'oee',   name: 'OEE',                   auto: 'oee',    unit: '%',   dir: 'up' },
+  { key: 'ppm',   name: 'PPM',                   auto: 'ppm',    unit: 'PPM', dir: 'down' },
+  { key: 'safe',  name: 'Safety',                auto: 'safety', unit: 'ครั้ง', dir: 'down' },
+  { key: 'train', name: 'Training',              auto: null },
+];
+const normName = x => String(x ?? '').toLowerCase().replace(/[\s\-_./()]+/g, '');
 
 /* วันงาน — ตัด 08:00 ตามกฎ Date/Time (ห้าม toISOString) */
 function workDateNow() {
@@ -74,6 +100,95 @@ function Spark({ days, map, color, dir }) {
           fill={color} fillOpacity={i === vals.length - 1 ? 1 : 0.42} />
       )))}
     </svg>
+  );
+}
+
+/* ── 1 เซลล์บนบอร์ด (1 หัวข้อ × 1 กลุ่มไลน์) ────────────────────────────────────
+   หน้าตาตามกระดาษ: ป้ายสถานะกลม G/Y/R ซ้าย + ชื่อหัวข้อ + ตัวเลข
+   ⚠️ ป้าย ⚡ บอกว่าระบบคำนวณให้ · ✍️ บอกว่าต้องมีคนกรอก — ห้ามทำให้ดูเหมือนกัน */
+function BoardCell({ row, onOpen }) {
+  const m = stMeta(row.st);
+  const badge = row.st === ST.good ? 'G' : row.st === ST.warn ? 'Y' : row.st === ST.bad ? 'R' : '–';
+  const val = row.value == null ? '—'
+    : `${nf(row.value, row.key === 'ppm' ? 0 : 2)}${row.unit ? ` ${row.unit}` : ''}`;
+  return (
+    <div onClick={onOpen}
+      style={{
+        display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', borderRadius: 8,
+        background: 'var(--bg2)', border: `1px solid ${row.st === ST.unknown ? 'var(--border)' : m.color}`,
+        cursor: onOpen ? 'pointer' : 'default',
+      }}
+      title={`${row.name} — ${row.why}`}>
+      {/* ป้ายสถานะกลมแบบเดียวกับสติกเกอร์บนบอร์ดกระดาษ · แดงไม่กระพริบ (เป็น KPI ไม่ใช่ alarm เครื่องหยุด) */}
+      <span style={{
+        flex: '0 0 auto', width: 26, height: 26, borderRadius: '50%', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 13,
+        background: row.st === ST.unknown ? 'var(--bg3)' : m.color,
+        color: row.st === ST.unknown ? 'var(--muted)' : '#0b1410',
+      }}>{badge}</span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', display: 'flex', gap: 4, alignItems: 'center' }}>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.name}</span>
+          <span style={{ flex: '0 0 auto', fontSize: 9.5, color: 'var(--muted)' }}>{row.auto ? '⚡' : '✍️'}</span>
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 900, color: row.value == null ? 'var(--muted)' : 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
+          {val}
+          {/* เป้า 0 (อุบัติเหตุ) ไม่ต้องโชว์ "/ 0" — อ่านแล้วงง เป้าอยู่ใน tooltip อยู่แล้ว */}
+          {row.target ? (
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>/ {nf(row.target, 2)}</span>
+          ) : null}
+        </div>
+      </div>
+      {row.series && Object.keys(row.series).length > 1 && (
+        <div style={{ flex: '0 0 auto' }}><Spark days={Object.keys(row.series).sort()} map={row.series} color={m.color} dir={row.dir} /></div>
+      )}
+    </div>
+  );
+}
+
+/* ── แผง "Key Performance <ส่วนงาน>" = คอลัมน์ซ้ายสุดบนบอร์ดกระดาษ ─────────────
+   บนกระดาษเป็นตาราง KPI ระดับส่วนงาน + แผง Core Activity Plan (100P/LEAN/QCC/Kaizen/5S)
+   ในระบบ = `kpi_definitions` ที่ line_group เป็น null → ตั้งอะไรไว้ก็ขึ้นตรงนี้
+   ⚠️ ไม่ hardcode รายชื่อกิจกรรม — แต่ละส่วนงานทำกิจกรรมไม่เหมือนกัน ให้ตั้งเองที่ KPI รายเดือน */
+function SectionPanel({ section, rows, onOpenKpi }) {
+  const st = worstStatus(rows.map(r => r.st));
+  const m = stMeta(st);
+  return (
+    <div style={{ background: 'var(--card)', border: `1px solid ${st === ST.unknown ? 'var(--border)' : m.color}`, borderRadius: 12, padding: 10 }}>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text)' }}>Key Performance {section}</div>
+        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ระดับส่วนงาน · รวมแผนกิจกรรม (100P/LEAN/QCC/Kaizen/5S)</div>
+      </div>
+      {!rows.length ? (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
+          ยังไม่ได้ตั้ง KPI ระดับส่วนงาน<br />
+          <span style={{ color: '#f59e0b' }}>ตั้งที่ 📑 KPI รายเดือน โดยเว้นช่อง "กลุ่มไลน์" ไว้</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {rows.map(r => <BoardCell key={r.key} row={r} onOpen={() => onOpenKpi(r)} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── 1 คอลัมน์ = 1 กลุ่มไลน์ (ตรงกับ 1 แผงบนบอร์ดกระดาษ) ────────────────────── */
+function BoardColumn({ col, onOpenGroup, onOpenKpi }) {
+  const m = stMeta(col.st);
+  return (
+    <div style={{ background: 'var(--card)', border: `1px solid ${col.st === ST.unknown ? 'var(--border)' : m.color}`, borderRadius: 12, padding: 10 }}>
+      <div onClick={onOpenGroup} style={{ marginBottom: 8, cursor: onOpenGroup ? 'pointer' : 'default' }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text)' }}>{col.group}</div>
+        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+          {col.ccs.length ? `Cost: ${col.ccs.join(' · ')}` : '⚠ ยังไม่ตั้ง cost center'}
+          {col.sessCount ? ` · ${col.sessCount} กะเดือนนี้` : ' · ยังไม่มีกะปิดเดือนนี้'}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+        {col.rows.map(r => <BoardCell key={r.key} row={r} onOpen={() => onOpenKpi(col, r)} />)}
+      </div>
+    </div>
   );
 }
 
@@ -152,7 +267,7 @@ export default function Obeya() {
   }, [setSp]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
+    supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center')
       .then(({ data: d }) => setLines(d || []));
     supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').order('sort_order')
       .then(({ data: d, error }) => setOrgSections(error ? [] : (d || [])));
@@ -261,9 +376,30 @@ export default function Obeya() {
       if (acts.error && !actsMissing) warn.push('งานติดตามจากประชุมเช้า');
       const actions = (acts.data || []).filter(a => !section || (a.section || '') === section);
 
+      // 9) KPI กรอกมือของปีนั้น — แถวที่ระบบคำนวณให้ไม่ได้ (DL/OH/Inventory/CSAT/Training)
+      //    scope: line_group = คอลัมน์บนบอร์ด · null = ระดับส่วนงาน
+      const year = Number(date.slice(0, 4));
+      let kdRes = await supabase.from('kpi_definitions')
+        .select('*, kpi_catalog(name, unit, direction)')
+        .eq('year', year).eq('is_active', true);
+      if (kdRes.error && (kdRes.error.code || '') !== '42P01') {
+        // ยังไม่ apply migration ทะเบียน → ถอยไป select ชุดเดิม (ห้ามทำให้บอร์ดพังทั้งใบ)
+        kdRes = await supabase.from('kpi_definitions').select('*').eq('year', year).eq('is_active', true);
+      }
+      const kpiMissing = (kdRes.error?.code || '') === '42P01';
+      if (kdRes.error && !kpiMissing) warn.push('นิยาม KPI');
+      const kdefs = (kdRes.data || []).filter(d => !d.section || d.section === section);
+      let kentries = [];
+      if (kdefs.length) {
+        const ke = await fetchByIds(kdefs.map(d => d.id), part => supabase
+          .from('kpi_manual_entries').select('kpi_id, month, value').in('kpi_id', part));
+        if (ke.error) warn.push('ค่า KPI รายเดือน');
+        kentries = ke.rows;
+      }
+
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
-        actions, actsMissing,
+        actions, actsMissing, kdefs, kentries, kpiMissing, year,
         sessions: sess.rows, closed, dt: dt.rows, df: df.rows, po: po.rows,
         targets: tg.data || [], pairs: pr.data || [], safety, safetyMissing,
         att: att.rows, headcount: empIds.length, warn,
@@ -452,7 +588,149 @@ export default function Obeya() {
     ];
   }, [data, days, date, monthStart, lines, lineNames]);
 
-  const overall = useMemo(() => (axes ? worstStatus(axes.map(a => a.status)) : ST.unknown), [axes]);
+  /* ── กริดบอร์ดตามกระดาษ: คอลัมน์ = กลุ่มไลน์ × 8 แถว ─────────────────────────
+     ⚠️ แยก "auto" กับ "manual" ให้เห็นบนจอเสมอ — auto อัพเดทเอง manual ต้องมีคนกรอก
+     ⚠️ ไม่มีเป้า ≠ ผ่าน → สถานะเทา "ยังไม่ตั้งเป้า" (Safety เป็นข้อยกเว้น เป้า = 0 เสมอ)  */
+  const board = useMemo(() => {
+    if (!data || data.empty) return null;
+    const { closed, dt, df, safety, kdefs, kentries, targets } = data;
+    const month = date.slice(0, 7);
+    const monthNo = Number(date.slice(5, 7));
+    /* ⚠️ แถวที่วันที่หาย (query ถอย select / ข้อมูลเพี้ยน) ต้อง "ไม่ถูกนับ" ไม่ใช่ "ทำบอร์ดพัง"
+       — เคยพังจริงตอนเรนเดอร์: e.event_date undefined → .slice ระเบิดทั้งหน้า */
+    const ym = x => String(x ?? '').slice(0, 7);
+
+    /* คอลัมน์ = ไลน์แม่ในส่วนงาน (parent_line_name IS NULL) — ตรงกับหัวคอลัมน์บนกระดาษ */
+    const groups = lines
+      .filter(l => (l.section || '') === section && !l.parent_line_name && (!scopeSet || scopeSet.has(l.name)))
+      .map(l => l.name).sort();
+
+    const plannedBy = {}, unplannedBy = {};
+    (dt || []).forEach(r => {
+      const m = Number(r.duration_min) || 0;
+      const t = r.dr_downtime_types?.category === 'planned' ? plannedBy : unplannedBy;
+      t[r.session_id] = (t[r.session_id] || 0) + m;
+    });
+    const defBy = {};
+    (df || []).forEach(r => (defBy[r.session_id] = defBy[r.session_id] || []).push(r));
+
+    /* ค่า KPI กรอกมือ: (line_group, ชื่อ KPI) → { def, ค่าเดือนนี้ } */
+    const entByKpi = {};
+    (kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
+    const manualOf = (grp, rowName) => {
+      const nn = normName(rowName);
+      const d = (kdefs || []).find(x =>
+        normName(x.kpi_catalog?.name || x.name) === nn && (x.line_group || '') === (grp || ''));
+      if (!d) return null;
+      const v = entByKpi[d.id]?.[monthNo];
+      return {
+        def: d,
+        value: v == null ? null : Number(v),
+        unit: d.kpi_catalog?.unit || '',
+        target: d.target_value == null ? null : Number(d.target_value),
+        dir: d.direction || d.kpi_catalog?.direction || null,
+      };
+    };
+
+    const tByG = Object.fromEntries((targets || []).map(t => [t.group_name, t]));
+    const cells = [];   // เก็บสถานะทุกเซลล์ไว้คิดไฟรวม
+
+    const cols = groups.map(g => {
+      const members = lines.filter(l => l.name === g || l.parent_line_name === g);
+      const memberNames = new Set(members.map(l => l.name));
+      /* บอร์ดพิมพ์ cost center ของ "ไลน์ลูก" กำกับหัวคอลัมน์ (ไลน์แม่เป็น cc ระดับส่วน) */
+      const ccs = [...new Set(members.filter(l => l.parent_line_name && l.cost_center).map(l => l.cost_center))].sort();
+
+      const ss = closed.filter(x => memberNames.has(x.line_name));
+      const mSess = ss.filter(x => ym(x.work_date) === month);
+      const dSess = ss.filter(x => x.work_date === date);
+
+      const oeeOf = list => wavg(list.map(x => ({
+        oee: x.oee != null ? Number(x.oee) : null, shift_min: x.shift_min, plannedMin: plannedBy[x.id] || 0,
+      })), x => x.oee, wLoad);
+      const ppmOf = list => {
+        const q = list.reduce((a, x) => a + (Number(x.actual_qty) || 0), 0);
+        const n = list.reduce((a, x) => a + sumDefectQty(defBy[x.id] || [], 'line'), 0);
+        return (q + n) > 0 ? (n / (q + n)) * 1e6 : null;
+      };
+      /* Safety ราย "กลุ่มไลน์" = เหตุการณ์ที่ระบุ line_name อยู่ในกลุ่ม
+         ⚠️ เหตุที่ไม่ได้ระบุไลน์ (ระดับส่วนงาน) ไม่ถูกนับในคอลัมน์ไหนเลย — บอกบนจอ */
+      const sfM = (safety || []).filter(e => ym(e.event_date) === month && e.line_name && memberNames.has(e.line_name));
+      const sfInj = sfM.filter(isInjury).length;
+
+      const tgt = tByG[g] || {};
+      const oeeTarget = (Number(tgt.target_a) || DEFAULT_APQ.a) * (Number(tgt.target_p) || DEFAULT_APQ.p)
+        * (Number(tgt.target_q) || DEFAULT_APQ.q) / 10000;
+
+      const rows = BOARD_ROWS.map(r => {
+        const man = manualOf(g, r.name);
+        let value = null, target = null, unit = r.unit || man?.unit || '', dir = r.dir || man?.dir || null;
+        let today = null, series = null, note = '';
+
+        if (r.auto === 'oee') {
+          value = oeeOf(mSess); today = oeeOf(dSess); target = oeeTarget;
+          series = {}; days.forEach(d => { const v = oeeOf(ss.filter(x => x.work_date === d)); if (v != null) series[d] = v; });
+          note = tByG[g] ? 'เป้าจากทะเบียนเป้า OEE' : 'ยังไม่ตั้งเป้า OEE — ใช้ค่ามาตรฐาน 90×90×99';
+        } else if (r.auto === 'ppm') {
+          value = ppmOf(mSess); today = ppmOf(dSess);
+          target = man?.target ?? null;
+          series = {}; days.forEach(d => { const v = ppmOf(ss.filter(x => x.work_date === d)); if (v != null) series[d] = v; });
+        } else if (r.auto === 'safety') {
+          value = sfInj; today = (safety || []).filter(e => e.event_date === date && e.line_name && memberNames.has(e.line_name) && isInjury(e)).length;
+          target = 0;   // เป้าอุบัติเหตุ = 0 เสมอ ไม่ต้องตั้ง
+          if (!(safety || []).length) { value = null; note = 'ยังไม่มีใครบันทึกเหตุการณ์'; }
+        } else {
+          value = man?.value ?? null; target = man?.target ?? null;
+        }
+
+        /* สถานะ: มีเป้า → เทียบเป้า · ไม่มีเป้า → เทา (กฎ "ไม่มีเป้า ≠ ผ่าน") */
+        let st = ST.unknown, why = '';
+        if (value == null) {
+          why = r.auto ? (note || 'ยังไม่มีข้อมูล') : (man ? 'ยังไม่กรอกค่าเดือนนี้' : 'ยังไม่ได้ตั้ง KPI ตัวนี้');
+        } else if (target != null && dir) {
+          st = statusVsTarget(value, target, dir);
+          why = `เทียบเป้า ${nf(target, 2)}${unit ? ' ' + unit : ''}`;
+        } else {
+          why = 'ยังไม่ตั้งเป้า — ตั้งได้ที่ 📑 KPI รายเดือน';
+        }
+        cells.push(st);
+        return { ...r, value, today, target, unit, dir, series, st, why, manual: !r.auto, hasDef: !!man };
+      });
+
+      return { group: g, ccs, rows, sessCount: mSess.length, st: worstStatus(rows.map(x => x.st)) };
+    });
+
+    /* แถวของแผง Key Performance = นิยาม KPI ที่ไม่ผูกกลุ่มไลน์ (เรียงตามหมวด/ลำดับที่ตั้งไว้) */
+    const secRows = (kdefs || [])
+      .filter(d => !d.line_group)
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+      .map(d => {
+        const value = entByKpi[d.id]?.[monthNo];
+        const v = value == null ? null : Number(value);
+        const target = d.target_value == null ? null : Number(d.target_value);
+        const dir = d.direction || d.kpi_catalog?.direction || null;
+        let st = ST.unknown, why = '';
+        if (v == null) why = 'ยังไม่กรอกค่าเดือนนี้';
+        else if (target != null && dir) { st = statusVsTarget(v, target, dir); why = `เทียบเป้า ${nf(target, 2)}`; }
+        else why = 'ยังไม่ตั้งเป้า — ตั้งได้ที่ 📑 KPI รายเดือน';
+        cells.push(st);
+        return {
+          key: `s-${d.id}`, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', auto: null,
+          value: v, target, unit: d.kpi_catalog?.unit || '', dir, series: null, st, why, manual: true, hasDef: true,
+        };
+      });
+
+    const orphanSafety = (safety || []).filter(e => ym(e.event_date) === month && !e.line_name).length;
+    /* ⚠️ ไฟเขียวที่มาจาก "ช่องเดียวที่ประเมินได้" = คำตอบที่หลอกคนอ่าน (บทเรียนเดียวกับ safetyStatus)
+       → คืน known/total ให้จอเขียนกำกับเสมอ ห้ามโชว์ไฟรวมลอยๆ */
+    const known = cells.filter(x => x !== ST.unknown).length;
+    return { cols, secRows, orphanSafety, worst: worstStatus(cells), known, total: cells.length };
+  }, [data, lines, section, scopeSet, date, days]);
+
+  const overall = useMemo(() => {
+    const parts = [...(axes ? axes.map(a => a.status) : []), ...(board ? [board.worst] : [])];
+    return parts.length ? worstStatus(parts) : ST.unknown;
+  }, [axes, board]);
 
   const openAxis = a => {
     if (!a.to) return;
@@ -507,7 +785,7 @@ export default function Obeya() {
     <div ref={rootRef} style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', background: full ? 'var(--bg)' : undefined, padding: full ? 14 : 0 }}>
       <PageHeader
         title="OBEYA — บอร์ด KPI ส่วนงาน" icon="📋"
-        sub={`SQCDM รายวัน · วันงาน ${date}${section ? ` · ${section}` : ''}`}
+        sub={`ตามบอร์ดหน้างาน · วันงาน ${date}${section ? ` · ${section}` : ''}`}
         actions={<>
           {canRecord && (
             <button onClick={() => setShowSafety({})} style={{ ...btn, background: '#ef4444', color: '#fff', borderColor: '#ef4444' }}>
@@ -533,7 +811,15 @@ export default function Obeya() {
           {date !== today && <button onClick={() => setParam('date', '')} style={{ ...btn, padding: '6px 10px' }}>วันนี้</button>}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>สถานะรวม</span>
+          <div style={{ textAlign: 'right', lineHeight: 1.3 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>สถานะรวม</div>
+            {/* ⚠️ ต้องบอกเสมอว่าไฟนี้ตัดสินจากกี่ช่อง — เขียวจากช่องเดียวใน 100 ช่อง = คำตอบที่หลอกคน */}
+            {board && (
+              <div style={{ fontSize: 10.5, color: board.known < board.total / 2 ? '#f59e0b' : 'var(--muted)' }}>
+                ประเมินได้ {board.known}/{board.total} ช่อง
+              </div>
+            )}
+          </div>
           <span style={{
             fontSize: 13.5, fontWeight: 900, color: stMeta(overall).color,
             border: `1.5px solid ${stMeta(overall).color}`, borderRadius: 8, padding: '4px 12px',
@@ -563,12 +849,82 @@ export default function Obeya() {
         </div>
       )}
 
+      {/* ═══ บอร์ดหลัก — กริดตามกระดาษ (คอลัมน์ = กลุ่มไลน์ × 8 หัวข้อ) ═══════════ */}
+      {board && !!board.cols.length && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <b style={{ fontSize: 13, color: 'var(--text)' }}>📋 บอร์ด {section} — {board.cols.length} กลุ่มไลน์</b>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              ตัวเลข = สะสมเดือน {date.slice(0, 7)} · ⚡ ระบบคำนวณให้ · ✍️ ต้องกรอกที่ 📑 KPI รายเดือน
+            </span>
+            {canAccessPage('/dept-dashboard', role) && (
+              <button onClick={() => navigate(`/dept-dashboard?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`)}
+                style={{ ...btn, marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }}>
+                📑 KPI รายเดือน / ตั้งเป้า
+              </button>
+            )}
+          </div>
+          <div style={{
+            display: 'grid', gap: 10, alignContent: 'start',
+            gridTemplateColumns: isMobile ? '1fr' : `repeat(auto-fit, minmax(260px, 1fr))`,
+          }}>
+            <SectionPanel section={section} rows={board.secRows}
+              onOpenKpi={() => {
+                const to = '/dept-dashboard';
+                if (canAccessPage(to, role)) navigate(`${to}?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`);
+              }} />
+            {board.cols.map(c => (
+              <BoardColumn key={c.group} col={c}
+                onOpenGroup={canAccessPage('/dashboard', role) ? () => navigate(`/dashboard?line=${encodeURIComponent(c.group)}`) : undefined}
+                onOpenKpi={(col, r) => {
+                  /* ⚠️ ปลายทางต้องผ่าน canAccessPage เสมอ — ไม่มีสิทธิ์ = ไม่พาไปแล้วโดนเด้ง */
+                  const to = r.auto === 'safety' ? null
+                    : r.auto ? '/oee-analytics'
+                      : `/dept-dashboard?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`;
+                  if (r.auto === 'safety' && canRecord) { setShowSafety({ section, line_name: col.group }); return; }
+                  if (to && canAccessPage(to.split('?')[0], role)) navigate(to);
+                }} />
+            ))}
+          </div>
+          {/* ห้ามให้เหตุการณ์ความปลอดภัยหายไปจากสายตาเพราะไม่ได้ระบุไลน์ */}
+          {board.orphanSafety > 0 && (
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 6 }}>
+              ⚠ เดือนนี้มีเหตุการณ์ความปลอดภัย {board.orphanSafety} รายการที่ไม่ได้ระบุไลน์ — ไม่ถูกนับในคอลัมน์ไหนเลย (ดูรวมที่การ์ด Safety ด้านล่าง)
+            </div>
+          )}
+          {board.known < board.total && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
+              ⓘ ยังประเมินไม่ได้ {board.total - board.known} ช่อง — ช่อง ✍️ ต้องมีคนกรอกค่า และทุกช่องต้องตั้ง "เป้าตัวเลข + ทิศทาง"
+              ก่อนถึงจะขึ้นไฟ G/Y/R (ไม่มีเป้า = เทา ไม่ใช่ผ่าน)
+            </div>
+          )}
+          {data?.kpiMissing && (
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 6 }}>
+              ⚠ ยังไม่ได้ apply migration ตาราง KPI กรอกมือ — แถว ✍️ ทั้งหมดจะว่างจนกว่าจะ apply (แจ้ง admin)
+            </div>
+          )}
+        </div>
+      )}
+      {board && !board.cols.length && !data?.empty && (
+        <div style={{ ...card, borderColor: '#f59e0b', color: '#f59e0b', fontSize: 12.5, marginBottom: 12 }}>
+          ส่วนงาน {section} ยังไม่มี "ไลน์แม่" ในทะเบียน — บอร์ดแบ่งคอลัมน์ตามกลุ่มไลน์ ตั้งได้ที่ ⚙️ ตั้งค่าไลน์
+        </div>
+      )}
+
       {axes && (
-        <div style={{
-          display: 'grid', gap: 12, marginBottom: 12,
-          gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', alignContent: 'start',
-        }}>
-          {axes.map(a => <AxisCard key={a.key} axis={a} isMobile={isMobile} onOpen={() => openAxis(a)} />)}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <b style={{ fontSize: 13, color: 'var(--text)' }}>📊 ภาพรวมส่วนงาน (SQCDM)</b>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              รวมทั้ง {section} รายวัน — ของแถมที่บอร์ดกระดาษไม่มี (บอร์ดกระดาษเป็นรายกลุ่มไลน์ รายเดือน)
+            </span>
+          </div>
+          <div style={{
+            display: 'grid', gap: 12,
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', alignContent: 'start',
+          }}>
+            {axes.map(a => <AxisCard key={a.key} axis={a} isMobile={isMobile} onOpen={() => openAxis(a)} />)}
+          </div>
         </div>
       )}
 
