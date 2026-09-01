@@ -5,12 +5,15 @@ import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import PageHeader from '../components/PageHeader';
 // แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
+/* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
+   หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
 /* ══ 📊 Dashboard รายส่วนงาน — หน้าเดียว สลับส่วนงานด้วย ?dept= ══════════════════════════
    ออกแบบเต็มอยู่ที่ `docs/DASHBOARD-DESIGN.md` · เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA
@@ -58,6 +61,12 @@ const fourMLink = (f) => `${FOURM_TAB}&status=${encodeURIComponent(f.status || '
 
 /* ── UI atoms (ใช้ร่วมทุกส่วนงาน) ────────────────────────────────────────────────────── */
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 };
+// ปุ่มเล็กบนหัวจอ TV ห้องช่าง — เล็กโดยตั้งใจ (พื้นที่แนวตั้งเป็นของผัง ไม่ใช่ของปุ่ม)
+const tvBtn = (on) => ({
+  fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 8, cursor: 'pointer',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+});
 
 function Section({ title, sub, children, tone }) {
   const bd = tone === 'alert' ? '#ef4444' : tone === 'warn' ? '#f59e0b' : 'var(--border)';
@@ -158,10 +167,10 @@ async function loadProduction(ctx) {
      → ผ่าน fetchByIds ทุกคิวรีที่ยิงด้วย id list (QC audit 2026-08-20 · T3-14) */
   const [ordRes, dtRes, defRes, { data: prods }, dt7Res] = await Promise.all([
     fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
-    fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
     supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
-    fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name, category)').in('session_id', c)),
+    fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
@@ -237,7 +246,7 @@ function ProductionView({ d, ctx }) {
       tagColor: staleOver7.length ? '#ef4444' : '#f59e0b', to: '/daily-report',
     }] : []),
     ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: '#f59e0b', to: '/daily-report' })),
-    ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: '#ef4444', to: '/daily-report' })),
+    ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name_th || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: '#ef4444', to: '/daily-report' })),
     ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: '#f59e0b', to: fourMLink(f) })),
   ];
 
@@ -249,7 +258,7 @@ function ProductionView({ d, ctx }) {
   const dtRecords = useMemo(() => {
     const sMap = {}; d.sess7.forEach(s => { sMap[s.id] = s; });
     return d.dt7.filter(x => x.dr_downtime_types?.category !== 'planned').map(x => ({
-      cat: x.dr_downtime_types?.name || 'ไม่ระบุประเภท', value: dtMinOf(x),
+      cat: x.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', value: dtMinOf(x),
       machine: x.machine_no || '(ไม่ระบุเครื่อง)', line: sMap[x.session_id]?.line_name || '-',
       shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
     })).filter(r => r.value > 0);
@@ -322,15 +331,18 @@ async function loadMaintenance(ctx) {
     supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
   ]);
   const sIds = (sess30 || []).filter(s => inScope(s.line_name)).map(s => s.id);
-  const [{ data: dt30 }, { data: cls }] = await Promise.all([
-    sIds.length ? supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, started_at, ended_at, call_mtn, description, dr_downtime_types(name, category)').in('session_id', sIds) : { data: [] },
+  /* ⚠️ 30 วัน ≈ 270 กะ — `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด แล้วคืนค่าว่าง "เงียบ"
+     (จอช่างจะขึ้น DT 0 นาที / เครื่องหยุดซ้ำ 0 เครื่อง ทั้งที่มีของจริง) → ผ่าน fetchByIds เสมอ */
+  const [dt30Res, { data: cls }] = await Promise.all([
+    fetchByIds(sIds, c => supabaseDR.from('downtime_logs').select('session_id, machine_no, duration_min, started_at, ended_at, call_mtn, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn'),
   ]);
   const eqIds = [...new Set((cls || []).map(c => c.equipment_id).filter(Boolean))];
   const { data: jigs } = eqIds.length
     ? await supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name').in('id', eqIds)
     : { data: [] };
-  return { mo: (mo || []), plans: plans || [], dt30: dt30 || [], sess30: sess30 || [], cls: cls || [], jigs: jigs || [] };
+  return { mo: (mo || []), plans: plans || [], dt30: dt30Res.rows, sess30: sess30 || [], cls: cls || [], jigs: jigs || [],
+    loadErr: !!dt30Res.error };
 }
 
 function MaintenanceView({ d, ctx }) {
@@ -359,7 +371,7 @@ function MaintenanceView({ d, ctx }) {
     d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned' && x.machine_no).forEach(x => {
       const m = (byMc[x.machine_no] ||= { machine: x.machine_no, times: 0, min: 0, line: sMap[x.session_id]?.line_name || '', last: null, causes: {} });
       m.times++; m.min += dtMinOf(x);
-      const c = x.dr_downtime_types?.name || 'ไม่ระบุ'; m.causes[c] = (m.causes[c] || 0) + 1;
+      const c = x.dr_downtime_types?.name_th || 'ไม่ระบุ'; m.causes[c] = (m.causes[c] || 0) + 1;
       const dt = x.started_at || sMap[x.session_id]?.work_date; if (dt && (!m.last || dt > m.last)) m.last = dt;
     });
     const hasMo = new Set(d.mo.filter(o => o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));
@@ -372,9 +384,9 @@ function MaintenanceView({ d, ctx }) {
   const unplannedMin = d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned').reduce((a, x) => a + dtMinOf(x), 0);
 
   const actions = [
-    ...callMtn.map(x => ({ icon: '📞', title: `เรียกช่างแล้วยังไม่ปิด — ${x.machine_no || 'ไม่ระบุเครื่อง'}`, detail: x.dr_downtime_types?.name || x.description || '', tag: 'ด่วน', tagColor: '#ef4444', to: '/mtn-repair' })),
+    ...callMtn.map(x => ({ icon: '📞', title: `เรียกช่างแล้วยังไม่ปิด — ${x.machine_no || 'ไม่ระบุเครื่อง'}`, detail: x.dr_downtime_types?.name_th || x.description || '', tag: 'ด่วน', tagColor: '#ef4444', to: '/mtn-repair' })),
     ...stale.map(o => ({ icon: '🛠️', title: `${o.mo_no || 'ใบซ่อม'} — ${o.machine_no || o.line_name || ''}`, detail: o.problem_characteristic || '', age: daysSince(o.report_at), tag: o.status, tagColor: '#f59e0b', to: '/mtn-repair' })),
-    ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: '#ef4444', to: '/pm-schedule' })),
+    ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: '#ef4444', to: '/pm?tab=plan' })),
   ];
 
   return (<>
@@ -436,7 +448,7 @@ function MaintenanceView({ d, ctx }) {
     </Section>
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm-schedule', '📅 แผน PM', overdue.length], ['/pm-forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
+      <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 จอเฝ้าระวัง (แขวนทีวี)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
 }
@@ -446,7 +458,9 @@ async function loadStore(ctx) {
   const { workDate, inScope } = ctx;
   const next = dayAdd(workDate, 1);
   const [stk, std, rounds, deliv, pr, ordToday] = await Promise.all([
-    supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
+    // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ยอด on-hand หายเงียบแล้ว Min/Max เตือนผิด (QC flow-audit #30)
+    fetchAllPages(() => supabaseDR.from('line_stock_summary')
+      .select('line_name, mat_no, part_name, qty_on_hand'), { orderBy: ['line_name', 'mat_no'] }),
     supabaseDR.from('kanban_standards').select('mat_no, part_name, min_qty, max_qty').eq('is_active', true),
     supabaseDR.from('kanban_delivery_rounds').select('line_name, shift, round_no, delivery_time, cutoff_time').eq('is_active', true),
     supabaseDR.from('kanban_deliveries').select('line_name, shift, round_no, confirmed_at, received_status').eq('work_date', workDate),
@@ -454,7 +468,7 @@ async function loadStore(ctx) {
     supabaseDR.from('customer_shipping_orders').select('*').in('due_date', [workDate, next]),
   ]);
   return {
-    stk: (stk.data || []).filter(s => !s.line_name || inScope(s.line_name)),
+    stk: (stk.rows || []).filter(s => !s.line_name || inScope(s.line_name)),
     std: std.data || [], rounds: (rounds.data || []).filter(r => inScope(r.line_name)),
     deliv: deliv.data || [], pr: pr.data || [], ord: ordToday.data || [],
   };
@@ -735,7 +749,12 @@ export default function DeptDashboard() {
   const setDept = (k) => { const n = new URLSearchParams(sp); n.set('dept', k); setSp(n); };
   // มุมมอง: 'now' = งานวันนี้ (เดิม) · 'kpi' = 📑 KPI รายเดือน (2026-08-24 · คำสั่ง user — แทนแพ็คกระดาษ
   // Internal Defect/OEE รายเดือนที่ปริ้นเซ็นกัน) — ใช้ param แยกจาก ?dept= ตามกฎแท็บซ้อนแท็บ §6.8
-  const view = sp.get('view') === 'kpi' ? 'kpi' : 'now';
+  /* ⚠️ `?view=andon` ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — เดิมแท็บนั้น mount
+     `<MtnAndonBoard>` ตัวเดียวกับ `/tv` เป๊ะ = ทางเข้า 2 ทางไปบอร์ดใบเดียวกัน
+     **redirect ไม่ใช่ลบทิ้ง** — จอ TV ที่บุ๊กมาร์กลิงก์เดิมไว้ต้องเปิดได้ต่อ (ห้ามพังของที่แขวนอยู่)
+     พา `?team=`/`?sound=` ไปด้วย เพราะเป็นค่าตั้งประจำห้องที่จอนั้นตั้งไว้แล้ว */
+  const rawView = sp.get('view');
+  const view = rawView === 'kpi' ? 'kpi' : 'now';
   const setView = (v) => { const n = new URLSearchParams(sp); if (v === 'now') n.delete('view'); else n.set('view', v); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
@@ -748,6 +767,17 @@ export default function DeptDashboard() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const workDate = getWorkDate();
+
+  /* ลิงก์เก่า `?view=andon` → หน้า `/tv` (จอเฝ้าระวังตัวจริง) — คงค่าประจำห้องไปด้วย
+     ต้องเป็น `replace` ไม่งั้นกดย้อนกลับแล้วเด้งวนกลับมาที่นี่อีก */
+  useEffect(() => {
+    if (rawView !== 'andon') return;
+    const n = new URLSearchParams();
+    n.set('dept', dept === 'store' || dept === 'production' ? dept : 'maintenance');
+    if (sp.get('team')) n.set('team', sp.get('team'));
+    if (sp.get('sound')) n.set('sound', sp.get('sound'));
+    navigate(`/tv?${n}`, { replace: true });
+  }, [rawView, dept, sp, navigate]);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name')
@@ -763,7 +793,9 @@ export default function DeptDashboard() {
 
   const ctx = useMemo(() => ({
     workDate, prevDate: dayAdd(workDate, -1), lines, inScope, navigate, isMobile, role,
-  }), [workDate, lines, inScope, navigate, isMobile, role]);
+    // รายชื่อไลน์ในขอบเขต (null = ไม่จำกัด) — component ที่โหลดข้อมูลเองต้องกรองฝั่ง server ได้ด้วย
+    scopeNames: scopeSet ? [...scopeSet] : null,
+  }), [workDate, lines, inScope, navigate, isMobile, role, scopeSet]);
 
   const load = useCallback(async () => {
     if (!lines.length) return;
@@ -778,41 +810,43 @@ export default function DeptDashboard() {
 
   return (
     <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', paddingRight: 52 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23 }}>📊 Dashboard ส่วนงาน</h2>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
-            วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)
-          </div>
-        </div>
-        <button onClick={load} style={{ padding: '7px 12px', fontSize: 13, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer' }}>🔄 รีเฟรช</button>
-      </div>
-
-      {/* สลับมุมมอง: งานวันนี้ / KPI รายเดือน */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-        {[{ k: 'now', label: '⚡ งานวันนี้' }, { k: 'kpi', label: '📑 KPI รายเดือน' }].map(v => (
-          <button key={v.k} onClick={() => setView(v.k)} style={{
-            fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 8, cursor: 'pointer',
-            background: view === v.k ? 'var(--bg3)' : 'transparent',
-            color: view === v.k ? 'var(--text)' : 'var(--muted)',
-            border: `1px solid ${view === v.k ? 'var(--border2)' : 'transparent'}`,
-          }}>{v.label}</button>
-        ))}
-      </div>
-
-      {/* เลือกส่วนงาน — เฉพาะมุมมองงานวันนี้ (KPI มี section picker ของตัวเองยึด org_nodes) */}
-      {view === 'now' && (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-        {DEPTS.map(t => (
-          <button key={t.key} onClick={() => setDept(t.key)} style={{
-            fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
-            background: dept === t.key ? 'var(--accent)' : 'var(--bg3)',
-            color: dept === t.key ? '#08120a' : 'var(--text)',
-            border: `1px solid ${dept === t.key ? 'var(--accent)' : 'var(--border2)'}`,
-          }}>{t.icon} {t.label}</button>
-        ))}
-      </div>
-      )}
+        {/* ── หัวเพจ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
+           (เดิมหน้านี้วาดหัวเรื่อง + แถบแท็บเองรวม 3 แถว ทรงปุ่มไม่ตรงกับหน้าอื่น
+            ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
+           ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
+        <PageHeader
+          title="Dashboard ส่วนงาน" icon="📊"
+          sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
+          actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
+          tabs={[
+            { key: 'now', label: '⚡ งานวันนี้' },
+            { key: 'kpi', label: '📑 KPI รายเดือน' },
+          ]}
+          tab={view} onTab={setView}
+        >
+          {/* เลือกส่วนงาน = "ตัวกรอง" คนละแกนกับแท็บมุมมอง — ติดป้ายกำกับไว้ไม่ให้อ่านเป็นแท็บชั้นที่ 2
+              (KPI รายเดือนมี section picker ของตัวเองที่ยึด org_nodes จึงไม่ต้องมีแถวนี้) */}
+          {view === 'now' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ส่วนงาน:</span>
+              {DEPTS.map(t => (
+                <button key={t.key} onClick={() => setDept(t.key)} style={{
+                  fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
+                  background: dept === t.key ? 'var(--bg3)' : 'transparent',
+                  color: dept === t.key ? 'var(--text)' : 'var(--muted)',
+                  border: `1px solid ${dept === t.key ? 'var(--border2)' : 'var(--border)'}`,
+                }}>{t.icon} {t.label}</button>
+              ))}
+              {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — เดิมเป็นแท็บ 🚨 จอห้องช่าง
+                  ที่ mount `<MtnAndonBoard>` ตัวเดียวกับ `/tv` เป๊ะ = ทางเข้า 2 ทางไปบอร์ดใบเดียวกัน
+                  หน้านี้เป็น "คิวงานที่กดไปทำ" · `/tv` เป็น "จอแขวน" — คนละงาน คนละหน้า
+                  ปุ่มนี้คงทางเข้าเดิมไว้ให้คนที่ชินกับที่นี่ (ห้ามตัดทางออกของใคร) */}
+              <button onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
+                title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+                style={{ ...tvBtn(false), marginLeft: 'auto' }}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
+            </div>
+          )}
+        </PageHeader>
 
       {view === 'kpi' && (
         <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>

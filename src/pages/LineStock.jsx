@@ -16,6 +16,7 @@ import StorageZonePanel from '../components/StorageZonePanel';
 import LineSelect from '../components/LineSelect';
 import StockMoveToChild from '../components/StockMoveToChild';
 import { visibleInterval } from '../utils/usePolling';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
@@ -113,16 +114,32 @@ function StockTab({ role, scope }) {
   const [rejectReason,setRejectReason]= useState('');
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: stk }, { data: boms }, { data: prods }, { data: ks }, { data: pm }] = await Promise.all([
+    // ⚠️ ทุกตารางในนี้โตเกิน 1000 แถวได้ → ต้อง paginate ทั้งหมด (กฎ CLAUDE.md)
+    //    เดิม paginate แค่ line_stock_summary ตัวเดียว · ตัวที่เจ็บที่สุดคือ `bom_items`
+    //    เพราะมันเป็นที่มาของ "ไลน์ลูกปลายทาง" ใน StockMoveToChild — ตกหล่นเมื่อไหร่
+    //    พาร์ทนั้นจะกลายเป็น "ใช้หลายไลน์ ต้องเลือกเอง" ทั้งที่จริงชี้ไลน์เดียวชัดเจน
+    //    (เสนอผิดแบบเงียบ = คนเลือกปลายทางผิด แล้วหักสต็อกผิดตัว ย้อนยาก)
+    const [{ data: ln }, { rows: stk }, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
-      supabaseDR.from('line_stock_summary').select('*').order('line_name').order('mat_no'),
-      supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
-      supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true).order('line_name').order('name'),
-      supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
-      supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+      // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
+        { orderBy: ['line_name', 'mat_no'] }),
+      fetchAllPages(() => supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
+        { orderBy: 'id' }),
+      fetchAllPages(() => supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true),
+        { orderBy: ['line_name', 'name', 'id'] }),
+      fetchAllPages(() => supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty').eq('is_active', true),
+        { orderBy: 'id' }),
+      fetchAllPages(() => supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+        { orderBy: 'id' }),
     ]);
+    const boms = bomRes.rows, prods = prodRes.rows, ks = ksRes.rows, pm = pmRes.rows;
+    // ⚠️ โหลดไม่ครบ = ต้องบอก ห้ามเงียบ — จอจะดูปกติทุกอย่าง แต่ข้อเสนอปลายทาง/ชื่อพาร์ท/min-max หายไปเฉยๆ
+    const bad = [['สูตร BOM', bomRes], ['สินค้า', prodRes], ['ค่ามาตรฐานคัมบัง', ksRes], ['ทะเบียนพาร์ท', pmRes]]
+      .filter(([, r]) => r.error || r.truncated).map(([n]) => n);
+    if (bad.length) toast.error(`⚠ โหลดไม่ครบ: ${bad.join(' · ')} — ตัวเลข/ข้อเสนอบางส่วนอาจขาด ลองรีเฟรช`);
     setLines(ln || []);
     setStock(stk || []);
     setProducts(prods || []);
@@ -175,16 +192,22 @@ function StockTab({ role, scope }) {
   useEffect(() => { loadPending(); }, [loadPending]);
   useEffect(() => { if (showTxn) loadTxns(); }, [showTxn, loadTxns, lineFilter]);
 
-  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') ทำให้ปลอดภัยจากการกดซ้ำ/สองคน
+  // อนุมัติ/ปฏิเสธ movement ที่ pending — .eq('status','pending') กันเขียนซ้ำ แต่ update ที่ match 0 แถว
+  // "คืนสำเร็จไม่มี error" → ต้องนับแถวจริงเสมอ ไม่งั้นคนที่สองได้ toast อนุมัติทั้งที่อีกคนปฏิเสธไปแล้ว
   const reviewTxn = async (txn, decision, reason) => {
     setReviewing(txn.id);
     const patch = decision === 'approved'
       ? { status:'approved', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: null }
       : { status:'rejected', reviewed_by: fullName, reviewed_at: new Date().toISOString(), reject_reason: (reason || '').trim() || 'ไม่ระบุเหตุผล' };
-    const { error } = await supabaseDR.from('line_stock_transactions')
-      .update(patch).eq('id', txn.id).eq('status', 'pending');
+    const { data: updated, error } = await supabaseDR.from('line_stock_transactions')
+      .update(patch).eq('id', txn.id).eq('status', 'pending').select('id');
     setReviewing(null);
     if (error) { toast.error(error.message); return; }
+    if (!updated || updated.length === 0) {
+      toast.error('รายการนี้ถูกอนุมัติ/ปฏิเสธโดยคนอื่นไปแล้ว — รีเฟรชคิวให้ใหม่');
+      loadPending(); load(); if (showTxn) loadTxns();
+      return;
+    }
     toast.success(decision === 'approved' ? '✅ อนุมัติแล้ว — เข้า stock' : '❌ ปฏิเสธแล้ว');
     setRejectTx(null); setRejectReason('');
     loadPending(); load(); if (showTxn) loadTxns();
@@ -962,11 +985,19 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
+                  {/* ⚠️ ถอด "🔄 ทุกกะ (all)" ออกแล้ว (2026-08-26) — เป็นตัวเลือกที่ล้มเหลวเงียบ:
+                      ตัวจัดสรร demand ใน HeijunkaKanban จับคู่รอบกับกะด้วยคีย์ `${กลุ่มไลน์}|${shift}`
+                      แล้วเทียบกับ `production_sessions.shift` ซึ่งมีแค่ 'day'/'night'
+                      ⇒ รอบที่ตั้ง 'all' ไม่มีวัน match → ขึ้นบนบอร์ดแต่ได้ 0 พาร์ทตลอดกาล
+                      (ตรวจแล้วไม่มีแถวไหนใช้ 'all' เลย — ถอดได้ไม่กระทบใคร)
+                      จะรองรับจริงต้องแก้ `roundWindows`/`roundAlloc` ให้แยกคีย์ตามกะด้วย ไม่ใช่แค่ปล่อยตัวเลือกไว้ */}
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
-                    <option value="all">🔄 ทุกกะ (all)</option>
                   </select>
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                    กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
+                  </div>
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>รอบที่ *</label>
@@ -1145,7 +1176,7 @@ function DeliveryTimeBoardTab() {
     <>
       <InternalTimeBoard
         title={`🕐 บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
-        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 Kanban Board"
+        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง"
         groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
       />
@@ -1197,12 +1228,14 @@ function InflowRulesTab({ canEdit }) {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [{ data: r }, { data: ln }, { data: st }] = await Promise.all([
+    const [{ data: r }, { data: ln }, { rows: st }] = await Promise.all([
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
-      supabaseDR.from('line_stock_summary').select('line_name'),
+      // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ชื่อคลังท้ายลำดับหายจาก dropdown เงียบ (QC flow-audit #30)
+      fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
+        { orderBy: ['line_name', 'mat_no'] }),
     ]);
     setRules(r || []);
     setLines(ln || []);
@@ -1339,10 +1372,10 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
-  { key:'wip',       label:'🔩 WIP ระหว่างขั้น' },
+  { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
-  { key:'timeboard', label:'🕐 บอร์ดเวลา' },
+  { key:'timeboard', label:'🕐 บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
   { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
 ];
 

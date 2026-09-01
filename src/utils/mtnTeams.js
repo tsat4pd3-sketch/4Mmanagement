@@ -108,5 +108,16 @@ export const teamForItem = (it, itemRows = null) => {
   return 'maintenance'
 }
 
+/* ชนิดอุปกรณ์ (machines.equipment_kind) → ทีมที่ "ปกติ" ดูแล — ใช้จัดคิวบนจอห้องช่างเท่านั้น
+   ⚠️ เป็นการ **เดา** ไม่ใช่ข้อเท็จจริง — ตัวตัดสินจริงว่าใครรับผิดชอบคือ `mtn_orders.mtn_dept`
+      (ใบซ่อม) และ `checklists.department` (งานตรวจ) ตามกฎเหล็ก "ชนิดอุปกรณ์ไม่ได้ล็อกว่าใครตรวจ"
+   → จอที่กรองด้วยตัวนี้ **ห้ามซ่อนของที่กรองออกเงียบ** ต้องบอกจำนวนเสมอ */
+export const teamForEquipmentKind = (kind) => {
+  const k = String(kind || '').trim()
+  if (k === 'die') return 'die_maintenance'
+  if (k === 'jig') return 'jig_maintenance'
+  return 'maintenance'   // machine / facility / ไม่ระบุ
+}
+
 /** ทีมทั้งหมดสำหรับทำ dropdown — [{ key, name }] · value = key (เก็บลง DB) · name = ชื่อที่โชว์ */
 export const teamOptions = () => teamRows().map(t => ({ key: t.key, name: t.dept_name || t.label || t.key }))

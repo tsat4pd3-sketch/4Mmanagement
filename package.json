@@ -17,6 +17,7 @@
     "browser-image-compression": "^2.0.2",
     "exceljs": "^4.4.0",
     "framer-motion": "^12.38.0",
+    "heic2any": "^0.0.4",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "jsqr": "^1.4.0",

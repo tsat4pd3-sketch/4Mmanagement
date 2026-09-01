@@ -12,6 +12,8 @@ import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCa
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { fetchAllPages } from '../utils/fetchByIds';
+import { dedupeForecastRows } from '../utils/demandSupply';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -180,8 +182,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         }
         const is862 = ediFiles[0].is862;
         // dedupe: EDI ออกบรรทัดซ้ำ key เดิมได้ — ใช้ตัวหลังสุด ไม่บวกทบ
+        // ⚠️ key ต้องรวม PO — 2 release ต่าง Purchase Order ที่ part/วัน/เวลาเดียวกันเป็นคนละใบจริง
+        //    (เดิมตัวหลังทับ = demand หายเงียบ · QC flow-audit D1) — บรรทัดซ้ำแท้ (ทุกช่องเท่ากัน) ยังถูก dedupe เหมือนเดิม
         const byKey = new Map();
-        ediFiles.forEach(f => f.rows.forEach(r => byKey.set(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`, r)));
+        ediFiles.forEach(f => f.rows.forEach(r => byKey.set(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}|${r.po || ''}`, r)));
         const rows2 = [...byKey.values()];
         if (!rows2.length) { toast.error('ไม่พบรายการที่มีจำนวน > 0 ในไฟล์ EDI'); return; }
         /* map Part Num ลูกค้า → mat_no ภายใน ผ่าน p_no (normalize ตัด ขีด/ช่องว่าง)
@@ -196,7 +200,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               ห้ามเงียบ และห้ามหยุด import (ไม่งั้นงานส่งของหยุดทั้งวัน) */
         const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
         const [{ data: stds }, { data: prods }, { data: shipTos }] = await Promise.all([
-          supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').not('p_no', 'is', null),
+          // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
+          supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
           supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null),
           supabaseDR.from('ship_to_plants').select('code, customer_name'),
         ]);
@@ -216,12 +221,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           const b = baseOfPart(pno);
           if (b) { (baseMap[b] = baseMap[b] || []); if (!baseMap[b].some(e => e.mat_no === mat)) baseMap[b].push({ mat_no: mat, name }); }
         };
-        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
+        // dr_products ก่อน — ตัวเดียวที่รู้ "ลูกค้า" ของ mat (list dedupe ต่อ mat_no: ใครใส่ก่อนชนะ
+        // ถ้า kanban_standards ใส่ก่อน entry จะไม่มี customer แล้วการแยกด้วย ship-to ใช้ไม่ได้)
         (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name, x.customer));
+        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
         // FG (ขึ้นต้น 1) ชนะ child เสมอ — เรียงให้ FG มาก่อนในทุกลิสต์
         Object.values(matMap).forEach(l => l.sort((a, b) => (isFgMat(b.mat_no) ? 1 : 0) - (isFgMat(a.mat_no) ? 1 : 0)));
         const unmatched = new Set();
         const guessed = new Map();     // part → { shipTos:Set, mats:[...] } = แยกลูกค้าไม่ออก ต้องตั้ง ship-to
+        const baseHits = new Map();    // part → mat = จับคู่จาก base part (ตัด revision) — ต้องโชว์ให้คนเห็นก่อนยืนยัน
         const records = rows2.map(r => {
           const cands = matMap[norm(r.part)] || [];
           let hit = null;
@@ -239,7 +247,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           }
           if (!hit) {                                   // fallback: จับ base part เฉพาะที่ชัดตัวเดียว (กำกวม = ไม่เดา)
             const bc = baseMap[baseOfPart(r.part)];
-            if (bc && bc.length === 1) hit = bc[0];
+            if (bc && bc.length === 1) { hit = bc[0]; baseHits.set(r.part, bc[0].mat_no); }
           }
           if (!hit) unmatched.add(r.part);
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
@@ -249,6 +257,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           files: ediFiles.map(f => f.fName),
           records, unmatched: [...unmatched],
           ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats })),
+          baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat })),
           shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
           dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
           dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
@@ -411,8 +420,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
           .in('customer', edi.shipTos).gte('due_date', delFrom).neq('status', 'pending');
         const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        /* ⚠️ ต้องมีขอบบน .lte(dateTo) ด้วย (semantics เดียวกับ path 830) — ไฟล์ horizon สั้น
+           จะลบ pending อนาคตที่เกินช่วงไฟล์ทิ้งถาวรโดยไม่มีอะไร insert คืน (QC flow-audit D1) */
         const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
-          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos).gte('due_date', delFrom);
+          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
+          .gte('due_date', delFrom).lte('due_date', edi.dateTo);
         if (eDel) throw eDel;
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
@@ -450,7 +462,27 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   };
 
   const deleteBatch = async (b) => {
+    /* ⚠️ batch_id เป็น FK on delete cascade — ลบ batch = ลบทุกใบที่ยังถืออยู่
+       ใบ shipped (ข้อเท็จจริงย้อนหลัง + จุดยึด ref_shipment_id ของแถวตัดสต็อก) และใบค้างส่งวันเก่า
+       ห้ามหายไปกับปุ่มลบไฟล์ — กฎเหล็ก "ห้ามลบออเดอร์ที่วันส่งผ่านไปแล้ว" (QC flow-audit D1)
+       → detach ใบประวัติออกจาก batch ก่อน (batch_id = null) แล้วค่อยลบ ให้ cascade โดนเฉพาะ pending อนาคต */
     if (!window.confirm(`ลบชุดข้อมูล "${b.file_name}" (${b.row_count} แถว)? ข้อมูลที่นำเข้าจากไฟล์นี้จะถูกลบทั้งหมด`)) return;
+    if (b.kind === 'orders') {
+      const wd = workDateStr();
+      const { data: hist, error: eH } = await supabaseDR.from('customer_shipping_orders')
+        .select('id, status, due_date').eq('batch_id', b.id)
+        .or(`status.neq.pending,due_date.lt.${wd}`);
+      if (eH) { toast.error(eH.message); return; }
+      if (hist?.length) {
+        const shipped = hist.filter(h => h.status !== 'pending').length;
+        if (!window.confirm(
+          `ไฟล์นี้มีใบที่เป็น "ประวัติ" ${hist.length} ใบ (เริ่ม workflow/ส่งแล้ว ${shipped} · วันส่งผ่านมาแล้ว ${hist.length - shipped})\n` +
+          `ใบพวกนี้จะถูก "เก็บไว้" (ไม่ลบ) — ลบเฉพาะใบ pending ในอนาคตของไฟล์นี้\nยืนยัน?`)) return;
+        const { error: eDet } = await supabaseDR.from('customer_shipping_orders')
+          .update({ batch_id: null }).in('id', hist.map(h => h.id));
+        if (eDet) { toast.error('แยกใบประวัติออกจากไฟล์ไม่สำเร็จ — ยกเลิกการลบ: ' + eDet.message); return; }
+      }
+    }
     const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', b.id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบชุดข้อมูลแล้ว');
@@ -526,6 +558,23 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                     </div>
                   ))}
                   {edi.ambiguous.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
+                </div>
+              )}
+              {/* จับคู่จาก base part (ตัด revision) = การเดาข้าม rev — ถูกเกือบเสมอ แต่เคส EC ออกเลขใหม่
+                  จะพา demand เข้าเลขเก่าเงียบๆ → ต้องโชว์ให้คนกวาดตาก่อนกดยืนยัน (ระบบเสนอ คนตรวจ) */}
+              {edi.baseMatched?.length > 0 && (
+                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
+                    💡 {edi.baseMatched.length} พาร์ท จับคู่จาก base part (เลขตรง rev ไม่มีในระบบ) — ตรวจก่อนยืนยัน
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
+                    ถ้าเป็นพาร์ทเดิมที่ EDI สะกด rev ต่าง = ถูกต้อง · แต่ถ้าเพิ่งออก EC เป็นเลขใหม่
+                    ควรไปตั้ง P/N ของ MAT ใหม่ที่ Product Master ก่อน ไม่งั้น demand จะเข้าเลข rev เก่า
+                  </div>
+                  {edi.baseMatched.slice(0, 6).map(b => (
+                    <div key={b.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>{b.part} → {b.mat}</div>
+                  ))}
+                  {edi.baseMatched.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.baseMatched.length - 6} พาร์ท</div>}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
@@ -624,11 +673,13 @@ function PlannerTab({ refreshKey, custLabel }) {
       const from = months[0];
       const toD = new Date(months[months.length - 1]);
       const to = monthFirst(new Date(toD.getFullYear(), toD.getMonth() + 1, 1));
-      const [{ data: fc }, { data: od }] = await Promise.all([
-        supabaseDR.from('customer_forecasts').select('*').gte('period_month', from).lt('period_month', to),
-        supabaseDR.from('customer_shipping_orders').select('*').gte('due_date', from).lt('due_date', to),
+      // แบ่งหน้า — forecast มี ~1,463 แถวถึง ส.ค. 2027 · ช่วง 12 เดือนทะลุเพดาน 1000 แถวแล้วตัดเงียบ (QC flow-audit D1)
+      const [{ rows: fc }, { rows: od }] = await Promise.all([
+        fetchAllPages(() => supabaseDR.from('customer_forecasts').select('*').gte('period_month', from).lt('period_month', to)),
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('*').gte('due_date', from).lt('due_date', to)),
       ]);
-      setForecasts(fc || []);
+      // dedupe ข้าม source (edi ชนะ manual ต่อ mat×เดือน) — มาตรฐานเดียวกับแท็บ 🎴 (fBySrc เดิม)
+      setForecasts(dedupeForecastRows(fc || []));
       setOrders(od || []);
       const mats = [...new Set([...(fc || []), ...(od || [])].map(x => x.mat_no))];
       if (mats.length) {
@@ -837,8 +888,10 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     //    ทำให้ตัวเลข "CAP จริง" ขยับตามเวลาที่เปิดหน้า · ไฟล์นี้มี dateStr() (local) อยู่แล้ว
     const oeeD = new Date(); oeeD.setDate(oeeD.getDate() - 90);
     const oeeFrom = dateStr(oeeD);
-    const { data: sess } = await supabaseDR.from('production_sessions')
-      .select('line_name, oee, shift_min').eq('status', 'closed').gte('work_date', oeeFrom).not('oee', 'is', null);
+    // แบ่งหน้า — กะปิดแล้ว 90 วันทะลุ 1000 แถวได้ (~130 กะ/สัปดาห์) → OEE บางไลน์ขาดเงียบ
+    // แล้วค่า "CAP จริง ~" ที่ planner คลิกใช้จะเพี้ยน (QC flow-audit D1)
+    const { rows: sess } = await fetchAllPages(() => supabaseDR.from('production_sessions')
+      .select('id, line_name, oee, shift_min').eq('status', 'closed').gte('work_date', oeeFrom).not('oee', 'is', null));
     const byLine = {};
     (sess || []).forEach(s => { if (s.line_name) (byLine[s.line_name] = byLine[s.line_name] || []).push(s); });
     setOeeByLine(Object.fromEntries(Object.entries(byLine)
@@ -852,15 +905,12 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     setPmMap(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
     setDrMap(Object.fromEntries((dr || []).map(r => [r.mat_no, r])));
     // กัน double-count: mat ที่มีทั้ง EDI 830 (รายสัปดาห์) และ manual (รายเดือน) ในเดือนเดียว
-    // → รวมเฉพาะ source เดียว (EDI 830 official ก่อน · ไม่มีค่อยใช้ manual) แทนการบวกทั้ง 2 grain (2026-07-21)
-    const fBySrc = {};
-    (fc || []).forEach(r => {
-      if (!r.mat_no) return;
-      const e = fBySrc[r.mat_no] || (fBySrc[r.mat_no] = { edi: 0, other: 0 });
-      e[r.source === 'edi_830' ? 'edi' : 'other'] += Number(r.qty) || 0;
-    });
+    // → ใช้ helper กลาง dedupeForecastRows (edi ชนะ manual ต่อ mat×เดือน) — สูตรเดียวกับทุกจอ (2026-08-25)
     const fmap = {};
-    Object.entries(fBySrc).forEach(([mat, e]) => { fmap[mat] = e.edi > 0 ? e.edi : e.other; });
+    dedupeForecastRows(fc || []).forEach(r => {
+      if (!r.mat_no) return;
+      fmap[r.mat_no] = (fmap[r.mat_no] || 0) + (Number(r.qty) || 0);
+    });
     setForecast(fmap);
     setEdits({});
     setLoading(false);
@@ -1072,10 +1122,20 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         }
         if (pErr) throw pErr;
         // 2) เขียนผลเข้า kanban_standards (min/max = ชิ้น, total_kanban = ใบ) — ใช้คอลัมน์เดิม ทำงานได้ทั้ง 2 type
+        // ⚠️ ต้อง destructure { error } + นับแถว — supabase-js คืน error ไม่ throw · เดิมไม่เช็คเลย
+        //    = kanban_standards ไม่ติดบางแถวใต้ toast เขียว "อัปเดตแล้ว" (QC flow-audit D1)
         const lotStd = lotPcsOf(calcType, pp);   // ← ชิ้นเสมอ (ดูกฎเหล็กที่ lotPcsOf)
         const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: lotStd, total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
-        if (row.ks && row.ks.mat_no) await supabaseDR.from('kanban_standards').update(patch).eq('mat_no', row.mat);
-        else await supabaseDR.from('kanban_standards').insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
+        if (row.ks && row.ks.mat_no) {
+          const { data: upd, error: kErr } = await supabaseDR.from('kanban_standards')
+            .update(patch).eq('mat_no', row.mat).select('mat_no');
+          if (kErr) throw new Error(`เขียน kanban ของ ${row.mat} ไม่สำเร็จ: ${kErr.message}`);
+          if (!upd || upd.length === 0) throw new Error(`เขียน kanban ของ ${row.mat} ไม่ติด (0 แถว) — ตรวจว่าพาร์ทยังอยู่ในระบบ`);
+        } else {
+          const { error: kErr } = await supabaseDR.from('kanban_standards')
+            .insert({ mat_no: row.mat, part_name: row.name, customer: row.customer, is_active: true, ...patch });
+          if (kErr) throw new Error(`เพิ่ม kanban ของ ${row.mat} ไม่สำเร็จ: ${kErr.message}`);
+        }
       }
       toast.success(`✅ อัปเดต kanban ${changedRows.length} รายการเข้าระบบดึงแล้ว`);
       if (paramWarn) toast.info('หมายเหตุ: param เฉพาะ Production ยังไม่ถูกจำ (ต้อง apply migration 20260716_kanban_production_calc)');

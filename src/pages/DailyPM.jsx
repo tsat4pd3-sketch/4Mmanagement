@@ -11,6 +11,7 @@ import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarch
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
+import { liveChannel } from '../utils/liveChannel';
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -173,7 +174,7 @@ export default function DailyPM() {
   useEffect(() => {
     let timer = null
     const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(), 1500) }
-    const ch = supabaseDR.channel('daily-pm')
+    const ch = liveChannel(supabaseDR, 'daily-pm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)
@@ -369,7 +370,7 @@ export default function DailyPM() {
                   {(row.missing.length > 0 || row.ng.length > 0) && (
                     // ต้องพาไปแท็บ "ฝ่ายผลิต" ตรงๆ (?dept=production) — หน้า pm-check เปิดค่าเริ่มต้นเป็นแท็บซ่อมบำรุง
                     // ถ้าพนักงานบันทึกผลผิดแท็บ ระบบ Daily PM จะไม่นับให้
-                    <Link to={`/pm-check?dept=production&line=${encodeURIComponent(row.line_name)}`} style={{
+                    <Link to={`/pm?tab=check&dept=production&line=${encodeURIComponent(row.line_name)}`} style={{
                       display: 'inline-block', marginTop: 10, fontSize: 12, fontWeight: 700, textDecoration: 'none',
                       padding: '6px 12px', borderRadius: 8, background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}55`,
                     }}>
@@ -390,9 +391,9 @@ export default function DailyPM() {
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>📖 วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
               {[
-                { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
+                { n: '1', title: 'เพิ่มเครื่อง + หัวข้อตรวจ', desc: <>ที่หน้า <Link to="/pm?tab=setup&dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link> (กด "+ เพิ่มอุปกรณ์" แล้วใส่ชื่อ/ไลน์/หัวข้อที่ต้องตรวจ)</> },
                 { n: '2', title: 'ลงทะเบียนที่แท็บนี้', desc: 'ติ๊กเครื่องที่ "ต้องตรวจทุกต้นกะ" ของแต่ละไลน์ — ตัวเลข N ของไลน์มาจากตรงนี้' },
-                { n: '3', title: 'พนักงานตรวจต้นกะ', desc: <>ที่หน้า <Link to="/pm-check?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตรวจสอบอุปกรณ์ → แท็บ ฝ่ายผลิต</Link> เลือกเครื่อง ติ๊กผ่าน/NG แล้วบันทึก</> },
+                { n: '3', title: 'พนักงานตรวจต้นกะ', desc: <>ที่หน้า <Link to="/pm?tab=check&dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตรวจสอบอุปกรณ์ → แท็บ ฝ่ายผลิต</Link> เลือกเครื่อง ติ๊กผ่าน/NG แล้วบันทึก</> },
                 { n: '4', title: 'ระบบเฝ้าเอง', desc: 'เปิดใบผลิตใบแรกของไลน์ → เริ่มนับ 60 นาที · ครบ+ผ่าน = 🟢 แจ้ง Telegram · พบ NG = 🔴 · เกินเวลายังไม่ครบ = 🟠' },
               ].map(s => (
                 <div key={s.n} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -408,7 +409,7 @@ export default function DailyPM() {
           {!canManage && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--accent2)' }}>* ดูได้อย่างเดียว — เฉพาะ admin/manager/supervisor แก้ไขได้</div>}
           {Object.keys(jigsByLine).length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
-              ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
+              ยังไม่มีอุปกรณ์ในระบบ — เพิ่มได้ที่หน้า <Link to="/pm?tab=setup&dept=production" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งค่า PM → แท็บ ฝ่ายผลิต</Link>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: 'calc(100vh - 300px)', overflowY: 'auto', paddingRight: 4 }}>
@@ -425,7 +426,7 @@ export default function DailyPM() {
                     {noLine && (
                       <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
                         อุปกรณ์กลุ่มนี้ยังไม่ถูกระบุว่าอยู่ไลน์ไหน — ระบบจับคู่กับใบผลิตใบแรกของไลน์เพื่อเริ่มนับเวลาไม่ได้ (สถานะจะค้าง "ยังไม่เริ่มผลิต" ตลอด)
-                        {' '}<b>เลือกไลน์ในการ์ดด้านล่างได้เลย</b> อุปกรณ์จะย้ายเข้ากลุ่มไลน์นั้นแล้วติ๊กลงทะเบียนต่อได้ทันที (หรือแก้ที่หน้า <Link to="/pm-setup?dept=production" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM → ฝ่ายผลิต</Link> ก็ได้)
+                        {' '}<b>เลือกไลน์ในการ์ดด้านล่างได้เลย</b> อุปกรณ์จะย้ายเข้ากลุ่มไลน์นั้นแล้วติ๊กลงทะเบียนต่อได้ทันที (หรือแก้ที่หน้า <Link to="/pm?tab=setup&dept=production" style={{ color: '#f59e0b', fontWeight: 700 }}>ตั้งค่า PM → ฝ่ายผลิต</Link> ก็ได้)
                       </div>
                     )}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 8 }}>

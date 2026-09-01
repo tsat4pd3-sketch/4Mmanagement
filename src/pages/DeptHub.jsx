@@ -163,15 +163,17 @@ const DEPT_CSS = `
    ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
    ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
 const CARD_META = {
-  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/dashboard',    label: 'Overview & Control',      desc: 'จอภาพรวมโรงงาน · ผังรวม · Dashboard ส่วนงาน · สายธารความต้องการ' },
+  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/dept-dashboard', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
+  // 📺 จอที่ "แขวนทิ้งไว้" — แยกจากภาพรวมเพราะไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28)
+  'จอแสดงผล':              { code: 'TVB·02', color: '#38bdf8', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · จอเฝ้าระวังแขวนห้อง · OEE รายไลน์' },
   'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#22c55e', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
   'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
   'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
-  'Logistic - Store':         { code: 'LOG·05', color: '#f59e0b', route: '/line-stock',   label: 'Logistic & Store',        desc: 'สต๊อกในไลน์ · Kanban · Rack Center · Delivery · ขนส่ง' },
-  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·06', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ตรวจ/แผน PM · ผังเครื่องจักร · พลังงาน' },
-  'ควบคุมคุณภาพ QA/QC':       { code: 'QUA·07', color: '#4d9fff', route: '/qa',           label: 'Quality QA/QC',           desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15' },
-  'วิศวกรรม (PE)':            { code: 'ENG·08', color: '#f472b6', route: '/pe-docs',      label: 'Process Engineering',     desc: 'Process Flow · PFMEA · Control Plan' },
+  'Logistic - Store':         { code: 'LOG·05', color: '#f59e0b', route: '/line-stock',   label: 'Logistic & Store',        desc: 'สต๊อกในไลน์ · บอร์ดคัมบัง · ภาชนะ & Packaging · จัดส่งลูกค้า · ขนส่ง' },
+  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·06', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
+  'คุณภาพ & วิศวกรรม':        { code: 'QUA·07', color: '#4d9fff', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·09', color: '#34d399', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
+  'ผู้บริหาร & เดโม':         { code: 'EXE·09', color: '#a78bfa', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
 };
 
 const DEPTS = NAV_GROUP_ORDER.map((group, i) => {

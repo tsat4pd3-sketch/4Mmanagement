@@ -11,6 +11,7 @@
  * ตาราง: qa_parts, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
@@ -417,6 +418,10 @@ export default function QAInspectionSetup() {
 
   /* ── Drawings (หลายแผ่น/มุมมองต่อ part) ── */
   const uploadFile = async (file) => {
+    // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อนเช็คชนิด (Android ส่ง type ว่างมา จะไม่ผ่าน regex ด้านล่าง)
+    // PDF ไม่เข้าเงื่อนไข HEIC จึงผ่านตัวนี้ไปตรงๆ ตามเดิม
+    try { file = await toDecodableImage(file); }
+    catch (e) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); return null; }
     if (!/^image\/|application\/pdf$/.test(file.type)) { toast.error('รองรับเฉพาะไฟล์รูปภาพหรือ PDF'); return null; }
     if (file.size > 20 * 1024 * 1024) { toast.error('ไฟล์ใหญ่เกิน 20MB'); return null; }
     // รูปภาพบีบก่อนอัปโหลด (สเปคเดียวกับผัง 2560px/2.5MB/q0.9 — drawing ต้องซูมอ่าน dimension ได้)

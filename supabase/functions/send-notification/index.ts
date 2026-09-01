@@ -129,7 +129,9 @@ async function sendTelegramPhoto(photoUrl: string, caption: string, chatId?: str
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, photo: photoUrl, caption, parse_mode: 'HTML' }),
-    }).catch(() => {}),
+      // รูปเป็นของแนบ best-effort (ข้อความหลักส่งแยกไปแล้ว) — พลาดได้ แต่ห้ามเงียบสนิท
+    }).then((r) => { if (!r.ok) console.error('[sendPhoto] HTTP', r.status, photoUrl); },
+            (e) => console.error('[sendPhoto]', String(e), photoUrl)),
   ));
 }
 
@@ -148,7 +150,9 @@ async function sendTelegramMediaGroup(photos: { url: string; caption: string }[]
           ...(i === 0 ? { caption: p.caption, parse_mode: 'HTML' } : {}),
         })),
       }),
-    }).catch(() => {}),
+      // เช่นเดียวกับ sendPhoto — พลาดได้ แต่ต้องเห็นใน edge log
+    }).then((r) => { if (!r.ok) console.error('[sendMediaGroup] HTTP', r.status); },
+            (e) => console.error('[sendMediaGroup]', String(e))),
   ));
 }
 

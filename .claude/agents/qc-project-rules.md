@@ -55,6 +55,13 @@ model: inherit
   แล้วเครื่องค้างในแท็บนั้นถาวร — เคยเกิด 24 แถว) ต้องใช้ `findChecklist(...)` ตอนอ่าน
   (CLAUDE.md "กฎเหล็ก — checklist เกิดตอนบันทึกเท่านั้น")
   · grep: `getOrCreateChecklist` ใน `src/` แล้วดูว่าอยู่ใน handler บันทึกจริงหรือ effect ตอนเปิดดู
+- **B6** subscribe realtime (`postgres_changes`) ต้องผ่าน **`liveChannel(client, 'ชื่อ')`**
+  ห้ามเรียก `client.channel('ชื่อคงที่')` ตรงๆ — `channel()` dedupe ตาม topic + `removeChannel()` เป็น async
+  (teardown หลัง server ack) → effect รอบใหม่ได้ channel เก่าที่ยังไม่ถูกถอด แล้ว `.on()` push binding ทบไปเรื่อยๆ
+  → หน่วงขึ้นทุกครั้งที่ effect re-run จนค้าง (เจอจริง 2026-08-26 หน้า Management)
+  (CLAUDE.md "กฎเหล็ก — subscribe realtime ต้องผ่าน liveChannel")
+  · grep: `\.channel\(` ใน `src/` — ทุกตัวที่ไม่ผ่าน `liveChannel` = ผิด
+  · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
 
 ### หมวด C — Permissions (data-driven)
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
@@ -76,7 +83,7 @@ model: inherit
   (ข) migration ที่ seed `permission_catalog` ต้องใช้ `group_name` เป็นชื่อหมวดใน
   `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด (ภาพรวม 1xx · ฝ่ายผลิต 2xx ·
   วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic - Store 5xx · การตรวจสอบและซ่อมบำรุง 6xx ·
-  ควบคุมคุณภาพ QA/QC 7xx · วิศวกรรม (PE) 8xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 9xx — ห้ามซ้ำเลขเดิม)
+  คุณภาพ & วิศวกรรม 7xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 9xx · ผู้บริหาร & เดโม — ห้ามซ้ำเลขเดิม)
   พิมพ์ชื่อหมวดเองเมื่อไหร่ = หมวดกำพร้าโผล่กลางตาราง (เคยเกิด: 'ซ่อมบำรุง'/'ประชุมแถวเช้า')
   · grep: `group_name` ใน supabase/migrations/ เทียบกับ NAV_GROUP_ORDER
 - **C7** หน้า Home ต้องเข้าถึงได้ทุกหมวด (2026-08-24) — `DEPTS` ใน `src/pages/DeptHub.jsx`
@@ -84,6 +91,15 @@ model: inherit
   (เคยเกิด: เพิ่มหมวด 'วิศวกรรม (PE)' แล้วไม่มีใครเพิ่มการ์ด → `/pe-docs` เข้าจากหน้า Home ไม่ได้เลย
   โดยไม่มีอะไรฟ้อง) · key ของ `CARD_META` ต้องเป็นชื่อหมวดใน NAV_GROUP_ORDER เท่านั้น
   · เทสล็อกไว้แล้ว: `node --test 'src/utils/__tests__/*.test.mjs'` (homeCoverage)
+- **C8** ชื่อเมนู/แท็บ ต้องบอก "เข้าไปทำอะไร" และห้ามชนกัน (nav audit 2026-08-27) —
+  (ก) เพิ่ม/ยุบหมวดต้องแก้ครบ 4 ที่: NAV_ITEMS · NAV_GROUP_ORDER · NAV_GROUP_META ·
+  PAGE_GROUPS · (+ migration ถ้า permission_catalog มีแถวในหมวดนั้น) ·
+  (ข) หมวดที่มีเมนูเดียวห้ามตั้งเป็นหมวดของตัวเอง (กินที่บน rail เท่าหมวดใหญ่) ·
+  (ค) label เมนูเปลี่ยน = หัวเรื่อง `<h1>/<h2>` ของหน้านั้นต้องเปลี่ยนตาม ·
+  (ง) แท็บที่กดแล้วทำงานต่อไม่ได้ (กระจกอ่านอย่างเดียว) ต้องมีคำว่า "ดูอย่างเดียว" ในชื่อแท็บ ·
+  (จ) แท็บคนละเรื่องห้ามตั้งชื่อชนกันข้ามหน้า (เคยเกิด: 'WIP ระหว่างขั้น' vs 'WIP Point') ·
+  (ฉ) เมนูใหม่ในหมวด 'ตั้งค่าโปรแกรม,ฐานข้อมูล' ต้องใส่ field `sub` (ฐานข้อมูลหลัก/ตั้งค่าระบบ)
+  · grep: `label:` ใน NAV_ITEMS เทียบกับ `<h1>`/`<h2>` ของหน้านั้น
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext
@@ -104,6 +120,11 @@ model: inherit
   ทำแล้ว: operator, LineSetup (ห้ามลบผังยืมจากไลน์แม่), ProductMaster (guard รูปแชร์), QAInspectionSetup,
   PMSetup, SignatureModal — จุดอัปโหลดใหม่ที่ไม่ลบของเก่า = ไฟล์กำพร้าสะสม
 - **E3** GIF cap ≤ 2MB ต้องยังอยู่**ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) — ห้ามมีใครถอดออก
+- **E4** ทุกจุดที่รับไฟล์รูปจากผู้ใช้ต้องผ่าน **`toDecodableImage()`** (`src/utils/heicToJpeg.js`) ก่อน decode/บีบ
+  — กล้องมือถือถ่ายเป็น HEIC/HEIF ซึ่ง Chrome อ่านไม่ได้ · grep: `imageCompression(` / `new Image()` / `createImageBitmap(`
+  ที่รับไฟล์จาก `<input type="file">` แล้ว**ไม่มี `toDecodableImage` นำหน้า** = ผิด · ห้ามเขียนตัวเช็ค/แปลง HEIC เองซ้ำ
+  · `heic2any` ต้อง **dynamic import เท่านั้น** (static = bundle หลักบวม 1.35MB) · ข้อความ error เรื่อง decode
+  ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **F1** marker บนผังไลน์ = วงกลม+ป้ายใต้เท่านั้น (ห้ามกล่องเหลี่ยม) · สูตร MK สเกลตาม
