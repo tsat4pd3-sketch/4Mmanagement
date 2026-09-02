@@ -22,6 +22,7 @@ import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
 import QualityBinLinkModal from '../components/QualityBinLinkModal';
 import StoreLotQueue from '../components/StoreLotQueue';
+import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
@@ -2803,6 +2804,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 2 แผงนี้เป็นคนละทิศของลูปเดียวกัน — ไลน์ไหนไม่เกี่ยวจะไม่ render อะไรเลย */}
             <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
             <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
+
+            {/* 📦 WIP ที่ไลน์ — สโตร์ส่งมาเท่าไหร่ · ตัดเป็น FG เท่าไหร่ · ค้างเท่าไหร่ (user 2026-09-01)
+                ⚠️ ค้าง = "คำนวณ" (รับเข้า − ผลิต×BOM) ไม่ใช่ qty_on_hand ในระบบ
+                   backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
+                ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
+            <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
 
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>

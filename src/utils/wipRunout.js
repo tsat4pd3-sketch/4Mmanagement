@@ -24,6 +24,25 @@
    • พาร์ทไม่มีแถวสต็อกที่ไลน์  → `unknown` **ห้ามตีเป็น 0 แล้วบอกว่าขาดแล้ว**
    • FG ไม่ได้ตั้ง CT           → คำนวณเวลาไม่ได้ → `no_ct` **ห้ามเดา CT**
    • ไลน์ไม่มีใบเปิด            → ไม่มีการกิน → `idle` (ไม่ใช่ "ของพอ")
+
+   ── 📥 โหมด `assumeZeroWip` — "ยังไม่ตั้งจุด WIP ก็ให้เห็น workflow ไปก่อน" ────
+   ที่มา (user 2026-09-01): "ทางสโตร์ไม่เห็นความต้องการจากฝ่ายผลิตเลย ถ้ายังไม่ตั้งจุด WIP
+   ถ้าจะให้เห็นการจำลอง workflow เรามอง WIP=0 ไปก่อนได้มั้ย เพราะยังไง BOM ของ FG
+   ก็มีครบแตกหาพาร์ทย่อยหมดแล้ว"  — ถูกต้อง: **ความต้องการ (need) จาก BOM แม่นอยู่แล้ว
+   ที่ไม่รู้คือ "หักได้เท่าไหร่"** ⇒ WIP=0 = ยอด gross ซึ่งเป็นความจริงที่ยังไม่หัก
+   ไม่ใช่การเดา (สภาพจริง 31/08: LINE APRON ASSY 31 พาร์ท เช็คสโตร์ได้ 2 · อีก 29 ไม่มีแถว
+   → จอโล่งจนสโตร์อ่านไม่ออกว่าผลิตต้องใช้อะไร)
+
+   🔴 กฎเหล็กของโหมดนี้ — **`assumed` เป็นสถานะของตัวเอง ห้ามยุบเข้า `out`**
+   `out` = ยืนยันแล้วว่าของหมด (มีแถวสต็อกและยอดเป็น 0) · `assumed` = ยังไม่รู้ว่ามีเท่าไหร่
+   ยุบรวมเมื่อไหร่ = จอยืนยันสิ่งที่ไม่จริง แล้วสโตร์วิ่งส่งของที่อาจมีอยู่ที่ไลน์แล้ว
+   (กฎเดิม "ไม่รู้ ≠ ไม่มี" ยังอยู่ครบ — เปลี่ยนแค่ "ไม่รู้แล้วเงียบ" เป็น "ไม่รู้แล้วบอกกำหนดส่ง")
+
+   ⭐ ทำไม WIP=0 ยัง "จัดลำดับ" ได้ (จุดที่ไม่ชัดถ้าไม่อ่านโค้ด):
+   `left <= 0` → `runoutMs = cursor` ซึ่ง cursor คือ **เวลาที่ใบแรกที่ต้องใช้พาร์ทนั้นเริ่มทำ**
+   ไม่ใช่ "ตอนนี้" ทั้งหมด ⇒ พาร์ทที่ไลน์จะหยิบใช้ตอนบ่ายยังอยู่หลังพาร์ทที่ใช้ตอนเช้า
+   **ลำดับส่งของยังถูกต้อง** แค่ตัวเลขเป็น gross (ยังไม่หักของที่อาจมีอยู่ที่ไลน์)
+   ⇒ จอต้องเขียนกำกับว่า "ยังไม่หัก WIP ที่ไลน์" ทุกที่ที่แสดงยอดนี้ **ห้ามถอด**
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /** ยอดที่ผลิตไปแล้วของใบหนึ่ง — สูตรบังคับของโปรเจค ห้ามเขียนเอง */
@@ -44,6 +63,9 @@ export const RUNOUT_REASON = {
   unknown: { key: 'unknown', icon: '❔', label: 'ยังเช็คไม่ได้',   tone: 'muted' },
   no_ct:   { key: 'no_ct',   icon: '⚠️', label: 'ยังไม่ตั้ง CT',   tone: 'warn'  },
   idle:    { key: 'idle',    icon: '⏸️', label: 'ไลน์ยังไม่เดิน',  tone: 'muted' },
+  // 📥 โหมดมอง WIP=0 — "ไลน์ต้องใช้ตอนนี้ แต่ยังไม่รู้ว่ามีอยู่ที่ไลน์เท่าไหร่"
+  // ⚠️ คนละความหมายกับ out (ยืนยันแล้วว่าหมด) ห้ามยุบรวม — ดูกฎหัวไฟล์
+  assumed: { key: 'assumed', icon: '📥', label: 'ต้องส่งก่อนเวลานี้', tone: 'warn' },
 };
 
 /**
@@ -54,12 +76,14 @@ export const RUNOUT_REASON = {
  * @param {Function} a.wipOf    (childMat) => number | null   (null = ไม่มีแถวสต็อก = ไม่รู้)
  * @param {Function} a.ctOf     (fgMat) => วินาที/ชิ้น (0 = ไม่รู้)
  * @param {number}   a.nowMs
+ * @param {boolean}  a.assumeZeroWip  พาร์ทที่ไม่มีแถวสต็อก → มองเป็น 0 (gross) แทน `unknown`
+ *                                    ดูกฎหัวไฟล์ · ผลลัพธ์ติดธง `assumed` เสมอ
  * @returns {{ parts: Array, firstRunoutMs: number|null, horizonMs: number|null,
- *             noCtMats: string[], counts: object }}
+ *             noCtMats: string[], counts: object, assumedCount: number }}
  */
-export function forecastRunout({ orders = [], bomOf, wipOf, ctOf, nowMs = Date.now() }) {
-  const acc = {};   // childMat → { consumedDone, need, wipLedger }
-  const touch = (mat) => (acc[mat] = acc[mat] || { consumedDone: 0, need: 0, wipLedger: undefined });
+export function forecastRunout({ orders = [], bomOf, wipOf, ctOf, nowMs = Date.now(), assumeZeroWip = false }) {
+  const acc = {};   // childMat → { consumedDone, need, wipLedger, assumed }
+  const touch = (mat) => (acc[mat] = acc[mat] || { consumedDone: 0, need: 0, wipLedger: undefined, assumed: false });
 
   // ── 1) หักของที่ผลิตไปแล้ววันนี้ออกจาก WIP (backflush แบบคำนวณ) ──
   orders.forEach(o => {
@@ -94,9 +118,15 @@ export function forecastRunout({ orders = [], bomOf, wipOf, ctOf, nowMs = Date.n
   };
 
   // WIP ที่ใช้ได้จริงตอนนี้ = ledger − ที่ผลิตไปแล้ว (ไม่ต่ำกว่า 0) · null = ไม่รู้
+  // โหมด assumeZeroWip: ไม่มีแถวสต็อก → มองเป็น 0 แล้ว **ติดธง assumed ไว้เสมอ**
+  // (ธงนี้คือสิ่งที่ทำให้จอแยก "ยังไม่รู้" ออกจาก "ยืนยันแล้วว่าหมด" ได้ — ห้ามถอด)
   const wipNowOf = (mat) => {
     const led = wipOfCached(mat);
-    if (led === null) return null;
+    if (led === null) {
+      if (!assumeZeroWip) return null;
+      touch(mat).assumed = true;
+      return 0;
+    }
     return Math.max(0, led - (acc[mat]?.consumedDone || 0));
   };
 
@@ -136,16 +166,19 @@ export function forecastRunout({ orders = [], bomOf, wipOf, ctOf, nowMs = Date.n
       const wipNow = wipNowOf(mat);
       let reason;
       if (wipNow === null) reason = 'unknown';
-      else if (runoutMs[mat] != null) reason = runoutMs[mat] <= nowMs ? 'out' : 'soon';
+      // ⚠️ พาร์ทที่ถูกสมมติ WIP=0 ต้องเป็น `assumed` ห้ามตกไปเป็น out/soon
+      //    (out = ยืนยันแล้วว่าหมด · assumed = ยังไม่รู้ว่ามีเท่าไหร่ — คนละคำตอบ)
+      else if (runoutMs[mat] != null) reason = v.assumed ? 'assumed' : (runoutMs[mat] <= nowMs ? 'out' : 'soon');
       else if (!open.length) reason = 'idle';
       else if (cutShort) reason = 'no_ct';
       else reason = 'enough';
       return {
         mat_no: mat,
         need: v.need,
-        wipLedger: v.wipLedger,
+        wipLedger: v.wipLedger,     // null = ไม่มีแถวสต็อกที่ไลน์ (คงความจริงไว้เสมอ)
         consumedDone: v.consumedDone,
         wipNow,
+        assumed: !!v.assumed,       // true = ตัวเลขนี้ยังไม่หัก WIP ที่ไลน์ (gross)
         runoutMs: runoutMs[mat] ?? null,
         reason,
       };
@@ -156,7 +189,7 @@ export function forecastRunout({ orders = [], bomOf, wipOf, ctOf, nowMs = Date.n
       return b.need - a.need;
     });
 
-  const counts = { out: 0, soon: 0, enough: 0, unknown: 0, no_ct: 0, idle: 0 };
+  const counts = { out: 0, soon: 0, enough: 0, unknown: 0, no_ct: 0, idle: 0, assumed: 0 };
   parts.forEach(p => { counts[p.reason] = (counts[p.reason] || 0) + 1; });
 
   const timed = parts.filter(p => p.runoutMs != null);
@@ -166,12 +199,19 @@ export function forecastRunout({ orders = [], bomOf, wipOf, ctOf, nowMs = Date.n
     horizonMs,
     noCtMats: [...noCtMats],
     counts,
+    // จำนวนพาร์ทที่ตัวเลขยังไม่หัก WIP ที่ไลน์ — จอต้องเอาไปบอกผู้ใช้ ห้ามกลืน
+    assumedCount: parts.filter(p => p.assumed).length,
   };
 }
 
-/** เรียงกลุ่มไลน์: ใครจะขาดก่อน ไปก่อน · ไม่มีเวลา (ไม่รู้/พอ) ไปท้าย */
+/** เรียงกลุ่มไลน์: ใครจะขาดก่อน ไปก่อน · ไม่มีเวลา (ไม่รู้/พอ) ไปท้าย
+ *  ⚠️ ชั้นที่ 3 จำเป็นสำหรับโหมด assumeZeroWip — ทุกกลุ่มได้ firstRunoutMs เท่ากัน (= ตอนนี้)
+ *     และ unknown เป็น 0 หมด ⇒ ถ้าไม่มีชั้นนี้ ลำดับจะกลายเป็นสุ่มตามลำดับ object */
 export function byUrgency(a, b) {
   const A = a.firstRunoutMs ?? Infinity, B = b.firstRunoutMs ?? Infinity;
   if (A !== B) return A - B;
-  return (b.counts?.unknown || 0) - (a.counts?.unknown || 0);
+  const un = (b.counts?.unknown || 0) - (a.counts?.unknown || 0);
+  if (un) return un;
+  const urgent = (x) => (x?.counts?.out || 0) + (x?.counts?.assumed || 0) + (x?.counts?.soon || 0);
+  return urgent(b) - urgent(a);
 }

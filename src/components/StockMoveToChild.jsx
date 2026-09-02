@@ -18,6 +18,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useState, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { checkIssueFlow } from '../utils/bomTree';
 import { toast } from './Toast';
 
 const th = { padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
@@ -55,15 +56,26 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     return m;
   }, [products, productBom, childrenOf]);
 
+  const typeOf = useMemo(() => {
+    const m = {}; (lines || []).forEach(l => { m[l.name] = l.line_type || null; });
+    return m;
+  }, [lines]);
+
   const rows = useMemo(() => (stock || [])
     .filter(s => childrenOf[s.line_name] && Math.abs(parseFloat(s.qty_on_hand) || 0) > 0)
     .map(s => {
       const all = [...(suggestFor[s.mat_no] || [])];
       // เสนอเฉพาะไลน์ลูกของไลน์แม่ตัวนี้ — ของไลน์แม่อื่นไม่เกี่ยว
       const opts = all.filter(n => childrenOf[s.line_name].includes(n));
-      return { ...s, qty: parseFloat(s.qty_on_hand) || 0, opts: opts.length ? opts : childrenOf[s.line_name] , sure: opts.length === 1 };
+      const list = opts.length ? opts : childrenOf[s.line_name];
+      /* 🔴 pattern การไหล (user 2026-09-02): 5xx coil → ไลน์ปั๊ม → 2xx → ไลน์ประกอบ → FG
+         เสนอย้าย coil เข้าไลน์ประกอบ = ผิด pattern (user จับได้จากจอจริง)
+         ต้นเหตุคือ BOM ถูกแบน — 71 แถวมี 5xx อยู่ใต้ FG 1xx โดยตรง ระบบเลยเชื่อว่าไลน์ประกอบใช้ coil
+         ⚠️ เตือนอย่างเดียว ห้ามตัดตัวเลือกทิ้ง (บางไลน์ปั๊ม+ประกอบรวมกันจริง) */
+      const flowWarn = list.map(n => checkIssueFlow(s.mat_no, typeOf[n])).find(Boolean) || null;
+      return { ...s, qty: parseFloat(s.qty_on_hand) || 0, opts: list, sure: opts.length === 1, flowWarn };
     })
-    .sort((a, b) => (b.sure - a.sure) || (b.qty - a.qty)), [stock, childrenOf, suggestFor]);
+    .sort((a, b) => (b.sure - a.sure) || (b.qty - a.qty)), [stock, childrenOf, suggestFor, typeOf]);
 
   if (!rows.length) return null;
   const sureCount = rows.filter(r => r.sure).length;
@@ -74,6 +86,10 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     if (!to) { toast.error('เลือกไลน์ลูกปลายทางก่อน'); return; }
     if (!(qty > 0)) { toast.error('จำนวนต้องมากกว่า 0'); return; }
     if (qty > r.qty && !window.confirm(`ย้าย ${qty.toLocaleString()} ชิ้น มากกว่าคงเหลือ ${r.qty.toLocaleString()} — ยอดที่ ${r.line_name} จะติดลบ\nยืนยัน?`)) return;
+    /* 🔴 ปลายทางที่เลือกจริงผิด pattern การไหล = ถามยืนยันอีกชั้น (เตือนดัง ไม่บล็อก)
+       เคสจริง: จอเสนอย้าย coil 5xx เข้าไลน์ประกอบ เพราะ BOM ถูกแบน (71 แถว 5xx ใต้ FG) */
+    const fw = checkIssueFlow(r.mat_no, typeOf[to]);
+    if (fw && !window.confirm(`🔴 ผิด pattern การไหลของวัสดุ\n\n${fw.text}\n\n${r.mat_no} → ${to}\n\nยืนยันว่าถูกต้องจริง?`)) return;
     if (!window.confirm(`ย้าย ${r.mat_no} จำนวน ${qty.toLocaleString()} ชิ้น\n${r.line_name} → ${to} ?`)) return;
 
     setBusy(r.mat_no);
@@ -134,6 +150,12 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                           {r.opts.map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                         {!r.sure && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>⚠ ใช้หลายไลน์ — เลือกเอง</div>}
+                        {/* 🔴 ผิด pattern การไหลของวัสดุ — เตือน ไม่บล็อก (ดู bomTree.checkIssueFlow) */}
+                        {r.flowWarn && (
+                          <div style={{ fontSize: 10, color: '#ef4444', marginTop: 2, fontWeight: 700, maxWidth: 200, whiteSpace: 'normal', lineHeight: 1.4 }}>
+                            🔴 {r.flowWarn.text}
+                          </div>
+                        )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
                         <input type="number" disabled={!canIssue} style={{ ...inp, width: 90, textAlign: 'right' }}

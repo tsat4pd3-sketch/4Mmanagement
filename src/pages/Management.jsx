@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { wipPointCat } from '../utils/wipMatOptions';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
@@ -3261,7 +3262,9 @@ function PointDetailCard({ detail, alarms, onClose }) {
               ) : (
                 <>
                   <span style={chipSt(isPackaging ? '#4d9fff' : '#f59e0b')}>{isPackaging ? '📦 Packaging' : '🧱 Material'}</span>
-                  {!isPackaging && point.material_category && <span style={chipSt('#a78bfa')}>{point.material_category}</span>}
+                  {/* ⚠️ ห้ามโชว์เลขดิบ ('9'/'op' อ่านไม่รู้เรื่อง) — ผ่าน wipCatLabel เหมือนหน้าตั้งค่า */}
+                  {!isPackaging && wipPointCat(point.material_category, point.mat_no).text
+                    && <span style={chipSt('#a78bfa')}>{wipPointCat(point.material_category, point.mat_no).text}</span>}
                   <span style={chipSt(isLow ? '#ef4444' : '#22c55e')}>
                     {isLow ? '⚠ ' : ''}{point.current_qty ?? 0} / min {point.min_qty ?? 0} – max {point.max_qty ?? 0}
                   </span>

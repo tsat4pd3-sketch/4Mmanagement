@@ -65,18 +65,35 @@ export default function LineOeeBoard() {
     (async () => {
       // tolerant: flow_mode/parallel_stations อาจยังไม่ apply ในบาง env → ถอย select ชุดพื้นฐาน
       let { data: d, error } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, flow_mode, parallel_stations').order('name');
-      if (error) ({ data: d } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'));
+        .select('id, name, section, parent_line_name, is_active, flow_mode, parallel_stations').order('name');
+      if (error) ({ data: d } = await supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'));
       setLines(d || []);
+    })();
+  }, []);
+  /* ⚠️ 2026-08-25 บั๊กที่ user จับได้: dropdown ดึงทุกแถวจาก production_lines ตรงๆ ไม่กรองอะไรเลย
+     → "Office PD4" / "Rework - PD1" / "test" (is_active=false) โผล่ปนกับไลน์ผลิตจริง เพราะไม่ได้
+     เช็ค is_active และไม่มีทางรู้ว่าแถวไหน "ไม่เคยผลิตอะไรเลย" — ตรวจ DB จริงแล้ว 3 แถวนี้ไม่มี
+     production_sessions สักแถวเดียวตลอดกาล (ต่างจาก GOR/HYDROFORM ที่มีประวัติจริงแค่ไม่ได้เดินเมื่อเร็วๆ นี้)
+     → เพิ่ม (1) is_active (2) "ทั้งครอบครัวไลน์เคยมีกะจริงไหม" — หลักเดียวกับ TEEP ที่ไม่นับไลน์ที่ไม่เคยเปิดกะ
+     cache 4 ชม. (payload เล็ก แค่คอลัมน์ line_name ของ session ทั้งหมด ~1,000 แถว) */
+  const [everLines, setEverLines] = useState(null); // null = ยังโหลดไม่เสร็จ — อย่าเพิ่งกรองด้วยเงื่อนไขนี้
+  useEffect(() => {
+    (async () => {
+      const rows = await cachedMaster('production_sessions:line_names_ever', async () =>
+        (await supabaseDR.from('production_sessions').select('line_name')).data || []);
+      setEverLines(new Set((rows || []).map(r => r.line_name).filter(Boolean)));
     })();
   }, []);
   const scopeNames = useMemo(() => scopedLineNames({ role, lineId, sections, lines }), [role, lineId, sections, lines]);
   const topOptions = useMemo(() => {
-    const tops = lines.filter(l => !l.parent_line_name).map(l => l.name);
+    const tops = lines
+      .filter(l => !l.parent_line_name && l.is_active !== false)
+      .filter(l => !everLines || getLineFamilyNames(lines, l.name).some(n => everLines.has(n)))
+      .map(l => l.name);
     if (!scopeNames) return tops;
     const sc = new Set(scopeNames);
     return tops.filter(t => getLineFamilyNames(lines, t).some(n => sc.has(n)));
-  }, [lines, scopeNames]);
+  }, [lines, scopeNames, everLines]);
   // deep-link ?line= — นอก scope/สะกดผิด = ตกไปตัวแรกที่เข้าได้ (pattern เดียวกับ Management)
   const line = useMemo(() => {
     const q = sp.get('line');
@@ -325,6 +342,38 @@ export default function LineOeeBoard() {
               </div>
               {!data?.target && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>เป้ามาตรฐาน (ยังไม่ตั้ง 🎯 ที่ /oee-analytics)</div>}
             </div>
+            {/* ⚠️ 2026-08-25 บั๊กที่ user ทัก "ปัจจุบันล่ะ มีแต่ย้อนหลัง 7 วันหรอ" — สถานะสดเดิมมีอยู่
+                แค่ซ่อนอยู่แถบเล็กท้ายจอ ตัวเลขใหญ่สุดบนจอ (72.0%) คือค่าเฉลี่ย 7 วัน ไม่ใช่ตอนนี้
+                → เพิ่มการ์ด "ตอนนี้ (Live)" ให้เห็นคู่กันชัดๆ ตั้งแต่แถวบนสุด (แถบท้ายจอเดิมยังอยู่
+                เป็นรายละเอียด/เหตุผลกำกับ) — ที่มาข้อมูลเหมือนเดิมทุกอย่าง (C.activeDt/C.hasOpen/C.liveNow) */}
+            <div style={{ ...card, flex: '0 0 220px', display: 'flex', flexDirection: 'column' }}>
+              <div style={capSt}>ตอนนี้ (Live)</div>
+              {C.activeDt.length ? (
+                <>
+                  <div style={{ fontSize: 'clamp(30px,3vw,40px)', fontWeight: 900, lineHeight: 1.15, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="dt-alarm-icon">🔴</span> หยุด
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
+                    {C.activeDt.map(d2 => d2.dr_downtime_types?.name_th || 'ไม่ระบุ').join(' · ')}
+                  </div>
+                </>
+              ) : C.hasOpen ? (
+                <>
+                  <div style={{ fontSize: 'clamp(36px,3.8vw,50px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums',
+                    color: C.liveNow?.oee == null ? 'var(--muted)' : '#22c55e' }}>
+                    {C.liveNow?.oee != null ? `${Math.round(C.liveNow.oee)}%` : '—'}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
+                    {C.liveNow?.oee != null ? '🟢 กำลังผลิต · OEE กะนี้' : C.liveNow?.noCt ? '⚠ ยังไม่ตั้ง CT — คำนวณไม่ได้' : '🟢 กำลังผลิต · ยังประเมินไม่ได้'}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 'clamp(30px,3vw,40px)', fontWeight: 900, color: 'var(--muted)' }}>⏸</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ยังไม่เปิดกะ</div>
+                </>
+              )}
+            </div>
             <div style={{ ...card, flex: 1, minWidth: 380 }}>
               <div style={capSt}>OEE Trend รายวัน ({DAYS_TREND} วัน · เฉลี่ยถ่วงเวลารับภาระ)</div>
               <ResponsiveContainer width="100%" height={168}>
@@ -389,8 +438,14 @@ export default function LineOeeBoard() {
                         <td style={{ fontSize: 11.5, color: 'var(--text2)', padding: '3px 6px' }}>{d2.machine_no || '—'}</td>
                         <td style={{ fontSize: 11.5, color: 'var(--text2)', padding: '3px 6px', fontVariantNumeric: 'tabular-nums' }}>{d2.duration_min ?? '—'}</td>
                         <td style={{ fontSize: 11.5, padding: '3px 6px', whiteSpace: 'nowrap' }}>
+                          {/* ⚠️ 2026-08-25 บั๊กที่ user จับได้: shake ทั้งคำ "🔴 Active" (ไม่ใช่แค่ไอคอน) ดูรก/แปลก
+                              — .dt-alarm-icon ทุกจุดอื่นในระบบ (FactoryMap/Dashboard/DailyPM) ใช้กับ "ไอคอนตัวเดียว"
+                              เท่านั้น จุดนี้ผิดเงื่อนไขเดิม + คำว่า Active ก็ไม่เข้าพวกกับศัพท์ไทยที่เหลือในตาราง
+                              (คู่กับ "✓ กลับมาแล้ว") → แยกไอคอนออกมา shake เดี่ยว ข้อความเป็นภาษาไทยล้วน */}
                           {active
-                            ? <b style={{ color: planned ? 'var(--muted)' : '#ef4444' }} className={planned ? undefined : 'dt-alarm-icon'}>{planned ? '🗓️ ตามแผน' : '🔴 Active'}</b>
+                            ? <b style={{ color: planned ? 'var(--muted)' : '#ef4444' }}>
+                                {planned ? '🗓️ ตามแผน' : <><span className="dt-alarm-icon">🔴</span> ยังหยุดอยู่</>}
+                              </b>
                             : <span style={{ color: '#22c55e' }}>✓ กลับมาแล้ว</span>}
                           {d2.call_mtn && <span style={{ color: '#f59e0b' }}> 📞</span>}
                         </td>
@@ -405,8 +460,9 @@ export default function LineOeeBoard() {
           {/* footer สถานะปัจจุบัน — กระพริบเฉพาะแดง (DT นอกแผนค้าง) ตาม Andon */}
           <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 14, padding: '8px 16px' }}>
             {C.activeDt.length ? (
-              <b className="dt-alarm-icon" style={{ color: '#ef4444', fontSize: 14 }}>
-                🔴 {line} หยุดอยู่: {C.activeDt.map(d2 => d2.dr_downtime_types?.name_th || 'ไม่ระบุ').join(' · ')}
+              // shake เฉพาะไอคอน 🔴 — ห้าม shake ทั้งประโยค (กฎเดียวกับที่แก้ในตาราง Alarm History ข้างบน)
+              <b style={{ color: '#ef4444', fontSize: 14 }}>
+                <span className="dt-alarm-icon">🔴</span> {line} หยุดอยู่: {C.activeDt.map(d2 => d2.dr_downtime_types?.name_th || 'ไม่ระบุ').join(' · ')}
               </b>
             ) : C.hasOpen ? (
               <b style={{ color: '#22c55e', fontSize: 14 }}>▶ {line} กำลังผลิต{C.liveNow?.oee != null ? ` · OEE กะนี้ (สด) ${Math.round(C.liveNow.oee)}%` : C.liveNow?.noCt ? ' · ⚠ ยังไม่ตั้ง CT — คำนวณ P ไม่ได้' : ''}</b>

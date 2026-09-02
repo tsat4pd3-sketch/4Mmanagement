@@ -27,7 +27,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -66,21 +66,24 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const canReceive = can('wip_request', 'receive', role);
   const canSetLv   = can('line_levels', 'manage', role);
 
-  /* ครอบครัวไลน์ — ของอาจถูกจ่ายเข้าไลน์แม่หรือไลน์ลูก (กฎ scope มาตรฐาน)
-     ⚠️ lines ยังโหลดไม่เสร็จ = ถอยไปชื่อไลน์ตัวเอง **ห้ามได้ array ว่าง** (จะกลายเป็นไม่เห็นอะไรเลย) */
-  const famNames = useMemo(() => {
-    const f = getLineFamilyNames(lines, lineName);
-    return f.length ? f : (lineName ? [lineName] : []);
-  }, [lines, lineName]);
+  /* ⚠️⚠️ กฎ "หน่วยย่อยที่สุด" (user เคาะ 2026-08-31) — ของอยู่ที่ leaf เสมอ
+     ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ ⇒ **ห้ามใช้ getLineFamilyNames กับสต็อก/min-max/ใบขอ**
+     เดิมใช้ family แล้วไลน์ลูก 3 ตัวนับของก้อนเดียวกันของแม่ครบทุกตัว → จอบอก "ของพอ"
+     ทั้งที่หน้าไลน์ไม่มีของ = ซ่อนการขาด · family ใช้เฉพาะ "ใครเห็นอะไร" ซึ่งคนละแกน */
+  const isLeaf   = useMemo(() => isLeafLine(lines, lineName), [lines, lineName]);
+  const kidNames = useMemo(() => getChildLineNames(lines, lineName), [lines, lineName]);
+  /* สายบน — ไว้ตรวจว่ามีของค้างที่ไลน์แม่ไหม (ไม่เอามานับรวม แต่ต้องบอกให้เห็น ห้ามเงียบ) */
+  const upNames  = useMemo(() => getAncestorNames(lines, lineName), [lines, lineName]);
 
   const load = useCallback(async () => {
-    if (!lineName || !famNames.length) return;
+    if (!lineName) return;
     setErr(null);
+    const stockLines = [lineName, ...upNames];   // ของตัวเอง + ที่อาจค้างข้างบน (แยกกันตอนคำนวณ)
     const [lv, st, rq] = await Promise.all([
-      supabaseDR.from('line_part_levels').select('*').in('line_name', famNames).eq('is_active', true),
-      supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', famNames),
+      supabaseDR.from('line_part_levels').select('*').eq('line_name', lineName).eq('is_active', true),
+      supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', stockLines),
       supabase.from('wip_replenish_requests').select('*')
-        .in('line_name', famNames).is('wip_point_id', null).in('status', OPEN_STATUSES)
+        .eq('line_name', lineName).is('wip_point_id', null).in('status', OPEN_STATUSES)
         .order('requested_at', { ascending: true, nullsFirst: false }),
     ]);
     /* ⚠️ ตารางยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ error ของผู้ใช้
@@ -92,21 +95,34 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     setLevels(lv.data || []);
     setStock(st.data || []);
     setReqs(rq.data || []);
-  }, [lineName, famNames]);
+  }, [lineName, upNames]);
 
   useEffect(() => { load(); }, [load]);
 
-  /* ── ยอดคงเหลือรวมทั้งครอบครัวไลน์ต่อ mat ──────────────────────────────────
-     ของชิ้นเดียวกันอาจถูกจ่ายเข้าไลน์แม่บ้างไลน์ลูกบ้าง (ปัญหาที่รู้อยู่แล้ว)
-     ⇒ รวมก่อนเทียบ min ไม่งั้นเห็นครึ่งเดียวแล้วเรียกเติมทั้งที่ของมีพอ */
+  /* ── ยอดคงเหลือ "ของไลน์นี้เท่านั้น" ────────────────────────────────────────
+     ⚠️ ห้ามบวกของไลน์แม่เข้ามา — ของที่แม่ยังไม่ได้ถูกจ่ายลงมาที่ไลน์นี้จริง
+        และไลน์พี่น้องก็จะนับก้อนเดียวกันซ้ำอีก */
   const onHand = useMemo(() => {
     const m = new Map();
     for (const s of stock) {
-      if (!s.mat_no) continue;
+      if (!s.mat_no || s.line_name !== lineName) continue;
       m.set(s.mat_no, (m.get(s.mat_no) || 0) + (Number(s.qty_on_hand) || 0));
     }
     return m;
-  }, [stock]);
+  }, [stock, lineName]);
+
+  /* ของที่ยังค้างอยู่ที่ไลน์แม่ — **ไม่นับเป็นของไลน์นี้ แต่ต้องเห็น** ห้ามเงียบ
+     (นี่คือสาเหตุที่ระบบไม่เสนอเติมทั้งที่ยอดในระบบดูเหมือนมี — ต้องไปย้ายที่ /line-stock) */
+  const stuckUp = useMemo(() => {
+    if (!upNames.length) return [];
+    const out = [];
+    for (const s of stock) {
+      if (!s.mat_no || s.line_name === lineName) continue;
+      const q = Number(s.qty_on_hand) || 0;
+      if (q > 0) out.push({ mat_no: s.mat_no, line_name: s.line_name, qty: q });
+    }
+    return out.sort((a, b) => b.qty - a.qty);
+  }, [stock, lineName, upNames]);
 
   // 1 พาร์ท = 1 ใบเปิดได้ใบเดียว (unique index กันระดับ DB อีกชั้น)
   const reqByMat = useMemo(() => {
@@ -253,7 +269,21 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   /* ── render ───────────────────────────────────────────────────────────────── */
   if (err?.notReady) return null;   // ยังไม่ apply migration = ฟีเจอร์ยังไม่เปิด (ไม่รบกวนหน้าจอ)
 
-  const nothing = !err && !suggest.length && !holds.length && !inFlight.length && !noLevel.length;
+  /* ⚠️ ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ (กฎหน่วยย่อยที่สุด)
+     ตัวเลขระดับนี้ไม่มีความหมาย — บอกให้ไปเปิดที่ไลน์ลูกแทน **ห้ามโชว์ตัวเลขให้เข้าใจผิด** */
+  if (!isLeaf) return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
+        <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของและจุดเรียกเติมอยู่ที่ <b>ไลน์ย่อย</b>
+        <br />เปิดกะที่ไลน์ย่อยเพื่อดู/เบิก: {kidNames.map(n => (
+          <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
+        ))}
+      </div>
+    </div>
+  );
+
+  const nothing = !err && !suggest.length && !holds.length && !inFlight.length && !noLevel.length && !stuckUp.length;
   if (nothing) return null;         // ไลน์ที่ยังไม่ตั้งอะไรเลย + ไม่มีของ = ไม่ต้องรก
 
   const card = { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16 };
@@ -278,6 +308,24 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       {err?.msg && (
         <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>
           ⚠ โหลดข้อมูลไม่สำเร็จ — {err.msg} · ตัวเลขด้านล่างอาจไม่ครบ
+        </div>
+      )}
+
+      {/* ⬆ ของยังกองที่ไลน์แม่ — ไม่นับเป็นของไลน์นี้ แต่ห้ามเงียบ
+          นี่คือเหตุผลที่ระบบไม่เสนอเติมทั้งที่ยอดรวมในระบบดูเหมือนมี */}
+      {stuckUp.length > 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10, lineHeight: 1.7 }}>
+          <b style={{ color: '#f59e0b' }}>⬆ ของ {stuckUp.length} พาร์ทยังอยู่ที่ไลน์แม่ ไม่ได้อยู่หน้าไลน์นี้</b>
+          <br />ระบบนับเฉพาะของที่อยู่ที่ <b>{lineName}</b> จริง (หน่วยย่อยที่สุด) — ของที่ไลน์แม่จึงไม่ถูกนับให้
+          <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            {stuckUp.slice(0, 8).map(s => (
+              <span key={`${s.line_name}|${s.mat_no}`} style={{ padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 11 }}>
+                {s.mat_no} · {fmtQty(s.qty)} <span style={{ color: 'var(--muted)' }}>@ {s.line_name}</span>
+              </span>
+            ))}
+            {stuckUp.length > 8 && <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>+ อีก {stuckUp.length - 8}</span>}
+          </div>
+          <div style={{ marginTop: 5, color: 'var(--muted)' }}>ย้ายลงไลน์ย่อยที่ <b>Line Stock → แท็บ Stock → 🔀 ย้ายเข้าไลน์ลูก</b></div>
         </div>
       )}
 
@@ -374,7 +422,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {showSetup && (
-        <LevelSetupModal lineName={lineName} famNames={famNames} levels={levels} onHand={onHand}
+        <LevelSetupModal lineName={lineName} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand}
           fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
       )}
     </div>
@@ -407,19 +455,33 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
 }
 
 /* ── ตั้ง min/max ต่อไลน์ (หัวหน้าไลน์ + หัวหน้าแผนกผลิต — ไม่ใช่ Planning) ──── */
-function LevelSetupModal({ lineName, famNames, levels, onHand, fullName, onClose }) {
+function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onClose }) {
+  /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
+     ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
+     — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
   const [rows, setRows] = useState(() => {
     const byMat = new Map(levels.map(l => [l.mat_no, l]));
-    const mats = [...new Set([...byMat.keys(), ...onHand.keys()])].sort();
+    const mats = [...new Set([...byMat.keys(), ...onHand.keys(), ...upMats])].sort();
     return mats.map(m => {
       const l = byMat.get(m);
       return { mat_no: m, id: l?.id || null, min_qty: l?.min_qty ?? '', max_qty: l?.max_qty ?? '',
-               reorder_qty: l?.reorder_qty ?? '', have: onHand.get(m) ?? null };
+               reorder_qty: l?.reorder_qty ?? '', have: onHand.get(m) ?? null,
+               atParent: !onHand.has(m) && upMats.includes(m) };
     });
   });
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
+  const [newMat, setNewMat] = useState('');
   const set = (i, k, v) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r));
+
+  // พาร์ทใหม่ที่ยังไม่โผล่ที่ไหนเลย — พิมพ์เพิ่มเองได้ ไม่งั้นตั้งจุดเรียกเติมล่วงหน้าไม่ได้
+  const addMat = () => {
+    const m = newMat.trim();
+    if (!m) return;
+    if (rows.some(r => r.mat_no.toLowerCase() === m.toLowerCase())) { toast.info('มีพาร์ทนี้ในรายการแล้ว'); setNewMat(''); return; }
+    setRows(rs => [{ mat_no: m, id: null, min_qty: '', max_qty: '', reorder_qty: '', have: null, atParent: false }, ...rs]);
+    setNewMat('');
+  };
 
   const save = async () => {
     setSaving(true);
@@ -451,8 +513,17 @@ function LevelSetupModal({ lineName, famNames, levels, onHand, fullName, onClose
             เหลือถึง <b>min</b> เมื่อไหร่ ระบบจะเสนอให้เบิก · <b>max</b> ใช้คำนวณว่าเบิกเท่าไหร่ (เติมให้เต็ม)
             <br />ไม่กรอก min = <b>ไม่เฝ้าพาร์ทนั้น</b> ระบบจะไม่เตือนเลย — คนที่ยืนหน้าไลน์เป็นคนรู้ว่าควรตั้งเท่าไหร่
           </div>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
-            style={{ width: 220, marginTop: 8, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
+              style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+            <span style={{ color: 'var(--border2)' }}>|</span>
+            <input value={newMat} onChange={e => setNewMat(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addMat(); } }}
+              placeholder="เพิ่มพาร์ทเอง (รหัส)"
+              style={{ width: 180, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+            <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
+          </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -466,8 +537,14 @@ function LevelSetupModal({ lineName, famNames, levels, onHand, fullName, onClose
                 const i = rows.indexOf(r);
                 return (
                   <tr key={r.mat_no} style={{ borderTop: '1px solid var(--border2)' }}>
-                    <td style={{ padding: '5px 0', fontWeight: 700, color: 'var(--text)' }}>{r.mat_no}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--muted)', paddingRight: 10 }}>{fmtQty(r.have)}</td>
+                    <td style={{ padding: '5px 0', fontWeight: 700, color: 'var(--text)' }}>
+                      {r.mat_no}
+                      {/* ของยังอยู่ที่ไลน์แม่ — ตั้ง min ไว้ล่วงหน้าได้ แต่ต้องรู้ว่ายังไม่ใช่ของไลน์นี้ */}
+                      {r.atParent && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent2)', fontWeight: 700 }}>⬆ ยังอยู่ไลน์แม่</span>}
+                    </td>
+                    <td style={{ textAlign: 'right', color: 'var(--muted)', paddingRight: 10 }}>
+                      {r.have == null ? <span title="ไม่มีแถวสต็อกของไลน์นี้ — ยังเช็คไม่ได้ ไม่ใช่ของหมด">—</span> : fmtQty(r.have)}
+                    </td>
                     {['min_qty', 'max_qty', 'reorder_qty'].map(k => (
                       <td key={k} style={{ padding: '3px 4px 3px 0' }}>
                         <input type="number" value={r[k]} onChange={e => set(i, k, e.target.value)}
