@@ -40,7 +40,14 @@ function computeAvg(v1, v2, v3) {
 }
 
 const S = {
-  page: { display: 'flex', height: '100%', background: 'var(--bg)' },
+  /* ⚠️ ห้ามใส่ `overflow` ให้ `main`/`body` (2026-09-02 · user ทัก "ยิ่งหัวข้อเยอะ ข้อหลังๆ มองไม่เห็นรูป")
+     หน้านี้ถูก embed ใน `PmHub` ซึ่งไม่ได้กำหนดความสูง → `height:100%` ตกเป็น `auto`
+     ⇒ `main{overflow:hidden}` + `body{overflowY:auto}` กลายเป็น **scroll container ที่ไม่มีวันเลื่อน**
+       (เนื้อหาสูงเท่าไหร่กล่องก็สูงตาม) แต่มันยัง "ขัง" `position:sticky` ของรูปเครื่องไว้ข้างใน
+       → เอกสารเลื่อน รูปเลื่อนตามหายไป **sticky ไม่เคยทำงานเลยสักครั้ง**
+     ตอนนี้ปล่อยให้ document เป็นตัวเลื่อน → sticky เกาะ viewport จริง
+     (flex child ล้นแนวนอนใช้ `minWidth:0` แก้ ไม่ใช่ `overflow:hidden` ซึ่งเป็นตัวขัง sticky) */
+  page: { display: 'flex', minHeight: '100%', background: 'var(--bg)' },
   sidebar: { width: 280, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   sidebarHead: { padding: '16px 16px 10px' },
   deptBar: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 16px 12px' },
@@ -55,14 +62,14 @@ const S = {
     border: `1.5px solid ${active ? color : 'var(--border)'}`,
     background: active ? `${color}12` : 'var(--card)',
   }),
-  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  main: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' },
   header: { padding: '14px 52px 14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 },
   tabBar: { display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' },
   tabBtn: (active) => ({
     padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
     background: active ? 'var(--card)' : 'transparent', color: active ? 'var(--text)' : 'var(--muted)',
   }),
-  body: { flex: 1, overflowY: 'auto', padding: 20 },
+  body: { flex: 1, minWidth: 0, padding: 20 },
   cpRow: (status) => ({
     display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', borderRadius: 8,
     border: `1px solid ${status ? STATUS_COLOR[status].border : 'var(--border)'}`,
@@ -112,7 +119,7 @@ function cpCheckStatus(cp, r) {
 //   • ลากซ้าย/ขวา (หรือกดจุดใต้ภาพ) เพื่อหมุนดูรอบเครื่อง — pin โชว์เฉพาะเฟรมที่วางไว้ (image_id)
 //   • สีหมุด = สถานะตรวจจริง (OK/NG) · คลิกหมุด → เลื่อน+ไฮไลต์แถวเช็คของจุดนั้น (activeCpId)
 // pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
-function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300 }) {
+function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300, compact = false }) {
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [zoomCp, setZoomCp] = useState(null)   // จุดที่กำลังเปิดรูปซูม (มี image_path)
@@ -172,9 +179,11 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
   }
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: compact ? 0 : 16 }}>
       {/* container หุ้มรูปพอดี (fit-content) กึ่งกลาง — รูปแนวตั้ง (ถ่ายจากมือถือ) ไม่มีแถบเทาข้างเสียพื้นที่
-         รูปสูงได้ถึง min(maxH, 76vh) เพื่อใช้พื้นที่แนวตั้งเต็ม โดยเฉพาะมือถือ (2026-07-24) */}
+         รูปสูงได้ถึง min(maxH, 76vh) เพื่อใช้พื้นที่แนวตั้งเต็ม โดยเฉพาะมือถือ (2026-07-24)
+         ⚠️ `compact` = โหมดแถบติดบนจอแคบ — รูปเตี้ยลงและตัดบรรทัดอธิบายออก เพื่อไม่ให้กินจอ
+            เกินครึ่ง (ที่เหลือต้องเป็นของรายการตรวจ) · คำอธิบายเดิมยังอยู่ครบในโหมดปกติ */}
       <div ref={boxRef} onPointerDown={pointerDown}
         style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
         <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
@@ -213,7 +222,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
         )}
       </div>
       {spin && (
-        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: compact ? 5 : 8, flexWrap: 'wrap' }}>
           {frames.map((f, i) => (
             <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
               style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
@@ -221,7 +230,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
         </div>
       )}
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
-      {framePins.some(c => c.image_path) && (
+      {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           🔍 หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
         </div>
@@ -616,6 +625,18 @@ export default function PMCheckData() {
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
+  /* 📌 รูปเครื่องเป็น "แถบติดบน" ตอนจอแคบ — พับเก็บได้ (จำต่อเครื่อง)
+     ⚠️ ต้อง **วัดความสูงจริง** ไม่ใช่เดา เพราะเอาไปตั้ง `scrollMarginTop` ของแถวเช็ค
+        (กฎ §6.8) — เดาแล้วตอนคลิกหมุด แถวจะถูกเลื่อนไปซ่อนใต้รูปพอดี */
+  const [viewerOpen, setViewerOpen] = useState(() => {
+    try { return localStorage.getItem('pm_viewer_open') !== '0' } catch { return true }
+  })
+  const toggleViewer = () => setViewerOpen(v => {
+    try { localStorage.setItem('pm_viewer_open', v ? '0' : '1') } catch { /* private mode */ }
+    return !v
+  })
+  const viewerRef = useRef(null)
+  const [viewerH, setViewerH] = useState(0)
   // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
@@ -740,6 +761,17 @@ export default function PMCheckData() {
     })
     fetchHistory(selectedJig.id)
   }, [selectedJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* วัดความสูงจริงของแถบรูปที่ติดบน (จอแคบ) — เอาไปเว้น `scrollMarginTop` ให้แถวเช็ค
+     ไม่วัด/เดาเลข = คลิกหมุดแล้วแถวถูกเลื่อนไปนอนใต้รูปพอดี มองไม่เห็นสิ่งที่เพิ่งกด */
+  useEffect(() => {
+    const el = viewerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') { setViewerH(0); return }
+    const ro = new ResizeObserver(() => setViewerH(el.getBoundingClientRect().height))
+    ro.observe(el)
+    setViewerH(el.getBoundingClientRect().height)
+    return () => ro.disconnect()
+  }, [selectedJig, checkpoints, frames, viewerOpen, isNarrow, isWide])
 
   // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น
   useEffect(() => {
@@ -1011,8 +1043,12 @@ export default function PMCheckData() {
                 const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list' && checkpoints.length > 0
                 // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
                 const twoCol = isWide && showPhoto
+                /* จอแคบ = รูปอยู่ "บนหัว" ของรายการ → ต้องเตี้ยพอให้เหลือที่กรอกจริง
+                   (480px บนมือถือ = กินเกือบทั้งจอ ตอบ feedback "ในมือถือก็เหมือนยังไม่เหมาะ") */
+                const stackCompact = showPhoto && !twoCol
                 const viewerNode = showPhoto
-                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 560 : 480} />
+                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId}
+                      maxH={twoCol ? 560 : (isNarrow ? 190 : 260)} compact={stackCompact} />
                   : null
 
                 const formNode = (
@@ -1080,7 +1116,8 @@ export default function PMCheckData() {
                             <div key={cp.id}>
                               {header}
                               <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
-                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s' }}>
+                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s',
+                                  scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
                                 {row}
                               </div>
                             </div>
@@ -1098,12 +1135,30 @@ export default function PMCheckData() {
 
                 return twoCol ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(360px, 100%), 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
-                    <div style={{ position: 'sticky', top: 0 }}>{viewerNode}</div>
+                    <div style={{ position: 'sticky', top: 8 }}>{viewerNode}</div>
                     <div>{formNode}</div>
                   </div>
                 ) : (
                   <div style={{ maxWidth: showPhoto ? 760 : 720, margin: '0 auto' }}>
-                    {viewerNode}
+                    {/* 📌 จอแคบ: รูป + หมุด **ติดอยู่บนหัวจอ** ตลอดที่ไล่เช็คลงไป
+                        เดิมวางไว้เฉยๆ แล้วเลื่อนหายไปตั้งแต่ข้อ 3-4 → ข้อหลังๆ ไม่รู้ว่าจุดอยู่ตรงไหนของเครื่อง
+                        พื้นหลังทึบบังคับ (ไม่งั้นรายการเลื่อนทะลุใต้รูป) · พับเก็บได้เมื่ออยากได้พื้นที่กรอกเต็ม */}
+                    {stackCompact && (
+                      <div ref={viewerRef} style={{
+                        position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg)',
+                        paddingBottom: 8, marginBottom: 10, borderBottom: '1px solid var(--border)',
+                      }}>
+                        {viewerOpen && viewerNode}
+                        <button onClick={toggleViewer} style={{
+                          display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 999, cursor: 'pointer',
+                          fontSize: 11, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                        }}>
+                          {/* พับแล้วต้องยังบอกว่าซ่อนอะไรไว้ + กางคืนได้ ห้ามหายเงียบ */}
+                          {viewerOpen ? '▲ ซ่อนรูปเครื่อง' : '▼ แสดงรูปเครื่อง (ดูว่าจุดอยู่ตรงไหน)'}
+                        </button>
+                      </div>
+                    )}
+                    {!stackCompact && viewerNode}
                     {formNode}
                   </div>
                 )
