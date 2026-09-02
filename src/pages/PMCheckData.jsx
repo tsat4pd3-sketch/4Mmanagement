@@ -15,6 +15,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } fro
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
+import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -614,6 +615,14 @@ export default function PMCheckData() {
 
   const [userId, setUserId] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const [fullName, setFullName] = useState('')
+  /* 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อได้เลย (2026-09-02 · feedback หน้างาน)
+     ⚠️ **ระบบเสนอ คนกดยืนยัน** ห้ามเปิดใบให้อัตโนมัติ (กฎเดิมทั้งโปรเจค) —
+        ใบซ่อมเป็นงานที่มีคนต้องรับผิดชอบจริง ไม่ใช่ผลข้างเคียงของการกดบันทึก */
+  const [moPrompt, setMoPrompt] = useState(null)   // { insp, ngTopics } หลังบันทึกเจอ NG
+  const [moTeam, setMoTeam] = useState('maintenance')
+  const [moSaving, setMoSaving] = useState(false)
+  const [moByInsp, setMoByInsp] = useState({})     // inspection_id → { id, mo_no } (กันเปิดซ้ำ + โชว์ในประวัติ)
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
   const canRecord = useMemo(() => { const [res, act] = recordPermFor(department); return can(res, act, userRole) }, [department, userRole])
@@ -667,7 +676,8 @@ export default function PMCheckData() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data?.user?.id ?? null)
-      if (data?.user?.id) supabase.from('profiles').select('role').eq('id', data.user.id).single().then(({ data: p }) => setUserRole(p?.role ?? null))
+      if (data?.user?.id) supabase.from('profiles').select('role, full_name').eq('id', data.user.id).single()
+        .then(({ data: p }) => { setUserRole(p?.role ?? null); setFullName(p?.full_name ?? '') })
     })
   }, [])
 
@@ -728,6 +738,78 @@ export default function PMCheckData() {
   const fetchHistory = async (jigId) => {
     const { data } = await supabaseDR.from('inspections').select('*').eq('jig_id', jigId).order('inspected_at', { ascending: false }).limit(30)
     setInspections(data ?? [])
+    /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
+       (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
+       ⚠️ tolerant กับ 42703 — ยังไม่ apply migration ต้องใช้หน้านี้ได้ตามปกติ */
+    const failIds = (data ?? []).filter(i => i.status === 'fail').map(i => i.id)
+    if (!failIds.length) { setMoByInsp({}); return }
+    const { data: mos, error } = await supabaseDR.from('mtn_orders')
+      .select('id, mo_no, status, source_inspection_id').in('source_inspection_id', failIds)
+    if (error) { setMoByInsp({}); return }
+    const m = {}; (mos ?? []).forEach(o => { m[o.source_inspection_id] = o })
+    setMoByInsp(m)
+  }
+
+  /* ทีมช่างตั้งต้นของใบซ่อมที่จะเปิด
+     ⚠️ AM = ผลิตตรวจเอง — เจอ NG แล้ว **ส่งกลับให้ผลิตซ่อมเองไม่ได้** ต้องเดาทีมช่างจากชนิดอุปกรณ์
+        (jig → JIG MTN · die → DIE MTN · อื่น → MTN) แล้วให้คนเลือกทับได้เสมอ */
+  const defaultMoTeam = () => (isAmTeam(department)
+    ? (teamForEquipmentKind(selectedJig?.equipment_type) || 'maintenance')
+    : (teamKeyOf(department) || 'maintenance'))
+
+  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoPrompt({ insp, ngTopics }) }
+
+  // เปิดจากแท็บประวัติ (เคสกด "ไว้ก่อน" ตอนบันทึก) — ต้องไปหาชื่อจุดที่ไม่ผ่านของใบนั้นมาก่อน
+  const openMoFromHistory = async (insp) => {
+    const { data } = await supabaseDR.from('inspection_results')
+      .select('checkpoint_id').eq('inspection_id', insp.id).eq('status', 'fail')
+    const names = (data ?? []).map(r => checkpoints.find(c => c.id === r.checkpoint_id)?.name).filter(Boolean)
+    // จุดตรวจถูกลบ/ย้ายแผนกไปแล้ว = หาชื่อไม่เจอ — ยังเปิดใบได้ แต่ต้องบอกตรงๆ ว่าดูรายละเอียดที่ผลตรวจ
+    openMoPrompt(insp, names.length ? names : ['(ดูรายละเอียดในผลตรวจ)'])
+  }
+
+  const createMoFromInspection = async () => {
+    if (!moPrompt || !selectedJig) return
+    const { insp, ngTopics } = moPrompt
+    setMoSaving(true)
+    try {
+      const now = new Date()
+      // วันงาน (ตัด 08:00 ตามกะ) — ห้าม toISOString (UTC เพี้ยนช่วงเช้ามืด)
+      const wd = new Date(now); if (wd.getHours() < 8) wd.setDate(wd.getDate() - 1)
+      const workDate = `${wd.getFullYear()}-${String(wd.getMonth() + 1).padStart(2, '0')}-${String(wd.getDate()).padStart(2, '0')}`
+      const payload = {
+        status: 'pending', current_step: 1, report_at: now.toISOString(), work_date: workDate,
+        repair_scope: 'in_line',
+        line_name: selectedJig.line_name || null,
+        mtn_dept: teamKeyOf(moTeam) || 'maintenance',
+        machine_no: selectedJig.machine_no || selectedJig.jig_no || null,
+        problem_characteristic: 'อื่นๆ',
+        report_note: `[จากผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}] ${selectedJig.name} — จุดที่ไม่ผ่าน: ${ngTopics.join(', ')}`,
+        reporter_prod: fullName || null, reported_by_name: fullName || null,
+        source_inspection_id: insp.id,
+      }
+      let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single()
+      // ยังไม่ apply migration = ไม่มีคอลัมน์ผูกที่มา → เปิดใบได้ แต่ต้องบอกว่าผูกกลับผลตรวจไม่ได้
+      if (error?.code === '42703') {
+        const { source_inspection_id: _drop, ...slim } = payload // eslint-disable-line no-unused-vars
+        ;({ data, error } = await supabaseDR.from('mtn_orders').insert(slim).select().single())
+        if (!error) toast.info('เปิดใบซ่อมแล้ว แต่ยังผูกกลับผลตรวจไม่ได้ — ยังไม่ได้รัน migration 20260902_mtn_order_from_inspection (แจ้ง admin)')
+      }
+      if (error) {
+        toast.error(error.code === '23505' ? 'ผลตรวจใบนี้มีใบแจ้งซ่อมอยู่แล้ว' : error.message)
+        return
+      }
+      fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
+        // ส่ง "ชื่อทีม" ในข้อความแจ้งเตือน (DB เก็บรหัส) — เหตุผลเดียวกับ notifyMtn ใน MtnRepair.jsx
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
+      }).catch(() => {})
+      setMoByInsp(prev => ({ ...prev, [insp.id]: data }))
+      setMoPrompt(null)
+      toast.success(`📝 เปิดใบแจ้งซ่อมแล้ว → แจ้งถึงทีม ${deptNameOf(moTeam) || 'MTN'} — ติดตามต่อที่หน้าแจ้งซ่อม MTN`)
+    } finally {
+      setMoSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -876,6 +958,12 @@ export default function PMCheckData() {
       setResults(init); setNotes('')
       fetchHistory(selectedJig.id)
       setTab('history')
+      /* 🔧 เจอ NG → เสนอเปิดใบแจ้งซ่อมทันที (ตอนนี้แหละที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง)
+         เสนอหลังบันทึกสำเร็จเท่านั้น — ต้องมี inspection id ก่อนถึงผูกที่มาได้
+         ข้ามได้ ไม่บล็อก · กด "ไว้ก่อน" แล้วยังกลับมาเปิดจากแท็บประวัติได้ (ไม่เป็นทางตัน) */
+      if (overall === 'fail' && ngTopics.length && can('mtn_repair', 'report', userRole)) {
+        openMoPrompt(insp, ngTopics)
+      }
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -1177,9 +1265,24 @@ export default function PMCheckData() {
                           {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
                           {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
                           {insp.approval_status === 'pending' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>รออนุมัติ</span>}
+                          {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
+                          {moByInsp[insp.id] && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c' }}>
+                              🔧 ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <span style={{ color: 'var(--muted)' }}>›</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* กด "ไว้ก่อน" ตอนบันทึกแล้วต้องกลับมาเปิดได้ — ไม่งั้นข้ามครั้งเดียว = ทางตัน */}
+                        {insp.status === 'fail' && !moByInsp[insp.id] && can('mtn_repair', 'report', userRole) && (
+                          <button onClick={e => { e.stopPropagation(); openMoFromHistory(insp) }} style={{
+                            padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                            border: '1px solid #fb923c', background: 'rgba(251,146,60,0.12)', color: '#fb923c',
+                          }}>🔧 เปิดใบแจ้งซ่อม</button>
+                        )}
+                        <span style={{ color: 'var(--muted)' }}>›</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1197,6 +1300,54 @@ export default function PMCheckData() {
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>
+
+      {/* ── 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อเลย ──────────────────────────────────
+          ⚠️ ไม่ปิดจากการคลิกพื้นหลัง (UI-CONVENTIONS §5) — เผลอแตะแล้วปิด = เสียโอกาสเปิดใบ
+             ตอนที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง (ยังกลับมาเปิดจากประวัติได้ แต่คนละจังหวะ) */}
+      {moPrompt && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3100, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>⚠ พบผลตรวจไม่ผ่าน {moPrompt.ngTopics.length} จุด</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 4 }}>{selectedJig?.name}</div>
+            </div>
+            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
+              {moPrompt.ngTopics.map((n, i) => <div key={i}>• {n}</div>)}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>แจ้งถึงทีมช่าง</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {MTN_TEAMS.map(t => (
+                  <button key={t} onClick={() => setMoTeam(t)} style={{
+                    padding: '6px 13px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: `1.5px solid ${moTeam === t ? 'var(--accent)' : 'var(--border2)'}`,
+                    background: moTeam === t ? 'var(--accent-dim)' : 'var(--bg3)', color: moTeam === t ? 'var(--accent)' : 'var(--muted)',
+                  }}>{deptNameOf(t)}</button>
+                ))}
+              </div>
+              {/* AM เจอ NG ส่งกลับให้ผลิตซ่อมเองไม่ได้ — ต้องบอกว่าทีมตั้งต้นมาจากการเดา ให้เลือกทับได้ */}
+              {isAmTeam(department) && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+                  ผลตรวจนี้เป็น AM (ผลิตตรวจเอง) — ระบบเดาทีมช่างจากชนิดอุปกรณ์ให้ก่อน เลือกใหม่ได้ถ้าไม่ตรง
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
+                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+              }}>ไว้ก่อน</button>
+              <button onClick={createMoFromInspection} disabled={moSaving} style={{
+                padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                border: 'none', background: 'var(--accent)', color: '#071008', opacity: moSaving ? 0.6 : 1,
+              }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
+              กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
