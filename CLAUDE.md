@@ -2852,7 +2852,14 @@ migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_req
 > - วันงาน **กลิ้งตามเวลาจริงในตัว polling** (จอ QA เปิดค้างข้าม 08:00 ได้ ล็อกไว้ตอน mount = บอร์ดค้างวันเก่าเงียบๆ)
 > - `InternalTimeBoard` รับ `items[].dashed` แล้ว (additive — บอร์ดเดิมของ Store ไม่กระทบ)
 - **ไม่สร้าง `qa_piece_inspections` แยกตามที่เอกสารเดิมเสนอ** — `qa_inspection_sheets` (สร้างทีหลังเอกสาร) ทำหน้าที่นั้นครบแล้ว สร้างตารางที่ 2 = ผลตรวจแตก 2 ที่
-- **⚠️ ยังไม่ apply/deploy — ต้องทำ 3 ขั้นตามลำดับ:** (1) migration `20260819_qa_fme_call.sql` (Main) (2) deploy edge `qa-fme-scan` **`verify_jwt=false`** + `20260819_qa_fme_scan_cron.sql` (3) เปิดสวิตช์ที่ `/qa` ⚙️ · **`is_enabled` default = false โดยตั้งใจ** (ยิงเข้าห้อง Telegram จริง ต้องให้เจ้าของระบบกดเปิดเอง) · `skip_older_min` (120) กันเรียกย้อนหลังท่วมห้องแชทตอนเพิ่งเปิด
+- **📌 สถานะจริง (ตรวจ DB+edge 2026-09-02): ติดตั้งครบแล้ว แต่ยัง "เงียบสนิทโดยตั้งใจ"**
+  · migration apply แล้ว · edge `qa-fme-scan` **deploy แล้ว v13 (`verify_jwt=false`)** · cron `*/5 * * * *` active
+  · **แต่ `qa_fme_config.is_enabled = false`** → scanner ออกทันทีทุกรอบ ไม่แตะอะไรเลย (`qa_fme_obligations` = 0 แถว)
+  · **และ rule `qa_fme_call` ยังไม่ได้เลือกห้อง (channel_ids ว่าง)** → ต่อให้เปิดสวิตช์ ข้อความจะตกไปห้อง fallback
+  **เปิดใช้จริงต้องทำ 2 อย่างตามลำดับ:** (1) เลือกห้องให้ `qa_fme_call`/`qa_fme_overdue` ที่ `/notification-config`
+  (2) ค่อยเปิดสวิตช์ที่ `/qa` ⚙️ — สลับลำดับแล้วข้อความชุดแรกจะไปโผล่ผิดห้อง
+  · **`is_enabled` default = false โดยตั้งใจ** (ยิงเข้าห้อง Telegram จริง ต้องให้เจ้าของระบบกดเปิดเอง)
+  · `skip_older_min` (120) กันเรียกย้อนหลังท่วมห้องแชทตอนเพิ่งเปิด
 
 ---
 
@@ -3978,7 +3985,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน 01:00 UTC = 08:00 ไทย) | เตือน Planned PM ตามขั้น 30/14/3 วัน + **เกินกำหนด (ซ้ำสัปดาห์ละครั้ง)** → POST ไป send-notification ฝั่ง Main · ดูกฎ "เตือน PM" ด้านล่าง |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
-| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
+| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · **deploy แล้ว v13 + cron `*/5` เดินอยู่ แต่สวิตช์ยังปิด** (ตรวจ 2026-09-02) |
 | `store-daily-scan` | DR (pg_cron 00:50 UTC = **07:50 ไทย** — ดูกฎ "เวลาสแกนต้องอยู่ในวันงานที่จะรายงาน") | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
 | `send-store-notification` | Main | **ผู้ส่งฝั่ง Store** — รับ event `store_abnormal` · **แยกไฟล์จาก send-notification โดยตั้งใจ (กันไฟล์ 47KB พัง) แต่ route ผ่าน `notification_rules`/`telegram_channels` ชุดเดียวกัน** (precedent เดียวกับ `send-mtn-notification`) → เปิด/ปิด/เลือกห้อง/แก้ข้อความ/เลือก role ที่เข้ากระดิ่ง ทำที่ `/notification-config` เหมือนทุกเรื่อง · verify_jwt=false |
 | `send-event-notification` | Main | **ผู้ส่งกลาง generic (2026-08-25)** — รับ `{ event, lines[], title?, section?, line_name?, ref_table?, ref_id?, vars? }` แล้วส่งทั้ง **Telegram + ในแอป** จากแถว `notification_rules` เดียวกัน · resolve ส่วนงานจาก `line_name` เอง (ไลน์ลูกตกทอดจากไลน์แม่) · ผู้รับผ่าน RPC `notify_recipients` · **เพิ่มเรื่องใหม่ = insert แถว rule + เรียก `notifyEvent()` ไม่ต้องแตะ edge ตัวไหนอีก** · เรียกจาก client ผ่าน `src/utils/notifyEvent.js` และจาก DB trigger ผ่าน pg_net · verify_jwt=false |
@@ -3992,6 +3999,23 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - `POST /functions/v1/cleanup-orphan-photos?dry_run=1` + header `x-cleanup-token` (token ฝังในซอร์ส function) — **รัน dry_run ดูรายงานก่อนลบจริงเสมอ**, มี safety ข้ามไฟล์ที่อัปโหลดภายใน 24 ชม.
 - รันครั้งแรกล้างได้ 117 ไฟล์ / 100.6MB — ปกติไม่ต้องรันซ้ำ เพราะแอปลบไฟล์เก่าเองตอนเปลี่ยนรูปแล้ว (ดู "Storage & รูปภาพ")
 - ถ้า environment โดน network policy บล็อกยิงตรงไป supabase.co → เรียกผ่าน `net.http_post` (pg_net) จาก SQL แทน (ดู pattern ใน migration `20260708_pm_daily_scan_cron.sql`)
+
+> ### ⚠️ กฎเหล็ก — ตรวจ "ของค้าง" ต้องถามฐาน ห้ามเชื่อ stamp ในไฟล์/เอกสาร (2026-09-02)
+> เอกสาร/คอมเมนต์ในไฟล์บอกสถานะ deploy ผิดได้ง่าย เพราะแต่ละ session บันทึกคนละที่และไม่มีใครตามลบ
+> — วัดจริงรอบนี้: CLAUDE.md เขียนว่า `qa-fme-scan` "ยังไม่ deploy" แต่**อยู่ v13 + cron เดินมาแล้ว**
+> · migration 35 ไฟล์ล่าสุดมี stamp ในไฟล์แค่ 2 ตัว ทั้งที่ **apply ครบทุกตัว**
+> **วิธีตรวจที่เชื่อได้ (ทำซ้ำได้ ~3 คิวรี):**
+> 1. **migration** → query `to_regclass()` / `information_schema.columns` / `pg_proc` / `pg_indexes` /
+>    `cron.job` ของ object ที่แต่ละไฟล์สร้าง **ทั้ง 2 project** — ไม่มีในทั้งคู่ = ยังไม่ apply จริง
+>    (`supabase_migrations.schema_migrations` เทียบชื่อไฟล์ไม่ได้ — เวอร์ชันเป็น timestamp ตอน apply)
+> 2. **edge** → `list_edge_functions` แล้ว `get_edge_function` **ดึงซอร์สที่รันอยู่มา diff กับ repo**
+>    เลข version/updated_at บอกแค่ "เคยถูก deploy" ไม่ได้บอกว่าตรงกับ repo
+> 3. **สวิตช์** → ของที่ deploy แล้วอาจยังเงียบเพราะ flag ปิด (`qa_fme_config.is_enabled`)
+>    หรือ rule ไม่ได้เลือกห้อง (`notification_rules.channel_ids` ว่าง) — **"deployed" ≠ "ทำงาน"**
+> **⚠️ deploy edge ผ่าน MCP ต้องพิมพ์ทั้งไฟล์ซ้ำใน tool call** → ไฟล์ใหญ่ (`send-notification` 56KB)
+> **ห้าม deploy ด้วยวิธีนี้** พิมพ์พลาดตัวเดียว = แจ้งเตือนทั้งระบบพัง · ไฟล์ใหญ่ให้ deploy ด้วย
+> `supabase functions deploy <slug>` จากเครื่องที่มี CLI + access token (อ่านไฟล์ตรง ไม่มีทางพิมพ์ตก)
+> · deploy ผ่าน MCP แล้ว **ต้องดึงกลับมาตรวจว่าโครงสร้างครบทุกจุดที่ตั้งใจแก้** ก่อนถือว่าเสร็จ
 
 ---
 
