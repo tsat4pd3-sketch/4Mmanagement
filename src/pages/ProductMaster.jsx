@@ -16,6 +16,8 @@ import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 import InfoMore from '../components/InfoMore';
+import BomTreeView from '../components/BomTreeView';
+import { uomLabel } from '../utils/bomTree';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1363,6 +1365,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [selProduct, setSelProduct] = useState(null);
   const [items, setItems]           = useState([]);
   const [counts, setCounts]         = useState({});
+  const [bomByMat, setBomByMat]     = useState({});     // mat_no → ลูกชั้นถัดไป (ไล่โครงหลายชั้น)
+  const [showTree, setShowTree]     = useState(true);   // 🌳 กางโครงแบบ SAP
   const [partsMaster, setPartsMaster] = useState([]);   // catalog กลาง
   const [search, setSearch]         = useState('');
   const [loading, setLoading]       = useState(false);
@@ -1380,16 +1384,27 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const loadAll = useCallback(async () => {
     const [{ data: prods }, { data: boms }, { data: parts }, opMap] = await Promise.all([
       supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
-      supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
+      /* ดึง BOM ทั้งฐาน (459 แถว) ไม่ใช่แค่ product ที่เลือก — ต้องใช้ไล่โครงหลายชั้น
+         (ลูกที่เป็น product เองมี BOM ของตัวเอง = ชั้นถัดไป) */
+      supabaseDR.from('bom_items').select('product_id, mat_no, part_name, qty_per_unit, uom').eq('is_active', true),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
       loadOpInfo(),
     ]);
     // 🔩 รายการขั้นตอน (OP งานขับนัท) ไม่ใช่พาร์ทจริง — ห้ามมี BOM ของตัวเอง จึงไม่โผล่ในลิสต์นี้
-    setProducts((prods || []).filter(p => !opMap[p.mat_no]));
+    const list = (prods || []).filter(p => !opMap[p.mat_no]);
+    setProducts(list);
     setPartsMaster(parts || []);
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
     setCounts(c);
+    // mat_no → ลูกชั้นถัดไป (ใช้กับ BomTreeView) — ไล่ผ่าน product ทุกตัว ไม่ใช่เฉพาะ FG
+    const matOf = {}; (prods || []).forEach(p => { matOf[p.id] = p.mat_no; });
+    const tree = {};
+    (boms || []).forEach(b => {
+      const m = matOf[b.product_id];
+      if (m) (tree[m] = tree[m] || []).push(b);
+    });
+    setBomByMat(tree);
   }, []);
 
   const loadItems = useCallback(async (productId) => {
@@ -1570,6 +1585,24 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 </div>
               )}
             </div>
+            {/* 🌳 โครงหลายชั้นแบบ SAP (CS12) — ตารางด้านล่างเป็นชั้น 1 อย่างเดียว
+                ต้องมีตัวกางถึงจะเห็นว่าของตัวไหนถูกนับซ้ำ (BOM ถูกแบนมาจาก SAP) */}
+            {!loading && items.length > 0 && selProduct?.mat_no && (
+              <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                <div onClick={() => setShowTree(v => !v)}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
+                  🌳 โครงหลายชั้น (แบบ SAP Display Multilevel BOM)
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{showTree ? '▾' : '▸'}</span>
+                </div>
+                {showTree && (
+                  <div style={{ marginTop: 10 }}>
+                    <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
+                      bomOf={(m) => bomByMat[m] || []} />
+                  </div>
+                )}
+              </div>
+            )}
+
             {loading ? (
               <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
             ) : items.length === 0 ? (
@@ -1591,9 +1624,17 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                         <TD style={{ fontWeight: 600 }}>{it.part_name}</TD>
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{it.part_no || '—'}</TD>
                         <TD style={{ fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{it.mat_no}</TD>
-                        <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>{Number(it.qty_per_unit)}</TD>
+                        {/* ⚠️ จำนวนต้องมีหน่วยติดตัว (user 2026-09-02) — coil เป็น KG ไม่ใช่ชิ้น
+                            "0.341" กับ "5" ดูเหมือนหน่วยเดียวกันถ้าไม่บอก */}
+                        <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {Number(it.qty_per_unit)}
+                          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', marginLeft: 3 }}>{uomLabel(it.uom) || '⚠'}</span>
+                        </TD>
                         <TD style={{ fontWeight: 700, color: '#f59e0b', textAlign: 'right' }}>{it.qty_per_pkg ? Number(it.qty_per_pkg) : '—'}</TD>
-                        <TD style={{ color: 'var(--muted)' }}>{it.uom}</TD>
+                        {/* PC / EA / pcs ในฐานเป็นของเดียวกัน 3 สะกด — แสดงให้เป็นมาตรฐานเดียว (ไม่แก้ค่าใน DB) */}
+                        <TD style={{ color: it.uom ? 'var(--muted)' : '#f59e0b', fontWeight: it.uom ? 400 : 700 }}>
+                          {uomLabel(it.uom) || '⚠ ไม่ระบุ'}
+                        </TD>
                         <TD>{it.source_line
                           ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
                           : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
