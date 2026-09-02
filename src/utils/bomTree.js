@@ -34,6 +34,42 @@ export const uomLabel = (u) => {
 /** จุดนำหน้าแบบ SAP: ชั้น 1 = ".1" · ชั้น 2 = "..2" */
 export const levelTag = (lv) => `${'.'.repeat(Math.max(1, lv))}${lv}`;
 
+/* ═══ 📍 เลขรายการ (Item) — SAP 0010 / 0020 / 0030 ═══════════════════════════════
+   ⚠️ **นับใหม่ทุก "ตัวแม่" ไม่ใช่นับต่อเนื่องทั้งใบ** (user ยืนยันจากจอ SAP 2026-09-02):
+      ชั้น .1 วิ่ง 0010→0120 · ใต้ 20066660 เริ่ม 0010 ใหม่ · ใต้ 20066662 ก็ 0010 ใหม่
+   ⇒ ค่านี้มีความหมายเฉพาะ "ภายใน BOM ของตัวแม่ตัวนั้น" ห้ามเอาไปเทียบข้ามตัวแม่
+   เก็บใน DB เป็น integer (เรียงถูกเสมอ) แล้วเติมศูนย์หน้าตอนแสดงผลเท่านั้น          */
+
+/** 10 → "0010" · null/0 → '' (ยังไม่ตั้ง — **ไม่ใช่ "0000"** ห้ามเดาว่าเป็นรายการแรก) */
+export const itemNoLabel = (n) => {
+  const v = Number(n);
+  return Number.isFinite(v) && v > 0 ? String(Math.trunc(v)).padStart(4, '0') : '';
+};
+
+/** เลขรายการถัดไปตามธรรมเนียม SAP (เว้นทีละ 10 เพื่อให้แทรกกลางได้)
+ *  ⚠️ ไล่จากเลขสูงสุดที่ "ตั้งไว้แล้ว" ไม่ใช่นับจำนวนแถว — แถวที่ยังไม่ตั้งเลขต้องไม่ดันเลขถัดไป */
+export const nextItemNo = (rows = [], step = 10) => {
+  const max = rows.reduce((m, r) => {
+    const v = Number(r?.item_no);
+    return Number.isFinite(v) && v > m ? v : m;
+  }, 0);
+  return Math.min(9999, Math.floor(max / step) * step + step);
+};
+
+/** เรียงแบบใบ BOM: ตามเลขรายการก่อน · **ที่ยังไม่ตั้งเลขไปท้ายสุด** (ไม่ใช่ขึ้นก่อนเพราะ null)
+ *  แล้วค่อยเรียง mat_no เป็นตัวตัดสินสุดท้าย (ลำดับคงที่ ไม่เต้นทุกครั้งที่โหลด) */
+export const byItemNo = (a, b) => {
+  const av = Number(a?.item_no), bv = Number(b?.item_no);
+  const ao = Number.isFinite(av) && av > 0 ? av : Infinity;
+  const bo = Number.isFinite(bv) && bv > 0 ? bv : Infinity;
+  if (ao !== bo) return ao - bo;
+  return norm(a?.mat_no).localeCompare(norm(b?.mat_no));
+};
+
+/** รหัสคลังที่เบิก (SAP Stor.Loc.) สำหรับแสดงผล — ตัดช่องว่าง ตัวพิมพ์ใหญ่
+ *  **ไม่ระบุ = '' ห้ามเดาเป็นคลังใดคลังหนึ่ง** (ระบบยังใช้พฤติกรรมเดิม = เบิกตาม line_name) */
+export const slocLabel = (s) => norm(s).toUpperCase();
+
 /**
  * กาง BOM ของ FG ตัวหนึ่งเป็นรายการเรียงแบบ SAP (depth-first ตามลำดับที่ BOM เก็บไว้)
  *
@@ -73,7 +109,8 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
 
   const walk = (mat, level, qtyPerParentUnit, path) => {
     if (level > maxDepth) { truncated = true; return; }
-    const kids = bom(mat) || [];
+    // เรียงตามใบ BOM ของตัวแม่ (Item 0010/0020…) · ยังไม่ตั้งเลข = ตกท้ายเรียงตาม mat (ลำดับคงที่)
+    const kids = [...(bom(mat) || [])].sort(byItemNo);
     kids.forEach(k => {
       const m = norm(k?.mat_no);
       if (!m) return;
@@ -87,6 +124,9 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
         part_name: k.part_name || '',
         uom: k.uom || '',
         supplier: k.supplier || '',
+        // 📍 เลขรายการ/คลัง ของบรรทัดนั้นใน BOM ของตัวแม่ (null = ยังไม่ตั้ง ห้ามเดา)
+        item_no: k.item_no ?? null,
+        storage_location: k.storage_location || '',
         qty: per,
         qtyPerRoot: cum,
         parent: path[path.length - 1] || null,

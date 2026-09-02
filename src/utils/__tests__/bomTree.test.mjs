@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { explodeBom, leafRequirements, flatRequirements, levelTag,
-         checkBomFlow, checkIssueFlow, isAssemblyLine } from '../bomTree.js';
+         checkBomFlow, checkIssueFlow, isAssemblyLine,
+         itemNoLabel, nextItemNo, byItemNo, slocLabel } from '../bomTree.js';
 
 /* โครงจริงจาก SAP Display Multilevel BOM ของ 10100384 (user ส่งภาพจอมา 2026-09-02)
    .1  20066660 ×1  →  ..2 20066662 ×1  →  ...3 50029976 ×0.450 KG
@@ -169,4 +170,45 @@ test('isAssemblyLine — ไม่รู้ต้องคืน null ไม่�
   assert.equal(isAssemblyLine('stamping'), false);
   assert.equal(isAssemblyLine(null), null);
   assert.equal(isAssemblyLine(''), null);
+});
+
+/* ═══ 📍 เลขรายการ (Item 0010/0020) + คลังที่เบิก — เทียบจอ SAP (2026-09-02) ═══ */
+
+test('itemNoLabel — เติมศูนย์หน้า 4 หลักแบบ SAP · ยังไม่ตั้ง = ว่าง ห้ามเป็น "0000"', () => {
+  assert.equal(itemNoLabel(10), '0010');
+  assert.equal(itemNoLabel(20), '0020');
+  assert.equal(itemNoLabel(120), '0120');
+  assert.equal(itemNoLabel(9999), '9999');
+  // 🔴 null/0 = "ยังไม่ตั้ง" คนละเรื่องกับ "รายการที่ 0" — ต้องว่าง ไม่ใช่ 0000
+  assert.equal(itemNoLabel(null), '');
+  assert.equal(itemNoLabel(undefined), '');
+  assert.equal(itemNoLabel(0), '');
+  assert.equal(itemNoLabel(''), '');
+});
+
+test('nextItemNo — เว้นทีละ 10 ตามธรรมเนียม SAP · ใบเปล่าเริ่ม 0010', () => {
+  assert.equal(nextItemNo([]), 10);
+  assert.equal(nextItemNo([{ item_no: 10 }, { item_no: 20 }]), 30);
+  // 🔴 ไล่จาก "เลขสูงสุดที่ตั้งไว้" ไม่ใช่นับจำนวนแถว — แถวที่ยังไม่ตั้งเลขต้องไม่ดันเลขถัดไป
+  assert.equal(nextItemNo([{ item_no: 10 }, { item_no: null }, { item_no: null }]), 20);
+  // เลขที่ไม่ลงตัว 10 (คนกรอกเอง/แทรกกลาง) ต้องปัดขึ้นหลักสิบถัดไป ไม่ใช่ +10 ดิบๆ
+  assert.equal(nextItemNo([{ item_no: 15 }]), 20);
+  assert.equal(nextItemNo([{ item_no: 9999 }]), 9999);   // ชนเพดาน SAP (4 หลัก)
+});
+
+test('byItemNo — เรียงตามใบ BOM · ที่ยังไม่ตั้งเลขไปท้ายสุด (ไม่ใช่ขึ้นก่อนเพราะ null)', () => {
+  const rows = [
+    { item_no: null, mat_no: '30042571' },
+    { item_no: 20,   mat_no: '20066663' },
+    { item_no: null, mat_no: '10100384' },
+    { item_no: 10,   mat_no: '20066660' },
+  ];
+  assert.deepEqual([...rows].sort(byItemNo).map(r => r.mat_no),
+    ['20066660', '20066663', '10100384', '30042571']);   // 0010, 0020, แล้วที่ยังไม่ตั้งเรียงตาม mat
+});
+
+test('slocLabel — ตัวพิมพ์ใหญ่/ตัดช่องว่าง · ไม่ระบุ = ว่าง ห้ามเดาคลัง', () => {
+  assert.equal(slocLabel(' rm01 '), 'RM01');
+  assert.equal(slocLabel(null), '');
+  assert.equal(slocLabel('   '), '');
 });

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { explodeBom, checkBomFlow, uomLabel } from '../utils/bomTree';
+import { explodeBom, checkBomFlow, uomLabel, itemNoLabel, slocLabel } from '../utils/bomTree';
 
 /* ═══ 🌳 BOM หลายชั้น — เทียบเคียงจอ SAP "Display Multilevel BOM" (CS12) ══════════
    user ส่งภาพจอ SAP มาให้ศึกษา 2026-09-02 แล้วสั่งยกระดับ feature BOM
@@ -108,10 +108,12 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             <th style={th}>ชั้น</th>
+            <th style={th}>Item</th>
             <th style={th}>Component</th>
             <th style={th}>รายละเอียด</th>
             <th style={{ ...th, textAlign: 'right' }}>จำนวน/ตัวแม่</th>
             <th style={th}>หน่วย</th>
+            <th style={th}>คลัง</th>
             <th style={{ ...th, textAlign: 'right' }}>ต่อ 1 FG</th>
           </tr></thead>
           <tbody>
@@ -121,6 +123,10 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
               return (
                 <tr key={`${r.path.join('>')}|${i}`} style={bad ? { background: 'rgba(239,68,68,0.06)' } : undefined}>
                   <td style={{ ...td, fontFamily: 'monospace', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{r.tag}</td>
+                  {/* 📍 เลขรายการนับใหม่ทุกตัวแม่ (SAP) — ชั้น 2 ที่ขึ้น 0010 ใหม่ = ปกติ ไม่ใช่ซ้ำ */}
+                  <td style={{ ...td, fontFamily: 'monospace', color: r.item_no ? 'var(--text2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>
+                    {itemNoLabel(r.item_no) || '—'}
+                  </td>
                   <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', whiteSpace: 'nowrap',
                     paddingLeft: 9 + (r.level - 1) * 14 }}>
                     {r.level > 1 && <span style={{ color: 'var(--muted)' }}>└ </span>}{r.mat_no}
@@ -143,6 +149,9 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
                   {/* หน่วยต้องมีเสมอ — ไม่มีในฐาน = บอกตรงๆ ห้ามเดา */}
                   <td style={{ ...td, whiteSpace: 'nowrap', color: r.uom ? 'var(--text2)' : TONE.warn, fontWeight: 700 }}>
                     {uomLabel(r.uom) || '⚠ ไม่ระบุ'}
+                  </td>
+                  <td style={{ ...td, fontFamily: 'monospace', whiteSpace: 'nowrap', color: r.storage_location ? '#a855f7' : 'var(--muted)', fontWeight: r.storage_location ? 700 : 400 }}>
+                    {slocLabel(r.storage_location) || '—'}
                   </td>
                   <td style={{ ...td, textAlign: 'right', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmtQty(r.qtyPerRoot)}</td>
                 </tr>
