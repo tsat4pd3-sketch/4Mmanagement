@@ -1,4 +1,4 @@
--- 🔧 FIXTURE SHIM RECORD & SUSTAINABILITY (DR project · 2026-09-01) — ⚠️ ร่าง ยังไม่ apply
+-- 🔧 FIXTURE SHIM RECORD & SUSTAINABILITY (DR project · 2026-09-01) — ✅ apply แล้ว 2026-09-01
 --
 -- โจทย์ลูกค้า: ต้องมี shim record เพื่อควบคุม fixture sustainability
 -- ออกแบบเต็ม + ข้อมูลจริงที่วัดได้ + กฎเหล็ก: docs/FIXTURE-SHIM-DESIGN.md

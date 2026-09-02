@@ -62,6 +62,7 @@ const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
+const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -138,6 +139,7 @@ export const NAV_ITEMS = [
   //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
   { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
 
   // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
@@ -1735,6 +1737,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
+              } />
+              <Route path="/fixture" element={
+                <RoleRoute path="/fixture" userRole={role}><FixtureRegistry /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>
