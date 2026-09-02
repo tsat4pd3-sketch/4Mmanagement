@@ -17,7 +17,8 @@ import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
-import { uomLabel, itemNoLabel, nextItemNo, byItemNo, slocLabel } from '../utils/bomTree';
+import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
+import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1366,7 +1367,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [items, setItems]           = useState([]);
   const [counts, setCounts]         = useState({});
   const [bomByMat, setBomByMat]     = useState({});     // mat_no → ลูกชั้นถัดไป (ไล่โครงหลายชั้น)
-  const [slocOptions, setSlocOptions] = useState([]);   // รหัสคลัง (SAP Stor.Loc.) ที่เคยใช้จริง
+  const [slocs, setSlocs]           = useState([]);     // ทะเบียนรหัสคลัง (storage_locations)
+  const [slocUsed, setSlocUsed]     = useState([]);     // รหัสที่ถูกใช้ใน BOM จริง (เผื่อมีที่ยังไม่ลงทะเบียน)
   const [showTree, setShowTree]     = useState(true);   // 🌳 กางโครงแบบ SAP
   const [partsMaster, setPartsMaster] = useState([]);   // catalog กลาง
   const [search, setSearch]         = useState('');
@@ -1375,6 +1377,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [pickerQ, setPickerQ]       = useState('');     // ค้นหาใน picker
   const [pickerSel, setPickerSel]   = useState([]);     // รายการที่เลือก [{part, qty_per_unit}]
   const [showEdit, setShowEdit]     = useState(false);  // modal แก้ไข bom row
+  const [slocFree, setSlocFree]     = useState(false);  // true = พิมพ์รหัสคลังเอง (ไม่เลือกจากทะเบียน)
   const [editItem, setEditItem]     = useState(null);
   const [form, setForm]             = useState(EMPTY_BOM);
   const [saving, setSaving]         = useState(false);
@@ -1394,14 +1397,17 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         ? supabaseDR.from('bom_items').select(BOM_SLIM).eq('is_active', true)
         : r;
     };
-    const [{ data: prods }, { data: boms }, { data: parts }, opMap] = await Promise.all([
+    const [{ data: prods }, { data: boms }, { data: parts }, opMap, { data: locs }] = await Promise.all([
       supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
       fetchBom(),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
       loadOpInfo(),
+      // ทะเบียนรหัสคลัง — ยังไม่ apply migration (42P01) = ลิสต์ว่าง แต่ยังพิมพ์รหัสเองได้ ไม่ตัน
+      supabaseDR.from('storage_locations').select('code, name, kind, is_active').eq('is_active', true).order('sort_order').order('code'),
     ]);
-    // รหัสคลังที่เคยใช้จริง → datalist กันพิมพ์รหัสใหม่ทุกครั้ง (รหัสไม่นิ่ง = จับคู่ไม่ได้)
-    setSlocOptions([...new Set((boms || []).map(b => slocLabel(b.storage_location)).filter(Boolean))].sort());
+    setSlocs(locs || []);
+    // รหัสที่ถูกใช้ใน BOM จริง — เอาไว้เทียบว่ามีตัวไหน "ยังไม่ลงทะเบียน" (ห้ามซ่อน)
+    setSlocUsed([...new Set((boms || []).map(b => slocLabel(b.storage_location)).filter(Boolean))].sort());
     // 🔩 รายการขั้นตอน (OP งานขับนัท) ไม่ใช่พาร์ทจริง — ห้ามมี BOM ของตัวเอง จึงไม่โผล่ในลิสต์นี้
     const list = (prods || []).filter(p => !opMap[p.mat_no]);
     setProducts(list);
@@ -1456,8 +1462,28 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
   const lineNames = useMemo(() => [...new Set((products || []).map(p => p.line_name).filter(Boolean))].sort(), [products]);
 
+  /* ═══ 🏬 ตัวเลือกรหัสคลังในโมดัลแก้ไข ═══
+     ทะเบียน + รหัสที่เคยถูกใช้ใน BOM แต่ยังไม่ลงทะเบียน (**ห้ามซ่อน** ไม่งั้นหาตัวที่ต้องแก้ไม่เจอ) */
+  const slocChoices = useMemo(() => {
+    const reg = new Map(slocs.map(s => [slocLabel(s.code), { code: slocLabel(s.code), name: s.name }]));
+    slocUsed.forEach(c => { if (!reg.has(c)) reg.set(c, { code: c, name: '⚠ ยังไม่ลงทะเบียน' }); });
+    return [...reg.values()];
+  }, [slocs, slocUsed]);
+  const slocCode      = slocLabel(form.storage_location);
+  const slocInList    = slocChoices.some(s => s.code === slocCode);
+  const slocBadFormat = slocCode !== '' && !slocValid(slocCode);
+  const slocRegistered = slocs.some(s => slocLabel(s.code) === slocCode);
+  const slocUnregistered = slocCode !== '' && !slocRegistered;
+
   const openPicker = () => { setPickerQ(''); setPickerSel([]); setShowPicker(true); };
-  const openEdit_  = (it) => { setEditItem(it); setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '' }); setShowEdit(true); };
+  const openEdit_  = (it) => {
+    setEditItem(it);
+    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '' });
+    // รหัสเดิมที่ไม่มีในลิสต์ (ทะเบียน+ที่เคยใช้) = เปิดโหมดพิมพ์เอง ไม่งั้น select จะแสดงว่าง = ค่าหายเงียบ
+    const c = slocLabel(it.storage_location);
+    setSlocFree(!!c && !slocChoices.some(s => s.code === c));
+    setShowEdit(true);
+  };
 
   const handlePickerSave = async () => {
     if (!pickerSel.length) { toast.error('เลือกพาร์ทอย่างน้อย 1 รายการ'); return; }
@@ -1510,6 +1536,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (itemNo !== null && (!Number.isFinite(itemNo) || itemNo < 1 || itemNo > 9999)) {
       toast.error('เลขรายการต้องเป็น 1–9999 (SAP ใช้ 4 หลัก เช่น 0010) หรือเว้นว่างถ้ายังไม่ตั้ง'); return;
     }
+    // รูปแบบรหัสคลังผิด = บล็อก (DB มี check ด้วย — บอกก่อนจะได้ไม่เจอ error ดิบ)
+    if (!slocValid(form.storage_location)) { toast.error(`รหัสคลังไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; }
     setSaving(true);
     const base = {
       qty_per_unit: qty,
@@ -1530,8 +1558,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     }
     setSaving(false);
     if (error) {
-      toast.error(error.code === '23505'
-        ? `เลขรายการ ${itemNoLabel(itemNo)} ถูกใช้ในใบนี้แล้ว — เลือกเลขอื่น`
+      toast.error(
+        error.code === '23505' ? `เลขรายการ ${itemNoLabel(itemNo)} ถูกใช้ในใบนี้แล้ว — เลือกเลขอื่น`
+        : error.code === '23514' ? `ค่าไม่ผ่านเงื่อนไขของฐานข้อมูล — ${SLOC_FORMAT_HINT}`
         : error.message);
       return;
     }
@@ -1687,9 +1716,21 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                         {/* 🏬 คลังที่เบิกชิ้นส่วนบรรทัดนี้ (SAP Stor.Loc.)
                             ไม่ระบุ = "—" → ระบบยังเบิกตามพฤติกรรมเดิม (line_name/STORE) ไม่ใช่ error */}
                         <TD style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                          {it.storage_location
-                            ? <span style={{ fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7' }}>{slocLabel(it.storage_location)}</span>
-                            : <span style={{ color: 'var(--muted)' }}>—</span>}
+                          {(() => {
+                            const c = slocLabel(it.storage_location);
+                            if (!c) return <span style={{ color: 'var(--muted)' }}>—</span>;
+                            const reg = slocs.find(s => slocLabel(s.code) === c);
+                            const meta = slocKindMeta(reg?.kind);
+                            // รหัสที่ยังไม่ลงทะเบียน = ส้ม + ⚠ (ห้ามแสดงเหมือนรหัสปกติ อาจพิมพ์ผิด)
+                            return (
+                              <span title={reg ? `${meta.icon} ${reg.name}` : 'ยังไม่อยู่ในทะเบียนรหัสคลัง'}
+                                style={{ fontWeight: 700, padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap',
+                                  background: reg ? `${meta.color}1f` : 'rgba(245,158,11,0.14)',
+                                  color: reg ? meta.color : '#f59e0b' }}>
+                                {reg ? '' : '⚠ '}{c}
+                              </span>
+                            );
+                          })()}
                         </TD>
                         <TD>{it.source_line
                           ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
@@ -1817,12 +1858,39 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 </div>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>คลังที่เบิก (Stor.Loc.)</label>
-                  <input style={{ ...inputSt, fontFamily: 'monospace' }} maxLength={20} list="bom-slocs"
-                    value={form.storage_location} onChange={e => setForm(f => ({ ...f, storage_location: e.target.value }))}
-                    placeholder="เว้นว่าง = ยังไม่ระบุ" />
-                  <datalist id="bom-slocs">{slocOptions.map(s => <option key={s} value={s} />)}</datalist>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
-                    ยังไม่ผูกกับการตัดสต็อก — ระบบยังเบิกตามไลน์เหมือนเดิม
+                  {/* เลือกจากทะเบียนเป็นหลัก — รหัสต้องนิ่ง ไม่งั้นจับคู่ไม่ได้
+                      แต่ต้องพิมพ์เองได้ด้วย (PE อาจไม่มีสิทธิ์แก้ทะเบียน = ห้ามทางตัน) */}
+                  {slocFree ? (
+                    <input autoFocus style={{ ...inputSt, fontFamily: 'monospace', textTransform: 'uppercase' }} maxLength={6}
+                      value={form.storage_location} onChange={e => setForm(f => ({ ...f, storage_location: e.target.value }))}
+                      placeholder="เช่น S401" />
+                  ) : (
+                    <select style={{ ...inputSt, fontFamily: 'monospace' }} value={slocInList ? slocLabel(form.storage_location) : ''}
+                      onChange={e => {
+                        if (e.target.value === '__free') { setSlocFree(true); setForm(f => ({ ...f, storage_location: '' })); return; }
+                        setForm(f => ({ ...f, storage_location: e.target.value }));
+                      }}>
+                      <option value="">— ยังไม่ระบุ —</option>
+                      {slocChoices.map(s => (
+                        <option key={s.code} value={s.code}>{s.code} · {s.name}</option>
+                      ))}
+                      <option value="__free">✏️ พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
+                    </select>
+                  )}
+                  <div style={{ fontSize: 10.5, marginTop: 3, lineHeight: 1.45 }}>
+                    {slocFree && (
+                      <div style={{ marginBottom: 2 }}>
+                        <span style={{ color: 'var(--muted)' }}>{SLOC_FORMAT_HINT} · </span>
+                        <span onClick={() => { setSlocFree(false); setForm(f => ({ ...f, storage_location: '' })); }}
+                          style={{ color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>เลือกจากทะเบียนแทน</span>
+                      </div>
+                    )}
+                    {/* ⚠ ต้องบอกทั้ง 2 กรณี: รูปแบบผิด (บันทึกไม่ได้) กับ ยังไม่ลงทะเบียน (บันทึกได้แต่ควรไปเพิ่ม) */}
+                    {slocBadFormat && <div style={{ color: '#ef4444', fontWeight: 700 }}>🔴 รูปแบบไม่ถูก — {SLOC_FORMAT_HINT}</div>}
+                    {!slocBadFormat && slocUnregistered && (
+                      <div style={{ color: '#f59e0b', fontWeight: 700 }}>⚠ รหัสนี้ยังไม่อยู่ในทะเบียน — บันทึกได้ แต่ควรไปเพิ่มที่ 📦 Line Stock → 🏬 โซนคลัง</div>
+                    )}
+                    <div style={{ color: 'var(--muted)' }}>ยังไม่ผูกกับการตัดสต็อก — ระบบยังเบิกตามไลน์เหมือนเดิม</div>
                   </div>
                 </div>
               </div>

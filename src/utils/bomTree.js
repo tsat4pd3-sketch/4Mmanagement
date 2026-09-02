@@ -66,9 +66,10 @@ export const byItemNo = (a, b) => {
   return norm(a?.mat_no).localeCompare(norm(b?.mat_no));
 };
 
-/** รหัสคลังที่เบิก (SAP Stor.Loc.) สำหรับแสดงผล — ตัดช่องว่าง ตัวพิมพ์ใหญ่
- *  **ไม่ระบุ = '' ห้ามเดาเป็นคลังใดคลังหนึ่ง** (ระบบยังใช้พฤติกรรมเดิม = เบิกตาม line_name) */
-export const slocLabel = (s) => norm(s).toUpperCase();
+/* 🏬 รหัสคลัง (SAP Stor.Loc.) มีบ้านของตัวเองที่ `src/utils/storageLoc.js`
+   (รูปแบบ/ชนิดพื้นที่/การตรวจ อยู่ที่นั่นทั้งหมด) — re-export ไว้เฉยๆ ให้จุดที่ทำงานกับ BOM
+   import จากที่เดียวได้ **ห้ามนิยาม slocLabel ซ้ำที่นี่** */
+export { slocLabel } from './storageLoc.js';
 
 /**
  * กาง BOM ของ FG ตัวหนึ่งเป็นรายการเรียงแบบ SAP (depth-first ตามลำดับที่ BOM เก็บไว้)

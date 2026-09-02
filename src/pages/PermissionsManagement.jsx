@@ -100,6 +100,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-coordination', label: '— แท็บ ประสานงาน PM (แจ้งผลิต) (ใน ศูนย์ PM)' },
       { key: 'page:/pm-setup',    label: '— แท็บ ตั้งจุดตรวจ PM (ใน ศูนย์ PM)' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
+      { key: 'page:/fixture',     label: 'บันทึกชิม Fixture (JIG)' },
       { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
     ],
   },

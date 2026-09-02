@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import { baseOfPart } from '../utils/matResolve';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
@@ -818,14 +819,7 @@ const tdc = { padding: '6px 8px', borderTop: '1px solid var(--border)', fontSize
 
 /* นับวันทำงานของเดือนจากปฏิทินบริษัท: วันธรรมดา (จ-ศ) − วันหยุด + วันเสาร์/อาทิตย์ที่มาร์ค working
    (company_calendar เก็บเฉพาะวันพิเศษ ไม่ครบเดือน — วันปกติจึงอนุมานเป็นวันธรรมดา) */
-// base part = ตัด revision token ตัวท้าย (≤2 ตัวอักษร) ออก แล้ว uppercase ไม่มีตัวคั่น
-// เช่น "MB3B 16C274 CE" → "MB3B16C274" · "MB3B-16C274" → "MB3B16C274" (ตรงกัน แม้ rev ต่าง)
-function baseOfPart(x) {
-  return String(x || '').toUpperCase()
-    .replace(/[^A-Z0-9]+/g, ' ').trim()
-    .replace(/ [A-Z0-9]{1,2}$/, '')
-    .replace(/ /g, '');
-}
+// baseOfPart ย้ายไป src/utils/matResolve.js แล้ว (ใช้ร่วมกับโมดูล Fixture Shim — ห้ามนิยามซ้ำ)
 
 /* วันทำงาน/เดือน → ใช้ countWorkingDaysInMonth (utils/companyCalendar) ที่เดียว
    (QC audit 2026-08-20 · รอบ 5: เดิมไฟล์นี้ถือสูตรของตัวเองซ้ำกับ util กลาง — ความหมายเท่ากัน
