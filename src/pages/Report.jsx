@@ -1014,6 +1014,7 @@ table{border-collapse:collapse;width:100%}
 function StationLogTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
+  const orgSectionList = useOrgSections();
   const today = getWorkDate();
   const [stations, setStations] = useState([]);
   const [lines, setLines] = useState([]);
@@ -1022,6 +1023,7 @@ function StationLogTab() {
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stationSection, setStationSection] = useState('');
   const [stationTeam, setStationTeam] = useState('');
   const [stationShift, setStationShift] = useState('');
   const [calLoaded, setCalLoaded] = useState(false);
@@ -1034,19 +1036,39 @@ function StationLogTab() {
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
-  // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
-  // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
-  const scopedStations = useMemo(() => {
-    const isScoped = (role === 'leader' && userLineId) || scopeSecs.length > 0;
-    if (!isScoped) return stations;
-    if (!lines.length) return [];
+  const secByLineName = useMemo(() => Object.fromEntries(lines.map(l => [l.name, l.section])), [lines]);
+
+  // ⚠️ dropdown "ส่วนงาน" ต้อง scope ด้วย ไม่ใช่แค่ query — เดิม dropdown เลือกสถานีเป็นลิสต์แบนรวมทุกไลน์
+  // ทุกส่วนงาน (LINE C/PD1, LINE GWM/PD2, ... ปนกันหมด) ไม่มีชั้นให้กรองก่อนเลย แม้ query ข้อมูลจะ scope
+  // อยู่แล้วก็ตาม (2026-09 · user จับได้จากภาพหน้าจอ "ไม่กรอง hierarchy") — เติมตัวกรองส่วนงานแบบเดียวกับ
+  // DailyTab/PerEmployeeTab ในไฟล์นี้ ให้แคบเหลือทีละส่วนงานก่อนไปเลือกสถานี
+  const stationSectionsList = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine ? stations.filter(s => s.line_name === myLine.name) : [];
+      return myLine?.section ? [myLine.section] : [];
     }
-    const secByLineName = Object.fromEntries(lines.map(l => [l.name, l.section]));
-    return stations.filter(s => inSectionScope(scopeSecs, secByLineName[s.line_name]));
-  }, [stations, lines, role, userLineId, scopeSecs]);
+    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
+  }, [lines, orgSectionList, role, userLineId, scopeSecs]);
+
+  // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
+  // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
+  // แล้วซ้อนตัวกรอง "ส่วนงาน" ที่ user เลือกเองทับอีกชั้น (แคบลงได้อย่างเดียว ไม่มีทางเห็นนอก scope ที่ role อนุญาต)
+  const scopedStations = useMemo(() => {
+    const isRoleScoped = (role === 'leader' && userLineId) || scopeSecs.length > 0;
+    let out = stations;
+    if (isRoleScoped) {
+      if (!lines.length) return [];
+      if (role === 'leader' && userLineId) {
+        const myLine = lines.find(l => String(l.id) === String(userLineId));
+        out = myLine ? stations.filter(s => s.line_name === myLine.name) : [];
+      } else {
+        out = stations.filter(s => inSectionScope(scopeSecs, secByLineName[s.line_name]));
+      }
+    }
+    if (stationSection) out = out.filter(s => secByLineName[s.line_name] === stationSection);
+    return out;
+  }, [stations, lines, role, userLineId, scopeSecs, secByLineName, stationSection]);
 
   // เลือกสถานีแรกใน scope อัตโนมัติ / เคลียร์ถ้าสถานีที่เลือกหลุด scope
   useEffect(() => {
@@ -1140,6 +1162,10 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={stationSection} onChange={e => setStationSection(e.target.value)} style={selSt}>
+          <option value="">ทุกส่วนงาน</option>
+          {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
           style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (

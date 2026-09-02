@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════════════
-   🚨 จอห้องช่าง (Maintenance Andon Board) — `/dept-dashboard?dept=maintenance&view=andon`
+   🚨 จอเฝ้าระวัง (Andon Board) — เนื้อในของหน้า `/tv` ทุก `?dept=` (ช่าง/ผลิต/สโตร์)
 
    ที่มา (feedback หน้างาน 2026-08-24): จอ TV ในห้องช่างเปิด `/factory-map` อยู่
    ซึ่งเป็น "ผังภาพรวมทั้งโรงงาน" ใบเดียวกับที่ผู้บริหารดู — ตอบคำถามของช่างไม่ได้
@@ -30,7 +30,10 @@
        ค่าเริ่มต้น = `call_mtn` (ห้องช่างรอถูกเรียก · เห็นเครื่องหยุดด้วยตาบนผัง ไม่ส่งเสียงซ้ำ)
        `?sound=all` = ดังตอนเครื่องหยุดเกินเกณฑ์ด้วย — สำหรับห้องที่นั่งรวมกับฝ่ายผลิต
        (user 2026-08-27: จอนี้จะแขวนในออฟฟิศที่มีทั้ง ผจก.ฝ่ายผลิต และช่าง JIG)
-     · **กรองทีมแล้วต้องบอกว่าซ่อนไปกี่รายการ** — การจับคู่เครื่อง↔ทีมเป็นการ *เดา* จากชนิดอุปกรณ์
+     · **`?team=` กรองได้เฉพาะ "คิวงาน" (ใบซ่อม MO · แผน PM) ห้ามกรอง "เครื่องหยุด"**
+       (feedback 2026-09-01: *"เบรคดาวน์จากเครื่อง จากจิ๊ก หรือจากแม่พิมพ์ ไลน์ผลิตก็หยุดรึป่าว"*)
+       ผัง + พาดหัว + ลิสต์เครื่องหยุด + เสียง = ทุกทีมเสมอ · ของทีมอื่นหรี่ + ติดป้ายบอกทีม
+       ส่วนคิวงานที่ถูกกรอง **ต้องบอกว่าซ่อนไปกี่รายการ** — การจับคู่เครื่อง↔ทีมเป็นการ *เดา* จากชนิดอุปกรณ์
        (กฎเหล็ก: ชนิดอุปกรณ์ไม่ได้ล็อกว่าใครเป็นคนตรวจ) ห้ามให้ของหายเงียบ
      · **สถานะที่ระบบ "ไม่รู้" ต้องบอกว่าไม่รู้** — ไม่มี SCADA/มิเตอร์รายเครื่อง จึงบอกได้แค่
        "ไลน์นี้เปิดกะอยู่ / มีคนลง downtime ค้างไว้" **ห้ามเขียนว่า online/พลังงานเรียลไทม์**
@@ -212,17 +215,27 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
     .map(x => ({ ...x, _s: severity(x, thr), _min: dtElapsedMin(x), _team: teamOfDt(x) }))
     .sort((a, b) => a._s.rank - b._s.rank || (b._min ?? -1) - (a._min ?? -1)), [dts, teamOfDt, thr]);
 
-  // ทีมที่ไม่ระบุ (ไม่รู้เครื่อง) ต้องเห็นเสมอ — ปล่อยหลุดจอไม่ได้
-  const rows = useMemo(() => (team ? allRows.filter(r => !r._team || r._team === team) : allRows), [allRows, team]);
-  const hiddenByTeam = allRows.length - rows.length;
-
-  const live = rows.filter(r => r._s.k !== 'planned');
-  const planned = rows.filter(r => r._s.k === 'planned');
+  /* 🔴🔴 กฎเหล็ก — **ตัวกรองทีมห้ามกรอง "เครื่องหยุด"** (feedback หน้างาน 2026-09-01)
+     *"จะเบรคดาวน์จากเครื่อง จากจิ๊ก หรือจากแม่พิมพ์ ไลน์ผลิตก็หยุดรึป่าว"* — ใช่ หยุดเหมือนกัน
+     เดิมกรอง `rows` ด้วยทีมแล้วเอาไปวาดผัง + พาดหัวด้วย ⇒ **จอโกหก**: สลับชิปไปทีมที่ไม่ได้ถือใบนั้น
+     ผังกลับเขียวทั้งโรงงาน + พาดหัวขึ้น "✅ ไม่มีเครื่องหยุดอยู่ตอนนี้" ทั้งที่ 2 ไลน์หยุดจริงอยู่
+     (ผิดกฎ "จอที่ยืนยันสิ่งที่ไม่จริง แย่กว่าจอที่ว่าง")
+     ⇒ แยก 2 แกนให้ขาด:
+        · **"ไลน์ไหนหยุด" = ข้อเท็จจริงของฝ่ายผลิต → ไม่กรองทีมเด็ดขาด** (ผัง · พาดหัว · ลิสต์ · เสียง)
+        · **"ใครไปซ่อม" = คิวงานของทีม → กรองได้** (ใบซ่อม MO · แผน PM)
+     การ์ดของทีมอื่นยังโชว์ แต่ **ติดป้ายบอกว่าเป็นของทีมไหน + หรี่ลง** — เห็นว่าไลน์หยุด
+     โดยไม่เข้าใจผิดว่าเป็นงานตัวเอง (ดีกว่าซ่อนแล้วนับ "ซ่อนไป N" ซึ่งตอบไม่ได้ว่าไลน์ไหน) */
+  const live = allRows.filter(r => r._s.k !== 'planned');
+  const planned = allRows.filter(r => r._s.k === 'planned');
   const nCall = live.filter(r => r._s.k === 'call').length;
+  // ของทีมอื่น = รู้ทีมแน่ชัดและไม่ใช่ทีมที่เลือก · ไม่รู้ทีม = ถือว่าเกี่ยวกับทุกคน (ห้ามหรี่)
+  const otherTeam = useCallback((r) => !!(team && r._team && r._team !== team), [team]);
 
   /* ── สถานะรายไลน์สำหรับระบายสีบนผัง ──
      🔴 มี downtime นอกแผนค้าง (กระพริบถ้ายังไม่มีใครรับสายเรียกช่าง) · 🟢 เปิดกะอยู่ · ⚪ ไม่ได้เปิดกะ
-     ⚠️ "เปิดกะอยู่" ≠ "เครื่องเดินอยู่" — ระบบยังไม่มีสัญญาณรายเครื่อง (ต้องมี SCADA) ห้ามเขียนว่า online */
+     ⚠️ "เปิดกะอยู่" ≠ "เครื่องเดินอยู่" — ระบบยังไม่มีสัญญาณรายเครื่อง (ต้องมี SCADA) ห้ามเขียนว่า online
+     ⚠️⚠️ อ่านจาก `live` ที่ **ไม่กรองทีม** เสมอ — ผังเป็นความจริงชุดเดียวที่ทุกห้องเห็นตรงกัน
+        (กติกาเดียวกับ "เครื่องหยุดชนะเสมอ แม้บนจอสโตร์") ห้ามเอา rows ที่กรองทีมแล้วมาวาด */
   const lineState = useMemo(() => {
     const m = {};
     live.forEach(r => {
@@ -342,10 +355,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
 
       {/* ⚠️ กรองทีมแล้วต้องบอกว่าซ่อนอะไรไป — การจับคู่เครื่อง↔ทีมเป็นการเดาจากชนิดอุปกรณ์
           (PM เดาไม่ได้ ใช้ `checklists.department` = ตัวจริง แต่ก็ยังต้องบอกว่าซ่อนไปกี่แผน) */}
-      {team && (hiddenByTeam > 0 || moHidden > 0 || pmHidden > 0) && (
+      {team && (moHidden > 0 || pmHidden > 0) && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          👁 ซ่อนของทีมอื่น: เครื่องหยุด {hiddenByTeam} · ใบซ่อม {moHidden} · แผน PM {pmHidden} — กด “ทุกทีม” เพื่อดูครบ
-          (เครื่องที่ยังไม่รู้ว่าทีมไหนดูแล จะแสดงให้ทุกทีมเห็นเสมอ)
+          👁 ซ่อน<b>คิวงาน</b>ของทีมอื่น: ใบซ่อม {moHidden} · แผน PM {pmHidden} — กด “ทุกทีม” เพื่อดูครบ
+          · <b>เครื่องที่หยุดไม่เคยถูกซ่อน</b> (ไลน์หยุดคือเรื่องของทุกคน — ของทีมอื่นขึ้นป้ายกำกับไว้)
         </div>
       )}
 
@@ -388,6 +401,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             <span><b style={{ color: '#22c55e' }}>■</b> เปิดกะอยู่</span>
             <span><b style={{ color: '#6b7280' }}>■</b> ไม่ได้เปิดกะ</span>
             {showStore && <span>📦 = รอของจากสโตร์ (เครื่องหยุดชนะเสมอ)</span>}
+            {showPm && <span>· ผัง<b>ไม่กรองทีม</b> — ไลน์หยุดคือเรื่องของทุกคน (ชิปทีมกรองเฉพาะคิวใบซ่อม/แผน PM)</span>}
             <span>· สีมาจาก <b>กะที่เปิด + downtime ที่คนลงไว้</b> ยังไม่มีสัญญาณรายเครื่อง (ต้องต่อ SCADA/มิเตอร์ก่อน)</span>
           </div>
         </div>
@@ -422,13 +436,18 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               แล้วค่อยเครื่อง/ประเภท/หมายเหตุ · คำอธิบายยาวไปท้ายสุดเป็นตัวเล็ก
               (เดิมเอา "⚠ ไม่ระบุเครื่อง" เป็นหัวเรื่องตัวใหญ่ + คำอธิบาย 2 บรรทัด แล้วเวลาถูกดันไปขวา
                พอคอลัมน์แคบบนจอ ultrawide ข้อความตัดบรรทัดจนอ่านไม่ออก · user ทัก 2026-08-26) */}
-          {live.map(r => (
+          {live.map(r => {
+            const oth = otherTeam(r);
+            return (
             <div key={r.id} className={r._s.blink ? 'dt-alarm-blink' : undefined}
               onClick={() => navigate('/mtn-repair')}
               style={{
                 ...card, cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3,
                 borderColor: r._s.color, borderLeft: `7px solid ${r._s.color}`,
                 background: r._s.k === 'call' ? 'rgba(239,68,68,0.12)' : 'var(--card)',
+                /* ของทีมอื่น = หรี่ลงพอให้รู้ว่าไม่ใช่คิวเรา แต่ **ห้ามซ่อน/ห้ามจางจนอ่านไม่ออกจากอีกฝั่งห้อง**
+                   (ไลน์นั้นหยุดจริง ผังก็ระบายสีอยู่ — ลิสต์ต้องอธิบายได้ว่าเป็นเครื่องอะไร) */
+                opacity: oth ? 0.72 : 1,
               }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                 <span style={{ fontSize: 14 * big, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -455,8 +474,15 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (จึงแสดงให้ทุกทีม)
                 </div>
               )}
+              {/* ของทีมอื่น: บอกให้ชัดว่าไลน์หยุดจริง แต่คิวซ่อมไม่ใช่ของห้องนี้ */}
+              {oth && (
+                <div style={{ fontSize: 10 * big, color: 'var(--muted)', lineHeight: 1.4 }}>
+                  🔁 ไลน์นี้หยุดอยู่จริง แต่เป็นคิวซ่อมของทีม <b>{deptNameOf(r._team)}</b>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
 
           {/* ⚠️ หยุดตามแผนไม่ใช่ alarm — แต่ห้ามซ่อน (ช่างต้องรู้ว่าเครื่องไหนหยุดอยู่ด้วยเหตุอะไร) */}
           {planned.length > 0 && (
@@ -555,7 +581,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
       {zoom && (() => {
         const z = String(zoom).trim().toUpperCase();
         const eqOf = (v) => String(v || '').trim().toUpperCase() === z;
-        const zDt = rows.filter(r => eqOf(r.production_sessions?.line_name));
+        /* ⚠️ ต้องเป็น `allRows` (ไม่กรองทีม) ให้ตรงกับสีบนผัง — ไม่งั้นกดกรอบที่ระบายแดงอยู่
+           แล้ว modal ตอบ "ไลน์นี้ปกติ" เพราะใบนั้นเป็นของทีมอื่น = จอขัดกันเองในคลิกเดียว
+           (ส่วน zMo/zPm ยังกรองทีมได้ — นั่นคือคิวงาน ไม่ใช่สถานะไลน์) */
+        const zDt = allRows.filter(r => eqOf(r.production_sessions?.line_name));
         const zNos = new Set(zDt.map(r => normNo(r.machine_no)).filter(Boolean));
         const zMo = mo.filter(o => eqOf(o.line_name) || zNos.has(normNo(o.machine_no)));
         const zPm = pm.filter(p => eqOf(p.line));

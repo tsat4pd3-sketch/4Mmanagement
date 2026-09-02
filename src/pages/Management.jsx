@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { wipPointCat } from '../utils/wipMatOptions';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
@@ -17,6 +18,7 @@ import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
@@ -1492,114 +1494,11 @@ export default function Management() {
           const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
           const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
 
-          const computeQueuedPositionsFull = (cards) => {
-            const breaks = allBreaksOnce();
-            const filtered = cards.filter(o => o.orderStartMs && o.orderEndMs);
-            const byOpenTime = [...filtered].sort((a, b) => a.orderStartMs - b.orderStartMs);
-            // คิวแสดงผลจริง: ใบที่ "ปิดแล้ว" (confirm) คือลำดับการผลิตที่เกิดขึ้นจริง ให้แทรกเข้าคิวก่อนตามเวลาปิดจริง
-            // (confirmed_at) เสมอ — ใบที่ "ยังไม่ปิด" ถือว่ายังไม่ถึงตาที่ผลิตจริง ต้องถีบไปต่อท้ายคิวเสมอ ไม่ว่าจะ
-            // เปิดมาก่อนนานแค่ไหนก็ตาม ผลคือถ้ามีใบ confirm มาแทรก จะดันใบที่ยังไม่ปิดถอยไปอยู่หลังสุด ไม่บังพื้นที่
-            // ของใบที่ทำสำเร็จไปแล้วจริง ๆ — ทำให้เหลือใบแดง (ยังไม่ปิด) แค่เท่าที่จำเป็นจริง ๆ
-            const doneCards = filtered.filter(o => o.isDone && o.confirmed_at)
-              .sort((a, b) => new Date(a.confirmed_at).getTime() - new Date(b.confirmed_at).getTime() || a.orderStartMs - b.orderStartMs);
-            const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
-              .sort((a, b) => a.orderStartMs - b.orderStartMs);
-            const sorted = [...doneCards, ...openCards];
-            // ── ชุดสแกนปิดรวด (batch confirm) ──────────────────────────────────────
-            // เครื่องจักรยังไม่ส่งสัญญาณจบทีละใบ พนักงานจึงสแกนปิดทั้งล็อตรวดเดียว (เช่น 9 ใบติดกัน)
-            // ถ้าตัดสิน "ปิดช้า" รายใบจาก confirmed_at ใบแรก ๆ ของชุดจะกลายเป็นส้มเกินจริงเสมอ
-            // จึงจัดกลุ่มใบที่สแกนห่างกันไม่เกิน 5 นาทีเป็นชุดเดียว แล้วตัดสินความช้าที่ใบสุดท้ายของชุด
-            // (เทียบเวลาสแกนจบชุด กับเวลาจบตามทฤษฎีของงานทั้งชุด)
-            const BATCH_GAP_MS = 5 * 60000;
-            const batchIdOf = new Map();
-            let curBatchId = 0;
-            doneCards.forEach((o, i) => {
-              if (i > 0 && new Date(o.confirmed_at).getTime() - new Date(doneCards[i - 1].confirmed_at).getTime() > BATCH_GAP_MS) curBatchId++;
-              batchIdOf.set(o, curBatchId);
-            });
-            const batchCount = new Map();
-            doneCards.forEach(o => { const b = batchIdOf.get(o); batchCount.set(b, (batchCount.get(b) || 0) + 1); });
-            const batchSeen = new Map();
-            // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
-            // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-            // pace เทียบเป็น std-time (Σ ยอด×CT ต่อพาร์ท) — คิวคำนวณระดับ sub-line มีหลายพาร์ท CT ต่างกันได้
-            const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMatNo[c.mat_no] || 0)), 0);
-            const anyCt = cards.some(c => (ctByMatNo[c.mat_no] || 0) > 0);
-            const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-            let expectedStdSec = Infinity;
-            if (anyCt && firstStartMs) {
-              let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
-              breaks.forEach(([bs, be]) => {
-                const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
-                if (oe > os) elapsedMs -= (oe - os);
-              });
-              expectedStdSec = Math.max(0, elapsedMs) / 1000;
-            }
-            const rowBehindPace = rowActualStdSec < expectedStdSec;
-            let queueEndMs = -Infinity;
-            let curRoundIdx = null;
-            return sorted.map(o => {
-              const roundIdx = roundIndexOf(o.orderStartMs);
-              // ห้ามให้ queueEndMs ถอยหลัง — ถ้าการ์ดก่อนหน้ายาวคร่อมเข้ารอบถัดไป (duration ยาวจาก qty×ct)
-              // ต้องเดินคิวต่อจากที่มันจบจริง ไม่ใช่กระโดดกลับไปที่จุดเริ่มรอบใหม่ (จะทำให้ทับกัน)
-              if (curRoundIdx === null || roundIdx !== curRoundIdx) {
-                curRoundIdx = roundIdx;
-                queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
-              }
-              const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
-              let startMs = Math.max(o.orderStartMs, queueEndMs);
-              let endMs = startMs + durationMs;
-              // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
-              // เวลาที่ "ว่าง" ก่อนเบรคเสียไปฟรี ๆ) แต่ให้ "ซอย" ทับเบรคแล้วยืดความยาวการ์ดออกแทน
-              const consumedBreaks = new Set();
-              let extended = true;
-              while (extended) {
-                extended = false;
-                breaks.forEach(([bs, be], i) => {
-                  if (consumedBreaks.has(i)) return;
-                  if (bs < endMs && be > startMs) {
-                    consumedBreaks.add(i);
-                    endMs += (be - bs);
-                    extended = true;
-                  }
-                });
-              }
-              // กฎตายตัว: ใบกัมบังห้ามซ้อนทับกันเอง และความกว้างต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด
-              // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
-              // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
-              // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
-              // ปิดช้า: ใบเดี่ยวตัดสินตามเดิม · ใบในชุดสแกนรวดเดียวตัดสินเฉพาะใบสุดท้ายของชุด
-              // (ใบแรก ๆ ของชุดถือว่าจบตามคิวทฤษฎี เพราะเวลาสแกนไม่ใช่เวลาผลิตจบจริงของใบนั้น)
-              let isLateDone = false;
-              if (o.isDone && o.confirmed_at) {
-                const bid = batchIdOf.get(o);
-                const size = batchCount.get(bid) || 1;
-                const seen = (batchSeen.get(bid) || 0) + 1;
-                batchSeen.set(bid, seen);
-                if (size === 1 || seen === size)
-                  isLateDone = new Date(o.confirmed_at).getTime() > endMs + (size > 1 ? BATCH_GAP_MS : 0);
-              }
-              let occupiedEndMs = endMs;
-              if (isLateDone) {
-                occupiedEndMs = new Date(o.confirmed_at).getTime();
-              } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
-                occupiedEndMs = nowMs;
-              }
-              // เดินคิวต้องไม่ขยับมาก่อน endMs ของการ์ดนี้เด็ดขาด (ไม่งั้นใบถัดไปจะมาทับกล่องที่แสดงอยู่)
-              // ถ้าปิดช้ากว่าทฤษฎี (isLateDone) ค่อยยืดคิวต่อไปถึง occupiedEndMs (confirmed_at จริง) กันใบถัดไปทับ "หาง"
-              // ถ้าปิดเร็ว/ยังไม่ปิด ใช้ endMs เดิม — ห้ามใช้ confirmed_at ที่เร็วกว่ามาเลื่อนคิวให้สั้นลง
-              queueEndMs = isLateDone ? occupiedEndMs : endMs;
-              const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs && rowBehindPace;
-              return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
-            }).map((item, i, arr) => {
-              // ใบที่ยังไม่ปิด+เลยกำหนด หางสีแดงจะยืดไปถึง "ตอนนี้" เสมอ — แต่ถ้าใบถัดไปเริ่มทำงานไปแล้ว
-              // (แสดงว่าคิวเดินต่อไปจริงแล้ว) ต้องตัดหางแดงให้สุดแค่จุดที่ใบถัดไปเริ่ม ไม่ให้ยืดไปทับใบถัดไป
-              if (item.isDelayed && arr[i + 1]) {
-                return { ...item, occupiedEndMs: Math.min(item.occupiedEndMs, arr[i + 1].startMs) };
-              }
-              return item;
-            });
-          };
+          // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
+          // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
+          const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
+            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+          });
 
           // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
           const pctForHalf = (item, half) => {
@@ -3363,7 +3262,9 @@ function PointDetailCard({ detail, alarms, onClose }) {
               ) : (
                 <>
                   <span style={chipSt(isPackaging ? '#4d9fff' : '#f59e0b')}>{isPackaging ? '📦 Packaging' : '🧱 Material'}</span>
-                  {!isPackaging && point.material_category && <span style={chipSt('#a78bfa')}>{point.material_category}</span>}
+                  {/* ⚠️ ห้ามโชว์เลขดิบ ('9'/'op' อ่านไม่รู้เรื่อง) — ผ่าน wipCatLabel เหมือนหน้าตั้งค่า */}
+                  {!isPackaging && wipPointCat(point.material_category, point.mat_no).text
+                    && <span style={chipSt('#a78bfa')}>{wipPointCat(point.material_category, point.mat_no).text}</span>}
                   <span style={chipSt(isLow ? '#ef4444' : '#22c55e')}>
                     {isLow ? '⚠ ' : ''}{point.current_qty ?? 0} / min {point.min_qty ?? 0} – max {point.max_qty ?? 0}
                   </span>

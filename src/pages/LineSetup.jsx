@@ -13,9 +13,10 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
-import { MAT_CLASSES, matDigit, matClassOf, matMatches } from '../utils/matPrefix';
-import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat } from '../utils/wipMatOptions';
+import { matDigit, matClassOf, matMatches, isSapMat } from '../utils/matPrefix';
+import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat, wipCatOptions, wipCatValue, wipCatLabel, wipPointCat, WIP_CAT_OP } from '../utils/wipMatOptions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { loadOpInfo } from '../utils/opItems';
 import SearchSelect from '../components/SearchSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -207,11 +208,15 @@ export default function LineSetup({ embedded = false } = {}) {
     () => buildWipMatOptions(drProducts, { line: selectedLine, lines, upstreamLines }),
     [drProducts, lines, selectedLine, upstreamLines],
   );
-  const wipMatCat = matDigit(wipForm.material_category);
-  const { rows: wipMatShown, hidden: wipMatHidden } = useMemo(
+  const wipMatCat = wipCatValue(wipForm.material_category);
+  const { rows: wipMatShown, hidden: wipMatHidden, keptUnjudged: wipMatKept } = useMemo(
     () => filterWipMatByCat(wipMatOptions, wipMatCat, wipMatAllCat),
     [wipMatOptions, wipMatCat, wipMatAllCat],
   );
+  const wipMatSel = wipMatOptions.find(o => o.id === wipForm.mat_no) || null;
+  const wipMatIsOp = wipMatSel?.isOp;
+  // ประเภทที่ระบบอ่านได้เองจากเลข mat (ใช้บอกว่าไม่ต้องเลือกซ้ำ)
+  const wipMatDerived = wipPointCat('', wipForm.mat_no, wipMatIsOp);
 
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
@@ -307,13 +312,15 @@ export default function LineSetup({ embedded = false } = {}) {
         (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
             (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
        → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
-    const [{ data: pmRows }, { data: drPd }, { data: flRows }] = await Promise.all([
+    const [{ data: pmRows }, { data: drPd }, { data: flRows }, opMap] = await Promise.all([
       supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
       // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
       supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).not('mat_no', 'is', null),
       supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
+      // รายการขั้นตอน (OP) — ผ่าน util กลาง (cache ระดับ module · best-effort) เพื่อ "ติดป้าย" ไม่ใช่กรองทิ้ง
+      loadOpInfo(),
     ]);
-    setDrProducts(mergeMatRegistry(pmRows || [], drPd || []));
+    setDrProducts(mergeMatRegistry(pmRows || [], drPd || [], opMap));
     /* ไลน์ต้นน้ำที่ป้อนงานให้ไลน์นี้ (โหลดไม่ได้ = ไม่มีกลุ่ม "ต้นน้ำ" เฉยๆ ลิสต์ยังครบ)
        ⚠️ เทียบทั้งครอบครัวไลน์ ไม่ใช่ `familyLines` ของ machines (นั่นคือ ตัวเอง+ลูก สำหรับวางเครื่องบนผัง)
        — ป้อนงานให้ไลน์แม่ = ป้อนให้งานที่ไลน์ลูกทำด้วย */
@@ -514,7 +521,8 @@ export default function LineSetup({ embedded = false } = {}) {
     for (const t of ['machines', 'production_sessions', 'dr_products', 'line_stock_transactions',
                      'jigs', 'pm_daily_line_targets', 'pm_daily_alerts', 'mtn_orders', 'improvements', 'scrap_reports',
                      'facility_supply_links', 'pm_coordination_plans', 'kanban_delivery_rounds', 'kanban_deliveries',
-                     'rack_requests', 'kanban_calc_params', 'transport_nodes']) {
+                     'rack_requests', 'kanban_calc_params', 'transport_nodes',
+                     'line_part_levels']) {   // min/max พาร์ทต่อไลน์ (ลูปเรียกของจากสโตร์)
       await bump(supabaseDR, t);
     }
     // คอลัมน์ที่ชื่อไม่ใช่ 'line_name' — ต้องระบุ col เอง
@@ -1614,42 +1622,80 @@ export default function LineSetup({ embedded = false } = {}) {
                       {/* ⚠️ เดิม hardcode 200/300/500 — ขัดกฎ matPrefix.js ที่บอกว่าเลข SAP
                           รันทะลุช่วงเดิมไปแล้ว ต้องแยกด้วย "เลขตัวแรกตัวเดียว" เท่านั้น
                           (เบอร์ 1 = FG หายไปจากลิสต์เดิมด้วย ทั้งที่จุด WIP เก็บ FG ได้) */}
-                      {/* ข้อมูลเก่าเก็บ '200'/'300'/'500' — normalize ด้วย matDigit ตอนแสดง
-                          ค่าเดิมจึงไม่หายจากช่อง (จะถูกเขียนเป็นเลขตัวเดียวเมื่อบันทึกครั้งถัดไป) */}
-                      <select value={matDigit(wipForm.material_category)}
+                      {/* ข้อมูลเก่าเก็บ '200'/'300'/'500' — normalize ด้วย wipCatValue ตอนแสดง
+                          ค่าเดิมจึงไม่หายจากช่อง (จะถูกเขียนเป็นเลขตัวเดียวเมื่อบันทึกครั้งถัดไป)
+                          ⚠️ "ขั้นตอนย่อย" เป็นตัวเลือกของตัวเอง ไม่ใช่เบอร์ 9 (ดู wipMatOptions.js) */}
+                      <select value={wipMatCat}
                         onChange={e => setWipForm({ ...wipForm, material_category: e.target.value })}>
                         <option value="">-- ประเภทวัสดุ --</option>
-                        {MAT_CLASSES.map(c => (
-                          <option key={c.digit} value={c.digit}>{c.digit} · {c.label}</option>
+                        {wipCatOptions().map(c => (
+                          <option key={c.value} value={c.value}>{c.label}</option>
                         ))}
                       </select>
                       {/* ⚠️ ทะเบียนพาร์ทหลักร้อยรายการ — <datalist> ค้นได้แค่ "ขึ้นต้นตรง" ใช้กับชื่อไทยไม่ได้
                           ใช้ SearchSelect ตามกฎ UI-CONVENTIONS §5.1.1 (ลิสต์เกิน ~30 แถวห้ามเป็น select/datalist)
                           allowFree = พาร์ทที่ยังไม่เข้าทะเบียนยังพิมพ์เองได้ (ติดป้ายบอกว่าอยู่นอกทะเบียน) */}
                       <SearchSelect
-                        value={wipMatOptions.some(o => o.id === wipForm.mat_no) ? wipForm.mat_no : ''}
+                        value={wipMatSel ? wipForm.mat_no : ''}
                         text={wipForm.mat_no}
                         options={wipMatShown}
                         allowFree
                         freeHint="ยังไม่มีในทะเบียนพาร์ท"
                         placeholder="เลขที่วัสดุ (mat no.) — พิมพ์รหัส/ชื่อเพื่อค้น"
-                        emptyText={wipMatCat && !wipMatAllCat ? `ไม่พบในประเภท ${wipMatCat} — ลองกด "ดูทุกประเภท"` : 'ไม่พบพาร์ทที่ค้นหา'}
+                        emptyText={wipMatCat && !wipMatAllCat ? `ไม่พบใน ${wipCatLabel(wipMatCat)} — ลองกด "ดูทุกประเภท"` : 'ไม่พบพาร์ทที่ค้นหา'}
+                        wrapRows
                         onChange={({ id, text }) => setWipForm(f => ({ ...f, mat_no: id || text }))}
                       />
+                      {/* ชื่อพาร์ทยาวกว่าความกว้างแถบข้าง — โชว์ใต้ช่องแบบตัดบรรทัด ให้อ่านครบ
+                          (ในช่องเก็บแค่เลข mat ไม่งั้นถูกตัดกลางคำจนอ่านไม่ออก) */}
+                      {wipMatSel?.sub && (
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2, overflowWrap: 'anywhere' }}>
+                          <span style={{ color: wipMatSel.badgeColor, fontWeight: 700 }}>{wipMatSel.badge}</span>
+                          {' · '}{wipMatSel.sub}
+                        </div>
+                      )}
+                      {/* ⚠️ ประเภทวัสดุ derive จากเลข mat ได้อยู่แล้ว — บอกให้รู้ว่าไม่ต้องเลือกซ้ำ
+                          (ถ้าไม่บอก คนจะคิดว่าเว้นว่างแล้วระบบไม่รู้ว่าเป็นพาร์ทซื้อ) */}
+                      {!wipMatCat && wipMatDerived.text && (
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
+                          ระบบอ่านจากเลข mat ได้เองว่าเป็น <b style={{ color: 'var(--text2)' }}>{wipMatDerived.text}</b> — ไม่ต้องเลือกประเภทก็ได้
+                          {' '}(เลือกไว้เพื่อกรองลิสต์ตอนค้นหาเท่านั้น)
+                        </div>
+                      )}
                       {/* ห้ามซ่อนเงียบ — บอกเสมอว่าตัวกรองประเภทซ่อนไปกี่รายการ + ทางออก */}
                       {wipMatCat !== '' && wipMatHidden > 0 && (
                         <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
-                          กรองด้วยประเภท {wipMatCat} · ซ่อน {wipMatHidden} รายการ
+                          {/* ⚠️ โชว์ "ชื่อประเภท" ไม่ใช่เลขดิบ — "กรองด้วยประเภท 9" อ่านไม่รู้เรื่อง
+                              และทำให้เข้าใจผิดว่ารายการขั้นตอนที่คงไว้เป็นเบอร์ 9 (feedback หน้างาน) */}
+                          กรอง: {wipCatLabel(wipMatCat)} · ซ่อน {wipMatHidden} รายการ
+                          {wipMatKept > 0 && ` · รวม 🔩 ขั้นตอนย่อย (Operation) ${wipMatKept} รายการไว้ด้วย — ไม่มีเลข MAT SAP จึงไม่แยกตามประเภทวัสดุ`}
                           <button type="button" onClick={() => setWipMatAllCat(v => !v)}
                             style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 10.5, padding: 0, textDecoration: 'underline' }}>
                             {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
                           </button>
                         </div>
                       )}
-                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน) */}
-                      {wipForm.mat_no && wipMatCat && !matMatches(wipForm.mat_no, wipMatCat) && (
+                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน)
+                          ⚠️ เตือนเฉพาะเลข SAP 8 หลักที่ไม่ใช่ OP — อย่างอื่นตีความประเภทไม่ได้ จะเตือนผิดทุกครั้ง */}
+                      {wipForm.mat_no && wipMatCat && wipMatCat !== WIP_CAT_OP && !wipMatIsOp && isSapMat(wipForm.mat_no) && !matMatches(wipForm.mat_no, wipMatCat) && (
                         <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
-                          ⚠ {wipForm.mat_no} ขึ้นต้นด้วย {matDigit(wipForm.mat_no) || '—'} ({matClassOf(wipForm.mat_no)?.label || 'ไม่รู้จัก'}) ไม่ตรงประเภทที่เลือก ({wipMatCat})
+                          ⚠ {wipForm.mat_no} เป็น {matClassOf(wipForm.mat_no)?.label || 'ประเภทที่ไม่รู้จัก'} ไม่ตรงกับที่เลือกไว้ ({wipCatLabel(wipMatCat)})
+                        </div>
+                      )}
+                      {/* ไม่ใช่เลข MAT SAP (8 หลัก) และไม่ใช่ OP = อาจพิมพ์ผิด/เป็นเลขลูกค้า — บอกไว้ ไม่บล็อก */}
+                      {wipForm.mat_no && !wipMatIsOp && !isSapMat(wipForm.mat_no) && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          ⚠ “{wipForm.mat_no}” ไม่ใช่เลข MAT SAP (ต้องเป็นตัวเลข 8 หลัก) — บันทึกได้
+                          แต่ระบบตอบไม่ได้ว่าเป็นวัสดุประเภทไหน · ถ้าเป็นขั้นตอนการผลิต ให้ติ๊ก 🔩 รายการขั้นตอน ที่ Product Master
+                          แล้วเลือกประเภทเป็น “🔩 ขั้นตอนย่อย (Operation)”
+                        </div>
+                      )}
+                      {/* เลือก OP = ตั้งใจได้ (บัฟเฟอร์เก็บของหลังขั้นนั้นจริง) แต่ต้องรู้ว่ามันไม่ใช่พาร์ทในทะเบียน */}
+                      {wipMatIsOp && (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                          🔩 ขั้นตอนย่อย (Operation) — ไม่ใช่พาร์ทในทะเบียน SAP · สโตร์ไม่มีของตัวนี้ให้เบิก
+                          จุดนี้จึงเป็น <b>บัฟเฟอร์ระหว่างขั้นในไลน์</b> (Min/Max ใช้ดูจังหวะงาน ไม่ใช่จุดสั่งเติมจากสโตร์)
+                          {wipMatCat !== WIP_CAT_OP && ' · แนะนำตั้งประเภทเป็น “🔩 ขั้นตอนย่อย (Operation)”'}
                         </div>
                       )}
                     </>
@@ -1718,10 +1764,12 @@ export default function LineSetup({ embedded = false } = {}) {
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                           {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 11, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
                         </div>
+                        {/* ⚠️ material_category เป็น "เลขประเภท"/'op' ไม่ใช่เลข MAT → ต้องใช้ wipCatLabel
+                            (matClassOf เข้มขึ้นแล้ว: ไม่ใช่เลข SAP 8 หลัก คืน null · และห้ามโชว์เลขดิบ) */}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                           {p.point_type === 'packaging'
                             ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
-                            : `${p.material_category ? `${matClassOf(p.material_category)?.short || `cat.${p.material_category}`} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
+                            : `${wipPointCat(p.material_category, p.mat_no).text ? `${wipPointCat(p.material_category, p.mat_no).text} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
                           คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
                         </div>
                       </div>

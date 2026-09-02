@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { buildLineWip, WIP_STATUS } from '../utils/lineWipLedger';
 
@@ -27,7 +27,6 @@ import { buildLineWip, WIP_STATUS } from '../utils/lineWipLedger';
  * และเป็นตัวจำกัดขนาดคิวรีในตัว · ยังไม่เคยมีบันทึกเลย = บอกตรงๆ ไม่เดา
  */
 
-const norm = (s) => (s ?? '').toString().trim().toLowerCase();
 const fmt  = (n) => {
   const v = Number(n) || 0;
   return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -49,6 +48,7 @@ const shiftDate = (ymd, back) => {
 
 export default function LineWipPanel({ lineName, workDate, lines = [] }) {
   const [txns, setTxns]       = useState([]);
+  const [upRows, setUpRows]   = useState([]);   // ของที่ค้างอยู่ที่ไลน์แม่ (ไม่นับรวม)
   const [orders, setOrders]   = useState([]);
   const [bomByMat, setBom]    = useState({});
   const [err, setErr]         = useState(null);
@@ -58,28 +58,35 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
   const [range, setRange]     = useState('day');
   const [showAll, setShowAll] = useState(false);
 
-  // ครอบครัวไลน์ — ⚠️ lines ยังโหลดไม่เสร็จ ห้ามได้ set ว่าง (จะกลายเป็น "ไม่มี WIP" ทั้งที่มี)
-  const famNames = useMemo(() => {
-    const names = getLineFamilyNames(lines, lineName);
-    return names.length ? names : [lineName];
-  }, [lines, lineName]);
+  /* ⚠️⚠️ กฎ "หน่วยย่อยที่สุด" (user เคาะ 2026-08-31) — ของอยู่ที่ leaf เสมอ
+     **ห้ามใช้ `getLineFamilyNames` กับสต็อก** — family คือ "ใครเห็นอะไร" (scope ของ leader)
+     ไม่ใช่ "ของอยู่ที่ไหน" · เอามานับสต็อก = ไลน์ลูกทุกตัวนับของก้อนเดียวกันของแม่ซ้ำกันหมด
+     → จอบอก "ค้างเยอะ" ทั้งที่หน้าไลน์ไม่มีของ (ทิศที่อันตรายที่สุด)
+     (แผง 📦 เรียกชิ้นส่วนจากสโตร์ บนหน้าเดียวกันใช้กติกานี้อยู่แล้ว — 2 แผงต้องตอบตรงกัน) */
+  const isLeaf   = useMemo(() => isLeafLine(lines, lineName), [lines, lineName]);
+  const kidNames = useMemo(() => getChildLineNames(lines, lineName), [lines, lineName]);
+  /* สายบน — ไว้ตรวจว่ามีของค้างที่ไลน์แม่ไหม (ไม่นับรวม แต่ต้องบอกให้เห็น ห้ามเงียบ) */
+  const upNames  = useMemo(() => getAncestorNames(lines, lineName), [lines, lineName]);
 
   const load = useCallback(async () => {
     if (!lineName || !workDate) return;
     setLoading(true); setErr(null); setPartial(false);
     try {
-      /* 1) ledger ของไลน์ในครอบครัว — ⚠️ `status='approved'` เท่านั้น
-            (pending/rejected มีจริง · นับด้วยจะได้ยอดเกิน view) */
+      /* 1) ledger — ดึงของ "ไลน์นี้ + สายบน" แล้วค่อยแยกกันตอนคำนวณ
+            ⚠️ ของไลน์แม่ **ไม่นับเป็นของไลน์นี้** (ยังไม่ถูกจ่ายลงมาจริง) แต่ต้องเห็น ห้ามเงียบ
+            ⚠️ `status='approved'` เท่านั้น (pending/rejected มีจริง · นับด้วยจะได้ยอดเกิน view) */
       const tRes = await fetchAllPages(
         () => supabaseDR.from('line_stock_transactions')
-          .select('mat_no, part_name, type, qty, work_date')
-          .in('line_name', famNames).eq('status', 'approved'),
+          .select('line_name, mat_no, part_name, type, qty, work_date')
+          .in('line_name', [lineName, ...upNames]).eq('status', 'approved'),
         { orderBy: ['work_date', 'mat_no'] },
       );
       if (tRes.error) throw new Error(tRes.error);
-      const tx = tRes.rows;
+      const all = tRes.rows;
+      const tx = all.filter(r => r.line_name === lineName);
+      setUpRows(all.filter(r => r.line_name !== lineName));
 
-      // 2) ฐานเวลา = วันแรกที่มีบันทึก "จ่ายเข้าไลน์" — ไม่มีเลย = ตอบเรื่องยอดค้างไม่ได้
+      // 2) ฐานเวลา = วันแรกที่มีบันทึก "จ่ายเข้าไลน์นี้" — ไม่มีเลย = ตอบเรื่องยอดค้างไม่ได้
       const firstIssue = tx.filter(t => t.type === 'issue' && t.work_date)
         .reduce((m, t) => (m == null || t.work_date < m ? t.work_date : m), null);
 
@@ -90,7 +97,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
         const oRes = await fetchAllPages(
           () => supabaseDR.from('prod_orders')
             .select('mat_no, status, qty, qty_ok, qty_actual, production_sessions!inner(line_name, work_date)')
-            .in('production_sessions.line_name', famNames)
+            .eq('production_sessions.line_name', lineName)
             .gte('production_sessions.work_date', firstIssue),
           { orderBy: 'id' },
         );
@@ -142,7 +149,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
     } catch (e) {
       setErr(e.message || String(e));
     } finally { setLoading(false); }
-  }, [lineName, workDate, famNames]);
+  }, [lineName, workDate, upNames]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -159,9 +166,38 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
     txns.filter(t => t.type === 'issue' && t.work_date)
       .reduce((m, t) => (m == null || t.work_date < m ? t.work_date : m), null), [txns]);
 
+  /* ของที่ยังค้างอยู่ที่ไลน์แม่ — **ไม่ใช่ของไลน์นี้ แต่ต้องเห็น** ห้ามเงียบ
+     (นี่คือสาเหตุที่ยอดค้างของไลน์ดูน้อยทั้งที่สโตร์จ่ายมาแล้ว — ต้องไปย้ายที่ /line-stock) */
+  const stuckUp = useMemo(() => {
+    const m = new Map();
+    for (const r of upRows) {
+      const sign = { issue: 1, adjust: 1, consume: -1, return: -1 }[r.type];
+      if (!sign || !r.mat_no) continue;
+      m.set(r.mat_no, (m.get(r.mat_no) || 0) + sign * (Number(r.qty) || 0));
+    }
+    return [...m.entries()].filter(([, q]) => q > 0)
+      .map(([mat_no, qty]) => ({ mat_no, qty })).sort((a, b) => b.qty - a.qty);
+  }, [upRows]);
+
   if (loading) return null;
-  // ไม่มีทั้ง ledger และการใช้ของ = ไลน์นี้ยังไม่เข้าระบบ WIP → ไม่ต้องรกจอ
-  if (!err && !wip.parts.length) return null;
+
+  /* ⚠️ ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ (กฎหน่วยย่อยที่สุด)
+     ตัวเลข WIP ระดับนี้ไม่มีความหมาย — บอกให้ไปเปิดที่ไลน์ลูก **ห้ามโชว์ตัวเลขให้เข้าใจผิด** */
+  if (!isLeaf) return (
+    <div style={{ ...card, borderColor: 'rgba(59,130,246,0.3)', marginBottom: 16, padding: '12px 14px' }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', marginBottom: 4 }}>📦 WIP ที่ไลน์</div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
+        <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของและยอดค้างอยู่ที่ <b>ไลน์ย่อย</b>
+        <br />เปิดกะที่ไลน์ย่อยเพื่อดู: {kidNames.map(n => (
+          <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
+        ))}
+      </div>
+    </div>
+  );
+
+  /* ไม่มีทั้ง ledger และการใช้ของ = ไลน์นี้ยังไม่เข้าระบบ WIP → ไม่ต้องรกจอ
+     ⚠️ แต่ถ้ามีของค้างอยู่ที่ไลน์แม่ ต้องโชว์ — นั่นคือคำอธิบายว่าทำไมไลน์นี้ถึงว่าง */
+  if (!err && !wip.parts.length && !stuckUp.length) return null;
 
   const t = wip.totals;
   const rows = showAll ? wip.parts : wip.parts.slice(0, 8);
@@ -179,6 +215,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
         </span>
         {t.negative > 0     && <span style={chip('rgba(239,68,68,0.14)', TONE.crit)}>🔴 ใช้เกินที่รับ {t.negative}</span>}
         {t.neverIssued > 0  && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>📭 ไม่มีบันทึกรับเข้า {t.neverIssued}</span>}
+        {stuckUp.length > 0 && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>🔀 ค้างที่ไลน์แม่ {stuckUp.length} พาร์ท</span>}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{open ? '▾' : '▸'}</span>
       </div>
 
@@ -207,6 +244,26 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
           ) : (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
               ยอดสะสมนับตั้งแต่ <b>{firstIssueDate}</b> (วันแรกที่สโตร์เริ่มบันทึกการจ่ายเข้าไลน์นี้)
+            </div>
+          )}
+
+          {/* ⚠️ ของที่จ่ายไว้ที่ไลน์แม่ — ไม่นับเป็นของไลน์นี้ แต่ต้องเห็น (ห้ามเงียบ)
+              นี่คือคำอธิบายว่าทำไมยอดค้างของไลน์ถึงน้อย/ติดลบ ทั้งที่สโตร์จ่ายมาแล้ว */}
+          {stuckUp.length > 0 && (
+            <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)', padding: '9px 12px', marginBottom: 10, fontSize: 11.5, color: 'var(--text2)' }}>
+              🔀 <b style={{ color: TONE.warn }}>มีของค้างอยู่ที่ไลน์แม่ {stuckUp.length} พาร์ท</b> — ยังไม่ถูกย้ายลงมาที่ไลน์นี้ จึงไม่นับรวมด้านล่าง
+              <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                {stuckUp.slice(0, 8).map(s => (
+                  <span key={s.mat_no} style={{ padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 11 }}>
+                    {s.mat_no} · {fmt(s.qty)}
+                  </span>
+                ))}
+                {stuckUp.length > 8 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {stuckUp.length - 8}</span>}
+              </div>
+              <div style={{ marginTop: 4 }}>
+                ย้ายที่{' '}
+                <Link to="/line-stock" style={{ color: 'var(--accent)', fontWeight: 700 }}>📦 Line Stock → 🔀 ย้ายเข้าไลน์ลูก</Link>
+              </div>
             </div>
           )}
 

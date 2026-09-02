@@ -12,8 +12,8 @@ import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 // แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
-/* 🚨 จอห้องช่าง — lazy: มี realtime + siren โหลดเฉพาะตอนเปิดจริง */
-const MtnAndonBoard = lazy(() => import('../components/MtnAndonBoard'));
+/* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
+   หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
 /* ══ 📊 Dashboard รายส่วนงาน — หน้าเดียว สลับส่วนงานด้วย ?dept= ══════════════════════════
    ออกแบบเต็มอยู่ที่ `docs/DASHBOARD-DESIGN.md` · เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA
@@ -448,7 +448,7 @@ function MaintenanceView({ d, ctx }) {
     </Section>
 
     <Section title="🔗 ทางลัด">
-      <Links navigate={navigate} items={[['/dept-dashboard?dept=maintenance&view=andon', '🚨 จอห้องช่าง (Andon)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
+      <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 จอเฝ้าระวัง (แขวนทีวี)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
 }
@@ -749,10 +749,12 @@ export default function DeptDashboard() {
   const setDept = (k) => { const n = new URLSearchParams(sp); n.set('dept', k); setSp(n); };
   // มุมมอง: 'now' = งานวันนี้ (เดิม) · 'kpi' = 📑 KPI รายเดือน (2026-08-24 · คำสั่ง user — แทนแพ็คกระดาษ
   // Internal Defect/OEE รายเดือนที่ปริ้นเซ็นกัน) — ใช้ param แยกจาก ?dept= ตามกฎแท็บซ้อนแท็บ §6.8
-  /* 'andon' = จอห้องช่าง (เฉพาะส่วนงานซ่อมบำรุง — จอ TV ในห้องช่างต้องเห็นเครื่องหยุด + มีเสียงเตือน
-     ซึ่ง /factory-map ที่เคยเปิดอยู่ให้ไม่ได้ · feedback หน้างาน 2026-08-24) */
+  /* ⚠️ `?view=andon` ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — เดิมแท็บนั้น mount
+     `<MtnAndonBoard>` ตัวเดียวกับ `/tv` เป๊ะ = ทางเข้า 2 ทางไปบอร์ดใบเดียวกัน
+     **redirect ไม่ใช่ลบทิ้ง** — จอ TV ที่บุ๊กมาร์กลิงก์เดิมไว้ต้องเปิดได้ต่อ (ห้ามพังของที่แขวนอยู่)
+     พา `?team=`/`?sound=` ไปด้วย เพราะเป็นค่าตั้งประจำห้องที่จอนั้นตั้งไว้แล้ว */
   const rawView = sp.get('view');
-  const view = rawView === 'kpi' ? 'kpi' : (rawView === 'andon' && dept === 'maintenance') ? 'andon' : 'now';
+  const view = rawView === 'kpi' ? 'kpi' : 'now';
   const setView = (v) => { const n = new URLSearchParams(sp); if (v === 'now') n.delete('view'); else n.set('view', v); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
@@ -766,28 +768,16 @@ export default function DeptDashboard() {
   const [err, setErr] = useState(null);
   const workDate = getWorkDate();
 
-  /* ⛶ เต็มจอ — จอ TV ห้องช่างเปิดค้างทั้งวัน แถบ tab ของเบราว์เซอร์ + taskbar กินแนวตั้ง ~100px
-     ซึ่งเป็นพื้นที่ที่ "ผัง" ต้องการที่สุด (feedback 2026-08-26 "ยังสเกลแย่อยู่เลย")
-     ⚠️ ต้องเป็นปุ่มให้คนกดเอง — requestFullscreen ต้องมาจาก user gesture เรียกเองไม่ได้ */
-  const [fs, setFs] = useState(false);
+  /* ลิงก์เก่า `?view=andon` → หน้า `/tv` (จอเฝ้าระวังตัวจริง) — คงค่าประจำห้องไปด้วย
+     ต้องเป็น `replace` ไม่งั้นกดย้อนกลับแล้วเด้งวนกลับมาที่นี่อีก */
   useEffect(() => {
-    const on = () => setFs(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', on);
-    return () => document.removeEventListener('fullscreenchange', on);
-  }, []);
-  const toggleFs = () => {
-    if (document.fullscreenElement) document.exitFullscreen?.();
-    else document.documentElement.requestFullscreen?.().catch(() => {});
-  };
-
-  /* ขอบเขตเสียงของจอห้องช่าง — อยู่ใน URL (บุ๊กมาร์กต่อห้อง) · ตัว <DowntimeSiren> อ่าน param เดียวกัน
-     ไม่ตั้ง = เฉพาะ "เรียกช่าง" (พฤติกรรมเดิม ไม่กระทบจอที่แขวนอยู่แล้ว) */
-  const soundAll = sp.get('sound') === 'all';
-  const setSoundAll = (v) => {
-    const n = new URLSearchParams(sp);
-    if (v) n.set('sound', 'all'); else n.delete('sound');
-    setSp(n, { replace: true });
-  };
+    if (rawView !== 'andon') return;
+    const n = new URLSearchParams();
+    n.set('dept', dept === 'store' || dept === 'production' ? dept : 'maintenance');
+    if (sp.get('team')) n.set('team', sp.get('team'));
+    if (sp.get('sound')) n.set('sound', sp.get('sound'));
+    navigate(`/tv?${n}`, { replace: true });
+  }, [rawView, dept, sp, navigate]);
 
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name')
@@ -819,50 +809,17 @@ export default function DeptDashboard() {
   const scopeText = scopeSet ? `${scopeSet.size} ไลน์ในขอบเขตของคุณ` : 'ทุกไลน์';
 
   return (
-    // จอห้องช่าง (andon) เป็นบอร์ด TV — ไม่ cap 1800px (กติกาเดียวกับ Dashboard/Management ที่ใช้เต็มจอ)
-    <div style={{ maxWidth: view === 'andon' ? undefined : 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* ══ จอ TV ห้องช่าง = หัวเพจแถวเดียว ══
-          เดิม หัวเรื่อง+คำอธิบาย / แถบมุมมอง / แถบส่วนงาน = 3 แถว ≈ 130px บนจอที่สูงราว 700px
-          → ผังเหลือไม่ถึงครึ่งจอ (user ทัก 2026-08-26 "ยังสเกลแย่อยู่เลย")
-          บนจอนี้ 2 ใน 3 แถวไม่มีใครกด: ส่วนงานล็อกที่ "ซ่อมบำรุง" อยู่แล้ว (andon มีเฉพาะส่วนงานนี้)
-          ส่วนแถบมุมมองยุบเป็นปุ่มเล็กท้ายแถว — ยังกดกลับได้ครบ ไม่ได้ตัดทางออกของใคร */}
-      {view === 'andon' ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', paddingRight: 52 }}>
-          <h2 style={{ margin: 0, fontSize: isMobile ? 17 : 20 }}>🚨 จอห้องช่าง</h2>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-            วันงาน {fmtDate(workDate)} · {scopeText} · มีเสียงเตือนเมื่อมีคนกด “เรียกช่าง”
-          </span>
-          <div style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-            <button onClick={toggleFs} title="ซ่อนแถบเบราว์เซอร์ + taskbar เพื่อให้ผังใหญ่ขึ้น" style={tvBtn(fs)}>
-              {fs ? '⛶ ออกจากเต็มจอ' : '⛶ เต็มจอ'}
-            </button>
-            {/* 🔊 ขอบเขตเสียงของจอนี้ — เก็บใน URL เพื่อให้แต่ละห้องบุ๊กมาร์กของตัวเอง (เหมือน `?team=`)
-                ห้องช่างล้วน = เฉพาะ "เรียกช่าง" · ห้องที่นั่งรวมกับฝ่ายผลิต = ทุกเครื่องที่หยุดเกินเกณฑ์ */}
-            <button onClick={() => setSoundAll(!soundAll)} style={tvBtn(soundAll)}
-              title={soundAll
-                ? 'ดังทั้งตอนเครื่องหยุดเกินเกณฑ์ และตอนมีคนกด "เรียกช่าง" — สำหรับห้องที่นั่งรวมกับฝ่ายผลิต'
-                : 'ดังเฉพาะตอนมีคนกด "เรียกช่าง" — เครื่องหยุดเฉยๆ เห็นด้วยตาบนผังแต่ไม่มีเสียง'}>
-              {soundAll ? '🔊 เสียง: ทุกเครื่องที่หยุด' : '🔔 เสียง: เฉพาะเรียกช่าง'}
-            </button>
-            <button onClick={() => setView('now')} style={tvBtn(false)}>⚡ งานวันนี้</button>
-            <button onClick={() => setView('kpi')} style={tvBtn(false)}>📑 KPI</button>
-            <button onClick={load} style={tvBtn(false)}>🔄</button>
-          </div>
-        </div>
-      ) : (
-        /* ── หน้าปกติ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
+    <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ── หัวเพจ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
            (เดิมหน้านี้วาดหัวเรื่อง + แถบแท็บเองรวม 3 แถว ทรงปุ่มไม่ตรงกับหน้าอื่น
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
-           ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role)
-              และ `?view=andon` ใช้ได้เฉพาะส่วนงานซ่อมบำรุง ซึ่ง hook ตัวนั้นไม่รองรับเงื่อนไขข้ามแท็บ
-              (เหตุผลเต็มอยู่ในคอมเมนต์ของ setDept/setView ด้านบน) */
+           ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
         <PageHeader
           title="Dashboard ส่วนงาน" icon="📊"
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
           actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
           tabs={[
             { key: 'now', label: '⚡ งานวันนี้' },
-            ...(dept === 'maintenance' ? [{ key: 'andon', label: '🚨 จอห้องช่าง' }] : []),
             { key: 'kpi', label: '📑 KPI รายเดือน' },
           ]}
           tab={view} onTab={setView}
@@ -880,10 +837,16 @@ export default function DeptDashboard() {
                   border: `1px solid ${dept === t.key ? 'var(--border2)' : 'var(--border)'}`,
                 }}>{t.icon} {t.label}</button>
               ))}
+              {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — เดิมเป็นแท็บ 🚨 จอห้องช่าง
+                  ที่ mount `<MtnAndonBoard>` ตัวเดียวกับ `/tv` เป๊ะ = ทางเข้า 2 ทางไปบอร์ดใบเดียวกัน
+                  หน้านี้เป็น "คิวงานที่กดไปทำ" · `/tv` เป็น "จอแขวน" — คนละงาน คนละหน้า
+                  ปุ่มนี้คงทางเข้าเดิมไว้ให้คนที่ชินกับที่นี่ (ห้ามตัดทางออกของใคร) */}
+              <button onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
+                title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+                style={{ ...tvBtn(false), marginLeft: 'auto' }}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
             </div>
           )}
         </PageHeader>
-      )}
 
       {view === 'kpi' && (
         <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
@@ -891,13 +854,6 @@ export default function DeptDashboard() {
         </Suspense>
       )}
 
-      {view === 'andon' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
-      {view === 'andon' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
-      {view === 'andon' && !loading && !err && data?.dept === 'maintenance' && (
-        <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
-          <MtnAndonBoard d={data.d} ctx={ctx} />
-        </Suspense>
-      )}
       {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
       {/* render เฉพาะเมื่อข้อมูลที่ถืออยู่เป็นของส่วนงานที่กำลังดู */}
