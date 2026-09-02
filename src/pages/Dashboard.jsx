@@ -198,6 +198,23 @@ export default function Dashboard() {
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
   };
 
+  /* 🔴 กฎเหล็ก — จอที่แขวนค้าง 24 ชม. ต้อง "กลิ้งวันงาน" ตามเวลาจริง (audit 2026-09-02)
+     `workDateStr` มาจาก `now` (tick ทุกวินาที) จึงกลิ้งเอง แต่ `selectedDate`/`boardDate` เป็น
+     useState ที่ตั้งครั้งเดียวตอน mount → พอถึง 08:00 กะใหม่เปิดด้วย work_date วันใหม่ แต่บอร์ด
+     ยัง query `.eq('work_date', boardDate)` = วันเก่า ⇒ **จอโชว์งานเมื่อวานค้างทั้งวัน
+     ไม่มีใบผลิตของกะที่เดินอยู่เลยสักใบ** ต้องมีคนเดินไปกด F5 ทุกเช้า
+     ซ้ำร้าย effect sync กะข้างล่างถูก gate ด้วย `selectedDate === workDateStr` → พอวันค้าง
+     เงื่อนไขเป็น false ตลอด **กะก็แข็งตายตามไปด้วย**
+     ⚠️ กลิ้งเฉพาะคนที่ "ดูวันนี้อยู่" — คนที่เลือกย้อนหลังเองต้องไม่ถูกดีดออกจากวันที่เขาเลือก */
+  const prevWorkDateRef = useRef(workDateStr);
+  useEffect(() => {
+    const prev = prevWorkDateRef.current;
+    if (prev === workDateStr) return;
+    prevWorkDateRef.current = workDateStr;
+    setSelectedDate(d => (d === prev ? workDateStr : d));
+    setBoardDate(d => (d === prev ? workDateStr : d));
+  }, [workDateStr]);
+
   // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
   useEffect(() => {
     if (selectedDate === workDateStr) {

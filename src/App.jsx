@@ -916,11 +916,34 @@ function playNotifChime() {
 // map ที่มาของแจ้งเตือน → หน้าที่เปิดตอนกด — **ต้อง mirror กับ `routeFor()` ใน edge `send-push`**
 // (Web Push กดแล้วเปิดหน้าไหน กระดิ่งในแอปต้องพาไปหน้าเดียวกัน — แก้ฝั่งไหนให้ตามไปแก้อีกฝั่งด้วย)
 // feedback หน้างาน 2026-08-25: "เปิด MO แล้วอยากให้ช่างรับงานได้ทันที" — เดิมกดแจ้งเตือนแล้วแค่ mark อ่าน ไม่พาไปไหน
+// 🔴 audit 2026-09-02: map เดิมมีแค่ 4 ตาราง แต่ระบบเขียน `ref_table` จริง 11 ค่า
+//    ⇒ วัดจากฐาน: **1,194 แจ้งเตือนกดแล้วไม่ไปไหน** (skill_level_up_requests 754 · ojt_trainings 170
+//      · defect_logs 107 · improvements 51 · cqi15_event_logs 46 · inspections 41 · user_feedback 25)
+//    ในกระดิ่งแถวนั้นไม่มีลูกศร › กดแล้วแค่ mark อ่าน · Web Push แตะแล้วเปิดหน้าแรกเหมือนแอปพัง
+//    `defect_logs` เพิ่งเปิด inapp_roles เมื่อ 1 ก.ย. → หัวหน้าได้แจ้งเตือนของเสียแต่กดเข้าไปทำงานต่อไม่ได้
+//    ⚠️ ปลายทางที่มีแท็บ ให้ใส่ `?tab=` ให้ตรงงาน — พาไปหน้ารวมเปล่าๆ แล้วให้ไปไล่หาเองไม่นับว่าแก้แล้ว
 const NOTIF_ROUTE = {
   four_m_logs:   '/event-log',
   mtn_orders:    '/mtn-repair',
   downtime_logs: '/daily-report',
   shift_schedules: '/shift-organize',
+  defect_logs:   '/daily-report',
+  skill_level_up_requests: '/operator?tab=levelup',
+  ojt_trainings: '/ojt-training',
+  improvements:  '/improvements',
+  cqi15_event_logs: '/event-log',
+  inspections:   '/pm?tab=check',
+  meeting_action_items: '/morning-meeting',
+  lpa_audits:    '/daily-checker?tab=lpa',
+  scrap_reports: '/scrap-report',
+  pe_change_requests: '/pe-docs',
+  rack_requests: '/rack-center',
+  wip_replenish_requests: '/heijunka',
+  qa_ncr:        '/qa?tab=ncr',
+  qa_capa:       '/qa?tab=capa',
+  qa_customer_claims: '/qa?tab=claims',
+  quality_bin_records: '/qa?tab=bins',
+  material_requests:   '/qa?tab=matreq',
 };
 
 function NotificationBell({ userId, role }) {
