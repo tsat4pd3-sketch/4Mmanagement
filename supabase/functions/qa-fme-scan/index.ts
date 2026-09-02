@@ -75,16 +75,27 @@ function chatsFor(routes: Record<string, Route>, key: string): string[] | null {
   if (r && r.chats.length) return r.chats;
   return TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];      // ยังไม่ตั้งห้อง = ห้อง default
 }
-async function sendTelegram(message: string, chats: string[]) {
+/* ⚠️ ต้องคืนว่า "ส่งออกจริงไหม" — ผู้เรียกใช้ค่านี้ตัดสินว่าจะ mark alert_count หรือไม่
+   ส่งพลาดแล้ว mark = งานตรวจก้อนนั้นเงียบถาวรทั้งที่ไม่มีใครเคยได้รับแจ้ง
+   (กฎเดียวกับ shipping-phase-scan / store-daily-scan — ห้าม .catch(() => {}) เปล่าๆ) */
+async function sendTelegram(message: string, chats: string[]): Promise<boolean> {
   const list = [...new Set(chats.filter(Boolean))];
-  if (!BOT_TOKEN || !list.length) return;
-  await Promise.all(list.map((chat) =>
-    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
-    }).catch(() => undefined)
-  ));
+  if (!BOT_TOKEN || !list.length) return false;
+  const res = await Promise.all(list.map(async (chat) => {
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
+      });
+      if (!r.ok) console.error(`qa-fme-scan: telegram ${chat} → ${r.status} ${await r.text()}`);
+      return r.ok;
+    } catch (e) {
+      console.error(`qa-fme-scan: telegram ${chat} →`, (e as Error)?.message || e);
+      return false;
+    }
+  }));
+  return res.some(Boolean);
 }
 
 /* ── DR REST (คนละ project — ใช้ anon key ตาม convention ของ supabaseDR) ── */
@@ -519,42 +530,85 @@ Deno.serve(async (req) => {
     const lateChats = chatsFor(routes, 'qa_fme_overdue');
     let calls = 0, escalations = 0;
 
-    for (const ob of obs) {
-      if (ob.status !== 'pending') continue;                       // acked/done = ไม่ต้องตาม
-      const head = `🏭 <b>${ob.line_name}</b> · ${ob.shift === 'night' ? 'กะดึก' : 'กะเช้า'}\n` +
-        `📦 รุ่น: <b>${ob.mat_no}</b>${ob.product_name ? ` (${ob.product_name})` : ''}\n` +
-        `📌 เหตุ: ${REASON_LABEL[ob.trigger_reason] || ob.trigger_reason}` +
-        (ob.part_id ? '' : '\n⚠️ ยังไม่ได้ผูกรุ่นนี้กับพาร์ทในระบบตรวจ (ตั้งที่ /qa-setup)');
+    /* ⚠️⚠️ กฎเหล็ก — "1 งานตรวจ = 1 ข้อความ" ใช้กับของจริงไม่ได้ (dry-run 2026-09-02)
+       รอบสแกนเดียววัดได้ **51 รายการ** (HDF2 19 · SUB APRON 14 · LASER-789 11 …)
+       = ยิงรวดเดียว 51 ข้อความ แล้วยัง escalate ซ้ำทุก 30 นาทีอีก
+       → เป็นเคสเดียวกับ `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่านทั้งห้อง
+       ⇒ **รวมเป็นข้อความเดียวต่อรอบสแกน** (precedent: kanban-round-scan ที่ส่งใบเดียวรวมทุกไลน์)
+          รายละเอียดรายรายการอยู่ในหน้า /qa อยู่แล้ว ข้อความมีหน้าที่แค่ "ปลุกให้ไปเปิดดู"
+       ⚠️ ห้ามกลับไปวนส่งรายรายการ ไม่ว่าจะดูสะดวกกว่าแค่ไหน */
+    const MAX_LINES = 12;                       // เกินนี้ยุบเป็น "…อีก N" — Telegram จำกัด 4096 ตัวอักษร
+    const shiftTh = (s: string) => (s === 'night' ? 'กะดึก' : 'กะเช้า');
+    const footer = (n: number) =>
+      (n ? `\n\n⚠️ <b>${n} รายการยังไม่ได้ผูกกับพาร์ทในระบบตรวจ</b> — กดเปิดใบตรวจจากคิวไม่ได้ (ตั้งเลข MAT ที่ /qa-setup)` : '') +
+      '\n📋 รายการเต็ม: หน้า QA → แท็บใบตรวจ (มีมุมมองไทม์ไลน์ว่าต้องไปไลน์ไหนกี่โมง)';
 
-      if (!ob.alert_count) {
-        // ⚠️ นับว่า "เรียกแล้ว" เฉพาะเมื่อส่งออกจริง — ถ้ายังไม่ตั้งห้อง/ปิด rule ไว้ ต้องไม่กลืนการเรียก
-        //    (ไม่งั้นพอไปเปิด rule ทีหลัง งานตรวจก้อนนั้นจะเงียบไปเลยทั้งที่ไม่มีใครเคยได้รับแจ้ง)
-        if (!callChats || !callChats.length) continue;
-        await sendTelegram(
-          `🔔 <b>QA เรียกตรวจ — ${STAGE_LABEL[ob.stage]}</b>\n${head}\n` +
-          `⏱️ ส่งผลภายใน ${Math.round((new Date(ob.due_at).getTime() - new Date(ob.triggered_at).getTime()) / 60000)} นาที ` +
-          `(ภายใน ${hhmm(ob.due_at)})`, callChats);
-        calls++;
-        await supabase.from('qa_fme_obligations')
-          .update({ alert_count: 1, last_alerted_at: now.toISOString() }).eq('id', ob.id);
-        continue;
+    // ── 8.1 เรียกครั้งแรก (ยังไม่เคยแจ้ง) ──
+    const fresh = obs.filter(ob => ob.status === 'pending' && !ob.alert_count);
+    /* ⚠️ นับว่า "เรียกแล้ว" เฉพาะเมื่อส่งออกจริง — ยังไม่ตั้งห้อง/ปิด rule ไว้ ต้องไม่กลืนการเรียก
+       (ไม่งั้นพอไปเปิด rule ทีหลัง งานตรวจก้อนนั้นจะเงียบไปเลยทั้งที่ไม่มีใครเคยได้รับแจ้ง) */
+    if (fresh.length && callChats?.length) {
+      const byLine = new Map<string, typeof fresh>();
+      for (const ob of fresh) {
+        const k = `${ob.line_name}|${ob.shift}`;
+        if (!byLine.has(k)) byLine.set(k, []);
+        byLine.get(k)!.push(ob);
       }
+      const blocks = [...byLine.entries()]
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([k, list]) => {
+          const [line, shift] = k.split('|');
+          const stages = new Map<string, number>();
+          list.forEach(o => stages.set(o.stage, (stages.get(o.stage) ?? 0) + 1));
+          const detail = [...stages.entries()]
+            .map(([s, n]) => `${STAGE_LABEL[s] ?? s} ${n}`).join(' · ');
+          const soon = list.reduce((a, o) => (a && a < o.due_at ? a : o.due_at), '');
+          return `🏭 <b>${line}</b> · ${shiftTh(shift)} — ${list.length} รายการ\n` +
+            `   ${detail}${soon ? ` · เร็วสุดภายใน ${hhmm(soon)}` : ''}`;
+        });
+      const shown = blocks.slice(0, MAX_LINES);
+      const more = blocks.length - shown.length;
+      const sent = await sendTelegram(
+        `🔔 <b>QA เรียกตรวจ ${fresh.length} รายการ</b> (${hhmm(now.toISOString())})\n\n` +
+        shown.join('\n') + (more > 0 ? `\n\n…อีก ${more} ไลน์` : '') +
+        footer(fresh.filter(o => !o.part_id).length),
+        callChats);
+      if (sent) {
+        calls = fresh.length;
+        // ข้อความรวมแล้ว แต่ยัง mark รายแถว — ตัวนับ/เพดาน escalate เป็นของรายงานตรวจแต่ละใบ
+        await supabase.from('qa_fme_obligations')
+          .update({ alert_count: 1, last_alerted_at: now.toISOString() })
+          .in('id', fresh.map(o => o.id));
+        fresh.forEach(o => { o.alert_count = 1; o.last_alerted_at = now.toISOString(); });
+      }
+    }
 
-      // เกินเวลาแล้ว → เตือนซ้ำทุก escalate_min จนกว่าจะรับงาน (มีเพดาน max_alerts กัน spam)
-      if (now < new Date(ob.due_at) || ob.alert_count >= cfg.max_alerts) continue;
+    // ── 8.2 เตือนซ้ำเมื่อเกินเวลา (มีเพดาน max_alerts กัน spam) ──
+    const late = obs.filter(ob => {
+      if (ob.status !== 'pending' || !ob.alert_count) return false;
+      if (now < new Date(ob.due_at) || ob.alert_count >= cfg.max_alerts) return false;
       const since = ob.last_alerted_at ? (now.getTime() - new Date(ob.last_alerted_at).getTime()) / 60000 : 1e9;
-      if (since < cfg.escalate_min) continue;
-      /* ⚠️ ยังไม่ตั้งห้อง / ปิด rule `qa_fme_overdue` ไว้ = ไม่บวก alert_count (หลักเดียวกับการเรียกครั้งแรก)
-         เดิมบวกทุกครั้งไม่ว่าส่งออกหรือไม่ → ตัวนับไต่ถึง max_alerts ตั้งแต่ยังไม่มีใครได้รับอะไร
-         พอไปเปิด rule ทีหลัง งานตรวจก้อนนั้นจะเงียบตลอดกาลทั้งที่ยังไม่เคยเตือนสักครั้ง */
-      if (!lateChats || !lateChats.length) continue;
-      const lateMin = Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000);
-      await sendTelegram(
-        `🚨 <b>QA เกินเวลาตรวจ — ${STAGE_LABEL[ob.stage]}</b> (เตือนครั้งที่ ${ob.alert_count})\n${head}\n` +
-        `⏰ เลยกำหนดมาแล้ว <b>${lateMin} นาที</b> (ครบกำหนด ${hhmm(ob.due_at)})`, lateChats);
-      escalations++;
-      await supabase.from('qa_fme_obligations')
-        .update({ alert_count: ob.alert_count + 1, last_alerted_at: now.toISOString() }).eq('id', ob.id);
+      return since >= cfg.escalate_min;
+    });
+    if (late.length && lateChats?.length) {
+      const rows = [...late]
+        .sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime())
+        .map(ob => `🏭 <b>${ob.line_name}</b> · ${ob.mat_no} · ${STAGE_LABEL[ob.stage] ?? ob.stage}` +
+          ` — เลย <b>${Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000)} นาที</b>`);
+      const shown = rows.slice(0, MAX_LINES);
+      const more = rows.length - shown.length;
+      const sent = await sendTelegram(
+        `🚨 <b>QA เกินเวลาตรวจ ${late.length} รายการ</b> (${hhmm(now.toISOString())})\n\n` +
+        shown.join('\n') + (more > 0 ? `\n…อีก ${more} รายการ` : '') +
+        footer(late.filter(o => !o.part_id).length),
+        lateChats);
+      if (sent) {
+        escalations = late.length;
+        for (const ob of late) {
+          await supabase.from('qa_fme_obligations')
+            .update({ alert_count: ob.alert_count + 1, last_alerted_at: now.toISOString() }).eq('id', ob.id);
+        }
+      }
     }
 
     // master อ่านมาไม่ครบ = ต้องเห็นใน log ของ cron ด้วย ไม่ใช่เฉพาะ dry-run (ห้ามล้มเหลวเงียบ)

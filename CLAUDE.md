@@ -2643,7 +2643,35 @@ migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_req
 - `nextDocNo` ย้ายจาก QualityControl.jsx → **`src/utils/qaDocNo.js`** (ใบตรวจเรียกใช้ตัวเดียวกันโดยไม่เกิด circular import)
 - **ยังไม่ทำ:** ผลตรวจยังไม่ไหลเข้า SPC อัตโนมัติ (จุด variable ที่กรอกค่าในใบตรวจ ยังไม่สร้าง `qa_measurements` ให้เอง — ต้องกด "ส่งเข้า SPC" ที่ setup แล้วกรอกที่แท็บ SPC เหมือนเดิม) · ยังไม่มีฟอร์มพิมพ์ใบตรวจ (ถ้าจะทำ ต้อง register ใน `/doc-forms` ตามกฎเอกสาร)
 
-### 🔔 ผลิตเรียก QA มาตรวจ — FME (First–Middle–End) · โค้ดครบ **ยังไม่ apply/deploy** (2026-08-19)
+### 🔔 ผลิตเรียก QA มาตรวจ — FME (First–Middle–End) · **apply/deploy ครบแล้ว แต่ยังปิดสวิตช์อยู่** (2026-08-19 · สถานะ 2026-09-02)
+
+> #### 🚦 สถานะจริง ณ 2026-09-02 — ติดที่ **ข้อมูล** ไม่ใช่โค้ด **ห้ามเปิดสวิตช์จนกว่าจะแก้**
+> migration ครบ (`qa_fme_config`/`obligations`/`part_rules` + คอลัมน์ mid_* ครบ 4) · cron `qa-fme-scan`
+> `*/5 * * * *` active=true · `is_enabled = false` (จึงยังเงียบสนิท ไม่มีอะไรออก Telegram)
+>
+> **dry-run กับข้อมูลจริง (`?dry=1`): สแกนเจอ 34 กะ · 178 ใบผลิต · 39 รุ่น → จะสร้างงานตรวจ 51 รายการ**
+> (ชิ้นแรก 4 · ระหว่างผลิต 29 · ชิ้นสุดท้าย 18 · HDF2 19 · SUB APRON 14 · LASER-789 11 · …)
+>
+> | 🔴 ตัวขวาง | ตัวเลข |
+> |---|---|
+> | **`part_linked = 0/51`** — กดเปิดใบตรวจจากคิวไม่ได้สักรายการ | `qa_parts` ทั้งระบบมี **2 แถว** และ **ตั้ง `mat_no` แล้ว 0 แถว** |
+> | รุ่นที่วิ่งจริงในโรงงาน | **39 รุ่น** (ต่อ 2 พาร์ทที่ลงทะเบียนไว้) |
+>
+> ⇒ เปิดตอนนี้ = QA ได้ข้อความที่ทุกใบเขียนว่า "ยังไม่ได้ผูกรุ่นนี้กับพาร์ทในระบบตรวจ" แล้วทำงานต่อไม่ได้
+> **เงื่อนไขก่อนเปิด: ลงมาตรฐานการตรวจใน `/qa-setup` + ผูก `qa_parts.mat_no` ให้ครอบรุ่นที่วิ่งจริง**
+> (ไม่ต้องครบ 39 — เริ่มจากไลน์ที่ตรวจจริงก่อนก็พอ แต่ต้องมีมากกว่า 0)
+>
+> #### ⚠️⚠️ กฎเหล็ก — "1 งานตรวจ = 1 ข้อความ" ใช้กับของจริงไม่ได้ (แก้แล้ว 2026-09-02)
+> โค้ดเดิมวนส่ง Telegram รายรายการ → dry-run วัดได้ **51 ข้อความรวดเดียวในรอบสแกนเดียว**
+> แล้วยัง escalate ซ้ำทุก 30 นาที (สูงสุด 8 ครั้ง/รายการ) = เคสเดียวกับ `shipping_phase_alert`
+> ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่านทั้งห้อง
+> - ตอนนี้ **รวมเป็นข้อความเดียวต่อรอบสแกน** (precedent: `kanban-round-scan` ที่ส่งใบเดียวรวมทุกไลน์)
+>   — สรุปรายไลน์ + จำนวนต่อสเตจ + เวลาที่เร็วสุด · เกิน 12 ไลน์ยุบเป็น "…อีก N" (Telegram จำกัด 4096 ตัวอักษร)
+>   · รายละเอียดรายรายการอยู่ในหน้า `/qa` อยู่แล้ว ข้อความมีหน้าที่แค่ "ปลุกให้ไปเปิดดู"
+> - **ห้ามกลับไปวนส่งรายรายการ** ไม่ว่าจะดูสะดวกกว่าแค่ไหน
+> - `sendTelegram` คืน `boolean` แล้ว — **ส่งไม่สำเร็จ = ไม่ mark `alert_count`** (ไม่งั้นงานตรวจก้อนนั้น
+>   เงียบถาวรทั้งที่ไม่มีใครเคยได้รับแจ้ง) · เดิม `.catch(() => undefined)` กลืน error ทิ้ง — กฎเดียวกับ
+>   `shipping-phase-scan` / `store-daily-scan` · **ข้อความรวม แต่ยัง mark รายแถว** (เพดาน escalate เป็นของแต่ละใบ)
 
 "ระบบ 2" ตาม `docs/INSPECTION_ALARM_SYSTEMS.md` (ระบบ 1 = `pm-daily-scan` · ระบบ 3 = `pm-plan-reminder` ใช้งานอยู่แล้ว) — เดิมไม่มีช่องทางให้ผลิตเรียก QA เลย ใบตรวจเป็น **pull** (QA เดินไปตรวจเอง) ระบบจึงไม่มีทางรู้ว่า "ตรวจตก" ไปกี่รุ่น
 
@@ -3730,7 +3758,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน 01:00 UTC = 08:00 ไทย) | เตือน Planned PM ตามขั้น 30/14/3 วัน + **เกินกำหนด (ซ้ำสัปดาห์ละครั้ง)** → POST ไป send-notification ฝั่ง Main · ดูกฎ "เตือน PM" ด้านล่าง |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
-| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · ⚠️ **ยังไม่ deploy** (2026-08-19) |
+| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที · **cron active แล้ว 2026-09-02**) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · **deploy แล้ว · แจ้ง Telegram รวมเป็นข้อความเดียวต่อรอบสแกน ห้ามวนส่งรายรายการ** |
 | `store-daily-scan` | DR (pg_cron 00:50 UTC = **07:50 ไทย** — ดูกฎ "เวลาสแกนต้องอยู่ในวันงานที่จะรายงาน") | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
 | `send-store-notification` | Main | **ผู้ส่งฝั่ง Store** — รับ event `store_abnormal` · **แยกไฟล์จาก send-notification โดยตั้งใจ (กันไฟล์ 47KB พัง) แต่ route ผ่าน `notification_rules`/`telegram_channels` ชุดเดียวกัน** (precedent เดียวกับ `send-mtn-notification`) → เปิด/ปิด/เลือกห้อง/แก้ข้อความ/เลือก role ที่เข้ากระดิ่ง ทำที่ `/notification-config` เหมือนทุกเรื่อง · verify_jwt=false |
 | `send-event-notification` | Main | **ผู้ส่งกลาง generic (2026-08-25)** — รับ `{ event, lines[], title?, section?, line_name?, ref_table?, ref_id?, vars? }` แล้วส่งทั้ง **Telegram + ในแอป** จากแถว `notification_rules` เดียวกัน · resolve ส่วนงานจาก `line_name` เอง (ไลน์ลูกตกทอดจากไลน์แม่) · ผู้รับผ่าน RPC `notify_recipients` · **เพิ่มเรื่องใหม่ = insert แถว rule + เรียก `notifyEvent()` ไม่ต้องแตะ edge ตัวไหนอีก** · เรียกจาก client ผ่าน `src/utils/notifyEvent.js` และจาก DB trigger ผ่าน pg_net · verify_jwt=false |
