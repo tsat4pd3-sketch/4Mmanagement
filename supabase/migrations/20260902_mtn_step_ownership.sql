@@ -17,8 +17,10 @@
 --      ⇒ sale / planner_store / display กดรับมอบ + ให้คะแนนความพึงพอใจแทนฝ่ายที่แจ้งได้
 --   ⚠️ ขั้น 7 `approve` = admin/manager เท่านั้น → supervisor (ระดับส่วน) ทำไม่ได้
 --   ⚠️ ขั้น 2 กับ 3 ใช้คีย์เดียวกัน → ช่างรับงานแล้วจ่ายงานให้ตัวเองได้ แยกไม่ได้
---   ⚠️ bucket `dept_admin` เกิด 2026-08-03 หลังคีย์ mtn_repair ถูก seed (2026-07-14)
---      ⇒ ไม่มีแถวเลยสักคีย์ = แอดมินหน่วยงานไม่ได้อะไรเพิ่มในโมดูลนี้ (กับดัก enum_range)
+--   ℹ️ bucket `dept_admin` **ไม่ติดกับดัก enum_range** — `20260803_dept_admin.sql` ก๊อป
+--      ทุก action ที่ manager ถืออยู่ให้ bucket ตอนสร้าง จึงได้ mtn_repair:* ชุดเดิมครบแล้ว
+--      (ตรวจกับฐานจริง 2026-09-02) · ขั้น ⑥ ท้ายไฟล์จึงเป็นแค่ safety net ของคีย์ที่ manager
+--      อาจถูกปิดไว้ตอนนั้น — ไม่ใช่การเติมของที่หายทั้งชุด
 --
 -- สิ่งที่ไฟล์นี้ทำ:
 --   ① คีย์ใหม่ 3 ตัว  assign (ขั้น 2) · accept_work (ขั้น 4) · handover (ขั้น 6)
@@ -82,9 +84,8 @@ from (select unnest(enum_range(null::user_role)) as role) r
 where r.role::text = any (array['admin','manager','supervisor','dept_admin'])
 on conflict (role, permission_key) do update set allowed = true;
 
--- ── ⑥ ปิดช่องว่าง bucket dept_admin ของคีย์เดิม (เกิดหลัง seed ชุดแรก) ──────────
---    แอดมินหน่วยงาน = หัวหน้าหน่วยงาน → ควรเปิดใบ/ตรวจคุณภาพในหน่วยงานตัวเองได้
---    (ไม่แจก service/manage_master/delete — นั่นเป็นของทีมช่าง/ผู้ดูแลระบบ)
+-- ── ⑥ safety net: bucket dept_admin ต้องเปิดใบ/ตรวจคุณภาพในหน่วยงานตัวเองได้ ─────
+--    (ปกติได้มาแล้วจาก 20260803_dept_admin.sql — do nothing ถ้ามีอยู่แล้ว)
 insert into role_permissions (role, permission_key, allowed) values
   ('dept_admin', 'mtn_repair:report', true),
   ('dept_admin', 'mtn_repair:qa',     true)
