@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { wipPointCat } from '../utils/wipMatOptions';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
@@ -17,6 +18,8 @@ import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
+import { liveChannel } from '../utils/liveChannel';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -199,6 +202,15 @@ export default function Management() {
   const [isSavingDoc,     setIsSavingDoc]     = useState(false);
   const [lineProdData,    setLineProdData]    = useState(null); // heijunka data for selected line
   const [boardDate,       setBoardDate]       = useState(() => getWorkDate()); // วันที่ mini Heijunka board — เลือกดูย้อนหลังได้
+  /* กะที่กำลังดู — เดิมผังคนล็อก getCurrentShift() ตายตัว หัวหน้าจึงเห็นได้แค่กะปัจจุบัน
+     และเลือกวันย้อนหลังแล้ว "คน" ก็ไม่ตามไปด้วย (จอบอกว่าย้อนหลังแต่โชว์คนของวันนี้ = จอโกหก)
+     feedback หน้างาน 2026-08-27: "เลือกกะไม่ได้ กลายเป็นแสดงแค่กะเช้าอย่างเดียว" */
+  const [viewShift,       setViewShift]       = useState(() => getCurrentShift());
+  const todayWorkDate = getWorkDate();
+  /* "ดูสด" = วันนี้ + กะปัจจุบันเท่านั้น → จัดคนได้
+     กะอื่น/วันย้อนหลัง = **อ่านอย่างเดียว** เพราะการลากคนจะไปเขียน daily_production_logs ของวันนั้น
+     และ station_assignment_logs ที่ stamp เวลา "ตอนนี้" = ประวัติเพี้ยนย้อนแก้ยาก */
+  const isLiveView = boardDate === todayWorkDate && viewShift === getCurrentShift();
   // มุมมองหลักของ Canvas Area: สลับดูทีละมุม — 'map' = ผังไลน์+คน (floor map) · 'heijunka' = บอร์ด Heijunka
   // ดูทีละมุมได้พื้นที่เต็มจอ เห็นรายละเอียดครบ ไม่ถูกบีบ/ย่อ (แก้ปัญหา kanban เยอะแล้วบอร์ดดันผังหลุดจอ)
   // · default = map (งานหลักคือจัดคนลงสถานี) · จำสถานะใน localStorage
@@ -407,7 +419,7 @@ export default function Management() {
     const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
     refresh();
     const stopPoll = visibleInterval(refresh, RATE.BACKUP);
-    const ch = supabaseDR.channel('mgmt-dt-alarm')
+    const ch = liveChannel(supabaseDR, 'mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();
@@ -465,7 +477,7 @@ export default function Management() {
   useEffect(() => {
     if (!selectedLine) return;
     fetchData();
-  }, [selectedLine]);
+  }, [selectedLine, boardDate, viewShift]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // viewKey อยู่ใน deps ด้วย — ตอน mount allLines มาถึงช้ากว่า selectedLine ได้
   // พอ hierarchy resolve เสร็จ (viewLineNames เปลี่ยน) ต้อง refetch จุดงานของทั้งครอบครัวไลน์
@@ -499,21 +511,23 @@ export default function Management() {
   };
 
   const fetchData = async () => {
-    const today = getWorkDate();
+    // ⚠️ ยึด "วัน/กะที่กำลังดู" ไม่ใช่ตอนนี้ — ไม่งั้นเลือกย้อนหลังแล้วยังโชว์คนของกะปัจจุบัน
+    const today = boardDate;
+    const shiftV = viewShift;
     const { data: workerData } = await supabase
       .from('daily_production_logs')
       .select('id, assigned_line, employee_id, employees(id, employee_id_code, name, image_url, team, section, line_id, employee_skills(skill_name, score))')
-      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
+      .eq('work_date', today).eq('shift', shiftV).eq('is_present', true).eq('has_helmet', true).eq('has_boots', true).eq('has_gloves', true);
     // คนที่เช็คชื่อแล้วแต่ PPE ไม่ครบ — ไม่เข้า pool (ห้ามจัดลงสถานี) แต่ต้องกระพริบเตือนบนหัวผัง
     const { data: ppeData } = await supabase
       .from('daily_production_logs')
       .select('id, employee_id, has_helmet, has_boots, has_gloves, employees(id, name, image_url, team, line_id)')
-      .eq('work_date', today).eq('shift', getCurrentShift()).eq('is_present', true)
+      .eq('work_date', today).eq('shift', shiftV).eq('is_present', true)
       .or('has_helmet.eq.false,has_boots.eq.false,has_gloves.eq.false');
     setPpeAlerts(ppeData || []);
     // 🤝 ยืมตัวข้ามไลน์กะนี้ (line_helpers) — best-effort: ยังไม่ apply migration = พฤติกรรมเดิม
     const { data: helperData, error: eHelper } = await supabase.from('line_helpers')
-      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', getCurrentShift());
+      .select('employee_id, to_line_id').eq('work_date', today).eq('shift', shiftV);
     if (!eHelper) {
       const hm = {};
       (helperData || []).forEach(h => { hm[h.employee_id] = h.to_line_id; });
@@ -546,6 +560,8 @@ export default function Management() {
 
   /* ── Assign worker ── shared between drag-drop and touch-tap */
   const assignWorker = async (logId, stationId) => {
+    // guard ชั้นสุดท้าย — โหมดย้อนหลัง/กะอื่น ห้ามเขียนอะไรทั้งสิ้น (ซ่อนปุ่มอย่างเดียวไม่พอ)
+    if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — จัดกำลังคนได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const finalAssign = stationId === 'Pool' ? null : stationId;
     const droppedWorker = workers.find(w => w.id === logId);
     const prevAssign = droppedWorker?.assigned_line ?? null;
@@ -893,6 +909,7 @@ export default function Management() {
   }, [workers, dynamicStations, viewLineNames, belongsToShownMap]);
 
   const assignSpecialTask = async (worker, taskType) => {
+    if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — กำหนดงานนอกไลน์ได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const today = getWorkDate();
     await supabase.from('operator_special_tasks').upsert(
       { employee_id: worker.employee_id, task_type: taskType, work_date: today },
@@ -912,7 +929,7 @@ export default function Management() {
   /* ── Special Pool Card ── */
   const SpecialCard = ({ worker }) => {
     const task = specialTasks.find(t => t.employee_id === worker.employee_id);
-    const canDrag = can('management', 'assign_manpower', role);
+    const canDrag = can('management', 'assign_manpower', role) && isLiveView;
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
@@ -965,12 +982,12 @@ export default function Management() {
     const isSelected = selectedWorker?.id === worker.id;
     return (
       <div
-        draggable={!isMobile}
-        onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
+        draggable={!isMobile && isLiveView}
+        onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        onClick={() => handlePoolTap(worker)}
+        onClick={() => isLiveView && handlePoolTap(worker)}
         style={{
           position: 'relative',
           width: '100%',
@@ -1029,12 +1046,12 @@ export default function Management() {
     const pend4m = man4mPendingFor(worker.employees?.name);
     return (
       <div
-        draggable={!isMobile}
-        onDragStart={!isMobile ? (e) => handleDragStart(e, worker) : undefined}
+        draggable={!isMobile && isLiveView}
+        onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
-        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : 'grab', userSelect: 'none' }}
+        style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : (isLiveView ? 'grab' : 'default'), userSelect: 'none' }}
         title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}
       >
         {/* photo only — score & name live in the hover popup card + the fit badge below the pill */}
@@ -1201,6 +1218,40 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
+          {/* ── วัน/กะที่กำลังดู (2026-08-27 · feedback "เลือกกะไม่ได้ แสดงแค่กะเช้า") ──
+               ต้อง render เสมอ แม้กะนั้นไม่มีคนสักคน — ไม่งั้นสลับไปกะดึกที่ว่างแล้ว
+               จะไม่มีปุ่มให้สลับกลับ (ทางตันที่มองไม่เห็น) */}
+          {selectedLine && (
+            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 10,
+              background: isLiveView ? 'var(--bg3)' : 'rgba(168,85,247,0.12)',
+              border: `1px solid ${isLiveView ? 'var(--border2)' : 'rgba(168,85,247,0.5)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>กะที่ดู</span>
+                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                  {[['day', '☀️ เช้า'], ['night', '🌙 ดึก']].map(([k, t]) => (
+                    <button key={k} onClick={() => setViewShift(k)}
+                      style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                        background: viewShift === k ? 'var(--accent)' : 'var(--bg)',
+                        border: `1px solid ${viewShift === k ? 'var(--accent)' : 'var(--border)'}`,
+                        color: viewShift === k ? '#08130a' : 'var(--text2)' }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                📅 {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
+              </div>
+              {!isLiveView && (
+                <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4, lineHeight: 1.5 }}>
+                  👁 โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
+                  <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
+                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                    ⟳ กลับมาดูสด
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── กำลังคนทั้งกลุ่มไลน์ (รวมไลน์ย่อย) + รายชื่อคนไลน์ย่อยที่มีผังแยก (2026-08-03) ── */}
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
             <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
@@ -1277,7 +1328,7 @@ export default function Management() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
-            {can('management', 'assign_manpower', role) && specialWorkers.length > 0 && (
+            {can('management', 'assign_manpower', role) && isLiveView && specialWorkers.length > 0 && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
             )}
           </div>
@@ -1310,6 +1361,13 @@ export default function Management() {
         {selectedLine && !isMobile && (
           <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>บันทึก 4M ไลน์</div>
+            {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
+                ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
+            {!isLiveView && (
+              <div style={{ fontSize: 10.5, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+                ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
+              </div>
+            )}
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
@@ -1436,114 +1494,11 @@ export default function Management() {
           const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
           const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
 
-          const computeQueuedPositionsFull = (cards) => {
-            const breaks = allBreaksOnce();
-            const filtered = cards.filter(o => o.orderStartMs && o.orderEndMs);
-            const byOpenTime = [...filtered].sort((a, b) => a.orderStartMs - b.orderStartMs);
-            // คิวแสดงผลจริง: ใบที่ "ปิดแล้ว" (confirm) คือลำดับการผลิตที่เกิดขึ้นจริง ให้แทรกเข้าคิวก่อนตามเวลาปิดจริง
-            // (confirmed_at) เสมอ — ใบที่ "ยังไม่ปิด" ถือว่ายังไม่ถึงตาที่ผลิตจริง ต้องถีบไปต่อท้ายคิวเสมอ ไม่ว่าจะ
-            // เปิดมาก่อนนานแค่ไหนก็ตาม ผลคือถ้ามีใบ confirm มาแทรก จะดันใบที่ยังไม่ปิดถอยไปอยู่หลังสุด ไม่บังพื้นที่
-            // ของใบที่ทำสำเร็จไปแล้วจริง ๆ — ทำให้เหลือใบแดง (ยังไม่ปิด) แค่เท่าที่จำเป็นจริง ๆ
-            const doneCards = filtered.filter(o => o.isDone && o.confirmed_at)
-              .sort((a, b) => new Date(a.confirmed_at).getTime() - new Date(b.confirmed_at).getTime() || a.orderStartMs - b.orderStartMs);
-            const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
-              .sort((a, b) => a.orderStartMs - b.orderStartMs);
-            const sorted = [...doneCards, ...openCards];
-            // ── ชุดสแกนปิดรวด (batch confirm) ──────────────────────────────────────
-            // เครื่องจักรยังไม่ส่งสัญญาณจบทีละใบ พนักงานจึงสแกนปิดทั้งล็อตรวดเดียว (เช่น 9 ใบติดกัน)
-            // ถ้าตัดสิน "ปิดช้า" รายใบจาก confirmed_at ใบแรก ๆ ของชุดจะกลายเป็นส้มเกินจริงเสมอ
-            // จึงจัดกลุ่มใบที่สแกนห่างกันไม่เกิน 5 นาทีเป็นชุดเดียว แล้วตัดสินความช้าที่ใบสุดท้ายของชุด
-            // (เทียบเวลาสแกนจบชุด กับเวลาจบตามทฤษฎีของงานทั้งชุด)
-            const BATCH_GAP_MS = 5 * 60000;
-            const batchIdOf = new Map();
-            let curBatchId = 0;
-            doneCards.forEach((o, i) => {
-              if (i > 0 && new Date(o.confirmed_at).getTime() - new Date(doneCards[i - 1].confirmed_at).getTime() > BATCH_GAP_MS) curBatchId++;
-              batchIdOf.set(o, curBatchId);
-            });
-            const batchCount = new Map();
-            doneCards.forEach(o => { const b = batchIdOf.get(o); batchCount.set(b, (batchCount.get(b) || 0) + 1); });
-            const batchSeen = new Map();
-            // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
-            // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-            // pace เทียบเป็น std-time (Σ ยอด×CT ต่อพาร์ท) — คิวคำนวณระดับ sub-line มีหลายพาร์ท CT ต่างกันได้
-            const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMatNo[c.mat_no] || 0)), 0);
-            const anyCt = cards.some(c => (ctByMatNo[c.mat_no] || 0) > 0);
-            const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-            let expectedStdSec = Infinity;
-            if (anyCt && firstStartMs) {
-              let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
-              breaks.forEach(([bs, be]) => {
-                const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
-                if (oe > os) elapsedMs -= (oe - os);
-              });
-              expectedStdSec = Math.max(0, elapsedMs) / 1000;
-            }
-            const rowBehindPace = rowActualStdSec < expectedStdSec;
-            let queueEndMs = -Infinity;
-            let curRoundIdx = null;
-            return sorted.map(o => {
-              const roundIdx = roundIndexOf(o.orderStartMs);
-              // ห้ามให้ queueEndMs ถอยหลัง — ถ้าการ์ดก่อนหน้ายาวคร่อมเข้ารอบถัดไป (duration ยาวจาก qty×ct)
-              // ต้องเดินคิวต่อจากที่มันจบจริง ไม่ใช่กระโดดกลับไปที่จุดเริ่มรอบใหม่ (จะทำให้ทับกัน)
-              if (curRoundIdx === null || roundIdx !== curRoundIdx) {
-                curRoundIdx = roundIdx;
-                queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
-              }
-              const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
-              let startMs = Math.max(o.orderStartMs, queueEndMs);
-              let endMs = startMs + durationMs;
-              // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
-              // เวลาที่ "ว่าง" ก่อนเบรคเสียไปฟรี ๆ) แต่ให้ "ซอย" ทับเบรคแล้วยืดความยาวการ์ดออกแทน
-              const consumedBreaks = new Set();
-              let extended = true;
-              while (extended) {
-                extended = false;
-                breaks.forEach(([bs, be], i) => {
-                  if (consumedBreaks.has(i)) return;
-                  if (bs < endMs && be > startMs) {
-                    consumedBreaks.add(i);
-                    endMs += (be - bs);
-                    extended = true;
-                  }
-                });
-              }
-              // กฎตายตัว: ใบกัมบังห้ามซ้อนทับกันเอง และความกว้างต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด
-              // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
-              // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
-              // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
-              // ปิดช้า: ใบเดี่ยวตัดสินตามเดิม · ใบในชุดสแกนรวดเดียวตัดสินเฉพาะใบสุดท้ายของชุด
-              // (ใบแรก ๆ ของชุดถือว่าจบตามคิวทฤษฎี เพราะเวลาสแกนไม่ใช่เวลาผลิตจบจริงของใบนั้น)
-              let isLateDone = false;
-              if (o.isDone && o.confirmed_at) {
-                const bid = batchIdOf.get(o);
-                const size = batchCount.get(bid) || 1;
-                const seen = (batchSeen.get(bid) || 0) + 1;
-                batchSeen.set(bid, seen);
-                if (size === 1 || seen === size)
-                  isLateDone = new Date(o.confirmed_at).getTime() > endMs + (size > 1 ? BATCH_GAP_MS : 0);
-              }
-              let occupiedEndMs = endMs;
-              if (isLateDone) {
-                occupiedEndMs = new Date(o.confirmed_at).getTime();
-              } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
-                occupiedEndMs = nowMs;
-              }
-              // เดินคิวต้องไม่ขยับมาก่อน endMs ของการ์ดนี้เด็ดขาด (ไม่งั้นใบถัดไปจะมาทับกล่องที่แสดงอยู่)
-              // ถ้าปิดช้ากว่าทฤษฎี (isLateDone) ค่อยยืดคิวต่อไปถึง occupiedEndMs (confirmed_at จริง) กันใบถัดไปทับ "หาง"
-              // ถ้าปิดเร็ว/ยังไม่ปิด ใช้ endMs เดิม — ห้ามใช้ confirmed_at ที่เร็วกว่ามาเลื่อนคิวให้สั้นลง
-              queueEndMs = isLateDone ? occupiedEndMs : endMs;
-              const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs && rowBehindPace;
-              return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
-            }).map((item, i, arr) => {
-              // ใบที่ยังไม่ปิด+เลยกำหนด หางสีแดงจะยืดไปถึง "ตอนนี้" เสมอ — แต่ถ้าใบถัดไปเริ่มทำงานไปแล้ว
-              // (แสดงว่าคิวเดินต่อไปจริงแล้ว) ต้องตัดหางแดงให้สุดแค่จุดที่ใบถัดไปเริ่ม ไม่ให้ยืดไปทับใบถัดไป
-              if (item.isDelayed && arr[i + 1]) {
-                return { ...item, occupiedEndMs: Math.min(item.occupiedEndMs, arr[i + 1].startMs) };
-              }
-              return item;
-            });
-          };
+          // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
+          // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
+          const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
+            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+          });
 
           // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
           const pctForHalf = (item, half) => {
@@ -1762,7 +1717,7 @@ export default function Management() {
             });
             return chips;
           })();
-          const todayWd = getWorkDate();
+          const todayWd = todayWorkDate;
           const shiftBoardDate = (days) => {
             const d = new Date(`${boardDate}T12:00:00`);
             d.setDate(d.getDate() + days);
@@ -3307,7 +3262,9 @@ function PointDetailCard({ detail, alarms, onClose }) {
               ) : (
                 <>
                   <span style={chipSt(isPackaging ? '#4d9fff' : '#f59e0b')}>{isPackaging ? '📦 Packaging' : '🧱 Material'}</span>
-                  {!isPackaging && point.material_category && <span style={chipSt('#a78bfa')}>{point.material_category}</span>}
+                  {/* ⚠️ ห้ามโชว์เลขดิบ ('9'/'op' อ่านไม่รู้เรื่อง) — ผ่าน wipCatLabel เหมือนหน้าตั้งค่า */}
+                  {!isPackaging && wipPointCat(point.material_category, point.mat_no).text
+                    && <span style={chipSt('#a78bfa')}>{wipPointCat(point.material_category, point.mat_no).text}</span>}
                   <span style={chipSt(isLow ? '#ef4444' : '#22c55e')}>
                     {isLow ? '⚠ ' : ''}{point.current_qty ?? 0} / min {point.min_qty ?? 0} – max {point.max_qty ?? 0}
                   </span>

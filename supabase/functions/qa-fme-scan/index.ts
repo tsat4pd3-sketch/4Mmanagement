@@ -154,6 +154,11 @@ Deno.serve(async (req) => {
     const orders = await dr<Ord>(
       `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at,qty,qty_ok,qty_actual&session_id=in.(${sIds.join(',')})`);
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
+    /* ⚠️ PostgREST ตัดที่ 1000 แถวเงียบๆ (กฎ CLAUDE.md) — 2 master นี้ยังไม่ถึง แต่โตได้
+       ชนเพดานเมื่อไหร่ = พาร์ทที่หายไปจะไม่มี lot_size/pair/OP → ไม่มี Middle แบบไม่มีใครรู้
+       → ไม่แก้ให้เอง (ต้องไป paginate) แต่ **ต้องรายงานเสมอ ห้ามเงียบ** */
+    const truncated: string[] = [];
+    if (products.length >= 1000) truncated.push(`dr_products (${products.length})`);
     /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
        ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
     /* ⚠️ kanban_standards ไม่มีคอลัมน์ line_name (เจอตอน dry-run 2026-08-21 → 42703)
@@ -162,6 +167,7 @@ Deno.serve(async (req) => {
                   qty_per_kanban: number | null; min_qty: number | null; max_qty: number | null };
     const kstd = await dr<Kstd>(
       'kanban_standards?select=mat_no,product_id,lot_size,qty_per_kanban,min_qty,max_qty&is_active=eq.true');
+    if (kstd.length >= 1000) truncated.push(`kanban_standards (${kstd.length})`);
     /* ⚠️ 1 mat มีได้หลายแถว (คนละไลน์/ปลายทาง) — เดิม `set()` ทับกันไปเรื่อยๆ แถวสุดท้ายชนะ
        = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
     const lotRows = new Map<string, Kstd[]>();
@@ -456,6 +462,8 @@ Deno.serve(async (req) => {
             .filter(x => x.std.length || x.param),
           mid_mode: cfg.mid_mode ?? 'lot', mid_lot_ratio: Number(cfg.mid_lot_ratio ?? 1),
           mid_min_pcs: midMin, mid_max_per_run: Number(cfg.mid_max_per_run ?? 12),
+          // master ชนเพดาน 1000 แถวของ PostgREST = อ่านมาไม่ครบ → ผลด้านบนเชื่อไม่ได้ทั้งก้อน
+          master_truncated: truncated,
         },
         would_create: list.map(r => ({
           line: r.line_name, shift: r.shift, work_date: r.work_date,
@@ -536,18 +544,23 @@ Deno.serve(async (req) => {
       if (now < new Date(ob.due_at) || ob.alert_count >= cfg.max_alerts) continue;
       const since = ob.last_alerted_at ? (now.getTime() - new Date(ob.last_alerted_at).getTime()) / 60000 : 1e9;
       if (since < cfg.escalate_min) continue;
-      if (lateChats && lateChats.length) {
-        const lateMin = Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000);
-        await sendTelegram(
-          `🚨 <b>QA เกินเวลาตรวจ — ${STAGE_LABEL[ob.stage]}</b> (เตือนครั้งที่ ${ob.alert_count})\n${head}\n` +
-          `⏰ เลยกำหนดมาแล้ว <b>${lateMin} นาที</b> (ครบกำหนด ${hhmm(ob.due_at)})`, lateChats);
-        escalations++;
-      }
+      /* ⚠️ ยังไม่ตั้งห้อง / ปิด rule `qa_fme_overdue` ไว้ = ไม่บวก alert_count (หลักเดียวกับการเรียกครั้งแรก)
+         เดิมบวกทุกครั้งไม่ว่าส่งออกหรือไม่ → ตัวนับไต่ถึง max_alerts ตั้งแต่ยังไม่มีใครได้รับอะไร
+         พอไปเปิด rule ทีหลัง งานตรวจก้อนนั้นจะเงียบตลอดกาลทั้งที่ยังไม่เคยเตือนสักครั้ง */
+      if (!lateChats || !lateChats.length) continue;
+      const lateMin = Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000);
+      await sendTelegram(
+        `🚨 <b>QA เกินเวลาตรวจ — ${STAGE_LABEL[ob.stage]}</b> (เตือนครั้งที่ ${ob.alert_count})\n${head}\n` +
+        `⏰ เลยกำหนดมาแล้ว <b>${lateMin} นาที</b> (ครบกำหนด ${hhmm(ob.due_at)})`, lateChats);
+      escalations++;
       await supabase.from('qa_fme_obligations')
         .update({ alert_count: ob.alert_count + 1, last_alerted_at: now.toISOString() }).eq('id', ob.id);
     }
 
-    return json({ ok: true, scanned: { sessions: sessions.length, runs: runs.size }, created, closed, calls, escalations });
+    // master อ่านมาไม่ครบ = ต้องเห็นใน log ของ cron ด้วย ไม่ใช่เฉพาะ dry-run (ห้ามล้มเหลวเงียบ)
+    if (truncated.length) console.error('qa-fme-scan: master ชนเพดาน 1000 แถว →', truncated.join(', '));
+    return json({ ok: true, scanned: { sessions: sessions.length, runs: runs.size },
+      created, closed, calls, escalations, master_truncated: truncated });
   } catch (e) {
     console.error('qa-fme-scan', e);
     return json({ ok: false, error: String((e as Error)?.message ?? e) }, 500);

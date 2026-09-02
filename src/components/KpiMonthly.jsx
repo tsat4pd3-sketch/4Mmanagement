@@ -169,7 +169,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const { can, role } = usePerms();
   const canManage = can('kpi', 'manage');
   const [year, setYear] = useState(nowYear);
-  const [section, setSection] = useState('');
+  /* ⚠️ รับ ?section= จาก URL — /obeya ส่งมาตอนกดเซลล์บนบอร์ด (กฎ "ลิงก์ต้องพาไปถึงตัวงานนั้น")
+     ไม่งั้นกดจากบอร์ด PD3 แล้วเปิดมาเจอส่วนงานอื่น ต้องไปเลือกเองซ้ำ */
+  const [section, setSection] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('section') || ''; } catch { return ''; }
+  });
   const [group, setGroup] = useState(''); // drill-down กลุ่มไลน์ (top-level)
   const [orgSections, setOrgSections] = useState(null); // null = ยังโหลด · [] = ผังว่าง → fallback
   const [loading, setLoading] = useState(false);
@@ -198,6 +202,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const fromOrg = (orgSections || []).map(s => s.code || s.name).filter(s => inScopeSecs.has(s));
     return fromOrg.length ? fromOrg : [...inScopeSecs].sort();
   }, [orgSections, lines, scopeSet]);
+
+  /* ⚠️ ส่วนงานจาก URL ที่ไม่อยู่ในขอบเขตของ user = ตกกลับ "ทุกส่วนงาน"
+     (กฎ useTabParam: ค่าที่ไม่รู้จักห้ามทำให้จอว่าง · และ select จะโชว์ค่าว่างถ้า value ไม่มีใน options) */
+  useEffect(() => {
+    if (section && sectionOpts.length && !sectionOpts.includes(section)) { setSection(''); setGroup(''); }
+  }, [section, sectionOpts]);
 
   /* กลุ่มไลน์บนสุด (parent หรือไลน์เดี่ยว) ในขอบเขต+ส่วนที่เลือก */
   const groupOpts = useMemo(() => {

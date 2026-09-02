@@ -166,6 +166,23 @@ export function buildProblemReport({ downtimes = [], defects = [], minMinutes = 
 
   const qtyNg = defects.reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
 
+  /* หัวเรื่อง "ปัญหา :" บนหัวใบ — เสนอจาก "รายการเดียวที่หนักสุด" ของกะนี้
+   * ⚠️ เป็นค่าเสนอเท่านั้น คนแก้ทับ/ล้างได้ก่อนพิมพ์เสมอ (ทั้งใบถูกยื่นไว้ใต้หัวเรื่องนี้)
+   * ⚠️ ไม่มีรายการเข้าใบเลย = คืน '' ปล่อยว่างให้เขียนมือ **ห้ามแต่งข้อความขึ้นเอง**
+   * เกณฑ์: downtime ที่ยาวสุดก่อน (ทั้งเครื่องจักร+การรอ) ไม่มี downtime ค่อยใช้ของเสียที่มากสุด
+   *        — สืบกลับได้เสมอว่ามาจากแถวไหน ไม่ใช่การสรุปลอยๆ */
+  const dfQty = d => (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+  const topDt = [...machineDt, ...waitDt]
+    .sort((a, b) => (Number(b.duration_min) || 0) - (Number(a.duration_min) || 0))[0];
+  const topDf = [...defects].sort((a, b) => dfQty(b) - dfQty(a))[0];
+  const headline = topDt
+    ? `${topDt.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}`
+      + `${topDt.machine_no ? ` (${topDt.machine_no})` : ''}`
+      + ` ${Math.round(Number(topDt.duration_min) || 0)} นาที`
+    : topDf
+      ? `${topDf.dr_defect_types?.name_th || 'ไม่ระบุประเภท'}${dfQty(topDf) ? ` ${dfQty(topDf)} ชิ้น` : ''}`
+      : '';
+
   // ผลการตรวจติดตาม = ช่องสรุปท้ายใบ (ใบกระดาษมีช่องเดียวรวมทุกคอลัมน์)
   const inReport = [...defects, ...machineDt, ...waitDt];
   const followup = {
@@ -175,6 +192,7 @@ export function buildProblemReport({ downtimes = [], defects = [], minMinutes = 
   };
 
   return {
+    headline,
     quality: { ...q, qty: qtyNg, time: span(defects), by: who(defects), count: defects.length },
     machine: { ...m, time: span(machineDt), by: who(machineDt), count: machineDt.length,
                minutes: machineDt.reduce((a, d) => a + (Number(d.duration_min) || 0), 0) },
@@ -257,7 +275,7 @@ export async function printProdProblemReport({ session, downtimes, defects, minM
     <div class="lg">${logo ? `<img src="${logo}" alt="">` : ''}</div>
     <div class="mid">
       <h1>${esc(df.title || 'ใบรายงานปัญหาการผลิต')}</h1>
-      <div class="f"><b>ปัญหา :</b><span>${esc(extra.problem || '')}</span></div>
+      <div class="f"><b>ปัญหา :</b><span>${esc(extra.problem ?? R.headline ?? '')}</span></div>
       <div class="f"><b>ส่วนผลิต/แผนก :</b><span>${esc(extra.dept || section || '')}</span></div>
       <div class="f"><b>Line/พื้นที่ :</b><span>${esc(session.line_name || '')}</span></div>
     </div>

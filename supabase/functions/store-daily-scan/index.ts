@@ -86,12 +86,30 @@ Deno.serve(async () => {
     const shortage = rows.filter((r) => r.kind === 'shortage').length;
     const over = rows.filter((r) => r.kind === 'over').length;
 
-    await fetch(NOTIFY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NOTIFY_KEY}`, apikey: NOTIFY_KEY },
-      // total = ของจริงจาก head-count · sampled/truncated = บอกว่าลิสต์ข้างล่างครบไหม
-      body: JSON.stringify({ event: 'store_abnormal', alert: { work_date: workDate, total: exactTotal, sampled: rows.length, truncated, shortage, over, groups } }),
-    }).catch(() => {});
+    /* ⚠️ ส่งไม่สำเร็จต้องรายงาน ห้าม `.catch(() => {})` แล้วตอบ ok:true (แก้ 2026-08-26)
+       เดิมกลืน error ทิ้ง → Telegram ล่ม / rule ถูกปิด / send-store-notification พัง
+       = สรุปสโตร์รายวันหายไปเฉยๆ โดยไม่มีใครรู้ (cron log ก็ขึ้น succeeded)
+       ตัวนี้เป็นสรุปรายวัน ไม่มีตาราง dedup ให้ถอน → รอบหน้าพรุ่งนี้แจ้งใหม่เองอยู่แล้ว
+       จึงแค่ต้อง "ดังพอให้เห็นใน cron log + response" ไม่ต้อง retry */
+    let notifyErr: string | null = null;
+    try {
+      const res = await fetch(NOTIFY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NOTIFY_KEY}`, apikey: NOTIFY_KEY },
+        // total = ของจริงจาก head-count · sampled/truncated = บอกว่าลิสต์ข้างล่างครบไหม
+        body: JSON.stringify({ event: 'store_abnormal', alert: { work_date: workDate, total: exactTotal, sampled: rows.length, truncated, shortage, over, groups } }),
+      });
+      if (!res.ok) notifyErr = `HTTP ${res.status} ${(await res.text().catch(() => '')).slice(0, 200)}`;
+    } catch (e) {
+      notifyErr = String(e);
+    }
+    if (notifyErr) {
+      console.error('[store-daily-scan] notify failed:', notifyErr);
+      return new Response(JSON.stringify({
+        ok: false, notify_error: notifyErr,
+        findings: exactTotal, sampled: rows.length, truncated, shortage, over,
+      }), { status: 502 });
+    }
 
     return new Response(JSON.stringify({ ok: true, findings: exactTotal, sampled: rows.length, truncated, shortage, over }), { status: 200 });
   } catch (err) {

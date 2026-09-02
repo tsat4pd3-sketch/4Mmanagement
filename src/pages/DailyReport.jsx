@@ -4,13 +4,14 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
-import { printProdProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
+import { printProdProblemReport, buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
 import { can, canAccessPage } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
@@ -21,6 +22,8 @@ import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
 import QualityBinLinkModal from '../components/QualityBinLinkModal';
 import StoreLotQueue from '../components/StoreLotQueue';
+import LineWipPanel from '../components/LineWipPanel';
+import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
@@ -33,6 +36,7 @@ import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
+import { liveChannel } from '../utils/liveChannel';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -190,7 +194,7 @@ export default function DailyReport() {
 
       {tab === 'live'    && <LiveTab role={role} stale={stale} onGoStale={() => setTab('stale')}
                               focusSessionId={focusSess} onFocusDone={() => setFocusSess(null)} />}
-      {tab === 'stale'   && <StaleTab stale={stale} onOpenSession={(id) => { setFocusSess(id); setTab('live'); }} />}
+      {tab === 'stale'   && <StaleTab stale={stale} role={role} onOpenSession={(id) => { setFocusSess(id); setTab('live'); }} />}
       {tab === 'history' && <HistoryTab role={role} />}
       {tab === 'export'  && <ExportTab />}
       {tab === 'setup'   && canSetup && <SetupTab role={role} />}
@@ -319,6 +323,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [approveNote, setApproveNote] = useState(''); // remark ของ SV ตอนอนุมัติปิดกะ (optional — คำขอ user 2026-07-24)
   // SV reject-with-remark modal (บอกหัวหน้ากลุ่มว่าต้องกลับไปแก้อะไร)
   const [showRejectModal, setShowRejectModal] = useState(false);
+  // ใบรายงานปัญหาการผลิต — ช่อง "ปัญหา :" บนหัวใบ ระบบเสนอค่าให้ คนแก้/ล้างได้ก่อนพิมพ์
+  const [problemSheet, setProblemSheet] = useState(null);   // { title } | null
+
   const [rejectReason, setRejectReason]       = useState('');
   const [savingReject, setSavingReject]       = useState(false);
 
@@ -586,7 +593,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       clearTimeout(timers[key]);
       timers[key] = setTimeout(fn, ms);
     };
-    const ch = supabaseDR.channel('live-dr')
+    const ch = liveChannel(supabaseDR, 'live-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => debounce('sess', () => load()))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => debounce('ord',  () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => debounce('dt',   () => { if (selSession) loadDT(selSession.id); }))
@@ -2595,12 +2602,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {(dtLogs.length > 0 || defectLogs.length > 0) && (() => {
                     const pend = countPendingFix({ downtimes: dtLogs, defects: defectLogs });
                     return (
-                      <button onClick={async () => {
-                        const ok = await printProdProblemReport({
-                          session: selSession, downtimes: dtLogs, defects: defectLogs,
-                          section: lineMap?.[selSession.line_name]?.section || null,
-                        });
-                        if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+                      <button onClick={() => {
+                        // เปิดช่อง "ปัญหา :" ให้ตรวจ/แก้ก่อนพิมพ์ — เดิมช่องนี้ออกมาว่างทุกใบ
+                        // (feedback หน้างาน 2026-08-28: "ปัญหาลงตรงไหนได้บ้าง" — ไม่มีที่ให้ลงจริงๆ)
+                        const R = buildProblemReport({ downtimes: dtLogs, defects: defectLogs, minMinutes: PROBLEM_MIN_MINUTES });
+                        setProblemSheet({ title: R.headline || '' });
                       }}
                         style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
                         title={pend.total
@@ -2794,7 +2800,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             {/* คิวสั่งผลิตจากสโตร์ (ไลน์ปั๊ม/พาร์ทลูก) — วางเหนือ Prod Orders โดยตั้งใจ:
                 "สโตร์อยากได้อะไร" ต้องมาก่อน "เราเปิดใบอะไรไปแล้ว"
                 ไลน์ที่ไม่มีคิว + ไม่มีของค้าง component จะไม่ render อะไรเลย (ไม่รกจอไลน์ประกอบ) */}
+            {/* 🔩 คิวสั่งผลิตจากสโตร์ (ไลน์ปั๊ม) · 📦 เรียกชิ้นส่วนจากสโตร์ (ไลน์ประกอบ)
+                2 แผงนี้เป็นคนละทิศของลูปเดียวกัน — ไลน์ไหนไม่เกี่ยวจะไม่ render อะไรเลย */}
             <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
+            <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
+
+            {/* 📦 WIP ที่ไลน์ — สโตร์ส่งมาเท่าไหร่ · ตัดเป็น FG เท่าไหร่ · ค้างเท่าไหร่ (user 2026-09-01)
+                ⚠️ ค้าง = "คำนวณ" (รับเข้า − ผลิต×BOM) ไม่ใช่ qty_on_hand ในระบบ
+                   backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
+                ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
+            <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
 
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
@@ -3456,6 +3471,46 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {/* ── CLOSE SHIFT / OEE modal ─────────────────────────── */}
         {/* SV review-before-approve — show exactly what the leader submitted before deciding */}
         {/* Reject-with-remark modal — SV ระบุสิ่งที่ต้องกลับไปแก้ให้หัวหน้ากลุ่มทราบ */}
+        {/* ใบรายงานปัญหาการผลิต — ยืนยันหัวเรื่อง "ปัญหา :" ก่อนพิมพ์
+            ระบบเสนอจากรายการที่หนักสุดของกะ (สืบกลับได้ว่ามาจากแถวไหน) แต่คนเป็นคนตัดสิน */}
+        {problemSheet && selSession && (() => {
+          const doPrint = async () => {
+            const title = problemSheet.title;
+            setProblemSheet(null);
+            const ok = await printProdProblemReport({
+              session: selSession, downtimes: dtLogs, defects: defectLogs,
+              section: lineMap?.[selSession.line_name]?.section || null,
+              extra: { problem: title },
+            });
+            if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+          };
+          return (
+          <div className="overlay" style={{ zIndex: 2200 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,520px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>📝 ใบรายงานปัญหาการผลิต</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+                {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
+              </div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ปัญหา (หัวเรื่องบนหัวใบ)</label>
+              <input value={problemSheet.title} autoFocus
+                onChange={e => setProblemSheet(v => ({ ...v, title: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') doPrint(); }}
+                placeholder="เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ"
+                style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
+                ระบบเสนอจากรายการที่กินเวลา/จำนวนมากสุดของกะนี้ — แก้ทับหรือล้างทิ้งได้ ช่องอื่นในใบดึงจากที่บันทึกไว้แล้วอัตโนมัติ
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button onClick={() => setProblemSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={doPrint} style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700 }}>
+                  🖨 พิมพ์ใบรายงาน
+                </button>
+              </div>
+            </div>
+          </div>
+          );
+        })()}
+
         {showRejectModal && selSession && (
           <div className="overlay" style={{ zIndex: 2200 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,480px)' }}>
@@ -5115,10 +5170,44 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
    ⚠️ อ่านอย่างเดียว + พาไปที่กะนั้นในแท็บ Live — **ห้ามใส่ปุ่มปิด/อนุมัติรวบทีเดียวที่นี่**
       ปิดกะต้องยืนยันยอดผลิต/OEE รายกะ (modal ปิดกะ) · กดรวบ = stamp ตัวเลขที่ไม่มีคนดู
 ═══════════════════════════════════════════════════════════════ */
-function StaleTab({ stale, onOpenSession }) {
+function StaleTab({ stale, onOpenSession, role }) {
   const rows = stale?.rows || [];
   const [q, setQ] = useState('');
   const [side, setSide] = useState('all');   // all | sv (รอ SV อนุมัติ) | leader (ยังไม่ขอปิด)
+
+  /* 🧹 เคลียร์ "กะเปล่า" ทีเดียว — ส่วนหนึ่งของกะค้างคือกะที่เปิดผิด/เปิดทิ้งไว้ ไม่มีข้อมูลเลย
+     แล้วไม่มีใครกล้าแตะเพราะต้องเข้าไปกดลบทีละกะ
+     ⚠️ ลบได้เฉพาะกะที่ "ไม่มี Order/Downtime/ของเสีย เลย" — ลบกะเปล่าไม่ได้สร้างข้อมูลเท็จอะไร
+        ต่างจาก auto-close ที่ต้อง stamp OEE จากยอดที่ไม่มีคนยืนยัน (ยังห้ามทำตามกฎเดิม)
+     ⚠️ ยิงคิวรีเฉพาะตอนกดปุ่ม ไม่ใช่ตอนเปิดแท็บ (กฎ egress)
+     ⚠️ ผ่าน fetchByIds เสมอ · error/truncated ห้ามกลืน — โหลดไม่ครบแล้วเดาว่า "เปล่า" = ลบกะที่มีข้อมูลทิ้ง */
+  const [emptyScan, setEmptyScan] = useState(null);   // null=ยังไม่ตรวจ · { busy, ids, err }
+  const scanEmpty = async () => {
+    const ids = rows.map(o => o.id);
+    if (!ids.length) return;
+    setEmptyScan({ busy: true, ids: [], err: null });
+    const has = new Set();
+    for (const t of ['prod_orders', 'downtime_logs', 'defect_logs']) {
+      const r = await fetchByIds(ids, chunk =>
+        supabaseDR.from(t).select('session_id').in('session_id', chunk).order('session_id'));
+      if (r.error || r.truncated) { setEmptyScan({ busy: false, ids: [], err: r.error?.message || 'โหลดข้อมูลไม่ครบ' }); return; }
+      (r.rows || []).forEach(x => has.add(x.session_id));
+    }
+    setEmptyScan({ busy: false, ids: ids.filter(id => !has.has(id)), err: null });
+  };
+  const deleteEmpty = async () => {
+    const ids = emptyScan?.ids || [];
+    if (!ids.length) return;
+    const names = rows.filter(o => ids.includes(o.id))
+      .map(o => `• ${o.line_name} · ${o.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · ${fmtDate(o.work_date)}`);
+    if (!window.confirm(`ลบกะเปล่า ${ids.length} กะ ?\n(ไม่มี Order / Downtime / ของเสีย เลยสักรายการ)\n\n${names.slice(0, 15).join('\n')}${names.length > 15 ? `\n… และอีก ${names.length - 15} กะ` : ''}`)) return;
+    setEmptyScan(e => ({ ...e, busy: true }));
+    const { error } = await supabaseDR.from('production_sessions').delete().in('id', ids);
+    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); setEmptyScan(e => ({ ...e, busy: false })); return; }
+    toast.success(`ลบกะเปล่าที่ค้าง ${ids.length} กะเรียบร้อย`);
+    setEmptyScan(null);
+    stale.reload?.();
+  };
 
   const shown = rows.filter(o => {
     if (side === 'sv' && o.status !== 'pending_close') return false;
@@ -5160,6 +5249,45 @@ function StaleTab({ stale, onOpenSession }) {
           กะที่ไม่ปิด = OEE/ยอดผลิตของวันนั้น<b>หายจากรายงานเดือน</b> (ระบบนับเฉพาะกะที่ปิดแล้ว) · เป้าหมาย: เคลียร์ภายใน {STALE_SESSION_DAYS} วัน
           <span style={{ color: 'var(--muted)' }}> · เริ่มกะใหม่ของวันนี้ได้ตามปกติ ไม่ต้องรอเคลียร์</span>
         </div>
+
+        {/* 🧹 กะเปล่า = เปิดผิด/เปิดทิ้งไว้ ลบทิ้งได้โดยไม่กระทบรายงาน — กะที่มีข้อมูลจริงยังต้องให้คนปิดเองเสมอ */}
+        {can('daily_report', 'delete_session', role) && rows.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+            {!emptyScan ? (
+              <>
+                <button onClick={scanEmpty}
+                  style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                  🔎 ตรวจหากะเปล่า
+                </button>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  กะที่ไม่มี Order / Downtime / ของเสีย เลย = เปิดผิดหรือเปิดทิ้งไว้ — ลบทีเดียวได้ ไม่ต้องไล่ทีละกะ
+                </span>
+              </>
+            ) : emptyScan.busy ? (
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังตรวจ…</span>
+            ) : emptyScan.err ? (
+              /* โหลดไม่ครบ = ห้ามบอกว่า "ไม่มีกะเปล่า" (จะกลายเป็นตีกะที่มีข้อมูลว่าเปล่าแล้วลบทิ้ง) */
+              <span style={{ fontSize: 12, color: '#f59e0b' }}>
+                ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังลบไม่ได้
+                <button onClick={() => setEmptyScan(null)} style={{ marginLeft: 8, fontSize: 11.5, padding: '3px 9px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ลองใหม่</button>
+              </span>
+            ) : emptyScan.ids.length === 0 ? (
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+                ✓ ไม่มีกะเปล่า — ทั้ง {rows.length} กะมีข้อมูลจริง ต้องปิด/อนุมัติเอง
+              </span>
+            ) : (
+              <>
+                <button onClick={deleteEmpty}
+                  style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 8, cursor: 'pointer', background: 'rgba(239,68,68,0.9)', border: '1px solid #ef4444', color: '#fff' }}>
+                  🗑 ลบกะเปล่า {emptyScan.ids.length} กะ
+                </button>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  อีก {rows.length - emptyScan.ids.length} กะมีข้อมูลจริง — ต้องปิด/อนุมัติเอง (ระบบไม่ปิดให้)
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>

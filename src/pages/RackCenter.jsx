@@ -10,6 +10,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -117,7 +118,7 @@ export default function RackCenter() {
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
   useEffect(() => {
-    const ch = supabaseDR.channel('rack-requests-live')
+    const ch = liveChannel(supabaseDR, 'rack-requests-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rack_requests' }, load)
       .subscribe();
     return () => { supabaseDR.removeChannel(ch); };
@@ -268,7 +269,7 @@ export default function RackCenter() {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,2.5vw,24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🗃️ Rack Center — เรียกภาชนะ
+            🗃️ ภาชนะ &amp; Packaging — เรียกภาชนะ
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ

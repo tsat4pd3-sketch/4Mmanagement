@@ -34,6 +34,7 @@ const DR_AUDIT_TABLES = new Set([
   'die_sets','equipment_die','die_op_types','die_storage_areas','storage_zones',
   'part_routings',
   'quality_bin_records',
+  'line_part_levels',   // min/max พาร์ทต่อไลน์ — ค่าที่คนตั้งเอง ต้องรู้ว่าใครแก้เมื่อไหร่
 ])
 let drActorName = null
 // เรียกจาก App.jsx เมื่อรู้ตัวตน user (login) — ล้างเป็น null ตอน logout

@@ -165,12 +165,25 @@ export function parseSpareSheet(matrix = [], opts = {}) {
 /** จับคู่แถวที่นำเข้ากับอะไหล่ที่มีอยู่ → บอกว่าอันไหน "เพิ่มใหม่" อันไหน "อัพเดท"
  *  @param rows       ผลจาก parseSpareSheet().rows
  *  @param existing   อะไหล่ในระบบ (mtn_spare_parts)
- *  @param keyField   'code' | 'mat_no'  */
-export function matchExisting(rows = [], existing = [], keyField = 'code') {
-  const idx = new Map()
+ *  @param keyField   'code' | 'mat_no'
+ *  @param opts.section  หน่วยงานเจ้าของที่กำลังนำเข้า — **ส่งมาแล้วจะจับคู่เฉพาะในหน่วยงานนั้น**
+ *
+ *  ⚠️ ทำไมต้องมีขอบเขตหน่วยงาน (feedback 2026-08-25 "มีการใช้ Mat. No. ซ้ำกัน")
+ *     คลังของแต่ละหน่วยงานมีของชิ้นเดียวกันได้ (เลข MAT เดียวกัน คนละพื้นที่เก็บ คนละคนดูแล)
+ *     ถ้าจับคู่ข้ามหน่วยงาน → PD1 นำเข้าไฟล์ตัวเอง แล้วไป **อัพเดททับสต็อกของ PD3** แบบเงียบๆ
+ *     → จับคู่เฉพาะหน่วยงานเดียวกัน · เจอคีย์ซ้ำที่หน่วยงานอื่นถือ = สร้างใหม่ + **เตือนให้เห็น ห้ามเงียบ**
+ *     ไม่ส่ง section มา = พฤติกรรมเดิมทุกประการ (จับคู่ทั้งคลัง) */
+export function matchExisting(rows = [], existing = [], keyField = 'code', opts = {}) {
+  const scoped = Object.prototype.hasOwnProperty.call(opts, 'section')
+  const secOf = (v) => String(v ?? '').trim().toUpperCase()
+  const target = secOf(opts.section)
+  const idx = new Map()        // คีย์ → แถวในหน่วยงานที่นำเข้า (ตัวที่อัพเดททับได้)
+  const otherSec = new Map()   // คีย์ → หน่วยงานอื่นที่ถือคีย์นี้อยู่ (ไว้เตือน)
   for (const p of existing) {
     const k = normHeader(p?.[keyField])
-    if (k) idx.set(k, p)
+    if (!k) continue
+    if (!scoped || secOf(p.section) === target) { if (!idx.has(k)) idx.set(k, p) }
+    else if (!otherSec.has(k)) otherSec.set(k, secOf(p.section) || 'ของกลาง')
   }
   const seen = new Map()          // กันไฟล์เดียวมีคีย์ซ้ำกันเอง
   return rows.map(r => {
@@ -188,6 +201,9 @@ export function matchExisting(rows = [], existing = [], keyField = 'code') {
     } else {
       seen.set(k, r.rowNo)
       if (idx.has(k)) { action = 'update'; existingRow = idx.get(k) }
+      else if (otherSec.has(k)) {
+        errors.push(`คีย์นี้มีอยู่แล้วในหน่วยงาน ${otherSec.get(k)} — จะสร้างเป็นรายการใหม่ของหน่วยงานนี้ (ไม่ทับของเขา)`)
+      }
     }
     if (errors.some(e => e === 'ไม่มีชื่ออะไหล่')) action = 'skip'
     return { ...r, errors, action, existing: existingRow }

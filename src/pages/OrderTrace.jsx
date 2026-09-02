@@ -12,6 +12,8 @@ import { isParallelLine } from '../utils/lineTypes';
 import { noteSimilarity, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import { PART_WORDS, wordGroups } from '../utils/peLink';
 import PageHeader from '../components/PageHeader';
+import useTabParam from '../utils/useTabParam';
+import SymptomSearch from '../components/SymptomSearch';
 import { inspMeta } from '../utils/inspectionStatus';
 
 /*
@@ -58,6 +60,8 @@ const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', border
 
 export default function OrderTrace() {
   const { role, lineId, sections } = useContext(UserContext);
+  // 2 ทางเข้าของการสอบกลับ: รู้เลขใบ (order) ↔ รู้แต่อาการ (symptom)
+  const [tab, setTab] = useTabParam(['order', 'symptom'], 'order');
   const scopeSecs = sections || [];
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -896,9 +900,34 @@ export default function OrderTrace() {
     <div style={{ maxWidth: 'min(97vw, 1500px)', margin: '0 auto' }}>
       <PageHeader
         title="สอบกลับ Order (Order Traceability)" icon="🔎"
-        sub="สแกน/ค้นหาใบผลิต → เห็นทุกเหตุการณ์ + สถานการณ์รอบข้าง ณ เวลาผลิตใบนั้น"
+        sub={tab === 'symptom'
+          ? 'มีแต่อาการที่ลูกค้าแจ้ง → ค้นหาของเสีย/เครื่องหยุดที่เกี่ยวข้อง แล้วเจาะเข้าใบผลิต'
+          : 'สแกน/ค้นหาใบผลิต → เห็นทุกเหตุการณ์ + สถานการณ์รอบข้าง ณ เวลาผลิตใบนั้น'}
+        tabs={[
+          { key: 'order', label: '🔎 จากเลขใบผลิต' },
+          { key: 'symptom', label: '🩺 จากอาการที่แจ้ง' },
+        ]}
+        tab={tab} onTab={setTab}
       />
 
+      {/* ── ค้นด้วยอาการ: ไม่รู้เลขใบก็เริ่มสอบกลับได้ (2026-08-26) ──
+           เจอใบที่สงสัยแล้วกด "สอบกลับใบนี้" → สลับมาแท็บใบผลิตพร้อมค้นให้เลย */}
+      {tab === 'symptom' && (
+        <SymptomSearch
+          inScope={inScope}
+          onOpenOrder={(prodNo) => {
+            setTab('order');
+            setSearch(prodNo);
+            doSearch(prodNo, { includeOpen: true }).then(rows => {
+              const hit = rows.find(o => o.prod_no === prodNo) || rows[0];
+              if (hit) setSel(hit);
+              else toast.info(`ไม่พบใบ ${prodNo} ในช่วงวันที่ตั้งไว้ — ขยายช่วงวันแล้วค้นใหม่`);
+            });
+          }}
+        />
+      )}
+
+      {tab === 'order' && (<>
       {/* ── ค้นหา ── */}
       <div style={{ ...card, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <input type="text" value={search} onChange={e => setSearch(e.target.value)}
@@ -1045,7 +1074,7 @@ export default function OrderTrace() {
                   <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--muted)' }}>
                     พาร์ทนี้ <b style={{ color: 'var(--text2)' }}>ยังไม่มีเอกสาร PFMEA / Control Plan ในระบบ</b> —
                     จึงยังโฟกัสตามอาการไม่ได้ (ทั้งระบบลงไปแล้ว {trace.pe?.totalSets ?? 0} พาร์ท)
-                    <div style={{ marginTop: 5 }}>ลงเอกสารได้ที่หน้า <b>วิศวกรรม (PE) → Flow / PFMEA / Control Plan</b></div>
+                    <div style={{ marginTop: 5 }}>ลงเอกสารได้ที่หน้า <b>คุณภาพ & วิศวกรรม → Flow / PFMEA / Control Plan</b></div>
                   </div>
                 ) : (
                   <>
@@ -1610,6 +1639,7 @@ export default function OrderTrace() {
           )}
         </>
       )}
+      </>)}
     </div>
   );
 }

@@ -28,6 +28,8 @@ export const IMG_READ_ERROR =
   'วิธีแก้: ตั้งกล้องให้ถ่ายเป็น JPEG — Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด "รูปภาพประสิทธิภาพสูง (HEIF)" · iPhone: ตั้งค่า → กล้อง → รูปแบบ → เลือก "เข้ากันได้มากที่สุด" · ' +
   'หรือเปิดระบบผ่าน Chrome/Safari แทนเบราว์เซอร์ในแอป (เช่น LINE) แล้วลองใหม่';
 
+import { toDecodableImage } from './heicToJpeg';
+
 /** วาดลง canvas แล้วคืน JPEG blob (คืน null ถ้า toBlob ไม่ออก) */
 function draw(src, w, h, maxPx, quality) {
   const scale = Math.min(1, maxPx / Math.max(w, h));
@@ -39,6 +41,10 @@ function draw(src, w, h, maxPx, quality) {
 }
 
 export default async function resizeImage(file, maxPx = 1024, quality = 0.8) {
+  // ⓪ HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไม่ใช่ HEIC = คืนไฟล์เดิม ไม่มี overhead)
+  //    แปลงไม่สำเร็จ = โยน HEIC_FAIL_MSG ที่บอกวิธีตั้งกล้อง — ผู้เรียกโชว์ต่อได้เลย
+  file = await toDecodableImage(file, Math.max(quality, 0.9));
+
   // ① createImageBitmap — ทางหลัก (decode นอก main thread · รองรับฟอร์แมตกว้างกว่า)
   if (typeof createImageBitmap === 'function') {
     let bmp = null;

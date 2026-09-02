@@ -9,8 +9,10 @@ import useIsMobile from '../utils/useIsMobile';
    + แถบลายเฉียงช่วงเวลาพัก
 
    props:
-   - groups: [{ key, label, sub, items: [{ id, timeMin, color, text, title, data }] }]
+   - groups: [{ key, label, sub, items: [{ id, timeMin, color, text, title, data, dashed }] }]
      timeMin = นาทีบนกรอบวันงาน (08:00 = 480, ก่อนตี 8 บวก 1440 แล้ว)
+     dashed  = บล็อกนี้เป็น "คาดการณ์" ไม่ใช่ของที่เกิดขึ้นจริง → เส้นประ + จาง
+               (กฎ: ของจริงกับของเดา ห้ามวาดเหมือนกันจนแยกไม่ออก — ดู QaFmeBoard)
    - nowMin: นาทีปัจจุบันบนกรอบเดียวกัน (null = ไม่ใช่วันงานปัจจุบัน ไม่วาดเส้น/ป้าย)
    - breaks: [{ s, e, label }] ช่วงเวลาพักบนกรอบเดียวกัน (จาก breaksToFrame ใน utils/timeFrame)
    - onItemClick(data, x, y)
@@ -111,7 +113,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
                 if (isCol) {
                   return (
                     <div key={it.id} onClick={e => onItemClick?.(it.data, e.clientX, e.clientY)} title={it.title}
-                      style={{ position: 'absolute', top: 8, width: 9, height: 9, borderRadius: '50%', left: `${Math.min(Math.max(left, 0), 98.5)}%`, background: it.color, border: '1.5px solid rgba(0,0,0,0.25)', cursor: onItemClick ? 'pointer' : 'default', zIndex: 1 }} />
+                      style={{ position: 'absolute', top: 8, width: 9, height: 9, borderRadius: '50%', left: `${Math.min(Math.max(left, 0), 98.5)}%`, background: it.dashed ? 'transparent' : it.color, border: it.dashed ? `1.5px dashed ${it.color}` : '1.5px solid rgba(0,0,0,0.25)', cursor: onItemClick ? 'pointer' : 'default', zIndex: 1 }} />
                   );
                 }
                 return (
@@ -119,7 +121,9 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
                     style={{
                       position: 'absolute', top: 5 + (lanes.map[it.id] || 0) * LANE_H, height: LANE_H - 6,
                       left: `${Math.min(Math.max(left, 0), 97)}%`, width: `${(SPAN_MIN / SPAN) * 100}%`, minWidth: 48,
-                      background: `${it.color}22`, border: `1.5px solid ${it.color}cc`, borderRadius: 5, zIndex: 1,
+                      background: it.dashed ? `${it.color}0f` : `${it.color}22`,
+                      border: `1.5px ${it.dashed ? 'dashed' : 'solid'} ${it.color}${it.dashed ? '99' : 'cc'}`,
+                      borderRadius: 5, zIndex: 1, opacity: it.dashed ? 0.9 : 1,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                       cursor: onItemClick ? 'pointer' : 'default', boxSizing: 'border-box',
                     }}>

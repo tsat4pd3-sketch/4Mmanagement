@@ -43,7 +43,7 @@ export default function RundownStock() {
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
       // ⚠️ order อ้าง "เลขลูกค้า" แต่คลังเก็บ "เลข SAP" — ต้อง resolve ผ่าน matResolve
       //    เทียบตรงๆ จะได้ "ไม่มีของ" ทั้งที่ของเต็มคลังอยู่ใต้เลข SAP (กฎเหล็ก CLAUDE.md)
-      supabaseDR.from('dr_products').select('mat_no, p_no').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, p_no, is_operation').eq('is_active', true),
       supabaseDR.from('kanban_standards').select('mat_no, p_no').eq('is_active', true),
     ]);
     setLoadWarn(stkR.error || odsR.error || (stkR.truncated || odsR.truncated ? 'ข้อมูลเกินเพดานที่ดึงได้' : ''));
@@ -144,7 +144,7 @@ export default function RundownStock() {
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 18 }}>
         <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📉 Rundown Stock — Balance FG รายวัน
+          📉 คาดการณ์ของจะขาด — Balance FG รายวัน
         </h1>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
           stock พร้อมส่ง{fgDest ? ` (คลัง ${fgDest})` : ''} − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง

@@ -11,7 +11,7 @@ import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
-import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches } from '../utils/matPrefix';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
@@ -2125,10 +2125,18 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Mat SAP *</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Mat SAP * <span style={{ fontWeight: 500 }}>(ตัวเลข 8 หลัก)</span></label>
                   <input style={{ ...inputSt, fontFamily: 'monospace', color: matColor(form.mat_no) }}
                     value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))}
-                    placeholder="เช่น 300001234" />
+                    placeholder="เช่น 30051864" />
+                  {/* ทะเบียนกลางเก็บเฉพาะเลข SAP จริง (ชั้น OP ห้ามเข้าที่นี่) → เตือนได้โดยไม่มี false positive
+                      ⚠️ เตือน ไม่บล็อก — ข้อมูลเก่า/เคสยกเว้นต้องยังบันทึกได้ */}
+                  {form.mat_no.trim() && !isSapMat(form.mat_no) && (
+                    <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 4 }}>
+                      ⚠ ไม่ใช่รูปแบบเลข MAT SAP (ตัวเลขล้วน 8 หลัก) — บันทึกได้ แต่ระบบจะไม่ติดป้ายประเภทวัสดุให้
+                      {' '}· ถ้าเป็นขั้นตอนการผลิต ให้ไปติ๊ก 🔩 รายการขั้นตอน ที่ฟอร์มสินค้า ไม่ใช่เพิ่มในทะเบียนนี้
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Part No.</label>
@@ -2549,7 +2557,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
                 <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
               )}
               {filtered.map(row => {
-                const mismatch = row.ks && row.qty_per_pkg != null && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
+                // ⚠️ ต้องเช็ค qty_per_kanban ด้วย — แถวที่ค่าว่างเทียบไม่ได้ (Number(undefined)=NaN ขึ้น ⚠️ มั่ว)
+                const mismatch = row.ks && row.ks.qty_per_kanban != null && row.qty_per_pkg != null
+                  && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
                 return (
                   <tr key={row.mat_no} style={{ opacity: row.ks ? 1 : 0.55 }}>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', fontSize: 13 }}>{row.mat_no}</td>
@@ -2558,7 +2568,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{row.uom || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)' }}>{row.qty_per_pkg != null ? row.qty_per_pkg.toLocaleString() : '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontWeight: 900, fontSize: 15, color: mismatch ? '#f59e0b' : row.ks ? 'var(--accent)' : 'var(--muted)' }}>
-                      {row.ks ? row.ks.qty_per_kanban.toLocaleString() : '—'}
+                      {/* ⚠️ `kanban_standards.qty_per_kanban` เป็น nullable (default 0 แต่ไม่ NOT NULL)
+                          แถวเดียวที่เป็น null เคยทำให้ทั้งแท็บพัง (undefined.toLocaleString) — guard เหมือนเซลล์อื่นในแถว */}
+                      {row.ks?.qty_per_kanban != null ? row.ks.qty_per_kanban.toLocaleString() : '—'}
                       {mismatch && <span title="ไม่ตรงกับ Qty/Pkg ใน Parts Master" style={{ marginLeft: 4 }}>⚠️</span>}
                     </td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.min_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.min_qty != null ? row.ks.min_qty.toLocaleString() : '—'}</td>

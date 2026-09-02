@@ -840,6 +840,9 @@ export default function OEEAnalytics() {
     supabase.from('cost_center_rates').select('*').then(({ data, error }) => { if (!error) setCcRates(data || []); });
   }, []);
   const [dtIncludePlanned, setDtIncludePlanned] = useState(false); // Pareto DT: default นับเฉพาะนอกแผน
+  // สั่ง Pareto ให้เจาะประเภทที่กดจากการ์ด 💰 (nonce = กดชื่อเดิมซ้ำต้องเปิดใหม่ได้)
+  const [dtFocus, setDtFocus]   = useState(null);
+  const [defFocus, setDefFocus] = useState(null);
   const [trOrders, setTrOrders]   = useState([]);   // ใบงานของช่วงที่เลือก (ทำ pair-aware total)
   const [trPairMat, setTrPairMat] = useState({});
   const [defects,    setDefects]    = useState([]);
@@ -1205,6 +1208,7 @@ export default function OEEAnalytics() {
   const defectCost = useMemo(() => {
     const acc = { all: 0, line: 0, trial: 0, qtyAll: 0, qtyLine: 0, qtyTrial: 0 };
     const noCost = new Map();   // mat -> จำนวนชิ้นที่ตีมูลค่าไม่ได้
+    const byType = new Map();   // ประเภทของเสีย -> { qty, baht }
     defects.forEach(d => {
       const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
       if (!qty) return;
@@ -1219,8 +1223,14 @@ export default function OEEAnalytics() {
       }
       const v = qty * unit;
       acc.all += v; if (trial) acc.trial += v; else acc.line += v;
+      /* Top ประเภทตามมูลค่า — ตอบคนละคำถามกับ Pareto รายจำนวน
+         ("ประเภทไหนแพงสุด" ≠ "ประเภทไหนเยอะสุด" — ของเสีย 5 ชิ้นของพาร์ทแพง กินเงินกว่า 50 ชิ้นของพาร์ทถูก) */
+      const t = d.dr_defect_types?.name_th || 'ไม่ระบุ';
+      const cur = byType.get(t) || { qty: 0, baht: 0 };
+      cur.qty += qty; cur.baht += v; byType.set(t, cur);
     });
-    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]) };
+    return { ...acc, noCost: [...noCost.entries()].sort((a, b) => b[1] - a[1]),
+      byType: [...byType.entries()].sort((a, b) => b[1].baht - a[1].baht) };
   }, [defects, partCost]);
 
   // `cluster: true` = จับกลุ่มจากข้อความอิสระ (ทางเดียวที่จะเจาะ "อื่นๆ" ซึ่งบังคับกรอกรายละเอียดอยู่แล้ว)
@@ -1972,16 +1982,23 @@ export default function OEEAnalytics() {
             {dtCost.byType.length > 0 && (
               <div style={{ flex: 1, minWidth: 260 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>Top ประเภทตามมูลค่า</div>
+                {/* กดแถวแล้วเจาะทันที — ยอดรวมอย่างเดียวตอบไม่ได้ว่า "เงินก้อนนี้เกิดที่เครื่องไหน กะไหน วันไหน"
+                    ซึ่งเป็นคำถามเดียวที่ทำให้เอาไปแก้ได้จริง · ส่ง measure='baht' ไปด้วยให้เรียงตามเงินตรงกับที่เห็น */}
                 {dtCost.byType.slice(0, 5).map(([t, v]) => (
-                  <div key={t} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '2px 0' }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
+                  <div key={t} role="button" tabIndex={0}
+                    onClick={() => setDtFocus({ cat: t, measure: 'baht', n: Date.now() })}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDtFocus({ cat: t, measure: 'baht', n: Date.now() }); } }}
+                    title={`เจาะดู "${t}" — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/วัน`}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {Math.round(v.min).toLocaleString()} น.</span>
                   </div>
                 ))}
-                {/* ชี้ทางเจาะต่อ — ยอดรวมอย่างเดียวตอบไม่ได้ว่า "เงินก้อนนี้เกิดที่เครื่องไหน กะไหน วันไหน" */}
                 <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
-                  🔍 เจาะต่อได้ที่ <b>Pareto ด้านล่าง</b> — กดปุ่ม <b style={{ color: 'var(--accent)' }}>฿ บาท</b> เพื่อเรียงตามเงิน
-                  แล้วคลิกแท่งเพื่อแยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/คนบันทึก/วัน (เห็นบาทรายแถวและรายการดิบ)
+                  🔍 <b>คลิกแถวเพื่อเจาะ</b> — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/คนบันทึก/วัน (เห็นบาทรายแถวและรายการดิบ)
+                  · หรือเลื่อนลงไปที่ <b>Pareto</b> แล้วกดปุ่ม <b style={{ color: 'var(--accent)' }}>฿ บาท</b> เพื่อเรียงทั้งกราฟตามเงิน
                 </div>
               </div>
             )}
@@ -2003,7 +2020,7 @@ export default function OEEAnalytics() {
         {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
         <div>
           <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
-            records={dtRecords} dims={DT_DIMS} unit="นาที"
+            records={dtRecords} dims={DT_DIMS} unit="นาที" focus={dtFocus}
             emptyText={dtIncludePlanned ? 'ไม่มีข้อมูล Downtime' : 'ไม่มี Downtime นอกแผนในช่วงนี้'}
             sectionStyle={s.section} titleStyle={s.title} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
@@ -2033,6 +2050,28 @@ export default function OEEAnalytics() {
                 </div>
               ))}
             </div>
+            {/* Top ประเภทตามมูลค่า — กดแล้วเจาะทันที (ยอดรวมตอบไม่ได้ว่าเงินก้อนนี้เกิดที่ไลน์ไหน พาร์ทไหน วันไหน) */}
+            {defectCost.byType.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>Top ประเภทตามมูลค่า</div>
+                {defectCost.byType.slice(0, 5).map(([t, v]) => (
+                  <div key={t} role="button" tabIndex={0}
+                    onClick={() => setDefFocus({ cat: t, measure: 'baht', n: Date.now() })}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDefFocus({ cat: t, measure: 'baht', n: Date.now() }); } }}
+                    title={`เจาะดู "${t}" — แยกตามไลน์/ชิ้นงาน/กะ/วัน`}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {v.qty.toLocaleString()} ชิ้น</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                  🔍 <b>คลิกแถวเพื่อเจาะ</b> — "ประเภทไหนแพงสุด" ตอบคนละคำถามกับ "ประเภทไหนเยอะสุด" ใน Pareto ด้านล่าง
+                  · <b>ประเภทที่ยังตีมูลค่าไม่ได้ไม่โผล่ในลิสต์นี้</b> (ดูแถบเตือนด้านล่าง)
+                </div>
+              </div>
+            )}
             {defectCost.noCost.length > 0 && (
               <div style={{ marginTop: 10, fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.7 }}>
                 ⚠ ยังตีมูลค่าไม่ได้ {defectCost.noCost.length} พาร์ท ({defectCost.noCost.reduce((a, x) => a + x[1], 0).toLocaleString()} ชิ้น) — ยอดบาทข้างบนจึงต่ำกว่าความจริง
@@ -2045,7 +2084,7 @@ export default function OEEAnalytics() {
           </div>
         )}
 
-        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น"
+        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น" focus={defFocus}
           emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
       </div>
 

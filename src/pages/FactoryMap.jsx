@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -20,6 +21,7 @@ import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaP
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
+import { liveChannel } from '../utils/liveChannel';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -1144,7 +1146,7 @@ export default function FactoryMap({ setupMode = false }) {
   useEffect(() => {
     let timer = null;
     const bump = (fn) => { clearTimeout(timer); timer = setTimeout(fn, 1500); };
-    const ch = supabaseDR.channel('factory-map-live')
+    const ch = liveChannel(supabaseDR, 'factory-map-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => bump(loadStatus))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
@@ -1587,12 +1589,14 @@ export default function FactoryMap({ setupMode = false }) {
 
   /* ── อัปโหลดรูปผัง (บีบเบา 2560/2.5MB/q0.9) ── */
   const handleUpload = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return; e.target.value = '';
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-    const isGif = file.type === 'image/gif' || ext === 'gif';
-    if (isGif && file.size > 2 * 1024 * 1024) return toast.error('GIF ต้องไม่เกิน 2MB');
+    let file = e.target.files?.[0]; if (!file) return; e.target.value = '';
     try {
       setUploading(true);
+      // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
+      file = await toDecodableImage(file);
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const isGif = file.type === 'image/gif' || ext === 'gif';
+      if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
       const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
       const path = `factory/map_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob);

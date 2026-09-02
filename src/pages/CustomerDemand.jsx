@@ -161,7 +161,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
       const [{ data: dp }, { data: ks }] = await Promise.all([
         // ⚠️ กรอง is_active — แถวที่ถูก EC แทน (superseded) ทำ p_no กลายเป็น ambiguous
         //    แล้วการหัก/coverage หยุดทำงานทั้งที่ master ตัวจริงชัดเจน (มาตรฐานเดียวกับ Rundown)
-        supabaseDR.from('dr_products').select('mat_no, p_no').not('p_no', 'is', null).eq('is_active', true),
+        supabaseDR.from('dr_products').select('mat_no, p_no, is_operation').not('p_no', 'is', null).eq('is_active', true),
         supabaseDR.from('kanban_standards').select('mat_no, p_no').not('p_no', 'is', null).eq('is_active', true),
       ]);
       const pnIdx = buildPnIndex([...(dp || []), ...(ks || [])]);

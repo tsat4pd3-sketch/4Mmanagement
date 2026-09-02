@@ -183,7 +183,7 @@ export default function PMSchedule() {
   return (
     <div style={S.page}>
       <div>
-        <h1 style={S.h1}>แผน PM</h1>
+        <h1 style={S.h1}>ปฏิทินแผน PM</h1>
         <p style={S.sub}>ตารางการตรวจสอบ · {teamMeta?.label ?? DEPT_LABEL[department] ?? department}</p>
       </div>
 

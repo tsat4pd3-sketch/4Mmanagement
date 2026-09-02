@@ -9,6 +9,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { toDecodableImage } from '../utils/heicToJpeg';
 import { toast } from './Toast';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
@@ -26,6 +27,8 @@ const warnBox = { background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(2
 /* รูปผังต้องซูมอ่านป้าย/เลขแม่พิมพ์ออก — สเปคเดียวกับรูปผังทั้งระบบ (2560px / q0.9 / ≤2.5MB)
    ห้ามบีบแรงกว่านี้ (ดู CLAUDE.md "Storage & รูปภาพ" — เคยบีบจนเบลอใช้ไม่ได้มาแล้ว) */
 async function compressPlan(file) {
+  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิม · แปลงไม่ได้ = โยนข้อความบอกวิธีตั้งกล้อง)
+  file = await toDecodableImage(file);
   if (file.type === 'image/gif') { if (file.size > 2 * 1024 * 1024) throw new Error('GIF ต้องไม่เกิน 2MB'); return file; }
   const img = await new Promise((res, rej) => {
     const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file);

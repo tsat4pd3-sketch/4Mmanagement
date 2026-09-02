@@ -31,6 +31,7 @@ import useTabParam from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
 import SearchSelect from '../components/SearchSelect';
+import { liveChannel } from '../utils/liveChannel';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -215,7 +216,7 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, section: mySection, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
@@ -318,7 +319,7 @@ export default function MtnRepair() {
   useEffect(() => {
     loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.key)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
-    const ch = supabaseDR.channel('mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
+    const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
     return () => { supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders]);
 
@@ -384,8 +385,8 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
-      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} />}
-      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} />}
+      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
+      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}

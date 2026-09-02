@@ -9,6 +9,7 @@ import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
+import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
@@ -19,6 +20,8 @@ import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE } from '../utils/refreshRates';
 import { visibleInterval } from '../utils/usePolling';
+import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
+import { liveChannel } from '../utils/liveChannel';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -263,6 +266,15 @@ export default function Dashboard() {
   // ⚠️ กรองเฉพาะ "ชั้นแสดงผล" — ห้ามกรอง cards ก่อนคำนวณคิว (ตำแหน่ง/เวลาคาดเสร็จผูกกับคิวทั้งไลน์)
   const [boardLineSel,  setBoardLineSel]  = useState('');
   const [boardQuery,    setBoardQuery]    = useState('');
+  /* ✍️ แถวที่มีแต่ "ใบเปิดเอง" (ไลน์ที่ไม่มีบัตรคัมบังให้สแกน) ยุบไว้เป็นค่าเริ่มต้น —
+     บอร์ดนี้เป็นจอภาพรวม ของหลักคือใบสั่งที่สแกนจาก SAP (user 2026-08-27)
+     จำต่อเครื่อง (จอ TV ตั้งครั้งเดียวจบ) · กางดูได้เสมอ ไม่ได้ตัดข้อมูลทิ้ง */
+  const [showManualRows, setShowManualRows] = useState(() => {
+    try { return localStorage.getItem('esm_board_manual') === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('esm_board_manual', showManualRows ? '1' : '0'); } catch { /* โหมดส่วนตัว/ปิด site data */ }
+  }, [showManualRows]);
   const [lineByMat,     setLineByMat]     = useState({});   // mat_no → line_name (จาก dr_products)
   const [pairMatByMat,  setPairMatByMat]  = useState({});   // mat_no → pair_mat_no (งานคู่ RH/LH — แม่พิมพ์คู่)
   const [ediOrders,     setEdiOrders]     = useState([]);   // รอบส่งลูกค้า (EDI 862) วันนี้+พรุ่งนี้ ที่ยังไม่ส่ง
@@ -568,7 +580,7 @@ export default function Dashboard() {
       clearTimeout(timer);
       timer = setTimeout(() => fetchProdStatus(), 1500);
     };
-    const ch = supabaseDR.channel('dash-dr')
+    const ch = liveChannel(supabaseDR, 'dash-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         refresh)
@@ -730,6 +742,19 @@ export default function Dashboard() {
     [logs, selectedShift, passAll, visibleLineIds],
   );
 
+  /* ⚠️ เช็คชื่อแล้วแต่ "จัดเข้ากะไม่ได้" — assignedShift = null (ไลน์นั้นยังไม่มีตารางกะของวันที่เลือก)
+     คนกลุ่มนี้ตกทั้งกะเช้าและกะดึกพร้อมกันแบบเงียบๆ → KPI โชว์ 0 คน ซึ่งคนอ่านเป็น "ไม่มีใครมาทำงาน"
+     ทั้งที่ความจริงคือ "ยังไม่ได้ตั้งตารางกะ" — คนละเรื่องกัน (กฎ: ประเมินไม่ได้ ต้องบอก ห้ามกลายเป็น 0)
+     เคสจริง 2026-08-27: ทุกไลน์ PD4 ตารางกะหมดที่ 23/08 แต่คนเช็คชื่อครบทุกวัน 20-28 คน */
+  const noShiftLogs = useMemo(() => {
+    const base = logs.filter(l => l.assignedShift == null && l.is_present);
+    return passAll ? base : base.filter(l => visibleLineIds.has(l.employees?.line_id));
+  }, [logs, passAll, visibleLineIds]);
+  const noShiftLineNames = useMemo(() => {
+    const byId = new Map(visibleLines.map(l => [l.id, l.name]));
+    return [...new Set(noShiftLogs.map(l => byId.get(l.employees?.line_id)).filter(Boolean))].sort();
+  }, [noShiftLogs, visibleLines]);
+
   const present  = useMemo(() => shiftLogs.filter(l =>  l.is_present), [shiftLogs]);
   const absent   = useMemo(() => shiftLogs.filter(l => !l.is_present), [shiftLogs]);
   const ppeReady = useMemo(() => present.filter(l => l.has_helmet && l.has_boots && l.has_gloves), [present]);
@@ -887,6 +912,35 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* คนที่ยังจัดเข้ากะไม่ได้ — ห้ามปล่อยให้ KPI โชว์ 0 เฉยๆ (งานค้าง = ป้ายนิ่ง ไม่กระพริบ) */}
+      {selectedShift !== 'all' && noShiftLogs.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)',
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
+              ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+              ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
+              {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
+            </div>
+          </div>
+          <button onClick={() => setSelectedShift('all')} style={{
+            padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)',
+            background: 'transparent', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>👁 ดูรวมทุกกะ</button>
+          {canAccessPage('/shift-organize', role) && (
+            <button onClick={() => navigate('/shift-organize')} style={{
+              padding: '6px 12px', borderRadius: 8, border: 'none',
+              background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>🗓️ ไปตั้งตารางกะ</button>
+          )}
+        </div>
+      )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
@@ -1441,13 +1495,25 @@ export default function Dashboard() {
                       const rowKey = multiSubLine ? `${c.line_name || ''}|${c.productKey}` : c.productKey;
                       (groups[rowKey] = groups[rowKey] || { key: rowKey, label: c.productLabel, img: c.productImg, line: c.line_name, cards: [] }).cards.push(c);
                     });
-                    const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
+                    /* ⭐ ใบสั่งจาก SAP (สแกนบัตรคัมบัง) คือของหลักบนบอร์ดนี้ — ใบที่เปิดเองด้วยมือ
+                       (ไลน์ที่ไม่มีบาร์โค้ดให้สแกน) ดันขึ้นบนสุดตามลำดับตัวอักษรจนบังของจริง
+                       (user 2026-08-27: "อยากให้เน้นชิ้นงานที่เป็น order จาก SAP เป็นหลัก · manual ยุบไว้ได้")
+                       ⚠️ แถวที่ **มีใบสแกนปนอยู่แม้ใบเดียว = ไม่ใช่แถว manual** ห้ามยุบ (จะพาใบ SAP หายไปด้วย) */
+                    const isManualRow = (row) => row.cards.length > 0 && row.cards.every(c => c.is_manual);
+                    const productRows = Object.values(groups).sort((a, b) =>
+                      // แถว manual ไปท้ายเสมอ (แม้ตอนกางดู) — ของหลักต้องอยู่บนสุด
+                      (isManualRow(a) ? 1 : 0) - (isManualRow(b) ? 1 : 0) ||
+                      a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
                     // ตัวกรองพาร์ท (boardQuery) — กรองเฉพาะแถวที่จะวาด · สรุปหัวการ์ด/pace ยังนับทุกแถวตามจริง
                     const bq = boardQuery.trim().toUpperCase();
-                    const visRows = !bq ? productRows : productRows.filter(row =>
+                    const qRows = !bq ? productRows : productRows.filter(row =>
                       (row.label || '').toUpperCase().includes(bq) ||
                       row.cards.some(c => String(c.mat_no || '').toUpperCase().includes(bq) || String(c.prod_no || '').toUpperCase().includes(bq)));
-                    const hiddenRowCount = productRows.length - visRows.length;
+                    const hiddenRowCount = productRows.length - qRows.length;
+                    /* ⚠️ ยุบ "การแสดงผล" เท่านั้น — ห้ามกรองก่อนคำนวณคิว/ตำแหน่งการ์ด
+                       (ตำแหน่งใบและเวลาคาดเสร็จผูกกับคิวทั้งไลน์ ตัดใบออกก่อน = เวลาเพี้ยนทั้งแถว) */
+                    const manualRows = qRows.filter(isManualRow);
+                    const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
 
                     // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
                     const getBreakIntervals = (half) => breakPolicies
@@ -1479,120 +1545,11 @@ export default function Dashboard() {
 
                     // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
                     // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
-                    const computeQueuedPositionsFull = (cards) => {
-                      const breaks = allBreaksOnce();
-                      const filtered = cards.filter(o => o.orderStartMs && o.orderEndMs);
-                      const byOpenTime = [...filtered].sort((a, b) => a.orderStartMs - b.orderStartMs);
-                      // คิวแสดงผลจริง: ใบที่ "ปิดแล้ว" (confirm) คือลำดับการผลิตที่เกิดขึ้นจริง ให้แทรกเข้าคิวก่อนตามเวลาปิดจริง
-                      // (confirmed_at) เสมอ — ใบที่ "ยังไม่ปิด" ถือว่ายังไม่ถึงตาที่ผลิตจริง ต้องถีบไปต่อท้ายคิวเสมอ ไม่ว่าจะ
-                      // เปิดมาก่อนนานแค่ไหนก็ตาม ผลคือถ้ามีใบ confirm มาแทรก จะดันใบที่ยังไม่ปิดถอยไปอยู่หลังสุด ไม่บังพื้นที่
-                      // ของใบที่ทำสำเร็จไปแล้วจริง ๆ — ทำให้เหลือใบแดง (ยังไม่ปิด) แค่เท่าที่จำเป็นจริง ๆ
-                      const doneCards = filtered.filter(o => o.isDone && o.confirmed_at)
-                        .sort((a, b) => new Date(a.confirmed_at).getTime() - new Date(b.confirmed_at).getTime() || a.orderStartMs - b.orderStartMs);
-                      const openCards = filtered.filter(o => !(o.isDone && o.confirmed_at))
-                        .sort((a, b) => a.orderStartMs - b.orderStartMs);
-                      const sorted = [...doneCards, ...openCards];
-                      // ── ชุดสแกนปิดรวด (batch confirm) ──────────────────────────────────────
-                      // เครื่องจักรยังไม่ส่งสัญญาณจบทีละใบ พนักงานจึงสแกนปิดทั้งล็อตรวดเดียว (เช่น 9 ใบติดกัน)
-                      // ถ้าตัดสิน "ปิดช้า" รายใบจาก confirmed_at ใบแรก ๆ ของชุดจะกลายเป็นส้มเกินจริงเสมอ
-                      // จึงจัดกลุ่มใบที่สแกนห่างกันไม่เกิน 5 นาทีเป็นชุดเดียว แล้วตัดสินความช้าที่ใบสุดท้ายของชุด
-                      // (เทียบเวลาสแกนจบชุด กับเวลาจบตามทฤษฎีของงานทั้งชุด)
-                      const BATCH_GAP_MS = 5 * 60000;
-                      const batchIdOf = new Map();
-                      let curBatchId = 0;
-                      doneCards.forEach((o, i) => {
-                        if (i > 0 && new Date(o.confirmed_at).getTime() - new Date(doneCards[i - 1].confirmed_at).getTime() > BATCH_GAP_MS) curBatchId++;
-                        batchIdOf.set(o, curBatchId);
-                      });
-                      const batchCount = new Map();
-                      doneCards.forEach(o => { const b = batchIdOf.get(o); batchCount.set(b, (batchCount.get(b) || 0) + 1); });
-                      const batchSeen = new Map();
-                      // เงื่อนไขผสม: ใบที่ยังไม่ปิด+เกินเวลาจะตีแดงก็ต่อเมื่อ "ยอดรวมจริงของแถวนี้ยังไม่ทันเป้าตามเวลา" ด้วย
-                      // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
-                      // pace เทียบเป็น std-time (Σ ยอด×CT ของแต่ละพาร์ท) — คิวหนึ่งอาจมีหลายพาร์ท CT ต่างกัน
-                      // (คิวคำนวณระดับ sub-line แล้ว ไม่ใช่ต่อพาร์ท — ห้ามใช้ CT ของใบแรกเหมาทั้งคิว)
-                      const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMatNo[c.mat_no] || 0)), 0);
-                      const anyCt = cards.some(c => (ctByMatNo[c.mat_no] || 0) > 0);
-                      const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-                      let expectedStdSec = Infinity;
-                      if (anyCt && firstStartMs) {
-                        let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
-                        breaks.forEach(([bs, be]) => {
-                          const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
-                          if (oe > os) elapsedMs -= (oe - os);
-                        });
-                        expectedStdSec = Math.max(0, elapsedMs) / 1000;
-                      }
-                      const rowBehindPace = rowActualStdSec < expectedStdSec;
-                      let queueEndMs = -Infinity;
-                      let curRoundIdx = null;
-                      return sorted.map(o => {
-                        const roundIdx = roundIndexOf(o.orderStartMs);
-                        if (curRoundIdx === null || roundIdx !== curRoundIdx) {
-                          // ข้ามไปรอบใหม่ — รีเซ็ตคิวไปต้นรอบ "เฉพาะตอนที่ใบก่อนหน้าปิดไปแล้วจริง ๆ ก่อนรอบนี้"
-                          // ถ้าใบก่อนหน้ายังครองไลน์อยู่ข้ามเข้ามาในรอบนี้ (queueEndMs ล้ำเข้ามา) ห้ามดันกลับไปต้นรอบ
-                          // เด็ดขาด เพราะ 1 ไลน์ผลิตได้ทีละใบเท่านั้น แถบจะซ้อนทับกันไม่ได้ไม่ว่ากรณีใด
-                          curRoundIdx = roundIdx;
-                          queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
-                        }
-                        const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
-                        let startMs = Math.max(o.orderStartMs, queueEndMs);
-                        let endMs = startMs + durationMs;
-                        // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
-                        // เวลาที่ "ว่าง" ก่อนเบรคเสียไปฟรี ๆ) แต่ให้ "ซอย" ทับเบรคแล้วยืดความยาวการ์ดออกแทน
-                        // เพราะช่วงเวลาที่ทับเบรคนั้นผลิตงานไม่ได้จริง ๆ ต้องนับเป็นเวลาที่ครองไลน์เพิ่ม
-                        const consumedBreaks = new Set();
-                        let extended = true;
-                        while (extended) {
-                          extended = false;
-                          breaks.forEach(([bs, be], i) => {
-                            if (consumedBreaks.has(i)) return;
-                            if (bs < endMs && be > startMs) {
-                              consumedBreaks.add(i);
-                              endMs += (be - bs);
-                              extended = true;
-                            }
-                          });
-                        }
-                        // กฎตายตัว: ใบกัมบังห้ามซ้อนทับกันเอง และความกว้างต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด
-                        // ดังนั้นถ้าปิดงานเร็วกว่าทฤษฎี (confirmed_at < endMs) จะไม่บีบ/เลื่อนตำแหน่งตาม confirmed_at เลย —
-                        // ปล่อยให้การ์ดอยู่ตามคิว (queueFloor + durationMs) เหมือนเดิม ใช้ confirmed_at แค่ตัดสินสี/ไอคอนเท่านั้น
-                        // ส่วนกรณีปิดงานช้ากว่าทฤษฎี (isLateDone) ปล่อยให้ endMs เดิม + แสดง "หาง" ของความช้าแยกต่างหาก (ไม่ขยับการ์ดหลัก)
-                        // ปิดช้า: ใบเดี่ยวตัดสินตามเดิม · ใบในชุดสแกนรวดเดียวตัดสินเฉพาะใบสุดท้ายของชุด
-                        // (ใบแรก ๆ ของชุดถือว่าจบตามคิวทฤษฎี เพราะเวลาสแกนไม่ใช่เวลาผลิตจบจริงของใบนั้น)
-                        let isLateDone = false;
-                        if (o.isDone && o.confirmed_at) {
-                          const bid = batchIdOf.get(o);
-                          const size = batchCount.get(bid) || 1;
-                          const seen = (batchSeen.get(bid) || 0) + 1;
-                          batchSeen.set(bid, seen);
-                          if (size === 1 || seen === size)
-                            isLateDone = new Date(o.confirmed_at).getTime() > endMs + (size > 1 ? BATCH_GAP_MS : 0);
-                        }
-                        // เวลาที่ "ครองไลน์" จริง สำหรับผลักคิวถัดไป (ไม่ใช่แค่เวลาจบตามแผน):
-                        // - ถ้าปิดงานแล้ว ใช้เวลาปิดจริง (confirmed_at) เสมอ
-                        // - ถ้ายังไม่ปิดแต่เลยกำหนดจบไปแล้ว ถือว่ายังครองไลน์อยู่จนถึงเวลาปัจจุบัน
-                        let occupiedEndMs = endMs;
-                        if (isLateDone) {
-                          occupiedEndMs = new Date(o.confirmed_at).getTime();
-                        } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
-                          occupiedEndMs = nowMs;
-                        }
-                        // เดินคิวต้องไม่ขยับมาก่อน endMs ของการ์ดนี้เด็ดขาด (ไม่งั้นใบถัดไปจะมาทับกล่องที่แสดงอยู่)
-                        // ถ้าปิดช้ากว่าทฤษฎี (isLateDone) ค่อยยืดคิวต่อไปถึง occupiedEndMs (confirmed_at จริง) กันใบถัดไปทับ "หาง"
-                        // ถ้าปิดเร็ว/ยังไม่ปิด ใช้ endMs เดิม — ห้ามใช้ confirmed_at ที่เร็วกว่ามาเลื่อนคิวให้สั้นลง
-                        queueEndMs = isLateDone ? occupiedEndMs : endMs;
-                        const isDelayed = !o.isDone && !o.isCarry && endMs < nowMs && rowBehindPace;
-                        return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
-                      }).map((item, i, arr) => {
-                        // ใบที่ยังไม่ปิด+เลยกำหนด หางสีแดงจะยืดไปถึง "ตอนนี้" เสมอ — แต่ถ้าใบถัดไปเริ่มทำงานไปแล้ว
-                        // (แสดงว่าคิวเดินต่อไปจริงแล้ว) ต้องตัดหางแดงให้สุดแค่จุดที่ใบถัดไปเริ่ม ไม่ให้ยืดไปทับใบถัดไป
-                        if (item.isDelayed && arr[i + 1]) {
-                          return { ...item, occupiedEndMs: Math.min(item.occupiedEndMs, arr[i + 1].startMs) };
-                        }
-                        return item;
-                      });
-                    };
+                    // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
+                    // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
+                    const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
+                      breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+                    });
 
                     // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบ "คนละพาร์ท" ของไลน์เดียวกันต้องต่อคิวกัน ──
                     // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
@@ -2023,7 +1980,22 @@ export default function Dashboard() {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{visRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                          </div>
+                        )}
+                        {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
+                            (ยอดผลิต/pace บนหัวการ์ดยังนับใบพวกนี้ครบตามจริง — ยุบแค่การแสดงผลรายแถว) */}
+                        {manualRows.length > 0 && (
+                          <div onClick={() => setShowManualRows(v => !v)}
+                            style={{
+                              padding: '6px 12px', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8,
+                              color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
+                            }}>
+                            <span style={{ fontWeight: 800, color: 'var(--text2)' }}>{showManualRows ? '▼' : '▶'}</span>
+                            <span>✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) · {manualRows.length} พาร์ท</span>
+                            <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--accent)' }}>
+                              {showManualRows ? 'ยุบเก็บ (ทั้งบอร์ด)' : 'กางดู (ทั้งบอร์ด)'}
+                            </span>
                           </div>
                         )}
                         {visRows.map((row, ri) => {

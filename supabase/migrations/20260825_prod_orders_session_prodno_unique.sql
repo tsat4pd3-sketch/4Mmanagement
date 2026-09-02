@@ -1,6 +1,11 @@
 -- กันเปิดใบผลิตซ้ำจาก 2 เครื่องสแกนการ์ดใบเดียวกันพร้อมกัน (QC flow-audit 2026-08-25 · finding #14)
 -- Project ปลายทาง: DR (eyhclzkifitbhbljgoav)
 --
+-- ✅ apply แล้ว 2026-08-26 (user รันผ่าน SQL Editor)
+--    เช็คก่อนรัน: คู่ (session_id, prod_no) ซ้ำ = **0 แถว** → สร้าง index ผ่านฉลุย
+--    ตรวจผล: pg_indexes มี prod_orders_session_prodno_uniq ลงท้าย WHERE (status <> 'imported'::text) ✓
+--    ⇒ ไม่มีใบซ้ำค้างในฐาน = ที่ผ่านมา race นี้ยังไม่เคยเกิดจริง (index กันไว้ล่วงหน้า)
+--
 -- ที่มา: DailyReport กันใบซ้ำด้วย state ฝั่ง client อย่างเดียว (prodOrders.find) —
 -- realtime debounce 600ms + latency โหลด = หน้าต่าง race ~1-2 วิ → 2 เครื่องสแกนพร้อมกัน
 -- ได้ใบซ้ำ 2 ใบ แล้วปิดใบ = เข้าคลัง 2 เท่า (trigger fn_post_confirmed_output ต่อใบ)
