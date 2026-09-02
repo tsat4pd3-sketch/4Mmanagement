@@ -24,12 +24,17 @@ const PAGE_GROUPS = [
     group: 'ภาพรวม',
     pages: [
       { key: 'page:/',            label: 'หน้าหลัก' },
-      { key: 'page:/dashboard',   label: 'จอผลิตรวม (TV)' },
       { key: 'page:/dept-dashboard', label: 'งานค้างของส่วนงาน' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
-      { key: 'page:/line-oee', label: 'OEE รายไลน์ (จอไลน์)' },
-      { key: 'page:/tv', label: 'จอ TV แขวนห้อง' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
+    ],
+  },
+  {
+    group: 'จอแสดงผล',
+    pages: [
+      { key: 'page:/dashboard',   label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)' },
+      { key: 'page:/tv',          label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)' },
+      { key: 'page:/line-oee',    label: 'OEE รายไลน์ (จอหน้าไลน์)' },
     ],
   },
   {
@@ -66,6 +71,7 @@ const PAGE_GROUPS = [
       { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
       { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
       { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },
+      { key: 'page:/workforce-insight', label: 'กำลังคน & Turnover' },
       { key: 'page:/shift-organize', label: 'ตารางกะ' },
     ],
   },

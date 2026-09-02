@@ -10,6 +10,7 @@ import { addMinutes, timeStrToMs, dayFrameMs, roundDeliveryMin, getRoundStatus }
 import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
+import PurchaseBulkModal from '../components/PurchaseBulkModal';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -986,7 +987,7 @@ const matchQ = (q, ...fields) => {
 };
 
 function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, fmt, workDate, nowMs, canOperate }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState('');   // '' | '3' | '5'
@@ -1129,7 +1130,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           </div> : (<>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
               🧮 รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
-              {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต สั่งซื้อรวมยอดเดียวได้'}
+              {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต · กดปุ่มบนการ์ดเพื่อเลื่อนสถานะรวมทีเดียว'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
               {purGroups.map(g => {
@@ -1138,14 +1139,26 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 const lot = Number(g.min_lot) === Number(g.max_lot)
                   ? `${fmt(g.min_lot)} ชิ้น × ${fmt(g.slips)} ใบ`
                   : `${fmt(g.min_lot)}–${fmt(g.max_lot)} ชิ้น/ใบ × ${fmt(g.slips)} ใบ`;
+                /* ⚠️ วิว group ด้วย (mat_no, status) แล้วเอา min(dest_line)/min(supplier) มาโชว์
+                   → กลุ่มที่ใบกระจายหลายไลน์ การ์ดจะโชว์ไลน์เดียว = โกหกเงียบ
+                   (วัดจริง 2026-09-02: 8 จาก 25 กลุ่ม · 50031601 = 5 ไลน์ 2 ซัพพลายเออร์)
+                   `dest_count`/`supplier_count` มาจาก migration 20260902 — ยังไม่ apply = undefined
+                   → ตกกลับพฤติกรรมเดิม (โชว์ไลน์เดียว) ไม่พัง แค่ยังไม่เตือน */
+                const multiDest = Number(g.dest_count) > 1;
+                const multiSup  = Number(g.supplier_count) > 1;
                 return (
                   <QueueCard key={`${g.mat_no}|${g.status}`} code={g.mat_no} name={g.part_name}
-                    qty={fmt(g.total_qty)} unit="ชิ้น" destination={g.dest_line || '—'}
+                    qty={fmt(g.total_qty)} unit="ชิ้น"
+                    destination={multiDest ? `${g.dest_count} ไลน์ (กางดูในปุ่มรวมยอด)` : (g.dest_line || '—')}
                     statusLabel={many ? `${st.label} · ${fmt(g.slips)} ใบ` : st.label}
                     statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                    actionLabel={canOperate && st.nextLabel ? (many ? `${st.nextLabel} (ทีละใบ)` : st.nextLabel) : null}
-                    busy={busy === g.first_id} onAction={() => onAdvancePurchase(g, st.next)}
-                    meta={[many ? lot : '', g.supplier ? `🏢 ${g.supplier}` : ''].filter(Boolean).join(' · ')} />
+                    actionLabel={canOperate && st.nextLabel ? (many ? `${st.nextLabel} รวม ${fmt(g.slips)} ใบ` : st.nextLabel) : null}
+                    busy={busy === g.first_id}
+                    onAction={() => (many ? setBulkBuy({ g, next: st.next, label: st.nextLabel })
+                                          : onAdvancePurchase(g, st.next))}
+                    meta={[many ? lot : '',
+                           g.supplier ? `🏢 ${g.supplier}${multiSup ? ` +${g.supplier_count - 1}` : ''}` : '',
+                          ].filter(Boolean).join(' · ')} />
                 );
               })}
             </div>
@@ -1282,6 +1295,7 @@ export default function HeijunkaKanban() {
   const [wipRequests, setWipRequests]   = useState([]);
   const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
   const [purchaseErr, setPurchaseErr]           = useState('');
+  const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
   const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
@@ -2087,7 +2101,7 @@ export default function HeijunkaKanban() {
             store={unifiedStore} setStore={setUnifiedStore}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
-            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr}
+            lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
           />
@@ -2196,6 +2210,16 @@ export default function HeijunkaKanban() {
           fmt={fmt} saving={receiving}
           onCancel={() => setReceiveModal(null)}
           onSubmit={submitReceive}
+        />
+      )}
+
+      {/* 🛒 เลื่อนสถานะรวมทั้งพาร์ท — คิวจัดซื้อออกใบละล็อต (384 ใบ/พาร์ท กดทีละใบไม่ไหว) */}
+      {bulkBuy && (
+        <PurchaseBulkModal
+          group={bulkBuy.g} next={bulkBuy.next} nextLabel={bulkBuy.label}
+          fullName={fullName} workDate={workDate}
+          onClose={() => setBulkBuy(null)}
+          onDone={async () => { await loadPull(); await load(); }}
         />
       )}
     </div>

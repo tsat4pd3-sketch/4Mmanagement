@@ -34,12 +34,29 @@ export const isSapMat = (m) => /^\d+$/.test(String(m ?? '').trim())
 
 /**
  * index จากแถว master ที่มี p_no (dr_products / kanban_standards)
- * @param {Array<{p_no?: string, mat_no?: string}>} rows
+ *
+ * ⚠️ กฎเหล็ก — **ข้ามแถว `is_operation` เสมอ** (2026-08-31)
+ * ชั้น OP (รายการขั้นตอน) ไม่ใช่ของในคลัง — DB บล็อกไม่ให้เข้าสต็อกอยู่แล้วทั้ง 2 ทาง
+ * (`fn_post_confirmed_output` / `fn_explode_child_demand` return null เมื่อ is_operation)
+ * ⇒ มันไม่มีทางเป็นคำตอบของ "ตัดสต็อกจากเลขไหน" แต่ถ้าปล่อยเข้า index มันจะกลายเป็น
+ * **ผู้สมัครปลอม** แล้วทำให้ทั้งกลุ่มเป็น `ambiguous` = ระบบไม่เดา = **ไม่ตัดสต็อกเลย**
+ *
+ * เจอจริง 2026-08-31 (ข้อมูล dr_products): OP ถูกตั้ง p_no เป็นเลขของพาร์ทจริง
+ *   MB3B-16A127-AA  → '127 (M6 มีเกลียว)' + 20058481 + 20059975   ← OP ทำให้ 2 กลายเป็น 3
+ *   RB3B-16E024-AA  → 'E024 (M6 ไม่มีเกลียว)' + 20066660 + 20067027
+ *   MB3B-E102D04-BC → 'D04 (BOLT M6)' + 20065733                  ← ตัด OP ออกแล้วเหลือตัวเดียว = resolve ได้
+ * กฎเดิมเขียนแค่ "ห้ามเอา OP เข้า BOM/คัมบัง/parts_master" แต่ไม่มีใครห้ามตั้ง p_no ให้ OP
+ *
+ * ⚠️ ไม่กระทบทาง `direct` ของ pickStockMat — ตัวนั้นเช็ค has(raw) ก่อนเข้า resolve เสมอ
+ * ⚠️ tolerant: แถวที่ไม่ได้ select `is_operation` มา (undefined) = ไม่ถูกกรอง (พฤติกรรมเดิม)
+ *
+ * @param {Array<{p_no?: string, mat_no?: string, is_operation?: boolean}>} rows
  * @returns {Map<string, Set<string>>} normalized p_no → เซ็ตของ mat_no ที่อ้างเลขนั้น
  */
 export function buildPnIndex(rows) {
   const idx = new Map()
   ;(rows || []).forEach(r => {
+    if (r?.is_operation) return
     const k = normMat(r?.p_no)
     const mat = String(r?.mat_no ?? '').trim()
     if (!k || !mat) return

@@ -55,6 +55,46 @@ export const getLineFamilyNames = (allLines, ref) => getLineFamily(allLines, ref
 /** Set ของ id ทั้งครอบครัว — ใช้เช็ค employees.line_id */
 export const getLineFamilyIds = (allLines, ref) => new Set(getLineFamily(allLines, ref).map(l => l.id));
 
+/* ══ กฎ "หน่วยย่อยที่สุด" (leaf line) — user เคาะ 2026-08-31 ═══════════════════════
+   "ของมันต้องส่งเข้าไลน์ลูกอยู่แล้วถ้าไลน์แม่มีลูก เพื่อการมอนิเตอร์
+    คือต้องดูไปที่หน่วยย่อยที่สุด ถ้าไม่มีลูก ไลน์นั้นถึงจะเป็นหน่วยย่อยสุด"
+
+   ⇒ ไลน์แม่ที่มีลูก = **แผนก** ไม่ใช่จุดวางของ · ของ/ยอดคงเหลือ/min-max อยู่ที่ leaf เสมอ
+
+   ⚠️ คนละแกนกับ `getLineFamilyNames` — อย่าสับสน:
+        family = "ใครมีสิทธิ์เห็นอะไร" (scope ของ leader — ครอบแม่+พี่น้อง+ลูก)
+        leaf   = "ของอยู่ที่ไหนจริง"   (หน่วยนับสต็อก — ตัวเดียว ไม่ครอบใคร)
+      เอา family ไปนับสต็อก = ไลน์ลูกหลายตัวนับของก้อนเดียวกันของแม่ซ้ำกันทุกตัว
+      → จอบอก "ของพอ" ทั้งที่หน้าไลน์ไม่มีของ = ซ่อนการขาด (ทิศที่อันตรายที่สุด) */
+
+/** ชื่อไลน์ลูกตรงๆ (ชั้นเดียว ไม่ไล่ลงหลาน) */
+export const getChildLineNames = (allLines, name) =>
+  (allLines || []).filter(l => l.parent_line_name === name).map(l => l.name);
+
+/** ไลน์นี้เป็นหน่วยย่อยที่สุดไหม (ไม่มีลูก) = เป็นจุดวางของ/หน่วยมอนิเตอร์ได้
+ *  ⚠️ `lines` ยังโหลดไม่เสร็จ → คืน true (ถือว่าเป็น leaf ไว้ก่อน)
+ *     ไม่งั้นจอจะขึ้น "ไลน์นี้เป็นไลน์แม่" แวบนึงทุกครั้งที่เปิดหน้า */
+export const isLeafLine = (allLines, name) =>
+  !name || !allLines?.length ? true : getChildLineNames(allLines, name).length === 0;
+
+/** ไลน์ลูกที่เป็น leaf ทั้งหมดใต้ไลน์นี้ (ตัวเองเป็น leaf = คืนตัวเอง) — ปลายทางที่ของควรอยู่ */
+export function getLeafLineNames(allLines, name) {
+  if (!name) return [];
+  const kids = getChildLineNames(allLines, name);
+  if (!kids.length) return [name];
+  const out = [];
+  const seen = new Set([name]);
+  const queue = [...kids];
+  while (queue.length) {
+    const n = queue.shift();
+    if (seen.has(n)) continue;
+    seen.add(n);
+    const c = getChildLineNames(allLines, n);
+    if (c.length) queue.push(...c); else out.push(n);
+  }
+  return out;
+}
+
 /** สายบนอย่างเดียว (ไม่รวมตัวเอง) เรียงจากใกล้ → ไกล — ใช้หา layout fallback */
 export function getAncestorNames(allLines, name) {
   const out = [];

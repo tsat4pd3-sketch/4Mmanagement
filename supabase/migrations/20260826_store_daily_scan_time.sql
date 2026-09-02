@@ -2,8 +2,7 @@
 --
 -- ✅ apply แล้ว 2026-08-26 (user รันผ่าน SQL Editor · jobid 10)
 --    ตรวจผล: store-daily-scan | 50 0 * * * | active = true  ✓
--- ⚠️ ยังต้อง deploy edge `store-daily-scan` ตัวใหม่ด้วย (เช็ค res.ok + ตอบ 502 เมื่อส่งพลาด)
---    ถ้ายังไม่ deploy: เวลาถูกแล้ว เคส C/D เข้า Telegram ได้แล้ว แต่ยังเงียบอยู่ถ้าการส่งล้มเหลว
+-- ✅ deploy edge `store-daily-scan` v3 แล้ว 2026-09-02 (head-count + เช็ค res.ok + ตอบ 502 เมื่อส่งพลาด)
 --
 -- 🔴 บั๊กที่แก้: เคส C (รอบส่งเลยเวลา) และ D (รับไม่ครบ) **ไม่มีทางเข้า Telegram ได้เลยตลอดกาล**
 --
