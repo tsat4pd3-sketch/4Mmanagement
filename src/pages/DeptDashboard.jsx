@@ -464,13 +464,20 @@ async function loadStore(ctx) {
     supabaseDR.from('kanban_standards').select('mat_no, part_name, min_qty, max_qty').eq('is_active', true),
     supabaseDR.from('kanban_delivery_rounds').select('line_name, shift, round_no, delivery_time, cutoff_time').eq('is_active', true),
     supabaseDR.from('kanban_deliveries').select('line_name, shift, round_no, confirmed_at, received_status').eq('work_date', workDate),
-    supabaseDR.from('purchase_requests').select('mat_no, part_name, dest_line, supplier, status, work_date').in('status', ['pending', 'ordered']),
+    /* 🔴 ใบสั่งซื้อต้องอ่านจากวิวรวมยอด "รายพาร์ท" — ห้ามดึงรายใบ (audit 2026-09-02)
+       ทริกเกอร์ fn_explode_child_demand ออก 1 ใบต่อ 1 ล็อต ⇒ วัดฐานจริงวันนี้ **3,104 ใบ = 42 พาร์ท**
+       เดิม: (ก) ดึงรายใบไม่แบ่งหน้า → ได้ 1,000 แถวแบบสุ่ม ตัวนับผิด
+             (ข) prLate.map() วาด "1 การ์ด/1 ใบ" ใน 🚨 ต้องทำตอนนี้ → กำแพงการ์ดหลายร้อยใบกลบคิวงานจริง
+       ผิดกฎเหล็กของบอร์ดสโตร์ตรงๆ: "คิวที่ระบบออกใบอัตโนมัติ ต้องรวมยอดรายพาร์ท ห้ามโชว์รายใบ" */
+    supabaseDR.from('v_purchase_open_summary').select('*'),
     supabaseDR.from('customer_shipping_orders').select('*').in('due_date', [workDate, next]),
   ]);
   return {
     stk: (stk.rows || []).filter(s => !s.line_name || inScope(s.line_name)),
     std: std.data || [], rounds: (rounds.data || []).filter(r => inScope(r.line_name)),
     deliv: deliv.data || [], pr: pr.data || [], ord: ordToday.data || [],
+    // โหลดไม่ครบ = จอขึ้นเขียว "ไม่มีงานค้าง" ทั้งที่ของขาดจริง — ห้ามเงียบ (loader อื่นในไฟล์นี้มี loadErr แล้ว)
+    loadErr: !!(stk.error || stk.truncated || std.error || rounds.error || deliv.error || pr.error || ordToday.error),
   };
 }
 
@@ -500,7 +507,9 @@ function StoreView({ d, ctx }) {
     return r.delivery_time && r.delivery_time < nowHM && !got?.confirmed_at;
   });
   const partial = d.deliv.filter(x => x.received_status && x.received_status !== 'full');
-  const prLate = d.pr.filter(p => p.work_date && p.work_date < workDate);
+  // แถวจากวิว = 1 พาร์ท (รวมทุกใบ) · first_work_date = ใบเก่าสุดของพาร์ทนั้น
+  const prLate = d.pr.filter(p => p.first_work_date && p.first_work_date < workDate);
+  const prSlips = d.pr.reduce((a, p) => a + (p.slips || 0), 0);
 
   const shipped = d.ord.filter(o => o.status === 'shipped' || o.shipped_at).length;
   const ordTotal = d.ord.length;
@@ -508,12 +517,20 @@ function StoreView({ d, ctx }) {
   const actions = [
     ...lateRounds.map(r => ({ icon: '⏰', title: `รอบส่งเลยเวลา — ${r.line_name}`, detail: `รอบ ${r.round_no} · ${r.delivery_time}`, tag: 'ยังไม่ยืนยัน', tagColor: '#ef4444', to: '/heijunka' })),
     ...partial.map(x => ({ icon: '📦', title: `รับไม่ครบ — ${x.line_name}`, detail: `รอบ ${x.round_no}`, tag: x.received_status, tagColor: '#f59e0b', to: '/line-stock' })),
-    ...prLate.map(p => ({ icon: '🧾', title: `สั่งซื้อค้าง — ${p.part_name || p.mat_no}`, detail: `${p.supplier || ''} → ${p.dest_line || ''}`, age: daysSince(`${p.work_date}T08:00:00`), tag: p.status, tagColor: '#f59e0b', to: '/line-stock' })),
+    ...prLate.map(p => ({ icon: '🧾', title: `สั่งซื้อค้าง — ${p.part_name || p.mat_no}`,
+      detail: `${p.slips} ใบ · รวม ${(p.total_qty || 0).toLocaleString()} ชิ้น · ${p.supplier_count > 1 ? `${p.supplier_count} ผู้ขาย` : (p.supplier || '')} → ${p.dest_count > 1 ? `${p.dest_count} ปลายทาง` : (p.dest_line || '')}`,
+      age: daysSince(`${p.first_work_date}T08:00:00`), tag: p.status, tagColor: '#f59e0b', to: '/heijunka' })),
     ...under.slice(0, 5).map(r => ({ icon: '🟥', title: `ต่ำกว่า Min — ${r.name}`, detail: `คงเหลือ ${fmtNum(r.qty)} · Min ${fmtNum(r.min)}`, tag: `ขาด ${fmtNum(r.short)}`, tagColor: '#ef4444', to: '/store-monitor' })),
   ];
 
   return (<>
-    <Section title="🚨 ต้องทำตอนนี้" sub={`รอบส่งเลยเวลา ${lateRounds.length} · รับไม่ครบ ${partial.length} · สั่งซื้อค้าง ${prLate.length} · ต่ำกว่า Min ${under.length}`} tone={actions.length ? 'alert' : null}>
+    {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — จอสโตร์ขึ้นเขียวทั้งที่ของขาดคือกรณีที่แย่ที่สุด */}
+    {d.loadErr && (
+      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+        🔴 โหลดข้อมูลสต็อก/รอบส่ง/ใบสั่งซื้อไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> อย่าเพิ่งสรุปว่า "ไม่มีงานค้าง"
+      </div>
+    )}
+    <Section title="🚨 ต้องทำตอนนี้" sub={`รอบส่งเลยเวลา ${lateRounds.length} · รับไม่ครบ ${partial.length} · สั่งซื้อค้าง ${prLate.length} พาร์ท · ต่ำกว่า Min ${under.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
@@ -522,7 +539,8 @@ function StoreView({ d, ctx }) {
       <Kpi label="🟧 เกิน Max" value={over.length} unit="พาร์ท" color={over.length ? '#f59e0b' : '#22c55e'} sub="สต๊อกค้างเกินจำเป็น" />
       <Kpi label="🚚 รอบส่งวันนี้" value={`${d.rounds.length - lateRounds.length}/${d.rounds.length}`} color={lateRounds.length ? '#f59e0b' : '#22c55e'} sub={`เลยเวลายังไม่ยืนยัน ${lateRounds.length}`} />
       <Kpi label="📤 ออเดอร์ลูกค้าวันนี้" value={`${shipped}/${ordTotal}`} color={ordTotal && shipped < ordTotal ? '#f59e0b' : '#22c55e'} sub="ส่งแล้ว / ทั้งหมด" />
-      <Kpi label="🧾 ใบสั่งซื้อค้าง" value={d.pr.length} unit="รายการ" color={prLate.length ? '#ef4444' : undefined} sub={`เลยกำหนด ${prLate.length}`} />
+      {/* นับ "พาร์ทที่ต้องสั่ง" ไม่ใช่จำนวนใบ — จำนวนใบไม่ใช่ปริมาณงานจริง (กฎบอร์ดสโตร์) */}
+      <Kpi label="🧾 พาร์ทที่ต้องสั่งซื้อ" value={d.pr.length} unit="พาร์ท" color={prLate.length ? '#ef4444' : undefined} sub={`เลยกำหนด ${prLate.length} · รวม ${prSlips.toLocaleString()} ใบ`} />
       <Kpi label="🔩 พาร์ทที่มีสต๊อก" value={matRows.length} unit="รายการ" sub={`ตั้ง Min/Max แล้ว ${matRows.filter(r => r.min > 0 || r.max > 0).length}`} />
     </div>
 

@@ -399,12 +399,17 @@ export default function Dashboard() {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
         e.target += o.qty || 0;
-        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
+        /* 🔴 สูตรบังคับของโปรเจค: confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)  (audit 2026-09-02)
+           เดิมใบที่ยังไม่ปิดให้ 0 ทั้งที่ `active` รวม open + carry_over ไว้แล้ว
+           ⇒ ยอดที่หัวหน้ากรอกระหว่างกะ และยอดจริงของใบยกยอด **หายจากจอ TV ทั้งหมด**
+              ขณะที่ /factory-map · /dept-dashboard · /line-oee · /flow-tower ใช้สูตรเต็ม
+              = 2 จอบอกยอดคนละตัวในเวลาเดียวกัน */
+        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullD = active.filter(o => !o.mat_no);
       const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
       const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
+      const actual  = ptotD.produced + nullD.reduce((sum, o) => sum + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
