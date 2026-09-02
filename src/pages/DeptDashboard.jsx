@@ -149,7 +149,7 @@ const KPI_GRID = (isMobile) => ({ display: 'grid', gap: 10, gridTemplateColumns:
 async function loadProduction(ctx) {
   const { workDate, prevDate, inScope } = ctx;
   const d7 = dayAdd(workDate, -6);
-  const [{ data: sess2 }, { data: sess7 }, fourM, logsRes, empRes, { data: staleRaw }] = await Promise.all([
+  const [{ data: sess2, error: eS2 }, { data: sess7, error: eS7 }, fourM, logsRes, empRes, { data: staleRaw, error: eStale }] = await Promise.all([
     supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
     supabase.from('four_m_logs').select('id, work_date, line_name, category, description, status, created_by_name').in('status', ['pending', 'pending_qa']).order('work_date', { ascending: true }).limit(100),
@@ -173,8 +173,13 @@ async function loadProduction(ctx) {
     fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
+  /* ⚠️ loadErr ต้องครอบคิวรี "ชั้นแม่" ด้วย (audit 2026-09-02)
+     เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
+     "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
+     · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
-    loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error),
+    loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
+      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
@@ -325,7 +330,7 @@ function ProductionView({ d, ctx }) {
 async function loadMaintenance(ctx) {
   const { workDate, inScope } = ctx;
   const d30 = dayAdd(workDate, -29);
-  const [{ data: mo }, { data: plans }, { data: sess30 }] = await Promise.all([
+  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, { data: sess30, error: eSess30 }] = await Promise.all([
     supabaseDR.from('mtn_orders').select('*').order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days').eq('is_active', true),
     supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
@@ -338,11 +343,15 @@ async function loadMaintenance(ctx) {
     supabaseDR.from('checklists').select('id, equipment_id, department').eq('module', 'mtn'),
   ]);
   const eqIds = [...new Set((cls || []).map(c => c.equipment_id).filter(Boolean))];
-  const { data: jigs } = eqIds.length
-    ? await supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name').in('id', eqIds)
-    : { data: [] };
+  // ⚠️ eqIds = ทุก checklist module='mtn' (หลักร้อย) — คอมเมนต์เหนือขึ้นไปเตือนเองแล้วว่าต้องผ่าน fetchByIds
+  const { rows: jigs, error: eJig } = eqIds.length
+    ? await fetchByIds(eqIds, (c) => supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name').in('id', c))
+    : { rows: [], error: null };
+  /* ⚠️ loadErr ต้องครอบ plans/mo ด้วย (audit 2026-09-02)
+     plans พลาด → "PM เกินกำหนด 0 · ใกล้ครบ 0" เขียว ซึ่งขัดกฎของโปรเจคตรงตัว
+     ("ไม่มีแผนถึงกำหนด ≠ ไม่มีแผนเลย ห้ามขึ้นเขียวว่าปกติดี") · mo พลาด → "ใบซ่อมค้าง 0" */
   return { mo: (mo || []), plans: plans || [], dt30: dt30Res.rows, sess30: sess30 || [], cls: cls || [], jigs: jigs || [],
-    loadErr: !!dt30Res.error };
+    loadErr: !!(dt30Res.error || eJig || eMo || ePlans || eSess30) };
 }
 
 function MaintenanceView({ d, ctx }) {
