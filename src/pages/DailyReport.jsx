@@ -899,16 +899,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }));
   };
 
+  /* ตัวเลือก MAT.NO ของโมดัล "Scan เปิด Prod Order"
+     ⚠️ บั๊กคลาสเดียวกับ dtMatOptions ข้างล่าง (และ machineOpts ของ /improvements · wipMatOptions)
+        แต่ตกสำรวจมา 4 รอบ — เดิมกรอง `dr_products.line_name === ชื่อไลน์ที่เปิดกะ` ตรงเป๊ะ
+        ไลน์ลูกที่สินค้าผูกไว้กับไลน์แม่/ไลน์พี่น้อง จะได้ลิสต์ว่าง → ไม่ render dropdown เลย
+        → mat_no เป็น required → **เปิดใบสแกนไม่ได้ทั้งกะ** และแบนเนอร์ขึ้นว่า "ยังไม่มี Kanban
+        Standard ผูกไว้เลย" ซึ่งเป็นคำตอบที่ผิด (มาตรฐานมีอยู่ แค่ผูกไว้ที่ไลน์อื่นในครอบครัว)
+     เคสจริงที่พิสูจน์แล้ว: 17/08 มีคนย้าย dr_products.line_name ของ 20065715/20065635
+        จาก HDF2 → LASER-789 (ไลน์พี่น้องกัน พ่อ HYDROFORM) → สัปดาห์นั้นเอง HDF2 สแกนเปิดใบ
+        ได้ 0 ใบ (ก่อนหน้านั้น 253 ใบ/สัปดาห์) แล้วหันไปใช้ "เปิดเป้า (ไม่มีบาร์โค้ด)" แทนทั้งหมด
+     วัดผลก่อนแก้ (30 วัน): 6 ไลน์ได้ลิสต์ว่าง (HDF1/HDF2/LASER-345/BENDING E50/BENDING EXPORT/
+        Laser GOR) · อีก 3 ไลน์ลิสต์แคบเกินจริง · แก้เป็น family แล้วไม่มีไลน์ไหนเสียตัวเลือกเดิม */
+  const scanMatStds = useMemo(() => {
+    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
+    if (!fam.size) return [];   // ไลน์ยังโหลดไม่เสร็จ = ยังตัดสินไม่ได้ (เฟรมถัดไปได้ครบเอง)
+    return kanbanStds.filter(s => fam.has((s.dr_products?.line_name || '').trim().toLowerCase()));
+  }, [kanbanStds, lines, selSession]);
+
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
-    if (!showScanOpen || !selSession || kanbanStds.length === 0) return;
-    const lineName = selSession.line_name;
-    const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
-    if (lineStds.length === 1 && !openProdForm.mat_no) {
-      handleOpenProdMatNoChange(lineStds[0].mat_no);
-    }
+    if (!showScanOpen || !selSession || scanMatStds.length !== 1) return;
+    if (!openProdForm.mat_no) handleOpenProdMatNoChange(scanMatStds[0].mat_no);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showScanOpen, kanbanStds, selSession]);
+  }, [showScanOpen, scanMatStds, selSession]);
 
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
@@ -4597,16 +4610,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 {(() => {
                   const lineName = selSession?.line_name;
-                  const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
+                  const lineStds = scanMatStds;   // ครอบครัวไลน์ ไม่ใช่ชื่อตรงเป๊ะ (ดูเหตุผลที่ scanMatStds)
                   if (lineStds.length === 0) {
                     return (
                       <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
-                        ⚠ ไลน์นี้ ({lineName}) ยังไม่มี Kanban Standard ผูกไว้เลย — ไปเพิ่มที่ Product Setup ก่อน
+                        ⚠ ทั้งครอบครัวไลน์ของ {lineName} ยังไม่มี Kanban Standard ผูกไว้เลย — ไปเพิ่มที่ Product Setup ก่อน
+                        <div style={{ fontWeight: 500, marginTop: 4, opacity: 0.85 }}>
+                          (ระหว่างนี้ใช้ปุ่ม “✍️ เปิดเป้า (ไม่มีบาร์โค้ด)” เปิดใบได้)
+                        </div>
                       </div>
                     );
                   }
                   return (
-                    <Field label={`MAT.NO (${lineStds.length} รายการของไลน์นี้) *`}>
+                    <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
                       <select
                         id="open-mat-select"
                         value={openProdForm.mat_no}

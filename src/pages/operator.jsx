@@ -294,13 +294,26 @@ export default function Operator() {
   const handleRejectLevel = async () => {
     if (!rejectLuReason.trim()) { toast.error('กรุณาระบุเหตุผล'); return; }
     const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('skill_level_up_requests').update({
+    /* ⚠️ ลำดับเดียวกับ handleApproveLevel: เคลียร์ pending_level ให้สำเร็จก่อน แล้วค่อยปิดคำขอ
+       เดิมปิดคำขอก่อนแล้วเคลียร์ทีหลัง + ไม่เช็คผลทั้งคู่ →
+       `employee_skills` เป็น RLS `has_perm(...)` ซึ่ง **update ที่ไม่ผ่านคืน 0 แถว ไม่มี error**
+       ⇒ คำขอกลายเป็น rejected (หายจากคิว) แต่ pending_level ยังค้าง
+         = พนักงานคนนั้น **farm EXP ต่อไม่ได้ถาวร** และไม่มีใครเห็น เพราะเบาะแส (คำขอ) ถูกปิดไปแล้ว
+       → ต้องนับแถวที่เขียนจริง ไม่ใช่ดูแค่ error (กฎ RLS-เงียบ) */
+    const { data: cleared, error: cErr } = await supabase.from('employee_skills')
+      .update({ pending_level: null })
+      .eq('employee_id', rejectLuModal.employee_id).eq('skill_name', rejectLuModal.skill_name)
+      .select('employee_id');
+    if (cErr || !cleared?.length) {
+      toast.error(cErr ? 'เคลียร์สถานะรออนุมัติไม่สำเร็จ: ' + cErr.message
+                       : 'เคลียร์สถานะรออนุมัติไม่สำเร็จ (ไม่มีสิทธิ์ skills:edit หรือไม่พบแถวสกิลนี้) — ยังไม่ปิดคำขอ');
+      return;
+    }
+    const { error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'rejected', reviewed_by: user.id, reviewed_at: new Date().toISOString(),
       reject_reason: rejectLuReason.trim(),
     }).eq('id', rejectLuModal.id);
-    // Clear pending_level so farming can resume from current score
-    await supabase.from('employee_skills').update({ pending_level: null })
-      .eq('employee_id', rejectLuModal.employee_id).eq('skill_name', rejectLuModal.skill_name);
+    if (rErr) { toast.error('ปิดคำขอไม่สำเร็จ: ' + rErr.message); return; }
     toast.info('Rejected — พนักงานสามารถ farm ต่อได้');
     setRejectLuModal(null); setRejectLuReason('');
     fetchLevelUpRequests();
@@ -787,7 +800,10 @@ export default function Operator() {
               { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
-                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', minWidth: 110 }}>
+                /* ⚠️ ต้องมี width: 'auto' — index.css ตั้ง `select { width: 100% }` ทั้งแอป
+                   `minWidth` เป็นแค่พื้น override ไม่ได้ → select 4 ตัวกินคนละบรรทัด (วัดจริง
+                   1500px และ 1280px ได้ 7 แถว) ดันปุ่มกรองตกไปแถวที่ 5 ทั้งที่ที่แนวนอนเหลือเฟือ */
+                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', width: 'auto', minWidth: 110, maxWidth: 200 }}>
                 <option value="">{`— ${f.label} —`}</option>
                 {(f.label === 'Dept' || f.label === 'Group') ? (() => {
                   const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;

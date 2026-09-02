@@ -28,6 +28,7 @@ import { liveChannel } from '../utils/liveChannel'
 export default function DowntimeSiren({ mode = 'open_15min' }) {
   const [raw, setRaw] = useState([])       // แถวดิบที่ยังไม่รับทราบ (กะเปิดอยู่)
   const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
+  const [loadErr, setLoadErr] = useState(false) // อ่านรายการเครื่องหยุดไม่ได้ — ห้ามเงียบ (จอ TV ไม่มีใครเฝ้า)
   const [, setTick] = useState(0)          // นาฬิกา — ให้ "ครบเกณฑ์" เกิดเองโดยไม่ต้องยิง DB
   const [muted, setMuted] = useState(false) // เบราว์เซอร์บล็อกเสียงอยู่ (ยังไม่มีใครแตะจอ)
   const acRef = useRef(null)
@@ -49,8 +50,15 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
     // โหมด 'all' กรอง ack รายแถวตอนจัดชนิด (แถวเดียวมี 2 ช่อง ack) — downtime ที่เปิดค้างพร้อมกันมีไม่กี่แถว
     if (mode === 'call_mtn') q = q.eq('call_mtn', true).is('call_mtn_ack_at', null)
     else if (mode === 'open_15min') q = q.is('open_ack_at', null)
-    const { data } = await q
+    const { data, error } = await q
     loadDtAlertMin().then(setThr)
+    /* 🔴 โหลดไม่สำเร็จ ≠ "ไม่มีเครื่องหยุด" — ห้ามล้างลิสต์ทิ้ง
+       เดิมรับแค่ `data` → query ล้ม (RLS/คอลัมน์เปลี่ยน/เน็ตสะดุด) = `setRaw([])`
+       → alerts ว่าง → clearInterval → **ไซเรนหยุดดัง + แถบเตือนหายทั้งอัน** โดยไม่มีสัญญาณอะไรเลย
+       และ poll ถัดไปคือ 15 นาที ถ้าล้มถาวรก็เงียบตลอดกาล ซึ่งขัดกับหน้าที่เดียวของ component นี้
+       → คงลิสต์เดิมไว้ (ของที่ยังหยุดอยู่ก็ยังหยุดอยู่) + ตั้งธงให้จอบอกว่ากำลังอ่านไม่ได้ */
+    if (error) { console.error('[DowntimeSiren] โหลดรายการเครื่องหยุดไม่สำเร็จ:', error); setLoadErr(true); return }
+    setLoadErr(false)
     // เอาเฉพาะรายการของกะที่ยังเปิดอยู่ (เครื่องยังหยุดจริง)
     setRaw((data || []).filter(d => ['open', 'pending_close'].includes(d.production_sessions?.status)))
   }, [mode])
@@ -147,6 +155,16 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   /* ยังไม่มีเหตุ แต่เสียงล็อกอยู่ = ต้องบอกตั้งแต่ตอนนี้ (จอห้องช่างที่เปิดทิ้งไว้)
      ชิปเล็ก มุมล่างขวา สีเหลืองนิ่ง ไม่กระพริบ — เป็นสถานะความพร้อม ไม่ใช่ alarm */
   if (!alerts.length) {
+    /* อ่านรายการไม่ได้ ต้องขึ้นให้เห็น — "เงียบ" กับ "ไม่มีเครื่องหยุด" หน้าตาเหมือนกันจากข้างนอก
+       จอ TV ไม่มีใครเฝ้า ถ้าไม่บอกก็จะเข้าใจว่าทุกอย่างปกติดี */
+    if (loadErr) return (
+      <div style={{ position: 'fixed', bottom: 12, right: 12, zIndex: 4000,
+                    display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(28,10,10,0.95)',
+                    border: '1px solid rgba(239,68,68,0.6)', borderRadius: 10, padding: '7px 11px',
+                    fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' }}>
+        ⚠️ อ่านรายการเครื่องหยุดไม่ได้ — ยังบอกไม่ได้ว่ามีเครื่องหยุดหรือไม่
+      </div>
+    )
     if (!muted) return null
     return (
       <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"

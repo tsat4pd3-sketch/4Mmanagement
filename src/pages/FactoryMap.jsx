@@ -391,6 +391,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [regions, setRegions] = useState([]);
   const [layoutLines, setLayoutLines] = useState(() => new Set()); // ไลน์ที่มีผังพื้น (line_layouts) → คลิกเจาะดูผังพร้อมคนแบบ Dashboard
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
+  const [partial, setPartial] = useState('');        // โหลดข้อมูลไม่ครบ — ห้ามให้ผังโกหกเงียบ (จอนี้ไม่มีใครเฝ้า)
   const [manpower, setManpower] = useState({});        // คน/เข้างาน (Main)
   const [pmStatus, setPmStatus] = useState({});        // PM เครื่องจักร (DR)
   const [pmOrphan, setPmOrphan] = useState({ total: 0, overdue: 0 });  // แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ห้ามหายเงียบ
@@ -554,13 +555,17 @@ export default function FactoryMap({ setupMode = false }) {
   /* ── metric รายไลน์ (DR) — refresh 30 วิ · เก็บทุก metric ในรอบเดียว ── */
   const loadStatus = useCallback(async () => {
     const workDate = getWorkDate();
-    const { data: sessions } = await supabaseDR
+    const { data: sessions, error: sErr } = await supabaseDR
       // ⚠️ ต้อง select `shift` — ตัวกรองนโยบายพักเทียบ b.shift === s.shift ถ้าไม่มีจะเป็น undefined
       //    แล้วเหลือแค่ b.shift === 'both' ซึ่ง break_policies ไม่มีสักแถว = ไม่หักเวลาพักเลยทั้งระบบ
       .from('production_sessions').select('id, line_name, status, shift, oee, oee_a, oee_p, oee_q, qty_ng, ng_qty, start_time, shift_min').eq('work_date', workDate);
-    if (!sessions?.length) { setLineStatus({}); return; }
+    /* 🔴 "อ่านไม่ได้" ≠ "ยังไม่เปิดกะ" — เดิมรับแค่ data แล้ว `setLineStatus({})`
+       ⇒ query ล้ม = **ผังรวมทั้งโรงงานเป็นเทา "ยังไม่ได้เปิดกะ"** ทั้งที่ทุกไลน์เดินอยู่
+       จอนี้ไม่มีใครเฝ้า (แขวนห้องประชุม/ผู้บริหาร) → คงค่าเดิมไว้ + ตั้งธงให้ขึ้นแถบบอก */
+    if (sErr) { console.error('[FactoryMap] โหลดกะไม่สำเร็จ:', sErr); setPartial('โหลดข้อมูลกะไม่สำเร็จ — ตัวเลขบนผังเป็นของรอบก่อนหน้า'); return; }
+    if (!sessions?.length) { setPartial(''); setLineStatus({}); return; }
     const sessIds = sessions.map(s => s.id);
-    const [{ data: orders }, { data: dts }, { data: defs }, prods, breaks, kstds] = await Promise.all([
+    const [oRes, dRes, fRes, prods, breaks, kstds] = await Promise.all([
       supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, qty_ng, mat_no, opened_at').in('session_id', sessIds),
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
@@ -577,6 +582,16 @@ export default function FactoryMap({ setupMode = false }) {
         (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
+    /* 🔴 query ลูกล้มเหลว = ตัวเลขบนผัง "ผิดแบบดูดี" ไม่ใช่ว่าง — ต้องบอกทุกครั้ง
+       · defs ล้ม → ngBySess ว่าง → **Q สด = 100% ทุกไลน์** (บั๊กที่แก้ไป 2026-08-05 กลับมาทางนี้)
+       · dts  ล้ม → ไม่มี downtime → **A = 100%** ไลน์ที่หยุดอยู่โชว์ OEE สวย + Andon ไม่ขึ้น
+       · orders ล้ม → ยอดผลิต 0 ทั้งที่ผลิตอยู่
+       จอ /line-oee มี banner `partial` แบบนี้อยู่แล้ว — 2 จอโชว์ OEE ชุดเดียวกัน
+       จอหนึ่งบอกว่าโหลดไม่ครบ อีกจอเงียบ = คนเชื่อจอที่โกหก */
+    const { data: orders, error: oErr } = oRes, { data: dts, error: dErr } = dRes, { data: defs, error: fErr } = fRes;
+    const miss = [oErr && 'ใบผลิต', dErr && 'เครื่องหยุด', fErr && 'ของเสีย'].filter(Boolean);
+    if (miss.length) console.error('[FactoryMap] โหลดไม่ครบ:', { oErr, dErr, fErr });
+    setPartial(miss.length ? `⚠️ โหลด${miss.join('/')}ไม่สำเร็จ — OEE/Andon บนผังยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ` : '');
     const pairMap = {}, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
@@ -1912,6 +1927,12 @@ export default function FactoryMap({ setupMode = false }) {
 
   return (
     <div className="page-content" style={{ maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
+      {partial && (
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
+                      background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.45)', color: '#f87171' }}>
+          {partial}
+        </div>
+      )}
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>

@@ -1953,7 +1953,17 @@ export default function HeijunkaKanban() {
     };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
-  const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  /* ⚠️ ต้อง guard null — เป็น fmt ตัวเดียวใน 14 ตัวทั้งโปรเจคที่เคยไม่ guard
+     (ที่เหลือใช้ `n == null ? '—'` หรือ `Number(n || 0)` หมด)
+     วันนี้ยังพังไม่ได้เพราะ pending_qty/lot_qty/qty เป็น NOT NULL ในฐานทั้ง 3 ตัว
+     แต่ `null.toLocaleString()` = TypeError ทำจอขาวทั้งแท็บ 🔄 Pull จากแถวเดียว
+     → guard ไว้ก่อน ถูกกว่าไปพึ่ง constraint ที่ session อื่นอาจผ่อนทีหลัง
+     "ไม่รู้ ≠ 0" → คืน '—' ไม่ใช่ 0 (0 อ่านว่า "ไม่มีของ" ซึ่งคนละเรื่อง) */
+  const fmt = (n) => {
+    if (n == null || Number.isNaN(Number(n))) return '—';
+    const v = Number(n);
+    return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
 
   /* ── CSV export ── */
   const exportCSV = () => {
