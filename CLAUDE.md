@@ -214,11 +214,12 @@
 | Logistic - Store | `/customer-demand` | CustomerDemand (Delivery) | manager/supervisor/leader/qa/sale/planner_store |
 | Logistic - Store | `/store-monitor` | **StoreMonitor — 🚨 เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)** · **⚠️ เงื่อนไขตรวจทั้งหมดอยู่ในวิว `v_store_abnormal` (DR) ที่เดียว — หน้านี้กับตัวแจ้งเตือน `store-daily-scan` อ่านตัวเดียวกัน ห้ามเขียนเงื่อนไขซ้ำในหน้า** (2026-08-21 · เดิม logic อยู่ในหน้าอย่างเดียว ตัวแจ้งเตือนจะต้อง copy ไปเขียนใหม่ = drift แน่นอน) · โหลดวิวไม่สำเร็จ = ขึ้นแถบแดง **ห้ามขึ้นจอเขียว "ปกติดี"** : read-only monitor ถอดจาก 17 เคส TEI-TEI (Toyota TPS) → เฟส 1 จับ 5 เคสที่ detect ได้จริงจากข้อมูลปัจจุบัน สรุปเป็นผล 🟥 Shortage / 🟧 Over stock แบบ andon (แดงกระพริบเฉพาะรุนแรง เหลืองนิ่ง) · เคส: #A on-hand<Min · #B on-hand>Max (เทียบ `kanban_standards`) · #C รอบส่งเลยเวลายังไม่ยืนยัน (`kanban_delivery_rounds`/`kanban_deliveries`) · #D รับไม่ครบ partial · #E `purchase_requests` สั่งซื้อค้างเกินวันกำหนด · **⚠️ v3 (2026-08-25): เคส A/B เทียบ Min/Max ระดับ "รวมทุกคลังต่อ mat" (min/max เป็นค่าต่อ mat — เทียบราย location = แจ้งซ้ำ/แจ้งผิด · breakdown รายคลังอยู่ใน detail) · เคส C เทียบ "นาทีบนกรอบวันงาน 08:00→08:00" สูตรเดียวกับ `getRoundStatus` ฝั่งจอ (เดิม wall-clock + กรอง hour<20 → รอบหลังเที่ยงคืนขึ้น "เลยเวลา" ปลอมตอนบ่าย และรอบกะดึกไม่เคยถูกตรวจ) · dwell = `(จุด‖1)×(นาที/จุด‖10)` ตรงกับ `roundDeliveryMin` · **เคส E รวมยอดรายพาร์ท×ปลายทาง×สถานะ ห้ามโชว์รายใบ** (ทริกเกอร์ออก 1 ใบ/ล็อต — วัดจริง 25/08: **2,336 แถว → 52 แถว** หลังรวมกลุ่ม · ถ้าโชว์รายใบจอ+Telegram ท่วม · กฎเหล็กเดียวกับบอร์ดสโตร์)** · **scope ตาม pattern มาตรฐานแล้ว** (leader = family ไลน์ตัวเอง · role อื่นตาม sections · admin/ไม่มี scope = ทั้งโรงงาน — กรองที่ `scoped` ครอบทั้งลิสต์/ตัวนับ/dropdown ไลน์ · QC audit 2026-08-03 เดิมเขียน `lineSection` ค้างไว้ไม่ได้ใช้ = เห็นทุกไลน์) · ฟิลเตอร์ไลน์/ชนิด · refresh 60s · **ไม่แตะ write-path ของ store** · เคส ผิดกล่อง/pattern/pallet ต้องมี kanban-scan ก่อน = เฟสถัดไป · migration `20260721_store_monitor_permission.sql` | ทุก role (read-only) |
 | Logistic - Store | `/transport` | **Transport — 🚚 มอบหมายขนส่ง (Teiki-bin เฟส 1 ก้อน ก)**: มอบหมาย carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ ให้ "รอบส่ง" ที่มีอยู่ (`kanban_delivery_rounds`) รายวัน — **ต่อยอดบนรอบเดิม ไม่สร้างคิว/บอร์ดใหม่ ไม่คำนวณ demand ซ้ำ** · ตาราง DR (anon): `transport_vehicles` (master ยานพาหนะ data-driven: handlift/tow/forklift/cart/amr) · `transport_carriers` (name/emp_code/shift/vehicles[]/section/is_active) · `transport_round_assignments` (work_date+round_id unique → carrier) · แท็บ: 🗓️ มอบหมายวันนี้ (dropdown carrier ต่อรอบ กรองตามกะ · สถานะรอบจาก `getRoundStatus` util) + 👷 คนขับ/ยานพาหนะ (CRUD carrier) · สิทธิ์: ดู = ทุก role · `transport:manage` = admin/mgr/sv/leader/planner_store · migration `20260721_transport_carriers.sql` (DR) + `20260721_transport_page_permission.sql` (Main) · **Load รอบส่ง (2026-08-03):** `transport_vehicles.capacity_pkg` (กล่อง/เที่ยว — ตั้งใน route tab ช่อง "จุ") + Heijunka ⏰ รอบจัดส่งวันนี้ โชว์ "N กล่อง ÷ จุ C = M เที่ยว" ต่อรอบ (1 การ์ด kanban = 1 กล่อง · รถ = ของคนขับที่มอบหมายรอบนั้น ไม่มีมอบหมาย = คันจุมากสุด + หมายเหตุ · >1 เที่ยว = ส้ม) — migration `20260803_transport_vehicle_capacity.sql` (DR · **apply แล้ว** — ตรวจคอลัมน์จริง 2026-08-10) · **route tab (2026-08-03):** ปุ่ม ✨ เรียงจุดจอดสั้นสุด (`bestStopOrder` TSP ใน transportGraph.js — ล็อกจุดแรกเป็นต้นทาง) · sim นับเวลาแวะจริง (timeline วิ่ง+แวะ จุดส้ม ⏸) · แผนที่โชว์ถนนทั้งโรงงาน (เทาบาง) + legend · **บทบาทจุดจอดต่อรอบ `transport_round_stops.action`** ('load' ⬆รับ/'drop' ⬇ส่ง · null = เดาจากชนิดจุด dock→load) — ป้ายคลิกสลับในลิสต์ + badge บนแผนที่ · migration `20260803_transport_stop_action.sql` (DR · saveStops คงค่า action ตอนเรียงใหม่ — ใส่คีย์เฉพาะเมื่อคอลัมน์มีจริง) · เฟสถัดไป (ดู `docs/TRANSPORT_AMR_DESIGN.md`): Dispatch Board รวมทุกคิว · empty_return · มือถือคนขับ · KPI lead-time | ทุก role (ดู) · manage ตามสิทธิ์ |
-| การตรวจสอบและซ่อมบำรุง | `/mtn-repair` | MtnRepair — ใบแจ้งซ่อม MO 7 ขั้น (ดู section "MTN Work-Order") · แท็บ **🔩 คลังอะไหล่** = FM-JIG-009 + Rank WI-JIG-010 · แท็บ **🗺️ ผังคลัง** = ผังชั้นวางมุมหน้า ค้นของแล้วรู้ว่าอยู่ช่องไหน (ดู section "คลังอะไหล่") | ทุก role (ดู) · report/service/qa/approve/manage_master ตามสิทธิ์ |
+| การตรวจสอบและซ่อมบำรุง | `/mtn-repair` | MtnRepair — ใบแจ้งซ่อม MO 7 ขั้น (**"ขั้นไหนใครทำ" อยู่ที่ `src/utils/mtnStepPerm.js` ที่เดียว** · ดู section "MTN Work-Order") · แท็บ **🔩 คลังอะไหล่** = FM-JIG-009 + Rank WI-JIG-010 · แท็บ **🗺️ ผังคลัง** = ผังชั้นวางมุมหน้า ค้นของแล้วรู้ว่าอยู่ช่องไหน (ดู section "คลังอะไหล่") | ทุก role (ดู) · report/service/qa/approve/manage_master ตามสิทธิ์ |
 | การตรวจสอบและซ่อมบำรุง | `/pm` | **PmHub — 🔧 ศูนย์ PM (2026-08-26 · feedback "3 หน้า PM ควรรวมเป็นหน้าเดียว ไม่ต้องกดกลับไปกลับมา")** ยุบ 5 หน้าที่เป็น workflow เดียวกันเป็นแท็บ: `?tab=check` ตรวจ (PMCheckData) · `plan` แผน (PMSchedule) · `forecast` ล่วงหน้า (PmForecast) · `coord` ประสานงาน (PmCoordination) · `setup` ตั้งค่าจุดตรวจ (PMSetup) · **embed component หน้าเดิมทั้งดุ้น ไม่แก้ของเดิม** (pattern เดียวกับ `DailyChecker`) · route เดิมทั้ง 5 → `<Navigate to="/pm?tab=…" replace />` · **สิทธิ์ piggyback ไม่ต้อง seed `page:/pm`** (special-case ใน `permissions.js` — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง · `/pm-setup` ที่เป็น admin/mgr/sv ยังซ่อนจากช่างเหมือนเดิม) · **⚠️ หน้าลูกใช้ `?dept=`/`?line=`/`?equip=` — หน้าลูกใหม่ห้ามใช้ `?tab=`** (ชนกับหน้าแม่) · เพิ่มหน้างาน PM ใหม่ = เติม `TABS` + route redirect + special-case ใน permissions.js + label ใน `PAGE_GROUPS` | ทุก role (ตามแท็บ) |
 | (ไม่อยู่ใน sidebar) | `/pm-check` `/pm-schedule` `/pm-forecast` `/pm-coordination` `/pm-setup` | redirect เข้าแท็บของ `/pm` (ลิงก์/bookmark เก่ายังใช้ได้) · **ลิงก์ภายในให้ชี้ `/pm?tab=…` ตรงๆ ห้ามเด้งผ่าน redirect** | ตามคีย์เดิมของแต่ละหน้า |
 | (แท็บใน `/pm`) | `?tab=coord` | PmCoordination — 🗓️ แผนประสานงาน PM ข้ามวัน (แบบเมล MTN แจ้ง Production): งาน PM/แก้เครื่องหลายวัน + ทีมรับผิดชอบแต่ละวัน + ช่วง Production Support → แจ้ง Telegram + พิมพ์ใบ (ดู section "PM Coordination") | ทุก role (ดู) · `pm_coord:manage` = admin/mgr/sv/mtn/engineer/leader |
 | การตรวจสอบและซ่อมบำรุง | `/mtn-layout` | MtnMachineLayout | ทุก role |
+| การตรวจสอบและซ่อมบำรุง | `/fixture` | **FixtureRegistry — 📐 บันทึกชิม Fixture (JIG)** · 4 แท็บ `?tab=points\|shim\|status\|classify` — ทะเบียนจุดชิมรายจุด (ตั้งความถี่ตรวจ **รายจุด** 2 แกน วัน/shot) · บันทึกชิม (กรอกได้ทั้ง **ค่ารวม** และ **+/- จากเดิม**) · จุดที่ถึงกำหนด/เกินเกณฑ์ · 🏷️ จัดชนิดอุปกรณ์เป็นชุด (เฟส 0 — jig/fixture ที่ยังติดป้าย `equipment_kind='machine'`) · ดู section "Fixture Shim Record" + `docs/FIXTURE-SHIM-DESIGN.md` | ทุก role (ดู) · `fixture_shim:record` = admin/mgr/mtn · `fixture_shim:approve` = admin/mgr · `fixture_point:manage` = admin/mgr/mtn |
 | (แท็บใน `/pm`) | `?tab=setup` | PMSetup | admin/manager/supervisor |
 | การตรวจสอบและซ่อมบำรุง | `/energy` | **Energy — ⚡ พลังงานไฟฟ้า + 🌱 คาร์บอน** · 4 แท็บ: 📝 กรอกรายเดือน (3 ชั้น: บิลทั้งโรงงาน / จุดที่มีมิเตอร์ / จุดที่ยังไม่มีมิเตอร์ — ผลรวมที่วัดได้ cumulate ขึ้นมา) · 📊 สรุป & วิเคราะห์ (เทรนด์ 12 เดือน+YoY · **"อะไรทำให้เดือนนี้เปลี่ยน" = contribution to change** · สัดส่วนการใช้ · SEC kWh/ชิ้น) · ⚙️ ค่าการปล่อย (EF ตาม TGO — **ไม่ seed ค่าให้ ต้องกรอกพร้อมที่มา**) · 📡 มิเตอร์/MQTT (**ซ่อนจนกว่าจะ apply migration**) · สูตรทั้งหมดอยู่ `src/utils/energy.js` ที่เดียว **ห้ามคำนวณเองในหน้า ห้ามแตกไฟล์ util พลังงาน/คาร์บอนเพิ่ม** · ดู `docs/ENERGY_MONITORING_DESIGN.md` | ทุก role (ดู) · `energy:record` = admin/mgr/mtn/engineer/dept_admin |
 | คุณภาพ & วิศวกรรม | `/qa` | QualityControl — Dashboard คุณภาพ · **✅ ใบตรวจ (Check Sheet)** · SPC/Cp-Cpk · NCR · CAPA/8D · **🗑️ ถังเหลือง/ถังแดง** · 📮 เคลมลูกค้า · **📦 ใบเบิกทดสอบ (FM-STO-003 — ดู section)** · เครื่องมือวัด (ดู section "QA Inspection — setup → ใบตรวจ" + "ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง") | admin/manager/supervisor/leader/qa/doc_control |
@@ -2938,7 +2939,35 @@ migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_req
 - `nextDocNo` ย้ายจาก QualityControl.jsx → **`src/utils/qaDocNo.js`** (ใบตรวจเรียกใช้ตัวเดียวกันโดยไม่เกิด circular import)
 - **ยังไม่ทำ:** ผลตรวจยังไม่ไหลเข้า SPC อัตโนมัติ (จุด variable ที่กรอกค่าในใบตรวจ ยังไม่สร้าง `qa_measurements` ให้เอง — ต้องกด "ส่งเข้า SPC" ที่ setup แล้วกรอกที่แท็บ SPC เหมือนเดิม) · ยังไม่มีฟอร์มพิมพ์ใบตรวจ (ถ้าจะทำ ต้อง register ใน `/doc-forms` ตามกฎเอกสาร)
 
-### 🔔 ผลิตเรียก QA มาตรวจ — FME (First–Middle–End) · โค้ดครบ **ยังไม่ apply/deploy** (2026-08-19)
+### 🔔 ผลิตเรียก QA มาตรวจ — FME (First–Middle–End) · **apply/deploy ครบแล้ว แต่ยังปิดสวิตช์อยู่** (2026-08-19 · สถานะ 2026-09-02)
+
+> #### 🚦 สถานะจริง ณ 2026-09-02 — ติดที่ **ข้อมูล** ไม่ใช่โค้ด **ห้ามเปิดสวิตช์จนกว่าจะแก้**
+> migration ครบ (`qa_fme_config`/`obligations`/`part_rules` + คอลัมน์ mid_* ครบ 4) · cron `qa-fme-scan`
+> `*/5 * * * *` active=true · `is_enabled = false` (จึงยังเงียบสนิท ไม่มีอะไรออก Telegram)
+>
+> **dry-run กับข้อมูลจริง (`?dry=1`): สแกนเจอ 34 กะ · 178 ใบผลิต · 39 รุ่น → จะสร้างงานตรวจ 51 รายการ**
+> (ชิ้นแรก 4 · ระหว่างผลิต 29 · ชิ้นสุดท้าย 18 · HDF2 19 · SUB APRON 14 · LASER-789 11 · …)
+>
+> | 🔴 ตัวขวาง | ตัวเลข |
+> |---|---|
+> | **`part_linked = 0/51`** — กดเปิดใบตรวจจากคิวไม่ได้สักรายการ | `qa_parts` ทั้งระบบมี **2 แถว** และ **ตั้ง `mat_no` แล้ว 0 แถว** |
+> | รุ่นที่วิ่งจริงในโรงงาน | **39 รุ่น** (ต่อ 2 พาร์ทที่ลงทะเบียนไว้) |
+>
+> ⇒ เปิดตอนนี้ = QA ได้ข้อความที่ทุกใบเขียนว่า "ยังไม่ได้ผูกรุ่นนี้กับพาร์ทในระบบตรวจ" แล้วทำงานต่อไม่ได้
+> **เงื่อนไขก่อนเปิด: ลงมาตรฐานการตรวจใน `/qa-setup` + ผูก `qa_parts.mat_no` ให้ครอบรุ่นที่วิ่งจริง**
+> (ไม่ต้องครบ 39 — เริ่มจากไลน์ที่ตรวจจริงก่อนก็พอ แต่ต้องมีมากกว่า 0)
+>
+> #### ⚠️⚠️ กฎเหล็ก — "1 งานตรวจ = 1 ข้อความ" ใช้กับของจริงไม่ได้ (แก้แล้ว 2026-09-02)
+> โค้ดเดิมวนส่ง Telegram รายรายการ → dry-run วัดได้ **51 ข้อความรวดเดียวในรอบสแกนเดียว**
+> แล้วยัง escalate ซ้ำทุก 30 นาที (สูงสุด 8 ครั้ง/รายการ) = เคสเดียวกับ `shipping_phase_alert`
+> ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่านทั้งห้อง
+> - ตอนนี้ **รวมเป็นข้อความเดียวต่อรอบสแกน** (precedent: `kanban-round-scan` ที่ส่งใบเดียวรวมทุกไลน์)
+>   — สรุปรายไลน์ + จำนวนต่อสเตจ + เวลาที่เร็วสุด · เกิน 12 ไลน์ยุบเป็น "…อีก N" (Telegram จำกัด 4096 ตัวอักษร)
+>   · รายละเอียดรายรายการอยู่ในหน้า `/qa` อยู่แล้ว ข้อความมีหน้าที่แค่ "ปลุกให้ไปเปิดดู"
+> - **ห้ามกลับไปวนส่งรายรายการ** ไม่ว่าจะดูสะดวกกว่าแค่ไหน
+> - `sendTelegram` คืน `boolean` แล้ว — **ส่งไม่สำเร็จ = ไม่ mark `alert_count`** (ไม่งั้นงานตรวจก้อนนั้น
+>   เงียบถาวรทั้งที่ไม่มีใครเคยได้รับแจ้ง) · เดิม `.catch(() => undefined)` กลืน error ทิ้ง — กฎเดียวกับ
+>   `shipping-phase-scan` / `store-daily-scan` · **ข้อความรวม แต่ยัง mark รายแถว** (เพดาน escalate เป็นของแต่ละใบ)
 
 "ระบบ 2" ตาม `docs/INSPECTION_ALARM_SYSTEMS.md` (ระบบ 1 = `pm-daily-scan` · ระบบ 3 = `pm-plan-reminder` ใช้งานอยู่แล้ว) — เดิมไม่มีช่องทางให้ผลิตเรียก QA เลย ใบตรวจเป็น **pull** (QA เดินไปตรวจเอง) ระบบจึงไม่มีทางรู้ว่า "ตรวจตก" ไปกี่รุ่น
 
@@ -3468,7 +3497,45 @@ migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21
 - **ตาราง (DR):** `mtn_orders` (แถวเดียวต่อใบ เก็บครบ 7 ขั้น) · `mtn_order_parts` (log เบิกอะไหล่ต่อใบ + หัก stock) · master: `mtn_technicians` `mtn_spare_parts` `mtn_problem_types` (cascade ลักษณะปัญหา→รายละเอียด) `mtn_repair_types` `mtn_item_types` · `mtn_mo_counter` · migration `20260714_mtn_work_order.sql` (seed taxonomy 20 + ช่าง 8 + item/repair types)
 - **รูป/ลายเซ็น:** bucket **`mtn-images`** (DR, anon-open, cap 5MB) — รูปก่อน/หลังซ่อม/QA บีบ 1280px q0.85 ก่อนอัปโหลด (helper `resizeImage`) · ลายเซ็นต่อขั้น (step4/5/6/7) วาดใน `SignaturePad` (canvas→PNG) · ลบใบ = ลบไฟล์ที่ผูกทุกอัน (best-effort)
 - **KPI (คำนวณสดจาก timestamp ไม่เก็บ):** Response = accept−report · TTR = repair_done−accept · Breakdown = repair_done−report · แท็บ 📊 KPI มีการ์ดเฉลี่ย + พาเรโต้ลักษณะปัญหา Top 10 (กรองช่วงวัน/ไลน์)
-- **สิทธิ์ (role_permissions, migration `20260714_mtn_work_order_permissions.sql`):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · `mtn_repair:service` (step2-4) = admin/manager/mtn · `mtn_repair:qa` (step5) = admin/manager/qa · `mtn_repair:approve` (step7) = admin/manager · `mtn_repair:manage_master` (ช่าง/อะไหล่/taxonomy + ลบใบ) = admin/manager/mtn · ปุ่ม action แต่ละขั้นเช็ค `can()` ตามนี้ (ไม่ hardcode)
+> ### 🔴🔴 กฎเหล็ก — "ขั้นไหนใครทำ" อยู่ที่ `src/utils/mtnStepPerm.js` ที่เดียว (2026-09-02 · recheck ตามคำสั่ง user)
+> เกณฑ์นี้ถูกใช้ **2 ที่ที่ต้องตรงกันเป๊ะเสมอ** — ตัวซ่อนปุ่มใน `DetailDrawer` (`canEditStep`) กับ
+> guard ชั้นสองใน `StepModal.save()` (**RLS ของ `mtn_orders` ฝั่ง DR เป็น anon เปิดหมด → UI คือด่านเดียวจริงๆ**)
+> เดิมเขียนซ้ำ 2 ก้อนแล้ว**ต่างกันจริง** (ตัวซ่อนปุ่มมี branch `step===1` ที่ guard ไม่มี) → ยุบมาที่ util
+> · `MTN_STEPS` / `canDoStep()` / `stepLabel()` / `stepDenyHint()` / `isOrderReporter()` · เทส 13 เคส
+> **ห้ามเอา `STEP_PERM` กลับมาเขียนใน MtnRepair.jsx และห้ามพิมพ์ชื่อขั้นซ้ำในหน้า** (ปุ่ม/หัวโมดัล/StepBox อ่านจาก `stepLabel`/`MTN_STEPS`)
+>
+> | ขั้น | ใครทำ | คีย์ | seed |
+> |---|---|---|---|
+> | 1 เปิดใบแจ้งซ่อม | ใครก็ได้ที่พบปัญหา | `report` | ทุก role |
+> | 2 รับเรื่อง + จ่ายงาน | **หัวหน้าช่าง** | **`assign`** 🆕 | admin/manager/mtn/dept_admin |
+> | 3 ลงมือซ่อม + อัพเดท | ช่างที่รับงาน | `service` | admin/manager/mtn |
+> | 2-3 เฉพาะใบทีมตัวเอง | ช่างฝ่ายผลิต | `service_own_team` | + supervisor/leader/engineer |
+> | 4 ตรวจรับงานหลังซ่อม | **ผู้เปิดใบ / ฝ่ายที่แจ้ง** | **`accept_work`** 🆕 | admin/manager/supervisor/leader/dept_admin — **ไม่ให้ `mtn`** |
+> | 5 ตรวจคุณภาพ | QA | `qa` | admin/manager/qa/dept_admin |
+> | 6 รับมอบ + ติดตามผล | **หัวหน้าแผนกผู้แจ้ง** | **`handover`** 🆕 | admin/manager/supervisor/leader/dept_admin |
+> | 7 อนุมัติปิดใบ | หัวหน้าแผนก/ส่วน/ผจก. | `approve` | + **supervisor** + dept_admin |
+>
+> - **🔴 ขั้น 4 เคยเป็น `service` = ทีมช่างตรวจงานตัวเองแล้วเซ็นรับรองเอง** และช่องติ๊ก
+>   **"เกี่ยวกับคุณภาพ?" อยู่ในขั้นนี้ ซึ่งเป็นตัวตัดสินว่าจะข้าม QA (ขั้น 5) หรือไม่**
+>   ⇒ ช่างเลือกเองว่าจะให้ QA ตรวจไหม · แก้แล้ว: `service_own_team` หดเหลือ **ขั้น 2-3**
+> - **🔴 ขั้น 6 เคยเป็น `report` ที่ seed ด้วย `enum_range` = ทุก role** ⇒ sale/planner_store/display
+>   กดรับมอบ + ให้คะแนนความพึงพอใจแทนฝ่ายที่แจ้งได้
+> - **⭐ ผู้เปิดใบทำขั้น 4 และ 6 ของใบตัวเองได้เสมอ ไม่ต้องรอ admin ติ๊ก role** — `isOrderReporter()`
+>   ยึด **`mtn_orders.reported_by_name`** (ระบบ stamp ตอน insert) เป็นหลัก · **`reporter_prod` เป็นช่องที่พิมพ์แก้ได้
+>   ใช้เป็น fallback เฉพาะใบเก่าที่ยังไม่มี stamp** (ถ้าเทียบด้วยเสมอ = พิมพ์ชื่อคนอื่นแล้วสวมสิทธิ์ได้)
+>   · ช่างที่เปิดใบเองก็ยังตรวจรับใบตัวเองได้ตามปกติ
+> - **⭐ deploy-safe: คีย์ใหม่ที่ยังไม่ apply migration = ไม่มีแถว = fail-closed** → `canDoStep` เช็ค
+>   `isActionSeeded()` แล้วถอยไปคีย์เดิม (`assign`→`service` · `accept_work`→`service` · `handover`→`report`)
+>   **ไม่ถอย = ใบค้างขั้นนั้นทั้งระบบทันทีที่ deploy โค้ดก่อนรัน SQL** · seed แล้วเกณฑ์ใหม่มีผลเอง
+> - **`manage_master` = แก้ย้อนหลังได้ทุกขั้น** (ไม่ใช่แค่จัดการช่าง/อะไหล่ตามชื่อ) — label ในทะเบียนเขียนกำกับแล้ว
+> - **แยก "หัวหน้าช่าง" จาก "ช่าง" ใช้ flag `is_dept_admin` ห้ามเพิ่ม role** — seed `mtn` ให้ `assign` ไว้ก่อน
+>   ไม่ให้ทีมช่างทำงานไม่ได้ตอน deploy · อยากรัดจริงให้ถอด `mtn` ที่ `/permissions` แล้วติ๊กแอดมินหน่วยงานที่ `/add-user`
+> - **bucket `dept_admin` ไม่มีแถว `mtn_repair:*` เลย** (เกิด 2026-08-03 หลัง seed ชุดแรก 2026-07-14 — กับดัก `enum_range`) → เติมให้แล้ว
+> - **ยังไม่ทำ:** ยังไม่ผูก "ฝ่ายที่แจ้ง" กับ scope จริง — manager/supervisor คนไหนก็ได้ทั้งโรงงานยังปิดใบของฝ่ายอื่นได้
+>   (จะทำต้องเทียบ section ของ `line_name` บนใบ กับ `sections` ของผู้ใช้ — เป็นการรัดที่ล็อกคนออกได้ ต้องให้ user เคาะก่อน)
+> - migration `20260902_mtn_step_ownership.sql` (Main)
+
+- **สิทธิ์ (role_permissions):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · ที่เหลือดูตารางในกฎเหล็กด้านบน · ปุ่ม action แต่ละขั้นเช็คผ่าน `canDoStep()` (ไม่ hardcode role array)
 - **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
 - **หลายทีมซ่อม (2026-07-14):** ครอบคลุม **PRODUCTION(Autonomous) / JIG MTN / DIE MTN / MTN** — `mtn_technicians.dept` (ทีมของช่าง, master แยกกลุ่มตามทีม) + `mtn_orders.mtn_dept` ("แจ้งถึงหน่วยงาน" auto จากชนิดอุปกรณ์: JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN แก้ได้) · ฟิลเตอร์รายการตามหน่วยงาน · migration `20260714_mtn_multi_team.sql`
 - **แจกงานให้ถูกทีม 4 ส่วน (2026-07-16 — คำสั่ง user):** ทำ 3 อย่างพร้อมกัน จับคู่ทีมของ user ผ่าน `teamsForUser(mtnTeams, sections)` (util `src/utils/mtnTeams.js`):
@@ -3586,6 +3653,107 @@ migration `20260821_bbs_safety_observation.sql` (**apply แล้ว 2026-08-21
   - **ผังรวม ↔ ผังจัดเก็บ:** กรอบบน `/factory-map` ที่**ชื่อตรงกับชื่อผังจัดเก็บ** (`die_storage_areas.name` เทียบ trim+lowercase — ข้าม project Main↔DR ทำ FK ไม่ได้ "ชื่อคือกุญแจ" pattern เดียวกับโซน facility ↔ `pm_facility_areas`) = **โซนคลังแม่พิมพ์ 🔨** · dropdown ตีกรอบมี optgroup "🔨 คลังแม่พิมพ์" · โซนโชว์ health จากใบซ่อม MO ของแม่พิมพ์ที่วางในโซน (`dieZones` ใน FactoryMap · poll `RATE.ANALYTIC` · MO pending = กระพริบตาม Andon) · **คลิกโซน → `/die-registry?tab=layout&area=<id>&from=factory-map`** (มีปุ่ม ← กลับผังรวม — precedent เดียวกับโซน facility → `/mtn-layout`) · ฝั่ง DieLayout: ผังที่ตีกรอบแล้วมีปุ่ม "🏭 ดูบนผังรวมโรงงาน" · ยังไม่ตีกรอบ = ขึ้นคำแนะนำ (ห้ามเงียบ) · **เปลี่ยนชื่อผังจัดเก็บ = cascade ชื่อกรอบบนผังรวมให้อัตโนมัติ** (AreaFormModal — พลาดต้อง toast บอก ห้ามเงียบ · กฎ rename cascade)
   - **แม่พิมพ์ ↔ ไลน์ผลิต:** ชุดแม่พิมพ์ → `die_sets.mat_no` → `dr_products.line_name` = "🏭 ป้อนไลน์ผลิต" แสดงใน panel ผังจัดเก็บ + แถวบอร์ดสถานะ (info เท่านั้น — ชุดที่ยังไม่ผูก MAT ไม่แสดง = ไปผูกที่แท็บทะเบียน) · ส่วน `machines.line_name` ของแม่พิมพ์ = ชื่อ**กลุ่มเครื่องปั๊ม** (LINE A ( 800 Ton )) แสดงเป็น "เครื่องปั๊ม" ห้ามสับสนกับไลน์ผลิต
 - **เฟสถัดไป (ยังไม่ทำ):** สแกน QR แม่พิมพ์ (`ESM:M:<uuid>` มีอยู่แล้ว) แล้วเด้งเข้าหมุด/เปลี่ยนสถานะ · ผูกสถานะ in_use กับการเปิดใบผลิต (ตอนนี้ยังไม่มีข้อมูล "ใบผลิตใช้แม่พิมพ์ตัวไหน" — ดู gap ใน /order-trace) · auto เปลี่ยนสถานะเป็น maintenance ตอนเปิด MO (ตอนนี้ให้ derive แสดงทับแทน ไม่เขียนทับ manual)
+
+---
+
+## Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า)
+
+หน้า `/fixture` (`FixtureRegistry.jsx`) — ลูกค้าขอ **ระบบบันทึกชิม (shim record)** เพื่อคุม fixture sustainability
+· ออกแบบเต็ม + ผลค้นมาตรฐานภายนอก + กฎเหล็ก 11 ข้อ: **`docs/FIXTURE-SHIM-DESIGN.md`**
+· migration `20260901_fixture_shim_record.sql` (DR) + `20260901_fixture_shim_permissions.sql` (Main) — **apply แล้วทั้งคู่ 2026-09-01**
+
+| ตาราง (DR) | เก็บอะไร |
+|---|---|
+| `fixture_point_kinds` | ชนิดจุด (locator_pin/bush/clamp/rest_pad/block/other) + **ค่าตั้งต้น** ความถี่/อายุ — data-driven เพิ่มชนิดใหม่ไม่ต้องแก้โค้ด |
+| `fixture_points` | 1 แถว = 1 จุดชิมของ fixture ตัวหนึ่ง · `baseline/current/max_shim_mm` · **`interval_days` + `interval_cycles` รายจุด** · `expected_life_cycles` · `last_check_at/shot` · `last_replaced_at/shot` |
+| `fixture_shim_events` | ประวัติทุกครั้งที่แตะจุดนั้น (`check`/`shim_added`/`shim_removed`/`part_replaced`/`adjust`) · **`shim_before_mm`+`shim_after_mm`+`delta_mm` เก็บครบทั้ง 3** · `plates_text` (แผ่นที่ซ้อนจริง) · `shot_at_event` · ผู้อนุมัติ |
+
+**สูตรทั้งหมดอยู่ `src/utils/fixturePoints.js` (pure · เทส 20 เคส) — ห้ามคำนวณเองในหน้า**
+`shimStack` · `shotsFromPieces` · `pointDueStatus` · `toolLifeStatus` · `learnedToolLife` · `suggestMaxShim` · `suggestFixtureCandidates` · `resolveFixtureParts`
+
+> ### ⚠️ กฎเหล็ก 1 — ความถี่ตรวจอยู่ที่ **"จุด" ไม่ใช่ "ใบเช็คลิสต์"**
+> locator pin สึกเร็วกว่า rest pad หลายเท่า — ตั้งความถี่ทั้งใบเท่ากันคือตรวจถี่เกินจนไม่มีใครทำ หรือห่างเกินจนพัง
+> **แยกใบเช็คลิสต์ตามความถี่ไม่ได้** — `checklists.frequency` เป็นระดับใบ และ unique index
+> `checklists_equipment_module_dept_uniq (equipment_id, module, department)` บังคับ 1 เครื่อง = 1 ใบต่อแผนก
+> → เก็บที่ `fixture_points.interval_days/interval_cycles` · **null = ไม่ตั้ง = ไม่เตือน** (98 แผน PM เดิมไม่กระทบ)
+>
+> ### ⚠️ กฎเหล็ก 2 — 2 แกน "อะไรถึงก่อนใช้อันนั้น" และ **ต้องบอกว่าอันไหนเป็นตัวตัดสิน**
+> `pointDueStatus` คืน `driver` = `days` / `cycles` เสมอ — ไม่บอกแล้วช่างไม่รู้ว่าควรไปเร่งเรื่องเวลาหรือเรื่องยอดผลิต
+> · นับ shot ไม่ได้ (ไม่รู้พาร์ท/ไม่มีใบผลิต) = **`unknown_usage` ตกไปใช้แกนวันอย่างเดียว + เขียนบนจอว่าทำไม**
+> **ห้ามตีเป็น 0 shot** (0 = "ยังไม่เคยใช้เลย" ซึ่งคนละเรื่องกับ "ไม่รู้")
+>
+> ### ⚠️ กฎเหล็ก 3 — `max_shim_mm = null` คือ **"ยังไม่ตั้งเกณฑ์" ไม่ใช่ "ห้ามใส่ชิม"**
+> user สั่งชัด: *"ยังไม่ต้องมีเกณฑ์ ให้เริ่มมีข้อมูลก่อนว่าปัจจุบันชิมอยู่กี่ mm"*
+> → `shimStack` คืน level `no_limit` (เทา) **ห้ามเตือน ห้ามตีเป็น 0** · `suggestMaxShim` เสนอค่าจากประวัติจริง (≥5 ตัวอย่าง) **ให้คนกดตั้งเอง**
+>
+> ### ⚠️ กฎเหล็ก 4 — **ค่ารวมคือความจริง · delta เป็นแค่โหมดกรอก**
+> user ขอกรอกได้ทั้ง 2 แบบ → ฟอร์มมี 2 โหมดแต่**คำนวณลง `shim_after_mm` เสมอ** และโชว์ preview
+> "จะบันทึกเป็น X mm (จากเดิม Y mm, +Z mm)" ก่อนกดยืนยัน · เก็บ `before`/`after`/`delta` ครบทั้ง 3 ช่อง
+> — เก็บแต่ delta แล้วผลรวมจะ drift ทันทีที่มีใครลืมบันทึกครั้งหนึ่ง
+>
+> ### ⚠️ กฎเหล็ก 5 — อายุใช้งานเรียนจาก **ประวัติของเราเอง** ห้ามยืมตัวเลขมาตรฐานภายนอกมาตัดสิน
+> ค้นแล้ว (ดู §7 ของ design doc): **ไม่มีมาตรฐานสากลที่กำหนดจำนวน cycle ตายตัว** — ตัวเลข 20k-50k ที่ user เดา
+> เป็นช่วงที่ผู้ผลิตแต่ละเจ้าให้ไว้ต่างกันตามวัสดุ/โหลด/การหล่อลื่น · เกณฑ์ตัดสินจริงคือ **มิติที่วัดได้**
+> → `learnedToolLife` = median ของช่วง shot ระหว่างการเปลี่ยนจริง (≥3 ตัวอย่าง) · **น้อยกว่านั้น = คืน null ไม่เดา**
+>
+> ### ⚠️ กฎเหล็ก 6 — นับ shot จาก **พาร์ทที่ fixture นั้นผลิต** ไม่ใช่จากไลน์
+> ตรวจข้อมูลจริง: HDF1/HDF2 มีสินค้าผูก `line_name` = **0 รายการ** → นับระดับไลน์ตอบไม่ได้เลย
+> · `resolveFixtureParts` แตก `jigs.part_no` (คั่นด้วย `/` ได้) → จับคู่ `dr_products` ด้วย **`normMat` ก่อน แล้วค่อย `baseOfPart`**
+> (ทะเบียนจิ๊กมัก rev เก่ากว่าที่ผลิตอยู่ · `baseOfPart` ย้ายมาอยู่ `src/utils/matResolve.js` แล้ว **ห้ามนิยามซ้ำ**)
+> · `shot = ชิ้น ÷ pieces_per_cycle` (`machines.pieces_per_cycle` · null = 1 + ธง `assumed` ให้จอบอกว่าเป็นสมมติฐาน)
+> · **งานคู่ RH/LH นับ 1 shot ไม่ใช่ 2** — ผ่าน `pairAwareTotal` ตามกฎเดิมของโปรเจค
+> · **จับคู่บางส่วน (`partial`) ต้องขึ้นเตือนว่ายอด shot ต่ำกว่าจริง ห้ามเงียบ**
+>
+> ### ⚠️ กฎเหล็ก 7 — 1 FG มีหลาย MAT SAP (แยกตามลูกค้า) → **นับ shot ต้องรวมทุกเลข**
+> user เตือนเองว่า *"อย่าหลงประเด็น เรื่อง 1 FG มีหลาย matsap เพื่อแยกลูกค้านะ"*
+> **ไม่ขัดกับกฎ "ห้าม net ข้าม MAT SAP"** — กฎนั้นคุม **สต็อก/ออเดอร์** (ของแลกกันไม่ได้เพราะผูก SAP)
+> ส่วนนี่คือ **จำนวนครั้งที่จิ๊กทำงาน** ซึ่งเกิดขึ้นจริงไม่ว่าของจะถูกส่งให้ลูกค้าเจ้าไหน
+>
+> ### ⚠️ กฎเหล็ก 8 — เฟส 0: fixture จริงเคย **ติดป้ายผิดเป็น `equipment_kind='machine'`** (จัดชุดใหญ่แล้ว 2026-09-02)
+> backfill 2026-08-10 ติดป้ายทั้งตารางตอนที่ยังไม่มีแกน jig ใช้งานจริง → จิ๊กบนไลน์ค้างเป็น `machine`
+> **รวมจิ๊กเชื่อม Line 60/61 ซึ่งเป็นไลน์นำร่อง** → ทะเบียน `/fixture` เปิดมาว่างเปล่า
+> · **migration `20260902_reclassify_jig_fixtures.sql` (DR · apply แล้ว) ย้าย 50 ตัว → jig 54 → 104 · machine 241 → 191**
+>   (Line 60 ได้ 11 · Line 61 ได้ 13) · backup ราย id ที่ `_reclass_jig_20260902` **ห้าม drop จนกว่าจะยืนยันว่าใช้งานจริงโอเค**
+>
+> **🔑 เกณฑ์ที่ใช้ตัดสิน "ชื่อชัด" (ใช้ซ้ำได้ตอนจัดรอบหน้า):**
+>   1. **`machine_no` ขึ้นต้น `JHYD` / `JYD` / `GPHYD` = ระบบเลขจิ๊กของโรงงานเอง** — หลักฐานคือ
+>      ซีรีส์เดียวกัน 53 ตัวถูกตั้งเป็น jig ไปแล้ว (JHYD07-01..10 เป็น jig แต่ JHYD07-11/13/14 ค้างเป็น machine)
+>      = **ตกหล่น ไม่ใช่ตั้งใจ** · **`machine_name` เชื่อไม่ได้** — JHYD05-05 ชื่อ "Welding" แต่เป็นจิ๊กเชื่อม ไม่ใช่เครื่องเชื่อม
+>   2. ชื่อ/เลขมีคำว่า **JIG เป็นคำเดี่ยว** (JIG SLIDELOAD · MARKING JIG · POKA-YOKE JIG)
+>
+> **❌ ไม่แตะเพราะกำกวม — ให้คนติ๊กเองที่แท็บ ⚙️:** `CENTERING HDF1/HDF2` · `MARKING E50/B222/C347`
+>   (มีจิ๊กของตัวเองแยกอยู่แล้ว เช่น JHYD14-03 = "JIG MARKING TUBE E50" ⇒ ตัวที่ชื่อ MARKING เฉยๆ
+>    น่าจะเป็น "เครื่องมาร์ค" จริง) — **เดาแล้วผิดจะไปโผล่ผิดทะเบียน**
+>
+> **⚠️ ตรวจผลกระทบก่อนย้ายชนิดทุกครั้ง — รอบนี้ปลอดภัยเพราะ:**
+>   · **%A / OEE ไม่ขยับ** — `parallelUnitsOf` fallback นับเครื่องด้วย `line_name` **ไม่ได้กรอง `equipment_kind`**
+>     และ DailyReport โหลด machines ด้วย `select('*')` (ถ้าวันหน้ามีใครใส่ตัวกรองชนิดลงไป การย้ายชนิดจะไปขยับ %A ทันที)
+>   · **picker เลือกเครื่องทุกหน้ากรองแค่ `die` ออก ไม่เคยจำกัดเป็น `machine`** (DailyReport downtime · MtnRepair · Improvements)
+>     → จิ๊กพวกนี้ยังเลือกได้ตามปกติ · สำคัญมากเพราะมี **downtime อ้างถึง 837 แถว · ใบซ่อม 5 ใบ**
+>   · แถวเงา `jigs` 14 ตัว `equipment_type='jig'` อยู่แล้วทั้งหมด (migration ยัง sync ซ้ำแบบ idempotent)
+>   · **ผลที่ตั้งใจ:** หายจากลิสต์ default ของ `/machine-database` · จอห้องช่างเดาทีมเป็น **JIG MTN แทน MTN**
+>     สำหรับ downtime ที่ยังไม่มีใบซ่อม (`teamForEquipmentKind` — ถูกกว่าเดิม แต่เป็นการ**เดา** ไม่ใช่ข้อเท็จจริง)
+>
+> · แท็บ 🏷️ ใช้ `suggestFixtureCandidates` **เสนอ + ให้ติ๊กเป็นชุด ระบบไม่ backfill เอง** สำหรับตัวที่เหลือ (หลักเดียวกับทะเบียนแม่พิมพ์)
+> · เปลี่ยน kind แล้ว **ต้อง sync `jigs.equipment_type` ของแถวเงาด้วย** ผ่าน `jigEquipTypeOf` (กฎเดิม: แถวเงา derive จาก machines เสมอ) — sync พลาดต้องขึ้นเตือนแยก **ห้ามเงียบ**
+>
+> ### ⚠️ กฎเหล็ก 9 — ไม่สร้างตาราง "จิ๊ก" ใหม่ · ต่อบน `machines` + `equipment_kind='jig'`
+> pattern เดียวกับ `equipment_die` — ตัวตนอุปกรณ์เป็นของกลางชุดเดียว (MO/downtime/QR/ผังเครื่องจักรอ้างเลขเดียวกัน)
+> **แยกหน้าจอได้ ห้ามแยกฐานข้อมูล**
+>
+> ### ⚠️ กฎเหล็ก 10 — ไม่เพิ่ม permission key เกินจำเป็น และ **`page:*` ห้ามลง `permission_catalog`**
+> 3 คีย์เท่านั้น: `fixture_shim:record` · `fixture_shim:approve` (หัวหน้าช่าง JIG ตามที่ user ระบุ) · `fixture_point:manage`
+> · `page:/fixture` seed ใน `role_permissions` **โดยระบุ role ชัดเจนครบ 11 ตัว ห้าม `enum_range`** (กับดัก role ที่เพิ่มทีหลัง)
+> · หน้า `/permissions` ดึงคีย์ action จาก catalog แต่ดึงคีย์หน้าจาก `PAGE_GROUPS` ในโค้ด — ใส่ `page:` ลง catalog = โผล่ผิดแท็บ
+>
+> ### ⚠️ กฎเหล็ก 11 — "คัดลอกจุดจาก fixture อื่น" คัดลอกแต่ **โครง** ห้ามคัดลอกค่าที่วัดได้
+> `copyFrom` เอาไปแค่ เลขจุด/ชนิด/ความถี่/เกณฑ์ · **`baseline_shim_mm`/`current_shim_mm` ต้องว่างเสมอ**
+> ค่าชิมเป็นของเฉพาะตัวจิ๊ก คัดลอกมาแล้วกลายเป็นหลักฐานเท็จทันที
+
+- **นำร่อง Line 60/61** (คำสั่ง user) — จัดชนิดให้แล้ว (Line 60 = 11 จิ๊ก · Line 61 = 13) **เริ่มตั้งจุดชิมได้เลย**
+- **ยังไม่ทำ:** ยังไม่ผูกกับใบ PM/MO อัตโนมัติ (`mtn_order_id` มีคอลัมน์รอไว้แล้ว) · ยังไม่แจ้งเตือนตอนจุดถึงกำหนด
+  (ตอนนี้เห็นที่แท็บ 📊 สถานะ — จะทำต้องเพิ่ม scanner ฝั่ง server + rule ตามกฎ "เพิ่มเรื่องใหม่ = insert rule + `notifyEvent`")
+  · ยังไม่มีใบพิมพ์ (ทำเมื่อไหร่ต้อง register ใน `/doc-forms` ตามกฎเอกสาร)
 
 ---
 
@@ -4126,7 +4294,7 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 | `pm-daily-scan` | DR (pg_cron) | สแกน Daily PM alarm สีส้ม (เช็คไม่เสร็จตามเวลา) — เขียว/แดง event-driven จากแอป |
 | `pm-plan-reminder` | DR (pg_cron รายวัน 01:00 UTC = 08:00 ไทย) | เตือน Planned PM ตามขั้น 30/14/3 วัน + **เกินกำหนด (ซ้ำสัปดาห์ละครั้ง)** → POST ไป send-notification ฝั่ง Main · ดูกฎ "เตือน PM" ด้านล่าง |
 | `shipping-phase-scan` | DR (pg_cron ทุก 10 นาที) | สแกน shipping walkback phase misses บนกรอบวันงาน 08:00→08:00 · **v3 (2026-08-24): เตือนเฟสกลางเฉพาะเมื่อทีมใช้ walkback จริง** — ดูกฎด้านล่าง |
-| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · **deploy แล้ว v13 + cron `*/5` เดินอยู่ แต่สวิตช์ยังปิด** (ตรวจ 2026-09-02) |
+| `qa-fme-scan` | Main (pg_cron ทุก 5 นาที · **cron active**) | **ผลิตเรียก QA มาตรวจ FME** — อ่าน `production_sessions`/`prod_orders`/`dr_products` จาก DR (`DR_URL`/`DR_ANON_KEY`) หา "รุ่นที่เพิ่งขึ้นไลน์/เพิ่งจบ" → สร้าง `qa_fme_obligations` + ยิง `qa_fme_call`/`qa_fme_overdue` + sync สถานะจาก `qa_inspection_sheets` · **เช็ค `qa_fme_config.is_enabled` ก่อนทำอะไรทั้งสิ้น (default false = เงียบสนิท)** · **deploy v13 + cron `*/5` เดินอยู่ แต่สวิตช์ยังปิด** (ตรวจ 2026-09-02) · **แจ้ง Telegram รวมเป็นข้อความเดียวต่อรอบสแกน ห้ามวนส่งรายรายการ** (แก้ 2026-09-02 — ต้อง deploy ทับ v13) |
 | `store-daily-scan` | DR (pg_cron 00:50 UTC = **07:50 ไทย** — ดูกฎ "เวลาสแกนต้องอยู่ในวันงานที่จะรายงาน") | **เฝ้าระวังสโตร์รายวัน** (2026-08-21) — อ่านวิว **`v_store_abnormal`** (เงื่อนไข 5 เคสอยู่ในวิวที่เดียว หน้า `/store-monitor` อ่านตัวเดียวกัน **ห้าม copy เงื่อนไขมาเขียนซ้ำ**) → จัดกลุ่มตามเคส → POST `store_abnormal` ไป `send-store-notification` · **ยิงวันละครั้ง ไม่ใช่ทุก 10 นาที** (บทเรียนจาก `shipping_phase_alert` ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน) · verify_jwt=false |
 | `send-store-notification` | Main | **ผู้ส่งฝั่ง Store** — รับ event `store_abnormal` · **แยกไฟล์จาก send-notification โดยตั้งใจ (กันไฟล์ 47KB พัง) แต่ route ผ่าน `notification_rules`/`telegram_channels` ชุดเดียวกัน** (precedent เดียวกับ `send-mtn-notification`) → เปิด/ปิด/เลือกห้อง/แก้ข้อความ/เลือก role ที่เข้ากระดิ่ง ทำที่ `/notification-config` เหมือนทุกเรื่อง · verify_jwt=false |
 | `send-event-notification` | Main | **ผู้ส่งกลาง generic (2026-08-25)** — รับ `{ event, lines[], title?, section?, line_name?, ref_table?, ref_id?, vars? }` แล้วส่งทั้ง **Telegram + ในแอป** จากแถว `notification_rules` เดียวกัน · resolve ส่วนงานจาก `line_name` เอง (ไลน์ลูกตกทอดจากไลน์แม่) · ผู้รับผ่าน RPC `notify_recipients` · **เพิ่มเรื่องใหม่ = insert แถว rule + เรียก `notifyEvent()` ไม่ต้องแตะ edge ตัวไหนอีก** · เรียกจาก client ผ่าน `src/utils/notifyEvent.js` และจาก DB trigger ผ่าน pg_net · verify_jwt=false |

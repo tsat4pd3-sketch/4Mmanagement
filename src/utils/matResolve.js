@@ -18,6 +18,17 @@
 /** ตัดขีด/ช่องว่าง/สัญลักษณ์ แล้วเป็นตัวพิมพ์ใหญ่ (กฎ normalize เดียวกับที่ Planner&Sales ใช้ตอน import 862) */
 export const normMat = (s) => String(s ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase()
 
+/**
+ * base part = ตัด revision token ตัวท้าย (≤2 ตัว) ออก แล้ว uppercase ไม่มีตัวคั่น
+ *   "MB3B 16C274 CE" → "MB3B16C274" · "MB3B-16C274-C" → "MB3B16C274"
+ * ใช้จับคู่พาร์ทที่ rev ต่างกัน (เลขในทะเบียนจิ๊กมักเป็น rev เก่ากว่าที่ผลิตอยู่)
+ * ⚠️ หลวมกว่า normMat โดยตั้งใจ — ใช้เป็น **ชั้นรอง** เสมอ (ลอง normMat ให้ตรงก่อน)
+ */
+export const baseOfPart = (x) => String(x || '').toUpperCase()
+  .replace(/[^A-Z0-9]+/g, ' ').trim()
+  .replace(/ [A-Z0-9]{1,2}$/, '')
+  .replace(/ /g, '')
+
 /** เลข SAP ที่ใช้ตัดสต็อกได้ = ตัวเลขล้วน (กัน 'E024 (M6 ไม่มีเกลียว)' / '30047596 & 30052451') */
 export const isSapMat = (m) => /^\d+$/.test(String(m ?? '').trim())
 
