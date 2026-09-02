@@ -186,20 +186,38 @@ export default function ParetoAbcChart({
     );
   };
 
-  // โหมดย่อ: A+B แสดงเป็นแท่ง · C ยุบเป็นแถบเดียว (ไม่มีชื่อ ไม่กินที่ — กดขยายดูได้)
+  /* ── โหมดย่อ: แท่ง Top N · ที่เหลือยุบแถวเดียว (2026-09-02 · คำสั่ง user "default top10 พอมั้ย
+        ที่เหลือยุบไว้ ไปโชว์ตอนกดขยาย") ──
+     เดิมยุบเฉพาะกลุ่ม C ⇒ Downtime ยัง render A(13)+B(10) = 23 แท่ง สูงเกือบ 700px
+     บนจอที่คนอ่านจริงแค่ 5-6 อันดับแรก
+     ⚠️ กฎที่ห้ามแหก:
+       · **การจัดกลุ่ม ABC ยังคำนวณจาก "ทุกรายการ" เหมือนเดิม** — ป้าย "A · 13 รายการ (81%)"
+         ต้องเป็นความจริงของทั้งชุด ไม่ใช่ของ 10 อันที่โชว์ (ไม่งั้นเปอร์เซ็นต์โกหก)
+       · **ห้ามซ่อนเงียบ** — แถวที่ยุบต้องบอกจำนวน + ยอดรวม + % และกดเปิดดูครบได้
+       · **ชิป "เน้นแก้กลุ่ม A" ด้านล่างยังโชว์ครบทุกตัว** = ลิสต์งานที่ต้องแก้ไม่มีวันหาย
+         (ตัวที่ยุบไปในกราฟยังอ่านชื่อได้จากชิป) */
+  const TOP_N = 10;
+  // เหลือเกิน 1 รายการถึงคุ้มที่จะยุบ (ยุบ 1 แถวเพื่อได้ 1 แถวคืน = ไม่ได้อะไร)
+  const nShow = rows.length > TOP_N + 1 ? TOP_N : rows.length;
   const chartCompact = () => {
-    const cSum = groups.C.reduce((s2, d) => s2 + d._val, 0);
+    const rest = rows.slice(nShow);
+    const rSum = rest.reduce((s2, d) => s2 + d._val, 0);
+    const restA = rest.filter(d => d._cls === 'A').length;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        {[...groups.A, ...groups.B].map((d, i) => barRow(d, i, { compact: true }))}
-        {groups.C.length > 0 && (
-          <div onClick={() => setOpen(true)} title={`กลุ่ม C ${groups.C.length} รายการ · ${fmt(cSum)} ${unitOf} — กดดูรายละเอียด`}
+        {rows.slice(0, nShow).map((d, i) => barRow(d, i, { compact: true }))}
+        {rest.length > 0 && (
+          <div onClick={() => setOpen(true)} title={`อีก ${rest.length} รายการ · รวม ${fmt(rSum)} ${unitOf} — กดดูครบทุกรายการ`}
             style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 38%) 1fr auto', alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
-            <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>C · {groups.C.length} รายการ (หางยาว)</span>
-            <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: 6 }}>
-              <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, cSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>
+              ⤢ อีก {rest.length} รายการ{restA > 0 ? ` (กลุ่ม A ${restA})` : ''}
             </span>
-            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{fmt(cSum)}</span>
+            <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: 6 }}>
+              <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, rSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
+            </span>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+              {fmt(rSum)} ({(rSum / total * 100).toFixed(0)}%)
+            </span>
           </div>
         )}
       </div>
@@ -281,6 +299,12 @@ export default function ParetoAbcChart({
             {k} · {groups[k].length} รายการ ({(groups[k].reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%)
           </span>
         ))}
+        {/* บอกให้ชัดว่ากราฟตัดที่เท่าไหร่ — ป้าย A/B/C ข้างบนเป็นของ "ทุกรายการ" ไม่ใช่ของที่เห็น */}
+        {rows.length > nShow && (
+          <span style={{ color: 'var(--muted)' }}>
+            กราฟแสดง {nShow} อันดับแรกจาก {rows.length} · สัดส่วน A/B/C ข้างบนนับครบทุกรายการ
+          </span>
+        )}
         {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>🔍 คลิกแท่ง/ชิป = เจาะลึก</span>}
       </div>
       {/* เน้นกลุ่ม A — ตัวที่ต้องแก้ก่อน (คลิกเจาะได้) */}
