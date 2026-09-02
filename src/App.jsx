@@ -40,6 +40,7 @@ const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
+const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
@@ -159,6 +160,7 @@ export const NAV_ITEMS = [
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'พนักงาน & ทักษะ' },
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
+  { to: '/workforce-insight', icon: '📈', label: 'กำลังคน & Turnover', group: 'พนักงาน & ทักษะ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
 
   // ── จอผู้บริหาร/เดโม — แยกออกจาก "ภาพรวม" (nav audit 2026-08-27) ────────────────
@@ -1594,6 +1596,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/skills-report" element={
                 <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
+              } />
+              <Route path="/workforce-insight" element={
+                <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
               <Route path="/register"   element={
                 <RoleRoute path="/register" userRole={role}><Register /></RoleRoute>

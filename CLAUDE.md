@@ -228,6 +228,7 @@
 | คุณภาพ & วิศวกรรม | `/pe-docs` | **PEDocs — 📐 PE Core Tools: Process Flow / PFMEA / Control Plan** (ดู section "PE Core Tools") | ทุก role (ดู) · แก้ = `pe:edit` (admin/mgr/engineer) · revision = `pe:approve` |
 | วิเคราะห์ & รายงาน | `/report` | Report | ทุก role (7 tabs: รายวัน/รายพนักงาน/Log จุดงาน/สรุปช่วงเวลา/4M/ใบบันทึก/จองรถ OT + CSV export) · **Changing Point Control Record ย้ายเข้าทะเบียนกลาง `doc_forms`/`doc_form_revisions` doc_key `changing_point` แล้ว (2026-07-30)** — แผง "⚙️ จัดการเอกสาร" ในแท็บ 4M กับหน้า `/doc-forms` แก้ข้อมูลชุดเดียวกัน · ตารางเก่า `document_controls`/`document_control_revisions` เลิกใช้ (คงไว้เป็นประวัติ ห้าม drop จนกว่าจะยืนยันข้อมูลครบ) · **deep-link (2026-08-11): `?tab=` ของหน้านี้เป็น "เลข index ของ `TABS`"** (สัญญาเดิม ต่างจากหน้าอื่นที่ใช้ key ข้อความ — ดู UI-CONVENTIONS §6.8) → **สลับลำดับ TABS = ลิงก์ข้างนอกพาไปผิดแท็บเงียบๆ** · ที่อ้างอยู่ตอนนี้: `?tab=4` (4M Changes) จาก `/dept-dashboard` · **แท็บ 4M รับต่ออีก 3 param: `status` (ตัวกรองสถานะ · validate กับ `STATUS_META`) · `from=YYYY-MM-DD` (วันเริ่มช่วง) · `focus=<log id>` (เน้นแถว + เลื่อนไปหา)** → กระโดดเข้าคิวอนุมัติใบนั้นแล้วกด Approve ได้เลย · **ต้องส่ง `from` มาด้วยเสมอ** — ช่วง default คือ 7 วันล่าสุด ใบค้างมักเก่ากว่านั้น (ค้างจริง 60-80 วัน) ไม่ส่งจะเปิดมาเจอจอว่าง · หา `focus` ไม่เจอ = ขึ้นแถบแดงอธิบาย + ปุ่มล้างตัวกรอง (**ห้ามเงียบ**) |
 | พนักงาน & ทักษะ | `/skills-report` | `<Report mode="skills" />` — 3 แท็บสกิลที่แยกจาก /report (Skill Matrix / ค่าฝีมือ / Multi-Skill Form) component อยู่ใน Report.jsx เดิมทั้งหมด (`SKILL_TAB_IDXS`) | ทุก role |
+| พนักงาน & ทักษะ | `/workforce-insight` | **WorkforceInsight — 📈 กำลังคน & Turnover** (ดู section "Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover") | admin/manager/supervisor/leader |
 | ตั้งค่าโปรแกรม,ฐานข้อมูล | `/org-setup` | OrgSetup — **เปิดให้หน่วยงานแก้ผัง "ของตัวเอง" ได้แล้ว (2026-08-24 · user ทัก "แอดมินหน่วยงานเข้าไม่ได้ ทำให้เพิ่มผังของตัวเองไม่ได้")** · ทางตันเดิม: `Planning&Store` มี 0 แผนก → ลงทะเบียนพนักงานเลือกแผนกไม่ได้ · ระบบบอกให้มาเพิ่มที่นี่ แต่หน้าเป็น admin-only และ bucket `dept_admin` ปลดล็อก `page:*` ไม่ได้ = ไม่มีทางทำได้เลย · **โมเดล = precedent `shift_schedule:edit_dept`**: เปิด **หน้า** ให้ role สนับสนุนดูได้ + คีย์ใหม่ **`org:manage_own_unit`** แก้ได้เฉพาะ**แผนก/กลุ่มใต้ `profiles.section` ของตัวเอง** · **โครงระดับ Section ยังเป็นของ admin ล้วน** (เปลี่ยนชื่อ/ลบ section = cascade ทั้งระบบ) · guard 3 ชั้น (ซ่อนปุ่ม `canEditNode`/`canAddDeptHere`/`canAddLineHere` + เช็คซ้ำใน `handleSave`) · **⚠️ "ส่วนงานของฉัน" = `profiles.section` เดี่ยว ห้ามใช้ `sections[]`** · ไม่ได้ตั้ง section = ขึ้นแถบส้มบอกให้ admin ไปตั้งที่ `/add-user` (ห้ามเงียบ) · **⚠️ แผนกขึ้นตรงฝ่าย (MTN/JIG/DIE/QA) ยังเป็น admin เท่านั้น** — `profiles` ไม่มีคอลัมน์ department จึงระบุเจ้าของไม่ได้ · migration `20260824_org_manage_own_unit.sql` (**apply แล้ว**) | admin (แก้ทั้งผัง) · manager/supervisor/planner_store/sale/mtn/qa/engineer/document_control (ดู · แก้เฉพาะหน่วยงานตัวเองถ้าถือคีย์) |
 | พนักงาน & ทักษะ | `/register` | Register | admin/manager/supervisor |
 | พนักงาน & ทักษะ | `/operator` | Operator | admin/manager/supervisor/leader |
@@ -3615,6 +3616,47 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
   - **บนจอต้องเขียนกำกับว่า log เฉพาะการแก้ด้วยมือ** ไม่งั้นคนอ่านจะเข้าใจว่าคะแนนที่ขยับเองคือไม่มีใครแตะ · **โหลดไม่สำเร็จต้องขึ้น "โหลดไม่ได้" ห้ามแสดงเป็น "ไม่มีประวัติ"** (ว่างเปล่ากับอ่านไม่ได้ คนละเรื่อง)
 - **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
+
+## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
+
+หน้า `WorkforceInsight.jsx` (กลุ่มพนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** (ไม่มีปุ่มเขียนข้อมูล) · 3 แท็บจากคำขอ user เดียวกัน ("insight turn over + สรุปกำลังคนแต่ละวันเป็นกราฟ" + "สรุปการเปลี่ยนตำแหน่งงานในแต่ละวัน"): **📊 กำลังคนรายวัน** (`daily_production_logs`) · **🔀 เปลี่ยนจุดงานรายวัน** (`station_assignment_logs`) · **📉 Turnover** (`employees.is_active` + `audit_log`)
+
+- **Scope มาตรฐาน** (`useEmployeeScope` hook ในไฟล์) — leader = family ไลน์ตัวเอง (`getLineFamilyNames`) · role อื่น = ตาม `sections` (`inSectionScope`) — ครอบทั้ง 3 แท็บ (ลิสต์พนักงาน/ไลน์/ตัวกรองส่วนงาน)
+- **`useOrgSections`/`useOrgDepts` ย้ายจาก `Report.jsx` มาไว้ที่ `src/utils/useOrgSections.js`** (เมื่อหน้าที่สองต้องใช้ตัวเดียวกัน — ตามกฎ single source of truth) `Report.jsx` เปลี่ยนไป import จากที่นี่แทน **ห้ามนิยามซ้ำที่อื่นอีก**
+- สิทธิ์ `page:/workforce-insight` seed = admin/manager/supervisor/leader (ระดับความอ่อนไหวเดียวกับ `/operator` — เห็นรายชื่อคน inactive/turnover เป็นรายบุคคล) · migration `20260902_workforce_insight_page.sql`
+
+### 📊 กำลังคนรายวัน
+นับจาก `daily_production_logs` (เช็คชื่อ+PPE) ต่อวัน → present/leave/absent/OT · เทียบเส้นกำลังคนมาตรฐาน (`stdCapacityOf` — ตัดปัญหานับซ้ำไลน์แม่-ลูก ตามกฎเดิม) เป็น `ReferenceLine` บนกราฟแท่งสะสม (stacked bar: present=เขียว/leave=เหลือง/absent=แดง)
+
+### 🔀 เปลี่ยนจุดงานรายวัน
+> #### ⚠️ กฎเหล็ก — "ย้ายจุดงาน" นับเฉพาะแถวที่ `station_name` ต่างจากแถวก่อนหน้าจริง ห้ามนับทุกแถวที่ 2 เป็นต้นไป
+> `station_assignment_logs` มีได้หลายแถวต่อ (พนักงาน, วันงาน, กะ) — **แถวแรกของกลุ่มคือ "จุดเริ่มต้น" ไม่ใช่การย้าย**
+> ที่เหลือนับเป็น "ย้ายจริง" ต่อเมื่อ `station_name` ต่างจากแถวก่อนหน้า (เรียงตาม `started_at`) เท่านั้น —
+> ระบบล็อกซ้ำที่จุดเดิม (re-log ไม่ใช่การย้าย) ก็มีแถวเกิดได้เหมือนกัน
+> **ตรวจกับข้อมูลจริงแล้ว: 509 แถวที่ไม่ใช่แถวแรกของกลุ่ม มีแค่ 411 แถวที่เป็นการย้ายจริง (98 แถวเป็น re-log จุดเดิม)**
+> — นับแบบเดิม (ทุกแถวที่ 2 เป็นต้นไป) จะได้ตัวเลขสูงเกินจริง ~19%
+> อัลกอริทึม: group by `(employee_id, work_date, shift)` → sort by `started_at` → diff กับแถวก่อนหน้าในกลุ่มเดียวกัน
+
+- แผง **"🔝 คนที่ถูกย้ายจุดงานบ่อยสุด"** (top 10) — สัญญาณของจุดที่ต้อง cross-train เพิ่ม/ปัญหาจัดคน ไม่ใช่ปัญหาตัวบุคคล
+
+### 📉 Turnover
+> #### ⚠️ กฎเหล็ก — วันที่ออกงานสืบได้จริงแค่ตั้งแต่ที่ `audit_log` เริ่มเก็บ `employees` (2026-08-07) — ก่อนหน้านั้น "ไม่รู้"
+> `employees` ไม่มีคอลัมน์ `end_date`/`exit_date` — สถานะออกงานเก็บแค่ `is_active=false` **โดยไม่มีวันที่กำกับ**
+> วันที่ปิดใช้งานจริงจึงต้องสืบจาก `audit_log` (แถวที่ `table_name='employees'` + `changed_fields` มี `is_active`)
+> ซึ่ง**เริ่มมีข้อมูลตั้งแต่ 2026-08-07 เท่านั้น** — คน inactive ที่ถูกปิดก่อนวันนั้นจะไม่มีร่องรอยเวลาเลย
+> ข้อมูลจริง (2026-09): inactive ทั้งหมด 66 คน → **สืบวันที่ได้ 11 คน (`knownExits`) · สืบไม่ได้ 55 คน (`unknownExits`)**
+> **ห้ามเดาวันที่ออกงานให้คน 55 คนนี้** — แยกเป็นก้อนของตัวเองเสมอ (chip list ไม่มีวันที่ ไม่เข้ากราฟรายเดือน)
+> แถบเตือนสีเหลืองอธิบายช่องว่างนี้อยู่บนจอถาวร ห้ามถอด — ตรงกับหลัก "ไม่รู้ ≠ ไม่มี" ของโปรเจค
+
+- KPI: จำนวนออกในช่วงที่ดู · turnover rate โดยประมาณ (%) · อายุงานเฉลี่ย (วัน, โชว์ N ตัวอย่างกำกับ — เฉลี่ยจากกลุ่มที่รู้วันที่เท่านั้น) · ออกภายใน 90 วันแรก (early attrition) · จำนวนที่สืบวันที่ไม่ได้
+- กราฟรายเดือน: hires (เขียว) vs exits (แดง) · Pareto รายส่วนงาน · ตารางรายละเอียด known-exits (`positionLabel()`)
+
+> #### 🔴 พบบั๊กข้อมูล — 35 คนมี `start_date` เป็น พ.ศ. ที่ถูกกรอกลงคอลัมน์วันที่แบบ ค.ศ. (2026-09-02 · พบระหว่างทำหน้านี้)
+> พ.ศ. = ค.ศ. + 543 — เจอ 35 แถวที่ `employees.start_date` ถูกพิมพ์ปี พ.ศ. ทับลง input แบบ ค.ศ. (เช่น 2569 แทน 2026)
+> **ตรวจจับได้ 100% ด้วย `start_date > current_date`** เพราะการพิมพ์ผิดแบบนี้ลอยไปอนาคตเสมอ (ไม่มีทางบังเอิญตรงกับวันที่จริงในอดีต)
+> - **ระบบไม่แก้ให้อัตโนมัติ** (กฎ "ห้ามเดา/แก้ข้อมูลธุรกิจแทนคน") — `isValidStartDate()` กรองแถวพวกนี้ออกจากกราฟ/สถิติอายุงาน
+>   + ขึ้นแถบเตือนจำนวนที่พบ ชี้ทางไปแก้ที่ `/operator` (**ห้ามเงียบ** — เจอแล้วต้องบอก ไม่ใช่แค่กรองทิ้งเฉยๆ)
+> - **ยังไม่ backfill** — เป็น data cleanup แยกจากโค้ด รอ user ตัดสินใจว่าจะแก้เอง/ให้ช่วยแก้
 
 ## ประวัติผลิต by Product — `/product-history` (2026-07-24)
 

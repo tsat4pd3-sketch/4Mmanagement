@@ -26,6 +26,7 @@ import { positionLabel, loadPositions } from '../utils/positions';   // ตำ�
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
+import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -144,36 +145,8 @@ const IND_SIG_DEFAULTS = ['พนักงานผู้ถูกประเ�
 
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
-function useOrgSections() {
-  const [orgSections, setOrgSections] = useState([]);
-  useEffect(() => {
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name')
-      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name).sort()));
-  }, []);
-  return orgSections;
-}
-
-// แผนกตามลำดับชั้นองค์กร — คืนฟังก์ชัน deptsOf(section): กรองแผนกด้วย parent_id ของ section (cascade)
-// เดิมคืน list แบนรวมทุก section → dropdown แผนกเลือกข้าม section ได้ + ชื่อซ้ำ (บั๊กแก้ 2026-07-21)
-function useOrgDepts() {
-  const [tree, setTree] = useState({ secs: [], depts: [] });
-  useEffect(() => {
-    Promise.all([
-      supabase.from('org_nodes').select('id, code, name').eq('kind', 'section').eq('is_active', true),
-      supabase.from('org_nodes').select('code, name, parent_id').eq('kind', 'department').eq('is_active', true).order('name'),
-    ]).then(([s1, s2]) => setTree({ secs: s1.data || [], depts: s2.data || [] }));
-  }, []);
-  return useMemo(() => {
-    const nameOf = (n) => n.code || n.name;
-    const all = [...new Set(tree.depts.map(nameOf))].sort();
-    return (sectionCode) => {
-      if (!sectionCode) return all;
-      const sec = tree.secs.find(n => nameOf(n) === sectionCode);
-      if (!sec) return all;
-      return [...new Set(tree.depts.filter(d => d.parent_id === sec.id).map(nameOf))].sort();
-    };
-  }, [tree]);
-}
+// useOrgSections/useOrgDepts ย้ายไป src/utils/useOrgSections.js แล้ว (2026-09 — เมื่อหน้าที่สองต้องใช้ตัวเดียวกัน
+// ตามกฎ single source of truth) — import จากด้านบนแทน ห้ามนิยามซ้ำที่นี่
 
 // แท็บสกิล (index ใน TABS) แยกไปหน้า /skills-report (หมวด พนักงาน & ทักษะ — 2026-07-20)
 // component/helper ทั้งหมดยังอยู่ไฟล์นี้ — /skills-report คือ <Report mode="skills" /> กรองแท็บเท่านั้น

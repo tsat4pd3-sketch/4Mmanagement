@@ -71,6 +71,7 @@ const PAGE_GROUPS = [
       { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
       { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
       { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },
+      { key: 'page:/workforce-insight', label: 'กำลังคน & Turnover' },
       { key: 'page:/shift-organize', label: 'ตารางกะ' },
     ],
   },
