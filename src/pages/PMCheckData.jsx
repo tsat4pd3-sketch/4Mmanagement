@@ -475,7 +475,14 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
   const buildExportArgs = async (currentUserEmail) => {
     const resultMap = Object.fromEntries(results.map(r => [r.checkpoint_id, r]))
     const userIds = [insp.inspector_id, insp.approved_by, userId].filter(Boolean)
-    const { data: profs } = await supabase.from('profiles').select('id, email, signature_url').in('id', userIds)
+    /* 🔴 ห้าม select `email` — `profiles` ไม่มีคอลัมน์นี้ (มีแต่ notify_email ที่ไม่เคยถูกใช้ส่งอะไร)
+       เดิม select('id, email, signature_url') = 42703 ทั้งคิวรี → profMap ว่าง
+       → **ลายเซ็นผู้ตรวจ/ผู้อนุมัติหายจากใบพิมพ์ PM ทุกใบ** และชื่อกลายเป็น "Inspector"/"Approver"
+       โดยไม่มี error เพราะรับแค่ `{ data }` (supabase-js คืน {data,error} ไม่ throw) — audit 2026-09-03
+       คลาสเดียวกับ fn_audit ที่อ่าน coalesce(full_name, email) แล้วไม่บันทึกผู้แก้ทั้งระบบ */
+    const { data: profs, error: profErr } = await supabase
+      .from('profiles').select('id, full_name, signature_url').in('id', userIds)
+    if (profErr) { console.warn('[buildExportArgs] profiles', profErr.message); toast.error('โหลดชื่อ/ลายเซ็นผู้ตรวจไม่สำเร็จ — ใบที่พิมพ์จะไม่มีลายเซ็น') }
     const profMap = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
     const sigCache = {}
     const getSig = async (uid) => {
@@ -485,8 +492,8 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
       sigCache[uid] = url ? await resolveSignatureDataUrl(url) : null
       return sigCache[uid]
     }
-    const inspector = { email: profMap[insp.inspector_id]?.email ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
-    const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.email ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
+    const inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
+    const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
     // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
