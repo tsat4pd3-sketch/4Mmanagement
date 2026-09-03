@@ -1,0 +1,42 @@
+# Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
+
+> ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
+
+
+> ### ⚠️ กฎเหล็ก — ตาราง master/config ที่ "แก้ไขได้" ต้องมี audit
+> เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร (เจอจริง: `dr_products.line_name` ถูกเปลี่ยนไลน์ สืบไม่ได้) · **ตาราง master/editable ใหม่ทุกตัวต้องผูก audit** (เพิ่มชื่อตารางใน `tbls[]` ของ migration `20260724_audit_log_*.sql`)
+
+- **ตาราง `audit_log` กลาง (ต่อ project)** — เก็บ `table_name, row_pk, action (INSERT/UPDATE/DELETE), actor, changed_fields[], old_data jsonb, new_data jsonb, changed_at` · เขียนโดย generic trigger `fn_audit()` (SECURITY DEFINER) ที่ผูกกับตาราง master · migration `20260724_audit_log_main.sql` + `20260724_audit_log_dr.sql`
+- **`fn_audit()` best-effort เสมอ** — ห่อ insert ด้วย `exception when others then null` → **audit ล้มเหลวห้ามทำ write หลักพัง** (สำคัญมากกับระบบ production) · UPDATE ที่ไม่มีอะไรเปลี่ยนจริง (นอกจาก updated_at) ไม่ log
+> ### 🔴 กฎเหล็ก — เทส audit ต้องเทสด้วย `auth.uid()` ที่ไม่ null เสมอ (2026-08-17 · เจอบั๊กที่เงียบมา 3 สัปดาห์)
+> **อาการ:** `audit_log` ฝั่ง Main มี **2,234 แถว จาก 15 ตาราง แต่ `actor` = null ทั้งหมด · `actor_uid` = null ทั้งหมด** → ระบบ traceability ตอบได้แค่ "อะไรเปลี่ยน" **ตอบ "ใครเปลี่ยน" ไม่ได้เลย** ซึ่งเป็นคำถามหลักที่มันถูกสร้างมาเพื่อตอบ
+> **เหตุ:** `fn_audit` เขียน `select coalesce(full_name, email) from public.profiles` แต่ **`profiles` ไม่มีคอลัมน์ `email`** (มี `notify_email`) → error 42703 · บรรทัดนั้นถูกเรียก**เฉพาะเมื่อ `auth.uid()` ไม่ null = คนล็อกอินเป็นคนแก้** → error โดน `exception when others then null` กลืน = **ไม่ log ทั้งแถว** · แถวที่ log สำเร็จทั้งหมดคือการเขียนที่ `auth.uid()` เป็น null (migration/service role) ซึ่งข้ามบรรทัดนั้นไป จึงได้ actor ว่าง
+> **⇒ การแก้โดยคนจริงไม่เคยถูกบันทึกสักครั้ง** · แก้แล้ว migration `20260817_fix_audit_actor_no_email.sql` (actor = `full_name` → ไม่มีก็ใช้ uid) · **แถวเก่า 2,234 แถวกู้ไม่ได้** (ไม่มีข้อมูลต้นทาง) ของใหม่มีชื่อครบ
+> **บทเรียน:** `exception when others then null` จำเป็นจริง (audit ห้ามทำ write หลักพัง) แต่ทำให้บั๊กแบบนี้**เงียบสนิทไม่มีสัญญาณใดๆ** → รัน SQL ด้วย service role แล้วผ่าน **ไม่ได้แปลว่าใช้ได้** เพราะ `auth.uid()` เป็น null = เดินคนละ path กับผู้ใช้จริง
+> **วิธีเทสที่ถูก:** `set_config('request.jwt.claims', json_build_object('sub', <uid>)::text, false)` → `update` จริง 1 แถว → เช็คว่าได้แถวที่ `actor` ไม่ null (ทำในทรานแซกชันที่คืนค่าเดิม + ลบแถวเทสทิ้ง)
+> **⚠️ ห้ามใช้ email เป็นตัวระบุตัวคนที่ไหนอีก — ระบบนี้ไม่มีอีเมล** (user ยืนยัน 2026-08-17 · ตรวจแล้วไม่มี provider ส่งเมลในโปรเจคเลย แจ้งเตือนไป Telegram + in-app + Web Push ล้วน · `profiles.notify_email` เก็บค่าไว้เฉยๆ ไม่เคยถูกใช้ส่งอะไร)
+
+- **actor (ใครแก้):** Main (authenticated) = `auth.uid()` → **`profiles.full_name`** (ไม่มีชื่อ → uid) · **DR เป็น anon เสมอ → `auth.uid()` = null** → actor มาจากคอลัมน์ `updated_by_name` บนแถว
+  - **✅ DR actor ทำแล้ว (centralized) — 2026-07-24:** `supabaseClient.js` **wrap `supabaseDR.from`** ให้ฝัง `updated_by_name = ชื่อ user ปัจจุบัน` อัตโนมัติทุก `update/upsert/insert` ของตาราง master ใน `DR_AUDIT_TABLES` (ครอบทุกหน้าในทีเดียว ไม่ต้องไล่แก้ handler รายจุด) · `setDrActorName(fullName)` เรียกจาก `App.jsx fetchProfile` (ล้างตอน signout) · fn_audit อ่าน `updated_by_name` → actor · **⚠️ ตารางใน `DR_AUDIT_TABLES` ต้องมีคอลัมน์ `updated_by_name` (migration `20260724_dr_updated_by_name.sql`) ไม่งั้น write พัง** — เพิ่มตาราง DR ใหม่เข้า audit ต้องเพิ่มทั้งในลิสต์ migration + `DR_AUDIT_TABLES` ให้ตรงกัน
+  - **DELETE ฝั่ง DR** actor = `updated_by_name` ของแถวเดิม (คนแก้ล่าสุด ไม่ใช่คนลบ) — gap เล็กๆ ยอมรับได้ (จะได้คนลบจริงต้องผ่าน `current_setting('app.actor')` ซึ่ง REST ตั้งไม่ได้ง่าย)
+- **`updated_at` + trigger `fn_set_updated_at()`** เพิ่มให้ตาราง master ที่ผูก audit (BEFORE UPDATE set now())
+- **ดูประวัติ:** หน้า `/product-history` (ProductHistory) โชว์ audit ของ `dr_products` แถวนั้น (line_name/CT/PN เปลี่ยนโดยใคร) · จุดอื่นที่อยากโชว์ audit ให้ query `audit_log` ด้วย `table_name`+`row_pk`
+- **`employee_skills` (คะแนนทักษะรายคน) ผูก audit แล้ว 2026-08-17** — แต่ใช้ **`fn_audit_manual_only()` ไม่ใช่ `fn_audit()`**: log เฉพาะตอนมี `auth.uid()` (คนกดในแอป) · **cron ไม่ log โดยตั้งใจ** เพราะ daily skill farm เขียนตารางนี้หลายร้อยแถว/วัน → ผูก generic audit จะบวม ~100MB/ปี บน free tier 500MB และ log ว่า "cron +1 EXP" ก็ไม่ตอบคำถามที่คนถามจริง ("ใครไปแก้คะแนน") · **ตารางอื่นที่ job อัตโนมัติเขียนถี่ ให้ใช้ `fn_audit_manual_only` แบบเดียวกัน**
+  - **📜 จอกลางดูประวัติทั้งระบบ = หน้า `/audit-log`** (หมวดตั้งค่าโปรแกรม,ฐานข้อมูล · 2026-08-19 · user ทักว่าเดิมอยู่ผิดที่)
+  - เดิมจอดู audit ตัวเดียวถูกฝังใน `/mtn-repair` → ⚙️ ข้อมูลตั้งต้น ซึ่งกรองไว้แค่ **9 ตารางของทีมช่าง** ทั้งที่ระบบมี audit trigger **~74 ตาราง 2 project** → ของสำคัญไม่มีหน้าไหนดูได้เลย (`role_permissions` 309 แถว = ใครแก้สิทธิ์ · `profiles` · `employees` 308 · `machines` 1,494 · `dr_products` 287)
+  - **component กลาง `src/components/AuditLogViewer.jsx`** — ใช้ร่วมทั้งหน้า `/audit-log` และแท็บใน `/mtn-repair` (ส่ง prop `tables` จำกัดขอบเขต) · **ห้ามเขียนจอดู audit ใหม่ที่อื่น**
+  - **ป้ายไทยของตาราง/ฟิลด์อยู่ที่ `src/utils/auditLabels.js` จุดเดียว** — ไม่รู้จัก = แสดงชื่อดิบ (ไม่พัง) · เพิ่ม audit ให้ตารางใหม่แล้วอยากได้ชื่อไทย มาเติมที่นี่
+  - **แยกฝั่งด้วยแท็บ ไม่ query รวม** — `audit_log` มีคนละชุดต่อ project (คนละ database join กันไม่ได้)
+  - ตัวเลือกตาราง/คนแก้ในตัวกรอง **สร้างจากข้อมูลจริงที่โหลดมา** ไม่ hardcode → ตารางใหม่โผล่เอง
+  - สิทธิ์ `page:/audit-log` seed **admin/manager เท่านั้น** (เห็นการเปลี่ยนสิทธิ์ + ข้อมูลพนักงาน = อ่อนไหว) · role อื่นเปิดเองที่ `/permissions` · migration `20260819_audit_log_page.sql` (**apply แล้ว**)
+- **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
+  - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
+  - **⭐ retention ทำให้ audit_log "หยุดโต" ไม่ใช่แค่ "โตช้าลง"** (ตกผลึกกับ user 2026-08-19) — มันเข้าสมดุลที่ `อัตรา/วัน × 180 วัน` แล้วนิ่ง (ลบเท่าที่เพิ่ม): 20/วัน = ~5 MB · 50/วัน = ~13 MB · 141/วัน = ~35 MB → **เลิกเป็นปัญหาถาวรไม่ว่าใช้หนักแค่ไหน**
+  - **⚠️ อัตรา 141 แถว/วัน ที่ใช้ประเมินตอนแรก คือช่วง "initial implementation" ไม่ใช่ steady state** — ดู audit_log รายวันจริง: spike ทุกครั้งตรงกับวันที่มี migration/backfill (31 ก.ค.–2 ส.ค. ตั้งจุดตรวจ PM 261/685/258 · 5 ส.ค. จัด PM dept ownership 520 · **10 ส.ค. backfill `equipment_kind` 262 แม่พิมพ์ = 1,117 แถว** · 17 ส.ค. จัด dr_products 239) แต่ **18-19 ส.ค. เหลือ 14 และ 24 แถว/วัน** = ต่างกัน 6-10 เท่า
+  - **บทเรียน: อย่าประเมินอัตราโตด้วยค่าเฉลี่ยที่คร่อมช่วง setup** — ดู trend รายวันเสมอ แล้วดูว่า spike ตรงกับ migration/backfill ไหม
+  - ผลต่ออายุ free tier: DR เต็มใน **~4.5 ปี** (ประเมินเดิม 2.6 ปีมองร้ายเกินจริงเพราะใช้อัตราช่วง setup) · **ตัวที่โตต่อเนื่องจริงคือข้อมูลการผลิต** (`prod_orders`/`downtime_logs`/`line_stock_transactions`) ซึ่ง **ไม่ควรมี retention** เพราะเป็นข้อมูลธุรกิจ · ถ้า adoption โต 3 เท่าตามเป้าโปรเจค → ~1.5 ปี
+  - **⚠️ สืบย้อนได้แค่ 6 เดือนล่าสุด** — ต้องเก็บยาวกว่านี้เพื่อ audit ภายนอก (IATF ฯลฯ) ให้ export ออกก่อน หรือยืด interval ใน cron
+  - **ไม่กระทบบันทึกคุณภาพ** — `lpa_audit_answers` / `ojt_*` / `four_m_logs` / `pe_doc_revisions` เก็บในตารางของตัวเอง ไม่ใช่ `audit_log`
+- **ดูที่:** โมดัลแก้ไขพนักงานใน `/operator` → แผง 📊 ระดับทักษะ → **🕓 ประวัติการแก้คะแนน** (component ร่วม `src/components/SkillEditHistory.jsx`) · อ่านผ่าน **RPC `get_skill_edit_history(p_employee_id, p_limit)`** ไม่ใช่ filter jsonb ฝั่ง client (ตรงกับ expression index `idx_audit_log_skills_emp` + ไม่ต้องให้ client รู้รูปร่าง jsonb) · **RPC เป็น SECURITY INVOKER ห้ามเปลี่ยนเป็น DEFINER** (RLS `audit_log_read` = authenticated เท่านั้น)
+  - **บนจอต้องเขียนกำกับว่า log เฉพาะการแก้ด้วยมือ** ไม่งั้นคนอ่านจะเข้าใจว่าคะแนนที่ขยับเองคือไม่มีใครแตะ · **โหลดไม่สำเร็จต้องขึ้น "โหลดไม่ได้" ห้ามแสดงเป็น "ไม่มีประวัติ"** (ว่างเปล่ากับอ่านไม่ได้ คนละเรื่อง)
+- **ยังไม่ apply = ไม่พัง** — โค้ดที่อ่าน audit_log ห่อ try/catch (เช่น ProductHistory) · การเขียนตาราง master ทำงานปกติ แค่ยังไม่ถูก log จนกว่าจะ apply migration
