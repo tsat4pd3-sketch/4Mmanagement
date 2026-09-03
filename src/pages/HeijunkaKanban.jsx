@@ -1363,37 +1363,61 @@ export default function HeijunkaKanban() {
     if (lot.status === next) return;
     setPullBusy(lot.id);
     try {
-      // เปลี่ยนสถานะแบบมีเงื่อนไข: อัปเดตเฉพาะแถวที่ยัง "ไม่ใช่" ค่าใหม่ แล้วเช็คว่าเราเป็นคนเปลี่ยนจริง
-      // กัน double-click / สองแท็บ ไม่ให้ insert stock (issue/consume) ซ้ำตอนปิดล็อต
+      /* compare-and-swap: เดินหน้าได้เฉพาะจากสถานะที่เราเห็นตอนกดเท่านั้น
+         ⚠️ เดิมเป็น .neq('status', next) ซึ่งหลวมเกินไป (บั๊กเดียวกับที่ advancePurchase แก้ไปแล้ว):
+            - ใบที่ถูก "ยกเลิก" ไปแล้วยังถูกกดเป็น done ได้ = ชุบชีวิตใบขยะ แล้ว **เติมสต็อกปลอม**
+              (ข้อมูลจริง 2026-09-03: child_lot_requests cancelled 100 ใบ ซึ่งคือใบล็อต ≤1 ชิ้น
+               ที่ void ไปตอนแก้บั๊กหน่วย lot_size — กดจากจอที่ค้างอยู่ = ของที่ไม่มีจริงเข้าสโตร์)
+            - ข้ามขั้น pending → done ได้เลยจากจอค้าง (ข้าม producing)
+         กัน double-click / สองแท็บ ไม่ให้ insert stock (issue/consume) ซ้ำตอนปิดล็อตด้วย */
       const { data: updated, error } = await supabaseDR.from('child_lot_requests')
-        .update({ status: next }).eq('id', lot.id).neq('status', next).select('id');
+        .update({ status: next }).eq('id', lot.id).eq('status', lot.status).select('id');
       if (error) throw error;
-      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
+      if (!updated || updated.length === 0) {
+        toast.info(`ล็อต ${lot.child_mat_no} ถูกเปลี่ยนสถานะโดยคนอื่นไปแล้ว — รีเฟรชให้ใหม่`);
+        await loadPull(); setPullBusy(null); return;
+      }
       // ── ผลิตเสร็จ = ปิด loop ──
       if (next === 'done') {
-        const wd = lot.work_date || getWorkDate();
-        const txns = [];
-        // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
-        if (lot.source_line) {
-          txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
-            type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
-          // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
-          //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
-          //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
-          const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
-            .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
-          if (eRaw) throw eRaw;
-          (lotRaws || []).forEach(r => {
-            txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
-              type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
-          });
+        /* 🔴 claim สถานะไปแล้ว = กดซ้ำไม่ได้อีก (compare-and-swap ข้างบนจะคืน 0 แถว)
+           ⇒ ถ้าเขียน ledger ไม่สำเร็จแล้วปล่อยไว้เฉยๆ ใบจะค้างสถานะ "ผลิตเสร็จ" ตลอดกาล
+              โดยที่สต็อกไม่เคยขยับ และ **ไม่มีทางกดใหม่ให้ระบบเขียนให้**
+           → ล้มเหลวเมื่อไหร่ต้องคืนสถานะกลับที่เดิมเสมอ แล้วให้คนกดใหม่ได้ */
+        try {
+          const wd = lot.work_date || getWorkDate();
+          const txns = [];
+          // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
+          if (lot.source_line) {
+            txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
+              type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
+            // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
+            //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
+            //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
+            const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
+              .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
+            if (eRaw) throw eRaw;
+            (lotRaws || []).forEach(r => {
+              txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
+                type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
+            });
+          }
+          if (txns.length) {
+            const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
+            if (e2) throw e2;
+          }
+          /* ใบเบิกวัตถุดิบที่ผูกไว้ → issued
+             ⚠️ ถึงตรงนี้ stock ลงไปแล้ว **ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่)
+                แต่ห้ามเงียบด้วย — ใบเบิกค้าง pending = คิวสโตร์โชว์งานที่ทำไปแล้ว */
+          const { error: e3 } = await supabaseDR.from('raw_withdrawal_requests')
+            .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
+          if (e3) toast.error(`ปิดล็อต ${lot.child_mat_no} + ตัดสต็อกเรียบร้อย แต่ปิดใบเบิกวัตถุดิบไม่สำเร็จ — ไปปิดเองที่คิวใบเบิก (${e3.message})`);
+        } catch (ledgerErr) {
+          const { error: eBack } = await supabaseDR.from('child_lot_requests')
+            .update({ status: lot.status }).eq('id', lot.id).eq('status', next);
+          throw new Error(eBack
+            ? `เขียนสต็อกไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบ ${lot.child_mat_no} ค้างสถานะ "${next}" ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที (${ledgerErr.message})`
+            : `เขียนสต็อกไม่สำเร็จ — คืนสถานะล็อต ${lot.child_mat_no} กลับเป็น "${lot.status}" แล้ว ลองกดใหม่อีกครั้ง (${ledgerErr.message})`);
         }
-        if (txns.length) {
-          const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
-          if (e2) throw e2;
-        }
-        // ใบเบิกวัตถุดิบที่ผูกไว้ → issued
-        await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
       }
       // toast ตามจริง: เติมสต็อกเฉพาะเมื่อมี source_line (ผลิตเองแล้วของกลับเข้าสโตร์)
       toast.success(next === 'done'
@@ -1431,7 +1455,16 @@ export default function HeijunkaKanban() {
           type: 'issue', work_date: pr.work_date || getWorkDate(),
           note: `รับของซื้อเข้าสโตร์${pr.supplier ? ' · ' + pr.supplier : ''}`, created_by: fullName || 'สโตร์',
         });
-        if (e2) throw e2;
+        // claim สถานะไปแล้ว = กดซ้ำไม่ได้ (compare-and-swap จะคืน 0 แถว) → ต้องคืนสถานะเดิมเสมอเมื่อ ledger ล้ม
+        // ไม่งั้นใบค้าง "รับเข้าแล้ว" ตลอดกาลโดยของไม่เคยเข้าคลัง และไม่มีทางกดใหม่
+        if (e2) {
+          const { error: eBack } = await supabaseDR.from('purchase_requests')
+            .update({ status: pr.status, received_by: pr.received_by ?? null, received_at: pr.received_at ?? null })
+            .eq('id', pr.id).eq('status', next);
+          throw new Error(eBack
+            ? `รับเข้าคลังไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบ ${pr.mat_no} ค้างสถานะ "รับเข้าแล้ว" ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที (${e2.message})`
+            : `รับเข้าคลังไม่สำเร็จ — คืนสถานะใบ ${pr.mat_no} กลับเป็น "${pr.status}" แล้ว ลองกดใหม่อีกครั้ง (${e2.message})`);
+        }
       }
       // dest_line ว่าง = ไม่รู้ปลายทางสโตร์ → สต็อกไม่ถูกเติม ห้าม toast เขียวเหมือนสำเร็จ (QC flow-audit #42)
       if (next === 'received' && !pr.dest_line) {
@@ -1468,8 +1501,14 @@ export default function HeijunkaKanban() {
   const issueRaw = async (raw) => {
     setPullBusy(raw.id);
     try {
-      const { error } = await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('id', raw.id);
+      // นับแถวที่เขียนจริง — ใบที่ถูกจ่ายไปแล้ว/ถูกลบ จะได้ 0 แถวโดยไม่มี error (ห้ามขึ้นเขียวว่าสำเร็จ)
+      const { data: done, error } = await supabaseDR.from('raw_withdrawal_requests')
+        .update({ status: 'issued' }).eq('id', raw.id).eq('status', 'pending').select('id');
       if (error) throw error;
+      if (!done?.length) {
+        toast.info(`ใบเบิก ${raw.raw_mat_no} ถูกจ่ายไปแล้ว — รีเฟรชให้ใหม่`);
+        await loadPull(); setPullBusy(null); return;
+      }
       toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
@@ -1497,21 +1536,38 @@ export default function HeijunkaKanban() {
         .update(payload).eq('id', w.id).eq('status', w.status).select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
+      let capNote = '';
       if (next === 'delivered' && w.wip_point_id) {
-        const { data: point } = await supabase.from('wip_buffer_points').select('current_qty, max_qty').eq('id', w.wip_point_id).single();
-        if (point) {
-          const newQty = Math.min((point.current_qty || 0) + w.request_qty, point.max_qty ?? Infinity);
-          await supabase.from('wip_buffer_points').update({ current_qty: newQty }).eq('id', w.wip_point_id);
+        /* 🔴🔴 ห้ามกลับไป update `wip_buffer_points` ตรงๆ จาก client
+           RLS ของตารางนั้นเขียนได้เฉพาะ admin/manager/supervisor แต่คนกดปุ่มนี้คือผู้ถือ heijunka:operate
+           วัดกับฐานจริง 2026-09-03: 44 บัญชี (leader 19 · qa 20 · planner_store 1 · document_control 2 · display 2)
+           **ไม่ผ่าน RLS สักคน — รวมถึง planner_store ซึ่งเป็นสโตร์ตัวจริงเจ้าของงานนี้**
+           และ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" → โค้ดเดิมเช็คแค่ error จึงขึ้น "✅ เติมเรียบร้อย"
+           ทั้งที่ current_qty ไม่เคยขยับ (เทสสวมบทยืนยันแล้ว: planner_store update ตรง → rows=0)
+           → ผ่าน RPC wip_point_add_qty (SECURITY DEFINER · guard has_perm · ล็อกแถวกันกดพร้อมกัน) */
+        const { data: res, error: eQty } = await supabase
+          .rpc('wip_point_add_qty', { p_point_id: w.wip_point_id, p_add: w.request_qty });
+        const row = Array.isArray(res) ? res[0] : res;
+        if (eQty || !row) {
+          // สถานะ delivered ถูก claim ไปแล้ว = กดซ้ำไม่ได้ → คืนสถานะเดิมให้กดใหม่ได้
+          const { error: eBack } = await supabase.from('wip_replenish_requests')
+            .update({ status: w.status, delivered_by: null, delivered_at: null }).eq('id', w.id).eq('status', next);
+          throw new Error(eBack
+            ? `เติมยอดจุด WIP ไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบค้าง "ส่งแล้ว" ทั้งที่ยอดไม่ขึ้น แจ้ง admin (${eQty?.message || 'ไม่ได้ผลลัพธ์กลับมา'})`
+            : `เติมยอดจุด WIP ไม่สำเร็จ — คืนสถานะกลับแล้ว ลองกดใหม่ (${eQty?.message || 'ไม่ได้ผลลัพธ์กลับมา'})`);
         }
+        // ชนเพดาน max_qty = ยอดที่ส่งจริงกับที่บันทึกต่างกัน ห้าม clamp เงียบ
+        if (row.capped) capNote = ` · ⚠ ส่ง ${w.request_qty} แต่ยอดชนเพดานจุด (สูงสุด ${row.cap_max}) — ระบบบันทึกยอดคงเหลือ ${row.new_qty} ส่วนที่เกินเพดานไม่ถูกนับ`;
       }
       const what = w.point_name || w.mat_no || 'รายการนี้';
       /* ⚠️ ใบจากไลน์: ลูปนี้เป็น "การสื่อสาร" ไม่ใช่ ledger — ไม่ตัด/บวกสต็อกให้เอง
          (เขียนเองด้วย = สต็อกโผล่ 2 ที่ เพราะสโตร์บันทึกจ่ายเข้าไลน์อยู่แล้วอีกทาง)
          ⇒ ต้องเตือนบนจอ ห้ามให้เข้าใจว่ายอดขยับให้แล้ว */
-      toast.success(next === 'delivered'
-        ? (w.wip_point_id ? `✅ เติม ${what} เรียบร้อย`
-                          : `🚚 ส่ง ${what} แล้ว — อย่าลืมบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Store ด้วย (ลูปนี้ไม่ตัดสต็อกให้)`)
-        : `อัปเดต ${what} → ${next}`);
+      const doneMsg = w.wip_point_id
+        ? `✅ เติม ${what} เรียบร้อย${capNote}`
+        : `🚚 ส่ง ${what} แล้ว — อย่าลืมบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Store ด้วย (ลูปนี้ไม่ตัดสต็อกให้)`;
+      if (next === 'delivered' && capNote) toast.error(doneMsg);   // ชนเพดาน = ต้องเห็นชัด ไม่ใช่เขียวกลืนไป
+      else toast.success(next === 'delivered' ? doneMsg : `อัปเดต ${what} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
