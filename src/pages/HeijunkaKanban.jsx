@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -494,7 +494,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsed ? 0 : 16 }}
         onClick={() => setCollapsed(v => !v)}>
         <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-          ⏰ รอบจัดส่งวันนี้ <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({rounds.length} รอบ)</span>
+          ⏰ รอบจัดส่ง{(() => { const { startMs, endMs } = dayFrameMs(workDate); return nowMs >= startMs && nowMs < endMs ? 'วันนี้' : ` ${workDate}`; })()} <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({rounds.length} รอบ)</span>
         </div>
         <span style={{ color: 'var(--muted)', fontSize: 14 }}>{collapsed ? '▶' : '▼'}</span>
       </div>
@@ -669,7 +669,7 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
           overdue.length ? overdue.slice(0, 2).map(r => `${r.line_name} รอบ ${r.round_no}`).join(' · ') + (overdue.length > 2 ? ` +${overdue.length - 2}` : '') : 'ไม่มี',
           overdue.length ? '#ef4444' : '#22c55e')}
         {tile('🎴', 'การ์ดรอเตรียมส่ง', cardsLeft, `${pending.length} รอบที่ยังไม่ยืนยันส่ง`, cardsLeft > 0 ? '#f59e0b' : '#22c55e')}
-        {tile('✅', 'ยืนยันส่งแล้ว', `${confirmedCount}/${rounds.length}`, 'รอบของวันนี้ทั้งหมด', confirmedCount === rounds.length ? '#22c55e' : 'var(--text)')}
+        {tile('✅', 'ยืนยันส่งแล้ว', `${confirmedCount}/${rounds.length}`, isToday ? 'รอบของวันนี้ทั้งหมด' : `รอบของ ${workDate} ทั้งหมด`, confirmedCount === rounds.length ? '#22c55e' : 'var(--text)')}
       </div>
       {warnings.length > 0 && (
         <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-lg)' }}>
@@ -1311,6 +1311,27 @@ export default function HeijunkaKanban() {
     const t = setInterval(() => setNowMs(Date.now()), 30000);
     return () => clearInterval(t);
   }, []);
+
+  /* ⚠️ วันงานต้องกลิ้งตามเวลาจริง — จอสโตร์เปิดค้างข้ามคืนได้ (audit 2026-09-02)
+     เดิม workDate ล็อกไว้ตอน mount แต่ nowMs เดินทุก 30 วิ → พอผ่าน 08:00 ของวันถัดไป
+     `nowMs >= endMs` ของกรอบวันเก่าเป็นจริงทันที ⇒ **ทุกรอบที่ยังไม่ยืนยันพลิกเป็น 🔴 ค้างส่ง
+     พร้อมกันหมด** ขณะที่หัวเพจยังเขียน "ตามแผนผลิตวันนี้" และการ์ดยังเขียน "รอบของวันนี้ทั้งหมด"
+     = จอยืนยันสิ่งที่ไม่จริง ซึ่งแย่กว่าจอที่ว่าง
+     เลื่อนให้ **เฉพาะคนที่ยังอยู่บน "วันนี้"** — คนที่เลือกวันย้อนหลังไว้เองต้องไม่ถูกดึงออก
+     (pattern เดียวกับ Dashboard / MtnAndonBoard) */
+  const liveWorkDate = useMemo(() => {
+    const d = new Date(nowMs);
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, [nowMs]);
+  const prevLiveWdRef = useRef(liveWorkDate);
+  useEffect(() => {
+    const prev = prevLiveWdRef.current;
+    if (prev === liveWorkDate) return;
+    prevLiveWdRef.current = liveWorkDate;
+    setWorkDate(d => (d === prev ? liveWorkDate : d));
+  }, [liveWorkDate]);
+  const isBackDate = workDate !== liveWorkDate;
 
   const loadPull = useCallback(async () => {
     // ⚠️ กรอง cancelled ตั้งแต่ query — ใบยกเลิกไม่ใช่งานค้าง แต่เดิมถูก render เต็มบอร์ด
@@ -1967,7 +1988,17 @@ export default function HeijunkaKanban() {
     };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
-  const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  /* ⚠️ ต้อง guard null — เป็น fmt ตัวเดียวใน 14 ตัวทั้งโปรเจคที่เคยไม่ guard
+     (ที่เหลือใช้ `n == null ? '—'` หรือ `Number(n || 0)` หมด)
+     วันนี้ยังพังไม่ได้เพราะ pending_qty/lot_qty/qty เป็น NOT NULL ในฐานทั้ง 3 ตัว
+     แต่ `null.toLocaleString()` = TypeError ทำจอขาวทั้งแท็บ 🔄 Pull จากแถวเดียว
+     → guard ไว้ก่อน ถูกกว่าไปพึ่ง constraint ที่ session อื่นอาจผ่อนทีหลัง
+     "ไม่รู้ ≠ 0" → คืน '—' ไม่ใช่ 0 (0 อ่านว่า "ไม่มีของ" ซึ่งคนละเรื่อง) */
+  const fmt = (n) => {
+    if (n == null || Number.isNaN(Number(n))) return '—';
+    const v = Number(n);
+    return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
 
   /* ── CSV export ── */
   const exportCSV = () => {
@@ -1997,8 +2028,23 @@ export default function HeijunkaKanban() {
             🎴 บอร์ดคัมบัง (ทุกสโตร์) — Heijunka
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            ความต้องการพาร์ทย่อยตามแผนผลิตวันนี้ · แตกจาก BOM ของแต่ละ product
+            ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
           </p>
+          {/* ⚠️ ดูวันย้อนหลัง/ล่วงหน้าต้องเห็นชัด — รอบที่ยังไม่ยืนยันของวันเก่าจะขึ้น 🔴 ค้างส่ง ทั้งกระดาน
+              ถ้าไม่ติดป้ายบอก คนอ่านจะเข้าใจว่าเป็นของวันนี้แล้ววิ่งไปตามงานที่ผ่านไปแล้ว */}
+          {isBackDate && (
+            <div style={{
+              marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 10px',
+              borderRadius: 999, fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b',
+            }}>
+              📅 กำลังดูวันที่ {workDate} (ไม่ใช่วันงานปัจจุบัน)
+              <button onClick={() => setWorkDate(liveWorkDate)} style={{
+                padding: '2px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                fontFamily: 'var(--font-body)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)',
+              }}>⟳ กลับวันนี้</button>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={{

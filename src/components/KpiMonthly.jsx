@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty } from '../utils/oee';
 import { defectUnitCost } from '../utils/costSaving';
+import { fetchByIds } from '../utils/fetchByIds';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -58,7 +59,6 @@ async function pageAll(buildQuery, onProg) {
     if (!data || data.length < 1000) return out;
   }
 }
-const chunk = (arr, n = 120) => { const o = []; for (let i = 0; i < arr.length; i += n) o.push(arr.slice(i, i + n)); return o; };
 
 /* ── มินิกราฟ 12 เดือนท้ายแถว (inline SVG — 10+ แถว ลาก Recharts มาทุกแถวไม่คุ้ม · pattern เดียวกับ Spark ของ FactoryMap)
    กติกาที่ตกลงกับ user (2026-08-25 "กราฟแบบไหนเหมาะ"):
@@ -219,28 +219,29 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       const ids = sessions.map(s => s.id);
       // 2) Downtime ของกะพวกนั้น (chunk .in 120 ต่อคิว — กฎ URL ยาว) → plannedMin ต่อกะ (ตัวถ่วง wLoad) + นาทีนอกแผน
+      /* ⚠️ แบ่งก้อน id อย่างเดียวไม่พอ — ต้องแบ่งหน้าด้วย (audit 2026-09-02)
+         120 กะ × downtime กะละหลายแถว เกิน 1000 ได้ (วัดฐานจริงปีนี้: ก้อนหนักสุด 833 แถว
+         = เหลือที่แค่ 17% · โตอีกนิดก็ทะลุ) และ dtPlanned เป็น **ตัวถ่วง wLoad ของ OEE เฉลี่ย**
+         ⇒ ตัดเมื่อไหร่ OEE รายเดือนทั้งตารางเพี้ยน แล้วถูก export เป็น FM-HRM-6-022/024/025 ไปเซ็น
+         → fetchByIds ทำครบ 3 ชั้น (ก้อน id + หน้า + order คงที่) */
       const dtPlanned = {}, dtUnplanned = {};
-      let dtSeen = 0;
-      for (const c of chunk(ids)) {
-        const { data: rows, error } = await supabaseDR.from('downtime_logs')
-          .select('session_id, duration_min, dr_downtime_types(category)').in('session_id', c);
-        if (error) throw error;
-        rows.forEach(r => {
-          const m = Number(r.duration_min) || 0;
-          if (r.dr_downtime_types?.category === 'planned') dtPlanned[r.session_id] = (dtPlanned[r.session_id] || 0) + m;
-          else dtUnplanned[r.session_id] = (dtUnplanned[r.session_id] || 0) + m;
-        });
-        dtSeen += rows.length; setProg(`โหลด Downtime ${dtSeen} แถว...`);
-      }
+      const dtRes = await fetchByIds(ids, (c) => supabaseDR.from('downtime_logs')
+        .select('id, session_id, duration_min, dr_downtime_types(category)').in('session_id', c));
+      if (dtRes.error) throw new Error(dtRes.error);
+      if (dtRes.truncated) throw new Error('โหลด Downtime ไม่ครบ — ตัวเลข OEE/DT จะผิด ยังสร้างรายงานไม่ได้');
+      dtRes.rows.forEach(r => {
+        const m = Number(r.duration_min) || 0;
+        if (r.dr_downtime_types?.category === 'planned') dtPlanned[r.session_id] = (dtPlanned[r.session_id] || 0) + m;
+        else dtUnplanned[r.session_id] = (dtUnplanned[r.session_id] || 0) + m;
+      });
+      setProg(`โหลด Downtime ${dtRes.rows.length} แถว...`);
       // 3) ของเสีย (line-mode ต้องรู้ is_trial + excl_from_q + mat สำหรับคิดเงิน)
-      const defects = [];
-      for (const c of chunk(ids)) {
-        const { data: rows, error } = await supabaseDR.from('defect_logs')
-          .select('session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q)')
-          .in('session_id', c);
-        if (error) throw error;
-        defects.push(...rows);
-      }
+      const defRes = await fetchByIds(ids, (c) => supabaseDR.from('defect_logs')
+        .select('id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q)')
+        .in('session_id', c));
+      if (defRes.error) throw new Error(defRes.error);
+      if (defRes.truncated) throw new Error('โหลดของเสียไม่ครบ — PPM/Cost of defect จะผิด ยังสร้างรายงานไม่ได้');
+      const defects = defRes.rows;
       // 4) ต้นทุน/ชิ้น + เป้า OEE
       const [{ data: parts, error: e4 }, { data: targets, error: e5 }] = await Promise.all([
         supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost'),
@@ -271,13 +272,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const rows = (d || []).filter(x => !section || !x.section || x.section === section);
     setDefs(rows);
     if (!rows.length) { setEntries({}); return; }
+    // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
     const map = {};
-    for (const c of chunk(rows.map(r => r.id))) {
-      const { data: es, error: e2 } = await supabase.from('kpi_manual_entries')
-        .select('kpi_id, month, value').in('kpi_id', c);
-      if (e2) { toast.error('โหลดค่า KPI กรอกมือไม่สำเร็จ: ' + e2.message); return; }
-      (es || []).forEach(e => { (map[e.kpi_id] = map[e.kpi_id] || {})[e.month] = e.value != null ? Number(e.value) : null; });
-    }
+    const entRes = await fetchByIds(rows.map(r => r.id), (c) => supabase.from('kpi_manual_entries')
+      .select('id, kpi_id, month, value').in('kpi_id', c));
+    if (entRes.error) { toast.error('โหลดค่า KPI กรอกมือไม่สำเร็จ: ' + entRes.error); return; }
+    if (entRes.truncated) toast.error('ค่า KPI กรอกมือโหลดได้ไม่ครบ — ตัวเลขบางเดือนอาจหาย');
+    entRes.rows.forEach(e => { (map[e.kpi_id] = map[e.kpi_id] || {})[e.month] = e.value != null ? Number(e.value) : null; });
     setEntries(map);
   }, [year, section]);
   useEffect(() => { loadDefs(); }, [loadDefs]);

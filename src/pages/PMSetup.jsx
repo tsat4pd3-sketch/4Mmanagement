@@ -549,7 +549,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         : copyChecklistToDept(cur.id, moveTo, userId, { replace })
       let res = await run(false)
       if (res.reason === 'target_has_checkpoints') {
-        const ok = window.confirm(`${toLabel} มีรายการตรวจอยู่แล้ว ${res.targetCheckpoints} จุด\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด — ยืนยันหรือไม่?`)
+        // ⚠️ ต้องบอกเรื่อง "แผน PM" ด้วย — FK pm_plans.checklist_id เป็น CASCADE
+        //    ลบ checklist ปลายทาง = รอบเวลา/วันตรวจล่าสุด/วันครบกำหนด/เกณฑ์ยอดผลิต หายตามไปทั้งหมด
+        //    (เดิมถามแค่จำนวนจุดตรวจ → คนกดตกลงโดยไม่รู้ว่ากำลังลบแผน PM ทิ้ง)
+        const ok = window.confirm(
+          `${toLabel} มีของอยู่แล้ว: รายการตรวจ ${res.targetCheckpoints} จุด`
+          + (res.targetPlans > 0 ? ` · แผน PM ${res.targetPlans} แผน` : '')
+          + `\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด`
+          + (res.targetPlans > 0 ? ' (รวมรอบเวลา/วันครบกำหนดของแผน PM ที่จะหายถาวร)' : '')
+          + ` — ยืนยันหรือไม่?`)
         if (!ok) { setMoveBusy(false); return }
         res = await run(true)
       }

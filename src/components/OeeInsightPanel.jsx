@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchByIds } from '../utils/fetchByIds';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 import { wavg, wLoad, buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { fetchByIds } from '../utils/fetchByIds';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -89,16 +89,27 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
       // ── ข้อมูลคนขาดจากฝั่ง Main (เช็คชื่อ) — ผูก line ผ่าน employees.line_id ──
       const lineIds = lines.filter(l => lineNames.includes(l.name)).map(l => l.id);
       let absentByDate = {}; // work_date -> จำนวนคนขาด (ของไลน์ใน scope)
-      try {
-        const { data: emps } = await supabase.from('employees').select('id, line_id').in('line_id', lineIds).eq('is_active', true);
+      let absentOk = true;   // โหลดไม่ครบ = ห้ามสรุปว่า "คนขาดไม่กระทบ" (แผงนี้พูดแทนความเงียบไม่ได้)
+      /* 🔴 เดิม `.in('employee_id', empIds.slice(0, 900))` (audit 2026-09-02)
+         (ก) 900 uuid ≈ 35,000 ตัวอักษรใน URL — ยาวกว่าเคส 813 กะ (31,700) ที่พิสูจน์แล้วว่าคิวรีล้ม
+         (ข) `.slice(0,900)` = ตัดพนักงานทิ้งเงียบ (ฐานจริง 276 คน วันนี้ยังไม่ถึง แต่กติกาผิด)
+         (ค) ไม่แบ่งหน้า — ฐานจริง 90 วันมีแถวคนขาด **2,469 แถว** → ได้ 1,000
+         (ง) ห่อ try/catch ที่จับอะไรไม่ได้ (supabase-js คืน {error} ไม่ throw) → พังแล้วเงียบสนิท
+         ⇒ Insight #5 "คนขาด ↔ OEE" ไม่ขึ้น หรือขึ้นค่าต่างที่ผิด ทั้งที่แผงนี้มีไว้ชี้เป้าให้ไปแก้ */
+      {
+        const { data: emps, error: eEmp } = await supabase.from('employees')
+          .select('id, line_id').in('line_id', lineIds).eq('is_active', true);
+        if (eEmp) absentOk = false;
         const empIds = (emps || []).map(e => e.id);
         if (empIds.length) {
-          const { data: logs } = await supabase.from('daily_production_logs')
-            .select('work_date, employee_id, is_present').gte('work_date', from).lte('work_date', to)
-            .eq('is_present', false).in('employee_id', empIds.slice(0, 900));
-          (logs || []).forEach(l => { absentByDate[l.work_date] = (absentByDate[l.work_date] || 0) + 1; });
+          const r = await fetchByIds(empIds, (c) => supabase.from('daily_production_logs')
+            .select('id, work_date, employee_id, is_present').gte('work_date', from).lte('work_date', to)
+            .eq('is_present', false).in('employee_id', c));
+          if (r.error || r.truncated) absentOk = false;
+          r.rows.forEach(l => { absentByDate[l.work_date] = (absentByDate[l.work_date] || 0) + 1; });
         }
-      } catch { /* ฝั่งเช็คชื่อพังไม่ทำ insight หลักล่ม */ }
+      }
+      if (!absentOk) absentByDate = null;   // null = "ไม่รู้" ≠ "ไม่มีคนขาด" (ห้ามยุบเป็น {})
 
       // CT เฉลี่ยถ่วงน้ำหนักต่อ session (ไว้แปลง นาที ↔ ชิ้น)
       const ctBySess = {};
@@ -217,7 +228,11 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
         }
       }
 
-      /* ═ 5. คนขาด ↔ OEE ═ */
+      /* ═ 5. คนขาด ↔ OEE ═
+         ⚠️ absentByDate === null = อ่านข้อมูลเช็คชื่อไม่ได้ → **ข้ามข้อนี้ไปเลย**
+         เดิมพังแล้วได้ {} ซึ่งทำให้ "ทุกกะ = วันคนครบ" → ไม่มี insight → จอสรุปว่า "คนขาดไม่ใช่ปัญหา"
+         ซึ่งเป็นคำกล่าวอ้างที่พิสูจน์ไม่ได้ (แผงนี้อันตรายตรงที่ความเงียบถูกอ่านเป็นข่าวดี) */
+      if (absentByDate) {
       const withAbsS = sess.filter(s => (absentByDate[s.work_date] || 0) > 0);
       const noAbsS = sess.filter(s => (absentByDate[s.work_date] || 0) === 0);
       const withAbs = withAbsS.map(s => Number(s.oee));
@@ -232,6 +247,10 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
             impact: gap * 8,
           });
         }
+      }
+      } else {
+        out.push({ sev: 'info', icon: '👥', title: 'ยังตรวจ "คนขาด ↔ OEE" ไม่ได้',
+          detail: 'อ่านข้อมูลเช็คชื่อไม่สำเร็จในรอบนี้ — ไม่ได้แปลว่าคนขาดไม่กระทบ ลองโหลดหน้าใหม่อีกครั้ง', impact: 0 });
       }
 
       /* ═ 6. Product ที่ช้ากว่า CT ซ้ำๆ ═ */

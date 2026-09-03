@@ -7,3 +7,4 @@ dist/
 
 # ไฟล์ชั่วคราวของสคริปต์สร้างเอกสารใน docs/
 docs/__pycache__/
+supabase/.temp/
