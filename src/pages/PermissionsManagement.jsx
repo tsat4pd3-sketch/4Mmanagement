@@ -72,16 +72,27 @@ const PAGE_GROUPS = [
     ],
   },
   {
-    group: 'Logistic - Store',
+    group: 'Logistic - ขาเข้า (Inbound)',
     pages: [
       { key: 'page:/line-stock',   label: 'Store management' },
       { key: 'page:/heijunka',     label: 'Kanban Board' },
-      { key: 'page:/rack-center',  label: 'Rack Center management' },
-      { key: 'page:/planner-sales', label: 'Planner & Sales' },
-      { key: 'page:/rundown-stock', label: 'Rundown Stock' },
-      { key: 'page:/customer-demand', label: 'Delivery' },
-      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal)' },
       { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
+      // ทำงานคาบ 2 ฝั่ง (sidebar โชว์ทั้งขาเข้า-ขาออกผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
+      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal) · คาบ 2 ฝั่ง' },
+    ],
+  },
+  {
+    group: 'Logistic - ขาออก (Outbound)',
+    pages: [
+      { key: 'page:/customer-demand', label: 'Delivery' },
+      { key: 'page:/rundown-stock', label: 'Rundown Stock' },
+      { key: 'page:/rack-center',  label: 'Rack Center management' },
+    ],
+  },
+  {
+    group: 'Logistic - แผนงาน & ข้อมูล',
+    pages: [
+      { key: 'page:/planner-sales', label: 'Planner & Sales' },
     ],
   },
   {
