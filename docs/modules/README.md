@@ -50,3 +50,5 @@
 | Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09) | `docs/modules/storage-images.md` | 35 KB |
 | Deploy | `docs/modules/deploy.md` | 25 KB |
 | 🔗 ลูปปิด 8D → PFMEA / PFC / Control Plan (2026-08-17 · คำสั่ง user) | `docs/modules/closed-loop-8d-pfmea.md` | 14 KB |
+| ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` | 6 KB |
+| 4M Approval Workflow — ประวัติเหตุการณ์ `[Auto]` ท่วมคิว | `docs/modules/four-m-workflow.md` | 2 KB |
