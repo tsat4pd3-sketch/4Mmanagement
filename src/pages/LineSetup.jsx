@@ -486,9 +486,19 @@ export default function LineSetup({ embedded = false } = {}) {
       toast.error(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
     }
     const old = line.name;
-    // Update production_lines (name + children's parent_line_name)
-    await supabase.from('production_lines').update({ name }).eq('id', line.id);
-    await supabase.from('production_lines').update({ parent_line_name: name }).eq('parent_line_name', old);
+    /* 🔴 ต้องเช็คผลของ 2 บรรทัดนี้ก่อน cascade เสมอ (audit 2026-09-02)
+       เดิมไม่เช็คเลย ⇒ ถ้าเปลี่ยนชื่อในทะเบียนไม่สำเร็จ (unique ชน / RLS / เน็ต) โค้ดยังเดินต่อไป
+       rename `line_name` ใน ~40 ตารางทั้ง 2 project จาก old → name
+       ⇒ ทุก session/product/machine ชี้ไปชื่อไลน์ที่ **ไม่มีในทะเบียน** = อาการ "กะที่เปิดค้างหาย
+          จากรายการ" ที่กฎเหล็กทั้งหัวข้อนี้เขียนไว้เพื่อป้องกัน — แต่กลับด้านและหนักกว่าเดิม
+       + `.select('id')` นับแถว: RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถว ไม่ error (เงียบ) */
+    const { data: renamed, error: eRen } = await supabase.from('production_lines')
+      .update({ name }).eq('id', line.id).select('id');
+    if (eRen) { toast.error('เปลี่ยนชื่อไลน์ไม่สำเร็จ: ' + eRen.message); return; }
+    if (!renamed?.length) { toast.error('เปลี่ยนชื่อไลน์ไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือไลน์ถูกลบไปแล้ว'); return; }
+    const { error: ePar } = await supabase.from('production_lines')
+      .update({ parent_line_name: name }).eq('parent_line_name', old);
+    if (ePar) toast.error('เปลี่ยนชื่อไลน์แล้ว แต่ผูกไลน์ลูกกับชื่อใหม่ไม่สำเร็จ: ' + ePar.message);
 
     // ── Cascade "ชื่อไลน์" (line_name snapshot) ทุกตารางทั้ง 2 project ────────────────────────────
     // ⚠️ กฎเหล็ก (2026-07-22): ไลน์ถูกอ้างด้วย "ชื่อ" เป็น text snapshot ในหลายตาราง ไม่ใช่ FK
@@ -497,8 +507,16 @@ export default function LineSetup({ embedded = false } = {}) {
     // รายการ "กะที่เปิดอยู่" ใน Daily Report เพราะระบบกรองด้วยชื่อไลน์ปัจจุบัน (session ยังเปิดใน DB
     // แค่ถูกกรองพ้นสายตา) · dr_products.line_name เก่า ทำให้เปิด order/สแกนของไลน์ที่เปลี่ยนชื่อไม่ได้ด้วย
     // best-effort: ยิงทีละตาราง ไม่ abort ถ้าตารางใด error (บาง deploy ยังไม่มีตาราง/คอลัมน์นั้น)
+    /* ⚠️ `try { await supabase… } catch {}` = โค้ดตาย — supabase-js **คืน** { error } ไม่ throw
+       ⇒ cascade ที่ล้มถูกกลืน 100% แล้วข้อมูลชื่อเก่าค้างอยู่โดยไม่มีใครรู้
+       best-effort ยังถูกต้อง (ไม่ abort — บาง deploy ยังไม่มีตาราง/คอลัมน์นั้น) แต่ต้อง "รายงานท้ายงาน" */
+    const bumpFailed = [];
     const bump = async (client, table, col = 'line_name') => {
-      try { await client.from(table).update({ [col]: name }).eq(col, old); } catch { /* best-effort */ }
+      try {
+        const { error } = await client.from(table).update({ [col]: name }).eq(col, old);
+        // 42P01/42703 = ตาราง/คอลัมน์ยังไม่มีใน deploy นี้ = ไม่ใช่ความล้มเหลว
+        if (error && !['42P01', '42703'].includes(error.code)) bumpFailed.push(table);
+      } catch { bumpFailed.push(table); }
     };
     // Main project (client supabase) — ผัง/จุดงาน + 4M + factory map + LPA + action items + poka-yoke + QA + คำขอ WIP + home position
     for (const t of ['workstations', 'line_layouts', 'wip_buffer_points', 'machine_points', 'machine_flow_links',
@@ -534,6 +552,13 @@ export default function LineSetup({ embedded = false } = {}) {
       await bump(supabaseDR, t, 'source_line');
     }
 
+    /* cascade ล้มบางตาราง = ข้อมูลชื่อเก่ากำพร้าอยู่ตรงนั้น ต้องบอกให้รู้ว่าตารางไหน
+       (ไม่ abort ตามดีไซน์เดิม — แต่ห้ามเงียบ ไม่งั้นไม่มีใครรู้ว่าต้องไปตามแก้) */
+    if (bumpFailed.length) {
+      toast.error(`เปลี่ยนชื่อไลน์แล้ว แต่ตามไปแก้ชื่อไม่สำเร็จ ${bumpFailed.length} ตาราง: ${bumpFailed.slice(0, 5).join(', ')}${bumpFailed.length > 5 ? ' …' : ''} — แจ้ง admin ให้ตามแก้`);
+    } else {
+      toast.success(`เปลี่ยนชื่อไลน์เป็น "${name}" แล้ว`);
+    }
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
     await fetchLines();

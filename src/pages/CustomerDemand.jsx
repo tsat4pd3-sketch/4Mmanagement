@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import useIsMobile from '../utils/useIsMobile';
 import { UserContext } from '../App';
@@ -120,7 +120,17 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
 
   const nextDayOf = (d) => { const x = new Date(`${d}T12:00:00`); x.setDate(x.getDate() + 1); return dateStr(x); };
 
+  /* ⚠️ กันผลคิวรีของวันเก่ามาทับวันใหม่ (audit 2026-09-02)
+     `load` มี await หลายชั้น — กด ◀ ▶ รัวๆ แล้วรอบเก่าจบทีหลัง จะ setOrders ด้วยรายการของ "วันก่อนหน้า"
+     ทั้งที่หัวเพจขึ้นวันใหม่ ⇒ คนกด "ส่งแล้ว" บนใบที่คิดว่าเป็นวันนี้ แต่จริงเป็นของอีกวัน
+     **หักสต็อก FG ผิดใบ + มาร์คส่งผิดใบ** ซึ่งย้อนยาก (ต้องไปแก้ ledger เอง)
+     → ผูก state ทุกก้อนกับวันที่ที่ยิงคิวรีไป ไม่ตรงกับที่กำลังดู = ทิ้งผลนั้นทั้งชุด */
+  const dayRef = useRef(day);
+  dayRef.current = day;
+
   const load = useCallback(async () => {
+    const reqDay = day;
+    const stale = () => dayRef.current !== reqDay;
     // วันงาน D = (D, เวลา ≥ 08:00 หรือไม่ระบุเวลา) + (D+1, เวลา < 08:00 = กะดึกข้ามคืน)
     const nd = nextDayOf(day);
     const back = new Date(`${day}T12:00:00`);
@@ -139,6 +149,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
       // (ของใน STORE/มินิสโตร์ยังไม่ผ่านแพ็ค/รับเข้าคลัง ส่งลูกค้าไม่ได้ — กฎเดียวกับ RundownStock)
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
     ]);
+    if (stale()) return;   // ผู้ใช้เปลี่ยนวันระหว่างรอผล — ทิ้งทั้งชุด ห้ามเขียนทับของวันที่กำลังดู
     const fgDestName = (inflowRules || []).find(r => r.match_type === 'prefix' && r.match_value === '1')?.dest_line_name || null;
     setFgDest(fgDestName);
     setWfSteps(wfs || []);
@@ -164,6 +175,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
         supabaseDR.from('dr_products').select('mat_no, p_no, is_operation').not('p_no', 'is', null).eq('is_active', true),
         supabaseDR.from('kanban_standards').select('mat_no, p_no').not('p_no', 'is', null).eq('is_active', true),
       ]);
+      if (stale()) return;
       const pnIdx = buildPnIndex([...(dp || []), ...(ks || [])]);
       // ดึงสต็อกของ "ทั้งเลขบน order และปลายทางที่ map ได้" แล้วค่อยเลือกตัวที่มีของจริง
       // ⚠️ ห้ามดึงเฉพาะเลขที่ resolve ได้ — ของบางส่วนถูกบันทึกด้วยเลขลูกค้าตรงๆ
@@ -176,6 +188,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
          เคสจริง 20059949: FG 1,000 + STORE 10,231 — เดิมรวมเป็น 11,231 แล้วขึ้น "พร้อมส่งครบ"
          สวนกับ Rundown หน้าข้างๆ + ตอนกดส่งหักลง STORE (คลังผิด) เพราะเรียงตาม qty มากสุด
          ไม่รู้จักคลัง FG (rules ว่าง) = ถอยไปนับรวมแบบเดิม (tolerant ห้ามทำจอพังทั้งหน้า) */
+      if (stale()) return;
       const m = {};
       (st || []).forEach(r => {
         const q = parseFloat(r.qty_on_hand) || 0;
@@ -302,6 +315,14 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   const advance = async (o) => {
     const step = nextStep(o);
     if (!step) return;
+    /* ด่านสุดท้าย: ใบที่กดต้องอยู่ในกรอบวันงานที่กำลังดูจริงๆ
+       การกดขั้นนี้ "หักสต็อก FG + มาร์คส่ง" = ย้อนยาก (ต้องไปแก้ ledger เอง)
+       ⇒ ถ้าแถวหลุดมาจากวันอื่น (ผลคิวรีเก่าค้าง/render ไม่ทัน) ให้หยุดแล้วโหลดใหม่ ห้ามเขียนต่อ
+       กรอบวันงาน D = due_date D (เวลา ≥ 08:00 หรือไม่ระบุ) + due_date D+1 (เวลา < 08:00) */
+    const t = o.ship_time?.slice(0, 5);
+    const inFrame = o.due_date === day ? (!t || t >= '08:00')
+      : o.due_date === nextDayOf(day) ? (!!t && t < '08:00') : false;
+    if (!inFrame) { toast.error('ใบนี้ไม่ใช่ของวันงานที่กำลังดู — กำลังโหลดใหม่'); await load(); return; }
     const to = step.to;
     setBusy(o.id);
     const payload = { status: to };

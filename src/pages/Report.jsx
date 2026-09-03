@@ -1476,19 +1476,28 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
   useEffect(() => { load(); }, [from, to, line, cat, statusFilter, allowedLineNames]);
 
-  const load = async () => {
-    setLoading(true);
+  /* 🔴 `.limit(5000)` ใช้ไม่ได้จริง — PostgREST clamp ที่ 1000 (audit 2026-09-02)
+     วัดฐานจริง: four_m_logs **1,139 แถว** และเรียง work_date desc ⇒ **ใบเก่าสุดตกไปก่อน**
+     ซึ่งเป็นตัวที่ deep-link จาก /dept-dashboard และหน้าแรกตั้งใจพาไปหาพอดี
+     (ลิงก์ส่ง ?tab=4&from=<90 วันก่อน> เพราะใบค้างจริงมักเก่า 60-80 วัน)
+     `id` ปิดท้าย order — work_date/created_at ซ้ำกันได้ ถ้าไม่มีคีย์ unique แถวจะหลุด/ซ้ำระหว่างหน้า */
+  const buildQ = () => {
     let q = supabase.from('four_m_logs')
       .select('id, work_date, line_name, category, description, created_at, status, sv_approved_by, sv_approved_at, approved_by, approved_at, reject_reason, requires_qa, change_subtype, created_by, request_image_url, qa_image_url')
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(5000);
+      .order('id');
     if (line)         q = q.in('line_name', lineFamilyOf(line)); // เลือกไลน์ = เห็นทั้งครอบครัวไลน์ (หลัก↔ย่อย)
     if (cat)          q = q.eq('category', cat);
     if (statusFilter) q = q.eq('status', statusFilter);
     if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
-    const { data } = await q;
+    return q;
+  };
+
+  const load = async () => {
+    setLoading(true);
+    const data = await fetchAllRows(buildQ);
     setLogs(data || []);
 
     const allIds = [...new Set((data || []).flatMap(l => [l.sv_approved_by, l.approved_by].filter(Boolean)))];

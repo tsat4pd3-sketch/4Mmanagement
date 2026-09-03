@@ -226,6 +226,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const focusRef = useRef(focusSessionId); focusRef.current = focusSessionId;
   const onFocusDoneRef = useRef(onFocusDone); onFocusDoneRef.current = onFocusDone;
   const [dtLogs, setDtLogs]         = useState([]);
+  /* 🔴 กฎเหล็ก — โหลดข้อมูลกะไม่สำเร็จ = "ปิดกะไม่ได้" ไม่ใช่แค่เตือน (audit 2026-09-02)
+     เดิม loadDT/loadDefectLogs/loadProdOrders ไม่เช็ค error แล้ว setXxx(data || [])
+     → เน็ตสะดุด/RLS ปฏิเสธ = จอขึ้น "Downtime 0 รายการ · ของเสีย 0 ชิ้น" เหมือนกะที่ดีมาก
+     → หัวหน้ากดปิดกะตามปกติ → computeOEE ได้ A=100 / Q=100 แล้ว **stamp ลง production_sessions
+       อย่างถาวร** พร้อม qty_ng=0 → ไหลเข้ารายงานเดือน/PPM/FTT/KPI โดยไม่มีใครย้อนได้
+       (กฎของโปรเจคห้าม recompute กะเก่าด้วย master ปัจจุบัน)
+     ⇒ นี่คือกรณีที่ต้อง **บล็อก** เพราะเขียนค่าถาวรที่แก้กลับไม่ได้
+     key = ชื่อข้อมูลที่โหลดพลาด · ว่าง = ครบดี */
+  const [sessLoadErr, setSessLoadErr] = useState({});
+  const sessLoadErrList = useMemo(() => Object.entries(sessLoadErr)
+    .filter(([, v]) => v).map(([k]) => k), [sessLoadErr]);
   const [dtCmOpen, setDtCmOpen]     = useState(null); // id ของ DT ที่กางแผงคอมเมนต์อยู่
   // 🛠 ลงวิธีแก้ไข/ผลตรวจติดตามของปัญหา 1 รายการ — { kind:'downtime'|'defect', row, title }
   const [fixTarget, setFixTarget]   = useState(null);
@@ -489,20 +500,26 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const loadDT = useCallback(async (sessionId) => {
     if (!sessionId) return;
-    const { data } = await supabaseDR.from('downtime_logs')
+    const { data, error } = await supabaseDR.from('downtime_logs')
       .select('*, dr_downtime_types(name_th, color, category)')
       .eq('session_id', sessionId)
       .order('started_at', { ascending: false });
+    // โหลดพลาด = ห้ามล้างของเดิมเป็น [] (จอจะบอกว่า "ไม่มี Downtime" ซึ่งคนละเรื่องกับ "อ่านไม่ได้")
+    if (error) { console.warn('[loadDT]', error.message); setSessLoadErr(e => ({ ...e, Downtime: error.message })); return; }
+    setSessLoadErr(e => (e.Downtime ? { ...e, Downtime: null } : e));
     setDtLogs(data || []);
   }, []);
 
   const loadProdOrders = useCallback(async (sessionId, lineName) => {
     if (!sessionId) return;
     // Current session orders
-    const { data } = await supabaseDR.from('prod_orders')
+    const { data, error } = await supabaseDR.from('prod_orders')
       .select('*')
       .eq('session_id', sessionId)
       .order('opened_at');
+    // ⚠️ ใบผลิตพลาด = ยอดผลิต/เป้า/ยอดยก ผิดหมด — ปิดกะไปคือ stamp ยอดที่ไม่มีอยู่จริง
+    if (error) { console.warn('[loadProdOrders]', error.message); setSessLoadErr(e => ({ ...e, 'ใบผลิต': error.message })); return; }
+    setSessLoadErr(e => (e['ใบผลิต'] ? { ...e, 'ใบผลิต': null } : e));
     setProdOrders(data || []);
 
     // ประวัติการอัพเดทยอดสะสมของใบ manual — โชว์เป็นช่วงเวลา (10:00 → 200, 12:00 → +280)
@@ -561,10 +578,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
-    const { data } = await supabaseDR.from('defect_logs')
+    const { data, error } = await supabaseDR.from('defect_logs')
       .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name)')
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
+    if (error) { console.warn('[loadDefectLogs]', error.message); setSessLoadErr(e => ({ ...e, 'ของเสีย': error.message })); return; }
+    setSessLoadErr(e => (e['ของเสีย'] ? { ...e, 'ของเสีย': null } : e));
     setDefectLogs(data || []);
 
     // ของเสียแถวไหนถูกส่งลงถังเหลือง/แดงไปแล้วบ้าง (ยิงรวมครั้งเดียว ไม่ยิงรายแถว)
@@ -584,6 +603,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     if (selSession) {
+      setSessLoadErr({}); // สลับกะ = เริ่มนับใหม่ (ไม่งั้น error ของกะเก่าค้างบล็อกกะใหม่)
       loadDT(selSession.id);
       loadProdOrders(selSession.id, selSession.line_name);
       loadDefectLogs(selSession.id);
@@ -903,16 +923,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }));
   };
 
+  /* ตัวเลือก MAT.NO ของโมดัล "Scan เปิด Prod Order"
+     ⚠️ บั๊กคลาสเดียวกับ dtMatOptions ข้างล่าง (และ machineOpts ของ /improvements · wipMatOptions)
+        แต่ตกสำรวจมา 4 รอบ — เดิมกรอง `dr_products.line_name === ชื่อไลน์ที่เปิดกะ` ตรงเป๊ะ
+        ไลน์ลูกที่สินค้าผูกไว้กับไลน์แม่/ไลน์พี่น้อง จะได้ลิสต์ว่าง → ไม่ render dropdown เลย
+        → mat_no เป็น required → **เปิดใบสแกนไม่ได้ทั้งกะ** และแบนเนอร์ขึ้นว่า "ยังไม่มี Kanban
+        Standard ผูกไว้เลย" ซึ่งเป็นคำตอบที่ผิด (มาตรฐานมีอยู่ แค่ผูกไว้ที่ไลน์อื่นในครอบครัว)
+     เคสจริงที่พิสูจน์แล้ว: 17/08 มีคนย้าย dr_products.line_name ของ 20065715/20065635
+        จาก HDF2 → LASER-789 (ไลน์พี่น้องกัน พ่อ HYDROFORM) → สัปดาห์นั้นเอง HDF2 สแกนเปิดใบ
+        ได้ 0 ใบ (ก่อนหน้านั้น 253 ใบ/สัปดาห์) แล้วหันไปใช้ "เปิดเป้า (ไม่มีบาร์โค้ด)" แทนทั้งหมด
+     วัดผลก่อนแก้ (30 วัน): 6 ไลน์ได้ลิสต์ว่าง (HDF1/HDF2/LASER-345/BENDING E50/BENDING EXPORT/
+        Laser GOR) · อีก 3 ไลน์ลิสต์แคบเกินจริง · แก้เป็น family แล้วไม่มีไลน์ไหนเสียตัวเลือกเดิม */
+  const scanMatStds = useMemo(() => {
+    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
+    if (!fam.size) return [];   // ไลน์ยังโหลดไม่เสร็จ = ยังตัดสินไม่ได้ (เฟรมถัดไปได้ครบเอง)
+    return kanbanStds.filter(s => fam.has((s.dr_products?.line_name || '').trim().toLowerCase()));
+  }, [kanbanStds, lines, selSession]);
+
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
-    if (!showScanOpen || !selSession || kanbanStds.length === 0) return;
-    const lineName = selSession.line_name;
-    const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
-    if (lineStds.length === 1 && !openProdForm.mat_no) {
-      handleOpenProdMatNoChange(lineStds[0].mat_no);
-    }
+    if (!showScanOpen || !selSession || scanMatStds.length !== 1) return;
+    if (!openProdForm.mat_no) handleOpenProdMatNoChange(scanMatStds[0].mat_no);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showScanOpen, kanbanStds, selSession]);
+  }, [showScanOpen, scanMatStds, selSession]);
 
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
@@ -1879,6 +1912,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const handleCloseSession = async () => {
     if (!selSession) return;
 
+    /* 🔴 ด่านสุดท้าย — ข้อมูลกะโหลดไม่ครบ ห้ามปิดกะเด็ดขาด (audit 2026-09-02)
+       ปิดกะ = stamp A/P/Q + ยอด NG ลงฐานอย่างถาวร · ข้อมูลขาด = stamp ค่าที่ไม่จริง
+       และย้อนไม่ได้ (กฎห้าม recompute กะเก่า) → บล็อก ไม่ใช่แค่เตือน */
+    if (sessLoadErrList.length) {
+      toast.error(`ปิดกะไม่ได้ — โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ ตัวเลข OEE/ของเสียจะถูกบันทึกผิดถาวร · กด ↻ โหลดใหม่ให้ครบก่อน`);
+      return;
+    }
+
     // Check open orders that haven't been decided yet
     const openOrders = prodOrders.filter(o => o.status === 'open');
     const undecided  = openOrders.filter(o => !carryOverDecisions[o.id]);
@@ -2588,7 +2629,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       });
                       setShowCloseShift(true);
                     }}
-                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
+                      disabled={sessLoadErrList.length > 0}
+                      title={sessLoadErrList.length ? `โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ — ปิดกะตอนนี้จะบันทึก OEE/ของเสียผิดถาวร` : undefined}
+                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700,
+                        ...(sessLoadErrList.length ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>
                       {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
                   )}
@@ -2628,8 +2672,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     );
                   })()}
 
-                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — ลบได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ */}
+                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — ลบได้จากจอ Live เลย ไม่ต้องปิดกะแล้วไปลบที่ประวัติ
+                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มลบจะโผล่กับ
+                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้ลบตอนไม่รู้ */}
                   {canDeleteSession && ['open', 'pending_close'].includes(selSession.status)
+                    && sessLoadErrList.length === 0
                     && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0 && (
                     <button onClick={handleDeleteEmptySession}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
@@ -2638,6 +2685,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   )}
                 </div>
               </div>
+
+              {/* 🔴 ข้อมูลกะโหลดไม่ครบ — ต้องบอกให้ชัดว่าตัวเลขบนจอ "ยังไม่ใช่ของจริง"
+                  ไม่งั้นหัวหน้าอ่าน "Downtime 0 · ของเสีย 0" เป็นกะที่ดีมาก (static ไม่กระพริบ — เป็นสถานะจอ ไม่ใช่ alarm หน้างาน) */}
+              {sessLoadErrList.length > 0 && (
+                <div style={{ marginTop: 12, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.45)', borderRadius: 8, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
+                    ⚠ โหลด {sessLoadErrList.join(' / ')} ไม่สำเร็จ — ตัวเลขบนจอยังไม่ครบ
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.55 }}>
+                    ปิดกะตอนนี้จะบันทึก OEE และยอดของเสียผิดถาวร (แก้ย้อนหลังไม่ได้) — ระบบจึงปิดปุ่มปิดกะไว้ก่อน<br />
+                    กด <b>↻ โหลดใหม่</b> หรือเลือกกะนี้อีกครั้ง เมื่อข้อมูลครบแล้วปุ่มจะกลับมาเอง
+                  </div>
+                </div>
+              )}
 
               {/* คำขอปิดกะถูกปฏิเสธ — โชว์ remark ให้หัวหน้ากลุ่มรู้ว่าต้องกลับไปแก้อะไร (static ไม่กระพริบ) */}
               {selSession.status === 'open' && selSession.close_reject_reason && (
@@ -4614,16 +4675,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 {(() => {
                   const lineName = selSession?.line_name;
-                  const lineStds = kanbanStds.filter(s => s.dr_products?.line_name === lineName);
+                  const lineStds = scanMatStds;   // ครอบครัวไลน์ ไม่ใช่ชื่อตรงเป๊ะ (ดูเหตุผลที่ scanMatStds)
                   if (lineStds.length === 0) {
                     return (
                       <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
-                        ⚠ ไลน์นี้ ({lineName}) ยังไม่มี Kanban Standard ผูกไว้เลย — ไปเพิ่มที่ Product Setup ก่อน
+                        ⚠ ทั้งครอบครัวไลน์ของ {lineName} ยังไม่มี Kanban Standard ผูกไว้เลย — ไปเพิ่มที่ Product Setup ก่อน
+                        <div style={{ fontWeight: 500, marginTop: 4, opacity: 0.85 }}>
+                          (ระหว่างนี้ใช้ปุ่ม “✍️ เปิดเป้า (ไม่มีบาร์โค้ด)” เปิดใบได้)
+                        </div>
                       </div>
                     );
                   }
                   return (
-                    <Field label={`MAT.NO (${lineStds.length} รายการของไลน์นี้) *`}>
+                    <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
                       <select
                         id="open-mat-select"
                         value={openProdForm.mat_no}

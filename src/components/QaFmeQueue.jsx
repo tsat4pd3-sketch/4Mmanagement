@@ -20,6 +20,8 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
+import { usePolling } from '../utils/usePolling';
+import { RATE } from '../utils/refreshRates';
 import QaFmeBoard from './QaFmeBoard';
 
 const STAGE_META = {
@@ -70,10 +72,15 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
   }, [scopedLineNames]);
 
   useEffect(() => { load(); }, [load]);
+  /* ⚠️ ยิง DB ต้องผ่าน usePolling — แท็บซ่อน/ล็อกจอแล้วต้องหยุดยิง (กฎ egress)
+     และตัวสร้างงานคือ cron ฝั่ง server ทุก 5 นาที → poll ถี่กว่านั้นไม่ทำให้ QA รู้เร็วขึ้นเลย
+     (เดิม setInterval 60 วิ = ถี่กว่าทุก RATE ในระบบ 5-10 เท่า และยิงต่อแม้ไม่มีคนดู)
+     นาฬิกาแยกไว้ต่างหาก — ไม่ยิง DB จึงเดินได้ตามปกติให้ตัวนับเวลาบนจอไม่ค้าง */
+  usePolling(load, RATE.ANALYTIC);
   useEffect(() => {
-    const t = setInterval(() => { setNow(Date.now()); load(); }, 60_000);
+    const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
-  }, [load]);
+  }, []);
 
   const saveCfg = async (patch) => {
     setBusy(true);

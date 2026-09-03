@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { fetchByIds } from '../utils/fetchByIds';
 import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
@@ -916,12 +917,23 @@ export default function Checkin() {
       const scopedEmp = (empData || []).filter(e => !lineIds || lineIds.includes(e.line_id));
       if (!scopedEmp.length) { toast.error('ไม่พบพนักงานในส่วนงานนี้'); setExporting(false); return; }
 
-      const { data: logData } = await supabase
+      /* 🔴 ใบนี้ถูกพิมพ์ไปเซ็น (บันทึกการมาทำงาน / ชดเชย-OT ที่ register ใน doc_forms)
+         ⇒ ข้อมูลขาด = ช่องวันเข้างานว่าง = อ่านว่า "ขาดงาน" ทั้งที่มาทำงานจริง (audit 2026-09-02)
+         เดิมพังได้ 2 ทางพร้อมกัน:
+           • `.in()` กับ ~300 uuid = URL ~12,000 ตัวอักษร (ปลอดภัยที่ ~120 id) → proxy ตัด คิวรีล้มเงียบ
+           • `.limit(10000)` ใช้ไม่ได้จริง — PostgREST clamp 1000 · 300 คน × 16 วัน ≈ 4,800 แถว
+         → fetchByIds ทำครบ 3 ชั้น (ก้อน id + แบ่งหน้า + order คงที่)
+         **โหลดไม่ครบ = ไม่ยอมพิมพ์** (ใบที่ผิดแล้วมีลายเซ็นอนุมัติ แย่กว่าไม่ได้ใบ) */
+      const logRes = await fetchByIds(scopedEmp.map(e => e.id), (c) => supabase
         .from('daily_production_logs')
         .select('employee_id, work_date, is_present, has_ot, has_extended_ot, leave_type, shift')
         .gte('work_date', dateFrom).lte('work_date', dateTo)
-        .in('employee_id', scopedEmp.map(e => e.id))
-        .limit(10000);
+        .in('employee_id', c));
+      if (logRes.error || logRes.truncated) {
+        toast.error('โหลดข้อมูลการมาทำงานไม่ครบ — ยังพิมพ์ไม่ได้ (ใบจะขึ้นว่า "ขาดงาน" ผิด) ลองลดช่วงวันที่ หรือเลือกส่วนงานให้แคบลง');
+        setExporting(false); return;
+      }
+      const logData = logRes.rows;
 
       const logsByEmp = {};
       (logData || []).forEach(l => {

@@ -7,6 +7,7 @@ import CollapseCardBase from '../components/CollapseCard';
 import PageHeader from '../components/PageHeader';
 import DailyBars from '../components/DailyBars';
 import DemandVsProduction from '../components/DemandVsProduction';
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -52,6 +53,7 @@ export default function ProductHistory() {
   const [defects, setDefects]   = useState([]);
   const [audit, setAudit]       = useState([]);
   const [loading, setLoading]   = useState(false);
+  const [loadWarn, setLoadWarn] = useState('');   // โหลดไม่ครบ → แถบเตือน (ห้ามเงียบ)
 
   // master lists
   useEffect(() => {
@@ -90,24 +92,31 @@ export default function ProductHistory() {
     if (!mats?.length) return;
     setLoading(true);
     // ใบผลิตของ mat ที่เลือก (เดี่ยวหรือทั้งกลุ่ม) + join session (line/date/shift/oee)
-    const { data: ord } = await supabaseDR.from('prod_orders')
+    /* ⚠️ ต้องแบ่งหน้า — `.limit(2000)` ใช้ไม่ได้จริง PostgREST clamp ที่ 1000 เสมอ (audit 2026-09-02)
+       วัดฐานจริง: ช่วง default 90 วัน มีใบผลิต **10,980 ใบ** ⇒ เดิมเห็นแค่ 9%
+       ⇒ "ผลิตรวม/เป้ารวม/NG รวม" ต่ำกว่าจริงมหาศาล และ `prodByDay` ที่ป้อน <DemandVsProduction>
+          ก็ขาดไปด้วย ขณะที่ฝั่ง demand ดึงครบ → สต็อกจำลองติดลบ → ขึ้น "🔴 ขาด N" ทั้งที่ผลิตครบ
+          = สั่งเร่งผลิตซ้ำโดยไม่จำเป็น
+       (`id` ปิดท้าย order เสมอ — `opened_at` ซ้ำกันได้เพราะสแกนรวบ ถ้าไม่มีคีย์ unique แถวจะหลุด/ซ้ำระหว่างหน้า) */
+    const ordRes = await fetchAllPages(() => supabaseDR.from('prod_orders')
       .select('id, prod_no, mat_no, machine_no, qty, qty_target, qty_actual, qty_ok, status, opened_at, confirmed_at, carry_over_note, production_sessions!inner(line_name, work_date, shift, oee, status)')
       .in('mat_no', mats.map(m => m.mat_no))
-      .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
-      .order('opened_at', { ascending: false }).limit(2000);
+      .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to),
+      { orderBy: ['opened_at', 'id'] });
+    // fetchAllPages เรียงขึ้นเสมอ (ต้องคงที่คู่กับ .range) — ใบล่าสุดขึ้นก่อนเป็นเรื่องการแสดงผล เรียงกลับที่นี่
+    const ord = ordRes.rows.slice().reverse();
+    const ordWarn = ordRes.error ? 'โหลดใบผลิตไม่สำเร็จ' : (ordRes.truncated ? 'ใบผลิตโหลดได้ไม่ครบ' : '');
     /* ⚠️ defect_logs **ไม่มีคอลัมน์ mat_no** — ผูกกับสินค้าผ่าน prod_order_id เท่านั้น
        เดิม .eq('mat_no', …) → 42703 → def = [] เงียบๆ → "NG รวม" ขึ้น 0 เสมอ ทุกสินค้า
        (เจอจากภาพหน้าจอจริง: 1,000 ใบ แต่ NG รวม = 0) */
     const oIds = (ord || []).map(o => o.id);
-    let def = [], defErr = null;
-    for (let i = 0; i < oIds.length; i += 120) {          // .in() ยาวเกินไป proxy ตัด
-      const { data: d, error } = await supabaseDR.from('defect_logs')
-        .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
-        .in('prod_order_id', oIds.slice(i, i + 120));
-      if (error) { defErr = error; break; }
-      def = def.concat(d || []);
-    }
-    if (defErr) console.warn('[productHistory] โหลดของเสียไม่สำเร็จ', defErr);
+    /* แบ่งก้อน id อย่างเดียวไม่พอ — ต้องแบ่งหน้าด้วย (120 ใบ × ของเสียใบละหลายแถว เกิน 1000 ได้)
+       ⇒ ใช้ fetchByIds ที่ทำครบ 3 ชั้น (ก้อน id + หน้า + order คงที่) ในบรรทัดเดียว */
+    const defRes = await fetchByIds(oIds, (c) => supabaseDR.from('defect_logs')
+      .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
+      .in('prod_order_id', c));
+    const def = defRes.rows;
+    const defWarn = defRes.error ? 'โหลดของเสียไม่สำเร็จ' : (defRes.truncated ? 'ของเสียโหลดได้ไม่ครบ' : '');
     // audit ของแถว dr_products นี้ (best-effort — ถ้ายังไม่ apply migration audit_log จะว่าง)
     let auditRows = [];
     try {
@@ -118,6 +127,8 @@ export default function ProductHistory() {
       auditRows = a || [];
     } catch { auditRows = []; }
     setOrders(ord || []); setDefects(def); setAudit(auditRows);
+    // ⚠️ โหลดไม่ครบ = ตัวเลขบนหน้านี้ต่ำกว่าจริง ต้องบอกเสมอ ห้ามให้ดูเหมือนข้อมูลครบ
+    setLoadWarn([ordWarn, defWarn].filter(Boolean).join(' · '));
     setLoading(false);
   }, [from, to]);
 
@@ -270,6 +281,17 @@ export default function ProductHistory() {
         title="ประวัติผลิต (by Product)" icon="📜"
         sub="เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)"
       />
+
+      {/* ⚠️ โหลดไม่ครบ = ทุกตัวเลขในหน้านี้ต่ำกว่าจริง (รวมทั้งแผงเทียบความต้องการลูกค้าที่บอก "ขาด/พอ")
+          ห้ามปล่อยให้ดูเหมือนข้อมูลครบ — กฎ "ห้ามล้มเหลวเงียบ" */}
+      {loadWarn && (
+        <div style={{
+          marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444',
+        }}>
+          ⚠ {loadWarn} — ตัวเลขในหน้านี้ต่ำกว่าความจริง อย่าเพิ่งใช้ตัดสินใจ (ลองแคบช่วงวันที่ลง แล้วโหลดใหม่)
+        </div>
+      )}
 
       {/* ตัวเลือกสินค้า + ช่วงวันที่ */}
       <div style={{ ...card, marginBottom: 16 }}>
