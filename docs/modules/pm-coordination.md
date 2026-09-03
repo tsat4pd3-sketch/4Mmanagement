@@ -1,0 +1,18 @@
+# PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
+
+> ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
+
+
+หน้า `/pm-coordination` (`PmCoordination.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — ทำ **"ใบแจ้งแผน" แบบเมลที่ MTN ส่งประสานงาน** (เช่น "RE: แผนการ Cleaning Cutting Head เครื่อง Laser LS-10") สำหรับงาน PM/แก้เครื่องที่**กินหลายวัน + ต้องประสานหลายฝ่าย** (Production ถอดชุด → MTN ทำ → คืน+Calibration → Production support ปรับคุณภาพช่วงเวลาที่นัด) — ไม่ใช่ซ่อมจบในตัวแบบ MO
+
+- **โครงสร้าง 1 แผน = หัวใบ (เครื่องจาก MachineDatabase + ไลน์ + Remark) + หลายขั้นงาน** แต่ละขั้น: วันที่ · ทีมรับผิดชอบ (production หรือ mtn_teams) · รายละเอียด · ช่วงเวลา (time_from/to optional) · flag **"⚠️ ต้อง Production Support"** (เน้นสีแดงในใบ/เมล) · ติ๊ก done รายขั้นได้
+- **ช่องเครื่องจักร = พิมพ์/ค้นด้วยหมายเลขเครื่อง (input+datalist keyed `machine_no`) ไม่ใช่ชื่อรุ่น (คำสั่ง user 2026-07-31):** MTN/PD/PE อ้างอิงเลขเครื่องเวลาแจ้ง → พิมพ์ `RB-104`/`LS-10`/`CT-02` แล้ว resolve เป็นเครื่องในฐานข้อมูล (เติมชื่อรุ่น/ไลน์ให้) · datalist เรียงตาม machine_no · พิมพ์เลขที่ไม่มีในฐาน = เก็บเป็น free text ได้ (machine_id null)
+- **ตาราง (DR):** `pm_coordination_plans` (title/machine_*/line_name/remark/status draft·notified·done·cancelled) + `pm_coordination_tasks` (plan_id cascade, task_date, team, description, time_from/to, is_support, done, sort_order) · migration `20260723_pm_coordination.sql`
+- **แจ้ง Production:** ปุ่ม "📤 แจ้ง Production" → `send-notification` event **`pm_coordination`** (จัดรูปเหมือนเมล: หัวเรื่อง+เครื่อง+ลิสต์ขั้นงานราย日+Remark) → status เป็น `notified` · route category maintenance ปรับห้อง/ปิด/แก้ข้อความที่ `/notification-config`
+- **พิมพ์ใบ** (window.open+print): โลโก้ TS + หัวเรื่อง + เครื่อง/ไลน์ + แผนงานเป็น bullet (ขั้น support สีแดง) + Remark + ช่องเซ็น ผู้จัดทำ(MTN)/รับทราบ(Production)
+- **สิทธิ์:** ดู = ทุก role (Production ต้องเห็นแผนที่ถูกนัด) · `pm_coord:manage` (สร้าง/แก้/ลบ/แจ้ง/ติ๊ก done) = admin/manager/supervisor/mtn/engineer/leader · migration `20260723_pm_coordination_permission.sql` (Main — page + manage + notification_rule `pm_coordination`)
+- **Scope:** leader = family ไลน์ตัวเอง · role อื่นตาม sections (กรองด้วย `line_name` ของแผน) — pattern มาตรฐาน
+- **🔗 ผูกกับระบบแผน PM เดิม (`pm_plans`) — 2 ทาง (2026-07-23):** (1) ในหน้าสร้างแผนมี dropdown **"สร้างจากแผน PM เดิม"** — เลือกแผน PM ที่มีวันครบกำหนด → เติมเครื่อง/ไลน์/`pm_plan_id` + เพิ่มขั้นงานวันครบกำหนดให้อัตโนมัติ (resolve equipment ผ่าน `checklists.equipment_id` → **jigs (รวม shadow) หรือ machines** — PM model ใช้ jigs เป็นหลัก) (2) หน้า **PM Forecast (`/pm-forecast`)** มีปุ่ม **"🗓️ แผนประสานงาน"** ต่อแถว (เห็นเมื่อ `pm_coord:manage`) → ส่ง prefill ผ่าน `sessionStorage['pmcoord_prefill']` แล้ว navigate มา `/pm-coordination` เปิด modal ผูก plan+เครื่อง+วันคาด PM ให้เลย · การ์ดที่ผูกโชว์ชิป "🔗 ผูกแผน PM" · เก็บ `pm_coordination_plans.pm_plan_id`
+- **🔔 ช่วง Production Support ที่กำลังจะถึง (2026-07-23):** แผงแดงบนหน้ารวมทุกขั้นงานที่ติ๊ก `is_support` ของแผนที่ยังไม่ done/cancelled (วันนี้เป็นต้นไป · scope ตามไลน์) เรียงตามวัน — เตือน Production ล่วงหน้าว่าถูกนัด support วันไหน/เวลาไหน
+- **✅ sync "เสร็จ" กลับระบบแผน PM (2026-07-23):** ปิดแผนที่ผูก `pm_plan_id` เป็น "เสร็จ" → confirm แล้ว stamp `pm_plans.last_done_at = วันนี้` · แผนตามรอบเวลา (ไม่ใช่ usage) เลื่อน `next_due_date = วันทำ + interval_days` ให้อัตโนมัติ · usage → forecast คำนวณเองจาก last_done_at (การทำ PM checklist จริงยังบันทึกที่ PMCheckData แยกกัน — อันนี้แค่ sync วันรอบถัดไป)
+- **ต้อง deploy edge `send-notification`** ให้รู้จัก event `pm_coordination` (ก่อน deploy: กด "แจ้ง" ได้ 400 เงียบ แต่ status ยังเป็น notified — ตัวใบ/พิมพ์ใช้ได้ปกติ)
