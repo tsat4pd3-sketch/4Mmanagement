@@ -16,6 +16,7 @@ import StorageZonePanel from '../components/StorageZonePanel';
 import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
 import StockMoveToChild from '../components/StockMoveToChild';
+import { checkStockPlacement } from '../utils/moveTargets';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
@@ -106,6 +107,12 @@ function StockTab({ role, scope }) {
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [matSearch,  setMatSearch]  = useState('');
+  /* วัตถุดิบ/งาน blank ที่ถูกจ่ายเข้าไลน์ขั้นถัดไป = ต้นเหตุที่ของไปกองผิดแผนก
+     ⚠️ ต้อง select `line_type` มาด้วย ไม่งั้นเงียบตลอด (บั๊กเดิม: ตัวเตือน flow ไม่เคยทำงานเลย) */
+  const placementWarn = useMemo(() => {
+    const lt = lines.find(l => l.name === form.line_name)?.line_type;
+    return checkStockPlacement(form.mat_no, form.part_name || bomMap[(form.mat_no || '').trim().toUpperCase()], lt);
+  }, [form.mat_no, form.part_name, form.line_name, lines, bomMap]);
 
   // ── store review queue ──
   const [pending,     setPending]     = useState([]);   // manual movements รออนุมัติ
@@ -123,7 +130,7 @@ function StockTab({ role, scope }) {
     const [{ data: ln }, { rows: stk }, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
       // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
         { orderBy: ['line_name', 'mat_no'] }),
@@ -599,6 +606,14 @@ function StockTab({ role, scope }) {
                       <br />แนะนำให้เลือก<b>ไลน์ลูก</b>ที่ใช้พาร์ทนี้จริงแทน
                     </div>
                   )}
+                  {/* 🔴 ปิดที่ต้นเหตุ — วัตถุดิบ/งาน blank ถูกจ่ายเข้าไลน์ขั้นถัดไป คือที่มาของ
+                      "coil ไปกองอยู่แผนกประกอบ" ที่ต้องมาตามย้ายทีหลัง (feedback 2026-09-03)
+                      ⚠️ เตือนอย่างเดียว ไม่บล็อก (บางไลน์ปั๊ม+ประกอบรวมกันจริง) */}
+                  {placementWarn && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#ef4444', fontWeight: 700, lineHeight: 1.6 }}>
+                      🔴 {placementWarn.text}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
@@ -759,7 +774,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
     ]);
     setRounds(rnd || []);
     setLines(ln || []);
@@ -1233,7 +1248,7 @@ function InflowRulesTab({ canEdit }) {
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
       // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ชื่อคลังท้ายลำดับหายจาก dropdown เงียบ (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
         { orderBy: ['line_name', 'mat_no'] }),
