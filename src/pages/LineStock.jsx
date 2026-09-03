@@ -4,6 +4,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
+import { splitBySide, sideMatches } from '../utils/logisticSide';
+import SideFilterChips from '../components/SideFilterChips';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
@@ -70,6 +72,8 @@ function StockTab({ role, scope }) {
   const [lines,   setLines]   = useState([]);
   const [stock,   setStock]   = useState([]);
   const [txns,    setTxns]    = useState([]);
+  // ฝั่งงาน: '' ทั้งหมด · inbound (Store 2xx/3xx/5xx) · outbound (Warehouse FG 1xx) · unknown
+  const [sideFilter, setSideFilter] = useState('');
   const [bomMap,  setBomMap]  = useState({});
   const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
@@ -274,9 +278,20 @@ function StockTab({ role, scope }) {
     return Object.entries(bomMap).filter(([m]) => m.includes(q)).slice(0, 8);
   }, [matSearch, bomMap]);
 
-  const filteredStock = useMemo(() => {
-    return lineFilter ? stock.filter(s => s.line_name === lineFilter) : stock;
-  }, [stock, lineFilter]);
+  /* กรอง 2 ชั้น: ไลน์/คลัง → ฝั่งงาน (ขาเข้า Store 2xx/3xx/5xx · ขาออก Warehouse FG 1xx)
+     ตัวนับบนชิปต้องนับ "หลังกรองไลน์แล้ว" เพื่อให้เลขตรงกับที่ตาข้างล่างเห็นจริง */
+  const lineStock = useMemo(() => (
+    lineFilter ? stock.filter(s => s.line_name === lineFilter) : stock
+  ), [stock, lineFilter]);
+
+  const sideCounts = useMemo(() => {
+    const g = splitBySide(lineStock);
+    return { inbound: g.inbound.length, outbound: g.outbound.length, unknown: g.unknown.length };
+  }, [lineStock]);
+
+  const filteredStock = useMemo(() => (
+    sideFilter ? lineStock.filter(s => sideMatches(s.mat_no, sideFilter)) : lineStock
+  ), [lineStock, sideFilter]);
 
   const stockByLine = useMemo(() => {
     const map = {};
@@ -384,6 +399,15 @@ function StockTab({ role, scope }) {
         lines={lines} stock={stock} products={products} productBom={productBom}
         canIssue={canIssue} fullName={fullName} workDate={getToday()} onDone={load}
       />
+
+      {/* ฝั่งงาน — จอนี้เคยลิสต์ทุกเลข MAT ปนกันทั้งที่คนละแผนกดูแล (feedback หน้างาน 2026-09-03)
+          ตัวนับนับหลังกรองไลน์แล้ว → เลขบนชิปตรงกับที่เห็นในตารางเสมอ */}
+      <div style={{ ...card, padding:'10px 14px', marginBottom:12 }}>
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
+          📥 ขาเข้า = Store ดูแล (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 📤 ขาออก = Warehouse + Delivery ดูแล (FG 1xx รอส่งลูกค้า)
+        </div>
+      </div>
 
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
