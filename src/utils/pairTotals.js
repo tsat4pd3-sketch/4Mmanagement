@@ -28,11 +28,45 @@ export function collapseOps(perMat, opMap) {
     const parent = op.parent;
     if (!parent) { out.push(r); return }               // ยังไม่ผูกพาร์ทจริง — คงนับเดิม
     if (present.has(parent)) return;                    // พาร์ทจริงถือยอดแล้ว — ขั้นไม่บวกซ้ำ
-    const g = groups[parent] = groups[parent] || { mat_no: parent, target: 0, produced: 0 };
+    /* `_ops` = ชั้น OP ที่ยุบมาเป็นแถวนี้ (client-only ขึ้นต้น _ ไม่ลง DB)
+       จำเป็นเพราะ pair_mat_no ของงานคู่ถูกประกาศไว้ที่ "ชั้น OP" ไม่ใช่ที่พาร์ทจริง
+       ยุบแล้วทิ้ง = คู่ที่คนละพาร์ทจริงจับกันไม่ติด แล้วบวกซ้ำ (ดู resolvePairAcrossOps) */
+    const g = groups[parent] = groups[parent] || { mat_no: parent, target: 0, produced: 0, _ops: [] };
+    if (r.mat_no != null) g._ops.push(r.mat_no);
     g.target   = Math.max(g.target,   Number(r.target)   || 0);
     g.produced = Math.max(g.produced, Number(r.produced) || 0);
   });
   return out.concat(Object.values(groups));
+}
+
+/* ── คู่ RH/LH ที่ประกาศไว้ที่ชั้น OP ต้องรอดจากการยุบเข้าพาร์ทจริง (2026-09-03) ──
+   เคสจริง HDF1: 90031601 (RH) ↔ 90031602 (LH) เป็นคู่กัน แต่ op_parent_mat คนละตัว
+   → ยุบแล้วได้ 2 แถวคนละพาร์ทจริงซึ่ง "ไม่ได้ผูก pair_mat_no ต่อกัน" (และห้ามไปผูก —
+     กฎเหล็ก: FG ที่ผลิตแยกกันได้ ห้ามตั้ง pair_mat_no) ⇒ บวกซ้ำเป็น 2 เท่า
+   ⚠️ คืน pairOf ตัวเดิมเป๊ะเมื่อไม่มีแถวที่ยุบมาจาก OP → พฤติกรรมเดิมทุกกรณี */
+function resolvePairAcrossOps(rows, pairOf) {
+  const owner = new Map();                       // opMat → mat_no ของแถวที่ยุบมันไว้
+  rows.forEach(r => (r._ops || []).forEach(op => owner.set(op, r.mat_no)));
+  if (!owner.size) return pairOf;
+  const inRows = new Set(rows.map(r => r.mat_no).filter(m => m != null));
+  const byMat  = new Map(rows.map(r => [r.mat_no, r]));
+  return (mat) => {
+    const direct = pairOf(mat);
+    if (direct != null && inRows.has(direct)) return direct;   // คู่ตรงตัวมีในชุด = ใช้เลย
+    for (const op of byMat.get(mat)?._ops || []) {
+      const p = op != null ? pairOf(op) : null;
+      const via = p != null ? owner.get(p) : null;
+      if (via != null && via !== mat) return via;
+    }
+    return direct;                                             // หาไม่เจอ = ค่าเดิม
+  };
+}
+
+/** รวมยอดแบบ "ยุบชั้น OP แล้วนับคู่ RH/LH ครั้งเดียว" — ลำดับนี้ห้ามสลับ
+ *  @returns {{ target:number, produced:number, hasPair:boolean }} */
+export function pairAwareOpTotal(perMat, pairOf, opMap = null) {
+  const rows = opMap ? collapseOps(perMat, opMap) : perMat;
+  return pairAwareTotal(rows, resolvePairAcrossOps(rows, pairOf));
 }
 
 /* ── orderTotal — รวมยอดจากลิสต์ใบงานแบบ pair-aware + op-aware ในตัวเดียว ──
@@ -45,8 +79,7 @@ export function orderTotal(orders, pick, pairOf = () => null, opMap = null) {
     if (o.mat_no == null) { nullSum += v; return }
     (perMat[o.mat_no] = perMat[o.mat_no] || { mat_no: o.mat_no, target: 0, produced: 0 }).target += v;
   });
-  const rows = opMap ? collapseOps(Object.values(perMat), opMap) : Object.values(perMat);
-  return pairAwareTotal(rows, pairOf).target + nullSum;
+  return pairAwareOpTotal(Object.values(perMat), pairOf, opMap).target + nullSum;
 }
 
 export function pairAwareTotal(perMat, pairOf) {

@@ -42,7 +42,8 @@ test('collapseOps: พาร์ทจริงไม่อยู่ → ยุ�
     { mat_no: 'M6', target: 500, produced: 500 },
     { mat_no: 'M8', target: 500, produced: 490 },
   ], opMap)
-  assert.deepEqual(rows, [{ mat_no: 'P1', target: 500, produced: 500 }])
+  // `_ops` = ร่องรอยชั้น OP ที่ยุบมา — จำเป็นให้คู่ RH/LH ที่ประกาศไว้ที่ชั้น OP รอดจากการยุบ
+  assert.deepEqual(rows, [{ mat_no: 'P1', target: 500, produced: 500, _ops: ['M6', 'M8'] }])
 })
 
 test('collapseOps: OP ที่ parent = null คงนับเดิม (worklist ห้ามเดา) · opMap ว่าง = คืน input', () => {

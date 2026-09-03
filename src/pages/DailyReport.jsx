@@ -15,7 +15,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
-import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { pairAwareOpTotal, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
@@ -213,6 +213,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
+  /* คู่ RH/LH — ใช้ร่วมทั้ง "ภาพรวมทั้งกะ" และแบนเนอร์ "จะส่งต่อกะหน้า"
+     ⚠️ นิยามที่เดียว ห้ามประกาศซ้ำในแต่ละ IIFE (2 จอในหน้าเดียวกันต้องนับเหมือนกันเสมอ) */
+  const pairOf = useCallback(
+    (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null, [products]);
   const [dtTypes, setDtTypes]       = useState([]);
   const [sessions, setSessions]     = useState([]);
   // กะค้างย้ายไปแท็บ "⏰ กะค้าง" แล้ว — แท็บนี้เหลือแค่ชิปสรุปบรรทัดเดียว (ข้อมูลมาจากหน้าแม่)
@@ -2688,8 +2692,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
               // สรุปภาพใหญ่: นับงานคู่ RH/LH เป็น 1 คู่/stroke (max ของสองข้าง) ไม่บวกชิ้นซ้ำ · พาร์ทเดี่ยว = บวกปกติ
               // + collapseOps: รายการขั้นตอน (OP งานขับนัท) ยุบเข้าพาร์ทจริง ไม่นับซ้ำ (แถวรายพาร์ทยังแยกโชว์ครบ)
-              const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
-              const pt = pairAwareTotal(collapseOps(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), opInfoSync()), pairOf);
+              const pt = pairAwareOpTotal(productRows.map(r => ({ mat_no: r.matNo, target: r.target, produced: r.confirmed })), pairOf, opInfoSync());
               const nullMat = prodOrders.filter(o => !o.mat_no);
               const totalTarget    = pt.target + nullMat.reduce((s, o) => s + o.qty, 0);
               const totalConfirmed = pt.produced
@@ -2893,16 +2896,30 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 const outCarry = prodOrders.filter(o => o.status === 'carry_over');
                 if (!outOpen.length && !outCarry.length) return null;
                 const remainOf   = (o) => Math.max(0, (o.qty_target ?? o.qty) - (o.qty_actual || 0));
-                const settledQty = outCarry.reduce((s, o) => s + remainOf(o), 0);
-                const openQty    = outOpen.reduce((s, o) => s + remainOf(o), 0);
+                /* ⚠️ ต้องนับแบบเดียวกับ "ภาพรวมทั้งกะ" ด้านบน — งานคู่ RH/LH = 1 ครั้งปั๊ม
+                   ห้าม reduce บวกตรงๆ (เคสจริง HDF1 คู่ 550+550 ขึ้น 1,100 ทั้งที่ต้องปั๊ม 550 ครั้ง
+                   → แบนเนอร์ขัดกับสรุปกะในจอเดียวกัน พนักงานอ่านแล้วสับสน · 2026-09-03) */
+                const opMap      = opInfoSync();
+                const settledQty = orderTotal(outCarry, remainOf, pairOf, opMap);
+                const openQty    = orderTotal(outOpen,  remainOf, pairOf, opMap);
                 const unfilled   = outOpen.filter(o => !(o.qty_actual > 0)).length;
                 const total      = settledQty + openQty;
+                const paired     = pairAwareOpTotal(
+                  [...outOpen, ...outCarry].map(o => ({ mat_no: o.mat_no, target: 0, produced: 0 })),
+                  pairOf, opMap).hasPair;
                 if (!total) return null;
                 return (
                   <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 9 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa' }}>
-                      ⏭ จะส่งต่อกะหน้า {unfilled > 0 ? '~' : ''}{total} ชิ้น
+                      ⏭ จะส่งต่อกะหน้า {unfilled > 0 ? '~' : ''}{total} {paired ? 'ชุด (คู่ RH/LH)' : 'ชิ้น'}
                     </div>
+                    {/* งานคู่ปั๊มครั้งเดียวได้ทั้ง LH+RH → เลขนี้คือ "จำนวนครั้งที่ต้องปั๊ม"
+                        ไม่ใช่ผลบวกชิ้นสองฝั่ง — ต้องเขียนบอก ไม่งั้นคนอ่านเทียบกับการ์ดแล้วงง */}
+                    {paired && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                        นับ <b style={{ color: 'var(--text2)' }}>1 คู่ = 1 ครั้งปั๊ม</b> (ได้ทั้ง LH+RH พร้อมกัน) — ไม่บวกชิ้นสองฝั่งซ้ำ
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       {outCarry.length > 0 && <>ยืนยันยกยอดแล้ว <b style={{ color: 'var(--text2)' }}>{settledQty}</b> ชิ้น ({outCarry.length} ใบ){outOpen.length > 0 ? ' · ' : ''}</>}
                       {outOpen.length > 0 && <>ใบที่ยังไม่ปิด <b style={{ color: 'var(--text2)' }}>{openQty}</b> ชิ้น ({outOpen.length} ใบ)</>}
