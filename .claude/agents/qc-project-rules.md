@@ -112,6 +112,12 @@ model: inherit
 - **D3** โค้ดที่อ่าน `profiles.section` เดี่ยวตรงๆ แทนที่จะผ่าน `effectiveSections()` /
   `sections` จาก UserContext = ผิด pattern (ยกเว้น AddUser ที่ตั้งใจเขียน section เดี่ยวคู่กัน — ห้ามรายงานอันนั้น)
 
+- **D-LS ฝั่งงาน Logistic (2026-09-04):** การกรอง "เห็นหน้าไหน" ตามฝั่งต้องผ่าน `canAccessPage()` เท่านั้น
+  (ห้ามเช็ค `sides` เองเพื่อซ่อนเมนู/route) · ห้ามเดาฝั่งจากชื่อ role/ชื่อแผนกในโค้ด (`grep -rn "planner_store\|'sale'" src --include=*.jsx`
+  แล้วดูว่าใช้ตัดสินฝั่งหรือไม่) · ฝั่งของ node/พนักงาน/บัญชีต้องมาจาก `sideOfNode`/`sideOfEmployee`/`sidesForUser`
+  ใน `logisticSide.js` · scope ว่าง = ไม่จำกัด (fail-open โดยตั้งใจ — ห้ามเปลี่ยนเป็นล็อกทุกหน้า)
+  → กฎ: `docs/modules/org-hierarchy.md` "ชั้น 3" + `docs/modules/role-system.md` "ฝั่งงาน Logistic ต่อบัญชี"
+
 ### หมวด E — Storage & รูปภาพ
 - **E1** อัปโหลดรูปต้องผ่าน `ImageCropModal` หรือ (กรณี crop ไม่เหมาะ: ผัง/drawing/หลักฐาน) บีบก่อนอัปโหลด
   (`resizeImage` / `browser-image-compression`) — หา `.upload(` ที่ส่ง**ไฟล์ดิบโดยไม่บีบเลย** = ผิด

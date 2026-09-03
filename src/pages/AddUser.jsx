@@ -5,6 +5,8 @@ import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
 import { positionOptions, positionLabel, loadPositions, levelOfPosition, maintenanceKindOfPosition, levelMeta } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
 import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
+import { SIDES, sideMeta, normalizeSides, sideOfEmployee } from '../utils/logisticSide';   // ฝั่งงาน Logistic ชั้น 3 (2026-09-04)
+import { divisionOfNode } from '../utils/orgDivisions';
 import LineSelect from '../components/LineSelect';
 
 import InfoMore from '../components/InfoMore';
@@ -29,7 +31,7 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
 ));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '',
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], logisticSides: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
   // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
@@ -56,6 +58,7 @@ export default function AddUser() {
   const [lines,         setLines]         = useState([]);
   const [sectionOpts,   setSectionOpts]   = useState([]);
   const [teamOpts,      setTeamOpts]      = useState([]);
+  const [orgNodes,      setOrgNodes]      = useState([]);   // ผังทั้งก้อน — หา section ฝ่าย logistic + ตกทอดฝั่งจากแผนกพนักงาน
   const [fetchingUsers, setFetchingUsers] = useState(true);
   const [showModal,     setShowModal]     = useState(false);
   const [modalMode,     setModalMode]     = useState('create');
@@ -84,9 +87,11 @@ export default function AddUser() {
     //    select แค่ id,name = ได้ลิสต์แบนไม่มีลำดับชั้น (กับดักที่เขียนไว้ในหัว LineSelect.jsx)
     supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name')
       .then(({ data }) => setLines(data || []));
-    supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
+    // select('*') โดยตั้งใจ — ต้องการ division/logistic_side ที่เพิ่มทีหลัง (ระบุชื่อคอลัมน์ที่ยังไม่ apply = ทั้ง query ล้ม ลิสต์ section หายทั้งหน้า)
+    supabase.from('org_nodes').select('*').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         const nodes = data || [];
+        setOrgNodes(nodes);
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
         setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
       });
@@ -115,11 +120,16 @@ export default function AddUser() {
     const daMap = {};
     const { data: daRows, error: daErr } = await supabase.from('profiles').select('id, is_dept_admin');
     if (!daErr) (daRows || []).forEach(r => { daMap[r.id] = r.is_dept_admin === true; });
+    // logistic_sides best-effort แยก query — คอลัมน์เพิ่งเพิ่ม (migration 20260904)
+    const lsMap = {};
+    const { data: lsRows, error: lsErr } = await supabase.from('profiles').select('id, logistic_sides');
+    if (!lsErr) (lsRows || []).forEach(r => { lsMap[r.id] = normalizeSides(r.logistic_sides); });
 
     setUsers((profiles || []).map(p => ({
       ...p,
       mtn_teams: mtnMap[p.id] || [],
       is_dept_admin: daMap[p.id] || false,
+      logistic_sides: lsMap[p.id] || [],
       email: authMap[p.id]?.email || '—',
       created_at: authMap[p.id]?.created_at || null,
     })));
@@ -164,6 +174,14 @@ export default function AddUser() {
 
   // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
   //   role ที่ไม่เข้าเกณฑ์ (admin/display) → false เสมอ · error (ยังไม่ apply migration) = เงียบ
+  // เขียน logistic_sides แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260904) — ว่าง = null = ไม่จำกัด
+  //   บันทึกตามฟอร์มเสมอ (ไม่ผูกกับ role — กฎ: ห้ามสรุปจากชื่อ role ว่าใครอยู่ฝ่ายไหน)
+  const saveLogisticSides = async (id) => {
+    if (!id) return;
+    const val = normalizeSides(form.logisticSides);
+    await supabase.from('profiles').update({ logistic_sides: val.length ? val : null }).eq('id', id); // ignore error โดยตั้งใจ
+  };
+
   const saveDeptAdmin = async (id) => {
     if (!id) return;
     const val = DEPT_ADMIN_ELIGIBLE(form.role) ? !!form.deptAdmin : false;
@@ -198,6 +216,7 @@ export default function AddUser() {
       position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
       mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
+      logisticSides: normalizeSides(u.logistic_sides),
       deptAdmin:   u.is_dept_admin === true,
       lineId:      u.line_id      ? String(u.line_id) : '',
       team:        u.team         || '',
@@ -252,6 +271,7 @@ export default function AddUser() {
       // mtn_teams เขียนตามหลัง best-effort (edge ยังไม่รู้จัก field นี้)
       await saveMtnTeams(data.user?.id);
       await saveDeptAdmin(data.user?.id);
+      await saveLogisticSides(data.user?.id);
       await saveEmpLink(data.user?.id);
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
@@ -335,6 +355,7 @@ export default function AddUser() {
       if (err) throw err;
       await saveMtnTeams(editingId); // best-effort แยก กัน edit พังถ้ายังไม่ apply migration
       await saveDeptAdmin(editingId); // best-effort แยก (migration 20260803)
+      await saveLogisticSides(editingId); // best-effort แยก (migration 20260904)
       await saveEmpLink(editingId);   // best-effort แยก (migration 20260821)
       setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
       setShowModal(false);
@@ -563,6 +584,12 @@ export default function AddUser() {
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, color: (u.sections?.length || u.section) ? 'var(--text)' : 'var(--muted)' }}>
                     {u.sections?.length ? u.sections.join(', ') : (u.section || '—')}
+                    {/* ฝั่งงาน Logistic ที่ตั้งตรง (ตกทอดจากแผนกพนักงานไม่โชว์ที่นี่ — ดูในฟอร์มแก้ไข) */}
+                    {(u.logistic_sides || []).length > 0 && (
+                      <span title={(u.logistic_sides || []).map(k => sideMeta(k)?.label || k).join(' · ')} style={{ marginLeft: 4, fontSize: 12 }}>
+                        {(u.logistic_sides || []).map(k => sideMeta(k)?.icon || '').join('')}
+                      </span>
+                    )}
                   </td>
                   <td style={{ fontSize: 13, color: u.line_id ? 'var(--text)' : 'var(--muted)' }}>
                     {lineName}
@@ -863,6 +890,50 @@ export default function AddUser() {
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </InfoMore>
               </div>
+
+              {/* ฝั่งงาน Logistic (profiles.logistic_sides — ชั้น 3 · 2026-09-04) — ด่านชั้น 2 ของ canAccessPage
+                  สำหรับหน้าในหมวด Logistic 3 ฝั่ง · โผล่เมื่อบัญชีอยู่ในส่วนงานฝ่าย logistic (ป้าย division ที่ผัง)
+                  หรือมีค่าค้าง/ตกทอดอยู่ — ไม่ผูกกับ role · ไม่ติ๊ก = ไม่จำกัด (เห็นครบเหมือนเดิม) */}
+              {(() => {
+                const logisticSecs = orgNodes
+                  .filter(n => n.kind === 'section' && divisionOfNode(n.id, orgNodes) === 'logistic')
+                  .map(n => n.code || n.name);
+                const linkedEmp = form.accountKind === 'person' && form.employeeId ? empById[form.employeeId] : null;
+                const derived = linkedEmp ? sideOfEmployee(linkedEmp, orgNodes) : null;
+                const show = form.sections.some(s => logisticSecs.includes(s)) || form.logisticSides.length > 0 || !!derived;
+                if (!show) return null;
+                return (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={labelSt}>📦 ฝั่งงาน Logistic (เห็นเมนูหมวด Logistic เฉพาะฝั่งที่ทำ)</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
+                      {SIDES.map(s => {
+                        const checked = form.logisticSides.includes(s.key);
+                        return (
+                          <label key={s.key} title={`${s.owner} — ${s.desc}`} style={{
+                            display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                            padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
+                            background: checked ? `${s.color}22` : 'var(--bg2)',
+                            border: `1px solid ${checked ? s.color : 'var(--border2)'}`,
+                            color: checked ? s.color : 'var(--text2)',
+                          }}>
+                            <input type="checkbox" checked={checked}
+                              onChange={() => setF('logisticSides', checked ? form.logisticSides.filter(x => x !== s.key) : [...form.logisticSides, s.key])}
+                              style={{ margin: 0 }} />
+                            {s.icon} {s.label} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· {s.owner}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                      <b>ไม่ติ๊กเลย = ไม่จำกัด</b> (เห็นหมวด Logistic ครบทุกฝั่งตาม role)
+                      {derived
+                        ? <> · บัญชีนี้ผูกพนักงานแผนก <b>{linkedEmp?.department}</b> → ตกทอดฝั่ง <b style={{ color: sideMeta(derived)?.color }}>{sideMeta(derived)?.icon} {sideMeta(derived)?.label}</b> อัตโนมัติเมื่อไม่ติ๊ก (ติ๊กที่นี่ = ทับค่าตกทอด)</>
+                        : <> · บัญชีหน่วยงาน/ใช้ร่วมที่ไม่ผูกพนักงาน ต้องติ๊กที่นี่ (ไม่มีแผนกให้ตกทอด)</>}
+                      <br />⚠️ <b>Warehouse = FG 1xx → ขาออก</b> · <b>Store = 2xx/3xx/5xx → ขาเข้า</b> — คนละแผนก คนละฝั่ง ห้ามสลับ
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
               {isMtnTeamRole(form.role) && (

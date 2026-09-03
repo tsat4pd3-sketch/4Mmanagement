@@ -6,7 +6,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
-import { splitBySide, sideMatches } from '../utils/logisticSide';
+import { splitBySide, sideMatches, defaultSideFilter } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
@@ -28,7 +28,7 @@ import SideFilterChips from '../components/SideFilterChips';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
 export default function StoreMonitor() {
-  const { role, lineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, sides: userSides } = useContext(UserContext);
   const [prodLines, setProdLines] = useState([]); // production_lines (id/name/section/parent) — ใช้คิด scope
   const [findings, setFindings] = useState([]);
   const [loadErr, setLoadErr] = useState('');
@@ -36,7 +36,8 @@ export default function StoreMonitor() {
   const [lineFilter, setLineFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');   // all | shortage | over
   // ฝั่งงาน — '' ทั้งหมด (default: จอเฝ้าระวังต้องเห็นภาพรวมก่อน) · inbound Store · outbound Warehouse+Delivery
-  const [sideFilter, setSideFilter] = useState('');
+  // เริ่มที่ฝั่งของบัญชี (ชั้น 3 · 2026-09-04) — ไม่จำกัด/หลายฝั่ง = ทั้งหมด · กดสลับได้เสมอ
+  const [sideFilter, setSideFilter] = useState(() => defaultSideFilter(userSides));
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {

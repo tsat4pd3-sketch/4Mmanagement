@@ -14,6 +14,7 @@ import { supabase } from '../supabaseClient';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
+import { SIDES, normalizeSides } from '../utils/logisticSide';
 
 export default function ViewAsModal({ current, onClose, onApply }) {
   const [role, setRole] = useState(current?.role || 'leader');
@@ -22,6 +23,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
   const [team, setTeam] = useState(current?.team || '');
   const [sections, setSections] = useState(current?.sections || []);
   const [mtnTeams, setMtnTeams] = useState(current?.mtnTeams || []);
+  const [sides, setSides] = useState(normalizeSides(current?.sides));   // ฝั่งงาน Logistic (ชั้น 3 · 2026-09-04)
   const [lines, setLines] = useState([]);
   const [orgSections, setOrgSections] = useState([]);
   const [teamRows, setTeamRows] = useState(pmTeamsSync());
@@ -44,6 +46,8 @@ export default function ViewAsModal({ current, onClose, onApply }) {
 
   const toggleMtnTeam = (k) =>
     setMtnTeams(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]);
+  const toggleSide = (k) =>
+    setSides(prev => prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]);
 
   const apply = () => {
     onApply({
@@ -55,6 +59,8 @@ export default function ViewAsModal({ current, onClose, onApply }) {
       // ⚠️ ต้องส่งไปด้วย ไม่งั้นโหมดจำลอง = ทีมช่างว่างเสมอ → ทดสอบสิทธิ์ที่ผูกกับทีมไม่ได้เลย
       //    (เช่น mtn_repair:service_own_team ที่ต้อง "ทีมของคน = ทีมของใบ" ถึงจะผ่าน)
       mtnTeams: role === 'display' ? [] : mtnTeams,
+      // ฝั่งงาน Logistic — ไม่ติ๊ก = ไม่จำกัด (เหมือนบัญชีที่ยังไม่ถูกตั้งฝั่ง) · ติ๊กแล้วเมนูหมวด Logistic ฝั่งอื่นหาย
+      sides: role === 'display' ? [] : sides,
     });
   };
 
@@ -142,6 +148,27 @@ export default function ViewAsModal({ current, onClose, onApply }) {
                     background: mtnTeams.includes(t.key) ? 'var(--accent-dim)' : 'var(--bg3)',
                     color: mtnTeams.includes(t.key) ? 'var(--accent)' : 'var(--text2)',
                   }}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || t.label || t.key}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 📥📤🧭 ฝั่งงาน Logistic (profiles.logistic_sides) — ด่านชั้น 2 ของ canAccessPage สำหรับหน้าในหมวด Logistic
+            ไม่ติ๊ก = ไม่จำกัด · ติ๊กแล้วเห็นเฉพาะหมวดของฝั่งนั้น (หน้าที่คาบ 2 ฝั่ง เช่น เฝ้าระวังสต๊อก ผ่านทั้งคู่) */}
+        {role !== 'display' && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
+              📦 ฝั่งงาน Logistic (ไม่ติ๊ก = ไม่จำกัด — เห็นหมวด Logistic ครบทุกฝั่งตามกติกา role)
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {SIDES.map(s => (
+                <button key={s.key} onClick={() => toggleSide(s.key)} title={`${s.owner} — ${s.desc}`}
+                  style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: sides.includes(s.key) ? `2px solid ${s.color}` : '1px solid var(--border2)',
+                    background: sides.includes(s.key) ? `${s.color}22` : 'var(--bg3)',
+                    color: sides.includes(s.key) ? s.color : 'var(--text2)',
+                  }}>{s.icon} {s.label}</button>
               ))}
             </div>
           </div>

@@ -93,3 +93,97 @@ export function splitBySide(rows, matOf = (r) => r?.mat_no) {
 /** ประเภท MAT ที่อยู่ในฝั่งนั้น — ใช้เขียนคำอธิบายบนจอ ไม่ให้ hardcode "3xx/5xx/2xx" ซ้ำ */
 export const matClassesOfSide = (side) =>
   MAT_CLASSES.filter(c => DIGIT_SIDE[c.digit] === side);
+
+/* ═══ ชั้น 3 — ฝั่งของ "คน/หน่วยงาน" (2026-09-04) ═════════════════════════════════
+   ป้าย `org_nodes.logistic_side` ติดที่แผนก (7 แผนกใต้ Planning&Store) แล้วลูกตกทอด
+   (หลักเดียวกับ `org_nodes.division` — orgDivisions.js) · บัญชีได้ฝั่งจาก
+   `profiles.logistic_sides[]` (ตั้งตรง) หรือตกทอดจากแผนกของพนักงานที่ผูก
+   ⚠️ ห้ามเดาฝั่งจากชื่อแผนก/ชื่อ role ในโค้ด — ยึดป้ายที่ผังเสมอ (โรงงานอื่นเรียกไม่เหมือนกัน)
+   ⚠️ "ว่าง = ไม่จำกัด" โดยตั้งใจ: บัญชีที่ยังไม่ถูกตั้งฝั่งเห็นทุกฝั่งเหมือนก่อนมีฟีเจอร์นี้
+      (ล็อกคนออกจากงานตัวเองไม่ได้ — กฎ "กรอง scope แล้วไม่เหลือ = ห้ามคืนลิสต์ว่าง") */
+
+export const SIDE_KEYS = SIDES.map(s => s.key);
+
+const normStr = (v) => String(v ?? '').trim().toLowerCase();
+
+/** ล้างค่าให้เหลือเฉพาะ key ที่ถูกต้อง ไม่ซ้ำ · รับ null/ค่าเพี้ยนได้ (ข้อมูลจาก DB/sessionStorage) */
+export function normalizeSides(arr) {
+  const out = [];
+  for (const v of Array.isArray(arr) ? arr : []) {
+    const k = normStr(v);
+    if (SIDE_KEYS.includes(k) && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
+/** ฝั่งของ node หนึ่งในผัง — ไม่ได้ติดป้ายเอง = ตกทอดจากแม่ (กัน loop ที่ 10 ชั้น) */
+export function sideOfNode(nodeId, orgNodes) {
+  if (!nodeId || !orgNodes?.length) return null;
+  const byId = new Map(orgNodes.map(n => [n.id, n]));
+  let cur = byId.get(nodeId);
+  for (let i = 0; cur && i < 10; i++) {
+    const s = normStr(cur.logistic_side);
+    if (SIDE_KEYS.includes(s)) return s;
+    cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+  }
+  return null;
+}
+
+/** ฝั่งของพนักงาน 1 คน — ยึด **แผนก** ก่อน (ป้ายอยู่ระดับแผนก · section 'Planning&Store' ไม่มีป้ายโดยตั้งใจ)
+ *  ไม่มีแผนก/แผนกไม่มีป้าย ค่อยดู section (เผื่อโรงงานอื่นติดป้ายที่ระดับส่วน) */
+export function sideOfEmployee(emp, orgNodes) {
+  if (!emp || !orgNodes?.length) return null;
+  const dep = normStr(emp.department);
+  const sec = normStr(emp.section);
+  if (dep) {
+    const n = orgNodes.find(x => x.kind === 'department' && normStr(x.code || x.name) === dep)
+           || orgNodes.find(x => x.kind === 'department' && normStr(x.name) === dep);
+    const s = n && sideOfNode(n.id, orgNodes);
+    if (s) return s;
+  }
+  if (sec) {
+    const n = orgNodes.find(x => x.kind === 'section' && normStr(x.code || x.name) === sec);
+    const s = n && sideOfNode(n.id, orgNodes);
+    if (s) return s;
+  }
+  return null;
+}
+
+/** ฝั่งที่บัญชีนี้ทำ — [] = ไม่จำกัด
+ *    1. explicitSides (profiles.logistic_sides — admin ตั้งที่ /add-user) ถ้ามี = source of truth
+ *    2. ไม่มีค่อยตกทอดจากแผนกของพนักงานที่ผูก (derivedSide จาก sideOfEmployee)
+ *    3. ไม่มีทั้งคู่ = [] เห็นทุกฝั่ง (backward-compatible กับบัญชีเดิมทั้งหมด) */
+export function sidesForUser(explicitSides, derivedSide) {
+  const ex = normalizeSides(explicitSides);
+  if (ex.length) return ex;
+  const d = normStr(derivedSide);
+  return SIDE_KEYS.includes(d) ? [d] : [];
+}
+
+/** ฝั่งของเมนู 1 รายการ — จาก `side` ใน NAV_GROUP_META ของหมวดหลัก + หมวด alsoIn (หน้าที่คาบ 2 ฝั่ง)
+ *  หมวดที่ไม่ใช่ Logistic ไม่มี side → [] = หน้ากลาง ไม่ถูกกรองด้วยฝั่ง */
+export function pageSidesOf(item, groupMeta) {
+  const out = [];
+  for (const g of [item?.group, item?.alsoIn]) {
+    const s = g && groupMeta?.[g]?.side;
+    if (s && SIDE_KEYS.includes(s) && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+
+/** เข้าหน้านี้ได้ตามฝั่งไหม — userSides ว่าง = ไม่จำกัด · pageSides ว่าง = หน้ากลาง ผ่านเสมอ
+ *  ⚠️ เป็นชั้น "จำกัดเพิ่ม" ทับสิทธิ์ role เท่านั้น — ไม่เคยเปิดหน้าที่ role ไม่มีสิทธิ์ให้ */
+export function sideAllows(pageSides, userSides) {
+  const u = normalizeSides(userSides);
+  if (!u.length) return true;
+  const p = normalizeSides(pageSides);
+  if (!p.length) return true;
+  return p.some(s => u.includes(s));
+}
+
+/** ค่าเริ่มต้นของชิปกรองพาร์ทในหน้า — บัญชีที่อยู่ฝั่งเดียว (ขาเข้า หรือ ขาออก) เปิดหน้ามาเห็นของฝั่งตัวเองก่อน
+ *  control (Sales/Planner/Billing) ไม่ถือของ → ไม่กำหนด · หลายฝั่ง/ไม่จำกัด → '' (ทั้งหมด) */
+export function defaultSideFilter(userSides) {
+  const mat = normalizeSides(userSides).filter(s => s === 'inbound' || s === 'outbound');
+  return mat.length === 1 ? mat[0] : '';
+}

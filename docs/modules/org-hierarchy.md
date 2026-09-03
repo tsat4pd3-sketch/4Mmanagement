@@ -58,8 +58,23 @@
 > - **`NAV_ITEMS[].alsoIn` = หน้าที่ทำงานคาบ 2 หมวด** (ตอนนี้มีตัวเดียว: `/store-monitor` จับทั้งขาเข้า-ขาออก)
 >   sidebar + การ์ดหน้า Home โชว์ซ้ำ 2 ที่ผ่าน **`inNavGroup(item, groups)`** · แต่ **สิทธิ์/ค้นหา/breadcrumb/
 >   ตัวนับ นับครั้งเดียวเสมอ** (1 หน้ามีสิทธิ์ชุดเดียว) — `PAGE_GROUPS` จึงใส่ที่หมวดหลักที่เดียว
-> - **ยังไม่ทำ (ชั้น 3):** เพิ่ม 7 แผนกย่อยใต้ `Planning&Store` + ติดป้ายฝั่ง แล้วแยก scope/สิทธิ์จริง
->   ตอนนี้ทุกคนยังเห็นทุกหน้าเหมือนเดิม — การแยกที่ทำแล้วเป็นชั้น **เมนู + เนื้อในหน้า** เท่านั้น
+> - **ชั้น 3 — scope ฝั่งจริง (ทำแล้ว 2026-09-04 · migration `20260904_logistic_layer3_departments.sql` Main):**
+>   - **7 แผนกย่อยใต้ `Planning&Store`** seed ในผัง: Store(📥) · Warehouse/Delivery/Rack Center(📤) · Sales/Planner/Billing(🧭)
+>     — **ไม่แยก section / ไม่เพิ่มชั้นในต้นไม้** (profiles.sections + employees.section อ้าง 'Planning&Store' อยู่ แยกแล้วหลุด scope ทั้งฝ่าย)
+>   - **ป้ายฝั่ง = `org_nodes.logistic_side`** (inbound/outbound/control — key ตาม `SIDES`) ติดที่แผนก ลูกตกทอด (`sideOfNode`)
+>     หลักเดียวกับ `division` · ตั้งที่ `/org-setup` (ช่อง "📦 ฝั่งงาน Logistic" โผล่เฉพาะ node ในฝ่าย logistic ตามป้าย division)
+>     · **ห้ามเดาฝั่งจากชื่อแผนก/ชื่อ role ในโค้ด** — ยึดป้ายที่ผังเสมอ
+>   - **ฝั่งของบัญชี = `sidesForUser(profiles.logistic_sides, sideOfEmployee(พนักงานที่ผูก))`** — ตั้งตรงชนะตกทอด
+>     · ตั้งตรงที่ `/add-user` (ช่องโผล่เมื่อ section อยู่ฝ่าย logistic / มีค่าค้าง / ผูกพนักงานที่มีฝั่ง — **ไม่ผูกกับ role**)
+>     · บัญชี sale ทั้ง 6 เป็น `account_kind='shared'` ไม่ผูกพนักงาน → **ต้องติ๊กฝั่งเอง** (ไม่มีแผนกให้ตกทอด)
+>   - **ด่านเดียว = `canAccessPage()`** (permissions.js) = สิทธิ์ role **และ** ฝั่ง (`sideOkForPath` · path→ฝั่ง ลงทะเบียนจาก
+>     `NAV_ITEMS` + `NAV_GROUP_META[group].side` ตอนโหลด App.jsx) → sidebar / การ์ด Home / RoleRoute / ลิงก์ notification ตามกันหมด
+>     · หน้า `alsoIn` (เฝ้าระวังสต๊อก) ผ่านได้ทั้ง 2 ฝั่ง · หมวดอื่นไม่มี side = หน้ากลาง ไม่ถูกกรอง
+>   - **🔴 ว่าง = ไม่จำกัด โดยตั้งใจ** — บัญชีที่ยังไม่ถูกตั้งฝั่งเห็นครบเหมือนเดิม (apply แล้วไม่มีใครเสียสิทธิ์ · โหลดล้ม/คอลัมน์ยังไม่มี = [])
+>     · admin ข้ามด่านฝั่งเสมอ (safety net เดียวกับ page:*) · ฝั่งเป็นชั้น **จำกัดเพิ่ม** ไม่เคยเปิดหน้าที่ role ไม่มีสิทธิ์
+>     · โหมดจำลอง 🎭 ตั้งฝั่งได้ (`viewAs.sides`) — ทดสอบการมองเห็นของคน Store/Warehouse ก่อนติ๊กจริง
+>   - ในหน้า: `SideFilterChips` ของ `/line-stock` + `/store-monitor` เริ่มที่ฝั่งของบัญชี (`defaultSideFilter` · `UserContext.sides`) กดสลับได้เสมอ
+>   - เทส: `logisticSide.test.mjs` (sideOfNode/sideOfEmployee/sidesForUser/sideAllows) + `permissions.test.mjs` (ด่านฝั่งใน canAccessPage)
 > ### ⚠️ กฎเหล็ก — "ฝ่าย (Division)" เป็น **ป้ายที่ node** ไม่ใช่ชั้นใน tree (2026-08-18 · ย้ำอีกครั้ง 2026-08-19)
 > ระบบมีกลไกฝ่ายอยู่แล้ว: ตาราง **`org_divisions`** (production/maintenance/quality/logistic/office)
 > + คอลัมน์ **`org_nodes.division`** ติดป้ายที่ node ระดับบนสุด แล้ว**ลูกตกทอดขึ้นไปหา** (`divisionOfNode`)

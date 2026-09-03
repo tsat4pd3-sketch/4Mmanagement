@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
-import { splitBySide, sideMatches } from '../utils/logisticSide';
+import { splitBySide, sideMatches, defaultSideFilter } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
@@ -65,7 +65,7 @@ const EMPTY_FORM = { line_name:'', mat_no:'', part_name:'', qty:'', type:'issue'
    TAB: STOCK (existing content)
    ───────────────────────────────────────────────────────────────────────────── */
 function StockTab({ role, scope }) {
-  const { fullName } = useContext(UserContext);
+  const { fullName, sides: userSides } = useContext(UserContext);
   const canIssue = can('line_stock', 'issue', role);
   const canApprove = can('line_stock', 'approve', role);
 
@@ -73,7 +73,8 @@ function StockTab({ role, scope }) {
   const [stock,   setStock]   = useState([]);
   const [txns,    setTxns]    = useState([]);
   // ฝั่งงาน: '' ทั้งหมด · inbound (Store 2xx/3xx/5xx) · outbound (Warehouse FG 1xx) · unknown
-  const [sideFilter, setSideFilter] = useState('');
+  // เริ่มที่ฝั่งของบัญชี (ชั้น 3 · 2026-09-04) — คน Store เปิดมาเห็นขาเข้าก่อน · ไม่จำกัด/หลายฝั่ง = ทั้งหมด · กดสลับได้เสมอ
+  const [sideFilter, setSideFilter] = useState(() => defaultSideFilter(userSides));
   const [bomMap,  setBomMap]  = useState({});
   const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี

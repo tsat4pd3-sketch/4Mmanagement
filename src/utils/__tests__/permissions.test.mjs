@@ -68,6 +68,12 @@ before(async () => {
     // page:* ที่ seed enum_range แจกหลุดเข้า bucket — โค้ดต้องบล็อกเอง
     { role: 'dept_admin', permission_key: 'page:/org-setup',       allowed: true },
     { role: 'mtn',        permission_key: 'page:/daily-pm',        allowed: true },
+    // หน้าหมวด Logistic — ใช้เทสด่านฝั่งงาน (ชั้น 3 · 2026-09-04)
+    { role: 'sale',       permission_key: 'page:/line-stock',      allowed: true },
+    { role: 'sale',       permission_key: 'page:/customer-demand', allowed: true },
+    { role: 'sale',       permission_key: 'page:/store-monitor',   allowed: true },
+    { role: 'sale',       permission_key: 'page:/planner-sales',   allowed: true },
+    { role: 'qa',         permission_key: 'page:/line-stock',      allowed: false },
   ];
   // แถวถ่วง 2300 แถว → pagination ต้องวิ่ง 3 หน้า · role 'display' เรียงกลางลิสต์
   // ทำให้แถว manager/mtn/qa/supervisor ถูกดันไปหน้า 2-3 — ถ้า pagination พังเทสล้มทันที
@@ -115,4 +121,34 @@ test('Daily Checker piggyback: เข้าได้ผ่านสิทธิ�
 
 test('pagination: แถวที่ถูกดันไปหน้าท้ายๆ (>2000 แถว) ต้องไม่หลุดจาก cache', () => {
   assert.equal(mod.canAccessPage('/shift-organize', 'supervisor'), true);
+});
+
+/* ═══ ด่านฝั่งงาน Logistic (ชั้น 3 · 2026-09-04) — ชั้น "จำกัดเพิ่ม" ทับสิทธิ์ role ═══ */
+test('ฝั่งงาน: ไม่ตั้งฝั่ง = เห็นครบตาม role (บัญชีเดิมไม่เสียอะไรตอน deploy)', () => {
+  mod.registerPageSides(new Map([
+    ['/line-stock', ['inbound']], ['/customer-demand', ['outbound']],
+    ['/store-monitor', ['inbound', 'outbound']], ['/planner-sales', ['control']],
+  ]));
+  mod.setUserSides([]);
+  for (const p of ['/line-stock', '/customer-demand', '/store-monitor', '/planner-sales']) {
+    assert.equal(mod.canAccessPage(p, 'sale'), true, p);
+  }
+});
+
+test('ฝั่งงาน: คน Store (inbound) เห็นเฉพาะขาเข้า + หน้าที่คาบ 2 ฝั่ง · ไม่เห็นขาออก/แผนงาน', () => {
+  mod.setUserSides(['inbound']);
+  assert.equal(mod.canAccessPage('/line-stock', 'sale'), true);
+  assert.equal(mod.canAccessPage('/store-monitor', 'sale'), true, 'เฝ้าระวังสต๊อกคาบ 2 ฝั่ง');
+  assert.equal(mod.canAccessPage('/customer-demand', 'sale'), false, 'จัดส่งลูกค้าเป็นของ Warehouse/Delivery');
+  assert.equal(mod.canAccessPage('/planner-sales', 'sale'), false);
+  // หน้าหมวดอื่นไม่ถูกกรองด้วยฝั่ง
+  assert.equal(mod.canAccessPage('/shift-organize', 'supervisor'), true);
+  mod.setUserSides([]);
+});
+
+test('ฝั่งงาน: ไม่เคยเปิดหน้าที่ role ไม่มีสิทธิ์ · admin bypass เสมอแม้ตั้งฝั่ง', () => {
+  mod.setUserSides(['inbound']);
+  assert.equal(mod.canAccessPage('/line-stock', 'qa'), false, 'qa ไม่มีสิทธิ์หน้า — ฝั่งช่วยไม่ได้');
+  assert.equal(mod.canAccessPage('/customer-demand', 'admin'), true, 'admin ต้องไม่โดนล็อกตัวเองด้วยฝั่ง');
+  mod.setUserSides([]);
 });

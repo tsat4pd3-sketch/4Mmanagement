@@ -9,6 +9,7 @@
  * of the permissions page (or any other page) via a misconfigured table.
  */
 import { supabase } from '../supabaseClient';
+import { sideAllows, normalizeSides } from './logisticSide.js';   // .js เพื่อให้เทส node:test resolve ได้ (bundler ไม่สน)
 
 let cache = null; // Map<`${role}:${permission_key}`, boolean>
 let loadingPromise = null;
@@ -19,6 +20,20 @@ let loadingPromise = null;
 let _deptAdmin = false;
 export function setDeptAdmin(v) { _deptAdmin = !!v; }
 export function isDeptAdminActive() { return _deptAdmin; }
+
+// ฝั่งงาน Logistic ของ user (ชั้น 3 · 2026-09-04) — ชั้น "จำกัดเพิ่ม" ทับสิทธิ์ role ของหน้าในหมวด Logistic
+//   _userSides  = ฝั่งที่ user ทำ (จาก profiles.logistic_sides หรือตกทอดจากแผนกพนักงาน — ตั้งจาก App.jsx
+//                 ตอน fetchProfile/จำลอง role เหมือน setDeptAdmin) · [] = ไม่จำกัด
+//   _pageSides  = path → ฝั่งของหน้า (App.jsx ลงทะเบียนจาก NAV_ITEMS + NAV_GROUP_META.side ตอนโหลดโมดูล)
+//   หน้าที่ไม่มีฝั่ง (หมวดอื่น) ผ่านเสมอ · **ไม่เคยเปิดหน้าที่ role ไม่มีสิทธิ์** — เช็คหลัง role ผ่านแล้วเท่านั้น
+//   เก็บเป็น module-level เพราะ canAccessPage ถูกเรียก sync จาก sidebar/route/Home/notification หลายร้อยจุด
+let _userSides = [];
+let _pageSides = new Map();
+export function setUserSides(arr) { _userSides = normalizeSides(arr); }
+export function getUserSides() { return _userSides; }
+export function registerPageSides(map) { _pageSides = map instanceof Map ? map : new Map(Object.entries(map || {})); }
+/** หน้านี้อยู่ในฝั่งที่ user ทำไหม (ไม่รู้จัก path = หน้ากลาง ผ่าน) */
+export function sideOkForPath(path) { return sideAllows(_pageSides.get(path) || [], _userSides); }
 
 export async function loadPermissions(forceRefresh = false) {
   if (cache && !forceRefresh) return cache;
@@ -71,6 +86,12 @@ export function hasPermission(permissionKey, role) {
 }
 
 export function canAccessPage(path, role) {
+  // ชั้น 1 = สิทธิ์ role (data-driven) · ชั้น 2 = ฝั่งงาน Logistic ของ user (จำกัดเพิ่มเท่านั้น)
+  // admin ข้ามด่านฝั่งเสมอ — safety net เดียวกับสิทธิ์หน้า (ตั้งฝั่งผิดต้องแก้ตัวเองได้ที่ /add-user)
+  return roleCanAccessPage(path, role) && (role === 'admin' || sideOkForPath(path));
+}
+
+function roleCanAccessPage(path, role) {
   // Daily Checker = ศูนย์รวมแท็บ (PM Daily / LPA / ...) — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง
   // (piggyback สิทธิ์เดิม ไม่ต้อง seed page:/daily-checker · แท็บใน DailyChecker.jsx โผล่ตามสิทธิ์ย่อย)
   if (path === '/daily-checker') {

@@ -8,7 +8,8 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
-import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin, setUserSides, registerPageSides } from './utils/permissions';
+import { pageSidesOf, sidesForUser, sideOfEmployee, normalizeSides } from './utils/logisticSide'; // ฝั่งงาน Logistic ชั้น 3 (2026-09-04)
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
@@ -86,7 +87,7 @@ const RemoteControl = lazy(() => import('./pages/RemoteControl'));
 const RemoteReceiver = lazy(() => import('./components/RemoteReceiver'));
 
 /* ─── Role System ──────────────────────────────────────────── */
-export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, notifyEmail: null, signatureUrl: null, fullName: null });
+export const UserContext = createContext({ role: 'admin', lineId: null, team: null, section: null, sides: [], notifyEmail: null, signatureUrl: null, fullName: null });
 
 // null roles = accessible to every role
 // group ใช้จัดหมวดหมู่ในแถบ sidebar (มี minimize/expand ต่อหมวด)
@@ -212,14 +213,22 @@ export const NAV_GROUP_META = {
   'ฝ่ายผลิต':                  { icon: '🏭', short: 'ผลิต' },
   'วิเคราะห์ & รายงาน':        { icon: '📈', short: 'รายงาน' },
   'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
-  'Logistic - ขาเข้า (Inbound)':  { icon: '📥', short: 'ขาเข้า' },
-  'Logistic - ขาออก (Outbound)':  { icon: '📤', short: 'ขาออก' },
-  'Logistic - แผนงาน & ข้อมูล':   { icon: '🧭', short: 'แผนงาน' },
+  // `side` = ฝั่งงานของหมวด (key ตาม logisticSide.js SIDES) — ใช้กรองเมนู/หน้าตามฝั่งของบัญชี (ชั้น 3 · 2026-09-04)
+  'Logistic - ขาเข้า (Inbound)':  { icon: '📥', short: 'ขาเข้า', side: 'inbound' },
+  'Logistic - ขาออก (Outbound)':  { icon: '📤', short: 'ขาออก', side: 'outbound' },
+  'Logistic - แผนงาน & ข้อมูล':   { icon: '🧭', short: 'แผนงาน', side: 'control' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
   'ผู้บริหาร & เดโม':          { icon: '🔮', short: 'ผู้บริหาร' },
 };
+
+/* ฝั่งงานของแต่ละหน้า → ด่านชั้น 2 ของ canAccessPage (permissions.js) — ลงทะเบียนครั้งเดียวตอนโหลดโมดูล
+   หน้าในหมวด Logistic ได้ฝั่งจาก NAV_GROUP_META.side ของหมวดหลัก + alsoIn (หน้าที่คาบ 2 ฝั่งผ่านได้ทั้ง 2)
+   หมวดอื่นไม่มี side = หน้ากลาง ไม่ถูกกรอง · single source = NAV_ITEMS + NAV_GROUP_META ห้ามพิมพ์ path ซ้ำที่อื่น */
+registerPageSides(new Map(
+  NAV_ITEMS.map(i => [i.to, pageSidesOf(i, NAV_GROUP_META)]).filter(([, sides]) => sides.length),
+));
 
 // เมนูจริงของหมวด sidebar สำหรับ DeptHub — การ์ดหน้าหลักดึงไปแสดงเป็นชิปที่คลิกเข้าหน้าได้เลย
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
@@ -1375,7 +1384,24 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion ไม่ได้ใช้ในฟังก์ชันโดยตรง — รับไว้เพื่อให้ prop เปลี่ยนแล้ว layout ทั้งต้น re-render
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+/* ฝั่งงาน Logistic ของบัญชี (ชั้น 3 · 2026-09-04) — ลำดับความสำคัญตาม sidesForUser():
+     1. profiles.logistic_sides (admin ตั้งที่ /add-user — บัญชีหน่วยงาน/shared ที่ไม่ผูกพนักงาน)
+     2. ตกทอดจากแผนกของพนักงานที่ผูก (employees.department → org_nodes.logistic_side → sideOfEmployee)
+     3. ไม่มีทั้งคู่ = [] ไม่จำกัด
+   ทุก query best-effort — supabase-js ไม่ throw (คืน {error}) แต่กัน throw อื่นไว้ด้วย → [] เสมอเมื่อพลาด */
+async function loadUserSides(userId, emp) {
+  try {
+    const { data: p } = await supabase.from('profiles').select('logistic_sides').eq('id', userId).maybeSingle();
+    const explicit = normalizeSides(p?.logistic_sides);
+    if (explicit.length) return explicit;
+    if (!emp?.department && !emp?.section) return [];
+    const { data: nodes } = await supabase.from('org_nodes')
+      .select('id, parent_id, kind, name, code, logistic_side').eq('is_active', true);
+    return sidesForUser([], sideOfEmployee(emp, nodes || []));
+  } catch { return []; }
+}
+
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userMtnTeams, userSides, userIsDeptAdmin, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   const [isOpen, setIsOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 768);
@@ -1399,6 +1425,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
     setDrActorName(null);
     setDeptAdmin(false);
+    setUserSides([]);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1482,7 +1509,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   if (location.pathname === '/tv') {
     if (!canAccessPage('/tv', role)) return <Navigate to="/" replace />;
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], sides: userSides || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <TvBoard />
         </Suspense>
@@ -1495,7 +1522,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], sides: userSides || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
@@ -1522,7 +1549,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role, sidebarOpen: isOpen }}>
+    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], sides: userSides || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role, sidebarOpen: isOpen }}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -1796,6 +1823,7 @@ export default function App() {
   const [userAvatarUrl,    setUserAvatarUrl]    = useState(null); // รูปโปรไฟล์ user (profiles.avatar_url — 2026-07-14)
   const [userMtnTeams,     setUserMtnTeams]     = useState([]);   // ทีมช่างซ่อมที่ user สังกัด (profiles.mtn_teams — 2026-07-22) แยกคิว MO
   const [userIsDeptAdmin,  setUserIsDeptAdmin]  = useState(false); // แอดมินหน่วยงาน (profiles.is_dept_admin — 2026-08-03) ซ้อนบน role เดิม
+  const [userLogSides,     setUserLogSides]     = useState([]);   // ฝั่งงาน Logistic (profiles.logistic_sides / ตกทอดจากแผนกพนักงาน — 2026-09-04) [] = ไม่จำกัด
   const [showSplash,   setShowSplash]   = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
@@ -1827,7 +1855,9 @@ export default function App() {
   useEffect(() => {
     if (!profileLoaded) return;
     setDeptAdmin(impersonating ? !!viewAs?.deptAdmin : userIsDeptAdmin);
-  }, [profileLoaded, impersonating, viewAs, userIsDeptAdmin]);
+    // ฝั่งงาน Logistic เป็น module-flag ของ canAccessPage เช่นกัน — ต้องตามโหมดจำลองด้วย
+    setUserSides(impersonating ? normalizeSides(viewAs?.sides) : userLogSides);
+  }, [profileLoaded, impersonating, viewAs, userIsDeptAdmin, userLogSides]);
   // ค่า effective ที่ส่งเข้า layout ทั้งต้น (จำลอง = ทับด้วยค่าที่เลือกในโหมด)
   const effRole     = impersonating ? viewAs.role : userRole;
   const effLineId   = impersonating ? (viewAs.lineId ?? null) : userLineId;
@@ -1838,6 +1868,7 @@ export default function App() {
     : userSections;
   const effMtnTeams = impersonating ? (Array.isArray(viewAs.mtnTeams) ? viewAs.mtnTeams : []) : userMtnTeams;
   const effDeptAdmin = impersonating ? !!viewAs.deptAdmin : userIsDeptAdmin;
+  const effSides     = impersonating ? normalizeSides(viewAs.sides) : userLogSides;
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -1885,9 +1916,11 @@ export default function App() {
     //
     // ⚠️ `sections[]` **ไม่ย้าย** — เป็น "ขอบเขตที่ admin ให้" ไม่ใช่ตัวตน และ employees ไม่มีของเทียบเท่า
     let ident = { team: data?.team ?? null, line_id: data?.line_id ?? null, section: data?.section ?? null };
+    let empRow = null;   // แถวพนักงานที่ผูก — ใช้ตกทอดฝั่ง Logistic จากแผนก (loadUserSides)
     if (data?.employee_id) {
       const { data: emp } = await supabase.from('employees')
-        .select('team, line_id, section').eq('id', data.employee_id).maybeSingle();
+        .select('team, line_id, section, department').eq('id', data.employee_id).maybeSingle();
+      empRow = emp || null;
       if (emp) ident = {
         team:    emp.team    ?? ident.team,
         line_id: emp.line_id ?? ident.line_id,
@@ -1919,6 +1952,13 @@ export default function App() {
     {
       const v = data?.is_dept_admin === true;
       setUserIsDeptAdmin(v); setDeptAdmin(v);
+    }
+    // ฝั่งงาน Logistic (ชั้น 3 · 2026-09-04) — เป็นด่านของ canAccessPage จึงต้อง **รอให้ได้ค่าก่อน render แรก**
+    // (แยก query แบบ mtn_teams แต่ await — ถ้าไม่รอ เมนูจะโผล่ครบแล้วค่อยหาย) · best-effort: คอลัมน์/ป้าย
+    // ยังไม่ apply หรือโหลดล้ม → [] = ไม่จำกัด เหมือนก่อนมีฟีเจอร์ ห้ามทำ login พัง
+    {
+      const sides = await loadUserSides(user.id, empRow);
+      setUserLogSides(sides); setUserSides(sides);
     }
     setProfileLoaded(true);
   };
@@ -1997,6 +2037,7 @@ export default function App() {
                 userSection={effSection}
                 userSections={effSections}
                 userMtnTeams={effMtnTeams}
+                userSides={effSides}
                 userIsDeptAdmin={effDeptAdmin}
                 userPosition={userPosition}
                 userEmail={userEmail}

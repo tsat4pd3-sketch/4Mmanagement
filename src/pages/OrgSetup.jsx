@@ -6,6 +6,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta } from '../utils/laborType';
+import { SIDES, sideMeta, sideOfNode } from '../utils/logisticSide';   // ป้ายฝั่งงาน Logistic ที่แผนก (ชั้น 3 · 2026-09-04)
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
 
@@ -37,6 +38,7 @@ export default function OrgSetup() {
   const [formRefLineId, setFormRefLineId] = useState('');
   const [formLaborType, setFormLaborType] = useState('direct'); // section: direct/indirect
   const [formDivision, setFormDivision] = useState('');        // ฝ่าย — ติดที่ node ระดับบนสุด ลูกตกทอด
+  const [formSide, setFormSide] = useState('');                // ฝั่งงาน Logistic — ติดที่แผนก ลูกตกทอด (เฉพาะ node ในฝ่าย logistic)
   const [divReady, setDivReady] = useState(0);
   const [saving, setSaving] = useState(false);
   // ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup) — เก็บใน section_signers keyed by production_lines.section
@@ -159,15 +161,23 @@ export default function OrgSetup() {
 
   const openCreate = (kind, parentId) => {
     setFormName(''); setFormCode(''); setFormCostCenter(''); setFormRefLineId('');
-    setFormLaborType('direct'); setFormDivision('');
+    setFormLaborType('direct'); setFormDivision(''); setFormSide('');
     setModal({ kind, parentId, editing: null });
   };
   const openEdit = (node) => {
     setFormName(node.name); setFormCode(node.code || ''); setFormCostCenter(lineCostCenter(node));
     setFormRefLineId(node.ref_line_id ? String(node.ref_line_id) : '');
     setFormLaborType(node.labor_type || 'direct'); setFormDivision(node.division || '');
+    setFormSide(node.logistic_side || '');
     setModal({ kind: node.kind, parentId: node.parent_id, editing: node });
   };
+
+  /* node นี้อยู่ในฝ่าย logistic ไหม (ตัวเอง/แม่/ค่าที่เพิ่งเลือกในฟอร์ม) → ค่อยโชว์ช่อง "ฝั่งงาน"
+     ⚠️ ยึดป้าย division ที่ผัง ไม่เดาจากชื่อ 'Planning&Store' (โรงงานอื่นเรียกไม่เหมือนกัน) */
+  const inLogisticCtx = (m) => !!m && ['section', 'department'].includes(m.kind) && (
+    formDivision === 'logistic'
+    || (m.editing && divisionOfNode(m.editing.id, nodes) === 'logistic')
+    || (!!m.parentId && divisionOfNode(m.parentId, nodes) === 'logistic'));
 
   const handleSave = async () => {
     if (!formName.trim()) return toast.error('กรุณากรอกชื่อ');
@@ -202,6 +212,9 @@ export default function OrgSetup() {
       ...(['section', 'department'].includes(modal.kind) ? { labor_type: formLaborType } : {}),
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
       ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
+      // ฝั่งงาน Logistic — ส่งเฉพาะเมื่อช่องโผล่ (node ในฝ่าย logistic) หรือมีค่าค้าง
+      // ไม่ส่งเสมอ เพราะก่อน apply migration 20260904 คอลัมน์ยังไม่มี → node ฝ่ายอื่นต้องยังบันทึกได้
+      ...(inLogisticCtx(modal) || formSide ? { logistic_side: formSide || null } : {}),
     };
     const { error } = modal.editing
       ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
@@ -289,6 +302,7 @@ export default function OrgSetup() {
                   {s.cost_center && <CostBadge code={s.cost_center} />}
                   <LaborBadge type={s.labor_type} />
                   <DivBadge node={s} nodes={nodes} />
+                  <SideBadge node={s} nodes={nodes} />
                 </span>
                 {canEditNode(s) && <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
@@ -319,6 +333,7 @@ export default function OrgSetup() {
                   {d.cost_center && <CostBadge code={d.cost_center} />}
                   <LaborBadge type={d.labor_type} />
                   <DivBadge node={d} nodes={nodes} />
+                  <SideBadge node={d} nodes={nodes} />
                 </span>
                 {canEditNode(d) && <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
@@ -450,6 +465,19 @@ export default function OrgSetup() {
                   </div>
                 </div>
               )}
+              {inLogisticCtx(modal) && (
+                <div>
+                  <label style={labelSt}>📦 ฝั่งงาน Logistic</label>
+                  <select value={formSide} onChange={e => setFormSide(e.target.value)}>
+                    <option value="">— ตกทอดจากตัวแม่ / ยังไม่ระบุ —</option>
+                    {SIDES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label} — {s.owner}</option>)}
+                  </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                    ใช้กำหนดว่าคนในแผนกนี้เห็นเมนู Logistic <b>ฝั่งไหน</b> (บัญชีที่ผูกพนักงานแผนกนี้ตกทอดฝั่งอัตโนมัติ)
+                    · <b>Warehouse = FG 1xx → ขาออก</b> · <b>Store = 2xx/3xx/5xx → ขาเข้า</b> — คนละแผนก ห้ามสลับ
+                  </div>
+                </div>
+              )}
               {modal.kind === 'line' && (
                 <div>
                   <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
@@ -487,6 +515,23 @@ function CostBadge({ code }) {
   return (
     <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
       💰{code}
+    </span>
+  );
+}
+
+/** ป้ายฝั่งงาน Logistic — โชว์เฉพาะ node ที่มีฝั่ง (ติดเอง = เต็ม · ตกทอดจากแม่ = จาง) แบบเดียวกับ DivBadge */
+function SideBadge({ node, nodes }) {
+  const own = node.logistic_side || null;
+  const eff = own || sideOfNode(node.id, nodes);
+  const m = eff && sideMeta(eff);
+  if (!m) return null;
+  return (
+    <span title={own ? `ฝั่งงาน: ${m.owner} (ติดป้ายที่ตัวนี้เอง)` : `ฝั่งงาน: ${m.owner} (ตกทอดจากตัวแม่)`}
+      style={{
+        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 999,
+        border: `1px solid ${m.color}${own ? '' : '55'}`, color: m.color, opacity: own ? 1 : 0.6,
+      }}>
+      {m.icon} {m.short}{own ? '' : ' (ตกทอด)'}
     </span>
   );
 }

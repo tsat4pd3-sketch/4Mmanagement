@@ -83,3 +83,81 @@ test('UNKNOWN_SIDE ต้องแยกจาก SIDES (เป็นสถา�
   assert.equal(UNKNOWN_SIDE.key, 'unknown');
   assert.ok(!SIDES.some(s => s.key === 'unknown'), 'ห้ามยัด unknown เข้า SIDES — จะกลายเป็นฝั่งที่มีเจ้าของ');
 });
+
+/* ═══ ชั้น 3 — ฝั่งของคน/หน่วยงาน (2026-09-04) ═══════════════════════════════════ */
+import {
+  SIDE_KEYS, normalizeSides, sideOfNode, sideOfEmployee, sidesForUser,
+  pageSidesOf, sideAllows, defaultSideFilter,
+} from '../logisticSide.js';
+
+/* ผังจำลองตาม seed ใน migration 20260904: section Planning&Store (ไม่มีป้าย) → 7 แผนกมีป้าย */
+const ORG = [
+  { id: 'ps',  kind: 'section',    name: 'Planning&Store', parent_id: null, division: 'logistic' },
+  { id: 'st',  kind: 'department', name: 'Store',       parent_id: 'ps', logistic_side: 'inbound' },
+  { id: 'wh',  kind: 'department', name: 'Warehouse',   parent_id: 'ps', logistic_side: 'outbound' },
+  { id: 'dl',  kind: 'department', name: 'Delivery',    parent_id: 'ps', logistic_side: 'outbound' },
+  { id: 'sl',  kind: 'department', name: 'Sales',       parent_id: 'ps', logistic_side: 'control' },
+  { id: 'g1',  kind: 'line',       name: 'WH Team 1',   parent_id: 'wh' },                         // ลูกของ Warehouse ไม่ติดป้ายเอง
+  { id: 'pd1', kind: 'section',    name: 'PD1', code: 'PD1', parent_id: null, division: 'production' },
+];
+
+test('SIDE_KEYS ตรงกับ SIDES และ normalizeSides ล้างค่าเพี้ยน/ซ้ำ/ตัวพิมพ์', () => {
+  assert.deepEqual(SIDE_KEYS, SIDES.map(s => s.key));
+  assert.deepEqual(normalizeSides(['Inbound', 'inbound', 'bogus', null, 'OUTBOUND']), ['inbound', 'outbound']);
+  assert.deepEqual(normalizeSides(null), []);
+  assert.deepEqual(normalizeSides('inbound'), [], 'ไม่ใช่ array = ว่าง (ค่าจาก sessionStorage อาจเพี้ยน)');
+});
+
+test('sideOfNode: ป้ายที่แผนก ลูกตกทอด · section ที่ไม่มีป้าย = null · Warehouse ≠ Store', () => {
+  assert.equal(sideOfNode('st', ORG), 'inbound',  'Store = ขาเข้า');
+  assert.equal(sideOfNode('wh', ORG), 'outbound', 'Warehouse = ขาออก — ห้ามกลับด้านกับ Store');
+  assert.equal(sideOfNode('g1', ORG), 'outbound', 'ลูกของ Warehouse ตกทอดขาออก');
+  assert.equal(sideOfNode('ps', ORG), null, 'Planning&Store ไม่มีป้าย (ทั้ง 3 ฝั่งอยู่ใต้ส่วนเดียวกัน) ห้ามเดา');
+  assert.equal(sideOfNode('pd1', ORG), null);
+  assert.equal(sideOfNode(null, ORG), null);
+});
+
+test('sideOfEmployee: ยึดแผนกก่อน section · ไม่มีแผนก/ไม่มีป้าย = null', () => {
+  assert.equal(sideOfEmployee({ section: 'Planning&Store', department: 'Store' }, ORG), 'inbound');
+  assert.equal(sideOfEmployee({ section: 'Planning&Store', department: 'warehouse ' }, ORG), 'outbound', 'เทียบชื่อแบบไม่สนตัวพิมพ์/ช่องว่าง (department เป็น free text)');
+  assert.equal(sideOfEmployee({ section: 'Planning&Store', department: null }, ORG), null, 'พนักงานที่ยังไม่ระบุแผนก = ไม่รู้ฝั่ง ไม่จำกัด');
+  assert.equal(sideOfEmployee({ section: 'PD1', department: 'ASSY' }, ORG), null, 'ฝ่ายผลิตไม่มีฝั่ง Logistic');
+});
+
+test('sidesForUser: ค่าที่ตั้งตรงชนะค่าตกทอด · ไม่มีทั้งคู่ = [] (ไม่จำกัด — บัญชีเดิมไม่เสียอะไร)', () => {
+  assert.deepEqual(sidesForUser(['outbound'], 'inbound'), ['outbound'], 'admin ตั้งเองต้องทับค่าตกทอด');
+  assert.deepEqual(sidesForUser([], 'inbound'), ['inbound']);
+  assert.deepEqual(sidesForUser(null, null), []);
+  assert.deepEqual(sidesForUser(['bogus'], 'bogus'), [], 'ค่าเพี้ยนทั้งคู่ = ไม่จำกัด ไม่ใช่ล็อกทุกหน้า');
+});
+
+test('pageSidesOf: ฝั่งของเมนูมาจาก NAV_GROUP_META.side ของหมวดหลัก + alsoIn · หมวดอื่นไม่มี', () => {
+  const META = {
+    'Logistic - ขาเข้า (Inbound)': { side: 'inbound' },
+    'Logistic - ขาออก (Outbound)': { side: 'outbound' },
+    'ฝ่ายผลิต': { icon: '🏭' },
+  };
+  assert.deepEqual(pageSidesOf({ to: '/line-stock', group: 'Logistic - ขาเข้า (Inbound)' }, META), ['inbound']);
+  assert.deepEqual(pageSidesOf({ to: '/store-monitor', group: 'Logistic - ขาเข้า (Inbound)', alsoIn: 'Logistic - ขาออก (Outbound)' }, META),
+    ['inbound', 'outbound'], 'หน้าที่คาบ 2 ฝั่งต้องได้ทั้งคู่');
+  assert.deepEqual(pageSidesOf({ to: '/daily-report', group: 'ฝ่ายผลิต' }, META), [], 'หน้าหมวดอื่น = หน้ากลาง');
+});
+
+test('sideAllows: ว่าง = ไม่จำกัด · หน้ากลางผ่านเสมอ · จำกัดแล้วเห็นเฉพาะฝั่งตัวเอง (หน้าคาบ 2 ฝั่งผ่าน)', () => {
+  assert.equal(sideAllows(['inbound'], []), true, 'บัญชีไม่ถูกตั้งฝั่ง = เห็นทุกหน้าเหมือนเดิม');
+  assert.equal(sideAllows([], ['inbound']), true, 'หน้ากลาง (ไม่มีฝั่ง) ไม่ถูกกรอง');
+  assert.equal(sideAllows(['inbound'], ['inbound']), true);
+  assert.equal(sideAllows(['outbound'], ['inbound']), false, 'คน Store ไม่เห็นหน้าขาออก');
+  assert.equal(sideAllows(['inbound'], ['outbound']), false, 'คน Warehouse ไม่เห็นหน้าขาเข้า');
+  assert.equal(sideAllows(['inbound', 'outbound'], ['outbound']), true, 'เฝ้าระวังสต๊อกคาบ 2 ฝั่ง — คน Warehouse ยังเห็น');
+  assert.equal(sideAllows(['control'], ['inbound', 'outbound']), false);
+  assert.equal(sideAllows(['control'], ['control']), true);
+});
+
+test('defaultSideFilter: ฝั่งเดียวที่ถือของ = เริ่มที่ฝั่งนั้น · control/หลายฝั่ง/ไม่จำกัด = ทั้งหมด', () => {
+  assert.equal(defaultSideFilter(['inbound']), 'inbound');
+  assert.equal(defaultSideFilter(['outbound', 'control']), 'outbound', 'control ไม่ถือของ ไม่นับ');
+  assert.equal(defaultSideFilter(['inbound', 'outbound']), '');
+  assert.equal(defaultSideFilter(['control']), '');
+  assert.equal(defaultSideFilter([]), '');
+});

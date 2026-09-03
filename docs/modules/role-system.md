@@ -149,6 +149,20 @@
 - migration `20260821_profiles_employee_link.sql` (**apply แล้ว**) · **ไม่เปลี่ยนพฤติกรรมของใครเลย** (additive ล้วน)
 - **⚠️ RLS `auth_update_profiles` เปิดให้ authenticated แก้ profile ของใครก็ได้** (using/with_check = true · ของเดิมมาก่อน) — คุมด้วย `page:/add-user` (admin only) ฝั่ง UI เท่านั้น · ถ้าจะรัดต้องทำแยก (ดูกฎ `set_my_signature` RPC)
 
+### ฝั่งงาน Logistic ต่อบัญชี — `profiles.logistic_sides[]` (ชั้น 3 · 2026-09-04)
+
+- แกนที่ 3 ของ scope นอกจาก `sections[]` (ข้อมูลผลิต) และ `mtn_teams[]` (คิวซ่อม): **ฝั่งงาน Logistic** inbound/outbound/control
+  (key ตาม `src/utils/logisticSide.js` SIDES · migration `20260904_logistic_layer3_departments.sql` Main)
+- **ผล = กรองหน้าในหมวด Logistic 3 ฝั่ง** ผ่าน `canAccessPage()` ชั้นที่ 2 (`setUserSides`/`registerPageSides`/`sideOkForPath` ใน permissions.js)
+  — ไม่ใช่ role ใหม่ ไม่แตะ `role_permissions` · ฝั่งเป็นชั้น "จำกัดเพิ่ม" ไม่เคยเปิดหน้าที่ role ไม่มีสิทธิ์ · admin ข้ามเสมอ
+- **ที่มาของค่า (`sidesForUser`)**: (1) `profiles.logistic_sides` ที่ admin ติ๊กใน `/add-user` (2) ไม่มีค่อยตกทอดจากแผนกของพนักงานที่ผูก
+  (`employees.department` → `org_nodes.logistic_side`) (3) ไม่มีทั้งคู่ = `[]` **ไม่จำกัด** (เห็นครบเหมือนก่อนมีฟีเจอร์)
+- App.jsx **await** ค่านี้ก่อน `setProfileLoaded(true)` (ต่างจาก mtn_teams ที่ยิงทิ้ง) เพราะเป็นด่านของเมนู — ไม่รอ = เมนูโผล่ครบแล้วค่อยหาย
+  · best-effort: คอลัมน์/ป้ายยังไม่ apply หรือ query ล้ม → `[]` ห้ามทำ login พัง
+- `UserContext.sides` = ค่า effective (ตามโหมดจำลองด้วย) — หน้าที่อยากรู้ฝั่งของคนใช้ตัวนี้ ห้าม query profiles ซ้ำ
+- **ห้ามสรุปฝั่งจาก role** (`sale` 6 บัญชีคือบัญชีใช้ร่วมของทั้งฝ่าย) และ**ห้ามเดาจากชื่อแผนก** — ยึดป้ายที่ผัง + ค่าที่ admin ตั้ง
+- รายละเอียดผัง/แผนก 7 ตัว/กฎ Warehouse ≠ Store → `docs/modules/org-hierarchy.md`
+
 ### Section/Line/Team Scoping — รองรับหลาย section ต่อ user แล้ว (2026-07-09)
 
 - ขอบเขตส่วนงานเก็บที่ `profiles.sections text[]` (หลายค่า เช่น `{PD1,PD2,QA}`) โดยยังมี `profiles.section` เดี่ยว (legacy) อยู่คู่กัน — ตีความผ่าน `effectiveSections(role, sections, section)` ใน `src/utils/sectionScope.js` ตามลำดับ:
