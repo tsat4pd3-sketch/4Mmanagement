@@ -41,11 +41,28 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
   const down = useMemo(() => downstreamOf(graph, lineName), [graph, lineName]);
   const up = useMemo(() => upstreamOf(graph, lineName), [graph, lineName]);
 
-  /* ไลน์ที่เลือกได้ = ทุกไลน์ยกเว้นตัวเอง (ข้ามไลน์แม่-ลูก/ข้ามส่วนงานได้ — ของไหลข้ามส่วนงานจริง) */
-  const options = useMemo(
-    () => lines.filter(l => l.name !== lineName).map(l => l.name).sort((a, b) => a.localeCompare(b)),
-    [lines, lineName]
-  );
+  /* ไลน์ที่ "มีลูก" = ระดับแผนก — งานจริงเกิดที่ไลน์ลูกเสมอ
+     (กฎเดียวกับหน่วยนับสต๊อก: ของ/งานอยู่ที่ไลน์ย่อยที่สุด ไลน์แม่เป็นแค่การจัดกลุ่ม) */
+  const childrenOf = useMemo(() => {
+    const m = {};
+    (lines || []).forEach(l => { if (l.parent_line_name) (m[l.parent_line_name] ||= []).push(l.name); });
+    Object.values(m).forEach(a => a.sort((x, y) => x.localeCompare(y)));
+    return m;
+  }, [lines]);
+
+  /* ไลน์ที่เลือกได้ — ข้ามแผนก/ข้ามส่วนงานได้ (ของไหลข้ามส่วนงานจริง)
+     🔴 เสนอลำดับ ไม่ตัดตัวเลือกทิ้ง (กฎเดียวกับ moveTargets): ไลน์แม่ยังเลือกได้ แต่แยกกลุ่ม + เตือน
+        เดิมลิสต์ดิบๆ ไม่บอกอะไรเลย → คนตั้ง "LASER-345 ➡️ LINE APRON ASSY" ซึ่งเป็นชื่อ *แผนก*
+        แล้ว cover time คำนวณไม่ได้ตลอดกาล เพราะไลน์แม่ไม่มี product/CT ของตัวเอง (ข้อมูลจริง 03/09: 0 พาร์ท)
+     ⚠️ ไลน์ที่ปิดใช้งานถูกกรองออก แต่ค่าที่ "ตั้งไว้แล้ว" ยังแสดงในลิสต์เส้นเสมอ (ไม่หายเงียบ) */
+  const { leafOpts, parentOpts } = useMemo(() => {
+    const usable = (lines || []).filter(l => l.name !== lineName && l.is_active !== false);
+    const byName = (a, b) => a.localeCompare(b);
+    return {
+      leafOpts: usable.filter(l => !childrenOf[l.name]).map(l => l.name).sort(byName),
+      parentOpts: usable.filter(l => childrenOf[l.name]).map(l => l.name).sort(byName),
+    };
+  }, [lines, lineName, childrenOf]);
 
   const save = async () => {
     if (!form?.other) { toast.error('เลือกไลน์ปลายทางก่อน'); return; }
@@ -76,7 +93,11 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
     const other = dir === 'down' ? l.to_line : l.from_line;
     /* ⚠️ cover time คิดจาก CT ของ "ไลน์ปลายน้ำ" เสมอ (ปลายน้ำเป็นคนกินของออกจาก buffer) */
     const consumer = dir === 'down' ? l.to_line : lineName;
-    const cover = bufferCoverMin(l.buffer_qty, lineAvgCtSec(products, consumer));
+    const consumerCt = lineAvgCtSec(products, consumer);
+    const cover = bufferCoverMin(l.buffer_qty, consumerCt);
+    /* ตั้งไว้ผิดชั้น = ต้องเห็น ไม่ใช่เงียบ — เส้นที่ชี้ไปไลน์แม่ประเมินเวลาไม่ได้เลย */
+    const otherKids = childrenOf[other] || [];
+    const ctMissing = l.buffer_qty != null && consumerCt == null;
     return (
       <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--border2)', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
@@ -89,6 +110,14 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
         {cover != null && (
           <span title="ต้นน้ำหยุดได้ประมาณเท่านี้ก่อนปลายน้ำเริ่มรอของ (คิดจาก CT เฉลี่ยของไลน์ปลายน้ำ)"
             style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>≈ กันได้ {fmtMin(cover)}</span>
+        )}
+        {ctMissing && (
+          <span title={`${consumer} ยังไม่มีสินค้าที่ตั้ง Cycle Time — ประเมิน "กันได้กี่นาที" ไม่ได้`}
+            style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ไม่มี CT ของ {consumer} — ประเมินเวลาไม่ได้</span>
+        )}
+        {otherKids.length > 0 && (
+          <span title={`${other} เป็นระดับแผนก (มีไลน์ย่อย ${otherKids.join(', ')}) — งานจริงเกิดที่ไลน์ย่อย ตั้งเส้นที่ไลน์ย่อยแทน`}
+            style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>⚠ {other} เป็นแผนก ไม่ใช่ไลน์</span>
         )}
         {canEdit && (
           <button onClick={() => remove(l)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.6 }}>🗑</button>
@@ -148,7 +177,16 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์
                       <select value={form.other} onChange={e => setForm({ ...form, other: e.target.value })} style={{ marginTop: 3 }}>
                         <option value="">— เลือกไลน์ —</option>
-                        {options.map(n => <option key={n} value={n}>{n}</option>)}
+                        {leafOpts.length > 0 && (
+                          <optgroup label="⭐ ไลน์ผลิต (งานเกิดที่นี่จริง)">
+                            {leafOpts.map(n => <option key={n} value={n}>{n}</option>)}
+                          </optgroup>
+                        )}
+                        {parentOpts.length > 0 && (
+                          <optgroup label="⚠️ ระดับแผนก (มีไลน์ย่อย — ปกติไม่ควรเลือก)">
+                            {parentOpts.map(n => <option key={n} value={n}>{n}</option>)}
+                          </optgroup>
+                        )}
                       </select>
                     </label>
                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อจุดพัก (ถ้ามี)
@@ -160,6 +198,23 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                         placeholder="ไม่รู้ = เว้นว่าง" style={{ marginTop: 3 }} />
                     </label>
                   </div>
+                  {(childrenOf[form.other] || []).length > 0 && (
+                    /* เตือน ไม่บล็อก — แต่ต้องบอกผลที่ตามมา + เสนอไลน์ย่อยให้กดได้เลย (ห้ามเป็นทางตัน) */
+                    <div style={{ fontSize: 11, color: '#f59e0b', lineHeight: 1.7, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 9px' }}>
+                      <b>⚠ {form.other} เป็นระดับแผนก ไม่ใช่ไลน์ผลิต</b> — งานจริงเกิดที่ไลน์ย่อย
+                      และไลน์แม่ไม่มีสินค้า/CT ของตัวเอง ⇒ ระบบจะประเมิน <b>“กันได้กี่นาที”</b> ให้เส้นนี้ไม่ได้เลย
+                      <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                        <span style={{ color: 'var(--muted)' }}>เลือกไลน์ย่อยแทน:</span>
+                        {(childrenOf[form.other] || []).map(k => (
+                          <button key={k} type="button" onClick={() => setForm({ ...form, other: k })}
+                            style={{ ...btnSt, padding: '3px 9px', fontSize: 11 }}>{k}</button>
+                        ))}
+                      </div>
+                      <div style={{ marginTop: 4, color: 'var(--muted)' }}>
+                        ป้อนให้หลายไลน์ = บันทึกทีละเส้น (เช่น LASER ➡️ Line 60 แล้วเพิ่ม LASER ➡️ Line 61 อีกเส้น)
+                      </div>
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button onClick={() => setForm(null)} style={btnSt}>ยกเลิก</button>
                     <button onClick={save} disabled={saving}

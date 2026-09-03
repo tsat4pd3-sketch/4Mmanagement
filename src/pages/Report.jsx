@@ -26,6 +26,7 @@ import { positionLabel, loadPositions } from '../utils/positions';   // ตำ�
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
+import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -144,36 +145,8 @@ const IND_SIG_DEFAULTS = ['พนักงานผู้ถูกประเ�
 
 const lbSt = { fontSize: 11, fontWeight: 600, color: 'var(--text2)', marginBottom: 4, display: 'block' };
 
-function useOrgSections() {
-  const [orgSections, setOrgSections] = useState([]);
-  useEffect(() => {
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name')
-      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name).sort()));
-  }, []);
-  return orgSections;
-}
-
-// แผนกตามลำดับชั้นองค์กร — คืนฟังก์ชัน deptsOf(section): กรองแผนกด้วย parent_id ของ section (cascade)
-// เดิมคืน list แบนรวมทุก section → dropdown แผนกเลือกข้าม section ได้ + ชื่อซ้ำ (บั๊กแก้ 2026-07-21)
-function useOrgDepts() {
-  const [tree, setTree] = useState({ secs: [], depts: [] });
-  useEffect(() => {
-    Promise.all([
-      supabase.from('org_nodes').select('id, code, name').eq('kind', 'section').eq('is_active', true),
-      supabase.from('org_nodes').select('code, name, parent_id').eq('kind', 'department').eq('is_active', true).order('name'),
-    ]).then(([s1, s2]) => setTree({ secs: s1.data || [], depts: s2.data || [] }));
-  }, []);
-  return useMemo(() => {
-    const nameOf = (n) => n.code || n.name;
-    const all = [...new Set(tree.depts.map(nameOf))].sort();
-    return (sectionCode) => {
-      if (!sectionCode) return all;
-      const sec = tree.secs.find(n => nameOf(n) === sectionCode);
-      if (!sec) return all;
-      return [...new Set(tree.depts.filter(d => d.parent_id === sec.id).map(nameOf))].sort();
-    };
-  }, [tree]);
-}
+// useOrgSections/useOrgDepts ย้ายไป src/utils/useOrgSections.js แล้ว (2026-09 — เมื่อหน้าที่สองต้องใช้ตัวเดียวกัน
+// ตามกฎ single source of truth) — import จากด้านบนแทน ห้ามนิยามซ้ำที่นี่
 
 // แท็บสกิล (index ใน TABS) แยกไปหน้า /skills-report (หมวด พนักงาน & ทักษะ — 2026-07-20)
 // component/helper ทั้งหมดยังอยู่ไฟล์นี้ — /skills-report คือ <Report mode="skills" /> กรองแท็บเท่านั้น
@@ -1014,6 +987,7 @@ table{border-collapse:collapse;width:100%}
 function StationLogTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
+  const orgSectionList = useOrgSections();
   const today = getWorkDate();
   const [stations, setStations] = useState([]);
   const [lines, setLines] = useState([]);
@@ -1022,6 +996,7 @@ function StationLogTab() {
   const [to, setTo] = useState(today);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [stationSection, setStationSection] = useState('');
   const [stationTeam, setStationTeam] = useState('');
   const [stationShift, setStationShift] = useState('');
   const [calLoaded, setCalLoaded] = useState(false);
@@ -1034,19 +1009,39 @@ function StationLogTab() {
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
-  // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
-  // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
-  const scopedStations = useMemo(() => {
-    const isScoped = (role === 'leader' && userLineId) || scopeSecs.length > 0;
-    if (!isScoped) return stations;
-    if (!lines.length) return [];
+  const secByLineName = useMemo(() => Object.fromEntries(lines.map(l => [l.name, l.section])), [lines]);
+
+  // ⚠️ dropdown "ส่วนงาน" ต้อง scope ด้วย ไม่ใช่แค่ query — เดิม dropdown เลือกสถานีเป็นลิสต์แบนรวมทุกไลน์
+  // ทุกส่วนงาน (LINE C/PD1, LINE GWM/PD2, ... ปนกันหมด) ไม่มีชั้นให้กรองก่อนเลย แม้ query ข้อมูลจะ scope
+  // อยู่แล้วก็ตาม (2026-09 · user จับได้จากภาพหน้าจอ "ไม่กรอง hierarchy") — เติมตัวกรองส่วนงานแบบเดียวกับ
+  // DailyTab/PerEmployeeTab ในไฟล์นี้ ให้แคบเหลือทีละส่วนงานก่อนไปเลือกสถานี
+  const stationSectionsList = useMemo(() => {
     if (role === 'leader' && userLineId) {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine ? stations.filter(s => s.line_name === myLine.name) : [];
+      return myLine?.section ? [myLine.section] : [];
     }
-    const secByLineName = Object.fromEntries(lines.map(l => [l.name, l.section]));
-    return stations.filter(s => inSectionScope(scopeSecs, secByLineName[s.line_name]));
-  }, [stations, lines, role, userLineId, scopeSecs]);
+    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
+  }, [lines, orgSectionList, role, userLineId, scopeSecs]);
+
+  // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
+  // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
+  // แล้วซ้อนตัวกรอง "ส่วนงาน" ที่ user เลือกเองทับอีกชั้น (แคบลงได้อย่างเดียว ไม่มีทางเห็นนอก scope ที่ role อนุญาต)
+  const scopedStations = useMemo(() => {
+    const isRoleScoped = (role === 'leader' && userLineId) || scopeSecs.length > 0;
+    let out = stations;
+    if (isRoleScoped) {
+      if (!lines.length) return [];
+      if (role === 'leader' && userLineId) {
+        const myLine = lines.find(l => String(l.id) === String(userLineId));
+        out = myLine ? stations.filter(s => s.line_name === myLine.name) : [];
+      } else {
+        out = stations.filter(s => inSectionScope(scopeSecs, secByLineName[s.line_name]));
+      }
+    }
+    if (stationSection) out = out.filter(s => secByLineName[s.line_name] === stationSection);
+    return out;
+  }, [stations, lines, role, userLineId, scopeSecs, secByLineName, stationSection]);
 
   // เลือกสถานีแรกใน scope อัตโนมัติ / เคลียร์ถ้าสถานีที่เลือกหลุด scope
   useEffect(() => {
@@ -1140,6 +1135,10 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={stationSection} onChange={e => setStationSection(e.target.value)} style={selSt}>
+          <option value="">ทุกส่วนงาน</option>
+          {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
           style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (

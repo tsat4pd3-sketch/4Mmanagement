@@ -24,11 +24,17 @@ const PAGE_GROUPS = [
     group: 'ภาพรวม',
     pages: [
       { key: 'page:/',            label: 'หน้าหลัก' },
-      { key: 'page:/dashboard',   label: 'จอผลิตรวม (TV)' },
       { key: 'page:/dept-dashboard', label: 'งานค้างของส่วนงาน' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
-      { key: 'page:/line-oee', label: 'OEE รายไลน์ (จอไลน์)' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
+    ],
+  },
+  {
+    group: 'จอแสดงผล',
+    pages: [
+      { key: 'page:/dashboard',   label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)' },
+      { key: 'page:/tv',          label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)' },
+      { key: 'page:/line-oee',    label: 'OEE รายไลน์ (จอหน้าไลน์)' },
     ],
   },
   {
@@ -65,20 +71,32 @@ const PAGE_GROUPS = [
       { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
       { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
       { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },
+      { key: 'page:/workforce-insight', label: 'กำลังคน & Turnover' },
       { key: 'page:/shift-organize', label: 'ตารางกะ' },
     ],
   },
   {
-    group: 'Logistic - Store',
+    group: 'Logistic - ขาเข้า (Inbound)',
     pages: [
       { key: 'page:/line-stock',   label: 'สต๊อกในไลน์' },
       { key: 'page:/heijunka',     label: 'บอร์ดคัมบัง (ทุกสโตร์)' },
-      { key: 'page:/rack-center',  label: 'ภาชนะ & Packaging' },
-      { key: 'page:/planner-sales', label: 'Planner & Sales' },
-      { key: 'page:/rundown-stock', label: 'คาดการณ์ของจะขาด' },
-      { key: 'page:/customer-demand', label: 'จัดส่งลูกค้า' },
-      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal)' },
       { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
+      // ทำงานคาบ 2 ฝั่ง (sidebar โชว์ทั้งขาเข้า-ขาออกผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
+      { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal) · คาบ 2 ฝั่ง' },
+    ],
+  },
+  {
+    group: 'Logistic - ขาออก (Outbound)',
+    pages: [
+      { key: 'page:/customer-demand', label: 'จัดส่งลูกค้า' },
+      { key: 'page:/rundown-stock', label: 'คาดการณ์ของจะขาด' },
+      { key: 'page:/rack-center',  label: 'ภาชนะ & Packaging' },
+    ],
+  },
+  {
+    group: 'Logistic - แผนงาน & ข้อมูล',
+    pages: [
+      { key: 'page:/planner-sales', label: 'Planner & Sales' },
     ],
   },
   {
@@ -93,6 +111,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-coordination', label: '— แท็บ ประสานงาน PM (แจ้งผลิต) (ใน ศูนย์ PM)' },
       { key: 'page:/pm-setup',    label: '— แท็บ ตั้งจุดตรวจ PM (ใน ศูนย์ PM)' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
+      { key: 'page:/fixture',     label: 'บันทึกชิม Fixture (JIG)' },
       { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
     ],
   },

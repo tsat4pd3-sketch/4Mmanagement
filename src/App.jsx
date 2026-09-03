@@ -40,6 +40,7 @@ const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
+const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
@@ -49,6 +50,8 @@ const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
 const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
+// 📺 จอเฝ้าระวังแขวนห้อง — เปลือกเต็มจอของ <MtnAndonBoard> (ดูหัวไฟล์ TvBoard.jsx · ไม่ใช่บอร์ดใบใหม่)
+const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
@@ -60,6 +63,7 @@ const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
+const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -96,12 +100,21 @@ export const NAV_ITEMS = [
   // จัดหมวดเมนูใหม่ทั้งระบบ 2026-07-20 (คำสั่ง user): ภาพรวม = จอแสดงผล/ผู้บริหาร · ฝ่ายผลิต = งานประจำวัน
   // · วิเคราะห์ & รายงาน · พนักงาน & ทักษะ (ใหม่ — รวมเรื่องคนที่เคยกระจาย 3 หมวด)
   // ⚠️ ชื่อเมนูต้องบอกว่า "เข้าไปทำอะไร" ไม่ใช่บอกแค่ว่าเกี่ยวกับเรื่องอะไร (nav audit 2026-08-27)
-  { to: '/dashboard',   icon: '📊', label: 'จอผลิตรวม (TV)',       group: 'ภาพรวม' },
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
+  // ⚠️ นี่คือ "คิวงานที่กดไปทำ" ไม่ใช่จอแขวน — จอแขวนอยู่หมวด 📺 จอแสดงผล (nav audit 2026-08-28)
   { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
+
+  /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
+     เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
+     ⚠️ ชื่อต้องบอกว่า "จอนี้ตอบคำถามอะไร" — เดิม "จอผลิตรวม (TV)" กับ "จอ TV แขวนห้อง"
+        มีคำว่า TV/จอ ทั้งคู่ คนเลือกไม่ถูกว่าอันไหนควรแขวน (ผิดกฎชื่อเมนูของเราเอง) */
+  { to: '/dashboard',   icon: '📊', label: 'ไทม์ไลน์ผลิตทุกไลน์ (TV)', group: 'จอแสดงผล' },
+  /* 📺 จอเฝ้าระวัง (`?dept=` ช่าง/ผลิต/สโตร์) — เต็มจอ ไม่มี sidebar/กระดิ่ง
+     render ที่ branch พิเศษใน ProtectedLayout (เหมือนหน้า Home) ไม่ได้อยู่ใน <Routes> ด้านล่าง */
+  { to: '/tv', icon: '📺', label: 'จอเฝ้าระวังแขวนห้อง (ช่าง/ผลิต/สโตร์)', group: 'จอแสดงผล' },
   // 📟 บอร์ด OEE ประจำไลน์ (จอ TV หน้าไลน์ · deep-link ?line=) — อ่านตารางเราเท่านั้น เตรียมรับ SCADA เป็น "เซ็นเซอร์"
-  { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอไลน์)',  group: 'ภาพรวม' },
+  { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอหน้าไลน์)', group: 'จอแสดงผล' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
@@ -115,14 +128,21 @@ export const NAV_ITEMS = [
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
 
-  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: 'Logistic - Store' },
-  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: 'Logistic - Store' },
-  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: 'Logistic - Store' },
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: 'Logistic - Store' },
-  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: 'Logistic - Store' },
-  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - Store' },
-  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - Store' },
+  /* Logistic & Sales แบ่ง 3 ฝั่งตามความรับผิดชอบจริงของแผนกย่อย (2026-09-03 · คำสั่ง user)
+     ⚠️ Warehouse (เก็บ FG 1xx → ขาออก) ≠ Store (คุม 2xx/3xx/5xx → ขาเข้า) — ห้ามสลับ
+     นิยามฝั่ง + การจัดฝั่งจากเลข MAT อยู่ที่ src/utils/logisticSide.js จุดเดียว */
+  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: 'Logistic - ขาเข้า (Inbound)' },
+  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: 'Logistic - ขาเข้า (Inbound)' },
+  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - ขาเข้า (Inbound)' },
+  // เฝ้าระวังสต๊อกจับทั้ง 2 ฝั่ง (A/B เทียบ min-max ของทุกเลข · E ใบสั่งซื้อค้าง) → โผล่ทั้งสองหมวด
+  // `alsoIn` = โชว์ซ้ำเฉพาะใน sidebar/หน้า Home · ที่อื่น (สิทธิ์/ค้นหา/breadcrumb/ตัวนับ) นับครั้งเดียว
+  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - ขาเข้า (Inbound)', alsoIn: 'Logistic - ขาออก (Outbound)' },
+
+  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: 'Logistic - ขาออก (Outbound)' },
+  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: 'Logistic - ขาออก (Outbound)' },
+  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: 'Logistic - ขาออก (Outbound)' },
+
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - แผนงาน & ข้อมูล' },
 
   // ⚠️ 4 เมนู PM เดิมขึ้นต้นด้วยคำชุดเดียวกัน ("...อุปกรณ์เครื่องจักร") จนแยกไม่ออกว่าอันไหนทำอะไร
   //    ชื่อใหม่บอกการกระทำ: บันทึกผล / ดูปฏิทิน / ดูว่าจะครบกำหนด / ตั้งจุดที่ต้องตรวจ (nav audit 2026-08-27)
@@ -133,6 +153,7 @@ export const NAV_ITEMS = [
   //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
   { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
 
   // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
@@ -148,6 +169,7 @@ export const NAV_ITEMS = [
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'พนักงาน & ทักษะ' },
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
+  { to: '/workforce-insight', icon: '📈', label: 'กำลังคน & Turnover', group: 'พนักงาน & ทักษะ' },
   { to: '/shift-organize', icon: '🗓', label: 'ตารางกะ',         group: 'พนักงาน & ทักษะ' },
 
   // ── จอผู้บริหาร/เดโม — แยกออกจาก "ภาพรวม" (nav audit 2026-08-27) ────────────────
@@ -180,16 +202,19 @@ export const NAV_ITEMS = [
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - ขาเข้า (Inbound)', 'Logistic - ขาออก (Outbound)', 'Logistic - แผนงาน & ข้อมูล', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
 export const NAV_GROUP_META = {
-  'ภาพรวม':                    { icon: '📊', short: 'ภาพรวม' },
+  'ภาพรวม':                    { icon: '🏠', short: 'ภาพรวม' },
+  'จอแสดงผล':               { icon: '📺', short: 'จอแขวน' },
   'ฝ่ายผลิต':                  { icon: '🏭', short: 'ผลิต' },
   'วิเคราะห์ & รายงาน':        { icon: '📈', short: 'รายงาน' },
   'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
-  'Logistic - Store':          { icon: '📦', short: 'สโตร์' },
+  'Logistic - ขาเข้า (Inbound)':  { icon: '📥', short: 'ขาเข้า' },
+  'Logistic - ขาออก (Outbound)':  { icon: '📤', short: 'ขาออก' },
+  'Logistic - แผนงาน & ข้อมูล':   { icon: '🧭', short: 'แผนงาน' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
@@ -200,14 +225,20 @@ export const NAV_GROUP_META = {
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
 // และกรองตามสิทธิ์ role เดียวกับ sidebar เพื่อให้ชิปตรงกับเมนูที่ user คนนั้นเห็นจริง
 export function navItemsForGroups(groups, role) {
-  return NAV_ITEMS.filter(i => i.to !== '/' && groups.includes(i.group) && canAccessPage(i.to, role));
+  return NAV_ITEMS.filter(i => i.to !== '/' && inNavGroup(i, groups) && canAccessPage(i.to, role));
 }
+
+/* เมนูอยู่ในหมวดนี้ไหม — นับ `alsoIn` ด้วย (หน้าที่ทำงานคาบ 2 หมวด เช่น เฝ้าระวังสต๊อก
+   ที่จับทั้งขาเข้า-ขาออก) · ใช้เฉพาะ "การแสดงผลรายการเมนู" (sidebar + การ์ดหน้า Home)
+   ⚠️ ห้ามเอาไปใช้กับตัวนับ/สิทธิ์/ค้นหา — เมนู 1 หน้ามีสิทธิ์ชุดเดียว ต้องนับครั้งเดียว */
+export const inNavGroup = (item, groups) =>
+  groups.includes(item.group) || (item.alsoIn && groups.includes(item.alsoIn));
 
 // สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
 // เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
 export function accessSummaryForRole(role) {
   const pages = NAV_ITEMS.filter(i => i.to !== '/' && canAccessPage(i.to, role));
-  const groups = NAV_GROUP_ORDER.filter(g => pages.some(p => p.group === g));
+  const groups = NAV_GROUP_ORDER.filter(g => pages.some(p => inNavGroup(p, [g])));
   return { total: pages.length, all: pages.length >= NAV_ITEMS.length - 1, groups };
 }
 
@@ -343,7 +374,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? visibleItems.filter(i => (i.label + ' ' + i.group + ' ' + i.to).toLowerCase().includes(q))
     : null;
   const groupedItems = NAV_GROUP_ORDER
-    .map(g => ({ group: g, items: visibleItems.filter(i => i.group === g) }))
+    .map(g => ({ group: g, items: visibleItems.filter(i => inNavGroup(i, [g])) }))
     .filter(g => g.items.length > 0);
   const displayName = userFullName || userEmail || '';
   const initials = displayName
@@ -906,6 +937,7 @@ const NOTIF_ROUTE = {
   four_m_logs:   '/event-log',
   mtn_orders:    '/mtn-repair',
   downtime_logs: '/daily-report',
+  shift_schedules: '/shift-organize',
 };
 
 function NotificationBell({ userId, role }) {
@@ -1444,6 +1476,22 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     : 0;
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
 
+  /* 📺 จอ TV (`/tv`) — แสดงเต็มจอ ไม่มี sidebar / rail / กระดิ่ง / RemoteReceiver / CommandPalette
+     จอนี้ "แขวนไว้อย่างเดียว" ไม่มีคนกด → chrome ทุกชิ้นคือ DOM ที่เปลืองเปล่าบนเบราว์เซอร์สมาร์ททีวี
+     และพื้นที่แนวตั้งที่ผังต้องการ (บทเรียน 2026-08-26) · ยังผ่าน canAccessPage ตามปกติ */
+  if (location.pathname === '/tv') {
+    if (!canAccessPage('/tv', role)) return <Navigate to="/" replace />;
+    return (
+      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
+          <TvBoard />
+        </Suspense>
+        {viewAsBanner}
+        {viewAsModal}
+      </UserContext.Provider>
+    );
+  }
+
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
@@ -1565,6 +1613,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/skills-report" element={
                 <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
+              } />
+              <Route path="/workforce-insight" element={
+                <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
               <Route path="/register"   element={
                 <RoleRoute path="/register" userRole={role}><Register /></RoleRoute>
@@ -1713,6 +1764,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
+              } />
+              <Route path="/fixture" element={
+                <RoleRoute path="/fixture" userRole={role}><FixtureRegistry /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>

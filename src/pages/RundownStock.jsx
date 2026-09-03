@@ -43,7 +43,7 @@ export default function RundownStock() {
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),
       // ⚠️ order อ้าง "เลขลูกค้า" แต่คลังเก็บ "เลข SAP" — ต้อง resolve ผ่าน matResolve
       //    เทียบตรงๆ จะได้ "ไม่มีของ" ทั้งที่ของเต็มคลังอยู่ใต้เลข SAP (กฎเหล็ก CLAUDE.md)
-      supabaseDR.from('dr_products').select('mat_no, p_no').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, p_no, is_operation').eq('is_active', true),
       supabaseDR.from('kanban_standards').select('mat_no, p_no').eq('is_active', true),
     ]);
     setLoadWarn(stkR.error || odsR.error || (stkR.truncated || odsR.truncated ? 'ข้อมูลเกินเพดานที่ดึงได้' : ''));
