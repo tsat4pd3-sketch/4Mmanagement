@@ -11,6 +11,8 @@ import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
+import DeliverScanModal from '../components/DeliverScanModal';
+import { DELIVER_GATES } from '../utils/replenishGate';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -1243,14 +1245,19 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                ไม่ใช่เติมจุด WIP จุดใดจุดหนึ่ง · เวลาที่ไลน์แจ้งคือคีย์เรียงคิว จึงโชว์ไว้ด้วย */
             const fromLine = !w.wip_point_id;
             const at = w.requested_at ? new Date(w.requested_at) : null;
+            /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
+               · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
+            const gate = fromLine && w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
+            const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
+            const nextLabel = fromLine && w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : st.next;
             return (
               <QueueCard key={w.id} code={code}
                 name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
                 qty={fmt(w.request_qty)} unit="" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                actionLabel={canOperate ? st.next : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
+                actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 meta={fromLine
-                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}`
+                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
                   : (w.point_type === 'packaging' ? '📦 packaging' : '🧱 material')} />
             );
           })}
@@ -1264,6 +1271,7 @@ export default function HeijunkaKanban() {
   const { fullName, role } = useContext(UserContext);
   const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
+  const canOverride = can('wip_request', 'override', role);   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
   const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
@@ -1293,6 +1301,9 @@ export default function HeijunkaKanban() {
   const [rackRequests, setRackRequests] = useState([]);
   const [pkgRequests, setPkgRequests]   = useState([]);
   const [wipRequests, setWipRequests]   = useState([]);
+  // 🎯 จุดส่งงาน (DR) — ทะเบียนที่ด่านขั้น 7 ใช้เทียบ · โหลดทั้ง active+ปิดแล้ว เพื่อให้ป้ายเก่าสแกนแล้วได้คำตอบ "จุดนี้ปิดแล้ว"
+  const [deliveryPoints, setDeliveryPoints] = useState([]);
+  const [deliverModal, setDeliverModal] = useState(null);   // ใบจากไลน์ที่กำลังจะมาร์ก delivered (รอสแกนจุดส่ง)
   const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
@@ -1317,7 +1328,7 @@ export default function HeijunkaKanban() {
     //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: purchases, error: purErr }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
@@ -1331,6 +1342,7 @@ export default function HeijunkaKanban() {
       supabase.from('wip_replenish_requests').select('*')
         .in('status', ['pending', 'preparing', 'delivered'])
         .order('requested_at', { ascending: false }).limit(200),
+      supabaseDR.from('line_delivery_points').select('*'),
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
@@ -1346,6 +1358,10 @@ export default function HeijunkaKanban() {
     setRackRequests((racks || []).filter(r => r.status !== 'cancelled'));
     setPkgRequests(pkgs || []);
     setWipRequests(wips || []);
+    /* ทะเบียนจุดส่งยังไม่ apply (42P01) = ทุกไลน์ยังไม่มีจุด → ด่านผ่านแบบ no_point ซึ่งตรงความจริง
+       แต่ error อื่นห้ามกลืน — โหลดไม่ได้แล้วเงียบ = ด่านหายไปโดยไม่มีใครรู้ */
+    if (dpErr && dpErr.code !== '42P01') toast.error('โหลดทะเบียนจุดส่งไม่ได้: ' + dpErr.message);
+    setDeliveryPoints(dpErr ? [] : (dps || []));
     setPurchaseRequests(purchases || []);
     const lm = {};
     (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
@@ -1474,22 +1490,49 @@ export default function HeijunkaKanban() {
   // บอร์ดนี้แสดงคิว rack/packaging แบบอ่านอย่างเดียว + ลิงก์ไป /rack-center
 
   // เติมจุด WIP: pending → preparing → delivered — พอ delivered ค่อยบวก current_qty กลับที่จุดจริง (main supabase)
-  const advanceWip = async (w) => {
+  /* บันทึกครั้งที่ด่านบล็อก/override — ไม่บันทึกครั้งที่ผ่าน (docs §4.6) · best-effort: ล้มแล้วห้ามขวางการส่งของ แต่ต้องบอก */
+  const logScanBlock = async (w, evt) => {
+    if (!evt) return;
+    const { error } = await supabase.from('line_replenish_scan_blocks').insert({
+      request_id: w.id, line_name: w.line_name, mat_no: w.mat_no, step: 'deliver', check_kind: 'point',
+      outcome: evt.outcome, status_code: evt.status_code || null, scanned_raw: evt.scanned_raw || null,
+      expected: evt.expected || null, actual: evt.actual || null, reason: evt.reason || null, actor_name: fullName || null,
+    });
+    // 42P01 = ยังไม่ apply migration Main → ฟีเจอร์บันทึกยังไม่เปิด (ด่านฝั่งจอยังทำงาน) · error อื่นต้องเห็น
+    if (error && error.code !== '42P01') toast.error('บันทึกเหตุการณ์ด่านสแกนไม่สำเร็จ: ' + error.message);
+  };
+
+  // gate = { payload, event } จาก DeliverScanModal (ใบจากไลน์ตอน preparing → delivered เท่านั้น)
+  const advanceWip = async (w, gate) => {
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
     if (!next) return;
+    /* เฟส 4 (ขั้น 7): ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์กว่าถึงไลน์ — เปิดโมดัลแทนการเลื่อนสถานะทันที
+       ใบจุด WIP (wip_point_id) เป็นการเติมจุดในไลน์ ไม่ผ่านด่านนี้ */
+    if (next === 'delivered' && !w.wip_point_id && !gate) { setDeliverModal(w); return; }
     setPullBusy(w.id);
     try {
-      const payload = { status: next };
+      const payload = { status: next, ...(gate?.payload || {}) };
       /* 4 หมุดเวลาต้องครบ ไม่งั้นตอบได้แค่ "ช้า" แต่ตอบไม่ได้ว่า **ช้าตรงไหน**
          (รอสโตร์หยิบ? รอรถ? รอผลิตมาเซ็นรับ?) — docs/STORE-PULL-LOOP-DESIGN.md §4.1
          requested_at (ไลน์กด) → picked_at (เริ่มจัด) → delivered_at (ส่งถึง) → received_at (ผลิตเซ็นรับ) */
       if (next === 'preparing') { payload.picked_at = new Date().toISOString(); payload.picked_by_name = fullName || 'สโตร์'; }
       if (next === 'delivered') { payload.delivered_by = fullName || 'สโตร์'; payload.delivered_at = new Date().toISOString(); }
       // compare-and-swap กันกดซ้ำ/2 เครื่อง — ไม่งั้น delivered ซ้ำ = บวก current_qty จุด WIP สองรอบ
-      const { data: updated, error } = await supabase.from('wip_replenish_requests')
+      let { data: updated, error } = await supabase.from('wip_replenish_requests')
         .update(payload).eq('id', w.id).eq('status', w.status).select('id');
+      /* 42703 = คอลัมน์ delivered_* ยังไม่มี (ยังไม่ apply 20260903_wip_replenish_deliver_gate.sql)
+         → บันทึกแบบเดิมให้งานเดินต่อ แต่ต้องบอกว่าผลสแกนถูกทิ้ง (tolerant ได้ แต่ห้ามเงียบ — ENGINEERING-PRINCIPLES §6) */
+      if (error?.code === '42703' && gate) {
+        ({ data: updated, error } = await supabase.from('wip_replenish_requests')
+          .update({ status: next, delivered_by: payload.delivered_by, delivered_at: payload.delivered_at })
+          .eq('id', w.id).eq('status', w.status).select('id'));
+        if (!error) toast.error('บันทึกส่งแล้ว แต่ผลสแกนจุดส่งยังไม่ถูกเก็บ — ยังไม่ได้ apply migration 20260903 (Main) แจ้ง admin');
+      }
       if (error) throw error;
-      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
+      // CAS ไม่ติด = อีกเครื่องขยับใบนี้ไปแล้ว → ปิดโมดัลด้วย ไม่งั้นค้างอยู่กับใบที่ไม่มีอยู่ในสถานะนั้นแล้ว
+      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); setDeliverModal(null); toast.info('ใบนี้ถูกอัปเดตจากเครื่องอื่นแล้ว — โหลดคิวใหม่'); return; }
+      if (gate?.event) await logScanBlock(w, gate.event);
+      setDeliverModal(null);
       if (next === 'delivered' && w.wip_point_id) {
         const { data: point } = await supabase.from('wip_buffer_points').select('current_qty, max_qty').eq('id', w.wip_point_id).single();
         if (point) {
@@ -2210,6 +2253,17 @@ export default function HeijunkaKanban() {
           fmt={fmt} saving={receiving}
           onCancel={() => setReceiveModal(null)}
           onSubmit={submitReceive}
+        />
+      )}
+
+      {/* 📍 เฟส 4 ลูปสโตร์ — ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์ก delivered (docs/STORE-PULL-LOOP-DESIGN.md §4.5/4.6) */}
+      {deliverModal && (
+        <DeliverScanModal
+          request={deliverModal} points={deliveryPoints} canOverride={canOverride} fullName={fullName}
+          busy={pullBusy === deliverModal.id}
+          onLogEvent={(evt) => logScanBlock(deliverModal, evt)}
+          onConfirm={(payload, event) => advanceWip(deliverModal, { payload, event })}
+          onClose={() => setDeliverModal(null)}
         />
       )}
 

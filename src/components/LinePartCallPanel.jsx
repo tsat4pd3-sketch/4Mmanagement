@@ -29,6 +29,7 @@ import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
+import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -57,6 +58,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [levels, setLevels] = useState([]);
   const [stock, setStock]   = useState([]);
   const [reqs, setReqs]     = useState([]);
+  const [dpoints, setDpoints] = useState([]);   // 🎯 จุดส่งงานของไลน์นี้ (เฟส 4) — ไม่มี = สโตร์ตรวจจุดไม่ได้ → worklist
   const [err, setErr]       = useState(null);
   const [busy, setBusy]     = useState(null);
   const [showSetup, setShowSetup] = useState(false);
@@ -79,13 +81,16 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!lineName) return;
     setErr(null);
     const stockLines = [lineName, ...upNames];   // ของตัวเอง + ที่อาจค้างข้างบน (แยกกันตอนคำนวณ)
-    const [lv, st, rq] = await Promise.all([
+    const [lv, st, rq, dp] = await Promise.all([
       supabaseDR.from('line_part_levels').select('*').eq('line_name', lineName).eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', stockLines),
       supabase.from('wip_replenish_requests').select('*')
         .eq('line_name', lineName).is('wip_point_id', null).in('status', OPEN_STATUSES)
         .order('requested_at', { ascending: true, nullsFirst: false }),
+      // จุดส่งเป็นของเสริม (เฟส 4) — ตารางยังไม่ apply/โหลดไม่ได้ ห้ามลากทั้งแผงล้ม แค่ถือว่ายังไม่มีจุด
+      supabaseDR.from('line_delivery_points').select('id, code, name, line_names, is_active').contains('line_names', [lineName]),
     ]);
+    setDpoints(dp.error ? [] : (dp.data || []));
     /* ⚠️ ตารางยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ error ของผู้ใช้
        แยกให้ขาดจาก error จริง ไม่งั้นขึ้นแถบแดงให้ทุกคนดูทุกวันโดยไม่มีอะไรให้ทำ */
     const notReady = [lv, st, rq].some(r => r.error?.code === '42P01' || r.error?.code === '42703');
@@ -154,6 +159,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
   const holds   = reqs.filter(r => r.status === 'hold');
   const inFlight = reqs.filter(r => ['pending', 'preparing', 'delivered'].includes(r.status));
+  const hasDeliveryPoint = pointsForLine(dpoints, lineName).length > 0;
 
   /* พาร์ทที่มีของอยู่ในไลน์ แต่ยังไม่ได้ตั้งจุดเรียกเติม — ต้องเห็น ห้ามซ่อน
      (ไม่ตั้ง = ระบบจะไม่มีวันเตือนพาร์ทนั้น ซึ่งเงียบกว่าตั้งผิด) */
@@ -392,6 +398,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                     · รอมาแล้ว {wait} นาที
                   </span>
                 )}
+                {/* เฟส 4 — ของถูกวางที่ไหน/ผ่านด่านทางไหน: สแกนจุด · ไลน์ยังไม่ตั้งจุด · หัวหน้าปลดบล็อก (override ต้องเห็น ห้ามซ่อน) */}
+                {r.status === 'delivered' && r.delivered_gate && DELIVER_GATES[r.delivered_gate] && (
+                  <span title={r.delivered_override_reason || ''} style={{ fontSize: 11, fontWeight: 700, color: DELIVER_GATES[r.delivered_gate].color }}>
+                    {DELIVER_GATES[r.delivered_gate].icon} {r.delivered_gate === 'scanned' ? (r.delivered_point_name || DELIVER_GATES.scanned.label) : DELIVER_GATES[r.delivered_gate].label}
+                  </span>
+                )}
                 {r.status === 'delivered' && canReceive && (
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                     <button disabled={busy === r.id} onClick={() => receive(r, true)} style={btn('#22c55e', '#04140a')}>✔ รับครบ</button>
@@ -401,6 +413,13 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── worklist: ไลน์ยังไม่ตั้ง "จุดส่งงาน" — สโตร์ส่งได้ แต่ระบบตรวจไม่ได้ว่าวางถูกจุดไหม (เฟส 4 · ไม่รู้ = ห้ามบล็อก แต่ห้ามเงียบ) ── */}
+      {!hasDeliveryPoint && (
+        <div style={{ marginTop: 10, fontSize: 11, color: '#f59e0b' }}>
+          🎯 ไลน์นี้ยังไม่ตั้งจุดส่งงาน — สโตร์ยิง QR ยืนยันจุดวางของไม่ได้ · ตั้งที่ <b>⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน</b> แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR
         </div>
       )}
 

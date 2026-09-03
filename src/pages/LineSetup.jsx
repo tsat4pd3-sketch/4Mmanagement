@@ -13,6 +13,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
+import DeliveryPointPanel from '../components/DeliveryPointPanel';
 import { matDigit, matClassOf, matMatches, isSapMat } from '../utils/matPrefix';
 import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat, wipCatOptions, wipCatValue, wipCatLabel, wipPointCat, WIP_CAT_OP } from '../utils/wipMatOptions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -533,6 +534,15 @@ export default function LineSetup({ embedded = false } = {}) {
     for (const t of ['bom_items', 'child_lot_requests', 'packaging_withdrawal_requests']) {
       await bump(supabaseDR, t, 'source_line');
     }
+    // 🎯 จุดส่งงาน — line_names เป็น text[] (1 จุดหลายไลน์) → bump ธรรมดาใช้ไม่ได้ ต้องอ่าน-แก้-เขียนรายแถว
+    //    (แบบเดียวกับ lpa_questions.hidden_for_lines) ไม่งั้นเปลี่ยนชื่อไลน์แล้วจุดส่ง+ป้าย QR ที่พิมพ์ไปแล้วกำพร้าเงียบ
+    try {
+      const { data: dps } = await supabaseDR.from('line_delivery_points').select('id, line_names').contains('line_names', [old]);
+      for (const d of dps || []) {
+        const next = (d.line_names || []).map(n => (n === old ? name : n));
+        await supabaseDR.from('line_delivery_points').update({ line_names: next }).eq('id', d.id);
+      }
+    } catch { /* best-effort — ตารางยังไม่ apply ก็ข้าม */ }
 
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
@@ -2096,6 +2106,9 @@ export default function LineSetup({ embedded = false } = {}) {
 
           {/* 🔗 สายการไหลระหว่างไลน์ — ไลน์นี้ป้อนงานให้ใคร / รับของจากใคร (2026-08-19) */}
           <LineFlowPanel lineName={selectedLine} lines={lines} canEdit={canEdit} />
+
+          {/* 🎯 จุดส่งงานหน้าไลน์ — ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปสโตร์เฟส 4 · 2026-09-03) */}
+          <DeliveryPointPanel lineName={selectedLine} lines={lines} />
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
