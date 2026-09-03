@@ -23,7 +23,13 @@
 **หลังแก้/เพิ่มอะไรก็ตาม — อัพเดทกฎในคอมมิทเดียวกัน:**
 - สร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า → อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่)
 - เปลี่ยน schema / ตาราง / Edge Function / workflow / กฎธุรกิจ → อัพเดท **`docs/modules/<module>.md` ของโมดูลนั้น** (พร้อมวันที่) · CLAUDE.md แก้เฉพาะเมื่อกระทบ*ทุก* session (กฎเหล็กข้ามโมดูล, Supabase project, workflow)
-- **📏 เพดาน CLAUDE.md = 120 KB (~45k tokens)** — ก่อน commit รัน `node scripts/check-claude-md-size.mjs` ถ้าเกินให้ย้ายส่วนที่เป็นรายละเอียดโมดูล/ประวัติออกไป `docs/modules/` ก่อน
+- **📏 เพดาน CLAUDE.md = 120 KB (~45k tokens) — อยู่ในด่าน `npm run build` แล้ว (2026-09-03)**
+  `npm run check:context` (= `scripts/check-claude-md-size.mjs`) รันเป็น**ขั้นแรก**ของ build → **ไม่ผ่าน = build ล่ม = deploy ไม่ออก**
+  ตรวจ 3 ช่องทางที่ทำให้ context บวม (ครบทุกทางที่ Claude Code ดูดไฟล์เข้า memory เอง):
+  1. **ขนาด CLAUDE.md > 120 KB** → ย้ายรายละเอียดโมดูล/ประวัติไป `docs/modules/`
+  2. **`@path` import** ← **ต้นเหตุจริงของ 550k tokens** ไม่ใช่ขนาดไฟล์ · `@` ดูดไฟล์ปลายทางเข้า memory ทุก session ต่อให้ CLAUDE.md เล็กก็บวมได้ — อ้างด้วย path ธรรมดาเสมอ
+  3. **CLAUDE.md ซ้อนในโฟลเดอร์ย่อย** (Claude Code โหลดเพิ่มเองเมื่อทำงานในโฟลเดอร์นั้น)
+  · **ห้ามถอดออกจาก build เพื่อให้ deploy ผ่าน** — แก้ที่เอกสารแทน (บทเรียนเดียวกับเทสที่เคยเขียนไว้แล้วไม่มี script ไหนรัน จนต้องเอาเข้าด่าน 2026-08-24)
 - **ประวัติการแก้ / ผลรันจริง / ตัวเลข runtime / feedback ที่ตัดสินใจไปแล้ว → เขียนสั้นๆ ในไฟล์โมดูล ไม่ใส่ CLAUDE.md** (CLAUDE.md = กฎปัจจุบัน ไม่ใช่ changelog)
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกไว้ในไฟล์โมดูลที่เกี่ยวข้อง (ถ้าข้ามโมดูล เช่น "กับดัก CSS" ค่อยไว้ใน CLAUDE.md)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
@@ -612,7 +618,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 2. **ทำงานให้สอดคล้องกับกฎ** — ถ้าสิ่งที่จะทำขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
 3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern, schema, สิทธิ์, หรือ workflow ที่ session อื่นต้องรู้ → อัพเดทเอกสารที่เกี่ยวข้อง (`docs/modules/<module>.md` เป็นหลัก / UI-CONVENTIONS.md / PERMISSIONS-DESIGN.md / CLAUDE.md เฉพาะกฎข้าม session) **ในคอมมิทเดียวกัน** พร้อมวันที่
 4. build ผ่าน (`npm run build`) ก่อน commit เสมอ · merge เข้า `main` = deploy จริง
-   - **⚠️ `npm run build` = `lint:critical` → `npm test` → `vite build` (เทสเข้าด่านแล้ว 2026-08-24)**
+   - **⚠️ `npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** (เทสเข้าด่าน 2026-08-24 · ด่าน context 2026-09-03)
      ก่อนหน้านี้มีไฟล์เทส 9 ไฟล์ / 51 เคส ที่เอกสารอ้างว่า "ล็อกไว้แล้ว" แต่ **ไม่มี script ไหนรันมันเลย**
      → เทสที่เขียนไว้กันของพังไม่เคยถูกเรียกใช้จริงถ้าไม่มีคนพิมพ์คำสั่งเอง (พบตอน QC audit)
      · ตัวรัน = `scripts/run-tests.mjs` ไล่หา `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่ไว้ใน
