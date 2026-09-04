@@ -183,6 +183,7 @@ const MO_INAPP: Record<string, { t: (v: Record<string, string>) => string; type:
   mtn_repaired:  { t: (v) => `🔧 ซ่อมเสร็จ ${v.mo_no} — รอตรวจสอบ`,                        type: 'info'    },
   mtn_checked:   { t: (v) => `🔎 ตรวจหลังซ่อมแล้ว ${v.mo_no}`,                             type: 'info'    },
   mtn_qa:        { t: (v) => `🧪 ยืนยันคุณภาพแล้ว ${v.mo_no}`,                              type: 'info'    },
+  mtn_qa_skipped:{ t: (v) => `⏭ ข้าม QA ${v.mo_no} — ไม่เกี่ยวกับคุณภาพ · รอรับมอบ`,        type: 'info'    },
   mtn_handover:  { t: (v) => `🤝 รับมอบงานซ่อม ${v.mo_no}`,                                type: 'info'    },
   mtn_closed:    { t: (v) => `✅ ปิดใบแจ้งซ่อม ${v.mo_no}`,                                 type: 'success' },
   mtn_returned:  { t: (v) => `↩️ ใบแจ้งซ่อมถูกตีกลับ — ${v.line_name} (แก้แผนกแล้วส่งใหม่)`, type: 'error'   },
@@ -246,6 +247,7 @@ Deno.serve(async (req) => {
       tech_main: mo.tech_main || mo.assigned_to || '-', root_cause: mo.root_cause || '-', solution: mo.solution || '-',
       check_result: mo.check_result || '-', quality_related: mo.quality_related || '-', checker_name: mo.checker_name || '-',
       qa_result: mo.qa_result || '-', qa_checker: mo.qa_checker || '-', follow_up: mo.follow_up || '-', ho_checker: mo.ho_checker || '-',
+      qa_skip_reason: mo.qa_skip_reason || '-', qa_skipped_by: mo.qa_skipped_by || '-',
       approver: mo.approver_name || '-',
     };
     const equip = `${v.item_type}${v.machine_no ? ` (${v.machine_no})` : ''}`;
@@ -269,6 +271,10 @@ Deno.serve(async (req) => {
         builtin = [`🧪 <b>ยืนยันคุณภาพหลังซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
           `ผลคุณภาพ: ${v.qa_result}`, `ผู้ตรวจ QA: ${v.qa_checker}`].join('\n');
         photo = mo.qa_img || null; break;
+      case 'mtn_qa_skipped':
+        // ข้าม QA (2026-09-03) — ขั้น 4 เลือก "เกี่ยวกับคุณภาพ" แต่งานไม่เกี่ยวจริง → ไปรับมอบเลย (status ยัง checked)
+        builtin = [`⏭ <b>ข้ามการตรวจ QA — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
+          `งานไม่เกี่ยวกับคุณภาพ: ${v.qa_skip_reason}`, `ผู้ยืนยัน: ${v.qa_skipped_by}`].join('\n'); break;
       case 'mtn_handover':
         builtin = [`🤝 <b>รับมอบหลังซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
           `ติดตามผล: ${v.follow_up}`, `ผู้รับมอบ: ${v.ho_checker}`].join('\n'); break;
@@ -289,6 +295,7 @@ Deno.serve(async (req) => {
       mtn_repaired: 'รอตรวจสอบหลังซ่อม (ขั้น 4)',
       mtn_checked: 'รอยืนยันคุณภาพ / รับมอบ (ขั้น 5-6)',
       mtn_qa: 'รอรับมอบ (ขั้น 6)',
+      mtn_qa_skipped: 'รอรับมอบ (ขั้น 6)',
       mtn_handover: 'รออนุมัติปิด (ขั้น 7)',
     };
     if (NEXT[event]) builtin += `\n⏳ ขั้นต่อไป: ${NEXT[event]}`;

@@ -12,7 +12,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MTN_STEPS, canDoStep, isOrderReporter, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MTN_STEPS, QA_NOT_RELATED, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -396,8 +396,8 @@ export default function MtnRepair() {
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
       {detail && <DetailDrawer order={orders.find(x => x.id === detail.id) || detail} {...cp}
-        onClose={() => setDetail(null)} onStep={(step, editMode) => setStepModal({ step, editMode, order: orders.find(x => x.id === detail.id) || detail })} />}
-      {stepModal && <StepModal {...cp} step={stepModal.step} order={stepModal.order} editMode={stepModal.editMode}
+        onClose={() => setDetail(null)} onStep={(step, editMode, extra) => setStepModal({ step, editMode, ...(extra || {}), order: orders.find(x => x.id === detail.id) || detail })} />}
+      {stepModal && <StepModal {...cp} step={stepModal.step} order={stepModal.order} editMode={stepModal.editMode} skipQa={!!stepModal.skipQa}
         onClose={() => setStepModal(null)} onSaved={() => { setStepModal(null); loadOrders(); }} />}
     </div>
   );
@@ -642,7 +642,7 @@ function nextStepFor(order) {
     case 'assigned':
     case 'repairing': return S(3);
     case 'repaired':  return S(4);
-    case 'checked':   return order.quality_related === 'เกี่ยวกับคุณภาพ' ? S(5) : S(6);
+    case 'checked':   return isWaitingQa(order) ? S(5) : S(6);   // ขั้น 5 มีเงื่อนไข — ข้ามได้ด้วยปุ่ม ⏭ (canSkipQa)
     case 'qa':        return S(6);
     case 'handover':  return S(7);
     default:          return null;
@@ -736,7 +736,7 @@ function printMoReport(o, dparts = [], logo0) {
   <table>
     <tr><td class="sech" style="width:50.2%;height:25pt"><b>4&5 [CONFIRM QUALITY]</b> <span class="en">ยืนยันคุณภาพ</span></td>
         <td class="sech" style="width:49.8%;height:25pt"><b>6 [ACCEPT]</b> <span class="en">รับมอบหลังซ่อม</span></td></tr>
-    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result)}${L('5.รายละเอียด', o.qa_note)}</td>
+    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result || (o.qa_skipped_at ? 'ไม่เกี่ยวกับคุณภาพ (ข้ามการตรวจ QA)' : ''))}${L('5.รายละเอียด', o.qa_note || (o.qa_skipped_at ? `${o.qa_skip_reason || ''} — ${o.qa_skipped_by || ''}`.trim() : ''))}</td>
         <td>${L('สถานะ:', o.follow_up)}${L('ผู้แจ้ง:', o.ho_reporter || o.reporter_prod)}${L('รายละเอียด:', '')}</td></tr>
   </table>
   <table class="signs">
@@ -865,6 +865,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const stepCtx = { order: o, fullName, inOrderTeam, ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
+  /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
+     ผู้เปิดใบ/ผู้ถือ accept_work หรือ QA เอง กดข้ามไปรับมอบ (ขั้น 6) ได้ — เกณฑ์อยู่ที่ canSkipQa() */
+  const skipQa = canSkipQa(stepCtx);
 
   // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
   const [resubDept, setResubDept] = useState(dept);
@@ -989,6 +992,14 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             <Row k="ผล" v={o.check_result} /><Row k="เกี่ยวคุณภาพ?" v={o.quality_related} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
           </StepBox>
           <StepBox n={5} done={o.current_step >= 5}>
+            {isQaSkipped(o) && (
+              <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+                ⏭ <b>ข้ามการตรวจ QA — งานไม่เกี่ยวกับคุณภาพ</b>
+                <div>เหตุผล: {o.qa_skip_reason || '—'}</div>
+                <div style={{ color: 'var(--text2)' }}>โดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}</div>
+              </div>
+            )}
+            {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
             <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
           </StepBox>
           <StepBox n={6} done={o.current_step >= 6}>
@@ -1018,6 +1029,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod }) || []).map((t, i) => <div key={i}>{t}</div>)}
+            {isWaitingQa(o) && (skipQa.ok
+              ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
+              : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ ผู้เปิดใบ / ผู้ถือสิทธิ์ mtn_repair:accept_work / QA กดข้าม QA ไปขั้น 6 ได้</div>)}
           </div>
         </div>
       )}
@@ -1034,6 +1048,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             printMoReport(o, dparts, logo);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
+          {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="งานไม่เกี่ยวกับคุณภาพ — ไม่ต้องให้ QA ตรวจ ไปรับมอบ/ติดตามผลเลย">⏭ ไม่เกี่ยวกับคุณภาพ — ข้าม QA ไปขั้น 6</button>}
           {next && canEditStep(next.step) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
       </div>
@@ -1042,7 +1057,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
+function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
@@ -1078,6 +1093,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
     labor_cost: o.labor_cost ?? '', parts_cost: o.parts_cost ?? '',
     check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || 'ไม่เกี่ยวกับคุณภาพ', checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
+    qa_skip_reason: o.qa_skip_reason || '',
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
     satisfaction: o.satisfaction || {},
     approver_name: o.approver_name || fullName || '',
@@ -1093,7 +1109,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
   const set = (k, v) => { touch(); setF(p => ({ ...p, [k]: v })); };
   const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
   const isReject = step === 2 && f.repair_type === 'Reject MO';
-  const needSign = [4, 5, 6, 7].includes(step);
+  const needSign = [4, 5, 6, 7].includes(step) && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
 
   const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]); };
   const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
@@ -1140,7 +1156,14 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
          (ผู้ถือ manage_master ข้ามได้ตามเดิม = สิทธิ์แก้ย้อนหลังของทุกขั้น) */
       const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
       const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
-      const verdict = canDoStep(step, { order: o, fullName, inOrderTeam, ...stepPerms(role) });
+      const stepCtx = { order: o, fullName, inOrderTeam, ...stepPerms(role) };
+      if (skipQa) {
+        // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
+        const vs = canSkipQa(stepCtx);
+        if (!vs.ok) { setSaving(false); return toast.error(vs.code === 'not_waiting_qa' ? 'ใบนี้ไม่ได้ค้างรอ QA แล้ว — ปิดแล้วเปิดใหม่' : 'ข้าม QA ได้เฉพาะผู้เปิดใบ / ผู้ถือสิทธิ์ตรวจรับงาน (accept_work) / QA'); }
+        if (!f.qa_skip_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ไม่ต้องให้ QA ตรวจ'); }
+      }
+      const verdict = skipQa ? { ok: true } : canDoStep(step, stepCtx);
       if (!verdict.ok) {
         setSaving(false);
         const meta = MTN_STEPS[step];
@@ -1152,7 +1175,19 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         return toast.error(`ขั้นนี้เป็นหน้าที่ของ${meta?.who || 'ผู้มีสิทธิ์'} — บัญชีนี้ทำไม่ได้`);
       }
       const upd = { updated_at: new Date().toISOString() };
-      if (step === 2) {
+      if (skipQa) {
+        /* ⏭ ข้าม QA = แก้การตัดสินใจของขั้น 4 ไม่ใช่ขั้นใหม่ — status คง `checked` แล้วพลิก
+           quality_related เป็น "ไม่เกี่ยว" → nextStepFor พาไปขั้น 6 เอง (ไม่เพิ่ม status ให้ KPI/Andon/ใบพิมพ์ต้องรู้จัก)
+           บันทึกเหตุผล/คน/เวลาไว้เสมอ — ใบพิมพ์/StepBox 5 โชว์ว่า "ข้าม" ไม่ใช่ "QA ยังไม่ตรวจ" */
+        const skipFields = { qa_skip_reason: f.qa_skip_reason.trim(), qa_skipped_by: fullName || '', qa_skipped_at: new Date().toISOString() };
+        let { error } = await supabaseDR.from('mtn_orders').update({ ...upd, quality_related: QA_NOT_RELATED, ...skipFields }).eq('id', o.id);
+        if (error?.code === '42703') {
+          // deploy-safe: ยังไม่ apply migration 20260903_mtn_qa_skip (DR) — ให้ใบเดินต่อได้ แต่ต้องบอกดังๆ ว่าเหตุผลไม่ถูกเก็บ
+          ({ error } = await supabaseDR.from('mtn_orders').update({ ...upd, quality_related: QA_NOT_RELATED }).eq('id', o.id));
+          if (!error) toast.error('ข้าม QA แล้ว แต่ยังบันทึกเหตุผลไม่ได้ — ฐาน DR ยังไม่มีคอลัมน์ qa_skip_reason (รัน migration 20260903_mtn_qa_skip)');
+        }
+        if (error) throw error;
+      } else if (step === 2) {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
         if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
@@ -1229,16 +1264,22 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
         const oldUrl = o[fld], newUrl = upd[fld];
         if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
       }
-      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
+      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = skipQa ? 'mtn_qa_skipped' : isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
     } catch (e) { setSaving(false); toast.error(e.message || 'บันทึกไม่สำเร็จ'); }
   };
 
   // หัวโมดัล = stepLabel() ตัวเดียวกับปุ่มขั้นถัดไป — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่ (เคยมี map `titles` แล้ว drift)
   return (
-    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step)}`} onClose={onClose} dirty={dirty}>
+    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? '⏭ ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step)}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
-        {MTN_STEPS[step] && (
+        {skipQa && (
+          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
+            ⏭ ใบนี้ค้างรอ QA เพราะขั้น 4 ระบุว่า <b>“เกี่ยวกับคุณภาพ”</b> — ถ้างานซ่อมนี้ไม่กระทบคุณภาพชิ้นงานจริง
+            กดยืนยันเพื่อข้ามการตรวจ QA แล้วไป <b>รับมอบ / ติดตามผล (ขั้น 6)</b> ทันที · ระบบบันทึกชื่อคุณและเหตุผลไว้ในใบ
+          </div>
+        )}
+        {MTN_STEPS[step] && !skipQa && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
             👤 ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{MTN_STEPS[step].who}</b>
             {MTN_STEPS[step].byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
@@ -1331,7 +1372,11 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
           <Field label="ระบุรายละเอียด (เช่น ยังเหลืออะไรต้องตามต่อ)"><input value={f.check_note} onChange={e => set('check_note', e.target.value)} style={inp} /></Field>
           <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><input value={f.checker_name} onChange={e => set('checker_name', e.target.value)} style={inp} /></Field>
         </>}
-        {step === 5 && <>
+        {skipQa && <>
+          <Field label="เหตุผลที่ไม่ต้องให้ QA ตรวจ (เช่น ซ่อมไฟ/ลม/โครงสร้าง ไม่แตะจุดที่กระทบชิ้นงาน)" required><textarea value={f.qa_skip_reason} onChange={e => set('qa_skip_reason', e.target.value)} style={{ ...inp, minHeight: 64 }} /></Field>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ผู้ยืนยัน: <b style={{ color: 'var(--text2)' }}>{fullName || '—'}</b> · ผลตรวจรับขั้น 4 ({o.check_result || '—'} · {o.checker_name || '—'}) คงเดิม ไม่ต้องเซ็นใหม่</div>
+        </>}
+        {step === 5 && !skipQa && <>
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><input value={f.qa_checker} onChange={e => set('qa_checker', e.target.value)} style={inp} /></Field>
@@ -1367,7 +1412,7 @@ function StepModal({ step, order, editMode, techs, repairTypes, parts, laborRate
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
-        <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
+        <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : skipQa ? '⏭ ยืนยันข้าม QA ไปขั้น 6' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
       </div>
     </ModalShell>
   );
