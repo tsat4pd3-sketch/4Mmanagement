@@ -2,7 +2,7 @@
 // pure module (ไม่ import supabase) → import ตรงได้เลย ไม่ต้อง bundle
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canDoStep, isOrderReporter, MTN_STEPS, stepDenyHint } from '../mtnStepPerm.js';
+import { canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint } from '../mtnStepPerm.js';
 
 // ผูก role เป็นชุดสิทธิ์ง่ายๆ: keys = คีย์ที่ role นั้นถือ
 const perms = (keys, seededKeys = null) => ({
@@ -111,4 +111,40 @@ test('ทุกขั้นใน MTN_STEPS มี title/who ครบ — จ�
     assert.ok(m.title && m.who, `step ${s} ขาด title/who`);
     assert.ok(m.key, `step ${s} ขาด key`);
   }
+});
+
+/* ── ข้าม QA (ขั้น 5 → 6) เมื่องานไม่เกี่ยวกับคุณภาพ — 2026-09-03 ── */
+const WAITING_QA = { ...ORDER, status: 'checked', quality_related: 'เกี่ยวกับคุณภาพ' };
+
+test('isWaitingQa: ค้างรอ QA = status checked + ขั้น 4 ระบุเกี่ยวกับคุณภาพ เท่านั้น', () => {
+  assert.equal(isWaitingQa(WAITING_QA), true);
+  assert.equal(isWaitingQa({ ...WAITING_QA, quality_related: 'ไม่เกี่ยวกับคุณภาพ' }), false);
+  assert.equal(isWaitingQa({ ...WAITING_QA, status: 'qa' }), false);       // QA ตรวจแล้ว
+  assert.equal(isWaitingQa({ ...WAITING_QA, status: 'repaired' }), false); // ยังไม่ถึงขั้น 4
+  assert.equal(isWaitingQa(null), false);
+});
+
+test('canSkipQa: ผู้เปิดใบข้ามได้ (แก้การตัดสินใจขั้น 4 ของตัวเอง) แม้ไม่มี role อะไรเลย', () => {
+  const r = canSkipQa({ order: WAITING_QA, fullName: 'สมชาย ใจดี', ...perms([]) });
+  assert.equal(r.ok, true); assert.equal(r.code, 'step4:reporter');
+});
+
+test('canSkipQa: QA เองข้ามได้ (งานไม่ใช่ของ QA ไม่ต้องเซ็นรับรองสิ่งที่ไม่ได้ตรวจ)', () => {
+  const r = canSkipQa({ order: WAITING_QA, fullName: 'คนอื่น', ...perms(['qa']) });
+  assert.equal(r.ok, true); assert.equal(r.code, 'step5:perm');
+});
+
+test('canSkipQa: ช่างที่ซ่อม (service) ข้ามไม่ได้ — เหตุผลเดียวกับที่ช่างตรวจรับงานตัวเองไม่ได้', () => {
+  assert.equal(canSkipQa({ order: WAITING_QA, fullName: 'ช่าง', inOrderTeam: true, ...perms(['service', 'service_own_team']) }).ok, false);
+});
+
+test('canSkipQa: ใบที่ไม่ได้ค้างรอ QA ข้ามไม่ได้ ต่อให้เป็น manage_master', () => {
+  assert.equal(canSkipQa({ order: { ...WAITING_QA, quality_related: 'ไม่เกี่ยวกับคุณภาพ' }, fullName: 'สมชาย ใจดี', ...perms(['manage_master']) }).code, 'not_waiting_qa');
+  assert.equal(canSkipQa({ order: { ...WAITING_QA, status: 'qa' }, fullName: 'สมชาย ใจดี', ...perms(['manage_master']) }).code, 'not_waiting_qa');
+});
+
+test('isQaSkipped: ดูจาก qa_skipped_at อย่างเดียว (ใบเก่าที่ไม่มีคอลัมน์ = ไม่เคยข้าม)', () => {
+  assert.equal(isQaSkipped({ qa_skipped_at: '2026-09-03T01:00:00Z' }), true);
+  assert.equal(isQaSkipped({}), false);
+  assert.equal(isQaSkipped(undefined), false);
 });
