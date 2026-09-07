@@ -82,6 +82,10 @@
 > **⚠️ deploy edge ผ่าน MCP ต้องพิมพ์ทั้งไฟล์ซ้ำใน tool call** → ไฟล์ใหญ่ (`send-notification` 56KB)
 > **ห้าม deploy ด้วยวิธีนี้** พิมพ์พลาดตัวเดียว = แจ้งเตือนทั้งระบบพัง · ไฟล์ใหญ่ให้ deploy ด้วย
 > `supabase functions deploy <slug>` จากเครื่องที่มี CLI + access token (อ่านไฟล์ตรง ไม่มีทางพิมพ์ตก)
+> **⚠️ แต่ user ไม่มี CLI (2026-09-07 — ก๊อปคำสั่ง `supabase functions deploy` ไปวางใน SQL Editor แล้วได้ 42601)**
+> → ห้ามส่งคำสั่ง CLI ให้ user ทำ · ทางเดียวที่มีคือ **deploy ผ่าน MCP โดย AI session** แล้ว `get_edge_function`
+> ดึงกลับมาเทียบกับ repo ให้ครบทุกจุดที่แก้ก่อนถือว่าเสร็จ · ไฟล์ ≤ ~30 KB ยอมรับได้ (send-mtn 25 KB deploy ผ่าน MCP แล้ว v17)
+> · ไฟล์ 56 KB (`send-notification`) ยังเสี่ยง — แตกไฟล์ก่อนถ้าต้องแก้
 > · deploy ผ่าน MCP แล้ว **ต้องดึงกลับมาตรวจว่าโครงสร้างครบทุกจุดที่ตั้งใจแก้** ก่อนถือว่าเสร็จ
 
 ---
