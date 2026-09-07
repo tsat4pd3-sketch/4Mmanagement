@@ -23,10 +23,23 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const appSrc = readFileSync(resolve(root, 'src/App.jsx'), 'utf8');
 const migDir = resolve(root, 'supabase/migrations');
 
+/* หมวด Logistic อ้างผ่าน `LOGISTIC_GROUPS.<key>` (src/utils/logisticSide.js — single source of truth ของชื่อ 2026-09-07)
+   → อ่านค่าจริงจากไฟล์นั้นมาแทนที่ ไม่งั้นเทสเห็นแค่ string literal แล้วหมวด Logistic หายไป 3 หมวด */
+const sideSrc = readFileSync(resolve(root, 'src/utils/logisticSide.js'), 'utf8');
+function logisticGroups() {
+  const m = sideSrc.match(/export const LOGISTIC_GROUPS\s*=\s*\{([\s\S]*?)\}/);
+  assert.ok(m, 'หา LOGISTIC_GROUPS ใน logisticSide.js ไม่เจอ');
+  return Object.fromEntries([...m[1].matchAll(/(\w+):\s*'([^']+)'/g)].map(x => [x[1], x[2]]));
+}
 function navGroupOrder() {
   const m = appSrc.match(/export const NAV_GROUP_ORDER\s*=\s*\[([\s\S]*?)\]/);
   assert.ok(m, 'หา NAV_GROUP_ORDER ใน App.jsx ไม่เจอ');
-  return [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
+  const lg = logisticGroups();
+  return [...m[1].matchAll(/'([^']+)'|LOGISTIC_GROUPS\.(\w+)/g)].map(x => {
+    if (x[1]) return x[1];
+    assert.ok(lg[x[2]], `LOGISTIC_GROUPS.${x[2]} ไม่มีใน logisticSide.js`);
+    return lg[x[2]];
+  });
 }
 
 /** migration ทะเบียนหมวดตัวล่าสุด (ชื่อไฟล์ขึ้นด้วยวันที่ → เรียงตามชื่อ = เรียงตามเวลา) */

@@ -46,6 +46,10 @@ const fmtMin = (m) => {
 
 export default function StoreTimeChart({
   rounds, deliveries, view, storeStock, kanbanStd, lineMap, workDate, breakPolicies, nowMs,
+  // ── เลือกพาร์ทไปส่ง (2026-09-07 · user: "คือสิ่งที่ต้องไปส่ง แต่กดเลือกชิ้นงานที่จะไปส่งไม่ได้") ──
+  //   openRequests = ใบขอเติมที่ยังไม่จบ (กันสร้างซ้ำ — unique index ระดับ DB กันอีกชั้น)
+  //   onCreateRequests(items) = สร้างใบเข้า 🔄 คิวเติม WIP · items[].line ต้องเป็น **ไลน์ย่อยที่สุด** ไม่ใช่กลุ่ม
+  openRequests = [], onCreateRequests,   // canOperate มาจาก prop เดิมด้านบนแล้ว
   fmt, canOperate, onConfirm, confirming, onReceive, onOpenLine,
 }) {
   const isMobile = useIsMobile();
@@ -56,6 +60,8 @@ export default function StoreTimeChart({
   const [highlightId, setHighlightId] = useState(null);
   const [expanded, setExpanded]     = useState(null);
   const [qOpen, setQOpen]           = useState({});   // กางรายการพาร์ทของคิวส่งตามคำขอ
+  const [sel, setSel]               = useState({});   // key `${group}|${mat}` → item ที่เลือกจะไปส่ง
+  const [creating, setCreating]     = useState(false);
   /* 📥 มอง WIP ที่ไลน์ = 0 สำหรับพาร์ทที่ยังไม่ได้ตั้งยอด (user 2026-09-01)
      default = เปิด เพราะสภาพจริงคือพาร์ทส่วนใหญ่ยังไม่มีแถวสต็อกที่ไลน์
      → ปิดไว้ = สโตร์เปิดจอมาแล้วไม่เห็นความต้องการอะไรเลย (ปัญหาที่ทำให้ต้องมีโหมดนี้)
@@ -256,6 +262,58 @@ export default function StoreTimeChart({
       };
     });
   }, [runoutByLine, storeStock]);
+
+  /* ── เลือกพาร์ทไปส่ง ─────────────────────────────────────────────────────────
+     ⚠️ การ์ดคิวจัดกลุ่มตาม "ไลน์แม่" (groupOf) แต่ใบส่งต้องลง **ไลน์ย่อยที่สุด** (กฎ leaf ของลูปสโตร์ —
+        ของอยู่ที่ leaf เสมอ · ใบที่ลงชื่อกลุ่ม แผงฝั่งไลน์ลูกจะมองไม่เห็น) → หาไลน์ย่อยจาก "ใบผลิตที่กิน
+        พาร์ทนั้น" (groupOrders[g].lineName ∧ BOM มีพาร์ท) · หลายไลน์ = ให้คนเลือก · หาไม่เจอ = ใช้ไลน์ที่มีกะเปิดในกลุ่ม */
+  const leafLinesFor = (g, mat) => {
+    const { groupOrders = {}, bomByMat = {}, linesOfGroup = {} } = view || {};
+    const fromOrders = [...new Set((groupOrders[g] || [])
+      .filter(o => o.lineName && (bomByMat[o.matNo] || []).some(b => b.mat_no === mat))
+      .map(o => o.lineName))];
+    if (fromOrders.length) return fromOrders;
+    const opened = linesOfGroup[g] || [];
+    return opened.length ? opened : [g];
+  };
+  const groupOfLine = (ln) => lineMap?.[ln]?.parent_line_name || ln;
+  // ใบที่ค้างอยู่แล้วของ (กลุ่ม, พาร์ท) — ห้ามสร้างซ้ำ ให้เห็นว่า "อยู่ในคิวแล้ว สถานะอะไร"
+  const openByKey = useMemo(() => {
+    const m = {};
+    (openRequests || []).forEach(r => { if (!r.wip_point_id && r.mat_no) m[`${groupOfLine(r.line_name)}|${r.mat_no}`] = r; });
+    return m;
+  }, [openRequests, lineMap]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const selKey = (g, mat) => `${g}|${mat}`;
+  const canPick = !!(canOperate && onCreateRequests);
+  const toggleSel = (q, p) => {
+    const k = selKey(q.line, p.mat_no);
+    setSel(s => {
+      if (s[k]) { const n = { ...s }; delete n[k]; return n; }
+      const lines = leafLinesFor(q.line, p.mat_no);
+      return { ...s, [k]: { key: k, group: q.line, line: lines[0], lines, mat_no: p.mat_no, part_name: p.part_name || null,
+        qty: Math.max(1, Math.ceil(Number(p.netTotal) || 0)), cards: p.cards || 0, wipNow: p.wipNow ?? null } };
+    });
+  };
+  const selectReady = (q) => setSel(s => {
+    const n = { ...s };
+    q.parts.forEach(p => {
+      const k = selKey(q.line, p.mat_no);
+      if (openByKey[k] || !(p.netTotal > 0) || !['ok', 'split'].includes(p.store)) return;
+      const lines = leafLinesFor(q.line, p.mat_no);
+      n[k] = { key: k, group: q.line, line: lines[0], lines, mat_no: p.mat_no, part_name: p.part_name || null,
+        qty: Math.max(1, Math.ceil(Number(p.netTotal) || 0)), cards: p.cards || 0, wipNow: p.wipNow ?? null };
+    });
+    return n;
+  });
+  const selItems = Object.values(sel);
+  const createSelected = async () => {
+    if (!selItems.length || creating) return;
+    setCreating(true);
+    try {
+      const done = await onCreateRequests(selItems);
+      if (done !== false) setSel({});
+    } finally { setCreating(false); }
+  };
 
   // พาร์ทที่ยังไม่มียอด WIP ที่ไลน์ — ต้องรายงานเสมอ ไม่ว่าโหมดจะเปิดหรือปิด
   const assumedTotal = onDemandQueue.reduce((s, q) => s + (q.assumedCount || 0), 0);
@@ -661,10 +719,35 @@ export default function StoreTimeChart({
             </div>
           </div>
 
+          {/* แถบสร้างใบส่ง — เลือกจากรายการที่ต้องหยิบ แล้วเข้าคิว 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก ไม่แตกคิวใหม่) */}
+          {canPick && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10, padding: '8px 12px',
+              background: selItems.length ? 'rgba(34,197,94,0.10)' : 'var(--bg2)', border: `1px solid ${selItems.length ? 'rgba(34,197,94,0.4)' : 'var(--border)'}`, borderRadius: 10 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
+                {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : 'ติ๊กพาร์ทในรายการที่ต้องหยิบ แล้วกดสร้างใบส่ง'}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', flex: '1 1 200px' }}>
+                ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ · ยังต้องบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Line Stock เหมือนเดิม
+              </span>
+              {selItems.length > 0 && (
+                <button onClick={() => setSel({})} disabled={creating}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                  ล้าง
+                </button>
+              )}
+              <button onClick={createSelected} disabled={!selItems.length || creating}
+                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: selItems.length ? 'var(--accent)' : 'var(--bg3)', color: selItems.length ? '#08130c' : 'var(--muted)',
+                  fontSize: 12.5, fontWeight: 800, cursor: selItems.length ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
+                {creating ? 'กำลังสร้าง…' : `🚚 สร้างใบส่ง (${selItems.length})`}
+              </button>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 10 }}>
             {onDemandQueue.map((q, i) => {
               const open = !!qOpen[q.line];
               const blocked = q.none + q.partial;
+              const pickable = q.parts.filter(p => p.netTotal > 0 && ['ok', 'split'].includes(p.store) && !openByKey[selKey(q.line, p.mat_no)]).length;
+              const inQueue = q.parts.filter(p => openByKey[selKey(q.line, p.mat_no)]).length;
               return (
                 <div key={q.line} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -704,11 +787,20 @@ export default function StoreTimeChart({
                     {q.none > 0    && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')}>🚨 สโตร์ไม่มีของ {q.none}</span>}
                     {q.unknownStore > 0 && <span style={chip('rgba(148,163,184,0.14)', 'var(--muted)')} title="พาร์ทนี้ไม่มีแถวสต็อกในคลัง STORE — เช็คไม่ได้ว่ามีของไหม (ไม่ได้แปลว่าไม่มี)">❔ เช็คไม่ได้ {q.unknownStore}</span>}
                   </div>
-                  <button onClick={() => setQOpen(s => ({ ...s, [q.line]: !s[q.line] }))}
-                    style={{ marginTop: 7, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                      fontSize: 11, fontWeight: 700, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
-                    {open ? '▾ ซ่อนรายการ' : `▸ ดูรายการที่ต้องหยิบ (${q.parts.length})`}
-                  </button>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 7 }}>
+                    <button onClick={() => setQOpen(s => ({ ...s, [q.line]: !s[q.line] }))}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                        fontSize: 11, fontWeight: 700, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
+                      {open ? '▾ ซ่อนรายการ' : `▸ ดูรายการที่ต้องหยิบ (${q.parts.length})`}
+                    </button>
+                    {inQueue > 0 && <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 700 }} title="มีใบขอเติมค้างอยู่ในคิวเติม WIP แล้ว">📋 ในคิวแล้ว {inQueue}</span>}
+                    {canPick && pickable > 0 && (
+                      <button onClick={() => { selectReady(q); setQOpen(s => ({ ...s, [q.line]: true })); }}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>
+                        ☑ เลือกที่สโตร์มีพร้อม ({pickable})
+                      </button>
+                    )}
+                  </div>
                   {open && (
                     <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 260, overflowY: 'auto' }}>
                       {q.parts.map(p => {
@@ -718,8 +810,18 @@ export default function StoreTimeChart({
                           : p.store === 'none'        ? { c: '#ef4444', t: '🚨' }
                           :                             { c: 'var(--muted)', t: '❔' };
                         const rr = RUNOUT_REASON[p.reason] || RUNOUT_REASON.unknown;
+                        const k = selKey(q.line, p.mat_no);
+                        const existing = openByKey[k];
+                        const picked = sel[k];
                         return (
-                          <div key={p.mat_no} style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 11.5 }}>
+                          <div key={p.mat_no} style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 11.5, flexWrap: 'wrap',
+                            background: picked ? 'rgba(34,197,94,0.10)' : 'transparent', borderRadius: 6, padding: picked ? '2px 4px' : 0 }}>
+                            {canPick && (
+                              existing
+                                ? <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 700, whiteSpace: 'nowrap' }} title={`มีใบค้างอยู่แล้ว → ${existing.line_name}`}>📋 {existing.status === 'pending' ? 'รอหยิบ' : existing.status === 'preparing' ? 'กำลังจัด' : 'ส่งแล้ว'}</span>
+                                : <input type="checkbox" checked={!!picked} onChange={() => toggleSel(q, p)} disabled={!(p.netTotal > 0)}
+                                    title={p.netTotal > 0 ? 'เลือกไปส่ง' : 'ไม่มียอดต้องส่ง'} style={{ width: 'auto', cursor: 'pointer', margin: 0 }} />
+                            )}
                             <span style={{ color: m.c }} title={`ของในสโตร์: ${m.t}`}>{m.t}</span>
                             <span style={{ fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>{p.mat_no}</span>
                             <span style={{ color: 'var(--muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
@@ -737,6 +839,15 @@ export default function StoreTimeChart({
                             <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', fontSize: 10.5 }}>
                               {p.have == null ? 'สโตร์ —' : `สโตร์ ${fmt(p.have)}`}
                             </span>
+                            {/* ไลน์ย่อยปลายทาง — โชว์เมื่อเลือกแล้ว · กลุ่มที่มีหลายไลน์ย่อยเปิดกะให้คนเลือกเอง (ระบบไม่เดา) */}
+                            {picked && (
+                              picked.lines.length > 1
+                                ? <select value={picked.line} onChange={e => setSel(s => ({ ...s, [k]: { ...s[k], line: e.target.value } }))}
+                                    style={{ width: 'auto', fontSize: 10.5, padding: '1px 4px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.5)', background: 'var(--bg2)', color: 'var(--accent)' }}>
+                                    {picked.lines.map(ln => <option key={ln} value={ln}>➜ {ln}</option>)}
+                                  </select>
+                                : <span style={{ fontSize: 10.5, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}>➜ {picked.line}</span>
+                            )}
                           </div>
                         );
                       })}

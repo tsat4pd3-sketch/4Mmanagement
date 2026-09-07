@@ -421,7 +421,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 
 **ที่มา (คำถามหน้างาน): "ไลน์ Stamping รับคำสั่งผลิตจากสโตร์ยังไง"** — ระบบออกใบให้อยู่แล้ว
 (`child_lot_requests` + `raw_withdrawal_requests` จาก `fn_explode_child_demand` ตอนปิดใบ FG)
-**แต่โผล่แค่ที่ `/heijunka` ซึ่งอยู่หมวด Logistic - ขาเข้า** ขณะที่ไลน์ปั๊มอยู่หน้า `/daily-report` ทั้งกะ
+**แต่โผล่แค่ที่ `/heijunka` ซึ่งอยู่หมวด Logistic - Store** ขณะที่ไลน์ปั๊มอยู่หน้า `/daily-report` ทั้งกะ
 ⇒ การสื่อสารจริงเกิดนอกระบบ (ข้อมูล 19/08: ใบสั่งผลิตลูก 54 ใบ · ใบเบิกวัตถุดิบ 3 ใบ
 เทียบกับ 5,468 แถวที่เข้าคลังอัตโนมัติจากการสแกนปิดใบ)
 
@@ -754,6 +754,11 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > - **ผลบนใบ `wip_replenish_requests.delivered_gate`** = `scanned`/`no_point`/`override` (+ `delivered_point_id/name`, `delivered_override_*`) · trigger `fn_wip_replenish_deliver_gate` (Main) ปฏิเสธ delivered ที่ไม่มี gate — **ตารางความจริงต้องตรงกับ `validateDeliverPayload` เป๊ะ**
 > - **`line_replenish_scan_blocks` (Main · insert-only)** เก็บเฉพาะครั้งที่บล็อก/override → ตอบ "ด่านกันอะไรได้" · **ห้ามตั้งชื่อขึ้นต้น `pokayoke_`** (คนละโมดูลกับ `/pokayoke`)
 > - **ลำดับ deploy: merge โค้ดก่อน แล้ว apply migration Main** — โค้ดใหม่ทนคอลัมน์ยังไม่มี (42703 → บันทึกแบบเดิม + toast) แต่โค้ดเก่าไม่ส่ง gate
+
+> #### 🏬 สโตร์เปิดใบส่งเองจาก Store Time Chart (2026-09-07 · user "กดเลือกชิ้นงานที่จะไปส่งไม่ได้") · รายละเอียด `docs/STORE-PULL-LOOP-DESIGN.md` §8.2
+> - ติ๊กพาร์ทในคิว "ส่งตามคำขอ" → 🚚 สร้างใบส่ง → `wip_replenish_requests` **คิวเดียวกับที่ไลน์เรียก** · `source='store_forecast'` (migration `20260907_wip_replenish_source.sql` Main · default `'line'`)
+> - **ใบลง leaf ไม่ใช่กลุ่ม** — `view.groupOrders[g][].lineName` (เพิ่ม 2026-09-07) + BOM → ไลน์ย่อยที่กินพาร์ท · หลายไลน์ให้คนเลือก · `view.linesOfGroup` เป็น fallback
+> - พาร์ทที่มีใบค้าง = "📋 ในคิวแล้ว" ติ๊กไม่ได้ · ป้ายที่มาบนการ์ด/แผงไลน์: 🏬 สโตร์ส่งตามแผนผลิต vs 📦 ไลน์ขอเบิก · ไม่ยิง notify
 - **⚠️ เฟส 0 ที่ยังค้าง:** `fn_explode_child_demand` หักมินิสโตร์ด้วยชื่อ **ไลน์ที่เปิดกะ** แต่ของถูกจ่ายเข้า
   **ไลน์แม่** → backflush ไม่เคยเกิด → ยอดในไลน์ไม่เคยลด → **ไม่มีวันแตะ min เอง**
   ระหว่างนี้หัวหน้ายังกด "เบิก" เองได้ (ไม่บล็อก) แต่การเสนออัตโนมัติจะเงียบจนกว่าจะย้ายของไปไลน์ลูกครบ
