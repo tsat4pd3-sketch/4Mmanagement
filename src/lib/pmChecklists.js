@@ -95,13 +95,24 @@ export async function moveChecklistDept(checklistId, toDepartment, { replace = f
 
   const target = await findChecklist(src.equipment_id, src.module, toDepartment)
   if (target) {
-    const [{ count: tCps }, { count: tInsp }] = await Promise.all([
+    // ⚠️ นับไม่สำเร็จ = "ไม่รู้" ห้ามเดาเป็น 0 — `?? 0` ทำให้ด่านทั้งสองผ่านแล้วลบทิ้งเลย
+    //    (count query ล้ม → count = undefined → (undefined ?? 0) > 0 = false → ตกไปบรรทัด delete)
+    const [rCps, rInsp, rPlans] = await Promise.all([
       supabaseDR.from('jig_checkpoints').select('id', { count: 'exact', head: true }).eq('checklist_id', target.id),
       supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).eq('checklist_id', target.id),
+      supabaseDR.from('pm_plans').select('id', { count: 'exact', head: true }).eq('checklist_id', target.id),
     ])
+    const cErr = rCps.error || rInsp.error || rPlans.error
+    if (cErr || rCps.count == null || rInsp.count == null || rPlans.count == null)
+      throw new Error('ตรวจของที่แผนกปลายทางไม่สำเร็จ — ยังย้ายไม่ได้ (กันลบทับของที่มีอยู่) ' + (cErr?.message || ''))
+    const { count: tCps } = rCps, { count: tInsp } = rInsp, { count: tPlans } = rPlans
     // ปลายทางมีประวัติการตรวจ = ห้ามทับเด็ดขาด (FK inspections เป็น NO ACTION ลบไม่ได้อยู่แล้ว)
-    if ((tInsp ?? 0) > 0) throw new Error('แผนกปลายทางมีประวัติการตรวจอยู่แล้ว — ย้ายทับไม่ได้ ใช้ "คัดลอก" แทน')
-    if ((tCps ?? 0) > 0 && !replace) return { moved: false, reason: 'target_has_checkpoints', targetCheckpoints: tCps }
+    if (tInsp > 0) throw new Error('แผนกปลายทางมีประวัติการตรวจอยู่แล้ว — ย้ายทับไม่ได้ ใช้ "คัดลอก" แทน')
+    // ⚠️ pm_plans FK เป็น **CASCADE** (ตรวจ schema จริง 2026-09-02) — ลบ checklist = แผน PM ของ
+    //    ปลายทางหายไปด้วยทั้งรอบเวลา/last_done_at/next_due_date/เกณฑ์ยอดผลิต · เดิมนับแต่ jig_checkpoints
+    //    แล้วถามผู้ใช้แค่เรื่องจุดตรวจ = ลบแผน PM ทิ้งโดยไม่มีใครรู้ตัว → ต้องนับ+บอกด้วย
+    if ((tCps > 0 || tPlans > 0) && !replace)
+      return { moved: false, reason: 'target_has_checkpoints', targetCheckpoints: tCps, targetPlans: tPlans }
     const { error: eDel } = await supabaseDR.from('checklists').delete().eq('id', target.id)
     if (eDel) throw eDel
   }
@@ -122,9 +133,14 @@ export async function copyChecklistToDept(checklistId, toDepartment, userId, { r
   if (!cps?.length) return { copied: false, reason: 'empty' }
 
   const target = await getOrCreateChecklist(src.equipment_id, src.module, toDepartment, userId)
-  const { count: tCps } = await supabaseDR
+  // ⚠️ นับไม่สำเร็จ = "ไม่รู้" ห้าม `?? 0` — จะข้ามด่านไปลง insert ทับของเดิม
+  //    ⇒ จุดตรวจปลายทาง "ซ้ำสองชุด" เงียบๆ (ผู้ตรวจเห็นทุกจุดสองครั้ง) โดยไม่มีใครกดยืนยันอะไรเลย
+  const rCps = await supabaseDR
     .from('jig_checkpoints').select('id', { count: 'exact', head: true }).eq('checklist_id', target.id)
-  if ((tCps ?? 0) > 0) {
+  if (rCps.error || rCps.count == null)
+    throw new Error('ตรวจจุดตรวจที่แผนกปลายทางไม่สำเร็จ — ยังคัดลอกไม่ได้ (กันจุดตรวจซ้ำ) ' + (rCps.error?.message || ''))
+  const tCps = rCps.count
+  if (tCps > 0) {
     if (!replace) return { copied: false, reason: 'target_has_checkpoints', targetCheckpoints: tCps }
     const { error: eDel } = await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', target.id)
     if (eDel) throw eDel

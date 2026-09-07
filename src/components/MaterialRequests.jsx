@@ -18,7 +18,8 @@ import { usePerms } from '../utils/usePerms';
 import { toast } from './Toast';
 import ReadOnlyNote from './ReadOnlyNote';
 import InfoMore from './InfoMore';
-import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import { scopedLineNames } from '../utils/sectionScope';
 import {
   movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, isPullable,
 } from '../utils/materialRequest';
@@ -63,13 +64,13 @@ export default function MaterialRequests() {
   const [pq, setPq] = useState('');
 
   /* ── scope มาตรฐาน: leader = ทั้งครอบครัวไลน์ตัวเอง · อื่น = ตาม sections ── */
+  //   helper กลาง scopedLineNames — เดิมเทียบ sections.includes(l.section) ตรงตัว (ไม่ normalize
+  //   ช่องว่าง/ตัวพิมพ์เหมือน inSectionScope) และไม่มี fallback เมื่อกรองแล้วไม่เหลือไลน์ (audit รอบ 11)
   const scopedLines = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const fam = getLineFamilyIds(lines, Number(lineId));
-      return fam.size ? lines.filter(l => fam.has(l.id)) : lines;
-    }
-    if (sections.length) return lines.filter(l => sections.includes(l.section));
-    return lines;
+    const names = scopedLineNames({ role, lineId, sections, lines });
+    if (!names) return lines;
+    const set = new Set(names);
+    return lines.filter(l => set.has(l.name));
   }, [lines, role, lineId, sections]);
   const scopeNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
 

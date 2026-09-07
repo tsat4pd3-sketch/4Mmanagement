@@ -27,6 +27,7 @@ import CalloutPin from './CalloutPin';
 import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -167,21 +168,36 @@ export default function QaCheckSheet({ canRecord }) {
     return () => { alive = false; };
   }, [partId]);
 
+  /* คีย์ของใบที่ "กำลังแสดงอยู่" — ใช้กัน race ทั้งขาอ่านและขาเขียน (audit 2026-09-02)
+     🔴 เดิม `loadSheet` ไม่มี guard และ `ensureSheet` ลัดวงจรด้วย `if (sheet?.id) return sheet`
+        โดยไม่ตรวจว่าใบนั้นเป็นของคีย์ปัจจุบันไหม ⇒ QA เปลี่ยน "รอบที่" 1→2 (หรือเปลี่ยนพาร์ท)
+        ระหว่างคิวรีรอบ 1 ยังไม่กลับ แล้วแตะจุดตรวจภายใน ~1 วินาที → ผลตรวจถูก upsert ด้วย
+        `sheet_id` **ของรอบเดิม** โดยจอขึ้นเขียว "บันทึกแล้ว" ปกติ = บันทึกคุณภาพผิดใบแบบเงียบสนิท
+        (และ NCR ที่เปิดจากแถวนั้นชี้ผิดรอบตามไปด้วย) */
+  const sheetKey = `${partId}|${workDate}|${shift}|${roundNo}`;
+  const sheetKeyRef = useRef(sheetKey);
+  sheetKeyRef.current = sheetKey;
+  const matchesKey = (s) => !!s && `${s.part_id}|${s.work_date}|${s.shift}|${s.round_no}` === sheetKeyRef.current;
+
   /* ── ใบตรวจของคีย์ปัจจุบัน (พาร์ท+วัน+กะ+รอบ) + ผลในใบ ── */
   const loadSheet = useCallback(async () => {
     if (!partId) { setSheet(null); setResults([]); return; }
+    const myKey = `${partId}|${workDate}|${shift}|${roundNo}`;
     setLoading(true);
     const { data: sh, error } = await supabase.from('qa_inspection_sheets').select('*')
       .eq('part_id', partId).eq('work_date', workDate).eq('shift', shift).eq('round_no', roundNo)
       .maybeSingle();
     // 42P01 = ตารางยังไม่มี (ยังไม่ apply migration) — ไม่ใช่ error ของ user
     if (error?.code === '42P01') { setNeedMigration(true); setSheet(null); setResults([]); setLoading(false); return; }
+    if (sheetKeyRef.current !== myKey) return;   // ผู้ใช้เปลี่ยนคีย์ระหว่างรอ → ทิ้งผลรอบนี้
     setNeedMigration(false);
     let res = [];
     if (sh?.id) {
       const { data } = await supabase.from('qa_inspection_results').select('*').eq('sheet_id', sh.id);
       res = data || [];
     }
+    // เช็คซ้ำหลัง await ตัวที่ 2 — ห้าม setDrafts({}) ทับค่าที่ผู้ใช้เพิ่งพิมพ์ในคีย์ใหม่
+    if (sheetKeyRef.current !== myKey) return;
     setSheet(sh || null);
     setResults(res);
     setDrafts({});
@@ -239,7 +255,9 @@ export default function QaCheckSheet({ canRecord }) {
 
   /* ── สร้างใบเมื่อเริ่มบันทึกจริง (ไม่สร้างใบเปล่าทิ้งไว้) ── */
   const ensureSheet = useCallback(async () => {
-    if (sheet?.id) return sheet;
+    // ⚠️ ด่านสุดท้ายของขาเขียน — ต้องตรวจว่าใบใน state เป็นของคีย์ที่แสดงอยู่จริง
+    //    เช็คแค่ `sheet?.id` ไม่พอ: ใบของรอบก่อนก็มี id เหมือนกัน แล้วผลตรวจจะลงผิดใบ
+    if (matchesKey(sheet)) return sheet;
     if (!part) return null;
     const { data, error } = await supabase.from('qa_inspection_sheets').insert({
       part_id: part.id, part_no: part.part_no, part_name: part.part_name || null,
@@ -361,7 +379,7 @@ export default function QaCheckSheet({ canRecord }) {
       created_by: fullName || null,
     }).select().single();
     if (error) { setBusy(false); toast.error(`เปิด NCR ไม่สำเร็จ: ${error.message}`); return; }
-    await supabase.from('qa_inspection_results').update({ ncr_id: data.id }).eq('id', res.id);
+    checkWrite(await supabase.from('qa_inspection_results').update({ ncr_id: data.id }).eq('id', res.id), 'ผูก NCR เข้าผลตรวจ');
     notifyEvent({
       event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr', ref_id: data.id,
       line_name: part?.line_name || null, actor: fullName,

@@ -16,7 +16,7 @@
  *     (หลักเดียวกับ checklist ของ PM ที่เคยสร้างเงาเปล่าค้างจนเครื่องไปโผล่ผิดแท็บ)
  *  4. update ต้องนับแถวที่เขียนจริง (`.select('id')`) — RLS ปฏิเสธ = 0 แถว ไม่ error
  */
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
@@ -26,6 +26,7 @@ import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy'
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { printBbsSheet } from '../lib/bbsPrint';
+import { checkWrite } from '../utils/dbWrite';
 
 const thisMonth = () => {
   const d = new Date();
@@ -110,9 +111,20 @@ export default function BbsCheck() {
   }, []);
   useEffect(() => { loadStatic(); }, [loadStatic]);
 
+  /* คีย์ของใบที่ "กำลังแสดงอยู่" — กัน race ทั้งขาอ่านและขาเขียน (audit 2026-09-02)
+     🔴 เดิม load() ไม่มี guard และ ensureSheet ลัดวงจรด้วย `if (sheet) return sheet` โดยไม่ตรวจคีย์
+        ⇒ หัวหน้ากรอก BBS หลายไลน์/หลายเดือนติดกัน แล้วเปลี่ยนไลน์-เปลี่ยนเดือนแล้วทาช่องต่อทันที
+          → `bbs_observations.sheet_id` ลงใบของ **เดือน/ไลน์ก่อนหน้า** โดยจอทาติดสีปกติ
+          = กลับมาดูเดือนนั้นเจอรอยทาที่ไม่ได้ทำ · เดือนที่ทำจริงว่างเปล่า · ใบพิมพ์ FM ไม่ตรงของจริง */
+  const sheetKey = `${month}|${lineObj?.name || ''}|${shift}`;
+  const sheetKeyRef = useRef(sheetKey);
+  sheetKeyRef.current = sheetKey;
+  const matchesKey = (s) => !!s && `${s.month_key}|${s.line_name}|${s.shift}` === sheetKeyRef.current;
+
   /* ── พนักงาน + ใบของเดือน/ไลน์/กะที่เลือก ── */
   const load = useCallback(async () => {
     if (!lineObj) return;
+    const myKey = `${month}|${lineObj.name}|${shift}`;
     setLoading(true); setLoadWarn('');
     try {
       const fam = getLineFamilyIds(lines, lineObj.id);
@@ -122,12 +134,14 @@ export default function BbsCheck() {
       q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', lineObj.id);
       const { data: empData, error: empErr } = await q.order('employee_id_code');
       if (empErr) setLoadWarn(`โหลดรายชื่อพนักงานไม่สำเร็จ: ${empErr.message}`);
+      if (sheetKeyRef.current !== myKey) return;   // เปลี่ยนไลน์/เดือน/กะ ระหว่างรอ → ทิ้งผลรอบนี้
       setEmps(empData || []);
 
       const { data: sh, error: shErr } = await supabase.from('bbs_sheets').select('*')
         .eq('month_key', month).eq('line_name', lineObj.name).eq('shift', shift)
         .maybeSingle();
       if (shErr && shErr.code !== 'PGRST116') setLoadWarn(`โหลดหัวใบไม่สำเร็จ: ${shErr.message}`);
+      if (sheetKeyRef.current !== myKey) return;
       setSheet(sh || null);
 
       if (sh) {
@@ -136,12 +150,13 @@ export default function BbsCheck() {
         if (obErr) setLoadWarn(`โหลดผลสังเกตไม่สำเร็จ: ${obErr.message}`);
         const map = {};
         (obs || []).forEach(o => { map[cellKey(o.employee_id, o.day)] = o; });
-        setCells(map);
 
         const { data: rn } = await supabase.from('bbs_row_notes')
           .select('employee_id, note').eq('sheet_id', sh.id);
         const nm = {};
         (rn || []).forEach(r => { nm[r.employee_id] = r.note || ''; });
+        if (sheetKeyRef.current !== myKey) return;
+        setCells(map);
         setRowNotes(nm);
       } else {
         setCells({});
@@ -153,7 +168,8 @@ export default function BbsCheck() {
 
   /* ── หัวใบ: สร้างตอนบันทึกจริงเท่านั้น (ห้ามสร้างตอนเปิดดู) ── */
   const ensureSheet = useCallback(async () => {
-    if (sheet) return sheet;
+    // ⚠️ ด่านสุดท้ายของขาเขียน — เช็คแค่ `sheet` ไม่พอ ใบของเดือน/ไลน์ก่อนก็ truthy เหมือนกัน
+    if (matchesKey(sheet)) return sheet;
     if (!lineObj) return null;
     const me = signers.find(s => s.full_name === fullName);
     const payload = {
@@ -591,8 +607,8 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
       const keep = new Set(up.filter(u => u.id).map(u => u.id));
       const gone = agreements.filter(a => !keep.has(a.id));
       if (gone.length) {
-        await supabase.from('bbs_agreements').update({ is_active: false })
-          .in('id', gone.map(g => g.id));
+        checkWrite(await supabase.from('bbs_agreements').update({ is_active: false })
+          .in('id', gone.map(g => g.id)), 'ปิดข้อตกลงเดิม');
       }
       toast.success('บันทึกข้อตกลงแล้ว');
       onClose();

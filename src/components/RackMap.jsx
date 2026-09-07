@@ -16,6 +16,7 @@ import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { loadSpareSections, sectionOptions, sectionKeyOf, COMMON_SECTION_LABEL } from '../utils/spareSection';
 import { stockState, computeSpareRank, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
+import { checkWrite } from '../utils/dbWrite';
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -270,7 +271,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
   const delCell = async (c) => {
     if (!confirm(`ลบช่อง "${c.shelf_code}" ออกจากผัง?\n(ตัวอะไหล่ไม่ถูกลบ · กด Undo คืนได้)`)) return;
     hist.pushHistory();
-    await supabaseDR.from('mtn_rack_cells').delete().eq('id', c.id);
+    checkWrite(await supabaseDR.from('mtn_rack_cells').delete().eq('id', c.id), 'ลบช่องชั้นวาง');
     setSelCell(null); loadCells(rackId);
   };
   const renameCell = async (c) => {

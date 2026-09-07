@@ -9,6 +9,7 @@ import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
+import { checkWrite } from '../utils/dbWrite';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
@@ -207,12 +208,13 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
           tasks: tasks.map(t => ({ task_date: t.task_date, team: teamLabelOf(t.team), description: t.description, time_from: t.time_from, time_to: t.time_to, is_support: t.is_support })),
         } },
       });
-      await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id);
+      checkWrite(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id), 'ตั้งสถานะ "แจ้งแล้ว"');
       toast.success('แจ้ง Production แล้ว'); onReload();
     } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
   };
   const setStatus = async (status) => {
-    await supabaseDR.from('pm_coordination_plans').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
+    const { error: wErr215 } = await supabaseDR.from('pm_coordination_plans').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
+    if (wErr215) { toast.error('เปลี่ยนสถานะแผนไม่สำเร็จ: ' + wErr215.message); return; }
     // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
     if (status === 'done' && p.pm_plan_id && pmPlan) {
       if (confirm('PM ของเครื่องนี้ทำเสร็จจริงแล้ว?\nกด OK เพื่ออัพเดท "วันทำล่าสุด" ในระบบแผน PM (เลื่อนรอบถัดไปให้อัตโนมัติ)')) {
@@ -231,12 +233,12 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     onReload();
   };
   const toggleTask = async (t) => {
-    await supabaseDR.from('pm_coordination_tasks').update({ done: !t.done }).eq('id', t.id);
+    checkWrite(await supabaseDR.from('pm_coordination_tasks').update({ done: !t.done }).eq('id', t.id), 'ติ๊กงาน');
     onReload();
   };
   const del = async () => {
     if (!confirm('ลบแผนนี้?')) return;
-    await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id);
+    checkWrite(await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id), 'ลบแผน');
     toast.success('ลบแล้ว'); onReload();
   };
 
@@ -347,7 +349,8 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     } else {
       const { error } = await supabaseDR.from('pm_coordination_plans').update(head).eq('id', planId);
       if (error) { setBusy(false); return toast.error(error.message); }
-      await supabaseDR.from('pm_coordination_tasks').delete().eq('plan_id', planId);
+      const { error: wErr350 } = await supabaseDR.from('pm_coordination_tasks').delete().eq('plan_id', planId);
+      if (wErr350) { toast.error('ล้างรายการงานเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr350.message); return; }
     }
     const rows = tasks.filter(t => t.description?.trim() || t.task_date).map((t, i) => ({
       plan_id: planId, task_date: t.task_date || null, team: t.team || null, description: t.description || null,

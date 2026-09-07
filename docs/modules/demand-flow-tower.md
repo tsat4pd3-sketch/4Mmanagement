@@ -703,6 +703,41 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > #### ⚠️ กันเสนอซ้ำที่ระดับ DB — `wip_replenish_open_per_part_uniq`
 > 1 พาร์ท/ไลน์ มีใบที่ยังไม่จบได้ **ใบเดียว** · ไม่งั้นเปิดหน้าใหม่ทุกครั้ง = คิวท่วม
 > (บทเรียน `purchase_requests` 2,336 ใบ) · client แปลง 23505 เป็นข้อความไทย
+>
+> #### 🔴🔴 กฎเหล็ก 6 — บวกยอดจุด WIP ต้องผ่าน RPC **`wip_point_add_qty`** ห้าม update `wip_buffer_points` ตรงจาก client (2026-09-03 · full QC audit)
+> `wip_buffer_points` มี RLS ที่เขียนได้เฉพาะ **admin/manager/supervisor** (hardcode role array)
+> แต่คนที่กด "ส่งถึงแล้ว" ในคิวเติม WIP คือผู้ถือ **`heijunka:operate`**
+> — วัดกับฐานจริง: **44 บัญชีไม่ผ่าน RLS สักคน** (leader 19 · qa 20 · **planner_store 1 ซึ่งเป็นสโตร์ตัวจริง** ·
+> document_control 2 · display 2) ผ่านแค่ 27 (admin/manager/supervisor)
+> ⇒ **RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"** → โค้ดเดิมเช็คแค่ `error` จึงขึ้น **"✅ เติมเรียบร้อย"
+> ทั้งที่ `current_qty` ไม่เคยขยับ** (เทสสวมบทยืนยัน: planner_store update ตรง → `rows=0` · ผ่าน RPC → 305)
+> - **ไม่แก้ด้วยการเปิด policy ให้ 44 บัญชี** — ตารางนี้เป็น master ของจุด WIP (ตำแหน่งบนผัง · min/max · ภาชนะ)
+>   ซึ่งเป็นของ admin/mgr/sv จริง · สิ่งที่สโตร์ต้องทำคือ **บวก `current_qty` คอลัมน์เดียว = คนละแกน**
+>   → SECURITY DEFINER แตะเฉพาะคอลัมน์ที่อนุญาต (precedent `set_my_signature`) + guard **`has_perm()`** ตามกฎ
+>   "สิทธิ์ต้อง data-driven ห้าม hardcode role array" · migration `20260903_wip_point_add_qty_rpc.sql` (**apply แล้ว**)
+> - **RPC ล็อกแถว (`for update`) ก่อนอ่าน** — 2 เครื่องสโตร์กดพร้อมกันต้องบวกทบกัน ไม่ใช่เขียนทับกัน
+>   (read-modify-write ฝั่ง client = ยอดหายไปหนึ่งใบเงียบๆ)
+> - **ชนเพดาน `max_qty` ต้องบอกบนจอ ห้าม clamp เงียบ** — RPC คืน `capped`/`cap_max` แล้วจอขึ้น toast **แดง**
+>   (ส่งไป N แต่บันทึกได้เท่าเพดาน = ยอดจริงกับยอดในระบบต่างกัน คนต้องรู้)
+> - `max_qty` null **หรือ 0 = "ไม่รู้เพดาน" → ไม่ clamp** (clamp ด้วย 0 = ล้างยอดทิ้ง เสียหายกว่ายอมให้เกิน)
+>   · ⚠️ ข้อมูลจริงตอนนี้ `max_qty > 0` ครบทั้ง 10 แถว — เงื่อนไขนี้เป็นการกันไว้ ไม่ใช่แก้ของที่พังอยู่
+> - **`LineSetup` ยัง update ตรงได้ตามเดิม** (policy `wip_buffer_points_write_setup` = `has_perm('line_setup:edit')` ตั้งแต่ **2026-09-04** — เดิม hardcode admin/mgr/sv ซึ่ง**ไม่ตรง**กับสิทธิ์จริง: dept_admin ที่ถือ line_setup:edit แก้จุด WIP ได้ 0 แถวเงียบ · migration `20260904_rls_match_ui_permissions.sql`) **ห้ามย้ายมาใช้ RPC นี้**
+>   (RPC ตั้งใจแตะแค่ `current_qty` ไม่ใช่ทางแก้ master)
+>
+> #### 🔴 กฎเหล็ก 7 — claim สถานะก่อนเขียน ledger **ต้องคืนสถานะเดิมเมื่อ ledger ล้ม** (2026-09-03)
+> ทุกปุ่มเลื่อนสถานะในบอร์ดสโตร์ใช้ **compare-and-swap** เป็นตัวกันกดซ้ำ/สองเครื่อง (ถูกแล้ว ห้ามเอาออก —
+> เขียน ledger ก่อนแล้วค่อยเปลี่ยนสถานะ = 2 เครื่องกดพร้อมกันได้สต็อกซ้ำ)
+> **แต่ผลข้างเคียงคือ claim สำเร็จแล้ว "กดซ้ำไม่ได้อีก"** ⇒ ledger ล้มแล้วปล่อยไว้ = ใบค้างสถานะ
+> "ผลิตเสร็จ/รับเข้าแล้ว/ส่งแล้ว" **ตลอดกาลโดยสต็อกไม่เคยขยับ และไม่มีทางให้ระบบเขียนให้อีก**
+> - แก้ครบแล้วที่ `advanceLot` (ผลิตเสร็จ) · `advancePurchase` (รับเข้า) · `advanceWip` (เติมจุด)
+>   — ล้มเมื่อไหร่ **คืนสถานะกลับที่เดิม** แล้วบอกให้กดใหม่
+> - **คืนสถานะไม่สำเร็จด้วย = ต้องดังกว่าเดิม** ("ค้างสถานะ X ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที")
+> - **ของที่ลง ledger ไปแล้ว ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่) — เช่นปิดใบเบิกวัตถุดิบใน `advanceLot`
+>   ที่ทำหลัง insert stock → ล้มแล้วให้ **บอกดังๆ ให้ไปปิดเอง** (pattern เดียวกับ `submitReceive`)
+> - **⚠️ `advanceLot` เคยใช้ `.neq('status', next)` ซึ่งหลวมเกินไป — แก้เป็น `.eq('status', lot.status)` แล้ว**
+>   (บั๊กเดียวกับที่ `advancePurchase` แก้ไปก่อน): ใบที่ **ยกเลิก** ไปแล้วถูกกดเป็น done ได้ = ชุบชีวิตใบขยะ
+>   แล้ว **เติมสต็อกปลอม** · ข้อมูลจริง `child_lot_requests` cancelled **100 ใบ** (ใบล็อต ≤1 ชิ้นที่ void
+>   ตอนแก้บั๊กหน่วย `lot_size`) — กดจากจอที่เปิดค้างอยู่ = ของที่ไม่มีจริงเข้าสโตร์ · และข้ามขั้น pending→done ได้
 
 - **ระบบเสนอ คนกดยืนยัน — ห้าม auto-สร้างใบเบิก** (กฎเดิมทั้งโปรเจค) · การเสนอ **คำนวณสดจากยอดจริง
   ไม่ persist แถว `suggested`** (แถวแบบนั้นต้องมี scanner คอยสร้าง/ล้าง — สถานะเปิดไว้ใน DB รอเฟสหน้า)
@@ -727,3 +762,9 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 ### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
 มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**
 การสะสมล็อตของจริงเกิดที่ `fn_explode_child_demand` แทน — **อย่าไปต่อยอดบน `kanban_scans`**
+
+> #### 🔗 แถว consume ของ `fn_explode_child_demand` ต้องมี `ref_order_id`/`ref_session_id` (2026-09-04 · full QC audit รอบ 10)
+> trigger ตัด mini-store ตอนปิดใบ FG เคยเขียนแถว `consume` โดยไม่ stamp ใบผลิต → `/order-trace` (ดึงสต็อกด้วย `ref_order_id`)
+> **มองไม่เห็นการตัดชิ้นส่วนของใบนั้นเลย** — วัดจริง 2,247 แถว null ทั้งหมด · แก้ที่ trigger + backfill จับคู่ note `auto: FG <prod_no>` + ไลน์ + work_date
+> ได้ 2,212 แถว (กำกวม 29 + หาไม่เจอ 6 ปล่อย null ไม่เดา) · migration `20260904_explode_consume_ref_order.sql` (DR · apply แล้ว)
+> · guard กันโพสต์ซ้ำ/ปุ่มถอยใบ กรอง `type='issue'` เท่านั้น จึงไม่กระทบ · **แถว ledger อัตโนมัติทุกชนิดต้องผูก ref ต้นทางตั้งแต่เขียน** ไม่งั้นสอบกลับขาดตอน

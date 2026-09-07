@@ -61,7 +61,8 @@ async function sendTelegram(message: string, chats: string[]) {
     fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
-    }).catch(() => null)));
+    }).then(async (r) => { if (!r.ok) console.error('mtn-daily-summary: telegram', chat, r.status, await r.text().catch(() => '')); })
+      .catch((e) => console.error('mtn-daily-summary: telegram', chat, String(e)))));
 }
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };

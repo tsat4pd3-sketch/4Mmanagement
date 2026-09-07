@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { fetchByIds } from '../utils/fetchByIds';
 import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
@@ -11,6 +12,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, seesAllTeams } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
+import { checkWrite } from '../utils/dbWrite';
 
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
@@ -608,7 +610,7 @@ export default function Checkin() {
         const toUnbookExtra = displayed.filter(emp => !isBookedExtra(emp)).map(emp => emp.id);
 
         if (toBookExtra.length) {
-          await supabase.from('ot_night_bookings').upsert(
+          checkWrite(await supabase.from('ot_night_bookings').upsert(
             toBookExtra.map(empId => ({
               work_date:      d,
               shift:          otShift,
@@ -619,7 +621,7 @@ export default function Checkin() {
               booked_by_name: fullName || null,
             })),
             { onConflict: 'employee_id,work_date,shift' }
-          );
+          ), 'จองรถ OT ล่วงหน้า');
         }
         if (toUnbookExtra.length) {
           await supabase.from('ot_night_bookings')
@@ -786,7 +788,7 @@ export default function Checkin() {
     if (!toOpen.length) { toast.info('ไม่ได้เลือกไลน์ไหนเพื่อเปิดกะ'); setOpenShiftModal(null); setSubLineSelections({}); return; }
     try {
       for (const { line, startTime, hasOtNight } of toOpen) {
-        await supabaseDR.from('production_sessions').insert({
+        const { error: wErr790 } = await supabaseDR.from('production_sessions').insert({
           work_date:       openShiftModal.workDateStr,
           line_name:       line.name,
           shift:           openShiftModal.shift,
@@ -795,6 +797,7 @@ export default function Checkin() {
           opened_by_name:  fullName || 'SV',
           notes:           hasOtNight ? 'OT กะดึก (เปิดจากเช็คชื่อ)' : null,
         });
+        if (wErr790) throw wErr790;   // เปิดกะ — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
       }
       toast.success(`เปิดกะ ${toOpen.map(l => l.line.name).join(', ')} สำเร็จ`);
     } catch (e) {
@@ -916,12 +919,23 @@ export default function Checkin() {
       const scopedEmp = (empData || []).filter(e => !lineIds || lineIds.includes(e.line_id));
       if (!scopedEmp.length) { toast.error('ไม่พบพนักงานในส่วนงานนี้'); setExporting(false); return; }
 
-      const { data: logData } = await supabase
+      /* 🔴 ใบนี้ถูกพิมพ์ไปเซ็น (บันทึกการมาทำงาน / ชดเชย-OT ที่ register ใน doc_forms)
+         ⇒ ข้อมูลขาด = ช่องวันเข้างานว่าง = อ่านว่า "ขาดงาน" ทั้งที่มาทำงานจริง (audit 2026-09-02)
+         เดิมพังได้ 2 ทางพร้อมกัน:
+           • `.in()` กับ ~300 uuid = URL ~12,000 ตัวอักษร (ปลอดภัยที่ ~120 id) → proxy ตัด คิวรีล้มเงียบ
+           • `.limit(10000)` ใช้ไม่ได้จริง — PostgREST clamp 1000 · 300 คน × 16 วัน ≈ 4,800 แถว
+         → fetchByIds ทำครบ 3 ชั้น (ก้อน id + แบ่งหน้า + order คงที่)
+         **โหลดไม่ครบ = ไม่ยอมพิมพ์** (ใบที่ผิดแล้วมีลายเซ็นอนุมัติ แย่กว่าไม่ได้ใบ) */
+      const logRes = await fetchByIds(scopedEmp.map(e => e.id), (c) => supabase
         .from('daily_production_logs')
         .select('employee_id, work_date, is_present, has_ot, has_extended_ot, leave_type, shift')
         .gte('work_date', dateFrom).lte('work_date', dateTo)
-        .in('employee_id', scopedEmp.map(e => e.id))
-        .limit(10000);
+        .in('employee_id', c));
+      if (logRes.error || logRes.truncated) {
+        toast.error('โหลดข้อมูลการมาทำงานไม่ครบ — ยังพิมพ์ไม่ได้ (ใบจะขึ้นว่า "ขาดงาน" ผิด) ลองลดช่วงวันที่ หรือเลือกส่วนงานให้แคบลง');
+        setExporting(false); return;
+      }
+      const logData = logRes.rows;
 
       const logsByEmp = {};
       (logData || []).forEach(l => {

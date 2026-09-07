@@ -5,6 +5,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
+import { checkWrite } from '../utils/dbWrite';
 
 /* ─── TransportMapEditor — วาดกราฟถนน/ทางเดินรถบนผังใหญ่ (Store/AMR) ──────────
    ใช้รูปผังตัวเดียวกับ /factory-map (factory_map ฝั่ง Main) เป็นฉากหลัง
@@ -208,7 +209,7 @@ export default function TransportMapEditor() {
     const node = await createNodeRow(pt.x, pt.y, 'junction')
     if (!node) return null
     const bidir = edge.bidir !== false
-    await supabaseDR.from('transport_edges').delete().eq('id', edge.id)
+    checkWrite(await supabaseDR.from('transport_edges').delete().eq('id', edge.id), 'บันทึกผังขนส่ง');
     const { data: two, error } = await supabaseDR.from('transport_edges').insert([
       { a_node: edge.a_node, b_node: node.id, bidir, is_active: true, updated_by_name: fullName },
       { a_node: node.id, b_node: edge.b_node, bidir, is_active: true, updated_by_name: fullName },

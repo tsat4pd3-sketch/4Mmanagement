@@ -205,10 +205,11 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
     const ids = [...new Set([...byRole, ...byTeam, ...reporter])].filter(Boolean);
     if (!ids.length) return;
     const body = String(message).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 300);
-    await supabase.from('notifications').insert(ids.map((uid) => ({
+    const { error } = await supabase.from('notifications').insert(ids.map((uid) => ({
       user_id: uid, title: meta.t(v), body, type: meta.type,
       ref_table: 'mtn_orders', ref_id: mo?.id != null ? String(mo.id) : null,
     })));
+    if (error) console.error('notifyMoInApp insert', error.message);   // supabase-js ไม่ throw
   } catch (e) { console.error('notifyMoInApp', e); }   // แจ้งในแอปพลาด ห้ามทำให้ Telegram พัง
 }
 

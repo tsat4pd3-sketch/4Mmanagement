@@ -11,7 +11,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //   header: x-cleanup-token: <CLEANUP_TOKEN>
 // กันพลาด: ไฟล์ที่เพิ่งอัปโหลดภายใน 24 ชม. จะไม่ถูกแตะ (อาจกำลังรอผูกกับ record)
 
-const CLEANUP_TOKEN = '56ef8b73bbc1b19d9efa1b283f6f4f99ab6981b3a0a1fd83'
+// token อ่านจาก secret เท่านั้น (เคยฝังในซอร์ส = อยู่ใน git history ของทุกคน · แก้ 2026-09-07)
+//   ตั้งด้วย: supabase secrets set CLEANUP_TOKEN=<สุ่มใหม่> --project-ref ewhdfqwfwofivojtsizn  แล้ว deploy ใหม่
+//   ไม่ตั้ง = function ปฏิเสธทุกคำขอ (fail-closed) — ดีกว่าเปิดให้ token เก่าที่รั่วแล้วใช้ต่อ
+const CLEANUP_TOKEN = Deno.env.get('CLEANUP_TOKEN') ?? ''
 const BUCKET = 'employee-photos'
 const SAFETY_MS = 24 * 60 * 60 * 1000
 
@@ -24,6 +27,7 @@ const json = (body: unknown, status = 200) =>
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (!CLEANUP_TOKEN) return json({ error: 'CLEANUP_TOKEN not configured' }, 503)
   if (req.headers.get('x-cleanup-token') !== CLEANUP_TOKEN) return json({ error: 'unauthorized' }, 401)
 
   try {
@@ -46,7 +50,10 @@ Deno.serve(async (req) => {
     if (e2) throw e2
     for (const r of layouts ?? []) addRef(r.image_url)
     // ผังรวมโรงงาน (factory/) — whitelist กันโดนลบ (เก็บ bucket เดียวกับ layouts)
-    const { data: fmaps } = await admin.from('factory_map').select('image_url')
+    // ⚠️ whitelist ทุกตารางต้อง throw เมื่อคิวรีล้ม — ถ้ากลืน error ตรงนี้ fmaps=undefined
+    //    → รูปผังรวมโรงงานทุกไฟล์ใน factory/ กลายเป็น "กำพร้า" แล้วถูกลบจริง (พบตอน audit 2026-09-07)
+    const { data: fmaps, error: e3 } = await admin.from('factory_map').select('image_url')
+    if (e3) throw e3
     for (const r of fmaps ?? []) addRef(r.image_url)
 
     // 2) ไล่รายชื่อไฟล์ทั้ง bucket (root + โฟลเดอร์ layouts/)

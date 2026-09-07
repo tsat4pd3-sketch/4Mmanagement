@@ -18,6 +18,7 @@ import SpinAnnotator from '../components/SpinAnnotator'
 import ImageCropModal from '../components/ImageCropModal'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
+import { checkWrite } from '../utils/dbWrite';
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -549,7 +550,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         : copyChecklistToDept(cur.id, moveTo, userId, { replace })
       let res = await run(false)
       if (res.reason === 'target_has_checkpoints') {
-        const ok = window.confirm(`${toLabel} มีรายการตรวจอยู่แล้ว ${res.targetCheckpoints} จุด\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด — ยืนยันหรือไม่?`)
+        // ⚠️ ต้องบอกเรื่อง "แผน PM" ด้วย — FK pm_plans.checklist_id เป็น CASCADE
+        //    ลบ checklist ปลายทาง = รอบเวลา/วันตรวจล่าสุด/วันครบกำหนด/เกณฑ์ยอดผลิต หายตามไปทั้งหมด
+        //    (เดิมถามแค่จำนวนจุดตรวจ → คนกดตกลงโดยไม่รู้ว่ากำลังลบแผน PM ทิ้ง)
+        const ok = window.confirm(
+          `${toLabel} มีของอยู่แล้ว: รายการตรวจ ${res.targetCheckpoints} จุด`
+          + (res.targetPlans > 0 ? ` · แผน PM ${res.targetPlans} แผน` : '')
+          + `\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด`
+          + (res.targetPlans > 0 ? ' (รวมรอบเวลา/วันครบกำหนดของแผน PM ที่จะหายถาวร)' : '')
+          + ` — ยืนยันหรือไม่?`)
         if (!ok) { setMoveBusy(false); return }
         res = await run(true)
       }
@@ -742,7 +751,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
       // ── replace jig_images (spin frames) → map each frameKey to its new row id ──
       const frameIdByKey = {}
-      await supabaseDR.from('jig_images').delete().eq('jig_id', jigId)
+      const { error: wErr753 } = await supabaseDR.from('jig_images').delete().eq('jig_id', jigId);
+      if (wErr753) { toast.error('ล้างรูปจิ๊กเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr753.message); return; }
       if (resolvedFrames.length) {
         const { data: insImgs, error: imgErr } = await supabaseDR.from('jig_images')
           .insert(resolvedFrames.map((f, i) => ({ jig_id: jigId, image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title })))
@@ -773,13 +783,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       {
         const uses = planType === 'usage' || planType === 'hybrid'
         const thr = usageThreshold !== '' && usageThreshold != null ? Number(usageThreshold) : null
-        await supabaseDR.from('pm_plans').upsert({
+        checkWrite(await supabaseDR.from('pm_plans').upsert({
           checklist_id: cl.id,
           plan_type: planType,
           usage_metric: uses ? 'produced_qty' : null,
           usage_threshold: uses ? thr : null,
           usage_source_line: uses ? (usageLine.trim() || lineName || null) : null,
-        }, { onConflict: 'checklist_id' })
+        }, { onConflict: 'checklist_id' }), 'บันทึกประเภทแผน PM / เกณฑ์ usage');
       }
 
       // อัพโหลดรูปอ้างอิงต่อจุด (ที่เพิ่งแนบใหม่) ก่อน insert
@@ -797,7 +807,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       const { named, ordered } = groupCheckpoints(checkpoints)
       const groupOrderMap = Object.fromEntries(named.map((g, i) => [g.name, i]))
 
-      await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', cl.id)
+      const { error: wErr808 } = await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', cl.id);
+      if (wErr808) { toast.error('ล้างจุดตรวจเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr808.message); return; }
       if (ordered.length > 0) {
         const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(
           ordered.map((c, i) => ({

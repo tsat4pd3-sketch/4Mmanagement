@@ -15,6 +15,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -1147,10 +1148,11 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     try {
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
-        await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap);                       // future uploads
+        checkWrite(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap), 'ผูกเลขลูกค้าเข้าสินค้า');                       // future uploads
         // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
-        try { await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap); } catch { /* best-effort — บางพาร์ทไม่มีแถว kanban */ }
-        await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust); // existing forecast
+        // best-effort (บางพาร์ทไม่มีแถว kanban = 0 แถว ไม่ใช่ error) — แต่ error จริงต้องเห็น (supabase-js ไม่ throw · try/catch เดิมไม่มีวันจับ)
+        checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards');
+        checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่'); // existing forecast
       }
       toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
       setMapModal(false); setMapSel({});

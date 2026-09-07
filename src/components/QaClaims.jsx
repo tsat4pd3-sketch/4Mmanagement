@@ -16,6 +16,7 @@ import { UserContext } from '../App';
 import { nextDocNo } from '../utils/qaDocNo';
 import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
+import { checkWrite } from '../utils/dbWrite';
 
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
@@ -146,7 +147,7 @@ export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa 
       status: 'open', created_by: fullName || null,
     }).select('id').single();
     if (error) { setBusy(false); toast.error(error.message); return; }
-    await supabase.from('qa_customer_claims').update({ capa_id: data.id, status: c.status === 'open' ? 'investigating' : c.status }).eq('id', c.id);
+    checkWrite(await supabase.from('qa_customer_claims').update({ capa_id: data.id, status: c.status === 'open' ? 'investigating' : c.status }).eq('id', c.id), 'ผูก CAPA เข้าเคลม');
     notifyEvent({
       event: 'qa_capa_opened', type: 'info', ref_table: 'qa_capa', ref_id: data.id,
       line_name: c.line_name || null, actor: fullName,

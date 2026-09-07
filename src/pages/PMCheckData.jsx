@@ -16,6 +16,7 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
+import { checkWrite } from '../utils/dbWrite';
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -393,7 +394,8 @@ function NgRecheckPanel({ result, cp, onSaved }) {
         patch.recheck_value_1 = Number(rv1); patch.recheck_value_2 = Number(rv2); patch.recheck_value_3 = Number(rv3)
         patch.recheck_avg = recheckAvg; patch.final_status = finalStatus
       }
-      await supabaseDR.from('inspection_results').update(patch).eq('id', result.id)
+      const { error: wErr396 } = await supabaseDR.from('inspection_results').update(patch).eq('id', result.id);
+      if (wErr396) throw wErr396;   // บันทึก recheck — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
       onSaved()
     } catch (err) { toast.error(err.message) }
     finally { setSaving(false) }
@@ -485,7 +487,14 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
   const buildExportArgs = async (currentUserEmail) => {
     const resultMap = Object.fromEntries(results.map(r => [r.checkpoint_id, r]))
     const userIds = [insp.inspector_id, insp.approved_by, userId].filter(Boolean)
-    const { data: profs } = await supabase.from('profiles').select('id, email, signature_url').in('id', userIds)
+    /* 🔴 ห้าม select `email` — `profiles` ไม่มีคอลัมน์นี้ (มีแต่ notify_email ที่ไม่เคยถูกใช้ส่งอะไร)
+       เดิม select('id, email, signature_url') = 42703 ทั้งคิวรี → profMap ว่าง
+       → **ลายเซ็นผู้ตรวจ/ผู้อนุมัติหายจากใบพิมพ์ PM ทุกใบ** และชื่อกลายเป็น "Inspector"/"Approver"
+       โดยไม่มี error เพราะรับแค่ `{ data }` (supabase-js คืน {data,error} ไม่ throw) — audit 2026-09-03
+       คลาสเดียวกับ fn_audit ที่อ่าน coalesce(full_name, email) แล้วไม่บันทึกผู้แก้ทั้งระบบ */
+    const { data: profs, error: profErr } = await supabase
+      .from('profiles').select('id, full_name, signature_url').in('id', userIds)
+    if (profErr) { console.warn('[buildExportArgs] profiles', profErr.message); toast.error('โหลดชื่อ/ลายเซ็นผู้ตรวจไม่สำเร็จ — ใบที่พิมพ์จะไม่มีลายเซ็น') }
     const profMap = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
     const sigCache = {}
     const getSig = async (uid) => {
@@ -495,13 +504,13 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
       sigCache[uid] = url ? await resolveSignatureDataUrl(url) : null
       return sigCache[uid]
     }
-    const inspector = { email: profMap[insp.inspector_id]?.email ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
-    const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.email ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
+    const inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
+    const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     const exporter = { email: currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
     // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
     const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
-    await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id)
+    checkWrite(await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id), 'บันทึกว่า export แล้ว');
     return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
   }
 
