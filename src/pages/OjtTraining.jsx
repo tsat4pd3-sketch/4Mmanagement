@@ -132,16 +132,45 @@ export default function OjtTraining() {
   useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
 
   // พนักงานสำหรับ picker — scope: leader = ครอบครัวไลน์ตัวเอง · role อื่นตาม sections
+  // + 🤝 คนที่ถูกยืมตัวมาไลน์ใน scope "กะนี้" (line_helpers) — หัวหน้าที่ยืมคนข้ามส่วนงานต้อง OJT ให้เขาได้
+  //   (feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ เพราะ picker กรองตาม section/ไลน์สังกัดเดิม)
   useEffect(() => {
     if (!lines.length && role === 'leader') return;
-    let q = supabase.from('employees').select('id, name, employee_id_code, section, line_id, team').eq('is_active', true).order('employee_id_code');
-    if (role === 'leader' && userLineId) {
-      const fam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];
-      q = q.in('line_id', fam.length ? fam : [userLineId]);
-    } else if (scopeSecs.length) {
-      q = q.in('section', scopeSecs);
-    }
-    q.then(({ data }) => setEmployees(data || []));
+    let alive = true;
+    (async () => {
+      let q = supabase.from('employees').select('id, name, employee_id_code, section, line_id, team').eq('is_active', true).order('employee_id_code');
+      const famIds = (role === 'leader' && userLineId) ? getLineFamilyIds(lines, Number(userLineId) || userLineId) : null;
+      if (famIds) {
+        const fam = [...famIds];
+        q = q.in('line_id', fam.length ? fam : [userLineId]);
+      } else if (scopeSecs.length) {
+        q = q.in('section', scopeSecs);
+      }
+      const { data } = await q;
+      let list = data || [];
+
+      // ยืมตัวกะนี้ — work date ไทยตัด 08:00 + กะ 08:00–20:00 = day (กฎเดียวกับ Checkin.getShiftInfo)
+      const now = new Date();
+      const wd = new Date(now); if (now.getHours() < 8) wd.setDate(wd.getDate() - 1);
+      const workDate = `${wd.getFullYear()}-${String(wd.getMonth() + 1).padStart(2, '0')}-${String(wd.getDate()).padStart(2, '0')}`;
+      const shift = (now.getHours() >= 8 && now.getHours() < 20) ? 'day' : 'night';
+      const { data: helpers } = await supabase.from('line_helpers').select('employee_id, to_line_id')
+        .eq('work_date', workDate).eq('shift', shift);   // ตารางยังไม่มี = error เงียบ → ไม่มีคนยืม (best-effort)
+      const lineById = Object.fromEntries(lines.map(l => [l.id, l]));
+      const inScope = (toLineId) => famIds
+        ? (famIds.size ? famIds.has(toLineId) : toLineId === Number(userLineId))
+        : (!scopeSecs.length || inSectionScope(scopeSecs, lineById[toLineId]?.section));
+      const have = new Set(list.map(e => e.id));
+      const borrowed = (helpers || []).filter(h => inScope(h.to_line_id) && !have.has(h.employee_id));
+      if (borrowed.length) {
+        const { data: extra } = await supabase.from('employees').select('id, name, employee_id_code, section, line_id, team')
+          .in('id', borrowed.map(h => h.employee_id)).eq('is_active', true);
+        const toLineOf = Object.fromEntries(borrowed.map(h => [h.employee_id, h.to_line_id]));
+        (extra || []).forEach(e => list.push({ ...e, _helperFrom: lineById[e.line_id]?.name || e.section || 'ไลน์อื่น', _helperTo: lineById[toLineOf[e.id]]?.name || '' }));
+      }
+      if (alive) setEmployees(list);
+    })();
+    return () => { alive = false; };
   }, [lines, role, userLineId, scopeSecs]);
 
   // mandatory scope ก่อนแสดงรายการ (แบบเดียวกับหน้าอื่น) — leader/scoped เห็นเฉพาะ section ตัวเอง
@@ -618,6 +647,7 @@ table{border-collapse:collapse}
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
+                          {e._helperFrom && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>🤝 ยืมตัวจาก {e._helperFrom} มาช่วย {e._helperTo} (กะนี้)</span>}
                         </div>
                       ))}
                     </div>
