@@ -691,7 +691,7 @@ function QaView({ d, ctx }) {
     <div style={KPI_GRID(isMobile)}>
       <Kpi label="🚫 ของเสีย 7 วัน" value={fmtNum(ng7)} unit="ชิ้น" color={ng7 ? '#ef4444' : '#22c55e'} sub={`ผลิตดี ${fmtNum(ok7)} ชิ้น`} />
       <Kpi label="📉 PPM (7 วัน)" value={ppm == null ? '—' : fmtNum(ppm)} color={ppm == null ? undefined : ppm > 5000 ? '#ef4444' : ppm > 1000 ? '#f59e0b' : '#22c55e'}
-        sub="เสีย ÷ (ดี+เสีย) × 1,000,000" />
+        sub="เสีย ÷ ยอดที่ผลิตทั้งหมด (ดี+เสีย) × 1,000,000" />
       <Kpi label="✍️ ไลน์ที่บันทึกของเสียวันนี้" value={`${ranLines.length - noLog.length}/${ranLines.length}`}
         color={noLog.length ? '#f59e0b' : '#22c55e'} sub="ไลน์ที่เดินกะวันนี้" />
       <Kpi label="📝 4M รออนุมัติ QA" value={d.fourM.length} unit="ใบ" color={d.fourM.length ? '#f59e0b' : '#22c55e'} sub="ค้างที่ QA" />

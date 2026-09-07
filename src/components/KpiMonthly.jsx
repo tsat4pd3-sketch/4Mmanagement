@@ -28,8 +28,8 @@ import {
    กติกาที่ยึด (ห้ามละเมิด):
    - OEE เดือน = wavg(oee ที่ stamp, ถ่วง wLoad = shift_min − plannedMin) — ห้าม mean-of-percentages
    - NG ยึด defect_logs (qty_ng + qty_suspect) แบบ line-mode (ไม่รวมงานทดลอง — มาตรฐานเดียวกับ %Q/FTT/PPM ทุกจอ)
-   - PPM = NG ÷ (ยอดผลิต + NG) × 1e6 — ยอดสแกน = ของดีล้วน (ต่างจากสูตรใบเดิม NG÷ยอดผลิต ~0.03% ที่ระดับ PPM ต่ำ
-     เทียบใบเก่าได้ต่อเนื่อง — เขียนกำกับสูตรบนจอ/ใบพิมพ์แล้ว)
+   - PPM = NG ÷ ยอดที่ผลิตทั้งหมด × 1e6 — "ยอดที่ผลิตทั้งหมด" = ยอดสแกน (ของดีล้วน) + NG
+     (user ยืนยัน 2026-09-07 "งานเสีย ÷ ยอดที่ผลิต" — ตรงกับสูตรนี้ ไม่ใช่ NG÷ยอดสแกน · เขียนกำกับบนจอ/ใบพิมพ์ให้ชัดว่าตัวหารรวมของเสีย)
    - ยอดผลิต = Σ actual_qty ของกะปิดแล้ว "รายชิ้น" (LH/RH แยกชิ้น — ตรงกับใบเดิมที่นับต่อไลน์ต่อชิ้น
      · PPM ต้องหารด้วยชิ้นอยู่แล้ว จึงไม่ใช้ pairAwareTotal ที่นับคู่สำหรับยอดภาพใหญ่)
    - Cost of defect ผ่าน defectUnitCost (standard ชนะ → material) · ตีมูลค่าไม่ได้ = รายงานจำนวน ห้ามเดา
@@ -501,7 +501,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${scopeLabel}</h2>
       <div style="font-size:11px;color:#555;margin-bottom:8px">
         จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · OEE ถ่วงน้ำหนักเวลารับภาระ ·
-        PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
+        PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
       </div>
       <table style="border-collapse:collapse;width:100%">
         <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">รวม/เฉลี่ย</th></tr>
@@ -525,7 +525,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       const autoRows = [
         { key: 'produce', name: 'ยอดผลิต (ชิ้น)', formula: 'Σ ยอดผลิตจริงของกะที่ปิดแล้ว', val: m => (m.n ? m.produce : null), sum: months.tot.produce },
         { key: 'ng', name: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', formula: 'Σ defect_logs (qty_ng + qty_suspect)', val: m => (m.n ? m.ng : null), sum: months.tot.ng },
-        { key: 'ppm', name: 'Internal defect (PPM)', formula: 'ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶', val: m => (m.n ? m.ppm : null), sum: months.tot.ppm },
+        { key: 'ppm', name: 'Internal defect (PPM)', formula: 'ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶', val: m => (m.n ? m.ppm : null), sum: months.tot.ppm },
         { key: 'cost', name: 'Cost of defect (บาท)', formula: 'Σ ของเสีย × ต้นทุน/ชิ้น (standard → material)',
           val: m => (m.n && m.costKnown ? m.cost : null), sum: months.tot.costKnown ? months.tot.cost : null },
         { key: 'oee', name: 'OEE (%)', formula: 'OEE stamp ถ่วงน้ำหนักเวลารับภาระ',
@@ -558,7 +558,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       await exportKpiExcel({
         year, sectionLabel: scopeLabel, rows: [...manualRows, ...autoRows],
         formCode: fullCode(df || {}),
-        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ (ยอดผลิต+ของเสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${group ? ` · ตัวเลขอัตโนมัติกรองกลุ่ม ${group} — KPI กรอกมือเป็นระดับส่วนงาน` : ''}`,
+        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${group ? ` · ตัวเลขอัตโนมัติกรองกลุ่ม ${group} — KPI กรอกมือเป็นระดับส่วนงาน` : ''}`,
       });
     } catch (e) {
       toast.error('export Excel ไม่สำเร็จ: ' + (e?.message || e));
@@ -739,7 +739,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         นับเฉพาะ<b>กะที่ปิดแล้ว</b> — กะที่เปิดค้างยังไม่ถูกนับ · OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
-        PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ ไม่รวมงานทดลอง (ต่างจากสูตรใบเดิม ของเสีย ÷ ยอดผลิต ~0.03% ที่ระดับ PPM ปัจจุบัน) ·
+        PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง (สูตรเดียวกับใบ KPI ของบริษัท — ยืนยัน 2026-09-07) ·
         Excel export ตามโครง 3 ชีทของฟอร์ม FM-HRM-6-022/024/025
       </div>
 

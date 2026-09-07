@@ -670,7 +670,7 @@ export default function Obeya() {
       const rows = BOARD_ROWS.map(r => {
         const man = manualOf(g, r.name);
         let value = null, target = null, unit = r.unit || man?.unit || '', dir = r.dir || man?.dir || null;
-        let today = null, series = null, note = '';
+        let today = null, series = null, note = '', fromDept = false;
 
         if (r.auto === 'oee') {
           value = oeeOf(mSess); today = oeeOf(dSess); target = oeeTarget;
@@ -683,9 +683,22 @@ export default function Obeya() {
           dir = ad?.direction || dir;
           series = {}; days.forEach(d => { const v = ppmOf(ss.filter(x => x.work_date === d)); if (v != null) series[d] = v; });
         } else if (r.auto === 'safety') {
-          value = sfInj; today = (safety || []).filter(e => e.event_date === date && e.line_name && memberNames.has(e.line_name) && isInjury(e)).length;
-          target = 0;   // เป้าอุบัติเหตุ = 0 เสมอ ไม่ต้องตั้ง
-          if (!(safety || []).length) { value = null; note = 'ยังไม่มีใครบันทึกเหตุการณ์'; }
+          /* ค่า KPI Safety รายเดือน = "สรุปจากหน่วยงานความปลอดภัย" (กรอกมือ — คำตอบ user 2026-09-07)
+             · มีนิยาม Safety + ค่าเดือนนี้ (ระดับกลุ่มไลน์ก่อน → ระดับส่วนงาน) = ใช้ค่านั้นตัดสินสี ป้ายเปลี่ยนเป็น ✍️
+             · ยังไม่มีใครกรอก = ถอยไปใช้บันทึกหน้างาน safety_events เหมือนเดิม (กฎ "ไม่มีบันทึก ≠ เขียว")
+             · ห้ามเอา 2 แหล่งมาบวกกัน — หน้างานบันทึกเป็นข้อมูลประกอบ เขียนกำกับใน note เสมอ */
+          const manSec = man?.value != null ? null : manualOf('', r.name);
+          const manSafe = man?.value != null ? man : (manSec?.value != null ? manSec : null);
+          if (manSafe) {
+            value = manSafe.value; today = null;
+            target = manSafe.target; unit = manSafe.unit || r.unit; dir = manSafe.dir || dir;
+            fromDept = true;
+            note = `สรุปจากหน่วยงานความปลอดภัย${manSafe === man ? '' : ' (ค่าระดับส่วนงาน)'} · หน้างานบันทึกบาดเจ็บเดือนนี้ ${sfInj} ครั้ง`;
+          } else {
+            value = sfInj; today = (safety || []).filter(e => e.event_date === date && e.line_name && memberNames.has(e.line_name) && isInjury(e)).length;
+            target = 0;   // เป้าอุบัติเหตุ = 0 เสมอ ไม่ต้องตั้ง
+            if (!(safety || []).length) { value = null; note = 'ยังไม่มีใครบันทึกเหตุการณ์'; }
+          }
         } else {
           value = man?.value ?? null; target = man?.target ?? null;
         }
@@ -702,8 +715,9 @@ export default function Obeya() {
             ? 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ปุ่ม 🎯 ท้ายแถว'
             : 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ตอนแก้นิยาม KPI';
         }
+        if (fromDept) why = `${note}${why ? ' · ' + why : ''}`;
         cells.push(st);
-        return { ...r, value, today, target, unit, dir, series, st, why, manual: !r.auto, hasDef: !!man };
+        return { ...r, auto: fromDept ? null : r.auto, value, today, target, unit, dir, series, st, why, manual: fromDept || !r.auto, hasDef: !!man };
       });
 
       return { group: g, ccs, rows, sessCount: mSess.length, st: worstStatus(rows.map(x => x.st)) };
@@ -1036,7 +1050,7 @@ export default function Obeya() {
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
         ตัวเลขรายวันนับเฉพาะ<b>กะที่ปิดแล้ว</b> · OEE = ค่าที่ stamp ตอนปิดกะ ถ่วงน้ำหนักเวลารับภาระ ·
-        PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ ไม่รวมงานทดลอง · Downtime นับเฉพาะนอกแผน ·
+        PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง · Downtime นับเฉพาะนอกแผน ·
         แกนที่ยังไม่มีเป้าในระบบจะเทียบกับ<b>ค่าเฉลี่ยตัวเอง {TREND_DAYS - 1} วันก่อน</b> (เขียนกำกับบนการ์ด)
       </div>
 
