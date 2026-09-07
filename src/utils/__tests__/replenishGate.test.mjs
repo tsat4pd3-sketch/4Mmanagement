@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pointsForLine, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS, DELIVER_GATES } from '../replenishGate.js';
+import { pointsForLine, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS, DELIVER_GATES, checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, PICK_GATES } from '../replenishGate.js';
 import { parseQrPayload, buildQrPayload, resolveDeliveryPoint } from '../qrCode.js';
 
 /* ด่านขั้น 7 ของลูปสโตร์ — docs/STORE-PULL-LOOP-DESIGN.md §4.5/§4.6 (2026-09-03) */
@@ -113,4 +113,45 @@ test('ESM:D:<uuid> — สร้าง/แกะ/resolve ครบ · เลข�
   assert.equal(resolveDeliveryPoint(s4, ALL), null);
   assert.equal(resolveDeliveryPoint(parseQrPayload('ESM:D:not-exist'), ALL), null);
   assert.equal(resolveDeliveryPoint(null, ALL), null);
+});
+
+/* ── ขั้น 5 สแกนพาร์ท + จำนวน (2026-09-07 · user "เตรียมก็ต้อง scan verify") ── */
+const reqPick = { id: 'r5', line_name: 'LINE 61', mat_no: '30045438', request_qty: 60 };
+
+test('ขั้น 5 พาร์ท — ESM:P ตรง = ok · เลขเปล่าตรง = ok · เลขเปล่าที่ขึ้นต้นด้วย mat (check digit) = ok แบบ loose', () => {
+  assert.equal(checkPickPart({ request: reqPick, scan: parseQrPayload('ESM:P:30045438') }).status, 'ok');
+  assert.equal(checkPickPart({ request: reqPick, scan: parseQrPayload(' 30045438\r\n') }).status, 'ok');
+  const loose = checkPickPart({ request: reqPick, scan: parseQrPayload('3004543863') });   // บาร์โค้ดบัตรมีเลขต่อท้าย
+  assert.equal(loose.status, 'ok'); assert.equal(loose.loose, true);
+});
+
+test('🔴 ขั้น 5 พาร์ท — ผิดพาร์ท/ป้ายชนิดอื่น/อ่านไม่ออก ต้องบล็อก + บอกว่าใบต้องการอะไร', () => {
+  const r = checkPickPart({ request: reqPick, scan: parseQrPayload('30042570') });
+  assert.equal(r.status, 'mismatch'); assert.equal(r.block, true);
+  assert.match(r.message, /30045438/); assert.match(r.message, /30042570/);
+  assert.equal(checkPickPart({ request: reqPick, scan: parseQrPayload('ESM:M:abc') }).status, 'mismatch');   // ป้ายเครื่อง
+  assert.equal(checkPickPart({ request: reqPick, scan: parseQrPayload('ESM:P:3004543') }).status, 'mismatch'); // ESM:P ต้องเป๊ะ ไม่ loose
+  assert.equal(checkPickPart({ request: reqPick, scan: null }).status, 'unknown');
+  // loose ต้องไม่หลวมเกิน — คนละพาร์ทที่บังเอิญขึ้นต้นคล้าย
+  assert.equal(checkPickPart({ request: { mat_no: '3004' }, scan: parseQrPayload('30045438') }).status, 'mismatch');
+});
+
+test('ขั้น 5 จำนวน — เท่ากัน ok · ขาด = เตือน+ต้องยืนยัน ไม่บล็อก · เกิน = บล็อก · 0/ว่าง = invalid', () => {
+  assert.equal(checkPickQty({ request: reqPick, qty: 60 }).status, 'ok');
+  const under = checkPickQty({ request: reqPick, qty: 45 });
+  assert.equal(under.status, 'under'); assert.equal(under.block, false); assert.equal(under.needConfirm, true); assert.equal(under.diff, -15);
+  const over = checkPickQty({ request: reqPick, qty: 61 });
+  assert.equal(over.status, 'over'); assert.equal(over.block, true);
+  assert.equal(checkPickQty({ request: reqPick, qty: 0 }).block, true);
+  assert.equal(checkPickQty({ request: reqPick, qty: '' }).block, true);
+});
+
+test('🔴 validatePickPayload = ตารางความจริงเดียวกับ trigger fn_wip_replenish_pick_gate', () => {
+  assert.equal(validatePickPayload(buildPickPayload({ gate: 'scanned', qty: 60, scanRaw: '30045438' })), null);
+  assert.equal(validatePickPayload(buildPickPayload({ gate: 'override', qty: 60, reasonKey: 'label_missing', overrideBy: 'สมชาย' })), null);
+  assert.notEqual(validatePickPayload(buildPickPayload({ gate: 'scanned', qty: 60 })), null);            // ไม่มีผลสแกน
+  assert.notEqual(validatePickPayload(buildPickPayload({ gate: 'scanned', qty: 0, scanRaw: 'x' })), null); // ไม่มีจำนวน
+  assert.notEqual(validatePickPayload(buildPickPayload({ gate: 'override', qty: 60, reasonKey: '', reasonNote: '' })), null);   // ไม่มีเหตุผลเลย
+  assert.notEqual(validatePickPayload({ picked_qty: 60 }), null);
+  assert.deepEqual(Object.keys(PICK_GATES).sort(), ['override', 'scanned']);
 });

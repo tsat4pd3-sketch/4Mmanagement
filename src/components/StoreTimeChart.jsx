@@ -579,9 +579,8 @@ export default function StoreTimeChart({
             <span style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa' }}>
               🚚 ส่งตามคำขอ (delivery to order) — {onDemandQueue.length} ไลน์
             </span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              อยากให้ไลน์ไหนเดินเป็นรอบ ตั้งได้ที่ <b>📦 Line Stock → ⏰ รอบจัดส่ง</b>
-            </span>
+            {/* โหมดรอบเป็น opt-in รายไลน์ (§6.1) — ไม่ต้องป้ายบนจอทำงานทุกวัน แค่ tooltip พอ (audit 2026-09-07) */}
+            <span title="ถ้าวันหน้าไลน์ไหนอยากเดินเป็นรอบ ตั้งได้ที่ Line Stock → รอบจัดส่ง (opt-in รายไลน์)" style={{ fontSize: 11, color: 'var(--muted)', cursor: 'help' }}>ⓘ</span>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
             ไม่ได้นัดเวลาไว้ — เวลาบนไทม์ไลน์มาจาก <b>การคำนวณ</b>: หัก WIP ด้วยของที่ผลิตไปแล้ววันนี้
@@ -727,7 +726,7 @@ export default function StoreTimeChart({
                 {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : 'ติ๊กพาร์ทในรายการที่ต้องหยิบ แล้วกดสร้างใบส่ง'}
               </span>
               <span style={{ fontSize: 11, color: 'var(--muted)', flex: '1 1 200px' }}>
-                ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ · ยังต้องบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Line Stock เหมือนเดิม
+                ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" สแกนพาร์ท+จำนวน (ตัดสต็อกให้เลย) → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ
               </span>
               {selItems.length > 0 && (
                 <button onClick={() => setSel({})} disabled={creating}

@@ -480,7 +480,7 @@ where ps.work_date >= current_date - 7 group by 1 order by 2 desc;
 | 0 ย้ายของไปไลน์ลูก | ⏳ **ยังค้าง** | ไม่ใช่โค้ด — ใช้แผง 🔀 `StockMoveToChild` (`/line-stock` แท็บ Stock) · ยังไม่ย้าย = การเสนออัตโนมัติเงียบ (กดเบิกเองได้ ไม่บล็อก) |
 | 1 `line_part_levels` + จอตั้งค่า | ✅ | `20260831_line_part_levels.sql` (DR) · `LevelSetupModal` ใน `LinePartCallPanel` |
 | 2 ใบขอเติม + คิวสโตร์ + รับของ | ✅ | `20260831_wip_replenish_pull_loop.sql` (Main) · `src/components/LinePartCallPanel.jsx` · `/heijunka` 🔄 คิวเติม WIP รับใบจากไลน์ด้วยแล้ว |
-| 3a สแกน TAG CARD | ❌ | บล็อกที่คำถาม §7 ข้อ 1 (บาร์โค้ดตัวไหนคือ MAT.NO.) |
+| 3a สแกน TAG CARD | 🔶 ลงแบบ loose (2026-09-07) | ขั้น 5 สแกนพาร์ท+จำนวน+ตัดสต็อกลงแล้ว (§8.3) · เทียบ mat แบบ "ขึ้นต้นด้วย" จนกว่าจะรู้รูปแบบบาร์โค้ดจริง (§7 ข้อ 1) · lot/id ยังไม่เก็บ |
 | 3b re-tag at receiving | ❌ | บล็อกที่คำถาม §7 ข้อ 2 |
 | 4 QR จุดส่งงาน | ✅ (2026-09-03) | `20260903_line_delivery_points.sql` (DR) + `20260903_wip_replenish_deliver_gate.sql` (Main) · ตั้งจุดที่ `/linesetup` แผง 🎯 (`DeliveryPointPanel`) · พิมพ์ป้าย `/qr-labels?kind=delivery` (`ESM:D:<uuid>`) · สโตร์กด "ถึงไลน์" → `DeliverScanModal` สแกนก่อนปิด · กฎใน `src/utils/replenishGate.js` + trigger DB · ดู §8.1 |
 | 5 teiki-bin | ❌ | opt-in รายไลน์ ทำหลังเฟส 2 |
@@ -528,12 +528,34 @@ where ps.work_date >= current_date - 7 group by 1 order by 2 desc;
 - **สร้างเสร็จพาไป 🔄 คิวเติม WIP ทันที** (setViewMode unified + แท็บ wip) — ทำงานต่อได้เลย
 - ⚠️ ยังไม่ตัดสต็อกให้เหมือนใบอื่น (กฎเหล็ก 5) · แถบสร้างใบเขียนกำกับไว้แล้ว
 
+### 8.3 ขั้น 5 สแกนยืนยันของที่เตรียม + ตัดสต็อกตอนยืนยัน — ตาม "Smart Withdraw Kanban" (2026-09-07 · user ส่ง pptx · ต้องปิดลูปในสัปดาห์นี้)
+
+แผนผัง pptx (Area Production ↔ Area Store) map กับระบบ:
+
+| ขั้นในแผนผัง | ในระบบ | สถานะ |
+|---|---|---|
+| Production → WIP ≤ min → Production request withdraw | `/daily-report` แผง 📦 (เฟส 1-2) | ✅ |
+| Order received (view on computer) | `/heijunka` → 🔄 คิวเติม WIP · แถบ `OnDemandStrip` | ✅ |
+| Store prepare item → **Scan confirm order** → matching Order Request = Order scan | ปุ่ม "🔍 เริ่มเตรียม · สแกนพาร์ท" → `PickScanModal` (`checkPickPart` + `checkPickQty`) | ✅ 2026-09-07 |
+| ไม่ตรง → **Alert in Smart Fac / Mobile** → Check part & Quantity → Fix error | บล็อกบนจอ + บอกว่าใบต้องการอะไร · บันทึก `line_replenish_scan_blocks` (step `pick`) · Telegram rule `wip_pick_blocked` | ✅ |
+| ตรง → **Scan for SAP update (Deduct stock)** | ยืนยันเตรียม = เขียน `line_stock_transactions` (DR) **STORE −qty (consume) · ไลน์ +qty (issue)** · id เก็บที่ `stock_txn_ids` | ✅ (ยังไม่ต่อ SAP จริง — ledger ของ ESM) |
+| TP Man transfer parts to PD → **TP Man scan confirm delivery** → Verified location = area request | "📍 ถึงไลน์แล้ว · สแกนจุดส่ง" → `DeliverScanModal` (เฟส 4) | ✅ |
+| Confirm job received by Smart Fac | ไลน์กด ✔ รับครบ / ⚠ ได้ไม่ครบ (ขั้น 8) | ✅ |
+
+- migration `20260907_wip_replenish_pick_gate.sql` (Main): `picked_qty/picked_gate/picked_scan_raw/picked_override_*` + `stock_txn_ids uuid[]`/`stock_txn_note` + trigger `fn_wip_replenish_pick_gate` (ตารางความจริงเดียวกับ `validatePickPayload`) + rule `wip_pick_blocked`
+- **ด่านพาร์ท:** ยิง `ESM:P:<mat>` หรือเลข mat บนบัตร/กล่อง · ป้ายชนิดอื่น/คนละ mat = 🔴 บล็อก · **เลขเปล่าที่ขึ้นต้นด้วย mat_no ยอมแบบ `loose`** (บัตร TAG CARD มี check digit ต่อท้าย — §7 ข้อ 1 ยังไม่ยืนยันรูปแบบ) บันทึกดิบไว้ใน `picked_scan_raw` เสมอ พอรู้รูปแบบจริงค่อยล็อก
+- **ด่านจำนวน:** เกิน = บล็อก · ขาด = เตือน + ติ๊กยืนยัน (ฝั่งไลน์เห็น "⚠ สโตร์หยิบได้ X/Y" ก่อนของถึง) · ไม่ตรวจขนาดกล่อง (qty_per_pkg ยังไม่ครบ — ไม่บล็อกเพราะข้อมูลเราไม่ครบ)
+- **🔴 เปลี่ยนกฎเดิม ("ลูปเป็นการสื่อสาร ไม่ตัดสต็อก")** — ตอนนี้ **ยืนยันเตรียม = ตัดสต็อกให้เลย** ตามขั้น "Scan for SAP update" ในแผนผัง
+  · สโตร์**ห้าม**ไปบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Line Stock ซ้ำสำหรับใบเหล่านี้ (ทำซ้ำ = สต็อกโผล่ 2 เท่า) · toast ตอนส่งถึงไลน์เลิกเตือนให้ไปบันทึกแล้ว
+  · STORE ไม่มีแถวสต็อกของพาร์ท = "ไม่รู้" → บวกเข้าไลน์แต่**ไม่หัก STORE** + จด `stock_txn_note` + toast (หักแล้วติดลบจากของที่ไม่เคยลงรับ = ตัวเลขโกหก) → worklist ลงรับเข้า STORE ให้ครบ
+  · ledger ล้ม = ใบยังเป็น preparing แต่ `stock_txn_note` บอก + toast · `stock_txn_ids` มีแล้วไม่ตัดซ้ำ
+- **ยังไม่ทำ:** ต่อ SAP จริง (ตอนนี้ตัดใน ledger ESM) · ตรวจ lot/FIFO · ขนาดกล่อง
+
 **สิ่งที่เบี่ยงจากเอกสาร (พร้อมเหตุผล):**
 1. **ไม่ใช้ `transport_nodes`/`storage_zones` เป็นจุดส่ง** (§4.5 เสนอไว้) — node บังคับพิกัดบนผังรวม ไลน์ที่ยังไม่วาดถนนตั้งจุดไม่ได้ = ทางตัน · โซน = ที่กองของในคลัง คนละความหมาย → ตารางใหม่ `line_delivery_points` + `transport_node_id` (optional) ไว้ผูกกราฟถนนทีหลัง
 2. **ด่าน "พาร์ท/จำนวน" ขั้น 5 ยังไม่มี** — §8 เดิมเขียนว่าเฟส 2 ได้ด่านจำนวนแล้ว **ไม่จริง** (`advanceWip` เลื่อนสถานะเฉยๆ ไม่ถามยอด) แก้ข้อความแล้ว · ด่านพาร์ทต้องรอเฟส 3a (สแกน TAG CARD) · ด่านจำนวนทำได้เลยตอนต่อเฟส 3a เพราะต้องมีโมดัลขั้น 5 อยู่ดี
 3. **override ไม่บังคับ "คนละคนกับที่ถูกบล็อก"** — role แยกคนไม่ได้ · ใช้สิทธิ์ + บันทึกชื่อ/เหตุผลทุกครั้งแทน (§4.6 ข้อ 5 = ทางออกเป็นเซ็นเซอร์)
 
-**ขอบเขตที่ต้องรู้:** ลูปนี้เป็น **การสื่อสาร ไม่ใช่ ledger** — กดส่ง/กดรับ **ไม่ตัดหรือบวกสต็อก**
-สโตร์ยังต้องบันทึก "จ่ายพาร์ทเข้าไลน์" อีกทางเหมือนเดิม (เขียนเองด้วย = สต็อกโผล่ 2 ที่)
-⇒ ถ้ายังไม่บันทึกจ่าย ยอดในไลน์จะไม่ขึ้น แล้วพาร์ทนั้นจะถูกเสนอซ้ำหลังปิดใบ — **ถูกต้องแล้ว**
-มันกำลังบอกว่าของยังไม่เข้าระบบ ไม่ใช่บั๊ก
+**ขอบเขตที่ต้องรู้ (แก้ 2026-09-07):** ลูปนี้**ตัดสต็อกที่ขั้นเดียว = ตอนสโตร์ยืนยันเตรียม (§8.3)** — กดส่ง/กดรับ**ไม่แตะ ledger**
+สโตร์**ไม่ต้อง**บันทึก "จ่ายพาร์ทเข้าไลน์" ซ้ำสำหรับใบในคิวเติม WIP (ซ้ำ = สต็อกโผล่ 2 เท่า) · ใบที่ STORE ไม่มีแถวสต็อก
+จะบวกเข้าไลน์แต่ไม่หัก STORE พร้อมจดเหตุผล — นั่นคือสัญญาณว่ายังไม่เคยลงรับเข้า STORE ไม่ใช่บั๊ก
