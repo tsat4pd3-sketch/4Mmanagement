@@ -8,6 +8,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
@@ -63,6 +64,8 @@ export default function MorningMeeting() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isMobile = useIsMobile();
   const canRecord = can('morning_meeting', 'record', role);
+  // 📜 ผู้รับผิดชอบที่เคยบันทึกใน meeting_action_items (Main) — คนนอกทะเบียน (ช่าง/ผู้รับเหมา) ยังเลือกซ้ำได้ (2026-09-07)
+  const assigneeHist = useColumnHistory(supabase, 'meeting_action_items', 'assignee');
 
   const [meetingDate, setMeetingDate] = useState(defaultMeetingDate);
   const [allLines, setAllLines]       = useState([]);
@@ -1085,7 +1088,7 @@ export default function MorningMeeting() {
               </div>
               <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ผู้รับผิดชอบ
                 {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (คนของไลน์ที่เลือกขึ้นก่อน) — ตารางเก็บชื่อ text ไม่มีคอลัมน์ id */}
-                <PersonSelect value={actModal.assignee || ''} source="both" placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 4 }}
+                <PersonSelect value={actModal.assignee || ''} source="both" history={assigneeHist} placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 4 }}
                   lines={actModal.line_name ? getLineFamilyNames(allLines, actModal.line_name) : undefined}
                   onChange={({ name }) => setActModal(v => ({ ...v, assignee: name }))} />
               </label>

@@ -10,6 +10,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { notifyEvent } from '../utils/notifyEvent';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 
 /* ══════════════════════════════════════════════════════════════
@@ -90,6 +91,9 @@ export default function OjtTraining() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canRecord = can('ojt', 'record', role);
   const canDelete = can('ojt', 'delete', role);
+  // 📜 ชื่อผู้สอน/ผู้ประเมินที่เคยบันทึกไว้ (Main ojt_*) — วิทยากรภายนอกที่ไม่มีใน profiles/employees ยังเลือกซ้ำได้ (2026-09-07)
+  const trainerHist = useColumnHistory(supabase, 'ojt_trainings', 'trainer_name');
+  const evalHist = useColumnHistory(supabase, 'ojt_training_attendees', 'evaluator_name');
 
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -622,7 +626,7 @@ table{border-collapse:collapse}
                 <div>
                   <div style={lb}>ผู้สอนงาน</div>
                   {/* ผู้สอน = user ระบบหรือพนักงาน (หัวหน้าไลน์) → PersonSelect profiles ∪ employees · พิมพ์ลง FM-HRM-004 (2026-09-07) */}
-                  <PersonSelect source="both" value={editing.trainer_name || ''} onChange={r => setF('trainer_name', r.name)} />
+                  <PersonSelect source="both" value={editing.trainer_name || ''} history={trainerHist} onChange={r => setF('trainer_name', r.name)} />
                 </div>
               </div>
 
@@ -704,7 +708,7 @@ table{border-collapse:collapse}
                           </td>
                           <td>
                             {/* ผู้ประเมินรายคน — picker เดียวกับผู้สอน (default = ผู้สอน) (2026-09-07) */}
-                            <PersonSelect source="both" value={a.evaluator_name || ''} onChange={r => setAtt(idx, 'evaluator_name', r.name)}
+                            <PersonSelect source="both" value={a.evaluator_name || ''} history={evalHist} onChange={r => setAtt(idx, 'evaluator_name', r.name)}
                               style={{ width: 170 }} inputStyle={{ fontSize: 12, padding: '4px 24px 4px 6px' }} maxRows={20} />
                           </td>
                           <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button></td>

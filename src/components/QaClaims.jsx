@@ -20,6 +20,7 @@ import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import PartSelect from './PartSelect';
 import CustomerSelect from './CustomerSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
@@ -263,6 +264,9 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
 }
 
 function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats }) {
+  // 📜 ค่าที่เคยบันทึกใน qa_claims (Main) — พาร์ท/ลูกค้าที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (สะกดเดิม = ไม่แตกกลุ่มเคลมซ้ำ) (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_claims', 'part_no', { upper: true });
+  const custHist = useColumnHistory(supabase, 'qa_claims', 'customer');
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
   const ro = !canRecord || detail.status === 'closed';
   return (
@@ -295,11 +299,11 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: 11, marginBottom: 12 }}>
           <Field label="วันที่รับเคลม *"><input type="date" style={inputSt} value={detail.claim_date} onChange={set('claim_date')} disabled={ro} /></Field>
           {/* ลูกค้า = ชื่อกลุ่มทะเบียนเคลม — เลือกจากรายชื่อลูกค้าใน Product Master (CustomerSelect) กันสะกดต่างแล้วแตกกลุ่ม (2026-09-07) */}
-          <Field label="ลูกค้า *"><CustomerSelect value={detail.customer || ''} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
+          <Field label="ลูกค้า *"><CustomerSelect value={detail.customer || ''} history={custHist} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
           <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder="เช่น WLS6033" disabled={ro} /></Field>
           <Field label="กำหนดตอบกลับ"><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
           <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)">
-            <PartSelect value={detail.part_no || ''} options={partOpts} disabled={ro} placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
+            <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={ro} placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
               onChange={({ part_no, part_name }) => setDetail((f) => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
           </Field>
           <Field label="ชื่อพาร์ท"><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>

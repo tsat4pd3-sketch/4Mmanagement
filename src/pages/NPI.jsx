@@ -11,6 +11,7 @@ import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import useTabParam from '../utils/useTabParam';
 import { todayLocal, fmtDate } from '../utils/dateFormat';
 import { loadDocForms } from '../utils/docForms';
@@ -82,6 +83,12 @@ export default function NPI() {
   const projectId = sp.get('project') || '';
   const partParam = sp.get('part') || '';
   const today = todayLocal();
+
+  // 📜 ค่าที่เคยบันทึกไว้ (Main npi_*) — MAT/ลูกค้า/ชื่อคนที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const matHist = useColumnHistory(supabase, 'npi_parts', 'mat_no', { upper: true });
+  const custHist = useColumnHistory(supabase, 'npi_projects', 'customer');
+  const leaderHist = useColumnHistory(supabase, 'npi_projects', 'leader_name');
+  const ownerHist = useColumnHistory(supabase, 'npi_parts', 'owner_name');
 
   // ── master / ทะเบียน ──
   const [templates, setTemplates] = useState([]);          // [{...t, phases, delivs}]
@@ -377,7 +384,7 @@ export default function NPI() {
             <Field label="รหัสโปรเจค" hint="เว้นว่าง = ระบบตั้งให้"><input style={inp} value={projModal.project_code} onChange={e => setProjModal({ ...projModal, project_code: e.target.value })} placeholder="NPI-2026-001" /></Field>
             <Field label="ชื่อโปรเจค *"><input style={inp} value={projModal.name} onChange={e => setProjModal({ ...projModal, name: e.target.value })} placeholder="P703 MCA 2027" /></Field>
             {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) ให้ตรงกับแม่แบบ/ชุด PE (2026-09-07) */}
-            <Field label="ลูกค้า"><CustomerSelect value={projModal.customer || ''} placeholder="FORD" onChange={({ customer }) => setProjModal({ ...projModal, customer })} /></Field>
+            <Field label="ลูกค้า"><CustomerSelect value={projModal.customer || ''} history={custHist} placeholder="FORD" onChange={({ customer }) => setProjModal({ ...projModal, customer })} /></Field>
             <Field label="Model" hint="จุดโยง pe_doc_sets.model"><input style={inp} value={projModal.model || ''} onChange={e => setProjModal({ ...projModal, model: e.target.value })} placeholder="P703" /></Field>
             <Field label="แม่แบบเฟส (ลูกค้า) *" hint="เปลี่ยนภายหลังไม่ย้อนแก้พาร์ทที่สร้างแล้ว" span={2}>
               <select style={inp} value={projModal.template_id} onChange={e => setProjModal({ ...projModal, template_id: e.target.value })} disabled={!!projModal.id && parts.length > 0}>
@@ -389,7 +396,7 @@ export default function NPI() {
             <Field label="วัน SOP" hint="พาร์ทใหม่จะกระจายวันแผนเฟสจาก kickoff→SOP ให้ (แก้ได้)"><input type="date" style={inp} value={projModal.sop_date || ''} onChange={e => setProjModal({ ...projModal, sop_date: e.target.value })} /></Field>
             <Field label="สถานะ"><MetaSelect value={projModal.status} onChange={v => setProjModal({ ...projModal, status: v })} meta={PROJECT_STATUS} /></Field>
             {/* leader = user ระบบ (profiles) → PersonSelect แทน datalist (npi_projects ยังไม่มีคอลัมน์ leader_uid — เก็บชื่ออย่างเดียว · 2026-09-07) */}
-            <Field label="Project leader"><PersonSelect value={projModal.leader_name || ''} onChange={r => setProjModal({ ...projModal, leader_name: r.name })} /></Field>
+            <Field label="Project leader"><PersonSelect value={projModal.leader_name || ''} history={leaderHist} onChange={r => setProjModal({ ...projModal, leader_name: r.name })} /></Field>
             <Field label="รายละเอียด" span={2}><textarea style={{ ...inp, minHeight: 60 }} value={projModal.description || ''} onChange={e => setProjModal({ ...projModal, description: e.target.value })} /></Field>
           </div>
         </Modal>
@@ -412,7 +419,7 @@ export default function NPI() {
             <Field label="ชื่อพาร์ท"><input style={inp} value={partModal.part_name || ''} onChange={e => setPartModal({ ...partModal, part_name: e.target.value })} /></Field>
             {/* 🔴 mat_no = คีย์โยง Product Master ตอน SOP → ProductSelect · พาร์ทใหม่ก่อน SOP ยังไม่มีใน master พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
             <Field label="MAT No. (SAP)" hint="โยง Product Master ตอน SOP">
-              <ProductSelect value={partModal.mat_no || ''} lines={partModal.line_name ? [partModal.line_name] : undefined}
+              <ProductSelect value={partModal.mat_no || ''} lines={partModal.line_name ? [partModal.line_name] : undefined} history={matHist}
                 allowFree freeHint="พาร์ทใหม่ที่ยังไม่มีใน Product Master — ผูกให้ตรงตอน SOP"
                 onChange={r => setPartModal({ ...partModal, mat_no: r.mat_no })} />
             </Field>
@@ -430,7 +437,7 @@ export default function NPI() {
                 {[1, 2, 3, 4, 5].map(l => <option key={l} value={l}>Level {l}</option>)}
               </select>
             </Field>
-            <Field label="ผู้รับผิดชอบพาร์ท"><PersonSelect value={partModal.owner_name || ''} onChange={r => setPartModal({ ...partModal, owner_name: r.name })} /></Field>
+            <Field label="ผู้รับผิดชอบพาร์ท"><PersonSelect value={partModal.owner_name || ''} history={ownerHist} onChange={r => setPartModal({ ...partModal, owner_name: r.name })} /></Field>
             <Field label="หมายเหตุ"><input style={inp} value={partModal.remark || ''} onChange={e => setPartModal({ ...partModal, remark: e.target.value })} /></Field>
           </div>
           {!partModal.id && (

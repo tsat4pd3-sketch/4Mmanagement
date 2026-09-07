@@ -8,6 +8,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 const NO_LINES = [];
@@ -26,6 +27,8 @@ export default function PokaYokeCheck() {
   const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canRecord = can('pokayoke', 'record', role);
   const canManage = can('pokayoke', 'manage', role);
+  // 📜 ชื่อผู้ตรวจที่เคยบันทึก (Main pokayoke_checks) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const checkerHist = useColumnHistory(supabase, 'pokayoke_checks', 'checker_name');
 
   const [lines, setLines] = useState([]);
   const [selLine, setSelLine] = useState('');
@@ -154,7 +157,7 @@ export default function PokaYokeCheck() {
         <div><div style={lb}>วันที่</div><input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} style={{ width: 150 }} /></div>
         <div style={{ flex: '1 1 180px' /* basis 180: จอแคบตกบรรทัดใหม่ ไม่ถูกบีบเหลือ 28px (2026-09-07) */ }}><div style={lb}>ผู้ตรวจ</div>
           {/* <PersonSelect> profiles+employees ของไลน์ที่เลือกขึ้นก่อน · default = ชื่อผู้ใช้ · เก็บ snapshot checker_name เหมือนเดิม · 2026-09-07 */}
-          <PersonSelect value={checker} source="both" lines={selFam} onChange={res => setChecker(res.name)} style={{ maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} /></div>
+          <PersonSelect value={checker} source="both" lines={selFam} history={checkerHist} onChange={res => setChecker(res.name)} style={{ maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} /></div>
         {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>➕ เพิ่มอุปกรณ์</button>}
       </div>
 

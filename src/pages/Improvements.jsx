@@ -9,6 +9,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -101,6 +102,8 @@ export default function Improvements() {
   const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canManage = can('improvements', 'manage', role);
   const canDel    = canDelete('improvements', 'manage', role);  // สิทธิ์ลบโปรเจค แยกจากจัดการ
+  // 📜 ผู้รับผิดชอบ milestone ที่เคยบันทึก (DR improvement_milestones) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const assigneeHist = useColumnHistory(supabaseDR, 'improvement_milestones', 'assignee');
 
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -1262,7 +1265,7 @@ export default function Improvements() {
                                 {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
                               </select>
                               {/* 2026-09-07 เลือกคนผ่าน <PersonSelect> (profiles+employees · คนของไลน์นี้ขึ้นก่อน) — milestones อยู่ DR เก็บชื่อ snapshot */}
-                              <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" placeholder="ผู้รับผิดชอบ"
+                              <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" history={assigneeHist} placeholder="ผู้รับผิดชอบ"
                                 lines={imp.line_name ? getLineFamilyNames(lines, imp.line_name) : undefined}
                                 style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)' }}
                                 onChange={({ name }) => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: name } }))} />

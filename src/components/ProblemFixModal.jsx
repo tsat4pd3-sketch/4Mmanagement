@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import PersonSelect from './PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 const TABLE = { downtime: 'downtime_logs', defect: 'defect_logs' };
 const TYPE_COL = { downtime: 'downtime_type_id', defect: 'defect_type_id' };
@@ -29,6 +30,9 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
   const [resBy, setResBy]     = useState(row?.followup_by || actorName || '');
   const [saving, setSaving]   = useState(false);
   const [past, setPast]       = useState([]);   // วิธีแก้ที่เคยลงไว้ของปัญหาชนิดเดียวกัน
+  // 📜 ชื่อผู้แก้/ผู้ตรวจติดตามที่เคยบันทึก (DR downtime_logs — คอลัมน์ชื่อเดียวกับ defect_logs) — ช่างนอกทะเบียนยังเลือกซ้ำได้ (2026-09-07)
+  const fixByHist = useColumnHistory(supabaseDR, 'downtime_logs', 'fix_by');
+  const followHist = useColumnHistory(supabaseDR, 'downtime_logs', 'followup_by');
 
   const typeId = row?.[TYPE_COL[kind]];
 
@@ -144,7 +148,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้แก้ไข</span>
           {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (ผู้แก้มักเป็นช่าง/พนักงาน) — เก็บชื่อ snapshot (ตาราง DR) */}
-          <PersonSelect value={fixBy} source="both" placeholder="ชื่อผู้แก้ไข" style={{ width: 260 }} inputStyle={inp}
+          <PersonSelect value={fixBy} source="both" history={fixByHist} placeholder="ชื่อผู้แก้ไข" style={{ width: 260 }} inputStyle={inp}
             onChange={({ name }) => setFixBy(name)} />
         </div>
 
@@ -156,7 +160,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้ตรวจติดตาม</span>
           {/* 2026-09-07 <PersonSelect> — default ผู้ใช้ปัจจุบันเหมือนเดิม */}
-          <PersonSelect value={resBy} source="both" placeholder="ชื่อผู้ตรวจติดตาม" style={{ width: 260 }} inputStyle={inp}
+          <PersonSelect value={resBy} source="both" history={followHist} placeholder="ชื่อผู้ตรวจติดตาม" style={{ width: 260 }} inputStyle={inp}
             onChange={({ name }) => setResBy(name)} />
         </div>
 

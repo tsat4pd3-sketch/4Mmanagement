@@ -29,6 +29,7 @@ import LineSelect from '../components/LineSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
 
@@ -2124,6 +2125,9 @@ function DocumentControlPanel() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [newRev, setNewRev] = useState({ record_date: '', rev: '', issued_date: '', description: '', responsible: '', approved_name: '' });
+  // 📜 ชื่อที่เคยบันทึกใน doc_form_revisions (Main) — ผู้รับผิดชอบ/ผู้อนุมัติ rev เก่าที่ไม่มีใน profiles ยังเลือกซ้ำได้ (2026-09-07)
+  const respHist = useColumnHistory(supabase, 'doc_form_revisions', 'responsible');
+  const apprHist = useColumnHistory(supabase, 'doc_form_revisions', 'approved_name');
 
   const load = async () => {
     setLoading(true);
@@ -2264,9 +2268,9 @@ function DocumentControlPanel() {
         <input type="date" value={newRev.issued_date} onChange={e => setNewRev(v => ({ ...v, issued_date: e.target.value }))} style={inSt} title="Issued date" />
         <input value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={inSt} />
         {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (doc_form_revisions เก็บชื่อ text — ไม่มีคอลัมน์ id) */}
-        <PersonSelect value={newRev.responsible} placeholder="Responsible" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
+        <PersonSelect value={newRev.responsible} history={respHist} placeholder="Responsible" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
-        <PersonSelect value={newRev.approved_name} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
+        <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
         <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
       </div>

@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
@@ -110,6 +111,14 @@ export default function LayerProcessAudit() {
   const canRecord = can('lpa', 'record', role);
   const canManage = can('lpa', 'manage', role);
   const canDelete = can('lpa', 'delete', role);
+  // 📜 ชื่อที่เคยบันทึกไว้ (Main lpa_*) — ผู้ตรวจ/4 ชั้นที่ไม่มีใน profiles (ย้ายจากกระดาษ) ยังเลือกซ้ำได้ (2026-09-07)
+  const auditorHist = useColumnHistory(supabase, 'lpa_audits', 'auditor_name');
+  const layerHist = {
+    leader_name: useColumnHistory(supabase, 'lpa_plans', 'leader_name'),
+    supervisor_name: useColumnHistory(supabase, 'lpa_plans', 'supervisor_name'),
+    manager_name: useColumnHistory(supabase, 'lpa_plans', 'manager_name'),
+    gm_name: useColumnHistory(supabase, 'lpa_plans', 'gm_name'),
+  };
 
   // ⚠️ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ LPA ของ /daily-checker ซึ่งจอง ?tab= ไปแล้ว
   const [tabRaw, setTab] = useTabParam(['audit', 'plan', 'report', 'questions'], 'audit', 'sub');
@@ -890,7 +899,7 @@ ${issuesHtml}
               <div key={k}>
                 <div style={lb}>{label}</div>
                 {/* 4 ชั้นผู้ตรวจ = user ระบบ (พิมพ์ลง FM-QMR-008) — PersonSelect profiles แทน datalist ที่รับทุกสะกด (2026-09-07) */}
-                <PersonSelect value={qHeader[k] || ''} onChange={r => setQHeaderF(k, r.name)} disabled={!canManage} placeholder={`เลือก ${label}…`} />
+                <PersonSelect value={qHeader[k] || ''} history={layerHist[k]} onChange={r => setQHeaderF(k, r.name)} disabled={!canManage} placeholder={`เลือก ${label}…`} />
               </div>
             ))}
           </div>
@@ -999,7 +1008,7 @@ ${issuesHtml}
             <div>
               <div style={lb}>ผู้ตรวจ</div>
               {/* ผู้ตรวจจาก profiles → ลายเซ็นตามคนที่เลือก (ไม่ใช่แค่โปรไฟล์ตัวเอง) · พิมพ์เองยังได้ (2026-09-07) */}
-              <PersonSelect value={draft?.auditor_name || ''} style={{ width: 200 }}
+              <PersonSelect value={draft?.auditor_name || ''} history={auditorHist} style={{ width: 200 }}
                 onChange={r => setDraft(prev => ({ ...prev, auditor_name: r.name, auditor_sig_url: r.kind === 'free' ? prev?.auditor_sig_url || null : (r.signature_url || null) }))} />
             </div>
             <div>

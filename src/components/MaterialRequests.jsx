@@ -21,6 +21,7 @@ import InfoMore from './InfoMore';
 import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import StorageLocSelect from './StorageLocSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from './SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
@@ -382,6 +383,10 @@ export default function MaterialRequests() {
 /* ── ฟอร์มใบเบิก ─────────────────────────────────────────────────────────── */
 function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, parts = [], onPick, onClose, onSave }) {
   const { req, items } = editor;
+  // 📜 ค่าที่เคยบันทึกใน material_requests (DR) — รหัสคลังที่ยังไม่ลง storage_locations / ผู้ขอที่ไม่มีบัญชี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const destHist = useColumnHistory(supabaseDR, 'material_requests', 'dest_storage_location', { upper: true });
+  const slocHist = useColumnHistory(supabaseDR, 'material_requests', 'storage_location', { upper: true });
+  const requesterHist = useColumnHistory(supabaseDR, 'material_requests', 'requester_name');
   // หน่วยงานผู้ขอ = ส่วนงานในผังองค์กร (org_nodes) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (ตำแหน่ง/หน่วยงานสนับสนุน) (2026-09-07)
   const orgSections = useOrgSections();
   // หน่วยของรายการล็อกตาม parts_master.uom เมื่อรหัส MAT อยู่ในทะเบียน — พิมพ์เองได้เฉพาะรหัสที่ยังไม่ลงทะเบียน (2026-09-07)
@@ -417,7 +422,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <F label="สถานะ"><input value={statusMeta(req.status).label} readOnly style={{ ...inpSt, color: statusMeta(req.status).color, fontWeight: 700 }} /></F>
 
         {/* ผู้ขอ = user ระบบ (profiles) · ผู้ขอที่ไม่มีบัญชีพิมพ์เองได้พร้อมป้าย (2026-09-07) */}
-        <F label="ชื่อผู้ขอเบิก"><PersonSelect value={req.requester_name || ''} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
+        <F label="ชื่อผู้ขอเบิก"><PersonSelect value={req.requester_name || ''} history={requesterHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
         <F label="หน่วยงาน / ตำแหน่ง">
           <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder="— เลือกส่วนงาน —"
             onChange={v => setReq({ requester_dept: v })} selectStyle={inpSt} inputStyle={inpSt} />
@@ -438,12 +443,12 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
 
         {/* ช่องข้างช่องติ๊กบนใบ — โผล่เฉพาะที่ประเภทนั้นต้องใช้ */}
         {/* รหัสคลังจากทะเบียน storage_locations (DR · migration 20260902) — รหัสนอกทะเบียนยังบันทึกได้พร้อมป้าย ⚠ (2026-09-07) */}
-        {needs === 'dest' && <F label="Storage Location ปลายทาง"><StorageLocSelect value={req.dest_storage_location || ''} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ dest_storage_location: code })} /></F>}
+        {needs === 'dest' && <F label="Storage Location ปลายทาง"><StorageLocSelect value={req.dest_storage_location || ''} history={destHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ dest_storage_location: code })} /></F>}
         {needs === 'order' && <F label="Production Order"><input value={req.order_no || ''} readOnly={ro} onChange={e => setReq({ order_no: e.target.value })} style={inpSt} /></F>}
         {needs === 'cc' && <F label="Cost Center"><input value={req.cost_center || ''} readOnly={ro} onChange={e => setReq({ cost_center: e.target.value })} style={inpSt} /></F>}
 
         <F label="รหัสโรงงาน (Plant)"><input value={req.plant_code || ''} readOnly={ro} onChange={e => setReq({ plant_code: e.target.value })} style={inpSt} /></F>
-        <F label="รหัสคลังสินค้า / สโตร์"><StorageLocSelect value={req.storage_location || ''} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ storage_location: code })} /></F>
+        <F label="รหัสคลังสินค้า / สโตร์"><StorageLocSelect value={req.storage_location || ''} history={slocHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ storage_location: code })} /></F>
       </div>
 
       <F label="รายละเอียด" full>

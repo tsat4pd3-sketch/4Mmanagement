@@ -14,6 +14,7 @@ import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import MachineSelect from '../components/MachineSelect';
 import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -351,6 +352,9 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
   // ครอบครัวไลน์ที่เลือก (แม่+ลูก) — ให้เครื่อง/พนักงานของไลน์นี้ขึ้นก่อนใน picker (ไม่ตัดไลน์อื่น · 2026-09-07)
   const famNames = useMemo(() => (form.line_name ? getLineFamilyNames(lines, form.line_name) : []), [lines, form.line_name]);
   const famIds = useMemo(() => (form.line_name ? [...getLineFamilyIds(lines, form.line_name)] : []), [lines, form.line_name]);
+  // 📜 ค่าที่เคยบันทึกใน cqi15_event_logs (Main) — สถานีที่ยังไม่ลง /machines / ชื่อพนักงานที่พ้นทะเบียน ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const stationHist = useColumnHistory(supabase, 'cqi15_event_logs', 'station_number', { upper: true });
+  const operatorHist = useColumnHistory(supabase, 'cqi15_event_logs', 'weld_cell_operator');
 
   const selectedEvent = eventDefs.find(d => d.event_no === parseInt(form.event_no));
   const eventChecks = selectedEvent
@@ -397,13 +401,13 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Station Number</label>
             {/* station = เลขเครื่อง (SP-67) จากทะเบียน machines (DR) — ออกรายงาน CQI-15 ให้ลูกค้าตรวจ ต้องสะกดตรงทะเบียน (2026-09-07) */}
-            <MachineSelect value={form.station_number || ''} lines={famNames} allowFree freeHint="สถานีที่ยังไม่มีในทะเบียนเครื่อง /machines"
+            <MachineSelect value={form.station_number || ''} lines={famNames} allowFree history={stationHist} freeHint="สถานีที่ยังไม่มีในทะเบียนเครื่อง /machines"
               placeholder="เช่น SP-67" onChange={r => f('station_number', r.machine_no)} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Weld Cell Operator</label>
             {/* พนักงานจากทะเบียน employees — คนในครอบครัวไลน์ที่เลือกขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม (2026-09-07) */}
-            <PersonSelect source="employees" value={form.weld_cell_operator || ''} lineIds={famIds}
+            <PersonSelect source="employees" value={form.weld_cell_operator || ''} lineIds={famIds} history={operatorHist}
               placeholder="ชื่อพนักงาน" onChange={r => f('weld_cell_operator', r.name)} />
           </div>
         </div>

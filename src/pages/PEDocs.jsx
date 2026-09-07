@@ -19,6 +19,7 @@ import MachineSelect from '../components/MachineSelect';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import useProducts from '../utils/useProducts';
@@ -78,6 +79,13 @@ export default function PEDocs() {
 
   const [sets, setSets] = useState([]);
   const [procs, setProcs] = useState([]);       // ของ set ที่เลือก
+  // 📜 ค่าที่เคยบันทึกไว้ในคอลัมน์ปลายทาง — ทะเบียนไม่มี (MAT เก่า/เครื่องยังไม่ลง /machines/ชื่อคนจากกระดาษ) ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const matHist = useColumnHistory(supabase, 'pe_doc_sets', 'mat_no', { upper: true });
+  const custHist = useColumnHistory(supabase, 'pe_doc_sets', 'customer');
+  const mcHist = useColumnHistory(supabase, 'pe_processes', 'machine_no', { upper: true });
+  const issuedHist = useColumnHistory(supabase, 'pe_doc_revisions', 'issued_by');
+  const checkedHist = useColumnHistory(supabase, 'pe_doc_revisions', 'checked_by');
+  const approvedHist = useColumnHistory(supabase, 'pe_doc_revisions', 'approved_by');
   const [fmea, setFmea] = useState([]);
   const [cp, setCp] = useState([]);
   const [revs, setRevs] = useState([]);
@@ -607,14 +615,14 @@ export default function PEDocs() {
             <label style={lbl}>Part No. (ลูกค้า) *<input value={setModal.part_no} onChange={e => setSetModal({ ...setModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             {/* 🔴 mat_no = กุญแจ golden thread (peRouting / VSM / OrderTrace / NPI) → เลือกจาก Product Master เท่านั้น (ตรวจซ้ำตอนบันทึก · 2026-09-07) */}
             <div style={lbl}>MAT SAP
-              <ProductSelect value={setModal.mat_no || ''} products={prodMaster} lines={setModal.line_name ? [setModal.line_name] : undefined}
+              <ProductSelect value={setModal.mat_no || ''} products={prodMaster} lines={setModal.line_name ? [setModal.line_name] : undefined} history={matHist}
                 placeholder="เลขภายใน (โยงข้อมูลผลิต)" style={{ marginTop: 4 }}
                 onChange={r => setSetModal({ ...setModal, mat_no: r.mat_no })} />
             </div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Part Name<input value={setModal.part_name || ''} onChange={e => setSetModal({ ...setModal, part_name: e.target.value })} placeholder="REINF ASY FRT FNDR INR BDY RH" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Model<input value={setModal.model || ''} onChange={e => setSetModal({ ...setModal, model: e.target.value })} placeholder="P703" style={{ marginTop: 4 }} /></label>
             {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
-            <div style={lbl}>Customer<CustomerSelect value={setModal.customer || ''} placeholder="FORD" style={{ marginTop: 4 }} onChange={({ customer }) => setSetModal({ ...setModal, customer })} /></div>
+            <div style={lbl}>Customer<CustomerSelect value={setModal.customer || ''} history={custHist} placeholder="FORD" style={{ marginTop: 4 }} onChange={({ customer }) => setSetModal({ ...setModal, customer })} /></div>
             <label style={lbl}>ไลน์หลักที่ผลิต
               <LineSelect lines={lineOpts} value={setModal.line_name || ''} placeholder="— ไม่ระบุ —"
                 style={{ marginTop: 4 }} onChange={v => setSetModal({ ...setModal, line_name: v })} />
@@ -643,10 +651,11 @@ export default function PEDocs() {
             <button style={btnSm} onClick={() => setSetModal(null)}>ยกเลิก</button>
             <button style={btnPrim} disabled={saving} onClick={async () => {
               if (!setModal.part_no?.trim()) { toast.error('กรอก Part No. ก่อน'); return; }
-              // MAT SAP ต้องมีจริงใน Product Master (join key) — ตรวจเมื่อทะเบียนโหลดแล้วเท่านั้น ไม่งั้นบันทึกไม่ได้ทั้งที่ทะเบียนแค่ยังไม่มา
+              // MAT SAP ควรมีจริงใน Product Master (join key) — ตรวจเมื่อทะเบียนโหลดแล้วเท่านั้น ไม่งั้นบันทึกไม่ได้ทั้งที่ทะเบียนแค่ยังไม่มา
+              // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็น confirm (คำสั่ง user: ทะเบียนไม่มี → ยังใช้ค่าที่เคยบันทึก/พาร์ทที่ยังไม่ขึ้น master ได้ ห้ามบล็อกเงียบ)
               const matIn = setModal.mat_no?.trim().toUpperCase();
               if (matIn && prodMaster.length && !prodMaster.some(p => String(p.mat_no || '').trim().toUpperCase() === matIn)) {
-                toast.error(`MAT SAP ${matIn} ไม่มีใน Product Master — เลือกจากลิสต์ หรือเพิ่มสินค้าที่ /products ก่อน`); return;
+                if (!window.confirm(`MAT SAP ${matIn} ไม่มีใน Product Master — ข้อมูลผลิต/VSM/สอบกลับจะยังโยงไม่ได้จนกว่าจะเพิ่มสินค้าที่ /products\nใช้ค่านี้ต่อหรือไม่?`)) return;
               }
               const patch = {
                 part_no: setModal.part_no.trim(), mat_no: setModal.mat_no?.trim() || null,
@@ -699,7 +708,7 @@ export default function PEDocs() {
             </label>
             {/* machine_no ไหลต่อไป part_routings (PeRoutingSuggest) → กล่อง VSM — เลือกจากทะเบียน machines (DR) แทน datalist (2026-09-07) */}
             <div style={lbl}>เครื่องจักร (M/C No.)
-              <MachineSelect value={procModal.machine_no || ''} lines={procFam} allowFree freeHint="เครื่องที่ยังไม่ลงทะเบียน /machines"
+              <MachineSelect value={procModal.machine_no || ''} lines={procFam} allowFree history={mcHist} freeHint="เครื่องที่ยังไม่ลงทะเบียน /machines"
                 placeholder="SP-82" style={{ marginTop: 4 }} onChange={r => setProcModal({ ...procModal, machine_no: r.machine_no })} />
             </div>
             <label style={lbl}>ไลน์/พื้นที่
@@ -894,9 +903,9 @@ export default function PEDocs() {
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>เลขอ้างอิงต้นเหตุ (เลขเคลม/NCR/MO)<input value={revModal.ref_id || ''} onChange={e => setRevModal({ ...revModal, ref_id: e.target.value })} placeholder="เช่น WLS6033" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>เนื้อหาการแก้ไข *<textarea rows={3} value={revModal.content} onChange={e => setRevModal({ ...revModal, content: e.target.value })} placeholder="Process 210 Missing nut m6 (WLS00292)" style={{ marginTop: 4 }} /></label>
             {/* ผู้ออก/ตรวจ/รับรอง = user ระบบ (profiles) · พิมพ์เองได้สำหรับ rev เก่าที่ย้ายจากกระดาษ (ติดป้าย) (2026-09-07) */}
-            <div style={lbl}>ผู้ออก<PersonSelect value={revModal.issued_by || ''} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, issued_by: r.name })} /></div>
-            <div style={lbl}>ผู้ตรวจสอบ<PersonSelect value={revModal.checked_by || ''} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, checked_by: r.name })} /></div>
-            <div style={lbl}>ผู้รับรอง<PersonSelect value={revModal.approved_by || ''} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, approved_by: r.name })} /></div>
+            <div style={lbl}>ผู้ออก<PersonSelect value={revModal.issued_by || ''} history={issuedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, issued_by: r.name })} /></div>
+            <div style={lbl}>ผู้ตรวจสอบ<PersonSelect value={revModal.checked_by || ''} history={checkedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, checked_by: r.name })} /></div>
+            <div style={lbl}>ผู้รับรอง<PersonSelect value={revModal.approved_by || ''} history={approvedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, approved_by: r.name })} /></div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
             <button style={btnSm} onClick={() => setRevModal(null)}>ยกเลิก</button>

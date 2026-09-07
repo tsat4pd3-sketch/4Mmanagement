@@ -24,6 +24,7 @@ import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import LineSelect from '../components/LineSelect';
 import InstrumentSelect from '../components/InstrumentSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 
@@ -133,6 +134,9 @@ export default function QAInspectionSetup() {
   const { fullName } = useContext(UserContext);
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
+  // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const methodHist = useColumnHistory(supabase, 'qa_check_items', 'method');
+  const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
 
   const [parts, setParts] = useState([]);
   const [lines, setLines] = useState([]);
@@ -947,7 +951,7 @@ export default function QAInspectionSetup() {
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             {/* ลูกค้า — เลือกจากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
-            <Field label="ลูกค้า"><CustomerSelect value={partModal.customer || ''} onChange={({ customer }) => setPartModal(f => ({ ...f, customer }))} /></Field>
+            <Field label="ลูกค้า"><CustomerSelect value={partModal.customer || ''} history={custHist} onChange={({ customer }) => setPartModal(f => ({ ...f, customer }))} /></Field>
             <Field label="Model"><input style={inputSt} value={partModal.model} onChange={e => setPartModal(f => ({ ...f, model: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
               {/* qa_parts.line_name ใช้ scope พาร์ทใน QaCheckSheet — ชื่อต้อง canonical → <LineSelect> (2026-09-07) */}
@@ -1027,7 +1031,7 @@ export default function QAInspectionSetup() {
             )}
             <Field label="วิธี / เครื่องมือตรวจ">
               {/* ทะเบียนเครื่องมือวัด (Main qa_instruments) โหลด+cache ใน <InstrumentSelect> เอง (2026-09-07) */}
-              <InstrumentSelect value={itemModal.method} onChange={v => setItemModal(f => ({ ...f, method: v }))}
+              <InstrumentSelect value={itemModal.method} history={methodHist} onChange={v => setItemModal(f => ({ ...f, method: v }))}
                 placeholder="Vernier / CF / Visual — ค้นรหัส/ชื่อเครื่องมือ…" />
             </Field>
             <Field label="Stage การตรวจ">

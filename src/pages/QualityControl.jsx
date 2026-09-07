@@ -29,6 +29,7 @@ import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import PartSelect from '../components/PartSelect';
 import InstrumentSelect from '../components/InstrumentSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import usePartOptions from '../utils/usePartOptions';
@@ -544,6 +545,9 @@ const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: 
 
 function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [] }) {
   const { fullName } = useContext(UserContext);
+  // 📜 ค่าที่เคยบันทึกใน qa_characteristics (Main) — พาร์ท/เกจที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_characteristics', 'part_no', { upper: true });
+  const gaugeHist = useColumnHistory(supabase, 'qa_characteristics', 'gauge');
   const [chars, setChars] = useState([]);
   const [selId, setSelId] = useState(null);
   const [rows, setRows] = useState([]);          // measurements ของ characteristic ที่เลือก
@@ -836,7 +840,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {/* part_no = คีย์จัดกลุ่มลิสต์ SPC — อ่านจากทะเบียนพาร์ท (<PartSelect>) แทนพิมพ์เอง (2026-09-07) */}
             <Field label="Part No. *">
-              <PartSelect value={charModal.part_no} options={partOpts}
+              <PartSelect value={charModal.part_no} options={partOpts} history={partHist}
                 onChange={({ part_no, part_name }) => setCharModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={charModal.part_name} onChange={e => setCharModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
@@ -857,7 +861,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
             </Field>
             {/* gauge เก็บรหัสจากทะเบียน qa_instruments (แท็บ 📏) — โยงจุดควบคุมกับสถานะสอบเทียบ (2026-09-07) */}
             <Field label="เครื่องมือวัด">
-              <InstrumentSelect value={charModal.gauge} instruments={instruments} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
+              <InstrumentSelect value={charModal.gauge} instruments={instruments} history={gaugeHist} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
             </Field>
             <Field label="อ้างอิง Control Plan" span><input style={inputSt} placeholder="เช่น CP-HDF-001 ข้อ 12" value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
             {charModal.id && (
@@ -894,6 +898,8 @@ const EMPTY_NCR = { report_date: '', line_name: '', part_no: '', part_name: '', 
 
 function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
   const { fullName, role, lineId, sections } = useContext(UserContext);
+  // 📜 part_no ที่เคยบันทึกใน qa_ncr (Main) — พาร์ทที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_ncr', 'part_no', { upper: true });
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active'); // active | all | closed
   const [createModal, setCreateModal] = useState(null);
@@ -1015,7 +1021,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
             </Field>
             {/* part_no ของ NCR ถูกก๊อปเข้า CAPA (กุญแจหาเอกสาร PE) → ต้องมาจากทะเบียนพาร์ท (2026-09-07) */}
             <Field label="Part No.">
-              <PartSelect value={createModal.part_no} options={partOpts}
+              <PartSelect value={createModal.part_no} options={partOpts} history={partHist}
                 onChange={({ part_no, part_name }) => setCreateModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={createModal.part_name} onChange={e => setCreateModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
@@ -1145,6 +1151,9 @@ const D_FIELDS = [
 
 function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], partOpts = [] }) {
   const { fullName } = useContext(UserContext);
+  // 📜 ค่าที่เคยบันทึกใน qa_capa (Main) — พาร์ท/ชื่อผู้รับผิดชอบที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_capa', 'part_no', { upper: true });
+  const ownerHist = useColumnHistory(supabase, 'qa_capa', 'owner_name');
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active');
   const [detail, setDetail] = useState(null); // { ...capa } (id=null = สร้างใหม่)
@@ -1310,7 +1319,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             <Field label="หัวข้อ *"><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
             {/* ผู้รับผิดชอบ = user ระบบ (profiles) — เลือกจากทะเบียนคน เผื่อแจ้งเตือนรายคนภายหลัง (2026-09-07) */}
             <Field label="ผู้รับผิดชอบ">
-              <PersonSelect value={detail.owner_name || ''} onChange={r => setDetail(f => ({ ...f, owner_name: r.name }))} disabled={!canRecord} />
+              <PersonSelect value={detail.owner_name || ''} history={ownerHist} onChange={r => setDetail(f => ({ ...f, owner_name: r.name }))} disabled={!canRecord} />
             </Field>
             <Field label="กำหนดปิด (due date)"><input type="date" style={inputSt} value={detail.due_date || ''} onChange={e => setDetail(f => ({ ...f, due_date: e.target.value }))} disabled={!canRecord} /></Field>
           </div>
@@ -1318,7 +1327,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             {/* 🔴 part_no + line_name คือ join key ของลูปปิด 8D (matchDocSet · CapaEffectiveness .eq('line_name'))
                 — อ่านจากทะเบียนแทนพิมพ์เอง (2026-09-07) */}
             <Field label="เลขพาร์ท (ใช้หาเอกสาร PFMEA/Control Plan)">
-              <PartSelect value={detail.part_no || ''} options={partOpts} disabled={!canRecord}
+              <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={!canRecord}
                 onChange={({ part_no }) => setDetail(f => ({ ...f, part_no }))} />
             </Field>
             <Field label="ไลน์ผลิต">

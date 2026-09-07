@@ -11,6 +11,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { ECI_STATUS, ECI_LEGS, eciMissingLinks, nextEciCode } from '../utils/npi';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName, WarnBar } from './NpiUi';
 import PersonSelect from './PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 const DWG_KIND = { '2d': '2D', '3d': '3D', spec: 'Spec', other: 'อื่นๆ' };
 const DWG_STATUS = { draft: { label: 'ร่าง', color: '#94a3b8' }, released: { label: 'ปล่อยแล้ว', color: '#22c55e' }, obsolete: { label: 'ยกเลิก', color: '#64748b' } };
@@ -18,6 +19,8 @@ const DWG_STATUS = { draft: { label: 'ร่าง', color: '#94a3b8' }, release
 export default function NpiDrawingsEci({ project, parts, partId, onPickPart, drawings, ecis, tooling, canEdit, canApprove, fullName, today, onChanged }) {
   const [dwModal, setDwModal] = useState(null);
   const [eciModal, setEciModal] = useState(null);
+  // 📜 ผู้ขอ ECI ที่เคยบันทึกไว้ (Main npi_eci) — ผู้ติดต่อฝั่งลูกค้าไม่มีใน profiles เลือกซ้ำได้ไม่ต้องพิมพ์ใหม่ (2026-09-07)
+  const reqHist = useColumnHistory(supabase, 'npi_eci', 'requested_by');
   const [saving, setSaving] = useState(false);
   const [fourM, setFourM] = useState([]);       // ใบ 4M Method ล่าสุด (ผูก ECI)
   const [peCrs, setPeCrs] = useState([]);       // คำขอแก้เอกสาร PE ของชุดที่พาร์ทในโปรเจคผูก
@@ -268,7 +271,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
             <Field label="หัวข้อ *" span={3}><input style={inp} value={eciModal.title} onChange={e => setEciModal({ ...eciModal, title: e.target.value })} /></Field>
             <Field label="รายละเอียด" span={3}><textarea style={{ ...inp, minHeight: 56 }} value={eciModal.description || ''} onChange={e => setEciModal({ ...eciModal, description: e.target.value })} /></Field>
             {/* ผู้ขอ = user ภายใน (profiles) · ที่มาจากลูกค้า = พิมพ์ชื่อผู้ติดต่อเองได้ (allowFree + ป้าย) (2026-09-07) */}
-            <Field label="ผู้ขอ/ต้นเรื่อง"><PersonSelect value={eciModal.requested_by || ''} freeHint="ผู้ติดต่อฝั่งลูกค้า" onChange={r => setEciModal({ ...eciModal, requested_by: r.name })} /></Field>
+            <Field label="ผู้ขอ/ต้นเรื่อง"><PersonSelect value={eciModal.requested_by || ''} history={reqHist} freeHint="ผู้ติดต่อฝั่งลูกค้า" onChange={r => setEciModal({ ...eciModal, requested_by: r.name })} /></Field>
             <Field label="วันที่รับ"><input type="date" style={inp} value={eciModal.requested_date || ''} onChange={e => setEciModal({ ...eciModal, requested_date: e.target.value })} /></Field>
             <Field label="ต้องมีผลภายใน"><input type="date" style={inp} value={eciModal.target_date || ''} onChange={e => setEciModal({ ...eciModal, target_date: e.target.value })} /></Field>
             <Field label="สถานะ"><MetaSelect value={eciModal.status} onChange={v => setEciModal({ ...eciModal, status: v })} meta={ECI_STATUS} exclude={canApprove ? [] : ['approved', 'rejected', 'implemented']} /></Field>
