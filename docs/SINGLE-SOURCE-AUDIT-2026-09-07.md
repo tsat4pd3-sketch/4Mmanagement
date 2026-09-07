@@ -29,6 +29,30 @@
 | ทีม A/B/C hardcode | 8 | `['A','B','C']` | `useOrgTeams()` (org_nodes kind='team' → fallback A/B/C) |
 | รหัสคลัง (Stor.Loc.) | 4 | input | `<StorageLocSelect>` ← `useStorageLocations` |
 
+## สถานะการแก้ (2026-09-07 — แก้ครบในวันเดียวกับ audit)
+
+**แก้แล้ว: ทุก 🔴 / 🟡 / 🔵 ที่มีทะเบียนในฐาน (~150 ช่อง · 58 ไฟล์)** — ตรวจผ่าน `npm run build` (context · lint · เทส 6 เคสใหม่ · vite)
++ `audit/crashsweep.mjs` 70 หน้า พัง 0 + sweep เปิด modal/พิมพ์ในช่อง picker 40 หน้า 52 ครั้ง พัง 0
+
+| component/loader ใหม่ | ใช้แทน | ไฟล์ที่ใช้ |
+|---|---|---|
+| `PersonSelect` + `usePeople` | ช่องชื่อคน ~60 จุด | Report · ScrapReport · QualityBins · ProblemFixModal · MorningMeeting · Improvements · LineSetup · OrgSetup · DocFormsRegistry · MtnRepair · PMSchedule · PokaYoke · QualityControl · LPA · OJT · PEDocs · NPI · Npi* · MaterialRequests · QaPieceStepper · EventLog · KpiMonthly · VSM |
+| `MachineSelect` + `useMachines` | หมายเลขเครื่อง 7 จุด | MtnRepair · PMSetup · PmCoordination · RoutingPanel · PEDocs · EventLog · SparePartMaster |
+| `ProductSelect` + `useProducts` | MAT SAP ~14 จุด | DailyReport · ScrapReport · QualityBins · LinePartCallPanel · ProductMaster · PMSetup · DieRegistry · PEDocs · NPI · CustomerDemand · LineStock · PlannerSales |
+| `PartSelect` + `usePartOptions` | เลขพาร์ท P/N (กุญแจเอกสาร PE) 5 จุด | QualityControl (CAPA/NCR/SPC) · QaClaims |
+| `CustomerSelect` + `useCustomers` | ลูกค้า ~11 จุด | DailyReport · ProductMaster · MtnRepair · QAInspectionSetup · QaClaims · PEDocs · PeExcelImportModal · NPI · NpiTemplates |
+| `InstrumentSelect` + `useInstruments` | เครื่องมือวัด/วิธีตรวจ | QualityControl · QAInspectionSetup |
+| `StorageLocSelect` + `useStorageLocations` | รหัสคลัง | ScrapReport · MaterialRequests ×2 |
+| `SelectOrFree` | select + ระบุเอง (ซ้ำ 7 จุด) | QualityControl · PEDocs · OJT · MaterialRequests · LPA · PokaYoke · DieRegistry |
+| `LineSelect` (เดิม) | `lines.map(<option>)` ~35 จุด | ทุกกลุ่ม — query ทุกตัวเปลี่ยนเป็น `LINE_COLUMNS` |
+| `useOrgTeams` | ทีม A/B/C hardcode 8 จุด | Report ×7 · Checkin |
+| `useOrgSections` fallback · `SearchSelect` allowFree=false ล้างค่านอกทะเบียนเมื่อปิดลิสต์ | — | ทุก picker |
+
+**ข้ามตามที่ audit ระบุ (ไม่มี master / เป็น enum ในโค้ด / phase 4):** supplier (Y2 · #34 · #47) · `model` · `qa_instruments.inst_type` (#11) · `OWNER_ROLE` NPI (#40) · `PKG_CATEGORIES` (B3) · `jigs.equipment_type` vs `machines.equipment_kind` (#19 — derive จากเครื่องแล้ว แต่ยังคง 2 enum) · dock / plant name · ตัวเลือก enum สถานะ/ผล/ความรุนแรงทั้งหมด
+
+**ไม่เปลี่ยน schema** — คอลัมน์ id ที่ไม่มี (mtn_orders.machine_id · jigs.mat_no · meeting_action_items.assignee_id · npi leader_uid/owner_uid · doc_form_revisions) ยังเก็บ text snapshot เหมือนเดิม · ถ้าอยากผูก FK จริงเป็นงานถัดไป (migration + picker คืน id ให้อยู่แล้ว)
+
+---
 **สิ่งที่ตั้งใจ "ยังไม่ทำ" (ต้องมี master ใหม่ = product decision · schema):**
 - ตาราง `customers` (code/name/alias) — ระหว่างนี้ใช้ derived list จาก Product Master (`useCustomers.js` แก้จุดเดียวเมื่อมีตาราง)
 - ตาราง `suppliers` — NPI migration ระบุเป็นเฟส 4 · พิมพ์ซ้ำใน parts_master / container_types / part_routings.vendor / mtn_spare_parts / purchase_slips / npi_tooling.maker
