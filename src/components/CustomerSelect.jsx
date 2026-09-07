@@ -14,19 +14,19 @@ import useCustomers, { customerKey } from '../utils/useCustomers';
 
 export default function CustomerSelect({
   value = '', onChange, allowFree = true, placeholder = 'เลือก / ค้นลูกค้า…', freeHint = 'ลูกค้าใหม่ — ตรวจสะกดให้ตรงกับ Product Master',
-  disabled, inputStyle, style, extra = [],
+  disabled, inputStyle, style, extra = [], history = [],   // history = ชื่อลูกค้าที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory)
 }) {
   const customers = useCustomers();
   const options = useMemo(() => {
     const seen = new Set();
     const out = [];
-    for (const c of [...customers, ...(extra || []).map(n => ({ name: n, n: 0 }))]) {
+    for (const c of [...customers, ...[...(extra || []), ...(history || [])].map(n => ({ name: n, n: 0 }))]) {
       const k = customerKey(c.name); if (!k || seen.has(k)) continue;
       seen.add(k);
       out.push({ id: k, label: c.name, badge: c.n ? `${c.n} สินค้า` : null, keywords: k });
     }
     return out;
-  }, [customers, extra]);
+  }, [customers, extra, history]);
   const sel = useMemo(() => options.find(o => o.id === customerKey(value)) || null, [options, value]);
   const emit = ({ text, opt }) => {
     if (opt) onChange?.({ customer: opt.label, known: true });

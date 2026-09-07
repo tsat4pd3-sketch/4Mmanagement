@@ -131,3 +131,23 @@ export function productOptions(products, { lines, strict = false, includeOps = f
   }
   return [...main, ...extra];
 }
+
+/** เติม "ค่าที่เคยบันทึกไว้" + "ค่าปัจจุบันที่ไม่อยู่ในทะเบียน" ต่อท้าย option ของ picker
+ *  (2026-09-07 · คำสั่ง user: ทะเบียนไม่มี = ใช้ข้อมูลที่เคยลงไว้ได้ ห้ามล้าง/บล็อกเงียบ)
+ *  - `history` = distinct ค่าจากคอลัมน์ปลายทาง (useColumnHistory) → กลุ่ม 📜 เฉพาะตัวที่ไม่มีในทะเบียน
+ *  - `current` = ค่าที่เก็บอยู่ → ถ้าไม่ตรงทะเบียน/ประวัติ ให้เป็น option ด้วย (SearchSelect จะได้ไม่ล้าง)
+ *  ทุกตัวติดป้าย ⚠ ให้เห็นว่านอกทะเบียน · `make(value)` สร้าง field เฉพาะของ picker นั้น */
+export const HISTORY_GROUP = '📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)';
+export function appendHistoryOptions(options, { history = [], current = '', keyOf = (v) => up(v), make = () => ({}) } = {}) {
+  const seen = new Set(options.map(o => o.key ?? keyOf(o.label)));
+  const extra = [];
+  const add = (v) => {
+    const s = String(v ?? '').trim(); if (!s) return;
+    const k = keyOf(s); if (!k || seen.has(k)) return;
+    seen.add(k);
+    extra.push({ id: `hist:${k}`, key: k, label: s, group: HISTORY_GROUP, badge: '⚠ นอกทะเบียน', badgeColor: 'var(--accent2)', history: true, ...make(s) });
+  };
+  (history || []).forEach(add);
+  add(current);
+  return extra.length ? [...options, ...extra] : options;
+}

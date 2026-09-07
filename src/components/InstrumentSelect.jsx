@@ -9,6 +9,7 @@
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import useInstruments from '../utils/useInstruments';
+import { appendHistoryOptions } from '../utils/pickerOptions';
 
 const up = (v) => String(v ?? '').trim().toUpperCase();
 
@@ -16,7 +17,7 @@ export default function InstrumentSelect({
   value = '', onChange, instruments: given, disabled, allowFree = true,
   placeholder = 'ค้นรหัส / ชื่อเครื่องมือวัด…',
   freeHint = 'วิธีตรวจที่ไม่ใช่เครื่องมือ (Visual/CF) หรือเครื่องมือที่ยังไม่ลงทะเบียนที่ /qa แท็บ 📏',
-  inputStyle, style,
+  history = [], inputStyle, style,
 }) {
   const loaded = useInstruments();
   const instruments = given?.length ? given : loaded;
@@ -25,9 +26,10 @@ export default function InstrumentSelect({
     keywords: `${i.name || ''} ${i.inst_type || ''} ${i.line_name || ''} ${i.brand || ''}`,
     badge: i.status === 'retired' ? '⏸' : i.status === 'repair' ? '🔧' : null,
   })), [instruments]);
-  const sel = useMemo(() => options.find(o => o.key === up(value)) || null, [options, value]);
+  const optionsAll = useMemo(() => appendHistoryOptions(options, { history, current: '' }), [options, history]);
+  const sel = useMemo(() => optionsAll.find(o => o.key === up(value)) || null, [optionsAll, value]);
   return (
-    <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} disabled={disabled}
+    <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} disabled={disabled}
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
       emptyText="ไม่พบเครื่องมือวัดในทะเบียน — ลงทะเบียนได้ที่ /qa แท็บ 📏 เครื่องมือวัด"
       inputStyle={inputStyle} style={style}

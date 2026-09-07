@@ -8,8 +8,9 @@ import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import useStorageLocations from '../utils/useStorageLocations';
 import { slocLabel, slocValid, SLOC_KINDS } from '../utils/storageLoc';
+import { appendHistoryOptions } from '../utils/pickerOptions';
 
-export default function StorageLocSelect({ value = '', onChange, allowFree = true, placeholder = 'รหัสคลัง เช่น S401…', disabled, inputStyle, style, kinds }) {
+export default function StorageLocSelect({ value = '', onChange, allowFree = true, placeholder = 'รหัสคลัง เช่น S401…', disabled, inputStyle, style, kinds, history = [] }) {
   const rows = useStorageLocations();
   const options = useMemo(() => rows
     .filter(r => r.is_active !== false || slocLabel(r.code) === slocLabel(value))
@@ -18,15 +19,16 @@ export default function StorageLocSelect({ value = '', onChange, allowFree = tru
       id: r.code, label: r.code, sub: r.name, keywords: `${r.name || ''} ${SLOC_KINDS[r.kind]?.label || ''}`,
       badge: r.is_active === false ? '⏸' : (SLOC_KINDS[r.kind]?.icon || null), kind: r.kind,
     })), [rows, value, kinds]);
-  const sel = useMemo(() => options.find(o => o.id === slocLabel(value)) || null, [options, value]);
+  const optionsAll = useMemo(() => appendHistoryOptions(options, { history, current: value, keyOf: slocLabel, make: (v) => ({ id: v }) }), [options, history, value]);
+  const sel = useMemo(() => optionsAll.find(o => o.key === slocLabel(value) || o.id === slocLabel(value)) || null, [optionsAll, value]);
   const emit = ({ text, opt }) => {
-    const code = opt ? opt.id : slocLabel(text);
-    onChange?.({ code, known: !!opt, valid: slocValid(code), opt: opt || null });
+    const code = opt ? slocLabel(opt.label) : slocLabel(text);
+    onChange?.({ code, known: !!opt && !opt.history, valid: slocValid(code), opt: opt || null });
   };
   const bad = value && !slocValid(value);
   return (
     <div style={style}>
-      <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
+      <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} onChange={emit}
         allowFree={allowFree} placeholder={placeholder} freeHint="รูปแบบ ตัวอักษร 1-3 + เลข 3 หลัก"
         emptyText="ไม่พบรหัสคลังนี้ในทะเบียน" disabled={disabled}
         inputStyle={{ fontFamily: 'monospace', textTransform: 'uppercase', ...(bad ? { borderColor: '#ef4444' } : {}), ...inputStyle }} />

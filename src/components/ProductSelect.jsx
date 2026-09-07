@@ -17,7 +17,7 @@
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import useProducts from '../utils/useProducts';
-import { productOptions } from '../utils/pickerOptions';
+import { productOptions, appendHistoryOptions } from '../utils/pickerOptions';
 
 const up = (s) => String(s ?? '').trim().toUpperCase();
 export { productOptions };
@@ -25,17 +25,19 @@ export { productOptions };
 export default function ProductSelect({
   value = '', onChange, products: given, lines, strict = false, includeOps = false, includeInactive = false,
   extraOptions, allowFree = false, placeholder = 'ค้น MAT / ชื่อ / P/N / ลูกค้า…', freeHint = '',
+  history = [],          // MAT ที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — Product Master ไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
   disabled, inputStyle, style, wrapRows = false, maxRows = 60,
 }) {
   const { products: loaded, failed } = useProducts();
   const products = given?.length ? given : loaded;
-  const options = useMemo(
-    () => productOptions(products, { lines, strict, includeOps, includeInactive, current: value, extraOptions }),
-    [products, lines, strict, includeOps, includeInactive, value, extraOptions],
-  );
+  const options = useMemo(() => {
+    const base = productOptions(products, { lines, strict, includeOps, includeInactive, current: value, extraOptions });
+    // ค่าที่เคยบันทึก/ค่าปัจจุบันที่ไม่อยู่ในทะเบียน = ยังเลือกได้ พร้อมป้าย ⚠ (ไม่ล้าง ไม่บล็อก — คำสั่ง user 2026-09-07)
+    return appendHistoryOptions(base, { history, current: value, make: (v) => ({ mat_no: v, name: null, p_no: null, customer: null, line_name: null, extra: true }) });
+  }, [products, lines, strict, includeOps, includeInactive, value, extraOptions, history]);
   const sel = useMemo(() => options.find(o => o.key === up(value)) || null, [options, value]);
   const emit = ({ text, opt }) => {
-    if (opt) onChange?.({ mat_no: opt.mat_no, id: opt.extra ? null : opt.id, name: opt.name, p_no: opt.p_no, customer: opt.customer, line_name: opt.line_name, known: true, opt });
+    if (opt) onChange?.({ mat_no: opt.mat_no, id: opt.extra ? null : opt.id, name: opt.name, p_no: opt.p_no, customer: opt.customer, line_name: opt.line_name, known: !opt.history, opt });
     else onChange?.({ mat_no: up(text), id: null, name: null, p_no: null, customer: null, line_name: null, known: false, opt: null });
   };
   return (

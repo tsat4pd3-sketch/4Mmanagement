@@ -13,14 +13,16 @@ import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import usePartOptions from '../utils/usePartOptions';
 import { partKey } from '../utils/partOptions';
+import { appendHistoryOptions } from '../utils/pickerOptions';
 
 export default function PartSelect({
   value = '', onChange, options: given, disabled, allowFree = true,
   placeholder = 'ค้นเลขพาร์ท / MAT / ชื่อ / ลูกค้า…', freeHint = 'พาร์ทที่ยังไม่มีชุดเอกสาร PE — สะกดให้ตรง P/N ลูกค้า',
+  history = [],          // เลขพาร์ทที่เคยบันทึกในคอลัมน์ปลายทาง — ทะเบียนไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
   inputStyle, style,
 }) {
   const loaded = usePartOptions();
-  const options = given || loaded;
+  const options = useMemo(() => appendHistoryOptions(given || loaded, { history, current: value, keyOf: partKey, make: (v) => ({ part_no: v, part_name: '', mat_no: null }) }), [given, loaded, history, value]);
   const sel = useMemo(() => options.find(o => o.key === partKey(value)) || null, [options, value]);
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} disabled={disabled}
@@ -28,7 +30,7 @@ export default function PartSelect({
       emptyText="ไม่พบเลขพาร์ทในทะเบียน (ชุดเอกสาร PE / มาตรฐานตรวจ QA / Product Master)"
       inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style}
       onChange={({ text, opt }) => onChange?.(opt
-        ? { part_no: opt.part_no, part_name: opt.part_name || '', mat_no: opt.mat_no || null, known: true, opt }
+        ? { part_no: opt.part_no, part_name: opt.history ? null : (opt.part_name || ''), mat_no: opt.mat_no || null, known: !opt.history, opt }
         : { part_no: text, part_name: null, mat_no: null, known: false, opt: null })} />
   );
 }

@@ -22,7 +22,7 @@ import SearchSelect from './SearchSelect';
 import usePeople from '../utils/usePeople';
 import { positionLabel } from '../utils/positions';
 import { roleLabel } from '../utils/roleMeta';
-import { personOptions, sameName } from '../utils/pickerOptions';
+import { personOptions, sameName, appendHistoryOptions } from '../utils/pickerOptions';
 
 export { personOptions };
 
@@ -30,18 +30,19 @@ export default function PersonSelect({
   value = '', onChange, source = 'profiles',
   lines, lineIds, section, roles, strict = false,
   allowFree = true, placeholder = 'ค้นชื่อ / รหัสพนักงาน…', freeHint = '', emptyText,
+  history = [],          // ชื่อที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — คนนอกทะเบียนที่เคยกรอกยังเลือกซ้ำได้ (กลุ่ม 📜)
   disabled, inputStyle, style, wrapRows = false, maxRows = 60,
 }) {
   const { profiles, employees, failed } = usePeople({ profiles: source !== 'employees', employees: source !== 'profiles' });
-  const options = useMemo(
-    () => personOptions({ profiles, employees, source, lines, lineIds, section, roles, strict, posLabel: positionLabel, roleLabel }),
-    [profiles, employees, source, lines, lineIds, section, roles, strict],
-  );
+  const options = useMemo(() => {
+    const base = personOptions({ profiles, employees, source, lines, lineIds, section, roles, strict, posLabel: positionLabel, roleLabel });
+    return appendHistoryOptions(base, { history, current: '', keyOf: (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(), make: () => ({ kind: 'free', uid: null, employee_id: null, employee_code: null, signature_url: null, section: null, position: null, role: null }) });
+  }, [profiles, employees, source, lines, lineIds, section, roles, strict, history]);
   // ค่าที่เก็บอยู่คือ "ชื่อ" → หา option ที่ชื่อตรงกัน (ชื่อเดิมที่พิมพ์มาก่อนก็ยังโชว์ได้ผ่าน text)
   const sel = useMemo(() => options.find(o => sameName(o.label, value)) || null, [options, value]);
   const emit = ({ id, text, opt }) => {
-    if (opt) onChange?.({ name: opt.label, id: opt.uid || opt.employee_id || null, uid: opt.uid || null, employee_id: opt.employee_id || null, employee_code: opt.employee_code || null, signature_url: opt.signature_url || null, section: opt.section, position: opt.position, role: opt.role, kind: opt.kind, opt });
-    else onChange?.({ name: text, id: null, uid: null, employee_id: null, employee_code: null, signature_url: null, section: null, position: null, role: null, kind: 'free', opt: null });
+    if (opt) onChange?.({ name: opt.label, known: !opt.history, id: opt.uid || opt.employee_id || null, uid: opt.uid || null, employee_id: opt.employee_id || null, employee_code: opt.employee_code || null, signature_url: opt.signature_url || null, section: opt.section, position: opt.position, role: opt.role, kind: opt.kind, opt });
+    else onChange?.({ name: text, known: false, id: null, uid: null, employee_id: null, employee_code: null, signature_url: null, section: null, position: null, role: null, kind: 'free', opt: null });
     void id;
   };
   return (

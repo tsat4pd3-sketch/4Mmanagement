@@ -16,7 +16,7 @@
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import useMachines from '../utils/useMachines';
-import { machineOptions } from '../utils/pickerOptions';
+import { machineOptions, appendHistoryOptions } from '../utils/pickerOptions';
 
 const up = (s) => String(s ?? '').trim().toUpperCase();
 export { machineOptions };
@@ -24,20 +24,22 @@ export { machineOptions };
 export default function MachineSelect({
   value = '', onChange, machines: given, lines, kinds, strict = false, includeInactive = false,
   valueKey = 'machine_no', allowFree = false, placeholder = 'ค้นเลขเครื่อง / ชื่อ / ไลน์…', freeHint = '',
+  history = [],          // เลขเครื่องที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — ทะเบียนไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
   disabled, inputStyle, style, wrapRows = false, maxRows = 60,
 }) {
   const { machines: loaded, failed } = useMachines();
   const machines = given?.length ? given : loaded;
-  const options = useMemo(
-    () => machineOptions(machines, { lines, kinds, strict, includeInactive, current: valueKey === 'machine_no' ? value : '' }),
-    [machines, lines, kinds, strict, includeInactive, value, valueKey],
-  );
+  const options = useMemo(() => {
+    const base = machineOptions(machines, { lines, kinds, strict, includeInactive, current: valueKey === 'machine_no' ? value : '' });
+    // ค่าที่เคยบันทึก/ค่าปัจจุบันที่ไม่อยู่ในทะเบียน = ยังเลือกได้ พร้อมป้าย ⚠ (ไม่ล้าง ไม่บล็อก — คำสั่ง user 2026-09-07)
+    return appendHistoryOptions(base, { history, current: valueKey === 'machine_no' ? value : '', make: (v) => ({ machine_no: v, name: null, line_name: null, equipment_kind: null }) });
+  }, [machines, lines, kinds, strict, includeInactive, value, valueKey, history]);
   const sel = useMemo(() => (valueKey === 'id'
     ? options.find(o => o.id === value)
     : options.find(o => o.key === up(value))) || null, [options, value, valueKey]);
   const text = sel ? sel.label : (valueKey === 'id' ? '' : (value || ''));
   const emit = ({ text: t, opt }) => {
-    if (opt) onChange?.({ machine_no: opt.machine_no, id: opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, known: true, opt });
+    if (opt) onChange?.({ machine_no: opt.machine_no, id: opt.history ? null : opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, known: !opt.history, opt });
     else onChange?.({ machine_no: t, id: null, name: null, line_name: null, equipment_kind: null, known: false, opt: null });
   };
   return (

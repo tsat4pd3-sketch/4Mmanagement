@@ -96,3 +96,14 @@ test('buildPartOptions: กุญแจ = part_no (P/N) · รวม 3 แหล
   assert.equal(first.mat_no, '10100384', 'เติม mat_no จากแหล่งที่สองเมื่อแหล่งแรกไม่มี');
   assert.equal(partKey(' mb3b-8c306 '), 'MB3B-8C306');
 });
+
+import { appendHistoryOptions, HISTORY_GROUP } from '../pickerOptions.js';
+test('appendHistoryOptions: ค่าที่เคยบันทึก/ค่าปัจจุบันนอกทะเบียนยังเลือกได้ (กลุ่ม 📜) และไม่ซ้ำกับทะเบียน', () => {
+  const base = machineOptions(machines, {});
+  const o = appendHistoryOptions(base, { history: ['rb-10', 'X-77', ' '], current: 'LEGACY-1', make: (v) => ({ machine_no: v }) });
+  const hist = o.filter(x => x.history);
+  assert.deepEqual(hist.map(x => x.label), ['X-77', 'LEGACY-1'], 'RB-10 มีในทะเบียนแล้ว ไม่ซ้ำ · ช่องว่างถูกทิ้ง');
+  assert.ok(hist.every(x => x.group === HISTORY_GROUP && x.badge));
+  assert.equal(hist[1].machine_no, 'LEGACY-1');
+  assert.equal(appendHistoryOptions(base, {}), base, 'ไม่มีอะไรเติม = คืน array เดิม');
+});
