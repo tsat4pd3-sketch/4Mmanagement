@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useContext, useCallback, Fragment } from 'react';
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -8,6 +8,8 @@ import PageHeader from '../components/PageHeader';
 import DailyBars from '../components/DailyBars';
 import DemandVsProduction from '../components/DemandVsProduction';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import LineSelect from '../components/LineSelect';
+import useProductionLines from '../utils/useProductionLines';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -33,7 +35,8 @@ export default function ProductHistory() {
   const scopeSecs = sections || [];
 
   const [products, setProducts] = useState([]);
-  const [lines, setLines]       = useState([]);
+  // ทะเบียนไลน์ชุดกลาง (id, name, parent_line_name, section, is_active — ครบสำหรับ <LineSelect>) (2026-09-07 แทน select เอง)
+  const lines = useProductionLines();
   const [search, setSearch]     = useState('');
   const [filterLine, setFilterLine] = useState('');
   const [selMat, setSelMat]     = useState(null);   // product object
@@ -59,8 +62,6 @@ export default function ProductHistory() {
   useEffect(() => {
     supabaseDR.from('dr_products').select('id, mat_no, name, p_no, line_name, cycle_time_sec, is_active')
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
-      .then(({ data }) => setLines(data || []));
   }, []);
 
   // ไลน์ที่อยู่ใน scope ของผู้ใช้ (leader = family ตัวเอง · role อื่น = ตาม sections · ไม่มี scope = ทั้งหมด)
@@ -225,32 +226,12 @@ export default function ProductHistory() {
     return products.filter(p => !p.line_name || scopeLineNames.has(p.line_name.trim().toLowerCase()));
   }, [products, scopeLineNames]);
 
-  // dropdown ไลน์จัดชั้นตามผัง (กฎ §5.3 — เดิมลิสต์แบนเรียง ก-ฮ แม่ลูกปนกัน user ทัก 2026-08-18):
-  // optgroup = กลุ่มบนสุดตาม parent_line_name · แม่ขึ้นก่อนในกลุ่ม ลูกมี ↳ นำหน้า
+  // ไลน์ที่มีสินค้าจริง (inUse) → ป้อน <LineSelect> กลาง (ลำดับชั้น/scope/ตัดปลดระวาง ทำให้เหมือนทุกหน้า — 2026-09-07 เลิกจัด optgroup เอง)
   // ชื่อที่ไม่อยู่ใน production_lines = optgroup "⚠ นอกผัง" ห้ามซ่อน (กฎ worklist — ซ่อนแล้วหาของผิดไม่เจอ)
   const lineGroups = useMemo(() => {
     const names = [...new Set(scopedProducts.map(p => (p.line_name || '').trim()).filter(Boolean))];
-    const byName = {}; lines.forEach(l => { byName[l.name] = l; });
-    const topOf = (n) => {
-      let cur = byName[n]; if (!cur) return null;
-      const seen = new Set();
-      while (cur.parent_line_name && byName[cur.parent_line_name] && !seen.has(cur.name)) { seen.add(cur.name); cur = byName[cur.parent_line_name]; }
-      return cur.name;
-    };
-    const sortTh = (a, b) => a.localeCompare(b, 'th');
-    const groups = {}; const off = [];
-    names.forEach(n => {
-      const t = topOf(n);
-      if (!t) { off.push(n); return; }
-      (groups[t] = groups[t] || []).push(n);
-    });
-    return {
-      groups: Object.keys(groups).sort(sortTh).map(t => ({
-        top: t,
-        names: groups[t].sort((a, b) => (a === t ? -1 : b === t ? 1 : sortTh(a, b))),
-      })),
-      off: off.sort(sortTh),
-    };
+    const reg = new Set(lines.map(l => l.name));
+    return { inUse: new Set(names.filter(n => reg.has(n))), off: names.filter(n => !reg.has(n)).sort((x, y) => x.localeCompare(y, 'th')) };
   }, [scopedProducts, lines]);
 
   const filteredProducts = useMemo(() => {
@@ -303,19 +284,10 @@ export default function ProductHistory() {
           </div>
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
-            <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ marginTop: 4, width: 200 }}>
-              <option value="">ทุกไลน์</option>
-              {lineGroups.groups.map(g => (
-                <optgroup key={g.top} label={g.top}>
-                  {g.names.map(n => <option key={n} value={n}>{n === g.top ? n : `↳ ${n}`}</option>)}
-                </optgroup>
-              ))}
-              {lineGroups.off.length > 0 && (
-                <optgroup label="⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)">
-                  {lineGroups.off.map(n => <option key={n} value={n}>{n}</option>)}
-                </optgroup>
-              )}
-            </select>
+            {/* <LineSelect> กลาง (ลำดับชั้น + scope + ตัดปลดระวาง) — เฉพาะไลน์ที่มีสินค้าจริง · ชื่อนอกทะเบียนแยก optgroup ห้ามซ่อน (2026-09-07) */}
+            <LineSelect lines={lines.filter(l => lineGroups.inUse.has(l.name))} value={filterLine} onChange={setFilterLine}
+              role={role} lineId={lineId} sections={sections} placeholder="ทุกไลน์" style={{ marginTop: 4, width: 220 }}
+              extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
           </div>
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตั้งแต่</label>

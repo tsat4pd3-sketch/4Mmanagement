@@ -8,6 +8,8 @@ import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../utils/matResolve';
+import ProductSelect from '../components/ProductSelect';
+import useProducts from '../utils/useProducts';
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -65,24 +67,28 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   const [addSaving, setAddSaving] = useState(false);
   const emptyAdd = { customer: '', mat_no: '', part_name: '', qty: '', due_date: workDateStr(), ship_time: '', order_no: '', dock_code: '' };
   const [addForm, setAddForm] = useState(emptyAdd);
-  const [prodNames, setProdNames] = useState({});          // mat_no → ชื่อพาร์ท (datalist + เติมชื่ออัตโนมัติ)
+  // Product Master ชุดกลาง (cache ร่วมทั้งแอป) — ป้อน <ProductSelect> + เติมชื่อพาร์ทอัตโนมัติ (2026-09-07 เลิก select dr_products เอง)
+  const { products: prodMaster } = useProducts();
+  const prodNames = useMemo(() => {                         // mat_no → ชื่อพาร์ท (เฉพาะ active — ตามพฤติกรรมเดิม)
+    const m = {};
+    prodMaster.forEach(p => { if (p.mat_no && p.is_active !== false && !m[p.mat_no]) m[p.mat_no] = p.name; });
+    return m;
+  }, [prodMaster]);
   useEffect(() => {
     supabaseDR.from('break_policies').select('*').eq('is_active', true)
       .then(({ data }) => setBreakPolicies(data || []));
-    supabaseDR.from('dr_products').select('mat_no, name').eq('is_active', true)
-      .then(({ data }) => {
-        const m = {};
-        (data || []).forEach(p => { if (!m[p.mat_no]) m[p.mat_no] = p.name; });
-        setProdNames(m);
-      });
   }, []);
 
   const saveAddOrder = async () => {
     const mat = addForm.mat_no.trim().toUpperCase();
     const qty = parseFloat(addForm.qty);
     if (!mat) { toast.error('กรอก MAT No.'); return; }
+    // MAT เป็นกุญแจ join (dr_products / line_stock / kanban / Rundown) — ต้องมีใน Product Master เท่านั้น ห้ามหลุดเงียบ (2026-09-07)
+    if (!prodNames[mat]) { toast.error(`MAT ${mat} ไม่มีใน Product Master — เพิ่มที่ /products ก่อน`); return; }
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
     if (!addForm.due_date) { toast.error('เลือกวันที่ส่ง'); return; }
+    // ship-to ต้องเป็น code ในทะเบียน ship_to_plants (active) — สร้าง code ใหม่ที่แท็บ ⚙️ Ship-to Config ก่อน
+    if (addForm.customer && !(shipToCodes || []).includes(addForm.customer)) { toast.error(`Ship-to ${addForm.customer} ไม่มีในทะเบียน — ตั้งค่าที่แท็บ ⚙️ Ship-to Config ก่อน`); return; }
     setAddSaving(true);
     const { error } = await supabaseDR.from('customer_shipping_orders').insert({
       customer: addForm.customer.trim() || null,
@@ -553,21 +559,24 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ลูกค้า (Ship-to)
-                  <input list="add-ord-shipto" value={addForm.customer} onChange={e => setAddForm(f => ({ ...f, customer: e.target.value.toUpperCase() }))}
-                    placeholder="GRBNA" style={inputSt} />
-                  <datalist id="add-ord-shipto">{(shipToCodes || []).map(c => <option key={c} value={c} />)}</datalist>
+                  {/* เลือกจากทะเบียน ship_to_plants (active) เท่านั้น — code นี้เป็น join key ของ custLabel/ชาร์ต/workflow ต่อลูกค้า พิมพ์เองไม่ได้ (2026-09-07) */}
+                  <select value={addForm.customer} onChange={e => setAddForm(f => ({ ...f, customer: e.target.value }))} style={inputSt}>
+                    <option value="">— ไม่ระบุลูกค้า —</option>
+                    {(shipToCodes || []).map(c => <option key={c} value={c}>{custLabel(c)}</option>)}
+                  </select>
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>MAT No. *
-                  <input list="add-ord-mat" value={addForm.mat_no}
-                    onChange={e => { const v = e.target.value.toUpperCase(); setAddForm(f => ({ ...f, mat_no: v, part_name: prodNames[v.trim()] || f.part_name })); }}
-                    placeholder="1XXXXXXX" style={{ ...inputSt, fontFamily: 'monospace' }} />
-                  <datalist id="add-ord-mat">{Object.keys(prodNames).map(m => <option key={m} value={m} />)}</datalist>
+                  {/* picker กลาง Product Master — ไม่รับ MAT นอกทะเบียน (พาร์ทใหม่ต้องเพิ่มที่ /products ก่อน) · เลือกแล้วเติมชื่อพาร์ทให้ (2026-09-07) */}
+                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder="ค้น MAT / ชื่อพาร์ท / P/N…"
+                    onChange={({ mat_no, name }) => setAddForm(f => ({ ...f, mat_no, part_name: name || prodNames[mat_no] || f.part_name }))} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>จำนวน (ชิ้น) *
                   <input type="number" min="1" value={addForm.qty} onChange={e => setAddForm(f => ({ ...f, qty: e.target.value }))} style={inputSt} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อพาร์ท
-                  <input value={addForm.part_name} onChange={e => setAddForm(f => ({ ...f, part_name: e.target.value }))} style={inputSt} />
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อพาร์ท{prodNames[addForm.mat_no.trim()] ? ' (จาก Product Master)' : ''}
+                  {/* snapshot ชื่อจาก dr_products — MAT ที่เลือกจากทะเบียนแล้วห้ามแก้ชื่อเอง (ชื่อคนละแบบ = สอบกลับไม่เจอ) (2026-09-07) */}
+                  <input value={addForm.part_name} readOnly={!!prodNames[addForm.mat_no.trim()]} onChange={e => setAddForm(f => ({ ...f, part_name: e.target.value }))}
+                    style={{ ...inputSt, opacity: prodNames[addForm.mat_no.trim()] ? 0.75 : 1 }} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>วันที่ส่ง *
                   <input type="date" value={addForm.due_date} onChange={e => setAddForm(f => ({ ...f, due_date: e.target.value }))} style={inputSt} />
@@ -1239,7 +1248,8 @@ export default function CustomerDemand() {
         tab={tab} onTab={setTab}
       />
 
-      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap)} />}
+      {/* ship-to ที่เลือกได้ในฟอร์มคีย์ order = เฉพาะ active (ปิดใช้แล้วยังแสดงชื่อผ่าน custLabel ได้ตามเดิม) */}
+      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap).filter(c => shipToMap[c]?.is_active !== false).sort()} />}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
