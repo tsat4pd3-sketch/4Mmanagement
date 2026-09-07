@@ -25,6 +25,9 @@ import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { useOrgSections } from '../utils/useOrgSections';
 import { RATE } from '../utils/refreshRates';
 
 import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
@@ -317,7 +320,9 @@ export default function OEEAnalytics() {
   }, []);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name').then(({ data }) => {
+    // LINE_COLUMNS (id,name,parent_line_name,section,is_active) ครบสำหรับ <LineSelect> + cost_center ที่หน้านี้ใช้คิดต้นทุน (2026-09-07)
+    // (ไม่ใช้ useProductionLines() ตรงๆ เพราะ cache กลางไม่มี cost_center — คิวรีเดียวแต่ scope เองเหมือนเดิม)
+    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name').then(({ data }) => {
       let rows = data || [];
       if (role === 'leader' && userLineId) {
         const myLine = rows.find(l => String(l.id) === String(userLineId));
@@ -365,21 +370,27 @@ export default function OEEAnalytics() {
   const [shiftSchedMap, setShiftSchedMap] = useState({}); // line_id -> day_team
   const [tdLoading, setTdLoading] = useState(false);
 
-  // Cascading Section → Department(group) → Line options
-  const sectionOptions = useMemo(() => [...new Set(linesFull.map(l => l.section).filter(Boolean))].sort(), [linesFull]);
+  // Cascading Section → Department(group) → Line options (2026-09-07: ส่วนงานยึด org_nodes · แผนก/ไลน์ผ่าน <LineSelect> กลาง)
+  // ส่วนงานจากผังองค์กร (กฎ CLAUDE.md) เฉพาะที่มีไลน์ใน scope ของ user · ผังยังว่าง = ถอยไปเดาจาก production_lines (backward-compat)
+  const orgSections = useOrgSections();
+  const sectionOptions = useMemo(() => {
+    const inLines = new Set(linesFull.map(l => l.section).filter(Boolean));
+    const fromOrg = orgSections.filter(sec => inLines.has(sec));
+    return fromOrg.length ? fromOrg : [...inLines].sort();
+  }, [orgSections, linesFull]);
 
-  const deptOptions = useMemo(() => {
-    const inSection = tdSection ? linesFull.filter(l => l.section === tdSection) : linesFull;
-    const parents = [...new Set(inSection.filter(l => parentChildrenMap[l.name]).map(l => l.name))];
-    const standalone = inSection.filter(l => !l.parent_line_name && !parentChildrenMap[l.name]).map(l => l.name);
-    return { parents: parents.sort(), standalone: standalone.sort() };
-  }, [tdSection, linesFull, parentChildrenMap]);
+  // แผนก/กลุ่มไลน์ = ไลน์รากในส่วนงาน (ไม่มีแม่ในทะเบียน) — LineSelect ตัดปลดระวาง/จัดลำดับให้
+  const rootLines = useMemo(() => {
+    const names = new Set(linesFull.map(l => l.name));
+    return linesFull.filter(l => (!tdSection || l.section === tdSection) && !(l.parent_line_name && names.has(l.parent_line_name)));
+  }, [tdSection, linesFull]);
 
-  const lineOptions = useMemo(() => {
+  // ไลน์ลูกของกลุ่มที่เลือก (ใช้ parentChildrenMap เดิม — สูตรเดียวกับ tdScopeLines)
+  const childLines = useMemo(() => {
     if (!tdDept) return [];
-    if (parentChildrenMap[tdDept]) return parentChildrenMap[tdDept];
-    return [];
-  }, [tdDept, parentChildrenMap]);
+    const kids = new Set(parentChildrenMap[tdDept] || []);
+    return linesFull.filter(l => kids.has(l.name));
+  }, [tdDept, linesFull, parentChildrenMap]);
 
   const tdScopeLines = useMemo(() => {
     if (tdLine) return [tdLine];
@@ -857,6 +868,11 @@ export default function OEEAnalytics() {
   const [period,     setPeriod]     = useState('monthly'); // daily|weekly|monthly|yearly
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
+  // ชื่อไลน์ใน sessions ที่ไม่ตรงทะเบียน (ไลน์ถูก rename/ลบ) — แยก optgroup ใน dropdown ห้ามซ่อน (2026-09-07)
+  const trOrphanLines = useMemo(() => {
+    const reg = new Set(linesFull.map(l => String(l.name).trim().toLowerCase()));
+    return lines.filter(n => !reg.has(String(n).trim().toLowerCase()));
+  }, [lines, linesFull]);
   const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
   const [dateTo,     setDateTo]     = useState(() => getWorkDateStr());
 
@@ -1322,17 +1338,11 @@ export default function OEEAnalytics() {
               {sectionOptions.map(sec => <option key={sec} value={sec}>{sec}</option>)}
             </select>
 
-            <select style={s.sel} value={tdDept} onChange={e => { setTdDept(e.target.value); setTdLine(''); }}>
-              <option value="">ทุกแผนก/กลุ่มไลน์</option>
-              {deptOptions.parents.map(p => <option key={p} value={p}>▸ {p}</option>)}
-              {deptOptions.standalone.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
+            {/* แผนก/กลุ่มไลน์ → ไลน์ลูก ผ่าน <LineSelect> กลาง (linesFull ถูก scope แล้ว จึงไม่ส่ง role/sections ซ้ำ) (2026-09-07) */}
+            <LineSelect style={s.sel} lines={rootLines} value={tdDept} onChange={v => { setTdDept(v); setTdLine(''); }} placeholder="ทุกแผนก/กลุ่มไลน์" />
 
-            {lineOptions.length > 0 && (
-              <select style={s.sel} value={tdLine} onChange={e => setTdLine(e.target.value)}>
-                <option value="">{tdDept} (ทั้งหมด)</option>
-                {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
+            {childLines.length > 0 && (
+              <LineSelect style={s.sel} lines={childLines} value={tdLine} onChange={setTdLine} placeholder={`${tdDept} (ทั้งหมด)`} />
             )}
 
             <select style={s.sel} value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
@@ -1822,22 +1832,9 @@ export default function OEEAnalytics() {
             </button>
           ))}
         </div>
-        <select style={s.sel} value={selLine} onChange={e => setSelLine(e.target.value)}>
-          <option value="">ทุกไลน์</option>
-          {/* Leaf lines (no parent, no children in session list) */}
-          {lines.filter(l => !Object.values(parentChildrenMap).flat().includes(l) && !parentChildrenMap[l]).map(l => (
-            <option key={l} value={l}>{l}</option>
-          ))}
-          {/* Parent lines: show as group + individual sub-lines */}
-          {Object.entries(parentChildrenMap).filter(([p]) => lines.includes(p) || lines.some(l => parentChildrenMap[p]?.includes(l))).map(([parent, children]) => (
-            <optgroup key={parent} label={`▸ ${parent}`}>
-              <option value={parent}>{parent} (ทั้งหมด)</option>
-              {children.filter(c => lines.includes(c)).map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        {/* ทะเบียนไลน์ (scope แล้ว) ผ่าน <LineSelect> กลาง — เดิมสร้างจากชื่อใน sessions: ไลน์ที่ rename แล้วโชว์ชื่อเก่า / ไลน์ที่ยังไม่มี session หาย (2026-09-07) */}
+        <LineSelect style={s.sel} lines={linesFull} value={selLine} onChange={setSelLine} placeholder="ทุกไลน์"
+          extraGroups={[{ label: '⚠ นอกทะเบียน (ชื่อใน sessions ไม่ตรงทะเบียนไลน์)', options: trOrphanLines.map(n => ({ value: n })) }]} />
         <select style={s.sel} value={selShift} onChange={e => setSelShift(e.target.value)}>
           <option value="">ทุกกะ</option>
           <option value="day">กะเช้า</option>

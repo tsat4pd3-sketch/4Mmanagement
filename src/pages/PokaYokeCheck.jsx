@@ -4,7 +4,14 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+// picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import SelectOrFree from '../components/SelectOrFree';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+const NO_LINES = [];
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
    ทะเบียนอุปกรณ์ต่อไลน์ (pokayoke_devices) + บันทึกทดสอบด้วยชิ้น master NG (pokayoke_checks)
@@ -20,6 +27,8 @@ export default function PokaYokeCheck() {
   const { role, lineId: userLineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canRecord = can('pokayoke', 'record', role);
   const canManage = can('pokayoke', 'manage', role);
+  // 📜 ชื่อผู้ตรวจที่เคยบันทึก (Main pokayoke_checks) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const checkerHist = useColumnHistory(supabase, 'pokayoke_checks', 'checker_name');
 
   const [lines, setLines] = useState([]);
   const [selLine, setSelLine] = useState('');
@@ -34,9 +43,23 @@ export default function PokaYokeCheck() {
   useEffect(() => { setChecker(fullName || ''); }, [fullName]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       .then(({ data }) => setLines(data || []));
   }, []);
+
+  /* สถานีของไลน์ที่กำลังแก้อุปกรณ์ (Main `workstations`) — จุดงานเลือกจากทะเบียน ไม่พิมพ์เอง (audit #24 · 2026-09-07)
+     <SelectOrFree> = ระบุเองสำหรับอุปกรณ์ที่ไม่ได้อยู่ประจำสถานี · guard alive กัน stale-response ตอนสลับไลน์ */
+  const [stations, setStations] = useState([]);
+  const editLine = dEditing?.line_name || '';
+  useEffect(() => {
+    if (!editLine) { setStations([]); return; }
+    let alive = true;
+    supabase.from('workstations').select('station_name').eq('line_name', editLine).order('station_name')
+      .then(({ data }) => { if (alive) setStations([...new Set((data || []).map(w => w.station_name).filter(Boolean))]); });
+    return () => { alive = false; };
+  }, [editLine]);
+  // ครอบครัวไลน์ที่เลือก — ให้ picker ผู้ตรวจเรียงคนของไลน์ขึ้นก่อน (ไม่ตัดคนอื่น)
+  const selFam = useMemo(() => (selLine ? getLineFamilyNames(lines, selLine) : NO_LINES), [lines, selLine]);
 
   // scope ไลน์มาตรฐาน
   const visibleLines = useMemo(() => {
@@ -123,11 +146,8 @@ export default function PokaYokeCheck() {
       {/* ตัวเลือก */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
         <div><div style={lb}>ไลน์ / พื้นที่</div>
-          <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ minWidth: 200 }}>
-            {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
-              <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-            ))}
-          </select>
+          {/* <LineSelect> — visibleLines กรอง scope แล้ว (ไม่มี option ว่าง เหมือนเดิม) · 2026-09-07 */}
+          <LineSelect lines={visibleLines} value={selLine} onChange={setSelLine} placeholder={null} style={{ minWidth: 200 }} />
         </div>
         <div><div style={lb}>กะ</div>
           <select value={selShift} onChange={e => setSelShift(e.target.value)} style={{ width: 160 }}>
@@ -135,7 +155,9 @@ export default function PokaYokeCheck() {
           </select>
         </div>
         <div><div style={lb}>วันที่</div><input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} style={{ width: 150 }} /></div>
-        <div style={{ flex: '1 1 180px' /* basis 180: จอแคบตกบรรทัดใหม่ ไม่ถูกบีบเหลือ 28px (2026-09-07) */ }}><div style={lb}>ผู้ตรวจ</div><input value={checker} onChange={e => setChecker(e.target.value)} style={{ width: '100%', maxWidth: 220 }} /></div>
+        <div style={{ flex: '1 1 180px' /* basis 180: จอแคบตกบรรทัดใหม่ ไม่ถูกบีบเหลือ 28px (2026-09-07) */ }}><div style={lb}>ผู้ตรวจ</div>
+          {/* <PersonSelect> profiles+employees ของไลน์ที่เลือกขึ้นก่อน · default = ชื่อผู้ใช้ · เก็บ snapshot checker_name เหมือนเดิม · 2026-09-07 */}
+          <PersonSelect value={checker} source="both" lines={selFam} history={checkerHist} onChange={res => setChecker(res.name)} style={{ maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} /></div>
         {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>➕ เพิ่มอุปกรณ์</button>}
       </div>
 
@@ -208,7 +230,11 @@ export default function PokaYokeCheck() {
                 <div><div style={lb}>รหัส</div><input value={dEditing.code || ''} onChange={e => setDEditing(p => ({ ...p, code: e.target.value }))} style={{ width: '100%' }} /></div>
                 <div><div style={lb}>ชื่อ/หน้าที่ *</div><input value={dEditing.name || ''} onChange={e => setDEditing(p => ({ ...p, name: e.target.value }))} style={{ width: '100%' }} /></div>
               </div>
-              <div><div style={lb}>จุดงาน/ตำแหน่ง</div><input value={dEditing.station || ''} onChange={e => setDEditing(p => ({ ...p, station: e.target.value }))} style={{ width: '100%' }} /></div>
+              <div><div style={lb}>จุดงาน/ตำแหน่ง</div>
+                {/* เลือกจาก workstations ของไลน์ (ทะเบียนสถานี) — "ระบุเอง" เฉพาะอุปกรณ์ที่ไม่อยู่ประจำสถานี · ค่าเก่าที่ไม่ตรงทะเบียนโชว์ในโหมดระบุเอง · 2026-09-07 */}
+                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder="— ไม่ระบุสถานี —" freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
+                  onChange={v => setDEditing(p => ({ ...p, station: v }))} style={{ width: '100%' }} />
+              </div>
               <div><div style={lb}>วิธีทดสอบ</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder="เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน" /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10 }}>
                 <div><div style={lb}>ชิ้น master NG ที่ใช้</div><input value={dEditing.master_ref || ''} onChange={e => setDEditing(p => ({ ...p, master_ref: e.target.value }))} style={{ width: '100%' }} /></div>

@@ -14,7 +14,15 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import ProductSelect from '../components/ProductSelect';
+import PersonSelect from '../components/PersonSelect';
+import StorageLocSelect from '../components/StorageLocSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน scrap_reports/items — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import { slocValid, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { inSectionScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
@@ -78,6 +86,15 @@ export default function ScrapReport() {
 
   const [reports, setReports] = useState([]);
   const [allLines, setAllLines] = useState([]);   // production_lines เต็ม (name/section/parent) ไว้คิด scope
+  /* 📜 ค่าที่เคยบันทึกในใบรายงานของเสีย (DR) — MAT/ชื่อผู้เซ็น/รหัสคลังที่กรอกมาก่อนทะเบียนจะครบ ยังเลือกซ้ำได้
+     ห้ามล้าง/บล็อกเงียบ (คำสั่ง user 2026-09-07) · เก็บ snapshot text เหมือนเดิม */
+  const itemMatHist = useColumnHistory(supabaseDR, 'scrap_report_items', 'mat_no', { upper: true });
+  const inspectorHist = useColumnHistory(supabaseDR, 'scrap_reports', 'inspector_name');
+  const requesterHist = useColumnHistory(supabaseDR, 'scrap_reports', 'requester_name');
+  const approverQaHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_qa_name');
+  const approverPdHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_pd_name');
+  const approverGmHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_gm_name');
+  const storageHist = useColumnHistory(supabaseDR, 'scrap_reports', 'storage_location', { upper: true });
 
   // ขอบเขตไลน์ที่เห็นได้: leader → เฉพาะครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน
   // qa/manager/admin (sections ว่าง = ไม่จำกัด) → เห็นทั้งโรงงานเหมือนเดิม · null = ไม่จำกัด
@@ -103,6 +120,9 @@ export default function ScrapReport() {
   const [defectPicker, setDefectPicker] = useState(null); // itemKey
   const [sapOptions, setSapOptions] = useState(null);
   const [sapSearch, setSapSearch] = useState('');
+  // 2026-09-07 แผนก/ส่วน ในหัวใบ เลือกจากผังองค์กร (org_nodes) แทนพิมพ์เอง · ส่วน auto จากไลน์ที่เลือก
+  const orgSections = useOrgSections();
+  const deptsOf     = useOrgDepts();
   const [reqPicker, setReqPicker] = useState(null); // ใบเบิก QA ที่ดึงเข้าใบนี้ได้ | null
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
   const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
@@ -119,7 +139,7 @@ export default function ScrapReport() {
 
   useEffect(() => {
     // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setAllLines(data || []));
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setAllLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
     loadDocForms().then(() => setDocReady(true));
   }, []);
@@ -128,7 +148,7 @@ export default function ScrapReport() {
      parts_master เข้ามาด้วย (2026-08-06) — พาร์ทซื้อนอก/วัตถุดิบ (300/500) ที่ยังไม่ถูกผูกใน BOM
      ของสินค้าใดเลย เดิมไม่ขึ้นให้เลือก ต้องกรอกมือ · dedupe ด้วย mat_no (dr_products > bom_items > parts_master) */
   useEffect(() => {
-    if (!sapPicker || sapOptions !== null) return;
+    if ((!sapPicker && !editor) || sapOptions !== null) return; // 2026-09-07 โหลดเมื่อเปิดฟอร์มด้วย — ช่อง MAT SAP ในแถวเป็น picker แล้ว
     let alive = true;
     (async () => {
       const [{ data: prods }, { data: boms }, { data: macs }, pmRes] = await Promise.all([
@@ -155,7 +175,21 @@ export default function ScrapReport() {
       setSapOptions(opts);
     })();
     return () => { alive = false; };
-  }, [sapPicker, sapOptions]);
+  }, [sapPicker, sapOptions, editor]);
+
+  // 2026-09-07 พาร์ทลูก (BOM / parts_master) เป็นกลุ่มเสริมของ <ProductSelect> ในแถวรายการ — main product ให้ ProductSelect อ่านจาก Product Master เอง
+  const sapExtra = useMemo(() => (sapOptions || []).filter(o => o.source === 'sub' && o.mat_no)
+    .map(o => ({ mat_no: o.mat_no, name: o.part_name, p_no: o.part_no, sub: [o.part_no, o.part_name].filter(Boolean).join(' · ') })), [sapOptions]);
+  // แถวที่ mat_no ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน (แก้ได้เมื่อล้าง mat_no · master ผิด (badMaster) part_no ปล่อยให้กรอกเอง)
+  const sapByMat = useMemo(() => new Map((sapOptions || []).filter(o => o.mat_no).map(o => [o.mat_no.toUpperCase(), o])), [sapOptions]);
+  const pickSapForItem = (key, { mat_no, name, p_no, opt }) => {
+    // พิมพ์เอง หรือเลือกจากกลุ่ม 📜 เคยบันทึกไว้ (ไม่มีในทะเบียน) → เก็บแค่ mat_no ไม่ทับ part_no/part_name ที่กรอกไว้ (2026-09-07)
+    if (!opt || opt.history) { setItem(key, { mat_no }); return; }
+    const so = sapByMat.get(String(mat_no).toUpperCase());
+    const isSub = String(opt.id).startsWith('x:');
+    setItem(key, { mat_no, source: isSub ? 'sub' : 'main', part_no: so ? so.part_no : (p_no || mat_no), part_name: so ? so.part_name : (name || '') });
+    if (so?.badMaster) toast.error(`พาร์ทนี้ใน Product Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "${so.badMaster}" — ต้องกรอก PART NO. เอง แล้วไปแก้ที่ /products`);
+  };
 
   const sapMatches = useMemo(() => {
     const q = sapSearch.trim().toLowerCase();
@@ -299,6 +333,7 @@ export default function ScrapReport() {
   const saveReport = async () => {
     const { report, items } = editor;
     if (!report.line_name) { toast.error('เลือกไลน์'); return; }
+    if (!slocValid(report.storage_location)) { toast.error(`Storage Location ไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
     let doc_no = report.doc_no;
     if (!doc_no) doc_no = await nextDocNo(report.report_date);
     const payload = {
@@ -425,16 +460,36 @@ export default function ScrapReport() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
             <Field label="ไลน์ *">
-              <select style={inputSt} value={editor.report.line_name} onChange={e => setRep({ line_name: e.target.value })}>
-                <option value="">— เลือกไลน์ —</option>
-                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
+              {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — เลือกไลน์แล้ว "ส่วน" เติมจาก production_lines.section อัตโนมัติ */}
+              <LineSelect lines={lines} value={editor.report.line_name} style={inputSt} placeholder="— เลือกไลน์ —"
+                onChange={v => { const ln = allLines.find(l => l.name === v); setRep({ line_name: v, ...(ln?.section ? { section: ln.section } : {}) }); }} />
+            </Field>
+            {/* 2026-09-07 แผนก = <select> จากผังองค์กร (cascade จากส่วน) · ค่าเดิมที่ไม่อยู่ในผังยังโชว์ ไม่หายเงียบ */}
+            <Field label="แผนก">
+              <select style={inputSt} value={editor.report.dept || ''} onChange={e => setRep({ dept: e.target.value })}>
+                <option value="">—</option>
+                {editor.report.dept && !deptsOf(editor.report.section).includes(editor.report.dept) && <option value={editor.report.dept}>{editor.report.dept} ⚠ ไม่มีในผัง</option>}
+                {deptsOf(editor.report.section).map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </Field>
-            <Field label="แผนก"><input style={inputSt} value={editor.report.dept} onChange={e => setRep({ dept: e.target.value })} /></Field>
-            <Field label="ส่วน"><input style={inputSt} value={editor.report.section} onChange={e => setRep({ section: e.target.value })} /></Field>
-            <Field label="Storage Location"><input style={inputSt} value={editor.report.storage_location} onChange={e => setRep({ storage_location: e.target.value })} /></Field>
+            {/* 2026-09-07 ส่วน = auto จากไลน์ (อ่านอย่างเดียวเมื่อไลน์มี section) · ไลน์ไม่มี section → เลือกจากผังองค์กร */}
+            <Field label="ส่วน">
+              {(() => {
+                const lnSec = allLines.find(l => l.name === editor.report.line_name)?.section || '';
+                return (
+                  <select style={inputSt} value={editor.report.section || ''} disabled={!!lnSec}
+                    onChange={e => setRep({ section: e.target.value, dept: '' })}>
+                    <option value="">—</option>
+                    {editor.report.section && !orgSections.includes(editor.report.section) && <option value={editor.report.section}>{editor.report.section}</option>}
+                    {orgSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                  </select>
+                );
+              })()}
+            </Field>
+            {/* 2026-09-07 รหัสคลังจากทะเบียน storage_locations (พิมพ์เองได้พร้อมป้าย + ตรวจรูปแบบ slocValid ตอนบันทึก) */}
+            <Field label="Storage Location">
+              <StorageLocSelect value={editor.report.storage_location || ''} inputStyle={inputSt} history={storageHist} onChange={({ code }) => setRep({ storage_location: code })} />
+            </Field>
             <Field label="ประเภทชิ้นงาน (หัวฟอร์ม)" span3>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 6 }}>
                 {CAT_OPTS.map(([v, l]) => (
@@ -474,14 +529,26 @@ export default function ScrapReport() {
                       {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
                       {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
-                    <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px' }} value={it.part_no} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
-                    <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px' }} value={it.part_name} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
-                    <td style={tdSt}>
-                      <div style={{ display: 'flex', gap: 2 }}>
-                        <input style={{ ...inputSt, width: 96, padding: '5px 7px' }} value={it.mat_no} onChange={e => setItem(it._key, { mat_no: e.target.value })} />
-                        <button style={{ ...ghostBtn, padding: '4px 6px' }} title="เลือกจาก SAP/BOM" onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
-                      </div>
-                    </td>
+                    {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
+                        allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
+                    {(() => {
+                      const so = it.mat_no ? sapByMat.get(String(it.mat_no).toUpperCase()) : null;
+                      const lockNo = !!(so && so.part_no && !so.badMaster);
+                      const lockName = !!(so && so.part_name);
+                      return (<>
+                        <td style={tdSt}><input style={{ ...inputSt, width: 120, padding: '5px 7px', opacity: lockNo ? 0.75 : 1 }} value={it.part_no} readOnly={lockNo} title={lockNo ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
+                        <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px', opacity: lockName ? 0.75 : 1 }} value={it.part_name} readOnly={lockName} title={lockName ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
+                        <td style={tdSt}>
+                          <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                            <ProductSelect value={it.mat_no} extraOptions={sapExtra} history={itemMatHist} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined}
+                              allowFree freeHint="พาร์ทที่ไม่อยู่ในทะเบียน / master กรอกเลขเครื่อง" placeholder="MAT SAP"
+                              style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 7px', fontSize: 12 }}
+                              onChange={r => pickSapForItem(it._key, r)} />
+                            <button style={{ ...ghostBtn, padding: '4px 6px' }} title="เลือกจาก SAP/BOM" onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
+                          </div>
+                        </td>
+                      </>);
+                    })()}
                     <td style={tdSt}><input style={{ ...inputSt, width: 66, padding: '5px 7px' }} value={it.model} onChange={e => setItem(it._key, { model: e.target.value })} /></td>
                     <td style={tdSt}>
                       <select style={{ ...inputSt, width: 60, padding: '5px 4px' }} value={it.code} onChange={e => setItem(it._key, { code: e.target.value })}>
@@ -523,13 +590,13 @@ export default function ScrapReport() {
             </table>
           </div>
 
-          {/* สายอนุมัติ */}
+          {/* สายอนุมัติ — 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (role ที่ตรงช่องขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม — ตาราง DR) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14 }}>
-            <Field label="ผู้ตรวจสอบ (QC)"><input style={inputSt} value={editor.report.inspector_name} onChange={e => setRep({ inspector_name: e.target.value })} /></Field>
-            <Field label="ผู้ขออนุมัติ (หัวหน้าแผนก)"><input style={inputSt} value={editor.report.requester_name} onChange={e => setRep({ requester_name: e.target.value })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก. QA/QC)"><input style={inputSt} value={editor.report.approver_qa_name} onChange={e => setRep({ approver_qa_name: e.target.value })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก.ผลิต)"><input style={inputSt} value={editor.report.approver_pd_name} onChange={e => setRep({ approver_pd_name: e.target.value })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก.ทั่วไป)"><input style={inputSt} value={editor.report.approver_gm_name} onChange={e => setRep({ approver_gm_name: e.target.value })} /></Field>
+            <Field label="ผู้ตรวจสอบ (QC)"><PersonSelect value={editor.report.inspector_name || ''} roles={['qa']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={inspectorHist} inputStyle={inputSt} onChange={({ name }) => setRep({ inspector_name: name })} /></Field>
+            <Field label="ผู้ขออนุมัติ (หัวหน้าแผนก)"><PersonSelect value={editor.report.requester_name || ''} roles={['supervisor', 'leader']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={requesterHist} inputStyle={inputSt} onChange={({ name }) => setRep({ requester_name: name })} /></Field>
+            <Field label="ผู้อนุมัติ (ผจก. QA/QC)"><PersonSelect value={editor.report.approver_qa_name || ''} roles={['qa', 'manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverQaHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_qa_name: name })} /></Field>
+            <Field label="ผู้อนุมัติ (ผจก.ผลิต)"><PersonSelect value={editor.report.approver_pd_name || ''} roles={['manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverPdHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_pd_name: name })} /></Field>
+            <Field label="ผู้อนุมัติ (ผจก.ทั่วไป)"><PersonSelect value={editor.report.approver_gm_name || ''} roles={['manager', 'admin']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverGmHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_gm_name: name })} /></Field>
             <Field label="สถานะ">
               <select style={inputSt} value={editor.report.status} onChange={e => setRep({ status: e.target.value })} disabled={!canManage && editor.report.status === 'approved'}>
                 <option value="draft">ร่าง</option><option value="submitted">ส่งอนุมัติ</option>

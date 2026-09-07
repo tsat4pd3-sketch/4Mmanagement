@@ -2,9 +2,11 @@ import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
-import { positionOptions, positionLabel, loadPositions, levelOfPosition, maintenanceKindOfPosition, levelMeta } from '../utils/positions';
+import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
 import { can, loadPermissions } from '../utils/permissions';   // เช็คสิทธิ์ของ role ที่เลือก เพื่อเตือนเมื่อไม่ตรงกับระดับงาน
-import { MTN_TEAMS, deptNameOf, teamKeyOf } from '../utils/mtnTeams';
+import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
+import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
+import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
 
 import InfoMore from '../components/InfoMore';
@@ -47,7 +49,7 @@ const TEAM_DESC = {
 };
 
 // ตำแหน่งงานจริงในโรงงาน (แสดงตัวตน/รายงาน/ลายเซ็น) — คนละมิติกับ role ซึ่งเป็น "ชุดสิทธิ์ใช้ระบบ"
-// master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) + ตัวเลือก "อื่นๆ (พิมพ์เอง)" — ห้าม hardcode ซ้ำ
+// master list กลางใช้ร่วมทุกหน้า (src/utils/positions.js) — ห้าม hardcode ซ้ำ · ตำแหน่งใหม่เพิ่มเข้าตาราง positions ผ่านปุ่มในฟอร์ม (2026-09-07)
 // ตัวเลือกตำแหน่ง — อ่านสดจาก cache ของ master (loadPositions() เรียกตอน mount) · [{value:key,label:ไทย,level}]
 const posOpts = () => positionOptions();
 
@@ -66,7 +68,8 @@ export default function AddUser() {
   const [filterRole,    setFilterRole]    = useState('');
   const [filterSection, setFilterSection] = useState('');
   const [sort,          setSort]          = useState({ key: 'created_at', dir: 'desc' });
-  const [posCustom,     setPosCustom]     = useState(false); // ตำแหน่ง = "อื่นๆ (พิมพ์เอง)" อยู่
+  const [newPos,        setNewPos]        = useState(null);  // { key, label_th, level } = กำลังเพิ่มตำแหน่งใหม่เข้าทะเบียน positions (2026-09-07)
+  const [newPosSaving,  setNewPosSaving]  = useState(false);
   const [loading,       setLoading]       = useState(false);
   const [message,       setMessage]       = useState(null);
   const [error,         setError]         = useState(null);
@@ -79,7 +82,8 @@ export default function AddUser() {
 
   useEffect(() => {
     // master ตำแหน่งงาน (positions) — ต้องโหลดก่อน positionLabel()/levelOfPosition() ถึงได้ค่าจาก DB
-    Promise.all([loadPositions(), loadPermissions()]).then(() => setPosVer(v => v + 1));
+    // + mtn_teams (ทีมช่างซ่อม) โหลดพร้อมกัน — checkbox ทีมอ่านผ่าน pmTeamsSync() หลังโหลดเสร็จ
+    Promise.all([loadPositions(), loadPermissions(), loadPmTeams()]).then(() => setPosVer(v => v + 1));
     // ⚠️ <LineSelect> ต้องการ parent_line_name (ลำดับชั้น) + section (กรอง scope) + is_active
     //    select แค่ id,name = ได้ลิสต์แบนไม่มีลำดับชั้น (กับดักที่เขียนไว้ในหัว LineSelect.jsx)
     supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name')
@@ -127,6 +131,26 @@ export default function AddUser() {
   };
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  /* + เพิ่มตำแหน่งใหม่ → insert positions (Main) ก่อน แล้วเลือกให้ — แทนช่อง "อื่นๆ (พิมพ์เอง)" เดิม (2026-09-07)
+     ค่าที่พิมพ์เองไม่มีใน master → levelOfPosition() คืน null = คำเตือน AM/PM ไม่ทำงานเงียบๆ (Register.jsx ไม่มีช่องหนีอยู่แล้ว) */
+  const addPosition = async () => {
+    const key = String(newPos?.key || '').trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+    const label = String(newPos?.label_th || '').trim();
+    if (!key || !label) { setError('เพิ่มตำแหน่ง: กรอก key (a-z / ตัวเลข / _) และชื่อตำแหน่งภาษาไทย'); return; }
+    if (!newPos?.level) { setError('เพิ่มตำแหน่ง: เลือกระดับงานของตำแหน่งนี้'); return; }
+    if (posOpts().some(p => p.value === key)) { setF('position', key); setNewPos(null); return; }   // มีอยู่แล้ว = เลือกให้เลย
+    setNewPosSaving(true);
+    const ok = checkWrite(await supabase.from('positions').insert({ key, label_th: label, level: newPos.level, sort_order: 100 + posOpts().length }), 'เพิ่มตำแหน่ง');
+    setNewPosSaving(false);
+    if (!ok) return;
+    clearPositionsCache();
+    await loadPositions();       // ให้ positionLabel()/levelOfPosition() เห็นแถวใหม่ทันที
+    setPosVer(v => v + 1);
+    setError(null);
+    setF('position', key);
+    setNewPos(null);
+  };
   const empById = useMemo(() => Object.fromEntries(emps.map(e => [e.id, e])), [emps]);
   const lineName = (id) => lines.find(l => String(l.id) === String(id))?.name || '';
   /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — ฐานพนักงานคือค่าจริง (หัวหน้าแผนกดูแล) */
@@ -182,7 +206,7 @@ export default function AddUser() {
 
   const openCreate = () => {
     setForm(emptyForm);
-    setPosCustom(false);
+    setNewPos(null);
     setEditingId(null);
     setModalMode('create');
     setMessage(null);
@@ -207,7 +231,7 @@ export default function AddUser() {
       accountKind: u.account_kind || (u.employee_id ? 'person' : ''),
       employeeId:  u.employee_id  || '',
     });
-    setPosCustom(!!u.position && !posOpts().some(p => p.value === u.position));
+    setNewPos(null);   // ตำแหน่งนอก master ของ user เก่ายังโชว์ใน select พร้อมป้าย ⚠ (positionOptionsWith) — ไม่ต้องเปิดช่องพิมพ์เอง
     setEditingId(u.id);
     setModalMode('edit');
     setMessage(null);
@@ -757,21 +781,34 @@ export default function AddUser() {
 
               <div>
                 <label style={labelSt}>ตำแหน่งงาน (Position)</label>
-                {/* dropdown ปกติ (เปลี่ยนค่าได้เสมอ) + "อื่นๆ" เปิดช่องพิมพ์เอง — datalist เดิมพอมีค่าแล้วตัวเลือกอื่นหาย */}
-                <select
-                  value={posCustom ? '__custom__' : form.position}
-                  onChange={e => {
-                    if (e.target.value === '__custom__') { setPosCustom(true); setF('position', ''); }
-                    else { setPosCustom(false); setF('position', e.target.value); }
-                  }}>
-                  <option value="">— ไม่ระบุ —</option>
-                  {posOpts().map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-                  <option value="__custom__">อื่นๆ (พิมพ์เอง)...</option>
-                </select>
-                {posCustom && (
-                  <input type="text" autoFocus placeholder="พิมพ์ตำแหน่ง เช่น ผู้ช่วยหัวหน้าแผนก"
-                    value={form.position} onChange={e => setF('position', e.target.value)}
-                    style={{ marginTop: 6 }} />
+                {/* 2026-09-07: เลิกช่อง "อื่นๆ (พิมพ์เอง)" — ตำแหน่งนอก master ไม่มีระดับงาน (คำเตือน AM/PM เงียบ)
+                    ตำแหน่งใหม่ให้เพิ่มเข้าทะเบียน positions ก่อนแล้วเลือก · ค่าเก่าที่เคยพิมพ์ไว้ยังโชว์ (positionOptionsWith) ไม่หายตอนบันทึก */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select value={form.position} onChange={e => setF('position', e.target.value)} style={{ flex: 1, minWidth: 0 }}>
+                    <option value="">— ไม่ระบุ —</option>
+                    {positionOptionsWith(form.position).map(p => (
+                      <option key={p.value} value={p.value}>{p.label}{p.level == null && !posOpts().some(o => o.value === p.value) ? ' ⚠ นอกทะเบียน' : ''}</option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => setNewPos(v => (v ? null : { key: '', label_th: '', level: 'staff' }))}
+                    style={{ whiteSpace: 'nowrap', padding: '0 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    {newPos ? '✕ ยกเลิก' : '+ เพิ่มตำแหน่งใหม่'}
+                  </button>
+                </div>
+                {newPos && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr auto', gap: 6, marginTop: 6, alignItems: 'center', padding: 8, background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
+                    <input type="text" autoFocus placeholder="key (a-z/_) เช่น asst_head" value={newPos.key}
+                      onChange={e => setNewPos(p => ({ ...p, key: e.target.value }))} style={{ fontFamily: 'monospace' }} />
+                    <input type="text" placeholder="ชื่อตำแหน่ง (ไทย) เช่น ผู้ช่วยหัวหน้าแผนก" value={newPos.label_th}
+                      onChange={e => setNewPos(p => ({ ...p, label_th: e.target.value }))} />
+                    <select value={newPos.level} onChange={e => setNewPos(p => ({ ...p, level: e.target.value }))} title="ระดับงาน — ใช้ตัดสินว่าใครทำ AM ใครทำ PM">
+                      {POSITION_LEVELS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
+                    </select>
+                    <button type="button" onClick={addPosition} disabled={newPosSaving}
+                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
+                      {newPosSaving ? '...' : 'บันทึกตำแหน่ง'}
+                    </button>
+                  </div>
                 )}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                   ตำแหน่งจริงในโรงงาน — ใช้แสดงตัวตน/รายงาน/ลายเซ็น <b>ไม่มีผลต่อสิทธิ์</b>
@@ -871,7 +908,9 @@ export default function AddUser() {
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO)</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
-                    {MTN_TEAMS.map(t => {
+                    {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) แทน MTN_TEAMS hardcode · ค่าที่เก็บ = key เสมอ */}
+                    {pmTeamsSync().map(team => {
+                      const t = team.key;
                       const checked = (form.mtnTeams || []).some(x => teamKeyOf(x) === t);
                       return (
                         <label key={t} style={{
@@ -884,7 +923,7 @@ export default function AddUser() {
                           <input type="checkbox" checked={checked}
                             onChange={() => setF('mtnTeams', checked ? form.mtnTeams.filter(x => teamKeyOf(x) !== t) : [...form.mtnTeams, t])}
                             style={{ margin: 0 }} />
-                          {deptNameOf(t)}
+                          {team.icon ? `${team.icon} ` : ''}{deptNameOf(t)}
                         </label>
                       );
                     })}

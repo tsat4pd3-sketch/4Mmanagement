@@ -9,9 +9,25 @@ import { toast } from './Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { TOOL_KIND, TOOL_STATUS, STEP_STATUS, LIGHT, toolingRollup, stepLight, ganttRange, barPos, proposeSteps } from '../utils/npi';
 import { inp, card, btn, ghost, Field, Pill, LightDot, MetaSelect, Modal } from './NpiUi';
+import PersonSelect from './PersonSelect';
+import SearchSelect from './SearchSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import { appendHistoryOptions } from '../utils/pickerOptions';
 
 export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged }) {
+  // ตัวเลือกชุดแม่พิมพ์ (DR die_sets) สำหรับ SearchSelect — die_set_code เป็น join key กับ /die-registry ห้ามพิมพ์เอง (2026-09-07)
+  const dieBase = useMemo(() => (dieSets || []).map(d => ({
+    id: d.set_code, label: d.set_code, sub: [d.part_no, d.model].filter(Boolean).join(' · '), keywords: `${d.part_no || ''} ${d.model || ''}`,
+  })), [dieSets]);
+  // 📜 die_set_code ที่เคยบันทึกไว้ (Main npi_tooling_plans) — ชุดที่ /die-registry ยังไม่ลง/รหัสเก่า ยังเลือกซ้ำได้ ไม่ถูกล้างเงียบ
+  // (SearchSelect ไม่ allowFree ล้างค่านอกลิสต์เมื่อปิด) · ยังเก็บเป็น text เหมือนเดิม (2026-09-07)
+  const dieHist = useColumnHistory(supabase, 'npi_tooling_plans', 'die_set_code', { upper: true });
+  const ownerHist = useColumnHistory(supabase, 'npi_tooling_plans', 'owner_name');
+  const respHist = useColumnHistory(supabase, 'npi_tooling_steps', 'responsible_name');
   const [planModal, setPlanModal] = useState(null);
+  const dieOpts = useMemo(() => appendHistoryOptions(dieBase, { history: dieHist, current: planModal?.die_set_code || '', keyOf: (v) => String(v || '').trim().toUpperCase() }), [dieBase, dieHist, planModal?.die_set_code]);
+  // รหัสที่เก็บจริงของ option (history = label · ทะเบียน = id) — ใช้ทั้งตอนหา value ที่เลือกอยู่และตอนเขียนกลับ state
+  const dieCodeOf = (o) => (o.history ? o.label : o.id);
   const [stepModal, setStepModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [openIds, setOpenIds] = useState(() => new Set());
@@ -165,8 +181,14 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
             <Field label="แผนส่งมอบ" hint="เว้นว่าง = ใช้วันจบขั้นสุดท้าย"><input type="date" style={inp} value={planModal.plan_end} onChange={e => setPlanModal({ ...planModal, plan_end: e.target.value })} /></Field>
             <Field label="เริ่มจริง"><input type="date" style={inp} value={planModal.actual_start} onChange={e => setPlanModal({ ...planModal, actual_start: e.target.value })} /></Field>
             <Field label="ส่งมอบจริง"><input type="date" style={inp} value={planModal.actual_end} onChange={e => setPlanModal({ ...planModal, actual_end: e.target.value })} /></Field>
-            <Field label="ผูกชุดแม่พิมพ์ (die_sets) หลัง transfer" hint="ทะเบียนที่ /die-registry"><input style={inp} value={planModal.die_set_code} onChange={e => setPlanModal({ ...planModal, die_set_code: e.target.value })} list="npi-die-sets" placeholder="set_code" /></Field>
-            <Field label="ผู้รับผิดชอบ"><input style={inp} value={planModal.owner_name} onChange={e => setPlanModal({ ...planModal, owner_name: e.target.value })} list="npi-users" /></Field>
+            <Field label="ผูกชุดแม่พิมพ์ (die_sets) หลัง transfer" hint="ทะเบียนที่ /die-registry">
+              <SearchSelect value={dieOpts.find(o => dieCodeOf(o) === planModal.die_set_code)?.id || ''} text={planModal.die_set_code || ''}
+                options={dieOpts} placeholder="ค้น set_code / part / model…" emptyText="ไม่พบชุดแม่พิมพ์ — ลงทะเบียนที่ /die-registry ก่อน"
+                inputStyle={{ fontFamily: 'monospace' }}
+                onChange={({ text, opt }) => setPlanModal({ ...planModal, die_set_code: opt ? dieCodeOf(opt) : text })} />
+            </Field>
+            {/* ผู้รับผิดชอบ = user ระบบ → PersonSelect แทน datalist npi-users (2026-09-07) */}
+            <Field label="ผู้รับผิดชอบ"><PersonSelect value={planModal.owner_name || ''} history={ownerHist} onChange={r => setPlanModal({ ...planModal, owner_name: r.name })} /></Field>
             <Field label="หมายเหตุ" span={2}><input style={inp} value={planModal.note} onChange={e => setPlanModal({ ...planModal, note: e.target.value })} /></Field>
           </div>
           {!planModal.id && (
@@ -175,7 +197,6 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
               สร้างขั้นงานจากแม่แบบชนิด "{TOOL_KIND[planModal.tool_kind]?.label}" ({stepTemplates.filter(s => s.tool_kind === planModal.tool_kind).length} ขั้น · วันแผนต่อเนื่องจากวันเริ่ม — แก้ทีหลังได้)
             </label>
           )}
-          <datalist id="npi-die-sets">{dieSets.map(d => <option key={d.set_code} value={d.set_code}>{d.part_no || ''} {d.model || ''}</option>)}</datalist>
         </Modal>
       )}
 
@@ -191,7 +212,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
             <Field label="เริ่มจริง"><input type="date" style={inp} value={stepModal.actual_start} onChange={e => setStepModal({ ...stepModal, actual_start: e.target.value })} /></Field>
             <Field label="จบจริง"><input type="date" style={inp} value={stepModal.actual_end} onChange={e => setStepModal({ ...stepModal, actual_end: e.target.value })} /></Field>
             <Field label="สถานะ"><MetaSelect value={stepModal.status} onChange={v => setStepModal({ ...stepModal, status: v, progress_pct: v === 'completed' ? 100 : stepModal.progress_pct })} meta={STEP_STATUS} /></Field>
-            <Field label="ผู้รับผิดชอบ"><input style={inp} value={stepModal.responsible_name} onChange={e => setStepModal({ ...stepModal, responsible_name: e.target.value })} list="npi-users" /></Field>
+            <Field label="ผู้รับผิดชอบ"><PersonSelect value={stepModal.responsible_name || ''} history={respHist} onChange={r => setStepModal({ ...stepModal, responsible_name: r.name })} /></Field>
             <Field label="หมายเหตุ" span={2}><input style={inp} value={stepModal.note} onChange={e => setStepModal({ ...stepModal, note: e.target.value })} /></Field>
           </div>
         </Modal>

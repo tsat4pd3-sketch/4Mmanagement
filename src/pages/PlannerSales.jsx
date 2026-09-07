@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
+import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
 import { baseOfPart } from '../utils/matResolve';
 import { toast } from '../components/Toast';
@@ -1002,11 +1003,6 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     .map(m => ({ mat: m, order: forecast[m], part_name: null }))
     .sort((a, b) => b.order - a.order), [forecast, drMap, pmMap, ksMap]);
 
-  // ตัวเลือกเลข SAP ภายในสำหรับจับคู่ (จาก dr_products ที่ active)
-  const sapOptions = useMemo(() => Object.entries(drMap)
-    .map(([mat, v]) => ({ mat, name: v.name || '', line: v.line_name || '' }))
-    .sort((a, b) => a.mat.localeCompare(b.mat)), [drMap]);
-
   // auto-suggest จับคู่ด้วย base part (revision ต่างกันก็จับได้) — customerPart → [{sap,name}]
   const suggestByCust = useMemo(() => {
     const byBase = {};
@@ -1142,8 +1138,11 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
   // (#1) จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน: เขียน p_no ให้ dr_products (รอบถัดไป) + re-point forecast เดิม
   const doMapping = async () => {
-    const pairs = Object.entries(mapSel).filter(([, sap]) => sap);
-    if (!pairs.length) { toast.info('ยังไม่ได้เลือกคู่ SAP'); return; }
+    // เขียนเฉพาะคู่ที่เลข SAP มีจริงใน Product Master — เลขที่ไม่มีจะ update dr_products 0 แถวเงียบ แต่ยัง re-point forecast ไป MAT ผี (2026-09-07)
+    const pairs = Object.entries(mapSel).filter(([, sap]) => sap && drMap[sap]);
+    const skipped = Object.values(mapSel).filter(v => v && !drMap[v]).length;
+    if (!pairs.length) { toast.info(skipped ? 'เลข SAP ที่เลือกไม่มีใน Product Master — เลือกจากลิสต์' : 'ยังไม่ได้เลือกคู่ SAP'); return; }
+    if (skipped) toast.info(`ข้าม ${skipped} พาร์ทที่เลข SAP ไม่มีใน Product Master`);
     setMapping(true);
     try {
       for (const [cust, sap] of pairs) {
@@ -1408,9 +1407,10 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700 }}>{u.mat}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(u.order)}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)' }}>
-                        <input list="sap-opts" value={mapSel[u.mat] || ''} placeholder="พิมพ์เลข SAP หรือชื่อ…"
-                          onChange={e => setMapSel(s => ({ ...s, [u.mat]: e.target.value.trim() }))}
-                          style={{ ...inputSt, width: '100%', padding: '5px 8px', fontSize: 12,
+                        {/* picker กลาง Product Master (ค้น MAT/ชื่อ/P/N/ไลน์) — ไม่รับเลขนอกทะเบียน (2026-09-07 แทน datalist) */}
+                        <ProductSelect value={mapSel[u.mat] || ''} placeholder="ค้นเลข SAP / ชื่อ…"
+                          onChange={({ mat_no }) => setMapSel(s => ({ ...s, [u.mat]: mat_no }))}
+                          inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12,
                             borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? '#22c55e' : mapSel[u.mat] ? '#ef4444' : 'var(--border)' }} />
                         {mapSel[u.mat] && (drMap[mapSel[u.mat]]
                           ? <div style={{ fontSize: 10.5, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
@@ -1432,9 +1432,6 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                   ))}
                 </tbody>
               </table>
-              <datalist id="sap-opts">
-                {sapOptions.map(o => <option key={o.mat} value={o.mat}>{o.name}{o.line ? ` · ${o.line}` : ''}</option>)}
-              </datalist>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>* พาร์ทที่ยังไม่มีเลข SAP ในระบบเลย ต้องไปเพิ่มที่ Product Master ก่อน แล้วค่อยกลับมาจับคู่</div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>

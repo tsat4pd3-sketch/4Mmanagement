@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { proposeRoutingFromPfc, resolveMatForSet, toRoutingRows } from '../utils/peRouting';
+import LineSelect from './LineSelect';
 
 const inp = { fontSize: 12, padding: '4px 7px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' };
 const KIND_TH = { process: '🔧 ขั้นผลิต', inspection: '🔍 จุดตรวจ' };
@@ -57,7 +58,6 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
 
   const included = useMemo(() => steps.filter(s => s.include).length, [steps]);
   const setStep = (i, patch) => setSteps(prev => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)));
-  const lineNames = useMemo(() => [...new Set(lines.map(l => l.name))], [lines]);
   const matched = matNo ? products?.find(p => p.mat_no === matNo) : null;
 
   const confirm = async () => {
@@ -170,8 +170,9 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
                     <input value={s.name} onChange={e => setStep(i, { name: e.target.value })} style={{ ...inp, width: 220 }} />
                   </td>
                   <td style={{ padding: '4px 6px', borderTop: '1px solid var(--border)' }}>
-                    <input value={s.line_name || ''} onChange={e => setStep(i, { line_name: e.target.value })}
-                      list="pe-rt-lines" placeholder="—" style={{ ...inp, width: 130 }} />
+                    {/* 🔴 part_routings.line_name = คีย์ที่ VSM ดึง CT/OEE จาก production_sessions — <LineSelect> แทน datalist (2026-09-07) */}
+                    <LineSelect lines={lines} value={s.line_name || ''} placeholder="—" style={{ ...inp, width: 150 }}
+                      onChange={v => setStep(i, { line_name: v })} />
                   </td>
                   <td style={{ padding: '4px 8px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{s.machine_no || '—'}</td>
                   <td style={{ padding: '4px 6px', borderTop: '1px solid var(--border)' }}>
@@ -182,7 +183,6 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
               ))}
             </tbody>
           </table>
-          <datalist id="pe-rt-lines">{lineNames.map(n => <option key={n} value={n} />)}</datalist>
         </div>
 
         {skipped.length > 0 && (

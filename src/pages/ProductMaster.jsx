@@ -13,7 +13,11 @@ import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import CustomerSelect from '../components/CustomerSelect';
+import ProductSelect from '../components/ProductSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
@@ -206,6 +210,8 @@ export default function ProductMaster() {
   const [items,   setItems]   = useState([]);
   const [lines,   setLines]   = useState([]);
   const [kanbanStds, setKanbanStds] = useState([]);
+  // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc (product_id null) ยังเลือกแก้ qty ซ้ำได้ (2026-09-07)
+  const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
   const [familyTotals, setFamilyTotals] = useState({});
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
   const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
@@ -242,7 +248,8 @@ export default function ProductMaster() {
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
-      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
+      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
       supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
@@ -280,12 +287,6 @@ export default function ProductMaster() {
       // รูปเติมเฉพาะเมื่อฟอร์มยังไม่มี (ไม่ทับรูปที่ผู้ใช้เพิ่งเลือก)
       setForm(f => ({ ...f, mat_no: mat, name: p.part_name || f.name, image_url: f.image_url || p.image_url || '' }));
       toast.info('เติม MAT + ชื่อจากทะเบียนกลางแล้ว — กรอกรายละเอียดฝั่งผลิต (ไลน์/CT/ลูกค้า) ต่อได้เลย');
-    } else if (partsPickFor === 'kanban') {
-      setKanbanForm(f => ({
-        ...f, mat_no: mat,
-        // ค่าตั้งต้น 1 ใบ Kanban = 1 packaging (qty_per_pkg) — ถ้าผู้ใช้กรอกค่าอื่นไว้แล้วไม่ทับ
-        qty_per_kanban: (!f.qty_per_kanban || Number(f.qty_per_kanban) === 1) && p.qty_per_pkg > 0 ? p.qty_per_pkg : f.qty_per_kanban,
-      }));
     }
     setPartsPickFor(null);
   };
@@ -551,6 +552,8 @@ export default function ProductMaster() {
 
   const activeCount = items.filter(i => i.is_active).length;
   const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort();
+  // ชื่อไลน์ที่สินค้าใช้อยู่แต่ไม่มีในทะเบียนไลน์ — ต้องยังกรองได้ (ห้ามหายเงียบ) แยกกลุ่ม ⚠ ใน <LineSelect> (2026-09-07)
+  const orphanLineOpts = uniqueLines.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n }));
 
   /* ── group visibleFamilies by part name to collapse same-name/diff-customer ── */
   const visibleGroups = useMemo(() => {
@@ -723,10 +726,10 @@ export default function ProductMaster() {
           placeholder="🔍 ชื่อ / MAT.NO / P.NO / ลูกค้า..."
           value={search} onChange={e => setSearch(e.target.value)}
         />
-        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', padding: '8px 10px' }}>
-          <option value="">ทุกไลน์</option>
-          {uniqueLines.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
+        {/* 2026-09-07: กรองไลน์ผ่าน <LineSelect> (ลำดับชั้น/ตัดปลดระวาง) แทนลิสต์แบนจากแถวสินค้า */}
+        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
+          extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]}
+          style={{ ...inputSt, width: 'auto', padding: '8px 10px' }} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
           <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
           แสดงประวัติ EC
@@ -1079,7 +1082,12 @@ export default function ProductMaster() {
                 </Field>
               )}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Customer"><input value={form.customer} onChange={e => setForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputSt} /></Field>
+                <Field label="Customer">
+                  {/* 2026-09-07: เลือกจากรายชื่อลูกค้าที่ derive จาก Product Master ∪ ship_to_plants (<CustomerSelect>) —
+                      EDI/forecast/claim/NPI join ด้วยสตริงนี้ สะกดต่างตัวเดียว = ลูกค้าแตกเป็น 2 ราย · ลูกค้าใหม่ยังพิมพ์ได้พร้อมป้าย */}
+                  <CustomerSelect value={form.customer} onChange={({ customer }) => setForm(f => ({ ...f, customer }))}
+                    placeholder="เช่น FORD" inputStyle={{ background: 'var(--bg)', fontFamily: 'var(--font-body)' }} />
+                </Field>
                 <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputSt} /></Field>
               </div>
               <Field label="ประเภทกระบวนการ *">
@@ -1101,13 +1109,9 @@ export default function ProductMaster() {
                 </Field>
               )}
               <Field label="ไลน์ผลิตหลัก">
-                <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inputSt}>
-                  <option value="">ไม่ระบุ</option>
-                  {/* จัดชั้นตามผัง (§5.3 ข้อ 8) — ไลน์แม่ยังเลือกได้ (HYDROFORM มีสินค้าผูกตัวแม่) */}
-                  {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
-                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                  ))}
-                </select>
+                {/* 2026-09-07: ผ่าน <LineSelect> (ลำดับชั้น §5.3 ข้อ 8 · ไลน์ปลดระวางไม่โผล่แต่ค่าที่ตั้งไว้ยังเห็น)
+                    — ไลน์แม่ยังเลือกได้ (HYDROFORM มีสินค้าผูกตัวแม่) */}
+                <LineSelect lines={lines} value={form.line_name} onChange={v => setForm(f => ({ ...f, line_name: v }))} placeholder="ไม่ระบุ" style={inputSt} />
               </Field>
               <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
                 <MatSearchField value={form.pair_mat_no} onChange={v => setForm(f => ({ ...f, pair_mat_no: v }))}
@@ -1211,11 +1215,16 @@ export default function ProductMaster() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input autoFocus value={kanbanForm.mat_no} onChange={e => setKanbanForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100335" style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700 }} />
-                    <button type="button" onClick={() => setPartsPickFor('kanban')} title="เลือกจากทะเบียนกลาง Parts Master"
-                      style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
-                  </div>
+                  {/* 2026-09-07: เลือกจาก Product Master ผ่าน <ProductSelect> (ไม่ allowFree — Kanban Std ของสินค้าที่ไม่มีจริงไม่มีความหมาย)
+                      เดิมพิมพ์เอง + ปุ่ม 🗂 parts_master · เลือกแล้วเติม qty ตั้งต้นจาก qty_per_pkg ของ Parts Master เหมือนเดิม */}
+                  <ProductSelect value={kanbanForm.mat_no} products={items} placeholder="ค้น MAT / ชื่อ / P/N…" history={kanbanMatHist}
+                    inputStyle={{ background: 'var(--bg)', fontWeight: 700 }}
+                    onChange={({ mat_no }) => setKanbanForm(f => {
+                      const pm = pmParts.find(p => (p.mat_no || '').trim().toUpperCase() === mat_no);
+                      // ค่าตั้งต้น 1 ใบ Kanban = 1 packaging (qty_per_pkg) — ถ้าผู้ใช้กรอกค่าอื่นไว้แล้วไม่ทับ
+                      const qty = (!f.qty_per_kanban || Number(f.qty_per_kanban) === 1) && pm?.qty_per_pkg > 0 ? pm.qty_per_pkg : f.qty_per_kanban;
+                      return { ...f, mat_no, qty_per_kanban: qty };
+                    })} />
                   {kanbanForm.mat_no && pmParts.length > 0 && !matInRegistry(kanbanForm.mat_no) && (
                     <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>⚠ ยังไม่มีในทะเบียนกลาง Parts Master</div>
                   )}
@@ -1367,6 +1376,7 @@ const TD = ({ children, style }) => (
 
 function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
+  const plLines = useProductionLines(); // ทะเบียนไลน์ (LINE_COLUMNS) สำหรับ <LineSelect> ช่อง source_line (2026-09-07)
   const [products, setProducts]     = useState([]);
   const [selProduct, setSelProduct] = useState(null);
   const [items, setItems]           = useState([]);
@@ -1464,8 +1474,6 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     return has ? prev.filter(x => x.part.id !== part.id) : [...prev, { part, qty_per_unit: 1 }];
   });
   const setPickQty = (partId, qty) => setPickerSel(prev => prev.map(x => x.part.id === partId ? { ...x, qty_per_unit: qty } : x));
-
-  const lineNames = useMemo(() => [...new Set((products || []).map(p => p.line_name).filter(Boolean))].sort(), [products]);
 
   /* ═══ 🏬 ตัวเลือกรหัสคลังในโมดัลแก้ไข ═══
      ทะเบียน + รหัสที่เคยถูกใช้ใน BOM แต่ยังไม่ลงทะเบียน (**ห้ามซ่อน** ไม่งั้นหาตัวที่ต้องแก้ไม่เจอ) */
@@ -1901,10 +1909,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ผลิตที่ไลน์ (source line — พาร์ทผลิตเอง 200)</label>
-                <input style={inputSt} list="bom-source-lines" value={form.source_line} onChange={e => setForm(f => ({ ...f, source_line: e.target.value }))} placeholder="เว้นว่าง = ของซื้อ/วัตถุดิบ (ดึงจากสโตร์)" />
-                <datalist id="bom-source-lines">
-                  {lineNames.map(l => <option key={l} value={l} />)}
-                </datalist>
+                {/* 2026-09-07: source_line เป็น join key (Heijunka/StoreLotQueue/FlowTower/VSM จัดกลุ่มด้วยชื่อนี้) → เลือกจากทะเบียนไลน์
+                    ผ่าน <LineSelect> ห้ามพิมพ์เอง (HDF-1 vs HDF1 = ไลน์ผีเงียบๆ) · ว่าง = ของซื้อ/วัตถุดิบ */}
+                <LineSelect lines={plLines} value={form.source_line} onChange={v => setForm(f => ({ ...f, source_line: v }))}
+                  placeholder="เว้นว่าง = ของซื้อ/วัตถุดิบ (ดึงจากสโตร์)" style={inputSt} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>

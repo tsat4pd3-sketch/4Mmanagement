@@ -8,6 +8,7 @@ import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisi
 import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
 
 import InfoMore from '../components/InfoMore';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
@@ -101,6 +102,8 @@ export default function OrgSetup() {
   };
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
+  // รหัส cost center ที่มีใช้อยู่แล้ว (ผัง + ไลน์) — datalist ให้ reuse รหัสเดิม ไม่พิมพ์เพี้ยน (ยังไม่มี master cost_centers) 2026-09-07
+  const ccCodes = useMemo(() => [...new Set([...nodes.map(n => n.cost_center), ...lines.map(l => l.cost_center)].map(c => String(c || '').trim()).filter(Boolean))].sort(), [nodes, lines]);
   const lineCostCenter = (node) => {
     if (node?.kind === 'line' && node.ref_line_id) { const pl = lineById[String(node.ref_line_id)]; if (pl) return pl.cost_center || ''; }
     return node?.cost_center || '';
@@ -382,9 +385,10 @@ export default function OrgSetup() {
                 </InfoMore>
                 {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} readOnly={!sgEdit} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4, ...(sgEdit ? null : { opacity: 0.6 }) }} /></div>
-                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><input type="text" value={sgTA} readOnly={!sgEdit} onChange={e => setSgTA(e.target.value)} style={{ marginTop: 4, ...(sgEdit ? null : { opacity: 0.6 }) }} /></div>
-                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><input type="text" value={sgHRM} readOnly={!sgEdit} onChange={e => setSgHRM(e.target.value)} style={{ marginTop: 4, ...(sgEdit ? null : { opacity: 0.6 }) }} /></div>
+                  {/* 2026-09-07: ผู้เซ็นเลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — HR/TA อาจไม่มีบัญชี ESM · เก็บ snapshot ชื่อเหมือนเดิม) */}
+                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><PersonSelect value={sgManager} onChange={({ name }) => setSgManager(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
+                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><PersonSelect value={sgTA} onChange={({ name }) => setSgTA(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
+                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><PersonSelect value={sgHRM} onChange={({ name }) => setSgHRM(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
                 </div>
               </div>
             );
@@ -432,7 +436,11 @@ export default function OrgSetup() {
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>🔗 single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
                   </>
                 ) : (
-                  <input type="text" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
+                  <>
+                    {/* 2026-09-07: datalist รหัสที่มีใช้แล้วในผัง/ไลน์ — reuse รหัสเดิม ไม่พิมพ์เพี้ยน (cost_center_rates join ด้วยสตริงนี้) */}
+                    <input type="text" list="org-cc-codes" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
+                    <datalist id="org-cc-codes">{ccCodes.map(c => <option key={c} value={c} />)}</datalist>
+                  </>
                 )}
               </div>
               {['section', 'department'].includes(modal.kind) && (

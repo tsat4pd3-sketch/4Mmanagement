@@ -17,6 +17,10 @@ import WipBetweenSteps from '../components/WipBetweenSteps';
 import StorageZonePanel from '../components/StorageZonePanel';
 import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
+import ProductSelect from '../components/ProductSelect';
+import useProducts from '../utils/useProducts';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 import StockMoveToChild from '../components/StockMoveToChild';
 import { checkStockPlacement } from '../utils/moveTargets';
 import { visibleInterval } from '../utils/usePolling';
@@ -78,6 +82,8 @@ function StockTab({ role, scope }) {
   const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
   const [products, setProducts] = useState([]);     // [{id, name, mat_no, line_name}]
+  // 📜 MAT ที่เคยบันทึกใน line_stock_transactions (DR) — เคยรับ/จ่ายไปแล้วแต่ยังไม่อยู่ในทะเบียนใด ยังเลือกซ้ำได้ (save ยังถามยืนยันเหมือนพิมพ์เอง) · 2026-09-07
+  const txnMatHist = useColumnHistory(supabaseDR, 'line_stock_transactions', 'mat_no', { upper: true });
   const [productBom, setProductBom] = useState({}); // product_id → [{mat_no, part_name}]
   const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
 
@@ -110,7 +116,6 @@ function StockTab({ role, scope }) {
   const [showForm,   setShowForm]   = useState(false);
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
-  const [matSearch,  setMatSearch]  = useState('');
   /* วัตถุดิบ/งาน blank ที่ถูกจ่ายเข้าไลน์ขั้นถัดไป = ต้นเหตุที่ของไปกองผิดแผนก
      ⚠️ ต้อง select `line_type` มาด้วย ไม่งั้นเงียบตลอด (บั๊กเดิม: ตัวเตือน flow ไม่เคยทำงานเลย) */
   const placementWarn = useMemo(() => {
@@ -240,8 +245,9 @@ function StockTab({ role, scope }) {
       return;
     }
     const isAdjustDown = form.type === 'adjust' && form.dir === 'down';
-    // กันสร้างของผี: MAT ที่ไม่มีในฐาน (parts master/BOM) ต้องยืนยันก่อน
-    if (!knownMats.has(matUpper) && !bomMap[matUpper]) {
+    // กันสร้างของผี: MAT ที่ไม่มีในฐาน (Product Master / parts master / BOM) = ค่าที่พิมพ์เองใน picker ต้องยืนยันก่อน
+    // (2026-09-07: MAT ที่เลือกจาก Product Master ไม่ต้องยืนยันซ้ำ — picker ยืนยันทะเบียนให้แล้ว)
+    if (!knownMats.has(matUpper) && !bomMap[matUpper] && !drMats.has(matUpper)) {
       if (!window.confirm(`MAT ${matUpper} ไม่มีในฐานข้อมูล (Parts Master / BOM)\nยืนยันสร้างรายการ stock ใหม่?`)) return;
     }
     // กัน stock ติดลบเงียบๆ สำหรับรายการที่หักออก (คืน Store / ปรับลด)
@@ -276,11 +282,14 @@ function StockTab({ role, scope }) {
     if (showTxn) loadTxns();
   };
 
-  const matOptions = useMemo(() => {
-    const q = matSearch.trim().toUpperCase();
-    if (!q) return [];
-    return Object.entries(bomMap).filter(([m]) => m.includes(q)).slice(0, 8);
-  }, [matSearch, bomMap]);
+  // MAT ของ Product Master ที่ active (จอนี้โหลดไว้แล้ว) — ใช้ตัดสินว่า MAT ที่กรอกเป็น "ของพิมพ์เอง" หรือไม่
+  const drMats = useMemo(() => new Set(products.map(p => String(p.mat_no || '').toUpperCase()).filter(Boolean)), [products]);
+  // พาร์ทลูกที่ไม่อยู่ใน dr_products (BOM / parts_master) → กลุ่มแยกใน <ProductSelect> (2026-09-07 แทน dropdown ทำเอง 8 แถว)
+  const matExtraOptions = useMemo(() => {
+    const out = Object.entries(bomMap).map(([m, name]) => ({ mat_no: m, name, group: '🧩 พาร์ทลูก (BOM)' }));
+    knownMats.forEach(m => { if (m && !bomMap[m]) out.push({ mat_no: m, name: '', group: '🧰 ทะเบียนพาร์ท (parts_master)' }); });
+    return out;
+  }, [bomMap, knownMats]);
 
   /* กรอง 2 ชั้น: ไลน์/คลัง → ฝั่งงาน (ขาเข้า Store 2xx/3xx/5xx · ขาออก Warehouse FG 1xx)
      ตัวนับบนชิปต้องนับ "หลังกรองไลน์แล้ว" เพื่อให้เลขตรงกับที่ตาข้างล่างเห็นจริง */
@@ -683,27 +692,15 @@ function StockTab({ role, scope }) {
                 )}
               </div>
 
-              {/* Mat No. with autocomplete */}
-              <div style={{ position:'relative' }}>
+              {/* MAT SAP — picker กลาง Product Master ∪ BOM ∪ parts_master (2026-09-07 แทน input+dropdown ทำเอง)
+                  พิมพ์เองได้ (พาร์ทลูกที่ยังไม่เข้าทะเบียนมีจริง — "กันสร้างของผี") แต่ค่าพิมพ์เองติดป้าย + ต้องยืนยันตอนบันทึก */}
+              <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>MAT SAP *</label>
-                <input style={{ ...inputSt, fontFamily:'monospace', fontWeight:700 }}
-                  value={form.mat_no}
-                  onChange={e => { const v = e.target.value.toUpperCase(); setForm(f => ({ ...f, mat_no:v, part_name: bomMap[v] || f.part_name })); setMatSearch(v); }}
-                  placeholder="พิมพ์เพื่อค้นหา..."
-                />
-                {matOptions.length > 0 && (
-                  <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:8, zIndex:100, maxHeight:160, overflowY:'auto' }}>
-                    {matOptions.map(([m, name]) => (
-                      <div key={m} onClick={() => { setForm(f => ({ ...f, mat_no:m, part_name:name })); setMatSearch(''); }}
-                        style={{ padding:'8px 12px', cursor:'pointer', fontSize:13, display:'flex', gap:10, alignItems:'center' }}
-                        onMouseEnter={e => e.currentTarget.style.background='var(--bg2)'}
-                        onMouseLeave={e => e.currentTarget.style.background=''}>
-                        <span style={{ fontFamily:'monospace', fontWeight:700, color:'#0ea5e9' }}>{m}</span>
-                        <span style={{ color:'var(--muted)', fontSize:12 }}>{name}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <ProductSelect value={form.mat_no} allowFree extraOptions={matExtraOptions} history={txnMatHist}
+                  lines={form.line_name ? [form.line_name] : undefined}
+                  placeholder="ค้น MAT / ชื่อพาร์ท…" freeHint="MAT นอกทะเบียนต้องยืนยันอีกครั้งตอนบันทึก"
+                  inputStyle={{ fontWeight:700 }}
+                  onChange={({ mat_no, name }) => setForm(f => ({ ...f, mat_no, part_name: name || bomMap[mat_no] || f.part_name }))} />
               </div>
 
               <div>
@@ -1263,6 +1260,12 @@ function DeliveryTimeBoardTab() {
    สแกนปิดออเดอร์ปุ๊บ ผลผลิตถูก post เข้า stock ปลายทางทันที ไม่ต้องรอปิดกะ
    ───────────────────────────────────────────────────────────────────────────── */
 function InflowRulesTab({ canEdit }) {
+  const { role, lineId, sections } = useContext(UserContext);
+  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
+  // Product Master สำหรับกฎแบบ "MAT ตรงตัว" — match_value ถูกเทียบตรงกับ line_stock_transactions.mat_no โดย trigger (2026-09-07)
+  const { products } = useProducts();
+  // 📜 MAT ที่เคยตั้งกฎไว้ (stock_inflow_rules.match_value — รวมค่า prefix ด้วย แต่ picker ใช้เฉพาะโหมด mat) · 2026-09-07
+  const ruleMatHist = useColumnHistory(supabaseDR, 'stock_inflow_rules', 'match_value', { upper: true });
   const [rules, setRules] = useState([]);
   const [lines, setLines] = useState([]);
   // ปลายทางที่มีอยู่จริง — derive จากคลังที่มีของ ไม่ hardcode 'FG WAREHOUSE'/'STORE'
@@ -1291,7 +1294,10 @@ function InflowRulesTab({ canEdit }) {
     const mv = form.match_value.trim().toUpperCase();
     const dest = form.dest_line_name.trim();
     if (!mv) { toast.error(form.match_type === 'prefix' ? 'กรอกเลขขึ้นต้น MAT เช่น 1 หรือ 2' : 'กรอก MAT No.'); return; }
-    if (!dest) { toast.error('กรอกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
+    // MAT ตรงตัวนอก Product Master → ถามยืนยัน (2026-09-07 เดิมบล็อกแข็ง) — trigger เทียบตรงตัว พิมพ์ผิดตัวเดียวของไปกองผิดคลังเงียบๆ จึงเตือนชัด
+    if (form.match_type === 'mat' && !products.some(p => String(p.mat_no || '').toUpperCase() === mv)
+      && !window.confirm(`MAT ${mv} ไม่มีใน Product Master — กฎจะ match เฉพาะเลขนี้ตรงตัว · ใช้ค่านี้ต่อหรือไม่?`)) return;
+    if (!dest) { toast.error('เลือกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
     setSaving(true);
     const { error } = await supabaseDR.from('stock_inflow_rules')
       .upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' });
@@ -1384,17 +1390,20 @@ function InflowRulesTab({ canEdit }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{form.match_type === 'prefix' ? 'เลขขึ้นต้น (เช่น 1, 2)' : 'MAT No.'}</span>
-              <input value={form.match_value} onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
-                placeholder={form.match_type === 'prefix' ? '1' : '1XXXXXXX'} style={{ ...inputSt, width: form.match_type === 'prefix' ? 130 : 190, fontFamily: 'monospace' }} />
+              {/* prefix = ข้อความอิสระโดยชอบ · MAT ตรงตัว = เลือกจาก Product Master (2026-09-07) */}
+              {form.match_type === 'prefix'
+                ? <input value={form.match_value} onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
+                    placeholder="1" style={{ ...inputSt, width: 130, fontFamily: 'monospace' }} />
+                : <ProductSelect products={products} value={form.match_value} style={{ width: 260 }} history={ruleMatHist}
+                    onChange={({ mat_no }) => setForm(f => ({ ...f, match_value: mat_no }))} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ปลายทาง (พิมพ์เอง หรือเลือกไลน์)</span>
-              <input list="inflow-dest-options" value={form.dest_line_name} onChange={e => setForm(f => ({ ...f, dest_line_name: e.target.value }))}
-                placeholder="FG WAREHOUSE" style={{ ...inputSt, width: 220 }} />
-              <datalist id="inflow-dest-options">
-                {dests.filter(d => !lines.some(l => l.name === d)).map(d => <option key={d} value={d} />)}
-                {lines.filter(l => l.is_active !== false).map(l => <option key={l.name} value={l.name} />)}
-              </datalist>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ปลายทาง (ไลน์ / คลัง)</span>
+              {/* dest_line_name ถูก copy เป็น line_stock_transactions.line_name โดย trigger = join key ของ line_stock_summary
+                  พิมพ์ผิด = "ไลน์ผี" ที่มีของแต่ไม่มีใครเห็น → เลือกจากทะเบียนไลน์ + คลังกลางเท่านั้น (2026-09-07 · บั๊กคลาสเดียวกับรอบจัดส่ง) */}
+              <LineSelect lines={lines} value={form.dest_line_name} onChange={v => setForm(f => ({ ...f, dest_line_name: v }))} {...scope}
+                placeholder="— เลือกปลายทาง —" style={{ ...inputSt, width: 240 }}
+                extraGroups={[{ label: '🏬 คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', '#08130a'), opacity: saving ? 0.6 : 1 }}>
               {saving ? '...' : '💾 บันทึก'}

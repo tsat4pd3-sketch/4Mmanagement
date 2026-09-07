@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -8,10 +8,13 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { loadDocForms, withDocFoot, docFormSync, fullCode } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — ใบพิมพ์/Excel CQI-15 อ่านเลขฟอร์มผ่าน docFormSync (2026-07-30)
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
+import MachineSelect from '../components/MachineSelect';
+import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -346,6 +349,12 @@ export default function EventLog() {
 /* ─── Create Form ──────────────────────────────────────────────── */
 function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkItems, eventDefs, onSubmit, submitting }) {
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  // ครอบครัวไลน์ที่เลือก (แม่+ลูก) — ให้เครื่อง/พนักงานของไลน์นี้ขึ้นก่อนใน picker (ไม่ตัดไลน์อื่น · 2026-09-07)
+  const famNames = useMemo(() => (form.line_name ? getLineFamilyNames(lines, form.line_name) : []), [lines, form.line_name]);
+  const famIds = useMemo(() => (form.line_name ? [...getLineFamilyIds(lines, form.line_name)] : []), [lines, form.line_name]);
+  // 📜 ค่าที่เคยบันทึกใน cqi15_event_logs (Main) — สถานีที่ยังไม่ลง /machines / ชื่อพนักงานที่พ้นทะเบียน ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const stationHist = useColumnHistory(supabase, 'cqi15_event_logs', 'station_number', { upper: true });
+  const operatorHist = useColumnHistory(supabase, 'cqi15_event_logs', 'weld_cell_operator');
 
   const selectedEvent = eventDefs.find(d => d.event_no === parseInt(form.event_no));
   const eventChecks = selectedEvent
@@ -391,11 +400,15 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Station Number</label>
-            <input type="text" placeholder="เช่น SP-67" value={form.station_number} onChange={e => f('station_number', e.target.value)} />
+            {/* station = เลขเครื่อง (SP-67) จากทะเบียน machines (DR) — ออกรายงาน CQI-15 ให้ลูกค้าตรวจ ต้องสะกดตรงทะเบียน (2026-09-07) */}
+            <MachineSelect value={form.station_number || ''} lines={famNames} allowFree history={stationHist} freeHint="สถานีที่ยังไม่มีในทะเบียนเครื่อง /machines"
+              placeholder="เช่น SP-67" onChange={r => f('station_number', r.machine_no)} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Weld Cell Operator</label>
-            <input type="text" placeholder="ชื่อพนักงาน" value={form.weld_cell_operator} onChange={e => f('weld_cell_operator', e.target.value)} />
+            {/* พนักงานจากทะเบียน employees — คนในครอบครัวไลน์ที่เลือกขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม (2026-09-07) */}
+            <PersonSelect source="employees" value={form.weld_cell_operator || ''} lineIds={famIds} history={operatorHist}
+              placeholder="ชื่อพนักงาน" onChange={r => f('weld_cell_operator', r.name)} />
           </div>
         </div>
 

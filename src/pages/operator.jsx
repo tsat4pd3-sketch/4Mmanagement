@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
@@ -178,7 +180,7 @@ export default function Operator() {
     fetchSkillDefs();
     fetchEmployees();
     fetchLevelUpRequests();
-    supabase.from('production_lines').select('id, name, section').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
@@ -1658,20 +1660,20 @@ export default function Operator() {
                     );
                   }
                   // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
+                  // 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าเดิมนอกลิสต์ไม่หายเงียบ) — คง pre-filter scope+แผนก เดิม
                   return (
-                    <select value={cur} disabled={!editingEmp.department} onChange={e => {
-                      const val = e.target.value;
-                      const line = lines.find(l => l.name === val);
-                      setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
-                    }}>
-                      <option value="">{editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                      {filterLinesByDept(
+                    <LineSelect value={cur} disabled={!editingEmp.department}
+                      placeholder={editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}
+                      lines={filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
                           // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยให้ filterLinesByDept คัดตามแผนกอย่างเดียว
                           .filter(l => empSection === ORPHAN_SECTION || !empSection || l.section === empSection),
                         editingEmp.department
-                      ).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                    </select>
+                      )}
+                      onChange={val => {
+                        const line = lines.find(l => l.name === val);
+                        setEditingEmp({ ...editingEmp, group_name: val, line_id: line?.id || null });
+                      }} />
                   );
                 })()}
               </div>

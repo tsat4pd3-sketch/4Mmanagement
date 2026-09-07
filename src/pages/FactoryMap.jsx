@@ -1850,6 +1850,7 @@ export default function FactoryMap({ setupMode = false }) {
     if (!target) return toast.error('เลือกไลน์/โซน หรือพิมพ์ชื่อโซนใหม่ก่อน');
     if (regions.some(r => r.line_name === target)) return toast.error(`"${target}" ถูกตีกรอบไว้แล้ว`);
     const isNewStore = assignLine === '__new__' && newZoneType === 'store'; // จับก่อน reset state
+    const isNewFac = assignLine === '__new__' && newZoneType === 'fac';
     const storeKind = newZoneKind;
     const pts = assignFor; setAssignFor(null); setNewZone('');
     hist.pushHistory();
@@ -1867,6 +1868,17 @@ export default function FactoryMap({ setupMode = false }) {
       } else {
         toast.success(`ตีกรอบ + สร้างทะเบียนโซนคลัง "${target}" แล้ว — ไปผูก MAT/ความจุ ที่ /line-stock แท็บ 🏬 โซนคลัง`);
         loadStoreZones();
+        return;
+      }
+    }
+    // 🔧 โซน MTN/facility ใหม่ — สร้างทะเบียน pm_facility_areas ให้ในขั้นเดียว (2026-09-07 mirror สาย store)
+    // กรอบจับคู่สถานะด้วยชื่อ (trim+lowercase) กับ pm_facility_areas.name — เดิมพิมพ์ชื่อแล้วไม่สร้างทะเบียน = กรอบกำพร้าไม่มีสถานะ
+    if (isNewFac && !facilityZones.some(n => n.trim().toLowerCase() === target.toLowerCase())) {
+      const { error: fe } = await supabaseDR.from('pm_facility_areas').insert({ name: target });
+      if (fe) toast.error(`ตีกรอบแล้ว แต่สร้างทะเบียนโซน facility ไม่สำเร็จ (${fe.message}) — สร้างเองที่ /pm-setup`);
+      else {
+        setFacilityZones(prev => [...new Set([...prev, target])].sort((a, b) => a.localeCompare(b)));
+        toast.success(`ตีกรอบ + สร้างทะเบียนโซน facility "${target}" แล้ว — ผูกเครื่อง/จุดตรวจต่อที่ /pm-setup`);
         return;
       }
     }
@@ -3218,6 +3230,9 @@ export default function FactoryMap({ setupMode = false }) {
                     </select>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ระบบจะสร้างทะเบียนโซนคลังให้เลย — ผูก MAT/ความจุต่อที่ /line-stock แท็บ 🏬 โซนคลัง</div>
                   </>
+                )}
+                {newZoneType === 'fac' && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>ระบบจะสร้างทะเบียนโซน facility (pm_facility_areas) ให้เลย — ผูกเครื่อง/จุดตรวจต่อที่ /pm-setup</div>
                 )}
               </div>
             )}

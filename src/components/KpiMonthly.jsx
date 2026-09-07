@@ -7,6 +7,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
+import PersonSelect from './PersonSelect';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -794,7 +795,9 @@ function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
           </div>
           <div>
             <div style={lbl}>RESPONSIBILITY</div>
-            <input style={inp} value={f.action_owner} onChange={e => set('action_owner', e.target.value)} />
+            {/* ผู้รับผิดชอบเลือกจากทะเบียนคน (profiles) — พิมพ์เองได้เพราะใบ Appraisal บางข้อระบุเป็นหน่วยงาน (2026-09-07) */}
+            <PersonSelect value={f.action_owner || ''} section={section || undefined} allowFree freeHint="ระบุเป็นชื่อหน่วยงานได้"
+              onChange={({ name }) => set('action_owner', name)} inputStyle={{ padding: '6px 30px 6px 8px', background: 'var(--bg2)' }} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>

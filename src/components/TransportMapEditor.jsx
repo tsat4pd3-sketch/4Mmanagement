@@ -6,6 +6,9 @@ import { toast } from '../components/Toast'
 import { NODE_KINDS, nodeKind, buildAdj, edgeWeight, segIntersect, closestPointOnSeg } from '../utils/transportGraph'
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory'
 import { checkWrite } from '../utils/dbWrite';
+import LineSelect from './LineSelect'
+import useProductionLines from '../utils/useProductionLines'
+import { WAREHOUSE_LOCATIONS } from '../utils/storageZones'
 
 /* ─── TransportMapEditor — วาดกราฟถนน/ทางเดินรถบนผังใหญ่ (Store/AMR) ──────────
    ใช้รูปผังตัวเดียวกับ /factory-map (factory_map ฝั่ง Main) เป็นฉากหลัง
@@ -29,7 +32,9 @@ export default function TransportMapEditor() {
   const [imageUrl, setImageUrl] = useState(null)
   const [nodes, setNodes] = useState([])
   const [edges, setEdges] = useState([])
-  const [lineNames, setLineNames] = useState([])
+  // ทะเบียนไลน์ชุดกลาง (ครบ parent/section/is_active → <LineSelect> จัดลำดับชั้น+ตัดไลน์ปลดระวางให้) (2026-09-07 แทน select('name') เอง)
+  const lines = useProductionLines()
+  const [storeZoneNames, setStoreZoneNames] = useState([])   // ชื่อโซนคลังบนผัง (DR storage_zones) — จุดจอดผูกสโตร์ได้
   const [loading, setLoading] = useState(true)
   const [mode, setMode] = useState('select')
   const [addKind, setAddKind] = useState('stop')
@@ -93,17 +98,17 @@ export default function TransportMapEditor() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: fm }, { data: nd }, { data: eg }, { data: ln }, { data: ts }] = await Promise.all([
+    const [{ data: fm }, { data: nd }, { data: eg }, { data: sz }, { data: ts }] = await Promise.all([
       supabase.from('factory_map').select('image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabaseDR.from('transport_nodes').select('*'),
       supabaseDR.from('transport_edges').select('*'),
-      supabase.from('production_lines').select('name').order('name'),
+      supabaseDR.from('storage_zones').select('name').order('name'),
       supabaseDR.from('transport_settings').select('meters_per_unit').eq('id', 1).maybeSingle(),
     ])
     setImageUrl(fm?.image_url || null)
     setNodes(nd || [])
     setEdges(eg || [])
-    setLineNames((ln || []).map(l => l.name).filter(Boolean))
+    setStoreZoneNames((sz || []).map(z => z.name).filter(Boolean))
     setMpu(ts?.meters_per_unit ?? null)
     setLoading(false)
   }, [])
@@ -488,8 +493,11 @@ export default function TransportMapEditor() {
                 </select>
               </FieldLbl>
               <FieldLbl t="ผูกไลน์/สโตร์ (optional)">
-                <input list="tr-lines" value={selNode.line_name || ''} onChange={e => patchNode(selNode.id, { line_name: e.target.value || null })} placeholder="ไลน์ที่จุดจอดนี้บริการ" style={inp} />
-                <datalist id="tr-lines">{lineNames.map(l => <option key={l} value={l} />)}</datalist>
+                {/* line_name เป็น join key ที่ Transport.jsx ใช้จับจุดจอดของรอบ (isOfLine) — สะกดผิด = รอบหาจุดไม่เจอ
+                    → เลือกจากทะเบียนไลน์ + คลังกลาง/โซนคลังเท่านั้น (2026-09-07 แทน datalist พิมพ์เอง) */}
+                <LineSelect lines={lines} value={selNode.line_name || ''} onChange={v => patchNode(selNode.id, { line_name: v || null })}
+                  placeholder="— ไม่ผูก —" style={inp}
+                  extraGroups={[{ label: '🏬 คลัง / โซนคลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...storeZoneNames])].map(n => ({ value: n })) }]} />
               </FieldLbl>
               <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text2)', margin: '6px 0', cursor: 'pointer' }}>
                 <input type="checkbox" checked={selNode.is_active !== false} onChange={e => patchNode(selNode.id, { is_active: e.target.checked })} style={{ width: 'auto' }} /> ใช้งาน
