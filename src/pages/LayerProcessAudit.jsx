@@ -4,7 +4,10 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
@@ -43,6 +46,30 @@ const ANSWERS = [
   { key: 'NA', label: 'N/A', color: '#94a3b8', desc: 'ไม่เกี่ยวข้อง' },
 ];
 const ansMeta = (k) => ANSWERS.find(a => a.key === k);
+
+/* ── StationPick — สถานีตรวจเลือกจาก "สถานีในแผน ∪ จุดงาน (workstations) ของครอบครัวไลน์" + ✏️ ระบุเอง
+   (2026-09-07) · ค่าเดิมที่ไม่อยู่ในลิสต์ยังโชว์ได้ · ใช้ทั้งช่องบันทึกผลตรวจและช่องรายวันในตารางแผน (compact) */
+function StationPick({ value, onChange, options = [], disabled, style }) {
+  const [free, setFree] = useState(false);
+  const list = [...new Set(options.map(o => String(o || '').trim()).filter(Boolean))];
+  const custom = free || (!!value && !list.includes(value));
+  if (custom) return (
+    <div style={{ display: 'flex', gap: 3, ...style }}>
+      <input type="text" value={value || ''} disabled={disabled} placeholder="ระบุเอง" style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '4px 8px' }}
+        onChange={e => { setFree(true); onChange(e.target.value); }} />
+      <button type="button" disabled={disabled} title="กลับไปเลือกจากลิสต์" onClick={() => { setFree(false); onChange(''); }}
+        style={{ padding: '2px 7px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>↩</button>
+    </div>
+  );
+  return (
+    <select value={value || ''} disabled={disabled} style={{ fontSize: 12, padding: '4px 8px', ...style }}
+      onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
+      <option value="">— เลือกสถานี —</option>
+      {list.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value="__free__">✏️ ระบุเอง…</option>
+    </select>
+  );
+}
 const SHIFT_META = { day: 'กะเช้า (Shift 01)', night: 'กะดึก (Shift 02)' };
 
 /* ── date helpers (กฎ work date ตัด 08:00 — ห้าม toISOString) ── */
@@ -133,6 +160,8 @@ export default function LayerProcessAudit() {
   const [auditDate, setAuditDate] = useState(getWorkDate());
   const [auditLayer, setAuditLayer] = useState(role === 'manager' ? 'manager' : role === 'supervisor' ? 'supervisor' : role === 'engineer' || role === 'qa' ? 'supervisor' : 'leader');
   const [draft, setDraft] = useState(null);          // { id?, station, auditor_name, auditor_sig_url, answers: {qid:{answer,note}} }
+  const [auditPlanStations, setAuditPlanStations] = useState([]); // สถานีในแผนเดือนที่ตรวจ — ตัวเลือกช่อง "Station ที่ตรวจ"
+  const [wsNames, setWsNames] = useState([]);        // จุดงาน (workstations) ของครอบครัวไลน์ที่เลือก — ตัวเลือกสถานี (2026-09-07)
   const [savingAudit, setSavingAudit] = useState(false);
   const [showSignPad, setShowSignPad] = useState(false);
 
@@ -157,7 +186,7 @@ export default function LayerProcessAudit() {
   useEffect(() => {
     (async () => {
       const [{ data: ln }, { data: qs }, { data: profs }, { data: { user } }] = await Promise.all([
-        supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+        supabase.from('production_lines').select(LINE_COLUMNS).order('name'),   // ครบ is_active ให้ <LineSelect> (2026-09-07)
         supabase.from('lpa_questions').select('*').order('seq'),
         supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
         supabase.auth.getUser(),
@@ -206,6 +235,13 @@ export default function LayerProcessAudit() {
     });
     return { list };
   };
+  // โหลดจุดงานของไลน์ที่เลือกไว้เป็นตัวเลือกสถานี (แผนรายวัน + ผลตรวจ) — set state หลัง await เท่านั้น + guard เปลี่ยนไลน์ระหว่างรอ
+  useEffect(() => {
+    let alive = true;
+    const p = (!selLine || !lines.length) ? Promise.resolve({ list: [] }) : fetchStationNames();
+    p.then(({ list }) => { if (alive) setWsNames(list || []); });
+    return () => { alive = false; };
+  }, [selLine, lines]); // eslint-disable-line react-hooks/exhaustive-deps
   const fillStationsFromWorkstations = async () => {
     const { list, error } = await fetchStationNames();
     if (error) { toast.error('ดึงจุดงานไม่สำเร็จ: ' + error.message); return; }
@@ -452,6 +488,7 @@ export default function LayerProcessAudit() {
         supabase.from('lpa_plans').select('id, lpa_plan_days(day, station)').eq('line_name', selLine).eq('shift', selShift).eq('month_key', auditDate.slice(0, 7)).maybeSingle(),
       ]);
       const planStation = pl?.lpa_plan_days?.find(d => d.day === Number(auditDate.slice(8, 10)))?.station || '';
+      setAuditPlanStations([...new Set((pl?.lpa_plan_days || []).map(d => (d.station || '').trim()).filter(Boolean))]);
       if (existing) {
         const ans = {};
         (existing.lpa_audit_answers || []).forEach(a => { if (a.question_id) ans[a.question_id] = { answer: a.answer, note: a.note || '' }; });
@@ -818,11 +855,9 @@ ${issuesHtml}
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
       <div>
         <div style={lb}>ไลน์ / พื้นที่ตรวจ</div>
-        <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ width: 210, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
-            <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-          ))}
-        </select>
+        {/* <LineSelect> — ลำดับชั้น/ตัดไลน์ปลดระวาง/ค่าเดิมไม่หายเงียบ (visibleLines กรอง scope ไว้แล้ว · 2026-09-07) */}
+        <LineSelect lines={visibleLines} value={selLine} placeholder={null} onChange={setSelLine}
+          style={{ width: 210, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
       </div>
       <div>
         <div style={lb}>กะ</div>
@@ -876,12 +911,11 @@ ${issuesHtml}
             {[['leader_name', 'Leader'], ['supervisor_name', 'Supervisor'], ['manager_name', 'Manager'], ['gm_name', 'GM Plant']].map(([k, label]) => (
               <div key={k}>
                 <div style={lb}>{label}</div>
-                <input type="text" list="lpa-profiles" value={qHeader[k] || ''} onChange={e => setQHeaderF(k, e.target.value)} disabled={!canManage}
-                  style={{ width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+                {/* 4 ชั้นผู้ตรวจ = user ระบบ (พิมพ์ลง FM-QMR-008) — PersonSelect profiles แทน datalist ที่รับทุกสะกด (2026-09-07) */}
+                <PersonSelect value={qHeader[k] || ''} onChange={r => setQHeaderF(k, r.name)} disabled={!canManage} placeholder={`เลือก ${label}…`} />
               </div>
             ))}
           </div>
-          <datalist id="lpa-profiles">{profiles.filter(p => p.full_name).map(p => <option key={p.id} value={p.full_name} />)}</datalist>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div style={{ flex: '1 1 340px' }}>
               <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากจุดงานในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้ · ใช้ทั้งไตรมาส)</div>
@@ -934,8 +968,8 @@ ${issuesHtml}
                             </td>
                             <td>
                               {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>วันหยุด</span> : (
-                                <input type="text" value={pd.station || ''} onChange={e => setQDay(mk, d, { station: e.target.value })} disabled={!canManage}
-                                  style={{ width: 'min(100%, 320px)', fontSize: 12, padding: '4px 8px' }} />
+                                <StationPick value={pd.station || ''} onChange={v => setQDay(mk, d, { station: v })} disabled={!canManage}
+                                  options={[...(qHeader.stations || '').split(/[\n,]+/), ...wsNames]} style={{ width: 'min(100%, 320px)' }} />
                               )}
                             </td>
                             {LAYERS.map(l => {
@@ -980,13 +1014,15 @@ ${issuesHtml}
             </div>
             <div>
               <div style={lb}>Station ที่ตรวจ</div>
-              <input type="text" value={draft?.station || ''} onChange={e => setDraft(prev => ({ ...prev, station: e.target.value }))}
-                placeholder="ตามแผน / ระบุเอง" style={{ width: 190, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+              {/* สถานีจากแผนเดือนนี้ ∪ จุดงานในผังไลน์ + ระบุเอง (lpa_audits.station เดิมพิมพ์เอง · 2026-09-07) */}
+              <StationPick value={draft?.station || ''} onChange={v => setDraft(prev => ({ ...prev, station: v }))}
+                options={[...auditPlanStations, ...wsNames]} style={{ width: 190, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
             </div>
             <div>
               <div style={lb}>ผู้ตรวจ</div>
-              <input type="text" value={draft?.auditor_name || ''} onChange={e => setDraft(prev => ({ ...prev, auditor_name: e.target.value }))}
-                style={{ width: 180, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+              {/* ผู้ตรวจจาก profiles → ลายเซ็นตามคนที่เลือก (ไม่ใช่แค่โปรไฟล์ตัวเอง) · พิมพ์เองยังได้ (2026-09-07) */}
+              <PersonSelect value={draft?.auditor_name || ''} style={{ width: 200 }}
+                onChange={r => setDraft(prev => ({ ...prev, auditor_name: r.name, auditor_sig_url: r.kind === 'free' ? prev?.auditor_sig_url || null : (r.signature_url || null) }))} />
             </div>
             <div>
               <div style={lb}>ลายเซ็น</div>
@@ -1147,12 +1183,8 @@ ${issuesHtml}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
             <div>
               <div style={lb}>จัดการคำถามของ</div>
-              <select value={qScope} onChange={e => setQScope(e.target.value)} style={{ minWidth: 220 }}>
-                <option value="">🌐 ทุกไลน์ (common — ฐานที่ backfall)</option>
-                {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : '🏭 '}${l.name}`}</option>
-                ))}
-              </select>
+              <LineSelect lines={visibleLines} value={qScope} onChange={setQScope} style={{ minWidth: 220 }}
+                placeholder="🌐 ทุกไลน์ (common — ฐานที่ backfall)" />
             </div>
             <button
               onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
@@ -1226,12 +1258,8 @@ ${issuesHtml}
               <div><div style={lb}>คำถาม</div><textarea rows={2} value={qEditing.question} onChange={e => setQEditing(p => ({ ...p, question: e.target.value }))} style={{ width: '100%', fontSize: 13 }} /></div>
               <div>
                 <div style={lb}>ใช้กับไลน์ (เว้นว่าง = ทุกไลน์)</div>
-                <select value={qEditing.line_name || ''} onChange={e => setQEditing(p => ({ ...p, line_name: e.target.value }))} style={{ width: '100%' }}>
-                  <option value="">— ทุกไลน์ —</option>
-                  {toHierarchicalOptions(visibleLines).map(({ line: l, depth }) => (
-                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                  ))}
-                </select>
+                <LineSelect lines={visibleLines} value={qEditing.line_name || ''} placeholder="— ทุกไลน์ —" style={{ width: '100%' }}
+                  onChange={v => setQEditing(p => ({ ...p, line_name: v }))} />
               </div>
               {qEditing.category === 'special' && (
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

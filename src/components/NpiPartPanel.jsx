@@ -13,6 +13,7 @@ import {
 } from '../utils/npi';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName } from './NpiUi';
 import { printPpapChecklist } from '../lib/npiPpapPrint';
+import PersonSelect from './PersonSelect';
 
 export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged }) {
   const [phaseModal, setPhaseModal] = useState(null);
@@ -293,7 +294,8 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
             <Field label="เริ่มจริง"><input type="date" style={inp} value={phaseModal.actual_start} onChange={e => setPhaseModal({ ...phaseModal, actual_start: e.target.value })} /></Field>
             <Field label="จบจริง"><input type="date" style={inp} value={phaseModal.actual_end} onChange={e => setPhaseModal({ ...phaseModal, actual_end: e.target.value })} /></Field>
             <Field label="สถานะ"><MetaSelect value={phaseModal.status} onChange={v => setPhaseModal({ ...phaseModal, status: v, actual_end: v === 'completed' && !phaseModal.actual_end ? today : phaseModal.actual_end })} meta={PHASE_STATUS} /></Field>
-            <Field label="ผู้รับผิดชอบเฟส"><input style={inp} value={phaseModal.owner_name || ''} onChange={e => setPhaseModal({ ...phaseModal, owner_name: e.target.value })} list="npi-users" /></Field>
+            {/* ผู้รับผิดชอบ = user ระบบ (profiles) → PersonSelect แทน datalist npi-users (2026-09-07) */}
+            <Field label="ผู้รับผิดชอบเฟส"><PersonSelect value={phaseModal.owner_name || ''} onChange={r => setPhaseModal({ ...phaseModal, owner_name: r.name })} /></Field>
             <Field label="หมายเหตุ" span={2}><input style={inp} value={phaseModal.note || ''} onChange={e => setPhaseModal({ ...phaseModal, note: e.target.value })} /></Field>
           </div>
         </Modal>
@@ -308,7 +310,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
             <Field label="ชนิดเอกสาร"><select style={inp} value={dvModal.doc_kind} onChange={e => setDvModal({ ...dvModal, doc_kind: e.target.value })}>{Object.entries(DOC_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
             <Field label="กำหนดส่ง"><input type="date" style={inp} value={dvModal.due_date || ''} onChange={e => setDvModal({ ...dvModal, due_date: e.target.value })} /></Field>
             <Field label="เสร็จเมื่อ"><input type="date" style={inp} value={dvModal.done_at || ''} onChange={e => setDvModal({ ...dvModal, done_at: e.target.value })} /></Field>
-            <Field label="ผู้รับผิดชอบ"><input style={inp} value={dvModal.owner_name || ''} onChange={e => setDvModal({ ...dvModal, owner_name: e.target.value })} list="npi-users" /></Field>
+            <Field label="ผู้รับผิดชอบ"><PersonSelect value={dvModal.owner_name || ''} onChange={r => setDvModal({ ...dvModal, owner_name: r.name })} /></Field>
             <Field label="ทีมเจ้าของ"><select style={inp} value={dvModal.owner_role || ''} onChange={e => setDvModal({ ...dvModal, owner_role: e.target.value })}><option value="">—</option>{Object.entries(OWNER_ROLE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
             <Field label="อ้างอิงของจริงในระบบ"><select style={inp} value={dvModal.ref_kind || ''} onChange={e => setDvModal({ ...dvModal, ref_kind: e.target.value, ref_id: '' })}><option value="">—</option>{Object.entries(REF_KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
             <Field label="รายการที่อ้าง">

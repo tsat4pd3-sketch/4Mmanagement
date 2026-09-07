@@ -3,7 +3,7 @@ import resizeImg from '../utils/resizeImage';
 import { todayLocal as localToday } from '../utils/dateFormat';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -15,6 +15,14 @@ import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 import PeChangeRequests from '../components/PeChangeRequests';
 import PeRoutingSuggest from '../components/PeRoutingSuggest';
 import LineSelect from '../components/LineSelect';
+import MachineSelect from '../components/MachineSelect';
+import ProductSelect from '../components/ProductSelect';
+import PersonSelect from '../components/PersonSelect';
+import CustomerSelect from '../components/CustomerSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import useProducts from '../utils/useProducts';
+import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -54,6 +62,28 @@ const classChip = (c) => c ? (
 ) : null;
 
 const lbl = { fontSize: 12, fontWeight: 700, color: 'var(--muted)' };
+
+/* ── DeptPick — "ผู้รับผิดชอบ" ใน FMEA / "ผู้คุม" ใน CP = หน่วยงาน (PD / QA / JIG MTN) → เลือกจากผังองค์กร (org_nodes)
+   (2026-09-07) · ✏️ ระบุเองได้ (ฟอร์มที่นำเข้าจาก Excel ใช้ตัวย่อของลูกค้า) · ค่าเดิมนอกผังยังโชว์ ไม่หายเงียบ */
+function DeptPick({ value, onChange, options = [], placeholder = 'PD / QA / PE' }) {
+  const [free, setFree] = useState(false);
+  const custom = free || (!!value && !options.includes(value));
+  if (custom) return (
+    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+      <input value={value || ''} placeholder={placeholder} style={{ flex: 1, minWidth: 0 }} onChange={e => { setFree(true); onChange(e.target.value); }} />
+      <button type="button" title="กลับไปเลือกจากผังองค์กร" onClick={() => { setFree(false); onChange(''); }}
+        style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>↩</button>
+    </div>
+  );
+  return (
+    <select value={value || ''} style={{ marginTop: 4 }}
+      onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
+      <option value="">— เลือกหน่วยงาน —</option>
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value="__free__">✏️ ระบุเอง…</option>
+    </select>
+  );
+}
 const thSt = { padding: '7px 9px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const tdSt = { padding: '7px 9px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
 const btnSm = { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11, fontWeight: 700, cursor: 'pointer' };
@@ -71,8 +101,12 @@ export default function PEDocs() {
   const [fmea, setFmea] = useState([]);
   const [cp, setCp] = useState([]);
   const [revs, setRevs] = useState([]);
-  const [machines, setMachines] = useState([]); // DR — datalist เครื่อง
   const [lines, setLines] = useState([]);
+  // ทะเบียนที่ picker ใช้ (2026-09-07): Product Master เช็ค MAT SAP ตอนบันทึก · ผังองค์กรสำหรับหน่วยงานใน FMEA/CP
+  const { products: prodMaster } = useProducts();
+  const orgSections = useOrgSections();
+  const deptsOf = useOrgDepts();
+  const orgUnits = useMemo(() => [...new Set([...orgSections, ...deptsOf('')])], [orgSections, deptsOf]);
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -102,13 +136,12 @@ export default function PEDocs() {
 
   const loadSets = useCallback(async () => {
     setLoading(true);
-    const [{ data: s }, { data: mc }, { data: ln }] = await Promise.all([
+    const [{ data: s }, { data: ln }] = await Promise.all([
       supabase.from('pe_doc_sets').select('*').order('part_no'),
-      supabaseDR.from('machines').select('machine_no, machine_name, line_name').eq('is_active', true).order('machine_no'),
-      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> · เครื่องจักรย้ายไป <MachineSelect> (โหลด+cache เอง · 2026-09-07)
+      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
     ]);
     setSets(s || []);
-    setMachines(mc || []);
     setLines(ln || []);
     setLoading(false);
   }, []);
@@ -237,6 +270,9 @@ export default function PEDocs() {
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
   const lineOpts = lines.filter(l => l.parent_line_name || !lines.some(x => x.parent_line_name === l.name));
+  // ครอบครัวไลน์ของ OP ที่กำลังแก้ (ไม่ระบุ = ไลน์หลักของชุด) — ให้เครื่องของไลน์นั้นขึ้นก่อนใน MachineSelect (2026-09-07)
+  const procFamLine = procModal?.line_name || curSet?.line_name || '';
+  const procFam = procFamLine ? getLineFamilyNames(lines, procFamLine) : [];
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(97vw, 1600px)', margin: '0 auto' }}>
@@ -589,10 +625,16 @@ export default function PEDocs() {
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label style={lbl}>Part No. (ลูกค้า) *<input value={setModal.part_no} onChange={e => setSetModal({ ...setModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
-            <label style={lbl}>MAT SAP<input value={setModal.mat_no || ''} onChange={e => setSetModal({ ...setModal, mat_no: e.target.value })} placeholder="เลขภายใน (โยงข้อมูลผลิต)" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
+            {/* 🔴 mat_no = กุญแจ golden thread (peRouting / VSM / OrderTrace / NPI) → เลือกจาก Product Master เท่านั้น (ตรวจซ้ำตอนบันทึก · 2026-09-07) */}
+            <div style={lbl}>MAT SAP
+              <ProductSelect value={setModal.mat_no || ''} products={prodMaster} lines={setModal.line_name ? [setModal.line_name] : undefined}
+                placeholder="เลขภายใน (โยงข้อมูลผลิต)" style={{ marginTop: 4 }}
+                onChange={r => setSetModal({ ...setModal, mat_no: r.mat_no })} />
+            </div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Part Name<input value={setModal.part_name || ''} onChange={e => setSetModal({ ...setModal, part_name: e.target.value })} placeholder="REINF ASY FRT FNDR INR BDY RH" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Model<input value={setModal.model || ''} onChange={e => setSetModal({ ...setModal, model: e.target.value })} placeholder="P703" style={{ marginTop: 4 }} /></label>
-            <label style={lbl}>Customer<input value={setModal.customer || ''} onChange={e => setSetModal({ ...setModal, customer: e.target.value })} placeholder="FORD" style={{ marginTop: 4 }} /></label>
+            {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
+            <div style={lbl}>Customer<CustomerSelect value={setModal.customer || ''} placeholder="FORD" style={{ marginTop: 4 }} onChange={({ customer }) => setSetModal({ ...setModal, customer })} /></div>
             <label style={lbl}>ไลน์หลักที่ผลิต
               <LineSelect lines={lineOpts} value={setModal.line_name || ''} placeholder="— ไม่ระบุ —"
                 style={{ marginTop: 4 }} onChange={v => setSetModal({ ...setModal, line_name: v })} />
@@ -621,6 +663,11 @@ export default function PEDocs() {
             <button style={btnSm} onClick={() => setSetModal(null)}>ยกเลิก</button>
             <button style={btnPrim} disabled={saving} onClick={async () => {
               if (!setModal.part_no?.trim()) { toast.error('กรอก Part No. ก่อน'); return; }
+              // MAT SAP ต้องมีจริงใน Product Master (join key) — ตรวจเมื่อทะเบียนโหลดแล้วเท่านั้น ไม่งั้นบันทึกไม่ได้ทั้งที่ทะเบียนแค่ยังไม่มา
+              const matIn = setModal.mat_no?.trim().toUpperCase();
+              if (matIn && prodMaster.length && !prodMaster.some(p => String(p.mat_no || '').trim().toUpperCase() === matIn)) {
+                toast.error(`MAT SAP ${matIn} ไม่มีใน Product Master — เลือกจากลิสต์ หรือเพิ่มสินค้าที่ /products ก่อน`); return;
+              }
               const patch = {
                 part_no: setModal.part_no.trim(), mat_no: setModal.mat_no?.trim() || null,
                 part_name: setModal.part_name?.trim() || null, model: setModal.model?.trim() || null,
@@ -670,10 +717,11 @@ export default function PEDocs() {
                 {Object.entries(KIND_META).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}
               </select>
             </label>
-            <label style={lbl}>เครื่องจักร (M/C No.)
-              <input list="pe-machines" value={procModal.machine_no || ''} onChange={e => setProcModal({ ...procModal, machine_no: e.target.value })} placeholder="SP-82" style={{ marginTop: 4, fontFamily: 'monospace' }} />
-              <datalist id="pe-machines">{machines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_name || ''} · {m.line_name || ''}</option>)}</datalist>
-            </label>
+            {/* machine_no ไหลต่อไป part_routings (PeRoutingSuggest) → กล่อง VSM — เลือกจากทะเบียน machines (DR) แทน datalist (2026-09-07) */}
+            <div style={lbl}>เครื่องจักร (M/C No.)
+              <MachineSelect value={procModal.machine_no || ''} lines={procFam} allowFree freeHint="เครื่องที่ยังไม่ลงทะเบียน /machines"
+                placeholder="SP-82" style={{ marginTop: 4 }} onChange={r => setProcModal({ ...procModal, machine_no: r.machine_no })} />
+            </div>
             <label style={lbl}>ไลน์/พื้นที่
               <LineSelect lines={lineOpts} value={procModal.line_name || ''} placeholder="— ไม่ระบุ —"
                 style={{ marginTop: 4 }} onChange={v => setProcModal({ ...procModal, line_name: v })} />
@@ -752,7 +800,7 @@ export default function PEDocs() {
               RPN = {(Number(fmeaModal.severity) || 0) * (Number(fmeaModal.occurrence) || 0) * (Number(fmeaModal.detection) || 0) || '—'}
             </div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Recommended Action<textarea rows={2} value={fmeaModal.recommended_action || ''} onChange={e => setFmeaModal({ ...fmeaModal, recommended_action: e.target.value })} style={{ marginTop: 4 }} /></label>
-            <label style={lbl}>ผู้รับผิดชอบ<input value={fmeaModal.responsibility || ''} onChange={e => setFmeaModal({ ...fmeaModal, responsibility: e.target.value })} placeholder="PD / QA / PE" style={{ marginTop: 4 }} /></label>
+            <div style={lbl}>ผู้รับผิดชอบ<DeptPick value={fmeaModal.responsibility || ''} options={orgUnits} onChange={v => setFmeaModal({ ...fmeaModal, responsibility: v })} /></div>
             <label style={lbl}>วันเป้าหมาย<input type="date" value={fmeaModal.target_date || ''} onChange={e => setFmeaModal({ ...fmeaModal, target_date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Action Taken (ผลที่ทำจริง)<textarea rows={2} value={fmeaModal.action_taken || ''} onChange={e => setFmeaModal({ ...fmeaModal, action_taken: e.target.value })} style={{ marginTop: 4 }} /></label>
             {[['new_severity', 'S ใหม่'], ['new_occurrence', 'O ใหม่'], ['new_detection', 'D ใหม่']].map(([k, t]) => (
@@ -809,7 +857,7 @@ export default function PEDocs() {
                 <option value="">—</option><option value="CC">CC</option><option value="SC">SC</option>
               </select>
             </label>
-            <label style={lbl}>ผู้คุม (Person in charge)<input value={cpModal.person || ''} onChange={e => setCpModal({ ...cpModal, person: e.target.value })} placeholder="PD / QA / JIG MTN" style={{ marginTop: 4 }} /></label>
+            <div style={lbl}>ผู้คุม (Person in charge)<DeptPick value={cpModal.person || ''} options={orgUnits} placeholder="PD / QA / JIG MTN" onChange={v => setCpModal({ ...cpModal, person: v })} /></div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Spec / Tolerance<textarea rows={2} value={cpModal.spec || ''} onChange={e => setCpModal({ ...cpModal, spec: e.target.value })} placeholder="≥ 20 NM. / FOLLOW SOP NO. FTM-P703-068" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>วิธีวัด (Measurement)<textarea rows={2} value={cpModal.method || ''} onChange={e => setCpModal({ ...cpModal, method: e.target.value })} placeholder="TORQUE TEST / VISUAL CHECK" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Control Method (เอกสาร)<textarea rows={2} value={cpModal.control_method || ''} onChange={e => setCpModal({ ...cpModal, control_method: e.target.value })} placeholder="PPM NO.FM-PD3-001" style={{ marginTop: 4 }} /></label>
@@ -865,9 +913,10 @@ export default function PEDocs() {
             </label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>เลขอ้างอิงต้นเหตุ (เลขเคลม/NCR/MO)<input value={revModal.ref_id || ''} onChange={e => setRevModal({ ...revModal, ref_id: e.target.value })} placeholder="เช่น WLS6033" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>เนื้อหาการแก้ไข *<textarea rows={3} value={revModal.content} onChange={e => setRevModal({ ...revModal, content: e.target.value })} placeholder="Process 210 Missing nut m6 (WLS00292)" style={{ marginTop: 4 }} /></label>
-            <label style={lbl}>ผู้ออก<input value={revModal.issued_by || ''} onChange={e => setRevModal({ ...revModal, issued_by: e.target.value })} style={{ marginTop: 4 }} /></label>
-            <label style={lbl}>ผู้ตรวจสอบ<input value={revModal.checked_by || ''} onChange={e => setRevModal({ ...revModal, checked_by: e.target.value })} style={{ marginTop: 4 }} /></label>
-            <label style={lbl}>ผู้รับรอง<input value={revModal.approved_by || ''} onChange={e => setRevModal({ ...revModal, approved_by: e.target.value })} style={{ marginTop: 4 }} /></label>
+            {/* ผู้ออก/ตรวจ/รับรอง = user ระบบ (profiles) · พิมพ์เองได้สำหรับ rev เก่าที่ย้ายจากกระดาษ (ติดป้าย) (2026-09-07) */}
+            <div style={lbl}>ผู้ออก<PersonSelect value={revModal.issued_by || ''} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, issued_by: r.name })} /></div>
+            <div style={lbl}>ผู้ตรวจสอบ<PersonSelect value={revModal.checked_by || ''} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, checked_by: r.name })} /></div>
+            <div style={lbl}>ผู้รับรอง<PersonSelect value={revModal.approved_by || ''} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, approved_by: r.name })} /></div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
             <button style={btnSm} onClick={() => setRevModal(null)}>ยกเลิก</button>

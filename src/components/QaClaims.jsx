@@ -17,6 +17,9 @@ import { nextDocNo } from '../utils/qaDocNo';
 import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import LineSelect from './LineSelect';
+import SearchSelect from './SearchSelect';
+import CustomerSelect from './CustomerSelect';
 
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
@@ -36,6 +39,20 @@ const ghostBtn = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(
 const Chip = ({ label, color }) => (
   <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
 );
+/* ── PartPick — เลขพาร์ท = กุญแจหาเอกสาร PFMEA (matchDocSet) + ถูกก๊อปเข้า CAPA (2026-09-07)
+   options มาจากหน้าหลัก /qa (partOpts: pe_doc_sets ∪ qa_parts ∪ dr_products — ดู usePartOptions ใน QualityControl.jsx)
+   เก็บ part_no text เหมือนเดิม · พาร์ทที่ยังไม่มีชุด PE พิมพ์เองได้พร้อมป้าย */
+const upKey = (v) => String(v ?? '').trim().toUpperCase();
+function PartPick({ value, onChange, options, disabled }) {
+  const sel = useMemo(() => options.find(o => o.key === upKey(value)) || null, [options, value]);
+  return (
+    <SearchSelect value={sel ? sel.id : ''} text={value || ''} options={options} disabled={disabled}
+      allowFree freeHint="พาร์ทที่ยังไม่มีชุดเอกสาร PE — สะกดให้ตรง P/N ลูกค้า" placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
+      inputStyle={{ fontFamily: 'monospace' }}
+      onChange={({ text, opt }) => onChange({ part_no: opt ? opt.part_no : text, part_name: opt ? (opt.part_name || '') : null })} />
+  );
+}
+
 const Field = ({ label, children, span }) => (
   <label style={{ display: 'block', gridColumn: span ? `span ${span}` : undefined }}>
     <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
@@ -54,7 +71,8 @@ const EMPTY = () => ({
   due_reply_date: dayAdd(localDate(), 3), reply_note: '', cost_impact: '', status: 'open', remark: '',
 });
 
-export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa }) {
+// lines = แถว production_lines เต็ม (LINE_COLUMNS) จากหน้าหลัก — ไม่ใช่ชื่ออย่างเดียวแล้ว (2026-09-07)
+export default function QaClaims({ lines = [], role, lineId, sections, partOpts = [], canRecord, canManage, onOpenCapa }) {
   const { fullName } = useContext(UserContext);
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active');
@@ -253,12 +271,12 @@ export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa 
         </table>
       </div>
 
-      {detail && <ClaimModal {...{ detail, setDetail, lines, canRecord, canManage, busy, save, openCapa, repeats: findRepeats(detail, list) }} />}
+      {detail && <ClaimModal {...{ detail, setDetail, lines, role, lineId, sections, partOpts, canRecord, canManage, busy, save, openCapa, repeats: findRepeats(detail, list) }} />}
     </div>
   );
 }
 
-function ClaimModal({ detail, setDetail, lines, canRecord, canManage, busy, save, openCapa, repeats }) {
+function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats }) {
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
   const ro = !canRecord || detail.status === 'closed';
   return (
@@ -290,16 +308,19 @@ function ClaimModal({ detail, setDetail, lines, canRecord, canManage, busy, save
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: 11, marginBottom: 12 }}>
           <Field label="วันที่รับเคลม *"><input type="date" style={inputSt} value={detail.claim_date} onChange={set('claim_date')} disabled={ro} /></Field>
-          <Field label="ลูกค้า *"><input style={inputSt} value={detail.customer} onChange={set('customer')} placeholder="เช่น FTM / AAT" disabled={ro} /></Field>
+          {/* ลูกค้า = ชื่อกลุ่มทะเบียนเคลม — เลือกจากรายชื่อลูกค้าใน Product Master (CustomerSelect) กันสะกดต่างแล้วแตกกลุ่ม (2026-09-07) */}
+          <Field label="ลูกค้า *"><CustomerSelect value={detail.customer || ''} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
           <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder="เช่น WLS6033" disabled={ro} /></Field>
           <Field label="กำหนดตอบกลับ"><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
-          <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)"><input style={inputSt} value={detail.part_no || ''} onChange={set('part_no')} placeholder="MB3B-8C306-BE" disabled={ro} /></Field>
+          <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)">
+            <PartPick value={detail.part_no || ''} options={partOpts} disabled={ro}
+              onChange={({ part_no, part_name }) => setDetail((f) => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
+          </Field>
           <Field label="ชื่อพาร์ท"><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>
           <Field label="ไลน์ผลิต">
-            <select style={inputSt} value={detail.line_name || ''} onChange={set('line_name')} disabled={ro}>
-              <option value="">— ไม่ระบุ —</option>
-              {lines.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+            {/* <LineSelect> — ลำดับชั้น/ปลดระวาง/scope เหมือนทุกหน้า (เดิม lines.map ชื่อล้วน · 2026-09-07) */}
+            <LineSelect lines={lines} value={detail.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt} disabled={ro}
+              role={role} lineId={lineId} sections={sections} onChange={(v) => setDetail((f) => ({ ...f, line_name: v }))} />
           </Field>
           <Field label="ประเภท">
             <select style={inputSt} value={detail.category} onChange={set('category')} disabled={ro}>

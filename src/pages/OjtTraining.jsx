@@ -9,6 +9,7 @@ import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { notifyEvent } from '../utils/notifyEvent';
+import PersonSelect from '../components/PersonSelect';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -97,6 +98,8 @@ export default function OjtTraining() {
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes, setOrgDeptNodes] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [divisions, setDivisions] = useState([]);  // org_divisions (ฝ่าย) — ตัวเลือกช่อง "ฝ่าย" (2026-09-07)
+  const [deptFree, setDeptFree] = useState(false); // ช่อง "ฝ่าย" โหมดระบุเอง (ค่าเก่านอกผัง / ฝ่ายที่ยังไม่ตั้ง)
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
@@ -114,13 +117,16 @@ export default function OjtTraining() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: tr }, { data: ln }, { data: org }, { data: profs }] = await Promise.all([
+    const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
+      // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)
+      supabase.from('org_divisions').select('code, label, is_active').order('sort_order'),
     ]);
     setLines(ln || []);
+    setDivisions((divs || []).filter(d => d.is_active !== false).map(d => d.label).filter(Boolean));
     // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)
     setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name));
     setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
@@ -579,7 +585,30 @@ table{border-collapse:collapse}
                 <div><div style={lb}>สถานที่</div><input type="text" value={editing.location || ''} onChange={e => setF('location', e.target.value)} style={{ width: '100%' }} /></div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-                <div><div style={lb}>ฝ่าย</div><input type="text" value={editing.dept || ''} onChange={e => setF('dept', e.target.value)} style={{ width: '100%' }} /></div>
+                <div>
+                  <div style={lb}>ฝ่าย</div>
+                  {/* เลือกจาก org_divisions (fallback = รายชื่อ section เมื่อผังยังไม่ตั้งฝ่าย) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (2026-09-07) */}
+                  {(() => {
+                    const opts = divisions.length ? divisions : orgSections;
+                    const custom = deptFree || (!!editing.dept && !opts.includes(editing.dept));
+                    if (custom) return (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input type="text" value={editing.dept || ''} placeholder="ระบุเอง" style={{ flex: 1, minWidth: 0 }}
+                          onChange={e => { setDeptFree(true); setF('dept', e.target.value); }} />
+                        <button type="button" title="กลับไปเลือกจากผัง" onClick={() => { setDeptFree(false); setF('dept', ''); }}
+                          style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>↩</button>
+                      </div>
+                    );
+                    return (
+                      <select value={editing.dept || ''} style={{ width: '100%' }}
+                        onChange={e => { if (e.target.value === '__free__') { setDeptFree(true); setF('dept', ''); } else setF('dept', e.target.value); }}>
+                        <option value="">— เลือก —</option>
+                        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__free__">✏️ ระบุเอง…</option>
+                      </select>
+                    );
+                  })()}
+                </div>
                 <div>
                   <div style={lb}>ส่วน</div>
                   <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
@@ -609,7 +638,11 @@ table{border-collapse:collapse}
                     );
                   })()}
                 </div>
-                <div><div style={lb}>ผู้สอนงาน</div><input type="text" value={editing.trainer_name || ''} onChange={e => setF('trainer_name', e.target.value)} style={{ width: '100%' }} /></div>
+                <div>
+                  <div style={lb}>ผู้สอนงาน</div>
+                  {/* ผู้สอน = user ระบบหรือพนักงาน (หัวหน้าไลน์) → PersonSelect profiles ∪ employees · พิมพ์ลง FM-HRM-004 (2026-09-07) */}
+                  <PersonSelect source="both" value={editing.trainer_name || ''} onChange={r => setF('trainer_name', r.name)} />
+                </div>
               </div>
 
               {/* ประเภทการอบรม */}
@@ -688,7 +721,11 @@ table{border-collapse:collapse}
                               <option value="0">✗ ไม่เห็นด้วย</option>
                             </select>
                           </td>
-                          <td><input type="text" value={a.evaluator_name || ''} onChange={e => setAtt(idx, 'evaluator_name', e.target.value)} style={{ width: 130, fontSize: 12, padding: '4px 6px' }} /></td>
+                          <td>
+                            {/* ผู้ประเมินรายคน — picker เดียวกับผู้สอน (default = ผู้สอน) (2026-09-07) */}
+                            <PersonSelect source="both" value={a.evaluator_name || ''} onChange={r => setAtt(idx, 'evaluator_name', r.name)}
+                              style={{ width: 170 }} inputStyle={{ fontSize: 12, padding: '4px 24px 4px 6px' }} maxRows={20} />
+                          </td>
                           <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
                         </tr>
                       ))}
