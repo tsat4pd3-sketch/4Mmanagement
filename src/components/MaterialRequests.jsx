@@ -21,6 +21,7 @@ import InfoMore from './InfoMore';
 import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import StorageLocSelect from './StorageLocSelect';
+import SelectOrFree from './SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
@@ -383,7 +384,6 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
   const { req, items } = editor;
   // หน่วยงานผู้ขอ = ส่วนงานในผังองค์กร (org_nodes) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (ตำแหน่ง/หน่วยงานสนับสนุน) (2026-09-07)
   const orgSections = useOrgSections();
-  const [deptFree, setDeptFree] = useState(false);
   // หน่วยของรายการล็อกตาม parts_master.uom เมื่อรหัส MAT อยู่ในทะเบียน — พิมพ์เองได้เฉพาะรหัสที่ยังไม่ลงทะเบียน (2026-09-07)
   const uomOf = (mat) => parts.find(p => p.mat_no === mat)?.uom || null;
   const moves = movesFor(req.kind);
@@ -419,24 +419,8 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         {/* ผู้ขอ = user ระบบ (profiles) · ผู้ขอที่ไม่มีบัญชีพิมพ์เองได้พร้อมป้าย (2026-09-07) */}
         <F label="ชื่อผู้ขอเบิก"><PersonSelect value={req.requester_name || ''} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
         <F label="หน่วยงาน / ตำแหน่ง">
-          {(() => {
-            const custom = deptFree || (!!req.requester_dept && !orgSections.includes(req.requester_dept));
-            if (custom) return (
-              <div style={{ display: 'flex', gap: 4 }}>
-                <input value={req.requester_dept || ''} readOnly={ro} placeholder="ระบุเอง" style={{ ...inpSt, flex: 1, minWidth: 0 }}
-                  onChange={e => { setDeptFree(true); setReq({ requester_dept: e.target.value }); }} />
-                {!ro && <button type="button" style={miniBtn} title="กลับไปเลือกจากผังองค์กร" onClick={() => { setDeptFree(false); setReq({ requester_dept: '' }); }}>↩</button>}
-              </div>
-            );
-            return (
-              <select value={req.requester_dept || ''} disabled={ro} style={inpSt}
-                onChange={e => { if (e.target.value === '__free__') { setDeptFree(true); setReq({ requester_dept: '' }); } else setReq({ requester_dept: e.target.value }); }}>
-                <option value="">— เลือกส่วนงาน —</option>
-                {orgSections.map(o => <option key={o} value={o}>{o}</option>)}
-                <option value="__free__">✏️ ระบุเอง…</option>
-              </select>
-            );
-          })()}
+          <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder="— เลือกส่วนงาน —"
+            onChange={v => setReq({ requester_dept: v })} selectStyle={inpSt} inputStyle={inpSt} />
         </F>
         <F label="ไลน์ที่ขอของ (ใช้จับคู่ใบของเสีย)">
           {/* ชื่อไลน์ต้อง canonical (จับคู่ใบของเสีย) → <LineSelect> · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}

@@ -19,6 +19,7 @@ import MachineSelect from '../components/MachineSelect';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import useProducts from '../utils/useProducts';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
@@ -63,27 +64,6 @@ const classChip = (c) => c ? (
 
 const lbl = { fontSize: 12, fontWeight: 700, color: 'var(--muted)' };
 
-/* ── DeptPick — "ผู้รับผิดชอบ" ใน FMEA / "ผู้คุม" ใน CP = หน่วยงาน (PD / QA / JIG MTN) → เลือกจากผังองค์กร (org_nodes)
-   (2026-09-07) · ✏️ ระบุเองได้ (ฟอร์มที่นำเข้าจาก Excel ใช้ตัวย่อของลูกค้า) · ค่าเดิมนอกผังยังโชว์ ไม่หายเงียบ */
-function DeptPick({ value, onChange, options = [], placeholder = 'PD / QA / PE' }) {
-  const [free, setFree] = useState(false);
-  const custom = free || (!!value && !options.includes(value));
-  if (custom) return (
-    <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-      <input value={value || ''} placeholder={placeholder} style={{ flex: 1, minWidth: 0 }} onChange={e => { setFree(true); onChange(e.target.value); }} />
-      <button type="button" title="กลับไปเลือกจากผังองค์กร" onClick={() => { setFree(false); onChange(''); }}
-        style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>↩</button>
-    </div>
-  );
-  return (
-    <select value={value || ''} style={{ marginTop: 4 }}
-      onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
-      <option value="">— เลือกหน่วยงาน —</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__free__">✏️ ระบุเอง…</option>
-    </select>
-  );
-}
 const thSt = { padding: '7px 9px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const tdSt = { padding: '7px 9px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
 const btnSm = { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11, fontWeight: 700, cursor: 'pointer' };
@@ -800,7 +780,7 @@ export default function PEDocs() {
               RPN = {(Number(fmeaModal.severity) || 0) * (Number(fmeaModal.occurrence) || 0) * (Number(fmeaModal.detection) || 0) || '—'}
             </div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Recommended Action<textarea rows={2} value={fmeaModal.recommended_action || ''} onChange={e => setFmeaModal({ ...fmeaModal, recommended_action: e.target.value })} style={{ marginTop: 4 }} /></label>
-            <div style={lbl}>ผู้รับผิดชอบ<DeptPick value={fmeaModal.responsibility || ''} options={orgUnits} onChange={v => setFmeaModal({ ...fmeaModal, responsibility: v })} /></div>
+            <div style={lbl}>ผู้รับผิดชอบ<SelectOrFree value={fmeaModal.responsibility || ''} options={orgUnits} placeholder="— เลือกหน่วยงาน —" freePlaceholder="PD / QA / PE" style={{ marginTop: 4 }} onChange={v => setFmeaModal({ ...fmeaModal, responsibility: v })} /></div>
             <label style={lbl}>วันเป้าหมาย<input type="date" value={fmeaModal.target_date || ''} onChange={e => setFmeaModal({ ...fmeaModal, target_date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Action Taken (ผลที่ทำจริง)<textarea rows={2} value={fmeaModal.action_taken || ''} onChange={e => setFmeaModal({ ...fmeaModal, action_taken: e.target.value })} style={{ marginTop: 4 }} /></label>
             {[['new_severity', 'S ใหม่'], ['new_occurrence', 'O ใหม่'], ['new_detection', 'D ใหม่']].map(([k, t]) => (
@@ -857,7 +837,7 @@ export default function PEDocs() {
                 <option value="">—</option><option value="CC">CC</option><option value="SC">SC</option>
               </select>
             </label>
-            <div style={lbl}>ผู้คุม (Person in charge)<DeptPick value={cpModal.person || ''} options={orgUnits} placeholder="PD / QA / JIG MTN" onChange={v => setCpModal({ ...cpModal, person: v })} /></div>
+            <div style={lbl}>ผู้คุม (Person in charge)<SelectOrFree value={cpModal.person || ''} options={orgUnits} placeholder="— เลือกหน่วยงาน —" freePlaceholder="PD / QA / JIG MTN" style={{ marginTop: 4 }} onChange={v => setCpModal({ ...cpModal, person: v })} /></div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Spec / Tolerance<textarea rows={2} value={cpModal.spec || ''} onChange={e => setCpModal({ ...cpModal, spec: e.target.value })} placeholder="≥ 20 NM. / FOLLOW SOP NO. FTM-P703-068" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>วิธีวัด (Measurement)<textarea rows={2} value={cpModal.method || ''} onChange={e => setCpModal({ ...cpModal, method: e.target.value })} placeholder="TORQUE TEST / VISUAL CHECK" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Control Method (เอกสาร)<textarea rows={2} value={cpModal.control_method || ''} onChange={e => setCpModal({ ...cpModal, control_method: e.target.value })} placeholder="PPM NO.FM-PD3-001" style={{ marginTop: 4 }} /></label>

@@ -10,6 +10,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { notifyEvent } from '../utils/notifyEvent';
 import PersonSelect from '../components/PersonSelect';
+import SelectOrFree from '../components/SelectOrFree';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -99,7 +100,6 @@ export default function OjtTraining() {
   const [orgDeptNodes, setOrgDeptNodes] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [divisions, setDivisions] = useState([]);  // org_divisions (ฝ่าย) — ตัวเลือกช่อง "ฝ่าย" (2026-09-07)
-  const [deptFree, setDeptFree] = useState(false); // ช่อง "ฝ่าย" โหมดระบุเอง (ค่าเก่านอกผัง / ฝ่ายที่ยังไม่ตั้ง)
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
@@ -588,26 +588,7 @@ table{border-collapse:collapse}
                 <div>
                   <div style={lb}>ฝ่าย</div>
                   {/* เลือกจาก org_divisions (fallback = รายชื่อ section เมื่อผังยังไม่ตั้งฝ่าย) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (2026-09-07) */}
-                  {(() => {
-                    const opts = divisions.length ? divisions : orgSections;
-                    const custom = deptFree || (!!editing.dept && !opts.includes(editing.dept));
-                    if (custom) return (
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <input type="text" value={editing.dept || ''} placeholder="ระบุเอง" style={{ flex: 1, minWidth: 0 }}
-                          onChange={e => { setDeptFree(true); setF('dept', e.target.value); }} />
-                        <button type="button" title="กลับไปเลือกจากผัง" onClick={() => { setDeptFree(false); setF('dept', ''); }}
-                          style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>↩</button>
-                      </div>
-                    );
-                    return (
-                      <select value={editing.dept || ''} style={{ width: '100%' }}
-                        onChange={e => { if (e.target.value === '__free__') { setDeptFree(true); setF('dept', ''); } else setF('dept', e.target.value); }}>
-                        <option value="">— เลือก —</option>
-                        {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                        <option value="__free__">✏️ ระบุเอง…</option>
-                      </select>
-                    );
-                  })()}
+                  <SelectOrFree value={editing.dept || ''} options={divisions.length ? divisions : orgSections} onChange={v => setF('dept', v)} style={{ width: '100%' }} />
                 </div>
                 <div>
                   <div style={lb}>ส่วน</div>

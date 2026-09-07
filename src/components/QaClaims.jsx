@@ -18,7 +18,7 @@ import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
-import SearchSelect from './SearchSelect';
+import PartSelect from './PartSelect';
 import CustomerSelect from './CustomerSelect';
 
 const STATUS = {
@@ -39,20 +39,6 @@ const ghostBtn = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(
 const Chip = ({ label, color }) => (
   <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
 );
-/* ── PartPick — เลขพาร์ท = กุญแจหาเอกสาร PFMEA (matchDocSet) + ถูกก๊อปเข้า CAPA (2026-09-07)
-   options มาจากหน้าหลัก /qa (partOpts: pe_doc_sets ∪ qa_parts ∪ dr_products — ดู usePartOptions ใน QualityControl.jsx)
-   เก็บ part_no text เหมือนเดิม · พาร์ทที่ยังไม่มีชุด PE พิมพ์เองได้พร้อมป้าย */
-const upKey = (v) => String(v ?? '').trim().toUpperCase();
-function PartPick({ value, onChange, options, disabled }) {
-  const sel = useMemo(() => options.find(o => o.key === upKey(value)) || null, [options, value]);
-  return (
-    <SearchSelect value={sel ? sel.id : ''} text={value || ''} options={options} disabled={disabled}
-      allowFree freeHint="พาร์ทที่ยังไม่มีชุดเอกสาร PE — สะกดให้ตรง P/N ลูกค้า" placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
-      inputStyle={{ fontFamily: 'monospace' }}
-      onChange={({ text, opt }) => onChange({ part_no: opt ? opt.part_no : text, part_name: opt ? (opt.part_name || '') : null })} />
-  );
-}
-
 const Field = ({ label, children, span }) => (
   <label style={{ display: 'block', gridColumn: span ? `span ${span}` : undefined }}>
     <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
@@ -313,7 +299,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
           <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder="เช่น WLS6033" disabled={ro} /></Field>
           <Field label="กำหนดตอบกลับ"><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
           <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)">
-            <PartPick value={detail.part_no || ''} options={partOpts} disabled={ro}
+            <PartSelect value={detail.part_no || ''} options={partOpts} disabled={ro} placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
               onChange={({ part_no, part_name }) => setDetail((f) => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
           </Field>
           <Field label="ชื่อพาร์ท"><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>

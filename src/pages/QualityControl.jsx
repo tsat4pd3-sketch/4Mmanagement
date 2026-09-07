@@ -27,9 +27,12 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
-import SearchSelect from '../components/SearchSelect';
+import PartSelect from '../components/PartSelect';
+import InstrumentSelect from '../components/InstrumentSelect';
+import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
-import useProducts from '../utils/useProducts';
+import usePartOptions from '../utils/usePartOptions';
+import { invalidateInstruments } from '../utils/useInstruments';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -231,109 +234,6 @@ function Modal({ title, onClose, children, width = 560 }) {
         <div style={{ padding: 18, overflowY: 'auto' }}>{children}</div>
       </div>
     </div>
-  );
-}
-
-/* ── PartPick — ช่อง "เลขพาร์ท" ที่เป็นกุญแจหาเอกสาร PE (2026-09-07 · single-source audit) ──
-   เดิม 4 จุด (SPC / NCR / CAPA / เคลม) พิมพ์ part_no เอง ทั้งที่ matchDocSet (PeChangeRequests) และ
-   CapaEffectiveness เทียบ text ตรงๆ → สะกดต่างตัวเดียว = "ไม่พบเอกสาร/ไม่มีข้อมูล" เงียบๆ
-   ทะเบียนที่ใช้: pe_doc_sets (Main) ∪ qa_parts (Main) ∪ dr_products (DR — คีย์ = P/N ลูกค้า fallback mat_no)
-   เก็บ part_no (+part_name) เป็น text เหมือนเดิม · ⚠️ ไม่ใช้ <ProductSelect> เพราะตัวนั้นเทียบค่าที่เก็บด้วย
-   mat_no ขณะที่ช่องนี้เก็บ P/N — เลือกจากลิสต์แล้วจะโดนติดป้าย "พิมพ์เอง" ผิดๆ · พาร์ทที่ยังไม่มีชุด PE
-   พิมพ์เองได้ (allowFree) พร้อมป้ายบอก ไม่ปล่อยเงียบ */
-const upKey = (v) => String(v ?? '').trim().toUpperCase();
-function buildPartOptions({ products = [], sets = [], qaParts = [] }) {
-  const out = []; const byKey = new Map();
-  const push = (o) => {
-    const k = upKey(o.part_no); if (!k) return;
-    const ex = byKey.get(k);
-    if (ex) { ex.keywords += ` ${o.keywords || ''}`; if (!ex.part_name && o.part_name) ex.part_name = o.part_name; return; }
-    const row = { ...o, id: `pn:${k}`, key: k, label: o.part_no };
-    byKey.set(k, row); out.push(row);
-  };
-  sets.filter(x => x.status !== 'obsolete').forEach(x => push({
-    part_no: x.part_no, part_name: x.part_name || '', group: '📘 ชุดเอกสาร PE (PFC / FMEA / CP)', badge: '📘',
-    sub: [x.part_name, x.mat_no, x.customer, x.line_name].filter(Boolean).join(' · '),
-    keywords: `${x.part_name || ''} ${x.mat_no || ''} ${x.customer || ''} ${x.line_name || ''}`,
-  }));
-  qaParts.filter(x => x.is_active !== false).forEach(x => push({
-    part_no: x.part_no, part_name: x.part_name || '', group: '🔍 มาตรฐานตรวจ QA (qa_parts)', badge: '🔍',
-    sub: [x.part_name, x.mat_no, x.customer, x.line_name].filter(Boolean).join(' · '),
-    keywords: `${x.part_name || ''} ${x.mat_no || ''} ${x.customer || ''} ${x.line_name || ''}`,
-  }));
-  products.filter(p => p.mat_no && !p.is_operation && p.is_active !== false).forEach(p => push({
-    part_no: p.p_no || p.mat_no, part_name: p.name || '', group: '📦 Product Master (P/N ลูกค้า · MAT)', badge: p.customer || null,
-    sub: [p.name, p.mat_no, p.customer, p.line_name].filter(Boolean).join(' · '),
-    keywords: `${p.name || ''} ${p.mat_no || ''} ${p.customer || ''} ${p.line_name || ''}`,
-  }));
-  return out;
-}
-/** โหลดทะเบียนพาร์ททั้ง 3 แหล่งครั้งเดียวที่หน้าหลัก แล้วส่ง options ลงทุกแท็บ (hook — เรียกบนสุดของ component เท่านั้น) */
-function usePartOptions() {
-  const { products } = useProducts();
-  const [reg, setReg] = useState({ sets: [], qaParts: [] });
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const a = await supabase.from('pe_doc_sets').select('id, part_no, part_name, mat_no, customer, line_name, status').order('part_no');
-      let b = await supabase.from('qa_parts').select('id, part_no, part_name, mat_no, customer, line_name, is_active').order('part_no');
-      // qa_parts.mat_no มาจาก migration 20260819 — ยังไม่ apply (42703) ให้ถอยไปคอลัมน์พื้นฐาน ไม่ให้ลิสต์ว่างทั้งหน้า
-      if (b.error) b = await supabase.from('qa_parts').select('id, part_no, part_name, customer, line_name, is_active').order('part_no');
-      if (!alive) return;
-      setReg({ sets: a.data || [], qaParts: b.data || [] });
-    })();
-    return () => { alive = false; };
-  }, []);
-  return useMemo(() => buildPartOptions({ products, sets: reg.sets, qaParts: reg.qaParts }), [products, reg]);
-}
-/** onChange({ part_no, part_name }) — part_name = null เมื่อพิมพ์เอง (ไม่ทับชื่อที่กรอกไว้) */
-function PartPick({ value, onChange, options, disabled, placeholder = 'ค้นเลขพาร์ท / MAT / ชื่อ / ลูกค้า…' }) {
-  const sel = useMemo(() => options.find(o => o.key === upKey(value)) || null, [options, value]);
-  return (
-    <SearchSelect value={sel ? sel.id : ''} text={value || ''} options={options} disabled={disabled}
-      allowFree freeHint="พาร์ทที่ยังไม่มีชุดเอกสาร PE — สะกดให้ตรง P/N ลูกค้า" placeholder={placeholder}
-      inputStyle={{ fontFamily: 'monospace' }}
-      onChange={({ text, opt }) => onChange({ part_no: opt ? opt.part_no : text, part_name: opt ? (opt.part_name || '') : null })} />
-  );
-}
-
-/* ── InstrumentPick — เลือกเครื่องมือวัดจากทะเบียน qa_instruments (เก็บ code) — โยง SPC/ใบตรวจกับสถานะสอบเทียบ
-   (2026-09-07) · allowFree สำหรับเครื่องมือที่ยังไม่ลงทะเบียน (ติดป้ายให้เห็น) */
-function InstrumentPick({ value, onChange, instruments = [], disabled, placeholder = 'ค้นรหัส / ชื่อเครื่องมือวัด…' }) {
-  const options = useMemo(() => instruments.map(i => ({
-    id: i.id, label: i.code, key: upKey(i.code), sub: [i.name, i.inst_type, i.line_name].filter(Boolean).join(' · '),
-    keywords: `${i.name || ''} ${i.inst_type || ''} ${i.line_name || ''} ${i.brand || ''}`,
-    badge: i.status === 'retired' ? '⏸' : i.status === 'repair' ? '🔧' : null,
-  })), [instruments]);
-  const sel = useMemo(() => options.find(o => o.key === upKey(value)) || null, [options, value]);
-  return (
-    <SearchSelect value={sel ? sel.id : ''} text={value || ''} options={options} disabled={disabled}
-      allowFree freeHint="เครื่องมือที่ยังไม่ลงทะเบียนในแท็บ 📏 เครื่องมือวัด" placeholder={placeholder}
-      emptyText="ไม่พบเครื่องมือวัด — ลงทะเบียนได้ที่แท็บ 📏 เครื่องมือวัด"
-      onChange={({ text, opt }) => onChange(opt ? opt.label : text)} />
-  );
-}
-
-/* ── OrgUnitPick — เลือกส่วนงาน/แผนกจากผังองค์กร (org_nodes) + ✏️ ระบุเองสำหรับจุดเก็บทางกายภาพ ("ห้อง CMM")
-   (2026-09-07) · ค่าเดิมที่ไม่อยู่ในผังยังโชว์ได้ ไม่หายเงียบ */
-function OrgUnitPick({ value, onChange, options = [], disabled, placeholder = '— เลือกจากผังองค์กร —' }) {
-  const [free, setFree] = useState(false);
-  const custom = free || (!!value && !options.includes(value));
-  if (custom) return (
-    <div style={{ display: 'flex', gap: 4 }}>
-      <input style={inputSt} value={value || ''} disabled={disabled} placeholder="ระบุเอง เช่น ห้อง CMM"
-        onChange={e => { setFree(true); onChange(e.target.value); }} />
-      <button type="button" style={{ ...ghostBtn, padding: '4px 8px', whiteSpace: 'nowrap' }} disabled={disabled} title="กลับไปเลือกจากผังองค์กร"
-        onClick={() => { setFree(false); onChange(''); }}>↩</button>
-    </div>
-  );
-  return (
-    <select style={inputSt} value={value || ''} disabled={disabled}
-      onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
-      <option value="">{placeholder}</option>
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__free__">✏️ ระบุเอง…</option>
-    </select>
   );
 }
 
@@ -934,9 +834,9 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
       {charModal && (
         <Modal title={charModal.id ? '✏️ แก้ไขจุดควบคุม' : '➕ เพิ่มจุดควบคุม SPC'} onClose={() => setCharModal(null)}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {/* part_no = คีย์จัดกลุ่มลิสต์ SPC — อ่านจากทะเบียนพาร์ท (PartPick) แทนพิมพ์เอง (2026-09-07) */}
+            {/* part_no = คีย์จัดกลุ่มลิสต์ SPC — อ่านจากทะเบียนพาร์ท (<PartSelect>) แทนพิมพ์เอง (2026-09-07) */}
             <Field label="Part No. *">
-              <PartPick value={charModal.part_no} options={partOpts}
+              <PartSelect value={charModal.part_no} options={partOpts}
                 onChange={({ part_no, part_name }) => setCharModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={charModal.part_name} onChange={e => setCharModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
@@ -957,7 +857,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
             </Field>
             {/* gauge เก็บรหัสจากทะเบียน qa_instruments (แท็บ 📏) — โยงจุดควบคุมกับสถานะสอบเทียบ (2026-09-07) */}
             <Field label="เครื่องมือวัด">
-              <InstrumentPick value={charModal.gauge} instruments={instruments} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
+              <InstrumentSelect value={charModal.gauge} instruments={instruments} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
             </Field>
             <Field label="อ้างอิง Control Plan" span><input style={inputSt} placeholder="เช่น CP-HDF-001 ข้อ 12" value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
             {charModal.id && (
@@ -1115,7 +1015,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
             </Field>
             {/* part_no ของ NCR ถูกก๊อปเข้า CAPA (กุญแจหาเอกสาร PE) → ต้องมาจากทะเบียนพาร์ท (2026-09-07) */}
             <Field label="Part No.">
-              <PartPick value={createModal.part_no} options={partOpts}
+              <PartSelect value={createModal.part_no} options={partOpts}
                 onChange={({ part_no, part_name }) => setCreateModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={createModal.part_name} onChange={e => setCreateModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
@@ -1418,7 +1318,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             {/* 🔴 part_no + line_name คือ join key ของลูปปิด 8D (matchDocSet · CapaEffectiveness .eq('line_name'))
                 — อ่านจากทะเบียนแทนพิมพ์เอง (2026-09-07) */}
             <Field label="เลขพาร์ท (ใช้หาเอกสาร PFMEA/Control Plan)">
-              <PartPick value={detail.part_no || ''} options={partOpts} disabled={!canRecord}
+              <PartSelect value={detail.part_no || ''} options={partOpts} disabled={!canRecord}
                 onChange={({ part_no }) => setDetail(f => ({ ...f, part_no }))} />
             </Field>
             <Field label="ไลน์ผลิต">
@@ -1603,6 +1503,7 @@ function InstrumentTab({ lineObjs, canManage }) {
       ? await supabase.from('qa_instruments').update(payload).eq('id', f.id)
       : await supabase.from('qa_instruments').insert(payload);
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+    invalidateInstruments(); // cache ทะเบียนเครื่องมือกลาง (useInstruments) — ให้ <InstrumentSelect> หน้าอื่นเห็นของใหม่
     toast.success('บันทึกแล้ว ✓');
     setModal(null);
     load();
@@ -1685,7 +1586,8 @@ function InstrumentTab({ lineObjs, canManage }) {
             <Field label="Range"><input style={inputSt} placeholder="0-150 mm" value={modal.range_spec} onChange={e => setModal(f => ({ ...f, range_spec: e.target.value }))} /></Field>
             <Field label="Resolution"><input style={inputSt} placeholder="0.01 mm" value={modal.resolution} onChange={e => setModal(f => ({ ...f, resolution: e.target.value }))} /></Field>
             <Field label="ตำแหน่ง/แผนก">
-              <OrgUnitPick value={modal.location} options={orgUnits} onChange={v => setModal(f => ({ ...f, location: v }))} />
+              <SelectOrFree value={modal.location} options={orgUnits} placeholder="— เลือกจากผังองค์กร —" freePlaceholder="ระบุเอง เช่น ห้อง CMM" style={inputSt}
+                onChange={v => setModal(f => ({ ...f, location: v }))} />
             </Field>
             <Field label="ไลน์">
               <LineSelect lines={lineObjs} value={modal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}

@@ -13,6 +13,7 @@ import useTabParam from '../utils/useTabParam';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
+import SelectOrFree from '../components/SelectOrFree';
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -107,8 +108,6 @@ export default function DieRegistry() {
   const [editDie, setEditDie] = useState(null);   // ฟอร์มแม่พิมพ์รายตัว
   const [saving, setSaving]   = useState(false);
   // ช่องไลน์ในฟอร์มชุด: เลือกจากรายชื่อที่ใช้อยู่ · "✏️ ระบุใหม่" = พิมพ์เอง (audit #28 · 2026-09-07) — ปิด modal แล้วรีเซ็ต
-  const [lineFree, setLineFree] = useState(false);
-  useEffect(() => { if (!editSet) setLineFree(false); }, [editSet]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -589,21 +588,9 @@ export default function DieRegistry() {
               {/* ⚠️ ยังไม่มี master ของ "กลุ่มเครื่องปั๊ม" (LINE A ( 800 Ton ) ฯลฯ ไม่อยู่ใน production_lines — audit #28)
                   → เลือกจากชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว (self-referential) กันสะกดต่างจน inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์
                   "✏️ ระบุใหม่" เฉพาะไลน์ที่ยังไม่มีในระบบ · ทางแก้ถาวร = ลงทะเบียนกลุ่มเครื่องปั๊มเป็น master แล้วใช้ <LineSelect> · 2026-09-07 */}
-              {(lineFree || (editSet.line_name && !dieLineNames.includes(editSet.line_name)))
-                ? <div style={{ display: 'flex', gap: 6 }}>
-                    <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={editSet.line_name || ''} placeholder="เช่น LINE A ( 800 Ton )"
-                      onChange={e => setEditSet(f => ({ ...f, line_name: e.target.value }))} />
-                    {dieLineNames.length > 0 && (
-                      <button type="button" onClick={() => { setLineFree(false); setEditSet(f => ({ ...f, line_name: '' })); }}
-                        style={{ ...cancelBtnStyle, padding: '2px 8px', fontSize: 11, whiteSpace: 'nowrap' }}>เลือกจากรายการ</button>
-                    )}
-                  </div>
-                : <select style={inputStyle} value={editSet.line_name || ''}
-                    onChange={e => { if (e.target.value === '__new__') { setLineFree(true); setEditSet(f => ({ ...f, line_name: '' })); } else setEditSet(f => ({ ...f, line_name: e.target.value })); }}>
-                    <option value="">— เลือก —</option>
-                    {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
-                    <option value="__new__">✏️ ระบุใหม่ (ไลน์ที่ยังไม่มีในระบบ)</option>
-                  </select>}
+              <SelectOrFree value={editSet.line_name || ''} options={dieLineNames} placeholder="— เลือกไลน์/กลุ่มเครื่องปั๊ม —"
+                freeLabel="✏️ ระบุใหม่ (ไลน์ที่ยังไม่มีในระบบ)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
+                onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รูปแบบชุด">
               <select style={inputStyle} value={editSet.kind || 'tandem'}

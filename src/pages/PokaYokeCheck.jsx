@@ -8,6 +8,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 const NO_LINES = [];
 
@@ -44,12 +45,10 @@ export default function PokaYokeCheck() {
   }, []);
 
   /* สถานีของไลน์ที่กำลังแก้อุปกรณ์ (Main `workstations`) — จุดงานเลือกจากทะเบียน ไม่พิมพ์เอง (audit #24 · 2026-09-07)
-     stationFree = ระบุเองสำหรับอุปกรณ์ที่ไม่ได้อยู่ประจำสถานี · guard alive กัน stale-response ตอนสลับไลน์ */
+     <SelectOrFree> = ระบุเองสำหรับอุปกรณ์ที่ไม่ได้อยู่ประจำสถานี · guard alive กัน stale-response ตอนสลับไลน์ */
   const [stations, setStations] = useState([]);
-  const [stationFree, setStationFree] = useState(false);
   const editLine = dEditing?.line_name || '';
   useEffect(() => {
-    setStationFree(false);
     if (!editLine) { setStations([]); return; }
     let alive = true;
     supabase.from('workstations').select('station_name').eq('line_name', editLine).order('station_name')
@@ -230,17 +229,8 @@ export default function PokaYokeCheck() {
               </div>
               <div><div style={lb}>จุดงาน/ตำแหน่ง</div>
                 {/* เลือกจาก workstations ของไลน์ (ทะเบียนสถานี) — "ระบุเอง" เฉพาะอุปกรณ์ที่ไม่อยู่ประจำสถานี · ค่าเก่าที่ไม่ตรงทะเบียนโชว์ในโหมดระบุเอง · 2026-09-07 */}
-                {(stationFree || (dEditing.station && !stations.includes(dEditing.station)))
-                  ? <div style={{ display: 'flex', gap: 6 }}>
-                      <input value={dEditing.station || ''} onChange={e => setDEditing(p => ({ ...p, station: e.target.value }))} placeholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)" style={{ flex: 1, minWidth: 0, width: 'auto' }} />
-                      {stations.length > 0 && <button type="button" onClick={() => { setStationFree(false); setDEditing(p => ({ ...p, station: '' })); }} style={{ ...btnGray, padding: '6px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>เลือกจากสถานี</button>}
-                    </div>
-                  : <select value={dEditing.station || ''} style={{ width: '100%' }}
-                      onChange={e => { if (e.target.value === '__free__') { setStationFree(true); setDEditing(p => ({ ...p, station: '' })); } else setDEditing(p => ({ ...p, station: e.target.value })); }}>
-                      <option value="">— ไม่ระบุสถานี —</option>
-                      {stations.map(s => <option key={s} value={s}>{s}</option>)}
-                      <option value="__free__">✏️ ระบุเอง (ไม่อยู่ประจำสถานี)</option>
-                    </select>}
+                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder="— ไม่ระบุสถานี —" freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
+                  onChange={v => setDEditing(p => ({ ...p, station: v }))} style={{ width: '100%' }} />
               </div>
               <div><div style={lb}>วิธีทดสอบ</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder="เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน" /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10 }}>

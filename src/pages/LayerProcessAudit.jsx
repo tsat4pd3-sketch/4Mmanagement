@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
@@ -47,29 +48,6 @@ const ANSWERS = [
 ];
 const ansMeta = (k) => ANSWERS.find(a => a.key === k);
 
-/* ── StationPick — สถานีตรวจเลือกจาก "สถานีในแผน ∪ จุดงาน (workstations) ของครอบครัวไลน์" + ✏️ ระบุเอง
-   (2026-09-07) · ค่าเดิมที่ไม่อยู่ในลิสต์ยังโชว์ได้ · ใช้ทั้งช่องบันทึกผลตรวจและช่องรายวันในตารางแผน (compact) */
-function StationPick({ value, onChange, options = [], disabled, style }) {
-  const [free, setFree] = useState(false);
-  const list = [...new Set(options.map(o => String(o || '').trim()).filter(Boolean))];
-  const custom = free || (!!value && !list.includes(value));
-  if (custom) return (
-    <div style={{ display: 'flex', gap: 3, ...style }}>
-      <input type="text" value={value || ''} disabled={disabled} placeholder="ระบุเอง" style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '4px 8px' }}
-        onChange={e => { setFree(true); onChange(e.target.value); }} />
-      <button type="button" disabled={disabled} title="กลับไปเลือกจากลิสต์" onClick={() => { setFree(false); onChange(''); }}
-        style={{ padding: '2px 7px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>↩</button>
-    </div>
-  );
-  return (
-    <select value={value || ''} disabled={disabled} style={{ fontSize: 12, padding: '4px 8px', ...style }}
-      onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
-      <option value="">— เลือกสถานี —</option>
-      {list.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value="__free__">✏️ ระบุเอง…</option>
-    </select>
-  );
-}
 const SHIFT_META = { day: 'กะเช้า (Shift 01)', night: 'กะดึก (Shift 02)' };
 
 /* ── date helpers (กฎ work date ตัด 08:00 — ห้าม toISOString) ── */
@@ -968,7 +946,7 @@ ${issuesHtml}
                             </td>
                             <td>
                               {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>วันหยุด</span> : (
-                                <StationPick value={pd.station || ''} onChange={v => setQDay(mk, d, { station: v })} disabled={!canManage}
+                                <SelectOrFree value={pd.station || ''} onChange={v => setQDay(mk, d, { station: v })} disabled={!canManage} placeholder="— เลือกสถานี —" compact
                                   options={[...(qHeader.stations || '').split(/[\n,]+/), ...wsNames]} style={{ width: 'min(100%, 320px)' }} />
                               )}
                             </td>
@@ -1015,7 +993,7 @@ ${issuesHtml}
             <div>
               <div style={lb}>Station ที่ตรวจ</div>
               {/* สถานีจากแผนเดือนนี้ ∪ จุดงานในผังไลน์ + ระบุเอง (lpa_audits.station เดิมพิมพ์เอง · 2026-09-07) */}
-              <StationPick value={draft?.station || ''} onChange={v => setDraft(prev => ({ ...prev, station: v }))}
+              <SelectOrFree value={draft?.station || ''} onChange={v => setDraft(prev => ({ ...prev, station: v }))} placeholder="— เลือกสถานี —" compact
                 options={[...auditPlanStations, ...wsNames]} style={{ width: 190, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
             </div>
             <div>

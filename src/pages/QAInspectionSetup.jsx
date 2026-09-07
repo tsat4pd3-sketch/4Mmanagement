@@ -22,7 +22,7 @@ import { QA_STAGES } from '../utils/qaStages';
 import CalloutPin from '../components/CalloutPin';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import LineSelect from '../components/LineSelect';
-import SearchSelect from '../components/SearchSelect';
+import InstrumentSelect from '../components/InstrumentSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
@@ -109,24 +109,6 @@ function Modal({ title, onClose, children, width = 560 }) {
   );
 }
 
-/* ── InstrumentPick — วิธี/เครื่องมือตรวจ เลือกจากทะเบียน qa_instruments (เก็บ code) — โยงจุดตรวจกับสถานะสอบเทียบ
-   (2026-09-07) · allowFree สำหรับวิธีที่ไม่ใช่เครื่องมือ (Visual / CF) และเครื่องมือที่ยังไม่ลงทะเบียน */
-const upKey = (v) => String(v ?? '').trim().toUpperCase();
-function InstrumentPick({ value, onChange, instruments = [] }) {
-  const options = useMemo(() => instruments.map(i => ({
-    id: i.id, label: i.code, key: upKey(i.code), sub: [i.name, i.inst_type, i.line_name].filter(Boolean).join(' · '),
-    keywords: `${i.name || ''} ${i.inst_type || ''} ${i.line_name || ''}`,
-    badge: i.status === 'retired' ? '⏸' : i.status === 'repair' ? '🔧' : null,
-  })), [instruments]);
-  const sel = useMemo(() => options.find(o => o.key === upKey(value)) || null, [options, value]);
-  return (
-    <SearchSelect value={sel ? sel.id : ''} text={value || ''} options={options}
-      allowFree freeHint="วิธีตรวจที่ไม่ใช่เครื่องมือ (Visual/CF) หรือเครื่องมือที่ยังไม่ลงทะเบียนที่ /qa 📏" placeholder="Vernier / CF / Visual — ค้นรหัส/ชื่อเครื่องมือ…"
-      emptyText="ไม่พบเครื่องมือวัดในทะเบียน (/qa แท็บ 📏 เครื่องมือวัด)"
-      onChange={({ text, opt }) => onChange(opt ? opt.label : text)} />
-  );
-}
-
 function Field({ label, children, span }) {
   return (
     <div style={{ gridColumn: span ? '1 / -1' : undefined }}>
@@ -154,7 +136,6 @@ export default function QAInspectionSetup() {
 
   const [parts, setParts] = useState([]);
   const [lines, setLines] = useState([]);
-  const [instruments, setInstruments] = useState([]);   // qa_instruments — picker วิธี/เครื่องมือตรวจ
   const [selId, setSelId] = useState(null);
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState('');
@@ -205,9 +186,6 @@ export default function QAInspectionSetup() {
     // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> กรองปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
     supabase.from('production_lines').select(LINE_COLUMNS).order('name')
       .then(({ data }) => setLines(data || []));
-    // ทะเบียนเครื่องมือวัด (Main) — ป้อน picker "วิธี/เครื่องมือตรวจ" ของจุดตรวจ (2026-09-07)
-    supabase.from('qa_instruments').select('id, code, name, inst_type, line_name, status').order('code')
-      .then(({ data }) => setInstruments(data || []));
   }, []);
 
   const loadItems = useCallback(async (partId) => {
@@ -1048,7 +1026,9 @@ export default function QAInspectionSetup() {
               </>
             )}
             <Field label="วิธี / เครื่องมือตรวจ">
-              <InstrumentPick value={itemModal.method} instruments={instruments} onChange={v => setItemModal(f => ({ ...f, method: v }))} />
+              {/* ทะเบียนเครื่องมือวัด (Main qa_instruments) โหลด+cache ใน <InstrumentSelect> เอง (2026-09-07) */}
+              <InstrumentSelect value={itemModal.method} onChange={v => setItemModal(f => ({ ...f, method: v }))}
+                placeholder="Vernier / CF / Visual — ค้นรหัส/ชื่อเครื่องมือ…" />
             </Field>
             <Field label="Stage การตรวจ">
               <select style={inputSt} value={itemModal.stage} onChange={e => setItemModal(f => ({ ...f, stage: e.target.value }))}>
