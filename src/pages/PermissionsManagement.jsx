@@ -5,6 +5,7 @@ import { toast } from '../components/Toast';
 import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import { NAV_GROUP_ORDER } from '../App';
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
@@ -194,7 +195,10 @@ export default function PermissionsManagement() {
     return m;
   }, [rows]);
 
-  // catalog จัดกลุ่มตาม group_name เรียงตาม sort (sort ใน seed ไล่ต่อเนื่องข้ามกลุ่ม)
+  // catalog จัดกลุ่มตาม group_name · ลำดับ "หมวด" ตาม NAV_GROUP_ORDER (= sidebar) ไม่ใช่ตาม sort ข้ามหมวด
+  //   (2026-09-07: เดิมเรียงหมวดตามแถวแรกที่เจอ → sort หลุดช่วงทีเดียว หมวดทั้งหมวดลอยไปผิดที่ เคยเกิดกับ Logistic)
+  //   sort ยังคุมลำดับ "ภายในหมวด" เหมือนเดิม · หมวดที่ไม่มีใน NAV_GROUP_ORDER (seed ชื่อผิด — ฐานมี FK กันแล้ว
+  //   แต่กันเหนียว) ต่อท้ายพร้อมป้าย ⚠️ ให้เห็นว่าเป็นหมวดกำพร้า ไม่ปล่อยให้กลืนไปกับของจริง
   const actionGroups = useMemo(() => {
     const groups = [];
     for (const c of catalog) {
@@ -202,7 +206,10 @@ export default function PermissionsManagement() {
       if (!g) { g = { group: c.group_name, items: [] }; groups.push(g); }
       g.items.push({ key: `${c.resource}:${c.action}`, label: c.label });
     }
-    return groups;
+    const rank = g => { const i = NAV_GROUP_ORDER.indexOf(g); return i < 0 ? NAV_GROUP_ORDER.length : i; };
+    return groups
+      .sort((a, b) => rank(a.group) - rank(b.group))
+      .map(g => NAV_GROUP_ORDER.includes(g.group) ? g : { ...g, group: `⚠️ ${g.group} (หมวดไม่อยู่ในเมนู — แก้ group_name ใน permission_catalog)` });
   }, [catalog]);
 
   const toggle = async (permissionKey, role, current) => {

@@ -54,7 +54,9 @@
 > - **เมนูแยก 3 หมวดตามฝั่งแล้ว** (`Logistic - ขาเข้า (Inbound)` / `ขาออก (Outbound)` / `แผนงาน & ข้อมูล`)
 >   — `NAV_GROUP_ORDER` + `NAV_GROUP_META` + `CARD_META` (DeptHub) + `PAGE_GROUPS` (/permissions)
 >   + `permission_catalog.group_name/sort` (migration `20260903_permission_catalog_logistic_sides.sql` · **apply แล้ว**
->   · ซอย sort ในช่วง 5xx: ขาเข้า 500-519 · ขาออก 520-539 · แผนงาน 540-559) — **5 จุดนี้ต้องตรงกันเสมอ**
+>   · ซอย sort ในช่วง 5xx: ขาเข้า 500-519 · ขาออก 520-539 · แผนงาน 540-599) — **5 จุดนี้ต้องตรงกันเสมอ**
+>   · **2026-09-07: + จุดที่ 6 = ตาราง `nav_groups`** (ทะเบียนหมวดในฐาน · `permission_catalog.group_name` FK มาที่นี่ ·
+>   migration `20260907_nav_groups_registry.sql` **apply แล้ว**) — เทส `navGroupsRegistry.test.mjs` ล็อกให้ตรง App.jsx
 > - **`NAV_ITEMS[].alsoIn` = หน้าที่ทำงานคาบ 2 หมวด** (ตอนนี้มีตัวเดียว: `/store-monitor` จับทั้งขาเข้า-ขาออก)
 >   sidebar + การ์ดหน้า Home โชว์ซ้ำ 2 ที่ผ่าน **`inNavGroup(item, groups)`** · แต่ **สิทธิ์/ค้นหา/breadcrumb/
 >   ตัวนับ นับครั้งเดียวเสมอ** (1 หน้ามีสิทธิ์ชุดเดียว) — `PAGE_GROUPS` จึงใส่ที่หมวดหลักที่เดียว
