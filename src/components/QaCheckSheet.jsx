@@ -680,7 +680,8 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
           background: judged ? color : (item.rank ? RANK[item.rank].color : '#4d9fff'),
         }}>{item.balloon_no}</span>
 
-        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+        {/* minWidth 200: จอแคบให้ปุ่ม/ช่องค่าตกบรรทัดใหม่ แทนที่จะบีบข้อความจนคำละบรรทัด (วัดจริง 390px การ์ดสูง 500px+ · 2026-09-07) */}
+        <div style={{ flex: '1 1 240px', minWidth: 200 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.characteristic}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
             <span>สเปค: {specOf(item)}</span>
