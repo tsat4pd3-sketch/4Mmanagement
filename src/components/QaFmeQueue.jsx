@@ -112,8 +112,9 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
     setReadiness({ ...assessFmeReadiness({ qaParts, products, rules }), at: Date.now() });
   }, []);
 
-  // เปิดแผง ⚙️ เมื่อไหร่ ตรวจใหม่ทุกครั้ง (ไปผูกพาร์ท/เลือกห้องมาแล้วกลับมาต้องเห็นผลทันที)
-  useEffect(() => { if (showCfg && canManage) loadReadiness(); }, [showCfg, canManage, loadReadiness]);
+  // คนมีสิทธิ์เปิด: ตรวจตั้งแต่เปิดหน้า (แถบ "ปิดอยู่" ต้องบอกได้เลยว่าติดกี่ข้อ) และตรวจใหม่ทุกครั้งที่กดเปิดแผง ⚙️
+  // (ไปผูกพาร์ท/เลือกห้องมาแล้วกลับมาต้องเห็นผลทันที)
+  useEffect(() => { if (canManage) loadReadiness(); }, [showCfg, canManage, loadReadiness]);
 
   const saveCfg = async (patch) => {
     if (patch.is_enabled === true) {

@@ -22,6 +22,7 @@ import { QA_STAGES } from '../utils/qaStages';
 import CalloutPin from '../components/CalloutPin';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import { specLabel } from '../utils/qaSpec';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -837,11 +838,9 @@ export default function QAInspectionSetup() {
                         </td>
                         <td style={tdSt}>{it.characteristic}{it.remark ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{it.remark}</div> : null}</td>
                         <td style={tdSt}><Chip label={it.item_type === 'variable' ? 'Variable' : 'Attribute'} color={it.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} /></td>
-                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                          {it.spec_text || (it.item_type === 'variable'
-                            ? [it.lsl != null ? `LSL ${it.lsl}` : null, it.nominal != null ? `${it.nominal}` : null, it.usl != null ? `USL ${it.usl}` : null].filter(Boolean).join(' / ') || '—'
-                            : 'GO / NOGO')}
-                          {it.unit ? ` ${it.unit}` : ''}
+                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }} title={it.spec_text ? `ข้อความตามแบบ: ${it.spec_text}` : undefined}>
+                          {/* ข้อความเดียวกับที่จอตรวจโชว์ (utils/qaSpec — ห้ามประกอบเอง) */}
+                          {specLabel(it)}
                         </td>
                         <td style={tdSt}>{it.method || '—'}</td>
                         <td style={tdSt}>{it.rank ? <Chip label={it.rank} color={RANK[it.rank]?.color || '#6b7280'} /> : '—'}</td>
@@ -1004,7 +1003,9 @@ export default function QAInspectionSetup() {
             <Field label="ชื่อจุดตรวจ / Characteristic *" span>
               <input style={inputSt} placeholder="เช่น ความกว้างร่อง A / ไม่มีครีบบริเวณขอบตัด" value={itemModal.characteristic} onChange={e => setItemModal(f => ({ ...f, characteristic: e.target.value }))} />
             </Field>
-            <Field label="Quality standard (ข้อความตามแบบ)" span>
+            <Field label={itemModal.item_type === 'variable'
+              ? 'Quality standard (ข้อความตามแบบ — ใช้แสดงเฉพาะเมื่อไม่ได้ตั้ง LSL/USL/Nominal)'
+              : 'Quality standard (ข้อความตามแบบ)'} span>
               <input style={inputSt} placeholder='เช่น "5 ± 1.5", "0 ≤ 0.3" หรือ "GO / NOGO"' value={itemModal.spec_text} onChange={e => setItemModal(f => ({ ...f, spec_text: e.target.value }))} />
             </Field>
             {itemModal.item_type === 'variable' && (
@@ -1013,6 +1014,13 @@ export default function QAInspectionSetup() {
                 <Field label="Nominal"><input type="number" step="any" style={inputSt} value={itemModal.nominal} onChange={e => setItemModal(f => ({ ...f, nominal: e.target.value }))} /></Field>
                 <Field label="USL"><input type="number" step="any" style={inputSt} value={itemModal.usl} onChange={e => setItemModal(f => ({ ...f, usl: e.target.value }))} /></Field>
                 <Field label="หน่วย"><input style={inputSt} value={itemModal.unit} onChange={e => setItemModal(f => ({ ...f, unit: e.target.value }))} /></Field>
+                {/* พรีวิวจากค่าชุดเดียวกับที่ตัดสินอัตโนมัติ — ตัวเลขคือความจริง ข้อความตามแบบเป็นแค่ประกอบ (2026-09-07) */}
+                <div style={{ gridColumn: '1 / -1', fontSize: 12, color: 'var(--muted)' }}>
+                  จอตรวจจะแสดงสเปคว่า <b style={{ color: 'var(--text)' }}>{specLabel(itemModal)}</b>
+                  {itemModal.lsl === '' && itemModal.usl === '' && (
+                    <span style={{ color: '#f59e0b' }}> · ยังไม่ตั้ง LSL/USL — ระบบจะไม่ตัดสินอัตโนมัติ คนตรวจต้องกดผ่าน/ไม่ผ่านเอง</span>
+                  )}
+                </div>
               </>
             )}
             <Field label="วิธี / เครื่องมือตรวจ">

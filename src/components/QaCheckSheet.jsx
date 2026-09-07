@@ -28,6 +28,7 @@ import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import { specLabel, judgeVariable } from '../utils/qaSpec';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -657,24 +658,10 @@ export default function QaCheckSheet({ canRecord }) {
 }
 
 /* สเปคที่ใช้ตัดสิน — ข้อความเดียวกับที่โชว์ในหน้า setup */
-function specOf(it) {
-  if (it.spec_text) return it.spec_text + (it.unit ? ` ${it.unit}` : '');
-  if (it.item_type === 'variable') {
-    const s = [it.lsl != null ? `LSL ${it.lsl}` : null, it.nominal != null ? `${it.nominal}` : null, it.usl != null ? `USL ${it.usl}` : null]
-      .filter(Boolean).join(' / ');
-    return (s || '—') + (it.unit ? ` ${it.unit}` : '');
-  }
-  return 'GO / NOGO';
-}
-
-/* ตัดสินอัตโนมัติสำหรับจุด variable: ทุกค่าต้องอยู่ในสเปค (ไม่ตั้ง limit = ตัดสินเองไม่ได้) */
-function autoJudge(it, values) {
-  if (it.lsl == null && it.usl == null) return null;
-  const nums = values.filter(v => v !== '' && v != null).map(Number);
-  if (!nums.length || nums.some(Number.isNaN)) return null;
-  const bad = nums.some(v => (it.lsl != null && v < it.lsl) || (it.usl != null && v > it.usl));
-  return bad ? 'ng' : 'ok';
-}
+/* สเปค + ตัดสินอัตโนมัติ ย้ายไป utils/qaSpec.js (single source of truth · 2026-09-07)
+   — label กับคำตัดสินต้องอ่าน limit ชุดเดียวกัน · ห้ามประกอบข้อความสเปคเองในหน้านี้อีก */
+const specOf = specLabel;
+const autoJudge = judgeVariable;
 
 function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobile, rowRef, onSelect, onDraft, onSave, onOpenNcr }) {
   const n = Math.min(10, Math.max(1, item.sample_size || 1));
