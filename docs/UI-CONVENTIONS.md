@@ -396,6 +396,9 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 | MAT SAP / เลขพาร์ท / Kanban Std / die set / PE set / NPI part | `<ProductSelect>` (+`extraOptions` BOM/parts_master) | `useProducts` (DR dr_products) | `mat_no` + `product_id` เมื่อคอลัมน์มี |
 | ลูกค้า | `<CustomerSelect>` | `useCustomers` (distinct dr_products ∪ ship_to_plants — **ยังไม่มีตาราง customers**) | ชื่อ text (normalize เป็นสะกดหลัก) |
 | รหัสคลัง Stor.Loc. | `<StorageLocSelect>` | `useStorageLocations` (DR storage_locations) | code |
+| เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
+| เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
+| ค่าที่มีลิสต์สั้น + ต้องยอมระบุเองจริง (ส่วนงาน/แผนก/ฝ่าย · สถานี · ไลน์ปั๊มแม่พิมพ์) | `<SelectOrFree>` (select + "✏️ ระบุเอง" ช่องเดียว · ค่าเดิมนอกลิสต์เปิดในโหมดระบุเอง) | org_nodes / workstations / ที่มีอยู่ | text |
 | ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
 | ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
 | ส่วนงาน / แผนก | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |

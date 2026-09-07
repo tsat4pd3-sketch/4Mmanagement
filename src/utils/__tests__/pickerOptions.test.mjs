@@ -82,3 +82,17 @@ test('productOptions: ตัด OP เป็น default · prefer ไลน์ �
   const cur = productOptions(products, { current: '99999' });
   assert.ok(cur.some(x => x.mat_no === '99999' && x.badge === '⏸'));
 });
+
+import { buildPartOptions, partKey } from '../partOptions.js';
+test('buildPartOptions: กุญแจ = part_no (P/N) · รวม 3 แหล่งไม่ซ้ำ · dr_products ใช้ p_no fallback mat_no', () => {
+  const o = buildPartOptions({
+    sets: [{ part_no: 'MB3B-8C306', part_name: 'REINF', status: 'active' }, { part_no: 'OLD-1', status: 'obsolete' }],
+    qaParts: [{ part_no: 'mb3b-8c306', part_name: '', mat_no: '10100384', is_active: true }, { part_no: 'X-9', is_active: false }],
+    products: [{ mat_no: '10100385', p_no: 'MB3B-8C307', name: 'LH', is_active: true }, { mat_no: '20000001', name: 'no pn', is_active: true }, { mat_no: 'OP', is_operation: true }],
+  });
+  assert.deepEqual(o.map(x => x.key), ['MB3B-8C306', 'MB3B-8C307', '20000001']);
+  const first = o[0];
+  assert.equal(first.part_name, 'REINF');
+  assert.equal(first.mat_no, '10100384', 'เติม mat_no จากแหล่งที่สองเมื่อแหล่งแรกไม่มี');
+  assert.equal(partKey(' mb3b-8c306 '), 'MB3B-8C306');
+});

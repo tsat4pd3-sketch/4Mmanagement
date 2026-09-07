@@ -516,11 +516,13 @@ src/
 │                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal,
 │                      #   DowntimeSiren (เสียงเตือน downtime — 2026-07-14)
 │                      #   ⭐ picker กลาง (2026-09-07 — UI-CONVENTIONS §5.1.2 บังคับ): LineSelect · SearchSelect ·
-│                      #   PersonSelect · MachineSelect · ProductSelect · CustomerSelect · StorageLocSelect
+│                      #   PersonSelect · MachineSelect · ProductSelect · PartSelect · CustomerSelect · StorageLocSelect ·
+│                      #   InstrumentSelect · SelectOrFree (select + ระบุเอง ช่องเดียว)
 ├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
 │                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·
 │                      #   useCustomers (ยังไม่มีตาราง customers — derive จาก Product Master) · useStorageLocations ·
-│                      #   useOrgSections (+useOrgTeams) · pickerOptions.js (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
+│                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · pickerOptions.js + partOptions.js
+│                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
 │                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
 │                      #   otPeriods.js, dateFormat.js, useImgBox.js
