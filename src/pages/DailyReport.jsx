@@ -35,6 +35,7 @@ import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
@@ -6728,6 +6729,8 @@ function ProductSetup({ role }) {
   const [kanbanForm, setKanbanForm]       = useState({ product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
   const [kanbanSaving, setKanbanSaving]   = useState(false);
   const [expandedFamilies, setExpandedFamilies] = useState({}); // family_id → bool
+  // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc / MAT เก่าที่ Product Master ยังไม่มี ยังเลือกซ้ำได้ (product_id null) · 2026-09-07
+  const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
 
   const blankForm = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '' });
 
@@ -6835,12 +6838,13 @@ function ProductSetup({ role }) {
   const handleKanbanSave = async () => {
     if (!kanbanForm.mat_no.trim()) { toast.error('กรอก MAT.NO ก่อน'); return; }
     if (!kanbanForm.qty_per_kanban || Number(kanbanForm.qty_per_kanban) < 1) { toast.error('Qty ต้องมากกว่า 0'); return; }
-    // 2026-09-07 MAT.NO ต้องมีใน Product Master (สแกนเปิดใบ join ด้วย mat_no — std ของ MAT ที่ไม่มีจริงใช้ไม่ได้)
+    // 2026-09-07 MAT.NO นอก Product Master → ถามยืนยัน (เดิมบล็อกแข็ง — user สั่ง: ทะเบียนไม่มีต้องยังใช้ค่าที่เคยบันทึกได้)
+    //   บันทึกได้แต่ product_id = null (สแกนเปิดใบ join ด้วย mat_no ยังใช้ได้เมื่อเพิ่มสินค้าทีหลัง)
     const matched = items.find(i => String(i.mat_no || '').trim().toUpperCase() === kanbanForm.mat_no.trim().toUpperCase());
-    if (!matched) { toast.error(`MAT.NO ${kanbanForm.mat_no.trim().toUpperCase()} ไม่มีใน Product Master — เพิ่มสินค้าก่อน`); return; }
+    if (!matched && !window.confirm(`MAT.NO ${kanbanForm.mat_no.trim().toUpperCase()} ไม่มีใน Product Master — จะบันทึกโดยไม่ผูกสินค้า (product_id ว่าง) ใช้ค่านี้ต่อหรือไม่?`)) return;
     setKanbanSaving(true);
     const payload = {
-      product_id: kanbanForm.product_id || matched.id || null,
+      product_id: kanbanForm.product_id || matched?.id || null,
       mat_no: kanbanForm.mat_no.trim().toUpperCase(),
       qty_per_kanban: parseInt(kanbanForm.qty_per_kanban),
       is_active: kanbanForm.is_active,
@@ -7099,8 +7103,8 @@ function ProductSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
-                  {/* 2026-09-07 เลือกจาก Product Master เท่านั้น (ไม่ allowFree) — kanban std ของ MAT ที่ไม่มีในทะเบียนใช้สแกนเปิดใบไม่ได้ · เซ็ต product_id คู่กับ mat_no */}
-                  <ProductSelect products={items} value={kanbanForm.mat_no} placeholder="เช่น 10100335"
+                  {/* 2026-09-07 เลือกจาก Product Master (ไม่ allowFree) + กลุ่ม 📜 MAT ที่เคยบันทึกไว้ (product_id ว่าง) · เซ็ต product_id คู่กับ mat_no */}
+                  <ProductSelect products={items} value={kanbanForm.mat_no} placeholder="เช่น 10100335" history={kanbanMatHist}
                     lines={items.find(i => i.id === kanbanForm.product_id)?.line_name ? [items.find(i => i.id === kanbanForm.product_id).line_name] : undefined}
                     inputStyle={{ ...inputStyle, fontWeight: 700 }}
                     onChange={({ mat_no, id }) => setKanbanForm(f => ({ ...f, mat_no, product_id: id || '' }))} />

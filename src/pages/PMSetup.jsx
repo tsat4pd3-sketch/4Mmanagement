@@ -13,6 +13,7 @@ import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } fro
 import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
 import ProductSelect from '../components/ProductSelect'
+import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเครื่องที่เคยบันทึกใน jigs — Machine Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { LINE_COLUMNS } from '../utils/useProductionLines'
 import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
@@ -455,6 +456,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [addMode, setAddMode] = useState(isEdit ? 'manual' : 'workstation')
   const [machineOptions, setMachineOptions] = useState([])
   const [machineId, setMachineId] = useState(editJig?.machine_id ?? null)
+  // 📜 เลขเครื่องที่เคยบันทึกใน jigs (DR) — facility/จิ๊กที่ยังไม่ลง Machine Master แต่เคยตั้ง PM ไว้ ยังเลือกซ้ำได้ (machine_id null เหมือนพิมพ์เอง) · 2026-09-07
+  const jigMachineHist = useColumnHistory(supabaseDR, 'jigs', 'machine_no', { upper: true })
 
   const [name, setName] = useState(editJig?.name ?? '')
   const [description, setDescription] = useState(editJig?.description ?? '')
@@ -1094,7 +1097,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             {/* Machine No. = <MachineSelect> เซ็ต machine_id คู่กัน — โหมด manual เดิมพิมพ์เองแล้ว machine_id=null ทำ Andon/PmCoordination
                 หาเครื่องไม่เจอ · พิมพ์เองยังได้ (facility ที่ไม่อยู่ใน Machine Master) แต่ติดป้าย · โหมด Floor Map ล็อกตามเครื่องที่เลือก · 2026-09-07 */}
             <div><label style={S.label}>Machine No.</label>
-              <MachineSelect value={machineNo} machines={machineOptions} lines={lineName ? [lineName] : undefined} allowFree
+              <MachineSelect value={machineNo} machines={machineOptions} lines={lineName ? [lineName] : undefined} allowFree history={jigMachineHist}
                 disabled={addMode === 'workstation' && !isEdit}
                 freeHint="(อุปกรณ์ที่ไม่อยู่ใน Machine Master — จะไม่ผูก machine_id)"
                 onChange={res => {

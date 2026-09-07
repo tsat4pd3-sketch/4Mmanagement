@@ -15,6 +15,7 @@ import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
 import ProductSelect from './ProductSelect';
 import PersonSelect from './PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน quality_bin_records — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { positionLabel } from '../utils/positions';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -64,6 +65,13 @@ export default function QualityBins() {
   const [lines, setLines] = useState([]);
   // 2026-09-07 ชิ้นงานอ่านผ่าน <ProductSelect> (cache Product Master กลาง — เลิก datalist 400 แถวที่ตัดของหายเงียบ)
   const [matLocked, setMatLocked] = useState(false); // mat_no ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน
+  /* 📜 ค่าที่เคยบันทึกใน quality_bin_records (DR) — ชิ้นงาน/ชื่อคนที่กรอกมาก่อนทะเบียนจะครบ ยังเลือกซ้ำได้ ห้ามล้าง/บล็อกเงียบ
+     (คำสั่ง user 2026-09-07) · known:false = นอกทะเบียน → ไม่ล็อกชื่อ/Part No. */
+  const binMatHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'mat_no', { upper: true });
+  const reportedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'reported_by');
+  const qaByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'qa_by');
+  const repairByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'repair_by');
+  const disposedByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
   const [rows, setRows] = useState([]);
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(today());
@@ -327,11 +335,12 @@ export default function QualityBins() {
 
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)</label>
                 {/* 2026-09-07 <ProductSelect> — สินค้าของครอบครัวไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้ (ของที่ยังไม่อยู่ในทะเบียนมาถึงถังจริง) พร้อมป้าย */}
-                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master"
+                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master" history={binMatHist}
                   placeholder="MAT / รหัสชิ้นงาน" inputStyle={inp}
-                  onChange={({ mat_no, name, p_no, line_name, opt }) => {
-                    setMatLocked(!!opt);
-                    setForm(f => ({ ...f, mat_no, ...(opt ? { part_name: name || f.part_name, part_no: p_no || f.part_no, line_name: f.line_name || line_name || '' } : {}) }));
+                  onChange={({ mat_no, name, p_no, line_name, opt, known }) => {
+                    const inReg = !!opt && known !== false; // กลุ่ม 📜 เคยบันทึกไว้ = นอกทะเบียน → ปฏิบัติเหมือนพิมพ์เอง (2026-09-07)
+                    setMatLocked(inReg);
+                    setForm(f => ({ ...f, mat_no, ...(inReg ? { part_name: name || f.part_name, part_no: p_no || f.part_no, line_name: f.line_name || line_name || '' } : {}) }));
                   }} /></div>
               {/* ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน (ล้าง MAT เพื่อแก้เอง) — กันสะกดชื่อชิ้นงานคนละแบบ */}
               <div><label style={lbl}>ชื่อชิ้นงาน</label>
@@ -343,16 +352,16 @@ export default function QualityBins() {
                 <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
               {/* 2026-09-07 ชื่อคนเลือกจาก employees+profiles ผ่าน <PersonSelect> (คนในครอบครัวไลน์ขึ้นก่อน · เก็บชื่อ snapshot — ตาราง DR) */}
               <div><label style={lbl}>ผู้แจ้ง (พนักงาน)</label>
-                <PersonSelect value={form.reported_by} source="both" lines={famLines} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
+                <PersonSelect value={form.reported_by} source="both" lines={famLines} history={reportedHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
               <div><label style={lbl}>ผู้ตรวจสอบ (QA)</label>
-                <PersonSelect value={form.qa_by} source="both" roles={['qa']} lines={famLines} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, qa_by: name }))} /></div>
+                <PersonSelect value={form.qa_by} source="both" roles={['qa']} lines={famLines} history={qaByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, qa_by: name }))} /></div>
 
               {isY ? (<>
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ผลการซ่อม</div>
                 <div><label style={lbl}>วันที่ซ่อมชิ้นงาน</label>
                   <input type="date" value={form.repair_date} onChange={e => setForm(f => ({ ...f, repair_date: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>ผู้ดำเนินการซ่อม</label>
-                  <PersonSelect value={form.repair_by} source="both" lines={famLines} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, repair_by: name }))} /></div>
+                  <PersonSelect value={form.repair_by} source="both" lines={famLines} history={repairByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, repair_by: name }))} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>รายละเอียดการซ่อมชิ้นงาน</label>
                   <input value={form.repair_detail} onChange={e => setForm(f => ({ ...f, repair_detail: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>ผลซ่อม OK (ชิ้น)</label>
@@ -365,7 +374,7 @@ export default function QualityBins() {
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การกำจัดทำลาย (ตาม DOA)</div>
                 <div><label style={lbl}>ผู้กำจัดทำลาย</label>
                   {/* เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน (positions master) อัตโนมัติ — ยังแก้เองได้ */}
-                  <PersonSelect value={form.disposed_by} source="both" lines={famLines} inputStyle={inp}
+                  <PersonSelect value={form.disposed_by} source="both" lines={famLines} history={disposedByHist} inputStyle={inp}
                     onChange={({ name, position, opt }) => setForm(f => ({ ...f, disposed_by: name, ...(opt && position ? { disposed_position: positionLabel(position) || position } : {}) }))} /></div>
                 <div><label style={lbl}>ตำแหน่ง</label>
                   <input value={form.disposed_position} onChange={e => setForm(f => ({ ...f, disposed_position: e.target.value }))}

@@ -17,6 +17,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import MachineSelect from './MachineSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกใน routing — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const BLANK = {
   step_name: '', line_name: '', machine_no: '', process_type: '',
@@ -42,6 +43,8 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
   const [editing, setEditing] = useState(null);        // row | 'new' | null
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
+  // 📜 เลขเครื่องที่เคยบันทึกใน part_routings (DR) — เครื่องที่ยังไม่ลง /machines แต่มี routing อยู่แล้ว ยังเลือกซ้ำได้ (text join key เหมือนเดิม) · 2026-09-07
+  const machineHist = useColumnHistory(supabaseDR, 'part_routings', 'machine_no', { upper: true });
 
   const loadAll = useCallback(async () => {
     const [{ data: prods }, { data: rt }] = await Promise.all([
@@ -304,7 +307,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                   <label style={lbl}>หมายเลขเครื่อง (ถ้ามี)</label>
                   {/* 2026-09-07: เลือกจากทะเบียนเครื่อง (DR machines) ผ่าน <MachineSelect> — เครื่องของไลน์ที่เลือกขึ้นก่อน · ไม่ allowFree
                       (machine_no เป็น text join key ที่ VSM/OrderTrace เทียบด้วย normNo) */}
-                  <MachineSelect value={form.machine_no} lines={machinePrefLines}
+                  <MachineSelect value={form.machine_no} lines={machinePrefLines} history={machineHist}
                     onChange={({ machine_no }) => setForm(f => ({ ...f, machine_no: machine_no || '' }))}
                     inputStyle={{ background: 'var(--bg2)', padding: '6px 30px 6px 9px', borderRadius: 6 }} />
                 </div>

@@ -38,6 +38,7 @@ import MachineSelect from '../components/MachineSelect';
 import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
@@ -468,6 +469,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
      พิมพ์เองผิดตัวเดียว = ใบหลุด/เข้า scope คนอื่นเงียบๆ (audit 2026-09-07) · ผังว่าง = ถอยไป section ของไลน์ */
   const orgSections = useOrgSections();
   const deptsOf = useOrgDepts();
+  /* 📜 ค่าที่เคยบันทึกใน mtn_orders (DR) — ทะเบียน machines/profiles/Product Master ไม่มี ก็ยังเลือกค่าเดิมซ้ำได้
+     ห้ามล้าง/บล็อกเงียบ (คำสั่ง user 2026-09-07) · เก็บเป็น text เหมือนเดิม (known:false = id null) */
+  const machineHist = useColumnHistory(supabaseDR, 'mtn_orders', 'machine_no', { upper: true });
+  const reporterHist = useColumnHistory(supabaseDR, 'mtn_orders', 'reporter_prod');
+  const customerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'customer');
   const sectionOpts = useMemo(
     () => (orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort()),
     [orgSections, lines],
@@ -636,7 +642,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             {/* <MachineSelect> แทน datalist — ค้นเลข/ชื่อ/ไลน์ · เครื่องของไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
-            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} allowFree
+            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} allowFree history={machineHist}
               placeholder={wantDie ? 'ค้นเลขแม่พิมพ์ / สแกน' : 'ค้นเลขเครื่อง / ชื่อ / สแกน'} style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
               style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
@@ -682,11 +688,11 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
         {/* ลูกค้า = <CustomerSelect> (รายชื่อจาก Product Master · พิมพ์ใหม่ได้พร้อมป้าย) · โมเดลไม่มี master — พิมพ์เอง (2026-09-07) */}
-        <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><input value={f.model} onChange={e => set('model', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="โมเดล" /><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} placeholder="ลูกค้า" style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} /></div></Field>
+        <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><input value={f.model} onChange={e => set('model', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="โมเดล" /><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} history={customerHist} placeholder="ลูกค้า" style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} /></div></Field>
         <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
         {/* ชื่อคน = <PersonSelect> (profiles + employees · คนของไลน์/แผนกที่เลือกขึ้นก่อน) — เก็บ snapshot ชื่อเหมือนเดิม
             ตัวตนจริงของผู้เปิดใบยังเป็น reported_by_name (stamp ตอนบันทึก) · 2026-09-07 */}
-        <Field label="ผู้แจ้ง (ผลิต)"><PersonSelect value={f.reporter_prod} source="both" lines={lineFam} section={f.dept_section} onChange={res => set('reporter_prod', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+        <Field label="ผู้แจ้ง (ผลิต)"><PersonSelect value={f.reporter_prod} source="both" lines={lineFam} section={f.dept_section} history={reporterHist} onChange={res => set('reporter_prod', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
         <Field label="ผู้แจ้ง (คุณภาพ)"><PersonSelect value={f.reporter_qa} source="both" roles={QA_ROLES} section="QA" onChange={res => set('reporter_qa', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อ QA (เว้นว่างได้)" /></Field>
         <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={pickBefore} /></div>
         <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
@@ -1163,6 +1169,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   );
   // ครอบครัวไลน์ของใบ — ให้ PersonSelect เรียงคนของฝ่ายที่แจ้งขึ้นก่อน (ไม่ตัดคนอื่น) · 2026-09-07
   const orderFam = useMemo(() => (order?.line_name ? getLineFamilyNames(lines, order.line_name) : NO_LINES), [lines, order?.line_name]);
+  // 📜 ชื่อที่เคยบันทึกในช่องเดียวกันของ mtn_orders — คนนอกทะเบียน (profiles/employees) ที่เคยกรอกยังเลือกซ้ำได้ (2026-09-07)
+  const checkerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'checker_name');
+  const qaCheckerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'qa_checker');
+  const hoCheckerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'ho_checker');
+  const approverHist = useColumnHistory(supabaseDR, 'mtn_orders', 'approver_name');
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -1468,7 +1479,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           </Field>
           <Field label="ระบุรายละเอียด (เช่น ยังเหลืออะไรต้องตามต่อ)"><input value={f.check_note} onChange={e => set('check_note', e.target.value)} style={inp} /></Field>
           {/* ผู้ตรวจรับ = คนของฝ่ายที่แจ้ง (ไลน์/แผนกของใบขึ้นก่อน) ผ่าน <PersonSelect> · 2026-09-07 */}
-          <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><PersonSelect value={f.checker_name} source="both" lines={orderFam} section={o.dept_section} onChange={res => set('checker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+          <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><PersonSelect value={f.checker_name} source="both" lines={orderFam} section={o.dept_section} history={checkerHist} onChange={res => set('checker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
         </>}
         {skipQa && <>
           <Field label="เหตุผลที่ไม่ต้องให้ QA ตรวจ (เช่น ซ่อมไฟ/ลม/โครงสร้าง ไม่แตะจุดที่กระทบชิ้นงาน)" required><textarea value={f.qa_skip_reason} onChange={e => set('qa_skip_reason', e.target.value)} style={{ ...inp, minHeight: 64 }} /></Field>
@@ -1478,13 +1489,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           {/* เจ้าหน้าที่ QA = <PersonSelect> role qa ขึ้นก่อน · 2026-09-07 */}
-          <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><PersonSelect value={f.qa_checker} source="both" roles={QA_ROLES} section="QA" onChange={res => set('qa_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+          <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><PersonSelect value={f.qa_checker} source="both" roles={QA_ROLES} section="QA" history={qaCheckerHist} onChange={res => set('qa_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
         {step === 6 && <>
           <Field label="ผลติดตามหลังใช้งานจริง"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           {/* หัวหน้าแผนกฝ่ายที่แจ้ง = <PersonSelect> profiles role supervisor/manager ของไลน์/แผนกใบขึ้นก่อน · 2026-09-07 */}
-          <Field label="ชื่อผู้รับมอบงาน (หัวหน้าแผนกฝ่ายที่แจ้ง)"><PersonSelect value={f.ho_checker} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('ho_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+          <Field label="ชื่อผู้รับมอบงาน (หัวหน้าแผนกฝ่ายที่แจ้ง)"><PersonSelect value={f.ho_checker} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={hoCheckerHist} onChange={res => set('ho_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           <Field label="ประเมินความพึงพอใจบริการซ่อม (KPI หน่วยงานซ่อม)">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {SAT_DIMS.map(d => (
@@ -1506,7 +1517,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         </>}
         {step === 7 && <>
           {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
-          <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+          <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
         {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: 'approve_sign' }[step]]} onChange={v => { touch(); setSig(v); }} /></Field>}

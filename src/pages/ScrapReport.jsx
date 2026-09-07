@@ -20,6 +20,7 @@ import { LINE_COLUMNS } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
 import StorageLocSelect from '../components/StorageLocSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน scrap_reports/items — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { slocValid, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { inSectionScope } from '../utils/sectionScope';
@@ -85,6 +86,15 @@ export default function ScrapReport() {
 
   const [reports, setReports] = useState([]);
   const [allLines, setAllLines] = useState([]);   // production_lines เต็ม (name/section/parent) ไว้คิด scope
+  /* 📜 ค่าที่เคยบันทึกในใบรายงานของเสีย (DR) — MAT/ชื่อผู้เซ็น/รหัสคลังที่กรอกมาก่อนทะเบียนจะครบ ยังเลือกซ้ำได้
+     ห้ามล้าง/บล็อกเงียบ (คำสั่ง user 2026-09-07) · เก็บ snapshot text เหมือนเดิม */
+  const itemMatHist = useColumnHistory(supabaseDR, 'scrap_report_items', 'mat_no', { upper: true });
+  const inspectorHist = useColumnHistory(supabaseDR, 'scrap_reports', 'inspector_name');
+  const requesterHist = useColumnHistory(supabaseDR, 'scrap_reports', 'requester_name');
+  const approverQaHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_qa_name');
+  const approverPdHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_pd_name');
+  const approverGmHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_gm_name');
+  const storageHist = useColumnHistory(supabaseDR, 'scrap_reports', 'storage_location', { upper: true });
 
   // ขอบเขตไลน์ที่เห็นได้: leader → เฉพาะครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน
   // qa/manager/admin (sections ว่าง = ไม่จำกัด) → เห็นทั้งโรงงานเหมือนเดิม · null = ไม่จำกัด
@@ -173,7 +183,8 @@ export default function ScrapReport() {
   // แถวที่ mat_no ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน (แก้ได้เมื่อล้าง mat_no · master ผิด (badMaster) part_no ปล่อยให้กรอกเอง)
   const sapByMat = useMemo(() => new Map((sapOptions || []).filter(o => o.mat_no).map(o => [o.mat_no.toUpperCase(), o])), [sapOptions]);
   const pickSapForItem = (key, { mat_no, name, p_no, opt }) => {
-    if (!opt) { setItem(key, { mat_no }); return; }
+    // พิมพ์เอง หรือเลือกจากกลุ่ม 📜 เคยบันทึกไว้ (ไม่มีในทะเบียน) → เก็บแค่ mat_no ไม่ทับ part_no/part_name ที่กรอกไว้ (2026-09-07)
+    if (!opt || opt.history) { setItem(key, { mat_no }); return; }
     const so = sapByMat.get(String(mat_no).toUpperCase());
     const isSub = String(opt.id).startsWith('x:');
     setItem(key, { mat_no, source: isSub ? 'sub' : 'main', part_no: so ? so.part_no : (p_no || mat_no), part_name: so ? so.part_name : (name || '') });
@@ -477,7 +488,7 @@ export default function ScrapReport() {
             </Field>
             {/* 2026-09-07 รหัสคลังจากทะเบียน storage_locations (พิมพ์เองได้พร้อมป้าย + ตรวจรูปแบบ slocValid ตอนบันทึก) */}
             <Field label="Storage Location">
-              <StorageLocSelect value={editor.report.storage_location || ''} inputStyle={inputSt} onChange={({ code }) => setRep({ storage_location: code })} />
+              <StorageLocSelect value={editor.report.storage_location || ''} inputStyle={inputSt} history={storageHist} onChange={({ code }) => setRep({ storage_location: code })} />
             </Field>
             <Field label="ประเภทชิ้นงาน (หัวฟอร์ม)" span3>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 6 }}>
@@ -529,7 +540,7 @@ export default function ScrapReport() {
                         <td style={tdSt}><input style={{ ...inputSt, width: 150, padding: '5px 7px', opacity: lockName ? 0.75 : 1 }} value={it.part_name} readOnly={lockName} title={lockName ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
                         <td style={tdSt}>
                           <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                            <ProductSelect value={it.mat_no} extraOptions={sapExtra} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined}
+                            <ProductSelect value={it.mat_no} extraOptions={sapExtra} history={itemMatHist} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined}
                               allowFree freeHint="พาร์ทที่ไม่อยู่ในทะเบียน / master กรอกเลขเครื่อง" placeholder="MAT SAP"
                               style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 7px', fontSize: 12 }}
                               onChange={r => pickSapForItem(it._key, r)} />
@@ -581,11 +592,11 @@ export default function ScrapReport() {
 
           {/* สายอนุมัติ — 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (role ที่ตรงช่องขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม — ตาราง DR) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14 }}>
-            <Field label="ผู้ตรวจสอบ (QC)"><PersonSelect value={editor.report.inspector_name || ''} roles={['qa']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} inputStyle={inputSt} onChange={({ name }) => setRep({ inspector_name: name })} /></Field>
-            <Field label="ผู้ขออนุมัติ (หัวหน้าแผนก)"><PersonSelect value={editor.report.requester_name || ''} roles={['supervisor', 'leader']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} inputStyle={inputSt} onChange={({ name }) => setRep({ requester_name: name })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก. QA/QC)"><PersonSelect value={editor.report.approver_qa_name || ''} roles={['qa', 'manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_qa_name: name })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก.ผลิต)"><PersonSelect value={editor.report.approver_pd_name || ''} roles={['manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_pd_name: name })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก.ทั่วไป)"><PersonSelect value={editor.report.approver_gm_name || ''} roles={['manager', 'admin']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_gm_name: name })} /></Field>
+            <Field label="ผู้ตรวจสอบ (QC)"><PersonSelect value={editor.report.inspector_name || ''} roles={['qa']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={inspectorHist} inputStyle={inputSt} onChange={({ name }) => setRep({ inspector_name: name })} /></Field>
+            <Field label="ผู้ขออนุมัติ (หัวหน้าแผนก)"><PersonSelect value={editor.report.requester_name || ''} roles={['supervisor', 'leader']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={requesterHist} inputStyle={inputSt} onChange={({ name }) => setRep({ requester_name: name })} /></Field>
+            <Field label="ผู้อนุมัติ (ผจก. QA/QC)"><PersonSelect value={editor.report.approver_qa_name || ''} roles={['qa', 'manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverQaHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_qa_name: name })} /></Field>
+            <Field label="ผู้อนุมัติ (ผจก.ผลิต)"><PersonSelect value={editor.report.approver_pd_name || ''} roles={['manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverPdHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_pd_name: name })} /></Field>
+            <Field label="ผู้อนุมัติ (ผจก.ทั่วไป)"><PersonSelect value={editor.report.approver_gm_name || ''} roles={['manager', 'admin']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverGmHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_gm_name: name })} /></Field>
             <Field label="สถานะ">
               <select style={inputSt} value={editor.report.status} onChange={e => setRep({ status: e.target.value })} disabled={!canManage && editor.report.status === 'approved'}>
                 <option value="draft">ร่าง</option><option value="submitted">ส่งอนุมัติ</option>

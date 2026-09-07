@@ -16,6 +16,7 @@ import { loadOpInfo } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import ProductSelect from '../components/ProductSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
 
 import InfoMore from '../components/InfoMore';
@@ -209,6 +210,8 @@ export default function ProductMaster() {
   const [items,   setItems]   = useState([]);
   const [lines,   setLines]   = useState([]);
   const [kanbanStds, setKanbanStds] = useState([]);
+  // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc (product_id null) ยังเลือกแก้ qty ซ้ำได้ (2026-09-07)
+  const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
   const [familyTotals, setFamilyTotals] = useState({});
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
   const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
@@ -1214,7 +1217,7 @@ export default function ProductMaster() {
                 <Field label="MAT.NO *">
                   {/* 2026-09-07: เลือกจาก Product Master ผ่าน <ProductSelect> (ไม่ allowFree — Kanban Std ของสินค้าที่ไม่มีจริงไม่มีความหมาย)
                       เดิมพิมพ์เอง + ปุ่ม 🗂 parts_master · เลือกแล้วเติม qty ตั้งต้นจาก qty_per_pkg ของ Parts Master เหมือนเดิม */}
-                  <ProductSelect value={kanbanForm.mat_no} products={items} placeholder="ค้น MAT / ชื่อ / P/N…"
+                  <ProductSelect value={kanbanForm.mat_no} products={items} placeholder="ค้น MAT / ชื่อ / P/N…" history={kanbanMatHist}
                     inputStyle={{ background: 'var(--bg)', fontWeight: 700 }}
                     onChange={({ mat_no }) => setKanbanForm(f => {
                       const pm = pmParts.find(p => (p.mat_no || '').trim().toUpperCase() === mat_no);

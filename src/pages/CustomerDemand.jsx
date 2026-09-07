@@ -10,6 +10,7 @@ import useTabParam from '../utils/useTabParam';
 import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../utils/matResolve';
 import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
    ติดตามรอบส่งงานลูกค้ารายวัน (walkback 4 activity, FG stock, ranking ดิว)
@@ -69,6 +70,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   const [addForm, setAddForm] = useState(emptyAdd);
   // Product Master ชุดกลาง (cache ร่วมทั้งแอป) — ป้อน <ProductSelect> + เติมชื่อพาร์ทอัตโนมัติ (2026-09-07 เลิก select dr_products เอง)
   const { products: prodMaster } = useProducts();
+  // 📜 MAT ที่เคยบันทึกใน customer_shipping_orders (DR) — เลขจาก EDI ที่ Product Master ยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const shipMatHist = useColumnHistory(supabaseDR, 'customer_shipping_orders', 'mat_no', { upper: true });
   const prodNames = useMemo(() => {                         // mat_no → ชื่อพาร์ท (เฉพาะ active — ตามพฤติกรรมเดิม)
     const m = {};
     prodMaster.forEach(p => { if (p.mat_no && p.is_active !== false && !m[p.mat_no]) m[p.mat_no] = p.name; });
@@ -83,12 +86,14 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     const mat = addForm.mat_no.trim().toUpperCase();
     const qty = parseFloat(addForm.qty);
     if (!mat) { toast.error('กรอก MAT No.'); return; }
-    // MAT เป็นกุญแจ join (dr_products / line_stock / kanban / Rundown) — ต้องมีใน Product Master เท่านั้น ห้ามหลุดเงียบ (2026-09-07)
-    if (!prodNames[mat]) { toast.error(`MAT ${mat} ไม่มีใน Product Master — เพิ่มที่ /products ก่อน`); return; }
+    // MAT เป็นกุญแจ join (dr_products / line_stock / kanban / Rundown) — นอก Product Master ให้ถามยืนยัน ไม่บล็อกเงียบ
+    // (2026-09-07 เดิมบล็อกแข็ง — user สั่ง: ทะเบียนไม่มีต้องยังใช้ค่าที่เคยบันทึกได้ · ใบจาก EDI ก็เก็บ MAT นอกทะเบียนอยู่แล้ว)
+    if (!prodNames[mat] && !window.confirm(`MAT ${mat} ไม่มีใน Product Master — Rundown/สต็อกจะจับคู่ไม่ได้จนกว่าจะเพิ่มที่ /products · ใช้ค่านี้ต่อหรือไม่?`)) return;
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
     if (!addForm.due_date) { toast.error('เลือกวันที่ส่ง'); return; }
-    // ship-to ต้องเป็น code ในทะเบียน ship_to_plants (active) — สร้าง code ใหม่ที่แท็บ ⚙️ Ship-to Config ก่อน
-    if (addForm.customer && !(shipToCodes || []).includes(addForm.customer)) { toast.error(`Ship-to ${addForm.customer} ไม่มีในทะเบียน — ตั้งค่าที่แท็บ ⚙️ Ship-to Config ก่อน`); return; }
+    // ship-to นอกทะเบียน ship_to_plants (active) → ถามยืนยัน (2026-09-07 เดิมบล็อกแข็ง) — ป้าย/workflow ต่อลูกค้าจะไม่ครบจนกว่าจะตั้งที่แท็บ ⚙️ Ship-to Config
+    if (addForm.customer && !(shipToCodes || []).includes(addForm.customer)
+      && !window.confirm(`Ship-to ${addForm.customer} ไม่มีในทะเบียน — ชาร์ต/workflow ต่อลูกค้าจะไม่ครบจนกว่าจะตั้งค่าที่แท็บ ⚙️ Ship-to Config · ใช้ค่านี้ต่อหรือไม่?`)) return;
     setAddSaving(true);
     const { error } = await supabaseDR.from('customer_shipping_orders').insert({
       customer: addForm.customer.trim() || null,
@@ -559,15 +564,17 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ลูกค้า (Ship-to)
-                  {/* เลือกจากทะเบียน ship_to_plants (active) เท่านั้น — code นี้เป็น join key ของ custLabel/ชาร์ต/workflow ต่อลูกค้า พิมพ์เองไม่ได้ (2026-09-07) */}
+                  {/* เลือกจากทะเบียน ship_to_plants (active) — code นี้เป็น join key ของ custLabel/ชาร์ต/workflow ต่อลูกค้า พิมพ์เองไม่ได้ (2026-09-07)
+                      ค่าที่ติดมาแต่ไม่อยู่ในทะเบียน active คงไว้เป็นตัวเลือก ⚠ ไม่ล้างเงียบ (save จะถามยืนยัน) */}
                   <select value={addForm.customer} onChange={e => setAddForm(f => ({ ...f, customer: e.target.value }))} style={inputSt}>
                     <option value="">— ไม่ระบุลูกค้า —</option>
+                    {addForm.customer && !(shipToCodes || []).includes(addForm.customer) && <option value={addForm.customer}>⚠ {addForm.customer} (นอกทะเบียน)</option>}
                     {(shipToCodes || []).map(c => <option key={c} value={c}>{custLabel(c)}</option>)}
                   </select>
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>MAT No. *
-                  {/* picker กลาง Product Master — ไม่รับ MAT นอกทะเบียน (พาร์ทใหม่ต้องเพิ่มที่ /products ก่อน) · เลือกแล้วเติมชื่อพาร์ทให้ (2026-09-07) */}
-                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder="ค้น MAT / ชื่อพาร์ท / P/N…"
+                  {/* picker กลาง Product Master + กลุ่ม 📜 MAT ที่เคยบันทึกไว้ (นอกทะเบียน → save ถามยืนยัน) · เลือกแล้วเติมชื่อพาร์ทให้ (2026-09-07) */}
+                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder="ค้น MAT / ชื่อพาร์ท / P/N…" history={shipMatHist}
                     onChange={({ mat_no, name }) => setAddForm(f => ({ ...f, mat_no, part_name: name || prodNames[mat_no] || f.part_name }))} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>จำนวน (ชิ้น) *

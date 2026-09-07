@@ -19,6 +19,7 @@ import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 import StockMoveToChild from '../components/StockMoveToChild';
 import { checkStockPlacement } from '../utils/moveTargets';
@@ -81,6 +82,8 @@ function StockTab({ role, scope }) {
   const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
   const [products, setProducts] = useState([]);     // [{id, name, mat_no, line_name}]
+  // 📜 MAT ที่เคยบันทึกใน line_stock_transactions (DR) — เคยรับ/จ่ายไปแล้วแต่ยังไม่อยู่ในทะเบียนใด ยังเลือกซ้ำได้ (save ยังถามยืนยันเหมือนพิมพ์เอง) · 2026-09-07
+  const txnMatHist = useColumnHistory(supabaseDR, 'line_stock_transactions', 'mat_no', { upper: true });
   const [productBom, setProductBom] = useState({}); // product_id → [{mat_no, part_name}]
   const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
 
@@ -693,7 +696,7 @@ function StockTab({ role, scope }) {
                   พิมพ์เองได้ (พาร์ทลูกที่ยังไม่เข้าทะเบียนมีจริง — "กันสร้างของผี") แต่ค่าพิมพ์เองติดป้าย + ต้องยืนยันตอนบันทึก */}
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>MAT SAP *</label>
-                <ProductSelect value={form.mat_no} allowFree extraOptions={matExtraOptions}
+                <ProductSelect value={form.mat_no} allowFree extraOptions={matExtraOptions} history={txnMatHist}
                   lines={form.line_name ? [form.line_name] : undefined}
                   placeholder="ค้น MAT / ชื่อพาร์ท…" freeHint="MAT นอกทะเบียนต้องยืนยันอีกครั้งตอนบันทึก"
                   inputStyle={{ fontWeight:700 }}
@@ -1261,6 +1264,8 @@ function InflowRulesTab({ canEdit }) {
   const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
   // Product Master สำหรับกฎแบบ "MAT ตรงตัว" — match_value ถูกเทียบตรงกับ line_stock_transactions.mat_no โดย trigger (2026-09-07)
   const { products } = useProducts();
+  // 📜 MAT ที่เคยตั้งกฎไว้ (stock_inflow_rules.match_value — รวมค่า prefix ด้วย แต่ picker ใช้เฉพาะโหมด mat) · 2026-09-07
+  const ruleMatHist = useColumnHistory(supabaseDR, 'stock_inflow_rules', 'match_value', { upper: true });
   const [rules, setRules] = useState([]);
   const [lines, setLines] = useState([]);
   // ปลายทางที่มีอยู่จริง — derive จากคลังที่มีของ ไม่ hardcode 'FG WAREHOUSE'/'STORE'
@@ -1289,8 +1294,9 @@ function InflowRulesTab({ canEdit }) {
     const mv = form.match_value.trim().toUpperCase();
     const dest = form.dest_line_name.trim();
     if (!mv) { toast.error(form.match_type === 'prefix' ? 'กรอกเลขขึ้นต้น MAT เช่น 1 หรือ 2' : 'กรอก MAT No.'); return; }
-    // MAT ตรงตัว ต้องมีใน Product Master — พิมพ์ผิดตัวเดียว trigger จะไม่ match แล้วของไปกองผิดคลังเงียบๆ
-    if (form.match_type === 'mat' && !products.some(p => String(p.mat_no || '').toUpperCase() === mv)) { toast.error(`MAT ${mv} ไม่มีใน Product Master — เลือกจากลิสต์`); return; }
+    // MAT ตรงตัวนอก Product Master → ถามยืนยัน (2026-09-07 เดิมบล็อกแข็ง) — trigger เทียบตรงตัว พิมพ์ผิดตัวเดียวของไปกองผิดคลังเงียบๆ จึงเตือนชัด
+    if (form.match_type === 'mat' && !products.some(p => String(p.mat_no || '').toUpperCase() === mv)
+      && !window.confirm(`MAT ${mv} ไม่มีใน Product Master — กฎจะ match เฉพาะเลขนี้ตรงตัว · ใช้ค่านี้ต่อหรือไม่?`)) return;
     if (!dest) { toast.error('เลือกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
     setSaving(true);
     const { error } = await supabaseDR.from('stock_inflow_rules')
@@ -1388,7 +1394,7 @@ function InflowRulesTab({ canEdit }) {
               {form.match_type === 'prefix'
                 ? <input value={form.match_value} onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
                     placeholder="1" style={{ ...inputSt, width: 130, fontFamily: 'monospace' }} />
-                : <ProductSelect products={products} value={form.match_value} style={{ width: 260 }}
+                : <ProductSelect products={products} value={form.match_value} style={{ width: 260 }} history={ruleMatHist}
                     onChange={({ mat_no }) => setForm(f => ({ ...f, match_value: mat_no }))} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

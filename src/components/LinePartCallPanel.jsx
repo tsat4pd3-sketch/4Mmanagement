@@ -31,6 +31,7 @@ import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHi
 import { notifyEvent } from '../utils/notifyEvent';
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
 import ProductSelect from './ProductSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -481,6 +482,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
   /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
      ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
      — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
+  // 📜 MAT ที่เคยตั้งระดับไว้ใน line_part_levels (DR) — ไลน์อื่นเคยตั้งไว้แต่ Product Master/BOM ยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const levelMatHist = useColumnHistory(supabaseDR, 'line_part_levels', 'mat_no', { upper: true });
   const [rows, setRows] = useState(() => {
     const byMat = new Map(levels.map(l => [l.mat_no, l]));
     const mats = [...new Set([...byMat.keys(), ...onHand.keys(), ...upMats])].sort();
@@ -518,7 +521,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
   const addMat = () => {
     const m = newMat.trim();
     if (!m) return;
-    if (!newMatKnown) { toast.error(`"${m}" ไม่มีในทะเบียน — เลือกจาก Product Master / BOM เท่านั้น (พิมพ์ผิด = จุดเฝ้าที่ไม่เคยเตือน)`); return; }
+    // 2026-09-07 นอกทะเบียน (กลุ่ม 📜 เคยบันทึกไว้) → ถามยืนยันแทนบล็อกแข็ง — พิมพ์ผิด = จุดเฝ้าที่ไม่เคยเตือน จึงเตือนชัด
+    if (!newMatKnown && !window.confirm(`"${m}" ไม่มีใน Product Master / BOM — ใช้ค่านี้ต่อหรือไม่?`)) return;
     if (rows.some(r => r.mat_no.toLowerCase() === m.toLowerCase())) { toast.info('มีพาร์ทนี้ในรายการแล้ว'); setNewMat(''); setNewMatKnown(false); return; }
     setRows(rs => [{ mat_no: m, id: null, min_qty: '', max_qty: '', reorder_qty: '', have: null, atParent: false }, ...rs]);
     setNewMat(''); setNewMatKnown(false);
@@ -559,10 +563,10 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
               style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
-            {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM · ไม่รับค่าพิมพ์เอง */}
-            <ProductSelect value={newMat} lines={famNames} extraOptions={bomExtra} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
+            {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM ∪ 📜 เคยตั้งไว้ · ไม่รับค่าพิมพ์เอง (known=false = นอกทะเบียน → ถามยืนยัน) */}
+            <ProductSelect value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
               style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
-              onChange={({ mat_no, opt }) => { setNewMat(mat_no); setNewMatKnown(!!opt); }} />
+              onChange={({ mat_no, opt, known }) => { setNewMat(mat_no); setNewMatKnown(!!opt && known !== false); }} />
             <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
           </div>
         </div>

@@ -8,6 +8,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — เครื่อง/ไลน์ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect';
 import MachineSelect from '../components/MachineSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกในแผน — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
@@ -304,6 +305,8 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       .map(t => ({ ...t }))
   );
   const [busy, setBusy] = useState(false);
+  // 📜 เลขเครื่องที่เคยบันทึกใน pm_coordination_plans (DR) — เครื่องที่ยังไม่ลง /machines แต่เคยทำแผนไว้ ยังเลือกซ้ำได้ (2026-09-07)
+  const machineHist = useColumnHistory(supabaseDR, 'pm_coordination_plans', 'machine_no', { upper: true });
 
   const machOpts = useMemo(() => {
     let arr = machines;
@@ -314,7 +317,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
   /* เลือกเครื่องจาก <MachineSelect> (audit #20 · 2026-09-07) — เดิม datalist resolve machine_id เฉพาะพิมพ์ตรงเป๊ะ
      ไม่ตรง = machine_id ว่างเงียบๆ · ตอนนี้เลือกจากทะเบียน = ได้ id/ชื่อ/ไลน์ครบ · ข้อความที่พิมพ์ค้าง (ยังไม่เลือก) ถือว่ายังไม่ผูก
-     → save จะกันไว้ (แผนประสานงานทำกับเครื่องที่ลงทะเบียนเท่านั้น — ไม่เปิด allowFree) */
+     → save จะถามยืนยันก่อน (2026-09-07 เดิมบล็อกแข็ง — user สั่ง: ทะเบียนไม่มีต้องยังใช้ค่าที่เคยบันทึกได้ · กลุ่ม 📜 ให้ id null เช่นกัน) */
   const onMachinePick = (res) => {
     setF(v => ({
       ...v, machine_no: res.machine_no || '', machine_id: res.opt ? res.id : '',
@@ -340,9 +343,10 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
   const save = async () => {
     if (!f.title.trim()) return toast.error('กรอกหัวเรื่องงาน');
-    // เลขเครื่องที่ไม่ผูกทะเบียน = ผังเครื่อง/Andon หาไม่เจอ — กันเฉพาะแผนใหม่หรือเมื่อเพิ่งเปลี่ยนเลข (แผนเก่าที่ค้างมาก่อนยังแก้ส่วนอื่นได้)
-    if (f.machine_no && !f.machine_id && (plan._new || f.machine_no !== (plan.machine_no || '')))
-      return toast.error('เลือกเครื่องจากทะเบียน — เครื่องที่ยังไม่ลงทะเบียนให้เพิ่มที่ /machines ก่อน');
+    // เลขเครื่องที่ไม่ผูกทะเบียน = ผังเครื่อง/Andon หาไม่เจอ — ถามเฉพาะแผนใหม่หรือเมื่อเพิ่งเปลี่ยนเลข (แผนเก่าที่ค้างมาก่อนยังแก้ส่วนอื่นได้)
+    // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็นยืนยัน — เก็บเป็น text (machine_id null) ไม่ทำข้อมูลอื่นเสีย
+    if (f.machine_no && !f.machine_id && (plan._new || f.machine_no !== (plan.machine_no || ''))
+      && !window.confirm(`เครื่อง ${f.machine_no} ไม่มีในทะเบียน /machines — ผังเครื่อง/Andon จะหาแผนนี้ไม่เจอ · ใช้ค่านี้ต่อหรือไม่?`)) return;
     setBusy(true);
     const nowIso = new Date().toISOString();
     const head = { title: f.title.trim(), machine_id: f.machine_id || null, machine_no: f.machine_no || null,
@@ -392,7 +396,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
           <div>
             <label style={lbl}>เครื่องจักร (เลือกหมายเลขเครื่องจากทะเบียน)</label>
             {/* <MachineSelect> แทน datalist — machOpts กรอง scope แล้ว · เครื่องของไลน์ที่เลือกขึ้นก่อน · 2026-09-07 */}
-            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={machOpts} lines={f.line_name ? [f.line_name] : undefined}
+            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={machOpts} lines={f.line_name ? [f.line_name] : undefined} history={machineHist}
               placeholder="ค้นเลขเครื่อง เช่น RB-104, LS-10, CT-02" inputStyle={{ background: 'var(--bg)' }} />
             {f.machine_id && f.machine_name
               ? <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>✓ {f.machine_name}{f.line_name ? ` · ${f.line_name}` : ''}</div>

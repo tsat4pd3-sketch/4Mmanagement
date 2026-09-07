@@ -13,6 +13,7 @@ import useTabParam from '../utils/useTabParam';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import SelectOrFree from '../components/SelectOrFree';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -97,6 +98,8 @@ export default function DieRegistry() {
   const [layoutReady, setLayoutReady] = useState(false); // migration 20260819 apply แล้วหรือยัง
   const [loading, setLoading] = useState(true);
   const [focusDieId, setFocusDieId] = useState(null);    // 📊 สถานะ กด 🗺️ → กระโดดมาแท็บผัง
+  // 📜 MAT ที่เคยบันทึกใน die_sets (DR) — MAT เก่าที่ Product Master ยังไม่มี ยังเลือกซ้ำได้ ไม่ต้องพิมพ์ใหม่ (2026-09-07)
+  const dieMatHist = useColumnHistory(supabaseDR, 'die_sets', 'mat_no', { upper: true });
 
   const [search, setSearch]       = useState('');
   const [filterLine, setFilterLine] = useState('');
@@ -573,8 +576,8 @@ export default function DieRegistry() {
             </Field>
             <Field label="MAT SAP" hint="ผูกกับ Product Master">
               {/* <ProductSelect> แทน datalist — mat_no คือคีย์ golden thread (VSM / pieces_per_stroke) · เลือกแล้วเติมชื่อ/P/N ให้ ·
-                  ไม่เปิด allowFree (MAT ที่ยังไม่มีให้เพิ่มที่ /products) · ค่าเก่าที่ไม่ตรงทะเบียนยังแสดง/แก้ได้ · 2026-09-07 */}
-              <ProductSelect value={editSet.mat_no || ''} lines={editSet.line_name ? [editSet.line_name] : undefined}
+                  ไม่เปิด allowFree (MAT ที่ยังไม่มีให้เพิ่มที่ /products) · ค่าเก่าที่ไม่ตรงทะเบียนยังแสดง/แก้ได้ + กลุ่ม 📜 เคยบันทึกไว้ · 2026-09-07 */}
+              <ProductSelect value={editSet.mat_no || ''} lines={editSet.line_name ? [editSet.line_name] : undefined} history={dieMatHist}
                 onChange={res => setEditSet(f => ({
                   ...f, mat_no: res.mat_no || '',
                   ...(res.opt ? { part_name: res.name || f.part_name || '', part_no: res.p_no || f.part_no || '' } : null),
