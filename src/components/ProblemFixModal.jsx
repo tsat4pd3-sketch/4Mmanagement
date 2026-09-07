@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
+import PersonSelect from './PersonSelect';
 
 const TABLE = { downtime: 'downtime_logs', defect: 'defect_logs' };
 const TYPE_COL = { downtime: 'downtime_type_id', defect: 'defect_type_id' };
@@ -91,7 +92,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
   const ta  = { width: '100%', minHeight: 76, padding: '8px 10px', borderRadius: 8,
                 border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)',
                 fontSize: 13, fontFamily: 'inherit', resize: 'vertical' };
-  const inp = { width: 200, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border2)',
+  const inp = { padding: '6px 30px 6px 10px', borderRadius: 8, border: '1px solid var(--border2)',
                 background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 };
 
   return (
@@ -142,7 +143,9 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
 
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้แก้ไข</span>
-          <input value={fixBy} onChange={e => setFixBy(e.target.value)} style={inp} placeholder="ชื่อผู้แก้ไข" />
+          {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (ผู้แก้มักเป็นช่าง/พนักงาน) — เก็บชื่อ snapshot (ตาราง DR) */}
+          <PersonSelect value={fixBy} source="both" placeholder="ชื่อผู้แก้ไข" style={{ width: 260 }} inputStyle={inp}
+            onChange={({ name }) => setFixBy(name)} />
         </div>
 
         {/* ── ผลตรวจติดตาม ── */}
@@ -152,7 +155,9 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
           placeholder="แก้แล้วหายจริงไหม ตามดูแล้วผลเป็นยังไง — ลงทีหลังได้ ไม่ต้องกรอกพร้อมวิธีแก้" />
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้ตรวจติดตาม</span>
-          <input value={resBy} onChange={e => setResBy(e.target.value)} style={inp} placeholder="ชื่อผู้ตรวจติดตาม" />
+          {/* 2026-09-07 <PersonSelect> — default ผู้ใช้ปัจจุบันเหมือนเดิม */}
+          <PersonSelect value={resBy} source="both" placeholder="ชื่อผู้ตรวจติดตาม" style={{ width: 260 }} inputStyle={inp}
+            onChange={({ name }) => setResBy(name)} />
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 14, lineHeight: 1.5 }}>

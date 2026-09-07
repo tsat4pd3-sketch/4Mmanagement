@@ -30,6 +30,7 @@ import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
+import ProductSelect from './ProductSelect';
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -443,7 +444,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {showSetup && (
-        <LevelSetupModal lineName={lineName} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand}
+        <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand}
           fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
       )}
     </div>
@@ -476,7 +477,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
 }
 
 /* ── ตั้ง min/max ต่อไลน์ (หัวหน้าไลน์ + หัวหน้าแผนกผลิต — ไม่ใช่ Planning) ──── */
-function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onClose }) {
+function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fullName, onClose }) {
   /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
      ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
      — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
@@ -493,15 +494,34 @@ function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onCl
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
   const [newMat, setNewMat] = useState('');
+  const [newMatKnown, setNewMatKnown] = useState(false); // เลือกจากทะเบียนแล้ว (ไม่ใช่พิมพ์เอง)
   const set = (i, k, v) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r));
 
-  // พาร์ทใหม่ที่ยังไม่โผล่ที่ไหนเลย — พิมพ์เพิ่มเองได้ ไม่งั้นตั้งจุดเรียกเติมล่วงหน้าไม่ได้
+  /* 2026-09-07 "เพิ่มพาร์ทเอง" ต้องเลือกจากทะเบียน (Product Master ∪ พาร์ทลูก BOM ของครอบครัวไลน์) — ไม่ allowFree
+     mat_no ที่พิมพ์ผิดจะกลายเป็นจุดเฝ้าที่ไม่ match สต็อกแถวไหนเลย → min alert ไม่เคยดังโดยไม่มีใครรู้ */
+  const famNames = useMemo(() => [...new Set([lineName, ...getAncestorNames(lines, lineName), ...getChildLineNames(lines, lineName)])].filter(Boolean), [lines, lineName]);
+  const [bomExtra, setBomExtra] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data: prods, error: e1 } = await supabaseDR.from('dr_products').select('id, mat_no').in('line_name', famNames).eq('is_active', true);
+      if (e1 || !prods?.length) return;
+      const { data: boms } = await supabaseDR.from('bom_items').select('mat_no, part_no, part_name').in('product_id', prods.map(p => p.id)).eq('is_active', true).limit(1000);
+      if (!alive) return;
+      const seen = new Set();
+      setBomExtra((boms || []).filter(b => b.mat_no && !seen.has(b.mat_no) && seen.add(b.mat_no))
+        .map(b => ({ mat_no: b.mat_no, name: b.part_name, p_no: b.part_no, sub: [b.part_no, b.part_name].filter(Boolean).join(' · '), group: '🧩 พาร์ทลูก BOM ของไลน์นี้' })));
+    })();
+    return () => { alive = false; };
+  }, [famNames]);
+
   const addMat = () => {
     const m = newMat.trim();
     if (!m) return;
-    if (rows.some(r => r.mat_no.toLowerCase() === m.toLowerCase())) { toast.info('มีพาร์ทนี้ในรายการแล้ว'); setNewMat(''); return; }
+    if (!newMatKnown) { toast.error(`"${m}" ไม่มีในทะเบียน — เลือกจาก Product Master / BOM เท่านั้น (พิมพ์ผิด = จุดเฝ้าที่ไม่เคยเตือน)`); return; }
+    if (rows.some(r => r.mat_no.toLowerCase() === m.toLowerCase())) { toast.info('มีพาร์ทนี้ในรายการแล้ว'); setNewMat(''); setNewMatKnown(false); return; }
     setRows(rs => [{ mat_no: m, id: null, min_qty: '', max_qty: '', reorder_qty: '', have: null, atParent: false }, ...rs]);
-    setNewMat('');
+    setNewMat(''); setNewMatKnown(false);
   };
 
   const save = async () => {
@@ -539,10 +559,10 @@ function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onCl
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
               style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
-            <input value={newMat} onChange={e => setNewMat(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addMat(); } }}
-              placeholder="เพิ่มพาร์ทเอง (รหัส)"
-              style={{ width: 180, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+            {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM · ไม่รับค่าพิมพ์เอง */}
+            <ProductSelect value={newMat} lines={famNames} extraOptions={bomExtra} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
+              style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
+              onChange={({ mat_no, opt }) => { setNewMat(mat_no); setNewMatKnown(!!opt); }} />
             <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
           </div>
         </div>

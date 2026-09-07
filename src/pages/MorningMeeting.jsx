@@ -6,6 +6,9 @@ import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { orderTotal } from '../utils/pairTotals';
@@ -130,7 +133,7 @@ export default function MorningMeeting() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, std_day_shift, std_night_shift')
+        .select(`${LINE_COLUMNS}, std_day_shift, std_night_shift`) // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
         .order('name');
       setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
@@ -1071,11 +1074,9 @@ export default function MorningMeeting() {
               </label>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ไลน์
-                  <select value={actModal.line_name} onChange={e => setActModal(v => ({ ...v, line_name: e.target.value }))}
-                    style={{ marginTop: 4, fontSize: 13 }}>
-                    <option value="">— เรื่องรวม —</option>
-                    {viewLines.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                  </select>
+                  {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope+section filter เดิม (viewLines) */}
+                  <LineSelect lines={viewLines} value={actModal.line_name} placeholder="— เรื่องรวม —" style={{ marginTop: 4, fontSize: 13 }}
+                    onChange={v => setActModal(x => ({ ...x, line_name: v }))} />
                 </label>
                 <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>กำหนดเสร็จ
                   <input type="date" value={actModal.due_date || ''} onChange={e => setActModal(v => ({ ...v, due_date: e.target.value }))}
@@ -1083,8 +1084,10 @@ export default function MorningMeeting() {
                 </label>
               </div>
               <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ผู้รับผิดชอบ
-                <input value={actModal.assignee} onChange={e => setActModal(v => ({ ...v, assignee: e.target.value }))}
-                  style={{ marginTop: 4, fontSize: 13 }} placeholder="ชื่อผู้รับผิดชอบ" />
+                {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (คนของไลน์ที่เลือกขึ้นก่อน) — ตารางเก็บชื่อ text ไม่มีคอลัมน์ id */}
+                <PersonSelect value={actModal.assignee || ''} source="both" placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 4 }}
+                  lines={actModal.line_name ? getLineFamilyNames(allLines, actModal.line_name) : undefined}
+                  onChange={({ name }) => setActModal(v => ({ ...v, assignee: name }))} />
               </label>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
                 <button onClick={() => setActModal(null)} style={btnSt(false)}>ยกเลิก</button>
