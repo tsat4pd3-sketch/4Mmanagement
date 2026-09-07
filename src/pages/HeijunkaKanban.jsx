@@ -62,7 +62,34 @@ function LineBoardLink({ line }) {
    src/utils/deliveryRounds.js (single source of truth — เดิมซ้ำกับ LineStock) */
 
 /* ─── Store Board View ───────────────────────────────────────────────────── */
-function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs, canOperate }) {
+/* ── 🚚 ไลน์ที่ไม่ใช้รอบ = "เบิกตอนไหนส่งตอนนั้น" (user ย้ำ 2026-09-07 · docs/STORE-PULL-LOOP-DESIGN.md §6.1)
+   ⚠️ ห้ามเขียนว่า "ยังไม่ตั้งรอบ → ไปตั้ง" เหมือนงานยังทำไม่เสร็จ — โหมดนี้คือวิธีทำงานจริงของสโตร์ ไม่ใช่ของขาด
+   บล็อกนี้ตอบ 2 อย่างที่สโตร์ต้องรู้ต่อไลน์: ใบที่ค้างอยู่ตอนนี้ (จากคิวเติม WIP) + ทางไปเลือกพาร์ทไปส่ง (Store Time Chart) */
+const WIP_ST_SHORT = { pending: 'รอหยิบ', preparing: 'กำลังจัด', delivered: 'ส่งแล้ว รอไลน์รับ' };
+function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onGoQueue }) {
+  const groupOf = (ln) => lineMap?.[ln]?.parent_line_name || ln;
+  const tickets = wipRequests.filter(w => !w.wip_point_id && groupOf(w.line_name) === lineName);
+  const byStatus = tickets.reduce((m, w) => { m[w.status] = (m[w.status] || 0) + 1; return m; }, {});
+  const linkBtn = (label, fn) => (
+    <button onClick={fn} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{label}</button>
+  );
+  return (
+    <div style={{ padding: '10px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🚚 ส่งตามคำขอ</span>
+      <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เบิกตอนไหนส่งตอนนั้น — ไลน์นี้ไม่ใช้รอบ</span>
+      {tickets.length
+        ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#38bdf8' }}>
+            📋 ใบค้าง {tickets.length} · {Object.entries(byStatus).map(([s, n]) => `${WIP_ST_SHORT[s] || s} ${n}`).join(' · ')}
+          </span>
+        : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>📋 ยังไม่มีใบส่งค้าง</span>}
+      <span style={{ flex: 1 }} />
+      {onGoChart && linkBtn('☑ เลือกพาร์ทไปส่ง → Store Time Chart', onGoChart)}
+      {onGoQueue && linkBtn('🔄 คิวเติม WIP', onGoQueue)}
+    </div>
+  );
+}
+
+function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs, canOperate, wipRequests, onGoChart, onGoQueue }) {
   const [expanded, setExpanded] = useState(null);
   const { groupDemand, roundAlloc } = view;
 
@@ -91,7 +118,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 
   if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+      วันนี้ยังไม่มีไลน์ที่มีแผนผลิต — ความต้องการพาร์ทจะโผล่เมื่อไลน์เปิดใบผลิต
     </div>
   );
 
@@ -110,9 +137,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
               <LineBoardLink line={lineName} />
             </div>
             {!lineRounds.length ? (
-              <div style={{ padding: '12px 14px', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 10, fontSize: 12, color: 'var(--muted)' }}>
-                ⚠️ ไลน์นี้ยังไม่ตั้งรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง (demand ด้านบนคำนวณจากแผนผลิตวันนี้แล้ว รอกำหนดรอบเพื่อแจ้งสโตร์)
-              </div>
+              <OnDemandLineBlock lineName={lineName} lineMap={lineMap} wipRequests={wipRequests} onGoChart={onGoChart} onGoQueue={onGoQueue} />
             ) : (
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {lineRounds.map(r => {
@@ -249,7 +274,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
 
   if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+      วันนี้ยังไม่มีไลน์ที่มีแผนผลิต — ไลน์ที่ส่งตามคำขอ (ไม่ใช้รอบ) ดูเวลาที่จะขาดของได้ที่ 🕐 Store Time Chart
     </div>
   );
 
@@ -1073,7 +1098,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'fg' && (<>
         {hiddenNote}
-        {rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรอบจัดส่ง</div> :
+        {rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบที่ต้องไปส่งอยู่ที่แท็บ 🔄 คิวเติม WIP · เลือกพาร์ทจาก forecast ได้ที่ 🕐 Store Time Chart
+        </div> :
         vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {vRounds.map(r => {
@@ -1257,7 +1284,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 meta={fromLine
-                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
+                  ? `${w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก'}${at ? ` · ${w.source === 'store_forecast' ? 'เปิด' : 'แจ้ง'} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
                   : (w.point_type === 'packaging' ? '📦 packaging' : '🧱 material')} />
             );
           })}
@@ -1560,6 +1587,39 @@ export default function HeijunkaKanban() {
     });
     // 42P01 = ยังไม่ apply migration Main → ฟีเจอร์บันทึกยังไม่เปิด (ด่านฝั่งจอยังทำงาน) · error อื่นต้องเห็น
     if (error && error.code !== '42P01') toast.error('บันทึกเหตุการณ์ด่านสแกนไม่สำเร็จ: ' + error.message);
+  };
+
+  /* 🏬 สโตร์เลือกพาร์ทจาก Store Time Chart → สร้างใบเข้าคิวเติม WIP เอง (2026-09-07 · คำสั่ง user)
+     ⚠️ เข้าคิวเดียวกับใบที่ไลน์เรียก ห้ามแตกคิว · `source = 'store_forecast'` ไว้แยกที่มา
+     ⚠️ items[].line ต้องเป็นไลน์ย่อยที่สุด (StoreTimeChart หาให้จากใบผลิตที่กินพาร์ทนั้น)
+     ⚠️ 1 พาร์ท/ไลน์ มีใบค้างได้ใบเดียว (unique index) → 23505 = มีอยู่แล้ว รายงานเป็นรายการ ไม่ใช่ error รวม
+     ⚠️ ไม่ยิง notify ให้สโตร์เอง (คนกดคือสโตร์) — ไลน์เห็นใบในแผง 📦 ของ Daily Report เมื่อของถึง */
+  const createStoreRequests = async (items) => {
+    if (!items?.length) return false;
+    const now = new Date().toISOString();
+    let ok = 0, dup = 0, noSourceCol = false;
+    const errs = [];
+    for (const it of items) {
+      const row = {
+        line_name: it.line, mat_no: it.mat_no, part_name: it.part_name || null,
+        request_qty: it.qty, status: 'pending',
+        requested_at: now, requested_by: fullName || 'สโตร์', decided_by_name: fullName || null,
+        on_hand_at_req: it.wipNow ?? null, source: 'store_forecast',
+      };
+      let { error } = await supabase.from('wip_replenish_requests').insert(row);
+      // 42703 = ยังไม่ apply 20260907_wip_replenish_source.sql → บันทึกโดยไม่มีคอลัมน์ที่มา (บอกบนจอ ห้ามเงียบ)
+      if (error?.code === '42703') { noSourceCol = true; const { source, ...rest } = row; void source; ({ error } = await supabase.from('wip_replenish_requests').insert(rest)); }
+      if (!error) ok++;
+      else if (error.code === '23505') dup++;
+      else errs.push(`${it.mat_no}: ${error.message}`);
+    }
+    if (ok) toast.success(`🚚 สร้างใบส่ง ${ok} รายการ เข้าคิวเติม WIP แล้ว${dup ? ` · ${dup} รายการมีใบค้างอยู่แล้ว` : ''}`);
+    else if (dup && !errs.length) toast.error(`ทุกรายการมีใบค้างอยู่ในคิวแล้ว (${dup}) — ดูที่ 🔄 คิวเติม WIP`);
+    if (errs.length) toast.error(`สร้างไม่สำเร็จ ${errs.length} รายการ: ${errs[0]}`);
+    if (noSourceCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260907_wip_replenish_source (Main) — ใบไม่ถูกมาร์กว่ามาจากสโตร์');
+    await loadPull();
+    if (ok) { setViewMode('unified'); setUnifiedStore('wip'); }   // พาไปเห็นใบที่เพิ่งสร้าง — ทำงานต่อได้ทันที
+    return ok > 0 || (dup > 0 && !errs.length);
   };
 
   // gate = { payload, event } จาก DeliverScanModal (ใบจากไลน์ตอน preparing → delivered เท่านั้น)
@@ -2063,6 +2123,7 @@ export default function HeijunkaKanban() {
       (groupOrders[g] = groupOrders[g] || []).push({
         matNo: d.mat_no, qty: d.qty, qtyOk: d.qty_ok, qtyActual: d.qty_actual,
         confirmed: !!d.confirmed, openedAt: d.opened_at,
+        lineName: sess.line_name,   // ไลน์ย่อยที่เปิดใบ — ใบส่งของสโตร์ต้องลง leaf ไม่ใช่กลุ่ม (กฎหน่วยย่อยที่สุด)
       });
       if (d.product) {
         if (!(d.mat_no in bomByMat)) bomByMat[d.mat_no] = bomMap[d.product.id] || [];
@@ -2084,6 +2145,7 @@ export default function HeijunkaKanban() {
     return {
       cols, rowList, noBom: [...noBom.values()], sessById, totalKanban, roundAlloc, groupDemand,
       groupOrders, bomByMat, ctByMat, wipByGroup,
+      linesOfGroup: Object.fromEntries(Object.entries(linesOfGroup).map(([g, s]) => [g, [...s]])),
     };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
@@ -2258,12 +2320,14 @@ export default function HeijunkaKanban() {
             workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} fmt={fmt}
             canOperate={canOperate} onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)}
+            openRequests={wipRequests} onCreateRequests={createStoreRequests}
           />
         ) : viewMode === 'board' ? (
           <StoreBoardView
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
             onReceive={openReceive} fmt={fmt} lineMap={lineMap} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
+            wipRequests={wipRequests} onGoChart={() => setViewMode('chart')} onGoQueue={() => { setViewMode('unified'); setUnifiedStore('wip'); }}
           />
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
+import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { supabase } from '../supabaseClient';
 import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -77,17 +78,17 @@ const PAGE_GROUPS = [
     ],
   },
   {
-    group: 'Logistic - ขาเข้า (Inbound)',
+    group: LOGISTIC_GROUPS.inbound,
     pages: [
       { key: 'page:/line-stock',   label: 'สต๊อกในไลน์' },
       { key: 'page:/heijunka',     label: 'บอร์ดคัมบัง (ทุกสโตร์)' },
       { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
-      // ทำงานคาบ 2 ฝั่ง (sidebar โชว์ทั้งขาเข้า-ขาออกผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
+      // ทำงานคาบ 2 ฝั่ง (sidebar โชว์ทั้งหมวด Store และ Warehouse & Delivery ผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
       { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal) · คาบ 2 ฝั่ง' },
     ],
   },
   {
-    group: 'Logistic - ขาออก (Outbound)',
+    group: LOGISTIC_GROUPS.outbound,
     pages: [
       { key: 'page:/customer-demand', label: 'จัดส่งลูกค้า' },
       { key: 'page:/rundown-stock', label: 'คาดการณ์ของจะขาด' },
@@ -95,7 +96,7 @@ const PAGE_GROUPS = [
     ],
   },
   {
-    group: 'Logistic - แผนงาน & ข้อมูล',
+    group: LOGISTIC_GROUPS.control,
     pages: [
       { key: 'page:/planner-sales', label: 'Planner & Sales' },
     ],

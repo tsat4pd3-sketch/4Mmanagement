@@ -409,7 +409,7 @@ function StockTab({ role, scope }) {
       <div style={{ ...card, padding:'10px 14px', marginBottom:12 }}>
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
-          📥 ขาเข้า = Store ดูแล (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 📤 ขาออก = Warehouse + Delivery ดูแล (FG 1xx รอส่งลูกค้า)
+          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
         </div>
       </div>
 

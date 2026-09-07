@@ -391,7 +391,9 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
                 <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{r.mat_no}</b>
-                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ขอ {fmtQty(r.request_qty)} ชิ้น · แจ้ง {hhmm(r.requested_at)}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}`}
+                </span>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: meta.color }}>{meta.label}</span>
                 {wait != null && (
                   <span style={{ fontSize: 11, color: wait > 60 ? '#ef4444' : 'var(--muted)', fontWeight: wait > 60 ? 800 : 400 }}>
