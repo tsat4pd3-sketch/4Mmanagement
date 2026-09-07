@@ -139,6 +139,17 @@ test('suggestFixtureCandidates: ไม่เดาจากคำกำกวม
   assert.equal(suggestFixtureCandidates(rows, new Set()).length, 0);
 });
 
+test('suggestFixtureCandidates: "วางอยู่บนผัง" อย่างเดียวไม่พอ — เครื่องจริงบนผังห้ามโผล่ (เคสจริง 107 เครื่อง 2026-09-07)', () => {
+  const rows = [
+    { machine_no: 'SP-88',  machine_name: 'Denyo DN-C-50-4-06-12-14', equipment_kind: 'machine', line_name: 'SUB APRON' },
+    { machine_no: 'RB-120', machine_name: 'ABB',                       equipment_kind: 'machine', line_name: 'SUB APRON' },
+    { machine_no: 'JHYD06-11', machine_name: '—',                      equipment_kind: 'machine', line_name: 'Line 61' },
+  ];
+  const out = suggestFixtureCandidates(rows, new Set(['SP-88', 'RB-120', 'JHYD06-11']));
+  assert.deepEqual(out.map(m => m.machine_no), ['JHYD06-11'], 'เฉพาะตัวที่มีเบาะแสจากเลข/ชื่อ');
+  assert.ok(out[0]._reasons.includes('วางอยู่บนผังไลน์แล้ว'), 'ผังยังเป็นคะแนนเสริมให้ตัวที่มีเบาะแส');
+});
+
 // ── จับคู่ fixture ↔ พาร์ท (ข้อมูลจริงมี 3 ความต่าง: ขีด/ช่องว่าง · rev · RH-LH ช่องเดียว) ──
 import { resolveFixtureParts } from '../fixturePoints.js';
 
