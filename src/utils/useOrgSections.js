@@ -41,3 +41,22 @@ export function useOrgDepts() {
     };
   }, [tree]);
 }
+
+/** ลิสต์ "ทีม/กะ" จากผัง (org_nodes kind='team') — ผังยังไม่มีทีม = ถอยไป A/B/C เดิม
+ *  (2026-09-07 · single-source audit: Report/Checkin เคย hardcode A/B/C 8 จุด ขณะที่ /operator อ่านจากผังแล้ว)
+ *  ⚠️ dropdown "ทีม" ทุกหน้าใช้ hook นี้ ห้ามเขียน ['A','B','C'] ซ้ำ */
+export const DEFAULT_TEAMS = ['A', 'B', 'C'];
+export function useOrgTeams() {
+  const [teams, setTeams] = useState(DEFAULT_TEAMS);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('org_nodes').select('code, name').eq('kind', 'team').eq('is_active', true).order('sort_order', { nullsFirst: false })
+      .then(({ data }) => {
+        if (!alive) return;
+        const t = [...new Set((data || []).map(n => n.code || n.name).filter(Boolean))];
+        if (t.length) setTeams(t);
+      });
+    return () => { alive = false; };
+  }, []);
+  return teams;
+}

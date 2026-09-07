@@ -6,6 +6,7 @@
 อัพเดทล่าสุด: 2026-08-25 (§7: แถวลิสต์ที่มีปุ่ม action ต่อท้ายต้อง flexWrap · ทุกจุดรับไฟล์รูปต้องผ่าน `toDecodableImage()` รองรับ HEIC จากกล้องมือถือ) · ก่อนหน้า: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
+อัพเดท 2026-09-07: ใหม่ §5.1.2 — ช่อง "ชื่อคน/เลขเครื่อง/MAT/ลูกค้า/รหัสคลัง" ต้องใช้ picker กลาง (`PersonSelect`/`MachineSelect`/`ProductSelect`/`CustomerSelect`/`StorageLocSelect`) + `useOrgTeams` — audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`
 อัพเดท 2026-08-21: §5.3 ข้อ 9 ใหม่ — **dropdown เลือกไลน์ต้องใช้ `<LineSelect>` เท่านั้น** (ลำดับชั้น + scope + ตัดไลน์ปลดระวาง) · `production_lines.is_active` = ปลดระวางไลน์แทนการลบ
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
 อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
@@ -381,6 +382,35 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 - **⚠️ ลิสต์ยาวมักมาคู่กับกับดัก 1000 แถวของ PostgREST** — `select('*')` ที่ไม่ `.range()` ได้แค่
   1000 แถวแรก ของที่เกินมา **หายจากลิสต์เงียบๆ ค้นยังไงก็ไม่เจอ** → ดึงแบบแบ่งหน้าเสมอ
   (`fetchAllRows` ใน `MtnRepair.jsx` · ต้อง `.order()` คงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า)
+
+## 5.1.2 ⭐ ช่อง "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง" = picker กลางเท่านั้น (2026-09-07 · คำสั่ง user)
+
+*"ชื่อต่างๆ ไม่ว่าจะเป็นคน เครื่อง ชิ้นส่วน ประเภท รหัส — ถ้ามีระบบลงฐานข้อมูลแล้ว ต้องไม่มีให้พิมพ์เอง เป็นการเลือก
+กรองตามลำดับชั้นองค์กร หรือพิมพ์หาได้"* — audit ทั้งระบบ (`docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`) เจอ ~160 ช่อง
+ที่พิมพ์เองทั้งที่มีทะเบียน: ชื่อคน ~60 · dropdown ไลน์เขียนเอง ~35 · MAT ~14 · ลูกค้า ~11 · เลขเครื่อง 6 · ทีม A/B/C 8
+
+| ช่องที่รับ | ใช้ component นี้เท่านั้น | ทะเบียน (loader) | ค่าที่ DB เก็บ |
+|---|---|---|---|
+| ชื่อคน (ผู้ตรวจ/อนุมัติ/รับผิดชอบ/แจ้ง/สอน/หัวหน้า/ผู้แก้) | `<PersonSelect>` | `usePeople` (Main profiles ∪ employees) | ชื่อ text เหมือนเดิม + `*_uid`/`employee_id` เมื่อคอลัมน์มี |
+| หมายเลขเครื่อง / แม่พิมพ์ / จิ๊ก | `<MachineSelect>` | `useMachines` (DR machines) | `machine_no` + `machine_id` เมื่อคอลัมน์มี |
+| MAT SAP / เลขพาร์ท / Kanban Std / die set / PE set / NPI part | `<ProductSelect>` (+`extraOptions` BOM/parts_master) | `useProducts` (DR dr_products) | `mat_no` + `product_id` เมื่อคอลัมน์มี |
+| ลูกค้า | `<CustomerSelect>` | `useCustomers` (distinct dr_products ∪ ship_to_plants — **ยังไม่มีตาราง customers**) | ชื่อ text (normalize เป็นสะกดหลัก) |
+| รหัสคลัง Stor.Loc. | `<StorageLocSelect>` | `useStorageLocations` (DR storage_locations) | code |
+| ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
+| ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
+| ส่วนงาน / แผนก | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
+| สถานี | `<select>` จาก `workstations` ของครอบครัวไลน์ (+ "✏️ ระบุเอง" เฉพาะที่จำเป็น) | workstations | station_name |
+
+กฎของ picker กลางทุกตัว (ล็อกด้วยเทส `src/utils/__tests__/pickerOptions.test.mjs`):
+1. **ของที่เกี่ยวข้องขึ้นก่อน ไม่ตัดของอื่นทิ้ง** — prefer ด้วย `lines`/`lineIds`/`section`/`roles`/`kinds` แล้วขึ้นกลุ่ม 🎯 ก่อน
+   (หยิบข้ามทีม/ไลน์มีจริง) · ใส่ `strict` เฉพาะที่ต้องจำกัดจริง (เช่น เครื่องในไลน์นี้เท่านั้น)
+2. **ค่าที่เลือกไว้แล้วต้องไม่หายจากลิสต์** — เครื่อง/สินค้าที่ปลดระวางยังโชว์ ⏸ · ชื่อเดิมที่พิมพ์มาก่อนยังแสดง (ไม่ล้างข้อมูลเก่าเงียบๆ)
+3. **`allowFree` เปิดเฉพาะจุดที่ของนอกทะเบียนมีจริง** (ลูกค้าใหม่ · คนนอกระบบ/ลูกค้า · พาร์ท NPI ก่อน SOP · scrap ที่ master กรอกเลขเครื่อง)
+   และ SearchSelect ติดป้าย "✎ ไม่ได้อยู่ในทะเบียน" เสมอ · `MachineSelect`/`ProductSelect` ปิด allowFree เป็น default (ให้ไปเพิ่มที่ /machines · /products)
+4. **ค่าที่ DB เก็บไม่เปลี่ยน** (ตาราง DR ผูก FK กับ Main ไม่ได้ — snapshot ชื่อยังจำเป็น) picker แค่บังคับสะกดตรงทะเบียน + คืน id ให้เก็บเพิ่มเมื่อมีคอลัมน์
+5. **ช่องในตาราง (แถว × หลายสิบ)** ใช้ `<select>` จากลิสต์สั้นที่กรองแล้ว (ค่าปัจจุบันคงเป็น option) แทน SearchSelect ที่กางในบรรทัด
+6. option builder เป็น pure function ใน `src/utils/pickerOptions.js` — จุดใหม่ที่ต้องการ option ของคน/เครื่อง/สินค้า ให้เรียกตัวนี้ ห้าม map เองในหน้า
+7. **ห้ามสร้าง master ใหม่แบบเงียบ** — ยังไม่มี: `customers` · `suppliers` · กลุ่มเครื่องปั๊มของแม่พิมพ์ · `cost_centers` (ดู "ยังไม่ทำ" ใน audit) — ทำเมื่อ user สั่ง แล้วแก้ loader ตัวเดียว
 
 ## 5.2 ฟอร์ม master data ต้องมี picker จากฐานที่มีอยู่
 

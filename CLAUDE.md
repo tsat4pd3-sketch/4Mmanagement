@@ -515,7 +515,12 @@ src/
 ├── components/        # ของกลาง: Toast, ImageCropModal, MachineFloorMap, SpinAnnotator,
 │                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal,
 │                      #   DowntimeSiren (เสียงเตือน downtime — 2026-07-14)
+│                      #   ⭐ picker กลาง (2026-09-07 — UI-CONVENTIONS §5.1.2 บังคับ): LineSelect · SearchSelect ·
+│                      #   PersonSelect · MachineSelect · ProductSelect · CustomerSelect · StorageLocSelect
 ├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
+│                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·
+│                      #   useCustomers (ยังไม่มีตาราง customers — derive จาก Product Master) · useStorageLocations ·
+│                      #   useOrgSections (+useOrgTeams) · pickerOptions.js (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
 │                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
 │                      #   otPeriods.js, dateFormat.js, useImgBox.js
@@ -677,6 +682,8 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 ## Design System
 
 > ### ⚠️ บังคับอ่านก่อนแก้ UI ทุกครั้ง: `docs/UI-CONVENTIONS.md`
+> **ช่องกรอกที่รับ "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง / ไลน์ / ทีม / ส่วนงาน" ห้ามเป็น `<input>` เปล่าหรือ datalist เอง —
+> ใช้ picker กลางเท่านั้น (§5.1.2 · คำสั่ง user 2026-09-07 · audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`)**
 > มาตรฐานกลางของ UI ที่หลาย session ต้องทำให้เหมือนกัน — จุด/marker บนผังไลน์ (**วงกลม+ป้ายใต้เท่านั้น ห้ามเหลี่ยม** สูตรขนาด MK สเกลตามผัง + edge clamp), ไฟ Andon เขียว/เหลือง/แดง (**กระพริบเฉพาะแดง** เหลือง=นิ่ง), การ์ดสูงเท่ากันใน grid, ฟอนต์ขั้นต่ำ 11-12px (จอ TV), modal ผังต้อง fit จอเดียวไม่มี scroll, hover ใช้ได้เฉพาะอุปกรณ์มีเมาส์จริง, playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip`, สิทธิ์ action ผ่าน `can()` ห้าม hardcode role array เพิ่ม
 > **ถ้าสร้าง/เปลี่ยน pattern ที่ใช้หลายหน้า ต้องอัพเดท docs/UI-CONVENTIONS.md (พร้อมวันที่) ในคอมมิทเดียวกัน**
 
