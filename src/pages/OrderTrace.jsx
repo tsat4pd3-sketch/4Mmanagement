@@ -472,10 +472,12 @@ export default function OrderTrace() {
         const inspIds = [...new Set(Object.values(inspByJig).flat().map(i => i.inspector_id).filter(Boolean))];
         let profName = {};
         if (inspIds.length) {
-          try {
-            const { data: pf } = await supabase.from('profiles').select('id, full_name, email').in('id', inspIds);
-            profName = Object.fromEntries((pf || []).map(p => [p.id, p.full_name || p.email]));
-          } catch { /* ignore */ }
+          /* 🔴 ห้าม select `email` — profiles ไม่มีคอลัมน์นี้ → 42703 ทั้งคิวรี → ชื่อผู้ตรวจว่างทุกแถว
+             และ try/catch จับไม่ได้เลย (supabase-js คืน {data,error} ไม่ throw) = พังเงียบสนิท (audit 2026-09-03) */
+          const { data: pf, error: pfErr } = await supabase
+            .from('profiles').select('id, full_name').in('id', inspIds);
+          if (pfErr) console.warn('[orderTrace] profiles', pfErr.message);
+          profName = Object.fromEntries((pf || []).map(p => [p.id, p.full_name]));
         }
 
         const dtByMc = {};

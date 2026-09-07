@@ -6,6 +6,7 @@ import { toast } from '../components/Toast';
 import { loadDocForms, docFormSync, docFormScopes } from '../utils/docForms';
 import { buildDocFormPreviewHtml } from '../lib/docFormPreview';
 import tsLogoUrl from '../assets/TS logo.png';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -130,7 +131,7 @@ export default function DocFormsRegistry() {
   };
   const removeScope = async (sc) => {
     if (!window.confirm(`ลบชุดของส่วนงาน "${sc.section}"? (กลับไปใช้ชุดกลาง)`)) return;
-    await supabase.from('doc_form_scopes').delete().eq('id', sc.id);
+    checkWrite(await supabase.from('doc_form_scopes').delete().eq('id', sc.id), 'ลบขอบเขต');
     loadScopes(sc.doc_key); loadDocForms(true);
   };
   const addRevision = async () => {
@@ -147,7 +148,7 @@ export default function DocFormsRegistry() {
   };
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    await supabase.from('doc_form_revisions').delete().eq('id', r.id);
+    checkWrite(await supabase.from('doc_form_revisions').delete().eq('id', r.id), 'ลบ revision');
     loadRevisions(editing.doc_key);
   };
 

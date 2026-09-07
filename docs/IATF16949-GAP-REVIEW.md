@@ -14,8 +14,8 @@
 | **Core Tools: FMEA / PFC / Control Plan** | ✅ ครบ (2026-08-13) | `/pe-docs` — ข้อมูลจริง 2 พาร์ท (RH+LH P703) + revision ผูกต้นเหตุเคลม |
 | **Core Tools: SPC** | 🟡 มีแต่ข้อมูล 0 | X̄-R + Cp/Cpk/Pp/Ppk ตาม AIAG ใน `/qa` — `qa_measurements` ยังว่าง |
 | **Core Tools: MSA** | 🔴 **ไม่มี** | ทะเบียนเครื่องมือวัดมีแค่กำหนดสอบเทียบ — ไม่มี GR&R / Bias / Linearity |
-| **Core Tools: APQP** | 🔴 ไม่มี | มี "ผลลัพธ์" ของ APQP (PFC/FMEA/CP) แต่ไม่มีตัวติดตามเฟส/timing plan พาร์ทใหม่ |
-| **Core Tools: PPAP** | 🔴 ไม่มี | ไม่มีทะเบียน PSW / สถานะ submission / ระดับ PPAP ต่อพาร์ท |
+| **Core Tools: APQP** | 🟡 ทำแล้ว 2026-09-07 (`/npi` · รอ adoption) | ตัวติดตามเฟส/timing plan ต่อพาร์ท — แม่แบบ APQP 5 เฟส + Toyota SPTT · ดู `docs/modules/npi-apqp.md` |
+| **Core Tools: PPAP** | 🟡 ทำแล้ว 2026-09-07 (`/npi`) | ทะเบียน 18 elements + PSW no./submitted/approved + ระดับ PPAP ต่อพาร์ท + ใบ checklist พิมพ์ได้ |
 | 7.1.5 เครื่องมือวัด | 🟡 | สอบเทียบ+เตือนครบกำหนด ✅ · MSA ❌ · คุมแล็บภายนอก ISO 17025 ❌ |
 | 7.2 ความสามารถบุคลากร | ✅ แข็งแรง | Skill matrix + level-up approval + OJT FM-HRM-004 + ใบประเมิน F-PRS-P1-119 |
 | 7.5 ควบคุมเอกสาร | ✅ แข็งแรง | `/doc-forms` 24 ฟอร์ม (Rev/Effective/specimen) · ⚠️ ไม่มีนโยบาย retention/ทำลายบันทึก |
@@ -23,7 +23,7 @@
 | **8.4 ควบคุม Supplier** | 🔴 **ช่องว่างใหญ่สุด** | ไม่มีโมดูลเลย: ASL / supplier PPM / ผลตรวจรับเข้าผูก supplier / supplier audit (`parts_master` มีแค่ชื่อ) |
 | 8.5.1 Control Plan → หน้างาน | ✅ | ใบตรวจ QA + LPA + AM ทุกต้นกะ + Poka-yoke verification + TPM/PM + die registry (8.5.1.5-.6 ครบ) |
 | 8.5.2 Traceability | ✅/🟡 | `/order-trace` ลึก — gap ที่บันทึกแล้ว: lot supplier ตอนรับเข้า + attribution รายกล่องขาออก |
-| 8.5.6 ควบคุมการเปลี่ยนแปลง | ✅/🟡 | 4M workflow แข็งแรง · ECN มีแต่เลขอ้างใน revision ยังไม่มี workflow อนุมัติ ECN |
+| 8.5.6 ควบคุมการเปลี่ยนแปลง | ✅ | 4M workflow แข็งแรง · **ECI/ECN workflow ทำแล้ว 2026-09-07** (`/npi` แท็บแบบ & ECI — ปิดได้ต่อเมื่อผูกแบบ rev ใหม่/คำขอแก้ PE/ใบ 4M/แผน tooling ครบ) |
 | 8.6 ปล่อยผลิตภัณฑ์ | 🟡/🔴 | ใบตรวจมีระบบแต่ข้อมูล 0 · **Layout inspection + functional test ประจำปี (8.6.2) ไม่มีตัวติดตาม** |
 | 8.7 Nonconforming | ✅🟡 | NCR (containment→disposition) + Scrap FM-PD2-002 + 8D — NCR = 0 แถว · concession ลูกค้า ❌ |
 | **9.2 Internal audit 3 ชนิด** | 🟡/🔴 | Process audit = LPA ✅ · **System audit ❌ · Product audit ❌** · ทะเบียนคุณสมบัติ auditor ❌ |
@@ -44,4 +44,4 @@
 3. **MSA (GR&R)** — Core Tool เดียวที่ขาดทั้งดุ้น ต่อยอดทะเบียนเครื่องมือวัดเดิม
 4. **Supplier quality (8.4)** — โมดูลใหญ่สุดที่หายไป
 5. **Internal audit ครบ 3 ชนิด** (system + product ต่อยอดโครง LPA) + **Contingency plans (6.1.2.3)**
-6. APQP/PPAP tracker · ECN workflow · Layout inspection schedule · record retention
+6. ~~APQP/PPAP tracker · ECN workflow~~ **ทำแล้ว 2026-09-07 (`/npi`)** · Layout inspection schedule · record retention

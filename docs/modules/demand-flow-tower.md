@@ -644,7 +644,8 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 |---|---|---|---|
 | 3 เห็นว่าถึงจุดเรียกเติม | ระบบ → หัวหน้าไลน์ | `/daily-report` แผง 📦 | ✅ (บนจอ · **Telegram ต้องมี scanner ยังไม่ทำ**) |
 | 4 ยืนยันเบิก / พักไว้ | หัวหน้ากลุ่ม | ปุ่มในแผงเดียวกัน | ✅ |
-| 5-7 หยิบ → ส่ง | สโตร์ | `/heijunka` → 🔄 คิวเติม WIP | ✅ (ยังไม่มีสแกน = เฟส 3-4) |
+| 5-6 หยิบ | สโตร์ | `/heijunka` → 🔄 คิวเติม WIP | ✅ (ยังไม่มีสแกน TAG CARD = เฟส 3a) |
+| 7 ถึงไลน์ สแกนจุดส่ง | สโตร์ | ปุ่ม "📍 ถึงไลน์แล้ว · สแกนจุดส่ง" → `DeliverScanModal` | ✅ เฟส 4 (2026-09-03) |
 | 8 ยืนยันรับ ครบ/ไม่ครบ | ผลิต | แผง 📦 | ✅ |
 
 > #### 🔴🔴 กฎเหล็ก — **หน่วยนับของ = "ไลน์ย่อยที่สุด (leaf)"** ห้ามใช้ `getLineFamilyNames` กับสต็อก (2026-08-31 · user เคาะ)
@@ -702,11 +703,57 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > #### ⚠️ กันเสนอซ้ำที่ระดับ DB — `wip_replenish_open_per_part_uniq`
 > 1 พาร์ท/ไลน์ มีใบที่ยังไม่จบได้ **ใบเดียว** · ไม่งั้นเปิดหน้าใหม่ทุกครั้ง = คิวท่วม
 > (บทเรียน `purchase_requests` 2,336 ใบ) · client แปลง 23505 เป็นข้อความไทย
+>
+> #### 🔴🔴 กฎเหล็ก 6 — บวกยอดจุด WIP ต้องผ่าน RPC **`wip_point_add_qty`** ห้าม update `wip_buffer_points` ตรงจาก client (2026-09-03 · full QC audit)
+> `wip_buffer_points` มี RLS ที่เขียนได้เฉพาะ **admin/manager/supervisor** (hardcode role array)
+> แต่คนที่กด "ส่งถึงแล้ว" ในคิวเติม WIP คือผู้ถือ **`heijunka:operate`**
+> — วัดกับฐานจริง: **44 บัญชีไม่ผ่าน RLS สักคน** (leader 19 · qa 20 · **planner_store 1 ซึ่งเป็นสโตร์ตัวจริง** ·
+> document_control 2 · display 2) ผ่านแค่ 27 (admin/manager/supervisor)
+> ⇒ **RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"** → โค้ดเดิมเช็คแค่ `error` จึงขึ้น **"✅ เติมเรียบร้อย"
+> ทั้งที่ `current_qty` ไม่เคยขยับ** (เทสสวมบทยืนยัน: planner_store update ตรง → `rows=0` · ผ่าน RPC → 305)
+> - **ไม่แก้ด้วยการเปิด policy ให้ 44 บัญชี** — ตารางนี้เป็น master ของจุด WIP (ตำแหน่งบนผัง · min/max · ภาชนะ)
+>   ซึ่งเป็นของ admin/mgr/sv จริง · สิ่งที่สโตร์ต้องทำคือ **บวก `current_qty` คอลัมน์เดียว = คนละแกน**
+>   → SECURITY DEFINER แตะเฉพาะคอลัมน์ที่อนุญาต (precedent `set_my_signature`) + guard **`has_perm()`** ตามกฎ
+>   "สิทธิ์ต้อง data-driven ห้าม hardcode role array" · migration `20260903_wip_point_add_qty_rpc.sql` (**apply แล้ว**)
+> - **RPC ล็อกแถว (`for update`) ก่อนอ่าน** — 2 เครื่องสโตร์กดพร้อมกันต้องบวกทบกัน ไม่ใช่เขียนทับกัน
+>   (read-modify-write ฝั่ง client = ยอดหายไปหนึ่งใบเงียบๆ)
+> - **ชนเพดาน `max_qty` ต้องบอกบนจอ ห้าม clamp เงียบ** — RPC คืน `capped`/`cap_max` แล้วจอขึ้น toast **แดง**
+>   (ส่งไป N แต่บันทึกได้เท่าเพดาน = ยอดจริงกับยอดในระบบต่างกัน คนต้องรู้)
+> - `max_qty` null **หรือ 0 = "ไม่รู้เพดาน" → ไม่ clamp** (clamp ด้วย 0 = ล้างยอดทิ้ง เสียหายกว่ายอมให้เกิน)
+>   · ⚠️ ข้อมูลจริงตอนนี้ `max_qty > 0` ครบทั้ง 10 แถว — เงื่อนไขนี้เป็นการกันไว้ ไม่ใช่แก้ของที่พังอยู่
+> - **`LineSetup` ยัง update ตรงได้ตามเดิม** (policy `wip_buffer_points_write_setup` = `has_perm('line_setup:edit')` ตั้งแต่ **2026-09-04** — เดิม hardcode admin/mgr/sv ซึ่ง**ไม่ตรง**กับสิทธิ์จริง: dept_admin ที่ถือ line_setup:edit แก้จุด WIP ได้ 0 แถวเงียบ · migration `20260904_rls_match_ui_permissions.sql`) **ห้ามย้ายมาใช้ RPC นี้**
+>   (RPC ตั้งใจแตะแค่ `current_qty` ไม่ใช่ทางแก้ master)
+>
+> #### 🔴 กฎเหล็ก 7 — claim สถานะก่อนเขียน ledger **ต้องคืนสถานะเดิมเมื่อ ledger ล้ม** (2026-09-03)
+> ทุกปุ่มเลื่อนสถานะในบอร์ดสโตร์ใช้ **compare-and-swap** เป็นตัวกันกดซ้ำ/สองเครื่อง (ถูกแล้ว ห้ามเอาออก —
+> เขียน ledger ก่อนแล้วค่อยเปลี่ยนสถานะ = 2 เครื่องกดพร้อมกันได้สต็อกซ้ำ)
+> **แต่ผลข้างเคียงคือ claim สำเร็จแล้ว "กดซ้ำไม่ได้อีก"** ⇒ ledger ล้มแล้วปล่อยไว้ = ใบค้างสถานะ
+> "ผลิตเสร็จ/รับเข้าแล้ว/ส่งแล้ว" **ตลอดกาลโดยสต็อกไม่เคยขยับ และไม่มีทางให้ระบบเขียนให้อีก**
+> - แก้ครบแล้วที่ `advanceLot` (ผลิตเสร็จ) · `advancePurchase` (รับเข้า) · `advanceWip` (เติมจุด)
+>   — ล้มเมื่อไหร่ **คืนสถานะกลับที่เดิม** แล้วบอกให้กดใหม่
+> - **คืนสถานะไม่สำเร็จด้วย = ต้องดังกว่าเดิม** ("ค้างสถานะ X ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที")
+> - **ของที่ลง ledger ไปแล้ว ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่) — เช่นปิดใบเบิกวัตถุดิบใน `advanceLot`
+>   ที่ทำหลัง insert stock → ล้มแล้วให้ **บอกดังๆ ให้ไปปิดเอง** (pattern เดียวกับ `submitReceive`)
+> - **⚠️ `advanceLot` เคยใช้ `.neq('status', next)` ซึ่งหลวมเกินไป — แก้เป็น `.eq('status', lot.status)` แล้ว**
+>   (บั๊กเดียวกับที่ `advancePurchase` แก้ไปก่อน): ใบที่ **ยกเลิก** ไปแล้วถูกกดเป็น done ได้ = ชุบชีวิตใบขยะ
+>   แล้ว **เติมสต็อกปลอม** · ข้อมูลจริง `child_lot_requests` cancelled **100 ใบ** (ใบล็อต ≤1 ชิ้นที่ void
+>   ตอนแก้บั๊กหน่วย `lot_size`) — กดจากจอที่เปิดค้างอยู่ = ของที่ไม่มีจริงเข้าสโตร์ · และข้ามขั้น pending→done ได้
 
 - **ระบบเสนอ คนกดยืนยัน — ห้าม auto-สร้างใบเบิก** (กฎเดิมทั้งโปรเจค) · การเสนอ **คำนวณสดจากยอดจริง
   ไม่ persist แถว `suggested`** (แถวแบบนั้นต้องมี scanner คอยสร้าง/ล้าง — สถานะเปิดไว้ใน DB รอเฟสหน้า)
 - **ยังไม่ทำ:** แจ้ง Telegram ตอนถึง min โดยไม่ต้องเปิดหน้า (ต้องมี scanner ฝั่ง server ·
-  rule `wip_part_below_min` seed ไว้แล้ว) · สแกน TAG CARD ยืนยัน mat+lot (เฟส 3) · QR จุดส่งงาน (เฟส 4)
+  rule `wip_part_below_min` seed ไว้แล้ว) · สแกน TAG CARD ยืนยัน mat+lot (เฟส 3) · ด่านจำนวนขั้น 5 (ทำพร้อมเฟส 3a)
+
+> #### 🎯 เฟส 4 — จุดส่งงาน + ด่าน "ส่งถูกจุดไหม" (2026-09-03) · รายละเอียดเต็ม `docs/STORE-PULL-LOOP-DESIGN.md` §8.1
+> - **`line_delivery_points` (DR)** = ป้าย QR `ESM:D:<uuid>` ที่ติดหน้าไลน์ · `line_names text[]` (แร็คเดียวป้อน 60+61) · **เฉพาะไลน์ leaf** (กฎหน่วยย่อยที่สุดข้างบน)
+>   · ตั้งที่ `/linesetup` แผง 🎯 (`DeliveryPointPanel` · สิทธิ์ `delivery_point:manage`) · พิมพ์ `/qr-labels?kind=delivery` · **ไม่มีปุ่มลบ มีแต่ปิดใช้งาน** (ป้ายเก่าหน้างานสแกนแล้วต้องได้ "ปิดแล้ว")
+>   · **`line_names` เป็น text[] snapshot → เข้า `handleRenameLine` แบบอ่าน-แก้-เขียน** (bump ธรรมดาไม่ได้) ทำแล้ว
+> - **กฎอยู่ `src/utils/replenishGate.js` ที่เดียว** (`checkDeliveryPoint` / `buildDeliverPayload` / `validateDeliverPayload` · เทส 11 เคส) — ห้ามเขียนเงื่อนไขซ้ำในหน้า
+>   · **ไม่รู้ = ห้ามบล็อก** — ไลน์ยังไม่ตั้งจุด → ผ่านแบบ `no_point` + แผงฝั่งไลน์ขึ้น worklist · **เทียบตัวตนจุดกับ `line_name` บนใบตรงๆ** ห้าม infer จากพาร์ท
+>   · **ปุ่มยืนยัน disabled จนกว่าสแกนผ่าน** · บล็อกต้องบอก "ที่ถูกคือจุดไหน" · override = สิทธิ์ `wip_request:override` + เหตุผล (`OVERRIDE_REASONS`) + ชื่อ
+> - **ผลบนใบ `wip_replenish_requests.delivered_gate`** = `scanned`/`no_point`/`override` (+ `delivered_point_id/name`, `delivered_override_*`) · trigger `fn_wip_replenish_deliver_gate` (Main) ปฏิเสธ delivered ที่ไม่มี gate — **ตารางความจริงต้องตรงกับ `validateDeliverPayload` เป๊ะ**
+> - **`line_replenish_scan_blocks` (Main · insert-only)** เก็บเฉพาะครั้งที่บล็อก/override → ตอบ "ด่านกันอะไรได้" · **ห้ามตั้งชื่อขึ้นต้น `pokayoke_`** (คนละโมดูลกับ `/pokayoke`)
+> - **ลำดับ deploy: merge โค้ดก่อน แล้ว apply migration Main** — โค้ดใหม่ทนคอลัมน์ยังไม่มี (42703 → บันทึกแบบเดิม + toast) แต่โค้ดเก่าไม่ส่ง gate
 - **⚠️ เฟส 0 ที่ยังค้าง:** `fn_explode_child_demand` หักมินิสโตร์ด้วยชื่อ **ไลน์ที่เปิดกะ** แต่ของถูกจ่ายเข้า
   **ไลน์แม่** → backflush ไม่เคยเกิด → ยอดในไลน์ไม่เคยลด → **ไม่มีวันแตะ min เอง**
   ระหว่างนี้หัวหน้ายังกด "เบิก" เองได้ (ไม่บล็อก) แต่การเสนออัตโนมัติจะเงียบจนกว่าจะย้ายของไปไลน์ลูกครบ
@@ -715,3 +762,9 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 ### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
 มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**
 การสะสมล็อตของจริงเกิดที่ `fn_explode_child_demand` แทน — **อย่าไปต่อยอดบน `kanban_scans`**
+
+> #### 🔗 แถว consume ของ `fn_explode_child_demand` ต้องมี `ref_order_id`/`ref_session_id` (2026-09-04 · full QC audit รอบ 10)
+> trigger ตัด mini-store ตอนปิดใบ FG เคยเขียนแถว `consume` โดยไม่ stamp ใบผลิต → `/order-trace` (ดึงสต็อกด้วย `ref_order_id`)
+> **มองไม่เห็นการตัดชิ้นส่วนของใบนั้นเลย** — วัดจริง 2,247 แถว null ทั้งหมด · แก้ที่ trigger + backfill จับคู่ note `auto: FG <prod_no>` + ไลน์ + work_date
+> ได้ 2,212 แถว (กำกวม 29 + หาไม่เจอ 6 ปล่อย null ไม่เดา) · migration `20260904_explode_consume_ref_order.sql` (DR · apply แล้ว)
+> · guard กันโพสต์ซ้ำ/ปุ่มถอยใบ กรอง `type='issue'` เท่านั้น จึงไม่กระทบ · **แถว ledger อัตโนมัติทุกชนิดต้องผูก ref ต้นทางตั้งแต่เขียน** ไม่งั้นสอบกลับขาดตอน

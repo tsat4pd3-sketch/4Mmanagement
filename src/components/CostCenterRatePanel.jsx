@@ -1,7 +1,10 @@
-import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
+import { Fragment, useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import CollapseCard from './CollapseCard';
+import ReadOnlyNote from './ReadOnlyNote';
+import { UserContext } from '../App';
+import { can } from '../utils/permissions';
 import { RATE_COMPONENTS, rateFor, fmtBaht } from '../utils/costSaving';
 
 /* ═══ 💰 Activity Rate ต่อ Cost Center — แผงใน /org-setup (2026-08-11) ═══
@@ -26,6 +29,14 @@ const emptyForm = () => ({
 });
 
 export default function CostCenterRatePanel({ nodes, lines }) {
+  /* 🔴 ด่านสิทธิ์ — เพิ่ม 2026-09-03 (full QC audit)
+     เดิมแผงนี้ "ไม่มี can() สักบรรทัด" เพราะคอมเมนต์เก่าเขียนว่า /org-setup เป็น admin-only
+     ซึ่งจริงตอนเขียน (2026-08-11) แต่ 2026-08-24 หน้าถูกเปิดให้ role สนับสนุนดูผังของตัวเอง
+     → engineer/mtn/planner_store/sale (บัญชีจริง 16 คน) แก้ค่าแรงมาตรฐาน 52 cost center ได้
+     ซึ่งเป็นตัวคูณของ "เงินที่ประหยัดได้" ทุกจอ (improvements · มูลค่าดาวไทม์/ของเสีย · เด็คผู้บริหาร)
+     ⚠️ อย่าพึ่งสิทธิ์เข้าหน้าเป็นด่านของแผงในหน้า — สิทธิ์หน้าเปลี่ยนได้ที่ /permissions ตลอดเวลา */
+  const { role } = useContext(UserContext);
+  const canEdit = can('cost_rate', 'manage', role);
   const [rates, setRates] = useState([]);
   const [form, setForm] = useState(null);      // {id?, cost_center, effective_from, <rate fields จาก RATE_COMPONENTS>, note}
   const [histOpen, setHistOpen] = useState({}); // cc -> bool
@@ -63,6 +74,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
   const shownList = showAllLevels ? ccList : groupList;
 
   const handleSave = async () => {
+    if (!canEdit) { toast.error('ไม่มีสิทธิ์แก้ Activity Rate'); return; }
     const cc = form.cost_center.trim();
     if (!cc) { toast.error('กรอกรหัส cost center ก่อน'); return; }
     if (!form.effective_from) { toast.error('เลือกวันเริ่มใช้ rate (effective) ก่อน'); return; }
@@ -72,24 +84,32 @@ export default function CostCenterRatePanel({ nodes, lines }) {
       ...Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, Number(form[c.field]) || 0])),
       note: form.note?.trim() || null,
     };
+    /* ⚠️ ต้อง .select('id') นับแถวที่เขียนจริง — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"
+       (พิสูจน์กับ RLS จริงแล้ว: role สนับสนุน update ได้ rows=0 · insert โดน 42501)
+       เช็คแค่ `if (error)` = ขึ้น toast เขียวทั้งที่ไม่มีอะไรถูกบันทึก */
     const q = form.id
-      ? supabase.from('cost_center_rates').update(payload).eq('id', form.id)
-      : supabase.from('cost_center_rates').insert(payload);
-    const { error } = await q;
+      ? supabase.from('cost_center_rates').update(payload).eq('id', form.id).select('id')
+      : supabase.from('cost_center_rates').insert(payload).select('id');
+    const { data: wrote, error } = await q;
     setSaving(false);
     if (error) {
-      toast.error(error.code === '23505' ? `มี rate ของ ${cc} วันที่ ${form.effective_from} อยู่แล้ว — แก้แถวเดิมแทน` : error.message);
+      toast.error(error.code === '23505' ? `มี rate ของ ${cc} วันที่ ${form.effective_from} อยู่แล้ว — แก้แถวเดิมแทน`
+        : error.code === '42501' ? 'ไม่มีสิทธิ์แก้ Activity Rate (ต้องมีคีย์ cost_rate:manage)' : error.message);
       return;
     }
+    if (!wrote?.length) { toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ Activity Rate หรือแถวถูกลบไปแล้ว'); return; }
     toast.success('บันทึก rate แล้ว');
     setForm(null);
     load();
   };
 
   const handleDelete = async (r) => {
+    if (!canEdit) { toast.error('ไม่มีสิทธิ์ลบ Activity Rate'); return; }
     if (!window.confirm(`ลบ rate ${r.cost_center} (effective ${r.effective_from})?`)) return;
-    const { error } = await supabase.from('cost_center_rates').delete().eq('id', r.id);
-    if (error) { toast.error(error.message); return; }
+    // นับแถวที่ลบจริงเช่นกัน — RLS ปฏิเสธ DELETE ก็เงียบแบบเดียวกับ UPDATE
+    const { data: gone, error } = await supabase.from('cost_center_rates').delete().eq('id', r.id).select('id');
+    if (error) { toast.error(error.code === '42501' ? 'ไม่มีสิทธิ์ลบ Activity Rate' : error.message); return; }
+    if (!gone?.length) { toast.error('ลบไม่สำเร็จ — ไม่มีสิทธิ์ หรือแถวถูกลบไปแล้ว'); return; }
     load();
   };
 
@@ -183,12 +203,14 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     {/* ⚠️ ＋ rate = ทางหลัก (บัญชีส่ง rate รอบใหม่ = แถวใหม่ ประวัติเดิมคงไว้)
                         ✏️ = ทางรอง ใช้เฉพาะกรอกผิด — จงใจให้จืดกว่า ไม่ให้เผลอกดแก้ทับ rate ปีเก่า */}
                     <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                      <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
-                        title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
-                        style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
-                      {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
-                        title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
+                      {canEdit ? (<>
+                        <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
+                          title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
+                          style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
+                        {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
+                          title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
+                      </>) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒</span>}
                     </td>
                   </tr>
                   {open && hist.map(r => (
@@ -201,8 +223,10 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       <td style={{ padding: '4px 10px', fontSize: 11, textAlign: 'right', fontFamily: 'monospace', color: 'var(--muted)' }}>{fmtBaht(RATE_COMPONENTS.reduce((a, c) => a + (Number(r[c.field]) || 0), 0))}</td>
                       <td style={{ padding: '4px 10px' }} />
                       <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        <button onClick={() => setForm({ ...emptyForm(), ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
-                        <button onClick={() => handleDelete(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                        {canEdit && <>
+                          <button onClick={() => setForm({ ...emptyForm(), ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                          <button onClick={() => handleDelete(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                        </>}
                       </td>
                     </tr>
                   ))}
@@ -212,9 +236,16 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           </tbody>
         </table>
       </div>
-      <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-        ➕ เพิ่ม rate (พิมพ์รหัสเอง)
-      </button>
+      {canEdit ? (
+        <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          ➕ เพิ่ม rate (พิมพ์รหัสเอง)
+        </button>
+      ) : (
+        /* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล — UI-CONVENTIONS §6.9 */
+        <ReadOnlyNote role={role} permKey="cost_rate:manage"
+          what="แก้ Activity Rate (ค่าแรง/ค่าเสื่อม/โสหุ้ย ต่อ cost center)"
+          hint="rate ชุดนี้เป็นตัวคูณของ “เงินที่ประหยัดได้” ทุกจอ (โปรเจคปรับปรุง · มูลค่าดาวไทม์/ของเสีย · เด็ครายงานเดือน) จึงเปิดให้เฉพาะผู้ดูแลระบบ/ผู้จัดการ" />
+      )}
 
       {/* modal ฟอร์ม rate — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5 */}
       {form && (

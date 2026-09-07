@@ -64,6 +64,12 @@ model: inherit
   · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
 
 ### หมวด C — Permissions (data-driven)
+
+- **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
+- **[C-RLS-2]** ตารางที่ client เรียก `.upsert()` ต้องมี UPDATE policy (ไม่มี = ชนแถวเดิมแล้ว 42501) · ตารางที่ client `.update()/.delete()` แล้วผลลัพธ์สำคัญ ต้อง `.select('id')` นับแถว (RLS ปฏิเสธ = 0 แถวไม่มี error)
+- **[B-WRITE-1]** ทุก `insert/update/delete/upsert` ต้องอ่าน `error` (ใช้ `checkWrite` จาก `src/utils/dbWrite.js` หรืออ่าน `{ error }` เอง) · grep: `^\s*await supabase(DR)?\.from\('[^']+'\)\.(insert|update|delete|upsert)\(` ต้องได้ 0 (ยกเว้น `AddUser.jsx` mtn_teams ที่ตั้งใจ · `webpush.js` ใน try ของ unsubscribe) — `await supabase.from(...).insert(...)` เปล่าๆ หรือ `const { data } = ...` = กลืน error · `try{await supabase…}catch{}` = โค้ดตาย (supabase-js ไม่ throw)
+- **[B-WRITE-2]** effect ที่ await แล้ว set state ตาม selection ต้องมี guard กัน stale response (`alive`/request id) — CLAUDE.md §กฎเหล็กการเขียน DB จาก client ข้อ 4
+
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —
   action ใหม่ต้องผ่าน `can(resource, action, role)` / `usePerms()` / `hasPermission(key, role)`
   · grep: `\[(\s*)'admin'` และ `includes\(role\)` ใน `src/`
@@ -81,9 +87,13 @@ model: inherit
   (ก) `PAGE_GROUPS` ใน PermissionsManagement.jsx ต้องมีหมวด/ลำดับหมวด/ลำดับหน้า/ชื่อหน้า
   ตรงกับ `NAV_ITEMS` + `NAV_GROUP_ORDER` ใน App.jsx (เพิ่มหน้าใหม่ต้องเพิ่ม 2 ที่ให้ตรงกัน) ·
   (ข) migration ที่ seed `permission_catalog` ต้องใช้ `group_name` เป็นชื่อหมวดใน
-  `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด (ภาพรวม 1xx · ฝ่ายผลิต 2xx ·
-  วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic - Store 5xx · การตรวจสอบและซ่อมบำรุง 6xx ·
-  คุณภาพ & วิศวกรรม 7xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 9xx · ผู้บริหาร & เดโม — ห้ามซ้ำเลขเดิม)
+  `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวดใน **ตาราง `nav_groups`** (2026-09-07: ทะเบียนหมวด
+  ในฐาน + FK `permission_catalog.group_name → nav_groups(name)` · ช่วง: ภาพรวม 100-149 · จอแสดงผล 150-199 ·
+  ฝ่ายผลิต 2xx · วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic ขาเข้า 500-519 / ขาออก 520-539 /
+  แผนงาน & ข้อมูล 540-599 · การตรวจสอบและซ่อมบำรุง 6xx · คุณภาพ & วิศวกรรม 7xx · ตั้งค่าโปรแกรม,ฐานข้อมูล 900-949 ·
+  ผู้บริหาร & เดโม 950-999 · 8xx ว่าง — ห้ามซ้ำเลขเดิม) ·
+  (ค) **เปลี่ยน/เพิ่มหมวดใน `NAV_GROUP_ORDER` ต้องมี migration `*_nav_groups_*.sql` ใหม่ (upsert ทั้งชุด)
+  ในคอมมิทเดียวกัน** — เทส `navGroupsRegistry.test.mjs` เทียบไฟล์ล่าสุดกับ App.jsx (ไม่ตรง = build ไม่ผ่าน)
   พิมพ์ชื่อหมวดเองเมื่อไหร่ = หมวดกำพร้าโผล่กลางตาราง (เคยเกิด: 'ซ่อมบำรุง'/'ประชุมแถวเช้า')
   · grep: `group_name` ใน supabase/migrations/ เทียบกับ NAV_GROUP_ORDER
 - **C7** หน้า Home ต้องเข้าถึงได้ทุกหมวด (2026-08-24) — `DEPTS` ใน `src/pages/DeptHub.jsx`

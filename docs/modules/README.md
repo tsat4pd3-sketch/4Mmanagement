@@ -41,6 +41,7 @@
 | ⚫ PM Photo-Compare Inspection — ❌ ถอดออกแล้ว (2026-07-22) | `docs/modules/_archived/pm-photo-compare-removed.md` | 2 KB |
 | Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13) | `docs/modules/employee-skills-exp.md` | 14 KB |
 | PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) | `docs/modules/pe-core-tools.md` | 28 KB |
+| 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07) | `docs/modules/npi-apqp.md` | 12 KB |
 | Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24) | `docs/modules/traceability-audit-log.md` | 15 KB |
 | Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02) | `docs/modules/workforce-insight.md` | 8 KB |
 | ประวัติผลิต by Product — `/product-history` (2026-07-24) | `docs/modules/product-history.md` | 17 KB |

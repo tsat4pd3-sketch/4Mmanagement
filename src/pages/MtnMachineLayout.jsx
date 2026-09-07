@@ -15,6 +15,7 @@ import FactoryMap from './FactoryMap'
 import { jigEquipTypeOf } from '../utils/equipmentKinds'
 import useTabParam from '../utils/useTabParam'
 import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
+import { checkWrite } from '../utils/dbWrite';
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -378,13 +379,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
     if (!editMode) return
     hist.pushHistory()
     setFacPoints(prev => prev.map(p => p.id === pointId ? { ...p, pos_top: pct.top, pos_left: pct.left } : p))
-    await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId)
+    checkWrite(await supabaseDR.from('pm_facility_points').update({ pos_top: pct.top, pos_left: pct.left }).eq('id', pointId), 'บันทึกผัง');
   }
   const removePoint = async (pointId) => {
     if (!editMode) return
     hist.pushHistory()
     setFacPoints(prev => prev.filter(p => p.id !== pointId))
-    await supabaseDR.from('pm_facility_points').delete().eq('id', pointId)
+    checkWrite(await supabaseDR.from('pm_facility_points').delete().eq('id', pointId), 'บันทึกผัง');
   }
 
   /* ── enrich markers for the current view + department filter ── */

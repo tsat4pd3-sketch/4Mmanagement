@@ -143,14 +143,22 @@ export default function OrgSetup() {
     const row = signersMap[secKeyOf(node)] || {};
     setSgManager(row.manager_name || ''); setSgTA(row.ta_name || ''); setSgHRM(row.hrm_name || '');
   }, [selSection, signersMap, plSecSet, sections]); // eslint-disable-line
+  /* 🔒 ผู้เซ็นใบค่าฝีมือ = ชื่อที่ถูกพิมพ์ลงช่องลายเซ็นเอกสารจริง (audit 2026-09-03)
+     เดิมไม่มีด่านเลย → role สนับสนุนที่เข้าหน้านี้ได้ (16 บัญชี) แก้ผู้อนุมัติของส่วนงานอื่นได้
+     admin = ทุกส่วนงาน · ผู้ถือ org:manage_own_unit = เฉพาะส่วนงานตัวเอง (หลักเดียวกับ isMyUnit ของตารางกะ) */
+  const canEditSigners = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
   const saveSigners = async () => {
     const node = sections.find(s => s.id === selSection);
     const key = secKeyOf(node);
     if (!key) return toast.error('ส่วนงานนี้ยังไม่มี Code/ชื่อ — ตั้งก่อนบันทึกผู้เซ็น');
+    if (!canEditSigners(selSection)) return toast.error('แก้ผู้เซ็นได้เฉพาะส่วนงานของตัวเอง');
     setSgSaving(true);
     const row = { section: key, manager_name: sgManager || null, ta_name: sgTA || null, hrm_name: sgHRM || null, updated_at: new Date().toISOString() };
-    const { error } = await supabase.from('section_signers').upsert(row, { onConflict: 'section' });
-    if (error) toast.error('Error: ' + error.message);
+    // ⚠️ นับแถวที่เขียนจริง — RLS ปฏิเสธแล้วเงียบ (คืน 200 ไม่มี error) จะขึ้น toast เขียวทั้งที่ไม่ได้บันทึก
+    const { data: wrote, error } = await supabase.from('section_signers')
+      .upsert(row, { onConflict: 'section' }).select('section');
+    if (error) toast.error(error.code === '42501' ? 'ไม่มีสิทธิ์แก้ผู้เซ็นใบค่าฝีมือ' : 'Error: ' + error.message);
+    else if (!wrote?.length) toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ผู้เซ็นของส่วนงานนี้');
     else { setSignersMap(m => ({ ...m, [key]: row })); toast.success('บันทึกผู้เซ็นแล้ว'); }
     setSgSaving(false);
   };
@@ -351,15 +359,22 @@ export default function OrgSetup() {
             const node = sections.find(s => s.id === selSection);
             if (!node) return null;
             const key = secKeyOf(node);
+            const sgEdit = canEditSigners(selSection);
             return (
               <div className="card" style={{ flexBasis: '100%', width: '100%', padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
                   <strong style={{ fontSize: 13, color: 'var(--text2)' }}>✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ — ส่วน {node.name}{key ? ` (${key})` : ''}</strong>
-                  <button onClick={saveSigners} disabled={sgSaving || !key}
-                    style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
-                    {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
-                  </button>
+                  {sgEdit && (
+                    <button onClick={saveSigners} disabled={sgSaving || !key}
+                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
+                      {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                    </button>
+                  )}
                 </div>
+                {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล — §6.9 */}
+                {!sgEdit && <ReadOnlyNote role={role} permKey="org:manage_own_unit" compact
+                  what="แก้ผู้เซ็นใบค่าฝีมือของส่วนงานนี้"
+                  hint="ชื่อที่ตั้งตรงนี้ถูกพิมพ์ลงช่องลายเซ็นในใบสรุปค่าฝีมือจริง — แอดมินหน่วยงานแก้ได้เฉพาะส่วนงานของตัวเอง" />}
                 <InfoMore size={11} style={{ marginBottom: 10 }} id="org_signers"
                   lead={<>ใช้ดึงชื่อลงช่องลายเซ็น “ใบสรุปค่าฝีมือ” อัตโนมัติ</>}>
                   ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้
@@ -367,9 +382,9 @@ export default function OrgSetup() {
                 </InfoMore>
                 {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4 }} /></div>
-                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><input type="text" value={sgTA} onChange={e => setSgTA(e.target.value)} style={{ marginTop: 4 }} /></div>
-                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><input type="text" value={sgHRM} onChange={e => setSgHRM(e.target.value)} style={{ marginTop: 4 }} /></div>
+                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><input type="text" value={sgManager} readOnly={!sgEdit} onChange={e => setSgManager(e.target.value)} style={{ marginTop: 4, ...(sgEdit ? null : { opacity: 0.6 }) }} /></div>
+                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><input type="text" value={sgTA} readOnly={!sgEdit} onChange={e => setSgTA(e.target.value)} style={{ marginTop: 4, ...(sgEdit ? null : { opacity: 0.6 }) }} /></div>
+                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><input type="text" value={sgHRM} readOnly={!sgEdit} onChange={e => setSgHRM(e.target.value)} style={{ marginTop: 4, ...(sgEdit ? null : { opacity: 0.6 }) }} /></div>
                 </div>
               </div>
             );

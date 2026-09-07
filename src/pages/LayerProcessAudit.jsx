@@ -429,7 +429,8 @@ export default function LayerProcessAudit() {
         };
         const { data: saved, error } = await supabase.from('lpa_plans').upsert(row, { onConflict: 'line_name,shift,month_key' }).select().single();
         if (error) throw error;
-        await supabase.from('lpa_plan_days').delete().eq('plan_id', saved.id);
+        const { error: wErr432 } = await supabase.from('lpa_plan_days').delete().eq('plan_id', saved.id);
+        if (wErr432) { toast.error('ล้างแผนรายวันเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr432.message); return; }
         const rows = Object.values(md.days).filter(d => d.station || d.plan_leader || d.plan_supervisor || d.plan_manager || d.plan_gm)
           .map(d => ({ plan_id: saved.id, day: d.day, station: d.station || null, plan_leader: !!d.plan_leader, plan_supervisor: !!d.plan_supervisor, plan_manager: !!d.plan_manager, plan_gm: !!d.plan_gm }));
         if (rows.length) { const { error: e2 } = await supabase.from('lpa_plan_days').insert(rows); if (e2) throw e2; }

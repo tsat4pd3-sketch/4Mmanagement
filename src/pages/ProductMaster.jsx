@@ -19,6 +19,7 @@ import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
+import { checkWrite } from '../utils/dbWrite';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -367,11 +368,11 @@ export default function ProductMaster() {
         if (error) { toast.error(friendlySaveError(error, payload.mat_no, form.is_operation)); return; }
         savedId = inserted.id;
         if (ecSource) {
-          await supabaseDR.from('dr_products').update({
+          checkWrite(await supabaseDR.from('dr_products').update({
             is_active: false,
             superseded_at: form.effective_from || localDateStr(),
             superseded_by: inserted.id,
-          }).eq('id', ecSource.id);
+          }).eq('id', ecSource.id), 'บันทึกสินค้า');
           // EC = พาร์ทเดิม revision ใหม่ → ลงทะเบียน MAT ใหม่เข้าทะเบียนกลาง parts_master ให้อัตโนมัติ
           // สืบทอดเฉพาะ "คุณสมบัติทางกายภาพ" จากเลขเดิม (uom/จำนวนต่อกล่อง/supplier/รูป) —
           // ต้นทุน (material/standard) ไม่สืบทอด: rev ใหม่ต้นทุนเปลี่ยนได้ ให้บัญชีเติมเอง ห้ามเดา
@@ -398,7 +399,7 @@ export default function ProductMaster() {
                 // ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้ในทะเบียนเป็นการตัดสินใจของคน)
                 if (oldPm) {
                   const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
-                  await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id);
+                  checkWrite(await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id), 'ติดหมายเหตุทะเบียนกลางเดิม');
                 }
               }
             } catch (e) { console.warn('EC → parts_master:', e); }
@@ -436,22 +437,26 @@ export default function ProductMaster() {
       }
       // ผูกคู่ RH/LH สองทาง — ถ้าเปลี่ยน/ยกเลิกคู่เดิม ให้เลิกผูกฝั่งคู่เดิมด้วย
       const oldPairMatNo = editing !== 'new' ? items.find(i => i.id === editing)?.pair_mat_no : null;
+      // ⚠️ ต้องเช็คผล — คู่ตั้งข้างเดียว = OEE/บอร์ด/เปิดเป้าคู่ มองไม่เห็นว่าเป็นงานคู่ (พังเงียบทั้งสาย)
       if (oldPairMatNo && oldPairMatNo !== payload.pair_mat_no) {
-        await supabaseDR.from('dr_products').update({ pair_mat_no: null }).eq('mat_no', oldPairMatNo);
+        const { error: unErr } = await supabaseDR.from('dr_products').update({ pair_mat_no: null }).eq('mat_no', oldPairMatNo);
+        if (unErr) toast.error(`บันทึกแล้ว แต่ปลดคู่เดิม ${oldPairMatNo} ไม่สำเร็จ — ไปแก้ที่ตัวนั้นเอง: ` + unErr.message);
       }
       if (payload.pair_mat_no) {
-        await supabaseDR.from('dr_products').update({ pair_mat_no: payload.mat_no }).eq('mat_no', payload.pair_mat_no);
+        const { data: paired, error: prErr } = await supabaseDR.from('dr_products').update({ pair_mat_no: payload.mat_no }).eq('mat_no', payload.pair_mat_no).select('id');
+        if (prErr) toast.error(`บันทึกแล้ว แต่ผูกคู่ฝั่ง ${payload.pair_mat_no} ไม่สำเร็จ (คู่จะชี้ข้างเดียว): ` + prErr.message);
+        else if (!paired?.length) toast.error(`ไม่พบ MAT คู่ ${payload.pair_mat_no} ในทะเบียน — คู่ชี้ข้างเดียว ตรวจเลขคู่อีกครั้ง`);
       }
       // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
       if (imageFile && payload.name) {
-        await supabaseDR.from('dr_products').update({ image_url: imageUrl })
-          .eq('name', payload.name).neq('id', savedId);  // eq ไม่ใช่ ilike — กันชื่อที่มี % _ ไปแมตช์ผิดตัว
+        checkWrite(await supabaseDR.from('dr_products').update({ image_url: imageUrl })
+          .eq('name', payload.name).neq('id', savedId), 'sync รูปให้ variant');  // eq ไม่ใช่ ilike — กันชื่อที่มี % _ ไปแมตช์ผิดตัว
       }
       // รูป = ตัวตนพาร์ท (โมเดลทะเบียนกลาง) — เติมเข้า parts_master เมื่อทะเบียนยังไม่มีรูปของ mat นี้ (ไม่ทับของเดิม)
       if (imageFile && imageUrl && payload.mat_no) {
         const { data: pmRows } = await supabaseDR.from('parts_master').select('id, image_url').eq('mat_no', payload.mat_no).limit(1);
         if (pmRows?.[0] && !pmRows[0].image_url) {
-          await supabaseDR.from('parts_master').update({ image_url: imageUrl }).eq('id', pmRows[0].id);
+          checkWrite(await supabaseDR.from('parts_master').update({ image_url: imageUrl }).eq('id', pmRows[0].id), 'sync รูปไปทะเบียนกลาง');
         }
       }
       toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
@@ -2183,7 +2188,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   async function toggleActive(p) {
     // ยืนยันเฉพาะตอน "ปิดใช้งาน" พาร์ท — เปิดกลับไม่ต้องถาม
     if (p.is_active && !confirm(`ปิดใช้งานพาร์ท "${p.part_no || p.mat_no || ''}" ?\n\nจะหายจากการเลือกใช้ (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
-    await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id);
+    checkWrite(await supabaseDR.from('parts_master').update({ is_active: !p.is_active }).eq('id', p.id), 'เปิด/ปิดใช้งานพาร์ท');
     load();
   }
 

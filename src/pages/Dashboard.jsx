@@ -198,6 +198,23 @@ export default function Dashboard() {
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
   };
 
+  /* 🔴 กฎเหล็ก — จอที่แขวนค้าง 24 ชม. ต้อง "กลิ้งวันงาน" ตามเวลาจริง (audit 2026-09-02)
+     `workDateStr` มาจาก `now` (tick ทุกวินาที) จึงกลิ้งเอง แต่ `selectedDate`/`boardDate` เป็น
+     useState ที่ตั้งครั้งเดียวตอน mount → พอถึง 08:00 กะใหม่เปิดด้วย work_date วันใหม่ แต่บอร์ด
+     ยัง query `.eq('work_date', boardDate)` = วันเก่า ⇒ **จอโชว์งานเมื่อวานค้างทั้งวัน
+     ไม่มีใบผลิตของกะที่เดินอยู่เลยสักใบ** ต้องมีคนเดินไปกด F5 ทุกเช้า
+     ซ้ำร้าย effect sync กะข้างล่างถูก gate ด้วย `selectedDate === workDateStr` → พอวันค้าง
+     เงื่อนไขเป็น false ตลอด **กะก็แข็งตายตามไปด้วย**
+     ⚠️ กลิ้งเฉพาะคนที่ "ดูวันนี้อยู่" — คนที่เลือกย้อนหลังเองต้องไม่ถูกดีดออกจากวันที่เขาเลือก */
+  const prevWorkDateRef = useRef(workDateStr);
+  useEffect(() => {
+    const prev = prevWorkDateRef.current;
+    if (prev === workDateStr) return;
+    prevWorkDateRef.current = workDateStr;
+    setSelectedDate(d => (d === prev ? workDateStr : d));
+    setBoardDate(d => (d === prev ? workDateStr : d));
+  }, [workDateStr]);
+
   // Auto-sync shift when day→night boundary crosses (20:00) while viewing today
   useEffect(() => {
     if (selectedDate === workDateStr) {
@@ -382,12 +399,17 @@ export default function Dashboard() {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
         e.target += o.qty || 0;
-        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : 0;
+        /* 🔴 สูตรบังคับของโปรเจค: confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)  (audit 2026-09-02)
+           เดิมใบที่ยังไม่ปิดให้ 0 ทั้งที่ `active` รวม open + carry_over ไว้แล้ว
+           ⇒ ยอดที่หัวหน้ากรอกระหว่างกะ และยอดจริงของใบยกยอด **หายจากจอ TV ทั้งหมด**
+              ขณะที่ /factory-map · /dept-dashboard · /line-oee · /flow-tower ใช้สูตรเต็ม
+              = 2 จอบอกยอดคนละตัวในเวลาเดียวกัน */
+        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullD = active.filter(o => !o.mat_no);
       const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
       const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual  = ptotD.produced + nullD.filter(o => o.status === 'confirmed').reduce((sum, o) => sum + (o.qty_ok ?? o.qty ?? 0), 0);
+      const actual  = ptotD.produced + nullD.reduce((sum, o) => sum + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด

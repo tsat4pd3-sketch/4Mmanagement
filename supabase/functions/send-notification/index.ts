@@ -193,11 +193,11 @@ async function usersByRole(roles: string[]): Promise<string[]> {
 async function insertNotifications(userIds: string[], title: string, body: string, type: string, refTable?: string, refId?: unknown) {
   const ids = [...new Set(userIds)].filter(Boolean);
   if (!ids.length) return;
-  try {
-    await supabase.from('notifications').insert(
-      ids.map((uid) => ({ user_id: uid, title, body, type, ref_table: refTable ?? null, ref_id: refId != null ? String(refId) : null })),
-    );
-  } catch (e) { console.error('insertNotifications', e); }
+  // supabase-js คืน { error } ไม่ throw — try/catch เดิมไม่มีวันทำงาน แจ้งเตือนในแอปหายเงียบ
+  const { error } = await supabase.from('notifications').insert(
+    ids.map((uid) => ({ user_id: uid, title, body, type, ref_table: refTable ?? null, ref_id: refId != null ? String(refId) : null })),
+  );
+  if (error) console.error('insertNotifications', error.message);
 }
 // หัวหน้าของ section ไลน์นั้น (supervisor/manager ที่คุม section เดียวกัน) + leader ของไลน์นั้น
 async function headsForLine(lineName: string | undefined): Promise<string[]> {
@@ -839,11 +839,12 @@ Deno.serve(async (req) => {
     const notifBody = `${log.work_date} · ${log.description}`;
 
     await Promise.allSettled(unique.map(async (t) => {
-      await supabase.from('notifications').insert({
+      const { error } = await supabase.from('notifications').insert({
         user_id: t.userId, title, body: notifBody,
         type: status === 'rejected' ? 'error' : status === 'approved' ? 'success' : 'info',
         ref_table: 'four_m_logs', ref_id: log.id,
       });
+      if (error) console.error('4m in-app notify', t.userId, error.message);
     }));
 
     // Telegram only if this event isn't disabled in the rules

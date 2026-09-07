@@ -10,6 +10,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -56,7 +57,7 @@ export default function Transport() {
   };
   const saveDwell = async (min) => {
     setDwellMin(min);
-    await supabaseDR.from('transport_settings').upsert({ id: 1, dwell_min: min, updated_by_name: fullName, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    checkWrite(await supabaseDR.from('transport_settings').upsert({ id: 1, dwell_min: min, updated_by_name: fullName, updated_at: new Date().toISOString() }, { onConflict: 'id' }), 'บันทึกเวลาจอด');
   };
 
   const load = useCallback(async () => {
@@ -135,7 +136,8 @@ export default function Transport() {
     try {
       // ใส่คีย์ action เฉพาะเมื่อคอลัมน์มีจริง (แถวที่ select มามีคีย์นี้) — ยังไม่ apply migration ก็ยังบันทึกได้
       const hasActionCol = roundStops.some(s => 'action' in s);
-      await supabaseDR.from('transport_round_stops').delete().eq('round_id', roundId);
+      const { error: wErr138 } = await supabaseDR.from('transport_round_stops').delete().eq('round_id', roundId);
+      if (wErr138) { setBusy(null); toast.error('ล้างจุดจอดเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr138.message); return; }
       if (orderedNodeIds.length) {
         const rows = orderedNodeIds.map((nid, i) => ({
           round_id: roundId, seq: i, node_id: nid, updated_by_name: fullName,

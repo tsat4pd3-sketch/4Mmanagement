@@ -169,7 +169,7 @@ serve(async (req) => {
             checkNames ? `Checks: ${checkNames}${moreCount > 0 ? ` +${moreCount} รายการ` : ''}` : '',
           ].filter(Boolean).join(' · ')
 
-          await supabase.from('notifications').insert(
+          const { error: nErr } = await supabase.from('notifications').insert(
             profiles.map((p: { id: string }) => ({
               user_id: p.id,
               title: notifTitle,
@@ -179,6 +179,7 @@ serve(async (req) => {
               ref_id: log.id,
             }))
           )
+          if (nErr) console.error('cqi15 in-app notify', nErr.message)
         }
       }
     }
@@ -235,7 +236,7 @@ serve(async (req) => {
 
       // In-app: notify reporter
       if (logData.reported_by) {
-        await supabase.from('notifications').insert({
+        const { error: rErr } = await supabase.from('notifications').insert({
           user_id: logData.reported_by,
           title: `${allApproved ? '✅' : anyRejected ? '❌' : '📋'} Event #${def?.event_no} — [${role_key}] ${status === 'approved' ? 'อนุมัติแล้ว' : 'ปฏิเสธ'}`,
           body: `${logData.line_name} · ${def?.name_th ?? ''} · โดย ${approver ?? ''}${pendingRoles.length ? ` · รอ: ${pendingRoles.join(', ')}` : ''}`,
@@ -243,6 +244,7 @@ serve(async (req) => {
           ref_table: 'cqi15_event_logs',
           ref_id: log_id,
         })
+        if (rErr) console.error('cqi15 in-app notify reporter', rErr.message)
       }
 
       // In-app: notify remaining pending roles
@@ -252,7 +254,7 @@ serve(async (req) => {
           if (sysRoles.length === 0) continue
           const { data: profiles } = await supabase.from('profiles').select('id').in('role', sysRoles)
           if (!profiles?.length) continue
-          await supabase.from('notifications').insert(
+          const { error: nErr } = await supabase.from('notifications').insert(
             profiles.map((p: { id: string }) => ({
               user_id: p.id,
               title: `⏳ [${pRole}] รอการอนุมัติ — CQI-15 Event #${def?.event_no}`,
@@ -262,6 +264,7 @@ serve(async (req) => {
               ref_id: log_id,
             }))
           )
+          if (nErr) console.error('cqi15 in-app notify', nErr.message)
         }
       }
     }

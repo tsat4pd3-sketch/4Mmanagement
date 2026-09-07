@@ -14,14 +14,33 @@ const json = (b: unknown, status = 200) =>
 
 // map ที่มา → หน้าเปิดตอนกด notification
 // ⚠️ ต้อง mirror กับ NOTIF_ROUTE ใน src/App.jsx เสมอ (กระดิ่งกับ Web Push ต้องพาไปหน้าเดียวกัน)
+// 🔴 audit 2026-09-02 — เดิมรู้จักแค่ 4 ตาราง ทั้งที่ระบบเขียน ref_table จริง 11 ค่า
+//    ⇒ 1,194 แจ้งเตือนในฐาน แตะ Push แล้วเปิดหน้าแรก `/` เหมือนแอปพัง
+const ROUTES: Record<string, string> = {
+  four_m_logs: '/event-log',
+  mtn_orders: '/mtn-repair',
+  downtime_logs: '/daily-report',
+  shift_schedules: '/shift-organize',
+  defect_logs: '/daily-report',
+  skill_level_up_requests: '/operator?tab=levelup',
+  ojt_trainings: '/ojt-training',
+  improvements: '/improvements',
+  cqi15_event_logs: '/event-log',
+  inspections: '/pm?tab=check',
+  meeting_action_items: '/morning-meeting',
+  lpa_audits: '/daily-checker?tab=lpa',
+  scrap_reports: '/scrap-report',
+  pe_change_requests: '/pe-docs',
+  rack_requests: '/rack-center',
+  wip_replenish_requests: '/heijunka',
+  qa_ncr: '/qa?tab=ncr',
+  qa_capa: '/qa?tab=capa',
+  qa_customer_claims: '/qa?tab=claims',
+  quality_bin_records: '/qa?tab=bins',
+  material_requests: '/qa?tab=matreq',
+};
 function routeFor(refTable?: string): string {
-  switch (refTable) {
-    case 'four_m_logs':  return '/event-log';
-    case 'mtn_orders':   return '/mtn-repair';
-    case 'downtime_logs':return '/daily-report';
-    case 'shift_schedules': return '/shift-organize';
-    default:             return '/';
-  }
+  return (refTable && ROUTES[refTable]) || '/';
 }
 
 Deno.serve(async (req) => {
@@ -32,17 +51,23 @@ Deno.serve(async (req) => {
     if (!userId) return json({ ok: false, reason: 'missing user_id' }, 400);
 
     // VAPID keys จาก notification_settings (service role อ่านได้)
-    const { data: cfg } = await supabase
+    const { data: cfg, error: cfgErr } = await supabase
       .from('notification_settings')
       .select('vapid_public_key, vapid_private_key, vapid_subject')
       .eq('id', 1).maybeSingle();
+    // ⚠️ อ่าน config ไม่ได้ ≠ "ยังไม่ได้ตั้ง VAPID" — เดิมตอบ skipped:'no vapid keys' ซึ่งชี้ทางผิด
+    //    คนไล่ปัญหาจะไปหาที่การตั้งค่า ทั้งที่ปัญหาคือคิวรีล้ม
+    if (cfgErr) { console.error('send-push read config failed', cfgErr.message); return json({ ok: false, error: 'read config failed: ' + cfgErr.message }, 500); }
     if (!cfg?.vapid_public_key || !cfg?.vapid_private_key) return json({ ok: true, skipped: 'no vapid keys' });
     webpush.setVapidDetails(cfg.vapid_subject || 'mailto:admin@example.com', cfg.vapid_public_key, cfg.vapid_private_key);
 
-    const { data: subs } = await supabase
+    const { data: subs, error: subErr } = await supabase
       .from('push_subscriptions')
       .select('id, endpoint, p256dh, auth')
       .eq('user_id', userId);
+    // ⚠️ อ่านรายชื่อ subscription ไม่ได้ ≠ "user ยังไม่เปิด Push" — เดิมตอบ ok:true sent:0 เหมือนกันเป๊ะ
+    //    เรียกจาก pg_net แบบ fire-and-forget ไม่มีใครอ่าน response → ต้องดังใน log ไว้ก่อน
+    if (subErr) { console.error('send-push read subscriptions failed', subErr.message); return json({ ok: false, error: 'read subscriptions failed: ' + subErr.message }, 500); }
     if (!subs?.length) return json({ ok: true, sent: 0 });
 
     const payload = JSON.stringify({
@@ -52,8 +77,9 @@ Deno.serve(async (req) => {
       tag:   body.ref_table && body.ref_id ? `${body.ref_table}:${body.ref_id}` : undefined,
     });
 
-    let sent = 0;
+    let sent = 0, failed = 0;
     const dead: string[] = [];
+    const codes: Record<string, number> = {};
     await Promise.all(subs.map(async (s) => {
       try {
         await webpush.sendNotification(
@@ -63,12 +89,19 @@ Deno.serve(async (req) => {
         sent++;
       } catch (err) {
         const code = (err as { statusCode?: number })?.statusCode;
-        if (code === 404 || code === 410) dead.push(s.id); // subscription หมดอายุ → ลบทิ้ง
+        if (code === 404 || code === 410) { dead.push(s.id); return; } // subscription หมดอายุ → ลบทิ้ง
+        // ⚠️ error อื่นเดิมถูกกลืนทั้งหมด (401 VAPID ผิด · 403 · 413 payload ใหญ่ · 429 โดนจำกัด)
+        //    แล้วยังตอบ ok:true sent:0 → **Push ตายทั้งระบบได้โดยไม่มีใครรู้**
+        //    (เรียกจาก pg_net แบบ fire-and-forget ไม่มีใครอ่าน response → log ต้องดังไว้ก่อน)
+        failed++;
+        codes[String(code ?? 'unknown')] = (codes[String(code ?? 'unknown')] ?? 0) + 1;
+        console.error('send-push failed', code, String(err).slice(0, 200));
       }
     }));
     if (dead.length) await supabase.from('push_subscriptions').delete().in('id', dead);
 
-    return json({ ok: true, sent, removed: dead.length });
+    return json({ ok: failed === 0, sent, failed, removed: dead.length, codes },
+      failed && !sent ? 502 : 200);
   } catch (err) {
     return json({ ok: false, error: String(err) }, 500);
   }

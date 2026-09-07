@@ -244,7 +244,11 @@ function Field({ label, children, span }) {
    TAB 1 — Dashboard คุณภาพ (PPM / FTT / Pareto จาก DR project)
    ════════════════════════════════════════════════════════════════════════ */
 const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วัน' }, { v: 90, label: '90 วัน' }];
-const prodQty = o => o.qty_ok ?? o.qty_actual ?? o.qty ?? 0;   // ยอดผลิตจริงต่อใบงาน
+/* ยอดผลิตจริงต่อใบงาน — สูตรบังคับของโปรเจค (audit 2026-09-02)
+   🔴 เดิม `qty_ok ?? qty_actual ?? qty` ตกไปใช้ `qty` (= **เป้า**) กับใบที่ยังไม่ปิดและยังไม่กรอกยอด
+      ⇒ ตัวหารพองเกินจริง → **PPM ต่ำกว่าความจริง / FTT สูงกว่าความจริง**
+         ซึ่งเป็นตัวเลขที่อาจอ้างอิงกับลูกค้า และไหลไปโผล่บนฟอร์ม KPI ที่ปริ้นเซ็น */
+const prodQty = o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0));
 
 function QualityDashboard() {
   const { role, lineId, sections } = useContext(UserContext);
@@ -316,8 +320,11 @@ function QualityDashboard() {
       // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
       //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
       const [ooRes, ddRes] = await Promise.all([
+        /* ⚠️ ต้อง select `status` ด้วย ไม่งั้นใช้สูตรบังคับไม่ได้ · และกรอง cancelled/imported ออก
+           (`imported` = ตัวยกยอดที่กะถัดไปรับไปแล้ว — ไม่กรองจะนับซ้ำกับแถวใหม่ของกะถัดไป) */
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
-          .select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual').in('session_id', c)),
+          .select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual, status')
+          .not('status', 'in', '("cancelled","imported")').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
           .select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', c)),
       ]);

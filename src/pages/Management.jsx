@@ -20,6 +20,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
+import { checkWrite } from '../utils/dbWrite';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -595,7 +596,7 @@ export default function Management() {
       // สร้าง record ใหม่เฉพาะเมื่อย้ายไปสถานี (ไม่สร้างตอนย้ายกลับ pool)
       if (finalAssign) {
         const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
-        await supabase.from('station_assignment_logs').insert({
+        checkWrite(await supabase.from('station_assignment_logs').insert({
           employee_id:      droppedWorker.employee_id,
           station_id:       finalAssign,
           station_name:     station?.station_name || null,
@@ -608,15 +609,16 @@ export default function Management() {
           ended_at:         null,
           assigned_by_uid:  user?.id || null,
           assigned_by_name: fullName || null,
-        });
+        }), 'บันทึก');
       }
     }
 
     // ถ้า assign ไปสถานีผลิต → ล้าง special task อัตโนมัติ
     if (finalAssign && droppedWorker?.employee_id) {
       const today = getWorkDate();
-      await supabase.from('operator_special_tasks').delete().eq('employee_id', droppedWorker.employee_id).eq('work_date', today);
-      setSpecialTasks(prev => prev.filter(t => t.employee_id !== droppedWorker.employee_id));
+      const { error: stErr } = await supabase.from('operator_special_tasks').delete().eq('employee_id', droppedWorker.employee_id).eq('work_date', today);
+      if (stErr) toast.error('เข้าจุดงานแล้ว แต่ล้างงานนอกไลน์เดิมไม่สำเร็จ (จะขึ้นซ้ำ 2 ที่): ' + stErr.message);
+      else setSpecialTasks(prev => prev.filter(t => t.employee_id !== droppedWorker.employee_id));
     }
 
     if (finalAssign && droppedWorker) {
@@ -646,17 +648,19 @@ export default function Management() {
             const { data: dup } = await supabase.from('four_m_logs')
               .select('id').eq('work_date', today).eq('category', 'Man').eq('description', desc).limit(1);
             if (!dup?.length) {
-              await supabase.from('four_m_logs').insert([{
+              // supabase-js ไม่ throw — ไม่เช็ค error = ประวัติย้ายจุด (4M Man) หายเงียบ
+              const { error: m4Err } = await supabase.from('four_m_logs').insert([{
                 work_date: today, line_name: station.line_name, category: 'Man',
                 description: desc, requires_qa: false, status: 'approved',
                 change_subtype: 'same_ok',
               }]);
+              if (m4Err) toast.error('เข้าจุดงานแล้ว แต่บันทึกใบ 4M Man อัตโนมัติไม่สำเร็จ (ประวัติย้ายจุดจะขาด): ' + m4Err.message);
               fetchData();
             }
           } else {
             const desc = `${droppedWorker.employees?.name} ${moveType === 'cross' ? 'ย้ายข้ามไลน์ไปจุด' : 'ย้ายไปจุด'} ${station.station_name}`;
             const mc = MAN_CASE_META[manCase];
-            await supabase.from('four_m_logs').insert([{
+            const { error: m4Err } = await supabase.from('four_m_logs').insert([{
               work_date: today,
               line_name: station.line_name,
               category: 'Man',
@@ -666,7 +670,8 @@ export default function Management() {
               change_subtype: manCase === 2 ? 'cross_skill_ok' : 'cross_needs_ojt',
               created_by: (await supabase.auth.getUser()).data.user?.id ?? null,
             }]);
-            toast.info('เข้าตำแหน่งแล้ว — กรุณาแนบเอกสาร OJT ภายหลัง');
+            if (m4Err) toast.error('เข้าตำแหน่งแล้ว แต่เปิดใบ 4M Man ไม่สำเร็จ — ต้องเปิดเองที่หน้า 4M: ' + m4Err.message);
+            else toast.info('เข้าตำแหน่งแล้ว — กรุณาแนบเอกสาร OJT ภายหลัง');
             fetchData();
           }
         }
@@ -911,18 +916,22 @@ export default function Management() {
   const assignSpecialTask = async (worker, taskType) => {
     if (!isLiveView) { toast.error('โหมดดูย้อนหลัง — กำหนดงานนอกไลน์ได้เฉพาะกะปัจจุบันของวันนี้'); return; }
     const today = getWorkDate();
-    await supabase.from('operator_special_tasks').upsert(
+    // ⚠️ เคยเงียบ: ตารางไม่มี UPDATE policy (จน 20260904) → เปลี่ยนงานให้คนที่มีงานวันนี้แล้ว = 42501
+    //    แต่ไม่เช็ค error → modal ปิด จอโชว์งานเดิม · ตอนนี้เช็คเสมอ (supabase-js ไม่ throw)
+    const { error } = await supabase.from('operator_special_tasks').upsert(
       { employee_id: worker.employee_id, task_type: taskType, work_date: today },
       { onConflict: 'employee_id,work_date' }
     );
+    if (error) { toast.error('กำหนดงานนอกไลน์ไม่สำเร็จ: ' + error.message); return; }
     setSpecialModal(null);
     fetchData();
   };
 
   const removeSpecialTask = async (worker) => {
     const today = getWorkDate();
-    await supabase.from('operator_special_tasks').delete()
+    const { error } = await supabase.from('operator_special_tasks').delete()
       .eq('employee_id', worker.employee_id).eq('work_date', today);
+    if (error) { toast.error('ยกเลิกงานนอกไลน์ไม่สำเร็จ: ' + error.message); return; }
     fetchData();
   };
 

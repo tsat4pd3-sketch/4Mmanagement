@@ -40,6 +40,20 @@ export const AUDIT_TABLE_LABELS = {
   pe_cp_items:             '📐 Control Plan',
   pe_doc_revisions:        '📐 Revision เอกสาร PE',
   pe_change_requests:      '📐 คำขอแก้เอกสาร PE',
+  // ── NPI พาร์ทใหม่ APQP/PPAP (Main · 2026-09-07) ──
+  npi_templates:           '🚀 NPI แม่แบบเฟส',
+  npi_template_phases:     '🚀 NPI เฟสในแม่แบบ',
+  npi_template_deliverables: '🚀 NPI รายการเอกสารในแม่แบบ',
+  npi_projects:            '🚀 NPI โปรเจครุ่นใหม่',
+  npi_parts:               '🚀 NPI พาร์ท (PPAP/PSW)',
+  npi_part_phases:         '🚀 NPI เฟสรายพาร์ท',
+  npi_deliverables:        '🚀 NPI เอกสารส่งมอบ',
+  npi_tasks:               '🚀 NPI งานมอบหมาย',
+  npi_drawing_revisions:   '📐 NPI revision แบบ',
+  npi_change_requests:     '🔁 NPI ECI',
+  npi_tooling_plans:       '🔧 NPI แผน tooling',
+  npi_tooling_steps:       '🔧 NPI ขั้นงาน tooling',
+  npi_tooling_step_templates: '🔧 NPI แม่แบบขั้นงาน tooling',
 
   // ── สินค้า & คัมบัง (DR) ──
   dr_products:             '📦 สินค้า (Product Master)',

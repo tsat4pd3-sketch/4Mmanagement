@@ -39,12 +39,22 @@ function shiftInfo() {
   };
 }
 
-async function notify(pm: unknown) {
-  await fetch(NOTIFY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${NOTIFY_KEY}`, 'apikey': NOTIFY_KEY },
-    body: JSON.stringify({ event: 'pm_daily', pm }),
-  });
+// ⚠️ กฎเหล็ก (CLAUDE.md): "mark กันซ้ำ ต้องถอนคืนเมื่อส่งไม่สำเร็จ · ห้ามกลืน error"
+//    เดิมทิ้ง response แล้ว insert pm_daily_alerts ต่อทันที ⇒ ส่งพลาดครั้งเดียว = ไลน์นั้นเงียบทั้งกะ
+//    (สแกนทุก 10 นาที แต่ dedup เห็นแถว mark แล้วข้ามตลอด) และ response ยังตอบ ok:true sent:N
+async function notify(pm: unknown): Promise<boolean> {
+  try {
+    const res = await fetch(NOTIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${NOTIFY_KEY}`, 'apikey': NOTIFY_KEY },
+      body: JSON.stringify({ event: 'pm_daily', pm }),
+    });
+    if (!res.ok) console.error('pm_daily notify failed', res.status, await res.text().catch(() => ''));
+    return res.ok;
+  } catch (e) {
+    console.error('pm_daily notify threw', String(e));
+    return false;
+  }
 }
 
 Deno.serve(async () => {
@@ -60,16 +70,24 @@ Deno.serve(async () => {
     for (const t of active) (byLine[t.line_name] ||= []).push(t.jig_id);
     const allJigIds = [...new Set(active.map(t => t.jig_id))];
 
-    const [{ data: jigRows }, { data: prodCls }, { data: alerts }] = await Promise.all([
+    const [rJigs, rProdCls, rAlerts] = await Promise.all([
       db.from('jigs').select('id, name, machine_no').in('id', allJigIds),
       db.from('checklists').select('id').eq('module', 'mtn').eq('department', 'production'),
       db.from('pm_daily_alerts').select('line_name').eq('work_date', si.workDateStr).eq('shift', si.shift).eq('color', 'orange'),
     ]);
-    const jigById: Record<string, { name?: string; machine_no?: string }> = Object.fromEntries((jigRows ?? []).map(j => [j.id, j]));
-    const prodIds = new Set((prodCls ?? []).map(c => c.id));
-    const alerted = new Set((alerts ?? []).map(a => a.line_name));
+    // ⚠️ 3 คิวรีนี้พลาดแล้ว "เตือนเกิน" ทั้งหมด — ต้องหยุด ห้ามเดินต่อด้วยค่าว่าง:
+    //    · alerts พลาด → alerted ว่าง → ยิงซ้ำทุกไลน์ทุก 10 นาทีทั้งกะ
+    //    · checklists(production) พลาด → prodIds ว่าง → checked ว่าง → ทุกไลน์ดูเหมือน "ยังไม่ตรวจ"
+    //      = เตือนทั้งโรงงานทั้งที่ operator ตรวจครบแล้ว (สแปมที่ทำให้คนเลิกเชื่อระบบ)
+    const eLoad = rJigs.error || rProdCls.error || rAlerts.error;
+    if (eLoad) throw new Error('โหลดข้อมูลตั้งต้นไม่สำเร็จ — หยุดไว้ก่อนกันเตือนเกิน: ' + eLoad.message);
+    const jigById: Record<string, { name?: string; machine_no?: string }> = Object.fromEntries((rJigs.data ?? []).map(j => [j.id, j]));
+    const prodIds = new Set((rProdCls.data ?? []).map(c => c.id));
+    const alerted = new Set((rAlerts.data ?? []).map(a => a.line_name));
 
-    const { data: insp } = await db.from('inspections').select('jig_id, checklist_id, inspected_at').in('jig_id', allJigIds).gte('inspected_at', startISO);
+    const { data: insp, error: eInsp } = await db.from('inspections').select('jig_id, checklist_id, inspected_at').in('jig_id', allJigIds).gte('inspected_at', startISO);
+    // อ่านประวัติการตรวจไม่ได้ = ไม่รู้ว่าใครตรวจแล้ว → เตือนไปก็ผิด (กฎ "ไม่รู้ ≠ ยังไม่ทำ")
+    if (eInsp) throw new Error('อ่านประวัติการตรวจ AM ไม่สำเร็จ — หยุดไว้ก่อนกันเตือนคนที่ตรวจแล้ว: ' + eInsp.message);
     const checked = new Set<string>();
     for (const i of insp ?? []) if (prodIds.has(i.checklist_id)) checked.add(i.jig_id);
 
@@ -95,14 +113,20 @@ Deno.serve(async () => {
     }
 
     /* ครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — `production_lines` อยู่ Main คนละ project กับ scan ตัวนี้
-       จึงอ่านผ่าน REST ด้วย anon key เดียวกับที่ใช้ POST แจ้งเตือน
-       ⚠️ อ่านไม่ได้ = ถอยไปเทียบชื่อตรงตัว (พฤติกรรมเดิม ไม่แย่ลง) **แต่ต้องรายงานออกมาใน response**
-          ไม่งั้นการ์ดไลน์แม่จะไม่มีวันเตือนโดยไม่มีใครรู้ว่าทำไม */
+       🔴🔴 กฎเหล็ก (CLAUDE.md 2026-08-27): **ต้องอ่านผ่าน RPC `line_parent_map()` ห้าม select ตารางตรง**
+       RLS ของ production_lines เปิดให้ `authenticated` เท่านั้น แต่ scan ตัวนี้ถือได้แค่ **anon key**
+       ⇒ `/rest/v1/production_lines?select=...` คืน **[] โดยไม่มี error** (200 ว่างเปล่า) → hierarchy
+         ค้าง 'unavailable' ตลอดกาล → ไลน์แม่ที่กะเปิดที่ไลน์ลูกไม่มีวันถูกเตือน
+       พิสูจน์จากข้อมูลจริง 2026-09-02: **HYDROFORM ลงทะเบียน AM ไว้ 11 จุด (มากสุดในระบบ)
+       แต่ `pm_daily_alerts` ไม่มีแถวของ HYDROFORM เลยสักแถวเดียว** ขณะที่อีก 6 ไลน์มี 7-20 ครั้ง
+       — บั๊กตัวเดียวกับที่แก้ให้ `kanban-round-scan` ไปแล้ว แต่ไม่มีใครกวาดมาถึงตัวนี้
+       ⚠️ ยังคง fallback เทียบชื่อตรงตัวไว้ (RPC ล่มจริงๆ = 6 ไลน์ที่เหลือต้องเตือนต่อได้) */
     let hierarchy: 'ok' | 'unavailable' = 'unavailable';
     const famOf: Record<string, string[]> = {};
     try {
-      const res = await fetch(`${NOTIFY_URL.replace('/functions/v1/send-notification', '')}/rest/v1/production_lines?select=name,parent_line_name`,
-        { headers: { apikey: NOTIFY_KEY, Authorization: `Bearer ${NOTIFY_KEY}` } });
+      const res = await fetch(`${NOTIFY_URL.replace('/functions/v1/send-notification', '')}/rest/v1/rpc/line_parent_map`,
+        { method: 'POST', headers: { apikey: NOTIFY_KEY, Authorization: `Bearer ${NOTIFY_KEY}`, 'Content-Type': 'application/json' }, body: '{}' });
+      if (!res.ok) console.error('line_parent_map failed', res.status, await res.text().catch(() => ''));
       if (res.ok) {
         const rows = await res.json() as { name: string; parent_line_name: string | null }[];
         if (Array.isArray(rows) && rows.length) {
@@ -133,7 +157,7 @@ Deno.serve(async () => {
     };
 
     const now = Date.now();
-    let sent = 0;
+    let sent = 0, failed = 0;
     for (const line of lines) {
       if (alerted.has(line)) continue;
       const fo = startedFor(line);
@@ -142,16 +166,23 @@ Deno.serve(async () => {
       const jigIds = byLine[line];
       const missing = jigIds.filter(id => !checked.has(id));
       if (missing.length === 0) continue;                           // complete
-      await notify({
+      const sentOk = await notify({
         color: 'orange', line_name: line, shift_label: si.label, work_date: si.workDateStr,
         checked: jigIds.length - missing.length, total: jigIds.length,
         missing: missing.map(id => { const j = jigById[id]; return j?.machine_no ? `${j.machine_no}·${j.name}` : (j?.name ?? id); }),
       });
-      await db.from('pm_daily_alerts').insert({ line_name: line, work_date: si.workDateStr, shift: si.shift, color: 'orange' });
+      // ส่งไม่สำเร็จ = ไม่ mark → รอบสแกนถัดไป (อีก 10 นาที) ลองใหม่เอง ยังอยู่ในกะเดิม
+      if (!sentOk) { failed++; continue; }
+      const { error: eMark } = await db.from('pm_daily_alerts')
+        .insert({ line_name: line, work_date: si.workDateStr, shift: si.shift, color: 'orange' });
+      if (eMark) console.error('pm_daily mark failed', line, eMark.message);
       sent++;
     }
     // hierarchy = 'unavailable' → ไลน์แม่ที่กะเปิดอยู่ที่ไลน์ลูก จะไม่ถูกเตือน (ต้องเห็น ห้ามเงียบ)
-    return new Response(JSON.stringify({ ok: true, lines: lines.length, sent, hierarchy, shift: si.shift, work_date: si.workDateStr }), { headers: { 'Content-Type': 'application/json' } });
+    // ส่งพลาดต้องดังพอให้เห็น — cron ขึ้น succeeded ทุกรอบอยู่แล้ว ถ้าไม่บอกก็ไม่มีใครรู้
+    return new Response(JSON.stringify({ ok: failed === 0, lines: lines.length, sent, failed, hierarchy, shift: si.shift, work_date: si.workDateStr }), {
+      status: failed ? 502 : 200, headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }

@@ -54,7 +54,9 @@
 > - **เมนูแยก 3 หมวดตามฝั่งแล้ว** (`Logistic - ขาเข้า (Inbound)` / `ขาออก (Outbound)` / `แผนงาน & ข้อมูล`)
 >   — `NAV_GROUP_ORDER` + `NAV_GROUP_META` + `CARD_META` (DeptHub) + `PAGE_GROUPS` (/permissions)
 >   + `permission_catalog.group_name/sort` (migration `20260903_permission_catalog_logistic_sides.sql` · **apply แล้ว**
->   · ซอย sort ในช่วง 5xx: ขาเข้า 500-519 · ขาออก 520-539 · แผนงาน 540-559) — **5 จุดนี้ต้องตรงกันเสมอ**
+>   · ซอย sort ในช่วง 5xx: ขาเข้า 500-519 · ขาออก 520-539 · แผนงาน 540-599) — **5 จุดนี้ต้องตรงกันเสมอ**
+>   · **2026-09-07: + จุดที่ 6 = ตาราง `nav_groups`** (ทะเบียนหมวดในฐาน · `permission_catalog.group_name` FK มาที่นี่ ·
+>   migration `20260907_nav_groups_registry.sql` **apply แล้ว**) — เทส `navGroupsRegistry.test.mjs` ล็อกให้ตรง App.jsx
 > - **`NAV_ITEMS[].alsoIn` = หน้าที่ทำงานคาบ 2 หมวด** (ตอนนี้มีตัวเดียว: `/store-monitor` จับทั้งขาเข้า-ขาออก)
 >   sidebar + การ์ดหน้า Home โชว์ซ้ำ 2 ที่ผ่าน **`inNavGroup(item, groups)`** · แต่ **สิทธิ์/ค้นหา/breadcrumb/
 >   ตัวนับ นับครั้งเดียวเสมอ** (1 หน้ามีสิทธิ์ชุดเดียว) — `PAGE_GROUPS` จึงใส่ที่หมวดหลักที่เดียว
@@ -157,6 +159,12 @@
 >   ทำให้ตัวเสนอปลายทางของ `moveTargets` ไม่นับไลน์นั้นเป็นไลน์ขึ้นรูป — **ระบบไม่เดา ต้องตั้งเองที่
 >   `/linesetup` → ⚙️ ตั้งค่าไลน์ → 🏭 คุณสมบัติของไลน์นี้**
 > - **หลักการคิดเงินที่ยืนยันกับ user แล้ว: ความเสียหายคิดที่ไลน์ที่ *เกิดเหตุ* ด้วย rate ของไลน์นั้น ไม่ปันส่วนข้ามไลน์** — ผลกระทบปลายน้ำถูกบันทึกเองอยู่แล้วผ่าน downtime type "รอชิ้นงาน Sub Part"/"รอชิ้นงาน (HDF, Laser)" ที่ไลน์ปลายน้ำ (ข้อมูลจริง 60 วัน: Line 61 = 348 นาที) · cost center แยกตาม SAP = ถูกแล้ว **ห้ามรวม**
+> - **ข้อมูลจริงแก้แล้ว 2026-09-03 (ผ่าน SQL Editor — ไม่ใช่ UI · audit trigger เก็บ delete/insert ไว้ · `updated_by_name` = "tsat.vx (แก้ผ่าน SQL)"):**
+>   ลบ `LASER-345 → LINE APRON ASSY` · เพิ่ม `LASER-345 → Line 60` + `LASER-345 → Line 61` (buffer_qty ยัง null — หน้างานกรอกเอง)
+>   · Main: `production_lines.line_type` ของ `Line 61` = `welding_assembly` (ตามไลน์แม่ + Line 60/SUB APRON)
+>   · **ยังค้าง: `LASER-789` ไม่มีปลายทาง** — สินค้าใน dr_products ของไลน์นี้ = REINF FRT FNDR LH/RH "ก่อนแพ็ค" (20065635/20065715)
+>     ไม่มี BOM parent ในระบบ ⇒ ระบบตอบไม่ได้ว่าส่งต่อไลน์ไหน (อาจไปแพ็ค/ส่งลูกค้าตรง) — **ห้ามเดา** รอหน้างานยืนยันแล้วตั้งที่ `/linesetup`
+>     · **ข้อมูลจริง 2026-09-04:** ทั้ง 2 เลขเข้า STORE (prefix 2) แล้วมี `customer_shipping_orders` จาก EDI 862 ลูกค้า GBJWC ตรง ⇒ **ปลายทาง = ลูกค้า ไม่ใช่ไลน์ผลิตในโรงงาน** จบสายที่ LASER-789 ตามที่ user เคาะ ("✂️ จบขอบเขตเรา") — ไม่ต้องตั้งเส้นต่อใน `line_flow_links` · รายละเอียดสาย HDF2→LASER-789 ดู `docs/modules/oee.md` บล็อก 🔴 2026-09-04
 
 > ### ⚠️ กฎเหล็ก — กำลังคนมาตรฐาน (`std_day_shift`/`std_night_shift`) อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น (2026-08-05)
 > **`production_lines` เก็บ std ได้ทั้งไลน์แม่และไลน์ลูก แต่ไม่เคยมีกฎ inherit** → ข้อมูลจริงมี **3 convention ปนกันในตารางเดียว**: HYDROFORM (แม่ 14/14 · ลูกทั้ง 6 ก็อป 14/14 มาหมด) · LINE APRON ASSY (แม่ 17 · ลูก 6+7+6=19) · GOR/LWR BAR (แม่ตั้ง · ลูก 0/0) — ส่วน**พนักงานจริง (`employees.line_id`)** เดิมผูกไลน์แม่แทบทั้งหมด **แต่ที่ถูกคือไลน์ลูก (ระดับกลุ่ม)** กำลังทยอยจัด — ดูกฎ "พนักงานอยู่ที่ไลน์ลูก" ในหัวข้อ scope ของ leader

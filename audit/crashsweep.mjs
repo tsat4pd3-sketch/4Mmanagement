@@ -16,8 +16,13 @@ for (const name of PAGES) {
     if (await p.evaluate(() => window.__crash)) bad.push({ name, where: 'หน้าแรก', errs: [...errs] })
     else {
       // กดปุ่มบนหัวเพจ (แท็บ/สลับมุมมอง) ทีละอัน แล้ววัดซ้ำ
+      /* ⚠️ เพดานนี้เคยเป็น 12 แล้ว **ซ่อนบั๊กจริงไว้** — /heijunka มี 23 ปุ่มบนหัวเพจ
+         และแท็บ "🔄 Pull / ใบสั่งผลิต" ที่ทำจอขาวอยู่ index 13 → เครื่องมือรายงาน "พัง 0"
+         ทั้งที่พังจริง (full audit 2026-09-02) · ตั้ง 40 ให้ครอบหน้าที่ปุ่มเยอะสุด
+         ปรับได้ด้วย env: BTN_CAP=12 node audit/crashsweep.mjs (เร็วขึ้นตอนอยากสวีปคร่าวๆ) */
+      const CAP = Number(process.env.BTN_CAP || 40)
       const btns = await p.$$('main button, header button')
-      for (let i = 0; i < Math.min(btns.length, 12); i++) {
+      for (let i = 0; i < Math.min(btns.length, CAP); i++) {
         let label = ''
         try {
           label = ((await btns[i].textContent()) || '').trim().slice(0, 22)

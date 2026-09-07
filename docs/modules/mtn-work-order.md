@@ -14,7 +14,7 @@
 > - **✕ / ยกเลิก ถามยืนยันเมื่อกรอกไปแล้ว** (`dirty` + `confirmDiscard()`) — `dirty` ต้องถูกตั้งจาก **ทุก** ทางที่แก้ข้อมูล (ช่องกรอก · แนบรูป · เพิ่ม/ลบอะไหล่ · ลายเซ็น) เพิ่มช่องใหม่ต้องผ่าน `set()`/`touch()` เสมอ ไม่งั้นถามไม่ขึ้นแล้วข้อมูลหายเงียบ
 > - **จุดที่ปิดจาก backdrop ได้จริงอยู่ที่อื่น — แก้แล้ว 12 จุด 9 ไฟล์** (FeedbackModal · SparePartMaster ×4 รวมพรีวิวนำเข้าไฟล์ · RackMap ×2 · DieLayout · BbsCheck · QaClaims · PeChangeRequests · RackCenter QR label) · กติกาเต็ม + รายชื่อ modal ที่**ตั้งใจ**คงการปิดจาก backdrop ไว้ → `docs/UI-CONVENTIONS.md` §5
 
-- **Workflow 7 ขั้น (mirror ของเดิม):** 1 แจ้งซ่อม → 2 รับ/จ่ายงาน (**ออกเลข MO อัตโนมัติ**) → 3 ดำเนินการซ่อม → 4 ตรวจหลังซ่อม → 5 คุณภาพหลังซ่อม (**เฉพาะงานที่ step4 ระบุ "เกี่ยวกับคุณภาพ"** ไม่งั้นข้ามไป step6) → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO) · `status`: pending→assigned→repaired→checked→qa→handover→closed · `rejected` (step2 เลือก "Reject MO") · `current_step` 1..7 ใช้คิด % ความคืบหน้า
+- **Workflow 7 ขั้น (mirror ของเดิม):** 1 แจ้งซ่อม → 2 รับ/จ่ายงาน (**ออกเลข MO อัตโนมัติ**) → 3 ดำเนินการซ่อม → 4 ตรวจหลังซ่อม → 5 คุณภาพหลังซ่อม (**เฉพาะงานที่ step4 ระบุ "เกี่ยวกับคุณภาพ"** ไม่งั้นข้ามไป step6) → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO) · **⏭ ใบที่ค้างรอ QA แล้วแต่งานไม่เกี่ยวคุณภาพจริง กดข้าม step5 → 6 ได้** (ดูหัวข้อ "ข้าม QA" ด้านล่าง · 2026-09-03) · `status`: pending→assigned→repaired→checked→qa→handover→closed · `rejected` (step2 เลือก "Reject MO") · `current_step` 1..7 ใช้คิด % ความคืบหน้า
 - **↩️ ตีกลับให้ผู้แจ้ง (แจ้งผิดแผนก · 2026-07-22 · migration `20260722_mtn_return_reroute.sql` DR — ⚠️ ค้างไม่ได้ apply มา 2 สัปดาห์ เพิ่ง apply จริง 2026-08-06):** ทีมที่ได้รับใบผิดแผนกกด Reject ที่ step2 → `status='returned'` + `returned_at`/`returned_from_dept` + เหตุผลใน `reject_reason` (reuse ช่องเดิม) → **ใบเด้งกลับหาผู้แจ้ง ไม่ถูกทิ้ง** → ผู้แจ้งเลือกแผนกที่ถูกแล้วส่งใหม่ (`resubmit`) → กลับเป็น `pending` + **รีเซ็ต `report_at`** (นาฬิกา KPI เริ่มนับใหม่ให้แผนกที่ถูก — ไม่โทษทีมที่เพิ่งได้รับใบ) โดยเก็บ `first_report_at` (เวลาเปิดครั้งแรก) + `bounce_count` ไว้อ้างอิง · การ์ดใบโชว์ชิป "↩️ ใบนี้เคยถูกตีกลับ N ครั้ง" เสมอเมื่อ bounce_count > 0 · **ระหว่างที่ migration ยังไม่ apply ฟีเจอร์นี้พังเงียบ** — กด Reject/ส่งใหม่ได้ error 42703 (`update` ไม่ tolerant ตัดคอลัมน์ที่ไม่มี) · `mtn_orders.status` ไม่มี check constraint จึงรับค่า `returned` ได้ทันทีหลังเติมคอลัมน์
 - **ประเมินความพึงพอใจบริการซ่อม (step 6 รับมอบ/ติดตาม — KPI หน่วยงานซ่อม · 2026-07-22):** หน่วยงานผู้แจ้งให้คะแนน **5 ด้าน × 3 ระดับ** (เฉยๆ=1/พอใจ=2/พอใจมาก=3): คุณภาพงานซ่อม · ความเร็วในการตอบสนอง · ความสามารถในการแก้ไขปัญหา · ความสุภาพ/PPE · ความพร้อมในการเข้าแก้ไขปัญหา · เก็บ `mtn_orders.satisfaction` jsonb (ด้านที่ไม่ประเมิน = ไม่มี key · **ไม่บังคับ ข้ามได้**) · const กลาง `SAT_DIMS`/`SAT_LEVELS` ใน MtnRepair · **แท็บ 📊 KPI** เพิ่มการ์ด "ความพึงพอใจเฉลี่ย %" + แถบรายด้าน (avg/3 · เขียว≥2.5/เหลือง≥2/แดง) นับเฉพาะใบที่ประเมิน · migration `20260722_mtn_satisfaction.sql` (DR additive)
 - **⚠️ ฟิลเตอร์สถานะไม่ให้ซ้ำ:** dropdown สถานะ render จาก `STATUS_META` (มี `closed: '✅ ปิด MO'` อยู่แล้ว) + `open`/`all` เท่านั้น — **ห้ามเพิ่ม `<option value="closed">` ซ้ำ** (เคยมี "✅ ปิดแล้ว" ซ้ำกับ "✅ ปิด MO" — ลบแล้ว 2026-07-22)
@@ -27,7 +27,7 @@
 > เกณฑ์นี้ถูกใช้ **2 ที่ที่ต้องตรงกันเป๊ะเสมอ** — ตัวซ่อนปุ่มใน `DetailDrawer` (`canEditStep`) กับ
 > guard ชั้นสองใน `StepModal.save()` (**RLS ของ `mtn_orders` ฝั่ง DR เป็น anon เปิดหมด → UI คือด่านเดียวจริงๆ**)
 > เดิมเขียนซ้ำ 2 ก้อนแล้ว**ต่างกันจริง** (ตัวซ่อนปุ่มมี branch `step===1` ที่ guard ไม่มี) → ยุบมาที่ util
-> · `MTN_STEPS` / `canDoStep()` / `stepLabel()` / `stepDenyHint()` / `isOrderReporter()` · เทส 13 เคส
+> · `MTN_STEPS` / `canDoStep()` / `stepLabel()` / `stepDenyHint()` / `isOrderReporter()` / `orderInReporterScope()` · เทส 26 เคส (`mtnStepPerm.test.mjs`)
 > **ห้ามเอา `STEP_PERM` กลับมาเขียนใน MtnRepair.jsx และห้ามพิมพ์ชื่อขั้นซ้ำในหน้า** (ปุ่ม/หัวโมดัล/StepBox อ่านจาก `stepLabel`/`MTN_STEPS`)
 >
 > | ขั้น | ใครทำ | คีย์ | seed |
@@ -57,10 +57,31 @@
 > - **แยก "หัวหน้าช่าง" จาก "ช่าง" ใช้ flag `is_dept_admin` ห้ามเพิ่ม role** — seed `mtn` ให้ `assign` ไว้ก่อน
 >   ไม่ให้ทีมช่างทำงานไม่ได้ตอน deploy · อยากรัดจริงให้ถอด `mtn` ที่ `/permissions` แล้วติ๊กแอดมินหน่วยงานที่ `/add-user`
 > - **bucket `dept_admin` ไม่ติดกับดัก `enum_range` ในโมดูลนี้** — `20260803_dept_admin.sql` ก๊อปทุก action ที่ manager ถือให้ bucket ตอนสร้าง จึงได้ `mtn_repair:*` ชุดเดิมครบตั้งแต่ตอนนั้น (ตรวจกับฐานจริง 2026-09-02) · **กับดัก `enum_range` ยังใช้กับ role ธรรมดาที่เพิ่มทีหลังเสมอ — แต่ bucket ตัวนี้มีตัวก๊อปให้แล้ว อย่าเหมาว่าขาด**
-> - **ยังไม่ทำ:** ยังไม่ผูก "ฝ่ายที่แจ้ง" กับ scope จริง — manager/supervisor คนไหนก็ได้ทั้งโรงงานยังปิดใบของฝ่ายอื่นได้
->   (จะทำต้องเทียบ section ของ `line_name` บนใบ กับ `sections` ของผู้ใช้ — เป็นการรัดที่ล็อกคนออกได้ ต้องให้ user เคาะก่อน)
+> - **🔒 ขั้น 4/6/7 ("ฝ่ายที่แจ้ง") ผูกกับ scope จริงแล้ว (2026-09-07 · user เคาะ "ลุยข้อ 2"):** ผู้ถือ `accept_work`/`handover`/`approve`
+>   ทำได้**เฉพาะใบในส่วนงาน/ครอบครัวไลน์ของตัวเอง** — `MTN_STEPS[n].reporterSide` + opts `inReporterScope` ใน `canDoStep`
+>   (คืน `{ ok:false, code:'out_of_scope' }`) · ผู้เรียกคำนวณด้วย **`orderInReporterScope(order, { scopeLineNames, knownLineNames, sections })`**
+>   (pure · MtnRepair ส่ง `reporterScope` = `scopeLines` ชุดเดียวกับที่กรองรายการ + ทะเบียนไลน์ + `sections`)
+>   · **ลำดับตัดสิน: `line_name` ที่อยู่ในทะเบียนไลน์ชนะ `dept_section` เสมอ** (ช่อง "แผนก (PD)" พิมพ์แก้ได้ · ข้อมูลจริง 60 วันว่าง ~60%)
+>   ไลน์ไม่รู้จัก (แม่พิมพ์ผูก "LINE A ( 800 Ton )") จึงค่อยเทียบ `dept_section` กับ `sections`
+>   · **null = ตัดสินไม่ได้ = ผ่านตามเดิม** (ผู้ใช้ไม่จำกัด scope / ใบไม่ระบุไลน์ / ไลน์ไม่รู้จักและไม่มี dept_section) — หลัก "ไม่รู้ ≠ ไม่ใช่"
+>   การรัดที่ล็อกคนออกต้องมีหลักฐานว่าใบเป็นของฝ่ายอื่นจริง · **ผู้เปิดใบ / `manage_master` ไม่ติด scope** · ขั้น 2-3-5 (ทีมช่าง/QA) ไม่เกี่ยว
+>   · fallback ก่อน apply migration ก็เคารพ scope (ไม่เปิดช่องผ่านคีย์เดิม) · กล่อง 🔒 ใน DetailDrawer + toast ตอนบันทึกบอกว่าใบเป็นของไลน์/ส่วนงานไหน
+>   และชี้ไป `/add-user` (เพิ่มส่วนงาน) **ไม่ใช่ `/permissions`** (ไม่ใช่ปัญหา role)
+>   · ⚠️ ผลจริงเล็กกว่าที่ฟังดู: รายการใบถูกกรองด้วย `scopeLines` อยู่แล้ว ผู้ใช้ที่จำกัด scope จึงไม่เห็นใบฝ่ายอื่นตั้งแต่ต้น —
+>   ตัวนี้ปิดช่องที่เหลือคือ **ใบที่ `line_name` ว่าง/ไม่อยู่ในทะเบียน** (หลุดฟิลเตอร์) + เป็น guard ชั้นสองตอนบันทึกให้ตรงกับฟิลเตอร์
+>   · manager/dept_admin ที่ `sections` ว่าง = ทั้งโรงงานตามเดิม (ตั้งใจ) — อยากรัดให้ตั้ง sections ที่ `/add-user`
+>   · ตรวจฐานจริง 2026-09-07: บัญชีที่ถือคีย์ขั้น 4/6/7 แต่ไม่จำกัด scope มี manager 1 คน = ผจก. ทั้งโรงงาน **user เคาะ "ปล่อยไว้"** (ถูกต้องตามโครงสร้าง) · leader ทั้ง 3 ถูกจำกัดด้วยครอบครัวไลน์จาก `line_id` อยู่แล้ว — **คิวรีเช็คต้องดู `line_id` ด้วย ไม่ใช่แค่ `sections`** ไม่งั้น leader ติดมาทั้งที่ไม่ใช่ปัญหา
 > - migration `20260902_mtn_step_ownership.sql` (Main)
 
+- **⏭ ข้าม QA (ขั้น 5 → 6) เมื่องานไม่เกี่ยวกับคุณภาพ (2026-09-03 · คำสั่ง user "สเต็ป 5 ต้องให้ QA อนุมัติ ถ้าเรื่องไม่เกี่ยวกับ QA ต้องกดข้ามไปสเต็ป 6 ได้ ตอนนี้ไม่ได้"):**
+  ขั้น 4 เลือก "เกี่ยวกับคุณภาพ" → ใบไปค้างรอ QA และ**ไม่มีใครเลื่อนต่อได้นอกจาก QA** (ตรวจฐาน 2026-09-03: ค้าง 26 ใบ ทีม PRODUCTION ทั้งหมด นานสุด 9 วัน — ส่วนใหญ่เป็น PM/BM เครื่อง STATIONARY/ROBOT ที่หัวหน้าไลน์ติ๊ก "เกี่ยวกับคุณภาพ" ไว้)
+  - **โมเดล: การข้าม = แก้การตัดสินใจของขั้น 4 ไม่ใช่ขั้นใหม่** — `status` คง `checked` · `quality_related` → `ไม่เกี่ยวกับคุณภาพ` · บันทึก `qa_skip_reason` (บังคับ) / `qa_skipped_by` / `qa_skipped_at` → `nextStepFor` พาไปขั้น 6 เอง · **ไม่เพิ่ม status ใหม่** (KPI/Andon/ใบพิมพ์/edge เดิมไม่ต้องรู้จักค่าใหม่) · ไม่เซ็น (ไม่ใช่การรับรองคุณภาพ)
+  - **ใครข้ามได้ = `canSkipQa()` ใน `mtnStepPerm.js`** (source of truth เดียวกับปุ่มและ guard ตอนบันทึก): คนที่ทำขั้น 4 ได้ (ผู้เปิดใบ / `accept_work` / `manage_master`) **หรือ** QA (`qa`) — QA เห็นว่าไม่ใช่งานตัวเองก็ปล่อยผ่านได้โดยไม่ต้องเซ็นรับรองสิ่งที่ไม่ได้ตรวจ · **ช่างที่ซ่อม (`service`) ข้ามไม่ได้** เหตุผลเดียวกับที่ช่างตรวจรับงานตัวเองไม่ได้ · ใบที่ไม่ได้ค้างรอ QA (`isWaitingQa`=false) ข้ามไม่ได้แม้เป็น manage_master
+  - UI: ปุ่ม "⏭ ไม่เกี่ยวกับคุณภาพ — ข้าม QA ไปขั้น 6" (สีเหลือง) ข้างปุ่มขั้นถัดไปใน DetailDrawer · StepModal โหมด `skipQa` (state `stepModal.skipQa` — ไม่ใช่ step ใหม่) กรอกเหตุผล · StepBox 5 โชว์กล่อง "⏭ ข้ามการตรวจ QA + เหตุผล/คน/เวลา" · กล่อง 🔒 บอกทางข้ามให้คนที่กดไม่ได้ (§6.9) · ใบพิมพ์ FM-JIG-008 ช่อง 5 พิมพ์ "ไม่เกี่ยวกับคุณภาพ (ข้ามการตรวจ QA)" + เหตุผล
+  - แจ้งเตือน event **`mtn_qa_skipped`** (edge `send-mtn-notification` · ขั้นต่อไป: รอรับมอบ) · rule ก๊อปห้อง/role จาก `mtn_checked` · edge ที่ยังไม่ deploy ตอบ 400 unknown event → client กลืนเงียบตาม pattern เดิมของ `notifyMtn` (ใบยังเดินต่อ แค่ไม่มีข้อความ)
+  - **deploy-safe:** ยังไม่ apply migration DR → update ได้ 42703 → client ถอยไปบันทึกแค่ `quality_related` + toast แดงบอกให้รัน migration (ใบเดินต่อได้ แต่เหตุผลไม่ถูกเก็บ — ไม่เงียบ)
+  - migrations: `20260903_mtn_qa_skip.sql` (DR — 3 คอลัมน์ additive) + `20260903_mtn_qa_skipped_notification_rule.sql` (Main — แถว notification_rules) · เทส `mtnStepPerm.test.mjs` +6 เคส
+  - ⚠️ ระหว่างตรวจพบ `notification_rules.channel_ids` ของ `mtn_checked`/`mtn_qa` **ว่างในฐานจริง** ทั้งที่ migration `20260825_mtn_events_route_to_mtn_room.sql` ควรผูกห้องให้แล้ว → ข้อความขั้น 4-5 ตกห้อง fallback ของบอท · ตรวจซ้ำ 2026-09-07: **ทุก event หมวด maintenance ยกเว้น mtn_reported ว่างหมด** (0825 ไม่เคยถูกรัน) → migration `20260907_mtn_rules_smart_maintenance_room.sql` ผูกห้อง 🔧 Smart Maintenance (ห้องเดียวกับ pm_*) ให้แถวที่ว่าง · ย้ายห้องได้ที่ /notification-config
 - **สิทธิ์ (role_permissions):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · ที่เหลือดูตารางในกฎเหล็กด้านบน · ปุ่ม action แต่ละขั้นเช็คผ่าน `canDoStep()` (ไม่ hardcode role array)
 - **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
 - **หลายทีมซ่อม (2026-07-14):** ครอบคลุม **PRODUCTION(Autonomous) / JIG MTN / DIE MTN / MTN** — `mtn_technicians.dept` (ทีมของช่าง, master แยกกลุ่มตามทีม) + `mtn_orders.mtn_dept` ("แจ้งถึงหน่วยงาน" auto จากชนิดอุปกรณ์: JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN แก้ได้) · ฟิลเตอร์รายการตามหน่วยงาน · migration `20260714_mtn_multi_team.sql`

@@ -52,6 +52,7 @@ create table permission_catalog (
 ```
 - **เพิ่มฟีเจอร์ใหม่ = insert catalog 1 แถว + seed role_permissions** → UI ขึ้นเองไม่ต้องแก้หน้า จัดการสิทธิ์
 - ไม่ใส่ FK จาก `role_permissions.permission_key` → catalog เพราะ key แบบ `page:/...` เดิมไม่อยู่ใน catalog (ตั้งใจ)
+- **`group_name` มี FK → `nav_groups(name)` (2026-09-07 · `20260907_nav_groups_registry.sql`)** — `nav_groups` = ทะเบียนหมวดเมนู (name/seq/sort_lo/sort_hi) ที่ mirror `NAV_GROUP_ORDER` ใน App.jsx · seed catalog ด้วยชื่อหมวดที่ไม่อยู่ในทะเบียน = error ทันที (เดิมเป็น do-block `raise warning` ที่ลิสต์หมวด hardcode แล้ว drift) · วิว `v_permission_catalog_sort_drift` = แถวที่ sort หลุดช่วง/ซ้ำในหมวด ควรว่างเสมอ · เปลี่ยนหมวดเมนู = migration `*_nav_groups_*` ใหม่ (เทส `navGroupsRegistry.test.mjs` ล็อกไว้)
 
 ### 2.3 Naming convention
 ```

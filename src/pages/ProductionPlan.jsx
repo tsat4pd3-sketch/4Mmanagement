@@ -6,7 +6,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
@@ -50,6 +50,7 @@ export default function ProductionPlan() {
   const [tab, setTab] = useTabParam(['daily', 'monthly'], 'daily');
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
+  const [planWarn, setPlanWarn] = useState('');   // โหลดไม่ครบ → เตือน (แผนอาจต่ำกว่าจริง)
   const [allLines, setAllLines] = useState([]);
   const [orgSections, setOrgSections] = useState([]); // ส่วนงานจากผังองค์กร (source of truth) — ไม่เดาจาก production_lines
   const [secFilter, setSecFilter] = useState('');
@@ -99,20 +100,30 @@ export default function ProductionPlan() {
     (async () => {
       setLoading(true);
       const histStart = addDays(today, -HISTORY_DAYS);
-      const [{ data: cal }, { data: prods }, { data: sess }, { data: ord }, { data: fc }, { data: past }] = await Promise.all([
+      /* ⚠️ `.limit(N>1000)` ใช้ไม่ได้ — PostgREST clamp ที่ 1000 เสมอ (audit 2026-09-02)
+         วัดฐานจริง: `customer_forecasts` ตั้งแต่เดือนนี้ = **1,363 แถว** ⇒ เดิมตัดทิ้ง ~360 แถว
+         และเพราะไม่มี `.order()` คู่กับ limit จึงได้ **คนละชุดทุกครั้งที่โหลด**
+         ⇒ แท็บรายเดือน: shiftsNeeded ต่ำกว่าจริง → verdict ขึ้น "กะเช้าพอ" ทั้งที่ต้องเปิด OT/กะดึก
+            และพาร์ทบางตัวหายไปจากแผนทั้งตัว · sessions/orders ยังไม่ทะลุวันนี้แต่โตได้เหมือนกัน */
+      const [{ data: cal }, { data: prods }, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no').eq('is_active', true).not('mat_no', 'is', null),
-        supabaseDR.from('production_sessions').select('id, line_name, shift, oee').eq('status', 'closed').gte('work_date', histStart).limit(2000),
-        supabaseDR.from('customer_shipping_orders').select('mat_no, part_name, customer, qty, due_date, status')
-          .neq('status', 'shipped').gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON)).limit(2000),
-        supabaseDR.from('customer_forecasts').select('mat_no, part_name, customer, qty, period_month, source')
-          .gte('period_month', `${monthKey(today)}-01`).limit(4000),
+        fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
+          .eq('status', 'closed').gte('work_date', histStart)),
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('id, mat_no, part_name, customer, qty, due_date, status')
+          .neq('status', 'shipped').gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON))),
+        fetchAllPages(() => supabaseDR.from('customer_forecasts').select('id, mat_no, part_name, customer, qty, period_month, source')
+          .gte('period_month', `${monthKey(today)}-01`)),
         // ⚠️ ออเดอร์ค้างส่งที่เลยดิว (pending วันเก่า ย้อน 30 วัน) — เดิมถูกตัดทิ้งทั้งก้อน
         //    แผนรายวันเริ่ม backlog=0 แล้วบอก "กะเช้าพอ" ทั้งที่มีของค้างส่งจริง (QC flow-audit D1 · red)
-        supabaseDR.from('customer_shipping_orders').select('mat_no, qty, due_date')
-          .neq('status', 'shipped').gte('due_date', addDays(today, -30)).lt('due_date', today).limit(2000),
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('id, mat_no, qty, due_date')
+          .neq('status', 'shipped').gte('due_date', addDays(today, -30)).lt('due_date', today)),
       ]);
+      const sess = sessRes.rows, ord = ordRes.rows, fc = fcRes.rows, past = pastRes.rows;
+      // โหลดไม่ครบ = แผนกำลังผลิต/ความต้องการ ต่ำกว่าจริง → verdict อาจบอก "พอ" ผิด ห้ามเงียบ
+      setPlanWarn([sessRes, ordRes, fcRes, pastRes].some(r => r.error || r.truncated)
+        ? 'โหลดข้อมูลไม่ครบ — แผนที่คำนวณอาจต่ำกว่าความจริง (ลองโหลดใหม่)' : '');
       setCalMap(Object.fromEntries((cal || []).map(c => [c.work_date, c.day_type])));
       setOrders(ord || []);
       setOverdueOrders(past || []);
@@ -369,6 +380,14 @@ export default function ProductionPlan() {
           <button onClick={() => setCapMode('safe')} style={btnSt(capMode === 'safe')} title="ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)">ปลอดภัย (P25)</button>
         </>}
       />
+
+      {/* ⚠️ โหลดไม่ครบ = ทั้งกำลังผลิตและความต้องการต่ำกว่าจริง → verdict อาจบอก "กะเช้าพอ" ผิด */}
+      {planWarn && (
+        <div style={{
+          margin: '0 0 12px', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444',
+        }}>⚠ {planWarn}</div>
+      )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
       </div>

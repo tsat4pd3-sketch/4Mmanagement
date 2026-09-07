@@ -71,6 +71,11 @@ export function hasPermission(permissionKey, role) {
 }
 
 export function canAccessPage(path, role) {
+  // ⚠️ ตัด query/hash ออกก่อนเสมอ — สิทธิ์ผูกกับ "หน้า" ไม่ใช่แท็บ
+  //    ผู้เรียกที่ส่ง deep-link มา (`/qa?tab=ncr`, `/pm?tab=check`) เดิมจะได้ `page:/qa?tab=ncr`
+  //    ซึ่งไม่มีวันตรงกับคีย์ใดเลย → คืน false เงียบๆ = ปุ่ม/ลิงก์หายไปทั้งที่ผู้ใช้มีสิทธิ์จริง
+  //    (เจอตอนต่อ deep-link ให้กระดิ่งแจ้งเตือน — audit 2026-09-02)
+  path = String(path || '').split(/[?#]/)[0];
   // Daily Checker = ศูนย์รวมแท็บ (PM Daily / LPA / ...) — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง
   // (piggyback สิทธิ์เดิม ไม่ต้อง seed page:/daily-checker · แท็บใน DailyChecker.jsx โผล่ตามสิทธิ์ย่อย)
   if (path === '/daily-checker') {

@@ -218,30 +218,34 @@ export default function EventLog() {
 
       // 3. Insert approval records for each needed role
       if (rolesNeeded.size > 0) {
-        await supabase.from('cqi15_event_approvals').insert(
+        // supabase-js ไม่ throw — ถ้าไม่เช็ค ใบจะถูกสร้างแล้วตั้ง in_progress โดยไม่มีแถวอนุมัติ = ปิดไม่ได้ตลอดกาล
+        const { error: apErr } = await supabase.from('cqi15_event_approvals').insert(
           [...rolesNeeded].map(rk => ({
             event_log_id: newLog.id,
             role_key: rk,
             status: 'pending',
           }))
         );
+        if (apErr) throw new Error('บันทึกใบแล้ว แต่สร้างรายการอนุมัติไม่สำเร็จ (ใบจะค้างไม่มีผู้อนุมัติ — แจ้ง admin): ' + apErr.message);
       }
 
       // 4. Initialize check completions
       if (eventChecks.length > 0) {
-        await supabase.from('cqi15_check_completions').insert(
+        const { error: ckErr } = await supabase.from('cqi15_check_completions').insert(
           eventChecks.map(ch => ({
             event_log_id: newLog.id,
             check_no: ch.check_no,
             result: 'pending',
           }))
         );
+        if (ckErr) throw new Error('บันทึกใบแล้ว แต่สร้างรายการเช็คไม่สำเร็จ: ' + ckErr.message);
       }
 
       // 5. Update status — ถ้าไม่มี role ต้องอนุมัติเลย (definition ไม่มี matrix) ให้ปิดเป็น approved เลย
       // ไม่งั้นค้าง in_progress ตลอดกาล (handleApprove ต้องมี approval ≥1 ถึงจะปิดได้)
-      await supabase.from('cqi15_event_logs')
+      const { error: stErr } = await supabase.from('cqi15_event_logs')
         .update({ overall_status: rolesNeeded.size > 0 ? 'in_progress' : 'approved' }).eq('id', newLog.id);
+      if (stErr) throw new Error('บันทึกใบแล้ว แต่ตั้งสถานะไม่สำเร็จ (ใบจะค้าง pending): ' + stErr.message);
 
       // 6. Send notification via edge function
       const evDef = eventDefs.find(d => d.event_no === parseInt(form.event_no));

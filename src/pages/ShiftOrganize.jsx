@@ -10,6 +10,7 @@ import { toast } from '../components/Toast';
 
 import InfoMore from '../components/InfoMore';
 import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
+import { checkWrite } from '../utils/dbWrite';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -327,7 +328,7 @@ export default function ShiftOrganize() {
 
   const handleDeleteOverride = async (id) => {
     if (!confirm('ยืนยันลบรายการเปลี่ยนกะรายบุคคลนี้?')) return;
-    await supabase.from('shift_overrides').delete().eq('id', id);
+    checkWrite(await supabase.from('shift_overrides').delete().eq('id', id), 'ลบ override กะ');
     fetchOverrides();
   };
 
@@ -366,7 +367,9 @@ export default function ShiftOrganize() {
 
   const handleDeleteMergeEvent = async (id) => {
     if (!confirm('ยืนยันลบเหตุการณ์ยุบกะนี้?')) return;
-    await supabase.from('shift_merge_events').delete().eq('id', id);
+    const { data: gone, error } = await supabase.from('shift_merge_events').delete().eq('id', id).select('id');
+    if (error) toast.error('ลบไม่สำเร็จ: ' + error.message);
+    else if (!gone?.length) toast.error('ลบไม่ติด (0 แถว) — ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ');
     fetchMergeEvents();
   };
 

@@ -85,3 +85,14 @@
 > · deploy ผ่าน MCP แล้ว **ต้องดึงกลับมาตรวจว่าโครงสร้างครบทุกจุดที่ตั้งใจแก้** ก่อนถือว่าเสร็จ
 
 ---
+
+### 🔴 audit รอบ 11 (2026-09-07) — edge functions ที่กลืน error + token ฝังในซอร์ส
+- **`cleanup-orphan-photos`** (Main · bucket `employee-photos` = รูปพนักงาน + ผังไลน์ `layouts/` + ผังรวมโรงงาน `factory/`):
+  - **คิวรี whitelist `factory_map` ไม่เช็ค error** → ถ้าคิวรีล้ม `fmaps=undefined` แล้วโค้ดเดินต่อ = รูปผังรวมโรงงานทุกไฟล์ที่เก่ากว่า 24 ชม. ถูกนับเป็นกำพร้าและ**ถูกลบจริง** · แก้ให้ throw เหมือน employees/line_layouts
+  - **token เคยฝังในซอร์ส** (`const CLEANUP_TOKEN = '56ef…'` อยู่ใน git history) → เปลี่ยนเป็น `Deno.env.get('CLEANUP_TOKEN')` · ไม่ตั้ง = ตอบ 503 ทุกคำขอ (fail-closed)
+    **ก่อน deploy ใหม่ต้องตั้ง secret:** `supabase secrets set CLEANUP_TOKEN=<สุ่มใหม่ 48 hex> --project-ref ewhdfqwfwofivojtsizn` · **token เดิมถือว่ารั่วแล้ว ห้ามใช้ซ้ำ**
+  - กฎ: ตัวเก็บกวาดที่ "ลบของจริง" ต้อง fail-closed ทุกขั้น — whitelist ล้ม = หยุด ไม่ใช่ลบต่อ · เพิ่มตาราง/โฟลเดอร์ใหม่ที่เก็บใน bucket นี้ต้องมาเติม whitelist ที่นี่ (writers ตอนนี้: operator.jsx · LineSetup.jsx · FactoryMap.jsx — `avatars` แยก bucket โดยเจตนา)
+- **`downtime-open-scan`**: stamp `open_alerted_at` ไม่เช็คผล → ล้มเงียบ = รายการเดิมถูกแจ้งซ้ำทุกรอบ 5 นาทีจนกว่าจะปิด · ตอนนี้ log ทั้ง stamp ล้มและ notify ตอบไม่ ok
+- **`mtn-daily-summary`**: `fetch(...).catch(() => null)` → Telegram ส่งไม่ออกทั้งวันไม่มีร่องรอย · ตอนนี้ log status/body เมื่อไม่ ok
+- **in-app `notifications` insert ใน 5 functions** (`send-notification` ×2 · `send-store-notification` · `send-mtn-notification` · `send-cqi15-notification` ×3): เดิม `try { await supabase.from('notifications').insert(...) } catch {}` — **supabase-js ไม่ throw** จึงไม่มีวันจับ · เปลี่ยนเป็นอ่าน `{ error }` แล้ว log
+- ⚠️ ทั้งหมด**ยังไม่ deploy** — ต้อง `supabase functions deploy <ชื่อ>` ทีละตัว (cleanup-orphan-photos ตั้ง secret ก่อน) · ซอร์สในรีโปเป็น source of truth

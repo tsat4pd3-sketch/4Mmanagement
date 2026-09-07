@@ -131,7 +131,7 @@ function StockTab({ role, scope }) {
     //    เพราะมันเป็นที่มาของ "ไลน์ลูกปลายทาง" ใน StockMoveToChild — ตกหล่นเมื่อไหร่
     //    พาร์ทนั้นจะกลายเป็น "ใช้หลายไลน์ ต้องเลือกเอง" ทั้งที่จริงชี้ไลน์เดียวชัดเจน
     //    (เสนอผิดแบบเงียบ = คนเลือกปลายทางผิด แล้วหักสต็อกผิดตัว ย้อนยาก)
-    const [{ data: ln }, { rows: stk }, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
+    const [{ data: ln, error: lnErr }, stkRes, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
       supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
@@ -149,11 +149,15 @@ function StockTab({ role, scope }) {
     ]);
     const boms = bomRes.rows, prods = prodRes.rows, ks = ksRes.rows, pm = pmRes.rows;
     // ⚠️ โหลดไม่ครบ = ต้องบอก ห้ามเงียบ — จอจะดูปกติทุกอย่าง แต่ข้อเสนอปลายทาง/ชื่อพาร์ท/min-max หายไปเฉยๆ
-    const bad = [['สูตร BOM', bomRes], ['สินค้า', prodRes], ['ค่ามาตรฐานคัมบัง', ksRes], ['ทะเบียนพาร์ท', pmRes]]
+    /* ⚠️ เดิมเช็ค 4 ตารางรอง แต่ **ลืมตัวสต็อกเอง** (audit 2026-09-02)
+     ⇒ ยอด on-hand หายไปเงียบๆ แล้ว min/max คำนวณจากยอดที่ไม่ครบ
+        → แถวที่จริงต่ำกว่า Min กลับไม่ขึ้นเตือน ซึ่งเป็นงานหลักของหน้านี้ */
+  const bad = [['ยอดสต็อกในไลน์', stkRes], ['ทะเบียนไลน์', { error: lnErr }],
+    ['สูตร BOM', bomRes], ['สินค้า', prodRes], ['ค่ามาตรฐานคัมบัง', ksRes], ['ทะเบียนพาร์ท', pmRes]]
       .filter(([, r]) => r.error || r.truncated).map(([n]) => n);
     if (bad.length) toast.error(`⚠ โหลดไม่ครบ: ${bad.join(' · ')} — ตัวเลข/ข้อเสนอบางส่วนอาจขาด ลองรีเฟรช`);
     setLines(ln || []);
-    setStock(stk || []);
+    setStock(stkRes.rows || []);
     setProducts(prods || []);
     const bm = {};
     const pb = {};

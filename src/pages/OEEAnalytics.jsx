@@ -24,7 +24,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 
 import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
@@ -881,32 +881,41 @@ export default function OEEAnalytics() {
         setSessions([]); setDowntimes([]); setDefects([]); setLoading(false); return;
       }
 
-      let q = supabaseDR.from('production_sessions')
-        .select('*')
-        .eq('status', 'closed')
-        .gte('work_date', dateFrom)
-        .lte('work_date', dateTo)
-        .order('work_date', { ascending: true })
-        .limit(5000);
-      if (expandedLines?.length === 1) q = q.eq('line_name', expandedLines[0]);
-      else if (expandedLines?.length > 1) q = q.in('line_name', expandedLines);
-      if (selShift) q = q.eq('shift', selShift);
-      const { data: sess } = await q;
+      // ⚠️ `.limit(5000)` ใช้ไม่ได้ — PostgREST clamp ที่ 1000 แถวเงียบๆ
+      //    วัดจริง 2026-09-02: ช่วง 90 วันมี 1,058 กะปิดแล้ว → **หายไป 58 กะทุกครั้งที่เปิดแท็บแนวโน้ม**
+      //    (กะที่หายคือกะท้ายช่วงตาม order work_date → เดือนล่าสุดขาดมากสุด ซึ่งเป็นเดือนที่คนดู)
+      //    ต้องแบ่งหน้าเสมอ + order คงที่คู่ range (work_date อย่างเดียวไม่ unique → ต้องมี id ปิดท้าย)
+      const sessRes = await fetchAllPages(() => {
+        let q = supabaseDR.from('production_sessions')
+          .select('*')
+          .eq('status', 'closed')
+          .gte('work_date', dateFrom)
+          .lte('work_date', dateTo);
+        if (expandedLines?.length === 1) q = q.eq('line_name', expandedLines[0]);
+        else if (expandedLines?.length > 1) q = q.in('line_name', expandedLines);
+        if (selShift) q = q.eq('shift', selShift);
+        return q;
+      }, { orderBy: ['work_date', 'id'] });
+      const sess = sessRes.rows;
 
-      const sessionIds = (sess || []).map(s => s.id);
+      const sessionIds = sess.map(s => s.id);
 
       // ⚠️ ห้าม .in('session_id', sessionIds) ตรงๆ — ช่วง 90 วัน = 800+ กะ → URL ~31,700 ตัวอักษร
       //    โดนตัด → คิวรีล้มเหลว → DT/ของเสีย/Pareto/มูลค่าเป็น 0 เงียบๆ ขณะที่ A/P/Q (ค่า stamp)
       //    ยังโชว์ค่าจริง = จอขัดแย้งกันเอง (บั๊กจริงที่ user จับได้ 2026-08-20)
-      const [dtRes, defRes, { data: dtt }, { data: deft }, { data: linesData }] = await Promise.all([
+      const [dtRes, defRes, { data: dtt }, { data: deft }, lineRes] = await Promise.all([
         fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
           .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
         fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
           .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
-        supabaseDR.from('production_sessions').select('line_name').eq('status', 'closed'),
+        // ⚠️ ตัวนี้อ่าน "กะปิดแล้วทั้งตาราง" เพื่อทำ dropdown ไลน์ → ไม่แบ่งหน้า = ได้แค่ 1000 แถวแรก
+        //    วัดจริง 2026-09-02: 1,058 แถว → distinct line_name ได้ 27 จาก 28 = **ไลน์หนึ่งหายจาก dropdown**
+        //    (เลือกไลน์นั้นดูแนวโน้มไม่ได้เลย และไม่มีอะไรบอกว่าหายไป)
+        fetchAllPages(() => supabaseDR.from('production_sessions').select('line_name').eq('status', 'closed')),
       ]);
+      const linesData = lineRes.rows;
 
       setSessions(sess || []);
       setDowntimes(dtRes.rows);
@@ -929,8 +938,9 @@ export default function OEEAnalytics() {
       setTrOrders(ordRes.rows);
       // โหลดไม่ครบ = ตัวเลขรวมต่ำกว่าจริง ต้องบอกบนจอ ห้ามเงียบ
       setTrLoadWarn(
-        [dtRes, defRes, ordRes].some(r => r.error || r.truncated)
-          ? (dtRes.error || defRes.error || ordRes.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน)')
+        [sessRes, dtRes, defRes, ordRes, lineRes].some(r => r.error || r.truncated)
+          ? (sessRes.error || dtRes.error || defRes.error || ordRes.error || lineRes.error
+             || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน)')
           : null,
       );
       const trMats = [...new Set(ordRes.rows.map(o => o.mat_no).filter(Boolean))];

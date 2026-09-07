@@ -74,8 +74,12 @@ Deno.serve(async () => {
       }).catch(() => null);
       // stamp กันแจ้งซ้ำ (ทำเฉพาะเมื่อ POST สำเร็จ — ล้มเหลวปล่อยให้รอบถัดไปลองใหม่)
       if (res && res.ok) {
-        await db.from('downtime_logs').update({ open_alerted_at: new Date().toISOString() }).eq('id', r.id);
+        // supabase-js ไม่ throw — stamp ล้มเงียบ = รายการนี้ถูกแจ้งซ้ำทุกรอบ 5 นาทีจนกว่าจะปิด
+        const { error: markErr } = await db.from('downtime_logs').update({ open_alerted_at: new Date().toISOString() }).eq('id', r.id);
+        if (markErr) console.error('downtime-open-scan: stamp open_alerted_at failed', r.id, markErr.message);
         sent++;
+      } else if (res) {
+        console.error('downtime-open-scan: notify failed', r.id, res.status, await res.text().catch(() => ''));
       }
     }
     return new Response(JSON.stringify({ ok: true, open_alert_min: openMin, candidates: open.length, sent }), {

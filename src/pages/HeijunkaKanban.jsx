@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -11,6 +11,8 @@ import { MAT_CLASSES, matColor, matMatches } from '../utils/matPrefix';
 import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
+import DeliverScanModal from '../components/DeliverScanModal';
+import { DELIVER_GATES } from '../utils/replenishGate';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -494,7 +496,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: collapsed ? 0 : 16 }}
         onClick={() => setCollapsed(v => !v)}>
         <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-          ⏰ รอบจัดส่งวันนี้ <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({rounds.length} รอบ)</span>
+          ⏰ รอบจัดส่ง{(() => { const { startMs, endMs } = dayFrameMs(workDate); return nowMs >= startMs && nowMs < endMs ? 'วันนี้' : ` ${workDate}`; })()} <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({rounds.length} รอบ)</span>
         </div>
         <span style={{ color: 'var(--muted)', fontSize: 14 }}>{collapsed ? '▶' : '▼'}</span>
       </div>
@@ -669,7 +671,7 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
           overdue.length ? overdue.slice(0, 2).map(r => `${r.line_name} รอบ ${r.round_no}`).join(' · ') + (overdue.length > 2 ? ` +${overdue.length - 2}` : '') : 'ไม่มี',
           overdue.length ? '#ef4444' : '#22c55e')}
         {tile('🎴', 'การ์ดรอเตรียมส่ง', cardsLeft, `${pending.length} รอบที่ยังไม่ยืนยันส่ง`, cardsLeft > 0 ? '#f59e0b' : '#22c55e')}
-        {tile('✅', 'ยืนยันส่งแล้ว', `${confirmedCount}/${rounds.length}`, 'รอบของวันนี้ทั้งหมด', confirmedCount === rounds.length ? '#22c55e' : 'var(--text)')}
+        {tile('✅', 'ยืนยันส่งแล้ว', `${confirmedCount}/${rounds.length}`, isToday ? 'รอบของวันนี้ทั้งหมด' : `รอบของ ${workDate} ทั้งหมด`, confirmedCount === rounds.length ? '#22c55e' : 'var(--text)')}
       </div>
       {warnings.length > 0 && (
         <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-lg)' }}>
@@ -1243,14 +1245,19 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                ไม่ใช่เติมจุด WIP จุดใดจุดหนึ่ง · เวลาที่ไลน์แจ้งคือคีย์เรียงคิว จึงโชว์ไว้ด้วย */
             const fromLine = !w.wip_point_id;
             const at = w.requested_at ? new Date(w.requested_at) : null;
+            /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
+               · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
+            const gate = fromLine && w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
+            const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
+            const nextLabel = fromLine && w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : st.next;
             return (
               <QueueCard key={w.id} code={code}
                 name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
                 qty={fmt(w.request_qty)} unit="" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
-                actionLabel={canOperate ? st.next : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
+                actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 meta={fromLine
-                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}`
+                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
                   : (w.point_type === 'packaging' ? '📦 packaging' : '🧱 material')} />
             );
           })}
@@ -1264,6 +1271,7 @@ export default function HeijunkaKanban() {
   const { fullName, role } = useContext(UserContext);
   const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
+  const canOverride = can('wip_request', 'override', role);   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
   const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
@@ -1293,6 +1301,9 @@ export default function HeijunkaKanban() {
   const [rackRequests, setRackRequests] = useState([]);
   const [pkgRequests, setPkgRequests]   = useState([]);
   const [wipRequests, setWipRequests]   = useState([]);
+  // 🎯 จุดส่งงาน (DR) — ทะเบียนที่ด่านขั้น 7 ใช้เทียบ · โหลดทั้ง active+ปิดแล้ว เพื่อให้ป้ายเก่าสแกนแล้วได้คำตอบ "จุดนี้ปิดแล้ว"
+  const [deliveryPoints, setDeliveryPoints] = useState([]);
+  const [deliverModal, setDeliverModal] = useState(null);   // ใบจากไลน์ที่กำลังจะมาร์ก delivered (รอสแกนจุดส่ง)
   const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
@@ -1312,12 +1323,33 @@ export default function HeijunkaKanban() {
     return () => clearInterval(t);
   }, []);
 
+  /* ⚠️ วันงานต้องกลิ้งตามเวลาจริง — จอสโตร์เปิดค้างข้ามคืนได้ (audit 2026-09-02)
+     เดิม workDate ล็อกไว้ตอน mount แต่ nowMs เดินทุก 30 วิ → พอผ่าน 08:00 ของวันถัดไป
+     `nowMs >= endMs` ของกรอบวันเก่าเป็นจริงทันที ⇒ **ทุกรอบที่ยังไม่ยืนยันพลิกเป็น 🔴 ค้างส่ง
+     พร้อมกันหมด** ขณะที่หัวเพจยังเขียน "ตามแผนผลิตวันนี้" และการ์ดยังเขียน "รอบของวันนี้ทั้งหมด"
+     = จอยืนยันสิ่งที่ไม่จริง ซึ่งแย่กว่าจอที่ว่าง
+     เลื่อนให้ **เฉพาะคนที่ยังอยู่บน "วันนี้"** — คนที่เลือกวันย้อนหลังไว้เองต้องไม่ถูกดึงออก
+     (pattern เดียวกับ Dashboard / MtnAndonBoard) */
+  const liveWorkDate = useMemo(() => {
+    const d = new Date(nowMs);
+    if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }, [nowMs]);
+  const prevLiveWdRef = useRef(liveWorkDate);
+  useEffect(() => {
+    const prev = prevLiveWdRef.current;
+    if (prev === liveWorkDate) return;
+    prevLiveWdRef.current = liveWorkDate;
+    setWorkDate(d => (d === prev ? liveWorkDate : d));
+  }, [liveWorkDate]);
+  const isBackDate = workDate !== liveWorkDate;
+
   const loadPull = useCallback(async () => {
     // ⚠️ กรอง cancelled ตั้งแต่ query — ใบยกเลิกไม่ใช่งานค้าง แต่เดิมถูก render เต็มบอร์ด
     //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: purchases, error: purErr }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
@@ -1331,6 +1363,7 @@ export default function HeijunkaKanban() {
       supabase.from('wip_replenish_requests').select('*')
         .in('status', ['pending', 'preparing', 'delivered'])
         .order('requested_at', { ascending: false }).limit(200),
+      supabaseDR.from('line_delivery_points').select('*'),
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
@@ -1346,6 +1379,10 @@ export default function HeijunkaKanban() {
     setRackRequests((racks || []).filter(r => r.status !== 'cancelled'));
     setPkgRequests(pkgs || []);
     setWipRequests(wips || []);
+    /* ทะเบียนจุดส่งยังไม่ apply (42P01) = ทุกไลน์ยังไม่มีจุด → ด่านผ่านแบบ no_point ซึ่งตรงความจริง
+       แต่ error อื่นห้ามกลืน — โหลดไม่ได้แล้วเงียบ = ด่านหายไปโดยไม่มีใครรู้ */
+    if (dpErr && dpErr.code !== '42P01') toast.error('โหลดทะเบียนจุดส่งไม่ได้: ' + dpErr.message);
+    setDeliveryPoints(dpErr ? [] : (dps || []));
     setPurchaseRequests(purchases || []);
     const lm = {};
     (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
@@ -1356,37 +1393,61 @@ export default function HeijunkaKanban() {
     if (lot.status === next) return;
     setPullBusy(lot.id);
     try {
-      // เปลี่ยนสถานะแบบมีเงื่อนไข: อัปเดตเฉพาะแถวที่ยัง "ไม่ใช่" ค่าใหม่ แล้วเช็คว่าเราเป็นคนเปลี่ยนจริง
-      // กัน double-click / สองแท็บ ไม่ให้ insert stock (issue/consume) ซ้ำตอนปิดล็อต
+      /* compare-and-swap: เดินหน้าได้เฉพาะจากสถานะที่เราเห็นตอนกดเท่านั้น
+         ⚠️ เดิมเป็น .neq('status', next) ซึ่งหลวมเกินไป (บั๊กเดียวกับที่ advancePurchase แก้ไปแล้ว):
+            - ใบที่ถูก "ยกเลิก" ไปแล้วยังถูกกดเป็น done ได้ = ชุบชีวิตใบขยะ แล้ว **เติมสต็อกปลอม**
+              (ข้อมูลจริง 2026-09-03: child_lot_requests cancelled 100 ใบ ซึ่งคือใบล็อต ≤1 ชิ้น
+               ที่ void ไปตอนแก้บั๊กหน่วย lot_size — กดจากจอที่ค้างอยู่ = ของที่ไม่มีจริงเข้าสโตร์)
+            - ข้ามขั้น pending → done ได้เลยจากจอค้าง (ข้าม producing)
+         กัน double-click / สองแท็บ ไม่ให้ insert stock (issue/consume) ซ้ำตอนปิดล็อตด้วย */
       const { data: updated, error } = await supabaseDR.from('child_lot_requests')
-        .update({ status: next }).eq('id', lot.id).neq('status', next).select('id');
+        .update({ status: next }).eq('id', lot.id).eq('status', lot.status).select('id');
       if (error) throw error;
-      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
+      if (!updated || updated.length === 0) {
+        toast.info(`ล็อต ${lot.child_mat_no} ถูกเปลี่ยนสถานะโดยคนอื่นไปแล้ว — รีเฟรชให้ใหม่`);
+        await loadPull(); setPullBusy(null); return;
+      }
       // ── ผลิตเสร็จ = ปิด loop ──
       if (next === 'done') {
-        const wd = lot.work_date || getWorkDate();
-        const txns = [];
-        // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
-        if (lot.source_line) {
-          txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
-            type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
-          // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
-          //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
-          //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
-          const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
-            .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
-          if (eRaw) throw eRaw;
-          (lotRaws || []).forEach(r => {
-            txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
-              type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
-          });
+        /* 🔴 claim สถานะไปแล้ว = กดซ้ำไม่ได้อีก (compare-and-swap ข้างบนจะคืน 0 แถว)
+           ⇒ ถ้าเขียน ledger ไม่สำเร็จแล้วปล่อยไว้เฉยๆ ใบจะค้างสถานะ "ผลิตเสร็จ" ตลอดกาล
+              โดยที่สต็อกไม่เคยขยับ และ **ไม่มีทางกดใหม่ให้ระบบเขียนให้**
+           → ล้มเหลวเมื่อไหร่ต้องคืนสถานะกลับที่เดิมเสมอ แล้วให้คนกดใหม่ได้ */
+        try {
+          const wd = lot.work_date || getWorkDate();
+          const txns = [];
+          // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
+          if (lot.source_line) {
+            txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
+              type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
+            // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
+            //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
+            //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
+            const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
+              .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
+            if (eRaw) throw eRaw;
+            (lotRaws || []).forEach(r => {
+              txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
+                type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
+            });
+          }
+          if (txns.length) {
+            const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
+            if (e2) throw e2;
+          }
+          /* ใบเบิกวัตถุดิบที่ผูกไว้ → issued
+             ⚠️ ถึงตรงนี้ stock ลงไปแล้ว **ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่)
+                แต่ห้ามเงียบด้วย — ใบเบิกค้าง pending = คิวสโตร์โชว์งานที่ทำไปแล้ว */
+          const { error: e3 } = await supabaseDR.from('raw_withdrawal_requests')
+            .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
+          if (e3) toast.error(`ปิดล็อต ${lot.child_mat_no} + ตัดสต็อกเรียบร้อย แต่ปิดใบเบิกวัตถุดิบไม่สำเร็จ — ไปปิดเองที่คิวใบเบิก (${e3.message})`);
+        } catch (ledgerErr) {
+          const { error: eBack } = await supabaseDR.from('child_lot_requests')
+            .update({ status: lot.status }).eq('id', lot.id).eq('status', next);
+          throw new Error(eBack
+            ? `เขียนสต็อกไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบ ${lot.child_mat_no} ค้างสถานะ "${next}" ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที (${ledgerErr.message})`
+            : `เขียนสต็อกไม่สำเร็จ — คืนสถานะล็อต ${lot.child_mat_no} กลับเป็น "${lot.status}" แล้ว ลองกดใหม่อีกครั้ง (${ledgerErr.message})`);
         }
-        if (txns.length) {
-          const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
-          if (e2) throw e2;
-        }
-        // ใบเบิกวัตถุดิบที่ผูกไว้ → issued
-        await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
       }
       // toast ตามจริง: เติมสต็อกเฉพาะเมื่อมี source_line (ผลิตเองแล้วของกลับเข้าสโตร์)
       toast.success(next === 'done'
@@ -1424,7 +1485,16 @@ export default function HeijunkaKanban() {
           type: 'issue', work_date: pr.work_date || getWorkDate(),
           note: `รับของซื้อเข้าสโตร์${pr.supplier ? ' · ' + pr.supplier : ''}`, created_by: fullName || 'สโตร์',
         });
-        if (e2) throw e2;
+        // claim สถานะไปแล้ว = กดซ้ำไม่ได้ (compare-and-swap จะคืน 0 แถว) → ต้องคืนสถานะเดิมเสมอเมื่อ ledger ล้ม
+        // ไม่งั้นใบค้าง "รับเข้าแล้ว" ตลอดกาลโดยของไม่เคยเข้าคลัง และไม่มีทางกดใหม่
+        if (e2) {
+          const { error: eBack } = await supabaseDR.from('purchase_requests')
+            .update({ status: pr.status, received_by: pr.received_by ?? null, received_at: pr.received_at ?? null })
+            .eq('id', pr.id).eq('status', next);
+          throw new Error(eBack
+            ? `รับเข้าคลังไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบ ${pr.mat_no} ค้างสถานะ "รับเข้าแล้ว" ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที (${e2.message})`
+            : `รับเข้าคลังไม่สำเร็จ — คืนสถานะใบ ${pr.mat_no} กลับเป็น "${pr.status}" แล้ว ลองกดใหม่อีกครั้ง (${e2.message})`);
+        }
       }
       // dest_line ว่าง = ไม่รู้ปลายทางสโตร์ → สต็อกไม่ถูกเติม ห้าม toast เขียวเหมือนสำเร็จ (QC flow-audit #42)
       if (next === 'received' && !pr.dest_line) {
@@ -1461,8 +1531,14 @@ export default function HeijunkaKanban() {
   const issueRaw = async (raw) => {
     setPullBusy(raw.id);
     try {
-      const { error } = await supabaseDR.from('raw_withdrawal_requests').update({ status: 'issued' }).eq('id', raw.id);
+      // นับแถวที่เขียนจริง — ใบที่ถูกจ่ายไปแล้ว/ถูกลบ จะได้ 0 แถวโดยไม่มี error (ห้ามขึ้นเขียวว่าสำเร็จ)
+      const { data: done, error } = await supabaseDR.from('raw_withdrawal_requests')
+        .update({ status: 'issued' }).eq('id', raw.id).eq('status', 'pending').select('id');
       if (error) throw error;
+      if (!done?.length) {
+        toast.info(`ใบเบิก ${raw.raw_mat_no} ถูกจ่ายไปแล้ว — รีเฟรชให้ใหม่`);
+        await loadPull(); setPullBusy(null); return;
+      }
       toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
@@ -1474,37 +1550,81 @@ export default function HeijunkaKanban() {
   // บอร์ดนี้แสดงคิว rack/packaging แบบอ่านอย่างเดียว + ลิงก์ไป /rack-center
 
   // เติมจุด WIP: pending → preparing → delivered — พอ delivered ค่อยบวก current_qty กลับที่จุดจริง (main supabase)
-  const advanceWip = async (w) => {
+  /* บันทึกครั้งที่ด่านบล็อก/override — ไม่บันทึกครั้งที่ผ่าน (docs §4.6) · best-effort: ล้มแล้วห้ามขวางการส่งของ แต่ต้องบอก */
+  const logScanBlock = async (w, evt) => {
+    if (!evt) return;
+    const { error } = await supabase.from('line_replenish_scan_blocks').insert({
+      request_id: w.id, line_name: w.line_name, mat_no: w.mat_no, step: 'deliver', check_kind: 'point',
+      outcome: evt.outcome, status_code: evt.status_code || null, scanned_raw: evt.scanned_raw || null,
+      expected: evt.expected || null, actual: evt.actual || null, reason: evt.reason || null, actor_name: fullName || null,
+    });
+    // 42P01 = ยังไม่ apply migration Main → ฟีเจอร์บันทึกยังไม่เปิด (ด่านฝั่งจอยังทำงาน) · error อื่นต้องเห็น
+    if (error && error.code !== '42P01') toast.error('บันทึกเหตุการณ์ด่านสแกนไม่สำเร็จ: ' + error.message);
+  };
+
+  // gate = { payload, event } จาก DeliverScanModal (ใบจากไลน์ตอน preparing → delivered เท่านั้น)
+  const advanceWip = async (w, gate) => {
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
     if (!next) return;
+    /* เฟส 4 (ขั้น 7): ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์กว่าถึงไลน์ — เปิดโมดัลแทนการเลื่อนสถานะทันที
+       ใบจุด WIP (wip_point_id) เป็นการเติมจุดในไลน์ ไม่ผ่านด่านนี้ */
+    if (next === 'delivered' && !w.wip_point_id && !gate) { setDeliverModal(w); return; }
     setPullBusy(w.id);
     try {
-      const payload = { status: next };
+      const payload = { status: next, ...(gate?.payload || {}) };
       /* 4 หมุดเวลาต้องครบ ไม่งั้นตอบได้แค่ "ช้า" แต่ตอบไม่ได้ว่า **ช้าตรงไหน**
          (รอสโตร์หยิบ? รอรถ? รอผลิตมาเซ็นรับ?) — docs/STORE-PULL-LOOP-DESIGN.md §4.1
          requested_at (ไลน์กด) → picked_at (เริ่มจัด) → delivered_at (ส่งถึง) → received_at (ผลิตเซ็นรับ) */
       if (next === 'preparing') { payload.picked_at = new Date().toISOString(); payload.picked_by_name = fullName || 'สโตร์'; }
       if (next === 'delivered') { payload.delivered_by = fullName || 'สโตร์'; payload.delivered_at = new Date().toISOString(); }
       // compare-and-swap กันกดซ้ำ/2 เครื่อง — ไม่งั้น delivered ซ้ำ = บวก current_qty จุด WIP สองรอบ
-      const { data: updated, error } = await supabase.from('wip_replenish_requests')
+      let { data: updated, error } = await supabase.from('wip_replenish_requests')
         .update(payload).eq('id', w.id).eq('status', w.status).select('id');
+      /* 42703 = คอลัมน์ delivered_* ยังไม่มี (ยังไม่ apply 20260903_wip_replenish_deliver_gate.sql)
+         → บันทึกแบบเดิมให้งานเดินต่อ แต่ต้องบอกว่าผลสแกนถูกทิ้ง (tolerant ได้ แต่ห้ามเงียบ — ENGINEERING-PRINCIPLES §6) */
+      if (error?.code === '42703' && gate) {
+        ({ data: updated, error } = await supabase.from('wip_replenish_requests')
+          .update({ status: next, delivered_by: payload.delivered_by, delivered_at: payload.delivered_at })
+          .eq('id', w.id).eq('status', w.status).select('id'));
+        if (!error) toast.error('บันทึกส่งแล้ว แต่ผลสแกนจุดส่งยังไม่ถูกเก็บ — ยังไม่ได้ apply migration 20260903 (Main) แจ้ง admin');
+      }
       if (error) throw error;
-      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
+      // CAS ไม่ติด = อีกเครื่องขยับใบนี้ไปแล้ว → ปิดโมดัลด้วย ไม่งั้นค้างอยู่กับใบที่ไม่มีอยู่ในสถานะนั้นแล้ว
+      if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); setDeliverModal(null); toast.info('ใบนี้ถูกอัปเดตจากเครื่องอื่นแล้ว — โหลดคิวใหม่'); return; }
+      if (gate?.event) await logScanBlock(w, gate.event);
+      setDeliverModal(null);
+      let capNote = '';
       if (next === 'delivered' && w.wip_point_id) {
-        const { data: point } = await supabase.from('wip_buffer_points').select('current_qty, max_qty').eq('id', w.wip_point_id).single();
-        if (point) {
-          const newQty = Math.min((point.current_qty || 0) + w.request_qty, point.max_qty ?? Infinity);
-          await supabase.from('wip_buffer_points').update({ current_qty: newQty }).eq('id', w.wip_point_id);
+        /* 🔴🔴 ห้ามกลับไป update `wip_buffer_points` ตรงๆ จาก client
+           RLS ของตารางนั้นเขียนได้เฉพาะ admin/manager/supervisor แต่คนกดปุ่มนี้คือผู้ถือ heijunka:operate
+           วัดกับฐานจริง 2026-09-03: 44 บัญชี (leader 19 · qa 20 · planner_store 1 · document_control 2 · display 2)
+           **ไม่ผ่าน RLS สักคน — รวมถึง planner_store ซึ่งเป็นสโตร์ตัวจริงเจ้าของงานนี้**
+           และ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" → โค้ดเดิมเช็คแค่ error จึงขึ้น "✅ เติมเรียบร้อย"
+           ทั้งที่ current_qty ไม่เคยขยับ (เทสสวมบทยืนยันแล้ว: planner_store update ตรง → rows=0)
+           → ผ่าน RPC wip_point_add_qty (SECURITY DEFINER · guard has_perm · ล็อกแถวกันกดพร้อมกัน) */
+        const { data: res, error: eQty } = await supabase
+          .rpc('wip_point_add_qty', { p_point_id: w.wip_point_id, p_add: w.request_qty });
+        const row = Array.isArray(res) ? res[0] : res;
+        if (eQty || !row) {
+          // สถานะ delivered ถูก claim ไปแล้ว = กดซ้ำไม่ได้ → คืนสถานะเดิมให้กดใหม่ได้
+          const { error: eBack } = await supabase.from('wip_replenish_requests')
+            .update({ status: w.status, delivered_by: null, delivered_at: null }).eq('id', w.id).eq('status', next);
+          throw new Error(eBack
+            ? `เติมยอดจุด WIP ไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบค้าง "ส่งแล้ว" ทั้งที่ยอดไม่ขึ้น แจ้ง admin (${eQty?.message || 'ไม่ได้ผลลัพธ์กลับมา'})`
+            : `เติมยอดจุด WIP ไม่สำเร็จ — คืนสถานะกลับแล้ว ลองกดใหม่ (${eQty?.message || 'ไม่ได้ผลลัพธ์กลับมา'})`);
         }
+        // ชนเพดาน max_qty = ยอดที่ส่งจริงกับที่บันทึกต่างกัน ห้าม clamp เงียบ
+        if (row.capped) capNote = ` · ⚠ ส่ง ${w.request_qty} แต่ยอดชนเพดานจุด (สูงสุด ${row.cap_max}) — ระบบบันทึกยอดคงเหลือ ${row.new_qty} ส่วนที่เกินเพดานไม่ถูกนับ`;
       }
       const what = w.point_name || w.mat_no || 'รายการนี้';
       /* ⚠️ ใบจากไลน์: ลูปนี้เป็น "การสื่อสาร" ไม่ใช่ ledger — ไม่ตัด/บวกสต็อกให้เอง
          (เขียนเองด้วย = สต็อกโผล่ 2 ที่ เพราะสโตร์บันทึกจ่ายเข้าไลน์อยู่แล้วอีกทาง)
          ⇒ ต้องเตือนบนจอ ห้ามให้เข้าใจว่ายอดขยับให้แล้ว */
-      toast.success(next === 'delivered'
-        ? (w.wip_point_id ? `✅ เติม ${what} เรียบร้อย`
-                          : `🚚 ส่ง ${what} แล้ว — อย่าลืมบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Store ด้วย (ลูปนี้ไม่ตัดสต็อกให้)`)
-        : `อัปเดต ${what} → ${next}`);
+      const doneMsg = w.wip_point_id
+        ? `✅ เติม ${what} เรียบร้อย${capNote}`
+        : `🚚 ส่ง ${what} แล้ว — อย่าลืมบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Store ด้วย (ลูปนี้ไม่ตัดสต็อกให้)`;
+      if (next === 'delivered' && capNote) toast.error(doneMsg);   // ชนเพดาน = ต้องเห็นชัด ไม่ใช่เขียวกลืนไป
+      else toast.success(next === 'delivered' ? doneMsg : `อัปเดต ${what} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -1967,7 +2087,17 @@ export default function HeijunkaKanban() {
     };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
-  const fmt = (n) => Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  /* ⚠️ ต้อง guard null — เป็น fmt ตัวเดียวใน 14 ตัวทั้งโปรเจคที่เคยไม่ guard
+     (ที่เหลือใช้ `n == null ? '—'` หรือ `Number(n || 0)` หมด)
+     วันนี้ยังพังไม่ได้เพราะ pending_qty/lot_qty/qty เป็น NOT NULL ในฐานทั้ง 3 ตัว
+     แต่ `null.toLocaleString()` = TypeError ทำจอขาวทั้งแท็บ 🔄 Pull จากแถวเดียว
+     → guard ไว้ก่อน ถูกกว่าไปพึ่ง constraint ที่ session อื่นอาจผ่อนทีหลัง
+     "ไม่รู้ ≠ 0" → คืน '—' ไม่ใช่ 0 (0 อ่านว่า "ไม่มีของ" ซึ่งคนละเรื่อง) */
+  const fmt = (n) => {
+    if (n == null || Number.isNaN(Number(n))) return '—';
+    const v = Number(n);
+    return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
 
   /* ── CSV export ── */
   const exportCSV = () => {
@@ -1997,8 +2127,23 @@ export default function HeijunkaKanban() {
             🎴 บอร์ดคัมบัง (ทุกสโตร์) — Heijunka
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            ความต้องการพาร์ทย่อยตามแผนผลิตวันนี้ · แตกจาก BOM ของแต่ละ product
+            ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
           </p>
+          {/* ⚠️ ดูวันย้อนหลัง/ล่วงหน้าต้องเห็นชัด — รอบที่ยังไม่ยืนยันของวันเก่าจะขึ้น 🔴 ค้างส่ง ทั้งกระดาน
+              ถ้าไม่ติดป้ายบอก คนอ่านจะเข้าใจว่าเป็นของวันนี้แล้ววิ่งไปตามงานที่ผ่านไปแล้ว */}
+          {isBackDate && (
+            <div style={{
+              marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 10px',
+              borderRadius: 999, fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b',
+            }}>
+              📅 กำลังดูวันที่ {workDate} (ไม่ใช่วันงานปัจจุบัน)
+              <button onClick={() => setWorkDate(liveWorkDate)} style={{
+                padding: '2px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                fontFamily: 'var(--font-body)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)',
+              }}>⟳ กลับวันนี้</button>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={{
@@ -2210,6 +2355,17 @@ export default function HeijunkaKanban() {
           fmt={fmt} saving={receiving}
           onCancel={() => setReceiveModal(null)}
           onSubmit={submitReceive}
+        />
+      )}
+
+      {/* 📍 เฟส 4 ลูปสโตร์ — ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์ก delivered (docs/STORE-PULL-LOOP-DESIGN.md §4.5/4.6) */}
+      {deliverModal && (
+        <DeliverScanModal
+          request={deliverModal} points={deliveryPoints} canOverride={canOverride} fullName={fullName}
+          busy={pullBusy === deliverModal.id}
+          onLogEvent={(evt) => logScanBlock(deliverModal, evt)}
+          onConfirm={(payload, event) => advanceWip(deliverModal, { payload, event })}
+          onClose={() => setDeliverModal(null)}
         />
       )}
 

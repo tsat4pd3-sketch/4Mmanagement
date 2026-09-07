@@ -88,9 +88,8 @@ async function notifyInApp(routes: Record<string, Route>, event: string, htmlMes
   if (!ids.length) return;
   const title = routes[event]?.label || event;
   const body = String(htmlMessage).replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
-  try {
-    await supabase.from('notifications').insert(ids.map((uid) => ({ user_id: uid, title, body, type: 'info' })));
-  } catch (e) { console.error('insertNotifications', e); }
+  const { error } = await supabase.from('notifications').insert(ids.map((uid) => ({ user_id: uid, title, body, type: 'info' })));
+  if (error) console.error('insertNotifications', error.message);   // supabase-js ไม่ throw — try/catch เดิมไม่มีวันจับ
 }
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };

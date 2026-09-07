@@ -53,21 +53,35 @@ function stageFor(days: number): { stage: string; label: string } | null {
   return null;
 }
 
-async function notify(pm: unknown) {
-  await fetch(NOTIFY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${NOTIFY_KEY}`, 'apikey': NOTIFY_KEY },
-    body: JSON.stringify({ event: 'pm_plan_reminder', pm }),
-  });
+// ⚠️ กฎเหล็ก (CLAUDE.md): "mark กันซ้ำ ต้องถอนคืนเมื่อส่งไม่สำเร็จ · ห้ามกลืน error"
+//    ของเดิม `await fetch(...)` ทิ้ง response ทั้งก้อน แล้ว insert แถวกันซ้ำต่อทันทีแบบไม่มีเงื่อนไข
+//    ⇒ ส่งพลาดครั้งเดียว (Main ล่ม / rule ปิด / ไม่ได้เลือกห้อง) = **stage นั้นเงียบถาวรตลอดวงรอบ**
+//      และฟังก์ชันยังตอบ ok:true fired:N เหมือนสำเร็จ = ไม่มีใครรู้ว่ามีอะไรหายไป
+//    → คืน ok ออกมาให้ผู้เรียกตัดสิน แล้วค่อย mark เฉพาะที่ส่งสำเร็จจริง
+async function notify(pm: unknown): Promise<boolean> {
+  try {
+    const res = await fetch(NOTIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${NOTIFY_KEY}`, 'apikey': NOTIFY_KEY },
+      body: JSON.stringify({ event: 'pm_plan_reminder', pm }),
+    });
+    if (!res.ok) console.error('pm_plan_reminder notify failed', res.status, await res.text().catch(() => ''));
+    return res.ok;
+  } catch (e) {
+    console.error('pm_plan_reminder notify threw', String(e));
+    return false;
+  }
 }
 
 Deno.serve(async () => {
   try {
     const today = bangkokToday();
 
-    const { data: plans } = await db.from('pm_plans')
+    // ⚠️ อ่านแผนไม่ได้ ≠ "ไม่มีแผน" — เดิมทิ้ง error แล้วตอบ ok:true plans:0 เหมือนไม่มีอะไรต้องเตือน
+    const { data: plans, error: ePlans } = await db.from('pm_plans')
       .select('id, checklist_id, next_due_date, next_due_reason, interval_days, deferred_to, deferred_at, last_done_at')
       .eq('is_active', true).not('next_due_date', 'is', null);
+    if (ePlans) throw new Error('อ่าน pm_plans ไม่สำเร็จ: ' + ePlans.message);
     if (!plans || !plans.length) return new Response(JSON.stringify({ ok: true, plans: 0 }), { headers: { 'Content-Type': 'application/json' } });
 
     const clIds = [...new Set(plans.map(p => p.checklist_id))];
@@ -78,11 +92,14 @@ Deno.serve(async () => {
     const jigById = Object.fromEntries((jigs ?? []).map(j => [j.id, j]));
 
     // Existing reminders for the current due cycles → dedup set "planId|dueDate|stage".
-    const { data: sentRows } = await db.from('pm_plan_reminders')
+    // ⚠️ อ่านตัวกันซ้ำไม่ได้ = **ห้ามเดาว่ายังไม่เคยส่ง** — Set ว่างแปลว่า "ยิงใหม่ทุกแผนทุก stage"
+    //    (ผิดทิศตรงข้ามกับข้อบน แต่เจ็บพอกัน: ห้องแชทท่วมแล้วคนเลิกอ่านทั้งห้อง)
+    const { data: sentRows, error: eSent } = await db.from('pm_plan_reminders')
       .select('plan_id, due_date, stage').in('plan_id', plans.map(p => p.id));
+    if (eSent) throw new Error('อ่าน pm_plan_reminders (ตัวกันแจ้งซ้ำ) ไม่สำเร็จ — หยุดไว้ก่อนกันยิงซ้ำ: ' + eSent.message);
     const sent = new Set((sentRows ?? []).map(r => `${r.plan_id}|${r.due_date}|${r.stage}`));
 
-    let fired = 0;
+    let fired = 0, failed = 0;
     for (const p of plans) {
       // เลื่อนแผน PM แบบตกลงแล้ว (ยังไม่ถูกทำหลังเลื่อน) → เตือนโดยนับถอยหลังไปวันที่เลื่อน แทนวันเดิม
       const deferActive = p.deferred_to && (!p.last_done_at || (p.deferred_at && new Date(p.last_done_at) < new Date(p.deferred_at)));
@@ -95,17 +112,24 @@ Deno.serve(async () => {
 
       const cl = clById[p.checklist_id];
       const jig = cl ? jigById[cl.equipment_id] : null;
-      await notify({
+      const sentOk = await notify({
         stage: bucket.stage, stage_label: bucket.label, days,
         due_date: due, reason: p.next_due_reason ?? 'time',
         checklist_name: cl?.name ?? '', frequency: cl?.frequency ?? '',
         jig_name: jig?.name ?? '', machine_no: jig?.machine_no ?? '',
         line_name: jig?.line_name ?? '', part_name: jig?.part_name ?? '',
       });
-      await db.from('pm_plan_reminders').insert({ plan_id: p.id, due_date: due, stage: bucket.stage });
+      // ส่งไม่สำเร็จ = ไม่ mark → รอบพรุ่งนี้ลองใหม่เอง (stage เดิมยังอยู่ในช่วงของมัน)
+      if (!sentOk) { failed++; continue; }
+      const { error: eMark } = await db.from('pm_plan_reminders')
+        .insert({ plan_id: p.id, due_date: due, stage: bucket.stage });
+      if (eMark) console.error('pm_plan_reminder mark failed', p.id, bucket.stage, eMark.message);
       fired++;
     }
-    return new Response(JSON.stringify({ ok: true, plans: plans.length, fired }), { headers: { 'Content-Type': 'application/json' } });
+    // ส่งพลาดต้องดังพอให้เห็นใน log/response — ไม่งั้นเงียบแบบเดิม (cron ขึ้น succeeded ทุกวัน)
+    return new Response(JSON.stringify({ ok: failed === 0, plans: plans.length, fired, failed }), {
+      status: failed ? 502 : 200, headers: { 'Content-Type': 'application/json' },
+    });
   } catch (err) {
     return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
