@@ -12,7 +12,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MTN_STEPS, QA_NOT_RELATED, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MTN_STEPS, QA_NOT_RELATED, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -307,6 +307,15 @@ export default function MtnRepair() {
     return null;
   }, [lines, role, lineId, scopeSecs]);
 
+  /* 🔒 ขอบเขต "ฝ่ายที่แจ้ง" สำหรับขั้น 4/6/7 — ใช้ scopeLines ชุดเดียวกับที่กรองรายการ (leader = ครอบครัวไลน์ ·
+     sections = ไลน์ในส่วนงาน · null = ไม่จำกัด) + ทะเบียนไลน์ทั้งหมดไว้แยก "ไลน์ที่ไม่รู้จัก" ออกจาก "ไลน์ของฝ่ายอื่น"
+     เกณฑ์ตัดสินอยู่ที่ orderInReporterScope() ใน mtnStepPerm.js — ห้ามเขียนเงื่อนไขซ้ำที่นี่ */
+  const reporterScope = useMemo(() => ({
+    scopeLineNames: scopeLines ? [...scopeLines] : null,
+    knownLineNames: lines.map(l => l.name),
+    sections: scopeSecs || [],
+  }), [scopeLines, lines, scopeSecs]);
+
   // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
   const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
   const teamDefaulted = useRef(false);
@@ -362,7 +371,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -843,7 +852,7 @@ function printMoReportMtn(o, dparts = [], logo0) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
@@ -863,7 +872,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         ตรวจรับงานของ **ผู้เปิดใบ** ช่างตรวจงานตัวเองไม่ได้อีกต่อไป */
   const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
   const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
-  const stepCtx = { order: o, fullName, inOrderTeam, ...stepPerms(role) };
+  // 🔒 ขั้น 4/6/7 ทำได้เฉพาะใบของฝ่ายตัวเอง — null = ตัดสินไม่ได้ (ไม่จำกัด/ไลน์ไม่รู้จัก) = ผ่านตามเดิม
+  const inReporterScope = orderInReporterScope(o, reporterScope || {});
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
@@ -1029,7 +1040,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod }) || []).map((t, i) => <div key={i}>{t}</div>)}
+            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', orderLine: o.line_name, orderSection: o.dept_section }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ ผู้เปิดใบ / ผู้ถือสิทธิ์ mtn_repair:accept_work / QA กดข้าม QA ไปขั้น 6 ได้</div>)}
@@ -1058,7 +1069,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
+function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], reporterScope = null, onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
@@ -1157,7 +1168,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
          (ผู้ถือ manage_master ข้ามได้ตามเดิม = สิทธิ์แก้ย้อนหลังของทุกขั้น) */
       const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
       const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
-      const stepCtx = { order: o, fullName, inOrderTeam, ...stepPerms(role) };
+      const inReporterScope = orderInReporterScope(o, reporterScope || {});
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -1171,6 +1183,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         // บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้หน้างานเดาว่าต้องไปขออะไรกับใคร
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
           return toast.error(`ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} — คุณทำได้เฉพาะใบของทีมตัวเอง`);
+        if (verdict.code === 'out_of_scope')
+          return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ฝ่ายอื่น'} — ขั้นนี้ทำได้เฉพาะใบของส่วนงานตัวเอง (ผู้เปิดใบหรือหัวหน้าฝ่ายนั้นเป็นคนกด)`);
         if (meta?.byReporter)
           return toast.error(`ขั้นนี้เป็นของ${meta.who} — ใบนี้เปิดโดย “${o.reported_by_name || o.reporter_prod || '—'}”`);
         return toast.error(`ขั้นนี้เป็นหน้าที่ของ${meta?.who || 'ผู้มีสิทธิ์'} — บัญชีนี้ทำไม่ได้`);
