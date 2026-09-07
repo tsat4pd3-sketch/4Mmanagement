@@ -55,14 +55,12 @@ const TREND_DAYS = 14;
 const DEFAULT_APQ = { a: 90, p: 90, q: 99 };   // ค่ามาตรฐานเมื่อกรุ๊ปยังไม่ตั้งเป้า (กฎ oee_targets)
 
 /* ── 8 หัวข้อบนบอร์ดจริง (ถอดจากป้ายเหลืองในรูปที่ user ถ่ายมา) ────────────────────
-   ⚠️ `name` ต้องตรงกับชื่อใน `kpi_catalog` ที่ seed ไว้ (migration 20260901_kpi_line_group)
+   ⚠️ `name` ต้องตรงกับชื่อใน `kpi_catalog` ที่ seed ไว้ (migration 20260901_kpi_line_group · แถวปี 2026: 20260907_kpi_catalog_2026_rm_dloh)
       จับคู่แบบ normSearch → เปลี่ยนตัวพิมพ์/ช่องว่างในทะเบียนแล้วยังหาเจอ
    `auto` = ระบบคำนวณให้เอง อัพเดททุกวัน (ตอบข้อ ② ของ user)
    `auto: null` = ต้องกรอกที่ 📑 KPI รายเดือน — ระบบไม่มีข้อมูลตั้งต้น (ยอดขาย/ค่าโสหุ้ยจริง)
    ⚠️ ห้ามเดาค่าให้แถว manual — ไม่มีค่า = "ยังไม่กรอก" ไม่ใช่ 0 */
-const BOARD_ROWS = [
-  { key: 'dl',    name: 'Direct Labor',          auto: null },
-  { key: 'oh',    name: 'Overhead',              auto: null },
+const ROWS_COMMON = [
   { key: 'inv',   name: 'Inventory Balance',     auto: null },
   { key: 'csat',  name: 'Customer Satisfaction', auto: null },
   { key: 'oee',   name: 'OEE',                   auto: 'oee',    unit: '%',   dir: 'up' },
@@ -70,6 +68,18 @@ const BOARD_ROWS = [
   { key: 'safe',  name: 'Safety',                auto: 'safety', unit: 'ครั้ง', dir: 'down' },
   { key: 'train', name: 'Training',              auto: null },
 ];
+/* หมวด Financial เปลี่ยนโครงตามปี (user 2026-09-07: "ปีนี้จะมีเพิ่ม %RM เข้ามาเป็นข้อที่ 1 และ DL กับ OH จะรวมกันเป็นข้อเดียว"
+   — รูปบอร์ด/ไฟล์ตัวอย่างที่ได้มาเป็นโครงปี 2024) · ชื่อเก่าในทะเบียนไม่ rename (ตัวตน KPI ข้ามปีต้องคงเดิม)
+   แต่ปิดใช้งานไว้ · เปิดบอร์ดย้อนปี ≤ 2025 ยังได้แถว DL/OH แยกเหมือนกระดาษเดิม */
+const ROWS_FIN_2026 = [
+  { key: 'rm',    name: '%RM (Raw Material)',    auto: null },
+  { key: 'dloh',  name: 'DL+OH (Direct Labor + Overhead)', auto: null },
+];
+const ROWS_FIN_LEGACY = [
+  { key: 'dl',    name: 'Direct Labor',          auto: null },
+  { key: 'oh',    name: 'Overhead',              auto: null },
+];
+export const boardRowsFor = year => [...(Number(year) >= 2026 ? ROWS_FIN_2026 : ROWS_FIN_LEGACY), ...ROWS_COMMON];
 const normName = x => String(x ?? '').toLowerCase().replace(/[\s\-_./()]+/g, '');
 
 /* วันงาน — ตัด 08:00 ตามกฎ Date/Time (ห้าม toISOString) */
@@ -667,7 +677,7 @@ export default function Obeya() {
       const oeeTarget = (Number(tgt.target_a) || DEFAULT_APQ.a) * (Number(tgt.target_p) || DEFAULT_APQ.p)
         * (Number(tgt.target_q) || DEFAULT_APQ.q) / 10000;
 
-      const rows = BOARD_ROWS.map(r => {
+      const rows = boardRowsFor(date.slice(0, 4)).map(r => {
         const man = manualOf(g, r.name);
         let value = null, target = null, unit = r.unit || man?.unit || '', dir = r.dir || man?.dir || null;
         let today = null, series = null, note = '', fromDept = false;
