@@ -122,6 +122,7 @@ const PAGE_GROUPS = [
       { key: 'page:/qa-setup', label: 'มาตรฐานการตรวจ & Drawing' },
       { key: 'page:/event-log', label: 'CQI-15 Event Log' },
       { key: 'page:/pe-docs', label: 'Flow / PFMEA / Control Plan' },
+      { key: 'page:/npi', label: 'พาร์ทใหม่ APQP / PPAP' },
     ],
   },
   {
