@@ -46,7 +46,8 @@
 | `SelectOrFree` | select + ระบุเอง (ซ้ำ 7 จุด) | QualityControl · PEDocs · OJT · MaterialRequests · LPA · PokaYoke · DieRegistry |
 | `LineSelect` (เดิม) | `lines.map(<option>)` ~35 จุด | ทุกกลุ่ม — query ทุกตัวเปลี่ยนเป็น `LINE_COLUMNS` |
 | `useOrgTeams` | ทีม A/B/C hardcode 8 จุด | Report ×7 · Checkin |
-| `useOrgSections` fallback · `SearchSelect` allowFree=false ล้างค่านอกทะเบียนเมื่อปิดลิสต์ | — | ทุก picker |
+| `useOrgSections` fallback · `SearchSelect` allowFree=false ล้าง**ข้อความที่พิมพ์ค้น**แล้วไม่เลือก (ไม่ใช่ค่าเดิม) | — | ทุก picker |
+| `useColumnHistory` + prop `history` ทุก picker | **คำสั่ง user หลัง audit: "ทะเบียนไม่มี ใช้ข้อมูลที่เคยลงไว้ได้มั้ย"** → กลุ่ม 📜 เคยบันทึกไว้ เลือกได้ + ป้าย ⚠ · ค่าเดิมนอกทะเบียนไม่ถูกล้าง · ด่านเซฟเปลี่ยนจากบล็อกเป็น confirm | ทุกจุดที่ picker ปิด allowFree + ช่องชื่อคน/ลูกค้า/รหัสคลังหลัก |
 
 **ข้ามตามที่ audit ระบุ (ไม่มี master / เป็น enum ในโค้ด / phase 4):** supplier (Y2 · #34 · #47) · `model` · `qa_instruments.inst_type` (#11) · `OWNER_ROLE` NPI (#40) · `PKG_CATEGORIES` (B3) · `jigs.equipment_type` vs `machines.equipment_kind` (#19 — derive จากเครื่องแล้ว แต่ยังคง 2 enum) · dock / plant name · ตัวเลือก enum สถานะ/ผล/ความรุนแรงทั้งหมด
 

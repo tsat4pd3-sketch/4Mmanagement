@@ -411,6 +411,10 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 3. **`allowFree` เปิดเฉพาะจุดที่ของนอกทะเบียนมีจริง** (ลูกค้าใหม่ · คนนอกระบบ/ลูกค้า · พาร์ท NPI ก่อน SOP · scrap ที่ master กรอกเลขเครื่อง)
    และ SearchSelect ติดป้าย "✎ ไม่ได้อยู่ในทะเบียน" เสมอ · `MachineSelect`/`ProductSelect` ปิด allowFree เป็น default (ให้ไปเพิ่มที่ /machines · /products)
 4. **ค่าที่ DB เก็บไม่เปลี่ยน** (ตาราง DR ผูก FK กับ Main ไม่ได้ — snapshot ชื่อยังจำเป็น) picker แค่บังคับสะกดตรงทะเบียน + คืน id ให้เก็บเพิ่มเมื่อมีคอลัมน์
+4.1 **ทะเบียนไม่มี = ใช้ค่าที่เคยบันทึกไว้ได้ ห้ามล้าง/บล็อกเงียบ (คำสั่ง user 2026-09-07)** — ทุก picker รับ `history` (distinct ของคอลัมน์ปลายทาง
+   ผ่าน `useColumnHistory(client, table, column, { upper })`) แสดงเป็นกลุ่ม **📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)** เลือกได้ + ป้าย ⚠ · ค่าปัจจุบันที่ไม่อยู่ใน
+   ทะเบียนก็อยู่ในกลุ่มนี้อัตโนมัติ (SearchSelect จึงไม่ล้างค่าเก่า) · onChange คืน `known:false` · **ด่านตอนเซฟที่เจอค่านอกทะเบียนต้องเป็น `confirm` ให้ไปต่อได้
+   ไม่ใช่ toast.error + return** (ยกเว้นเคสที่ไปต่อแล้วข้อมูลพัง เช่น update dr_products ด้วย MAT ที่ไม่มี = 0 แถว)
 5. **ช่องในตาราง (แถว × หลายสิบ)** ใช้ `<select>` จากลิสต์สั้นที่กรองแล้ว (ค่าปัจจุบันคงเป็น option) แทน SearchSelect ที่กางในบรรทัด
 6. option builder เป็น pure function ใน `src/utils/pickerOptions.js` — จุดใหม่ที่ต้องการ option ของคน/เครื่อง/สินค้า ให้เรียกตัวนี้ ห้าม map เองในหน้า
 7. **ห้ามสร้าง master ใหม่แบบเงียบ** — ยังไม่มี: `customers` · `suppliers` · กลุ่มเครื่องปั๊มของแม่พิมพ์ · `cost_centers` (ดู "ยังไม่ทำ" ใน audit) — ทำเมื่อ user สั่ง แล้วแก้ loader ตัวเดียว

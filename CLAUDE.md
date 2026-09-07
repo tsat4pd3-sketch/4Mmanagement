@@ -521,7 +521,8 @@ src/
 ├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
 │                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·
 │                      #   useCustomers (ยังไม่มีตาราง customers — derive จาก Product Master) · useStorageLocations ·
-│                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · pickerOptions.js + partOptions.js
+│                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · useColumnHistory (📜 ค่าที่เคยบันทึก —
+│                      #   ทะเบียนไม่มีก็ยังเลือกได้ ห้ามล้าง/บล็อก) · pickerOptions.js + partOptions.js
 │                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
 │                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
