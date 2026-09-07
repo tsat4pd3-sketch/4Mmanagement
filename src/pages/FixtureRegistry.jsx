@@ -80,6 +80,8 @@ export default function FixtureRegistry() {
   const [mapKeys, setMapKeys] = useState(() => new Set());
   const [products, setProducts] = useState([]);
   const [kinds, setKinds] = useState(DEFAULT_POINT_KINDS);
+  // ฟอร์ม "สร้างจุดจากแม่แบบ" — แทน window.prompt 3 ชั้นที่ต้องพิมพ์รหัสชนิดเอง (audit #31 · 2026-09-07) · null = ปิด
+  const [tpl, setTpl] = useState(null);
   const [points, setPoints] = useState([]);
   const [allPoints, setAllPoints] = useState([]);  // ทุกฟิกเจอร์ (แท็บสถานะ)
   const [loading, setLoading] = useState(true);
@@ -237,16 +239,20 @@ export default function FixtureRegistry() {
     load();
   };
 
-  const genTemplate = async () => {
+  // เปิดฟอร์มแม่แบบ — ชนิดจุดเลือกจาก fixture_point_kinds (select เดียวกับฟอร์มจุด) ไม่ต้องพิมพ์รหัสเอง
+  const genTemplate = () => {
     if (!fx) return;
-    const kind = window.prompt(`สร้างจุดจากแม่แบบ — ชนิดจุด:\n${kinds.map(k => k.code).join(' / ')}`, 'locator_pin');
-    if (!kind) return;
+    const kind = kinds.some(k => k.code === 'locator_pin') ? 'locator_pin' : (kinds[0]?.code || '');
+    setTpl({ kind, n: 6, prefix: kind === 'locator_pin' ? 'L' : 'P' });
+  };
+  const runTemplate = async () => {
+    if (!fx || !tpl) return;
+    const kind = tpl.kind;
     const k = kinds.find(x => x.code === kind);
-    if (!k) return toast.error('ไม่รู้จักชนิดนี้');
-    const nRaw = window.prompt('สร้างกี่จุด?', '6');
-    const n = Number(nRaw);
+    if (!k) return toast.error('เลือกชนิดจุด');
+    const n = Number(tpl.n);
     if (!Number.isFinite(n) || n < 1 || n > 60) return toast.error('จำนวนต้องอยู่ระหว่าง 1–60');
-    const prefix = window.prompt('ตัวนำหน้าเลขจุด', kind === 'locator_pin' ? 'L' : 'P') || 'P';
+    const prefix = String(tpl.prefix || '').trim() || 'P';
 
     const exist = new Set(points.map(p => p.point_no));
     const rows = [];
@@ -265,6 +271,7 @@ export default function FixtureRegistry() {
     const { data, error } = await supabaseDR.from('fixture_points').insert(rows).select('id');
     if (error) return toast.error(`สร้างไม่สำเร็จ: ${error.message}`);
     toast.success(`สร้าง ${data?.length ?? 0} จุด — อย่าลืมกรอก baseline ของแต่ละจุด`);
+    setTpl(null);
     load();
   };
 
@@ -556,6 +563,38 @@ export default function FixtureRegistry() {
       )}
 
       {/* ── modal แก้ไขจุด ── */}
+      {/* ฟอร์มสร้างจุดจากแม่แบบ — ชนิดจุดเลือกจาก fixture_point_kinds (แทน window.prompt ที่ต้องพิมพ์รหัสเอง) · 2026-09-07 */}
+      {tpl && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
+                        padding: 18, width: 'min(420px,100%)' }}>
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>✨ สร้างจุดจากแม่แบบ · {fx?.machine_no}</div>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <Field label="ชนิดจุด">
+                <select value={tpl.kind} style={inp}
+                        onChange={e => setTpl(t => ({ ...t, kind: e.target.value, prefix: e.target.value === 'locator_pin' ? 'L' : 'P' }))}>
+                  {kinds.map(k => <option key={k.code} value={k.code}>{k.icon} {k.label}</option>)}
+                </select>
+              </Field>
+              <Field label="สร้างกี่จุด" hint="1–60">
+                <input type="number" min="1" max="60" value={tpl.n} onChange={e => setTpl(t => ({ ...t, n: e.target.value }))} style={inp} />
+              </Field>
+              <Field label="ตัวนำหน้าเลขจุด" hint={`${tpl.prefix || 'P'}1, ${tpl.prefix || 'P'}2, …`}>
+                <input value={tpl.prefix} onChange={e => setTpl(t => ({ ...t, prefix: e.target.value }))} style={inp} />
+              </Field>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
+              <button onClick={() => setTpl(null)}
+                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
+                               borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={runTemplate}
+                      style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+                               padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>สร้างจุด</button>
+            </div>
+          </div>
+        </div>
+      )}
       {editing && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>

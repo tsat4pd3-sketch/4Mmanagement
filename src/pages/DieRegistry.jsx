@@ -12,6 +12,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
+import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -105,6 +106,9 @@ export default function DieRegistry() {
   const [editSet, setEditSet] = useState(null);   // ฟอร์มชุด
   const [editDie, setEditDie] = useState(null);   // ฟอร์มแม่พิมพ์รายตัว
   const [saving, setSaving]   = useState(false);
+  // ช่องไลน์ในฟอร์มชุด: เลือกจากรายชื่อที่ใช้อยู่ · "✏️ ระบุใหม่" = พิมพ์เอง (audit #28 · 2026-09-07) — ปิด modal แล้วรีเซ็ต
+  const [lineFree, setLineFree] = useState(false);
+  useEffect(() => { if (!editSet) setLineFree(false); }, [editSet]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -557,31 +561,49 @@ export default function DieRegistry() {
       {editSet && (
         <Modal title={editSet.id ? 'แก้ไขชุดแม่พิมพ์' : 'เพิ่มชุดแม่พิมพ์'} onClose={() => setEditSet(null)}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="ชื่อพาร์ท / ชื่อชุด *">
-              <input style={inputStyle} value={editSet.part_name || ''}
+            {/* ชื่อ/เลขพาร์ท เติมอัตโนมัติจาก MAT ที่เลือก — แก้เองได้เฉพาะเมื่อ MAT ยังไม่ผูก Product Master (audit #29 · 2026-09-07) */}
+            <Field label="ชื่อพาร์ท / ชื่อชุด *" hint={editSet.mat_no && products.some(p => p.mat_no === editSet.mat_no) ? 'จาก Product Master' : undefined}>
+              <input style={{ ...inputStyle, ...(editSet.mat_no && products.some(p => p.mat_no === editSet.mat_no) ? { background: 'var(--bg2)', color: 'var(--text2)' } : null) }}
+                value={editSet.part_name || ''} readOnly={!!editSet.mat_no && products.some(p => p.mat_no === editSet.mat_no)}
                 onChange={e => setEditSet(f => ({ ...f, part_name: e.target.value }))} />
             </Field>
-            <Field label="เลขพาร์ท (P/N ลูกค้า)">
-              <input style={inputStyle} value={editSet.part_no || ''}
+            <Field label="เลขพาร์ท (P/N ลูกค้า)" hint={editSet.mat_no && products.some(p => p.mat_no === editSet.mat_no) ? 'จาก Product Master' : undefined}>
+              <input style={{ ...inputStyle, ...(editSet.mat_no && products.some(p => p.mat_no === editSet.mat_no) ? { background: 'var(--bg2)', color: 'var(--text2)' } : null) }}
+                value={editSet.part_no || ''} readOnly={!!editSet.mat_no && products.some(p => p.mat_no === editSet.mat_no)}
                 onChange={e => setEditSet(f => ({ ...f, part_no: e.target.value }))} />
             </Field>
             <Field label="MAT SAP" hint="ผูกกับ Product Master">
-              <input style={inputStyle} list="die-mat-list" value={editSet.mat_no || ''}
-                onChange={e => setEditSet(f => ({ ...f, mat_no: e.target.value }))} />
-              <datalist id="die-mat-list">
-                {products.filter(p => p.mat_no).map(p => <option key={p.mat_no} value={p.mat_no}>{p.name}</option>)}
-              </datalist>
+              {/* <ProductSelect> แทน datalist — mat_no คือคีย์ golden thread (VSM / pieces_per_stroke) · เลือกแล้วเติมชื่อ/P/N ให้ ·
+                  ไม่เปิด allowFree (MAT ที่ยังไม่มีให้เพิ่มที่ /products) · ค่าเก่าที่ไม่ตรงทะเบียนยังแสดง/แก้ได้ · 2026-09-07 */}
+              <ProductSelect value={editSet.mat_no || ''} lines={editSet.line_name ? [editSet.line_name] : undefined}
+                onChange={res => setEditSet(f => ({
+                  ...f, mat_no: res.mat_no || '',
+                  ...(res.opt ? { part_name: res.name || f.part_name || '', part_no: res.p_no || f.part_no || '' } : null),
+                }))} inputStyle={{ background: 'var(--bg)' }} />
             </Field>
             <Field label="รุ่น / Model">
               <input style={inputStyle} value={editSet.model || ''}
                 onChange={e => setEditSet(f => ({ ...f, model: e.target.value }))} />
             </Field>
             <Field label="ไลน์ / กลุ่มเครื่องปั๊ม">
-              <input style={inputStyle} list="die-line-list" value={editSet.line_name || ''}
-                onChange={e => setEditSet(f => ({ ...f, line_name: e.target.value }))} />
-              <datalist id="die-line-list">
-                {dieLineNames.map(n => <option key={n} value={n} />)}
-              </datalist>
+              {/* ⚠️ ยังไม่มี master ของ "กลุ่มเครื่องปั๊ม" (LINE A ( 800 Ton ) ฯลฯ ไม่อยู่ใน production_lines — audit #28)
+                  → เลือกจากชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว (self-referential) กันสะกดต่างจน inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์
+                  "✏️ ระบุใหม่" เฉพาะไลน์ที่ยังไม่มีในระบบ · ทางแก้ถาวร = ลงทะเบียนกลุ่มเครื่องปั๊มเป็น master แล้วใช้ <LineSelect> · 2026-09-07 */}
+              {(lineFree || (editSet.line_name && !dieLineNames.includes(editSet.line_name)))
+                ? <div style={{ display: 'flex', gap: 6 }}>
+                    <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={editSet.line_name || ''} placeholder="เช่น LINE A ( 800 Ton )"
+                      onChange={e => setEditSet(f => ({ ...f, line_name: e.target.value }))} />
+                    {dieLineNames.length > 0 && (
+                      <button type="button" onClick={() => { setLineFree(false); setEditSet(f => ({ ...f, line_name: '' })); }}
+                        style={{ ...cancelBtnStyle, padding: '2px 8px', fontSize: 11, whiteSpace: 'nowrap' }}>เลือกจากรายการ</button>
+                    )}
+                  </div>
+                : <select style={inputStyle} value={editSet.line_name || ''}
+                    onChange={e => { if (e.target.value === '__new__') { setLineFree(true); setEditSet(f => ({ ...f, line_name: '' })); } else setEditSet(f => ({ ...f, line_name: e.target.value })); }}>
+                    <option value="">— เลือก —</option>
+                    {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    <option value="__new__">✏️ ระบุใหม่ (ไลน์ที่ยังไม่มีในระบบ)</option>
+                  </select>}
             </Field>
             <Field label="รูปแบบชุด">
               <select style={inputStyle} value={editSet.kind || 'tandem'}

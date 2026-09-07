@@ -6,7 +6,7 @@
      ห้ามกลับไป update stock_qty ตรงๆ จาก client (read-modify-write = ยอดเพี้ยนเมื่อ 2 เครื่องทำพร้อมกัน)
    - Rank A/B/C คำนวณจากการใช้จริง (mtn_spare_usage_monthly) + leadtime ผ่าน utils/spareRank.js
      ไม่กรอก Rank เอง (แต่ override ได้พร้อมเหตุผล)
-   - ตำแหน่งชั้นวาง (shelf) ใช้ "รหัสเดียวกันทั้งคลัง" (datalist ช่วยไม่ให้พิมพ์ใหม่ทุกครั้ง)
+   - ตำแหน่งชั้นวาง (shelf) ใช้ "รหัสเดียวกันทั้งคลัง" — เลือกช่องจากผังคลัง mtn_rack_cells ผ่าน <SearchSelect> (2026-09-07)
      — เป็นกุญแจที่แผนผังคลัง (rack map) จะใช้จับคู่ในเฟสถัดไป */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -22,6 +22,16 @@ import ImageCropModal from './ImageCropModal';
 import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
 import { pickUnusedColor } from '../utils/colorPick';
 import { checkWrite } from '../utils/dbWrite';
+// picker กลาง (single-source audit 2026-09-07) — ชั้นวางจากผังคลัง (mtn_rack_cells) · เครื่องจากทะเบียน
+import SearchSelect from './SearchSelect';
+import MachineSelect from './MachineSelect';
+
+// ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
+const appendCsv = (cur, v) => {
+  const items = String(cur || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!items.some(x => x.toUpperCase() === String(v).toUpperCase())) items.push(v);
+  return items.join(', ');
+};
 
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
@@ -107,12 +117,28 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
   }, []);
   useEffect(() => { loadAux(); }, [loadAux]);
 
+  /* ช่องชั้นวางจากผังคลังจริง (mtn_rack_cells × mtn_rack_maps) — shelf คือคีย์ที่ RackMap ใช้วางอะไหล่ลงช่อง
+     (audit #32 · 2026-09-07): พิมพ์รหัสผิดตัวเดียว = "อะไหล่ยังไม่วางผัง" เงียบๆ · best-effort ตารางยังไม่มีก็ไม่พัง */
+  const [rackCells, setRackCells] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      supabaseDR.from('mtn_rack_maps').select('id, name, team, is_active').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('mtn_rack_cells').select('id, rack_id, shelf_code, label').order('shelf_code'),
+    ]).then(([m, c]) => {
+      if (!alive) return;
+      const byRack = {}; (m.data || []).forEach(x => { byRack[x.id] = x; });
+      setRackCells((c.data || []).filter(x => byRack[x.rack_id]).map(x => ({ ...x, rack: byRack[x.rack_id] })));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const reloadAll = useCallback(async () => { await Promise.all([reload?.(), loadAux()]); }, [reload, loadAux]);
 
   const catOf = useCallback((k) => cats.find(c => c.key === k), [cats]);
   // หมวดอะไหล่เป็นมุมมองของทีม (เช่น LP = Locating Pin เป็นของ JIG) → dropdown กรองตามทีมที่เลือก
   const teamCats = useMemo(() => filterByTeam(cats, fTeam), [cats, fTeam]);
-  // รหัสชั้นวางที่เคยใช้ — datalist กันพิมพ์รหัสใหม่ทุกครั้ง (รหัสต้องนิ่งเพื่อผูกแผนผังคลังในอนาคต)
+  // รหัสชั้นวางที่อะไหล่ใช้อยู่ — เป็นกลุ่ม "⚠ ยังไม่อยู่ในผัง" ท้ายลิสต์ชั้นวาง (ให้เห็นว่ารหัสไหนต้องไปวางผัง) · 2026-09-07
   const shelfOpts = useMemo(() => [...new Set(parts.map(p => p.shelf).filter(Boolean))].sort(), [parts]);
 
   // รวม Rank + สถานะสต็อกไว้ล่วงหน้า (ใช้ทั้งกรอง/เรียง/สรุป)
@@ -385,7 +411,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 
       {movePart && <StockMoveModal {...movePart} fullName={fullName} onClose={() => setMovePart(null)} onDone={reloadAll} />}
       {histPart && <HistoryModal part={histPart} usageRows={usage[histPart.id] || []} onClose={() => setHistPart(null)} />}
-      {editPart && <PartEditModal part={editPart === 'new' ? null : editPart} cats={cats} teams={teams} shelfOpts={shelfOpts}
+      {editPart && <PartEditModal part={editPart === 'new' ? null : editPart} cats={cats} teams={teams} shelfOpts={shelfOpts} rackCells={rackCells}
         secOpts={secOpts} orgSecs={orgSecs} defSection={fSection || mySection}
         usageRows={editPart === 'new' ? [] : (usage[editPart.id] || [])} count={parts.length}
         onClose={() => setEditPart(null)} onSaved={reloadAll} />}
@@ -467,7 +493,7 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
 /* ══════════════════════════════════════════════════════════════════════════
    เพิ่ม / แก้ไขอะไหล่ (FM-JIG-009)
    ══════════════════════════════════════════════════════════════════════════ */
-function PartEditModal({ part, cats, teams, shelfOpts, secOpts = [], orgSecs = [], defSection = '', usageRows, count, onClose, onSaved }) {
+function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts = [], orgSecs = [], defSection = '', usageRows, count, onClose, onSaved }) {
   const isNew = !part;
   const [f, setF] = useState(() => ({
     code: part?.code || '', name: part?.name || '', unit: part?.unit || 'ชิ้น',
@@ -485,6 +511,24 @@ function PartEditModal({ part, cats, teams, shelfOpts, secOpts = [], orgSecs = [
   const [cropFile, setCropFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  /* ตัวเลือกชั้นวาง: ช่องในผังของทีมนี้ขึ้นก่อน → ทีมอื่น → รหัสที่อะไหล่ใช้อยู่แต่ยังไม่มีในผัง (ติดป้าย ให้เห็นว่าต้องไปวางผัง)
+     ห้ามตัดของทีมอื่นทิ้ง (UI-CONVENTIONS §5.1.1) · 2026-09-07 */
+  const shelfOptions = useMemo(() => {
+    const cells = rackCells.map(c => ({
+      id: c.id, label: c.shelf_code, sub: c.rack?.name || '', keywords: `${c.label || ''} ${c.rack?.name || ''}`,
+      _pref: !!c.rack?.team && c.rack.team === f.team,
+    }));
+    cells.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, undefined, { numeric: true }));
+    const known = new Set(cells.map(c => c.label));
+    const legacy = shelfOpts.filter(s => !known.has(s)).map(s => ({
+      id: `legacy:${s}`, label: s, group: '⚠ รหัสที่ใช้อยู่ แต่ยังไม่อยู่ในผังชั้นวาง', badge: 'ยังไม่วางผัง', badgeColor: '#f59e0b',
+    }));
+    return [...cells.map(c => ({ ...c, group: c._pref ? '🎯 ชั้นวางของทีมนี้' : '🏭 ชั้นวางทีมอื่น' })), ...legacy];
+  }, [rackCells, shelfOpts, f.team]);
+  const shelfSel = shelfOptions.find(o => o.label === f.shelf) || null;
+  // ช่องค้นเครื่องสำหรับปุ่ม "เพิ่มเครื่อง" ใน used_with — ข้อความค้นค้างไว้จนกว่าจะเลือก
+  const [usedQ, setUsedQ] = useState('');
 
   // ── ยอดใช้ย้อนหลังที่คีย์เอง (source='manual') — ใช้ตอนย้ายข้อมูลจาก Excel (คอลัมน์ PI/PO)
   //    เพื่อให้จัด Rank ได้ทันที ไม่ต้องรอสะสม ledger 6 เดือน
@@ -622,11 +666,20 @@ function PartEditModal({ part, cats, teams, shelfOpts, secOpts = [], orgSecs = [
                   {cats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.key} · {c.label}</option>)}
                 </select>
               </Field>
-              <Field label="ตำแหน่งชั้นวาง" hint="ใช้รหัสเดิมให้ตรงกันทั้งคลัง (เลือกจากที่เคยใช้ได้) — หาของเจอเร็วขึ้น">
-                <input value={f.shelf} onChange={e => set('shelf', e.target.value)} list="spare-shelf-opts" placeholder="เช่น A-01-3" style={inp} />
-                <datalist id="spare-shelf-opts">{shelfOpts.map(s => <option key={s} value={s} />)}</datalist>
+              <Field label="ตำแหน่งชั้นวาง" hint="เลือกช่องจากผังชั้นวาง (แท็บ 🗺️ ผังคลัง) — รหัสตรงกันทั้งคลัง หาของเจอเร็ว">
+                {/* <SearchSelect> จาก mtn_rack_cells แทน datalist ค่าเก่า — พิมพ์เองได้แต่ติดป้าย (ช่องที่ยังไม่วางผัง) · 2026-09-07 */}
+                <SearchSelect value={shelfSel ? shelfSel.id : ''} text={f.shelf} options={shelfOptions} allowFree
+                  placeholder="ค้นรหัสชั้น / ชื่อชั้นวาง…" freeHint="(ยังไม่มีช่องนี้ในผังชั้นวาง — วางผังที่แท็บ 🗺️)"
+                  emptyText="ไม่พบช่องชั้นวาง — วางผังที่แท็บ 🗺️ ผังคลังก่อน"
+                  onChange={({ text }) => set('shelf', text)} inputStyle={{ background: 'var(--bg)' }} />
               </Field>
-              <Field label="ใช้กับ (เครื่อง/จิ๊ก)"><input value={f.used_with} onChange={e => set('used_with', e.target.value)} placeholder="เช่น RB-104, จิ๊ก APRON" style={inp} /></Field>
+              <Field label="ใช้กับ (เครื่อง/จิ๊ก)" hint="พิมพ์ได้ · หรือเลือกจากทะเบียนเครื่องให้เลขตรงกัน (คั่นด้วย ,)">
+                <input value={f.used_with} onChange={e => set('used_with', e.target.value)} placeholder="เช่น RB-104, จิ๊ก APRON" style={inp} />
+                {/* ตัวช่วยเติมเลขเครื่องจาก <MachineSelect> — เลือกแล้วต่อท้ายลิสต์ (ยังเก็บเป็น text ตาม schema เดิม) · 2026-09-07 */}
+                <MachineSelect value={usedQ} placeholder="➕ เพิ่มเครื่อง/จิ๊กจากทะเบียน…" style={{ marginTop: 6 }}
+                  inputStyle={{ background: 'var(--bg)', fontSize: 12, padding: '6px 30px 6px 10px' }}
+                  onChange={res => { if (res.opt) { set('used_with', appendCsv(f.used_with, res.machine_no)); setUsedQ(''); } else setUsedQ(res.machine_no || ''); }} />
+              </Field>
             </div>
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
