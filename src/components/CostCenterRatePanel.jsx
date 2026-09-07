@@ -238,7 +238,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
       </div>
       {canEdit ? (
         <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-          ➕ เพิ่ม rate (พิมพ์รหัสเอง)
+          ➕ เพิ่ม rate (เลือกรหัสจากผัง/ไลน์)
         </button>
       ) : (
         /* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล — UI-CONVENTIONS §6.9 */
@@ -258,12 +258,30 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>Cost Center *
-                  {/* readOnly ไม่ใช่ disabled — disabled ทำให้กล่องหน้าตาคนละแบบกับโมดัลเพิ่มใหม่ */}
-                  <input list="cc-rate-codes" value={form.cost_center} readOnly={!!form.id}
-                    onChange={e => setForm({ ...form, cost_center: e.target.value })} placeholder="เช่น 2140662101"
-                    title={form.id ? 'ย้าย rate ข้าม cost center ไม่ได้ — ถ้ากรอกรหัสผิด ให้ลบแถวนี้แล้วเพิ่มใหม่' : ''}
-                    style={{ marginTop: 4, fontFamily: 'monospace', opacity: form.id ? 0.75 : 1, cursor: form.id ? 'not-allowed' : 'auto' }} />
-                  <datalist id="cc-rate-codes">{groupList.map(c => <option key={c.cc} value={c.cc} />)}</datalist>
+                  {form.id ? (
+                    /* แก้แถวเดิม = ย้ายรหัสไม่ได้ · readOnly ไม่ใช่ disabled — ให้กล่องหน้าตาเหมือนกัน */
+                    <input value={form.cost_center} readOnly
+                      title="ย้าย rate ข้าม cost center ไม่ได้ — ถ้ากรอกรหัสผิด ให้ลบแถวนี้แล้วเพิ่มใหม่"
+                      style={{ marginTop: 4, fontFamily: 'monospace', opacity: 0.75, cursor: 'not-allowed' }} />
+                  ) : (
+                    /* 2026-09-07: เลือกจาก ccList ที่คำนวณไว้แล้ว (ผัง + ไลน์ + ที่มี rate) — rate ของรหัสที่ไม่มีไลน์/กลุ่มไหนใช้
+                       = แถวกำพร้าที่ costSaving/Improvements/OEE ไม่มีวันอ่านเจอ จึงเลิกให้พิมพ์เอง (รหัสใหม่ต้องตั้งที่ผัง/ไลน์ก่อน) */
+                    <select value={form.cost_center} onChange={e => setForm({ ...form, cost_center: e.target.value })}
+                      style={{ marginTop: 4, fontFamily: 'monospace' }}>
+                      <option value="">— เลือก cost center —</option>
+                      {form.cost_center && !ccList.some(c => c.cc === form.cost_center) && (
+                        <option value={form.cost_center}>{form.cost_center} ⚠ ไม่มีในผัง/ไลน์</option>
+                      )}
+                      <optgroup label="ระดับกลุ่ม (ไลน์ผลิต / กลุ่มในผัง)">
+                        {groupList.map(c => <option key={c.cc} value={c.cc}>{c.cc}{[...c.orgGroup, ...c.lines].length ? ` · ${[...c.orgGroup, ...c.lines].slice(0, 3).join(', ')}` : ''}</option>)}
+                      </optgroup>
+                      {otherCount > 0 && (
+                        <optgroup label="ระดับส่วน/แผนก (ปกติไม่ตั้ง rate)">
+                          {ccList.filter(c => !groupList.includes(c)).map(c => <option key={c.cc} value={c.cc}>{c.cc}{c.orgOther.length ? ` · ${c.orgOther.slice(0, 2).join(', ')}` : ''}</option>)}
+                        </optgroup>
+                      )}
+                    </select>
+                  )}
                 </label>
                 {/* ⚠️ Effective = "วันที่ rate เริ่มมีผลตามบัญชี" ไม่ใช่ timestamp ตอนแก้
                     (เวลาแก้ระบบ stamp เองที่ updated_at + audit_log — ไม่ต้องกรอก)

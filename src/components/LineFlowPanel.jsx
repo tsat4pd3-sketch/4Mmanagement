@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { buildFlowGraph, downstreamOf, upstreamOf, lineAvgCtSec, bufferCoverMin } from '../utils/lineFlow';
+import LineSelect from './LineSelect';
 
 /* ═══ 🔗 สายการไหลระหว่างไลน์ — แผงใน /linesetup (2026-08-19) ═══
    ตอบ "ไลน์นี้ป้อนงานให้ใคร / รับของมาจากใคร" ซึ่งระบบเดิมไม่เคยเก็บไว้ที่ไหนเลย
@@ -50,19 +51,12 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
     return m;
   }, [lines]);
 
-  /* ไลน์ที่เลือกได้ — ข้ามแผนก/ข้ามส่วนงานได้ (ของไหลข้ามส่วนงานจริง)
-     🔴 เสนอลำดับ ไม่ตัดตัวเลือกทิ้ง (กฎเดียวกับ moveTargets): ไลน์แม่ยังเลือกได้ แต่แยกกลุ่ม + เตือน
-        เดิมลิสต์ดิบๆ ไม่บอกอะไรเลย → คนตั้ง "LASER-345 ➡️ LINE APRON ASSY" ซึ่งเป็นชื่อ *แผนก*
-        แล้ว cover time คำนวณไม่ได้ตลอดกาล เพราะไลน์แม่ไม่มี product/CT ของตัวเอง (ข้อมูลจริง 03/09: 0 พาร์ท)
-     ⚠️ ไลน์ที่ปิดใช้งานถูกกรองออก แต่ค่าที่ "ตั้งไว้แล้ว" ยังแสดงในลิสต์เส้นเสมอ (ไม่หายเงียบ) */
-  const { leafOpts, parentOpts } = useMemo(() => {
-    const usable = (lines || []).filter(l => l.name !== lineName && l.is_active !== false);
-    const byName = (a, b) => a.localeCompare(b);
-    return {
-      leafOpts: usable.filter(l => !childrenOf[l.name]).map(l => l.name).sort(byName),
-      parentOpts: usable.filter(l => childrenOf[l.name]).map(l => l.name).sort(byName),
-    };
-  }, [lines, lineName, childrenOf]);
+  /* ไลน์ที่เลือกได้ — ข้ามแผนก/ข้ามส่วนงานได้ (ของไหลข้ามส่วนงานจริง) → ส่งเข้า <LineSelect> (2026-09-07)
+     🔴 เสนอลำดับ ไม่ตัดตัวเลือกทิ้ง (กฎเดียวกับ moveTargets): ไลน์แม่ยังเลือกได้ (LineSelect วางแม่ก่อน ↳ ลูก)
+        แล้วกล่องเตือนใต้ช่องบอกว่าเป็นแผนก + เสนอไลน์ย่อยให้กด — เดิมลิสต์ดิบๆ ไม่บอกอะไรเลย
+        → คนตั้ง "LASER-345 ➡️ LINE APRON ASSY" ซึ่งเป็นชื่อ *แผนก* แล้ว cover time คำนวณไม่ได้ตลอดกาล
+     ⚠️ ไลน์ปิดใช้งาน LineSelect กรองออกเอง แต่ค่าที่ "ตั้งไว้แล้ว" ยังแสดงในลิสต์เส้นเสมอ (ไม่หายเงียบ) */
+  const pickLines = useMemo(() => (lines || []).filter(l => l.name !== lineName), [lines, lineName]);
 
   const save = async () => {
     if (!form?.other) { toast.error('เลือกไลน์ปลายทางก่อน'); return; }
@@ -175,19 +169,8 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์
-                      <select value={form.other} onChange={e => setForm({ ...form, other: e.target.value })} style={{ marginTop: 3 }}>
-                        <option value="">— เลือกไลน์ —</option>
-                        {leafOpts.length > 0 && (
-                          <optgroup label="⭐ ไลน์ผลิต (งานเกิดที่นี่จริง)">
-                            {leafOpts.map(n => <option key={n} value={n}>{n}</option>)}
-                          </optgroup>
-                        )}
-                        {parentOpts.length > 0 && (
-                          <optgroup label="⚠️ ระดับแผนก (มีไลน์ย่อย — ปกติไม่ควรเลือก)">
-                            {parentOpts.map(n => <option key={n} value={n}>{n}</option>)}
-                          </optgroup>
-                        )}
-                      </select>
+                      {/* 2026-09-07: <LineSelect> (ลำดับชั้นแม่→ลูก · ตัดปลดระวาง) — from_line/to_line เป็น join key ของ Heijunka/FlowTower */}
+                      <LineSelect lines={pickLines} value={form.other} onChange={v => setForm({ ...form, other: v })} style={{ marginTop: 3 }} />
                     </label>
                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อจุดพัก (ถ้ามี)
                       <input value={form.buffer_label} onChange={e => setForm({ ...form, buffer_label: e.target.value })}
