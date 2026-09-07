@@ -12,6 +12,24 @@
 
 - **ที่มา (คำสั่ง user):** เดิม `qa_inspection_items` **ไม่ถูกอ่านจากหน้าไหนเลยนอกจากหน้า setup เอง** → จุดชนิด **attribute (GO/NOGO) ไม่มีที่ลงผลเลย** ส่วน variable ไปได้ทางเดียวคือปุ่ม "ส่งเข้า SPC" (คัดลอกไป `qa_characteristics` **แบบไม่ผูก FK กลับ** — แก้สเปคที่ setup ทีหลังไม่ตามไปแก้ฝั่ง SPC) · แท็บใบตรวจปิดช่องว่างนี้ · migration `20260804_qa_inspection_check_sheet.sql` (Main)
 - **1 ใบ = พาร์ท + วันงาน + กะ + รอบที่** (`unique(part_id, work_date, shift, round_no)`) — ความถี่แบบ "3 ชิ้น/กะ" = เปิดหลายรอบในกะเดียวได้ · **สร้างใบเมื่อบันทึกผลจุดแรกเท่านั้น** (ไม่ทิ้งใบเปล่า) · ชนกัน 2 เครื่อง = unique key กันให้ แล้วดึงใบของจริงมาใช้ต่อ
+- **🔩 ใบตรวจ = ตรวจทีละชิ้น (sequential acceptance) — 2026-09-07 · คำสั่ง user ("ตรวจทีละชิ้นงานให้ครบทุกจุด ค่อยเปลี่ยนชิ้น")**
+  · หน้างานหยิบชิ้นที่ 1 ไล่ทุกจุด → ค่อยหยิบชิ้นถัดไป · **n ต่อจุดในมาตรฐานไม่ได้กำหนดจำนวนชิ้นอีก** (เป็นค่าอ้างอิงในเอกสาร)
+  · **ตัวเดินกฎ = `src/utils/qaSequential.js`** (`evalSequence`/`pieceResult`/`seqLabel` · เทส 15 เคส) — ทุกจอถามตัวนี้ว่า "ต่อไปทำอะไร" ห้ามเขียนกฎซ้ำ
+  | ลำดับผลในรอบ | ผล |
+  |---|---|
+  | ผ่าน (ชิ้นแรก) | ✅ ยอมรับ ปิดใบ |
+  | ตก → ผ่าน → ผ่าน | ✅ ยอมรับ (ผ่านติดกัน 2) |
+  | ตก → ตก · ตก → ผ่าน → ตก | 🚨 alarm ตกสะสม 2 ในรอบ → รอ action |
+  | รอบ ≥2 (หลัง action): ตกชิ้นเดียว | 🚨 alarm ซ้ำทันที · ผ่านติดกัน 2 = ยอมรับ |
+  · **ใช้ทุกสเตจ (First/Middle/End)** · ทุกเส้นทางจบใน 3 ชิ้นต่อรอบ · เลือก "ตกสะสม 2" ไม่ใช่ "ติดกัน 2" เพราะผลสลับจะวนไม่จบ
+  · ตาราง (Main · migration `20260907_qa_sequential_inspection_main.sql` **apply แล้ว 2026-09-07**): `qa_inspection_pieces` (1 แถว/ชิ้น: round_no · piece_no ต่อเนื่องทั้งใบ · result · failed_items snapshot · disposition rework/scrap/hold + remark บังคับเมื่อตก · `red_bin_id` เมื่อ scrap → สร้าง `quality_bin_records` bin=red (DR) 1 ชิ้นทันที) · `qa_inspection_actions` (1 แถว/รอบที่ alarm: action_text · action_by · `four_m_log_id`) · ใบเพิ่ม `seq_round/seq_state/alarm_count` = **cache ที่แอปเขียนตาม evalSequence — ความจริงคือ pieces + actions**
+  · ค่าต่อจุดต่อชิ้นยังลง `qa_inspection_results.values_json` (index = ชิ้นที่−1 · attribute เก็บ 'ok'/'ng'/'na') · judgement ต่อจุด = ng ถ้ามีชิ้นไหน ng · qty_checked/qty_ng นับสะสม — pin บนแบบ/NCR/ประวัติเดิมอ่านได้เหมือนเดิม
+  · **ใบปิดเองเมื่อ "ยอมรับ"** (status done · result pass · ปิดคิว FME done_ok) — ปุ่ม "ปิดใบ / ผ่านทั้งหมด / เปิดกลับมาแก้" ถอดออกแล้ว · ใบไม่มีสถานะ "ไม่ผ่านสุดท้าย" — มีแต่ alarm รอ action
+  · **cross-function:** ฝ่ายผลิต/หัวหน้าไลน์บันทึก action (สิทธิ์ใหม่ **`qa:record_action`** seed admin/manager/supervisor/leader/dept_admin/qa/engineer) · **QA คอนเฟิร์มด้วยการตรวจต่อจนผ่านติดกัน 2 ชิ้น — ไม่มีปุ่มยืนยันแยก** (ปุ่มที่ไม่มีใครกด = ใบค้าง บทเรียนคิว 4M)
+  · **4M = ทางเลือกที่ผูกกัน ไม่บังคับ:** ติ๊ก "เปิดใบ 4M จากการแก้ไขนี้" + เลือก Man/Machine/Material/Method → insert `four_m_logs` (requires_qa=true · เข้าคิวอนุมัติหัวหน้า→QA ตามปกติ + `send-notification new_4m`) แล้วเก็บ id ที่ `qa_inspection_actions.four_m_log_id` · **ห้ามสร้าง 4M อัตโนมัติ** (กฎ CLAUDE.md)
+  · แจ้งเตือน (data-driven ที่ `/notification-config` หมวดคุณภาพ — ตั้งห้องผลิต+คุณภาพ): **`qa_seq_alarm`** (ตกซ้ำ ต้องแก้ไข) · **`qa_seq_action`** (ผลิตบันทึก action แล้ว QA กลับมาตรวจ) · alarm ปิดเองเมื่อผ่านตามกฎ
+  · UI: `src/components/QaPieceStepper.jsx` (ฟอร์มชิ้นที่ N ทุกจุด 1 คอลัมน์ · variable ตั้ง limit ตัดสินอัตโนมัติจาก `qaSpec.judgeVariable` · ไม่ตั้ง = ปุ่ม ผ่าน/ไม่ผ่าน · "ข้าม" ต่อจุดต่อชิ้น · modal disposition ห้ามปิดจาก backdrop · แถบ alarm แดง**นิ่ง**) · แผง "สรุปต่อจุด" เดิมเหลืออ่านอย่างเดียว + ปุ่ม NCR
+  · ยังไม่ทำ: export ฟอร์มกระดาษ (รอ user ส่งใบจริง) · dashboard ใบที่รอ action (query จาก `seq_state='await_action'` ได้เลย)
 - **🔒 สเปคจุดตรวจมีเจ้าของจุดเดียว = `src/utils/qaSpec.js` (`specLabel` + `judgeVariable` · เทส `qaSpec.test.mjs` · 2026-09-07)**
   เคสจริง 07/09: จุด `test` ตั้ง LSL 4 / Nominal 5 / USL 6 แต่ช่อง "ข้อความตามแบบ" (`spec_text`) พิมพ์ "5" → จอตรวจโชว์ "สเปค: 5 mm"
   ขณะที่ตัดสินอัตโนมัติใช้ 4–6 ⇒ คนตรวจเห็น 6.1 "ไม่ผ่าน" โดยไม่รู้ว่าเส้นอยู่ไหน (สเปคเก็บ 2 แบบ + ตัวประกอบ label เขียนซ้ำ 2 ไฟล์)
