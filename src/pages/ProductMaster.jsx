@@ -436,11 +436,15 @@ export default function ProductMaster() {
       }
       // ผูกคู่ RH/LH สองทาง — ถ้าเปลี่ยน/ยกเลิกคู่เดิม ให้เลิกผูกฝั่งคู่เดิมด้วย
       const oldPairMatNo = editing !== 'new' ? items.find(i => i.id === editing)?.pair_mat_no : null;
+      // ⚠️ ต้องเช็คผล — คู่ตั้งข้างเดียว = OEE/บอร์ด/เปิดเป้าคู่ มองไม่เห็นว่าเป็นงานคู่ (พังเงียบทั้งสาย)
       if (oldPairMatNo && oldPairMatNo !== payload.pair_mat_no) {
-        await supabaseDR.from('dr_products').update({ pair_mat_no: null }).eq('mat_no', oldPairMatNo);
+        const { error: unErr } = await supabaseDR.from('dr_products').update({ pair_mat_no: null }).eq('mat_no', oldPairMatNo);
+        if (unErr) toast.error(`บันทึกแล้ว แต่ปลดคู่เดิม ${oldPairMatNo} ไม่สำเร็จ — ไปแก้ที่ตัวนั้นเอง: ` + unErr.message);
       }
       if (payload.pair_mat_no) {
-        await supabaseDR.from('dr_products').update({ pair_mat_no: payload.mat_no }).eq('mat_no', payload.pair_mat_no);
+        const { data: paired, error: prErr } = await supabaseDR.from('dr_products').update({ pair_mat_no: payload.mat_no }).eq('mat_no', payload.pair_mat_no).select('id');
+        if (prErr) toast.error(`บันทึกแล้ว แต่ผูกคู่ฝั่ง ${payload.pair_mat_no} ไม่สำเร็จ (คู่จะชี้ข้างเดียว): ` + prErr.message);
+        else if (!paired?.length) toast.error(`ไม่พบ MAT คู่ ${payload.pair_mat_no} ในทะเบียน — คู่ชี้ข้างเดียว ตรวจเลขคู่อีกครั้ง`);
       }
       // ชิ้นงานเดียวกัน (ชื่อตรงกัน) ต่างแค่ customer/mat — sync รูปให้ทุก variant อัตโนมัติ
       if (imageFile && payload.name) {

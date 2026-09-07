@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
-import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { scopedLineNames } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
@@ -81,14 +80,12 @@ export default function StoreMonitor() {
 
   // mandatory scope filter — leader = family ไลน์ตัวเอง · role อื่นตาม sections (pattern มาตรฐาน CLAUDE.md)
   //   null = ไม่จำกัด (admin / role ที่ไม่มี scope) · กรองก่อน filter อิสระเสมอ · ครอบทั้งลิสต์ ตัวนับ และ dropdown
+  //   ใช้ helper กลาง scopedLineNames (sectionScope.js) — เวอร์ชันเดิมเขียนเองแล้วขาด fallback:
+  //   leader ที่ line_id ไม่อยู่ในทะเบียน / sections ที่กรองแล้วไม่เหลือไลน์ → ได้ Set ว่าง = จอว่างทั้งจอ
+  //   ทั้งที่กฎกลางบอกว่า "กรองแล้วไม่เหลือ = ไม่จำกัด" (audit รอบ 11 · 2026-09-07)
   const scopeLineNames = useMemo(() => {
-    if (role === 'admin' || !prodLines.length) return null;
-    if (role === 'leader' && lineId) {
-      const self = prodLines.find(l => String(l.id) === String(lineId));
-      return self ? new Set(getLineFamilyNames(prodLines, self.name)) : new Set();
-    }
-    if (scopeSecs?.length) return new Set(prodLines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
-    return null;
+    const names = scopedLineNames({ role, lineId, sections: scopeSecs || [], lines: prodLines });
+    return names ? new Set(names) : null;
   }, [prodLines, role, lineId, scopeSecs]);
   // ⚠️ แถวของ "คลังกลาง" (STORE / FG WAREHOUSE — line ที่ไม่ใช่ไลน์ผลิตในทะเบียน) ต้องผ่าน scope เสมอ
   //    เหมือน line ว่าง — ไม่งั้น role ที่ถูกจำกัด sections/leader มองไม่เห็น shortage ของคลังกลางเลย
