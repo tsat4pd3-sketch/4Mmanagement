@@ -286,7 +286,8 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 borderLeft: `3px solid ${sm.color}`, borderRadius: 8, padding: '7px 10px',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {sm.label}</span>
-                <span style={{ fontSize: 13, minWidth: 0, flex: 1 }}>
+                {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
+                <span style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>
