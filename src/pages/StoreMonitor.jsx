@@ -6,6 +6,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { splitBySide, sideMatches } from '../utils/logisticSide';
+import SideFilterChips from '../components/SideFilterChips';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -33,6 +35,8 @@ export default function StoreMonitor() {
   const [cutMsg, setCutMsg] = useState('');   // ชนเพดานแถว — ข้อมูลมาแล้วแต่ไม่ครบ (คนละเรื่องกับโหลดพัง)
   const [lineFilter, setLineFilter] = useState('');
   const [kindFilter, setKindFilter] = useState('all');   // all | shortage | over
+  // ฝั่งงาน — '' ทั้งหมด (default: จอเฝ้าระวังต้องเห็นภาพรวมก่อน) · inbound Store · outbound Warehouse+Delivery
+  const [sideFilter, setSideFilter] = useState('');
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -97,9 +101,16 @@ export default function StoreMonitor() {
     [findings, scopeLineNames, allProdNames]);
 
   const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(), [scoped]);
+  /* จอนี้คาบ 2 ฝั่งโดยธรรมชาติ (เคส A/B เทียบ min-max ของทุกเลข MAT · E ใบสั่งซื้อค้าง)
+     → ให้กรองฝั่งได้ แต่ default = ทั้งหมด เพราะเป็นจอเฝ้าระวังภาพรวม (mat = ตัวจัดฝั่ง) */
+  const sideCounts = useMemo(() => {
+    const g = splitBySide(scoped, f => f.mat);
+    return { inbound: g.inbound.length, outbound: g.outbound.length, unknown: g.unknown.length };
+  }, [scoped]);
   const shown = scoped
     .filter(f => !lineFilter || f.line === lineFilter)
     .filter(f => kindFilter === 'all' || f.kind === kindFilter)
+    .filter(f => sideMatches(f.mat, sideFilter))
     .sort((a, b) => b.sev - a.sev || String(a.line).localeCompare(String(b.line)));
 
   const nShort = scoped.filter(f => f.kind === 'shortage').length;
@@ -129,6 +140,11 @@ export default function StoreMonitor() {
             <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* หน้านี้อยู่ทั้งหมวดขาเข้า-ขาออก (คาบ 2 ฝั่งจริง) → กรองฝั่งได้ แต่ default เห็นภาพรวมทั้งหมด */}
+      <div style={{ marginBottom: 12 }}>
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>

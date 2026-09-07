@@ -169,11 +169,14 @@ const CARD_META = {
   'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#22c55e', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
   'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
   'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
-  'Logistic - Store':         { code: 'LOG·05', color: '#f59e0b', route: '/line-stock',   label: 'Logistic & Store',        desc: 'สต๊อกในไลน์ · บอร์ดคัมบัง · ภาชนะ & Packaging · จัดส่งลูกค้า · ขนส่ง' },
-  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·06', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
-  'คุณภาพ & วิศวกรรม':        { code: 'QUA·07', color: '#4d9fff', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
-  'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·09', color: '#34d399', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
-  'ผู้บริหาร & เดโม':         { code: 'EXE·09', color: '#a78bfa', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
+  // Logistic แยก 3 ฝั่งตามความรับผิดชอบจริง — ⚠️ Warehouse (FG 1xx · ขาออก) ≠ Store (2xx/3xx/5xx · ขาเข้า)
+  'Logistic - ขาเข้า (Inbound)':  { code: 'IN·06',  color: '#38bdf8', route: '/line-stock',      label: 'Inbound · Store',      desc: 'Store ดูแล 3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง — สต๊อกในไลน์ · บอร์ดคัมบัง · ขนส่งเข้าไลน์' },
+  'Logistic - ขาออก (Outbound)':  { code: 'OUT·07', color: '#f59e0b', route: '/customer-demand', label: 'Outbound · Delivery',  desc: 'Warehouse (FG 1xx) · Delivery · Rack Center — จัดส่งลูกค้า · คาดการณ์ของจะขาด · ภาชนะ' },
+  'Logistic - แผนงาน & ข้อมูล':   { code: 'PLN·08', color: '#a78bfa', route: '/planner-sales',   label: 'Planning & Data',      desc: 'Sales · Planner · Billing — ประสานข้อมูลระหว่างขาเข้า ↔ ผลิต ↔ ขาออก' },
+  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·09', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
+  'คุณภาพ & วิศวกรรม':        { code: 'QUA·10', color: '#4d9fff', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
+  'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·11', color: '#34d399', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
+  'ผู้บริหาร & เดโม':         { code: 'EXE·12', color: '#f472b6', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
 };
 
 const DEPTS = NAV_GROUP_ORDER.map((group, i) => {

@@ -4,6 +4,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { isFgMat } from '../utils/matPrefix';
+import { splitBySide, sideMatches } from '../utils/logisticSide';
+import SideFilterChips from '../components/SideFilterChips';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
 import InternalTimeBoard from '../components/InternalTimeBoard';
@@ -13,8 +15,10 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
 import StorageZonePanel from '../components/StorageZonePanel';
+import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
 import StockMoveToChild from '../components/StockMoveToChild';
+import { checkStockPlacement } from '../utils/moveTargets';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
@@ -68,6 +72,8 @@ function StockTab({ role, scope }) {
   const [lines,   setLines]   = useState([]);
   const [stock,   setStock]   = useState([]);
   const [txns,    setTxns]    = useState([]);
+  // ฝั่งงาน: '' ทั้งหมด · inbound (Store 2xx/3xx/5xx) · outbound (Warehouse FG 1xx) · unknown
+  const [sideFilter, setSideFilter] = useState('');
   const [bomMap,  setBomMap]  = useState({});
   const [ksMap,   setKsMap]   = useState({});       // mat_no → { min, max } จาก kanban_standards
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
@@ -105,6 +111,12 @@ function StockTab({ role, scope }) {
   const [form,       setForm]       = useState(EMPTY_FORM);
   const [saving,     setSaving]     = useState(false);
   const [matSearch,  setMatSearch]  = useState('');
+  /* วัตถุดิบ/งาน blank ที่ถูกจ่ายเข้าไลน์ขั้นถัดไป = ต้นเหตุที่ของไปกองผิดแผนก
+     ⚠️ ต้อง select `line_type` มาด้วย ไม่งั้นเงียบตลอด (บั๊กเดิม: ตัวเตือน flow ไม่เคยทำงานเลย) */
+  const placementWarn = useMemo(() => {
+    const lt = lines.find(l => l.name === form.line_name)?.line_type;
+    return checkStockPlacement(form.mat_no, form.part_name || bomMap[(form.mat_no || '').trim().toUpperCase()], lt);
+  }, [form.mat_no, form.part_name, form.line_name, lines, bomMap]);
 
   // ── store review queue ──
   const [pending,     setPending]     = useState([]);   // manual movements รออนุมัติ
@@ -122,7 +134,7 @@ function StockTab({ role, scope }) {
     const [{ data: ln }, { rows: stk }, bomRes, prodRes, ksRes, pmRes] = await Promise.all([
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
       // ⚠️ view นี้โตเกิน 1000 แถวได้ — select เฉยๆ โดนตัดเงียบแล้วยอดสต็อกหายจากจอเขียนหลักของ store (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('*'),
         { orderBy: ['line_name', 'mat_no'] }),
@@ -266,9 +278,20 @@ function StockTab({ role, scope }) {
     return Object.entries(bomMap).filter(([m]) => m.includes(q)).slice(0, 8);
   }, [matSearch, bomMap]);
 
-  const filteredStock = useMemo(() => {
-    return lineFilter ? stock.filter(s => s.line_name === lineFilter) : stock;
-  }, [stock, lineFilter]);
+  /* กรอง 2 ชั้น: ไลน์/คลัง → ฝั่งงาน (ขาเข้า Store 2xx/3xx/5xx · ขาออก Warehouse FG 1xx)
+     ตัวนับบนชิปต้องนับ "หลังกรองไลน์แล้ว" เพื่อให้เลขตรงกับที่ตาข้างล่างเห็นจริง */
+  const lineStock = useMemo(() => (
+    lineFilter ? stock.filter(s => s.line_name === lineFilter) : stock
+  ), [stock, lineFilter]);
+
+  const sideCounts = useMemo(() => {
+    const g = splitBySide(lineStock);
+    return { inbound: g.inbound.length, outbound: g.outbound.length, unknown: g.unknown.length };
+  }, [lineStock]);
+
+  const filteredStock = useMemo(() => (
+    sideFilter ? lineStock.filter(s => sideMatches(s.mat_no, sideFilter)) : lineStock
+  ), [lineStock, sideFilter]);
 
   const stockByLine = useMemo(() => {
     const map = {};
@@ -376,6 +399,15 @@ function StockTab({ role, scope }) {
         lines={lines} stock={stock} products={products} productBom={productBom}
         canIssue={canIssue} fullName={fullName} workDate={getToday()} onDone={load}
       />
+
+      {/* ฝั่งงาน — จอนี้เคยลิสต์ทุกเลข MAT ปนกันทั้งที่คนละแผนกดูแล (feedback หน้างาน 2026-09-03)
+          ตัวนับนับหลังกรองไลน์แล้ว → เลขบนชิปตรงกับที่เห็นในตารางเสมอ */}
+      <div style={{ ...card, padding:'10px 14px', marginBottom:12 }}>
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
+          📥 ขาเข้า = Store ดูแล (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 📤 ขาออก = Warehouse + Delivery ดูแล (FG 1xx รอส่งลูกค้า)
+        </div>
+      </div>
 
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
@@ -598,6 +630,14 @@ function StockTab({ role, scope }) {
                       <br />แนะนำให้เลือก<b>ไลน์ลูก</b>ที่ใช้พาร์ทนี้จริงแทน
                     </div>
                   )}
+                  {/* 🔴 ปิดที่ต้นเหตุ — วัตถุดิบ/งาน blank ถูกจ่ายเข้าไลน์ขั้นถัดไป คือที่มาของ
+                      "coil ไปกองอยู่แผนกประกอบ" ที่ต้องมาตามย้ายทีหลัง (feedback 2026-09-03)
+                      ⚠️ เตือนอย่างเดียว ไม่บล็อก (บางไลน์ปั๊ม+ประกอบรวมกันจริง) */}
+                  {placementWarn && (
+                    <div style={{ marginTop: 6, fontSize: 11, color: '#ef4444', fontWeight: 700, lineHeight: 1.6 }}>
+                      🔴 {placementWarn.text}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
@@ -758,7 +798,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
       supabaseDR.from('kanban_delivery_rounds').select('*').eq('is_active', true).order('line_name').order('shift').order('round_no'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
     ]);
     setRounds(rnd || []);
     setLines(ln || []);
@@ -1232,7 +1272,7 @@ function InflowRulesTab({ canEdit }) {
       supabaseDR.from('stock_inflow_rules').select('*').order('match_type').order('match_value'),
       // ⚠️ ต้อง select ให้ครบ — ขาด parent_line_name = dropdown ไม่มีลำดับชั้น
       //    ขาด section = กรอง scope ไม่ได้ · ขาด is_active = ไลน์ปลดระวางโผล่ปน (ดู LineSelect.jsx)
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
       // แบ่งหน้า — view โตเกิน 1000 แถวเมื่อไหร่ ชื่อคลังท้ายลำดับหายจาก dropdown เงียบ (QC flow-audit #30)
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name'),
         { orderBy: ['line_name', 'mat_no'] }),
@@ -1396,7 +1436,8 @@ export default function LineStock() {
 
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
-      {activeTab === 'zones'     && <StorageZonePanel />}
+      {/* 🏬 2 ทะเบียนคนละชั้น: รหัสคลัง (SAP SLoc — อ้างใน BOM) เหนือ โซนกองของบนผัง · ห้ามยุบรวม */}
+      {activeTab === 'zones'     && <><StorageLocPanel /><StorageZonePanel /></>}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}

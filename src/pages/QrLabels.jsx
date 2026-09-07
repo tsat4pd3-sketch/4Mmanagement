@@ -8,6 +8,7 @@
  * เอกสารพิมพ์ผ่านทะเบียนเอกสารกลาง (doc_key `qr_label`) ตามกฎ CLAUDE.md — ห้าม hardcode เลขฟอร์ม
  */
 import { useState, useEffect, useMemo, useContext } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -30,7 +31,9 @@ export default function QrLabels() {
   const { role, sections: scopeSecs = [], lineId } = useContext(UserContext);
   const canPrint = can('qr_labels', 'print', role);
 
-  const [kind, setKind] = useState('machine');   // machine | jig
+  // machine | jig | delivery — `?kind=` มาจากลิงก์ในแผงจุดส่ง (/linesetup) · ค่าที่ไม่รู้จัก = ตกกลับ machine ห้ามจอว่าง
+  const [searchParams] = useSearchParams();
+  const [kind, setKind] = useState(() => (QR_KINDS[searchParams.get('kind')] ? searchParams.get('kind') : 'machine'));
   const [lines, setLines] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +71,14 @@ export default function QrLabels() {
           .select('id, machine_no, machine_name, line_name, equipment_category, is_active')
           .eq('is_active', true).order('line_name').order('machine_no');
         if (alive) setRows(data || []);
+      } else if (kind === 'delivery') {
+        /* 🎯 จุดส่งงานหน้าไลน์ (ลูปสโตร์เฟส 4) — 1 จุดหลายไลน์ได้ → line_name บนป้าย = ไลน์ทั้งหมดต่อกัน
+           พิมพ์เฉพาะจุด active: ป้ายของจุดที่ปิดแล้วไม่ควรถูกพิมพ์ซ้ำไปติดหน้างานอีก */
+        const { data, error } = await supabaseDR.from('line_delivery_points')
+          .select('id, code, name, line_names, note, is_active')
+          .eq('is_active', true).order('sort_order').order('name');
+        if (error && error.code !== '42P01') toast.error('โหลดจุดส่งไม่ได้: ' + error.message);
+        if (alive) setRows((data || []).map(d => ({ ...d, line_name: (Array.isArray(d.line_names) ? d.line_names : []).join(' / '), _lines: Array.isArray(d.line_names) ? d.line_names : [] })));
       } else {
         const { data } = await supabaseDR.from('jigs')
           .select('id, jig_no, name, part_name, line_name, equipment_type, machine_id')
@@ -89,22 +100,24 @@ export default function QrLabels() {
     const kw = q.trim().toLowerCase();
     return rows.filter(r => {
       const ln = r.line_name || '';
-      if (scopedLineNames && ln && !scopedLineNames.has(ln)) return false;
-      if (filterLine && ln !== filterLine) return false;
+      // จุดส่งผูกหลายไลน์ — เห็น/กรองได้ถ้า "ไลน์ใดไลน์หนึ่ง" ตรง (ไม่ใช่ข้อความรวมตรงเป๊ะ)
+      const lns = r._lines?.length ? r._lines : (ln ? [ln] : []);
+      if (scopedLineNames && lns.length && !lns.some(n => scopedLineNames.has(n))) return false;
+      if (filterLine && !lns.includes(filterLine)) return false;
       if (!kw) return true;
-      return [r.machine_no, r.jig_no, r.machine_name, r.name, r.part_name, ln]
+      return [r.machine_no, r.jig_no, r.machine_name, r.name, r.part_name, r.code, ln]
         .some(v => String(v || '').toLowerCase().includes(kw));
     });
   }, [rows, q, filterLine, scopedLineNames]);
 
   const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const lineOpts = useMemo(() => {
-    const s = new Set(rows.map(r => r.line_name).filter(Boolean)
+    const s = new Set(rows.flatMap(r => (r._lines?.length ? r._lines : [r.line_name])).filter(Boolean)
       .filter(n => !scopedLineNames || scopedLineNames.has(n)));
     return [...s].sort();
   }, [rows, scopedLineNames]);
 
-  const noOf = (r) => (kind === 'machine' ? r.machine_no : r.jig_no) || '';
+  const noOf = (r) => (kind === 'machine' ? r.machine_no : kind === 'delivery' ? r.code : r.jig_no) || '';
   const nameOf = (r) => (kind === 'machine' ? r.machine_name : (r.name || r.part_name)) || '';
   const missingNo = visible.filter(r => !noOf(r).trim()).length;
 
@@ -118,6 +131,8 @@ export default function QrLabels() {
     const sz = SIZES[size];
     const QR = (await import('qrcode')).default;
     const df = docFormSync('qr_label', { form_code: null, title: 'ป้าย QR อุปกรณ์' });
+    // ป้ายจุดส่งไม่มี "เลข" เป็นหลัก — ตัวใหญ่บนป้ายคือชื่อจุด (สโตร์ต้องอ่านออกจากระยะแร็ค) รหัสสั้นเป็นบรรทัดรอง
+    const isDp = kind === 'delivery';
 
     const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
     const cells = [];
@@ -125,12 +140,13 @@ export default function QrLabels() {
       const payload = buildQrPayload(kind, r.id);
       // margin:0 + errorCorrectionLevel M — ป้ายเล็กสแกนติดง่ายกว่าเมื่อ QR เต็มพื้นที่
       const svg = await QR.toString(payload, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
-      const no = noOf(r) || '— ยังไม่มีเลข —';
+      const no = isDp ? `🎯 ${nameOf(r)}` : (noOf(r) || '— ยังไม่มีเลข —');
+      const nm = isDp ? (noOf(r) ? `รหัส ${noOf(r)} · จุดส่งงาน` : 'จุดส่งงาน') : nameOf(r);
       cells.push(`<div class="lb">
         <div class="qr">${svg}</div>
         <div class="tx">
           <div class="no">${esc(no)}</div>
-          <div class="nm">${esc(nameOf(r))}</div>
+          <div class="nm">${esc(nm)}</div>
           <div class="ln">${esc(r.line_name || '')}</div>
         </div>
       </div>`);
@@ -183,7 +199,18 @@ export default function QrLabels() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <button onClick={() => setKind('machine')} style={chip(kind === 'machine', '#4d9fff')}>⚙️ เครื่องจักร</button>
         <button onClick={() => setKind('jig')} style={chip(kind === 'jig', '#34d399')}>🧩 จิ๊ก/แม่พิมพ์</button>
+        <button onClick={() => setKind('delivery')} style={chip(kind === 'delivery', '#f59e0b')}>🎯 จุดส่งงาน</button>
       </div>
+      {kind === 'delivery' && (
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          🎯 ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>ใหญ่ 90×60</b> (สแกนจากระยะแร็ค)
+        </div>
+      )}
+      {kind === 'delivery' && !loading && !visible.length && (
+        <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          ⚠️ ยังไม่มีจุดส่งงานที่เปิดใช้ (ในขอบเขตที่คุณเห็น) — ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ ก่อน แล้วกลับมาพิมพ์
+        </div>
+      )}
 
       {/* ตัวกรอง */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
@@ -222,7 +249,7 @@ export default function QrLabels() {
           ⚠️ ยังไม่มีข้อมูลจิ๊ก/แม่พิมพ์ในระบบ — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
         </div>
       )}
-      {missingNo > 0 && (
+      {missingNo > 0 && kind !== 'delivery' && (
         <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
           ⚠️ {missingNo} รายการยังไม่มีเลขกำกับ — พิมพ์ป้ายได้ (QR ใช้รหัสภายใน) แต่คนอ่านป้ายจะไม่เห็นเลข แนะนำใส่เลขให้ครบก่อน
         </div>
@@ -235,7 +262,7 @@ export default function QrLabels() {
               <th style={{ ...th, width: 44 }}>
                 <input type="checkbox" checked={visible.length > 0 && sel.size === visible.length} onChange={toggleAll} style={{ width: 'auto', cursor: 'pointer' }} />
               </th>
-              <th style={th}>เลข</th>
+              <th style={th}>{kind === 'delivery' ? 'รหัสสั้น' : 'เลข'}</th>
               <th style={th}>ชื่อ</th>
               <th style={th}>ไลน์</th>
             </tr>
@@ -246,7 +273,7 @@ export default function QrLabels() {
             {visible.map(r => (
               <tr key={r.id} onClick={() => toggle(r.id)} style={{ cursor: 'pointer', background: sel.has(r.id) ? 'var(--accent-dim)' : 'transparent' }}>
                 <td style={td}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} onClick={e => e.stopPropagation()} style={{ width: 'auto', cursor: 'pointer' }} /></td>
-                <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace' }}>{noOf(r) || <span style={{ color: '#f59e0b' }}>— ไม่มีเลข —</span>}</td>
+                <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace' }}>{noOf(r) || <span style={{ color: kind === 'delivery' ? 'var(--muted)' : '#f59e0b' }}>{kind === 'delivery' ? '—' : '— ไม่มีเลข —'}</span>}</td>
                 <td style={td}>{nameOf(r)}</td>
                 <td style={{ ...td, color: 'var(--text2)' }}>{r.line_name || '—'}</td>
               </tr>

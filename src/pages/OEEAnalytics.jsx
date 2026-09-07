@@ -1965,6 +1965,68 @@ export default function OEEAnalytics() {
         }
       </div>
 
+      {/* ══ 📐 โครงพื้นที่ของบล็อกล่าง (แก้ 2026-09-02 · feedback "ลืมกฎเรื่องใช้พื้นที่ให้คุ้มค่า") ══
+          เดิม: การ์ดเงิน 2 ใบเป็น section เต็มความกว้าง (ตัวหนังสือกองซ้าย ที่ว่างขวา ~60%)
+                แล้ว grid 2 คอลัมน์ข้างล่างมี **ลูก 3 ตัว** (DT Pareto · มูลค่าของเสีย · Defect Pareto)
+                ⇒ แถว 2 เหลือครึ่งขวา**ว่างเปล่า** + การ์ดเงินโดน grid ยืดสูงเท่า DT Pareto (25 แท่ง)
+                   = ช่องดำยาวครึ่งจอ ซึ่งคือสิ่งที่เห็นในภาพหน้าจอ
+          ตอนนี้: 2 แถว · แต่ละแถวมีลูก **2 ตัวพอดี** ไม่มีช่องกำพร้า
+            แถว A: [Pareto Downtime (สูงสุด)] | [การ์ดเงิน 2 ใบเรียงลง — ความสูงรวมพอๆ กัน]
+            แถว B: [Pareto ของเสีย]           | [เปรียบเทียบ A·P·Q]
+          ⚠️ `alignItems:'start'` บังคับ — ไม่งั้น grid ยืดการ์ดเตี้ยให้สูงเท่าเพื่อน (ต้นเหตุเดิม)
+          ⚠️ คอลัมน์ขวาว่างทั้งคอลัมน์เมื่อไหร่ (ยังไม่มีต้นทุน/rate) ต้องกลับเป็นเต็มความกว้าง
+             ไม่งั้นได้ช่องว่างแบบเดิมกลับมา */}
+      {(() => {
+      const hasMoney = dtCost.totalMin > 0 || defectCost.qtyAll > 0;
+      /* A·P·Q อยู่คอลัมน์ขวาได้เฉพาะตอนแท่งน้อย (รายเดือน/สัปดาห์) — ถ้าจัดกลุ่มรายวันช่วงยาว
+         แท่งจะเป็นสิบๆ กลุ่ม ต้องใช้ความกว้างเต็มถึงจะอ่านออก */
+      const apqNarrow = grouped.length > 0 && grouped.length <= 12;
+      const gcol = (on) => (isMobile || !on ? 'minmax(0, 1fr)' : 'minmax(0, 1.35fr) minmax(300px, 1fr)');
+      /* วาดครั้งเดียว ใช้ได้ทั้ง 2 ตำแหน่ง (คอลัมน์ขวาของแถว B หรือเต็มความกว้างข้างล่าง)
+         — ห้ามก๊อป JSX 2 ชุด เดี๋ยวแก้ตัวเดียวแล้วอีกตัวค้าง */
+      const apqChart = (
+        <div style={s.section}>
+          <div style={s.title}>เปรียบเทียบ A · P · Q</div>
+          {grouped.length === 0
+            ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{loading ? 'กำลังโหลด...' : 'ไม่มีข้อมูล'}</div>
+            : (
+              <ResponsiveContainer width="100%" height={220}>
+                {/* maxBarSize — กลุ่มน้อย (3 เดือน) บนคอลัมน์กว้าง แท่งจะอ้วนจนดูเหมือนที่ว่างเป็นช่องๆ */}
+                <BarChart data={grouped} margin={{ top: 5, right: 20, left: 0, bottom: 5 }} maxBarSize={44}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
+                  <Tooltip content={<OEETooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="a" name="A%" fill="#22c55e" opacity={0.8} radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="p" name="P%" fill="#f59e0b" opacity={0.8} radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="q" name="Q%" fill="#a78bfa" opacity={0.8} radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )
+          }
+        </div>
+      );
+      return (<>
+
+      <div style={{ display: 'grid', gridTemplateColumns: gcol(hasMoney), gap: 16, alignItems: 'start' }}>
+        {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
+        <div style={{ minWidth: 0 }}>
+          <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
+            records={dtRecords} dims={DT_DIMS} unit="นาที" focus={dtFocus}
+            emptyText={dtIncludePlanned ? 'ไม่มีข้อมูล Downtime' : 'ไม่มี Downtime นอกแผนในช่วงนี้'}
+            sectionStyle={s.section} titleStyle={s.title} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={dtIncludePlanned} onChange={e => setDtIncludePlanned(e.target.checked)} style={{ width: 'auto' }} />
+            รวม "หยุดตามแผน" ด้วย ({Math.round(dtPlannedMin).toLocaleString()} นาที)
+            <span style={{ color: 'var(--muted)' }}>— ปกติไม่นับ เพราะไม่ใช่การสูญเสียที่ต้องแก้</span>
+          </label>
+        </div>
+
+        {/* คอลัมน์ขวา = การ์ดเงิน 2 ใบเรียงลง (สั้นทั้งคู่ · รวมกันแล้วสูงพอๆ กับ Pareto ซ้าย) */}
+        {hasMoney && (
+        <div style={{ minWidth: 0 }}>
+
       {/* 💰 มูลค่าดาวไทม์นอกแผน — link นาทีที่เสียกับเงิน (คู่กับแผงมูลค่าของเสียด้านล่าง) */}
       {dtCost.totalMin > 0 && (
         <div style={s.section}>
@@ -2015,22 +2077,6 @@ export default function OEEAnalytics() {
         </div>
       )}
 
-      {/* Downtime Pareto + Defect side-by-side */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        {/* Downtime Pareto — ABC Analysis (ชื่อบนแกนเฉพาะกลุ่ม A · ที่เหลือดูที่ tooltip/ปุ่มขยาย) */}
-        <div>
-          <ParetoAbcChart title={`Pareto — Downtime ${dtIncludePlanned ? 'ทุกประเภท' : 'นอกแผน'} รายประเภท (นาที)`}
-            records={dtRecords} dims={DT_DIMS} unit="นาที" focus={dtFocus}
-            emptyText={dtIncludePlanned ? 'ไม่มีข้อมูล Downtime' : 'ไม่มี Downtime นอกแผนในช่วงนี้'}
-            sectionStyle={s.section} titleStyle={s.title} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={dtIncludePlanned} onChange={e => setDtIncludePlanned(e.target.checked)} style={{ width: 'auto' }} />
-            รวม "หยุดตามแผน" ด้วย ({Math.round(dtPlannedMin).toLocaleString()} นาที)
-            <span style={{ color: 'var(--muted)' }}>— ปกติไม่นับ เพราะไม่ใช่การสูญเสียที่ต้องแก้</span>
-          </label>
-        </div>
-
-        {/* Quality Breakdown — ABC Analysis + เจาะลึก */}
         {/* 💰 มูลค่าของเสีย — แยกงานทดลองออกจากของเสียจากไลน์ผลิต (ตัวที่คิดเข้า %Q) */}
         {defectCost.qtyAll > 0 && (
           <div style={s.section}>
@@ -2084,31 +2130,24 @@ export default function OEEAnalytics() {
           </div>
         )}
 
-        <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น" focus={defFocus}
-          emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
+        </div>
+        )}
       </div>
 
-      {/* A/P/Q Bar comparison by period */}
-      <div style={s.section}>
-        <div style={s.title}>เปรียบเทียบ A · P · Q</div>
-        {grouped.length === 0
-          ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{loading ? 'กำลังโหลด...' : 'ไม่มีข้อมูล'}</div>
-          : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={grouped} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
-                <Tooltip content={<OEETooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="a" name="A%" fill="#22c55e" opacity={0.8} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="p" name="P%" fill="#f59e0b" opacity={0.8} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="q" name="Q%" fill="#a78bfa" opacity={0.8} radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )
-        }
+      {/* ══ แถว B: Pareto ของเสีย | เปรียบเทียบ A·P·Q ══
+          A·P·Q แท่งเยอะ (จัดกลุ่มรายวัน) = ต้องเต็มความกว้าง → ตกลงไปเป็นบล็อกของตัวเองข้างล่าง
+          แล้วให้ Pareto ของเสียกินเต็มความกว้างแทน (ไม่เหลือครึ่งขวาว่างทั้ง 2 กรณี) */}
+      <div style={{ display: 'grid', gridTemplateColumns: gcol(apqNarrow), gap: 16, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <ParetoAbcChart title="Pareto — ของเสียรายประเภท (ชิ้น)" records={defRecords} dims={DEF_DIMS} unit="ชิ้น" focus={defFocus}
+            emptyText="ไม่มีข้อมูลของเสีย" sectionStyle={s.section} titleStyle={s.title} />
+        </div>
+        {apqNarrow && <div style={{ minWidth: 0 }}>{apqChart}</div>}
       </div>
+
+      {!apqNarrow && apqChart}
+      </>);
+      })()}
 
       {/* Data Table */}
       <div style={s.section}>

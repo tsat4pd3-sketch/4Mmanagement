@@ -15,6 +15,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } fro
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
+import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -40,7 +41,14 @@ function computeAvg(v1, v2, v3) {
 }
 
 const S = {
-  page: { display: 'flex', height: '100%', background: 'var(--bg)' },
+  /* ⚠️ ห้ามใส่ `overflow` ให้ `main`/`body` (2026-09-02 · user ทัก "ยิ่งหัวข้อเยอะ ข้อหลังๆ มองไม่เห็นรูป")
+     หน้านี้ถูก embed ใน `PmHub` ซึ่งไม่ได้กำหนดความสูง → `height:100%` ตกเป็น `auto`
+     ⇒ `main{overflow:hidden}` + `body{overflowY:auto}` กลายเป็น **scroll container ที่ไม่มีวันเลื่อน**
+       (เนื้อหาสูงเท่าไหร่กล่องก็สูงตาม) แต่มันยัง "ขัง" `position:sticky` ของรูปเครื่องไว้ข้างใน
+       → เอกสารเลื่อน รูปเลื่อนตามหายไป **sticky ไม่เคยทำงานเลยสักครั้ง**
+     ตอนนี้ปล่อยให้ document เป็นตัวเลื่อน → sticky เกาะ viewport จริง
+     (flex child ล้นแนวนอนใช้ `minWidth:0` แก้ ไม่ใช่ `overflow:hidden` ซึ่งเป็นตัวขัง sticky) */
+  page: { display: 'flex', minHeight: '100%', background: 'var(--bg)' },
   sidebar: { width: 280, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   sidebarHead: { padding: '16px 16px 10px' },
   deptBar: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 16px 12px' },
@@ -55,14 +63,14 @@ const S = {
     border: `1.5px solid ${active ? color : 'var(--border)'}`,
     background: active ? `${color}12` : 'var(--card)',
   }),
-  main: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  main: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' },
   header: { padding: '14px 52px 14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 },
   tabBar: { display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' },
   tabBtn: (active) => ({
     padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
     background: active ? 'var(--card)' : 'transparent', color: active ? 'var(--text)' : 'var(--muted)',
   }),
-  body: { flex: 1, overflowY: 'auto', padding: 20 },
+  body: { flex: 1, minWidth: 0, padding: 20 },
   cpRow: (status) => ({
     display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', borderRadius: 8,
     border: `1px solid ${status ? STATUS_COLOR[status].border : 'var(--border)'}`,
@@ -112,7 +120,7 @@ function cpCheckStatus(cp, r) {
 //   • ลากซ้าย/ขวา (หรือกดจุดใต้ภาพ) เพื่อหมุนดูรอบเครื่อง — pin โชว์เฉพาะเฟรมที่วางไว้ (image_id)
 //   • สีหมุด = สถานะตรวจจริง (OK/NG) · คลิกหมุด → เลื่อน+ไฮไลต์แถวเช็คของจุดนั้น (activeCpId)
 // pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
-function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300 }) {
+function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300, compact = false }) {
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [zoomCp, setZoomCp] = useState(null)   // จุดที่กำลังเปิดรูปซูม (มี image_path)
@@ -172,9 +180,11 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
   }
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: compact ? 0 : 16 }}>
       {/* container หุ้มรูปพอดี (fit-content) กึ่งกลาง — รูปแนวตั้ง (ถ่ายจากมือถือ) ไม่มีแถบเทาข้างเสียพื้นที่
-         รูปสูงได้ถึง min(maxH, 76vh) เพื่อใช้พื้นที่แนวตั้งเต็ม โดยเฉพาะมือถือ (2026-07-24) */}
+         รูปสูงได้ถึง min(maxH, 76vh) เพื่อใช้พื้นที่แนวตั้งเต็ม โดยเฉพาะมือถือ (2026-07-24)
+         ⚠️ `compact` = โหมดแถบติดบนจอแคบ — รูปเตี้ยลงและตัดบรรทัดอธิบายออก เพื่อไม่ให้กินจอ
+            เกินครึ่ง (ที่เหลือต้องเป็นของรายการตรวจ) · คำอธิบายเดิมยังอยู่ครบในโหมดปกติ */}
       <div ref={boxRef} onPointerDown={pointerDown}
         style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
         <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
@@ -213,7 +223,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
         )}
       </div>
       {spin && (
-        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: compact ? 5 : 8, flexWrap: 'wrap' }}>
           {frames.map((f, i) => (
             <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
               style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
@@ -221,7 +231,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
         </div>
       )}
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
-      {framePins.some(c => c.image_path) && (
+      {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
           🔍 หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
         </div>
@@ -605,6 +615,14 @@ export default function PMCheckData() {
 
   const [userId, setUserId] = useState(null)
   const [userRole, setUserRole] = useState(null)
+  const [fullName, setFullName] = useState('')
+  /* 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อได้เลย (2026-09-02 · feedback หน้างาน)
+     ⚠️ **ระบบเสนอ คนกดยืนยัน** ห้ามเปิดใบให้อัตโนมัติ (กฎเดิมทั้งโปรเจค) —
+        ใบซ่อมเป็นงานที่มีคนต้องรับผิดชอบจริง ไม่ใช่ผลข้างเคียงของการกดบันทึก */
+  const [moPrompt, setMoPrompt] = useState(null)   // { insp, ngTopics } หลังบันทึกเจอ NG
+  const [moTeam, setMoTeam] = useState('maintenance')
+  const [moSaving, setMoSaving] = useState(false)
+  const [moByInsp, setMoByInsp] = useState({})     // inspection_id → { id, mo_no } (กันเปิดซ้ำ + โชว์ในประวัติ)
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
   const canRecord = useMemo(() => { const [res, act] = recordPermFor(department); return can(res, act, userRole) }, [department, userRole])
@@ -616,6 +634,18 @@ export default function PMCheckData() {
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
+  /* 📌 รูปเครื่องเป็น "แถบติดบน" ตอนจอแคบ — พับเก็บได้ (จำต่อเครื่อง)
+     ⚠️ ต้อง **วัดความสูงจริง** ไม่ใช่เดา เพราะเอาไปตั้ง `scrollMarginTop` ของแถวเช็ค
+        (กฎ §6.8) — เดาแล้วตอนคลิกหมุด แถวจะถูกเลื่อนไปซ่อนใต้รูปพอดี */
+  const [viewerOpen, setViewerOpen] = useState(() => {
+    try { return localStorage.getItem('pm_viewer_open') !== '0' } catch { return true }
+  })
+  const toggleViewer = () => setViewerOpen(v => {
+    try { localStorage.setItem('pm_viewer_open', v ? '0' : '1') } catch { /* private mode */ }
+    return !v
+  })
+  const viewerRef = useRef(null)
+  const [viewerH, setViewerH] = useState(0)
   // มือถือ/แท็บเล็ต: master-detail — โชว์ "ลิสต์อุปกรณ์" หรือ "ฟอร์มเช็ค" ทีละอัน (ไม่อัด 2 คอลัมน์)
   const [isNarrow, setIsNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches)
   const [isWide, setIsWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
@@ -646,7 +676,8 @@ export default function PMCheckData() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data?.user?.id ?? null)
-      if (data?.user?.id) supabase.from('profiles').select('role').eq('id', data.user.id).single().then(({ data: p }) => setUserRole(p?.role ?? null))
+      if (data?.user?.id) supabase.from('profiles').select('role, full_name').eq('id', data.user.id).single()
+        .then(({ data: p }) => { setUserRole(p?.role ?? null); setFullName(p?.full_name ?? '') })
     })
   }, [])
 
@@ -707,6 +738,78 @@ export default function PMCheckData() {
   const fetchHistory = async (jigId) => {
     const { data } = await supabaseDR.from('inspections').select('*').eq('jig_id', jigId).order('inspected_at', { ascending: false }).limit(30)
     setInspections(data ?? [])
+    /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
+       (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
+       ⚠️ tolerant กับ 42703 — ยังไม่ apply migration ต้องใช้หน้านี้ได้ตามปกติ */
+    const failIds = (data ?? []).filter(i => i.status === 'fail').map(i => i.id)
+    if (!failIds.length) { setMoByInsp({}); return }
+    const { data: mos, error } = await supabaseDR.from('mtn_orders')
+      .select('id, mo_no, status, source_inspection_id').in('source_inspection_id', failIds)
+    if (error) { setMoByInsp({}); return }
+    const m = {}; (mos ?? []).forEach(o => { m[o.source_inspection_id] = o })
+    setMoByInsp(m)
+  }
+
+  /* ทีมช่างตั้งต้นของใบซ่อมที่จะเปิด
+     ⚠️ AM = ผลิตตรวจเอง — เจอ NG แล้ว **ส่งกลับให้ผลิตซ่อมเองไม่ได้** ต้องเดาทีมช่างจากชนิดอุปกรณ์
+        (jig → JIG MTN · die → DIE MTN · อื่น → MTN) แล้วให้คนเลือกทับได้เสมอ */
+  const defaultMoTeam = () => (isAmTeam(department)
+    ? (teamForEquipmentKind(selectedJig?.equipment_type) || 'maintenance')
+    : (teamKeyOf(department) || 'maintenance'))
+
+  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoPrompt({ insp, ngTopics }) }
+
+  // เปิดจากแท็บประวัติ (เคสกด "ไว้ก่อน" ตอนบันทึก) — ต้องไปหาชื่อจุดที่ไม่ผ่านของใบนั้นมาก่อน
+  const openMoFromHistory = async (insp) => {
+    const { data } = await supabaseDR.from('inspection_results')
+      .select('checkpoint_id').eq('inspection_id', insp.id).eq('status', 'fail')
+    const names = (data ?? []).map(r => checkpoints.find(c => c.id === r.checkpoint_id)?.name).filter(Boolean)
+    // จุดตรวจถูกลบ/ย้ายแผนกไปแล้ว = หาชื่อไม่เจอ — ยังเปิดใบได้ แต่ต้องบอกตรงๆ ว่าดูรายละเอียดที่ผลตรวจ
+    openMoPrompt(insp, names.length ? names : ['(ดูรายละเอียดในผลตรวจ)'])
+  }
+
+  const createMoFromInspection = async () => {
+    if (!moPrompt || !selectedJig) return
+    const { insp, ngTopics } = moPrompt
+    setMoSaving(true)
+    try {
+      const now = new Date()
+      // วันงาน (ตัด 08:00 ตามกะ) — ห้าม toISOString (UTC เพี้ยนช่วงเช้ามืด)
+      const wd = new Date(now); if (wd.getHours() < 8) wd.setDate(wd.getDate() - 1)
+      const workDate = `${wd.getFullYear()}-${String(wd.getMonth() + 1).padStart(2, '0')}-${String(wd.getDate()).padStart(2, '0')}`
+      const payload = {
+        status: 'pending', current_step: 1, report_at: now.toISOString(), work_date: workDate,
+        repair_scope: 'in_line',
+        line_name: selectedJig.line_name || null,
+        mtn_dept: teamKeyOf(moTeam) || 'maintenance',
+        machine_no: selectedJig.machine_no || selectedJig.jig_no || null,
+        problem_characteristic: 'อื่นๆ',
+        report_note: `[จากผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}] ${selectedJig.name} — จุดที่ไม่ผ่าน: ${ngTopics.join(', ')}`,
+        reporter_prod: fullName || null, reported_by_name: fullName || null,
+        source_inspection_id: insp.id,
+      }
+      let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single()
+      // ยังไม่ apply migration = ไม่มีคอลัมน์ผูกที่มา → เปิดใบได้ แต่ต้องบอกว่าผูกกลับผลตรวจไม่ได้
+      if (error?.code === '42703') {
+        const { source_inspection_id: _drop, ...slim } = payload // eslint-disable-line no-unused-vars
+        ;({ data, error } = await supabaseDR.from('mtn_orders').insert(slim).select().single())
+        if (!error) toast.info('เปิดใบซ่อมแล้ว แต่ยังผูกกลับผลตรวจไม่ได้ — ยังไม่ได้รัน migration 20260902_mtn_order_from_inspection (แจ้ง admin)')
+      }
+      if (error) {
+        toast.error(error.code === '23505' ? 'ผลตรวจใบนี้มีใบแจ้งซ่อมอยู่แล้ว' : error.message)
+        return
+      }
+      fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
+        // ส่ง "ชื่อทีม" ในข้อความแจ้งเตือน (DB เก็บรหัส) — เหตุผลเดียวกับ notifyMtn ใน MtnRepair.jsx
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
+      }).catch(() => {})
+      setMoByInsp(prev => ({ ...prev, [insp.id]: data }))
+      setMoPrompt(null)
+      toast.success(`📝 เปิดใบแจ้งซ่อมแล้ว → แจ้งถึงทีม ${deptNameOf(moTeam) || 'MTN'} — ติดตามต่อที่หน้าแจ้งซ่อม MTN`)
+    } finally {
+      setMoSaving(false)
+    }
   }
 
   useEffect(() => {
@@ -740,6 +843,17 @@ export default function PMCheckData() {
     })
     fetchHistory(selectedJig.id)
   }, [selectedJig, department, userId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* วัดความสูงจริงของแถบรูปที่ติดบน (จอแคบ) — เอาไปเว้น `scrollMarginTop` ให้แถวเช็ค
+     ไม่วัด/เดาเลข = คลิกหมุดแล้วแถวถูกเลื่อนไปนอนใต้รูปพอดี มองไม่เห็นสิ่งที่เพิ่งกด */
+  useEffect(() => {
+    const el = viewerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') { setViewerH(0); return }
+    const ro = new ResizeObserver(() => setViewerH(el.getBoundingClientRect().height))
+    ro.observe(el)
+    setViewerH(el.getBoundingClientRect().height)
+    return () => ro.disconnect()
+  }, [selectedJig, checkpoints, frames, viewerOpen, isNarrow, isWide])
 
   // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น
   useEffect(() => {
@@ -844,6 +958,12 @@ export default function PMCheckData() {
       setResults(init); setNotes('')
       fetchHistory(selectedJig.id)
       setTab('history')
+      /* 🔧 เจอ NG → เสนอเปิดใบแจ้งซ่อมทันที (ตอนนี้แหละที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง)
+         เสนอหลังบันทึกสำเร็จเท่านั้น — ต้องมี inspection id ก่อนถึงผูกที่มาได้
+         ข้ามได้ ไม่บล็อก · กด "ไว้ก่อน" แล้วยังกลับมาเปิดจากแท็บประวัติได้ (ไม่เป็นทางตัน) */
+      if (overall === 'fail' && ngTopics.length && can('mtn_repair', 'report', userRole)) {
+        openMoPrompt(insp, ngTopics)
+      }
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -1011,8 +1131,12 @@ export default function PMCheckData() {
                 const showPhoto = frames.length > 0 && selectedJig.layout_type !== 'list' && checkpoints.length > 0
                 // จอกว้าง (≥1180px) + มีรูป → 2 คอลัมน์ (รูปซ้ายค้างไว้ · รายการเช็คขวา) ใช้พื้นที่เต็ม
                 const twoCol = isWide && showPhoto
+                /* จอแคบ = รูปอยู่ "บนหัว" ของรายการ → ต้องเตี้ยพอให้เหลือที่กรอกจริง
+                   (480px บนมือถือ = กินเกือบทั้งจอ ตอบ feedback "ในมือถือก็เหมือนยังไม่เหมาะ") */
+                const stackCompact = showPhoto && !twoCol
                 const viewerNode = showPhoto
-                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId} maxH={twoCol ? 560 : 480} />
+                  ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId}
+                      maxH={twoCol ? 560 : (isNarrow ? 190 : 260)} compact={stackCompact} />
                   : null
 
                 const formNode = (
@@ -1080,7 +1204,8 @@ export default function PMCheckData() {
                             <div key={cp.id}>
                               {header}
                               <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
-                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s' }}>
+                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s',
+                                  scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
                                 {row}
                               </div>
                             </div>
@@ -1098,12 +1223,30 @@ export default function PMCheckData() {
 
                 return twoCol ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(min(360px, 100%), 1fr) minmax(420px, 640px)', gap: 24, alignItems: 'start', maxWidth: 1500, margin: '0 auto' }}>
-                    <div style={{ position: 'sticky', top: 0 }}>{viewerNode}</div>
+                    <div style={{ position: 'sticky', top: 8 }}>{viewerNode}</div>
                     <div>{formNode}</div>
                   </div>
                 ) : (
                   <div style={{ maxWidth: showPhoto ? 760 : 720, margin: '0 auto' }}>
-                    {viewerNode}
+                    {/* 📌 จอแคบ: รูป + หมุด **ติดอยู่บนหัวจอ** ตลอดที่ไล่เช็คลงไป
+                        เดิมวางไว้เฉยๆ แล้วเลื่อนหายไปตั้งแต่ข้อ 3-4 → ข้อหลังๆ ไม่รู้ว่าจุดอยู่ตรงไหนของเครื่อง
+                        พื้นหลังทึบบังคับ (ไม่งั้นรายการเลื่อนทะลุใต้รูป) · พับเก็บได้เมื่ออยากได้พื้นที่กรอกเต็ม */}
+                    {stackCompact && (
+                      <div ref={viewerRef} style={{
+                        position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg)',
+                        paddingBottom: 8, marginBottom: 10, borderBottom: '1px solid var(--border)',
+                      }}>
+                        {viewerOpen && viewerNode}
+                        <button onClick={toggleViewer} style={{
+                          display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 999, cursor: 'pointer',
+                          fontSize: 11, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                        }}>
+                          {/* พับแล้วต้องยังบอกว่าซ่อนอะไรไว้ + กางคืนได้ ห้ามหายเงียบ */}
+                          {viewerOpen ? '▲ ซ่อนรูปเครื่อง' : '▼ แสดงรูปเครื่อง (ดูว่าจุดอยู่ตรงไหน)'}
+                        </button>
+                      </div>
+                    )}
+                    {!stackCompact && viewerNode}
                     {formNode}
                   </div>
                 )
@@ -1122,9 +1265,24 @@ export default function PMCheckData() {
                           {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
                           {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
                           {insp.approval_status === 'pending' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>รออนุมัติ</span>}
+                          {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
+                          {moByInsp[insp.id] && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c' }}>
+                              🔧 ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <span style={{ color: 'var(--muted)' }}>›</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* กด "ไว้ก่อน" ตอนบันทึกแล้วต้องกลับมาเปิดได้ — ไม่งั้นข้ามครั้งเดียว = ทางตัน */}
+                        {insp.status === 'fail' && !moByInsp[insp.id] && can('mtn_repair', 'report', userRole) && (
+                          <button onClick={e => { e.stopPropagation(); openMoFromHistory(insp) }} style={{
+                            padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                            border: '1px solid #fb923c', background: 'rgba(251,146,60,0.12)', color: '#fb923c',
+                          }}>🔧 เปิดใบแจ้งซ่อม</button>
+                        )}
+                        <span style={{ color: 'var(--muted)' }}>›</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1142,6 +1300,54 @@ export default function PMCheckData() {
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>
+
+      {/* ── 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อเลย ──────────────────────────────────
+          ⚠️ ไม่ปิดจากการคลิกพื้นหลัง (UI-CONVENTIONS §5) — เผลอแตะแล้วปิด = เสียโอกาสเปิดใบ
+             ตอนที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง (ยังกลับมาเปิดจากประวัติได้ แต่คนละจังหวะ) */}
+      {moPrompt && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3100, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>⚠ พบผลตรวจไม่ผ่าน {moPrompt.ngTopics.length} จุด</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 4 }}>{selectedJig?.name}</div>
+            </div>
+            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
+              {moPrompt.ngTopics.map((n, i) => <div key={i}>• {n}</div>)}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>แจ้งถึงทีมช่าง</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {MTN_TEAMS.map(t => (
+                  <button key={t} onClick={() => setMoTeam(t)} style={{
+                    padding: '6px 13px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    border: `1.5px solid ${moTeam === t ? 'var(--accent)' : 'var(--border2)'}`,
+                    background: moTeam === t ? 'var(--accent-dim)' : 'var(--bg3)', color: moTeam === t ? 'var(--accent)' : 'var(--muted)',
+                  }}>{deptNameOf(t)}</button>
+                ))}
+              </div>
+              {/* AM เจอ NG ส่งกลับให้ผลิตซ่อมเองไม่ได้ — ต้องบอกว่าทีมตั้งต้นมาจากการเดา ให้เลือกทับได้ */}
+              {isAmTeam(department) && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+                  ผลตรวจนี้เป็น AM (ผลิตตรวจเอง) — ระบบเดาทีมช่างจากชนิดอุปกรณ์ให้ก่อน เลือกใหม่ได้ถ้าไม่ตรง
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
+                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+              }}>ไว้ก่อน</button>
+              <button onClick={createMoFromInspection} disabled={moSaving} style={{
+                padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                border: 'none', background: 'var(--accent)', color: '#071008', opacity: moSaving ? 0.6 : 1,
+              }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
+              กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

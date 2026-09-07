@@ -65,6 +65,7 @@ const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
+const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -132,14 +133,21 @@ export const NAV_ITEMS = [
   { to: '/improvements',   icon: '💡', label: 'Improvements',        group: 'ฝ่ายผลิต' },
   { to: '/scrap-report',   icon: '♻️', label: 'ใบรายงานของเสีย (Scrap)', group: 'ฝ่ายผลิต' },
 
-  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: 'Logistic - Store' },
-  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: 'Logistic - Store' },
-  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: 'Logistic - Store' },
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - Store' },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: 'Logistic - Store' },
-  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: 'Logistic - Store' },
-  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - Store' },
-  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - Store' },
+  /* Logistic & Sales แบ่ง 3 ฝั่งตามความรับผิดชอบจริงของแผนกย่อย (2026-09-03 · คำสั่ง user)
+     ⚠️ Warehouse (เก็บ FG 1xx → ขาออก) ≠ Store (คุม 2xx/3xx/5xx → ขาเข้า) — ห้ามสลับ
+     นิยามฝั่ง + การจัดฝั่งจากเลข MAT อยู่ที่ src/utils/logisticSide.js จุดเดียว */
+  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: 'Logistic - ขาเข้า (Inbound)' },
+  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: 'Logistic - ขาเข้า (Inbound)' },
+  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - ขาเข้า (Inbound)' },
+  // เฝ้าระวังสต๊อกจับทั้ง 2 ฝั่ง (A/B เทียบ min-max ของทุกเลข · E ใบสั่งซื้อค้าง) → โผล่ทั้งสองหมวด
+  // `alsoIn` = โชว์ซ้ำเฉพาะใน sidebar/หน้า Home · ที่อื่น (สิทธิ์/ค้นหา/breadcrumb/ตัวนับ) นับครั้งเดียว
+  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - ขาเข้า (Inbound)', alsoIn: 'Logistic - ขาออก (Outbound)' },
+
+  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: 'Logistic - ขาออก (Outbound)' },
+  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: 'Logistic - ขาออก (Outbound)' },
+  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: 'Logistic - ขาออก (Outbound)' },
+
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - แผนงาน & ข้อมูล' },
 
   // ⚠️ 4 เมนู PM เดิมขึ้นต้นด้วยคำชุดเดียวกัน ("...อุปกรณ์เครื่องจักร") จนแยกไม่ออกว่าอันไหนทำอะไร
   //    ชื่อใหม่บอกการกระทำ: บันทึกผล / ดูปฏิทิน / ดูว่าจะครบกำหนด / ตั้งจุดที่ต้องตรวจ (nav audit 2026-08-27)
@@ -150,6 +158,7 @@ export const NAV_ITEMS = [
   //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
   { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
+  { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
 
   // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
@@ -198,7 +207,7 @@ export const NAV_ITEMS = [
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - Store', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - ขาเข้า (Inbound)', 'Logistic - ขาออก (Outbound)', 'Logistic - แผนงาน & ข้อมูล', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
@@ -208,7 +217,9 @@ export const NAV_GROUP_META = {
   'ฝ่ายผลิต':                  { icon: '🏭', short: 'ผลิต' },
   'วิเคราะห์ & รายงาน':        { icon: '📈', short: 'รายงาน' },
   'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
-  'Logistic - Store':          { icon: '📦', short: 'สโตร์' },
+  'Logistic - ขาเข้า (Inbound)':  { icon: '📥', short: 'ขาเข้า' },
+  'Logistic - ขาออก (Outbound)':  { icon: '📤', short: 'ขาออก' },
+  'Logistic - แผนงาน & ข้อมูล':   { icon: '🧭', short: 'แผนงาน' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
@@ -219,14 +230,20 @@ export const NAV_GROUP_META = {
 // อิง NAV_ITEMS ตัวเดียวกับ sidebar เสมอ (single source of truth — ห้ามพิมพ์รายชื่อเมนูซ้ำใน DeptHub)
 // และกรองตามสิทธิ์ role เดียวกับ sidebar เพื่อให้ชิปตรงกับเมนูที่ user คนนั้นเห็นจริง
 export function navItemsForGroups(groups, role) {
-  return NAV_ITEMS.filter(i => i.to !== '/' && groups.includes(i.group) && canAccessPage(i.to, role));
+  return NAV_ITEMS.filter(i => i.to !== '/' && inNavGroup(i, groups) && canAccessPage(i.to, role));
 }
+
+/* เมนูอยู่ในหมวดนี้ไหม — นับ `alsoIn` ด้วย (หน้าที่ทำงานคาบ 2 หมวด เช่น เฝ้าระวังสต๊อก
+   ที่จับทั้งขาเข้า-ขาออก) · ใช้เฉพาะ "การแสดงผลรายการเมนู" (sidebar + การ์ดหน้า Home)
+   ⚠️ ห้ามเอาไปใช้กับตัวนับ/สิทธิ์/ค้นหา — เมนู 1 หน้ามีสิทธิ์ชุดเดียว ต้องนับครั้งเดียว */
+export const inNavGroup = (item, groups) =>
+  groups.includes(item.group) || (item.alsoIn && groups.includes(item.alsoIn));
 
 // สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
 // เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
 export function accessSummaryForRole(role) {
   const pages = NAV_ITEMS.filter(i => i.to !== '/' && canAccessPage(i.to, role));
-  const groups = NAV_GROUP_ORDER.filter(g => pages.some(p => p.group === g));
+  const groups = NAV_GROUP_ORDER.filter(g => pages.some(p => inNavGroup(p, [g])));
   return { total: pages.length, all: pages.length >= NAV_ITEMS.length - 1, groups };
 }
 
@@ -362,7 +379,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? visibleItems.filter(i => (i.label + ' ' + i.group + ' ' + i.to).toLowerCase().includes(q))
     : null;
   const groupedItems = NAV_GROUP_ORDER
-    .map(g => ({ group: g, items: visibleItems.filter(i => i.group === g) }))
+    .map(g => ({ group: g, items: visibleItems.filter(i => inNavGroup(i, [g])) }))
     .filter(g => g.items.length > 0);
   const displayName = userFullName || userEmail || '';
   const initials = displayName
@@ -1755,6 +1772,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
+              } />
+              <Route path="/fixture" element={
+                <RoleRoute path="/fixture" userRole={role}><FixtureRegistry /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>

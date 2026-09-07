@@ -1,5 +1,14 @@
 /* mock client สำหรับ audit layout เท่านั้น — คืนข้อมูลว่าง ให้หน้า render โครงออกมาได้ */
 
+/* ชื่อประเภทจริงจากระบบ — ยาว/สั้นคละกันเหมือนของจริง (ใช้ทดสอบกราฟจัดอันดับ + ป้ายแกนที่ถูกตัด) */
+const DT_NAMES = ['JIG มีปัญหา (ชำรุด/ปรับแก้)', 'Robot (Alarm/Error)', 'เลเซอร์มีปัญหา',
+  'เครื่องแจ้งเตือน Alarm (ไม่ระบุสาเหตุ)', 'อื่นๆ (นอกแผน)', 'แก้ไขปัญหาคุณภาพ',
+  'รอกระบวนการก่อนหน้า (นอกแผน)', 'ราง Conveyor มีปัญหา', 'Sensor / Reed มีปัญหา', 'ลวดเชื่อมติด',
+  'Stationary มีปัญหา', 'Feed nut ติด/ปัญหาเกลียว Nut,Bolt,Stud', 'ปรับแนวเชื่อม / ปรับจุด Spot']
+const DEF_NAMES = ['รอยร้าว/แตก', 'เจาะรูไม่ครบ', 'งานยุบ', 'ย่น', 'งานทดลอง / ปรับตั้งเครื่อง (Try-out)',
+  'รูไม่ตรงตำแหน่ง', 'ตัดไม่ขาด / ไม่จบ process', 'บุบบุ๋ง', 'รู NOGO / ขนาดรูไม่ได้', 'ทับเศษ SCRAP',
+  'เสียรูป', 'ครีบเกิน', 'เชื่อมไม่ติด']
+
 /* แถวปลอม 1 ชุด ครอบคอลัมน์ที่ใช้บ่อยที่สุดในโปรเจค — ให้ตาราง/ลิสต์ render ของจริงออกมาวัดได้ */
 const ROW = (i) => ({
   id: `id-${i}`, name: `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`, code: `CODE-${i}`,
@@ -17,8 +26,12 @@ const ROW = (i) => ({
   ended_at: '2026-08-04T01:30:00+07:00', checklist_id: `c-${i}`,
   full_name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ ${i}`, position: 'operator', role: 'leader', email: `u${i}@x.co`,
   title: `หัวข้อทดสอบ ${i}`, label: `ป้าย ${i}`, note: 'หมายเหตุ', remark: 'หมายเหตุ',
-  dr_downtime_types: { name_th: 'เครื่องเสีย', category: 'unplanned' },
-  dr_defect_types: { name_th: 'งานเป็นครีบ' },
+  /* ⚠️ ต้อง **แตกต่างกันตาม i** (2026-09-02) — เดิมทุกแถวคืนชื่อประเภทเดียวกัน
+     ⇒ กราฟที่ "จัดกลุ่มตามประเภท" (Pareto/ABC/พาเรโตของเสีย) ได้ 1 กลุ่มเสมอ
+        = harness มองไม่เห็นบั๊กของกราฟจัดอันดับเลยสักตัว (ทั้งความสูง ทั้งการยุบหางยาว)
+     ชื่อยกมาจากประเภทจริงในระบบ เพื่อให้ความยาวข้อความใกล้เคียงของจริงด้วย */
+  dr_downtime_types: { name_th: DT_NAMES[i % DT_NAMES.length], category: 'unplanned' },
+  dr_defect_types: { name_th: DEF_NAMES[i % DEF_NAMES.length] },
   dr_products: { mat_no: `1010${1000+i}`, part_name: `ชิ้นงาน ${i}`, cycle_time_sec: 58 },
   employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },

@@ -16,6 +16,9 @@ import { loadOpInfo } from '../utils/opItems';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 
 import InfoMore from '../components/InfoMore';
+import BomTreeView from '../components/BomTreeView';
+import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
+import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1348,7 +1351,7 @@ export default function ProductMaster() {
    Add mode: picker จาก parts_master → กรอกแค่ qty_per_unit
    Edit mode: แก้ qty_per_unit / qty_per_pkg ของ bom row
 ═══════════════════════════════════════════════════════════════ */
-const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '' };
+const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '', item_no: '', storage_location: '' };
 
 const TH = ({ children, w }) => (
   <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{children}</th>
@@ -1363,6 +1366,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [selProduct, setSelProduct] = useState(null);
   const [items, setItems]           = useState([]);
   const [counts, setCounts]         = useState({});
+  const [bomByMat, setBomByMat]     = useState({});     // mat_no → ลูกชั้นถัดไป (ไล่โครงหลายชั้น)
+  const [slocs, setSlocs]           = useState([]);     // ทะเบียนรหัสคลัง (storage_locations)
+  const [slocUsed, setSlocUsed]     = useState([]);     // รหัสที่ถูกใช้ใน BOM จริง (เผื่อมีที่ยังไม่ลงทะเบียน)
+  const [showTree, setShowTree]     = useState(true);   // 🌳 กางโครงแบบ SAP
   const [partsMaster, setPartsMaster] = useState([]);   // catalog กลาง
   const [search, setSearch]         = useState('');
   const [loading, setLoading]       = useState(false);
@@ -1370,6 +1377,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [pickerQ, setPickerQ]       = useState('');     // ค้นหาใน picker
   const [pickerSel, setPickerSel]   = useState([]);     // รายการที่เลือก [{part, qty_per_unit}]
   const [showEdit, setShowEdit]     = useState(false);  // modal แก้ไข bom row
+  const [slocFree, setSlocFree]     = useState(false);  // true = พิมพ์รหัสคลังเอง (ไม่เลือกจากทะเบียน)
   const [editItem, setEditItem]     = useState(null);
   const [form, setForm]             = useState(EMPTY_BOM);
   const [saving, setSaving]         = useState(false);
@@ -1378,18 +1386,43 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [copying, setCopying]         = useState(false);
 
   const loadAll = useCallback(async () => {
-    const [{ data: prods }, { data: boms }, { data: parts }, opMap] = await Promise.all([
+    /* ดึง BOM ทั้งฐาน (459 แถว) ไม่ใช่แค่ product ที่เลือก — ต้องใช้ไล่โครงหลายชั้น
+       (ลูกที่เป็น product เองมี BOM ของตัวเอง = ชั้นถัดไป)
+       item_no/storage_location เป็นคอลัมน์ใหม่ → ยังไม่ apply migration ต้องถอยไปชุดเดิม ห้ามให้ทั้งแท็บพัง */
+    const BOM_FULL = 'product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location';
+    const BOM_SLIM = 'product_id, mat_no, part_name, qty_per_unit, uom';
+    const fetchBom = async () => {
+      const r = await supabaseDR.from('bom_items').select(BOM_FULL).eq('is_active', true);
+      return r.error?.code === '42703'
+        ? supabaseDR.from('bom_items').select(BOM_SLIM).eq('is_active', true)
+        : r;
+    };
+    const [{ data: prods }, { data: boms }, { data: parts }, opMap, { data: locs }] = await Promise.all([
       supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
-      supabaseDR.from('bom_items').select('product_id').eq('is_active', true),
+      fetchBom(),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
       loadOpInfo(),
+      // ทะเบียนรหัสคลัง — ยังไม่ apply migration (42P01) = ลิสต์ว่าง แต่ยังพิมพ์รหัสเองได้ ไม่ตัน
+      supabaseDR.from('storage_locations').select('code, name, kind, is_active').eq('is_active', true).order('sort_order').order('code'),
     ]);
+    setSlocs(locs || []);
+    // รหัสที่ถูกใช้ใน BOM จริง — เอาไว้เทียบว่ามีตัวไหน "ยังไม่ลงทะเบียน" (ห้ามซ่อน)
+    setSlocUsed([...new Set((boms || []).map(b => slocLabel(b.storage_location)).filter(Boolean))].sort());
     // 🔩 รายการขั้นตอน (OP งานขับนัท) ไม่ใช่พาร์ทจริง — ห้ามมี BOM ของตัวเอง จึงไม่โผล่ในลิสต์นี้
-    setProducts((prods || []).filter(p => !opMap[p.mat_no]));
+    const list = (prods || []).filter(p => !opMap[p.mat_no]);
+    setProducts(list);
     setPartsMaster(parts || []);
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
     setCounts(c);
+    // mat_no → ลูกชั้นถัดไป (ใช้กับ BomTreeView) — ไล่ผ่าน product ทุกตัว ไม่ใช่เฉพาะ FG
+    const matOf = {}; (prods || []).forEach(p => { matOf[p.id] = p.mat_no; });
+    const tree = {};
+    (boms || []).forEach(b => {
+      const m = matOf[b.product_id];
+      if (m) (tree[m] = tree[m] || []).push(b);
+    });
+    setBomByMat(tree);
   }, []);
 
   const loadItems = useCallback(async (productId) => {
@@ -1399,7 +1432,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       .select('*').eq('product_id', productId).eq('is_active', true).order('mat_no');
     setLoading(false);
     if (error) { toast.error(error.message); return; }
-    setItems(data || []);
+    /* 📍 เรียงตาม "เลขรายการ" แบบใบ BOM ของ SAP (0010/0020/…) แล้วค่อย mat_no
+       ⚠️ เรียงฝั่ง client ไม่ใช่ .order('item_no') — ยังไม่ apply migration = ไม่มีคอลัมน์ = query พังทั้งใบ
+       byItemNo ดันแถวที่ยังไม่ตั้งเลขไปท้าย (ไม่ใช่ขึ้นก่อนเพราะ null) */
+    setItems([...(data || [])].sort(byItemNo));
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -1426,8 +1462,28 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
   const lineNames = useMemo(() => [...new Set((products || []).map(p => p.line_name).filter(Boolean))].sort(), [products]);
 
+  /* ═══ 🏬 ตัวเลือกรหัสคลังในโมดัลแก้ไข ═══
+     ทะเบียน + รหัสที่เคยถูกใช้ใน BOM แต่ยังไม่ลงทะเบียน (**ห้ามซ่อน** ไม่งั้นหาตัวที่ต้องแก้ไม่เจอ) */
+  const slocChoices = useMemo(() => {
+    const reg = new Map(slocs.map(s => [slocLabel(s.code), { code: slocLabel(s.code), name: s.name }]));
+    slocUsed.forEach(c => { if (!reg.has(c)) reg.set(c, { code: c, name: '⚠ ยังไม่ลงทะเบียน' }); });
+    return [...reg.values()];
+  }, [slocs, slocUsed]);
+  const slocCode      = slocLabel(form.storage_location);
+  const slocInList    = slocChoices.some(s => s.code === slocCode);
+  const slocBadFormat = slocCode !== '' && !slocValid(slocCode);
+  const slocRegistered = slocs.some(s => slocLabel(s.code) === slocCode);
+  const slocUnregistered = slocCode !== '' && !slocRegistered;
+
   const openPicker = () => { setPickerQ(''); setPickerSel([]); setShowPicker(true); };
-  const openEdit_  = (it) => { setEditItem(it); setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '' }); setShowEdit(true); };
+  const openEdit_  = (it) => {
+    setEditItem(it);
+    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '' });
+    // รหัสเดิมที่ไม่มีในลิสต์ (ทะเบียน+ที่เคยใช้) = เปิดโหมดพิมพ์เอง ไม่งั้น select จะแสดงว่าง = ค่าหายเงียบ
+    const c = slocLabel(it.storage_location);
+    setSlocFree(!!c && !slocChoices.some(s => s.code === c));
+    setShowEdit(true);
+  };
 
   const handlePickerSave = async () => {
     if (!pickerSel.length) { toast.error('เลือกพาร์ทอย่างน้อย 1 รายการ'); return; }
@@ -1436,8 +1492,11 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     setSaving(true);
     // re-fetch existing mat_nos to avoid stale state duplicates
     const { data: existing } = await supabaseDR.from('bom_items')
-      .select('mat_no').eq('product_id', selProduct.id);
+      .select('mat_no, item_no').eq('product_id', selProduct.id);
     const usedMats = new Set((existing || []).map(r => r.mat_no));
+    /* 📍 ตั้งเลขรายการต่อจากของเดิม เว้นทีละ 10 แบบ SAP (0010/0020/…) เพื่อให้แทรกกลางได้
+       เลขนี้เป็น "ลำดับในใบ" ไม่ใช่ข้อมูลธุรกิจ → เติมให้เลยได้ · แก้ทีหลังที่ปุ่ม ✏️ */
+    let seq = nextItemNo(existing || []);
     const rows = pickerSel
       .filter(x => !usedMats.has(x.part.mat_no))
       .map(x => ({
@@ -1449,14 +1508,21 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         qty_per_pkg:  x.part.qty_per_pkg || null,
         uom:          x.part.uom || 'pcs',
         supplier:     x.part.supplier || null,
+        item_no:      (() => { const v = seq; seq = Math.min(9999, seq + 10); return v; })(),
         created_by:   fullName,
         updated_at:   new Date().toISOString(),
         is_active:    true,
       }));
     if (!rows.length) { setSaving(false); toast.info('พาร์ทที่เลือกมีอยู่ใน BOM แล้วทั้งหมด'); return; }
-    const { error } = await supabaseDR.from('bom_items').insert(rows);
+    let { error } = await supabaseDR.from('bom_items').insert(rows);
+    // ยังไม่ apply migration (42703) = เพิ่มพาร์ทได้ปกติ แค่ไม่มีเลขรายการ **ห้ามให้ทั้งใบพัง**
+    if (error?.code === '42703') {
+      ({ error } = await supabaseDR.from('bom_items')
+        .insert(rows.map(({ item_no, ...r }) => r)));
+      if (!error) toast.info('เพิ่มพาร์ทแล้ว — แต่ยังตั้งเลขรายการไม่ได้ (ยังไม่ได้ apply migration)');
+    }
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(error.code === '23505' ? 'เลขรายการซ้ำ — มีคนแก้ BOM นี้พร้อมกัน กดโหลดใหม่แล้วลองอีกครั้ง' : error.message); return; }
     toast.success(`เพิ่ม ${rows.length} พาร์ทใน BOM แล้ว`);
     setShowPicker(false);
     loadItems(selProduct.id);
@@ -1466,16 +1532,38 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const handleEditSave = async () => {
     const qty = parseFloat(form.qty_per_unit);
     if (!qty || qty <= 0) { toast.error('QTY ต้องมากกว่า 0'); return; }
+    const itemNo = String(form.item_no).trim() === '' ? null : parseInt(form.item_no, 10);
+    if (itemNo !== null && (!Number.isFinite(itemNo) || itemNo < 1 || itemNo > 9999)) {
+      toast.error('เลขรายการต้องเป็น 1–9999 (SAP ใช้ 4 หลัก เช่น 0010) หรือเว้นว่างถ้ายังไม่ตั้ง'); return;
+    }
+    // รูปแบบรหัสคลังผิด = บล็อก (DB มี check ด้วย — บอกก่อนจะได้ไม่เจอ error ดิบ)
+    if (!slocValid(form.storage_location)) { toast.error(`รหัสคลังไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; }
     setSaving(true);
-    const { error } = await supabaseDR.from('bom_items').update({
+    const base = {
       qty_per_unit: qty,
       qty_per_pkg:  form.qty_per_pkg ? parseFloat(form.qty_per_pkg) : null,
       note:         form.note.trim() || null,
       source_line:  form.source_line.trim() || null,
       updated_at:   new Date().toISOString(),
+    };
+    let { error } = await supabaseDR.from('bom_items').update({
+      ...base,
+      item_no:          itemNo,
+      storage_location: slocLabel(form.storage_location) || null,
     }).eq('id', editItem.id);
+    // ยังไม่ apply migration = แก้ qty/note ได้เหมือนเดิม แต่ต้องบอกว่าอะไรไม่ถูกบันทึก **ห้ามเงียบ**
+    if (error?.code === '42703') {
+      ({ error } = await supabaseDR.from('bom_items').update(base).eq('id', editItem.id));
+      if (!error) toast.info('บันทึกแล้ว — แต่เลขรายการ/คลัง ยังเก็บไม่ได้ (ยังไม่ได้ apply migration)');
+    }
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      toast.error(
+        error.code === '23505' ? `เลขรายการ ${itemNoLabel(itemNo)} ถูกใช้ในใบนี้แล้ว — เลือกเลขอื่น`
+        : error.code === '23514' ? `ค่าไม่ผ่านเงื่อนไขของฐานข้อมูล — ${SLOC_FORMAT_HINT}`
+        : error.message);
+      return;
+    }
     toast.success('แก้ไขแล้ว');
     setShowEdit(false);
     loadItems(selProduct.id);
@@ -1570,6 +1658,24 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 </div>
               )}
             </div>
+            {/* 🌳 โครงหลายชั้นแบบ SAP (CS12) — ตารางด้านล่างเป็นชั้น 1 อย่างเดียว
+                ต้องมีตัวกางถึงจะเห็นว่าของตัวไหนถูกนับซ้ำ (BOM ถูกแบนมาจาก SAP) */}
+            {!loading && items.length > 0 && selProduct?.mat_no && (
+              <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                <div onClick={() => setShowTree(v => !v)}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
+                  🌳 โครงหลายชั้น (แบบ SAP Display Multilevel BOM)
+                  <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{showTree ? '▾' : '▸'}</span>
+                </div>
+                {showTree && (
+                  <div style={{ marginTop: 10 }}>
+                    <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
+                      bomOf={(m) => bomByMat[m] || []} />
+                  </div>
+                )}
+              </div>
+            )}
+
             {loading ? (
               <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
             ) : items.length === 0 ? (
@@ -1581,19 +1687,51 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg2)' }}>
-                      <TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
+                      <TH w={62}>Item</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
                       {(canEdit || canDelete) && <TH w={90}> </TH>}
                     </tr>
                   </thead>
                   <tbody>
                     {items.map(it => (
                       <tr key={it.id}>
+                        {/* 📍 เลขรายการในใบ BOM ของตัวแม่นี้ (SAP Item) — **นับใหม่ทุกตัวแม่**
+                            ยังไม่ตั้ง = "—" ห้ามโชว์ 0000 (ไม่ใช่รายการแรก แต่คือยังไม่ระบุ) */}
+                        <TD style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: it.item_no ? 'var(--text2)' : 'var(--muted)' }}>
+                          {itemNoLabel(it.item_no) || '—'}
+                        </TD>
                         <TD style={{ fontWeight: 600 }}>{it.part_name}</TD>
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{it.part_no || '—'}</TD>
                         <TD style={{ fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{it.mat_no}</TD>
-                        <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>{Number(it.qty_per_unit)}</TD>
+                        {/* ⚠️ จำนวนต้องมีหน่วยติดตัว (user 2026-09-02) — coil เป็น KG ไม่ใช่ชิ้น
+                            "0.341" กับ "5" ดูเหมือนหน่วยเดียวกันถ้าไม่บอก */}
+                        <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {Number(it.qty_per_unit)}
+                          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', marginLeft: 3 }}>{uomLabel(it.uom) || '⚠'}</span>
+                        </TD>
                         <TD style={{ fontWeight: 700, color: '#f59e0b', textAlign: 'right' }}>{it.qty_per_pkg ? Number(it.qty_per_pkg) : '—'}</TD>
-                        <TD style={{ color: 'var(--muted)' }}>{it.uom}</TD>
+                        {/* PC / EA / pcs ในฐานเป็นของเดียวกัน 3 สะกด — แสดงให้เป็นมาตรฐานเดียว (ไม่แก้ค่าใน DB) */}
+                        <TD style={{ color: it.uom ? 'var(--muted)' : '#f59e0b', fontWeight: it.uom ? 400 : 700 }}>
+                          {uomLabel(it.uom) || '⚠ ไม่ระบุ'}
+                        </TD>
+                        {/* 🏬 คลังที่เบิกชิ้นส่วนบรรทัดนี้ (SAP Stor.Loc.)
+                            ไม่ระบุ = "—" → ระบบยังเบิกตามพฤติกรรมเดิม (line_name/STORE) ไม่ใช่ error */}
+                        <TD style={{ fontFamily: 'monospace', fontSize: 12 }}>
+                          {(() => {
+                            const c = slocLabel(it.storage_location);
+                            if (!c) return <span style={{ color: 'var(--muted)' }}>—</span>;
+                            const reg = slocs.find(s => slocLabel(s.code) === c);
+                            const meta = slocKindMeta(reg?.kind);
+                            // รหัสที่ยังไม่ลงทะเบียน = ส้ม + ⚠ (ห้ามแสดงเหมือนรหัสปกติ อาจพิมพ์ผิด)
+                            return (
+                              <span title={reg ? `${meta.icon} ${reg.name}` : 'ยังไม่อยู่ในทะเบียนรหัสคลัง'}
+                                style={{ fontWeight: 700, padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap',
+                                  background: reg ? `${meta.color}1f` : 'rgba(245,158,11,0.14)',
+                                  color: reg ? meta.color : '#f59e0b' }}>
+                                {reg ? '' : '⚠ '}{c}
+                              </span>
+                            );
+                          })()}
+                        </TD>
                         <TD>{it.source_line
                           ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
                           : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
@@ -1705,6 +1843,56 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / Packaging</label>
                 <input type="number" min="1" step="any" style={inputSt} value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
+              </div>
+              {/* 📍 2 ช่องนี้เทียบกับ SAP โดยตรง (user ทัก 2026-09-02 ว่าเรายังไม่มี) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เลขรายการ (Item)</label>
+                  <input type="number" min="1" max="9999" step="10" style={{ ...inputSt, fontFamily: 'monospace' }}
+                    value={form.item_no} onChange={e => setForm(f => ({ ...f, item_no: e.target.value }))}
+                    placeholder={String(nextItemNo(items))} />
+                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                    {itemNoLabel(form.item_no) ? <>จะบันทึกเป็น <b style={{ color: 'var(--text2)' }}>{itemNoLabel(form.item_no)}</b> · </> : null}
+                    นับใหม่ทุกตัวแม่ · เว้นทีละ 10 เพื่อแทรกกลางได้
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>คลังที่เบิก (Stor.Loc.)</label>
+                  {/* เลือกจากทะเบียนเป็นหลัก — รหัสต้องนิ่ง ไม่งั้นจับคู่ไม่ได้
+                      แต่ต้องพิมพ์เองได้ด้วย (PE อาจไม่มีสิทธิ์แก้ทะเบียน = ห้ามทางตัน) */}
+                  {slocFree ? (
+                    <input autoFocus style={{ ...inputSt, fontFamily: 'monospace', textTransform: 'uppercase' }} maxLength={6}
+                      value={form.storage_location} onChange={e => setForm(f => ({ ...f, storage_location: e.target.value }))}
+                      placeholder="เช่น S401" />
+                  ) : (
+                    <select style={{ ...inputSt, fontFamily: 'monospace' }} value={slocInList ? slocLabel(form.storage_location) : ''}
+                      onChange={e => {
+                        if (e.target.value === '__free') { setSlocFree(true); setForm(f => ({ ...f, storage_location: '' })); return; }
+                        setForm(f => ({ ...f, storage_location: e.target.value }));
+                      }}>
+                      <option value="">— ยังไม่ระบุ —</option>
+                      {slocChoices.map(s => (
+                        <option key={s.code} value={s.code}>{s.code} · {s.name}</option>
+                      ))}
+                      <option value="__free">✏️ พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
+                    </select>
+                  )}
+                  <div style={{ fontSize: 10.5, marginTop: 3, lineHeight: 1.45 }}>
+                    {slocFree && (
+                      <div style={{ marginBottom: 2 }}>
+                        <span style={{ color: 'var(--muted)' }}>{SLOC_FORMAT_HINT} · </span>
+                        <span onClick={() => { setSlocFree(false); setForm(f => ({ ...f, storage_location: '' })); }}
+                          style={{ color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>เลือกจากทะเบียนแทน</span>
+                      </div>
+                    )}
+                    {/* ⚠ ต้องบอกทั้ง 2 กรณี: รูปแบบผิด (บันทึกไม่ได้) กับ ยังไม่ลงทะเบียน (บันทึกได้แต่ควรไปเพิ่ม) */}
+                    {slocBadFormat && <div style={{ color: '#ef4444', fontWeight: 700 }}>🔴 รูปแบบไม่ถูก — {SLOC_FORMAT_HINT}</div>}
+                    {!slocBadFormat && slocUnregistered && (
+                      <div style={{ color: '#f59e0b', fontWeight: 700 }}>⚠ รหัสนี้ยังไม่อยู่ในทะเบียน — บันทึกได้ แต่ควรไปเพิ่มที่ 📦 Line Stock → 🏬 โซนคลัง</div>
+                    )}
+                    <div style={{ color: 'var(--muted)' }}>ยังไม่ผูกกับการตัดสต็อก — ระบบยังเบิกตามไลน์เหมือนเดิม</div>
+                  </div>
+                </div>
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ผลิตที่ไลน์ (source line — พาร์ทผลิตเอง 200)</label>
