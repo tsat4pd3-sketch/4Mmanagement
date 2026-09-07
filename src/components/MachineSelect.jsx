@@ -11,7 +11,7 @@
    allowFree ปิดเป็น default (เครื่องที่ยังไม่ลงทะเบียนให้ไปเพิ่มที่ /machines) — เปิดได้พร้อมป้าย
 
    value = machine_no (หรือ id เมื่อ valueKey='id') · onChange({ machine_no, id, name, line_name,
-   equipment_kind, opt }) — พิมพ์เอง (allowFree) = id null
+   equipment_kind, known, opt }) — พิมพ์เอง (allowFree) = id null · allowFree=false = ค่านอกทะเบียนถูกล้างเมื่อปิดลิสต์
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
@@ -37,8 +37,8 @@ export default function MachineSelect({
     : options.find(o => o.key === up(value))) || null, [options, value, valueKey]);
   const text = sel ? sel.label : (valueKey === 'id' ? '' : (value || ''));
   const emit = ({ text: t, opt }) => {
-    if (opt) onChange?.({ machine_no: opt.machine_no, id: opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, opt });
-    else onChange?.({ machine_no: t, id: null, name: null, line_name: null, equipment_kind: null, opt: null });
+    if (opt) onChange?.({ machine_no: opt.machine_no, id: opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, known: true, opt });
+    else onChange?.({ machine_no: t, id: null, name: null, line_name: null, equipment_kind: null, known: false, opt: null });
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={text} options={options} onChange={emit}

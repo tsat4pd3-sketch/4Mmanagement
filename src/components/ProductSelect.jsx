@@ -11,7 +11,8 @@
    allowFree ปิดเป็น default — เปิดเฉพาะจุดที่พาร์ทอาจยังไม่อยู่ใน Product Master จริง (NPI ก่อน SOP ·
    scrap ที่ master กรอกเลขเครื่อง) พร้อม freeHint
 
-   value = mat_no · onChange({ mat_no, id, name, p_no, customer, line_name, opt })
+   value = mat_no · onChange({ mat_no, id, name, p_no, customer, line_name, known, opt })
+   allowFree=false: SearchSelect ล้างข้อความที่ไม่ตรงทะเบียนเมื่อปิดลิสต์ — ค่านอกทะเบียนไม่ค้างในฟอร์ม
    ══════════════════════════════════════════════════════════════════════════ */
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
@@ -34,8 +35,8 @@ export default function ProductSelect({
   );
   const sel = useMemo(() => options.find(o => o.key === up(value)) || null, [options, value]);
   const emit = ({ text, opt }) => {
-    if (opt) onChange?.({ mat_no: opt.mat_no, id: opt.extra ? null : opt.id, name: opt.name, p_no: opt.p_no, customer: opt.customer, line_name: opt.line_name, opt });
-    else onChange?.({ mat_no: up(text), id: null, name: null, p_no: null, customer: null, line_name: null, opt: null });
+    if (opt) onChange?.({ mat_no: opt.mat_no, id: opt.extra ? null : opt.id, name: opt.name, p_no: opt.p_no, customer: opt.customer, line_name: opt.line_name, known: true, opt });
+    else onChange?.({ mat_no: up(text), id: null, name: null, p_no: null, customer: null, line_name: null, known: false, opt: null });
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
