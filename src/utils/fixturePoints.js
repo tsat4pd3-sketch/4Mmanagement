@@ -236,8 +236,12 @@ export function suggestFixtureCandidates(machines = [], onMapKeys = new Set()) {
       let score = 0;
       for (const h of NO_HINTS)   if (h.re.test(m.machine_no   || '')) { score += h.w; reasons.push(h.why); }
       for (const h of NAME_HINTS) if (h.re.test(m.machine_name || '')) { score += h.w; reasons.push(h.why); }
-      if (onMapKeys.has(norm(m.machine_no))) { score += 10; reasons.push('วางอยู่บนผังไลน์แล้ว'); }
-      return { ...m, _score: score, _reasons: reasons };
+      const hinted = score > 0;   // มีเบาะแสจากเลข/ชื่อจริงๆ
+      /* "วางอยู่บนผังไลน์" เป็นแค่คะแนนเสริมเรียงลำดับ **ไม่ใช่เหตุผลให้เสนอ** — เครื่องเชื่อม/โรบอท/ปั๊ม
+         ก็วางบนผังทั้งนั้น · เคยปล่อยให้เกณฑ์นี้ผ่านคนเดียว → เสนอ 107 เครื่องจริง (Denyo/ABB/SEYI) ที่ไม่มีวันเป็นจิ๊ก
+         ผู้ใช้เข้าใจว่า "ลิสต์นี้คือเครื่องที่ยังไม่ได้ตั้งค่า" ตั้งแล้วก็ไม่หาย (feedback 2026-09-07) */
+      if (hinted && onMapKeys.has(norm(m.machine_no))) { score += 10; reasons.push('วางอยู่บนผังไลน์แล้ว'); }
+      return { ...m, _score: hinted ? score : 0, _reasons: reasons };
     })
     .filter(m => m._score > 0)
     .sort((a, b) => b._score - a._score

@@ -508,11 +508,40 @@ export default function Checkin() {
     });
     if (error) {
       if (error.code === '42P01') toast.error('ยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration 20260819_line_helpers_main (แจ้ง admin)');
-      else if (error.code === '23505') toast.error(`${emp.name} ถูกยืมตัวไปไลน์อื่นแล้วในกะนี้ — ต้องให้ไลน์นั้นกดคืนก่อน`);
+      else if (error.code === '23505') await resolveBorrowConflict(emp);
       else toast.error('ยืมตัวไม่สำเร็จ: ' + error.message);
       return;
     }
     toast.success(`🤝 ยืม ${emp.name} มาช่วยกะนี้แล้ว`);
+    setShowBorrowModal(false);
+    fetchData();
+  };
+
+  /* 23505 = คนนี้ถูกยืมไปแล้วในวัน+กะเดียวกัน (unique work_date+shift+employee_id) — บอกให้ชัดว่าไลน์ไหน/ใครยืม
+     · ปลายทางเดิมอยู่ใน scope เรา → เสนอ "ย้าย" มาไลน์ที่เลือกแทน (update แถวเดิม — ยังคง 1 คน 1 ไลน์ต่อกะ)
+     · นอก scope → ต้องให้ไลน์นั้นกด ✕ คืน หรือรอกะถัดไป (การยืมหมดอายุเองเมื่อเปลี่ยนกะ/วัน ไม่ต้องกดคืน)
+     feedback หน้างาน 2026-09-07: "พอจะยืมใหม่มันติดว่ายืมอยู่แล้ว" — ข้อความเดิมไม่บอกว่าไลน์ไหน/ต้องทำอะไร */
+  const resolveBorrowConflict = async (emp) => {
+    const { data: rows, error } = await supabase.from('line_helpers')
+      .select('id, to_line_id, created_by_name')
+      .eq('work_date', shiftInfo.workDateStr).eq('shift', shiftInfo.shift).eq('employee_id', emp.id).limit(1);
+    const cur = rows?.[0];
+    if (error || !cur) { toast.error(`${emp.name} ถูกยืมตัวไปไลน์อื่นแล้วในกะนี้ — ต้องให้ไลน์นั้นกด ✕ คืนก่อน หรือรอกะถัดไป`); return; }
+    const curLine = lines.find(l => l.id === cur.to_line_id)?.name || 'ไลน์อื่น';
+    const by = cur.created_by_name ? ` (${cur.created_by_name} ยืม)` : '';
+    const target = lines.find(l => l.id === Number(borrowLineId))?.name || 'ไลน์ที่เลือก';
+    if (Number(borrowLineId) === cur.to_line_id) { toast.info(`${emp.name} ถูกยืมมา ${curLine} อยู่แล้วในกะนี้`); return; }
+    const canMove = scopedLines.some(l => l.id === cur.to_line_id);
+    if (!canMove) {
+      toast.error(`${emp.name} ถูกยืมไป ${curLine}${by} แล้วในกะนี้ — ให้ไลน์นั้นกด ✕ คืนก่อน หรือรอกะถัดไป (การยืมหมดอายุเองเมื่อเปลี่ยนกะ ไม่ต้องกดคืน)`);
+      return;
+    }
+    if (!window.confirm(`${emp.name} ถูกยืมไป ${curLine}${by} แล้วในกะนี้\nย้ายมาช่วย ${target} แทน?`)) return;
+    const { data: moved, error: mErr } = await supabase.from('line_helpers')
+      .update({ to_line_id: Number(borrowLineId), created_by_name: fullName || null })
+      .eq('id', cur.id).select('id');
+    if (mErr || !moved?.length) { toast.error('ย้ายการยืมไม่สำเร็จ: ' + (mErr?.message || 'ไม่มีแถวถูกแก้ (สิทธิ์?)')); return; }
+    toast.success(`🤝 ย้าย ${emp.name} จาก ${curLine} มาช่วย ${target} แล้ว`);
     setShowBorrowModal(false);
     fetchData();
   };
@@ -1196,7 +1225,7 @@ export default function Checkin() {
               <button onClick={() => setShowBorrowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-              {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร)
+              {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร) · หมดกะแล้วหลุดเอง ไม่ต้องกดคืน — กด ✕ คืน เฉพาะเมื่อจะให้ไลน์อื่นยืมต่อในกะเดียวกัน
             </div>
             {!helpersReady && (
               <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
@@ -1241,7 +1270,7 @@ export default function Checkin() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.employee_id_code} · {homeLine}{r.team ? ` · ทีม ${r.team}` : ''}</div>
                     </div>
                     {borrowedHere
-                      ? <span style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, whiteSpace: 'nowrap' }}>🤝 ยืมแล้ว</span>
+                      ? <span style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, whiteSpace: 'nowrap' }}>🤝 ยืมแล้ว → {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
                       : inRoster
                         ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>อยู่ในรายชื่อแล้ว</span>
                         : (

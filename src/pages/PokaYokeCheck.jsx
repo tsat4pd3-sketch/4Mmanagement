@@ -135,7 +135,7 @@ export default function PokaYokeCheck() {
           </select>
         </div>
         <div><div style={lb}>วันที่</div><input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} style={{ width: 150 }} /></div>
-        <div style={{ flex: 1 }}><div style={lb}>ผู้ตรวจ</div><input value={checker} onChange={e => setChecker(e.target.value)} style={{ width: '100%', maxWidth: 220 }} /></div>
+        <div style={{ flex: '1 1 180px' /* basis 180: จอแคบตกบรรทัดใหม่ ไม่ถูกบีบเหลือ 28px (2026-09-07) */ }}><div style={lb}>ผู้ตรวจ</div><input value={checker} onChange={e => setChecker(e.target.value)} style={{ width: '100%', maxWidth: 220 }} /></div>
         {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>➕ เพิ่มอุปกรณ์</button>}
       </div>
 

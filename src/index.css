@@ -300,6 +300,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   html, body { font-size: 14px; }
   th { font-size: 11px; padding: 9px 10px; }
   td { padding: 9px 10px; font-size: 13px; }
+  /* ⚠️ ช่องกรอกบนมือถือต้อง ≥16px เสมอ (2026-09-07 · รีวิวฟังก์ชันตรวจสอบบนมือถือ)
+     iOS Safari ซูมเข้าอัตโนมัติเมื่อโฟกัส input ที่ฟอนต์ < 16px แล้ว "ค้างซูม" ทั้งหน้า
+     = อาการ "หน้าเลื่อนไปมา/ต้องถ่างนิ้วกลับ" ที่หน้างานบ่น · วัดจริง: ทุกหน้าตรวจ (BBS 61 ช่อง ·
+     เช็คชื่อ 224 ช่อง) เป็น 15px หมด · ใส่ที่ธีมทีเดียว ห้ามไล่แก้รายหน้า */
+  input, select, textarea { font-size: 16px; }
 }
 
 .page-content {
