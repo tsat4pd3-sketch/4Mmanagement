@@ -20,6 +20,7 @@
       ตอนไม่มีใครเปิดหน้า — ยังไม่ทำ · เฟสนี้สัญญาณอยู่บน "จอที่หัวหน้าเปิดอยู่แล้วทั้งกะ"
       ส่วน `wip_request_placed` (ไลน์กดเบิก → บอกสโตร์) ยิงจริงตั้งแต่เฟสนี้
 
+   ⚠️ 2026-09-07: สโตร์ยืนยันเตรียม (ขั้น 5) = ตัดสต็อกให้แล้ว (STORE −qty · ไลน์ +qty) — แผงนี้ไม่แตะ ledger
    ตารางที่แตะ: line_part_levels (DR) · line_stock_summary (DR) · wip_replenish_requests (Main)
    ⚠️ ใบขอเติมอยู่ **Main** ส่วนสต็อกอยู่ **DR** — คนละ client อย่าสลับ
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -399,6 +400,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                   <span style={{ fontSize: 11, color: wait > 60 ? '#ef4444' : 'var(--muted)', fontWeight: wait > 60 ? 800 : 400 }}>
                     · รอมาแล้ว {wait} นาที
                   </span>
+                )}
+                {/* ขั้น 5 — สโตร์หยิบได้ไม่ครบต้องเห็นตั้งแต่ก่อนของมาถึง (ไม่ใช่เพิ่งรู้ตอนนับ) */}
+                {['preparing', 'delivered'].includes(r.status) && r.picked_qty != null && Number(r.picked_qty) < Number(r.request_qty) && (
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>⚠ สโตร์หยิบได้ {fmtQty(r.picked_qty)} / {fmtQty(r.request_qty)}</span>
                 )}
                 {/* เฟส 4 — ของถูกวางที่ไหน/ผ่านด่านทางไหน: สแกนจุด · ไลน์ยังไม่ตั้งจุด · หัวหน้าปลดบล็อก (override ต้องเห็น ห้ามซ่อน) */}
                 {r.status === 'delivered' && r.delivered_gate && DELIVER_GATES[r.delivered_gate] && (

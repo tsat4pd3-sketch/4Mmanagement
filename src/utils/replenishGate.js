@@ -1,7 +1,8 @@
 /* ═══ 🛡️ ด่านตรวจของลูปสโตร์ (Store ⇄ Production Pull Loop) — เฟส 4: จุดส่งงาน ═════════
    docs/STORE-PULL-LOOP-DESIGN.md §4.5 + §4.6 (user 2026-08-27) · ลงจริง 2026-09-03
 
-   ตอบคำถามเดียว: **"ของที่สโตร์กำลังวาง ตรงกับปลายทางบนใบไหม"** (ขั้น 7 · สแกน QR จุดส่ง)
+   ตอบ 2 คำถาม: **"ของที่หยิบ ตรงกับใบไหม"** (ขั้น 5 · สแกนพาร์ท + จำนวน · 2026-09-07 user: "เตรียมก็ต้อง scan verify")
+              และ **"ของที่สโตร์กำลังวาง ตรงกับปลายทางบนใบไหม"** (ขั้น 7 · สแกน QR จุดส่ง)
 
    ⚠️⚠️ กฎเหล็กที่ถอดจาก §4.6 — ห้ามแก้ให้ "ง่ายขึ้น":
    1. **ไม่รู้ = ห้ามบล็อก** — ไลน์ที่ยังไม่ตั้งจุดส่งเลย ตรวจไม่ได้ → ปล่อยผ่านแบบ `no_point`
@@ -139,4 +140,82 @@ export function overrideReasonOk(reasonKey, reasonNote) {
   if (!OVERRIDE_REASONS.some(r => r.key === reasonKey)) return false;
   if (reasonKey === 'other') return norm(reasonNote).length > 0;
   return true;
+}
+
+/* ═══ ขั้น 5 — สแกนพาร์ท + จำนวน ตอนกด "เริ่มเตรียม" (user 2026-09-07) ═══════════════════════
+   §4.6: ด่านแรกอยู่ขั้น 5 ไม่ใช่ขั้น 7 — ผิดที่ชั้นวาง = แก้ 10 วินาที · ผิดตอนถึงไลน์ = เดินกลับทั้งเที่ยว
+   · พาร์ท: ยิงป้าย ESM:P:<mat> หรือบาร์โค้ด 1D บนบัตร/กล่อง → ต้องเป็น mat_no บนใบ · ไม่ตรง = 🔴 บล็อก
+   · จำนวน: เกิน = 🔴 บล็อก (ไม่มีเหตุผลที่ถูกต้อง + WIP บวม) · ขาด = 🟡 เตือน + บังคับยืนยัน (กล่องสุดท้ายไม่เต็มเป็นเรื่องปกติ
+     และขั้น 8 รองรับ "ได้ไม่ครบ" อยู่แล้ว) · ห้ามบล็อกเพราะข้อมูลเราไม่ครบ
+   ⚠️ บัตร TAG CARD ของจริงยังไม่ยืนยันว่าบาร์โค้ดเส้นไหนคือ MAT.NO. (§7 ข้อ 1) → เลขเปล่าที่ "ขึ้นต้นด้วย mat_no"
+     (มี check digit/running ต่อท้าย) ถือว่าตรงแบบ `loose` ไปก่อน — บันทึกดิบไว้เสมอ พอรู้รูปแบบจริงค่อยล็อกให้เป๊ะ */
+
+export const PICK_GATES = {
+  scanned:  { label: 'สแกนพาร์ทแล้ว',      icon: '🔍', color: '#22c55e' },
+  override: { label: 'ปลดบล็อกโดยหัวหน้า', icon: '🔓', color: '#ef4444' },
+};
+
+const normMat = (s) => String(s ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
+
+/**
+ * ด่านพาร์ท (ขั้น 5)
+ * @param {object} a.request  ใบ (mat_no)
+ * @param {object|null} a.scan  ผล parseQrPayload (kind 'product' | null | อื่น)
+ * @returns {{ status:'ok'|'mismatch'|'unknown', block:boolean, loose?:boolean, message:string, expected:string, actual:string }}
+ */
+export function checkPickPart({ request, scan }) {
+  const want = normMat(request?.mat_no);
+  const raw = norm(scan?.raw);
+  const expected = norm(request?.mat_no);
+  if (!scan || !norm(scan.id)) {
+    return { status: 'unknown', block: true, expected, actual: raw, message: `อ่านป้ายไม่ออก — ใบนี้ต้องการพาร์ท ${expected}` };
+  }
+  // ป้ายชนิดอื่น (เครื่อง/จิ๊ก/จุดส่ง) = หยิบผิดอย่างแน่นอน ไม่เดา
+  if (scan.kind && scan.kind !== 'product') {
+    return { status: 'mismatch', block: true, expected, actual: raw, message: `ป้ายที่ยิงไม่ใช่ป้ายพาร์ท (${raw}) — ใบนี้ต้องการ ${expected}` };
+  }
+  const got = normMat(scan.id);
+  if (got === want) return { status: 'ok', block: false, expected, actual: norm(scan.id), message: `✓ ตรงพาร์ท — ${expected}` };
+  // บาร์โค้ด 1D บนบัตรอาจมี check digit/running ต่อท้าย mat_no — ยอมแบบ loose จนกว่าจะรู้รูปแบบจริง (§7 ข้อ 1)
+  if (scan.kind === null && want.length >= 6 && got.startsWith(want)) {
+    return { status: 'ok', block: false, loose: true, expected, actual: norm(scan.id), message: `✓ ตรงพาร์ท — ${expected} (อ่านจากบาร์โค้ด ${norm(scan.id)})` };
+  }
+  return { status: 'mismatch', block: true, expected, actual: norm(scan.id),
+    message: `ใบนี้ต้องการ ${expected} · ที่ยิงมาคือ ${norm(scan.id)} — หยิบผิดพาร์ท วางคืนแล้วหยิบ ${expected}` };
+}
+
+/**
+ * ด่านจำนวน (ขั้น 5) — เกิน = บล็อก · ขาด = เตือน (ต้องยืนยัน) · เท่ากัน = ผ่าน
+ * @returns {{ status:'ok'|'over'|'under'|'invalid', block:boolean, needConfirm:boolean, message:string, diff:number }}
+ */
+export function checkPickQty({ request, qty }) {
+  const want = Number(request?.request_qty) || 0;
+  const q = Number(qty);
+  if (!(q > 0)) return { status: 'invalid', block: true, needConfirm: false, diff: 0, message: 'ใส่จำนวนที่หยิบ (ต้องมากกว่า 0)' };
+  const diff = q - want;
+  if (diff > 0) return { status: 'over', block: true, needConfirm: false, diff, message: `หยิบเกินใบ ${diff.toLocaleString()} ชิ้น (ใบขอ ${want.toLocaleString()}) — ส่งเกินทำ WIP บวม ลดให้เท่าใบ` };
+  if (diff < 0) return { status: 'under', block: false, needConfirm: true, diff, message: `หยิบได้ ${q.toLocaleString()} / ${want.toLocaleString()} — ขาด ${(-diff).toLocaleString()} ชิ้น (ยืนยันว่าส่งไม่ครบ ไลน์จะเห็นตอนรับของ)` };
+  return { status: 'ok', block: false, needConfirm: false, diff: 0, message: `✓ ครบ ${want.toLocaleString()} ชิ้น` };
+}
+
+/** คอลัมน์ที่เขียนลงใบตอน pending → preparing */
+export function buildPickPayload({ gate, qty, scanRaw, reasonKey, reasonNote, overrideBy }) {
+  const p = { picked_gate: gate, picked_qty: Number(qty) > 0 ? Number(qty) : null, picked_scan_raw: norm(scanRaw) || null,
+              picked_override_reason: null, picked_override_by_name: null };
+  if (gate === 'override') {
+    const meta = OVERRIDE_REASONS.find(r => r.key === reasonKey);
+    const note = norm(reasonNote);
+    p.picked_override_reason = [meta?.label || reasonKey || '', note].filter(Boolean).join(' — ') || null;
+    p.picked_override_by_name = norm(overrideBy) || null;
+  }
+  return p;
+}
+
+/** ตารางความจริงเดียวกับ trigger `fn_wip_replenish_pick_gate` (Main) — ห้าม drift */
+export function validatePickPayload(p) {
+  const gate = p?.picked_gate;
+  if (!(Number(p?.picked_qty) > 0)) return 'ใส่จำนวนที่หยิบก่อน';
+  if (gate === 'scanned') return norm(p.picked_scan_raw) ? null : 'สแกนพาร์ทก่อนเริ่มเตรียม';
+  if (gate === 'override') return norm(p.picked_override_reason) ? null : 'ปลดบล็อกต้องระบุเหตุผล';
+  return 'ต้องสแกนพาร์ท หรือให้หัวหน้าปลดบล็อก ก่อนกด "เริ่มเตรียม"';
 }

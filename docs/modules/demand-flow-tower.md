@@ -644,7 +644,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 |---|---|---|---|
 | 3 เห็นว่าถึงจุดเรียกเติม | ระบบ → หัวหน้าไลน์ | `/daily-report` แผง 📦 | ✅ (บนจอ · **Telegram ต้องมี scanner ยังไม่ทำ**) |
 | 4 ยืนยันเบิก / พักไว้ | หัวหน้ากลุ่ม | ปุ่มในแผงเดียวกัน | ✅ |
-| 5-6 หยิบ | สโตร์ | `/heijunka` → 🔄 คิวเติม WIP | ✅ (ยังไม่มีสแกน TAG CARD = เฟส 3a) |
+| 5-6 หยิบ + ตัดสต็อก | สโตร์ | ปุ่ม "🔍 เริ่มเตรียม · สแกนพาร์ท" → `PickScanModal` (สแกนพาร์ท + จำนวน · ผิด = บล็อก + Telegram `wip_pick_blocked` · ยืนยัน = ตัดสต็อก) | ✅ 2026-09-07 (§8.3) |
 | 7 ถึงไลน์ สแกนจุดส่ง | สโตร์ | ปุ่ม "📍 ถึงไลน์แล้ว · สแกนจุดส่ง" → `DeliverScanModal` | ✅ เฟส 4 (2026-09-03) |
 | 8 ยืนยันรับ ครบ/ไม่ครบ | ผลิต | แผง 📦 | ✅ |
 
@@ -695,10 +695,10 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > เก็บแค่ 2 หมุด = ตอบได้แค่ "ช้า" แต่ตอบไม่ได้ว่า **ช้าตรงไหน** (รอสโตร์หยิบ? รอรถ? รอผลิตเซ็นรับ?)
 > ซึ่งเป็นคำถามเดียวที่ทำให้เอาไปแก้ได้จริง
 >
-> #### ⚠️ กฎเหล็ก 5 — **ลูปนี้เป็นการสื่อสาร ไม่ใช่ ledger — ไม่ตัด/บวกสต็อกให้**
-> สโตร์บันทึก "จ่ายพาร์ทเข้าไลน์" อยู่แล้วอีกทาง · เขียนเองด้วย = **สต็อกโผล่ 2 ที่**
-> (ปัญหาเดียวกับที่ห้ามใส่ปุ่ม "ผลิตเสร็จ" ใน `StoreLotQueue`)
-> → toast ตอนกดส่งเตือนให้ไปบันทึกจ่ายเข้าไลน์ด้วย **ห้ามให้เข้าใจว่ายอดขยับให้แล้ว**
+> #### ⚠️ กฎเหล็ก 5 (แก้ 2026-09-07 · Smart Withdraw Kanban) — **ยืนยันเตรียม (ขั้น 5) = ตัดสต็อกให้เลย · กดส่ง/กดรับไม่แตะ ledger**
+> `PickScanModal` ยืนยันแล้วเขียน `line_stock_transactions` (DR) 2 แถว: STORE −qty (`consume`) · ไลน์ +qty (`issue`) · id เก็บที่
+> `wip_replenish_requests.stock_txn_ids` กันตัดซ้ำ · STORE ไม่มีแถว = ไม่หัก + `stock_txn_note` + toast (ห้ามเงียบ)
+> **สโตร์ห้ามบันทึก "จ่ายพาร์ทเข้าไลน์" ซ้ำสำหรับใบในคิวเติม WIP** (ซ้ำ = สต็อก 2 เท่า) — เดิมลูปไม่ตัดสต็อก ตอนนี้ตัดแล้ว
 >
 > #### ⚠️ กันเสนอซ้ำที่ระดับ DB — `wip_replenish_open_per_part_uniq`
 > 1 พาร์ท/ไลน์ มีใบที่ยังไม่จบได้ **ใบเดียว** · ไม่งั้นเปิดหน้าใหม่ทุกครั้ง = คิวท่วม
@@ -744,6 +744,10 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 - **ยังไม่ทำ:** แจ้ง Telegram ตอนถึง min โดยไม่ต้องเปิดหน้า (ต้องมี scanner ฝั่ง server ·
   rule `wip_part_below_min` seed ไว้แล้ว) · สแกน TAG CARD ยืนยัน mat+lot (เฟส 3) · ด่านจำนวนขั้น 5 (ทำพร้อมเฟส 3a)
 
+> #### 🔍 ขั้น 5 — สแกนยืนยันของที่เตรียม + ตัดสต็อก (2026-09-07 · Smart Withdraw Kanban) · รายละเอียด `docs/STORE-PULL-LOOP-DESIGN.md` §8.3
+> - `checkPickPart` (ESM:P / เลข mat · เลขเปล่าที่ขึ้นต้นด้วย mat = `loose` จนกว่าจะรู้รูปแบบบัตร) · `checkPickQty` (เกิน=บล็อก · ขาด=เตือน+ยืนยัน) · `validatePickPayload` = trigger `fn_wip_replenish_pick_gate` (Main · migration `20260907_wip_replenish_pick_gate.sql`)
+> - ตัดสต็อกที่ `deductStockForPick` ใน HeijunkaKanban (DR ledger) — ไม่ต่อ SAP จริง · `/heijunka` audit 2026-09-07: default แท็บ = คิวเติม WIP · ซ่อนแท็บ Store FG + ปุ่ม Heijunka Board เมื่อไม่มีรอบ · `OnDemandStrip` แทน PlannerStrip
+>
 > #### 🎯 เฟส 4 — จุดส่งงาน + ด่าน "ส่งถูกจุดไหม" (2026-09-03) · รายละเอียดเต็ม `docs/STORE-PULL-LOOP-DESIGN.md` §8.1
 > - **`line_delivery_points` (DR)** = ป้าย QR `ESM:D:<uuid>` ที่ติดหน้าไลน์ · `line_names text[]` (แร็คเดียวป้อน 60+61) · **เฉพาะไลน์ leaf** (กฎหน่วยย่อยที่สุดข้างบน)
 >   · ตั้งที่ `/linesetup` แผง 🎯 (`DeliveryPointPanel` · สิทธิ์ `delivery_point:manage`) · พิมพ์ `/qr-labels?kind=delivery` · **ไม่มีปุ่มลบ มีแต่ปิดใช้งาน** (ป้ายเก่าหน้างานสแกนแล้วต้องได้ "ปิดแล้ว")
