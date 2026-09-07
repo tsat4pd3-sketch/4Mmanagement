@@ -1927,9 +1927,12 @@ function SkillSubItemsModal({ skill, onClose }) {
     const j = idx + dir;
     if (j < 0 || j >= rows.length) return;
     const a = rows[idx], b = rows[j];
-    // สลับ seq สองแถว
-    await supabase.from('skill_sub_items').update({ seq: b.seq }).eq('id', a.id);
-    await supabase.from('skill_sub_items').update({ seq: a.seq }).eq('id', b.id);
+    // สลับ seq สองแถว — เช็คผลรายตัว: RLS ปฏิเสธ = 0 แถวไม่มี error (เคยเงียบกับ sale/mtn/planner_store จน 20260904)
+    const r1 = await supabase.from('skill_sub_items').update({ seq: b.seq }).eq('id', a.id).select('id');
+    const r2 = await supabase.from('skill_sub_items').update({ seq: a.seq }).eq('id', b.id).select('id');
+    const err = r1.error || r2.error;
+    if (err) toast.error('เรียงลำดับไม่สำเร็จ: ' + err.message);
+    else if (!r1.data?.length || !r2.data?.length) toast.error('เรียงลำดับไม่ติด — ไม่มีสิทธิ์แก้หัวข้อสกิล (skills:edit)');
     load();
   };
 

@@ -893,10 +893,11 @@ export default function LineSetup({ embedded = false } = {}) {
       current_qty: parseFloat(wipForm.current_qty) || 0,
       updated_at:  new Date().toISOString(),
     };
-    const { error } = wipForm.id
-      ? await supabase.from('wip_buffer_points').update(payload).eq('id', wipForm.id)
-      : await supabase.from('wip_buffer_points').insert([payload]);
+    const { data: saved, error } = wipForm.id
+      ? await supabase.from('wip_buffer_points').update(payload).eq('id', wipForm.id).select('id')
+      : await supabase.from('wip_buffer_points').insert([payload]).select('id');
     if (error) return toast.error('Error: ' + error.message);
+    if (!saved?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
     fetchLineData();
     setWipTempPos(null);
     setWipForm(emptyWipForm);
@@ -905,8 +906,10 @@ export default function LineSetup({ embedded = false } = {}) {
   const deleteWipPoint = async (id) => {
     if (!window.confirm('ยืนยันการลบจุด WIP นี้?')) return;
     hist.pushHistory();
-    const { error } = await supabase.from('wip_buffer_points').delete().eq('id', id);
-    if (!error) fetchLineData();
+    const { data: gone, error } = await supabase.from('wip_buffer_points').delete().eq('id', id).select('id');
+    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
+    fetchLineData();
   };
 
   // เรียกเติมจุด WIP ที่ต่ำกว่า min — สร้างการ์ดคำขอเข้าคิว (ไปโผล่ที่ Heijunka Kanban → ตู้รวม → WIP Point)
@@ -952,10 +955,12 @@ export default function LineSetup({ embedded = false } = {}) {
       pos_left:    machineTempPos ? machineTempPos.left : existing?.pos_left,
       redundancy_group: machineForm.redundancy_group.trim() || null,
     };
-    const { error } = machineForm.id
-      ? await supabase.from('machine_points').update(payload).eq('id', machineForm.id)
-      : await supabase.from('machine_points').insert([payload]);
+    // .select('id') + นับแถว — RLS ปฏิเสธ update = 0 แถวไม่มี error (เคยเงียบกับ dept_admin จน 20260904)
+    const { data: saved, error } = machineForm.id
+      ? await supabase.from('machine_points').update(payload).eq('id', machineForm.id).select('id')
+      : await supabase.from('machine_points').insert([payload]).select('id');
     if (error) return toast.error('Error: ' + error.message);
+    if (!saved?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
     fetchLineData();
     setMachineTempPos(null);
     setMachineForm({ id: null, machine_no: '', redundancy_group: '' });
@@ -964,8 +969,10 @@ export default function LineSetup({ embedded = false } = {}) {
   const deleteMachinePoint = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดเครื่องจักรนี้?')) return;
     hist.pushHistory();
-    const { error } = await supabase.from('machine_points').delete().eq('id', id);
-    if (!error) fetchLineData();
+    const { data: gone, error } = await supabase.from('machine_points').delete().eq('id', id).select('id');
+    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
+    fetchLineData();
   };
 
   /* ── เส้นทางการผลิต (sequential flow ระหว่างจุดเครื่องจักร) ── */
@@ -989,8 +996,10 @@ export default function LineSetup({ embedded = false } = {}) {
   const deleteFlowLink = async (id) => {
     if (!window.confirm('ยืนยันการลบเส้นเชื่อมต่อนี้?')) return;
     hist.pushHistory();
-    const { error } = await supabase.from('machine_flow_links').delete().eq('id', id);
-    if (!error) fetchLineData();
+    const { data: gone, error } = await supabase.from('machine_flow_links').delete().eq('id', id).select('id');
+    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
+    fetchLineData();
   };
 
   // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล

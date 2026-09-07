@@ -2002,19 +2002,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         // หมายเหตุ: ไม่เซ็ต carry_over_from_session_id ที่นี่ — field นี้ใช้บอกว่า order นี้ "ถูกรับมาจากกะก่อน"
         // (ใส่ตอน import เท่านั้น ที่ handleImportCarryOrders) ถ้าเซ็ตที่นี่จะกลายเป็น order ตัวเองชี้กลับมาตัวเอง
         // ทำให้ขึ้นป้าย "ยกยอดมา" ผิดๆทั้งที่ยังไม่เคยถูกรับมาจากไหนเลย แค่กำลังจะถูกยกออกไปกะถัดไปเป็นครั้งแรก
-        await supabaseDR.from('prod_orders').update({
+        // ⚠️ เขียนแล้วต้องเช็ค — trigger ฝั่ง DB (explode/post_output) ล้มได้ · ถ้าเงียบ = กะปิดแล้วแต่ใบยัง open
+        const { error: coErr } = await supabaseDR.from('prod_orders').update({
           status:      'carry_over',
           qty_actual:  qActual,
           stopped_at:  stoppedAt,
           carry_over_note: `ยกยอด: ทำได้ ${qActual}/${order.qty} ชิ้น จาก${selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(selSession.work_date)}`,
         }).eq('id', order.id);
+        if (coErr) { toast.error(`ปิดออเดอร์ ${order.prod_no || order.mat_no} ไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + coErr.message); setSavingClose(false); return; }
       } else if (decision === 'confirm') {
         // ⚠️ ใบ manual ทำ "เกินเป้า" ได้ (guard จำนวนยกเว้น is_manual) — เขียนทับด้วยเป้า (order.qty)
         //    = ยอดจริงส่วนเกินหาย + เข้าคลังต่ำกว่าจริง (QC flow-audit #15) → ใช้ยอดจริงแบบ handleManualClose
         //    ใบสแกนปกติ qty = จำนวนการ์ดคัมบัง (ของดีตายตัว) คงพฤติกรรมเดิม
         const isManual = !!order.is_manual;
         const finalQty = isManual ? Math.max(qActual, order.qty_actual || 0, order.qty || 0) : order.qty;
-        await supabaseDR.from('prod_orders').update({
+        const { error: coErr } = await supabaseDR.from('prod_orders').update({
           status:       'confirmed',
           qty_actual:   finalQty,
           ...(isManual ? { qty: finalQty, qty_ok: finalQty } : {}),
@@ -2022,8 +2024,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           confirmed_at: stoppedAt,
           confirmed_by: fullName,
         }).eq('id', order.id);
+        if (coErr) { toast.error(`ปิดออเดอร์ ${order.prod_no || order.mat_no} ไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + coErr.message); setSavingClose(false); return; }
       } else if (decision === 'cancel') {
-        await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual, stopped_at: stoppedAt }).eq('id', order.id);
+        const { error: coErr } = await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual, stopped_at: stoppedAt }).eq('id', order.id);
+        if (coErr) { toast.error(`ปิดออเดอร์ ${order.prod_no || order.mat_no} ไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + coErr.message); setSavingClose(false); return; }
       }
     }
 

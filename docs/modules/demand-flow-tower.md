@@ -720,7 +720,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >   (ส่งไป N แต่บันทึกได้เท่าเพดาน = ยอดจริงกับยอดในระบบต่างกัน คนต้องรู้)
 > - `max_qty` null **หรือ 0 = "ไม่รู้เพดาน" → ไม่ clamp** (clamp ด้วย 0 = ล้างยอดทิ้ง เสียหายกว่ายอมให้เกิน)
 >   · ⚠️ ข้อมูลจริงตอนนี้ `max_qty > 0` ครบทั้ง 10 แถว — เงื่อนไขนี้เป็นการกันไว้ ไม่ใช่แก้ของที่พังอยู่
-> - **`LineSetup` ยัง update ตรงได้ตามเดิม** (หน้าตั้งค่าไลน์ = admin/mgr/sv ตรงกับ RLS พอดี) **ห้ามย้ายมาใช้ RPC นี้**
+> - **`LineSetup` ยัง update ตรงได้ตามเดิม** (policy `wip_buffer_points_write_setup` = `has_perm('line_setup:edit')` ตั้งแต่ **2026-09-04** — เดิม hardcode admin/mgr/sv ซึ่ง**ไม่ตรง**กับสิทธิ์จริง: dept_admin ที่ถือ line_setup:edit แก้จุด WIP ได้ 0 แถวเงียบ · migration `20260904_rls_match_ui_permissions.sql`) **ห้ามย้ายมาใช้ RPC นี้**
 >   (RPC ตั้งใจแตะแค่ `current_qty` ไม่ใช่ทางแก้ master)
 >
 > #### 🔴 กฎเหล็ก 7 — claim สถานะก่อนเขียน ledger **ต้องคืนสถานะเดิมเมื่อ ledger ล้ม** (2026-09-03)
@@ -750,3 +750,9 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 ### ⚫ ท่อที่ตายแล้ว — `kanban_scans`
 มี trigger `trg_lot_post_accumulate` ผูกอยู่ แต่ตาราง **0 แถวตลอดกาล ไม่มีโค้ดเขียนแล้ว**
 การสะสมล็อตของจริงเกิดที่ `fn_explode_child_demand` แทน — **อย่าไปต่อยอดบน `kanban_scans`**
+
+> #### 🔗 แถว consume ของ `fn_explode_child_demand` ต้องมี `ref_order_id`/`ref_session_id` (2026-09-04 · full QC audit รอบ 10)
+> trigger ตัด mini-store ตอนปิดใบ FG เคยเขียนแถว `consume` โดยไม่ stamp ใบผลิต → `/order-trace` (ดึงสต็อกด้วย `ref_order_id`)
+> **มองไม่เห็นการตัดชิ้นส่วนของใบนั้นเลย** — วัดจริง 2,247 แถว null ทั้งหมด · แก้ที่ trigger + backfill จับคู่ note `auto: FG <prod_no>` + ไลน์ + work_date
+> ได้ 2,212 แถว (กำกวม 29 + หาไม่เจอ 6 ปล่อย null ไม่เดา) · migration `20260904_explode_consume_ref_order.sql` (DR · apply แล้ว)
+> · guard กันโพสต์ซ้ำ/ปุ่มถอยใบ กรอง `type='issue'` เท่านั้น จึงไม่กระทบ · **แถว ledger อัตโนมัติทุกชนิดต้องผูก ref ต้นทางตั้งแต่เขียน** ไม่งั้นสอบกลับขาดตอน

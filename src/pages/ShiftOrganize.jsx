@@ -366,7 +366,9 @@ export default function ShiftOrganize() {
 
   const handleDeleteMergeEvent = async (id) => {
     if (!confirm('ยืนยันลบเหตุการณ์ยุบกะนี้?')) return;
-    await supabase.from('shift_merge_events').delete().eq('id', id);
+    const { data: gone, error } = await supabase.from('shift_merge_events').delete().eq('id', id).select('id');
+    if (error) toast.error('ลบไม่สำเร็จ: ' + error.message);
+    else if (!gone?.length) toast.error('ลบไม่ติด (0 แถว) — ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ');
     fetchMergeEvents();
   };
 

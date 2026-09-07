@@ -93,3 +93,5 @@
 - component ร่วม: `src/components/CollapseCard.jsx` (แยกจาก ProductHistory — section ย่อ/ขยาย จำสถานะ localStorage ผ่าน `storePrefix`)
 
 ---
+
+- **2026-09-04 (audit รอบ 10):** แถว `consume` ที่ trigger ตัด mini-store ตอนปิดใบ FG เพิ่ง**เริ่มมี `ref_order_id`** — ก่อนหน้านี้ null ทั้งหมด (2,247 แถว) ทำให้แท็บใบผลิตไม่เห็นว่าใบนั้นกินลูกอะไรไปเท่าไหร่ · backfill แล้ว 2,212 แถว · เหลือ 35 แถวเก่า (prod_no ซ้ำในวัน/ไลน์เดียวกัน หรือหา session ไม่เจอ) ยัง null ตั้งใจไม่เดา — ดู `docs/modules/demand-flow-tower.md`
