@@ -39,23 +39,31 @@
 
 สถานะ: 🟢 คำนวณอัตโนมัติแล้ว · 🟡 คำนวณได้บางส่วน/รอข้อมูล · ⚪ ยังต้องกรอกมือ · ❓ ยังไม่เห็นไฟล์
 
-| # | หัวข้อบนบอร์ด | สถานะ | สูตรจริง | ต้นทางในระบบ | ยังขาด |
+| # | หัวข้อบนบอร์ด | สถานะ | สูตรจริง (จากฟอร์ม KPI Evaluation · ตัวอย่าง PD2 2024) | ต้นทางในระบบ | ยังขาด |
 |---|---|---|---|---|---|
-| 1 | Direct Labor | ❓ | — | `cost_center_rates` มี rate DL บาท/ชม. | ยอดขาย/ฐานที่ใช้หาร · สูตรจริง |
-| 2 | Overhead | ❓ | — | `cost_center_rates` มี OH/IDP | เหมือนข้อ 1 |
-| 3 | Inventory Balance | ❓ | — | `line_stock_summary` (ยอดคงเหลือปัจจุบัน) · `kanban_standards` min/max | นิยาม "balance" (วัน? บาท? เทียบ Max?) · ต้นทุน/ชิ้น |
-| 4 | Customer Satisfaction | ❓ | — | `qa_customer_claims` (0 แถว) | นิยามคะแนน · ที่มา (ลูกค้าให้? นับเคลม?) |
-| 5 | **OEE** | 🟢 | `wavg(oee, wLoad)` กะที่ปิดแล้ว | `production_sessions.oee` (ค่า stamp) | — เป้าอยู่ที่ `oee_targets` แล้ว |
-| 6 | **PPM** | 🟢 | `ของเสีย ÷ (ผลิต+ของเสีย) × 10⁶` ไม่รวมงานทดลอง | `defect_logs` (line-mode) | ⚠️ ต่างจากสูตรใบเดิม (`ของเสีย ÷ ผลิต`) ~0.03% — **ต้องยืนยันว่าใช้สูตรไหน** |
-| 7 | **Safety** | 🟢 | นับเหตุบาดเจ็บ/เดือน เป้า 0 | `safety_events` (0 แถว — รอเริ่มบันทึก) | — |
-| 8 | Training | ❓ | — | `ojt_trainings` 13 ใบ · `employee_skills` | นิยาม (ชั่วโมง/คน? %ผ่าน? จำนวนหลักสูตร?) |
+| 1 | Direct Labor | ⚪ | **"Data from SAP"** · เป็น % (ค่าจริง 0.56–0.96%) · **แผนรายเดือนไม่เท่ากัน** (0.70% ม.ค. … 1.09% ธ.ค.) · Commitment ≤ 0.806% / Target ≤ 0.782% · **ตัวหารไม่ปรากฏในไฟล์** (น่าจะ DL cost ÷ ยอดขาย — ต้องถาม) | `cost_center_rates` มี rate DL บาท/ชม. แต่ไม่มียอดขาย | สูตรตัวตั้ง/ตัวหาร · แผนรายเดือน (ระบบมีแต่เป้าเดียวทั้งปี) |
+| 2 | Overhead | ⚪ | "Data from SAP" · % (0.06–0.31%) · แผนรายเดือนไม่เท่ากัน · Commitment ≤ 0.108% / Target ≤ 0.105% | เหมือนข้อ 1 | เหมือนข้อ 1 |
+| 3 | Inventory Balance | ⚪ | หน่วย **"วัน" (0.75D)** · scope = **cost center** (ใบระบุ "Production Ass'y (P402+P403+P404+P413)") · Commitment ≤ 0.76 Day / Target ≤ 0.75 Day · ค่าจริง 0.35–0.81D | `line_stock_summary` (คงเหลือปัจจุบัน) + `kanban_standards` | นิยาม "วัน" = คงเหลือ ÷ ใช้ต่อวัน? (ชิ้นหรือบาท) · ต้องผูก cost center ↔ กลุ่มไลน์ |
+| 4 | Customer Satisfaction | ⚪ | "% Customer Satisfaction" · Commitment ≥ 95% / Target 100% · **ค่าจริงเป็นขั้น 1/16** (0.9375 · 0.875 · 0.8125 · 0.6875) ⇒ **ใบคะแนน 16 ข้อ/ครั้ง** ที่ลูกค้าหรือ QA ให้คะแนน | `qa_customer_claims` (0 แถว) — **ไม่ใช่ตัวเดียวกัน** (เคลม ≠ คะแนนความพึงพอใจ) | ใบคะแนน 16 ข้อคืออะไร ใครกรอก (ยังไม่มีในระบบ) |
+| 5 | **OEE** | 🟢 | "Data from OEE program" · Commitment ≥ 70% / Target ≥ 75% · PD2 2024 ทำได้ 84–93% ทุกเดือน · Progress = **ค่าเฉลี่ย 12 เดือน** (ตรวจแล้ว 0.8793 = avg) | `production_sessions.oee` (wavg) · เป้าที่ `oee_targets` | ⚠️ เป้าในระบบเป็น A×P×Q (default 80.2) — ใบใช้ 75% ตรงๆ · ต้องตั้ง `oee_targets` ของ PD2 ให้ตรงใบ |
+| 6 | **PPM** | 🟢 | "Internal Perspective (Internal defect)" · "Data from OEE program" · Commitment ≤ 300 PPM / Target ≤ 250 PPM · PD2 2024 = 0–56 PPM · Progress = avg (12.25 ✓) | `defect_logs` (line-mode) | ⚠️ ตัวหารยังไม่ยืนยัน (ระบบ `เสีย÷(ผลิต+เสีย)` · ใบเดิม `เสีย÷ผลิต`) — **ไฟล์นี้ก็ไม่บอกสูตร** |
+| 7 | **Safety** | 🟢 | ชื่อเต็ม **"Safety (Die, Disability/Decrepitude, Dismemberment)"** = นับเฉพาะ**เหตุร้ายแรง** (ตาย/ทุพพลภาพ/สูญเสียอวัยวะ) · Target "0 Case" · Commitment "-" · scope = "Section Assembly" | `safety_events.kind` = พีระมิด near_miss → property → first_aid → medical → restricted → **lti (สูงสุด)** · บอร์ดนับ "บาดเจ็บ" = severity ≥ first_aid | **ระบบไม่มีชั้น "ตาย/ทุพพลภาพ/สูญเสียอวัยวะ" เหนือ LTI** และนับตั้งแต่ปฐมพยาบาล ⇒ บอร์ดเข้มกว่าใบ (แดงง่ายกว่า) — ต้องตกลงว่าจะยึดนิยามไหน |
+| 8 | Training | ⚪ | บนใบคือ **"TS Academy" (4.2)** — "Data from HRM" · **% สะสมพนักงานที่ผ่านอบรม** (สูตรในเซลล์ `=เดือนก่อน+x%` · 15.6% → 100%) · Commitment ≥ 80% / Target ≥ 90% · แผนมีแต่ ธ.ค. | `ojt_trainings` 13 ใบ · `employee_skills` | นิยาม "ผ่านอบรม" = หลักสูตรอะไร (HRM ถือข้อมูล ไม่ใช่ OJT หน้างาน) |
+
+### KPI บนฟอร์มที่ **ไม่อยู่ใน 8 หัวข้อของบอร์ด** (ฟอร์มมี 11 ตัว · เลข BSC 1.1–4.3)
+| เลข | ชื่อบนฟอร์ม | สูตร/ที่มา | หมายเหตุ |
+|---|---|---|---|
+| 3.1 | Overall Cost Reduction (100P&CR) | "Value cost improvement" % · Commitment ≥ 1.00% / Target ≥ 1.20% · แผน 1.2% ทุกเดือน | = 100P ในแผง Key Performance · ระบบมี `improvements` cost saving แต่**ตัวหาร (ต้นทุนรวม?) ไม่มี** |
+| 4.1 | Engagement Survey | "Data from HRM" · ปีละครั้ง (ธ.ค.) · ≥ 80% / ≥ 85% | กรอกมือ 1 ค่า/ปี — ระบบรองรับอยู่แล้ว (เดือนอื่นใส่ "-") |
+| 4.3 | Core Activity : CIW | "Data from Leader Activity" · **milestone รายไตรมาส** 0.3529 / 0.6471 / 0.8235 / 1 (= 6/17 · 11/17 · 14/17 · 17/17 ⇒ **17 cost center หลัก**) | เป้าเป็นขั้นบันได ไม่ใช่ค่าเดียวทั้งปี |
 
 ### แผง Key Performance (ระดับส่วนงาน) + Core Activity Plan
 | หัวข้อ | สถานะ | หมายเหตุ |
 |---|---|---|
-| 100P · LEAN · QCC · 5S · TS Academy | ❓ | ยังไม่เห็นไฟล์ — ตั้งเป็น KPI ระดับส่วนงานได้ทันทีที่รู้นิยาม |
+| 100P · TS Academy | 🟡 | เห็นแล้วในฟอร์ม KPI Evaluation (= 3.1 Overall Cost Reduction · 4.2 TS Academy — ดูตารางบน) |
+| LEAN · QCC · 5S | ❓ | ยังไม่เห็นไฟล์ |
 | Kaizen | 🟡 | มี `improvements` (Kaizen) ในระบบแล้ว + สูตร cost saving — ต้องดูว่าใบนับอะไร (จำนวนเรื่อง? เงินที่ประหยัด?) |
-| Master Plan / E-Day (แผง ENGNEER) | ❓ | เป็น Gantt ไม่ใช่ KPI — ยังไม่มีที่เก็บในระบบ |
+| Master Plan / E-Day (แผง ENGNEER) | 🟡 | **เห็นฟอร์มแล้ว (2026-09-07 — ดู §5)** = Gantt รายสัปดาห์ 12 เดือน × W1–W4 · 15 แถว · Plan/Actual · ยังไม่มีที่เก็บในระบบ |
 
 ---
 
@@ -79,4 +87,59 @@
 รู้จากรูปบอร์ดแล้ว: 2 คอลัมน์ (LINE HYDROFORM 1&2 · LINE APRON ASSY & SUP APRON)
 สถานะบนบอร์ด ณ วันถ่ายรูป: Inventory 🔴 (APRON) · PPM 🔴 (HYDROFORM) · Safety 🔴 (APRON) · OEE 🟡 (APRON)
 
-### PD4 · PD1 · PD2 · Planning&Store — ยังไม่ได้รับไฟล์
+### PD2 — ได้ "ตัวอย่างฟอร์ม" ปี 2024 (2026-09-07) — ไม่ใช่ข้อมูลสด
+ชีท `Example for manager` ในไฟล์ KPI Evaluation = ใบจริงของ **Production Assembly (PD2) ปี 2024** (Manager K.Witthaya · Update 16/01/2025)
+ค่ารายเดือนครบ 12 เดือน 11 KPI → **ลงย้อนหลังปี 2024 ของ PD2 ได้ทันที**ผ่าน 📑 KPI รายเดือน (รอ user สั่ง — ห้ามลงเอง)
+สิ่งที่ใบนี้บอกและระบบยังไม่มี → §5
+
+### PD4 · PD1 · Planning&Store — ยังไม่ได้รับไฟล์
+
+---
+
+## 5. ไฟล์ชุดที่ 1 (2026-09-07) — 4 ฟอร์มตัวอย่าง (`*_for_example.xlsx`)
+
+> ทั้ง 4 ไฟล์เป็น **แม่แบบ** (ช่องว่าง) + 1 ชีทตัวอย่างจริง (PD2 2024) · ไม่มีเลขฟอร์ม/Rev/โลโก้ในเซลล์ใดเลย (แนบมาเป็นรูป? — ไม่มีรูปในไฟล์) · A4 แนวนอนทุกใบ · ไม่มีสูตร/conditional formatting/data validation (ทุกอย่างพิมพ์มือ ยกเว้น TS Academy `=เดือนก่อน+x%`)
+
+### 5.1 Key Performance Index Evaluation (ชีท Form for manager / Form for Supervisor / Example for manager)
+**โครงคอลัมน์:** No · Key performance · KPI (= *ที่มาข้อมูล* เช่น "Data from SAP") · **Commitment** · **Target** · Master plan Y2024 ม.ค.–ธ.ค. (แต่ละ KPI 2 แถว **Plan / Actual**) · Response (Champion) · **Progress** · **EVA** · Problem · Countermeasure
+**หัวใบ:** Approval Level 3 ช่อง — ใบ Manager = Director / GM Plant / Manager · ใบ Supervisor = GM Plant / Manager / Supervisor · มุมขวา Date / Name / Dept / Update · กล่อง "หัวข้อ ↔ Performance indicator" 8 ช่อง (ใบตัวอย่างใส่ 11)
+**หมวด BSC 4 หมวดตายตัว:** 1 Financial · 2 Customer · 3 Internal Process · 4 Learning & Growth — ตรงกับ `kpi_definitions.category` (financial/customer/internal/learning) พอดี
+
+**⭐ ข้อค้นพบสำคัญ — ระบบยังทำไม่ตรงใบ 3 จุด:**
+1. **EVA = 3 ระดับจาก 2 เกณฑ์:** ● เขียว "Achieve target" (ผ่าน Target) · ● เหลือง "Within commitment" (ไม่ถึง Target แต่ยังอยู่ใน Commitment) · ● แดง "Miss commitment" (หลุด Commitment) — สีจาก font Wingdings `l` (00B050 / FFFF00 / FF0000)
+   → ระบบเก็บ `commitment` เป็น**ข้อความ**เฉยๆ แล้วตัดสินเหลืองด้วย `statusVsTarget(band=5%)` ซึ่งเป็นแถบเดา **ต้องเปลี่ยนเป็น `commitment_value` ตัวเลข** แล้วให้ G/Y/R = target / commitment / หลุด (ทั้ง `/obeya` และ 📑 KPI รายเดือน) — band 5% ใช้เฉพาะแถวที่ไม่มี commitment
+   · ใบมี legend แถวที่ 2 อีกชุด (✓ Achieve · ▲ Improvement · ✗ Miss goal) แต่ตัวอย่างจริงใช้แค่ ● 3 สี
+2. **แผน (Plan) เป็นรายเดือน ไม่ใช่ค่าเดียวทั้งปี:** DL/OH แผนต่างกันทุกเดือน (ตาม budget) · TS Academy/CIW เป็นบันได · Engagement มีแค่ ธ.ค. → ระบบมี `target_value` เดียว/ปี — **ต้องมี plan รายเดือน** (คอลัมน์ `plan` ใน `kpi_manual_entries` เป็นทางที่กระทบน้อยสุด · แถว auto ก็ต้องตั้งแผนรายเดือนได้)
+3. **Progress = ค่าเฉลี่ยของ Actual ทุกเดือนที่มีค่า** (ตรวจ 3 ตัว: OEE 0.8793 · PPM 12.25 · CSAT 0.8802 ตรงเป๊ะ · DL 0.00653 vs avg 0.00667 — คลาดจากพิมพ์มือ) — ตรงกับคอลัมน์ "เฉลี่ย-รวม" ที่ export มีอยู่แล้ว ✓ · Safety/Inventory เป็นข้อความ ("0 Case" / "0.41 Day") ไม่ใช่ตัวเลข
+
+**Problem / Countermeasure / Response(Champion)** — ระบบมี `action_plan`/`action_owner` ต่อ KPI ต่อปี ใกล้เคียง · แต่ใบเขียน Problem เป็นเหตุการณ์มีวันที่ ("Store ไม่รับงาน 022/023 วันที่ 29/04/2024") = ควรผูกกับ open issue (§5.3) มากกว่าฝังในนิยาม
+
+### 5.2 Master Plan (ชีท Master Plan · ปี 2025 · TSA สาขา 1)
+Gantt: No · (ชื่อกิจกรรม — ช่อง B–J ว่างไม่มีหัว) · Response · Status (Plan/Actual 2 แถวต่อกิจกรรม) · 12 เดือน × **W1–W4** · Remark · ISSUED BY / APPROVED BY · 15 แถว
+ชีทซ่อน `D1` = รุ่นเก่ากว่า (มี "Activities" · PREPARED/APPROVED · Rev) · **ยังไม่มีตารางไหนในระบบเก็บแผนรายสัปดาห์แบบนี้** (`improvements` เป็นโปรเจคเดี่ยว ไม่มี Gantt)
+
+### 5.3 Open Issue (ชีท Open Issue · ชีทซ่อน Open Issue (2) / P1)
+คอลัมน์: Topic · No. · **Status R / Y / G** (3 ช่องติ๊ก) · Problem · Countermeasure · Start Date · Finish Date · Response Person · Remark · หัว Issue by / Date
+รุ่นจัดกลุ่ม (ซ่อน) แบ่ง **Topic 5 กลุ่มตายตัว**: Customer issue, Drawing/Raw material · Dies Tooling · Assembly & Equipment · Part quality · Other
+→ ใกล้ `meeting_action_items` ที่สุด (problem/root_cause/assignee/due_date/status open-doing-done) แต่**ขาด**: Countermeasure แยกจากสาเหตุ · Start date · Topic 5 กลุ่ม · สถานะเป็น R/Y/G (ของเราเป็น workflow ไม่ใช่สี) — แผง 🚨 "งานที่ต้องตามแก้" ใน `/obeya` ควรพิมพ์ออกเป็นใบนี้ได้
+
+### 5.4 Monitoring Sheet (ชีท Monitoring Sheet · ชีทซ่อน D2 "PROJECT MONITORING SHEET" · D3)
+รายสัปดาห์: "Result Weekly : Date" · Problem Detail | Countermeasure (ช่องเขียนอิสระ) · Open Issue List 7 แถว (คอลัมน์เดียวกับ §5.3)
+รุ่นซ่อน D2 = Yearly plan + ตารางผลรายสัปดาห์ 12 เดือน × W1–W4 + open issue list ในใบเดียว
+→ = "บันทึกประชุมรายสัปดาห์ของ Obeya" — ระบบมี Morning Meeting รายวัน แต่ไม่มีรอบรายสัปดาห์
+
+### 5.5 สิ่งที่ต้องถาม user ก่อนลงมือ (เรียงตามผลกระทบ)
+1. **PPM ตัวหาร** (ค้างจากรอบก่อน — ไฟล์นี้ก็ไม่ตอบ)
+2. **DL / OH % ตัวหารคืออะไร** (ยอดขาย? ต้นทุนผลิต?) และเอามาจาก SAP รายงานตัวไหน — ถ้าไม่มีทางดึง ก็กรอกมือต่อไป (ระบบรองรับแล้ว)
+3. **Customer Satisfaction 16 ข้อ** ใบคะแนนอะไร ใครกรอก — ถ้าเป็นใบที่ QA/Sales ได้จากลูกค้า ทำฟอร์มกรอกในระบบได้ (แล้วบอร์ดคำนวณ % เอง)
+4. **Safety นับเฉพาะร้ายแรง 3 ประเภท** ตามชื่อ KPI หรือ นับทุกเหตุบาดเจ็บ — ตอนนี้ระบบแดงตั้งแต่ปฐมพยาบาล และ**ไม่มีชนิดเหนือ LTI** (ตาย/ทุพพลภาพ/สูญเสียอวัยวะ) · บอร์ดกระดาษ PD3 ขึ้นแดงที่ APRON — เหตุระดับไหน?
+5. **Inventory "วัน"** สูตร + จะให้ผูก cost center กับกลุ่มไลน์ยังไง (ต้องมีตาราง map)
+6. ใบ KPI Evaluation นี้**มีเลขฟอร์มไหม** — export ปัจจุบันอิง FM-HRM-6-022/024/025 ซึ่งเป็นคนละ layout · ถ้าจะ export ใบนี้ต้อง register `/doc-forms` เพิ่ม
+7. อนุญาตให้**ลงข้อมูล PD2 ปี 2024 ย้อนหลัง**จากชีทตัวอย่างไหม (11 KPI × 12 เดือน — ทำได้เลยเมื่อสั่ง)
+
+### 5.6 งานที่ตกผลึกจากไฟล์ชุดนี้ (ยังไม่ทำ — รอคำตอบ §5.5 ข้อ 1-5 ไม่จำเป็นสำหรับข้อ a-b)
+- (a) `commitment_value` + กติกา G/Y/R 3 ระดับ (target / commitment) — กระทบ `obeya.js` `statusVsTarget` ผู้ใช้ทุกจอ ต้อง backward-compatible (ไม่มี commitment = band เดิม)
+- (b) แผนรายเดือน (`plan`) ต่อ KPI — โมดัลกรอก + กราฟเส้นแผน + export คอลัมน์ Plan/Actual 2 แถวตามใบ
+- (c) Open issue ตามใบ §5.3 บน `meeting_action_items` (เพิ่ม countermeasure / start_date / topic / rag) + พิมพ์ใบ
+- (d) Master Plan Gantt รายสัปดาห์ (ตารางใหม่) — แผง ENGNEER
+- (e) เพิ่มชั้น `fatal`/`disability`/`dismemberment` ใน `SAFETY_KINDS` (severity 6+) + ให้ KPI Safety เลือกได้ว่านับจากชั้นไหน (ขึ้นกับคำตอบข้อ 4 — ห้ามลดความเข้มของบอร์ดเองโดยไม่ได้สั่ง)
