@@ -208,3 +208,18 @@
 - **เพดานเวลา login ตามกะ (2026-07-15):** role หน้างานที่ทำงานสลับกะ+ใช้เครื่องเช็คชื่อร่วมกัน (`leader`+`supervisor`) จะถูก **เตะออกทันทีเมื่อเลย "สิ้นกะที่ตอน login + 60 นาที"** ไม่สนใจ idle (กะเช้า 08:00–19:59 → หมดอายุ 21:00 · กะดึก 20:00–07:59 → หมดอายุ 09:00 เช้าถัดไป) — แก้ปัญหาหัวหน้ากะก่อนไม่ logout แล้วคนกะใหม่มาเช็คผิด session · stamp เวลา login ที่ `localStorage['esm-session-started']` ตอน `SIGNED_IN` (ล้างตอน signout) · admin/manager/office/display **ไม่โดน** (ทำงานเครื่องตัวเอง มี idle-logout คุมพอ) · ปรับขอบเขตที่ list `shiftCapped` + ค่า `SHIFT_GRACE_MS`/`shiftDeadlineFrom()` ใน App.jsx
 
 ---
+
+## เหตุการณ์ชื่อผู้ใช้หายทั้งระบบ — 2026-09-02 (สืบจาก audit_log · กู้คืน 2026-09-07)
+
+- **อาการ:** `/add-user` ขึ้น "ไม่ระบุชื่อ" เกือบทุกแถว · user ต้องพิมพ์ชื่อคืนเอง 3–4 ก.ย. (24 บัญชี)
+- **สาเหตุ (จาก `audit_log`):** 2026-09-02 15:49:33 บัญชี **role `leader`** (mongkol@pd4) update `full_name` ของ **49 บัญชีอื่น**
+  ในทรานแซกชันเดียว: ชื่อเดิม → `__hack__` → `null` · 4 นาทีก่อนหน้า บัญชีเดียวกันแก้ `is_dept_admin`/`sections` ของตัวเอง ·
+  30 นาทีถัดมา (16:19) มี migration `protect_profile_privilege_columns` apply ผ่าน MCP โดย**ไม่มีไฟล์ในรีโป**
+  → **รูปแบบ = การทดสอบช่องโหว่ RLS แล้วปิดช่องโหว่ แต่ขั้น "คืนค่าเดิม" ตั้งเป็น null แทนชื่อเดิม** (ไม่ใช่ระบบรีเฟรช/ไม่ใช่โค้ดหน้าเพจ — `AddUser.handleUpdate` แก้ทีละ id เสมอ)
+- **ช่องโหว่จริง:** policy `auth_update_profiles` = `using(true) with check(true)` สำหรับ authenticated → role อะไรก็ update โปรไฟล์คนอื่นได้ทั้งตาราง ·
+  trigger `protect_profile_role` เวอร์ชันเดิม (20260706) กันแค่เปลี่ยน `role` · เวอร์ชันใหม่กัน "แก้แถวคนอื่น" + คอลัมน์สิทธิ์ทั้งชุด
+  (ไฟล์ `20260902_protect_profile_privilege_columns.sql` ถอดจาก DB ใส่รีโปแล้ว 2026-09-07 · policy `using(true)` ยังคงไว้เพราะ admin update ผ่าน client)
+- **กู้คืน:** `20260907_restore_profile_names_from_audit.sql` — เติมเฉพาะแถวที่ยัง null จากค่า `old_data` ใน audit_log (49 บัญชี · no_name 61 → 0) · บัญชีที่ user พิมพ์ใหม่แล้วไม่แตะ
+- **กฎที่ตกผลึก:** (1) **ห้ามทดสอบช่องโหว่ด้วยการเขียนทับข้อมูลจริงบน production** — ถ้าจำเป็นให้ใช้ `begin … rollback` หรือแถวทดสอบของตัวเอง และต้องคืนค่าเดิมจาก snapshot ไม่ใช่ null
+  (2) migration ที่ apply ผ่าน MCP/SQL Editor **ต้องมีไฟล์ในรีโปคอมมิทเดียวกัน** ไม่งั้น session ถัดไปเห็น DB กับรีโปไม่ตรงกัน (กฎเดิมใน CLAUDE.md แต่หลุด)
+  (3) `audit_log` บน `profiles` คือสิ่งที่ทำให้กู้ได้ครบ — ตาราง master ใหม่ต้องผูก `trg_audit` เสมอ
