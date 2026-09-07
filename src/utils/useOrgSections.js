@@ -14,8 +14,17 @@ import { supabase } from '../supabaseClient';
 export function useOrgSections() {
   const [orgSections, setOrgSections] = useState([]);
   useEffect(() => {
+    let alive = true;
     supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name')
-      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name).sort()));
+      .then(async ({ data }) => {
+        const fromOrg = (data || []).map(n => n.code || n.name).filter(Boolean).sort();
+        if (fromOrg.length) { if (alive) setOrgSections(fromOrg); return; }
+        // ผังยังว่าง (โรงงานใหม่ตอน rollout) → fallback distinct production_lines.section (backward-compat
+        // ตามหมายเหตุหัวไฟล์ — เดิมผู้เรียกต้องทำเองทีละหน้า · 2026-09-07 ย้ายเข้า hook)
+        const { data: ln } = await supabase.from('production_lines').select('section').not('section', 'is', null);
+        if (alive) setOrgSections([...new Set((ln || []).map(l => l.section).filter(Boolean))].sort());
+      });
+    return () => { alive = false; };
   }, []);
   return orgSections;
 }
