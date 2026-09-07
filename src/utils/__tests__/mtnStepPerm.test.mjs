@@ -148,3 +148,62 @@ test('isQaSkipped: ดูจาก qa_skipped_at อย่างเดียว 
   assert.equal(isQaSkipped({}), false);
   assert.equal(isQaSkipped(undefined), false);
 });
+
+/* ── 🔒 ขั้น 4/6/7 ผูกกับ "ฝ่ายที่แจ้ง" (scope) — 2026-09-07 ── */
+import { orderInReporterScope } from '../mtnStepPerm.js';
+
+const LINES = ['HYDROFORM', 'HDF1', 'HDF2', 'LASER-345', 'LINE APRON ASSY', 'Line 60', 'Line 61', 'GOR', 'Assy GOR'];
+const PD3 = { scopeLineNames: ['HYDROFORM', 'HDF1', 'HDF2', 'LASER-345', 'LINE APRON ASSY', 'Line 60', 'Line 61'], knownLineNames: LINES, sections: ['PD3'] };
+
+test('orderInReporterScope: ใบไลน์ในส่วนงานตัวเอง = true · ไลน์ส่วนงานอื่น = false', () => {
+  assert.equal(orderInReporterScope({ line_name: 'Line 60' }, PD3), true);
+  assert.equal(orderInReporterScope({ line_name: 'GOR' }, PD3), false);
+  assert.equal(orderInReporterScope({ line_name: ' line 60 ' }, PD3), true, 'ต้องทนช่องว่าง/ตัวพิมพ์');
+});
+
+test('orderInReporterScope: ตัดสินไม่ได้ = null (ไม่จำกัด scope / ไม่ระบุไลน์ / ไลน์ไม่อยู่ในทะเบียนและไม่มี dept_section)', () => {
+  assert.equal(orderInReporterScope({ line_name: 'GOR' }, { scopeLineNames: null, knownLineNames: LINES, sections: [] }), null, 'admin/ไม่มี sections = ทั้งโรงงาน');
+  assert.equal(orderInReporterScope({ line_name: '' }, PD3), null, 'ใบไม่ระบุไลน์');
+  assert.equal(orderInReporterScope({ line_name: 'LINE A ( 800 Ton )' }, PD3), null, 'ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์ + ไม่มี dept_section');
+});
+
+test('orderInReporterScope: ไลน์ไม่รู้จักแต่ใบระบุ dept_section → เทียบ section ตรงๆ', () => {
+  assert.equal(orderInReporterScope({ line_name: 'LINE A ( 800 Ton )', dept_section: 'PD1' }, PD3), false);
+  assert.equal(orderInReporterScope({ line_name: 'LINE A ( 800 Ton )', dept_section: 'pd3' }, PD3), true);
+  // ไลน์รู้จักต้องชนะ dept_section ที่พิมพ์มือ (ช่อง PD แก้ได้ในฟอร์ม)
+  assert.equal(orderInReporterScope({ line_name: 'GOR', dept_section: 'PD3' }, PD3), false);
+});
+
+test('ขั้น 4/6/7: ถือคีย์แต่ใบเป็นของฝ่ายอื่น = out_of_scope · ใบในฝ่ายตัวเอง = perm', () => {
+  for (const [step, key] of [[4, 'accept_work'], [6, 'handover'], [7, 'approve']]) {
+    const other = { order: ORDER, fullName: 'หัวหน้า PD3', inReporterScope: false, ...perms([key], SEEDED_ALL) };
+    assert.deepEqual(canDoStep(step, other), { ok: false, code: 'out_of_scope' }, `ขั้น ${step} ต้องล็อกใบฝ่ายอื่น`);
+    const own = { ...other, inReporterScope: true };
+    assert.deepEqual(canDoStep(step, own), { ok: true, code: 'perm' });
+    const unknown = { ...other, inReporterScope: null };
+    assert.deepEqual(canDoStep(step, unknown), { ok: true, code: 'perm' }, 'ตัดสินไม่ได้ = ผ่านตามเดิม (ไม่รู้ ≠ ไม่ใช่)');
+  }
+});
+
+test('scope ไม่ล็อกผู้เปิดใบ / manage_master / ขั้นของทีมช่าง (2-3-5)', () => {
+  const opener = { order: ORDER, fullName: 'สมชาย ใจดี', inReporterScope: false, ...perms([], SEEDED_ALL) };
+  assert.deepEqual(canDoStep(4, opener), { ok: true, code: 'reporter' });
+  assert.deepEqual(canDoStep(6, opener), { ok: true, code: 'reporter' });
+  const boss = { order: ORDER, fullName: 'ผจก.', inReporterScope: false, ...perms(['manage_master'], SEEDED_ALL) };
+  assert.deepEqual(canDoStep(7, boss), { ok: true, code: 'manage_master' });
+  const tech = { order: ORDER, fullName: 'ช่าง', inReporterScope: false, ...perms(['assign', 'service', 'qa'], SEEDED_ALL) };
+  for (const s of [2, 3, 5]) assert.equal(canDoStep(s, tech).ok, true, `ขั้น ${s} ไม่ใช่ขั้นของฝ่ายที่แจ้ง ไม่ติด scope`);
+});
+
+test('fallback ก่อน apply migration ก็ยังเคารพ scope (ไม่เปิดช่องผ่านคีย์เดิม)', () => {
+  const old = { order: ORDER, fullName: 'หัวหน้า', inReporterScope: false, ...perms(['service', 'report'], SEEDED_OLD) };
+  assert.deepEqual(canDoStep(4, old), { ok: false, code: 'out_of_scope' });
+  assert.deepEqual(canDoStep(6, old), { ok: false, code: 'out_of_scope' });
+});
+
+test('stepDenyHint แบบ out_of_scope บอกว่าใบเป็นของไลน์/ส่วนงานไหน และไม่พาไปขอ role เพิ่ม', () => {
+  const h = stepDenyHint(4, { reporterName: 'สมชาย ใจดี', outOfScope: true, orderLine: 'GOR', orderSection: 'PD4' });
+  assert.ok(h.some(l => l.includes('GOR') && l.includes('PD4')));
+  assert.ok(h.some(l => l.includes('/add-user')));
+  assert.ok(!h.some(l => l.includes('mtn_repair:accept_work')), 'ไม่ใช่ปัญหา role ห้ามชี้ไป /permissions');
+});

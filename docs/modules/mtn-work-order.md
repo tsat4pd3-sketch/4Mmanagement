@@ -27,7 +27,7 @@
 > เกณฑ์นี้ถูกใช้ **2 ที่ที่ต้องตรงกันเป๊ะเสมอ** — ตัวซ่อนปุ่มใน `DetailDrawer` (`canEditStep`) กับ
 > guard ชั้นสองใน `StepModal.save()` (**RLS ของ `mtn_orders` ฝั่ง DR เป็น anon เปิดหมด → UI คือด่านเดียวจริงๆ**)
 > เดิมเขียนซ้ำ 2 ก้อนแล้ว**ต่างกันจริง** (ตัวซ่อนปุ่มมี branch `step===1` ที่ guard ไม่มี) → ยุบมาที่ util
-> · `MTN_STEPS` / `canDoStep()` / `stepLabel()` / `stepDenyHint()` / `isOrderReporter()` · เทส 13 เคส
+> · `MTN_STEPS` / `canDoStep()` / `stepLabel()` / `stepDenyHint()` / `isOrderReporter()` / `orderInReporterScope()` · เทส 26 เคส (`mtnStepPerm.test.mjs`)
 > **ห้ามเอา `STEP_PERM` กลับมาเขียนใน MtnRepair.jsx และห้ามพิมพ์ชื่อขั้นซ้ำในหน้า** (ปุ่ม/หัวโมดัล/StepBox อ่านจาก `stepLabel`/`MTN_STEPS`)
 >
 > | ขั้น | ใครทำ | คีย์ | seed |
@@ -57,8 +57,19 @@
 > - **แยก "หัวหน้าช่าง" จาก "ช่าง" ใช้ flag `is_dept_admin` ห้ามเพิ่ม role** — seed `mtn` ให้ `assign` ไว้ก่อน
 >   ไม่ให้ทีมช่างทำงานไม่ได้ตอน deploy · อยากรัดจริงให้ถอด `mtn` ที่ `/permissions` แล้วติ๊กแอดมินหน่วยงานที่ `/add-user`
 > - **bucket `dept_admin` ไม่ติดกับดัก `enum_range` ในโมดูลนี้** — `20260803_dept_admin.sql` ก๊อปทุก action ที่ manager ถือให้ bucket ตอนสร้าง จึงได้ `mtn_repair:*` ชุดเดิมครบตั้งแต่ตอนนั้น (ตรวจกับฐานจริง 2026-09-02) · **กับดัก `enum_range` ยังใช้กับ role ธรรมดาที่เพิ่มทีหลังเสมอ — แต่ bucket ตัวนี้มีตัวก๊อปให้แล้ว อย่าเหมาว่าขาด**
-> - **ยังไม่ทำ:** ยังไม่ผูก "ฝ่ายที่แจ้ง" กับ scope จริง — manager/supervisor คนไหนก็ได้ทั้งโรงงานยังปิดใบของฝ่ายอื่นได้
->   (จะทำต้องเทียบ section ของ `line_name` บนใบ กับ `sections` ของผู้ใช้ — เป็นการรัดที่ล็อกคนออกได้ ต้องให้ user เคาะก่อน)
+> - **🔒 ขั้น 4/6/7 ("ฝ่ายที่แจ้ง") ผูกกับ scope จริงแล้ว (2026-09-07 · user เคาะ "ลุยข้อ 2"):** ผู้ถือ `accept_work`/`handover`/`approve`
+>   ทำได้**เฉพาะใบในส่วนงาน/ครอบครัวไลน์ของตัวเอง** — `MTN_STEPS[n].reporterSide` + opts `inReporterScope` ใน `canDoStep`
+>   (คืน `{ ok:false, code:'out_of_scope' }`) · ผู้เรียกคำนวณด้วย **`orderInReporterScope(order, { scopeLineNames, knownLineNames, sections })`**
+>   (pure · MtnRepair ส่ง `reporterScope` = `scopeLines` ชุดเดียวกับที่กรองรายการ + ทะเบียนไลน์ + `sections`)
+>   · **ลำดับตัดสิน: `line_name` ที่อยู่ในทะเบียนไลน์ชนะ `dept_section` เสมอ** (ช่อง "แผนก (PD)" พิมพ์แก้ได้ · ข้อมูลจริง 60 วันว่าง ~60%)
+>   ไลน์ไม่รู้จัก (แม่พิมพ์ผูก "LINE A ( 800 Ton )") จึงค่อยเทียบ `dept_section` กับ `sections`
+>   · **null = ตัดสินไม่ได้ = ผ่านตามเดิม** (ผู้ใช้ไม่จำกัด scope / ใบไม่ระบุไลน์ / ไลน์ไม่รู้จักและไม่มี dept_section) — หลัก "ไม่รู้ ≠ ไม่ใช่"
+>   การรัดที่ล็อกคนออกต้องมีหลักฐานว่าใบเป็นของฝ่ายอื่นจริง · **ผู้เปิดใบ / `manage_master` ไม่ติด scope** · ขั้น 2-3-5 (ทีมช่าง/QA) ไม่เกี่ยว
+>   · fallback ก่อน apply migration ก็เคารพ scope (ไม่เปิดช่องผ่านคีย์เดิม) · กล่อง 🔒 ใน DetailDrawer + toast ตอนบันทึกบอกว่าใบเป็นของไลน์/ส่วนงานไหน
+>   และชี้ไป `/add-user` (เพิ่มส่วนงาน) **ไม่ใช่ `/permissions`** (ไม่ใช่ปัญหา role)
+>   · ⚠️ ผลจริงเล็กกว่าที่ฟังดู: รายการใบถูกกรองด้วย `scopeLines` อยู่แล้ว ผู้ใช้ที่จำกัด scope จึงไม่เห็นใบฝ่ายอื่นตั้งแต่ต้น —
+>   ตัวนี้ปิดช่องที่เหลือคือ **ใบที่ `line_name` ว่าง/ไม่อยู่ในทะเบียน** (หลุดฟิลเตอร์) + เป็น guard ชั้นสองตอนบันทึกให้ตรงกับฟิลเตอร์
+>   · manager/dept_admin ที่ `sections` ว่าง = ทั้งโรงงานตามเดิม (ตั้งใจ) — อยากรัดให้ตั้ง sections ที่ `/add-user`
 > - migration `20260902_mtn_step_ownership.sql` (Main)
 
 - **⏭ ข้าม QA (ขั้น 5 → 6) เมื่องานไม่เกี่ยวกับคุณภาพ (2026-09-03 · คำสั่ง user "สเต็ป 5 ต้องให้ QA อนุมัติ ถ้าเรื่องไม่เกี่ยวกับ QA ต้องกดข้ามไปสเต็ป 6 ได้ ตอนนี้ไม่ได้"):**
