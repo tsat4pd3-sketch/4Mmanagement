@@ -67,7 +67,7 @@ model: inherit
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
 - **[C-RLS-2]** ตารางที่ client เรียก `.upsert()` ต้องมี UPDATE policy (ไม่มี = ชนแถวเดิมแล้ว 42501) · ตารางที่ client `.update()/.delete()` แล้วผลลัพธ์สำคัญ ต้อง `.select('id')` นับแถว (RLS ปฏิเสธ = 0 แถวไม่มี error)
-- **[B-WRITE-1]** ทุก `insert/update/delete/upsert` ต้องอ่าน `error` — `await supabase.from(...).insert(...)` เปล่าๆ หรือ `const { data } = ...` = กลืน error · `try{await supabase…}catch{}` = โค้ดตาย (supabase-js ไม่ throw)
+- **[B-WRITE-1]** ทุก `insert/update/delete/upsert` ต้องอ่าน `error` (ใช้ `checkWrite` จาก `src/utils/dbWrite.js` หรืออ่าน `{ error }` เอง) · grep: `^\s*await supabase(DR)?\.from\('[^']+'\)\.(insert|update|delete|upsert)\(` ต้องได้ 0 (ยกเว้น `AddUser.jsx` mtn_teams ที่ตั้งใจ · `webpush.js` ใน try ของ unsubscribe) — `await supabase.from(...).insert(...)` เปล่าๆ หรือ `const { data } = ...` = กลืน error · `try{await supabase…}catch{}` = โค้ดตาย (supabase-js ไม่ throw)
 - **[B-WRITE-2]** effect ที่ await แล้ว set state ตาม selection ต้องมี guard กัน stale response (`alive`/request id) — CLAUDE.md §กฎเหล็กการเขียน DB จาก client ข้อ 4
 
 - **C1** ห้าม hardcode role array เพิ่ม เช่น `['admin','manager','supervisor'].includes(role)` —

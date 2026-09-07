@@ -22,6 +22,7 @@ import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 import { liveChannel } from '../utils/liveChannel';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -1900,7 +1901,7 @@ export default function FactoryMap({ setupMode = false }) {
     if (!r) return;
     if (JSON.stringify(r.points) === JSON.stringify(d.base)) return;   // คลิกเฉยๆ ไม่ได้ลาก — ไม่บันทึก/ไม่เข้า history
     if (d.snap) hist.pushSnapshot(d.snap);
-    await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id);
+    checkWrite(await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id), 'บันทึกจุด polygon');
   };
   const deleteRegion = async (id) => {
     const rg = regions.find(r => r.id === id);

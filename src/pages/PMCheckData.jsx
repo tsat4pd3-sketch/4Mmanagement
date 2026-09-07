@@ -16,6 +16,7 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
+import { checkWrite } from '../utils/dbWrite';
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -393,7 +394,8 @@ function NgRecheckPanel({ result, cp, onSaved }) {
         patch.recheck_value_1 = Number(rv1); patch.recheck_value_2 = Number(rv2); patch.recheck_value_3 = Number(rv3)
         patch.recheck_avg = recheckAvg; patch.final_status = finalStatus
       }
-      await supabaseDR.from('inspection_results').update(patch).eq('id', result.id)
+      const { error: wErr396 } = await supabaseDR.from('inspection_results').update(patch).eq('id', result.id);
+      if (wErr396) throw wErr396;   // บันทึก recheck — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
       onSaved()
     } catch (err) { toast.error(err.message) }
     finally { setSaving(false) }
@@ -508,7 +510,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
     const categories = await fetchCategories({ includeInactive: true })
     // เลขฟอร์ม/Rev/Effective อ่านจาก Document Master กลาง (doc_control แก้ได้ที่ /doc-forms) · fallback ค่าเดิม
     const docForm = await getDocForm('pm_jig', { form_code: 'FM-JIG-003', rev: 'Rev.00', effective_date: '01/07/2020' })
-    await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id)
+    checkWrite(await supabaseDR.from('inspections').update({ exported_by: userId, exported_at: new Date().toISOString() }).eq('id', insp.id), 'บันทึกว่า export แล้ว');
     return { jig, inspection: insp, checkpoints, results: resultMap, inspector, approver, exporter, categories, docForm }
   }
 

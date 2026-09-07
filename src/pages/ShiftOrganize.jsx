@@ -10,6 +10,7 @@ import { toast } from '../components/Toast';
 
 import InfoMore from '../components/InfoMore';
 import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
+import { checkWrite } from '../utils/dbWrite';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -327,7 +328,7 @@ export default function ShiftOrganize() {
 
   const handleDeleteOverride = async (id) => {
     if (!confirm('ยืนยันลบรายการเปลี่ยนกะรายบุคคลนี้?')) return;
-    await supabase.from('shift_overrides').delete().eq('id', id);
+    checkWrite(await supabase.from('shift_overrides').delete().eq('id', id), 'ลบ override กะ');
     fetchOverrides();
   };
 

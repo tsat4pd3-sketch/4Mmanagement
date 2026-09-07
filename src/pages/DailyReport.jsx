@@ -37,6 +37,7 @@ import useProductionLines from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
 import { liveChannel } from '../utils/liveChannel';
+import { checkWrite } from '../utils/dbWrite';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -738,7 +739,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (ov.start) {
           const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
           const ms = new Date(`${selSession.work_date}T${ov.start.slice(0, 5)}:00`).getTime();
-          await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id);
+          checkWrite(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id), 'บันทึกเวลาเริ่ม MAT');
         }
         if (ov.end) {
           const confirmedOds = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
@@ -746,7 +747,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             const lastOrder = confirmedOds.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
             let ms = new Date(`${selSession.work_date}T${ov.end.slice(0, 5)}:00`).getTime();
             if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-            await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id);
+            checkWrite(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id), 'บันทึกเวลาปิด MAT');
           }
         }
       }
@@ -766,7 +767,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         ...(startChanged ? { start_time: closeStartTime } : {}),
         ...(endChanged   ? { end_time:   closeEndTime   } : {}),
       };
-      await supabaseDR.from('production_sessions').update(update).eq('id', selSession.id);
+      const { error: wErr769 } = await supabaseDR.from('production_sessions').update(update).eq('id', selSession.id);
+      if (wErr769) { toast.error('บันทึกเวลา/OEE ของกะไม่สำเร็จ: ' + wErr769.message); return; }
       toast.success('บันทึกเวลาและคำนวณ OEE ใหม่สำเร็จ');
       setShowEditTimes(false);
       setMatTimeOverride({});
@@ -1239,21 +1241,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
       // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
       const firstOrder = prodOrders.find(o => o.id === pendingPairId);
-      await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId);
-      await supabaseDR.from('prod_orders').update({
+      checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId), 'ผูกคู่ RH/LH (ใบแรก)');
+      checkWrite(await supabaseDR.from('prod_orders').update({
         paired_order_id: pendingPairId,
         ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
-      }).eq('id', data.id);
+      }).eq('id', data.id), 'ผูกคู่ RH/LH (ใบที่สอง)');
       setPendingPairId(null);
       toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
     } else if (partnerMatNo) {
       const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
       if (existingPartner) {
-        await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id);
-        await supabaseDR.from('prod_orders').update({
+        checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
+        checkWrite(await supabaseDR.from('prod_orders').update({
           paired_order_id: existingPartner.id,
           ...(existingPartner.opened_at ? { opened_at: existingPartner.opened_at } : {}),
-        }).eq('id', data.id);
+        }).eq('id', data.id), 'ผูกคู่ RH/LH (ใบใหม่)');
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
         setPendingPairId(data.id);
@@ -1491,7 +1493,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (pe) {
           toast.error(`เปิดเป้าคู่ไม่สำเร็จ: ${pe.message}`);
         } else {
-          await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id);
+          checkWrite(await supabaseDR.from('prod_orders').update({ paired_order_id: pairCreated.id }).eq('id', created.id), 'ผูกคู่ RH/LH');
           toast.success(`เปิดเป้าคู่ ${pairMat} · ${qty} ชิ้น ✓${pairSession.id !== selSession.id ? ` (ไลน์ ${pairLine} — ไปอัพเดทยอดที่หน้ากะของไลน์นั้น)` : ''}`);
         }
       }
@@ -1635,15 +1637,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const dup = prodOrders.find(p => p.prod_no === o.prod_no);
       if (dup) {
         // มีในกะนี้แล้ว — mark ต้นทางทุกใบ (รวมใบซ้ำในกะเก่าๆ) เป็น imported เพื่อให้ banner เคลียร์ออก
-        await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
+        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
         continue;
       }
       const remainQty = o.qty - (o.qty_actual || 0);
       if (remainQty <= 0) {
         // ผลิตครบเป้าแล้ว ไม่ต้องยกยอด — แค่ปิดต้นทางไม่ให้ขึ้นเตือนค้างอีก
-        await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
+        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
         continue;
       }
       const { error } = await supabaseDR.from('prod_orders').insert({
@@ -1668,8 +1670,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (!error) {
         imported++;
         // Mark original orders (ทุกใบที่ prod_no ตรงกันในกะเก่า) as 'imported'
-        await supabaseDR.from('prod_orders').update({ status: 'imported' })
-          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id);
+        checkWrite(await supabaseDR.from('prod_orders').update({ status: 'imported' })
+          .eq('prod_no', o.prod_no).in('status', ['carry_over', 'open']).neq('session_id', selSession.id), 'ปิดใบต้นทางเป็น imported (ถ้าค้างจะถูกรับซ้ำรอบหน้า)');
       }
     }
     toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
@@ -2040,7 +2042,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (ov.start) {
         const firstOrder = orders.reduce((a, b) => (!a.opened_at || (b.opened_at && new Date(b.opened_at) < new Date(a.opened_at))) ? b : a);
         const ms = new Date(`${selSession.work_date}T${ov.start.slice(0,5)}:00`).getTime();
-        await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id);
+        checkWrite(await supabaseDR.from('prod_orders').update({ opened_at: new Date(ms).toISOString() }).eq('id', firstOrder.id), 'บันทึกเวลาเริ่ม MAT');
       }
       if (ov.end) {
         const confirmedOrders = orders.filter(o => o.status === 'confirmed' && o.confirmed_at);
@@ -2048,7 +2050,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const lastOrder = confirmedOrders.reduce((a, b) => (new Date(b.confirmed_at) > new Date(a.confirmed_at)) ? b : a);
           let ms = new Date(`${selSession.work_date}T${ov.end.slice(0,5)}:00`).getTime();
           if (lastOrder.opened_at && ms < new Date(lastOrder.opened_at).getTime()) ms += 86400000;
-          await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id);
+          checkWrite(await supabaseDR.from('prod_orders').update({ confirmed_at: new Date(ms).toISOString() }).eq('id', lastOrder.id), 'บันทึกเวลาปิด MAT');
         }
       }
     }
@@ -2260,12 +2262,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (!reason) { toast.error('กรุณาระบุสิ่งที่ต้องกลับไปแก้ไข (remark) ให้หัวหน้ากลุ่มทราบ'); return; }
     setSavingReject(true);
     // คืนสถานะ order ที่เคยถูกยกยอด/ยกเลิกไว้ตอนขอปิดกะ กลับเป็น open เพื่อให้ leader แก้ไขใหม่ได้
-    await supabaseDR.from('prod_orders').update({
+    const { error: wErr2263 } = await supabaseDR.from('prod_orders').update({
       status:                      'open',
       carry_over_note:             null,
       carry_over_from_session_id:  null,
       qty_actual:                  0,
     }).eq('session_id', selSession.id).in('status', ['carry_over', 'cancelled']);
+    if (wErr2263) { setSavingReject(false); toast.error('คืนสถานะใบยกยอดกลับเป็น open (ยังไม่ปฏิเสธการปิดกะ)ไม่สำเร็จ: ' + wErr2263.message); return; }
     const { error } = await supabaseDR.from('production_sessions').update({
       status:                  'open',
       close_requested_by_name: null,
@@ -6806,11 +6809,11 @@ function ProductSetup({ role }) {
       if (error) { setSaving(false); toast.error(error.message); return; }
       // Mark old product as superseded
       if (ecSource) {
-        await supabaseDR.from('dr_products').update({
+        checkWrite(await supabaseDR.from('dr_products').update({
           is_active: false,
           superseded_at: form.effective_from || today(),
           superseded_by: inserted.id,
-        }).eq('id', ecSource.id);
+        }).eq('id', ecSource.id), 'บันทึกข้อมูลสินค้า');
       }
     } else {
       const { error } = await supabaseDR.from('dr_products').update(payload).eq('id', editing);

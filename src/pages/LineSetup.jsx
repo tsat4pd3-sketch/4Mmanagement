@@ -20,6 +20,7 @@ import { loadOpInfo } from '../utils/opItems';
 import SearchSelect from '../components/SearchSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
+import { checkWrite } from '../utils/dbWrite';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -405,7 +406,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const handleUpdateParent = async (line, parentName) => {
     // เปลี่ยนโครงสร้าง master (ไลน์แม่) — ยืนยันก่อน กันแตะ dropdown พลาด · ยกเลิก = revert หน้าจอ
     if (!confirm(`เปลี่ยน "ไลน์แม่" ของ ${line.name} เป็น "${parentName || '(ไม่มี — เป็นไลน์หลัก)'}" ?\n\nกระทบการรวมเครื่อง/ผัง/กำลังผลิตของทั้งกลุ่ม`)) { await fetchLines(); return; }
-    await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id);
+    checkWrite(await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id), 'ตั้งไลน์แม่');
     await fetchLines();
   };
 
@@ -436,7 +437,7 @@ export default function LineSetup({ embedded = false } = {}) {
     if (!window.confirm(`ลบไลน์ "${line.name}" ?\n\nจุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย${warn}`)) return;
     // Clear parent ref from children first
     if (childCount > 0) {
-      await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name);
+      checkWrite(await supabase.from('production_lines').update({ parent_line_name: null }).eq('parent_line_name', line.name), 'ปลดไลน์ลูกออกจากไลน์ที่ลบ');
     }
     // อ่าน URL ผังก่อนลบ row — จะได้ลบไฟล์ใน storage ตามหลัง DB สำเร็จ (กติกา CLAUDE.md กันไฟล์กำพร้า)
     const { data: delLayout } = await supabase.from('line_layouts').select('image_url').eq('line_name', line.name).maybeSingle();
@@ -460,7 +461,7 @@ export default function LineSetup({ embedded = false } = {}) {
         if (oldName.startsWith('layouts/')) supabase.storage.from('employee-photos').remove([oldName]).catch(() => {});
       }
     }
-    await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id);
+    checkWrite(await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id), 'ปลดพนักงานออกจากไลน์ที่ลบ');
     const { error: eLine } = await supabase.from('production_lines').delete().eq('id', line.id);
     if (eLine) { toast.error('ลบไลน์ไม่สำเร็จ: ' + eLine.message); return; }
     const remaining = lines.filter(l => l.id !== line.id);
@@ -475,7 +476,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const handleUpdateSection = async (line, section) => {
     // เปลี่ยน Section ของไลน์ = กระทบ scope/สิทธิ์การมองเห็น — ยืนยันก่อน · ยกเลิก = revert หน้าจอ
     if (!confirm(`เปลี่ยน "Section" ของ ${line.name} เป็น "${section || '(ไม่มี)'}" ?\n\nกระทบขอบเขตการมองเห็น (scope) และการผูกใบค่าฝีมือ`)) { await fetchLines(); return; }
-    await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id);
+    checkWrite(await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id), 'ตั้ง section ของไลน์');
     await fetchLines();
   };
 
@@ -531,7 +532,7 @@ export default function LineSetup({ embedded = false } = {}) {
       const { data: hid } = await supabase.from('lpa_questions').select('id, hidden_for_lines').contains('hidden_for_lines', [old]);
       for (const q of hid || []) {
         const next = (q.hidden_for_lines || []).map(n => (n === old ? name : n));
-        await supabase.from('lpa_questions').update({ hidden_for_lines: next }).eq('id', q.id);
+        checkWrite(await supabase.from('lpa_questions').update({ hidden_for_lines: next }).eq('id', q.id), 'ซ่อน/แสดงข้อ LPA ของไลน์');
       }
     } catch { /* best-effort — คอลัมน์ยังไม่ apply ก็ข้าม */ }
     // DR project (client supabaseDR) — production_sessions/dr_products สำคัญสุด (กะที่เปิด + product→line map)
@@ -832,14 +833,15 @@ export default function LineSetup({ embedded = false } = {}) {
       stationId = data.id;
     }
 
-    await supabase.from('station_requirements').delete().eq('station_id', stationId);
+    const { error: wErr835 } = await supabase.from('station_requirements').delete().eq('station_id', stationId);
+    if (wErr835) { toast.error('ล้างทักษะเดิมของจุดงาน (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr835.message); return; }
     const reqRows = Object.entries(formData.requirements).map(([skill_name, min_score]) => ({
       station_id: stationId,
       skill_name,
       min_score,
     }));
     if (reqRows.length > 0) {
-      await supabase.from('station_requirements').insert(reqRows);
+      checkWrite(await supabase.from('station_requirements').insert(reqRows), 'บันทึกทักษะที่ต้องการของจุดงาน');
     }
 
     fetchLineData();
@@ -850,7 +852,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const deleteStation = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
     hist.pushHistory();
-    await supabase.from('station_requirements').delete().eq('station_id', id);
+    checkWrite(await supabase.from('station_requirements').delete().eq('station_id', id), 'ล้างทักษะของจุดงานที่ลบ');
     const { error } = await supabase.from('workstations').delete().eq('id', id);
     if (!error) fetchLineData();
   };

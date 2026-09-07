@@ -8,6 +8,7 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { inspMeta } from '../utils/inspectionStatus'
+import { checkWrite } from '../utils/dbWrite';
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -357,10 +358,10 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
     }).eq('id', row.plan.id)
     if (error) { setSaving(false); return toast.error(error.message) }
     // log ประวัติ
-    await supabaseDR.from('pm_plan_deferrals').insert({
+    checkWrite(await supabaseDR.from('pm_plan_deferrals').insert({
       plan_id: row.plan.id, checklist_id: row.cl.id, from_due: curDue || null, to_due: toDue,
       reason: reason.trim(), agreed_with: agreed.trim() || null, by_name: byName || null, by_uid: byUid || null,
-    })
+    }), 'บันทึกประวัติเลื่อน PM');
     // แจ้ง Telegram (best-effort ไม่บล็อก)
     try {
       await fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification', {

@@ -15,6 +15,7 @@ import { activeProcessTypes } from '../utils/processTypes';
 import { nextSeq } from '../utils/routing';
 import useIsMobile from '../utils/useIsMobile';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import { checkWrite } from '../utils/dbWrite';
 
 const BLANK = {
   step_name: '', line_name: '', machine_no: '', process_type: '',
@@ -126,8 +127,8 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
     if (!a || !b) return;
     const { error } = await supabaseDR.from('part_routings').update({ seq: -a.seq }).eq('id', a.id);
     if (error) { toast.error(error.message); return; }
-    await supabaseDR.from('part_routings').update({ seq: a.seq }).eq('id', b.id);
-    await supabaseDR.from('part_routings').update({ seq: b.seq }).eq('id', a.id);
+    checkWrite(await supabaseDR.from('part_routings').update({ seq: a.seq }).eq('id', b.id), 'บันทึกเส้นทาง');
+    checkWrite(await supabaseDR.from('part_routings').update({ seq: b.seq }).eq('id', a.id), 'บันทึกเส้นทาง');
     loadSteps(sel.mat_no);
   };
 

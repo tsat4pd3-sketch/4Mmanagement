@@ -230,9 +230,10 @@ export default function MachineDatabase() {
     // Supply route: sync ไลน์ที่ facility/utility นี้จ่าย (เฉพาะเครื่องที่มี id แล้ว) — best-effort
     if (editing.id && (editing.equipment_category || 'production') !== 'production') {
       try {
-        await supabaseDR.from('facility_supply_links').delete().eq('machine_id', editing.id);
-        if (supplyLines.length) await supabaseDR.from('facility_supply_links').insert(supplyLines.map(ln => ({ machine_id: editing.id, line_name: ln })));
-      } catch { /* ตารางยังไม่ apply — ข้าม */ }
+        const { error: wErr233 } = await supabaseDR.from('facility_supply_links').delete().eq('machine_id', editing.id);
+        if (wErr233) { setSaving(false); toast.error('ล้างการเชื่อม facility เดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr233.message); return; }
+        if (supplyLines.length) checkWrite(await supabaseDR.from('facility_supply_links').insert(supplyLines.map(ln => ({ machine_id: editing.id, line_name: ln }))), 'บันทึกไลน์ที่ facility นี้จ่าย');
+      } catch { /* supabase-js ไม่ throw — catch นี้ไม่มีวันทำงาน คงไว้กันโค้ดข้างบนโยนเอง */ }
     }
     setSaving(false);
     toast.success('บันทึกสำเร็จ');

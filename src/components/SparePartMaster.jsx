@@ -21,6 +21,7 @@ import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, m
 import ImageCropModal from './ImageCropModal';
 import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
 import { pickUnusedColor } from '../utils/colorPick';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
@@ -911,7 +912,7 @@ function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [],
           part_id: pid, month_key, qty_out, qty_in: 0, source: 'manual',
         }));
         if (uRows.length && pid)
-          await supabaseDR.from('mtn_spare_usage_monthly').upsert(uRows, { onConflict: 'part_id,month_key,source' });
+          checkWrite(await supabaseDR.from('mtn_spare_usage_monthly').upsert(uRows, { onConflict: 'part_id,month_key,source' }), 'บันทึกยอดใช้อะไหล่รายเดือน');
       } catch { failed++; }
     }
     setBusy(false); setProgress(null);

@@ -12,6 +12,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, seesAllTeams } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
+import { checkWrite } from '../utils/dbWrite';
 
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
@@ -609,7 +610,7 @@ export default function Checkin() {
         const toUnbookExtra = displayed.filter(emp => !isBookedExtra(emp)).map(emp => emp.id);
 
         if (toBookExtra.length) {
-          await supabase.from('ot_night_bookings').upsert(
+          checkWrite(await supabase.from('ot_night_bookings').upsert(
             toBookExtra.map(empId => ({
               work_date:      d,
               shift:          otShift,
@@ -620,7 +621,7 @@ export default function Checkin() {
               booked_by_name: fullName || null,
             })),
             { onConflict: 'employee_id,work_date,shift' }
-          );
+          ), 'จองรถ OT ล่วงหน้า');
         }
         if (toUnbookExtra.length) {
           await supabase.from('ot_night_bookings')
@@ -787,7 +788,7 @@ export default function Checkin() {
     if (!toOpen.length) { toast.info('ไม่ได้เลือกไลน์ไหนเพื่อเปิดกะ'); setOpenShiftModal(null); setSubLineSelections({}); return; }
     try {
       for (const { line, startTime, hasOtNight } of toOpen) {
-        await supabaseDR.from('production_sessions').insert({
+        const { error: wErr790 } = await supabaseDR.from('production_sessions').insert({
           work_date:       openShiftModal.workDateStr,
           line_name:       line.name,
           shift:           openShiftModal.shift,
@@ -796,6 +797,7 @@ export default function Checkin() {
           opened_by_name:  fullName || 'SV',
           notes:           hasOtNight ? 'OT กะดึก (เปิดจากเช็คชื่อ)' : null,
         });
+        if (wErr790) throw wErr790;   // เปิดกะ — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
       }
       toast.success(`เปิดกะ ${toOpen.map(l => l.line.name).join(', ')} สำเร็จ`);
     } catch (e) {

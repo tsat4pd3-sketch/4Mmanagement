@@ -19,6 +19,7 @@ import { roleLabel } from './utils/roleMeta';                       // ป้า
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
+import { checkWrite } from './utils/dbWrite';
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -1044,12 +1045,12 @@ function NotificationBell({ userId, role }) {
   const markAllRead = async () => {
     const unread = notifs.filter(n => !n.is_read).map(n => n.id);
     if (!unread.length) return;
-    await supabase.from('notifications').update({ is_read: true }).in('id', unread);
+    checkWrite(await supabase.from('notifications').update({ is_read: true }).in('id', unread), 'ทำเครื่องหมายอ่านแล้ว');
     setNotifs(n => n.map(x => ({ ...x, is_read: true })));
   };
 
   const markOne = async (id) => {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    checkWrite(await supabase.from('notifications').update({ is_read: true }).eq('id', id), 'ทำเครื่องหมายอ่านแล้ว');
     setNotifs(n => n.map(x => x.id === id ? { ...x, is_read: true } : x));
   };
 

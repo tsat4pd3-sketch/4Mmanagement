@@ -27,6 +27,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import { checkWrite } from '../utils/dbWrite';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -2185,7 +2186,7 @@ function DocumentControlPanel() {
 
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    await supabase.from('doc_form_revisions').delete().eq('id', r.id);
+    checkWrite(await supabase.from('doc_form_revisions').delete().eq('id', r.id), 'ลบ revision');
     load();
   };
 

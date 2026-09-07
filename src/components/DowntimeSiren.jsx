@@ -4,6 +4,7 @@ import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 import { liveChannel } from '../utils/liveChannel'
+import { checkWrite } from '../utils/dbWrite';
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -149,7 +150,7 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
 
   const ack = async (a) => {
     setRaw(prev => prev.filter(x => x.id !== a.id))
-    await supabaseDR.from('downtime_logs').update({ [metaOf(a).ackField]: new Date().toISOString() }).eq('id', a.id)
+    checkWrite(await supabaseDR.from('downtime_logs').update({ [metaOf(a).ackField]: new Date().toISOString() }).eq('id', a.id), 'บันทึกรับทราบเสียงเตือน');
   }
 
   /* ยังไม่มีเหตุ แต่เสียงล็อกอยู่ = ต้องบอกตั้งแต่ตอนนี้ (จอห้องช่างที่เปิดทิ้งไว้)

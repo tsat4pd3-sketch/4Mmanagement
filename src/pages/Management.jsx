@@ -20,6 +20,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
+import { checkWrite } from '../utils/dbWrite';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -595,7 +596,7 @@ export default function Management() {
       // สร้าง record ใหม่เฉพาะเมื่อย้ายไปสถานี (ไม่สร้างตอนย้ายกลับ pool)
       if (finalAssign) {
         const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
-        await supabase.from('station_assignment_logs').insert({
+        checkWrite(await supabase.from('station_assignment_logs').insert({
           employee_id:      droppedWorker.employee_id,
           station_id:       finalAssign,
           station_name:     station?.station_name || null,
@@ -608,7 +609,7 @@ export default function Management() {
           ended_at:         null,
           assigned_by_uid:  user?.id || null,
           assigned_by_name: fullName || null,
-        });
+        }), 'บันทึก');
       }
     }
 

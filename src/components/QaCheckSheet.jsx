@@ -27,6 +27,7 @@ import CalloutPin from './CalloutPin';
 import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -378,7 +379,7 @@ export default function QaCheckSheet({ canRecord }) {
       created_by: fullName || null,
     }).select().single();
     if (error) { setBusy(false); toast.error(`เปิด NCR ไม่สำเร็จ: ${error.message}`); return; }
-    await supabase.from('qa_inspection_results').update({ ncr_id: data.id }).eq('id', res.id);
+    checkWrite(await supabase.from('qa_inspection_results').update({ ncr_id: data.id }).eq('id', res.id), 'ผูก NCR เข้าผลตรวจ');
     notifyEvent({
       event: 'qa_ncr_opened', type: 'error', ref_table: 'qa_ncr', ref_id: data.id,
       line_name: part?.line_name || null, actor: fullName,

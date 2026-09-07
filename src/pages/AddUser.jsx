@@ -167,7 +167,9 @@ export default function AddUser() {
   const saveDeptAdmin = async (id) => {
     if (!id) return;
     const val = DEPT_ADMIN_ELIGIBLE(form.role) ? !!form.deptAdmin : false;
-    try { await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id); } catch { /* ยังไม่ apply migration */ }
+    // supabase-js ไม่ throw — try/catch เดิมไม่มีวันจับ · migration 20260803 apply แล้ว ไม่มีเหตุให้เงียบอีก
+    const { error } = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id);
+    if (error) setError('บันทึกบัญชีแล้ว แต่ตั้ง "แอดมินหน่วยงาน" ไม่สำเร็จ: ' + error.message);
   };
 
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
