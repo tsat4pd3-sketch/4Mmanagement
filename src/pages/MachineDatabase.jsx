@@ -10,6 +10,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
+import { checkWrite } from '../utils/dbWrite';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
