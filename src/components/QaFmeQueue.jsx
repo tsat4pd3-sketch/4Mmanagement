@@ -16,12 +16,14 @@
  *   - ระบบปิดอยู่ก็ต้องบอกบนจอ + ชี้ทางเปิด ห้ามเงียบจนไม่มีใครรู้ว่ามีฟีเจอร์นี้
  */
 import { useState, useEffect, useCallback, useContext } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { cachedMaster } from '../utils/masterCache';
+import { assessFmeReadiness } from '../utils/qaFmeReadiness';
 import QaFmeBoard from './QaFmeBoard';
 
 const STAGE_META = {
@@ -49,6 +51,10 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
   const [missing, setMissing] = useState(false);   // ยังไม่ apply migration
   const [showCfg, setShowCfg] = useState(false);
   const [busy, setBusy] = useState(false);
+  /* preflight ก่อนเปิดสวิตช์ (2026-09-03): null = ยังไม่ได้ตรวจ · { canEnable, checks, at }
+     เหตุ: dry-run จริงพบว่าเปิดตอนพาร์ทยังไม่ผูก = QA ได้คิว 51 รายการที่กดเปิดใบตรวจไม่ได้สักอัน
+     และห้อง Telegram ยังไม่เลือก = ข้อความชุดแรกไปห้อง fallback → สวิตช์ต้องกันเอง ห้ามเปิดได้เฉยๆ */
+  const [readiness, setReadiness] = useState(null);
   const [now, setNow] = useState(() => Date.now());
   /* มุมมอง: รายการ (คิวที่ต้องทำตอนนี้) / ไทม์ไลน์ (ทั้งวัน เห็นว่าจะต้องไปไลน์ไหนกี่โมง)
      จำต่อเครื่องใน localStorage — QA แต่ละคนถนัดคนละแบบ (คำขอ user 2026-08-31) */
@@ -82,7 +88,44 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
     return () => clearInterval(t);
   }, []);
 
+  /* โหลด 3 ชุดแยกกัน — ชุดไหนพัง = null ให้ตัวประเมินบอกว่า "ประเมินไม่ได้" (ห้ามแปลงเป็นผ่าน) */
+  const loadReadiness = useCallback(async () => {
+    const [qaParts, products, rules] = await Promise.all([
+      supabase.from('qa_parts').select('id, part_no, mat_no').eq('is_active', true).limit(2000)
+        .then(r => (r.error ? null : (r.data || []))),
+      // dr_products อยู่ DR (anon เสมอ) · แบ่งหน้าเหมือน QaFmeBoard — key แยกเพราะเลือกคอลัมน์คนละชุด
+      cachedMaster('dr_products_link', async () => {
+        const out = [];
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabaseDR.from('dr_products')
+            .select('mat_no, p_no, pair_mat_no').order('mat_no').range(from, from + 999);
+          if (error) throw error;
+          out.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        return out;
+      }).then(d => (Array.isArray(d) ? d : null)),
+      supabase.from('notification_rules').select('event_key, channel_ids, is_enabled')
+        .in('event_key', ['qa_fme_call', 'qa_fme_overdue'])
+        .then(r => (r.error ? null : (r.data || []))),
+    ]);
+    setReadiness({ ...assessFmeReadiness({ qaParts, products, rules }), at: Date.now() });
+  }, []);
+
+  // เปิดแผง ⚙️ เมื่อไหร่ ตรวจใหม่ทุกครั้ง (ไปผูกพาร์ท/เลือกห้องมาแล้วกลับมาต้องเห็นผลทันที)
+  useEffect(() => { if (showCfg && canManage) loadReadiness(); }, [showCfg, canManage, loadReadiness]);
+
   const saveCfg = async (patch) => {
+    if (patch.is_enabled === true) {
+      // ปิด → เปิด ต้องผ่าน preflight เท่านั้น · ปิดสวิตช์ได้เสมอ
+      const r = readiness?.canEnable != null ? readiness : null;
+      if (!r) { toast.error('ยังตรวจความพร้อมไม่เสร็จ — รอสักครู่แล้วลองใหม่'); return; }
+      if (!r.canEnable) {
+        const bad = r.checks.filter(c => c.hard && c.ok !== true).map(c => c.label);
+        toast.error(`เปิดไม่ได้ — ยังไม่พร้อม: ${bad.join(' · ')}`);
+        return;
+      }
+    }
     setBusy(true);
     const { error } = await supabase.from('qa_fme_config').update(patch).eq('id', 1);
     setBusy(false);
@@ -145,16 +188,26 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
         <Box tone="warn">
           ระบบเรียกตรวจ <b>ปิดอยู่</b> — ยังไม่มีการแจ้งเข้าห้อง Telegram และไม่มีการสร้างคิว
           {canManage ? ' · กด ⚙️ ตั้งค่าการเรียกตรวจ เพื่อเปิด' : ' · ให้หัวหน้า QA เปิดที่ ⚙️ ตั้งค่าการเรียกตรวจ'}
+          {readiness && !readiness.canEnable && (
+            <span style={{ color: '#ef4444' }}>
+              {' '}· <b>ยังเปิดไม่ได้</b> — ติด {readiness.checks.filter(c => c.hard && c.ok !== true).length} ข้อ (ดูรายการในแผง ⚙️)
+            </span>
+          )}
         </Box>
       )}
 
       {showCfg && cfg && canManage && (
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: 11, margin: '9px 0' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, marginBottom: 9 }}>
-            <input type="checkbox" checked={!!cfg.is_enabled} disabled={busy}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, marginBottom: 9,
+            opacity: !cfg.is_enabled && readiness && !readiness.canEnable ? 0.6 : 1 }}>
+            <input type="checkbox" checked={!!cfg.is_enabled}
+              disabled={busy || (!cfg.is_enabled && (!readiness || !readiness.canEnable))}
+              title={cfg.is_enabled ? 'ปิดระบบเรียกตรวจ' : !readiness ? 'กำลังตรวจความพร้อม…'
+                : readiness.canEnable ? 'พร้อมเปิด' : 'ยังเปิดไม่ได้ — แก้รายการ ❌ ด้านล่างก่อน'}
               onChange={e => saveCfg({ is_enabled: e.target.checked })} style={{ width: 'auto' }} />
             เปิดระบบเรียก QA ตรวจอัตโนมัติ (แจ้งเข้าห้อง Telegram)
           </label>
+          <ReadinessList readiness={readiness} enabled={!!cfg.is_enabled} onRecheck={loadReadiness} />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Num label="ส่งผลภายใน (นาที)" value={cfg.first_due_min} onSave={v => saveCfg({ first_due_min: v, end_due_min: v })} />
             <Num label="เกินเวลา เตือนซ้ำทุก (นาที)" value={cfg.escalate_min} onSave={v => saveCfg({ escalate_min: v })} />
@@ -264,6 +317,42 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* รายการเช็คก่อนเปิดสวิตช์ — โชว์เสมอเมื่อเปิดแผง ⚙️ (เปิดอยู่แล้วก็โชว์ เผื่อห้อง/พาร์ทถูกถอดทีหลัง)
+   ❌ hard = กันเปิด · ⚠️ soft = เตือน · ❔ = ประเมินไม่ได้ (โหลดข้อมูลไม่มา — นับเป็นยังไม่พร้อม ไม่เดาให้) */
+function ReadinessList({ readiness, enabled, onRecheck }) {
+  const [busy, setBusy] = useState(false);
+  const recheck = async () => { setBusy(true); try { await onRecheck(); } finally { setBusy(false); } };
+  return (
+    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px', marginBottom: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+        <span style={{ fontSize: 12, fontWeight: 700 }}>
+          🚦 ความพร้อมก่อนเปิด{readiness ? (readiness.canEnable ? ' — พร้อม' : ' — ยังไม่พร้อม') : ' — กำลังตรวจ…'}
+        </span>
+        {enabled && readiness && !readiness.canEnable && (
+          <span style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>ระบบเปิดอยู่ทั้งที่ยังไม่พร้อม — QA อาจได้คิวที่เปิดใบไม่ได้</span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button onClick={recheck} disabled={busy} style={btn('var(--bg3)', 'var(--text2)')}>{busy ? '…' : '🔄 ตรวจใหม่'}</button>
+      </div>
+      {readiness ? readiness.checks.map(c => {
+        const icon = c.ok === true ? '✅' : c.ok === null ? '❔' : c.hard ? '❌' : '⚠️';
+        const color = c.ok === true ? '#22c55e' : c.ok === null || c.hard ? '#ef4444' : '#f59e0b';
+        return (
+          <div key={c.key} style={{ display: 'flex', gap: 7, alignItems: 'baseline', fontSize: 12, lineHeight: 1.55, flexWrap: 'wrap' }}>
+            <span style={{ color, fontWeight: 700, whiteSpace: 'nowrap' }}>{icon} {c.label}</span>
+            <span style={{ color: c.ok === true ? 'var(--muted)' : color }}>{c.detail}</span>
+            {c.ok !== true && <span style={{ color: 'var(--muted)' }}>→ แก้ที่ <b>{c.fixAt}</b></span>}
+          </div>
+        );
+      }) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังอ่านพาร์ท QA · ทะเบียนสินค้า · ห้อง Telegram…</div>}
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5 }}>
+        ลำดับที่ต้องทำ: <b>/qa-setup</b> ผูกพาร์ท → <b>/notification-config</b> เลือกห้อง → ค่อยเปิดสวิตช์นี้
+        (สลับลำดับ = ข้อความชุดแรกไปผิดห้อง)
+      </div>
     </div>
   );
 }

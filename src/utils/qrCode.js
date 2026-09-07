@@ -5,6 +5,8 @@
  *   ESM:M:<uuid>     เครื่องจักร (machines.id)
  *   ESM:J:<uuid>     จิ๊ก / แม่พิมพ์ (jigs.id)
  *   ESM:P:<mat_no>   สินค้า/พาร์ท (mat_no — unique ทั้ง dr_products/parts_master/kanban_standards)
+ *   ESM:D:<uuid>     จุดส่งงานหน้าไลน์ (line_delivery_points.id — DR · ลูปสโตร์เฟส 4 · 2026-09-03)
+ *                    สโตร์ยิงป้ายนี้ตอนวางของถึงไลน์ = หมุดเวลา delivered_at + ด่านตรวจ "ส่งถูกจุดไหม"
  *
  * ทำไมเครื่อง/จิ๊กใช้ uuid ไม่ใช่เลขเครื่อง:
  *   ป้ายติดเครื่องอยู่หน้างานเป็นปี — ถ้าเข้ารหัสด้วย "เลขเครื่อง" แล้ววันหนึ่งเปลี่ยนเลข
@@ -25,14 +27,15 @@ export const QR_KINDS = {
   machine: { code: 'M', label: 'เครื่องจักร', icon: '⚙️' },
   jig: { code: 'J', label: 'จิ๊ก/แม่พิมพ์', icon: '🧩' },
   product: { code: 'P', label: 'สินค้า/พาร์ท', icon: '📦' },
+  delivery: { code: 'D', label: 'จุดส่งงาน', icon: '🎯' },
 };
 
 const CODE_TO_KIND = Object.fromEntries(Object.entries(QR_KINDS).map(([k, v]) => [v.code, k]));
 
 /**
  * สร้างข้อความที่จะเข้ารหัสลง QR
- * @param {'machine'|'jig'|'product'} kind
- * @param {string} id  uuid (machine/jig) หรือ mat_no (product)
+ * @param {'machine'|'jig'|'product'|'delivery'} kind
+ * @param {string} id  uuid (machine/jig/delivery) หรือ mat_no (product)
  */
 export function buildQrPayload(kind, id) {
   const meta = QR_KINDS[kind];
@@ -129,4 +132,25 @@ export function resolveProduct(scan, products = []) {
       || products.find(p => normCode(p.p_no) === n)
       || products.find(p => normCode(p.part_no) === n)
       || null;
+}
+
+/**
+ * หา "จุดส่งงาน" (line_delivery_points) จากสิ่งที่สแกนมา
+ *   - ป้ายของระบบ ESM:D:<uuid> → เทียบ id
+ *   - เลขเปล่า/พิมพ์มือ → เทียบ `code` ของจุด (เผื่อป้ายเลอะแล้วคนพิมพ์รหัสสั้นที่พิมพ์ไว้บนป้ายแทน)
+ *   - ป้ายชนิดอื่น (เครื่อง/จิ๊ก/พาร์ท) → null เสมอ — ยิงป้ายเครื่องแทนป้ายจุดส่ง ต้องถูกจับได้ ไม่ใช่เดาให้
+ * @param {object} scan   ผลจาก parseQrPayload
+ * @param {Array}  points รายการจุดส่ง (ต้องมี id, code)
+ */
+export function resolveDeliveryPoint(scan, points = []) {
+  if (!scan) return null;
+  if (scan.kind === 'delivery') {
+    return points.find(p => String(p.id) === scan.id) || null;
+  }
+  if (scan.kind === null) {
+    const n = normCode(scan.id);
+    if (!n) return null;
+    return points.find(p => p.code && normCode(p.code) === n) || null;
+  }
+  return null;
 }

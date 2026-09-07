@@ -120,6 +120,43 @@ export function canDoStep(step, opts = {}) {
   return { ok: false, code: 'denied' };
 }
 
+/* ═══ ขั้น 5 (QA) เป็นขั้น "เงื่อนไข" — เข้าเฉพาะใบที่ขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ ═══
+   ค่าที่เก็บใน mtn_orders.quality_related (ข้อความไทยตามฟอร์มกระดาษ — เปลี่ยนแล้วใบเก่าเพี้ยนทั้งฐาน)
+   ⚠️ nextStepFor / ปุ่มข้าม / StepBox ต้องเทียบผ่านตัวนี้ ห้ามพิมพ์ข้อความซ้ำในหน้า */
+export const QA_RELATED = 'เกี่ยวกับคุณภาพ';
+export const QA_NOT_RELATED = 'ไม่เกี่ยวกับคุณภาพ';
+
+/** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ */
+export const isWaitingQa = (order) =>
+  order?.status === 'checked' && String(order?.quality_related || '').trim() === QA_RELATED;
+
+/** ใบนี้เคยถูก "ข้าม QA" (ไม่เกี่ยวกับคุณภาพ — แก้การตัดสินใจของขั้น 4 ทีหลัง) */
+export const isQaSkipped = (order) => !!order?.qa_skipped_at;
+
+/**
+ * ข้าม QA (ขั้น 5) ไปรับมอบ (ขั้น 6) ได้ไหม — 2026-09-03 (คำสั่ง user: "เรื่องที่ไม่เกี่ยวกับ QA
+ * ต้องกดข้ามไปขั้น 6 ได้ ตอนนี้ไม่ได้")
+ *
+ * ที่มา: ขั้น 4 เลือก "เกี่ยวกับคุณภาพ" แล้วใบไปค้างรอ QA — ถ้าเลือกผิดหรืองานไม่เกี่ยว QA จริง
+ *        ไม่มีใครเลื่อนต่อได้นอกจาก QA (ตรวจฐาน 2026-09-03: ค้าง 26 ใบ ทีม PRODUCTION ทั้งหมด)
+ *
+ * การข้าม = **แก้การตัดสินใจของขั้น 4** ไม่ใช่ขั้นใหม่ → status คง `checked` แล้วพลิก
+ * quality_related เป็น "ไม่เกี่ยว" + บันทึกเหตุผล/คน/เวลา (qa_skip_reason/qa_skipped_by/qa_skipped_at)
+ * ⇒ nextStepFor พาไปขั้น 6 เอง ไม่ต้องเพิ่ม status ใหม่ (KPI/Andon/ใบพิมพ์ไม่กระทบ)
+ *
+ * ใครข้ามได้ = คนที่ตัดสินเรื่องนี้ได้ในขั้น 4 (ผู้เปิดใบ / accept_work) **หรือ** QA เอง (ขั้น 5)
+ * — QA เห็นว่างานไม่ใช่ของตัวเองก็ปล่อยผ่านได้โดยไม่ต้องเซ็นรับรองคุณภาพที่ไม่ได้ตรวจ
+ * ช่างที่ซ่อม (service) ข้ามไม่ได้ — เหตุผลเดียวกับที่ช่างตรวจรับงานตัวเองไม่ได้
+ */
+export function canSkipQa(opts = {}) {
+  if (!isWaitingQa(opts.order)) return { ok: false, code: 'not_waiting_qa' };
+  const v4 = canDoStep(4, opts);
+  if (v4.ok) return { ok: true, code: `step4:${v4.code}` };
+  const v5 = canDoStep(5, opts);
+  if (v5.ok) return { ok: true, code: `step5:${v5.code}` };
+  return { ok: false, code: 'denied' };
+}
+
 /**
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
