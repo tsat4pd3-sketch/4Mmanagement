@@ -109,4 +109,4 @@ catalog group 'คุณภาพ & วิศวกรรม' sort 755-757 · `p
 
 ## 9. ประวัติ
 
-- 2026-09-07 เฟส 1-3 ครบ: migration + `/npi` 6 แท็บ + util/เทส + ใบ PPAP checklist · crash-sweep ผ่านทุกแท็บ 1500/390px · **migration ยังไม่ apply — user รันเองที่ SQL Editor (Main)**
+- 2026-09-07 เฟส 1-3 ครบ: migration + `/npi` 6 แท็บ + util/เทส + ใบ PPAP checklist · crash-sweep ผ่านทุกแท็บ 1500/390px · **migration apply แล้ว 2026-09-07** (user รันผ่าน SQL Editor Main — ตรวจ doc_forms `npi_ppap_checklist` มีแถวแล้ว)

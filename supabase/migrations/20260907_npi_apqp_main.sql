@@ -1,4 +1,4 @@
--- ═══ 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (เฟส 1-3) · Main project ═══
+-- ═══ 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (เฟส 1-3) · Main project ═══ — ✅ apply แล้ว 2026-09-07 (user รันผ่าน SQL Editor)
 -- 2026-09-07 · คำสั่ง user: "ให้ ESM ครอบคลุมทั้งหมดของ E-SPT — ไล่ทำเรื่องที่ยังไม่ต้องยุ่งกับ supplier ก่อน
 --   อยู่ในหมวด engineering"  · ที่มา: รีวิวเดค E-SPT (VR Intelligence) + IATF gap review ข้อ APQP/PPAP/ECN
 -- แบบเต็ม: docs/modules/npi-apqp.md
