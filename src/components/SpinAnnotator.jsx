@@ -21,6 +21,8 @@ export default function SpinAnnotator({
   onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
   // { pinKey: true } — จุดที่มี "รูปเจาะจุด" แล้ว (โชว์ 🔍 บนหมุด ให้คนตั้งค่าเห็นว่าจุดไหนยังไม่มี)
   pinHasDetail = {},
+  // true = ใช้เป็น "ผังวางหมุด" อย่างเดียว (เช่น จุดชิมที่ /fixture) — รูปเป็นของ PM Setup ห้ามเพิ่ม/ลบจากที่นี่
+  readOnlyFrames = false,
 }) {
   const boxRef = useRef(null)
   const layerRef = useRef(null)
@@ -111,26 +113,26 @@ export default function SpinAnnotator({
             style={{ position: 'relative', width: 46, height: 40, borderRadius: 6, overflow: 'hidden', cursor: 'pointer', flexShrink: 0,
               border: `2px solid ${i === frameIdx ? 'var(--accent)' : 'var(--border)'}` }}>
             <img src={f._preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <button onClick={e => { e.stopPropagation(); onRemoveFrame?.(f._key) }} title="ลบเฟรม"
-              style={{ position: 'absolute', top: -1, right: -1, width: 16, height: 16, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>
+            {!readOnlyFrames && <button onClick={e => { e.stopPropagation(); onRemoveFrame?.(f._key) }} title="ลบเฟรม"
+              style={{ position: 'absolute', top: -1, right: -1, width: 16, height: 16, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', border: 'none', cursor: 'pointer' }}>✕</button>}
             <span style={{ position: 'absolute', bottom: 0, left: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '0 4px', borderRadius: '0 4px 0 0' }}>{i + 1}</span>
           </div>
         ))}
-        <label style={{ width: 46, height: 40, borderRadius: 6, border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
+        {!readOnlyFrames && <label style={{ width: 46, height: 40, borderRadius: 6, border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
           <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={e => { if (e.target.files?.length) onAddFrames?.(e.target.files); e.target.value = '' }} />
           {busy ? '…' : '+'}
-        </label>
+        </label>}
       </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+      {!readOnlyFrames && <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         {spin ? '🔄 หลายมุม — ลากรูปซ้าย/ขวาปัดดูรอบเครื่อง · pin ผูกกับเฟรมที่วาง (ยิ่งเยอะยิ่งลื่น)' : frames.length === 1 ? '🖼️ รูปเดียว — เพิ่มรูป (+) หลายมุมเพื่อปัดดูรอบเครื่องได้ (ไม่บังคับจำนวน)' : 'เพิ่มรูปหลายมุม (+) — 1 รูป = ปกติ, ตั้งแต่ 2 รูปปัดดูรอบเครื่องได้'}
-      </div>
+      </div>}
       {/* ⚠️ วิธีใช้ที่ถูก (feedback หน้างาน 2026-08-21) — รูปมุมแคบอย่าอัปเป็นเฟรมแยก
          เพราะคนตรวจจะไม่รู้ว่ามันอยู่ตรงไหนของเครื่อง */}
-      <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', lineHeight: 1.65 }}>
+      {!readOnlyFrames && <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', lineHeight: 1.65 }}>
         💡 <b>รูปตรงนี้ = “แผนที่” ให้เห็นทั้งเครื่องแล้วปักหมุด</b> — ส่วนรูปโคลสอัพของแต่ละจุด
         ให้แนบที่ช่อง <b>📷 รูปจุด</b> ในแถวจุดตรวจด้านล่าง (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
         <div style={{ marginTop: 3, opacity: 0.85 }}>อัปรูปโคลสอัพเป็นเฟรมแยกตรงนี้ = คนตรวจไม่รู้ว่าอยู่ตรงไหนของเครื่อง</div>
-      </div>
+      </div>}
     </div>
   )
 }

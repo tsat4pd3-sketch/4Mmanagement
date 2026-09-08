@@ -13,10 +13,15 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import useTabParam from '../utils/useTabParam';
 import FixtureClassify from '../components/FixtureClassify';
 import FixtureShimPanel from '../components/FixtureShimPanel';
+import SpinAnnotator from '../components/SpinAnnotator';
+import { Link } from 'react-router-dom';
+import { saveShimPointPin } from '../utils/fixtureShimApi';
 import {
   DEFAULT_POINT_KINDS, resolveFixtureParts, shotsFromPieces,
-  shimStack, pointDueStatus, toolLifeStatus, n0,
+  shimStack, pointDueStatus, toolLifeStatus, n0, pointPin,
 } from '../utils/fixturePoints';
+
+const jigImgUrl = (path) => supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl;
 
 /* ═══════════════════════════════════════════════════════════════
    🧩 ทะเบียนจิ๊ก/ฟิกเจอร์ + Shim Record — /fixture
@@ -91,6 +96,12 @@ export default function FixtureRegistry() {
   const [shot, setShot] = useState({ shots: null, assumed: false, note: '' });
   const [editing, setEditing] = useState(null);
   const [q, setQ] = useState('');
+  /* 📍 หมุดจุดชิมบนรูปเครื่อง (2026-09-08) — รูปเป็นของ PM Setup (jig_images ผูกกับแถวเงา jigs.id)
+     ที่นี่แค่ "ปักหมุด" ลง fixture_points.x_pos/y_pos/image_id · จุดที่ผูก checkpoint_id ไว้ยืมหมุดของจุดตรวจ PM ได้ (pointPin) */
+  const [frames, setFrames] = useState([]);       // [{ _key:id, _preview:url }]
+  const [frameIdx, setFrameIdx] = useState(0);
+  const [armPoint, setArmPoint] = useState('');   // point id ที่กำลังรอคลิกวางตำแหน่ง
+  const [cpById, setCpById] = useState({});       // jig_checkpoints ของ fixture นี้ที่มีหมุด (สำหรับจุดที่ผูก checkpoint_id)
 
   // ── โหลด master ──────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -165,6 +176,43 @@ export default function FixtureRegistry() {
     setPoints(allPoints.filter(p => p.machine_id === fxId));
     setPointId('');
   }, [allPoints, fxId]);
+
+  // รูปเครื่อง + จุดตรวจ PM ที่มีหมุด ของ fixture ที่เลือก (ผ่านแถวเงา jigs)
+  useEffect(() => {
+    let dead = false;
+    setFrames([]); setFrameIdx(0); setArmPoint(''); setCpById({});
+    if (!shadow?.id) return;
+    (async () => {
+      const [{ data: imgs }, { data: cls }] = await Promise.all([
+        supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', shadow.id).order('sort'),
+        supabaseDR.from('checklists').select('id').eq('equipment_id', shadow.id),
+      ]);
+      if (dead) return;
+      setFrames((imgs || []).map(im => ({ _key: im.id, _preview: jigImgUrl(im.image_path) })));
+      const clIds = (cls || []).map(c => c.id);
+      if (clIds.length) {
+        const { data: cps } = await supabaseDR.from('jig_checkpoints').select('id, name, x_pos, y_pos, image_id').in('checklist_id', clIds).not('x_pos', 'is', null);
+        if (!dead) setCpById(Object.fromEntries((cps || []).map(c => [c.id, c])));
+      }
+    })();
+    return () => { dead = true; };
+  }, [shadow?.id]);
+
+  const placePin = async (x, y) => {
+    if (!armPoint) return;
+    const imageId = frames[frameIdx]?._key ?? null;
+    const res = await saveShimPointPin(armPoint, { x, y, imageId }, fullName);
+    if (!res.ok) return toast.error(`ปักหมุดไม่สำเร็จ: ${res.error}`);
+    toast.success('ปักหมุดแล้ว');
+    setArmPoint('');
+    load();
+  };
+  const removePin = async (pid) => {
+    if (!window.confirm('ถอนหมุดของจุดนี้ออกจากรูป? (ข้อมูลชิมไม่หาย)')) return;
+    const res = await saveShimPointPin(pid, null, fullName);
+    if (!res.ok) return toast.error(`ถอนหมุดไม่สำเร็จ: ${res.error}`);
+    load();
+  };
 
   // ── shot สะสม (ค่าประมาณจากยอดผลิตของพาร์ทที่จับ) ────────────────────────
   useEffect(() => {
@@ -478,6 +526,37 @@ export default function FixtureRegistry() {
             </div>
           )}
 
+          {/* 📍 ผังวางหมุด — รูปชุดเดียวกับใบตรวจ PM: ปักตรงไหน คนตรวจเห็นหมุดม่วงตรงนั้น */}
+          {points.length > 0 && (
+            frames.length ? (
+              <div style={{ ...card, display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <b style={{ fontSize: 13 }}>📍 ตำแหน่งจุดชิมบนรูปเครื่อง</b>
+                  <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                    ปักแล้ว {points.filter(p => pointPin(p, cpById)).length}/{points.length} จุด · รูปชุดเดียวกับใบตรวจ PM — เปลี่ยนรูปที่ PM Setup
+                  </span>
+                  {armPoint && <span style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }}>
+                    กำลังวาง {points.find(p => p.id === armPoint)?.point_no} — คลิกบนรูป · <span onClick={() => setArmPoint('')} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
+                  </span>}
+                </div>
+                <SpinAnnotator readOnlyFrames
+                  frames={frames} frameIdx={frameIdx} setFrameIdx={setFrameIdx}
+                  arming={!!armPoint}
+                  pins={points.map(p => ({ p, pin: pointPin(p, cpById) }))
+                    .filter(({ pin }) => pin && (pin.imageId ?? frames[0]?._key) === frames[frameIdx]?._key)
+                    .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no, color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
+                  onPlace={canManage ? placePin : undefined}
+                  onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />
+              </div>
+            ) : (
+              <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.6 }}>
+                📷 ยังไม่มีรูปเครื่องของ <b>{fx.machine_no}</b> จึงยังปักตำแหน่งจุดบนรูปไม่ได้ —
+                อัปโหลดรูป (หลายมุมได้) ที่ <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>PM Setup → ⚙️ ตั้งค่าจุดตรวจ</Link> แล้วกลับมาปักที่นี่
+                {!shadow && <div style={{ marginTop: 4, color: 'var(--muted)' }}>(เครื่องนี้ยังไม่มีแถวลงทะเบียนอุปกรณ์ PM — สร้างที่ PM Setup ก่อน)</div>}
+              </div>
+            )
+          )}
+
           {!points.length ? (
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>
               ยังไม่มีจุดในทะเบียนของฟิกเจอร์ตัวนี้
@@ -488,7 +567,7 @@ export default function FixtureRegistry() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead style={{ background: 'var(--bg2)' }}>
                   <tr style={{ textAlign: 'left' }}>
-                    {['จุด', 'ชนิด', 'baseline', 'ปัจจุบัน', 'เพดาน', 'ความถี่ตรวจ', 'อายุชิ้นส่วน', ''].map(h =>
+                    {['จุด', 'ชนิด', 'บนรูป', 'baseline', 'ปัจจุบัน', 'เพดาน', 'ความถี่ตรวจ', 'อายุชิ้นส่วน', ''].map(h =>
                       <th key={h} style={{ padding: '8px 10px' }}>{h}</th>)}
                   </tr>
                 </thead>
@@ -504,6 +583,17 @@ export default function FixtureRegistry() {
                           {p.name && <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{p.name}</div>}
                         </td>
                         <td style={{ padding: '7px 10px' }}>{kindMeta(p.kind_code).icon} {kindMeta(p.kind_code).label}</td>
+                        <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontSize: 11.5 }}>
+                          {(() => { const pin = pointPin(p, cpById); return pin
+                            ? <span style={{ color: '#a78bfa', fontWeight: 700 }} title={pin.source === 'checkpoint' ? 'ยืมหมุดจากจุดตรวจ PM' : 'หมุดของจุดนี้เอง'}>📍 {pin.source === 'checkpoint' ? 'จาก PM' : `เฟรม ${Math.max(1, frames.findIndex(f => f._key === (pin.imageId ?? frames[0]?._key)) + 1)}`}</span>
+                            : <span style={{ color: 'var(--muted)' }}>—</span>; })()}
+                          {canManage && frames.length > 0 && (
+                            <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"
+                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? '#071008' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
+                              {armPoint === p.id ? 'คลิกรูป…' : (pointPin(p, cpById)?.source === 'own' ? 'ย้าย' : 'วาง')}
+                            </button>
+                          )}
+                        </td>
                         <td style={{ padding: '7px 10px' }}>{p.baseline_shim_mm ?? <Blank />}</td>
                         <td style={{ padding: '7px 10px',
                                      color: st.level === 'over' ? '#ef4444' : st.level === 'warn' ? '#f59e0b' : 'inherit',

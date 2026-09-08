@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { recordShimEvent } from '../utils/fixtureShimApi';
 import { toast } from '../components/Toast';
 import {
   shimStack, SHIM_REASONS, SHIM_ACTIONS, n0,
@@ -111,36 +112,15 @@ export default function FixtureShimPanel({
 
     setSaving(true);
     try {
-      const isReplace = f.action === 'part_replaced';
-      const { error } = await supabaseDR.from('fixture_shim_events').insert({
-        point_id: point.id,
-        action: f.action,
-        shim_before_mm: before,
-        shim_after_mm: preview.after,
-        delta_mm: preview.delta,
-        plates_text: f.plates_text.trim() || null,
-        measure_before: n0(f.measure_before),
-        measure_after: n0(f.measure_after),
-        reason: f.reason,
-        note: f.note.trim() || null,
-        by_name: fullName || null,
-        shot_at_event: currentShot ?? null,
+      // เขียนผ่านตัวกลาง fixtureShimApi (จุดเดียวกับที่ใบตรวจ PM ใช้) — ตัวมัน stamp last_check_at ให้ด้วย
+      const res = await recordShimEvent({
+        point, afterMm: preview.after, action: f.action, reason: f.reason, note: f.note,
+        platesText: f.plates_text, measureBefore: f.measure_before, measureAfter: f.measure_after,
+        byName: fullName, shotAtEvent: currentShot ?? null,
       });
-      if (error) throw error;
-
-      // ค่ารวมปัจจุบันของจุด = ค่าจาก event ล่าสุดเสมอ (ไม่บวกสะสม)
-      const patch = { current_shim_mm: preview.after };
-      if (isReplace) {
-        patch.last_replaced_at = new Date().toISOString();
-        patch.last_replaced_shot = currentShot ?? null;
-      }
-      const { error: pErr } = await supabaseDR
-        .from('fixture_points').update(patch).eq('id', point.id).select('id');
-      if (pErr) {
-        toast.error(`บันทึกเหตุการณ์แล้ว แต่อัปเดตค่ารวมของจุดไม่สำเร็จ: ${pErr.message}`);
-      } else {
-        toast.success(`บันทึกแล้ว · ค่ารวมใหม่ ${preview.after} mm`);
-      }
+      if (!res.ok) throw new Error(res.error || 'บันทึกไม่สำเร็จ');
+      if (res.warn) toast.error(res.warn);
+      else toast.success(`บันทึกแล้ว · ค่ารวมใหม่ ${preview.after} mm`);
       setF(p => ({ ...p, delta: '', total: '', plates_text: '', measure_before: '', measure_after: '', note: '' }));
       await load();
       onSaved?.();
