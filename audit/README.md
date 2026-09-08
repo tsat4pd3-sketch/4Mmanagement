@@ -48,6 +48,11 @@ node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px 
 
 ## กับดักที่ต้องรู้
 
+- **ห้ามปิด vite ด้วย `pkill -f "vite --config audit"` จาก shell เดียวกับที่รันสคริปต์** (2026-09-08 เจอจริง):
+  pattern ไปแมตช์ command line ของ shell ตัวเอง → shell ตายก่อนถึงคำสั่งถัดไป (`git checkout` กลับ branch ไม่ถูกรัน
+  → ไปแก้โค้ดค้างบน `main` แล้ว `reset --hard` ทับ commit หายทั้งชุด ต้องกู้จาก reflog) · เก็บ PID ตอน start แล้ว `kill $PID` แทน
+
+
 - **ต้องเทียบกับ noise เสมอ** — Dashboard/OEEAnalytics ขยับเองหลายร้อยจุดต่อการเรนเดอร์
   ถ้าไม่มี control จะสรุปผิดว่า CSS ทำพัง (พลาดมาแล้ว 2 รอบ)
 - **ต้องตัด false positive 3 แบบ ไม่งั้นไล่แก้ของที่ไม่ได้พัง** (`audit/probe.js` ทำให้แล้ว):
