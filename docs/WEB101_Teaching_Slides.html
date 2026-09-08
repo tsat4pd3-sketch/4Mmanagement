@@ -1,0 +1,1295 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>เขียนเว็บสายโรงงาน 101</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+ --gd:#0D3D14; --gm:#14571F; --or:#C0561E; --gold:#EBD9B0;
+ --ink:#16261a; --mut:#5b6b5f; --line:#d8e0d6; --bg:#f4f6f2;
+ --code:#10231a; --code2:#1b3527; --cmt:#7fa88c; --str:#e8c07d; --kw:#7fd1a0; --fn:#8fc7ff;
+}
+html,body{height:100%}
+body{font-family:Tahoma,"Sarabun","Noto Sans Thai",sans-serif;background:#0a1a0e;color:var(--ink);overflow:hidden}
+#deck{position:relative;width:100vw;height:100vh}
+.sl{position:absolute;inset:0;display:none;flex-direction:column;
+ padding:40px 56px 52px;background:var(--bg);overflow:hidden}
+.sl.on{display:flex}
+.pg{position:absolute;bottom:16px;right:40px;font-size:13px;color:var(--mut);letter-spacing:.5px}
+.tag{position:absolute;top:24px;right:40px;font-size:12px;color:#fff;background:var(--gm);
+ padding:4px 12px;border-radius:20px;letter-spacing:.6px}
+h1{font-size:70px;color:#fff;letter-spacing:2px;line-height:1.05}
+h2{font-size:32px;color:var(--gd);border-bottom:4px solid var(--or);
+ padding-bottom:11px;margin-bottom:18px;padding-right:150px;line-height:1.25}
+.bd{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:12px}
+.bd.top{justify-content:flex-start}
+h3{font-size:18px;margin-bottom:10px;color:var(--gd)}
+
+/* ── cover ─────────────────────────────────────────── */
+.cover{background:linear-gradient(150deg,var(--gd) 0%,var(--gm) 62%,#0a2b10 100%);
+ align-items:flex-start;justify-content:center;padding-left:72px}
+.c-sub{font-size:27px;color:var(--gold);margin-top:12px;letter-spacing:1px}
+.c-line{font-size:19px;color:#cfe3d2;margin-top:26px;line-height:1.7}
+.c-foot{position:absolute;bottom:48px;left:72px;font-size:15px;color:#9dbba4;
+ border-top:2px solid var(--or);padding-top:11px;line-height:1.6}
+.cover .pg{color:#9dbba4}
+
+/* ── section divider ───────────────────────────────── */
+.sec{background:linear-gradient(140deg,var(--gd),var(--gm));justify-content:center;padding-left:72px}
+.sec-num{font-size:112px;font-weight:bold;color:rgba(235,217,176,.22);line-height:.9}
+.sec h2{font-size:48px;color:#fff;border:0;border-left:7px solid var(--or);
+ padding:4px 0 4px 22px;margin:8px 0 0}
+.sec-sub{font-size:20px;color:var(--gold);margin-top:14px;padding-left:29px}
+.sec .pg{color:#9dbba4}
+.sec-time{position:absolute;bottom:48px;left:101px;font-size:15px;color:#9dbba4}
+
+/* ── agenda ────────────────────────────────────────── */
+.ag{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;align-content:start}
+.ag-row{display:flex;gap:13px;align-items:flex-start;background:#fff;
+ border:1px solid var(--line);border-left:5px solid var(--gd);border-radius:7px;padding:10px 14px}
+.ag-n{flex:0 0 28px;height:28px;border-radius:50%;background:var(--or);color:#fff;
+ font-size:14px;font-weight:bold;display:flex;align-items:center;justify-content:center}
+.ag-row b{display:block;font-size:16px;color:var(--gd);margin-bottom:2px}
+.ag-row span{font-size:13px;color:var(--mut);line-height:1.5}
+
+/* ── bullets ───────────────────────────────────────── */
+.bls{display:flex;flex-direction:column;gap:8px;overflow:auto;flex:0 1 auto;min-height:0;padding-right:6px}
+.bl{background:#fff;border:1px solid var(--line);border-left:5px solid var(--gm);
+ border-radius:7px;padding:10px 15px}
+.bl-t{font-size:16.5px;font-weight:bold;color:var(--gd);margin-bottom:3px}
+.bl-d{font-size:14.5px;color:#3d4d41;line-height:1.6}
+.bl.warn{border-left-color:var(--or)}
+.bl.warn .bl-t{color:var(--or)}
+
+/* ── steps ─────────────────────────────────────────── */
+.sts{display:flex;flex-direction:column;gap:8px;overflow:auto;flex:0 1 auto;min-height:0}
+.st{display:flex;gap:14px;align-items:flex-start;background:#fff;
+ border:1px solid var(--line);border-radius:7px;padding:10px 15px}
+.st-n{flex:0 0 30px;height:30px;border-radius:50%;background:var(--gd);color:#fff;
+ font-weight:bold;font-size:15px;display:flex;align-items:center;justify-content:center}
+.st b{display:block;font-size:16.5px;color:var(--gd);margin-bottom:2px}
+.st span{font-size:14.5px;color:#3d4d41;line-height:1.55}
+
+/* ── code ──────────────────────────────────────────── */
+.code{background:var(--code);border-radius:9px;padding:16px 20px;overflow:auto;
+ font-family:"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+ font-size:15px;line-height:1.65;color:#dbe8de;white-space:pre;flex:0 1 auto;min-height:0;
+ border:1px solid #24422f}
+.code.sm{font-size:13.5px;line-height:1.6}
+.code b{color:#fff;font-weight:600}
+.k{color:var(--kw)}   /* keyword */
+.s{color:var(--str)}  /* string  */
+.c{color:var(--cmt)}  /* comment */
+.f{color:var(--fn)}   /* func/tag */
+.cap{font-size:13.5px;color:var(--mut);margin-top:-4px}
+.codes{display:flex;flex-direction:column;gap:10px;flex:0 1 auto;min-height:0;overflow:auto}
+
+/* ── two / three columns ───────────────────────────── */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-content:start;min-height:0}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-content:start;min-height:0}
+.col{background:#fff;border:1px solid var(--line);border-radius:9px;padding:16px 18px;min-width:0}
+.col-a{border-top:6px solid #8fa894}
+.col-b{border-top:6px solid var(--or)}
+.col-g{border-top:6px solid var(--gm)}
+.col ul{list-style:none}
+.col li{font-size:15px;line-height:1.55;padding:7px 0 7px 22px;position:relative;
+ border-bottom:1px dashed var(--line)}
+.col li:last-child{border:0}
+.col li::before{content:"▪";position:absolute;left:3px;color:var(--or);font-size:16px}
+
+/* ── table ─────────────────────────────────────────── */
+.scroll{overflow:auto;flex:0 1 auto;min-height:0;border:1px solid var(--line);border-radius:8px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{background:var(--gd);color:#fff;text-align:left;padding:9px 13px;font-size:14px;position:sticky;top:0}
+td{padding:8px 13px;border-top:1px solid var(--line);line-height:1.5;vertical-align:top}
+td code,.ic{font-family:"Cascadia Mono",Consolas,monospace;font-size:13.5px;
+ background:#eef2ec;padding:1px 6px;border-radius:4px;color:var(--gd)}
+tbody tr:nth-child(even){background:#f8faf7}
+
+/* ── notes & warnings ──────────────────────────────── */
+.note{background:#fdf3e8;border-left:5px solid var(--or);padding:11px 15px;
+ border-radius:0 7px 7px 0;font-size:14.5px;line-height:1.6}
+.note.ok{background:#eef6ee;border-left-color:var(--gm)}
+.bigwarn{flex:0 1 auto;display:flex;flex-direction:column;justify-content:center;
+ background:#fff;border:2px solid var(--or);border-radius:11px;padding:28px 34px}
+.bw-t{font-size:29px;font-weight:bold;color:var(--or);margin-bottom:18px;line-height:1.3}
+.bigwarn ul{list-style:none}
+.bigwarn li{font-size:17px;line-height:1.6;padding:9px 0 9px 26px;position:relative}
+.bigwarn li::before{content:"→";position:absolute;left:0;color:var(--gd);font-weight:bold}
+
+/* ── flow diagram ──────────────────────────────────── */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+.fx{flex:1 1 0;min-width:150px;background:#fff;border:1px solid var(--line);
+ border-top:6px solid var(--gm);border-radius:9px;padding:16px 14px;text-align:center}
+.fx-i{font-size:38px;line-height:1}
+.fx-t{font-size:17px;font-weight:bold;color:var(--gd);margin:8px 0 5px}
+.fx-d{font-size:13.5px;color:#3d4d41;line-height:1.5}
+.fa{flex:0 0 34px;display:flex;align-items:center;justify-content:center;
+ font-size:24px;color:var(--or);font-weight:bold}
+
+/* ── stat row ──────────────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.stt{background:#fff;border:1px solid var(--line);border-radius:9px;padding:16px 14px;text-align:center}
+.stt-n{font-size:36px;font-weight:bold;color:var(--gd);line-height:1;font-variant-numeric:tabular-nums}
+.stt-l{font-size:13.5px;color:var(--mut);margin-top:7px;line-height:1.45}
+
+/* ── closing list ──────────────────────────────────── */
+.cls{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;align-content:start}
+.cl{display:flex;gap:13px;align-items:flex-start;background:#fff;border:1px solid var(--line);
+ border-radius:7px;padding:11px 15px}
+.cl-i{font-size:24px;line-height:1.2}
+.cl b{display:block;font-size:16px;color:var(--gd);margin-bottom:2px}
+.cl span{font-size:13.5px;color:var(--mut);line-height:1.5}
+
+/* ── chrome ────────────────────────────────────────── */
+#bar{position:fixed;left:0;bottom:0;height:4px;background:var(--or);width:0;transition:width .2s;z-index:9}
+#hint{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;font-size:12.5px;
+ color:#9dbba4;background:rgba(10,26,14,.85);padding:6px 14px;border-radius:16px;
+ transition:opacity 1s;z-index:9}
+@media (prefers-reduced-motion:reduce){#bar,#hint{transition:none}}
+</style></head><body>
+<div id="deck">
+
+<!-- ══ 1 ปก ══ -->
+<section class="sl cover">
+<h1>เขียนเว็บสายโรงงาน 101</h1>
+<div class="c-sub">สร้างระบบเว็บใช้งานจริง ตั้งแต่ศูนย์ จนขึ้นออนไลน์</div>
+<div class="c-line">ถอดบทเรียนจากระบบจริง — ESM Enterprise Shopfloor Management<br>React + Vite · Supabase · Render</div>
+<div class="c-foot">Thai Summit Group · หลักสูตรผู้เริ่มต้น ไม่ต้องมีพื้นฐานเขียนโปรแกรม<br>ระยะเวลา 1 วัน (6 ชม.) · มีแล็บลงมือทำ 2 ชม.</div>
+</section>
+
+<!-- ══ 2 จบแล้วทำอะไรได้ ══ -->
+<section class="sl"><div class="tag">เป้าหมาย</div><h2>จบคอร์สนี้แล้วคุณทำอะไรได้</h2>
+<div class="bd"><div class="sts">
+<div class="st"><div class="st-n">1</div><div><b>สร้างโปรเจคเว็บของตัวเองได้</b><span>เปิดโปรเจคใหม่ · รันบนเครื่องตัวเอง · แก้แล้วเห็นผลทันที</span></div></div>
+<div class="st"><div class="st-n">2</div><div><b>ทำหน้าบันทึกข้อมูล + ตารางแสดงผลได้</b><span>กรอกฟอร์ม → เซฟลงฐานข้อมูลจริง → ดึงกลับมาแสดง → แก้ → ลบ</span></div></div>
+<div class="st"><div class="st-n">3</div><div><b>ต่อฐานข้อมูลบนคลาวด์เป็น</b><span>สร้างตาราง · เชื่อมจากโค้ด · เข้าใจเรื่องสิทธิ์ว่าทำไมข้อมูลถึงหาย</span></div></div>
+<div class="st"><div class="st-n">4</div><div><b>เอาขึ้นออนไลน์ให้คนอื่นเปิดใช้ได้</b><span>build · deploy · ได้ลิงก์ที่ส่งให้หัวหน้าเปิดจากมือถือได้</span></div></div>
+<div class="st"><div class="st-n">5</div><div><b>อ่านโค้ดของระบบ ESM รู้เรื่อง</b><span>รู้ว่าไฟล์ไหนทำอะไร · แก้ข้อความ/เพิ่มคอลัมน์เองได้โดยไม่พัง</span></div></div>
+</div>
+<div class="note">สิ่งที่<b>ไม่ได้</b>สอนวันนี้: ทำแอปมือถือ native · ทำ AI · security ระดับลึก · การออกแบบ UX เต็มรูปแบบ — พวกนี้ต่อยอดทีหลังได้ ถ้าฐานวันนี้แน่น</div>
+</div></section>
+
+<!-- ══ 3 agenda ══ -->
+<section class="sl"><h2>หัวข้อวันนี้ 10 ส่วน</h2>
+<div class="bd top"><div class="ag">
+<div class="ag-row"><div class="ag-n">1</div><div><b>เว็บทำงานยังไง</b><span>ภาพรวมก่อนแตะโค้ด · 20 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">2</div><div><b>ติดตั้งเครื่องมือ + โปรเจคแรก</b><span>ลงมือทำพร้อมกัน · 30 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">3</div><div><b>HTML / CSS / JavaScript</b><span>เท่าที่ใช้จริง ไม่ท่องทั้งเล่ม · 45 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">4</div><div><b>React 101</b><span>หัวใจของงานทั้งหมด · 60 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">5</div><div><b>หลายหน้าใน 1 เว็บ (Router)</b><span>โครงโปรเจคที่โตได้ · 20 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">6</div><div><b>ฐานข้อมูล Supabase</b><span>เก็บข้อมูลจริง + สิทธิ์ · 45 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">7</div><div><b>แล็บ: หน้าบันทึกยอดผลิต</b><span>ทำจนใช้ได้จริง · 60 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">8</div><div><b>เอาขึ้นออนไลน์</b><span>Git · build · deploy · 30 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">9</div><div><b>บทเรียนจากระบบจริง</b><span>กับดักที่เคยทำพังมาแล้ว · 30 นาที</span></div></div>
+<div class="ag-row"><div class="ag-n">10</div><div><b>เรียนต่อยังไง + ใช้ AI ช่วย</b><span>เส้นทาง 90 วัน · 20 นาที</span></div></div>
+</div></div></section>
+
+<!-- ══ 4 กติกา ══ -->
+<section class="sl"><h2>กติกาห้องเรียน 5 ข้อ</h2>
+<div class="bd"><div class="bls">
+<div class="bl"><div class="bl-t">💻 เปิดคอมทำตามทุกสไลด์ที่มีโค้ด</div><div class="bl-d">ดูอย่างเดียวจะลืมภายในสองวัน — พิมพ์เองแล้วเห็นมันรันคือสิ่งที่จำได้</div></div>
+<div class="bl"><div class="bl-t">🔴 พังคือเรื่องปกติ</div><div class="bl-d">วันนี้เราจะ<b>ตั้งใจทำให้พัง</b>หลายรอบ แล้วอ่าน error ด้วยกัน — อ่าน error เป็น = เขียนโปรแกรมเป็นไปแล้วครึ่งทาง</div></div>
+<div class="bl"><div class="bl-t">✋ ติดตรงไหนยกมือทันที</div><div class="bl-d">อย่ารอ ถ้าค้างเกิน 3 นาทีแล้วยังไม่ผ่าน ยกมือ — เดี๋ยวจะหลุดขบวนทั้งวัน</div></div>
+<div class="bl"><div class="bl-t">📋 ไม่ต้องจำคำสั่ง</div><div class="bl-d">มีเอกสารประกอบให้ทุกคำสั่ง คัดลอกได้ — สิ่งที่ต้องจำคือ<b>"ทำไม"</b> ไม่ใช่ "พิมพ์อะไร"</div></div>
+<div class="bl"><div class="bl-t">🎯 เป้าคือทำหน้าใช้งานจริง 1 หน้าให้เสร็จ</div><div class="bl-d">ไม่ใช่รู้ทุกอย่าง — 1 หน้าที่ทำเองจนจบ มีค่ากว่ารู้ผิวๆ สิบเรื่อง</div></div>
+</div></div></section>
+
+<!-- ══ 5 SEC 1 ══ -->
+<section class="sl sec"><div class="sec-num">1</div><h2>เว็บทำงานยังไง</h2>
+<div class="sec-sub">ภาพรวมก่อนแตะโค้ด</div><div class="sec-time">⏱ 20 นาที</div></section>
+
+<!-- ══ 6 ══ -->
+<section class="sl"><h2>เปิดเว็บ 1 หน้า เกิดอะไรขึ้นบ้าง</h2>
+<div class="bd"><div class="flow">
+<div class="fx"><div class="fx-i">🖱️</div><div class="fx-t">1. พิมพ์ที่อยู่</div><div class="fx-d">เบราว์เซอร์ถามหาว่า<br>เว็บนี้อยู่เครื่องไหน</div></div>
+<div class="fa">→</div>
+<div class="fx"><div class="fx-i">🗄️</div><div class="fx-t">2. เซิร์ฟเวอร์ส่งไฟล์</div><div class="fx-d">HTML · CSS · JavaScript<br>= ข้อความล้วนๆ</div></div>
+<div class="fa">→</div>
+<div class="fx"><div class="fx-i">🧠</div><div class="fx-t">3. เบราว์เซอร์ประกอบร่าง</div><div class="fx-d">อ่านไฟล์แล้ววาดหน้าจอ<br>+ รันโค้ด JavaScript</div></div>
+<div class="fa">→</div>
+<div class="fx"><div class="fx-i">🔄</div><div class="fx-t">4. ขอข้อมูลเพิ่ม</div><div class="fx-d">โค้ดยิงไปถามฐานข้อมูล<br>แล้วเอามาเติมในหน้า</div></div>
+</div>
+<div class="note"><b>จุดสำคัญ:</b> โค้ดที่เราเขียน <b>รันบนเครื่องของคนเปิดเว็บ</b> ไม่ใช่ที่เซิร์ฟเวอร์ — คนหน้าไลน์เปิดหน้า Daily Report บนแท็บเล็ต โค้ดก็ทำงานอยู่ในแท็บเล็ตเครื่องนั้น เซิร์ฟเวอร์แค่ส่งไฟล์กับข้อมูลให้</div>
+</div></section>
+
+<!-- ══ 7 ══ -->
+<section class="sl"><h2>ระบบเว็บ 1 ตัว = 3 ชิ้นส่วน</h2>
+<div class="bd"><div class="three">
+<div class="col col-g"><h3>🖥️ หน้าบ้าน (Frontend)</h3><ul>
+<li>สิ่งที่คนเห็นและกด</li><li>ปุ่ม ฟอร์ม ตาราง กราฟ</li><li>ภาษา: HTML + CSS + JavaScript</li><li>เครื่องมือ: <span class="ic">React</span></li>
+<li><b>วันนี้เรียนหนักสุดตรงนี้</b></li></ul></div>
+<div class="col col-b"><h3>🗄️ หลังบ้าน (Backend + DB)</h3><ul>
+<li>ที่เก็บข้อมูลถาวร</li><li>ตรวจว่าใครมีสิทธิ์ทำอะไร</li><li>ภาษา: SQL</li><li>เครื่องมือ: <span class="ic">Supabase</span></li>
+<li><b>สมัยนี้ไม่ต้องเขียนเองแล้ว</b></li></ul></div>
+<div class="col col-a"><h3>🌐 ที่ฝากเว็บ (Deploy)</h3><ul>
+<li>ทำให้คนอื่นเปิดได้</li><li>ได้ลิงก์ URL จริง</li><li>อัปเดตอัตโนมัติเมื่อแก้โค้ด</li><li>เครื่องมือ: <span class="ic">Render</span></li>
+<li><b>ตั้งครั้งเดียว จบ</b></li></ul></div>
+</div>
+<div class="note ok">เมื่อก่อนต้องมีคน 3 คนทำ 3 ส่วน · วันนี้เครื่องมือดีพอที่<b>คนเดียวทำได้ทั้งหมด</b> — นี่คือเหตุผลที่วิศวกรในโรงงานลุกขึ้นมาทำระบบเองได้แล้ว</div>
+</div></section>
+
+<!-- ══ 8 ══ -->
+<section class="sl"><h2>ระบบ ESM ที่เราใช้อยู่ ประกอบด้วยอะไร</h2>
+<div class="bd">
+<div class="stats">
+<div class="stt"><div class="stt-n">70</div><div class="stt-l">หน้า (pages)</div></div>
+<div class="stt"><div class="stt-n">104</div><div class="stt-l">ชิ้นส่วนใช้ซ้ำ (components)</div></div>
+<div class="stt"><div class="stt-n">114</div><div class="stt-l">สูตร/กฎกลาง (utils)</div></div>
+<div class="stt"><div class="stt-n">361</div><div class="stt-l">ครั้งที่แก้ฐานข้อมูล</div></div>
+</div>
+<div class="scroll"><table>
+<thead><tr><th style="width:22%">ชั้น</th><th style="width:26%">ใช้อะไร</th><th>ทำหน้าที่อะไรในระบบเรา</th></tr></thead>
+<tbody>
+<tr><td>หน้าบ้าน</td><td><code>React 19</code> + <code>Vite</code></td><td>ทุกหน้าที่คุณเห็น — เช็คชื่อ, Daily Report, OEE, ใบแจ้งซ่อม</td></tr>
+<tr><td>เส้นทางหน้า</td><td><code>React Router</code></td><td>สลับหน้าโดยไม่โหลดใหม่ทั้งเว็บ (<code>/checkin</code>, <code>/oee-analytics</code>)</td></tr>
+<tr><td>กราฟ</td><td><code>Recharts</code></td><td>กราฟ OEE · Pareto ของเสีย · แนวโน้มรายเดือน</td></tr>
+<tr><td>ฐานข้อมูล</td><td><code>Supabase</code> ×2</td><td>Main = คน/สิทธิ์/4M · DR = ข้อมูลผลิตรายวัน</td></tr>
+<tr><td>ไฟล์รูป</td><td>Supabase Storage</td><td>รูปพนักงาน · รูปจุดตรวจ PM · ลายเซ็น</td></tr>
+<tr><td>ที่ฝากเว็บ</td><td><code>Render.com</code></td><td>push โค้ดขึ้น GitHub แล้วมันอัปเดตเว็บให้เอง</td></tr>
+</tbody></table></div>
+<div class="note">ทั้งระบบมีโค้ดราว <b>126,000 บรรทัด</b> — ฟังดูเยอะ แต่มันคือ<b>สิ่งเดิมซ้ำๆ กัน 70 รอบ</b> พอเข้าใจ 1 หน้า ก็อ่านออกทั้งระบบ</div>
+</div></section>
+
+<!-- ══ 9 ══ -->
+<section class="sl"><h2>ศัพท์ 12 คำที่จะได้ยินทั้งวัน</h2>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:20%">คำ</th><th style="width:36%">แปลเป็นภาษาคน</th><th>เทียบกับโรงงาน</th></tr></thead>
+<tbody>
+<tr><td><code>repository</code> (repo)</td><td>กล่องเก็บโค้ดทั้งโปรเจค</td><td>แฟ้มเอกสารของทั้งไลน์</td></tr>
+<tr><td><code>component</code></td><td>ชิ้นส่วนหน้าจอที่ใช้ซ้ำได้</td><td>จิ๊กที่ถอดไปใช้กับหลายพาร์ทได้</td></tr>
+<tr><td><code>state</code></td><td>ค่าที่เปลี่ยนได้ระหว่างใช้งาน</td><td>ตัวเลขบนหน้าปัดที่ขยับตลอด</td></tr>
+<tr><td><code>props</code></td><td>ค่าที่ส่งเข้าไปให้ชิ้นส่วนนั้น</td><td>ใบสั่งงานที่แนบไปกับกล่อง</td></tr>
+<tr><td><code>build</code></td><td>แปลงโค้ดให้เป็นไฟล์ที่เบราว์เซอร์อ่านได้</td><td>ขึ้นรูปจากแบบเป็นชิ้นงานจริง</td></tr>
+<tr><td><code>deploy</code></td><td>เอาไฟล์ที่ build แล้วขึ้นออนไลน์</td><td>ส่งของขึ้นรถไปหาลูกค้า</td></tr>
+<tr><td><code>API</code></td><td>ช่องทางให้โปรแกรมคุยกัน</td><td>ช่องรับ-ส่งงานระหว่างสถานี</td></tr>
+<tr><td><code>query</code></td><td>คำสั่งถามข้อมูลจากฐานข้อมูล</td><td>ใบขอข้อมูลที่ยื่นให้ห้องเอกสาร</td></tr>
+<tr><td><code>async / await</code></td><td>"รอผลก่อนค่อยทำต่อ"</td><td>รอเครื่องเดินจบไซเคิลก่อนหยิบชิ้นงาน</td></tr>
+<tr><td><code>error</code></td><td>ระบบบอกว่ามีอะไรผิด</td><td>ไฟ Andon แดง</td></tr>
+<tr><td><code>commit</code></td><td>บันทึกจุดเซฟของโค้ด</td><td>ลงชื่อปิดใบงานหนึ่งใบ</td></tr>
+<tr><td><code>branch</code></td><td>แยกไปทำงานโดยไม่กระทบของจริง</td><td>ลองไลน์ทดลองก่อนเข้าไลน์จริง</td></tr>
+</tbody></table></div></div></section>
+
+<!-- ══ 10 ══ -->
+<section class="sl"><h2>⚠️ เข้าใจให้ตรงกันก่อน: "เว็บไซต์" ≠ "ระบบเว็บ"</h2>
+<div class="bd"><div class="two">
+<div class="col col-a"><h3>เว็บไซต์ธรรมดา</h3><ul>
+<li>หน้าแนะนำบริษัท · ข่าวสาร</li><li>ข้อมูลคงที่ ไม่ค่อยเปลี่ยน</li>
+<li>ไม่มี login</li><li>ทำด้วย WordPress / Wix ก็จบ</li>
+<li><b>ไม่ต้องเรียนวันนี้ก็ทำได้</b></li></ul></div>
+<div class="col col-b"><h3>ระบบเว็บ (สิ่งที่เราจะทำ)</h3><ul>
+<li>คนกรอกข้อมูลเข้าไปทุกวัน</li><li>ข้อมูลเปลี่ยนตลอด ต้องเก็บถาวร</li>
+<li>มี login · แต่ละคนเห็นไม่เท่ากัน</li><li>ต้องเขียนโค้ดเอง</li>
+<li><b>ESM คือแบบนี้</b></li></ul></div>
+</div>
+<div class="note">ถ้าโจทย์คือ "อยากได้หน้าเว็บสวยๆ แนะนำแผนก" — อย่าเสียเวลาเขียนโค้ด · แต่ถ้าโจทย์คือ <b>"เลิกใช้กระดาษ / เลิกส่ง Excel ทางไลน์"</b> คุณมาถูกที่แล้ว</div>
+</div></section>
+
+<!-- ══ SEC 2 ══ -->
+<section class="sl sec"><div class="sec-num">2</div><h2>เครื่องมือ + โปรเจคแรก</h2>
+<div class="sec-sub">ลงมือทำพร้อมกัน เปิดคอมได้เลย</div><div class="sec-time">⏱ 30 นาที</div></section>
+
+<section class="sl"><div class="tag">ลงมือทำ</div><h2>ของที่ต้องติดตั้ง 4 อย่าง</h2>
+<div class="bd"><div class="sts">
+<div class="st"><div class="st-n">1</div><div><b>Node.js (เลือกรุ่น LTS)</b><span><span class="ic">nodejs.org</span> — คือ "เครื่องยนต์" ที่รัน JavaScript นอกเบราว์เซอร์ · ได้คำสั่ง <span class="ic">npm</span> ติดมาด้วย</span></div></div>
+<div class="st"><div class="st-n">2</div><div><b>Visual Studio Code</b><span><span class="ic">code.visualstudio.com</span> — โปรแกรมพิมพ์โค้ด ฟรี · ลงส่วนเสริม <b>ES7 React snippets</b> + <b>Prettier</b> ด้วย</span></div></div>
+<div class="st"><div class="st-n">3</div><div><b>Git</b><span><span class="ic">git-scm.com</span> — ตัวเก็บประวัติโค้ด · สมัคร <b>GitHub</b> ไว้ด้วย (ฟรี) ใช้เก็บโค้ดบนคลาวด์</span></div></div>
+<div class="st"><div class="st-n">4</div><div><b>Google Chrome</b><span>ใช้ทดสอบ + มีเครื่องมือนักพัฒนา (DevTools) ที่จะใช้ทั้งวัน</span></div></div>
+</div>
+<div class="note">เช็คว่าลงสำเร็จ — เปิด Terminal แล้วพิมพ์ <span class="ic">node -v</span> ต้องขึ้นเลขเวอร์ชัน เช่น <b>v20.11.0</b> · ถ้าขึ้นว่า "ไม่รู้จักคำสั่ง" = ยังไม่ได้ลง หรือต้องปิด-เปิด Terminal ใหม่</div>
+</div></section>
+
+<section class="sl"><h2>Terminal — 8 คำสั่งที่ใช้จริง</h2>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:32%">คำสั่ง</th><th>ทำอะไร</th></tr></thead>
+<tbody>
+<tr><td><code>cd ชื่อโฟลเดอร์</code></td><td>เดินเข้าไปในโฟลเดอร์นั้น</td></tr>
+<tr><td><code>cd ..</code></td><td>ถอยออกมา 1 ชั้น</td></tr>
+<tr><td><code>ls</code> (Windows: <code>dir</code>)</td><td>ดูว่าในโฟลเดอร์นี้มีอะไรบ้าง</td></tr>
+<tr><td><code>npm install</code></td><td>ดาวน์โหลดของที่โปรเจคต้องใช้มาให้ครบ</td></tr>
+<tr><td><code>npm run dev</code></td><td><b>เปิดเว็บบนเครื่องตัวเอง</b> — ใช้บ่อยที่สุด</td></tr>
+<tr><td><code>npm run build</code></td><td>สร้างไฟล์สำหรับขึ้นออนไลน์ (+ ตรวจโค้ดให้ด้วย)</td></tr>
+<tr><td><code>Ctrl + C</code></td><td>หยุดสิ่งที่กำลังรันอยู่</td></tr>
+<tr><td><code>↑</code> (ลูกศรขึ้น)</td><td>เรียกคำสั่งเดิมกลับมา — ไม่ต้องพิมพ์ซ้ำ</td></tr>
+</tbody></table></div>
+<div class="note">พิมพ์ผิดไม่พัง — Terminal จะบอกว่ามันไม่เข้าใจอะไร แล้วรอคำสั่งใหม่เฉยๆ <b>กดผิดไม่มีอะไรระเบิด</b></div>
+</div></section>
+
+<section class="sl"><div class="tag">ลงมือทำ</div><h2>สร้างโปรเจคแรก — 4 คำสั่ง</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c"># 1) สร้างโปรเจคใหม่ชื่อ my-first-app (เลือก React → JavaScript)</span>
+npm create vite@latest my-first-app
+
+<span class="c"># 2) เดินเข้าไปในโฟลเดอร์ที่เพิ่งสร้าง</span>
+cd my-first-app
+
+<span class="c"># 3) ดาวน์โหลดของที่ต้องใช้ (ครั้งแรกใช้เวลาสักครู่)</span>
+npm install
+
+<span class="c"># 4) เปิดเว็บ! → เปิดเบราว์เซอร์ไปที่ http://localhost:5173</span>
+npm run dev</div></div>
+<div class="note ok"><b>เกิดอะไรขึ้น:</b> <span class="ic">Vite</span> คือตัวช่วยที่เตรียมโครงโปรเจคให้ครบ แล้วเปิดเซิร์ฟเวอร์ทดสอบบนเครื่องคุณ · แก้โค้ดปุ๊บ <b>หน้าเว็บเปลี่ยนทันทีไม่ต้องกด refresh</b> — ระบบ ESM ก็ใช้ตัวนี้</div>
+<div class="note">⚠️ ปล่อย <span class="ic">npm run dev</span> รันค้างไว้ทั้งวัน · จะพิมพ์คำสั่งอื่นให้เปิด Terminal อีกหน้าต่าง</div>
+</div></section>
+
+<section class="sl"><h2>ในโปรเจคมีอะไรบ้าง</h2>
+<div class="bd"><div class="codes">
+<div class="code sm">my-first-app/
+├── <span class="f">node_modules/</span>   <span class="c">← ของที่ npm โหลดมา (ห้ามแตะ ห้ามส่งให้ใคร ลบทิ้งได้ตลอด)</span>
+├── <span class="f">public/</span>         <span class="c">← ไฟล์ที่เอาไปวางเฉยๆ เช่น โลโก้ favicon</span>
+├── <span class="f">src/</span>            <span class="c">← ★ ที่ทำงานของเรา 99% อยู่ตรงนี้</span>
+│   ├── main.jsx    <span class="c">← จุดเริ่มต้น เอา App ไปแปะลงหน้าเว็บ</span>
+│   ├── App.jsx     <span class="c">← หน้าตาหลักของแอป</span>
+│   └── index.css   <span class="c">← สีและฟอนต์รวม</span>
+├── index.html      <span class="c">← หน้าเปล่าที่รอให้ React มาเติม</span>
+└── package.json    <span class="c">← ทะเบียนโปรเจค: ชื่อ · คำสั่ง · รายการของที่ใช้</span></div></div>
+<div class="two">
+<div class="col col-g"><h3>ลองเลย 30 วินาที</h3><ul>
+<li>เปิด <span class="ic">src/App.jsx</span></li><li>ลบของเดิมทิ้งให้หมด</li>
+<li>พิมพ์ข้อความของตัวเองลงไป</li><li>กด Ctrl+S แล้วมองจอ</li></ul></div>
+<div class="col col-b"><h3>เทียบกับ ESM ของจริง</h3><ul>
+<li>โครงเหมือนกันเป๊ะ</li><li>ต่างแค่ <span class="ic">src/</span> มี <b>pages/ · components/ · utils/</b></li>
+<li>และมี <span class="ic">supabase/</span> เพิ่มมา</li><li><b>เริ่มจากอันนี้แหละ แล้วมันโตเอง</b></li></ul></div>
+</div></div></section>
+
+<section class="sl"><h2>DevTools — 3 แท็บที่ต้องใช้เป็น (กด F12)</h2>
+<div class="bd"><div class="three">
+<div class="col col-b"><h3>🔴 Console</h3><ul>
+<li><b>อ่าน error สีแดง</b></li><li>ดูค่าที่เรา <span class="ic">console.log()</span> ออกมา</li>
+<li>ตัวหนังสือแดง = บอกทั้ง<b>ไฟล์และบรรทัด</b></li>
+<li><b>เปิดค้างไว้ตลอดเวลาเขียนโค้ด</b></li></ul></div>
+<div class="col col-g"><h3>🌐 Network</h3><ul>
+<li>ดูว่ายิงไปถามฐานข้อมูลจริงมั้ย</li><li>ได้ข้อมูลกลับมากี่แถว</li>
+<li>สีแดง = โดนปฏิเสธ (มักเป็นเรื่องสิทธิ์)</li>
+<li>เช็คตรงนี้ก่อนโทษโค้ดตัวเอง</li></ul></div>
+<div class="col col-a"><h3>🧱 Elements</h3><ul>
+<li>ดูโครงหน้าเว็บที่วาดออกมาจริง</li><li>ลองแก้สี/ขนาดสดๆ ได้</li>
+<li>แก้ตรงนี้<b>ไม่ได้แก้ไฟล์</b> — refresh แล้วหาย</li>
+<li>ใช้ลองก่อนแล้วค่อยไปแก้ในโค้ด</li></ul></div>
+</div>
+<div class="note"><b>ทักษะที่ทำให้คุณต่างจากคนอื่น:</b> คนที่ไปต่อได้ = คนที่<b>อ่าน error แล้วเดาทางออกได้</b> ไม่ใช่คนที่จำโค้ดได้เยอะ · error ไม่ใช่ศัตรู มันคือใบแจ้งซ่อมที่บอกตำแหน่งให้แล้ว</div>
+</div></section>
+
+<section class="sl"><h2>⚠️ 3 ข้อห้าม ตั้งแต่วันแรก</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">พลาด 3 ข้อนี้ = แก้ทีหลังเจ็บมาก</div><ul>
+<li><b>ห้ามส่ง <span class="ic">node_modules</span> ให้ใคร</b> — หลายหมื่นไฟล์ · คนรับพิมพ์ <span class="ic">npm install</span> เอาเองได้ใน 1 นาที</li>
+<li><b>ห้ามเอารหัสผ่าน/คีย์ใส่ในโค้ดที่ push ขึ้น GitHub</b> — ใส่ในไฟล์ <span class="ic">.env</span> แล้วเขียน <span class="ic">.env</span> ไว้ใน <span class="ic">.gitignore</span> เสมอ</li>
+<li><b>ห้ามแก้ไฟล์ในโฟลเดอร์ <span class="ic">node_modules</span></b> — แก้แล้วหายทุกครั้งที่ติดตั้งใหม่ และคนอื่นไม่ได้ของที่คุณแก้</li>
+</ul></div>
+<div class="note">ในระบบ ESM คีย์ของ Supabase อ่านจาก <span class="ic">import.meta.env.VITE_SUPABASE_URL</span> — ค่าจริงตั้งไว้ที่ Render ไม่ได้อยู่ในโค้ด</div>
+</div></section>
+
+<!-- ══ SEC 3 ══ -->
+<section class="sl sec"><div class="sec-num">3</div><h2>HTML · CSS · JavaScript</h2>
+<div class="sec-sub">เท่าที่ใช้จริง ไม่ต้องท่องทั้งเล่ม</div><div class="sec-time">⏱ 45 นาที</div></section>
+
+<section class="sl"><h2>3 ภาษา 3 หน้าที่ — เทียบกับคน</h2>
+<div class="bd"><div class="three">
+<div class="col col-g"><h3>HTML = โครงกระดูก</h3><ul>
+<li>บอกว่า<b>มีอะไรอยู่ในหน้า</b></li><li>หัวข้อ · ย่อหน้า · ปุ่ม · ตาราง · ช่องกรอก</li>
+<li>ไม่มี HTML = หน้าว่างเปล่า</li></ul></div>
+<div class="col col-b"><h3>CSS = เสื้อผ้า</h3><ul>
+<li>บอกว่า<b>หน้าตาเป็นยังไง</b></li><li>สี · ขนาด · ระยะห่าง · การจัดวาง</li>
+<li>ไม่มี CSS = หน้าตายังใช้ได้ แค่ดูโบราณ</li></ul></div>
+<div class="col col-a"><h3>JavaScript = สมอง</h3><ul>
+<li>บอกว่า<b>กดแล้วเกิดอะไร</b></li><li>คำนวณ · เรียกข้อมูล · เปลี่ยนหน้าจอ</li>
+<li>ไม่มี JS = หน้านิ่ง กดอะไรไม่ได้</li></ul></div>
+</div>
+<div class="code sm"><span class="f">&lt;h2&gt;</span>ยอดผลิตวันนี้<span class="f">&lt;/h2&gt;</span>                          <span class="c">← HTML: มีหัวข้อ</span>
+<span class="f">&lt;style&gt;</span> h2 { color: green; } <span class="f">&lt;/style&gt;</span>            <span class="c">← CSS: ให้มันเขียว</span>
+<span class="f">&lt;script&gt;</span> document.<span class="f">querySelector</span>(<span class="s">'h2'</span>).textContent = <span class="s">'ยอด 1,240 ชิ้น'</span> <span class="f">&lt;/script&gt;</span>  <span class="c">← JS: เปลี่ยนข้อความ</span></div>
+</div></section>
+
+<section class="sl"><h2>HTML — 10 แท็กที่ใช้จริง 90% ของเวลา</h2>
+<div class="bd"><div class="two">
+<div class="code sm"><span class="c">&lt;!-- โครงสร้าง --&gt;</span>
+<span class="f">&lt;div&gt;</span>   กล่องเปล่า ใส่อะไรก็ได้
+<span class="f">&lt;h1&gt;</span>–<span class="f">&lt;h3&gt;</span> หัวข้อ ใหญ่→เล็ก
+<span class="f">&lt;p&gt;</span>     ย่อหน้าข้อความ
+<span class="f">&lt;span&gt;</span>  ข้อความสั้นในบรรทัด
+
+<span class="c">&lt;!-- รับข้อมูลจากคน --&gt;</span>
+<span class="f">&lt;input&gt;</span>  ช่องกรอก
+<span class="f">&lt;select&gt;</span> ช่องเลือก (dropdown)
+<span class="f">&lt;button&gt;</span> ปุ่มกด
+
+<span class="c">&lt;!-- แสดงข้อมูล --&gt;</span>
+<span class="f">&lt;table&gt;</span> ตาราง
+<span class="f">&lt;img&gt;</span>   รูป
+<span class="f">&lt;a&gt;</span>     ลิงก์</div>
+<div class="col col-g"><h3>กฎ 4 ข้อของ HTML</h3><ul>
+<li>เปิดแล้ว<b>ต้องปิด</b>: <span class="ic">&lt;p&gt;...&lt;/p&gt;</span></li>
+<li>ซ้อนกันได้ แต่ห้ามไขว้กัน</li>
+<li>แท็กพิเศษไม่ต้องปิด: <span class="ic">&lt;img&gt;</span> <span class="ic">&lt;input&gt;</span></li>
+<li>คุณสมบัติใส่ในแท็กเปิด:<br><span class="ic">&lt;input type="date"&gt;</span></li>
+</ul>
+<div class="note" style="margin-top:12px">ในระบบ ESM เราไม่ค่อยเขียน HTML ตรงๆ — เขียนใน React แทน แต่<b>หน้าตาเหมือนกัน 95%</b> ต่างแค่รายละเอียดที่จะบอกในหัวข้อถัดไป</div>
+</div>
+</div></div></section>
+
+<section class="sl"><h2>CSS — 3 เรื่องที่ต้องรู้</h2>
+<div class="bd"><div class="codes">
+<div class="code sm"><span class="c">/* 1) เลือกของที่จะแต่ง */</span>
+h2          { <span class="k">color</span>: <span class="s">#0D3D14</span>; }      <span class="c">/* ทุก h2 ในหน้า      */</span>
+.card       { <span class="k">padding</span>: <span class="s">16px</span>; }       <span class="c">/* ทุกอันที่ class="card" */</span>
+#total      { <span class="k">font-weight</span>: <span class="s">bold</span>; }  <span class="c">/* อันที่ id="total"    */</span>
+
+<span class="c">/* 2) กล่องทุกใบมี 4 ชั้น — เรียงจากในออกนอก */</span>
+.card { <span class="k">padding</span>: <span class="s">16px</span>;      <span class="c">/* ระยะจากขอบถึงข้อความ  */</span>
+        <span class="k">border</span>: <span class="s">1px solid #ddd</span>; <span class="c">/* เส้นขอบ            */</span>
+        <span class="k">margin</span>: <span class="s">12px</span>; }     <span class="c">/* ระยะห่างจากกล่องอื่น  */</span>
+
+<span class="c">/* 3) จัดวางหลายกล่อง — ใช้ 2 ตัวนี้พอ */</span>
+.row  { <span class="k">display</span>: <span class="s">flex</span>; <span class="k">gap</span>: <span class="s">12px</span>; }                          <span class="c">/* เรียงแถวเดียว */</span>
+.grid { <span class="k">display</span>: <span class="s">grid</span>; <span class="k">grid-template-columns</span>: <span class="s">repeat(3,1fr)</span>; } <span class="c">/* ตาราง 3 คอลัมน์ */</span></div></div>
+<div class="note">⚠️ <b>กับดักจริงจากระบบเรา:</b> ใน <span class="ic">index.css</span> ตั้ง <span class="ic">input { width:100% }</span> ไว้ทั้งแอป → ช่องวันที่ที่วางข้างปุ่มเลยกินเต็มแถว ดันปุ่มตกบรรทัด · เจอซ้ำ 3 หน้า กว่าจะรู้ตัว — <b>กฎที่ตั้งไว้ที่ส่วนกลาง มีผลกับทุกหน้าเสมอ</b></div>
+</div></section>
+
+<section class="sl"><h2>JavaScript — เก็บค่า</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="k">const</span> lineName = <span class="s">'ASSY 060'</span>       <span class="c">// ข้อความ — ตั้งแล้วเปลี่ยนไม่ได้ (ใช้ตัวนี้เป็นหลัก)</span>
+<span class="k">let</span>   qty = <span class="s">1240</span>                 <span class="c">// ตัวเลข — ตั้งแล้วเปลี่ยนค่าได้</span>
+<span class="k">const</span> isNight = <span class="s">true</span>              <span class="c">// จริง/เท็จ</span>
+
+<span class="c">// กลุ่มค่าที่เป็นชุดเดียวกัน — ใช้เยอะที่สุดในงานจริง</span>
+<span class="k">const</span> row = {
+  work_date: <span class="s">'2026-09-08'</span>,
+  line_name: <span class="s">'ASSY 060'</span>,
+  qty_ok: <span class="s">1240</span>,
+  qty_ng: <span class="s">6</span>,
+}
+console.<span class="f">log</span>(row.qty_ok)              <span class="c">// → 1240   (จุด = เข้าไปหยิบค่าข้างใน)</span>
+
+<span class="c">// รายการหลายตัว — ใส่ใน [ ]</span>
+<span class="k">const</span> rows = [row, row2, row3]
+console.<span class="f">log</span>(rows.length)             <span class="c">// → 3      (มีกี่ตัว)</span></div></div>
+<div class="note ok"><b>จำแค่นี้พอ:</b> <span class="ic">{ }</span> = ของ 1 ชิ้นที่มีหลายช่อง (เหมือน 1 แถวในตาราง) · <span class="ic">[ ]</span> = หลายชิ้นเรียงกัน (เหมือนทั้งตาราง) — ข้อมูลจากฐานข้อมูลกลับมาเป็นแบบนี้เสมอ</div>
+</div></section>
+
+<section class="sl"><h2>JavaScript — จัดการรายการ (ใช้ทุกหน้าจริงๆ)</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="k">const</span> logs = [
+  { line: <span class="s">'ASSY 060'</span>, ok: <span class="s">1240</span>, ng: <span class="s">6</span> },
+  { line: <span class="s">'ASSY 061'</span>, ok: <span class="s">980</span>,  ng: <span class="s">0</span> },
+  { line: <span class="s">'HDF 1'</span>,    ok: <span class="s">450</span>,  ng: <span class="s">12</span> },
+]
+
+<span class="c">// filter = คัดเฉพาะที่ต้องการ  → เหลือ 2 แถว</span>
+<span class="k">const</span> hasNg = logs.<span class="f">filter</span>(r =&gt; r.ng &gt; <span class="s">0</span>)
+
+<span class="c">// map = แปลงทุกตัวเป็นอย่างอื่น → ['ASSY 060','ASSY 061','HDF 1']</span>
+<span class="k">const</span> names = logs.<span class="f">map</span>(r =&gt; r.line)
+
+<span class="c">// reduce = ยุบทั้งหมดเหลือค่าเดียว → 2670</span>
+<span class="k">const</span> totalOk = logs.<span class="f">reduce</span>((sum, r) =&gt; sum + r.ok, <span class="s">0</span>)
+
+<span class="c">// find = หาตัวแรกที่ตรงเงื่อนไข → { line:'HDF 1', ... }</span>
+<span class="k">const</span> worst = logs.<span class="f">find</span>(r =&gt; r.ng &gt; <span class="s">10</span>)</div></div>
+<div class="note"><b>อ่านว่า:</b> <span class="ic">r =&gt; r.ng &gt; 0</span> แปลว่า "เอาแต่ละแถวมาเรียกว่า r แล้วตอบว่า ng ของมันมากกว่า 0 มั้ย" · เครื่องหมาย <span class="ic">=&gt;</span> เรียกว่า arrow function — <b>4 ตัวนี้ (filter/map/reduce/find) ครอบคลุมงานสรุปข้อมูลเกือบทั้งหมดในระบบ ESM</b></div>
+</div></section>
+
+<section class="sl"><h2>JavaScript — ฟังก์ชัน และการ "รอ"</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// ฟังก์ชัน = ชุดคำสั่งที่ตั้งชื่อไว้ เรียกใช้ซ้ำได้</span>
+<span class="k">function</span> <span class="f">calcOee</span>(a, p, q) {
+  <span class="k">return</span> a * p * q / <span class="s">10000</span>
+}
+<span class="f">calcOee</span>(<span class="s">90</span>, <span class="s">88</span>, <span class="s">99</span>)          <span class="c">// → 78.4</span>
+
+<span class="c">// เขียนแบบสั้น (arrow) — เจอบ่อยกว่าในโค้ดจริง</span>
+<span class="k">const</span> <span class="f">calcOee</span> = (a, p, q) =&gt; a * p * q / <span class="s">10000</span>
+
+<span class="c">// ─────────────────────────────────────────────────────</span>
+<span class="c">// งานที่ "ต้องรอ" เช่น ถามฐานข้อมูล ต้องใส่ async/await</span>
+<span class="k">async function</span> <span class="f">loadLogs</span>() {
+  <span class="k">const</span> { data, error } = <span class="k">await</span> supabase.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">select</span>(<span class="s">'*'</span>)
+  <span class="c">//                     ↑ await = รอตรงนี้จนกว่าข้อมูลจะมาถึง</span>
+  <span class="k">if</span> (error) { console.<span class="f">error</span>(error); <span class="k">return</span> [] }
+  <span class="k">return</span> data
+}</div></div>
+<div class="note">⚠️ ลืม <span class="ic">await</span> = ได้ "ใบสัญญาว่าจะส่งของ" มาแทนตัวข้อมูล → หน้าจอว่างเปล่าโดยไม่มี error · <b>เป็นบั๊กที่มือใหม่เจอบ่อยที่สุดอันดับ 1</b></div>
+</div></section>
+
+<section class="sl"><h2>⚠️ 4 กับดัก JavaScript ที่กัดทุกคน</h2>
+<div class="bd"><div class="bls">
+<div class="bl warn"><div class="bl-t"><span class="ic">=</span> กับ <span class="ic">===</span> ไม่เหมือนกัน</div><div class="bl-d"><span class="ic">=</span> คือ "ตั้งค่าให้" · <span class="ic">===</span> คือ "เท่ากันมั้ย" — เขียนผิดที่ในเงื่อนไข <span class="ic">if</span> แล้วโปรแกรมจะทำงานตลอดเวลาโดยไม่แจ้งอะไร</div></div>
+<div class="bl warn"><div class="bl-t">ค่าที่ยังมาไม่ถึง = <span class="ic">undefined</span></div><div class="bl-d">ข้อมูลยังโหลดไม่เสร็จแล้วสั่ง <span class="ic">rows.length</span> → error <b>"Cannot read properties of undefined"</b> · ป้องกันด้วย <span class="ic">rows?.length</span> หรือตั้งค่าเริ่มต้นเป็น <span class="ic">[]</span> เสมอ</div></div>
+<div class="bl warn"><div class="bl-t">ตัวเลขจากช่องกรอก = ข้อความ</div><div class="bl-d"><span class="ic">'10' + 5</span> ได้ <span class="ic">'105'</span> ไม่ใช่ 15 · แปลงก่อนคำนวณเสมอ: <span class="ic">Number(qty)</span></div></div>
+<div class="bl warn"><div class="bl-t">วันที่ = กับดักที่แพงที่สุด</div><div class="bl-d">ระบบเราเคยลงวันที่ผิดไป 1 วันทั้งระบบ เพราะใช้ <span class="ic">toISOString()</span> ที่คืนเวลาสากล (ช้ากว่าไทย 7 ชม.) — <b>รายละเอียดเต็มอยู่ในหัวข้อบทเรียนช่วงบ่าย</b></div></div>
+</div></div></section>
+
+<!-- ══ SEC 4 ══ -->
+<section class="sl sec"><div class="sec-num">4</div><h2>React 101</h2>
+<div class="sec-sub">หัวใจของงานทั้งหมด — ช่วงนี้สำคัญที่สุด</div><div class="sec-time">⏱ 60 นาที</div></section>
+
+<section class="sl"><h2>ทำไมต้องมี React</h2>
+<div class="bd"><div class="two">
+<div class="col col-a"><h3>ถ้าเขียน JavaScript เปล่าๆ</h3>
+<div class="code sm" style="margin-top:8px">qty = qty + <span class="s">1</span>
+document.<span class="f">querySelector</span>(<span class="s">'#qty'</span>)
+        .textContent = qty
+document.<span class="f">querySelector</span>(<span class="s">'#total'</span>)
+        .textContent = qty * price
+document.<span class="f">querySelector</span>(<span class="s">'#bar'</span>)
+        .style.width = qty/target*<span class="s">100</span> + <span class="s">'%'</span>
+<span class="c">// ...ลืมอัปเดตที่ไหนสักที่ = เลขไม่ตรงกัน</span></div>
+<ul style="margin-top:10px"><li>ต้องไล่สั่งอัปเดต<b>ทุกจุด</b>ด้วยมือ</li><li>หน้าใหญ่ขึ้น = ลืมมากขึ้น</li><li><b>เลขบนจอไม่ตรงกัน</b> คือบั๊กคลาสสิก</li></ul></div>
+<div class="col col-b"><h3>ถ้าใช้ React</h3>
+<div class="code sm" style="margin-top:8px"><span class="f">setQty</span>(qty + <span class="s">1</span>)
+
+<span class="c">// จบ.</span>
+<span class="c">// ทุกที่ที่ใช้ qty อัปเดตเองหมด</span>
+<span class="c">// ตัวเลข · ยอดรวม · แถบความคืบหน้า</span></div>
+<ul style="margin-top:10px"><li>เราบอกแค่ <b>"ข้อมูลตอนนี้คืออะไร"</b></li><li>React ไปวาดหน้าจอให้ตรงเอง</li><li>เลขบนจอ<b>ตรงกันเสมอ</b>โดยอัตโนมัติ</li></ul></div>
+</div>
+<div class="note ok"><b>ประโยคเดียวที่ต้องจำจากทั้งช่วงนี้:</b> ในโลก React เรา<b>ไม่สั่งแก้หน้าจอ</b> — เราแก้ข้อมูล แล้วหน้าจอตามเอง</div>
+</div></section>
+
+<section class="sl"><h2>Component แรก + กฎของ JSX</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// src/components/LineCard.jsx</span>
+<span class="k">export default function</span> <span class="f">LineCard</span>() {
+  <span class="k">return</span> (
+    <span class="f">&lt;div</span> className=<span class="s">"card"</span><span class="f">&gt;</span>
+      <span class="f">&lt;h3&gt;</span>ASSY 060<span class="f">&lt;/h3&gt;</span>
+      <span class="f">&lt;p&gt;</span>ยอดผลิตวันนี้ 1,240 ชิ้น<span class="f">&lt;/p&gt;</span>
+    <span class="f">&lt;/div&gt;</span>
+  )
+}</div></div>
+<div class="two">
+<div class="col col-b"><h3>5 กฎที่ต่างจาก HTML ธรรมดา</h3><ul>
+<li>ชื่อ component ต้อง<b>ขึ้นต้นตัวใหญ่</b></li>
+<li>คืนค่าได้<b>ก้อนเดียว</b> — ถ้ามีหลายก้อนให้ครอบด้วย <span class="ic">&lt;&gt;...&lt;/&gt;</span></li>
+<li>ใช้ <span class="ic">className</span> แทน <span class="ic">class</span></li>
+<li>ทุกแท็กต้องปิด แม้แต่ <span class="ic">&lt;img /&gt;</span> <span class="ic">&lt;br /&gt;</span></li>
+<li>ใส่ค่า JavaScript ด้วยปีกกา <span class="ic">{ }</span></li>
+</ul></div>
+<div class="col col-g"><h3>เอาไปใช้</h3>
+<div class="code sm"><span class="c">// src/App.jsx</span>
+<span class="k">import</span> LineCard <span class="k">from</span> <span class="s">'./components/LineCard'</span>
+
+<span class="k">export default function</span> <span class="f">App</span>() {
+  <span class="k">return</span> (
+    <span class="f">&lt;div&gt;</span>
+      <span class="f">&lt;LineCard /&gt;</span>
+      <span class="f">&lt;LineCard /&gt;</span>   <span class="c">{/* ใช้ซ้ำได้ */}</span>
+    <span class="f">&lt;/div&gt;</span>
+  )
+}</div></div>
+</div></div></section>
+
+<section class="sl"><h2>props — ส่งค่าเข้าไปในชิ้นส่วน</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// รับค่าเข้ามาทาง { } ในวงเล็บ แล้วเอาไปใช้ด้วย { }</span>
+<span class="k">export default function</span> <span class="f">LineCard</span>({ name, qty, target }) {
+  <span class="k">const</span> pct = Math.<span class="f">round</span>(qty / target * <span class="s">100</span>)
+  <span class="k">return</span> (
+    <span class="f">&lt;div</span> className=<span class="s">"card"</span><span class="f">&gt;</span>
+      <span class="f">&lt;h3&gt;</span>{name}<span class="f">&lt;/h3&gt;</span>
+      <span class="f">&lt;p&gt;</span>{qty.<span class="f">toLocaleString</span>()} / {target.<span class="f">toLocaleString</span>()} ชิ้น ({pct}%)<span class="f">&lt;/p&gt;</span>
+    <span class="f">&lt;/div&gt;</span>
+  )
+}
+
+<span class="c">// เรียกใช้ — ส่งค่าเหมือนใส่คุณสมบัติของแท็ก HTML</span>
+<span class="f">&lt;LineCard</span> name=<span class="s">"ASSY 060"</span> qty={<span class="s">1240</span>} target={<span class="s">1500</span>} <span class="f">/&gt;</span>
+<span class="f">&lt;LineCard</span> name=<span class="s">"ASSY 061"</span> qty={<span class="s">980</span>}  target={<span class="s">1000</span>} <span class="f">/&gt;</span></div></div>
+<div class="note">ข้อความใส่ใน <span class="ic">"..."</span> · ตัวเลข/ตัวแปร/ค่าจริง-เท็จ ใส่ใน <span class="ic">{...}</span> · <b>props ส่งลงล่างอย่างเดียว — ลูกแก้ค่าของแม่ไม่ได้</b> (เหมือนใบสั่งงานที่แนบมากับกล่อง จะแก้ใบเองไม่ได้)</div>
+</div></section>
+
+<section class="sl"><h2>state — ค่าที่เปลี่ยนได้ระหว่างใช้งาน</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="k">import</span> { useState } <span class="k">from</span> <span class="s">'react'</span>
+
+<span class="k">export default function</span> <span class="f">Counter</span>() {
+  <span class="c">//      ค่าปัจจุบัน  ตัวสั่งเปลี่ยนค่า        ค่าเริ่มต้น</span>
+  <span class="k">const</span> [qty,        setQty]        = <span class="f">useState</span>(<span class="s">0</span>)
+
+  <span class="k">return</span> (
+    <span class="f">&lt;div&gt;</span>
+      <span class="f">&lt;p&gt;</span>นับได้ {qty} ชิ้น<span class="f">&lt;/p&gt;</span>
+      <span class="f">&lt;button</span> onClick={() =&gt; <span class="f">setQty</span>(qty + <span class="s">1</span>)}<span class="f">&gt;</span>+1<span class="f">&lt;/button&gt;</span>
+      <span class="f">&lt;button</span> onClick={() =&gt; <span class="f">setQty</span>(<span class="s">0</span>)}<span class="f">&gt;</span>เริ่มใหม่<span class="f">&lt;/button&gt;</span>
+    <span class="f">&lt;/div&gt;</span>
+  )
+}</div></div>
+<div class="two">
+<div class="col col-g"><h3>เกิดอะไรขึ้นตอนกดปุ่ม</h3><ul>
+<li>เรียก <span class="ic">setQty</span> → React รู้ว่าข้อมูลเปลี่ยน</li>
+<li>React รันฟังก์ชันนี้ใหม่ทั้งอัน</li>
+<li>วาดเฉพาะส่วนที่ต่างจากเดิม</li></ul></div>
+<div class="col col-b"><h3>⚠️ ห้ามทำ</h3><ul>
+<li><span class="ic">qty = qty + 1</span> ← หน้าจอไม่ขยับ</li>
+<li>ต้องผ่าน <span class="ic">setQty</span> เท่านั้น</li>
+<li>ของที่<b>เปลี่ยนแล้วต้องเห็นบนจอ</b> = ต้องเป็น state</li></ul></div>
+</div></div></section>
+
+<section class="sl"><h2>แสดงรายการ — <span class="ic">map</span> + <span class="ic">key</span></h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="k">const</span> [rows, setRows] = <span class="f">useState</span>([])   <span class="c">// เริ่มด้วย [] ว่างเสมอ ห้ามเป็น undefined</span>
+
+<span class="k">return</span> (
+  <span class="f">&lt;table&gt;</span>
+    <span class="f">&lt;thead&gt;&lt;tr&gt;&lt;th&gt;</span>ไลน์<span class="f">&lt;/th&gt;&lt;th&gt;</span>ดี<span class="f">&lt;/th&gt;&lt;th&gt;</span>เสีย<span class="f">&lt;/th&gt;&lt;/tr&gt;&lt;/thead&gt;</span>
+    <span class="f">&lt;tbody&gt;</span>
+      {rows.<span class="f">map</span>(r =&gt; (
+        <span class="f">&lt;tr</span> key={r.id}<span class="f">&gt;</span>              <span class="c">{/* ★ key ต้องไม่ซ้ำกัน */}</span>
+          <span class="f">&lt;td&gt;</span>{r.line_name}<span class="f">&lt;/td&gt;</span>
+          <span class="f">&lt;td&gt;</span>{r.qty_ok}<span class="f">&lt;/td&gt;</span>
+          <span class="f">&lt;td&gt;</span>{r.qty_ng}<span class="f">&lt;/td&gt;</span>
+        <span class="f">&lt;/tr&gt;</span>
+      ))}
+    <span class="f">&lt;/tbody&gt;</span>
+  <span class="f">&lt;/table&gt;</span>
+)</div></div>
+<div class="note">⚠️ <b><span class="ic">key</span> คืออะไร:</b> ป้ายชื่อให้ React รู้ว่าแถวไหนคือแถวไหน · ไม่ใส่ = ลบแถวกลางแล้ว<b>ข้อมูลในช่องกรอกสลับแถวกัน</b> · ใช้ <span class="ic">id</span> จากฐานข้อมูลเสมอ <b>อย่าใช้ลำดับ (index)</b> เพราะพอเรียงใหม่ ลำดับก็เปลี่ยน</div>
+</div></section>
+
+<section class="sl"><h2>เงื่อนไข — ซ่อน/แสดงตามสถานการณ์</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// 1) แสดงเมื่อจริงเท่านั้น — ใช้ &amp;&amp;</span>
+{loading &amp;&amp; <span class="f">&lt;p&gt;</span>กำลังโหลด…<span class="f">&lt;/p&gt;</span>}
+{rows.length === <span class="s">0</span> &amp;&amp; <span class="f">&lt;p&gt;</span>ยังไม่มีข้อมูลของวันนี้<span class="f">&lt;/p&gt;</span>}
+
+<span class="c">// 2) เลือกอย่างใดอย่างหนึ่ง — ใช้ ? :</span>
+{qty_ng &gt; <span class="s">0</span>
+  ? <span class="f">&lt;span</span> style={{ color: <span class="s">'#c00'</span> }}<span class="f">&gt;</span>มีของเสีย {qty_ng} ชิ้น<span class="f">&lt;/span&gt;</span>
+  : <span class="f">&lt;span</span> style={{ color: <span class="s">'#1a7d38'</span> }}<span class="f">&gt;</span>ไม่มีของเสีย<span class="f">&lt;/span&gt;</span>}
+
+<span class="c">// 3) แสดงปุ่มตามสิทธิ์ — แบบที่ ESM ใช้จริงทุกหน้า</span>
+{<span class="f">can</span>(<span class="s">'daily_report:edit'</span>, role) &amp;&amp; <span class="f">&lt;button</span> onClick={save}<span class="f">&gt;</span>บันทึก<span class="f">&lt;/button&gt;</span>}</div></div>
+<div class="note">⚠️ <b>กับดัก:</b> <span class="ic">{rows.length &amp;&amp; ...}</span> เมื่อ length เป็น 0 จะพิมพ์เลข <b>0</b> ออกมาบนจอ เพราะ 0 ไม่ใช่ค่าเท็จในสายตา JSX — เขียน <span class="ic">rows.length &gt; 0 &amp;&amp;</span> ให้ชัดเจนเสมอ</div>
+</div></section>
+
+<section class="sl"><h2>ฟอร์ม — ผูกช่องกรอกกับ state</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="k">const</span> [form, setForm] = <span class="f">useState</span>({ line_name: <span class="s">''</span>, qty_ok: <span class="s">''</span>, qty_ng: <span class="s">''</span> })
+
+<span class="k">const</span> <span class="f">set</span> = (field, value) =&gt; <span class="f">setForm</span>(f =&gt; ({ ...f, [field]: value }))
+<span class="c">//                                        ↑ ...f = ก๊อปค่าเดิมทั้งหมด แล้วทับเฉพาะช่องที่แก้</span>
+
+<span class="k">return</span> (
+  <span class="f">&lt;div&gt;</span>
+    <span class="f">&lt;input</span> value={form.line_name}
+           onChange={e =&gt; <span class="f">set</span>(<span class="s">'line_name'</span>, e.target.value)}
+           placeholder=<span class="s">"ชื่อไลน์"</span> <span class="f">/&gt;</span>
+
+    <span class="f">&lt;input</span> type=<span class="s">"number"</span> value={form.qty_ok}
+           onChange={e =&gt; <span class="f">set</span>(<span class="s">'qty_ok'</span>, e.target.value)} <span class="f">/&gt;</span>
+
+    <span class="f">&lt;button</span> disabled={!form.line_name} onClick={save}<span class="f">&gt;</span>บันทึก<span class="f">&lt;/button&gt;</span>
+  <span class="f">&lt;/div&gt;</span>          <span class="c">{/* ↑ ยังไม่กรอกไลน์ = กดไม่ได้ กันข้อมูลขยะตั้งแต่ต้นทาง */}</span>
+)</div></div>
+<div class="note ok">รูปแบบนี้เรียกว่า <b>controlled input</b> — ค่าในช่องกับค่าใน state เป็นตัวเดียวกันเสมอ · ทุกฟอร์มใน ESM เขียนแบบนี้หมด ตั้งแต่เช็คชื่อยันใบแจ้งซ่อม</div>
+</div></section>
+
+<section class="sl"><h2>useEffect — ทำงานตอนเปิดหน้า</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="k">import</span> { useState, useEffect } <span class="k">from</span> <span class="s">'react'</span>
+
+<span class="k">const</span> [rows, setRows]     = <span class="f">useState</span>([])
+<span class="k">const</span> [loading, setLoading] = <span class="f">useState</span>(<span class="s">true</span>)
+<span class="k">const</span> [workDate, setWorkDate] = <span class="f">useState</span>(<span class="f">getWorkDate</span>())
+
+<span class="f">useEffect</span>(() =&gt; {
+  <span class="k">let</span> alive = <span class="s">true</span>                              <span class="c">// ★ กันคำตอบเก่ามาทับจอใหม่</span>
+  <span class="f">setLoading</span>(<span class="s">true</span>)
+  ;(<span class="k">async</span> () =&gt; {
+    <span class="k">const</span> { data, error } = <span class="k">await</span> supabase
+      .<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">select</span>(<span class="s">'*'</span>).<span class="f">eq</span>(<span class="s">'work_date'</span>, workDate)
+    <span class="k">if</span> (!alive) <span class="k">return</span>                           <span class="c">// ผู้ใช้เปลี่ยนวันไปแล้ว — ทิ้งคำตอบนี้</span>
+    <span class="k">if</span> (error) <span class="f">toast</span>.<span class="f">error</span>(<span class="s">'โหลดข้อมูลไม่สำเร็จ: '</span> + error.message)
+    <span class="f">setRows</span>(data || [])
+    <span class="f">setLoading</span>(<span class="s">false</span>)
+  })()
+  <span class="k">return</span> () =&gt; { alive = <span class="s">false</span> }                 <span class="c">// ทำความสะอาดตอนออกจากหน้า</span>
+}, [workDate])   <span class="c">// ← รายการนี้เปลี่ยนเมื่อไหร่ ให้ทำใหม่เมื่อนั้น</span></div></div>
+<div class="note">⚠️ <b>บั๊กจริงในระบบเรา:</b> ไม่มีตัว <span class="ic">alive</span> — ผู้ใช้กดเปลี่ยนกะเร็วๆ แล้วคำตอบของกะเก่ากลับมาทีหลัง <b>ทับข้อมูลกะใหม่บนจอ</b> · เกิดซ้ำ 3 รอบใน Daily Report กว่าจะจับได้</div>
+</div></section>
+
+<section class="sl"><h2>⚠️ กฎเหล็กของ Hooks</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">useState / useEffect ต้องอยู่บนสุดเสมอ</div><ul>
+<li>ห้ามวางไว้<b>หลัง</b> <span class="ic">if (loading) return ...</span></li>
+<li>ห้ามวางใน <span class="ic">if</span> · ใน <span class="ic">for</span> · ในฟังก์ชันย่อย</li>
+<li>ผิดกฎ = <b>ทั้งหน้าขึ้น error สีแดงเต็มจอ</b> (React error #310)</li>
+<li>เคสจริง: หน้าแจ้งซ่อมและหน้าเข้าสู่ระบบพังมาแล้วด้วยเหตุนี้ — ตอนนี้เราใส่ตัวตรวจไว้ในขั้นตอน <span class="ic">npm run build</span> แล้ว <b>ผิดกฎนี้จะ build ไม่ผ่านตั้งแต่บนเครื่องตัวเอง</b></li>
+</ul></div>
+<div class="note ok"><b>วิธีจำง่ายๆ:</b> เขียน <span class="ic">useState</span>/<span class="ic">useEffect</span> ให้ครบก่อน แล้วค่อยเขียน <span class="ic">if</span> และ <span class="ic">return</span> — ไล่จากบนลงล่างเสมอ ไม่มีข้อยกเว้น</div>
+</div></section>
+
+<!-- ══ SEC 5 ══ -->
+<section class="sl sec"><div class="sec-num">5</div><h2>หลายหน้าใน 1 เว็บ</h2>
+<div class="sec-sub">โครงโปรเจคที่โตจาก 1 หน้าเป็น 70 หน้าได้</div><div class="sec-time">⏱ 20 นาที</div></section>
+
+<section class="sl"><h2>จัดไฟล์ยังไงไม่ให้รก</h2>
+<div class="bd"><div class="two">
+<div class="code sm">src/
+├── App.jsx          <span class="c">← เมนู + รายชื่อหน้าทั้งหมด</span>
+├── main.jsx         <span class="c">← จุดสตาร์ท</span>
+├── index.css        <span class="c">← สี/ฟอนต์กลาง</span>
+├── supabaseClient.js <span class="c">← ตัวต่อฐานข้อมูล</span>
+│
+├── <b>pages/</b>           <span class="c">← 1 ไฟล์ = 1 หน้าจอ</span>
+│   ├── DailyReport.jsx
+│   ├── Checkin.jsx
+│   └── OEEAnalytics.jsx
+│
+├── <b>components/</b>      <span class="c">← ชิ้นส่วนที่หลายหน้าใช้ร่วม</span>
+│   ├── PageHeader.jsx
+│   ├── LineSelect.jsx
+│   └── Toast.jsx
+│
+└── <b>utils/</b>           <span class="c">← สูตร/กฎ ที่ไม่มีหน้าตา</span>
+    ├── permissions.js
+    └── dateFormat.js</div>
+<div class="col col-g"><h3>กฎการตัดสินใจ 3 ข้อ</h3><ul>
+<li><b>มีหน้าตา + เป็นหน้าเต็ม</b> → <span class="ic">pages/</span></li>
+<li><b>มีหน้าตา + ใช้ซ้ำหลายหน้า</b> → <span class="ic">components/</span></li>
+<li><b>ไม่มีหน้าตา เป็นสูตร/กฎ</b> → <span class="ic">utils/</span></li>
+</ul>
+<div class="note ok" style="margin-top:14px"><b>เกณฑ์ตัดสินง่ายๆ:</b> ถ้าโค้ดชุดเดิมถูกก๊อปไปวางเป็นครั้งที่ <b>2</b> — ยังพอทน · ครั้งที่ <b>3</b> = ต้องย้ายเข้า <span class="ic">components/</span> หรือ <span class="ic">utils/</span> ทันที</div>
+<div class="note" style="margin-top:10px">⚠️ ที่เจ็บที่สุดคือ<b>สูตรเดียวกันอยู่ 3 ที่</b> แล้วแก้ไม่ครบ → หน้า A กับหน้า B โชว์ตัวเลขไม่ตรงกัน แล้วไม่มีใครรู้ว่าอันไหนถูก</div>
+</div>
+</div></div></section>
+
+<section class="sl"><h2>React Router — สลับหน้าโดยไม่โหลดใหม่</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// ติดตั้งก่อน:  npm install react-router-dom</span>
+<span class="k">import</span> { BrowserRouter, Routes, Route, Link } <span class="k">from</span> <span class="s">'react-router-dom'</span>
+
+<span class="k">export default function</span> <span class="f">App</span>() {
+  <span class="k">return</span> (
+    <span class="f">&lt;BrowserRouter&gt;</span>
+      <span class="f">&lt;nav&gt;</span>
+        <span class="f">&lt;Link</span> to=<span class="s">"/"</span><span class="f">&gt;</span>หน้าแรก<span class="f">&lt;/Link&gt;</span>
+        <span class="f">&lt;Link</span> to=<span class="s">"/daily"</span><span class="f">&gt;</span>บันทึกยอดผลิต<span class="f">&lt;/Link&gt;</span>   <span class="c">{/* ห้ามใช้ &lt;a href&gt; */}</span>
+      <span class="f">&lt;/nav&gt;</span>
+
+      <span class="f">&lt;Routes&gt;</span>
+        <span class="f">&lt;Route</span> path=<span class="s">"/"</span>      element={<span class="f">&lt;Home /&gt;</span>} <span class="f">/&gt;</span>
+        <span class="f">&lt;Route</span> path=<span class="s">"/daily"</span> element={<span class="f">&lt;DailyLog /&gt;</span>} <span class="f">/&gt;</span>
+      <span class="f">&lt;/Routes&gt;</span>
+    <span class="f">&lt;/BrowserRouter&gt;</span>
+  )
+}</div></div>
+<div class="two">
+<div class="col col-b"><h3>ทำไมห้ามใช้ <span class="ic">&lt;a href&gt;</span></h3><ul>
+<li><span class="ic">&lt;a&gt;</span> = โหลดเว็บใหม่ทั้งอัน จอกระพริบ ข้อมูลที่ค้างอยู่หายหมด</li>
+<li><span class="ic">&lt;Link&gt;</span> = สลับเฉพาะเนื้อหา เร็วกว่ามาก</li></ul></div>
+<div class="col col-g"><h3>สั่งเปลี่ยนหน้าจากในโค้ด</h3>
+<div class="code sm"><span class="k">const</span> navigate = <span class="f">useNavigate</span>()
+<span class="c">// เซฟเสร็จแล้วพากลับหน้ารายการ</span>
+<span class="f">navigate</span>(<span class="s">'/daily'</span>)</div></div>
+</div></div></section>
+
+<section class="sl"><h2>70 หน้าแต่ยังเปิดเร็ว — โหลดเฉพาะหน้าที่เปิด</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// แบบธรรมดา: โหลดโค้ดของทุกหน้าตั้งแต่เปิดเว็บ (70 หน้า = ช้ามาก)</span>
+<span class="k">import</span> DailyReport <span class="k">from</span> <span class="s">'./pages/DailyReport'</span>
+
+<span class="c">// แบบที่ ESM ใช้: โหลดตอนที่ผู้ใช้กดเข้าหน้านั้นจริงๆ เท่านั้น</span>
+<span class="k">const</span> DailyReport = <span class="f">lazy</span>(() =&gt; <span class="k">import</span>(<span class="s">'./pages/DailyReport'</span>))
+
+<span class="f">&lt;Suspense</span> fallback={<span class="f">&lt;div&gt;</span>กำลังโหลด…<span class="f">&lt;/div&gt;</span>}<span class="f">&gt;</span>
+  <span class="f">&lt;Routes&gt;</span> … <span class="f">&lt;/Routes&gt;</span>
+<span class="f">&lt;/Suspense&gt;</span></div></div>
+<div class="note ok"><b>ผลจริง:</b> ระบบมี 70 หน้า แต่ตอนเปิดครั้งแรกโหลดแค่โครง + หน้าที่กำลังดู — <b>แท็บเล็ตหน้าไลน์กับ 4G ยังเปิดไหว</b></div>
+<div class="note">⚠️ ผลข้างเคียงที่ต้องรู้: พอ deploy เวอร์ชันใหม่ ไฟล์ย่อยของเวอร์ชันเก่าจะหายจากเซิร์ฟเวอร์ · แท็บที่เปิดค้างไว้ข้ามคืนแล้วกดเปลี่ยนหน้า = <b>จอดำเงียบๆ</b> · เราแก้ด้วยการดักเหตุการณ์นี้แล้วสั่งโหลดหน้าใหม่ให้อัตโนมัติ 1 ครั้ง (อยู่ใน <span class="ic">src/main.jsx</span>)</div>
+</div></section>
+
+<!-- ══ SEC 6 ══ -->
+<section class="sl sec"><div class="sec-num">6</div><h2>ฐานข้อมูล — Supabase</h2>
+<div class="sec-sub">เก็บข้อมูลจริง · ล็อกอิน · สิทธิ์</div><div class="sec-time">⏱ 45 นาที</div></section>
+
+<section class="sl"><h2>Supabase ให้อะไรเรามาบ้าง (ฟรี)</h2>
+<div class="bd"><div class="three">
+<div class="col col-g"><h3>🗄️ ฐานข้อมูล</h3><ul>
+<li>PostgreSQL ตัวจริง</li><li>สร้างตารางผ่านหน้าเว็บ</li><li>มีหน้ารันคำสั่ง SQL ให้</li></ul></div>
+<div class="col col-b"><h3>🔑 ระบบล็อกอิน</h3><ul>
+<li>สมัคร/เข้าสู่ระบบ/ลืมรหัส</li><li>จำสถานะข้ามการปิดเบราว์เซอร์</li><li><b>ไม่ต้องเขียนเองเลย</b></li></ul></div>
+<div class="col col-a"><h3>📦 ที่เก็บไฟล์</h3><ul>
+<li>รูป · PDF · ลายเซ็น</li><li>ได้ลิงก์รูปมาใช้ทันที</li><li>ESM เก็บรูปพนักงาน/จุดตรวจไว้ที่นี่</li></ul></div>
+</div>
+<div class="note ok"><b>สิ่งที่ทำให้มันต่างจากเมื่อก่อน:</b> พอสร้างตารางเสร็จ <b>Supabase สร้างช่องทางให้เว็บเรียกใช้ให้อัตโนมัติ</b> — ไม่ต้องเขียนโปรแกรมฝั่งเซิร์ฟเวอร์เองสักบรรทัด นี่คือเหตุผลที่คนเดียวทำทั้งระบบได้</div>
+<div class="note">ระบบ ESM ใช้ <b>2 โปรเจคแยกกัน</b>: Main (คน · สิทธิ์ · 4M) และ DR (ข้อมูลผลิตรายวัน) — ตอนเขียนโค้ดต้องรู้ว่าตารางที่จะเรียกอยู่ฝั่งไหน <b>เรียกผิดฝั่ง = ไม่เจอตาราง</b></div>
+</div></section>
+
+<section class="sl"><div class="tag">ลงมือทำ</div><h2>ออกแบบตารางแรก</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">-- รันในหน้า SQL Editor ของ Supabase</span>
+<span class="k">create table</span> daily_logs (
+  id          <span class="k">bigserial primary key</span>,        <span class="c">-- เลขประจำแถว ระบบแจกให้เอง</span>
+  work_date   <span class="k">date not null</span>,                <span class="c">-- วันงาน  '2026-09-08'</span>
+  shift       <span class="k">text not null default</span> <span class="s">'day'</span>,  <span class="c">-- กะ day / night</span>
+  line_name   <span class="k">text not null</span>,                <span class="c">-- ชื่อไลน์</span>
+  qty_ok      <span class="k">int  not null default</span> <span class="s">0</span>,     <span class="c">-- จำนวนดี</span>
+  qty_ng      <span class="k">int  not null default</span> <span class="s">0</span>,     <span class="c">-- จำนวนเสีย</span>
+  note        <span class="k">text</span>,                         <span class="c">-- หมายเหตุ (ว่างได้)</span>
+  created_at  <span class="k">timestamptz default now</span>()     <span class="c">-- เวลาที่บันทึก</span>
+);</div></div>
+<div class="two">
+<div class="col col-g"><h3>ชนิดข้อมูลที่ใช้จริง 5 ตัว</h3><ul>
+<li><span class="ic">text</span> — ข้อความทุกแบบ</li><li><span class="ic">int</span> / <span class="ic">numeric</span> — จำนวนเต็ม / มีทศนิยม</li>
+<li><span class="ic">date</span> — วันที่ล้วน</li><li><span class="ic">timestamptz</span> — วันที่+เวลา</li><li><span class="ic">boolean</span> — จริง/เท็จ</li></ul></div>
+<div class="col col-b"><h3>3 ข้อที่ต้องคิดตั้งแต่ตอนสร้าง</h3><ul>
+<li><b>อะไรห้ามว่าง</b> → ใส่ <span class="ic">not null</span></li>
+<li><b>ค่าตั้งต้นคืออะไร</b> → ใส่ <span class="ic">default</span></li>
+<li><b>ใครบันทึก เมื่อไหร่</b> → เก็บไว้เสมอ ไม่งั้นสอบกลับไม่ได้</li></ul></div>
+</div></div></section>
+
+<section class="sl"><h2>ต่อจากโค้ด — 2 ขั้นตอน</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// 1) ไฟล์ .env ที่รากโปรเจค  (และเขียน .env ไว้ใน .gitignore ด้วย!)</span>
+VITE_SUPABASE_URL=https://xxxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOi...</div>
+<div class="code"><span class="c">// 2) src/supabaseClient.js  — โค้ดจริงจากระบบ ESM</span>
+<span class="k">import</span> { createClient } <span class="k">from</span> <span class="s">'@supabase/supabase-js'</span>
+
+<span class="k">const</span> supabaseUrl     = <span class="k">import</span>.meta.env.VITE_SUPABASE_URL
+<span class="k">const</span> supabaseAnonKey = <span class="k">import</span>.meta.env.VITE_SUPABASE_ANON_KEY
+
+<span class="k">export const</span> supabase = <span class="f">createClient</span>(supabaseUrl, supabaseAnonKey)</div></div>
+<div class="note">⚠️ ชื่อตัวแปรใน Vite <b>ต้องขึ้นต้นด้วย <span class="ic">VITE_</span></b> ไม่งั้นอ่านไม่เจอ (เป็นค่าว่าง แล้วพังตอนเรียกใช้) · แก้ไฟล์ <span class="ic">.env</span> แล้วต้อง<b>ปิด-เปิด <span class="ic">npm run dev</span> ใหม่</b> เสมอ</div>
+<div class="note ok"><b>anon key เปิดเผยได้</b> — มันถูกส่งไปอยู่ในเบราว์เซอร์ทุกคนอยู่แล้ว ตัวที่กันข้อมูลจริงคือ <b>RLS</b> ในสไลด์ถัดๆ ไป · แต่ <span class="ic">service_role key</span> <b>ห้ามเอามาไว้ฝั่งหน้าเว็บเด็ดขาด</b></div>
+</div></section>
+
+<section class="sl"><h2>4 คำสั่งที่ใช้กับข้อมูล</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// อ่าน — เลือกคอลัมน์ที่ใช้จริง ไม่ต้อง * ทั้งหมด</span>
+<span class="k">const</span> { data, error } = <span class="k">await</span> supabase
+  .<span class="f">from</span>(<span class="s">'daily_logs'</span>)
+  .<span class="f">select</span>(<span class="s">'id, work_date, line_name, qty_ok, qty_ng'</span>)
+  .<span class="f">eq</span>(<span class="s">'work_date'</span>, <span class="s">'2026-09-08'</span>)     <span class="c">// เท่ากับ</span>
+  .<span class="f">gt</span>(<span class="s">'qty_ng'</span>, <span class="s">0</span>)                    <span class="c">// มากกว่า</span>
+  .<span class="f">order</span>(<span class="s">'line_name'</span>)                 <span class="c">// เรียง</span>
+  .<span class="f">limit</span>(<span class="s">200</span>)                        <span class="c">// เอาเท่าที่ใช้</span>
+
+<span class="c">// เพิ่มแถวใหม่</span>
+<span class="k">await</span> supabase.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">insert</span>({ work_date, line_name, qty_ok: <span class="s">1240</span> })
+
+<span class="c">// แก้แถวเดิม — ★ ต้องมี .eq() เสมอ ไม่งั้นแก้ทั้งตาราง</span>
+<span class="k">await</span> supabase.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">update</span>({ qty_ng: <span class="s">6</span> }).<span class="f">eq</span>(<span class="s">'id'</span>, <span class="s">12</span>)
+
+<span class="c">// ลบ — ★ ต้องมี .eq() เสมอ</span>
+<span class="k">await</span> supabase.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">delete</span>().<span class="f">eq</span>(<span class="s">'id'</span>, <span class="s">12</span>)</div></div>
+<div class="note">⚠️ <b>ลืม <span class="ic">.eq()</span> ใน update/delete = แก้/ลบทั้งตาราง</b> และมันจะรายงานว่า "สำเร็จ" ด้วย · ทดสอบกับข้อมูลจริงเมื่อไหร่ เจ็บเมื่อนั้น — <b>เขียน <span class="ic">.eq()</span> ก่อนเขียนอย่างอื่นเสมอ</b></div>
+</div></section>
+
+<section class="sl"><h2>⚠️ กฎเหล็กข้อ 1 ของระบบเรา</h2>
+<div class="bd"><div class="bigwarn"><div class="bw-t">คำสั่งฐานข้อมูล "ไม่โวยวาย" เวลาล้มเหลว</div><ul>
+<li>มันคืน <span class="ic">{ data, error }</span> เสมอ — <b>ไม่ระเบิด ไม่หยุดโปรแกรม</b></li>
+<li>เขียน <span class="ic">const { data } = await …</span> เฉยๆ = <b>กลืน error 100%</b> · คิวรีล้มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล"</li>
+<li>ผู้ใช้เห็น "บันทึกสำเร็จ" ทั้งที่ไม่มีอะไรถูกบันทึกเลย</li>
+</ul></div>
+<div class="code sm"><span class="c">// ทางแก้ที่ ESM ใช้ทั้งระบบ — src/utils/dbWrite.js (กวาดครบ 69 จุดแล้ว)</span>
+<span class="k">export function</span> <span class="f">checkWrite</span>(res, label) {
+  <span class="k">if</span> (res?.error) { <span class="f">toast</span>.<span class="f">error</span>(`${label}ไม่สำเร็จ: ${res.error.message}`); <span class="k">return</span> <span class="s">false</span> }
+  <span class="k">return</span> <span class="s">true</span>
+}
+<span class="c">// วิธีใช้ — ครอบทุกครั้งที่เขียนข้อมูล</span>
+<span class="f">checkWrite</span>(<span class="k">await</span> supabase.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">insert</span>(row), <span class="s">'บันทึกยอดผลิต'</span>)</div>
+</div></section>
+
+<section class="sl"><h2>⚠️ อีก 2 กับดักที่ทำข้อมูลหายเงียบ</h2>
+<div class="bd"><div class="bls">
+<div class="bl warn"><div class="bl-t">1. ดึงข้อมูลได้สูงสุด 1,000 แถวต่อครั้ง</div><div class="bl-d">เกินจากนั้น<b>หายไปเฉยๆ ไม่มี error</b> · ตารางสิทธิ์ของเราโตเกิน 1,000 แถวแล้วครั้งหนึ่ง → แถวที่เพิ่มทีหลังหายจากระบบ = <b>ตั้งสิทธิ์ถูกแล้วแต่ปุ่มไม่โผล่</b> หาสาเหตุอยู่หลายวัน<br>ทางแก้: แบ่งดึงทีละหน้า และ <b>ต้องสั่งเรียงลำดับ (<span class="ic">order</span>) ให้ครบทุกครั้ง</b> ไม่งั้นหน้า 1 กับหน้า 2 ไม่ต่อกัน</div></div>
+<div class="bl warn"><div class="bl-t">2. สิทธิ์ปฏิเสธการแก้/ลบ = "สำเร็จ 0 แถว ไม่มี error"</div><div class="bl-d">มีแต่การ <b>เพิ่มแถว</b> เท่านั้นที่ฟ้องกลับมา · การแก้และลบที่ถูกปฏิเสธจะเงียบสนิท<br>ทางแก้: ปุ่มที่ผลลัพธ์สำคัญ ให้ต่อท้ายด้วย <span class="ic">.select('id')</span> แล้ว<b>นับแถวที่ได้กลับมา</b> — ได้ 0 แถว = ยังไม่สำเร็จ ห้ามขึ้นข้อความสีเขียว</div></div>
+</div>
+<div class="note ok"><b>หลักการเดียวที่ครอบทั้ง 3 ข้อ:</b> <b>ห้ามล้มเหลวเงียบ</b> — ระบบที่บอกว่า "สำเร็จ" ทั้งที่ล้มเหลว อันตรายกว่าระบบที่พังดังๆ เพราะไม่มีใครไปตามแก้</div>
+</div></section>
+
+<section class="sl"><h2>RLS — ด่านความปลอดภัยของตาราง</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">-- เปิดด่านให้ตาราง (ค่าเริ่มต้นของ Supabase คือ "เปิดแล้ว")</span>
+<span class="k">alter table</span> daily_logs <span class="k">enable row level security</span>;
+
+<span class="c">-- ★ เปิดด่านแล้วยังไม่เขียนกฎ = ไม่มีใครเห็นอะไรเลย แม้แต่ตัวเอง</span>
+
+<span class="c">-- กฎที่ 1: คนที่ล็อกอินแล้ว อ่านได้ทุกแถว</span>
+<span class="k">create policy</span> <span class="s">"read for logged-in"</span> <span class="k">on</span> daily_logs
+  <span class="k">for select to</span> authenticated <span class="k">using</span> (<span class="s">true</span>);
+
+<span class="c">-- กฎที่ 2: คนที่ล็อกอินแล้ว เพิ่มแถวได้</span>
+<span class="k">create policy</span> <span class="s">"insert for logged-in"</span> <span class="k">on</span> daily_logs
+  <span class="k">for insert to</span> authenticated <span class="k">with check</span> (<span class="s">true</span>);</div></div>
+<div class="note">⚠️ <b>อาการที่มือใหม่เจอ 100%:</b> "โค้ดถูกทุกอย่าง แต่ตารางว่างเปล่า" → <b>เกือบทุกครั้งคือลืมเขียนกฎ RLS</b> · เช็คได้ที่แท็บ Network ใน DevTools — ถ้าได้ข้อมูลกลับมาเป็นลิสต์ว่าง ทั้งที่ในตารางมีข้อมูล = ใช่เลย</div>
+<div class="note">⚠️ <b>บทเรียนราคาแพงของเรา:</b> เคยไล่เปลี่ยนกฎหลายตารางพร้อมกันให้ "ปลอดภัยขึ้น" โดยไม่ดูว่าฝั่งไหนเรียกใช้ — ผลคือ<b>ข้อมูลหายทั้งระบบ</b> ต้องย้อนคืนฉุกเฉิน · <b>แก้กฎสิทธิ์ทีละตาราง แล้วทดสอบทีละตัวเสมอ</b></div>
+</div></section>
+
+<section class="sl"><h2>ล็อกอิน — Supabase Auth</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// เข้าสู่ระบบ</span>
+<span class="k">const</span> { data, error } = <span class="k">await</span> supabase.auth.<span class="f">signInWithPassword</span>({ email, password })
+<span class="k">if</span> (error) <span class="f">toast</span>.<span class="f">error</span>(<span class="s">'เข้าสู่ระบบไม่สำเร็จ: '</span> + error.message)
+
+<span class="c">// ออกจากระบบ</span>
+<span class="k">await</span> supabase.auth.<span class="f">signOut</span>()
+
+<span class="c">// เช็คว่าตอนนี้ล็อกอินอยู่มั้ย + คอยฟังเมื่อสถานะเปลี่ยน</span>
+<span class="f">useEffect</span>(() =&gt; {
+  supabase.auth.<span class="f">getSession</span>().<span class="f">then</span>(({ data }) =&gt; <span class="f">setSession</span>(data.session))
+  <span class="k">const</span> { data: sub } = supabase.auth.<span class="f">onAuthStateChange</span>((_e, s) =&gt; <span class="f">setSession</span>(s))
+  <span class="k">return</span> () =&gt; sub.subscription.<span class="f">unsubscribe</span>()
+}, [])
+
+<span class="c">// ยังไม่ล็อกอิน → แสดงหน้าเข้าสู่ระบบแทนทั้งแอป</span>
+<span class="k">if</span> (!session) <span class="k">return</span> <span class="f">&lt;Login /&gt;</span></div></div>
+<div class="note">ระบบ ESM เก็บข้อมูลเสริมของผู้ใช้ (ชื่อ · role · ส่วนงาน · ไลน์) ไว้ในตาราง <span class="ic">profiles</span> แยกต่างหาก แล้วดึงมาตอนล็อกอินสำเร็จ — <b>Supabase Auth เก็บแค่อีเมลกับรหัสผ่าน</b></div>
+</div></section>
+
+<section class="sl"><h2>สิทธิ์ — อย่าเขียน role ตายตัวในโค้ด</h2>
+<div class="bd"><div class="two">
+<div class="col col-b"><h3>❌ แบบที่จะเจ็บทีหลัง</h3>
+<div class="code sm" style="margin-top:8px">{(role === <span class="s">'admin'</span> ||
+  role === <span class="s">'manager'</span> ||
+  role === <span class="s">'supervisor'</span>) &amp;&amp;
+   <span class="f">&lt;button&gt;</span>อนุมัติ<span class="f">&lt;/button&gt;</span>}</div>
+<ul style="margin-top:10px"><li>เพิ่มตำแหน่งใหม่ = <b>ไล่แก้ทุกไฟล์</b></li><li>แก้ไม่ครบ = บางหน้าเห็น บางหน้าไม่เห็น</li><li>ต้อง build + deploy ใหม่ทุกครั้งที่ปรับสิทธิ์</li></ul></div>
+<div class="col col-g"><h3>✅ แบบที่ ESM ใช้</h3>
+<div class="code sm" style="margin-top:8px">{<span class="f">can</span>(<span class="s">'four_m:approve'</span>, role) &amp;&amp;
+   <span class="f">&lt;button&gt;</span>อนุมัติ<span class="f">&lt;/button&gt;</span>}</div>
+<ul style="margin-top:10px"><li>สิทธิ์เก็บใน<b>ตาราง</b> ไม่ใช่ในโค้ด</li><li>หัวหน้าติ๊กเองที่หน้าจัดการสิทธิ์ <b>มีผลทันที</b></li><li>ไม่ต้องแก้โค้ด ไม่ต้อง deploy</li></ul></div>
+</div>
+<div class="note ok"><b>หลักการที่ใช้ได้กับทุกเรื่อง ไม่ใช่แค่สิทธิ์:</b> อะไรที่<b>ผู้ใช้น่าจะอยากเปลี่ยนเอง</b> (สิทธิ์ · ประเภทของเสีย · เลขฟอร์ม · เป้าหมาย) ให้เก็บเป็น<b>ข้อมูลในตาราง</b> อย่าฝังในโค้ด — ไม่งั้นทุกการเปลี่ยนเล็กน้อยต้องรอโปรแกรมเมอร์</div>
+<div class="note">⚠️ และกฎในฐานข้อมูล (RLS) ต้องใช้<b>คีย์เดียวกับที่ปุ่มบนจอเช็ค</b> — ไม่งั้นคนมีปุ่มกดได้ แต่เขียนข้อมูลไม่ได้ (วัดจริงในระบบเราเจอ 5 ตาราง)</div>
+</div></section>
+
+<!-- ══ SEC 7 — WORKSHOP ══ -->
+<section class="sl sec"><div class="sec-num">7</div><h2>แล็บ: หน้าบันทึกยอดผลิต</h2>
+<div class="sec-sub">ทำจริงจนใช้งานได้ — เอาไปต่อยอดที่แผนกตัวเองได้เลย</div><div class="sec-time">⏱ 60 นาที · ทำพร้อมกันทีละขั้น</div></section>
+
+<section class="sl"><div class="tag">โจทย์</div><h2>สเปคที่จะทำให้เสร็จใน 1 ชั่วโมง</h2>
+<div class="bd"><div class="two">
+<div class="col col-g"><h3>ต้องทำได้</h3><ul>
+<li>เลือกวันงาน + กะ</li><li>กรอก ไลน์ / จำนวนดี / จำนวนเสีย / หมายเหตุ</li>
+<li>กดบันทึก แล้วขึ้นในตารางทันที</li><li>แก้และลบแถวที่กรอกผิดได้</li>
+<li>เห็นยอดรวมของวันนั้น + % ของเสีย</li></ul></div>
+<div class="col col-b"><h3>ต้องไม่พลาด (เกณฑ์ผ่าน)</h3><ul>
+<li>ยังไม่กรอกไลน์ = <b>กดบันทึกไม่ได้</b></li>
+<li>บันทึกล้มเหลว = <b>ขึ้นข้อความสีแดง</b> ห้ามเงียบ</li>
+<li>ลบ = <b>ถามยืนยันก่อน</b></li>
+<li>วันที่ต้องเป็น "วันงาน" ไม่ใช่วันตามนาฬิกาสากล</li></ul></div>
+</div>
+<div class="note ok"><b>ทำไมเลือกโจทย์นี้:</b> มันมีครบทุกอย่างที่ระบบงานจริงต้องมี — กรอก · เก็บ · แสดง · แก้ · ลบ · สรุป · กันพลาด · จัดการสิทธิ์ · <b>เข้าใจหน้านี้หน้าเดียว = อ่านออกทั้ง 70 หน้าใน ESM</b></div>
+</div></section>
+
+<section class="sl"><div class="tag">ขั้นที่ 1</div><h2>สร้างตาราง + เปิดสิทธิ์</h2>
+<div class="bd"><div class="codes">
+<div class="code sm"><span class="c">-- Supabase → SQL Editor → วางแล้วกด Run</span>
+<span class="k">create table</span> daily_logs (
+  id bigserial <span class="k">primary key</span>,
+  work_date date <span class="k">not null</span>,
+  shift text <span class="k">not null default</span> <span class="s">'day'</span>,
+  line_name text <span class="k">not null</span>,
+  qty_ok int <span class="k">not null default</span> <span class="s">0</span>,
+  qty_ng int <span class="k">not null default</span> <span class="s">0</span>,
+  note text,
+  created_by text,
+  created_at timestamptz <span class="k">default now</span>()
+);
+<span class="k">alter table</span> daily_logs <span class="k">enable row level security</span>;
+<span class="k">create policy</span> <span class="s">"rw for logged-in"</span> <span class="k">on</span> daily_logs
+  <span class="k">for all to</span> authenticated <span class="k">using</span> (<span class="s">true</span>) <span class="k">with check</span> (<span class="s">true</span>);
+
+<span class="c">-- ใส่ข้อมูลตัวอย่าง 2 แถว ไว้ทดสอบว่าหน้าอ่านข้อมูลได้จริง</span>
+<span class="k">insert into</span> daily_logs (work_date, line_name, qty_ok, qty_ng) <span class="k">values</span>
+  (<span class="k">current_date</span>, <span class="s">'ASSY 060'</span>, <span class="s">1240</span>, <span class="s">6</span>),
+  (<span class="k">current_date</span>, <span class="s">'ASSY 061'</span>, <span class="s">980</span>,  <span class="s">0</span>);</div></div>
+<div class="note"><b>เช็คก่อนไปต่อ:</b> เปิดแท็บ Table Editor ต้องเห็น 2 แถวนี้ · ถ้าไม่เห็น = คำสั่งยังไม่ได้รัน หรือรันผิดโปรเจค</div>
+<div class="note ok">งานจริงจะ<b>เก็บคำสั่ง SQL นี้ไว้เป็นไฟล์ในโปรเจค</b>ด้วยเสมอ (ที่ ESM อยู่ใน <span class="ic">supabase/migrations/</span> — มี 361 ไฟล์แล้ว) เพื่อให้รู้ว่าฐานข้อมูลเปลี่ยนอะไรไปบ้าง และย้อนกลับได้</div>
+</div></section>
+
+<section class="sl"><div class="tag">ขั้นที่ 2</div><h2>โครงหน้า + โหลดข้อมูล</h2>
+<div class="bd"><div class="codes">
+<div class="code sm"><span class="c">// src/pages/DailyLog.jsx</span>
+<span class="k">import</span> { useState, useEffect } <span class="k">from</span> <span class="s">'react'</span>
+<span class="k">import</span> { supabase } <span class="k">from</span> <span class="s">'../supabaseClient'</span>
+<span class="k">import</span> { getWorkDate } <span class="k">from</span> <span class="s">'../utils/workDate'</span>
+
+<span class="k">export default function</span> <span class="f">DailyLog</span>() {
+  <span class="k">const</span> [workDate, setWorkDate] = <span class="f">useState</span>(<span class="f">getWorkDate</span>())
+  <span class="k">const</span> [rows, setRows]         = <span class="f">useState</span>([])
+  <span class="k">const</span> [loading, setLoading]   = <span class="f">useState</span>(<span class="s">true</span>)
+
+  <span class="k">const</span> <span class="f">load</span> = <span class="k">async</span> () =&gt; {
+    <span class="f">setLoading</span>(<span class="s">true</span>)
+    <span class="k">const</span> { data, error } = <span class="k">await</span> supabase
+      .<span class="f">from</span>(<span class="s">'daily_logs'</span>)
+      .<span class="f">select</span>(<span class="s">'id, line_name, shift, qty_ok, qty_ng, note'</span>)
+      .<span class="f">eq</span>(<span class="s">'work_date'</span>, workDate)
+      .<span class="f">order</span>(<span class="s">'line_name'</span>)
+    <span class="k">if</span> (error) <span class="f">alert</span>(<span class="s">'โหลดข้อมูลไม่สำเร็จ: '</span> + error.message)   <span class="c">// ห้ามเงียบ</span>
+    <span class="f">setRows</span>(data || [])
+    <span class="f">setLoading</span>(<span class="s">false</span>)
+  }
+
+  <span class="f">useEffect</span>(() =&gt; { <span class="f">load</span>() }, [workDate])   <span class="c">// เปลี่ยนวัน → โหลดใหม่</span></div></div>
+<div class="note">ตอนนี้ยังไม่มีอะไรบนจอ — เปิด DevTools → Console แล้วลอง <span class="ic">console.log(rows)</span> ดูก่อนว่าข้อมูลมาจริงมั้ย · <b>เห็นข้อมูลก่อน แล้วค่อยวาดหน้าจอ</b> เป็นลำดับที่ทำให้แก้ปัญหาง่ายที่สุด</div>
+</div></section>
+
+<section class="sl"><div class="tag">ขั้นที่ 3</div><h2>ฟอร์มบันทึก</h2>
+<div class="bd"><div class="codes">
+<div class="code sm">  <span class="k">const</span> EMPTY = { line_name: <span class="s">''</span>, shift: <span class="s">'day'</span>, qty_ok: <span class="s">''</span>, qty_ng: <span class="s">''</span>, note: <span class="s">''</span> }
+  <span class="k">const</span> [form, setForm] = <span class="f">useState</span>(EMPTY)
+  <span class="k">const</span> <span class="f">set</span> = (k, v) =&gt; <span class="f">setForm</span>(f =&gt; ({ ...f, [k]: v }))
+
+  <span class="k">const</span> <span class="f">save</span> = <span class="k">async</span> () =&gt; {
+    <span class="k">if</span> (!form.line_name.<span class="f">trim</span>()) <span class="k">return</span> <span class="f">alert</span>(<span class="s">'กรุณาเลือกไลน์ก่อน'</span>)
+
+    <span class="k">const</span> { error } = <span class="k">await</span> supabase.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">insert</span>({
+      work_date: workDate,
+      line_name: form.line_name.<span class="f">trim</span>(),
+      shift:     form.shift,
+      qty_ok:    <span class="f">Number</span>(form.qty_ok) || <span class="s">0</span>,      <span class="c">// ★ แปลงข้อความเป็นตัวเลข</span>
+      qty_ng:    <span class="f">Number</span>(form.qty_ng) || <span class="s">0</span>,
+      note:      form.note || <span class="s">null</span>,
+    })
+    <span class="k">if</span> (error) <span class="k">return</span> <span class="f">alert</span>(<span class="s">'บันทึกไม่สำเร็จ: '</span> + error.message)   <span class="c">// ★ ห้ามเงียบ</span>
+
+    <span class="f">setForm</span>(EMPTY)   <span class="c">// ล้างฟอร์มให้พร้อมกรอกแถวถัดไป</span>
+    <span class="f">load</span>()          <span class="c">// ดึงข้อมูลใหม่ให้ตารางอัปเดต</span>
+  }</div></div>
+<div class="note ok"><b>ลำดับที่ถูกต้องของทุกปุ่มบันทึกในระบบงานจริง:</b> ตรวจข้อมูลก่อน → เขียน → <b>เช็ค error</b> → ล้างฟอร์ม → โหลดใหม่ · ขาดขั้น "เช็ค error" ขั้นเดียว = ระบบโกหกผู้ใช้</div>
+</div></section>
+
+<section class="sl"><div class="tag">ขั้นที่ 4</div><h2>ตาราง + ยอดรวม + ลบ</h2>
+<div class="bd"><div class="codes">
+<div class="code sm">  <span class="k">const</span> totalOk = rows.<span class="f">reduce</span>((s, r) =&gt; s + r.qty_ok, <span class="s">0</span>)
+  <span class="k">const</span> totalNg = rows.<span class="f">reduce</span>((s, r) =&gt; s + r.qty_ng, <span class="s">0</span>)
+  <span class="k">const</span> ngPct   = totalOk + totalNg ? (totalNg / (totalOk + totalNg) * <span class="s">100</span>).<span class="f">toFixed</span>(<span class="s">2</span>) : <span class="s">'0.00'</span>
+
+  <span class="k">const</span> <span class="f">remove</span> = <span class="k">async</span> (row) =&gt; {
+    <span class="k">if</span> (!<span class="f">confirm</span>(`ลบยอดของ ${row.line_name} ใช่หรือไม่?`)) <span class="k">return</span>
+    <span class="k">const</span> { data, error } = <span class="k">await</span> supabase
+      .<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">delete</span>().<span class="f">eq</span>(<span class="s">'id'</span>, row.id).<span class="f">select</span>(<span class="s">'id'</span>)
+    <span class="k">if</span> (error)            <span class="k">return</span> <span class="f">alert</span>(<span class="s">'ลบไม่สำเร็จ: '</span> + error.message)
+    <span class="k">if</span> (!data?.length)    <span class="k">return</span> <span class="f">alert</span>(<span class="s">'ลบไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ลบข้อมูล'</span>)  <span class="c">// ★ 0 แถว = ไม่สำเร็จ</span>
+    <span class="f">load</span>()
+  }
+
+  <span class="k">return</span> (
+    <span class="f">&lt;div&gt;</span>
+      <span class="f">&lt;h2&gt;</span>บันทึกยอดผลิต — {workDate}<span class="f">&lt;/h2&gt;</span>
+      <span class="f">&lt;p&gt;</span>ดี {totalOk.<span class="f">toLocaleString</span>()} · เสีย {totalNg.<span class="f">toLocaleString</span>()} · ของเสีย {ngPct}%<span class="f">&lt;/p&gt;</span>
+      {loading &amp;&amp; <span class="f">&lt;p&gt;</span>กำลังโหลด…<span class="f">&lt;/p&gt;</span>}
+      {!loading &amp;&amp; rows.length === <span class="s">0</span> &amp;&amp; <span class="f">&lt;p&gt;</span>ยังไม่มีข้อมูลของวันนี้<span class="f">&lt;/p&gt;</span>}
+      {rows.<span class="f">map</span>(r =&gt; (
+        <span class="f">&lt;div</span> key={r.id}<span class="f">&gt;</span>{r.line_name} · ดี {r.qty_ok} · เสีย {r.qty_ng}
+          <span class="f">&lt;button</span> onClick={() =&gt; <span class="f">remove</span>(r)}<span class="f">&gt;</span>ลบ<span class="f">&lt;/button&gt;</span>
+        <span class="f">&lt;/div&gt;</span>
+      ))}
+    <span class="f">&lt;/div&gt;</span>
+  )
+}</div></div>
+</div></section>
+
+<section class="sl"><div class="tag">ขั้นที่ 5</div><h2>วันงาน — สูตรที่ต้องมีในโรงงาน</h2>
+<div class="bd"><div class="codes">
+<div class="code"><span class="c">// src/utils/workDate.js — เก็บเป็นไฟล์กลาง ห้ามเขียนซ้ำในแต่ละหน้า</span>
+
+<span class="c">/** วันงาน: ก่อน 08:00 ให้นับเป็นวันก่อนหน้า (กะดึกทำงานข้ามเที่ยงคืน) */</span>
+<span class="k">export function</span> <span class="f">getWorkDate</span>(now = <span class="k">new</span> <span class="f">Date</span>()) {
+  <span class="k">const</span> d = <span class="k">new</span> <span class="f">Date</span>(now)
+  <span class="k">if</span> (d.<span class="f">getHours</span>() &lt; <span class="s">8</span>) d.<span class="f">setDate</span>(d.<span class="f">getDate</span>() - <span class="s">1</span>)
+  <span class="k">return</span> `${d.<span class="f">getFullYear</span>()}-${<span class="f">String</span>(d.<span class="f">getMonth</span>()+<span class="s">1</span>).<span class="f">padStart</span>(<span class="s">2</span>,<span class="s">'0'</span>)}-${<span class="f">String</span>(d.<span class="f">getDate</span>()).<span class="f">padStart</span>(<span class="s">2</span>,<span class="s">'0'</span>)}`
+}
+
+<span class="c">/** กะปัจจุบัน: 08:00–19:59 = กะเช้า · นอกนั้นกะดึก */</span>
+<span class="k">export const</span> <span class="f">getCurrentShift</span> = () =&gt;
+  (<span class="k">new</span> <span class="f">Date</span>().<span class="f">getHours</span>() &gt;= <span class="s">8</span> &amp;&amp; <span class="k">new</span> <span class="f">Date</span>().<span class="f">getHours</span>() &lt; <span class="s">20</span>) ? <span class="s">'day'</span> : <span class="s">'night'</span></div></div>
+<div class="note">⚠️ <b>ห้ามใช้ <span class="ic">new Date().toISOString()</span> เพื่อหาวันที่งาน</b> — มันคืนเวลาสากลซึ่งช้ากว่าไทย 7 ชั่วโมง · ผลคือช่วงเที่ยงคืนถึงตี 7 <b>ข้อมูลจะไปลงวันที่ก่อนหน้า</b> ทั้งกะดึกทั้งกะ · เราเคยเจอมาแล้ว และตอนนี้เป็นกฎเหล็กข้อแรกในคู่มือโปรเจค</div>
+<div class="note ok">พนักงานเข้ากะดึกตอน 20:00 เลิกตี 8 — <b>งานทั้งกะต้องเป็น "วันงาน" เดียวกัน</b> ไม่งั้นยอดผลิตกะเดียวถูกตัดครึ่งไปคนละวัน แล้วสรุป OEE ผิดทั้งเดือน</div>
+</div></section>
+
+<section class="sl"><h2>เช็คลิสต์ "หน้าที่ใช้ได้จริง" 10 ข้อ</h2>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:6%">✓</th><th style="width:40%">ข้อ</th><th>ทดสอบยังไง</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>ยังไม่มีข้อมูล ก็ไม่พัง</td><td>เปิดหน้าในวันที่ไม่มีข้อมูล ต้องขึ้นข้อความ ไม่ใช่จอขาว</td></tr>
+<tr><td>2</td><td>กำลังโหลดมีสัญญาณบอก</td><td>ต้องเห็น "กำลังโหลด…" ไม่ใช่จอว่างเงียบๆ</td></tr>
+<tr><td>3</td><td>บันทึกล้มเหลวแล้วผู้ใช้รู้</td><td>ตัดเน็ตแล้วกดบันทึก ต้องขึ้นข้อความแดง</td></tr>
+<tr><td>4</td><td>ข้อมูลไม่ครบ กดไม่ได้</td><td>เว้นช่องไลน์แล้วกดบันทึก ต้องถูกกัน</td></tr>
+<tr><td>5</td><td>ตัวเลขเป็นตัวเลขจริง</td><td>กรอก 1000 แล้วยอดรวมต้องบวกถูก ไม่ใช่ต่อข้อความ</td></tr>
+<tr><td>6</td><td>ลบมีการยืนยัน</td><td>กดลบต้องถามก่อน และ 0 แถว = ต้องแจ้งว่าไม่สำเร็จ</td></tr>
+<tr><td>7</td><td>วันที่ใช้วันงาน</td><td>ลองที่เวลาตี 2 ต้องได้วันของเมื่อวาน</td></tr>
+<tr><td>8</td><td>เปิดบนมือถือแล้วยังใช้ได้</td><td>ย่อหน้าต่างเบราว์เซอร์ให้แคบ ต้องไม่ล้นออกข้าง</td></tr>
+<tr><td>9</td><td>สลับวันเร็วๆ แล้วข้อมูลไม่สลับกัน</td><td>กดเปลี่ยนวันรัวๆ 5 ครั้ง ตัวเลขต้องตรงกับวันที่เลือกล่าสุด</td></tr>
+<tr><td>10</td><td><span class="ic">npm run build</span> ผ่าน</td><td>ต้องไม่มี error สีแดง — ผ่านแล้วค่อยส่งขึ้นออนไลน์</td></tr>
+</tbody></table></div>
+<div class="note ok"><b>เอาไปใช้ต่อได้:</b> ทุกหน้าใหม่ใน ESM ก็ต้องผ่าน 10 ข้อนี้ก่อน merge — <b>ไม่ใช่เพราะเป็นกฎ แต่เพราะเคยพลาดทุกข้อมาแล้ว</b></div>
+</div></section>
+
+<!-- ══ SEC 8 ══ -->
+<section class="sl sec"><div class="sec-num">8</div><h2>เอาขึ้นออนไลน์</h2>
+<div class="sec-sub">จากเครื่องตัวเอง → ลิงก์ที่ทุกคนเปิดได้</div><div class="sec-time">⏱ 30 นาที</div></section>
+
+<section class="sl"><h2>Git — 6 คำสั่งที่ใช้ทุกวัน</h2>
+<div class="bd"><div class="codes">
+<div class="code sm">git status                          <span class="c"># ตอนนี้แก้อะไรไปบ้าง (พิมพ์บ่อยที่สุด)</span>
+git checkout -b feature/daily-log   <span class="c"># แตกกิ่งใหม่ไปทำงาน ไม่กระทบของจริง</span>
+git add .                           <span class="c"># เลือกทุกอย่างที่แก้ เตรียมบันทึก</span>
+git commit -m <span class="s">"เพิ่มหน้าบันทึกยอดผลิต"</span>  <span class="c"># บันทึกจุดเซฟ พร้อมคำอธิบาย</span>
+git push -u origin feature/daily-log <span class="c"># ส่งขึ้น GitHub</span>
+git pull origin main                <span class="c"># ดึงงานล่าสุดของคนอื่นลงมา (ทำก่อนเริ่มงานเสมอ)</span></div></div>
+<div class="two">
+<div class="col col-g"><h3>ทำไมต้องแตกกิ่ง (branch)</h3><ul>
+<li><span class="ic">main</span> = ของจริงที่คนใช้อยู่</li><li>ทำงานบนกิ่งของตัวเอง พังก็ไม่กระทบใคร</li>
+<li>เสร็จแล้วค่อยรวมเข้า <span class="ic">main</span> → เว็บอัปเดตอัตโนมัติ</li></ul></div>
+<div class="col col-b"><h3>เขียนคำอธิบาย commit ยังไง</h3><ul>
+<li>✅ "แก้ยอดรวมกะดึกคำนวณผิด"</li><li>❌ "update", "fix", "แก้ไข"</li>
+<li>อีก 6 เดือนคุณจะต้องกลับมาอ่านมันเอง</li></ul></div>
+</div></div></section>
+
+<section class="sl"><h2>Deploy ขึ้น Render — ครั้งเดียวจบ</h2>
+<div class="bd"><div class="sts">
+<div class="st"><div class="st-n">1</div><div><b>push โค้ดขึ้น GitHub ให้เรียบร้อย</b><span>Render จะไปหยิบจากที่นั่น</span></div></div>
+<div class="st"><div class="st-n">2</div><div><b>สร้าง Static Site ใหม่ แล้วเลือก repo ของเรา</b><span>Build command: <span class="ic">npm run build</span> · Publish directory: <span class="ic">dist</span></span></div></div>
+<div class="st"><div class="st-n">3</div><div><b>ใส่ค่าลับใน Environment Variables</b><span><span class="ic">VITE_SUPABASE_URL</span> และ <span class="ic">VITE_SUPABASE_ANON_KEY</span> — ค่าเดียวกับในไฟล์ <span class="ic">.env</span> บนเครื่อง</span></div></div>
+<div class="st"><div class="st-n">4</div><div><b>ตั้ง Redirect/Rewrite: <span class="ic">/*</span> → <span class="ic">/index.html</span></b><span>⚠️ ข้อนี้ลืมบ่อยที่สุด — ไม่ตั้งแล้วผู้ใช้กด F5 บนหน้า <span class="ic">/daily</span> จะได้ <b>404</b> ทั้งที่หน้ามีอยู่จริง</span></div></div>
+<div class="st"><div class="st-n">5</div><div><b>เสร็จแล้ว — ได้ลิงก์มาส่งให้หัวหน้าเปิดจากมือถือได้เลย</b><span>หลังจากนี้ push โค้ดขึ้น <span class="ic">main</span> เมื่อไหร่ เว็บอัปเดตให้เองภายในไม่กี่นาที</span></div></div>
+</div>
+<div class="note ok">แผนฟรีก็พอสำหรับระบบภายใน · ESM ทั้งระบบ (15+ จอหน้างาน) ก็รันแบบนี้</div>
+</div></section>
+
+<section class="sl"><h2>หลัง deploy แล้วต้องคิดถึงอะไรอีก</h2>
+<div class="bd"><div class="bls">
+<div class="bl warn"><div class="bl-t">แท็บที่เปิดค้างจะรันโค้ดเวอร์ชันเก่า</div><div class="bl-d">คนไม่ปิดเบราว์เซอร์ = <b>แก้บั๊กไปแล้วเขายังเจอบั๊กเดิม</b> · ทางแก้: ฝังหมายเลขเวอร์ชันไว้ในเว็บ แล้วให้เว็บเช็คเป็นระยะว่ามีเวอร์ชันใหม่มั้ย ถ้ามีก็โหลดใหม่ให้อัตโนมัติ</div></div>
+<div class="bl warn"><div class="bl-t">จอ TV หน้างานไม่มีใครกด F5</div><div class="bl-d">เคสจริง: จอที่เปิดค้าง 24 ชม. <b>ไม่มีวันรู้ว่ามีเวอร์ชันใหม่</b> เพราะไม่เคยมีการสลับแท็บ · เราต้องเพิ่มตัวเช็คตามเวลา (ทุก 2 ชั่วโมง) ถึงจะได้ของใหม่</div></div>
+<div class="bl warn"><div class="bl-t">เบราว์เซอร์ของจอ TV เก่ากว่าที่คิดมาก</div><div class="bl-d">จอที่ใช้จริงมีเบราว์เซอร์รุ่นเก่ากว่าคอมทั่วไปหลายปี · ใช้ท่า CSS สมัยใหม่บางตัว = <b>ทั้งบรรทัดถูกทิ้งเงียบๆ</b> การ์ดพื้นใสมองไม่เห็น (เกิดจริงมาแล้ว) — <b>ต้องรู้ว่าปลายทางเปิดด้วยเครื่องอะไร ก่อนเลือกใช้ของใหม่</b></div></div>
+<div class="bl"><div class="bl-t">✅ ก่อนส่งของ ให้รันตัวตรวจก่อนเสมอ</div><div class="bl-d">ที่ ESM คำสั่ง <span class="ic">npm run build</span> รวมด่านตรวจไว้ 4 ชั้น (ขนาดเอกสาร → กฎที่ทำแอปพัง → ชุดทดสอบ → แปลงไฟล์) · <b>ไม่ผ่าน = ส่งขึ้นไม่ได้</b> ตั้งใจให้เป็นแบบนั้น</div></div>
+</div></div></section>
+
+<!-- ══ SEC 9 ══ -->
+<section class="sl sec"><div class="sec-num">9</div><h2>บทเรียนจากระบบจริง</h2>
+<div class="sec-sub">ทุกข้อคือของจริงที่เคยพังมาแล้ว</div><div class="sec-time">⏱ 30 นาที</div></section>
+
+<section class="sl"><h2>7 กับดักที่ทำระบบพัง เรียงตามความเจ็บ</h2>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:26%">กับดัก</th><th style="width:37%">อาการที่เห็น</th><th>วิธีกัน</th></tr></thead>
+<tbody>
+<tr><td>ใช้เวลาสากลหาวันที่</td><td>ข้อมูลลงผิดวันช่วงตี 0–7</td><td>ใช้ฟังก์ชันวันงานกลางตัวเดียวทั้งระบบ</td></tr>
+<tr><td>ไม่เช็ค error ตอนเขียนข้อมูล</td><td>ขึ้น "สำเร็จ" แต่ไม่มีอะไรถูกบันทึก</td><td>ครอบทุกจุดเขียนด้วยตัวเช็คกลาง</td></tr>
+<tr><td>ดึงข้อมูลเกิน 1,000 แถว</td><td>ข้อมูลหายเงียบ ไม่มี error</td><td>แบ่งดึงเป็นหน้า + สั่งเรียงลำดับให้ครบ</td></tr>
+<tr><td>สิทธิ์ในฐานข้อมูลไม่ตรงกับปุ่มบนจอ</td><td>กดปุ่มได้ แต่ข้อมูลไม่เปลี่ยน</td><td>กฎในฐานข้อมูลอ้างคีย์สิทธิ์เดียวกับปุ่ม</td></tr>
+<tr><td>คำตอบเก่ามาทับจอใหม่</td><td>สลับกะเร็วๆ แล้วเห็นข้อมูลผิดกะ</td><td>ใส่ตัวยกเลิกก่อนเขียนค่าลงจอ</td></tr>
+<tr><td>วาง hook ผิดที่</td><td>จอแดงทั้งหน้า</td><td>ตัวตรวจในขั้นตอน build จับให้ตั้งแต่ในเครื่อง</td></tr>
+<tr><td>สูตรเดียวกันอยู่หลายที่</td><td>สองหน้าโชว์ตัวเลขไม่ตรงกัน</td><td>ย้ายเข้าไฟล์กลาง ใช้ที่เดียว</td></tr>
+</tbody></table></div>
+<div class="note">สังเกตว่า <b>5 ใน 7 ข้อ "ไม่มี error"</b> — ระบบยังทำงานอยู่ ดูปกติทุกอย่าง แต่ข้อมูลผิด · <b>นี่คือบั๊กประเภทที่แพงที่สุด</b> เพราะกว่าจะรู้ตัวก็ตัดสินใจผิดไปหลายรอบแล้ว</div>
+</div></section>
+
+<section class="sl"><h2>4 หลักคิดที่ใช้ตัดสินใจได้ทุกครั้ง</h2>
+<div class="bd"><div class="bls">
+<div class="bl"><div class="bl-t">1. ของอย่างเดียวกัน ต้องมีที่อยู่ที่เดียว</div><div class="bl-d">สูตรคำนวณ · รายชื่อไลน์ · เลขฟอร์ม · นิยาม "วันงาน" — ก๊อปไปวางที่สองเมื่อไหร่ วันหนึ่งมันจะไม่ตรงกัน แล้วไม่มีใครรู้ว่าอันไหนถูก</div></div>
+<div class="bl"><div class="bl-t">2. เก็บเป็นข้อมูล ดีกว่าฝังในโค้ด</div><div class="bl-d">ถามตัวเองว่า "ผู้ใช้อยากเปลี่ยนเองมั้ย" — ถ้าใช่ ทำเป็นตารางให้เขาแก้เอง · ทุกอย่างที่ฝังในโค้ด = ทุกการเปลี่ยนต้องรอโปรแกรมเมอร์</div></div>
+<div class="bl"><div class="bl-t">3. ห้ามล้มเหลวเงียบ</div><div class="bl-d">พังแล้วบอกดังๆ ดีกว่าพังแล้วเงียบ · ผู้ใช้ที่เห็นข้อความแดงจะโทรมาถาม — ผู้ใช้ที่เห็นข้อความเขียวปลอมๆ จะเชื่อไปอีก 3 เดือน</div></div>
+<div class="bl"><div class="bl-t">4. คิดเผื่อวันที่ต้องถอยกลับ</div><div class="bl-d">ก่อนแก้อะไรใหญ่ ถามว่า <b>"ถ้าพังจะถอยยังไง"</b> · เพิ่มคอลัมน์ใหม่ให้มีค่าตั้งต้น · แก้ทีละอย่าง ไม่แก้ 5 อย่างในครั้งเดียว — ไม่งั้นพังแล้วไม่รู้ว่าตัวไหนทำ</div></div>
+</div></div></section>
+
+<section class="sl"><h2>เอกสาร — สิ่งที่มือใหม่ข้าม แล้วเสียใจทีหลัง</h2>
+<div class="bd"><div class="two">
+<div class="col col-b"><h3>สิ่งที่เกิดขึ้นถ้าไม่เขียน</h3><ul>
+<li>อีก 3 เดือนคุณอ่านโค้ดตัวเองไม่ออก</li>
+<li>คนใหม่เข้ามา ต้องถามคุณทุกเรื่อง</li>
+<li>แก้บั๊กเดิมซ้ำรอบที่สอง เพราะลืมว่าทำไมถึงเขียนแบบนั้น</li>
+<li><b>เอกสารที่ผิด แย่กว่าไม่มีเอกสาร</b></li></ul></div>
+<div class="col col-g"><h3>ที่ ESM เขียนอะไรบ้าง</h3><ul>
+<li><span class="ic">CLAUDE.md</span> — กฎรวมของโปรเจค อ่านก่อนแตะโค้ดทุกครั้ง</li>
+<li><span class="ic">docs/modules/</span> — ความรู้ลึกแยกตามโมดูล</li>
+<li><span class="ic">docs/UI-CONVENTIONS.md</span> — มาตรฐานหน้าตา</li>
+<li><span class="ic">supabase/migrations/</span> — ประวัติทุกการเปลี่ยนฐานข้อมูล</li></ul></div>
+</div>
+<div class="note ok"><b>กฎที่ใช้จริงและได้ผลที่สุด:</b> แก้อะไรที่คนอื่นต้องรู้ → <b>อัปเดตเอกสารในการบันทึกครั้งเดียวกัน</b> ไม่ผัดไปทีหลัง เพราะ "ทีหลัง" ไม่เคยมาถึง</div>
+<div class="note">และเขียนสิ่งที่ <b>"เคยพังเพราะอะไร"</b> ไว้ด้วยเสมอ — มีค่ากว่าคำอธิบายว่าโค้ดทำอะไร เพราะโค้ดอ่านเองได้ แต่บทเรียนอ่านจากโค้ดไม่ได้</div>
+</div></section>
+
+<!-- ══ SEC 10 ══ -->
+<section class="sl sec"><div class="sec-num">10</div><h2>เรียนต่อยังไง</h2>
+<div class="sec-sub">+ ใช้ AI ช่วยเขียนโค้ดให้ไม่พัง</div><div class="sec-time">⏱ 20 นาที</div></section>
+
+<section class="sl"><h2>ใช้ AI ช่วยเขียนโค้ด — 5 กฎ</h2>
+<div class="bd"><div class="bls">
+<div class="bl"><div class="bl-t">1. บอกบริบทให้ครบ ก่อนสั่งงาน</div><div class="bl-d">"เขียนหน้าบันทึกยอดผลิต" → ได้ของมั่ว · "เขียนหน้าบันทึกยอดผลิต ใช้ React + Supabase ตาราง <span class="ic">daily_logs</span> มีคอลัมน์… วันงานตัดที่ 08:00" → ได้ของที่ใช้ได้จริง</div></div>
+<div class="bl"><div class="bl-t">2. ขอทีละชิ้น อย่าขอทั้งระบบ</div><div class="bl-d">ขอทีเดียว 500 บรรทัด = อ่านไม่ไหว ตรวจไม่ได้ พังแล้วหาไม่เจอ · <b>ขอทีละฟังก์ชัน แล้วรันดูทุกครั้ง</b></div></div>
+<div class="bl warn"><div class="bl-t">3. โค้ดที่ AI เขียน ยังเป็นความรับผิดชอบของคุณ</div><div class="bl-d">มันแต่งชื่อฟังก์ชันที่ไม่มีอยู่จริงได้ · เดาชื่อคอลัมน์ผิดได้ · <b>รันจริงทุกครั้งก่อนเชื่อ</b> — ไม่มีทางลัดตรงนี้</div></div>
+<div class="bl warn"><div class="bl-t">4. ระวังจุดที่มันชอบพลาดเป็นพิเศษ</div><div class="bl-d">เรื่องวันที่/เขตเวลา · การเช็ค error · สิทธิ์การเข้าถึง — <b>3 เรื่องนี้ต้องอ่านเองทุกบรรทัด</b> เพราะเป็นเรื่องเฉพาะของแต่ละที่ ที่ AI ไม่มีทางรู้</div></div>
+<div class="bl"><div class="bl-t">5. ให้มันอธิบาย จนคุณเข้าใจ</div><div class="bl-d">ถามว่า "บรรทัดนี้ทำอะไร ทำไมต้องมี" · <b>ถ้ายังอธิบายให้คุณเข้าใจไม่ได้ อย่าเพิ่งเอาโค้ดนั้นไปใช้</b> — โค้ดที่ไม่มีใครเข้าใจ คือหนี้ที่ต้องจ่ายวันหน้า</div></div>
+</div></div></section>
+
+<section class="sl"><h2>เส้นทาง 90 วันข้างหน้า</h2>
+<div class="bd"><div class="three">
+<div class="col col-g"><h3>30 วันแรก</h3><ul>
+<li>ทำหน้าแบบวันนี้ซ้ำอีก <b>3 หน้า</b> โดยไม่เปิดสไลด์</li>
+<li>ทำจากงานจริงที่แผนกตัวเองยังใช้กระดาษ/Excel อยู่</li>
+<li>ให้เพื่อนร่วมงาน<b>ลองใช้จริง</b> แล้วฟังว่าติดตรงไหน</li>
+<li>เป้า: <b>คล่องเรื่องกรอก-เก็บ-แสดง</b></li></ul></div>
+<div class="col col-b"><h3>60 วัน</h3><ul>
+<li>เพิ่มล็อกอิน + แยกสิทธิ์ตามตำแหน่ง</li>
+<li>เพิ่มกราฟสรุป (Recharts)</li>
+<li>อัปโหลดรูป · ส่งออก Excel</li>
+<li>เป้า: <b>ทำระบบที่คนอื่นใช้จริงได้ 1 ระบบ</b></li></ul></div>
+<div class="col col-a"><h3>90 วัน</h3><ul>
+<li>อ่านโค้ด ESM แล้วแก้เองได้</li>
+<li>เชื่อมข้อมูลข้ามโมดูล</li>
+<li>เขียนเอกสาร + ทดสอบให้คนอื่นทำต่อได้</li>
+<li>เป้า: <b>ดูแลระบบที่คนอื่นก็แก้ต่อได้</b></li></ul></div>
+</div>
+<div class="note ok"><b>สิ่งที่ทำให้เร็วขึ้นกว่านี้ไม่มี:</b> ทำโปรเจคที่<b>ตัวเองต้องใช้เองทุกวัน</b> — ความอยากให้มันดีขึ้นจะลากคุณไปเรียนเรื่องใหม่เอง เร็วกว่าดูคลิปสอน 10 เท่า</div>
+</div></section>
+
+<section class="sl"><h2>การบ้าน 3 ข้อ</h2>
+<div class="bd"><div class="sts">
+<div class="st"><div class="st-n">1</div><div><b>ทำหน้าของวันนี้ให้จบ แล้วส่งลิงก์</b><span>ผ่านครบ 10 ข้อในเช็คลิสต์ · deploy ขึ้นออนไลน์จริง · ส่งลิงก์มาในกลุ่ม</span></div></div>
+<div class="st"><div class="st-n">2</div><div><b>เพิ่มอีก 1 อย่างที่ยังไม่ได้สอน</b><span>เช่น กราฟแท่งยอดรายวัน · ปุ่มส่งออก Excel · ช่องค้นหา — <b>ตั้งใจให้ติด</b> แล้วหาทางออกเอง นี่คือส่วนที่ได้ความรู้จริง</span></div></div>
+<div class="st"><div class="st-n">3</div><div><b>เขียนบันทึกสั้นๆ 1 หน้า</b><span>ตารางมีคอลัมน์อะไร · แต่ละไฟล์ทำอะไร · <b>ติดอะไรบ้างและแก้ยังไง</b> — ข้อสุดท้ายมีค่าที่สุด</span></div></div>
+</div>
+<div class="note">ส่งภายใน 2 สัปดาห์ · ติดตรงไหนถามได้ตลอด <b>อย่านั่งงมคนเดียวเกิน 30 นาที</b> — เวลาที่เสียไปกับการงมไม่ได้แปลว่าได้เรียนรู้มากกว่า</div>
+</div></section>
+
+<section class="sl"><h2>8 ข้อที่อยากให้จำจากวันนี้</h2>
+<div class="bd"><div class="cls">
+<div class="cl"><span class="cl-i">🔄</span><div><b>แก้ข้อมูล ไม่ใช่แก้หน้าจอ</b><span>หัวใจของ React ทั้งหมดอยู่ที่ประโยคนี้</span></div></div>
+<div class="cl"><span class="cl-i">🕗</span><div><b>วันงานตัดที่ 08:00 ไม่ใช่เที่ยงคืน</b><span>และห้ามใช้เวลาสากลหาวันที่</span></div></div>
+<div class="cl"><span class="cl-i">🔇</span><div><b>ห้ามล้มเหลวเงียบ</b><span>ทุกจุดที่เขียนข้อมูล ต้องเช็คผลเสมอ</span></div></div>
+<div class="cl"><span class="cl-i">📍</span><div><b>ของอย่างเดียวกัน อยู่ที่เดียว</b><span>ก๊อปครั้งที่ 3 = ต้องย้ายเข้าไฟล์กลาง</span></div></div>
+<div class="cl"><span class="cl-i">🗃️</span><div><b>สิ่งที่ผู้ใช้อยากแก้เอง ให้เก็บเป็นข้อมูล</b><span>อย่าฝังในโค้ด</span></div></div>
+<div class="cl"><span class="cl-i">🔴</span><div><b>อ่าน error ให้เป็น</b><span>มันบอกไฟล์และบรรทัดให้แล้ว</span></div></div>
+<div class="cl"><span class="cl-i">✅</span><div><b>เช็คลิสต์ 10 ข้อก่อนส่งของ</b><span>ทุกข้อมาจากความผิดพลาดจริง</span></div></div>
+<div class="cl"><span class="cl-i">📝</span><div><b>แก้อะไร อัปเดตเอกสารพร้อมกัน</b><span>"ไว้ทีหลัง" ไม่เคยมาถึง</span></div></div>
+</div></div></section>
+
+<section class="sl cover">
+<h1>ขอบคุณครับ</h1>
+<div class="c-sub">ถาม-ตอบ · ลองทำต่อด้วยกัน</div>
+<div class="c-line">เอกสารประกอบ + คำสั่งทั้งหมดคัดลอกได้จาก<br><b>docs/WEB101_TEACHING_NOTES.md</b> ในโปรเจค</div>
+<div class="c-foot">ระบบตัวอย่างในสไลด์ทั้งหมดคือโค้ดจริงจาก ESM<br>อยากดูของจริงหน้าไหน เปิดดูได้เลย — เรียนจากระบบที่ใช้อยู่ เร็วที่สุด</div>
+</section>
+
+</div>
+<div id="bar"></div>
+<div id="hint">→ / Space ถัดไป &nbsp;·&nbsp; ← ย้อนกลับ &nbsp;·&nbsp; F เต็มจอ &nbsp;·&nbsp; แตะขอบซ้าย/ขวาได้</div>
+<script>
+const S=[...document.querySelectorAll('.sl')];let i=0;
+const bar=document.getElementById('bar'),hint=document.getElementById('hint');
+S.forEach((s,k)=>{const p=document.createElement('div');p.className='pg';
+ p.textContent=(k+1)+'/'+S.length;s.appendChild(p)});
+function go(n){i=Math.max(0,Math.min(S.length-1,n));
+ S.forEach((s,k)=>s.classList.toggle('on',k===i));
+ bar.style.width=((i+1)/S.length*100)+'%';
+ location.hash=i?('#'+(i+1)):'';}
+addEventListener('keydown',e=>{
+ if(['ArrowRight',' ','PageDown','Enter'].includes(e.key)){e.preventDefault();go(i+1)}
+ else if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();go(i-1)}
+ else if(e.key==='Home')go(0);
+ else if(e.key==='End')go(S.length-1);
+ else if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+});
+addEventListener('click',e=>{if(e.target.closest('.scroll,.bls,.sts,.cls,.code,.codes,.ag'))return;
+ go(e.clientX<innerWidth*0.22?i-1:i+1)});
+let x0=null;
+addEventListener('touchstart',e=>x0=e.changedTouches[0].clientX,{passive:true});
+addEventListener('touchend',e=>{if(x0===null)return;
+ const d=e.changedTouches[0].clientX-x0;if(Math.abs(d)>55)go(i+(d<0?1:-1));x0=null},{passive:true});
+go(parseInt(location.hash.slice(1))-1||0);
+setTimeout(()=>hint.style.opacity=0,5000);
+</script></body></html>
