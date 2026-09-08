@@ -77,6 +77,16 @@ export function personOptions({
 
 const KIND_ICON = { machine: '⚙️', die: '🧱', jig: '🔧', facility: '🏭' };
 
+/** ข้อความที่ต้องส่งให้ <SearchSelect> ของ picker กลาง — **คืน `undefined` = ปล่อยให้ SearchSelect ถือคำค้นเอง**
+ *  ⚠️ กฎเหล็ก: picker ที่พาเรนต์เก็บแค่ **FK id** (valueKey='id') **ห้ามส่ง text เป็น ''** —
+ *  '' คือ controlled ว่าง → ทุกตัวอักษรที่พิมพ์ถูกล้างทันที และ q='' ตลอด = ค้นหาไม่ทำงานเลย
+ *  (เกิดจริง 2026-09-08: จอเพิ่มอุปกรณ์ PM พิมพ์หาจิ๊กไม่ได้ ต้องเลื่อนหาอย่างเดียว)
+ *  พาเรนต์ที่เก็บ "ค่า text" เอง (machine_no/mat_no/ชื่อคน) ส่งค่าที่เก็บไว้ได้ตามปกติ */
+export function pickerText({ selLabel, value, storesText = true }) {
+  if (selLabel != null) return selLabel;
+  return storesText ? (value || '') : undefined;
+}
+
 /** เครื่องจักร (DR machines) — prefer ด้วยครอบครัวไลน์ · กรอง kinds · ตัด is_active=false เว้นค่าที่เลือกอยู่ */
 /*  `groupByLine` = จัดกลุ่มตาม 📍 ไลน์ (ใช้เมื่อยังไม่รู้ไลน์ปลายทาง จึง prefer ไม่ได้) — คนหน้างานไล่หา
     ของตัวเองจาก "ไลน์" เป็นหลัก · ทะเบียนจริง 635 ตัว ในนั้นเป็นแม่พิมพ์ 262 ตัวที่ใช้ชื่อพาร์ทยาวๆ

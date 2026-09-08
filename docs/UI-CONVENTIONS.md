@@ -428,6 +428,19 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 > - **`maxRows` ต้องคลุมทั้งลิสต์เมื่อจัดกลุ่ม** — ตัดที่ 60/400 ทั้งที่เรียงตามชื่อไลน์ = **ไลน์ท้ายตัวอักษรไม่มีวันโผล่**
 >   (คนที่ไล่ดูไม่ได้พิมพ์ค้นเสมอ) · จุดที่ใช้: PMSetup เลือกเครื่องจักร (`maxRows=999`) · PMSetup Machine No. · คลังอะไหล่ ➕ เพิ่มเครื่อง/จิ๊ก
 > - บทเรียนข้ามงาน: **เปลี่ยน `<select>` เป็นช่องค้นหา ต้องยกโครงกลุ่ม (`optgroup`) มาด้วยเสมอ** — ค้นหาแทนการเลื่อนได้ แต่แทน "การรู้ว่าของอยู่กลุ่มไหน" ไม่ได้
+>
+> #### 🔴 picker ที่เก็บ **FK id** ห้ามส่ง `text=''` ให้ SearchSelect (2026-09-08 · feedback หน้างาน รอบ 2)
+> *"เลือกละหาจิ้กไม่เจอ พิมพ์หาก็ไม่ได้"* — จอเดียวกัน (`/pm-setup` เพิ่มอุปกรณ์) **พิมพ์ค้นไม่ได้เลย** ตัวอักษรหายทุกครั้งที่กด
+> - **ต้นเหตุ:** `MachineSelect valueKey='id'` คำนวณ `text` เป็น `''` เมื่อยังไม่ได้เลือก → SearchSelect เข้าโหมด **controlled ด้วยค่าว่าง**
+>   ⇒ `shown` ถูกบังคับเป็น `''` ทุก render (ลบตัวที่พิมพ์) และ `q` เป็น `''` ตลอด (**ตัวกรองไม่เคยทำงาน**) — จอ "ค้นหาได้" ที่ค้นไม่ได้จริง
+> - **กฎ:** พาเรนต์ที่เก็บแค่ FK id **ไม่มีที่เก็บคำค้น** ⇒ ต้องปล่อยให้ SearchSelect ถือเอง (`text` = `undefined`)
+>   ใช้ helper กลาง `pickerText({ selLabel, value, storesText })` ใน `pickerOptions.js` (pure · มีเทส) — `storesText:false` = คืน `undefined`
+>   · **`text=''` กับ `text=undefined` ไม่เหมือนกัน** — `''` = controlled ว่าง (พิมพ์ไม่ได้) · `undefined` = uncontrolled (พิมพ์ได้)
+> - SearchSelect sync `innerText` ไว้เสมอแม้อยู่โหมด controlled — picker แบบนี้ **สลับโหมดกลางคัน** (เลือกอยู่ = controlled ด้วย label,
+>   พอพิมพ์ทับค่าถูกล้าง = uncontrolled) ถ้าไม่ sync ตัวอักษรแรกที่พิมพ์ทับจะหาย
+> - **`onChange` ของพาเรนต์ต้อง no-op เมื่อค่าไม่เปลี่ยน** — PMSetup เดิมเรียก `handleMachineSelect()` ทุก keystroke (ล้างฟอร์มทั้งใบ)
+>   ⇒ `if (v !== (machineId ?? null)) handleMachineSelect(v)`
+> - **ทดสอบ UI แบบนี้ด้วยเทสหน่วยอย่างเดียวไม่พอ** — ต้องเปิดเบราว์เซอร์จริงแล้ววัด `input.value` หลังพิมพ์ + จำนวนแถวที่เหลือ
 
 กฎของ picker กลางทุกตัว (ล็อกด้วยเทส `src/utils/__tests__/pickerOptions.test.mjs`):
 1. **ของที่เกี่ยวข้องขึ้นก่อน ไม่ตัดของอื่นทิ้ง** — prefer ด้วย `lines`/`lineIds`/`section`/`roles`/`kinds` แล้วขึ้นกลุ่ม 🎯 ก่อน
