@@ -19,12 +19,23 @@
 > - **⚠️ ต้องเช็คนามสกุลไฟล์ด้วย ไม่ใช่ดูแต่ MIME** — Android/Chrome หลายรุ่นส่ง `type` เป็นค่าว่าง/`application/octet-stream` กับไฟล์ `.heic`
 > - **⚠️ แปลงให้เร็วที่สุดที่ต้น handler** — โค้ดที่ derive `ext`/ชนิดจากชื่อไฟล์ต่อจากนั้นจะได้ค่าถูกต้องตาม (ไฟล์ที่แปลงแล้วเป็น `.jpg`)
 >   แปลงทีหลังจะได้ไฟล์ JPEG แต่ตั้งชื่อบน storage เป็น `.heic`
-> - **จุดที่ผ่านเกตแล้ว (ครบทุกทางเข้ารูปในระบบ):** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator)
+> - **จุดที่ผ่านเกตแล้ว (ครบทุกทางเข้ารูปในระบบ):** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator) · `NpiUi.uploadNpiFile` (เพิ่ม 2026-09-08 — เคยหลุด)
 >   · `ImageCropModal` (รูปพนักงาน/โปรไฟล์/สินค้า/อะไหล่/PMSetup frames) · LineSetup ผังไลน์ · FactoryMap ผังโรงงาน
 >   · MtnMachineLayout โซน facility · PMSetup รูปจุดตรวจ · QAInspectionSetup drawing · DieLayout/RackMap `compressPlan`
 >   → **เพิ่มจุดรับไฟล์รูปใหม่ต้องเรียก `toDecodableImage()` ก่อนเสมอ**
 > - ข้อความบนจอห้ามพูดเรื่อง "ขนาด/ใหญ่เกินไป" กับปัญหา decode — ต้องชี้ "ฟอร์แมต + วิธีตั้งกล้องเป็น JPEG"
 >   (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")
+> #### ⚠️⚠️ กับดัก worker ของ heic2any — "รูปแรกลงได้ ลงหลายรูปแล้วลงไม่ได้อีกเลยจนรีเฟรช" (2026-09-08 · feedback Samsung/Android ทั้ง PWA + Chrome)
+> **ต้นเหตุ (อ่านจากซอร์ส `node_modules/heic2any/dist/heic2any.js` v0.0.4):** `window.__heic2any__worker` ถูกสร้าง**ตอน evaluate โมดูล ตัวเดียวทั้งหน้า** ไม่มี terminate/onerror/สร้างใหม่ · ทุกการแปลง `postMessage` + `addEventListener('message')` **เพิ่ม listener ไม่เคยถอด** · พอ worker ตาย (หน่วยความจำหมดหลังแปลงหลายรูป) `postMessage` **ไม่ throw ไม่ตอบ** → promise ค้างตลอดกาล → ปุ่มบันทึกหมุนไม่หยุด ทุกรูปหลังจากนั้นค้างเหมือนกัน (แม้รูปที่เคยลงได้) · ตัวเร่ง: `browserCanDecode()` เคย decode รูปเต็มใบเพื่อ "ลอง" ก่อนส่งให้ worker = peak memory ×2 · หลายหน้าเรียก `URL.createObjectURL(file)` ใน JSX ทุก re-render ไม่ revoke = ตรึงรูปหลาย MB ไว้ทุกตัวอักษรที่พิมพ์
+> **แก้ใน `src/utils/heicToJpeg.js` (เทส `__tests__/heicToJpeg.test.mjs` 13 เคส):**
+> - **timeout 45 วิ (`HEIC_TIMEOUT_MS`)** → โยน `HEIC_STUCK_MSG` ("รีเฟรชหน้า/ปิดแอปเปิดใหม่") · **`poisoned` flag ระดับโมดูล** — ค้างครั้งเดียว ทุกครั้งถัดไปโยนทันทีด้วยข้อความเดียวกัน (ไม่ให้รอ 45 วิ ซ้ำ) · **สร้าง worker ใหม่ในหน้าไม่ได้** เพราะซอร์ส worker อยู่ใน closure ของโมดูล + ES module cache — ทางเดียวคือโหลดหน้าใหม่ จึงต้องบอกผู้ใช้ตรงๆ · ตัวแปลง reject เอง (ไฟล์อ่านไม่ออก) = `HEIC_FAIL_MSG` ตามเดิม **ไม่ poison**
+> - **แปลงทีละไฟล์** (promise chain) · **MIME ยืนยัน HEIC บน Chrome/Android = ข้าม probe `createImageBitmap`** ไปแปลงเลย (คง probe เฉพาะเคสรู้จากนามสกุล/Safari)
+> - ผู้เรียกไม่ต้องแก้ signature (`isHeicFile`/`toDecodableImage`/`HEIC_FAIL_MSG` เหมือนเดิม) แต่ต้องรับ `HEIC_STUCK_MSG` ได้ = โชว์ `e.message` ตรงๆ ห้ามแทนด้วยข้อความคงที่
+> **3 กฎที่ตกผลึก (ใช้กับทุกจุดรับรูป — ไม่เฉพาะ HEIC):**
+> 1. **ทุก `await resizeImage(...)` / `toDecodableImage(...)` ต้อง reset busy flag (`saving`/`converting`/`isUploading`) ใน `finally`** — ห้ามพึ่ง `setX(false)` ที่โรยตามทาง return · rejection ที่หลุด = ปุ่มหมุนตลอดไป (ทำแล้ว: Management `handleSave4MLog` · operator `handleApproveLevel` · ImageCropModal `converting` ตั้ง sync ทุกครั้งที่ไฟล์เปลี่ยน · Report/PEDocs/Improvements/NpiUi มี finally อยู่แล้ว)
+> 2. **ห้าม `URL.createObjectURL(file)` ใน JSX/render** — ใช้ hook กลาง **`useObjectUrl(file)` (`src/utils/useObjectUrl.js`)** สร้างครั้งเดียวต่อไฟล์ + revoke เองตอนไฟล์เปลี่ยน/unmount · จุดที่ถือ URL ใน state เอง (Report ลายเซ็น multi-skill) ต้อง revoke ของเดิมก่อน set ใหม่ (ทำแล้ว: ProductMaster ×2 · PEDocs ×2 · Improvements · Register · Report)
+> 3. **`<input type="file">` ที่ซ่อนไว้ต้อง `e.target.value = ''` หลังอ่านไฟล์** — ไม่งั้นเลือก**ไฟล์เดิม**ซ้ำ `change` ไม่ยิง = ผู้ใช้ลองใหม่หลังล้มแล้ว "ไม่มีอะไรเกิดขึ้น" (ทำแล้ว: Management ×2 · Report ×2 · operator · Improvements · LineSetup (ใน `handleUploadImage` ครอบ 2 input) · SignatureModal)
+> - พ่วง: `NpiUi.uploadNpiFile` ผ่าน `toDecodableImage()` แล้ว (เคยหลุดเกต) · `RackMap`/`DieLayout` `compressPlan` กัน `toBlob` คืน null บนมือถือ (เดิมพัง `Cannot read properties of null`) + revoke blob URL ทุกทาง
 > - **ยังไม่ทำ:** ตัวบีบรูปสาย "ผัง/drawing" (2560px/q0.9) ยังกระจาย 7 จุด (`imageCompression` 5 จุด + `compressPlan` ที่ก๊อปกัน 2 ไฟล์)
 >   — ควรยุบเป็น util เดียวเมื่อไปแตะจุดนั้นครั้งหน้า (ตอนนี้เกต HEIC เข้าครบแล้วทุกจุด จึงไม่เร่ง)
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)

@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -27,6 +28,7 @@ export default function Register() {
   const [team,        setTeam]        = useState('');
   const [startDate,   setStartDate]   = useState('');
   const [photo,       setPhoto]       = useState(null);
+  const photoPreview = useObjectUrl(photo);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const [cropFile,    setCropFile]    = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [lines,       setLines]       = useState([]);
@@ -270,7 +272,7 @@ export default function Register() {
           <div>
             <label style={labelSt}>รูปถ่าย (ถ้ามี)</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {photo && <img src={URL.createObjectURL(photo)} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
+              {photoPreview && <img src={photoPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
               <input id="photo-upload" type="file" accept="image/*" onChange={e => {
                 const f = e.target.files?.[0];
                 e.target.value = '';

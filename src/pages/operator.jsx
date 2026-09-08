@@ -248,6 +248,8 @@ export default function Operator() {
       toast.error('ระดับ 100 ต้องแนบเอกสารการอบรมก่อน'); return;
     }
     setIsReviewing(true);
+    // ทุกทางออก (return ก่อนเวลา / throw จาก resizeImage·upload) ต้องผ่าน finally — ปุ่มห้ามค้างหมุน
+    try {
     const { data: { user } } = await supabase.auth.getUser();
     let doc_url = req.doc_url || null;
 
@@ -256,17 +258,17 @@ export default function Operator() {
       // และตั้งนามสกุลตามชนิดไฟล์จริง — เดิม fix .jpg ทำให้ PDF ถูกเก็บผิดฟอร์แมต
       const isPdf = luDocFile.type === 'application/pdf';
       if (isPdf && luDocFile.size > 20 * 1024 * 1024) {
-        toast.error('ไฟล์ PDF ต้องไม่เกิน 20MB'); setIsReviewing(false); return;
+        toast.error('ไฟล์ PDF ต้องไม่เกิน 20MB'); return;
       }
       let fileToUpload = luDocFile;
       if (luDocFile.type.startsWith('image/')) {
-        // resizeImage โยน error เมื่อ decode ไม่ได้ — ต้องรับเอง ไม่งั้นปุ่มค้างหมุนแบบไม่มีข้อความ
+        // resizeImage โยน error เมื่อ decode ไม่ได้/ตัวแปลง HEIC ค้าง — รับไว้โชว์ข้อความ (busy flag reset ที่ finally)
         try { fileToUpload = await resizeImage(luDocFile); }
-        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsReviewing(false); return; }
+        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       }
       const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
       const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
-      if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); setIsReviewing(false); return; }
+      if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       doc_url = urlData.publicUrl;
     }
@@ -277,18 +279,20 @@ export default function Operator() {
       employee_id: req.employee_id, skill_name: req.skill_name,
       score: req.to_level, pending_level: null,
     }, { onConflict: 'employee_id,skill_name' });
-    if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); setIsReviewing(false); return; }
+    if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); return; }
 
     const { error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'approved', reviewed_by: user.id, reviewed_at: new Date().toISOString(), doc_url,
     }).eq('id', req.id);
-    if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); setIsReviewing(false); return; }
+    if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); return; }
 
     toast.success(`อนุมัติ Level ${req.to_level} สำเร็จ`);
-    setIsReviewing(false);
     setLuDocFile(null); setLuDocPreview(null);
     fetchLevelUpRequests();
     fetchEmployees();
+    } finally {
+      setIsReviewing(false);
+    }
   };
 
   const handleRejectLevel = async () => {
@@ -1417,6 +1421,7 @@ export default function Operator() {
                             <input id={`doc-${req.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
                               onChange={e => {
                                 const f = e.target.files?.[0];
+                                e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
                                 if (!f) return;
                                 setLuDocFile(f);
                                 if (f.type.startsWith('image/')) {

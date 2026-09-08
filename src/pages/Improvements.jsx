@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import resizeImg from '../utils/resizeImage';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -143,6 +144,8 @@ export default function Improvements() {
   const [saving, setSaving] = useState(false);
   const [beforeFile, setBeforeFile] = useState(null);
   const [afterFile, setAfterFile] = useState(null);
+  const beforePreview = useObjectUrl(beforeFile);   // blob URL พรีวิว — สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
+  const afterPreview = useObjectUrl(afterFile);
   const [pareto, setPareto] = useState({ loading: false, rows: [] });
   const [closeModal, setCloseModal] = useState(null);  // { imp, note, peImpact } ตอนกดปิดจ๊อบ
   const [doModal,    setDoModal]    = useState(null);  // { imp, action, date } จังหวะ "เริ่มลงมือแก้จริง" (ขั้น Do)
@@ -1461,14 +1464,15 @@ export default function Improvements() {
                   <textarea value={modal.action_taken || ''} onChange={e => setModal({ ...modal, action_taken: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[['before', 'รูปก่อนแก้ไข', beforeFile, setBeforeFile, modal.image_before_url],
-                    ['after', 'รูปหลังแก้ไข', afterFile, setAfterFile, modal.image_after_url]].map(([key, label, file, setFile, existing]) => (
+                  {[['before', 'รูปก่อนแก้ไข', beforePreview, setBeforeFile, modal.image_before_url],
+                    ['after', 'รูปหลังแก้ไข', afterPreview, setAfterFile, modal.image_after_url]].map(([key, label, preview, setFile, existing]) => (
                     <div key={key}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-                      {(file || existing) && (
-                        <img src={file ? URL.createObjectURL(file) : existing} alt={label} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 4 }} />
+                      {(preview || existing) && (
+                        <img src={preview || existing} alt={label} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 4 }} />
                       )}
-                      <input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{ fontSize: 11 }} />
+                      {/* reset value เสมอ — เลือกไฟล์เดิมซ้ำแล้ว change ไม่ยิง (เคสหน้างาน: ลองแนบรูปเดิมหลังล้มแล้วเงียบ) */}
+                      <input type="file" accept="image/*" onChange={e => { setFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11 }} />
                     </div>
                   ))}
                 </div>

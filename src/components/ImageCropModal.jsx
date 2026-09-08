@@ -47,6 +47,9 @@ export default function ImageCropModal({
   const isGif = srcFile?.type === 'image/gif';
 
   useEffect(() => {
+    // ตั้ง converting ให้ตรงกับไฟล์ปัจจุบันเสมอ (sync) — เดิมตั้ง true เฉพาะเมื่อเป็น HEIC และ reset เฉพาะเมื่อ !cancelled
+    // → สลับไฟล์ระหว่างแปลงค้าง (worker ตาย) ทำให้ converting ค้าง true ตลอดไปแม้ไฟล์ใหม่ไม่ใช่ HEIC
+    setConverting(isHeicFile(file));
     if (!file) return;
     let url = null;
     let cancelled = false;
@@ -54,7 +57,6 @@ export default function ImageCropModal({
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิมทันที ไม่มี overhead)
       let f = file;
       if (isHeicFile(file)) {
-        setConverting(true);
         try { f = await toDecodableImage(file); }
         catch (e) { if (!cancelled) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); onCancel?.(); } return; }
         finally { if (!cancelled) setConverting(false); }

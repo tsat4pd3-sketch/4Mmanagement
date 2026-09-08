@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -215,6 +216,7 @@ export default function ProductMaster() {
   const [form,     setForm]     = useState(BLANK());
   const [saving,   setSaving]   = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const imagePreview = useObjectUrl(imageFile);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const [cropFile, setCropFile] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
 
@@ -1168,8 +1170,8 @@ export default function ProductMaster() {
               </div>
               <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
-                    <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  {(imagePreview || form.image_url) && (
+                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
@@ -2044,6 +2046,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   const [form, setForm]           = useState(EMPTY_PART);
   const [saving, setSaving]       = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const imagePreview = useObjectUrl(imageFile);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const [cropFile, setCropFile] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
@@ -2347,8 +2350,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
-                    <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  {(imagePreview || form.image_url) && (
+                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];

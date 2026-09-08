@@ -6,6 +6,7 @@
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import resizeImg from '../utils/resizeImage';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -52,6 +53,8 @@ const getWorkDate = () => {
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
+// ค่า max ของ input datetime-local (เวลาเครื่อง ไม่ใช่ UTC — ห้ามใช้ toISOString ตัด)
+const localDtNow = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const mtnPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removeMtnImg = (url) => { const p = mtnPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
 const uploadMtnImg = async (blob, path) => {
@@ -173,7 +176,8 @@ function ImgField({ label, value, onPick, required }) {
     <div>
       <label style={lbl}>{label}{required && <span style={{ color: '#ef4444' }}> *</span>}</label>
       {value && <img src={value} alt="" style={{ display: 'block', maxHeight: 120, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
-      <input type="file" accept="image/*" onChange={e => e.target.files?.[0] && onPick(e.target.files[0])} style={{ fontSize: 12 }} />
+      {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (feedback 2026-09-08 "รูปเดิมก็ลงไม่ได้") */}
+      <input type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onPick(f); }} style={{ fontSize: 12 }} />
     </div>
   );
 }
@@ -437,13 +441,17 @@ function MoCard({ o, onOpen }) {
 }
 
 /* ── Step 1: แจ้งซ่อม ─────────────────────────────────── */
-function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
+function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
     report_note: '', is_sample: false, reporter_prod: fullName || '', reporter_qa: '',
+    // 2026-09-08 (feedback admin): ผู้แจ้งเลือก BM/PM ได้ตั้งแต่ขั้น 1 (หัวหน้าช่างยังแก้ได้ที่ขั้น 2 ก่อนออกเลข MO)
+    //   + occurred_at = "วันเวลาที่เกิดเหตุจริง" สำหรับแจ้งย้อนหลัง — แยกจาก report_at (เวลากดแจ้ง = นาฬิกา KPI/เลข MO) ไม่ทับกัน
+    repair_type: '', occurred_at: '',
   });
   const [beforeFile, setBeforeFile] = useState(null);
+  const beforeUrl = useObjectUrl(beforeFile);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ฟอร์มนี้ยาว กรอกใหม่ทั้งใบเจ็บมาก)
@@ -455,6 +463,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   //   ⚠️ แม่พิมพ์ผูก line_name เป็น "ชื่อกลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งไม่มีใน production_lines
   //      → กรองด้วยไลน์ที่เลือกในฟอร์มจะไม่มีวันเจอแม่พิมพ์เลย (เจอจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01)
   //      จึงลิสต์แม่พิมพ์ "ทั้งหมด" ไม่กรองไลน์ — แม่พิมพ์ถอดย้ายเครื่องได้อยู่แล้ว
+  const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, f.mtn_dept), [repairTypes, f.mtn_dept]);
   const wantDie = useMemo(
     () => /^DIE\b/i.test(f.item_type || '') || (!f.item_type && teamKeyOf(f.mtn_dept) === 'die_maintenance'),
     [f.item_type, f.mtn_dept],
@@ -537,25 +546,41 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
     if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
+    const occurredIso = f.occurred_at ? new Date(f.occurred_at).toISOString() : null;
+    if (occurredIso && new Date(occurredIso) > new Date()) return toast.error('วันเวลาที่เกิดเหตุเป็นอนาคตไม่ได้');
     setSaving(true);
-    const payload = { ...f, want_at: f.want_at || null, status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: getWorkDate(), reported_by_name: fullName };
-    let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
-    // ยังไม่ apply migration problem_group → ตัดคอลัมน์แล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
-    if (error?.code === '42703') {
-      const { problem_group, ...rest } = payload;   // eslint-disable-line no-unused-vars
-      ({ data, error } = await supabaseDR.from('mtn_orders').insert(rest).select().single());
-    }
-    if (error) { setSaving(false); return toast.error(error.message); }
-    if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.jpg`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
-    notifyMtn(data, 'mtn_reported');
-    setSaving(false); toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
+    try {
+      // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น (เดิมหน้านี้ไม่เคยส่ง → ผู้แจ้งไม่ถูกแจ้งเลย มีแต่ใบที่เปิดจาก Daily Report)
+      const { data: { user } = {} } = await supabase.auth.getUser();
+      const payload = { ...f, want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
+        report_at: new Date().toISOString(), work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null };
+      let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
+      // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
+      if (error?.code === '42703') {
+        const { problem_group, occurred_at, ...rest } = payload;   // eslint-disable-line no-unused-vars
+        ({ data, error } = await supabaseDR.from('mtn_orders').insert(rest).select().single());
+        if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
+      }
+      if (error) return toast.error(error.message);
+      if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.jpg`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      notifyMtn(data, 'mtn_reported');
+      toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
+    } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
   };
 
   return (
     <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty} wide>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
-        <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <Field label="ขอบเขตการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
+          <Field label="ประเภทงานซ่อม (BM/PM)">
+            <select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>
+              <option value="">— ให้หัวหน้าช่างระบุ —</option>
+              {teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}
+            </select>
+          </Field>
+        </div>
         <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{toHierarchicalOptions(lines).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
@@ -620,11 +645,15 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
         </div>
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
+        <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
+          <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ว่าง = เกิดเหตุตอนนี้ · เวลาที่กดแจ้งยังถูกบันทึกแยกไว้ใช้คิด Response time/เลข MO</div>
+        </Field>
         <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6 }}><input value={f.model} onChange={e => set('model', e.target.value)} style={inp} placeholder="โมเดล" /><input value={f.customer} onChange={e => set('customer', e.target.value)} style={inp} placeholder="ลูกค้า" /></div></Field>
         <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
         <Field label="ผู้แจ้ง (ผลิต)"><input value={f.reporter_prod} onChange={e => set('reporter_prod', e.target.value)} style={inp} /></Field>
         <Field label="ผู้แจ้ง (คุณภาพ)"><input value={f.reporter_qa} onChange={e => set('reporter_qa', e.target.value)} style={inp} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={pickBefore} /></div>
+        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} /></div>
         <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
@@ -726,7 +755,7 @@ function printMoReport(o, dparts = [], logo0) {
         ${P(L('PD:', o.reporter_prod), L('QA:', o.reporter_qa))}
         ${L('MC Name:', o.item_type)}${L('Jig No:', o.machine_no)}
         ${P(L('Customer:', o.customer), L('Model:', o.model))}
-        ${P(L('วันที่แจ้ง:', beDT(o.report_at)), L('ต้องการ:', beD(o.want_at)))}
+        ${P(L('วันที่แจ้ง:', beDT(o.report_at)), L('ต้องการ:', beD(o.want_at)))}${o.occurred_at ? L('เกิดเหตุ:', beDT(o.occurred_at)) : ''}
         ${L('ลักษณะปัญหา:', o.problem_characteristic)}${L('รายละเอียด:', o.report_note || o.problem_detail)}
       </td>
       <td style="height:102pt">${L('วันที่รับงาน:', beDT(o.accept_at))}
@@ -977,7 +1006,8 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         <div>
           <StepBox n={1} done>
             <Row k="วันเวลาที่แจ้ง" v={fmtDateTime(o.report_at)} /><Row k="หน่วยงาน" v={deptNameOf(dept)} />
-            <Row k="ประเภท" v={SCOPE_OPTS.find(s => s.v === o.repair_scope)?.t} />
+            {o.occurred_at && <Row k="เกิดเหตุจริง" v={`${fmtDateTime(o.occurred_at)} (แจ้งย้อนหลัง)`} />}
+            <Row k="ขอบเขต / ประเภท" v={[SCOPE_OPTS.find(s => s.v === o.repair_scope)?.t, o.current_step < 2 && o.repair_type ? `${o.repair_type} (ผู้แจ้งระบุ)` : null].filter(Boolean).join(' · ')} />
             <Row k="ไลน์ / แผนก" v={`${o.line_name || '—'}${o.dept_section ? ' · ' + o.dept_section : ''}`} />
             <Row k="ส่วนงาน" v={o.work_area} /><Row k="Cost Center" v={o.cost_center} />
             <Row k="อุปกรณ์" v={`${o.item_type || '—'} ${o.machine_no || ''}`} />
@@ -1112,6 +1142,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   }));
   const [afterFile, setAfterFile] = useState(null);
   const [qaFile, setQaFile] = useState(null);
+  const afterUrl = useObjectUrl(afterFile), qaUrl = useObjectUrl(qaFile);
   const [sig, setSig] = useState({ mode: signatureUrl ? 'profile' : 'draw', url: signatureUrl, blob: null });
   const [usedParts, setUsedParts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -1316,7 +1347,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           </div>
         )}
         {step === 2 && <>
-          <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
+          <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
             <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
@@ -1346,7 +1377,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             <Field label="ช่างซ่อมหลัก"><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
             <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
           </div>
-          <ImgField label="รูปหลังซ่อม" value={afterFile ? URL.createObjectURL(afterFile) : (editMode ? o.after_img : null)} onPick={f2 => { touch(); setAfterFile(f2); }} />
+          <ImgField label="รูปหลังซ่อม" value={afterUrl || (editMode ? o.after_img : null)} onPick={f2 => { touch(); setAfterFile(f2); }} />
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ · เลือกจากทะเบียน = หักสต็อกให้ · พิมพ์ชื่อเองได้ถ้าไม่มีในคลัง</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
             {usedParts.map((p, i) => {
@@ -1410,7 +1441,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><input value={f.qa_checker} onChange={e => set('qa_checker', e.target.value)} style={inp} /></Field>
-          <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
+          <ImgField label="รูปยืนยันคุณภาพ" value={qaUrl || (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
         {step === 6 && <>
           <Field label="ผลติดตามหลังใช้งานจริง"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>

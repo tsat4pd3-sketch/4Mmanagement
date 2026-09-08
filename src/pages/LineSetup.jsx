@@ -577,6 +577,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleUploadImage = async (e) => {
     let file = e.target.files[0];
+    e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังอัปโหลดล้มแล้วลองรูปเดิม)
     if (!file) return;
     try {
       setIsUploading(true);
