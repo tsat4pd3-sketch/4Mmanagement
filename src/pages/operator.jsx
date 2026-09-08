@@ -14,6 +14,7 @@ import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
+import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
@@ -110,7 +111,12 @@ export default function Operator() {
   const canEditSkillsFor = (emp) => canEditSkills
     && (editAllSections
         || (!!homeSection && inSectionScope([homeSection], emp?.section))
-        || (!emp?.section && MAINTENANCE_ROLES.includes(role)));
+        || (!emp?.section && MAINTENANCE_ROLES.includes(role))
+        /* 🤝 คนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ — คนที่เห็นเขาทำงานจริงวันนี้คือหัวหน้าไลน์ปลายทาง
+           จึงเป็นคนเดียวที่ให้คะแนนทักษะได้ตรงความจริง · จำกัดเวลาในตัวอยู่แล้ว (การยืมหมดอายุเมื่อจบกะ)
+           ⚠️ ขยายเฉพาะ "สกิล" เท่านั้น — ประวัติพนักงาน (canEditEmp: ชื่อ/ส่วนงาน/ไลน์/ตำแหน่ง)
+              ยังเป็นของต้นสังกัด ห้ามให้ไลน์ที่ยืมไปแก้ ไม่งั้นเปลี่ยน line_id แล้วคนหายจากไลน์เดิม */
+        || helperIds.has(emp?.id));
 
   // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
   // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
@@ -161,6 +167,9 @@ export default function Operator() {
   const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [lines,           setLines]           = useState([]);
+  /* 🤝 id ของคนที่ถูก "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers) — เก็บแยกจาก employees
+     เพราะต้องใช้ตัดสินสิทธิ์/วาดป้ายหลังจากที่แถวถูกคัดลอกไปเป็น editingEmp แล้ว (spread ทิ้ง flag ได้) */
+  const [helperIds,       setHelperIds]       = useState(new Set());
   const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
   const [luDocFile,       setLuDocFile]       = useState(null);
@@ -327,14 +336,24 @@ export default function Operator() {
     setSkillDefs(data || []);
   };
 
+  /* กันคำตอบเก่าทับจอใหม่ (กฎเหล็กข้อ 4) — fetchEmployees ถูกเรียกจากหลายจุด (โหลดแรก/หลังบันทึก/
+     หลังอนุมัติ level-up) และตอนนี้มี await เพิ่มอีกจังหวะสำหรับคนยืมตัว */
+  const fetchReqRef = useRef(0);
   const fetchEmployees = async () => {
+    const myReq = ++fetchReqRef.current;
     // scope ของ leader = ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
     // ดึงไลน์เองตรงนี้ ไม่พึ่ง state `lines` เพราะโหลดขนานกัน อาจยังว่างตอน fetch รอบแรก
     let famIds = null;
+    // lines ของ scope — โหลดเองถ้า state ยังว่าง (fetch รอบแรกวิ่งขนานกับตัวโหลด lines)
+    // ต้องมี section ด้วย: mergeBorrowedEmployees ใช้หา section ของไลน์ปลายทางตอน scope เป็นส่วนงาน
+    let linesForScope = lines;
+    if (!linesForScope.length) {
+      const { data: ls } = await supabase.from('production_lines').select('id, name, section, parent_line_name');
+      linesForScope = ls || [];
+    }
     if (isLeader && userLineId) {
-      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
-      const s = getLineFamilyIds(ls || [], Number(userLineId));
-      famIds = s.size ? [...s] : null;
+      const s = getLineFamilyIds(linesForScope, Number(userLineId));
+      famIds = s.size ? [...s] : [Number(userLineId)];
     }
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
@@ -346,10 +365,20 @@ export default function Operator() {
       makeBase().eq('is_active', true).order('employee_id_code'),
       makeBase().eq('is_active', false).order('employee_id_code'),
     ]);
+    /* 🤝 ต่อท้ายด้วยคนที่ถูกยืมมาช่วยไลน์ใน scope "กะนี้" — หัวหน้าไลน์ปลายทางเป็นคนเห็นเขาทำงานจริงวันนี้
+       ต้องดู/ให้คะแนนทักษะ + พิมพ์ใบประเมิน F-PRS-P1-119 ให้เขาได้ (ดู src/utils/lineHelpers.js)
+       เฉพาะคนที่ยัง active — คนพ้นสภาพไม่ควรถูกยืมอยู่แล้ว */
+    const withHelpers = await mergeBorrowedEmployees(active || [], {
+      lines: linesForScope, lineIds: famIds, scopeSecs,
+      columns: '*, employee_skills(skill_name, score, pending_level)',
+    });
+    const hIds = new Set(withHelpers.filter(e => e._isHelper).map(e => e.id));
+    if (myReq !== fetchReqRef.current) return;   // มีคำขอใหม่กว่าแล้ว — ทิ้งคำตอบนี้
     // startTransition defers the heavy table re-render so navigation stays responsive
     startTransition(() => {
-      setEmployees(active || []);
+      setEmployees(withHelpers);
       setInactiveEmployees(inactive || []);
+      setHelperIds(hIds);
     });
   };
 
@@ -1033,6 +1062,15 @@ export default function Operator() {
                     </td>
                     <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
+                      {/* 🤝 บอกให้ชัดว่าคนนี้ "ยืมมาช่วยกะนี้" ไม่ใช่ย้ายสังกัดมาแล้ว (employees.line_id ไม่ถูกแตะ) */}
+                      {emp._isHelper && (
+                        <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้ — ต้นสังกัดยังเป็นที่เดิม`}
+                          style={{ display: 'inline-block', marginTop: 2, fontSize: 11, fontWeight: 700,
+                            padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap',
+                            background: '#0ea5e918', color: '#0ea5e9', border: '1px solid #0ea5e944' }}>
+                          🤝 ยืมจาก {emp._helperFrom}
+                        </div>
+                      )}
                     </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.section || '—'}
