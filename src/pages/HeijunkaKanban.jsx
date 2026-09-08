@@ -14,6 +14,7 @@ import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
+import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { notifyEvent } from '../utils/notifyEvent';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
@@ -1356,6 +1357,7 @@ export default function HeijunkaKanban() {
   const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
   const [pullBusy, setPullBusy]       = useState(null);
   const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
+  const linesArr = useMemo(() => Object.values(lineMap), [lineMap]);   // รูป array สำหรับ helper ลำดับชั้น (slocOfLine ฯลฯ)
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
   const [rackRequests, setRackRequests] = useState([]);
@@ -1363,6 +1365,9 @@ export default function HeijunkaKanban() {
   const [wipRequests, setWipRequests]   = useState([]);
   // 🎯 จุดส่งงาน (DR) — ทะเบียนที่ด่านขั้น 7 ใช้เทียบ · โหลดทั้ง active+ปิดแล้ว เพื่อให้ป้ายเก่าสแกนแล้วได้คำตอบ "จุดนี้ปิดแล้ว"
   const [deliveryPoints, setDeliveryPoints] = useState([]);
+  /* 🏬 ทะเบียนรหัสคลัง SAP (DR) — ใบขอเติม/ledger ต้องแปะ storage_location ตอนเขียน (derive จากไลน์ผ่าน slocCodeOfLine)
+     ไลน์ที่ยังไม่ผูก = null ไม่เดา · ตารางยังไม่มีคอลัมน์ line_names (ยังไม่ apply 20260908) = ทุกไลน์ยังไม่ผูก */
+  const [slocs, setSlocs] = useState([]);
   const [deliverModal, setDeliverModal] = useState(null);   // ใบจากไลน์ที่กำลังจะมาร์ก delivered (รอสแกนจุดส่ง)
   const [pickModal, setPickModal] = useState(null);         // ใบจากไลน์ที่กำลังจะมาร์ก preparing (รอสแกนพาร์ท+จำนวน · ขั้น 5)
   const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
@@ -1411,7 +1416,7 @@ export default function HeijunkaKanban() {
     //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
@@ -1429,7 +1434,11 @@ export default function HeijunkaKanban() {
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
+      supabaseDR.from('storage_locations').select('code, name, kind, line_names, is_active, sort_order'),
     ]);
+    // ทะเบียนรหัสคลังยังไม่ apply (42P01/42703) = ยังไม่ผูก SLoc ทั้งระบบ (tag เป็น null ตรงความจริง) · error อื่นห้ามกลืน
+    if (slocErr && !['42P01', '42703'].includes(slocErr.code)) toast.error('โหลดทะเบียนรหัสคลังไม่ได้: ' + slocErr.message);
+    setSlocs(slocErr ? [] : (slocRows || []));
     // ยังไม่ apply migration (42P01) = บอกบนจอ ห้ามโชว์ว่างเปล่าเหมือนไม่มีของต้องสั่ง
     setPurchaseErr(purErr ? (purErr.code === '42P01'
       ? 'ยังไม่ได้ apply migration 20260825_v_purchase_open_summary.sql (แจ้ง admin)'
@@ -1637,18 +1646,23 @@ export default function HeijunkaKanban() {
   const createStoreRequests = async (items) => {
     if (!items?.length) return false;
     const now = new Date().toISOString();
-    let ok = 0, dup = 0, noSourceCol = false;
+    let ok = 0, dup = 0, noSourceCol = false, noSlocCol = false;
     const errs = [];
+    const noSlocLines = new Set();
     for (const it of items) {
       const row = {
         line_name: it.line, mat_no: it.mat_no, part_name: it.part_name || null,
         request_qty: it.qty, status: 'pending',
         requested_at: now, requested_by: fullName || 'สโตร์', decided_by_name: fullName || null,
         on_hand_at_req: it.wipNow ?? null, source: 'store_forecast',
+        // 🏬 มุม SAP ของใบเดียวกัน (P411 ทั้ง Apron Assy) — ไลน์ยังไม่ผูก = null ไม่เดา
+        storage_location: slocCodeOfLine(slocs, linesArr, it.line),
       };
+      if (!row.storage_location) noSlocLines.add(it.line);
       let { error } = await supabase.from('wip_replenish_requests').insert(row);
-      // 42703 = ยังไม่ apply 20260907_wip_replenish_source.sql → บันทึกโดยไม่มีคอลัมน์ที่มา (บอกบนจอ ห้ามเงียบ)
-      if (error?.code === '42703') { noSourceCol = true; const { source, ...rest } = row; void source; ({ error } = await supabase.from('wip_replenish_requests').insert(rest)); }
+      // 42703 = ยังไม่ apply migration — ถอดทีละคอลัมน์ (storage_location 20260908 → source 20260907) บันทึกให้ได้ก่อน แล้วบอกบนจอ ห้ามเงียบ
+      if (error?.code === '42703') { noSlocCol = true; const { storage_location, ...rest } = row; void storage_location; ({ error } = await supabase.from('wip_replenish_requests').insert(rest));
+        if (error?.code === '42703') { noSourceCol = true; const { source, ...rest2 } = rest; void source; ({ error } = await supabase.from('wip_replenish_requests').insert(rest2)); } }
       if (!error) ok++;
       else if (error.code === '23505') dup++;
       else errs.push(`${it.mat_no}: ${error.message}`);
@@ -1657,6 +1671,8 @@ export default function HeijunkaKanban() {
     else if (dup && !errs.length) toast.error(`ทุกรายการมีใบค้างอยู่ในคิวแล้ว (${dup}) — ดูที่ 🔄 คิวเติม WIP`);
     if (errs.length) toast.error(`สร้างไม่สำเร็จ ${errs.length} รายการ: ${errs[0]}`);
     if (noSourceCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260907_wip_replenish_source (Main) — ใบไม่ถูกมาร์กว่ามาจากสโตร์');
+    if (noSlocCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
+    else if (ok && noSlocLines.size) toast.info(`ℹ️ ${[...noSlocLines].join(', ')} ยังไม่ผูกรหัสคลัง SAP — ใบไม่มีมุม SAP (ผูกที่ 📦 Line Stock → แท็บ 🏬 โซนคลัง → ทะเบียนรหัสคลัง)`);
     await loadPull();
     if (ok) { setViewMode('unified'); setUnifiedStore('wip'); }   // พาไปเห็นใบที่เพิ่งสร้าง — ทำงานต่อได้ทันที
     return ok > 0 || (dup > 0 && !errs.length);
@@ -1674,11 +1690,21 @@ export default function HeijunkaKanban() {
       note: `auto: ใบขอเติม ${w.mat_no} → ${w.line_name} (ยืนยันเตรียม · ใบ ${String(w.id).slice(0, 8)})` };
     const { data: st, error: stErr } = await supabaseDR.from('line_stock_summary').select('qty_on_hand').eq('line_name', 'STORE').eq('mat_no', w.mat_no).maybeSingle();
     let note = null;
-    const rows = [{ ...base, line_name: w.line_name, qty, type: 'issue' }];
+    /* 🏬 มุม SAP ของรายการเดียวกัน: ไลน์ → P4xx (ตกทอดจากไลน์แม่) · STORE → S401 — tag ตอนเขียน ไม่เดา
+       ใบมี storage_location อยู่แล้ว (snapshot ตอนสร้าง) ใช้ตัวนั้นก่อน กันทะเบียนถูกแก้ระหว่างทางแล้วใบกับ ledger ไม่ตรงกัน */
+    const lineSloc  = w.storage_location || slocCodeOfLine(slocs, linesArr, w.line_name);
+    const storeSloc = slocCodeOfLine(slocs, linesArr, 'STORE');
+    const rows = [{ ...base, line_name: w.line_name, qty, type: 'issue', storage_location: lineSloc }];
     if (stErr) note = `เช็คสต็อก STORE ไม่ได้: ${stErr.message}`;
     else if (!st) note = 'STORE ไม่มีแถวสต็อกของพาร์ทนี้ — บวกเข้าไลน์แล้ว แต่ไม่หัก STORE (ลงรับเข้า STORE ก่อน)';
-    else rows.push({ ...base, line_name: 'STORE', qty, type: 'consume' });
-    const { data: ins, error } = await supabaseDR.from('line_stock_transactions').insert(rows).select('id');
+    else rows.push({ ...base, line_name: 'STORE', qty, type: 'consume', storage_location: storeSloc });
+    if (!lineSloc) note = `${note ? note + ' · ' : ''}ไลน์ ${w.line_name} ยังไม่ผูกรหัสคลัง SAP — ledger ไม่มีมุม SAP (ผูกที่ 📦 Line Stock → แท็บ 🏬 โซนคลัง → ทะเบียนรหัสคลัง)`;
+    let { data: ins, error } = await supabaseDR.from('line_stock_transactions').insert(rows).select('id');
+    // 42703 = ยังไม่ apply 20260908_storage_locations_line_map (DR) → ตัดสต็อกแบบไม่ tag (ห้ามให้การตัดสต็อกล้มเพราะชั้นบัญชี)
+    if (error?.code === '42703') {
+      ({ data: ins, error } = await supabaseDR.from('line_stock_transactions').insert(rows.map(({ storage_location, ...r }) => { void storage_location; return r; })).select('id'));
+      if (!error) note = `${note ? note + ' · ' : ''}ยังไม่ apply migration 20260908_storage_locations_line_map (DR) — ledger ไม่ถูกแปะรหัสคลัง`;
+    }
     if (error) {
       toast.error(`ตัดสต็อกไม่สำเร็จ (ใบยังเป็น "กำลังเตรียม"): ${error.message}`);
       await supabase.from('wip_replenish_requests').update({ stock_txn_note: `ตัดสต็อกไม่สำเร็จ: ${error.message}` }).eq('id', w.id);
@@ -2400,6 +2426,7 @@ export default function HeijunkaKanban() {
             canOperate={canOperate} onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)}
             openRequests={wipRequests} onCreateRequests={createStoreRequests}
+            slocs={slocs} lines={linesArr}
           />
         ) : viewMode === 'board' ? (
           <StoreBoardView

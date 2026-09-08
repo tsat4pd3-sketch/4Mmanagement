@@ -31,6 +31,7 @@ import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
+import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
@@ -62,6 +63,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [stock, setStock]   = useState([]);
   const [reqs, setReqs]     = useState([]);
   const [dpoints, setDpoints] = useState([]);   // 🎯 จุดส่งงานของไลน์นี้ (เฟส 4) — ไม่มี = สโตร์ตรวจจุดไม่ได้ → worklist
+  const [slocs, setSlocs]     = useState([]);   // 🏬 ทะเบียนรหัสคลัง SAP (DR) — ใบขอเติมแปะ storage_location ตอนสร้าง (derive จากไลน์แม่)
   const [err, setErr]       = useState(null);
   const [busy, setBusy]     = useState(null);
   const [showSetup, setShowSetup] = useState(false);
@@ -84,7 +86,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!lineName) return;
     setErr(null);
     const stockLines = [lineName, ...upNames];   // ของตัวเอง + ที่อาจค้างข้างบน (แยกกันตอนคำนวณ)
-    const [lv, st, rq, dp] = await Promise.all([
+    const [lv, st, rq, dp, sl] = await Promise.all([
       supabaseDR.from('line_part_levels').select('*').eq('line_name', lineName).eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', stockLines),
       supabase.from('wip_replenish_requests').select('*')
@@ -92,8 +94,11 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         .order('requested_at', { ascending: true, nullsFirst: false }),
       // จุดส่งเป็นของเสริม (เฟส 4) — ตารางยังไม่ apply/โหลดไม่ได้ ห้ามลากทั้งแผงล้ม แค่ถือว่ายังไม่มีจุด
       supabaseDR.from('line_delivery_points').select('id, code, name, line_names, is_active').contains('line_names', [lineName]),
+      // ทะเบียนรหัสคลัง = ของเสริม (ชั้นบัญชี) — ยังไม่ apply/โหลดไม่ได้ = ยังไม่ผูก ไม่ใช่ error ของแผง
+      supabaseDR.from('storage_locations').select('code, line_names, is_active'),
     ]);
     setDpoints(dp.error ? [] : (dp.data || []));
+    setSlocs(sl.error ? [] : (sl.data || []));
     /* ⚠️ ตารางยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ error ของผู้ใช้
        แยกให้ขาดจาก error จริง ไม่งั้นขึ้นแถบแดงให้ทุกคนดูทุกวันโดยไม่มีอะไรให้ทำ */
     const notReady = [lv, st, rq].some(r => r.error?.code === '42P01' || r.error?.code === '42703');
@@ -172,12 +177,23 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   }, [onHand, levels]);
 
   /* ── actions ──────────────────────────────────────────────────────────────── */
+  const lineSloc = useMemo(() => slocCodeOfLine(slocs, lines, lineName), [slocs, lines, lineName]);
+  /* insert ใบ + แปะมุม SAP — 42703 = ยังไม่ apply 20260908_wip_replenish_storage_location (Main) → บันทึกแบบไม่ tag แล้วบอกบนจอ ห้ามให้การเบิกล้ม */
+  const insertReq = async (row) => {
+    const full = { ...row, storage_location: lineSloc };
+    let res = await supabase.from('wip_replenish_requests').insert(full);
+    if (res.error?.code === '42703') {
+      res = await supabase.from('wip_replenish_requests').insert(row);
+      if (!res.error) toast.info('บันทึกแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
+    }
+    return res;
+  };
   const place = async (s, qtyInput) => {
     const qty = Number(qtyInput);
     if (!(qty > 0)) { toast.error('ระบุจำนวนที่ต้องการเบิกก่อน'); return; }
     setBusy(s.mat_no);
     const now = new Date().toISOString();
-    const { error } = await supabase.from('wip_replenish_requests').insert({
+    const { error } = await insertReq({
       line_name: lineName, mat_no: s.mat_no, part_name: s.note || null,
       request_qty: qty, status: 'pending',
       requested_at: now, decided_by_name: fullName || null,
@@ -209,7 +225,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       `พักการเบิก "${s.mat_no}" ไว้ก่อน\n\nเหตุผล (เช่น เดี๋ยวเปลี่ยนรุ่น / ของยังพอถึงสิ้นกะ):`, '');
     if (reason === null) return;   // กดยกเลิก
     setBusy(s.mat_no);
-    const { error } = await supabase.from('wip_replenish_requests').insert({
+    const { error } = await insertReq({
       line_name: lineName, mat_no: s.mat_no, request_qty: s.suggestQty || 1,
       status: 'hold', requested_at: null,          // ⚠️ ยังไม่เริ่มนับเวลา — ยังไม่ได้สั่งเบิก
       hold_at: new Date().toISOString(), hold_by_name: fullName || null,

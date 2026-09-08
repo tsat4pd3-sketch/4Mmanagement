@@ -11,6 +11,8 @@
  *   3. ปิดใช้งาน/ลบ ต้องยืนยัน (UI-CONVENTIONS §5.4) · ลบไม่ได้ถ้ามีป้ายพิมพ์ไปแล้ว? — ระบบไม่รู้ว่าพิมพ์หรือยัง
  *      ⇒ **ไม่มีปุ่มลบ มีแต่ปิดใช้งาน** (ป้ายเก่าที่ยังติดอยู่หน้างานสแกนแล้วต้องได้คำตอบ "จุดนี้ปิดแล้ว" ไม่ใช่ "ไม่รู้จัก")
  *   4. ไม่ตั้ง = สโตร์ส่งได้แต่ตรวจไม่ได้ (gate `no_point`) — แผงฝั่งไลน์ (LinePartCallPanel) ขึ้น worklist ให้
+ *   5. 🏬 จุดส่งแปะ `storage_location` (มุม SAP ของไลน์ที่รับของ — derive จาก storage_locations.line_names ตอนบันทึก · 2026-09-08)
+ *      ไลน์ที่เลือกต้องอยู่พื้นที่ SAP เดียวกัน (จุดเดียวรับของให้ P411 กับ P409 ไม่ได้ — ด่านขั้น 7 เทียบพื้นที่ก่อน)
  *
  * ตาราง: line_delivery_points (DR · anon) · สิทธิ์ `delivery_point:manage` · actor stamp ผ่าน DR_AUDIT_TABLES
  */
@@ -21,6 +23,7 @@ import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames } from '../utils/lineHierarchy';
+import { slocOfLine, slocCodeOfLine } from '../utils/storageLoc';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
 
@@ -45,6 +48,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
   const [form, setForm]       = useState(null);    // null | form
   const [saving, setSaving]   = useState(false);
   const [addLine, setAddLine] = useState('');
+  const [slocs, setSlocs]     = useState([]);      // 🏬 ทะเบียนรหัสคลัง SAP — ยังไม่ apply/โหลดไม่ได้ = ยังไม่ผูก (ของเสริม ไม่ล้มแผง)
 
   const isLeaf = useMemo(() => isLeafLine(lines, lineName), [lines, lineName]);
   const kids   = useMemo(() => getChildLineNames(lines, lineName), [lines, lineName]);
@@ -54,8 +58,11 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
   const load = useCallback(async () => {
     if (!lineName) return;
     setLoadErr('');
-    const { data, error } = await supabaseDR.from('line_delivery_points').select('*')
-      .contains('line_names', [lineName]).order('sort_order').order('name');
+    const [{ data, error }, sl] = await Promise.all([
+      supabaseDR.from('line_delivery_points').select('*').contains('line_names', [lineName]).order('sort_order').order('name'),
+      supabaseDR.from('storage_locations').select('code, name, line_names, is_active'),
+    ]);
+    setSlocs(sl.error ? [] : (sl.data || []));
     if (error) {
       if (error.code === '42P01') { setMissing(true); setRows([]); return; }
       setLoadErr(error.message); return;
@@ -78,12 +85,21 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
     if (!lineNames.length) { toast.error('จุดส่งต้องผูกกับไลน์อย่างน้อย 1 ไลน์'); return; }
     const notLeaf = lineNames.filter(n => !isLeafLine(lines, n));
     if (notLeaf.length) { toast.error(`${notLeaf.join(', ')} เป็นไลน์แม่ (แผนก) — จุดส่งต้องผูกกับไลน์ย่อยที่สุดเท่านั้น`); return; }
+    // 🏬 มุม SAP ของจุด — ไลน์ที่เลือกต้องอยู่พื้นที่เดียวกัน (คนละพื้นที่ = แยกจุด ไม่งั้นด่านขั้น 7 เทียบพื้นที่ไม่ได้)
+    const codes = [...new Set(lineNames.map(n => slocCodeOfLine(slocs, lines, n)).filter(Boolean))];
+    if (codes.length > 1) { toast.error(`ไลน์ที่เลือกอยู่คนละพื้นที่ SAP (${codes.join(' / ')}) — จุดส่งเดียวรับของให้ 2 พื้นที่ไม่ได้ ให้แยกจุด`); return; }
     setSaving(true);
-    const payload = { code: code || null, name, line_names: lineNames, note: (form.note || '').trim() || null, is_active: !!form.is_active };
-    const q = form.id
-      ? supabaseDR.from('line_delivery_points').update(payload).eq('id', form.id)
-      : supabaseDR.from('line_delivery_points').insert(payload);
-    const { error } = await q;
+    const payload = { code: code || null, name, line_names: lineNames, note: (form.note || '').trim() || null, is_active: !!form.is_active, storage_location: codes[0] || null };
+    const run = (pl) => (form.id
+      ? supabaseDR.from('line_delivery_points').update(pl).eq('id', form.id)
+      : supabaseDR.from('line_delivery_points').insert(pl));
+    let { error } = await run(payload);
+    // 42703 = ยังไม่ apply 20260908_storage_locations_line_map (DR) → บันทึกแบบไม่ tag แล้วบอก ห้ามให้ตั้งจุดไม่ได้เพราะชั้นบัญชี
+    if (error?.code === '42703') {
+      const { storage_location, ...rest } = payload; void storage_location;
+      ({ error } = await run(rest));
+      if (!error) toast.info('บันทึกจุดแล้ว แต่ยังไม่ได้ apply migration 20260908_storage_locations_line_map (DR) — จุดไม่ถูกแปะรหัสคลัง SAP');
+    }
     setSaving(false);
     if (error) {
       // 23505 = รหัสสั้นซ้ำ (unique upper(code)) — บอกให้รู้ว่าชนกับใคร ไม่ใช่โยน SQL ใส่หน้า
@@ -157,6 +173,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                       {r.code && <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13, color: off ? 'var(--muted)' : '#22c55e' }}>{r.code}</span>}
                       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', flex: '1 1 120px' }}>{r.name}</span>
+                      {r.storage_location && <span title="พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏬 {r.storage_location}</span>}
                       {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏸ ปิดใช้งาน</span>}
                     </div>
                     {others.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔀 ใช้ร่วมกับ {others.join(' · ')}</div>}
@@ -209,6 +226,23 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                   placeholder="+ เพิ่มไลน์ที่ใช้จุดนี้ร่วม" role={role} lineId={lineId} sections={sections}
                   style={{ width: 240, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 }} />
               </div>
+              {/* 🏬 มุม SAP ที่จะถูกแปะบนจุด — derive จากไลน์ที่เลือก (ตกทอดจากไลน์แม่) · ยังไม่ผูก = บอก ไม่เดา */}
+              {(() => {
+                const info = (form.line_names || []).map(n => ({ n, s: slocOfLine(slocs, lines, n) }));
+                const codes = [...new Set(info.map(i => i.s?.code).filter(Boolean))];
+                const unmapped = info.filter(i => !i.s).map(i => i.n);
+                if (!info.length) return null;
+                return (
+                  <div style={{ marginTop: 8, fontSize: 11.5, color: codes.length > 1 ? '#ef4444' : 'var(--text2)' }}>
+                    {codes.length > 1
+                      ? <>🔴 ไลน์ที่เลือกอยู่คนละพื้นที่ SAP ({codes.join(' / ')}) — แยกเป็นคนละจุด</>
+                      : codes.length === 1
+                        ? <>🏬 พื้นที่ SAP: <b style={{ fontFamily: 'monospace' }}>{codes[0]}</b>{info.find(i => i.s)?.s.via !== info.find(i => i.s)?.n ? ` (ตกทอดจาก ${info.find(i => i.s).s.via})` : ''}</>
+                        : null}
+                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 Line Stock → 🏬 โซนคลัง)</span>}
+                  </div>
+                );
+              })()}
               <label style={{ display: 'block', marginTop: 10, fontSize: 12, color: 'var(--text2)' }}>หมายเหตุ (ตำแหน่งจริง เช่น "ข้างเสา C4 ฝั่งซ้ายของสายพาน")
                 <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inputSt} />
               </label>
