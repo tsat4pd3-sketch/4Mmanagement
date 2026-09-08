@@ -2432,7 +2432,15 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
    ใช้ parts_master เป็นแหล่งข้อมูลเดียวสำหรับ UOM (ไม่เก็บ uom ซ้ำใน kanban_standards)
    qty_per_kanban เริ่มต้น = parts_master.qty_per_pkg (1 ใบ Kanban = 1 packaging)
    ───────────────────────────────────────────────────────────────────────────── */
-const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lot_size: '' };
+/* lot_mode (2026-09-08 · user: "lot size 1 จริงๆ มันไม่มี มีแต่แบบสะสมล็อตกับแบบไม่ต้องสะสมล็อต")
+   'accumulate' = สะสม demand ครบ lot_size (≥2 ชิ้น) ค่อยออกใบสั่ง · 'direct' = ไม่สะสม ออกใบเท่ายอดขาดทุกครั้งที่ปิดใบ FG
+   '' = ยังไม่ตั้ง (demand ค้างใน accumulator) — กติกาจริงอยู่ที่ trigger fn_explode_child_demand (migration 20260908_lot_mode_direct)
+   ⚠️ ห้ามกลับไปใช้ "ใส่ 1 = ผลิตตามสั่ง" — trigger ตีความ 1 = ออกใบละ 1 ชิ้น (เคยระเบิด 400 ใบใน 3 วัน) · DB มี check lot_size >= 2 แล้ว */
+const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lot_size: '', lot_mode: '' };
+const LOT_MODE_META = {
+  accumulate: { label: '📥 สะสมล็อต', short: 'สะสม' },
+  direct:     { label: '🚚 ไม่สะสมล็อต (ผลิต/สั่งซื้อตามยอดที่ปิดใบ)', short: 'ไม่สะสม' },
+};
 
 /* ─────────────────────────────────────────────────────────────────────────────
    PANEL: PACKAGING — master กล่อง/พาเลท + link ต่อ product (เบิกจาก Rack Center)
@@ -2694,6 +2702,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
       min_qty: row.ks?.min_qty != null ? String(row.ks.min_qty) : '',
       max_qty: row.ks?.max_qty != null ? String(row.ks.max_qty) : '',
       lot_size: row.ks?.lot_size != null ? String(row.ks.lot_size) : '',
+      // แถวเก่าก่อน migration ไม่มี lot_mode: มี lot_size ≥2 = สะสมอยู่แล้ว (ตรงกับ backfill ใน migration)
+      lot_mode: row.ks?.lot_mode || (Number(row.ks?.lot_size) >= 2 ? 'accumulate' : ''),
     });
     setShowModal(true);
   };
@@ -2705,17 +2715,33 @@ function KanbanStdPanel({ canEdit, fullName }) {
     const minQ = form.min_qty === '' ? null : parseInt(form.min_qty);
     const maxQ = form.max_qty === '' ? null : parseInt(form.max_qty);
     if (minQ != null && maxQ != null && maxQ < minQ) { toast.error('Max ต้อง ≥ Min'); return; }
+    // โหมดล็อต: สะสม = ต้องมี lot_size ≥ 2 · ไม่สะสม = lot_size ว่างเสมอ (ค่าเก่าถูกล้าง ไม่งั้น trigger/จออื่นอ่านปนกัน)
+    const mode = form.lot_mode || null;
+    let lotSize = form.lot_size === '' ? null : parseInt(form.lot_size);
+    if (mode === 'accumulate') {
+      if (!(lotSize >= 2)) { toast.error('โหมดสะสมล็อต ต้องกรอกขนาดล็อตอย่างน้อย 2 ชิ้น — ถ้าผลิต/สั่งตามยอดทุกครั้ง ให้เลือก "ไม่สะสมล็อต"'); return; }
+    } else {
+      lotSize = null;
+    }
     setSaving(true);
-    const { error } = await supabaseDR.from('kanban_standards').upsert({
+    const payload = {
       mat_no: form.mat_no.trim().toUpperCase(),
       qty_per_kanban: qty,
       min_qty: minQ,
       max_qty: maxQ,
-      lot_size: form.lot_size === '' ? null : parseInt(form.lot_size),
+      lot_size: lotSize,
+      lot_mode: mode,
       is_active: true,
       updated_by: fullName,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'mat_no' });
+    };
+    let { error } = await supabaseDR.from('kanban_standards').upsert(payload, { onConflict: 'mat_no' });
+    // ยังไม่ apply migration 20260908_lot_mode_direct (42703) → บันทึกแบบเดิมได้ แต่ต้องบอกว่าโหมดไม่ถูกเก็บ (ห้ามเงียบ)
+    if (error && error.code === '42703' && /lot_mode/.test(error.message || '')) {
+      const { lot_mode: _lm, ...legacy } = payload;
+      ({ error } = await supabaseDR.from('kanban_standards').upsert(legacy, { onConflict: 'mat_no' }));
+      if (!error) toast.error('บันทึกแล้ว แต่ "โหมดล็อต" ยังไม่ถูกเก็บ — ฐานข้อมูลยังไม่ได้ apply migration 20260908_lot_mode_direct');
+    }
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึก Kanban Std แล้ว');
@@ -2776,7 +2802,10 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     </td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.min_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.min_qty != null ? row.ks.min_qty.toLocaleString() : '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: row.ks?.max_qty != null ? 'var(--text2)' : 'var(--muted)' }}>{row.ks?.max_qty != null ? row.ks.max_qty.toLocaleString() : '—'}</td>
-                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, color: row.ks?.lot_size != null ? '#7c3aed' : 'var(--muted)' }}>{row.ks?.lot_size != null ? row.ks.lot_size.toLocaleString() : '—'}</td>
+                    {/* โหมดล็อต: สะสม = โชว์ขนาด · ไม่สะสม = ป้าย · ว่าง = "—" (ยังไม่ตั้ง = demand ค้างใน accumulator) */}
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, color: row.ks?.lot_mode === 'direct' ? '#0ea5e9' : row.ks?.lot_size != null ? '#7c3aed' : 'var(--muted)' }}>
+                      {row.ks?.lot_mode === 'direct' ? '🚚 ไม่สะสม' : row.ks?.lot_size != null ? `📥 ${row.ks.lot_size.toLocaleString()}` : '—'}
+                    </td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}>
                       {row.ks ? (
                         <span title={row.ks.updated_by || ''}>
@@ -2832,28 +2861,54 @@ function KanbanStdPanel({ canEdit, fullName }) {
                 </div>
               </div>
               <div>
-                {/* ⚠️ ข้อความเดิม "เว้นว่าง = ไม่สะสมเป็นล็อต" บอกตรงข้ามกับที่ระบบทำจริง
-                    เว้นว่าง = ทริกเกอร์ `continue` ข้ามพาร์ทนี้ → demand สะสมใน accumulator เรื่อยๆ
-                    แต่ไม่มีวันกลายเป็นใบสั่ง (ข้อมูลจริง 2026-08: 44 พาร์ท 1.3 ล้านชิ้นค้างแบบนี้)
-                    พาร์ทพิเศษที่ "ผลิตตามสั่ง ไม่รอสะสม" → ใส่ 1 (lot-for-lot) ไม่ใช่เว้นว่าง */}
+                {/* ⚠️ เดิมช่องนี้เขียนบอกว่า "ใส่ 1 = ผลิตตามสั่ง ไม่รอสะสม" — planner ทำตาม ~90 พาร์ท (27-28/08)
+                    แล้ว trigger ตีความ 1 = "ออกใบละ 1 ชิ้น" → ใบขยะ 400 ใบใน 3 วัน (บั๊กหน่วย lot_size รอบ 2)
+                    user 2026-09-08: "lot size 1 จริงๆ มันไม่มี มีแต่แบบสะสมล็อตกับแบบไม่ต้องสะสมล็อต" → เก็บเป็นโหมดแยก (lot_mode)
+                    ⚠️ "ยังไม่ตั้ง" = ทริกเกอร์ข้ามพาร์ทนี้ → demand สะสมใน accumulator เรื่อยๆ แต่ไม่มีวันกลายเป็นใบสั่ง */}
                 <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
-                  Lot size — สะสม demand ครบเท่านี้ (<strong>ชิ้น</strong>) → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบอัตโนมัติ
+                  โหมดออกใบสั่งผลิต/สั่งซื้อพาร์ทนี้ (ตอนปิดใบผลิต FG ที่ใช้พาร์ทนี้)
                 </label>
-                <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
-                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="พาร์ทพิเศษ/ผลิตตามสั่ง → ใส่ 1" />
-                <div style={{ fontSize: 10.5, lineHeight: 1.6, marginTop: 4, color: 'var(--muted)' }}>
-                  <b style={{ color: 'var(--text)' }}>1</b> = ผลิตตามที่สั่ง ไม่ต้องรอสะสมล็อต (lot-for-lot — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ)
-                </div>
-                {!String(form.lot_size || '').trim() && (
+                <select value={form.lot_mode} onChange={e => setForm(f => ({ ...f, lot_mode: e.target.value, lot_size: e.target.value === 'accumulate' ? f.lot_size : '' }))}
+                  style={{ ...inputSt, fontWeight: 700 }}>
+                  <option value="">— ยังไม่ตั้ง (demand ค้าง ไม่ออกใบ) —</option>
+                  {Object.entries(LOT_MODE_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+                </select>
+                {form.lot_mode === 'accumulate' && (() => {
+                  const lot = Number(form.lot_size), pkg = Number(form.qty_per_kanban);
+                  const boxes = lot > 0 && pkg > 0 ? lot / pkg : null;
+                  return (
+                    <div style={{ marginTop: 8 }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
+                        Lot size — สะสม demand ครบเท่านี้ (<strong>ชิ้น</strong> ไม่ใช่จำนวนใบ/กล่อง) → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบอัตโนมัติ
+                      </label>
+                      <input type="number" min="2" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
+                        value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="เช่น 100" />
+                      {/* จอต้องเห็นค่าที่จะถูกบันทึกจริงในหน่วยที่คนคิด (กล่อง) — บทเรียนบั๊กหน่วย 21/08 + 08/09 */}
+                      {boxes != null && (
+                        <div style={{ fontSize: 11, marginTop: 4, color: lot < pkg ? '#ef4444' : 'var(--muted)', fontWeight: lot < pkg ? 700 : 400 }}>
+                          = {boxes.toLocaleString(undefined, { maximumFractionDigits: 2 })} กล่อง (Qty/Kanban {pkg.toLocaleString()} ชิ้น)
+                          {lot < pkg && ' — เล็กกว่า 1 กล่อง ใบสั่งจะออกถี่มาก ตรวจว่าใส่เป็น "ชิ้น" แล้วจริงไหม'}
+                        </div>
+                      )}
+                      {lot === 1 && <div style={{ fontSize: 11, marginTop: 4, color: '#ef4444', fontWeight: 700 }}>lot size 1 ไม่มีจริง — ถ้าผลิต/สั่งตามยอดทุกครั้ง ให้เลือกโหมด "ไม่สะสมล็อต" แทน</div>}
+                    </div>
+                  );
+                })()}
+                {form.lot_mode === 'direct' && (
+                  <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 5, color: 'var(--text2)' }}>
+                    ปิดใบผลิต FG 1 ครั้ง = ออกใบสั่ง 1 ใบ เท่ายอดที่ขาด (หักของในไลน์แล้ว) ทันที ไม่รอสะสม
+                  </div>
+                )}
+                {!form.lot_mode && (
                   <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 5, color: '#f59e0b', background: '#f59e0b14', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 8px' }}>
-                    ⚠️ <b>เว้นว่าง = ความต้องการค้างถาวร</b> — ระบบจะสะสม demand ของพาร์ทนี้ไปเรื่อยๆ แต่<b>ไม่มีวันออกใบสั่ง</b>
-                    <div style={{ opacity: 0.85, marginTop: 2 }}>ถ้าเป็นพาร์ทที่ผลิตตามสั่ง ให้ใส่ <b>1</b> · จุดที่ค้างอยู่ตอนนี้ดูได้ที่หน้า 🔗 สายธารความต้องการ</div>
+                    ⚠️ <b>ยังไม่ตั้งโหมด = ความต้องการค้างถาวร</b> — ระบบจะสะสม demand ของพาร์ทนี้ไปเรื่อยๆ แต่<b>ไม่มีวันออกใบสั่ง</b>
+                    <div style={{ opacity: 0.85, marginTop: 2 }}>จุดที่ค้างอยู่ตอนนี้ดูได้ที่หน้า 🔗 สายธารความต้องการ</div>
                   </div>
                 )}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                 UOM: <strong style={{ color: 'var(--text)' }}>{parts.find(p => p.mat_no === form.mat_no)?.uom || '—'}</strong> (จาก Parts Master)
-                · Min-Max คุมการเติมที่สโตร์ (ชิ้น) · Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย (ชิ้น)
+                · Min-Max คุมการเติมที่สโตร์ (ชิ้น) · โหมดล็อต/Lot size = เกณฑ์ยิงใบสั่งผลิตพาร์ทย่อย (ชิ้น)
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

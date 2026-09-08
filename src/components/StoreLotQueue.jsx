@@ -5,6 +5,7 @@ import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
+import { fetchAllRows } from '../utils/fetchAllRows';
 import ReadOnlyNote from './ReadOnlyNote';
 
 /**
@@ -62,12 +63,13 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
     if (!lineName) return;
     setLoading(true); setErr(null);
     try {
-      // 1) คิวใบสั่งที่ยังไม่ปิด — ทั้งระบบมีหลักสิบแถว ดึงมาแล้วกรองครอบครัวไลน์ฝั่ง client
+      // 1) คิวใบสั่งที่ยังไม่ปิด — ดึงทั้งระบบแล้วกรองครอบครัวไลน์ฝั่ง client
       //    (`source_line` เป็น text snapshot — `.in()` ตรงตัวพลาดง่ายเมื่อชื่อไลน์เคยถูกแก้)
       //    ⚠️ ต้องตัด `cancelled` ด้วย — ใบยกเลิกไม่ใช่งานค้าง (25/08 มี 100 ใบจากบั๊กหน่วย lot_size)
-      //    ปล่อยไว้ = ไลน์ปั๊มเห็นคิวปลอมเต็มจอ (บั๊กเดียวกับที่เพิ่งแก้ที่บอร์ดสโตร์)
-      const { data: lotRows, error: e1 } = await supabaseDR.from('child_lot_requests')
-        .select('*').not('status', 'in', '("done","cancelled")').order('created_at', { ascending: true }).limit(500);
+      //    ⚠️ ห้าม `.limit(N)` — 08/09 คิวทั้งระบบพองถึง 472 ใบ (ใบขยะ 1 ชิ้น 400 ใบ) ชนเพดาน 500 เดิม
+      //    = ใบใหม่สุดของไลน์ถูกตัดทิ้งเงียบ → แบ่งหน้าให้ครบ (fetchAllRows) ตามกฎ "ห้ามตัดข้อมูลเงียบ"
+      const { data: lotRows, error: e1 } = await fetchAllRows(supabaseDR, 'child_lot_requests', '*',
+        q => q.not('status', 'in', '("done","cancelled")').order('created_at', { ascending: true }).order('id'));
       if (e1) throw e1;
       const mine = (lotRows || []).filter(l => famSet.has(norm(l.source_line)));
       mine.sort((a, b) => {
@@ -182,7 +184,8 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
             {lots.map(lot => {
               const st      = LOT_META[lot.status] || LOT_META.pending;
               const rl      = rawByLot[lot.id] || [];
-              const rWait   = rl.filter(r => r.status !== 'issued');
+              // ใบเบิกที่ยกเลิก (ตามใบล็อตที่ถูก void) ไม่ใช่ของที่รอสโตร์จ่าย
+              const rWait   = rl.filter(r => r.status !== 'issued' && r.status !== 'cancelled');
               const days    = Math.floor((Date.now() - new Date(lot.created_at).getTime()) / 86400000);
               const madeQty = made[lot.child_mat_no] || 0;
               const ordered = orderedByMat[lot.child_mat_no] || 0;
@@ -247,6 +250,8 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                   <span style={{ color: '#f59e0b', fontWeight: 700 }}>ค้าง {fmt(b.pending_qty)} ชิ้น</span>
                   {b.block_reason === 'backlog_capped'
                     ? <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดเกินเพดานออกใบต่อรอบ จะทยอยออกใบเมื่อปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                    : b.block_reason === 'direct_backlog'
+                    ? <span style={{ color: 'var(--muted)', fontWeight: 700 }} title="พาร์ทนี้ตั้งเป็น 'ไม่สะสมล็อต' แล้ว — ยอดนี้คือของที่สะสมไว้ก่อนสลับโหมด ระบบไม่ออกใบให้เอง planner ต้องตัดสินใจ">🚚 ไม่สะสมล็อต · ยอดค้างก่อนสลับโหมด</span>
                     : b.suggested_lot > 0 && <span style={{ color: 'var(--muted)' }}>· เสนอล็อตละ {fmt(b.suggested_lot)}</span>}
                 </div>
               ))}

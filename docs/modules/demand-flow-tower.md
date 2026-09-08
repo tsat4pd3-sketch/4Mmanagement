@@ -60,10 +60,60 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > แล้วมีคนล้าง `lot_size` กลับเป็น null วันเดียวกัน → **ไม่มีใบสั่งซื้อออกอีกเลย 17 วัน** (คนคิดว่าระบบพัง)
 > - **อุดที่ทริกเกอร์แล้ว: เพดาน `MAX_LOTS = 50` ใบต่อพาร์ทต่อการปิดออเดอร์ 1 ครั้ง** (migration `20260821_explode_demand_lot_guard.sql` · apply แล้ว)
 >   ส่วนเกิน**ไม่หาย** — ค้างใน `child_demand_accumulator` เหมือนเดิม จึงยังโผล่ใน `v_demand_flow_blocks` / `/flow-tower`
-> - **ห้ามแก้ด้วยการห้ามตั้ง `lot_size` ต่ำ** — ของแพงบางตัวสั่งครั้งละ 1 ชิ้นได้จริง · ระบบต้องทนค่าที่คนกรอกผิด ไม่ใช่พังทั้งคิว
+> - ~~**ห้ามแก้ด้วยการห้ามตั้ง `lot_size` ต่ำ** — ของแพงบางตัวสั่งครั้งละ 1 ชิ้นได้จริง~~ **ยกเลิก 2026-09-08:** "สั่งครั้งละ 1 ชิ้น/ตามยอด"
+>   = โหมด `lot_mode='direct'` แล้ว · DB มี check `lot_size >= 2` (บั๊กนี้กลับมารอบ 2 ผ่านหน้า Kanban Std — ดูกฎเหล็ก lot_mode ด้านล่าง)
+>   · ที่ยังคงอยู่: ระบบต้องทนค่าที่คนกรอกผิด ไม่ใช่พังทั้งคิว (เพดาน MAX_LOTS ยังอยู่)
 > - ล้างใบขยะ 984 ใบแล้วด้วย **`status='cancelled'` + เหตุผลในชื่อพาร์ท ไม่ลบ** (`20260821_void_lot_size_typo_purchase_requests.sql`)
 >   — precedent เดียวกับการเคลียร์ `[Auto]` 4M ค้าง 323 ใบ
 > - **loop ที่ออกเอกสารตามปริมาณ ต้องมีเพดานเสมอ** — จุดใหม่ที่เขียน `while` แล้ว insert ในทริกเกอร์ ให้ทำแบบเดียวกัน
+
+> **🔴🔴 กฎเหล็ก — โหมดล็อตของพาร์ทลูก = `kanban_standards.lot_mode` · lot_size = 1 ไม่มีจริง (2026-09-08 · user เคาะ)**
+> *"lot size 1 จริงๆ มันไม่มีหรอก มันมีแต่แบบสะสมล็อตกับแบบไม่ต้องสะสมล็อต แต่ก็ไม่ได้หมายความว่า lot size = 1"*
+>
+> **บั๊กหน่วย lot_size รอบที่ 2 (พบจาก audit ภาพหน้า Daily Report LASER-345):** หน้า Kanban Std เคยเขียนบอกว่า
+> "ใส่ 1 = ผลิตตามสั่ง ไม่รอสะสม" → planner ทำตาม **~90 พาร์ท (27–28/08 · ไม่ผ่านปุ่ม Apply ที่แก้ไป 21/08)**
+> → ทริกเกอร์ `while pending >= lot` ออก **ใบละ 1 ชิ้น 400 ใบใน 3 วัน** (20067543/44/45 · 20070738 — user ยืนยันเป็น OP ทั้งหมด)
+> **บทเรียน: แก้ที่ปุ่ม Apply อย่างเดียวไม่พอ — ทุกทางเข้าที่เขียน lot_size ต้องสื่อความหมายเดียวกัน และ DB ต้องกันเอง**
+>
+> | `lot_mode` | ความหมาย | ทริกเกอร์ทำอะไร |
+> |---|---|---|
+> | `accumulate` | สะสมล็อต | สะสมใน `child_demand_accumulator` ครบ `lot_size` (**≥ 2 ชิ้น**) ค่อยออกใบ · เพดาน MAX_LOTS=50 (เดิม) |
+> | `direct` | ไม่สะสมล็อต | ปิดใบ FG 1 ครั้ง = **ออกใบ 1 ใบ เท่ายอดที่ขาด (ceil)** ทันที ไม่แตะ accumulator · `lot_size` ต้องว่าง |
+> | null | ยังไม่ตั้ง | สะสมค้างใน accumulator ไม่ออกใบ → โผล่ `v_demand_flow_blocks` (`no_lot_size`) |
+>
+> - migration `20260908_lot_mode_direct.sql` (DR · **apply แล้ว 08/09**): คอลัมน์ + check `lot_mode in (accumulate,direct)` +
+>   **check `lot_size is null or lot_size >= 2`** (กฎเดิม 21/08 ที่ห้ามบล็อกค่าต่ำ ยกเลิก — "สั่งครั้งละ 1 ชิ้น" คือโหมด direct)
+>   · backfill: lot_size=1 ทั้ง 90 แถว → `direct` + lot_size null (backup `kanban_standards_bak_lot1_20260908`) · lot_size≥2 → `accumulate`
+> - **จุดออกใบรวมเป็นฟังก์ชันเดียว `fn_emit_child_demand_slip()`** (ของซื้อ 3xx/5xx → `purchase_requests` · ผลิตเอง → `child_lot_requests`
+>   + `raw_withdrawal_requests`) — สาย direct กับสาย accumulate เรียกตัวเดียวกัน ห้ามก๊อป logic ออกใบไปเขียนที่อื่น
+> - **ลูกใน BOM ที่เป็น OP (`dr_products.is_operation`) → ทริกเกอร์ข้ามทั้งแถว** (ไม่หักมินิสโตร์/ไม่สะสม/ไม่ออกใบ) — เดิมข้ามเฉพาะ FG ที่เป็น OP
+>   · ⚠️ ข้อมูลจริง OP ยัง `is_operation=false`/ไม่มีใน dr_products (ดูรายการค้างด้านล่าง) ⇒ guard นี้จะทำงานเมื่อ master ถูกแก้
+> - วิว `v_demand_flow_blocks` v3: `block_reason='direct_backlog'` = โหมด direct ที่ยังมียอดค้างจากก่อนสลับโหมด (**ระบบไม่ออกใบให้เอง**
+>   planner ตัดสินใจ) · FlowTower/StoreLotQueue ไม่โชว์ปุ่มตั้งล็อตให้แถวนี้ · Heijunka การ์ดสะสมเขียน "ไม่สะสมล็อต · ค้างก่อนสลับโหมด"
+> - จุดเขียน `lot_mode` ฝั่ง client: ProductMaster Kanban Std (select โหมด + ช่อง lot_size โผล่เฉพาะ accumulate + แสดง "= N กล่อง") ·
+>   FlowTower ปุ่มตั้งล็อต (= accumulate เสมอ) · PlannerSales Apply (= accumulate · ค่าคำนวณ < 2 ชิ้น = **ไม่เขียน lot_size + toast แดง**)
+>   · ทุกจุดทน 42703 ก่อน apply แต่ต้องบอกว่าโหมดไม่ถูกเก็บ
+> - **ยังไม่ทำ:** VSM/RoutingPanel อ่าน `lot_size` อย่างเดียว — พาร์ท direct จะขึ้น "LOT ยังไม่ตั้ง" (ไม่ผิดแต่ไม่บอกโหมด) ·
+>   `dr_products.posting_mode` (immediate/lot_accumulate) เป็นแกน "โพสต์ใบผลิต FG" คนละเรื่อง **และตอนนี้ไม่มีโค้ดอ่านเลย** — ห้ามผูกเข้ากับ lot_mode
+>
+> **🧹 ล้างใบขยะ 420 ใบ (`20260908_void_junk_child_lot_requests.sql` · apply แล้ว · backup `child_lot_req_bak_junk_20260908`):**
+> ใบละ ≤1 ชิ้น 400 ใบ + **ใบสั่งผลิตของ 5xx (coil 50031601) 20 ใบ × 1,000 ชิ้น ค้าง 63–68 วัน** ที่เกิด 1–9 ก.ค.
+> *ก่อน* migration 20260710 route ของซื้อไปสั่งซื้อ (ตอนล้าง 24/08 แตะเฉพาะใบ ≤1 ชิ้น จึงรอด) · ครั้งนี้ void `producing` ด้วย
+> (5 ใบถูกกด "รับงาน" บนหน้า Daily Report วันเดียวกัน = ไลน์รับงานปลอม) · ใบเบิกวัตถุดิบ pending ของใบเหล่านี้ 700 แถว → `cancelled`
+> (Heijunka/StoreLotQueue กรอง cancelled ออกแล้ว) · **StoreLotQueue เลิก `.limit(500)` → `fetchAllRows`** (คิวเคยพองถึง 472 ใบ ใกล้ตัดเงียบ)
+>
+> **📋 worklist ค้างให้ PE/Planning ตัดสินใจ (ระบบไม่เดาเขียนแทน — user ยืนยันข้อเท็จจริง 08/09 แต่ต้องตั้ง `op_parent_mat` เอง):**
+> - `50031601`/`50031602` (LASER-345 · laser_cutting) = **OP laser cutting ของงาน apron assy 60/61 ทุกลูกค้า** · `50029017` (Laser GOR) ·
+>   `50031625` (Laser LWR) = OP ของ GOR / LWR BAR ทุกลูกค้า → ตอนนี้ลงทะเบียนเป็น "สินค้า" (`is_operation=false`) ด้วย**เลข coil**
+>   ⇒ LASER-345 เปิดใบผลิตด้วย mat `50031601` จริง 18 ใบ (7,985 ชิ้น ตั้งแต่ 21/08) — งานที่ออกจากเลเซอร์ควรเป็นเบอร์ 2xx ไม่ใช่เลขเหล็ก
+>   · ตั้ง `is_operation=true` + `op_parent_mat` ที่ Product Master แล้ว guard ใหม่ในทริกเกอร์จะข้ามให้เอง
+> - `20067543` · `20067544` · `20070738` = OP แต่**ไม่มีใน `dr_products` เลย** (มีแค่ `kanban_standards` + อยู่ใน BOM ของ FG) · `20067545` มีแต่ `is_operation=false`
+>   → OP ห้ามอยู่ใน BOM ตามกฎ BOM หลายชั้น — ต้องให้ PE เอาออก/ต่อโซ่ · accumulator ยังค้าง 775 ชิ้น (`direct_backlog`)
+> - `kanban_standards` 240/366 แถว ไม่มีใน `dr_products` → `source_line` ว่าง = ใบสั่งผลิตไม่โผล่ในจอไลน์ไหนเลย (320/472 ใบก่อนล้าง)
+>
+> **🕵️ `production_sessions` ผูก `fn_audit` แล้ว (`20260908_production_sessions_audit.sql`)** — ภาพ 09:33 ขึ้น "ค้างจากวันก่อน 56"
+> (LINE ASSY TSRA 39 กะ) แต่ 2 ชม.ต่อมา DB เหลือ 15 และไม่มีกะ TSRA ของวันก่อนเลย → น่าจะถูก "ลบกะเปล่า" แต่**พิสูจน์ไม่ได้**
+> (ไม่มี audit + FK CASCADE ลบ orders/downtime/defect ตามเงียบ) · ต่อไปนี้ทุก insert/update/delete ของกะมีร่องรอย
 
 > **✅ backflush หา mini-store ผิดชั้นไลน์ — user เคาะแล้ว 2026-08-21: "ไลน์แม่เป็นแค่แผนกใหญ่ งานอยู่ไลน์ลูกหมด"**
 > อาการเดิม: `fn_explode_child_demand` หักมินิสโตร์ด้วย `line_name` ของ**ไลน์ที่เปิดกะ** (ไลน์ลูก: Line 60/61/Assy LWR/SUB APRON)

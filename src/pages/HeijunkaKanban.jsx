@@ -848,14 +848,15 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
             {accumulator.map(a => {
-              const lot = lotSizeMap[a.child_mat_no];
+              const mode = lotSizeMap[a.child_mat_no];
+              const lot = mode === 'direct' ? null : mode;
               const pct = lot ? Math.min(100, (a.pending_qty / lot) * 100) : 0;
               return (
                 <div key={a.child_mat_no} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
                   <div style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(a.child_mat_no), fontSize: 13 }}>{a.child_mat_no}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
                     <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(a.pending_qty)}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lot ? `/ ${fmt(lot)} ล็อต` : 'ยังไม่ตั้ง lot'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lot ? `/ ${fmt(lot)} ล็อต` : mode === 'direct' ? 'ไม่สะสมล็อต · ค้างก่อนสลับโหมด' : 'ยังไม่ตั้ง lot'}</span>
                   </div>
                   {lot > 0 && (
                     <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden', marginTop: 6 }}>
@@ -1413,9 +1414,10 @@ export default function HeijunkaKanban() {
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
     const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
-      supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
+      // ใบเบิกวัตถุดิบที่ยกเลิก (ตามใบล็อตที่ถูก void 08/09) ไม่ใช่งานค้าง — กรองตั้งแต่ query เหมือน child_lot
+      supabaseDR.from('raw_withdrawal_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
-      supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
+      supabaseDR.from('kanban_standards').select('mat_no, lot_size, lot_mode').eq('is_active', true),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
       /* ⚠️⚠️ กรอง `suggested`/`hold` ออกเสมอ — 2 สถานะนี้ยัง "ไม่ใช่คำสั่ง"
@@ -1447,7 +1449,8 @@ export default function HeijunkaKanban() {
     setDeliveryPoints(dpErr ? [] : (dps || []));
     setPurchaseRequests(purchases || []);
     const lm = {};
-    (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
+    // โหมด "ไม่สะสมล็อต" (lot_mode=direct) เก็บเป็น 'direct' — การ์ดสะสมจะบอกว่ายอดนี้คือของค้างก่อนสลับโหมด
+    (ks || []).forEach(s => { if (s.lot_mode === 'direct') lm[s.mat_no] = 'direct'; else if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
     setLotSizeMap(lm);
   }, []);
 

@@ -161,8 +161,9 @@ export default function FlowTower() {
     if (!(v > 0)) { toast.error('ยังไม่มีค่าบรรจุต่อกล่องให้ใช้เป็นค่าเริ่มต้น — ตั้งเองที่ Product Master'); return; }
     if (!window.confirm(`ตั้งขนาดล็อตของ ${row.mat_no} = ${fmt(v)} ชิ้น (1 กล่อง)?\n\nความต้องการที่ค้างอยู่ ${fmt(row.pending_qty)} ชิ้น จะถูกแปลงเป็นใบสั่งในรอบผลิตถัดไป`)) return;
     setBusy(row.mat_no);
+    // ตั้งจากปุ่มนี้ = โหมด "สะสมล็อต" เสมอ (lot_mode ต้องไปคู่กับ lot_size — กติกาอยู่ที่ fn_explode_child_demand)
     const { data, error } = await supabaseDR.from('kanban_standards')
-      .update({ lot_size: v }).eq('mat_no', row.mat_no).eq('is_active', true).select('mat_no');
+      .update({ lot_size: v, lot_mode: 'accumulate' }).eq('mat_no', row.mat_no).eq('is_active', true).select('mat_no');
     setBusy('');
     if (error) { toast.error(error.message); return; }
     // ⚠️ RLS/เงื่อนไขไม่ตรง = สำเร็จ 0 แถว ไม่ error — ต้องนับแถวก่อนบอกว่าสำเร็จ
@@ -346,6 +347,10 @@ export default function FlowTower() {
                               (กดแล้วจะเขียนทับ lot_size ที่คนตั้งไว้ด้วยค่าเสนอ 1 กล่อง) · วิวเก่าไม่มีคอลัมน์นี้ = undefined = พฤติกรรมเดิม */}
                           {b.block_reason === 'backlog_capped'
                             ? <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                            /* direct_backlog = พาร์ทโหมด "ไม่สะสมล็อต" ที่ยังมียอดสะสมค้างจากก่อนสลับโหมด (08/09) —
+                               ห้ามโชว์ปุ่มตั้งล็อต (จะเปลี่ยนโหมดกลับเป็นสะสม) · ระบบไม่ออกใบให้เอง planner ตัดสินใจที่ Product Master */
+                            : b.block_reason === 'direct_backlog'
+                            ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }} title="พาร์ทนี้ตั้งเป็น 'ไม่สะสมล็อต' — ยอดนี้สะสมไว้ก่อนสลับโหมด ระบบไม่ออกใบให้เอง ให้ planner ตัดสินใจ (ตั้งกลับเป็นสะสมล็อต หรือสั่งผลิต/สั่งซื้อเอง)">🚚 ไม่สะสมล็อต · ค้างก่อนสลับโหมด</span>
                             : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
                               style={{ padding: '4px 10px', borderRadius: 7, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>

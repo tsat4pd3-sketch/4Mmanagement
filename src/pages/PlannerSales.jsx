@@ -1093,6 +1093,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     setApplying(true);
     try {
       let paramWarn = false;
+      const lotSkipped = [];   // พาร์ทที่ขนาดล็อตคำนวณได้ < 2 ชิ้น — ไม่เขียน lot_size (ห้ามเงียบ)
       for (const row of changedRows) {
         const pp = row.pp, r = row.r;
         // 1) บันทึก param ที่ใช้ (จำไว้รอบหน้า) — production เพิ่มฟิลด์เฉพาะ (best-effort ถ้ายังไม่ได้ apply migration)
@@ -1116,7 +1117,11 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         // ⚠️ ต้อง destructure { error } + นับแถว — supabase-js คืน error ไม่ throw · เดิมไม่เช็คเลย
         //    = kanban_standards ไม่ติดบางแถวใต้ toast เขียว "อัปเดตแล้ว" (QC flow-audit D1)
         const lotStd = lotPcsOf(calcType, pp);   // ← ชิ้นเสมอ (ดูกฎเหล็กที่ lotPcsOf)
-        const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, lot_size: lotStd, total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
+        /* ⚠️ lot_size = 1 ไม่มีจริง (user 2026-09-08) — DB มี check `lot_size >= 2` แล้ว
+           ปุ่มนี้ = ตั้งโหมด "สะสมล็อต" เสมอ · ค่าที่คำนวณได้ < 2 ชิ้น (pkg=1 × 1 ใบ) = ไม่เขียน lot_size และบอกให้ไปตั้งโหมดที่ Product Master */
+        const lotPatch = lotStd >= 2 ? { lot_size: lotStd, lot_mode: 'accumulate' } : {};
+        if (lotStd < 2) lotSkipped.push(row.mat);
+        const patch = { qty_per_kanban: Number(pp.packaging), min_qty: r.minPcs, max_qty: r.maxPcs, ...lotPatch, total_kanban: r.totalKanban, updated_by: fullName, updated_at: new Date().toISOString() };
         if (row.ks && row.ks.mat_no) {
           const { data: upd, error: kErr } = await supabaseDR.from('kanban_standards')
             .update(patch).eq('mat_no', row.mat).select('mat_no');
@@ -1130,6 +1135,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       }
       toast.success(`✅ อัปเดต kanban ${changedRows.length} รายการเข้าระบบดึงแล้ว`);
       if (paramWarn) toast.info('หมายเหตุ: param เฉพาะ Production ยังไม่ถูกจำ (ต้อง apply migration 20260716_kanban_production_calc)');
+      if (lotSkipped.length) toast.error(`ไม่ได้ตั้งขนาดล็อตให้ ${lotSkipped.length} พาร์ท (${lotSkipped.slice(0, 5).join(', ')}${lotSkipped.length > 5 ? ' …' : ''}) — ค่าที่คำนวณได้ต่ำกว่า 2 ชิ้น · lot size 1 ไม่มีจริง ถ้าเป็นพาร์ทที่ผลิตตามสั่งให้ตั้งโหมด "ไม่สะสมล็อต" ที่ Product Master → Kanban Std`);
       setPreview(null);
       await load();
     } catch (err) { toast.error(err.message); }
