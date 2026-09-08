@@ -370,3 +370,45 @@ export function splitDefectQty(rows) {
   (rows || []).forEach(d => { const q = defectQty(d); all += q; if (isTrialDefect(d)) trial += q; });
   return { all, line: all - trial, trial };
 }
+
+/* ═══ เป้า A/P/Q และค่าเฉลี่ยข้ามเดือน/ไตรมาส (2026-09-08 · เด็ค Monthly Review โหมด full data) ═══
+   อยู่ในไฟล์นี้เพราะเป็น "สูตร OEE" — กฎโปรเจค: util OEE มีไฟล์เดียว ห้ามแตกเพิ่ม */
+
+/** เป้ามาตรฐานเมื่อกลุ่มนั้นยังไม่ได้ตั้งค่า (A 90 × P 90 × Q 99 → OEE 80.2) */
+export const DEFAULT_OEE_TARGET = { a: 90, p: 90, q: 99 };
+
+/** เป้า OEE = A × P × Q เสมอ — **ห้ามอ่าน `oee_targets.target_oee`** (คอลัมน์ vestigial) */
+export const targetOeeOf = (t = {}) => {
+  const a = t.a ?? DEFAULT_OEE_TARGET.a, p = t.p ?? DEFAULT_OEE_TARGET.p, q = t.q ?? DEFAULT_OEE_TARGET.q;
+  return Math.round(((a / 100) * (p / 100) * (q / 100) * 100) * 10) / 10;
+};
+
+/** แถว `oee_targets` (หรือ null) → { a, p, q, oee, isDefault } · null/ค่าว่าง = ใช้ค่ามาตรฐาน */
+export function normOeeTarget(row) {
+  const pick = (v, d) => (v == null || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
+  const t = {
+    a: pick(row?.target_a, DEFAULT_OEE_TARGET.a),
+    p: pick(row?.target_p, DEFAULT_OEE_TARGET.p),
+    q: pick(row?.target_q, DEFAULT_OEE_TARGET.q),
+  };
+  return { ...t, oee: targetOeeOf(t), isDefault: !row };
+}
+
+/**
+ * เฉลี่ย OEE ข้ามหลายเดือน (ไตรมาส/ทั้งปี) — **ถ่วงน้ำหนักด้วยเวลารับภาระ ห้าม mean-of-percentages**
+ * rows = [{ oee, loadHr, nSess }] · ข้ามเดือนที่ไม่มีกะปิด (nSess = 0) และเดือนที่ OEE เป็น null
+ * ไม่มีน้ำหนักเลย (loadHr หายทุกแถว) → ถอยไปเฉลี่ยธรรมดา ดีกว่าคืน null ทั้งที่มีข้อมูล
+ * คืน null เมื่อไม่มีเดือนที่ใช้ได้เลย (= "ไม่มีข้อมูล" ไม่ใช่ 0)
+ */
+export function weightedOeeOf(rows, filterFn = null) {
+  const ms = (rows || []).filter(r => r && (r.nSess ?? 1) > 0 && r.oee != null && (!filterFn || filterFn(r)));
+  if (!ms.length) return null;
+  const w = ms.reduce((a, r) => a + (Number(r.loadHr) || 0), 0);
+  const v = w > 0
+    ? ms.reduce((a, r) => a + Number(r.oee) * (Number(r.loadHr) || 0), 0) / w
+    : ms.reduce((a, r) => a + Number(r.oee), 0) / ms.length;
+  return Math.round(v * 10) / 10;
+}
+
+/** ไตรมาสของ monthKey 'YYYY-MM' (1-4) */
+export const quarterOfMonthKey = (mk) => Math.ceil(Number(String(mk).split('-')[1]) / 3) || null;
