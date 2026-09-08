@@ -566,6 +566,14 @@ export default function LineSetup({ embedded = false } = {}) {
         await supabaseDR.from('line_delivery_points').update({ line_names: next }).eq('id', d.id);
       }
     } catch { /* best-effort — ตารางยังไม่ apply ก็ข้าม */ }
+    // 🏬 ทะเบียนรหัสคลัง SAP — line_names text[] เหมือนกัน (ผูกที่ไลน์แม่ → เปลี่ยนชื่อแม่แล้วทั้งแผนกหลุดจาก SLoc เงียบ ถ้าไม่ตาม)
+    try {
+      const { data: sls } = await supabaseDR.from('storage_locations').select('code, line_names').contains('line_names', [old]);
+      for (const sl of sls || []) {
+        const next = (sl.line_names || []).map(n => (n === old ? name : n));
+        await supabaseDR.from('storage_locations').update({ line_names: next }).eq('code', sl.code);
+      }
+    } catch { /* best-effort — ยังไม่ apply 20260908 ก็ข้าม */ }
 
     /* cascade ล้มบางตาราง = ข้อมูลชื่อเก่ากำพร้าอยู่ตรงนั้น ต้องบอกให้รู้ว่าตารางไหน
        (ไม่ abort ตามดีไซน์เดิม — แต่ห้ามเงียบ ไม่งั้นไม่มีใครรู้ว่าต้องไปตามแก้) */

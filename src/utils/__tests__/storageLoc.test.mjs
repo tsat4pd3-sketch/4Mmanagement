@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SLOC_RE, slocLabel, slocValid, slocKindGuess, slocKindMeta, SLOC_KINDS } from '../storageLoc.js';
+import { SLOC_RE, slocLabel, slocValid, slocKindGuess, slocKindMeta, SLOC_KINDS, slocOfLine, slocCodeOfLine, linesOfSloc } from '../storageLoc.js';
 
 /* รูปแบบที่ user กำหนดเอง 2026-09-02:
    ตัวอักษร 1-3 ตัว + เลข 3 หลัก · S=สโตร์ชิ้นส่วน P=ผลิต W=warehouse R=วัตถุดิบ */
@@ -61,4 +61,38 @@ test('slocKindMeta — ชนิดที่ไม่รู้จักต้อ
   Object.entries(SLOC_KINDS).forEach(([k, v]) => {
     assert.ok(v.label && v.icon && v.color, k);
   });
+});
+
+/* ── ไลน์ → SLoc (2026-09-08): ผูกที่ไลน์แม่ครั้งเดียว ลูกตกทอด · ยังไม่ผูก = null ห้ามเดา ── */
+const LINES = [
+  { name: 'LINE APRON ASSY', parent_line_name: null }, { name: 'Line 60', parent_line_name: 'LINE APRON ASSY' },
+  { name: 'Line 61', parent_line_name: 'LINE APRON ASSY' }, { name: 'SUB APRON', parent_line_name: 'LINE APRON ASSY' },
+  { name: 'HYDROFORM', parent_line_name: null }, { name: 'HDF1', parent_line_name: 'HYDROFORM' },
+  { name: 'LINE B', parent_line_name: null }, { name: 'STORE', parent_line_name: null },
+];
+const SLOCS = [
+  { code: 'P411', line_names: ['LINE APRON ASSY'], is_active: true },
+  { code: 'P409', line_names: ['HYDROFORM'], is_active: true },
+  { code: 'S401', line_names: ['STORE'], is_active: true },
+  { code: 'X999', line_names: ['LINE B'], is_active: false },
+];
+test('slocOfLine — ไลน์ลูกตกทอดจากแม่ · Line 60/61/Sub ทั้งหมด = P411 · via บอกว่าผูกที่ไหน', () => {
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'Line 60'), 'P411');
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'Line 61'), 'P411');
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'SUB APRON'), 'P411');
+  assert.equal(slocOfLine(SLOCS, LINES, 'Line 60').via, 'LINE APRON ASSY');
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'HDF1'), 'P409');
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'STORE'), 'S401');
+});
+test('🔴 ยังไม่ผูก / ผูกกับ SLoc ที่ปิด = null ไม่ใช่เดา', () => {
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'LINE B'), null);     // ผูกกับ X999 ที่ปิดใช้งาน
+  assert.equal(slocCodeOfLine(SLOCS, LINES, 'ไม่มีไลน์นี้'), null);
+  assert.equal(slocCodeOfLine(SLOCS, LINES, ''), null);
+  assert.equal(slocCodeOfLine([{ code: 'P1', line_names: null }], LINES, 'Line 60'), null);   // แถวเก่าไม่มี line_names ไม่พัง
+});
+test('ไลน์ที่ผูก SLoc เองชนะแม่ · linesOfSloc รวมลูกหลานให้', () => {
+  const S2 = [...SLOCS, { code: 'P412', line_names: ['SUB APRON'], is_active: true }];
+  assert.equal(slocCodeOfLine(S2, LINES, 'SUB APRON'), 'P412');
+  assert.deepEqual(linesOfSloc(S2, LINES, 'P411').sort(), ['LINE APRON ASSY', 'Line 60', 'Line 61']);
+  assert.deepEqual(linesOfSloc(S2, LINES, 'p412'), ['SUB APRON']);
 });
