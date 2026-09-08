@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
+import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
+import { fmtDate, todayLocal } from '../utils/dateFormat';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
@@ -141,47 +143,56 @@ export default function OjtTraining() {
   };
   useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
 
+  const EMP_PICK_COLS = 'id, name, employee_id_code, section, line_id, team';
+
+  // ไลน์ใน scope ของผู้ใช้ (leader = ทั้งครอบครัวไลน์) — ใช้ทั้งกรอง employees และหาคนยืมตัว
+  const scopeLineIds = useMemo(() => {
+    if (role !== 'leader' || !userLineId) return null;
+    const fam = getLineFamilyIds(lines, Number(userLineId) || userLineId);
+    return fam.size ? [...fam] : [Number(userLineId) || userLineId];
+  }, [lines, role, userLineId]);
+
   // พนักงานสำหรับ picker — scope: leader = ครอบครัวไลน์ตัวเอง · role อื่นตาม sections
-  // + 🤝 คนที่ถูกยืมตัวมาไลน์ใน scope "กะนี้" (line_helpers) — หัวหน้าที่ยืมคนข้ามส่วนงานต้อง OJT ให้เขาได้
-  //   (feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ เพราะ picker กรองตาม section/ไลน์สังกัดเดิม)
   useEffect(() => {
     if (!lines.length && role === 'leader') return;
     let alive = true;
     (async () => {
-      let q = supabase.from('employees').select('id, name, employee_id_code, section, line_id, team').eq('is_active', true).order('employee_id_code');
-      const famIds = (role === 'leader' && userLineId) ? getLineFamilyIds(lines, Number(userLineId) || userLineId) : null;
-      if (famIds) {
-        const fam = [...famIds];
-        q = q.in('line_id', fam.length ? fam : [userLineId]);
-      } else if (scopeSecs.length) {
-        q = q.in('section', scopeSecs);
-      }
+      let q = supabase.from('employees').select(EMP_PICK_COLS).eq('is_active', true).order('employee_id_code');
+      if (scopeLineIds)          q = q.in('line_id', scopeLineIds);
+      else if (scopeSecs.length) q = q.in('section', scopeSecs);
       const { data } = await q;
-      let list = data || [];
-
-      // ยืมตัวกะนี้ — work date ไทยตัด 08:00 + กะ 08:00–20:00 = day (กฎเดียวกับ Checkin.getShiftInfo)
-      const now = new Date();
-      const wd = new Date(now); if (now.getHours() < 8) wd.setDate(wd.getDate() - 1);
-      const workDate = `${wd.getFullYear()}-${String(wd.getMonth() + 1).padStart(2, '0')}-${String(wd.getDate()).padStart(2, '0')}`;
-      const shift = (now.getHours() >= 8 && now.getHours() < 20) ? 'day' : 'night';
-      const { data: helpers } = await supabase.from('line_helpers').select('employee_id, to_line_id')
-        .eq('work_date', workDate).eq('shift', shift);   // ตารางยังไม่มี = error เงียบ → ไม่มีคนยืม (best-effort)
-      const lineById = Object.fromEntries(lines.map(l => [l.id, l]));
-      const inScope = (toLineId) => famIds
-        ? (famIds.size ? famIds.has(toLineId) : toLineId === Number(userLineId))
-        : (!scopeSecs.length || inSectionScope(scopeSecs, lineById[toLineId]?.section));
-      const have = new Set(list.map(e => e.id));
-      const borrowed = (helpers || []).filter(h => inScope(h.to_line_id) && !have.has(h.employee_id));
-      if (borrowed.length) {
-        const { data: extra } = await supabase.from('employees').select('id, name, employee_id_code, section, line_id, team')
-          .in('id', borrowed.map(h => h.employee_id)).eq('is_active', true);
-        const toLineOf = Object.fromEntries(borrowed.map(h => [h.employee_id, h.to_line_id]));
-        (extra || []).forEach(e => list.push({ ...e, _helperFrom: lineById[e.line_id]?.name || e.section || 'ไลน์อื่น', _helperTo: lineById[toLineOf[e.id]]?.name || '' }));
-      }
-      if (alive) setEmployees(list);
+      if (alive) setEmployees(data || []);
     })();
     return () => { alive = false; };
-  }, [lines, role, userLineId, scopeSecs]);
+  }, [lines, role, userLineId, scopeSecs, scopeLineIds]);
+
+  /* 🤝 คนที่ถูก "ยืมตัว" มาไลน์ใน scope **ของวันที่ในใบอบรม** (ไม่ใช่ของวันนี้)
+     feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ (picker กรองตามสังกัดเดิม)
+     รอบแรกแก้ให้เฉพาะ "กะปัจจุบัน" ⇒ ใบที่บันทึกย้อนหลัง (พรุ่งนี้มากรอกของเมื่อวาน — เป็นเรื่องปกติ
+     ของงานเอกสาร) ยังเลือกคนยืมไม่ได้อยู่ดี · ตอนนี้อิง `train_date` ของใบ และ **เอาทั้ง 2 กะ**
+     ของวันนั้น เพราะใบ OJT ไม่มีช่อง "กะ" — เดากะผิดแล้วตัดคนทิ้ง แย่กว่าโชว์เกินแล้วให้คนเลือกเอง
+     โหลดตอนเปิดใบเท่านั้น (ไม่ใช่ตอนโหลดหน้า) — deps เป็น "วันที่" ไม่ใช่ object `editing`
+     ไม่งั้นพิมพ์ทีละตัวอักษรในฟอร์มจะยิงคิวรีใหม่ทุกครั้ง */
+  const [attendeePool, setAttendeePool] = useState([]);
+  const editDate = editing?.train_date || null;
+  useEffect(() => {
+    if (!editDate) { setAttendeePool(employees); return; }
+    let alive = true;
+    (async () => {
+      const opt = { lines, lineIds: scopeLineIds, scopeSecs, columns: EMP_PICK_COLS };
+      let list = await mergeBorrowedEmployees(employees, { ...opt, workDate: editDate });
+      /* กะดึกก่อน 08:00: ใบที่ลงวันที่ "วันนี้" ตามปฏิทิน แต่การยืมของกะที่กำลังทำงานอยู่ถูกบันทึกไว้
+         ใต้ work_date = เมื่อวาน (กฎตัด 08:00) → ต้องมองวันงานปัจจุบันด้วย ไม่งั้นหัวหน้ากะดึก
+         เปิดใบตอนตี 2 แล้วหาคนที่ยืมมาช่วยอยู่ตรงหน้าไม่เจอ · เรียกซ้ำได้ ฟังก์ชันตัดคนซ้ำให้เอง */
+      const todayCal = todayLocal();
+      const wd = currentWorkShift().workDate;
+      if (editDate === todayCal && wd !== editDate) {
+        list = await mergeBorrowedEmployees(list, { ...opt, workDate: wd });
+      }
+      if (alive) setAttendeePool(list);
+    })();
+    return () => { alive = false; };
+  }, [editDate, employees, lines, scopeLineIds, scopeSecs]);
 
   // mandatory scope ก่อนแสดงรายการ (แบบเดียวกับหน้าอื่น) — leader/scoped เห็นเฉพาะ section ตัวเอง
   const visibleTrainings = useMemo(() => trainings.filter(t => {
@@ -504,8 +515,8 @@ table{border-collapse:collapse}
   const searchResults = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
     if (!q) return [];
-    return employees.filter(e => (e.name || '').toLowerCase().includes(q) || (e.employee_id_code || '').toLowerCase().includes(q)).slice(0, 8);
-  }, [empSearch, employees]);
+    return attendeePool.filter(e => (e.name || '').toLowerCase().includes(q) || (e.employee_id_code || '').toLowerCase().includes(q)).slice(0, 8);
+  }, [empSearch, attendeePool]);
 
   return (
     <div className="page-content">
@@ -665,7 +676,9 @@ table{border-collapse:collapse}
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
-                          {e._helperFrom && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>🤝 ยืมตัวจาก {e._helperFrom} มาช่วย {e._helperTo} (กะนี้)</span>}
+                          {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>
+                            🤝 ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                          </span>}
                         </div>
                       ))}
                     </div>

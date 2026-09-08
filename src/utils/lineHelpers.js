@@ -53,7 +53,9 @@ export function isBorrowIntoScope(lineIds, scopeSecs, lineById, toLineId) {
  *   - lineIds    Set|Array line id ใน scope (leader) · null = ใช้ scopeSecs แทน
  *   - scopeSecs  ส่วนงานใน scope · [] = ไม่จำกัด
  *   - columns    คอลัมน์ที่จะ select ให้เหมือนกับที่หน้านั้นใช้ (ไม่งั้นแถวคนยืมขาดฟิลด์แล้วจอพัง)
- *   - workDate/shift  ระบุเองเมื่อทำงานย้อนหลัง · ไม่ส่ง = กะปัจจุบัน
+ *   - workDate  ระบุเองเมื่อทำงานย้อนหลัง · ไม่ส่ง = วันงานปัจจุบัน
+ *   - shift     'day'|'night' · **ส่ง workDate โดยไม่ส่ง shift = เอาทั้ง 2 กะของวันนั้น**
+ *               (ใบที่บันทึกย้อนหลังมักไม่รู้ว่าเป็นกะไหน — ตัดคนทิ้งเพราะเดากะผิดแย่กว่าโชว์เกิน)
  *   - activeOnly เอาเฉพาะพนักงาน is_active (default true)
  * @returns {Promise<Array>} list เดิม + คนยืม (ติดป้าย _isHelper/_helperFrom/_helperTo)
  *
@@ -63,12 +65,12 @@ export function isBorrowIntoScope(lineIds, scopeSecs, lineById, toLineId) {
 export async function mergeBorrowedEmployees(list, opts = {}) {
   const { lines = [], lineIds = null, scopeSecs = [], columns = '*',
           workDate, shift, activeOnly = true } = opts;
-  const ws = (workDate && shift) ? { workDate, shift } : currentWorkShift();
+  const ws = workDate ? { workDate, shift: shift || null } : currentWorkShift();
 
   const { supabase } = await import('../supabaseClient');
-  const { data: helpers, error } = await supabase.from('line_helpers')
-    .select('employee_id, to_line_id')
-    .eq('work_date', ws.workDate).eq('shift', ws.shift);
+  let hq = supabase.from('line_helpers').select('employee_id, to_line_id, shift').eq('work_date', ws.workDate);
+  if (ws.shift) hq = hq.eq('shift', ws.shift);
+  const { data: helpers, error } = await hq;
   if (error) {
     console.warn('[line_helpers] อ่านรายชื่อคนยืมตัวไม่สำเร็จ — แสดงเฉพาะคนในสังกัด:', error.message);
     return list;
@@ -88,11 +90,12 @@ export async function mergeBorrowedEmployees(list, opts = {}) {
     console.warn('[line_helpers] โหลดข้อมูลคนยืมตัวไม่สำเร็จ:', e2.message);
     return list;
   }
-  const toLineOf = Object.fromEntries(wanted.map(h => [h.employee_id, h.to_line_id]));
+  const byEmp = Object.fromEntries(wanted.map(h => [h.employee_id, h]));
   return [...(list || []), ...(extra || []).map(e => ({
     ...e,
-    _isHelper:   true,
-    _helperFrom: lineById[e.line_id]?.name || e.section || 'ไลน์อื่น',
-    _helperTo:   lineById[toLineOf[e.id]]?.name || '',
+    _isHelper:    true,
+    _helperFrom:  lineById[e.line_id]?.name || e.section || 'ไลน์อื่น',
+    _helperTo:    lineById[byEmp[e.id]?.to_line_id]?.name || '',
+    _helperShift: byEmp[e.id]?.shift || null,   // ระบุกะเมื่อดึงทั้งวัน — ใช้บอกผู้ใช้ว่ามาช่วยกะไหน
   }))];
 }
