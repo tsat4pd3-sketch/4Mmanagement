@@ -10,10 +10,33 @@ Output dir:  ./dist
 Branch:      main
 Dev:         npm run dev
 
-Environment Variables:
+Environment Variables (ต้องตั้งครบ 4 ตัว):
   VITE_SUPABASE_URL=https://ewhdfqwfwofivojtsizn.supabase.co
-  VITE_SUPABASE_ANON_KEY=<key from Supabase dashboard>
+  VITE_SUPABASE_ANON_KEY=<anon key ของ MAIN จาก Supabase dashboard>
+  VITE_SUPABASE_DR_URL=https://eyhclzkifitbhbljgoav.supabase.co
+  VITE_SUPABASE_DR_KEY=<anon key ของ Product DB (DR)>
 ```
+
+### ⚠️ URL/key ของ backend มีเจ้าของจุดเดียว: `src/utils/appConfig.js` (2026-09-08)
+
+**เตรียมย้ายมา server บริษัท (ไอทีจะรับช่วง maintain ต่อ)** — เดิม URL ของ project ถูก hardcode
+กระจาย **12 จุดฝั่งเว็บ** (8 จุด `fetch()` เรียก edge + 3 จุดใน AddUser + 1 fallback ฝั่ง DR)
+→ ย้าย server แล้วตั้ง env ครบก็ยัง**ยิงแจ้งเตือนกลับ cloud ตัวเก่า** และฝั่ง DR ยัง fallback ไปฐานเดิม
+**แบบเงียบ ไม่มี error** = ข้อมูลผลิตแตกเป็น 2 ที่ กว่าจะรู้ตอนตัวเลขเพี้ยน
+
+**กฎที่ตกผลึก — ห้ามละเมิด:**
+- **ห้ามเขียน URL หรือ key ของ Supabase project ที่ไหนอีกในโค้ด** ทุกจุดอ่านผ่าน `src/utils/appConfig.js`
+- **เรียก edge function ต้องผ่าน `callFn(name, body)`** (fire-and-forget · แนบ apikey ให้เอง · log error ให้)
+  หรือ `fnUrl(name)` เมื่อต้องอ่าน response / ใส่ `Authorization` เอง (เช่น create-user/delete-user)
+  **ห้าม `fetch()` URL เต็มเอง** — `buildFnUrl` ตัด `/` ท้าย base ให้ด้วย (ไอทีตั้ง env ติด `/` มาบ่อย
+  แล้วได้ `//functions/v1/…` = 404 เงียบ เพราะทุกจุดเป็น fire-and-forget · มีเทสล็อกไว้)
+- **ตั้ง env ไม่ครบ = ป้ายเตือนแดงบนจอ (เฉพาะ admin)** ผ่าน `configWarnings` → `configBanner` ใน App.jsx
+  — เจตนา: ห้ามล้มเหลวเงียบ ไม่ใช่เพื่อความสวยงาม **ห้ามถอด**
+- `LEGACY_DR_URL`/`LEGACY_DR_KEY` ใน appConfig = **ค่าประคอง deploy ปัจจุบันเท่านั้น**
+  (Render ไม่เคยตั้ง env ฝั่ง DR) · **ขั้นตอนถอด:** ตั้ง `VITE_SUPABASE_DR_URL/KEY` ครบทุกที่ที่ build
+  → ยืนยันป้ายเตือนหายจากจอ → ค่อยลบทั้ง 2 ค่า + บล็อก fallback ในคอมมิทเดียว
+- **ยังไม่ได้แก้ฝั่ง DB** — cron 9 job + function 3 ตัว ยัง hardcode URL อยู่
+  (ดูรายการเต็ม + ลำดับงานที่ `docs/SELF-HOST-MIGRATION.md`)
 
 ### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)
 

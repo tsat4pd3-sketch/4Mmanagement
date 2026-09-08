@@ -74,6 +74,17 @@
 > ไม่ว่า user จะ login เข้าแอปแล้วหรือไม่ ทุก query ผ่าน `supabaseDR` วิ่งด้วย role `anon` เสมอ
 > **ห้าม** เปลี่ยน RLS policy ของตารางฝั่ง DR project จาก `public`/`anon` ไปเป็น `TO authenticated` แบบเหมาว่าจะปลอดภัยขึ้น — จะพังทันทีเพราะ client ไม่มี JWT ให้เช็ค (เคยทำพังมาแล้วครั้งหนึ่ง: Product Master, Machine List, PM data, เปิดกะหายหมดทั้งระบบ ต้อง revert ฉุกเฉิน)
 > ถ้าจะ secure ฝั่ง DR project จริงๆ ต้องผ่าน Edge Function ที่ validate ฝั่ง server เอง — ยังไม่ได้ทำ เป็น known gap
+>
+> ### 🔴 กฎเหล็ก — ห้ามเขียน URL/key ของ Supabase ในโค้ด (2026-09-08 · เตรียมย้ายมา server บริษัท)
+> **เจ้าของจุดเดียว = `src/utils/appConfig.js`** (`SUPABASE_URL` · `SUPABASE_DR_URL` · `fnUrl()` · `callFn()`)
+> - เรียก edge function → **`callFn(name, body)`** (fire-and-forget · แนบ apikey ให้ · log error ให้)
+>   หรือ **`fnUrl(name)`** เมื่อต้องอ่าน response / ใส่ `Authorization` เอง — **ห้าม `fetch()` URL เต็มเอง**
+>   และ **ห้ามอ่าน `import.meta.env.VITE_SUPABASE_*` ตรงๆ ในหน้า/util อื่น**
+> - **เคยเกิดจริง:** URL hardcode 12 จุด → ย้าย server แล้วตั้ง env ครบ หน้าเว็บก็ยังยิงแจ้งเตือนกลับ cloud เก่า
+>   และฝั่ง DR ยัง fallback ไปฐานเดิม **เงียบ ไม่มี error** = ข้อมูลผลิตแตก 2 ที่ (แก้ครบแล้ว 2026-09-08)
+> - ตั้ง env ไม่ครบ → ป้ายเตือนแดงบนจอ admin (`configWarnings` → `configBanner` ใน App.jsx) **ห้ามถอด**
+> - **ค้างอยู่:** ฝั่ง DB ยัง hardcode URL — cron 9 job + function 3 ตัว (`fn_notify_push` · `fn_notify_skill_levelup` · `fn_shift_schedule_scan`)
+> 📄 แผนย้ายเต็ม + checklist cutover → **`docs/SELF-HOST-MIGRATION.md`** (ย้ำ: **ต้องเป็น PostgreSQL เท่านั้น** — MySQL = เขียนระบบใหม่)
 
 ---
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { callFn } from '../utils/appConfig'   // เรียก edge function — URL มีเจ้าของจุดเดียว
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
@@ -836,11 +837,8 @@ export default function PMCheckData() {
         toast.error(error.code === '23505' ? 'ผลตรวจใบนี้มีใบแจ้งซ่อมอยู่แล้ว' : error.message)
         return
       }
-      fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
-        // ส่ง "ชื่อทีม" ในข้อความแจ้งเตือน (DB เก็บรหัส) — เหตุผลเดียวกับ notifyMtn ใน MtnRepair.jsx
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
-      }).catch(() => {})
+      // ส่ง "ชื่อทีม" ในข้อความแจ้งเตือน (DB เก็บรหัส) — เหตุผลเดียวกับ notifyMtn ใน MtnRepair.jsx
+      callFn('send-mtn-notification', { event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } })
       setMoByInsp(prev => ({ ...prev, [insp.id]: data }))
       setMoPrompt(null)
       toast.success(`📝 เปิดใบแจ้งซ่อมแล้ว → แจ้งถึงทีม ${deptNameOf(moTeam) || 'MTN'} — ติดตามต่อที่หน้าแจ้งซ่อม MTN`)

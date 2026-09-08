@@ -15,7 +15,7 @@
  *    จะได้แจ้งเฉพาะหัวหน้าส่วนงานนั้น ไม่ใช่ทั้งโรงงาน (ไม่ส่ง = แจ้งทุกคนตาม role ไม่เงียบ)
  */
 
-const FN_URL = 'https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-event-notification';
+import { callFn } from './appConfig';   // URL ของ edge มีเจ้าของจุดเดียว — ห้ามเขียน URL เต็มที่นี่
 
 /**
  * @param {object} p
@@ -32,16 +32,10 @@ const FN_URL = 'https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-event
  */
 export function notifyEvent(p) {
   if (!p?.event) return;
-  try {
-    fetch(FN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-      body: JSON.stringify({
-        ...p,
-        lines: (p.lines || []).filter(Boolean).map(String),
-      }),
-    }).catch(() => {});
-  } catch { /* แจ้งเตือนพลาด ห้ามลากงานหลักล้ม */ }
+  callFn('send-event-notification', {
+    ...p,
+    lines: (p.lines || []).filter(Boolean).map(String),
+  });   // fire-and-forget — callFn กลืน error ให้แล้ว (แจ้งเตือนพลาดห้ามลากงานหลักล้ม)
 }
 
 export default notifyEvent;

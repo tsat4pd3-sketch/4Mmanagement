@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabaseDR } from '../supabaseClient'
+import { callFn } from '../utils/appConfig'   // เรียก edge function — URL มีเจ้าของจุดเดียว
 import { FREQ_LABEL, DEPT_LABEL, dueStatus, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import useIsMobile from '../utils/useIsMobile'
 import { UserContext } from '../App'
@@ -369,16 +370,11 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
       reason: reason.trim(), agreed_with: agreed.trim() || null, by_name: byName || null, by_uid: byUid || null,
     }), 'บันทึกประวัติเลื่อน PM');
     // แจ้ง Telegram (best-effort ไม่บล็อก)
-    try {
-      await fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: 'pm_deferred', pm: {
-          equip: `${row.eq?.machine_no ? row.eq.machine_no + ' ' : ''}${eqName}`.trim(),
-          line_name: row.eq?.line_name || '', from_due: curDue, to_due: toDue,
-          reason: reason.trim(), agreed_with: agreed.trim(), by_name: byName || '', defer_count: (row.deferCount || 0) + 1,
-        } }),
-      })
-    } catch { /* เงียบ */ }
+    await callFn('send-notification', { event: 'pm_deferred', pm: {
+      equip: `${row.eq?.machine_no ? row.eq.machine_no + ' ' : ''}${eqName}`.trim(),
+      line_name: row.eq?.line_name || '', from_due: curDue, to_due: toDue,
+      reason: reason.trim(), agreed_with: agreed.trim(), by_name: byName || '', defer_count: (row.deferCount || 0) + 1,
+    } })
     setSaving(false); toast.success('บันทึกการเลื่อนแผนแล้ว'); onSaved()
   }
 

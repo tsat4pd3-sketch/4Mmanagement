@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { callFn } from '../utils/appConfig';   // เรียก edge function — URL มีเจ้าของจุดเดียว
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -757,11 +758,7 @@ export default function Checkin() {
         (nowBooked(id) && ((otTasks[id] || '') !== (baseline.otTask[id] || '') ||
                            (otPeriods[id] || '') !== (baseline.otPeriod[id] || ''))));
 
-      const post = (event, payload) => fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-        body: JSON.stringify({ event, ...payload }),
-      }).catch(() => {}); // fire-and-forget, ไม่บล็อก
+      const post = (event, payload) => callFn('send-notification', { event, ...payload }); // fire-and-forget, ไม่บล็อก
 
       if (!hadAnyLog) {
         // ครั้งแรกของวัน = เช็คชื่อเริ่มงาน (แบบเดิม)

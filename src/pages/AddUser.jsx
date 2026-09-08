@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { fnUrl, SUPABASE_ANON_KEY } from '../utils/appConfig';   // URL/key ของ backend มีเจ้าของจุดเดียว
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
@@ -250,13 +251,13 @@ export default function AddUser() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
+        fnUrl('create-user'),
         {
           method: 'POST',
           headers: {
             'Content-Type':  'application/json',
             'Authorization': `Bearer ${session.access_token}`,
-            'apikey':        import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'apikey':        SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
             email:        form.email,
@@ -299,12 +300,12 @@ export default function AddUser() {
     setResetPwBusy(true); setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-user-password`, {
+      const res = await fetch(fnUrl('reset-user-password'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'apikey': SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ user_id: editingId, new_password: resetPw }),
       });
@@ -323,12 +324,12 @@ export default function AddUser() {
     setLoading(true); setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`, {
+      const res = await fetch(fnUrl('delete-user'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'apikey': SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ user_id: editingId }),
       });

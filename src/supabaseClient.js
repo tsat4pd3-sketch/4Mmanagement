@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
+// ⚠️ URL/key ของทั้ง 2 project มีเจ้าของจุดเดียวคือ utils/appConfig.js — ห้ามอ่าน import.meta.env ตรงนี้
+//    (เตรียมย้ายมา server บริษัท: ตั้ง env ผิด/ไม่ครบ ต้องเห็นบนจอ ไม่ใช่ต่อฐานเก่าเงียบๆ)
+import { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_DR_URL, SUPABASE_DR_KEY } from './utils/appConfig'
 
-const supabaseUrl     = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseUrl     = SUPABASE_URL
+const supabaseAnonKey = SUPABASE_ANON_KEY
 
 // auth ใช้ localStorage (default) — ห้ามเปลี่ยนกลับเป็น sessionStorage (2026-07-14):
 // sessionStorage แยกของใครของมันต่อแท็บ → เปิดหลายแท็บ = แต่ละแท็บถือ refresh token คนละก๊อปปี้
@@ -12,10 +15,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // Second project — Daily Report & PM data
-const supabaseDrUrl  = import.meta.env.VITE_SUPABASE_DR_URL  || 'https://eyhclzkifitbhbljgoav.supabase.co'
-const supabaseDrKey  = import.meta.env.VITE_SUPABASE_DR_KEY  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5aGNsemtpZml0YmhibGpnb2F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODExMDQsImV4cCI6MjA5MjQ1NzEwNH0.fHTA70fQ8yAvQuwAeM9HQ_UQjMdR3FUkxu_klvXs-h4'
-
-export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey)
+export const supabaseDR = createClient(SUPABASE_DR_URL, SUPABASE_DR_KEY)
 
 // ═══ DR actor stamping (traceability) — 2026-07-24 ══════════════════════════════════════════
 // DR เป็น anon เสมอ → ฐานข้อมูลไม่รู้ว่าใครแก้ · trigger fn_audit อ่าน updated_by_name เป็น actor

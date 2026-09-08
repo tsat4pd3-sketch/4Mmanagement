@@ -24,8 +24,15 @@ services:
       - path: /*
         name: Cache-Control
         value: no-cache
+    # ⚠️ ต้องตั้งค่าจริงใน Render dashboard ทั้ง 4 ตัว (sync:false = ไม่เก็บค่าในไฟล์นี้)
+    #    ฝั่ง DR ยังไม่ได้ตั้งมาแต่เดิม → แอป fallback ไปค่าที่ฝังในโค้ด (src/utils/appConfig.js)
+    #    ตั้งให้ครบแล้วป้ายเตือนแดงบนจอ admin จะหายไปเอง · ดู docs/SELF-HOST-MIGRATION.md
     envVars:
       - key: VITE_SUPABASE_URL
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_SUPABASE_DR_URL
+        sync: false
+      - key: VITE_SUPABASE_DR_KEY
         sync: false

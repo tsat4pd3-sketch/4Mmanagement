@@ -8,6 +8,7 @@ import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'r
 import resizeImg from '../utils/resizeImage';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { callFn } from '../utils/appConfig';   // เรียก edge function — URL มีเจ้าของจุดเดียว
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
@@ -138,10 +139,7 @@ const notifyMtn = (payload, event) => {
   //    ถูกต้องทั้งกับ edge เวอร์ชันที่ deploy อยู่ (แสดงค่าที่ส่งไปตรงๆ) และเวอร์ชันใหม่ (normalize ก่อนเสมอ)
   //    routing ไม่กระทบ — edge แปลงเป็น key ด้วย teamKey() ทั้งสองเวอร์ชัน
   const mo = payload?.mtn_dept ? { ...payload, mtn_dept: deptNameOf(payload.mtn_dept) } : payload;
-  fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ event, mo }),
-  }).catch(() => {});
+  callFn('send-mtn-notification', { event, mo });
 };
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };

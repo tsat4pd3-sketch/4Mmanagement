@@ -21,6 +21,7 @@ import { buildProfileMenu } from './utils/profileMenu';             // ราย
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { checkWrite } from './utils/dbWrite';
+import { configWarnings } from './utils/appConfig';   // ⚠️ env ของ backend ไม่ครบ = ต้องเห็นบนจอ ห้ามเงียบ
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -1456,6 +1457,25 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       </button>
     </div>
   ) : null;
+
+  /* ⚠️ ป้ายเตือน config — env ของ backend ไม่ครบ (เตรียมย้ายมา server บริษัท 2026-09-08)
+     เคสที่กันอยู่: build บน server ใหม่แต่ลืมตั้ง VITE_SUPABASE_DR_* → ฝั่ง DR ยัง fallback ไป
+     cloud ตัวเดิม "แบบเงียบ" = ข้อมูลผลิตแตกเป็น 2 ที่ กว่าจะรู้ก็ตัวเลขเพี้ยนไปแล้ว
+     แสดงเฉพาะ admin จริง (คนหน้าไลน์แก้ไม่ได้ ขึ้นไปก็รบกวนเปล่าๆ) · ดู utils/appConfig.js */
+  const configBanner = (realRole === 'admin' && configWarnings.length > 0) ? (
+    <div style={{
+      position: 'fixed', bottom: viewAs ? 62 : 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
+      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 12,
+      background: 'rgba(220,38,38,0.16)', border: '1.5px solid #ef4444', color: '#fca5a5',
+      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
+      maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
+    }}>
+      <span>⚠️ ตั้งค่าเชื่อมต่อฐานข้อมูลไม่ครบ</span>
+      <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11, maxWidth: 620 }}>
+        {configWarnings.join(' · ')}
+      </span>
+    </div>
+  ) : null;
   const viewAsModal = (realRole === 'admin' && viewAsOpen) ? (
     <Suspense fallback={null}>
       <ViewAsModal current={viewAs} onClose={() => setViewAsOpen(false)} onApply={onApplyViewAs} />
@@ -1514,6 +1534,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           <TvBoard />
         </Suspense>
         {viewAsBanner}
+        {configBanner}
         {viewAsModal}
       </UserContext.Provider>
     );
@@ -1543,6 +1564,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           </Suspense>
         )}
         {viewAsBanner}
+        {configBanner}
         {viewAsModal}
       </UserContext.Provider>
     );
@@ -1590,6 +1612,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           onAvatarSaved={onAvatarSaved}
         />
         {viewAsBanner}
+        {configBanner}
         {viewAsModal}
 
         <main style={{

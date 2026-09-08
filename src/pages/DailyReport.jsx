@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { callFn } from '../utils/appConfig';   // เรียก edge function — URL มีเจ้าของจุดเดียว
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
@@ -62,21 +63,13 @@ function getTsLogoDataUrl(url = tsLogoUrl) {
 }
 
 function notifyProdClose(payload) {
-  fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-    body: JSON.stringify({ event: 'prod_close', session: payload }),
-  }).catch(() => {});
+  callFn('send-notification', { event: 'prod_close', session: payload });
 }
 
 // แจ้งเตือน Telegram ทันทีที่พนักงานบันทึก Downtime — fire-and-forget ไม่บล็อกการบันทึก
 // event: 'downtime' (เครื่องหยุดใหม่) | 'downtime_recovered' (ปิดรายการที่เปิดค้าง = เครื่องกลับมารันได้)
 function notifyDowntime(payload, event = 'downtime') {
-  fetch(`https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-notification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
-    body: JSON.stringify({ event, downtime: payload }),
-  }).catch(() => {});
+  callFn('send-notification', { event, downtime: payload });
 }
 
 // สรุปชิ้นงาน/Downtime ของกะ สำหรับแนบในข้อความแจ้งเตือนปิดกะ (Telegram)
@@ -2375,11 +2368,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     };
     const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
     if (error) { toast.error(error.message); return; }
-    fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
-      // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
-    }).catch(() => {});
+    // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
+    callFn('send-mtn-notification', { event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } });
     setMoDtPick(null);
     toast.success(`📝 เปิดใบแจ้งซ่อม MO → แจ้งถึงทีม ${deptNameOf(team) || 'MTN'} แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”`);
   };
