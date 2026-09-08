@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { DOC_KIND, OWNER_ROLE } from '../utils/npi';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, Modal } from './NpiUi';
+import CustomerSelect from './CustomerSelect';
 
 const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 
@@ -128,7 +129,8 @@ export default function NpiTemplates({ templates, onChanged }) {
             <Field label="ชื่อแม่แบบ *" span={2}><input style={inp} value={tplModal.label} onChange={e => setTplModal({ ...tplModal, label: e.target.value })} placeholder="Isuzu NPD / Honda NMS" /></Field>
             {!tplModal.id && <Field label="code" hint="เว้นว่าง = สร้างจากชื่อ"><input style={inp} value={tplModal.code || ''} onChange={e => setTplModal({ ...tplModal, code: e.target.value })} /></Field>}
             {tplModal.id && <Field label="code"><input style={inp} value={tplModal.code} disabled /></Field>}
-            <Field label="ลูกค้า" hint="ว่าง = ทั่วไป"><input style={inp} value={tplModal.customer || ''} onChange={e => setTplModal({ ...tplModal, customer: e.target.value })} /></Field>
+            {/* ลูกค้า — แม่แบบจับคู่โปรเจคด้วยสตริงนี้ → เลือกจากรายชื่อใน Product Master (2026-09-07) */}
+            <Field label="ลูกค้า" hint="ว่าง = ทั่วไป"><CustomerSelect value={tplModal.customer || ''} onChange={({ customer }) => setTplModal({ ...tplModal, customer })} /></Field>
             <Field label="คำอธิบาย" span={2}><input style={inp} value={tplModal.description || ''} onChange={e => setTplModal({ ...tplModal, description: e.target.value })} /></Field>
             <Field label="ลำดับ"><input type="number" style={inp} value={tplModal.sort ?? 0} onChange={e => setTplModal({ ...tplModal, sort: e.target.value })} /></Field>
             <label style={{ fontSize: 12.5, paddingTop: 22 }}><input type="checkbox" checked={tplModal.is_active !== false} onChange={e => setTplModal({ ...tplModal, is_active: e.target.checked })} /> เปิดใช้ (เลือกได้ตอนสร้างโปรเจค)</label>

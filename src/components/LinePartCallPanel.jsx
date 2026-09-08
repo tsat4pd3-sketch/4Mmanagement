@@ -20,6 +20,7 @@
       ตอนไม่มีใครเปิดหน้า — ยังไม่ทำ · เฟสนี้สัญญาณอยู่บน "จอที่หัวหน้าเปิดอยู่แล้วทั้งกะ"
       ส่วน `wip_request_placed` (ไลน์กดเบิก → บอกสโตร์) ยิงจริงตั้งแต่เฟสนี้
 
+   ⚠️ 2026-09-07: สโตร์ยืนยันเตรียม (ขั้น 5) = ตัดสต็อกให้แล้ว (STORE −qty · ไลน์ +qty) — แผงนี้ไม่แตะ ledger
    ตารางที่แตะ: line_part_levels (DR) · line_stock_summary (DR) · wip_replenish_requests (Main)
    ⚠️ ใบขอเติมอยู่ **Main** ส่วนสต็อกอยู่ **DR** — คนละ client อย่าสลับ
 ═══════════════════════════════════════════════════════════════════════════════ */
@@ -30,6 +31,9 @@ import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
+import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
+import ProductSelect from './ProductSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -59,6 +63,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [stock, setStock]   = useState([]);
   const [reqs, setReqs]     = useState([]);
   const [dpoints, setDpoints] = useState([]);   // 🎯 จุดส่งงานของไลน์นี้ (เฟส 4) — ไม่มี = สโตร์ตรวจจุดไม่ได้ → worklist
+  const [slocs, setSlocs]     = useState([]);   // 🏬 ทะเบียนรหัสคลัง SAP (DR) — ใบขอเติมแปะ storage_location ตอนสร้าง (derive จากไลน์แม่)
   const [err, setErr]       = useState(null);
   const [busy, setBusy]     = useState(null);
   const [showSetup, setShowSetup] = useState(false);
@@ -81,7 +86,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!lineName) return;
     setErr(null);
     const stockLines = [lineName, ...upNames];   // ของตัวเอง + ที่อาจค้างข้างบน (แยกกันตอนคำนวณ)
-    const [lv, st, rq, dp] = await Promise.all([
+    const [lv, st, rq, dp, sl] = await Promise.all([
       supabaseDR.from('line_part_levels').select('*').eq('line_name', lineName).eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', stockLines),
       supabase.from('wip_replenish_requests').select('*')
@@ -89,8 +94,11 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         .order('requested_at', { ascending: true, nullsFirst: false }),
       // จุดส่งเป็นของเสริม (เฟส 4) — ตารางยังไม่ apply/โหลดไม่ได้ ห้ามลากทั้งแผงล้ม แค่ถือว่ายังไม่มีจุด
       supabaseDR.from('line_delivery_points').select('id, code, name, line_names, is_active').contains('line_names', [lineName]),
+      // ทะเบียนรหัสคลัง = ของเสริม (ชั้นบัญชี) — ยังไม่ apply/โหลดไม่ได้ = ยังไม่ผูก ไม่ใช่ error ของแผง
+      supabaseDR.from('storage_locations').select('code, line_names, is_active'),
     ]);
     setDpoints(dp.error ? [] : (dp.data || []));
+    setSlocs(sl.error ? [] : (sl.data || []));
     /* ⚠️ ตารางยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ error ของผู้ใช้
        แยกให้ขาดจาก error จริง ไม่งั้นขึ้นแถบแดงให้ทุกคนดูทุกวันโดยไม่มีอะไรให้ทำ */
     const notReady = [lv, st, rq].some(r => r.error?.code === '42P01' || r.error?.code === '42703');
@@ -169,12 +177,23 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   }, [onHand, levels]);
 
   /* ── actions ──────────────────────────────────────────────────────────────── */
+  const lineSloc = useMemo(() => slocCodeOfLine(slocs, lines, lineName), [slocs, lines, lineName]);
+  /* insert ใบ + แปะมุม SAP — 42703 = ยังไม่ apply 20260908_wip_replenish_storage_location (Main) → บันทึกแบบไม่ tag แล้วบอกบนจอ ห้ามให้การเบิกล้ม */
+  const insertReq = async (row) => {
+    const full = { ...row, storage_location: lineSloc };
+    let res = await supabase.from('wip_replenish_requests').insert(full);
+    if (res.error?.code === '42703') {
+      res = await supabase.from('wip_replenish_requests').insert(row);
+      if (!res.error) toast.info('บันทึกแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
+    }
+    return res;
+  };
   const place = async (s, qtyInput) => {
     const qty = Number(qtyInput);
     if (!(qty > 0)) { toast.error('ระบุจำนวนที่ต้องการเบิกก่อน'); return; }
     setBusy(s.mat_no);
     const now = new Date().toISOString();
-    const { error } = await supabase.from('wip_replenish_requests').insert({
+    const { error } = await insertReq({
       line_name: lineName, mat_no: s.mat_no, part_name: s.note || null,
       request_qty: qty, status: 'pending',
       requested_at: now, decided_by_name: fullName || null,
@@ -206,7 +225,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       `พักการเบิก "${s.mat_no}" ไว้ก่อน\n\nเหตุผล (เช่น เดี๋ยวเปลี่ยนรุ่น / ของยังพอถึงสิ้นกะ):`, '');
     if (reason === null) return;   // กดยกเลิก
     setBusy(s.mat_no);
-    const { error } = await supabase.from('wip_replenish_requests').insert({
+    const { error } = await insertReq({
       line_name: lineName, mat_no: s.mat_no, request_qty: s.suggestQty || 1,
       status: 'hold', requested_at: null,          // ⚠️ ยังไม่เริ่มนับเวลา — ยังไม่ได้สั่งเบิก
       hold_at: new Date().toISOString(), hold_by_name: fullName || null,
@@ -391,12 +410,18 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
                 <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{r.mat_no}</b>
-                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ขอ {fmtQty(r.request_qty)} ชิ้น · แจ้ง {hhmm(r.requested_at)}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}`}
+                </span>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: meta.color }}>{meta.label}</span>
                 {wait != null && (
                   <span style={{ fontSize: 11, color: wait > 60 ? '#ef4444' : 'var(--muted)', fontWeight: wait > 60 ? 800 : 400 }}>
                     · รอมาแล้ว {wait} นาที
                   </span>
+                )}
+                {/* ขั้น 5 — สโตร์หยิบได้ไม่ครบต้องเห็นตั้งแต่ก่อนของมาถึง (ไม่ใช่เพิ่งรู้ตอนนับ) */}
+                {['preparing', 'delivered'].includes(r.status) && r.picked_qty != null && Number(r.picked_qty) < Number(r.request_qty) && (
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>⚠ สโตร์หยิบได้ {fmtQty(r.picked_qty)} / {fmtQty(r.request_qty)}</span>
                 )}
                 {/* เฟส 4 — ของถูกวางที่ไหน/ผ่านด่านทางไหน: สแกนจุด · ไลน์ยังไม่ตั้งจุด · หัวหน้าปลดบล็อก (override ต้องเห็น ห้ามซ่อน) */}
                 {r.status === 'delivered' && r.delivered_gate && DELIVER_GATES[r.delivered_gate] && (
@@ -441,7 +466,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {showSetup && (
-        <LevelSetupModal lineName={lineName} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand}
+        <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand}
           fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
       )}
     </div>
@@ -474,10 +499,12 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
 }
 
 /* ── ตั้ง min/max ต่อไลน์ (หัวหน้าไลน์ + หัวหน้าแผนกผลิต — ไม่ใช่ Planning) ──── */
-function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onClose }) {
+function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fullName, onClose }) {
   /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
      ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
      — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
+  // 📜 MAT ที่เคยตั้งระดับไว้ใน line_part_levels (DR) — ไลน์อื่นเคยตั้งไว้แต่ Product Master/BOM ยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const levelMatHist = useColumnHistory(supabaseDR, 'line_part_levels', 'mat_no', { upper: true });
   const [rows, setRows] = useState(() => {
     const byMat = new Map(levels.map(l => [l.mat_no, l]));
     const mats = [...new Set([...byMat.keys(), ...onHand.keys(), ...upMats])].sort();
@@ -491,15 +518,35 @@ function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onCl
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
   const [newMat, setNewMat] = useState('');
+  const [newMatKnown, setNewMatKnown] = useState(false); // เลือกจากทะเบียนแล้ว (ไม่ใช่พิมพ์เอง)
   const set = (i, k, v) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r));
 
-  // พาร์ทใหม่ที่ยังไม่โผล่ที่ไหนเลย — พิมพ์เพิ่มเองได้ ไม่งั้นตั้งจุดเรียกเติมล่วงหน้าไม่ได้
+  /* 2026-09-07 "เพิ่มพาร์ทเอง" ต้องเลือกจากทะเบียน (Product Master ∪ พาร์ทลูก BOM ของครอบครัวไลน์) — ไม่ allowFree
+     mat_no ที่พิมพ์ผิดจะกลายเป็นจุดเฝ้าที่ไม่ match สต็อกแถวไหนเลย → min alert ไม่เคยดังโดยไม่มีใครรู้ */
+  const famNames = useMemo(() => [...new Set([lineName, ...getAncestorNames(lines, lineName), ...getChildLineNames(lines, lineName)])].filter(Boolean), [lines, lineName]);
+  const [bomExtra, setBomExtra] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data: prods, error: e1 } = await supabaseDR.from('dr_products').select('id, mat_no').in('line_name', famNames).eq('is_active', true);
+      if (e1 || !prods?.length) return;
+      const { data: boms } = await supabaseDR.from('bom_items').select('mat_no, part_no, part_name').in('product_id', prods.map(p => p.id)).eq('is_active', true).limit(1000);
+      if (!alive) return;
+      const seen = new Set();
+      setBomExtra((boms || []).filter(b => b.mat_no && !seen.has(b.mat_no) && seen.add(b.mat_no))
+        .map(b => ({ mat_no: b.mat_no, name: b.part_name, p_no: b.part_no, sub: [b.part_no, b.part_name].filter(Boolean).join(' · '), group: '🧩 พาร์ทลูก BOM ของไลน์นี้' })));
+    })();
+    return () => { alive = false; };
+  }, [famNames]);
+
   const addMat = () => {
     const m = newMat.trim();
     if (!m) return;
-    if (rows.some(r => r.mat_no.toLowerCase() === m.toLowerCase())) { toast.info('มีพาร์ทนี้ในรายการแล้ว'); setNewMat(''); return; }
+    // 2026-09-07 นอกทะเบียน (กลุ่ม 📜 เคยบันทึกไว้) → ถามยืนยันแทนบล็อกแข็ง — พิมพ์ผิด = จุดเฝ้าที่ไม่เคยเตือน จึงเตือนชัด
+    if (!newMatKnown && !window.confirm(`"${m}" ไม่มีใน Product Master / BOM — ใช้ค่านี้ต่อหรือไม่?`)) return;
+    if (rows.some(r => r.mat_no.toLowerCase() === m.toLowerCase())) { toast.info('มีพาร์ทนี้ในรายการแล้ว'); setNewMat(''); setNewMatKnown(false); return; }
     setRows(rs => [{ mat_no: m, id: null, min_qty: '', max_qty: '', reorder_qty: '', have: null, atParent: false }, ...rs]);
-    setNewMat('');
+    setNewMat(''); setNewMatKnown(false);
   };
 
   const save = async () => {
@@ -537,10 +584,10 @@ function LevelSetupModal({ lineName, upMats = [], levels, onHand, fullName, onCl
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
               style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
-            <input value={newMat} onChange={e => setNewMat(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addMat(); } }}
-              placeholder="เพิ่มพาร์ทเอง (รหัส)"
-              style={{ width: 180, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+            {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM ∪ 📜 เคยตั้งไว้ · ไม่รับค่าพิมพ์เอง (known=false = นอกทะเบียน → ถามยืนยัน) */}
+            <ProductSelect value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
+              style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
+              onChange={({ mat_no, opt, known }) => { setNewMat(mat_no); setNewMatKnown(!!opt && known !== false); }} />
             <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
           </div>
         </div>

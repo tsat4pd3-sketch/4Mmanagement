@@ -22,12 +22,16 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
-import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyIds } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import usePeople from '../utils/usePeople';
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { printBbsSheet } from '../lib/bbsPrint';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
+import useIsMobile from '../utils/useIsMobile';
 
 const thisMonth = () => {
   const d = new Date();
@@ -38,6 +42,8 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const cellKey = (empId, day) => `${empId}|${day}`;
+// ป้ายสั้นบนชิปมือถือ (ป้ายเต็มของ MARKS ยาวเกินชิปกว้าง ~80px · ความหมายเดียวกับ bbsMarks)
+const MOBILE_LABEL = { ok: 'เหมาะสม', ng: 'ไม่เหมาะสม', fixed: 'ปรับแก้แล้ว', na: 'ไม่ได้ตรวจ' };
 
 export default function BbsCheck() {
   const { role, lineId, sections = [], fullName } = useContext(UserContext);
@@ -49,6 +55,8 @@ export default function BbsCheck() {
   const [emps, setEmps] = useState([]);
   const [agreements, setAgreements] = useState([]);
   const [signers, setSigners] = useState([]);      // profiles ที่มีลายเซ็น
+  // ทะเบียนพนักงานทั้งหมด — เติมรหัสพนักงานให้ผู้ตรวจอัตโนมัติจากชื่อโปรไฟล์ (2026-09-07)
+  const { employees: allEmps } = usePeople({ profiles: false, employees: true });
   const [sheet, setSheet] = useState(null);
   const [cells, setCells] = useState({});
   const [rowNotes, setRowNotes] = useState({});   // คอลัมน์ "หมายเหตุ" ท้ายแถว (1 ช่อง/คน/ใบ)
@@ -59,9 +67,17 @@ export default function BbsCheck() {
   const [month, setMonth] = useState(thisMonth);
   const [selLine, setSelLine] = useState('');
   const [shift, setShift] = useState('');
-  const [brush, setBrush] = useState('ok');        // สัญลักษณ์ที่จะทา
-  const [brushSeq, setBrushSeq] = useState(1);     // เลขข้อ (เมื่อ brush = ng)
+  const [brushState, setBrush] = useState('ok');        // สัญลักษณ์ที่จะทา (แปรง — desktop)
+  const [brushSeqState, setBrushSeq] = useState(1);     // เลขข้อ (เมื่อ brush = ng)
+  const brush = brushState, brushSeq = brushSeqState;   // ชื่อเดิมสำหรับส่วน render (แปรง/legend)
   const [showAgree, setShowAgree] = useState(false);
+  /* ── โหมดมือถือ = "ทีละวัน ทีละคน" (2026-09-07 · รีวิวฟังก์ชันตรวจสอบบนมือถือ)
+     ตาราง 31 คอลัมน์บนจอ 390px เห็นแค่ชื่อ ช่องทาอยู่หลัง scroll ข้าง + แปรงเป็นท่าของเมาส์
+     → มือถือเลือก "วันที่" แล้วไล่การ์ดต่อคน กดชิปสัญลักษณ์ตรงๆ (ชิป ≥44px ใส่ถุงมือกดได้)
+     desktop ยังเป็นตารางเดิมเป๊ะ (branch แบบ additive ตามกฎ useIsMobile) */
+  const isMobile = useIsMobile();
+  const [selDay, setSelDay] = useState(() => (thisMonth() === todayLocal().slice(0, 7) ? Number(todayLocal().slice(8, 10)) : 1));
+  const [ngPick, setNgPick] = useState(null);      // emp.id ที่กำลังเลือก "เลขข้อ" ของ NG บนมือถือ
 
   const days = daysInMonth(month);
   const today = todayLocal();
@@ -70,7 +86,7 @@ export default function BbsCheck() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name').order('name');
+        .select(LINE_COLUMNS).order('name');   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       setLines(data || []);
     })();
   }, []);
@@ -195,8 +211,11 @@ export default function BbsCheck() {
   }, [sheet, lineObj, month, shift, fullName, signers]);
 
   /* ── ทาช่อง ── */
-  const paint = async (emp, day) => {
+  // markOverride/seqOverride: โหมดมือถือกดชิปตรงๆ ไม่ผ่านแปรง (desktop ส่ง 2 ตัวแรกเหมือนเดิม)
+  const paint = async (emp, day, markOverride, seqOverride) => {
     if (!canRecord || busy) return;
+    const brush = markOverride || brushState;
+    const brushSeq = markOverride ? (seqOverride ?? brushSeqState) : brushSeqState;
     const sh = await ensureSheet();
     if (!sh) return;
     const key = cellKey(emp.id, day);
@@ -309,9 +328,13 @@ export default function BbsCheck() {
     const sh = await ensureSheet();
     if (!sh) return;
     const p = signers.find(s => s.id === profileId);
+    // รหัสพนักงานเติมจากทะเบียน employees ที่ชื่อตรงกับโปรไฟล์ (profiles ไม่ผูก employee_id เสมอไป) — แก้เองได้ (2026-09-07)
+    const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const emp = p ? allEmps.find(e => norm(e.name) === norm(p.full_name)) : null;
     const patch = {
       inspector_name: p?.full_name || null,
       inspector_sig_url: p?.signature_url || null,
+      ...(emp?.employee_id_code ? { inspector_code: emp.employee_id_code } : {}),
       updated_by_name: fullName || null,
     };
     const { data, error } = await supabase.from('bbs_sheets')
@@ -370,12 +393,9 @@ export default function BbsCheck() {
         </div>
         <div>
           <label style={lbl}>พื้นที่ / ไลน์</label>
-          <select value={selLine} onChange={e => setSelLine(e.target.value)}
-            style={{ width: 230, padding: '7px 9px', fontSize: 13 }}>
-            {toHierarchicalOptions(scopedLines).map(({ line: l, depth }) => (
-              <option key={l.id} value={l.id}>{' '.repeat(depth * 3)}{l.name}</option>
-            ))}
-          </select>
+          {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
+          <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine}
+            style={{ width: 230, padding: '7px 9px', fontSize: 13 }} />
         </div>
         <div>
           <label style={lbl}>กะ</label>
@@ -407,7 +427,8 @@ export default function BbsCheck() {
           </div>
           <div>
             <label style={lbl}>รหัสพนักงาน</label>
-            <input defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
+            {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้ */}
+            <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
               placeholder="เช่น 61234"
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
@@ -443,8 +464,8 @@ export default function BbsCheck() {
         </div>
       </div>
 
-      {/* ── แปรง (เลือกสัญลักษณ์ แล้วคลิกช่องเพื่อทา) ── */}
-      {canRecord && (
+      {/* ── แปรง (เลือกสัญลักษณ์ แล้วคลิกช่องเพื่อทา) — desktop เท่านั้น (มือถือกดชิปในการ์ดตรงๆ) ── */}
+      {canRecord && !isMobile && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ทาช่องด้วย:</span>
           {MARKS.map(m => {
@@ -478,6 +499,85 @@ export default function BbsCheck() {
         <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 8 }}>
           ไม่มีพนักงานในไลน์นี้ — ตรวจที่หน้าฐานข้อมูลพนักงานว่าผูก “ไลน์” ไว้แล้วหรือยัง
         </div>
+      ) : isMobile ? (
+        /* ── มือถือ: เลือกวัน → การ์ดต่อคน → กดชิป ── */
+        (() => {
+          const day = Math.min(selDay, days);
+          const dstr = `${month}-${String(day).padStart(2, '0')}`;
+          const done = emps.filter(e => cells[cellKey(e.id, day)]).length;
+          const navBtn = { width: 46, height: 46, borderRadius: 10, fontSize: 18, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' };
+          const chip = (on, color) => ({
+            flex: '1 1 0', minWidth: 0, minHeight: 44, padding: '4px 2px', borderRadius: 10, cursor: canRecord ? 'pointer' : 'default',
+            fontSize: 13, fontWeight: 800, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
+            border: `2px solid ${on ? color : 'var(--border2)'}`, background: on ? color : 'var(--bg3)', color: on ? '#fff' : 'var(--text2)',
+          });
+          return (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <button onClick={() => setSelDay(Math.max(1, day - 1))} disabled={day <= 1} style={navBtn} aria-label="วันก่อนหน้า">◀</button>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: dstr === today ? 'var(--accent)' : 'var(--text)' }}>
+                    วันที่ {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>· วันนี้</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>ทาแล้ว {done}/{emps.length} คน</div>
+                </div>
+                <button onClick={() => setSelDay(Math.min(days, day + 1))} disabled={day >= days} style={navBtn} aria-label="วันถัดไป">▶</button>
+              </div>
+              {dstr !== today && today.startsWith(month) && (
+                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>📅 ไปวันนี้</button>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, alignContent: 'start' }}>
+                {emps.map((e, i) => {
+                  const c = cells[cellKey(e.id, day)];
+                  const picking = ngPick === e.id;
+                  return (
+                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 12, padding: '10px 12px', background: 'var(--card)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 18 }}>{i + 1}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                            {e.employee_id_code}
+                            {c?.source === 'ppe' && <span style={{ marginLeft: 6, color: '#22c55e' }}>⚡ เติมจากผลตรวจ PPE</span>}
+                          </div>
+                        </div>
+                        <span style={{ minWidth: 40, height: 40, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900,
+                          background: c ? markColor(c) : 'var(--bg3)', color: c ? '#fff' : 'var(--muted)' }}>{c ? markGlyph(c) : '·'}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {MARKS.map(m => {
+                          const on = c?.mark === m.key;
+                          return (
+                            <button key={m.key} disabled={!canRecord} style={chip(on, m.color)}
+                              onClick={() => { if (m.key === 'ng') { setNgPick(picking ? null : e.id); return; } setNgPick(null); paint(e, day, m.key); }}>
+                              <b style={{ fontSize: 16 }}>{m.key === 'ng' ? (on ? c.agreement_seq : '#') : m.glyph}</b>
+                              <span style={{ fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, textAlign: 'center' }}>{MOBILE_LABEL[m.key]}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {picking && (
+                        <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.35)' }}>
+                          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>ไม่เหมาะสม — ผิดข้อตกลงข้อไหน?</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {(agreements.length ? agreements : [{ seq: 1, text: '(ยังไม่ได้บันทึกข้อตกลง)' }]).map(a => (
+                              <button key={a.seq} title={a.text} onClick={() => { setNgPick(null); paint(e, day, 'ng', a.seq); }}
+                                style={{ minWidth: 44, minHeight: 44, borderRadius: 10, fontSize: 15, fontWeight: 800, cursor: 'pointer',
+                                  border: `2px solid ${c?.mark === 'ng' && c.agreement_seq === a.seq ? '#b91c1c' : 'var(--border2)'}`,
+                                  background: c?.mark === 'ng' && c.agreement_seq === a.seq ? '#b91c1c' : 'var(--bg3)',
+                                  color: c?.mark === 'ng' && c.agreement_seq === a.seq ? '#fff' : 'var(--text)' }}>{a.seq}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>กดชิปเดิมซ้ำ = ล้างช่อง · หมายเหตุท้ายแถวและมุมมองทั้งเดือนดูได้บนจอใหญ่</div>
+            </div>
+          );
+        })()
       ) : (
         // จอแคบเลื่อนแนวนอน (ตาราง 31 คอลัมน์ — ข้อยกเว้นตาม UI-CONVENTIONS §6)
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>

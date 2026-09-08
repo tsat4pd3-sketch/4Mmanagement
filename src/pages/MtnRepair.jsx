@@ -12,9 +12,9 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MTN_STEPS, QA_NOT_RELATED, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MTN_STEPS, QA_NOT_RELATED, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
@@ -32,6 +32,14 @@ import useTabParam from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
 import SearchSelect from '../components/SearchSelect';
+// picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/คน/ลูกค้า อ่านจากทะเบียน ห้ามพิมพ์เองเงียบๆ
+import LineSelect from '../components/LineSelect';
+import MachineSelect from '../components/MachineSelect';
+import PersonSelect from '../components/PersonSelect';
+import CustomerSelect from '../components/CustomerSelect';
+import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 /* ── helpers ─────────────────────────────────────────────── */
@@ -67,6 +75,11 @@ const beEcho = (ymd) => { if (!ymd) return ''; const [y, m, d] = ymd.split('-');
 // หน่วยงานซ่อม — fallback เท่านั้น (source of truth = mtn_teams ผ่าน pmTeamsSync().dept_name · ดู CLAUDE.md "ทีมช่างซ่อม 4 ส่วน")
 // ⚠️ ค่าที่เก็บลง DB = key เสมอ · ชื่อทีมใช้แสดงผลผ่าน deptNameOf() เท่านั้น (ดูกฎใน utils/mtnTeams.js)
 const MTN_DEPTS = ['jig_maintenance', 'die_maintenance', 'maintenance', 'production'];
+// role ที่ "ควรขึ้นก่อน" ใน PersonSelect (prefer ไม่ใช่ restrict — หยิบข้ามทีมมีจริง) · 2026-09-07
+const QA_ROLES = ['qa'];
+const MTN_HEAD_ROLES = ['mtn', 'supervisor', 'manager'];
+const DEPT_HEAD_ROLES = ['supervisor', 'manager'];
+const NO_LINES = [];
 // <option> ของทีม — value = key, ข้อความ = ชื่อทีม (ใช้ซ้ำทุก dropdown ในหน้านี้)
 const TeamOpts = ({ list }) => (list || []).map(k => <option key={k} value={k}>{deptNameOf(k)}</option>);
 // เดา default หน่วยงานจากชนิดอุปกรณ์ — reuse util กลาง (เลิก duplicate logic)
@@ -257,7 +270,7 @@ export default function MtnRepair() {
 
   const loadMasters = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
+      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       // equipment_kind = แกนชนิดอุปกรณ์ (machine/die/jig/facility) — ต้องมี ไม่งั้นแยก "แม่พิมพ์" ออกจาก "เครื่องจักร" ไม่ได้
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),
@@ -306,6 +319,15 @@ export default function MtnRepair() {
     if (scopeSecs?.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
     return null;
   }, [lines, role, lineId, scopeSecs]);
+
+  /* 🔒 ขอบเขต "ฝ่ายที่แจ้ง" สำหรับขั้น 4/6/7 — ใช้ scopeLines ชุดเดียวกับที่กรองรายการ (leader = ครอบครัวไลน์ ·
+     sections = ไลน์ในส่วนงาน · null = ไม่จำกัด) + ทะเบียนไลน์ทั้งหมดไว้แยก "ไลน์ที่ไม่รู้จัก" ออกจาก "ไลน์ของฝ่ายอื่น"
+     เกณฑ์ตัดสินอยู่ที่ orderInReporterScope() ใน mtnStepPerm.js — ห้ามเขียนเงื่อนไขซ้ำที่นี่ */
+  const reporterScope = useMemo(() => ({
+    scopeLineNames: scopeLines ? [...scopeLines] : null,
+    knownLineNames: lines.map(l => l.name),
+    sections: scopeSecs || [],
+  }), [scopeLines, lines, scopeSecs]);
 
   // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
   const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
@@ -362,7 +384,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -380,7 +402,8 @@ export default function MtnRepair() {
             {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
           <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option><TeamOpts list={mtnDepts} /></select>
-          <select value={fLine} onChange={e => setFLine(e.target.value)} style={{ ...inp, width: 180 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(scopedLineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
+          {/* dropdown ไลน์ = <LineSelect> เท่านั้น (UI-CONVENTIONS §5.3 ข้อ 9) — scopedLineObjs กรอง scope ไว้แล้ว · 2026-09-07 */}
+          <LineSelect lines={scopedLineObjs} value={fLine} onChange={setFLine} placeholder="ทุกไลน์" style={{ ...inp, width: 180 }} />
           <input value={fText} onChange={e => setFText(e.target.value)} placeholder="ค้นหา เลข MO/เครื่อง/ปัญหา" style={{ ...inp, width: 230 }} />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
         </div>
@@ -442,6 +465,28 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
   const pickBefore = (file) => { setDirty(true); setBeforeFile(file); };
   const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
+  /* แผนก/ส่วนงาน อ่านจากผังองค์กร (org_nodes) — dept_section เป็นคีย์ scope ของ orderInReporterScope()
+     พิมพ์เองผิดตัวเดียว = ใบหลุด/เข้า scope คนอื่นเงียบๆ (audit 2026-09-07) · ผังว่าง = ถอยไป section ของไลน์ */
+  const orgSections = useOrgSections();
+  const deptsOf = useOrgDepts();
+  /* 📜 ค่าที่เคยบันทึกใน mtn_orders (DR) — ทะเบียน machines/profiles/Product Master ไม่มี ก็ยังเลือกค่าเดิมซ้ำได้
+     ห้ามล้าง/บล็อกเงียบ (คำสั่ง user 2026-09-07) · เก็บเป็น text เหมือนเดิม (known:false = id null) */
+  const machineHist = useColumnHistory(supabaseDR, 'mtn_orders', 'machine_no', { upper: true });
+  const reporterHist = useColumnHistory(supabaseDR, 'mtn_orders', 'reporter_prod');
+  const customerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'customer');
+  const sectionOpts = useMemo(
+    () => (orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort()),
+    [orgSections, lines],
+  );
+  // ครอบครัวไลน์ที่เลือก — ให้ picker เครื่อง/คน "ขึ้นก่อน" (ไม่ตัดไลน์อื่น: เครื่องลงทะเบียนไว้ที่ไลน์ลูก แต่ใบเปิดที่ไลน์แม่มีจริง)
+  const lineFam = useMemo(() => (f.line_name ? getLineFamilyNames(lines, f.line_name) : NO_LINES), [lines, f.line_name]);
+  // แผนก + cost center ที่ derive จากไลน์ (ไลน์ลูกไม่มี CC → ใช้ของไลน์แม่) — ใช้ร่วมทั้งเลือกไลน์ / สแกน / เลือกเครื่อง
+  const lineDerived = (name) => {
+    const l = lines.find(x => x.name === name);
+    let cc = l?.cost_center || '';
+    if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
+    return { section: l?.section || '', cc };
+  };
   // แจ้งซ่อม "แม่พิมพ์" หรือ "เครื่องจักร"? — ตัดสินจากชนิดอุปกรณ์ที่เลือก แล้วค่อยดูทีมที่แจ้งถึง
   //   ⚠️ แม่พิมพ์ผูก line_name เป็น "ชื่อกลุ่มเครื่องปั๊ม" (เช่น LINE A ( 800 Ton )) ซึ่งไม่มีใน production_lines
   //      → กรองด้วยไลน์ที่เลือกในฟอร์มจะไม่มีวันเจอแม่พิมพ์เลย (เจอจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01)
@@ -453,14 +498,29 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   const lineMachines = useMemo(() => {
     if (wantDie) return machines.filter(m => isDie(m.equipment_kind));
     // ไม่ใช่งานแม่พิมพ์ → ตัดแม่พิมพ์ออกจากลิสต์เครื่องจักร (262 ตัวอยู่ตารางเดียวกัน เคยปนกันมาตลอด)
-    return machines.filter(m => !isDie(m.equipment_kind) && (!f.line_name || m.line_name === f.line_name));
-  }, [machines, f.line_name, wantDie]);
+    // ไม่ตัดตามไลน์แล้ว — <MachineSelect lines={lineFam}> เรียงเครื่องของไลน์ที่เลือกขึ้นก่อน (2026-09-07)
+    return machines.filter(m => !isDie(m.equipment_kind));
+  }, [machines, wantDie]);
+  const machineKinds = useMemo(() => (wantDie ? ['die'] : ['machine', 'jig', 'facility']), [wantDie]);
 
   const onLine = (name) => {
-    const l = lines.find(x => x.name === name);
-    let cc = l?.cost_center || '';
-    if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
-    setF(p => ({ ...p, line_name: name, dept_section: l?.section || p.dept_section, cost_center: cc || p.cost_center }));
+    const { section, cc } = lineDerived(name);
+    setDirty(true);
+    setF(p => ({ ...p, line_name: name, dept_section: section || p.dept_section, cost_center: cc || p.cost_center }));
+  };
+  /* เลือกเครื่องจาก <MachineSelect> — machine_no เป็น text join key (Andon/DieRegistry/improvements/OrderTrace)
+     mtn_orders ไม่มีคอลัมน์ machine_id → เก็บ machine_no อย่างเดียวเหมือนเดิม · เลือกจากทะเบียนแล้วยังไม่ได้เลือกไลน์
+     → เติมไลน์/แผนก/CC ให้เหมือนสแกน QR · พิมพ์เองได้ (allowFree) แต่ติดป้าย "ไม่ได้อยู่ในทะเบียน" */
+  const onMachinePick = (res) => {
+    setDirty(true);
+    setF(p => {
+      const next = { ...p, machine_no: res.machine_no || '' };
+      if (res.opt && res.line_name && !p.line_name && lines.some(x => x.name === res.line_name)) {
+        const { section, cc } = lineDerived(res.line_name);
+        Object.assign(next, { line_name: res.line_name, dept_section: section || p.dept_section, cost_center: cc || p.cost_center });
+      }
+      return next;
+    });
   };
 
   // สแกนป้าย QR ที่ติดเครื่อง → เติม "ไลน์ + เลขเครื่อง" ให้พร้อมกัน
@@ -468,14 +528,13 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
   const onScanMachine = (parsed) => {
     const mc = resolveMachine(parsed, machines);
     if (!mc) return `ไม่พบเครื่องนี้ในฐานข้อมูล (${parsed.raw}) — ตรวจว่าเครื่องลงทะเบียนแล้วหรือยัง`;
-    const l = lines.find(x => x.name === mc.line_name);
-    let cc = l?.cost_center || '';
-    if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
+    const { section, cc } = lineDerived(mc.line_name);
+    setDirty(true);
     setF(p => ({
       ...p,
       machine_no: mc.machine_no || p.machine_no,
       line_name: mc.line_name || p.line_name,
-      dept_section: l?.section || p.dept_section,
+      dept_section: section || p.dept_section,
       cost_center: cc || p.cost_center,
     }));
     toast.success(`เลือกเครื่อง ${mc.machine_no}${mc.line_name ? ` · ${mc.line_name}` : ''}`);
@@ -547,10 +606,25 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
         <Field label="ประเภทการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
-        <Field label="ไลน์การผลิต" required><select value={f.line_name} onChange={e => onLine(e.target.value)} style={inp}><option value="">— เลือก —</option>{toHierarchicalOptions(lines).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select></Field>
+        {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
+        <Field label="ไลน์การผลิต" required><LineSelect lines={lines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required /></Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <Field label="ส่วนงาน (ASSY)"><input value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp} /></Field>
-          <Field label="แผนก (PD)"><input value={f.dept_section} onChange={e => set('dept_section', e.target.value)} style={inp} /></Field>
+          {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
+          <Field label="ส่วนงาน (ASSY)">
+            <select value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp}>
+              <option value="">— ไม่ระบุ —</option>
+              {f.work_area && !deptsOf(f.dept_section).includes(f.work_area) && <option value={f.work_area}>⚠ {f.work_area} (ไม่มีในผัง)</option>}
+              {deptsOf(f.dept_section).map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+          {/* แผนก = section จากผังองค์กร (default ตามไลน์ · เปลี่ยนได้เฉพาะผ่านตัวเลือก — คีย์ scope ของ mtnStepPerm) · 2026-09-07 */}
+          <Field label="แผนก (PD)">
+            <select value={f.dept_section} onChange={e => { setDirty(true); setF(p => ({ ...p, dept_section: e.target.value, work_area: '' })); }} style={inp}>
+              <option value="">— เลือก —</option>
+              {f.dept_section && !sectionOpts.includes(f.dept_section) && <option value={f.dept_section}>⚠ {f.dept_section} (ไม่มีในผัง)</option>}
+              {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
         </div>
         <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
           ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
@@ -566,12 +640,13 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
                 .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
             })()}</select></Field>
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input list="mtn-mc-list" value={f.machine_no} onChange={e => set('machine_no', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder={wantDie ? 'พิมพ์เพื่อค้นแม่พิมพ์ / สแกน' : 'เลือก/พิมพ์/สแกน'} />
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+            {/* <MachineSelect> แทน datalist — ค้นเลข/ชื่อ/ไลน์ · เครื่องของไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
+            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} allowFree history={machineHist}
+              placeholder={wantDie ? 'ค้นเลขแม่พิมพ์ / สแกน' : 'ค้นเลขเครื่อง / ชื่อ / สแกน'} style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
-              style={{ flexShrink: 0, padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+              style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
           </div>
-          <datalist id="mtn-mc-list">{lineMachines.map(m => <option key={m.id} value={m.machine_no}>{m.machine_name}{m.line_name ? ` · ${m.line_name}` : ''}</option>)}</datalist>
           {wantDie && (
             <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
               {lineMachines.length
@@ -609,12 +684,16 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, mtnDepts = MTN_
             </div>
           )}
         </div>
-        <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} onChange={e => set('cost_center', e.target.value)} style={{ ...inp, background: 'var(--bg2)' }} placeholder="auto จากไลน์" /></Field>
+        {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
+        <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
-        <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6 }}><input value={f.model} onChange={e => set('model', e.target.value)} style={inp} placeholder="โมเดล" /><input value={f.customer} onChange={e => set('customer', e.target.value)} style={inp} placeholder="ลูกค้า" /></div></Field>
+        {/* ลูกค้า = <CustomerSelect> (รายชื่อจาก Product Master · พิมพ์ใหม่ได้พร้อมป้าย) · โมเดลไม่มี master — พิมพ์เอง (2026-09-07) */}
+        <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><input value={f.model} onChange={e => set('model', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="โมเดล" /><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} history={customerHist} placeholder="ลูกค้า" style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} /></div></Field>
         <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
-        <Field label="ผู้แจ้ง (ผลิต)"><input value={f.reporter_prod} onChange={e => set('reporter_prod', e.target.value)} style={inp} /></Field>
-        <Field label="ผู้แจ้ง (คุณภาพ)"><input value={f.reporter_qa} onChange={e => set('reporter_qa', e.target.value)} style={inp} /></Field>
+        {/* ชื่อคน = <PersonSelect> (profiles + employees · คนของไลน์/แผนกที่เลือกขึ้นก่อน) — เก็บ snapshot ชื่อเหมือนเดิม
+            ตัวตนจริงของผู้เปิดใบยังเป็น reported_by_name (stamp ตอนบันทึก) · 2026-09-07 */}
+        <Field label="ผู้แจ้ง (ผลิต)"><PersonSelect value={f.reporter_prod} source="both" lines={lineFam} section={f.dept_section} history={reporterHist} onChange={res => set('reporter_prod', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+        <Field label="ผู้แจ้ง (คุณภาพ)"><PersonSelect value={f.reporter_qa} source="both" roles={QA_ROLES} section="QA" onChange={res => set('reporter_qa', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อ QA (เว้นว่างได้)" /></Field>
         <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeFile ? URL.createObjectURL(beforeFile) : null} onPick={pickBefore} /></div>
         <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
       </div>
@@ -843,7 +922,7 @@ function printMoReportMtn(o, dparts = [], logo0) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = STATUS_META[o.status] || STATUS_META.pending;
   const next = nextStepFor(o);
@@ -863,7 +942,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         ตรวจรับงานของ **ผู้เปิดใบ** ช่างตรวจงานตัวเองไม่ได้อีกต่อไป */
   const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
   const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
-  const stepCtx = { order: o, fullName, inOrderTeam, ...stepPerms(role) };
+  // 🔒 ขั้น 4/6/7 ทำได้เฉพาะใบของฝ่ายตัวเอง — null = ตัดสินไม่ได้ (ไม่จำกัด/ไลน์ไม่รู้จัก) = ผ่านตามเดิม
+  const inReporterScope = orderInReporterScope(o, reporterScope || {});
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
@@ -1029,7 +1110,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod }) || []).map((t, i) => <div key={i}>{t}</div>)}
+            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', orderLine: o.line_name, orderSection: o.dept_section }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ ผู้เปิดใบ / ผู้ถือสิทธิ์ mtn_repair:accept_work / QA กดข้าม QA ไปขั้น 6 ได้</div>)}
@@ -1058,7 +1139,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
 }
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
-function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], fullName, signatureUrl, role, userTeams = [], onClose, onSaved }) {
+function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], lines = NO_LINES, fullName, signatureUrl, role, userTeams = [], reporterScope = null, onClose, onSaved }) {
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
@@ -1086,6 +1167,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       )}
     </>
   );
+  // ครอบครัวไลน์ของใบ — ให้ PersonSelect เรียงคนของฝ่ายที่แจ้งขึ้นก่อน (ไม่ตัดคนอื่น) · 2026-09-07
+  const orderFam = useMemo(() => (order?.line_name ? getLineFamilyNames(lines, order.line_name) : NO_LINES), [lines, order?.line_name]);
+  // 📜 ชื่อที่เคยบันทึกในช่องเดียวกันของ mtn_orders — คนนอกทะเบียน (profiles/employees) ที่เคยกรอกยังเลือกซ้ำได้ (2026-09-07)
+  const checkerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'checker_name');
+  const qaCheckerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'qa_checker');
+  const hoCheckerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'ho_checker');
+  const approverHist = useColumnHistory(supabaseDR, 'mtn_orders', 'approver_name');
   const o = order;
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
@@ -1157,7 +1245,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
          (ผู้ถือ manage_master ข้ามได้ตามเดิม = สิทธิ์แก้ย้อนหลังของทุกขั้น) */
       const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
       const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
-      const stepCtx = { order: o, fullName, inOrderTeam, ...stepPerms(role) };
+      const inReporterScope = orderInReporterScope(o, reporterScope || {});
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -1171,6 +1260,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         // บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้หน้างานเดาว่าต้องไปขออะไรกับใคร
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
           return toast.error(`ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} — คุณทำได้เฉพาะใบของทีมตัวเอง`);
+        if (verdict.code === 'out_of_scope')
+          return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ฝ่ายอื่น'} — ขั้นนี้ทำได้เฉพาะใบของส่วนงานตัวเอง (ผู้เปิดใบหรือหัวหน้าฝ่ายนั้นเป็นคนกด)`);
         if (meta?.byReporter)
           return toast.error(`ขั้นนี้เป็นของ${meta.who} — ใบนี้เปิดโดย “${o.reported_by_name || o.reporter_prod || '—'}”`);
         return toast.error(`ขั้นนี้เป็นหน้าที่ของ${meta?.who || 'ผู้มีสิทธิ์'} — บัญชีนี้ทำไม่ได้`);
@@ -1304,7 +1395,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         {step === 2 && <>
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
-            <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><input value={f.accepted_by} onChange={e => set('accepted_by', e.target.value)} style={inp} /></Field>
+            {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
+            <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><PersonSelect value={f.accepted_by} source="both" roles={MTN_HEAD_ROLES} onChange={res => set('accepted_by', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
             <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
               <select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}>
                 <option value="">— เลือกช่าง —</option>
@@ -1386,7 +1478,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             </div>
           </Field>
           <Field label="ระบุรายละเอียด (เช่น ยังเหลืออะไรต้องตามต่อ)"><input value={f.check_note} onChange={e => set('check_note', e.target.value)} style={inp} /></Field>
-          <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><input value={f.checker_name} onChange={e => set('checker_name', e.target.value)} style={inp} /></Field>
+          {/* ผู้ตรวจรับ = คนของฝ่ายที่แจ้ง (ไลน์/แผนกของใบขึ้นก่อน) ผ่าน <PersonSelect> · 2026-09-07 */}
+          <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><PersonSelect value={f.checker_name} source="both" lines={orderFam} section={o.dept_section} history={checkerHist} onChange={res => set('checker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
         </>}
         {skipQa && <>
           <Field label="เหตุผลที่ไม่ต้องให้ QA ตรวจ (เช่น ซ่อมไฟ/ลม/โครงสร้าง ไม่แตะจุดที่กระทบชิ้นงาน)" required><textarea value={f.qa_skip_reason} onChange={e => set('qa_skip_reason', e.target.value)} style={{ ...inp, minHeight: 64 }} /></Field>
@@ -1395,12 +1488,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         {step === 5 && !skipQa && <>
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
-          <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><input value={f.qa_checker} onChange={e => set('qa_checker', e.target.value)} style={inp} /></Field>
+          {/* เจ้าหน้าที่ QA = <PersonSelect> role qa ขึ้นก่อน · 2026-09-07 */}
+          <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><PersonSelect value={f.qa_checker} source="both" roles={QA_ROLES} section="QA" history={qaCheckerHist} onChange={res => set('qa_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           <ImgField label="รูปยืนยันคุณภาพ" value={qaFile ? URL.createObjectURL(qaFile) : (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
         {step === 6 && <>
           <Field label="ผลติดตามหลังใช้งานจริง"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
-          <Field label="ชื่อผู้รับมอบงาน (หัวหน้าแผนกฝ่ายที่แจ้ง)"><input value={f.ho_checker} onChange={e => set('ho_checker', e.target.value)} style={inp} /></Field>
+          {/* หัวหน้าแผนกฝ่ายที่แจ้ง = <PersonSelect> profiles role supervisor/manager ของไลน์/แผนกใบขึ้นก่อน · 2026-09-07 */}
+          <Field label="ชื่อผู้รับมอบงาน (หัวหน้าแผนกฝ่ายที่แจ้ง)"><PersonSelect value={f.ho_checker} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={hoCheckerHist} onChange={res => set('ho_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           <Field label="ประเมินความพึงพอใจบริการซ่อม (KPI หน่วยงานซ่อม)">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {SAT_DIMS.map(d => (
@@ -1421,7 +1516,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           </Field>
         </>}
         {step === 7 && <>
-          <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><input value={f.approver_name} onChange={e => set('approver_name', e.target.value)} style={inp} /></Field>
+          {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
+          <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
         {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: 'approve_sign' }[step]]} onChange={v => { touch(); setSig(v); }} /></Field>}
@@ -1473,7 +1569,8 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <select value={line} onChange={e => setLine(e.target.value)} style={{ ...inp, width: 200 }}><option value="">ทุกไลน์</option>{toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>)}</select>
+        {/* <LineSelect> — lineObjs ถูก scope จากหน้าหลักแล้ว · 2026-09-07 */}
+        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
         <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>

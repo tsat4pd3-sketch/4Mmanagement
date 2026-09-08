@@ -7,6 +7,10 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fmtDate } from '../utils/dateFormat';
@@ -99,6 +103,8 @@ export default function Improvements() {
   const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canManage = can('improvements', 'manage', role);
   const canDel    = canDelete('improvements', 'manage', role);  // สิทธิ์ลบโปรเจค แยกจากจัดการ
+  // 📜 ผู้รับผิดชอบ milestone ที่เคยบันทึก (DR improvement_milestones) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const assigneeHist = useColumnHistory(supabaseDR, 'improvement_milestones', 'assignee');
 
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -158,7 +164,7 @@ export default function Improvements() {
     setLoading(true);
     const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
       // cost_center: คิด cost saving (ไลน์ลูกไม่กรอก = ตกทอดจากไลน์แม่ — lineCostCenter)
-      supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
+      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
@@ -1259,9 +1265,11 @@ export default function Improvements() {
                                 <option value="">เฟส —</option>
                                 {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
                               </select>
-                              <input placeholder="ผู้รับผิดชอบ" value={msDraft[imp.id]?.assignee || ''}
-                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: e.target.value } }))}
-                                style={{ width: 100, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              {/* 2026-09-07 เลือกคนผ่าน <PersonSelect> (profiles+employees · คนของไลน์นี้ขึ้นก่อน) — milestones อยู่ DR เก็บชื่อ snapshot */}
+                              <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" history={assigneeHist} placeholder="ผู้รับผิดชอบ"
+                                lines={imp.line_name ? getLineFamilyNames(lines, imp.line_name) : undefined}
+                                style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)' }}
+                                onChange={({ name }) => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: name } }))} />
                               <input type="date" value={msDraft[imp.id]?.planned_start || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_start: e.target.value } }))}
                                 style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
@@ -1317,10 +1325,9 @@ export default function Improvements() {
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ไลน์ *
-                    <select value={modal.line_name} onChange={e => setModal({ ...modal, line_name: e.target.value, machine_no: '', mat_no: '' })} style={{ marginTop: 4 }}>
-                      <option value="">— เลือกไลน์ —</option>
-                      {lineOptions.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                    </select>
+                    {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter "ไลน์ลูก + scope" (lineOptions) เดิม */}
+                    <LineSelect lines={lineOptions} value={modal.line_name} placeholder="— เลือกไลน์ —" style={{ marginTop: 4 }}
+                      onChange={v => setModal({ ...modal, line_name: v, machine_no: '', mat_no: '' })} />
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ประเภทปัญหา *
                     <select value={modal.problem_source} onChange={e => setModal({ ...modal, problem_source: e.target.value, problem_type_id: '', problem_label: '' })} style={{ marginTop: 4 }}>

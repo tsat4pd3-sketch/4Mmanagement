@@ -112,8 +112,9 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
     setReadiness({ ...assessFmeReadiness({ qaParts, products, rules }), at: Date.now() });
   }, []);
 
-  // เปิดแผง ⚙️ เมื่อไหร่ ตรวจใหม่ทุกครั้ง (ไปผูกพาร์ท/เลือกห้องมาแล้วกลับมาต้องเห็นผลทันที)
-  useEffect(() => { if (showCfg && canManage) loadReadiness(); }, [showCfg, canManage, loadReadiness]);
+  // คนมีสิทธิ์เปิด: ตรวจตั้งแต่เปิดหน้า (แถบ "ปิดอยู่" ต้องบอกได้เลยว่าติดกี่ข้อ) และตรวจใหม่ทุกครั้งที่กดเปิดแผง ⚙️
+  // (ไปผูกพาร์ท/เลือกห้องมาแล้วกลับมาต้องเห็นผลทันที)
+  useEffect(() => { if (canManage) loadReadiness(); }, [showCfg, canManage, loadReadiness]);
 
   const saveCfg = async (patch) => {
     if (patch.is_enabled === true) {
@@ -286,7 +287,8 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 borderLeft: `3px solid ${sm.color}`, borderRadius: 8, padding: '7px 10px',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {sm.label}</span>
-                <span style={{ fontSize: 13, minWidth: 0, flex: 1 }}>
+                {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
+                <span style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>

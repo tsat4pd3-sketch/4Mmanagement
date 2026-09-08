@@ -16,7 +16,7 @@
  *   - วันงานใช้ getWorkDate (ก่อน 08:00 = วันก่อนหน้า) ห้าม toISOString
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import useIsMobile from '../utils/useIsMobile';
@@ -28,6 +28,10 @@ import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import { specLabel, judgeVariable } from '../utils/qaSpec';
+import { evalSequence } from '../utils/qaSequential';
+import { can } from '../utils/permissions';
+import QaPieceStepper from './QaPieceStepper';
 
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
@@ -74,6 +78,8 @@ const calcViewH = () =>
 
 export default function QaCheckSheet({ canRecord }) {
   const { role, lineId, sections, fullName } = useContext(UserContext);
+  // ฝ่ายผลิต/หัวหน้าไลน์บันทึก action หลัง alarm (cross-function กับ QA) — คีย์แยกจาก qa:record
+  const canAction = can('qa', 'record_action', role);
   const isMobile = useIsMobile();
 
   const [allLines, setAllLines] = useState([]);
@@ -94,6 +100,8 @@ export default function QaCheckSheet({ canRecord }) {
 
   const [sheet, setSheet] = useState(null);          // แถว qa_inspection_sheets ของคีย์ปัจจุบัน
   const [results, setResults] = useState([]);        // ผลของใบนั้น
+  const [pieces, setPieces] = useState([]);          // ผลต่อชิ้น (ตรวจทีละชิ้น · 2026-09-07)
+  const [actions, setActions] = useState([]);        // action ที่ปิด alarm แต่ละรอบ
   const [recent, setRecent] = useState([]);          // ใบตรวจล่าสุดของพาร์ทนี้
   const [drafts, setDrafts] = useState({});          // item_id → { values[], note, qty_ng }
   const [selItemId, setSelItemId] = useState(null);  // จุดที่ไฮไลต์ (คลิกหมุด ↔ แถว)
@@ -191,15 +199,23 @@ export default function QaCheckSheet({ canRecord }) {
     if (error?.code === '42P01') { setNeedMigration(true); setSheet(null); setResults([]); setLoading(false); return; }
     if (sheetKeyRef.current !== myKey) return;   // ผู้ใช้เปลี่ยนคีย์ระหว่างรอ → ทิ้งผลรอบนี้
     setNeedMigration(false);
-    let res = [];
+    let res = [], pcs = [], acts = [];
     if (sh?.id) {
-      const { data } = await supabase.from('qa_inspection_results').select('*').eq('sheet_id', sh.id);
-      res = data || [];
+      const [r1, r2, r3] = await Promise.all([
+        supabase.from('qa_inspection_results').select('*').eq('sheet_id', sh.id),
+        supabase.from('qa_inspection_pieces').select('*').eq('sheet_id', sh.id).order('piece_no'),
+        supabase.from('qa_inspection_actions').select('*').eq('sheet_id', sh.id).order('round_no'),
+      ]);
+      res = r1.data || []; pcs = r2.data || []; acts = r3.data || [];
+      // ตาราง pieces/actions ยังไม่ apply migration → บอกชัด ไม่ปล่อยให้ตัวเดินกฎคิดว่าใบว่าง
+      if (r2.error?.code === '42P01' || r3.error?.code === '42P01') { setNeedMigration(true); }
     }
     // เช็คซ้ำหลัง await ตัวที่ 2 — ห้าม setDrafts({}) ทับค่าที่ผู้ใช้เพิ่งพิมพ์ในคีย์ใหม่
     if (sheetKeyRef.current !== myKey) return;
     setSheet(sh || null);
     setResults(res);
+    setPieces(pcs);
+    setActions(acts);
     setDrafts({});
     setLoading(false);
   }, [partId, workDate, shift, roundNo]);
@@ -315,52 +331,138 @@ export default function QaCheckSheet({ canRecord }) {
     setResults(data || []);
   }, [canRecord, sheet, drafts, ensureSheet, fullName]);
 
-  /* ผ่านทั้งหมดที่ยังไม่ตรวจ — ลดการกดซ้ำๆ ตอนทุกจุดปกติ (pattern เดียวกับ LPA "ยังไม่ตอบ=Y") */
-  const passAllRemaining = async () => {
-    const left = items.filter(i => !resById.get(i.id));
-    if (!left.length) { toast.info('ตรวจครบทุกจุดแล้ว'); return; }
-    if (!window.confirm(`ทำเครื่องหมาย "ผ่าน" ให้จุดที่ยังไม่ตรวจ ${left.length} จุด?\n(จุดที่บันทึกผลไปแล้วไม่ถูกแตะ)`)) return;
+  /* ── ตรวจทีละชิ้น (sequential acceptance · 2026-09-07) ─────────────────────
+     ตัวเดินกฎ = utils/qaSequential (จุดเดียว) · ใบปิดเองเมื่อ "ยอมรับ" — ไม่มีปุ่มปิดใบ/ผ่านทั้งหมดอีก
+     ค่าต่อจุดต่อชิ้นยังลง qa_inspection_results.values_json (index = ชิ้นที่-1) ให้ pin/NCR/ประวัติเดิมอ่านได้ */
+  const seq = useMemo(() => evalSequence(pieces, actions), [pieces, actions]);
+  const shiftLabel = shift === 'day' ? 'กะเช้า' : 'กะดึก';
+
+  const savePiece = useCallback(async (p) => {
+    if (!canRecord) { toast.error('ไม่มีสิทธิ์บันทึกผลตรวจ'); return; }
+    if (seq.state !== 'inspecting') { toast.error(seq.state === 'accepted' ? 'ใบนี้ยอมรับแล้ว' : 'ใบนี้รอ action อยู่ — ตรวจต่อไม่ได้'); return; }
     setBusy(true);
     const sh = await ensureSheet();
     if (!sh) { setBusy(false); return; }
-    const rows = left.map(i => ({
-      sheet_id: sh.id, item_id: i.id,
-      balloon_no: String(i.balloon_no ?? ''), characteristic: i.characteristic,
-      item_type: i.item_type, spec_text: specOf(i),
-      judgement: 'ok', qty_checked: i.sample_size ?? null, qty_ng: 0,
-      recorded_by: fullName || null, recorded_at: new Date().toISOString(),
-    }));
-    const { error } = await supabase.from('qa_inspection_results').upsert(rows, { onConflict: 'sheet_id,item_id' });
+    const pieceNo = seq.nextPiece, roundNo = seq.round;
+    const now = new Date().toISOString();
+
+    // 1) ผลต่อจุด — merge ค่าของชิ้นนี้เข้า array เดิม · judgement รวม: มี ng ชิ้นไหน = ng
+    const rows = items.map(i => {
+      const prev = resById.get(i.id);
+      const j = p.judgements[i.id] || { judge: 'na', value: '', note: '' };
+      const vals = Array.isArray(prev?.values_json) ? [...prev.values_json] : [];
+      vals[pieceNo - 1] = i.item_type === 'variable' ? (j.value === '' || j.value == null ? null : Number(j.value)) : j.judge;
+      const judgement = (j.judge === 'ng' || prev?.judgement === 'ng') ? 'ng'
+        : (j.judge === 'ok' || prev?.judgement === 'ok') ? 'ok' : 'na';
+      return {
+        sheet_id: sh.id, item_id: i.id,
+        balloon_no: String(i.balloon_no ?? ''), characteristic: i.characteristic,
+        item_type: i.item_type, spec_text: specOf(i), judgement,
+        values_json: vals.some(v => v != null) ? vals : null,
+        qty_checked: (Number(prev?.qty_checked) || 0) + (j.judge !== 'na' ? 1 : 0),
+        qty_ng: (Number(prev?.qty_ng) || 0) + (j.judge === 'ng' ? 1 : 0),
+        note: j.note || prev?.note || null,
+        recorded_by: fullName || null, recorded_at: now,
+      };
+    });
+    if (!checkWrite(await supabase.from('qa_inspection_results').upsert(rows, { onConflict: 'sheet_id,item_id' }), 'ผลต่อจุด')) { setBusy(false); return; }
+
+    // 2) ผลต่อชิ้น
+    const { data: pc, error: pcErr } = await supabase.from('qa_inspection_pieces').insert({
+      sheet_id: sh.id, round_no: roundNo, piece_no: pieceNo, result: p.result,
+      failed_items: p.failedItems?.length ? p.failedItems : null,
+      disposition: p.result === 'fail' ? (p.disposition || null) : null,
+      remark: p.remark || null, recorded_by: fullName || null,
+    }).select().single();
+    if (pcErr) { setBusy(false); toast.error(`บันทึกชิ้นที่ ${pieceNo} ไม่สำเร็จ: ${pcErr.message}`); return; }
+
+    // 3) scrap → ลงถังแดง (DR) ผูกกลับ — ล้มเหลวต้องบอก ไม่เงียบ (ชิ้นถูกทิ้งแต่ไม่มีบันทึก = สืบไม่ได้)
+    if (p.disposition === 'scrap') {
+      const failedTxt = (p.failedItems || []).map(f => `#${f.balloon_no} ${f.characteristic}`).join(', ');
+      const { data: rb, error: rbErr } = await supabaseDR.from('quality_bin_records').insert({
+        bin: 'red', work_date: workDate, line_name: part?.line_name || null,
+        mat_no: part?.mat_no || null, part_name: part?.part_name || null, part_no: part?.part_no || null,
+        qty: 1, cause: `ใบตรวจ QA ${workDate} ${shiftLabel} รอบ ${roundNo} · ชิ้นที่ ${pieceNo} ตก ${failedTxt}${p.remark ? ` — ${p.remark}` : ''}`,
+        reported_by: fullName || null, qa_by: fullName || null,
+      }).select('id').single();
+      if (rbErr) toast.error(`บันทึกชิ้นแล้ว แต่ลงถังแดงไม่สำเร็จ: ${rbErr.message} — ไปลงที่แท็บถังแดงเอง`);
+      else {
+        checkWrite(await supabase.from('qa_inspection_pieces').update({ red_bin_id: rb.id }).eq('id', pc.id), 'ผูกถังแดงเข้าชิ้น');
+        notifyEvent({ event: 'quality_bin_added', type: 'error', ref_table: 'quality_bin_records', ref_id: rb.id,
+          line_name: part?.line_name || null, actor: fullName,
+          lines: ['🔴 ถังแดง (ของเสียยืนยันแล้ว — จากใบตรวจ QA)', `🏭 ไลน์: ${part?.line_name || '—'} · ${part?.part_no || '—'}`, `🔢 1 ชิ้น · ${failedTxt}`] });
+      }
+    }
+
+    // 4) เดินกฎใหม่ → เขียน cache บนใบ + ปิดใบ/alarm ตามผล
+    const next = evalSequence([...pieces, pc], actions);
+    const patch = { seq_round: next.round, seq_state: next.state, alarm_count: next.alarmCount };
+    if (next.state === 'accepted') Object.assign(patch, { status: 'done', result: 'pass', closed_by: fullName || null, closed_at: now });
+    if (!checkWrite(await supabase.from('qa_inspection_sheets').update(patch).eq('id', sh.id).select('id'), 'สถานะใบตรวจ')) { setBusy(false); loadSheet(); return; }
+    if (next.state === 'accepted') {
+      await linkFme(sh.id, 'done_ok');
+      toast.success(next.acceptedBy === 'first_pass' ? 'ชิ้นแรกผ่านทุกจุด — ยอมรับ ปิดใบแล้ว ✓' : 'ผ่านติดกัน 2 ชิ้น — ยอมรับ ปิดใบแล้ว ✓');
+    } else if (next.state === 'await_action') {
+      const failedPieces = [...pieces, pc].filter(x => x.round_no === next.round && x.result === 'fail');
+      notifyEvent({
+        event: 'qa_seq_alarm', type: 'error', ref_table: 'qa_inspection_sheets', ref_id: sh.id,
+        line_name: part?.line_name || null, actor: fullName,
+        lines: [
+          `🚨 ใบตรวจตกซ้ำ — ต้องแก้ไขก่อน QA ตรวจต่อ (alarm ครั้งที่ ${next.alarmCount})`,
+          `🏭 ไลน์: ${part?.line_name || '—'} · พาร์ท: ${part?.part_no || '—'}${part?.part_name ? ` ${part.part_name}` : ''}`,
+          `📅 ${workDate} ${shiftLabel} รอบ ${roundNo}${sheetStage ? ` · ${sheetStage}` : ''}`,
+          `✕ ชิ้นที่ตก: ${failedPieces.map(x => `${x.piece_no} (${(x.failed_items || []).map(f => `#${f.balloon_no}`).join(',') || '—'})`).join(' · ')}`,
+          'ฝ่ายผลิตบันทึก action ที่ /qa แท็บใบตรวจ แล้ว QA ตรวจต่อ 2 ชิ้นติดกัน',
+        ],
+      });
+      toast.error(`ชิ้นที่ ${pieceNo} ตก — ครบเงื่อนไข alarm แล้ว ต้องมี action ก่อนตรวจต่อ`);
+    } else {
+      toast.success(p.result === 'fail' ? `บันทึกชิ้นที่ ${pieceNo} (ตก) — ต้องตรวจชิ้นที่ ${next.nextPiece} ต่อ` : `บันทึกชิ้นที่ ${pieceNo} ผ่าน — ต้องผ่านอีก 1 ชิ้นติดกัน`);
+    }
     setBusy(false);
-    if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
-    const { data } = await supabase.from('qa_inspection_results').select('*').eq('sheet_id', sh.id);
-    setResults(data || []);
-    toast.success(`บันทึกผ่าน ${left.length} จุดแล้ว ✓`);
-  };
-
-  /* ปิดใบ — ต้องตรวจครบทุกจุดก่อน (ใบตรวจที่ไม่ครบ = หลักฐานคุณภาพใช้ไม่ได้) */
-  const closeSheet = async () => {
-    if (!sheet?.id) return;
-    if (summary.left > 0) { toast.error(`ยังเหลือ ${summary.left} จุดที่ยังไม่ได้ตรวจ`); return; }
-    const result = summary.ng > 0 ? 'fail' : 'pass';
-    if (!window.confirm(`ปิดใบตรวจนี้?\nสรุปผล: ${result === 'pass' ? 'ผ่าน ✓' : `ไม่ผ่าน (NG ${summary.ng} จุด)`}`)) return;
-    const { error } = await supabase.from('qa_inspection_sheets')
-      .update({ status: 'done', result, closed_by: fullName || null, closed_at: new Date().toISOString() })
-      .eq('id', sheet.id);
-    if (error) { toast.error(error.message); return; }
-    await linkFme(sheet.id, result === 'fail' ? 'done_ng' : 'done_ok');
-    toast.success('ปิดใบตรวจแล้ว ✓');
     loadSheet(); loadRecent();
-  };
+  }, [canRecord, seq, ensureSheet, items, resById, fullName, pieces, actions, workDate, shiftLabel, part, sheetStage, linkFme, loadSheet, loadRecent]);
 
-  const reopenSheet = async () => {
-    if (!sheet?.id) return;
-    if (!window.confirm('เปิดใบนี้กลับมาแก้ไขผลตรวจ?')) return;
-    const { error } = await supabase.from('qa_inspection_sheets')
-      .update({ status: 'open', result: null, closed_by: null, closed_at: null }).eq('id', sheet.id);
-    if (error) { toast.error(error.message); return; }
-    loadSheet(); loadRecent();
-  };
+  const saveAction = useCallback(async (a) => {
+    if (!canAction) { toast.error('ไม่มีสิทธิ์บันทึก action'); return; }
+    if (seq.state !== 'await_action' || !sheet?.id) { toast.error('ใบนี้ไม่ได้รอ action'); return; }
+    setBusy(true);
+    const roundNo = seq.alarmRound;
+    const failedTxt = pieces.filter(x => x.round_no === roundNo && x.result === 'fail')
+      .flatMap(x => (x.failed_items || []).map(f => `#${f.balloon_no} ${f.characteristic}`)).filter((v, i, arr) => arr.indexOf(v) === i).join(', ');
+    // ผูก 4M เมื่อคนเลือก (ห้ามสร้างอัตโนมัติเงียบๆ — บทเรียน 392 ใบ) · เข้าคิวอนุมัติหัวหน้า → QA ตามปกติ
+    let four_m_log_id = null;
+    if (a.fourM) {
+      const { data: u } = await supabase.auth.getUser();
+      const logData = {
+        work_date: workDate, line_name: part?.line_name || null, category: a.fourM.category,
+        description: `[ใบตรวจ QA ${part?.part_no || ''} · ${workDate} ${shiftLabel} รอบ ${roundNo}] ตกจุด ${failedTxt || '—'} — แก้ไข: ${a.text} (โดย ${a.by})`,
+        requires_qa: true, created_by: u?.user?.id ?? null,
+      };
+      const { data: m4, error: m4Err } = await supabase.from('four_m_logs').insert(logData).select('id').single();
+      if (m4Err) { setBusy(false); toast.error(`เปิดใบ 4M ไม่สำเร็จ: ${m4Err.message} — ยังไม่บันทึก action`); return; }
+      four_m_log_id = m4.id;
+      supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
+    }
+    const { error } = await supabase.from('qa_inspection_actions').insert({
+      sheet_id: sheet.id, round_no: roundNo, action_text: a.text, action_by: a.by, four_m_log_id, recorded_by: fullName || null,
+    });
+    if (error) { setBusy(false); toast.error(`บันทึก action ไม่สำเร็จ: ${error.message}`); return; }
+    checkWrite(await supabase.from('qa_inspection_sheets').update({ seq_state: 'inspecting', seq_round: roundNo + 1 }).eq('id', sheet.id).select('id'), 'สถานะใบตรวจ');
+    notifyEvent({
+      event: 'qa_seq_action', type: 'info', ref_table: 'qa_inspection_sheets', ref_id: sheet.id,
+      line_name: part?.line_name || null, actor: a.by,
+      lines: [
+        `🛠 ผลิตแก้ไขแล้ว — QA กลับมาตรวจต่อ (ต้องผ่านติดกัน 2 ชิ้น)`,
+        `🏭 ไลน์: ${part?.line_name || '—'} · พาร์ท: ${part?.part_no || '—'}`,
+        `📅 ${workDate} ${shiftLabel} รอบ ${roundNo} → รอบ ${roundNo + 1}`,
+        `📝 ${a.text} (${a.by})${four_m_log_id ? ' · เปิดใบ 4M แล้ว' : ''}`,
+      ],
+    });
+    setBusy(false);
+    toast.success(`บันทึก action แล้ว — QA ตรวจต่อรอบที่ ${roundNo + 1}`);
+    loadSheet();
+  }, [canAction, seq, sheet, pieces, workDate, shiftLabel, part, fullName, loadSheet]);
 
   /* NG → เปิด NCR ผูกกลับมาที่แถวผล (ไม่ต้องพิมพ์ซ้ำ) */
   const openNcr = async (item, res) => {
@@ -529,20 +631,8 @@ export default function QaCheckSheet({ canRecord }) {
                 ? <Chip label={sheet.result === 'pass' ? '✅ ปิดใบแล้ว — ผ่าน' : '⛔ ปิดใบแล้ว — ไม่ผ่าน'} color={sheet.result === 'pass' ? '#22c55e' : '#ef4444'} />
                 : <Chip label={sheet ? '📝 กำลังตรวจ' : '○ ยังไม่เริ่มตรวจ'} color={sheet ? '#4d9fff' : '#6b7280'} />}
               <span style={{ flex: 1 }} />
-              {canRecord && sheet?.status !== 'done' && (
-                <button style={ghostBtn} disabled={busy || !summary.left} onClick={passAllRemaining}>
-                  ✓ ผ่านทั้งหมดที่ยังไม่ตรวจ
-                </button>
-              )}
-              {canRecord && sheet && sheet.status !== 'done' && (
-                <button style={{ ...ghostBtn, background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', fontWeight: 800 }}
-                  disabled={busy} onClick={closeSheet}>
-                  🔒 ปิดใบตรวจ
-                </button>
-              )}
-              {canRecord && sheet?.status === 'done' && (
-                <button style={ghostBtn} onClick={reopenSheet}>↩️ เปิดกลับมาแก้</button>
-              )}
+              {/* ใบปิดเองเมื่อตัวเดินกฎบอก "ยอมรับ" — ไม่มีปุ่มปิดใบ/ผ่านทั้งหมด (ตรวจทีละชิ้น 2026-09-07) */}
+              <Chip label={`ชิ้นที่ตรวจแล้ว ${pieces.length}`} color="#6b7280" />
             </>
           )}
         </div>
@@ -609,19 +699,28 @@ export default function QaCheckSheet({ canRecord }) {
             </div>
           )}
 
-          {/* รายการจุดตรวจ */}
+          <div>
+          {/* ตรวจทีละชิ้น — แผงหลักของการบันทึก (ถามตัวเดินกฎว่าต่อไปทำอะไร) */}
+          {!needMigration && (
+            <QaPieceStepper items={items} results={results} pieces={pieces} actions={actions} seq={seq}
+              sheet={sheet} part={part} workDate={workDate} shift={shift}
+              canRecord={canRecord && !loading} canAction={canAction} busy={busy} isMobile={isMobile} fullName={fullName}
+              onSavePiece={savePiece} onSaveAction={saveAction} />
+          )}
+
+          {/* สรุปต่อจุด (อ่านอย่างเดียว — ค่าทุกชิ้นที่วัดแล้ว · เปิด NCR จากจุดที่ตกได้ที่นี่) */}
           <div style={{ ...cardSt, padding: 0 }}>
             <div style={{ padding: '12px 16px', fontWeight: 800, fontSize: 13.5, borderBottom: '1px solid var(--border)' }}>
-              📋 จุดตรวจ ({items.length})
+              📋 สรุปต่อจุด ({items.length})
               {loading && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}> · กำลังโหลด…</span>}
-              {readOnly && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}>
-                {' '}· {canRecord ? 'ใบปิดแล้ว (อ่านอย่างเดียว)' : 'ไม่มีสิทธิ์บันทึก — ดูอย่างเดียว'}
-              </span>}
+              <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}>
+                {' '}· {readOnly && canRecord ? 'ใบปิดแล้ว' : !canRecord ? 'ไม่มีสิทธิ์บันทึก — ดูอย่างเดียว' : 'บันทึกที่แผงตรวจทีละชิ้นด้านบน'}
+              </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {items.map(i => (
                 <ItemRow key={i.id} item={i} res={resById.get(i.id)} draft={drafts[i.id]}
-                  selected={selItemId === i.id} readOnly={readOnly} canRecord={canRecord} busy={busy} isMobile={isMobile}
+                  selected={selItemId === i.id} readOnly canRecord={canRecord} busy={busy} isMobile={isMobile}
                   rowRef={el => { rowRefs.current[i.id] = el; }}
                   onSelect={() => selectRow(i)}
                   onDraft={patch => setDrafts(p => ({ ...p, [i.id]: { ...(p[i.id] || {}), ...patch } }))}
@@ -629,6 +728,7 @@ export default function QaCheckSheet({ canRecord }) {
                   onOpenNcr={res => openNcr(i, res)} />
               ))}
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -657,24 +757,10 @@ export default function QaCheckSheet({ canRecord }) {
 }
 
 /* สเปคที่ใช้ตัดสิน — ข้อความเดียวกับที่โชว์ในหน้า setup */
-function specOf(it) {
-  if (it.spec_text) return it.spec_text + (it.unit ? ` ${it.unit}` : '');
-  if (it.item_type === 'variable') {
-    const s = [it.lsl != null ? `LSL ${it.lsl}` : null, it.nominal != null ? `${it.nominal}` : null, it.usl != null ? `USL ${it.usl}` : null]
-      .filter(Boolean).join(' / ');
-    return (s || '—') + (it.unit ? ` ${it.unit}` : '');
-  }
-  return 'GO / NOGO';
-}
-
-/* ตัดสินอัตโนมัติสำหรับจุด variable: ทุกค่าต้องอยู่ในสเปค (ไม่ตั้ง limit = ตัดสินเองไม่ได้) */
-function autoJudge(it, values) {
-  if (it.lsl == null && it.usl == null) return null;
-  const nums = values.filter(v => v !== '' && v != null).map(Number);
-  if (!nums.length || nums.some(Number.isNaN)) return null;
-  const bad = nums.some(v => (it.lsl != null && v < it.lsl) || (it.usl != null && v > it.usl));
-  return bad ? 'ng' : 'ok';
-}
+/* สเปค + ตัดสินอัตโนมัติ ย้ายไป utils/qaSpec.js (single source of truth · 2026-09-07)
+   — label กับคำตัดสินต้องอ่าน limit ชุดเดียวกัน · ห้ามประกอบข้อความสเปคเองในหน้านี้อีก */
+const specOf = specLabel;
+const autoJudge = judgeVariable;
 
 function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobile, rowRef, onSelect, onDraft, onSave, onOpenNcr }) {
   const n = Math.min(10, Math.max(1, item.sample_size || 1));
@@ -698,7 +784,8 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
           background: judged ? color : (item.rank ? RANK[item.rank].color : '#4d9fff'),
         }}>{item.balloon_no}</span>
 
-        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+        {/* minWidth 200: จอแคบให้ปุ่ม/ช่องค่าตกบรรทัดใหม่ แทนที่จะบีบข้อความจนคำละบรรทัด (วัดจริง 390px การ์ดสูง 500px+ · 2026-09-07) */}
+        <div style={{ flex: '1 1 240px', minWidth: 200 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.characteristic}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
             <span>สเปค: {specOf(item)}</span>

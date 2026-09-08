@@ -7,7 +7,9 @@ import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from 
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy'
+import { getLineFamilyNames } from '../utils/lineHierarchy'
+import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
+import { LINE_COLUMNS } from '../utils/useProductionLines'
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE } from '../utils/refreshRates'
@@ -83,7 +85,7 @@ export default function DailyPM() {
       supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').eq('department', 'production'),
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      supabase.from('production_lines').select(LINE_COLUMNS).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
     ])
     /* AM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → default แสดงเฉพาะ "เครื่องผลิต"
        ตัด jig/die tooling + facility/utility ออก ไม่ให้ลิสต์ลงทะเบียนรก (คำสั่ง user 2026-07-22)
@@ -445,25 +447,20 @@ export default function DailyPM() {
                               {/* ชื่อเต็ม ตัดได้ไม่เกิน 2 บรรทัด — ห้ามตัดจนเหลือตัวเดียวแบบ nowrap เดิม */}
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{j.name}</div>
                               {(j.machine_no || j.jig_no) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{[j.machine_no, j.jig_no].filter(Boolean).join(' · ')}</div>}
+                              {/* <LineSelect> (2026-09-07) — ห่อ div preventDefault กัน click ไปโดน <label> แล้ว toggle checkbox (เดิมทำที่ <select>)
+                                  · ค่า '' = placeholder ไม่ยิง assign · scopedProdLines กรอง scope แล้ว */}
                               {noLine && canManage && (
-                                <select defaultValue="" onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
-                                  style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
-                                  <option value="" disabled>📍 เลือกไลน์ให้เครื่องนี้…</option>
-                                  {toHierarchicalOptions(scopedProdLines).map(({ line: l, depth }) => (
-                                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                                  ))}
-                                </select>
+                                <div onClick={e => e.preventDefault()}>
+                                  <LineSelect lines={scopedProdLines} value="" onChange={v => v && assignJigLine(j, v)} placeholder="📍 เลือกไลน์ให้เครื่องนี้…"
+                                    style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }} />
+                                </div>
                               )}
-                              {/* เลือกไลน์ผิด → ย้ายจากตรงนี้ได้เลย รายการลงทะเบียนย้ายตามอัตโนมัติ */}
+                              {/* เลือกไลน์ผิด → ย้ายจากตรงนี้ได้เลย รายการลงทะเบียนย้ายตามอัตโนมัติ · ค่าปัจจุบันที่ไม่อยู่ในทะเบียน/นอก scope LineSelect เติมให้เอง (guarantee #4) */}
                               {!noLine && canManage && (
-                                <select value={line} onClick={e => e.preventDefault()} onChange={e => assignJigLine(j, e.target.value)}
-                                  title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย"
-                                  style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                                  {!scopedProdLines.some(l => l.name === line) && <option value={line}>{line}</option>}
-                                  {toHierarchicalOptions(scopedProdLines).map(({ line: l, depth }) => (
-                                    <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                                  ))}
-                                </select>
+                                <div onClick={e => e.preventDefault()} title="ย้ายเครื่องนี้ไปไลน์อื่น — เลือกไลน์ผิดแก้ตรงนี้ได้เลย">
+                                  <LineSelect lines={scopedProdLines} value={line} onChange={v => v && v !== line && assignJigLine(j, v)} placeholder={null}
+                                    style={{ width: '100%', marginTop: 6, padding: '3px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--muted)' }} />
+                                </div>
                               )}
                             </div>
                           </label>

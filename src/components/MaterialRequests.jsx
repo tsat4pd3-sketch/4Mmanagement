@@ -18,7 +18,13 @@ import { usePerms } from '../utils/usePerms';
 import { toast } from './Toast';
 import ReadOnlyNote from './ReadOnlyNote';
 import InfoMore from './InfoMore';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import LineSelect from './LineSelect';
+import PersonSelect from './PersonSelect';
+import StorageLocSelect from './StorageLocSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import SelectOrFree from './SelectOrFree';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
 import {
   movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, isPullable,
@@ -47,7 +53,7 @@ const SIGS = [
 ];
 
 export default function MaterialRequests() {
-  const { role, lineId, sections = [], fullName } = useContext(UserContext);
+  const { role, lineId, sections = [], fullName, section: mySection } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
@@ -77,7 +83,7 @@ export default function MaterialRequests() {
 
   useEffect(() => {
     // production_lines + profiles อยู่ Main · parts_master อยู่ DR
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name')   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       .then(({ data }) => setLines(data || []));
     supabase.from('profiles').select('id, full_name, signature_url').not('signature_url', 'is', null)
       .then(({ data }) => setSigners(data || []));
@@ -119,7 +125,8 @@ export default function MaterialRequests() {
     setEditor({
       req: {
         kind: 'withdraw', move_code: 'prod', request_date: d, need_date: d,
-        requester_name: fullName || '', requester_dept: 'QUALITY',
+        // หน่วยงาน default = ส่วนงานของ user (profiles.section) — เดิม hardcode 'QUALITY' ทุกคน (2026-09-07)
+        requester_name: fullName || '', requester_dept: mySection || 'QUALITY',
         plant_code: '2140', status: 'draft',
         doc_no: nextReqNo(d, rows.length),
         made_by_name: fullName || '', made_by_date: d,
@@ -342,7 +349,7 @@ export default function MaterialRequests() {
       {editor && (
         <Editor
           editor={editor} setReq={setReq} setItem={setItem} addItem={addItem} delItem={delItem}
-          canRecord={canRecord} role={role} signers={signers} scopedLines={scopedLines}
+          canRecord={canRecord} role={role} signers={signers} scopedLines={scopedLines} parts={parts}
           onPick={(k) => setPicker({ itemKey: k })}
           onClose={() => setEditor(null)} onSave={save}
         />
@@ -375,8 +382,16 @@ export default function MaterialRequests() {
 }
 
 /* ── ฟอร์มใบเบิก ─────────────────────────────────────────────────────────── */
-function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, onPick, onClose, onSave }) {
+function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, parts = [], onPick, onClose, onSave }) {
   const { req, items } = editor;
+  // 📜 ค่าที่เคยบันทึกใน material_requests (DR) — รหัสคลังที่ยังไม่ลง storage_locations / ผู้ขอที่ไม่มีบัญชี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const destHist = useColumnHistory(supabaseDR, 'material_requests', 'dest_storage_location', { upper: true });
+  const slocHist = useColumnHistory(supabaseDR, 'material_requests', 'storage_location', { upper: true });
+  const requesterHist = useColumnHistory(supabaseDR, 'material_requests', 'requester_name');
+  // หน่วยงานผู้ขอ = ส่วนงานในผังองค์กร (org_nodes) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (ตำแหน่ง/หน่วยงานสนับสนุน) (2026-09-07)
+  const orgSections = useOrgSections();
+  // หน่วยของรายการล็อกตาม parts_master.uom เมื่อรหัส MAT อยู่ในทะเบียน — พิมพ์เองได้เฉพาะรหัสที่ยังไม่ลงทะเบียน (2026-09-07)
+  const uomOf = (mat) => parts.find(p => p.mat_no === mat)?.uom || null;
   const moves = movesFor(req.kind);
   const needs = moveNeeds(req.kind, req.move_code);
   const ro = !canRecord;
@@ -407,14 +422,16 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         </F>
         <F label="สถานะ"><input value={statusMeta(req.status).label} readOnly style={{ ...inpSt, color: statusMeta(req.status).color, fontWeight: 700 }} /></F>
 
-        <F label="ชื่อผู้ขอเบิก"><input value={req.requester_name || ''} readOnly={ro} onChange={e => setReq({ requester_name: e.target.value })} style={inpSt} /></F>
-        <F label="หน่วยงาน / ตำแหน่ง"><input value={req.requester_dept || ''} readOnly={ro} onChange={e => setReq({ requester_dept: e.target.value })} style={inpSt} /></F>
+        {/* ผู้ขอ = user ระบบ (profiles) · ผู้ขอที่ไม่มีบัญชีพิมพ์เองได้พร้อมป้าย (2026-09-07) */}
+        <F label="ชื่อผู้ขอเบิก"><PersonSelect value={req.requester_name || ''} history={requesterHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
+        <F label="หน่วยงาน / ตำแหน่ง">
+          <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder="— เลือกส่วนงาน —"
+            onChange={v => setReq({ requester_dept: v })} selectStyle={inpSt} inputStyle={inpSt} />
+        </F>
         <F label="ไลน์ที่ขอของ (ใช้จับคู่ใบของเสีย)">
-          <select value={req.line_name || ''} disabled={ro} onChange={e => setReq({ line_name: e.target.value || null })} style={inpSt}>
-            <option value="">— ไม่ระบุ —</option>
-            {toHierarchicalOptions(scopedLines).map(({ line: l, depth }) =>
-              <option key={l.id} value={l.name}>{' '.repeat(depth * 3)}{l.name}</option>)}
-          </select>
+          {/* ชื่อไลน์ต้อง canonical (จับคู่ใบของเสีย) → <LineSelect> · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
+          <LineSelect lines={scopedLines} value={req.line_name || ''} disabled={ro} placeholder="— ไม่ระบุ —" style={inpSt}
+            onChange={v => setReq({ line_name: v || null })} />
         </F>
 
         <F label="วันที่เบิก *"><input type="date" value={req.request_date || ''} readOnly={ro} onChange={e => setReq({ request_date: e.target.value })} style={inpSt} /></F>
@@ -426,12 +443,13 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         </F>
 
         {/* ช่องข้างช่องติ๊กบนใบ — โผล่เฉพาะที่ประเภทนั้นต้องใช้ */}
-        {needs === 'dest' && <F label="Storage Location ปลายทาง"><input value={req.dest_storage_location || ''} readOnly={ro} onChange={e => setReq({ dest_storage_location: e.target.value })} style={inpSt} /></F>}
+        {/* รหัสคลังจากทะเบียน storage_locations (DR · migration 20260902) — รหัสนอกทะเบียนยังบันทึกได้พร้อมป้าย ⚠ (2026-09-07) */}
+        {needs === 'dest' && <F label="Storage Location ปลายทาง"><StorageLocSelect value={req.dest_storage_location || ''} history={destHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ dest_storage_location: code })} /></F>}
         {needs === 'order' && <F label="Production Order"><input value={req.order_no || ''} readOnly={ro} onChange={e => setReq({ order_no: e.target.value })} style={inpSt} /></F>}
         {needs === 'cc' && <F label="Cost Center"><input value={req.cost_center || ''} readOnly={ro} onChange={e => setReq({ cost_center: e.target.value })} style={inpSt} /></F>}
 
         <F label="รหัสโรงงาน (Plant)"><input value={req.plant_code || ''} readOnly={ro} onChange={e => setReq({ plant_code: e.target.value })} style={inpSt} /></F>
-        <F label="รหัสคลังสินค้า / สโตร์"><input value={req.storage_location || ''} readOnly={ro} onChange={e => setReq({ storage_location: e.target.value })} style={inpSt} /></F>
+        <F label="รหัสคลังสินค้า / สโตร์"><StorageLocSelect value={req.storage_location || ''} history={slocHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ storage_location: code })} /></F>
       </div>
 
       <F label="รายละเอียด" full>
@@ -460,13 +478,15 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                 <td style={tdSt}>{i + 1}</td>
                 <td style={tdSt}>
                   <div style={{ display: 'flex', gap: 3 }}>
-                    <input value={it.mat_no || ''} readOnly={ro} onChange={e => setItem(it._key, { mat_no: e.target.value })} style={{ ...inpSt, width: 100 }} />
+                    <input value={it.mat_no || ''} readOnly={ro} style={{ ...inpSt, width: 100 }}
+                      onChange={e => { const v = e.target.value; const u = uomOf(v); setItem(it._key, { mat_no: v, ...(u ? { unit: u } : {}) }); }} />
                     {canRecord && <button onClick={() => onPick(it._key)} style={miniBtn} title="เลือกจากทะเบียน">🗂</button>}
                   </div>
                 </td>
                 <td style={tdSt}><input value={it.description || ''} readOnly={ro} onChange={e => setItem(it._key, { description: e.target.value })} style={{ ...inpSt, width: 230 }} /></td>
                 <td style={tdSt}><input type="number" min="0" value={it.qty ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty: e.target.value })} style={{ ...inpSt, width: 72 }} /></td>
-                <td style={tdSt}><input value={it.unit || ''} readOnly={ro} onChange={e => setItem(it._key, { unit: e.target.value })} style={{ ...inpSt, width: 54 }} /></td>
+                <td style={tdSt}><input value={it.unit || ''} readOnly={ro || !!uomOf(it.mat_no)} title={uomOf(it.mat_no) ? 'หน่วยตาม Parts Master' : undefined}
+                  onChange={e => setItem(it._key, { unit: e.target.value })} style={{ ...inpSt, width: 54, ...(uomOf(it.mat_no) ? { opacity: 0.8 } : {}) }} /></td>
                 <td style={tdSt}><input type="number" min="0" value={it.qty_issued ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty_issued: e.target.value })} style={{ ...inpSt, width: 84 }} /></td>
                 <td style={tdSt}><input type="date" value={it.produced_date || ''} readOnly={ro} onChange={e => setItem(it._key, { produced_date: e.target.value })} style={{ ...inpSt, width: 130 }} /></td>
                 <td style={tdSt}><input value={it.batch_no || ''} readOnly={ro} onChange={e => setItem(it._key, { batch_no: e.target.value })} style={{ ...inpSt, width: 90 }} /></td>

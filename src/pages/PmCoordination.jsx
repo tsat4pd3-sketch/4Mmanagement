@@ -4,7 +4,12 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+// picker กลาง (single-source audit 2026-09-07) — เครื่อง/ไลน์ อ่านจากทะเบียน ไม่พิมพ์เอง
+import LineSelect from '../components/LineSelect';
+import MachineSelect from '../components/MachineSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกในแผน — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
@@ -62,8 +67,8 @@ export default function PmCoordination() {
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: pl }, plansRes, clsRes] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
-      supabaseDR.from('machines').select('id, machine_no, machine_name, line_name').eq('is_active', true).order('sort_order'),
+      supabase.from('production_lines').select(LINE_COLUMNS).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
+      supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
       // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
       supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
@@ -301,6 +306,8 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       .map(t => ({ ...t }))
   );
   const [busy, setBusy] = useState(false);
+  // 📜 เลขเครื่องที่เคยบันทึกใน pm_coordination_plans (DR) — เครื่องที่ยังไม่ลง /machines แต่เคยทำแผนไว้ ยังเลือกซ้ำได้ (2026-09-07)
+  const machineHist = useColumnHistory(supabaseDR, 'pm_coordination_plans', 'machine_no', { upper: true });
 
   const machOpts = useMemo(() => {
     let arr = machines;
@@ -309,14 +316,14 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     return [...arr].sort((a, b) => (a.machine_no || '').localeCompare(b.machine_no || '', undefined, { numeric: true }));
   }, [machines, scopeLines]);
 
-  // ผู้ใช้พิมพ์/เลือก "หมายเลขเครื่อง" (MTN/PD/PE อ้างอิงเลขเครื่อง) → resolve เป็นเครื่องในฐานข้อมูล
-  const onMachineNoInput = (val) => {
-    const key = val.trim();
-    const mc = machOpts.find(m => (m.machine_no || '').toLowerCase() === key.toLowerCase());
+  /* เลือกเครื่องจาก <MachineSelect> (audit #20 · 2026-09-07) — เดิม datalist resolve machine_id เฉพาะพิมพ์ตรงเป๊ะ
+     ไม่ตรง = machine_id ว่างเงียบๆ · ตอนนี้เลือกจากทะเบียน = ได้ id/ชื่อ/ไลน์ครบ · ข้อความที่พิมพ์ค้าง (ยังไม่เลือก) ถือว่ายังไม่ผูก
+     → save จะถามยืนยันก่อน (2026-09-07 เดิมบล็อกแข็ง — user สั่ง: ทะเบียนไม่มีต้องยังใช้ค่าที่เคยบันทึกได้ · กลุ่ม 📜 ให้ id null เช่นกัน) */
+  const onMachinePick = (res) => {
     setF(v => ({
-      ...v, machine_no: val, machine_id: mc?.id || '',
-      machine_name: mc ? (mc.machine_name || '') : v.machine_name,
-      line_name: mc?.line_name || v.line_name,
+      ...v, machine_no: res.machine_no || '', machine_id: res.opt ? res.id : '',
+      machine_name: res.opt ? (res.name || '') : v.machine_name,
+      line_name: res.opt ? (res.line_name || v.line_name) : v.line_name,
     }));
   };
   // สร้างจากแผน PM เดิม → เติมเครื่อง/ไลน์/ผูก pm_plan_id + เพิ่มขั้นงานวันครบกำหนดให้อัตโนมัติ
@@ -337,6 +344,10 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
   const save = async () => {
     if (!f.title.trim()) return toast.error('กรอกหัวเรื่องงาน');
+    // เลขเครื่องที่ไม่ผูกทะเบียน = ผังเครื่อง/Andon หาไม่เจอ — ถามเฉพาะแผนใหม่หรือเมื่อเพิ่งเปลี่ยนเลข (แผนเก่าที่ค้างมาก่อนยังแก้ส่วนอื่นได้)
+    // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็นยืนยัน — เก็บเป็น text (machine_id null) ไม่ทำข้อมูลอื่นเสีย
+    if (f.machine_no && !f.machine_id && (plan._new || f.machine_no !== (plan.machine_no || ''))
+      && !window.confirm(`เครื่อง ${f.machine_no} ไม่มีในทะเบียน /machines — ผังเครื่อง/Andon จะหาแผนนี้ไม่เจอ · ใช้ค่านี้ต่อหรือไม่?`)) return;
     setBusy(true);
     const nowIso = new Date().toISOString();
     const head = { title: f.title.trim(), machine_id: f.machine_id || null, machine_no: f.machine_no || null,
@@ -381,22 +392,19 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
           <div>
-            <label style={lbl}>เครื่องจักร (พิมพ์/เลือกหมายเลขเครื่อง)</label>
-            <input list="pmcoord-mach" value={f.machine_no} onChange={e => onMachineNoInput(e.target.value)}
-              placeholder="เช่น RB-104, LS-10, CT-02" style={inp} autoComplete="off" />
-            <datalist id="pmcoord-mach">
-              {machOpts.map(m => <option key={m.id} value={m.machine_no}>{[m.machine_name, m.line_name].filter(Boolean).join(' · ')}</option>)}
-            </datalist>
-            {f.machine_id && f.machine_name && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>✓ {f.machine_name}{f.line_name ? ` · ${f.line_name}` : ''}</div>}
+            <label style={lbl}>เครื่องจักร (เลือกหมายเลขเครื่องจากทะเบียน)</label>
+            {/* <MachineSelect> แทน datalist — machOpts กรอง scope แล้ว · เครื่องของไลน์ที่เลือกขึ้นก่อน · 2026-09-07 */}
+            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={machOpts} lines={f.line_name ? [f.line_name] : undefined} history={machineHist}
+              placeholder="ค้นเลขเครื่อง เช่น RB-104, LS-10, CT-02" inputStyle={{ background: 'var(--bg)' }} />
+            {f.machine_id && f.machine_name
+              ? <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>✓ {f.machine_name}{f.line_name ? ` · ${f.line_name}` : ''}</div>
+              : f.machine_no ? <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3 }}>⚠ ยังไม่ได้เลือกจากทะเบียน — เลือกจากลิสต์เพื่อผูกเครื่อง</div> : null}
           </div>
           <div>
             <label style={lbl}>ไลน์</label>
-            <select value={f.line_name} onChange={e => setF(v => ({ ...v, line_name: e.target.value }))} style={inp}>
-              <option value="">— เลือกไลน์ —</option>
-              {toHierarchicalOptions(lines.filter(l => !scopeLines || scopeLines.has(l.name))).map(({ line: l, depth }) => (
-                <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-              ))}
-            </select>
+            {/* <LineSelect> — ส่ง array ที่กรอง scope แล้ว (pre-filter เดิม) · 2026-09-07 */}
+            <LineSelect lines={lines.filter(l => !scopeLines || scopeLines.has(l.name))} value={f.line_name}
+              onChange={v => setF(x => ({ ...x, line_name: v }))} placeholder="— เลือกไลน์ —" style={inp} />
           </div>
         </div>
 

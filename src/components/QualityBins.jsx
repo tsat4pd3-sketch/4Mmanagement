@@ -13,6 +13,11 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
+import ProductSelect from './ProductSelect';
+import PersonSelect from './PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน quality_bin_records — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { positionLabel } from '../utils/positions';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -58,7 +63,15 @@ export default function QualityBins() {
 
   const [bin, setBin] = useState('yellow');
   const [lines, setLines] = useState([]);
-  const [products, setProducts] = useState([]);
+  // 2026-09-07 ชิ้นงานอ่านผ่าน <ProductSelect> (cache Product Master กลาง — เลิก datalist 400 แถวที่ตัดของหายเงียบ)
+  const [matLocked, setMatLocked] = useState(false); // mat_no ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน
+  /* 📜 ค่าที่เคยบันทึกใน quality_bin_records (DR) — ชิ้นงาน/ชื่อคนที่กรอกมาก่อนทะเบียนจะครบ ยังเลือกซ้ำได้ ห้ามล้าง/บล็อกเงียบ
+     (คำสั่ง user 2026-09-07) · known:false = นอกทะเบียน → ไม่ล็อกชื่อ/Part No. */
+  const binMatHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'mat_no', { upper: true });
+  const reportedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'reported_by');
+  const qaByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'qa_by');
+  const repairByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'repair_by');
+  const disposedByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
   const [rows, setRows] = useState([]);
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(today());
@@ -72,8 +85,6 @@ export default function QualityBins() {
   useEffect(() => {
     supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name')
       .then(({ data }) => setLines(data || []));
-    supabaseDR.from('dr_products').select('mat_no, name, p_no, line_name').eq('is_active', true)
-      .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
   }, []);
 
   // scope มาตรฐาน (helper กลาง) — ผลิตเห็นเฉพาะส่วนงานตัวเอง
@@ -120,11 +131,17 @@ export default function QualityBins() {
     [scopeNames, lines],
   );
 
-  const openNew = () => { setForm({ ...BLANK, reported_by: '' }); setEditing('new'); };
+  const openNew = () => { setForm({ ...BLANK, reported_by: '' }); setMatLocked(false); setEditing('new'); };
   const openEdit = (r) => {
     setForm(Object.fromEntries(Object.keys(BLANK).map(k => [k, r[k] ?? ''])));
+    setMatLocked(false);
     setEditing(r);
   };
+  // ครอบครัวไลน์ที่เลือกในฟอร์ม — ให้ picker สินค้า/คน ของไลน์นั้นขึ้นก่อน (ไม่ตัดไลน์อื่น)
+  const famLines = useMemo(
+    () => (form.line_name ? getLineFamilyNames(lines, form.line_name) : undefined),
+    [lines, form.line_name],
+  );
 
   const save = async () => {
     if (!form.work_date) { toast.error('กรอกวันที่ลงถัง'); return; }
@@ -317,34 +334,34 @@ export default function QualityBins() {
                 <input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={inp} /></div>
 
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)</label>
-                <input list="qbin-parts" value={form.mat_no}
-                  onChange={e => {
-                    const v = e.target.value;
-                    const p = products.find(x => x.mat_no === v);
-                    setForm(f => ({ ...f, mat_no: v, ...(p ? { part_name: p.name || f.part_name, part_no: p.p_no || f.part_no, line_name: f.line_name || p.line_name || '' } : {}) }));
-                  }}
-                  placeholder="MAT / รหัสชิ้นงาน" style={inp} />
-                <datalist id="qbin-parts">
-                  {products.slice(0, 400).map(p => <option key={p.mat_no} value={p.mat_no}>{p.name}</option>)}
-                </datalist></div>
+                {/* 2026-09-07 <ProductSelect> — สินค้าของครอบครัวไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้ (ของที่ยังไม่อยู่ในทะเบียนมาถึงถังจริง) พร้อมป้าย */}
+                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master" history={binMatHist}
+                  placeholder="MAT / รหัสชิ้นงาน" inputStyle={inp}
+                  onChange={({ mat_no, name, p_no, line_name, opt, known }) => {
+                    const inReg = !!opt && known !== false; // กลุ่ม 📜 เคยบันทึกไว้ = นอกทะเบียน → ปฏิบัติเหมือนพิมพ์เอง (2026-09-07)
+                    setMatLocked(inReg);
+                    setForm(f => ({ ...f, mat_no, ...(inReg ? { part_name: name || f.part_name, part_no: p_no || f.part_no, line_name: f.line_name || line_name || '' } : {}) }));
+                  }} /></div>
+              {/* ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน (ล้าง MAT เพื่อแก้เอง) — กันสะกดชื่อชิ้นงานคนละแบบ */}
               <div><label style={lbl}>ชื่อชิ้นงาน</label>
-                <input value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={inp} /></div>
+                <input value={form.part_name} readOnly={matLocked} title={matLocked ? 'ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง' : ''} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
               <div><label style={lbl}>Part No. (เลขลูกค้า)</label>
-                <input value={form.part_no} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={inp} /></div>
+                <input value={form.part_no} readOnly={matLocked} title={matLocked ? 'ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง' : ''} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
 
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>สาเหตุ</label>
                 <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
+              {/* 2026-09-07 ชื่อคนเลือกจาก employees+profiles ผ่าน <PersonSelect> (คนในครอบครัวไลน์ขึ้นก่อน · เก็บชื่อ snapshot — ตาราง DR) */}
               <div><label style={lbl}>ผู้แจ้ง (พนักงาน)</label>
-                <input value={form.reported_by} onChange={e => setForm(f => ({ ...f, reported_by: e.target.value }))} style={inp} /></div>
+                <PersonSelect value={form.reported_by} source="both" lines={famLines} history={reportedHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
               <div><label style={lbl}>ผู้ตรวจสอบ (QA)</label>
-                <input value={form.qa_by} onChange={e => setForm(f => ({ ...f, qa_by: e.target.value }))} style={inp} /></div>
+                <PersonSelect value={form.qa_by} source="both" roles={['qa']} lines={famLines} history={qaByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, qa_by: name }))} /></div>
 
               {isY ? (<>
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ผลการซ่อม</div>
                 <div><label style={lbl}>วันที่ซ่อมชิ้นงาน</label>
                   <input type="date" value={form.repair_date} onChange={e => setForm(f => ({ ...f, repair_date: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>ผู้ดำเนินการซ่อม</label>
-                  <input value={form.repair_by} onChange={e => setForm(f => ({ ...f, repair_by: e.target.value }))} style={inp} /></div>
+                  <PersonSelect value={form.repair_by} source="both" lines={famLines} history={repairByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, repair_by: name }))} /></div>
                 <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>รายละเอียดการซ่อมชิ้นงาน</label>
                   <input value={form.repair_detail} onChange={e => setForm(f => ({ ...f, repair_detail: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>ผลซ่อม OK (ชิ้น)</label>
@@ -356,7 +373,9 @@ export default function QualityBins() {
               </>) : (<>
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การกำจัดทำลาย (ตาม DOA)</div>
                 <div><label style={lbl}>ผู้กำจัดทำลาย</label>
-                  <input value={form.disposed_by} onChange={e => setForm(f => ({ ...f, disposed_by: e.target.value }))} style={inp} /></div>
+                  {/* เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน (positions master) อัตโนมัติ — ยังแก้เองได้ */}
+                  <PersonSelect value={form.disposed_by} source="both" lines={famLines} history={disposedByHist} inputStyle={inp}
+                    onChange={({ name, position, opt }) => setForm(f => ({ ...f, disposed_by: name, ...(opt && position ? { disposed_position: positionLabel(position) || position } : {}) }))} /></div>
                 <div><label style={lbl}>ตำแหน่ง</label>
                   <input value={form.disposed_position} onChange={e => setForm(f => ({ ...f, disposed_position: e.target.value }))}
                     placeholder="ระดับหัวหน้ากลุ่ม-วิศวกรขึ้นไป" style={inp} /></div>

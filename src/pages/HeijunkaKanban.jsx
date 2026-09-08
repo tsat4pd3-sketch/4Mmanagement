@@ -12,7 +12,10 @@ import ProdProgressStrip from '../components/ProdProgressStrip';
 import StoreTimeChart from '../components/StoreTimeChart';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import DeliverScanModal from '../components/DeliverScanModal';
-import { DELIVER_GATES } from '../utils/replenishGate';
+import PickScanModal from '../components/PickScanModal';
+import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
+import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
+import { notifyEvent } from '../utils/notifyEvent';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -62,7 +65,62 @@ function LineBoardLink({ line }) {
    src/utils/deliveryRounds.js (single source of truth — เดิมซ้ำกับ LineStock) */
 
 /* ─── Store Board View ───────────────────────────────────────────────────── */
-function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs, canOperate }) {
+/* ── 🚚 แถบสถานการณ์โหมดส่งตามคำขอ — แทน PlannerStrip (ซึ่งเป็นของโหมดรอบ) เมื่อไม่มีรอบ (audit 2026-09-07)
+   ตอบ 3 อย่างที่สโตร์ต้องรู้ตอนเปิดหน้า: ค้างกี่ใบแยกสถานะ · ใบไหนรอนานสุด · ใบที่ส่งแล้วแต่ไลน์ยังไม่กดรับ */
+function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
+  const tk = wipRequests.filter(w => !w.wip_point_id);
+  const n = (s) => tk.filter(w => w.status === s).length;
+  const oldest = tk.filter(w => w.status === 'pending' && w.requested_at)
+    .map(w => ({ w, min: Math.round((nowMs - new Date(w.requested_at).getTime()) / 60000) }))
+    .sort((a, b) => b.min - a.min)[0];
+  const tile = (icon, label, val, sub, color) => (
+    <div style={{ flex: '1 1 150px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px' }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{icon} {label}</div>
+      <div style={{ fontSize: 20, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1.1 }}>{val}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12, alignItems: 'stretch' }}>
+      {tile('🚚', 'โหมดส่งตามคำขอ', 'เบิกตอนไหนส่งตอนนั้น', 'ไม่มีไลน์ไหนใช้รอบ · คิวเรียงตามเวลาแจ้ง')}
+      {tile('🔔', 'รอหยิบ', n('pending'), oldest ? `รอนานสุด ${oldest.min} นาที · ${oldest.w.mat_no} → ${oldest.w.line_name}` : 'ไม่มีใบรอ', oldest && oldest.min > 60 ? '#ef4444' : undefined)}
+      {tile('🔧', 'กำลังเตรียม', n('preparing'), 'สแกนพาร์ทแล้ว · ตัดสต็อกแล้ว')}
+      {tile('📍', 'ส่งแล้ว รอไลน์รับ', n('delivered'), 'ไลน์กดรับใน Daily Report → ใบจบ')}
+      <button onClick={onGo} style={{ alignSelf: 'center', padding: '9px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+        🔄 เปิดคิวเติม WIP
+      </button>
+    </div>
+  );
+}
+
+/* ── 🚚 ไลน์ที่ไม่ใช้รอบ = "เบิกตอนไหนส่งตอนนั้น" (user ย้ำ 2026-09-07 · docs/STORE-PULL-LOOP-DESIGN.md §6.1)
+   ⚠️ ห้ามเขียนว่า "ยังไม่ตั้งรอบ → ไปตั้ง" เหมือนงานยังทำไม่เสร็จ — โหมดนี้คือวิธีทำงานจริงของสโตร์ ไม่ใช่ของขาด
+   บล็อกนี้ตอบ 2 อย่างที่สโตร์ต้องรู้ต่อไลน์: ใบที่ค้างอยู่ตอนนี้ (จากคิวเติม WIP) + ทางไปเลือกพาร์ทไปส่ง (Store Time Chart) */
+const WIP_ST_SHORT = { pending: 'รอหยิบ', preparing: 'กำลังจัด', delivered: 'ส่งแล้ว รอไลน์รับ' };
+function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onGoQueue }) {
+  const groupOf = (ln) => lineMap?.[ln]?.parent_line_name || ln;
+  const tickets = wipRequests.filter(w => !w.wip_point_id && groupOf(w.line_name) === lineName);
+  const byStatus = tickets.reduce((m, w) => { m[w.status] = (m[w.status] || 0) + 1; return m; }, {});
+  const linkBtn = (label, fn) => (
+    <button onClick={fn} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{label}</button>
+  );
+  return (
+    <div style={{ padding: '10px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🚚 ส่งตามคำขอ</span>
+      <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เบิกตอนไหนส่งตอนนั้น — ไลน์นี้ไม่ใช้รอบ</span>
+      {tickets.length
+        ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#38bdf8' }}>
+            📋 ใบค้าง {tickets.length} · {Object.entries(byStatus).map(([s, n]) => `${WIP_ST_SHORT[s] || s} ${n}`).join(' · ')}
+          </span>
+        : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>📋 ยังไม่มีใบส่งค้าง</span>}
+      <span style={{ flex: 1 }} />
+      {onGoChart && linkBtn('☑ เลือกพาร์ทไปส่ง → Store Time Chart', onGoChart)}
+      {onGoQueue && linkBtn('🔄 คิวเติม WIP', onGoQueue)}
+    </div>
+  );
+}
+
+function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confirming, onReceive, fmt, lineMap, workDate, nowMs, canOperate, wipRequests, onGoChart, onGoQueue }) {
   const [expanded, setExpanded] = useState(null);
   const { groupDemand, roundAlloc } = view;
 
@@ -91,7 +149,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 
   if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+      วันนี้ยังไม่มีไลน์ที่มีแผนผลิต — ความต้องการพาร์ทจะโผล่เมื่อไลน์เปิดใบผลิต
     </div>
   );
 
@@ -110,9 +168,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
               <LineBoardLink line={lineName} />
             </div>
             {!lineRounds.length ? (
-              <div style={{ padding: '12px 14px', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 10, fontSize: 12, color: 'var(--muted)' }}>
-                ⚠️ ไลน์นี้ยังไม่ตั้งรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง (demand ด้านบนคำนวณจากแผนผลิตวันนี้แล้ว รอกำหนดรอบเพื่อแจ้งสโตร์)
-              </div>
+              <OnDemandLineBlock lineName={lineName} lineMap={lineMap} wipRequests={wipRequests} onGoChart={onGoChart} onGoQueue={onGoQueue} />
             ) : (
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               {lineRounds.map(r => {
@@ -249,7 +305,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
 
   if (!Object.keys(byLine).length) return (
     <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีรอบจัดส่ง — ตั้งค่าที่ 📦 Line Stock → ⏰ รอบจัดส่ง
+      วันนี้ยังไม่มีไลน์ที่มีแผนผลิต — ไลน์ที่ส่งตามคำขอ (ไม่ใช้รอบ) ดูเวลาที่จะขาดของได้ที่ 🕐 Store Time Chart
     </div>
   );
 
@@ -915,7 +971,7 @@ const STORE_TABS = [
   //    (เดิมชื่อ 'Rack Center' ซ้ำกับเมนูเป๊ะ คนกดเข้ามาแล้วทำงานต่อไม่ได้โดยไม่รู้ล่วงหน้า)
   { key: 'rack',     icon: '📦', label: 'ภาชนะ (ดูอย่างเดียว)', desc: 'ภาชนะ + Packaging → ทุกไลน์ · จัดการที่ ภาชนะ & Packaging' },
   // ชื่อต้องต่างจากแท็บ 'WIP ค้างระหว่างขั้น' ใน สต๊อกในไลน์ — คนละเรื่องกัน (คิวเติม vs ยอดค้าง)
-  { key: 'wip',      icon: '🔄', label: 'คิวเติม WIP',   desc: 'จุด WIP ในไลน์ที่เรียกเติม → ไลน์นั้น' },
+  { key: 'wip',      icon: '🔄', label: 'คิวเติม WIP',   desc: 'ใบเบิกจากไลน์ · ใบส่งตามแผน · จุด WIP → ส่งเข้าไลน์' },
 ];
 // ของซื้อจาก supplier (300 child ซื้อ / 500 raw) — 2 สเต็ป: สั่งซื้อ → รับเข้า (เติม stock)
 const PURCHASE_STATUS = {
@@ -1046,7 +1102,8 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        {STORE_TABS.map(t => (
+        {/* แท็บ Store FG = รอบส่ง — ไม่มีรอบ active = ไม่มีอะไรให้ทำ ซ่อนไปเลย (โผล่เองเมื่อไลน์ตั้งรอบ) · audit 2026-09-07 */}
+        {STORE_TABS.filter(t => t.key !== 'fg' || rounds.length > 0).map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
             style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
               background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? '#08130a' : 'var(--text2)',
@@ -1073,7 +1130,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'fg' && (<>
         {hiddenNote}
-        {rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีรอบจัดส่ง</div> :
+        {rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+          🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบที่ต้องไปส่งอยู่ที่แท็บ 🔄 คิวเติม WIP · เลือกพาร์ทจาก forecast ได้ที่ 🕐 Store Time Chart
+        </div> :
         vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
           {vRounds.map(r => {
@@ -1234,7 +1293,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
       {store === 'wip' && (<>
         {hiddenNote}
         {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          ยังไม่มีคำขอ — มาจาก 2 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · หรือกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP
+          ยังไม่มีคำขอ — มาจาก 3 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง · หรือกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP
         </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
@@ -1249,7 +1308,9 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
             const gate = fromLine && w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
             const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
-            const nextLabel = fromLine && w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : st.next;
+            const nextLabel = fromLine && w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : fromLine && w.status === 'pending' ? '🔍 เริ่มเตรียม · สแกนพาร์ท' : st.next;
+            const pickMeta = fromLine && w.picked_qty != null && w.status !== 'pending'
+              ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
             return (
               <QueueCard key={w.id} code={code}
                 name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
@@ -1257,7 +1318,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 meta={fromLine
-                  ? `📦 ไลน์ขอเบิก${at ? ` · แจ้ง ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
+                  ? `${w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก'}${at ? ` · ${w.source === 'store_forecast' ? 'เปิด' : 'แจ้ง'} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${pickMeta ? ` · ${pickMeta}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
                   : (w.point_type === 'packaging' ? '📦 packaging' : '🧱 material')} />
             );
           })}
@@ -1296,6 +1357,7 @@ export default function HeijunkaKanban() {
   const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
   const [pullBusy, setPullBusy]       = useState(null);
   const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
+  const linesArr = useMemo(() => Object.values(lineMap), [lineMap]);   // รูป array สำหรับ helper ลำดับชั้น (slocOfLine ฯลฯ)
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
   const [rackRequests, setRackRequests] = useState([]);
@@ -1303,11 +1365,16 @@ export default function HeijunkaKanban() {
   const [wipRequests, setWipRequests]   = useState([]);
   // 🎯 จุดส่งงาน (DR) — ทะเบียนที่ด่านขั้น 7 ใช้เทียบ · โหลดทั้ง active+ปิดแล้ว เพื่อให้ป้ายเก่าสแกนแล้วได้คำตอบ "จุดนี้ปิดแล้ว"
   const [deliveryPoints, setDeliveryPoints] = useState([]);
+  /* 🏬 ทะเบียนรหัสคลัง SAP (DR) — ใบขอเติม/ledger ต้องแปะ storage_location ตอนเขียน (derive จากไลน์ผ่าน slocCodeOfLine)
+     ไลน์ที่ยังไม่ผูก = null ไม่เดา · ตารางยังไม่มีคอลัมน์ line_names (ยังไม่ apply 20260908) = ทุกไลน์ยังไม่ผูก */
+  const [slocs, setSlocs] = useState([]);
   const [deliverModal, setDeliverModal] = useState(null);   // ใบจากไลน์ที่กำลังจะมาร์ก delivered (รอสแกนจุดส่ง)
+  const [pickModal, setPickModal] = useState(null);         // ใบจากไลน์ที่กำลังจะมาร์ก preparing (รอสแกนพาร์ท+จำนวน · ขั้น 5)
   const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
   const [purchaseErr, setPurchaseErr]           = useState('');
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
-  const [unifiedStore, setUnifiedStore] = useState('fg'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
+  const [unifiedStore, setUnifiedStore] = useState('wip'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
   const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
 
@@ -1349,7 +1416,7 @@ export default function HeijunkaKanban() {
     //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }] = await Promise.all([
+    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
@@ -1367,7 +1434,11 @@ export default function HeijunkaKanban() {
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
+      supabaseDR.from('storage_locations').select('code, name, kind, line_names, is_active, sort_order'),
     ]);
+    // ทะเบียนรหัสคลังยังไม่ apply (42P01/42703) = ยังไม่ผูก SLoc ทั้งระบบ (tag เป็น null ตรงความจริง) · error อื่นห้ามกลืน
+    if (slocErr && !['42P01', '42703'].includes(slocErr.code)) toast.error('โหลดทะเบียนรหัสคลังไม่ได้: ' + slocErr.message);
+    setSlocs(slocErr ? [] : (slocRows || []));
     // ยังไม่ apply migration (42P01) = บอกบนจอ ห้ามโชว์ว่างเปล่าเหมือนไม่มีของต้องสั่ง
     setPurchaseErr(purErr ? (purErr.code === '42P01'
       ? 'ยังไม่ได้ apply migration 20260825_v_purchase_open_summary.sql (แจ้ง admin)'
@@ -1551,10 +1622,15 @@ export default function HeijunkaKanban() {
 
   // เติมจุด WIP: pending → preparing → delivered — พอ delivered ค่อยบวก current_qty กลับที่จุดจริง (main supabase)
   /* บันทึกครั้งที่ด่านบล็อก/override — ไม่บันทึกครั้งที่ผ่าน (docs §4.6) · best-effort: ล้มแล้วห้ามขวางการส่งของ แต่ต้องบอก */
-  const logScanBlock = async (w, evt) => {
+  const logScanBlock = async (w, evt, step = 'deliver') => {
     if (!evt) return;
+    // "Alert in Smart Fac / Mobile Phone" (Smart Withdraw Kanban) — หยิบผิดพาร์ทขึ้น Telegram ห้อง logistic ด้วย (rule wip_pick_blocked · fire-and-forget)
+    if (step === 'pick' && evt.outcome === 'blocked') {
+      notifyEvent({ event: 'wip_pick_blocked', type: 'error', ref_table: 'wip_replenish_requests', ref_id: w.id, line_name: w.line_name, actor: fullName,
+        lines: [`🏭 ไลน์: ${w.line_name}`, `🔩 ใบต้องการ ${w.mat_no} · ที่ยิงมา ${evt.actual || evt.scanned_raw || '—'}`, `👤 ${fullName || 'สโตร์'} — ระบบบล็อกไว้ รอแก้ให้ถูกแล้วสแกนใหม่`] });
+    }
     const { error } = await supabase.from('line_replenish_scan_blocks').insert({
-      request_id: w.id, line_name: w.line_name, mat_no: w.mat_no, step: 'deliver', check_kind: 'point',
+      request_id: w.id, line_name: w.line_name, mat_no: w.mat_no, step, check_kind: step === 'pick' ? 'part' : 'point',
       outcome: evt.outcome, status_code: evt.status_code || null, scanned_raw: evt.scanned_raw || null,
       expected: evt.expected || null, actual: evt.actual || null, reason: evt.reason || null, actor_name: fullName || null,
     });
@@ -1562,13 +1638,92 @@ export default function HeijunkaKanban() {
     if (error && error.code !== '42P01') toast.error('บันทึกเหตุการณ์ด่านสแกนไม่สำเร็จ: ' + error.message);
   };
 
-  // gate = { payload, event } จาก DeliverScanModal (ใบจากไลน์ตอน preparing → delivered เท่านั้น)
+  /* 🏬 สโตร์เลือกพาร์ทจาก Store Time Chart → สร้างใบเข้าคิวเติม WIP เอง (2026-09-07 · คำสั่ง user)
+     ⚠️ เข้าคิวเดียวกับใบที่ไลน์เรียก ห้ามแตกคิว · `source = 'store_forecast'` ไว้แยกที่มา
+     ⚠️ items[].line ต้องเป็นไลน์ย่อยที่สุด (StoreTimeChart หาให้จากใบผลิตที่กินพาร์ทนั้น)
+     ⚠️ 1 พาร์ท/ไลน์ มีใบค้างได้ใบเดียว (unique index) → 23505 = มีอยู่แล้ว รายงานเป็นรายการ ไม่ใช่ error รวม
+     ⚠️ ไม่ยิง notify ให้สโตร์เอง (คนกดคือสโตร์) — ไลน์เห็นใบในแผง 📦 ของ Daily Report เมื่อของถึง */
+  const createStoreRequests = async (items) => {
+    if (!items?.length) return false;
+    const now = new Date().toISOString();
+    let ok = 0, dup = 0, noSourceCol = false, noSlocCol = false;
+    const errs = [];
+    const noSlocLines = new Set();
+    for (const it of items) {
+      const row = {
+        line_name: it.line, mat_no: it.mat_no, part_name: it.part_name || null,
+        request_qty: it.qty, status: 'pending',
+        requested_at: now, requested_by: fullName || 'สโตร์', decided_by_name: fullName || null,
+        on_hand_at_req: it.wipNow ?? null, source: 'store_forecast',
+        // 🏬 มุม SAP ของใบเดียวกัน (P411 ทั้ง Apron Assy) — ไลน์ยังไม่ผูก = null ไม่เดา
+        storage_location: slocCodeOfLine(slocs, linesArr, it.line),
+      };
+      if (!row.storage_location) noSlocLines.add(it.line);
+      let { error } = await supabase.from('wip_replenish_requests').insert(row);
+      // 42703 = ยังไม่ apply migration — ถอดทีละคอลัมน์ (storage_location 20260908 → source 20260907) บันทึกให้ได้ก่อน แล้วบอกบนจอ ห้ามเงียบ
+      if (error?.code === '42703') { noSlocCol = true; const { storage_location, ...rest } = row; void storage_location; ({ error } = await supabase.from('wip_replenish_requests').insert(rest));
+        if (error?.code === '42703') { noSourceCol = true; const { source, ...rest2 } = rest; void source; ({ error } = await supabase.from('wip_replenish_requests').insert(rest2)); } }
+      if (!error) ok++;
+      else if (error.code === '23505') dup++;
+      else errs.push(`${it.mat_no}: ${error.message}`);
+    }
+    if (ok) toast.success(`🚚 สร้างใบส่ง ${ok} รายการ เข้าคิวเติม WIP แล้ว${dup ? ` · ${dup} รายการมีใบค้างอยู่แล้ว` : ''}`);
+    else if (dup && !errs.length) toast.error(`ทุกรายการมีใบค้างอยู่ในคิวแล้ว (${dup}) — ดูที่ 🔄 คิวเติม WIP`);
+    if (errs.length) toast.error(`สร้างไม่สำเร็จ ${errs.length} รายการ: ${errs[0]}`);
+    if (noSourceCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260907_wip_replenish_source (Main) — ใบไม่ถูกมาร์กว่ามาจากสโตร์');
+    if (noSlocCol) toast.error('บันทึกใบแล้ว แต่ยังไม่ได้ apply migration 20260908_wip_replenish_storage_location (Main) — ใบไม่ถูกแปะรหัสคลัง SAP');
+    else if (ok && noSlocLines.size) toast.info(`ℹ️ ${[...noSlocLines].join(', ')} ยังไม่ผูกรหัสคลัง SAP — ใบไม่มีมุม SAP (ผูกที่ 📦 Line Stock → แท็บ 🏬 โซนคลัง → ทะเบียนรหัสคลัง)`);
+    await loadPull();
+    if (ok) { setViewMode('unified'); setUnifiedStore('wip'); }   // พาไปเห็นใบที่เพิ่งสร้าง — ทำงานต่อได้ทันที
+    return ok > 0 || (dup > 0 && !errs.length);
+  };
+
+  /* 💾 ตัดสต็อกตอนยืนยันเตรียม (ขั้น "Scan for SAP update" ใน Smart Withdraw Kanban · 2026-09-07)
+     เขียน ledger ฝั่ง DR 2 แถว: STORE −qty (type consume) · ไลน์ปลายทาง +qty (type issue) — สูตร view line_stock_summary
+     · STORE ไม่มีแถวสต็อกของพาร์ทนี้ = "ไม่รู้" → ไม่หัก (หักแล้วติดลบจากของที่ไม่เคยลงรับ) แต่จดเหตุผลไว้บนใบ + toast ห้ามเงียบ
+     · id แถวเก็บที่ใบ (stock_txn_ids) — มีแล้วไม่ตัดซ้ำ · ledger ล้ม = ใบยังเป็น preparing แต่ stock_txn_note บอกว่ายังไม่ได้ตัด
+     ⚠️ เปลี่ยนกฎเหล็ก 5 เดิม (ลูปไม่ตัดสต็อก) — สโตร์ห้ามไปบันทึก "จ่ายพาร์ทเข้าไลน์" ซ้ำสำหรับใบเหล่านี้ */
+  const deductStockForPick = async (w, qty) => {
+    if (w.stock_txn_ids?.length) return;
+    const wd = getWorkDate();
+    const base = { mat_no: w.mat_no, part_name: w.part_name || null, status: 'approved', work_date: wd, created_by: fullName || 'สโตร์',
+      note: `auto: ใบขอเติม ${w.mat_no} → ${w.line_name} (ยืนยันเตรียม · ใบ ${String(w.id).slice(0, 8)})` };
+    const { data: st, error: stErr } = await supabaseDR.from('line_stock_summary').select('qty_on_hand').eq('line_name', 'STORE').eq('mat_no', w.mat_no).maybeSingle();
+    let note = null;
+    /* 🏬 มุม SAP ของรายการเดียวกัน: ไลน์ → P4xx (ตกทอดจากไลน์แม่) · STORE → S401 — tag ตอนเขียน ไม่เดา
+       ใบมี storage_location อยู่แล้ว (snapshot ตอนสร้าง) ใช้ตัวนั้นก่อน กันทะเบียนถูกแก้ระหว่างทางแล้วใบกับ ledger ไม่ตรงกัน */
+    const lineSloc  = w.storage_location || slocCodeOfLine(slocs, linesArr, w.line_name);
+    const storeSloc = slocCodeOfLine(slocs, linesArr, 'STORE');
+    const rows = [{ ...base, line_name: w.line_name, qty, type: 'issue', storage_location: lineSloc }];
+    if (stErr) note = `เช็คสต็อก STORE ไม่ได้: ${stErr.message}`;
+    else if (!st) note = 'STORE ไม่มีแถวสต็อกของพาร์ทนี้ — บวกเข้าไลน์แล้ว แต่ไม่หัก STORE (ลงรับเข้า STORE ก่อน)';
+    else rows.push({ ...base, line_name: 'STORE', qty, type: 'consume', storage_location: storeSloc });
+    if (!lineSloc) note = `${note ? note + ' · ' : ''}ไลน์ ${w.line_name} ยังไม่ผูกรหัสคลัง SAP — ledger ไม่มีมุม SAP (ผูกที่ 📦 Line Stock → แท็บ 🏬 โซนคลัง → ทะเบียนรหัสคลัง)`;
+    let { data: ins, error } = await supabaseDR.from('line_stock_transactions').insert(rows).select('id');
+    // 42703 = ยังไม่ apply 20260908_storage_locations_line_map (DR) → ตัดสต็อกแบบไม่ tag (ห้ามให้การตัดสต็อกล้มเพราะชั้นบัญชี)
+    if (error?.code === '42703') {
+      ({ data: ins, error } = await supabaseDR.from('line_stock_transactions').insert(rows.map(({ storage_location, ...r }) => { void storage_location; return r; })).select('id'));
+      if (!error) note = `${note ? note + ' · ' : ''}ยังไม่ apply migration 20260908_storage_locations_line_map (DR) — ledger ไม่ถูกแปะรหัสคลัง`;
+    }
+    if (error) {
+      toast.error(`ตัดสต็อกไม่สำเร็จ (ใบยังเป็น "กำลังเตรียม"): ${error.message}`);
+      await supabase.from('wip_replenish_requests').update({ stock_txn_note: `ตัดสต็อกไม่สำเร็จ: ${error.message}` }).eq('id', w.id);
+      return;
+    }
+    if (note) toast.error(`⚠ ${note}`);
+    const { error: e2 } = await supabase.from('wip_replenish_requests').update({ stock_txn_ids: (ins || []).map(r => r.id), stock_txn_note: note }).eq('id', w.id);
+    if (e2 && e2.code !== '42703') toast.error('ผูกเลข ledger กับใบไม่สำเร็จ: ' + e2.message);
+  };
+
+  // gate = { payload, event } จาก DeliverScanModal / PickScanModal (ใบจากไลน์เท่านั้น)
   const advanceWip = async (w, gate) => {
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
     if (!next) return;
     /* เฟส 4 (ขั้น 7): ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์กว่าถึงไลน์ — เปิดโมดัลแทนการเลื่อนสถานะทันที
        ใบจุด WIP (wip_point_id) เป็นการเติมจุดในไลน์ ไม่ผ่านด่านนี้ */
     if (next === 'delivered' && !w.wip_point_id && !gate) { setDeliverModal(w); return; }
+    /* ขั้น 5 (Smart Withdraw Kanban): ใบจากไลน์ต้องสแกนยืนยันพาร์ท + จำนวน ก่อนเป็น "กำลังเตรียม" — และยืนยันแล้วตัดสต็อกให้เลย */
+    if (next === 'preparing' && !w.wip_point_id && !gate) { setPickModal(w); return; }
     setPullBusy(w.id);
     try {
       const payload = { status: next, ...(gate?.payload || {}) };
@@ -1584,15 +1739,20 @@ export default function HeijunkaKanban() {
          → บันทึกแบบเดิมให้งานเดินต่อ แต่ต้องบอกว่าผลสแกนถูกทิ้ง (tolerant ได้ แต่ห้ามเงียบ — ENGINEERING-PRINCIPLES §6) */
       if (error?.code === '42703' && gate) {
         ({ data: updated, error } = await supabase.from('wip_replenish_requests')
-          .update({ status: next, delivered_by: payload.delivered_by, delivered_at: payload.delivered_at })
+          .update(next === 'preparing'
+            ? { status: next, picked_at: payload.picked_at, picked_by_name: payload.picked_by_name }
+            : { status: next, delivered_by: payload.delivered_by, delivered_at: payload.delivered_at })
           .eq('id', w.id).eq('status', w.status).select('id'));
-        if (!error) toast.error('บันทึกส่งแล้ว แต่ผลสแกนจุดส่งยังไม่ถูกเก็บ — ยังไม่ได้ apply migration 20260903 (Main) แจ้ง admin');
+        if (!error) toast.error(`บันทึกแล้ว แต่ผลสแกนยังไม่ถูกเก็บ — ยังไม่ได้ apply migration ${next === 'preparing' ? '20260907_wip_replenish_pick_gate' : '20260903_wip_replenish_deliver_gate'} (Main) แจ้ง admin`);
       }
       if (error) throw error;
       // CAS ไม่ติด = อีกเครื่องขยับใบนี้ไปแล้ว → ปิดโมดัลด้วย ไม่งั้นค้างอยู่กับใบที่ไม่มีอยู่ในสถานะนั้นแล้ว
       if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); setDeliverModal(null); toast.info('ใบนี้ถูกอัปเดตจากเครื่องอื่นแล้ว — โหลดคิวใหม่'); return; }
-      if (gate?.event) await logScanBlock(w, gate.event);
+      if (gate?.event) await logScanBlock(w, gate.event, next === 'preparing' ? 'pick' : 'deliver');
       setDeliverModal(null);
+      setPickModal(null);
+      // ขั้น "Scan for SAP update (Deduct stock)" — ยืนยันเตรียมแล้วตัดสต็อกให้เลย (STORE −qty · ไลน์ +qty)
+      if (next === 'preparing' && !w.wip_point_id && gate?.payload?.picked_qty > 0) await deductStockForPick(w, gate.payload.picked_qty);
       let capNote = '';
       if (next === 'delivered' && w.wip_point_id) {
         /* 🔴🔴 ห้ามกลับไป update `wip_buffer_points` ตรงๆ จาก client
@@ -1622,9 +1782,11 @@ export default function HeijunkaKanban() {
          ⇒ ต้องเตือนบนจอ ห้ามให้เข้าใจว่ายอดขยับให้แล้ว */
       const doneMsg = w.wip_point_id
         ? `✅ เติม ${what} เรียบร้อย${capNote}`
-        : `🚚 ส่ง ${what} แล้ว — อย่าลืมบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Store ด้วย (ลูปนี้ไม่ตัดสต็อกให้)`;
+        : `🚚 ส่ง ${what} แล้ว — รอไลน์ ${w.line_name} กดยืนยันรับ`;   // สต็อกตัดไปแล้วตอนยืนยันเตรียม (ขั้น 5)
       if (next === 'delivered' && capNote) toast.error(doneMsg);   // ชนเพดาน = ต้องเห็นชัด ไม่ใช่เขียวกลืนไป
-      else toast.success(next === 'delivered' ? doneMsg : `อัปเดต ${what} → ${next}`);
+      else toast.success(next === 'delivered' ? doneMsg
+        : next === 'preparing' && !w.wip_point_id ? `🔧 เริ่มเตรียม ${what} — ตัดสต็อกให้แล้ว หยิบเสร็จไปวางที่ไลน์แล้วกด "ถึงไลน์แล้ว"`
+        : `อัปเดต ${what} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -2063,6 +2225,7 @@ export default function HeijunkaKanban() {
       (groupOrders[g] = groupOrders[g] || []).push({
         matNo: d.mat_no, qty: d.qty, qtyOk: d.qty_ok, qtyActual: d.qty_actual,
         confirmed: !!d.confirmed, openedAt: d.opened_at,
+        lineName: sess.line_name,   // ไลน์ย่อยที่เปิดใบ — ใบส่งของสโตร์ต้องลง leaf ไม่ใช่กลุ่ม (กฎหน่วยย่อยที่สุด)
       });
       if (d.product) {
         if (!(d.mat_no in bomByMat)) bomByMat[d.mat_no] = bomMap[d.product.id] || [];
@@ -2084,6 +2247,7 @@ export default function HeijunkaKanban() {
     return {
       cols, rowList, noBom: [...noBom.values()], sessById, totalKanban, roundAlloc, groupDemand,
       groupOrders, bomByMat, ctByMat, wipByGroup,
+      linesOfGroup: Object.fromEntries(Object.entries(linesOfGroup).map(([g, s]) => [g, [...s]])),
     };
   }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
 
@@ -2217,6 +2381,8 @@ export default function HeijunkaKanban() {
 
       {/* Smart Scheduling Planner */}
       <PlannerStrip rounds={rounds} deliveries={deliveries} roundAlloc={view.roundAlloc} workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} />
+      {/* ไม่มีรอบ = แถบสถานการณ์ของโหมดส่งตามคำขอ (PlannerStrip ซ่อนตัวเอง) — งานค้างตามสถานะ + ใบที่รอนานสุด · audit 2026-09-07 */}
+      {!rounds.length && <OnDemandStrip wipRequests={wipRequests} nowMs={nowMs} onGo={() => { setViewMode('unified'); setUnifiedStore('wip'); }} />}
 
       {/* Store ต้องเห็นด้วยว่า "สั่งผลิตไปไลน์ไหน ทำได้ตามที่มอบหมายไหม" ไม่ใช่เห็นแค่ฝั่งเบิก-ส่ง
           (สรุปยอดเท่านั้น — บอร์ดตัวจริงอยู่ที่ฝ่ายผลิต กดชื่อไลน์แล้วเด้งไป ห้าม render ซ้ำที่นี่) */}
@@ -2226,7 +2392,8 @@ export default function HeijunkaKanban() {
       {/* View mode toggle */}
       {/* flexWrap: จอแคบปุ่มสลับมุมมองตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {[{ id: 'unified', label: '🗄️ ตู้ Kanban รวม' }, { id: 'chart', label: '🕐 Store Time Chart' }, { id: 'board', label: '🏪 Store Board' }, { id: 'timeline', label: '📊 Heijunka Board' }, { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
+        {/* 📊 Heijunka Board = กริดรอบส่ง 24 ชม. — ไม่มีรอบ = กริดว่างทั้งจอ ซ่อน (โผล่เองเมื่อมีรอบ) · audit 2026-09-07 */}
+        {[{ id: 'unified', label: '🗄️ ตู้ Kanban รวม' }, { id: 'chart', label: '🕐 Store Time Chart' }, { id: 'board', label: '🏪 Store Board' }, ...(rounds.length ? [{ id: 'timeline', label: '📊 Heijunka Board' }] : []), { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
           <button key={v.id} onClick={() => setViewMode(v.id)} style={{
             padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
             background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
@@ -2258,12 +2425,15 @@ export default function HeijunkaKanban() {
             workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} fmt={fmt}
             canOperate={canOperate} onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)}
+            openRequests={wipRequests} onCreateRequests={createStoreRequests}
+            slocs={slocs} lines={linesArr}
           />
         ) : viewMode === 'board' ? (
           <StoreBoardView
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
             onReceive={openReceive} fmt={fmt} lineMap={lineMap} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
+            wipRequests={wipRequests} onGoChart={() => setViewMode('chart')} onGoQueue={() => { setViewMode('unified'); setUnifiedStore('wip'); }}
           />
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard
@@ -2359,6 +2529,17 @@ export default function HeijunkaKanban() {
       )}
 
       {/* 📍 เฟส 4 ลูปสโตร์ — ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์ก delivered (docs/STORE-PULL-LOOP-DESIGN.md §4.5/4.6) */}
+      {/* 🔍 ขั้น 5 — สแกนยืนยันพาร์ท+จำนวน ก่อน "กำลังเตรียม" + ตัดสต็อก (Smart Withdraw Kanban 2026-09-07) */}
+      {pickModal && (
+        <PickScanModal
+          request={pickModal} canOverride={canOverride} fullName={fullName}
+          busy={pullBusy === pickModal.id}
+          onLogEvent={(evt) => logScanBlock(pickModal, evt, 'pick')}
+          onConfirm={(payload, event) => advanceWip(pickModal, { payload: { ...payload, picked_at: new Date().toISOString(), picked_by_name: fullName || 'สโตร์' }, event })}
+          onClose={() => setPickModal(null)}
+        />
+      )}
+
       {deliverModal && (
         <DeliverScanModal
           request={deliverModal} points={deliveryPoints} canOverride={canOverride} fullName={fullName}

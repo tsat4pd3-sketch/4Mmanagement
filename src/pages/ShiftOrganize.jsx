@@ -5,6 +5,8 @@ import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { roleLabel } from '../utils/roleMeta';
 import { toast } from '../components/Toast';
 
@@ -91,7 +93,7 @@ export default function ShiftOrganize() {
 
   const fetchLines = async () => {
     const [{ data: lineData }, { data: orgData }] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('id'),
+      supabase.from('production_lines').select(LINE_COLUMNS).order('id'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       supabase.from('org_nodes').select('id, code, name, kind, parent_id')
         .in('kind', ['section', 'department']).eq('is_active', true).order('name'),
     ]);
@@ -866,12 +868,8 @@ export default function ShiftOrganize() {
               ) : (
                 <div>
                   <label style={labelSt}>ไลน์ผลิต</label>
-                  <select value={mrgLineId} onChange={e => setMrgLineId(e.target.value)}>
-                    <option value="">— เลือกไลน์ —</option>
-                    {scopedLines.map(l => (
-                      <option key={l.id} value={l.id}>{l.name} {l.section ? `(${l.section})` : ''}</option>
-                    ))}
-                  </select>
+                  {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope เดิม (scopedLines) */}
+                  <LineSelect lines={scopedLines} value={mrgLineId} valueKey="id" placeholder="— เลือกไลน์ —" onChange={setMrgLineId} />
                 </div>
               )}
               <div style={{ display: 'flex', gap: 10 }}>

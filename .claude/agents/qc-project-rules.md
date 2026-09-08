@@ -216,6 +216,20 @@ model: inherit
   โดยไม่ import useUndoHistory · เขียน undo stack เองเฉพาะหน้า = 🟡 ให้ย้ายมาใช้ hook กลาง ·
   จุดที่ต้องมี: pushHistory ก่อน mutation แรกของ action, clear เมื่อสลับไลน์/โซน/ผัง
 
+- **F17** (2026-09-07 · คำสั่ง user — single source of truth) ช่องกรอกที่รับ **ชื่อคน / เลขเครื่อง /
+  MAT SAP / ลูกค้า / รหัสคลัง / ไลน์ / ทีม / ส่วนงาน** ต้องเป็น picker กลาง (UI-CONVENTIONS §5.1.2):
+  `<PersonSelect>` `<MachineSelect>` `<ProductSelect>` `<CustomerSelect>` `<StorageLocSelect>`
+  `<LineSelect>` `useOrgTeams()` `useOrgSections()/useOrgDepts()` — ห้าม `<input>` เปล่า / `<input list=…>`
+  datalist เอง / `lines.map(l => <option>)` / `['A','B','C']` hardcode · จับ:
+  · `placeholder=` ที่มีคำ ชื่อ|ผู้ตรวจ|ผู้อนุมัติ|ผู้รับผิดชอบ|ผู้แจ้ง|หัวหน้า|เลขเครื่อง|หมายเลขเครื่อง|MAT|ลูกค้า|Customer
+    บน `<input` ที่ไม่ใช่ search box = 🔴 ถ้าค่าถูก join/filter ที่อื่น · 🟡 ถ้าแค่แสดงผล/snapshot
+  · `<datalist` / `list="` ในไฟล์ที่ไม่ใช่ master-creation form
+  · `.map(l => <option` บน production_lines / `toHierarchicalOptions(` แล้ว map option เอง (§5.3 ข้อ 9)
+  · `['A', 'B', 'C']` / `'A','B','C'` ใน dropdown ทีม
+  · select profiles/employees/machines/dr_products เองมาทำ option แทน hook กลาง (usePeople/useMachines/useProducts)
+  ข้อยกเว้น: master-creation form ที่กำลังตั้งชื่อ master นั้นเอง · search box กรองลิสต์ · ช่องที่ audit
+  `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` ระบุ "ยังไม่ทำ" (ไม่มี master: supplier · model · press line ของแม่พิมพ์)
+
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)

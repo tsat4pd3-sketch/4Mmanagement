@@ -10,6 +10,8 @@ import { notifyEvent } from '../utils/notifyEvent';
 import { fmtDate } from '../utils/dateFormat';
 import { ECI_STATUS, ECI_LEGS, eciMissingLinks, nextEciCode } from '../utils/npi';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName, WarnBar } from './NpiUi';
+import PersonSelect from './PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 const DWG_KIND = { '2d': '2D', '3d': '3D', spec: 'Spec', other: 'อื่นๆ' };
 const DWG_STATUS = { draft: { label: 'ร่าง', color: '#94a3b8' }, released: { label: 'ปล่อยแล้ว', color: '#22c55e' }, obsolete: { label: 'ยกเลิก', color: '#64748b' } };
@@ -17,6 +19,8 @@ const DWG_STATUS = { draft: { label: 'ร่าง', color: '#94a3b8' }, release
 export default function NpiDrawingsEci({ project, parts, partId, onPickPart, drawings, ecis, tooling, canEdit, canApprove, fullName, today, onChanged }) {
   const [dwModal, setDwModal] = useState(null);
   const [eciModal, setEciModal] = useState(null);
+  // 📜 ผู้ขอ ECI ที่เคยบันทึกไว้ (Main npi_eci) — ผู้ติดต่อฝั่งลูกค้าไม่มีใน profiles เลือกซ้ำได้ไม่ต้องพิมพ์ใหม่ (2026-09-07)
+  const reqHist = useColumnHistory(supabase, 'npi_eci', 'requested_by');
   const [saving, setSaving] = useState(false);
   const [fourM, setFourM] = useState([]);       // ใบ 4M Method ล่าสุด (ผูก ECI)
   const [peCrs, setPeCrs] = useState([]);       // คำขอแก้เอกสาร PE ของชุดที่พาร์ทในโปรเจคผูก
@@ -220,7 +224,20 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
             <Field label="ชนิด"><select style={inp} value={dwModal.kind} onChange={e => setDwModal({ ...dwModal, kind: e.target.value })}>{Object.entries(DWG_KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
             <Field label="Rev *"><input style={inp} value={dwModal.rev} onChange={e => setDwModal({ ...dwModal, rev: e.target.value })} placeholder="A / Rev.03 / -CH" /></Field>
             <Field label="วันที่แบบ"><input type="date" style={inp} value={dwModal.rev_date || ''} onChange={e => setDwModal({ ...dwModal, rev_date: e.target.value })} /></Field>
-            <Field label="ECI/ECN ที่ทำให้เกิด rev นี้"><input style={inp} value={dwModal.eci_no || ''} onChange={e => setDwModal({ ...dwModal, eci_no: e.target.value })} list="npi-eci-nos" /></Field>
+            {/* เลือกจาก ECI ของพาร์ทนี้ (หรือทั้งโปรเจค) แทน datalist — เก็บ eci_no text เหมือนเดิม (ตารางไม่มี eci_id) · ค่าเก่าที่ไม่ตรงยังโชว์ (2026-09-07) */}
+            <Field label="ECI/ECN ที่ทำให้เกิด rev นี้">
+              {(() => {
+                const mine = ecis.filter(e => !e.part_id || e.part_id === dwModal.part_id);
+                const cur = dwModal.eci_no || '';
+                return (
+                  <select style={inp} value={cur} onChange={e => setDwModal({ ...dwModal, eci_no: e.target.value })}>
+                    <option value="">— ไม่มี / ไม่ระบุ —</option>
+                    {cur && !mine.some(e => e.eci_no === cur) && <option value={cur}>{cur} ⚠ ไม่พบในทะเบียน ECI ของพาร์ทนี้</option>}
+                    {mine.map(e => <option key={e.id} value={e.eci_no}>{e.eci_no} · {e.title || ''}{ECI_STATUS[e.status] ? ` (${ECI_STATUS[e.status].label})` : ''}</option>)}
+                  </select>
+                );
+              })()}
+            </Field>
             <Field label="รายละเอียดการเปลี่ยน" span={2}><textarea style={{ ...inp, minHeight: 56 }} value={dwModal.description || ''} onChange={e => setDwModal({ ...dwModal, description: e.target.value })} /></Field>
             <Field label="ไฟล์ (PDF/รูป ≤20MB)" hint="3D ไม่เก็บไฟล์ — ใส่ลิงก์">
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -231,7 +248,6 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
             <Field label="ลิงก์ภายนอก (PLM / แชร์ไดรฟ์)"><input style={inp} value={dwModal.external_url || ''} onChange={e => setDwModal({ ...dwModal, external_url: e.target.value })} placeholder="https://…" /></Field>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>บันทึกเป็น "ร่าง" ก่อน · ผู้มีสิทธิ์ npi:approve กด ✅ ปล่อย เพื่อให้เป็น rev ปัจจุบัน</div>
-          <datalist id="npi-eci-nos">{ecis.map(e => <option key={e.id} value={e.eci_no} />)}</datalist>
         </Modal>
       )}
 
@@ -254,7 +270,8 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
             <Field label="ที่มา"><select style={inp} value={eciModal.source} onChange={e => setEciModal({ ...eciModal, source: e.target.value })}><option value="customer">ลูกค้า</option><option value="internal">ภายใน</option></select></Field>
             <Field label="หัวข้อ *" span={3}><input style={inp} value={eciModal.title} onChange={e => setEciModal({ ...eciModal, title: e.target.value })} /></Field>
             <Field label="รายละเอียด" span={3}><textarea style={{ ...inp, minHeight: 56 }} value={eciModal.description || ''} onChange={e => setEciModal({ ...eciModal, description: e.target.value })} /></Field>
-            <Field label="ผู้ขอ/ต้นเรื่อง"><input style={inp} value={eciModal.requested_by || ''} onChange={e => setEciModal({ ...eciModal, requested_by: e.target.value })} /></Field>
+            {/* ผู้ขอ = user ภายใน (profiles) · ที่มาจากลูกค้า = พิมพ์ชื่อผู้ติดต่อเองได้ (allowFree + ป้าย) (2026-09-07) */}
+            <Field label="ผู้ขอ/ต้นเรื่อง"><PersonSelect value={eciModal.requested_by || ''} history={reqHist} freeHint="ผู้ติดต่อฝั่งลูกค้า" onChange={r => setEciModal({ ...eciModal, requested_by: r.name })} /></Field>
             <Field label="วันที่รับ"><input type="date" style={inp} value={eciModal.requested_date || ''} onChange={e => setEciModal({ ...eciModal, requested_date: e.target.value })} /></Field>
             <Field label="ต้องมีผลภายใน"><input type="date" style={inp} value={eciModal.target_date || ''} onChange={e => setEciModal({ ...eciModal, target_date: e.target.value })} /></Field>
             <Field label="สถานะ"><MetaSelect value={eciModal.status} onChange={v => setEciModal({ ...eciModal, status: v })} meta={ECI_STATUS} exclude={canApprove ? [] : ['approved', 'rejected', 'implemented']} /></Field>

@@ -9,6 +9,7 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 import { loadPermissions, canAccessPage, setDeptAdmin } from './utils/permissions';
+import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
@@ -133,18 +134,18 @@ export const NAV_ITEMS = [
   /* Logistic & Sales แบ่ง 3 ฝั่งตามความรับผิดชอบจริงของแผนกย่อย (2026-09-03 · คำสั่ง user)
      ⚠️ Warehouse (เก็บ FG 1xx → ขาออก) ≠ Store (คุม 2xx/3xx/5xx → ขาเข้า) — ห้ามสลับ
      นิยามฝั่ง + การจัดฝั่งจากเลข MAT อยู่ที่ src/utils/logisticSide.js จุดเดียว */
-  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: 'Logistic - ขาเข้า (Inbound)' },
-  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: 'Logistic - ขาเข้า (Inbound)' },
-  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: 'Logistic - ขาเข้า (Inbound)' },
+  { to: '/line-stock',      icon: '📦', label: 'สต๊อกในไลน์',              group: LOGISTIC_GROUPS.inbound },
+  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: LOGISTIC_GROUPS.inbound },
+  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: LOGISTIC_GROUPS.inbound },
   // เฝ้าระวังสต๊อกจับทั้ง 2 ฝั่ง (A/B เทียบ min-max ของทุกเลข · E ใบสั่งซื้อค้าง) → โผล่ทั้งสองหมวด
   // `alsoIn` = โชว์ซ้ำเฉพาะใน sidebar/หน้า Home · ที่อื่น (สิทธิ์/ค้นหา/breadcrumb/ตัวนับ) นับครั้งเดียว
-  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: 'Logistic - ขาเข้า (Inbound)', alsoIn: 'Logistic - ขาออก (Outbound)' },
+  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: LOGISTIC_GROUPS.inbound, alsoIn: LOGISTIC_GROUPS.outbound },
 
-  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: 'Logistic - ขาออก (Outbound)' },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: 'Logistic - ขาออก (Outbound)' },
-  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: 'Logistic - ขาออก (Outbound)' },
+  { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
+  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: LOGISTIC_GROUPS.outbound },
+  { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: 'Logistic - แผนงาน & ข้อมูล' },
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.control },
 
   // ⚠️ 4 เมนู PM เดิมขึ้นต้นด้วยคำชุดเดียวกัน ("...อุปกรณ์เครื่องจักร") จนแยกไม่ออกว่าอันไหนทำอะไร
   //    ชื่อใหม่บอกการกระทำ: บันทึกผล / ดูปฏิทิน / ดูว่าจะครบกำหนด / ตั้งจุดที่ต้องตรวจ (nav audit 2026-08-27)
@@ -205,7 +206,7 @@ export const NAV_ITEMS = [
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', 'Logistic - ขาเข้า (Inbound)', 'Logistic - ขาออก (Outbound)', 'Logistic - แผนงาน & ข้อมูล', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, LOGISTIC_GROUPS.control, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
@@ -215,9 +216,9 @@ export const NAV_GROUP_META = {
   'ฝ่ายผลิต':                  { icon: '🏭', short: 'ผลิต' },
   'วิเคราะห์ & รายงาน':        { icon: '📈', short: 'รายงาน' },
   'พนักงาน & ทักษะ':           { icon: '👥', short: 'พนักงาน' },
-  'Logistic - ขาเข้า (Inbound)':  { icon: '📥', short: 'ขาเข้า' },
-  'Logistic - ขาออก (Outbound)':  { icon: '📤', short: 'ขาออก' },
-  'Logistic - แผนงาน & ข้อมูล':   { icon: '🧭', short: 'แผนงาน' },
+  [LOGISTIC_GROUPS.inbound]:  { icon: '🏬', short: 'สโตร์' },
+  [LOGISTIC_GROUPS.outbound]:  { icon: '🚚', short: 'จัดส่ง' },
+  [LOGISTIC_GROUPS.control]:   { icon: '🧭', short: 'แผนงาน' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
@@ -1601,8 +1602,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           // ⚠️ เลื่อนได้แค่ขึ้น-ลง — ห้ามเลื่อนซ้ายขวาทั้งหน้า (คำสั่ง user 2026-08-04)
           //   ของกว้าง (ตาราง/บอร์ด/กราฟ) ต้องมี scroller ของตัวเอง (overflowX:'auto' ที่กล่องมันเอง)
           //   ตาม UI-CONVENTIONS — ห้ามปล่อยให้ล้นออกมาดันทั้งหน้าให้เลื่อนข้าง
-          overflowY: 'auto',
-          overflowX: 'hidden',
+          // 🔴 ต้องเป็น `clip` ไม่ใช่ `hidden`/`auto` (2026-09-08 — วัดจริงด้วย Playwright):
+          //   overflow ที่ไม่ใช่ visible/clip ทำให้ <main> เป็น "scroll container" ทั้งที่มันไม่เคยเลื่อนเอง
+          //   (สูงตามเนื้อหา · ตัวเลื่อนจริงคือ <body>) → position:sticky ของทุกหน้าถูกขังไว้ใน main
+          //   = ไม่เคยเกาะจอเลยสักหน้า (รูปเครื่องในหน้าตรวจ PM เลื่อนหายทั้ง PC/แท็บเล็ต/มือถือ
+          //   แม้แก้ที่หน้าไปแล้ว 2026-09-02) · `clip` ตัดของล้นเหมือน hidden แต่ไม่สร้าง scroll container
+          //   (Chromium 90+ · จอ TV webOS 23 = Cr 94 ผ่าน) · ห้ามใส่ overflowY กลับมา
+          overflowX: 'clip',
           minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>

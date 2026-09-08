@@ -6,6 +6,7 @@
 อัพเดทล่าสุด: 2026-08-25 (§7: แถวลิสต์ที่มีปุ่ม action ต่อท้ายต้อง flexWrap · ทุกจุดรับไฟล์รูปต้องผ่าน `toDecodableImage()` รองรับ HEIC จากกล้องมือถือ) · ก่อนหน้า: 2026-07-14 (ใหม่ §5.1 หมุดจุดตรวจใช้ `CalloutPin` — ลูกศรชี้จุดจริง + วงเลขหลบข้าง ไม่บังจุด · §6.5 ห้ามเหลือขอบข้างว่างบน landscape · บอร์ดเวลา: HH:00 + ชิป ⏳ ไม่ระบุเวลา · ปุ่ม 🏷️ โชว์/ซ่อน สองสถานะ · pillMaxW/subPillMaxW · ลำดับจุด คน→เครื่องจักร→WIP · mobile: useIsMobile hook / time board เลื่อนแนวนอนบนมือถือ / mgrid·tbtn / pointer-drag)
 อัพเดท 2026-07-15: §5.1 viewer วางจุดต้องซูมได้ (default เต็มความกว้างกรอบ ไม่ใช่ขนาดไฟล์)
 อัพเดท 2026-07-21: ใหม่ §5.3 dropdown ลำดับชั้นองค์กรต้อง cascade + ล้างตัวลูกเมื่อเปลี่ยนตัวแม่
+อัพเดท 2026-09-07: ใหม่ §5.1.2 — ช่อง "ชื่อคน/เลขเครื่อง/MAT/ลูกค้า/รหัสคลัง" ต้องใช้ picker กลาง (`PersonSelect`/`MachineSelect`/`ProductSelect`/`CustomerSelect`/`StorageLocSelect`) + `useOrgTeams` — audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`
 อัพเดท 2026-08-21: §5.3 ข้อ 9 ใหม่ — **dropdown เลือกไลน์ต้องใช้ `<LineSelect>` เท่านั้น** (ลำดับชั้น + scope + ตัดไลน์ปลดระวาง) · `production_lines.is_active` = ปลดระวางไลน์แทนการลบ
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
 อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
@@ -377,6 +378,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
   ShiftOrganize (override พนักงาน) · Report (รายบุคคล · ผู้ออกเอกสาร) · DocFormsRegistry ×2 · MaterialRequests (ผู้เซ็น) · BbsCheck (ผู้ตรวจ) ·
   DailyReport (เครื่องขนาน · MAT.NO ตอนเปิดใบ · ประเภท downtime) · PMSetup (เครื่องทั้งโรงงาน 632) · Improvements (เครื่อง · สินค้า) · PmCoordination (แผน PM) ·
   LineSetup (วางเครื่องบนผัง) · LineStock (Product/BOM) · QualityControl (กรองชิ้นงาน) · PEDocs (กรอง OP · FMEA · CP)
+  · **เกี่ยวกับ §5.1.2 (picker กลาง):** picker กลางรับ/คืน "ค่า text" (ชื่อคน · machine_no · mat_no) — จุดที่ฟอร์มเก็บ **FK id** (profile uid · employee id · product id · downtime_type id · kanban std · OP id) หรือมีกลุ่ม/badge เฉพาะ (Improvements พาเรโต้ · LineSetup จัดกลุ่มตามชนิดเครื่อง · MAT.NO ตอนเปิดใบ ⚠ชื่อซ้ำ) ใช้ `<SearchSelect>` ตรง · จุดที่เป็นเครื่องล้วนใช้ `<MachineSelect>` (DailyReport เครื่องขนาน · PMSetup `valueKey="id"`)
   · **ไลน์ผลิต (31) ยังใช้ `<LineSelect>`** (ลำดับชั้น+scope สำคัญกว่า ค้นได้ด้วยตัวแรกพอไหว) — ถ้าไลน์โตเกิน ~40 ค่อยเพิ่มโหมดค้นใน LineSelect ที่เดียว
   · `SearchSelect` **ไม่ต้องส่ง `text` แล้ว** (uncontrolled — ถือคำค้นเอง) ใช้ในบล็อก render/IIFE ที่ใส่ hook ไม่ได้ · ส่ง `text` เฉพาะเคส `allowFree` ที่ต้องเก็บชื่อพิมพ์เอง · มี `inputId` ให้โค้ดที่ `getElementById(...).focus()`
   · id ของ option ต้อง **string** เสมอ (`String(x.id)`) และเทียบ `value` เป็น string — component เทียบด้วย `===`
@@ -390,6 +392,42 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 - **⚠️ ลิสต์ยาวมักมาคู่กับกับดัก 1000 แถวของ PostgREST** — `select('*')` ที่ไม่ `.range()` ได้แค่
   1000 แถวแรก ของที่เกินมา **หายจากลิสต์เงียบๆ ค้นยังไงก็ไม่เจอ** → ดึงแบบแบ่งหน้าเสมอ
   (`fetchAllRows` ใน `MtnRepair.jsx` · ต้อง `.order()` คงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า)
+
+## 5.1.2 ⭐ ช่อง "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง" = picker กลางเท่านั้น (2026-09-07 · คำสั่ง user)
+
+*"ชื่อต่างๆ ไม่ว่าจะเป็นคน เครื่อง ชิ้นส่วน ประเภท รหัส — ถ้ามีระบบลงฐานข้อมูลแล้ว ต้องไม่มีให้พิมพ์เอง เป็นการเลือก
+กรองตามลำดับชั้นองค์กร หรือพิมพ์หาได้"* — audit ทั้งระบบ (`docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`) เจอ ~160 ช่อง
+ที่พิมพ์เองทั้งที่มีทะเบียน: ชื่อคน ~60 · dropdown ไลน์เขียนเอง ~35 · MAT ~14 · ลูกค้า ~11 · เลขเครื่อง 6 · ทีม A/B/C 8
+
+| ช่องที่รับ | ใช้ component นี้เท่านั้น | ทะเบียน (loader) | ค่าที่ DB เก็บ |
+|---|---|---|---|
+| ชื่อคน (ผู้ตรวจ/อนุมัติ/รับผิดชอบ/แจ้ง/สอน/หัวหน้า/ผู้แก้) | `<PersonSelect>` | `usePeople` (Main profiles ∪ employees) | ชื่อ text เหมือนเดิม + `*_uid`/`employee_id` เมื่อคอลัมน์มี |
+| หมายเลขเครื่อง / แม่พิมพ์ / จิ๊ก | `<MachineSelect>` | `useMachines` (DR machines) | `machine_no` + `machine_id` เมื่อคอลัมน์มี |
+| MAT SAP / เลขพาร์ท / Kanban Std / die set / PE set / NPI part | `<ProductSelect>` (+`extraOptions` BOM/parts_master) | `useProducts` (DR dr_products) | `mat_no` + `product_id` เมื่อคอลัมน์มี |
+| ลูกค้า | `<CustomerSelect>` | `useCustomers` (distinct dr_products ∪ ship_to_plants — **ยังไม่มีตาราง customers**) | ชื่อ text (normalize เป็นสะกดหลัก) |
+| รหัสคลัง Stor.Loc. | `<StorageLocSelect>` | `useStorageLocations` (DR storage_locations) | code |
+| เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
+| เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
+| ค่าที่มีลิสต์สั้น + ต้องยอมระบุเองจริง (ส่วนงาน/แผนก/ฝ่าย · สถานี · ไลน์ปั๊มแม่พิมพ์) | `<SelectOrFree>` (select + "✏️ ระบุเอง" ช่องเดียว · ค่าเดิมนอกลิสต์เปิดในโหมดระบุเอง) | org_nodes / workstations / ที่มีอยู่ | text |
+| ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
+| ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
+| ส่วนงาน / แผนก | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
+| สถานี | `<select>` จาก `workstations` ของครอบครัวไลน์ (+ "✏️ ระบุเอง" เฉพาะที่จำเป็น) | workstations | station_name |
+
+กฎของ picker กลางทุกตัว (ล็อกด้วยเทส `src/utils/__tests__/pickerOptions.test.mjs`):
+1. **ของที่เกี่ยวข้องขึ้นก่อน ไม่ตัดของอื่นทิ้ง** — prefer ด้วย `lines`/`lineIds`/`section`/`roles`/`kinds` แล้วขึ้นกลุ่ม 🎯 ก่อน
+   (หยิบข้ามทีม/ไลน์มีจริง) · ใส่ `strict` เฉพาะที่ต้องจำกัดจริง (เช่น เครื่องในไลน์นี้เท่านั้น)
+2. **ค่าที่เลือกไว้แล้วต้องไม่หายจากลิสต์** — เครื่อง/สินค้าที่ปลดระวางยังโชว์ ⏸ · ชื่อเดิมที่พิมพ์มาก่อนยังแสดง (ไม่ล้างข้อมูลเก่าเงียบๆ)
+3. **`allowFree` เปิดเฉพาะจุดที่ของนอกทะเบียนมีจริง** (ลูกค้าใหม่ · คนนอกระบบ/ลูกค้า · พาร์ท NPI ก่อน SOP · scrap ที่ master กรอกเลขเครื่อง)
+   และ SearchSelect ติดป้าย "✎ ไม่ได้อยู่ในทะเบียน" เสมอ · `MachineSelect`/`ProductSelect` ปิด allowFree เป็น default (ให้ไปเพิ่มที่ /machines · /products)
+4. **ค่าที่ DB เก็บไม่เปลี่ยน** (ตาราง DR ผูก FK กับ Main ไม่ได้ — snapshot ชื่อยังจำเป็น) picker แค่บังคับสะกดตรงทะเบียน + คืน id ให้เก็บเพิ่มเมื่อมีคอลัมน์
+4.1 **ทะเบียนไม่มี = ใช้ค่าที่เคยบันทึกไว้ได้ ห้ามล้าง/บล็อกเงียบ (คำสั่ง user 2026-09-07)** — ทุก picker รับ `history` (distinct ของคอลัมน์ปลายทาง
+   ผ่าน `useColumnHistory(client, table, column, { upper })`) แสดงเป็นกลุ่ม **📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)** เลือกได้ + ป้าย ⚠ · ค่าปัจจุบันที่ไม่อยู่ใน
+   ทะเบียนก็อยู่ในกลุ่มนี้อัตโนมัติ (SearchSelect จึงไม่ล้างค่าเก่า) · onChange คืน `known:false` · **ด่านตอนเซฟที่เจอค่านอกทะเบียนต้องเป็น `confirm` ให้ไปต่อได้
+   ไม่ใช่ toast.error + return** (ยกเว้นเคสที่ไปต่อแล้วข้อมูลพัง เช่น update dr_products ด้วย MAT ที่ไม่มี = 0 แถว)
+5. **ช่องในตาราง (แถว × หลายสิบ)** ใช้ `<select>` จากลิสต์สั้นที่กรองแล้ว (ค่าปัจจุบันคงเป็น option) แทน SearchSelect ที่กางในบรรทัด
+6. option builder เป็น pure function ใน `src/utils/pickerOptions.js` — จุดใหม่ที่ต้องการ option ของคน/เครื่อง/สินค้า ให้เรียกตัวนี้ ห้าม map เองในหน้า
+7. **ห้ามสร้าง master ใหม่แบบเงียบ** — ยังไม่มี: `customers` · `suppliers` · กลุ่มเครื่องปั๊มของแม่พิมพ์ · `cost_centers` (ดู "ยังไม่ทำ" ใน audit) — ทำเมื่อ user สั่ง แล้วแก้ loader ตัวเดียว
 
 ## 5.2 ฟอร์ม master data ต้องมี picker จากฐานที่มีอยู่
 
@@ -757,6 +795,25 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
 เดิม `audit/mockSupabase.js` คืน `dr_downtime_types.name_th` ค่าเดียวกันทุกแถว ⇒ กราฟจัดอันดับ
 ได้ **1 กลุ่มเสมอ** = harness มองไม่เห็นบั๊กของกราฟพวกนี้เลยสักตัว (ทั้งความสูง ทั้งการยุบหางยาว)
 เพิ่มคอลัมน์ที่หน้าใหม่เอาไป group ต้องทำให้มันแตกต่างตาม `i` ด้วย
+
+## 6.12 📱 ตารางติ๊ก/ทาช่องบนมือถือ = "โหมดการ์ดต่อคน" (2026-09-07 · รีวิวฟังก์ชันตรวจสอบบนมือถือ)
+
+ตารางกว้าง (BBS 31 คอลัมน์ · เช็คชื่อ PPE · LPA checklist) บนจอ 390px เห็นแค่คอลัมน์ชื่อ ช่องติ๊กทั้งหมดอยู่หลัง
+scroll ข้าง + checkbox 15px + "แปรง" เป็นท่าของเมาส์ → หน้างานบอก "ไม่เวิร์คเลย ใช้งานยาก" (วัดจริงด้วย `audit/`)
+
+- **`useIsMobile()` แล้ว branch เฉพาะส่วนตาราง** — desktop ต้อง render โค้ดเดิมเป๊ะ (additive) · ห้ามแตะ logic บันทึก
+  ให้ฟังก์ชันเดิมรับ mark/ค่าเป็น argument เพิ่ม (เช่น `paint(emp, day, markOverride, seqOverride)`) แทนการพึ่ง state "แปรง"
+- โครงมือถือ: **เลือกมิติที่ไล่ทีละหน่วย (วัน/กะ) ด้วยปุ่ม ◀ ▶ สูง ≥44px** → **การ์ด 1 ใบ = 1 คน** (ชื่อ ellipsis บรรทัดเดียว ·
+  รหัส · ป้ายที่มาเช่น ⚡ เติมจาก PPE · ผลปัจจุบันเป็นกล่องใหญ่มุมขวา) → **แถวชิปตัวเลือกทุกค่าที่ตารางเคยรับ**
+  (`minHeight:44` · `flex:'1 1 0', minWidth:0` · ป้ายสั้น ≤6 ตัวอักษร ห้ามใช้ label เต็มของตาราง · grid นอกต้อง `minmax(0,1fr)`
+  ไม่งั้นการ์ดล้นจอเงียบๆ) · ค่าที่ต้องการข้อมูลเพิ่ม (เช่น NG ต้องระบุเลขข้อ) = กดแล้วกางตัวเลือกใต้การ์ดใบนั้น ไม่เปิด modal
+- **แสดงความคืบหน้า** "ทาแล้ว x/N คน" + ปุ่ม "ไปวันนี้" เมื่อไม่ได้อยู่วันปัจจุบัน · กดชิปเดิมซ้ำ = ล้าง (พฤติกรรมเดียวกับ desktop)
+- ของที่ไม่ยกมาโหมดมือถือ (หมายเหตุท้ายแถว · มุมมองทั้งเดือน) ต้องบอกใต้ลิสต์ว่า "ดูได้บนจอใหญ่" ห้ามหายเงียบ
+- ต้นแบบ: `src/pages/BbsCheck.jsx` (โหมดมือถือ) · คิวถัดไป: เช็คชื่อ & PPE (`Checkin.jsx` — คอลัมน์เยอะกว่า ต้องยกครบ
+  มางาน/หมวก/รองเท้า/ถุงมือ/OT/OT+23/ลา/งานพิเศษ/จองรถ OT) · LPA checklist
+- กฎประกอบที่แก้พร้อมกัน: **ช่องกรอกบนมือถือ 16px** (index.css ≤768px — iOS ซูมค้างเมื่อ <16px) · แถว flex ที่มีปุ่ม/ช่องกว้างคงที่
+  ต้องให้บล็อกข้อความมี basis (`flex:'1 1 220px'`) ไม่ใช่ `flex:1` เปล่า ไม่งั้นบนจอแคบข้อความถูกบีบจนคำละบรรทัด
+  (เคสจริง: คิว FME ใน `/qa` การ์ดสูง 500px+ · ช่องผู้ตรวจ Poka-Yoke เหลือ 28px)
 
 ## 7. เบ็ดเตล็ดที่เคยกัด
 

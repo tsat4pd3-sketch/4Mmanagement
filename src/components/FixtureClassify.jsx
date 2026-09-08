@@ -3,6 +3,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { suggestFixtureCandidates } from '../utils/fixturePoints';
 import { jigEquipTypeOf, EQUIPMENT_KINDS } from '../utils/equipmentKinds';
+import LineSelect from './LineSelect'; // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
 
 /* ═══════════════════════════════════════════════════════════════
    ⚙️ จัดชนิดอุปกรณ์เป็นชุด — เฟส 0 ของโมดูล Fixture Shim
@@ -26,7 +27,7 @@ const chip = (bg, bd) => ({
   padding: '1px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
 });
 
-export default function FixtureClassify({ machines, mapKeys, canEdit, lines, onSaved }) {
+export default function FixtureClassify({ machines, mapKeys, canEdit, lines = [], onSaved }) {
   const [picked, setPicked] = useState(() => new Set());
   const [saving, setSaving] = useState(false);
   const [kind, setKind]     = useState('jig');
@@ -126,12 +127,11 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines, onS
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ"
                style={{ width: 220, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
                         background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-        <select value={lineF} onChange={e => setLineF(e.target.value)}
-                style={{ width: 190, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
-                         background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
-          <option value="">ทุกไลน์</option>
-          {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
+        {/* <LineSelect> — โชว์เฉพาะไลน์ที่มีรายการเสนอ (§5.3 ข้อ 6) · ชื่อไลน์ของเครื่องที่ไม่อยู่ในทะเบียนไลน์แยก optgroup ⚠ ไม่หายเงียบ · 2026-09-07 */}
+        <LineSelect lines={lines.filter(l => lineOpts.includes(l.name))} value={lineF} onChange={setLineF} placeholder="ทุกไลน์" includeRetired
+                    extraGroups={[{ label: '⚠ ไลน์ที่ไม่มีในทะเบียนไลน์', options: lineOpts.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n })) }]}
+                    style={{ width: 190, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
+                             background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
         <button onClick={pickAllShown} style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ติ๊ก/เอาออก ทั้งที่แสดง ({shown.length})

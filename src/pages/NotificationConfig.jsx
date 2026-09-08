@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
-import { MTN_TEAMS, deptNameOf } from '../utils/mtnTeams'
+import { deptNameOf } from '../utils/mtnTeams'
+import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams'   // ทีมช่างซ่อมจากตาราง mtn_teams — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
 
@@ -126,6 +127,7 @@ export default function NotificationConfig() {
   const [secOpts, setSecOpts] = useState([])
   const [deptOpts, setDeptOpts] = useState([])
   const [openTarget, setOpenTarget] = useState(null)   // event_key ที่กางตัวเลือกส่วนงาน/แผนกอยู่
+  const [teamsVer, setTeamsVer] = useState(0)          // bump เมื่อ mtn_teams โหลดเสร็จ → dropdown ทีมของห้อง re-render
 
   const load = async () => {
     setLoading(true)
@@ -182,7 +184,8 @@ export default function NotificationConfig() {
     toast.success('บันทึก Bot Token แล้ว')
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-on-mount
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(); loadPmTeams().then(() => setTeamsVer(v => v + 1)) }, [])
+  void teamsVer   // อ้างถึงเพื่อให้ dropdown ทีม (pmTeamsSync) วาดใหม่หลัง mtn_teams โหลดเสร็จ
 
   const rulesByCat = useMemo(() => {
     const m = {}
@@ -361,7 +364,8 @@ export default function NotificationConfig() {
             </label>
             <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
               <option value="">🔧 ทุกทีม (รวม)</option>
-              {MTN_TEAMS.map(t => <option key={t} value={t}>ทีม {deptNameOf(t)}</option>)}
+              {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
+              {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
             <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>

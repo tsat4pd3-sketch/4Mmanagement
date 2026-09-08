@@ -33,7 +33,7 @@
 - **ประวัติการแก้ / ผลรันจริง / ตัวเลข runtime / feedback ที่ตัดสินใจไปแล้ว → เขียนสั้นๆ ในไฟล์โมดูล ไม่ใส่ CLAUDE.md** (CLAUDE.md = กฎปัจจุบัน ไม่ใช่ changelog)
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกไว้ในไฟล์โมดูลที่เกี่ยวข้อง (ถ้าข้ามโมดูล เช่น "กับดัก CSS" ค่อยไว้ใน CLAUDE.md)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
-- **⚠️ เวลาบอก user ให้รัน migration ต้อง "วาง SQL เต็มๆ ในแชท" เสมอ ห้ามบอกแค่ชื่อไฟล์ (คำสั่งถาวรจาก user 2026-08-21)** — user รันผ่าน Supabase SQL Editor บนเว็บ **เปิดไฟล์ในรีโปไม่ได้** · เคยเกิดจริง: บอกชื่อไฟล์ไป user ก๊อป *path* ไปวางใน SQL Editor แล้วได้ `42601 syntax error at or near "supabase"` · ต้องระบุ **project ปลายทาง (Main/DR) กำกับทุกครั้ง** ด้วย (ตาราง 2 ฝั่งชื่อคล้ายกัน รันผิดฝั่งได้ง่าย) · แนบคิวรีเช็คผลหลังรันไปด้วยจะดีที่สุด
+- **⚠️ เวลาบอก user ให้รัน migration ต้อง "วาง SQL เต็มๆ ในแชท" เสมอ ห้ามบอกแค่ชื่อไฟล์ (คำสั่งถาวรจาก user 2026-08-21)** · **user ไม่มี Supabase CLI / terminal — ห้ามส่งคำสั่ง shell/CLI ให้รัน (2026-09-07 เคยก๊อป `supabase functions deploy` ไปวางใน SQL Editor)** · migration ที่ย้อนได้ + edge function → AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ (ดู `docs/modules/edge-functions.md`) · ให้ user ทำเฉพาะสิ่งที่ทำได้จากเว็บ (SQL Editor · ตั้ง secrets ใน dashboard · เมนูในแอป) — user รันผ่าน Supabase SQL Editor บนเว็บ **เปิดไฟล์ในรีโปไม่ได้** · เคยเกิดจริง: บอกชื่อไฟล์ไป user ก๊อป *path* ไปวางใน SQL Editor แล้วได้ `42601 syntax error at or near "supabase"` · ต้องระบุ **project ปลายทาง (Main/DR) กำกับทุกครั้ง** ด้วย (ตาราง 2 ฝั่งชื่อคล้ายกัน รันผิดฝั่งได้ง่าย) · แนบคิวรีเช็คผลหลังรันไปด้วยจะดีที่สุด
 - **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) → ต้อง register เข้าระบบทะเบียนเอกสาร `/doc-forms` (Document Master)** ให้ doc_control ปรับแต่งได้เอง (เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/โลโก้/Legend/ผู้ออกเอกสาร/Revision History) โดยไม่ต้องแก้โค้ด — ขั้นตอนบังคับ: (1) seed แถวใน `doc_forms` (migration — เอกสารที่ยังไม่มีเลขฟอร์มทางการก็ seed ด้วย form_code=null ไว้ก่อน) (2) ฟังก์ชันพิมพ์อ่านค่าผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`fullCode`/`getDocFormRevisions` + fallback ค่าเดิมในโค้ดเสมอ) — ฟอร์มทางการวาดหัว/footer เอง · **รายงานภายในที่ไม่มี layout ฟอร์ม อย่างน้อยห่อ html ก่อนพิมพ์ด้วย `withDocFoot(html, doc_key)`** (ทะเบียนยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิมเป๊ะ ตั้งเมื่อไหร่แถบเลขฟอร์มโผล่เอง) (3) โลโก้ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ในโค้ด และห้ามสร้างตารางทะเบียนเอกสารแยกใหม่** (เคยมี `document_controls` ซ้อน — ยุบเข้าทะเบียนกลางแล้ว 2026-07-30 · ดูรายละเอียดแถว `/doc-forms` ใน Pages & Routes + `docs/UI-CONVENTIONS.md` §6.6)
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
@@ -515,7 +515,15 @@ src/
 ├── components/        # ของกลาง: Toast, ImageCropModal, MachineFloorMap, SpinAnnotator,
 │                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal,
 │                      #   DowntimeSiren (เสียงเตือน downtime — 2026-07-14)
+│                      #   ⭐ picker กลาง (2026-09-07 — UI-CONVENTIONS §5.1.2 บังคับ): LineSelect · SearchSelect ·
+│                      #   PersonSelect · MachineSelect · ProductSelect · PartSelect · CustomerSelect · StorageLocSelect ·
+│                      #   InstrumentSelect · SelectOrFree (select + ระบุเอง ช่องเดียว)
 ├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
+│                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·
+│                      #   useCustomers (ยังไม่มีตาราง customers — derive จาก Product Master) · useStorageLocations ·
+│                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · useColumnHistory (📜 ค่าที่เคยบันทึก —
+│                      #   ทะเบียนไม่มีก็ยังเลือกได้ ห้ามล้าง/บล็อก) · pickerOptions.js + partOptions.js
+│                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
 │                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
 │                      #   otPeriods.js, dateFormat.js, useImgBox.js
@@ -677,6 +685,8 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 ## Design System
 
 > ### ⚠️ บังคับอ่านก่อนแก้ UI ทุกครั้ง: `docs/UI-CONVENTIONS.md`
+> **ช่องกรอกที่รับ "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง / ไลน์ / ทีม / ส่วนงาน" ห้ามเป็น `<input>` เปล่าหรือ datalist เอง —
+> ใช้ picker กลางเท่านั้น (§5.1.2 · คำสั่ง user 2026-09-07 · audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`)**
 > มาตรฐานกลางของ UI ที่หลาย session ต้องทำให้เหมือนกัน — จุด/marker บนผังไลน์ (**วงกลม+ป้ายใต้เท่านั้น ห้ามเหลี่ยม** สูตรขนาด MK สเกลตามผัง + edge clamp), ไฟ Andon เขียว/เหลือง/แดง (**กระพริบเฉพาะแดง** เหลือง=นิ่ง), การ์ดสูงเท่ากันใน grid, ฟอนต์ขั้นต่ำ 11-12px (จอ TV), modal ผังต้อง fit จอเดียวไม่มี scroll, hover ใช้ได้เฉพาะอุปกรณ์มีเมาส์จริง, playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip`, สิทธิ์ action ผ่าน `can()` ห้าม hardcode role array เพิ่ม
 > **ถ้าสร้าง/เปลี่ยน pattern ที่ใช้หลายหน้า ต้องอัพเดท docs/UI-CONVENTIONS.md (พร้อมวันที่) ในคอมมิทเดียวกัน**
 
@@ -722,6 +732,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 
 - **`color-scheme` ต้องประกาศคู่กับธีมเสมอ** (`:root { color-scheme: dark }` + `[data-theme="light"] { color-scheme: light }` — แก้แล้ว 2026-08-21 จาก feedback หน้างาน "Mode dark มองไม่เห็น"): ไอคอนปฏิทิน/นาฬิกาใน `input type=date/time` + ลูกศร select + popup ปฏิทิน เป็นของ browser วาดเอง ไม่ประกาศ = browser ถือว่าหน้าเป็น light → วาดไอคอน**สีดำ**ทับพื้นเขียวเข้ม มองไม่เห็นทั้งระบบ (วัดจริง: โซนไอคอน 0 pixel สว่าง → 77 หลังแก้) · **ห้ามแก้รายจุดด้วย `filter: invert()` ที่ input ตัวใดตัวหนึ่ง** — ประกาศที่ธีมครอบทุก native control ทีเดียว
 
+- **`position: sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX: 'clip'` — ห้ามเปลี่ยนกลับเป็น `hidden`/`auto` (2026-09-08 วัดจริงด้วย Playwright):** overflow ที่ไม่ใช่ `visible`/`clip` ทำให้ element เป็น scroll container แม้มันไม่เคยเลื่อนเอง (สูงตามเนื้อหา) แล้ว**ขัง sticky ของลูกทุกตัว**ไว้ข้างใน → ตัวเลื่อนจริงของหน้าคือ `<body>` (`html,body{height:100%;overflow-x:hidden}`) sticky จึงไม่เคยเกาะจอเลยสักหน้า · เคสจริง: รูปเครื่องหน้าตรวจ PM เลื่อนหายทั้ง PC/แท็บเล็ต/มือถือ แก้ในหน้าไป 1 รอบ (2026-09-02) ก็ยังหาย เพราะต้นเหตุอยู่ที่ชั้น `main` · **กฎ: กล่องที่แค่ต้องการ "ตัดของล้น" ใช้ `overflow: clip` · ใช้ `hidden`/`auto` เฉพาะกล่องที่ตั้งใจให้เลื่อนในตัวเอง (มี height/maxHeight จำกัด)** · ถ้า sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่มี overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`index.css` ตั้ง `input, select, textarea { width: 100% }` เป็น default ทั้งแอป** — input ที่วางใน toolbar/แถบควบคุมแนวนอน (เช่น `<input type="date">` ข้างปุ่ม ◀ ▶) **ต้องกำหนด `width` เองเสมอ** (เช่น `width: 140`) ไม่งั้นมันจะกินเต็มความกว้าง container แล้วดันปุ่มรอบๆ แตกเป็นหลายบรรทัดทั้งที่พื้นที่เหลือ — เคยกัดมาแล้วที่หัวบอร์ด Heijunka ทั้งหน้า Dashboard และหน้าจัดการไลน์ · checkbox/radio เคยโดนยืดจนบีบ label ข้างๆ หายทั้งแถบ (หน้า Daily PM) — ตอนนี้มี rule ยกเว้น `input[type="checkbox"], input[type="radio"] { width: auto }` ใน index.css แล้ว แต่ input ชนิดอื่นใน flex row ยังต้องระวังเอง
 - UI ที่ตั้งใจให้ดูจากระยะไกล (จอ TV/บอร์ดหน้างาน) อย่าใช้ font 8–9px ทั้งที่พื้นที่แนวนอนเหลือ — เกิดคำถาม "ตัวหนังสือเล็ก พื้นที่ว่างเหลือเยอะ" ซ้ำหลายรอบ ให้เริ่มที่ 11–12px สำหรับชิป/ป้าย และ 14–15px สำหรับหัวข้อ
 - **`display:grid` ที่วางในคอลัมน์สูงๆ (`flex:1`/`flex:7 0 0`) แล้วมีของแค่แถวเดียว → การ์ดถูกยืดสูงผิดสัดส่วน** เพราะ default `align-content: stretch` ของ grid กระจายพื้นที่ว่างแนวตั้งลงแถว → ต้องใส่ **`alignContent: 'start'`** เสมอเมื่อ grid อาจสูงกว่าเนื้อหา (เจอจริง: การ์ดพนักงานใน pool หน้า Management ยืดยาวลงมาทั้งใบ 2026-08-03) · ต่างจาก flexbox (default `align-items: stretch` ยืดแค่แกนขวาง ไม่ยืดตามความสูง container) — pattern เดียวกันกับ grid card ทุกจุดที่ container สูงกว่าเนื้อหา
