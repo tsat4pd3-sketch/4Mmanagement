@@ -83,7 +83,9 @@
 > - **เคยเกิดจริง:** URL hardcode 12 จุด → ย้าย server แล้วตั้ง env ครบ หน้าเว็บก็ยังยิงแจ้งเตือนกลับ cloud เก่า
 >   และฝั่ง DR ยัง fallback ไปฐานเดิม **เงียบ ไม่มี error** = ข้อมูลผลิตแตก 2 ที่ (แก้ครบแล้ว 2026-09-08)
 > - ตั้ง env ไม่ครบ → ป้ายเตือนแดงบนจอ admin (`configWarnings` → `configBanner` ใน App.jsx) **ห้ามถอด**
-> - **ค้างอยู่:** ฝั่ง DB ยัง hardcode URL — cron 9 job + function 3 ตัว (`fn_notify_push` · `fn_notify_skill_levelup` · `fn_shift_schedule_scan`)
+> - **ค้างอยู่ 18 จุด (เฟส 2 — ยังไม่แก้):** cron 9 job · DB function 3 ตัว (`fn_notify_push` · `fn_notify_skill_levelup` · `fn_shift_schedule_scan`)
+> · **ซอร์ส edge function 6 ไฟล์** ที่ scan ฝั่ง DR ยิงข้ามไปหา edge ฝั่ง MAIN ด้วย URL ฝังในไฟล์
+> (`pm-plan-reminder` · `pm-daily-scan` · `downtime-open-scan` · `shipping-phase-scan` · `store-daily-scan` · `kanban-round-scan`)
 > 📄 แผนย้ายเต็ม + checklist cutover → **`docs/SELF-HOST-MIGRATION.md`** (ย้ำ: **ต้องเป็น PostgreSQL เท่านั้น** — MySQL = เขียนระบบใหม่)
 
 ---

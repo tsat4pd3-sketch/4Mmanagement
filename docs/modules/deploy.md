@@ -35,7 +35,10 @@ Environment Variables (ต้องตั้งครบ 4 ตัว):
 - `LEGACY_DR_URL`/`LEGACY_DR_KEY` ใน appConfig = **ค่าประคอง deploy ปัจจุบันเท่านั้น**
   (Render ไม่เคยตั้ง env ฝั่ง DR) · **ขั้นตอนถอด:** ตั้ง `VITE_SUPABASE_DR_URL/KEY` ครบทุกที่ที่ build
   → ยืนยันป้ายเตือนหายจากจอ → ค่อยลบทั้ง 2 ค่า + บล็อก fallback ในคอมมิทเดียว
-- **ยังไม่ได้แก้ฝั่ง DB** — cron 9 job + function 3 ตัว ยัง hardcode URL อยู่
+- **ยังไม่ได้แก้ 18 จุด (เฟส 2)** — cron 9 job · DB function 3 ตัว · **ซอร์ส edge function 6 ไฟล์**
+  (`pm-plan-reminder` · `pm-daily-scan` · `downtime-open-scan` · `shipping-phase-scan` · `store-daily-scan`
+  · `kanban-round-scan` — scan ฝั่ง DR ที่ยิงข้ามไปหา edge ฝั่ง MAIN ด้วย URL ฝังในไฟล์)
+  → **ย้าย server แล้ว cron ทุกตัวยังส่งแจ้งเตือนกลับ cloud เก่า** = กับดักเดียวกับที่เฟส 1 ปิดไป
   (ดูรายการเต็ม + ลำดับงานที่ `docs/SELF-HOST-MIGRATION.md`)
 
 ### PWA — เพิ่มลงหน้าจอโฮม เปิดเหมือนแอป (2026-07-23)

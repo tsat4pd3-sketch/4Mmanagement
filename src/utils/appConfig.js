@@ -1,8 +1,8 @@
 /* ── 🔌 appConfig — จุดเดียวที่รู้ว่า "backend อยู่ที่ไหน" (2026-09-08) ─────────────────
  *
  * ทำไมต้องมี (เตรียมย้ายระบบมา server ของบริษัท — ไอทีจะรับช่วง maintain ต่อ):
- *   เดิม URL ของ Supabase project ถูก **hardcode กระจาย 9 จุดในโค้ดฝั่งเว็บ**
- *   (8 จุดเรียก edge function + 1 จุด fallback ของ client ฝั่ง DR)
+ *   เดิม URL ของ Supabase project ถูก **hardcode/เลี่ยง SSOT กระจาย 12 จุดในโค้ดฝั่งเว็บ**
+ *   (8 จุด fetch() เรียก edge + 3 จุดใน AddUser ที่ประกอบ URL เอง + 1 จุด fallback ของ client ฝั่ง DR)
  *   → ย้าย server แล้วตั้ง env ครบ **หน้าเว็บก็ยังยิงแจ้งเตือนกลับไปที่ cloud ตัวเก่าอยู่ดี**
  *     และที่อันตรายกว่า: DR ยัง fallback ไป cloud ตัวเก่า **แบบเงียบ ไม่มี error**
  *     = ข้อมูลผลิตแตกเป็น 2 ที่ โดยไม่มีใครรู้จนกว่าจะมีคนทักว่า "ตัวเลขไม่ตรง"
@@ -26,7 +26,12 @@ const env = import.meta.env || {};
 /** ปัญหา config ที่เจอตอนบูต — App.jsx เอาไปแสดงเป็นป้ายเตือนให้ admin (ห้ามล้มเหลวเงียบ) */
 export const configWarnings = [];
 
+// รันเฉพาะบนเบราว์เซอร์ — ตอน `npm test` (node) ไม่มี env อยู่แล้ว การเตือนจึงไม่มีความหมาย
+// และจะกลายเป็น noise ถาวรกลางผลเทสในด่าน build
+const IN_BROWSER = typeof window !== 'undefined';
+
 const warn = (msg) => {
+  if (!IN_BROWSER) return;
   configWarnings.push(msg);
   // eslint-disable-next-line no-console
   console.error(`[appConfig] ${msg}`);
@@ -66,7 +71,11 @@ export function buildFnUrl(baseUrl, name) {
 }
 
 /**
- * URL เต็มของ edge function บน Main project
+ * URL เต็มของ edge function **บน Main project เท่านั้น**
+ *
+ * ⚠️ edge ที่ client เรียกอยู่ทุกตัววันนี้ deploy อยู่ Main — ฝั่ง DR ถูกเรียกจาก cron ไม่ใช่ client
+ *    ถ้าวันหน้ามี edge ฝั่ง DR ที่ client ต้องเรียก **ห้ามใช้ตัวนี้** (จะยิงไป Main เงียบๆ)
+ *    ให้เพิ่ม `fnUrlDr()` ที่ใช้ SUPABASE_DR_URL แทน
  * @param {string} name ชื่อฟังก์ชัน เช่น 'send-notification'
  */
 export function fnUrl(name) {
@@ -89,6 +98,16 @@ export function callFn(name, body, opts = {}) {
   if (opts.apikey !== false && SUPABASE_ANON_KEY) headers.apikey = SUPABASE_ANON_KEY;
   try {
     return fetch(fnUrl(name), { method: 'POST', headers, body: JSON.stringify(body) })
+      .then((res) => {
+        // ⚠️ ห้ามจับแค่ network error — base URL ผิด/ยังไม่ deploy ฟังก์ชัน = ตอบ 404 แล้ว "เงียบสนิท"
+        //    (บทเรียนเดียวกับฝั่ง edge ที่เคย `.catch(() => null)` แล้ว Telegram ไม่ออกทั้งวัน
+        //     โดยไม่มีร่องรอย — ดู docs/modules/edge-functions.md)
+        if (!res.ok) {
+          // eslint-disable-next-line no-console
+          console.warn(`[callFn] ${name} ตอบ ${res.status} ${res.statusText} — ${fnUrl(name)}`);
+        }
+        return res;
+      })
       .catch((e) => {
         // eslint-disable-next-line no-console
         console.warn(`[callFn] ${name} ยิงไม่สำเร็จ`, e);

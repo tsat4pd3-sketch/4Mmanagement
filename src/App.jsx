@@ -1461,8 +1461,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   /* ⚠️ ป้ายเตือน config — env ของ backend ไม่ครบ (เตรียมย้ายมา server บริษัท 2026-09-08)
      เคสที่กันอยู่: build บน server ใหม่แต่ลืมตั้ง VITE_SUPABASE_DR_* → ฝั่ง DR ยัง fallback ไป
      cloud ตัวเดิม "แบบเงียบ" = ข้อมูลผลิตแตกเป็น 2 ที่ กว่าจะรู้ก็ตัวเลขเพี้ยนไปแล้ว
-     แสดงเฉพาะ admin จริง (คนหน้าไลน์แก้ไม่ได้ ขึ้นไปก็รบกวนเปล่าๆ) · ดู utils/appConfig.js */
-  const configBanner = (realRole === 'admin' && configWarnings.length > 0) ? (
+     แสดงเฉพาะ admin จริง + แอดมินหน่วยงาน (คนหน้าไลน์แก้ไม่ได้ ขึ้นไปก็รบกวนเปล่าๆ)
+     — ไอทีที่ตั้ง env ตอน cutover อาจ login เป็น dept_admin ไม่ใช่ admin · ดู utils/appConfig.js */
+  const configBanner = ((realRole === 'admin' || userIsDeptAdmin) && configWarnings.length > 0) ? (
     <div style={{
       position: 'fixed', bottom: viewAs ? 62 : 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 12,

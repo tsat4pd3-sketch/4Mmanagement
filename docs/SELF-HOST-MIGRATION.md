@@ -56,7 +56,9 @@ Edge Functions **21 ตัว** (ซอร์สอยู่ใน `supabase/fun
 
 ---
 
-## 2. ✅ เฟส 1 — ทำแล้ว (2026-09-08): ถอด URL ที่ hardcode ฝั่งเว็บ
+## 2. ✅ เฟส 1 — ทำแล้ว (2026-09-08): ถอด URL ที่ hardcode **ฝั่งเว็บ 12 จุด**
+
+> ครอบเฉพาะโค้ดใน `src/` · ฝั่ง DB และซอร์ส edge ยังค้างอีก 18 จุด (§3)
 
 **ปัญหาที่แก้:** ย้าย server แล้วตั้ง env ครบ หน้าเว็บก็ยัง**ยิงแจ้งเตือนกลับ cloud ตัวเก่า** (URL ฝังในโค้ด)
 และฝั่ง DR ยัง fallback ไปฐานเดิม **แบบเงียบ ไม่มี error** = ข้อมูลผลิตแตกเป็น 2 ที่
@@ -79,7 +81,7 @@ Edge Functions **21 ตัว** (ซอร์สอยู่ใน `supabase/fun
 
 ---
 
-## 3. ⬜ เฟส 2 — ฝั่ง DB ยังไม่แก้ (URL hardcode 12 จุด)
+## 3. ⬜ เฟส 2 — ยังไม่แก้ (URL hardcode 18 จุด: DB 12 + ซอร์ส edge 6)
 
 **ยังไม่ทำเพราะเป็น "การเปลี่ยนพฤติกรรมที่ย้อนยาก"** (แตะเส้นทางแจ้งเตือน + PM scan ที่รันอยู่จริง)
 ตามกฎ CLAUDE.md → ต้องให้ user ตัดสินใจก่อนลงมือ
@@ -109,7 +111,26 @@ Edge Functions **21 ตัว** (ซอร์สอยู่ใน `supabase/fun
 | `fn_notify_skill_levelup` | ✅ 1 | คำขออัพระดับทักษะ → แจ้งเตือน |
 | `fn_shift_schedule_scan` | — (เรียกจาก cron) | สแกนช่องว่างตารางกะ |
 
-### 3.3 แนวทางที่เสนอ (ยังไม่ลงมือ)
+### 3.3 ⚠️ ซอร์ส edge function ที่ฝัง URL ของ MAIN ไว้ในไฟล์ (6 ไฟล์)
+
+**นี่คือกับดักเดียวกับที่เฟส 1 ปิดไปฝั่งเว็บ** — scan ที่รันบน cron ฝั่ง DR ยิงข้ามไปเรียก edge
+แจ้งเตือนที่อยู่ฝั่ง MAIN ⇒ **ย้าย server แล้ว cron ทุกตัวยังส่งแจ้งเตือนกลับ cloud เก่า**
+
+| ไฟล์ | บรรทัด | ตัวแปร |
+|---|---|---|
+| `supabase/functions/pm-plan-reminder/index.ts` | 12 | `NOTIFY_URL` → `send-notification` |
+| `supabase/functions/pm-daily-scan/index.ts` | 13 (+127 ประกอบ `/rest/v1/rpc/…`) | `NOTIFY_URL` |
+| `supabase/functions/downtime-open-scan/index.ts` | 13 | `NOTIFY_URL` |
+| `supabase/functions/shipping-phase-scan/index.ts` | 13 | `NOTIFY_URL` |
+| `supabase/functions/store-daily-scan/index.ts` | 19 | `NOTIFY_URL` → `send-store-notification` |
+| `supabase/functions/kanban-round-scan/index.ts` | 24, 26, 61 | `MAIN_URL` — ใช้เป็น `createClient(MAIN_URL, MAIN_ANON)` ด้วย |
+
+**แก้ยังไง:** ทั้ง 6 ไฟล์ใช้ `Deno.env.get('SUPABASE_URL')` อยู่แล้วสำหรับ client ของตัวเอง แต่ไม่ได้ใช้กับ
+`NOTIFY_URL` → เปลี่ยนเป็นอ่านจาก secret ใหม่ เช่น `MAIN_FUNCTIONS_URL` (fallback = ค่าเดิม) แล้ว **redeploy ทั้ง 6 ตัว**
+· ตั้ง secret นี้ใน dashboard ตอน cutover (§4.1 ข้อ 4)
+· ตรวจ: `grep -rn "supabase\.co" supabase/functions/` ต้องได้ 0
+
+### 3.4 แนวทางที่เสนอสำหรับ cron/function ฝั่ง DB (ยังไม่ลงมือ)
 
 ทำ URL เป็น **data-driven จุดเดียวต่อ project** แทนที่จะฝังไว้ 12 ที่ — ให้ไอทีแก้ที่เดียวตอน cutover:
 
@@ -145,7 +166,7 @@ $$;
 | 1 | **DB password / connection string** ของทั้ง 2 project | สำหรับ `pg_dump` · **ต้อง dump `auth` schema ด้วย** ไม่งั้นพนักงาน 86 คนต้องตั้งรหัสใหม่ทุกคน |
 | 2 | Storage 1,552 ไฟล์ / 290 MB (11 buckets) | `avatars` `employee-photos` `four-m-images` `improvement-images` `jig-images` `mtn-images` `npi-files` `pe-images` `product-images` `qa-drawings` `signatures` |
 | 3 | Edge Functions 21 ตัว | ซอร์สอยู่ในรีโปแล้ว ✅ |
-| 4 | **Secrets 12 ตัว** | `TELEGRAM_BOT_TOKEN` · `TELEGRAM_CHAT_ID` · `TELEGRAM_WEBHOOK_SECRET` · `ANTHROPIC_API_KEY` · `AI_INTAKE_CHAT_IDS` · `CRON_SECRET` · `CLEANUP_TOKEN` · `INGEST_SECRET` · `DR_URL` · `DR_ANON_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` |
+| 4 | **Secrets 12 ตัว** (+ `MAIN_FUNCTIONS_URL` ใหม่ ถ้าทำเฟส 2 §3.3) | `TELEGRAM_BOT_TOKEN` · `TELEGRAM_CHAT_ID` · `TELEGRAM_WEBHOOK_SECRET` · `ANTHROPIC_API_KEY` · `AI_INTAKE_CHAT_IDS` · `CRON_SECRET` · `CLEANUP_TOKEN` · `INGEST_SECRET` · `DR_URL` · `DR_ANON_KEY` · `SUPABASE_URL` · `SUPABASE_SERVICE_ROLE_KEY` |
 | 5 | VAPID keys (Web Push) | อยู่ในตาราง `notification_settings` — มาพร้อม dump |
 
 > 🔴 **`service_role` / secret key ห้ามส่งทางอีเมลหรือแชท** — ข้ามทุก RLS อ่าน `auth.users` ได้หมด
@@ -157,7 +178,8 @@ $$;
 2. `pg_dump` ทั้ง 2 project (รวม `auth`, `storage` schema) → restore เข้า instance ใหม่
 3. ก๊อป storage objects ทั้ง 11 buckets
 4. Deploy edge functions 21 ตัว + ตั้ง secrets 12 ตัว
-5. **แก้ URL ใน cron 9 job + function 3 ตัว** (เฟส 2 — ถ้าทำแล้วเหลือแก้ `app_settings` แถวเดียว)
+5. **แก้ URL ที่ค้าง 18 จุด** (เฟส 2): cron 9 job + DB function 3 ตัว (ถ้าทำ §3.4 แล้วเหลือแก้ `app_settings` แถวเดียว)
+   + **redeploy edge 6 ไฟล์ที่ฝัง URL** พร้อมตั้ง secret `MAIN_FUNCTIONS_URL` (§3.3)
 6. ตั้ง Telegram webhook ใหม่ให้ชี้ server ใหม่
 7. Build frontend ด้วย **env ครบ 4 ตัว** → ตรวจว่า **ป้ายเตือนแดงไม่ขึ้นบนจอ admin**
 8. ตรวจ: login ได้ · เปิดกะได้ · บันทึก downtime แล้ว Telegram เข้า · PM scan ทำงาน · รูปขึ้น
@@ -165,15 +187,29 @@ $$;
 
 ### 4.3 ตรวจก่อนบอกว่า "ย้ายเสร็จ"
 
+**ขั้น A — ตอน cutover (LEGACY_DR_* ยังอยู่ในโค้ด):**
 ```bash
-# ในบันเดิลต้องไม่เหลือ project เดิม
-grep -c "ewhdfqwfwofivojtsizn\|eyhclzkifitbhbljgoav" dist/assets/*.js   # ต้องได้ 0 ทุกไฟล์
+# 1. URL ของ MAIN ต้องหายจากบันเดิล 100%
+grep -c "ewhdfqwfwofivojtsizn" dist/assets/*.js          # ต้องได้ 0 ทุกไฟล์
+# 2. URL ใหม่ต้องปรากฏ (พิสูจน์ว่า env เข้าจริง ไม่ได้ตกไป fallback)
+grep -l "<โดเมน server ใหม่>" dist/assets/*.js           # ต้องเจออย่างน้อย supabaseClient-*.js
+# 3. ซอร์ส edge ต้องไม่เหลือ URL ฝัง (เฟส 2 §3.3)
+grep -rn "supabase\.co" supabase/functions/             # ต้องได้ 0
 ```
+> ⚠️ **ห้ามใช้ `eyhclzkifitbhbljgoav` เป็นเกณฑ์ในขั้นนี้** — `LEGACY_DR_URL/KEY` เป็นฝั่งขวาของ `||`
+> จึงยังติดอยู่ในบันเดิลเสมอ (tree-shake ไม่ออก) ทั้งที่ตั้ง env ถูกแล้ว · **ตัวชี้วัดจริงของขั้นนี้คือ
+> ป้ายเตือนแดงไม่ขึ้นบนจอ admin** = แอปอ่าน env ครบ ไม่ได้ใช้ fallback
+
 ```sql
 -- ทั้ง 2 project ต้องได้ 0 แถว
 select jobname from cron.job where command ~ 'supabase\.co';
 select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
  where n.nspname='public' and p.prosrc like '%supabase.co%';
+```
+
+**ขั้น B — หลังถอด `LEGACY_DR_URL/KEY` ออกจาก `appConfig.js` (§2):**
+```bash
+grep -c "ewhdfqwfwofivojtsizn\|eyhclzkifitbhbljgoav" dist/assets/*.js   # ตอนนี้ถึงจะต้องได้ 0 ทุกไฟล์
 ```
 
 ---

@@ -62,6 +62,21 @@ model: inherit
   (CLAUDE.md "กฎเหล็ก — subscribe realtime ต้องผ่าน liveChannel")
   · grep: `\.channel\(` ใน `src/` — ทุกตัวที่ไม่ผ่าน `liveChannel` = ผิด
   · **ยกเว้น `broadcast`/`presence`** (`esm-remote-<code>` ใน RemoteReceiver/RemoteControl) — topic คือ "ห้อง" ต้องคงชื่อ
+- **B7** ห้ามเขียน **URL/key ของ Supabase project** ที่ไหนในโค้ด — เจ้าของจุดเดียวคือ `src/utils/appConfig.js`
+  (2026-09-08 · เตรียมย้ายมา server บริษัท — URL ฝังในโค้ดทำให้ "ย้ายแล้วเหมือนไม่ได้ย้าย":
+  หน้าเว็บยังยิงแจ้งเตือนกลับ cloud เก่า และฝั่ง DR ยัง fallback ไปฐานเดิม**แบบเงียบ**)
+  (CLAUDE.md "กฎเหล็ก — ห้ามเขียน URL/key ของ Supabase ในโค้ด" + `docs/SELF-HOST-MIGRATION.md`)
+  · grep: `https://[a-z]*\.supabase\.co` ใน `src/` → **ต้องได้เฉพาะ `utils/appConfig.js`**
+    (LEGACY_DR_URL ที่ตั้งใจคงไว้) **+ `utils/__tests__/appConfig.test.mjs`** (URL สมมติในเทส)
+    · `supabase.co` ที่อยู่ในคอมเมนต์ไม่นับ (ปัจจุบัน `components/FeedbackModal.jsx:103`)
+  · grep: `VITE_SUPABASE` ใน `src/` → โค้ดที่**อ่านค่าจริง**ต้องมีเฉพาะ `utils/appConfig.js`
+    (⚠️ อย่า grep `import.meta.env.VITE_SUPABASE` — appConfig อ่านผ่านตัวแปร `env` จะได้ 0 ทุกที่ =
+     เข้าใจผิดว่าผ่าน) · ที่พบใน `App.jsx:1462` เป็นคอมเมนต์อธิบายป้ายเตือน ไม่ใช่การอ่านค่า
+  · grep: `functions/v1` ใน `src/` → ต้องได้เฉพาะ `utils/appConfig.js` (+ ไฟล์เทสของมัน) — จุดอื่นต้องเรียกผ่าน
+    `callFn(name, body)` (fire-and-forget) หรือ `fnUrl(name)` (เมื่อต้องอ่าน response/ใส่ Authorization เอง)
+  · `callFn` ต้องเช็ค `res.ok` เสมอ — จับแค่ network error = 404 จาก base URL ผิดยังเงียบสนิท
+  · **ค้างอยู่ (เฟส 2 ยังไม่แก้ ห้ามรายงานเป็นของใหม่):** cron 9 job · DB function 3 ตัว ·
+    ซอร์ส edge 6 ไฟล์ (`grep -rn "supabase\.co" supabase/functions/`) — ดูรายการเต็มใน SELF-HOST-MIGRATION.md §3
 
 ### หมวด C — Permissions (data-driven)
 
