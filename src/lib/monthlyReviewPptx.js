@@ -150,11 +150,25 @@ function aggregateSessions(ss, plannedMinOf, ngOf) {
   };
 }
 
+/* ── ดัชนีตาม session_id (สร้างครั้งเดียว) ──
+   ⚠️ QC 2026-09-08: โหมด full เรียก outputOf/dtStats/ppmOf เป็นพันครั้ง (ไลน์ × 12 เดือน × 3 + รายวัน)
+      ถ้าแต่ละครั้งวน array `orders`/`downtimes` ทั้งก้อน (หลักแสนแถวได้) = main thread ค้างยาวตอนกด export
+      ⇒ จัดกลุ่มไว้ก่อน แล้วหยิบเฉพาะแถวของ session ที่เกี่ยว — สูตร/ตัวเลขเหมือนเดิมทุกประการ */
+function indexBySession(rows) {
+  const m = new Map();
+  (rows || []).forEach(r => {
+    const k = r.session_id;
+    const arr = m.get(k);
+    if (arr) arr.push(r); else m.set(k, [r]);
+  });
+  return m;
+}
+const rowsOfSessions = (ss, idx) => ss.flatMap(s => idx.get(s.id) || []);
+
 /** ยอดผลิตแบบ pair-aware + รวมขั้นตอน OP (กฎ pairAwareTotal/collapseOps) */
-function outputOfSessions(ss, orders, pairMap) {
-  const ids = new Set(ss.map(s => s.id));
+function outputOfSessions(ss, ordersIdx, pairMap) {
   const perMat = {}; let nullMat = 0;
-  orders.filter(o => ids.has(o.session_id)).forEach(o => {
+  rowsOfSessions(ss, ordersIdx).forEach(o => {
     let qty = 0;
     if (o.status === 'confirmed') qty = Number(o.qty_ok ?? o.qty) || 0;
     else if (o.status === 'carry_over') qty = Number(o.qty_actual) || 0; // ผลิตจริงส่วนที่ยกยอด (กฎ 2026-07-23)
@@ -167,18 +181,16 @@ function outputOfSessions(ss, orders, pairMap) {
 }
 
 /** PPM line-mode: ไม่รวมงานทดลอง (ให้ตรงกับ FTT/PPM ใน /qa และ oee_q ที่ stamp ตอนปิดกะ) */
-function ppmOfSessions(ss, defects, output) {
-  const ids = new Set(ss.map(s => s.id));
-  const ng = defects.filter(d => ids.has(d.session_id) && !isTrialDefect(d))
+function ppmOfSessions(ss, defectsIdx, output) {
+  const ng = rowsOfSessions(ss, defectsIdx).filter(d => !isTrialDefect(d))
     .reduce((a, d) => a + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0), 0);
   const base = output + ng;
   return base > 0 ? Math.round((ng / base) * 1e6) : 0;
 }
 
 /** ชั่วโมงหยุดนอกแผน + ประเภทที่หยุดนานสุด + นาทีแยกรายประเภท (ใช้ทำกราฟ DT รายประเภท 12 เดือน) */
-function dtOfSessions(ss, downtimes) {
-  const ids = new Set(ss.map(s => s.id));
-  const unplanned = downtimes.filter(d => ids.has(d.session_id) && d.dr_downtime_types?.category !== 'planned');
+function dtOfSessions(ss, dtIdx) {
+  const unplanned = rowsOfSessions(ss, dtIdx).filter(d => d.dr_downtime_types?.category !== 'planned');
   const byType = {};
   unplanned.forEach(d => { const k = d.dr_downtime_types?.name_th || 'อื่น ๆ'; byType[k] = (byType[k] || 0) + (Number(d.duration_min) || 0); });
   const top = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
@@ -219,7 +231,7 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames })
     const { data, error } = await supabase.from('oee_targets').select('group_name, target_a, target_p, target_q').in('group_name', groups);
     if (error) throw error;
     (data || []).forEach(r => { out.targets[r.group_name] = normOeeTarget(r); });
-  } catch (e) { out.warns.push('อ่านเป้า OEE ไม่ได้ — ใช้ค่ามาตรฐาน 90/90/99'); }
+  } catch (e) { out.targetsFailed = true; out.warns.push('อ่านเป้า OEE ไม่ได้ — ใช้ค่ามาตรฐาน 90/90/99'); }
 
   // ── ถังเหลือง/ถังแดง ทั้งปี → 4 สถานะต่อเดือน ──
   //    ค้างซ่อม = ยังไม่มี repair_date · ซ่อมเสร็จภายในวัน = repair_date = work_date · ซ่อมย้อนหลัง = repair_date > work_date
@@ -229,14 +241,19 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames })
       .eq('is_active', true)
       .gte('work_date', `${year}-01-01`).lte('work_date', `${year}-12-31`)
       .in('line_name', matchNames)
-      .order('work_date').order('id'));
+      .order('work_date').order('id'), 60);
+    if (r.truncated) out.warns.push('ถังเหลือง/แดงเกินเพดานที่ดึงได้ — ตัวเลข Tag Yellow ต่ำกว่าจริง');
     const per = {};
     sections.forEach(sec => {
       const names = new Set([...sec.lines, ...(sec.groups || [])]);
       const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
       per[sec.code] = months.map(mk => {
         const rows = r.filter(x => x.line_name && names.has(x.line_name) && monthKeyOf(x.work_date) === mk);
-        const sum = (f) => rows.filter(f).reduce((a, x) => a + (Number(x.qty) || 0), 0);
+        /* ⚠️ 4 สถานะเป็นของ **ถังเหลืองล้วน** (QC 2026-09-08): คอลัมน์ repair_* มีเฉพาะใบเหลือง
+           เอาแถว bin='red' มานับด้วยจะได้ (ก) "ค้างซ่อม" พองเพราะแดงไม่มีวันมี repair_date
+           (ข) นับซ้ำ เพราะแดงที่เกิดจากใบเหลือง (from_yellow_id) คือ qty ก้อนเดิม */
+        const yrows = rows.filter(x => x.bin === 'yellow');
+        const sum = (f) => yrows.filter(f).reduce((a, x) => a + (Number(x.qty) || 0), 0);
         return {
           monthKey: mk,
           waiting: sum(() => true),
@@ -255,14 +272,14 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames })
       : `โหลดถังเหลือง/แดงไม่สำเร็จ: ${e?.message || e}`);
   }
 
-  // ── ผังกำลังคน: รูปผัง + สถานี + คนประจำจุด (ว่าง = สถานีที่ไม่มีใครประจำ) ──
+  /* ── กำลังคน: สถานี + คนประจำจุด (ว่าง = สถานีที่ไม่มีใครตั้งเป็นจุดประจำ) ──
+     ⚠️ ยังไม่วาด "รูปผัง" ในเด็ค (เฟสถัดไป) จึงไม่ดึง line_layouts / pos_top / pos_left / รูปพนักงาน
+        — ดึงมาแล้วไม่ใช้ = payload เปล่าและทำให้คนอ่านโค้ดเข้าใจผิดว่ามีผังแล้ว */
   try {
-    const [layoutRes, stRes] = await Promise.all([
-      supabase.from('line_layouts').select('line_name, image_url').in('line_name', matchNames),
-      supabase.from('workstations').select('id, line_name, station_name, pos_top, pos_left').in('line_name', matchNames),
-    ]);
-    if (layoutRes.error || stRes.error) throw (layoutRes.error || stRes.error);
-    const stations = stRes.data || [];
+    // เลือกทั้งโรงงาน = หลายสิบไลน์ × 10-30 สถานี → เข้าใกล้เพดาน 1000 แถว ต้องแบ่งหน้า + มีตัวตัดสินเรียงที่ unique
+    const stations = await fetchAll(
+      supabase.from('workstations').select('id, line_name, station_name').in('line_name', matchNames).order('id'), 60);
+    if (stations.truncated) out.warns.push('สถานีงานเกินเพดานที่ดึงได้ — ตัวเลขจุดงาน/จุดว่างต่ำกว่าจริง');
     // ⚠️ employee_home_positions ทั้งตารางโตเกิน 1000 แถวได้ (จุดประจำของทั้งโรงงาน) — select เปล่า = ถูกตัดเงียบ
     //    → ดึงเฉพาะ station ที่อยู่ใน scope ผ่าน fetchByIds (chunk + แบ่งหน้า + เช็ค error)
     const stIds = stations.map(st => st.id);
@@ -274,18 +291,17 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames })
     const empIds = [...new Set(homes.map(h => h.employee_id).filter(Boolean))];
     const empById = {};
     if (empIds.length) {
-      const er = await fetchByIds(empIds, c => supabase.from('employees').select('id, name, employee_id_code, image_url, is_active').in('id', c));
+      const er = await fetchByIds(empIds, c => supabase.from('employees').select('id, name, is_active').in('id', c));
       if (er.error) throw er.error;
       (er.rows || []).forEach(e => { empById[e.id] = e; });
     }
-    const layoutOf = Object.fromEntries((layoutRes.data || []).map(l => [l.line_name, l.image_url]));
     const empAt = {};
     homes.forEach(h => { const e = empById[h.employee_id]; if (e && e.is_active !== false) empAt[h.station_id] = e; });
     [...new Set(stations.map(st => st.line_name))].forEach(ln => {
       const sts = stations.filter(st => st.line_name === ln)
         .map(st => ({ ...st, worker: empAt[st.id] || null }))
         .sort((a, b) => String(a.station_name || '').localeCompare(String(b.station_name || ''), 'th', { numeric: true }));
-      out.manpower[ln] = { layout: layoutOf[ln] || null, stations: sts, vacant: sts.filter(x => !x.worker).length };
+      out.manpower[ln] = { stations: sts, vacant: sts.filter(x => !x.worker).length };
     });
   } catch (e) { out.warns.push(`โหลดผังกำลังคนไม่สำเร็จ: ${e?.message || e}`); }
 
@@ -348,32 +364,40 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
     });
     /* คำนวณ 1 เดือนของชุด session ที่ให้มา — ใช้ทั้งระดับส่วนงานและระดับไลน์ (สูตรเดียวกันเป๊ะ)
        perLine เพิ่ม: แยกยอดกะเช้า/กะดึก (กราฟ Capacity D/N) + นาที DT รายประเภท (กราฟ DT 12 เดือน) */
+    const ordersIdx = indexBySession(orders), dtIdx = indexBySession(downtimes), defIdx = indexBySession(defects);
     const monthStat = (ss, mk, withDetail) => {
       if (!ss.length) return { monthKey: mk, nSess: 0 };
       const agg = aggregateSessions(ss, (id) => plannedBySess[id] || 0, (id) => ngBySess[id] || 0);
-      const output = outputOfSessions(ss, orders, pairMap);
-      const dt = dtOfSessions(ss, downtimes);
-      const base = { monthKey: mk, ...agg, output, dtHr: dt.dtHr, topDt: dt.topDt, ppm: ppmOfSessions(ss, defects, output) };
+      const output = outputOfSessions(ss, ordersIdx, pairMap);
+      const dt = dtOfSessions(ss, dtIdx);
+      const base = { monthKey: mk, ...agg, output, dtHr: dt.dtHr, topDt: dt.topDt, ppm: ppmOfSessions(ss, defIdx, output) };
       if (!withDetail) return base;
+      // ⚠️ shift ว่าง (null) ถูกนับเป็นกะเช้า — ค่าจริงในระบบมีแค่ 'day'/'night' แต่กันไว้ไม่ให้ยอดหาย
       const day = ss.filter(x => x.shift !== 'night');
       const night = ss.filter(x => x.shift === 'night');
       return {
         ...base, byType: dt.byType,
-        outDay: outputOfSessions(day, orders, pairMap),
-        outNight: outputOfSessions(night, orders, pairMap),
+        outDay: outputOfSessions(day, ordersIdx, pairMap),
+        outNight: outputOfSessions(night, ordersIdx, pairMap),
       };
     };
+    // จัดกลุ่ม session ตามเดือน/ไลน์ครั้งเดียว — เดิมกรอง array ทั้งก้อนซ้ำทุกช่อง (ไลน์ × 12 เดือน)
+    const byMonth = new Map();
+    sessions.forEach(x => {
+      const k = monthKeyOf(x.work_date);
+      const arr = byMonth.get(k); if (arr) arr.push(x); else byMonth.set(k, [x]);
+    });
+    const monthSess = (mk) => byMonth.get(mk) || [];
     const series = {};
     sections.forEach(sec => {
-      series[sec.code] = monthKeys.map(mk =>
-        monthStat(sessions.filter(x => monthKeyOf(x.work_date) === mk && sec.lines.includes(x.line_name)), mk, false));
+      const inSec = new Set(sec.lines);
+      series[sec.code] = monthKeys.map(mk => monthStat(monthSess(mk).filter(x => inSec.has(x.line_name)), mk, false));
     });
     let byLine = null;
     if (perLine) {
       byLine = {};
       allLineNames.forEach(ln => {
-        byLine[ln] = monthKeys.map(mk =>
-          monthStat(sessions.filter(x => monthKeyOf(x.work_date) === mk && x.line_name === ln), mk, true));
+        byLine[ln] = monthKeys.map(mk => monthStat(monthSess(mk).filter(x => x.line_name === ln), mk, true));
       });
     }
     return { series, byLine, warn: pairWarn };
@@ -517,14 +541,19 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
 
   /* ── aggregate ต่อกลุ่มไลน์ ── */
   // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oee.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
-  const plannedMinOf = (sid) => downtimes
-    .filter(d => d.session_id === sid && d.dr_downtime_types?.category === 'planned')
-    .reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
+  // สแกน downtimes ครั้งเดียวแล้วเก็บเป็น map (เดิมวนทั้งก้อนต่อ session — ยิ่งเลือกไลน์เยอะยิ่งช้าทวีคูณ)
+  const plannedBySessMain = {};
+  downtimes.forEach(d => {
+    if (d.dr_downtime_types?.category !== 'planned') return;
+    plannedBySessMain[d.session_id] = (plannedBySessMain[d.session_id] || 0) + (Number(d.duration_min) || 0);
+  });
+  const plannedMinOf = (sid) => plannedBySessMain[sid] || 0;
   // ทั้ง 4 ตัวนี้เรียกสูตรกลาง (§0) — เดือนย้อนหลังใน trend ใช้สูตรเดียวกันเป๊ะ
+  const ordersIdx = indexBySession(orders), dtIdx = indexBySession(downtimes), defIdx = indexBySession(defects);
   const aggSessions = (ss) => aggregateSessions(ss, plannedMinOf, (id) => ngBySession[id] || 0);
-  const outputOf = (ss) => outputOfSessions(ss, orders, pairMap);
-  const dtStats = (ss) => dtOfSessions(ss, downtimes);
-  const ppmOf = (ss, output) => ppmOfSessions(ss, defects, output);
+  const outputOf = (ss) => outputOfSessions(ss, ordersIdx, pairMap);
+  const dtStats = (ss) => dtOfSessions(ss, dtIdx);
+  const ppmOf = (ss, output) => ppmOfSessions(ss, defIdx, output);
   const trialQtyOf = (ss) => { // ของเสียงานทดลอง — โชว์แยก ห้ามหายเงียบ (กฎ §7)
     const ids = new Set(ss.map(s => s.id));
     return defects.filter(d => ids.has(d.session_id) && isTrialDefect(d))
@@ -712,7 +741,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
     const photoPairs = photoPairsOf(unplanned);
     imps.forEach(i => { if (i.before || i.after) photoPairs.push({ label: `Kaizen: ${i.title}`.slice(0, 40), before: i.before, after: i.after }); });
     return {
-      code: sec.code, ...agg, output, dtHr, ppm: ppmOf(ss, output), trialQty: trialQtyOf(ss),
+      code: sec.code, groups: sec.groups || [], ...agg, output, dtHr, ppm: ppmOf(ss, output), trialQty: trialQtyOf(ss),
       lines, dtGroups: dtGroupsOf(unplanned), defGroups: defGroupsOf(ss),
       fixCov: fixCoverage(unplanned), machineTop: machineStatsOf(unplanned),
       moOpen, act, fourM, imps, photoPairs: photoPairs.slice(0, 3),
@@ -1028,7 +1057,14 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
   };
   const photoUrlMap = {}; // url → dataURL (โหลดครั้งเดียวข้ามทุกส่วนงาน)
   {
-    const urls = [...new Set(data.depts.flatMap(d => (d.photoPairs || []).flatMap(p => [p.before, p.after])).filter(Boolean))];
+    /* ⚠️ ต้องรวมคู่รูป "รายไลน์" ของโหมด full ด้วย (QC 2026-09-08):
+       เดิมเก็บเฉพาะ d.photoPairs ซึ่ง cap ไว้ 3 คู่/ส่วนงาน → ไลน์ที่ไม่ติด top-3 ของส่วนงาน
+       จะได้ dataURL = null แล้วสไลด์ PROBLEM & ACTION ขึ้นข้อความ "ยังไม่มีรูปหลักฐาน …
+       แนบรูปในใบซ่อม MO แล้วจะขึ้นเอง" ทั้งที่ช่างแนบไปแล้ว = ข้อความเท็จบนเด็คประชุมผู้บริหาร */
+    const urls = [...new Set(data.depts.flatMap(d => [
+      ...(d.photoPairs || []),
+      ...d.lines.flatMap(l => l.photoPairs || []),
+    ]).flatMap(p => [p.before, p.after]).filter(Boolean))];
     const loaded = await Promise.all(urls.map(u => imgData(u)));
     urls.forEach((u, i) => { if (loaded[i]) photoUrlMap[u] = loaded[i]; });
   }
@@ -1457,7 +1493,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       /* ── 1) OEE ทั้งปี: แท่ง A/P/Q + เส้น OEE + เส้นเป้า (เส้นเป้าคือสิ่งที่โหมด focus OEE ไม่มีเลย) ── */
       {
         const s = newSlide();
-        head(s, `OEE : ${l.name}`, `${YEAR} — A / P / Q vs TARGET (เป้า OEE ${pct(tg.oee)} = A ${tg.a}% × P ${tg.p}% × Q ${tg.q}%${tg.isDefault ? ' · ค่ามาตรฐาน ยังไม่ได้ตั้งเป้ากลุ่มนี้' : ''})`);
+        head(s, `OEE : ${l.name}`, `${YEAR} — A / P / Q vs TARGET (เป้า OEE ${pct(tg.oee)} = A ${tg.a}% × P ${tg.p}% × Q ${tg.q}%${tg.isDefault ? (data.full.targetsFailed ? ' · ⚠ อ่านเป้าจากระบบไม่สำเร็จ ใช้ค่ามาตรฐาน' : ' · ค่ามาตรฐาน ยังไม่ได้ตั้งเป้ากลุ่มนี้') : ''})`);
         s.addChart([
           { type: pres.ChartType.bar, data: [
             { name: 'A', labels: [YM_LABELS], values: YM.map(mk => vAt(mk, 'a')) },
@@ -1532,7 +1568,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
         const ytd = quarterOee(rows, null);
         headline(s, 'OEE รายไตรมาส', 0.5, 1.62, 2.8);
         s.addChart(pres.ChartType.bar, [{
-          name: 'OEE %', labels: [['Q1', 'Q2', 'Q3', 'Q4', `ทั้งปี ${YEAR}`, 'เป้า']],
+          // เดือนรายงานยังไม่ถึง ธ.ค. = ยังไม่ใช่ "ทั้งปี" — เขียน YTD ให้ตรงความจริง
+          name: 'OEE %', labels: [['Q1', 'Q2', 'Q3', 'Q4', Number(data.monthKey.split('-')[1]) === 12 ? `ทั้งปี ${YEAR}` : `YTD ม.ค.–${monthShort(data.monthKey)}`, 'เป้า']],
           values: [...qs, ytd, tg.oee],
         }], {
           x: 0.4, y: 2.15, w: 4.3, h: 3.5, barDir: 'col', barGapWidthPct: 45, chartColors: [C.barOrange],
@@ -1711,8 +1748,12 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       /* ── MAN POWER — ผังไลน์ + จุดประจำ + ช่องว่าง (ผังเดียวกับหน้า /management) ── */
       {
         const s = newSlide();
-        const mps = d.lines.map(l => ({ line: l.name, ...(data.full.manpower[l.name] || { layout: null, stations: [], vacant: 0 }) }))
-          .filter(m => m.stations.length);
+        /* สถานีบางไลน์ลงทะเบียนไว้ใต้ "ชื่อไลน์แม่" ไม่ใช่ไลน์ลูกที่เปิดกะ (เหมือน LPA/เครื่อง PM)
+           → ต้องนับทั้งไลน์ลูกและไลน์แม่ ไม่งั้นตัวเลขจุดงานต่ำกว่าที่หน้า /management โชว์ */
+        const mpNames = [...new Set([...d.lines.map(l => l.name), ...(d.groups || [])])];
+        const mps = mpNames.map(nm => ({ line: nm, ...(data.full.manpower[nm] || { stations: [], vacant: 0 }) }))
+          .filter(m => m.stations.length)
+          .sort((a, b) => String(a.line).localeCompare(String(b.line), 'th', { numeric: true }));
         const totSt = mps.reduce((a, m) => a + m.stations.length, 0);
         const totVac = mps.reduce((a, m) => a + m.vacant, 0);
         head(s, `MAN POWER : ${d.code}`, `จุดงานประจำ ${num(totSt - totVac)}/${num(totSt)} จุด · ว่าง ${num(totVac)} จุด`);
@@ -1735,7 +1776,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
             { y: 2.95, rowH: 0.36, colW: [2.6, 1.2, 1.4, 1.0, 6.1], fontSize: 10.5, leftCols: [4], bottom: SAFE_BOTTOM - 0.5 });
           let ym = tm.bottom + 0.08;
           if (tm.hidden) ym = noteLine(s, `+ อีก ${tm.hidden} ไลน์ — ดูครบที่ /management`, ym, { size: 9.5 }) + 0.02;
-          noteLine(s, '"ว่าง" = สถานีที่ไม่มีพนักงานตั้งเป็นจุดประจำ (employee_home_positions) — ไม่ได้แปลว่าวันนั้นไม่มีคนยืน · ผังเต็มพร้อมรูปคนดูได้ที่ /management', ym, { size: 9.5 });
+          noteLine(s, '"ว่าง" = สถานีที่ไม่มีพนักงานตั้งเป็นจุดประจำ (employee_home_positions) — ไม่ได้แปลว่าวันนั้นไม่มีคนยืน · ' +
+            `⚠ ข้อมูลนี้เป็นสถานะ ณ วันที่สร้างเด็ค ไม่ใช่ ณ ${MON} (จุดประจำไม่มีประวัติย้อนหลัง) · ผังเต็มพร้อมรูปคนดูได้ที่ /management`, ym, { size: 9.5 });
         }
         footer(s);
       }

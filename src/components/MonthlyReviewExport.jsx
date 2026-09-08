@@ -152,8 +152,12 @@ export default function MonthlyReviewExport({ onClose }) {
         toast.error(hasTrend
           ? `⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — สไลด์ progression ยังมี แต่ตัวเลขเดือนก่อนอาจคลาดเคลื่อน (หมายเหตุกำกับบนสไลด์แล้ว)`
           : `⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — เด็คนี้จะไม่มีสไลด์ progression`);
-      } else if (trendMonths > 1 && !hasTrend) {
+      } else if (trendMonths > 1 && mode !== 'full' && !hasTrend) {
         toast.info('ย้อนหลังไม่มีกะที่ปิดแล้วพอเทียบ — เด็คนี้จะไม่มีสไลด์ progression');
+      }
+      // โหมด full พึ่งข้อมูลย้อนหลังทั้งปีเป็นแกนหลัก — ไม่มี byLine = สไลด์รายไลน์ว่างทั้งเล่ม ต้องบอกให้ตรง
+      if (mode === 'full' && !data.trend?.byLine) {
+        toast.error('⚠ ดึงข้อมูลย้อนหลังทั้งปีไม่สำเร็จ — สไลด์เจาะรายไลน์จะไม่มีกราฟ ลองลดจำนวนไลน์แล้วสร้างใหม่');
       }
       // โหลดข้อมูลบางส่วนไม่สำเร็จ = บอกดังๆ แล้วให้ผู้ใช้ตัดสินใจ (ห้ามปล่อยเด็คตัวเลขต่ำกว่าจริงออกไปเงียบๆ)
       if (data.dataWarn) toast.error('⚠ โหลด downtime/ของเสีย/ใบงานไม่ครบ — ตัวเลข DT/PPM ในเด็คอาจต่ำกว่าจริง ลองใหม่อีกครั้ง');
