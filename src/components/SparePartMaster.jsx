@@ -25,6 +25,8 @@ import { checkWrite } from '../utils/dbWrite';
 // picker กลาง (single-source audit 2026-09-07) — ชั้นวางจากผังคลัง (mtn_rack_cells) · เครื่องจากทะเบียน
 import SearchSelect from './SearchSelect';
 import MachineSelect from './MachineSelect';
+import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเบียน DR suppliers (ชิ้นส่วน/อะไหล่ขึ้นก่อน) — 2026-09-08
+import useSuppliers from '../utils/useSuppliers';
 
 // ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
 const appendCsv = (cur, v) => {
@@ -511,6 +513,17 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
   const [cropFile, setCropFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  // 2026-09-08: ทะเบียนผู้ขาย — เลือกผู้ขายที่ลงทะเบียน lead_time_days ไว้ แล้วช่อง Leadtime ยังว่าง → เติมให้ (ใช้จัด Rank)
+  // เติมเฉพาะตอนว่างเท่านั้น ไม่ทับค่าที่คนกรอกเอง (ต้นทางจริงอาจต่างจากทะเบียน)
+  const supplierRows = useSuppliers();
+  const pickSupplier = (r) => {
+    setF(p => {
+      const next = { ...p, supplier: r.supplier };
+      const reg = r.code ? supplierRows.find(x => x.code === r.code) : null;
+      if (reg && reg.lead_time_days != null && String(p.lead_time_days ?? '') === '') next.lead_time_days = reg.lead_time_days;
+      return next;
+    });
+  };
 
   /* ตัวเลือกชั้นวาง: ช่องในผังของทีมนี้ขึ้นก่อน → ทีมอื่น → รหัสที่อะไหล่ใช้อยู่แต่ยังไม่มีในผัง (ติดป้าย ให้เห็นว่าต้องไปวางผัง)
      ห้ามตัดของทีมอื่นทิ้ง (UI-CONVENTIONS §5.1.1) · 2026-09-07 */
@@ -573,7 +586,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
     const payload = {
       code: f.code.trim() || null, name: f.name.trim(), unit: f.unit.trim() || 'ชิ้น',
       team: f.team, section: sectionKeyOf(f.section) || null, mat_no: f.mat_no.trim() || null, part_no: f.part_no.trim() || null,
-      supplier: f.supplier.trim() || null, category: f.category || null, shelf: f.shelf.trim() || null,
+      supplier: (f.supplier || '').trim() || null, category: f.category || null, shelf: f.shelf.trim() || null,
       min_qty: Number(f.min_qty) || 0, max_qty: Number(f.max_qty) || 0,
       unit_price: num(f.unit_price), lead_time_days: num(f.lead_time_days),
       rank_override: f.rank_override || null, rank_note: f.rank_override ? f.rank_note.trim() : null,
@@ -691,7 +704,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
                 <Field label="หน่วย"><input value={f.unit} onChange={e => set('unit', e.target.value)} style={inp} /></Field>
                 <Field label="ขั้นต่ำ (Safety)"><input type="number" min="0" value={f.min_qty} onChange={e => set('min_qty', e.target.value)} style={inp} /></Field>
                 <Field label="สูงสุด"><input type="number" min="0" value={f.max_qty} onChange={e => set('max_qty', e.target.value)} style={inp} /></Field>
-                <Field label="ผู้ขาย"><input value={f.supplier} onChange={e => set('supplier', e.target.value)} style={inp} /></Field>
+                <Field label="ผู้ขาย"><SupplierSelect value={f.supplier || ''} kinds={['parts']} onChange={pickSupplier} inputStyle={inp} /></Field>
                 <Field label="ราคา/หน่วย (บาท)"><input type="number" min="0" step="any" value={f.unit_price} onChange={e => set('unit_price', e.target.value)} style={inp} /></Field>
                 <Field label="Leadtime (วัน)" hint="ใช้จัด Rank"><input type="number" min="0" value={f.lead_time_days} onChange={e => set('lead_time_days', e.target.value)} style={inp} /></Field>
               </div>
