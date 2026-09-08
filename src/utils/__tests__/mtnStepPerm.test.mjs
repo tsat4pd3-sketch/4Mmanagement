@@ -207,3 +207,24 @@ test('stepDenyHint แบบ out_of_scope บอกว่าใบเป็น�
   assert.ok(h.some(l => l.includes('/add-user')));
   assert.ok(!h.some(l => l.includes('mtn_repair:accept_work')), 'ไม่ใช่ปัญหา role ห้ามชี้ไป /permissions');
 });
+
+/* ── ↩️ ตีกลับใบ (Reject MO ขั้น 2) — 2026-09-08 feedback หน้างาน "Reject MO มันไม่ตีกลับ" ── */
+import { canBounceBack } from '../mtnStepPerm.js';
+
+test('canBounceBack: ใบที่ยังไม่เดินเลยขั้น 2 ตีกลับได้ (รวมใบที่รับงานไปแล้ว = เคสที่บั๊กเดิมไม่ตีกลับ)', () => {
+  assert.equal(canBounceBack({ status: 'pending', current_step: 1 }), true);
+  assert.equal(canBounceBack({ status: 'assigned', current_step: 2 }), true, 'รับงานแล้วแต่ยังไม่ซ่อม ต้องตีกลับได้');
+  assert.equal(canBounceBack({ status: 'repairing', current_step: 2 }), true);
+  assert.equal(canBounceBack({ status: 'returned', current_step: 1 }), true);
+  assert.equal(canBounceBack({}), true, 'ใบที่ยังไม่มี current_step = ถือว่าอยู่ขั้น 1');
+});
+
+test('canBounceBack: ซ่อมไปแล้ว/ปิดแล้ว ตีกลับไม่ได้ — ผลงานขั้น 3+ ต้องไม่หายจากใบ', () => {
+  assert.equal(canBounceBack({ status: 'repaired', current_step: 3 }), false);
+  assert.equal(canBounceBack({ status: 'checked', current_step: 4 }), false);
+  assert.equal(canBounceBack({ status: 'handover', current_step: 6 }), false);
+  assert.equal(canBounceBack({ status: 'closed', current_step: 7 }), false);
+  // ปิด/ยกเลิกแล้วห้ามตีกลับ แม้ current_step จะยังไม่เดิน (ใบถูกจบไปแล้ว)
+  assert.equal(canBounceBack({ status: 'closed', current_step: 2 }), false);
+  assert.equal(canBounceBack({ status: 'rejected', current_step: 1 }), false);
+});
