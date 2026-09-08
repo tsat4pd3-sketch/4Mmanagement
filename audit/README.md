@@ -65,6 +65,13 @@ node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px 
 - **ตัวเลื่อนของหน้าคือ `<body>` ไม่ใช่ `<html>`** (`html,body{height:100%}` + `overflow-x:hidden`)
   → `document.scrollingElement` คืน `<html>` ซึ่ง **ไม่เลื่อน** ต้องไล่หาตัวที่ `scrollHeight > clientHeight`
 - mock คืนแถวปลอม 14 แถวเหมือนกันทุกตาราง — พอสำหรับวัด layout **แต่ไม่ใช่การเทส business logic**
+- **⚠️ แถว 2,3 เป็นไลน์ลูกของแถว 1 และแถว 4 เป็นหลาน (`PARENT_OF` ใน mock) โดยตั้งใจ ห้ามถอด** (2026-09-08)
+  เดิม `parent_line_name: null` ทุกแถว ⇒ **โค้ดสาย "ไลน์แม่-ไลน์ลูก" ไม่เคยถูกรันใน harness เลยสักหน้า**
+  (`utils/lineHierarchy.js` family/leaf/ancestor/hierarchical · `stdManpower.js` · rollup พลังงานแม่-ลูก ·
+  FactoryMap `familyNames`/`stOf` · Management pool/จุดงาน) = บั๊กทั้งคลาส (นับซ้ำ · หา leaf ไม่เจอ ·
+  ไล่ ancestor แล้ววน) มองไม่เห็น · ของจริงมีไลน์ลูก 15+ ไลน์ (HYDROFORM มีลูก 8)
+  · ใส่ 3 ชั้นเพราะตัวไล่ recursive ต้องถูกเรียกจริง — 2 ชั้นทดสอบ "หลาน" ไม่ได้
+  · ยืนยันว่าทำงานจริง: Management ขึ้นชิป "🔗 รวมไลน์ย่อย: …" · /energy ตารางกรอกได้ indent 8/24/40px
 - **⚠️ แถวที่ 14 เป็น "แถวข้อมูลไม่ครบ" (`NULLISH`) โดยตั้งใจ ห้ามถอด** — คอลัมน์ตัวเลขในฐานจริง
   ส่วนใหญ่ nullable แถวเดียวที่เป็น null ทำให้ทั้งหน้าพัง (`undefined.toLocaleString()`) และ
   build/lint จับไม่ได้ · เพิ่มคอลัมน์ใหม่ใน `ROW()` ที่ nullable จริง **ให้เพิ่มใน `NULLISH()` ด้วย**
@@ -74,7 +81,8 @@ node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px 
 ## ไฟล์
 
 - `index.html` + `main.jsx` — ตัวโหลดหน้าเดี่ยว (มี ErrorBoundary + จำลอง `<main>` แบบเดียวกับแอปจริง)
-- `mockSupabase.js` — client ปลอม (chainable + คืน `ROWS` 14 แถว) · เพิ่มคอลัมน์ใน `ROW()` ได้ตามต้องการ
+- `mockSupabase.js` — client ปลอม (chainable + คืน `ROWS` 14 แถว · **มีลำดับชั้นไลน์แม่-ลูก 3 ชั้น + แถว
+  ข้อมูลไม่ครบ 1 แถว ห้ามถอดทั้งคู่**) · เพิ่มคอลัมน์ใน `ROW()` ได้ตามต้องการ
 - `probe.js` — ตัวตรวจ "ล้นจอจริง" (ตัด false positive 3 แบบข้างบน) · **ใช้ตัวนี้ตัวเดียว ห้ามเขียนใหม่**
 - `sweep.mjs` — กวาดทุกหน้า × 320/360/390px × กดปุ่ม แล้วรายงานจุดที่ล้นพร้อม style ที่เป็นต้นเหตุ
 - `crashsweep.mjs` — กวาดทุกหน้าที่ desktop หา **หน้าที่ render พัง** (ใช้หลัง merge หลาย session)
