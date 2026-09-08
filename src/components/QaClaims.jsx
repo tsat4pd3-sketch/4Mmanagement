@@ -17,6 +17,10 @@ import { nextDocNo } from '../utils/qaDocNo';
 import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import LineSelect from './LineSelect';
+import PartSelect from './PartSelect';
+import CustomerSelect from './CustomerSelect';
+import useColumnHistory from '../utils/useColumnHistory';
 
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
@@ -54,7 +58,8 @@ const EMPTY = () => ({
   due_reply_date: dayAdd(localDate(), 3), reply_note: '', cost_impact: '', status: 'open', remark: '',
 });
 
-export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa }) {
+// lines = แถว production_lines เต็ม (LINE_COLUMNS) จากหน้าหลัก — ไม่ใช่ชื่ออย่างเดียวแล้ว (2026-09-07)
+export default function QaClaims({ lines = [], role, lineId, sections, partOpts = [], canRecord, canManage, onOpenCapa }) {
   const { fullName } = useContext(UserContext);
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active');
@@ -253,12 +258,15 @@ export default function QaClaims({ lines = [], canRecord, canManage, onOpenCapa 
         </table>
       </div>
 
-      {detail && <ClaimModal {...{ detail, setDetail, lines, canRecord, canManage, busy, save, openCapa, repeats: findRepeats(detail, list) }} />}
+      {detail && <ClaimModal {...{ detail, setDetail, lines, role, lineId, sections, partOpts, canRecord, canManage, busy, save, openCapa, repeats: findRepeats(detail, list) }} />}
     </div>
   );
 }
 
-function ClaimModal({ detail, setDetail, lines, canRecord, canManage, busy, save, openCapa, repeats }) {
+function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats }) {
+  // 📜 ค่าที่เคยบันทึกใน qa_claims (Main) — พาร์ท/ลูกค้าที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (สะกดเดิม = ไม่แตกกลุ่มเคลมซ้ำ) (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_claims', 'part_no', { upper: true });
+  const custHist = useColumnHistory(supabase, 'qa_claims', 'customer');
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
   const ro = !canRecord || detail.status === 'closed';
   return (
@@ -290,16 +298,19 @@ function ClaimModal({ detail, setDetail, lines, canRecord, canManage, busy, save
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: 11, marginBottom: 12 }}>
           <Field label="วันที่รับเคลม *"><input type="date" style={inputSt} value={detail.claim_date} onChange={set('claim_date')} disabled={ro} /></Field>
-          <Field label="ลูกค้า *"><input style={inputSt} value={detail.customer} onChange={set('customer')} placeholder="เช่น FTM / AAT" disabled={ro} /></Field>
+          {/* ลูกค้า = ชื่อกลุ่มทะเบียนเคลม — เลือกจากรายชื่อลูกค้าใน Product Master (CustomerSelect) กันสะกดต่างแล้วแตกกลุ่ม (2026-09-07) */}
+          <Field label="ลูกค้า *"><CustomerSelect value={detail.customer || ''} history={custHist} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
           <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder="เช่น WLS6033" disabled={ro} /></Field>
           <Field label="กำหนดตอบกลับ"><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
-          <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)"><input style={inputSt} value={detail.part_no || ''} onChange={set('part_no')} placeholder="MB3B-8C306-BE" disabled={ro} /></Field>
+          <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)">
+            <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={ro} placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
+              onChange={({ part_no, part_name }) => setDetail((f) => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
+          </Field>
           <Field label="ชื่อพาร์ท"><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>
           <Field label="ไลน์ผลิต">
-            <select style={inputSt} value={detail.line_name || ''} onChange={set('line_name')} disabled={ro}>
-              <option value="">— ไม่ระบุ —</option>
-              {lines.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+            {/* <LineSelect> — ลำดับชั้น/ปลดระวาง/scope เหมือนทุกหน้า (เดิม lines.map ชื่อล้วน · 2026-09-07) */}
+            <LineSelect lines={lines} value={detail.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt} disabled={ro}
+              role={role} lineId={lineId} sections={sections} onChange={(v) => setDetail((f) => ({ ...f, line_name: v }))} />
           </Field>
           <Field label="ประเภท">
             <select style={inputSt} value={detail.category} onChange={set('category')} disabled={ro}>

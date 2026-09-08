@@ -16,6 +16,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { toast } from './Toast';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { pieceResult, seqLabel, SEQ_RULE } from '../utils/qaSequential';
+import PersonSelect from './PersonSelect';
 
 const JUDGE = {
   ok: { label: 'ผ่าน', color: '#22c55e' },
@@ -167,7 +168,11 @@ export default function QaPieceStepper({
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : '2fr 1fr', alignItems: 'start' }}>
               <textarea style={{ ...inputSt, minHeight: 64, gridColumn: isMobile ? undefined : '1 / -1' }} placeholder="แก้ไขอะไร / ปรับอะไร (บังคับกรอก)"
                 value={act.text} onChange={e => setAct(a => ({ ...a, text: e.target.value }))} />
-              <input style={inputSt} placeholder="ชื่อคนทำ action" value={act.by} onChange={e => setAct(a => ({ ...a, by: e.target.value }))} />
+              {/* คนทำ action = ผู้ปฏิบัติงาน/หัวหน้าไลน์ (ไม่จำเป็นต้องเป็น user ระบบ) → PersonSelect profiles ∪ employees
+                  คนในไลน์ของพาร์ทขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
+              <PersonSelect source="both" value={act.by} lines={part?.line_name ? [part.line_name] : undefined}
+                placeholder="ชื่อคนทำ action" inputStyle={{ fontSize: fs }}
+                onChange={r => setAct(a => ({ ...a, by: r.name }))} />
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
                 <input type="checkbox" checked={act.fourM} onChange={e => setAct(a => ({ ...a, fourM: e.target.checked }))} style={{ width: 'auto' }} />
                 เปิดใบ 4M จากการแก้ไขนี้

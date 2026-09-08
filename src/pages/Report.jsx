@@ -20,14 +20,21 @@ import {
 } from '../utils/skillLevels';
 import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skill ยังวาดหัวโลโก้ตัวเดียวกับใบรายบุคคล
 import SkillRadarPanel from '../components/SkillRadarPanel';
+import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
-import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -597,6 +604,7 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
 }
 
 function DailyTab() {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const now = new Date();
@@ -621,7 +629,7 @@ function DailyTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -752,15 +760,11 @@ table{border-collapse:collapse;width:100%}
           <option value="">ทุกแผนก</option>
           {deptsOf(dailySection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={dailyLine} onChange={e => setDailyLine(e.target.value)} style={selSt}>
-          <option value="">ทุกไลน์</option>
-          {dailyVisibleLines.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
-        </select>
+        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คงตัวกรอง scope+section เดิม */}
+        <LineSelect lines={dailyVisibleLines} value={dailyLine} valueKey="id" placeholder="ทุกไลน์" style={selSt} onChange={setDailyLine} />
         <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
-          <option value="A">Team A</option>
-          <option value="B">Team B</option>
-          <option value="C">Team C</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {filteredLogs.length} คน</span>
         {calLoaded && (
@@ -808,6 +812,7 @@ table{border-collapse:collapse;width:100%}
 }
 
 function PerEmployeeTab() {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
@@ -937,13 +942,12 @@ table{border-collapse:collapse;width:100%}
         </select>
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
-          <option value="A">Team A</option>
-          <option value="B">Team B</option>
-          <option value="C">Team C</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
-        </select>
+        <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
+          inputStyle={{ padding: '7px 30px 7px 10px', borderRadius: 7, fontSize: 13 }}
+          options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
+          onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
@@ -986,6 +990,7 @@ table{border-collapse:collapse;width:100%}
 }
 
 function StationLogTab() {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
@@ -1153,9 +1158,7 @@ table{border-collapse:collapse;width:100%}
         <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <select value={stationTeam} onChange={e => setStationTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
-          <option value="A">Team A</option>
-          <option value="B">Team B</option>
-          <option value="C">Team C</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <select value={stationShift} onChange={e => setStationShift(e.target.value)} style={selSt}>
           <option value="">ทุกกะ</option>
@@ -1227,6 +1230,7 @@ table{border-collapse:collapse;width:100%}
 }
 
 function RangeTab() {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
@@ -1240,7 +1244,7 @@ function RangeTab() {
   const [rangeTeam, setRangeTeam] = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
   }, []);
 
   useEffect(() => { load(); }, [from, to]);
@@ -1335,15 +1339,11 @@ table{border-collapse:collapse;width:100%}
           <option value="">ทุกส่วนงาน</option>
           {rangeSections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={rangeLine} onChange={e => setRangeLine(e.target.value)} style={selSt}>
-          <option value="">ทุกไลน์</option>
-          {rangeVisibleLines.map(l => <option key={l.id} value={String(l.id)}>{l.name}</option>)}
-        </select>
+        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
+        <LineSelect lines={rangeVisibleLines} value={rangeLine} valueKey="id" placeholder="ทุกไลน์" style={selSt} onChange={setRangeLine} />
         <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
-          <option value="A">Team A</option>
-          <option value="B">Team B</option>
-          <option value="C">Team C</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} คน</span>
         {canExport && (
@@ -1471,7 +1471,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   }, [role, scopeSecs, userLineId, lines]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     loadCompanyCalendar();
   }, []);
 
@@ -1926,10 +1926,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
               <option value="">ทุกส่วนงาน</option>
               {fourMSections.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={line} onChange={e => setLine(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-              <option value="">ทุกไลน์</option>
-              {fourMVisibleLines.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-            </select>
+            {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
+            <LineSelect lines={fourMVisibleLines} value={line} placeholder="ทุกไลน์" style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 12 }} onChange={setLine} />
           </>);
         })()}
         <select value={cat} onChange={e => setCat(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
@@ -2132,6 +2130,9 @@ function DocumentControlPanel() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [newRev, setNewRev] = useState({ record_date: '', rev: '', issued_date: '', description: '', responsible: '', approved_name: '' });
+  // 📜 ชื่อที่เคยบันทึกใน doc_form_revisions (Main) — ผู้รับผิดชอบ/ผู้อนุมัติ rev เก่าที่ไม่มีใน profiles ยังเลือกซ้ำได้ (2026-09-07)
+  const respHist = useColumnHistory(supabase, 'doc_form_revisions', 'responsible');
+  const apprHist = useColumnHistory(supabase, 'doc_form_revisions', 'approved_name');
 
   const load = async () => {
     setLoading(true);
@@ -2212,10 +2213,8 @@ function DocumentControlPanel() {
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
-          <select value={issuedBy} onChange={e => setIssuedBy(e.target.value)} style={inSt}>
-            <option value="">— เลือก —</option>
-            {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+          <SearchSelect value={issuedBy || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —" inputStyle={inSt}
+            options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setIssuedBy(id)} />
         </div>
       </div>
 
@@ -2271,8 +2270,11 @@ function DocumentControlPanel() {
         <input value={newRev.rev} onChange={e => setNewRev(v => ({ ...v, rev: e.target.value }))} placeholder="Rev" style={inSt} />
         <input type="date" value={newRev.issued_date} onChange={e => setNewRev(v => ({ ...v, issued_date: e.target.value }))} style={inSt} title="Issued date" />
         <input value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={inSt} />
-        <input value={newRev.responsible} onChange={e => setNewRev(v => ({ ...v, responsible: e.target.value }))} placeholder="Responsible" style={inSt} />
-        <input value={newRev.approved_name} onChange={e => setNewRev(v => ({ ...v, approved_name: e.target.value }))} placeholder="Approved" style={inSt} />
+        {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (doc_form_revisions เก็บชื่อ text — ไม่มีคอลัมน์ id) */}
+        <PersonSelect value={newRev.responsible} history={respHist} placeholder="Responsible" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
+          onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
+        <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
+          onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
         <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>+ เพิ่ม</button>
       </div>
     </div>
@@ -2286,6 +2288,7 @@ function DocumentControlPanel() {
 const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
 
 function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();
@@ -2320,9 +2323,7 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
         placeholder="ทุกไลน์" style={selSt} onChange={setFilterLine} />
       <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={selSt}>
         <option value="">ทุก Team</option>
-        <option value="A">Team A</option>
-        <option value="B">Team B</option>
-        <option value="C">Team C</option>
+        {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
       </select>
     </div>
   );
@@ -2342,9 +2343,12 @@ function SkillMatrixTab() {
   const [lines,          setLines]          = useState([]);
   const [selectedEmp,    setSelectedEmp]    = useState(null);
   const [subItemsByskill, setSubItemsByskill] = useState({});
+  /* กันคำตอบเก่าทับจอใหม่ (กฎเหล็กข้อ 4 ใน CLAUDE.md) — load() ยิงทุกครั้งที่เปลี่ยน filter
+     และมี await หลายจังหวะ (คนยืมตัวเพิ่มมาอีกจังหวะ) สลับ filter เร็วๆ คำตอบเก่ากลับมาทีหลังได้ */
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name').then(({ data }) => setLines(data || []));
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     supabase.from('skill_sub_items').select('skill_name, seq, label, wi_ref').order('seq')
       .then(({ data }) => {
         const map = {};
@@ -2364,6 +2368,7 @@ function SkillMatrixTab() {
   };
 
   const load = async () => {
+    const myReq = ++reqIdRef.current;
     setLoading(true);
     const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
@@ -2380,8 +2385,25 @@ function SkillMatrixTab() {
       supabase.from('skill_definitions').select('*').order('sort_order'),
       q,
     ]);
+    /* 🤝 ต่อท้ายด้วยคนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers · src/utils/lineHelpers.js)
+       ใบประเมินทักษะรายบุคคล F-PRS-P1-119 พิมพ์จากจอนี้ — หัวหน้าไลน์ปลายทางที่เห็นเขาทำงานจริง
+       ต้องประเมินเขาได้ ไม่งั้นคนยืมข้ามส่วนงานหายจากจอทั้งที่ยืนอยู่ในไลน์
+       scope ที่ใช้ = filter ที่เลือกอยู่ (ถ้ามี) ไม่ใช่ scope ดิบ — เลือกไลน์ตัวเอง = เห็นคนที่มาช่วยไลน์นั้น */
+    const effLineIds = filterLine ? lineFamilyIdsOf(filterLine)
+                     : (role === 'leader' && userLineId) ? lineFamilyIdsOf(userLineId) : null;
+    const effSecs    = filterSection ? [filterSection] : scopeSecs;
+    let list = await mergeBorrowedEmployees(emps || [], {
+      lines, lineIds: effLineIds, scopeSecs: effSecs,
+      columns: baseSelect,
+    });
+    // filter ทีม/แผนกถูกใส่ไว้ใน query (ฝั่ง server) — คนยืมมาทางอื่น ต้องกรองซ้ำฝั่ง client ให้ตรงกัน
+    if (filterTeam || filterDept) {
+      list = list.filter(e => !e._isHelper
+        || ((!filterTeam || e.team === filterTeam) && (!filterDept || e.department === filterDept)));
+    }
+    if (myReq !== reqIdRef.current) return;   // มีคำขอใหม่กว่าแล้ว — ทิ้งคำตอบนี้
     setSkillDefs(defs || []);
-    setEmployees(emps || []);
+    setEmployees(list);
     setLoading(false);
   };
 
@@ -2417,7 +2439,7 @@ function SkillMatrixTab() {
               const v = sm[s.name];
               return `<td style="border:1px solid #ccc;text-align:center;padding:2px">${v !== undefined && v > 0 ? v : '—'}</td>`;
             }).join('');
-            return `<tr><td style="border:1px solid #ccc;text-align:center;padding:2px">${i+1}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.employee_id_code || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.name || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.section || ''}</td><td style="border:1px solid #ccc;padding:2px 4px;text-align:center">${emp.team || ''}</td>${cells}<td style="border:1px solid #ccc;text-align:center;font-weight:700;padding:2px">${avg !== null ? avg : '—'}</td></tr>`;
+            return `<tr><td style="border:1px solid #ccc;text-align:center;padding:2px">${i+1}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.employee_id_code || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.name || ''}${emp._isHelper ? ' 🤝' : ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.section || ''}${emp._isHelper ? ` (ยืมมาช่วย ${emp._helperTo || ''})` : ''}</td><td style="border:1px solid #ccc;padding:2px 4px;text-align:center">${emp.team || ''}</td>${cells}<td style="border:1px solid #ccc;text-align:center;font-weight:700;padding:2px">${avg !== null ? avg : '—'}</td></tr>`;
           }).join('');
           const catHeaderCells = groups.map(g => `<th colspan="${g.skills.length}" style="border:1px solid #ccc;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:9px;font-weight:800;text-align:center">${g.icon} ${g.label}</th>`).join('');
           const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Skill Matrix</title>
@@ -2427,7 +2449,7 @@ table{border-collapse:collapse;width:100%}
 @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:8mm">
 <h2 style="margin:0 0 4px;font-size:14px">Skill Matrix</h2>
-<p style="color:#666;margin:0 0 8px;font-size:9px">พิมพ์วันที่: ${todayStr} · รวม ${employees.length} คน</p>
+<p style="color:#666;margin:0 0 8px;font-size:9px">พิมพ์วันที่: ${todayStr} · รวม ${employees.length} คน${employees.some(e => e._isHelper) ? ' · 🤝 = ยืมตัวมาช่วยกะนี้ (ต้นสังกัดอยู่ไลน์อื่น)' : ''}</p>
 <table><thead>
 <tr style="background:#f3f4f6">
 <th rowspan="2" style="border:1px solid #ccc;padding:3px">#</th>
@@ -2458,7 +2480,8 @@ ${catHeaderCells}
               const scores = ordered.map(s => (sm[s.name] !== undefined && sm[s.name] > 0) ? sm[s.name] : '');
               const defined = ordered.map(s => sm[s.name]).filter(v => v !== undefined && v > 0);
               const avg = defined.length ? Math.round(defined.reduce((a,b)=>a+b,0)/defined.length) : '';
-              return [emp.employee_id_code, emp.name, emp.section || '', emp.team || '', ...scores, avg];
+              // 🤝 กำกับคนยืมตัวใน export ด้วย — ไฟล์ที่ส่งต่อไม่มีบริบทบนจอ อ่านผิดว่าเป็นคนในไลน์ได้
+              return [emp.employee_id_code, emp.name + (emp._isHelper ? ' 🤝' : ''), emp.section || '', emp.team || '', ...scores, avg];
             })
           );
         }} />
@@ -2507,7 +2530,9 @@ ${catHeaderCells}
                       }
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}
+                          {emp._isHelper && <span style={{ marginLeft: 5, color: '#0ea5e9', fontWeight: 700 }}>🤝 ยืมจาก {emp._helperFrom}</span>}
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -2589,6 +2614,15 @@ ${catHeaderCells}
                       <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        {/* 🤝 ยืมมาช่วยกะนี้ — ต้นสังกัดยังเป็นไลน์เดิม (ห้ามอ่านว่าย้ายสังกัดแล้ว) */}
+                        {emp._isHelper && (
+                          <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้`}
+                            style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700,
+                              color: '#0ea5e9', background: '#0ea5e918', border: '1px solid #0ea5e944',
+                              borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>
+                            🤝 ยืมจาก {emp._helperFrom}
+                          </div>
+                        )}
                         {avg !== null && (
                           <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
                             avg {avg}
@@ -2815,6 +2849,11 @@ function MultiSkillFormTab() {
   const [filterDept,    setFilterDept]    = useState('');
 
   // Header info inputs
+  // 2026-09-07 ฝ่าย/ส่วน/แผนก เลือกจากผังองค์กร (org_divisions / org_nodes) แทนพิมพ์เอง — ส่วน/แผนก ยังถูก auto-fill จากไลน์ที่เลือกเหมือนเดิม
+  const orgSectionsMS = useOrgSections();
+  const deptsOfMS     = useOrgDepts();
+  const [divisions, setDivisions] = useState(divisionsSync());
+  useEffect(() => { let alive = true; loadDivisions().then(d => { if (alive) setDivisions(d || divisionsSync()); }); return () => { alive = false; }; }, []);
   const [dept,       setDept]       = useState('Production');
   const [section,    setSection]    = useState('');
   const [department, setDepartment] = useState('');
@@ -2844,7 +2883,7 @@ function MultiSkillFormTab() {
   }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3000,17 +3039,26 @@ function MultiSkillFormTab() {
           <div className="card">
             <div style={{ fontWeight: 700, marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>ข้อมูลหัวเอกสาร</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+              {/* 2026-09-07 ฝ่าย/ส่วน/แผนก = <select> จากผังองค์กร (ค่าที่ auto-fill จากไลน์แต่ไม่อยู่ในผัง ยังโชว์เป็นตัวเลือกไม่หายเงียบ) · หัวหน้าแผนก = <PersonSelect> */}
               {[
-                { label: 'ฝ่าย', val: dept,       set: setDept },
-                { label: 'ส่วน', val: section,    set: setSection },
-                { label: 'แผนก', val: department, set: setDepartment },
-                { label: 'หัวหน้าแผนก', val: headName, set: setHeadName },
-              ].map(({ label, val, set }) => (
+                { label: 'ฝ่าย', val: dept,       set: setDept,       opts: divisions.map(d => d.label), plain: true },
+                { label: 'ส่วน', val: section,    set: setSection,    opts: orgSectionsMS },
+                { label: 'แผนก', val: department, set: setDepartment, opts: deptsOfMS(section) },
+              ].map(({ label, val, set, opts, plain }) => (
                 <div key={label}>
                   <span style={lbSt}>{label}</span>
-                  <input value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }} />
+                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
+                    <option value="">—</option>
+                    {val && !opts.includes(val) && <option value={val}>{plain ? val : `${val} ⚠ ไม่มีในผัง`}</option>}
+                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
                 </div>
               ))}
+              <div>
+                <span style={lbSt}>หัวหน้าแผนก</span>
+                <PersonSelect value={headName} roles={['supervisor']} lineIds={filterLine ? [filterLine] : undefined} placeholder="ค้นชื่อหัวหน้าแผนก…"
+                  onChange={({ name }) => setHeadName(name)} inputStyle={{ padding: '6px 30px 6px 10px' }} />
+              </div>
             </div>
 
             {/* Signature slots */}
@@ -3025,9 +3073,10 @@ function MultiSkillFormTab() {
                     <span style={lbSt}>{label}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px' }}>{autoRole}</span>
                   </div>
-                  <input value={name} onChange={e => setName(e.target.value)}
-                    placeholder="ชื่อ-นามสกุล"
-                    style={{ width: '100%', padding: '5px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 6 }} />
+                  {/* 2026-09-07 เลือกจาก profiles (<PersonSelect>) — role ตามช่องขึ้นก่อน · เลือกแล้วลายเซ็นตามมาเอง (พิมพ์เองยังได้แต่ติดป้าย) */}
+                  <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder="ชื่อ-นามสกุล"
+                    style={{ marginBottom: 6 }} inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12 }}
+                    onChange={({ name: nm, signature_url }) => { setName(nm); if (signature_url) setSig(signature_url); }} />
                   {sig ? (
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
@@ -3283,6 +3332,7 @@ const SHIFT_DEFS = [
 ];
 
 function SkillAllowanceTab() {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = new Date();
@@ -3308,7 +3358,7 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, cost_center, head_name, parent_line_name').order('name')
+    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center, head_name`).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('category, allowance_type').eq('category', 'allowance_skill')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3636,18 +3686,15 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์ผลิต</div>
-          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกไลน์</option>
-            {(scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines).map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (scopedLineNames) เดิม */}
+          <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder="ทุกไลน์"
+            style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }} onChange={setLine} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
           <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุก Team</option>
-            <option value="A">Team A</option>
-            <option value="B">Team B</option>
-            <option value="C">Team C</option>
+            {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
           </select>
         </div>
         <button onClick={load} disabled={loading}
@@ -3694,8 +3741,10 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Cost Center</div>
-          <input value={costCenter} onChange={e => setCostCenter(e.target.value)} placeholder="เช่น 2140662201"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130 }} />
+          {/* 2026-09-08: <CostCenterSelect> จากทะเบียน cost_centers (Main) แทน input+datalist — ค่าพิมพ์หัวใบ ยัง override ได้
+              history = รหัสที่ตั้งไว้ในทะเบียนไลน์ (ยังไม่ลงทะเบียนก็เลือกได้ กลุ่ม 📜) · เติมอัตโนมัติจากไลน์ที่เลือกเหมือนเดิม */}
+          <CostCenterSelect value={costCenter} history={[...new Set(lines.map(l => l.cost_center).filter(Boolean))]}
+            onChange={r => setCostCenter(r.code)} style={{ width: 200 }} inputStyle={{ padding: '6px 10px', fontSize: 13 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
@@ -3709,23 +3758,23 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>
-          <input value={signerHead} onChange={e => setSignerHead(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+          {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
+          <PersonSelect value={signerHead} roles={['supervisor', 'leader']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHead(name)} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการต้นสังกัด)</div>
-          <input value={signerManager} onChange={e => setSignerManager(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+          {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
+          <PersonSelect value={signerManager} roles={['manager']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerManager(name)} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (เจ้าหน้าที่ TA)</div>
-          <input value={signerTA} onChange={e => setSignerTA(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+          {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
+          <PersonSelect value={signerTA} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerTA(name)} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการส่วน HRM)</div>
-          <input value={signerHRM} onChange={e => setSignerHRM(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 140 }} />
+          {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
+          <PersonSelect value={signerHRM} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHRM(name)} />
         </div>
       </div>
 
@@ -3811,6 +3860,7 @@ function SkillAllowanceTab() {
    📋 AttendanceFormTab — ใบบันทึกการมาทำงาน
    ══════════════════════════════════════════════════════════════ */
 function AttendanceFormTab() {
+  const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today   = new Date();
@@ -3830,7 +3880,7 @@ function AttendanceFormTab() {
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
@@ -4228,10 +4278,8 @@ function AttendanceFormTab() {
         {/* minWidth:0 — ไม่งั้น div นี้กว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
         <div style={{ minWidth: 0, flex: '1 1 150px' }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-          <select value={line} onChange={e => setLine(e.target.value)} style={{ width: '100%', minWidth: 0, padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกไลน์</option>
-            {attLinesInScope.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
-          </select>
+          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (attLinesInScope) เดิม */}
+          <LineSelect lines={attLinesInScope} value={line} placeholder="ทุกไลน์" style={{ width: '100%', minWidth: 0, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} onChange={setLine} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
@@ -4251,9 +4299,7 @@ function AttendanceFormTab() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
           <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
             <option value="">ทุก Team</option>
-            <option value="A">Team A</option>
-            <option value="B">Team B</option>
-            <option value="C">Team C</option>
+            {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
           </select>
         </div>
         <div>

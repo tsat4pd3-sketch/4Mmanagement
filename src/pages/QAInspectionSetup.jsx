@@ -21,7 +21,11 @@ import useIsMobile from '../utils/useIsMobile';
 import { QA_STAGES } from '../utils/qaStages';
 import CalloutPin from '../components/CalloutPin';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import InstrumentSelect from '../components/InstrumentSelect';
+import CustomerSelect from '../components/CustomerSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -130,6 +134,9 @@ export default function QAInspectionSetup() {
   const { fullName } = useContext(UserContext);
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
+  // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const methodHist = useColumnHistory(supabase, 'qa_check_items', 'method');
+  const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
 
   const [parts, setParts] = useState([]);
   const [lines, setLines] = useState([]);
@@ -180,7 +187,8 @@ export default function QAInspectionSetup() {
 
   useEffect(() => {
     // เก็บเป็น object (id/name/parent_line_name) — dropdown จัดชั้นตามผัง (§5.3 ข้อ 8)
-    supabase.from('production_lines').select('id, name, parent_line_name').order('name')
+    // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> กรองปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -942,15 +950,13 @@ export default function QAInspectionSetup() {
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
-            <Field label="ลูกค้า"><input style={inputSt} value={partModal.customer} onChange={e => setPartModal(f => ({ ...f, customer: e.target.value }))} /></Field>
+            {/* ลูกค้า — เลือกจากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
+            <Field label="ลูกค้า"><CustomerSelect value={partModal.customer || ''} history={custHist} onChange={({ customer }) => setPartModal(f => ({ ...f, customer }))} /></Field>
             <Field label="Model"><input style={inputSt} value={partModal.model} onChange={e => setPartModal(f => ({ ...f, model: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
-              <select style={inputSt} value={partModal.line_name} onChange={e => setPartModal(f => ({ ...f, line_name: e.target.value }))}>
-                <option value="">— ไม่ระบุ —</option>
-                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
-              </select>
+              {/* qa_parts.line_name ใช้ scope พาร์ทใน QaCheckSheet — ชื่อต้อง canonical → <LineSelect> (2026-09-07) */}
+              <LineSelect lines={lines} value={partModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+                onChange={v => setPartModal(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="Dwg. No."><input style={inputSt} placeholder="เช่น 97/3" value={partModal.dwg_no} onChange={e => setPartModal(f => ({ ...f, dwg_no: e.target.value }))} /></Field>
             <Field label="Revision"><input style={inputSt} placeholder="เช่น 01" value={partModal.drawing_rev} onChange={e => setPartModal(f => ({ ...f, drawing_rev: e.target.value }))} /></Field>
@@ -1024,7 +1030,9 @@ export default function QAInspectionSetup() {
               </>
             )}
             <Field label="วิธี / เครื่องมือตรวจ">
-              <input style={inputSt} placeholder="Vernier / CF / Visual" value={itemModal.method} onChange={e => setItemModal(f => ({ ...f, method: e.target.value }))} />
+              {/* ทะเบียนเครื่องมือวัด (Main qa_instruments) โหลด+cache ใน <InstrumentSelect> เอง (2026-09-07) */}
+              <InstrumentSelect value={itemModal.method} history={methodHist} onChange={v => setItemModal(f => ({ ...f, method: v }))}
+                placeholder="Vernier / CF / Visual — ค้นรหัส/ชื่อเครื่องมือ…" />
             </Field>
             <Field label="Stage การตรวจ">
               <select style={inputSt} value={itemModal.stage} onChange={e => setItemModal(f => ({ ...f, stage: e.target.value }))}>

@@ -28,6 +28,7 @@ import { buildVsmLive, LIVE_STATUS } from '../lib/vsmLive';
 import { printVsm } from '../lib/vsmPrint';
 import { printVsmA3 } from '../lib/vsmA3Print';
 import VsmCanvas, { VsmLegend, PALETTE_DARK, PALETTE_LIGHT } from '../components/VsmCanvas';
+import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { usePolling } from '../utils/usePolling';
@@ -587,9 +588,14 @@ export default function VSM() {
             {(a3.plan || []).map((r, i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 140px 120px 110px 32px', gap: 6, marginBottom: 5 }}>
                 {[['what', 'สิ่งที่ต้องทำ'], ['who', 'ผู้รับผิดชอบ'], ['when', 'กำหนดเสร็จ'], ['status', 'สถานะ']].map(([f, ph]) => (
-                  <input key={f} value={r[f] || ''} placeholder={ph}
-                    onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
-                    style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                  f === 'who'
+                    // ผู้รับผิดชอบเลือกจากทะเบียนคน — พิมพ์เองได้ (เจ้าของแผน A3 เป็นชื่อทีมได้) (2026-09-07)
+                    ? <PersonSelect key={f} value={r.who || ''} placeholder={ph} allowFree freeHint="ระบุเป็นชื่อทีมได้"
+                        onChange={({ name }) => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, who: name } : x) }))}
+                        inputStyle={{ fontSize: 12, padding: '5px 26px 5px 8px', borderRadius: 5, background: 'var(--bg2)' }} />
+                    : <input key={f} value={r[f] || ''} placeholder={ph}
+                        onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
+                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
                 ))}
                 <button onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>🗑</button>

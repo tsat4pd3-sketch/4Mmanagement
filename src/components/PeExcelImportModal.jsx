@@ -8,6 +8,7 @@ import { useState, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
+import CustomerSelect from './CustomerSelect';
 import {
   sheetToGrid, parseFmeaSheet, parseCpSheet, parseCoverSheet, parseFormHeader,
   normSheetKey, isDataSheet, buildImportPlan, planSummary,
@@ -281,7 +282,8 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
                 <label style={lbl}>Part No. *<input value={meta.part_no} onChange={(e) => setMeta({ ...meta, part_no: e.target.value })} placeholder="MB3B-16E062-CH" style={inp} /></label>
                 <label style={lbl}>ชื่อพาร์ท<input value={meta.part_name} onChange={(e) => setMeta({ ...meta, part_name: e.target.value })} style={inp} /></label>
                 <label style={lbl}>Model<input value={meta.model} onChange={(e) => setMeta({ ...meta, model: e.target.value })} placeholder="P703" style={inp} /></label>
-                <label style={lbl}>ลูกค้า<input value={meta.customer} onChange={(e) => setMeta({ ...meta, customer: e.target.value })} placeholder="FORD" style={inp} /></label>
+                {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) ให้ชุดใหม่สะกดตรงชุดอื่น (2026-09-07) */}
+                <div style={lbl}>ลูกค้า<CustomerSelect value={meta.customer || ''} placeholder="FORD" style={{ marginTop: 4 }} inputStyle={{ fontSize: 12, padding: '7px 30px 7px 9px' }} onChange={({ customer }) => setMeta({ ...meta, customer })} /></div>
                 <label style={lbl}>เลขเอกสาร PFC<input value={meta.doc_no_pfc} onChange={(e) => setMeta({ ...meta, doc_no_pfc: e.target.value })} style={inp} /></label>
                 <label style={lbl}>เลขเอกสาร FMEA<input value={meta.doc_no_fmea} onChange={(e) => setMeta({ ...meta, doc_no_fmea: e.target.value })} style={inp} /></label>
                 <label style={lbl}>เลขเอกสาร CP<input value={meta.doc_no_cp} onChange={(e) => setMeta({ ...meta, doc_no_cp: e.target.value })} style={inp} /></label>

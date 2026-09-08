@@ -27,7 +27,9 @@ export const normSearch = (s) => String(s ?? '').toLowerCase().replace(/[\s\-_./
 
 export default function SearchSelect({
   value = '',            // id ที่เลือกอยู่ ('' = ยังไม่ได้เลือกจากลิสต์)
-  text = '',             // ข้อความในช่อง (เมื่อยังไม่ได้เลือก = คำค้น/ชื่อที่พิมพ์เอง)
+  text: textProp,        // ข้อความในช่อง (เมื่อยังไม่ได้เลือก = คำค้น/ชื่อที่พิมพ์เอง)
+                         //   ⚠️ ไม่ส่ง = component ถือคำค้นเอง (uncontrolled · 2026-09-08) — ใช้ได้ทั้งใน render
+                         //   block/IIFE ที่ใส่ hook ไม่ได้ · ส่งเมื่อต้องการ allowFree แล้วเก็บชื่อที่พิมพ์เองเท่านั้น
   options = [],          // [{ id, label, sub, badge, badgeColor, group, keywords }]
   onChange,              // ({ id, text, opt }) => void
   allowFree = false,     // พิมพ์ชื่อที่ไม่มีในลิสต์ได้ไหม
@@ -41,13 +43,32 @@ export default function SearchSelect({
   disabled = false,
   inputStyle,
   style,
+  inputId,               // id ของ <input> — ให้โค้ดเดิมที่ document.getElementById(...).focus() ยังใช้ได้
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [innerText, setInnerText] = useState('');
+  const controlled = textProp !== undefined;
+  const text = controlled ? textProp : innerText;
+  // uncontrolled: เลือกแล้วล้างคำค้นทิ้ง (ช่องโชว์ label ของค่าที่เลือกอยู่แล้ว) · พิมพ์ = เก็บคำค้น
+  const emit = (v) => { if (!controlled) setInnerText(v.id ? '' : v.text); onChange?.(v); };
   const boxRef = useRef(null);
   const listRef = useRef(null);
+  // ค่าล่าสุดสำหรับ handler ที่ผูกไว้ใน effect (away-click) — กัน closure ค้างค่าเก่า
+  const latest = useRef({});
 
   const sel = useMemo(() => options.find(o => o.id === value) || null, [options, value]);
+  latest.current = { sel, text, allowFree, onChange };
+
+  /* ⚠️ allowFree=false = "ต้องเลือกจากทะเบียนเท่านั้น" (2026-09-07 · single-source audit)
+     เดิมข้อความที่พิมพ์ค้างไว้ยังไหลผ่าน onChange ไปถึง state ของฟอร์ม → ทุกจุดต้องเขียน guard เอง
+     ตอนนี้: ปิดลิสต์ (คลิกนอกกรอบ / Esc) โดยไม่ได้เลือก = ล้างข้อความออกทันที ค่าที่ไม่อยู่ในทะเบียน
+     จึงไม่มีทางค้างอยู่ในฟอร์มได้ (พิมพ์ค้นแล้วไม่เจอ = ช่องกลับเป็นว่าง ไม่ใช่เก็บคำค้นเป็นค่า) */
+  const closeList = () => {
+    const { sel: s, text: t, allowFree: free, onChange: cb } = latest.current;
+    setOpen(false);
+    if (!free && !s && String(t || '').trim() !== '') cb?.({ id: '', text: '', opt: null });
+  };
   // เลือกแล้ว = ไม่ถือว่ากำลังค้น (ไม่งั้นเปิดลิสต์อีกทีจะเหลือแถวเดียวคือตัวที่เลือก)
   const q = sel ? '' : text;
   const shown = sel ? sel.label : text;
@@ -66,17 +87,17 @@ export default function SearchSelect({
   // ปิดเมื่อคลิกนอกกรอบ (picker — ไม่ใช่ฟอร์ม จึงปิดจากคลิกนอกได้)
   useEffect(() => {
     if (!open) return;
-    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    const away = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) closeList(); };
     document.addEventListener('mousedown', away);
     document.addEventListener('touchstart', away);
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('touchstart', away); };
   }, [open]);
 
-  const pick = (o) => { onChange?.({ id: o.id, text: o.label, opt: o }); setOpen(false); };
-  const clear = () => { onChange?.({ id: '', text: '', opt: null }); setOpen(true); };
+  const pick = (o) => { emit({ id: o.id, text: o.label, opt: o }); setOpen(false); };
+  const clear = () => { emit({ id: '', text: '', opt: null }); setOpen(true); };
 
   const onKey = (e) => {
-    if (e.key === 'Escape') { setOpen(false); return; }
+    if (e.key === 'Escape') { closeList(); return; }
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
     if (!open) return;
     if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, rows.length - 1)); }
@@ -104,10 +125,11 @@ export default function SearchSelect({
     <div ref={boxRef} style={{ position: 'relative', ...style }}>
       <div style={{ position: 'relative' }}>
         <input
+          id={inputId}
           value={shown}
           disabled={disabled}
           placeholder={placeholder}
-          onChange={e => { onChange?.({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
+          onChange={e => { emit({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKey}
           style={inp}

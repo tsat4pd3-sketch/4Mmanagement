@@ -9,6 +9,10 @@ import { toast } from '../components/Toast'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
 import { inspMeta } from '../utils/inspectionStatus'
 import { checkWrite } from '../utils/dbWrite';
+import PersonSelect from '../components/PersonSelect' // ชื่อคน = picker กลาง (single-source audit 2026-09-07)
+import useColumnHistory from '../utils/useColumnHistory'
+// role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
+const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -345,6 +349,8 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
   const [reason, setReason] = useState('')
   const [agreed, setAgreed] = useState('')
   const [saving, setSaving] = useState(false)
+  // 📜 ชื่อที่เคยตกลงเลื่อนด้วย (DR pm_plans.defer_agreed_with) — คนที่ไม่มีบัญชีระบบ (ตกลงทางโทรศัพท์) ยังเลือกซ้ำได้ (2026-09-07)
+  const agreedHist = useColumnHistory(supabaseDR, 'pm_plans', 'defer_agreed_with')
 
   const save = async () => {
     if (!toDue) return toast.error('เลือกวันที่เลื่อนไป')
@@ -390,9 +396,11 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>เหตุผลการเลื่อน *
             <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="เช่น คิวผลิตแน่น ผลิตไม่หยุด / ตัดไฟไม่ได้ช่วงนี้" style={{ ...inp, marginTop: 4, minHeight: 54 }} />
           </label>
-          <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ตกลงร่วมกับ (planner / production)
-            <input value={agreed} onChange={e => setAgreed(e.target.value)} placeholder="ชื่อผู้ที่ตกลงเลื่อนด้วย" style={{ ...inp, marginTop: 4 }} />
-          </label>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ตกลงร่วมกับ (planner / production)
+            {/* <PersonSelect> profiles — planner/หัวหน้าขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (ตกลงทางโทรศัพท์) · เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
+            <PersonSelect value={agreed} source="profiles" roles={AGREE_ROLES} history={agreedHist} onChange={res => setAgreed(res.name)}
+              placeholder="ชื่อผู้ที่ตกลงเลื่อนด้วย" style={{ marginTop: 4 }} inputStyle={{ background: 'var(--bg)', fontWeight: 400 }} />
+          </div>
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>* บันทึกประวัติการเลื่อนไว้ · รอบ PM ถัดไปยังนับจากวันที่ทำจริง</div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>

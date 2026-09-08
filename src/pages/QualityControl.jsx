@@ -23,8 +23,18 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { isTrialDefect, defectQty } from '../utils/oee';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import PartSelect from '../components/PartSelect';
+import InstrumentSelect from '../components/InstrumentSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import SelectOrFree from '../components/SelectOrFree';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import usePartOptions from '../utils/usePartOptions';
+import { invalidateInstruments } from '../utils/useInstruments';
+import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import MaterialRequests from '../components/MaterialRequests';
@@ -36,6 +46,7 @@ import QualityBins from '../components/QualityBins';
 import CapaEffectiveness from '../components/CapaEffectiveness';
 import { VERDICTS as EFF_V } from '../utils/capaEffect';
 import { notifyEvent } from '../utils/notifyEvent';
+import SearchSelect from '../components/SearchSelect';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -447,10 +458,10 @@ function QualityDashboard() {
           {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ชิ้นงาน:</span>
-        <select value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 180, maxWidth: 280 }}>
-          <option value="">ทุกชิ้นงาน ({productOptions.length})</option>
-          {productOptions.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
+        <SearchSelect value={productFilter || ''} placeholder={`ทุกชิ้นงาน (${productOptions.length}) — พิมพ์ค้นหา`} style={{ minWidth: 200, maxWidth: 320 }}
+          inputStyle={inputSt}
+          options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
+          onChange={({ id }) => setProductFilter(id)} />
         {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
         {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
       </div>
@@ -533,8 +544,11 @@ function QualityDashboard() {
    ════════════════════════════════════════════════════════════════════════ */
 const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: '', unit: 'mm', nominal: '', usl: '', lsl: '', subgroup_size: 5, gauge: '', control_method: '' };
 
-function SPCTab({ lineObjs, canRecord, canManage }) {
+function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [] }) {
   const { fullName } = useContext(UserContext);
+  // 📜 ค่าที่เคยบันทึกใน qa_characteristics (Main) — พาร์ท/เกจที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_characteristics', 'part_no', { upper: true });
+  const gaugeHist = useColumnHistory(supabase, 'qa_characteristics', 'gauge');
   const [chars, setChars] = useState([]);
   const [selId, setSelId] = useState(null);
   const [rows, setRows] = useState([]);          // measurements ของ characteristic ที่เลือก
@@ -825,16 +839,17 @@ function SPCTab({ lineObjs, canRecord, canManage }) {
       {charModal && (
         <Modal title={charModal.id ? '✏️ แก้ไขจุดควบคุม' : '➕ เพิ่มจุดควบคุม SPC'} onClose={() => setCharModal(null)}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Part No. *"><input style={inputSt} value={charModal.part_no} onChange={e => setCharModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
+            {/* part_no = คีย์จัดกลุ่มลิสต์ SPC — อ่านจากทะเบียนพาร์ท (<PartSelect>) แทนพิมพ์เอง (2026-09-07) */}
+            <Field label="Part No. *">
+              <PartSelect value={charModal.part_no} options={partOpts} history={partHist}
+                onChange={({ part_no, part_name }) => setCharModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
+            </Field>
             <Field label="Part Name"><input style={inputSt} value={charModal.part_name} onChange={e => setCharModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             <Field label="จุดควบคุม / Characteristic *" span><input style={inputSt} placeholder="เช่น ความกว้างร่อง A หลังตัด" value={charModal.characteristic} onChange={e => setCharModal(f => ({ ...f, characteristic: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
-              <select style={inputSt} value={charModal.line_name} onChange={e => setCharModal(f => ({ ...f, line_name: e.target.value }))}>
-                <option value="">— ไม่ระบุ —</option>
-                {toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
-              </select>
+              {/* dropdown ไลน์ = <LineSelect> เท่านั้น (ปลดระวาง/scope/ลำดับชั้นเหมือนทุกหน้า · 2026-09-07) */}
+              <LineSelect lines={lineObjs} value={charModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+                onChange={v => setCharModal(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="หน่วย"><input style={inputSt} value={charModal.unit} onChange={e => setCharModal(f => ({ ...f, unit: e.target.value }))} /></Field>
             <Field label="LSL"><input style={inputSt} type="number" step="any" value={charModal.lsl} onChange={e => setCharModal(f => ({ ...f, lsl: e.target.value }))} /></Field>
@@ -845,7 +860,10 @@ function SPCTab({ lineObjs, canRecord, canManage }) {
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}{n === 1 ? ' (I-MR)' : ''}</option>)}
               </select>
             </Field>
-            <Field label="เครื่องมือวัด"><input style={inputSt} placeholder="เช่น Vernier VC-001" value={charModal.gauge} onChange={e => setCharModal(f => ({ ...f, gauge: e.target.value }))} /></Field>
+            {/* gauge เก็บรหัสจากทะเบียน qa_instruments (แท็บ 📏) — โยงจุดควบคุมกับสถานะสอบเทียบ (2026-09-07) */}
+            <Field label="เครื่องมือวัด">
+              <InstrumentSelect value={charModal.gauge} instruments={instruments} history={gaugeHist} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
+            </Field>
             <Field label="อ้างอิง Control Plan" span><input style={inputSt} placeholder="เช่น CP-HDF-001 ข้อ 12" value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
             {charModal.id && (
               <Field label="สถานะ">
@@ -879,8 +897,10 @@ const NCR_SEV = { minor: { label: 'Minor', color: '#4d9fff' }, major: { label: '
 const DISPO = { use_as_is: 'ใช้ตามสภาพ (Use as-is)', rework: 'ซ่อมแก้ (Rework)', sort: 'คัดแยก (Sort)', scrap: 'ทำลาย (Scrap)', return_supplier: 'คืน Supplier' };
 const EMPTY_NCR = { report_date: '', line_name: '', part_no: '', part_name: '', source: 'inprocess', severity: 'minor', defect_desc: '', qty_found: '', qty_ng: '' };
 
-function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa }) {
+function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
   const { fullName, role, lineId, sections } = useContext(UserContext);
+  // 📜 part_no ที่เคยบันทึกใน qa_ncr (Main) — พาร์ทที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_ncr', 'part_no', { upper: true });
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active'); // active | all | closed
   const [createModal, setCreateModal] = useState(null);
@@ -995,14 +1015,16 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa }) {
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
-              <select style={inputSt} value={createModal.line_name} onChange={e => setCreateModal(f => ({ ...f, line_name: e.target.value }))}>
-                <option value="">— ไม่ระบุ —</option>
-                {toHierarchicalOptions(scopedLineNames ? lineObjs.filter(l => scopedLineNames.includes(l.name)) : lineObjs).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
-              </select>
+              {/* <LineSelect> กรอง scope (leader = ครอบครัวไลน์ · sections) ให้เอง — ถอด filter ที่เขียนเองออก (2026-09-07) */}
+              <LineSelect lines={lineObjs} value={createModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+                role={role} lineId={lineId} sections={sections}
+                onChange={v => setCreateModal(f => ({ ...f, line_name: v }))} />
             </Field>
-            <Field label="Part No."><input style={inputSt} value={createModal.part_no} onChange={e => setCreateModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
+            {/* part_no ของ NCR ถูกก๊อปเข้า CAPA (กุญแจหาเอกสาร PE) → ต้องมาจากทะเบียนพาร์ท (2026-09-07) */}
+            <Field label="Part No.">
+              <PartSelect value={createModal.part_no} options={partOpts} history={partHist}
+                onChange={({ part_no, part_name }) => setCreateModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
+            </Field>
             <Field label="Part Name"><input style={inputSt} value={createModal.part_name} onChange={e => setCreateModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             <Field label="ที่มา">
               <select style={inputSt} value={createModal.source} onChange={e => setCreateModal(f => ({ ...f, source: e.target.value }))}>
@@ -1128,8 +1150,11 @@ const D_FIELDS = [
   ['d8_closure',     'D8 — สรุปปิดและขอบคุณทีม (Closure)'],
 ];
 
-function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
+function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], partOpts = [] }) {
   const { fullName } = useContext(UserContext);
+  // 📜 ค่าที่เคยบันทึกใน qa_capa (Main) — พาร์ท/ชื่อผู้รับผิดชอบที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
+  const partHist = useColumnHistory(supabase, 'qa_capa', 'part_no', { upper: true });
+  const ownerHist = useColumnHistory(supabase, 'qa_capa', 'owner_name');
   const [list, setList] = useState([]);
   const [filter, setFilter] = useState('active');
   const [detail, setDetail] = useState(null); // { ...capa } (id=null = สร้างใหม่)
@@ -1293,16 +1318,22 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone }) {
         <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={1400}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <Field label="หัวข้อ *"><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
-            <Field label="ผู้รับผิดชอบ"><input style={inputSt} value={detail.owner_name || ''} onChange={e => setDetail(f => ({ ...f, owner_name: e.target.value }))} disabled={!canRecord} /></Field>
+            {/* ผู้รับผิดชอบ = user ระบบ (profiles) — เลือกจากทะเบียนคน เผื่อแจ้งเตือนรายคนภายหลัง (2026-09-07) */}
+            <Field label="ผู้รับผิดชอบ">
+              <PersonSelect value={detail.owner_name || ''} history={ownerHist} onChange={r => setDetail(f => ({ ...f, owner_name: r.name }))} disabled={!canRecord} />
+            </Field>
             <Field label="กำหนดปิด (due date)"><input type="date" style={inputSt} value={detail.due_date || ''} onChange={e => setDetail(f => ({ ...f, due_date: e.target.value }))} disabled={!canRecord} /></Field>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            {/* 🔴 part_no + line_name คือ join key ของลูปปิด 8D (matchDocSet · CapaEffectiveness .eq('line_name'))
+                — อ่านจากทะเบียนแทนพิมพ์เอง (2026-09-07) */}
             <Field label="เลขพาร์ท (ใช้หาเอกสาร PFMEA/Control Plan)">
-              <input style={inputSt} value={detail.part_no || ''} placeholder="เช่น MB3B-8C306-BE"
-                onChange={e => setDetail(f => ({ ...f, part_no: e.target.value }))} disabled={!canRecord} />
+              <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={!canRecord}
+                onChange={({ part_no }) => setDetail(f => ({ ...f, part_no }))} />
             </Field>
             <Field label="ไลน์ผลิต">
-              <input style={inputSt} value={detail.line_name || ''} onChange={e => setDetail(f => ({ ...f, line_name: e.target.value }))} disabled={!canRecord} />
+              <LineSelect lines={lineObjs} value={detail.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+                disabled={!canRecord} onChange={v => setDetail(f => ({ ...f, line_name: v }))} />
             </Field>
           </div>
           {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>อ้างอิง NCR: <b>{detail.ncr_no}</b></div>}
@@ -1452,6 +1483,10 @@ function calState(inst) {
 }
 
 function InstrumentTab({ lineObjs, canManage }) {
+  // ตำแหน่ง/แผนกของเครื่องมือ = หน่วยงานในผังองค์กร (org_nodes) — เดิมพิมพ์เอง (2026-09-07)
+  const orgSections = useOrgSections();
+  const deptsOf = useOrgDepts();
+  const orgUnits = useMemo(() => [...new Set([...orgSections, ...deptsOf('')])], [orgSections, deptsOf]);
   const [list, setList] = useState([]);
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState('');
@@ -1478,6 +1513,7 @@ function InstrumentTab({ lineObjs, canManage }) {
       ? await supabase.from('qa_instruments').update(payload).eq('id', f.id)
       : await supabase.from('qa_instruments').insert(payload);
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+    invalidateInstruments(); // cache ทะเบียนเครื่องมือกลาง (useInstruments) — ให้ <InstrumentSelect> หน้าอื่นเห็นของใหม่
     toast.success('บันทึกแล้ว ✓');
     setModal(null);
     load();
@@ -1559,14 +1595,13 @@ function InstrumentTab({ lineObjs, canManage }) {
             <Field label="Serial No."><input style={inputSt} value={modal.serial_no} onChange={e => setModal(f => ({ ...f, serial_no: e.target.value }))} /></Field>
             <Field label="Range"><input style={inputSt} placeholder="0-150 mm" value={modal.range_spec} onChange={e => setModal(f => ({ ...f, range_spec: e.target.value }))} /></Field>
             <Field label="Resolution"><input style={inputSt} placeholder="0.01 mm" value={modal.resolution} onChange={e => setModal(f => ({ ...f, resolution: e.target.value }))} /></Field>
-            <Field label="ตำแหน่ง/แผนก"><input style={inputSt} value={modal.location} onChange={e => setModal(f => ({ ...f, location: e.target.value }))} /></Field>
+            <Field label="ตำแหน่ง/แผนก">
+              <SelectOrFree value={modal.location} options={orgUnits} placeholder="— เลือกจากผังองค์กร —" freePlaceholder="ระบุเอง เช่น ห้อง CMM" style={inputSt}
+                onChange={v => setModal(f => ({ ...f, location: v }))} />
+            </Field>
             <Field label="ไลน์">
-              <select style={inputSt} value={modal.line_name} onChange={e => setModal(f => ({ ...f, line_name: e.target.value }))}>
-                <option value="">— ไม่ระบุ —</option>
-                {toHierarchicalOptions(lineObjs).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
-              </select>
+              <LineSelect lines={lineObjs} value={modal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+                onChange={v => setModal(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รอบสอบเทียบ (เดือน)"><input type="number" min="1" style={inputSt} value={modal.cal_freq_months} onChange={e => setModal(f => ({ ...f, cal_freq_months: e.target.value }))} /></Field>
             <Field label="สอบเทียบล่าสุด"><input type="date" style={inputSt} value={modal.last_calibrated} onChange={e => setModal(f => ({ ...f, last_calibrated: e.target.value }))} /></Field>
@@ -1618,14 +1653,24 @@ export default function QualityControl() {
   const [allLines, setAllLines] = useState([]);
   const [capaPrefill, setCapaPrefill] = useState(null); // NCR → เปิด 8D
 
+  // LINE_COLUMNS ครบ (is_active) ให้ <LineSelect> ตัดไลน์ปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
       .then(({ data }) => setAllLines(data || []));
+  }, []);
+  // ทะเบียนพาร์ท (pe_doc_sets ∪ qa_parts ∪ dr_products) + เครื่องมือวัด — โหลดครั้งเดียวส่งลงทุกแท็บ (2026-09-07)
+  const partOpts = usePartOptions();
+  const [instruments, setInstruments] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('qa_instruments').select('id, code, name, inst_type, brand, line_name, status').order('code')
+      .then(({ data }) => { if (alive) setInstruments(data || []); });
+    return () => { alive = false; };
   }, []);
   // ลิสต์ไลน์ที่ส่งให้ทุกแท็บ (SPC/NCR/Instrument) ต้อง scope ด้วย — ไม่งั้น leader/supervisor
   // เลือกไลน์นอกส่วนงานแล้วสร้าง NCR/characteristic ข้ามส่วนงานได้ (กฎ dropdown-scope · QC audit 2026-08-03)
   // lineObjs = object array (id/name/parent_line_name) สำหรับ render dropdown แบบจัดชั้น (§5.3 ข้อ 8)
-  // ส่วน `lines` (ชื่อ string) คงไว้ให้ QaClaims + logic กรองเดิม — ค่า save/filter ไม่เปลี่ยน
+  // (QaClaims รับ lineObjs เต็มแถวแล้ว — 2026-09-07 — ให้ <LineSelect> จัดลำดับชั้น/ปลดระวางเหมือนแท็บอื่น)
   const lineObjs = useMemo(() => {
     if (role === 'leader' && lineId) {
       const myLine = allLines.find(l => String(l.id) === String(lineId));
@@ -1635,7 +1680,6 @@ export default function QualityControl() {
     if (sections?.length) return allLines.filter(l => inSectionScope(sections, l.section));
     return allLines;
   }, [allLines, role, lineId, sections]);
-  const lines = useMemo(() => lineObjs.map(l => l.name), [lineObjs]);
 
   const openCapaFromNcr = useCallback((ncr) => {
     setCapaPrefill(ncr);
@@ -1652,12 +1696,12 @@ export default function QualityControl() {
 
       {tab === 'dashboard' && <QualityDashboard />}
       {tab === 'sheet' && <QaCheckSheet canRecord={canRecord} />}
-      {tab === 'spc' && <SPCTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} />}
-      {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
-      {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} />}
+      {tab === 'spc' && <SPCTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} partOpts={partOpts} instruments={instruments} />}
+      {tab === 'ncr' && <NCRTab lineObjs={lineObjs} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} partOpts={partOpts} />}
+      {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} lineObjs={lineObjs} partOpts={partOpts} />}
       {tab === 'bins' && <QualityBins />}
       {tab === 'matreq' && <MaterialRequests />}
-      {tab === 'claims' && <QaClaims lines={lines} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
+      {tab === 'claims' && <QaClaims lines={lineObjs} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
     </div>
   );

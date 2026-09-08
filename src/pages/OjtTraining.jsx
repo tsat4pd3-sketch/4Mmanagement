@@ -5,10 +5,15 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
+import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
+import { fmtDate, todayLocal } from '../utils/dateFormat';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { notifyEvent } from '../utils/notifyEvent';
+import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import SelectOrFree from '../components/SelectOrFree';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -88,6 +93,9 @@ export default function OjtTraining() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const canRecord = can('ojt', 'record', role);
   const canDelete = can('ojt', 'delete', role);
+  // 📜 ชื่อผู้สอน/ผู้ประเมินที่เคยบันทึกไว้ (Main ojt_*) — วิทยากรภายนอกที่ไม่มีใน profiles/employees ยังเลือกซ้ำได้ (2026-09-07)
+  const trainerHist = useColumnHistory(supabase, 'ojt_trainings', 'trainer_name');
+  const evalHist = useColumnHistory(supabase, 'ojt_training_attendees', 'evaluator_name');
 
   const [trainings, setTrainings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +105,7 @@ export default function OjtTraining() {
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes, setOrgDeptNodes] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [divisions, setDivisions] = useState([]);  // org_divisions (ฝ่าย) — ตัวเลือกช่อง "ฝ่าย" (2026-09-07)
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
@@ -114,13 +123,16 @@ export default function OjtTraining() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: tr }, { data: ln }, { data: org }, { data: profs }] = await Promise.all([
+    const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
+      // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)
+      supabase.from('org_divisions').select('code, label, is_active').order('sort_order'),
     ]);
     setLines(ln || []);
+    setDivisions((divs || []).filter(d => d.is_active !== false).map(d => d.label).filter(Boolean));
     // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)
     setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name));
     setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
@@ -131,47 +143,56 @@ export default function OjtTraining() {
   };
   useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
 
+  const EMP_PICK_COLS = 'id, name, employee_id_code, section, line_id, team';
+
+  // ไลน์ใน scope ของผู้ใช้ (leader = ทั้งครอบครัวไลน์) — ใช้ทั้งกรอง employees และหาคนยืมตัว
+  const scopeLineIds = useMemo(() => {
+    if (role !== 'leader' || !userLineId) return null;
+    const fam = getLineFamilyIds(lines, Number(userLineId) || userLineId);
+    return fam.size ? [...fam] : [Number(userLineId) || userLineId];
+  }, [lines, role, userLineId]);
+
   // พนักงานสำหรับ picker — scope: leader = ครอบครัวไลน์ตัวเอง · role อื่นตาม sections
-  // + 🤝 คนที่ถูกยืมตัวมาไลน์ใน scope "กะนี้" (line_helpers) — หัวหน้าที่ยืมคนข้ามส่วนงานต้อง OJT ให้เขาได้
-  //   (feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ เพราะ picker กรองตาม section/ไลน์สังกัดเดิม)
   useEffect(() => {
     if (!lines.length && role === 'leader') return;
     let alive = true;
     (async () => {
-      let q = supabase.from('employees').select('id, name, employee_id_code, section, line_id, team').eq('is_active', true).order('employee_id_code');
-      const famIds = (role === 'leader' && userLineId) ? getLineFamilyIds(lines, Number(userLineId) || userLineId) : null;
-      if (famIds) {
-        const fam = [...famIds];
-        q = q.in('line_id', fam.length ? fam : [userLineId]);
-      } else if (scopeSecs.length) {
-        q = q.in('section', scopeSecs);
-      }
+      let q = supabase.from('employees').select(EMP_PICK_COLS).eq('is_active', true).order('employee_id_code');
+      if (scopeLineIds)          q = q.in('line_id', scopeLineIds);
+      else if (scopeSecs.length) q = q.in('section', scopeSecs);
       const { data } = await q;
-      let list = data || [];
-
-      // ยืมตัวกะนี้ — work date ไทยตัด 08:00 + กะ 08:00–20:00 = day (กฎเดียวกับ Checkin.getShiftInfo)
-      const now = new Date();
-      const wd = new Date(now); if (now.getHours() < 8) wd.setDate(wd.getDate() - 1);
-      const workDate = `${wd.getFullYear()}-${String(wd.getMonth() + 1).padStart(2, '0')}-${String(wd.getDate()).padStart(2, '0')}`;
-      const shift = (now.getHours() >= 8 && now.getHours() < 20) ? 'day' : 'night';
-      const { data: helpers } = await supabase.from('line_helpers').select('employee_id, to_line_id')
-        .eq('work_date', workDate).eq('shift', shift);   // ตารางยังไม่มี = error เงียบ → ไม่มีคนยืม (best-effort)
-      const lineById = Object.fromEntries(lines.map(l => [l.id, l]));
-      const inScope = (toLineId) => famIds
-        ? (famIds.size ? famIds.has(toLineId) : toLineId === Number(userLineId))
-        : (!scopeSecs.length || inSectionScope(scopeSecs, lineById[toLineId]?.section));
-      const have = new Set(list.map(e => e.id));
-      const borrowed = (helpers || []).filter(h => inScope(h.to_line_id) && !have.has(h.employee_id));
-      if (borrowed.length) {
-        const { data: extra } = await supabase.from('employees').select('id, name, employee_id_code, section, line_id, team')
-          .in('id', borrowed.map(h => h.employee_id)).eq('is_active', true);
-        const toLineOf = Object.fromEntries(borrowed.map(h => [h.employee_id, h.to_line_id]));
-        (extra || []).forEach(e => list.push({ ...e, _helperFrom: lineById[e.line_id]?.name || e.section || 'ไลน์อื่น', _helperTo: lineById[toLineOf[e.id]]?.name || '' }));
-      }
-      if (alive) setEmployees(list);
+      if (alive) setEmployees(data || []);
     })();
     return () => { alive = false; };
-  }, [lines, role, userLineId, scopeSecs]);
+  }, [lines, role, userLineId, scopeSecs, scopeLineIds]);
+
+  /* 🤝 คนที่ถูก "ยืมตัว" มาไลน์ใน scope **ของวันที่ในใบอบรม** (ไม่ใช่ของวันนี้)
+     feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ (picker กรองตามสังกัดเดิม)
+     รอบแรกแก้ให้เฉพาะ "กะปัจจุบัน" ⇒ ใบที่บันทึกย้อนหลัง (พรุ่งนี้มากรอกของเมื่อวาน — เป็นเรื่องปกติ
+     ของงานเอกสาร) ยังเลือกคนยืมไม่ได้อยู่ดี · ตอนนี้อิง `train_date` ของใบ และ **เอาทั้ง 2 กะ**
+     ของวันนั้น เพราะใบ OJT ไม่มีช่อง "กะ" — เดากะผิดแล้วตัดคนทิ้ง แย่กว่าโชว์เกินแล้วให้คนเลือกเอง
+     โหลดตอนเปิดใบเท่านั้น (ไม่ใช่ตอนโหลดหน้า) — deps เป็น "วันที่" ไม่ใช่ object `editing`
+     ไม่งั้นพิมพ์ทีละตัวอักษรในฟอร์มจะยิงคิวรีใหม่ทุกครั้ง */
+  const [attendeePool, setAttendeePool] = useState([]);
+  const editDate = editing?.train_date || null;
+  useEffect(() => {
+    if (!editDate) { setAttendeePool(employees); return; }
+    let alive = true;
+    (async () => {
+      const opt = { lines, lineIds: scopeLineIds, scopeSecs, columns: EMP_PICK_COLS };
+      let list = await mergeBorrowedEmployees(employees, { ...opt, workDate: editDate });
+      /* กะดึกก่อน 08:00: ใบที่ลงวันที่ "วันนี้" ตามปฏิทิน แต่การยืมของกะที่กำลังทำงานอยู่ถูกบันทึกไว้
+         ใต้ work_date = เมื่อวาน (กฎตัด 08:00) → ต้องมองวันงานปัจจุบันด้วย ไม่งั้นหัวหน้ากะดึก
+         เปิดใบตอนตี 2 แล้วหาคนที่ยืมมาช่วยอยู่ตรงหน้าไม่เจอ · เรียกซ้ำได้ ฟังก์ชันตัดคนซ้ำให้เอง */
+      const todayCal = todayLocal();
+      const wd = currentWorkShift().workDate;
+      if (editDate === todayCal && wd !== editDate) {
+        list = await mergeBorrowedEmployees(list, { ...opt, workDate: wd });
+      }
+      if (alive) setAttendeePool(list);
+    })();
+    return () => { alive = false; };
+  }, [editDate, employees, lines, scopeLineIds, scopeSecs]);
 
   // mandatory scope ก่อนแสดงรายการ (แบบเดียวกับหน้าอื่น) — leader/scoped เห็นเฉพาะ section ตัวเอง
   const visibleTrainings = useMemo(() => trainings.filter(t => {
@@ -494,8 +515,8 @@ table{border-collapse:collapse}
   const searchResults = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
     if (!q) return [];
-    return employees.filter(e => (e.name || '').toLowerCase().includes(q) || (e.employee_id_code || '').toLowerCase().includes(q)).slice(0, 8);
-  }, [empSearch, employees]);
+    return attendeePool.filter(e => (e.name || '').toLowerCase().includes(q) || (e.employee_id_code || '').toLowerCase().includes(q)).slice(0, 8);
+  }, [empSearch, attendeePool]);
 
   return (
     <div className="page-content">
@@ -579,7 +600,11 @@ table{border-collapse:collapse}
                 <div><div style={lb}>สถานที่</div><input type="text" value={editing.location || ''} onChange={e => setF('location', e.target.value)} style={{ width: '100%' }} /></div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-                <div><div style={lb}>ฝ่าย</div><input type="text" value={editing.dept || ''} onChange={e => setF('dept', e.target.value)} style={{ width: '100%' }} /></div>
+                <div>
+                  <div style={lb}>ฝ่าย</div>
+                  {/* เลือกจาก org_divisions (fallback = รายชื่อ section เมื่อผังยังไม่ตั้งฝ่าย) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (2026-09-07) */}
+                  <SelectOrFree value={editing.dept || ''} options={divisions.length ? divisions : orgSections} onChange={v => setF('dept', v)} style={{ width: '100%' }} />
+                </div>
                 <div>
                   <div style={lb}>ส่วน</div>
                   <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
@@ -609,7 +634,11 @@ table{border-collapse:collapse}
                     );
                   })()}
                 </div>
-                <div><div style={lb}>ผู้สอนงาน</div><input type="text" value={editing.trainer_name || ''} onChange={e => setF('trainer_name', e.target.value)} style={{ width: '100%' }} /></div>
+                <div>
+                  <div style={lb}>ผู้สอนงาน</div>
+                  {/* ผู้สอน = user ระบบหรือพนักงาน (หัวหน้าไลน์) → PersonSelect profiles ∪ employees · พิมพ์ลง FM-HRM-004 (2026-09-07) */}
+                  <PersonSelect source="both" value={editing.trainer_name || ''} history={trainerHist} onChange={r => setF('trainer_name', r.name)} />
+                </div>
               </div>
 
               {/* ประเภทการอบรม */}
@@ -647,7 +676,9 @@ table{border-collapse:collapse}
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
-                          {e._helperFrom && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>🤝 ยืมตัวจาก {e._helperFrom} มาช่วย {e._helperTo} (กะนี้)</span>}
+                          {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>
+                            🤝 ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                          </span>}
                         </div>
                       ))}
                     </div>
@@ -688,7 +719,11 @@ table{border-collapse:collapse}
                               <option value="0">✗ ไม่เห็นด้วย</option>
                             </select>
                           </td>
-                          <td><input type="text" value={a.evaluator_name || ''} onChange={e => setAtt(idx, 'evaluator_name', e.target.value)} style={{ width: 130, fontSize: 12, padding: '4px 6px' }} /></td>
+                          <td>
+                            {/* ผู้ประเมินรายคน — picker เดียวกับผู้สอน (default = ผู้สอน) (2026-09-07) */}
+                            <PersonSelect source="both" value={a.evaluator_name || ''} history={evalHist} onChange={r => setAtt(idx, 'evaluator_name', r.name)}
+                              style={{ width: 170 }} inputStyle={{ fontSize: 12, padding: '4px 24px 4px 6px' }} maxRows={20} />
+                          </td>
                           <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
                         </tr>
                       ))}

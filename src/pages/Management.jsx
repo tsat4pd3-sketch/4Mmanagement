@@ -10,7 +10,9 @@ import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } fro
 import { useNavigate } from 'react-router-dom';
 import { can, canAccessPage } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
-import { getLineFamilyNames, getLineFamilyIds, getAncestorNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames, getLineFamilyIds, getAncestorNames } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -433,7 +435,7 @@ export default function Management() {
     const fetchLines = async () => {
       // ดึงทุกไลน์เสมอเพื่อ resolve ลำดับชั้น (parent/children) ได้ครบ — scope ไปตัดที่ "รายการให้เลือก" แทน
       // ไม่งั้น leader ที่ผูกกับไลน์หลักจะมองไม่เห็นจุดที่ set ไว้ที่ไลน์ย่อย (และกลับกัน)
-      const { data } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
+      const { data } = await supabase.from('production_lines').select(LINE_COLUMNS).order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       let all = data || [];
       // เติมโหมดการไหลงาน (flow_mode/parallel_stations) best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้าม
       const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
@@ -1198,12 +1200,9 @@ export default function Management() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
           {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย (view ไลน์ย่อย+ไลน์หลัก)
               leader ก็สลับดูภายในครอบครัวไลน์ตัวเองได้ — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch */}
-          <select value={selectedLine} onChange={(e) => setSelectedLine(e.target.value)}
-            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
-              <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-            ))}
-          </select>
+          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก) — ไม่มี option ว่าง เหมือนเดิม */}
+          <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine}
+            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
           {mergedChildNames.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
               🔗 รวมไลน์ย่อย: {mergedChildNames.join(', ')}

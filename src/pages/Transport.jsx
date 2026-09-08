@@ -11,6 +11,7 @@ import useTabParam from '../utils/useTabParam';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { checkWrite } from '../utils/dbWrite';
+import { useOrgSections } from '../utils/useOrgSections';
 
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
@@ -659,6 +660,10 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
   const [f, setF] = useState({ ...carrier });
   const [saving, setSaving] = useState(false);
   const [empQ, setEmpQ] = useState('');
+  // เลือกจากฐานพนักงานแล้ว = รหัสพนักงานล็อก (แก้ได้เฉพาะพิมพ์ชื่อเอง = คนขับ outsource) (2026-09-07 · ยังไม่มีคอลัมน์ employee_id — เฟส 1)
+  const [empLocked, setEmpLocked] = useState(false);
+  // ส่วนงานยึด org_nodes (ห้ามพิมพ์เอง — ค่าสะกดต่างกันทำ scope/กรองไม่เจอ) (2026-09-07)
+  const orgSections = useOrgSections();
   const isNew = !carrier.id;
   const toggleVeh = (code) => setF(p => ({ ...p, vehicles: p.vehicles.includes(code) ? p.vehicles.filter(v => v !== code) : [...p.vehicles, code] }));
 
@@ -667,7 +672,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
     if (!q) return [];
     return employees.filter(e => (e.name || '').toLowerCase().includes(q) || (e.employee_id_code || '').toLowerCase().includes(q)).slice(0, 15);
   }, [empQ, employees]);
-  const pickEmp = (e) => { setF(p => ({ ...p, name: e.name, emp_code: e.employee_id_code || '', section: e.section || p.section })); setEmpQ(''); };
+  const pickEmp = (e) => { setF(p => ({ ...p, name: e.name, emp_code: e.employee_id_code || '', section: e.section || p.section })); setEmpQ(''); setEmpLocked(!!e.employee_id_code); };
 
   const save = async () => {
     if (!f.name?.trim()) return toast.error('กรอกชื่อคนขับ');
@@ -709,16 +714,24 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
             )}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เลือกแล้วเติมชื่อ+รหัสให้อัตโนมัติ · หรือพิมพ์เองด้านล่างเผื่อคนขับ outsource</div>
           </div>
-          <div><span style={lbl}>ชื่อ *</span><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} style={inp} /></div>
+          <div><span style={lbl}>ชื่อ *</span><input value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setEmpLocked(false); }} style={inp} /></div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1 }}><span style={lbl}>รหัสพนักงาน</span><input value={f.emp_code || ''} onChange={e => setF({ ...f, emp_code: e.target.value })} style={inp} /></div>
+            <div style={{ flex: 1 }}><span style={lbl}>รหัสพนักงาน{empLocked ? ' (จากทะเบียน)' : ''}</span>
+              <input value={f.emp_code || ''} readOnly={empLocked} onChange={e => setF({ ...f, emp_code: e.target.value })} style={{ ...inp, opacity: empLocked ? 0.75 : 1 }} /></div>
             <div style={{ flex: 1 }}><span style={lbl}>กะ</span>
               <select value={f.shift || ''} onChange={e => setF({ ...f, shift: e.target.value })} style={inp}>
                 {SHIFTS.map(s => <option key={s[0]} value={s[0]}>{s[1]}</option>)}
               </select>
             </div>
           </div>
-          <div><span style={lbl}>ส่วนงาน (optional)</span><input value={f.section || ''} onChange={e => setF({ ...f, section: e.target.value })} style={inp} /></div>
+          <div><span style={lbl}>ส่วนงาน (optional)</span>
+            <select value={f.section || ''} onChange={e => setF({ ...f, section: e.target.value })} style={inp}>
+              <option value="">— ไม่ระบุ —</option>
+              {/* ค่าเดิมที่ไม่อยู่ในผัง (ข้อมูลเก่า/พิมพ์มาก่อน) ต้องยังโชว์ ไม่หายเงียบ */}
+              {f.section && !orgSections.includes(f.section) && <option value={f.section}>{f.section} ⚠ ไม่มีในผังองค์กร</option>}
+              {orgSections.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <div>
             <span style={lbl}>🚚 ยานพาหนะที่ขับได้ (สกิล)</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>

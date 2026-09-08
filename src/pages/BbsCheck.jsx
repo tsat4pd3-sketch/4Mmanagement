@@ -22,11 +22,15 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
-import { getLineFamilyIds, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyIds } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import usePeople from '../utils/usePeople';
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { printBbsSheet } from '../lib/bbsPrint';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 import useIsMobile from '../utils/useIsMobile';
 
 const thisMonth = () => {
@@ -51,6 +55,8 @@ export default function BbsCheck() {
   const [emps, setEmps] = useState([]);
   const [agreements, setAgreements] = useState([]);
   const [signers, setSigners] = useState([]);      // profiles ที่มีลายเซ็น
+  // ทะเบียนพนักงานทั้งหมด — เติมรหัสพนักงานให้ผู้ตรวจอัตโนมัติจากชื่อโปรไฟล์ (2026-09-07)
+  const { employees: allEmps } = usePeople({ profiles: false, employees: true });
   const [sheet, setSheet] = useState(null);
   const [cells, setCells] = useState({});
   const [rowNotes, setRowNotes] = useState({});   // คอลัมน์ "หมายเหตุ" ท้ายแถว (1 ช่อง/คน/ใบ)
@@ -80,7 +86,7 @@ export default function BbsCheck() {
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name').order('name');
+        .select(LINE_COLUMNS).order('name');   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       setLines(data || []);
     })();
   }, []);
@@ -322,9 +328,13 @@ export default function BbsCheck() {
     const sh = await ensureSheet();
     if (!sh) return;
     const p = signers.find(s => s.id === profileId);
+    // รหัสพนักงานเติมจากทะเบียน employees ที่ชื่อตรงกับโปรไฟล์ (profiles ไม่ผูก employee_id เสมอไป) — แก้เองได้ (2026-09-07)
+    const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const emp = p ? allEmps.find(e => norm(e.name) === norm(p.full_name)) : null;
     const patch = {
       inspector_name: p?.full_name || null,
       inspector_sig_url: p?.signature_url || null,
+      ...(emp?.employee_id_code ? { inspector_code: emp.employee_id_code } : {}),
       updated_by_name: fullName || null,
     };
     const { data, error } = await supabase.from('bbs_sheets')
@@ -383,12 +393,9 @@ export default function BbsCheck() {
         </div>
         <div>
           <label style={lbl}>พื้นที่ / ไลน์</label>
-          <select value={selLine} onChange={e => setSelLine(e.target.value)}
-            style={{ width: 230, padding: '7px 9px', fontSize: 13 }}>
-            {toHierarchicalOptions(scopedLines).map(({ line: l, depth }) => (
-              <option key={l.id} value={l.id}>{' '.repeat(depth * 3)}{l.name}</option>
-            ))}
-          </select>
+          {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
+          <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine}
+            style={{ width: 230, padding: '7px 9px', fontSize: 13 }} />
         </div>
         <div>
           <label style={lbl}>กะ</label>
@@ -414,16 +421,14 @@ export default function BbsCheck() {
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
             <label style={lbl}>ผู้ตรวจสอบ (ดึงลายเซ็นจากโปรไฟล์)</label>
-            <select disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
-              onChange={e => setInspector(e.target.value)}
-              style={{ width: 210, padding: '6px 8px', fontSize: 12.5 }}>
-              <option value="">— เลือกผู้ตรวจสอบ —</option>
-              {signers.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-            </select>
+            <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
+              placeholder="— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —" style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
+              options={signers.map(s => ({ id: s.id, label: s.full_name }))} onChange={({ id }) => setInspector(id)} />
           </div>
           <div>
             <label style={lbl}>รหัสพนักงาน</label>
-            <input defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
+            {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้ */}
+            <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
               placeholder="เช่น 61234"
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />

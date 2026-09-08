@@ -33,11 +33,15 @@ import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
-import useProductionLines from '../utils/useProductionLines';
+import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+import ProductSelect from '../components/ProductSelect';
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import MachineSelect from '../components/MachineSelect';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -382,7 +386,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }, { data: bp }, { data: mc }, { data: dft }] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
       supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'),
@@ -2932,11 +2936,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 return (
                   <div style={{ marginBottom: 10, padding: '8px 12px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
-                    <select value={openMachineNo} onChange={e => setOpenMachineNo(e.target.value)}
-                      style={{ width: 220, fontSize: 12, fontWeight: 600 }}>
-                      <option value="">— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) —</option>
-                      {lineMachines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}</option>)}
-                    </select>
+                    <MachineSelect value={openMachineNo || ''} machines={lineMachines} strict placeholder="— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) — พิมพ์ค้นหา" style={{ width: 280 }}
+                      inputStyle={{ fontSize: 12, fontWeight: 600, padding: '6px 30px 6px 8px' }}
+                      onChange={({ machine_no }) => setOpenMachineNo(machine_no || '')} />
                     {lineMachines.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ยังไม่มีเครื่องในทะเบียน — เพิ่มที่ Machine Database)</span>}
                   </div>
                 );
@@ -3514,24 +3516,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <input type="date" value={openForm.work_date} onChange={e => setOpenForm(f => ({ ...f, work_date: e.target.value }))} style={inputStyle} />
                 </Field>
                 <Field label="ไลน์การผลิต">
-                  <select value={openForm.line_name} onChange={e => setOpenForm(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
-                    <option value="">เลือกไลน์...</option>
-                    {lines.filter(l => !l.parent_line_name && !parentChildrenMap[l.name] && (!openScopeLineNames || openScopeLineNames.has(l.name))).map(l => (
-                      <option key={l.id} value={l.name}>{l.name}</option>
-                    ))}
-                    {Object.entries(parentChildrenMap).map(([parent, children]) => {
-                      const kids = children.filter(cn => !openScopeLineNames || openScopeLineNames.has(cn));
-                      if (!kids.length) return null;
-                      return (
-                        <optgroup key={parent} label={`▸ ${parent}`}>
-                          {kids.map(cn => {
-                            const cl = lines.find(l => l.name === cn);
-                            return cl ? <option key={cl.id} value={cl.name}>{cl.name}</option> : null;
-                          })}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
+                  {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก เหมือนทุกหน้า) — คง pre-filter scope เปิดกะ (openScopeLineNames) ไว้เท่าเดิม */}
+                  <LineSelect lines={openScopeLineNames ? lines.filter(l => openScopeLineNames.has(l.name)) : lines}
+                    value={openForm.line_name} placeholder="เลือกไลน์..." style={inputStyle}
+                    onChange={v => setOpenForm(f => ({ ...f, line_name: v }))} />
                 </Field>
                 <Field label="กะทำงาน">
                   <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStart(e.target.value) }))} style={inputStyle}>
@@ -4695,29 +4683,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }
                   return (
                     <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
-                      <select
-                        id="open-mat-select"
-                        value={openProdForm.mat_no}
-                        onChange={e => handleOpenProdMatNoChange(e.target.value)}
-                        style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
-                      >
-                        <option value="">— เลือก MAT.NO —</option>
-                        {lineStds.map(s => {
-                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14:
-                             10105769 กับ 10105770 ชื่อเดียวกันทั้งคู่) → ต่อท้ายด้วยเลขพาร์ทลูกค้า
-                             ที่พอแยกออก + ติดธง ⚠ ให้เห็นว่าคู่ไหนกำกวม (แก้จริงต้องไปตั้งชื่อ
-                             ให้ต่างกันที่ Product Master — ระบบไม่เดาชื่อให้) */
+                      <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder="— ค้นหา MAT.NO / ชื่อสินค้า —"
+                        inputStyle={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
+                        options={lineStds.map(s => {
+                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14) → ต่อท้ายเลขพาร์ทลูกค้า + ธง ⚠ */
                           const nm = s.dr_products?.name || s.part_name || '';
                           const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
-                          return (
-                            <option key={s.id} value={s.mat_no}>
-                              {s.mat_no}{nm ? ` · ${nm}` : ''}
-                              {dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}
-                              {dup ? ' ⚠ชื่อซ้ำ' : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
-                            </option>
-                          );
+                          return {
+                            id: s.mat_no,
+                            label: `${s.mat_no}${nm ? ` · ${nm}` : ''}${dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
+                            sub: `${s.qty_per_kanban} ชิ้น/ใบ`, keywords: `${nm} ${s.dr_products?.p_no || ''}`,
+                          };
                         })}
-                      </select>
+                        onChange={({ id }) => handleOpenProdMatNoChange(id)} />
                       {(() => {
                         const names = lineStds.map(s => s.dr_products?.name || s.part_name || '').filter(Boolean);
                         const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
@@ -5090,16 +5068,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       const pts = sessionProcessTypesAll();
                       const filtered = dtTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
                       return (
-                        <select autoFocus value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
-                          <option value="">เลือกประเภท...</option>
-                          {['unplanned', 'planned'].map(cat => (
-                            <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}>
-                              {filtered.filter(t => t.category === cat).map(t => (
-                                <option key={t.id} value={t.id}>{t.name_th}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder="เลือกประเภท… (พิมพ์ค้นหา)" inputStyle={inputStyle}
+                          options={['unplanned', 'planned'].flatMap(cat => filtered.filter(t => t.category === cat).map(t => ({ id: String(t.id), label: t.name_th, group: cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน' })))}
+                          onChange={({ id }) => setDtForm(f => ({ ...f, downtime_type_id: id }))} />
                       );
                     })()}
                   </Field>
@@ -5482,7 +5453,7 @@ function HistoryTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: ln } = await supabase.from('production_lines').select('id, name, section, parent_line_name').order('name');
+    const { data: ln } = await supabase.from('production_lines').select(LINE_COLUMNS).order('name');
     const lm = {};
     (ln || []).forEach(l => { lm[l.name] = l; });
     const pcm = {};
@@ -5864,7 +5835,7 @@ function ExportTab() {
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
       .then(({ data }) => {
         const ln = data || [];
         const normSection = (s) => (s || '').trim().toLowerCase();
@@ -6740,13 +6711,15 @@ function ProductSetup({ role }) {
   const [kanbanForm, setKanbanForm]       = useState({ product_id: '', mat_no: '', qty_per_kanban: 1, is_active: true });
   const [kanbanSaving, setKanbanSaving]   = useState(false);
   const [expandedFamilies, setExpandedFamilies] = useState({}); // family_id → bool
+  // 📜 MAT ที่เคยบันทึกใน kanban_standards (DR) — แถวจาก Kanban Auto-Calc / MAT เก่าที่ Product Master ยังไม่มี ยังเลือกซ้ำได้ (product_id null) · 2026-09-07
+  const kanbanMatHist = useColumnHistory(supabaseDR, 'kanban_standards', 'mat_no', { upper: true });
 
   const blankForm = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', is_active: true, effective_from: '' });
 
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }, { data: stds }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
-      supabase.from('production_lines').select('id, name').order('name'),
+      supabase.from('production_lines').select(LINE_COLUMNS).order('name'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (ลำดับชั้น/ปลดระวาง)
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
     ]);
     setItems(pr || []);
@@ -6847,9 +6820,13 @@ function ProductSetup({ role }) {
   const handleKanbanSave = async () => {
     if (!kanbanForm.mat_no.trim()) { toast.error('กรอก MAT.NO ก่อน'); return; }
     if (!kanbanForm.qty_per_kanban || Number(kanbanForm.qty_per_kanban) < 1) { toast.error('Qty ต้องมากกว่า 0'); return; }
+    // 2026-09-07 MAT.NO นอก Product Master → ถามยืนยัน (เดิมบล็อกแข็ง — user สั่ง: ทะเบียนไม่มีต้องยังใช้ค่าที่เคยบันทึกได้)
+    //   บันทึกได้แต่ product_id = null (สแกนเปิดใบ join ด้วย mat_no ยังใช้ได้เมื่อเพิ่มสินค้าทีหลัง)
+    const matched = items.find(i => String(i.mat_no || '').trim().toUpperCase() === kanbanForm.mat_no.trim().toUpperCase());
+    if (!matched && !window.confirm(`MAT.NO ${kanbanForm.mat_no.trim().toUpperCase()} ไม่มีใน Product Master — จะบันทึกโดยไม่ผูกสินค้า (product_id ว่าง) ใช้ค่านี้ต่อหรือไม่?`)) return;
     setKanbanSaving(true);
     const payload = {
-      product_id: kanbanForm.product_id || null,
+      product_id: kanbanForm.product_id || matched?.id || null,
       mat_no: kanbanForm.mat_no.trim().toUpperCase(),
       qty_per_kanban: parseInt(kanbanForm.qty_per_kanban),
       is_active: kanbanForm.is_active,
@@ -7062,7 +7039,10 @@ function ProductSetup({ role }) {
                 </Field>
               )}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Customer"><input value={form.customer} onChange={e => setForm(f => ({ ...f, customer: e.target.value }))} placeholder="เช่น FORD" style={inputStyle} /></Field>
+                <Field label="Customer">
+                  {/* 2026-09-07 เลือกจากรายชื่อลูกค้าที่มีใน Product Master (CustomerSelect) — พิมพ์ลูกค้าใหม่ได้แต่ติดป้าย ไม่ให้สะกดแตกเป็นคนละลูกค้า */}
+                  <CustomerSelect value={form.customer || ''} onChange={({ customer }) => setForm(f => ({ ...f, customer }))} placeholder="เช่น FORD" inputStyle={inputStyle} />
+                </Field>
                 <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
               </div>
               <Field label="ประเภทกระบวนการ *">
@@ -7105,8 +7085,11 @@ function ProductSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
-                  <input autoFocus value={kanbanForm.mat_no} onChange={e => setKanbanForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))}
-                    placeholder="เช่น 10100335" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
+                  {/* 2026-09-07 เลือกจาก Product Master (ไม่ allowFree) + กลุ่ม 📜 MAT ที่เคยบันทึกไว้ (product_id ว่าง) · เซ็ต product_id คู่กับ mat_no */}
+                  <ProductSelect products={items} value={kanbanForm.mat_no} placeholder="เช่น 10100335" history={kanbanMatHist}
+                    lines={items.find(i => i.id === kanbanForm.product_id)?.line_name ? [items.find(i => i.id === kanbanForm.product_id).line_name] : undefined}
+                    inputStyle={{ ...inputStyle, fontWeight: 700 }}
+                    onChange={({ mat_no, id }) => setKanbanForm(f => ({ ...f, mat_no, product_id: id || '' }))} />
                 </Field>
                 <Field label="Qty / Kanban Card *">
                   <input type="number" min="1" value={kanbanForm.qty_per_kanban}

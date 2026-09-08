@@ -18,3 +18,11 @@
 - **เฟสถัดไป (ยังไม่ทำ):** สแกน QR แม่พิมพ์ (`ESM:M:<uuid>` มีอยู่แล้ว) แล้วเด้งเข้าหมุด/เปลี่ยนสถานะ · ผูกสถานะ in_use กับการเปิดใบผลิต (ตอนนี้ยังไม่มีข้อมูล "ใบผลิตใช้แม่พิมพ์ตัวไหน" — ดู gap ใน /order-trace) · auto เปลี่ยนสถานะเป็น maintenance ตอนเปิด MO (ตอนนี้ให้ derive แสดงทับแทน ไม่เขียนทับ manual)
 
 ---
+
+## กลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ = ทะเบียน `die_press_lines` — 2026-09-08 · ทะเบียน (DR)
+
+เดิม DieRegistry derive รายชื่อ "LINE A ( 800 Ton )" จากแถวของตัวเอง (พิมพ์ผิดตัวเดียว = กลุ่มใหม่) · ตอนนี้มีตาราง DR `die_press_lines`
+(code · name · tonnage · ref_production_line · migration `20260908_die_press_lines_dr.sql` · seed 6 กลุ่ม: LINE A-D + HDF1/HDF2 ที่ ref ไลน์ผลิตจริง)
+· ช่องไลน์ในฟอร์มชุด = `<SelectOrFree>` จาก `useDiePressLines()` (ค่าเก่านอกทะเบียนยังเลือกได้) · จัดการที่ `/die-registry` แท็บทะเบียน แผง ⚙️ (สิทธิ์ `machines:edit`)
+· **ตั้งใจแยกจาก `production_lines`** — ถ้าเพิ่มเป็นไลน์ผลิตจะโผล่ใน dropdown ไลน์/scope/OEE/TV ทุกหน้า · `die_sets.line_name` / `machines.line_name` ยังเก็บ name text เหมือนเดิม
+· `ref_production_line` = ทางเชื่อมไป production_sessions/OEE ในอนาคต (HDF1/HDF2 ตั้งแล้ว · LINE A-D ยังไม่มีไลน์ผลิตคู่)

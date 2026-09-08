@@ -3,6 +3,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryRounds';
 import { forecastRunout, byUrgency, RUNOUT_REASON } from '../utils/wipRunout';
+import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของไลน์ปลายทาง (2026-09-08)
 
 /* ═══ 🕐 Store Time Chart — สโตร์เตรียมของส่งเข้าไลน์ (2xx/3xx/5xx) ═══════════
    ที่มา (user 2026-08-26): "รอบการส่งของจาก Warehouse ไปลูกค้า ดูเข้าใจง่าย ชัดเจนที่สุด
@@ -50,6 +51,7 @@ export default function StoreTimeChart({
   //   openRequests = ใบขอเติมที่ยังไม่จบ (กันสร้างซ้ำ — unique index ระดับ DB กันอีกชั้น)
   //   onCreateRequests(items) = สร้างใบเข้า 🔄 คิวเติม WIP · items[].line ต้องเป็น **ไลน์ย่อยที่สุด** ไม่ใช่กลุ่ม
   openRequests = [], onCreateRequests,   // canOperate มาจาก prop เดิมด้านบนแล้ว
+  slocs = [], lines = [],                // 🏬 ทะเบียนรหัสคลัง (DR) + production_lines (array) — ป้าย "➜ P411 · Line 60" บนพาร์ทที่เลือก
   fmt, canOperate, onConfirm, confirming, onReceive, onOpenLine,
 }) {
   const isMobile = useIsMobile();
@@ -285,13 +287,23 @@ export default function StoreTimeChart({
   }, [openRequests, lineMap]);   // eslint-disable-line react-hooks/exhaustive-deps
   const selKey = (g, mat) => `${g}|${mat}`;
   const canPick = !!(canOperate && onCreateRequests);
+  /* 🏬 ชั้นบัญชี SAP (2026-09-08): ใบยังลงไลน์ย่อยที่สุด (ของอยู่ที่ leaf) แต่โชว์มุม SAP คู่กัน "➜ P411 · Line 60"
+     กลุ่มที่มีหลายไลน์ย่อยแต่**ทุกไลน์อยู่พื้นที่ SAP เดียวกัน** = เลือกไลน์แรกให้เลย (ไม่บังคับให้คนตัดสินเรื่องที่ SAP มองเป็นก้อนเดียว)
+     ยังเปลี่ยนได้ผ่าน dropdown ถ้ารู้ว่าของต้องวางหน้าไลน์ไหน · พื้นที่ต่างกัน = ต้องเลือกเองเหมือนเดิม (ระบบไม่เดา) */
+  const slocOf = (ln) => slocCodeOfLine(slocs, lines, ln);
+  const mkItem = (q, p) => {
+    const cand = leafLinesFor(q.line, p.mat_no);
+    const codes = [...new Set(cand.map(slocOf))];
+    const sameSloc = cand.length > 1 && codes.length === 1 && !!codes[0];
+    return { key: selKey(q.line, p.mat_no), group: q.line, line: cand[0], lines: cand, sloc: slocOf(cand[0]), sameSloc,
+      mat_no: p.mat_no, part_name: p.part_name || null,
+      qty: Math.max(1, Math.ceil(Number(p.netTotal) || 0)), cards: p.cards || 0, wipNow: p.wipNow ?? null };
+  };
   const toggleSel = (q, p) => {
     const k = selKey(q.line, p.mat_no);
     setSel(s => {
       if (s[k]) { const n = { ...s }; delete n[k]; return n; }
-      const lines = leafLinesFor(q.line, p.mat_no);
-      return { ...s, [k]: { key: k, group: q.line, line: lines[0], lines, mat_no: p.mat_no, part_name: p.part_name || null,
-        qty: Math.max(1, Math.ceil(Number(p.netTotal) || 0)), cards: p.cards || 0, wipNow: p.wipNow ?? null } };
+      return { ...s, [k]: mkItem(q, p) };
     });
   };
   const selectReady = (q) => setSel(s => {
@@ -299,9 +311,7 @@ export default function StoreTimeChart({
     q.parts.forEach(p => {
       const k = selKey(q.line, p.mat_no);
       if (openByKey[k] || !(p.netTotal > 0) || !['ok', 'split'].includes(p.store)) return;
-      const lines = leafLinesFor(q.line, p.mat_no);
-      n[k] = { key: k, group: q.line, line: lines[0], lines, mat_no: p.mat_no, part_name: p.part_name || null,
-        qty: Math.max(1, Math.ceil(Number(p.netTotal) || 0)), cards: p.cards || 0, wipNow: p.wipNow ?? null };
+      n[k] = mkItem(q, p);
     });
     return n;
   });
@@ -579,9 +589,8 @@ export default function StoreTimeChart({
             <span style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa' }}>
               🚚 ส่งตามคำขอ (delivery to order) — {onDemandQueue.length} ไลน์
             </span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              อยากให้ไลน์ไหนเดินเป็นรอบ ตั้งได้ที่ <b>📦 Line Stock → ⏰ รอบจัดส่ง</b>
-            </span>
+            {/* โหมดรอบเป็น opt-in รายไลน์ (§6.1) — ไม่ต้องป้ายบนจอทำงานทุกวัน แค่ tooltip พอ (audit 2026-09-07) */}
+            <span title="ถ้าวันหน้าไลน์ไหนอยากเดินเป็นรอบ ตั้งได้ที่ Line Stock → รอบจัดส่ง (opt-in รายไลน์)" style={{ fontSize: 11, color: 'var(--muted)', cursor: 'help' }}>ⓘ</span>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
             ไม่ได้นัดเวลาไว้ — เวลาบนไทม์ไลน์มาจาก <b>การคำนวณ</b>: หัก WIP ด้วยของที่ผลิตไปแล้ววันนี้
@@ -727,7 +736,7 @@ export default function StoreTimeChart({
                 {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : 'ติ๊กพาร์ทในรายการที่ต้องหยิบ แล้วกดสร้างใบส่ง'}
               </span>
               <span style={{ fontSize: 11, color: 'var(--muted)', flex: '1 1 200px' }}>
-                ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ · ยังต้องบันทึก "จ่ายพาร์ทเข้าไลน์" ที่ Line Stock เหมือนเดิม
+                ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" สแกนพาร์ท+จำนวน (ตัดสต็อกให้เลย) → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ
               </span>
               {selItems.length > 0 && (
                 <button onClick={() => setSel({})} disabled={creating}
@@ -842,11 +851,17 @@ export default function StoreTimeChart({
                             {/* ไลน์ย่อยปลายทาง — โชว์เมื่อเลือกแล้ว · กลุ่มที่มีหลายไลน์ย่อยเปิดกะให้คนเลือกเอง (ระบบไม่เดา) */}
                             {picked && (
                               picked.lines.length > 1
-                                ? <select value={picked.line} onChange={e => setSel(s => ({ ...s, [k]: { ...s[k], line: e.target.value } }))}
-                                    style={{ width: 'auto', fontSize: 10.5, padding: '1px 4px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.5)', background: 'var(--bg2)', color: 'var(--accent)' }}>
-                                    {picked.lines.map(ln => <option key={ln} value={ln}>➜ {ln}</option>)}
+                                ? <select value={picked.line} onChange={e => setSel(s => ({ ...s, [k]: { ...s[k], line: e.target.value, sloc: slocOf(e.target.value) } }))}
+                                    title={picked.sameSloc
+                                      ? `ทุกไลน์ในกลุ่มอยู่พื้นที่ SAP ${picked.sloc} เดียวกัน — ระบบเลือกไลน์แรกให้ · เปลี่ยนได้ถ้ารู้ว่าต้องวางหน้าไลน์ไหน`
+                                      : 'หลายไลน์ย่อยกินพาร์ทนี้ (คนละพื้นที่ SAP) — เลือกไลน์ที่จะไปวางของ'}
+                                    style={{ width: 'auto', fontSize: 10.5, padding: '1px 4px', borderRadius: 6, border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
+                                    {picked.lines.map(ln => { const c = slocOf(ln); return <option key={ln} value={ln}>➜ {c ? `${c} · ` : ''}{ln}</option>; })}
                                   </select>
-                                : <span style={{ fontSize: 10.5, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}>➜ {picked.line}</span>
+                                : <span style={{ fontSize: 10.5, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}
+                                    title={picked.sloc ? `พื้นที่ SAP ${picked.sloc} · ของวางที่ ${picked.line}` : 'ไลน์นี้ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 Line Stock → 🏬 โซนคลัง)'}>
+                                    ➜ {picked.sloc ? `${picked.sloc} · ` : ''}{picked.line}
+                                  </span>
                             )}
                           </div>
                         );

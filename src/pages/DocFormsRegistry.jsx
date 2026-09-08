@@ -7,6 +7,8 @@ import { loadDocForms, docFormSync, docFormScopes } from '../utils/docForms';
 import { buildDocFormPreviewHtml } from '../lib/docFormPreview';
 import tsLogoUrl from '../assets/TS logo.png';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
+import PersonSelect from '../components/PersonSelect';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -300,10 +302,8 @@ export default function DocFormsRegistry() {
                 </div>
                 <div>
                   <div style={lb}>ผู้ออกเอกสาร (Issued — ใช้ชื่อ+ลายเซ็นบนฟอร์มที่รองรับ)</div>
-                  <select value={editing.issued_by || ''} onChange={e => setF('issued_by', e.target.value)} style={{ width: '100%' }}>
-                    <option value="">— ไม่ระบุ —</option>
-                    {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-                  </select>
+                  <SearchSelect value={editing.issued_by || ''} placeholder="— ไม่ระบุ (พิมพ์ค้นหาชื่อ) —"
+                    options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setF('issued_by', id)} />
                 </div>
               </div>
               <div><div style={lb}>หมายเหตุ (แสดงเฉพาะในทะเบียน)</div><input type="text" value={editing.notes || ''} onChange={e => setF('notes', e.target.value)} style={{ width: '100%' }} /></div>
@@ -385,13 +385,15 @@ export default function DocFormsRegistry() {
                     </tbody>
                   </table>
                 </div>
-                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '110px 70px 110px 1fr 110px 110px auto', gap: 6, marginTop: 8, alignItems: 'center' }}>
+                {/* 2026-09-07: Responsible/Approved เลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — ประวัติเก่ามีชื่อคนที่ลาออกแล้ว)
+                    alignItems start = ลิสต์ picker กางในบรรทัดโดยไม่ดันช่องข้างๆ */}
+                <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '110px 70px 110px 1fr 150px 150px auto', gap: 6, marginTop: 8, alignItems: 'start' }}>
                   <input type="date" value={newRev.record_date} onChange={e => setNewRev(v => ({ ...v, record_date: e.target.value }))} title="วันที่บันทึก" style={{ width: '100%' }} />
                   <input type="text" value={newRev.rev} onChange={e => setNewRev(v => ({ ...v, rev: e.target.value }))} placeholder="Rev" style={{ width: '100%' }} />
                   <input type="date" value={newRev.issued_date} onChange={e => setNewRev(v => ({ ...v, issued_date: e.target.value }))} title="Issued date" style={{ width: '100%' }} />
                   <input type="text" value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={{ width: '100%' }} />
-                  <input type="text" value={newRev.responsible} onChange={e => setNewRev(v => ({ ...v, responsible: e.target.value }))} placeholder="Responsible" style={{ width: '100%' }} />
-                  <input type="text" value={newRev.approved_name} onChange={e => setNewRev(v => ({ ...v, approved_name: e.target.value }))} placeholder="Approved" style={{ width: '100%' }} />
+                  <PersonSelect value={newRev.responsible} onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} placeholder="Responsible" />
+                  <PersonSelect value={newRev.approved_name} onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} placeholder="Approved" />
                   <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
                 </div>
               </div>
@@ -433,15 +435,15 @@ export default function DocFormsRegistry() {
                 {scopeEdit.labels.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--muted)' }}>ฟอร์มนี้ยังไม่ได้ตั้งช่องลายเซ็นในชุดกลาง — ตั้งที่ช่อง “ช่องลายเซ็นหัวเอกสาร” ก่อน</div>
                 ) : scopeEdit.labels.map((lbl, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr', gap: 6, alignItems: 'center', marginBottom: 5 }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{i + 1}</span>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr', gap: 6, alignItems: 'start', marginBottom: 5 }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', paddingTop: 8 }}>{i + 1}</span>
                     <input type="text" value={lbl} placeholder="ป้ายช่อง" style={{ width: '100%', fontSize: 12.5 }}
                       onChange={e => setScopeEdit(v => ({ ...v, labels: v.labels.map((x, j) => j === i ? e.target.value : x) }))} />
-                    <input type="text" list="doc-scope-people" value={scopeEdit.names[i] || ''} placeholder="ชื่อผู้เซ็นประจำ (เว้นว่าง = เซ็นสด)" style={{ width: '100%', fontSize: 12.5 }}
-                      onChange={e => setScopeEdit(v => ({ ...v, names: v.names.map((x, j) => j === i ? e.target.value : x) }))} />
+                    {/* 2026-09-07: ผู้เซ็นประจำเลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — ผู้จัดการที่ไม่มี login มีจริง · ป้าย "ไม่ได้อยู่ในทะเบียน" ให้เห็น) */}
+                    <PersonSelect value={scopeEdit.names[i] || ''} placeholder="ชื่อผู้เซ็นประจำ (เว้นว่าง = เซ็นสด)" inputStyle={{ fontSize: 12.5 }}
+                      onChange={({ name }) => setScopeEdit(v => ({ ...v, names: v.names.map((x, j) => j === i ? name : x) }))} />
                   </div>
                 ))}
-                <datalist id="doc-scope-people">{profiles.map(p => <option key={p.id} value={p.full_name || ''} />)}</datalist>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                   ⚠️ จำนวนช่องล็อกตาม layout ฟอร์ม · ป้ายที่ไม่แก้ = ตามชุดกลาง (ชุดกลางเปลี่ยนแล้วตามเอง) · ชื่อที่กรอกจะพิมพ์ใต้เส้นลงชื่อ
                 </div>
@@ -450,10 +452,8 @@ export default function DocFormsRegistry() {
                 <div><div style={lb}>footer เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                   <input type="text" value={scopeEdit.footer_note} onChange={e => setScopeEdit(v => ({ ...v, footer_note: e.target.value }))} style={{ width: '100%' }} /></div>
                 <div><div style={lb}>ผู้ออกเอกสารเฉพาะส่วนงาน</div>
-                  <select value={scopeEdit.issued_by || ''} onChange={e => setScopeEdit(v => ({ ...v, issued_by: e.target.value }))} style={{ width: '100%' }}>
-                    <option value="">— ใช้ของกลาง —</option>
-                    {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-                  </select></div>
+                  <SearchSelect value={scopeEdit.issued_by || ''} placeholder="— ใช้ของกลาง (พิมพ์ค้นหาชื่อ) —"
+                    options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setScopeEdit(v => ({ ...v, issued_by: id }))} /></div>
               </div>
               <div><div style={lb}>Legend เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>

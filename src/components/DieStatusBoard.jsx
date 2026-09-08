@@ -7,6 +7,7 @@ import { useState, useMemo } from 'react';
 import { toast } from './Toast';
 import LineSelect from './LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import useDiePressLines from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 import {
   DIE_STATUSES, DIE_STATUS_UNSET, dieStatusMeta, buildOpenMoMap, openMosOf,
   regrindOver, saveDieStatus, MO_STATUS_LABEL, MIGRATION_HINT,
@@ -28,9 +29,14 @@ export default function DieStatusBoard({
   const moMap = useMemo(() => buildOpenMoMap(openMos), [openMos]);
   const activeDies = useMemo(() => dies.filter(d => d.is_active), [dies]);
   const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
+  const pressLines = useDiePressLines();
+  // 2026-09-08: ตัวกรองไลน์ = ทะเบียน die_press_lines ที่เปิดใช้ ∪ ชื่อที่แม่พิมพ์ใช้จริง (ค่าเก่าที่ยังไม่ลงทะเบียนต้องกรองได้เหมือนเดิม)
   const lineNames = useMemo(
-    () => [...new Set(activeDies.map(d => d.line_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [activeDies]);
+    () => [...new Set([
+      ...pressLines.filter(p => p.is_active !== false).map(p => p.name),
+      ...activeDies.map(d => d.line_name),
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [activeDies, pressLines]);
   const areaNameOf = (id) => areas.find(a => a.id === id)?.name || null;
   const setNameOf = (d) => setsById[d.ext?.die_set_id]?.part_name || null;
   // 🏭 link แม่พิมพ์ ↔ ไลน์ผลิต: ชุด → MAT → dr_products.line_name (ไลน์ที่ใช้พาร์ทของชุดนี้)

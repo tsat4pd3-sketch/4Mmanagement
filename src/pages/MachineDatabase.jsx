@@ -11,6 +11,7 @@ import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automa
 import EmojiPicker from '../components/EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
 import { checkWrite } from '../utils/dbWrite';
+import LineSelect from '../components/LineSelect';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -84,6 +85,8 @@ export default function MachineDatabase() {
   const [editing, setEditing]       = useState(null); // machine form object, or null
   const [saving, setSaving]         = useState(false);
   const [facilityAreas, setFacilityAreas] = useState([]); // ชื่อโซน facility (จาก pm_facility_areas) — ตัวเลือก/suggest
+  const [newArea, setNewArea] = useState(null);           // null = ปิดช่อง · string = กำลังพิมพ์ชื่อโซนใหม่ (2026-09-07)
+  const [areaSaving, setAreaSaving] = useState(false);
   const [supplyLines, setSupplyLines] = useState([]);     // Supply route: facility/utility นี้จ่ายให้ไลน์ไหนบ้าง (ในฟอร์มแก้ไข)
   const [supplyByMachine, setSupplyByMachine] = useState({}); // machine_id → [line_name] (โชว์ในลิสต์)
 
@@ -118,6 +121,23 @@ export default function MachineDatabase() {
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  /* + เพิ่มโซน facility ใหม่ → insert pm_facility_areas (DR) ก่อน แล้วค่อยเลือก (2026-09-07)
+     ห้ามพิมพ์ชื่อโซนลง machines.line_name ตรงๆ — MtnMachineLayout/Energy จับคู่โซนด้วยชื่อ พิมพ์ต่างตัวเดียว = โซนซ้ำ */
+  const addFacilityArea = async () => {
+    const name = String(newArea || '').trim();
+    if (!name) { toast.error('พิมพ์ชื่อโซน/ระบบก่อน'); return; }
+    const dup = facilityAreas.find(a => a.trim().toLowerCase() === name.toLowerCase());
+    if (dup) { setEditing(f => ({ ...f, line_name: dup })); setNewArea(null); toast.info(`มีโซน "${dup}" อยู่แล้ว — เลือกให้แล้ว`); return; }
+    setAreaSaving(true);
+    const ok = checkWrite(await supabaseDR.from('pm_facility_areas').insert({ name, sort_order: facilityAreas.length + 1 }), 'เพิ่มโซน facility');
+    setAreaSaving(false);
+    if (!ok) return;
+    setFacilityAreas(a => [...a, name]);
+    setEditing(f => ({ ...f, line_name: name }));
+    setNewArea(null);
+    toast.success(`เพิ่มโซน "${name}" แล้ว`);
+  };
 
   // mandatory scope filter (คำสั่ง user 2026-07-12) — leader = family ไลน์ตัวเอง, มี sections = เฉพาะ section ตัวเอง
   // user ไม่มี scope เห็นหมดเหมือนเดิม · กรองก่อน filter อิสระเสมอ (pattern มาตรฐาน CLAUDE.md)
@@ -288,23 +308,17 @@ export default function MachineDatabase() {
           <option value="">— ทุกหมวด —</option>
           {EQUIP_CATS.map(c => <option key={c.v} value={c.v}>{c.t}</option>)}
         </select>
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 180 }}>
-          {catLineNames
-            ? <>
-                <option value="">— ทุกระบบ/พื้นที่ —</option>
-                {catLineNames.map(n => <option key={n} value={n}>{n}</option>)}
-              </>
-            : <>
-                <option value="">— ทุกไลน์ —</option>
-                {scopedLines.filter(l => l.is_active !== false && !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                {Object.entries(parentChildrenMap).map(([parent, children]) => (
-                  <optgroup key={parent} label={`▸ ${parent}`}>
-                    <option value={parent}>{parent} — ทั้งกลุ่ม</option>
-                    {children.map(c => <option key={c} value={c}>{c}</option>)}
-                  </optgroup>
-                ))}
-              </>}
-        </select>
+        {catLineNames ? (
+          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 180 }}>
+            <option value="">— ทุกระบบ/พื้นที่ —</option>
+            {catLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        ) : (
+          /* 2026-09-07: ไลน์ผลิตผ่าน <LineSelect> (ลำดับชั้น + scope มาตรฐาน leader/sections) แทน optgroup ที่ประกอบเอง
+             เลือกไลน์แม่ = เห็นเครื่องทั้งกลุ่ม (logic kids ใน `filtered` เดิม) */
+          <LineSelect lines={lines} value={filterLine} onChange={setFilterLine} placeholder="— ทุกไลน์ —"
+            role={role} lineId={userLineId} sections={scopeSecs} style={{ ...inputStyle, width: 180 }} />
+        )}
         <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...inputStyle, width: 180 }}>
           <option value="">— ทุกประเภท —</option>
           {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {t.label}</option>)}
@@ -431,23 +445,41 @@ export default function MachineDatabase() {
               </Field>
               {(editing.equipment_category || 'production') === 'production' ? (
                 <Field label="ไลน์การผลิต *">
-                  <select value={editing.line_name} onChange={e => setEditing(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
-                    <option value="">— เลือกไลน์ —</option>
-                    {scopedLines.filter(l => l.is_active !== false && !l.parent_line_name && !parentChildrenMap[l.name]).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                    {Object.entries(parentChildrenMap).map(([parent, children]) => (
-                      <optgroup key={parent} label={`▸ ${parent}`}>
-                        {/* ไลน์ใหญ่เลือกได้ด้วย — บางโรงงานใช้ผังไลน์ใหญ่เป็นผังจริงที่วางเครื่อง (เช่น HYDROFORM) */}
-                        <option value={parent}>{parent} (ไลน์หลัก)</option>
-                        {children.map(c => <option key={c} value={c}>{c}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
+                  {/* 2026-09-07: <LineSelect> (ลำดับชั้น + scope) — ไลน์แม่ยังเลือกได้ (บางโรงงานวางเครื่องบนผังไลน์ใหญ่ เช่น HYDROFORM)
+                      ไลน์ปลดระวางไม่โผล่ แต่ค่าที่ตั้งไว้แล้วยังเห็นพร้อมป้าย ⏸ */}
+                  <LineSelect lines={lines} value={editing.line_name} onChange={v => setEditing(f => ({ ...f, line_name: v }))}
+                    role={role} lineId={userLineId} sections={scopeSecs} style={inputStyle} />
                 </Field>
               ) : (
                 <Field label="ระบบ / พื้นที่ facility *">
-                  <input list="fac-areas" value={editing.line_name} onChange={e => setEditing(f => ({ ...f, line_name: e.target.value }))} placeholder="เช่น ระบบน้ำ 1, ลม 2, High Pressure, UTILITY STEEL" style={inputStyle} />
-                  <datalist id="fac-areas">{facilityAreas.map(n => <option key={n} value={n} />)}</datalist>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ต้องผูกไลน์ผลิต · พิมพ์ชื่อระบบใหม่ได้เลย หรือเลือกจากโซนที่มี</div>
+                  {/* 2026-09-07: เลือกจากทะเบียนโซน pm_facility_areas (DR) — MtnMachineLayout/Energy จับคู่โซนด้วย "ชื่อ"
+                      พิมพ์เองสะกดต่างตัวเดียว = โซนซ้ำ · โซนใหม่ต้อง insert เข้าทะเบียนก่อน (ปุ่ม + เพิ่มโซนใหม่) */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <select value={editing.line_name} onChange={e => setEditing(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
+                      <option value="">— เลือกโซน / ระบบ —</option>
+                      {/* ค่าเก่าที่ไม่มีในทะเบียน ต้องยังโชว์ (ห้ามหายเงียบ) พร้อมป้ายให้ไปจัดข้อมูล */}
+                      {editing.line_name && !facilityAreas.includes(editing.line_name) && (
+                        <option value={editing.line_name}>{editing.line_name} ⚠ ไม่มีในทะเบียนโซน</option>
+                      )}
+                      {facilityAreas.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <button type="button" onClick={() => setNewArea(v => (v == null ? '' : null))}
+                      style={{ ...cancelBtnStyle, padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                      + เพิ่มโซนใหม่
+                    </button>
+                  </div>
+                  {newArea != null && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <input autoFocus value={newArea} onChange={e => setNewArea(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addFacilityArea(); } }}
+                        placeholder="ชื่อโซน/ระบบใหม่ เช่น ระบบน้ำ 1, High Pressure" style={inputStyle} />
+                      <button type="button" onClick={addFacilityArea} disabled={areaSaving}
+                        style={{ ...saveBtnStyle, padding: '8px 12px', whiteSpace: 'nowrap', opacity: areaSaving ? 0.6 : 1 }}>
+                        {areaSaving ? '...' : 'บันทึกโซน'}
+                      </button>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ต้องผูกไลน์ผลิต · โซนชุดเดียวกับผัง facility ของ MTN และจอพลังงาน — ไม่มีในลิสต์ให้กด “+ เพิ่มโซนใหม่”</div>
                 </Field>
               )}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

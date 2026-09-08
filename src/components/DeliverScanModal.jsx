@@ -14,7 +14,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import ScanModal from './ScanModal';
 import { resolveDeliveryPoint } from '../utils/qrCode';
-import { pointsForLine, pointLabel, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS } from '../utils/replenishGate';
+import { pointsForRequest, pointLabel, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS } from '../utils/replenishGate';
 
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
 const btn = (bg, color, border = 'transparent', disabled = false) => ({
@@ -30,7 +30,8 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
   const [reasonKey, setReasonKey]   = useState('');
   const [reasonNote, setReasonNote] = useState('');
 
-  const serving = useMemo(() => pointsForLine(points, request?.line_name), [points, request]);
+  // ตรงไลน์ก่อน · ไม่มี = จุดในพื้นที่ SAP เดียวกัน (ต้องเป็นตัวเดียวกับที่ checkDeliveryPoint ใช้)
+  const serving = useMemo(() => pointsForRequest(points, request), [points, request]);
   const noPoint = serving.length === 0;
 
   /* ScanModal เรียก onScan(parsed) — คืน string = โชว์ error ในตัวสแกน (สแกนต่อได้ทันที ไม่ต้องปิด-เปิดใหม่) */

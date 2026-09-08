@@ -8,7 +8,16 @@
         นี่คือ "รหัสบัญชีคลัง" ที่อ้างในทุกบรรทัด BOM แบบ SAP · **ห้ามยุบรวมกัน**
 
    ⚠️ ทุกไฟล์ที่แตะรหัสคลังต้องใช้ helper ในไฟล์นี้ **ห้ามเขียน regex/format ซ้ำในหน้า**
-   ไฟล์นี้ pure — ห้าม import supabase/react (จะได้เทสตรงๆ ได้)                     */
+   ไฟล์นี้ pure — ห้าม import supabase/react (จะได้เทสตรงๆ ได้)
+
+   ═══ ชั้นบัญชี SAP ↔ ชั้นกายภาพ (2026-09-08 · user) ═══════════════════════════════════════
+   SAP คุมวัตถุดิบที่ระดับ **พื้นที่ (SLoc)**: P411 = ทั้งแผนก Apron Assy (Line 60 · 61 · Sub Apron) · P409 = ทั้ง Hydroform
+   ESM คุมที่ระดับ **ไลน์ย่อยที่สุด** (ของ sub component ของ FG แต่ละตัวอยู่หน้าไลน์ของมัน)
+   → ไม่เลือกข้าง: SLoc เป็น "ชั้นบัญชี" ที่ **derive จากไลน์อัตโนมัติ** (`slocOfLine`) แล้วแปะติดทุกรายการตอนเขียน
+     (ใบขอเติม · ledger · จุดส่ง) · ผูกที่ไลน์แม่ครั้งเดียวใน `storage_locations.line_names` ลูกตกทอด
+   · ตัดสต็อกตอนสโตร์ยืนยันเตรียม = มุม SAP คือ S401 → P411 · มุม WIP ของเราคือ STORE → Line 60 — รายการเดียว 2 มุมมอง
+   · ไลน์ที่ยังไม่ผูก = null **ไม่เดา** (จอต้องขึ้น worklist)                                       */
+import { getAncestorNames } from './lineHierarchy.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 const norm = (s) => (s ?? '').toString().trim();
 
@@ -49,3 +58,31 @@ export const slocKindMeta = (kind) => SLOC_KINDS[kind] || SLOC_KINDS.other;
 
 /** ข้อความอธิบายรูปแบบ (ใช้ทั้ง placeholder และข้อความ error — จะได้ตรงกันเสมอ) */
 export const SLOC_FORMAT_HINT = 'รูปแบบ: ตัวอักษร 1-3 ตัว + เลข 3 หลัก (เช่น S401 · P401 · W401 · R401)';
+
+/**
+ * หา SLoc ของไลน์ — ตรงชื่อก่อน แล้วไล่สายบน (ไลน์ลูกตกทอดจากไลน์แม่ ตั้งครั้งเดียวที่แม่)
+ * @param {Array} slocs  แถว storage_locations (ต้องมี code, line_names[], is_active)
+ * @param {Array} lines  production_lines (name, parent_line_name)
+ * @param {string} lineName
+ * @returns {{ code:string, via:string, sloc:object }|null}  via = ชื่อไลน์ที่ผูกไว้จริง (ตัวเองหรือแม่) · null = ยังไม่ผูก **ห้ามเดา**
+ */
+export function slocOfLine(slocs, lines, lineName) {
+  const ln = norm(lineName);
+  if (!ln) return null;
+  const active = (slocs || []).filter(s => s && s.is_active !== false && Array.isArray(s.line_names));
+  const find = (name) => active.find(s => s.line_names.map(norm).includes(name));
+  const direct = find(ln);
+  if (direct) return { code: slocLabel(direct.code), via: ln, sloc: direct };
+  for (const a of getAncestorNames(lines || [], ln)) {
+    const hit = find(a);
+    if (hit) return { code: slocLabel(hit.code), via: a, sloc: hit };
+  }
+  return null;
+}
+export const slocCodeOfLine = (slocs, lines, lineName) => slocOfLine(slocs, lines, lineName)?.code || null;
+
+/** ไลน์ทั้งหมด (รวมลูกหลาน) ที่ตกอยู่ใน SLoc นี้ — ใช้ backfill/สรุปยอด · ไลน์ที่ผูก SLoc อื่นเองชนะแม่ */
+export function linesOfSloc(slocs, lines, code) {
+  const c = slocLabel(code);
+  return (lines || []).map(l => l.name).filter(n => slocCodeOfLine(slocs, lines, n) === c);
+}

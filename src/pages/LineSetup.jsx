@@ -19,6 +19,9 @@ import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat, wipCatOptions,
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadOpInfo } from '../utils/opItems';
 import SearchSelect from '../components/SearchSelect';
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
@@ -230,6 +233,8 @@ export default function LineSetup({ embedded = false } = {}) {
      กับ "ข้อมูลเฉพาะไลน์นี้" (ประเภทไลน์/โหมดไหลงาน/เครื่องขนาน — เป็นคุณสมบัติเครื่องจริง ไม่ตกทอด) */
   const selLineObj    = lines.find(l => l.name === selectedLine) || null;
   const parentLineObj = selLineObj?.parent_line_name ? (lines.find(l => l.name === selLineObj.parent_line_name) || null) : null;
+  // รหัส cost center ที่ไลน์อื่นใช้อยู่ — ส่งเป็น history ให้ <CostCenterSelect> (กลุ่ม 📜) รหัสที่ยังไม่ลงทะเบียน cost_centers ยังเลือกได้ ไม่บล็อกงานเก่า (2026-09-07 datalist → 2026-09-08 picker กลาง)
+  const ccCodes = [...new Set(lines.map(l => String(l.cost_center || '').trim()).filter(Boolean))].sort();
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
 
   const fetchLines = async () => {
@@ -562,6 +567,14 @@ export default function LineSetup({ embedded = false } = {}) {
         await supabaseDR.from('line_delivery_points').update({ line_names: next }).eq('id', d.id);
       }
     } catch { /* best-effort — ตารางยังไม่ apply ก็ข้าม */ }
+    // 🏬 ทะเบียนรหัสคลัง SAP — line_names text[] เหมือนกัน (ผูกที่ไลน์แม่ → เปลี่ยนชื่อแม่แล้วทั้งแผนกหลุดจาก SLoc เงียบ ถ้าไม่ตาม)
+    try {
+      const { data: sls } = await supabaseDR.from('storage_locations').select('code, line_names').contains('line_names', [old]);
+      for (const sl of sls || []) {
+        const next = (sl.line_names || []).map(n => (n === old ? name : n));
+        await supabaseDR.from('storage_locations').update({ line_names: next }).eq('code', sl.code);
+      }
+    } catch { /* best-effort — ยังไม่ apply 20260908 ก็ข้าม */ }
 
     /* cascade ล้มบางตาราง = ข้อมูลชื่อเก่ากำพร้าอยู่ตรงนั้น ต้องบอกให้รู้ว่าตารางไหน
        (ไม่ abort ตามดีไซน์เดิม — แต่ห้ามเงียบ ไม่งั้นไม่มีใครรู้ว่าต้องไปตามแก้) */
@@ -1432,18 +1445,12 @@ export default function LineSetup({ embedded = false } = {}) {
                       </select>
                       {/* Parent line selector — can't assign parent to a line that already has children */}
                       {!l._isParent && (
-                        <select
-                          value={l.parent_line_name || ''}
-                          onClick={e => e.stopPropagation()}
-                          onChange={e => { e.stopPropagation(); handleUpdateParent(l, e.target.value); }}
-                          title="ไลน์หลัก (parent)"
-                          style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }}
-                        >
-                          <option value="">ไม่มีหลัก</option>
-                          {lines.filter(p => p.name !== l.name && !p.parent_line_name).map(p => (
-                            <option key={p.id} value={p.name}>{p.name}</option>
-                          ))}
-                        </select>
+                        /* 2026-09-07: ไลน์แม่ผ่าน <LineSelect> (ส่งเฉพาะไลน์ราก) — wrapper กัน click ทะลุไปเลือกแถว */
+                        <span onClick={e => e.stopPropagation()} title="ไลน์หลัก (parent)" style={{ display: 'inline-flex', flexShrink: 0 }}>
+                          <LineSelect lines={lines.filter(p => p.name !== l.name && !p.parent_line_name)} value={l.parent_line_name || ''}
+                            onChange={v => handleUpdateParent(l, v)} placeholder="ไม่มีหลัก"
+                            style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }} />
+                        </span>
                       )}
                       {canDel && <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
                         style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
@@ -1471,14 +1478,10 @@ export default function LineSetup({ embedded = false } = {}) {
                 {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <select value={newLineParent} onChange={e => setNewLineParent(e.target.value)}
-              style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }}>
-              <option value="">ไม่มีไลน์หลัก (standalone)</option>
-              {/* cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
-              {lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection)).map(l => (
-                <option key={l.id} value={l.name}>ลูกของ {l.name}</option>
-              ))}
-            </select>
+            {/* 2026-09-07: <LineSelect> ส่งเฉพาะไลน์ราก · cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
+            <LineSelect lines={lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection))}
+              value={newLineParent} onChange={setNewLineParent} placeholder="ไม่มีไลน์หลัก (standalone)"
+              style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
               style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
@@ -1859,24 +1862,12 @@ export default function LineSetup({ embedded = false } = {}) {
               {(machineTempPos || machineForm.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
                   {/* ซ่อนเครื่องที่วางบนผังไปแล้ว (ทุกไลน์ในครอบครัว) — เหลือเฉพาะที่ยังไม่วาง + ตัวที่กำลังแก้ */}
-                  <select value={machineForm.machine_no}
-                    onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
-                    <option value="">-- เลือกเครื่องจักร --</option>
-                    {selectableMachines.filter(m => !m.machine_type_id).map(m => (
-                      <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
-                    ))}
-                    {machineTypes.map(t => {
-                      const items = selectableMachines.filter(m => m.machine_type_id === t.id);
-                      if (!items.length) return null;
-                      return (
-                        <optgroup key={t.id} label={`${t.icon || ''} ${t.label}`}>
-                          {items.map(m => (
-                            <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
+                  <SearchSelect value={machineForm.machine_no || ''} placeholder="-- ค้นหาเครื่องจักร (รหัส/ชื่อ) --"
+                    options={[
+                      ...selectableMachines.filter(m => !m.machine_type_id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, keywords: m.machine_name || '' })),
+                      ...machineTypes.flatMap(t => selectableMachines.filter(m => m.machine_type_id === t.id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, group: `${t.icon || ''} ${t.label}`, keywords: m.machine_name || '' }))),
+                    ]}
+                    onChange={({ id }) => setMachineForm({ ...machineForm, machine_no: id })} />
                   {drMachines.filter(m => m.is_active).length === 0 ? (
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ 🏭 ฐานข้อมูลเครื่องจักร ด้านบน</div>
                   ) : selectableMachines.length === 0 && (
@@ -2056,18 +2047,22 @@ export default function LineSetup({ embedded = false } = {}) {
             )}
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏷️ Cost Center</label>
-              <input type="text" value={costCenter} disabled={!canEdit}
-                onChange={e => setCostCenter(e.target.value)}
-                placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'เช่น 2140662201'}
-                style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
+              {/* 2026-09-08: เลือกจากทะเบียน cost_centers (Main) ผ่าน <CostCenterSelect> — UI-CONVENTIONS §5.1.2 ห้าม input/datalist เอง
+                  section ของไลน์ → รหัสของส่วนงานนี้ขึ้นก่อน · history = รหัสที่ไลน์อื่นใช้อยู่ (ยังไม่ลงทะเบียนก็เลือกได้ ป้าย ⚠) */}
+              <div style={{ marginTop: 4 }}>
+                <CostCenterSelect value={costCenter} disabled={!canEdit} section={selLineObj?.section} history={ccCodes}
+                  onChange={r => setCostCenter(r.code)}
+                  placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'ค้นรหัส / ชื่อ cost center…'}
+                  inputStyle={{ fontSize: 14, fontWeight: 600 }} />
+              </div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
               รวมกำลังคน <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน (เช้า+ดึก)
             </div>
             <div style={{ marginBottom: 14 }}>
               <label style={labelSt}>👨‍🔧 หัวหน้างาน (ใช้ในใบค่าฝีมือ)</label>
-              <input type="text" value={signerHead} disabled={!canEdit}
-                onChange={e => setSignerHead(e.target.value)}
+              {/* 2026-09-07: เลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — หัวหน้าที่ยังไม่มีบัญชีมีจริง · เก็บ snapshot ชื่อเหมือนเดิม) */}
+              <PersonSelect value={signerHead} onChange={({ name }) => setSignerHead(name)} disabled={!canEdit}
                 placeholder={parentLineObj?.head_name ? `ตามไลน์แม่: ${parentLineObj.head_name}` : 'เช่น คุณสุวิทชัย ดีทั่ว'}
                 style={{ marginTop: 4 }} />
             </div>

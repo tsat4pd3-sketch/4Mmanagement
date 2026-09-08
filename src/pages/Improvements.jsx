@@ -8,6 +8,10 @@ import { toast } from '../components/Toast';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
+import LineSelect from '../components/LineSelect';
+import PersonSelect from '../components/PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fmtDate } from '../utils/dateFormat';
@@ -15,6 +19,7 @@ import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectU
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import PeChangeRequests from '../components/PeChangeRequests';
 import { notifyEvent } from '../utils/notifyEvent';
+import SearchSelect from '../components/SearchSelect';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -99,6 +104,8 @@ export default function Improvements() {
   const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
   const canManage = can('improvements', 'manage', role);
   const canDel    = canDelete('improvements', 'manage', role);  // สิทธิ์ลบโปรเจค แยกจากจัดการ
+  // 📜 ผู้รับผิดชอบ milestone ที่เคยบันทึก (DR improvement_milestones) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
+  const assigneeHist = useColumnHistory(supabaseDR, 'improvement_milestones', 'assignee');
 
   const [lines, setLines] = useState([]);
   const [items, setItems] = useState([]);
@@ -160,7 +167,7 @@ export default function Improvements() {
     setLoading(true);
     const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
       // cost_center: คิด cost saving (ไลน์ลูกไม่กรอก = ตกทอดจากไลน์แม่ — lineCostCenter)
-      supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center').order('name'),
+      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
@@ -1261,9 +1268,11 @@ export default function Improvements() {
                                 <option value="">เฟส —</option>
                                 {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
                               </select>
-                              <input placeholder="ผู้รับผิดชอบ" value={msDraft[imp.id]?.assignee || ''}
-                                onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: e.target.value } }))}
-                                style={{ width: 100, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                              {/* 2026-09-07 เลือกคนผ่าน <PersonSelect> (profiles+employees · คนของไลน์นี้ขึ้นก่อน) — milestones อยู่ DR เก็บชื่อ snapshot */}
+                              <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" history={assigneeHist} placeholder="ผู้รับผิดชอบ"
+                                lines={imp.line_name ? getLineFamilyNames(lines, imp.line_name) : undefined}
+                                style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)' }}
+                                onChange={({ name }) => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: name } }))} />
                               <input type="date" value={msDraft[imp.id]?.planned_start || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_start: e.target.value } }))}
                                 style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
@@ -1319,10 +1328,9 @@ export default function Improvements() {
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ไลน์ *
-                    <select value={modal.line_name} onChange={e => setModal({ ...modal, line_name: e.target.value, machine_no: '', mat_no: '' })} style={{ marginTop: 4 }}>
-                      <option value="">— เลือกไลน์ —</option>
-                      {lineOptions.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
-                    </select>
+                    {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter "ไลน์ลูก + scope" (lineOptions) เดิม */}
+                    <LineSelect lines={lineOptions} value={modal.line_name} placeholder="— เลือกไลน์ —" style={{ marginTop: 4 }}
+                      onChange={v => setModal({ ...modal, line_name: v, machine_no: '', mat_no: '' })} />
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ประเภทปัญหา *
                     <select value={modal.problem_source} onChange={e => setModal({ ...modal, problem_source: e.target.value, problem_type_id: '', problem_label: '' })} style={{ marginTop: 4 }}>
@@ -1349,71 +1357,27 @@ export default function Improvements() {
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
-                    <select value={modal.machine_no || ''} onChange={e => setModal({ ...modal, machine_no: e.target.value })} style={{ marginTop: 4 }}>
-                      <option value="">— ทั้งไลน์ —</option>
-                      {/* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน (เช่นชื่อที่พิมพ์ในบันทึก downtime) ต้องยังแสดงได้ —
-                          ไม่งั้น select โชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ = โกหกคนอ่าน */}
-                      {modal.machine_no && !mcListed(modal.machine_no) && (
-                        <option value={modal.machine_no}>⚠ {modal.machine_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)</option>
-                      )}
-                      {/* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ = คำตอบที่คนกำลังหา */}
-                      {mcHit.length > 0 && (
-                        <optgroup label={`⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`}>
-                          {mcHit.map(m => (
-                            <option key={m.id} value={m.machine_no}>
-                              {m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''} — {Math.round(mcOfHit(m).value).toLocaleString()} {hitUnit} · {mcOfHit(m).count} ครั้ง
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {mcUnreg.length > 0 && (
-                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง">
-                          {mcUnreg.map(h => (
-                            <option key={`u-${h.machine_no}`} value={h.machine_no}>
-                              {h.machine_no} — {Math.round(h.value).toLocaleString()} {hitUnit} · {h.count} ครั้ง
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label={mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์'}>
-                        {mcRest.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
-                      </optgroup>
-                      {/* แม่พิมพ์แยกกลุ่มท้ายสุด — เดิมปนกลางลิสต์เครื่องจักร (ชื่อยาวเป็นชื่อพาร์ท) */}
-                      {mcDie.length > 0 && (
-                        <optgroup label="🔨 แม่พิมพ์">
-                          {mcDie.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
-                        </optgroup>
-                      )}
-                    </select>
+                    <SearchSelect value={modal.machine_no || ''} placeholder="— ทั้งไลน์ — (พิมพ์ค้นหาเครื่อง)" style={{ marginTop: 4 }}
+                      options={[
+                        /* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน ต้องยังแสดงได้ — ไม่งั้นช่องโชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ */
+                        ...(modal.machine_no && !mcListed(modal.machine_no) ? [{ id: modal.machine_no, label: `⚠ ${modal.machine_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)' }] : []),
+                        /* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ */
+                        ...mcHit.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, badge: `${Math.round(mcOfHit(m).value).toLocaleString()} ${hitUnit} · ${mcOfHit(m).count} ครั้ง`, badgeColor: '#f59e0b', group: `⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`, keywords: m.machine_name || '' })),
+                        ...mcUnreg.map(h => ({ id: h.machine_no, label: h.machine_no, badge: `${Math.round(h.value).toLocaleString()} ${hitUnit} · ${h.count} ครั้ง`, badgeColor: '#f59e0b', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง' })),
+                        ...mcRest.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, group: mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์', keywords: m.machine_name || '' })),
+                        ...mcDie.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, group: '🔨 แม่พิมพ์', keywords: m.machine_name || '' })),
+                      ]}
+                      onChange={({ id }) => setModal({ ...modal, machine_no: id })} />
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>สินค้า
-                    <select value={modal.mat_no || ''} onChange={e => setModal({ ...modal, mat_no: e.target.value })} style={{ marginTop: 4 }}>
-                      <option value="">— ทุกสินค้า —</option>
-                      {modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) && (
-                        <option value={modal.mat_no}>⚠ {modal.mat_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)</option>
-                      )}
-                      {prodHit.length > 0 && (
-                        <optgroup label={`⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`}>
-                          {prodHit.map(p => (
-                            <option key={p.id} value={p.mat_no}>
-                              {p.mat_no} · {p.name} — {Math.round(matOfHit(p).value).toLocaleString()} {hitUnit}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {prodUnreg.length > 0 && (
-                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้">
-                          {prodUnreg.map(mat => (
-                            <option key={`um-${mat}`} value={mat}>
-                              {mat} — {Math.round(hitMat.get(mat).value).toLocaleString()} {hitUnit}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label={prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์'}>
-                        {prodRest.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
-                      </optgroup>
-                    </select>
+                    <SearchSelect value={modal.mat_no || ''} placeholder="— ทุกสินค้า — (พิมพ์ค้นหา MAT / ชื่อ)" style={{ marginTop: 4 }}
+                      options={[
+                        ...(modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) ? [{ id: modal.mat_no, label: `⚠ ${modal.mat_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)' }] : []),
+                        ...prodHit.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, badge: `${Math.round(matOfHit(p).value).toLocaleString()} ${hitUnit}`, badgeColor: '#f59e0b', group: `⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`, keywords: p.name || '' })),
+                        ...prodUnreg.map(mat => ({ id: mat, label: mat, badge: `${Math.round(hitMat.get(mat).value).toLocaleString()} ${hitUnit}`, badgeColor: '#f59e0b', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้' })),
+                        ...prodRest.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, group: prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์', keywords: p.name || '' })),
+                      ]}
+                      onChange={({ id }) => setModal({ ...modal, mat_no: id })} />
                     {/* ลิสต์ว่าง = ต้องบอกว่าทำไม ห้ามปล่อยให้ดูเหมือน dropdown เสีย */}
                     {prodAll.length === 0 && prodUnreg.length === 0 && (
                       <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>

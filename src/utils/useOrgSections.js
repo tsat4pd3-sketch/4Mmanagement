@@ -14,8 +14,17 @@ import { supabase } from '../supabaseClient';
 export function useOrgSections() {
   const [orgSections, setOrgSections] = useState([]);
   useEffect(() => {
+    let alive = true;
     supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name')
-      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name).sort()));
+      .then(async ({ data }) => {
+        const fromOrg = (data || []).map(n => n.code || n.name).filter(Boolean).sort();
+        if (fromOrg.length) { if (alive) setOrgSections(fromOrg); return; }
+        // ผังยังว่าง (โรงงานใหม่ตอน rollout) → fallback distinct production_lines.section (backward-compat
+        // ตามหมายเหตุหัวไฟล์ — เดิมผู้เรียกต้องทำเองทีละหน้า · 2026-09-07 ย้ายเข้า hook)
+        const { data: ln } = await supabase.from('production_lines').select('section').not('section', 'is', null);
+        if (alive) setOrgSections([...new Set((ln || []).map(l => l.section).filter(Boolean))].sort());
+      });
+    return () => { alive = false; };
   }, []);
   return orgSections;
 }
@@ -40,4 +49,23 @@ export function useOrgDepts() {
       return [...new Set(tree.depts.filter(d => d.parent_id === sec.id).map(nameOf))].sort();
     };
   }, [tree]);
+}
+
+/** ลิสต์ "ทีม/กะ" จากผัง (org_nodes kind='team') — ผังยังไม่มีทีม = ถอยไป A/B/C เดิม
+ *  (2026-09-07 · single-source audit: Report/Checkin เคย hardcode A/B/C 8 จุด ขณะที่ /operator อ่านจากผังแล้ว)
+ *  ⚠️ dropdown "ทีม" ทุกหน้าใช้ hook นี้ ห้ามเขียน ['A','B','C'] ซ้ำ */
+export const DEFAULT_TEAMS = ['A', 'B', 'C'];
+export function useOrgTeams() {
+  const [teams, setTeams] = useState(DEFAULT_TEAMS);
+  useEffect(() => {
+    let alive = true;
+    supabase.from('org_nodes').select('code, name').eq('kind', 'team').eq('is_active', true).order('sort_order', { nullsFirst: false })
+      .then(({ data }) => {
+        if (!alive) return;
+        const t = [...new Set((data || []).map(n => n.code || n.name).filter(Boolean))];
+        if (t.length) setTeams(t);
+      });
+    return () => { alive = false; };
+  }, []);
+  return teams;
 }

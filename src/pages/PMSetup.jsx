@@ -9,7 +9,13 @@ import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
-import { toHierarchicalOptions } from '../utils/lineHierarchy'
+// picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
+import LineSelect from '../components/LineSelect'
+import MachineSelect from '../components/MachineSelect'
+import ProductSelect from '../components/ProductSelect'
+import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเครื่องที่เคยบันทึกใน jigs — Machine Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import { LINE_COLUMNS } from '../utils/useProductionLines'
+import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
@@ -43,6 +49,12 @@ function inferEquipType(stationCode) {
   const code = (stationCode ?? '').split('-')[0].trim().toUpperCase()
   if (code.startsWith('J')) return 'jig'
   return 'machine'
+}
+// ประเภทอุปกรณ์ของแถวเงา = machines.equipment_kind ของเครื่องที่เลือก (jig/die/machine) — เดาจากรหัสเฉพาะเมื่อทะเบียนไม่ระบุ
+// (facility ไม่มีใน EQUIP_TYPE_LABEL → ถอยไปเดา · ยังคง 2 taxonomy ตาม audit #19 — ไม่แตะโครง) 2026-09-07
+function equipTypeOfMachine(m) {
+  const k = m?.equipment_kind
+  return k && EQUIP_TYPE_LABEL[k] ? k : inferEquipType(m?.machine_no)
 }
 
 function newCheckpoint(extra = {}) {
@@ -444,6 +456,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [addMode, setAddMode] = useState(isEdit ? 'manual' : 'workstation')
   const [machineOptions, setMachineOptions] = useState([])
   const [machineId, setMachineId] = useState(editJig?.machine_id ?? null)
+  // 📜 เลขเครื่องที่เคยบันทึกใน jigs (DR) — facility/จิ๊กที่ยังไม่ลง Machine Master แต่เคยตั้ง PM ไว้ ยังเลือกซ้ำได้ (machine_id null เหมือนพิมพ์เอง) · 2026-09-07
+  const jigMachineHist = useColumnHistory(supabaseDR, 'jigs', 'machine_no', { upper: true })
 
   const [name, setName] = useState(editJig?.name ?? '')
   const [description, setDescription] = useState(editJig?.description ?? '')
@@ -476,6 +490,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [error, setError] = useState('')
 
   const [lineOptions, setLineOptions] = useState([])
+  // กระบวนการ (process_types DR) — jigs.process เก็บ key · fallback DEFAULT_PROCESS_TYPES เมื่อโหลดไม่ได้ (2026-09-07)
+  const [procTypes, setProcTypes] = useState(() => activeProcessTypes())
+  // พื้นที่ facility (pm_facility_areas) — โหมด manual ลง Air Pump/Compressor ที่อยู่ "Utility Room" ไม่ใช่ไลน์ผลิต
+  // → เป็น optgroup แยกใน <LineSelect> ห้ามปนกับไลน์ผลิต (UI-CONVENTIONS §5.3 ข้อ 9) · best-effort ตารางไม่มีก็ไม่พัง
+  const [facilityAreas, setFacilityAreas] = useState([])
+  // MAT ที่เลือกจาก Product Master เพื่อเติม Part Name/No. (jigs ไม่มีคอลัมน์ mat_no — ไม่บันทึก)
+  const [partMat, setPartMat] = useState('')
   // สรุปรายการตรวจของเครื่องนี้แยกตามแผนก (1 เครื่องมีได้หลายแผนก) + เครื่องมือย้าย/คัดลอก
   const [deptSummary, setDeptSummary] = useState([])
   const [moveBusy, setMoveBusy] = useState(false)
@@ -483,13 +504,17 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [existingNote, setExistingNote] = useState(null)  // เครื่องที่เลือกเคยขึ้นทะเบียน PM แผนกอื่นแล้ว
   useEffect(() => {
     getCurrentUserId().then(setUserId)
-    supabaseDR.from('machines').select('id, line_name, machine_no, machine_name').order('line_name').order('sort_order')
+    // equipment_kind/is_active มาด้วย — <MachineSelect> ใช้ติดป้ายชนิด/⏸ และ derive ประเภทอุปกรณ์ (2026-09-07)
+    supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind, is_active').order('line_name').order('sort_order')
       .then(({ data }) => setMachineOptions(data ?? []))
-    // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown
-    // เก็บเป็น object (id/name/parent_line_name) เพื่อ render จัดชั้นตามผัง (§5.3 ข้อ 8)
+    // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown + ไลน์ของอุปกรณ์
+    // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (ลำดับชั้น + section + is_active) · 2026-09-07
     // ตั้งใจไม่ scope ตาม section — config นับ shot อ้างไลน์ข้ามส่วนงานได้ (เช่นแม่พิมพ์ย้ายเครื่อง)
-    supabase.from('production_lines').select('id, name, parent_line_name').order('name')
+    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
       .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
+    supabaseDR.from('pm_facility_areas').select('id, name').order('sort_order').order('name')
+      .then(({ data }) => setFacilityAreas((data ?? []).filter(a => a.name)), () => {})
+    loadProcessTypes().then(() => setProcTypes(activeProcessTypes())).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -598,7 +623,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     setLineName(m.line_name ?? '')
     setMachineNo(m.machine_no ?? '')
     setEquipCategory('production')
-    setEquipType(inferEquipType(m.machine_no))
+    setEquipType(equipTypeOfMachine(m))
     // เครื่องนี้อาจขึ้นทะเบียน PM ไว้แล้วโดยแผนกอื่น — บอกให้รู้ว่าจะ "เพิ่มรายการตรวจของแผนกนี้"
     // ไม่ใช่สร้างอุปกรณ์ซ้ำ (save จะใช้แถว jigs เดิม)
     supabaseDR.from('jigs').select('id').eq('module', 'mtn').eq('machine_id', id).maybeSingle()
@@ -992,14 +1017,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           {addMode === 'workstation' && !isEdit && (
             <div>
               <label style={S.label}>เลือกเครื่องจักร ({machineOptions.length} ตัว)</label>
-              <select value={machineId ?? ''} onChange={e => handleMachineSelect(e.target.value || null)} style={{ width: '100%' }}>
-                <option value="">— เลือกเครื่องจักร —</option>
-                {Object.entries(machinesByLine).sort(([a], [b]) => a.localeCompare(b)).map(([line, ms]) => (
-                  <optgroup key={line} label={`📍 ${line}`}>
-                    {ms.map(m => <option key={m.id} value={m.id}>{m.machine_no}{m.machine_name ? ` — ${m.machine_name}` : ''}</option>)}
-                  </optgroup>
-                ))}
-              </select>
+              {/* 🔴 ต้อง groupByLine — feedback หน้างาน 2026-09-08 "ปกติมันจะเป็นไลน์ผลิตค่ะ ตอนจะแอดอุปกรณ์ใหม่":
+                  ทะเบียนมี 635 ตัว (แม่พิมพ์ 262 · เครื่อง 189 · จิ๊ก 148 · facility 36) และ 272 ตัวใช้ชื่อพาร์ทยาวๆ
+                  เป็น machine_no → ลิสต์แบนเรียงตามรหัสขึ้น "4B-01 / 4X4 BRACKET…" ปนกัน ไล่หาไลน์ตัวเองไม่ได้
+                  (ของเดิมเป็น <select> ที่ optgroup ตามไลน์อยู่แล้ว — ตอนเปลี่ยนเป็นช่องค้นหาแล้วกลุ่มหายไป)
+                  maxRows สูง เพราะจอนี้คน "ไล่ดูตามไลน์" ไม่ได้พิมพ์ค้นอย่างเดียว */}
+              <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptions} groupByLine maxRows={999}
+                placeholder="— ค้นหา / เลือกเครื่องจักร (รหัส · ชื่อ · ไลน์) —"
+                onChange={({ id }) => handleMachineSelect(id || null)} />
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}
@@ -1059,20 +1084,52 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           </div>
 
           <div className="mgrid" style={S.inputRow}>
-            {[
-              { label: 'No./รหัส', val: jigNo, set: setJigNo, ph: 'JIG-001' },
-              { label: 'Process', val: process, set: setProcess, ph: 'Welding' },
-              { label: 'Model', val: model, set: setModel, ph: 'Model A' },
-              { label: 'Part Name', val: partName, set: setPartName, ph: 'Pin A' },
-              { label: 'Part No.', val: partNo, set: setPartNo, ph: 'P-0001' },
-              { label: 'Machine No.', val: machineNo, set: setMachineNo, ph: 'M-01' },
-            ].map(({ label, val, set, ph }) => (
-              <div key={label}><label style={S.label}>{label}</label><input value={val} onChange={e => set(e.target.value)} placeholder={ph} /></div>
-            ))}
+            <div><label style={S.label}>No./รหัส</label><input value={jigNo} onChange={e => setJigNo(e.target.value)} placeholder="JIG-001" /></div>
+            {/* Process = key จาก process_types (label โชว์) — ค่าเก่าที่พิมพ์ไว้ (เช่น "Welding") ยังเลือกค้างได้ ไม่หายเงียบ · 2026-09-07 */}
+            <div><label style={S.label}>Process</label>
+              <select value={process} onChange={e => setProcess(e.target.value)} style={{ width: '100%' }}>
+                <option value="">— ไม่ระบุ —</option>
+                {process && !procTypes.some(p => p.key === process) && <option value={process}>⚠ {process} (ไม่มีในทะเบียนกระบวนการ)</option>}
+                {procTypes.map(p => <option key={p.key} value={p.key}>{p.icon ? `${p.icon} ` : ''}{p.label}</option>)}
+              </select>
+            </div>
+            <div><label style={S.label}>Model</label><input value={model} onChange={e => setModel(e.target.value)} placeholder="Model A" /></div>
+            {/* Machine No. = <MachineSelect> เซ็ต machine_id คู่กัน — โหมด manual เดิมพิมพ์เองแล้ว machine_id=null ทำ Andon/PmCoordination
+                หาเครื่องไม่เจอ · พิมพ์เองยังได้ (facility ที่ไม่อยู่ใน Machine Master) แต่ติดป้าย · โหมด Floor Map ล็อกตามเครื่องที่เลือก · 2026-09-07 */}
+            <div><label style={S.label}>Machine No.</label>
+              <MachineSelect value={machineNo} machines={machineOptions} lines={lineName ? [lineName] : undefined} groupByLine allowFree history={jigMachineHist}
+                disabled={addMode === 'workstation' && !isEdit}
+                freeHint="(อุปกรณ์ที่ไม่อยู่ใน Machine Master — จะไม่ผูก machine_id)"
+                onChange={res => {
+                  setMachineNo(res.machine_no || '')
+                  setMachineId(res.opt ? res.id : null)
+                  if (res.opt) {
+                    if (res.line_name && !lineName) setLineName(res.line_name)
+                    setEquipType(equipTypeOfMachine(res.opt))
+                  }
+                }} />
+            </div>
+            <div><label style={S.label}>Part Name</label><input value={partName} onChange={e => setPartName(e.target.value)} placeholder="Pin A" /></div>
+            <div><label style={S.label}>Part No.</label><input value={partNo} onChange={e => setPartNo(e.target.value)} placeholder="P-0001" /></div>
+            {/* ค้นพาร์ทจาก Product Master → เติม Part Name/No. ให้ (jigs ไม่เก็บ mat_no) · พิมพ์ทับได้ = จิ๊กที่ใช้กับหลายพาร์ท · 2026-09-07 */}
+            <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>เลือกพาร์ทจาก Product Master (เติม Part Name / Part No. ให้)</label>
+              <ProductSelect value={partMat} lines={lineName ? [lineName] : undefined} allowFree
+                freeHint="(พาร์ทที่ยังไม่อยู่ใน Product Master — กรอก Part Name/No. เองด้านบน)"
+                onChange={res => {
+                  setPartMat(res.mat_no || '')
+                  if (res.opt) { setPartName(res.name || res.mat_no || ''); setPartNo(res.p_no || res.mat_no || '') }
+                }} />
+            </div>
           </div>
 
           {(addMode === 'manual' || isEdit) && (
-            <div><label style={S.label}>ไลน์ / พื้นที่</label><input value={lineName} onChange={e => setLineName(e.target.value)} placeholder="เช่น Line-A, Utility Room" /></div>
+            <div><label style={S.label}>ไลน์ / พื้นที่</label>
+              {/* <LineSelect> แทนช่องพิมพ์เอง — jigs.line_name เป็นคีย์จัดกลุ่ม DailyPM/PMSchedule/FactoryMap · พื้นที่ facility
+                  แยก optgroup จาก pm_facility_areas · ค่าเก่าที่ไม่อยู่ในทะเบียนยังโชว์ ⚠ ไม่หายเงียบ · 2026-09-07 */}
+              <LineSelect lines={lineOptions} value={lineName} onChange={setLineName} placeholder="— เลือกไลน์ / พื้นที่ —" includeRetired
+                extraGroups={[{ label: '🏭 พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
+                style={{ width: '100%' }} />
+            </div>
           )}
 
           <div>
@@ -1107,14 +1164,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 </div>
                 <div>
                   <label style={S.label}>นับยอดจากไลน์</label>
-                  <select value={usageLine} onChange={e => setUsageLine(e.target.value)}>
-                    <option value="">— ใช้ไลน์ของอุปกรณ์{lineName ? ` (${lineName})` : ''} —</option>
-                    {/* ค่าที่ตั้งไว้เดิมแต่ไม่อยู่ในลิสต์ (ไลน์ถูกลบ/เปลี่ยนชื่อ) ยังต้องเลือกค้างไว้ได้ — ห้ามหายเงียบ */}
-                    {usageLine && !lineOptions.some(l => l.name === usageLine) && <option value={usageLine}>{usageLine}</option>}
-                    {toHierarchicalOptions(lineOptions).map(({ line: l, depth }) => (
-                      <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                    ))}
-                  </select>
+                  {/* <LineSelect> ไม่ส่ง scope (ตั้งใจ — นับ shot อ้างไลน์ข้ามส่วนงานได้) · includeRetired + ค่าเก่าที่ไม่อยู่ในทะเบียน
+                      ยังเลือกค้างได้ (guarantee #4 ของ LineSelect) · 2026-09-07 */}
+                  <LineSelect lines={lineOptions} value={usageLine} onChange={setUsageLine} includeRetired
+                    placeholder={`— ใช้ไลน์ของอุปกรณ์${lineName ? ` (${lineName})` : ''} —`} style={{ width: '100%' }} />
                 </div>
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
                   ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score · เลือกไลน์จากฐานข้อมูลไลน์ผลิต (เว้นว่าง = ใช้ไลน์ของอุปกรณ์)

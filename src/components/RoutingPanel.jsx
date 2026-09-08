@@ -14,8 +14,11 @@ import { toast } from '../components/Toast';
 import { activeProcessTypes } from '../utils/processTypes';
 import { nextSeq } from '../utils/routing';
 import useIsMobile from '../utils/useIsMobile';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
 import { checkWrite } from '../utils/dbWrite';
+import LineSelect from './LineSelect';
+import MachineSelect from './MachineSelect';
+import SupplierSelect from './SupplierSelect'; // ผู้รับจ้าง = ทะเบียน DR suppliers (จ้างนอก/บริการขึ้นก่อน) — 2026-09-08
+import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกใน routing — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const BLANK = {
   step_name: '', line_name: '', machine_no: '', process_type: '',
@@ -41,6 +44,8 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
   const [editing, setEditing] = useState(null);        // row | 'new' | null
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
+  // 📜 เลขเครื่องที่เคยบันทึกใน part_routings (DR) — เครื่องที่ยังไม่ลง /machines แต่มี routing อยู่แล้ว ยังเลือกซ้ำได้ (text join key เหมือนเดิม) · 2026-09-07
+  const machineHist = useColumnHistory(supabaseDR, 'part_routings', 'machine_no', { upper: true });
 
   const loadAll = useCallback(async () => {
     const [{ data: prods }, { data: rt }] = await Promise.all([
@@ -156,12 +161,13 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
     loadSteps(sel.mat_no); loadAll();
   };
 
-  // dropdown ไลน์จัดชั้นตามผัง (§5.3 ข้อ 8) — dedupe ด้วยชื่อ (กันข้อมูลซ้ำ) แล้วให้ helper เรียงแม่→ลูก
-  const lineOptions = useMemo(() => {
+  // ทะเบียนไลน์สำหรับ <LineSelect> — dedupe ด้วยชื่อ (กันข้อมูลซ้ำ) · parent ต้องส่ง LINE_COLUMNS ครบ (ลำดับชั้น/ปลดระวาง) 2026-09-07
+  const uniqLines = useMemo(() => {
     const seen = new Set();
-    const uniq = lines.filter(l => l.name && !seen.has(l.name) && seen.add(l.name));
-    return toHierarchicalOptions(uniq);
+    return lines.filter(l => l.name && !seen.has(l.name) && seen.add(l.name));
   }, [lines]);
+  // เครื่องของไลน์ที่เลือกขึ้นก่อน (prefer-first ไม่ตัดไลน์อื่น — เครื่องข้ามไลน์มีจริง)
+  const machinePrefLines = useMemo(() => (form.line_name ? [form.line_name] : undefined), [form.line_name]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(260px, 340px) 1fr', gap: 16, alignItems: 'start' }}>
@@ -290,21 +296,23 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               {form.is_outsourced ? (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={lbl}>ผู้รับจ้าง *</label>
-                  <input value={form.vendor_name} onChange={e => setForm(f => ({ ...f, vendor_name: e.target.value }))} placeholder="เช่น JAROONRAT" style={inp} />
+                  {/* 2026-09-08: <SupplierSelect> แทน input เปล่า — vendor_name ยังเก็บชื่อ text (VSM/OrderTrace อ่านค่าเดิมได้) · พิมพ์เองได้พร้อมป้าย */}
+                  <SupplierSelect value={form.vendor_name || ''} kinds={['service']} placeholder="เช่น JAROONRAT"
+                    onChange={r => setForm(f => ({ ...f, vendor_name: r.supplier }))} inputStyle={inp} />
                 </div>
               ) : (<>
                 <div>
                   <label style={lbl}>ไลน์ที่ทำ *</label>
-                  <select value={form.line_name} onChange={e => setForm(f => ({ ...f, line_name: e.target.value }))} style={inp}>
-                    <option value="">— เลือกไลน์ —</option>
-                    {lineOptions.map(({ line: l, depth }) => (
-                      <option key={l.id} value={l.name}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                    ))}
-                  </select>
+                  {/* 2026-09-07: <LineSelect> (ลำดับชั้น §5.3 ข้อ 8 · ปลดระวางไม่โผล่) — line_name เป็น join key ที่ VSM (vsmModel) ใช้ */}
+                  <LineSelect lines={uniqLines} value={form.line_name} onChange={v => setForm(f => ({ ...f, line_name: v }))} style={inp} />
                 </div>
                 <div>
                   <label style={lbl}>หมายเลขเครื่อง (ถ้ามี)</label>
-                  <input value={form.machine_no} onChange={e => setForm(f => ({ ...f, machine_no: e.target.value }))} style={inp} />
+                  {/* 2026-09-07: เลือกจากทะเบียนเครื่อง (DR machines) ผ่าน <MachineSelect> — เครื่องของไลน์ที่เลือกขึ้นก่อน · ไม่ allowFree
+                      (machine_no เป็น text join key ที่ VSM/OrderTrace เทียบด้วย normNo) */}
+                  <MachineSelect value={form.machine_no} lines={machinePrefLines} history={machineHist}
+                    onChange={({ machine_no }) => setForm(f => ({ ...f, machine_no: machine_no || '' }))}
+                    inputStyle={{ background: 'var(--bg2)', padding: '6px 30px 6px 9px', borderRadius: 6 }} />
                 </div>
               </>)}
               <div>
