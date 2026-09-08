@@ -137,6 +137,7 @@ model: inherit
   ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
+- **[F-LIST-2]** เปลี่ยน `<select>` ที่มี `<optgroup>` ไปเป็น `<SearchSelect>`/picker กลาง ต้องยกกลุ่มมาด้วย (`group` ของ option / `groupByLine`) และ `maxRows` ต้องคลุมทั้งลิสต์ — ตัดแถวทั้งที่จัดกลุ่ม = กลุ่มท้ายๆ ไม่มีวันโผล่ (UI-CONVENTIONS §5.1.1 · 2026-09-08)
 - **[F-LIST-1]** `<select>` ที่ option มาจาก master ใหญ่ (พนักงาน/โปรไฟล์/เครื่องจักร/สินค้า·MAT/อะไหล่/ประเภท downtime/OP ของ PE/แผน PM) ต้องเป็น `<SearchSelect>` (UI-CONVENTIONS §5.1.1 · audit 2026-09-08) · ไลน์ผลิต = `<LineSelect>` · ลิสต์สั้น (สถานะ/กะ/ทีม/ประเภท ≤30) ใช้ `<select>` ได้ · grep: `\.map\(.*<option` แล้วไล่ดูตัวแปรต้นทาง
 
 - **F1** marker บนผังไลน์ = วงกลม+ป้ายใต้เท่านั้น (ห้ามกล่องเหลี่ยม) · สูตร MK สเกลตาม

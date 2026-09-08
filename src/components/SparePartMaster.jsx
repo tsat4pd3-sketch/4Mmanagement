@@ -689,7 +689,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               <Field label="ใช้กับ (เครื่อง/จิ๊ก)" hint="พิมพ์ได้ · หรือเลือกจากทะเบียนเครื่องให้เลขตรงกัน (คั่นด้วย ,)">
                 <input value={f.used_with} onChange={e => set('used_with', e.target.value)} placeholder="เช่น RB-104, จิ๊ก APRON" style={inp} />
                 {/* ตัวช่วยเติมเลขเครื่องจาก <MachineSelect> — เลือกแล้วต่อท้ายลิสต์ (ยังเก็บเป็น text ตาม schema เดิม) · 2026-09-07 */}
-                <MachineSelect value={usedQ} placeholder="➕ เพิ่มเครื่อง/จิ๊กจากทะเบียน…" style={{ marginTop: 6 }}
+                <MachineSelect value={usedQ} groupByLine placeholder="➕ เพิ่มเครื่อง/จิ๊กจากทะเบียน…" style={{ marginTop: 6 }}
                   inputStyle={{ background: 'var(--bg)', fontSize: 12, padding: '6px 30px 6px 10px' }}
                   onChange={res => { if (res.opt) { set('used_with', appendCsv(f.used_with, res.machine_no)); setUsedQ(''); } else setUsedQ(res.machine_no || ''); }} />
               </Field>
