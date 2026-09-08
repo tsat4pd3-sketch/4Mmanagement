@@ -82,6 +82,8 @@ export default function FixtureRegistry() {
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);   // ทุกชนิด (ใช้แท็บจัดชนิด)
   const [jigsShadow, setJigsShadow] = useState([]);
+  const [imgJigIds, setImgJigIds] = useState(() => new Set());   // jigs.id ที่มีรูปเครื่อง (ปักหมุดได้)
+  const [onlyWithImg, setOnlyWithImg] = useState(false);
   const [mapKeys, setMapKeys] = useState(() => new Set());
   const [products, setProducts] = useState([]);
   const [kinds, setKinds] = useState(DEFAULT_POINT_KINDS);
@@ -107,7 +109,7 @@ export default function FixtureRegistry() {
   const load = useCallback(async () => {
     setLoading(true);
     const warn = [];
-    const [ln, mc, jg, mp, pr, kd, fp] = await Promise.all([
+    const [ln, mc, jg, mp, pr, kd, fp, ji] = await Promise.all([
       cachedMaster('fx_lines', () => supabase.from('production_lines')
         .select('id, name, section, parent_line_name, is_active').order('name')),
       supabaseDR.from('machines')
@@ -119,6 +121,7 @@ export default function FixtureRegistry() {
         .select('mat_no, p_no, name, line_name, is_active').eq('is_active', true)),
       supabaseDR.from('fixture_point_kinds').select('*').eq('is_active', true).order('sort_order'),
       supabaseDR.from('fixture_points').select('*').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('jig_images').select('jig_id'),   // แค่รู้ว่าตัวไหนมีรูป — ป้าย 📷 ให้เลือกตัวที่ปักหมุดได้ก่อน
     ]);
 
     if (ln.error) warn.push('ไลน์');
@@ -132,6 +135,7 @@ export default function FixtureRegistry() {
     setProducts(pr.data || []);
     if (kd.data?.length) setKinds(kd.data);
     setAllPoints(fp.data || []);
+    setImgJigIds(new Set((ji.data || []).map(r => r.jig_id)));
     setDataWarn(warn.length ? `โหลดไม่สำเร็จ: ${warn.join(' · ')} — ตัวเลขบางส่วนอาจไม่ครบ` : '');
     setLoading(false);
   }, []);
@@ -159,10 +163,16 @@ export default function FixtureRegistry() {
     () => machines.filter(m => m.equipment_kind === 'jig' && inScope(m.line_name)),
     [machines, inScope],
   );
+  const shadowByMachine = useMemo(() => Object.fromEntries(jigsShadow.map(j => [j.machine_id, j])), [jigsShadow]);
+  const hasImg = useCallback((f) => { const sh = shadowByMachine[f.id]; return !!(sh && imgJigIds.has(sh.id)); }, [shadowByMachine, imgJigIds]);
   const shownFixtures = useMemo(() => {
     const kw = q.trim().toLowerCase();
-    return kw ? fixtures.filter(f => `${f.machine_no} ${f.machine_name}`.toLowerCase().includes(kw)) : fixtures;
-  }, [fixtures, q]);
+    let out = kw ? fixtures.filter(f => `${f.machine_no} ${f.machine_name} ${f.line_name || ''}`.toLowerCase().includes(kw)) : fixtures;
+    if (onlyWithImg) out = out.filter(hasImg);
+    // ตัวที่มีรูปขึ้นก่อน — ปักหมุดได้ทันที (ไม่ตัดตัวอื่นทิ้ง)
+    return [...out].sort((a, b) => (hasImg(b) - hasImg(a)) || String(a.machine_no).localeCompare(String(b.machine_no)));
+  }, [fixtures, q, onlyWithImg, hasImg]);
+  const withImgCount = useMemo(() => fixtures.filter(hasImg).length, [fixtures, hasImg]);
 
   const fx = useMemo(() => fixtures.find(f => f.id === fxId) || null, [fixtures, fxId]);
   const shadow = useMemo(() => jigsShadow.find(j => j.machine_id === fxId) || null, [jigsShadow, fxId]);
@@ -400,10 +410,14 @@ export default function FixtureRegistry() {
               <option value="">— เลือกจิ๊ก / ฟิกเจอร์ ({shownFixtures.length}) —</option>
               {shownFixtures.map(f => (
                 <option key={f.id} value={f.id}>
-                  {f.machine_no} · {f.machine_name || '—'}{f.line_name ? ` (${f.line_name})` : ''}
+                  {hasImg(f) ? '📷 ' : ''}{f.machine_no} · {f.machine_name || '—'}{f.line_name ? ` (${f.line_name})` : ''}
                 </option>
               ))}
             </select>
+            <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }} title="มีรูปเครื่องจาก PM Setup แล้ว = ปักตำแหน่งจุดบนรูปได้ทันที">
+              <input type="checkbox" checked={onlyWithImg} onChange={e => setOnlyWithImg(e.target.checked)} />
+              📷 เฉพาะที่มีรูป ({withImgCount})
+            </label>
             {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>👥 เห็นเฉพาะส่วนงานของคุณ</span>}
           </div>
 

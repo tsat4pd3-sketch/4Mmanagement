@@ -1251,6 +1251,14 @@ export default function PMCheckData() {
                       <div style={{ fontSize: 12, marginTop: 14 }}>
                         ยังไม่ได้ลงจุดตรวจของแผนกนี้จริง → ตั้งที่ <b>PM Setup</b> (ถ้าลงผิดแผนก ย้ายข้ามแผนกได้ที่นั่น)
                       </div>
+                      {/* จิ๊กที่มีจุดชิมแต่ยังไม่มีจุดตรวจ PM (เช่น JHYD12-01) — ค่าชิมบันทึกที่ /fixture ได้เลย ไม่ต้องรอใบตรวจ */}
+                      {shimPoints.length > 0 && (
+                        <div style={{ fontSize: 12, marginTop: 10, color: SHIM_PIN_COLOR }}>
+                          🔩 เครื่องนี้มีจุดชิม {shimPoints.length} จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่{' '}
+                          <Link to="/fixture?tab=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>ทะเบียนจิ๊ก → 🔧 บันทึกชิม</Link>
+                          {' '}(ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่)
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
