@@ -137,6 +137,8 @@ model: inherit
   ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
+- **[F-LIST-1]** `<select>` ที่ option มาจาก master ใหญ่ (พนักงาน/โปรไฟล์/เครื่องจักร/สินค้า·MAT/อะไหล่/ประเภท downtime/OP ของ PE/แผน PM) ต้องเป็น `<SearchSelect>` (UI-CONVENTIONS §5.1.1 · audit 2026-09-08) · ไลน์ผลิต = `<LineSelect>` · ลิสต์สั้น (สถานะ/กะ/ทีม/ประเภท ≤30) ใช้ `<select>` ได้ · grep: `\.map\(.*<option` แล้วไล่ดูตัวแปรต้นทาง
+
 - **F1** marker บนผังไลน์ = วงกลม+ป้ายใต้เท่านั้น (ห้ามกล่องเหลี่ยม) · สูตร MK สเกลตาม
   renderedMapWidth (ห้าม vw/ค่าตายตัว) · edge clamp · anchor: wrapper translate(-50%,-50%)
   สูงเท่าวงกลม ป้ายเป็น absolute top:100% · หน้าใหม่ควร reuse `MachineFloorMap.jsx`

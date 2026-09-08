@@ -373,6 +373,16 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
   · **ลิสต์สั้น (ประเภท/สถานะ/ทีม/กะ) ใช้ `<select>` ต่อไป** — native picker บนมือถือเร็วกว่า
   · dropdown ที่เป็น **"ไลน์ผลิต"** ยังต้องใช้ `<LineSelect>` เหมือนเดิม (มีลำดับชั้น + scope)
   · `<input list=datalist>` ก็ค้นได้ ใช้ได้เมื่อไม่ต้องโชว์ข้อมูลประกอบ (สต็อก/ชั้นวาง) ต่อแถว
+- **📏 audit ทั้งระบบ 2026-09-08 (คำสั่ง user "dropdown ทุกจุดต้องค้นได้"):** นับจากฐานจริง — พนักงาน 209 · เครื่องจักร 632 (ไลน์เดียวสูงสุด 119) · สินค้า 139 · parts_master 329 · ประเภท downtime 86 · โปรไฟล์ 86 · OP (pe_processes) 94 · ไลน์ผลิต 31
+  ⇒ **ลิสต์จาก master กลุ่มนี้ = ต้อง `<SearchSelect>` เสมอ** (พนักงาน · โปรไฟล์/ผู้เซ็น · เครื่องจักร/จุดงาน · สินค้า/MAT · อะไหล่ · ประเภท downtime · OP ของ PE · แผน PM) — แปลงแล้ว 20 จุด/13 ไฟล์:
+  ShiftOrganize (override พนักงาน) · Report (รายบุคคล · ผู้ออกเอกสาร) · DocFormsRegistry ×2 · MaterialRequests (ผู้เซ็น) · BbsCheck (ผู้ตรวจ) ·
+  DailyReport (เครื่องขนาน · MAT.NO ตอนเปิดใบ · ประเภท downtime) · PMSetup (เครื่องทั้งโรงงาน 632) · Improvements (เครื่อง · สินค้า) · PmCoordination (แผน PM) ·
+  LineSetup (วางเครื่องบนผัง) · LineStock (Product/BOM) · QualityControl (กรองชิ้นงาน) · PEDocs (กรอง OP · FMEA · CP)
+  · **เกี่ยวกับ §5.1.2 (picker กลาง):** picker กลางรับ/คืน "ค่า text" (ชื่อคน · machine_no · mat_no) — จุดที่ฟอร์มเก็บ **FK id** (profile uid · employee id · product id · downtime_type id · kanban std · OP id) หรือมีกลุ่ม/badge เฉพาะ (Improvements พาเรโต้ · LineSetup จัดกลุ่มตามชนิดเครื่อง · MAT.NO ตอนเปิดใบ ⚠ชื่อซ้ำ) ใช้ `<SearchSelect>` ตรง · จุดที่เป็นเครื่องล้วนใช้ `<MachineSelect>` (DailyReport เครื่องขนาน · PMSetup `valueKey="id"`)
+  · **ไลน์ผลิต (31) ยังใช้ `<LineSelect>`** (ลำดับชั้น+scope สำคัญกว่า ค้นได้ด้วยตัวแรกพอไหว) — ถ้าไลน์โตเกิน ~40 ค่อยเพิ่มโหมดค้นใน LineSelect ที่เดียว
+  · `SearchSelect` **ไม่ต้องส่ง `text` แล้ว** (uncontrolled — ถือคำค้นเอง) ใช้ในบล็อก render/IIFE ที่ใส่ hook ไม่ได้ · ส่ง `text` เฉพาะเคส `allowFree` ที่ต้องเก็บชื่อพิมพ์เอง · มี `inputId` ให้โค้ดที่ `getElementById(...).focus()`
+  · id ของ option ต้อง **string** เสมอ (`String(x.id)`) และเทียบ `value` เป็น string — component เทียบด้วย `===`
+  · ตรวจ: `grep -n "\.map(.*<option" src/pages/*.jsx src/components/*.jsx` แล้วดูว่าตัวแปรที่ map มาจาก master ข้างบนหรือไม่
 - **ห้ามมี 2 ช่องคู่กัน "เลือกจากลิสต์" + "หรือพิมพ์เอง"** — พอเลือกแล้วช่องขวาก็แค่สะท้อนชื่อเดิม
   กินที่ + คนอ่านไม่รู้ว่าต้องกรอกช่องไหน · รวมเป็นช่องเดียว: เลือกจากลิสต์ = ผูก id ·
   พิมพ์แล้วไม่ตรงลิสต์ = เก็บเป็นข้อความ **พร้อมป้ายบอกว่า "ไม่ได้อยู่ในทะเบียน"** (ห้ามเงียบ)

@@ -33,6 +33,7 @@ import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -942,9 +943,10 @@ table{border-collapse:collapse;width:100%}
           <option value="">ทุก Team</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
-        </select>
+        <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
+          inputStyle={{ padding: '7px 30px 7px 10px', borderRadius: 7, fontSize: 13 }}
+          options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
+          onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
@@ -2209,10 +2211,8 @@ function DocumentControlPanel() {
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
-          <select value={issuedBy} onChange={e => setIssuedBy(e.target.value)} style={inSt}>
-            <option value="">— เลือก —</option>
-            {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+          <SearchSelect value={issuedBy || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —" inputStyle={inSt}
+            options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setIssuedBy(id)} />
         </div>
       </div>
 

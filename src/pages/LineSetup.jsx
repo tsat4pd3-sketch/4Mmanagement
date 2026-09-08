@@ -1861,24 +1861,12 @@ export default function LineSetup({ embedded = false } = {}) {
               {(machineTempPos || machineForm.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
                   {/* ซ่อนเครื่องที่วางบนผังไปแล้ว (ทุกไลน์ในครอบครัว) — เหลือเฉพาะที่ยังไม่วาง + ตัวที่กำลังแก้ */}
-                  <select value={machineForm.machine_no}
-                    onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
-                    <option value="">-- เลือกเครื่องจักร --</option>
-                    {selectableMachines.filter(m => !m.machine_type_id).map(m => (
-                      <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
-                    ))}
-                    {machineTypes.map(t => {
-                      const items = selectableMachines.filter(m => m.machine_type_id === t.id);
-                      if (!items.length) return null;
-                      return (
-                        <optgroup key={t.id} label={`${t.icon || ''} ${t.label}`}>
-                          {items.map(m => (
-                            <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
+                  <SearchSelect value={machineForm.machine_no || ''} placeholder="-- ค้นหาเครื่องจักร (รหัส/ชื่อ) --"
+                    options={[
+                      ...selectableMachines.filter(m => !m.machine_type_id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, keywords: m.machine_name || '' })),
+                      ...machineTypes.flatMap(t => selectableMachines.filter(m => m.machine_type_id === t.id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, group: `${t.icon || ''} ${t.label}`, keywords: m.machine_name || '' }))),
+                    ]}
+                    onChange={({ id }) => setMachineForm({ ...machineForm, machine_no: id })} />
                   {drMachines.filter(m => m.is_active).length === 0 ? (
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ 🏭 ฐานข้อมูลเครื่องจักร ด้านบน</div>
                   ) : selectableMachines.length === 0 && (
