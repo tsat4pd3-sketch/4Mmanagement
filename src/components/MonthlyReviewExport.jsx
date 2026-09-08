@@ -50,6 +50,8 @@ function TriBox({ state, onChange }) { // state: 'all' | 'some' | 'none'
 export default function MonthlyReviewExport({ onClose }) {
   const { fullName, position, sections: scopeSecs } = useContext(UserContext);
   const [monthKey, setMonthKey] = useState(prevMonthKey());
+  // จำนวนเดือนที่แสดงในเด็ค (รวมเดือนรายงาน) — 1 = เหมือนเดิม ไม่มีสไลด์เทรนด์
+  const [trendMonths, setTrendMonths] = useState(3);
   // tree: [{ code, groups: [{ name, lines: [leafName...] }] }]
   const [tree, setTree] = useState([]);
   const [selLines, setSelLines] = useState(() => new Set()); // leaf ที่ติ๊ก
@@ -116,7 +118,10 @@ export default function MonthlyReviewExport({ onClose }) {
     try {
       const { buildMonthlyReviewData, generateMonthlyReviewPptx } = await import('../lib/monthlyReviewPptx');
       toast.info('กำลังรวบรวมข้อมูล…');
-      const data = await buildMonthlyReviewData({ monthKey, sections: selSections });
+      const data = await buildMonthlyReviewData({ monthKey, sections: selSections, trendMonths });
+      // เทรนด์โหลดไม่สำเร็จ = เด็คยังออก แต่ต้องบอก ห้ามให้เข้าใจว่า "ไม่มีข้อมูลย้อนหลัง"
+      if (data.trend?.warn) toast.error(`⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — เด็คนี้จะไม่มีสไลด์ progression`);
+      else if (trendMonths > 1 && !(data.trend?.months?.length > 1)) toast.info('ย้อนหลังไม่มีกะที่ปิดแล้วพอเทียบ — เด็คนี้จะไม่มีสไลด์ progression');
       // โหลดข้อมูลบางส่วนไม่สำเร็จ = บอกดังๆ แล้วให้ผู้ใช้ตัดสินใจ (ห้ามปล่อยเด็คตัวเลขต่ำกว่าจริงออกไปเงียบๆ)
       if (data.dataWarn) toast.error('⚠ โหลด downtime/ของเสีย/ใบงานไม่ครบ — ตัวเลข DT/PPM ในเด็คอาจต่ำกว่าจริง ลองใหม่อีกครั้ง');
       const df = docFormSync('monthly_review', {});
@@ -155,9 +160,24 @@ export default function MonthlyReviewExport({ onClose }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ display: 'grid', gap: 12 }}>
-          <div>
-            <div style={lb}>เดือนรายงาน</div>
-            <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)} style={{ width: 180 }} />
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'end' }}>
+            <div>
+              <div style={lb}>เดือนรายงาน</div>
+              <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)} style={{ width: 180 }} />
+            </div>
+            <div>
+              <div style={lb}>ช่วงเทียบย้อนหลัง (progression)</div>
+              <select value={trendMonths} onChange={e => setTrendMonths(Number(e.target.value))} style={{ width: '100%', maxWidth: 260 }}>
+                <option value={1}>ไม่เทียบ — เฉพาะเดือนที่เลือก</option>
+                <option value={3}>3 เดือน (เดือนที่เลือก + ย้อนหลัง 2)</option>
+                <option value={6}>6 เดือน (ย้อนหลัง 5)</option>
+                <option value={12}>12 เดือน (ย้อนหลัง 11)</option>
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                เพิ่มสไลด์ <b>PERFORMANCE TREND</b> (กราฟ OEE รายส่วนงาน + ตาราง OEE/DT/PPM/Output ต่อเดือน + Δ)
+                และป้าย ▲▼ เทียบเดือนก่อนบนการ์ดตัวเลข · ย้อนหลังยิ่งเยอะยิ่งใช้เวลาดึงข้อมูลนานขึ้น
+              </div>
+            </div>
           </div>
           <div>
             <div style={lb}>ขอบเขตรายงาน — ติ๊กได้ตั้งแต่ทั้งส่วนงาน จนถึงรายไลน์ (เลือกแล้ว {totalSel} ไลน์)</div>
@@ -216,7 +236,8 @@ export default function MonthlyReviewExport({ onClose }) {
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
             สร้างเด็ค PowerPoint ตาม template TSG <b>Revision 01</b> (พื้นขาว · เขียว-ส้มชุดใหม่ · โลโก้ใหม่)
             จากข้อมูลกะที่ปิดแล้วของเดือนที่เลือก — Executive Summary → กราฟ OEE รายไลน์ →
-            รายส่วน/ไลน์ → Top Downtime + <b>วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ</b> + ใบซ่อม MO →
+            <b>PERFORMANCE TREND ย้อนหลัง</b> → รายส่วน/ไลน์ → Top Downtime +
+            <b>วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ</b> + ใบซ่อม MO →
             Top Defects → Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
