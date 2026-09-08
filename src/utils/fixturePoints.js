@@ -249,6 +249,36 @@ export function suggestFixtureCandidates(machines = [], onMapKeys = new Set()) {
       || String(a.machine_no || '').localeCompare(String(b.machine_no || '')));
 }
 
+// ── 6.5) จุดชิม ↔ รูปเครื่อง / ใบตรวจ PM (2026-09-08) ─────────────────────────
+/**
+ * แปลงค่าที่วัดได้เป็น action ของ event — ใช้ตอนกรอกจากใบตรวจ PM ซึ่งช่างพิมพ์แค่ "ค่ารวมตอนนี้"
+ *   ไม่มีค่าเดิม / เท่าเดิม → 'check' (แค่ยืนยันว่ายังเท่านี้)
+ *   มากขึ้น → 'add' · น้อยลง → 'remove'   (ชื่อ action เดียวกับ SHIM_ACTIONS ห้ามพิมพ์ใหม่)
+ */
+export function deriveShimAction(beforeMm, afterMm) {
+  const b = num(beforeMm), a = num(afterMm);
+  if (a == null) return null;
+  if (b == null || Math.abs(a - b) < 1e-9) return 'check';
+  return a > b ? 'add' : 'remove';
+}
+
+/**
+ * หมุดของจุดชิมบนรูปเครื่อง — จุดเดียวที่ตัดสินว่า "จุดนี้อยู่ตรงไหน"
+ *   1. มี x_pos/y_pos ของตัวเอง → ใช้ของตัวเอง (image_id null = เฟรมแรก ตาม convention ของ jig_checkpoints)
+ *   2. ไม่มี แต่ผูก checkpoint_id → ยืมหมุดของจุดตรวจ PM นั้น
+ *   3. ไม่มีทั้งคู่ → null (จอต้องบอกว่า "ยังไม่ปักบนรูป" ห้ามเดา)
+ * @param cpById  { [checkpoint_id]: { x_pos, y_pos, image_id } }
+ * @returns {{x:number, y:number, imageId:string|null, source:'own'|'checkpoint'}|null}
+ */
+export function pointPin(point, cpById = {}) {
+  if (point?.x_pos != null && point?.y_pos != null)
+    return { x: Number(point.x_pos), y: Number(point.y_pos), imageId: point.image_id ?? null, source: 'own' };
+  const cp = point?.checkpoint_id ? cpById[point.checkpoint_id] : null;
+  if (cp && cp.x_pos != null && cp.y_pos != null)
+    return { x: Number(cp.x_pos), y: Number(cp.y_pos), imageId: cp.image_id ?? null, source: 'checkpoint' };
+  return null;
+}
+
 // ── 7) จับคู่ fixture ↔ พาร์ทที่มันจับ (ใช้นับ shot) ────────────────────────
 /**
  * แปลงข้อความพาร์ทในทะเบียนจิ๊ก (`jigs.part_no`) → รายการ mat_no ที่ต้องนับยอดผลิต
