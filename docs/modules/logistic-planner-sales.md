@@ -189,3 +189,9 @@
   `edi_import`, `shipping_shipped`, `shipping_overdue`, `shipping_phase_alert`
 
 ---
+
+## ลูกค้า = ทะเบียน `customers` (DR) — 2026-09-08 · ทะเบียน
+
+ชื่อลูกค้าเคยเป็น text ใน `dr_products.customer` และพิมพ์เองซ้ำ ≥10 ฟอร์ม · ตอนนี้ DR `customers` (code · name · aliases[] · migration
+`20260908_customers_master_dr.sql` · seed 22 ค่าที่มีอยู่จริง — รวมค่าที่ดูไม่ใช่ลูกค้า ให้ปิดใช้/รวมเองที่ `/products` แท็บ 🏷️ ลูกค้า ไม่ล้างเงียบ)
+· ทุกฟอร์มเลือกผ่าน `<CustomerSelect>` — alias แม็ปเข้าสะกดหลัก · `customer` ปลายทางยังเก็บ name text · `ship_to_plants.customer_name` ควรตรงกับ name หลักในทะเบียน

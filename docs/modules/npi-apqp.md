@@ -110,3 +110,10 @@ catalog group 'คุณภาพ & วิศวกรรม' sort 755-757 · `p
 ## 9. ประวัติ
 
 - 2026-09-07 เฟส 1-3 ครบ: migration + `/npi` 6 แท็บ + util/เทส + ใบ PPAP checklist · crash-sweep ผ่านทุกแท็บ 1500/390px · **migration apply แล้ว 2026-09-07** (user รันผ่าน SQL Editor Main — ตรวจ doc_forms `npi_ppap_checklist` มีแถวแล้ว)
+
+## ทะเบียน supplier (ชื่อ) มีแล้ว — 2026-09-08 · ทะเบียน `suppliers` (DR)
+
+single-source audit สร้าง DR `suppliers` (code · name · kind · contact · lead_time_days · migration `20260908_suppliers_master_dr.sql`)
+เป็น**ทะเบียนชื่อฝั่งโรงงาน** — ช่อง "ผู้ทำ (maker)" ใน tooling plan เลือกผ่าน `<SupplierSelect kinds={['tooling','internal']}>`
+(`maker_name` ยังเก็บ text · พิมพ์เองได้พร้อมป้าย) · **ไม่ใช่ supplier portal เฟส 4** — เฟส 4 ยังต้องมี `supplier_id` + role/RLS ฝั่ง Main ตาม §8
+ถึงตอนนั้นให้ portal อ้าง `suppliers.code` นี้ ไม่ต้องสร้างทะเบียนซ้อน

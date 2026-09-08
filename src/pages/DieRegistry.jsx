@@ -15,6 +15,9 @@ import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import SelectOrFree from '../components/SelectOrFree';
+import SimpleMasterPanel from '../components/SimpleMasterPanel';
+import CollapseCard from '../components/CollapseCard';
+import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -87,6 +90,8 @@ export default function DieRegistry() {
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
   const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry');
+  // 2026-09-08: ทะเบียน die_press_lines — แหล่งหลักของชื่อ "ไลน์/กลุ่มเครื่องปั๊ม" ของแม่พิมพ์ (แยกจาก production_lines)
+  const pressLines = useDiePressLines();
 
   const [lines, setLines]   = useState([]);
   const [dies, setDies]     = useState([]);   // machines (equipment_kind='die') + equipment_die
@@ -183,6 +188,12 @@ export default function DieRegistry() {
     dies.forEach(d => { if (d.line_name && inScope(d.line_name)) s.add(d.line_name); });
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [sets, dies, inScope]);
+  /* 2026-09-08: ตัวเลือกไลน์ในฟอร์มชุด = ทะเบียน die_press_lines ที่เปิดใช้ (ขึ้นก่อน) ∪ ชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว
+        (ค่าเก่าที่ยังไม่ลงทะเบียนต้องเลือกซ้ำได้ ห้ามหายเงียบ — SelectOrFree ตัดซ้ำให้เอง) */
+  const setLineOptions = useMemo(() => [
+    ...pressLines.filter(p => p.is_active !== false).map(p => p.name),
+    ...dieLineNames,
+  ], [pressLines, dieLineNames]);
 
   /* ── ประกอบชุด + สมาชิก + ตรวจ "ข้อมูลที่ยังไม่ครบ" ─────────────── */
   const diesBySet = useMemo(() => {
@@ -557,6 +568,21 @@ export default function DieRegistry() {
           </div>
         </div>
       ))}
+
+      {/* ⚙️ ทะเบียนกลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ (DR die_press_lines · 2026-09-08) — พับไว้ท้ายแท็บ (ตั้งค่านานๆ ครั้ง)
+          code กรอกเอง (สั้น เช่น LINE-A) · ref_production_line = ชื่อไลน์ผลิตจริงเมื่อกลุ่มนั้นคือไลน์ (HDF1) ไว้ต่อ linkage OEE
+          SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
+      <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
+        <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateDiePressLines}
+          help="ชื่อในทะเบียนนี้คือค่าที่เก็บใน die_sets.line_name / machines.line_name (text) — แยกจากทะเบียนไลน์ผลิต (production_lines) ตั้งใจไม่ให้ชื่อเครื่องปั๊มโผล่ใน dropdown ไลน์ผลิตทุกหน้า · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
+          fields={[
+            { key: 'name', label: 'ชื่อกลุ่ม/ไลน์', required: true, placeholder: 'เช่น LINE A ( 800 Ton )' },
+            { key: 'tonnage', label: 'Tonnage', type: 'text', placeholder: 'เช่น 800 Ton', width: 120 },
+            { key: 'ref_production_line', label: 'ไลน์ผลิตอ้างอิง', placeholder: 'เช่น HDF1 (ถ้าเป็นไลน์ผลิตจริง)' },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      </CollapseCard>
       </>}
 
       {/* ── modal: ชุดแม่พิมพ์ ── */}
@@ -588,11 +614,11 @@ export default function DieRegistry() {
                 onChange={e => setEditSet(f => ({ ...f, model: e.target.value }))} />
             </Field>
             <Field label="ไลน์ / กลุ่มเครื่องปั๊ม">
-              {/* ⚠️ ยังไม่มี master ของ "กลุ่มเครื่องปั๊ม" (LINE A ( 800 Ton ) ฯลฯ ไม่อยู่ใน production_lines — audit #28)
-                  → เลือกจากชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว (self-referential) กันสะกดต่างจน inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์
-                  "✏️ ระบุใหม่" เฉพาะไลน์ที่ยังไม่มีในระบบ · ทางแก้ถาวร = ลงทะเบียนกลุ่มเครื่องปั๊มเป็น master แล้วใช้ <LineSelect> · 2026-09-07 */}
-              <SelectOrFree value={editSet.line_name || ''} options={dieLineNames} placeholder="— เลือกไลน์/กลุ่มเครื่องปั๊ม —"
-                freeLabel="✏️ ระบุใหม่ (ไลน์ที่ยังไม่มีในระบบ)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
+              {/* ทะเบียน = DR `die_press_lines` (แผง ⚙️ ท้ายแท็บทะเบียน · 2026-09-08 — ปิด audit #28) กลุ่มเครื่องปั๊ม (LINE A ( 800 Ton ) ฯลฯ)
+                  ตั้งใจแยกจาก production_lines · ชื่อเก่าที่ชุด/แม่พิมพ์ใช้อยู่แต่ยังไม่ลงทะเบียนยังเลือกซ้ำได้ (กันสะกดต่างจน
+                  inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์) · "✏️ ระบุใหม่" เฉพาะกรณีจริงที่ยังไม่มีในทะเบียน */}
+              <SelectOrFree value={editSet.line_name || ''} options={setLineOptions} placeholder="— เลือกจากทะเบียนกลุ่มเครื่องปั๊ม —"
+                freeLabel="✏️ ระบุใหม่ (ยังไม่มีในทะเบียน die_press_lines)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
                 onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รูปแบบชุด">
