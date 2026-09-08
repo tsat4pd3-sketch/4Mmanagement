@@ -1,0 +1,151 @@
+<!doctype html>
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     WEB 101 — Answer key / ไฟล์เฉลย
+     Daily Production Log — one file, no build tools, no terminal.
+     บันทึกยอดผลิต — ไฟล์เดียว ไม่ต้องติดตั้งอะไร ไม่ต้องพิมพ์คำสั่ง
+
+     Trainer: open this in VS Code, press "Go Live". Students build the same
+     file step by step in class; this copy is what it should look like at the end.
+     ผู้สอน: เปิดไฟล์นี้ใน VS Code แล้วกด "Go Live" — ผู้เรียนจะสร้างไฟล์เดียวกันนี้
+     ทีละขั้นในคลาส ไฟล์นี้คือหน้าตาตอนทำเสร็จ
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>บันทึกยอดผลิต / Daily Production Log</title>
+<style>
+  body   { font-family: Tahoma, sans-serif; background: #f4f6f2; color: #16261a;
+           margin: 0; padding: 24px; }
+  h1     { font-size: 22px; color: #0D3D14; margin: 0 0 4px; }
+  .sub   { color: #5b6b5f; font-size: 14px; margin-bottom: 18px; }
+  .row   { display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+           background: #fff; border: 1px solid #d8e0d6; border-radius: 8px;
+           padding: 14px; margin-bottom: 14px; }
+  input  { padding: 8px 10px; border: 1px solid #cfd8cd; border-radius: 6px;
+           font-size: 15px; font-family: inherit; }
+  button { padding: 9px 20px; border: 0; border-radius: 6px; background: #14571F;
+           color: #fff; font-size: 15px; font-family: inherit; cursor: pointer; }
+  button:disabled { background: #9aa79c; cursor: not-allowed; }
+  table  { width: 100%; border-collapse: collapse; background: #fff;
+           border: 1px solid #d8e0d6; border-radius: 8px; overflow: hidden; }
+  th     { background: #0D3D14; color: #fff; text-align: left; padding: 10px 12px;
+           font-size: 14px; }
+  td     { padding: 9px 12px; border-top: 1px solid #e6ece4; font-size: 15px; }
+  .num   { text-align: right; }
+  .ng    { color: #c0392b; font-weight: bold; }
+  #msg   { min-height: 22px; font-size: 14px; margin: 10px 0; }
+  .ok    { color: #1a7d38; }
+  .bad   { color: #c0392b; }
+</style>
+</head>
+<body>
+
+<h1>บันทึกยอดผลิต / Daily Production Log</h1>
+<div class="sub">กรอกยอดของแต่ละไลน์ แล้วกดบันทึก / Enter each line's output, then press Save</div>
+
+<div class="row">
+  <input id="date" type="date">
+  <input id="line" placeholder="ไลน์ / Line" style="width:150px">
+  <input id="ok"   type="number" placeholder="ดี / Good" style="width:110px">
+  <input id="ng"   type="number" placeholder="เสีย / NG"  style="width:110px">
+  <button id="saveBtn">บันทึก / Save</button>
+</div>
+
+<div id="msg"></div>
+
+<table>
+  <thead>
+    <tr><th>ไลน์ / Line</th><th class="num">ดี / Good</th><th class="num">เสีย / NG</th></tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<!-- Step 1 — the helper that talks to the data store / ตัวช่วยคุยกับที่เก็บข้อมูล -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+
+<script>
+// ─── Step 2 — your two keys / ใส่กุญแจ 2 ตัวของคุณตรงนี้ ─────────────────────
+const PROJECT_URL = 'https://PASTE-YOUR-URL.supabase.co'
+const PUBLIC_KEY  = 'PASTE-YOUR-PUBLIC-KEY'
+
+const db = supabase.createClient(PROJECT_URL, PUBLIC_KEY)
+
+// ─── small helpers / ตัวช่วยเล็กๆ ───────────────────────────────────────────
+const box = (id) => document.getElementById(id)
+
+function say(text, bad) {                       // show a message to the user
+  box('msg').textContent = text                 // แสดงข้อความให้ผู้ใช้เห็น
+  box('msg').className   = bad ? 'bad' : 'ok'
+}
+
+function today() {                              // today's date as 2026-09-08
+  const d = new Date()                          // วันที่วันนี้
+  const two = (n) => String(n).padStart(2, '0')
+  return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate())
+}
+
+// ─── Step 3 — read the data and show it / อ่านข้อมูลมาแสดง ──────────────────
+async function load() {
+  const answer = await db.from('daily_logs')
+    .select('line_name, qty_ok, qty_ng')
+    .eq('work_date', box('date').value)
+    .order('line_name')
+
+  if (answer.error) {                           // never fail silently
+    say('โหลดข้อมูลไม่สำเร็จ / Could not load: ' + answer.error.message, true)
+    return                                      // ห้ามเงียบเวลาพัง
+  }
+
+  const rows = answer.data
+  if (rows.length === 0) {
+    box('rows').innerHTML = '<tr><td colspan="3">ยังไม่มีข้อมูลของวันนี้ / No data for this date</td></tr>'
+    say('')
+    return
+  }
+
+  box('rows').innerHTML = rows.map(function (r) {
+    return '<tr><td>' + r.line_name + '</td>' +
+           '<td class="num">' + r.qty_ok + '</td>' +
+           '<td class="num ' + (r.qty_ng > 0 ? 'ng' : '') + '">' + r.qty_ng + '</td></tr>'
+  }).join('')
+  say('')
+}
+
+// ─── Step 4 — save a new row / บันทึกแถวใหม่ ────────────────────────────────
+async function save() {
+  if (box('line').value.trim() === '') {
+    say('กรอกชื่อไลน์ก่อน / Please enter a line name first', true)
+    return
+  }
+
+  box('saveBtn').disabled = true
+  const answer = await db.from('daily_logs').insert({
+    work_date: box('date').value,
+    line_name: box('line').value.trim(),
+    qty_ok: Number(box('ok').value) || 0,       // Number() = text to number
+    qty_ng: Number(box('ng').value) || 0,       // แปลงข้อความให้เป็นตัวเลข
+  })
+  box('saveBtn').disabled = false
+
+  if (answer.error) {
+    say('บันทึกไม่สำเร็จ / Could not save: ' + answer.error.message, true)
+    return
+  }
+
+  say('บันทึกแล้ว / Saved')
+  box('line').value = ''
+  box('ok').value   = ''
+  box('ng').value   = ''
+  load()                                        // refresh the table / โหลดตารางใหม่
+}
+
+// ─── Step 5 — wire the buttons / ผูกปุ่มกับงาน ──────────────────────────────
+box('date').value = today()
+box('saveBtn').addEventListener('click', save)
+box('date').addEventListener('change', load)
+load()
+</script>
+
+</body>
+</html>

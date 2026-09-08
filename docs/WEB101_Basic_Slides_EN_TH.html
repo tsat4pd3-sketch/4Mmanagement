@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your First Web App</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+ --gd:#0D3D14; --gm:#14571F; --or:#C0561E; --gold:#EBD9B0;
+ --ink:#16261a; --mut:#5b6b5f; --line:#d8e0d6; --bg:#f4f6f2;
+ --code:#10231a; --cmt:#7fa88c; --str:#e8c07d; --kw:#7fd1a0; --fn:#8fc7ff;
+ --okbg:#eef6ee; --okline:#1a7d38;
+}
+html,body{height:100%}
+body{font-family:Tahoma,"Sarabun","Noto Sans Thai",sans-serif;background:#0a1a0e;color:var(--ink);overflow:hidden}
+#deck{position:relative;width:100vw;height:100vh}
+.sl{position:absolute;inset:0;display:none;flex-direction:column;
+ padding:38px 56px 50px;background:var(--bg);overflow:hidden}
+.sl.on{display:flex}
+.pg{position:absolute;bottom:15px;right:38px;font-size:13px;color:var(--mut)}
+.tag{position:absolute;top:22px;right:38px;font-size:12px;color:#fff;background:var(--gm);
+ padding:4px 13px;border-radius:20px;letter-spacing:.5px}
+.tag.do{background:var(--or)}
+
+/* ── heading: english on top, thai under ── */
+h2{font-size:31px;color:var(--gd);line-height:1.2}
+h2 .th{display:block;font-size:19px;color:var(--mut);font-weight:normal;margin-top:3px}
+.hd{border-bottom:4px solid var(--or);padding-bottom:11px;margin-bottom:16px;padding-right:170px}
+.bd{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:12px}
+.bd.top{justify-content:flex-start}
+.th{font-family:"Sarabun",Tahoma,sans-serif}
+
+/* ── cover ── */
+.cover{background:linear-gradient(150deg,var(--gd) 0%,var(--gm) 62%,#0a2b10 100%);
+ justify-content:center;padding-left:72px}
+h1{font-size:64px;color:#fff;line-height:1.06}
+h1 .th{display:block;font-size:31px;color:var(--gold);margin-top:12px;font-weight:normal}
+.c-line{font-size:19px;color:#cfe3d2;margin-top:28px;line-height:1.75}
+.c-foot{position:absolute;bottom:44px;left:72px;font-size:14.5px;color:#9dbba4;
+ border-top:2px solid var(--or);padding-top:11px;line-height:1.65}
+.cover .pg{color:#9dbba4}
+
+/* ── section divider ── */
+.sec{background:linear-gradient(140deg,var(--gd),var(--gm));justify-content:center;padding-left:72px}
+.sec-num{font-size:104px;font-weight:bold;color:rgba(235,217,176,.22);line-height:.9}
+.sec h2{font-size:44px;color:#fff;border:0;border-left:7px solid var(--or);
+ padding:4px 0 4px 22px;margin:8px 0 0}
+.sec h2 .th{font-size:24px;color:var(--gold);margin-top:6px}
+.sec-time{position:absolute;bottom:44px;left:101px;font-size:15px;color:#9dbba4}
+.sec .pg{color:#9dbba4}
+
+/* ── bilingual list ── */
+.list{display:flex;flex-direction:column;gap:9px;overflow:auto;flex:0 1 auto;min-height:0;padding-right:6px}
+.it{background:#fff;border:1px solid var(--line);border-left:5px solid var(--gm);
+ border-radius:7px;padding:11px 16px}
+.it .en{font-size:17px;font-weight:bold;color:var(--gd);line-height:1.35}
+.it .th{font-size:15px;color:#3d4d41;line-height:1.55;margin-top:3px}
+.it.warn{border-left-color:var(--or)}
+.it.warn .en{color:var(--or)}
+
+/* ── numbered steps ── */
+.steps{display:flex;flex-direction:column;gap:9px;overflow:auto;flex:0 1 auto;min-height:0}
+.stp{display:flex;gap:14px;align-items:flex-start;background:#fff;
+ border:1px solid var(--line);border-radius:7px;padding:11px 16px}
+.stp-n{flex:0 0 32px;height:32px;border-radius:50%;background:var(--gd);color:#fff;
+ font-weight:bold;font-size:16px;display:flex;align-items:center;justify-content:center}
+.stp .en{font-size:17px;font-weight:bold;color:var(--gd);line-height:1.35}
+.stp .th{font-size:15px;color:#3d4d41;line-height:1.55;margin-top:3px}
+
+/* ── checkpoint box ── */
+.chk{background:var(--okbg);border:2px solid var(--okline);border-radius:10px;padding:16px 20px}
+.chk .en{font-size:19px;font-weight:bold;color:#166b30;margin-bottom:5px}
+.chk .th{font-size:15.5px;color:#2c4a33;line-height:1.6}
+
+/* ── note / warn ── */
+.note{background:#fdf3e8;border-left:5px solid var(--or);padding:11px 16px;
+ border-radius:0 7px 7px 0;font-size:15px;line-height:1.6}
+.note .th{color:var(--mut);font-size:14px;display:block;margin-top:3px}
+.note.ok{background:var(--okbg);border-left-color:var(--okline)}
+
+/* ── columns ── */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-content:start;min-height:0}
+.three{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;align-content:start;min-height:0}
+.col{background:#fff;border:1px solid var(--line);border-radius:9px;padding:16px 18px;min-width:0}
+.col-a{border-top:6px solid #8fa894}.col-b{border-top:6px solid var(--or)}.col-g{border-top:6px solid var(--gm)}
+.col h3{font-size:18px;color:var(--gd);line-height:1.3}
+.col h3 .th{display:block;font-size:14px;color:var(--mut);font-weight:normal;margin-top:2px}
+.col ul{list-style:none;margin-top:10px}
+.col li{font-size:15px;line-height:1.5;padding:7px 0 7px 21px;position:relative;border-bottom:1px dashed var(--line)}
+.col li:last-child{border:0}
+.col li::before{content:"▪";position:absolute;left:3px;color:var(--or);font-size:16px}
+.col li .th{display:block;font-size:13.5px;color:var(--mut);margin-top:2px}
+
+/* ── flow ── */
+.flow{display:flex;align-items:stretch}
+.fx{flex:1 1 0;background:#fff;border:1px solid var(--line);border-top:6px solid var(--gm);
+ border-radius:9px;padding:16px 14px;text-align:center}
+.fx-i{font-size:40px;line-height:1}
+.fx .en{font-size:17px;font-weight:bold;color:var(--gd);margin:9px 0 4px}
+.fx .th{font-size:13.5px;color:#3d4d41;line-height:1.5}
+.fa{flex:0 0 36px;display:flex;align-items:center;justify-content:center;font-size:25px;color:var(--or)}
+
+/* ── code ── */
+.code{background:var(--code);border:1px solid #24422f;border-radius:9px;padding:15px 18px;overflow:auto;
+ font-family:"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+ font-size:14.5px;line-height:1.65;color:#dbe8de;white-space:pre;flex:0 1 auto;min-height:0}
+.code.sm{font-size:13px;line-height:1.6}
+.k{color:var(--kw)}.s{color:var(--str)}.c{color:var(--cmt)}.f{color:var(--fn)}
+.ic{font-family:"Cascadia Mono",Consolas,monospace;font-size:13.5px;
+ background:#eef2ec;padding:1px 6px;border-radius:4px;color:var(--gd)}
+
+/* ── table ── */
+.scroll{overflow:auto;flex:0 1 auto;min-height:0;border:1px solid var(--line);border-radius:8px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{background:var(--gd);color:#fff;text-align:left;padding:9px 13px;font-size:14px;position:sticky;top:0}
+th .th{display:block;font-size:12px;color:#bcd3c0;font-weight:normal}
+td{padding:8px 13px;border-top:1px solid var(--line);line-height:1.45;vertical-align:top}
+td .th{display:block;font-size:13px;color:var(--mut);margin-top:2px}
+tbody tr:nth-child(even){background:#f8faf7}
+
+/* ── agenda ── */
+.ag{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;align-content:start}
+.ag-row{display:flex;gap:13px;align-items:flex-start;background:#fff;
+ border:1px solid var(--line);border-left:5px solid var(--gd);border-radius:7px;padding:10px 14px}
+.ag-n{flex:0 0 27px;height:27px;border-radius:50%;background:var(--or);color:#fff;
+ font-size:13px;font-weight:bold;display:flex;align-items:center;justify-content:center}
+.ag-row .en{font-size:16px;color:var(--gd);font-weight:bold;line-height:1.3}
+.ag-row .th{font-size:13px;color:var(--mut);line-height:1.45;margin-top:2px}
+.ag-t{margin-left:auto;font-size:13px;color:var(--or);font-weight:bold;white-space:nowrap;padding-left:8px}
+
+/* ── chrome ── */
+#bar{position:fixed;left:0;bottom:0;height:4px;background:var(--or);width:0;transition:width .2s;z-index:9}
+#hint{position:fixed;left:50%;transform:translateX(-50%);bottom:13px;font-size:12.5px;
+ color:#9dbba4;background:rgba(10,26,14,.85);padding:6px 14px;border-radius:16px;transition:opacity 1s;z-index:9}
+@media (prefers-reduced-motion:reduce){#bar,#hint{transition:none}}
+</style></head><body>
+<div id="deck">
+
+<!-- 1 cover -->
+<section class="sl cover">
+<h1>Your First Web App<span class="th">สร้างเว็บแอปแรกของคุณ</span></h1>
+<div class="c-line">4 hours · No IT background needed · No commands to type<br>
+<span class="th">4 ชั่วโมง · ไม่ต้องมีพื้นฐานไอที · ไม่ต้องพิมพ์คำสั่งใดๆ</span></div>
+<div class="c-foot">By the end you will have a real web page, with a real database, that other people can open on their phone.<br>
+<span class="th">จบคลาสนี้คุณจะมีหน้าเว็บจริง ที่เก็บข้อมูลจริง และเปิดจากมือถือคนอื่นได้</span></div>
+</section>
+
+<!-- 2 who -->
+<section class="sl"><div class="hd"><h2>Who this class is for<span class="th">คลาสนี้สำหรับใคร</span></h2></div>
+<div class="bd"><div class="two">
+<div class="col col-g"><h3>✅ You can take this class if…<span class="th">คุณเรียนได้ ถ้า…</span></h3><ul>
+<li>You can use Excel and email<span class="th">ใช้ Excel กับอีเมลเป็น</span></li>
+<li>You can copy and paste<span class="th">ก๊อปวางเป็น</span></li>
+<li>You have a job that still uses paper forms<span class="th">มีงานที่ยังใช้กระดาษอยู่</span></li>
+<li><b>That is the whole requirement.</b><span class="th"><b>แค่นี้จริงๆ</b></span></li>
+</ul></div>
+<div class="col col-b"><h3>👨‍🏫 And you can teach it if…<span class="th">และคุณสอนได้ ถ้า…</span></h3><ul>
+<li>You did the class once yourself<span class="th">เคยทำตามคลาสนี้ด้วยตัวเอง 1 รอบ</span></li>
+<li>You have the trainer guide open beside you<span class="th">เปิดคู่มือผู้สอนไว้ข้างๆ</span></li>
+<li>You are willing to say "I don't know, let's find out"<span class="th">กล้าพูดว่า "ไม่รู้ เดี๋ยวหาคำตอบด้วยกัน"</span></li>
+<li><b>You do NOT need to be a programmer.</b><span class="th"><b>ไม่ต้องเป็นโปรแกรมเมอร์</b></span></li>
+</ul></div>
+</div>
+<div class="note ok">Every step in this class is <b>copy → paste → look at the screen</b>. Nothing is typed from memory.
+<span class="th">ทุกขั้นตอนในคลาสนี้คือ <b>ก๊อป → วาง → ดูหน้าจอ</b> ไม่มีอะไรต้องพิมพ์เองจากความจำ</span></div>
+</div></section>
+
+<!-- 3 outcome -->
+<section class="sl"><div class="hd"><h2>What you will have at 4 o'clock<span class="th">ตอนบ่ายสี่คุณจะได้อะไรกลับไป</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">A working page: type in a line name and quantity, press Save</div><div class="th">หน้าเว็บที่ใช้ได้จริง: พิมพ์ชื่อไลน์กับจำนวน แล้วกดบันทึก</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">The data is really stored — close the browser, come back, it is still there</div><div class="th">ข้อมูลถูกเก็บจริง — ปิดเบราว์เซอร์แล้วเปิดใหม่ ข้อมูลยังอยู่</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">A link you can send to anyone — it opens on their phone</div><div class="th">ลิงก์ที่ส่งให้ใครก็ได้ — เปิดจากมือถือเขาได้เลย</div></div></div>
+<div class="stp"><div class="stp-n">4</div><div><div class="en">The confidence to say "I understand roughly how our systems work"</div><div class="th">ความมั่นใจว่า "เข้าใจคร่าวๆ แล้วว่าระบบที่เราใช้กันมันทำงานยังไง"</div></div></div>
+</div>
+<div class="note">What you will <b>not</b> have: a finished factory system. That takes months and a team. Today is the first honest step.
+<span class="th">สิ่งที่คุณจะ<b>ยังไม่</b>ได้: ระบบโรงงานที่สมบูรณ์ — อันนั้นใช้เวลาเป็นเดือนและใช้ทีม · วันนี้คือก้าวแรกที่ของจริง</span></div>
+</div></section>
+
+<!-- 4 agenda -->
+<section class="sl"><div class="hd"><h2>Today — 4 hours, 7 parts<span class="th">วันนี้ — 4 ชั่วโมง 7 ช่วง</span></h2></div>
+<div class="bd top"><div class="ag">
+<div class="ag-row"><div class="ag-n">1</div><div><div class="en">How a web app works</div><div class="th">เว็บแอปทำงานยังไง</div></div><div class="ag-t">25 min</div></div>
+<div class="ag-row"><div class="ag-n">2</div><div><div class="en">Get your tools ready</div><div class="th">เตรียมเครื่องมือ</div></div><div class="ag-t">20 min</div></div>
+<div class="ag-row"><div class="ag-n">3</div><div><div class="en">🔧 Make a page appear</div><div class="th">🔧 ทำให้หน้าเว็บโผล่ขึ้นมา</div></div><div class="ag-t">40 min</div></div>
+<div class="ag-row"><div class="ag-n">—</div><div><div class="en">Break</div><div class="th">พัก</div></div><div class="ag-t">15 min</div></div>
+<div class="ag-row"><div class="ag-n">4</div><div><div class="en">🔧 Build the place where data lives</div><div class="th">🔧 สร้างที่เก็บข้อมูล</div></div><div class="ag-t">45 min</div></div>
+<div class="ag-row"><div class="ag-n">5</div><div><div class="en">🔧 Connect the page to the data</div><div class="th">🔧 ต่อหน้าเว็บเข้ากับข้อมูล</div></div><div class="ag-t">45 min</div></div>
+<div class="ag-row"><div class="ag-n">6</div><div><div class="en">🔧 Put it online</div><div class="th">🔧 เอาขึ้นออนไลน์</div></div><div class="ag-t">25 min</div></div>
+<div class="ag-row"><div class="ag-n">7</div><div><div class="en">Rules, limits, and what comes next</div><div class="th">กฎ ข้อจำกัด และก้าวต่อไป</div></div><div class="ag-t">25 min</div></div>
+</div>
+<div class="note ok">🔧 = everyone works on their own computer. That is <b>2 hours 35 minutes of hands-on</b> out of 4 hours.
+<span class="th">🔧 = ทุกคนลงมือทำกับเครื่องตัวเอง รวมแล้ว <b>2 ชั่วโมง 35 นาที</b> จาก 4 ชั่วโมง</span></div>
+</div></section>
+
+<!-- 5 rules -->
+<section class="sl"><div class="hd"><h2>4 rules for today<span class="th">กติกา 4 ข้อของวันนี้</span></h2></div>
+<div class="bd"><div class="list">
+<div class="it"><div class="en">🙋 Raise your hand as soon as your screen looks different from mine</div><div class="th">ยกมือทันทีที่หน้าจอคุณไม่เหมือนของผม — อย่ารอ เดี๋ยวจะตามไม่ทันทั้งวัน</div></div>
+<div class="it"><div class="en">🔴 Breaking things is part of the class, not a mistake</div><div class="th">ทำพังคือส่วนหนึ่งของบทเรียน ไม่ใช่ความผิด — เราจะทำพังด้วยกันหลายรอบ</div></div>
+<div class="it"><div class="en">📋 Never type from the screen — copy from the handout file</div><div class="th">ห้ามพิมพ์ตามหน้าจอ ให้ก๊อปจากไฟล์เอกสารที่แจก — พิมพ์เองแล้วผิดตัวเดียวก็ไม่ทำงาน</div></div>
+<div class="it"><div class="en">🛑 We stop at every green checkpoint until everybody is there</div><div class="th">เราจะหยุดที่กล่องเขียวทุกครั้ง จนกว่าทุกคนจะถึงจุดเดียวกัน — ไม่มีใครถูกทิ้งไว้ข้างหลัง</div></div>
+</div></div></section>
+
+<!-- ══ PART 1 ══ -->
+<section class="sl sec"><div class="sec-num">1</div><h2>How a web app works<span class="th">เว็บแอปทำงานยังไง</span></h2>
+<div class="sec-time">⏱ 25 min · no computer needed yet / ยังไม่ต้องใช้คอม</div></section>
+
+<section class="sl"><div class="hd"><h2>Paper → Excel → Web app<span class="th">กระดาษ → Excel → เว็บแอป</span></h2></div>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:26%">Question<span class="th">คำถาม</span></th><th style="width:24%">Paper<span class="th">กระดาษ</span></th><th style="width:25%">Excel file<span class="th">ไฟล์ Excel</span></th><th>Web app<span class="th">เว็บแอป</span></th></tr></thead>
+<tbody>
+<tr><td>Two people fill it at the same time?<span class="th">กรอกพร้อมกัน 2 คนได้ไหม</span></td><td>No</td><td>Usually no<span class="th">ส่วนใหญ่ไม่ได้</span></td><td><b>Yes</b><span class="th"><b>ได้</b></span></td></tr>
+<tr><td>Where is the newest version?<span class="th">ไฟล์ล่าสุดอยู่ไหน</span></td><td>Somebody's desk<span class="th">บนโต๊ะใครสักคน</span></td><td>7 copies in chat<span class="th">7 ก๊อปในไลน์</span></td><td><b>One place, always</b><span class="th"><b>ที่เดียวเสมอ</b></span></td></tr>
+<tr><td>See today's total instantly?<span class="th">เห็นยอดรวมวันนี้ทันทีไหม</span></td><td>Add it up by hand<span class="th">บวกมือ</span></td><td>If you open it<span class="th">ถ้าเปิดไฟล์</span></td><td><b>Automatic</b><span class="th"><b>อัตโนมัติ</b></span></td></tr>
+<tr><td>Who changed this number?<span class="th">ใครแก้ตัวเลขนี้</span></td><td>Nobody knows<span class="th">ไม่มีใครรู้</span></td><td>Nobody knows<span class="th">ไม่มีใครรู้</span></td><td><b>Recorded</b><span class="th"><b>บันทึกไว้</b></span></td></tr>
+<tr><td>Open from a phone on the floor?<span class="th">เปิดจากมือถือหน้าไลน์</span></td><td>No</td><td>Painful<span class="th">ลำบาก</span></td><td><b>Yes</b><span class="th"><b>ได้</b></span></td></tr>
+</tbody></table></div>
+<div class="note">Excel is not the enemy. It is a great <b>calculator</b> and a poor <b>shared record book</b>. Today we build the record book.
+<span class="th">Excel ไม่ใช่ผู้ร้าย — มันเป็น<b>เครื่องคิดเลข</b>ที่ดีมาก แต่เป็น<b>สมุดบันทึกส่วนกลาง</b>ที่แย่ · วันนี้เราสร้างสมุดบันทึกนั้น</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>A web app is just 3 things<span class="th">เว็บแอปมีแค่ 3 ชิ้นส่วน</span></h2></div>
+<div class="bd"><div class="flow">
+<div class="fx"><div class="fx-i">📄</div><div class="en">1. The page</div><div class="th">หน้าจอที่คนเห็นและกด<br>= หน้าร้าน</div></div>
+<div class="fa">↔</div>
+<div class="fx"><div class="fx-i">🗄️</div><div class="en">2. The data store</div><div class="th">ที่เก็บข้อมูลถาวร<br>= ห้องเก็บของหลังร้าน</div></div>
+<div class="fa">+</div>
+<div class="fx"><div class="fx-i">🌐</div><div class="en">3. The address</div><div class="th">ที่อยู่ให้คนอื่นเปิดได้<br>= ป้ายหน้าร้าน + ที่ตั้ง</div></div>
+</div>
+<div class="two">
+<div class="col col-g"><h3>Today you build all three<span class="th">วันนี้คุณทำครบทั้ง 3 ชิ้น</span></h3><ul>
+<li>Part 3 → the page<span class="th">ช่วงที่ 3 → หน้าจอ</span></li>
+<li>Part 4 → the data store<span class="th">ช่วงที่ 4 → ที่เก็บข้อมูล</span></li>
+<li>Part 6 → the address<span class="th">ช่วงที่ 6 → ที่อยู่ออนไลน์</span></li>
+</ul></div>
+<div class="col col-b"><h3>Ten years ago…<span class="th">เมื่อสิบปีก่อน…</span></h3><ul>
+<li>This needed 3 specialists and a server room<span class="th">ต้องใช้ผู้เชี่ยวชาญ 3 คน + ห้องเซิร์ฟเวอร์</span></li>
+<li>Now the tools are free and you click most of it<span class="th">ตอนนี้เครื่องมือฟรี และส่วนใหญ่แค่คลิก</span></li>
+<li><b>That is why we can do this in 4 hours</b><span class="th"><b>เพราะแบบนี้เราถึงทำได้ใน 4 ชม.</b></span></li>
+</ul></div>
+</div></div></section>
+
+<section class="sl"><div class="hd"><h2>What happens when you press Save<span class="th">ตอนกดปุ่ม "บันทึก" เกิดอะไรขึ้น</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">You type 1,240 into the box and press the button</div><div class="th">คุณพิมพ์ 1,240 ลงในช่อง แล้วกดปุ่ม</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">The page packs it into a small message and sends it over the internet</div><div class="th">หน้าเว็บห่อข้อมูลเป็นข้อความสั้นๆ แล้วส่งผ่านอินเทอร์เน็ต</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">The data store writes a new row and answers back "done"</div><div class="th">ที่เก็บข้อมูลเขียนแถวใหม่ แล้วตอบกลับว่า "เรียบร้อย"</div></div></div>
+<div class="stp"><div class="stp-n">4</div><div><div class="en">The page asks for the list again and redraws the table</div><div class="th">หน้าเว็บขอรายการใหม่อีกครั้ง แล้ววาดตารางใหม่</div></div></div>
+</div>
+<div class="note">The whole trip takes under one second — but it <b>can fail</b> (no internet, no permission). A good page always <b>tells you</b> when it failed. A bad page says "Saved" anyway. Remember this; we will build it in properly today.
+<span class="th">ทั้งวงจรใช้เวลาไม่ถึงวินาที — แต่<b>ล้มเหลวได้</b> (เน็ตหลุด ไม่มีสิทธิ์) · หน้าที่ดีต้อง<b>บอกคุณ</b>เมื่อล้มเหลว หน้าที่แย่จะขึ้นว่า "บันทึกแล้ว" อยู่ดี — จำไว้ เดี๋ยววันนี้เราจะใส่ตรงนี้ให้ถูก</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>8 words you will hear today<span class="th">ศัพท์ 8 คำที่จะได้ยินวันนี้</span></h2></div>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:22%">Word<span class="th">คำ</span></th><th style="width:39%">Means<span class="th">แปลว่า</span></th><th>Like in a factory<span class="th">เทียบกับโรงงาน</span></th></tr></thead>
+<tbody>
+<tr><td><b>Browser</b></td><td>Chrome, Edge, Safari<span class="th">โปรแกรมเปิดเว็บ</span></td><td>The window you look through<span class="th">หน้าต่างที่เรามอง</span></td></tr>
+<tr><td><b>File</b></td><td>One document on your computer<span class="th">เอกสาร 1 ไฟล์ในเครื่อง</span></td><td>One sheet of paper<span class="th">กระดาษ 1 แผ่น</span></td></tr>
+<tr><td><b>Code</b></td><td>Instructions written for a computer<span class="th">คำสั่งที่เขียนให้คอมทำ</span></td><td>A work instruction (WI)<span class="th">ใบ WI</span></td></tr>
+<tr><td><b>Table</b></td><td>Rows and columns of stored data<span class="th">ข้อมูลที่เก็บเป็นแถวและคอลัมน์</span></td><td>An Excel sheet<span class="th">ชีต Excel 1 ชีต</span></td></tr>
+<tr><td><b>Row</b></td><td>One record<span class="th">ข้อมูล 1 รายการ</span></td><td>One line on the form<span class="th">1 บรรทัดในใบฟอร์ม</span></td></tr>
+<tr><td><b>Save / Load</b></td><td>Write into / read out of the store<span class="th">เขียนลง / อ่านออกจากที่เก็บ</span></td><td>Put in / take out of the cabinet<span class="th">เก็บเข้า / หยิบออกจากตู้</span></td></tr>
+<tr><td><b>Key</b></td><td>A long password the page uses<span class="th">รหัสยาวๆ ที่หน้าเว็บใช้</span></td><td>The key card to the room<span class="th">คีย์การ์ดเข้าห้อง</span></td></tr>
+<tr><td><b>Deploy</b></td><td>Put your files online<span class="th">เอาไฟล์ขึ้นออนไลน์</span></td><td>Ship the goods out<span class="th">ส่งของออกไป</span></td></tr>
+</tbody></table></div>
+<div class="note ok">If any other technical word appears today and nobody explains it — <b>stop the class and ask</b>. That is a rule, not a favour.
+<span class="th">ถ้ามีศัพท์เทคนิคอื่นโผล่มาโดยไม่มีใครอธิบาย — <b>ให้หยุดคลาสแล้วถามเลย</b> นี่คือกติกา ไม่ใช่การรบกวน</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>What we build today<span class="th">วันนี้เราจะสร้างอะไร</span></h2></div>
+<div class="bd"><div class="two">
+<div class="col col-g"><h3>Daily production log<span class="th">หน้าบันทึกยอดผลิต</span></h3><ul>
+<li>Pick a date<span class="th">เลือกวันที่</span></li>
+<li>Type: line name, good, NG<span class="th">พิมพ์: ชื่อไลน์ · จำนวนดี · จำนวนเสีย</span></li>
+<li>Press Save<span class="th">กดบันทึก</span></li>
+<li>See all of today's rows in a table<span class="th">เห็นทุกแถวของวันนั้นในตาราง</span></li>
+</ul></div>
+<div class="col col-b"><h3>Why this one<span class="th">ทำไมเลือกโจทย์นี้</span></h3><ul>
+<li>It is the smallest thing that is still <b>useful</b><span class="th">เล็กที่สุดเท่าที่ยัง<b>ใช้งานได้จริง</b></span></li>
+<li>Every business form is the same shape<span class="th">ฟอร์มทุกใบในโรงงานหน้าตาแบบนี้หมด</span></li>
+<li>Change the words and it becomes <b>your</b> form<span class="th">เปลี่ยนแค่ข้อความ ก็กลายเป็นฟอร์ม<b>ของคุณ</b></span></li>
+</ul></div>
+</div>
+<div class="note ok"><b>Homework hint:</b> think now about which paper form in your area you would replace first. You will change today's page into that form as homework.
+<span class="th"><b>ใบ้การบ้าน:</b> คิดไว้ตั้งแต่ตอนนี้ว่าใบกระดาษใบไหนในแผนกคุณที่อยากเลิกใช้ก่อน — การบ้านคือเอาหน้าของวันนี้ไปแปลงเป็นใบนั้น</span></div>
+</div></section>
+
+<!-- ══ PART 2 ══ -->
+<section class="sl sec"><div class="sec-num">2</div><h2>Get your tools ready<span class="th">เตรียมเครื่องมือ</span></h2>
+<div class="sec-time">⏱ 20 min · open your computer now / เปิดคอมได้แล้ว</div></section>
+
+<section class="sl"><div class="tag do">DO IT / ลงมือ</div><div class="hd"><h2>Install 2 things. That is all.<span class="th">ติดตั้งแค่ 2 อย่าง จบ</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Google Chrome — the browser we all use today</div><div class="th">Google Chrome — เบราว์เซอร์ที่เราจะใช้กันวันนี้ · โหลดจาก google.com/chrome</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Visual Studio Code — the program we type the page in (it is free)</div><div class="th">Visual Studio Code — โปรแกรมที่เราใช้พิมพ์หน้าเว็บ (ฟรี) · โหลดจาก code.visualstudio.com</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">Inside VS Code, add one extension: type "Live Server" and press Install</div><div class="th">ในโปรแกรม VS Code ให้ลงส่วนเสริม 1 ตัว: กดรูปสี่เหลี่ยม 4 ช่องด้านซ้าย พิมพ์ "Live Server" แล้วกด Install</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — everyone should see this</div><div class="th">จุดเช็ค — ทุกคนต้องเห็นแบบนี้: เปิด VS Code ได้ · ในแถบส่วนเสริมขึ้นคำว่า Live Server พร้อมปุ่ม "Uninstall" (แปลว่าลงแล้ว) · <b>ยังไม่ต้องทำอะไรต่อ รอเพื่อนให้ครบ</b></div></div>
+<div class="note">No Node, no npm, no black command window today. If you have seen those in another course — we are deliberately not using them.
+<span class="th">วันนี้ไม่มี Node ไม่มี npm ไม่มีหน้าจอดำให้พิมพ์คำสั่ง · ถ้าเคยเห็นในคอร์สอื่น — วันนี้เราตั้งใจไม่ใช้</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">DO IT / ลงมือ</div><div class="hd"><h2>Create 2 free accounts<span class="th">สมัครบัญชีฟรี 2 ที่</span></h2></div>
+<div class="bd"><div class="two">
+<div class="col col-g"><h3>Supabase — the data store<span class="th">Supabase — ที่เก็บข้อมูล</span></h3><ul>
+<li>Go to <span class="ic">supabase.com</span> → Start your project<span class="th">เข้า supabase.com กด Start your project</span></li>
+<li>Sign in with your Google account<span class="th">เข้าด้วยบัญชี Google ได้เลย</span></li>
+<li>Free. No credit card.<span class="th">ฟรี ไม่ต้องใช้บัตรเครดิต</span></li>
+</ul></div>
+<div class="col col-b"><h3>Netlify — the address<span class="th">Netlify — ที่อยู่ออนไลน์</span></h3><ul>
+<li>Go to <span class="ic">netlify.com</span> → Sign up<span class="th">เข้า netlify.com กด Sign up</span></li>
+<li>Sign in with your Google account<span class="th">เข้าด้วยบัญชี Google ได้เลย</span></li>
+<li>We only use it in Part 6<span class="th">เราจะใช้ตอนช่วงที่ 6</span></li>
+</ul></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — you are signed in to both websites</div><div class="th">จุดเช็ค — ล็อกอินเข้าได้ทั้ง 2 เว็บ · เห็นหน้าจอที่มีชื่อ/อีเมลของคุณมุมขวาบน</div></div>
+<div class="note">⚠️ Use your <b>work email</b> and write the password down somewhere safe. You will need these accounts again for homework.
+<span class="th">⚠️ ใช้<b>อีเมลที่ทำงาน</b> และจดรหัสผ่านเก็บไว้ให้ดี — ต้องใช้บัญชีนี้อีกตอนทำการบ้าน</span></div>
+</div></section>
+
+<!-- ══ PART 3 ══ -->
+<section class="sl sec"><div class="sec-num">3</div><h2>Make a page appear<span class="th">ทำให้หน้าเว็บโผล่ขึ้นมา</span></h2>
+<div class="sec-time">⏱ 40 min · hands on keyboards / ลงมือทำ</div></section>
+
+<section class="sl"><div class="tag do">STEP A1</div><div class="hd"><h2>Make a folder and open it<span class="th">สร้างโฟลเดอร์ แล้วเปิดใน VS Code</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">On your Desktop, create a new folder named <b>my-app</b></div><div class="th">ที่หน้าจอเดสก์ท็อป สร้างโฟลเดอร์ใหม่ชื่อ <b>my-app</b> (ใช้ชื่อภาษาอังกฤษ ไม่เว้นวรรค)</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Open VS Code → File → Open Folder → choose <b>my-app</b></div><div class="th">เปิด VS Code → เมนู File → Open Folder → เลือกโฟลเดอร์ <b>my-app</b></div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">If it asks "Do you trust the authors?" → click <b>Yes</b></div><div class="th">ถ้ามันถามว่า "Do you trust the authors?" → กด <b>Yes</b></div></div></div>
+<div class="stp"><div class="stp-n">4</div><div><div class="en">In the left panel, click the "New File" icon and name it <b>index.html</b></div><div class="th">แถบซ้าย กดไอคอน "New File" (กระดาษมีเครื่องหมายบวก) ตั้งชื่อ <b>index.html</b> — ต้องสะกดแบบนี้เป๊ะ</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — an empty file named index.html is open, and the word "my-app" is at the top-left</div><div class="th">จุดเช็ค — มีไฟล์เปล่าชื่อ index.html เปิดอยู่ และมุมซ้ายบนขึ้นคำว่า my-app</div></div>
+<div class="note">⚠️ The name matters: <b>index</b>.html tells the browser "this is the front page". Not Index.html, not index.htm.
+<span class="th">⚠️ ชื่อไฟล์สำคัญ: <b>index</b>.html แปลว่า "นี่คือหน้าแรก" · ห้ามเป็น Index.html หรือ index.htm</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP A2</div><div class="hd"><h2>Paste this, then press Ctrl+S<span class="th">ก๊อปอันนี้วาง แล้วกด Ctrl+S</span></h2></div>
+<div class="bd"><div class="code">&lt;!doctype html&gt;
+&lt;<span class="f">html</span> lang=<span class="s">"th"</span>&gt;
+&lt;<span class="f">head</span>&gt;
+  &lt;<span class="f">meta</span> charset=<span class="s">"utf-8"</span>&gt;
+  &lt;<span class="f">title</span>&gt;บันทึกยอดผลิต&lt;/<span class="f">title</span>&gt;
+&lt;/<span class="f">head</span>&gt;
+&lt;<span class="f">body</span>&gt;
+
+  &lt;<span class="f">h1</span>&gt;บันทึกยอดผลิต / Daily Production Log&lt;/<span class="f">h1</span>&gt;
+  &lt;<span class="f">p</span>&gt;Hello. This page is alive.&lt;/<span class="f">p</span>&gt;
+
+&lt;/<span class="f">body</span>&gt;
+&lt;/<span class="f">html</span>&gt;</div>
+<div class="steps">
+<div class="stp"><div class="stp-n">→</div><div><div class="en">Now right-click anywhere in the file → <b>Open with Live Server</b></div><div class="th">จากนั้นคลิกขวาที่ไหนก็ได้ในไฟล์ → เลือก <b>Open with Live Server</b> (หรือกดคำว่า Go Live มุมขวาล่าง)</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — Chrome opens by itself and shows your heading in big letters</div><div class="th">จุดเช็ค — Chrome เด้งขึ้นมาเอง และแสดงหัวข้อตัวใหญ่ที่คุณเพิ่งวาง · ที่อยู่ด้านบนขึ้นต้นด้วย <b>127.0.0.1:5500</b></div></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>What did you just paste?<span class="th">ที่เพิ่งวางไปคืออะไร</span></h2></div>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:30%">Line<span class="th">บรรทัด</span></th><th>What it does<span class="th">ทำหน้าที่อะไร</span></th></tr></thead>
+<tbody>
+<tr><td><span class="ic">&lt;!doctype html&gt;</span></td><td>Tells the browser: this is a web page<span class="th">บอกเบราว์เซอร์ว่า นี่คือหน้าเว็บ</span></td></tr>
+<tr><td><span class="ic">&lt;head&gt;</span></td><td>Information <b>about</b> the page — not shown on screen<span class="th">ข้อมูล<b>เกี่ยวกับ</b>หน้า — ไม่แสดงบนจอ</span></td></tr>
+<tr><td><span class="ic">&lt;title&gt;</span></td><td>The name on the browser tab<span class="th">ชื่อที่โผล่บนแท็บเบราว์เซอร์</span></td></tr>
+<tr><td><span class="ic">&lt;body&gt;</span></td><td>Everything people actually see<span class="th">ทุกอย่างที่คนเห็นจริงๆ</span></td></tr>
+<tr><td><span class="ic">&lt;h1&gt;</span></td><td>A big heading<span class="th">หัวข้อตัวใหญ่</span></td></tr>
+<tr><td><span class="ic">&lt;p&gt;</span></td><td>A paragraph of text<span class="th">ย่อหน้าข้อความ</span></td></tr>
+</tbody></table></div>
+<div class="note ok"><b>The pattern:</b> everything opens with <span class="ic">&lt;name&gt;</span> and closes with <span class="ic">&lt;/name&gt;</span>, like opening and closing a box. Whatever sits between them is inside that box.
+<span class="th"><b>รูปแบบคือ:</b> ทุกอย่างเปิดด้วย <span class="ic">&lt;ชื่อ&gt;</span> และปิดด้วย <span class="ic">&lt;/ชื่อ&gt;</span> เหมือนเปิดกล่องแล้วปิดกล่อง · อะไรที่อยู่ระหว่างกลาง = อยู่ในกล่องนั้น</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP A3</div><div class="hd"><h2>Change it and watch<span class="th">ลองแก้ แล้วมองจอ</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Put VS Code on the left of your screen and Chrome on the right</div><div class="th">จัดหน้าจอ: VS Code ไว้ซ้าย Chrome ไว้ขวา ให้เห็นพร้อมกัน</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Change the heading text to your own line or department name</div><div class="th">แก้ข้อความหัวข้อ เป็นชื่อไลน์หรือชื่อแผนกของคุณเอง</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">Press <b>Ctrl+S</b> and keep your eyes on Chrome</div><div class="th">กด <b>Ctrl+S</b> แล้วจ้องที่ Chrome ไว้</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — Chrome updated by itself. You never touched the browser.</div><div class="th">จุดเช็ค — Chrome เปลี่ยนเอง โดยที่คุณไม่ได้ไปแตะเบราว์เซอร์เลย · ถ้าไม่เปลี่ยน ให้เช็คว่ากด Ctrl+S แล้วจริงไหม (ชื่อไฟล์บนแท็บจะไม่มีจุดวงกลม)</div></div>
+<div class="note ok">This is the loop you will use forever: <b>edit → save → look</b>. Nothing more magical than that.
+<span class="th">นี่คือวงจรที่คุณจะใช้ตลอดไป: <b>แก้ → เซฟ → ดู</b> · ไม่มีอะไรมากกว่านี้</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP A4</div><div class="hd"><h2>Add the boxes people will type in<span class="th">เพิ่มช่องกรอกกับตาราง</span></h2></div>
+<div class="bd"><div class="note">Replace the <span class="ic">&lt;p&gt;Hello…&lt;/p&gt;</span> line with the block below. Keep everything else.
+<span class="th">เอาบรรทัด <span class="ic">&lt;p&gt;Hello…&lt;/p&gt;</span> ออก แล้ววางก้อนข้างล่างนี้แทน · ส่วนอื่นคงไว้เหมือนเดิม</span></div>
+<div class="code sm">  &lt;<span class="f">input</span> id=<span class="s">"date"</span> type=<span class="s">"date"</span>&gt;
+  &lt;<span class="f">input</span> id=<span class="s">"line"</span> placeholder=<span class="s">"ไลน์ / Line"</span>&gt;
+  &lt;<span class="f">input</span> id=<span class="s">"ok"</span>   type=<span class="s">"number"</span> placeholder=<span class="s">"ดี / Good"</span>&gt;
+  &lt;<span class="f">input</span> id=<span class="s">"ng"</span>   type=<span class="s">"number"</span> placeholder=<span class="s">"เสีย / NG"</span>&gt;
+  &lt;<span class="f">button</span> id=<span class="s">"saveBtn"</span>&gt;บันทึก / Save&lt;/<span class="f">button</span>&gt;
+
+  &lt;<span class="f">div</span> id=<span class="s">"msg"</span>&gt;&lt;/<span class="f">div</span>&gt;
+
+  &lt;<span class="f">table</span> border=<span class="s">"1"</span>&gt;
+    &lt;<span class="f">thead</span>&gt;
+      &lt;<span class="f">tr</span>&gt;&lt;<span class="f">th</span>&gt;ไลน์ / Line&lt;/<span class="f">th</span>&gt;&lt;<span class="f">th</span>&gt;ดี / Good&lt;/<span class="f">th</span>&gt;&lt;<span class="f">th</span>&gt;เสีย / NG&lt;/<span class="f">th</span>&gt;&lt;/<span class="f">tr</span>&gt;
+    &lt;/<span class="f">thead</span>&gt;
+    &lt;<span class="f">tbody</span> id=<span class="s">"rows"</span>&gt;&lt;/<span class="f">tbody</span>&gt;
+  &lt;/<span class="f">table</span>&gt;</div>
+<div class="chk"><div class="en">✅ Checkpoint — you can see 4 boxes, a button, and an empty table with 3 headings</div><div class="th">จุดเช็ค — เห็นช่องกรอก 4 ช่อง ปุ่ม 1 ปุ่ม และตารางเปล่าที่มีหัวตาราง 3 ช่อง · <b>ปุ่มยังกดไม่ได้ — ถูกต้องแล้ว</b> เรายังไม่ได้บอกมันว่าให้ทำอะไร</div></div>
+<div class="note">The word <span class="ic">id="line"</span> is a <b>name tag</b> on that box. In Part 5 we will say "take what is in the box named line" — that is why every box has one.
+<span class="th">คำว่า <span class="ic">id="line"</span> คือ<b>ป้ายชื่อ</b>ของช่องนั้น · ช่วงที่ 5 เราจะสั่งว่า "เอาค่าจากช่องชื่อ line" — เพราะแบบนี้ทุกช่องถึงต้องมีป้าย</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>If your screen is not right yet<span class="th">ถ้าหน้าจอยังไม่ถูก</span></h2></div>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:36%">What you see<span class="th">อาการ</span></th><th>Fix<span class="th">วิธีแก้</span></th></tr></thead>
+<tbody>
+<tr><td>Nothing opened in Chrome<span class="th">Chrome ไม่เด้งขึ้นมา</span></td><td>Live Server not installed. Check the extensions panel<span class="th">ยังไม่ได้ลง Live Server — กลับไปเช็คในแถบส่วนเสริม</span></td></tr>
+<tr><td>The page shows the code itself<span class="th">หน้าเว็บโชว์โค้ดออกมาเลย</span></td><td>The file name is wrong — it must end with <b>.html</b><span class="th">ชื่อไฟล์ผิด — ต้องลงท้ายด้วย <b>.html</b></span></td></tr>
+<tr><td>Thai text looks like ���<span class="th">ภาษาไทยเป็นตัวประหลาด</span></td><td>The <span class="ic">charset="utf-8"</span> line is missing<span class="th">บรรทัด <span class="ic">charset="utf-8"</span> หายไป</span></td></tr>
+<tr><td>Half the page disappeared<span class="th">หน้าหายไปครึ่งหนึ่ง</span></td><td>A closing tag is missing — press Ctrl+Z until it comes back, then paste again<span class="th">ปิดแท็กไม่ครบ — กด Ctrl+Z ย้อนจนกลับมา แล้ววางใหม่</span></td></tr>
+<tr><td>Nothing changes when I save<span class="th">เซฟแล้วไม่เปลี่ยน</span></td><td>You are looking at a different tab, or you edited a different file<span class="th">กำลังดูคนละแท็บ หรือแก้คนละไฟล์</span></td></tr>
+</tbody></table></div>
+<div class="note ok">Notice: <b>every problem here is a typing problem, not a thinking problem.</b> Computers are strict, not clever.
+<span class="th">สังเกตว่า <b>ทุกปัญหาข้างบนคือพิมพ์ผิด ไม่ใช่คิดผิด</b> · คอมพิวเตอร์เข้มงวด ไม่ใช่ฉลาด</span></div>
+</div></section>
+
+<!-- ══ PART 4 ══ -->
+<section class="sl sec"><div class="sec-num">4</div><h2>Build the place where data lives<span class="th">สร้างที่เก็บข้อมูล</span></h2>
+<div class="sec-time">⏱ 45 min · almost all clicking / เกือบทั้งหมดแค่คลิก</div></section>
+
+<section class="sl"><div class="hd"><h2>A "table" is just an Excel sheet that lives on the internet<span class="th">"ตาราง" ก็คือชีต Excel ที่อยู่บนอินเทอร์เน็ต</span></h2></div>
+<div class="bd"><div class="two">
+<div class="col col-a"><h3>In Excel<span class="th">ใน Excel</span></h3><ul>
+<li>Sheet name<span class="th">ชื่อชีต</span></li><li>Column headings in row 1<span class="th">หัวคอลัมน์ในแถวที่ 1</span></li>
+<li>One line of data per row<span class="th">1 แถว = ข้อมูล 1 รายการ</span></li><li>Lives in a file on someone's PC<span class="th">อยู่ในไฟล์บนเครื่องใครสักคน</span></li></ul></div>
+<div class="col col-g"><h3>In a database<span class="th">ในฐานข้อมูล</span></h3><ul>
+<li><b>Table</b> name<span class="th">ชื่อ<b>ตาราง</b></span></li><li><b>Columns</b>, and each has a fixed type<span class="th"><b>คอลัมน์</b> และแต่ละคอลัมน์กำหนดชนิดข้อมูลตายตัว</span></li>
+<li>One <b>row</b> per record<span class="th">1 <b>แถว</b> = ข้อมูล 1 รายการ</span></li><li>Lives online, everyone sees the same one<span class="th">อยู่ออนไลน์ ทุกคนเห็นชุดเดียวกัน</span></li></ul></div>
+</div>
+<div class="note">The one real difference: a column that is set to "number" <b>will refuse</b> the word "many". That refusal is the feature — it is what stops the mess you get in Excel.
+<span class="th">ต่างกันจริงๆ อยู่ข้อเดียว: คอลัมน์ที่ตั้งเป็น "ตัวเลข" จะ<b>ไม่ยอมรับ</b>คำว่า "เยอะ" · การไม่ยอมรับนี่แหละคือข้อดี — มันกันความมั่วแบบที่เจอใน Excel</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP B1</div><div class="hd"><h2>Create your project<span class="th">สร้างโปรเจคของคุณ</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">In Supabase press <b>New project</b></div><div class="th">ในหน้า Supabase กด <b>New project</b></div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Name: <b>my-app</b> · Region: choose <b>Singapore</b> (closest to us)</div><div class="th">ชื่อ: <b>my-app</b> · Region: เลือก <b>Singapore</b> (ใกล้เราที่สุด = เร็วที่สุด)</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">It gives you a database password — <b>copy it into a note now</b></div><div class="th">มันจะให้รหัสผ่านฐานข้อมูลมา — <b>ก๊อปเก็บใส่โน้ตทันที</b> (วันนี้ไม่ได้ใช้ แต่หายแล้วเอาคืนไม่ได้)</div></div></div>
+<div class="stp"><div class="stp-n">4</div><div><div class="en">Press Create and wait about 2 minutes ☕</div><div class="th">กด Create แล้วรอประมาณ 2 นาที ☕ (ระบบกำลังสร้างฐานข้อมูลจริงให้คุณอยู่)</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — the green dot next to your project name says the project is ready</div><div class="th">จุดเช็ค — จุดสีเขียวข้างชื่อโปรเจคขึ้นว่าพร้อมใช้งาน · ถ้ายังหมุนอยู่ ให้รอ อย่าเพิ่งกดอะไร</div></div>
+<div class="note">While waiting, look at the left menu. <b>Table Editor</b> is where the data lives. <b>SQL Editor</b> is the expert door — we will not use it today.
+<span class="th">ระหว่างรอ ดูเมนูด้านซ้ายไว้: <b>Table Editor</b> คือที่เก็บข้อมูล · <b>SQL Editor</b> คือประตูของคนเชี่ยวชาญ — วันนี้เราไม่ใช้</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP B2</div><div class="hd"><h2>Create the table by clicking<span class="th">สร้างตารางด้วยการคลิก</span></h2></div>
+<div class="bd"><div class="note">Table Editor → <b>New table</b> → name it <b>daily_logs</b> → add these columns → Save
+<span class="th">Table Editor → <b>New table</b> → ตั้งชื่อ <b>daily_logs</b> → เพิ่มคอลัมน์ตามตารางนี้ → กด Save</span></div>
+<div class="scroll"><table>
+<thead><tr><th style="width:26%">Column name<span class="th">ชื่อคอลัมน์</span></th><th style="width:20%">Type<span class="th">ชนิด</span></th><th>Holds<span class="th">เก็บอะไร</span></th></tr></thead>
+<tbody>
+<tr><td><span class="ic">id</span></td><td>—</td><td>Already there. Do not touch it<span class="th">มีให้อยู่แล้ว ไม่ต้องแตะ — เลขประจำแถวที่ระบบแจกเอง</span></td></tr>
+<tr><td><span class="ic">created_at</span></td><td>—</td><td>Already there. Records when the row was added<span class="th">มีให้อยู่แล้ว — บันทึกเวลาที่แถวถูกเพิ่ม</span></td></tr>
+<tr><td><span class="ic">work_date</span></td><td><span class="ic">date</span></td><td>The production date<span class="th">วันที่ผลิต</span></td></tr>
+<tr><td><span class="ic">line_name</span></td><td><span class="ic">text</span></td><td>Line name<span class="th">ชื่อไลน์</span></td></tr>
+<tr><td><span class="ic">qty_ok</span></td><td><span class="ic">int8</span></td><td>Good quantity<span class="th">จำนวนดี</span></td></tr>
+<tr><td><span class="ic">qty_ng</span></td><td><span class="ic">int8</span></td><td>NG quantity<span class="th">จำนวนเสีย</span></td></tr>
+</tbody></table></div>
+<div class="note">⚠️ Spelling must match exactly — all small letters, underscore not space. The page in Part 5 asks for these names letter by letter.
+<span class="th">⚠️ ต้องสะกดตรงเป๊ะ — ตัวเล็กทั้งหมด ใช้ขีดล่าง ไม่ใช่เว้นวรรค · หน้าเว็บในช่วงที่ 5 จะเรียกชื่อพวกนี้แบบตัวต่อตัว</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP B3</div><div class="hd"><h2>Type 2 rows by hand<span class="th">พิมพ์ข้อมูล 2 แถวด้วยมือ</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">In the table, press <b>Insert</b> → <b>Insert row</b></div><div class="th">ในตาราง กด <b>Insert</b> → <b>Insert row</b></div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Fill in: today's date · a line name · 1240 · 6 — leave id and created_at empty</div><div class="th">กรอก: วันที่วันนี้ · ชื่อไลน์ · 1240 · 6 — ช่อง id กับ created_at ปล่อยว่างไว้</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">Do it once more with a different line name</div><div class="th">ทำอีกรอบ ใช้ชื่อไลน์อื่น</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — you see 2 rows, and the id column filled itself in with 1 and 2</div><div class="th">จุดเช็ค — เห็น 2 แถว และคอลัมน์ id เติมเลข 1 กับ 2 ให้เอง</div></div>
+<div class="note ok"><b>You just built the "storeroom" of your app.</b> This data is now on the internet, not in a file on your PC. Nothing on your computer can lose it.
+<span class="th"><b>คุณเพิ่งสร้าง "ห้องเก็บของ" ของแอปเสร็จแล้ว</b> · ข้อมูลนี้อยู่บนอินเทอร์เน็ต ไม่ได้อยู่ในไฟล์บนเครื่องคุณ — เครื่องพังข้อมูลก็ไม่หาย</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP B4</div><div class="hd"><h2>Open the door for your page<span class="th">เปิดประตูให้หน้าเว็บเข้าถึงข้อมูล</span></h2></div>
+<div class="bd"><div class="note">By default the data store lets <b>nobody</b> in — not even you. That is the safe default. We now open it for practice.
+<span class="th">ค่าเริ่มต้นคือ<b>ไม่ให้ใครเข้าเลย</b> แม้แต่ตัวคุณเอง — นั่นคือค่าที่ปลอดภัย · ตอนนี้เราจะเปิดเพื่อฝึก</span></div>
+<div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Left menu → <b>Authentication</b> → <b>Policies</b> → find <b>daily_logs</b></div><div class="th">เมนูซ้าย → <b>Authentication</b> → <b>Policies</b> → หาตาราง <b>daily_logs</b></div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">New policy → <b>Get started quickly</b> → pick "Enable read access for all users" → Save</div><div class="th">กด New policy → เลือก <b>Get started quickly</b> → เลือกแบบ "Enable read access for all users" → Save</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">New policy again → this time pick the <b>INSERT</b> template → Save</div><div class="th">กด New policy อีกครั้ง → รอบนี้เลือกแบบ <b>INSERT</b> (เพิ่มข้อมูล) → Save</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — daily_logs shows 2 policies</div><div class="th">จุดเช็ค — ตาราง daily_logs ขึ้นว่ามี 2 policies</div></div>
+<div class="note">⚠️ <b>Say this out loud in class:</b> what we just did means <b>anyone with the link can read and add rows</b>. That is fine for practice data. It is <b>not</b> fine for real production, HR or customer data — for that you need log-in, and you must ask IT.
+<span class="th">⚠️ <b>ผู้สอนต้องพูดข้อนี้ออกเสียง:</b> สิ่งที่เพิ่งทำแปลว่า <b>ใครมีลิงก์ก็อ่านและเพิ่มข้อมูลได้</b> · ใช้กับข้อมูลฝึกได้ แต่ <b>ห้ามใช้</b>กับข้อมูลผลิตจริง ข้อมูลพนักงาน หรือข้อมูลลูกค้า — ของจริงต้องมีระบบล็อกอิน และต้องคุยกับฝ่าย IT ก่อน</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP B5</div><div class="hd"><h2>Copy your 2 keys<span class="th">ก๊อปกุญแจ 2 ตัว</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Left menu → <b>Project Settings</b> → <b>API</b></div><div class="th">เมนูซ้าย → <b>Project Settings</b> → <b>API</b></div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Copy <b>Project URL</b> into your note — it looks like <span class="ic">https://abcd1234.supabase.co</span></div><div class="th">ก๊อป <b>Project URL</b> เก็บใส่โน้ต — หน้าตาแบบ <span class="ic">https://abcd1234.supabase.co</span></div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">Copy the <b>public</b> key (labelled anon / publishable) — a very long line of letters</div><div class="th">ก๊อป key ตัวที่เขียนว่า <b>public</b> (anon / publishable) — เป็นตัวอักษรยาวมาก</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — both values are sitting in your note, ready to paste</div><div class="th">จุดเช็ค — ทั้ง 2 ค่าอยู่ในโน้ตแล้ว พร้อมเอาไปวาง</div></div>
+<div class="note">There is a second key on that page marked <b>secret / service_role</b>. <b>Never</b> copy that one into a web page. It ignores every rule you just set.
+<span class="th">ในหน้านั้นมีอีก key หนึ่งเขียนว่า <b>secret / service_role</b> · <b>ห้าม</b>เอาตัวนั้นใส่ในหน้าเว็บเด็ดขาด — มันข้ามกฎทุกข้อที่คุณเพิ่งตั้งไป</span></div>
+</div></section>
+
+<!-- ══ PART 5 ══ -->
+<section class="sl sec"><div class="sec-num">5</div><h2>Connect the page to the data<span class="th">ต่อหน้าเว็บเข้ากับข้อมูล</span></h2>
+<div class="sec-time">⏱ 45 min · the moment it becomes real / ช่วงที่มันกลายเป็นของจริง</div></section>
+
+<section class="sl"><div class="tag do">STEP C1</div><div class="hd"><h2>Add the connection<span class="th">ใส่ตัวเชื่อม</span></h2></div>
+<div class="bd"><div class="note">Paste this <b>just above</b> the line <span class="ic">&lt;/body&gt;</span> at the bottom of your file, then put your 2 keys in.
+<span class="th">วางก้อนนี้<b>เหนือบรรทัด</b> <span class="ic">&lt;/body&gt;</span> ที่อยู่ท้ายไฟล์ แล้วเอากุญแจ 2 ตัวของคุณมาใส่</span></div>
+<div class="code">&lt;<span class="f">script</span> src=<span class="s">"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"</span>&gt;&lt;/<span class="f">script</span>&gt;
+
+&lt;<span class="f">script</span>&gt;
+<span class="k">const</span> PROJECT_URL = <span class="s">'วาง Project URL ที่นี่'</span>
+<span class="k">const</span> PUBLIC_KEY  = <span class="s">'วาง public key ที่นี่'</span>
+
+<span class="k">const</span> db  = supabase.<span class="f">createClient</span>(PROJECT_URL, PUBLIC_KEY)
+<span class="k">const</span> box = (id) =&gt; document.<span class="f">getElementById</span>(id)
+&lt;/<span class="f">script</span>&gt;</div>
+<div class="two">
+<div class="col col-g"><h3>What each line is<span class="th">แต่ละบรรทัดคืออะไร</span></h3><ul>
+<li>Line 1 borrows a ready-made helper from the internet<span class="th">บรรทัดแรก = ยืมตัวช่วยสำเร็จรูปจากอินเทอร์เน็ตมาใช้</span></li>
+<li><span class="ic">db</span> = your connection to the store<span class="th"><span class="ic">db</span> = สายที่ต่อไปยังที่เก็บข้อมูลของคุณ</span></li>
+<li><span class="ic">box</span> = "get me the box named …"<span class="th"><span class="ic">box</span> = "ขอช่องที่ชื่อว่า …"</span></li>
+</ul></div>
+<div class="col col-b"><h3>⚠️ Keep the quote marks<span class="th">⚠️ อย่าลบเครื่องหมาย ' '</span></h3><ul>
+<li>Paste your key <b>between</b> the two quotes<span class="th">วาง key <b>ระหว่าง</b>เครื่องหมาย ' ' 2 ตัว</span></li>
+<li>No spaces before or after<span class="th">อย่าให้มีเว้นวรรคหน้า-หลัง</span></li>
+<li>This is the #1 mistake in this class<span class="th">นี่คือจุดที่คนพลาดมากที่สุดในคลาสนี้</span></li>
+</ul></div>
+</div></div></section>
+
+<section class="sl"><div class="tag do">STEP C2</div><div class="hd"><h2>Show the data on the page<span class="th">ดึงข้อมูลมาแสดงบนหน้า</span></h2></div>
+<div class="bd"><div class="note">Paste this inside the same <span class="ic">&lt;script&gt;</span> block, under the lines you just added.
+<span class="th">วางต่อท้ายในก้อน <span class="ic">&lt;script&gt;</span> เดิม ใต้บรรทัดที่เพิ่งใส่ไป</span></div>
+<div class="code sm"><span class="k">async function</span> <span class="f">load</span>() {
+  <span class="k">const</span> answer = <span class="k">await</span> db.<span class="f">from</span>(<span class="s">'daily_logs'</span>)
+    .<span class="f">select</span>(<span class="s">'line_name, qty_ok, qty_ng'</span>)
+    .<span class="f">eq</span>(<span class="s">'work_date'</span>, box(<span class="s">'date'</span>).value)
+
+  <span class="k">if</span> (answer.error) {                              <span class="c">// something went wrong — say so</span>
+    box(<span class="s">'msg'</span>).textContent = <span class="s">'โหลดไม่สำเร็จ / Load failed: '</span> + answer.error.message
+    <span class="k">return</span>
+  }
+
+  box(<span class="s">'rows'</span>).innerHTML = answer.data.<span class="f">map</span>(<span class="k">function</span> (r) {
+    <span class="k">return</span> <span class="s">'&lt;tr&gt;&lt;td&gt;'</span> + r.line_name + <span class="s">'&lt;/td&gt;&lt;td&gt;'</span> + r.qty_ok + <span class="s">'&lt;/td&gt;&lt;td&gt;'</span> + r.qty_ng + <span class="s">'&lt;/td&gt;&lt;/tr&gt;'</span>
+  }).<span class="f">join</span>(<span class="s">''</span>)
+}
+
+box(<span class="s">'date'</span>).value = <span class="s">'2026-09-08'</span>      <span class="c">// ← put TODAY's date here for now</span>
+<span class="f">load</span>()</div>
+<div class="chk"><div class="en">✅ Checkpoint — the 2 rows you typed in Supabase now appear in your table</div><div class="th">จุดเช็ค — 2 แถวที่คุณพิมพ์ไว้ใน Supabase โผล่ขึ้นมาในตารางบนหน้าเว็บแล้ว · <b>นี่คือจุดสำคัญที่สุดของทั้งวัน</b> — หน้าเว็บของคุณคุยกับฐานข้อมูลจริงได้แล้ว</div></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>Read it out loud in plain words<span class="th">อ่านออกเสียงเป็นภาษาคน</span></h2></div>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:44%">The code says<span class="th">โค้ดเขียนว่า</span></th><th>You would say<span class="th">แปลเป็นภาษาคน</span></th></tr></thead>
+<tbody>
+<tr><td><span class="ic">db.from('daily_logs')</span></td><td>"Go to the daily_logs table"<span class="th">"ไปที่ตาราง daily_logs"</span></td></tr>
+<tr><td><span class="ic">.select('line_name, qty_ok…')</span></td><td>"Bring me these columns"<span class="th">"เอาคอลัมน์พวกนี้มา"</span></td></tr>
+<tr><td><span class="ic">.eq('work_date', …)</span></td><td>"Only rows where the date equals this"<span class="th">"เอาเฉพาะแถวที่วันที่ตรงกับอันนี้"</span></td></tr>
+<tr><td><span class="ic">if (answer.error) …</span></td><td>"If it went wrong, tell the user and stop"<span class="th">"ถ้าพัง ให้บอกผู้ใช้แล้วหยุด"</span></td></tr>
+<tr><td><span class="ic">.map(…)</span></td><td>"Turn every row into one line of the table"<span class="th">"เปลี่ยนทุกแถวให้เป็น 1 บรรทัดในตาราง"</span></td></tr>
+</tbody></table></div>
+<div class="note ok">Code is not a secret language. It is <b>a short, very strict way of writing instructions</b> — like a work instruction that refuses to guess what you meant.
+<span class="th">โค้ดไม่ใช่ภาษาลับ · มันคือ<b>วิธีเขียนคำสั่งแบบสั้นและเข้มงวดมาก</b> — เหมือนใบ WI ที่ไม่ยอมเดาใจคุณเลยสักนิด</span></div>
+</div></section>
+
+<section class="sl"><div class="tag do">STEP C3</div><div class="hd"><h2>Make the Save button work<span class="th">ทำให้ปุ่มบันทึกใช้งานได้</span></h2></div>
+<div class="bd"><div class="code sm"><span class="k">async function</span> <span class="f">save</span>() {
+  <span class="k">if</span> (box(<span class="s">'line'</span>).value.<span class="f">trim</span>() === <span class="s">''</span>) {            <span class="c">// no line name → stop</span>
+    box(<span class="s">'msg'</span>).textContent = <span class="s">'กรอกชื่อไลน์ก่อน / Enter a line name first'</span>
+    <span class="k">return</span>
+  }
+
+  <span class="k">const</span> answer = <span class="k">await</span> db.<span class="f">from</span>(<span class="s">'daily_logs'</span>).<span class="f">insert</span>({
+    work_date: box(<span class="s">'date'</span>).value,
+    line_name: box(<span class="s">'line'</span>).value.<span class="f">trim</span>(),
+    qty_ok: <span class="f">Number</span>(box(<span class="s">'ok'</span>).value) || <span class="s">0</span>,            <span class="c">// text → number</span>
+    qty_ng: <span class="f">Number</span>(box(<span class="s">'ng'</span>).value) || <span class="s">0</span>,
+  })
+
+  <span class="k">if</span> (answer.error) {                                   <span class="c">// never say "Saved" when it failed</span>
+    box(<span class="s">'msg'</span>).textContent = <span class="s">'บันทึกไม่สำเร็จ / Save failed: '</span> + answer.error.message
+    <span class="k">return</span>
+  }
+
+  box(<span class="s">'msg'</span>).textContent = <span class="s">'บันทึกแล้ว / Saved'</span>
+  box(<span class="s">'line'</span>).value = <span class="s">''</span>; box(<span class="s">'ok'</span>).value = <span class="s">''</span>; box(<span class="s">'ng'</span>).value = <span class="s">''</span>
+  <span class="f">load</span>()
+}
+
+box(<span class="s">'saveBtn'</span>).<span class="f">addEventListener</span>(<span class="s">'click'</span>, save)      <span class="c">// button → do save()</span>
+box(<span class="s">'date'</span>).<span class="f">addEventListener</span>(<span class="s">'change'</span>, load)        <span class="c">// change date → reload</span></div>
+<div class="chk"><div class="en">✅ Checkpoint — type a line and numbers, press Save, and it appears in the table below</div><div class="th">จุดเช็ค — พิมพ์ชื่อไลน์กับตัวเลข กด Save แล้วมันโผล่ในตารางข้างล่าง · <b>ลองปิดเบราว์เซอร์แล้วเปิดใหม่ — ข้อมูลยังอยู่</b></div></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>Try to break it on purpose<span class="th">ลองทำให้พังดูสักหน่อย</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Press Save with the line box empty → it should refuse politely</div><div class="th">กด Save ทั้งที่ยังไม่กรอกชื่อไลน์ → ต้องขึ้นข้อความเตือน ไม่ใช่บันทึกมั่ว</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Turn off your Wi-Fi, then press Save → it must tell you it failed</div><div class="th">ปิด Wi-Fi แล้วกด Save → ต้องขึ้นข้อความว่าบันทึกไม่สำเร็จ</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">Turn Wi-Fi back on, press Save again → it works</div><div class="th">เปิด Wi-Fi กลับ แล้วกด Save อีกที → ใช้ได้ตามปกติ</div></div></div>
+</div>
+<div class="note ok"><b>This is the most important idea in the whole class.</b> A system that says "Saved" when nothing was saved is more dangerous than a system that crashes — because nobody goes back to check.
+<span class="th"><b>นี่คือแนวคิดที่สำคัญที่สุดของทั้งคลาส</b> · ระบบที่ขึ้นว่า "บันทึกแล้ว" ทั้งที่ไม่มีอะไรถูกบันทึก อันตรายกว่าระบบที่พังดังๆ — เพราะไม่มีใครกลับไปตรวจ</span></div>
+<div class="note">In our real ESM system this exact mistake was found in <b>69 places</b> and fixed. Now every save is checked. You just learned the rule that took us a year to learn.
+<span class="th">ในระบบ ESM ของจริง เคยเจอความผิดพลาดข้อนี้ <b>69 จุด</b> แล้วไล่แก้จนครบ · ตอนนี้ทุกจุดที่บันทึกมีการเช็คผลหมด — สิ่งที่คุณเพิ่งเรียนไป เราใช้เวลาเป็นปีกว่าจะรู้</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>If it is not working<span class="th">ถ้ายังไม่ทำงาน</span></h2></div>
+<div class="bd"><div class="note">First: in Chrome press <b>F12</b> and look at the <b>Console</b> tab. Red text tells you what is wrong.
+<span class="th">อย่างแรก: ใน Chrome กด <b>F12</b> แล้วดูแท็บ <b>Console</b> · ตัวหนังสือสีแดงจะบอกว่าอะไรผิด</span></div>
+<div class="scroll"><table>
+<thead><tr><th style="width:38%">Message / symptom<span class="th">ข้อความ / อาการ</span></th><th>What to fix<span class="th">แก้ตรงไหน</span></th></tr></thead>
+<tbody>
+<tr><td>Table is empty but Supabase has rows<span class="th">ตารางว่าง ทั้งที่ใน Supabase มีข้อมูล</span></td><td>The date in the box is not the date of your rows — or you skipped Step B4<span class="th">วันที่ในช่องไม่ตรงกับวันที่ของข้อมูล — หรือข้ามขั้น B4 (นโยบายสิทธิ์)</span></td></tr>
+<tr><td><span class="ic">Invalid API key</span></td><td>The key was cut short when copying. Copy it again, whole<span class="th">ก๊อป key มาไม่ครบ — ก๊อปใหม่ให้ครบทั้งเส้น</span></td></tr>
+<tr><td><span class="ic">supabase is not defined</span></td><td>The borrowed-helper line is missing or below your code<span class="th">บรรทัดยืมตัวช่วยหายไป หรืออยู่ใต้โค้ดของคุณ — ต้องอยู่ข้างบนเสมอ</span></td></tr>
+<tr><td><span class="ic">column … does not exist</span></td><td>A column name is spelled differently in the table<span class="th">ชื่อคอลัมน์ในตารางสะกดไม่ตรงกับในโค้ด</span></td></tr>
+<tr><td>Nothing happens when I click Save<span class="th">กด Save แล้วไม่มีอะไรเกิดขึ้น</span></td><td>The last two lines (addEventListener) are missing<span class="th">2 บรรทัดสุดท้าย (addEventListener) หายไป</span></td></tr>
+<tr><td><span class="ic">new row violates row-level security</span></td><td>The INSERT policy in Step B4 was not created<span class="th">ยังไม่ได้สร้าง policy แบบ INSERT ในขั้น B4</span></td></tr>
+</tbody></table></div>
+<div class="note ok">Every single one of these is a <b>typing or a clicking</b> problem. None of them means you are bad at this.
+<span class="th">ทุกข้อข้างบนคือปัญหาจาก<b>การพิมพ์หรือการคลิก</b> ไม่มีข้อไหนแปลว่าคุณไม่มีหัวด้านนี้</span></div>
+</div></section>
+
+<!-- ══ PART 6 ══ -->
+<section class="sl sec"><div class="sec-num">6</div><h2>Put it online<span class="th">เอาขึ้นออนไลน์</span></h2>
+<div class="sec-time">⏱ 25 min · the fun part / ช่วงที่สนุกที่สุด</div></section>
+
+<section class="sl"><div class="tag do">STEP D</div><div class="hd"><h2>Drag your folder onto a web page. That is the whole deploy.<span class="th">ลากโฟลเดอร์ไปวางบนเว็บ — จบแค่นี้</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Go to <span class="ic">app.netlify.com/drop</span></div><div class="th">เข้าเว็บ <span class="ic">app.netlify.com/drop</span></div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Drag your whole <b>my-app</b> folder from the Desktop onto the big dashed box</div><div class="th">ลากโฟลเดอร์ <b>my-app</b> ทั้งโฟลเดอร์จากเดสก์ท็อป มาวางในกรอบเส้นประใหญ่ๆ</div></div></div>
+<div class="stp"><div class="stp-n">3</div><div><div class="en">Wait a few seconds — you get a link like <span class="ic">https://calm-otter-123.netlify.app</span></div><div class="th">รอไม่กี่วินาที — จะได้ลิงก์แบบ <span class="ic">https://calm-otter-123.netlify.app</span></div></div></div>
+<div class="stp"><div class="stp-n">4</div><div><div class="en">Open that link on your phone and save a row from there</div><div class="th">เปิดลิงก์นั้นบนมือถือ แล้วลองบันทึกข้อมูลจากมือถือดู</div></div></div>
+</div>
+<div class="chk"><div class="en">✅ Checkpoint — the row you saved on your phone appears on your computer screen too</div><div class="th">จุดเช็ค — แถวที่บันทึกจากมือถือ โผล่บนจอคอมด้วย (กดเปลี่ยนวันที่ไป-กลับให้มันโหลดใหม่) · <b>ตอนนี้คุณมีระบบที่หลายคนใช้พร้อมกันได้จริงแล้ว</b></div></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>⚠️ Before anyone uses this for real work<span class="th">⚠️ ก่อนจะเอาไปใช้กับงานจริง</span></h2></div>
+<div class="bd"><div class="list">
+<div class="it warn"><div class="en">1. Anyone with the link can see and add data — there is no log-in yet</div><div class="th">ใครมีลิงก์ก็เห็นและเพิ่มข้อมูลได้ — ยังไม่มีระบบล็อกอิน · ห้ามใส่ข้อมูลพนักงาน ข้อมูลลูกค้า หรือตัวเลขที่เป็นความลับ</div></div>
+<div class="it warn"><div class="en">2. Nobody can tell who typed what</div><div class="th">ยังบอกไม่ได้ว่าใครเป็นคนกรอก — งานจริงที่ต้องสอบกลับได้ ต้องมีล็อกอินก่อน</div></div>
+<div class="it warn"><div class="en">3. There is no approval step, no correction history</div><div class="th">ยังไม่มีขั้นตอนอนุมัติ และไม่มีประวัติการแก้ไข</div></div>
+<div class="it warn"><div class="en">4. Talk to IT before it becomes the official record of anything</div><div class="th">คุยกับฝ่าย IT ก่อนเสมอ ถ้ามันจะกลายเป็นบันทึกทางการของอะไรก็ตาม — โดยเฉพาะข้อมูลที่ลูกค้าหรือผู้ตรวจอาจขอดู</div></div>
+</div>
+<div class="note ok">This is not a reason to stop. It is the honest line between <b>a working prototype</b> (what you built today) and <b>a production system</b> (what ESM is). Prototypes are how good systems start.
+<span class="th">นี่ไม่ใช่เหตุผลให้หยุด · มันคือเส้นแบ่งที่ตรงไปตรงมาระหว่าง <b>ต้นแบบที่ใช้ได้</b> (ที่คุณทำวันนี้) กับ <b>ระบบใช้งานจริง</b> (แบบ ESM) — และระบบดีๆ ทุกตัวก็เริ่มจากต้นแบบทั้งนั้น</span></div>
+</div></section>
+
+<!-- ══ PART 7 ══ -->
+<section class="sl sec"><div class="sec-num">7</div><h2>Rules, limits, what next<span class="th">กฎ ข้อจำกัด และก้าวต่อไป</span></h2>
+<div class="sec-time">⏱ 25 min</div></section>
+
+<section class="sl"><div class="hd"><h2>6 rules that keep you out of trouble<span class="th">กฎ 6 ข้อ ที่จะทำให้คุณไม่เดือดร้อน</span></h2></div>
+<div class="bd"><div class="list">
+<div class="it"><div class="en">1. Never let a page say "Saved" when it did not save</div><div class="th">ห้ามให้หน้าเว็บขึ้นว่า "บันทึกแล้ว" ทั้งที่ยังไม่ได้บันทึก — เช็คผลทุกครั้ง</div></div>
+<div class="it"><div class="en">2. Keep one copy of anything. Two copies always disagree one day</div><div class="th">ของอย่างเดียวกันเก็บที่เดียว — สองที่เมื่อไหร่ วันหนึ่งมันจะไม่ตรงกัน แล้วไม่มีใครรู้ว่าอันไหนถูก</div></div>
+<div class="it"><div class="en">3. Change one thing at a time, then look</div><div class="th">แก้ทีละอย่าง แล้วดูผล — แก้ 5 อย่างรวดเดียว พังแล้วหาไม่เจอว่าตัวไหน</div></div>
+<div class="it"><div class="en">4. Never paste the secret key into a page</div><div class="th">ห้ามเอา key ตัวที่เขียนว่า secret ใส่ในหน้าเว็บ</div></div>
+<div class="it"><div class="en">5. Practice data first. Real data only after IT says yes</div><div class="th">เริ่มด้วยข้อมูลฝึกเสมอ · ข้อมูลจริงต่อเมื่อ IT เห็นชอบแล้ว</div></div>
+<div class="it"><div class="en">6. Write down what you did, on the same day you did it</div><div class="th">จดสิ่งที่ทำไว้ ในวันเดียวกับที่ทำ — "ไว้ทีหลัง" ไม่เคยมาถึง</div></div>
+</div></div></section>
+
+<section class="sl"><div class="hd"><h2>Do it yourself, or call IT?<span class="th">อันไหนทำเองได้ อันไหนต้องเรียก IT</span></h2></div>
+<div class="bd"><div class="two">
+<div class="col col-g"><h3>✅ Go ahead yourself<span class="th">ทำเองได้เลย</span></h3><ul>
+<li>Change the wording on a page<span class="th">แก้ข้อความบนหน้า</span></li>
+<li>Add a column to your own practice table<span class="th">เพิ่มคอลัมน์ในตารางฝึกของตัวเอง</span></li>
+<li>Build a page for your own team's paper form<span class="th">ทำหน้าใหม่แทนใบกระดาษของทีมตัวเอง</span></li>
+<li>Show it to your manager and get feedback<span class="th">เอาไปให้หัวหน้าดู แล้วรับฟีดแบ็ก</span></li>
+</ul></div>
+<div class="col col-b"><h3>🛑 Stop and ask IT<span class="th">หยุด แล้วถาม IT ก่อน</span></h3><ul>
+<li>Anything with employee or customer data<span class="th">อะไรก็ตามที่มีข้อมูลพนักงานหรือลูกค้า</span></li>
+<li>Anything an auditor might ask to see<span class="th">อะไรที่ผู้ตรวจอาจขอดู</span></li>
+<li>Connecting to an existing company system<span class="th">การไปต่อกับระบบที่บริษัทใช้อยู่</span></li>
+<li>When people start depending on it daily<span class="th">เมื่อมีคนเริ่มใช้มันทุกวันจนขาดไม่ได้</span></li>
+</ul></div>
+</div>
+<div class="note ok">The right sentence to use with IT: <b>"I built a small prototype to show what we need. Can we look at it together?"</b> That is a much easier conversation than "please build us a system."
+<span class="th">ประโยคที่ควรใช้คุยกับ IT: <b>"ผมทำต้นแบบเล็กๆ ไว้ให้เห็นภาพว่าเราต้องการอะไร ขอดูด้วยกันได้ไหม"</b> — คุยแบบนี้ง่ายกว่าเดินไปบอกว่า "ช่วยทำระบบให้หน่อย" เยอะ</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>What a real system adds on top<span class="th">ระบบจริงมีอะไรเพิ่มจากที่เราทำวันนี้</span></h2></div>
+<div class="bd"><div class="scroll"><table>
+<thead><tr><th style="width:34%">Today you built<span class="th">วันนี้คุณทำได้</span></th><th>A real system also has<span class="th">ระบบจริงมีเพิ่ม</span></th></tr></thead>
+<tbody>
+<tr><td>One page<span class="th">1 หน้า</span></td><td>Many pages with a menu<span class="th">หลายหน้าพร้อมเมนู (ESM มี 70 หน้า)</span></td></tr>
+<tr><td>Anyone can open it<span class="th">ใครก็เปิดได้</span></td><td>Log-in, and each role sees different things<span class="th">ล็อกอิน และแต่ละตำแหน่งเห็นไม่เท่ากัน</span></td></tr>
+<tr><td>Add rows<span class="th">เพิ่มข้อมูล</span></td><td>Edit, delete, approve, and a record of who did it<span class="th">แก้ ลบ อนุมัติ และบันทึกว่าใครทำ</span></td></tr>
+<tr><td>A table<span class="th">ตาราง</span></td><td>Charts, exports, printed forms, alerts<span class="th">กราฟ ส่งออก Excel ใบพิมพ์ การแจ้งเตือน</span></td></tr>
+<tr><td>Works if you are careful<span class="th">ใช้ได้ถ้าระวัง</span></td><td>Automatic checks that block bad data<span class="th">ตัวตรวจอัตโนมัติที่กันข้อมูลผิดตั้งแต่ต้นทาง</span></td></tr>
+</tbody></table></div>
+<div class="note">Every one of those is <b>the same three pieces you built today</b>, repeated and refined. Nothing new in principle — just more of it, done carefully.
+<span class="th">ทุกข้อข้างบนคือ <b>3 ชิ้นส่วนเดิมที่คุณทำวันนี้</b> ทำซ้ำและทำให้ละเอียดขึ้นเท่านั้น · หลักการไม่มีอะไรใหม่ — แค่มีเยอะขึ้นและทำอย่างระมัดระวัง</span></div>
+</div></section>
+
+<section class="sl"><div class="hd"><h2>Homework — 2 things<span class="th">การบ้าน 2 ข้อ</span></h2></div>
+<div class="bd"><div class="steps">
+<div class="stp"><div class="stp-n">1</div><div><div class="en">Turn today's page into <b>your</b> form</div><div class="th">แปลงหน้าของวันนี้ให้เป็นฟอร์ม<b>ของคุณ</b> — เปลี่ยนหัวข้อ เปลี่ยนชื่อช่อง เพิ่ม 1 คอลัมน์ในตาราง Supabase แล้วใช้มันจริง 1 สัปดาห์</div></div></div>
+<div class="stp"><div class="stp-n">2</div><div><div class="en">Write half a page: what worked, what got stuck, what you would want next</div><div class="th">เขียนครึ่งหน้ากระดาษ: อะไรทำได้ · ติดตรงไหน · อยากได้อะไรเพิ่ม — <b>ข้อที่ติดมีค่าที่สุด</b> เพราะมันคือโจทย์จริงของแผนกคุณ</div></div></div>
+</div>
+<div class="note ok">Bring both to the follow-up session in 2 weeks. If you get stuck for more than 30 minutes — <b>ask, do not grind</b>. Sitting stuck is not learning.
+<span class="th">เอามาคุยกันในนัดติดตามอีก 2 สัปดาห์ · ถ้าติดเกิน 30 นาที — <b>ให้ถาม อย่านั่งงม</b> · การนั่งติดอยู่เฉยๆ ไม่ได้แปลว่าได้เรียนรู้มากกว่า</span></div>
+<div class="note">The finished example file is in <span class="ic">docs/web101-basic/index.html</span> — compare yours with it if something is missing.
+<span class="th">ไฟล์ตัวอย่างที่ทำเสร็จแล้วอยู่ที่ <span class="ic">docs/web101-basic/index.html</span> — เทียบกับของคุณได้ถ้ารู้สึกว่าขาดอะไรไป</span></div>
+</div></section>
+
+<section class="sl cover">
+<h1>Thank you<span class="th">ขอบคุณครับ</span></h1>
+<div class="c-line">You now know something most people in this building do not.<br>
+<span class="th">ตอนนี้คุณรู้ในสิ่งที่คนส่วนใหญ่ในตึกนี้ยังไม่รู้</span></div>
+<div class="c-foot">Questions now · then keep the link, keep the folder, and use it this week<br>
+<span class="th">ถามได้เลยตอนนี้ · แล้วเก็บลิงก์ เก็บโฟลเดอร์ไว้ แล้วลองใช้จริงสัปดาห์นี้</span></div>
+</section>
+
+</div>
+<div id="bar"></div>
+<div id="hint">→ / Space next &nbsp;·&nbsp; ← back &nbsp;·&nbsp; F fullscreen &nbsp;·&nbsp; tap left/right edge</div>
+<script>
+const S=[...document.querySelectorAll('.sl')];let i=0;
+const bar=document.getElementById('bar'),hint=document.getElementById('hint');
+S.forEach((s,k)=>{const p=document.createElement('div');p.className='pg';
+ p.textContent=(k+1)+'/'+S.length;s.appendChild(p)});
+function go(n){i=Math.max(0,Math.min(S.length-1,n));
+ S.forEach((s,k)=>s.classList.toggle('on',k===i));
+ bar.style.width=((i+1)/S.length*100)+'%';
+ location.hash=i?('#'+(i+1)):'';}
+addEventListener('keydown',e=>{
+ if(['ArrowRight',' ','PageDown','Enter'].includes(e.key)){e.preventDefault();go(i+1)}
+ else if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();go(i-1)}
+ else if(e.key==='Home')go(0);
+ else if(e.key==='End')go(S.length-1);
+ else if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+});
+addEventListener('click',e=>{if(e.target.closest('.scroll,.list,.steps,.code,.ag'))return;
+ go(e.clientX<innerWidth*0.22?i-1:i+1)});
+let x0=null;
+addEventListener('touchstart',e=>x0=e.changedTouches[0].clientX,{passive:true});
+addEventListener('touchend',e=>{if(x0===null)return;
+ const d=e.changedTouches[0].clientX-x0;if(Math.abs(d)>55)go(i+(d<0?1:-1));x0=null},{passive:true});
+go(parseInt(location.hash.slice(1))-1||0);
+setTimeout(()=>hint.style.opacity=0,5000);
+</script></body></html>
