@@ -1024,7 +1024,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                   maxRows สูง เพราะจอนี้คน "ไล่ดูตามไลน์" ไม่ได้พิมพ์ค้นอย่างเดียว */}
               <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptions} groupByLine maxRows={999}
                 placeholder="— ค้นหา / เลือกเครื่องจักร (รหัส · ชื่อ · ไลน์) —"
-                onChange={({ id }) => handleMachineSelect(id || null)} />
+                onChange={({ id }) => { const v = id || null; if (v !== (machineId ?? null)) handleMachineSelect(v) }} />
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}

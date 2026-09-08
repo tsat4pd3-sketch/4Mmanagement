@@ -50,8 +50,10 @@ export default function SearchSelect({
   const [innerText, setInnerText] = useState('');
   const controlled = textProp !== undefined;
   const text = controlled ? textProp : innerText;
-  // uncontrolled: เลือกแล้วล้างคำค้นทิ้ง (ช่องโชว์ label ของค่าที่เลือกอยู่แล้ว) · พิมพ์ = เก็บคำค้น
-  const emit = (v) => { if (!controlled) setInnerText(v.id ? '' : v.text); onChange?.(v); };
+  /* เก็บคำค้นไว้เสมอ แม้โหมด controlled — เพราะ picker บางตัว (MachineSelect valueKey='id') สลับโหมดกลางคัน:
+     ตอน "เลือกอยู่" มันส่ง text=label (controlled) พอผู้ใช้พิมพ์ทับ ค่าที่เลือกถูกล้าง → กลายเป็น uncontrolled
+     ถ้าไม่ sync innerText ไว้ ตัวอักษรที่เพิ่งพิมพ์จะหายทันที = พิมพ์ค้นไม่ได้เลย (feedback หน้างาน 2026-09-08) */
+  const emit = (v) => { setInnerText(v.id ? '' : (v.text ?? '')); onChange?.(v); };
   const boxRef = useRef(null);
   const listRef = useRef(null);
   // ค่าล่าสุดสำหรับ handler ที่ผูกไว้ใน effect (away-click) — กัน closure ค้างค่าเก่า

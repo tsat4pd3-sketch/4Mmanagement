@@ -16,7 +16,7 @@
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import useMachines from '../utils/useMachines';
-import { machineOptions, appendHistoryOptions } from '../utils/pickerOptions';
+import { machineOptions, appendHistoryOptions, pickerText } from '../utils/pickerOptions';
 
 const up = (s) => String(s ?? '').trim().toUpperCase();
 export { machineOptions };
@@ -37,7 +37,8 @@ export default function MachineSelect({
   const sel = useMemo(() => (valueKey === 'id'
     ? options.find(o => o.id === value)
     : options.find(o => o.key === up(value))) || null, [options, value, valueKey]);
-  const text = sel ? sel.label : (valueKey === 'id' ? '' : (value || ''));
+  // valueKey='id' = พาเรนต์เก็บแค่ id ไม่มีที่เก็บคำค้น → ต้องปล่อยให้ SearchSelect ถือเอง (pickerText คืน undefined)
+  const text = pickerText({ selLabel: sel ? sel.label : null, value, storesText: valueKey !== 'id' });
   const emit = ({ text: t, opt }) => {
     if (opt) onChange?.({ machine_no: opt.machine_no, id: opt.history ? null : opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, known: !opt.history, opt });
     else onChange?.({ machine_no: t, id: null, name: null, line_name: null, equipment_kind: null, known: false, opt: null });
