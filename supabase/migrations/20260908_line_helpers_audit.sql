@@ -76,3 +76,10 @@ begin
       for each row execute function public.fn_audit();
   end if;
 end $$;
+
+-- ── 4) ปิด warning ของ Supabase advisor: SECURITY DEFINER ที่ anon/authenticated เรียกได้ ──
+-- ฟังก์ชันนี้เป็น trigger function (คืน type `trigger`) เรียกผ่าน REST /rpc ไม่ได้อยู่แล้ว
+-- แต่ advisor ยังนับเป็นช่องโหว่ → revoke ให้เกลี้ยง
+-- ⚠️ ปลอดภัย: PostgreSQL เช็ค EXECUTE ของ trigger function ตอน `create trigger` เท่านั้น
+--    ไม่เช็คตอน trigger ทำงาน (เทสแล้ว insert ผ่าน + snapshot ชื่อยังเติมครบ)
+revoke execute on function public.fn_line_helpers_snapshot_names() from anon, authenticated, public;
