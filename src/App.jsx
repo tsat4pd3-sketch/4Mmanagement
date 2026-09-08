@@ -1575,8 +1575,13 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           // ⚠️ เลื่อนได้แค่ขึ้น-ลง — ห้ามเลื่อนซ้ายขวาทั้งหน้า (คำสั่ง user 2026-08-04)
           //   ของกว้าง (ตาราง/บอร์ด/กราฟ) ต้องมี scroller ของตัวเอง (overflowX:'auto' ที่กล่องมันเอง)
           //   ตาม UI-CONVENTIONS — ห้ามปล่อยให้ล้นออกมาดันทั้งหน้าให้เลื่อนข้าง
-          overflowY: 'auto',
-          overflowX: 'hidden',
+          // 🔴 ต้องเป็น `clip` ไม่ใช่ `hidden`/`auto` (2026-09-08 — วัดจริงด้วย Playwright):
+          //   overflow ที่ไม่ใช่ visible/clip ทำให้ <main> เป็น "scroll container" ทั้งที่มันไม่เคยเลื่อนเอง
+          //   (สูงตามเนื้อหา · ตัวเลื่อนจริงคือ <body>) → position:sticky ของทุกหน้าถูกขังไว้ใน main
+          //   = ไม่เคยเกาะจอเลยสักหน้า (รูปเครื่องในหน้าตรวจ PM เลื่อนหายทั้ง PC/แท็บเล็ต/มือถือ
+          //   แม้แก้ที่หน้าไปแล้ว 2026-09-02) · `clip` ตัดของล้นเหมือน hidden แต่ไม่สร้าง scroll container
+          //   (Chromium 90+ · จอ TV webOS 23 = Cr 94 ผ่าน) · ห้ามใส่ overflowY กลับมา
+          overflowX: 'clip',
           minWidth: 0,
         }}>
           <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>

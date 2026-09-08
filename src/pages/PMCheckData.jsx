@@ -47,9 +47,13 @@ const S = {
        (เนื้อหาสูงเท่าไหร่กล่องก็สูงตาม) แต่มันยัง "ขัง" `position:sticky` ของรูปเครื่องไว้ข้างใน
        → เอกสารเลื่อน รูปเลื่อนตามหายไป **sticky ไม่เคยทำงานเลยสักครั้ง**
      ตอนนี้ปล่อยให้ document เป็นตัวเลื่อน → sticky เกาะ viewport จริง
-     (flex child ล้นแนวนอนใช้ `minWidth:0` แก้ ไม่ใช่ `overflow:hidden` ซึ่งเป็นตัวขัง sticky) */
+     (flex child ล้นแนวนอนใช้ `minWidth:0` แก้ ไม่ใช่ `overflow:hidden` ซึ่งเป็นตัวขัง sticky)
+     🔴 2026-09-08: แก้ตรงนี้แล้ว "ยังหาย" อยู่ดี (วิดีโอ user) — ต้นเหตุชั้นบนกว่า: `<main>` ใน App.jsx
+     มี overflowY:auto ขัง sticky ไว้อีกชั้น (ทุกหน้า) → แก้ที่ App.jsx เป็น overflowX:'clip' แล้ว
+     ห้ามคิดว่า sticky ในหน้านี้ทำงานเพราะโค้ดหน้านี้อย่างเดียว */
   page: { display: 'flex', minHeight: '100%', background: 'var(--bg)' },
-  sidebar: { width: 280, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  // จอกว้าง: ลิสต์เครื่องเกาะจอ + เลื่อนในตัวเอง (เดิมยาวตามหน้า เลื่อนเช็คข้อล่างๆ แล้วลิสต์หายไปทั้งแถบ)
+  sidebar: { width: 280, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh' },
   sidebarHead: { padding: '16px 16px 10px' },
   deptBar: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 16px 12px' },
   deptBtn: (active, color) => ({
@@ -656,6 +660,8 @@ export default function PMCheckData() {
     return () => { mqN.removeEventListener('change', on); mqW.removeEventListener('change', on) }
   }, [])
   const [tab, setTab] = useState('record')
+  // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
+  const [jigQuery, setJigQuery] = useState('')
   const [results, setResults] = useState({})
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -984,9 +990,17 @@ export default function PMCheckData() {
   //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
   //   (ข) ประเภทอุปกรณ์ = ประเภท default ของทีม (ให้เริ่ม checklist ใหม่ได้) · ผลิต = ทุกชนิด
   const teamEquip = (teams.find(t => t.key === department) || {}).equip_type
-  const deptJigs = department === 'production'
+  const deptJigsAll = department === 'production'
     ? jigs
     : jigs.filter(j => (teamEquip && (j.equipment_type || 'machine') === teamEquip) || clDeptByJig[j.id]?.has(department))
+  // คำค้นแยกเป็นคำ ทุกคำต้องเจอ (เช่น "laser 789" · "jhyd08") — เทียบกับ เลขเครื่อง+ชื่อ+ไลน์ รวมกัน
+  const qWords = jigQuery.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const matchJig = (j) => {
+    if (!qWords.length) return true
+    const hay = `${j.machine_no || ''} ${j.name || ''} ${j.line_name || ''}`.toLowerCase()
+    return qWords.every(w => hay.includes(w))
+  }
+  const deptJigs = deptJigsAll.filter(matchJig)
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -996,7 +1010,7 @@ export default function PMCheckData() {
     <div style={S.page}>
       {/* Sidebar (จอแคบ = เต็มความกว้าง) */}
       {showSidebar && (
-      <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none' } : null) }}>
+      <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none', position: 'static', height: 'auto' } : null) }}>
         <div style={S.sidebarHead}>
           <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>บันทึกผลตรวจ PM</h2>
         </div>
@@ -1007,6 +1021,14 @@ export default function PMCheckData() {
         <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
           <b style={{ color: deptColor }}>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
         </div>
+        <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input value={jigQuery} onChange={e => setJigQuery(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์" aria-label="ค้นหาเครื่อง"
+            style={{ flex: 1, minWidth: 0, padding: '7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }} />
+          {jigQuery && <button onClick={() => setJigQuery('')} title="ล้างคำค้น" style={{ flexShrink: 0, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>✕</button>}
+        </div>
+        {qWords.length > 0 && department !== 'production' && (
+          <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
+        )}
         <div style={S.jigList}>
           {department === 'production' ? (() => {
             // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
@@ -1015,7 +1037,7 @@ export default function PMCheckData() {
             const byLine = {}
             jigs.forEach(j => {
               const lns = dailyLineByJig[j.id]
-              if (!lns) return
+              if (!lns || !matchJig(j)) return
               lns.forEach(ln => {
                 if (lineParam && ln !== lineParam) return
                 ;(byLine[ln] ||= []).push(j)
@@ -1084,7 +1106,9 @@ export default function PMCheckData() {
               {pendingBlock}
             </>)
           })() : (<>
-            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>}
+            {deptJigs.length === 0 && (qWords.length
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ “{jigQuery.trim()}”<br /><span onClick={() => setJigQuery('')} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างคำค้น</span></p>
+              : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
             {deptJigs.map(jig => (
               <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
