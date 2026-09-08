@@ -12,7 +12,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MTN_STEPS, QA_NOT_RELATED, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MTN_STEPS, QA_NOT_RELATED, canBounceBack, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -105,6 +105,17 @@ const STATUS_META = {
   closed:    { label: '✅ ปิด MO',            step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
   returned:  { label: '↩️ ตีกลับ (ผิดแผนก)',   step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
   rejected:  { label: '⛔ Reject MO',         step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
+};
+/* 🔴 ป้ายสถานะต้องบอก "ใครต้องทำต่อ" ให้ตรง — 2026-09-08 (feedback หน้างาน
+   "Step กดข้ามของ Q มันหายในที่เลือกไม่เกี่ยวกับคุณภาพ")
+   `checked` (ผ่านขั้น 4 แล้ว) ใช้ป้ายเดียวว่า "รอคุณภาพ/รับมอบ" ทั้งที่แยกเป็น 2 ทางคนละคนทำ:
+     · ขั้น 4 ระบุ "เกี่ยวกับคุณภาพ"    → รอ QA ตรวจจริง (มีปุ่ม ⏭ ข้าม QA ให้กด)
+     · ขั้น 4 ระบุ "ไม่เกี่ยวกับคุณภาพ" → ข้าม QA ไปรับมอบเลย **ปุ่ม ⏭ หายถูกแล้ว** (ไม่มีอะไรให้ข้าม)
+   เคสหลังจอเดิมเขียน "รอคุณภาพ" + กล่องขั้น 5 ว่างเปล่า + ปุ่มข้ามหาย ⇒ หน้างานอ่านว่า "ใบค้างรอ QA
+   แล้วปุ่มข้ามหายไป" · ป้ายต้องพูดความจริง ห้ามให้เดา — ดูกล่องหมายเหตุขั้น 5 ใน DetailDrawer คู่กัน */
+const statusMetaOf = (o) => {
+  const m = STATUS_META[o?.status] || STATUS_META.pending;
+  return o?.status === 'checked' && !isWaitingQa(o) ? { ...m, label: '🤝 รอรับมอบ (ไม่ต้องตรวจ QA)' } : m;
 };
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -428,7 +439,7 @@ export default function MtnRepair() {
 }
 
 function MoCard({ o, onOpen }) {
-  const m = STATUS_META[o.status] || STATUS_META.pending;
+  const m = statusMetaOf(o);
   const pct = Math.round((o.current_step / 7) * 100);
   const dept = o.mtn_dept || deptForItem(o.item_type);
   return (
@@ -742,7 +753,7 @@ function printMoReport(o, dparts = [], logo0) {
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
   const L = (k, v) => `<div class="f"><span class="fk">${k}</span> <span class="fv">${esc(v)}</span></div>`;
-  const statusTh = (STATUS_META[o.status] || {}).label?.replace(/^[^฀-๿]+/, '').trim() || o.status;
+  const statusTh = statusMetaOf(o).label?.replace(/^[^฀-๿]+/, '').trim() || o.status;
   const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
   // ป้ายหัวช่องเซ็น 4 ช่อง — ไล่เฉดเทาอ่อน→เข้ม ตามฟอร์มกระดาษ (ช่องสุดท้ายพื้นเข้ม ตัวอักษรขาว)
   const SG_BG = ['#d9d9d9', '#b7b7b7', '#999999', '#666666'];
@@ -924,7 +935,7 @@ function printMoReportMtn(o, dparts = [], logo0) {
 /* ── Detail drawer ───────────────────────────────────── */
 function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
-  const m = STATUS_META[o.status] || STATUS_META.pending;
+  const m = statusMetaOf(o);
   const next = nextStepFor(o);
   const dept = o.mtn_dept || deptForItem(o.item_type);
   const openImps = (improvements || []).filter(i => i.line_name === o.line_name && (!i.machine_no || i.machine_no === o.machine_no));
@@ -985,20 +996,39 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const Img = ({ label, url }) => url ? <div><div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{label}</div><img src={url} alt="" style={{ maxHeight: 130, borderRadius: 8, border: '1px solid var(--border)' }} /></div> : null;
   /* หัวข้อขั้น + "ใครทำ" มาจาก MTN_STEPS (ขั้น 1 เป็นการเปิดใบ ไม่อยู่ในตารางนั้น)
      เดิมพิมพ์ชื่อขั้นมือ 7 ที่ แล้วไม่ตรงกับปุ่ม/หัวโมดัล — คนอ่านไม่รู้ว่าใครต้องทำต่อ */
-  const StepBox = ({ n, done, children }) => {
+  /* `note` = ข้อความที่ต้องเห็น **แม้ขั้นนั้นยังไม่ถูกทำ** — ใช้บอก "ขั้นนี้ไม่ต้องทำแล้ว"
+     ให้ต่างจาก "ยังไม่ได้ทำ" (กล่องจางๆ ว่างเปล่า) ซึ่งหน้างานอ่านว่าใบค้าง — 2026-09-08 */
+  const StepBox = ({ n, done, note, children }) => {
     const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : MTN_STEPS[n];
     return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done ? 1 : 0.55 }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note ? 1 : 0.55 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : 'var(--muted)' }}>
-          {done ? '✅' : '⬜'} ขั้น {n}: {meta?.title}
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : note ? '#f59e0b' : 'var(--muted)' }}>
+          {done ? '✅' : note ? '⏭' : '⬜'} ขั้น {n}: {meta?.title}
           <span style={{ fontWeight: 600, color: 'var(--muted)', marginLeft: 6, fontSize: 11 }}>· {meta?.who}</span>
         </div>
         {done && n >= 2 && canEditStep(n) && <button onClick={() => onStep(n, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>✏️ แก้ไข</button>}
       </div>
+      {note}
       {done && children}
     </div>
   ); };
+
+  /* 🔴 ขั้น 5 ต้องแยก "ไม่ต้องตรวจ" ออกจาก "ยังไม่ตรวจ" — 2026-09-08 (feedback หน้างาน)
+     ทั้ง 2 เคสที่ QA ไม่ต้องแตะใบนี้ (ขั้น 4 เลือก "ไม่เกี่ยวกับคุณภาพ" · กด ⏭ ข้าม QA แล้ว)
+     **ไม่ขยับ `current_step` ออกจาก 4** ⇒ กล่องขั้น 5 เดิม (`done = current_step >= 5`) ว่างเปล่า
+     และกล่อง "⏭ ข้ามการตรวจ QA" ที่เขียนไว้ก็ไม่เคยโผล่จนกว่าจะรับมอบเสร็จ (บั๊กเงียบตัวเดียวกัน)
+     → ย้ายมาเป็น `note` ที่โชว์เสมอ + บอกด้วยว่าปุ่ม ⏭ หายเพราะไม่มีอะไรให้ข้ามแล้ว */
+  const qa5Note = (o.status === 'checked' && !isWaitingQa(o)) || (isQaSkipped(o) && o.current_step < 5) ? (
+    <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+      ⏭ <b>ไม่ต้องตรวจ QA — งานนี้ไม่เกี่ยวกับคุณภาพ</b>
+      <div style={{ color: 'var(--text2)' }}>
+        {isQaSkipped(o)
+          ? <>กดข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || '—'}</div></>
+          : <>ขั้น 4 ระบุว่า “{QA_NOT_RELATED}” → ข้ามขั้นนี้ไป <b>ขั้น 6 รับมอบ</b> ได้เลย (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</>}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${m.label} · ${deptNameOf(dept)}`} onClose={onClose} wide>
@@ -1073,14 +1103,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           <StepBox n={4} done={o.current_step >= 4}>
             <Row k="ผล" v={o.check_result} /><Row k="เกี่ยวคุณภาพ?" v={o.quality_related} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
           </StepBox>
-          <StepBox n={5} done={o.current_step >= 5}>
-            {isQaSkipped(o) && (
-              <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-                ⏭ <b>ข้ามการตรวจ QA — งานไม่เกี่ยวกับคุณภาพ</b>
-                <div>เหตุผล: {o.qa_skip_reason || '—'}</div>
-                <div style={{ color: 'var(--text2)' }}>โดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}</div>
-              </div>
-            )}
+          <StepBox n={5} done={o.current_step >= 5} note={qa5Note}>
             {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
             <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
           </StepBox>
@@ -1283,9 +1306,18 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
         if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
-        // Reject = "ตีกลับให้ผู้แจ้ง" (ผิดแผนก) — เด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ)
-        if (!editMode) { if (isReject) { upd.status = 'returned'; upd.reject_reason = f.reject_reason; upd.returned_at = new Date().toISOString(); upd.returned_from_dept = o.mtn_dept || null; } else { upd.status = 'assigned'; upd.current_step = 2; } }
-        else if (isReject) upd.reject_reason = f.reject_reason;
+        /* Reject = "ตีกลับให้ผู้แจ้ง" (ผิดแผนก) — เด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ)
+           🔴 แก้ 2026-09-08 (feedback หน้างาน "ระบบ Reject MO มันไม่ตีกลับ แต่ก่อนหน้านี้ตีกลับ"):
+           เดิมสาขานี้อยู่ใต้ `if (!editMode)` ⇒ กด ✏️ แก้ไขขั้น 2 ของใบที่รับงานไปแล้วแล้วเลือก "Reject MO"
+           **บันทึกแค่ `reject_reason` ใบไม่เด้งกลับเลย** ทั้งที่กล่องส้มบนฟอร์มเขียนว่า "ใบจะเด้งกลับหาผู้แจ้ง"
+           = โกหกผู้ใช้ (ข้อมูลจริง 08/09: 2 ใบค้าง status=assigned + repair_type='Reject MO' + returned_at ว่าง)
+           ตีกลับเป็น "การตัดสินใจของทั้งใบ" ไม่ใช่ฟิลด์ของขั้น 2 → ต้องทำงานทั้งตอนบันทึกครั้งแรกและตอนแก้ไข
+           · เกณฑ์ว่าตีกลับได้ไหมอยู่ที่ `canBounceBack()` ใน mtnStepPerm.js ที่เดียว (ใช้ร่วมกับกล่องเตือนบนฟอร์ม)
+           · `current_step: 1` ให้ตรงกับตอน resubmit — ใบกลับไปอยู่ที่ผู้แจ้งจริงๆ ไม่ค้างโชว์ว่าผ่านขั้น 2 แล้ว */
+        if (isReject) {
+          if (!canBounceBack(o)) { setSaving(false); return toast.error(`ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`); }
+          Object.assign(upd, { status: 'returned', current_step: 1, reject_reason: f.reject_reason, returned_at: new Date().toISOString(), returned_from_dept: o.mtn_dept || null });
+        } else if (!editMode) { upd.status = 'assigned'; upd.current_step = 2; }
         // ออกเลข MO ก่อนเลื่อนสถานะ — ถ้า RPC ล้ม (เน็ตสะดุด) ใบยังเป็น pending ให้กดสเตป 2 ใหม่ได้
         // (เดิมเลื่อน status→assigned ก่อน แล้ว RPC ล้ม → ใบค้าง assigned + mo_no=null ตลอดกาล ทำสเตป 2 ซ้ำไม่ได้)
         if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
@@ -1371,7 +1403,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         const oldUrl = o[fld], newUrl = upd[fld];
         if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
       }
-      if (!editMode) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = skipQa ? 'mtn_qa_skipped' : isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
+      // isReject = ตีกลับจริงแล้ว (ทั้งบันทึกครั้งแรกและตอนแก้ไข) → ผู้แจ้งต้องได้รับแจ้งเสมอ ไม่งั้นใบเด้งกลับแบบเงียบ
+      if (!editMode || isReject) { const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single(); const ev = skipQa ? 'mtn_qa_skipped' : isReject ? 'mtn_returned' : STEP_EVENT[step]; if (ev) notifyMtn(fresh, ev); }
       setSaving(false); toast.success(editMode ? 'แก้ไขแล้ว' : 'บันทึกแล้ว'); onSaved();
     } catch (e) { setSaving(false); toast.error(e.message || 'บันทึกไม่สำเร็จ'); }
   };
@@ -1394,7 +1427,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         )}
         {step === 2 && <>
           <Field label="ประเภทงานซ่อม" required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
-          {isReject ? <><div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px' }}>↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
+          {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? '#e0894a' : '#ef4444', background: canBounceBack(o) ? 'rgba(224,137,74,0.1)' : 'rgba(239,68,68,0.12)', border: `1px solid ${canBounceBack(o) ? 'rgba(224,137,74,0.3)' : 'rgba(239,68,68,0.5)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
             <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><PersonSelect value={f.accepted_by} source="both" roles={MTN_HEAD_ROLES} onChange={res => set('accepted_by', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
             <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
