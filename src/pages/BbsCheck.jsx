@@ -27,6 +27,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { printBbsSheet } from '../lib/bbsPrint';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 const thisMonth = () => {
   const d = new Date();
@@ -400,12 +401,9 @@ export default function BbsCheck() {
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
             <label style={lbl}>ผู้ตรวจสอบ (ดึงลายเซ็นจากโปรไฟล์)</label>
-            <select disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
-              onChange={e => setInspector(e.target.value)}
-              style={{ width: 210, padding: '6px 8px', fontSize: 12.5 }}>
-              <option value="">— เลือกผู้ตรวจสอบ —</option>
-              {signers.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-            </select>
+            <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
+              placeholder="— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —" style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
+              options={signers.map(s => ({ id: s.id, label: s.full_name }))} onChange={({ id }) => setInspector(id)} />
           </div>
           <div>
             <label style={lbl}>รหัสพนักงาน</label>

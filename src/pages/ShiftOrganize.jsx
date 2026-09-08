@@ -11,6 +11,7 @@ import { toast } from '../components/Toast';
 import InfoMore from '../components/InfoMore';
 import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -945,12 +946,9 @@ export default function ShiftOrganize() {
               </div>
               <div>
                 <label style={labelSt}>พนักงาน</label>
-                <select value={ovrEmpId} onChange={e => setOvrEmpId(e.target.value)}>
-                  <option value="">— เลือกพนักงาน —</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.employee_id_code} — {emp.name}</option>
-                  ))}
-                </select>
+                <SearchSelect value={String(ovrEmpId ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…"
+                  options={employees.map(emp => ({ id: String(emp.id), label: `${emp.employee_id_code} — ${emp.name}`, keywords: emp.employee_id_code }))}
+                  onChange={({ id }) => setOvrEmpId(id)} />
               </div>
               <div>
                 <label style={labelSt}>กะ</label>

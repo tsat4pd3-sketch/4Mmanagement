@@ -7,6 +7,7 @@ import { loadDocForms, docFormSync, docFormScopes } from '../utils/docForms';
 import { buildDocFormPreviewHtml } from '../lib/docFormPreview';
 import tsLogoUrl from '../assets/TS logo.png';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -300,10 +301,8 @@ export default function DocFormsRegistry() {
                 </div>
                 <div>
                   <div style={lb}>ผู้ออกเอกสาร (Issued — ใช้ชื่อ+ลายเซ็นบนฟอร์มที่รองรับ)</div>
-                  <select value={editing.issued_by || ''} onChange={e => setF('issued_by', e.target.value)} style={{ width: '100%' }}>
-                    <option value="">— ไม่ระบุ —</option>
-                    {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-                  </select>
+                  <SearchSelect value={editing.issued_by || ''} placeholder="— ไม่ระบุ (พิมพ์ค้นหาชื่อ) —"
+                    options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setF('issued_by', id)} />
                 </div>
               </div>
               <div><div style={lb}>หมายเหตุ (แสดงเฉพาะในทะเบียน)</div><input type="text" value={editing.notes || ''} onChange={e => setF('notes', e.target.value)} style={{ width: '100%' }} /></div>
@@ -450,10 +449,8 @@ export default function DocFormsRegistry() {
                 <div><div style={lb}>footer เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                   <input type="text" value={scopeEdit.footer_note} onChange={e => setScopeEdit(v => ({ ...v, footer_note: e.target.value }))} style={{ width: '100%' }} /></div>
                 <div><div style={lb}>ผู้ออกเอกสารเฉพาะส่วนงาน</div>
-                  <select value={scopeEdit.issued_by || ''} onChange={e => setScopeEdit(v => ({ ...v, issued_by: e.target.value }))} style={{ width: '100%' }}>
-                    <option value="">— ใช้ของกลาง —</option>
-                    {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-                  </select></div>
+                  <SearchSelect value={scopeEdit.issued_by || ''} placeholder="— ใช้ของกลาง (พิมพ์ค้นหาชื่อ) —"
+                    options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setScopeEdit(v => ({ ...v, issued_by: id }))} /></div>
               </div>
               <div><div style={lb}>Legend เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>

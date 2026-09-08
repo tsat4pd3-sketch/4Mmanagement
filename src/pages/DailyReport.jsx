@@ -2932,11 +2932,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 return (
                   <div style={{ marginBottom: 10, padding: '8px 12px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
-                    <select value={openMachineNo} onChange={e => setOpenMachineNo(e.target.value)}
-                      style={{ width: 220, fontSize: 12, fontWeight: 600 }}>
-                      <option value="">— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) —</option>
-                      {lineMachines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}</option>)}
-                    </select>
+                    <SearchSelect value={openMachineNo || ''} placeholder="— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) — พิมพ์ค้นหา" style={{ width: 280 }}
+                      inputStyle={{ fontSize: 12, fontWeight: 600, padding: '6px 30px 6px 8px' }}
+                      options={lineMachines.map(m => ({ id: m.machine_no, label: m.machine_no, sub: m.machine_name || '' }))}
+                      onChange={({ id }) => setOpenMachineNo(id)} />
                     {lineMachines.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ยังไม่มีเครื่องในทะเบียน — เพิ่มที่ Machine Database)</span>}
                   </div>
                 );
@@ -4695,29 +4694,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }
                   return (
                     <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
-                      <select
-                        id="open-mat-select"
-                        value={openProdForm.mat_no}
-                        onChange={e => handleOpenProdMatNoChange(e.target.value)}
-                        style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
-                      >
-                        <option value="">— เลือก MAT.NO —</option>
-                        {lineStds.map(s => {
-                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14:
-                             10105769 กับ 10105770 ชื่อเดียวกันทั้งคู่) → ต่อท้ายด้วยเลขพาร์ทลูกค้า
-                             ที่พอแยกออก + ติดธง ⚠ ให้เห็นว่าคู่ไหนกำกวม (แก้จริงต้องไปตั้งชื่อ
-                             ให้ต่างกันที่ Product Master — ระบบไม่เดาชื่อให้) */
+                      <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder="— ค้นหา MAT.NO / ชื่อสินค้า —"
+                        inputStyle={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
+                        options={lineStds.map(s => {
+                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14) → ต่อท้ายเลขพาร์ทลูกค้า + ธง ⚠ */
                           const nm = s.dr_products?.name || s.part_name || '';
                           const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
-                          return (
-                            <option key={s.id} value={s.mat_no}>
-                              {s.mat_no}{nm ? ` · ${nm}` : ''}
-                              {dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}
-                              {dup ? ' ⚠ชื่อซ้ำ' : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
-                            </option>
-                          );
+                          return {
+                            id: s.mat_no,
+                            label: `${s.mat_no}${nm ? ` · ${nm}` : ''}${dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
+                            sub: `${s.qty_per_kanban} ชิ้น/ใบ`, keywords: `${nm} ${s.dr_products?.p_no || ''}`,
+                          };
                         })}
-                      </select>
+                        onChange={({ id }) => handleOpenProdMatNoChange(id)} />
                       {(() => {
                         const names = lineStds.map(s => s.dr_products?.name || s.part_name || '').filter(Boolean);
                         const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
@@ -5090,16 +5079,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       const pts = sessionProcessTypesAll();
                       const filtered = dtTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
                       return (
-                        <select autoFocus value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
-                          <option value="">เลือกประเภท...</option>
-                          {['unplanned', 'planned'].map(cat => (
-                            <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}>
-                              {filtered.filter(t => t.category === cat).map(t => (
-                                <option key={t.id} value={t.id}>{t.name_th}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder="เลือกประเภท… (พิมพ์ค้นหา)" inputStyle={inputStyle}
+                          options={['unplanned', 'planned'].flatMap(cat => filtered.filter(t => t.category === cat).map(t => ({ id: String(t.id), label: t.name_th, group: cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน' })))}
+                          onChange={({ id }) => setDtForm(f => ({ ...f, downtime_type_id: id }))} />
                       );
                     })()}
                   </Field>

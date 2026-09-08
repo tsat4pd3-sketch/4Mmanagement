@@ -22,6 +22,7 @@ import { checkStockPlacement } from '../utils/moveTargets';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
+import SearchSelect from '../components/SearchSelect';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -652,14 +653,9 @@ function StockTab({ role, scope }) {
               {/* เลือก MAT จาก BOM ของ product */}
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'#0ea5e9', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
-                <select value={bomProduct} onChange={e => setBomProduct(e.target.value)} style={inputSt}>
-                  <option value="">— เลือก Product เพื่อดูพาร์ทย่อยใน BOM —</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.mat_no ? `${p.mat_no} · ` : ''}{p.name}{p.line_name ? ` (${p.line_name})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
+                  options={products.map(p => ({ id: String(p.id), label: `${p.mat_no ? `${p.mat_no} · ` : ''}${p.name}`, sub: p.line_name || '', keywords: p.mat_no || '' }))}
+                  onChange={({ id }) => setBomProduct(id)} />
                 {bomProduct && (productBom[bomProduct] || []).length > 0 && (
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>
                     {(productBom[bomProduct] || []).map(c => {

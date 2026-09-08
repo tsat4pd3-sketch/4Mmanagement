@@ -19,6 +19,7 @@ import ImageCropModal from '../components/ImageCropModal'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -992,14 +993,9 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           {addMode === 'workstation' && !isEdit && (
             <div>
               <label style={S.label}>เลือกเครื่องจักร ({machineOptions.length} ตัว)</label>
-              <select value={machineId ?? ''} onChange={e => handleMachineSelect(e.target.value || null)} style={{ width: '100%' }}>
-                <option value="">— เลือกเครื่องจักร —</option>
-                {Object.entries(machinesByLine).sort(([a], [b]) => a.localeCompare(b)).map(([line, ms]) => (
-                  <optgroup key={line} label={`📍 ${line}`}>
-                    {ms.map(m => <option key={m.id} value={m.id}>{m.machine_no}{m.machine_name ? ` — ${m.machine_name}` : ''}</option>)}
-                  </optgroup>
-                ))}
-              </select>
+              <SearchSelect value={String(machineId ?? '')} placeholder="— ค้นหาเครื่องจักร (รหัส / ชื่อ / ไลน์) —"
+                options={Object.entries(machinesByLine).sort(([a], [b]) => a.localeCompare(b)).flatMap(([line, ms]) => ms.map(m => ({ id: String(m.id), label: `${m.machine_no}${m.machine_name ? ` — ${m.machine_name}` : ''}`, group: `📍 ${line}`, keywords: line })))}
+                onChange={({ id }) => handleMachineSelect(id || null)} />
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}

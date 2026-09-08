@@ -15,6 +15,7 @@ import PeFlowChart, { FlowLegend } from '../components/PeFlowChart';
 import PeChangeRequests from '../components/PeChangeRequests';
 import PeRoutingSuggest from '../components/PeRoutingSuggest';
 import LineSelect from '../components/LineSelect';
+import SearchSelect from '../components/SearchSelect';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -326,10 +327,10 @@ export default function PEDocs() {
           {/* ── ตัวกรอง OP (ใช้ร่วมแท็บ FMEA/CP) ── */}
           {(tab === 'fmea' || tab === 'cp') && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-              <select value={procFilter} onChange={e => setProcFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                <option value="">ทุก OP</option>
-                {procs.map(p => <option key={p.id} value={p.id}>OP {p.op_no} · {p.name}</option>)}
-              </select>
+              <SearchSelect value={String(procFilter || '')} placeholder="ทุก OP — พิมพ์ค้นหา" style={{ minWidth: 220 }}
+                inputStyle={{ padding: '6px 30px 6px 10px', fontSize: 12, borderRadius: 8, background: 'var(--bg2)' }}
+                options={procs.map(p => ({ id: String(p.id), label: `OP ${p.op_no} · ${p.name}`, keywords: String(p.op_no) }))}
+                onChange={({ id }) => setProcFilter(id)} />
               {tab === 'fmea' && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={rpnOnly} onChange={e => setRpnOnly(e.target.checked)} />
@@ -729,9 +730,9 @@ export default function PEDocs() {
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label style={lbl}>Process (OP) *
-              <select value={fmeaModal.process_id || ''} onChange={e => setFmeaModal({ ...fmeaModal, process_id: e.target.value })} style={{ marginTop: 4 }}>
-                {procs.map(p => <option key={p.id} value={p.id}>OP {p.op_no} · {p.name}</option>)}
-              </select>
+              <SearchSelect value={String(fmeaModal.process_id || '')} placeholder="ค้นหา OP…" style={{ marginTop: 4 }}
+                options={procs.map(p => ({ id: String(p.id), label: `OP ${p.op_no} · ${p.name}`, keywords: String(p.op_no) }))}
+                onChange={({ id }) => setFmeaModal({ ...fmeaModal, process_id: id })} />
             </label>
             <label style={lbl}>Classification
               <select value={fmeaModal.classification || ''} onChange={e => setFmeaModal({ ...fmeaModal, classification: e.target.value })} style={{ marginTop: 4 }}>
@@ -796,9 +797,9 @@ export default function PEDocs() {
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label style={lbl}>Process (OP) *
-              <select value={cpModal.process_id || ''} onChange={e => setCpModal({ ...cpModal, process_id: e.target.value })} style={{ marginTop: 4 }}>
-                {procs.map(p => <option key={p.id} value={p.id}>OP {p.op_no} · {p.name}</option>)}
-              </select>
+              <SearchSelect value={String(cpModal.process_id || '')} placeholder="ค้นหา OP…" style={{ marginTop: 4 }}
+                options={procs.map(p => ({ id: String(p.id), label: `OP ${p.op_no} · ${p.name}`, keywords: String(p.op_no) }))}
+                onChange={({ id }) => setCpModal({ ...cpModal, process_id: id })} />
             </label>
             <label style={lbl}>Char No.<input type="number" value={cpModal.char_no ?? ''} onChange={e => setCpModal({ ...cpModal, char_no: e.target.value })} style={{ marginTop: 4, width: 110, display: 'block' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Sub-op (กลุ่มในใบ CP เช่น "130.3 · PROGRESSIVE")<input value={cpModal.sub_op || ''} onChange={e => setCpModal({ ...cpModal, sub_op: e.target.value })} style={{ marginTop: 4 }} /></label>

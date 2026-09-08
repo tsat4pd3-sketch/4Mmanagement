@@ -25,6 +25,7 @@ import {
 } from '../utils/materialRequest';
 import { printMaterialRequest } from '../lib/materialRequestPrint';
 import { notifyEvent } from '../utils/notifyEvent';
+import SearchSelect from './SearchSelect';
 
 const today = () => {
   const d = new Date();
@@ -487,11 +488,8 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
               {s.label} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? 'ผู้เบิก/คืน' : 'ผู้จ่ายสินค้า'})</span>
             </div>
-            <select disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''}
-              onChange={e => pickSigner(s.k, e.target.value)} style={{ ...inpSt, width: '100%' }}>
-              <option value="">— เลือก —</option>
-              {signers.map(x => <option key={x.id} value={x.id}>{x.full_name}</option>)}
-            </select>
+            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —"
+              inputStyle={inpSt} options={signers.map(x => ({ id: x.id, label: x.full_name }))} onChange={({ id }) => pickSigner(s.k, id)} />
             <input type="date" disabled={ro} value={req[`${s.k}_date`] || ''}
               onChange={e => setReq({ [`${s.k}_date`]: e.target.value || null })} style={{ ...inpSt, width: '100%', marginTop: 4 }} />
             {req[`${s.k}_sig_url`] &&
