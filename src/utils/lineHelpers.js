@@ -17,6 +17,7 @@
    - **ห้ามใช้เพื่อขยายสิทธิ์เขียน** — ใช้เติม "รายชื่อที่มองเห็น" เท่านั้น ส่วนปุ่มแก้ไขยังคุมด้วย can() เหมือนเดิม  */
 
 import { inSectionScope } from './sectionScope.js';
+import { fetchByIds } from './fetchByIds.js';
 
 /* ⚠️ supabaseClient ถูก import แบบ dynamic ในฟังก์ชัน ไม่ใช่บนหัวไฟล์ — **ห้ามเปลี่ยนเป็น static import**
    supabaseClient.js อ่าน `import.meta.env` ซึ่งพังนอก Vite ⇒ ไฟล์ util ที่ static import มัน
@@ -83,11 +84,18 @@ export async function mergeBorrowedEmployees(list, opts = {}) {
     && isBorrowIntoScope(lineIds, scopeSecs, lineById, h.to_line_id));
   if (!wanted.length) return list;
 
-  let q = supabase.from('employees').select(columns).in('id', wanted.map(h => h.employee_id));
-  if (activeOnly) q = q.eq('is_active', true);
-  const { data: extra, error: e2 } = await q;
+  // ผ่าน fetchByIds (แบ่งก้อน id) ตามกติกาโปรเจค — วันนี้คนยืมมีหลักหน่วย แต่ถ้าทั้งโรงงานยืมกันจริง
+  // `.in()` ยาวๆ ทำ URL เกินเพดาน proxy แล้ว "คืนค่าว่างเงียบ" ซึ่งอาการจะเหมือนไม่มีคนยืมเป๊ะ
+  const { rows: extra, error: e2 } = await fetchByIds(
+    wanted.map(h => h.employee_id),
+    (chunk) => {
+      let q = supabase.from('employees').select(columns).in('id', chunk);
+      if (activeOnly) q = q.eq('is_active', true);
+      return q;
+    },
+  );
   if (e2) {
-    console.warn('[line_helpers] โหลดข้อมูลคนยืมตัวไม่สำเร็จ:', e2.message);
+    console.warn('[line_helpers] โหลดข้อมูลคนยืมตัวไม่สำเร็จ:', e2);
     return list;
   }
   const byEmp = Object.fromEntries(wanted.map(h => [h.employee_id, h]));
