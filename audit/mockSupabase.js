@@ -31,6 +31,11 @@ const ROW = (i) => ({
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
   status: 'open', shift: 'day', work_date: '2026-08-04', session_id: `s-${i}`,
+  /* ⚡ energy_points / energy_monthly — ต้องมี ไม่งั้นหน้า /energy รวมทุกจุดไว้ชั้นเดียว
+     (meteredSet ว่าง) แล้ว **โค้ดสาย "แยกตารางตามชั้นมิเตอร์" ไม่เคยถูกรันใน harness เลย**
+     is_metered สลับ 1 ใน 3 โดยตั้งใจ → ได้เคส "ไลน์ลูกมีมิเตอร์ แต่ไลน์แม่อยู่คนละตาราง"
+     ซึ่งเป็นเคสที่หน้างานเจอจริง (HDF1/HDF2 มีมิเตอร์ · HYDROFORM ไม่มี) */
+  scope_kind: 'line', scope_name: LINE_NAME(i), is_metered: i % 3 === 0, month_key: '2026-08',
   qty: 120+i, qty_ng: i, qty_ok: 118+i, qty_suspect: 0, qty_actual: 118+i, qty_target: 130,
   duration_min: 12+i, cycle_time_sec: 58, oee: 82.5, oee_a: 91, oee_p: 93, oee_q: 98,
   employee_id: `emp-${i}`, employee_id_code: `6${1000+i}`, is_present: true, team: 'A',

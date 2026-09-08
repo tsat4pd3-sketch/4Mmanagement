@@ -23,7 +23,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames, toHierarchicalOptions } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import {
@@ -197,11 +197,28 @@ export default function Energy() {
   const prevByKey = byMonth[prevMonth] || {};
 
   /* ── ชั้นของจุด: มีมิเตอร์ / ยังไม่มี (energy_points.is_metered) ── */
+  /* ── ความลึกที่ "แสดงในตารางนี้" (คนละตัวกับความลึกในต้นไม้จริง) ────────────────
+     หน้านี้แยกตารางเป็นชั้น (มีมิเตอร์ / ยังไม่มีมิเตอร์ / เฉพาะจุดที่มีข้อมูล) ⇒ ไลน์แม่มักไม่ได้อยู่
+     ตารางเดียวกับไลน์ลูก · กฎ + เหตุผล + เคสจริงอยู่ที่ `visibleDepths` ใน utils/lineHierarchy.js
+     (ห้ามคิดความลึกเองในหน้า — จอไหนคิดเองจะกลับไปเป็น "แม่ลูกมั่ว" แบบเดิม) */
+  const withDepth = useCallback((pts) => {
+    const parentKey = new Map(points.filter(p => p.kind === 'line' && p.parentName)
+      .map(p => [`line::${p.name}`, `line::${p.parentName}`]));
+    const depths = visibleDepths(pts.map(keyOf), k => parentKey.get(k) || null);
+    return pts.map(p => {
+      const d = depths.get(keyOf(p)) || { depth: 0, outsideParent: null };
+      return { ...p, depth: d.depth, outsideParent: d.outsideParent ? String(d.outsideParent).split('::').slice(1).join('::') : null };
+    });
+  }, [points]);
+
   const meteredSet = useMemo(() => new Set(
     (pointCfg || []).filter(c => c.is_metered).map(c => `${c.scope_kind}::${c.scope_name}`)
   ), [pointCfg]);
   const meteredPts = useMemo(() => points.filter(p => meteredSet.has(`${p.kind}::${p.name}`)), [points, meteredSet]);
   const otherPts = useMemo(() => points.filter(p => !meteredSet.has(`${p.kind}::${p.name}`)), [points, meteredSet]);
+  // แถวสำหรับ render — depth คิดใหม่ต่อตาราง (ยอดรวมยังใช้ meteredPts/otherPts เหมือนเดิม)
+  const meteredRows = useMemo(() => withDepth(meteredPts), [withDepth, meteredPts]);
+  const otherRows = useMemo(() => withDepth(otherPts), [withDepth, otherPts]);
 
   /* ── ลำดับชั้นแม่-ลูก: ใช้ตัดสินว่าจุดไหน "นับเข้ายอดรวมได้" (กฎกลางใน utils/energy.js) ──
      แม่ต้องหาเจอแม้ตัวแม่จะไม่อยู่ในลิสต์ที่ส่งเข้าไป (เช่นรวมเฉพาะจุดที่มีมิเตอร์) */
@@ -393,6 +410,13 @@ export default function Energy() {
         <td style={{ ...td, fontWeight: isPlant ? 800 : 600, paddingLeft: 8 + (p?.depth || 0) * 16 }}>
           {label}
           {p?.section && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}> · {p.section}</span>}
+          {/* แม่อยู่คนละตาราง = เยื้องใต้กันไม่ได้ (จะไปเยื้องใต้ไลน์อื่นที่ไม่เกี่ยวกัน) → บอกด้วยข้อความแทน */}
+          {p?.outsideParent && !coveredName && (
+            <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 10.5 }}
+              title="ไลน์แม่ไม่ได้อยู่ในตารางนี้ (คนละชั้นมิเตอร์) จึงไม่ได้เยื้องใต้กัน">
+              {' '}· ใต้ {p.outsideParent}
+            </span>
+          )}
           {/* ⚠️ ห้ามให้ค่าแม่กับค่าลูกบวกกันเงียบๆ — บอกตรงๆ ว่าแถวนี้ถูกนับที่ไหน */}
           {coveredName && (
             <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
@@ -463,7 +487,7 @@ export default function Energy() {
     );
   };
   /** ป้ายชื่อจุด — ไลน์ลูกใส่ ↳ ให้เห็นว่าเป็นชั้นย่อยของกลุ่ม (indent อย่างเดียวหายบนจอแคบ) */
-  const ptLabel = (p) => `${p.kind === 'zone' ? '🔧' : p.parentName ? '↳ 🏭' : '🏭'} ${p.name}`;
+  const ptLabel = (p) => `${p.kind === 'zone' ? '🔧' : p.depth > 0 ? '↳ 🏭' : '🏭'} ${p.name}`;
   const head = (withMeter) => (
     <thead><tr>
       <th style={th}>พื้นที่</th><th style={th}>หน่วย (kWh)</th><th style={th}>ค่าไฟ (บาท)</th>
@@ -577,7 +601,7 @@ export default function Energy() {
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                   {head(true)}
-                  <tbody>{meteredPts.map(p => row({ p, label: ptLabel(p) }))}</tbody>
+                  <tbody>{meteredRows.map(p => row({ p, label: ptLabel(p) }))}</tbody>
                 </table>
               )}
             </div>
@@ -595,7 +619,7 @@ export default function Energy() {
               <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                   {head(true)}
-                  <tbody>{otherPts.map(p => row({ p, label: ptLabel(p) }))}</tbody>
+                  <tbody>{otherRows.map(p => row({ p, label: ptLabel(p) }))}</tbody>
                 </table>
               </div>
             )}
@@ -735,12 +759,15 @@ export default function Energy() {
                   <th style={{ ...th, textAlign: 'right' }}>เทียบเดือนก่อน</th>
                 </tr></thead>
                 <tbody>
-                  {points.filter(p => months.some(mk => (byMonth[mk] || {})[keyOf(p)]?.qty != null)).map(p => {
+                  {/* ตารางนี้โชว์เฉพาะจุดที่มีข้อมูล → ต้องคิด depth ใหม่ด้วย (แม่ที่ไม่มีข้อมูลไม่อยู่ในตาราง) */}
+                  {withDepth(points.filter(p => months.some(mk => (byMonth[mk] || {})[keyOf(p)]?.qty != null))).map(p => {
                     const d = deltaPct(byKey[keyOf(p)]?.qty, prevByKey[keyOf(p)]?.qty);
                     return (
                       <tr key={keyOf(p)}>
                         <td style={{ ...td, fontWeight: 600, paddingLeft: 8 + (p.depth || 0) * 16 }}>
                           {ptLabel(p)}
+                          {p.outsideParent && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 10.5 }}
+                            title="ไลน์แม่ไม่มีข้อมูลในช่วงนี้ จึงไม่ได้อยู่ในตาราง"> · ใต้ {p.outsideParent}</span>}
                           {meteredSet.has(keyOf(p)) && <span title="มีมิเตอร์" style={{ marginLeft: 5, fontSize: 10.5, color: GOOD }}>🔌</span>}
                         </td>
                         {/* ค่าที่ถูกนับรวมไว้ที่ไลน์แม่แล้ว = ยังต้องเห็น (เป็นข้อมูลจริง) แต่ต้องรู้ว่าไม่ได้บวกเข้ายอดรวม */}
