@@ -17,7 +17,7 @@ import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
-import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
@@ -839,8 +839,10 @@ export default function FactoryMap({ setupMode = false }) {
       if (r.scope_kind === 'plant') continue;
       if (r.month_key !== cur && r.month_key !== prev) continue;
       const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null, series: [] });
-      if (r.month_key === cur) { o.qty = Number(r.qty) || 0; o.cost = Number(r.cost) || 0; o.source = r.source; }
-      else if (r.month_key === prev) o.prev = Number(r.qty) || 0;
+      // ⚠️ null ต้องคงเป็น null — "ยังไม่กรอก" ≠ "กรอก 0" · ตั้งแต่เปิดกรอกรายไลน์ลูก (2026-09-08)
+      //    ค่านี้ยังเป็นตัวตัดสินว่าไลน์แม่ "มีค่าแล้ว" (= ลูกไม่ถูกบวกซ้ำ) ด้วย
+      if (r.month_key === cur) { o.qty = r.qty == null ? null : Number(r.qty); o.cost = r.cost == null ? null : Number(r.cost); o.source = r.source; }
+      else if (r.month_key === prev) o.prev = r.qty == null ? null : Number(r.qty);
     }
     // ชุดข้อมูลย้อนหลังสำหรับกราฟจิ๋วบนการ์ด (เรียงเก่า→ใหม่ · เดือนที่ไม่มีข้อมูล = ข้าม ไม่เติม 0)
     const seriesOf = {};
@@ -859,15 +861,6 @@ export default function FactoryMap({ setupMode = false }) {
     setEnergyEf(efFor('electric', cur, ef || []));
   }, []);
   useEffect(() => { loadEnergy(); }, [loadEnergy]);
-
-  /* จุดที่กรอกค่าไฟไว้แต่ **ยังไม่ได้ตีกรอบบนผัง** = ตัวเลขหายไปเฉยๆ ไม่มีใครเห็น
-     ห้ามเงียบ — ขึ้นชิปเตือนพร้อมรายชื่อ (หลักเดียวกับ "จอแคบ · ซ่อนป้าย N ไลน์") */
-  const energyNoRegion = useMemo(() => {
-    if (metric !== 'energy') return [];
-    const drawn = new Set(regions.map(r => r.line_name));
-    return Object.entries(energyStatus)
-      .filter(([n, v]) => v.qty != null && !drawn.has(n)).map(([n]) => n);
-  }, [metric, regions, energyStatus]);
 
   /* ── ⚙️ ประวัติ OEE 7 วันก่อนหน้า — sparkline + Δ บนการ์ด KPI ของ metric OEE (2026-08-25) ──
      โหลด "ครั้งเดียว" ตอนกดแท็บ OEE ครั้งแรก ไม่ poll (ค่า stamp ของกะปิดแล้วไม่เปลี่ยนระหว่างวัน — กฎ egress)
@@ -1433,6 +1426,27 @@ export default function FactoryMap({ setupMode = false }) {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  /* ⚡ จุดที่ "นับเข้ายอดรวมได้" — หน้ากรอกเปิดให้ลงรายไลน์ลูกได้แล้ว (2026-09-08 · มิเตอร์ MDB แยก HDF1/HDF2)
+     ⇒ ต้องใช้กฎกลาง `energyRollup`: **แม่มีค่า = ใช้ของแม่ · แม่ไม่มีค่า = รวมลูก**
+        ถ้าบวกดื้อๆ ทั้งครอบครัวเหมือนเดิม กลุ่มที่ลงทั้งแม่และลูกจะโชว์ไฟเกินจริงเท่าตัว
+     ⚠️ parentOf มาจาก production_lines — โซน facility ไม่มีแม่ จึงถูกนับเสมอ (ถูกแล้ว) */
+  const energyCounted = useMemo(() => {
+    const par = (k) => parentOf[k] || null;
+    const setOf = (pick) => new Set(
+      energyRollup(Object.entries(energyStatus).map(([name, v]) => ({ key: name, qty: pick(v) })), par)
+        .filter(r => r.counted).map(r => r.key));
+    return { cur: setOf(v => v.qty), prev: setOf(v => v.prev) };
+  }, [energyStatus, parentOf]);
+
+  /* จุดที่กรอกค่าไฟไว้แต่ **ยังไม่ได้ตีกรอบบนผัง** = ตัวเลขหายไปเฉยๆ ไม่มีใครเห็น
+     ห้ามเงียบ — ขึ้นชิปเตือนพร้อมรายชื่อ (หลักเดียวกับ "จอแคบ · ซ่อนป้าย N ไลน์") */
+  const energyNoRegion = useMemo(() => {
+    if (metric !== 'energy') return [];
+    const drawn = new Set(regions.map(r => r.line_name));
+    return Object.entries(energyStatus)
+      .filter(([n, v]) => v.qty != null && energyCounted.cur.has(n) && !drawn.has(n)).map(([n]) => n);
+  }, [metric, regions, energyStatus, energyCounted]);
+
   // ไล่ขึ้นบรรพบุรุษ (พ่อ→ปู่→...) กันลูปด้วย seen
   const ancestorNames = (name) => { const out = []; const seen = new Set([name]); let p = parentOf[name]; while (p && !seen.has(p)) { out.push(p); seen.add(p); p = parentOf[p]; } return out; };
   // คืนชื่อไลน์ที่จะ "เปิดผังพื้นพร้อมพนักงาน" ให้ — เลือกผังที่มีคนจริง
@@ -1490,10 +1504,16 @@ export default function FactoryMap({ setupMode = false }) {
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0;
                agg.amTotal += pm.amTotal || 0; agg.amOverdue += pm.amOverdue || 0; agg.amDueSoon += pm.amDueSoon || 0;
                agg.pmBusy += pm.pmBusy || 0; if (!agg.pmBusyText) agg.pmBusyText = pm.pmBusyText || ''; }
-      // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
-      //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
+      /* ⚡ พลังงาน — กรอกได้ทุกชั้นแล้ว (ไลน์แม่ + ไลน์ลูก) จึง **ต้องกรองด้วย energyCounted ก่อนบวก**
+         ไม่งั้นกลุ่มที่ลงทั้งค่ารวมที่แม่และค่าแยกที่ลูก จะถูกบวกซ้ำเป็นสองเท่าบนผัง */
       const en = energyStatus[n];
-      if (en) { agg.kwh = (agg.kwh || 0) + (en.qty || 0); agg.kwhPrev = (agg.kwhPrev || 0) + (en.prev || 0); agg.kwhCost = (agg.kwhCost || 0) + (en.cost || 0); agg.kwhSrc = agg.kwhSrc || en.source; if (!agg.kwhSeries?.length) agg.kwhSeries = en.series || []; }
+      if (en) {
+        const useCur = en.qty != null && energyCounted.cur.has(n);
+        if (useCur) { agg.kwh = (agg.kwh || 0) + en.qty; agg.kwhSrc = agg.kwhSrc || en.source; if (!agg.kwhSeries?.length) agg.kwhSeries = en.series || []; }
+        if (en.prev != null && energyCounted.prev.has(n)) agg.kwhPrev = (agg.kwhPrev || 0) + en.prev;
+        // ค่าไฟ (บาท): จุดที่ลงเฉพาะค่าเงินไม่ลงหน่วย ต้องไม่หายไปจากผัง — แต่จุดที่ค่าถูกครอบด้วยแม่แล้วห้ามบวกซ้ำ
+        if (en.cost != null && (en.qty == null || useCur)) agg.kwhCost = (agg.kwhCost || 0) + en.cost;
+      }
     });
     // โซน facility เอง: Supply Route = เครื่องในโซนนี้ down (open MO) มั้ย (มุมมองต่างจากไลน์ผลิตที่เป็น "ถูกจ่าย")
     if (isFac(name)) {

@@ -240,3 +240,93 @@ export function meteredCoverage(meteredQty, billQty) {
     over: m > b * 1.02,   // เผื่อ 2% กันเคสปัดเศษ/คร่อมรอบบิล
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   🔌 ไลน์แม่ / ไลน์ลูก — "อ่านมิเตอร์ได้แค่ไหน ก็ลงได้แค่นั้น" (2026-09-08)
+
+   ── ปัญหาจริงจากหน้างาน (แชท 2026-09-08) ────────────────────────────────
+   ช่าง: "ค่าไฟตัว HDF ที่จะเอาค่ารวม Line Laser ทั้งสอง Line + HDF-01 + HDF-02 เลยใช่มั้ยครับ"
+        "จุดจาก micrologic ในห้อง MDB มันแยก HDF-01 กับ HDF-02 ครับ"
+   ⇒ **เบรกเกอร์อ่านแยกได้ แต่ระบบให้กรอกได้แค่ไลน์บนสุด** (HYDROFORM) — ทีมเลยต้องยัดค่ารวม
+     (Laser 2 ไลน์ + HDF1 + HDF2) ลงช่องเดียว = ทิ้งความละเอียดที่มิเตอร์ให้มาฟรีๆ
+     ผิดกฎข้อ 1 ของโมดูลนี้: "เก็บค่าที่อ่านได้ ไม่ใช่ค่าที่คำนวณแล้ว"
+
+   ── กฎที่ใช้ (ยืม pattern ของ src/utils/stdManpower.js มาตรงๆ) ───────────
+     **แม่มีค่า = ใช้ของแม่ (ลูกเป็นแค่รายละเอียด) · แม่ไม่มีค่า = รวมลูกขึ้นมา**
+   ⚠️ ห้ามบวกแม่ + ลูกเข้าด้วยกันเด็ดขาด — ยอด "ที่วัดได้" จะเกินบิลเป็นเท่าตัว
+      (เคยกันไว้ด้วยการ "ไม่ให้กรอกไลน์ลูก" ซึ่งแก้ที่อาการ ไม่ใช่ที่เหตุ)
+   ⚠️ ใช้ตัวนี้ **ทุกจุดที่รวมยอดพลังงานรายไลน์** (หน้า /energy + ผังรวม /factory-map)
+      ห้ามเขียนกฎนับซ้ำเองในหน้า — ไม่งั้นสองจอตอบไม่ตรงกันเหมือนเคส stdManpower
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * จัดชั้นจุดวัดว่าจุดไหน "นับเข้ายอดรวมได้" และจุดไหน "อยู่ในค่าของแม่แล้ว"
+ * @param {Array<{key:string, qty:*}>} items จุดที่จะรวม (qty null/'' = ยังไม่กรอก)
+ * @param {(key:string)=>string|null} parentOfKey แม่ของ key ในลำดับชั้น —
+ *        ต้องตอบได้แม้ key นั้นไม่อยู่ใน items (จะได้ไล่ข้ามชั้นที่ไม่ได้กรอกขึ้นไปหาแม่ที่กรอกไว้เจอ)
+ * @returns {Array} เรียงตาม items เดิม + { qty, counted, coveredBy, childQty, childCount }
+ *   counted   = นับเข้ายอดรวมได้ (มีค่า + ไม่มีบรรพบุรุษที่กรอกไว้)
+ *   coveredBy = key ของบรรพบุรุษที่กรอกไว้ใกล้สุด (ค่าตัวนี้ถูกนับไปแล้วในนั้น)
+ *   childQty  = ผลรวมของลูกหลานที่ "ค่ามาตกที่ตัวนี้" — ใช้ทวนว่าลูกรวมแล้วเท่ากับแม่ไหม
+ */
+export function energyRollup(items, parentOfKey) {
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const qtyOf = new Map();
+  for (const it of items || []) if (it?.key != null) qtyOf.set(it.key, num(it.qty));
+  const parent = (k) => (typeof parentOfKey === 'function' ? parentOfKey(k) : null) || null;
+
+  /** บรรพบุรุษที่กรอกค่าไว้ใกล้สุด (null = ไม่มี → จุดนี้เป็นตัวนับ) */
+  const filledAncestor = (key) => {
+    const seen = new Set([key]);
+    let p = parent(key), depth = 0;
+    while (p && !seen.has(p) && depth++ < 10) {   // กัน parent วนกันเอง (กฎเดียวกับ stdGroupOf)
+      if (qtyOf.get(p) != null) return p;
+      seen.add(p);
+      p = parent(p);
+    }
+    return null;
+  };
+
+  const out = (items || []).map(it => {
+    const qty = qtyOf.get(it.key) ?? null;
+    const coveredBy = qty == null ? null : filledAncestor(it.key);
+    return { ...it, qty, coveredBy, counted: qty != null && coveredBy == null, childQty: null, childCount: 0 };
+  });
+  const byKey = new Map(out.map(r => [r.key, r]));
+  for (const r of out) {
+    if (r.qty == null || !r.coveredBy) continue;
+    const owner = byKey.get(r.coveredBy);
+    if (!owner) continue;                       // แม่อยู่นอกลิสต์ (โดน scope ตัด) — ไม่มีที่ให้ทวน
+    owner.childQty = (owner.childQty ?? 0) + r.qty;
+    owner.childCount += 1;
+  }
+  return out;
+}
+
+/** สัดส่วน % ของส่วนย่อยในยอดรวม — เทียบไม่ได้ = null (ห้ามคืน 0 = "ไม่มีเลย" ซึ่งคนละความหมาย) */
+export function pctOf(part, whole) {
+  if (part == null || part === '' || whole == null || whole === '') return null;
+  const p = Number(part), w = Number(whole);
+  if (!Number.isFinite(p) || !Number.isFinite(w) || w === 0) return null;
+  return Math.round((p / w) * 1000) / 10;
+}
+
+/**
+ * ค่าที่กรอก "หลุดช่วงที่เคยเป็น" ไหม — กันพิมพ์ผิดหลัก (เคสจริง: Utility Hydroforming เม.ย. 69
+ * ลงไว้ 953,940 kWh ทั้งที่เดือนอื่น 50,000-75,000 → ผลรวมรายจุดทะลุยอดบิลทั้งโรงงาน)
+ * ⚠️ **เตือนเฉยๆ ห้ามบล็อก** — ค่าผิดปกติจริงก็มี (เดือนที่เปิดเครื่องใหม่/รวมสองรอบบิล)
+ *    ระบบไม่มีทางรู้แทนคน หน้าที่เราคือทำให้เห็น ไม่ใช่ตัดสินแทน
+ * @returns {null | { ratio:number, median:number, kind:'high'|'low' }}
+ */
+export function outlierVsHistory(qty, history, factor = 3) {
+  const v = qty == null || qty === '' ? null : Number(qty);
+  const past = (history || []).map(Number).filter(n => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+  if (v == null || !Number.isFinite(v) || v <= 0 || past.length < 3) return null;
+  const mid = Math.floor(past.length / 2);
+  const median = past.length % 2 ? past[mid] : (past[mid - 1] + past[mid]) / 2;
+  if (!(median > 0)) return null;
+  const ratio = Math.round((v / median) * 100) / 100;
+  if (ratio >= factor) return { ratio, median, kind: 'high' };
+  if (ratio <= 1 / factor) return { ratio, median, kind: 'low' };
+  return null;
+}
