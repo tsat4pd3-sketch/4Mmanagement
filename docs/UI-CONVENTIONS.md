@@ -394,7 +394,11 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 | ชื่อคน (ผู้ตรวจ/อนุมัติ/รับผิดชอบ/แจ้ง/สอน/หัวหน้า/ผู้แก้) | `<PersonSelect>` | `usePeople` (Main profiles ∪ employees) | ชื่อ text เหมือนเดิม + `*_uid`/`employee_id` เมื่อคอลัมน์มี |
 | หมายเลขเครื่อง / แม่พิมพ์ / จิ๊ก | `<MachineSelect>` | `useMachines` (DR machines) | `machine_no` + `machine_id` เมื่อคอลัมน์มี |
 | MAT SAP / เลขพาร์ท / Kanban Std / die set / PE set / NPI part | `<ProductSelect>` (+`extraOptions` BOM/parts_master) | `useProducts` (DR dr_products) | `mat_no` + `product_id` เมื่อคอลัมน์มี |
-| ลูกค้า | `<CustomerSelect>` | `useCustomers` (distinct dr_products ∪ ship_to_plants — **ยังไม่มีตาราง customers**) | ชื่อ text (normalize เป็นสะกดหลัก) |
+| ลูกค้า | `<CustomerSelect>` | `useCustomers` (DR `customers` — 2026-09-08 · alias แม็ปเข้าสะกดหลัก · fallback derive จาก Product Master) | ชื่อ text (name หลัก) |
+| ผู้ขาย / ผู้รับจ้าง / แหล่งที่มา (parts_master · container · routing จ้างนอก · อะไหล่ · NPI tooling maker) | `<SupplierSelect>` (`kinds` = ชนิดที่เกี่ยวข้องขึ้นก่อน) | `useSuppliers` (DR `suppliers` — 2026-09-08) | ชื่อ text |
+| Cost Center (ไลน์ · ผัง · rate · หัวใบ OT) | `<CostCenterSelect>` (allowFree ปิด — รหัสใหม่ตั้งที่ทะเบียนก่อน) | `useCostCenters` (Main `cost_centers` — 2026-09-08 · RLS `cost_rate:manage`) | code text |
+| กลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ (die_sets · machines die) | `<SelectOrFree>` จาก `useDiePressLines` | DR `die_press_lines` (2026-09-08 · ตั้งใจแยกจาก production_lines) | name text |
+| แผงจัดการทะเบียนเล็ก (รหัส + ชื่อ + ฟิลด์เสริม) | `<SimpleMasterPanel>` (draft+💾 · confirm ตอนปิดใช้/ลบ ตาม §5.4 · checkWrite + นับแถว) | — | — |
 | รหัสคลัง Stor.Loc. | `<StorageLocSelect>` | `useStorageLocations` (DR storage_locations) | code |
 | เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
 | เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
@@ -417,7 +421,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
    ไม่ใช่ toast.error + return** (ยกเว้นเคสที่ไปต่อแล้วข้อมูลพัง เช่น update dr_products ด้วย MAT ที่ไม่มี = 0 แถว)
 5. **ช่องในตาราง (แถว × หลายสิบ)** ใช้ `<select>` จากลิสต์สั้นที่กรองแล้ว (ค่าปัจจุบันคงเป็น option) แทน SearchSelect ที่กางในบรรทัด
 6. option builder เป็น pure function ใน `src/utils/pickerOptions.js` — จุดใหม่ที่ต้องการ option ของคน/เครื่อง/สินค้า ให้เรียกตัวนี้ ห้าม map เองในหน้า
-7. **ห้ามสร้าง master ใหม่แบบเงียบ** — ยังไม่มี: `customers` · `suppliers` · กลุ่มเครื่องปั๊มของแม่พิมพ์ · `cost_centers` (ดู "ยังไม่ทำ" ใน audit) — ทำเมื่อ user สั่ง แล้วแก้ loader ตัวเดียว
+7. **master ใหม่ = ตาราง + loader (`use<X>.js` cache ร่วม) + picker กลาง + แผง `<SimpleMasterPanel>` + migration ที่ seed จากค่าที่มีอยู่จริง** (ต้นแบบ 2026-09-08: `customers` · `suppliers` · `die_press_lines` · `cost_centers` — คอลัมน์ปลายทางยังเก็บ text เดิม ไม่ผูก FK เพื่อให้ย้อนได้) · ห้ามสร้าง master ใหม่แบบเงียบโดยไม่มี seed/แผงจัดการ
 
 ## 5.2 ฟอร์ม master data ต้องมี picker จากฐานที่มีอยู่
 
