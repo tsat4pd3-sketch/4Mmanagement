@@ -9,10 +9,24 @@ const DEF_NAMES = ['รอยร้าว/แตก', 'เจาะรูไม�
   'รูไม่ตรงตำแหน่ง', 'ตัดไม่ขาด / ไม่จบ process', 'บุบบุ๋ง', 'รู NOGO / ขนาดรูไม่ได้', 'ทับเศษ SCRAP',
   'เสียรูป', 'ครีบเกิน', 'เชื่อมไม่ติด']
 
+/* ⚠️ **ลำดับชั้นไลน์แม่ → ไลน์ลูก ต้องมีใน mock เสมอ ห้ามถอด** (2026-09-08)
+   ของจริง `production_lines` มีไลน์ลูก 15+ ไลน์ (HYDROFORM มีลูก 8 ไลน์: HDF1/HDF2/LASER-345/…)
+   และมีโค้ดหลายสิบจุดคิดบนโครงนี้ — `utils/lineHierarchy.js` (family/leaf/ancestor/hierarchical
+   options) · `utils/stdManpower.js` · rollup พลังงานแม่-ลูก · FactoryMap `familyNames`/`stOf` ·
+   Management / Checkin / ProductionPlan / LineStock …
+   เดิม mock ตั้ง `parent_line_name: null` **ทุกแถว** ⇒ crashsweep ไม่เคยรันโค้ดสายนี้เลยสักหน้า
+   = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก · หา leaf ไม่เจอ · เดินขึ้นหา ancestor แล้ววน · indent ตามชั้น)
+   มองไม่เห็นจาก harness เลย (เจอตอนทำ rollup พลังงาน 2026-09-08)
+   โครงที่ใส่ = **3 ชั้น** เพื่อให้ตัวไล่ recursive ถูกเรียกจริง: 1 = แม่ · 2,3 = ลูก · 4 = หลาน (ใต้ 2)
+   เหลือแถว 5-14 เป็นไลน์เดี่ยว (ยังต้องมี ไม่งั้นเคส "ไม่มีลูก" หายไป) */
+const LINE_NAME = (i) => `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`
+const PARENT_OF = { 2: 1, 3: 1, 4: 2 }
+
 /* แถวปลอม 1 ชุด ครอบคอลัมน์ที่ใช้บ่อยที่สุดในโปรเจค — ให้ตาราง/ลิสต์ render ของจริงออกมาวัดได้ */
 const ROW = (i) => ({
-  id: `id-${i}`, name: `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`, code: `CODE-${i}`,
-  line_name: 'LINE APRON ASSY / HYDROFORM', parent_line_name: null, section: 'PD1', line_id: 1,
+  id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
+  line_name: 'LINE APRON ASSY / HYDROFORM',
+  parent_line_name: PARENT_OF[i] ? LINE_NAME(PARENT_OF[i]) : null, section: 'PD1', line_id: 1,
   mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: null,
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
