@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   shimStack, shotsFromPieces, pointDueStatus, toolLifeStatus,
-  learnedToolLife, suggestMaxShim, suggestFixtureCandidates,
+  learnedToolLife, suggestMaxShim, suggestFixtureCandidates, deriveShimAction, pointPin,
 } from '../fixturePoints.js';
 
 const DAY = 86400000;
@@ -185,4 +185,25 @@ test('resolveFixtureParts: จับได้บางตัว = partial (ต�
   const r = resolveFixtureParts('MB3B-16C274-C/ZZZZ-9999', PRODUCTS, {});
   assert.equal(r.status, 'partial');
   assert.equal(r.tokens[1].mats.length, 0);
+});
+
+// ── จุดชิมบนรูป + กรอกจากใบตรวจ PM (2026-09-08) ──
+test('deriveShimAction: ไม่มีค่าเดิม/เท่าเดิม = check · มากขึ้น = add · น้อยลง = remove · ไม่กรอก = null', () => {
+  assert.equal(deriveShimAction(null, 0.5), 'check');
+  assert.equal(deriveShimAction(0.5, 0.5), 'check');
+  assert.equal(deriveShimAction(0.5, 0.8), 'add');
+  assert.equal(deriveShimAction(0.8, 0.3), 'remove');
+  assert.equal(deriveShimAction(0.8, null), null);
+  assert.equal(deriveShimAction(0.8, ''), null);
+});
+
+test('pointPin: หมุดของตัวเองชนะ → ยืมจาก checkpoint → ไม่มี = null (ห้ามเดา)', () => {
+  const cps = { c1: { x_pos: 0.2, y_pos: 0.3, image_id: 'img2' } };
+  assert.deepEqual(pointPin({ x_pos: 0.5, y_pos: 0.6, image_id: null, checkpoint_id: 'c1' }, cps),
+    { x: 0.5, y: 0.6, imageId: null, source: 'own' });
+  assert.deepEqual(pointPin({ x_pos: null, y_pos: null, checkpoint_id: 'c1' }, cps),
+    { x: 0.2, y: 0.3, imageId: 'img2', source: 'checkpoint' });
+  assert.equal(pointPin({ checkpoint_id: 'missing' }, cps), null);
+  assert.equal(pointPin({}, cps), null);
+  assert.equal(pointPin(null), null);
 });

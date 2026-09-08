@@ -46,6 +46,7 @@ import QualityBins from '../components/QualityBins';
 import CapaEffectiveness from '../components/CapaEffectiveness';
 import { VERDICTS as EFF_V } from '../utils/capaEffect';
 import { notifyEvent } from '../utils/notifyEvent';
+import SearchSelect from '../components/SearchSelect';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -457,10 +458,10 @@ function QualityDashboard() {
           {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ชิ้นงาน:</span>
-        <select value={productFilter} onChange={e => setProductFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 180, maxWidth: 280 }}>
-          <option value="">ทุกชิ้นงาน ({productOptions.length})</option>
-          {productOptions.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
+        <SearchSelect value={productFilter || ''} placeholder={`ทุกชิ้นงาน (${productOptions.length}) — พิมพ์ค้นหา`} style={{ minWidth: 200, maxWidth: 320 }}
+          inputStyle={inputSt}
+          options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
+          onChange={({ id }) => setProductFilter(id)} />
         {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
         {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
       </div>

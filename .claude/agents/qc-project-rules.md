@@ -137,6 +137,8 @@ model: inherit
   ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
+- **[F-LIST-1]** `<select>` ที่ option มาจาก master ใหญ่ (พนักงาน/โปรไฟล์/เครื่องจักร/สินค้า·MAT/อะไหล่/ประเภท downtime/OP ของ PE/แผน PM) ต้องเป็น `<SearchSelect>` (UI-CONVENTIONS §5.1.1 · audit 2026-09-08) · ไลน์ผลิต = `<LineSelect>` · ลิสต์สั้น (สถานะ/กะ/ทีม/ประเภท ≤30) ใช้ `<select>` ได้ · grep: `\.map\(.*<option` แล้วไล่ดูตัวแปรต้นทาง
+
 - **F1** marker บนผังไลน์ = วงกลม+ป้ายใต้เท่านั้น (ห้ามกล่องเหลี่ยม) · สูตร MK สเกลตาม
   renderedMapWidth (ห้าม vw/ค่าตายตัว) · edge clamp · anchor: wrapper translate(-50%,-50%)
   สูงเท่าวงกลม ป้ายเป็น absolute top:100% · หน้าใหม่ควร reuse `MachineFloorMap.jsx`
@@ -216,8 +218,8 @@ model: inherit
 
 - **F17** (2026-09-07 · คำสั่ง user — single source of truth) ช่องกรอกที่รับ **ชื่อคน / เลขเครื่อง /
   MAT SAP / ลูกค้า / รหัสคลัง / ไลน์ / ทีม / ส่วนงาน** ต้องเป็น picker กลาง (UI-CONVENTIONS §5.1.2):
-  `<PersonSelect>` `<MachineSelect>` `<ProductSelect>` `<CustomerSelect>` `<StorageLocSelect>`
-  `<LineSelect>` `useOrgTeams()` `useOrgSections()/useOrgDepts()` — ห้าม `<input>` เปล่า / `<input list=…>`
+  `<PersonSelect>` `<MachineSelect>` `<ProductSelect>` `<PartSelect>` `<CustomerSelect>` `<SupplierSelect>` `<CostCenterSelect>`
+  `<StorageLocSelect>` `<InstrumentSelect>` `<LineSelect>` `useOrgTeams()` `useOrgSections()/useOrgDepts()` `useDiePressLines()` — ห้าม `<input>` เปล่า / `<input list=…>`
   datalist เอง / `lines.map(l => <option>)` / `['A','B','C']` hardcode · จับ:
   · `placeholder=` ที่มีคำ ชื่อ|ผู้ตรวจ|ผู้อนุมัติ|ผู้รับผิดชอบ|ผู้แจ้ง|หัวหน้า|เลขเครื่อง|หมายเลขเครื่อง|MAT|ลูกค้า|Customer
     บน `<input` ที่ไม่ใช่ search box = 🔴 ถ้าค่าถูก join/filter ที่อื่น · 🟡 ถ้าแค่แสดงผล/snapshot
@@ -226,7 +228,7 @@ model: inherit
   · `['A', 'B', 'C']` / `'A','B','C'` ใน dropdown ทีม
   · select profiles/employees/machines/dr_products เองมาทำ option แทน hook กลาง (usePeople/useMachines/useProducts)
   ข้อยกเว้น: master-creation form ที่กำลังตั้งชื่อ master นั้นเอง · search box กรองลิสต์ · ช่องที่ audit
-  `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` ระบุ "ยังไม่ทำ" (ไม่มี master: supplier · model · press line ของแม่พิมพ์)
+  `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` ระบุ "ยังไม่ทำ" (ไม่มี master: model · inst_type · container category) · supplier / cost center / press line มี master แล้ว 2026-09-08
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

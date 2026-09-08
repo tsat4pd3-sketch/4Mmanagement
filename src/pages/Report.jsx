@@ -30,9 +30,11 @@ import LineSelect from '../components/LineSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -942,9 +944,10 @@ table{border-collapse:collapse;width:100%}
           <option value="">ทุก Team</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
-        </select>
+        <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
+          inputStyle={{ padding: '7px 30px 7px 10px', borderRadius: 7, fontSize: 13 }}
+          options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
+          onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
@@ -2209,10 +2212,8 @@ function DocumentControlPanel() {
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
-          <select value={issuedBy} onChange={e => setIssuedBy(e.target.value)} style={inSt}>
-            <option value="">— เลือก —</option>
-            {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+          <SearchSelect value={issuedBy || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —" inputStyle={inSt}
+            options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setIssuedBy(id)} />
         </div>
       </div>
 
@@ -3735,12 +3736,10 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Cost Center</div>
-          {/* 2026-09-07 เลือกจาก cost center ที่ตั้งไว้ในทะเบียนไลน์ (datalist) — ยัง override ได้เพราะเป็นค่าพิมพ์หัวใบ */}
-          <input value={costCenter} onChange={e => setCostCenter(e.target.value)} placeholder="เช่น 2140662201" list="ot-cost-centers"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130 }} />
-          <datalist id="ot-cost-centers">
-            {[...new Set(lines.map(l => l.cost_center).filter(Boolean))].sort().map(c => <option key={c} value={c} />)}
-          </datalist>
+          {/* 2026-09-08: <CostCenterSelect> จากทะเบียน cost_centers (Main) แทน input+datalist — ค่าพิมพ์หัวใบ ยัง override ได้
+              history = รหัสที่ตั้งไว้ในทะเบียนไลน์ (ยังไม่ลงทะเบียนก็เลือกได้ กลุ่ม 📜) · เติมอัตโนมัติจากไลน์ที่เลือกเหมือนเดิม */}
+          <CostCenterSelect value={costCenter} history={[...new Set(lines.map(l => l.cost_center).filter(Boolean))]}
+            onChange={r => setCostCenter(r.code)} style={{ width: 200 }} inputStyle={{ padding: '6px 10px', fontSize: 13 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
