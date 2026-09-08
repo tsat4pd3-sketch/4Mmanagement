@@ -29,6 +29,7 @@ import LineSelect from '../components/LineSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
@@ -3701,12 +3702,10 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Cost Center</div>
-          {/* 2026-09-07 เลือกจาก cost center ที่ตั้งไว้ในทะเบียนไลน์ (datalist) — ยัง override ได้เพราะเป็นค่าพิมพ์หัวใบ */}
-          <input value={costCenter} onChange={e => setCostCenter(e.target.value)} placeholder="เช่น 2140662201" list="ot-cost-centers"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130 }} />
-          <datalist id="ot-cost-centers">
-            {[...new Set(lines.map(l => l.cost_center).filter(Boolean))].sort().map(c => <option key={c} value={c} />)}
-          </datalist>
+          {/* 2026-09-08: <CostCenterSelect> จากทะเบียน cost_centers (Main) แทน input+datalist — ค่าพิมพ์หัวใบ ยัง override ได้
+              history = รหัสที่ตั้งไว้ในทะเบียนไลน์ (ยังไม่ลงทะเบียนก็เลือกได้ กลุ่ม 📜) · เติมอัตโนมัติจากไลน์ที่เลือกเหมือนเดิม */}
+          <CostCenterSelect value={costCenter} history={[...new Set(lines.map(l => l.cost_center).filter(Boolean))]}
+            onChange={r => setCostCenter(r.code)} style={{ width: 200 }} inputStyle={{ padding: '6px 10px', fontSize: 13 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
