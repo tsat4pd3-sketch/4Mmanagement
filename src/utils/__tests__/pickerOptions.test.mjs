@@ -63,6 +63,18 @@ test('machineOptions: ไลน์ที่เลือกขึ้นก่อ�
   assert.deepEqual(strict.map(x => x.machine_no), ['RB-10']);
 });
 
+test('machineOptions: groupByLine = จัดกลุ่มตามไลน์ (ไม่มีไลน์ = ท้ายสุด) — feedback หน้างาน 2026-09-08', () => {
+  const g = machineOptions(machines, { groupByLine: true });
+  // ทุกแถวต้องมีหัวกลุ่มเป็นไลน์ของตัวเอง — ไม่มีกลุ่ม = ลิสต์แบนอ่านไม่รู้เรื่อง (บั๊กที่หน้างานทัก)
+  assert.ok(g.every(o => String(o.group || '').startsWith('📍')), 'ทุกแถวต้องอยู่ในกลุ่ม 📍 ไลน์');
+  assert.ok(g.some(o => o.group === `📍 ${o.line_name}`), 'ชื่อกลุ่มต้องเป็นชื่อไลน์จริง');
+  // แถวของไลน์เดียวกันต้องอยู่ติดกัน (ไม่งั้นหัวกลุ่มโผล่ซ้ำ)
+  const seen = new Set(); let prev = null;
+  for (const o of g) { if (o.group !== prev) { assert.ok(!seen.has(o.group), `กลุ่ม ${o.group} ถูกแบ่งเป็นหลายท่อน`); seen.add(o.group); prev = o.group; } }
+  // ไม่ส่ง groupByLine = พฤติกรรมเดิม (ไม่มีกลุ่ม)
+  assert.ok(machineOptions(machines, {}).every(o => o.group === undefined));
+});
+
 const products = [
   { id: 'p1', mat_no: '10100384', name: 'REINF', p_no: 'MB3B-8C306', customer: 'FORD', line_name: 'ASSY1', is_active: true },
   { id: 'p2', mat_no: '10100385', name: 'REINF LH', p_no: 'MB3B-8C307', customer: 'FORD', line_name: 'ASSY2', is_active: true },

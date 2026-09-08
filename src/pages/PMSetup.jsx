@@ -1017,7 +1017,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           {addMode === 'workstation' && !isEdit && (
             <div>
               <label style={S.label}>เลือกเครื่องจักร ({machineOptions.length} ตัว)</label>
-              <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptions} placeholder="— ค้นหาเครื่องจักร (รหัส / ชื่อ / ไลน์) —"
+              {/* 🔴 ต้อง groupByLine — feedback หน้างาน 2026-09-08 "ปกติมันจะเป็นไลน์ผลิตค่ะ ตอนจะแอดอุปกรณ์ใหม่":
+                  ทะเบียนมี 635 ตัว (แม่พิมพ์ 262 · เครื่อง 189 · จิ๊ก 148 · facility 36) และ 272 ตัวใช้ชื่อพาร์ทยาวๆ
+                  เป็น machine_no → ลิสต์แบนเรียงตามรหัสขึ้น "4B-01 / 4X4 BRACKET…" ปนกัน ไล่หาไลน์ตัวเองไม่ได้
+                  (ของเดิมเป็น <select> ที่ optgroup ตามไลน์อยู่แล้ว — ตอนเปลี่ยนเป็นช่องค้นหาแล้วกลุ่มหายไป)
+                  maxRows สูง เพราะจอนี้คน "ไล่ดูตามไลน์" ไม่ได้พิมพ์ค้นอย่างเดียว */}
+              <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptions} groupByLine maxRows={999}
+                placeholder="— ค้นหา / เลือกเครื่องจักร (รหัส · ชื่อ · ไลน์) —"
                 onChange={({ id }) => handleMachineSelect(id || null)} />
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
@@ -1091,7 +1097,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             {/* Machine No. = <MachineSelect> เซ็ต machine_id คู่กัน — โหมด manual เดิมพิมพ์เองแล้ว machine_id=null ทำ Andon/PmCoordination
                 หาเครื่องไม่เจอ · พิมพ์เองยังได้ (facility ที่ไม่อยู่ใน Machine Master) แต่ติดป้าย · โหมด Floor Map ล็อกตามเครื่องที่เลือก · 2026-09-07 */}
             <div><label style={S.label}>Machine No.</label>
-              <MachineSelect value={machineNo} machines={machineOptions} lines={lineName ? [lineName] : undefined} allowFree history={jigMachineHist}
+              <MachineSelect value={machineNo} machines={machineOptions} lines={lineName ? [lineName] : undefined} groupByLine allowFree history={jigMachineHist}
                 disabled={addMode === 'workstation' && !isEdit}
                 freeHint="(อุปกรณ์ที่ไม่อยู่ใน Machine Master — จะไม่ผูก machine_id)"
                 onChange={res => {
