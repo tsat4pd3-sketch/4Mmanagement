@@ -93,3 +93,34 @@ test('layoutTable: ความสูงที่คืน = ผลรวมจ�
   assert.ok(Math.abs(fit.height - sum) < 0.011);
   assert.equal(fit.rowHs.length, fit.rows.length);
 });
+
+test('layoutTable: ย่อฟอนต์เฉพาะเมื่อได้แถวเพิ่มจริง (ตารางแบ่งหน้าต้องไม่กลายเป็น 8pt ทั้งสไลด์)', () => {
+  // สภาพจริงของสไลด์ OEE BREAKDOWN: ความสูงแถวติดเพดาน minRowH อยู่แล้ว → ย่อฟอนต์ไม่ได้แถวเพิ่ม
+  const head = ['Area', 'OEE', 'A', 'P', 'Q', 'Readout', 'Focus'];
+  const colW = [2.1, 1.2, 1.4, 1.5, 1.2, 2.7, 2.2];
+  const mk = (n) => Array.from({ length: n }, (_, i) => [`LINE-${i} ชื่อยาว`, '75.0%', '93.1%', '81.1%', '99.7%', 'Performance focus', 'JIG มีปัญหา (ชำรุด/ปรับแก้)']);
+  const opt = { head, colW, fontSize: 11, minFontSize: 8, minRowH: 0.38, headMinH: 0.38, maxH: 4.95 };
+  const full = layoutTable({ ...opt, rows: mk(12) });
+  const over = layoutTable({ ...opt, rows: mk(30) });
+  assert.equal(full.hidden, 0);
+  assert.ok(over.hidden > 0);
+  assert.equal(over.fontSize, full.fontSize, 'ตัดแถวแล้ว แต่ฟอนต์ต้องไม่เล็กลงถ้าย่อแล้วไม่ได้แถวเพิ่ม');
+  assert.equal(over.rows.length, full.rows.length);
+});
+
+test('layoutTable: ย่อฟอนต์เมื่อ "ได้แถวเพิ่มจริง" (เนื้อหายาวจนแถวโตเกินขั้นต่ำ)', () => {
+  const head = ['A', 'B'];
+  const longCell = 'ข้อความยาวมากที่จะห่อหลายบรรทัดเมื่อฟอนต์ใหญ่ แต่ห่อน้อยลงเมื่อฟอนต์เล็กลง จึงทำให้จำนวนแถวที่ลงได้เพิ่มขึ้นจริง';
+  const rows = Array.from({ length: 8 }, (_, i) => [`r${i}`, longCell]);
+  const colW = [1.2, 3.0];
+  const big = layoutTable({ head, rows, colW, fontSize: 14, minFontSize: 8, minRowH: 0.2, headMinH: 0.3, maxH: 3 });
+  assert.ok(big.fontSize < 14, 'กรณีนี้ย่อฟอนต์ได้แถวเพิ่ม → ต้องยอมย่อ');
+  assert.equal(big.rows.length + big.hidden, 8);
+});
+
+test('layoutTable: กล่องเตี้ยมากยังต้องเหลือ 1 แถว และ hidden ตรงกับที่ตัดจริง', () => {
+  const rows = Array.from({ length: 5 }, (_, i) => [`r${i}`, 'x']);
+  const tiny = layoutTable({ head: ['A', 'B'], rows, colW: [2, 2], fontSize: 10, minFontSize: 8, minRowH: 0.4, headMinH: 0.4, maxH: 0.45 });
+  assert.equal(tiny.rows.length, 1);
+  assert.equal(tiny.hidden, 4);
+});

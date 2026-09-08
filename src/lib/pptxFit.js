@@ -179,24 +179,31 @@ export function layoutTable({
   headFontSize = 11.5, minRowH = 0.3, headMinH = 0.32, maxH = 5,
 }) {
   const headH = (fs) => rowHeightIn(head, colW, fs, { minH: headMinH, bold: true });
+  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+  /* เลือก "ฟอนต์ใหญ่สุดที่ได้จำนวนแถวมากสุด"
+     ⚠️ กลยุทธ์เดิม (ย่อฟอนต์จนสุดก่อนเสมอ) ผิดกับตารางที่ caller ตั้งใจแบ่งหน้า:
+        ความสูงแถวติดเพดาน minRowH อยู่แล้ว ย่อฟอนต์จึงไม่ได้แถวเพิ่มเลย
+        แต่ตารางกลับกลายเป็น 8pt ทั้งสไลด์ (วัดจริง: 13 แถว → 8pt แต่ยังโชว์ได้ 12 แถวเท่าเดิม)
+        — เด็คนี้ฉายในห้องประชุม ตัวเล็กโดยไม่ได้อะไรกลับมา = เสียเปล่า */
+  let best = null;
   for (let fs = fontSize; fs >= minFontSize; fs -= 0.5) {
     const hfs = Math.min(headFontSize, fs + 2);
     const hH = headH(hfs);
-    const rowHs = rows.map(r => rowHeightIn(r, colW, fs, { minH: minRowH }));
-    const total = hH + rowHs.reduce((a, b) => a + b, 0);
-    if (total <= maxH) {
-      return { fontSize: fs, headFontSize: hfs, headRowH: hH, rowHs, rows, hidden: 0, height: Math.round(total * 100) / 100 };
-    }
+    const all = rows.map(r => rowHeightIn(r, colW, fs, { minH: minRowH }));
+    let n = rows.length, total = hH + sum(all);
+    while (n > 0 && total > maxH) { n -= 1; total = hH + sum(all.slice(0, n)); }
+    if (!best || n > best.n) best = { fs, hfs, hH, all, n, total };
+    if (n === rows.length) break; // ลงครบแล้วที่ฟอนต์ใหญ่สุด — ไม่ต้องย่อต่อ
   }
-  // เล็กสุดแล้วยังไม่พอ → ตัดแถวท้ายทิ้ง (เหลืออย่างน้อย 1 แถว) แล้วรายงานจำนวนที่ตัด
-  const fs = minFontSize;
-  const hfs = Math.min(headFontSize, fs + 2);
-  const hH = headH(hfs);
-  const all = rows.map(r => rowHeightIn(r, colW, fs, { minH: minRowH }));
-  let n = rows.length, total = hH + all.reduce((a, b) => a + b, 0);
-  while (n > 1 && total > maxH) { n -= 1; total = hH + all.slice(0, n).reduce((a, b) => a + b, 0); }
+  // แคบจนไม่พอแม้แถวเดียว → ยังต้องโชว์ 1 แถว (ล้นดีกว่าหายทั้งตาราง) แล้วรายงาน hidden ตามจริง
+  if (!best || best.n === 0) {
+    const fs = minFontSize, hfs = Math.min(headFontSize, fs + 2), hH = headH(hfs);
+    const all = rows.map(r => rowHeightIn(r, colW, fs, { minH: minRowH }));
+    best = { fs, hfs, hH, all, n: Math.min(1, rows.length), total: hH + (all[0] || 0) };
+  }
   return {
-    fontSize: fs, headFontSize: hfs, headRowH: hH, rowHs: all.slice(0, n),
-    rows: rows.slice(0, n), hidden: rows.length - n, height: Math.round(total * 100) / 100,
+    fontSize: best.fs, headFontSize: best.hfs, headRowH: best.hH,
+    rowHs: best.all.slice(0, best.n), rows: rows.slice(0, best.n),
+    hidden: rows.length - best.n, height: Math.round(best.total * 100) / 100,
   };
 }

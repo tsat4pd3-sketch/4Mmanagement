@@ -57,17 +57,26 @@ export default function MonthlyReviewExport({ onClose }) {
   const [selLines, setSelLines] = useState(() => new Set()); // leaf ที่ติ๊ก
   const [openSecs, setOpenSecs] = useState({});              // section → กางอยู่ไหม
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [presenter, setPresenter] = useState(fullName || '');
   const [presPosition, setPresPosition] = useState(position || '');
 
   useEffect(() => {
+    let alive = true; // guard กันคำตอบเก่าเขียนทับ (กฎเหล็ก stale-response)
     (async () => {
       loadDocForms();
       // section จากผังองค์กร (กฎ: section picker ยึด org_nodes) + fallback production_lines
-      const [{ data: nodes }, { data: lines }] = await Promise.all([
+      const [nodeRes, lineRes] = await Promise.all([
         supabase.from('org_nodes').select('code, kind, sort_order').eq('kind', 'section').order('sort_order'),
         supabase.from('production_lines').select('name, section, parent_line_name'),
       ]);
+      if (!alive) return;
+      const { data: nodes } = nodeRes, { data: lines } = lineRes;
+      // ⚠️ supabase-js ไม่ throw — ไม่อ่าน error = คิวรีล้มแล้ว modal ค้าง "กำลังโหลด…" ตลอดไป
+      //    (ไม่มี toast ไม่มีปุ่มลองใหม่) — ห้ามล้มเหลวเงียบ
+      const loadErr = lineRes.error || nodeRes.error;
+      if (loadErr) { setLoadError(loadErr.message || 'โหลดรายชื่อไลน์ไม่สำเร็จ'); toast.error(`โหลดรายชื่อไลน์/ส่วนงานไม่สำเร็จ: ${loadErr.message || ''}`); return; }
+      setLoadError(null);
       const lineArr = lines || [];
       const parentNames = new Set(lineArr.map(l => l.parent_line_name).filter(Boolean));
       let secs = (nodes || []).map(n => n.code);
@@ -87,6 +96,7 @@ export default function MonthlyReviewExport({ onClose }) {
       setTree(out);
       setSelLines(new Set(out.flatMap(s => s.groups.flatMap(g => g.lines)))); // default = ทุกไลน์ใน scope
     })();
+    return () => { alive = false; };
   }, [scopeSecs]);
 
   const linesOfSec = (s) => s.groups.flatMap(g => g.lines);
@@ -119,9 +129,16 @@ export default function MonthlyReviewExport({ onClose }) {
       const { buildMonthlyReviewData, generateMonthlyReviewPptx } = await import('../lib/monthlyReviewPptx');
       toast.info('กำลังรวบรวมข้อมูล…');
       const data = await buildMonthlyReviewData({ monthKey, sections: selSections, trendMonths });
-      // เทรนด์โหลดไม่สำเร็จ = เด็คยังออก แต่ต้องบอก ห้ามให้เข้าใจว่า "ไม่มีข้อมูลย้อนหลัง"
-      if (data.trend?.warn) toast.error(`⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — เด็คนี้จะไม่มีสไลด์ progression`);
-      else if (trendMonths > 1 && !(data.trend?.months?.length > 1)) toast.info('ย้อนหลังไม่มีกะที่ปิดแล้วพอเทียบ — เด็คนี้จะไม่มีสไลด์ progression');
+      /* เทรนด์มี 2 ระดับความเสียหาย ห้ามบอกเหมารวม (QC 2026-09-08):
+         มีสไลด์อยู่แต่ตัวเลขบางส่วนเพี้ยน (เช่น pair map ไม่ครบ) ≠ ไม่มีสไลด์เลย */
+      const hasTrend = (data.trend?.months?.length || 0) > 1;
+      if (data.trend?.warn) {
+        toast.error(hasTrend
+          ? `⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — สไลด์ progression ยังมี แต่ตัวเลขเดือนก่อนอาจคลาดเคลื่อน (หมายเหตุกำกับบนสไลด์แล้ว)`
+          : `⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — เด็คนี้จะไม่มีสไลด์ progression`);
+      } else if (trendMonths > 1 && !hasTrend) {
+        toast.info('ย้อนหลังไม่มีกะที่ปิดแล้วพอเทียบ — เด็คนี้จะไม่มีสไลด์ progression');
+      }
       // โหลดข้อมูลบางส่วนไม่สำเร็จ = บอกดังๆ แล้วให้ผู้ใช้ตัดสินใจ (ห้ามปล่อยเด็คตัวเลขต่ำกว่าจริงออกไปเงียบๆ)
       if (data.dataWarn) toast.error('⚠ โหลด downtime/ของเสีย/ใบงานไม่ครบ — ตัวเลข DT/PPM ในเด็คอาจต่ำกว่าจริง ลองใหม่อีกครั้ง');
       const df = docFormSync('monthly_review', {});
@@ -226,7 +243,9 @@ export default function MonthlyReviewExport({ onClose }) {
                   </div>
                 );
               })}
-              {!tree.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
+              {!tree.length && (loadError
+                ? <span style={{ fontSize: 12, color: 'var(--danger, #e05252)' }}>⚠ โหลดรายชื่อไลน์ไม่สำเร็จ: {loadError} — ปิดแล้วเปิดใหม่อีกครั้ง</span>
+                : <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>)}
             </div>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

@@ -969,13 +969,18 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     s.addTable(tableRows, { x, y, w, colW, border: { type: 'solid', color: C.border, pt: 0.75 }, rowH: [L.headRowH, ...L.rowHs], autoPage: false });
     return { bottom: y + L.height, hidden: L.hidden, fontSize: L.fontSize };
   };
-  /* บรรทัดหมายเหตุใต้ตาราง — วางจาก "ก้นตารางจริง" และไม่ยอมข้าม SAFE_BOTTOM */
+  const NOTE_H = 0.24; // ที่ที่ต้องกันไว้ให้บรรทัดหมายเหตุ 1 บรรทัด (ใช้ตอนตั้ง bottom ของตาราง)
+  /* บรรทัดหมายเหตุใต้ตาราง — วางจาก "ก้นตารางจริง"
+     ⚠️ ห้าม return เงียบเมื่อที่ไม่พอ (บทเรียน QC 2026-09-08): เดิม `if (y >= bottom) return y`
+        ทำให้บรรทัด "→ อีก N แถวอยู่หน้าถัดไป" หายทุกหน้าที่ตารางเต็มพอดี — ซึ่งเป็น
+        เคสที่ "ต้องบอกที่สุด" · ตอนนี้เลื่อนขึ้นให้พอดีเสมอ (ชิดก้นตารางนิดหน่อยยังดีกว่าหาย) */
   const noteLine = (s, text, y, { x = 0.6, w = 12.1, size = 10, italic = true, color = C.grey, bottom = SAFE_BOTTOM } = {}) => {
-    if (!text || y >= bottom) return y;
+    if (!text) return y;
     const fs = fitOneLine(text, w, size, 7.5);
-    const h = Math.min(bottom - y, lineHeightIn(fs) + 0.06);
-    s.addText(text, { x, y, w, h, fontFace: FONT, fontSize: fs, italic, color, align: 'left', valign: 'top', margin: 0 });
-    return y + h;
+    const h = lineHeightIn(fs) + 0.06;
+    const yy = Math.max(0, Math.min(y, bottom - h));
+    s.addText(text, { x, y: yy, w, h, fontFace: FONT, fontSize: fs, italic, color, align: 'left', valign: 'top', margin: 0 });
+    return yy + h;
   };
   // สไลด์ divider ตาม template: รูปเต็มฝั่งขวา + ระนาบขาวขอบเฉียง + หัวข้อเขียว 40 Bold ฝั่งซ้าย (ไม่มี footer)
   const divider = (s, title, photo) => {
@@ -1142,23 +1147,25 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       });
       const m = momDelta(data.trend, d.code, mt.key);
       const good = !m || m.delta === 0 ? null : (mt.lower ? m.delta < 0 : m.delta > 0);
+      // ⚠️ ฐานเทียบเป็น "เดือนล่าสุดของส่วนงานนั้นที่มีกะปิดจริง" ซึ่งอาจไม่ใช่เดือนก่อนหน้าตรงๆ
+      //    (ส่วนงานที่เดือนก่อนหยุดยาว/เพิ่งเปิดไลน์) → ต้องเขียนเดือนฐานในเซลล์ ห้ามตรึงไว้ที่หัวคอลัมน์
       trRows.push([
         d.code, mt.label, ...cells,
-        m ? { t: `${m.delta > 0 ? '+' : ''}${m.delta}`, color: good === null ? C.grey : good ? C.green : C.orange, bold: true } : { t: '—', color: C.grey },
+        m ? { t: `${m.delta > 0 ? '+' : ''}${m.delta} vs ${monthShort(m.prevKey)}`, color: good === null ? C.grey : good ? C.green : C.orange, bold: true } : { t: '—', color: C.grey },
       ]);
     }));
-    const firstW = 0.9, labW = 2.0, dW = 0.95;
+    const firstW = 0.9, labW = 2.0, dW = 1.55;
     const monW = Math.max(0.7, (12.3 - firstW - labW - dW) / mks.length);
-    const tt = tsgTable(s, ['Dept', 'Metric', ...labels, `Δ vs ${monthShort(mks[mks.length - 2])}`], trRows, {
+    const tt = tsgTable(s, ['Dept', 'Metric', ...labels, 'Δ MoM'], trRows, {
       y: tableY, rowH: ROW_H, headRowH: 0.3, fontSize: 10, minFontSize: 8,
-      colW: [firstW, labW, ...mks.map(() => monW), dW], leftCols: [1], bottom: SAFE_BOTTOM - 0.28,
+      colW: [firstW, labW, ...mks.map(() => monW), dW], leftCols: [1], bottom: SAFE_BOTTOM - NOTE_H,
     });
-    let yT = tt.bottom + 0.06;
-    if (tt.hidden) yT = noteLine(s, `+ อีก ${tt.hidden} แถว — ดูครบใน /oee-analytics แท็บแนวโน้ม`, yT, { size: 9 }) + 0.02;
+    // รวมทุกหมายเหตุเป็นบรรทัดเดียว — 2 บรรทัดซ้อนกันคือเหตุที่บรรทัดสรุป (ซึ่งพก ⚠ warn) เคยตกขอบ
     const misses = data.trend.missing?.length ? ` · เดือนที่ไม่มีกะปิดเลย ตัดออกจากกราฟ: ${data.trend.missing.map(monthShort).join(', ')}` : '';
-    const skipTxt = skipped.length ? ` · ไม่พอที่ในหน้านี้: ${skipped.join(' / ')} (ดูใน /oee-analytics แท็บแนวโน้ม)` : '';
-    noteLine(s, `ทุกเดือนคำนวณด้วยสูตรเดียวกับเดือนรายงาน (กะที่ปิดแล้วเท่านั้น · DT นับเฉพาะนอกแผน · PPM ไม่รวมงานทดลอง)${misses}${skipTxt}${data.trend.warn ? ` · ⚠ ${data.trend.warn}` : ''}`,
-      yT, { size: 9 });
+    const skipTxt = skipped.length ? ` · ไม่พอที่ในหน้านี้: ${skipped.join(' / ')}` : '';
+    const hidTxt = tt.hidden ? ` · + อีก ${tt.hidden} แถวไม่พอที่` : '';
+    noteLine(s, `ทุกเดือนคำนวณด้วยสูตรเดียวกับเดือนรายงาน (กะที่ปิดแล้วเท่านั้น · DT นับเฉพาะนอกแผน · PPM ไม่รวมงานทดลอง) · Δ เทียบเดือนก่อนหน้าที่มีกะปิดจริงของส่วนงานนั้น${hidTxt}${skipTxt}${misses}${data.trend.warn ? ` · ⚠ ${data.trend.warn}` : ''} — ดูครบใน /oee-analytics แท็บแนวโน้ม`,
+      tt.bottom + 0.06, { size: 9 });
     footer(s);
   }
 
@@ -1176,24 +1183,30 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     });
     const HEAD5 = ['Area', 'OEE', 'Availability', 'Performance', 'Quality', 'Primary readout', 'Focus'];
     // headRowH ต้องตรงกับที่ใช้ตอนนับหน้าล่วงหน้าเป๊ะ ไม่งั้นเลข "2/3" บนหัวสไลด์เพี้ยนจากจำนวนหน้าจริง
-    const OPT5 = { y: 1.85, rowH: 0.38, headRowH: 0.38, colW: [2.1, 1.2, 1.4, 1.5, 1.2, 2.7, 2.2], fontSize: 11, bottom: SAFE_BOTTOM - 0.05 };
+    // กันที่ NOTE_H ไว้ให้บรรทัด "→ อีก N แถวอยู่หน้าถัดไป" ตั้งแต่ตอนวางตาราง
+    // (ไม่งั้นตารางเต็มพอดีแล้วหมายเหตุไม่มีที่ — เคสที่ต้องบอกที่สุด)
+    const OPT5 = { y: 1.85, rowH: 0.38, headRowH: 0.38, colW: [2.1, 1.2, 1.4, 1.5, 1.2, 2.7, 2.2], fontSize: 11, bottom: SAFE_BOTTOM - NOTE_H };
     let rest = rows, page = 0;
+    const MAX_PAGE = 12;
     const nPage = (() => { // ลองวางล่วงหน้าเพื่อรู้จำนวนหน้าก่อน (หัวสไลด์ต้องบอก "2/3" ตั้งแต่หน้าแรก)
       let left = rows.length, pages = 0;
-      while (left > 0 && pages < 12) {
-        const fit = layoutTable({ head: HEAD5, rows: rows.slice(rows.length - left).map(r => r), colW: OPT5.colW, fontSize: 11, minRowH: 0.38, headMinH: 0.38, maxH: OPT5.bottom - OPT5.y });
-        const take = Math.max(1, fit.rows.length);
-        left -= take; pages += 1;
+      while (left > 0 && pages < MAX_PAGE) {
+        const fit = layoutTable({ head: HEAD5, rows: rows.slice(rows.length - left), colW: OPT5.colW, fontSize: 11, minRowH: 0.38, headMinH: 0.38, maxH: OPT5.bottom - OPT5.y });
+        left -= Math.max(1, fit.rows.length); pages += 1;
       }
       return Math.max(1, pages);
     })();
-    while (rest.length && page < 12) {
+    while (rest.length && page < MAX_PAGE) {
       page += 1;
       const s = newSlide();
       head(s, `OEE BREAKDOWN : WHY OEE MOVED${nPage > 1 ? ` (${page}/${nPage})` : ''}`, 'A / P / Q COMPARISON');
       const t5 = tsgTable(s, HEAD5, rest, OPT5);
       rest = rest.slice(rest.length - t5.hidden);
-      if (rest.length) noteLine(s, `→ อีก ${rest.length} แถวอยู่หน้าถัดไป (ทุกไลน์ที่เลือกอยู่ในเด็คครบ)`, t5.bottom + 0.06, { x: 0.5, w: 12.3, size: 10 });
+      // ชนเพดานหน้าแล้วยังเหลือ = ต้องบอก ห้ามหายเงียบ (เพดานกันลูปหลุด ไม่ใช่กติกาการตัดข้อมูล)
+      if (rest.length) noteLine(s, page >= MAX_PAGE
+        ? `+ อีก ${rest.length} แถวเกินจำนวนหน้าสูงสุดของสไลด์นี้ — ดูครบใน /oee-analytics`
+        : `→ อีก ${rest.length} แถวอยู่หน้าถัดไป (ทุกไลน์ที่เลือกอยู่ในเด็คครบ)`,
+        t5.bottom + 0.06, { x: 0.5, w: 12.3, size: 10 });
       footer(s);
     }
   }
@@ -1247,11 +1260,13 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       const tLoss = tsgTable(s, ['Loss / เวลาสูญเสีย', 'รายละเอียดปัญหา + การแก้ไข (จากหน้างาน + ใบซ่อม MO)', 'ลงวิธีแก้'], rows,
         { y: 1.72, rowH: pairs.length ? 1.2 : 1.42, headRowH: 0.32, colW: [2.3, 8.9, 1.1], fontSize: 9.5, minFontSize: 8, leftCols: [1], bottom: tabBottom });
       const cov = d.fixCov;
-      if (tLoss.hidden) noteLine(s, `+ อีก ${tLoss.hidden} ประเภทการหยุด — ดูครบใน /oee-analytics`, tLoss.bottom + 0.04, { size: 9.5 });
+      // นับทั้งกลุ่มที่ถูก slice ทิ้งก่อนเข้าตาราง (nGroups) และแถวที่ layout ตัด — ไม่งั้นบอกไม่ครบ
+      const cutDt = Math.max(0, d.dtGroups.length - nGroups) + tLoss.hidden;
+      if (cutDt) noteLine(s, `+ อีก ${cutDt} ประเภทการหยุดที่ไม่พอในหน้านี้ — ดูครบใน /oee-analytics`, tLoss.bottom + 0.04, { size: 9.5, bottom: pairs.length ? tabBottom + 0.24 : SAFE_BOTTOM });
       if (pairs.length) {
         // 📷 แถบหลักฐาน ก่อน → หลัง (รูปที่ช่าง/หัวหน้างานแนบในใบซ่อม MO / Kaizen)
         // ⚠️ ต้องวางจาก "ก้นตารางจริง" ไม่ใช่ rowH × จำนวนแถว — ไม่งั้นรูปทับตารางเมื่อแถวโตเอง
-        const stripY = Math.min(tLoss.bottom + (tLoss.hidden ? 0.28 : 0.15), SAFE_BOTTOM - 1.55);
+        const stripY = Math.min(tLoss.bottom + (cutDt ? 0.28 : 0.15), SAFE_BOTTOM - 1.55);
         s.addText(`หลักฐานการแก้ไข ก่อน → หลัง (รูปจากใบซ่อม MO / Kaizen ที่หน้างานแนบ) · countermeasures ${cov.fixed}/${cov.total} รายการ`,
           { x: 0.6, y: stripY, w: 12.1, h: 0.26, fontFace: FONT, fontSize: 10.5, bold: true, color: C.green, align: 'left', margin: 0 });
         pairs.slice(0, 3).forEach((p, i) => {
@@ -1278,7 +1293,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     if (d.defGroups.length) {
       const s = newSlide();
       head(s, `${d.code} QUALITY DETAIL : TOP DEFECTS`, `NG + SUSPECT — ${MON} (PPM ${num(d.ppm)})`);
-      const rows = d.defGroups.slice(0, 4).map(g => {
+      const DEF_CAP = 4;
+      const rows = d.defGroups.slice(0, DEF_CAP).map(g => {
         // วัน+ไลน์ต้องขึ้นก่อนตัวอาการเสมอ — ไม่งั้นหัวหน้ากลุ่มไล่หาย้อนหลังในระบบไม่เจอว่าเกิดวันไหน
         const detail = g.items.map((it, i) =>
           `(${i + 1}) ${it.date ? `${it.date.slice(8, 10)}/${it.date.slice(5, 7)} ` : ''}${it.line ? `${it.line} ` : ''}${it.desc || '-'} (${num(it.qty)} ชิ้น)${it.fix ? `\n     → ${it.fix}` : ''}`).join('\n');
@@ -1288,7 +1304,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       const tq = tsgTable(s, ['Defect / จำนวน', 'ตัวอย่างปัญหา + การแก้ไข (จากหน้างาน)'], rows,
         { y: 1.72, rowH: 1.0, headRowH: 0.32, colW: [2.9, 9.4], fontSize: 9.5, leftCols: [1], bottom: 5.9 });
       let yq = tq.bottom + 0.1;
-      if (tq.hidden) yq = noteLine(s, `+ อีก ${tq.hidden} ประเภทของเสีย — ดูครบใน /qa`, yq, { size: 9.5 }) + 0.02;
+      const cutDef = Math.max(0, d.defGroups.length - DEF_CAP) + tq.hidden;
+      if (cutDef) yq = noteLine(s, `+ อีก ${cutDef} ประเภทของเสียที่ไม่พอในหน้านี้ — ดูครบใน /qa`, yq, { size: 9.5, bottom: 6.2 }) + 0.02;
       bullets(s, [
         `Quality holds ${pct(d.q)} — verify countermeasures above prevented recurrence before closing in ${NEXT}.`,
         ...(d.trialQty ? [`🧪 Try-out defects ${num(d.trialQty)} ชิ้น — แสดงในรายการแต่ไม่นับใน PPM ตามกฎ Q (ไลน์ไม่ถูกลงโทษจากงานทดลอง)`] : []),
