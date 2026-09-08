@@ -44,6 +44,16 @@ export function pointsForLine(points, lineName) {
   return (points || []).filter(p => p && p.is_active !== false && lineList(p).includes(ln));
 }
 
+/** จุดส่งที่ใช้ได้กับ "ใบ" นี้ — ตรงไลน์ก่อน · ไม่มีจุดของไลน์แต่ใบมี SLoc → จุดในพื้นที่เดียวกัน (ชั้นบัญชี SAP 2026-09-08)
+ *  ⚠️ checkDeliveryPoint กับ DeliverScanModal ต้องใช้ตัวนี้ตัวเดียวกัน — ไม่งั้นโมดัลบอก "ไม่มีจุด" ทั้งที่ด่านมีจุดให้เทียบ */
+export function pointsForRequest(points, request) {
+  const byLine = pointsForLine(points, request?.line_name);
+  if (byLine.length) return byLine;
+  const reqSloc = norm(request?.storage_location).toUpperCase();
+  if (!reqSloc) return [];
+  return (points || []).filter(p => p && p.is_active !== false && norm(p.storage_location).toUpperCase() === reqSloc);
+}
+
 /** ชื่อจุดสำหรับข้อความ — มีรหัสสั้นก็โชว์คู่ (คนหน้างานจำรหัสบนป้ายได้ง่ายกว่าชื่อยาว) */
 export const pointLabel = (p) => {
   if (!p) return '—';
@@ -65,7 +75,12 @@ export const pointLabel = (p) => {
  */
 export function checkDeliveryPoint({ request, point, points, scannedRaw }) {
   const ln = norm(request?.line_name);
-  const serving = pointsForLine(points, ln);
+  /* ชั้น SLoc (2026-09-08): SAP คุมที่ "พื้นที่" (P411 = ทั้ง Apron Assy) → pptx "Verified location: Location Transfer = area request"
+     · ใบกับป้ายมี storage_location ทั้งคู่ → เทียบพื้นที่ก่อน: คนละพื้นที่ = บล็อก · พื้นที่เดียวกัน = ผ่าน (ไลน์ย่อยเป็นข้อมูลประกอบ)
+     · ไม่มีข้อมูล SLoc ฝั่งใดฝั่งหนึ่ง = ใช้กฎไลน์เดิม */
+  const reqSloc = norm(request?.storage_location).toUpperCase();
+  const ptSloc  = norm(point?.storage_location).toUpperCase();
+  const serving = pointsForRequest(points, request);
   const expected = serving.map(pointLabel).join(' / ');
 
   // กฎ 1 — ไม่รู้ = ห้ามบล็อก: ไลน์นี้ยังไม่มีจุดส่งในทะเบียนเลย
@@ -85,6 +100,19 @@ export function checkDeliveryPoint({ request, point, points, scannedRaw }) {
 
   // กฎ 2 — เทียบตัวตนจุดกับปลายทางบนใบตรงๆ
   const servesThis = lineList(point).includes(ln) && point.is_active !== false;
+  if (reqSloc && ptSloc && point.is_active !== false) {
+    if (reqSloc !== ptSloc) {
+      return {
+        status: 'mismatch', point, expected, actual: pointLabel(point), block: true,
+        message: `ใบนี้ไปพื้นที่ ${reqSloc} (${ln}) · ป้ายที่สแกนอยู่พื้นที่ ${ptSloc} ("${pointLabel(point)}") — ต้องส่งที่ ${expected || reqSloc}`,
+      };
+    }
+    if (!servesThis) {
+      const theirs = lineList(point);
+      return { status: 'ok', gate: 'scanned', point, expected, actual: pointLabel(point), block: false, slocOnly: true,
+        message: `✓ พื้นที่ ${reqSloc} ตรงใบ — จุด "${pointLabel(point)}" ผูกกับ ${theirs.join(' / ') || 'ไม่ระบุไลน์'} (ใบขอส่ง ${ln})` };
+    }
+  }
   if (!servesThis) {
     const theirs = lineList(point);
     const where = theirs.length ? ` (ของ ${theirs.join(' / ')})` : (point.is_active === false ? ' (ปิดใช้งานแล้ว)' : '');

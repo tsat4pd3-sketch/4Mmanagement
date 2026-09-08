@@ -17,6 +17,14 @@ import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
 import { checkWrite } from '../utils/dbWrite';
+import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
+import { recordShimEvent } from '../utils/fixtureShimApi'
+
+/* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
+   ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
+   หมุดม่วงบนรูปเดียวกัน + แถวกรอก "ค่าชิมรวมที่วัดได้" ท้ายใบ · บันทึกผ่าน recordShimEvent ผูก inspection_id
+   ไม่บังคับกรอก (จุดชิมมีความถี่ของตัวเอง — กฎเหล็ก 1 ของโมดูล fixture) · ไม่นับใน isFormReady */
+const SHIM_PIN_COLOR = '#a78bfa'
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -48,9 +56,13 @@ const S = {
        (เนื้อหาสูงเท่าไหร่กล่องก็สูงตาม) แต่มันยัง "ขัง" `position:sticky` ของรูปเครื่องไว้ข้างใน
        → เอกสารเลื่อน รูปเลื่อนตามหายไป **sticky ไม่เคยทำงานเลยสักครั้ง**
      ตอนนี้ปล่อยให้ document เป็นตัวเลื่อน → sticky เกาะ viewport จริง
-     (flex child ล้นแนวนอนใช้ `minWidth:0` แก้ ไม่ใช่ `overflow:hidden` ซึ่งเป็นตัวขัง sticky) */
+     (flex child ล้นแนวนอนใช้ `minWidth:0` แก้ ไม่ใช่ `overflow:hidden` ซึ่งเป็นตัวขัง sticky)
+     🔴 2026-09-08: แก้ตรงนี้แล้ว "ยังหาย" อยู่ดี (วิดีโอ user) — ต้นเหตุชั้นบนกว่า: `<main>` ใน App.jsx
+     มี overflowY:auto ขัง sticky ไว้อีกชั้น (ทุกหน้า) → แก้ที่ App.jsx เป็น overflowX:'clip' แล้ว
+     ห้ามคิดว่า sticky ในหน้านี้ทำงานเพราะโค้ดหน้านี้อย่างเดียว */
   page: { display: 'flex', minHeight: '100%', background: 'var(--bg)' },
-  sidebar: { width: 280, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  // จอกว้าง: ลิสต์เครื่องเกาะจอ + เลื่อนในตัวเอง (เดิมยาวตามหน้า เลื่อนเช็คข้อล่างๆ แล้วลิสต์หายไปทั้งแถบ)
+  sidebar: { width: 280, borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'sticky', top: 0, alignSelf: 'flex-start', height: '100vh' },
   sidebarHead: { padding: '16px 16px 10px' },
   deptBar: { display: 'flex', flexWrap: 'wrap', gap: 6, padding: '0 16px 12px' },
   deptBtn: (active, color) => ({
@@ -121,7 +133,7 @@ function cpCheckStatus(cp, r) {
 //   • ลากซ้าย/ขวา (หรือกดจุดใต้ภาพ) เพื่อหมุนดูรอบเครื่อง — pin โชว์เฉพาะเฟรมที่วางไว้ (image_id)
 //   • สีหมุด = สถานะตรวจจริง (OK/NG) · คลิกหมุด → เลื่อน+ไฮไลต์แถวเช็คของจุดนั้น (activeCpId)
 // pin สเกล/clamp อิง "กล่องรูปจริง" หัก letterbox (docs/UI-CONVENTIONS.md §5.1)
-function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, maxH = 300, compact = false }) {
+function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, shimPins = [], onShimPinClick, maxH = 300, compact = false }) {
   const [frameIdx, setFrameIdx] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [zoomCp, setZoomCp] = useState(null)   // จุดที่กำลังเปิดรูปซูม (มี image_path)
@@ -161,6 +173,8 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
   const firstId = frames[0]?.id
   // pin ของเฟรมปัจจุบัน (image_id ว่าง = ผูกเฟรมแรก ตาม backfill)
   const framePins = checkpoints.filter(c => c.x_pos != null && c.y_pos != null && ((c.image_id ?? firstId) === cur?.id))
+  // หมุดจุดชิม (ม่วง) ของเฟรมนี้ — ตำแหน่งมาจาก pointPin() (ของตัวเอง หรือยืมจากจุดตรวจ PM ที่ผูกไว้)
+  const frameShimPins = shimPins.filter(sp => (sp.pin.imageId ?? firstId) === cur?.id)
 
   const pointerDown = (e) => {
     if (!spin) return
@@ -210,6 +224,12 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, ma
                   }} />
               )
             })}
+            {frameShimPins.map(sp => (
+              <CalloutPin key={`shim-${sp.point.id}`} xPct={sp.pin.x * 100} yPct={sp.pin.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false}
+                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
+                onClick={e => { e.stopPropagation(); onShimPinClick?.(sp.point.id) }} />
+            ))}
           </div>
         )}
         {spin && (
@@ -665,6 +685,13 @@ export default function PMCheckData() {
     return () => { mqN.removeEventListener('change', on); mqW.removeEventListener('change', on) }
   }, [])
   const [tab, setTab] = useState('record')
+  // 🔩 จุดชิมของ fixture ตัวที่เลือก (machines.id = jigs.machine_id) + ค่าที่กรอกในใบนี้ {pointId: {mm, note}}
+  const [shimPoints, setShimPoints] = useState([])
+  const [shimVals, setShimVals] = useState({})
+  const [shimKinds, setShimKinds] = useState(DEFAULT_POINT_KINDS)
+  const canShim = can('fixture_shim', 'record', userRole)
+  // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
+  const [jigQuery, setJigQuery] = useState('')
   const [results, setResults] = useState({})
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -693,6 +720,7 @@ export default function PMCheckData() {
   useEffect(() => {
     supabaseDR.from('jigs').select('*').eq('module', 'mtn').order('name').then(({ data }) => setJigs(data ?? []))
     fetchCategories() // primes the category color cache used by categoryColor()
+    supabaseDR.from('fixture_point_kinds').select('*').eq('is_active', true).order('sort_order').then(({ data }) => { if (data?.length) setShimKinds(data) })
     fetchCheckingMethods().then(rows => setMethodIndex(indexByCode(rows)))
   }, [])
 
@@ -824,6 +852,12 @@ export default function PMCheckData() {
   useEffect(() => {
     if (!selectedJig || !userId) return
     setResults({}); setNotes(''); setTab('record'); setActiveCpId(null)
+    setShimVals({})
+    // จุดชิมของ fixture นี้ (ทะเบียน /fixture) — ไม่มี machine_id = ไม่ใช่ fixture ที่ผูกกับ machines → ไม่มีจุด
+    if (selectedJig.machine_id) {
+      supabaseDR.from('fixture_points').select('*').eq('machine_id', selectedJig.machine_id).eq('is_active', true).order('sort_order')
+        .then(({ data, error }) => { if (error) toast.error(`โหลดจุดชิมไม่สำเร็จ: ${error.message}`); setShimPoints(data ?? []) })
+    } else setShimPoints([])
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
     supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data }) => {
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
@@ -919,6 +953,22 @@ export default function PMCheckData() {
       const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
       if (e2) throw e2
 
+      // 🔩 ค่าชิมที่กรอกมาด้วย → ประวัติชิมของจุด (ผูก inspection_id) — ล้มต้องบอก ห้ามให้ใบตรวจหลักล้มตาม
+      const shimEntries = shimPoints.map(pt => [pt, shimVals[pt.id]]).filter(([, v]) => v && v.mm !== '' && v.mm != null && !Number.isNaN(Number(v.mm)))
+      if (shimEntries.length) {
+        if (!canShim) toast.error('ค่าชิมไม่ถูกบันทึก — บัญชีนี้ไม่มีสิทธิ์ fixture_shim:record')
+        else {
+          let okN = 0; const warns = []
+          for (const [pt, v] of shimEntries) {
+            const res = await recordShimEvent({ point: pt, afterMm: Number(v.mm), action: deriveShimAction(pt.current_shim_mm, Number(v.mm)), reason: 'wear', note: v.note, byName: fullName, shotAtEvent: null, inspectionId: insp.id })
+            if (res.ok) okN++; else warns.push(`${pt.point_no}: ${res.error}`)
+            if (res.warn) warns.push(res.warn)
+          }
+          if (okN) toast.success(`บันทึกค่าชิม ${okN} จุดลงประวัติแล้ว`)
+          if (warns.length) toast.error(`ชิมบางจุดไม่สำเร็จ: ${[...new Set(warns)].join(' · ')}`)
+        }
+      }
+
       if (overall === 'fail') {
         notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
       }
@@ -993,9 +1043,17 @@ export default function PMCheckData() {
   //   โผล่ใต้ทีม D ถ้า (ก) มี checklist ของทีม D อยู่แล้ว (ตรงกับหน้า PMSchedule) หรือ
   //   (ข) ประเภทอุปกรณ์ = ประเภท default ของทีม (ให้เริ่ม checklist ใหม่ได้) · ผลิต = ทุกชนิด
   const teamEquip = (teams.find(t => t.key === department) || {}).equip_type
-  const deptJigs = department === 'production'
+  const deptJigsAll = department === 'production'
     ? jigs
     : jigs.filter(j => (teamEquip && (j.equipment_type || 'machine') === teamEquip) || clDeptByJig[j.id]?.has(department))
+  // คำค้นแยกเป็นคำ ทุกคำต้องเจอ (เช่น "laser 789" · "jhyd08") — เทียบกับ เลขเครื่อง+ชื่อ+ไลน์ รวมกัน
+  const qWords = jigQuery.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const matchJig = (j) => {
+    if (!qWords.length) return true
+    const hay = `${j.machine_no || ''} ${j.name || ''} ${j.line_name || ''}`.toLowerCase()
+    return qWords.every(w => hay.includes(w))
+  }
+  const deptJigs = deptJigsAll.filter(matchJig)
 
   // จอแคบ: โชว์ทีละคอลัมน์ (ยังไม่เลือก=ลิสต์ · เลือกแล้ว=ฟอร์ม) · desktop โชว์ทั้งคู่เหมือนเดิม
   const showSidebar = !isNarrow || !selectedJig
@@ -1005,7 +1063,7 @@ export default function PMCheckData() {
     <div style={S.page}>
       {/* Sidebar (จอแคบ = เต็มความกว้าง) */}
       {showSidebar && (
-      <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none' } : null) }}>
+      <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none', position: 'static', height: 'auto' } : null) }}>
         <div style={S.sidebarHead}>
           <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>บันทึกผลตรวจ PM</h2>
         </div>
@@ -1016,6 +1074,14 @@ export default function PMCheckData() {
         <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
           <b style={{ color: deptColor }}>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
         </div>
+        <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input value={jigQuery} onChange={e => setJigQuery(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์" aria-label="ค้นหาเครื่อง"
+            style={{ flex: 1, minWidth: 0, padding: '7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }} />
+          {jigQuery && <button onClick={() => setJigQuery('')} title="ล้างคำค้น" style={{ flexShrink: 0, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>✕</button>}
+        </div>
+        {qWords.length > 0 && department !== 'production' && (
+          <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
+        )}
         <div style={S.jigList}>
           {department === 'production' ? (() => {
             // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
@@ -1024,7 +1090,7 @@ export default function PMCheckData() {
             const byLine = {}
             jigs.forEach(j => {
               const lns = dailyLineByJig[j.id]
-              if (!lns) return
+              if (!lns || !matchJig(j)) return
               lns.forEach(ln => {
                 if (lineParam && ln !== lineParam) return
                 ;(byLine[ln] ||= []).push(j)
@@ -1093,7 +1159,9 @@ export default function PMCheckData() {
               {pendingBlock}
             </>)
           })() : (<>
-            {deptJigs.length === 0 && <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>}
+            {deptJigs.length === 0 && (qWords.length
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ “{jigQuery.trim()}”<br /><span onClick={() => setJigQuery('')} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างคำค้น</span></p>
+              : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
             {deptJigs.map(jig => (
               <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{jig.name}</p>
@@ -1143,8 +1211,12 @@ export default function PMCheckData() {
                 /* จอแคบ = รูปอยู่ "บนหัว" ของรายการ → ต้องเตี้ยพอให้เหลือที่กรอกจริง
                    (480px บนมือถือ = กินเกือบทั้งจอ ตอบ feedback "ในมือถือก็เหมือนยังไม่เหมาะ") */
                 const stackCompact = showPhoto && !twoCol
+                const cpById = Object.fromEntries(checkpoints.map(c => [c.id, c]))
+                const shimPins = shimPoints.map(pt => ({ point: pt, pin: pointPin(pt, cpById) })).filter(x => x.pin)
+                const scrollToShim = (id) => { setActiveCpId(null); rowRefs.current[`shim:${id}`]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }
                 const viewerNode = showPhoto
                   ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId}
+                      shimPins={shimPins} onShimPinClick={scrollToShim}
                       maxH={twoCol ? 560 : (isNarrow ? 190 : 260)} compact={stackCompact} />
                   : null
 
@@ -1179,6 +1251,14 @@ export default function PMCheckData() {
                       <div style={{ fontSize: 12, marginTop: 14 }}>
                         ยังไม่ได้ลงจุดตรวจของแผนกนี้จริง → ตั้งที่ <b>PM Setup</b> (ถ้าลงผิดแผนก ย้ายข้ามแผนกได้ที่นั่น)
                       </div>
+                      {/* จิ๊กที่มีจุดชิมแต่ยังไม่มีจุดตรวจ PM (เช่น JHYD12-01) — ค่าชิมบันทึกที่ /fixture ได้เลย ไม่ต้องรอใบตรวจ */}
+                      {shimPoints.length > 0 && (
+                        <div style={{ fontSize: 12, marginTop: 10, color: SHIM_PIN_COLOR }}>
+                          🔩 เครื่องนี้มีจุดชิม {shimPoints.length} จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่{' '}
+                          <Link to="/fixture?tab=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>ทะเบียนจิ๊ก → 🔧 บันทึกชิม</Link>
+                          {' '}(ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่)
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -1220,6 +1300,67 @@ export default function PMCheckData() {
                             </div>
                           )
                         })
+                      })()}
+                      {shimPoints.length > 0 && (() => {
+                        const kindOf = (code) => shimKinds.find(k => k.code === code) || { icon: '🔩', label: code || '—' }
+                        const dueN = shimPoints.filter(pt => pointDueStatus(pt, { currentShot: null }).due).length
+                        return (
+                          <div style={{ marginTop: 12 }}>
+                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.45)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
+                              🔩 จุดชิม (Shim Record) · {shimPoints.length} จุด{dueN ? <span style={{ color: '#ef4444' }}> · ถึงรอบ {dueN}</span> : null}
+                              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', marginTop: 2 }}>
+                                วัดค่าชิมรวมตอนนี้แล้วกรอกเป็น mm — บันทึกพร้อมใบตรวจนี้ลงประวัติชิมของจุด (ไม่บังคับ · จุดที่ไม่กรอก = ไม่แตะ)
+                                {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด</span>}
+                              </div>
+                            </div>
+                            {!canShim && (
+                              <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
+                                🔒 บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
+                              </div>
+                            )}
+                            {shimPoints.map(pt => {
+                              const st = shimStack(pt)
+                              const due = pointDueStatus(pt, { currentShot: null })
+                              const v = shimVals[pt.id] ?? { mm: '', note: '' }
+                              const mm = v.mm === '' ? null : Number(v.mm)
+                              const act = deriveShimAction(pt.current_shim_mm, mm)
+                              const pinned = shimPins.some(x => x.point.id === pt.id)
+                              const overMax = mm != null && pt.max_shim_mm != null && mm > Number(pt.max_shim_mm)
+                              const k = kindOf(pt.kind_code)
+                              return (
+                                <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
+                                  style={{ ...S.cpRow(null), borderColor: overMax ? '#ef4444' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: stackCompact ? viewerH + 12 : 12 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 9, background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? 'ปักบนรูปแล้ว' : 'ยังไม่ปักบนรูป'}>{pt.point_no}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {k.label}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
+                                    <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>
+                                      ชิมรวม <b style={{ color: st.level === 'over' ? '#ef4444' : st.level === 'warn' ? '#f59e0b' : 'var(--text)' }}>{st.current ?? '—'}</b> / เพดาน {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
+                                      {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? '#ef4444' : due.level === 'soon' ? '#f59e0b' : 'var(--muted)' }}>· {due.text}</span>}
+                                    </span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      ค่าชิมรวมที่วัดได้
+                                      <input type="number" step="0.01" inputMode="decimal" value={v.mm} disabled={!canShim} placeholder="mm"
+                                        onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, mm: e.target.value } }))}
+                                        style={{ width: 84, textAlign: 'center', fontFamily: 'monospace' }} />
+                                      <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>mm</span>
+                                    </label>
+                                    <input value={v.note} disabled={!canShim} placeholder="หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)"
+                                      onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, note: e.target.value } }))}
+                                      style={{ flex: '1 1 160px', minWidth: 120 }} />
+                                    {mm != null && (
+                                      <span style={{ fontSize: 11.5, fontWeight: 700, color: overMax ? '#ef4444' : SHIM_PIN_COLOR }}>
+                                        {act === 'check' ? '→ ยืนยันเท่าเดิม' : act === 'add' ? `→ เพิ่ม +${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm` : `→ ลด ${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm`}
+                                        {overMax && ' · เกินเพดาน — ควรเปิดใบซ่อมเปลี่ยนชิ้นส่วน'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
                       })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>

@@ -22,7 +22,7 @@ const up = (s) => String(s ?? '').trim().toUpperCase();
 export { machineOptions };
 
 export default function MachineSelect({
-  value = '', onChange, machines: given, lines, kinds, strict = false, includeInactive = false,
+  value = '', onChange, machines: given, lines, kinds, strict = false, includeInactive = false, groupByLine = false,
   valueKey = 'machine_no', allowFree = false, placeholder = 'ค้นเลขเครื่อง / ชื่อ / ไลน์…', freeHint = '',
   history = [],          // เลขเครื่องที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — ทะเบียนไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
   disabled, inputStyle, style, wrapRows = false, maxRows = 60,
@@ -30,10 +30,10 @@ export default function MachineSelect({
   const { machines: loaded, failed } = useMachines();
   const machines = given?.length ? given : loaded;
   const options = useMemo(() => {
-    const base = machineOptions(machines, { lines, kinds, strict, includeInactive, current: valueKey === 'machine_no' ? value : '' });
+    const base = machineOptions(machines, { lines, kinds, strict, includeInactive, groupByLine, current: valueKey === 'machine_no' ? value : '' });
     // ค่าที่เคยบันทึก/ค่าปัจจุบันที่ไม่อยู่ในทะเบียน = ยังเลือกได้ พร้อมป้าย ⚠ (ไม่ล้าง ไม่บล็อก — คำสั่ง user 2026-09-07)
     return appendHistoryOptions(base, { history, current: valueKey === 'machine_no' ? value : '', make: (v) => ({ machine_no: v, name: null, line_name: null, equipment_kind: null }) });
-  }, [machines, lines, kinds, strict, includeInactive, value, valueKey, history]);
+  }, [machines, lines, kinds, strict, includeInactive, groupByLine, value, valueKey, history]);
   const sel = useMemo(() => (valueKey === 'id'
     ? options.find(o => o.id === value)
     : options.find(o => o.key === up(value))) || null, [options, value, valueKey]);

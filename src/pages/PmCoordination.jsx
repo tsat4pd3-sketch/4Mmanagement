@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
@@ -380,12 +381,9 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
         {plan._new && pmPlans.length > 0 && (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(74,144,224,0.10)', border: '1px solid rgba(74,144,224,0.4)' }}>
             <label style={{ ...lbl, color: '#4a90e0' }}>🔗 สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
-            <select value={f.pm_plan_id} onChange={e => fromPmPlan(e.target.value)} style={inp}>
-              <option value="">— ไม่ผูก (สร้างแผนอิสระ) —</option>
-              {pmPlans.map(p => <option key={p.plan_id} value={p.plan_id}>
-                {[p.machine_name, p.machine_no].filter(Boolean).join(' ')}{p.line_name ? ` · ${p.line_name}` : ''}{p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}{p.checklist_name ? ` · ${p.checklist_name}` : ''}
-              </option>)}
-            </select>
+            <SearchSelect value={String(f.pm_plan_id || '')} placeholder="— ไม่ผูก (สร้างแผนอิสระ) — พิมพ์ค้นหาเครื่อง/ไลน์" inputStyle={inp}
+              options={pmPlans.map(p => ({ id: String(p.plan_id), label: [p.machine_name, p.machine_no].filter(Boolean).join(' ') || String(p.plan_id), sub: `${p.line_name || ''}${p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}`, keywords: `${p.machine_no || ''} ${p.line_name || ''}` }))}
+              onChange={({ id }) => fromPmPlan(id)} />
           </div>
         )}
 

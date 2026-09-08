@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pointsForLine, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS, DELIVER_GATES, checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, PICK_GATES } from '../replenishGate.js';
+import { pointsForLine, pointsForRequest, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS, DELIVER_GATES, checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, PICK_GATES } from '../replenishGate.js';
 import { parseQrPayload, buildQrPayload, resolveDeliveryPoint } from '../qrCode.js';
 
 /* ด่านขั้น 7 ของลูปสโตร์ — docs/STORE-PULL-LOOP-DESIGN.md §4.5/§4.6 (2026-09-03) */
@@ -154,4 +154,30 @@ test('🔴 validatePickPayload = ตารางความจริงเด�
   assert.notEqual(validatePickPayload(buildPickPayload({ gate: 'override', qty: 60, reasonKey: '', reasonNote: '' })), null);   // ไม่มีเหตุผลเลย
   assert.notEqual(validatePickPayload({ picked_qty: 60 }), null);
   assert.deepEqual(Object.keys(PICK_GATES).sort(), ['override', 'scanned']);
+});
+
+/* ── ชั้น SLoc ในด่านจุดส่ง (2026-09-08) — SAP คุมที่พื้นที่ · "Location Transfer = area request" ── */
+test('SLoc: พื้นที่ตรงใบแต่จุดผูกไลน์อื่นในแผนกเดียวกัน → ผ่าน (slocOnly) · คนละพื้นที่ → บล็อกบอกทั้ง 2 รหัส', () => {
+  const P60s = { ...P60, storage_location: 'P411' };
+  const PHdf = { id: 'p-hdf', code: 'DP-HDF', name: 'จุดรับของ HDF1', line_names: ['HDF1'], storage_location: 'P409', is_active: true };
+  const req = { ...req61, storage_location: 'P411' };
+  const ok = checkDeliveryPoint({ request: req, point: P60s, points: [P60s, PHdf] });
+  assert.equal(ok.status, 'ok'); assert.equal(ok.slocOnly, true); assert.match(ok.message, /P411/);
+  const bad = checkDeliveryPoint({ request: req, point: PHdf, points: [P60s, PHdf] });
+  assert.equal(bad.status, 'mismatch'); assert.equal(bad.block, true);
+  assert.match(bad.message, /P411/); assert.match(bad.message, /P409/);
+  // ไลน์ยังไม่ตั้งจุดของตัวเอง แต่พื้นที่มีจุด → serving หาจากพื้นที่ ไม่ตก no_point
+  const viaSloc = checkDeliveryPoint({ request: { line_name: 'SUB APRON', storage_location: 'P411' }, point: P60s, points: [P60s, PHdf] });
+  assert.equal(viaSloc.status, 'ok');
+  // ไม่มีข้อมูล SLoc ฝั่งใดฝั่งหนึ่ง = กฎไลน์เดิม (จุดของไลน์อื่น = บล็อก)
+  assert.equal(checkDeliveryPoint({ request: req61, point: P60, points: ALL }).status, 'mismatch');
+});
+
+test('pointsForRequest = ตัวเดียวกับที่ checkDeliveryPoint/DeliverScanModal ใช้ — ตรงไลน์ก่อน ไม่มีค่อยตกไปพื้นที่ SAP', () => {
+  const P60s = { ...P60, storage_location: 'P411' };
+  const PHdf = { id: 'p-hdf', code: 'DP-HDF', name: 'จุดรับของ HDF1', line_names: ['HDF1'], storage_location: 'P409', is_active: true };
+  assert.deepEqual(pointsForRequest([P60s, PHdf], { line_name: 'LINE 60', storage_location: 'P409' }).map(p => p.id), [P60s.id]);   // ไลน์ชนะพื้นที่
+  assert.deepEqual(pointsForRequest([P60s, PHdf], { line_name: 'SUB APRON', storage_location: 'P411' }).map(p => p.id), [P60s.id]);
+  assert.deepEqual(pointsForRequest([P60s, PHdf], { line_name: 'SUB APRON' }), []);                                             // ไม่มี SLoc = กฎเดิม
+  assert.deepEqual(pointsForRequest([{ ...P60s, is_active: false }], { line_name: 'SUB APRON', storage_location: 'P411' }), []); // จุดปิดไม่นับ
 });

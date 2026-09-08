@@ -21,6 +21,7 @@ export const AUDIT_TABLE_LABELS = {
   employee_skills:         '📊 คะแนนทักษะ',
   skill_definitions:       '📊 นิยามทักษะ',
   station_requirements:    '📍 ทักษะที่จุดงานต้องการ',
+  line_helpers:            '🤝 ยืมพนักงานข้ามไลน์ (รายกะ)',
   // ── ผังองค์กร & ไลน์ (Main) ──
   org_nodes:               '🏢 ผังองค์กร',
   production_lines:        '🏭 ไลน์ผลิต',
@@ -130,6 +131,8 @@ export const AUDIT_FIELD_LABELS = {
   cost_center: 'Cost Center', std_day_shift: 'กำลังคนกะเช้า', std_night_shift: 'กำลังคนกะดึก',
   flow_mode: 'โหมดไหลงาน', parallel_stations: 'จำนวนเครื่องขนาน', line_type: 'ประเภทไลน์',
   image_url: 'รูป', is_enabled: 'เปิดใช้งาน', chat_id: 'ห้องแชท', inapp_roles: 'แจ้งในแอป (role)',
+  work_date: 'วันที่งาน', shift: 'กะ', employee_id: 'พนักงาน', emp_name: 'พนักงาน',
+  to_line_id: 'ไลน์ปลายทาง', to_line_name: 'ไลน์ปลายทาง', created_by_name: 'ผู้บันทึก',
 };
 
 /** ป้ายตาราง — ไม่รู้จักคืนชื่อดิบ (ไม่ซ่อน ไม่พัง) */
@@ -143,6 +146,6 @@ export const AUDIT_SKIP_FIELDS = new Set(['updated_at', 'updated_by_name', 'crea
 /** ชื่อที่ใช้เรียกแถวที่ถูกแก้ (เดาจากฟิลด์ยอดนิยม) */
 export const rowLabel = (r) => {
   const d = r?.new_data || r?.old_data || {};
-  return d.name || d.name_th || d.full_name || d.machine_no || d.mat_no || d.characteristic
+  return d.name || d.name_th || d.full_name || d.emp_name || d.machine_no || d.mat_no || d.characteristic
       || d.label || d.code || d.permission_key || d.cost_center || '(ไม่ระบุชื่อ)';
 };

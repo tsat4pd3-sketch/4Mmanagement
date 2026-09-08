@@ -562,10 +562,41 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >   · `byItemNo` ดันแถวที่ยังไม่ตั้งเลข **ไปท้าย** ไม่ใช่ขึ้นก่อนเพราะ null
 > - **ไม่ backfill ของเก่า 459 แถวโดยตั้งใจ** — ลำดับที่ถูกเป็นความรู้ของ PE (SAP เรียงตามลำดับประกอบ
 >   ไม่ใช่ตามเลข mat) เดาแล้วผิดจะกลายเป็นเลขอ้างอิงที่เชื่อไม่ได้
-> - **🔴 ยังไม่มีอะไรอ่าน 2 คอลัมน์นี้ไปตัดสต็อก** — `fn_explode_child_demand` ยังหักจาก `line_stock_summary`
->   ด้วย `line_name` เหมือนเดิมทุกประการ ⇒ **deploy แล้วพฤติกรรมไม่เปลี่ยน ใครไม่กรอกก็ไม่กระทบ**
->   · ผูก SLoc เข้าเส้นทางตัดสต็อกเป็นงานแยก ต้องคุยกับสโตร์ก่อนว่าจะ map รหัสคลังกับ location เดิมยังไง
->   · **จอเขียนกำกับไว้แล้วว่ายังไม่ผูก ห้ามถอด** (ไม่งั้นคนกรอกแล้วคิดว่ามีผลทันที)
+> - **`bom_items.storage_location` ยังไม่ถูกอ่านไปตัดสต็อก** — `fn_explode_child_demand` ยังหักจาก `line_stock_summary`
+>   ด้วย `line_name` เหมือนเดิม ⇒ ค่าใน BOM เป็นข้อมูลอ้างอิงเท่านั้น · **มุม SAP ของการเคลื่อนไหวสต็อกมาจาก
+>   "ชั้นบัญชี SLoc ↔ ไลน์" ด้านล่าง (2026-09-08) ไม่ใช่จากบรรทัด BOM**
+>
+> #### 🔗 ชั้นบัญชี SAP (SLoc) ↔ ชั้นกายภาพ (ไลน์ย่อยที่สุด) — ผูกไลน์แม่ครั้งเดียว ลูกตกทอด (2026-09-08 · user)
+> *"การควบคุมวัตถุดิบในโรงงานอ้างอิงจาก SAP ซึ่งแบ่งเป็นรหัสพื้นที่ — แผนก Apron Assy (Line 60 · 61 · Sub Apron) = P411 ·
+> โซน Hydroform ทั้งหมด = P409 · sub component เฉพาะของ FG ตัวเดียวก็เป็นของใครของมัน แต่สุดท้ายอยู่ใน P411 เหมือนกันในระบบ"*
+>
+> - **ไม่เลือกข้าง** — ของยังนับที่ **ไลน์ย่อยที่สุด** (กฎ leaf ของลูปสโตร์ไม่เปลี่ยน) · SLoc เป็น **ชั้นบัญชีที่ derive จากไลน์อัตโนมัติ**
+>   แล้ว **แปะ `storage_location` ติดทุกรายการตอนเขียน** = รายการเดียว 2 มุมมอง (มุม SAP: S401 → P411 · มุม WIP: STORE → Line 60)
+> - **ผูกที่ `storage_locations.line_names text[]`** (DR · migration `20260908_storage_locations_line_map.sql`) — ใส่**ไลน์แม่ครั้งเดียว**
+>   (`P411 ← LINE APRON ASSY` · `P409 ← HYDROFORM` · `S401 ← STORE` · `W401 ← FG WAREHOUSE` seed ให้แล้ว) ไลน์ลูกตกทอดผ่าน
+>   **`slocOfLine(slocs, lines, lineName)`** ใน `src/utils/storageLoc.js` (ตรงชื่อก่อน → ไล่สายบน `getAncestorNames` · ลูกที่ผูกรหัสอื่นเองชนะแม่)
+>   · `slocCodeOfLine` คืนรหัสอย่างเดียว · `linesOfSloc` = ไลน์ทั้งหมดที่ตกใน SLoc (ใช้ backfill/สรุป) · เทสใน `storageLoc.test.mjs`
+>   · **🔴 ไลน์ที่ยังไม่ผูก = `null` ห้ามเดา** — แผงทะเบียนขึ้น worklist "ไลน์ที่ยังไม่ผูกรหัสคลัง N ไลน์" (leaf ที่ active) ห้ามซ่อน
+>   · `line_names` เป็น text snapshot → เข้า rename cascade ใน `LineSetup.handleRenameLine` แล้ว (อ่าน-แก้-เขียน เหมือน line_delivery_points)
+> - **จุดที่แปะ `storage_location` ตอนเขียน (ทุกจุดทน 42703 = ยังไม่ apply → บันทึกแบบไม่ tag + toast ห้ามเงียบ):**
+>   | ที่ | ตาราง (project) | derive จาก |
+>   |---|---|---|
+>   | ใบขอเติมจากไลน์ (`LinePartCallPanel` place/hold) | `wip_replenish_requests` (Main · `20260908_wip_replenish_storage_location.sql`) | `slocCodeOfLine(lineName)` |
+>   | ใบส่งที่สโตร์เปิดเองจาก Store Time Chart (`createStoreRequests`) | เดียวกัน | ไลน์ย่อยที่เลือก |
+>   | ตัดสต็อกตอนยืนยันเตรียม (`deductStockForPick`) | `line_stock_transactions` (DR) | แถวไลน์ = `w.storage_location` (snapshot บนใบ) หรือ derive · แถว STORE = `slocCodeOfLine('STORE')` |
+>   | จุดส่งงาน (`DeliveryPointPanel`) | `line_delivery_points` (DR) | ไลน์ในจุด **ต้องพื้นที่เดียวกัน** (คนละพื้นที่ = บล็อก ให้แยกจุด) |
+>   · DB backstop: trigger `fn_stock_txn_fill_sloc` (DR · before insert) เติมให้เมื่อ `line_name` อยู่ใน `line_names` **ตรงชื่อ** (STORE → S401)
+>     — ไลน์ลูกที่ตกทอดจากแม่ต้องให้ client tag (ลำดับชั้นอยู่ Main)
+> - **Store Time Chart:** พาร์ทที่เลือกโชว์ **"➜ P411 · Line 60"** · กลุ่มที่มีหลายไลน์ย่อยแต่**ทุกไลน์อยู่พื้นที่ SAP เดียวกัน = เลือกไลน์แรกให้เลย**
+>   (ยังเปลี่ยนได้ใน dropdown) · คนละพื้นที่ = dropdown สีส้ม ต้องเลือกเองเหมือนเดิม (ระบบไม่เดา)
+> - **ด่านขั้น 7 (`checkDeliveryPoint`) เทียบพื้นที่ก่อนเทียบไลน์** — pptx "Verified location: Location Transfer = area request":
+>   คนละพื้นที่ = บล็อกบอกทั้ง 2 รหัส · พื้นที่เดียวกันแต่จุดผูกไลน์อื่น = ผ่าน (`slocOnly`) · ไม่มีข้อมูล SLoc ฝั่งใดฝั่งหนึ่ง = กฎไลน์เดิม
+>   · จุดที่ใช้ได้กับใบ = **`pointsForRequest(points, request)`** (ตรงไลน์ก่อน → ไม่มีค่อยตกไปจุดในพื้นที่เดียวกัน) —
+>     `checkDeliveryPoint` กับ `DeliverScanModal` **ต้องใช้ตัวเดียวกัน** ไม่งั้นโมดัลบอก "ไม่มีจุด" ทั้งที่ด่านมีจุดให้เทียบ
+> - **วิว `v_sloc_stock`** (DR) = ยอดคงเหลือมุม SAP ต่อ (SLoc, mat) สูตรเดียวกับ `line_stock_summary` — **รวมเฉพาะแถวที่ tag แล้ว**
+>   → ledger เก่าก่อนมีชั้นนี้ต้องกด **"🏷️ แปะรหัสคลังย้อนหลัง"** ในแผงทะเบียน (เฉพาะแถวที่ยัง null · idempotent · นับแถวที่แปะได้จริง)
+>   แผงโชว์จำนวนแถวที่ยังไม่มีมุม SAP เสมอ ห้ามซ่อน
+> - **ยังไม่ทำ:** ส่ง posting เข้า SAP จริง (ตอนนี้ตัดใน ledger ESM แล้วมีมุม SAP ให้กระทบยอดได้) · หน้าเทียบยอด v_sloc_stock กับ SAP
 >
 > #### 🏬 ทะเบียนรหัสคลัง `storage_locations` (DR) — รูปแบบ user กำหนดเอง 2026-09-02
 > *"storage loc id จะเป็นตัวหนังสือและตามด้วย int 3 หลัก เช่น s401 พื้นที่สโตร์เก็บชิ้นส่วน · P401 พื้นที่ผลิต1
@@ -591,7 +622,7 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 >   · รหัสที่ถูกใช้ใน BOM แต่ไม่มีในทะเบียน = **worklist ชิปส้มในแท็บ 🏬 ห้ามซ่อน** (กดชิปแล้วเปิดฟอร์มลงทะเบียนได้เลย)
 > - **แก้ `code` ไม่ได้ (เป็น PK และถูกอ้างใน BOM)** — ฟอร์มปิดช่อง **พร้อมเขียนเหตุผล** ว่าให้เพิ่มรหัสใหม่
 >   แล้วปิดใช้งานตัวเก่า **ห้ามปิดช่องเฉยๆ โดยไม่บอก** · ลบไม่ได้ถ้าถูกใช้อยู่ → ให้ปิดใช้งานแทน
-> - **จัดการที่ `/line-stock` แท็บ 🏬 โซนคลัง (ผัง)** — `StorageLocPanel` อยู่**เหนือ** `StorageZonePanel`
+> - **จัดการที่ `/line-stock` แท็บ 🏬 โซนคลัง (ผัง)** — `StorageLocPanel` (ทะเบียน + ผูกไลน์ + worklist + แปะย้อนหลัง) อยู่**เหนือ** `StorageZonePanel`
 >   ในแท็บเดียวกัน · **ใช้ `storage:manage` เดิม ไม่ seed key ใหม่** (เลี่ยงกับดัก `enum_range`)
 > - **⚠️⚠️ `storage_zones` (WMS เฟส 1) ไม่ใช่ SLoc — 2 ทะเบียนคนละชั้น ห้ามยุบรวม**
 >   `storage_zones` = โซนกองของที่**ตีกรอบบนผังโรงงาน** (มี capacity · ผูก mat แบบ array · มีรูปผัง)

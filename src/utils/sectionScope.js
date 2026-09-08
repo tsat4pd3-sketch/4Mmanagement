@@ -1,4 +1,4 @@
-import { getLineFamilyNames } from './lineHierarchy';
+import { getLineFamilyNames } from './lineHierarchy.js';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
 // (เช่น manager แผนกหนึ่งเห็นเฉพาะ PD1+PD2+QA) — ว่าง/NULL = ไม่จำกัด

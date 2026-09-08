@@ -373,6 +373,16 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
   · **ลิสต์สั้น (ประเภท/สถานะ/ทีม/กะ) ใช้ `<select>` ต่อไป** — native picker บนมือถือเร็วกว่า
   · dropdown ที่เป็น **"ไลน์ผลิต"** ยังต้องใช้ `<LineSelect>` เหมือนเดิม (มีลำดับชั้น + scope)
   · `<input list=datalist>` ก็ค้นได้ ใช้ได้เมื่อไม่ต้องโชว์ข้อมูลประกอบ (สต็อก/ชั้นวาง) ต่อแถว
+- **📏 audit ทั้งระบบ 2026-09-08 (คำสั่ง user "dropdown ทุกจุดต้องค้นได้"):** นับจากฐานจริง — พนักงาน 209 · เครื่องจักร 632 (ไลน์เดียวสูงสุด 119) · สินค้า 139 · parts_master 329 · ประเภท downtime 86 · โปรไฟล์ 86 · OP (pe_processes) 94 · ไลน์ผลิต 31
+  ⇒ **ลิสต์จาก master กลุ่มนี้ = ต้อง `<SearchSelect>` เสมอ** (พนักงาน · โปรไฟล์/ผู้เซ็น · เครื่องจักร/จุดงาน · สินค้า/MAT · อะไหล่ · ประเภท downtime · OP ของ PE · แผน PM) — แปลงแล้ว 20 จุด/13 ไฟล์:
+  ShiftOrganize (override พนักงาน) · Report (รายบุคคล · ผู้ออกเอกสาร) · DocFormsRegistry ×2 · MaterialRequests (ผู้เซ็น) · BbsCheck (ผู้ตรวจ) ·
+  DailyReport (เครื่องขนาน · MAT.NO ตอนเปิดใบ · ประเภท downtime) · PMSetup (เครื่องทั้งโรงงาน 632) · Improvements (เครื่อง · สินค้า) · PmCoordination (แผน PM) ·
+  LineSetup (วางเครื่องบนผัง) · LineStock (Product/BOM) · QualityControl (กรองชิ้นงาน) · PEDocs (กรอง OP · FMEA · CP)
+  · **เกี่ยวกับ §5.1.2 (picker กลาง):** picker กลางรับ/คืน "ค่า text" (ชื่อคน · machine_no · mat_no) — จุดที่ฟอร์มเก็บ **FK id** (profile uid · employee id · product id · downtime_type id · kanban std · OP id) หรือมีกลุ่ม/badge เฉพาะ (Improvements พาเรโต้ · LineSetup จัดกลุ่มตามชนิดเครื่อง · MAT.NO ตอนเปิดใบ ⚠ชื่อซ้ำ) ใช้ `<SearchSelect>` ตรง · จุดที่เป็นเครื่องล้วนใช้ `<MachineSelect>` (DailyReport เครื่องขนาน · PMSetup `valueKey="id"`)
+  · **ไลน์ผลิต (31) ยังใช้ `<LineSelect>`** (ลำดับชั้น+scope สำคัญกว่า ค้นได้ด้วยตัวแรกพอไหว) — ถ้าไลน์โตเกิน ~40 ค่อยเพิ่มโหมดค้นใน LineSelect ที่เดียว
+  · `SearchSelect` **ไม่ต้องส่ง `text` แล้ว** (uncontrolled — ถือคำค้นเอง) ใช้ในบล็อก render/IIFE ที่ใส่ hook ไม่ได้ · ส่ง `text` เฉพาะเคส `allowFree` ที่ต้องเก็บชื่อพิมพ์เอง · มี `inputId` ให้โค้ดที่ `getElementById(...).focus()`
+  · id ของ option ต้อง **string** เสมอ (`String(x.id)`) และเทียบ `value` เป็น string — component เทียบด้วย `===`
+  · ตรวจ: `grep -n "\.map(.*<option" src/pages/*.jsx src/components/*.jsx` แล้วดูว่าตัวแปรที่ map มาจาก master ข้างบนหรือไม่
 - **ห้ามมี 2 ช่องคู่กัน "เลือกจากลิสต์" + "หรือพิมพ์เอง"** — พอเลือกแล้วช่องขวาก็แค่สะท้อนชื่อเดิม
   กินที่ + คนอ่านไม่รู้ว่าต้องกรอกช่องไหน · รวมเป็นช่องเดียว: เลือกจากลิสต์ = ผูก id ·
   พิมพ์แล้วไม่ตรงลิสต์ = เก็บเป็นข้อความ **พร้อมป้ายบอกว่า "ไม่ได้อยู่ในทะเบียน"** (ห้ามเงียบ)
@@ -394,7 +404,11 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 | ชื่อคน (ผู้ตรวจ/อนุมัติ/รับผิดชอบ/แจ้ง/สอน/หัวหน้า/ผู้แก้) | `<PersonSelect>` | `usePeople` (Main profiles ∪ employees) | ชื่อ text เหมือนเดิม + `*_uid`/`employee_id` เมื่อคอลัมน์มี |
 | หมายเลขเครื่อง / แม่พิมพ์ / จิ๊ก | `<MachineSelect>` | `useMachines` (DR machines) | `machine_no` + `machine_id` เมื่อคอลัมน์มี |
 | MAT SAP / เลขพาร์ท / Kanban Std / die set / PE set / NPI part | `<ProductSelect>` (+`extraOptions` BOM/parts_master) | `useProducts` (DR dr_products) | `mat_no` + `product_id` เมื่อคอลัมน์มี |
-| ลูกค้า | `<CustomerSelect>` | `useCustomers` (distinct dr_products ∪ ship_to_plants — **ยังไม่มีตาราง customers**) | ชื่อ text (normalize เป็นสะกดหลัก) |
+| ลูกค้า | `<CustomerSelect>` | `useCustomers` (DR `customers` — 2026-09-08 · alias แม็ปเข้าสะกดหลัก · fallback derive จาก Product Master) | ชื่อ text (name หลัก) |
+| ผู้ขาย / ผู้รับจ้าง / แหล่งที่มา (parts_master · container · routing จ้างนอก · อะไหล่ · NPI tooling maker) | `<SupplierSelect>` (`kinds` = ชนิดที่เกี่ยวข้องขึ้นก่อน) | `useSuppliers` (DR `suppliers` — 2026-09-08) | ชื่อ text |
+| Cost Center (ไลน์ · ผัง · rate · หัวใบ OT) | `<CostCenterSelect>` (allowFree ปิด — รหัสใหม่ตั้งที่ทะเบียนก่อน) | `useCostCenters` (Main `cost_centers` — 2026-09-08 · RLS `cost_rate:manage`) | code text |
+| กลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ (die_sets · machines die) | `<SelectOrFree>` จาก `useDiePressLines` | DR `die_press_lines` (2026-09-08 · ตั้งใจแยกจาก production_lines) | name text |
+| แผงจัดการทะเบียนเล็ก (รหัส + ชื่อ + ฟิลด์เสริม) | `<SimpleMasterPanel>` (draft+💾 · confirm ตอนปิดใช้/ลบ ตาม §5.4 · checkWrite + นับแถว) | — | — |
 | รหัสคลัง Stor.Loc. | `<StorageLocSelect>` | `useStorageLocations` (DR storage_locations) | code |
 | เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
 | เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
@@ -403,6 +417,17 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
 | ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
 | ส่วนงาน / แผนก | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
 | สถานี | `<select>` จาก `workstations` ของครอบครัวไลน์ (+ "✏️ ระบุเอง" เฉพาะที่จำเป็น) | workstations | station_name |
+
+> #### 🔴 ลิสต์ยาวที่ "ยังไม่รู้ไลน์ปลายทาง" ต้อง `groupByLine` (2026-09-08 · feedback หน้างาน)
+> *"ปกติมันจะเป็นไลน์ผลิตค่ะพี่ ตอนจะแอดอุปกรณ์ใหม่"* — จอเพิ่มอุปกรณ์ PM (`/pm-setup`) เปลี่ยนจาก `<select>` ที่ **optgroup ตามไลน์**
+> มาเป็นช่องค้นหา แล้ว**กลุ่มหายไป** กลายเป็นลิสต์แบนเรียงตามรหัส · วัดฐานจริง: `machines` active **635 ตัว**
+> = แม่พิมพ์ 262 · เครื่อง 189 · จิ๊ก 148 · facility 36 และ **272 ตัวใช้ชื่อพาร์ทยาวๆ เป็น `machine_no`**
+> (`4X4 BRACKET, SHOCK ABS RH/LH · …`) → 60 แถวแรกที่โชว์เป็น `4B-01 / 4X4 BRACKET…` ปนกัน ไล่หาไลน์ตัวเองไม่ได้เลย
+> - **`prefer` (prop `lines`) ใช้ได้เฉพาะตอนที่ "รู้ไลน์อยู่แล้ว"** — จอที่เลือกเครื่อง**ก่อน**แล้วไลน์ตามมาทีหลัง prefer ไม่ช่วยอะไร
+>   → ส่ง **`groupByLine`** แทน (หัวกลุ่ม `📍 <ไลน์>` · ไม่มีไลน์ตกท้ายสุดเป็น "ไม่ระบุไลน์")
+> - **`maxRows` ต้องคลุมทั้งลิสต์เมื่อจัดกลุ่ม** — ตัดที่ 60/400 ทั้งที่เรียงตามชื่อไลน์ = **ไลน์ท้ายตัวอักษรไม่มีวันโผล่**
+>   (คนที่ไล่ดูไม่ได้พิมพ์ค้นเสมอ) · จุดที่ใช้: PMSetup เลือกเครื่องจักร (`maxRows=999`) · PMSetup Machine No. · คลังอะไหล่ ➕ เพิ่มเครื่อง/จิ๊ก
+> - บทเรียนข้ามงาน: **เปลี่ยน `<select>` เป็นช่องค้นหา ต้องยกโครงกลุ่ม (`optgroup`) มาด้วยเสมอ** — ค้นหาแทนการเลื่อนได้ แต่แทน "การรู้ว่าของอยู่กลุ่มไหน" ไม่ได้
 
 กฎของ picker กลางทุกตัว (ล็อกด้วยเทส `src/utils/__tests__/pickerOptions.test.mjs`):
 1. **ของที่เกี่ยวข้องขึ้นก่อน ไม่ตัดของอื่นทิ้ง** — prefer ด้วย `lines`/`lineIds`/`section`/`roles`/`kinds` แล้วขึ้นกลุ่ม 🎯 ก่อน
@@ -417,7 +442,7 @@ const { MK, SUB, pillFont, subPillFont, pillMaxW, subPillMaxW, ... } =
    ไม่ใช่ toast.error + return** (ยกเว้นเคสที่ไปต่อแล้วข้อมูลพัง เช่น update dr_products ด้วย MAT ที่ไม่มี = 0 แถว)
 5. **ช่องในตาราง (แถว × หลายสิบ)** ใช้ `<select>` จากลิสต์สั้นที่กรองแล้ว (ค่าปัจจุบันคงเป็น option) แทน SearchSelect ที่กางในบรรทัด
 6. option builder เป็น pure function ใน `src/utils/pickerOptions.js` — จุดใหม่ที่ต้องการ option ของคน/เครื่อง/สินค้า ให้เรียกตัวนี้ ห้าม map เองในหน้า
-7. **ห้ามสร้าง master ใหม่แบบเงียบ** — ยังไม่มี: `customers` · `suppliers` · กลุ่มเครื่องปั๊มของแม่พิมพ์ · `cost_centers` (ดู "ยังไม่ทำ" ใน audit) — ทำเมื่อ user สั่ง แล้วแก้ loader ตัวเดียว
+7. **master ใหม่ = ตาราง + loader (`use<X>.js` cache ร่วม) + picker กลาง + แผง `<SimpleMasterPanel>` + migration ที่ seed จากค่าที่มีอยู่จริง** (ต้นแบบ 2026-09-08: `customers` · `suppliers` · `die_press_lines` · `cost_centers` — คอลัมน์ปลายทางยังเก็บ text เดิม ไม่ผูก FK เพื่อให้ย้อนได้) · ห้ามสร้าง master ใหม่แบบเงียบโดยไม่มี seed/แผงจัดการ
 
 ## 5.2 ฟอร์ม master data ต้องมี picker จากฐานที่มีอยู่
 
@@ -804,6 +829,19 @@ scroll ข้าง + checkbox 15px + "แปรง" เป็นท่าขอ
 - กฎประกอบที่แก้พร้อมกัน: **ช่องกรอกบนมือถือ 16px** (index.css ≤768px — iOS ซูมค้างเมื่อ <16px) · แถว flex ที่มีปุ่ม/ช่องกว้างคงที่
   ต้องให้บล็อกข้อความมี basis (`flex:'1 1 220px'`) ไม่ใช่ `flex:1` เปล่า ไม่งั้นบนจอแคบข้อความถูกบีบจนคำละบรรทัด
   (เคสจริง: คิว FME ใน `/qa` การ์ดสูง 500px+ · ช่องผู้ตรวจ Poka-Yoke เหลือ 28px)
+
+## 6.13 🤝 คนที่ "ยืมตัว" มาช่วย ต้องมีป้ายกำกับเสมอ ห้ามปนเนียนกับคนในสังกัด (2026-09-08)
+
+หน้าไหนที่เอาคนใน `line_helpers` (ยืมพนักงานข้ามไลน์รายกะ) มาต่อท้ายรายชื่อ **ต้องบอกบนจอว่าคนนี้ยืมมา**
+เหตุผล: `employees.line_id` ของเขา **ไม่เคยถูกแตะ** — เห็นชื่อโผล่ในไลน์เฉยๆ หัวหน้าจะอ่านว่า "ย้ายสังกัดมาแล้ว"
+แล้วไปแก้ทะเบียนพนักงาน/จัดกำลังคนผิด · การยืมมีอายุแค่ 1 กะ พรุ่งนี้เขาหายไปเองด้วย
+
+- รายชื่อมาจาก `mergeBorrowedEmployees()` (`src/utils/lineHelpers.js`) — **จุดเดียวที่เป็นเจ้าของกฎนี้ ห้ามเขียนคิวรีเอง**
+  แถวที่ได้ติดป้าย `_isHelper` / `_helperFrom` (ไลน์ต้นสังกัด) / `_helperTo` (ไลน์ที่มาช่วย)
+- ป้ายบนจอ: ชิปฟ้า `🤝 ยืมจาก <ไลน์ต้นสังกัด>` ใต้ชื่อ + `title` บอกเต็มว่า "มาช่วย X เฉพาะกะนี้ — ต้นสังกัดยังเป็นที่เดิม"
+  (ฟ้า `#0ea5e9` = ข้อมูลบริบท ไม่ใช่ Andon — **ห้ามใช้เขียว/เหลือง/แดง** จะไปชนความหมายสถานะการผลิต)
+- **export/ใบพิมพ์ที่รวมคนยืมด้วย ต้องกำกับในไฟล์ด้วย** (🤝 ท้ายชื่อ + คำอธิบายใต้หัวเรื่อง) — ไฟล์ที่ส่งต่อไม่มีบริบทบนจอ
+- ทำแล้วที่: `/operator` (ตารางพนักงาน) · `/report` แท็บ Skill Matrix (+ PDF/CSV) · `/ojt-training` (picker ผู้เข้าอบรม)
 
 ## 7. เบ็ดเตล็ดที่เคยกัด
 

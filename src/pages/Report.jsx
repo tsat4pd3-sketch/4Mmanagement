@@ -20,6 +20,7 @@ import {
 } from '../utils/skillLevels';
 import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skill ยังวาดหัวโลโก้ตัวเดียวกับใบรายบุคคล
 import SkillRadarPanel from '../components/SkillRadarPanel';
+import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import tsLogoUrl from '../assets/TS logo.png';
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
@@ -29,9 +30,11 @@ import LineSelect from '../components/LineSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
+import SearchSelect from '../components/SearchSelect';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -941,9 +944,10 @@ table{border-collapse:collapse;width:100%}
           <option value="">ทุก Team</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <select value={selected} onChange={e => setSelected(e.target.value)} style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          {filteredEmployees.map(e => <option key={e.id} value={e.id}>{e.employee_id_code} — {e.name}</option>)}
-        </select>
+        <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
+          inputStyle={{ padding: '7px 30px 7px 10px', borderRadius: 7, fontSize: 13 }}
+          options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
+          onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
@@ -2208,10 +2212,8 @@ function DocumentControlPanel() {
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
-          <select value={issuedBy} onChange={e => setIssuedBy(e.target.value)} style={inSt}>
-            <option value="">— เลือก —</option>
-            {profiles.map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
-          </select>
+          <SearchSelect value={issuedBy || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —" inputStyle={inSt}
+            options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setIssuedBy(id)} />
         </div>
       </div>
 
@@ -2340,6 +2342,9 @@ function SkillMatrixTab() {
   const [lines,          setLines]          = useState([]);
   const [selectedEmp,    setSelectedEmp]    = useState(null);
   const [subItemsByskill, setSubItemsByskill] = useState({});
+  /* กันคำตอบเก่าทับจอใหม่ (กฎเหล็กข้อ 4 ใน CLAUDE.md) — load() ยิงทุกครั้งที่เปลี่ยน filter
+     และมี await หลายจังหวะ (คนยืมตัวเพิ่มมาอีกจังหวะ) สลับ filter เร็วๆ คำตอบเก่ากลับมาทีหลังได้ */
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
@@ -2362,6 +2367,7 @@ function SkillMatrixTab() {
   };
 
   const load = async () => {
+    const myReq = ++reqIdRef.current;
     setLoading(true);
     const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
     let q = supabase.from('employees').select(baseSelect).eq('is_active', true);
@@ -2378,8 +2384,25 @@ function SkillMatrixTab() {
       supabase.from('skill_definitions').select('*').order('sort_order'),
       q,
     ]);
+    /* 🤝 ต่อท้ายด้วยคนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers · src/utils/lineHelpers.js)
+       ใบประเมินทักษะรายบุคคล F-PRS-P1-119 พิมพ์จากจอนี้ — หัวหน้าไลน์ปลายทางที่เห็นเขาทำงานจริง
+       ต้องประเมินเขาได้ ไม่งั้นคนยืมข้ามส่วนงานหายจากจอทั้งที่ยืนอยู่ในไลน์
+       scope ที่ใช้ = filter ที่เลือกอยู่ (ถ้ามี) ไม่ใช่ scope ดิบ — เลือกไลน์ตัวเอง = เห็นคนที่มาช่วยไลน์นั้น */
+    const effLineIds = filterLine ? lineFamilyIdsOf(filterLine)
+                     : (role === 'leader' && userLineId) ? lineFamilyIdsOf(userLineId) : null;
+    const effSecs    = filterSection ? [filterSection] : scopeSecs;
+    let list = await mergeBorrowedEmployees(emps || [], {
+      lines, lineIds: effLineIds, scopeSecs: effSecs,
+      columns: baseSelect,
+    });
+    // filter ทีม/แผนกถูกใส่ไว้ใน query (ฝั่ง server) — คนยืมมาทางอื่น ต้องกรองซ้ำฝั่ง client ให้ตรงกัน
+    if (filterTeam || filterDept) {
+      list = list.filter(e => !e._isHelper
+        || ((!filterTeam || e.team === filterTeam) && (!filterDept || e.department === filterDept)));
+    }
+    if (myReq !== reqIdRef.current) return;   // มีคำขอใหม่กว่าแล้ว — ทิ้งคำตอบนี้
     setSkillDefs(defs || []);
-    setEmployees(emps || []);
+    setEmployees(list);
     setLoading(false);
   };
 
@@ -2415,7 +2438,7 @@ function SkillMatrixTab() {
               const v = sm[s.name];
               return `<td style="border:1px solid #ccc;text-align:center;padding:2px">${v !== undefined && v > 0 ? v : '—'}</td>`;
             }).join('');
-            return `<tr><td style="border:1px solid #ccc;text-align:center;padding:2px">${i+1}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.employee_id_code || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.name || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.section || ''}</td><td style="border:1px solid #ccc;padding:2px 4px;text-align:center">${emp.team || ''}</td>${cells}<td style="border:1px solid #ccc;text-align:center;font-weight:700;padding:2px">${avg !== null ? avg : '—'}</td></tr>`;
+            return `<tr><td style="border:1px solid #ccc;text-align:center;padding:2px">${i+1}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.employee_id_code || ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.name || ''}${emp._isHelper ? ' 🤝' : ''}</td><td style="border:1px solid #ccc;padding:2px 4px">${emp.section || ''}${emp._isHelper ? ` (ยืมมาช่วย ${emp._helperTo || ''})` : ''}</td><td style="border:1px solid #ccc;padding:2px 4px;text-align:center">${emp.team || ''}</td>${cells}<td style="border:1px solid #ccc;text-align:center;font-weight:700;padding:2px">${avg !== null ? avg : '—'}</td></tr>`;
           }).join('');
           const catHeaderCells = groups.map(g => `<th colspan="${g.skills.length}" style="border:1px solid #ccc;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:9px;font-weight:800;text-align:center">${g.icon} ${g.label}</th>`).join('');
           const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Skill Matrix</title>
@@ -2425,7 +2448,7 @@ table{border-collapse:collapse;width:100%}
 @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:8mm">
 <h2 style="margin:0 0 4px;font-size:14px">Skill Matrix</h2>
-<p style="color:#666;margin:0 0 8px;font-size:9px">พิมพ์วันที่: ${todayStr} · รวม ${employees.length} คน</p>
+<p style="color:#666;margin:0 0 8px;font-size:9px">พิมพ์วันที่: ${todayStr} · รวม ${employees.length} คน${employees.some(e => e._isHelper) ? ' · 🤝 = ยืมตัวมาช่วยกะนี้ (ต้นสังกัดอยู่ไลน์อื่น)' : ''}</p>
 <table><thead>
 <tr style="background:#f3f4f6">
 <th rowspan="2" style="border:1px solid #ccc;padding:3px">#</th>
@@ -2456,7 +2479,8 @@ ${catHeaderCells}
               const scores = ordered.map(s => (sm[s.name] !== undefined && sm[s.name] > 0) ? sm[s.name] : '');
               const defined = ordered.map(s => sm[s.name]).filter(v => v !== undefined && v > 0);
               const avg = defined.length ? Math.round(defined.reduce((a,b)=>a+b,0)/defined.length) : '';
-              return [emp.employee_id_code, emp.name, emp.section || '', emp.team || '', ...scores, avg];
+              // 🤝 กำกับคนยืมตัวใน export ด้วย — ไฟล์ที่ส่งต่อไม่มีบริบทบนจอ อ่านผิดว่าเป็นคนในไลน์ได้
+              return [emp.employee_id_code, emp.name + (emp._isHelper ? ' 🤝' : ''), emp.section || '', emp.team || '', ...scores, avg];
             })
           );
         }} />
@@ -2505,7 +2529,9 @@ ${catHeaderCells}
                       }
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}
+                          {emp._isHelper && <span style={{ marginLeft: 5, color: '#0ea5e9', fontWeight: 700 }}>🤝 ยืมจาก {emp._helperFrom}</span>}
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -2587,6 +2613,15 @@ ${catHeaderCells}
                       <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
+                        {/* 🤝 ยืมมาช่วยกะนี้ — ต้นสังกัดยังเป็นไลน์เดิม (ห้ามอ่านว่าย้ายสังกัดแล้ว) */}
+                        {emp._isHelper && (
+                          <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้`}
+                            style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700,
+                              color: '#0ea5e9', background: '#0ea5e918', border: '1px solid #0ea5e944',
+                              borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>
+                            🤝 ยืมจาก {emp._helperFrom}
+                          </div>
+                        )}
                         {avg !== null && (
                           <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
                             avg {avg}
@@ -3701,12 +3736,10 @@ function SkillAllowanceTab() {
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Cost Center</div>
-          {/* 2026-09-07 เลือกจาก cost center ที่ตั้งไว้ในทะเบียนไลน์ (datalist) — ยัง override ได้เพราะเป็นค่าพิมพ์หัวใบ */}
-          <input value={costCenter} onChange={e => setCostCenter(e.target.value)} placeholder="เช่น 2140662201" list="ot-cost-centers"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 130 }} />
-          <datalist id="ot-cost-centers">
-            {[...new Set(lines.map(l => l.cost_center).filter(Boolean))].sort().map(c => <option key={c} value={c} />)}
-          </datalist>
+          {/* 2026-09-08: <CostCenterSelect> จากทะเบียน cost_centers (Main) แทน input+datalist — ค่าพิมพ์หัวใบ ยัง override ได้
+              history = รหัสที่ตั้งไว้ในทะเบียนไลน์ (ยังไม่ลงทะเบียนก็เลือกได้ กลุ่ม 📜) · เติมอัตโนมัติจากไลน์ที่เลือกเหมือนเดิม */}
+          <CostCenterSelect value={costCenter} history={[...new Set(lines.map(l => l.cost_center).filter(Boolean))]}
+            onChange={r => setCostCenter(r.code)} style={{ width: 200 }} inputStyle={{ padding: '6px 10px', fontSize: 13 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
