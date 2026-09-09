@@ -79,16 +79,33 @@ delete from public.customer_shipping_orders o
 
 /* ══ ตรวจหลังรัน ═══════════════════════════════════════════════════════════════════
 -- ต้องได้ 0 แถว (ไม่มีใบ 862 ค้างที่ e-SMART ยืนยันแทนไปแล้ว)
+-- ⚠️⚠️ **คิวรีตรวจต้องเข้มเท่าคิวรีที่เขียนจริง** — พลาดจริง 2026-09-09 สองรอบซ้อน:
+--   รอบ 1: เขียนเช็คแบบ "อยู่ในระยะของใบ e-SMART ใบไหนก็ได้" (ไม่มี rn_p/rn_e)
+--   รอบ 2: ใส่ rn_p/rn_e แล้ว **แต่ยังฟ้องอยู่** เพราะการจับคู่เป็นแบบ *โลภตามสถานะปัจจุบัน*:
+--          พอใบ 15:30 ถูกลบไป ใบ 13:00 ก็เลื่อนขึ้นมาเป็น "ใบที่ใกล้เที่ยว 15:00 ที่สุด" แทน
+--          ⇒ รันเช็คซ้ำหลังลบ ได้คำตอบคนละชุดกับตอนลบเสมอ
+--   ⇒ ต้องกันใบ e-SMART ที่ **กินใบ 862 ไปแล้ว** ออกจากการจับคู่ — เครื่องหมายคือ `plan_qty is not null`
+--      (ขั้น ② เขียนไว้ให้) · ไม่งั้นใบ e-SMART ใบเดิมจะวนหาคู่ใหม่ไม่รู้จบ
+-- 🔴 บทเรียน: **คิวรีตรวจที่หลวมกว่าคิวรีที่เขียนจริง = ฟ้องผิด แล้วคนจะไปลบของที่ถูกต้องทิ้ง**
+--    คิวรีตรวจของงานลบข้อมูลต้องเขียนคู่กับคิวรีลบ และทดสอบว่า "รันหลังลบแล้วได้ 0 จริง"
 with o as (
-  select id, customer, due_date, mat_no, status, source, pull_batch_id,
+  select id, customer, due_date, mat_no, status, source, pull_batch_id, plan_qty,
          (due_date + ship_time::time + case when split_part(ship_time,':',1)::int < 8
             then interval '1 day' else interval '0' end) as at
-    from public.customer_shipping_orders where ship_time ~ '^[0-9]{1,2}:[0-9]{2}')
-select p.id, p.mat_no, p.due_date
-  from o p join o e
-    on e.source='esmart' and p.customer=e.customer and p.due_date=e.due_date and p.mat_no=e.mat_no
-   and (p.at - e.at) between interval '-150 minutes' and interval '45 minutes'
- where p.source='edi_862' and p.status='pending' and p.pull_batch_id is null;
+    from public.customer_shipping_orders where ship_time ~ '^[0-9]{1,2}:[0-9]{2}'),
+pair as (
+  select p.id as p_id, p.mat_no, p.due_date,
+         row_number() over (partition by e.id order by abs(extract(epoch from (p.at - e.at))), p.at) as rn_p,
+         row_number() over (partition by p.id order by abs(extract(epoch from (p.at - e.at))), e.at) as rn_e
+    from o e join o p
+      on e.source='esmart' and e.plan_qty is null          -- ← ใบที่กินคู่ไปแล้ว ห้ามหาคู่ใหม่
+     and p.customer=e.customer and p.due_date=e.due_date and p.mat_no=e.mat_no
+     and (p.at - e.at) between interval '-150 minutes' and interval '45 minutes'
+   where p.source='edi_862' and p.status='pending' and p.pull_batch_id is null
+     and not exists (select 1 from public.line_stock_transactions t where t.ref_shipment_id = p.id))
+select p_id, mat_no, due_date from pair where rn_p = 1 and rn_e = 1;
+-- ✅ วัดจริง 2026-09-09 หลังรัน: 0 แถว (ใบ 13:00 ของ 10105769 คงอยู่ถูกต้อง — เที่ยว 13:00
+--    ไม่มีพาร์ทนี้ในไฟล์ = ตรงกับ 862 ส่ง 70 ตามแผน)
 
 -- ใบ e-SMART ต้องมี plan_qty (ยอด 862 เดิม) ติดมาแล้ว
 select mat_no, ship_time, qty as "ลูกค้ายืนยัน", plan_qty as "862 เดิม"
