@@ -383,15 +383,25 @@ export const targetOeeOf = (t = {}) => {
   return Math.round(((a / 100) * (p / 100) * (q / 100) * 100) * 10) / 10;
 };
 
-/** แถว `oee_targets` (หรือ null) → { a, p, q, oee, isDefault } · null/ค่าว่าง = ใช้ค่ามาตรฐาน */
+/**
+ * แถว `oee_targets` (หรือ null) → { a, p, q, oee, isDefault, missing }
+ * - `isDefault` = ไม่มีแถวเลย (ยังไม่เคยตั้งเป้ากลุ่มนี้)
+ * - `missing`   = ชื่อช่องที่ **มีแถวแต่เว้นว่างไว้** แล้วถูกแทนด้วยค่ามาตรฐาน (เช่น ['p'])
+ *   ⚠️ ต้องมีเพราะของจริงมีหลายกลุ่มตั้งแค่ A กับ Q ปล่อย P ว่าง — ถ้าไม่บอก คนอ่านจะเข้าใจว่า
+ *      P 90% เป็นเป้าที่ทีมตั้งเอง ทั้งที่เป็นค่าที่ระบบเติมให้ (ห้ามล้มเหลว/เติมค่าแบบเงียบ)
+ */
 export function normOeeTarget(row) {
-  const pick = (v, d) => (v == null || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
+  const isBlank = (v) => v == null || v === '' || Number.isNaN(Number(v));
+  const pick = (v, d) => (isBlank(v) ? d : Number(v));
   const t = {
     a: pick(row?.target_a, DEFAULT_OEE_TARGET.a),
     p: pick(row?.target_p, DEFAULT_OEE_TARGET.p),
     q: pick(row?.target_q, DEFAULT_OEE_TARGET.q),
   };
-  return { ...t, oee: targetOeeOf(t), isDefault: !row };
+  const missing = row
+    ? ['a', 'p', 'q'].filter(k => isBlank(row[`target_${k}`]))
+    : [];
+  return { ...t, oee: targetOeeOf(t), isDefault: !row, missing };
 }
 
 /**
