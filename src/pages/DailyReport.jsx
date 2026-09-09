@@ -15,6 +15,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
+import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -157,23 +158,27 @@ const currentShift = () => { const h = new Date().getHours(); return (h >= 20 ||
 const AUTO_COLLAPSE_ROWS = 8;
 const LIST_FIRST = 8;
 
-/* ── ลิสต์การ์ดใบผลิต = grid หลายคอลัมน์ (2026-09-09 · feedback user "พื้นที่ตรงกลางว่างหลายส่วน
-   เพราะเป็น 1 column/row · แบ่งเป็น 2 column จะแปลกมั้ย") ──
-   วัดจากจอจริงของหัวหน้ากลุ่ม: การ์ดกว้าง ~1520px · เนื้อหาซ้ายจบ ~560px · บล็อกยอดขวาเริ่ม ~1800px
-   ⇒ **ช่องว่างกลางการ์ด ~1,240px** = 15 เท่าของเกณฑ์ "เหลือเกิน 80px = ต้องจัดใหม่" (UI-CONVENTIONS §6.11)
-   auto-fit + minmax(520px) → main ~1240px (จอ 1500) = 2 คอลัมน์ · ~1660px (จอ 1920) = 3 คอลัมน์ · แคบกว่านั้นยุบเหลือ 1
-   ทำด้วย CSS ล้วน ไม่ต้องพึ่ง JS วัดความกว้าง (จอ TV/แท็บเล็ตหมุนจอแล้วปรับเองทันที)
-   ⚠️ 520 ไม่ใช่เลขสวย — เป็นความกว้างที่บรรทัดแรกของการ์ด (prod_no + mat + ป้ายสถานะ + ยอดขวา)
-      ยังอ่านครบโดยไม่ต้อง ellipsis · ต่ำกว่านี้ป้าย "➡ ส่งกะถัดไปแล้ว" เริ่มโดนตัด
-   ⚠️ `alignItems:'start'` บังคับตาม §6.11 — การ์ดที่มีปุ่ม "✏️ ใบนี้ทำค้าง" สูงกว่าเพื่อน ห้ามให้ยืดเท่ากัน
-   หมายเหตุ §6.11 "จำนวนลูกต้องหารลงตัว" ใช้กับ **แผงที่จำนวนคงที่** — ลิสต์ที่ยาวไม่คงที่แบบนี้
-   แถวท้ายเหลือเศษเป็นเรื่องปกติ ไม่ใช่ช่องว่างที่ต้องแก้ */
-const ORDER_GRID = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))',
-  gap: 6,
-  alignItems: 'start',
-};
+/* ── ลิสต์การ์ด/แถวยาวในหน้านี้ = grid หลายคอลัมน์ (2026-09-09 · feedback user
+   "พื้นที่ตรงกลางว่างหลายส่วน เพราะเป็น 1 column/row · แบ่งเป็น 2 column จะแปลกมั้ย")
+   สูตร + เหตุผล + กับดัก อยู่ที่ `src/utils/cardGrid.js` ที่เดียว — ห้ามเขียน gridTemplateColumns เองซ้ำ
+   ค่า minPx เลือกจาก "บรรทัดที่ยาวที่สุดของแถวนั้นยังอ่านครบโดยไม่ต้อง ellipsis" ไม่ใช่เลขกลมๆ:
+     · ใบผลิต 520 — prod_no + mat + ป้ายสถานะ + ยอดขวา (ต่ำกว่านี้ป้าย "➡ ส่งกะถัดไปแล้ว" โดนตัด)
+     · Downtime 640 — แถวมีปุ่มต่อท้ายได้ถึง 5 ตัว (เปิดใบซ่อม/ลงวิธีแก้ไข/💬/✎/✕) แคบกว่านี้ปุ่มตกบรรทัด
+     · งานเสีย 480 — แถวสั้นสุด (ประเภท + mat + จำนวน + ปุ่มแก้/ลบ) */
+const ORDER_GRID  = cardGrid(520, 6);
+const DT_GRID     = cardGrid(640, 8);
+const DEFECT_GRID = cardGrid(480, 6);
+
+/* ── ภาพใหญ่: แผงเนื้อหาวางข้างกันคนละคอลัมน์ (2026-09-09 · feedback user
+   "แต่ละ box เป็น column เดียว แต่ภาพใหญ่ 3 เรื่องนี้คนละ column กัน") ──
+   วัดพื้นที่จริงจากจอหัวหน้ากลุ่ม: จอ 1920 → คอลัมน์เนื้อหากว้าง ~1525px
+     minPx 460 ⇒ 1525px = **3 คอลัมน์ (~500px/แผง)** ตามที่ขอ · ~1000-1420px = 2 · แคบกว่า 940px = 1
+   ⚠️ ที่ 500px แถวยาว (สโตร์/Downtime) จะ wrap เป็น 2 บรรทัด — ยอมแลก เพราะยังประหยัดแนวตั้งได้มาก
+      และจอที่กว้างกว่านี้ (2560) จะได้ ~840px/แผง = ไม่ wrap เลย
+   ⚠️ rowGap 0 โดยตั้งใจ — แผงเดิมมี `marginBottom: 16` ของตัวเองอยู่แล้ว ถ้าใส่ rowGap จะห่างซ้อน
+   ⚠️ grid ตัวนี้ทำให้ ORDER_GRID/DT_GRID/DEFECT_GRID ข้างในยุบเหลือ 1 คอลัมน์เองอัตโนมัติ
+      (min(100%, N) ใน cardGrid) — ตรงกับที่ user ต้องการ: กล่องละคอลัมน์เดียว */
+const PANEL_GRID = { ...cardGrid(460, 12), rowGap: 0 };
 const fmtMin = (min) => {
   if (!min && min !== 0) return '—';
   const m = Math.round(min);
@@ -2972,6 +2977,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 ไลน์ที่ไม่มีคิว + ไม่มีของค้าง component จะไม่ render อะไรเลย (ไม่รกจอไลน์ประกอบ) */}
             {/* 🔩 คิวสั่งผลิตจากสโตร์ (ไลน์ปั๊ม) · 📦 เรียกชิ้นส่วนจากสโตร์ (ไลน์ประกอบ)
                 2 แผงนี้เป็นคนละทิศของลูปเดียวกัน — ไลน์ไหนไม่เกี่ยวจะไม่ render อะไรเลย */}
+            {/* ⬇⬇ ภาพใหญ่ 2-3 คอลัมน์ — แต่ละกล่องข้างในยังเป็นคอลัมน์เดียวเหมือนเดิม (ดู PANEL_GRID) ⬇⬇ */}
+            <div style={PANEL_GRID}>
             <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
             <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
 
@@ -3356,8 +3363,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </span>
                   </div>
                 </div>
-                {defOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {defOpen && (<>
+                <div style={DEFECT_GRID}>
                   {/* flexWrap ที่แถว: ปุ่ม action ท้ายแถว (🗑️/🛠/✎/✕) เป็น nowrap ทั้งหมด — จอมือถือแถวไม่ wrap = ปุ่มตกขอบจอกดไม่ได้
                       (feedback หน้างาน 2026-08-25: "เข้าแก้ไขเวลาเสร็จในดาวน์ไทม์ในมือถือไม่ได้") */}
                   {limitRows('defects', defectLogs).map(d => (
@@ -3443,9 +3450,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       )}
                     </div>
                   ))}
-                  {moreRowsBtn('defects', defectLogs.length)}
                 </div>
-                )}
+                  {moreRowsBtn('defects', defectLogs.length)}
+                </>)}
               </div>
               );
             })()}
@@ -3470,7 +3477,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
               {dtOpen && (<>
               {dtLogs.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มี Downtime ในกะนี้</div>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={DT_GRID}>
                 {limitRows('downtime', dtLogs).map(d => {
                   const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                   return (
@@ -3564,12 +3571,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </div>
                   );
                 })}
-                {moreRowsBtn('downtime', dtLogs.length)}
               </div>
+                {moreRowsBtn('downtime', dtLogs.length)}
               </>)}
             </div>
               );
             })()}
+            </div>{/* ⬆⬆ จบ grid ภาพใหญ่ ⬆⬆ */}
           </>
         )}
 

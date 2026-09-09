@@ -49,6 +49,8 @@ const ACTION_META = {
 export default function PullSignalUpload({ open, onClose, onApplied, fullName, shipToMap }) {
   const [profiles, setProfiles] = useState(null);        // null = ยังไม่โหลด · [] = ตารางว่าง/ยังไม่ apply
   const [profileMissing, setProfileMissing] = useState(false);
+  const [rounds, setRounds] = useState(null);           // ตารางรอบรับของลูกค้า (customer_pull_rounds)
+  const [roundsMissing, setRoundsMissing] = useState(false);
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);            // ผลจาก parsePullFile + โปรไฟล์ที่ใช้
   const [shipTo, setShipTo] = useState('');
@@ -74,6 +76,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         if (error || !data?.length) { setProfiles([FALLBACK_PROFILE]); setProfileMissing(true); }
         else { setProfiles(data); setProfileMissing(false); }
       });
+    /* ⭐ ตารางรอบรับของลูกค้า — รอบส่งมาจากตารางนี้ ไม่ใช่สูตร (ดู pickPullRound)
+       ยังไม่ apply migration = ตกไปใช้ lead_min เหมือนเดิม + ขึ้นแถบบอกบนจอ ห้ามเงียบ */
+    supabaseDR.from('customer_pull_rounds').select('*').eq('is_active', true).order('sort_order')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setRounds([]); setRoundsMissing(true); }
+        else { setRounds(data || []); setRoundsMissing(!data?.length); }
+      });
     return () => { alive = false; };
   }, [open]);
 
@@ -82,6 +92,18 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     setOrders([]); setDupKeys(new Set()); setProducts([]); setCtxError('');
     setDupUploads([]); setDupAck(false);
   }, []);
+
+  /* ⚠️ ผู้ใช้เลือกไฟล์ได้ก่อนที่ prefetch จะกลับมา — ถ้าไม่รอ ตารางรอบรับจะยังเป็น null
+     ⇒ ตกไปใช้สูตร lead_min **โดยไม่มีคำเตือน** (เพราะโค้ดถือว่า "ยังไม่ได้โหลด" ไม่ใช่ "ไม่มีตาราง")
+     = เดารอบผิดแบบเงียบ ซึ่งเป็นบั๊กแบบเดียวกับที่ทั้งโมดูลนี้พยายามกำจัด */
+  const ensureRounds = useCallback(async () => {
+    if (rounds) return rounds;
+    const { data, error } = await supabaseDR.from('customer_pull_rounds')
+      .select('*').eq('is_active', true).order('sort_order');
+    const list = error ? [] : (data || []);
+    setRounds(list); setRoundsMissing(!!error || !list.length);
+    return list;
+  }, [rounds]);
 
   /* ── อ่านไฟล์ (csv/xlsx ทางเดียวกัน — SheetJS อ่าน csv ได้) ────────────────────────── */
   const onFile = useCallback(async (f) => {
@@ -94,7 +116,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       // raw:true + defval:'' → ค่าคงเป็นข้อความ ไม่ให้ SheetJS เดา MDY/DMY แทนเรา (pullSignal.parseTs คุมเอง)
       const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       const { profile, guessed } = pickProfile(matrix, profiles || [FALLBACK_PROFILE]);
-      const res = parsePullFile(matrix, profile);
+      const res = parsePullFile(matrix, profile, await ensureRounds());
       setParsed({ ...res, profile, guessed, rowsInFile: matrix.length });
       if (res.ok) {
         setShipTo(res.shipTo || '');
@@ -105,7 +127,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       setParsed({ ok: false, error: `อ่านไฟล์ไม่สำเร็จ: ${e.message}`, rows: [], warnings: [] });
     }
     setLoading(false);
-  }, [profiles, reset]);
+  }, [profiles, ensureRounds, reset]);
 
   /* ── โหลดบริบทปลายทาง: ใบส่งในรอบนั้น + แถวที่เคยนำเข้า ───────────────────────────
      ⚠️ แยกเป็นฟังก์ชันเพราะ **`apply()` ต้องเรียกซ้ำก่อนเขียนเสมอ** —
@@ -439,10 +461,30 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               <Field label="วันงานที่ส่ง">
                 <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={inputSt} />
               </Field>
-              <Field label={`รอบส่ง (ปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
+              <Field label={parsed.slot?.from === 'schedule'
+                ? `รอบรถลูกค้ามารับ (ตารางรอบรับ${parsed.dock ? ` · Dock ${parsed.dock}` : ''})`
+                : `รอบส่ง (⚠ เดาจากปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
                 <input type="time" value={shipTime} onChange={e => setShipTime(e.target.value)} style={inputSt} />
               </Field>
             </div>
+
+            {/* ⭐ บอกเสมอว่ารอบนี้มาจากไหน — "ตารางลูกค้า" กับ "สูตรเดา" ต้องแยกออกด้วยตา
+                (สูตรเคยเดา 13:00 ทั้งที่ตารางจริงคือ 14:00 — ไม่มีใครรู้จนเทียบใบกระดาษ) */}
+            {parsed.slot?.from === 'schedule' && parsed.slot.round && (
+              <div style={{ ...noteBox('#22c55e'), marginBottom: 8 }}>
+                🚚 ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{parsed.slot.round.period_start}-{parsed.slot.round.period_end}</b>
+                {parsed.slot.round.dock_code ? <> · Dock <b>{parsed.slot.round.dock_code}</b></> : null}
+                {' '}→ รถมารับ <b>{String(parsed.slot.round.pickup_time).slice(0, 5)}</b>
+                {parsed.slot.round.delivery_time ? <> · ถึงลูกค้า {String(parsed.slot.round.delivery_time).slice(0, 5)}</> : null}
+                {parsed.slot.round.prepare_from ? <> · เตรียมของ {String(parsed.slot.round.prepare_from).slice(0, 5)}-{String(parsed.slot.round.prepare_to || '').slice(0, 5)}</> : null}
+              </div>
+            )}
+            {roundsMissing && (
+              <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
+                ⚠️ ยังไม่มีตารางรอบรับในระบบ — ใช้สูตร “ปลายช่วง +{parsed.profile?.lead_min ?? 60} นาที” เดารอบให้
+                <b> ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง</b> · ตั้งตารางจริงได้ที่แท็บ <b>⚙️ Ship-to Config</b>
+              </div>
+            )}
 
             {!shipToMap?.[shipTo] && shipTo && (
               <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>

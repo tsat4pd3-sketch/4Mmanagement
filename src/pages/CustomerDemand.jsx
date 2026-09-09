@@ -12,6 +12,7 @@ import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
 const PullSignalUpload = lazy(() => import('../components/PullSignalUpload'));   // 📥 อัพโหลด e-SMART (ตัวอ่าน xlsx โหลดตอนเปิดเท่านั้น)
 const OrderIntakeLog = lazy(() => import('../components/OrderIntakeLog'));       // 📜 ประวัติ order เข้าระบบ (3 ทางเข้า)
+const PullRoundsPanel = lazy(() => import('../components/PullRoundsPanel'));
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
@@ -1131,7 +1132,7 @@ function WorkflowSection({ canEdit }) {
 }
 
 /* ─── Ship-to Plant Config Tab ────────────────────────────────────────────── */
-function ShipToTab({ canEdit, onChanged }) {
+function ShipToTab({ canEdit, onChanged, fullName }) {
   const [rows, setRows] = useState([]);
   const [draft, setDraft] = useState({});     // code → { customer_name, plant_name, note }
   const [newCode, setNewCode] = useState('');
@@ -1247,6 +1248,11 @@ function ShipToTab({ canEdit, onChanged }) {
         </div>
       )}
     </div>
+    {/* 🚚 ตารางรอบรับของลูกค้า — รอบส่งของ e-SMART มาจากตารางนี้ ไม่ใช่สูตร (2026-09-09) */}
+    <Suspense fallback={null}>
+      <PullRoundsPanel canEdit={canEdit} fullName={fullName}
+        shipToMap={Object.fromEntries((rows || []).map(r => [r.code, r]))} />
+    </Suspense>
     <WorkflowSection canEdit={canEdit} />
     </>
   );
@@ -1295,7 +1301,7 @@ export default function CustomerDemand() {
           <OrderIntakeLog shipToMap={shipToMap} custLabel={custLabel} />
         </Suspense>
       )}
-      {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
+      {tab === 'shipto' && <ShipToTab canEdit={canConfig} fullName={fullName} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
 }

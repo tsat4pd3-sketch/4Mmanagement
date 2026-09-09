@@ -196,12 +196,57 @@ export const timeStr = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
  * @returns {{at: Date, ship_time: string, work_date: string}|null}
  *   work_date = กรอบวันงาน 08:00→08:00 (ก่อน 08:00 นับเป็นวันก่อนหน้า — กฎเดียวกับทั้งระบบ)
  */
-export function shipSlotOf(windowEnd, leadMin = 60) {
+/* ═══ ⭐ รอบที่รถลูกค้ามารับ = **ตารางที่ลูกค้ากำหนด** ไม่ใช่สูตร (user 2026-09-09) ═══════
+   user ส่งตาราง "E-SMART Pattern normal / OT" ของ AAT มา — ระยะจากปลายช่วงถึงเวลารับ
+   **ไม่คงที่**: 10:00-12:00 → รับ 14:00 (2 ชม.) · 14:00-16:00 → รับ 22:00 (6 ชม.) ·
+   16:00-22:00 → รับ 23:00 (1 ชม.) ⇒ สูตร `ปลายช่วง + lead_min` เดาผิดแน่นอน
+   (ของเดิมได้ 13:00 แทน 14:00 — เจอเพราะเทียบกับตารางจริง ไม่ใช่เพราะระบบฟ้อง)
+
+   ⇒ อ่านจากตาราง `customer_pull_rounds` (data-driven ต่อโรงงาน/ลูกค้า — user สั่ง
+      "ต้องทำเป็นระบบให้รองรับการแก้ไขได้ สำหรับโรงงานอื่น แต่ของเรา seed ไปเลย")
+   ⚠️ ไม่มีแถวที่ตรง = **fallback ไป lead_min พร้อมบอกบนจอว่าเดาเอา** ห้ามเงียบ */
+const hhmm = (v) => {
+  const m = String(v ?? '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? `${String(+m[1]).padStart(2, '0')}:${m[2]}` : null;
+};
+
+/** หาแถวรอบรับที่ตรงกับช่วงเวลาในไฟล์
+ *  จับด้วย **เวลา HH:MM ของช่วง** (ไม่ใช่ระยะเวลา) — ช่วงข้ามเที่ยงคืน (22:00-00:00) จึงจับได้
+ *  ลำดับความเจาะจง: dock ตรง > dock ว่าง (fallback ของ ship-to นั้น) */
+export function pickPullRound(rounds, { shipTo, dock, pattern = 'normal', windowStart, windowEnd } = {}) {
+  const ps = windowStart instanceof Date ? timeStr(windowStart) : hhmm(windowStart);
+  const pe = windowEnd instanceof Date ? timeStr(windowEnd) : hhmm(windowEnd);
+  if (!ps || !pe) return null;
+  const st = String(shipTo || '').trim().toUpperCase();
+  const dk = String(dock || '').trim().toUpperCase();
+  const hit = (rounds || []).filter(r =>
+    r.is_active !== false
+    && String(r.ship_to || '').trim().toUpperCase() === st
+    && String(r.pattern || 'normal') === pattern
+    && hhmm(r.period_start) === ps && hhmm(r.period_end) === pe);
+  return hit.find(r => dk && String(r.dock_code || '').trim().toUpperCase() === dk)
+      || hit.find(r => !String(r.dock_code || '').trim())
+      || null;
+}
+
+/** รอบส่งของไฟล์นี้ — ใช้ตารางรอบรับก่อน ถ้าไม่มีค่อยใช้ lead_min
+ *  @returns {{at, ship_time, work_date, from: 'schedule'|'lead', round}}
+ *  ⚠️ `work_date` ตัดที่ 08:00 ตามกรอบวันงานไทย (ก่อน 08:00 = วันก่อนหน้า) */
+export function shipSlotOf(windowEnd, leadMin = 60, round = null) {
   if (!(windowEnd instanceof Date) || isNaN(windowEnd.getTime())) return null;
-  const at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
+  let at, from = 'lead';
+  const pk = round ? hhmm(round.pickup_time) : null;
+  if (pk) {
+    const [h, m] = pk.split(':').map(Number);
+    at = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate(), h, m);
+    at.setDate(at.getDate() + (Number(round.pickup_day_offset) || 0));
+    from = 'schedule';
+  } else {
+    at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
+  }
   const wd = new Date(at.getTime());
   if (wd.getHours() < 8) wd.setDate(wd.getDate() - 1);
-  return { at, ship_time: timeStr(at), work_date: dateStr(wd) };
+  return { at, ship_time: timeStr(at), work_date: dateStr(wd), from, round: round || null };
 }
 
 /** ประกอบเลขพาร์ทลูกค้า RB3B + 16E060 + BA → 'RB3B-16E060-BA' (ส่วนที่ว่างถูกข้าม) */
@@ -221,7 +266,7 @@ const num = (v) => {
  * @returns {{ok: boolean, error?: string, meta: object, rows: Array<object>, warnings: string[],
  *            windowStart: Date|null, windowEnd: Date|null, slot: object|null, shipTo: string|null}}
  */
-export function parsePullFile(matrix, profile) {
+export function parsePullFile(matrix, profile, rounds = null) {
   const p = profile || FALLBACK_PROFILE;
   const warnings = [];
   const headerIdx = findHeaderRow(matrix, p);
@@ -237,7 +282,7 @@ export function parsePullFile(matrix, profile) {
   const meta = readMeta(matrix, headerIdx, p.meta_map);
   const windowStart = parseTs(meta.window_start, p.ts_format);
   const windowEnd = parseTs(meta.window_end, p.ts_format);
-  const slot = shipSlotOf(windowEnd, p.lead_min);
+  let slot = shipSlotOf(windowEnd, p.lead_min);   // ค่าเริ่มจาก lead_min · จะทับด้วยตารางรอบรับหลังรู้ dock
   if (!windowEnd) warnings.push('ไฟล์ไม่ได้บอกช่วงเวลา (End Time) — ต้องเลือกวัน/รอบส่งเองบนจอ');
   let beRows = 0;   // ⚠️ แปลง พ.ศ.→ค.ศ. ให้ แต่ต้องบอกบนจอเสมอ (คนต้องรู้ว่าไฟล์ผิดรูปแบบ)
 
@@ -283,8 +328,22 @@ export function parsePullFile(matrix, profile) {
   const shipTos = [...new Set(rows.map(r => r.ship_to).filter(Boolean))];
   if (shipTos.length > 1) warnings.push(`ไฟล์มีหลาย Plant Code: ${shipTos.join(', ')} — ระบบจะแยกใบตามแต่ละเจ้า`);
 
+  /* ⭐ dock ต้องรู้ก่อนถึงจะหารอบรับได้ (B1 กับ B5 คนละตาราง) — dock อยู่ในแถว ไม่ใช่ meta
+     ⇒ หา dock ที่พบมากที่สุดในไฟล์ · หลาย dock ในไฟล์เดียว = ต้องบอกคน ห้ามเลือกเงียบ */
+  const dockCnt = {};
+  rows.forEach(r => { if (r.dock_code) dockCnt[r.dock_code] = (dockCnt[r.dock_code] || 0) + 1; });
+  const docks = Object.keys(dockCnt).sort((a, b) => dockCnt[b] - dockCnt[a]);
+  if (docks.length > 1) warnings.push(`ไฟล์มีหลาย Dock: ${docks.join(', ')} — ใช้ตารางรอบรับของ ${docks[0]} (แก้รอบเองบนจอได้)`);
+  const dock = docks[0] || null;
+
+  if (rounds && windowEnd) {
+    const round = pickPullRound(rounds, { shipTo: shipTos[0], dock, windowStart, windowEnd });
+    if (round) slot = shipSlotOf(windowEnd, p.lead_min, round);
+    else warnings.push(`ไม่มีรอบรับของ ${shipTos[0] || '?'}${dock ? ` dock ${dock}` : ''} ช่วง ${windowStart ? timeStr(windowStart) : '?'}-${windowEnd ? timeStr(windowEnd) : '?'} ในทะเบียน — ใช้สูตร "ปลายช่วง +${p.lead_min ?? 60} นาที" เดาให้ ⚠️ ตรวจรอบก่อนยืนยัน แล้วไปเพิ่มแถวที่ ⚙️ Ship-to Config`);
+  }
+
   return { ok: rows.length > 0, error: rows.length ? undefined : 'ไม่พบแถวข้อมูลในไฟล์',
-    meta, rows, warnings, windowStart, windowEnd, slot, shipTo: shipTos[0] || null };
+    meta, rows, warnings, windowStart, windowEnd, slot, dock, shipTo: shipTos[0] || null };
 }
 
 /**
