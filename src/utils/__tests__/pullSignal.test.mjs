@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound, pullRoundOptions, PULL_PATTERNS,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -571,4 +571,46 @@ test('แถวที่ dock ว่าง = fallback ของ ship-to นั�
   const mix = [R(null, '08:00', '10:00', '10:30'), R('B5', '08:00', '10:00', '11:00')];
   assert.equal(pickPullRound(mix, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }).pickup_time, '11:00');
   assert.equal(pickPullRound(mix, { shipTo: 'GRBNA', dock: 'B9', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }).pickup_time, '10:30');
+});
+
+/* ══ 🔴 แถว OT ต้องเข้าถึงได้จริง — ไม่ใช่ข้อมูลตาย (feedback หน้างาน 2026-09-09) ═════════
+   *"ทางจัดส่งเค้าเพิ่มข้อมูลช่วงโอทีของลูกค้าแล้วข้อมูลไม่ขึ้น"*
+   ต้นเหตุ: `pickPullRound` ตั้ง pattern='normal' เป็น default แล้วไม่มีใครส่งค่าอื่นมาเลย
+   ⇒ แถว ot_day/ot_night 10 แถวที่ seed ไว้ ไม่มีทางถูกใช้ · และเงียบ เพราะ normal ก็ตอบได้ */
+
+test('🔴 ช่วง 14:00-16:00 มี 2 แบบ — ต้องคืนทั้งคู่ให้จอเลือก (ปกติ 22:00 · OT 17:00 ต่างกัน 5 ชม.)', () => {
+  const opts = pullRoundOptions(ROUNDS, {
+    shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  assert.deepEqual(opts.map(o => o.key), ['normal', 'ot_day'], 'ปกติต้องมาก่อน (เป็น default)');
+  assert.equal(opts[0].round.pickup_time, '22:00');
+  assert.equal(opts[1].round.pickup_time, '17:00');
+});
+
+test('เลือก OT แล้วเวลารับต้องเปลี่ยนตาม ไม่ใช่ค้างที่ปกติ', () => {
+  const opts = pullRoundOptions(ROUNDS, {
+    shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  const ot = opts.find(o => o.key === 'ot_day');
+  assert.equal(shipSlotOf(parseTs(`${D}T16:00:00`), 60, ot.round).ship_time, '17:00');
+});
+
+test('ช่วงที่มีเฉพาะ OT ต้องถูกเลือกให้เอง (ไม่ตกไป fallback สูตร)', () => {
+  const withOtOnly = [...ROUNDS, R('B5', '16:00', '18:00', '19:00', 'ot_day')];
+  const opts = pullRoundOptions(withOtOnly, {
+    shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T16:00:00`), windowEnd: parseTs(`${D}T18:00:00`) });
+  assert.deepEqual(opts.map(o => o.key), ['ot_day']);
+  assert.equal(shipSlotOf(parseTs(`${D}T18:00:00`), 60, opts[0].round).from, 'schedule');
+});
+
+test('ช่วงที่ไม่มีเลย = ลิสต์ว่าง → จอต้องตกไป fallback สูตรพร้อมคำเตือน', () => {
+  assert.deepEqual(pullRoundOptions(ROUNDS, {
+    shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T03:00:00`), windowEnd: parseTs(`${D}T05:00:00`) }), []);
+});
+
+test('parsePullFile ต้องคืน patternOptions ให้จอ (ไม่งั้นเลือก OT ไม่ได้)', () => {
+  const res = parsePullFile(CSV, FALLBACK_PROFILE, ROUNDS);
+  assert.ok(Array.isArray(res.patternOptions), 'ต้องมีเสมอ แม้เป็นลิสต์ว่าง');
+});
+
+test('PULL_PATTERNS ต้องเรียงปกติมาก่อน — ลำดับนี้คือ default ของทั้งระบบ', () => {
+  assert.deepEqual(PULL_PATTERNS.map(p => p.key), ['normal', 'ot_day', 'ot_night']);
 });
