@@ -101,6 +101,7 @@ export default function DieRegistry() {
   const [areas, setAreas]     = useState([]);   // die_storage_areas — ผังจัดเก็บ
   const [openMos, setOpenMos] = useState([]);   // ใบซ่อม MO ที่ยังไม่ปิด (derive สถานะซ่อม)
   const [layoutReady, setLayoutReady] = useState(false); // migration 20260819 apply แล้วหรือยัง
+  const [dataWarn, setDataWarn] = useState('');          // คิวรีชุดไหนล้ม — ห้ามให้จอว่างแล้วอ่านว่า "ไม่มีข้อมูล"
   const [loading, setLoading] = useState(true);
   const [focusDieId, setFocusDieId] = useState(null);    // 📊 สถานะ กด 🗺️ → กระโดดมาแท็บผัง
   // 📜 MAT ที่เคยบันทึกใน die_sets (DR) — MAT เก่าที่ Product Master ยังไม่มี ยังเลือกซ้ำได้ ไม่ต้องพิมพ์ใหม่ (2026-09-07)
@@ -119,7 +120,10 @@ export default function DieRegistry() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: mc }, { data: st }, { data: ot }, { data: pd }, areaRes, moRes] = await Promise.all([
+    // ⚠️ ห้ามทำลาย error ด้วย `const { data } = await` — คิวรีล้มแล้วจอขึ้น "ไม่มีแม่พิมพ์"
+    //    เหมือนข้อมูลหาย (กฎเหล็กข้อ 1) → เก็บชื่อชุดที่ล้มไปโชว์เป็นแถบเตือน (audit 2026-09-08)
+    const warn = [];
+    const [lnRes, mcRes, stRes, otRes, pdRes, areaRes, moRes] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       // ตัวตนของแม่พิมพ์ยังอยู่ machines — embed ส่วนขยายมาด้วยในนัดเดียว
       supabaseDR.from('machines')
@@ -135,6 +139,12 @@ export default function DieRegistry() {
         .select('id, mo_no, status, machine_no, mtn_dept, current_step, report_at')
         .in('status', OPEN_MO_STATUSES),
     ]);
+    const { data: ln } = lnRes, { data: mc } = mcRes, { data: st } = stRes, { data: ot } = otRes, { data: pd } = pdRes;
+    if (lnRes.error) warn.push('ไลน์');
+    if (mcRes.error) warn.push('ทะเบียนแม่พิมพ์');
+    if (stRes.error) warn.push('ชุดแม่พิมพ์');
+    if (otRes.error) warn.push('ชนิด OP');
+    if (pdRes.error) warn.push('สินค้า');
     setLines(ln || []);
     // equipment_die เป็น 1:1 (machine_id เป็นทั้ง PK และ FK) → PostgREST คืนเป็น "object"
     // แต่รับทั้ง 2 ทรงไว้ กันกรณี schema cache มองเป็น 1:N แล้วคืน array (ว่าง = ยังไม่มีแถวส่วนขยาย)
@@ -147,6 +157,7 @@ export default function DieRegistry() {
     setLayoutReady(!areaRes.error);
     if (moRes.error) toast.error('โหลดใบซ่อม MO ไม่สำเร็จ: ' + moRes.error.message);   // ห้ามเงียบ — สถานะซ่อมจะหายทั้งบอร์ด
     setOpenMos(moRes.data || []);
+    setDataWarn(warn.length ? `โหลดไม่สำเร็จ: ${warn.join(' · ')} — ข้อมูลบนจอไม่ครบ (ไม่ใช่ว่าไม่มีข้อมูล)` : '');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -345,6 +356,13 @@ export default function DieRegistry() {
         ]}
         tab={tab} onTab={setTab}
       />
+
+      {dataWarn && (
+        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
+                      borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
+          ⚠️ {dataWarn}
+        </div>
+      )}
 
       {/* ⚠️ /die-registry เปิดให้ role `mtn` ด้วย — ถ้าวันหน้าถอด machines:edit ออกจาก mtn
           ปุ่มแก้จะหายทั้งหน้าโดยไม่มีคำอธิบาย (กับดักเดียวกับตารางกะ) */}
