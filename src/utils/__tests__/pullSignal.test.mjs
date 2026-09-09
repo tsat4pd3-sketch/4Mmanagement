@@ -4,6 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
+  toCeYear, looksBuddhist,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -72,6 +73,47 @@ test('parseTs — AM/PM และค่าที่อ่านไม่ออ�
   assert.equal(parseTs('ไม่ใช่เวลา'), null);
   const asDate = new Date(2026, 8, 8, 9, 0);
   assert.equal(parseTs(asDate), asDate);   // xlsx ที่ parse เป็น Date มาแล้ว
+});
+
+/* ══ ปี พ.ศ. — ไฟล์จริง 2026-09-09 ส่งมาเป็น 2569 (เจอหลัง deploy วันแรก) ═════════════ */
+
+test('🔴 toCeYear — ปี พ.ศ. ต้องถูกแปลงเป็น ค.ศ. · ปี ค.ศ. ต้องไม่ถูกแตะ', () => {
+  assert.equal(toCeYear(2569), 2026);
+  assert.equal(toCeYear(2500), 1957);
+  assert.equal(toCeYear(2026), 2026);      // ค.ศ. ปกติ ห้ามลบ 543
+  assert.equal(toCeYear(1999), 1999);
+  assert.equal(toCeYear('2569'), 2026);    // ค่าจากไฟล์เป็นข้อความเสมอ
+});
+
+test('🔴 parseTs — ไฟล์จริงที่ user เจอ: Start Time = 2569-09-09T06:00:00 ต้องได้ 2026', () => {
+  const d = parseTs('2569-09-09T06:00:00');
+  assert.equal(dateStr(d), '2026-09-09');
+  assert.equal(timeStr(d), '06:00');
+});
+
+test('parseTs — พ.ศ. ในรูปแบบ slash และ date เปล่าก็ต้องแปลง', () => {
+  assert.equal(dateStr(parseTs('09/09/2569 13:43:46', 'MDY')), '2026-09-09');
+  assert.equal(dateStr(parseTs('2569-09-09')), '2026-09-09');
+});
+
+test('looksBuddhist — ใช้เตือนบนจอ (ห้ามแปลงเงียบ)', () => {
+  assert.equal(looksBuddhist('2569-09-09T06:00:00'), true);
+  assert.equal(looksBuddhist('09/09/2569 13:43:46'), true);
+  assert.equal(looksBuddhist('2026-09-08T12:00:00'), false);
+  assert.equal(looksBuddhist(''), false);
+  assert.equal(looksBuddhist(null), false);
+});
+
+test('⭐ parsePullFile — ไฟล์ พ.ศ. ทั้งใบ: แปลงให้ + รอบส่งถูก + **ต้องเตือนบนจอ**', () => {
+  const be = CSV.map(r => r.map(c =>
+    typeof c === 'string' ? c.replace(/\b2026\b/g, '2569') : c));
+  const r = parsePullFile(be, P);
+  assert.equal(r.ok, true);
+  assert.equal(r.rows.length, 7);
+  assert.equal(r.slot.work_date, '2026-09-08');    // ไม่ใช่ 2569 (ใบล่องหน 543 ปี)
+  assert.equal(r.slot.ship_time, '15:00');
+  assert.equal(dateStr(r.rows[0].pulled_at), '2026-09-08');
+  assert.ok(r.warnings.some(w => w.includes('พ.ศ.')), 'ต้องมีคำเตือนว่าแปลงปีให้');
 });
 
 /* ══ รอบส่ง = ปลายช่วง + lead (user: milk-run) ═════════════════════════════════════ */
