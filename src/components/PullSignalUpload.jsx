@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr,
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads,
 } from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
@@ -60,6 +60,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ctxError, setCtxError] = useState('');
+  // 🚨 alarm "ไฟล์นี้เคยอัพแล้ว" — เตือน ไม่บล็อก แต่ต้องติ๊กรับทราบก่อนถึงกดยืนยันได้
+  const [dupUploads, setDupUploads] = useState([]);
+  const [dupAck, setDupAck] = useState(false);
 
   /* ── โปรไฟล์รูปแบบไฟล์ (data-driven) — ยังไม่ apply migration = ใช้ค่าสำรองในโค้ด + บอกบนจอ ── */
   useEffect(() => {
@@ -77,6 +80,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const reset = useCallback(() => {
     setFile(null); setParsed(null); setShipTo(''); setWorkDate(''); setShipTime('');
     setOrders([]); setDupKeys(new Set()); setProducts([]); setCtxError('');
+    setDupUploads([]); setDupAck(false);
   }, []);
 
   /* ── อ่านไฟล์ (csv/xlsx ทางเดียวกัน — SheetJS อ่าน csv ได้) ────────────────────────── */
@@ -150,6 +154,27 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return () => { alive = false; };
   }, [open, parsed, shipTo, workDate, shipTime, fetchContext]);
 
+  /* ── 🚨 ไฟล์นี้เคยอัพไปแล้วหรือยัง (user 2026-09-09: "ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ") ──
+     เทียบระดับ **ไฟล์** ไม่ใช่ระดับแถว — คนต้องเห็นก่อนกด ไม่ใช่รู้ตัวตอนใบซ้ำไปแล้ว */
+  useEffect(() => {
+    if (!open || !parsed?.ok || !shipTo) { setDupUploads([]); return; }
+    let alive = true;
+    supabaseDR.from('customer_pull_batches')
+      .select('id, file_name, window_start, window_end, work_date, ship_time, uploaded_by, uploaded_at, orders_updated, orders_created')
+      .eq('source', SOURCE).eq('ship_to', shipTo)
+      .order('uploaded_at', { ascending: false }).limit(50)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        // ตารางยังไม่ apply = ตรวจไม่ได้ แต่ไม่ใช่ "ไม่ซ้ำ" → ctxError บอกอยู่แล้วจากอีกจุด
+        if (error) { setDupUploads([]); return; }
+        setDupUploads(findDuplicateUploads(data, {
+          fileName: file?.name, windowStart: parsed.windowStart, windowEnd: parsed.windowEnd,
+        }));
+        setDupAck(false);
+      });
+    return () => { alive = false; };
+  }, [open, parsed, shipTo, file]);
+
   /* ── จับคู่ MAT: กรอง Product Master ด้วย "ชื่อลูกค้า" ของ ship-to ก่อนเสมอ ──────────────
      กฎเหล็ก (CLAUDE.md 2026-08-24): เลขพาร์ทลูกค้า 1 ตัว = หลายเลข SAP ต่างที่ลูกค้าปลายทาง
      RB3B-16E060-BA → 10100384 (FTM) · 10100385 (AAT) · 10106790 (FVL) — ไม่กรองก่อน = ambiguous ทุกตัว */
@@ -180,6 +205,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return t;
   }, [plan]);
   const willWrite = tally.update + tally.create;
+  const blockedByDup = dupUploads.length > 0 && !dupAck;
 
   /* ── ยืนยัน — เขียนจริง ───────────────────────────────────────────────────────────── */
   const apply = async () => {
@@ -366,6 +392,32 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             </div>
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
 
+            {/* 🚨 alarm อัพซ้ำ — เตือน ไม่บล็อก (อัพซ้ำมีเหตุผลที่ถูกต้องจริง เช่นรอบก่อนล้มกลางทาง)
+                แต่ต้องติ๊กรับทราบก่อนถึงกดยืนยันได้ · สีแดงนิ่ง ไม่กระพริบ (กระพริบสงวนให้ Andon) */}
+            {dupUploads.length > 0 && (
+              <div style={{ ...noteBox('#ef4444'), marginBottom: 10 }}>
+                <div style={{ fontWeight: 900, fontSize: 13, marginBottom: 4 }}>
+                  🚨 ไฟล์ชุดนี้เคยอัพเข้าระบบไปแล้ว {dupUploads.length > 1 ? `${dupUploads.length} ครั้ง` : ''}
+                </div>
+                {dupUploads.slice(0, 3).map(({ batch: b, reason }) => (
+                  <div key={b.id} style={{ fontSize: 12, marginTop: 3 }}>
+                    • {reason === 'same_file' ? 'ชื่อไฟล์เดียวกัน' : 'ช่วงเวลาเดียวกัน (คนละชื่อไฟล์)'}
+                    {' — '}{whenText(b.uploaded_at)} โดย {b.uploaded_by || 'ไม่ระบุ'}
+                    {b.ship_time && ` · ลงรอบ ${b.ship_time}`}
+                    {' → '}อัพเดท {fmt(b.orders_updated)} ใบ · สร้าง {fmt(b.orders_created)} ใบ
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6, lineHeight: 1.6 }}>
+                  ยืนยันต่อได้ถ้าตั้งใจ (เช่นรอบก่อนล้มกลางทาง) — ระบบจะ<b>ไม่สร้างใบซ้ำ</b> เพราะเทียบกับของจริงก่อนเขียนเสมอ
+                  และมีด่านกันซ้ำที่ฐานข้อมูลอีกชั้น · ถ้าไม่มีอะไรต้องแก้จริง ระบบจะบอกว่า “นำเข้าไปแล้ว” แล้วปิดให้เอง
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
+                  <input type="checkbox" checked={dupAck} onChange={e => setDupAck(e.target.checked)} />
+                  รับทราบว่าเป็นไฟล์ซ้ำ — ยืนยันจะอัพต่อ
+                </label>
+              </div>
+            )}
+
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
               <Field label="ลูกค้า (Plant Code)">
                 <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={inputSt}>
@@ -444,13 +496,16 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime}
+              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime || (dupUploads.length > 0 && !dupAck)}
                 style={{
                   padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
-                  background: willWrite ? 'var(--accent)' : 'var(--bg3)', color: willWrite ? '#08130a' : 'var(--muted)',
+                  background: willWrite && !blockedByDup ? 'var(--accent)' : 'var(--bg3)',
+                  color: willWrite && !blockedByDup ? '#08130a' : 'var(--muted)',
                 }}>
-                {saving ? 'กำลังบันทึก…' : `✅ ยืนยันอัพเดท (${willWrite})`}
+                {saving ? 'กำลังบันทึก…'
+                  : blockedByDup ? '🚨 ติ๊กรับทราบไฟล์ซ้ำก่อน'
+                  : `✅ ยืนยันอัพเดท (${willWrite})`}
               </button>
             </div>
           </>
@@ -459,6 +514,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     </div>
   );
 }
+
+/** เวลาแบบอ่านง่ายในกล่องเตือน — วันที่+เวลา (ไม่ใช้ toISOString: จะได้ UTC) */
+const whenText = (v) => {
+  const d = new Date(v);
+  if (!Number.isFinite(d.getTime())) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 const noteBox = (color) => ({
   padding: '7px 10px', borderRadius: 8, fontSize: 12, lineHeight: 1.6,

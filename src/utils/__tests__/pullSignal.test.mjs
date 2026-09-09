@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist,
+  toCeYear, looksBuddhist, findDuplicateUploads,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -339,4 +339,46 @@ test('⭐ พาร์ทที่ไม่อยู่ในไฟล์ ต้
   const plan = planOrderUpdates(groupsOf(CSV), orders, RESOLVE);
   assert.equal(plan.length, 3);
   assert.equal(plan.some(x => x.order?.id === 'keep'), false);   // ใบที่ไม่อยู่ในไฟล์ = ไม่ถูกแตะ
+});
+
+/* ══ 🚨 alarm อัพไฟล์ซ้ำ (user 2026-09-09: "ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ") ═════ */
+
+const B = (o) => ({ id: o.id, file_name: o.f, window_start: o.ws, window_end: o.we, uploaded_at: o.at });
+const PREV = [
+  B({ id: 'b2', f: 'Detailed SMART - 2026-09-09T100430.028.csv', ws: '2026-09-09T08:00:00', we: '2026-09-09T10:00:00', at: '2026-09-09T13:35:34' }),
+  B({ id: 'b1', f: 'Detailed SMART - 2026-09-09T080702.660.csv', ws: '2026-09-09T06:00:00', we: '2026-09-09T08:00:00', at: '2026-09-09T08:32:37' }),
+];
+const WIN = (a, b) => ({ windowStart: parseTs(a), windowEnd: parseTs(b) });
+
+test('⭐ findDuplicateUploads — ชื่อไฟล์ตรง = ซ้ำ (เคสกดอัพไฟล์เดิมซ้ำ)', () => {
+  const hits = findDuplicateUploads(PREV, { fileName: 'Detailed SMART - 2026-09-09T100430.028.csv', ...WIN('2026-09-09T08:00:00', '2026-09-09T10:00:00') });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reason, 'same_file');
+  assert.equal(hits[0].batch.id, 'b2');
+});
+
+test('⭐ findDuplicateUploads — ชื่อไฟล์ใหม่แต่ช่วงเวลาเดิม = ซ้ำ (โหลดซ้ำจากพอร์ทัลได้ชื่อใหม่ทุกครั้ง)', () => {
+  const hits = findDuplicateUploads(PREV, { fileName: 'Detailed SMART - 2026-09-09T119999.111.csv', ...WIN('2026-09-09T06:00:00', '2026-09-09T08:00:00') });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reason, 'same_window');
+  assert.equal(hits[0].batch.id, 'b1');
+});
+
+test('findDuplicateUploads — ช่วงเวลาใหม่ + ชื่อใหม่ = ไม่ซ้ำ (รอบถัดไปต้องอัพได้ปกติ)', () => {
+  assert.deepEqual(findDuplicateUploads(PREV, { fileName: 'ใหม่.csv', ...WIN('2026-09-09T10:00:00', '2026-09-09T12:00:00') }), []);
+});
+
+test('🔴 findDuplicateUploads — ไฟล์ที่ไม่บอกช่วงเวลา ห้ามถูกตีว่าซ้ำกันหมด', () => {
+  const noWin = [B({ id: 'x', f: 'ก.csv', ws: null, we: null, at: '2026-09-09T09:00:00' })];
+  assert.deepEqual(findDuplicateUploads(noWin, { fileName: 'ข.csv', windowStart: null, windowEnd: null }), []);
+  // ชื่อตรงยังจับได้ตามปกติ
+  assert.equal(findDuplicateUploads(noWin, { fileName: 'ก.csv' })[0].reason, 'same_file');
+});
+
+test('findDuplicateUploads — เจอหลายใบต้องเรียงใหม่สุดก่อน · ไม่มีข้อมูลไม่ throw', () => {
+  const many = [...PREV, B({ id: 'b0', f: 'Detailed SMART - 2026-09-09T080702.660.csv', ws: '2026-09-09T06:00:00', we: '2026-09-09T08:00:00', at: '2026-09-09T08:10:00' })];
+  const hits = findDuplicateUploads(many, { fileName: 'Detailed SMART - 2026-09-09T080702.660.csv', ...WIN('2026-09-09T06:00:00', '2026-09-09T08:00:00') });
+  assert.deepEqual(hits.map(h => h.batch.id), ['b1', 'b0']);
+  assert.deepEqual(findDuplicateUploads(null, {}), []);
+  assert.deepEqual(findDuplicateUploads(PREV), []);
 });
