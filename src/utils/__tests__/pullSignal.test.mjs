@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -501,4 +501,74 @@ test('🔴 ถอยหลังต้องไม่ล้ำเที่ยว
   const orders = [OB('prev', 'RB3B 16E060 BA', 50, '08:00')];
   const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
   assert.equal(row.action, 'create', '08:00 ห่าง 3 ชม. = เกินระยะถอยหลัง 2.5 ชม.');
+});
+
+/* ══ 🚚 ตารางรอบรับของลูกค้า — รอบส่งเป็น "ตาราง" ไม่ใช่ "สูตร" (user 2026-09-09) ═══════
+   user ส่งใบ "E-SMART Pattern normal/OT" ของ AAT มา — ระยะปลายช่วง→เวลารับ ไม่คงที่
+   สูตรเดิม (+60 นาที) เดาช่วง 10:00-12:00 เป็น 13:00 แต่ตารางจริงคือ 14:00 */
+const R = (dock, ps, pe, pickup, pattern = 'normal', extra = {}) =>
+  ({ ship_to: 'GRBNA', dock_code: dock, pattern, period_start: ps, period_end: pe,
+     pickup_time: pickup, is_active: true, ...extra });
+const ROUNDS = [
+  R('B5', '08:00', '10:00', '11:00'), R('B5', '10:00', '12:00', '14:00'),
+  R('B5', '12:00', '14:00', '15:00'), R('B5', '14:00', '16:00', '22:00'),
+  R('B5', '16:00', '22:00', '23:00'), R('B5', '22:00', '00:00', '01:00'),
+  R('B1', '06:00', '10:00', '13:15'),
+  R('B5', '14:00', '16:00', '17:00', 'ot_day'),
+];
+
+test('🔴 ช่วง 10:00-12:00 ต้องได้รอบ 14:00 ตามตาราง — สูตร +60 เดาผิดเป็น 13:00', () => {
+  const round = pickPullRound(ROUNDS, {
+    shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T10:00:00`), windowEnd: parseTs(`${D}T12:00:00`) });
+  const slot = shipSlotOf(parseTs(`${D}T12:00:00`), 60, round);
+  assert.equal(slot.ship_time, '14:00');
+  assert.equal(slot.from, 'schedule');
+  assert.equal(shipSlotOf(parseTs(`${D}T12:00:00`), 60).ship_time, '13:00', 'สูตรเดิมเดาผิด — เก็บไว้เทียบ');
+});
+
+test('ระยะห่างไม่คงที่ — 14:00-16:00 ต้องได้ 22:00 (ห่าง 6 ชม.) · 16:00-22:00 ได้ 23:00 (1 ชม.)', () => {
+  const a = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  const b = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T16:00:00`), windowEnd: parseTs(`${D}T22:00:00`) });
+  assert.equal(shipSlotOf(parseTs(`${D}T16:00:00`), 60, a).ship_time, '22:00');
+  assert.equal(shipSlotOf(parseTs(`${D}T22:00:00`), 60, b).ship_time, '23:00');
+});
+
+test('dock ต่างกัน = คนละตาราง (B1 ช่วง 06:00-10:00 → 13:15)', () => {
+  const b1 = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B1', windowStart: parseTs(`${D}T06:00:00`), windowEnd: parseTs(`${D}T10:00:00`) });
+  assert.equal(shipSlotOf(parseTs(`${D}T10:00:00`), 60, b1).ship_time, '13:15');
+  const b5 = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T06:00:00`), windowEnd: parseTs(`${D}T10:00:00`) });
+  assert.equal(b5, null, 'B5 ไม่มีช่วงนี้ → ต้องคืน null ให้ตกไป fallback ไม่ใช่หยิบของ dock อื่นมาใช้');
+});
+
+test('pattern OT เป็นคนละชุด — ต้องไม่ปนกับ normal', () => {
+  const norm = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  const ot = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', pattern: 'ot_day', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  assert.equal(norm.pickup_time, '22:00');
+  assert.equal(ot.pickup_time, '17:00');
+});
+
+test('ช่วงข้ามเที่ยงคืน (22:00-00:00 → รับ 01:00) และ work_date ตัดที่ 08:00', () => {
+  const round = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T22:00:00`), windowEnd: parseTs('2026-09-10T00:00:00') });
+  const slot = shipSlotOf(parseTs('2026-09-10T00:00:00'), 60, round);
+  assert.equal(slot.ship_time, '01:00');
+  assert.equal(slot.work_date, '2026-09-09', 'ตี 1 = ยังเป็นวันงานของเมื่อวาน');
+});
+
+test('ไม่มีแถวที่ตรง → fallback lead_min และบอกว่ามาจากสูตร', () => {
+  const round = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T03:00:00`), windowEnd: parseTs(`${D}T05:00:00`) });
+  assert.equal(round, null);
+  const slot = shipSlotOf(parseTs(`${D}T05:00:00`), 60, round);
+  assert.equal(slot.from, 'lead');
+  assert.equal(slot.ship_time, '06:00');
+});
+
+test('is_active=false ต้องไม่ถูกหยิบมาใช้', () => {
+  const off = [R('B5', '08:00', '10:00', '11:00', 'normal', { is_active: false })];
+  assert.equal(pickPullRound(off, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }), null);
+});
+
+test('แถวที่ dock ว่าง = fallback ของ ship-to นั้น (dock ตรงชนะเสมอ)', () => {
+  const mix = [R(null, '08:00', '10:00', '10:30'), R('B5', '08:00', '10:00', '11:00')];
+  assert.equal(pickPullRound(mix, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }).pickup_time, '11:00');
+  assert.equal(pickPullRound(mix, { shipTo: 'GRBNA', dock: 'B9', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }).pickup_time, '10:30');
 });
