@@ -352,8 +352,29 @@ export function aggregateSignals(rows) {
   return [...m.values()].sort((a, b) => a.customer_part_no.localeCompare(b.customer_part_no));
 }
 
+/**
+ * เวลาส่งจริงของใบ (absolute) — `ship_time` ก่อน 08:00 = กะดึกของวันงานนั้น ⇒ ตกวันถัดไปตามปฏิทิน
+ * ⚠️ ต้องเทียบเป็น Date จริง ห้ามเทียบ "นาทีบนกรอบ 08:00→08:00" — ช่วงเวลาในไฟล์ (เช่น 06:00–08:00)
+ * คร่อมขอบกรอบได้ แล้วเลขนาทีจะกลับด้าน (06:00 ดูเหมือน "หลัง" 09:00 ทั้งที่มาก่อน)
+ */
+export function orderShipAt(dueDate, shipTime) {
+  const d = String(dueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!d || !t) return null;
+  const at = new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
+  if (+t[1] < 8) at.setDate(at.getDate() + 1);   // กะดึกของวันงาน = วันถัดไปตามปฏิทิน
+  return at;
+}
+
 /** สถานะที่ "ทำไปแล้ว" — ห้ามแก้ยอด (สต็อกอาจถูกหักไปแล้ว · user เคาะ 2026-09-08: ไม่แตะ แต่รายงานส่วนต่าง) */
 export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
+
+/* ระยะที่ยอมให้ใบ 862 "นับเป็นเที่ยวเดียวกัน" กับรอบที่ e-SMART คำนวณได้
+   ถอยหลัง 2.5 ชม. = คลุมช่วงดึงเต็มช่วง (2 ชม.) + lead 1 ชม. โดยไม่ล้ำเที่ยวก่อนหน้า
+   เผื่อหน้า 45 นาที = กริด 862 ที่คลาดไปนิด (เคสจริง เที่ยว 15:00 ↔ ใบ 15:30)
+   ⚠️ อย่าขยายเผื่อหน้าเกิน ~1 ชม. — จะเริ่มกินใบของเที่ยวถัดไป */
+const MATCH_BACK_MS = 150 * 60000;
+const MATCH_FWD_MS  =  45 * 60000;
 
 /**
  * ตัดสินว่าแต่ละพาร์ทจะทำอะไรกับใบส่งที่มีอยู่ — **pure** (ไม่แตะ DB)
@@ -370,22 +391,61 @@ export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
  * @returns {Array<{group, order, mat, matStatus, candidates, action, diff, reason}>}
  *   action: 'update' | 'create' | 'locked' | 'unresolved' | 'same'
  */
-export function planOrderUpdates(groups, orders, resolve) {
+export function planOrderUpdates(groups, orders, resolve, slot) {
   const byPart = new Map();
   (orders || []).forEach(o => {
     const k = normKey(o.customer_part_no || o.mat_no);
     if (!byPart.has(k)) byPart.set(k, []);
     byPart.get(k).push(o);
   });
+  /* ⭐ ใบที่ "รอบเดียวกัน" = ใบ 862 ที่เวลาส่ง **ใกล้เที่ยวรถนี้ที่สุด** (user เคาะ 2026-09-09)
+     862 กับ e-SMART เดินคนละกริดเวลา ทั้งที่เป็น milk-run เที่ยวเดียวกัน — วัดจริง 09/09:
+       เที่ยว 09:00 ↔ 862 08:00 · 11:00 ↔ 10:00 · 13:00 ↔ 13:00 · **15:00 ↔ 15:30**
+     จับแบบ ship_time ตรงเป๊ะ ⇒ สร้างรอบใหม่ทุกครั้ง ⇒ ยอดนับ 2 เท่า + ใบ 862 ค้างแดงตลอดกาล
+
+     🔴 ทำไมไม่ใช้ช่วงครึ่งเปิด `(windowStart, targetAt]` (ของเดิม 2026-09-09 เช้า — ผิด 2 ทาง):
+       ⓐ **กินใบของเที่ยวก่อนหน้า** — ช่วง 12:00-14:00 (เที่ยว 15:00) คลุมใบ 13:00 ที่เที่ยว 13:00
+          เคลมไปแล้ว ⇒ แย่งใบกันเอง
+       ⓑ **มองไม่เห็นใบที่อยู่ถัดไปนิดเดียว** — เที่ยว 15:00 คู่จริงคือใบ 15:30 (ห่าง 30 นาที)
+          แต่อยู่นอกช่วง ⇒ สร้างรอบใหม่ ⇒ 15:30 ค้างแดงทั้งที่ยอดตรงกันเป๊ะ (40/40/35)
+     ⇒ กติกา: **ใกล้ที่สุดชนะ · เท่ากันเอาใบที่มาก่อน · ใบที่ batch อื่นเคลมไปแล้วห้ามเคลมซ้ำ**
+     ⚠️ ไม่ส่ง `slot` = พฤติกรรมเดิม (จับคู่จากลิสต์ที่ผู้เรียกกรองมาแล้ว) */
+  const gapOf = (o) => {
+    const at = orderShipAt(o.due_date, o.ship_time);
+    if (!at) return null;                                    // ไม่ระบุเวลา = วางในเที่ยวไหนไม่ได้ ห้ามเดา
+    return at.getTime() - slot.targetAt.getTime();
+  };
+  const inWindow = (o) => {
+    if (!slot?.targetAt) return true;
+    /* ใบที่ e-SMART รอบอื่นเคลมไปแล้ว = ของเที่ยวนั้น ห้ามเอามานับซ้ำ
+       (batch เดียวกัน = อัพไฟล์เดิมซ้ำ ยังแก้ใบเดิมได้ = idempotent) */
+    if (o.pull_batch_id && o.pull_batch_id !== slot.batchId) return false;
+    const gap = gapOf(o);
+    if (gap === null) return false;
+    return gap >= -MATCH_BACK_MS && gap <= MATCH_FWD_MS;
+  };
+  /* ไม่ส่ง slot = พฤติกรรมเดิม: ผู้เรียกกรองรอบมาเองแล้ว เอาใบที่เวลาส่งช้าสุดก่อน */
+  const byTimeDesc = (a, b) =>
+    (orderShipAt(b.due_date, b.ship_time)?.getTime() || 0) - (orderShipAt(a.due_date, a.ship_time)?.getTime() || 0);
+  /* ใกล้ที่สุดก่อน · ห่างเท่ากันเอาใบที่เวลาส่งมาก่อน (ของที่ถึงกำหนดก่อนขึ้นรถก่อน) */
+  const byNearest = (a, b) => {
+    const ga = gapOf(a), gb = gapOf(b);
+    return (Math.abs(ga) - Math.abs(gb)) || (ga - gb);
+  };
+
   return (groups || []).map(g => {
     const r = resolve ? resolve(g.customer_part_no) : { mat: null, status: 'none', candidates: [] };
     // ใบเดิมจับด้วยเลขลูกค้าก่อน (EDI เก็บ customer_part_no) แล้วค่อยลองเลข MAT ที่ map ได้
     const cand = [...(byPart.get(normKey(g.customer_part_no)) || []),
       ...(r.mat ? (byPart.get(normKey(r.mat)) || []) : [])];
-    const seen = new Set(); const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id));
+    const seen = new Set();
+    const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(inWindow)
+      .sort(slot?.targetAt ? byNearest : byTimeDesc);
     const open = list.find(o => !LOCKED_STATUSES.includes(o.status));
     const locked = list.find(o => LOCKED_STATUSES.includes(o.status));
-    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [] };
+    // ใบอื่นในช่วงเดียวกันที่ไม่ได้ถูกเลือก — **ต้องรายงาน ห้ามแตะเอง** (คนตัดสินว่าจะยุบหรือปล่อย)
+    const extras = list.filter(o => o !== open && o !== locked && !LOCKED_STATUSES.includes(o.status));
+    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [], extras };
     if (open) {
       const diff = g.qty - Number(open.qty || 0);
       return { ...base, order: open, action: diff === 0 ? 'same' : 'update', diff,
@@ -399,7 +459,8 @@ export function planOrderUpdates(groups, orders, resolve) {
       return { ...base, order: null, action: 'unresolved', diff: g.qty,
         reason: matIssueOf(r) };
     }
-    return { ...base, order: null, action: 'create', diff: g.qty, reason: 'ไม่มีใบในรอบนี้ — สร้างใหม่จากยอดที่ลูกค้ายืนยัน' };
+    return { ...base, order: null, action: 'create', diff: g.qty,
+      reason: 'ไม่มีใบ 862 ในช่วงเวลานี้ — สร้างใบใหม่ตามยอดที่ลูกค้ายืนยัน' };
   });
 }
 

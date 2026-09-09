@@ -145,6 +145,8 @@ export default function MonthlyReviewExport({ onClose }) {
       const data = await buildMonthlyReviewData({ monthKey, sections: selSections, trendMonths, mode });
       // ก้อนเสริมของโหมด full (เป้า OEE / ถังเหลือง / ผังกำลังคน) โหลดไม่ครบ = สไลด์นั้นบอกเอง แต่ต้องเตือนที่นี่ด้วย
       (data.full?.warns || []).forEach(w => toast.error(`⚠ ${w}`));
+      // 💸 ก้อนความสูญเปล่า/มูลค่า — ล้มเหลว = ไม่มีสไลด์ Loss Analysis ต้องบอก ห้ามเงียบ
+      (data.lean?.warns || []).forEach(w => toast.error(`⚠ ${w} — เด็คนี้จะไม่มีสไลด์ Loss Analysis`));
       /* เทรนด์มี 2 ระดับความเสียหาย ห้ามบอกเหมารวม (QC 2026-09-08):
          มีสไลด์อยู่แต่ตัวเลขบางส่วนเพี้ยน (เช่น pair map ไม่ครบ) ≠ ไม่มีสไลด์เลย */
       const hasTrend = (data.trend?.months?.length || 0) > 1;
@@ -303,7 +305,8 @@ export default function MonthlyReviewExport({ onClose }) {
             จากข้อมูลกะที่ปิดแล้วของเดือนที่เลือก — Executive Summary → กราฟ OEE รายไลน์ →
             <b>PERFORMANCE TREND ย้อนหลัง</b> → รายส่วน/ไลน์ → Top Downtime +
             <b>วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ</b> + ใบซ่อม MO →
-            Top Defects → Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
+            Top Defects → <b>Loss Analysis (6 Big Losses / 8 Wastes + มูลค่าเป็นบาท)</b> →
+            Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
