@@ -2990,25 +2990,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 (ดู PANEL_COLS/PANEL_STACK — ห้ามกลับไปเป็น grid แบนๆ ช่องดำจะกลับมา) ⬇⬇ */}
             <div style={PANEL_COLS}>
 
-            {/* ── คอลัมน์ 1: 🔩 ชิ้นส่วนเข้าไลน์ (สโตร์สั่ง / ไลน์เรียก / WIP ค้าง) ──
-                user 2026-09-09: "เรียกชิ้นส่วนกับ WIP ในไลน์ อยู่ box เดียวกันดีมั้ย มันคือเรื่องเดียวกัน"
-                → รวมเป็น **กล่องเดียว** ด้วย .dr-partbox (index.css): ถอดกรอบ/มุม/ระยะของแผงลูก
-                  เหลือเส้นคั่นบางๆ คั่นแต่ละท่อน · สีเส้นคั่น = สีประจำแผงนั้นเอง (ม่วง/เทา/ฟ้า)
-                ⚠️ ทั้ง 3 แผง return null ได้เอง (ไลน์ที่ไม่เกี่ยว) — `.dr-partbox:empty { display:none }`
-                   ทำให้กล่องเปล่า **และคอลัมน์ทั้งคอลัมน์** หายไปเอง ไม่เหลือกรอบว่าง
-                   (จึงต้องให้ .dr-partbox เป็นลูกตรงๆ ของ grid ห้ามมี div ครอบอีกชั้น) */}
-            <div className="dr-partbox">
-            <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
-            <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
-
-            {/* 📦 WIP ที่ไลน์ — สโตร์ส่งมาเท่าไหร่ · ตัดเป็น FG เท่าไหร่ · ค้างเท่าไหร่ (user 2026-09-01)
-                ⚠️ ค้าง = "คำนวณ" (รับเข้า − ผลิต×BOM) ไม่ใช่ qty_on_hand ในระบบ
-                   backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
-                ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
-            <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
-            </div>{/* จบคอลัมน์ 1 */}
-
-            {/* ── คอลัมน์ 2: 📦 ใบสั่งผลิต ── */}
+            {/* ── คอลัมน์ 1: 📦 ใบสั่งผลิต ── */}
             <div style={PANEL_STACK}>
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
@@ -3369,9 +3351,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               })()}
               </>)}
             </div>
-            </div>{/* จบคอลัมน์ 2 */}
+            </div>{/* จบคอลัมน์ 1 */}
 
-            {/* ── คอลัมน์ 3: ⚠️ ปัญหาที่เกิดในกะ (ของเสีย + Downtime) ── */}
+            {/* ── คอลัมน์ 2: ⚠️ ปัญหาที่เกิดในกะ (ของเสีย + Downtime) ── */}
             <div style={PANEL_STACK}>
             {/* Defect Logs panel */}
             {defectLogs.length > 0 && (() => {
@@ -3602,6 +3584,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             </div>
               );
             })()}
+            </div>{/* จบคอลัมน์ 2 */}
+
+            {/* ── คอลัมน์ 3: 🔩 ชิ้นส่วนเข้าไลน์ (สโตร์สั่ง / ไลน์เรียก / WIP ค้าง) ──
+                user 2026-09-09: "เรียกชิ้นส่วนกับ WIP ในไลน์ อยู่ box เดียวกันดีมั้ย มันคือเรื่องเดียวกัน"
+                → รวมเป็น **กล่องเดียว** ด้วย .dr-partbox (index.css): ถอดกรอบ/มุม/ระยะของแผงลูก
+                  เหลือเส้นคั่นบางๆ คั่นแต่ละท่อน · สีเส้นคั่น = สีประจำแผงนั้นเอง (ม่วง/เทา/ฟ้า)
+                ⚠️ ทั้ง 3 แผง return null ได้เอง (ไลน์ที่ไม่เกี่ยว) — `.dr-partbox:empty { display:none }`
+                   ทำให้กล่องเปล่า **และคอลัมน์ทั้งคอลัมน์** หายไปเอง ไม่เหลือกรอบว่าง
+                   (จึงต้องให้ .dr-partbox เป็นลูกตรงๆ ของ grid ห้ามมี div ครอบอีกชั้น) */}
+            <div className="dr-partbox">
+            <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
+            <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
+
+            {/* 📦 WIP ที่ไลน์ — สโตร์ส่งมาเท่าไหร่ · ตัดเป็น FG เท่าไหร่ · ค้างเท่าไหร่ (user 2026-09-01)
+                ⚠️ ค้าง = "คำนวณ" (รับเข้า − ผลิต×BOM) ไม่ใช่ qty_on_hand ในระบบ
+                   backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
+                ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
+            <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
             </div>{/* จบคอลัมน์ 3 */}
             </div>{/* ⬆⬆ จบ grid ภาพใหญ่ ⬆⬆ */}
           </>
