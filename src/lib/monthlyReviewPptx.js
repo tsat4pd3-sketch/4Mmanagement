@@ -283,8 +283,13 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames })
     // ⚠️ employee_home_positions ทั้งตารางโตเกิน 1000 แถวได้ (จุดประจำของทั้งโรงงาน) — select เปล่า = ถูกตัดเงียบ
     //    → ดึงเฉพาะ station ที่อยู่ใน scope ผ่าน fetchByIds (chunk + แบ่งหน้า + เช็ค error)
     const stIds = stations.map(st => st.id);
+    //    ⚠️ ตารางนี้ **ไม่มีคอลัมน์ `id`** (PK คือ `employee_id` — ยืนยันกับฐานจริง 2026-09-09)
+    //       fetchByIds ตั้ง orderBy:'id' เป็นค่าเริ่มต้น → ไม่ส่ง orderBy = 42703 ทั้งก้อน
+    //       (เจอจริงหน้างาน: toast "column employee_home_positions.id does not exist" · สไลด์ MAN POWER ว่าง)
     const homeRes = stIds.length
-      ? await fetchByIds(stIds, c => supabase.from('employee_home_positions').select('employee_id, station_id').in('station_id', c))
+      ? await fetchByIds(stIds,
+        c => supabase.from('employee_home_positions').select('employee_id, station_id').in('station_id', c),
+        { orderBy: 'employee_id' })
       : { rows: [], error: null };
     if (homeRes.error) throw homeRes.error;
     const homes = homeRes.rows || [];
@@ -1221,6 +1226,14 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
   const lineRows = (ln) => data.trend?.byLine?.[ln] || [];
   const groupOf = (ln) => data.full?.lineGroup?.[ln] || ln;
   const targetOf = (ln) => data.full?.targets?.[groupOf(ln)] || normOeeTarget(null);
+  /* ที่มาของเป้าต้องอ่านออกบนสไลด์ — 3 กรณีคนละเรื่องกัน ห้ามเขียนรวมเป็นอันเดียว */
+  const targetNote = (tg) => {
+    if (tg.isDefault) return data.full?.targetsFailed
+      ? ' · ⚠ อ่านเป้าจากระบบไม่สำเร็จ ใช้ค่ามาตรฐาน'
+      : ' · ค่ามาตรฐาน ยังไม่ได้ตั้งเป้ากลุ่มนี้';
+    if (tg.missing?.length) return ` · ${tg.missing.map(k => k.toUpperCase()).join('/')} ยังไม่ได้ตั้ง ใช้ค่ามาตรฐานแทน`;
+    return '';
+  };
   /** OEE ของไตรมาส (q=1..4) หรือทั้งปี (q=null) — ถ่วงน้ำหนักด้วยเวลารับภาระ ห้าม mean-of-percentages */
   const quarterOee = (rows, q) => weightedOeeOf(rows, q == null ? null : (r) => quarterOfMonthKey(r.monthKey) === q);
   /** นาที DT ของประเภทนั้นในเดือนก่อนหน้าที่มีกะปิดจริง (null = ไม่มีเดือนก่อนให้เทียบ) */
@@ -1493,7 +1506,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       /* ── 1) OEE ทั้งปี: แท่ง A/P/Q + เส้น OEE + เส้นเป้า (เส้นเป้าคือสิ่งที่โหมด focus OEE ไม่มีเลย) ── */
       {
         const s = newSlide();
-        head(s, `OEE : ${l.name}`, `${YEAR} — A / P / Q vs TARGET (เป้า OEE ${pct(tg.oee)} = A ${tg.a}% × P ${tg.p}% × Q ${tg.q}%${tg.isDefault ? (data.full.targetsFailed ? ' · ⚠ อ่านเป้าจากระบบไม่สำเร็จ ใช้ค่ามาตรฐาน' : ' · ค่ามาตรฐาน ยังไม่ได้ตั้งเป้ากลุ่มนี้') : ''})`);
+        head(s, `OEE : ${l.name}`, `${YEAR} — A / P / Q vs TARGET (เป้า OEE ${pct(tg.oee)} = A ${tg.a}% × P ${tg.p}% × Q ${tg.q}%${targetNote(tg)})`);
         s.addChart([
           { type: pres.ChartType.bar, data: [
             { name: 'A', labels: [YM_LABELS], values: YM.map(mk => vAt(mk, 'a')) },

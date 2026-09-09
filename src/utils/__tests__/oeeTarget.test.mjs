@@ -20,16 +20,19 @@ test('normOeeTarget: null/ค่าว่าง = ค่ามาตรฐาน
   assert.deepEqual({ a: d.a, p: d.p, q: d.q }, DEFAULT_OEE_TARGET);
   assert.equal(d.oee, 80.2);
   assert.equal(d.isDefault, true);
+  assert.deepEqual(d.missing, [], 'ไม่มีแถวเลย = isDefault ไม่ใช่ missing รายช่อง');
 
   const row = normOeeTarget({ target_a: 92, target_p: null, target_q: 99.5 });
   assert.equal(row.a, 92);
   assert.equal(row.p, 90, 'คอลัมน์ null ต้องถอยไปค่ามาตรฐาน ไม่ใช่ 0');
   assert.equal(row.q, 99.5);
   assert.equal(row.isDefault, false);
+  assert.deepEqual(row.missing, ['p'], 'มีแถวแต่เว้น P ว่าง → ต้องบอกว่า P ถูกเติมด้วยค่ามาตรฐาน');
   assert.equal(row.oee, targetOeeOf({ a: 92, p: 90, q: 99.5 }));
 
   // ค่าที่แปลงเป็นตัวเลขไม่ได้ ต้องไม่กลายเป็น NaN ทั้งเป้า
   assert.equal(normOeeTarget({ target_a: '', target_p: 'x' }).a, 90);
+  assert.deepEqual(normOeeTarget({ target_a: '', target_p: 'x', target_q: 99 }).missing, ['a', 'p']);
   assert.ok(Number.isFinite(normOeeTarget({ target_a: 'x', target_p: 'y', target_q: 'z' }).oee));
 });
 
