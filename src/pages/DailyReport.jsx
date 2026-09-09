@@ -169,16 +169,25 @@ const ORDER_GRID  = cardGrid(520, 6);
 const DT_GRID     = cardGrid(640, 8);
 const DEFECT_GRID = cardGrid(480, 6);
 
-/* ── ภาพใหญ่: แผงเนื้อหาวางข้างกันคนละคอลัมน์ (2026-09-09 · feedback user
+/* ── ภาพใหญ่: 3 เรื่องคนละคอลัมน์ (2026-09-09 · feedback user
    "แต่ละ box เป็น column เดียว แต่ภาพใหญ่ 3 เรื่องนี้คนละ column กัน") ──
    วัดพื้นที่จริงจากจอหัวหน้ากลุ่ม: จอ 1920 → คอลัมน์เนื้อหากว้าง ~1525px
      minPx 460 ⇒ 1525px = **3 คอลัมน์ (~500px/แผง)** ตามที่ขอ · ~1000-1420px = 2 · แคบกว่า 940px = 1
-   ⚠️ ที่ 500px แถวยาว (สโตร์/Downtime) จะ wrap เป็น 2 บรรทัด — ยอมแลก เพราะยังประหยัดแนวตั้งได้มาก
-      และจอที่กว้างกว่านี้ (2560) จะได้ ~840px/แผง = ไม่ wrap เลย
-   ⚠️ rowGap 0 โดยตั้งใจ — แผงเดิมมี `marginBottom: 16` ของตัวเองอยู่แล้ว ถ้าใส่ rowGap จะห่างซ้อน
+
+   🔴 บทเรียนที่ต้องไม่ทำซ้ำ (2026-09-09 รอบแรกส่งไปแล้ว user ตีกลับ "แบบนี้ใช้ไม่ได้"):
+      ครั้งแรกใช้ `cardGrid` **แบนๆ** โดยโยนแผงทั้ง 6 เป็นลูกของ grid เดียว
+      → grid row สูงเท่า "ลูกที่สูงที่สุดในแถวนั้น" ⇒ แผงเตี้ย (สโตร์/WIP) มีช่องดำยาวใต้ตัวเอง
+        และ Downtime ตกไปอยู่แถว 2 คนเดียว = จอโหว่หนักกว่าเดิม
+      ✅ ที่ถูกคือ **grid 1 แถว ลูก 3 ตัว = 3 คอลัมน์ แล้วให้แต่ละคอลัมน์ stack เนื้อหาเองแนวตั้ง**
+        (`PANEL_STACK`) ⇒ ไม่มีแถวให้สูงตามกัน จึงไม่มีช่องโหว่กลางจอ
+      **กติกา: จะเอาแผงหลายตัวมาวางข้างกัน ให้จัดเป็น "คอลัมน์ที่ stack เอง" เสมอ
+        ห้ามโยนเป็นลูกแบนๆ ของ auto-fit grid ถ้าลูกแต่ละตัวสูงไม่เท่ากัน** (UI-CONVENTIONS §6.14)
+
    ⚠️ grid ตัวนี้ทำให้ ORDER_GRID/DT_GRID/DEFECT_GRID ข้างในยุบเหลือ 1 คอลัมน์เองอัตโนมัติ
       (min(100%, N) ใน cardGrid) — ตรงกับที่ user ต้องการ: กล่องละคอลัมน์เดียว */
-const PANEL_GRID = { ...cardGrid(460, 12), rowGap: 0 };
+const PANEL_COLS  = { ...cardGrid(460, 12), rowGap: 0 };
+/* คอลัมน์ = flex stack · minWidth 0 กันเนื้อหาที่ไม่ยอมหดดันคอลัมน์ล้น (cardGrid ข้อ 3) */
+const PANEL_STACK = { display: 'flex', flexDirection: 'column', minWidth: 0 };
 const fmtMin = (min) => {
   if (!min && min !== 0) return '—';
   const m = Math.round(min);
@@ -2965,8 +2974,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 ไลน์ที่ไม่มีคิว + ไม่มีของค้าง component จะไม่ render อะไรเลย (ไม่รกจอไลน์ประกอบ) */}
             {/* 🔩 คิวสั่งผลิตจากสโตร์ (ไลน์ปั๊ม) · 📦 เรียกชิ้นส่วนจากสโตร์ (ไลน์ประกอบ)
                 2 แผงนี้เป็นคนละทิศของลูปเดียวกัน — ไลน์ไหนไม่เกี่ยวจะไม่ render อะไรเลย */}
-            {/* ⬇⬇ ภาพใหญ่ 2-3 คอลัมน์ — แต่ละกล่องข้างในยังเป็นคอลัมน์เดียวเหมือนเดิม (ดู PANEL_GRID) ⬇⬇ */}
-            <div style={PANEL_GRID}>
+            {/* ⬇⬇ ภาพใหญ่ 3 คอลัมน์ — คอลัมน์ละเรื่อง, แต่ละคอลัมน์ stack เนื้อหาเองแนวตั้ง
+                (ดู PANEL_COLS/PANEL_STACK — ห้ามกลับไปเป็น grid แบนๆ ช่องดำจะกลับมา) ⬇⬇ */}
+            <div style={PANEL_COLS}>
+
+            {/* ── คอลัมน์ 1: 🔩 ชิ้นส่วนเข้าไลน์ (สโตร์สั่ง / ไลน์เรียก / WIP ค้าง) ──
+                user 2026-09-09: "เรียกชิ้นส่วนกับ WIP ในไลน์ อยู่ box เดียวกันดีมั้ย มันคือเรื่องเดียวกัน"
+                → รวมเป็น **กล่องเดียว** ด้วย .dr-partbox (index.css): ถอดกรอบ/มุม/ระยะของแผงลูก
+                  เหลือเส้นคั่นบางๆ คั่นแต่ละท่อน · สีเส้นคั่น = สีประจำแผงนั้นเอง (ม่วง/เทา/ฟ้า)
+                ⚠️ ทั้ง 3 แผง return null ได้เอง (ไลน์ที่ไม่เกี่ยว) — `.dr-partbox:empty { display:none }`
+                   ทำให้กล่องเปล่า **และคอลัมน์ทั้งคอลัมน์** หายไปเอง ไม่เหลือกรอบว่าง
+                   (จึงต้องให้ .dr-partbox เป็นลูกตรงๆ ของ grid ห้ามมี div ครอบอีกชั้น) */}
+            <div className="dr-partbox">
             <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
             <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
 
@@ -2975,7 +2994,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                    backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
                 ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
             <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
+            </div>{/* จบคอลัมน์ 1 */}
 
+            {/* ── คอลัมน์ 2: 📦 ใบสั่งผลิต ── */}
+            <div style={PANEL_STACK}>
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: prodOrdersOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
@@ -3335,7 +3357,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               })()}
               </>)}
             </div>
+            </div>{/* จบคอลัมน์ 2 */}
 
+            {/* ── คอลัมน์ 3: ⚠️ ปัญหาที่เกิดในกะ (ของเสีย + Downtime) ── */}
+            <div style={PANEL_STACK}>
             {/* Defect Logs panel */}
             {defectLogs.length > 0 && (() => {
               const defAuto = defectLogs.length > AUTO_COLLAPSE_ROWS;
@@ -3565,6 +3590,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             </div>
               );
             })()}
+            </div>{/* จบคอลัมน์ 3 */}
             </div>{/* ⬆⬆ จบ grid ภาพใหญ่ ⬆⬆ */}
           </>
         )}
