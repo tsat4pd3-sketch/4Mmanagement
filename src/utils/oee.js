@@ -14,7 +14,33 @@
     3) policyBreakMin               — เวลาพักตามนโยบายที่ทับกับช่วงเวลาที่สนใจ
     4) computeLiveOee               — OEE สดของกะที่ยังไม่ปิด
     5) strictOee                    — "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย
+    6) orderProducedQty             — "ใบผลิตใบนี้ผลิตได้กี่ชิ้น" (สูตรบังคับของโปรเจค)
 */
+
+/* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
+   สูตรบังคับของโปรเจค: confirmed → `qty_ok ?? qty` · สถานะอื่นทั้งหมด → `qty_actual ?? 0`
+
+   ⚠️ เดิมสูตรนี้ถูกเขียนซ้ำ **7 ที่** (DailyReport · OEEAnalytics · Dashboard · MorningMeeting ·
+      QualityControl · wipChain · computeLiveOee ในไฟล์นี้เอง) แล้ว drift กันจริง —
+      ยุบเหลือที่นี่ที่เดียว 2026-09-09 · **ห้ามเขียนซ้ำในหน้าอีก**
+
+   ⭐ กติกาสำคัญที่พลาดกันบ่อย — `imported` ต้องนับเหมือน `carry_over`:
+      สถานะ 2 ตัวนี้คือ "ใบเดียวกันคนละจังหวะ" — `carry_over` = ยกยอดออกไปแล้วแต่กะถัดไปยังไม่รับ ·
+      `imported` = กะถัดไปรับไปแล้ว · **ตัวใบต้นทางยังถือยอดที่ตัวเองผลิตได้จริงอยู่ใน `qty_actual` เสมอ**
+      เดิมหลายจอกรอง `imported` ทิ้งทั้งแถว ⇒ **พอกะถัดไปกด "รับยอดค้าง" ยอดผลิตของกะที่ทำจริง
+      ลดลงเงียบๆ ทันที** (วัดจริง 2026-09-09: 3,213 ชิ้น ใน 170 กะ หายจากยอดผลิตทั้งระบบ)
+
+   ✅ ไม่ double count: ตอนรับยอด กะถัดไปเปิดใบใหม่ด้วย **ยอดที่เหลือ** เท่านั้น
+      (`remainQty = qty − qty_actual` ใน handleImportCarryOrders) → 5 (ต้นทาง) + 30 (ปลายทาง) = 35 ✅
+
+   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — เป้าของใบ `imported` ถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว
+      จุดที่รวมเป้าด้วย `o.qty` ดิบ ต้องกรอง `imported` ออกเหมือนเดิม ไม่งั้นเป้าถูกนับซ้ำ  */
+export function orderProducedQty(o) {
+  if (!o) return 0;
+  return o.status === 'confirmed'
+    ? Number(o.qty_ok ?? o.qty ?? 0)
+    : Number(o.qty_actual ?? 0);
+}
 
 
 /* ═══ 1) เฉลี่ยถ่วงน้ำหนัก ═══ */
@@ -171,7 +197,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   let stdMin = 0, produced = 0, ngFromOrders = 0, qtyNoCt = 0;
   const matsNoCt = new Set();
   orders.forEach(o => {
-    const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+    const q = orderProducedQty(o);
     produced += q;
     const ct = Number(ctMap[o.mat_no]) || 0;
     if (ct > 0) stdMin += q * ct / 60;

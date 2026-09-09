@@ -1,5 +1,14 @@
 # OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
+> ### ⭐ §6 `orderProducedQty(o)` — "ใบผลิตใบนี้ผลิตได้กี่ชิ้น" (2026-09-09)
+> `confirmed → qty_ok ?? qty` · สถานะอื่นทั้งหมด → `qty_actual ?? 0` · **เจ้าของสูตรอยู่ `src/utils/oee.js` ที่เดียว**
+> (เดิมก๊อปไว้ 7 ที่แล้ว drift จริง — DailyReport · OEEAnalytics · Dashboard · MorningMeeting · QualityControl · wipChain · computeLiveOee)
+> - **`imported` ต้องนับเท่ากับ `carry_over`** — เป็นใบเดียวกันคนละจังหวะ (ก่อน/หลังกะถัดไปกดรับ)
+>   เดิมหลายจอกรอง `imported` ทิ้งทั้งแถว ⇒ ยอดผลิตของกะที่ทำจริงหายตอนกะหน้ากดรับ (วัดจริง 3,213 ชิ้น/170 กะ)
+>   ไม่ double count เพราะใบของกะถัดไปถือแค่ยอดที่เหลือ · รายละเอียด → `docs/modules/daily-report.md`
+> - ⛔ **ห้ามใช้คิด "เป้า"** — จุดที่รวมเป้าด้วย `o.qty` ดิบ ต้องกรอง `imported` ออกเหมือนเดิม
+> - เทส: `src/utils/__tests__/orderProducedQty.test.mjs`
+
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 

@@ -12,10 +12,11 @@
    pure ทั้งไฟล์ — ไม่แตะ supabase/react (เทสตรงๆ ได้)
    ═══════════════════════════════════════════════════════════════════════════════════ */
 
-/** ยอดผลิตของใบ 1 ใบ ตามกติกากลาง (สอดคล้อง DailyReport):
- *  confirmed = qty_ok ?? qty · สถานะอื่น (open/carry_over/imported/cancelled) = qty_actual ?? 0 */
-export const orderQty = (o) =>
-  o.status === 'confirmed' ? Number(o.qty_ok ?? o.qty ?? 0) : Number(o.qty_actual ?? 0)
+/** ยอดผลิตของใบ 1 ใบ — เจ้าของสูตรอยู่ที่ `src/utils/oee.js` (§6) ที่เดียว
+ *  ที่นี่เป็นแค่ชื่อเดิมไว้ให้โค้ดในไฟล์นี้เรียก · **ห้ามเขียนสูตรซ้ำ** */
+import { orderProducedQty } from './oee.js'
+
+export const orderQty = orderProducedQty
 
 /** รวมใบผลิตเป็นยอดสะสมต่อ (mat, line) และต่อ mat
  *  orders: [{mat_no, status, qty, qty_ok, qty_actual, opened_at, line_name}]

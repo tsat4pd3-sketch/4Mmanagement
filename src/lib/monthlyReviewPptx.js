@@ -171,7 +171,8 @@ function outputOfSessions(ss, ordersIdx, pairMap) {
   rowsOfSessions(ss, ordersIdx).forEach(o => {
     let qty = 0;
     if (o.status === 'confirmed') qty = Number(o.qty_ok ?? o.qty) || 0;
-    else if (o.status === 'carry_over') qty = Number(o.qty_actual) || 0; // ผลิตจริงส่วนที่ยกยอด (กฎ 2026-07-23)
+    // ผลิตจริงส่วนที่ยกยอด (กฎ 2026-07-23) · imported = ใบเดียวกันหลังกะถัดไปรับแล้ว ต้องนับเท่ากัน (oee.js §6)
+    else if (['carry_over', 'imported'].includes(o.status)) qty = Number(o.qty_actual) || 0;
     else return;
     // ⚠️ pairAwareTotal คืน { target, produced } — ใช้ชื่อฟิลด์อื่นจะได้ undefined → NaN ทั้งเด็ค
     if (o.mat_no) perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: (perMat[o.mat_no]?.produced || 0) + qty };

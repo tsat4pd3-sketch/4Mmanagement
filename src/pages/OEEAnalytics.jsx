@@ -995,8 +995,10 @@ export default function OEEAnalytics() {
     if (!os.length) return null;   // ให้ผู้เรียกถอยไปใช้ค่า stamp เอง
     const perMat = {}; let nullSum = 0;
     os.forEach(o => {
+      // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23) · `imported` = ใบเดียวกันหลังกะถัดไปรับไปแล้ว
+      // ต้องนับเท่ากัน ไม่งั้นยอดผลิตของกะหายตอนกะหน้ากดรับ (oee.js §6 · 2026-09-09)
       const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
-        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
+        : ['carry_over', 'imported'].includes(o.status) ? (o.qty_actual ?? 0) : 0;
       if (!q) return;
       if (!o.mat_no) { nullSum += q; return; }
       (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;
