@@ -26,7 +26,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, groupSameProductKeys, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -1928,10 +1928,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // "คนละ product จริงๆ" (ซึ่ง parallel ได้ถ้าวิ่งคนละเครื่อง/สถานี) · เกณฑ์ overlap ต้องมีนัยยะ:
     // > 15 นาที และ > 20% ของ window ที่สั้นกว่า — จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่ไม่นับ
     // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT (product เดียวกันคนละลูกค้า) window ทับ 2 นาที → P ตกเหลือ 44%
-    const prodNameOf = (matNo) => (kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.name || matNo || '').trim().toUpperCase();
+    // จับกลุ่มด้วย "ชื่อ product **หรือ** เลขพาร์ทแกนกลาง" (union) — ดู groupSameProductKeys ใน utils/oee.js
+    // เดิมใช้ชื่ออย่างเดียว → พาร์ทเดียวกันที่แตก MAT ตามลูกค้า/เรฟ (ชื่อสะกดต่างกัน) กลายเป็นคนละ product
+    // แล้วขึ้น parallel กันเอง ทำ %P เพี้ยน (Assy LWR 06/08 + 31/08 กะดึก · ทวนสอบกับ Excel 2026-09-09)
+    // ⚠️ ต้องหา p_no/ชื่อจาก kanban_standards **แล้วถอยไป dr_products** — MAT ที่ไม่มีในคัมบัง
+    // เดิมได้คีย์เป็น mat_no ตัวเอง = แตกกลุ่มทุกใบโดยอัตโนมัติ
+    const prodInfoOf = (matNo) =>
+      kanbanStds.find(s => s.mat_no === matNo)?.dr_products
+      || products.find(p => p.mat_no === matNo)
+      || null;
+    const groupKeyByMat = groupSameProductKeys(matPData.map(d => {
+      const info = prodInfoOf(d.matNo);
+      return { matNo: d.matNo, name: info?.name, pNo: info?.p_no };
+    }));
     const prodGroupMap = {};
     matPData.forEach(d => {
-      const k = prodNameOf(d.matNo);
+      const k = groupKeyByMat[d.matNo] || `MAT:${d.matNo}`;
       const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
       g.stdSec += d.qty * d.ctSec;
       g.runMin += matRunMinMap[d.matNo] ?? 0;
