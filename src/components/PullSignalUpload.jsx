@@ -242,11 +242,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           customer: shipTo, mat_no: x.mat, customer_part_no: x.group.customer_part_no,
           part_name: x.group.part_name || null, qty: x.group.qty, due_date: workDate,
           ship_time: shipTime, dock_code: x.group.dock_code || null,
-          source: SOURCE, status: 'confirmed', pull_batch_id: batchId, ...stamp,
+          source: SOURCE, status: 'confirmed', pull_batch_id: batchId,
+          created_by_name: fullName || null,   // 📜 ให้แท็บประวัติตอบได้ว่าใบนี้เกิดจากใครอัพไฟล์
+          ...stamp,
         };
         let res = await supabaseDR.from('customer_shipping_orders').insert(rec).select('id');
         if (res.error?.code === '42703') {
-          const { pull_batch_id, confirm_source, confirmed_at, ...slim } = rec;   // eslint-disable-line no-unused-vars
+          // eslint-disable-next-line no-unused-vars
+          const { pull_batch_id, confirm_source, confirmed_at, created_by_name, ...slim } = rec;
           res = await supabaseDR.from('customer_shipping_orders').insert(slim).select('id');
         }
         if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
