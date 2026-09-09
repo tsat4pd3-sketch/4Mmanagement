@@ -569,17 +569,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
     // Fetch carry-over orders from previous sessions of same line (not yet imported)
     if (lineName) {
-      // ยอดยกถูกบันทึกถาวรตั้งแต่หัวหน้ากะ "ส่งขอปิดกะ" แล้ว (ไม่ต้องรอ SV อนุมัติ) — SV มีหน้าที่ตรวจ
-      // NG/Downtime/OEE เท่านั้น ไม่เกี่ยวกับยอดยก จึงรับ pending_close ด้วย ไม่ต้องรอ closed
+      /* ⚠️ ดึงกะก่อนหน้า **ทุกสถานะ** รวม `open` ด้วย แล้วค่อยแยกบทบาททีหลัง (แก้รอบ 2 · 2026-09-09):
+           - "กะที่หยิบยอดค้างมาได้" = `closed` / `pending_close` เท่านั้น (ยอดยกถูกบันทึกถาวรตั้งแต่
+             หัวหน้ากะ "ส่งขอปิดกะ" ไม่ต้องรอ SV — SV ตรวจแค่ NG/Downtime/OEE ไม่เกี่ยวกับยอดยก)
+           - "กะที่ใช้ตัดสินว่างานจบไปแล้ว" = **ทุกกะ** รวมกะที่ยัง `open`
+         feedback user: "ถ้ากะก่อนหน้ารับไปแล้ว และคอนเฟิมยอดแล้ว เหลือแค่ปิดกะ ก็ไม่ควรเด้งไปหากะถัดไป"
+         → กะที่รับไปแล้วแต่ยังไม่กดปิด สถานะยังเป็น `open` ⇒ ถ้าไม่ดึงมาด้วย จะมองไม่เห็นใบ confirmed ของมัน
+           แล้วใบเก่าที่ค้างในกะก่อนหน้านั้นจะกลายเป็น "ใบล่าสุด" แล้วถูกเสนอซ้ำ
+         ดึง 8 กะ (ไม่ใช่ 5) เพราะตอนนี้มีกะ `open` ปนอยู่ในโควตาด้วย */
       const { data: prevSessions } = await supabaseDR.from('production_sessions')
-        .select('id')
+        .select('id, status')
         .eq('line_name', lineName)
-        .in('status', ['closed', 'pending_close'])
         .neq('id', sessionId)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(8);
       if (prevSessions?.length) {
         const prevIds = prevSessions.map(s => s.id);
+        // กะที่ "ยอดค้างของมัน" หยิบมาได้จริง — กะที่ยังเปิดอยู่ห้ามหยิบ (เจ้าของกะยังทำงานอยู่)
+        const takeableSess = new Set(prevSessions.filter(sx => ['closed', 'pending_close'].includes(sx.status)).map(sx => sx.id));
         /* ⚠️ ต้องดึง **ทุกสถานะ** ไม่ใช่แค่ carry_over/open (แก้ 2026-09-09 · feedback หน้างาน
            "งานยกยอดที่กะเมื่อคืนเคลียร์จากกะเช้าเมื่อวานไปแล้ว ยังมาเด้งโชว์ต่อกะเช้าวันนี้")
            เพราะต้องรู้ด้วยว่า prod_no นั้น **มีใบที่ใหม่กว่าซึ่งถูกรับ/ปิดไปแล้วหรือยัง**
@@ -605,8 +612,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           if (currentProdNos.has(o.prod_no)) return false;      // รับเข้ากะนี้แล้ว
           /* ⭐ ด่านใหม่: เสนอเฉพาะเมื่อ **ใบล่าสุด** ของ prod_no นั้นยังค้างจริง
              ใบล่าสุดเป็น confirmed = กะหลังทำจนจบแล้ว · imported = ถูกรับไปแล้ว · cancelled = ยกเลิกแล้ว
-             → ทั้ง 3 กรณีงานจบไปแล้ว ห้ามปลุกใบเก่าที่ค้างในกะที่ยังไม่ปิดขึ้นมาเสนอซ้ำ */
+             → ทั้ง 3 กรณีงานจบไปแล้ว ห้ามปลุกใบเก่าที่ค้างในกะที่ยังไม่ปิดขึ้นมาเสนอซ้ำ
+             (ครอบถึงกะที่ "คอนเฟิมยอดแล้วแต่ยังไม่กดปิดกะ" ด้วย เพราะ prevSessions รวมกะ `open` แล้ว) */
           if (!['carry_over', 'open'].includes(o.status)) return false;
+          /* ใบล่าสุดอยู่ในกะที่ยัง `open` = กะนั้นกำลังทำงานกับใบนี้อยู่ ห้ามแย่งมา
+             (ต่างจาก `pending_close` ที่หัวหน้ากะตัดสินใจยกยอดไปแล้ว) */
+          if (!takeableSess.has(o.session_id)) return false;
           // ออเดอร์ที่ผลิตครบเป้าแล้ว (qty_actual >= qty) ไม่ถือเป็นยอดค้าง — ถ้ายังยกมาจะกลายเป็น
           // "ผีค้าง 1 ชิ้น" ไปเรื่อยๆ ทุกกะเพราะโค้ดเก่าบังคับขั้นต่ำ 1 ชิ้นแม้ผลิตครบแล้ว
           if ((o.qty_actual || 0) >= o.qty) return false;
