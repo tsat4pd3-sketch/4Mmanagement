@@ -287,6 +287,40 @@ export function parsePullFile(matrix, profile) {
     meta, rows, warnings, windowStart, windowEnd, slot, shipTo: shipTos[0] || null };
 }
 
+/**
+ * 🚨 ไฟล์นี้เคยอัพไปแล้วหรือยัง — ตรวจ "ระดับไฟล์" ก่อนเขียนอะไรทั้งนั้น
+ *
+ * ที่มา (user 2026-09-09): *"ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ"*
+ * เคสจริงวันเดียวกัน: ไฟล์เดิมถูกอัพ 2 ครั้งห่างกัน 4 วินาที → ใบส่งซ้ำทั้งชุด
+ * (ตอนนั้นตัวกันซ้ำระดับ "แถว" ตายอยู่ ⇒ ต้องมีชั้นที่คนเห็นด้วยตา ไม่ใช่พึ่งกลไกเงียบๆ อย่างเดียว)
+ *
+ * เทียบ 2 ทาง เพราะชื่อไฟล์เชื่อ 100% ไม่ได้:
+ *   - `same_file`   ชื่อไฟล์ตรงกัน (เคสปกติ: กดอัพไฟล์เดิมซ้ำ)
+ *   - `same_window` **ช่วงเวลา + ลูกค้า ตรงกัน** ← ตัวจริงที่บอกว่า "ข้อมูลชุดเดียวกัน"
+ *     (โหลดซ้ำจากพอร์ทัลได้ชื่อใหม่ทุกครั้ง — ชื่อมี timestamp ตอนโหลด ไม่ใช่ตอนของข้อมูล)
+ *
+ * ⚠️ **เตือน ไม่บล็อก** — อัพซ้ำมีเหตุผลที่ถูกต้องจริง (รอบก่อนล้มกลางทาง/แก้ ship-to แล้วอัพใหม่)
+ *    หน้าที่ของฟังก์ชันนี้คือ "ทำให้คนเห็น" · จอบังคับให้ติ๊กรับทราบก่อนถึงกดยืนยันได้
+ *
+ * @param {Array} batches แถวจาก customer_pull_batches ของ ship-to นั้น (ใหม่→เก่า)
+ * @returns {Array<{batch, reason:'same_file'|'same_window'}>} ใหม่สุดก่อน
+ */
+export function findDuplicateUploads(batches, { fileName, windowStart, windowEnd } = {}) {
+  const name = String(fileName || '').trim().toLowerCase();
+  const ws = windowStart instanceof Date ? windowStart.getTime() : null;
+  const we = windowEnd instanceof Date ? windowEnd.getTime() : null;
+  const at = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) ? t : null; };
+  return (batches || []).map(b => {
+    if (name && String(b.file_name || '').trim().toLowerCase() === name) return { batch: b, reason: 'same_file' };
+    // ช่วงเวลาต้องมีครบทั้ง 2 ฝั่งถึงเทียบได้ — ไฟล์ที่ไม่บอกช่วงเวลาห้ามถูกตีว่าซ้ำกันหมด
+    if (ws !== null && we !== null && at(b.window_start) === ws && at(b.window_end) === we) {
+      return { batch: b, reason: 'same_window' };
+    }
+    return null;
+  }).filter(Boolean)
+    .sort((a, b) => new Date(b.batch.uploaded_at || 0) - new Date(a.batch.uploaded_at || 0));
+}
+
 /** คีย์กันนำเข้าซ้ำ — ตรงกับ unique index `customer_pull_signals_dedup_idx` ฝั่ง DB เป๊ะ */
 export const signalKey = (r, source = 'esmart') =>
   `${source}|${r.ship_to || ''}|${r.supplier_ref || r.customer_part_no}|${
