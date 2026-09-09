@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -339,4 +339,236 @@ test('⭐ พาร์ทที่ไม่อยู่ในไฟล์ ต้
   const plan = planOrderUpdates(groupsOf(CSV), orders, RESOLVE);
   assert.equal(plan.length, 3);
   assert.equal(plan.some(x => x.order?.id === 'keep'), false);   // ใบที่ไม่อยู่ในไฟล์ = ไม่ถูกแตะ
+});
+
+/* ══ 🚨 alarm อัพไฟล์ซ้ำ (user 2026-09-09: "ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ") ═════ */
+
+const B = (o) => ({ id: o.id, file_name: o.f, window_start: o.ws, window_end: o.we, uploaded_at: o.at });
+const PREV = [
+  B({ id: 'b2', f: 'Detailed SMART - 2026-09-09T100430.028.csv', ws: '2026-09-09T08:00:00', we: '2026-09-09T10:00:00', at: '2026-09-09T13:35:34' }),
+  B({ id: 'b1', f: 'Detailed SMART - 2026-09-09T080702.660.csv', ws: '2026-09-09T06:00:00', we: '2026-09-09T08:00:00', at: '2026-09-09T08:32:37' }),
+];
+const WIN = (a, b) => ({ windowStart: parseTs(a), windowEnd: parseTs(b) });
+
+test('⭐ findDuplicateUploads — ชื่อไฟล์ตรง = ซ้ำ (เคสกดอัพไฟล์เดิมซ้ำ)', () => {
+  const hits = findDuplicateUploads(PREV, { fileName: 'Detailed SMART - 2026-09-09T100430.028.csv', ...WIN('2026-09-09T08:00:00', '2026-09-09T10:00:00') });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reason, 'same_file');
+  assert.equal(hits[0].batch.id, 'b2');
+});
+
+test('⭐ findDuplicateUploads — ชื่อไฟล์ใหม่แต่ช่วงเวลาเดิม = ซ้ำ (โหลดซ้ำจากพอร์ทัลได้ชื่อใหม่ทุกครั้ง)', () => {
+  const hits = findDuplicateUploads(PREV, { fileName: 'Detailed SMART - 2026-09-09T119999.111.csv', ...WIN('2026-09-09T06:00:00', '2026-09-09T08:00:00') });
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].reason, 'same_window');
+  assert.equal(hits[0].batch.id, 'b1');
+});
+
+test('findDuplicateUploads — ช่วงเวลาใหม่ + ชื่อใหม่ = ไม่ซ้ำ (รอบถัดไปต้องอัพได้ปกติ)', () => {
+  assert.deepEqual(findDuplicateUploads(PREV, { fileName: 'ใหม่.csv', ...WIN('2026-09-09T10:00:00', '2026-09-09T12:00:00') }), []);
+});
+
+test('🔴 findDuplicateUploads — ไฟล์ที่ไม่บอกช่วงเวลา ห้ามถูกตีว่าซ้ำกันหมด', () => {
+  const noWin = [B({ id: 'x', f: 'ก.csv', ws: null, we: null, at: '2026-09-09T09:00:00' })];
+  assert.deepEqual(findDuplicateUploads(noWin, { fileName: 'ข.csv', windowStart: null, windowEnd: null }), []);
+  // ชื่อตรงยังจับได้ตามปกติ
+  assert.equal(findDuplicateUploads(noWin, { fileName: 'ก.csv' })[0].reason, 'same_file');
+});
+
+test('findDuplicateUploads — เจอหลายใบต้องเรียงใหม่สุดก่อน · ไม่มีข้อมูลไม่ throw', () => {
+  const many = [...PREV, B({ id: 'b0', f: 'Detailed SMART - 2026-09-09T080702.660.csv', ws: '2026-09-09T06:00:00', we: '2026-09-09T08:00:00', at: '2026-09-09T08:10:00' })];
+  const hits = findDuplicateUploads(many, { fileName: 'Detailed SMART - 2026-09-09T080702.660.csv', ...WIN('2026-09-09T06:00:00', '2026-09-09T08:00:00') });
+  assert.deepEqual(hits.map(h => h.batch.id), ['b1', 'b0']);
+  assert.deepEqual(findDuplicateUploads(null, {}), []);
+  assert.deepEqual(findDuplicateUploads(PREV), []);
+});
+
+/* ══ ⭐ จับคู่ด้วย "ช่วงเวลาของไฟล์" ไม่ใช่รอบตรงเป๊ะ (user เคาะ 2026-09-09) ═══════════
+   ข้อมูลจริง AAT 09/09: 862 เดินกริด 08:00/10:00/13:00/15:30 · e-SMART = ปลายช่วง+1 ชม.
+   = 09:00/11:00/15:00 ⇒ จับตรงเป๊ะแล้วสร้างรอบใหม่ทุกครั้ง = ยอดนับ 2 เท่า + 862 ค้างแดงตลอดกาล */
+
+const D = '2026-09-09';
+const ORD = (id, part, qty, time, status = 'pending', source = 'edi_862') =>
+  ({ id, customer_part_no: part, mat_no: null, qty, due_date: D, ship_time: time, status, source });
+const SLOT = (ws, t) => ({ windowStart: parseTs(ws), targetAt: parseTs(t) });
+const G1 = [{ customer_part_no: 'RB3B-16E060-BA', qty: 30, pulls: 3, part_name: 'x', dock_code: 'B5' }];
+const RES1 = () => ({ mat: '10100385', status: 'mapped', candidates: ['10100385'] });
+
+test('orderShipAt — ship_time ก่อน 08:00 = กะดึก ตกวันถัดไปตามปฏิทิน', () => {
+  assert.equal(dateStr(orderShipAt(D, '10:00')), '2026-09-09');
+  assert.equal(dateStr(orderShipAt(D, '00:30')), '2026-09-10');
+  assert.equal(timeStr(orderShipAt(D, '00:30')), '00:30');
+  assert.equal(orderShipAt(D, null), null);
+  assert.equal(orderShipAt(null, '10:00'), null);
+});
+
+test('⭐ ไฟล์ 08:00–10:00 → รอบ 11:00 ต้องไปอัพเดทใบ 862 ของ 10:00 (ไม่สร้างรอบใหม่)', () => {
+  const orders = [ORD('a', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+  assert.equal(row.diff, -20);            // 862 วางแผน 50 · ลูกค้าเรียกจริง 30
+});
+
+test('⭐ ไฟล์ 06:00–08:00 → รอบ 09:00 ต้องจับใบ 08:00 ได้ (ช่วงคร่อมขอบกรอบวันงาน 08:00)', () => {
+  const orders = [ORD('a', 'RB3B 16E060 BA', 50, '08:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T06:00:00`, `${D}T09:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+test('🔴 ใบนอกช่วงเวลาต้องไม่ถูกแตะ (รอบบ่าย/กะดึกของวันเดียวกัน)', () => {
+  const orders = [ORD('later', 'RB3B 16E060 BA', 50, '15:30'), ORD('night', 'RB3B 16E060 BA', 60, '00:30')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'create');     // ไม่มีใบในช่วง → สร้างใหม่
+  assert.equal(row.order, null);
+});
+
+test('⭐ มีใบ 862 หลายใบในช่วงเดียวกัน — อัพเดทใบที่ใกล้เวลารับสุด ที่เหลือรายงานเป็น extras ห้ามแตะเอง', () => {
+  const orders = [ORD('early', 'RB3B 16E060 BA', 20, '08:30'), ORD('late', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'late');                    // ใกล้เวลาที่ลูกค้ามารับที่สุด
+  assert.deepEqual(row.extras.map(o => o.id), ['early']); // ต้องโผล่ให้คนเห็น ไม่ถูกลบ/แก้เงียบ
+});
+
+test('ใบในช่วงที่เตรียม/ส่งไปแล้ว ยังต้องเป็น locked เหมือนเดิม (ไม่แก้ยอด)', () => {
+  const orders = [ORD('done', 'RB3B 16E060 BA', 50, '10:00', 'prepared')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'locked');
+  assert.equal(row.diff, -20);
+});
+
+test('🔴 ใบที่ไม่ระบุเวลาส่ง ต้องไม่ถูกดูดเข้าช่วงไหนเลย (ห้ามเดา)', () => {
+  const orders = [ORD('notime', 'RB3B 16E060 BA', 50, null)];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'create');
+});
+
+test('ไม่ส่ง slot = พฤติกรรมเดิม (ผู้เรียกกรองรอบมาเองแล้ว)', () => {
+  const orders = [ORD('a', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1);
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+/* ══ 🔴 กริดจริง AAT 2026-09-09 — เที่ยวรถ ↔ ใบ 862 ที่คู่กันจริง ═══════════════════════
+   วัดจากฐานจริงหลังใช้งานเต็มวัน:
+     เที่ยว 09:00 ↔ 862 08:00 (50/50/70) · 11:00 ↔ 10:00 · 13:00 ↔ 13:00 · **15:00 ↔ 15:30**
+   ช่วงครึ่งเปิด (windowStart, targetAt] ที่ใช้ตอนเช้า ผิด 2 ทาง — เทสชุดนี้ล็อกทั้งคู่ */
+const OB = (id, part, qty, time, status = 'pending', batch = null) =>
+  ({ id, customer_part_no: part, mat_no: null, qty, due_date: D, ship_time: time, status,
+     source: 'edi_862', pull_batch_id: batch });
+
+test('🔴 เที่ยว 15:00 ต้องจับใบ 15:30 (ห่าง 30 นาที) — ของเดิมมองไม่เห็นแล้วสร้างรอบใหม่', () => {
+  const orders = [OB('a', 'RB3B 16E060 BA', 40, '15:30')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T12:00:00`, `${D}T15:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+test('🔴 ใบที่ e-SMART รอบก่อนเคลมไปแล้ว ต้องไม่ถูกเคลมซ้ำ (13:00 ของเที่ยว 13:00)', () => {
+  const orders = [OB('taken', 'RB3B 16E060 BA', 40, '13:00', 'shipped', 'batch-13'),
+                  OB('next',  'RB3B 16E060 BA', 40, '15:30')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T12:00:00`, `${D}T15:00:00`));
+  assert.equal(row.order.id, 'next', 'ต้องข้ามใบที่เที่ยวก่อนเคลมไปแล้ว');
+  assert.equal(row.action, 'update');
+});
+
+test('อัพไฟล์เดิมซ้ำ (batch เดียวกัน) ยังแก้ใบเดิมได้ = idempotent ไม่สร้างใบใหม่', () => {
+  const orders = [OB('a', 'RB3B 16E060 BA', 40, '10:00', 'confirmed', 'b1')];
+  const [row] = planOrderUpdates(G1, orders, RES1,
+    { ...SLOT(`${D}T08:00:00`, `${D}T11:00:00`), batchId: 'b1' });
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+test('ใกล้ที่สุดชนะ — เที่ยว 11:00 ต้องเลือกใบ 10:00 ไม่ใช่ 08:30', () => {
+  const orders = [OB('x', 'RB3B 16E060 BA', 20, '08:30'), OB('y', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.order.id, 'y');
+  assert.deepEqual(row.extras.map(o => o.id), ['x'], 'อีกใบต้องโผล่ให้คนเห็น ห้ามแตะเอง');
+});
+
+test('🔴 เผื่อหน้าต้องไม่กินใบของเที่ยวถัดไป — 22:00 อยู่ไกลเกิน ต้องไม่ถูกแตะ', () => {
+  const orders = [OB('night', 'RB3B 16E060 BA', 70, '22:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T12:00:00`, `${D}T15:00:00`));
+  assert.equal(row.action, 'create');
+  assert.equal(row.order, null);
+});
+
+test('🔴 ถอยหลังต้องไม่ล้ำเที่ยวก่อนหน้า — เที่ยว 11:00 ห้ามแตะใบ 08:00 (ของเที่ยว 09:00)', () => {
+  const orders = [OB('prev', 'RB3B 16E060 BA', 50, '08:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'create', '08:00 ห่าง 3 ชม. = เกินระยะถอยหลัง 2.5 ชม.');
+});
+
+/* ══ 🚚 ตารางรอบรับของลูกค้า — รอบส่งเป็น "ตาราง" ไม่ใช่ "สูตร" (user 2026-09-09) ═══════
+   user ส่งใบ "E-SMART Pattern normal/OT" ของ AAT มา — ระยะปลายช่วง→เวลารับ ไม่คงที่
+   สูตรเดิม (+60 นาที) เดาช่วง 10:00-12:00 เป็น 13:00 แต่ตารางจริงคือ 14:00 */
+const R = (dock, ps, pe, pickup, pattern = 'normal', extra = {}) =>
+  ({ ship_to: 'GRBNA', dock_code: dock, pattern, period_start: ps, period_end: pe,
+     pickup_time: pickup, is_active: true, ...extra });
+const ROUNDS = [
+  R('B5', '08:00', '10:00', '11:00'), R('B5', '10:00', '12:00', '14:00'),
+  R('B5', '12:00', '14:00', '15:00'), R('B5', '14:00', '16:00', '22:00'),
+  R('B5', '16:00', '22:00', '23:00'), R('B5', '22:00', '00:00', '01:00'),
+  R('B1', '06:00', '10:00', '13:15'),
+  R('B5', '14:00', '16:00', '17:00', 'ot_day'),
+];
+
+test('🔴 ช่วง 10:00-12:00 ต้องได้รอบ 14:00 ตามตาราง — สูตร +60 เดาผิดเป็น 13:00', () => {
+  const round = pickPullRound(ROUNDS, {
+    shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T10:00:00`), windowEnd: parseTs(`${D}T12:00:00`) });
+  const slot = shipSlotOf(parseTs(`${D}T12:00:00`), 60, round);
+  assert.equal(slot.ship_time, '14:00');
+  assert.equal(slot.from, 'schedule');
+  assert.equal(shipSlotOf(parseTs(`${D}T12:00:00`), 60).ship_time, '13:00', 'สูตรเดิมเดาผิด — เก็บไว้เทียบ');
+});
+
+test('ระยะห่างไม่คงที่ — 14:00-16:00 ต้องได้ 22:00 (ห่าง 6 ชม.) · 16:00-22:00 ได้ 23:00 (1 ชม.)', () => {
+  const a = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  const b = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T16:00:00`), windowEnd: parseTs(`${D}T22:00:00`) });
+  assert.equal(shipSlotOf(parseTs(`${D}T16:00:00`), 60, a).ship_time, '22:00');
+  assert.equal(shipSlotOf(parseTs(`${D}T22:00:00`), 60, b).ship_time, '23:00');
+});
+
+test('dock ต่างกัน = คนละตาราง (B1 ช่วง 06:00-10:00 → 13:15)', () => {
+  const b1 = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B1', windowStart: parseTs(`${D}T06:00:00`), windowEnd: parseTs(`${D}T10:00:00`) });
+  assert.equal(shipSlotOf(parseTs(`${D}T10:00:00`), 60, b1).ship_time, '13:15');
+  const b5 = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T06:00:00`), windowEnd: parseTs(`${D}T10:00:00`) });
+  assert.equal(b5, null, 'B5 ไม่มีช่วงนี้ → ต้องคืน null ให้ตกไป fallback ไม่ใช่หยิบของ dock อื่นมาใช้');
+});
+
+test('pattern OT เป็นคนละชุด — ต้องไม่ปนกับ normal', () => {
+  const norm = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  const ot = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', pattern: 'ot_day', windowStart: parseTs(`${D}T14:00:00`), windowEnd: parseTs(`${D}T16:00:00`) });
+  assert.equal(norm.pickup_time, '22:00');
+  assert.equal(ot.pickup_time, '17:00');
+});
+
+test('ช่วงข้ามเที่ยงคืน (22:00-00:00 → รับ 01:00) และ work_date ตัดที่ 08:00', () => {
+  const round = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T22:00:00`), windowEnd: parseTs('2026-09-10T00:00:00') });
+  const slot = shipSlotOf(parseTs('2026-09-10T00:00:00'), 60, round);
+  assert.equal(slot.ship_time, '01:00');
+  assert.equal(slot.work_date, '2026-09-09', 'ตี 1 = ยังเป็นวันงานของเมื่อวาน');
+});
+
+test('ไม่มีแถวที่ตรง → fallback lead_min และบอกว่ามาจากสูตร', () => {
+  const round = pickPullRound(ROUNDS, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T03:00:00`), windowEnd: parseTs(`${D}T05:00:00`) });
+  assert.equal(round, null);
+  const slot = shipSlotOf(parseTs(`${D}T05:00:00`), 60, round);
+  assert.equal(slot.from, 'lead');
+  assert.equal(slot.ship_time, '06:00');
+});
+
+test('is_active=false ต้องไม่ถูกหยิบมาใช้', () => {
+  const off = [R('B5', '08:00', '10:00', '11:00', 'normal', { is_active: false })];
+  assert.equal(pickPullRound(off, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }), null);
+});
+
+test('แถวที่ dock ว่าง = fallback ของ ship-to นั้น (dock ตรงชนะเสมอ)', () => {
+  const mix = [R(null, '08:00', '10:00', '10:30'), R('B5', '08:00', '10:00', '11:00')];
+  assert.equal(pickPullRound(mix, { shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }).pickup_time, '11:00');
+  assert.equal(pickPullRound(mix, { shipTo: 'GRBNA', dock: 'B9', windowStart: parseTs(`${D}T08:00:00`), windowEnd: parseTs(`${D}T10:00:00`) }).pickup_time, '10:30');
 });

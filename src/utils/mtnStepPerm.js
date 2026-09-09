@@ -183,6 +183,77 @@ export const isWaitingQa = (order) =>
 /** ใบนี้เคยถูก "ข้าม QA" (ไม่เกี่ยวกับคุณภาพ — แก้การตัดสินใจของขั้น 4 ทีหลัง) */
 export const isQaSkipped = (order) => !!order?.qa_skipped_at;
 
+/** เหตุผลมาตรฐานเมื่อ "ข้าม QA" เกิดจากการเลือกที่ขั้น 4 (ไม่ได้กดปุ่ม ⏭) — ข้อความเดียวทั้งระบบ */
+export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม่เกี่ยวกับคุณภาพ';
+
+/** ใบเดินผ่านขั้น 4 (ตรวจรับงานหลังซ่อม) ไปแล้วหรือยัง — ใช้ตัดสินว่า quality_related มีความหมายแล้ว */
+const passedStep4 = (order) =>
+  ['checked', 'qa', 'handover', 'closed'].includes(String(order?.status || '').trim())
+  || Number(order?.current_step || 0) >= 4;
+
+/**
+ * ขั้น 5 (QA) ของใบนี้อยู่ในสถานะไหน — จุดเดียวที่ตัดสิน "ตรวจแล้ว / ข้าม / ยังรอ"
+ *
+ * 🔴 ที่มา 2026-09-09: จอเดิมใช้ `current_step >= 5` เป็นเกณฑ์ "ขั้น 5 เสร็จ" แต่ใบที่ **ข้าม QA**
+ *    ไม่เคยขยับ current_step ออกจาก 4 (ข้าม = แก้การตัดสินใจของขั้น 4 ไม่ใช่ขั้นใหม่) ⇒ พอใบเดินต่อไป
+ *    ขั้น 6-7 แล้ว current_step ก็เกิน 5 เอง กล่องขั้น 5 จึงขึ้น ✅ เขียว **เหมือน QA ตรวจจริง**
+ *    ทั้งที่ไม่มีใครตรวจ (ไม่มีลายเซ็น/ผลคุณภาพ) = ใบพิมพ์/จอโกหกผู้ตรวจสอบ
+ *
+ * คืน:
+ *   'done'    QA ตรวจจริง (มี qa_at / ผลคุณภาพ)
+ *   'skipped' ไม่ต้องตรวจ — กด ⏭ ข้าม หรือขั้น 4 ระบุว่า "ไม่เกี่ยวกับคุณภาพ"
+ *   'waiting' ค้างรอ QA ตรวจอยู่ (ขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ)
+ *   'none'    ใบยังเดินไม่ถึงขั้น 4 — ยังไม่ถึงคิวตัดสิน
+ */
+export function moQaState(order) {
+  if (order?.qa_at || order?.qa_result) return 'done';
+  if (isQaSkipped(order)) return 'skipped';
+  if (!passedStep4(order)) return 'none';
+  return String(order?.quality_related || '').trim() === QA_RELATED ? 'waiting' : 'skipped';
+}
+
+/* ═══ ป้ายสถานะใบ MO — source of truth เดียวของ "ใบนี้รออะไรอยู่" (2026-09-09) ════════════
+   🔴 ที่มา (วัดฐานจริง 09/09): ใบค้าง `checked` 76 ใบ + `qa` 64 ใบ = 140 ใบรอขั้น 6 โตวันละ ~20
+   ต้นเหตุข้อ 1 = ป้ายเดียว "🧪 รอคุณภาพ/รับมอบ" ใช้กับ 2 สถานการณ์ที่คนละคนต้องกด:
+     · ขั้น 4 ระบุ "เกี่ยวกับคุณภาพ"    → รอ QA จริง (ขั้น 5)
+     · ขั้น 4 ระบุ "ไม่เกี่ยวกับคุณภาพ" → ไม่ต้องรอ QA เลย รอ **ฝ่ายที่แจ้ง** มารับมอบ (ขั้น 6)
+   หน้างานอ่านป้ายเดียวกันว่า "ยังรอ QA" แล้วไม่มีใครกดขั้น 6 → ใบกองค้าง
+   ⚠️ **ห้ามเพิ่มค่า `status` ใหม่เพื่อแยก 2 เคสนี้** (KPI/Andon/dieStatus/FactoryMap/TvBoard/edge อ่าน
+      status ตรงๆ) — แยกที่ "ป้าย" อย่างเดียว โดย derive จาก status + quality_related เหมือนที่
+      `nextStepFor()` ใน MtnRepair.jsx ทำอยู่แล้ว (ป้ายกับปุ่มขั้นถัดไปต้องพูดตรงกันเสมอ)
+   ⚠️ ทุกจอที่โชว์ป้ายสถานะ MO ต้องเรียก `moStatusLabel(order)` — ห้ามอ่าน MO_STATUS_LABEL[status]
+      ตรงๆ ถ้ามีตัวใบอยู่ในมือ (แผนที่นี้ไว้ใช้เฉพาะที่ไม่มีใบ เช่น dropdown ฟิลเตอร์/หัวกลุ่มสรุป) */
+export const MO_STATUS_LABEL = {
+  pending:   '📣 รอรับงาน',
+  assigned:  '🔧 รับงานแล้ว/รอซ่อม',
+  repairing: '🔧 กำลังซ่อม',
+  repaired:  '🔎 รอตรวจหลังซ่อม',
+  // ไม่มีตัวใบให้ดู = แยกไม่ได้ว่ารอ QA หรือรอรับมอบ → บอกทั้ง 2 ทาง ห้ามเดาทางใดทางหนึ่ง
+  checked:   '🧪 รอตรวจคุณภาพ / รอรับมอบ',
+  qa:        '🤝 รอรับมอบ',
+  handover:  '✍️ รออนุมัติปิด',
+  closed:    '✅ ปิด MO',
+  returned:  '↩️ ตีกลับ (ผิดแผนก)',
+  rejected:  '⛔ Reject MO',
+};
+
+export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
+export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้น 6)';
+
+/**
+ * ป้ายสถานะของใบนี้ (ใช้ที่การ์ด/หัว drawer/บอร์ด/ใบพิมพ์)
+ *
+ * ⚠️ แถวที่ query มาแบบเลือกคอลัมน์ (`select('id, status, ...')`) อาจไม่มี `quality_related` ติดมาเลย
+ *    (= undefined ไม่ใช่ null) → **ห้ามเดา** ให้ถอยไปใช้ป้ายรวมของ MO_STATUS_LABEL
+ *    ค่าที่มีจริงแต่ว่าง/null = "ไม่เกี่ยวกับคุณภาพ" ตามเกณฑ์เดียวกับ nextStepFor/isWaitingQa
+ */
+export function moStatusLabel(order) {
+  const st = String(order?.status || '').trim();
+  if (st !== 'checked') return MO_STATUS_LABEL[st] || st || MO_STATUS_LABEL.pending;
+  if (order?.quality_related === undefined && !order?.qa_skipped_at) return MO_STATUS_LABEL.checked;
+  return isWaitingQa(order) ? MO_LABEL_WAIT_QA : MO_LABEL_WAIT_HANDOVER;
+}
+
 /**
  * ข้าม QA (ขั้น 5) ไปรับมอบ (ขั้น 6) ได้ไหม — 2026-09-03 (คำสั่ง user: "เรื่องที่ไม่เกี่ยวกับ QA
  * ต้องกดข้ามไปขั้น 6 ได้ ตอนนี้ไม่ได้")

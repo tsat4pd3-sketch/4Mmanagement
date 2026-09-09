@@ -136,7 +136,7 @@ export default function DieRegistry() {
       supabaseDR.from('die_storage_areas').select('*').eq('is_active', true).order('sort_order').order('name'),
       // สถานะ "ซ่อมอยู่" derive จากใบ MO จริง — ห้ามให้คนตั้งซ้ำ (2 แหล่งจะ drift กัน)
       supabaseDR.from('mtn_orders')
-        .select('id, mo_no, status, machine_no, mtn_dept, current_step, report_at')
+        .select('id, mo_no, status, machine_no, mtn_dept, current_step, report_at, quality_related, qa_skipped_at')
         .in('status', OPEN_MO_STATUSES),
     ]);
     const { data: ln } = lnRes, { data: mc } = mcRes, { data: st } = stRes, { data: ot } = otRes, { data: pd } = pdRes;

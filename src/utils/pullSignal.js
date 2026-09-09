@@ -196,12 +196,57 @@ export const timeStr = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
  * @returns {{at: Date, ship_time: string, work_date: string}|null}
  *   work_date = กรอบวันงาน 08:00→08:00 (ก่อน 08:00 นับเป็นวันก่อนหน้า — กฎเดียวกับทั้งระบบ)
  */
-export function shipSlotOf(windowEnd, leadMin = 60) {
+/* ═══ ⭐ รอบที่รถลูกค้ามารับ = **ตารางที่ลูกค้ากำหนด** ไม่ใช่สูตร (user 2026-09-09) ═══════
+   user ส่งตาราง "E-SMART Pattern normal / OT" ของ AAT มา — ระยะจากปลายช่วงถึงเวลารับ
+   **ไม่คงที่**: 10:00-12:00 → รับ 14:00 (2 ชม.) · 14:00-16:00 → รับ 22:00 (6 ชม.) ·
+   16:00-22:00 → รับ 23:00 (1 ชม.) ⇒ สูตร `ปลายช่วง + lead_min` เดาผิดแน่นอน
+   (ของเดิมได้ 13:00 แทน 14:00 — เจอเพราะเทียบกับตารางจริง ไม่ใช่เพราะระบบฟ้อง)
+
+   ⇒ อ่านจากตาราง `customer_pull_rounds` (data-driven ต่อโรงงาน/ลูกค้า — user สั่ง
+      "ต้องทำเป็นระบบให้รองรับการแก้ไขได้ สำหรับโรงงานอื่น แต่ของเรา seed ไปเลย")
+   ⚠️ ไม่มีแถวที่ตรง = **fallback ไป lead_min พร้อมบอกบนจอว่าเดาเอา** ห้ามเงียบ */
+const hhmm = (v) => {
+  const m = String(v ?? '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? `${String(+m[1]).padStart(2, '0')}:${m[2]}` : null;
+};
+
+/** หาแถวรอบรับที่ตรงกับช่วงเวลาในไฟล์
+ *  จับด้วย **เวลา HH:MM ของช่วง** (ไม่ใช่ระยะเวลา) — ช่วงข้ามเที่ยงคืน (22:00-00:00) จึงจับได้
+ *  ลำดับความเจาะจง: dock ตรง > dock ว่าง (fallback ของ ship-to นั้น) */
+export function pickPullRound(rounds, { shipTo, dock, pattern = 'normal', windowStart, windowEnd } = {}) {
+  const ps = windowStart instanceof Date ? timeStr(windowStart) : hhmm(windowStart);
+  const pe = windowEnd instanceof Date ? timeStr(windowEnd) : hhmm(windowEnd);
+  if (!ps || !pe) return null;
+  const st = String(shipTo || '').trim().toUpperCase();
+  const dk = String(dock || '').trim().toUpperCase();
+  const hit = (rounds || []).filter(r =>
+    r.is_active !== false
+    && String(r.ship_to || '').trim().toUpperCase() === st
+    && String(r.pattern || 'normal') === pattern
+    && hhmm(r.period_start) === ps && hhmm(r.period_end) === pe);
+  return hit.find(r => dk && String(r.dock_code || '').trim().toUpperCase() === dk)
+      || hit.find(r => !String(r.dock_code || '').trim())
+      || null;
+}
+
+/** รอบส่งของไฟล์นี้ — ใช้ตารางรอบรับก่อน ถ้าไม่มีค่อยใช้ lead_min
+ *  @returns {{at, ship_time, work_date, from: 'schedule'|'lead', round}}
+ *  ⚠️ `work_date` ตัดที่ 08:00 ตามกรอบวันงานไทย (ก่อน 08:00 = วันก่อนหน้า) */
+export function shipSlotOf(windowEnd, leadMin = 60, round = null) {
   if (!(windowEnd instanceof Date) || isNaN(windowEnd.getTime())) return null;
-  const at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
+  let at, from = 'lead';
+  const pk = round ? hhmm(round.pickup_time) : null;
+  if (pk) {
+    const [h, m] = pk.split(':').map(Number);
+    at = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate(), h, m);
+    at.setDate(at.getDate() + (Number(round.pickup_day_offset) || 0));
+    from = 'schedule';
+  } else {
+    at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
+  }
   const wd = new Date(at.getTime());
   if (wd.getHours() < 8) wd.setDate(wd.getDate() - 1);
-  return { at, ship_time: timeStr(at), work_date: dateStr(wd) };
+  return { at, ship_time: timeStr(at), work_date: dateStr(wd), from, round: round || null };
 }
 
 /** ประกอบเลขพาร์ทลูกค้า RB3B + 16E060 + BA → 'RB3B-16E060-BA' (ส่วนที่ว่างถูกข้าม) */
@@ -221,7 +266,7 @@ const num = (v) => {
  * @returns {{ok: boolean, error?: string, meta: object, rows: Array<object>, warnings: string[],
  *            windowStart: Date|null, windowEnd: Date|null, slot: object|null, shipTo: string|null}}
  */
-export function parsePullFile(matrix, profile) {
+export function parsePullFile(matrix, profile, rounds = null) {
   const p = profile || FALLBACK_PROFILE;
   const warnings = [];
   const headerIdx = findHeaderRow(matrix, p);
@@ -237,7 +282,7 @@ export function parsePullFile(matrix, profile) {
   const meta = readMeta(matrix, headerIdx, p.meta_map);
   const windowStart = parseTs(meta.window_start, p.ts_format);
   const windowEnd = parseTs(meta.window_end, p.ts_format);
-  const slot = shipSlotOf(windowEnd, p.lead_min);
+  let slot = shipSlotOf(windowEnd, p.lead_min);   // ค่าเริ่มจาก lead_min · จะทับด้วยตารางรอบรับหลังรู้ dock
   if (!windowEnd) warnings.push('ไฟล์ไม่ได้บอกช่วงเวลา (End Time) — ต้องเลือกวัน/รอบส่งเองบนจอ');
   let beRows = 0;   // ⚠️ แปลง พ.ศ.→ค.ศ. ให้ แต่ต้องบอกบนจอเสมอ (คนต้องรู้ว่าไฟล์ผิดรูปแบบ)
 
@@ -283,8 +328,56 @@ export function parsePullFile(matrix, profile) {
   const shipTos = [...new Set(rows.map(r => r.ship_to).filter(Boolean))];
   if (shipTos.length > 1) warnings.push(`ไฟล์มีหลาย Plant Code: ${shipTos.join(', ')} — ระบบจะแยกใบตามแต่ละเจ้า`);
 
+  /* ⭐ dock ต้องรู้ก่อนถึงจะหารอบรับได้ (B1 กับ B5 คนละตาราง) — dock อยู่ในแถว ไม่ใช่ meta
+     ⇒ หา dock ที่พบมากที่สุดในไฟล์ · หลาย dock ในไฟล์เดียว = ต้องบอกคน ห้ามเลือกเงียบ */
+  const dockCnt = {};
+  rows.forEach(r => { if (r.dock_code) dockCnt[r.dock_code] = (dockCnt[r.dock_code] || 0) + 1; });
+  const docks = Object.keys(dockCnt).sort((a, b) => dockCnt[b] - dockCnt[a]);
+  if (docks.length > 1) warnings.push(`ไฟล์มีหลาย Dock: ${docks.join(', ')} — ใช้ตารางรอบรับของ ${docks[0]} (แก้รอบเองบนจอได้)`);
+  const dock = docks[0] || null;
+
+  if (rounds && windowEnd) {
+    const round = pickPullRound(rounds, { shipTo: shipTos[0], dock, windowStart, windowEnd });
+    if (round) slot = shipSlotOf(windowEnd, p.lead_min, round);
+    else warnings.push(`ไม่มีรอบรับของ ${shipTos[0] || '?'}${dock ? ` dock ${dock}` : ''} ช่วง ${windowStart ? timeStr(windowStart) : '?'}-${windowEnd ? timeStr(windowEnd) : '?'} ในทะเบียน — ใช้สูตร "ปลายช่วง +${p.lead_min ?? 60} นาที" เดาให้ ⚠️ ตรวจรอบก่อนยืนยัน แล้วไปเพิ่มแถวที่ ⚙️ Ship-to Config`);
+  }
+
   return { ok: rows.length > 0, error: rows.length ? undefined : 'ไม่พบแถวข้อมูลในไฟล์',
-    meta, rows, warnings, windowStart, windowEnd, slot, shipTo: shipTos[0] || null };
+    meta, rows, warnings, windowStart, windowEnd, slot, dock, shipTo: shipTos[0] || null };
+}
+
+/**
+ * 🚨 ไฟล์นี้เคยอัพไปแล้วหรือยัง — ตรวจ "ระดับไฟล์" ก่อนเขียนอะไรทั้งนั้น
+ *
+ * ที่มา (user 2026-09-09): *"ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ"*
+ * เคสจริงวันเดียวกัน: ไฟล์เดิมถูกอัพ 2 ครั้งห่างกัน 4 วินาที → ใบส่งซ้ำทั้งชุด
+ * (ตอนนั้นตัวกันซ้ำระดับ "แถว" ตายอยู่ ⇒ ต้องมีชั้นที่คนเห็นด้วยตา ไม่ใช่พึ่งกลไกเงียบๆ อย่างเดียว)
+ *
+ * เทียบ 2 ทาง เพราะชื่อไฟล์เชื่อ 100% ไม่ได้:
+ *   - `same_file`   ชื่อไฟล์ตรงกัน (เคสปกติ: กดอัพไฟล์เดิมซ้ำ)
+ *   - `same_window` **ช่วงเวลา + ลูกค้า ตรงกัน** ← ตัวจริงที่บอกว่า "ข้อมูลชุดเดียวกัน"
+ *     (โหลดซ้ำจากพอร์ทัลได้ชื่อใหม่ทุกครั้ง — ชื่อมี timestamp ตอนโหลด ไม่ใช่ตอนของข้อมูล)
+ *
+ * ⚠️ **เตือน ไม่บล็อก** — อัพซ้ำมีเหตุผลที่ถูกต้องจริง (รอบก่อนล้มกลางทาง/แก้ ship-to แล้วอัพใหม่)
+ *    หน้าที่ของฟังก์ชันนี้คือ "ทำให้คนเห็น" · จอบังคับให้ติ๊กรับทราบก่อนถึงกดยืนยันได้
+ *
+ * @param {Array} batches แถวจาก customer_pull_batches ของ ship-to นั้น (ใหม่→เก่า)
+ * @returns {Array<{batch, reason:'same_file'|'same_window'}>} ใหม่สุดก่อน
+ */
+export function findDuplicateUploads(batches, { fileName, windowStart, windowEnd } = {}) {
+  const name = String(fileName || '').trim().toLowerCase();
+  const ws = windowStart instanceof Date ? windowStart.getTime() : null;
+  const we = windowEnd instanceof Date ? windowEnd.getTime() : null;
+  const at = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) ? t : null; };
+  return (batches || []).map(b => {
+    if (name && String(b.file_name || '').trim().toLowerCase() === name) return { batch: b, reason: 'same_file' };
+    // ช่วงเวลาต้องมีครบทั้ง 2 ฝั่งถึงเทียบได้ — ไฟล์ที่ไม่บอกช่วงเวลาห้ามถูกตีว่าซ้ำกันหมด
+    if (ws !== null && we !== null && at(b.window_start) === ws && at(b.window_end) === we) {
+      return { batch: b, reason: 'same_window' };
+    }
+    return null;
+  }).filter(Boolean)
+    .sort((a, b) => new Date(b.batch.uploaded_at || 0) - new Date(a.batch.uploaded_at || 0));
 }
 
 /** คีย์กันนำเข้าซ้ำ — ตรงกับ unique index `customer_pull_signals_dedup_idx` ฝั่ง DB เป๊ะ */
@@ -318,8 +411,29 @@ export function aggregateSignals(rows) {
   return [...m.values()].sort((a, b) => a.customer_part_no.localeCompare(b.customer_part_no));
 }
 
+/**
+ * เวลาส่งจริงของใบ (absolute) — `ship_time` ก่อน 08:00 = กะดึกของวันงานนั้น ⇒ ตกวันถัดไปตามปฏิทิน
+ * ⚠️ ต้องเทียบเป็น Date จริง ห้ามเทียบ "นาทีบนกรอบ 08:00→08:00" — ช่วงเวลาในไฟล์ (เช่น 06:00–08:00)
+ * คร่อมขอบกรอบได้ แล้วเลขนาทีจะกลับด้าน (06:00 ดูเหมือน "หลัง" 09:00 ทั้งที่มาก่อน)
+ */
+export function orderShipAt(dueDate, shipTime) {
+  const d = String(dueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!d || !t) return null;
+  const at = new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
+  if (+t[1] < 8) at.setDate(at.getDate() + 1);   // กะดึกของวันงาน = วันถัดไปตามปฏิทิน
+  return at;
+}
+
 /** สถานะที่ "ทำไปแล้ว" — ห้ามแก้ยอด (สต็อกอาจถูกหักไปแล้ว · user เคาะ 2026-09-08: ไม่แตะ แต่รายงานส่วนต่าง) */
 export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
+
+/* ระยะที่ยอมให้ใบ 862 "นับเป็นเที่ยวเดียวกัน" กับรอบที่ e-SMART คำนวณได้
+   ถอยหลัง 2.5 ชม. = คลุมช่วงดึงเต็มช่วง (2 ชม.) + lead 1 ชม. โดยไม่ล้ำเที่ยวก่อนหน้า
+   เผื่อหน้า 45 นาที = กริด 862 ที่คลาดไปนิด (เคสจริง เที่ยว 15:00 ↔ ใบ 15:30)
+   ⚠️ อย่าขยายเผื่อหน้าเกิน ~1 ชม. — จะเริ่มกินใบของเที่ยวถัดไป */
+const MATCH_BACK_MS = 150 * 60000;
+const MATCH_FWD_MS  =  45 * 60000;
 
 /**
  * ตัดสินว่าแต่ละพาร์ทจะทำอะไรกับใบส่งที่มีอยู่ — **pure** (ไม่แตะ DB)
@@ -336,22 +450,61 @@ export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
  * @returns {Array<{group, order, mat, matStatus, candidates, action, diff, reason}>}
  *   action: 'update' | 'create' | 'locked' | 'unresolved' | 'same'
  */
-export function planOrderUpdates(groups, orders, resolve) {
+export function planOrderUpdates(groups, orders, resolve, slot) {
   const byPart = new Map();
   (orders || []).forEach(o => {
     const k = normKey(o.customer_part_no || o.mat_no);
     if (!byPart.has(k)) byPart.set(k, []);
     byPart.get(k).push(o);
   });
+  /* ⭐ ใบที่ "รอบเดียวกัน" = ใบ 862 ที่เวลาส่ง **ใกล้เที่ยวรถนี้ที่สุด** (user เคาะ 2026-09-09)
+     862 กับ e-SMART เดินคนละกริดเวลา ทั้งที่เป็น milk-run เที่ยวเดียวกัน — วัดจริง 09/09:
+       เที่ยว 09:00 ↔ 862 08:00 · 11:00 ↔ 10:00 · 13:00 ↔ 13:00 · **15:00 ↔ 15:30**
+     จับแบบ ship_time ตรงเป๊ะ ⇒ สร้างรอบใหม่ทุกครั้ง ⇒ ยอดนับ 2 เท่า + ใบ 862 ค้างแดงตลอดกาล
+
+     🔴 ทำไมไม่ใช้ช่วงครึ่งเปิด `(windowStart, targetAt]` (ของเดิม 2026-09-09 เช้า — ผิด 2 ทาง):
+       ⓐ **กินใบของเที่ยวก่อนหน้า** — ช่วง 12:00-14:00 (เที่ยว 15:00) คลุมใบ 13:00 ที่เที่ยว 13:00
+          เคลมไปแล้ว ⇒ แย่งใบกันเอง
+       ⓑ **มองไม่เห็นใบที่อยู่ถัดไปนิดเดียว** — เที่ยว 15:00 คู่จริงคือใบ 15:30 (ห่าง 30 นาที)
+          แต่อยู่นอกช่วง ⇒ สร้างรอบใหม่ ⇒ 15:30 ค้างแดงทั้งที่ยอดตรงกันเป๊ะ (40/40/35)
+     ⇒ กติกา: **ใกล้ที่สุดชนะ · เท่ากันเอาใบที่มาก่อน · ใบที่ batch อื่นเคลมไปแล้วห้ามเคลมซ้ำ**
+     ⚠️ ไม่ส่ง `slot` = พฤติกรรมเดิม (จับคู่จากลิสต์ที่ผู้เรียกกรองมาแล้ว) */
+  const gapOf = (o) => {
+    const at = orderShipAt(o.due_date, o.ship_time);
+    if (!at) return null;                                    // ไม่ระบุเวลา = วางในเที่ยวไหนไม่ได้ ห้ามเดา
+    return at.getTime() - slot.targetAt.getTime();
+  };
+  const inWindow = (o) => {
+    if (!slot?.targetAt) return true;
+    /* ใบที่ e-SMART รอบอื่นเคลมไปแล้ว = ของเที่ยวนั้น ห้ามเอามานับซ้ำ
+       (batch เดียวกัน = อัพไฟล์เดิมซ้ำ ยังแก้ใบเดิมได้ = idempotent) */
+    if (o.pull_batch_id && o.pull_batch_id !== slot.batchId) return false;
+    const gap = gapOf(o);
+    if (gap === null) return false;
+    return gap >= -MATCH_BACK_MS && gap <= MATCH_FWD_MS;
+  };
+  /* ไม่ส่ง slot = พฤติกรรมเดิม: ผู้เรียกกรองรอบมาเองแล้ว เอาใบที่เวลาส่งช้าสุดก่อน */
+  const byTimeDesc = (a, b) =>
+    (orderShipAt(b.due_date, b.ship_time)?.getTime() || 0) - (orderShipAt(a.due_date, a.ship_time)?.getTime() || 0);
+  /* ใกล้ที่สุดก่อน · ห่างเท่ากันเอาใบที่เวลาส่งมาก่อน (ของที่ถึงกำหนดก่อนขึ้นรถก่อน) */
+  const byNearest = (a, b) => {
+    const ga = gapOf(a), gb = gapOf(b);
+    return (Math.abs(ga) - Math.abs(gb)) || (ga - gb);
+  };
+
   return (groups || []).map(g => {
     const r = resolve ? resolve(g.customer_part_no) : { mat: null, status: 'none', candidates: [] };
     // ใบเดิมจับด้วยเลขลูกค้าก่อน (EDI เก็บ customer_part_no) แล้วค่อยลองเลข MAT ที่ map ได้
     const cand = [...(byPart.get(normKey(g.customer_part_no)) || []),
       ...(r.mat ? (byPart.get(normKey(r.mat)) || []) : [])];
-    const seen = new Set(); const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id));
+    const seen = new Set();
+    const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(inWindow)
+      .sort(slot?.targetAt ? byNearest : byTimeDesc);
     const open = list.find(o => !LOCKED_STATUSES.includes(o.status));
     const locked = list.find(o => LOCKED_STATUSES.includes(o.status));
-    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [] };
+    // ใบอื่นในช่วงเดียวกันที่ไม่ได้ถูกเลือก — **ต้องรายงาน ห้ามแตะเอง** (คนตัดสินว่าจะยุบหรือปล่อย)
+    const extras = list.filter(o => o !== open && o !== locked && !LOCKED_STATUSES.includes(o.status));
+    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [], extras };
     if (open) {
       const diff = g.qty - Number(open.qty || 0);
       return { ...base, order: open, action: diff === 0 ? 'same' : 'update', diff,
@@ -365,7 +518,8 @@ export function planOrderUpdates(groups, orders, resolve) {
       return { ...base, order: null, action: 'unresolved', diff: g.qty,
         reason: matIssueOf(r) };
     }
-    return { ...base, order: null, action: 'create', diff: g.qty, reason: 'ไม่มีใบในรอบนี้ — สร้างใหม่จากยอดที่ลูกค้ายืนยัน' };
+    return { ...base, order: null, action: 'create', diff: g.qty,
+      reason: 'ไม่มีใบ 862 ในช่วงเวลานี้ — สร้างใบใหม่ตามยอดที่ลูกค้ายืนยัน' };
   });
 }
 

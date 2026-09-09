@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr,
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt,
 } from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
@@ -49,6 +49,8 @@ const ACTION_META = {
 export default function PullSignalUpload({ open, onClose, onApplied, fullName, shipToMap }) {
   const [profiles, setProfiles] = useState(null);        // null = ยังไม่โหลด · [] = ตารางว่าง/ยังไม่ apply
   const [profileMissing, setProfileMissing] = useState(false);
+  const [rounds, setRounds] = useState(null);           // ตารางรอบรับของลูกค้า (customer_pull_rounds)
+  const [roundsMissing, setRoundsMissing] = useState(false);
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);            // ผลจาก parsePullFile + โปรไฟล์ที่ใช้
   const [shipTo, setShipTo] = useState('');
@@ -60,6 +62,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ctxError, setCtxError] = useState('');
+  // 🚨 alarm "ไฟล์นี้เคยอัพแล้ว" — เตือน ไม่บล็อก แต่ต้องติ๊กรับทราบก่อนถึงกดยืนยันได้
+  const [dupUploads, setDupUploads] = useState([]);
+  const [dupAck, setDupAck] = useState(false);
 
   /* ── โปรไฟล์รูปแบบไฟล์ (data-driven) — ยังไม่ apply migration = ใช้ค่าสำรองในโค้ด + บอกบนจอ ── */
   useEffect(() => {
@@ -71,13 +76,34 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         if (error || !data?.length) { setProfiles([FALLBACK_PROFILE]); setProfileMissing(true); }
         else { setProfiles(data); setProfileMissing(false); }
       });
+    /* ⭐ ตารางรอบรับของลูกค้า — รอบส่งมาจากตารางนี้ ไม่ใช่สูตร (ดู pickPullRound)
+       ยังไม่ apply migration = ตกไปใช้ lead_min เหมือนเดิม + ขึ้นแถบบอกบนจอ ห้ามเงียบ */
+    supabaseDR.from('customer_pull_rounds').select('*').eq('is_active', true).order('sort_order')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setRounds([]); setRoundsMissing(true); }
+        else { setRounds(data || []); setRoundsMissing(!data?.length); }
+      });
     return () => { alive = false; };
   }, [open]);
 
   const reset = useCallback(() => {
     setFile(null); setParsed(null); setShipTo(''); setWorkDate(''); setShipTime('');
     setOrders([]); setDupKeys(new Set()); setProducts([]); setCtxError('');
+    setDupUploads([]); setDupAck(false);
   }, []);
+
+  /* ⚠️ ผู้ใช้เลือกไฟล์ได้ก่อนที่ prefetch จะกลับมา — ถ้าไม่รอ ตารางรอบรับจะยังเป็น null
+     ⇒ ตกไปใช้สูตร lead_min **โดยไม่มีคำเตือน** (เพราะโค้ดถือว่า "ยังไม่ได้โหลด" ไม่ใช่ "ไม่มีตาราง")
+     = เดารอบผิดแบบเงียบ ซึ่งเป็นบั๊กแบบเดียวกับที่ทั้งโมดูลนี้พยายามกำจัด */
+  const ensureRounds = useCallback(async () => {
+    if (rounds) return rounds;
+    const { data, error } = await supabaseDR.from('customer_pull_rounds')
+      .select('*').eq('is_active', true).order('sort_order');
+    const list = error ? [] : (data || []);
+    setRounds(list); setRoundsMissing(!!error || !list.length);
+    return list;
+  }, [rounds]);
 
   /* ── อ่านไฟล์ (csv/xlsx ทางเดียวกัน — SheetJS อ่าน csv ได้) ────────────────────────── */
   const onFile = useCallback(async (f) => {
@@ -90,7 +116,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       // raw:true + defval:'' → ค่าคงเป็นข้อความ ไม่ให้ SheetJS เดา MDY/DMY แทนเรา (pullSignal.parseTs คุมเอง)
       const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       const { profile, guessed } = pickProfile(matrix, profiles || [FALLBACK_PROFILE]);
-      const res = parsePullFile(matrix, profile);
+      const res = parsePullFile(matrix, profile, await ensureRounds());
       setParsed({ ...res, profile, guessed, rowsInFile: matrix.length });
       if (res.ok) {
         setShipTo(res.shipTo || '');
@@ -101,7 +127,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       setParsed({ ok: false, error: `อ่านไฟล์ไม่สำเร็จ: ${e.message}`, rows: [], warnings: [] });
     }
     setLoading(false);
-  }, [profiles, reset]);
+  }, [profiles, ensureRounds, reset]);
 
   /* ── โหลดบริบทปลายทาง: ใบส่งในรอบนั้น + แถวที่เคยนำเข้า ───────────────────────────
      ⚠️ แยกเป็นฟังก์ชันเพราะ **`apply()` ต้องเรียกซ้ำก่อนเขียนเสมอ** —
@@ -110,7 +136,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const fetchContext = useCallback(async () => {
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
-        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no')
+        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id')
         .eq('customer', shipTo).eq('due_date', workDate),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
@@ -123,8 +149,10 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       })(),
     ]);
     return {
-      // รอบเดียวกัน = ship_time ตรงระดับนาที (EDI เก็บเป็น text 'HH:MM' หรือ 'HH:MM:SS')
-      orders: (ordRes.data || []).filter(o => String(o.ship_time || '').slice(0, 5) === shipTime),
+      /* ⭐ ส่งใบ "ทั้งวันงาน" ให้ `planOrderUpdates` ตัดสินด้วย **ช่วงเวลาของไฟล์** เอง
+         (เดิมกรอง ship_time ตรงเป๊ะที่นี่ ⇒ ใบ 862 ของรอบเดียวกันแต่คนละนาทีหลุดหมด
+          แล้วระบบสร้างรอบใหม่ทับ = ยอดนับ 2 เท่า · user เคาะแก้ 2026-09-09) */
+      orders: ordRes.data || [],
       dupKeys: new Set((sigRes.data || []).map(r => signalKey({ ...r, pulled_at: new Date(r.pulled_at) }, SOURCE))),
       // ตารางยังไม่ apply (42P01) = ถือว่ายังไม่เคยนำเข้า แต่ต้องบอกบนจอ ห้ามเงียบ
       err: ordRes.error?.message || (sigRes.error ? `ยังตรวจการนำเข้าซ้ำไม่ได้: ${sigRes.error.message}` : ''),
@@ -150,6 +178,27 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return () => { alive = false; };
   }, [open, parsed, shipTo, workDate, shipTime, fetchContext]);
 
+  /* ── 🚨 ไฟล์นี้เคยอัพไปแล้วหรือยัง (user 2026-09-09: "ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ") ──
+     เทียบระดับ **ไฟล์** ไม่ใช่ระดับแถว — คนต้องเห็นก่อนกด ไม่ใช่รู้ตัวตอนใบซ้ำไปแล้ว */
+  useEffect(() => {
+    if (!open || !parsed?.ok || !shipTo) { setDupUploads([]); return; }
+    let alive = true;
+    supabaseDR.from('customer_pull_batches')
+      .select('id, file_name, window_start, window_end, work_date, ship_time, uploaded_by, uploaded_at, orders_updated, orders_created')
+      .eq('source', SOURCE).eq('ship_to', shipTo)
+      .order('uploaded_at', { ascending: false }).limit(50)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        // ตารางยังไม่ apply = ตรวจไม่ได้ แต่ไม่ใช่ "ไม่ซ้ำ" → ctxError บอกอยู่แล้วจากอีกจุด
+        if (error) { setDupUploads([]); return; }
+        setDupUploads(findDuplicateUploads(data, {
+          fileName: file?.name, windowStart: parsed.windowStart, windowEnd: parsed.windowEnd,
+        }));
+        setDupAck(false);
+      });
+    return () => { alive = false; };
+  }, [open, parsed, shipTo, file]);
+
   /* ── จับคู่ MAT: กรอง Product Master ด้วย "ชื่อลูกค้า" ของ ship-to ก่อนเสมอ ──────────────
      กฎเหล็ก (CLAUDE.md 2026-08-24): เลขพาร์ทลูกค้า 1 ตัว = หลายเลข SAP ต่างที่ลูกค้าปลายทาง
      RB3B-16E060-BA → 10100384 (FTM) · 10100385 (AAT) · 10106790 (FVL) — ไม่กรองก่อน = ambiguous ทุกตัว */
@@ -170,9 +219,15 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     [parsed, dupKeys]);
   const dupCount = (parsed?.rows?.length || 0) - fresh.length;
   const groups = useMemo(() => aggregateSignals(fresh), [fresh]);
+  /* เที่ยวรถของไฟล์นี้ — ใบ 862 ที่เวลาส่ง "ใกล้เที่ยวนี้ที่สุด" = ใบเดียวกันกับที่ลูกค้าเรียก
+     (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
+  const slot = useMemo(() => ({
+    windowStart: parsed?.windowStart || null,
+    targetAt: workDate && shipTime ? orderShipAt(workDate, shipTime) : null,
+  }), [parsed, workDate, shipTime]);
   const plan = useMemo(
-    () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex)),
-    [groups, orders, pnIndex]);
+    () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex), slot),
+    [groups, orders, pnIndex, slot]);
 
   const tally = useMemo(() => {
     const t = { update: 0, create: 0, same: 0, locked: 0, unresolved: 0 };
@@ -180,6 +235,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return t;
   }, [plan]);
   const willWrite = tally.update + tally.create;
+  const blockedByDup = dupUploads.length > 0 && !dupAck;
 
   /* ── ยืนยัน — เขียนจริง ───────────────────────────────────────────────────────────── */
   const apply = async () => {
@@ -192,7 +248,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     const live = await fetchContext();
     if (live.err) { toast.error(`ตรวจสถานะล่าสุดไม่สำเร็จ: ${live.err}`); setSaving(false); return; }
     const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
-    const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex));
+    const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex), slot);
     const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
     if (!liveWrite) {
       toast.info('ไฟล์นี้ถูกนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดทเพิ่ม');
@@ -258,6 +314,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           dock_code: x.order.dock_code || x.group.dock_code || null,
           status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
           pull_batch_id: batchId, ...stamp,
+          // ⚠️ **ห้ามแก้ `ship_time`** — ยืนยันออเดอร์ไม่ได้แปลว่าเลื่อนเวลาส่ง · คงกริดของ 862 ไว้
         };
         // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
         let res = await supabaseDR.from('customer_shipping_orders').update(patch)
@@ -366,6 +423,32 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             </div>
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
 
+            {/* 🚨 alarm อัพซ้ำ — เตือน ไม่บล็อก (อัพซ้ำมีเหตุผลที่ถูกต้องจริง เช่นรอบก่อนล้มกลางทาง)
+                แต่ต้องติ๊กรับทราบก่อนถึงกดยืนยันได้ · สีแดงนิ่ง ไม่กระพริบ (กระพริบสงวนให้ Andon) */}
+            {dupUploads.length > 0 && (
+              <div style={{ ...noteBox('#ef4444'), marginBottom: 10 }}>
+                <div style={{ fontWeight: 900, fontSize: 13, marginBottom: 4 }}>
+                  🚨 ไฟล์ชุดนี้เคยอัพเข้าระบบไปแล้ว {dupUploads.length > 1 ? `${dupUploads.length} ครั้ง` : ''}
+                </div>
+                {dupUploads.slice(0, 3).map(({ batch: b, reason }) => (
+                  <div key={b.id} style={{ fontSize: 12, marginTop: 3 }}>
+                    • {reason === 'same_file' ? 'ชื่อไฟล์เดียวกัน' : 'ช่วงเวลาเดียวกัน (คนละชื่อไฟล์)'}
+                    {' — '}{whenText(b.uploaded_at)} โดย {b.uploaded_by || 'ไม่ระบุ'}
+                    {b.ship_time && ` · ลงรอบ ${b.ship_time}`}
+                    {' → '}อัพเดท {fmt(b.orders_updated)} ใบ · สร้าง {fmt(b.orders_created)} ใบ
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6, lineHeight: 1.6 }}>
+                  ยืนยันต่อได้ถ้าตั้งใจ (เช่นรอบก่อนล้มกลางทาง) — ระบบจะ<b>ไม่สร้างใบซ้ำ</b> เพราะเทียบกับของจริงก่อนเขียนเสมอ
+                  และมีด่านกันซ้ำที่ฐานข้อมูลอีกชั้น · ถ้าไม่มีอะไรต้องแก้จริง ระบบจะบอกว่า “นำเข้าไปแล้ว” แล้วปิดให้เอง
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
+                  <input type="checkbox" checked={dupAck} onChange={e => setDupAck(e.target.checked)} />
+                  รับทราบว่าเป็นไฟล์ซ้ำ — ยืนยันจะอัพต่อ
+                </label>
+              </div>
+            )}
+
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
               <Field label="ลูกค้า (Plant Code)">
                 <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={inputSt}>
@@ -378,10 +461,30 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               <Field label="วันงานที่ส่ง">
                 <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={inputSt} />
               </Field>
-              <Field label={`รอบส่ง (ปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
+              <Field label={parsed.slot?.from === 'schedule'
+                ? `รอบรถลูกค้ามารับ (ตารางรอบรับ${parsed.dock ? ` · Dock ${parsed.dock}` : ''})`
+                : `รอบส่ง (⚠ เดาจากปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
                 <input type="time" value={shipTime} onChange={e => setShipTime(e.target.value)} style={inputSt} />
               </Field>
             </div>
+
+            {/* ⭐ บอกเสมอว่ารอบนี้มาจากไหน — "ตารางลูกค้า" กับ "สูตรเดา" ต้องแยกออกด้วยตา
+                (สูตรเคยเดา 13:00 ทั้งที่ตารางจริงคือ 14:00 — ไม่มีใครรู้จนเทียบใบกระดาษ) */}
+            {parsed.slot?.from === 'schedule' && parsed.slot.round && (
+              <div style={{ ...noteBox('#22c55e'), marginBottom: 8 }}>
+                🚚 ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{parsed.slot.round.period_start}-{parsed.slot.round.period_end}</b>
+                {parsed.slot.round.dock_code ? <> · Dock <b>{parsed.slot.round.dock_code}</b></> : null}
+                {' '}→ รถมารับ <b>{String(parsed.slot.round.pickup_time).slice(0, 5)}</b>
+                {parsed.slot.round.delivery_time ? <> · ถึงลูกค้า {String(parsed.slot.round.delivery_time).slice(0, 5)}</> : null}
+                {parsed.slot.round.prepare_from ? <> · เตรียมของ {String(parsed.slot.round.prepare_from).slice(0, 5)}-{String(parsed.slot.round.prepare_to || '').slice(0, 5)}</> : null}
+              </div>
+            )}
+            {roundsMissing && (
+              <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
+                ⚠️ ยังไม่มีตารางรอบรับในระบบ — ใช้สูตร “ปลายช่วง +{parsed.profile?.lead_min ?? 60} นาที” เดารอบให้
+                <b> ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง</b> · ตั้งตารางจริงได้ที่แท็บ <b>⚙️ Ship-to Config</b>
+              </div>
+            )}
 
             {!shipToMap?.[shipTo] && shipTo && (
               <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
@@ -405,6 +508,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                   <th style={thR}>ลูกค้ายืนยัน</th>
                   <th style={thR}>862 เดิม</th>
                   <th style={thR}>ส่วนต่าง</th>
+                  <th style={th}>รอบปลายทาง</th>
                   <th style={th}>จะทำอะไร</th>
                 </tr></thead>
                 <tbody>
@@ -421,13 +525,25 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                         <td style={{ ...tdR, fontWeight: 800, color: !x.order ? 'var(--muted)' : x.diff > 0 ? '#ef4444' : x.diff < 0 ? '#f59e0b' : 'var(--muted)' }}>
                           {x.order ? (x.diff > 0 ? `+${fmt(x.diff)}` : fmt(x.diff)) : '—'}
                         </td>
+                        <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {x.order ? String(x.order.ship_time || '').slice(0, 5) : shipTime}
+                          {x.order && String(x.order.ship_time || '').slice(0, 5) !== shipTime && (
+                            <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม</div>
+                          )}
+                        </td>
                         <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
-                          {x.reason && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}</td>
+                          {x.reason && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
+                          {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
+                          {x.extras?.length > 0 && (
+                            <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>
+                              ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} ใบ ({x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
+                            </div>
+                          )}</td>
                       </tr>
                     );
                   })}
                   {!plan.length && (
-                    <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>
+                    <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>
                       {dupCount > 0 ? 'ทุกแถวในไฟล์นี้เคยนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดท' : 'ไม่มีรายการ'}
                     </td></tr>
                   )}
@@ -444,13 +560,16 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime}
+              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime || (dupUploads.length > 0 && !dupAck)}
                 style={{
                   padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
-                  background: willWrite ? 'var(--accent)' : 'var(--bg3)', color: willWrite ? '#08130a' : 'var(--muted)',
+                  background: willWrite && !blockedByDup ? 'var(--accent)' : 'var(--bg3)',
+                  color: willWrite && !blockedByDup ? '#08130a' : 'var(--muted)',
                 }}>
-                {saving ? 'กำลังบันทึก…' : `✅ ยืนยันอัพเดท (${willWrite})`}
+                {saving ? 'กำลังบันทึก…'
+                  : blockedByDup ? '🚨 ติ๊กรับทราบไฟล์ซ้ำก่อน'
+                  : `✅ ยืนยันอัพเดท (${willWrite})`}
               </button>
             </div>
           </>
@@ -459,6 +578,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     </div>
   );
 }
+
+/** เวลาแบบอ่านง่ายในกล่องเตือน — วันที่+เวลา (ไม่ใช้ toISOString: จะได้ UTC) */
+const whenText = (v) => {
+  const d = new Date(v);
+  if (!Number.isFinite(d.getTime())) return '—';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 const noteBox = (color) => ({
   padding: '7px 10px', borderRadius: 8, fontSize: 12, lineHeight: 1.6,

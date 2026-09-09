@@ -13,7 +13,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MTN_STEPS, QA_NOT_RELATED, canBounceBack, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -97,32 +97,34 @@ const NAME_CASCADE = {
   mtn_repair_types:  { name: 'repair_type' },
 };
 
+/* สี/ลำดับขั้นของแต่ละสถานะ — **ป้าย (label) ไม่ได้เขียนที่นี่**: มาจาก MO_STATUS_LABEL
+   ใน `src/utils/mtnStepPerm.js` ที่เดียว (จอซ่อม/บอร์ด Andon/ผังแม่พิมพ์/สรุป Telegram ต้องพูดตรงกัน) */
 const STATUS_META = {
-  pending:   { label: '📣 รอรับงาน',        step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
-  assigned:  { label: '🔧 รับงานแล้ว/รอซ่อม', step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  repairing: { label: '🔧 กำลังซ่อม',        step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  repaired:  { label: '🔎 รอตรวจหลังซ่อม',    step: 3, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  checked:   { label: '🧪 รอคุณภาพ/รับมอบ',   step: 4, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  qa:        { label: '🤝 รอรับมอบ',          step: 5, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  handover:  { label: '✍️ รออนุมัติปิด',      step: 6, color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
-  closed:    { label: '✅ ปิด MO',            step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
-  returned:  { label: '↩️ ตีกลับ (ผิดแผนก)',   step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
-  rejected:  { label: '⛔ Reject MO',         step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
+  pending:   { label: MO_STATUS_LABEL.pending,   step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
+  assigned:  { label: MO_STATUS_LABEL.assigned,  step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+  repairing: { label: MO_STATUS_LABEL.repairing, step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+  repaired:  { label: MO_STATUS_LABEL.repaired,  step: 3, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+  checked:   { label: MO_STATUS_LABEL.checked,   step: 4, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+  qa:        { label: MO_STATUS_LABEL.qa,        step: 5, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
+  handover:  { label: MO_STATUS_LABEL.handover,  step: 6, color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
+  closed:    { label: MO_STATUS_LABEL.closed,    step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
+  returned:  { label: MO_STATUS_LABEL.returned,  step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
+  rejected:  { label: MO_STATUS_LABEL.rejected,  step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
 };
-/* 🔴 ป้ายสถานะต้องบอก "ใครต้องทำต่อ" ให้ตรง — 2026-09-08 (feedback หน้างาน
-   "Step กดข้ามของ Q มันหายในที่เลือกไม่เกี่ยวกับคุณภาพ")
-   `checked` (ผ่านขั้น 4 แล้ว) ใช้ป้ายเดียวว่า "รอคุณภาพ/รับมอบ" ทั้งที่แยกเป็น 2 ทางคนละคนทำ:
-     · ขั้น 4 ระบุ "เกี่ยวกับคุณภาพ"    → รอ QA ตรวจจริง (มีปุ่ม ⏭ ข้าม QA ให้กด)
-     · ขั้น 4 ระบุ "ไม่เกี่ยวกับคุณภาพ" → ข้าม QA ไปรับมอบเลย **ปุ่ม ⏭ หายถูกแล้ว** (ไม่มีอะไรให้ข้าม)
-   เคสหลังจอเดิมเขียน "รอคุณภาพ" + กล่องขั้น 5 ว่างเปล่า + ปุ่มข้ามหาย ⇒ หน้างานอ่านว่า "ใบค้างรอ QA
-   แล้วปุ่มข้ามหายไป" · ป้ายต้องพูดความจริง ห้ามให้เดา — ดูกล่องหมายเหตุขั้น 5 ใน DetailDrawer คู่กัน */
+/* 🔴 ป้ายสถานะต้องบอก "ใครต้องทำต่อ" ให้ตรง — 2026-09-08 → เข้มขึ้น 2026-09-09 (ใบค้างขั้น 6 = 140 ใบ)
+   `checked` (ผ่านขั้น 4 แล้ว) เคยใช้ป้ายเดียว "🧪 รอคุณภาพ/รับมอบ" ทั้งที่แยกเป็น 2 ทางคนละคนกด:
+     · ขั้น 4 ระบุ "เกี่ยวกับคุณภาพ"    → "🧪 รอตรวจคุณภาพ (ขั้น 5)"  = รอ QA จริง (มีปุ่ม ⏭ ข้าม QA)
+     · ขั้น 4 ระบุ "ไม่เกี่ยวกับคุณภาพ" → "🤝 รอรับมอบ (ขั้น 6)"      = ไม่ต้องรอ QA เลย รอฝ่ายที่แจ้ง
+   ป้ายรวมทำให้หน้างานอ่านว่า "ยังรอ QA" แล้วไม่มีใครกดขั้น 6 → ใบกองค้าง
+   ⚠️ เกณฑ์แยกอยู่ที่ `moStatusLabel()` (mtnStepPerm.js) ที่เดียว **ห้ามอ่าน STATUS_META[o.status].label
+      ตรงๆ** และ **ห้ามเพิ่มค่า status ใหม่** เพื่อแยก 2 เคสนี้ (KPI/Andon/ใบพิมพ์/edge อ่าน status ดิบ) */
 const statusMetaOf = (o) => {
   const m = STATUS_META[o?.status] || STATUS_META.pending;
-  return o?.status === 'checked' && !isWaitingQa(o) ? { ...m, label: '🤝 รอรับมอบ (ไม่ต้องตรวจ QA)' } : m;
+  return { ...m, label: moStatusLabel(o) };   // ป้ายมาจาก moStatusLabel() เท่านั้น — สี/ขั้นคงเดิม
 };
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
-const QUALITY_OPTS = ['ไม่เกี่ยวกับคุณภาพ', 'เกี่ยวกับคุณภาพ'];
+const QUALITY_OPTS = [QA_NOT_RELATED, QA_RELATED];   // ค่าที่เก็บลง quality_related — จุดเดียวที่ mtnStepPerm.js
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
 const FOLLOW_OPTS = ['ไม่เกิดปัญหาซ้ำ', 'แจ้งเฝ้าระวัง', 'เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'];
 // ประเมินความพึงพอใจบริการซ่อม (step 6) — KPI ให้หน่วยงานซ่อม · 5 ด้าน × 3 ระดับ
@@ -769,6 +771,10 @@ function nextStepFor(order) {
   }
 }
 
+/* ช่อง "5.คุณภาพ" ในใบพิมพ์: ใบที่ไม่ต้องตรวจ QA ต้องพิมพ์ว่า "ไม่เกี่ยวกับคุณภาพ" ไม่ใช่ปล่อยว่าง
+   (ว่าง = ผู้ตรวจสอบอ่านว่า "ยังไม่ได้ตรวจ") · ครอบคลุมทั้งใบที่กด ⏭ และใบที่ขั้น 4 ระบุไม่เกี่ยว */
+const qaSkippedPrint = (o) => moQaState(o) === 'skipped';
+
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
 function printMoReport(o, dparts = [], logo0) {
   const teamKey = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
@@ -856,7 +862,7 @@ function printMoReport(o, dparts = [], logo0) {
   <table>
     <tr><td class="sech" style="width:50.2%;height:25pt"><b>4&5 [CONFIRM QUALITY]</b> <span class="en">ยืนยันคุณภาพ</span></td>
         <td class="sech" style="width:49.8%;height:25pt"><b>6 [ACCEPT]</b> <span class="en">รับมอบหลังซ่อม</span></td></tr>
-    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result || (o.qa_skipped_at ? 'ไม่เกี่ยวกับคุณภาพ (ข้ามการตรวจ QA)' : ''))}${L('5.รายละเอียด', o.qa_note || (o.qa_skipped_at ? `${o.qa_skip_reason || ''} — ${o.qa_skipped_by || ''}`.trim() : ''))}</td>
+    <tr class="q"><td>${L('4.ผลงานหลังแก้ไข:', o.check_result)}${L('4.รายละเอียด:', o.check_note)}${L('5.คุณภาพหลังการแก้ไข:', o.qa_result || (qaSkippedPrint(o) ? 'ไม่เกี่ยวกับคุณภาพ (ไม่ต้องตรวจ QA)' : ''))}${L('5.รายละเอียด', o.qa_note || (qaSkippedPrint(o) ? `${o.qa_skip_reason || QA_SKIP_REASON_STEP4}${o.qa_skipped_by ? ` — ${o.qa_skipped_by}` : ''}` : ''))}</td>
         <td>${L('สถานะ:', o.follow_up)}${L('ผู้แจ้ง:', o.ho_reporter || o.reporter_prod)}${L('รายละเอียด:', '')}</td></tr>
   </table>
   <table class="signs">
@@ -1027,14 +1033,18 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
      เดิมพิมพ์ชื่อขั้นมือ 7 ที่ แล้วไม่ตรงกับปุ่ม/หัวโมดัล — คนอ่านไม่รู้ว่าใครต้องทำต่อ */
   /* `note` = ข้อความที่ต้องเห็น **แม้ขั้นนั้นยังไม่ถูกทำ** — ใช้บอก "ขั้นนี้ไม่ต้องทำแล้ว"
      ให้ต่างจาก "ยังไม่ได้ทำ" (กล่องจางๆ ว่างเปล่า) ซึ่งหน้างานอ่านว่าใบค้าง — 2026-09-08 */
-  const StepBox = ({ n, done, note, children }) => {
+  /* `skipped` = ขั้นนี้ "ไม่ต้องทำ" (ข้ามอย่างเป็นทางการ) — ต่างจาก done (ทำแล้ว) และจาก
+     กล่องจางๆ (ยังไม่ได้ทำ) · ห้ามวาดเป็น ✅ เขียว เพราะแปลว่า "มีคนตรวจแล้ว" = โกหกผู้ตรวจสอบ */
+  const StepBox = ({ n, done, skipped, note, children }) => {
     const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : MTN_STEPS[n];
+    const mark = done ? '✅' : (skipped || note) ? '⏭' : '⬜';
     return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note ? 1 : 0.55 }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note || skipped ? 1 : 0.55 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : note ? '#f59e0b' : 'var(--muted)' }}>
-          {done ? '✅' : note ? '⏭' : '⬜'} ขั้น {n}: {meta?.title}
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : (skipped || note) ? '#f59e0b' : 'var(--muted)' }}>
+          {mark} ขั้น {n}: {meta?.title}
           <span style={{ fontWeight: 600, color: 'var(--muted)', marginLeft: 6, fontSize: 11 }}>· {meta?.who}</span>
+          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ ข้าม (ไม่เกี่ยวกับคุณภาพ)</span>}
         </div>
         {done && n >= 2 && canEditStep(n) && <button onClick={() => onStep(n, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>✏️ แก้ไข</button>}
       </div>
@@ -1043,18 +1053,21 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
     </div>
   ); };
 
-  /* 🔴 ขั้น 5 ต้องแยก "ไม่ต้องตรวจ" ออกจาก "ยังไม่ตรวจ" — 2026-09-08 (feedback หน้างาน)
-     ทั้ง 2 เคสที่ QA ไม่ต้องแตะใบนี้ (ขั้น 4 เลือก "ไม่เกี่ยวกับคุณภาพ" · กด ⏭ ข้าม QA แล้ว)
-     **ไม่ขยับ `current_step` ออกจาก 4** ⇒ กล่องขั้น 5 เดิม (`done = current_step >= 5`) ว่างเปล่า
-     และกล่อง "⏭ ข้ามการตรวจ QA" ที่เขียนไว้ก็ไม่เคยโผล่จนกว่าจะรับมอบเสร็จ (บั๊กเงียบตัวเดียวกัน)
-     → ย้ายมาเป็น `note` ที่โชว์เสมอ + บอกด้วยว่าปุ่ม ⏭ หายเพราะไม่มีอะไรให้ข้ามแล้ว */
-  const qa5Note = (o.status === 'checked' && !isWaitingQa(o)) || (isQaSkipped(o) && o.current_step < 5) ? (
+  /* 🔴 ขั้น 5 ต้องแยก 3 สถานะให้ขาด: ตรวจแล้ว ✅ / **ข้าม** ⏭ / ยังไม่ตรวจ ⬜ — 2026-09-08 → 09-09
+     ใบที่ไม่ต้องตรวจ QA (ขั้น 4 เลือก "ไม่เกี่ยวกับคุณภาพ" · กด ⏭ ข้าม QA) **ไม่ขยับ current_step
+     ออกจาก 4** ⇒ เกณฑ์เดิม `done = current_step >= 5` ผิด 2 ทางพร้อมกัน:
+       · ก่อนรับมอบ = กล่องจางว่างเปล่า อ่านเหมือน "ค้างรอ QA"
+       · หลังรับมอบ (current_step ขยับเป็น 6-7) = ขึ้น ✅ เขียว **เหมือน QA ตรวจจริงทั้งที่ไม่มีใครตรวจ**
+     → ใช้ `moQaState(o)` (mtnStepPerm.js) เป็นเกณฑ์เดียว แล้ววาดชิป/หมายเหตุ "ข้าม" ค้างไว้ตลอดอายุใบ */
+  const qa5 = moQaState(o);
+  const qa5Note = qa5 === 'skipped' ? (
     <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
       ⏭ <b>ไม่ต้องตรวจ QA — งานนี้ไม่เกี่ยวกับคุณภาพ</b>
       <div style={{ color: 'var(--text2)' }}>
         {isQaSkipped(o)
-          ? <>กดข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || '—'}</div></>
-          : <>ขั้น 4 ระบุว่า “{QA_NOT_RELATED}” → ข้ามขั้นนี้ไป <b>ขั้น 6 รับมอบ</b> ได้เลย (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</>}
+          ? <>ข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || QA_SKIP_REASON_STEP4}</div></>
+          : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
+        {o.status === 'checked' && <div>→ ขั้นต่อไปคือ <b>ขั้น 6 รับมอบ</b> ของฝ่ายที่แจ้ง (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</div>}
       </div>
     </div>
   ) : null;
@@ -1133,7 +1146,8 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           <StepBox n={4} done={o.current_step >= 4}>
             <Row k="ผล" v={o.check_result} /><Row k="เกี่ยวคุณภาพ?" v={o.quality_related} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
           </StepBox>
-          <StepBox n={5} done={o.current_step >= 5} note={qa5Note}>
+          {/* done = QA ตรวจจริงเท่านั้น (moQaState) — ห้ามกลับไปใช้ current_step >= 5 */}
+          <StepBox n={5} done={qa5 === 'done'} skipped={qa5 === 'skipped'} note={qa5Note}>
             {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
             <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
           </StepBox>
@@ -1167,6 +1181,19 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ ผู้เปิดใบ / ผู้ถือสิทธิ์ mtn_repair:accept_work / QA กดข้าม QA ไปขั้น 6 ได้</div>)}
+            {/* 🔴 ขั้น 6 ต้องบอก "ใครคนนั้น" ไม่ใช่แค่ตำแหน่ง — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ)
+                ก่อนหน้านี้กล่องนี้บอกแค่ "หัวหน้าแผนกของฝ่ายที่แจ้ง" ลอยๆ คนเปิดดูจึงไม่รู้ว่าต้องไปตาม
+                ใคร แล้วใบก็ค้างต่อ · ชื่อผู้แจ้งมีอยู่ในใบแล้ว (reported_by_name — stamp ตอนเปิดใบ) */}
+            {next.step === 6 && (
+              <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px dashed rgba(245,158,11,0.45)', color: 'var(--text)' }}>
+                🤝 <b>ฝั่งช่างทำงานเสร็จหมดแล้ว — เหลือขั้นสุดท้ายของฝ่ายที่แจ้ง (รับมอบ/ติดตามผล)</b>
+                <div style={{ color: 'var(--text2)', marginTop: 2 }}>
+                  คนที่ต้องกด: <b style={{ color: 'var(--text)' }}>{o.reported_by_name || o.reporter_prod || '— (ใบนี้ไม่ได้บันทึกชื่อผู้แจ้ง)'}</b>
+                  {[o.line_name, o.dept_section].filter(Boolean).length ? ` · ${[o.line_name, o.dept_section].filter(Boolean).join(' · ')}` : ''}
+                  {' '}— หรือหัวหน้าแผนกของฝ่ายนั้น (ผู้ถือสิทธิ์ mtn_repair:handover)
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1233,7 +1260,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', reject_reason: o.reject_reason || '',
     root_cause: o.root_cause || '', solution: o.solution || '', tech_main: o.tech_main || '', tech_secondary: o.tech_secondary || '',
     labor_cost: o.labor_cost ?? '', parts_cost: o.parts_cost ?? '',
-    check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || 'ไม่เกี่ยวกับคุณภาพ', checker_name: o.checker_name || fullName || '',
+    check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || QA_NOT_RELATED, checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
     qa_skip_reason: o.qa_skip_reason || '',
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
@@ -1396,8 +1423,21 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
         Object.assign(upd, { check_result: f.check_result, check_note: f.check_note, quality_related: f.quality_related, checker_name: f.checker_name, checker_sign: s });
         if (!editMode) { upd.status = 'checked'; upd.current_step = 4; upd.check_at = new Date().toISOString(); }
+        /* 🔴 เลือก "ไม่เกี่ยวกับคุณภาพ" ที่ขั้น 4 = **การข้าม QA แบบเดียวกับปุ่ม ⏭** — ต้องทิ้งร่องรอย
+           ชุดเดียวกัน (ใคร/เมื่อไหร่/เหตุผล) ไม่งั้นใบพิมพ์กับกล่องขั้น 5 แยกไม่ออกว่า "ข้าม" หรือ
+           "ยังไม่ตรวจ" (2026-09-09) · กลับไปเลือก "เกี่ยวกับคุณภาพ" = ล้างร่องรอยทิ้ง ไม่งั้นใบจะทั้ง
+           รอ QA และถูกมาร์คว่าข้ามพร้อมกัน · ค่าที่ stamp ไว้แล้วห้ามเขียนทับ (คนกดจริงต้องไม่หาย) */
+        const skipStamp = f.quality_related === QA_NOT_RELATED
+          ? { qa_skipped_by: o.qa_skipped_by || fullName || '', qa_skipped_at: o.qa_skipped_at || new Date().toISOString(), qa_skip_reason: o.qa_skip_reason || QA_SKIP_REASON_STEP4 }
+          : { qa_skipped_by: null, qa_skipped_at: null, qa_skip_reason: null };
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
-        { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+        { let { error: eUpdN } = await supabaseDR.from('mtn_orders').update({ ...upd, ...skipStamp }).eq('id', o.id);
+          if (eUpdN?.code === '42703') {
+            // deploy-safe: ฐาน DR ยังไม่มีคอลัมน์ qa_skip_* (migration 20260903_mtn_qa_skip) — ใบต้องเดินต่อได้
+            // แต่ห้ามเงียบ: ร่องรอยการข้าม QA ไม่ถูกเก็บ (ENGINEERING-PRINCIPLES §6 "tolerant ได้ แต่ห้ามเงียบ")
+            ({ error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id));
+            if (!eUpdN && f.quality_related === QA_NOT_RELATED) toast.error('บันทึกขั้น 4 แล้ว แต่ยังบันทึกร่องรอย "ไม่ต้องตรวจ QA" ไม่ได้ — ฐาน DR ยังไม่มีคอลัมน์ qa_skip_* (รัน migration 20260903_mtn_qa_skip)');
+          }
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
       } else if (step === 5) {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
@@ -1535,10 +1575,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label="ผลตรวจรับ — ฝ่ายที่แจ้งรับงานได้ไหม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="งานนี้กระทบคุณภาพชิ้นงานไหม">
             <select value={f.quality_related} onChange={e => set('quality_related', e.target.value)} style={inp}>{QUALITY_OPTS.map(r => <option key={r}>{r}</option>)}</select>
-            <div style={{ fontSize: 11.5, color: f.quality_related === 'เกี่ยวกับคุณภาพ' ? '#f59e0b' : 'var(--muted)', marginTop: 4 }}>
-              {f.quality_related === 'เกี่ยวกับคุณภาพ'
-                ? '→ ใบนี้จะถูกส่งให้ QA ตรวจ (ขั้น 5) ก่อนรับมอบ'
-                : '→ ข้ามขั้น 5 (QA) ไปที่รับมอบ/ติดตามผลเลย — เลือกให้ตรงความจริง ช่องนี้เป็นตัวตัดสินว่า QA จะได้ตรวจหรือไม่'}
+            <div style={{ fontSize: 11.5, color: f.quality_related === QA_RELATED ? '#f59e0b' : 'var(--muted)', marginTop: 4 }}>
+              {f.quality_related === QA_RELATED
+                ? '→ ใบนี้จะถูกส่งให้ QA ตรวจ (ขั้น 5) ก่อนรับมอบ · ป้ายสถานะจะขึ้นว่า “รอตรวจคุณภาพ (ขั้น 5)”'
+                : '→ ไม่ต้องรอ QA เลย ใบไปที่ “รอรับมอบ (ขั้น 6)” ของฝ่ายที่แจ้งทันที (ระบบบันทึกชื่อคุณ/เวลาไว้เป็นร่องรอยการข้าม) — เลือกให้ตรงความจริง ช่องนี้เป็นตัวตัดสินว่า QA จะได้ตรวจหรือไม่'}
             </div>
           </Field>
           <Field label="ระบุรายละเอียด (เช่น ยังเหลืออะไรต้องตามต่อ)"><input value={f.check_note} onChange={e => set('check_note', e.target.value)} style={inp} /></Field>
