@@ -11,6 +11,7 @@ import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../ut
 import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
 const PullSignalUpload = lazy(() => import('../components/PullSignalUpload'));   // 📥 อัพโหลด e-SMART (ตัวอ่าน xlsx โหลดตอนเปิดเท่านั้น)
+const OrderIntakeLog = lazy(() => import('../components/OrderIntakeLog'));       // 📜 ประวัติ order เข้าระบบ (3 ทางเข้า)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
@@ -97,7 +98,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
     if (addForm.customer && !(shipToCodes || []).includes(addForm.customer)
       && !window.confirm(`Ship-to ${addForm.customer} ไม่มีในทะเบียน — ชาร์ต/workflow ต่อลูกค้าจะไม่ครบจนกว่าจะตั้งค่าที่แท็บ ⚙️ Ship-to Config · ใช้ค่านี้ต่อหรือไม่?`)) return;
     setAddSaving(true);
-    const { error } = await supabaseDR.from('customer_shipping_orders').insert({
+    const rec = {
       customer: addForm.customer.trim() || null,
       mat_no: mat,
       part_name: addForm.part_name.trim() || prodNames[mat] || null,
@@ -107,7 +108,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
       order_no: addForm.order_no.trim() || null,
       dock_code: addForm.dock_code.trim() || null,
       source: 'manual',
-    });
+    };
+    // 📜 เก็บ "ใครคีย์" ให้แท็บประวัติ — ยังไม่ apply migration = บันทึกแบบเดิม + บอกบนจอ (ห้ามเงียบ)
+    let { error } = await supabaseDR.from('customer_shipping_orders').insert({ ...rec, created_by_name: fullName || null });
+    if (error?.code === '42703') {
+      ({ error } = await supabaseDR.from('customer_shipping_orders').insert(rec));
+      if (!error) toast.info('บันทึกแล้ว — แต่ยังไม่ได้เก็บชื่อผู้คีย์ (ยังไม่ apply migration)');
+    }
     setAddSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`➕ เพิ่ม order ${mat} × ${fmt(qty)} แล้ว`);
@@ -1248,7 +1255,7 @@ function ShipToTab({ canEdit, onChanged }) {
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 export default function CustomerDemand() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['shipping', 'shipto'], 'shipping');
+  const [tab, setTab] = useTabParam(['shipping', 'shipto', 'log'], 'shipping');
   const [refreshKey, setRefreshKey] = useState(0);
   // Ship-to config — สิทธิ์จากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canConfig = can('shipping', 'config', role);
@@ -1275,13 +1282,19 @@ export default function CustomerDemand() {
         sub="Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales"
         tabs={[
           { key: 'shipping', label: '🕐 Shipping Chart' },
-          { key: 'shipto', label: '⚙️ Ship-to Config' },
+          { key: 'log', label: '📜 ประวัติ order เข้าระบบ' },
+          { key: 'shipto', label: '⚙️ Ship-to Config' },   // ⚠️ แท็บตั้งค่าอยู่ท้ายสุดเสมอ (UI-CONVENTIONS §6.8 ข้อ 4)
         ]}
         tab={tab} onTab={setTab}
       />
 
       {/* ship-to ที่เลือกได้ในฟอร์มคีย์ order = เฉพาะ active (ปิดใช้แล้วยังแสดงชื่อผ่าน custLabel ได้ตามเดิม) */}
       {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap).filter(c => shipToMap[c]?.is_active !== false).sort()} shipToMap={shipToMap} />}
+      {tab === 'log' && (
+        <Suspense fallback={<div style={{ fontSize: 12, color: 'var(--text2)', padding: 16 }}>⏳ กำลังโหลด…</div>}>
+          <OrderIntakeLog shipToMap={shipToMap} custLabel={custLabel} />
+        </Suspense>
+      )}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
