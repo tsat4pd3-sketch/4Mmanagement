@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist, findDuplicateUploads,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -381,4 +381,73 @@ test('findDuplicateUploads — เจอหลายใบต้องเรี�
   assert.deepEqual(hits.map(h => h.batch.id), ['b1', 'b0']);
   assert.deepEqual(findDuplicateUploads(null, {}), []);
   assert.deepEqual(findDuplicateUploads(PREV), []);
+});
+
+/* ══ ⭐ จับคู่ด้วย "ช่วงเวลาของไฟล์" ไม่ใช่รอบตรงเป๊ะ (user เคาะ 2026-09-09) ═══════════
+   ข้อมูลจริง AAT 09/09: 862 เดินกริด 08:00/10:00/13:00/15:30 · e-SMART = ปลายช่วง+1 ชม.
+   = 09:00/11:00/15:00 ⇒ จับตรงเป๊ะแล้วสร้างรอบใหม่ทุกครั้ง = ยอดนับ 2 เท่า + 862 ค้างแดงตลอดกาล */
+
+const D = '2026-09-09';
+const ORD = (id, part, qty, time, status = 'pending', source = 'edi_862') =>
+  ({ id, customer_part_no: part, mat_no: null, qty, due_date: D, ship_time: time, status, source });
+const SLOT = (ws, t) => ({ windowStart: parseTs(ws), targetAt: parseTs(t) });
+const G1 = [{ customer_part_no: 'RB3B-16E060-BA', qty: 30, pulls: 3, part_name: 'x', dock_code: 'B5' }];
+const RES1 = () => ({ mat: '10100385', status: 'mapped', candidates: ['10100385'] });
+
+test('orderShipAt — ship_time ก่อน 08:00 = กะดึก ตกวันถัดไปตามปฏิทิน', () => {
+  assert.equal(dateStr(orderShipAt(D, '10:00')), '2026-09-09');
+  assert.equal(dateStr(orderShipAt(D, '00:30')), '2026-09-10');
+  assert.equal(timeStr(orderShipAt(D, '00:30')), '00:30');
+  assert.equal(orderShipAt(D, null), null);
+  assert.equal(orderShipAt(null, '10:00'), null);
+});
+
+test('⭐ ไฟล์ 08:00–10:00 → รอบ 11:00 ต้องไปอัพเดทใบ 862 ของ 10:00 (ไม่สร้างรอบใหม่)', () => {
+  const orders = [ORD('a', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+  assert.equal(row.diff, -20);            // 862 วางแผน 50 · ลูกค้าเรียกจริง 30
+});
+
+test('⭐ ไฟล์ 06:00–08:00 → รอบ 09:00 ต้องจับใบ 08:00 ได้ (ช่วงคร่อมขอบกรอบวันงาน 08:00)', () => {
+  const orders = [ORD('a', 'RB3B 16E060 BA', 50, '08:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T06:00:00`, `${D}T09:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+test('🔴 ใบนอกช่วงเวลาต้องไม่ถูกแตะ (รอบบ่าย/กะดึกของวันเดียวกัน)', () => {
+  const orders = [ORD('later', 'RB3B 16E060 BA', 50, '15:30'), ORD('night', 'RB3B 16E060 BA', 60, '00:30')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'create');     // ไม่มีใบในช่วง → สร้างใหม่
+  assert.equal(row.order, null);
+});
+
+test('⭐ มีใบ 862 หลายใบในช่วงเดียวกัน — อัพเดทใบที่ใกล้เวลารับสุด ที่เหลือรายงานเป็น extras ห้ามแตะเอง', () => {
+  const orders = [ORD('early', 'RB3B 16E060 BA', 20, '08:30'), ORD('late', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'late');                    // ใกล้เวลาที่ลูกค้ามารับที่สุด
+  assert.deepEqual(row.extras.map(o => o.id), ['early']); // ต้องโผล่ให้คนเห็น ไม่ถูกลบ/แก้เงียบ
+});
+
+test('ใบในช่วงที่เตรียม/ส่งไปแล้ว ยังต้องเป็น locked เหมือนเดิม (ไม่แก้ยอด)', () => {
+  const orders = [ORD('done', 'RB3B 16E060 BA', 50, '10:00', 'prepared')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'locked');
+  assert.equal(row.diff, -20);
+});
+
+test('🔴 ใบที่ไม่ระบุเวลาส่ง ต้องไม่ถูกดูดเข้าช่วงไหนเลย (ห้ามเดา)', () => {
+  const orders = [ORD('notime', 'RB3B 16E060 BA', 50, null)];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'create');
+});
+
+test('ไม่ส่ง slot = พฤติกรรมเดิม (ผู้เรียกกรองรอบมาเองแล้ว)', () => {
+  const orders = [ORD('a', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1);
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
 });

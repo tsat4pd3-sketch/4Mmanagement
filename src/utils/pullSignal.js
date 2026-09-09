@@ -352,6 +352,20 @@ export function aggregateSignals(rows) {
   return [...m.values()].sort((a, b) => a.customer_part_no.localeCompare(b.customer_part_no));
 }
 
+/**
+ * เวลาส่งจริงของใบ (absolute) — `ship_time` ก่อน 08:00 = กะดึกของวันงานนั้น ⇒ ตกวันถัดไปตามปฏิทิน
+ * ⚠️ ต้องเทียบเป็น Date จริง ห้ามเทียบ "นาทีบนกรอบ 08:00→08:00" — ช่วงเวลาในไฟล์ (เช่น 06:00–08:00)
+ * คร่อมขอบกรอบได้ แล้วเลขนาทีจะกลับด้าน (06:00 ดูเหมือน "หลัง" 09:00 ทั้งที่มาก่อน)
+ */
+export function orderShipAt(dueDate, shipTime) {
+  const d = String(dueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!d || !t) return null;
+  const at = new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
+  if (+t[1] < 8) at.setDate(at.getDate() + 1);   // กะดึกของวันงาน = วันถัดไปตามปฏิทิน
+  return at;
+}
+
 /** สถานะที่ "ทำไปแล้ว" — ห้ามแก้ยอด (สต็อกอาจถูกหักไปแล้ว · user เคาะ 2026-09-08: ไม่แตะ แต่รายงานส่วนต่าง) */
 export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
 
@@ -370,22 +384,41 @@ export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
  * @returns {Array<{group, order, mat, matStatus, candidates, action, diff, reason}>}
  *   action: 'update' | 'create' | 'locked' | 'unresolved' | 'same'
  */
-export function planOrderUpdates(groups, orders, resolve) {
+export function planOrderUpdates(groups, orders, resolve, slot) {
   const byPart = new Map();
   (orders || []).forEach(o => {
     const k = normKey(o.customer_part_no || o.mat_no);
     if (!byPart.has(k)) byPart.set(k, []);
     byPart.get(k).push(o);
   });
+  /* ⭐ ใบที่ "รอบเดียวกัน" = ใบที่เวลาส่งตกใน **ช่วงเวลาของไฟล์** (windowStart, targetAt]
+     ไม่ใช่ ship_time ตรงเป๊ะ (user เคาะ 2026-09-09) — 862 กับ e-SMART เดินคนละกริดเวลา
+     (862 = 08:00/10:00/13:00 · ปลายช่วง+1 ชม. = 09:00/11:00/15:00) ทั้งที่เป็น milk-run รอบเดียวกัน
+     จับแบบตรงเป๊ะ ⇒ สร้างรอบใหม่ทุกครั้ง ⇒ **ยอดนับ 2 เท่า และใบ 862 ค้างแดงตลอดกาล**
+     (วัดจริง 09/09: 862 ค้าง 465 ชิ้น คู่กับ e-SMART ที่ยืนยันไปแล้ว 360 ชิ้นของพาร์ทเดียวกัน)
+     ⚠️ ไม่ส่ง `slot` = พฤติกรรมเดิม (จับคู่จากลิสต์ที่ผู้เรียกกรองมาแล้ว) */
+  const inWindow = (o) => {
+    if (!slot?.targetAt) return true;
+    const at = orderShipAt(o.due_date, o.ship_time);
+    if (!at) return false;                                   // ไม่ระบุเวลา = วางในช่วงไม่ได้ ห้ามเดา
+    if (at > slot.targetAt) return false;
+    return slot.windowStart ? at > slot.windowStart : true;
+  };
+  const byTimeDesc = (a, b) =>
+    (orderShipAt(b.due_date, b.ship_time)?.getTime() || 0) - (orderShipAt(a.due_date, a.ship_time)?.getTime() || 0);
+
   return (groups || []).map(g => {
     const r = resolve ? resolve(g.customer_part_no) : { mat: null, status: 'none', candidates: [] };
     // ใบเดิมจับด้วยเลขลูกค้าก่อน (EDI เก็บ customer_part_no) แล้วค่อยลองเลข MAT ที่ map ได้
     const cand = [...(byPart.get(normKey(g.customer_part_no)) || []),
       ...(r.mat ? (byPart.get(normKey(r.mat)) || []) : [])];
-    const seen = new Set(); const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id));
+    const seen = new Set();
+    const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(inWindow).sort(byTimeDesc);
     const open = list.find(o => !LOCKED_STATUSES.includes(o.status));
     const locked = list.find(o => LOCKED_STATUSES.includes(o.status));
-    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [] };
+    // ใบอื่นในช่วงเดียวกันที่ไม่ได้ถูกเลือก — **ต้องรายงาน ห้ามแตะเอง** (คนตัดสินว่าจะยุบหรือปล่อย)
+    const extras = list.filter(o => o !== open && o !== locked && !LOCKED_STATUSES.includes(o.status));
+    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [], extras };
     if (open) {
       const diff = g.qty - Number(open.qty || 0);
       return { ...base, order: open, action: diff === 0 ? 'same' : 'update', diff,
@@ -399,7 +432,8 @@ export function planOrderUpdates(groups, orders, resolve) {
       return { ...base, order: null, action: 'unresolved', diff: g.qty,
         reason: matIssueOf(r) };
     }
-    return { ...base, order: null, action: 'create', diff: g.qty, reason: 'ไม่มีใบในรอบนี้ — สร้างใหม่จากยอดที่ลูกค้ายืนยัน' };
+    return { ...base, order: null, action: 'create', diff: g.qty,
+      reason: 'ไม่มีใบ 862 ในช่วงเวลานี้ — สร้างใบใหม่ตามยอดที่ลูกค้ายืนยัน' };
   });
 }
 
