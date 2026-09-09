@@ -192,7 +192,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     }
     const batchId = bRes.data?.id || null;
 
-    // 2) แถวดิบ = หลักฐาน · ชนคีย์กันซ้ำที่ DB → ใช้ upsert ignoreDuplicates (ปลอดภัยกว่าเช็คฝั่ง client อย่างเดียว)
+    // 2) แถวดิบ = หลักฐาน ห้ามแก้ · ชนคีย์กันซ้ำที่ DB → upsert ignoreDuplicates (ปลอดภัยกว่าเช็คฝั่ง client อย่างเดียว)
+    //    ล้มแล้วต้องไปโผล่ในสรุปท้าย ห้ามให้ toast เขียวกลบ
+    let sigErr = null;
     if (fresh.length) {
       const matOf = new Map(plan.map(x => [x.group.customer_part_no, x.mat]));
       const recs = fresh.map(r => ({
@@ -205,10 +207,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
         work_date: workDate, ship_time: shipTime, mat_no: matOf.get(r.customer_part_no) || null,
       }));
+      /* ⚠️ `onConflict` ต้องเป็น **คอลัมน์ล้วนที่ตรงกับ unique index จริง** —
+         เดิม index ใช้ `coalesce(supplier_ref, customer_part_no)` แล้วส่ง `supplier_ref` มา
+         ⇒ Postgres หา constraint ไม่เจอ (42P10) ⇒ **แถวหลักฐานไม่ถูกบันทึกเลย** และแท็บประวัติกางออกมาว่าง
+         (เกิดจริง 2026-09-09 · ตอนนี้ index เป็น `(source, ship_to, customer_part_no, pulled_at)` คอลัมน์ล้วน) */
       for (let i = 0; i < recs.length; i += 400) {
         const res = await supabaseDR.from('customer_pull_signals')
-          .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,supplier_ref,pulled_at', ignoreDuplicates: true });
-        if (res.error) { checkWrite(res, 'บันทึกแถวสัญญาณดึง'); break; }
+          .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,customer_part_no,pulled_at', ignoreDuplicates: true });
+        if (res.error) { sigErr = res.error.message; checkWrite(res, 'บันทึกแถวสัญญาณดึง'); break; }
       }
     }
 
@@ -264,6 +270,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     }
     setSaving(false);
     // ⚠️ ห้ามขึ้นเขียวล้วนเมื่อมีบางรายการล้ม (หลักเดียวกับ "กดส่งแล้วหักสต็อกไม่ได้ต้องรายงาน")
+    if (sigErr) failed.push(`บันทึกแถวหลักฐานไม่สำเร็จ (แท็บประวัติจะกางดูรายการไม่ได้): ${sigErr}`);
     if (failed.length) toast.error(`อัพเดท ${updated} · สร้าง ${created} · ล้มเหลว ${failed.length} — ${failed[0]}`);
     else toast.success(`✅ ยืนยันจากลูกค้าแล้ว — อัพเดท ${updated} ใบ · สร้างใหม่ ${created} ใบ (รอบ ${shipTime})`);
     onApplied?.({ workDate, shipTime, updated, created });

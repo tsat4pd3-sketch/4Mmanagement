@@ -4,7 +4,7 @@
 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_OEE_TARGET, targetOeeOf, normOeeTarget, weightedOeeOf, quarterOfMonthKey } from '../oee.js';
+import { DEFAULT_OEE_TARGET, targetOeeOf, normOeeTarget, weightedOeeOf, weekOfMonth } from '../oee.js';
 
 test('เป้า OEE = A × P × Q เสมอ (ห้ามอ่าน target_oee ที่เป็นคอลัมน์ vestigial)', () => {
   assert.equal(targetOeeOf({ a: 90, p: 90, q: 99 }), 80.2);
@@ -63,17 +63,30 @@ test('weightedOeeOf: ไม่มีน้ำหนักเลย → ถอย
   assert.equal(weightedOeeOf(rows), 75);
 });
 
-test('weightedOeeOf + quarterOfMonthKey: กรองรายไตรมาสได้ตรง', () => {
-  const rows = Array.from({ length: 12 }, (_, i) => ({
-    monthKey: `2026-${String(i + 1).padStart(2, '0')}`, oee: 60 + i, loadHr: 100, nSess: 10,
-  }));
-  assert.equal(quarterOfMonthKey('2026-01'), 1);
-  assert.equal(quarterOfMonthKey('2026-03'), 1);
-  assert.equal(quarterOfMonthKey('2026-04'), 2);
-  assert.equal(quarterOfMonthKey('2026-12'), 4);
-  assert.equal(weightedOeeOf(rows, r => quarterOfMonthKey(r.monthKey) === 1), 61); // (60+61+62)/3
-  assert.equal(weightedOeeOf(rows, r => quarterOfMonthKey(r.monthKey) === 4), 70); // (69+70+71)/3
-  assert.equal(weightedOeeOf(rows), 65.5);                                          // ทั้งปี
-  // ไตรมาสที่ยังไม่ถึง = null ไม่ใช่ 0
-  assert.equal(weightedOeeOf(rows.slice(0, 3), r => quarterOfMonthKey(r.monthKey) === 3), null);
+test('weekOfMonth: ซอยเดือนเป็น 4 ช่วง — W4 กลืนวันที่ 29-31 (ไม่ใช่ไตรมาสปฏิทิน)', () => {
+  assert.equal(weekOfMonth('2026-08-01'), 1);
+  assert.equal(weekOfMonth('2026-08-07'), 1);
+  assert.equal(weekOfMonth('2026-08-08'), 2);
+  assert.equal(weekOfMonth('2026-08-14'), 2);
+  assert.equal(weekOfMonth('2026-08-15'), 3);
+  assert.equal(weekOfMonth('2026-08-21'), 3);
+  assert.equal(weekOfMonth('2026-08-22'), 4);
+  assert.equal(weekOfMonth('2026-08-28'), 4);
+  // วันที่ 29-31 ต้องอยู่ W4 ไม่ใช่ W5 — ให้ได้ 4 แท่งเท่าเด็คที่วิศวกรทำมือ
+  assert.equal(weekOfMonth('2026-08-29'), 4);
+  assert.equal(weekOfMonth('2026-08-31'), 4);
+  assert.equal(weekOfMonth('2026-02-28'), 4);
+  assert.equal(weekOfMonth(''), null);
+  assert.equal(weekOfMonth(null), null);
+});
+
+test('weightedOeeOf + weekOfMonth: เฉลี่ยรายสัปดาห์ถ่วงเวลารับภาระได้ตรง', () => {
+  const rows = [
+    { d: '2026-08-03', oee: 70, loadHr: 100, nSess: 2 },
+    { d: '2026-08-05', oee: 80, loadHr: 300, nSess: 2 },   // W1 → (70*100+80*300)/400 = 77.5
+    { d: '2026-08-25', oee: 90, loadHr: 200, nSess: 2 },   // W4
+  ];
+  assert.equal(weightedOeeOf(rows, r => weekOfMonth(r.d) === 1), 77.5);
+  assert.equal(weightedOeeOf(rows, r => weekOfMonth(r.d) === 4), 90);
+  assert.equal(weightedOeeOf(rows, r => weekOfMonth(r.d) === 2), null, 'สัปดาห์ที่ไม่มีกะปิด = null ไม่ใช่ 0');
 });

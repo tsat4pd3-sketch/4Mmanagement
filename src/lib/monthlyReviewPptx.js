@@ -50,7 +50,7 @@
 import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, weightedOeeOf, quarterOfMonthKey } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, weightedOeeOf, weekOfMonth } from '../utils/oee';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fitOneLine, layoutTable, textHeightIn, lineHeightIn } from './pptxFit';
 
@@ -266,6 +266,23 @@ async function buildFullExtras({ monthKey, sections, allLineNames, matchNames })
       });
     });
     out.bins = per;
+    /* รายสัปดาห์ของ "เดือนรายงาน" (W1-W4) — เด็ควิศวกรแตกแบบนี้ ไม่ใช่ไตรมาส */
+    out.binWeeks = {};
+    sections.forEach(sec => {
+      const names = new Set([...sec.lines, ...(sec.groups || [])]);
+      out.binWeeks[sec.code] = [1, 2, 3, 4].map(w => {
+        const rows = r.filter(x => x.line_name && names.has(x.line_name)
+          && monthKeyOf(x.work_date) === monthKey && weekOfMonth(x.work_date) === w);
+        const yrows = rows.filter(x => x.bin === 'yellow');
+        const sum = (f) => yrows.filter(f).reduce((a, x) => a + (Number(x.qty) || 0), 0);
+        return {
+          w,
+          sameDay: sum(x => x.repair_date && String(x.repair_date) === String(x.work_date)),
+          late: sum(x => x.repair_date && String(x.repair_date) > String(x.work_date)),
+          pending: sum(x => !x.repair_date),
+        };
+      });
+    });
   } catch (e) {
     // 42P01 = ยังไม่ apply migration ถังเหลือง/แดง — ต้องบอกบนสไลด์ ห้ามโชว์เป็น "ไม่มีของเสีย"
     out.warns.push(/42P01|does not exist/i.test(String(e?.message || e))
@@ -688,6 +705,13 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
         daily: [...new Set(ls.map(x => x.work_date))].sort().map(wd => {
           const ds = ls.filter(x => x.work_date === wd);
           return { d: Number(String(wd).slice(8, 10)), day: outputOf(ds.filter(x => x.shift !== 'night')), night: outputOf(ds.filter(x => x.shift === 'night')) };
+        }),
+        /* OEE รายสัปดาห์ของเดือนรายงาน (W1-W4) — โครงเดียวกับเด็คที่วิศวกรทำมือ
+           ⚠️ ไม่ใช่ไตรมาสปฏิทิน (พิสูจน์จากไฟล์จริงแล้ว ดู weekOfMonth ใน utils/oee.js) */
+        weekly: [1, 2, 3, 4].map(w => {
+          const ws = ls.filter(x => weekOfMonth(x.work_date) === w);
+          const wa = aggSessions(ws);
+          return { w, oee: wa.oee, loadHr: wa.loadHr, nSess: ws.length };
         }),
       };
     }).filter(l => l.nSess > 0);
@@ -1121,9 +1145,11 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
   };
   // การ์ดตัวเลข — ทั้งตัวเลขและป้ายย่อเองตามความกว้างที่ได้จริง (การ์ดแคบลงเมื่อเลือกหลายส่วนงาน)
   // sub = บรรทัดเทียบเดือนก่อน (progression) — ไม่มีก็ไม่กินที่
+  // ⚠️ กล่อง 3 ชั้นต้องไม่ซ้อนกันเลย (เดิมซ้อน 0.04" ทั้งค่า→ป้าย และ ป้าย→บรรทัดเทียบ)
+  //    ตำแหน่งเริ่มของแต่ละชั้นคงเดิมเป๊ะ เปลี่ยนแค่ความสูงให้จบก่อนชั้นถัดไป
   const stat = (s, x, y, valueTxt, label, w = 2.6, sub = null) => {
-    s.addText(valueTxt, { x, y, w, h: 0.62, fontFace: FONT, fontSize: fitOneLine(valueTxt, w - 0.08, 30, 13), bold: true, color: C.orange, align: 'center', valign: 'middle', margin: 0 });
-    s.addText(label, { x, y: y + 0.58, w, h: 0.32, fontFace: FONT, fontSize: fitOneLine(label, w - 0.06, 11, 7.5), color: C.green, align: 'center', valign: 'top', margin: 0 });
+    s.addText(valueTxt, { x, y, w, h: 0.58, fontFace: FONT, fontSize: fitOneLine(valueTxt, w - 0.08, 30, 13), bold: true, color: C.orange, align: 'center', valign: 'middle', margin: 0 });
+    s.addText(label, { x, y: y + 0.58, w, h: 0.28, fontFace: FONT, fontSize: fitOneLine(label, w - 0.06, 11, 7.5), color: C.green, align: 'center', valign: 'top', margin: 0 });
     if (sub) s.addText(sub.text, { x, y: y + 0.86, w, h: 0.24, fontFace: FONT, fontSize: fitOneLine(sub.text, w - 0.06, 10, 7), bold: true, color: sub.color || C.grey, align: 'center', valign: 'top', margin: 0 });
   };
   /* bullet list ที่ "รู้เพดานตัวเอง" — ย่อฟอนต์ก่อน ถ้ายังไม่พอค่อยตัดหัวข้อท้าย (แล้วบอกว่าตัดกี่ข้อ)
@@ -1236,7 +1262,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     return '';
   };
   /** OEE ของไตรมาส (q=1..4) หรือทั้งปี (q=null) — ถ่วงน้ำหนักด้วยเวลารับภาระ ห้าม mean-of-percentages */
-  const quarterOee = (rows, q) => weightedOeeOf(rows, q == null ? null : (r) => quarterOfMonthKey(r.monthKey) === q);
+
   /** นาที DT ของประเภทนั้นในเดือนก่อนหน้าที่มีกะปิดจริง (null = ไม่มีเดือนก่อนให้เทียบ) */
   const prevMonthMin = (rows, typeName) => {
     const idx = rows.findIndex(r => r.monthKey === data.monthKey);
@@ -1249,9 +1275,13 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     const s = newSlide();
     if (logoDataUrl) s.addImage({ data: logoDataUrl, x: 5.92, y: 0.28, w: 1.25, h: 1.25 });
     const coverTitle = `MONTHLY PERFORMANCE REVIEW ${MON}`;
-    s.addText(coverTitle, { x: 0.6, y: 1.72, w: 12.13, h: 0.77, fontFace: FONT, fontSize: fitOneLine(coverTitle, 12.13, 40, 22), bold: true, color: C.green, align: 'center', valign: 'middle', margin: 0 });
+    /* ⚠️ 2026-09-09 (user: "หน้าแรกยังเพี้ยน"): กล่องหัวเรื่อง 1.72 สูง 0.77 = ก้น 2.49
+       แต่บรรทัด FULL DATA เคยวางที่ 2.42 → **ทับกัน 0.07"** (ตัวตรวจ overlap ตั้งเกณฑ์ 0.12" จึงรอด)
+       และหัวเรื่องยังตกบรรทัดเพราะ fitOneLine คำนวณพอดีเป๊ะ ไม่เผื่อกรณีเครื่องปลายทาง
+       ไม่มีฟอนต์ Tahoma แล้ว substitute ฟอนต์ที่กว้างกว่า ⇒ ย่นกล่องหัวเรื่อง + วาง FULL DATA ต่อจากก้นจริง */
+    s.addText(coverTitle, { x: 0.6, y: 1.66, w: 12.13, h: 0.70, fontFace: FONT, fontSize: fitOneLine(coverTitle, 12.13, 40, 20), bold: true, color: C.green, align: 'center', valign: 'middle', margin: 0 });
     if (FULL) s.addText(`FULL DATA — เจาะรายไลน์ (${data.depts.reduce((a, d) => a + d.lines.length, 0)} ไลน์) · ${YEAR}`,
-      { x: 0.6, y: 2.42, w: 12.13, h: 0.3, fontFace: FONT, fontSize: 13, bold: true, color: C.orange, align: 'center', margin: 0 });
+      { x: 0.6, y: 2.40, w: 12.13, h: 0.28, fontFace: FONT, fontSize: 13, bold: true, color: C.orange, align: 'center', valign: 'middle', margin: 0 });
     const who = [presenter, position].filter(Boolean).join(', ');
     s.addText([
       ...(who ? [T(who, { breakLine: true })] : []),
@@ -1340,7 +1370,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     s.addChart(pres.ChartType.bar, [{ name: 'OEE %', labels, values }], {
       x: 0.5, y: 2.2, w: 12.33, h: 4.3, barDir: 'col', barGapWidthPct: nL > 18 ? 30 : 60,
       chartColors: [C.barOrange],
-      showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: lblSize, dataLabelFormatCode: '0.0',
+      showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: lblSize, dataLabelFormatCode: '0.0"%"',
       catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: lblSize,
       ...(nL > 18 ? { catAxisLabelRotate: 45 } : {}),
       valAxisHidden: true, valAxisMaxVal: 110, valAxisMinVal: 0,
@@ -1372,9 +1402,9 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     s.addChart(pres.ChartType.line, seriesOee, {
       x: 0.5, y: 1.62, w: 12.33, h: chartH, chartColors: palette.slice(0, seriesOee.length),
       lineSize: 3, lineDataSymbolSize: 8, showValue: true,
-      dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: 9, dataLabelFormatCode: '0.0',
+      dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: 9, dataLabelFormatCode: '0.0"%"',
       catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 11,
-      valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 10, valAxisMaxVal: 100, valAxisMinVal: 0,
+      valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 10, valAxisLabelFormatCode: '0"%"', valAxisMaxVal: 100, valAxisMinVal: 0,
       valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
       showLegend: seriesOee.length > 1, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 10,
       showTitle: false,
@@ -1522,7 +1552,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
           x: 0.5, y: 1.68, w: 12.33, h: 4.55,
           chartColors: ['C9DFC9', '9CC69C', '6FAE72'], barGapWidthPct: 45,
           secondaryValAxis: false, valAxisMaxVal: 100, valAxisMinVal: 0,
-          valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 10,
+          valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 10, valAxisLabelFormatCode: '0"%"',
           catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 10,
           valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
           showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 10, showTitle: false,
@@ -1547,7 +1577,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
         ], {
           x: 0.4, y: 2.15, w: 6.1, h: 4.05, chartColors: [C.barOrange, 'F2C9A8', C.green], barGapWidthPct: 40,
           catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 8, catAxisLabelRotate: 45,
-          valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9,
+          valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0" ชิ้น"',
           valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
           showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 9, showTitle: false,
         });
@@ -1563,7 +1593,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
           })), {
             x: 6.8, y: 2.15, w: 6.05, h: 4.05, lineSize: 2, lineDataSymbolSize: 5,
             catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 8, catAxisLabelRotate: 45,
-            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9,
+            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '0.0"%"',
             valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
             showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 8, showTitle: false,
           });
@@ -1577,17 +1607,16 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       /* ── 3) OEE รายไตรมาส + โดนัท A/P/Q เดือนนี้ + Capacity รายวันของเดือน ── */
       {
         const s = newSlide();
-        head(s, `QUARTERLY & ${MON} : ${l.name}`, `Q1–Q4 vs ทั้งปี · A / P / Q เดือนนี้ · ยอดผลิตรายวัน`);
-        const qs = [1, 2, 3, 4].map(q => quarterOee(rows, q));
-        const ytd = quarterOee(rows, null);
-        headline(s, 'OEE รายไตรมาส', 0.5, 1.62, 2.8);
+        head(s, `WEEKLY & ${MON} : ${l.name}`, `OEE รายสัปดาห์ของเดือน · A / P / Q เดือนนี้ · ยอดผลิตรายวัน`);
+        // W1-W4 ของ "เดือนรายงาน" — โครงเดียวกับเด็คที่วิศวกรทำมือ (ไม่ใช่ไตรมาสปฏิทิน)
+        const wk = (l.weekly || []).map(w => (w.nSess > 0 ? r1(w.oee) : null));
+        headline(s, `OEE รายสัปดาห์ — ${MON}`, 0.5, 1.62, 3.4);
         s.addChart(pres.ChartType.bar, [{
-          // เดือนรายงานยังไม่ถึง ธ.ค. = ยังไม่ใช่ "ทั้งปี" — เขียน YTD ให้ตรงความจริง
-          name: 'OEE %', labels: [['Q1', 'Q2', 'Q3', 'Q4', Number(data.monthKey.split('-')[1]) === 12 ? `ทั้งปี ${YEAR}` : `YTD ม.ค.–${monthShort(data.monthKey)}`, 'เป้า']],
-          values: [...qs, ytd, tg.oee],
+          name: 'OEE %', labels: [['W1', 'W2', 'W3', 'W4', `ทั้งเดือน`, 'เป้า']],
+          values: [...wk, r1(l.oee), tg.oee],
         }], {
           x: 0.4, y: 2.15, w: 4.3, h: 3.5, barDir: 'col', barGapWidthPct: 45, chartColors: [C.barOrange],
-          showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: 10, dataLabelFormatCode: '0.0',
+          showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: 10, dataLabelFormatCode: '0.0"%"',
           catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 10,
           valAxisHidden: true, valAxisMaxVal: 110, valAxisMinVal: 0,
           valGridLine: { style: 'none' }, catGridLine: { style: 'none' }, showLegend: false, showTitle: false,
@@ -1609,12 +1638,12 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
           ], {
             x: 8.4, y: 2.15, w: 4.5, h: 3.5, barGrouping: 'stacked', chartColors: [C.barOrange, 'F2C9A8'], barGapWidthPct: 30,
             catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 7,
-            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9,
+            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0" ชิ้น"',
             valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
             showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 9, showTitle: false,
           });
         }
-        noteLine(s, `OEE รายไตรมาสถ่วงน้ำหนักด้วยเวลารับภาระของแต่ละเดือน (ห้ามเฉลี่ยเปอร์เซ็นต์ตรงๆ) · ไตรมาสที่ยังไม่มีกะปิด = ว่าง · แกนวันคือวันที่ทำงานที่มีกะปิดแล้วเท่านั้น`, 5.85, { size: 9 });
+        noteLine(s, `W1 = วันที่ 1-7 · W2 = 8-14 · W3 = 15-21 · W4 = 22 ถึงสิ้นเดือน · OEE รายสัปดาห์ถ่วงน้ำหนักด้วยเวลารับภาระ (ห้ามเฉลี่ยเปอร์เซ็นต์ตรงๆ) · สัปดาห์ที่ไม่มีกะปิด = ว่าง · แกนวันคือวันที่มีกะปิดแล้วเท่านั้น`, 5.85, { size: 9 });
         footer(s);
       }
 
@@ -1713,7 +1742,7 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       /* ── TAG YELLOW / TAG RED — ถังเหลือง 4 สถานะ (quality_bin_records) ── */
       {
         const s = newSlide();
-        head(s, `TAG YELLOW : ${d.code}`, `${YEAR} — ชิ้นงานต้องสงสัย: รอพิจารณา · ซ่อมเสร็จภายในวัน · ซ่อมย้อนหลัง · ค้างซ่อม`);
+        head(s, `TAG YELLOW : ${d.code}`, `${YEAR} รายเดือน + ${MON} รายสัปดาห์ — ซ่อมเสร็จภายในวัน · ซ่อมย้อนหลัง · ค้างซ่อม`);
         const series = data.full.bins?.[d.code] || null;
         const binWarn = data.full.warns.find(w => /ถังเหลือง|quality_bin/i.test(w));
         if (!series || binWarn) {
@@ -1731,29 +1760,30 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
             x: 0.4, y: 2.15, w: 7.9, h: 3.6, barDir: 'col', barGrouping: 'stacked', barGapWidthPct: 40,
             chartColors: [C.green, C.amber, C.orange],
             catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 9,
-            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9,
+            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0" ชิ้น"',
             valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
             showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 9, showTitle: false,
           });
-          headline(s, 'รายไตรมาส (ชิ้น)', 8.7, 1.62, 3.0);
-          const qSum = (k, q) => series.filter((_, i) => Math.ceil((i + 1) / 3) === q).reduce((a, r) => a + (r?.[k] ?? 0), 0);
+          headline(s, `รายสัปดาห์ — ${MON} (ชิ้น)`, 8.7, 1.62, 3.6);
+          const wRows = data.full.binWeeks?.[d.code] || [1, 2, 3, 4].map(w => ({ w }));
+          const WK = [['W1', 'W2', 'W3', 'W4']];
           s.addChart(pres.ChartType.bar, [
-            { name: 'ซ่อมเสร็จภายในวัน', labels: [['Q1', 'Q2', 'Q3', 'Q4']], values: [1, 2, 3, 4].map(q => qSum('sameDay', q)) },
-            { name: 'ซ่อมย้อนหลัง', labels: [['Q1', 'Q2', 'Q3', 'Q4']], values: [1, 2, 3, 4].map(q => qSum('late', q)) },
-            { name: 'ค้างซ่อม', labels: [['Q1', 'Q2', 'Q3', 'Q4']], values: [1, 2, 3, 4].map(q => qSum('pending', q)) },
+            { name: 'ซ่อมเสร็จภายในวัน', labels: WK, values: wRows.map(r => r.sameDay ?? 0) },
+            { name: 'ซ่อมย้อนหลัง', labels: WK, values: wRows.map(r => r.late ?? 0) },
+            { name: 'ค้างซ่อม', labels: WK, values: wRows.map(r => r.pending ?? 0) },
           ], {
             x: 8.5, y: 2.15, w: 4.4, h: 3.6, barDir: 'col', barGrouping: 'stacked', barGapWidthPct: 40,
             chartColors: [C.green, C.amber, C.orange],
             showValue: true, dataLabelColor: C.white, dataLabelFontFace: FONT, dataLabelFontSize: 9,
             catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 10,
-            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9,
+            valAxisLabelColor: C.green, valAxisLabelFontFace: FONT, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0" ชิ้น"',
             valGridLine: { style: 'solid', color: C.border, size: 0.5 }, catGridLine: { style: 'none' },
             showLegend: false, showTitle: false,
           });
           const cur = series[Number(data.monthKey.split('-')[1]) - 1] || {};
           const yTot = series.reduce((a, r) => ({ w: a.w + (r.waiting || 0), p: a.p + (r.pending || 0), r: a.r + (r.red || 0) }), { w: 0, p: 0, r: 0 });
           noteLine(s, `${MON}: ลงถังเหลือง ${num(cur.waiting || 0)} ชิ้น — ซ่อมเสร็จภายในวัน ${num(cur.sameDay || 0)} · ซ่อมย้อนหลัง ${num(cur.late || 0)} · ยังค้างซ่อม ${num(cur.pending || 0)} ชิ้น · ถังแดง ${num(cur.red || 0)} ชิ้น` +
-            ` | ทั้งปี ${YEAR}: เหลือง ${num(yTot.w)} ชิ้น (ค้าง ${num(yTot.p)}) · แดง ${num(yTot.r)} ชิ้น — "ค้างซ่อม" คือใบที่ยังไม่ลงวันที่ซ่อมในระบบ`,
+            ` | ทั้งปี ${YEAR}: เหลือง ${num(yTot.w)} ชิ้น (ค้าง ${num(yTot.p)}) · แดง ${num(yTot.r)} ชิ้น — "ค้างซ่อม" คือใบที่ยังไม่ลงวันที่ซ่อมในระบบ · W1 = วันที่ 1-7 · W2 = 8-14 · W3 = 15-21 · W4 = 22 ถึงสิ้นเดือน`,
             5.9, { size: 9.5 });
         }
         footer(s);

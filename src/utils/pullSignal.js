@@ -140,6 +140,20 @@ export function readMeta(matrix, headerIdx, metaMap) {
 }
 
 /**
+ * ปี พ.ศ. → ค.ศ. — ไฟล์จริงที่โหลดจากพอร์ทัล (หรือเปิด/เซฟผ่าน Excel เครื่องที่ตั้ง locale ไทย)
+ * ออกมาเป็น **พ.ศ.** ได้ (เจอจริง 2026-09-09: `Start Time` = `2569-09-09T06:00:00`)
+ * เดิมระบบเก็บตรงตัว ⇒ `due_date = 2569-09-09` = ใบล่องหน 543 ปี ไม่มีวันโผล่บนชาร์ต
+ * **เกณฑ์ ≥ 2400 ปลอดภัยเพราะไม่มีข้อมูลจัดส่งปี ค.ศ. 2400+ และ พ.ศ. เริ่มที่ 2500+**
+ */
+const YEAR_BE_MIN = 2400;
+export const toCeYear = (y) => (Number(y) >= YEAR_BE_MIN ? Number(y) - 543 : Number(y));
+/** ข้อความนี้ใช้ปี พ.ศ. ไหม (ใช้เตือนบนจอ — ห้ามแปลงเงียบ) */
+export const looksBuddhist = (v) => {
+  const m = String(v ?? '').match(/(?:^|[^\d])(\d{4})(?:[^\d]|$)/);
+  return !!m && Number(m[1]) >= YEAR_BE_MIN;
+};
+
+/**
  * แปลงข้อความเวลาเป็น Date **เวลาท้องถิ่น** (ห้ามใช้ `new Date(str)` ตรงๆ)
  * เหตุผล: `09/08/2026` เอนจินต่างกันตีความ MDY/DMY ไม่เหมือนกัน และ ISO ที่ไม่มี offset
  * บางที่ถูกตีเป็น UTC → วันงานเพี้ยน (กฎเหล็ก Date/Time ของโปรเจค)
@@ -153,8 +167,8 @@ export function parseTs(v, fmt = 'MDY') {
   if (!s) return null;
   // ISO: 2026-09-08T12:00:00 / 2026-09-08 12:00
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, mo, d] = s.split('-').map(Number); return new Date(y, mo - 1, d); }
+  if (m) return new Date(toCeYear(m[1]), +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, mo, d] = s.split('-').map(Number); return new Date(toCeYear(y), mo - 1, d); }
   // slash: 09/08/2026 13:43:46
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?/i);
   if (m) {
@@ -164,7 +178,7 @@ export function parseTs(v, fmt = 'MDY') {
     const ap = (m[7] || '').toUpperCase();
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
-    return new Date(+m[3], mo - 1, d, h, +(m[5] || 0), +(m[6] || 0));
+    return new Date(toCeYear(m[3]), mo - 1, d, h, +(m[5] || 0), +(m[6] || 0));
   }
   return null;
 }
@@ -225,6 +239,7 @@ export function parsePullFile(matrix, profile) {
   const windowEnd = parseTs(meta.window_end, p.ts_format);
   const slot = shipSlotOf(windowEnd, p.lead_min);
   if (!windowEnd) warnings.push('ไฟล์ไม่ได้บอกช่วงเวลา (End Time) — ต้องเลือกวัน/รอบส่งเองบนจอ');
+  let beRows = 0;   // ⚠️ แปลง พ.ศ.→ค.ศ. ให้ แต่ต้องบอกบนจอเสมอ (คนต้องรู้ว่าไฟล์ผิดรูปแบบ)
 
   const at = (row, f) => (idx[f] === undefined ? '' : row[idx[f]]);
   const rows = [];
@@ -234,6 +249,7 @@ export function parsePullFile(matrix, profile) {
     if (r.every(c => String(c ?? '').trim() === '')) continue;
     const partNo = joinPartNo(at(r, 'part_prefix'), at(r, 'part_base'), at(r, 'part_suffix'), p.part_join);
     if (!partNo) { blank++; continue; }
+    if (looksBuddhist(at(r, 'pulled_at'))) beRows++;
     const pulledAt = parseTs(at(r, 'pulled_at'), p.ts_format);
     if (!pulledAt) { badTs++; continue; }
     const per = num(at(r, 'qty'));
@@ -260,6 +276,9 @@ export function parsePullFile(matrix, profile) {
   if (badTs) warnings.push(`ข้าม ${badTs} แถว — อ่านเวลาที่ดึงไม่ออก`);
   if (badQty) warnings.push(`ข้าม ${badQty} แถว — อ่านจำนวนไม่ออก`);
   if (blank) warnings.push(`ข้าม ${blank} แถว — ไม่มีเลขพาร์ท`);
+  if (beRows || looksBuddhist(meta.window_start) || looksBuddhist(meta.window_end)) {
+    warnings.push(`ไฟล์ใช้ปี พ.ศ. — แปลงเป็น ค.ศ. ให้แล้ว (เช่น 2569 → 2026)${beRows ? ` · ${beRows} แถว` : ''}`);
+  }
 
   const shipTos = [...new Set(rows.map(r => r.ship_to).filter(Boolean))];
   if (shipTos.length > 1) warnings.push(`ไฟล์มีหลาย Plant Code: ${shipTos.join(', ')} — ระบบจะแยกใบตามแต่ละเจ้า`);
