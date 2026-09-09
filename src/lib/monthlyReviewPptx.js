@@ -1206,6 +1206,14 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     s.addTable(tableRows, { x, y, w, colW, border: { type: 'solid', color: C.border, pt: 0.75 }, rowH: [L.headRowH, ...L.rowHs], autoPage: false });
     return { bottom: y + L.height, hidden: L.hidden, fontSize: L.fontSize };
   };
+  /* ⚠️ 2026-09-09 (หัวหน้ากลุ่ม Assy2 ทัก "OEE ต่างกันเยอะ"): เด็คไม่ได้คำนวณผิด แต่ **ฐานของ A คนละแบบ**
+     กับไฟล์ Excel ที่วิศวกรทำมือ — วัดจริง ส.ค. 2026 (Assy LWR+GOR 78 กะ): ฐานที่ระบบใช้ 39,951 นาที
+     เทียบกับ "เวลากะ − หยุดตามแผน" 47,325 นาที = ต่างกัน 95 นาที/กะ ซึ่งตรงกับเวลาพัก/ประชุมแถว/5ส พอดี
+     ⇒ A ระบบ 76.0% · A ฐานเวลากะเต็ม 83.5% (≈ Excel 83.93%) — P/Q ตรงกันเกือบเป๊ะ
+     ระบบยึดสูตรตำรา (JIPM): เวลารับภาระ = กะ − พัก − หยุดตามแผน · **ต้องเขียนบนสไลด์เสมอ**
+     ไม่งั้นห้องประชุมได้ 2 ตัวเลขแล้วเถียงกันโดยไม่มีใครผิด */
+  const OEE_BASE_NOTE = 'นิยาม: A = เวลาเดินจริง ÷ เวลารับภาระ โดย **เวลารับภาระ = เวลากะ − เวลาพัก/ประชุมแถว/5ส − หยุดตามแผน** (สูตร OEE ตำรา JIPM) · ถ้าเทียบกับไฟล์ที่หารด้วย "เวลากะเต็ม" ตัวเลข A จะสูงกว่านี้ราว 6-7 จุด ทั้งที่ downtime ชุดเดียวกัน';
+
   const NOTE_H = 0.24; // ที่ที่ต้องกันไว้ให้บรรทัดหมายเหตุ 1 บรรทัด (ใช้ตอนตั้ง bottom ของตาราง)
   /* บรรทัดหมายเหตุใต้ตาราง — วางจาก "ก้นตารางจริง"
      ⚠️ ห้าม return เงียบเมื่อที่ไม่พอ (บทเรียน QC 2026-09-08): เดิม `if (y >= bottom) return y`
@@ -1352,7 +1360,8 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       ['Dept / Line', 'OEE', 'A', 'P', 'Q', 'Output', 'PPM', 'DT Hr'],
       data.depts.map(d => [`${d.code} Overall`, pct(d.oee), pct(d.a), pct(d.p), pct(d.q), num(d.output), num(d.ppm), d.dtHr]),
       { y: 3.42, rowH: 0.4, bottom: 5.6 });
-    bullets(s, execStory(data.depts, data.trend), 0.6, t3.bottom + 0.14, 12.1, 12.5);
+    const yBul = bullets(s, execStory(data.depts, data.trend), 0.6, t3.bottom + 0.14, 12.1, 12.5, SAFE_BOTTOM - 0.26);
+    noteLine(s, OEE_BASE_NOTE, Math.max(yBul + 0.04, SAFE_BOTTOM - 0.24), { size: 9 });
     footer(s);
   }
 
@@ -1489,10 +1498,13 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       const t5 = tsgTable(s, HEAD5, rest, OPT5);
       rest = rest.slice(rest.length - t5.hidden);
       // ชนเพดานหน้าแล้วยังเหลือ = ต้องบอก ห้ามหายเงียบ (เพดานกันลูปหลุด ไม่ใช่กติกาการตัดข้อมูล)
-      if (rest.length) noteLine(s, page >= MAX_PAGE
-        ? `+ อีก ${rest.length} แถวเกินจำนวนหน้าสูงสุดของสไลด์นี้ — ดูครบใน /oee-analytics`
-        : `→ อีก ${rest.length} แถวอยู่หน้าถัดไป (ทุกไลน์ที่เลือกอยู่ในเด็คครบ)`,
-        t5.bottom + 0.06, { x: 0.5, w: 12.3, size: 10 });
+      // รวมเป็นบรรทัดเดียว — 2 บรรทัดซ้อนกันแล้วชนกันที่ก้นสไลด์ (บทเรียนเดียวกับสไลด์ TREND)
+      const more5 = rest.length
+        ? (page >= MAX_PAGE
+          ? `+ อีก ${rest.length} แถวเกินจำนวนหน้าสูงสุดของสไลด์นี้ — ดูครบใน /oee-analytics · `
+          : `→ อีก ${rest.length} แถวอยู่หน้าถัดไป (ทุกไลน์ที่เลือกอยู่ในเด็คครบ) · `)
+        : '';
+      noteLine(s, more5 + OEE_BASE_NOTE, t5.bottom + 0.06, { x: 0.5, w: 12.3, size: 9 });
       footer(s);
     }
   }
