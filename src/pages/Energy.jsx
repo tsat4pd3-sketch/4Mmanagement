@@ -23,7 +23,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import {
@@ -31,6 +31,7 @@ import {
   bahtPerUnit, RATE_SANE_MIN, RATE_SANE_MAX, sumRows,
   efFor, co2eKg, fmtTco2e, monthRange, changeContribution, meteredCoverage,
   secOf, co2ePerPiece, PIECE_BASIS_LABEL,
+  energyRollup, pctOf, outlierVsHistory,
 } from '../utils/energy';
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
@@ -77,10 +78,18 @@ export default function Energy() {
     return lines;
   }, [lines, role, lineId, scopeSecs]);
 
-  // จุดที่กรอกได้ = ไลน์บนสุด (พลังงานวัดกันระดับกลุ่ม) + โซน facility
+  /* จุดที่กรอกได้ = **ทุกไลน์ในลำดับชั้น** (แม่ + ลูก เรียงเป็นขั้น) + โซน facility
+     ⚠️ เดิมให้กรอกได้แค่ไลน์บนสุด ด้วยเหตุผล "พลังงานวัดกันระดับกลุ่ม" — ซึ่งไม่ตรงกับของจริง:
+        เบรกเกอร์ Micrologic ในห้อง MDB อ่าน HDF1 / HDF2 แยกกันอยู่แล้ว (แชทหน้างาน 2026-09-08)
+        บังคับกรอกที่ไลน์แม่ = ทีมต้องบวกมือ (Laser 2 ไลน์ + HDF-01 + HDF-02) แล้วยัดลงช่องเดียว
+        → ทิ้งความละเอียดที่มิเตอร์ให้มาฟรีๆ + ตอบไม่ได้ว่าไลน์ไหนกินไฟ (ผิดกฎ "เก็บค่าที่อ่านได้")
+     การนับซ้ำคุมที่ `energyRollup` (แม่มีค่า = ใช้ของแม่) **ไม่ใช่ที่การห้ามกรอก** */
   const points = useMemo(() => ([
-    ...scopedLines.filter(l => !l.parent_line_name).map(l => ({ kind: 'line', name: l.name, section: l.section })),
-    ...zones.map(z => ({ kind: 'zone', name: z, section: null })),
+    ...toHierarchicalOptions(scopedLines).map(({ line, depth }) => ({
+      kind: 'line', name: line.name, section: line.section, depth,
+      parentName: line.parent_line_name || null,
+    })),
+    ...zones.map(z => ({ kind: 'zone', name: z, section: null, depth: 0, parentName: null })),
   ]), [scopedLines, zones]);
 
   const load = useCallback(async () => {
@@ -188,14 +197,53 @@ export default function Energy() {
   const prevByKey = byMonth[prevMonth] || {};
 
   /* ── ชั้นของจุด: มีมิเตอร์ / ยังไม่มี (energy_points.is_metered) ── */
+  /* ── ความลึกที่ "แสดงในตารางนี้" (คนละตัวกับความลึกในต้นไม้จริง) ────────────────
+     หน้านี้แยกตารางเป็นชั้น (มีมิเตอร์ / ยังไม่มีมิเตอร์ / เฉพาะจุดที่มีข้อมูล) ⇒ ไลน์แม่มักไม่ได้อยู่
+     ตารางเดียวกับไลน์ลูก · กฎ + เหตุผล + เคสจริงอยู่ที่ `visibleDepths` ใน utils/lineHierarchy.js
+     (ห้ามคิดความลึกเองในหน้า — จอไหนคิดเองจะกลับไปเป็น "แม่ลูกมั่ว" แบบเดิม) */
+  const withDepth = useCallback((pts) => {
+    const parentKey = new Map(points.filter(p => p.kind === 'line' && p.parentName)
+      .map(p => [`line::${p.name}`, `line::${p.parentName}`]));
+    const depths = visibleDepths(pts.map(keyOf), k => parentKey.get(k) || null);
+    return pts.map(p => {
+      const d = depths.get(keyOf(p)) || { depth: 0, outsideParent: null };
+      return { ...p, depth: d.depth, outsideParent: d.outsideParent ? String(d.outsideParent).split('::').slice(1).join('::') : null };
+    });
+  }, [points]);
+
   const meteredSet = useMemo(() => new Set(
     (pointCfg || []).filter(c => c.is_metered).map(c => `${c.scope_kind}::${c.scope_name}`)
   ), [pointCfg]);
   const meteredPts = useMemo(() => points.filter(p => meteredSet.has(`${p.kind}::${p.name}`)), [points, meteredSet]);
   const otherPts = useMemo(() => points.filter(p => !meteredSet.has(`${p.kind}::${p.name}`)), [points, meteredSet]);
+  // แถวสำหรับ render — depth คิดใหม่ต่อตาราง (ยอดรวมยังใช้ meteredPts/otherPts เหมือนเดิม)
+  const meteredRows = useMemo(() => withDepth(meteredPts), [withDepth, meteredPts]);
+  const otherRows = useMemo(() => withDepth(otherPts), [withDepth, otherPts]);
 
-  /* ── ยอดรวม: "ที่วัดได้" = sum ของจุดที่มีมิเตอร์ (cumulate ขึ้นมา) ── */
-  const sumOf = (pts, mk) => sumRows(pts.map(p => (byMonth[mk] || {})[keyOf(p)]).filter(Boolean));
+  /* ── ลำดับชั้นแม่-ลูก: ใช้ตัดสินว่าจุดไหน "นับเข้ายอดรวมได้" (กฎกลางใน utils/energy.js) ──
+     แม่ต้องหาเจอแม้ตัวแม่จะไม่อยู่ในลิสต์ที่ส่งเข้าไป (เช่นรวมเฉพาะจุดที่มีมิเตอร์) */
+  const parentKeyOf = useMemo(() => {
+    const m = new Map(points.filter(p => p.kind === 'line' && p.parentName)
+      .map(p => [`line::${p.name}`, `line::${p.parentName}`]));
+    return (k) => m.get(k) || null;
+  }, [points]);
+  const rollupOf = useCallback((pts, mk) => {
+    const mm = byMonth[mk] || {};
+    return energyRollup(pts.map(p => ({ key: keyOf(p), qty: mm[keyOf(p)]?.qty ?? null })), parentKeyOf);
+  }, [byMonth, parentKeyOf]);
+  /** ชั้นแม่-ลูกของเดือนที่กำลังดู (ทุกจุด) — ใช้ติดป้ายบนแถว */
+  const rollNow = useMemo(() => new Map(rollupOf(points, month).map(r => [r.key, r])), [rollupOf, points, month]);
+
+  /* ── ยอดรวม: "ที่วัดได้" = sum ของจุดที่มีมิเตอร์ (cumulate ขึ้นมา)
+     ⚠️ ข้ามจุดที่ค่าถูกนับไปแล้วในไลน์แม่ — ไม่งั้นแม่+ลูกบวกกันเอง ยอดทะลุบิลทันที ── */
+  const sumOf = (pts, mk) => {
+    const covered = new Set(rollupOf(pts, mk).filter(r => r.qty != null && !r.counted).map(r => r.key));
+    const mm = byMonth[mk] || {};
+    const res = sumRows(pts.map(p => (covered.has(keyOf(p)) ? null : mm[keyOf(p)])).filter(Boolean));
+    /* ตัวหารของ "กรอกแล้วกี่จุด" ต้องหักจุดที่แม่ครอบไว้แล้วออก — ไม่งั้นขึ้น 3/5 ทั้งที่ลงครบ
+       (บทเรียนเดิมของโมดูลนี้: ตัวเลขที่ทำให้ดูเหมือนงานยังไม่เสร็จ = คนเลิกเชื่อจอ) */
+    return { ...res, total: pts.length - covered.size };
+  };
   const metered = sumOf(meteredPts, month);
   const meteredPrev = sumOf(meteredPts, prevMonth);
   const bill = byKey['plant::PLANT'];
@@ -222,6 +270,16 @@ export default function Energy() {
   const secDelta = deltaPct(sec, secPrev);
   const kgPerPiece = co2ePerPiece(co2, pieces);
 
+  /** ค่าที่เคยกรอกของจุดนั้นในเดือนอื่น — ใช้จับ "พิมพ์ผิดหลัก" (ดู outlierVsHistory) */
+  const pastByKey = useMemo(() => {
+    const m = {};
+    for (const r of hist) {
+      if (r.month_key === month || r.qty == null) continue;
+      (m[`${r.scope_kind}::${r.scope_name}`] ||= []).push(Number(r.qty));
+    }
+    return m;
+  }, [hist, month]);
+
   /* บันทึกทีละช่อง (upsert) — กรอกแล้วเซฟเลย เหมือนหน้ากรอกอื่นในระบบ */
   const saveCell = async (p, patch) => {
     if (!canEdit) return;
@@ -238,6 +296,12 @@ export default function Energy() {
     const { error } = await supabaseDR.from('energy_monthly')
       .upsert(payload, { onConflict: 'scope_kind,scope_name,month_key,utility' });
     if (error) return toast.error(error.message);
+    /* ⚠️ เตือน "น่าจะพิมพ์ผิดหลัก" — เตือนหลังเซฟ **ไม่บล็อก** (เดือนที่ผิดปกติจริงก็มี
+       เช่นรวมสองรอบบิล/เพิ่งเปิดเครื่องใหม่ ระบบไม่มีทางรู้แทนคน) · แถวยังติด ⚠ ค้างไว้ให้เห็นด้วย */
+    if (patch.qty != null) {
+      const od = outlierVsHistory(patch.qty, pastByKey[`${p.kind}::${p.name}`]);
+      if (od) toast.info(`⚠ ${payload.scope_name}: ${fmtKwh(patch.qty)} kWh = ${od.ratio}× ของค่ากลางที่เคยลง (${fmtKwh(od.median)}) — บันทึกแล้ว แต่ช่วยตรวจว่ากรอกผิดหลักไหม`);
+    }
     load();
   };
   const numOrNull = (v) => (String(v).trim() === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
@@ -261,7 +325,9 @@ export default function Energy() {
   const trend = useMemo(() => months.map(mk => {
     const mm = byMonth[mk] || {};
     const b = mm['plant::PLANT']?.qty ?? null;
-    const met = sumRows(meteredPts.map(p => mm[keyOf(p)]).filter(Boolean)).qty;
+    // ⚠️ ต้องผ่าน rollup — เดือนที่ลงทั้งค่าแม่และค่าลูก ถ้าบวกดิบจะได้ยอดเกินจริงเท่าตัว
+    const met = sumRows(rollupOf(meteredPts, mk).filter(r => r.counted)
+      .map(r => mm[r.key]).filter(Boolean)).qty;
     const base = b ?? met;
     const e = efFor('electric', mk, factors);
     const ly = (byMonth[shiftMonth(mk, -12)] || {})['plant::PLANT']?.qty ?? null;
@@ -273,34 +339,42 @@ export default function Energy() {
       pieces: prod?.[mk] ?? null,
       sec: secOf(base, prod?.[mk]),
     };
-  }), [months, byMonth, meteredPts, factors, prod]);
+  }), [months, byMonth, meteredPts, factors, prod, rollupOf]);
   const hasTrend = trend.some(t => t.bill != null || t.metered != null);
   const hasYoy = trend.some(t => t.lastYear != null);
+
+  /** qty ที่ "นับได้" รายเดือน (ไม่ซ้ำแม่-ลูก) — ฐานของทุกกราฟ/ตารางในแท็บสรุป
+      ⚠️ ห้ามอ่าน byMonth ดิบๆ ในแผงสรุป กลุ่มที่ลงทั้งแม่และลูกจะถูกนับสองรอบ */
+  const countedQty = useMemo(() => {
+    const m = {};
+    for (const mk of months) m[mk] = new Map(rollupOf(points, mk).filter(r => r.counted).map(r => [r.key, r.qty]));
+    return m;
+  }, [months, points, rollupOf]);
 
   /** "อะไรทำให้เดือนนี้เปลี่ยน" — แตกส่วนต่างลงรายจุด (กราฟเรียงยอดตอบข้อนี้ไม่ได้) */
   const contrib = useMemo(() => changeContribution(
     points.map(p => ({
       key: keyOf(p), label: p.name,
-      cur: byKey[keyOf(p)]?.qty ?? null, prev: prevByKey[keyOf(p)]?.qty ?? null,
+      cur: countedQty[month]?.get(keyOf(p)) ?? null,
+      prev: countedQty[prevMonth]?.get(keyOf(p)) ?? null,
     }))
-  ), [points, byKey, prevByKey]);
+  ), [points, countedQty, month, prevMonth]);
   const contribRows = contrib.rows.filter(r => r.delta !== 0).slice(0, 10);
 
   /** สัดส่วนการใช้รายจุด 6 เดือนล่าสุด — เห็นโครงสร้างเปลี่ยน ไม่ใช่แค่ยอดรวมเปลี่ยน */
   const compPts = useMemo(() => {
     const tot = {};
     for (const p of points) {
-      const s = months.reduce((a, mk) => a + Number((byMonth[mk] || {})[keyOf(p)]?.qty || 0), 0);
+      const s = months.reduce((a, mk) => a + Number(countedQty[mk]?.get(keyOf(p)) || 0), 0);
       if (s > 0) tot[keyOf(p)] = { p, s };
     }
     return Object.values(tot).sort((a, b) => b.s - a.s).slice(0, 6).map(x => x.p);
-  }, [points, months, byMonth]);
+  }, [points, months, countedQty]);
   const compData = useMemo(() => months.slice(-6).map(mk => {
-    const mm = byMonth[mk] || {};
     const d = { label: monthLabel(mk).replace(/ 25/, ' ') };
-    compPts.forEach(p => { d[p.name] = mm[keyOf(p)]?.qty ?? 0; });
+    compPts.forEach(p => { d[p.name] = countedQty[mk]?.get(keyOf(p)) ?? 0; });
     return d;
-  }), [months, byMonth, compPts]);
+  }), [months, countedQty, compPts]);
 
   const Kpi = ({ label, value, sub, tone, warn }) => (
     <div style={{ ...card, flex: '1 1 190px', minWidth: 170, borderColor: warn ? '#f59e0b' : 'var(--border)' }}>
@@ -326,11 +400,37 @@ export default function Energy() {
     const rateOdd = rate != null && (rate < RATE_SANE_MIN || rate > RATE_SANE_MAX);
     const feeds = !isPlant && p.kind === 'zone' ? supply[p.name] : null;
     const target = isPlant ? { kind: 'plant', name: 'PLANT' } : p;
+    /* ชั้นแม่-ลูก: ค่านี้ถูกนับไปแล้วในไลน์แม่ไหม / ลูกกรอกกันมารวมเท่าไหร่ (ไว้ทวนกับค่าแม่) */
+    const roll = isPlant ? null : rollNow.get(k);
+    const coveredName = roll?.coveredBy ? String(roll.coveredBy).split('::').slice(1).join('::') : null;
+    const childPct = roll?.childQty != null ? pctOf(roll.childQty, r?.qty) : null;
+    const odd = outlierVsHistory(r?.qty, pastByKey[k]);   // พิมพ์ผิดหลัก — ต้องเห็นค้างบนแถว ไม่ใช่แค่ toast ตอนเซฟ
     return (
-      <tr key={k} style={isPlant ? { background: 'var(--bg3)' } : null}>
-        <td style={{ ...td, fontWeight: isPlant ? 800 : 600 }}>
+      <tr key={k} style={isPlant ? { background: 'var(--bg3)' } : coveredName ? { background: 'var(--bg2)' } : null}>
+        <td style={{ ...td, fontWeight: isPlant ? 800 : 600, paddingLeft: 8 + (p?.depth || 0) * 16 }}>
           {label}
           {p?.section && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}> · {p.section}</span>}
+          {/* แม่อยู่คนละตาราง = เยื้องใต้กันไม่ได้ (จะไปเยื้องใต้ไลน์อื่นที่ไม่เกี่ยวกัน) → บอกด้วยข้อความแทน */}
+          {p?.outsideParent && !coveredName && (
+            <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 10.5 }}
+              title="ไลน์แม่ไม่ได้อยู่ในตารางนี้ (คนละชั้นมิเตอร์) จึงไม่ได้เยื้องใต้กัน">
+              {' '}· ใต้ {p.outsideParent}
+            </span>
+          )}
+          {/* ⚠️ ห้ามให้ค่าแม่กับค่าลูกบวกกันเงียบๆ — บอกตรงๆ ว่าแถวนี้ถูกนับที่ไหน */}
+          {coveredName && (
+            <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
+              title="ไลน์แม่กรอกค่ารวมไว้แล้ว ค่าแถวนี้จึงเป็นรายละเอียดย่อย ไม่ถูกบวกซ้ำเข้ายอดรวม">
+              ↳ นับรวมอยู่ใน <b>{coveredName}</b> แล้ว · ไม่บวกซ้ำเข้ายอดที่วัดได้
+            </div>
+          )}
+          {roll?.childCount > 0 && (
+            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 400, marginTop: 2 }}
+              title="ทวนว่าค่าที่ลงไว้ที่ไลน์แม่ ครอบคลุมไลน์ลูกที่ลงไว้แค่ไหน">
+              ประกอบด้วยไลน์ย่อยที่ลงไว้ {roll.childCount} จุด รวม {fmtKwh(roll.childQty)} kWh
+              {childPct != null && <> = <b>{childPct}%</b> ของค่านี้{childPct > 102 ? ' ⚠ ลูกมากกว่าแม่' : ''}</>}
+            </div>
+          )}
           {/* "utility นี้จ่ายให้ไลน์ไหน" — อ่านจาก Supply route ที่ตั้งไว้ในฐานข้อมูลเครื่องจักร
               ยังไม่ได้ตั้ง = บอกให้รู้ ห้ามแสดงเป็นช่องว่างเฉยๆ (คนจะนึกว่าไม่มีความสัมพันธ์) */}
           {!isPlant && p.kind === 'zone' && (
@@ -347,9 +447,15 @@ export default function Energy() {
             )
           )}
         </td>
-        <td style={td}><input type="number" defaultValue={r?.qty ?? ''} readOnly={!canEdit} placeholder="—"
-          onBlur={e => { const v = numOrNull(e.target.value); if (v !== (r?.qty ?? null)) saveCell(target, { qty: v }); }}
-          style={{ ...inp, width: 108, ...(canEdit ? null : { background: 'var(--bg2)' }) }} /></td>
+        <td style={td}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input type="number" defaultValue={r?.qty ?? ''} readOnly={!canEdit} placeholder="—"
+              onBlur={e => { const v = numOrNull(e.target.value); if (v !== (r?.qty ?? null)) saveCell(target, { qty: v }); }}
+              style={{ ...inp, width: 108, ...(odd ? { borderColor: '#f59e0b' } : null), ...(canEdit ? null : { background: 'var(--bg2)' }) }} />
+            {odd && <span style={{ color: '#f59e0b', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}
+              title={`เดือนอื่นของจุดนี้อยู่แถว ${fmtKwh(odd.median)} kWh — ค่านี้ต่างกัน ${odd.ratio} เท่า ตรวจว่ากรอกผิดหลักไหม`}>⚠ {odd.ratio}×</span>}
+          </div>
+        </td>
         <td style={td}><input type="number" defaultValue={r?.cost ?? ''} readOnly={!canEdit} placeholder="—"
           onBlur={e => { const v = numOrNull(e.target.value); if (v !== (r?.cost ?? null)) saveCell(target, { cost: v }); }}
           style={{ ...inp, width: 108, ...(canEdit ? null : { background: 'var(--bg2)' }) }} /></td>
@@ -380,6 +486,8 @@ export default function Energy() {
       </tr>
     );
   };
+  /** ป้ายชื่อจุด — ไลน์ลูกใส่ ↳ ให้เห็นว่าเป็นชั้นย่อยของกลุ่ม (indent อย่างเดียวหายบนจอแคบ) */
+  const ptLabel = (p) => `${p.kind === 'zone' ? '🔧' : p.depth > 0 ? '↳ 🏭' : '🏭'} ${p.name}`;
   const head = (withMeter) => (
     <thead><tr>
       <th style={th}>พื้นที่</th><th style={th}>หน่วย (kWh)</th><th style={th}>ค่าไฟ (บาท)</th>
@@ -422,8 +530,8 @@ export default function Energy() {
             {billYoy?.qty != null && <> · ปีก่อน {deltaChip(deltaPct(bill?.qty, billYoy.qty))}</>}</>} />
         <Kpi label="ผลรวมที่วัดได้ (kWh)" value={fmtKwh(metered.qty)}
           sub={cover.coverPct != null
-            ? <>{cover.coverPct}% ของบิล · {metered.filled}/{meteredPts.length} จุดที่มีมิเตอร์</>
-            : `${metered.filled}/${meteredPts.length} จุดที่มีมิเตอร์`} />
+            ? <>{cover.coverPct}% ของบิล · {metered.filled}/{metered.total} จุดที่มีมิเตอร์</>
+            : `${metered.filled}/${metered.total} จุดที่มีมิเตอร์`} />
         <Kpi label="🌱 คาร์บอน (tCO2e)" value={ef ? fmtTco2e(co2) : '—'}
           tone={ef ? '#22c55e' : 'var(--muted)'} warn={!ef}
           sub={ef
@@ -479,6 +587,12 @@ export default function Energy() {
 
             {/* ② จุดที่มีมิเตอร์ — ที่กรอกจริง */}
             <h3 style={secTitle}>🔌 จุดที่มีมิเตอร์ ({meteredPts.length}) <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— รวมขึ้นไปเป็นยอดที่วัดได้</span></h3>
+            {/* กติกาที่คนกรอกต้องรู้ก่อนพิมพ์ตัวแรก — เขียนไว้ตรงนี้ ไม่ใช่ให้เดาจากผลลัพธ์ */}
+            <div style={{ fontSize: 11.5, color: 'var(--text2)', margin: '-4px 0 8px', lineHeight: 1.6 }}>
+              📏 <b>ลงตามที่มิเตอร์อ่านได้จริง</b> — เบรกเกอร์แยก HDF-01 / HDF-02 ก็ลงแยกได้เลย ไม่ต้องบวกมือรวมที่ไลน์แม่<br />
+              ระบบไม่บวกซ้ำให้อยู่แล้ว: <b>ไลน์แม่มีค่า = ใช้ค่าของแม่</b> (ลูกกลายเป็นรายละเอียด) ·
+              <b> ไลน์แม่เว้นว่าง = รวมค่าลูกขึ้นมาเป็นยอดกลุ่ม</b>
+            </div>
             <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 20 }}>
               {meteredPts.length === 0 ? (
                 <div style={{ padding: 14, fontSize: 12.5, color: 'var(--muted)' }}>
@@ -487,7 +601,7 @@ export default function Energy() {
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                   {head(true)}
-                  <tbody>{meteredPts.map(p => row({ p, label: `${p.kind === 'zone' ? '🔧' : '🏭'} ${p.name}` }))}</tbody>
+                  <tbody>{meteredRows.map(p => row({ p, label: ptLabel(p) }))}</tbody>
                 </table>
               )}
             </div>
@@ -499,13 +613,13 @@ export default function Energy() {
                 style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
                 {showUnmetered ? '▲ ซ่อน' : '▼ แสดง'}
               </button>
-              <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้</span>
+              <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— ทุกไลน์ในกลุ่ม + โซน · กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้ (กด <b>+ มีมิเตอร์</b> เพื่อย้ายขึ้นไป)</span>
             </h3>
             {showUnmetered && (
               <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                   {head(true)}
-                  <tbody>{otherPts.map(p => row({ p, label: `${p.kind === 'zone' ? '🔧' : '🏭'} ${p.name}` }))}</tbody>
+                  <tbody>{otherRows.map(p => row({ p, label: ptLabel(p) }))}</tbody>
                 </table>
               </div>
             )}
@@ -645,24 +759,35 @@ export default function Energy() {
                   <th style={{ ...th, textAlign: 'right' }}>เทียบเดือนก่อน</th>
                 </tr></thead>
                 <tbody>
-                  {points.filter(p => months.some(mk => (byMonth[mk] || {})[keyOf(p)]?.qty != null)).map(p => {
+                  {/* ตารางนี้โชว์เฉพาะจุดที่มีข้อมูล → ต้องคิด depth ใหม่ด้วย (แม่ที่ไม่มีข้อมูลไม่อยู่ในตาราง) */}
+                  {withDepth(points.filter(p => months.some(mk => (byMonth[mk] || {})[keyOf(p)]?.qty != null))).map(p => {
                     const d = deltaPct(byKey[keyOf(p)]?.qty, prevByKey[keyOf(p)]?.qty);
                     return (
                       <tr key={keyOf(p)}>
-                        <td style={{ ...td, fontWeight: 600 }}>
-                          {p.kind === 'zone' ? '🔧' : '🏭'} {p.name}
+                        <td style={{ ...td, fontWeight: 600, paddingLeft: 8 + (p.depth || 0) * 16 }}>
+                          {ptLabel(p)}
+                          {p.outsideParent && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 10.5 }}
+                            title="ไลน์แม่ไม่มีข้อมูลในช่วงนี้ จึงไม่ได้อยู่ในตาราง"> · ใต้ {p.outsideParent}</span>}
                           {meteredSet.has(keyOf(p)) && <span title="มีมิเตอร์" style={{ marginLeft: 5, fontSize: 10.5, color: GOOD }}>🔌</span>}
                         </td>
-                        {months.slice(-6).map(mk => (
-                          <td key={mk} style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>
-                            {fmtKwh((byMonth[mk] || {})[keyOf(p)]?.qty)}
-                          </td>
-                        ))}
+                        {/* ค่าที่ถูกนับรวมไว้ที่ไลน์แม่แล้ว = ยังต้องเห็น (เป็นข้อมูลจริง) แต่ต้องรู้ว่าไม่ได้บวกเข้ายอดรวม */}
+                        {months.slice(-6).map(mk => {
+                          const v = (byMonth[mk] || {})[keyOf(p)]?.qty;
+                          const inParent = v != null && !countedQty[mk]?.has(keyOf(p));
+                          return (
+                            <td key={mk} title={inParent ? 'ค่านี้ถูกนับรวมอยู่ในไลน์แม่แล้ว — ไม่บวกซ้ำเข้ายอดรวม' : ''}
+                              style={{ ...td, textAlign: 'right', color: inParent ? 'var(--muted)' : 'var(--text2)', fontStyle: inParent ? 'italic' : undefined }}>
+                              {fmtKwh(v)}{inParent ? '*' : ''}
+                            </td>);
+                        })}
                         <td style={{ ...td, textAlign: 'right' }}>{deltaChip(d)}</td>
                       </tr>);
                   })}
                 </tbody>
               </table>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '8px 14px 12px' }}>
+                * = ค่าที่ไลน์แม่กรอกครอบไว้แล้ว (แสดงเป็นรายละเอียด <b>ไม่ถูกบวกซ้ำ</b> เข้ายอดรวม/กราฟด้านบน)
+              </div>
             </div>
           </>
         ) : tab === 'mqtt' ? (

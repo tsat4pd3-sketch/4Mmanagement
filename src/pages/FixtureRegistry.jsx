@@ -360,9 +360,11 @@ export default function FixtureRegistry() {
 
   const removePoint = async (p) => {
     if (!window.confirm(`ปิดใช้งานจุด ${p.point_no}?\nประวัติชิมยังอยู่ครบ`)) return;
-    const { error } = await supabaseDR.from('fixture_points')
-      .update({ is_active: false, updated_by_name: fullName || null }).eq('id', p.id);
+    // ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error (กฎเหล็กข้อ 2) → ต้อง .select() แล้วนับแถว
+    const { data, error } = await supabaseDR.from('fixture_points')
+      .update({ is_active: false, updated_by_name: fullName || null }).eq('id', p.id).select('id');
     if (error) return toast.error(`ลบไม่สำเร็จ: ${error.message}`);
+    if (!data?.length) return toast.error('ลบไม่สำเร็จ — ไม่มีแถวถูกเขียน (สิทธิ์ไม่พอ?)');
     toast.success('ปิดใช้งานจุดแล้ว');
     load();
   };
