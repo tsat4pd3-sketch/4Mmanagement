@@ -50,7 +50,9 @@
 import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, weightedOeeOf, weekOfMonth } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, weightedOeeOf, weekOfMonth,
+         buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fitOneLine, layoutTable, textHeightIn, lineHeightIn } from './pptxFit';
 
@@ -429,6 +431,91 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
   }
 }
 
+/* ── 💸 Lean: 6 Big Losses / 8 Wastes + มูลค่าเป็นบาท (2026-09-09 · คำสั่ง user "เพิ่มสิ ควรจะใช้โชว์ได้ทั้งสองไฟล์") ──
+   ยกของที่แท็บ 🧠 วิเคราะห์สาเหตุ (`OeeInsightPanel`) คำนวณอยู่แล้วขึ้นเด็ค — ไม่ต้องกรอกอะไรเพิ่ม
+   ตัวคิดคือ `groupLean()` ใน utils/oee.js ตัวเดียวกับบนจอ (ห้ามเขียนสูตรซ้ำ)
+
+   ⚠️ กติกาการตีเป็นเงิน (ต่างจากบนจอที่ "ไม่ตีเป็นเงินเมื่อคร่อมหลายไลน์"):
+     activity rate ผูกกับ **cost center ของแต่ละไลน์** ⇒ ห้ามเอา rate เดียวคูณทั้งส่วนงาน
+     → คิดเงิน **รายไลน์แล้วค่อยบวก** · ไลน์ที่ยังไม่มี cost center/rate = **ไม่คิดเงิน แต่ต้องรายงานนาทีที่ตีไม่ได้**
+   ⚠️ ของเสียถูกแปลงเป็น "นาทีที่เสียไป" ด้วย CT ของกะนั้นก่อน (เทียบหน่วยเดียวกับ downtime) แล้วจึงคูณ rate
+   best-effort: ล้มเหลว = ไม่มีสไลด์นี้ + warn (เด็คต้องออกได้เสมอ) */
+async function buildLeanCost({ sections, sessions, downtimes, defects, orders, monthKey }) {
+  const out = { byDept: {}, warns: [], rateComps: RATE_COMPONENTS.map(c => c.key) };
+  try {
+    // CT ต่อ MAT (fallback chain เดียวกับตอนปิดกะ) → CT เฉลี่ยถ่วงน้ำหนักต่อกะ
+    const [kstdRes, prodRes] = await Promise.all([
+      supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true),
+      supabaseDR.from('dr_products').select('mat_no, cycle_time_sec').eq('is_active', true),
+    ]);
+    if (kstdRes.error || prodRes.error) throw (kstdRes.error || prodRes.error);
+    const ctMap = buildCtMap({ kanbanStds: kstdRes.data || [], products: prodRes.data || [] });
+    const ctBySess = {};
+    orders.forEach(o => {
+      const ct = ctMap[o.mat_no] || 0;
+      if (ct <= 0) return;
+      const c = (ctBySess[o.session_id] ||= { std: 0, qty: 0 });
+      const q = o.qty_ok ?? o.qty ?? 0;
+      c.std += q * ct; c.qty += q;
+    });
+    const ctSecFn = (sid) => { const c = ctBySess[sid]; return c && c.qty > 0 ? c.std / c.qty : 0; };
+
+    // cost center ของไลน์ (Main) + activity rate ณ เดือนรายงาน
+    const [lineRes, rateRes] = await Promise.all([
+      supabase.from('production_lines').select('name, parent_line_name, cost_center'),
+      supabase.from('cost_center_rates').select('cost_center, effective_from, dl_rate, dp_rate, idp_rate, oh_rate'),
+    ]);
+    if (lineRes.error || rateRes.error) throw (lineRes.error || rateRes.error);
+    const lines = lineRes.data || [], rates = rateRes.data || [];
+    const refDate = monthEndOf(monthKey);
+    const perHrOf = (ln) => {
+      const cc = lineCostCenter(lines, ln);
+      if (!cc) return { cc: null, perHr: null };
+      const row = rateFor(rates, cc, refDate);
+      const perHr = row ? ratePerHour(row, out.rateComps) : null;
+      return { cc, perHr: perHr > 0 ? perHr : null };
+    };
+
+    const dtIdx = indexBySession(downtimes), defIdx = indexBySession(defects);
+    sections.forEach(sec => {
+      const secSess = sessions.filter(x => sec.lines.includes(x.line_name));
+      if (!secSess.length) return;
+      const merge = (dst, rows, perHr) => rows.forEach(b => {
+        const k = b.key || '_none';
+        const d = (dst[k] ||= { key: b.key, meta: b.meta, min: 0, count: 0, qty: 0, baht: 0, types: {} });
+        d.min += b.min; d.count += b.count; d.qty += b.qty;
+        if (perHr) d.baht += (b.min / 60) * perHr;
+        b.types.forEach(t => { const x = (d.types[t.name] ||= { name: t.name, min: 0, qty: 0 }); x.min += t.min; x.qty += t.qty; });
+      });
+      const losses = {}, wastes = {};
+      let minPriced = 0, minUnpriced = 0; const noRate = [];
+      [...new Set(secSess.map(x => x.line_name))].forEach(ln => {
+        const ls = secSess.filter(x => x.line_name === ln);
+        const dts = rowsOfSessions(ls, dtIdx), defs = rowsOfSessions(ls, defIdx);
+        // includePlanned: false — "ความสูญเปล่า" ต้องไม่นับเวลาพัก/หยุดตามแผน (ฐานเดียวกับ A)
+        const L = groupLean({ axis: 'six_big_loss', downtimes: dts, defects: defs, ctSecFn, includePlanned: false });
+        const W = groupLean({ axis: 'waste_type', downtimes: dts, defects: defs, ctSecFn, includePlanned: false });
+        const { perHr } = perHrOf(ln);
+        const lineMin = L.reduce((a, b) => a + b.min, 0);
+        if (perHr) minPriced += lineMin; else { minUnpriced += lineMin; if (lineMin > 0) noRate.push(ln); }
+        merge(losses, L, perHr); merge(wastes, W, perHr);
+      });
+      const fin = (m) => Object.values(m)
+        .map(b => ({ ...b, min: Math.round(b.min), baht: Math.round(b.baht), types: Object.values(b.types).sort((x, y) => y.min - x.min).slice(0, 4) }))
+        .sort((a, b) => b.min - a.min);
+      const lossArr = fin(losses);
+      out.byDept[sec.code] = {
+        losses: lossArr, wastes: fin(wastes),
+        totalMin: lossArr.reduce((a, b) => a + b.min, 0),
+        baht: minPriced > 0 ? Math.round(lossArr.reduce((a, b) => a + b.baht, 0)) : null,
+        minPriced: Math.round(minPriced), minUnpriced: Math.round(minUnpriced), linesNoRate: noRate,
+        uncategorizedMin: Math.round(lossArr.filter(b => !b.key).reduce((a, b) => a + b.min, 0)),
+      };
+    });
+  } catch (e) { out.warns.push(`คิดความสูญเปล่า/มูลค่าไม่สำเร็จ: ${e?.message || e}`); }
+  return out;
+}
+
 export async function buildMonthlyReviewData({ monthKey, sections, trendMonths = 1, mode = 'oee' }) {
   const [y, m] = monthKey.split('-').map(Number);
   const from = `${monthKey}-01`;
@@ -456,9 +543,9 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // downtime / defect / orders — fetchByIds (แบ่งก้อน id + แบ่งหน้า + เช็ค error)
   // ⚠️ dr_downtime_types/dr_defect_types คอลัมน์ชื่อ **name_th** ไม่ใช่ name
   //    (เคยเขียน name → query ล้มเงียบทั้งเด็ค DT=0h — ต้นเหตุรายงาน JULY 2026 ว่าง)
-  const DT_FULL = 'id, session_id, machine_no, description, duration_min, fix_action, fix_by, followup_result, followup_by, dr_downtime_types(name_th, category)';
+  const DT_FULL = 'id, session_id, machine_no, description, duration_min, fix_action, fix_by, followup_result, followup_by, dr_downtime_types(name_th, category, six_big_loss, waste_type)';
   const DT_SLIM = 'id, session_id, machine_no, description, duration_min, dr_downtime_types(name_th, category)';
-  const DEF_FULL = 'session_id, qty_ng, qty_suspect, description, is_trial, fix_action, fix_by, followup_result, dr_defect_types(name_th, excl_from_q)';
+  const DEF_FULL = 'session_id, qty_ng, qty_suspect, description, is_trial, fix_action, fix_by, followup_result, dr_defect_types(name_th, excl_from_q, six_big_loss, waste_type)';
   const DEF_SLIM = 'session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)';
   const [dtRes, defRes, ordRes] = await Promise.all([
     fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('downtime_logs').select(sel).in('session_id', c), DT_FULL, DT_SLIM),
@@ -833,7 +920,11 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
     }
   }
 
-  return { monthKey, from, to, depts, dataWarn, fixSlim, trend, mode, full: fullMode ? await buildFullExtras({ monthKey, sections, allLineNames, matchNames }) : null };
+  // 💸 Lean + มูลค่า — ใช้ทั้ง 2 โหมด (คำสั่ง user: "ควรจะใช้โชว์ได้ทั้งสองไฟล์")
+  const lean = await buildLeanCost({ sections, sessions, downtimes, defects, orders, monthKey });
+
+  return { monthKey, from, to, depts, dataWarn, fixSlim, trend, mode, lean,
+    full: fullMode ? await buildFullExtras({ monthKey, sections, allLineNames, matchNames }) : null };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1325,9 +1416,12 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       `EXECUTIVE SUMMARY : ${data.depts.map(d => d.code).join(' <> ')} OEE / A / P / Q`,
       'OEE ACTUAL BY LINE',
       ...(data.trend?.months?.length > 1 ? [`PERFORMANCE TREND : ${data.trend.months.length} MONTHS PROGRESSION`] : []),
-      ...data.depts.map(d => FULL
-        ? `${d.code} REVIEW : Overall → เจาะรายไลน์ ${d.lines.length} ไลน์ (OEE ทั้งปี · Capacity · Downtime · Problem/Action) → Tag Yellow → Man Power → Issue & Action`
-        : `${d.code} REVIEW : Overall → ${lineBrief(d)} → Issue & Action`),
+      ...data.depts.map(d => {
+        const hasLean = (data.lean?.byDept?.[d.code]?.totalMin || 0) > 0;
+        return FULL
+          ? `${d.code} REVIEW : Overall → เจาะรายไลน์ ${d.lines.length} ไลน์ (OEE ทั้งปี · Capacity · Downtime · Problem/Action)${hasLean ? ' → Loss Analysis (บาท)' : ''} → Tag Yellow → Man Power → Issue & Action`
+          : `${d.code} REVIEW : Overall → ${lineBrief(d)}${hasLean ? ' → Loss Analysis (บาท)' : ''} → Issue & Action`;
+      }),
       `ISSUE & ACTION SUMMARY : ${NEXT.toUpperCase()} FOCUS`,
     ];
     // ย่อฟอนต์ตามจำนวน/ความยาววาระจริง — ส่วนงานเยอะ (4 ส่วน) วาระยาวขึ้นเองอัตโนมัติ
@@ -1835,6 +1929,52 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
           noteLine(s, '"ว่าง" = สถานีที่ไม่มีพนักงานตั้งเป็นจุดประจำ (employee_home_positions) — ไม่ได้แปลว่าวันนั้นไม่มีคนยืน · ' +
             `⚠ ข้อมูลนี้เป็นสถานะ ณ วันที่สร้างเด็ค ไม่ใช่ ณ ${MON} (จุดประจำไม่มีประวัติย้อนหลัง) · ผังเต็มพร้อมรูปคนดูได้ที่ /management`, ym, { size: 9.5 });
         }
+        footer(s);
+      }
+    }
+
+    /* ══ 💸 ความสูญเปล่า 6 Big Losses / 8 Wastes + มูลค่าเป็นบาท — โชว์ทั้ง 2 โหมด ══
+       ตอบคำถามที่ผู้บริหารถามจริง: "เสียเวลาไปกับอะไร และคิดเป็นเงินเท่าไหร่" */
+    {
+      const LN = data.lean?.byDept?.[d.code];
+      if (LN && LN.totalMin > 0) {
+        const s = newSlide();
+        head(s, `LOSS ANALYSIS : ${d.code}`, `${MON} — 6 Big Losses (TPM) · 8 Wastes (Lean) · แปลงเวลาที่เสียเป็นเงิน`);
+        stat(s, 0.6, 1.62, `${num(Math.round(LN.totalMin))} น.`, 'เวลาสูญเปล่ารวม (นอกแผน)', 2.9);
+        stat(s, 3.65, 1.62, LN.baht != null ? `${num(LN.baht)} ฿` : '—', LN.baht != null ? 'คิดเป็นเงิน' : 'ยังตีเป็นเงินไม่ได้', 2.9);
+        const topL = LN.losses.find(b => b.key);
+        stat(s, 6.70, 1.62, topL ? `${Math.round((topL.min / LN.totalMin) * 100)}%` : '—',
+          topL ? cut(topL.meta?.label || topL.key, 26) : 'ไม่มีข้อมูล', 2.9);
+        stat(s, 9.75, 1.62, num(LN.uncategorizedMin), '⚠ ยังไม่จัดหมวด (นาที)', 2.9);
+
+        headline(s, '6 BIG LOSSES (TPM)', 0.5, 2.62, 3.2);
+        const lossRows = LN.losses.slice(0, 6).map(b => [
+          `${b.meta?.icon || '❓'} ${b.meta?.label || 'ยังไม่จัดหมวด'}`,
+          b.meta?.oee ? { t: b.meta.oee, color: C.orange, bold: true } : { t: '—', color: C.grey },
+          num(b.min), num(b.count),
+          b.baht ? `${num(b.baht)} ฿` : '—',
+          cut(b.types.map(t => `${t.name} ${num(t.min)}น.`).join(' · '), 70),
+        ]);
+        const tL = tsgTable(s, ['ประเภทความสูญเปล่า', 'กระทบ', 'นาที', 'ครั้ง', 'บาท', 'ตัวที่กินเวลามากสุดในหมวด'], lossRows,
+          { y: 3.16, rowH: 0.34, headRowH: 0.32, colW: [2.9, 0.8, 0.9, 0.8, 1.5, 5.4], fontSize: 10, leftCols: [5], bottom: 5.0 });
+
+        headline(s, '8 WASTES (Lean)', 0.5, tL.bottom + 0.12, 3.2);
+        const wasteRows = LN.wastes.slice(0, 4).map(b => [
+          `${b.meta?.icon || '❓'} ${b.meta?.label || 'ยังไม่จัดหมวด'}`,
+          num(b.min), num(b.count), b.baht ? `${num(b.baht)} ฿` : '—',
+          cut(b.types.map(t => `${t.name} ${num(t.min)}น.`).join(' · '), 80),
+        ]);
+        const tW = tsgTable(s, ['ประเภทความสูญเปล่า (Lean)', 'นาที', 'ครั้ง', 'บาท', 'ตัวที่กินเวลามากสุดในหมวด'],
+          wasteRows.length ? wasteRows : [['ยังไม่ได้จัดหมวด Lean ให้ประเภท Downtime/ของเสีย', '—', '—', '—', 'ตั้งได้ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime']],
+          { y: tL.bottom + 0.66, rowH: 0.34, headRowH: 0.32, colW: [3.7, 0.9, 0.8, 1.5, 5.4], fontSize: 10, leftCols: [4], bottom: SAFE_BOTTOM - 0.28 });
+
+        // ที่มาของเงิน + สิ่งที่ตีเป็นเงินไม่ได้ ต้องบอกเสมอ (ห้ามโชว์ยอดบาทลอยๆ)
+        const priceNote = LN.baht == null
+          ? `⚠ ยังตีเป็นเงินไม่ได้ — ไลน์ในส่วนงานนี้ยังไม่ได้ตั้ง cost center หรือ activity rate (ตั้งที่ /org-setup → 💰 Activity Rate)`
+          : `เงิน = นาทีที่เสีย × activity rate ของ cost center **รายไลน์** (${data.lean.rateComps.map(k => k.toUpperCase()).join('+')}) แล้วบวกกัน — ไม่ได้ใช้ rate เดียวคูณทั้งส่วนงาน` +
+            (LN.minUnpriced > 0 ? ` · ⚠ อีก ${num(LN.minUnpriced)} นาที ตีเป็นเงินไม่ได้ (ยังไม่มี rate: ${cut(LN.linesNoRate.join(', '), 60)})` : '');
+        noteLine(s, `${priceNote} · ของเสียถูกแปลงเป็นนาทีด้วย CT ของกะนั้นก่อน · นับเฉพาะหยุดนอกแผน${LN.uncategorizedMin > 0 ? ` · "ยังไม่จัดหมวด" ${num(LN.uncategorizedMin)} นาที = ประเภทที่ยังไม่ผูก 6 Big Loss` : ''}`,
+          tW.bottom + 0.06, { size: 9 });
         footer(s);
       }
     }
