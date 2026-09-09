@@ -228,3 +228,53 @@ test('canBounceBack: ซ่อมไปแล้ว/ปิดแล้ว ตี
   assert.equal(canBounceBack({ status: 'closed', current_step: 2 }), false);
   assert.equal(canBounceBack({ status: 'rejected', current_step: 1 }), false);
 });
+
+/* ── 🏷️ ป้ายสถานะ + สถานะขั้น 5 — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ เพราะป้ายเดียวใช้ 2 ความหมาย) ── */
+import {
+  MO_LABEL_WAIT_HANDOVER, MO_LABEL_WAIT_QA, MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED,
+  moQaState, moStatusLabel,
+} from '../mtnStepPerm.js';
+
+test('moStatusLabel: checked + ไม่เกี่ยวกับคุณภาพ = รอรับมอบ (ขั้น 6) — ห้ามเขียนว่ารอ QA', () => {
+  const o = { status: 'checked', current_step: 4, quality_related: QA_NOT_RELATED };
+  assert.equal(moStatusLabel(o), MO_LABEL_WAIT_HANDOVER);
+  assert.ok(moStatusLabel(o).includes('รับมอบ') && !moStatusLabel(o).includes('คุณภาพ'));
+  // ค่าว่าง/null = ไม่เกี่ยวกับคุณภาพ (เกณฑ์เดียวกับ isWaitingQa/nextStepFor) — ใบเก่าที่ยังไม่เคยเลือก
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4, quality_related: null }), MO_LABEL_WAIT_HANDOVER);
+});
+
+test('moStatusLabel: checked + เกี่ยวกับคุณภาพ = รอตรวจคุณภาพ (ขั้น 5)', () => {
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4, quality_related: QA_RELATED }), MO_LABEL_WAIT_QA);
+});
+
+test('moStatusLabel: qa = รอรับมอบ · สถานะอื่นใช้ป้ายเดิม · status ที่ไม่รู้จักโชว์ค่าดิบ (ไม่กลบเงียบ)', () => {
+  assert.equal(moStatusLabel({ status: 'qa', current_step: 5 }), MO_STATUS_LABEL.qa);
+  assert.ok(MO_STATUS_LABEL.qa.includes('รับมอบ'));
+  assert.equal(moStatusLabel({ status: 'pending' }), MO_STATUS_LABEL.pending);
+  assert.equal(moStatusLabel({ status: 'handover', current_step: 6 }), MO_STATUS_LABEL.handover);
+  assert.equal(moStatusLabel({ status: 'weird_new_status' }), 'weird_new_status');
+});
+
+test('moStatusLabel: แถวที่ไม่ได้ select quality_related มา = ห้ามเดา ให้ใช้ป้ายรวมของ checked', () => {
+  // เคสจริง: บอร์ด Andon / ผังแม่พิมพ์ query เฉพาะบางคอลัมน์ → quality_related เป็น undefined
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4 }), MO_STATUS_LABEL.checked);
+  assert.ok(MO_STATUS_LABEL.checked.includes('คุณภาพ') && MO_STATUS_LABEL.checked.includes('รับมอบ'));
+});
+
+test('moQaState: ใบที่ข้าม QA ต้องรายงานว่า "skipped" ไม่ใช่ "done" — แม้ current_step จะเลย 5 ไปแล้ว', () => {
+  // กดปุ่ม ⏭ ข้าม QA (มี qa_skipped_at)
+  assert.equal(moQaState({ status: 'checked', current_step: 4, quality_related: QA_NOT_RELATED, qa_skipped_at: '2026-09-09T02:00:00Z' }), 'skipped');
+  // ขั้น 4 ระบุว่าไม่เกี่ยวกับคุณภาพ (ใบเก่าที่ไม่มีร่องรอย qa_skipped_*)
+  assert.equal(moQaState({ status: 'checked', current_step: 4, quality_related: QA_NOT_RELATED }), 'skipped');
+  // 🔴 หัวใจของบั๊ก: รับมอบ/ปิดใบไปแล้ว current_step = 6-7 แต่ QA ไม่เคยตรวจ → ต้องไม่ใช่ 'done'
+  assert.equal(moQaState({ status: 'handover', current_step: 6, quality_related: QA_NOT_RELATED }), 'skipped');
+  assert.equal(moQaState({ status: 'closed', current_step: 7, quality_related: QA_NOT_RELATED, qa_skipped_at: '2026-09-01T00:00:00Z' }), 'skipped');
+});
+
+test('moQaState: ตรวจจริง = done · ยังรอ QA = waiting · ยังไม่ถึงขั้น 4 = none', () => {
+  assert.equal(moQaState({ status: 'qa', current_step: 5, quality_related: QA_RELATED, qa_at: '2026-09-08T05:00:00Z' }), 'done');
+  assert.equal(moQaState({ status: 'closed', current_step: 7, quality_related: QA_RELATED, qa_result: 'ผ่านคุณภาพ' }), 'done', 'ใบเก่าที่ไม่มี qa_at แต่มีผลคุณภาพ = ตรวจแล้ว');
+  assert.equal(moQaState({ status: 'checked', current_step: 4, quality_related: QA_RELATED }), 'waiting');
+  assert.equal(moQaState({ status: 'repaired', current_step: 3 }), 'none');
+  assert.equal(moQaState({ status: 'pending', current_step: 1 }), 'none');
+});

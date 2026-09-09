@@ -91,19 +91,34 @@ async function loadTeamNames() {
 }
 const teamName = (v?: string | null): string => TEAM_NAME[teamKey(v)] || String(v || '');
 
-// ใบยังไม่ปิดค้างที่สถานะไหน → รอทำอะไรต่อ (แสดงเป็นกลุ่มในสรุป)
+/* ใบยังไม่ปิดค้างที่สถานะไหน → รอทำอะไรต่อ (แสดงเป็นกลุ่มในสรุป)
+   ⚠️ `checked` (ผ่านขั้น 4) **แตกเป็น 2 กลุ่มคนละคนต้องกด** ตาม `quality_related`:
+        เกี่ยวกับคุณภาพ    → รอ QA ตรวจ (ขั้น 5)
+        ไม่เกี่ยวกับคุณภาพ → ไม่ต้องรอ QA เลย รอฝ่ายที่แจ้งมารับมอบ (ขั้น 6)
+      กลุ่มรวม "รอยืนยันคุณภาพ / รับมอบ" ทำให้ทุกทีมอ่านว่ายังรอ QA แล้วใบกองค้าง
+      (วัดฐานจริง 2026-09-09: checked 76 + qa 64 = 140 ใบรอขั้น 6 โตวันละ ~20 ใบ เก่าสุด 25/08)
+   source of truth ของเกณฑ์แยก = `moStatusLabel()`/`isWaitingQa()` ใน `src/utils/mtnStepPerm.js`
+   (edge import จาก src/ ไม่ได้ → เขียนซ้ำแบบย่อที่นี่ · แก้ที่นั่นแล้วต้องแก้ที่นี่ด้วย) */
+const QA_RELATED = 'เกี่ยวกับคุณภาพ';
 const WAIT_LABEL: Record<string, string> = {
-  pending:   'รอช่างรับงาน (ขั้น 2)',
-  assigned:  'รอดำเนินการซ่อม (ขั้น 3)',
-  repairing: 'รอตรวจสอบหลังซ่อม (ขั้น 4)',
-  repaired:  'รอตรวจสอบหลังซ่อม (ขั้น 4)',
-  checked:   'รอยืนยันคุณภาพ / รับมอบ (ขั้น 5-6)',
-  qa:        'รอรับมอบ (ขั้น 6)',
-  handover:  'รออนุมัติปิด (ขั้น 7)',
+  pending:           'รอช่างรับงาน (ขั้น 2)',
+  assigned:          'รอดำเนินการซ่อม (ขั้น 3)',
+  repairing:         'รอตรวจสอบหลังซ่อม (ขั้น 4)',
+  repaired:          'รอตรวจสอบหลังซ่อม (ขั้น 4)',
+  checked_qa:        'รอ QA ตรวจคุณภาพ (ขั้น 5)',
+  checked_handover:  'รอฝ่ายที่แจ้งรับมอบ (ขั้น 6) — ไม่เกี่ยวกับคุณภาพ ไม่ต้องรอ QA',
+  qa:                'รอรับมอบ (ขั้น 6)',
+  handover:          'รออนุมัติปิด (ขั้น 7)',
 };
-const WAIT_ORDER = ['pending', 'assigned', 'repairing', 'repaired', 'checked', 'qa', 'handover'];
+const WAIT_ORDER = ['pending', 'assigned', 'repairing', 'repaired', 'checked_qa', 'checked_handover', 'qa', 'handover'];
 
-type MO = { mo_no?: string; status: string; mtn_dept?: string; item_type?: string; machine_no?: string; line_name?: string; report_at?: string };
+type MO = { mo_no?: string; status: string; mtn_dept?: string; item_type?: string; machine_no?: string; line_name?: string; report_at?: string; quality_related?: string | null };
+
+/** คีย์กลุ่ม "รออะไรอยู่" — เท่ากับ status ยกเว้น checked ที่แตกตามผลขั้น 4 */
+const waitKey = (m: MO): string =>
+  m.status === 'checked'
+    ? (String(m.quality_related || '').trim() === QA_RELATED ? 'checked_qa' : 'checked_handover')
+    : m.status;
 
 function daysOpen(iso?: string): number {
   if (!iso) return 0;
@@ -113,7 +128,7 @@ function daysOpen(iso?: string): number {
 function buildTeamBlock(rows: MO[]): string {
   // จัดกลุ่มตามสถานะที่ค้าง เรียงตามลำดับขั้น
   const byStatus: Record<string, MO[]> = {};
-  for (const m of rows) (byStatus[m.status] ||= []).push(m);
+  for (const m of rows) (byStatus[waitKey(m)] ||= []).push(m);
   const lines: string[] = [];
   for (const st of WAIT_ORDER) {
     const list = byStatus[st];
@@ -141,7 +156,8 @@ Deno.serve(async (req) => {
     // ดึงใบที่ยังไม่ปิด/ไม่ถูกปฏิเสธ จาก DR project
     if (!DR_URL || !DR_KEY) return json({ error: 'missing DR env' }, 500);
     await loadTeamNames();   // ชื่อทีมล่าสุดจาก mtn_teams (best-effort)
-    const q = `${DR_URL}/rest/v1/mtn_orders?select=mo_no,status,mtn_dept,item_type,machine_no,line_name,report_at`
+    // quality_related = ตัวแยกกลุ่ม checked (รอ QA / รอรับมอบ) — ขาดคอลัมน์นี้ = สรุปบอกผิดว่าใครต้องกด
+    const q = `${DR_URL}/rest/v1/mtn_orders?select=mo_no,status,mtn_dept,item_type,machine_no,line_name,report_at,quality_related`
       + `&status=not.in.(closed,rejected)&order=report_at.asc`;
     const res = await fetch(q, { headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` } });
     if (!res.ok) return json({ error: `DR fetch ${res.status}` }, 500);
