@@ -103,40 +103,52 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     setLoading(false);
   }, [profiles, reset]);
 
-  /* ── โหลดบริบทปลายทาง: ใบส่งในรอบนั้น · Product Master ของลูกค้ารายนี้ · แถวที่เคยนำเข้า ──
-     ⚠️ guard คำตอบเก่าทับจอใหม่ (กฎ stale-response ของโปรเจค) — เปลี่ยนรอบ/ลูกค้าเร็วๆ ได้ */
+  /* ── โหลดบริบทปลายทาง: ใบส่งในรอบนั้น + แถวที่เคยนำเข้า ───────────────────────────
+     ⚠️ แยกเป็นฟังก์ชันเพราะ **`apply()` ต้องเรียกซ้ำก่อนเขียนเสมอ** —
+     เคสจริง 2026-09-09: ไฟล์เดียวกันถูกอัพ 2 ครั้งห่างกัน 4 วินาที · รอบที่ 2 ใช้ `plan` ที่คำนวณไว้
+     ตั้งแต่ตอนเปิดไฟล์ (ยังไม่มีใบพวกนั้น) ⇒ **สร้างใบซ้ำอีกชุด 3 ใบ = ยอดเด้งเป็น 2 เท่า** */
+  const fetchContext = useCallback(async () => {
+    const [ordRes, sigRes] = await Promise.all([
+      supabaseDR.from('customer_shipping_orders')
+        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no')
+        .eq('customer', shipTo).eq('due_date', workDate),
+      (async () => {
+        const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
+        if (!times.length) return { data: [], error: null };
+        const lo = new Date(Math.min(...times)), hi = new Date(Math.max(...times));
+        return supabaseDR.from('customer_pull_signals')
+          .select('ship_to, supplier_ref, customer_part_no, pulled_at')
+          .eq('source', SOURCE).eq('ship_to', shipTo)
+          .gte('pulled_at', lo.toISOString()).lte('pulled_at', hi.toISOString());
+      })(),
+    ]);
+    return {
+      // รอบเดียวกัน = ship_time ตรงระดับนาที (EDI เก็บเป็น text 'HH:MM' หรือ 'HH:MM:SS')
+      orders: (ordRes.data || []).filter(o => String(o.ship_time || '').slice(0, 5) === shipTime),
+      dupKeys: new Set((sigRes.data || []).map(r => signalKey({ ...r, pulled_at: new Date(r.pulled_at) }, SOURCE))),
+      // ตารางยังไม่ apply (42P01) = ถือว่ายังไม่เคยนำเข้า แต่ต้องบอกบนจอ ห้ามเงียบ
+      err: ordRes.error?.message || (sigRes.error ? `ยังตรวจการนำเข้าซ้ำไม่ได้: ${sigRes.error.message}` : ''),
+    };
+  }, [shipTo, workDate, shipTime, parsed]);
+
+  /* ⚠️ guard คำตอบเก่าทับจอใหม่ (กฎ stale-response ของโปรเจค) — เปลี่ยนรอบ/ลูกค้าเร็วๆ ได้ */
   useEffect(() => {
     if (!open || !parsed?.ok || !shipTo || !workDate || !shipTime) { setOrders([]); return; }
     let alive = true;
     setLoading(true); setCtxError('');
     (async () => {
-      const [ordRes, prodRes] = await Promise.all([
-        supabaseDR.from('customer_shipping_orders')
-          .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no')
-          .eq('customer', shipTo).eq('due_date', workDate),
-        supabaseDR.from('dr_products').select('mat_no, p_no, customer, is_operation, is_active'),
-      ]);
+      const prodRes = await supabaseDR.from('dr_products').select('mat_no, p_no, customer, is_operation, is_active');
+      const ctx = await fetchContext();
       if (!alive) return;
-      if (ordRes.error || prodRes.error) setCtxError((ordRes.error || prodRes.error).message);
-      // รอบเดียวกัน = ship_time ตรงระดับนาที (EDI เก็บเป็น text 'HH:MM' หรือ 'HH:MM:SS')
-      setOrders((ordRes.data || []).filter(o => String(o.ship_time || '').slice(0, 5) === shipTime));
+      if (prodRes.error) setCtxError(prodRes.error.message);
+      else if (ctx.err) setCtxError(ctx.err);
       setProducts(prodRes.data || []);
-
-      // แถวที่เคยนำเข้าแล้ว — user โหลดไฟล์ทุก 2 ชม. ช่วงเวลาคาบเกี่ยว/โหลดซ้ำเกิดได้ง่าย
-      const times = parsed.rows.map(r => r.pulled_at.getTime());
-      const lo = new Date(Math.min(...times)), hi = new Date(Math.max(...times));
-      const sig = await supabaseDR.from('customer_pull_signals')
-        .select('ship_to, supplier_ref, customer_part_no, pulled_at')
-        .eq('source', SOURCE).eq('ship_to', shipTo)
-        .gte('pulled_at', lo.toISOString()).lte('pulled_at', hi.toISOString());
-      if (!alive) return;
-      // ตารางยังไม่ apply (42P01) = ถือว่ายังไม่เคยนำเข้า แต่ต้องบอกบนจอ ห้ามเงียบ
-      if (sig.error) setCtxError(prev => prev || `ยังตรวจการนำเข้าซ้ำไม่ได้: ${sig.error.message}`);
-      setDupKeys(new Set((sig.data || []).map(r => signalKey({ ...r, pulled_at: new Date(r.pulled_at) }, SOURCE))));
+      setOrders(ctx.orders);
+      setDupKeys(ctx.dupKeys);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [open, parsed, shipTo, workDate, shipTime]);
+  }, [open, parsed, shipTo, workDate, shipTime, fetchContext]);
 
   /* ── จับคู่ MAT: กรอง Product Master ด้วย "ชื่อลูกค้า" ของ ship-to ก่อนเสมอ ──────────────
      กฎเหล็ก (CLAUDE.md 2026-08-24): เลขพาร์ทลูกค้า 1 ตัว = หลายเลข SAP ต่างที่ลูกค้าปลายทาง
@@ -173,6 +185,22 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const apply = async () => {
     if (!willWrite) { toast.error('ไม่มีรายการที่ต้องเขียน'); return; }
     setSaving(true);
+
+    /* 🔴 re-plan จาก "ของจริง ณ วินาทีนี้" ก่อนเขียนเสมอ — plan บนจอถูกคำนวณตอนเปิดไฟล์
+       ระหว่างนั้นอาจมีคนอัพไฟล์เดียวกันไปแล้ว/กดปุ่มรอบสอง (เกิดจริง 2026-09-09 ห่างกัน 4 วินาที)
+       เชื่อ plan เก่า = สร้างใบซ้ำทั้งชุด · ตัวกันซ้ำที่ DB เป็นด่านสุดท้าย ไม่ใช่ด่านเดียว */
+    const live = await fetchContext();
+    if (live.err) { toast.error(`ตรวจสถานะล่าสุดไม่สำเร็จ: ${live.err}`); setSaving(false); return; }
+    const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
+    const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex));
+    const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
+    if (!liveWrite) {
+      toast.info('ไฟล์นี้ถูกนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดทเพิ่ม');
+      setSaving(false); reset(); onClose?.(); return;
+    }
+    setOrders(live.orders); setDupKeys(live.dupKeys);
+    const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
+
     const now = new Date().toISOString();
     const stamp = { confirm_source: SOURCE, confirmed_at: now };
 
@@ -258,14 +286,16 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           const { pull_batch_id, confirm_source, confirmed_at, created_by_name, ...slim } = rec;
           res = await supabaseDR.from('customer_shipping_orders').insert(slim).select('id');
         }
-        if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
+        if (res.error?.code === '23505') failed.push(`${x.group.customer_part_no}: มีใบของรอบนี้อยู่แล้ว (ด่านกันซ้ำที่ฐานข้อมูล) — กด ↻ แล้วลองใหม่`);
+        else if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
         else created++;
       }
     }
 
     if (batchId) {
       await supabaseDR.from('customer_pull_batches').update({
-        orders_updated: updated, orders_created: created, orders_skipped: tally.locked + tally.unresolved,
+        orders_updated: updated, orders_created: created,
+        orders_skipped: plan.filter(x => x.action === 'locked' || x.action === 'unresolved').length,
       }).eq('id', batchId);
     }
     setSaving(false);
