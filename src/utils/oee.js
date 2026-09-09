@@ -420,5 +420,18 @@ export function weightedOeeOf(rows, filterFn = null) {
   return Math.round(v * 10) / 10;
 }
 
-/** ไตรมาสของ monthKey 'YYYY-MM' (1-4) */
-export const quarterOfMonthKey = (mk) => Math.ceil(Number(String(mk).split('-')[1]) / 3) || null;
+/**
+ * สัปดาห์ที่เท่าไหร่ของเดือน (1-4) จาก work_date 'YYYY-MM-DD'
+ * W1 = วันที่ 1-7 · W2 = 8-14 · W3 = 15-21 · **W4 = 22 ถึงสิ้นเดือน** (กลืนวันที่ 29-31 เข้า W4)
+ *
+ * ⚠️ ที่มา (2026-09-09 · user ทักว่า "เค้าแตก week 1 2 3 4 ในเดือนนั้น ไม่ใช่ quarter"):
+ *    เด็คที่วิศวกรทำมือใช้ป้าย "Q1..Q4" แต่**ไม่ใช่ไตรมาสปฏิทิน** — พิสูจน์จากไฟล์จริง
+ *    (Apron 060/061 ส.ค. 2026): แท่งที่ 5 "OEE" = ค่าของ **เดือนรายงาน** ตรงเป๊ะทั้ง 2 ไลน์
+ *    และถ้าเป็นไตรมาสปฏิทิน Q2 ต้อง = 0.7815/0.7814 แต่ในไฟล์เป็น 0.8137/0.8089 → ไม่ตรง
+ *    ⇒ เป็นการ "ซอยเดือนนั้นออกเป็น 4 ช่วง" · ห้ามกลับไปใช้ไตรมาสปฏิทินอีก
+ */
+export const weekOfMonth = (workDate) => {
+  const d = Number(String(workDate).slice(8, 10));
+  if (!d) return null;
+  return Math.min(4, Math.ceil(d / 7));
+};

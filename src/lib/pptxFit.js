@@ -133,10 +133,17 @@ export function textHeightIn(text, wIn, sizePt, opts = {}) {
  * ขนาดฟอนต์ที่ใหญ่ที่สุด (≤ sizePt) ที่ทำให้ข้อความอยู่ "บรรทัดเดียว" ในกล่องกว้าง wIn
  * ใช้กับหัวเรื่อง/หัวข้อย่อย/ป้าย — แทน fit:'shrink' ที่ PowerPoint ไม่ย่อให้จริง
  */
+/* เผื่อไว้ 8% ของความกว้างกล่อง — **ห้ามคำนวณให้พอดีเป๊ะ**
+   ตารางความกว้างข้างบนเป็นของ Tahoma แต่เครื่องที่เปิดไฟล์อาจไม่มี Tahoma
+   (ตัวอ่าน .pptx บนเว็บ/Mac/Linux) แล้ว substitute ฟอนต์ที่กว้างกว่า ~10%
+   ⇒ ข้อความที่ "พอดีเป๊ะ" จะตกบรรทัดทันที (เจอจริง 2026-09-09: หัวปกตกบรรทัด "2026" ไปทับบรรทัดล่าง) */
+export const FIT_SAFETY = 0.92;
+
 export function fitOneLine(text, wIn, sizePt, minPt = 12) {
+  const usable = wIn * FIT_SAFETY;
   const w0 = textWidthIn(text, sizePt, { bold: true });
-  if (w0 <= wIn || w0 <= 0) return sizePt;
-  const scaled = Math.floor((sizePt * wIn / w0) * 2) / 2; // ปัดลงทีละ 0.5pt
+  if (w0 <= usable || w0 <= 0) return sizePt;
+  const scaled = Math.floor((sizePt * usable / w0) * 2) / 2; // ปัดลงทีละ 0.5pt
   return Math.max(minPt, Math.min(sizePt, scaled));
 }
 
