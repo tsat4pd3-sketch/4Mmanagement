@@ -114,7 +114,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const fetchContext = useCallback(async () => {
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
-        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no')
+        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id')
         .eq('customer', shipTo).eq('due_date', workDate),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
@@ -197,7 +197,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     [parsed, dupKeys]);
   const dupCount = (parsed?.rows?.length || 0) - fresh.length;
   const groups = useMemo(() => aggregateSignals(fresh), [fresh]);
-  /* ช่วงเวลาที่ไฟล์นี้ครอบ — ใบ 862 ที่เวลาส่งตกในช่วงนี้ = รอบเดียวกันกับที่ลูกค้าเรียก */
+  /* เที่ยวรถของไฟล์นี้ — ใบ 862 ที่เวลาส่ง "ใกล้เที่ยวนี้ที่สุด" = ใบเดียวกันกับที่ลูกค้าเรียก
+     (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
   const slot = useMemo(() => ({
     windowStart: parsed?.windowStart || null,
     targetAt: workDate && shipTime ? orderShipAt(workDate, shipTime) : null,

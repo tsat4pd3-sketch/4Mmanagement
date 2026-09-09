@@ -451,3 +451,54 @@ test('ไม่ส่ง slot = พฤติกรรมเดิม (ผู้�
   assert.equal(row.action, 'update');
   assert.equal(row.order.id, 'a');
 });
+
+/* ══ 🔴 กริดจริง AAT 2026-09-09 — เที่ยวรถ ↔ ใบ 862 ที่คู่กันจริง ═══════════════════════
+   วัดจากฐานจริงหลังใช้งานเต็มวัน:
+     เที่ยว 09:00 ↔ 862 08:00 (50/50/70) · 11:00 ↔ 10:00 · 13:00 ↔ 13:00 · **15:00 ↔ 15:30**
+   ช่วงครึ่งเปิด (windowStart, targetAt] ที่ใช้ตอนเช้า ผิด 2 ทาง — เทสชุดนี้ล็อกทั้งคู่ */
+const OB = (id, part, qty, time, status = 'pending', batch = null) =>
+  ({ id, customer_part_no: part, mat_no: null, qty, due_date: D, ship_time: time, status,
+     source: 'edi_862', pull_batch_id: batch });
+
+test('🔴 เที่ยว 15:00 ต้องจับใบ 15:30 (ห่าง 30 นาที) — ของเดิมมองไม่เห็นแล้วสร้างรอบใหม่', () => {
+  const orders = [OB('a', 'RB3B 16E060 BA', 40, '15:30')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T12:00:00`, `${D}T15:00:00`));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+test('🔴 ใบที่ e-SMART รอบก่อนเคลมไปแล้ว ต้องไม่ถูกเคลมซ้ำ (13:00 ของเที่ยว 13:00)', () => {
+  const orders = [OB('taken', 'RB3B 16E060 BA', 40, '13:00', 'shipped', 'batch-13'),
+                  OB('next',  'RB3B 16E060 BA', 40, '15:30')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T12:00:00`, `${D}T15:00:00`));
+  assert.equal(row.order.id, 'next', 'ต้องข้ามใบที่เที่ยวก่อนเคลมไปแล้ว');
+  assert.equal(row.action, 'update');
+});
+
+test('อัพไฟล์เดิมซ้ำ (batch เดียวกัน) ยังแก้ใบเดิมได้ = idempotent ไม่สร้างใบใหม่', () => {
+  const orders = [OB('a', 'RB3B 16E060 BA', 40, '10:00', 'confirmed', 'b1')];
+  const [row] = planOrderUpdates(G1, orders, RES1,
+    { ...SLOT(`${D}T08:00:00`, `${D}T11:00:00`), batchId: 'b1' });
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'a');
+});
+
+test('ใกล้ที่สุดชนะ — เที่ยว 11:00 ต้องเลือกใบ 10:00 ไม่ใช่ 08:30', () => {
+  const orders = [OB('x', 'RB3B 16E060 BA', 20, '08:30'), OB('y', 'RB3B 16E060 BA', 50, '10:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.order.id, 'y');
+  assert.deepEqual(row.extras.map(o => o.id), ['x'], 'อีกใบต้องโผล่ให้คนเห็น ห้ามแตะเอง');
+});
+
+test('🔴 เผื่อหน้าต้องไม่กินใบของเที่ยวถัดไป — 22:00 อยู่ไกลเกิน ต้องไม่ถูกแตะ', () => {
+  const orders = [OB('night', 'RB3B 16E060 BA', 70, '22:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T12:00:00`, `${D}T15:00:00`));
+  assert.equal(row.action, 'create');
+  assert.equal(row.order, null);
+});
+
+test('🔴 ถอยหลังต้องไม่ล้ำเที่ยวก่อนหน้า — เที่ยว 11:00 ห้ามแตะใบ 08:00 (ของเที่ยว 09:00)', () => {
+  const orders = [OB('prev', 'RB3B 16E060 BA', 50, '08:00')];
+  const [row] = planOrderUpdates(G1, orders, RES1, SLOT(`${D}T08:00:00`, `${D}T11:00:00`));
+  assert.equal(row.action, 'create', '08:00 ห่าง 3 ชม. = เกินระยะถอยหลัง 2.5 ชม.');
+});
