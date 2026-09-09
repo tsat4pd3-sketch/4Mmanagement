@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import resizeImg from '../utils/resizeImage';
 import { todayLocal as localToday } from '../utils/dateFormat';
 import ReadOnlyNote from '../components/ReadOnlyNote';
@@ -120,6 +121,8 @@ export default function PEDocs() {
   const [showCr, setShowCr] = useState(false);
   const printChartRef = useRef(null);                    // ผังชุดสีสว่างซ่อนไว้ ใช้ตอนพิมพ์
   const [procImgFile, setProcImgFile] = useState(null);  // รูปรออัปโหลดของ modal OP
+  const setImgPreview = useObjectUrl(setImgFile);        // blob URL พรีวิว — สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
+  const procImgPreview = useObjectUrl(procImgFile);
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
   const [routingOpen, setRoutingOpen] = useState(false); // 🔀 เสนอ routing เข้า VSM จาก PFC
 
@@ -641,7 +644,7 @@ export default function PEDocs() {
               <div style={lbl}>รูป Product / Drawing</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                 {(setImgFile || setModal.image_url) && (
-                  <img src={setImgFile ? URL.createObjectURL(setImgFile) : setModal.image_url} alt=""
+                  <img src={setImgPreview || setModal.image_url} alt=""
                     style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                 )}
                 <input type="file" accept="image/*" onChange={e => { setSetImgFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11, width: 'auto' }} />
@@ -729,7 +732,7 @@ export default function PEDocs() {
               <div style={lbl}>รูปประกอบ OP (ชิ้นงาน/จุดเชื่อม/drawing)</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                 {(procImgFile || procModal.image_url) && (
-                  <img src={procImgFile ? URL.createObjectURL(procImgFile) : procModal.image_url} alt=""
+                  <img src={procImgPreview || procModal.image_url} alt=""
                     style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                 )}
                 <input type="file" accept="image/*" onChange={e => { setProcImgFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11, width: 'auto' }} />

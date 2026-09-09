@@ -85,6 +85,10 @@ Deno.serve(async (req) => {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           payload,
+          // TTL 1 ชม.: มือถือหลับ/ไม่มีเน็ตชั่วคราว push service เก็บไว้ส่งต่อ (default 4 สัปดาห์ = ได้ MO เก่าเด้งทีหลังเป็นกอง)
+          // urgency high: Android Doze ปล่อยให้ FCM ปลุกเครื่องได้เฉพาะ high-priority — normal = รอจนกว่าจอจะติด
+          // (feedback 2026-09-08 Samsung "เปิดแล้วไม่เคยเด้ง")
+          { TTL: 3600, urgency: 'high' },
         );
         sent++;
       } catch (err) {

@@ -1,0 +1,435 @@
+/**
+ * 📥 อัพโหลดสัญญาณดึงงานจากลูกค้า (e-SMART) → ยืนยัน/อัพเดทใบส่งในรอบนั้น
+ *
+ * ที่มา (user 2026-09-08 · ฝ่าย Logistic): ลูกค้า AAT เรียกงานไม่ตรงตาม EDI 862 · เขาส่ง e-SMART
+ * มาให้ในพอร์ทัล user โหลดออกมาทุก 2 ชม. แล้วอัพเข้าระบบ
+ *   "e-SMART คือข้อมูลที่อัพเดทสุดท้ายก่อนจะส่งของ **เหมือนการยืนยัน order จากลูกค้า**"
+ *   "**ส่วนตัวไหนที่ไม่มีใน e-SMART แปลว่าตรงกับ 862**"
+ *
+ * กติกาที่ user เคาะ (2026-09-08) — เปลี่ยนเมื่อไหร่ต้องแก้เอกสารโมดูล logistic ด้วย:
+ *   1. รอบส่ง = **ปลายช่วงเวลาในไฟล์ + lead_min** (milk-run ลูกค้ามารับ) — แก้ได้บนจอก่อนยืนยัน
+ *   2. จำนวน = Σ(Containers Used × Part Quantity)
+ *   3. ไม่มีใบ 862 ในรอบนั้น → **สร้างใหม่**
+ *   4. ใบที่ `prepared` ขึ้นไป → **ไม่แตะ** แต่ต้องรายงานส่วนต่างให้เห็น (สต็อกอาจถูกหักไปแล้ว)
+ *   5. พาร์ทที่ไม่อยู่ในไฟล์ → ไม่แตะเลย (ห้ามลบ ห้าม zero-out)
+ *
+ * ⚠️ สูตร/การตัดสินใจทั้งหมดอยู่ `src/utils/pullSignal.js` (pure · เทส 27 เคส) — ห้ามคำนวณซ้ำในไฟล์นี้
+ * ⚠️ ทน migration ที่ยังไม่ apply: ตาราง/คอลัมน์ใหม่ไม่มี (42P01/42703) → บอกบนจอ **ห้ามเงียบ**
+ */
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { supabaseDR } from '../supabaseClient';
+import { toast } from './Toast';
+import { checkWrite } from '../utils/dbWrite';
+import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
+import {
+  FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
+  planOrderUpdates, signalKey, dateStr, timeStr,
+} from '../utils/pullSignal';
+
+const SOURCE = 'esmart';
+const inputSt = {
+  padding: '8px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)',
+  border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
+};
+const th = { padding: '7px 8px', fontSize: 11, fontWeight: 800, color: 'var(--text2)', textAlign: 'left', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
+const thR = { ...th, textAlign: 'right' };
+const td = { padding: '6px 8px', fontSize: 12, borderBottom: '1px solid var(--border)' };
+const tdR = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
+const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
+
+/* ป้ายผลการตัดสินต่อพาร์ท — สีสื่อความหมายเดียวกับทั้งระบบ (เขียว=ทำได้ · ส้ม=ต้องมีคนดู · เทา=ไม่ทำอะไร) */
+const ACTION_META = {
+  update:     { label: '✏️ อัพเดทยอด + ยืนยัน', color: '#22c55e' },
+  create:     { label: '➕ สร้างใบใหม่',          color: '#0ea5e9' },
+  same:       { label: '= ตรงกับ 862 อยู่แล้ว',   color: 'var(--muted)' },
+  locked:     { label: '🔒 ทำไปแล้ว — ไม่แตะ',    color: '#f59e0b' },
+  unresolved: { label: '⚠ จับคู่ MAT ไม่ได้',     color: '#ef4444' },
+};
+
+export default function PullSignalUpload({ open, onClose, onApplied, fullName, shipToMap }) {
+  const [profiles, setProfiles] = useState(null);        // null = ยังไม่โหลด · [] = ตารางว่าง/ยังไม่ apply
+  const [profileMissing, setProfileMissing] = useState(false);
+  const [file, setFile] = useState(null);
+  const [parsed, setParsed] = useState(null);            // ผลจาก parsePullFile + โปรไฟล์ที่ใช้
+  const [shipTo, setShipTo] = useState('');
+  const [workDate, setWorkDate] = useState('');
+  const [shipTime, setShipTime] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [dupKeys, setDupKeys] = useState(new Set());     // แถวที่เคยนำเข้าแล้ว (กันยอดทบ)
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [ctxError, setCtxError] = useState('');
+
+  /* ── โปรไฟล์รูปแบบไฟล์ (data-driven) — ยังไม่ apply migration = ใช้ค่าสำรองในโค้ด + บอกบนจอ ── */
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    supabaseDR.from('customer_pull_formats').select('*').eq('is_active', true).order('code')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error || !data?.length) { setProfiles([FALLBACK_PROFILE]); setProfileMissing(true); }
+        else { setProfiles(data); setProfileMissing(false); }
+      });
+    return () => { alive = false; };
+  }, [open]);
+
+  const reset = useCallback(() => {
+    setFile(null); setParsed(null); setShipTo(''); setWorkDate(''); setShipTime('');
+    setOrders([]); setDupKeys(new Set()); setProducts([]); setCtxError('');
+  }, []);
+
+  /* ── อ่านไฟล์ (csv/xlsx ทางเดียวกัน — SheetJS อ่าน csv ได้) ────────────────────────── */
+  const onFile = useCallback(async (f) => {
+    if (!f) return;
+    reset(); setFile(f); setLoading(true);
+    try {
+      const XLSX = await import('xlsx');
+      const wb = XLSX.read(await f.arrayBuffer(), { raw: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      // raw:true + defval:'' → ค่าคงเป็นข้อความ ไม่ให้ SheetJS เดา MDY/DMY แทนเรา (pullSignal.parseTs คุมเอง)
+      const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+      const { profile, guessed } = pickProfile(matrix, profiles || [FALLBACK_PROFILE]);
+      const res = parsePullFile(matrix, profile);
+      setParsed({ ...res, profile, guessed, rowsInFile: matrix.length });
+      if (res.ok) {
+        setShipTo(res.shipTo || '');
+        setWorkDate(res.slot?.work_date || dateStr(new Date()));
+        setShipTime(res.slot?.ship_time || '');
+      }
+    } catch (e) {
+      setParsed({ ok: false, error: `อ่านไฟล์ไม่สำเร็จ: ${e.message}`, rows: [], warnings: [] });
+    }
+    setLoading(false);
+  }, [profiles, reset]);
+
+  /* ── โหลดบริบทปลายทาง: ใบส่งในรอบนั้น · Product Master ของลูกค้ารายนี้ · แถวที่เคยนำเข้า ──
+     ⚠️ guard คำตอบเก่าทับจอใหม่ (กฎ stale-response ของโปรเจค) — เปลี่ยนรอบ/ลูกค้าเร็วๆ ได้ */
+  useEffect(() => {
+    if (!open || !parsed?.ok || !shipTo || !workDate || !shipTime) { setOrders([]); return; }
+    let alive = true;
+    setLoading(true); setCtxError('');
+    (async () => {
+      const [ordRes, prodRes] = await Promise.all([
+        supabaseDR.from('customer_shipping_orders')
+          .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no')
+          .eq('customer', shipTo).eq('due_date', workDate),
+        supabaseDR.from('dr_products').select('mat_no, p_no, customer, is_operation, is_active'),
+      ]);
+      if (!alive) return;
+      if (ordRes.error || prodRes.error) setCtxError((ordRes.error || prodRes.error).message);
+      // รอบเดียวกัน = ship_time ตรงระดับนาที (EDI เก็บเป็น text 'HH:MM' หรือ 'HH:MM:SS')
+      setOrders((ordRes.data || []).filter(o => String(o.ship_time || '').slice(0, 5) === shipTime));
+      setProducts(prodRes.data || []);
+
+      // แถวที่เคยนำเข้าแล้ว — user โหลดไฟล์ทุก 2 ชม. ช่วงเวลาคาบเกี่ยว/โหลดซ้ำเกิดได้ง่าย
+      const times = parsed.rows.map(r => r.pulled_at.getTime());
+      const lo = new Date(Math.min(...times)), hi = new Date(Math.max(...times));
+      const sig = await supabaseDR.from('customer_pull_signals')
+        .select('ship_to, supplier_ref, customer_part_no, pulled_at')
+        .eq('source', SOURCE).eq('ship_to', shipTo)
+        .gte('pulled_at', lo.toISOString()).lte('pulled_at', hi.toISOString());
+      if (!alive) return;
+      // ตารางยังไม่ apply (42P01) = ถือว่ายังไม่เคยนำเข้า แต่ต้องบอกบนจอ ห้ามเงียบ
+      if (sig.error) setCtxError(prev => prev || `ยังตรวจการนำเข้าซ้ำไม่ได้: ${sig.error.message}`);
+      setDupKeys(new Set((sig.data || []).map(r => signalKey({ ...r, pulled_at: new Date(r.pulled_at) }, SOURCE))));
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [open, parsed, shipTo, workDate, shipTime]);
+
+  /* ── จับคู่ MAT: กรอง Product Master ด้วย "ชื่อลูกค้า" ของ ship-to ก่อนเสมอ ──────────────
+     กฎเหล็ก (CLAUDE.md 2026-08-24): เลขพาร์ทลูกค้า 1 ตัว = หลายเลข SAP ต่างที่ลูกค้าปลายทาง
+     RB3B-16E060-BA → 10100384 (FTM) · 10100385 (AAT) · 10106790 (FVL) — ไม่กรองก่อน = ambiguous ทุกตัว */
+  const custName = shipToMap?.[shipTo]?.customer_name || null;
+  const pnIndex = useMemo(() => {
+    const norm = (s) => String(s || '').trim().toUpperCase();
+    const scoped = custName && norm(custName) !== norm(shipTo)
+      ? products.filter(p => norm(p.customer) === norm(custName))
+      : products;
+    return buildPnIndex(scoped.length ? scoped : products);
+  }, [products, custName, shipTo]);
+  const scopedByCustomer = !!custName && custName !== shipTo
+    && products.some(p => String(p.customer || '').trim().toUpperCase() === String(custName).trim().toUpperCase());
+
+  /* ── แผนที่จะทำ (pure) — แถวที่เคยนำเข้าแล้วถูกตัดออกก่อนรวมยอด ไม่งั้นยอดทบ ────────── */
+  const fresh = useMemo(
+    () => (parsed?.rows || []).filter(r => !dupKeys.has(signalKey(r, SOURCE))),
+    [parsed, dupKeys]);
+  const dupCount = (parsed?.rows?.length || 0) - fresh.length;
+  const groups = useMemo(() => aggregateSignals(fresh), [fresh]);
+  const plan = useMemo(
+    () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex)),
+    [groups, orders, pnIndex]);
+
+  const tally = useMemo(() => {
+    const t = { update: 0, create: 0, same: 0, locked: 0, unresolved: 0 };
+    plan.forEach(x => { t[x.action] = (t[x.action] || 0) + 1; });
+    return t;
+  }, [plan]);
+  const willWrite = tally.update + tally.create;
+
+  /* ── ยืนยัน — เขียนจริง ───────────────────────────────────────────────────────────── */
+  const apply = async () => {
+    if (!willWrite) { toast.error('ไม่มีรายการที่ต้องเขียน'); return; }
+    setSaving(true);
+    const now = new Date().toISOString();
+    const stamp = { confirm_source: SOURCE, confirmed_at: now };
+
+    // 1) ก้อนการนำเข้า — ทำเป็น "ร่องรอย" ก่อน แล้วค่อยเขียนใบ (ล้มกลางทางยังสืบได้ว่าไฟล์ไหน)
+    const batchRow = {
+      source: SOURCE, format_code: parsed.profile?.code || null, ship_to: shipTo,
+      file_name: file?.name || null, work_date: workDate, ship_time: shipTime,
+      window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
+      window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
+      row_count: parsed.rows.length, new_signals: fresh.length, uploaded_by: fullName || null,
+    };
+    const bRes = await supabaseDR.from('customer_pull_batches').insert(batchRow).select('id').single();
+    if (bRes.error) {
+      // ตารางยังไม่ apply = เขียนใบส่งได้อยู่ แต่จะไม่มีร่องรอย → ถามก่อน ห้ามเงียบ
+      const go = window.confirm(`บันทึกประวัติการนำเข้าไม่ได้ (${bRes.error.message})\nยังจะอัพเดทใบส่งต่อไหม? (จะไม่มีบันทึกว่ามาจากไฟล์ไหน)`);
+      if (!go) { setSaving(false); return; }
+    }
+    const batchId = bRes.data?.id || null;
+
+    // 2) แถวดิบ = หลักฐาน · ชนคีย์กันซ้ำที่ DB → ใช้ upsert ignoreDuplicates (ปลอดภัยกว่าเช็คฝั่ง client อย่างเดียว)
+    if (fresh.length) {
+      const matOf = new Map(plan.map(x => [x.group.customer_part_no, x.mat]));
+      const recs = fresh.map(r => ({
+        batch_id: batchId, source: SOURCE, ship_to: r.ship_to || shipTo,
+        supplier_ref: r.supplier_ref, customer_part_no: r.customer_part_no, part_name: r.part_name,
+        pulled_at: r.pulled_at.toISOString(), containers: r.containers,
+        qty_per_container: r.qty_per_container, qty: r.qty, dock_code: r.dock_code,
+        market_area: r.market_area, market_rack: r.market_rack, lsa: r.lsa, lp: r.lp,
+        window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
+        window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
+        work_date: workDate, ship_time: shipTime, mat_no: matOf.get(r.customer_part_no) || null,
+      }));
+      for (let i = 0; i < recs.length; i += 400) {
+        const res = await supabaseDR.from('customer_pull_signals')
+          .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,supplier_ref,pulled_at', ignoreDuplicates: true });
+        if (res.error) { checkWrite(res, 'บันทึกแถวสัญญาณดึง'); break; }
+      }
+    }
+
+    // 3) ใบส่ง — อัพเดท/สร้าง เฉพาะพาร์ทที่อยู่ในไฟล์
+    let updated = 0, created = 0; const failed = [];
+    for (const x of plan) {
+      if (x.action === 'update') {
+        const patch = {
+          qty: x.group.qty,
+          // ยอดแผนเก็บ "ครั้งแรกที่ถูกยืนยัน" เท่านั้น — อัพซ้ำรอบสองห้ามทับด้วยยอดที่ยืนยันไปแล้ว
+          plan_qty: x.order.plan_qty ?? x.order.qty,
+          part_name: x.order.part_name || x.group.part_name || null,
+          dock_code: x.order.dock_code || x.group.dock_code || null,
+          status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
+          pull_batch_id: batchId, ...stamp,
+        };
+        // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
+        let res = await supabaseDR.from('customer_shipping_orders').update(patch)
+          .eq('id', x.order.id).eq('status', x.order.status).select('id');
+        if (res.error?.code === '42703') {                    // migration ยังไม่ apply → ยอดยังอัพได้
+          res = await supabaseDR.from('customer_shipping_orders')
+            .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status })
+            .eq('id', x.order.id).eq('status', x.order.status).select('id');
+          if (!res.error) toast.info('ยังไม่ได้ apply migration — อัพเดทยอดให้แล้ว แต่ไม่ได้บันทึกว่ามาจาก e-SMART');
+        }
+        if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
+        else if (!res.data?.length) failed.push(`${x.group.customer_part_no}: ใบถูกเปลี่ยนสถานะไปแล้ว — โหลดใหม่แล้วลองอีกครั้ง`);
+        else updated++;
+      } else if (x.action === 'create') {
+        const rec = {
+          customer: shipTo, mat_no: x.mat, customer_part_no: x.group.customer_part_no,
+          part_name: x.group.part_name || null, qty: x.group.qty, due_date: workDate,
+          ship_time: shipTime, dock_code: x.group.dock_code || null,
+          source: SOURCE, status: 'confirmed', pull_batch_id: batchId, ...stamp,
+        };
+        let res = await supabaseDR.from('customer_shipping_orders').insert(rec).select('id');
+        if (res.error?.code === '42703') {
+          const { pull_batch_id, confirm_source, confirmed_at, ...slim } = rec;   // eslint-disable-line no-unused-vars
+          res = await supabaseDR.from('customer_shipping_orders').insert(slim).select('id');
+        }
+        if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
+        else created++;
+      }
+    }
+
+    if (batchId) {
+      await supabaseDR.from('customer_pull_batches').update({
+        orders_updated: updated, orders_created: created, orders_skipped: tally.locked + tally.unresolved,
+      }).eq('id', batchId);
+    }
+    setSaving(false);
+    // ⚠️ ห้ามขึ้นเขียวล้วนเมื่อมีบางรายการล้ม (หลักเดียวกับ "กดส่งแล้วหักสต็อกไม่ได้ต้องรายงาน")
+    if (failed.length) toast.error(`อัพเดท ${updated} · สร้าง ${created} · ล้มเหลว ${failed.length} — ${failed[0]}`);
+    else toast.success(`✅ ยืนยันจากลูกค้าแล้ว — อัพเดท ${updated} ใบ · สร้างใหม่ ${created} ใบ (รอบ ${shipTime})`);
+    onApplied?.({ workDate, shipTime, updated, created });
+    if (!failed.length) { reset(); onClose?.(); }
+  };
+
+  if (!open) return null;
+  const rowsInFile = parsed?.rows?.length || 0;
+
+  return (
+    /* ⚠️ ไม่ปิดจาก backdrop — เป็นฟอร์มที่ตั้งค่ารอบ/ลูกค้าไว้แล้ว เผลอแตะแล้วต้องอัพไฟล์ใหม่ทั้งชุด */
+    <div className="overlay" style={{ zIndex: 2400 }}>
+      <div style={{
+        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+        padding: 18, width: 'min(96vw, 1100px)', margin: 'auto',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+          <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
+            📥 อัพโหลด e-SMART — ยืนยัน order จากลูกค้า
+          </span>
+          <button className="tbtn" onClick={() => { reset(); onClose?.(); }}
+            style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.6 }}>
+          ไฟล์จากพอร์ทัลลูกค้า = <b>ยอดยืนยันสุดท้ายก่อนส่ง</b> · ระบบอัพเดท<b>เฉพาะพาร์ทที่อยู่ในไฟล์</b> ·
+          พาร์ทที่ไม่อยู่ในไฟล์ถือว่า<b>ตรงกับ 862 อยู่แล้ว ไม่ถูกแตะ</b>
+        </div>
+
+        {profileMissing && (
+          <div style={{ ...noteBox('#f59e0b'), marginBottom: 10 }}>
+            ⚠ ยังอ่านทะเบียนรูปแบบไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ค่าสำรองของ Ford e-SMART ในโค้ดแทน ·
+            ถ้าไฟล์ลูกค้าเจ้าอื่นให้ apply migration <code>20260908_customer_pull_signals_esmart.sql</code> ก่อน
+          </div>
+        )}
+
+        <label style={{
+          display: 'block', border: '1px dashed var(--border2)', borderRadius: 10, padding: 14,
+          textAlign: 'center', cursor: 'pointer', background: 'var(--bg2)', marginBottom: 12,
+        }}>
+          <input type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
+            onChange={e => onFile(e.target.files?.[0])} />
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>
+            {file ? `📄 ${file.name}` : '📎 เลือกไฟล์ e-SMART (.csv / .xlsx)'}
+          </span>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            {file ? 'คลิกเพื่อเปลี่ยนไฟล์' : 'ระบบอ่านหัวไฟล์เพื่อรู้ช่วงเวลาและรูปแบบเอง'}
+          </div>
+        </label>
+
+        {loading && <div style={{ fontSize: 12, color: 'var(--text2)' }}>⏳ กำลังอ่าน…</div>}
+
+        {parsed && !parsed.ok && (
+          <div style={noteBox('#ef4444')}>🔴 {parsed.error}</div>
+        )}
+
+        {parsed?.ok && (
+          <>
+            <div style={{ ...noteBox('#0ea5e9'), marginBottom: 10 }}>
+              <b>{parsed.profile?.name}</b>{parsed.guessed && ' · ⚠ เดารูปแบบจากคอลัมน์ (ไม่เจอคำสำคัญในหัวไฟล์)'}
+              {' · '}ช่วงเวลา {parsed.windowStart ? `${timeStr(parsed.windowStart)}–` : ''}{parsed.windowEnd ? timeStr(parsed.windowEnd) : '—'}
+              {' · '}{rowsInFile} แถว{dupCount > 0 && ` · ⏭ เคยนำเข้าแล้ว ${dupCount} แถว (ไม่นับซ้ำ)`}
+              {parsed.meta?.supplier_code && ` · GSDB ${parsed.meta.supplier_code}`}
+            </div>
+            {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
+
+            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
+              <Field label="ลูกค้า (Plant Code)">
+                <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={inputSt}>
+                  {!shipTo && <option value="">— เลือก —</option>}
+                  {[...new Set([shipTo, ...Object.keys(shipToMap || {})].filter(Boolean))].sort().map(c => (
+                    <option key={c} value={c}>{shipToMap?.[c]?.customer_name && shipToMap[c].customer_name !== c ? `${shipToMap[c].customer_name} (${c})` : c}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="วันงานที่ส่ง">
+                <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={inputSt} />
+              </Field>
+              <Field label={`รอบส่ง (ปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
+                <input type="time" value={shipTime} onChange={e => setShipTime(e.target.value)} style={inputSt} />
+              </Field>
+            </div>
+
+            {!shipToMap?.[shipTo] && shipTo && (
+              <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
+                ⚠ <b>{shipTo}</b> ไม่มีในทะเบียน Ship-to — ชาร์ต/workflow ต่อลูกค้าจะไม่ครบ ตั้งได้ที่แท็บ ⚙️ Ship-to Config
+              </div>
+            )}
+            {shipTo && !scopedByCustomer && (
+              <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
+                ⚠ ยังไม่ได้ตั้ง “ชื่อลูกค้า” ให้ ship-to นี้ (หรือไม่มีสินค้าไหนใช้ชื่อนั้น) — เลขพาร์ทลูกค้า 1 ตัวชี้ได้หลาย MAT
+                จึงอาจ<b>จับคู่ไม่ได้</b> · ตั้งที่ ⚙️ Ship-to Config ให้ตรงกับช่อง “ลูกค้า” ใน Product Master
+              </div>
+            )}
+            {ctxError && <div style={{ ...noteBox('#ef4444'), marginBottom: 8 }}>🔴 {ctxError}</div>}
+
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontVariantNumeric: 'tabular-nums' }}>
+                <thead><tr style={{ background: 'var(--bg2)' }}>
+                  <th style={th}>เลขพาร์ทลูกค้า</th>
+                  <th style={th}>MAT SAP</th>
+                  <th style={thR}>ดึง (ครั้ง)</th>
+                  <th style={thR}>ลูกค้ายืนยัน</th>
+                  <th style={thR}>862 เดิม</th>
+                  <th style={thR}>ส่วนต่าง</th>
+                  <th style={th}>จะทำอะไร</th>
+                </tr></thead>
+                <tbody>
+                  {plan.map((x, i) => {
+                    const m = ACTION_META[x.action] || {};
+                    return (
+                      <tr key={i}>
+                        <td style={{ ...td, fontWeight: 700 }}>{x.group.customer_part_no}
+                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>{x.group.part_name || ''}</div></td>
+                        <td style={{ ...td, fontFamily: 'monospace', color: x.mat ? '#0ea5e9' : 'var(--muted)' }}>{x.mat || '—'}</td>
+                        <td style={tdR}>{x.group.pulls}</td>
+                        <td style={{ ...tdR, fontWeight: 900 }}>{fmt(x.group.qty)}</td>
+                        <td style={tdR}>{x.order ? fmt(x.order.qty) : '—'}</td>
+                        <td style={{ ...tdR, fontWeight: 800, color: !x.order ? 'var(--muted)' : x.diff > 0 ? '#ef4444' : x.diff < 0 ? '#f59e0b' : 'var(--muted)' }}>
+                          {x.order ? (x.diff > 0 ? `+${fmt(x.diff)}` : fmt(x.diff)) : '—'}
+                        </td>
+                        <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
+                          {x.reason && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}</td>
+                      </tr>
+                    );
+                  })}
+                  {!plan.length && (
+                    <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>
+                      {dupCount > 0 ? 'ทุกแถวในไฟล์นี้เคยนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดท' : 'ไม่มีรายการ'}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+              <span style={{ fontSize: 12, color: 'var(--text2)', flex: '1 1 240px' }}>
+                จะเขียน <b style={{ color: 'var(--accent)' }}>{willWrite}</b> ใบ
+                (อัพเดท {tally.update} · สร้างใหม่ {tally.create})
+                {tally.same ? ` · ตรงอยู่แล้ว ${tally.same}` : ''}
+                {tally.locked ? ` · 🔒 ทำไปแล้ว ${tally.locked}` : ''}
+                {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
+              </span>
+              <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
+              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime}
+                style={{
+                  padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
+                  cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
+                  background: willWrite ? 'var(--accent)' : 'var(--bg3)', color: willWrite ? '#08130a' : 'var(--muted)',
+                }}>
+                {saving ? 'กำลังบันทึก…' : `✅ ยืนยันอัพเดท (${willWrite})`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const noteBox = (color) => ({
+  padding: '7px 10px', borderRadius: 8, fontSize: 12, lineHeight: 1.6,
+  background: `${color}14`, border: `1px solid ${color}55`, color: 'var(--text)',
+});
+
+function Field({ label, children }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{label}</span>
+      {children}
+    </label>
+  );
+}

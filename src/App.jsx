@@ -14,7 +14,7 @@ import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
-import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
+import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
@@ -1017,25 +1017,61 @@ function NotificationBell({ userId, role }) {
   };
 
   // ── Web Push (เด้งเข้ามือถือแม้ปิดแอป) ──
-  const [pushState, setPushState] = useState('default'); // default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  // สถานะ: default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  //        |stale (เบราว์เซอร์มี subscription แต่ DB ไม่มีแถวของ user นี้ → ต้องกด "เปิด" ใหม่)
+  //        |check-failed (เช็ค DB ไม่ได้ — ห้ามตีความว่า "ยังไม่เปิด" ดู webpush.js)
+  // 🔴 'subscribed' ต้องผ่านการเทียบกับแถว push_subscriptions ของ user นี้เสมอ (2026-09-08 — เดิมดูแค่เบราว์เซอร์
+  //    จอเลยบอก "เปิดแล้ว" ทั้งที่แถวถูกลบไป/เป็นของคนอื่น = หัวหน้ากะไม่เคยได้ push MO)
+  const [pushState, setPushState] = useState('default');
   const [pushBusy,  setPushBusy]  = useState(false);
-  const refreshPush = useCallback(() => { getPushState().then(setPushState).catch(() => {}); }, []);
-  useEffect(() => { refreshPush(); }, [refreshPush]);
+  const refreshPush = useCallback(() => {
+    let alive = true; // กัน stale-response: เปลี่ยน user แล้วคำตอบเก่ากลับมาทีหลัง
+    getPushState(userId).then(st => { if (alive) setPushState(st); }).catch(() => { if (alive) setPushState('check-failed'); });
+    return () => { alive = false; };
+  }, [userId]);
+  useEffect(() => refreshPush(), [refreshPush]);
+
+  // SW หมุน subscription (pushsubscriptionchange) → ผูกใหม่ให้ถ้าแถวเดิมเป็นของ user นี้ ไม่งั้นโชว์ 'stale' ให้กดเอง
+  useEffect(() => {
+    if (!userId) return undefined;
+    return onPushResubscribeRequest(async (msg) => {
+      const r = await handlePushResubscribe(userId, msg);
+      if (r === 'rebound') toast.info('ระบบต่ออายุการแจ้งเตือนเข้ามือถือให้แล้ว 📲');
+      else if (r === 'error') toast.error('ต่ออายุการแจ้งเตือนเข้ามือถือไม่สำเร็จ — เปิดกระดิ่งแล้วกด "เปิด" ใหม่');
+      refreshPush();
+    });
+  }, [userId, refreshPush]);
 
   const enablePush = async () => {
     setPushBusy(true);
     try {
       const ok = await subscribePush(userId);
       if (!ok && Notification.permission === 'denied') toast.error('เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์');
-      else if (ok) toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲');
+      else if (!ok) toast.info('ยังไม่ได้อนุญาตการแจ้งเตือน — กด "อนุญาต" ในกล่องที่เบราว์เซอร์ถาม');
+      else toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲 — กด "ทดสอบส่ง" เพื่อเช็คว่าเด้งถึงเครื่องนี้');
     } catch (e) { toast.error(e.message || 'เปิดไม่สำเร็จ'); }
     finally { setPushBusy(false); refreshPush(); }
   };
   const disablePush = async () => {
     setPushBusy(true);
-    await unsubscribePush();
+    const r = await unsubscribePush();
     setPushBusy(false); refreshPush();
-    toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+    if (!r.ok) toast.error(`ปิดแจ้งเตือนเข้ามือถือไม่สำเร็จ: ${r.error || 'ไม่ทราบสาเหตุ'}`);
+    else if (r.dbRows === 0) toast.info('ยกเลิกในเครื่องนี้แล้ว (ไม่พบการลงทะเบียนของคุณในระบบ — อาจเป็นของผู้ใช้อื่นบนเครื่องเดียวกัน)');
+    else toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+  };
+  // ทดสอบส่ง: insert notifications ของตัวเอง (policy notifications_insert_authenticated) → trigger trg_notify_push ยิง send-push
+  // ให้หน้างานพิสูจน์ได้ทันทีว่า push ถึงเครื่องนี้ ไม่ต้องรอมี MO จริง
+  const testPush = async () => {
+    setPushBusy(true);
+    const now = new Date().toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const ok = checkWrite(await supabase.from('notifications').insert({
+      user_id: userId, type: 'info',
+      title: '🔔 ทดสอบแจ้งเตือน',
+      body:  `ส่งเมื่อ ${now} — ถ้าเห็นข้อความนี้เด้งบนมือถือ แปลว่าระบบส่งถึงเครื่องนี้ได้`,
+    }), 'ส่งทดสอบ');
+    setPushBusy(false);
+    if (ok) toast.success('ส่งทดสอบแล้ว — ปิดจอ/ย่อแอปแล้วรอเด้งภายในไม่กี่วินาที (ถ้าไม่เด้ง: เช็คสิทธิ์แจ้งเตือนของ Chrome + แบตเตอรี่ "ไม่จำกัด")');
   };
 
   // Close dropdown on outside click
@@ -1129,8 +1165,28 @@ function NotificationBell({ userId, role }) {
               {pushState === 'subscribed' ? (
                 <>
                   <span style={{ color: 'var(--accent)', fontWeight: 600 }}>📲 เปิดแจ้งเตือนเข้ามือถือแล้ว</span>
-                  <button onClick={disablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button onClick={testPush} disabled={pushBusy} title="ส่งแจ้งเตือนทดสอบถึงตัวเอง เพื่อเช็คว่าเด้งถึงเครื่องนี้"
+                      style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'none', border: '1px solid var(--accent)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>
+                      {pushBusy ? '…' : 'ทดสอบส่ง'}
+                    </button>
+                    <button onClick={disablePush} disabled={pushBusy}
+                      style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                  </div>
+                </>
+              ) : pushState === 'stale' ? (
+                <>
+                  <span style={{ color: 'var(--accent2)', fontWeight: 600 }}>⚠️ การลงทะเบียนหลุด — กดเปิดใหม่</span>
+                  <button onClick={enablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
+                  </button>
+                </>
+              ) : pushState === 'check-failed' ? (
+                <>
+                  <span style={{ color: 'var(--accent2)' }}>⚠️ ตรวจสถานะแจ้งเตือนเข้ามือถือไม่ได้ (เครือข่าย/ฐานข้อมูล)</span>
+                  <button onClick={refreshPush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ลองใหม่</button>
                 </>
               ) : pushState === 'denied' ? (
                 <span style={{ color: 'var(--accent2)' }}>🔕 เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ก่อน</span>

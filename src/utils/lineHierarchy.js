@@ -149,3 +149,37 @@ export const filterLinesByDept = (lineList, department) => {
   const matched = lineList.filter(l => normOrgName(l.name) === nd || normOrgName(l.parent_line_name) === nd);
   return matched.length ? matched : lineList;
 };
+
+/* ══ ความลึกสำหรับ "ลิสต์ที่ถูกกรองมาแล้ว" (2026-09-08 · feedback หน้างาน) ═══════════
+   จอที่แยกลิสต์เดียวกันเป็นหลายตาราง/หลายชั้น (เช่น /energy แยก "จุดที่มีมิเตอร์" กับ "ยังไม่มี")
+   **ไลน์แม่มักไม่ได้อยู่ตารางเดียวกับไลน์ลูก** — ถ้าเยื้อง (indent) ตามความลึกของต้นไม้ทั้งหมด
+   ไลน์ลูกจะไปเยื้องใต้ "แถวที่บังเอิญอยู่เหนือมัน" ซึ่งไม่ใช่แม่ของมันเลย
+   เคสจริงที่ทำให้ต้องมีตัวนี้: HDF1/HDF2 ไปโผล่ใต้ GOR (คนละส่วนงาน) และ Line 60/61/SUB APRON
+   ไปโผล่ใต้ LASER-789 → user ทัก "ไลน์แม่ลูกมั่วไปหมด" · **ลำดับชั้นที่ผิด = อ่านแล้วเชื่อผิดทันที**
+
+   กฎ: นับเฉพาะบรรพบุรุษที่ **อยู่ในลิสต์เดียวกัน** · แม่ไม่อยู่ในลิสต์ = แบนราบ (depth 0) แล้วคืน
+   `outsideParent` ให้จอเอาไปบอกเป็นข้อความแทน ("· ใต้ HYDROFORM") — ห้ามซ่อนความสัมพันธ์ทิ้งเฉยๆ */
+
+/**
+ * @param {Array<string>} keys   คีย์ของรายการที่จะแสดง (จะเป็นชื่อไลน์ตรงๆ หรือคีย์ผสมอย่าง 'line::HDF1' ก็ได้)
+ * @param {(key:string)=>string|null} parentOfKey  แม่ของคีย์นั้น — ต้องตอบได้แม้คีย์นั้นไม่อยู่ใน keys
+ *        (ไม่งั้นข้ามชั้นที่ถูกกรองออกไปหาปู่ที่ยังอยู่ในลิสต์ไม่เจอ)
+ * @returns {Map<string,{depth:number, outsideParent:string|null}>}
+ */
+export function visibleDepths(keys, parentOfKey) {
+  const has = new Set(keys || []);
+  const parent = (k) => (typeof parentOfKey === 'function' ? parentOfKey(k) : null) || null;
+  const out = new Map();
+  for (const k of keys || []) {
+    let depth = 0, cur = parent(k);
+    const seen = new Set([k]);
+    const direct = cur;
+    while (cur && !seen.has(cur) && depth < 10) {   // กัน parent วนกันเอง (กฎเดียวกับ stdGroupOf)
+      seen.add(cur);
+      if (has.has(cur)) depth++;
+      cur = parent(cur);
+    }
+    out.set(k, { depth, outsideParent: direct && !has.has(direct) ? direct : null });
+  }
+  return out;
+}

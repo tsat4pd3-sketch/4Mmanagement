@@ -94,6 +94,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง
     if (!file) return;
     setUploadFile(file);
     const reader = new FileReader();

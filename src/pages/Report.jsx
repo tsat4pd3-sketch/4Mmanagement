@@ -1853,6 +1853,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={e => {
                   const f = e.target.files?.[0];
+                  e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
                   if (!f) return;
                   setQaImageFile(f);
                   const reader = new FileReader();
@@ -3079,7 +3080,7 @@ function MultiSkillFormTab() {
                   {sig ? (
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
-                      <button onClick={() => setSig(null)}
+                      <button onClick={() => { if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig); setSig(null); }}
                         style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
                     </div>
                   ) : (
@@ -3089,7 +3090,11 @@ function MultiSkillFormTab() {
                       </div>
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
                         const file = e.target.files[0];
-                        if (file) setSig(URL.createObjectURL(file));
+                        e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง
+                        if (!file) return;
+                        // revoke ของเดิมก่อนสร้างใหม่ — blob URL ที่ไม่ revoke ตรึงไฟล์ในหน่วยความจำจนรีเฟรช
+                        if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig);
+                        setSig(URL.createObjectURL(file));
                       }} />
                     </label>
                   )}
