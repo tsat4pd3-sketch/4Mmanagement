@@ -121,7 +121,7 @@ export default function TvBoard() {
       const [moRes, planRes, clsRes] = await Promise.all([
         needMo
           ? supabaseDR.from('mtn_orders')
-              .select('id, mo_no, machine_no, line_name, status, mtn_dept, report_at, problem_characteristic')
+              .select('id, mo_no, machine_no, line_name, status, mtn_dept, report_at, problem_characteristic, quality_related, qa_skipped_at')
               .in('status', OPEN_MO_STATUSES).order('report_at', { ascending: false }).limit(300)
           : Promise.resolve({ data: [] }),
         needPm

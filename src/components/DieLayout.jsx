@@ -16,8 +16,9 @@ import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { markerScale } from '../utils/markerScale';
 import {
   DIE_STATUSES, DIE_STATUS_UNSET, dieStatusMeta, dieMarkerState, openMosOf,
-  buildOpenMoMap, regrindOver, MO_STATUS_LABEL, MIGRATION_HINT,
+  buildOpenMoMap, regrindOver, MIGRATION_HINT,
 } from '../utils/dieStatus';
+import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายสถานะใบ MO (แยกรอ QA / รอรับมอบ)
 import DieStatusEditor from './DieStatusEditor';
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -492,7 +493,7 @@ export default function DieLayout({
                           <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 3 }}>🔧 ใบซ่อม MO ค้าง {mos.length} ใบ</div>
                           {mos.map(o => (
                             <div key={o.id} style={{ fontSize: 11.5, lineHeight: 1.7 }}>
-                              <b>{o.mo_no || '(ยังไม่ออกเลข MO)'}</b> · {MO_STATUS_LABEL[o.status] || o.status}
+                              <b>{o.mo_no || '(ยังไม่ออกเลข MO)'}</b> · {moStatusLabel(o)}
                               {o.report_at && <span style={{ color: 'var(--muted)' }}> · แจ้ง {new Date(o.report_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>}
                             </div>
                           ))}

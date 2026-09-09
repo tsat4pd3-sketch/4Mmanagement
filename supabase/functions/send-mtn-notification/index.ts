@@ -289,12 +289,22 @@ Deno.serve(async (req) => {
           ``, `📌 ผู้แจ้ง (${v.reporter_prod || '-'}) โปรดแก้แผนกให้ถูกต้องแล้วส่งใหม่`].filter(Boolean).join('\n'); break;
       default: return json({ error: 'unknown event' }, 400);
     }
-    // เด้งบอก "ขั้นต่อไป" ให้ห้องแชททีมรู้ว่าต้องรออะไรต่อ (ตามที่ user ต้องการ)
+    /* เด้งบอก "ขั้นต่อไป" ให้ห้องแชททีมรู้ว่าต้องรออะไรต่อ (ตามที่ user ต้องการ)
+       ⚠️ ขั้น 4 (mtn_checked) แยก 2 ทางตาม `quality_related` — ใบที่ "ไม่เกี่ยวกับคุณภาพ" **ไม่รอ QA เลย**
+          รอฝ่ายที่แจ้งมารับมอบ (ขั้น 6) · ข้อความรวม "รอยืนยันคุณภาพ / รับมอบ" ทำให้ห้องแชทเข้าใจว่ายังรอ QA
+          แล้วไม่มีใครไปกดขั้น 6 (วัดฐาน 2026-09-09: ค้าง 140 ใบ) — แก้ให้พูดตรงกับป้ายบนจอ
+       source of truth = `moStatusLabel()` / `isWaitingQa()` ใน `src/utils/mtnStepPerm.js`
+       (edge import จาก src/ ไม่ได้ → เขียนซ้ำแบบย่อที่นี่ · แก้ที่นั่นแล้วต้องแก้ที่นี่ด้วย —
+        convention เดียวกับที่ `src/utils/dieStatus.js` ใช้อยู่) */
+    const QA_RELATED = 'เกี่ยวกับคุณภาพ';
+    const nextAfterChecked = String(mo.quality_related || '').trim() === QA_RELATED
+      ? 'รอ QA ตรวจคุณภาพ (ขั้น 5)'
+      : 'รอฝ่ายที่แจ้งรับมอบ (ขั้น 6) — งานนี้ไม่เกี่ยวกับคุณภาพ ไม่ต้องรอ QA';
     const NEXT: Record<string, string> = {
       mtn_reported: 'รอช่างรับงาน (ขั้น 2)',
       mtn_assigned: 'รอดำเนินการซ่อม (ขั้น 3)',
       mtn_repaired: 'รอตรวจสอบหลังซ่อม (ขั้น 4)',
-      mtn_checked: 'รอยืนยันคุณภาพ / รับมอบ (ขั้น 5-6)',
+      mtn_checked: nextAfterChecked,
       mtn_qa: 'รอรับมอบ (ขั้น 6)',
       mtn_qa_skipped: 'รอรับมอบ (ขั้น 6)',
       mtn_handover: 'รออนุมัติปิด (ขั้น 7)',

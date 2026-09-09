@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads,
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt,
 } from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
@@ -114,7 +114,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const fetchContext = useCallback(async () => {
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
-        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no')
+        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id')
         .eq('customer', shipTo).eq('due_date', workDate),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
@@ -127,8 +127,10 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       })(),
     ]);
     return {
-      // รอบเดียวกัน = ship_time ตรงระดับนาที (EDI เก็บเป็น text 'HH:MM' หรือ 'HH:MM:SS')
-      orders: (ordRes.data || []).filter(o => String(o.ship_time || '').slice(0, 5) === shipTime),
+      /* ⭐ ส่งใบ "ทั้งวันงาน" ให้ `planOrderUpdates` ตัดสินด้วย **ช่วงเวลาของไฟล์** เอง
+         (เดิมกรอง ship_time ตรงเป๊ะที่นี่ ⇒ ใบ 862 ของรอบเดียวกันแต่คนละนาทีหลุดหมด
+          แล้วระบบสร้างรอบใหม่ทับ = ยอดนับ 2 เท่า · user เคาะแก้ 2026-09-09) */
+      orders: ordRes.data || [],
       dupKeys: new Set((sigRes.data || []).map(r => signalKey({ ...r, pulled_at: new Date(r.pulled_at) }, SOURCE))),
       // ตารางยังไม่ apply (42P01) = ถือว่ายังไม่เคยนำเข้า แต่ต้องบอกบนจอ ห้ามเงียบ
       err: ordRes.error?.message || (sigRes.error ? `ยังตรวจการนำเข้าซ้ำไม่ได้: ${sigRes.error.message}` : ''),
@@ -195,9 +197,15 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     [parsed, dupKeys]);
   const dupCount = (parsed?.rows?.length || 0) - fresh.length;
   const groups = useMemo(() => aggregateSignals(fresh), [fresh]);
+  /* เที่ยวรถของไฟล์นี้ — ใบ 862 ที่เวลาส่ง "ใกล้เที่ยวนี้ที่สุด" = ใบเดียวกันกับที่ลูกค้าเรียก
+     (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
+  const slot = useMemo(() => ({
+    windowStart: parsed?.windowStart || null,
+    targetAt: workDate && shipTime ? orderShipAt(workDate, shipTime) : null,
+  }), [parsed, workDate, shipTime]);
   const plan = useMemo(
-    () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex)),
-    [groups, orders, pnIndex]);
+    () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex), slot),
+    [groups, orders, pnIndex, slot]);
 
   const tally = useMemo(() => {
     const t = { update: 0, create: 0, same: 0, locked: 0, unresolved: 0 };
@@ -218,7 +226,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     const live = await fetchContext();
     if (live.err) { toast.error(`ตรวจสถานะล่าสุดไม่สำเร็จ: ${live.err}`); setSaving(false); return; }
     const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
-    const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex));
+    const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex), slot);
     const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
     if (!liveWrite) {
       toast.info('ไฟล์นี้ถูกนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดทเพิ่ม');
@@ -284,6 +292,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           dock_code: x.order.dock_code || x.group.dock_code || null,
           status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
           pull_batch_id: batchId, ...stamp,
+          // ⚠️ **ห้ามแก้ `ship_time`** — ยืนยันออเดอร์ไม่ได้แปลว่าเลื่อนเวลาส่ง · คงกริดของ 862 ไว้
         };
         // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
         let res = await supabaseDR.from('customer_shipping_orders').update(patch)
@@ -457,6 +466,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                   <th style={thR}>ลูกค้ายืนยัน</th>
                   <th style={thR}>862 เดิม</th>
                   <th style={thR}>ส่วนต่าง</th>
+                  <th style={th}>รอบปลายทาง</th>
                   <th style={th}>จะทำอะไร</th>
                 </tr></thead>
                 <tbody>
@@ -473,13 +483,25 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                         <td style={{ ...tdR, fontWeight: 800, color: !x.order ? 'var(--muted)' : x.diff > 0 ? '#ef4444' : x.diff < 0 ? '#f59e0b' : 'var(--muted)' }}>
                           {x.order ? (x.diff > 0 ? `+${fmt(x.diff)}` : fmt(x.diff)) : '—'}
                         </td>
+                        <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {x.order ? String(x.order.ship_time || '').slice(0, 5) : shipTime}
+                          {x.order && String(x.order.ship_time || '').slice(0, 5) !== shipTime && (
+                            <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม</div>
+                          )}
+                        </td>
                         <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
-                          {x.reason && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}</td>
+                          {x.reason && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
+                          {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
+                          {x.extras?.length > 0 && (
+                            <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>
+                              ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} ใบ ({x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
+                            </div>
+                          )}</td>
                       </tr>
                     );
                   })}
                   {!plan.length && (
-                    <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>
+                    <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>
                       {dupCount > 0 ? 'ทุกแถวในไฟล์นี้เคยนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดท' : 'ไม่มีรายการ'}
                     </td></tr>
                   )}
