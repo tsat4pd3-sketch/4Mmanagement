@@ -156,6 +156,24 @@ const currentShift = () => { const h = new Date().getHours(); return (h >= 20 ||
    เกินเท่านี้ถือว่า "เยอะ" → แผงเริ่มต้นแบบยุบ และเมื่อกางก็ยังตัดเหลือ 8 แถวแรก + ปุ่มแสดงอีก */
 const AUTO_COLLAPSE_ROWS = 8;
 const LIST_FIRST = 8;
+
+/* ── ลิสต์การ์ดใบผลิต = grid หลายคอลัมน์ (2026-09-09 · feedback user "พื้นที่ตรงกลางว่างหลายส่วน
+   เพราะเป็น 1 column/row · แบ่งเป็น 2 column จะแปลกมั้ย") ──
+   วัดจากจอจริงของหัวหน้ากลุ่ม: การ์ดกว้าง ~1520px · เนื้อหาซ้ายจบ ~560px · บล็อกยอดขวาเริ่ม ~1800px
+   ⇒ **ช่องว่างกลางการ์ด ~1,240px** = 15 เท่าของเกณฑ์ "เหลือเกิน 80px = ต้องจัดใหม่" (UI-CONVENTIONS §6.11)
+   auto-fit + minmax(520px) → main ~1240px (จอ 1500) = 2 คอลัมน์ · ~1660px (จอ 1920) = 3 คอลัมน์ · แคบกว่านั้นยุบเหลือ 1
+   ทำด้วย CSS ล้วน ไม่ต้องพึ่ง JS วัดความกว้าง (จอ TV/แท็บเล็ตหมุนจอแล้วปรับเองทันที)
+   ⚠️ 520 ไม่ใช่เลขสวย — เป็นความกว้างที่บรรทัดแรกของการ์ด (prod_no + mat + ป้ายสถานะ + ยอดขวา)
+      ยังอ่านครบโดยไม่ต้อง ellipsis · ต่ำกว่านี้ป้าย "➡ ส่งกะถัดไปแล้ว" เริ่มโดนตัด
+   ⚠️ `alignItems:'start'` บังคับตาม §6.11 — การ์ดที่มีปุ่ม "✏️ ใบนี้ทำค้าง" สูงกว่าเพื่อน ห้ามให้ยืดเท่ากัน
+   หมายเหตุ §6.11 "จำนวนลูกต้องหารลงตัว" ใช้กับ **แผงที่จำนวนคงที่** — ลิสต์ที่ยาวไม่คงที่แบบนี้
+   แถวท้ายเหลือเศษเป็นเรื่องปกติ ไม่ใช่ช่องว่างที่ต้องแก้ */
+const ORDER_GRID = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(520px, 1fr))',
+  gap: 6,
+  alignItems: 'start',
+};
 const fmtMin = (min) => {
   if (!min && min !== 0) return '—';
   const m = Math.round(min);
@@ -3105,7 +3123,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     : handedOff ? '➡ ส่งกะถัดไปแล้ว' : carryOver ? '➡ ยกยอด (รอกะถัดไปรับ)'
                     : cancelled ? '✕ ยกเลิก' : '● ผลิต';
                   return (
-                    <div key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
+                    // minWidth:0 บังคับตาม §6.11 — การ์ดเป็นลูกของ grid ถ้าไม่ใส่ เนื้อหาที่ไม่ยอมหดจะดันคอลัมน์ล้น
+                    <div key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
                       border: `1px solid ${manualStale ? '#f59e0b' : `${statusColor}40`}`, borderLeft: `4px solid ${statusColor}`,
                       boxShadow: manualStale ? '0 0 8px 1px rgba(245,158,11,0.4)' : 'none',
                       opacity: cancelled ? 0.45 : 1 }}>
@@ -3284,8 +3303,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 return (
                   <>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {limitRows('orders_open', activeOrders).map(renderOrderRow)}
+                    <div>
+                      <div style={ORDER_GRID}>{limitRows('orders_open', activeOrders).map(renderOrderRow)}</div>
                       {moreRowsBtn('orders_open', activeOrders.length)}
                     </div>
 
@@ -3297,8 +3316,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           ปิดแล้ว / ยกเลิก ({closedOrders.length} ใบ)
                         </div>
                         {showClosedOrders && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {limitRows('orders_closed', closedOrders).map(renderOrderRow)}
+                          <div>
+                            <div style={ORDER_GRID}>{limitRows('orders_closed', closedOrders).map(renderOrderRow)}</div>
                             {moreRowsBtn('orders_closed', closedOrders.length)}
                           </div>
                         )}
