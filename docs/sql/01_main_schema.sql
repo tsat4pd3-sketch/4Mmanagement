@@ -84,12 +84,18 @@ create table if not exists line_layouts (
   created_at timestamptz default now()
 );
 
+-- ⚠️ ตารางนี้ **ไม่มีคอลัมน์ `id`** บนฐานจริง — PK คือ `employee_id` (1 คน = 1 จุดประจำ)
+--    และ `station_id` เป็น **uuid** ไม่ใช่ integer (workstations.id เป็น uuid)
+--    ไฟล์นี้เคยเขียนผิดว่ามี `id uuid primary key` + `station_id integer` จนทำให้โค้ดที่เชื่อเอกสาร
+--    เรียก `fetchByIds` โดยไม่ส่ง orderBy แล้วพังทั้งก้อนด้วย 42703 (เจอจริง 2026-09-09)
+--    → แก้ให้ตรงกับ docs/sql/00_schema_snapshot_main.sql ซึ่ง dump จากฐานจริง
 create table if not exists employee_home_positions (
-  id          uuid primary key default gen_random_uuid(),
-  employee_id uuid not null unique references employees(id) on delete cascade,
-  station_id  integer references workstations(id) on delete cascade,
+  employee_id uuid primary key references employees(id) on delete cascade,
+  station_id  uuid references workstations(id) on delete cascade,
   line_name   text,
-  updated_at  timestamptz default now()
+  line_id     integer,
+  updated_at  timestamptz default now(),
+  updated_by  uuid
 );
 
 -- ─── 5. ทักษะ ───────────────────────────────────────────────────

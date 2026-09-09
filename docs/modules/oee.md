@@ -592,6 +592,19 @@ API: `textWidthIn` · `wrapLineCount` · `textHeightIn` · `fitOneLine` · `fitB
   · ตัด `line_layouts` / `pos_top` / `pos_left` / รูปพนักงาน ออกจาก select — ดึงมาแล้วไม่ได้ใช้ (ยังไม่วาดผังในเด็ค)
   · โหมด full ที่ดึงข้อมูลย้อนหลังล้ม = สไลด์รายไลน์ว่างทั้งเล่ม → toast บอกตรงๆ (เดิมบอกแค่ "ไม่มีสไลด์ progression")
 
+**บั๊กที่ user เจอหน้างานทันทีหลัง deploy (2026-09-09 · แก้แล้ว):**
+- **สไลด์ MAN POWER ล้มทั้งใบ** — toast `column employee_home_positions.id does not exist`
+  ต้นเหตุ: `fetchByIds` ตั้ง **`orderBy: 'id'` เป็นค่าเริ่มต้น** แต่ตารางนี้ **ไม่มีคอลัมน์ `id`**
+  (ยืนยันกับฐานจริงผ่าน MCP: PK คือ `employee_id` · `station_id` เป็น uuid) → ส่ง `{ orderBy: 'employee_id' }`
+  · ⚠️ **`docs/sql/01_main_schema.sql` เขียนผิดว่ามี `id uuid primary key` + `station_id integer`** — เอกสารนี่แหละที่พาไปผิด
+    แก้ให้ตรงกับ `docs/sql/00_schema_snapshot_main.sql` (dump จากฐานจริง) แล้ว
+  · เขียนรายชื่อ **13 ตาราง/วิวที่ไม่มี `id`** ไว้หัวไฟล์ `src/utils/fetchByIds.js` แล้ว — ตัวถัดไปจะได้ไม่พลาดซ้ำ
+    (ผู้เรียก `line_stock_summary` ทุกจุดส่ง orderBy ถูกอยู่แล้ว — จุดนี้เป็นรายเดียวที่พลาด)
+- **เป้าที่ตั้งไม่ครบถูกเติมค่ามาตรฐานเงียบๆ** — ของจริง 4/11 กลุ่มตั้งแค่ A กับ Q ปล่อย `target_p` ว่าง
+  ระบบเติม P=90 ให้แล้วสไลด์ไม่บอก ⇒ คนอ่านเข้าใจว่าเป็นเป้าที่ทีมตั้งเอง
+  → `normOeeTarget` คืน `missing: ['p']` และสไลด์เขียน "P ยังไม่ได้ตั้ง ใช้ค่ามาตรฐานแทน"
+  (แยก 3 กรณีให้ขาด: ไม่มีแถวเลย / มีแถวแต่เว้นบางช่อง / อ่านเป้าไม่สำเร็จ)
+
 **ยังขาดจากเด็ควิศวกร (ตกลงไว้ว่าเฟสถัดไป):**
 - **INVENTORY มูลค่าสต็อกเป็นบาทรายเดือน** — มีจำนวนชิ้น (LineStock/WIP) + ต้นทุนต่อชิ้น (`parts_master` ผ่าน `costSaving.js`) แต่**ไม่มี snapshot สิ้นเดือน** ⇒ ย้อนหลังไม่ได้ ต้องเริ่มเก็บก่อน
 - **PPM รายชนิดอุปกรณ์** (Stationary & Feeder / Robot / Jig / Laser Machine — Items Audited / FTC / Non Conforming) — LPA แบ่งตาม safety/quality/systemic/visual ไม่ได้แบ่งตามชนิดอุปกรณ์ และไม่นับ items audited
