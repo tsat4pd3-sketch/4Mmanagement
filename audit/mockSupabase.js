@@ -103,7 +103,17 @@ const TABLE_ROWS = {
     status: i % 5 === 0 ? 'producing' : 'pending',
     source_prod_no: isNullish(r) ? null : `MANUAL-2609${10 + i}-133957-BE`,
   }),
-  raw_withdrawal_requests: (r, i) => ({ ...r, lot_request_id: `id-${i}`, status: i % 3 ? 'pending' : 'issued' }),
+  /* raw_mat_no ต้องคละ 4 แบบ ให้โค้ดแยก routing ถูกรันครบทุกสาขา (2026-09-10):
+     · 1010100x = มีใน dr_products mock → routed (บางแถวเป็นไลน์อื่น = "ต่อจากไลน์อื่น")
+     · 2xxxxxxx = เบอร์ 2 แต่ไม่มีใน master → "routing ยังไม่ตั้ง" (เคสจริง 27 ใบกำพร้าในฐาน)
+     · 3xxx/5xxx = ของซื้อ/สิ้นเปลือง */
+  raw_withdrawal_requests: (r, i) => ({
+    ...r, lot_request_id: `id-${i}`, status: i % 3 ? 'pending' : 'issued',
+    raw_mat_no: [`1010${1000 + (i % 3)}`, '20058488', '30047587', '50027080'][i % 4],
+  }),
+  /* dr_products: 2 แถวแรกเป็น "ไลน์อื่น" โดยตั้งใจ — เดิมทุกแถว line_name เดียวกันหมด
+     ⇒ โค้ดที่ถามว่า "ของชิ้นนี้ไลน์อื่นทำหรือเปล่า" ไม่เคยได้คำตอบว่า "ใช่" เลยใน harness */
+  dr_products: (r, i) => (i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r),
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
     block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,
