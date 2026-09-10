@@ -65,6 +65,10 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   // 🚨 alarm "ไฟล์นี้เคยอัพแล้ว" — เตือน ไม่บล็อก แต่ต้องติ๊กรับทราบก่อนถึงกดยืนยันได้
   const [dupUploads, setDupUploads] = useState([]);
   const [dupAck, setDupAck] = useState(false);
+  /* 🚨 วันที่ในไฟล์น่าสงสัย (อ่านได้ 2 ทาง / ห่างจากวันนี้ผิดปกติ) — ต้องติ๊กรับทราบก่อนยืนยัน
+     บทเรียน 2026-09-10: อ่าน 10/09 เป็น 9 ต.ค. ⇒ ใบไปคนละเดือน + สต็อกถูกตัดซ้ำ 115 ชิ้น
+     คำเตือนเฉยๆ ไม่พอ เพราะคนกดยืนยันเร็วกว่าอ่าน — วันที่ผิด = เสียหายถึงสต็อกทันที */
+  const [dateAck, setDateAck] = useState(false);
 
   /* ── โปรไฟล์รูปแบบไฟล์ (data-driven) — ยังไม่ apply migration = ใช้ค่าสำรองในโค้ด + บอกบนจอ ── */
   useEffect(() => {
@@ -90,7 +94,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const reset = useCallback(() => {
     setFile(null); setParsed(null); setShipTo(''); setWorkDate(''); setShipTime(''); setPattern('normal');
     setOrders([]); setDupKeys(new Set()); setProducts([]); setCtxError('');
-    setDupUploads([]); setDupAck(false);
+    setDupUploads([]); setDupAck(false); setDateAck(false);
   }, []);
 
   /* ⚠️ ผู้ใช้เลือกไฟล์ได้ก่อนที่ prefetch จะกลับมา — ถ้าไม่รอ ตารางรอบรับจะยังเป็น null
@@ -116,7 +120,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       // raw:true + defval:'' → ค่าคงเป็นข้อความ ไม่ให้ SheetJS เดา MDY/DMY แทนเรา (pullSignal.parseTs คุมเอง)
       const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       const { profile, guessed } = pickProfile(matrix, profiles || [FALLBACK_PROFILE]);
-      const res = parsePullFile(matrix, profile, await ensureRounds());
+      // ⭐ ส่งชื่อไฟล์ไปด้วย — พอร์ทัลประทับเวลาที่ออกรายงานไว้ในชื่อ ใช้เป็นไม้บรรทัดตัดสินวันที่
+      const res = parsePullFile(matrix, profile, await ensureRounds(), { fileName: f.name });
       setParsed({ ...res, profile, guessed, rowsInFile: matrix.length });
       if (res.ok) {
         setShipTo(res.shipTo || '');
@@ -252,7 +257,9 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return t;
   }, [plan]);
   const willWrite = tally.update + tally.create;
+  const dateRisk = (parsed?.warnings || []).filter(w => w.includes('อ่านได้ 2 ทาง') || w.includes('ห่างจากวันนี้'));
   const blockedByDup = dupUploads.length > 0 && !dupAck;
+  const blockedByDate = dateRisk.length > 0 && !dateAck;
 
   /* ── ยืนยัน — เขียนจริง ───────────────────────────────────────────────────────────── */
   const apply = async () => {
@@ -439,6 +446,19 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               {parsed.meta?.supplier_code && ` · GSDB ${parsed.meta.supplier_code}`}
             </div>
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
+            {dateRisk.length > 0 && (
+              <div style={{ ...noteBox('#ef4444'), marginBottom: 8 }}>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>🚨 ตรวจวันที่ให้แน่ก่อนยืนยัน</div>
+                <div style={{ fontSize: 12, marginBottom: 6 }}>
+                  วันงานที่ระบบอ่านได้คือ <b>{workDate || '—'}</b> รอบส่ง <b>{shipTime || '—'}</b> —
+                  ถ้าไม่ตรงกับไฟล์ ให้แก้ 2 ช่องด้านบนก่อน · <b>วันที่ผิด = ใบไปโผล่ผิดวันและสต็อกถูกตัดซ้ำ</b>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={dateAck} onChange={e => setDateAck(e.target.checked)} />
+                  ตรวจแล้ว วันงานและรอบส่งถูกต้อง
+                </label>
+              </div>
+            )}
 
             {/* 🚨 alarm อัพซ้ำ — เตือน ไม่บล็อก (อัพซ้ำมีเหตุผลที่ถูกต้องจริง เช่นรอบก่อนล้มกลางทาง)
                 แต่ต้องติ๊กรับทราบก่อนถึงกดยืนยันได้ · สีแดงนิ่ง ไม่กระพริบ (กระพริบสงวนให้ Andon) */}
@@ -600,7 +620,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime || (dupUploads.length > 0 && !dupAck)}
+              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime || blockedByDup || blockedByDate}
                 style={{
                   padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',

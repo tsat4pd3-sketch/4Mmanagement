@@ -48,6 +48,7 @@ const LOT_META = {
 export default function StoreLotQueue({ lineName, lines = [], role }) {
   const [lots,    setLots]    = useState([]);
   const [raws,    setRaws]    = useState([]);
+  const [routes,  setRoutes]  = useState({});   // raw_mat_no → ไลน์ที่ผลิตของชิ้นนั้น
   const [made,    setMade]    = useState({});
   const [blocks,  setBlocks]  = useState([]);
   const [err,     setErr]     = useState(null);
@@ -94,6 +95,24 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
         rawRows = r.rows;
       }
       setRaws(rawRows);
+
+      /* 2.5) routing ของวัตถุดิบแต่ละตัว — "ของชิ้นนี้ใครทำ" (2026-09-10 · feedback user
+             "นี่มันงานของไลน์มันเอง จะไปรอสโตร์จ่ายทำไม · มันต้องอิง routing ไง
+              เบอร์ 2 คือผลิตภายใน บางทีมาจากไลน์อื่น")
+         สโตร์เป็นคนจ่ายเข้าไลน์ทุกตัวจริง แต่ "รอสโตร์" เฉยๆ ไม่บอกว่ารอ**ใคร**อยู่ —
+         รอไลน์อื่นปั๊มให้ กับ รอของซื้อเข้าโรงงาน คนละเรื่อง คนละคนตาม
+         ⚠️ ไม่มีแถวใน dr_products = ระบบไม่รู้ที่มา (เบอร์ 2 แปลว่า **routing ยังไม่ตั้ง**
+            ไม่ใช่ของซื้อ) — ต้องโชว์เป็นช่องโหว่ ห้ามเงียบ เพราะเป็นต้นเหตุที่
+            fn_explode เขียน source_line = null แล้วใบสั่งผลิตกลายเป็นใบกำพร้าไม่โผล่ที่ไลน์ไหนเลย */
+      const routeMap = {};
+      const rawMats = [...new Set(rawRows.map(r => r.raw_mat_no).filter(Boolean))];
+      if (rawMats.length) {
+        const rt = await fetchByIds(rawMats,
+          ids => supabaseDR.from('dr_products').select('mat_no, line_name').in('mat_no', ids).eq('is_active', true));
+        if (rt.error) throw new Error(rt.error);
+        rt.rows.forEach(d => { const ln = (d.line_name || '').trim(); if (ln) routeMap[d.mat_no] = ln; });
+      }
+      setRoutes(routeMap);
 
       // 3) ยอดที่ไลน์ปั๊มไปแล้ว (ตัวช่วย ไม่ใช่การผูกใบ)
       //    ⚠️ prod_orders ไม่มีคอลัมน์ line_name/work_date — ต้อง embed production_sessions
@@ -161,22 +180,42 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
       const sizes   = [...new Set(g.lots.map(l => Number(l.lot_qty) || 0))].sort((a, b) => a - b);
       const pending = g.lots.filter(l => l.status === 'pending');
       const rl      = g.lots.flatMap(l => rawByLot[l.id] || []);
+
+      /* แยกวัตถุดิบตาม "ใครเป็นคนทำ" — สโตร์จ่ายทุกตัว แต่ต้นทางคนละที่ (คำสั่ง user 10/09)
+         · fromLines = ไลน์อื่นในโรงงานปั๊ม/ตัดให้ → ถ้าขาด ต้องไปตามไลน์นั้น ไม่ใช่ตามสโตร์
+         · noRoute   = เบอร์ 2 (ผลิตภายใน) ที่ยังไม่มีแถวใน Product Master = routing ยังไม่ตั้ง
+         · buy       = ที่เหลือ (3xxx/5xxx) = ของซื้อ/สิ้นเปลือง ตามสโตร์/จัดซื้อได้ตรงๆ
+         ⚠️ ไลน์ตัวเองผลิตของชิ้นนั้นเอง = ห้ามให้ไปเบิกจากสโตร์ (กฎจาก user) — โชว์แยกเป็น self */
+      const mats = [...new Set(rl.map(r => r.raw_mat_no).filter(Boolean))];
+      const self = [], fromLines = [], noRoute = [], buy = [];
+      for (const m of mats) {
+        const owner = routes[m];
+        if (owner && norm(owner) === norm(lineName)) self.push(m);
+        else if (owner)                              fromLines.push(m);
+        else if (String(m).startsWith('2'))          noRoute.push(m);
+        else                                          buy.push(m);
+      }
       return {
         ...g, sizes, pending,
         producing: g.lots.length - pending.length,
         rawAll:  rl.length,
         rawWait: rl.filter(r => r.status !== 'issued').length,
+        mats: mats.length, self, noRoute, buy,
+        upLines: [...new Set(fromLines.map(m => routes[m]))],
+        upMats: fromLines.length,
         days: Math.floor((Date.now() - new Date(g.oldest).getTime()) / 86400000),
       };
     });
-  }, [lots, rawByLot]);
+  }, [lots, rawByLot, routes, lineName]);
 
   /* สรุปที่ต้องเห็น**แม้ตอนยุบ** — user: "ถ้า default ยุบก็ไม่เห็นอะไรเลย" */
   const head = useMemo(() => ({
     parts:     groups.length,
     pending:   groups.reduce((s, g) => s + g.pending.length, 0),
     producing: groups.reduce((s, g) => s + g.producing, 0),
-    rawWait:   groups.reduce((s, g) => s + (g.rawWait > 0 ? 1 : 0), 0),
+    upLines:   [...new Set(groups.flatMap(g => g.upLines))],
+    noRoute:   [...new Set(groups.flatMap(g => g.noRoute))],
+    self:      [...new Set(groups.flatMap(g => g.self))],
   }), [groups]);
 
   const takeLot = async (lot) => {
@@ -237,7 +276,9 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginRight: 'auto' }}>
           {head.pending   > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {head.pending}</span>}
           {head.producing > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {head.producing}</span>}
-          {head.rawWait   > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>🪨 รอวัตถุดิบ {head.rawWait} พาร์ท</span>}
+          {head.upLines.length > 0 && <span style={chip('rgba(14,165,233,0.14)', '#0ea5e9')} title={`ของที่ต้องใช้ บางตัวมาจากไลน์: ${head.upLines.join(' · ')}`}>🏭 ต่อจากไลน์อื่น {head.upLines.length}</span>}
+          {head.noRoute.length > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')} title={`เบอร์ 2 = ผลิตภายใน แต่ยังไม่มีแถวใน Product Master:\n${head.noRoute.join(' · ')}\n\nระบบจึงไม่รู้ว่าไลน์ไหนทำ → ใบสั่งผลิตของพาร์ทพวกนี้ถูกสร้างโดยไม่มีไลน์ปลายทาง (ใบกำพร้า ไม่โผล่บนจอไลน์ไหนเลย)`}>❓ routing ยังไม่ตั้ง {head.noRoute.length}</span>}
+          {head.self.length > 0 && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')} title={`ของพวกนี้ไลน์นี้เป็นคนผลิตเอง — ไม่ควรมีใบเบิกจากสโตร์:\n${head.self.join(' · ')}`}>⚠️ ของที่ไลน์ทำเอง {head.self.length}</span>}
           {blocks.length  > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ออกใบไม่ได้ {blocks.length}</span>}
         </div>
         <button onClick={load} title="โหลดคิวใหม่"
@@ -291,12 +332,23 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                   {/* บรรทัดสรุป — ทั้งหมดเป็นค่า**ระดับพาร์ท** จึงพิมพ์ครั้งเดียว ไม่ใช่ทุกล็อต */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 5, fontSize: 11, color: 'var(--muted)' }}>
                     <span style={{ fontWeight: 700, color: 'var(--text2)' }}>{sizeTxt}</span>
-                    {g.rawAll === 0 ? (
+                    {/* 🔴 เดิมเขียน "รอสโตร์จ่ายวัตถุดิบ N/N" ซึ่ง **เป็น false alarm ถาวร**:
+                        raw_withdrawal_requests.status ถูกเซ็ตเป็น issued ที่เดียว = ตอนคนกดปิดล็อต
+                        ที่ /heijunka · วัดจริง 10/09 ทั้งระบบ pending 727 / issued 13 (ครั้งสุดท้าย 27/08)
+                        ⇒ ทุกล็อตขึ้น "รอสโตร์จ่าย" ตลอดกาล ทั้งที่ไลน์ผลิตอยู่ 100%
+                        มันไม่ได้วัดว่าของมาหรือยัง — มันวัดว่ามีคนกดปุ่มบนบอร์ดสโตร์หรือยัง
+                        ⇒ เลิกโชว์เป็นสัญญาณเตือน · โชว์ "ของที่ต้องใช้มาจากไหน" แทน (ตอบว่ารอ**ใคร**) */}
+                    {g.mats === 0 ? (
                       <span>· 🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
-                    ) : g.rawWait === 0 ? (
-                      <span style={{ color: '#22c55e', fontWeight: 700 }}>· 🪨 วัตถุดิบจ่ายครบแล้ว ({g.rawAll} รายการ)</span>
                     ) : (
-                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>· 🪨 รอสโตร์จ่ายวัตถุดิบ {g.rawWait}/{g.rawAll} รายการ</span>
+                      <span title={`ใบเบิกที่ผูกกับล็อตชุดนี้ ${g.rawAll} ใบ · ปิดในระบบแล้ว ${g.rawAll - g.rawWait} ใบ
+(สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เฉพาะตอนกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
+                        · 🪨 ใช้ของ {g.mats} รายการ
+                        {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · 🏭 ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
+                        {g.buy.length > 0 && <span> · 🛒 ของซื้อ {g.buy.length}</span>}
+                        {g.noRoute.length > 0 && <b style={{ color: '#f59e0b' }}> · ❓ routing ยังไม่ตั้ง {g.noRoute.length}</b>}
+                        {g.self.length > 0 && <b style={{ color: '#ef4444' }}> · ⚠️ ไลน์นี้ทำเอง {g.self.length}</b>}
+                      </span>
                     )}
                     <span>· ค้างมา {g.days} วัน</span>
                     {/* ⚠️ ตัวช่วยตัดสินใจ ไม่ใช่การผูกใบ — เขียนกำกับให้ชัดเสมอ */}

@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound, pullRoundOptions, PULL_PATTERNS,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound, pullRoundOptions, PULL_PATTERNS, detectDateOrder, fileNameStamp,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -613,4 +613,109 @@ test('parsePullFile ต้องคืน patternOptions ให้จอ (ไม
 
 test('PULL_PATTERNS ต้องเรียงปกติมาก่อน — ลำดับนี้คือ default ของทั้งระบบ', () => {
   assert.deepEqual(PULL_PATTERNS.map(p => p.key), ['normal', 'ot_day', 'ot_night']);
+});
+
+/* ══ 🔴🔴 วันที่ d/m ต้องพิสูจน์จากไฟล์ ห้ามเชื่อค่าตั้งตายตัว (เคสจริง 2026-09-10) ══════
+   ไฟล์ของวันที่ 10 ก.ย. ส่งวันมาเป็น `10/09/2026` · โปรไฟล์ตั้ง ts_format='MDY'
+   ⇒ อ่านเป็น 9 ตุลาคม ⇒ ใบไปโผล่คนละเดือน ชาร์ตวันนี้ว่าง + **สต็อก FG ถูกตัดซ้ำ 115 ชิ้น**
+   ไฟล์ก่อนหน้ารอดเพราะบังเอิญ (09/08, 09/09 อ่านทางไหนก็สมเหตุสมผล) */
+
+test('detectDateOrder — เลข > 12 ในช่องใดช่องหนึ่ง = พิสูจน์ได้', () => {
+  assert.deepEqual(detectDateOrder(['25/09/2026 06:00']), { order: 'DMY', reason: 'proof' });
+  assert.deepEqual(detectDateOrder(['09/25/2026 06:00']), { order: 'MDY', reason: 'proof' });
+  assert.deepEqual(detectDateOrder(['10/09/2026 06:00']), { order: null, reason: 'ambiguous' });
+  assert.deepEqual(detectDateOrder(['25/09/2026', '09/25/2026']), { order: null, reason: 'conflict' });
+  assert.deepEqual(detectDateOrder(['2026-09-10T06:00']), { order: null, reason: 'none' });
+  assert.deepEqual(detectDateOrder(null), { order: null, reason: 'none' });
+});
+
+/* หัวไฟล์เป็น slash ทั้งคู่ = ไม่มีไม้บรรทัด ISO → ต้องตัดสินด้วย "ใกล้ตอนนี้ที่สุด" */
+const SLASHFILE = (d1, d2, rowTs) => [
+  CSV[0], CSV[1], CSV[2], CSV[3],
+  ['Start Time', d1, 'End Time', d2],
+  CSV[5],
+  ['GRBNA', '150524', 'RB3B', '16E060', 'BA', '', 'REINF ASY FRT FNDR INR BDY', 'BFU6W040', rowTs, '1', '10', 'BFRH', 'B5', '5E', ''],
+];
+
+test('🔴 เคสจริง: ไฟล์ 10/09/2026 โหลดวันที่ 10 ก.ย. ต้องได้ 10 ก.ย. ไม่ใช่ 9 ต.ค.', () => {
+  const now = new Date(2026, 8, 10, 8, 4);      // 2026-09-10 08:04 (เวลาที่โหลดไฟล์จริง)
+  const r = parsePullFile(SLASHFILE('10/09/2026 06:00:00', '10/09/2026 08:00:00', '10/09/2026 06:03:00'),
+    { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null, { now });
+  assert.equal(dateStr(r.windowEnd), '2026-09-10', 'ต้องเป็น 10 ก.ย. — ค่าตั้ง MDY ต้องแพ้หลักฐาน');
+  assert.equal(r.slot.work_date, '2026-09-10');
+  assert.ok(r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'เดามาต้องบอกบนจอ ห้ามเงียบ');
+});
+
+test('เลข > 12 ในไฟล์ = พิสูจน์ได้ ต้องชนะค่าตั้งในโปรไฟล์', () => {
+  const now = new Date(2026, 8, 25, 8, 0);
+  const r = parsePullFile(SLASHFILE('25/09/2026 06:00:00', '25/09/2026 08:00:00', '25/09/2026 06:03:00'),
+    { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null, { now });
+  assert.equal(dateStr(r.windowEnd), '2026-09-25');
+  assert.ok(r.warnings.some(w => w.includes('ต่างจากที่ตั้งไว้ในโปรไฟล์')));
+  assert.ok(!r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'พิสูจน์ได้แล้วห้ามเตือนว่าเดา');
+});
+
+test('หัวไฟล์เป็น ISO = ไม้บรรทัด — ใช้ตัดสินแถวได้โดยไม่ต้องเดาจากเวลาปัจจุบัน', () => {
+  const now = new Date(2027, 0, 1);             // ตั้งใจให้ห่างจากไฟล์มาก
+  const m = SLASHFILE('2026-09-10T06:00:00', '2026-09-10T08:00:00', '10/09/2026 06:03:00');
+  const r = parsePullFile(m, { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null, { now });
+  assert.equal(dateStr(r.rows[0].pulled_at), '2026-09-10', 'แถวต้องตกในกรอบของไฟล์');
+  assert.ok(!r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'มีไม้บรรทัดแล้วไม่ต้องเดา');
+});
+
+test('🔴🔴 ช่วงเวลาเป็นอนาคต = ห้ามนำเข้าเด็ดขาด (user: อัพวันนี้เป็นของเดือน 10 ไม่ได้)', () => {
+  const now = new Date(2026, 8, 10, 8, 0);
+  const r = parsePullFile(SLASHFILE('2026-10-09T06:00:00', '2026-10-09T08:00:00', '2026-10-09T06:03:00'),
+    FALLBACK_PROFILE, null, { now });
+  assert.equal(r.ok, false, 'ต้องบล็อก ไม่ใช่แค่เตือน');
+  assert.ok(r.error.includes('อนาคต'));
+});
+
+test('ช่วงเวลาเก่ากว่าวันนี้เกิน 3 วัน = เตือน แต่ยังนำเข้าได้ (ตามเก็บย้อนหลัง)', () => {
+  const now = new Date(2026, 8, 20, 8, 0);
+  const r = parsePullFile(SLASHFILE('2026-09-10T06:00:00', '2026-09-10T08:00:00', '2026-09-10T06:03:00'),
+    FALLBACK_PROFILE, null, { now });
+  assert.equal(r.ok, true);
+  assert.ok(r.warnings.some(w => w.includes('เก่ากว่าวันนี้')));
+});
+
+test('ไฟล์ปกติ (ช่วงใกล้วันนี้) ต้องไม่มีคำเตือนวันที่มากวน', () => {
+  const now = new Date(2026, 8, 10, 8, 0);
+  const r = parsePullFile(SLASHFILE('2026-09-10T06:00:00', '2026-09-10T08:00:00', '2026-09-10T06:03:00'),
+    FALLBACK_PROFILE, null, { now });
+  assert.ok(!r.warnings.some(w => w.includes('ห่างจากวันนี้') || w.includes('อ่านได้ 2 ทาง')));
+});
+
+test('🔴 ทิศกลับกัน (เคสจริง 10 ก.ย.): หัวไฟล์ slash + แถวเป็น ISO → แถวคือไม้บรรทัด', () => {
+  const now = new Date(2027, 0, 1);   // ตั้งใจให้ไกลจากไฟล์ เพื่อพิสูจน์ว่าไม่ได้ใช้ "ใกล้ตอนนี้"
+  const r = parsePullFile(SLASHFILE('10/09/2026 06:00:00', '10/09/2026 08:00:00', '2026-09-10T06:03:00'),
+    { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null, { now });
+  assert.equal(dateStr(r.windowEnd), '2026-09-10', 'ช่วงเวลาต้องครอบแถวที่ดึงได้');
+  assert.equal(r.slot.work_date, '2026-09-10');
+  assert.ok(!r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'มีไม้บรรทัดแล้วไม่ต้องเดา');
+});
+
+/* ══ ⭐ ไม้บรรทัดเวลา = timestamp ที่พอร์ทัลประทับในชื่อไฟล์ (user: "ทวนสอบได้มั้ย") ═════ */
+
+test('fileNameStamp — อ่านเวลาออกรายงานจากชื่อไฟล์', () => {
+  const d = fileNameStamp('Detailed SMART - 2026-09-10T080411.100.csv');
+  assert.equal(dateStr(d), '2026-09-10');
+  assert.equal(timeStr(d), '08:04');
+  assert.equal(fileNameStamp('ไฟล์อะไรไม่รู้.csv'), null);
+  assert.equal(fileNameStamp(null), null);
+});
+
+test('🔴 เคสจริงเต็มรูป: ชื่อไฟล์บอก 10 ก.ย. 08:04 → ช่วง 10/09 ต้องอ่านเป็น 10 ก.ย.', () => {
+  const r = parsePullFile(SLASHFILE('10/09/2026 06:00:00', '10/09/2026 08:00:00', '10/09/2026 06:03:00'),
+    { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null,
+    { now: new Date(2027, 0, 1), fileName: 'Detailed SMART - 2026-09-10T080411.100.csv' });
+  assert.equal(r.ok, true);
+  assert.equal(r.slot.work_date, '2026-09-10', 'ต้องเชื่อ timestamp ในชื่อไฟล์ ไม่ใช่นาฬิกาเครื่อง');
+});
+
+test('🔴 ไฟล์ที่ช่วงเวลาเลยเวลาออกรายงาน = บล็อก แม้นาฬิกาเครื่องจะดูปกติ', () => {
+  const r = parsePullFile(SLASHFILE('2026-10-09T06:00:00', '2026-10-09T08:00:00', '2026-10-09T06:03:00'),
+    FALLBACK_PROFILE, null,
+    { now: new Date(2026, 11, 1), fileName: 'Detailed SMART - 2026-09-10T080411.100.csv' });
+  assert.equal(r.ok, false, 'เทียบกับเวลาออกไฟล์ ไม่ใช่เวลาเครื่อง');
 });
