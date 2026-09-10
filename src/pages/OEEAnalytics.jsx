@@ -19,7 +19,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect } from '../utils/oee';
+import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
@@ -424,26 +424,12 @@ export default function OEEAnalytics() {
 
   // เฉลี่ย target ของหลายกรุ๊ป (กรุ๊ปที่ไม่ตั้งค่า metric นั้นใช้ค่ามาตรฐานแทน)
   // เป้า OEE ไม่ตั้งเอง — คำนวณจาก A×P×Q ของแต่ละกรุ๊ปเสมอ แล้วค่อยเฉลี่ยข้ามกรุ๊ป
-  const targetOf = useCallback((groupNames) => {
-    const effs = groupNames.map(g => {
-      const t = oeeTargets[g] || {};
-      return {
-        a: t.target_a != null ? Number(t.target_a) : null,
-        p: t.target_p != null ? Number(t.target_p) : null,
-        q: t.target_q != null ? Number(t.target_q) : null,
-      };
-    });
-    const out = { configured: effs.some(e => e.a != null || e.p != null || e.q != null) };
-    for (const k of ['a', 'p', 'q']) {
-      const vals = effs.map(e => e[k]).filter(v => v != null);
-      out[k] = vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10 : TARGET[k];
-    }
-    const oees = effs.length
-      ? effs.map(e => ((e.a ?? TARGET.a) * (e.p ?? TARGET.p) * (e.q ?? TARGET.q)) / 10000)
-      : [(TARGET.a * TARGET.p * TARGET.q) / 10000];
-    out.oee = Math.round(oees.reduce((s, v) => s + v, 0) / oees.length * 10) / 10;
-    return out;
-  }, [oeeTargets]);
+  // สูตรอยู่ที่ `avgOeeTarget` ใน src/utils/oee.js — **เด็ค .pptx รายเดือนใช้ตัวเดียวกัน**
+  // (ย้ายออกจากหน้านี้ 2026-09-10 · util OEE มีไฟล์เดียว ห้ามเขียนสูตรซ้ำในหน้า)
+  const targetOf = useCallback(
+    (groupNames) => avgOeeTarget(groupNames.map(g => oeeTargets[g] || null)),
+    [oeeTargets]
+  );
 
   // แท็บวันนี้: เลือกกรุ๊ป → เป้ากรุ๊ป · เลือกไลน์ → เป้ากรุ๊ปของไลน์ · เลือก section →
   // เฉลี่ยกรุ๊ปใน section · ทุกไลน์ → เฉลี่ยทุกกรุ๊ปใน scope (เช่น PD3 = เฉลี่ย APRON ASSY + HYDROFORM)
