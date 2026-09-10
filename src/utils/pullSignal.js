@@ -210,6 +210,14 @@ const hhmm = (v) => {
   return m ? `${String(+m[1]).padStart(2, '0')}:${m[2]}` : null;
 };
 
+/* รูปแบบวันทำงานที่ลูกค้าแยกตารางรับไว้คนละชุด (ใบลูกค้าแยก "Pattern normal" / "Pattern OT")
+   ⚠️ เรียงตามลำดับที่ใช้เป็น default — ปกติมาก่อนเสมอ */
+export const PULL_PATTERNS = [
+  { key: 'normal',   label: 'ปกติ' },
+  { key: 'ot_day',   label: 'OT กลางวัน' },
+  { key: 'ot_night', label: 'OT กลางคืน' },
+];
+
 /** หาแถวรอบรับที่ตรงกับช่วงเวลาในไฟล์
  *  จับด้วย **เวลา HH:MM ของช่วง** (ไม่ใช่ระยะเวลา) — ช่วงข้ามเที่ยงคืน (22:00-00:00) จึงจับได้
  *  ลำดับความเจาะจง: dock ตรง > dock ว่าง (fallback ของ ship-to นั้น) */
@@ -227,6 +235,22 @@ export function pickPullRound(rounds, { shipTo, dock, pattern = 'normal', window
   return hit.find(r => dk && String(r.dock_code || '').trim().toUpperCase() === dk)
       || hit.find(r => !String(r.dock_code || '').trim())
       || null;
+}
+
+/** ทุก pattern ที่ "มีรอบรับของช่วงเวลานี้" — เรียงตาม PULL_PATTERNS (ปกติมาก่อน)
+ *
+ *  🔴 ที่มา (feedback หน้างาน 2026-09-09): *"ทางจัดส่งเค้าเพิ่มข้อมูลช่วงโอทีของลูกค้าแล้วข้อมูลไม่ขึ้น"*
+ *     ตอนแรก `pickPullRound` ตั้ง `pattern = 'normal'` เป็นค่า default แล้ว**ไม่มีใครส่งค่าอื่นมาเลย**
+ *     ⇒ แถว ot_day/ot_night ที่ seed ไว้ 10 แถว **เป็นข้อมูลตาย ไม่มีทางถูกใช้**
+ *     และเงียบด้วย: ช่วง 14:00-16:00 มีทั้ง normal (รับ 22:00) และ ot_day (รับ 17:00)
+ *     ระบบหยิบ normal มาใช้ในวัน OT = **ผิดไป 5 ชั่วโมงโดยไม่มีอะไรฟ้อง**
+ *  ⇒ กฎ: **ทะเบียนที่มี "ประเภท" หลายแบบ ต้องมีทางเลือกประเภทบนจอเสมอ**
+ *     ห้ามปล่อยให้ default ในโค้ดเป็นทางเดียวที่เข้าถึงได้ (= seed ไปแล้วใช้ไม่ได้)
+ */
+export function pullRoundOptions(rounds, { shipTo, dock, windowStart, windowEnd } = {}) {
+  return PULL_PATTERNS
+    .map(p => ({ ...p, round: pickPullRound(rounds, { shipTo, dock, pattern: p.key, windowStart, windowEnd }) }))
+    .filter(x => x.round);
 }
 
 /** รอบส่งของไฟล์นี้ — ใช้ตารางรอบรับก่อน ถ้าไม่มีค่อยใช้ lead_min
@@ -283,6 +307,7 @@ export function parsePullFile(matrix, profile, rounds = null) {
   const windowStart = parseTs(meta.window_start, p.ts_format);
   const windowEnd = parseTs(meta.window_end, p.ts_format);
   let slot = shipSlotOf(windowEnd, p.lead_min);   // ค่าเริ่มจาก lead_min · จะทับด้วยตารางรอบรับหลังรู้ dock
+  let patternOptions = [];
   if (!windowEnd) warnings.push('ไฟล์ไม่ได้บอกช่วงเวลา (End Time) — ต้องเลือกวัน/รอบส่งเองบนจอ');
   let beRows = 0;   // ⚠️ แปลง พ.ศ.→ค.ศ. ให้ แต่ต้องบอกบนจอเสมอ (คนต้องรู้ว่าไฟล์ผิดรูปแบบ)
 
@@ -336,14 +361,19 @@ export function parsePullFile(matrix, profile, rounds = null) {
   if (docks.length > 1) warnings.push(`ไฟล์มีหลาย Dock: ${docks.join(', ')} — ใช้ตารางรอบรับของ ${docks[0]} (แก้รอบเองบนจอได้)`);
   const dock = docks[0] || null;
 
+  /* ⭐ เลือกได้หลาย pattern (ปกติ / OT กลางวัน / OT กลางคืน) — คืนตัวเลือกทั้งหมดให้จอ
+     default = ตัวแรกที่มีรอบของช่วงนี้ (ปกติมาก่อน) · คนเปลี่ยนเองได้บนจอเมื่อวันนั้นเป็นวัน OT */
   if (rounds && windowEnd) {
-    const round = pickPullRound(rounds, { shipTo: shipTos[0], dock, windowStart, windowEnd });
-    if (round) slot = shipSlotOf(windowEnd, p.lead_min, round);
+    patternOptions = pullRoundOptions(rounds, { shipTo: shipTos[0], dock, windowStart, windowEnd });
+    if (patternOptions.length) slot = shipSlotOf(windowEnd, p.lead_min, patternOptions[0].round);
     else warnings.push(`ไม่มีรอบรับของ ${shipTos[0] || '?'}${dock ? ` dock ${dock}` : ''} ช่วง ${windowStart ? timeStr(windowStart) : '?'}-${windowEnd ? timeStr(windowEnd) : '?'} ในทะเบียน — ใช้สูตร "ปลายช่วง +${p.lead_min ?? 60} นาที" เดาให้ ⚠️ ตรวจรอบก่อนยืนยัน แล้วไปเพิ่มแถวที่ ⚙️ Ship-to Config`);
+    if (patternOptions.length > 1) {
+      warnings.push(`ช่วงนี้มีรอบรับ ${patternOptions.length} แบบ (${patternOptions.map(o => o.label).join(' / ')}) — ระบบเลือก "${patternOptions[0].label}" ให้ ⚠️ ถ้าวันนั้นเป็นวัน OT ต้องเปลี่ยนเอง`);
+    }
   }
 
   return { ok: rows.length > 0, error: rows.length ? undefined : 'ไม่พบแถวข้อมูลในไฟล์',
-    meta, rows, warnings, windowStart, windowEnd, slot, dock, shipTo: shipTos[0] || null };
+    meta, rows, warnings, windowStart, windowEnd, slot, dock, patternOptions, shipTo: shipTos[0] || null };
 }
 
 /**

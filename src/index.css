@@ -624,3 +624,35 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   .modal-2col { display: grid; grid-template-columns: 1fr 1.15fr; gap: 20px; align-items: start; }
   .modal-2col > .m2c-span { grid-column: 1 / -1; }
 }
+
+/* ── 📦 กล่องรวม "ชิ้นส่วนเข้าไลน์" ใน Daily Report (2026-09-09 · คำขอ user) ─────────
+   "เรียกชิ้นส่วนกับ WIP ในไลน์ อยู่ box เดียวกันดีมั้ย มันคือเรื่องเดียวกัน" → ใช่
+   รวม 3 แผง (🔩 คิวสั่งผลิตจากสโตร์ · 📦 เรียกชิ้นส่วนจากสโตร์ · 📦 WIP ที่ไลน์)
+   ให้เป็น "กล่องเดียว" โดย **ไม่ต้องแก้ตัวคอมโพเนนต์** — ถอดกรอบ/มุม/ระยะของแผงลูกออก
+   เหลือเป็นเส้นคั่นล่างบางๆ (สีคงเดิมของแต่ละแผง = ม่วง/เทา/ฟ้า ใช้แยกท่อนได้)
+
+   ⚠️ ทำไมต้อง `!important`: สไตล์ของแผงลูกเป็น inline style (React) — กฎใน stylesheet
+      ที่มี !important เท่านั้นที่ชนะ inline ที่ไม่มี !important
+   ⚠️ `:empty` = ทั้ง 3 แผง return null (ไลน์ที่ไม่เกี่ยวกับชิ้นส่วน) → กล่องไม่มีลูกจริงใน DOM
+      ⇒ ซ่อนทั้งกล่อง **และคอลัมน์ในกริดหายไปเอง** ไม่เหลือกรอบเปล่า
+      (JSX ไม่ปล่อย text node ของ whitespace ที่มีขึ้นบรรทัดใหม่ — :empty จึง match จริง)
+      ⇒ .dr-partbox ต้องเป็นลูกตรงๆ ของ grid ห้ามมี div ครอบอีกชั้น
+   ⚠️ `overflow: clip` ไม่ใช่ `hidden` — กฎ sticky ใน CLAUDE.md (hidden = สร้าง scroll container) */
+.dr-partbox {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  overflow: clip;
+  min-width: 0;
+  align-self: start;
+  margin-bottom: 16px;
+}
+.dr-partbox:empty { display: none; }
+.dr-partbox > * {
+  margin-bottom: 0 !important;
+  border-radius: 0 !important;
+  border-style: solid !important;
+  border-width: 0 0 1px 0 !important;
+  background: transparent !important;
+}
+.dr-partbox > *:last-child { border-bottom-width: 0 !important; }

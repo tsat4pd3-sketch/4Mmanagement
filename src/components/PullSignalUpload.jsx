@@ -23,8 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt,
-} from '../utils/pullSignal';
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf} from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
 const inputSt = {
@@ -56,6 +55,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const [shipTo, setShipTo] = useState('');
   const [workDate, setWorkDate] = useState('');
   const [shipTime, setShipTime] = useState('');
+  const [pattern, setPattern] = useState('normal');     // ปกติ / OT กลางวัน / OT กลางคืน (ตารางรอบรับคนละชุด)
   const [orders, setOrders] = useState([]);
   const [dupKeys, setDupKeys] = useState(new Set());     // แถวที่เคยนำเข้าแล้ว (กันยอดทบ)
   const [products, setProducts] = useState([]);
@@ -88,7 +88,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   }, [open]);
 
   const reset = useCallback(() => {
-    setFile(null); setParsed(null); setShipTo(''); setWorkDate(''); setShipTime('');
+    setFile(null); setParsed(null); setShipTo(''); setWorkDate(''); setShipTime(''); setPattern('normal');
     setOrders([]); setDupKeys(new Set()); setProducts([]); setCtxError('');
     setDupUploads([]); setDupAck(false);
   }, []);
@@ -122,6 +122,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         setShipTo(res.shipTo || '');
         setWorkDate(res.slot?.work_date || dateStr(new Date()));
         setShipTime(res.slot?.ship_time || '');
+        setPattern(res.slot?.round?.pattern || res.patternOptions?.[0]?.key || 'normal');
       }
     } catch (e) {
       setParsed({ ok: false, error: `อ่านไฟล์ไม่สำเร็จ: ${e.message}`, rows: [], warnings: [] });
@@ -219,6 +220,22 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     [parsed, dupKeys]);
   const dupCount = (parsed?.rows?.length || 0) - fresh.length;
   const groups = useMemo(() => aggregateSignals(fresh), [fresh]);
+  /* ⭐ รอบรับตาม pattern ที่เลือกอยู่ — เปลี่ยน pattern แล้วเวลารับต้องขยับตามทันที
+     (ช่วง 14:00-16:00: ปกติรับ 22:00 · OT กลางวันรับ 17:00 — ต่างกัน 5 ชม.) */
+  const patOpts = parsed?.patternOptions || [];
+  const activeRound = useMemo(
+    () => patOpts.find(o => o.key === pattern)?.round || parsed?.slot?.round || null,
+    [patOpts, pattern, parsed]);
+
+  /* เปลี่ยน pattern = เวลารับเปลี่ยน ⇒ เติมช่องรอบส่ง/วันงานให้ใหม่
+     ⚠️ ไม่แตะเมื่อคนพิมพ์เวลาเองแล้ว — แต่เปลี่ยน pattern คือการสั่งใหม่ จึงทับได้ */
+  useEffect(() => {
+    if (!parsed?.ok || !parsed.windowEnd || !activeRound) return;
+    const sl = shipSlotOf(parsed.windowEnd, parsed.profile?.lead_min, activeRound);
+    if (!sl) return;
+    setShipTime(sl.ship_time); setWorkDate(sl.work_date);
+  }, [activeRound, parsed]);
+
   /* เที่ยวรถของไฟล์นี้ — ใบ 862 ที่เวลาส่ง "ใกล้เที่ยวนี้ที่สุด" = ใบเดียวกันกับที่ลูกค้าเรียก
      (กติกาการจับคู่ + เหตุผลอยู่ใน planOrderUpdates · ห้ามจับคู่เองในหน้า) */
   const slot = useMemo(() => ({
@@ -461,25 +478,48 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               <Field label="วันงานที่ส่ง">
                 <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={inputSt} />
               </Field>
-              <Field label={parsed.slot?.from === 'schedule'
+              <Field label={activeRound
                 ? `รอบรถลูกค้ามารับ (ตารางรอบรับ${parsed.dock ? ` · Dock ${parsed.dock}` : ''})`
                 : `รอบส่ง (⚠ เดาจากปลายช่วง +${parsed.profile?.lead_min ?? 60} นาที)`}>
                 <input type="time" value={shipTime} onChange={e => setShipTime(e.target.value)} style={inputSt} />
               </Field>
             </div>
 
-            {/* ⭐ บอกเสมอว่ารอบนี้มาจากไหน — "ตารางลูกค้า" กับ "สูตรเดา" ต้องแยกออกด้วยตา
-                (สูตรเคยเดา 13:00 ทั้งที่ตารางจริงคือ 14:00 — ไม่มีใครรู้จนเทียบใบกระดาษ) */}
-            {parsed.slot?.from === 'schedule' && parsed.slot.round && (
-              <div style={{ ...noteBox('#22c55e'), marginBottom: 8 }}>
-                🚚 ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{parsed.slot.round.period_start}-{parsed.slot.round.period_end}</b>
-                {parsed.slot.round.dock_code ? <> · Dock <b>{parsed.slot.round.dock_code}</b></> : null}
-                {' '}→ รถมารับ <b>{String(parsed.slot.round.pickup_time).slice(0, 5)}</b>
-                {parsed.slot.round.delivery_time ? <> · ถึงลูกค้า {String(parsed.slot.round.delivery_time).slice(0, 5)}</> : null}
-                {parsed.slot.round.prepare_from ? <> · เตรียมของ {String(parsed.slot.round.prepare_from).slice(0, 5)}-{String(parsed.slot.round.prepare_to || '').slice(0, 5)}</> : null}
+            {/* ⭐ เลือกรูปแบบวัน — ปกติ / OT · ลูกค้าแยกตารางรับคนละชุดจริง
+                🔴 ก่อนหน้านี้ล็อกเป็น 'normal' ในโค้ด ⇒ แถว OT ที่จัดส่งกรอกไว้ใช้ไม่ได้เลย
+                   (feedback: "เพิ่มข้อมูลช่วงโอทีของลูกค้าแล้วข้อมูลไม่ขึ้น") */}
+            {patOpts.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>รูปแบบวัน:</span>
+                {patOpts.map(o => (
+                  <button key={o.key} onClick={() => setPattern(o.key)}
+                    style={{
+                      padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                      border: `1px solid ${pattern === o.key ? 'var(--accent)' : 'var(--border)'}`,
+                      background: pattern === o.key ? 'var(--accent)' : 'var(--bg2)',
+                      color: pattern === o.key ? '#08130a' : 'var(--text2)',
+                    }}>
+                    {o.label} · รับ {String(o.round.pickup_time).slice(0, 5)}
+                  </button>
+                ))}
+                {patOpts.length > 1 && (
+                  <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠️ วัน OT ต้องกดเปลี่ยนเอง</span>
+                )}
               </div>
             )}
-            {roundsMissing && (
+
+            {/* ⭐ บอกเสมอว่ารอบนี้มาจากไหน — "ตารางลูกค้า" กับ "สูตรเดา" ต้องแยกออกด้วยตา
+                (สูตรเคยเดา 13:00 ทั้งที่ตารางจริงคือ 14:00 — ไม่มีใครรู้จนเทียบใบกระดาษ) */}
+            {activeRound && (
+              <div style={{ ...noteBox('#22c55e'), marginBottom: 8 }}>
+                🚚 ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{activeRound.period_start}-{activeRound.period_end}</b>
+                {activeRound.dock_code ? <> · Dock <b>{activeRound.dock_code}</b></> : null}
+                {' '}→ รถมารับ <b>{String(activeRound.pickup_time).slice(0, 5)}</b>
+                {activeRound.delivery_time ? <> · ถึงลูกค้า {String(activeRound.delivery_time).slice(0, 5)}</> : null}
+                {activeRound.prepare_from ? <> · เตรียมของ {String(activeRound.prepare_from).slice(0, 5)}-{String(activeRound.prepare_to || '').slice(0, 5)}</> : null}
+              </div>
+            )}
+            {roundsMissing && !activeRound && (
               <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
                 ⚠️ ยังไม่มีตารางรอบรับในระบบ — ใช้สูตร “ปลายช่วง +{parsed.profile?.lead_min ?? 60} นาที” เดารอบให้
                 <b> ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง</b> · ตั้งตารางจริงได้ที่แท็บ <b>⚙️ Ship-to Config</b>
