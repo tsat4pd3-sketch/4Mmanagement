@@ -142,7 +142,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const fetchContext = useCallback(async () => {
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
-        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id')
+        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id, plan_ship_time')
         .eq('customer', shipTo).eq('due_date', workDate),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
@@ -338,14 +338,20 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           dock_code: x.order.dock_code || x.group.dock_code || null,
           status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
           pull_batch_id: batchId, ...stamp,
-          // ⚠️ **ห้ามแก้ `ship_time`** — ยืนยันออเดอร์ไม่ได้แปลว่าเลื่อนเวลาส่ง · คงกริดของ 862 ไว้
+          /* ⭐ ย้ายเวลาส่งไปเป็น "รอบที่รถลูกค้ามารับจริง" (user 2026-09-10:
+             *"รอบ AAT ยังไม่ตรงนะ มันควรขึ้น 11 ปะ ไม่ใช่ 10 โมง"*)
+             862 = เวลาตามแผน · ตารางรอบรับ = **เวลาที่รถมาถึงจริง** ⇒ หน้างานต้องเตรียมของตามเวลาหลัง
+             (เดิมผมตั้งกฎ "ห้ามแก้ ship_time" ไว้เอง — ผิด เพราะทำให้จอบอกเวลาที่ไม่มีรถมารับ)
+             เก็บเวลาเดิมไว้ที่ `plan_ship_time` แบบเดียวกับ `plan_qty` ⇒ เทียบแผน vs จริงได้ */
+          ship_time: shipTime,
+          plan_ship_time: x.order.plan_ship_time ?? x.order.ship_time,
         };
         // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
         let res = await supabaseDR.from('customer_shipping_orders').update(patch)
           .eq('id', x.order.id).eq('status', x.order.status).select('id');
         if (res.error?.code === '42703') {                    // migration ยังไม่ apply → ยอดยังอัพได้
           res = await supabaseDR.from('customer_shipping_orders')
-            .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status })
+            .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status, ship_time: patch.ship_time })
             .eq('id', x.order.id).eq('status', x.order.status).select('id');
           if (!res.error) toast.info('ยังไม่ได้ apply migration — อัพเดทยอดให้แล้ว แต่ไม่ได้บันทึกว่ามาจาก e-SMART');
         }
