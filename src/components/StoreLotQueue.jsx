@@ -34,6 +34,12 @@ import ReadOnlyNote from './ReadOnlyNote';
 const norm = (s) => (s ?? '').toString().trim().toLowerCase();
 const fmt  = (n) => (Number(n) || 0).toLocaleString();
 
+/* ชิพสรุปเล็ก — ใช้ทั้งหัวแผง (เห็นแม้พับ) และหัวการ์ดรายพาร์ท */
+const chip = (bg, color) => ({
+  fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 20,
+  background: bg, color, border: `1px solid ${color}55`, whiteSpace: 'nowrap',
+});
+
 const LOT_META = {
   pending:   { label: '🆕 รอผลิต',    color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' },
   producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.35)' },
@@ -48,6 +54,8 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
   const [loading, setLoading] = useState(true);
   const [busy,    setBusy]    = useState(null);
   const [open,    setOpen]    = useState(true);
+  const [openMat, setOpenMat] = useState({});   // กางรายล็อตของพาร์ทไหนบ้าง
+  const [openBlocks, setOpenBlocks] = useState(false);  // แผง "ออกใบสั่งไม่ได้" — พับไว้ก่อน
 
   const canOperate = can('heijunka', 'operate', role);
 
@@ -131,6 +139,46 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
     return m;
   }, [lots]);
 
+  /* ── จัดกลุ่มตามพาร์ท (2026-09-10 · feedback user "ยุบก็ไม่เห็นอะไร เปิดก็ยาวเกิน") ──────
+     วัดจากฐานจริง: Assy GOR มี **37 ล็อตของ mat เดียวกัน ขนาดเท่ากัน สถานะเดียวกัน**
+     ต่างกันแค่ "มาจาก FG ใบไหน" ⇒ ของเดิมพิมพ์ข้อมูล*ระดับพาร์ท* (ชื่อ · วัตถุดิบ · ปั๊มไปแล้ว
+     · กล่อง ✅ 2 บรรทัด) ซ้ำ 37 รอบ ≈ 200 บรรทัดที่ไม่มีข้อมูลใหม่เลย
+     ⇒ 1 การ์ด = 1 พาร์ท · เลขระดับพาร์ทพิมพ์ครั้งเดียว · รายล็อตยุบไว้กดกางได้
+     ⚠️ ห้ามยุบข้ามไลน์/ข้ามสถานะ — คิวนี้กรองครอบครัวไลน์มาแล้ว และ pending/producing
+        แยกนับให้เห็นในหัวการ์ด (ไม่ใช่กลบให้เหลือสถานะเดียว)                                 */
+  const groups = useMemo(() => {
+    const m = new Map();   // Map รักษาลำดับที่ lots เรียงมาแล้ว (seq_no → created_at)
+    for (const l of lots) {
+      const k = l.child_mat_no || '—';
+      if (!m.has(k)) m.set(k, { mat: k, part_name: l.part_name || '', lots: [], qty: 0, oldest: l.created_at });
+      const g = m.get(k);
+      g.lots.push(l);
+      g.qty += Number(l.lot_qty) || 0;
+      if (l.created_at && l.created_at < g.oldest) g.oldest = l.created_at;
+      if (!g.part_name && l.part_name) g.part_name = l.part_name;
+    }
+    return [...m.values()].map(g => {
+      const sizes   = [...new Set(g.lots.map(l => Number(l.lot_qty) || 0))].sort((a, b) => a - b);
+      const pending = g.lots.filter(l => l.status === 'pending');
+      const rl      = g.lots.flatMap(l => rawByLot[l.id] || []);
+      return {
+        ...g, sizes, pending,
+        producing: g.lots.length - pending.length,
+        rawAll:  rl.length,
+        rawWait: rl.filter(r => r.status !== 'issued').length,
+        days: Math.floor((Date.now() - new Date(g.oldest).getTime()) / 86400000),
+      };
+    });
+  }, [lots, rawByLot]);
+
+  /* สรุปที่ต้องเห็น**แม้ตอนยุบ** — user: "ถ้า default ยุบก็ไม่เห็นอะไรเลย" */
+  const head = useMemo(() => ({
+    parts:     groups.length,
+    pending:   groups.reduce((s, g) => s + g.pending.length, 0),
+    producing: groups.reduce((s, g) => s + g.producing, 0),
+    rawWait:   groups.reduce((s, g) => s + (g.rawWait > 0 ? 1 : 0), 0),
+  }), [groups]);
+
   const takeLot = async (lot) => {
     setBusy(lot.id);
     try {
@@ -141,6 +189,30 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
       if (error) throw error;
       if (!data?.length) toast.info('ล็อตนี้ถูกอัปเดตไปแล้วจากอีกเครื่อง');
       else toast.success(`รับงาน ${lot.child_mat_no} แล้ว · สโตร์เห็นว่าไลน์เริ่มทำ`);
+      await load();
+    } catch (e) { toast.error(e.message || String(e)); }
+    setBusy(null);
+  };
+
+  /* ▶ รับงานทั้งพาร์ท — 37 ล็อตของพาร์ทเดียวกัน ไม่มีทางให้หน้างานกดทีละใบ 37 ครั้ง
+     ⚠️ ยังเป็น compare-and-swap เหมือนเดิม (`.eq('status','pending')`) + นับแถวที่เขียนจริง
+        เครื่องอื่นรับไปแล้วบางใบ = เขียนได้น้อยกว่าที่กด ต้องบอกตามจริง ห้ามขึ้นเขียวเหมา */
+  const takeGroup = async (g) => {
+    const ids = g.pending.map(l => l.id);
+    if (!ids.length) return;
+    if (!window.confirm(`รับงาน ${g.mat} ทั้งหมด ${ids.length} ล็อต (${fmt(g.qty)} ชิ้น) ?\n\nสโตร์จะเห็นว่าไลน์เริ่มทำแล้ว (ไม่แตะสต็อก)`)) return;
+    setBusy(`g:${g.mat}`);
+    try {
+      let done = 0;
+      for (let i = 0; i < ids.length; i += 100) {   // กัน URL ยาวเกินเพดาน proxy (กฎเหล็กข้อ 5)
+        const { data, error } = await supabaseDR.from('child_lot_requests')
+          .update({ status: 'producing' }).in('id', ids.slice(i, i + 100)).eq('status', 'pending').select('id');
+        if (error) throw error;
+        done += data?.length || 0;
+      }
+      if (!done)              toast.info('ล็อตชุดนี้ถูกอัปเดตไปแล้วจากอีกเครื่อง');
+      else if (done < ids.length) toast.info(`รับงานได้ ${done}/${ids.length} ล็อต — ที่เหลือเครื่องอื่นรับไปก่อนแล้ว`);
+      else                    toast.success(`รับงาน ${g.mat} ครบ ${done} ล็อตแล้ว`);
       await load();
     } catch (e) { toast.error(e.message || String(e)); }
     setBusy(null);
@@ -158,7 +230,15 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
         <div onClick={() => setOpen(o => !o)}
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#c084fc', cursor: 'pointer', userSelect: 'none' }}>
           <span style={{ fontSize: 11, color: 'var(--muted)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
-          🔩 คิวสั่งผลิตจากสโตร์ ({lots.length} ล็อต · {fmt(totalPcs)} ชิ้น)
+          🔩 คิวสั่งผลิตจากสโตร์ ({head.parts} พาร์ท · {lots.length} ล็อต · {fmt(totalPcs)} ชิ้น)
+        </div>
+        {/* ⬇ ตัวเลขหลักต้องเห็น**แม้พับ** — user 2026-09-10 "ถ้า default ยุบก็ไม่เห็นอะไรเลย"
+            พับแล้วยังตอบได้ว่า "มีงานรออยู่ไหม · ติดวัตถุดิบไหม" โดยไม่ต้องกด */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginRight: 'auto' }}>
+          {head.pending   > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {head.pending}</span>}
+          {head.producing > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {head.producing}</span>}
+          {head.rawWait   > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>🪨 รอวัตถุดิบ {head.rawWait} พาร์ท</span>}
+          {blocks.length  > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ออกใบไม่ได้ {blocks.length}</span>}
         </div>
         <button onClick={load} title="โหลดคิวใหม่"
           style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
@@ -177,50 +257,91 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
         <ReadOnlyNote show={!canOperate && lots.length > 0} role={role} compact
           what="กดรับงานล็อตจากสโตร์" permKey="heijunka:operate" />
 
-        {lots.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {lots.map(lot => {
-              const st      = LOT_META[lot.status] || LOT_META.pending;
-              const rl      = rawByLot[lot.id] || [];
-              const rWait   = rl.filter(r => r.status !== 'issued');
-              const days    = Math.floor((Date.now() - new Date(lot.created_at).getTime()) / 86400000);
-              const madeQty = made[lot.child_mat_no] || 0;
-              const ordered = orderedByMat[lot.child_mat_no] || 0;
+        {/* 📦 1 การ์ด = 1 พาร์ท (ไม่ใช่ 1 ล็อต) · เลขระดับพาร์ทพิมพ์ครั้งเดียว
+            ⚠️ maxHeight + overflowY = แผงยาวไม่ดันหน้าลงไปเรื่อยๆ (user 2026-09-10 "เปิดก็ยาวเกิน")
+               กล่องนี้มีความสูงจำกัดชัดเจน จึงใช้ auto ได้ตามกฎ overflow ใน CLAUDE.md */}
+        {groups.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: '52vh', overflowY: 'auto', paddingRight: 2 }}>
+            {groups.map(g => {
+              const st      = g.pending.length ? LOT_META.pending : LOT_META.producing;
+              const madeQty = made[g.mat] || 0;
+              const ordered = orderedByMat[g.mat] || 0;
               const enough  = ordered > 0 && madeQty >= ordered;
+              const detail  = !!openMat[g.mat];
+              const sizeTxt = g.sizes.length === 1
+                ? `${g.lots.length} ล็อต × ${fmt(g.sizes[0])} ชิ้น`
+                : `${g.lots.length} ล็อต · ${fmt(g.sizes[0])}-${fmt(g.sizes[g.sizes.length - 1])} ชิ้น/ล็อต`;
               return (
-                <div key={lot.id} style={{ padding: '9px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${st.color}` }}>
+                <div key={g.mat} style={{ padding: '9px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${st.color}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{lot.child_mat_no}</span>
-                    <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 120 }}>{lot.part_name || '—'}</span>
-                    <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{fmt(lot.lot_qty)} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>ชิ้น/ล็อต</span></span>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20, color: st.color, background: st.bg, border: `1px solid ${st.border}` }}>{st.label}</span>
-                    {canOperate && lot.status === 'pending' && (
-                      <button onClick={() => takeLot(lot)} disabled={busy === lot.id}
+                    <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{g.mat}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 120 }}>{g.part_name || '—'}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{fmt(g.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>ชิ้นรวม</span></span>
+                    {g.pending.length > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {g.pending.length}</span>}
+                    {g.producing     > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {g.producing}</span>}
+                    {canOperate && g.pending.length > 0 && (
+                      <button onClick={() => takeGroup(g)} disabled={busy === `g:${g.mat}`}
+                        title={`เปลี่ยนสถานะ ${g.pending.length} ล็อตเป็น "กำลังผลิต" — ไม่แตะสต็อก`}
                         style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 7, padding: '5px 13px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
-                        {busy === lot.id ? '...' : '▶ รับงาน'}
+                        {busy === `g:${g.mat}` ? '...' : `▶ รับงาน ${g.pending.length > 1 ? `ทั้งหมด (${g.pending.length})` : ''}`}
                       </button>
                     )}
                   </div>
 
+                  {/* บรรทัดสรุป — ทั้งหมดเป็นค่า**ระดับพาร์ท** จึงพิมพ์ครั้งเดียว ไม่ใช่ทุกล็อต */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 5, fontSize: 11, color: 'var(--muted)' }}>
-                    {/* สถานะวัตถุดิบ — สิ่งแรกที่ไลน์ต้องรู้ก่อนเริ่มปั๊ม */}
-                    {rl.length === 0 ? (
-                      <span>🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
-                    ) : rWait.length === 0 ? (
-                      <span style={{ color: '#22c55e', fontWeight: 700 }}>🪨 เหล็ก/วัตถุดิบ จ่ายครบแล้ว ({rl.length} รายการ)</span>
+                    <span style={{ fontWeight: 700, color: 'var(--text2)' }}>{sizeTxt}</span>
+                    {g.rawAll === 0 ? (
+                      <span>· 🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
+                    ) : g.rawWait === 0 ? (
+                      <span style={{ color: '#22c55e', fontWeight: 700 }}>· 🪨 วัตถุดิบจ่ายครบแล้ว ({g.rawAll} รายการ)</span>
                     ) : (
-                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>🪨 รอสโตร์จ่ายวัตถุดิบ {rWait.length}/{rl.length} รายการ</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>· 🪨 รอสโตร์จ่ายวัตถุดิบ {g.rawWait}/{g.rawAll} รายการ</span>
                     )}
-                    <span>· ค้างมา {days} วัน</span>
-                    {lot.source_prod_no && <span>· มาจาก FG {lot.source_prod_no}</span>}
+                    <span>· ค้างมา {g.days} วัน</span>
                     {/* ⚠️ ตัวช่วยตัดสินใจ ไม่ใช่การผูกใบ — เขียนกำกับให้ชัดเสมอ */}
-                    <span>· ปั๊ม {lot.child_mat_no} ไปแล้ว <b style={{ color: 'var(--text2)' }}>{fmt(madeQty)}</b> ชิ้น (นับรวมทุกล็อตที่ค้าง {fmt(ordered)})</span>
+                    <span>· ปั๊มไปแล้ว <b style={{ color: 'var(--text2)' }}>{fmt(madeQty)}</b> / สั่งค้าง {fmt(ordered)} ชิ้น</span>
+                    <button onClick={() => setOpenMat(o => ({ ...o, [g.mat]: !o[g.mat] }))}
+                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      {detail ? '▾ ซ่อนรายล็อต' : `▸ รายล็อต (${g.lots.length})`}
+                    </button>
                   </div>
 
+                  {/* เดิมเป็นกล่องข้อความ 2 บรรทัดต่อ**ทุกล็อต** — ย่อเป็นชิพบรรทัดเดียว
+                      เหตุผลเต็มย้ายไป title (hover/แตะค้าง) = ไม่ได้ซ่อนเหตุผล แค่ไม่กินจอ */}
                   {enough && (
-                    <div style={{ marginTop: 5, fontSize: 11, color: '#22c55e', lineHeight: 1.55 }}>
-                      ✅ ยอดที่ปั๊มไปแล้วครบตามที่สโตร์สั่ง — ถ้าล็อตนี้ทำจบจริง ให้ไปกดปิดล็อตที่บอร์ดสโตร์
-                      (ระบบไม่ปิดให้เอง เพราะยังไม่รู้ว่าใบผลิตใบไหนทำเพื่อล็อตไหน)
+                    <div style={{ marginTop: 5 }}>
+                      <span style={chip('rgba(34,197,94,0.12)', '#22c55e')}
+                        title="ยอดที่ปั๊มไปแล้วครบตามที่สโตร์สั่ง — ถ้าล็อตนี้ทำจบจริง ให้ไปกดปิดล็อตที่บอร์ดสโตร์ (Heijunka)
+ระบบไม่ปิดให้เอง เพราะยังไม่รู้ว่าใบผลิตใบไหนทำเพื่อล็อตไหน — เดาแล้วปิดผิดใบย้อนยาก">
+                        ✅ ปั๊มครบยอดที่สั่งแล้ว — ปิดล็อตที่บอร์ดสโตร์
+                      </span>
+                    </div>
+                  )}
+
+                  {/* รายล็อต — ต่างกันแค่ "มาจาก FG ใบไหน" จึงยุบไว้ กดกางเมื่ออยากสอบกลับ */}
+                  {detail && (
+                    <div style={{ marginTop: 7, paddingTop: 6, borderTop: '1px solid var(--border)', display: 'grid',
+                                  gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 250px), 1fr))', gap: 4 }}>
+                      {g.lots.map(lot => {
+                        const ls = LOT_META[lot.status] || LOT_META.pending;
+                        return (
+                          <div key={lot.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', minWidth: 0 }}>
+                            <span style={{ color: ls.color, fontWeight: 700 }}>{lot.status === 'pending' ? '🆕' : '🔧'}</span>
+                            <span style={{ fontWeight: 700, color: 'var(--text2)' }}>{fmt(lot.lot_qty)} ชิ้น</span>
+                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              title={lot.source_prod_no || ''}>
+                              {lot.source_prod_no ? `· FG ${lot.source_prod_no}` : '· ไม่ระบุ FG ต้นทาง'}
+                            </span>
+                            {canOperate && lot.status === 'pending' && (
+                              <button onClick={() => takeLot(lot)} disabled={busy === lot.id}
+                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>
+                                {busy === lot.id ? '...' : '▶'}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -232,9 +353,14 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
         {/* ความต้องการที่ค้างเพราะยังไม่ตั้งขนาดล็อต — ออกใบสั่งไม่ได้ ห้ามปล่อยเงียบ */}
         {blocks.length > 0 && (
           <div style={{ marginTop: lots.length ? 12 : 0, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '10px 12px' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
+            {/* พับได้ แต่ **หัวข้อบอกปัญหา + จำนวน อยู่ตลอด** — ปัญหานี้ห้ามหายไปจากจอ
+                (ยาว 8 แถว + คำอธิบาย 3 บรรทัด บังคิวงานจริงที่อยู่ข้างบน) */}
+            <div onClick={() => setOpenBlocks(o => !o)}
+              style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginBottom: openBlocks ? 4 : 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, transform: openBlocks ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
               ⚠️ สโตร์ต้องการของจากไลน์นี้ แต่ระบบออกใบสั่งไม่ได้ ({blocks.length} พาร์ท)
             </div>
+            {openBlocks && (<>
             <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 6 }}>
               ยังไม่ได้ตั้ง <b>ขนาดล็อต (lot size)</b> ของพาร์ทเหล่านี้ ความต้องการจึงสะสมไว้เฉยๆ ไม่กลายเป็นใบสั่ง —
               ตั้งค่าที่ <b>Product Master → 🎴 Kanban Std</b> แล้วใบสั่งจะออกเองรอบถัดไป
@@ -252,16 +378,17 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
               ))}
               {blocks.length > 8 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>… อีก {blocks.length - 8} พาร์ท (ดูทั้งหมดที่ 🔗 สายธารความต้องการ)</div>}
             </div>
+            </>)}
           </div>
         )}
 
         {/* ทำไมไม่มีปุ่ม "ผลิตเสร็จ" ที่นี่ — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล */}
         {lots.length > 0 && (
-          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
-            ℹ️ ที่นี่กด <b>รับงาน</b> ได้อย่างเดียว — การ <b>ปิดล็อต</b> ทำที่{' '}
-            <Link to="/heijunka" style={{ color: '#c084fc', fontWeight: 700 }}>บอร์ดสโตร์ (Heijunka)</Link>{' '}
-            ที่เดียว เพราะการปิดล็อตเขียนสต็อกจริง และหน้านี้ก็เขียนสต็อกอยู่แล้วตอนสแกนปิดใบ
-            — กดทั้งสองที่สำหรับของก้อนเดียวกัน สต็อกจะโผล่ซ้ำสองที่
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)' }}
+            title="การปิดล็อตเขียนสต็อกจริง และหน้า Daily Report ก็เขียนสต็อกอยู่แล้วตอนสแกนปิดใบ
+กดทั้งสองที่สำหรับของก้อนเดียวกัน = สต็อกโผล่ซ้ำสองที่คนละชื่อ">
+            ℹ️ ที่นี่กด <b>รับงาน</b> ได้อย่างเดียว · <b>ปิดล็อต</b> ทำที่{' '}
+            <Link to="/heijunka" style={{ color: '#c084fc', fontWeight: 700 }}>บอร์ดสโตร์ (Heijunka)</Link> ที่เดียว
           </div>
         )}
       </>)}
