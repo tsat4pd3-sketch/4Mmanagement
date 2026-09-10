@@ -4,7 +4,7 @@ import {
   FALLBACK_PROFILE, pickProfile, findHeaderRow, colIndexMap, readMeta,
   parseTs, dateStr, timeStr, shipSlotOf, joinPartNo, parsePullFile,
   signalKey, aggregateSignals, planOrderUpdates, LOCKED_STATUSES,
-  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound, pullRoundOptions, PULL_PATTERNS, detectDateOrder,
+  toCeYear, looksBuddhist, findDuplicateUploads, orderShipAt, pickPullRound, pullRoundOptions, PULL_PATTERNS, detectDateOrder, fileNameStamp,
 } from '../pullSignal.js';
 
 /* ── ไฟล์จริงที่ user ส่งมา 2026-09-08 (Detailed_SMART.csv รอบ 12:00–14:00) ──────────────
@@ -663,11 +663,20 @@ test('หัวไฟล์เป็น ISO = ไม้บรรทัด — �
   assert.ok(!r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'มีไม้บรรทัดแล้วไม่ต้องเดา');
 });
 
-test('🔴 ช่วงเวลาห่างจากวันนี้เกิน 3 วัน ต้องเตือนดัง (ด่านสุดท้ายกันวันที่เพี้ยนเงียบ)', () => {
+test('🔴🔴 ช่วงเวลาเป็นอนาคต = ห้ามนำเข้าเด็ดขาด (user: อัพวันนี้เป็นของเดือน 10 ไม่ได้)', () => {
   const now = new Date(2026, 8, 10, 8, 0);
   const r = parsePullFile(SLASHFILE('2026-10-09T06:00:00', '2026-10-09T08:00:00', '2026-10-09T06:03:00'),
     FALLBACK_PROFILE, null, { now });
-  assert.ok(r.warnings.some(w => w.includes('ห่างจากวันนี้')), 'ไฟล์ที่เพิ่งโหลดชี้ไปอีกเดือน = ต้องฟ้อง');
+  assert.equal(r.ok, false, 'ต้องบล็อก ไม่ใช่แค่เตือน');
+  assert.ok(r.error.includes('อนาคต'));
+});
+
+test('ช่วงเวลาเก่ากว่าวันนี้เกิน 3 วัน = เตือน แต่ยังนำเข้าได้ (ตามเก็บย้อนหลัง)', () => {
+  const now = new Date(2026, 8, 20, 8, 0);
+  const r = parsePullFile(SLASHFILE('2026-09-10T06:00:00', '2026-09-10T08:00:00', '2026-09-10T06:03:00'),
+    FALLBACK_PROFILE, null, { now });
+  assert.equal(r.ok, true);
+  assert.ok(r.warnings.some(w => w.includes('เก่ากว่าวันนี้')));
 });
 
 test('ไฟล์ปกติ (ช่วงใกล้วันนี้) ต้องไม่มีคำเตือนวันที่มากวน', () => {
@@ -684,4 +693,29 @@ test('🔴 ทิศกลับกัน (เคสจริง 10 ก.ย.): �
   assert.equal(dateStr(r.windowEnd), '2026-09-10', 'ช่วงเวลาต้องครอบแถวที่ดึงได้');
   assert.equal(r.slot.work_date, '2026-09-10');
   assert.ok(!r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'มีไม้บรรทัดแล้วไม่ต้องเดา');
+});
+
+/* ══ ⭐ ไม้บรรทัดเวลา = timestamp ที่พอร์ทัลประทับในชื่อไฟล์ (user: "ทวนสอบได้มั้ย") ═════ */
+
+test('fileNameStamp — อ่านเวลาออกรายงานจากชื่อไฟล์', () => {
+  const d = fileNameStamp('Detailed SMART - 2026-09-10T080411.100.csv');
+  assert.equal(dateStr(d), '2026-09-10');
+  assert.equal(timeStr(d), '08:04');
+  assert.equal(fileNameStamp('ไฟล์อะไรไม่รู้.csv'), null);
+  assert.equal(fileNameStamp(null), null);
+});
+
+test('🔴 เคสจริงเต็มรูป: ชื่อไฟล์บอก 10 ก.ย. 08:04 → ช่วง 10/09 ต้องอ่านเป็น 10 ก.ย.', () => {
+  const r = parsePullFile(SLASHFILE('10/09/2026 06:00:00', '10/09/2026 08:00:00', '10/09/2026 06:03:00'),
+    { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null,
+    { now: new Date(2027, 0, 1), fileName: 'Detailed SMART - 2026-09-10T080411.100.csv' });
+  assert.equal(r.ok, true);
+  assert.equal(r.slot.work_date, '2026-09-10', 'ต้องเชื่อ timestamp ในชื่อไฟล์ ไม่ใช่นาฬิกาเครื่อง');
+});
+
+test('🔴 ไฟล์ที่ช่วงเวลาเลยเวลาออกรายงาน = บล็อก แม้นาฬิกาเครื่องจะดูปกติ', () => {
+  const r = parsePullFile(SLASHFILE('2026-10-09T06:00:00', '2026-10-09T08:00:00', '2026-10-09T06:03:00'),
+    FALLBACK_PROFILE, null,
+    { now: new Date(2026, 11, 1), fileName: 'Detailed SMART - 2026-09-10T080411.100.csv' });
+  assert.equal(r.ok, false, 'เทียบกับเวลาออกไฟล์ ไม่ใช่เวลาเครื่อง');
 });

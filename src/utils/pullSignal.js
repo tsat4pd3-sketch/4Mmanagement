@@ -174,6 +174,19 @@ export const looksBuddhist = (v) => {
       แล้ว **ขึ้นคำเตือนบนจอเสมอ** ว่าเดามา ห้ามเงียบ */
 const SLASH_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/;
 
+/** ⭐ เวลาที่โหลดไฟล์ — อ่านจาก **ชื่อไฟล์** ที่พอร์ทัลประทับมาเป็น ISO
+ *  `Detailed SMART - 2026-09-10T080411.100.csv` → 2026-09-10 08:04:11
+ *
+ *  user 2026-09-10: *"ใช่ time stamp ของการอัพ ทวนสอบได้มั้ย"* — ได้ และแม่นกว่าเวลาเครื่อง
+ *  เพราะเป็น **เวลาที่ลูกค้าออกรายงานจริง** (ไม่ขึ้นกับนาฬิกาเครื่องที่อัพ และไม่กำกวมเพราะเป็น ISO)
+ *  ⇒ ใช้เป็นไม้บรรทัดตัดสินวันที่ · ไม่มีในชื่อไฟล์ค่อยตกไปใช้เวลาปัจจุบัน */
+export function fileNameStamp(name) {
+  const m = String(name ?? '').match(/(\d{4})-(\d{2})-(\d{2})[T_ ](\d{2})[:.]?(\d{2})[:.]?(\d{2})?/);
+  if (!m) return null;
+  const d = new Date(toCeYear(m[1]), +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  return isNaN(d.getTime()) ? null : d;
+}
+
 /** พิสูจน์ลำดับวัน/เดือนจากตัวอย่างวันที่ทั้งไฟล์
  *  @returns {{order: 'DMY'|'MDY'|null, reason: 'proof'|'conflict'|'ambiguous'|'none'}} */
 export function detectDateOrder(samples) {
@@ -320,8 +333,10 @@ const num = (v) => {
  * @returns {{ok: boolean, error?: string, meta: object, rows: Array<object>, warnings: string[],
  *            windowStart: Date|null, windowEnd: Date|null, slot: object|null, shipTo: string|null}}
  */
-export function parsePullFile(matrix, profile, rounds = null, { now = new Date() } = {}) {
+export function parsePullFile(matrix, profile, rounds = null, { now = new Date(), fileName = null } = {}) {
   const p = profile || FALLBACK_PROFILE;
+  /* ไม้บรรทัดเวลา = เวลาที่พอร์ทัลออกไฟล์ (จากชื่อไฟล์) · ไม่มีค่อยใช้เวลาเครื่อง */
+  const ref = fileNameStamp(fileName) || now;
   const warnings = [];
   const headerIdx = findHeaderRow(matrix, p);
   if (headerIdx < 0) {
@@ -374,28 +389,54 @@ export function parsePullFile(matrix, profile, rounds = null, { now = new Date()
     } else {
       /* ไม่มีไม้บรรทัด → เลือกการอ่านที่ให้ช่วงเวลา "ใกล้ตอนนี้ที่สุด"
          (ไฟล์ pull ถูกโหลดห่างจากช่วงของมันไม่กี่ ชม. · ห่างเป็นเดือน = อ่านกลับด้านแน่นอน) */
-      const ref = (meta.window_end || meta.window_start);
-      const gap = (f) => { const d = parseTs(ref, f); return d ? Math.abs(d.getTime() - now.getTime()) : Infinity; };
+      const refStr = (meta.window_end || meta.window_start);
+      const gap = (f) => { const d = parseTs(refStr, f); return d ? Math.abs(d.getTime() - ref.getTime()) : Infinity; };
       const gm = gap('MDY'), gd = gap('DMY');
       if (Number.isFinite(gm) || Number.isFinite(gd)) tsFmt = gd < gm ? 'DMY' : 'MDY';
       warnings.push(
-        `⚠️ วันที่ในไฟล์อ่านได้ 2 ทาง (${String(ref ?? '').trim()}) — ${det.reason === 'conflict' ? 'ไฟล์ใช้ลำดับปนกัน' : 'ทุกเลข ≤ 12 จึงพิสูจน์ไม่ได้'} · `
+        `⚠️ วันที่ในไฟล์อ่านได้ 2 ทาง (${String(refStr ?? '').trim()}) — ${det.reason === 'conflict' ? 'ไฟล์ใช้ลำดับปนกัน' : 'ทุกเลข ≤ 12 จึงพิสูจน์ไม่ได้'} · `
         + `ระบบเลือกแบบ ${tsFmt === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} เพราะใกล้เวลาปัจจุบันที่สุด — **ตรวจวันงาน/รอบส่งก่อนกดยืนยัน**`);
     }
   } else if (det.order && p.ts_format && det.order !== p.ts_format) {
     warnings.push(`ℹ️ ไฟล์นี้เรียงวันที่แบบ ${det.order === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} (ต่างจากที่ตั้งไว้ในโปรไฟล์ ${p.ts_format}) — ระบบใช้ตามไฟล์ ไม่ใช่ตามค่าที่ตั้ง`);
   }
 
-  const windowStart = parseTs(meta.window_start, tsFmt);
-  const windowEnd = parseTs(meta.window_end, tsFmt);
+  let windowStart = parseTs(meta.window_start, tsFmt);
+  let windowEnd = parseTs(meta.window_end, tsFmt);
 
-  /* 🚨 ด่านสุดท้าย: ช่วงเวลาต้องอยู่ใกล้ "ตอนนี้" — ไฟล์ที่โหลดวันนี้จะชี้ไปอีกเดือนไม่ได้
-     (ถ้าไม่มีด่านนี้ วันที่เพี้ยนจะเงียบสนิทจนไปโผล่ตอนสต็อกถูกตัดซ้ำ) */
-  if (windowEnd) {
-    const days = Math.round((windowEnd.getTime() - now.getTime()) / 86400000);
-    if (Math.abs(days) > 3) {
-      warnings.push(`🔴 ช่วงเวลาในไฟล์ห่างจากวันนี้ ${days > 0 ? '+' : ''}${days} วัน (${dateStr(windowEnd)}) — ผิดปกติสำหรับไฟล์ที่เพิ่งโหลด **ตรวจวันงานให้แน่ก่อนยืนยัน**`);
+  /* ═══ 🚨 กฎเหล็กของ e-SMART: **ช่วงเวลาที่ดึงเป็นอนาคตไม่ได้** (user 2026-09-10) ═══════
+     *"e-SMART อัพวันนี้ มันคือวันนี้ไง เพราะเค้าจะอัพ real time · ยังของเมื่อเช้า
+       อัพวันนี้ มันเป็นของเดือน 10 ไม่ได้"*
+     ไฟล์คือ "รายงานสิ่งที่ลูกค้าดึงไป**แล้ว**" ⇒ ปลายช่วงต้องไม่เกินเวลาที่อัพ
+     ⇒ ใช้เป็น **ตัวตัดสินขั้นสุดท้าย** ที่ override ทุกวิธีข้างบน แล้วถ้ายังไม่ผ่าน = **ไม่ให้นำเข้า**
+     (บทเรียน: เตือนอย่างเดียวไม่พอ — คนกดยืนยันเร็วกว่าอ่าน แล้ววันที่ผิดลามถึงสต็อกทันที) */
+  const FUTURE_GRACE_MS = 2 * 3600e3;      // เผื่อนาฬิกาคลาด/โหลดก่อนปิดช่วงนิดหน่อย
+  const isFuture = (d) => d && d.getTime() > ref.getTime() + FUTURE_GRACE_MS;
+
+  if (isFuture(windowEnd)) {
+    // ลองอ่านอีกด้าน — เคสจริง 10/09 อ่านผิดด้านได้อนาคต อ่านถูกด้านได้วันนี้พอดี
+    const alt = tsFmt === 'MDY' ? 'DMY' : 'MDY';
+    const altEnd = parseTs(meta.window_end, alt);
+    if (altEnd && !isFuture(altEnd)) {
+      tsFmt = alt;
+      windowStart = parseTs(meta.window_start, alt);
+      windowEnd = altEnd;
+      warnings.push(`ℹ️ วันที่ในไฟล์อ่านแบบเดิมแล้วตกอยู่หลังเวลาที่ออกไฟล์ (${dateStr(ref)} ${timeStr(ref)}) — ระบบสลับเป็น ${alt === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} ให้ (ช่วงที่ดึงเป็นอนาคตไม่ได้)`);
     }
+  }
+
+  if (isFuture(windowEnd)) {
+    /* 🔴 อ่านทางไหนก็ยังเป็นอนาคต = ไฟล์/นาฬิกาผิดจริง ⇒ **หยุด ไม่ให้นำเข้า** */
+    return { ok: false,
+      error: `ช่วงเวลาในไฟล์เป็นอนาคต (${dateStr(windowEnd)} ${timeStr(windowEnd)}) หลังเวลาที่ออกไฟล์ (${dateStr(ref)} ${timeStr(ref)}) — e-SMART คือรายงานสิ่งที่ลูกค้าดึงไปแล้ว จึงเป็นอนาคตไม่ได้`
+        + ` · ตรวจว่าโหลดไฟล์ถูกตัวไหม และวันที่บนเครื่องถูกต้องไหม`,
+      meta, rows: [], warnings, windowStart, windowEnd, slot: null, dock: null, patternOptions: [], shipTo: null };
+  }
+
+  /* เก่าเกินไปยังนำเข้าได้ (ตามเก็บย้อนหลัง) แต่ต้องเตือนให้เห็น */
+  if (windowEnd) {
+    const days = Math.round((ref.getTime() - windowEnd.getTime()) / 86400000);
+    if (days > 3) warnings.push(`🔴 ช่วงเวลาในไฟล์เก่ากว่าวันนี้ ${days} วัน (${dateStr(windowEnd)}) — ผิดปกติสำหรับไฟล์ที่เพิ่งโหลด **ตรวจวันงานให้แน่ก่อนยืนยัน**`);
   }
   let slot = shipSlotOf(windowEnd, p.lead_min);   // ค่าเริ่มจาก lead_min · จะทับด้วยตารางรอบรับหลังรู้ dock
   let patternOptions = [];

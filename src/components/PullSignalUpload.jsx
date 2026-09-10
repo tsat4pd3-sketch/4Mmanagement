@@ -120,7 +120,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       // raw:true + defval:'' → ค่าคงเป็นข้อความ ไม่ให้ SheetJS เดา MDY/DMY แทนเรา (pullSignal.parseTs คุมเอง)
       const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
       const { profile, guessed } = pickProfile(matrix, profiles || [FALLBACK_PROFILE]);
-      const res = parsePullFile(matrix, profile, await ensureRounds());
+      // ⭐ ส่งชื่อไฟล์ไปด้วย — พอร์ทัลประทับเวลาที่ออกรายงานไว้ในชื่อ ใช้เป็นไม้บรรทัดตัดสินวันที่
+      const res = parsePullFile(matrix, profile, await ensureRounds(), { fileName: f.name });
       setParsed({ ...res, profile, guessed, rowsInFile: matrix.length });
       if (res.ok) {
         setShipTo(res.shipTo || '');
