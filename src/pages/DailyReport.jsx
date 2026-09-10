@@ -306,6 +306,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   const [showOpen, setShowOpen] = useState(false);
+  const [openingSession, setOpeningSession] = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
   const [lineFlow, setLineFlow] = useState({});   // line_name → { flow_mode, parallel_stations } (best-effort — ไลน์เครื่องขนาน)
   const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
@@ -633,11 +634,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         prevSessions.forEach((sx, i) => { sessRank[sx.id] = i; });
         /* ใบล่าสุดจริงๆ ของแต่ละ prod_no = กะใหม่สุดก่อน ถ้ากะเดียวกันค่อยดู opened_at
            (เรียงมาแล้ว desc → ตัวแรกที่เจอในกะ rank ต่ำสุดคือใบล่าสุด) */
+        /* ⭐ `imported` ห้ามเป็น "ใบล่าสุด" ที่ตัดสินว่างานจบ (2026-09-10 · feedback หน้างาน
+             "กะกลางคืนส่งยอดต่อกะ เข้านี้ 25 ตัว · ตอนเข้าเปิดกะมาไม่โชว์ขึ้น")
+           imported แปลว่า "ใบนี้ถูกกะอื่นรับไปแล้ว" = **มีใบต่อจากมันเสมอ** ไม่ใช่จุดจบของงาน
+           (ต่างจาก confirmed/cancelled ที่จบจริง) · เคสจริง 09/09 Assy LWR: กะดึกถูกเปิดซ้ำ 2 กะ
+           ใบ 25/35 ถูกรับเข้ากะซ้ำ ⇒ ต้นทางกลายเป็น imported อยู่ในกะที่ created_at ใหม่กว่า
+           ⇒ ชนะ rank แล้วถูกตีว่า "จบแล้ว" ทับใบ carry_over 10 ชิ้นตัวจริงที่อยู่ในกะซ้ำ
+           ⇒ กะเช้าวันถัดมาไม่เห็นยอดค้าง 10 ชิ้นเลย
+           แก้: เรียงด้วย (ไม่ใช่ imported ก่อน, แล้วค่อยดูความใหม่ของกะ) — ใบต่อของ imported
+           อยู่ในกะที่ใหม่กว่าเสมอหรือไม่ก็กะปัจจุบัน (ซึ่งถูกกรองด้วย currentProdNos อยู่แล้ว) */
         const latest = {};
         (carried || []).forEach(o => {
           const cur = latest[o.prod_no];
           const r = sessRank[o.session_id] ?? 99;
-          if (!cur || r < cur.rank) latest[o.prod_no] = { row: o, rank: r };
+          const sup = o.status === 'imported' ? 1 : 0;   // 0 = ใบที่ยังพูดแทนงานนี้ได้ · 1 = ถูกรับไปแล้ว
+          if (!cur || sup < cur.sup || (sup === cur.sup && r < cur.rank)) latest[o.prod_no] = { row: o, rank: r, sup };
         });
         const currentProdNos = new Set((data || []).map(o => o.prod_no));
         const deduped = Object.values(latest).map(x => x.row).filter(o => {
@@ -714,6 +725,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
+    /* กดปุ่มซ้ำระหว่างรอ = เปิดกะซ้ำ — ด่าน `dup` ข้างล่างเป็น read-then-insert (TOCTOU)
+       กันไม่ได้ถ้าสองคำขอวิ่งพร้อมกัน · วัดจริง 10/09: Line 61 ได้ 2 กะ ห่างกัน 2.9 มิลลิวินาที
+       ด่านจริงที่กันได้แน่คือ unique index ฝั่ง DB (20260910_production_sessions_no_dup_open.sql) */
+    if (openingSession) return;
 
     // กันเปิดกะซ้ำ: ถ้าไลน์/กะ/วันที่นี้มี session ที่ยังไม่ปิดอยู่แล้ว ห้ามเปิดใหม่ทับ
     // (สาเหตุที่บอร์ด Heijunka/Dashboard มีแถว "Live" ค้างซ้ำกันจนล้น)
@@ -729,6 +744,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
 
+    setOpeningSession(true);
+    try {
     const { data: { user } } = await supabase.auth.getUser();
     const lineSection = lineMap[openForm.line_name]?.section || null;
     const { data, error } = await supabaseDR.from('production_sessions').insert({
@@ -742,7 +759,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       opened_by_uid:  user?.id,
       status:         'open',
     }).select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)').single();
-    if (error) { toast.error('เปิดกะไม่สำเร็จ: ' + error.message); return; }
+    if (error) {
+      // 23505 = ชน unique index กันกะซ้ำฝั่ง DB — แปลว่ามีคน/อีกแท็บเปิดกะนี้ไปแล้วเสี้ยววินาทีก่อน
+      toast.error(error.code === '23505'
+        ? `ไลน์นี้มีกะ${openForm.shift === 'day' ? 'เช้า' : 'ดึก'}เปิดอยู่แล้ว — กดรีเฟรชแล้วเลือกกะเดิมได้เลย`
+        : 'เปิดกะไม่สำเร็จ: ' + error.message);
+      return;
+    }
     toast.success('เปิดกะสำเร็จ');
 
     // ── รับ Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) มาเปิดต่ออัตโนมัติ ──
@@ -786,6 +809,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setDtLogs([]);
     setProdOrders([]);
     loadDT(data.id);
+    } finally { setOpeningSession(false); }
   };
 
   // Build datetime string from session work_date + HH:MM time, handling overnight (night shift)
@@ -3682,8 +3706,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowOpen(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleOpenSession} disabled={!openForm.line_name}
-                  style={{ ...saveBtnStyle, opacity: !openForm.line_name ? 0.5 : 1 }}>เปิดกะ</button>
+                <button onClick={handleOpenSession} disabled={!openForm.line_name || openingSession}
+                  style={{ ...saveBtnStyle, opacity: (!openForm.line_name || openingSession) ? 0.5 : 1 }}>
+                  {openingSession ? '⏳ กำลังเปิดกะ...' : 'เปิดกะ'}</button>
               </div>
             </div>
           </div>
