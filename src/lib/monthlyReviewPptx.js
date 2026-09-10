@@ -1501,18 +1501,27 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
        (ไลน์ที่ยังไม่ตั้งเป้าใช้ค่ามาตรฐาน 80.2 — หมายเหตุท้ายสไลด์บอกไว้ ห้ามให้เข้าใจว่าทีมตั้งเอง) */
     const tgLine = lines.map(l => targetOf(l.name).oee);
     const nDefault = lines.filter(l => targetOf(l.name).isDefault).length;
+    /* 🔴 กฎเหล็ก combo chart: `dataLabelPosition: 'outEnd'` **ห้ามอยู่ใน option ที่ใช้ร่วม**
+       OOXML ให้ `outEnd` เฉพาะ bar/column — ถ้าหลุดไปอยู่ใน `<c:lineChart>` PowerPoint จะขึ้น
+       "found a problem with content … click Repair" **เปิดไฟล์ไม่ได้ทั้งเด็ค** (เกิดจริง 2026-09-10)
+       ⇒ ป้ายค่าของแท่งต้องใส่ใน `options` ของ entry แท่งเท่านั้น · เส้นเป้าปิดป้ายค่าไปเลย
+       (ค่าเป้าอ่านจาก legend + หมายเหตุใต้กราฟอยู่แล้ว ไม่ต้องมีป้ายทุกจุด) */
     s.addChart([
-      { type: pres.ChartType.bar, data: [{ name: 'OEE %', labels, values }] },
-      { type: pres.ChartType.line, data: [{ name: 'Target %', labels, values: tgLine }] },
+      { type: pres.ChartType.bar, data: [{ name: 'OEE %', labels, values }], options: {
+        barDir: 'col', barGapWidthPct: nL > 18 ? 30 : 60,
+        showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green,
+        dataLabelFontFace: FONT, dataLabelFontSize: lblSize, dataLabelFormatCode: '0.0"%"',
+      } },
+      { type: pres.ChartType.line, data: [{ name: 'Target %', labels, values: tgLine }], options: {
+        showValue: false, lineSize: 2, lineDataSymbolSize: 5,
+      } },
     ], {
-      x: 0.5, y: 2.2, w: 12.33, h: 4.05, barDir: 'col', barGapWidthPct: nL > 18 ? 30 : 60,
+      x: 0.5, y: 2.2, w: 12.33, h: 4.05,
       chartColors: [C.barOrange, C.green],
-      showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: lblSize, dataLabelFormatCode: '0.0"%"',
       catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: lblSize,
       ...(nL > 18 ? { catAxisLabelRotate: 45 } : {}),
-      valAxisHidden: true, valAxisMaxVal: 110, valAxisMinVal: 0,
+      secondaryValAxis: false, valAxisHidden: true, valAxisMaxVal: 110, valAxisMinVal: 0,
       valGridLine: { style: 'none' }, catGridLine: { style: 'none' },
-      lineSize: 2, lineDataSymbolSize: 5,
       showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 10,
       showTitle: false,
     });

@@ -898,3 +898,47 @@ user ถามว่า *"เป็น operation รึป่าว ของ su
 >   และจุดเรียกไม่ได้อ่านค่า `hidden` ⇒ 4 ส่วนงาน × 2 แถว จะ **ซ่อนแถวเงียบ**
 > - ตรวจแล้วด้วย `harness.mjs` + `audit.py`: 2 โหมด × ช่วง 1/3/6/12 เดือน = **0 layout problem · 0 text overflow**
 >   (mock ใน harness จงใจให้กลุ่มสุดท้าย**ไม่ตั้งเป้า** + อีกกลุ่ม**เว้น P** เพื่อรันเส้นทางค่ามาตรฐาน/หมายเหตุจริง)
+
+> ### 🔴🔴 กฎเหล็ก .pptx — `dataLabelPosition: 'outEnd'` ห้ามอยู่ใน option ที่ใช้ร่วมของ combo chart
+> **เกิดจริง 2026-09-10 · ผู้ใช้เปิดไฟล์ไม่ได้ทั้งเด็ค** — PowerPoint ขึ้น
+> *"PowerPoint found a problem with content … click Repair"*
+>
+> **สาเหตุ:** `addChart([{bar},{line}], sharedOpts)` — pptxgenjs เอา `sharedOpts` ไปใส่**ทุก entry**
+> ⇒ เขียน `<c:dLblPos val="outEnd"/>` ลงใน `<c:lineChart>` ซึ่ง **OOXML ไม่อนุญาต**
+> (ECMA-376 ST_DLblPos: line/scatter ได้แค่ `ctr/l/r/t/b` · `outEnd` เป็นของ bar/column/pie เท่านั้น)
+> **ผิดกราฟเดียว = ทั้งไฟล์เปิดไม่ได้** ไม่ใช่แค่กราฟนั้นเพี้ยน
+>
+> ✅ วิธีที่ถูก: ใส่ option ป้ายค่าไว้ใน `options` ของ **entry แท่ง** เท่านั้น · entry เส้นตั้ง `showValue: false`
+> ```js
+> s.addChart([
+>   { type: pres.ChartType.bar,  data: [...], options: { barDir:'col', showValue:true, dataLabelPosition:'outEnd', … } },
+>   { type: pres.ChartType.line, data: [...], options: { showValue:false, lineSize:2 } },
+> ], { /* เหลือเฉพาะ option ที่ปลอดภัยกับทุกชนิด: แกน · สี · legend */ });
+> ```
+>
+> **⚠️ บทเรียนเรื่องวิธีตรวจ (สำคัญกว่าตัวบั๊ก):** `audit.py` + `textfit.mjs` รายงาน
+> **0 problem · 0 overflow** ทั้งที่ไฟล์เปิดไม่ได้ — เพราะทั้งคู่ตรวจแค่ **เรขาคณิตกับการตัดคำ**
+> ไม่เคยตรวจว่า **XML ถูกสเปกไหม** · build/lint/เทสก็ไม่จับ (ไม่มีอะไร throw)
+> ⇒ เพิ่ม **`node audit/pptxvalid.mjs <dir ที่ unzip .pptx>`** เป็นด่านใหม่ — ตรวจ
+> ตำแหน่งป้ายค่าตามชนิดกราฟ · ค่า `undefined/NaN` ในแคชตัวเลข · สีที่ไม่ใช่ hex 6 หลัก
+> (สีเพี้ยนเกิดเมื่อ `chartColors` สั้นกว่าจำนวน series) · พิสูจน์แล้วว่าจับเคสนี้ได้จริง
+>
+> **ขั้นตอนตรวจเด็คก่อน merge (ครบชุด):**
+> `harness.mjs` → `unzip` → `audit.py` (เรขาคณิต) + `textfit.mjs` (ตัดคำ) + **`pptxvalid.mjs` (OOXML)**
+> ทั้ง 2 โหมด × ช่วง 1/3/6/12 เดือน
+
+#### 🎯 เป้าตั้งที่ระดับ "กลุ่มไลน์" ไม่ใช่รายไลน์ — ไลน์ในกลุ่มเดียวกันเป้าเท่ากัน
+
+`oee_targets.group_name` = **ไลน์แม่ (`parent_line_name`) หรือไลน์เดี่ยว** ⇒ ไลน์ลูกทุกตัวใช้เป้าของแม่
+สถานะจริง ณ 2026-09-10 (11 กลุ่ม):
+
+| เป้า OEE | กลุ่ม | A / P / Q |
+|--:|---|---|
+| 85.0 | GOR · HYDROFORM · LINE APRON ASSY · LWR BAR | 90 / 94.5 / 99.9 |
+| 85.0 | LINE ASSY FORD UP375 · LINE ASSY TSRA | 89.6 / 95 / 99.9 |
+| 80.9 | Rework - PD1 | **A,P ยังไม่ตั้ง** / 99.9 |
+| 75.0 | LINE A/B/C/D (เครื่องปั๊ม) | 83.4 / **P ยังไม่ตั้ง** / 99.9 |
+
+⇒ บนสไลด์ `OEE ACTUAL BY LINE` เส้นเป้าจึง**เป็นขั้นบันได ไม่ใช่เส้นตรงเดียว** (เช่น ไลน์ปั๊ม 75 · ไลน์ assy 85)
+· กลุ่มที่ไม่มีแถวเลย = ค่ามาตรฐาน 80.2 และสไลด์เขียนบอกจำนวนไลน์ที่ใช้ค่ามาตรฐานไว้ท้ายกราฟ
+· **5 กลุ่มยังไม่ได้ตั้ง P** (และ Rework-PD1 ไม่ได้ตั้งทั้ง A และ P) — ตั้งเพิ่มได้ที่ปุ่ม 🎯 ใน `/oee-analytics`
