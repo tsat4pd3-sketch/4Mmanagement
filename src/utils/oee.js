@@ -431,6 +431,42 @@ export function normOeeTarget(row) {
 }
 
 /**
+ * เป้ารวมของ "หลายกลุ่มไลน์" (section / ทั้ง scope) — **ไม่เก็บใน DB คำนวณสดเสมอ**
+ * rows = แถวดิบ `oee_targets` ของแต่ละกลุ่ม (ใส่ `null`/`undefined` ได้สำหรับกลุ่มที่ยังไม่ตั้งเป้า)
+ *
+ * ⚠️ กติกา 2 ข้อที่พลาดกันบ่อย (ต้นฉบับ: `targetOf` ใน OEEAnalytics — ย้ายมาที่นี่ 2026-09-10
+ *    เพื่อให้จอ OEE กับเด็ค .pptx ใช้เลขชุดเดียวกัน · util OEE มีไฟล์เดียว ห้ามแตกเพิ่ม):
+ *  1. **A/P/Q เฉลี่ยเฉพาะกลุ่มที่ "ตั้งค่านั้นไว้จริง"** — กลุ่มที่เว้นว่างไม่ถูกนับเข้าค่าเฉลี่ย
+ *     (ไม่งั้นค่ามาตรฐาน 90 จะดึงค่าเฉลี่ยของทีมที่ตั้งเป้าสูงกว่าลงมา)
+ *  2. **OEE = เฉลี่ยของ (A×P×Q ต่อกลุ่ม)** ไม่ใช่ `a*p*q` ของค่าเฉลี่ย — ต่างกันจริงเมื่อกลุ่มตั้งเป้าไม่ครบ
+ *     ⇒ `out.oee !== targetOeeOf(out)` เป็นเรื่องปกติ **ห้าม "แก้" ให้เท่ากัน**
+ *
+ * คืน { a, p, q, oee, configured, missing }
+ *  · `configured` = มีอย่างน้อย 1 กลุ่มที่ตั้งเป้าไว้ (false = ใช้ค่ามาตรฐานล้วน — จอต้องบอกผู้อ่าน)
+ *  · `missing`    = ช่องที่ **ไม่มีกลุ่มไหนตั้งเลย** จึงใช้ค่ามาตรฐาน (เช่น ['p'])
+ */
+export function avgOeeTarget(rows = []) {
+  const isBlank = (v) => v == null || v === '' || Number.isNaN(Number(v));
+  const effs = (rows.length ? rows : [null]).map(r => ({
+    a: isBlank(r?.target_a) ? null : Number(r.target_a),
+    p: isBlank(r?.target_p) ? null : Number(r.target_p),
+    q: isBlank(r?.target_q) ? null : Number(r.target_q),
+  }));
+  const out = { configured: effs.some(e => e.a != null || e.p != null || e.q != null), missing: [] };
+  for (const k of ['a', 'p', 'q']) {
+    const vals = effs.map(e => e[k]).filter(v => v != null);
+    if (vals.length) out[k] = Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10;
+    else { out[k] = DEFAULT_OEE_TARGET[k]; out.missing.push(k); }
+  }
+  // ⚠️ ห้ามปัดเศษ OEE ของแต่ละกลุ่มก่อนเฉลี่ย (อย่าเรียก targetOeeOf ตรงนี้) — ปัดครั้งเดียวตอนท้าย
+  //    เคยต่างกัน 0.1 จุดกับเลขบนจอ /oee-analytics ตอนย้ายสูตรมาที่นี่ (2026-09-10)
+  const D = DEFAULT_OEE_TARGET;
+  const oees = effs.map(e => ((e.a ?? D.a) * (e.p ?? D.p) * (e.q ?? D.q)) / 10000);
+  out.oee = Math.round((oees.reduce((s, v) => s + v, 0) / oees.length) * 10) / 10;
+  return out;
+}
+
+/**
  * เฉลี่ย OEE ข้ามหลายเดือน (ไตรมาส/ทั้งปี) — **ถ่วงน้ำหนักด้วยเวลารับภาระ ห้าม mean-of-percentages**
  * rows = [{ oee, loadHr, nSess }] · ข้ามเดือนที่ไม่มีกะปิด (nSess = 0) และเดือนที่ OEE เป็น null
  * ไม่มีน้ำหนักเลย (loadHr หายทุกแถว) → ถอยไปเฉลี่ยธรรมดา ดีกว่าคืน null ทั้งที่มีข้อมูล

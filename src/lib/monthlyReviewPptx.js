@@ -50,7 +50,7 @@
 import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, weightedOeeOf, weekOfMonth,
+import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, avgOeeTarget, weightedOeeOf, weekOfMonth,
          buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -210,6 +210,28 @@ function dtOfSessions(ss, dtIdx) {
    sections = [{ code, lines: [lineName...] }] — ไลน์ leaf ใน scope ที่เลือกแล้ว
    (hierarchy picker ใน modal เลือกเจาะถึงระดับไลน์ได้ — lines คือผลการติ๊ก)
 ═══════════════════════════════════════════════════════════════════ */
+/* ── เป้า A/P/Q รายกลุ่มไลน์ — **โหลดทั้ง 2 โหมด** (focus OEE ก็ต้องมีเส้นเป้า · 2026-09-10) ──
+   เดิมโหลดอยู่ใน buildFullExtras ⇒ โหมด focus OEE ไม่มีเป้าเลยสักสไลด์ (user แจ้ง "ขาด target อะ ใน slide")
+   คืน { lineGroup, byGroup, failed } · best-effort: ล้มเหลว = ใช้ค่ามาตรฐาน + ตั้งธง failed
+   ให้สไลด์เขียนบอกผู้อ่านว่าเป็นค่ามาตรฐาน **ห้ามเงียบ** */
+async function loadOeeTargets({ allLineNames }) {
+  const out = { lineGroup: {}, byGroup: {}, failed: false, warns: [] };
+  try {
+    const { data, error } = await supabase.from('production_lines').select('name, parent_line_name');
+    if (error) throw error;
+    (data || []).forEach(l => { out.lineGroup[l.name] = l.parent_line_name || l.name; });
+  } catch (e) { out.warns.push('อ่านผังไลน์แม่-ลูกไม่ได้ — เส้นเป้าใช้ค่ามาตรฐาน'); }
+  try {
+    const groups = [...new Set(allLineNames.map(ln => out.lineGroup[ln] || ln))];
+    const { data, error } = await supabase.from('oee_targets')
+      .select('group_name, target_a, target_p, target_q').in('group_name', groups);
+    if (error) throw error;
+    (data || []).forEach(r => { out.byGroup[r.group_name] = normOeeTarget(r); out.rawByGroup = { ...(out.rawByGroup || {}), [r.group_name]: r }; });
+  } catch (e) { out.failed = true; out.warns.push('อ่านเป้า OEE ไม่ได้ — ใช้ค่ามาตรฐาน 90/90/99'); }
+  out.rawByGroup = out.rawByGroup || {};
+  return out;
+}
+
 /* ── ข้อมูลเสริมของโหมด "full data" (เจาะรายไลน์แบบเด็ควิศวกร · 2026-09-08) ─────────
    3 ก้อนที่เด็คของวิศวกรมีแต่โหมด focus OEE ไม่มี — ข้อมูลอยู่ในระบบครบแล้วทั้งหมด ไม่ต้องกรอกเพิ่ม:
      1. เป้า A/P/Q รายกลุ่มไลน์ (`oee_targets` Main) → เส้น Target บนกราฟ OEE 12 เดือน
@@ -217,24 +239,11 @@ function dtOfSessions(ss, dtIdx) {
      3. ผังกำลังคน (`line_layouts` + `workstations` + `employee_home_positions` Main) → สไลด์ MAN POWER
    ทุกก้อน best-effort: ล้มเหลว = คืน warn แล้วเด็คยังออก (สไลด์นั้นบอกว่าโหลดไม่ได้ ห้ามเงียบ)
 ──────────────────────────────────────────────────────────────────────────────── */
-async function buildFullExtras({ monthKey, sections, allLineNames, matchNames }) {
+async function buildFullExtras({ monthKey, sections, allLineNames, matchNames, targets }) {
   const year = monthKey.split('-')[0];
-  const out = { year, targets: {}, lineGroup: {}, bins: null, manpower: {}, warns: [] };
-
-  // ── ไลน์ → กลุ่ม (ไลน์แม่) : เป้า OEE ตั้งที่ระดับกลุ่ม ไม่ใช่ไลน์ลูก ──
-  try {
-    const { data, error } = await supabase.from('production_lines').select('name, parent_line_name');
-    if (error) throw error;
-    (data || []).forEach(l => { out.lineGroup[l.name] = l.parent_line_name || l.name; });
-  } catch (e) { out.warns.push('อ่านผังไลน์แม่-ลูกไม่ได้ — เส้นเป้าใช้ค่ามาตรฐาน'); }
-
-  // ── เป้า A/P/Q รายกลุ่ม (null = ค่ามาตรฐาน 90/90/99 → OEE 80.2 ตามกฎโปรเจค) ──
-  try {
-    const groups = [...new Set(allLineNames.map(ln => out.lineGroup[ln] || ln))];
-    const { data, error } = await supabase.from('oee_targets').select('group_name, target_a, target_p, target_q').in('group_name', groups);
-    if (error) throw error;
-    (data || []).forEach(r => { out.targets[r.group_name] = normOeeTarget(r); });
-  } catch (e) { out.targetsFailed = true; out.warns.push('อ่านเป้า OEE ไม่ได้ — ใช้ค่ามาตรฐาน 90/90/99'); }
+  // เป้า A/P/Q โหลดที่ `loadOeeTargets` (ใช้ร่วมทั้ง 2 โหมด) — สไลด์รายไลน์อ่านต่อจากตรงนี้ได้เหมือนเดิม
+  const out = { year, targets: targets.byGroup, lineGroup: targets.lineGroup, targetsFailed: targets.failed,
+                bins: null, manpower: {}, warns: [] };
 
   // ── ถังเหลือง/ถังแดง ทั้งปี → 4 สถานะต่อเดือน ──
   //    ค้างซ่อม = ยังไม่มี repair_date · ซ่อมเสร็จภายในวัน = repair_date = work_date · ซ่อมย้อนหลัง = repair_date > work_date
@@ -923,8 +932,9 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // 💸 Lean + มูลค่า — ใช้ทั้ง 2 โหมด (คำสั่ง user: "ควรจะใช้โชว์ได้ทั้งสองไฟล์")
   const lean = await buildLeanCost({ sections, sessions, downtimes, defects, orders, monthKey });
 
-  return { monthKey, from, to, depts, dataWarn, fixSlim, trend, mode, lean,
-    full: fullMode ? await buildFullExtras({ monthKey, sections, allLineNames, matchNames }) : null };
+  const targets = await loadOeeTargets({ allLineNames });
+  return { monthKey, from, to, depts, dataWarn, fixSlim, trend, mode, lean, targets,
+    full: fullMode ? await buildFullExtras({ monthKey, sections, allLineNames, matchNames, targets }) : null };
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1350,13 +1360,21 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
   const YM = Array.from({ length: 12 }, (_, i) => `${YEAR}-${String(i + 1).padStart(2, '0')}`); // ทั้งปีเสมอ
   const YM_LABELS = MONTH_EN.map(m => m.slice(0, 3).charAt(0) + m.slice(1, 3).toLowerCase());
   const lineRows = (ln) => data.trend?.byLine?.[ln] || [];
-  const groupOf = (ln) => data.full?.lineGroup?.[ln] || ln;
-  const targetOf = (ln) => data.full?.targets?.[groupOf(ln)] || normOeeTarget(null);
+  const groupOf = (ln) => data.targets?.lineGroup?.[ln] || ln;
+  const targetOf = (ln) => data.targets?.byGroup?.[groupOf(ln)] || normOeeTarget(null);
+  /* เป้าของ "หลายไลน์รวมกัน" (ส่วนงาน / ทั้งเด็ค) — ระดับ section ไม่เก็บใน DB คำนวณสดเสมอ
+     ใช้ `avgOeeTarget` ตัวเดียวกับหน้า /oee-analytics เป๊ะ (util OEE มีไฟล์เดียว)
+     ⇒ เลขเป้าบนเด็คกับบนจอต้องตรงกันเสมอ ห้ามเขียนสูตรเฉลี่ยเองตรงนี้ */
+  const targetOfLines = (lineNames) => avgOeeTarget(
+    [...new Set((lineNames || []).map(groupOf))].map(g => data.targets?.rawByGroup?.[g] || null)
+  );
+  const deptTarget = (d) => targetOfLines((d.lines || []).map(l => l.name));
+  const allTarget = () => targetOfLines(data.depts.flatMap(d => (d.lines || []).map(l => l.name)));
   /* ที่มาของเป้าต้องอ่านออกบนสไลด์ — 3 กรณีคนละเรื่องกัน ห้ามเขียนรวมเป็นอันเดียว */
   const targetNote = (tg) => {
-    if (tg.isDefault) return data.full?.targetsFailed
+    if (tg.isDefault || tg.configured === false) return data.targets?.failed
       ? ' · ⚠ อ่านเป้าจากระบบไม่สำเร็จ ใช้ค่ามาตรฐาน'
-      : ' · ค่ามาตรฐาน ยังไม่ได้ตั้งเป้ากลุ่มนี้';
+      : ' · ค่ามาตรฐาน ยังไม่ได้ตั้งเป้า';
     if (tg.missing?.length) return ` · ${tg.missing.map(k => k.toUpperCase()).join('/')} ยังไม่ได้ตั้ง ใช้ค่ามาตรฐานแทน`;
     return '';
   };
@@ -1450,10 +1468,19 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
       const apq = `A ${pct(d.a)} | P ${pct(d.p)} | Q ${pct(d.q)}`;
       s.addText(apq, { x: 0.6 + i * statW, y: 3.02, w: statW - 0.15, h: 0.3, fontFace: FONT, fontSize: fitOneLine(apq, statW - 0.2, 10.5, 6.5), color: C.green, align: 'center', valign: 'top', margin: 0 });
     });
+    /* คอลัมน์ Target (Gap) — ห้องประชุมต้องเห็น "ถึงเป้าไหม" ไม่ใช่แค่ตัวเลขลอยๆ (user แจ้ง 2026-09-10)
+       ⚠️ เพิ่มเป็น "คอลัมน์" ไม่ใช่ "แถวเพิ่ม" ตั้งใจ — แถวเพิ่มจะเป็น 2 เท่า แล้วตารางนี้
+          (bottom 5.6) ซ่อนแถวเงียบเมื่อมี 4 ส่วนงาน เพราะจุดนี้ไม่ได้อ่านค่า `hidden` */
     const t3 = tsgTable(s,
-      ['Dept / Line', 'OEE', 'A', 'P', 'Q', 'Output', 'PPM', 'DT Hr'],
-      data.depts.map(d => [`${d.code} Overall`, pct(d.oee), pct(d.a), pct(d.p), pct(d.q), num(d.output), num(d.ppm), d.dtHr]),
-      { y: 3.42, rowH: 0.4, bottom: 5.6 });
+      ['Dept / Line', 'OEE', 'Target (Gap)', 'A', 'P', 'Q', 'Output', 'PPM', 'DT Hr'],
+      data.depts.map(d => {
+        const tg = deptTarget(d);
+        const gap = d.oee == null ? null : Math.round((d.oee - tg.oee) * 10) / 10;
+        return [`${d.code} Overall`, pct(d.oee),
+          `${pct(tg.oee)}${gap == null ? '' : ` (${gap > 0 ? '+' : ''}${gap})`}`,
+          pct(d.a), pct(d.p), pct(d.q), num(d.output), num(d.ppm), d.dtHr];
+      }),
+      { y: 3.42, rowH: 0.4, bottom: 5.6, colW: [2.0, 1.1, 1.6, 1.1, 1.1, 1.1, 1.5, 1.3, 1.5] });
     const yBul = bullets(s, execStory(data.depts, data.trend), 0.6, t3.bottom + 0.14, 12.1, 12.5, SAFE_BOTTOM - 0.26);
     noteLine(s, OEE_BASE_NOTE, Math.max(yBul + 0.04, SAFE_BOTTOM - 0.24), { size: 9 });
     footer(s);
@@ -1470,16 +1497,28 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     // ป้ายแกน: 13-18 ไลน์ = 8pt · เกิน 18 ไลน์ = เอียง 45° ไม่งั้นชื่อไลน์ทับกันจนอ่านไม่ออก
     const nL = lines.length;
     const lblSize = nL > 18 ? 7 : nL > 12 ? 8 : nL > 8 ? 9.5 : 11;
-    s.addChart(pres.ChartType.bar, [{ name: 'OEE %', labels, values }], {
-      x: 0.5, y: 2.2, w: 12.33, h: 4.3, barDir: 'col', barGapWidthPct: nL > 18 ? 30 : 60,
-      chartColors: [C.barOrange],
+    /* เส้นเป้า "ต่อไลน์" — แต่ละไลน์มีเป้าของกลุ่มตัวเอง จึงไม่ใช่เส้นตรงเส้นเดียว
+       (ไลน์ที่ยังไม่ตั้งเป้าใช้ค่ามาตรฐาน 80.2 — หมายเหตุท้ายสไลด์บอกไว้ ห้ามให้เข้าใจว่าทีมตั้งเอง) */
+    const tgLine = lines.map(l => targetOf(l.name).oee);
+    const nDefault = lines.filter(l => targetOf(l.name).isDefault).length;
+    s.addChart([
+      { type: pres.ChartType.bar, data: [{ name: 'OEE %', labels, values }] },
+      { type: pres.ChartType.line, data: [{ name: 'Target %', labels, values: tgLine }] },
+    ], {
+      x: 0.5, y: 2.2, w: 12.33, h: 4.05, barDir: 'col', barGapWidthPct: nL > 18 ? 30 : 60,
+      chartColors: [C.barOrange, C.green],
       showValue: true, dataLabelPosition: 'outEnd', dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: lblSize, dataLabelFormatCode: '0.0"%"',
       catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: lblSize,
       ...(nL > 18 ? { catAxisLabelRotate: 45 } : {}),
       valAxisHidden: true, valAxisMaxVal: 110, valAxisMinVal: 0,
       valGridLine: { style: 'none' }, catGridLine: { style: 'none' },
-      showLegend: false, showTitle: false,
+      lineSize: 2, lineDataSymbolSize: 5,
+      showLegend: true, legendPos: 'b', legendColor: C.green, legendFontFace: FONT, legendFontSize: 10,
+      showTitle: false,
     });
+    noteLine(s, `แท่ง = OEE จริง · เส้น = เป้าของกลุ่มไลน์นั้น (A×P×Q ตั้งที่ปุ่ม 🎯 ใน /oee-analytics)`
+      + (nDefault ? ` · ${nDefault} ไลน์ยังไม่ได้ตั้งเป้า ใช้ค่ามาตรฐาน ${pct(normOeeTarget(null).oee)}` : '')
+      + (data.targets?.failed ? ' · ⚠ อ่านเป้าจากระบบไม่สำเร็จ' : ''), 6.34, { size: 9 });
     footer(s);
   }
 
@@ -1500,10 +1539,13 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
         return (r && r.nSess > 0 && r.oee != null) ? r1(r.oee) : null;
       }),
     }));
+    /* เส้นเป้ารวม (เฉลี่ยกลุ่มไลน์ทั้งเด็ค) — ดูเทรนด์แล้วต้องรู้ทันทีว่ายังต่ำกว่าเป้าอยู่ไหม */
+    const tgAll = allTarget();
+    seriesOee.push({ name: `Target ${pct(tgAll.oee)}`, labels, values: mks.map(() => tgAll.oee) });
     // ส่วนงานเยอะ = ตารางด้านล่างต้องการที่มากขึ้น → กราฟเตี้ยลง (ยังอ่านทิศทางได้)
     const chartH = data.depts.length >= 3 ? 2.05 : 2.5;
     s.addChart(pres.ChartType.line, seriesOee, {
-      x: 0.5, y: 1.62, w: 12.33, h: chartH, chartColors: palette.slice(0, seriesOee.length),
+      x: 0.5, y: 1.62, w: 12.33, h: chartH, chartColors: [...palette, C.green].slice(0, seriesOee.length),
       lineSize: 3, lineDataSymbolSize: 8, showValue: true,
       dataLabelColor: C.green, dataLabelFontFace: FONT, dataLabelFontSize: 9, dataLabelFormatCode: '0.0"%"',
       catAxisLabelColor: C.green, catAxisLabelFontFace: FONT, catAxisLabelFontSize: 11,
@@ -1563,18 +1605,27 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
         และหมายเหตุที่วางด้วยเลข 13×0.38 ตายตัวก็ไปทับ footer (user: "รายละเอียดยังขาด")
      ⇒ แบ่งหน้าแทนการตัด — ทุกไลน์ที่ user ติ๊กต้องอยู่ในเด็คเสมอ */
   {
+    /* คอลัมน์ Target ต่อแถว (user แจ้ง 2026-09-10 "ขาด target อะ ใน slide")
+       แถวส่วนงาน = เฉลี่ยเป้าของกลุ่มไลน์ในส่วนงาน · แถวไลน์ = เป้าของกลุ่มไลน์นั้น
+       ค่าที่ต่อท้าย = Gap (จริง − เป้า) เพราะ "ต่ำกว่าเป้าเท่าไหร่" คือสิ่งที่ห้องประชุมถามต่อทันที */
+    const tgCell = (actual, tg) => {
+      const gap = actual == null ? null : Math.round((actual - tg.oee) * 10) / 10;
+      return `${pct(tg.oee)}${gap == null ? '' : ` (${gap > 0 ? '+' : ''}${gap})`}`;
+    };
     const rows = [];
     data.depts.forEach(d => {
-      rows.push([`${d.code} Overall`, pct(d.oee), pct(d.a), pct(d.p), pct(d.q), `OEE constrained by ${lowestDriver(d)}`, lowestDriver(d) === 'A' ? 'Recover downtime' : 'Cycle stability']);
+      const tgD = deptTarget(d);
+      rows.push([`${d.code} Overall`, pct(d.oee), tgCell(d.oee, tgD), pct(d.a), pct(d.p), pct(d.q), `OEE constrained by ${lowestDriver(d)}`, lowestDriver(d) === 'A' ? 'Recover downtime' : 'Cycle stability']);
       d.lines.forEach(l => {
-        rows.push([l.name, pct(l.oee), pct(l.a), pct(l.p), pct(l.q), `${lineReadout(l)} focus`, l.dtGroups[0] ? `${l.dtGroups[0].name}` : 'Hold standard']);
+        const tgL = targetOf(l.name);
+        rows.push([l.name, pct(l.oee), tgCell(l.oee, tgL), pct(l.a), pct(l.p), pct(l.q), `${lineReadout(l)} focus`, l.dtGroups[0] ? `${l.dtGroups[0].name}` : 'Hold standard']);
       });
     });
-    const HEAD5 = ['Area', 'OEE', 'Availability', 'Performance', 'Quality', 'Primary readout', 'Focus'];
+    const HEAD5 = ['Area', 'OEE', 'Target (Gap)', 'Availability', 'Performance', 'Quality', 'Primary readout', 'Focus'];
     // headRowH ต้องตรงกับที่ใช้ตอนนับหน้าล่วงหน้าเป๊ะ ไม่งั้นเลข "2/3" บนหัวสไลด์เพี้ยนจากจำนวนหน้าจริง
     // กันที่ NOTE_H ไว้ให้บรรทัด "→ อีก N แถวอยู่หน้าถัดไป" ตั้งแต่ตอนวางตาราง
     // (ไม่งั้นตารางเต็มพอดีแล้วหมายเหตุไม่มีที่ — เคสที่ต้องบอกที่สุด)
-    const OPT5 = { y: 1.85, rowH: 0.38, headRowH: 0.38, colW: [2.1, 1.2, 1.4, 1.5, 1.2, 2.7, 2.2], fontSize: 11, bottom: SAFE_BOTTOM - NOTE_H };
+    const OPT5 = { y: 1.85, rowH: 0.38, headRowH: 0.38, colW: [1.95, 1.05, 1.5, 1.35, 1.45, 1.1, 2.2, 1.7], fontSize: 11, bottom: SAFE_BOTTOM - NOTE_H };
     let rest = rows, page = 0;
     const MAX_PAGE = 12;
     const nPage = (() => { // ลองวางล่วงหน้าเพื่อรู้จำนวนหน้าก่อน (หัวสไลด์ต้องบอก "2/3" ตั้งแต่หน้าแรก)
@@ -1614,10 +1665,20 @@ export async function generateMonthlyReviewPptx(data, { logoDataUrl, photos, pre
     // Overview
     {
       const s = newSlide();
-      head(s, `${d.code} REVIEW : OVERALL OEE / A / P / Q`, `${d.code} OVERVIEW`);
-      [['OEE', d.oee], ['A', d.a], ['P', d.p], ['Q', d.q]].forEach(([lb, v], i) => {
+      const tgD = deptTarget(d);
+      head(s, `${d.code} REVIEW : OVERALL OEE / A / P / Q`,
+        `${d.code} OVERVIEW — เป้า OEE ${pct(tgD.oee)} = A ${tgD.a}% × P ${tgD.p}% × Q ${tgD.q}%${targetNote(tgD)}`);
+      [['OEE', d.oee, tgD.oee], ['A', d.a, tgD.a], ['P', d.p, tgD.p], ['Q', d.q, tgD.q]].forEach(([lb, v, tv], i) => {
         stat(s, 0.6 + i * 3.05, 1.7, pct(v), lb === 'OEE' ? `Overall ${d.code}` : lb === 'A' ? 'Availability' : lb === 'P' ? 'Performance' : 'Quality', 2.9,
           deltaChip(d.code, lb === 'OEE' ? 'oee' : lb.toLowerCase()));
+        /* บรรทัดเป้าใต้การ์ด — ตัวเลขจริงลอยๆ ตอบไม่ได้ว่า "ผ่านไหม"
+           ⚠️ ต้องอยู่ **ใต้ deltaChip ของ stat() (จบที่ 2.80)** และไม่ชนตารางไลน์ (เริ่ม 2.95)
+              → ช่องว่างจริงมีแค่ 0.15" · เคยวางที่ 2.62 แล้วทับ chip 0.18" (harness จับได้) */
+        const gap = v == null ? null : Math.round((v - tv) * 10) / 10;
+        const tTxt = `เป้า ${pct(tv)}${gap == null ? '' : ` · ${gap >= 0 ? '▲' : '▼'} ${Math.abs(gap)}`}`;
+        s.addText(tTxt, { x: 0.6 + i * 3.05, y: 2.80, w: 2.9, h: 0.15, fontFace: FONT,
+          fontSize: fitOneLine(tTxt, 2.85, 8.5, 6.5), color: gap == null ? C.green : (gap >= 0 ? C.green : C.orange),
+          align: 'center', valign: 'top', margin: 0 });
       });
       /* ⚠️ เดิมตัดไลน์เหลือ 6 แถว **แบบเงียบ** (slice(0,6) ไม่มีหมายเหตุ) — ส่วนงานที่มี 11 ไลน์
          หายไป 5 ไลน์โดยไม่มีใครรู้ (user: "รายละเอียดยังขาด") · ตอนนี้ให้ตารางกินพื้นที่เท่าที่มี
