@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf} from '../utils/pullSignal';
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp} from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
 const inputSt = {
@@ -142,7 +142,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const fetchContext = useCallback(async () => {
     const [ordRes, sigRes] = await Promise.all([
       supabaseDR.from('customer_shipping_orders')
-        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id')
+        .select('id, customer, mat_no, customer_part_no, part_name, qty, plan_qty, due_date, ship_time, status, dock_code, source, order_no, pull_batch_id, plan_ship_time')
         .eq('customer', shipTo).eq('due_date', workDate),
       (async () => {
         const times = (parsed?.rows || []).map(r => r.pulled_at.getTime());
@@ -257,13 +257,18 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return t;
   }, [plan]);
   const willWrite = tally.update + tally.create;
+  /* 🔴 "ยอดตรงกับ 862 อยู่แล้ว" ก็ต้องบันทึกการนำเข้า (user 2026-09-10: *"วันนี้มันวันที่ 10/9/26 ทำไมมันขึ้น 9/9"*)
+     ประวัติ order เข้าระบบ = หลักฐานว่า **ได้รับสัญญาณดึงจากลูกค้าแล้ว** ไม่ใช่แค่ "มีอะไรเปลี่ยน"
+     เดิมกดยืนยันไม่ได้เลยถ้าไม่มีใบต้องแก้ ⇒ ไฟล์ที่ยอดตรงพอดี **หายไปจากประวัติทั้งใบ** */
+  const freshCount = (parsed?.rows?.length || 0) - dupCount;
+  const canImport = willWrite > 0 || freshCount > 0;
   const dateRisk = (parsed?.warnings || []).filter(w => w.includes('อ่านได้ 2 ทาง') || w.includes('ห่างจากวันนี้'));
   const blockedByDup = dupUploads.length > 0 && !dupAck;
   const blockedByDate = dateRisk.length > 0 && !dateAck;
 
   /* ── ยืนยัน — เขียนจริง ───────────────────────────────────────────────────────────── */
   const apply = async () => {
-    if (!willWrite) { toast.error('ไม่มีรายการที่ต้องเขียน'); return; }
+    if (!canImport) { toast.error('ไม่มีรายการที่ต้องบันทึก'); return; }
     setSaving(true);
 
     /* 🔴 re-plan จาก "ของจริง ณ วินาทีนี้" ก่อนเขียนเสมอ — plan บนจอถูกคำนวณตอนเปิดไฟล์
@@ -274,12 +279,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
     const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex), slot);
     const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
-    if (!liveWrite) {
+    setOrders(live.orders); setDupKeys(live.dupKeys);
+    const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
+    /* ไม่มีทั้งใบให้แก้ และไม่มีแถวใหม่ให้บันทึก = ไฟล์นี้เข้าไปแล้วจริงๆ ⇒ ไม่ต้องทำอะไร
+       แต่ถ้ามีแถวใหม่ (แม้ยอดตรงกับ 862 พอดี) ต้องบันทึกร่องรอยการนำเข้าเสมอ */
+    if (!liveWrite && !fresh.length) {
       toast.info('ไฟล์นี้ถูกนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดทเพิ่ม');
       setSaving(false); reset(); onClose?.(); return;
     }
-    setOrders(live.orders); setDupKeys(live.dupKeys);
-    const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
 
     const now = new Date().toISOString();
     const stamp = { confirm_source: SOURCE, confirmed_at: now };
@@ -338,14 +345,20 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           dock_code: x.order.dock_code || x.group.dock_code || null,
           status: x.order.status === 'pending' ? 'confirmed' : x.order.status,
           pull_batch_id: batchId, ...stamp,
-          // ⚠️ **ห้ามแก้ `ship_time`** — ยืนยันออเดอร์ไม่ได้แปลว่าเลื่อนเวลาส่ง · คงกริดของ 862 ไว้
+          /* ⭐ ย้ายเวลาส่งไปเป็น "รอบที่รถลูกค้ามารับจริง" (user 2026-09-10:
+             *"รอบ AAT ยังไม่ตรงนะ มันควรขึ้น 11 ปะ ไม่ใช่ 10 โมง"*)
+             862 = เวลาตามแผน · ตารางรอบรับ = **เวลาที่รถมาถึงจริง** ⇒ หน้างานต้องเตรียมของตามเวลาหลัง
+             (เดิมผมตั้งกฎ "ห้ามแก้ ship_time" ไว้เอง — ผิด เพราะทำให้จอบอกเวลาที่ไม่มีรถมารับ)
+             เก็บเวลาเดิมไว้ที่ `plan_ship_time` แบบเดียวกับ `plan_qty` ⇒ เทียบแผน vs จริงได้ */
+          ship_time: shipTime,
+          plan_ship_time: x.order.plan_ship_time ?? x.order.ship_time,
         };
         // compare-and-swap กับสถานะที่อ่านมา — 2 คนอัพไฟล์พร้อมกัน/ใบเพิ่งถูกกดเตรียม = ต้องไม่ทับ
         let res = await supabaseDR.from('customer_shipping_orders').update(patch)
           .eq('id', x.order.id).eq('status', x.order.status).select('id');
         if (res.error?.code === '42703') {                    // migration ยังไม่ apply → ยอดยังอัพได้
           res = await supabaseDR.from('customer_shipping_orders')
-            .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status })
+            .update({ qty: patch.qty, part_name: patch.part_name, dock_code: patch.dock_code, status: patch.status, ship_time: patch.ship_time })
             .eq('id', x.order.id).eq('status', x.order.status).select('id');
           if (!res.error) toast.info('ยังไม่ได้ apply migration — อัพเดทยอดให้แล้ว แต่ไม่ได้บันทึกว่ามาจาก e-SMART');
         }
@@ -376,7 +389,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     if (batchId) {
       await supabaseDR.from('customer_pull_batches').update({
         orders_updated: updated, orders_created: created,
-        orders_skipped: plan.filter(x => x.action === 'locked' || x.action === 'unresolved').length,
+        // นับ "ตรงกับ 862 อยู่แล้ว" รวมด้วย — ไม่งั้นไฟล์ที่ยอดตรงพอดีจะดูเหมือนไม่ได้ทำอะไรเลย
+        orders_skipped: plan.filter(x => x.action !== 'update' && x.action !== 'create').length,
       }).eq('id', batchId);
     }
     setSaving(false);
@@ -444,6 +458,17 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               {' · '}ช่วงเวลา {parsed.windowStart ? `${timeStr(parsed.windowStart)}–` : ''}{parsed.windowEnd ? timeStr(parsed.windowEnd) : '—'}
               {' · '}{rowsInFile} แถว{dupCount > 0 && ` · ⏭ เคยนำเข้าแล้ว ${dupCount} แถว (ไม่นับซ้ำ)`}
               {parsed.meta?.supplier_code && ` · GSDB ${parsed.meta.supplier_code}`}
+              {/* ⭐ เวลาที่ลูกค้าออกไฟล์ (จากชื่อไฟล์) — เป็นไม้บรรทัดที่ตัวอ่านใช้ตัดสินวันที่ด้วย
+                  โชว์ให้เห็นก่อนกดยืนยัน จะได้ทวนสอบว่าเป็นไฟล์ของรอบไหนจริง */}
+              {(() => {
+                const made = fileNameStamp(file?.name);
+                if (!made) return null;
+                const lag = Math.round((Date.now() - made.getTime()) / 60000);
+                return <div style={{ marginTop: 4 }}>
+                  🕐 ไฟล์ออกเมื่อ <b>{dateStr(made)} {timeStr(made)}</b>
+                  {lag >= 0 && <span style={{ color: lag > 120 ? '#f59e0b' : 'var(--muted)' }}> · ผ่านมาแล้ว {lag} นาที{lag > 120 ? ' (ข้อมูลอาจเก่า)' : ''}</span>}
+                </div>;
+              })()}
             </div>
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
             {dateRisk.length > 0 && (
@@ -620,7 +645,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime || blockedByDup || blockedByDate}
+              <button onClick={apply} disabled={saving || !canImport || !shipTo || !shipTime || blockedByDup || blockedByDate}
                 style={{
                   padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
