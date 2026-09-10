@@ -23,7 +23,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { buildPnIndex, resolveMatNo } from '../utils/matResolve';
 import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
-  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf} from '../utils/pullSignal';
+  planOrderUpdates, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp} from '../utils/pullSignal';
 
 const SOURCE = 'esmart';
 const inputSt = {
@@ -458,6 +458,17 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               {' · '}ช่วงเวลา {parsed.windowStart ? `${timeStr(parsed.windowStart)}–` : ''}{parsed.windowEnd ? timeStr(parsed.windowEnd) : '—'}
               {' · '}{rowsInFile} แถว{dupCount > 0 && ` · ⏭ เคยนำเข้าแล้ว ${dupCount} แถว (ไม่นับซ้ำ)`}
               {parsed.meta?.supplier_code && ` · GSDB ${parsed.meta.supplier_code}`}
+              {/* ⭐ เวลาที่ลูกค้าออกไฟล์ (จากชื่อไฟล์) — เป็นไม้บรรทัดที่ตัวอ่านใช้ตัดสินวันที่ด้วย
+                  โชว์ให้เห็นก่อนกดยืนยัน จะได้ทวนสอบว่าเป็นไฟล์ของรอบไหนจริง */}
+              {(() => {
+                const made = fileNameStamp(file?.name);
+                if (!made) return null;
+                const lag = Math.round((Date.now() - made.getTime()) / 60000);
+                return <div style={{ marginTop: 4 }}>
+                  🕐 ไฟล์ออกเมื่อ <b>{dateStr(made)} {timeStr(made)}</b>
+                  {lag >= 0 && <span style={{ color: lag > 120 ? '#f59e0b' : 'var(--muted)' }}> · ผ่านมาแล้ว {lag} นาที{lag > 120 ? ' (ข้อมูลอาจเก่า)' : ''}</span>}
+                </div>;
+              })()}
             </div>
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
             {dateRisk.length > 0 && (

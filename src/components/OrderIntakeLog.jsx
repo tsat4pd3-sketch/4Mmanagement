@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { fileNameStamp } from '../utils/pullSignal';
 import { INTAKE_KINDS, mergeIntakeLog, intakeSummary, filterIntake } from '../utils/orderIntakeLog';
 
 const card = {
@@ -173,8 +174,25 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', flex: '1 1 220px', minWidth: 0, wordBreak: 'break-word' }}>
           {e.title}
         </span>
-        <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-          {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>ไม่ระบุผู้ทำ</span>}
+        {/* ⭐ โชว์ 2 เวลาคู่กัน (user 2026-09-10): **เวลาที่ลูกค้าออกไฟล์** (จากชื่อไฟล์ ISO) กับ
+            **เวลาที่อัพเข้าระบบ** ⇒ ทวนสอบได้ว่าไฟล์เป็นของรอบไหนจริง และช้าไปกี่นาที
+            (เวลาออกไฟล์คือไม้บรรทัดที่ตัวอ่านใช้ตัดสินวันที่ด้วย — ดู fileNameStamp) */}
+        <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap', textAlign: 'right' }}>
+          {(() => {
+            const made = e.kind === 'esmart' ? fileNameStamp(e.title) : null;
+            if (!made) return null;
+            const lagMin = Math.round((new Date(e.at).getTime() - made.getTime()) / 60000);
+            const late = Number.isFinite(lagMin) && lagMin > 120;   // อัพช้ากว่า 2 ชม. = ข้อมูลเก่าแล้ว
+            return (
+              <>🕐 ออกไฟล์ <b style={{ color: 'var(--text)' }}>{whenLabel(made)}</b>
+                {Number.isFinite(lagMin) && lagMin >= 0 && (
+                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> (อัพหลังจากนั้น {lagMin} นาที)</span>
+                )}
+                <br />
+              </>
+            );
+          })()}
+          📥 อัพเข้าระบบ {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>ไม่ระบุผู้ทำ</span>}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
