@@ -257,13 +257,18 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     return t;
   }, [plan]);
   const willWrite = tally.update + tally.create;
+  /* 🔴 "ยอดตรงกับ 862 อยู่แล้ว" ก็ต้องบันทึกการนำเข้า (user 2026-09-10: *"วันนี้มันวันที่ 10/9/26 ทำไมมันขึ้น 9/9"*)
+     ประวัติ order เข้าระบบ = หลักฐานว่า **ได้รับสัญญาณดึงจากลูกค้าแล้ว** ไม่ใช่แค่ "มีอะไรเปลี่ยน"
+     เดิมกดยืนยันไม่ได้เลยถ้าไม่มีใบต้องแก้ ⇒ ไฟล์ที่ยอดตรงพอดี **หายไปจากประวัติทั้งใบ** */
+  const freshCount = (parsed?.rows?.length || 0) - dupCount;
+  const canImport = willWrite > 0 || freshCount > 0;
   const dateRisk = (parsed?.warnings || []).filter(w => w.includes('อ่านได้ 2 ทาง') || w.includes('ห่างจากวันนี้'));
   const blockedByDup = dupUploads.length > 0 && !dupAck;
   const blockedByDate = dateRisk.length > 0 && !dateAck;
 
   /* ── ยืนยัน — เขียนจริง ───────────────────────────────────────────────────────────── */
   const apply = async () => {
-    if (!willWrite) { toast.error('ไม่มีรายการที่ต้องเขียน'); return; }
+    if (!canImport) { toast.error('ไม่มีรายการที่ต้องบันทึก'); return; }
     setSaving(true);
 
     /* 🔴 re-plan จาก "ของจริง ณ วินาทีนี้" ก่อนเขียนเสมอ — plan บนจอถูกคำนวณตอนเปิดไฟล์
@@ -274,12 +279,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     const liveGroups = aggregateSignals((parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE))));
     const plan = planOrderUpdates(liveGroups, live.orders, (pn) => resolveMatNo(pn, pnIndex), slot);
     const liveWrite = plan.filter(x => x.action === 'update' || x.action === 'create').length;
-    if (!liveWrite) {
+    setOrders(live.orders); setDupKeys(live.dupKeys);
+    const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
+    /* ไม่มีทั้งใบให้แก้ และไม่มีแถวใหม่ให้บันทึก = ไฟล์นี้เข้าไปแล้วจริงๆ ⇒ ไม่ต้องทำอะไร
+       แต่ถ้ามีแถวใหม่ (แม้ยอดตรงกับ 862 พอดี) ต้องบันทึกร่องรอยการนำเข้าเสมอ */
+    if (!liveWrite && !fresh.length) {
       toast.info('ไฟล์นี้ถูกนำเข้าไปแล้ว — ไม่มีอะไรต้องอัพเดทเพิ่ม');
       setSaving(false); reset(); onClose?.(); return;
     }
-    setOrders(live.orders); setDupKeys(live.dupKeys);
-    const fresh = (parsed.rows || []).filter(r => !live.dupKeys.has(signalKey(r, SOURCE)));
 
     const now = new Date().toISOString();
     const stamp = { confirm_source: SOURCE, confirmed_at: now };
@@ -382,7 +389,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     if (batchId) {
       await supabaseDR.from('customer_pull_batches').update({
         orders_updated: updated, orders_created: created,
-        orders_skipped: plan.filter(x => x.action === 'locked' || x.action === 'unresolved').length,
+        // นับ "ตรงกับ 862 อยู่แล้ว" รวมด้วย — ไม่งั้นไฟล์ที่ยอดตรงพอดีจะดูเหมือนไม่ได้ทำอะไรเลย
+        orders_skipped: plan.filter(x => x.action !== 'update' && x.action !== 'create').length,
       }).eq('id', batchId);
     }
     setSaving(false);
@@ -626,7 +634,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-              <button onClick={apply} disabled={saving || !willWrite || !shipTo || !shipTime || blockedByDup || blockedByDate}
+              <button onClick={apply} disabled={saving || !canImport || !shipTo || !shipTime || blockedByDup || blockedByDate}
                 style={{
                   padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
