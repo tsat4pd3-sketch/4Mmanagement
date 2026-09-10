@@ -676,3 +676,12 @@ test('ไฟล์ปกติ (ช่วงใกล้วันนี้) ต�
     FALLBACK_PROFILE, null, { now });
   assert.ok(!r.warnings.some(w => w.includes('ห่างจากวันนี้') || w.includes('อ่านได้ 2 ทาง')));
 });
+
+test('🔴 ทิศกลับกัน (เคสจริง 10 ก.ย.): หัวไฟล์ slash + แถวเป็น ISO → แถวคือไม้บรรทัด', () => {
+  const now = new Date(2027, 0, 1);   // ตั้งใจให้ไกลจากไฟล์ เพื่อพิสูจน์ว่าไม่ได้ใช้ "ใกล้ตอนนี้"
+  const r = parsePullFile(SLASHFILE('10/09/2026 06:00:00', '10/09/2026 08:00:00', '2026-09-10T06:03:00'),
+    { ...FALLBACK_PROFILE, ts_format: 'MDY' }, null, { now });
+  assert.equal(dateStr(r.windowEnd), '2026-09-10', 'ช่วงเวลาต้องครอบแถวที่ดึงได้');
+  assert.equal(r.slot.work_date, '2026-09-10');
+  assert.ok(!r.warnings.some(w => w.includes('อ่านได้ 2 ทาง')), 'มีไม้บรรทัดแล้วไม่ต้องเดา');
+});

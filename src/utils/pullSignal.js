@@ -348,8 +348,21 @@ export function parsePullFile(matrix, profile, rounds = null, { now = new Date()
   const wsIso = parseTs(meta.window_start, tsFmt), weIso = parseTs(meta.window_end, tsFmt);
 
   if (det.reason === 'ambiguous' || det.reason === 'conflict') {
-    const rowSamples = dateSamples.slice(2).filter(v => SLASH_DATE.test(String(v ?? '').trim()));
-    if (isoWindow && wsIso && weIso && rowSamples.length) {
+    const rawRows = dateSamples.slice(2);
+    const rowSamples = rawRows.filter(v => SLASH_DATE.test(String(v ?? '').trim()));
+    const rowIsoTimes = rawRows.filter(isIso).map(v => parseTs(v)).filter(Boolean);
+    if (!isoWindow && rowIsoTimes.length) {
+      /* ⭐ ทิศกลับกัน (เคสจริง 2026-09-10): **หัวไฟล์เป็น slash แต่แถวเป็น ISO**
+         ⇒ แถวคือไม้บรรทัด — เลือกการอ่านหัวไฟล์ที่ทำให้ช่วงเวลา "ครอบแถวได้" */
+      const cover = (f) => {
+        const ws = parseTs(meta.window_start, f), we = parseTs(meta.window_end, f);
+        if (!ws || !we) return -1;
+        return rowIsoTimes.reduce((n, d) => n + (d >= ws && d <= we ? 1 : 0), 0);
+      };
+      const cm = cover('MDY'), cd = cover('DMY');
+      if (cm !== cd) tsFmt = cd > cm ? 'DMY' : 'MDY';
+      else warnings.push(`⚠️ ช่วงเวลาหัวไฟล์อ่านได้ 2 ทาง (${String(meta.window_start ?? '').trim()}) และเทียบกับเวลาที่ดึงในแถวก็ยังชี้ขาดไม่ได้ — **ตรวจวันงาน/รอบส่งก่อนกดยืนยัน**`);
+    } else if (isoWindow && wsIso && weIso && rowSamples.length) {
       /* ⭐ ตัดสินจากหลักฐานในไฟล์เอง: แถวที่ดึงต้องตกอยู่ในช่วงของไฟล์ — อ่านผิดด้านจะหลุดกรอบทันที
          (แม่นกว่าเดาจากเวลาปัจจุบัน และไม่ต้องพึ่งค่าตั้งใน master) */
       const inWin = (f) => rowSamples.reduce((n, v) => {
