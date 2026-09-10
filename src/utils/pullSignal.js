@@ -161,6 +161,36 @@ export const looksBuddhist = (v) => {
  * @param {'MDY'|'DMY'|'ISO'} fmt ลำดับวันของรูปแบบ `dd/mm/yyyy`
  * @returns {Date|null}
  */
+/* ═══ 🔴🔴 วันที่แบบ d/m/yyyy ต้อง "พิสูจน์จากไฟล์" ห้ามตั้งค่าตายตัว (2026-09-10) ═══════
+   เคสจริง: ไฟล์ 10 ก.ย. ส่งวันมาเป็น `10/09/2026` · โปรไฟล์ตั้ง `ts_format='MDY'` ไว้
+   ⇒ อ่านเป็น **9 ตุลาคม** ⇒ ใบส่งไปโผล่คนละเดือน (ชาร์ตวันนี้ว่างเปล่า) และ
+      **สต็อก FG ถูกตัดซ้ำ 115 ชิ้น** เพราะรอบ 08:00 จริงถูกยิงซ้ำอีกใบ
+   ⚠️ ไฟล์ก่อนหน้ารอด "โดยบังเอิญ" — 09/08, 09/09 อ่านทางไหนก็ได้วันที่สมเหตุสมผล
+      **10/09 คือวันแรกที่ MDY ≠ DMY จริงๆ** ⇒ ค่าตั้งตายตัวเป็นระเบิดเวลาที่รอวันตรงเงื่อนไข
+
+   ⇒ กติกา: ดูทั้งไฟล์ก่อน — เจอเลขไหน > 12 ในช่องใดช่องหนึ่ง = **พิสูจน์ได้** ว่าเรียงแบบไหน
+      พิสูจน์ไม่ได้ (ทุกวันที่ ≤ 12) → เลือกอันที่ **ใกล้เวลาปัจจุบันที่สุด**
+      (ไฟล์ pull ถูกโหลดห่างจากช่วงเวลาของมันไม่กี่ชั่วโมง — ห่างเป็นเดือน = อ่านกลับด้านแน่)
+      แล้ว **ขึ้นคำเตือนบนจอเสมอ** ว่าเดามา ห้ามเงียบ */
+const SLASH_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/;
+
+/** พิสูจน์ลำดับวัน/เดือนจากตัวอย่างวันที่ทั้งไฟล์
+ *  @returns {{order: 'DMY'|'MDY'|null, reason: 'proof'|'conflict'|'ambiguous'|'none'}} */
+export function detectDateOrder(samples) {
+  let dmy = false, mdy = false, any = false;
+  for (const v of samples || []) {
+    const m = String(v ?? '').trim().match(SLASH_DATE);
+    if (!m) continue;
+    any = true;
+    if (+m[1] > 12) dmy = true;     // ช่องแรก > 12 = เป็นวันแน่ ⇒ วัน/เดือน
+    if (+m[2] > 12) mdy = true;     // ช่องสอง > 12 = เป็นวันแน่ ⇒ เดือน/วัน
+  }
+  if (dmy && mdy) return { order: null, reason: 'conflict' };   // ไฟล์ปนกัน = เชื่อไม่ได้ทั้งคู่
+  if (dmy) return { order: 'DMY', reason: 'proof' };
+  if (mdy) return { order: 'MDY', reason: 'proof' };
+  return { order: null, reason: any ? 'ambiguous' : 'none' };
+}
+
 export function parseTs(v, fmt = 'MDY') {
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   const s = String(v ?? '').trim();
@@ -290,7 +320,7 @@ const num = (v) => {
  * @returns {{ok: boolean, error?: string, meta: object, rows: Array<object>, warnings: string[],
  *            windowStart: Date|null, windowEnd: Date|null, slot: object|null, shipTo: string|null}}
  */
-export function parsePullFile(matrix, profile, rounds = null) {
+export function parsePullFile(matrix, profile, rounds = null, { now = new Date() } = {}) {
   const p = profile || FALLBACK_PROFILE;
   const warnings = [];
   const headerIdx = findHeaderRow(matrix, p);
@@ -304,8 +334,56 @@ export function parsePullFile(matrix, profile, rounds = null) {
       meta: {}, rows: [], warnings, windowStart: null, windowEnd: null, slot: null, shipTo: null };
   }
   const meta = readMeta(matrix, headerIdx, p.meta_map);
-  const windowStart = parseTs(meta.window_start, p.ts_format);
-  const windowEnd = parseTs(meta.window_end, p.ts_format);
+
+  /* 🔴 หาลำดับวัน/เดือนจาก **ทั้งไฟล์** ก่อนแปลงอะไรทั้งนั้น (ดูเหตุผลที่ detectDateOrder) */
+  const rawAt = (row, f) => (idx[f] === undefined ? '' : row[idx[f]]);
+  const dateSamples = [meta.window_start, meta.window_end];
+  for (let i = headerIdx + 1; i < matrix.length; i++) dateSamples.push(rawAt(matrix[i] || [], 'pulled_at'));
+  const det = detectDateOrder(dateSamples);
+  let tsFmt = det.order || p.ts_format || 'MDY';
+
+  /* ช่วงเวลาหัวไฟล์เป็น ISO (`2026-09-10T06:00`) = ไม่กำกวมอยู่แล้ว — ใช้เป็น "ไม้บรรทัด" ตัดสินแถวได้ */
+  const isIso = (v) => /^\d{4}-\d{2}-\d{2}/.test(String(v ?? '').trim());
+  const isoWindow = isIso(meta.window_start) && isIso(meta.window_end);
+  const wsIso = parseTs(meta.window_start, tsFmt), weIso = parseTs(meta.window_end, tsFmt);
+
+  if (det.reason === 'ambiguous' || det.reason === 'conflict') {
+    const rowSamples = dateSamples.slice(2).filter(v => SLASH_DATE.test(String(v ?? '').trim()));
+    if (isoWindow && wsIso && weIso && rowSamples.length) {
+      /* ⭐ ตัดสินจากหลักฐานในไฟล์เอง: แถวที่ดึงต้องตกอยู่ในช่วงของไฟล์ — อ่านผิดด้านจะหลุดกรอบทันที
+         (แม่นกว่าเดาจากเวลาปัจจุบัน และไม่ต้องพึ่งค่าตั้งใน master) */
+      const inWin = (f) => rowSamples.reduce((n, v) => {
+        const d = parseTs(v, f);
+        return n + (d && d >= wsIso && d <= weIso ? 1 : 0);
+      }, 0);
+      const nm = inWin('MDY'), nd = inWin('DMY');
+      if (nm !== nd) tsFmt = nd > nm ? 'DMY' : 'MDY';
+    } else {
+      /* ไม่มีไม้บรรทัด → เลือกการอ่านที่ให้ช่วงเวลา "ใกล้ตอนนี้ที่สุด"
+         (ไฟล์ pull ถูกโหลดห่างจากช่วงของมันไม่กี่ ชม. · ห่างเป็นเดือน = อ่านกลับด้านแน่นอน) */
+      const ref = (meta.window_end || meta.window_start);
+      const gap = (f) => { const d = parseTs(ref, f); return d ? Math.abs(d.getTime() - now.getTime()) : Infinity; };
+      const gm = gap('MDY'), gd = gap('DMY');
+      if (Number.isFinite(gm) || Number.isFinite(gd)) tsFmt = gd < gm ? 'DMY' : 'MDY';
+      warnings.push(
+        `⚠️ วันที่ในไฟล์อ่านได้ 2 ทาง (${String(ref ?? '').trim()}) — ${det.reason === 'conflict' ? 'ไฟล์ใช้ลำดับปนกัน' : 'ทุกเลข ≤ 12 จึงพิสูจน์ไม่ได้'} · `
+        + `ระบบเลือกแบบ ${tsFmt === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} เพราะใกล้เวลาปัจจุบันที่สุด — **ตรวจวันงาน/รอบส่งก่อนกดยืนยัน**`);
+    }
+  } else if (det.order && p.ts_format && det.order !== p.ts_format) {
+    warnings.push(`ℹ️ ไฟล์นี้เรียงวันที่แบบ ${det.order === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} (ต่างจากที่ตั้งไว้ในโปรไฟล์ ${p.ts_format}) — ระบบใช้ตามไฟล์ ไม่ใช่ตามค่าที่ตั้ง`);
+  }
+
+  const windowStart = parseTs(meta.window_start, tsFmt);
+  const windowEnd = parseTs(meta.window_end, tsFmt);
+
+  /* 🚨 ด่านสุดท้าย: ช่วงเวลาต้องอยู่ใกล้ "ตอนนี้" — ไฟล์ที่โหลดวันนี้จะชี้ไปอีกเดือนไม่ได้
+     (ถ้าไม่มีด่านนี้ วันที่เพี้ยนจะเงียบสนิทจนไปโผล่ตอนสต็อกถูกตัดซ้ำ) */
+  if (windowEnd) {
+    const days = Math.round((windowEnd.getTime() - now.getTime()) / 86400000);
+    if (Math.abs(days) > 3) {
+      warnings.push(`🔴 ช่วงเวลาในไฟล์ห่างจากวันนี้ ${days > 0 ? '+' : ''}${days} วัน (${dateStr(windowEnd)}) — ผิดปกติสำหรับไฟล์ที่เพิ่งโหลด **ตรวจวันงานให้แน่ก่อนยืนยัน**`);
+    }
+  }
   let slot = shipSlotOf(windowEnd, p.lead_min);   // ค่าเริ่มจาก lead_min · จะทับด้วยตารางรอบรับหลังรู้ dock
   let patternOptions = [];
   if (!windowEnd) warnings.push('ไฟล์ไม่ได้บอกช่วงเวลา (End Time) — ต้องเลือกวัน/รอบส่งเองบนจอ');
@@ -320,7 +398,7 @@ export function parsePullFile(matrix, profile, rounds = null) {
     const partNo = joinPartNo(at(r, 'part_prefix'), at(r, 'part_base'), at(r, 'part_suffix'), p.part_join);
     if (!partNo) { blank++; continue; }
     if (looksBuddhist(at(r, 'pulled_at'))) beRows++;
-    const pulledAt = parseTs(at(r, 'pulled_at'), p.ts_format);
+    const pulledAt = parseTs(at(r, 'pulled_at'), tsFmt);
     if (!pulledAt) { badTs++; continue; }
     const per = num(at(r, 'qty'));
     const cont = idx.containers === undefined ? 1 : (num(at(r, 'containers')) ?? 1);
