@@ -283,7 +283,7 @@ export default function Register() {
           </div>
           {cropFile && (
             <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
-              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ"
+              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false}
               onCancel={() => setCropFile(null)}
               onConfirm={f => { setPhoto(f); setCropFile(null); }} />
           )}
