@@ -14,6 +14,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -256,7 +257,7 @@ export default function OjtTraining() {
       if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return; }
       // path ต้องอยู่ในโฟลเดอร์ auth.uid ของคนบันทึก (RLS bucket signatures) — ชื่อไฟล์กันชนด้วย timestamp
       const path = `${user.id}/ojt_${editing.id}_${idx}_${Date.now()}.png`;
-      const { error } = await supabase.storage.from('signatures').upload(path, blob, { contentType: 'image/png' });
+      const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
       if (error) { toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + error.message); return; }
       const url = supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl;
       // เซ็นทับของเดิม — ลบไฟล์เก่าทิ้ง (best-effort, เฉพาะโฟลเดอร์ตัวเอง)

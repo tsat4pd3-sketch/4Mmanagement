@@ -25,6 +25,7 @@ import ImageCropModal from '../components/ImageCropModal'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -754,7 +755,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           if (f._file) {
             const ext = (f._file.name?.split('.').pop() || 'jpg').toLowerCase()
             path = `jigs/${jigId}/frame-${f._key}.${ext}`
-            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, f._file, { upsert: true })
+            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, f._file, uploadOpts({ mutable: true, upsert: true }))
             if (upErr) throw upErr
           }
           if (path) resolvedFrames.push({ key: f._key, path, title: f.title ?? null })
@@ -823,7 +824,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         if (!c._imgFile) continue
         const ext = (c._imgFile.name?.split('.').pop() || 'jpg').toLowerCase()
         const p = `jigs/${jigId}/cp-${c._key}.${ext}`
-        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, c._imgFile, { upsert: true })
+        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, c._imgFile, uploadOpts({ mutable: true, upsert: true }))
         if (imgErr) throw imgErr
         cpImagePaths[c._key] = p
       }

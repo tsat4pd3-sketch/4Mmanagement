@@ -12,6 +12,7 @@ import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
 import { lineOptions } from '../components/LineSelect';
+import { uploadOpts } from '../utils/storageUpload';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -95,7 +96,7 @@ export default function Register() {
       if (photo) {
         const fileExt = photo.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, photo);
+        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, photo, uploadOpts());
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(fileName);
         photoUrl = pub.publicUrl;

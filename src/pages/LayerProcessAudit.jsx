@@ -15,6 +15,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import useTabParam from '../utils/useTabParam';
 import { notifyEvent } from '../utils/notifyEvent';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -500,7 +501,7 @@ export default function LayerProcessAudit() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return; }
       const path = `${user.id}/lpa_${Date.now()}.png`;
-      const { error } = await supabase.storage.from('signatures').upload(path, blob, { contentType: 'image/png' });
+      const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
       if (error) { toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + error.message); return; }
       const url = supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl;
       // ลบไฟล์เซ็นเฉพาะกิจอันเก่า (เฉพาะโฟลเดอร์ตัวเอง — ไม่ลบลายเซ็นโปรไฟล์)

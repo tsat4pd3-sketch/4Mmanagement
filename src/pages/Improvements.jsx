@@ -20,6 +20,7 @@ import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCa
 import PeChangeRequests from '../components/PeChangeRequests';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -732,7 +733,7 @@ export default function Improvements() {
         if (!file) continue;
         const blob = await resizeImage(file);
         const path = `${row.id}/${field === 'image_before_url' ? 'before' : 'after'}-${Date.now()}.jpg`;
-        const { error: upErr } = await supabaseDR.storage.from('improvement-images').upload(path, blob, { upsert: true });
+        const { error: upErr } = await supabaseDR.storage.from('improvement-images').upload(path, blob, uploadOpts({ upsert: true }));
         if (upErr) throw upErr;
         imgPayload[field] = supabaseDR.storage.from('improvement-images').getPublicUrl(path).data.publicUrl;
       }
