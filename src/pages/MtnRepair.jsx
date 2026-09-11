@@ -28,6 +28,7 @@ import { resolveMachine } from '../utils/qrCode';
 import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
+import MachineReliability from '../components/MachineReliability';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
@@ -258,6 +259,7 @@ export default function MtnRepair() {
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
     { key: 'kpi', label: '📊 KPI' },
+    { key: 'equip', label: '⚙️ รายอุปกรณ์ (MTTR/MTBF)' },   // นับจาก downtime จริง — คำขอทีม MTN 2026-09-11
     { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
     { key: 'rack', label: '🗺️ ผังคลัง' },
     ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
@@ -432,6 +434,7 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
+      {tab === 'equip' && <MachineReliability machines={machines} lineObjs={scopedLineObjs} scopeLines={scopeLines} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
