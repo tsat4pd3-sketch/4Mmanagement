@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from './Toast';
 import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
+import { looksLikeImage, isGifFile, extOf } from '../utils/imageFileKind';
 
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
@@ -19,6 +20,8 @@ import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
 // (เคยเจอ GIF เฉลี่ยไฟล์ละ ~4MB ใหญ่กว่ารูปนิ่งที่บีบแล้ว ~30 เท่า)
 const GIF_MAX_BYTES = 2 * 1024 * 1024;
 
+// ตัวตรวจชนิดไฟล์อยู่ที่ utils/imageFileKind.js จุดเดียว (มีเทส) — ห้ามเขียนซ้ำในหน้า
+
 export default function ImageCropModal({
   file, aspect = 1, shape = 'rect', outputSize = 480,
   title = 'จัดตำแหน่งรูปภาพให้ตรงกรอบ', quality = 0.85,
@@ -27,6 +30,12 @@ export default function ImageCropModal({
   //   (feedback หน้างาน 2026-08-21: "ปรับตำแหน่งที่จะโดน crop ให้เห็นจุดสำคัญครบไม่ได้")
   //   ปิดเป็นค่าเริ่มต้น → จุดที่เรียกอยู่เดิม (รูปพนักงาน/โปรไฟล์) ไม่เปลี่ยนพฤติกรรม
   allowFull = false, fullLabel = 'ใช้ทั้งรูป (ไม่ครอบ)',
+  // 🚫 allowGif = false → ไม่รับ GIF ที่จุดนี้ (รูปพนักงาน: operator / Register · 2026-09-11)
+  //   เหตุผล: GIF บีบไม่ได้ (ส่งต้นฉบับทั้งไฟล์) เฉลี่ย 4.3 MB/รูป = ใหญ่กว่ารูปนิ่งที่บีบแล้ว 60 เท่า
+  //   เคยทำ egress ทะลุโควต้าจน Supabase ล็อกบริการทั้ง organization (ทั้งโรงงาน login ไม่ได้)
+  //   — GIF 20 ไฟล์กิน 84 MB จาก bucket 124 MB · คำสั่ง user 2026-09-11 ให้ห้ามในรูปพนักงาน
+  //   ⚠️ default = true → จุดที่เรียกอยู่เดิม (สินค้า/อะไหล่/PM/โปรไฟล์) ไม่เปลี่ยนพฤติกรรม
+  allowGif = true,
   onCancel, onConfirm,
 }) {
   const [useFull, setUseFull] = useState(false);
@@ -62,6 +71,19 @@ export default function ImageCropModal({
         finally { if (!cancelled) setConverting(false); }
       }
       if (cancelled) return;
+      // ── ด่านชนิดไฟล์ — ต้อง "เตือนให้เห็น" ทุกครั้งที่ปฏิเสธ ห้ามปิดโมดัลเงียบๆ ─────────
+      //    (คำสั่ง user 2026-09-11: "ถ้านามสกุลไม่ตรง ควร alarm แจ้งเตือน")
+      //    เดิมไฟล์ที่ไม่ใช่รูปจะไปตายที่ img.onerror ซึ่งขึ้นข้อความเรื่องฟอร์แมตกล้อง = ชี้ผิดทาง
+      if (!looksLikeImage(f)) {
+        toast.error(`ไฟล์นี้ไม่ใช่รูปภาพ (.${extOf(f.name) || 'ไม่มีนามสกุล'}) — เลือกได้เฉพาะ JPG · PNG · WEBP`);
+        onCancel?.();
+        return;
+      }
+      if (!allowGif && isGifFile(f)) {
+        toast.error('รูปพนักงานใช้ไฟล์ GIF (ภาพขยับ) ไม่ได้ — ไฟล์ใหญ่กว่ารูปนิ่งหลายสิบเท่าจนเปลืองพื้นที่ระบบ · กรุณาใช้รูปนิ่ง JPG หรือ PNG แทน');
+        onCancel?.();
+        return;
+      }
       // เช็คขนาด GIF หลังแปลงเสมอ (ไฟล์ที่แปลงแล้วเป็น JPEG ไม่เข้าเงื่อนไขนี้)
       if (f.type === 'image/gif' && f.size > GIF_MAX_BYTES) {
         toast.error(`รูปขยับ (GIF) ต้องมีขนาดไม่เกิน 2 MB (ไฟล์นี้ ${(f.size / 1024 / 1024).toFixed(1)} MB) — ลองใช้ GIF ที่สั้นลง/เล็กลง หรือย่อไฟล์ก่อนอัปโหลด`);
@@ -90,7 +112,7 @@ export default function ImageCropModal({
       img.src = url;
     })();
     return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
-  }, [file]);
+  }, [file, allowGif]);
 
   const clampPos = (x, y, s) => {
     const dispW = natural.w * s, dispH = natural.h * s;

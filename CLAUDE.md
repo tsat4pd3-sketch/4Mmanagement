@@ -500,6 +500,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 - **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
   ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
   ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` ที่ operator/Register) — GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป
+  (ใหญ่กว่ารูปนิ่ง 60 เท่า) · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME)
+  · **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
 > 📄 รายละเอียดเต็ม → `docs/modules/storage-images.md`
 
 ---

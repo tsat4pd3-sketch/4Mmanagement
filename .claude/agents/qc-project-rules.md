@@ -130,6 +130,11 @@ model: inherit
   ทำแล้ว: operator, LineSetup (ห้ามลบผังยืมจากไลน์แม่), ProductMaster (guard รูปแชร์), QAInspectionSetup,
   PMSetup, SignatureModal — จุดอัปโหลดใหม่ที่ไม่ลบของเก่า = ไฟล์กำพร้าสะสม
 - **E3** GIF cap ≤ 2MB ต้องยังอยู่**ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) — ห้ามมีใครถอดออก
+- **[E-GIF]** จุดอัปรูป**พนักงาน** (operator / Register) ต้องส่ง **`allowGif={false}`** ให้ `ImageCropModal`
+  (GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป — เคยกิน 84 MB จาก bucket 124 MB) · ตัวเช็คชนิดไฟล์ต้องเรียกจาก
+  **`src/utils/imageFileKind.js`** เท่านั้น (`looksLikeImage`/`isGifFile`/`extOf`) — เขียน regex นามสกุล
+  หรือเช็ค `type === 'image/gif'` เองในหน้า = ผิด (Android ส่ง MIME ว่างมากับรูปจริง → ด่านรั่ว/ปฏิเสธรูปดีๆ)
+  · **ทุกทางที่ปฏิเสธไฟล์ต้องมี `toast.error` บอกเหตุผล + ทางแก้** — `onCancel()` เฉยๆ = ปิดเงียบ = ผิด
 - **[E-CACHE]** ทุก `.upload(` ต้องส่ง options ผ่าน **`uploadOpts()`** (`src/utils/storageUpload.js`) — ไม่ส่ง
   = ได้ `cacheControl` default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง (เคยทำ egress ทะลุโควต้าจน Supabase
   **ล็อกบริการทั้ง organization** 11 ก.ย. 2026) · และ path ที่เป็น**ชื่อคงที่ + `upsert: true`** (ทับไฟล์เดิม
