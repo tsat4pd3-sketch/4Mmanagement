@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { saveMyProfileMedia } from '../utils/profileSelf';
+import { uploadOpts } from '../utils/storageUpload';
 
 export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved }) {
   const [tab, setTab] = useState('draw'); // 'draw' | 'upload'
@@ -139,7 +140,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
 
       const { error: upErr } = await supabase.storage
         .from('signatures')
-        .upload(filePath, fileBlob, { contentType, upsert: true });
+        .upload(filePath, fileBlob, uploadOpts({ contentType, upsert: true }));
       if (upErr) { toast.error('อัปโหลดไม่สำเร็จ: ' + upErr.message); setSaving(false); return; }
 
       const { data: { publicUrl } } = supabase.storage.from('signatures').getPublicUrl(filePath);

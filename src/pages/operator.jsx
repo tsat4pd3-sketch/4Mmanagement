@@ -26,6 +26,7 @@ import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { uploadOpts } from '../utils/storageUpload';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -278,7 +279,7 @@ export default function Operator() {
         catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       }
       const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, uploadOpts({ upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' }));
       if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       doc_url = urlData.publicUrl;
@@ -450,7 +451,7 @@ export default function Operator() {
       if (editingEmp.newPhoto) {
         const fileExt = editingEmp.newPhoto.name.split('.').pop();
         const fileName = `emp_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, editingEmp.newPhoto);
+        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, editingEmp.newPhoto, uploadOpts());
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(fileName);
         photoUrl = pub.publicUrl;

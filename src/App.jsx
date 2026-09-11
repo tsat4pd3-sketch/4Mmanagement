@@ -1947,9 +1947,18 @@ export default function App() {
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
     const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
-    let { data, error } = await supabase.from('profiles').select(COLS + ', employee_id').eq('id', user.id).single();
-    // คอลัมน์ employee_id ยังไม่ apply (42703) → ถอยไป select ชุดเดิม ห้ามให้ login พังทั้งระบบ
-    if (error?.code === '42703') ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
+    // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
+    //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
+    //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
+    //    คอลัมน์ mtn_teams (20260722) / avatar_url (20260714) apply ครบแล้วทั้งคู่ (ตรวจ 2026-09-11)
+    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url';
+    let { data, error } = await supabase.from('profiles').select(COLS_FULL).eq('id', user.id).single();
+    // คอลัมน์เสริมยังไม่ apply (42703) → ถอยไป select ชุดพื้นฐาน ห้ามให้ login พังทั้งระบบ
+    // (ค่าที่หายไปจะเป็น null → ทีมช่าง/รูปโปรไฟล์ไม่ขึ้น แต่เข้าใช้งานได้ตามปกติ)
+    if (error?.code === '42703') {
+      console.warn('[profile] คอลัมน์เสริมยังไม่ apply — ถอยไปชุดพื้นฐาน (mtn_teams/avatar_url/employee_id จะว่าง)');
+      ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
+    }
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1997,14 +2006,10 @@ export default function App() {
     setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
-    // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง
-    supabase.from('profiles').select('mtn_teams').eq('id', user.id).maybeSingle()
-      .then(({ data: mt }) => setUserMtnTeams(Array.isArray(mt?.mtn_teams) ? mt.mtn_teams : []))
-      .catch(() => setUserMtnTeams([]));
-    // avatar_url แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260714) ถ้ายังไม่ apply ห้ามทำ login พัง
-    supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
-      .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
-      .catch(() => setUserAvatarUrl(null));
+    // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
+    // ถ้า fallback 42703 ทำงาน ค่าจะเป็น undefined → ได้ [] / null เหมือนพฤติกรรมเดิมของ catch
+    setUserMtnTeams(Array.isArray(data?.mtn_teams) ? data.mtn_teams : []);
+    setUserAvatarUrl(data?.avatar_url ?? null);
     // is_dept_admin อยู่ใน select หลักแล้ว (migration 20260803 apply แล้ว — ยืนยันคอลัมน์มีจริงใน prod)
     // ตั้ง sync ก่อน render แรก — เดิมแยก query async แล้วมี race: หน้า render ก่อน flag มา ปุ่มแก้ไขไม่โผล่
     {

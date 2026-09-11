@@ -30,6 +30,7 @@ import BomTreeView from '../components/BomTreeView';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -348,7 +349,7 @@ export default function ProductMaster() {
         setImageUploading(true);
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile, uploadOpts());
         setImageUploading(false);
         if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
         const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
@@ -2181,7 +2182,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         setImageUploading(true);
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile, uploadOpts());
         setImageUploading(false);
         if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
         const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);

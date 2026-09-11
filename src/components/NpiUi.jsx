@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { LIGHT } from '../utils/npi';
 import { toDecodableImage, isHeicFile } from '../utils/heicToJpeg';
+import { uploadOpts } from '../utils/storageUpload';
 
 export const inp = {
   width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -109,7 +110,7 @@ export async function uploadNpiFile(folder, file) {
     } catch { /* บีบไม่ได้ — ส่งไฟล์เดิมภายใต้ cap */ }
   }
   const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
-  const { error } = await supabase.storage.from('npi-files').upload(path, toUpload, { upsert: true });
+  const { error } = await supabase.storage.from('npi-files').upload(path, toUpload, uploadOpts({ upsert: true }));
   if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
   return supabase.storage.from('npi-files').getPublicUrl(path).data.publicUrl;
 }

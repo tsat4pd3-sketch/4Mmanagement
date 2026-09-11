@@ -27,6 +27,7 @@ import SearchSelect from './SearchSelect';
 import MachineSelect from './MachineSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเบียน DR suppliers (ชิ้นส่วน/อะไหล่ขึ้นก่อน) — 2026-09-08
 import useSuppliers from '../utils/useSuppliers';
+import { uploadOpts } from '../utils/storageUpload';
 
 // ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
 const appendCsv = (cur, v) => {
@@ -573,7 +574,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
     setCropFile(null);
     try {
       const path = `spare/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
-      const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, { upsert: true, contentType: blob.type });
+      const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type }));
       if (error) throw error;
       setImg(supabaseDR.storage.from('mtn-images').getPublicUrl(path).data.publicUrl);
     } catch (err) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + err.message); }

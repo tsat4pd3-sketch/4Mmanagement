@@ -23,6 +23,7 @@ import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -1653,7 +1654,7 @@ export default function FactoryMap({ setupMode = false }) {
       if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
       const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
       const path = `factory/map_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob);
+      const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob, uploadOpts());
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(path);
       const row = mapId

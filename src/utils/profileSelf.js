@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient';
+import { uploadOpts } from './storageUpload';
 
 /* ═══ บันทึก "ลายเซ็น / รูปโปรไฟล์" ของตัวเอง (2026-08-17) ═══
    ⚠️ กับดักที่ทำให้ลายเซ็นหายหลัง logout:
@@ -58,7 +59,7 @@ export async function uploadMyAvatar(file, currentUrl) {
     if (!user) return { ok: false, message: 'ยังไม่ได้เข้าสู่ระบบ' };
 
     const path = `${user.id}/avatar_${Date.now()}.jpg`;
-    const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { contentType: 'image/jpeg' });
+    const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, uploadOpts({ contentType: 'image/jpeg' }));
     if (upErr) throw upErr;
 
     const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
