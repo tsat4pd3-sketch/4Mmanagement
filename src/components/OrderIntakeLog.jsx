@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { fileNameStamp } from '../utils/pullSignal';
+import CollapseCard from './CollapseCard';
 import { INTAKE_KINDS, mergeIntakeLog, intakeSummary, filterIntake } from '../utils/orderIntakeLog';
 
 const card = {
@@ -34,6 +35,20 @@ const fmt = (n) => Number(n || 0).toLocaleString(undefined, { maximumFractionDig
 const pad2 = (n) => String(n).padStart(2, '0');
 const dstr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return dstr(d); };
+/* คีย์/ป้ายรายวัน — ใช้เวลาท้องถิ่น ห้าม toISOString (กฎเหล็ก Date/Time ใน CLAUDE.md) */
+const dayKeyOf = (v) => {
+  const d = new Date(v);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+const TH_DAY = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+const dayLabelOf = (key) => {
+  const m = String(key).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return key;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return `${TH_DAY[d.getDay()]} ${m[3]}/${m[2]}/${m[1]}`;
+};
+
 const whenLabel = (v) => {
   const d = new Date(v);
   if (!Number.isFinite(d.getTime())) return '—';
@@ -96,6 +111,29 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
   const sum = useMemo(() => intakeSummary(shown), [shown]);
   const hidden = shown.length - Math.min(limit, shown.length);
 
+  /* 📁 จัดกลุ่มตามวัน — หัวกลุ่มสรุปให้พอตัดสินใจได้โดยไม่ต้องกาง (§5.5: หัวต้องบอกชื่อ+จำนวนเสมอ)
+     ⚠️ กลุ่มตาม "วันที่อัพเข้าระบบ" ไม่ใช่วันงาน — แท็บนี้คือไทม์ไลน์การนำเข้า */
+  const todayKey = useMemo(() => dayKeyOf(new Date()), []);
+  const dayGroups = useMemo(() => {
+    const m = new Map();
+    shown.slice(0, limit).forEach(e => {
+      const k = dayKeyOf(e.at);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(e);
+    });
+    return [...m.entries()].map(([day, items]) => {
+      const n = (f) => items.reduce((a, e) => a + (Number(f(e)) || 0), 0);
+      const up = n(e => e.stats?.updated), cr = n(e => e.stats?.created);
+      const kinds = [
+        items.filter(e => e.kind === 'esmart').length && `e-SMART ${items.filter(e => e.kind === 'esmart').length}`,
+        items.filter(e => e.kind === 'edi').length && `EDI ${items.filter(e => e.kind === 'edi').length}`,
+        items.filter(e => e.kind === 'manual').length && `คีย์มือ ${items.filter(e => e.kind === 'manual').length}`,
+      ].filter(Boolean).join(' · ');
+      return { day, items, label: dayLabelOf(day),
+        summary: `${kinds}${up || cr ? ` · อัพเดท ${up} · สร้าง ${cr} ใบ` : ''}` };
+    });
+  }, [shown, limit]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={card}>
@@ -143,11 +181,24 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         </div>
       )}
 
-      {/* ⚠️ ให้ทั้งหน้าเลื่อนตามปกติ ห้ามครอบลิสต์ด้วยกล่อง scroll ซ้อน (UI-CONVENTIONS §6.8) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {shown.slice(0, limit).map(e => (
-          <IntakeCard key={e.key} e={e} custLabel={custLabel}
-            open={open === e.key} onToggle={() => setOpen(open === e.key ? null : e.key)} />
+      {/* ⚠️ ให้ทั้งหน้าเลื่อนตามปกติ ห้ามครอบลิสต์ด้วยกล่อง scroll ซ้อน (UI-CONVENTIONS §6.8)
+          📁 จัดกลุ่มตามวัน + `CollapseCard` (§5.5 "ลิสต์ยาว = drill-down · จำสถานะพับ")
+             user 2026-09-11: *"ข้อมูลเยอะ default เป็นยุบที ตอนนี้ยาวลงไปเรื่อยๆ"*
+             **วันนี้กางไว้ · วันเก่ายุบ** — งานที่ต้องดูตอนนี้ห้ามถูกซ่อน (§5.5 เส้นแบ่งข้อ 2) */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {dayGroups.map(g => (
+          <CollapseCard key={g.day} id={`intake_${g.day}`} storePrefix="oil"
+            defaultOpen={g.day === todayKey}
+            title={<>{g.label}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> · วันนี้</span>}
+              <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 12 }}> — {g.summary}</span></>}
+            count={g.items.length}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {g.items.map(e => (
+                <IntakeCard key={e.key} e={e} custLabel={custLabel}
+                  open={open === e.key} onToggle={() => setOpen(open === e.key ? null : e.key)} />
+              ))}
+            </div>
+          </CollapseCard>
         ))}
       </div>
 

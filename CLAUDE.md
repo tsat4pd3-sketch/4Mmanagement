@@ -569,7 +569,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     45+3 findings + สถานะแก้ — ฝั่ง client เคลียร์แล้ว · ค้างฝั่ง DB/edge ดู §สถานะรวม) ·
                        #   FINANCIAL-GAP-ANALYSIS.md (ราคาขายต่อพาร์ท → สรุปยอดขาย/margin — gap 13 ข้อ
                        #     + คำถามที่ user ต้องตัดสิน 6 ข้อ · 📌 สำรวจแล้ว ยังไม่ลงมือ 2026-09-09
-                       #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง)
+                       #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
+                       #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
+                       #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
