@@ -42,6 +42,16 @@ const XLSX = [
 
 const P = FALLBACK_PROFILE;
 
+/* ⏱️ เวลา "ตอนนี้" ของทุกเทสในไฟล์นี้ — ตรึงไว้วันเดียวกับไฟล์ตัวอย่าง (2026-09-08 บ่าย 3)
+   🔴 ห้ามปล่อยให้ parsePullFile ใช้นาฬิกาเครื่อง: มันเตือน "ช่วงเวลาในไฟล์เก่ากว่าวันนี้ > 3 วัน"
+      ⇒ เทสที่นับจำนวน warning **ผ่านตอนเขียน แล้วตกเองอีก 4 วันถัดมาโดยไม่มีใครแก้โค้ดเลย**
+      เกิดจริง: เทส "แถวที่อ่านไม่ออกต้องถูกนับรายงาน" ตกตั้งแต่ 2026-09-12
+      = `npm run build` ล่ม = deploy ไม่ออก ทั้งที่โค้ดถูก (พบ 2026-09-14)
+   ⇒ **กฎ: เทสที่กินเวลาปัจจุบันต้องฉีด `now` เสมอ** — ของใหม่ให้เรียกผ่าน `parseAt()` ตัวนี้ */
+const NOW = new Date(2026, 8, 8, 15, 0);
+const parseAt = (matrix, profile = P, rounds = null, opts = {}) =>
+  parsePullFile(matrix, profile, rounds, { now: NOW, ...opts });
+
 /* ══ เวลา — กฎเหล็ก Date/Time ของโปรเจค ══════════════════════════════════════════ */
 
 test('parseTs — 09/08/2026 ต้องเป็น 8 ก.ย. (MDY) ไม่ใช่ 9 ส.ค.', () => {
@@ -107,7 +117,7 @@ test('looksBuddhist — ใช้เตือนบนจอ (ห้ามแป
 test('⭐ parsePullFile — ไฟล์ พ.ศ. ทั้งใบ: แปลงให้ + รอบส่งถูก + **ต้องเตือนบนจอ**', () => {
   const be = CSV.map(r => r.map(c =>
     typeof c === 'string' ? c.replace(/\b2026\b/g, '2569') : c));
-  const r = parsePullFile(be, P);
+  const r = parseAt(be);
   assert.equal(r.ok, true);
   assert.equal(r.rows.length, 7);
   assert.equal(r.slot.work_date, '2026-09-08');    // ไม่ใช่ 2569 (ใบล่องหน 543 ปี)
@@ -187,7 +197,7 @@ test('joinPartNo — ประกอบ prefix/base/suffix · ส่วนที
 });
 
 test('⭐ parsePullFile — ไฟล์จริง: 7 แถว · qty = containers × part_qty', () => {
-  const r = parsePullFile(CSV, P);
+  const r = parseAt(CSV);
   assert.equal(r.ok, true);
   assert.equal(r.rows.length, 7);
   assert.equal(r.shipTo, 'GRBNA');
@@ -204,8 +214,8 @@ test('⭐ parsePullFile — ไฟล์จริง: 7 แถว · qty = conta
 test('parsePullFile — qty_mode qty_only ต้องไม่คูณ containers', () => {
   const rows = [...CSV];
   rows[6] = [...CSV[6]]; rows[6][9] = '3';        // Containers Used = 3
-  const mul = parsePullFile(rows, P).rows[0];
-  const only = parsePullFile(rows, { ...P, qty_mode: 'qty_only' }).rows[0];
+  const mul = parseAt(rows).rows[0];
+  const only = parseAt(rows, { ...P, qty_mode: 'qty_only' }).rows[0];
   assert.equal(mul.qty, 30);
   assert.equal(only.qty, 10);
 });
@@ -216,7 +226,7 @@ test('🔴 parsePullFile — แถวที่อ่านไม่ออกต
     ['GRBNA', '9', 'RB3B', '9X998', 'AA', '', 'x', '', '09/08/2026 12:00:00', '1', 'abc', '', '', '', ''],
     ['GRBNA', '9', '', '', '', '', 'x', '', '09/08/2026 12:00:00', '1', '5', '', '', '', ''],
   ];
-  const r = parsePullFile(rows, P);
+  const r = parseAt(rows);
   assert.equal(r.rows.length, 7);                       // 3 แถวเสียถูกตัด
   // ⚠️ นับเฉพาะ warning "ข้ามแถว" — ห้ามนับ warnings ทั้งก้อน
   //    parsePullFile ยังเตือนเรื่องอื่นที่ขึ้นกับ "วันนี้" ด้วย (ไฟล์เก่ากว่าวันนี้ N วัน)
@@ -230,10 +240,10 @@ test('🔴 parsePullFile — แถวที่อ่านไม่ออกต
 });
 
 test('parsePullFile — ไฟล์ผิดฟอร์แมต/ไม่มีข้อมูล ต้องคืน error ไม่ throw', () => {
-  const bad = parsePullFile([['อะไรก็ไม่รู้'], ['a', 'b']], P);
+  const bad = parseAt([['อะไรก็ไม่รู้'], ['a', 'b']]);
   assert.equal(bad.ok, false);
   assert.ok(bad.error.includes('หัวตาราง'));
-  const empty = parsePullFile([CSV[5]], P);
+  const empty = parseAt([CSV[5]]);
   assert.equal(empty.ok, false);
   assert.ok(empty.error.includes('ไม่พบแถวข้อมูล'));
 });
@@ -241,7 +251,7 @@ test('parsePullFile — ไฟล์ผิดฟอร์แมต/ไม่ม�
 /* ══ รวมยอด ════════════════════════════════════════════════════════════════════════ */
 
 test('⭐ aggregateSignals — ไฟล์ 12:00–14:00: 16E060=30 · 16E061=30 · 8C306=35', () => {
-  const g = aggregateSignals(parsePullFile(CSV, P).rows);
+  const g = aggregateSignals(parseAt(CSV).rows);
   assert.equal(g.length, 3);
   const by = Object.fromEntries(g.map(x => [x.customer_part_no, x]));
   assert.equal(by['RB3B-16E060-BA'].qty, 30);
@@ -254,7 +264,7 @@ test('⭐ aggregateSignals — ไฟล์ 12:00–14:00: 16E060=30 · 16E061=3
 });
 
 test('signalKey — คีย์กันซ้ำต้องแยกพาร์ทที่ดึงวินาทีเดียวกันออกจากกัน', () => {
-  const rows = parsePullFile(CSV, P).rows;
+  const rows = parseAt(CSV).rows;
   const a = rows.find(r => r.customer_part_no === 'RB3B-16E060-BA' && timeStr(r.pulled_at) === '13:43');
   const b = rows.find(r => r.customer_part_no === 'RB3B-16E061-BA' && timeStr(r.pulled_at) === '13:43');
   assert.notEqual(signalKey(a), signalKey(b));          // เวลาเดียวกันแต่คนละพาร์ท = คนละแถว
@@ -270,7 +280,7 @@ const RESOLVE = (p) => ({
   'RB3B-8C306-BC': { mat: '10105769', status: 'mapped', candidates: ['10105769'] },
 }[p] || { mat: null, status: 'none', candidates: [] });
 
-const groupsOf = (m) => aggregateSignals(parsePullFile(m, P).rows);
+const groupsOf = (m) => aggregateSignals(parseAt(m).rows);
 
 test('⭐ planOrderUpdates — เจอใบ pending ยอดต่าง → update พร้อมส่วนต่าง', () => {
   const orders = [{ id: 'o1', customer_part_no: 'RB3B 16E060 BA', mat_no: '10100385', qty: 40, status: 'pending' }];
@@ -612,7 +622,7 @@ test('ช่วงที่ไม่มีเลย = ลิสต์ว่า�
 });
 
 test('parsePullFile ต้องคืน patternOptions ให้จอ (ไม่งั้นเลือก OT ไม่ได้)', () => {
-  const res = parsePullFile(CSV, FALLBACK_PROFILE, ROUNDS);
+  const res = parseAt(CSV, FALLBACK_PROFILE, ROUNDS);
   assert.ok(Array.isArray(res.patternOptions), 'ต้องมีเสมอ แม้เป็นลิสต์ว่าง');
 });
 
