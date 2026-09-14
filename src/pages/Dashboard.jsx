@@ -383,6 +383,9 @@ export default function Dashboard() {
         workDate: s.work_date,
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
+        /* ⚠️ นโยบายพัก + process ของกะ — ขาดไปแล้ว A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14) */
+        breakPolicies: breakPolicies || [],
+        processType: s.dr_products?.process_type || null,
       });
       if (!live) return null;   // เพิ่งเปิดกะ (< LIVE_MIN_ELAPSED นาที) / ไม่มี start_time = ยังประเมินไม่ได้
       const f = v => (v == null ? null : v / 100);

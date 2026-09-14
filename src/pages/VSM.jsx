@@ -373,6 +373,8 @@ export default function VSM() {
     const lv = buildVsmLive({
       boxes, sessions: sess || [], orders, downtimes: dts, defects: dfs,
       ctMap: liveRaw.ctMap, lines, nowMs: Date.now(),
+      // นโยบายพัก — ขาดไปแล้ว A/P สดในแท็บสดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
+      breakPolicies: liveRaw.raw?.breakPolicies || [],
     });
     setLiveModel(model);
     setLiveData({ ...lv, at: Date.now(), workDate: wd, partial });

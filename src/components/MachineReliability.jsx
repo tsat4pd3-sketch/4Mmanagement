@@ -87,7 +87,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
      ⚠️ ต้องได้ process_type มาด้วย (สัญญาของ policyBreakForShift) แม้ตอนนี้ทุกแถวเป็น common */
   useEffect(() => {
     let alive = true;
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min')
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope')
       .eq('is_active', true)
       .then(({ data, error }) => {
         if (!alive) return;

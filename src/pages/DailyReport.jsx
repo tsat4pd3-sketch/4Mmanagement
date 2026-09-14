@@ -5665,7 +5665,7 @@ function HistoryTab({ role }) {
       supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true),
       supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
     ]).then(([k, p]) => setCtByMat(buildCtMap({ kanbanStds: k.data || [], products: p.data || [] })));
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)
       .then(({ data }) => setHistBreaks(data || []));
   }, []);
 
@@ -6745,7 +6745,7 @@ function BreakPolicySetup({ role }) {
   const [items, setItems]   = useState([]);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
-  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', sort_order: 0, is_active: true };
+  const emptyForm = { name_th: '', name_en: '', shift: 'both', start_time: '08:00', duration_min: 10, process_type: 'common', ot_scope: 'always', sort_order: 0, is_active: true };
   const [form, setForm] = useState(emptyForm);
 
   const load = useCallback(async () => {
@@ -6757,7 +6757,7 @@ function BreakPolicySetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, process_type: item.process_type, sort_order: item.sort_order, is_active: item.is_active }
+      ? { name_th: item.name_th, name_en: item.name_en || '', shift: item.shift, start_time: (item.start_time || '08:00').slice(0,5), duration_min: item.duration_min, process_type: item.process_type, ot_scope: item.ot_scope || 'always', sort_order: item.sort_order, is_active: item.is_active }
       : { ...emptyForm, sort_order: items.length + 1 });
   };
 
@@ -6784,6 +6784,9 @@ function BreakPolicySetup({ role }) {
   };
 
   const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก', both: '⏰ ทั้งสองกะ' };
+  /* ⚠️ พักบางรายการเกิด "อย่างใดอย่างหนึ่ง" ระหว่างวันทำโอ/ไม่ทำโอ (เช่น 5ส. 17:10 vs 19:40)
+     ตั้งผิด = หักพักซ้ำ → %A ของทุกจอเพี้ยน (เคสจริง 2026-09-14) · ดู migration 20260914_break_policies_ot_scope */
+  const OT_LABEL = { always: '', ot: '🕕 เฉพาะวันทำโอ', no_ot: '🚫 เฉพาะวันไม่ทำโอ' };
   const PROC_LABEL = new Proxy({}, { get: (_, k) => procDisplay(k) }); // data-driven — master กระบวนการ
 
   return (
@@ -6807,6 +6810,9 @@ function BreakPolicySetup({ role }) {
                 {item.name_en && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{item.name_en}</span>}
                 <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>{SHIFT_LABEL[item.shift]}</span>
                 <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(99,102,241,0.15)', color: '#a78bfa', fontWeight: 700 }}>{PROC_LABEL[item.process_type]}</span>
+                {OT_LABEL[item.ot_scope] && (
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 700 }}>{OT_LABEL[item.ot_scope]}</span>
+                )}
                 {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
@@ -6846,6 +6852,17 @@ function BreakPolicySetup({ role }) {
                   <option value="day">☀️ กะเช้าเท่านั้น</option>
                   <option value="night">🌙 กะดึกเท่านั้น</option>
                 </select>
+              </Field>
+              <Field label="ใช้กับวันแบบไหน">
+                <select value={form.ot_scope} onChange={e => setForm(f => ({ ...f, ot_scope: e.target.value }))} style={inputStyle}>
+                  <option value="always">ทุกวัน (ปกติ)</option>
+                  <option value="ot">🕕 เฉพาะวันที่ทำโอ</option>
+                  <option value="no_ot">🚫 เฉพาะวันที่ไม่ทำโอ</option>
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                  ใช้กับพักที่มี 2 รอบสลับกัน เช่น 5ส. 17:10 (ไม่ทำโอ) / 19:40 (ทำโอ) —
+                  ตั้งไว้แล้วระบบจะหักแค่รอบที่เกิดจริง ไม่นับซ้ำ
+                </div>
               </Field>
               <Field label="ใช้กับกระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
