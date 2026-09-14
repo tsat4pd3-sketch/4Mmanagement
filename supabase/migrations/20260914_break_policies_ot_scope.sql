@@ -31,8 +31,17 @@ alter table break_policies add constraint break_policies_ot_scope_chk
 comment on column break_policies.ot_scope is
   'always = ใช้ทุกกะ · ot = เฉพาะกะที่ทำโอ · no_ot = เฉพาะกะที่ไม่ทำโอ (ดู policyBreakOverlapMin)';
 
--- ตั้งค่าตามนโยบายจริงของกะเช้า (ชื่อตรงตัวจากทะเบียน — idempotent รันซ้ำได้)
+-- ตั้งค่าตามนโยบายจริงของกะเช้า (idempotent รันซ้ำได้)
+-- ⚠️ ชื่อในฐานมีช่องว่างเกินท้ายวงเล็บ ("5ส.(ไม่ทำโอ )") — เทียบ `=` ตรงตัวแล้ว **ไม่ match เงียบๆ**
+--    (เกิดจริงตอน apply รอบแรก: แถว ot ถูกตั้ง แถว no_ot ไม่ถูกตั้ง ⇒ ยังหักพัก 150 เหมือนเดิม)
+--    ⇒ ใช้ like กับคำสำคัญแทน และเช็คผลกลับทุกครั้งหลัง apply
 update break_policies set ot_scope = 'no_ot'
-  where shift = 'day' and name_th = '5ส.(ไม่ทำโอ)';
+  where shift = 'day' and name_th like '5ส.%' and name_th like '%ไม่ทำโอ%';
 update break_policies set ot_scope = 'ot'
-  where shift = 'day' and name_th in ('5ส.(ทำโอ)', 'พักเบรค OT กะเช้า');
+  where shift = 'day' and (
+    (name_th like '5ส.%' and name_th like '%(ทำโอ%')     -- 5ส. รอบวันที่ทำโอ
+    or name_th like 'พักเบรค OT%'                        -- เบรค OT กะเช้า
+  );
+
+-- เช็คผล (ควรได้ 3 แถว: 17:10 = no_ot · 17:30 = ot · 19:40 = ot)
+-- select name_th, start_time, duration_min, ot_scope from break_policies where ot_scope <> 'always' order by start_time;
